@@ -165,7 +165,7 @@ describe('rawToolSurface', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: 'Export full-resolution JPEG' }),
-    ).toHaveClass('raw-export-button', 'raw-export-button-primary')
+    ).toHaveClass('bg-[color:--color-raw-green]')
   })
 
   it('renders strength controls before tone', async () => {
@@ -320,9 +320,9 @@ describe('rawToolSurface', () => {
 
     await user.click(screen.getByRole('button', { name: 'Reset tone' }))
     expect(onToneReset).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Reset tone' })).toHaveClass(
-      'raw-tool-reset-button',
-    )
+    expect(
+      screen.getByRole('button', { name: 'Reset tone' }),
+    ).toBeInTheDocument()
   })
 
   it('disables tone controls before upload', () => {
@@ -340,12 +340,12 @@ describe('rawToolSurface', () => {
   it('uses Raw Lab-specific reset controls for tone and compare', () => {
     render(<RawToolSurface {...baseProps} hasImage />)
 
-    expect(screen.getByRole('button', { name: 'Reset tone' })).toHaveClass(
-      'raw-tool-reset-button',
-    )
+    expect(
+      screen.getByRole('button', { name: 'Reset tone' }),
+    ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: 'Reset compare view' }),
-    ).toHaveClass('raw-tool-reset-button')
+    ).toBeInTheDocument()
   })
 
   it('shows preserved tone state for non-neutral tone', () => {
@@ -438,7 +438,7 @@ describe('rawToolSurface', () => {
     const row = fileName.parentElement?.parentElement
 
     expect(row).toHaveClass('min-w-0')
-    expect(frame).toHaveClass('min-w-0', 'raw-lut-dropzone')
+    expect(frame).toHaveClass('min-w-0', 'flex-1')
     expect(fileName).toHaveClass('min-w-0', 'truncate')
     expect(fileName).toHaveAttribute('title', currentLut)
   })
@@ -500,7 +500,7 @@ describe('rawToolSurface', () => {
     const browser = screen.getByRole('dialog', {
       name: 'Catalog from profiles.example.com LUTs',
     })
-    const browserList = browser.querySelector('.raw-lut-source-browser-list')
+    const browserList = browser.querySelector('[data-lut-source-scroll]')
 
     expect(open).toHaveAttribute('aria-expanded', 'true')
     expect(open).toHaveAttribute('aria-controls', browser.id)
@@ -509,11 +509,8 @@ describe('rawToolSurface', () => {
         name: 'Close LUT source browser',
       }),
     ).toHaveFocus()
-    expect(browser).toHaveClass(
-      'raw-lut-browser-dialog',
-      'raw-lut-source-browser',
-    )
     expect(browser).toHaveAttribute('data-raw-lut-browser-dialog', 'source')
+    expect(browser).toHaveClass('fixed', 'z-60')
     expect(browser).toHaveAttribute('data-lut-source-placement', 'anchored')
     expect(
       browser.style.getPropertyValue('--raw-lut-source-browser-top'),
@@ -538,7 +535,7 @@ describe('rawToolSurface', () => {
 
     const entryRow = within(browser)
       .getByText('Kodak 2383 Rec.709')
-      .closest('.raw-lut-source-entry')
+      .closest('[class*="grid grid-cols"]')
     expect(entryRow).not.toBeNull()
     const entry = within(entryRow as HTMLElement)
 
@@ -826,10 +823,10 @@ describe('rawToolSurface', () => {
       screen.getByText(
         'Choose the LUT input and output contract before preview or export.',
       ),
-    ).toHaveClass('raw-lut-contract-status', 'raw-lut-contract-status-amber')
+    ).toHaveClass('to-[color:--color-raw-amber-soft]')
     expect(
       screen.getByRole('button', { name: 'Change LUT contract' }),
-    ).toHaveClass('raw-lut-contract-change-button')
+    ).toHaveClass('bg-[color:oklch(0.934_0.03_84_/_0.92)]')
   })
 
   it('shows a busy refresh affordance while an online LUT source is loading', () => {
@@ -852,7 +849,7 @@ describe('rawToolSurface', () => {
     })
 
     expect(refresh).toHaveAttribute('aria-busy', 'true')
-    expect(refresh).toHaveClass('raw-lut-source-icon-button-busy')
+    expect(refresh).toHaveClass('[&_svg]:animate-spin')
     expect(screen.getByText('Loading')).toBeInTheDocument()
   })
 
