@@ -403,7 +403,7 @@ describe('rawToolSurface', () => {
     )
     expect(
       within(
-        container.querySelector('.raw-mobile-tool-sheet') as HTMLElement,
+        container.querySelector('[data-raw-mobile-sheet]') as HTMLElement,
       ).getByRole('region', { name: 'Export' }),
     ).toBeInTheDocument()
   })

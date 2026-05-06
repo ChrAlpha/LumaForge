@@ -251,7 +251,13 @@ export function RawToolSurface(props: {
       <div
         id={mobileToolSheetId}
         ref={sheetRef}
-        className="raw-mobile-tool-sheet"
+        data-raw-mobile-sheet=""
+        className={[
+          'fixed inset-x-0 bottom-0 z-30 grid grid-rows-[auto_minmax(0,1fr)] min-h-0 overflow-hidden rounded-t-xl border-t border-[color:--color-raw-hairline] bg-gradient-to-b from-[color:oklch(0.954_0.022_86)] to-[color:oklch(0.91_0.03_84)] shadow-[0_-24px_54px_oklch(0.18_0.018_76_/_0.22)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] sm:hidden',
+          mobilePanel
+            ? 'visible translate-y-0 pointer-events-auto'
+            : 'invisible translate-y-full',
+        ].join(' ')}
         style={
           sheetDragY > 0
             ? { transform: `translateY(${sheetDragY}px)`, transition: 'none' }
@@ -259,29 +265,30 @@ export function RawToolSurface(props: {
         }
       >
         <div
-          className="raw-mobile-tool-sheet-top"
+          className="touch-none"
           onPointerDown={handleSheetPointerDown}
           onPointerMove={handleSheetPointerMove}
           onPointerUp={handleSheetPointerUp}
           onPointerCancel={handleSheetPointerCancel}
         >
-          <div
-            className="raw-mobile-tool-sheet-drag-handle"
-            aria-hidden="true"
-          />
-          <div className="raw-mobile-tool-sheet-header">
-            <h2>{mobilePanelTitle}</h2>
+          <div className="flex justify-center pt-2" aria-hidden="true">
+            <span className="block h-1 w-8 rounded-full bg-[color:oklch(0.74_0.035_78_/_0.64)]" />
+          </div>
+          <div className="flex items-center justify-between gap-3 border-b border-[color:oklch(0.74_0.035_78_/_0.58)] px-3 py-2.5">
+            <h2 className="m-0 text-[0.84rem] font-semibold leading-tight text-[color:--color-raw-ink]">
+              {mobilePanelTitle}
+            </h2>
             <button
               type="button"
-              className="raw-mobile-tool-sheet-close"
+              className="grid size-11 shrink-0 place-items-center rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.7)] bg-[color:--color-raw-paper] text-[color:--color-raw-ink]"
               aria-label={t('raw.mobileTools.close')}
               onClick={() => setMobilePanel(null)}
             >
-              <X aria-hidden="true" />
+              <X className="size-4" aria-hidden="true" />
             </button>
           </div>
         </div>
-        <div className="raw-mobile-tool-sheet-scroll">
+        <div className="min-h-0 overflow-y-auto px-3 pb-3 [&_section:first-child]:pt-3">
           {mobilePanel === 'style' &&
             renderStyleTools({ includeFileFacts: false })}
           {mobilePanel === 'export' && renderExportTools()}
@@ -290,12 +297,12 @@ export function RawToolSurface(props: {
 
       {/* Mobile rail */}
       <nav
-        className="raw-mobile-tool-rail"
+        className="z-[1] grid grid-cols-2 gap-2 border-t border-[color:--color-raw-hairline] px-2.5 pt-2 pb-[max(8px,env(safe-area-inset-bottom))] bg-gradient-to-b from-[color:oklch(0.958_0.018_86)] to-[color:oklch(0.925_0.026_86)] shadow-[0_-14px_36px_oklch(0.18_0.018_76_/_0.18)] sm:hidden"
         aria-label={t('raw.mobileTools.aria')}
       >
         <button
           type="button"
-          className="raw-mobile-tool-tab"
+          className="inline-flex min-w-0 min-h-[46px] items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.72)] bg-[color:--color-raw-paper] text-[0.78rem] font-bold leading-none text-[color:--color-raw-ink] data-[active=true]:border-[color:--color-raw-green-deep] data-[active=true]:bg-[color:oklch(0.86_0.065_145)] focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2"
           data-mobile-tool-tab="style"
           data-active={mobilePanel === 'style'}
           aria-expanded={mobilePanel === 'style'}
@@ -307,7 +314,7 @@ export function RawToolSurface(props: {
         </button>
         <button
           type="button"
-          className="raw-mobile-tool-tab raw-mobile-tool-tab-export"
+          className="inline-flex min-w-0 min-h-[46px] items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.74_0.15_152)] bg-[color:--color-raw-green] text-[0.78rem] font-bold leading-none text-[color:--color-raw-ink] data-[active=true]:border-[color:--color-raw-green-deep] data-[active=true]:bg-[color:oklch(0.86_0.065_145)] focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 aria-disabled:border-[color:oklch(0.74_0.035_78_/_0.72)] aria-disabled:bg-[color:oklch(0.92_0.026_86)] aria-disabled:text-[color:--color-raw-ink-soft]"
           data-mobile-tool-tab="export"
           data-active={mobilePanel === 'export'}
           aria-disabled={!props.canExport || props.isProcessing}

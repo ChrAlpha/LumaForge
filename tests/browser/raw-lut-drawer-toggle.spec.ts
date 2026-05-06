@@ -26,14 +26,12 @@ async function openRawToolsIfNeeded(page: Page) {
   if ((page.viewportSize()?.width ?? Number.POSITIVE_INFINITY) > 640) return
 
   const styleTab = page.getByRole('button', { name: 'Style' })
-  const sheet = page.locator('.raw-mobile-tool-sheet')
+  const sheet = page.locator('[data-raw-mobile-sheet]')
 
   await expect(styleTab).toBeVisible()
   await styleTab.click()
   await expect(sheet).toBeVisible()
-  await expect(page.locator('.raw-mobile-tool-sheet-header h2')).toHaveText(
-    'Style',
-  )
+  await expect(page.locator('[data-raw-mobile-sheet] h2')).toHaveText('Style')
 }
 
 test('closes the online LUT resource browser when its trigger is clicked again', async ({
