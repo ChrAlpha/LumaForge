@@ -3,7 +3,9 @@ import type {
   LUTProfileResolution,
   PreviewHistogramState,
 } from '@lumaforge/luma-color-runtime'
-import { Download, SlidersHorizontal, X } from 'lucide-react'
+import * as Collapsible from '@radix-ui/react-collapsible'
+import { ChevronDown, Download, SlidersHorizontal, X } from 'lucide-react'
+import { m } from 'motion/react'
 import type { ComponentProps } from 'react'
 import { useCallback, useId, useRef, useState } from 'react'
 
@@ -67,6 +69,7 @@ export function RawToolSurface(props: {
 }) {
   const { t } = useI18n()
   const [mobilePanel, setMobilePanel] = useState<MobileToolPanel | null>(null)
+  const [toneExpanded, setToneExpanded] = useState(true)
   const mobileToolSheetId = useId()
   const disabled = !props.hasImage || props.isProcessing
   const mobilePanelTitle =
@@ -143,6 +146,7 @@ export function RawToolSurface(props: {
     includeFileFacts = true,
   }: { includeFileFacts?: boolean } = {}) => (
     <>
+      {/* Phase 1: LUT + Intensity — always visible */}
       <LutContractTool
         currentLutName={props.currentLutName}
         disabled={props.isProcessing}
@@ -153,13 +157,6 @@ export function RawToolSurface(props: {
         onLutProfileSelect={props.onLutProfileSelect}
         onlineLutSources={props.onlineLutSources}
       />
-      <ToneTool
-        value={props.tone}
-        disabled={disabled}
-        onChange={props.onToneChange}
-        onReset={props.onToneReset}
-      />
-      <HistogramTool histogram={props.histogram} />
       <ToolSection title={t('raw.strength.title')}>
         <StrengthControl
           value={props.activeIntensity}
@@ -167,6 +164,39 @@ export function RawToolSurface(props: {
           disabled={disabled}
         />
       </ToolSection>
+
+      {/* Phase 2: Fine-tune — collapsible */}
+      <Collapsible.Root open={toneExpanded} onOpenChange={setToneExpanded}>
+        <Collapsible.Trigger className="flex w-full items-center justify-between rounded-lg border border-[color:--color-raw-hairline] px-3 py-2 text-[0.78rem] font-semibold text-[color:--color-raw-ink] transition-colors duration-150 hover:border-[color:--color-raw-green] hover:text-[color:--color-raw-green-deep]">
+          {t('raw.tone.fineTune')}
+          <ChevronDown
+            aria-hidden
+            className="size-4 transition-transform duration-200"
+            style={{ transform: toneExpanded ? 'rotate(180deg)' : undefined }}
+          />
+        </Collapsible.Trigger>
+        <Collapsible.Content asChild>
+          <m.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <div className="pt-3">
+              <ToneTool
+                value={props.tone}
+                disabled={disabled}
+                onChange={props.onToneChange}
+                onReset={props.onToneReset}
+              />
+              <HistogramTool histogram={props.histogram} />
+            </div>
+          </m.div>
+        </Collapsible.Content>
+      </Collapsible.Root>
+
+      <CompareTool disabled={disabled} onCompareReset={props.onCompareReset} />
+
       {includeFileFacts && (
         <FileFactsTool
           supportLevel={props.supportLevel}
@@ -175,10 +205,6 @@ export function RawToolSurface(props: {
         />
       )}
     </>
-  )
-
-  const renderCompareTools = () => (
-    <CompareTool disabled={disabled} onCompareReset={props.onCompareReset} />
   )
 
   const renderExportTools = () => (
@@ -199,16 +225,21 @@ export function RawToolSurface(props: {
 
   return (
     <aside
-      className="raw-tool-surface"
+      className="grid grid-rows-[auto_minmax(0,1fr)] gap-3 min-w-0 min-h-0 overflow-hidden border-l border-[color:--color-raw-hairline] bg-gradient-to-b from-[color:oklch(0.942_0.024_86)] to-[color:oklch(0.91_0.03_84)] p-3.5"
       data-raw-tool-surface="raw-finishing"
       data-raw-tool-sheet={mobilePanel ? 'open' : 'closed'}
       data-raw-mobile-panel={mobilePanel ?? 'closed'}
       aria-label={t('raw.tools.aria')}
     >
-      <div className="raw-tool-stack raw-tool-stack-desktop">
+      {/* Desktop scrollable content */}
+      <div className="raw-tool-stack hidden @[981px]:block">
         {renderStyleTools({ includeFileFacts: false })}
-        {renderCompareTools()}
-        {renderExportTools()}
+
+        {/* Phase 3: Export — sticky at bottom */}
+        <div className="sticky bottom-0 -mx-3.5 -mb-3.5 border-t border-[color:--color-raw-hairline] bg-gradient-to-b from-[color:oklch(0.954_0.022_86)] to-[color:oklch(0.91_0.03_84)] px-3.5 py-3">
+          {renderExportTools()}
+        </div>
+
         <FileFactsTool
           supportLevel={props.supportLevel}
           metadata={props.metadata}
@@ -216,6 +247,7 @@ export function RawToolSurface(props: {
         />
       </div>
 
+      {/* Mobile sheet */}
       <div
         id={mobileToolSheetId}
         ref={sheetRef}
@@ -256,6 +288,7 @@ export function RawToolSurface(props: {
         </div>
       </div>
 
+      {/* Mobile rail */}
       <nav
         className="raw-mobile-tool-rail"
         aria-label={t('raw.mobileTools.aria')}

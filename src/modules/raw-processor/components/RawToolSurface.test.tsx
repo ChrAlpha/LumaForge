@@ -168,7 +168,7 @@ describe('rawToolSurface', () => {
     ).toHaveClass('raw-export-button', 'raw-export-button-primary')
   })
 
-  it('renders tone controls before strength', async () => {
+  it('renders strength controls before tone', async () => {
     render(<RawToolSurface {...baseProps} hasImage />)
 
     const tone = screen.getByRole('region', { name: 'Tone' })
@@ -186,7 +186,7 @@ describe('rawToolSurface', () => {
     }
     expect(screen.getByRole('region', { name: 'Tone' })).toBeInTheDocument()
     expect(
-      tone.compareDocumentPosition(strength) & Node.DOCUMENT_POSITION_FOLLOWING,
+      strength.compareDocumentPosition(tone) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
   })
 
@@ -237,11 +237,10 @@ describe('rawToolSurface', () => {
     const strength = screen.getByRole('region', { name: 'Strength' })
 
     expect(
-      tone.compareDocumentPosition(histogram) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      strength.compareDocumentPosition(tone) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(
-      histogram.compareDocumentPosition(strength) &
+      tone.compareDocumentPosition(histogram) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(within(histogram).getByText('Quick preview')).toBeInTheDocument()
