@@ -47,11 +47,14 @@ export function WorkspaceHeader({
   const exportDisabledReason = localizeRawReason(rawExportDisabledReason, t)
 
   return (
-    <header className="raw-lab-topbar" role="banner">
+    <header
+      className="flex items-center justify-between gap-4 max-w-full min-w-0 border-b border-[color:--color-raw-hairline] px-[clamp(12px,2vw,22px)] py-3 bg-[color:oklch(0.952_0.018_86)]"
+      role="banner"
+    >
       <div className="min-w-0">
-        <div className="raw-lab-title-row flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <img
-            className="raw-lab-mark"
+            className="block size-7 shrink-0 rounded-[5px] object-cover shadow-[0_8px_22px_oklch(0.1_0.02_78_/_0.12)]"
             src={appIcon}
             alt=""
             aria-hidden="true"
@@ -60,7 +63,7 @@ export function WorkspaceHeader({
             {hasImage ? fileName : t('raw.header.title')}
           </h1>
           {hasImage && (
-            <span className="raw-lab-support-badge">
+            <span className="inline-flex">
               <SupportBadge level={supportLevel} />
             </span>
           )}
@@ -79,13 +82,13 @@ export function WorkspaceHeader({
         )}
       </div>
 
-      <div className="raw-lab-topbar-actions">
-        <LocaleToggle className="raw-lab-topbar-button raw-lab-locale-toggle" />
+      <div className="flex shrink-0 items-center gap-2">
+        <LocaleToggle className="inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-lg border border-[color:--color-raw-hairline] bg-[color:--color-raw-paper] px-[11px] py-2 text-[0.8rem] font-bold text-[color:--color-raw-ink] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:not-disabled:-translate-y-px hover:not-disabled:border-[color:--color-raw-green] focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-w-[70px]" />
         <button
           type="button"
           onClick={onReplaceFile}
           disabled={isExporting}
-          className="raw-lab-topbar-button raw-lab-topbar-button-replace"
+          className="inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-lg border border-[color:--color-raw-hairline] bg-[color:--color-raw-paper] px-[11px] py-2 text-[0.8rem] font-bold text-[color:--color-raw-ink] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:not-disabled:-translate-y-px hover:not-disabled:border-[color:--color-raw-green] focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {hasImage ? t('raw.header.replace') : t('raw.header.chooseRaw')}
         </button>
@@ -93,7 +96,7 @@ export function WorkspaceHeader({
           type="button"
           onClick={onResetSession}
           disabled={!hasImage || isExporting}
-          className="raw-lab-topbar-button raw-lab-topbar-button-reset"
+          className="inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-lg border border-[color:--color-raw-hairline] bg-[color:--color-raw-paper] px-[11px] py-2 text-[0.8rem] font-bold text-[color:--color-raw-ink] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:not-disabled:-translate-y-px hover:not-disabled:border-[color:--color-raw-green] focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t('raw.header.reset')}
         </button>
@@ -101,7 +104,7 @@ export function WorkspaceHeader({
           type="button"
           onClick={onOpenExport}
           disabled={!canExport}
-          className="raw-lab-topbar-button raw-lab-topbar-button-primary"
+          className="inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.74_0.15_152)] bg-[color:--color-raw-green] px-[11px] py-2 text-[0.8rem] font-bold text-[color:--color-raw-ink] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:not-disabled:-translate-y-px hover:not-disabled:border-[color:--color-raw-green] focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t('raw.header.fullRes')}
         </button>
@@ -109,15 +112,18 @@ export function WorkspaceHeader({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="raw-lab-topbar-button raw-lab-topbar-more"
+              className="inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-lg border border-[color:--color-raw-hairline] bg-[color:--color-raw-paper] px-[11px] py-2 text-[0.8rem] font-bold text-[color:--color-raw-ink] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:not-disabled:-translate-y-px hover:not-disabled:border-[color:--color-raw-green] focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 hidden @[640px]:inline-flex"
             >
               <MoreHorizontal aria-hidden="true" />
               {t('raw.header.more')}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="raw-lab-more-menu">
+          <DropdownMenuContent
+            align="end"
+            className="z-60 min-w-[168px] rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.72)] bg-gradient-to-b from-[color:oklch(0.962_0.018_86)] to-[color:oklch(0.922_0.026_86)] p-1 text-[color:--color-raw-ink] shadow-[0_16px_42px_oklch(0.18_0.018_76_/_0.18)]"
+          >
             <DropdownMenuItem
-              className="raw-lab-more-menu-item"
+              className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-1.5 text-[0.82rem] font-semibold text-[color:--color-raw-ink] focus:bg-[color:oklch(0.86_0.065_145)] data-[highlighted]:bg-[color:oklch(0.86_0.065_145)] data-[disabled]:opacity-50"
               disabled={isExporting}
               onSelect={onReplaceFile}
             >
@@ -125,7 +131,7 @@ export function WorkspaceHeader({
               {hasImage ? t('raw.header.replace') : t('raw.header.chooseRaw')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              className="raw-lab-more-menu-item"
+              className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-1.5 text-[0.82rem] font-semibold text-[color:--color-raw-ink] focus:bg-[color:oklch(0.86_0.065_145)] data-[highlighted]:bg-[color:oklch(0.86_0.065_145)] data-[disabled]:opacity-50"
               disabled={!hasImage || isExporting}
               onSelect={onResetSession}
             >
