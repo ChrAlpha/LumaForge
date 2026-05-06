@@ -40,7 +40,7 @@ export interface ComparePreviewStageProps {
 function EmptySampleCompare({ split }: { split: number }) {
   return (
     <div
-      className="raw-lab-sample"
+      className="absolute inset-0 overflow-hidden"
       style={
         {
           '--raw-compare-split-committed': `${split * 100}%`,
@@ -66,19 +66,26 @@ function UploadDock({
   return (
     <button
       type="button"
-      className="raw-lab-upload-dock"
+      className="absolute left-1/2 bottom-[clamp(52px,7vw,78px)] z-[5] flex min-w-[min(320px,calc(100%-36px))] items-center gap-3 rounded-lg border border-[color:oklch(0.96_0.012_86_/_0.36)] px-[13px] py-[11px] bg-[color:oklch(0.16_0.018_76_/_0.84)] text-[color:--color-raw-hero-ink] cursor-pointer -translate-x-1/2 focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
       onClick={(event) => {
         event.stopPropagation()
         onOpenFilePicker()
       }}
       disabled={disabled}
     >
-      <span className="raw-lab-upload-icon" aria-hidden="true">
+      <span
+        className="grid size-[34px] shrink-0 place-items-center rounded-[5px] bg-[color:--color-raw-green] text-[color:--color-raw-ink] font-extrabold"
+        aria-hidden="true"
+      >
         ↑
       </span>
       <span className="raw-lab-upload-copy">
-        <strong>{t('raw.stage.uploadTitle')}</strong>
-        <span>{t('raw.stage.uploadCopy')}</span>
+        <strong className="block text-[0.86rem] leading-tight">
+          {t('raw.stage.uploadTitle')}
+        </strong>
+        <span className="mt-[3px] block text-[0.72rem] leading-snug text-[color:oklch(0.9_0.016_86)]">
+          {t('raw.stage.uploadCopy')}
+        </span>
       </span>
     </button>
   )
@@ -112,7 +119,10 @@ export function ComparePreviewStage({
 
   return (
     <section
-      className={clsxm('raw-lab-stage', className)}
+      className={clsxm(
+        'relative min-w-0 min-h-0 overflow-hidden p-[clamp(12px,2vw,22px)]',
+        className,
+      )}
       aria-label={t('raw.stage.aria')}
     >
       <Dropzone
@@ -124,7 +134,7 @@ export function ComparePreviewStage({
         accept={RAW_FILE_EXTENSIONS}
         disabled={isProcessing}
         clickToOpen={false}
-        className="raw-lab-stage-frame"
+        className="relative w-full h-full min-h-0 overflow-hidden rounded-lg border border-[color:oklch(0.96_0.012_86_/_0.36)] bg-gradient-to-br from-[color:oklch(0.23_0.026_76)] to-[color:oklch(0.16_0.02_76)] shadow-[0_24px_80px_oklch(0.18_0.018_76_/_0.18)]"
       >
         {({ openFilePicker, disabled }) => (
           <>
