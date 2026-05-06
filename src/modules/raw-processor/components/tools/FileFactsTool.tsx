@@ -59,11 +59,15 @@ export function FileFactsTool({
 
   return (
     <ToolSection title={t('raw.fileFacts.title')}>
-      <dl className="raw-file-facts">
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 m-0">
         {facts.map((fact) => (
           <div key={fact.label}>
-            <dt>{fact.label}</dt>
-            <dd>{fact.value || t('raw.fileFacts.notLoaded')}</dd>
+            <dt className="text-[0.68rem] text-[color:--color-raw-ink-soft]">
+              {fact.label}
+            </dt>
+            <dd className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-[0.75rem] font-medium text-[color:--color-raw-ink]">
+              {fact.value || t('raw.fileFacts.notLoaded')}
+            </dd>
           </div>
         ))}
       </dl>
