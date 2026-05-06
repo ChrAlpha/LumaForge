@@ -90,7 +90,7 @@ function getViewportBoundedBrowserLayout(
 
   const triggerRect = trigger.getBoundingClientRect()
   const rowRect =
-    trigger.closest('.raw-lut-source-resource-row')?.getBoundingClientRect() ??
+    trigger.closest('[data-lut-resource-row]')?.getBoundingClientRect() ??
     triggerRect
   const availableWidth = Math.max(0, viewportWidth - margin * 2)
   const width = Math.min(
@@ -220,7 +220,7 @@ function LutBrowserDialog({
           id={id}
           forceMount
           aria-label={dialogLabel}
-          className={`raw-lut-browser-dialog ${className}`}
+          className={`fixed z-60 grid gap-2 overflow-hidden rounded-lg border border-[color:oklch(0.67_0.04_78_/_0.72)] bg-[color:oklch(0.948_0.022_86_/_0.98)] p-2 shadow-[0_18px_42px_oklch(0.32_0.04_70_/_0.16),inset_0_2px_0_oklch(0.98_0.018_86_/_0.72)] ${className}`}
           data-lut-source-placement={layout.placement}
           data-raw-lut-browser-dialog={kind}
           onCloseAutoFocus={(event) => {
@@ -239,21 +239,30 @@ function LutBrowserDialog({
           }}
           style={toBrowserStyle(layout)}
         >
-          <div className={`raw-lut-browser-heading ${headingClassName}`}>
-            <div>
+          <div
+            className={`flex min-w-0 items-center justify-between gap-2.5 ${headingClassName}`}
+          >
+            <div className="min-w-0">
               <DialogPrimitive.Title className="sr-only">
                 {dialogLabel}
               </DialogPrimitive.Title>
-              <span aria-hidden="true">{title}</span>
+              <span
+                aria-hidden="true"
+                className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.74rem] font-semibold text-[color:--color-raw-ink]"
+              >
+                {title}
+              </span>
               <DialogPrimitive.Description asChild>
-                <p>{description}</p>
+                <p className="mt-0.5 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.66rem] leading-tight text-[color:--color-raw-ink-soft]">
+                  {description}
+                </p>
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close
               type="button"
               aria-label={closeLabel}
               title={closeLabel}
-              className="raw-lut-source-icon-button"
+              className="inline-flex size-8 items-center justify-center rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.72)] bg-[color:oklch(0.964_0.018_86_/_0.76)] text-[color:--color-raw-ink-soft] transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:not-disabled:border-[color:oklch(0.59_0.15_153_/_0.58)] hover:not-disabled:bg-[color:oklch(0.59_0.15_153_/_0.1)] hover:not-disabled:text-[color:--color-raw-green-deep] hover:not-disabled:-translate-y-px disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2"
             >
               <X aria-hidden="true" />
             </DialogPrimitive.Close>
@@ -291,10 +300,10 @@ function LUTProfileButton({
       onClick={() => onSelect(profile)}
       className={
         isActive
-          ? 'raw-lut-contract-option raw-lut-contract-option-active'
+          ? 'block w-full min-w-0 rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.64)] bg-[color:oklch(0.954_0.02_86_/_0.72)] px-2 py-1.5 text-left text-[0.72rem] leading-snug transition-all duration-150 hover:border-[color:oklch(0.56_0.12_153_/_0.5)] hover:bg-[color:oklch(0.93_0.035_84_/_0.86)] hover:text-[color:--color-raw-ink] hover:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 border-[color:oklch(0.54_0.14_153)] bg-[color:--color-raw-green-soft] text-[color:--color-raw-ink]'
           : highlighted
-            ? 'raw-lut-contract-option raw-lut-contract-option-suggested'
-            : 'raw-lut-contract-option'
+            ? 'block w-full min-w-0 rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.64)] bg-[color:oklch(0.954_0.02_86_/_0.72)] px-2 py-1.5 text-left text-[0.72rem] leading-snug transition-all duration-150 hover:border-[color:oklch(0.56_0.12_153_/_0.5)] hover:bg-[color:oklch(0.93_0.035_84_/_0.86)] hover:text-[color:--color-raw-ink] hover:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 border-[color:oklch(0.78_0.16_63_/_0.38)] bg-[color:oklch(0.93_0.05_78_/_0.82)] text-[color:--color-raw-ink]'
+            : 'block w-full min-w-0 rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.64)] bg-[color:oklch(0.954_0.02_86_/_0.72)] px-2 py-1.5 text-left text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft] transition-all duration-150 hover:border-[color:oklch(0.56_0.12_153_/_0.5)] hover:bg-[color:oklch(0.93_0.035_84_/_0.86)] hover:text-[color:--color-raw-ink] hover:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2'
       }
     >
       <span className="block min-w-0 break-words">{buttonLabel}</span>
@@ -426,10 +435,10 @@ function LUTOutputOptionButton({
       onClick={() => onSelect(option)}
       className={
         isActive
-          ? 'raw-lut-contract-option raw-lut-contract-option-active'
+          ? 'block w-full min-w-0 rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.64)] bg-[color:oklch(0.954_0.02_86_/_0.72)] px-2 py-1.5 text-left text-[0.72rem] leading-snug transition-all duration-150 hover:border-[color:oklch(0.56_0.12_153_/_0.5)] hover:bg-[color:oklch(0.93_0.035_84_/_0.86)] hover:text-[color:--color-raw-ink] hover:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 border-[color:oklch(0.54_0.14_153)] bg-[color:--color-raw-green-soft] text-[color:--color-raw-ink]'
           : highlighted
-            ? 'raw-lut-contract-option raw-lut-contract-option-suggested'
-            : 'raw-lut-contract-option'
+            ? 'block w-full min-w-0 rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.64)] bg-[color:oklch(0.954_0.02_86_/_0.72)] px-2 py-1.5 text-left text-[0.72rem] leading-snug transition-all duration-150 hover:border-[color:oklch(0.56_0.12_153_/_0.5)] hover:bg-[color:oklch(0.93_0.035_84_/_0.86)] hover:text-[color:--color-raw-ink] hover:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 border-[color:oklch(0.78_0.16_63_/_0.38)] bg-[color:oklch(0.93_0.05_78_/_0.82)] text-[color:--color-raw-ink]'
+            : 'block w-full min-w-0 rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.64)] bg-[color:oklch(0.954_0.02_86_/_0.72)] px-2 py-1.5 text-left text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft] transition-all duration-150 hover:border-[color:oklch(0.56_0.12_153_/_0.5)] hover:bg-[color:oklch(0.93_0.035_84_/_0.86)] hover:text-[color:--color-raw-ink] hover:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2'
       }
     >
       <span className="block min-w-0 break-words">{option.label}</span>
@@ -598,8 +607,8 @@ function LUTContractBrowser({
       layout={browserLayout}
       id={browserId}
       kind="contract"
-      className="raw-lut-contract-browser"
-      headingClassName="raw-lut-contract-browser-heading"
+      className="grid-rows-[auto_auto_auto_minmax(0,1fr)] items-start"
+      headingClassName=""
       dialogLabel={t('raw.lutContract.browser')}
       title={t('raw.lutContract.browser')}
       description={
@@ -617,7 +626,7 @@ function LUTContractBrowser({
       }}
     >
       <div
-        className="raw-lut-contract-browser-tabs"
+        className="grid grid-cols-2 gap-1.5"
         role="tablist"
         aria-label={t('raw.lutContract.panels')}
       >
@@ -625,7 +634,7 @@ function LUTContractBrowser({
           type="button"
           role="tab"
           aria-selected={step === 'input'}
-          className="raw-lut-contract-browser-tab"
+          className="min-h-[32px] rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.58)] bg-[color:oklch(0.964_0.018_86_/_0.42)] text-[0.72rem] font-semibold text-[color:--color-raw-ink-soft] transition-all duration-150 hover:border-[color:oklch(0.59_0.15_153_/_0.34)] focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 aria-selected:border-[color:oklch(0.59_0.15_153_/_0.46)] aria-selected:bg-[color:oklch(0.59_0.15_153_/_0.12)] aria-selected:text-[color:--color-raw-green-deep]"
           onClick={() => setStep('input')}
         >
           {t('raw.lutContract.inputTab')}
@@ -634,7 +643,7 @@ function LUTContractBrowser({
           type="button"
           role="tab"
           aria-selected={step === 'output'}
-          className="raw-lut-contract-browser-tab"
+          className="min-h-[32px] rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.58)] bg-[color:oklch(0.964_0.018_86_/_0.42)] text-[0.72rem] font-semibold text-[color:--color-raw-ink-soft] transition-all duration-150 hover:border-[color:oklch(0.59_0.15_153_/_0.34)] focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 aria-selected:border-[color:oklch(0.59_0.15_153_/_0.46)] aria-selected:bg-[color:oklch(0.59_0.15_153_/_0.12)] aria-selected:text-[color:--color-raw-green-deep]"
           onClick={() => setStep('output')}
         >
           {t('raw.lutContract.outputTab')}
@@ -650,18 +659,18 @@ function LUTContractBrowser({
         value={query}
         placeholder={t('raw.lutContract.searchPlaceholder')}
         onChange={(event) => setQuery(event.currentTarget.value)}
-        inputClassName="raw-lut-input h-8 text-xs"
+        inputClassName="border-[color:oklch(0.7_0.04_78_/_0.74)] bg-[color:oklch(0.948_0.022_86_/_0.9)] text-[color:--color-raw-ink] shadow-none placeholder:text-[color:oklch(0.5_0.035_75_/_0.72)] focus:border-[color:oklch(0.5_0.12_153_/_0.86)] focus:shadow-[0_0_0_2px_oklch(0.59_0.15_153_/_0.16)] h-8 text-xs"
       />
 
       <div
-        className="raw-lut-browser-list raw-lut-contract-browser-list"
+        className="grid self-stretch min-h-0 gap-1.5 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-color:var(--color-raw-scrollbar-thumb)_transparent] [scrollbar-width:thin]"
         data-lut-contract-step={step}
       >
         {step === 'input' ? (
           <>
             {visibleSuggestions.length > 0 && (
               <div className="space-y-1">
-                <p className="raw-lut-contract-browser-group">
+                <p className="m-0 text-[0.68rem] font-semibold uppercase text-[color:oklch(0.47_0.085_68)]">
                   {t('raw.lutContract.suggestedInput')}
                 </p>
                 <div className="space-y-1">
@@ -684,7 +693,7 @@ function LUTContractBrowser({
 
             {groupedInputProfiles.map((group) => (
               <div key={`input-${group.label}`} className="space-y-1">
-                <p className="raw-lut-contract-browser-group">
+                <p className="m-0 text-[0.68rem] font-semibold uppercase text-[color:oklch(0.47_0.085_68)]">
                   {t('raw.lutContract.groupInput', { group: group.label })}
                 </p>
                 <div className="space-y-1">
@@ -705,7 +714,7 @@ function LUTContractBrowser({
             ))}
 
             {!hasInputMatches && (
-              <p className="raw-lut-contract-browser-empty">
+              <p className="m-0 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
                 {t('raw.lutContract.noInput')}
               </p>
             )}
@@ -714,7 +723,7 @@ function LUTContractBrowser({
           <>
             {suggestedOutputOptions.length > 0 && (
               <div className="space-y-1">
-                <p className="raw-lut-contract-browser-group">
+                <p className="m-0 text-[0.68rem] font-semibold uppercase text-[color:oklch(0.47_0.085_68)]">
                   {t('raw.lutContract.suggestedOutput')}
                 </p>
                 <div className="space-y-1">
@@ -733,7 +742,7 @@ function LUTContractBrowser({
 
             {groupedOutputOptions.map((group) => (
               <div key={`output-${group.label}`} className="space-y-1">
-                <p className="raw-lut-contract-browser-group">
+                <p className="m-0 text-[0.68rem] font-semibold uppercase text-[color:oklch(0.47_0.085_68)]">
                   {t('raw.lutContract.groupOutput', { group: group.label })}
                 </p>
                 <div className="space-y-1">
@@ -750,7 +759,7 @@ function LUTContractBrowser({
             ))}
 
             {!hasOutputMatches && (
-              <p className="raw-lut-contract-browser-empty">
+              <p className="m-0 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
                 {t('raw.lutContract.noOutput')}
               </p>
             )}
@@ -796,33 +805,35 @@ function LUTProfileStatus({
   return (
     <div className="space-y-2 pt-1">
       {isUnsupportedOutput ? (
-        <p className="raw-lut-contract-status raw-lut-contract-status-amber">
+        <p className="m-0 rounded-lg border border-[color:oklch(0.78_0.16_63_/_0.38)] p-2.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft] bg-gradient-to-b from-[color:oklch(0.93_0.05_78_/_0.78)] to-[color:--color-raw-amber-soft]">
           {t('raw.lutContract.unsupportedOutput')}
         </p>
       ) : isPending ? (
-        <p className="raw-lut-contract-status raw-lut-contract-status-amber">
+        <p className="m-0 rounded-lg border border-[color:oklch(0.78_0.16_63_/_0.38)] p-2.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft] bg-gradient-to-b from-[color:oklch(0.93_0.05_78_/_0.78)] to-[color:--color-raw-amber-soft]">
           {t('raw.lutContract.unknown')}
         </p>
       ) : resolvedProfile ? (
-        <div className="raw-lut-contract-facts">
-          <p className="raw-lut-contract-fact">
-            <span className="raw-lut-contract-term">
+        <div className="grid gap-1.5 min-w-0 text-[0.72rem] leading-snug text-[color:--color-raw-ink]">
+          <p className="grid grid-cols-[4.9rem_minmax(0,1fr)] gap-2 min-w-0 m-0">
+            <span className="font-semibold text-[color:oklch(0.47_0.085_68)]">
               {t('raw.lutContract.inputTerm')}
             </span>
-            <span className="raw-lut-contract-value">
+            <span className="min-w-0 overflow-wrap-anywhere font-medium text-[color:--color-raw-ink]">
               {resolvedProfile.label}
             </span>
           </p>
           {outputLabel && (
-            <p className="raw-lut-contract-fact">
-              <span className="raw-lut-contract-term">
+            <p className="grid grid-cols-[4.9rem_minmax(0,1fr)] gap-2 min-w-0 m-0">
+              <span className="font-semibold text-[color:oklch(0.47_0.085_68)]">
                 {t('raw.lutContract.outputTerm')}
               </span>
-              <span className="raw-lut-contract-value">{outputLabel}</span>
+              <span className="min-w-0 overflow-wrap-anywhere font-medium text-[color:--color-raw-ink]">
+                {outputLabel}
+              </span>
             </p>
           )}
           {needsOutputContract && (
-            <p className="raw-lut-contract-status raw-lut-contract-status-amber">
+            <p className="m-0 rounded-lg border border-[color:oklch(0.78_0.16_63_/_0.38)] p-2.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft] bg-gradient-to-b from-[color:oklch(0.93_0.05_78_/_0.78)] to-[color:--color-raw-amber-soft]">
               {t('raw.lutContract.needsOutput')}
             </p>
           )}
@@ -832,7 +843,7 @@ function LUTProfileStatus({
       <button
         ref={triggerRef}
         type="button"
-        className="raw-lut-contract-change-button"
+        className="inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.72_0.05_78_/_0.78)] bg-[color:oklch(0.934_0.03_84_/_0.92)] px-[11px] py-1.5 text-[0.72rem] font-semibold text-[color:--color-raw-ink] transition-all duration-150 hover:border-[color:oklch(0.56_0.12_153_/_0.5)] hover:bg-[color:oklch(0.9_0.05_84_/_0.95)] hover:text-[color:--color-raw-green-deep] hover:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2"
         aria-controls={browserId}
         aria-expanded={browserOpen}
         aria-haspopup="dialog"
@@ -896,8 +907,8 @@ function LutIconButton({
       onClick={onClick}
       className={
         busy
-          ? 'raw-lut-source-icon-button raw-lut-source-icon-button-busy'
-          : 'raw-lut-source-icon-button'
+          ? 'inline-flex size-8 items-center justify-center rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.72)] bg-[color:oklch(0.964_0.018_86_/_0.76)] text-[color:--color-raw-ink-soft] transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:not-disabled:border-[color:oklch(0.59_0.15_153_/_0.58)] hover:not-disabled:bg-[color:oklch(0.59_0.15_153_/_0.1)] hover:not-disabled:text-[color:--color-raw-green-deep] hover:not-disabled:-translate-y-px disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 [&_svg]:animate-spin'
+          : 'inline-flex size-8 items-center justify-center rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.72)] bg-[color:oklch(0.964_0.018_86_/_0.76)] text-[color:--color-raw-ink-soft] transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:not-disabled:border-[color:oklch(0.59_0.15_153_/_0.58)] hover:not-disabled:bg-[color:oklch(0.59_0.15_153_/_0.1)] hover:not-disabled:text-[color:--color-raw-green-deep] hover:not-disabled:-translate-y-px disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2'
       }
     >
       {children}
@@ -1042,8 +1053,8 @@ function OnlineLutSourceControls({
           layout={browserLayout}
           id={browserId}
           kind="source"
-          className="raw-lut-source-browser"
-          headingClassName="raw-lut-source-browser-heading"
+          className="grid-rows-[auto_minmax(0,1fr)]"
+          headingClassName=""
           dialogLabel={`${openResource.label} LUTs`}
           title={openResource.label}
           description={formatEntryCount(openEntries.length)}
@@ -1059,7 +1070,7 @@ function OnlineLutSourceControls({
           }}
         >
           <div
-            className="raw-lut-browser-list raw-lut-source-browser-list"
+            className="grid self-stretch min-h-0 gap-1.5 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-color:var(--color-raw-scrollbar-thumb)_transparent] [scrollbar-width:thin]"
             data-lut-source-scroll="internal"
           >
             {openEntries.length > 0 ? (
@@ -1081,8 +1092,11 @@ function OnlineLutSourceControls({
                 }
 
                 const renderEntry = (entry: (typeof openEntries)[number]) => (
-                  <div key={entry.id} className="raw-lut-source-entry">
-                    <span className="raw-lut-source-entry-title">
+                  <div
+                    key={entry.id}
+                    className="grid grid-cols-[minmax(0,1fr)_32px] items-center gap-1.5 min-w-0 rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.46)] bg-[color:oklch(0.964_0.018_86_/_0.36)] p-1.5"
+                  >
+                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.74rem] font-medium text-[color:--color-raw-ink]">
                       {entry.title}
                     </span>
                     <LutIconButton
@@ -1097,16 +1111,16 @@ function OnlineLutSourceControls({
                 return (
                   <>
                     {Array.from(familyGroups, ([family, entries]) => (
-                      <div key={family} className="raw-lut-source-family-group">
-                        <div className="raw-lut-source-family-heading">
+                      <div key={family} className="grid gap-1.5">
+                        <div className="m-0 text-[0.68rem] font-semibold uppercase text-[color:--color-raw-ink-soft]">
                           {family}
                         </div>
                         {entries.map(renderEntry)}
                       </div>
                     ))}
                     {ungrouped.length > 0 && (
-                      <div className="raw-lut-source-family-group">
-                        <div className="raw-lut-source-family-heading">
+                      <div className="grid gap-1.5">
+                        <div className="m-0 text-[0.68rem] font-semibold uppercase text-[color:--color-raw-ink-soft]">
                           {t('raw.lutSource.others')}
                         </div>
                         {ungrouped.map(renderEntry)}
@@ -1116,7 +1130,7 @@ function OnlineLutSourceControls({
                 )
               })()
             ) : (
-              <p className="raw-lut-source-browser-empty">
+              <p className="m-0 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
                 {openIssues.length > 0
                   ? t('raw.lutSource.noneCompatible')
                   : t('raw.lutSource.noneYet')}
@@ -1128,8 +1142,8 @@ function OnlineLutSourceControls({
     })()
 
   return (
-    <div className="raw-lut-source-controls">
-      <div className="raw-lut-source-input-row">
+    <div className="grid gap-2 min-w-0 mb-2.5">
+      <div className="grid grid-cols-[minmax(0,1fr)_32px_32px] gap-1.5 min-w-0">
         <label htmlFor={sourceInputId} className="sr-only">
           {t('raw.lutSource.url')}
         </label>
@@ -1150,7 +1164,7 @@ function OnlineLutSourceControls({
               void onlineLutSources.addSourceFromInput()
             }
           }}
-          inputClassName="raw-lut-input h-8 text-xs"
+          inputClassName="border-[color:oklch(0.7_0.04_78_/_0.74)] bg-[color:oklch(0.948_0.022_86_/_0.9)] text-[color:--color-raw-ink] shadow-none placeholder:text-[color:oklch(0.5_0.035_75_/_0.72)] focus:border-[color:oklch(0.5_0.12_153_/_0.86)] focus:shadow-[0_0_0_2px_oklch(0.59_0.15_153_/_0.16)] h-8 text-xs"
         />
         <LutIconButton
           label={t('raw.lutSource.add')}
@@ -1169,7 +1183,7 @@ function OnlineLutSourceControls({
       </div>
 
       {state.resources.length > 0 && (
-        <div className="raw-lut-source-list">
+        <div className="grid gap-1.5 min-w-0">
           {state.resources.map((resource) => {
             const isResourceLoading =
               state.isLoading && state.activeResourceId === resource.id
@@ -1179,27 +1193,33 @@ function OnlineLutSourceControls({
             const isOpen = openResourceId === resource.id
 
             return (
-              <div key={resource.id} className="raw-lut-source-resource">
-                <div className="raw-lut-source-resource-row">
-                  <div className="raw-lut-source-summary">
-                    <span className="raw-lut-source-label">
+              <div
+                key={resource.id}
+                className="grid min-w-0 py-1.5 border-t border-[color:oklch(0.74_0.035_78_/_0.52)]"
+              >
+                <div
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 min-w-0"
+                  data-lut-resource-row
+                >
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.72rem] font-semibold text-[color:--color-raw-green-deep]">
                       {resource.label}
                     </span>
-                    <span className="raw-lut-source-count">
+                    <span className="shrink-0 rounded-full border border-[color:oklch(0.74_0.035_78_/_0.58)] bg-[color:oklch(0.964_0.018_86_/_0.62)] px-1.5 py-0.5 text-[0.64rem] font-bold leading-tight text-[color:--color-raw-ink-soft]">
                       {formatEntryCount(entries.length)}
                     </span>
                     {isResourceLoading && (
-                      <span className="raw-lut-source-state">
+                      <span className="shrink-0 rounded-full border border-[color:oklch(0.59_0.15_153_/_0.3)] bg-[color:oklch(0.59_0.15_153_/_0.1)] px-1.5 py-0.5 text-[0.64rem] font-bold leading-tight text-[color:--color-raw-green-deep]">
                         {t('raw.lutSource.loading')}
                       </span>
                     )}
                     {hasIssue && (
-                      <span className="raw-lut-source-state raw-lut-source-state-issue">
+                      <span className="shrink-0 rounded-full border border-[color:oklch(0.63_0.16_55_/_0.34)] bg-[color:oklch(0.72_0.15_72_/_0.13)] px-1.5 py-0.5 text-[0.64rem] font-bold leading-tight text-[color:oklch(0.42_0.095_57)]">
                         {t('raw.lutSource.issue')}
                       </span>
                     )}
                   </div>
-                  <div className="raw-lut-source-actions">
+                  <div className="flex gap-1">
                     <LutIconButton
                       label={t('raw.lutSource.open', {
                         label: resource.label,
@@ -1255,9 +1275,10 @@ function OnlineLutSourceControls({
       {openBrowser}
 
       {state.issues.length > 0 && (
-        <div className="raw-lut-source-issues" role="status" aria-live="polite">
+        <div className="grid gap-1" role="status" aria-live="polite">
           {state.issues.slice(-2).map((issue, index) => (
             <p
+              className="m-0 text-[0.7rem] leading-snug text-[color:--color-raw-ink-soft]"
               key={[
                 issue.code,
                 issue.resourceId ?? issue.raw ?? 'source',
