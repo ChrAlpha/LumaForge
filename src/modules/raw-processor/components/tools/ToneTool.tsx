@@ -70,13 +70,22 @@ export function ToneTool({
 
   return (
     <ToolSection title={t('raw.tone.title')} eyebrow={t('raw.tone.eyebrow')}>
-      <div className="raw-tone-control">
-        <div className="raw-tone-control-field">
-          <label htmlFor={exposureId}>{t('raw.tone.exposure')}</label>
-          <output aria-hidden="true">
+      <div className="grid gap-2.5">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2.5 gap-y-1.5">
+          <label
+            className="text-[0.76rem] font-semibold text-[color:--color-raw-ink]"
+            htmlFor={exposureId}
+          >
+            {t('raw.tone.exposure')}
+          </label>
+          <output
+            className="text-[color:--color-raw-ink-soft] tabular-nums"
+            aria-hidden="true"
+          >
             {value.userExposureEv.toFixed(2)} EV
           </output>
           <input
+            className="col-span-full w-full accent-[color:--color-raw-green]"
             id={exposureId}
             type="range"
             min={-5}
@@ -86,10 +95,21 @@ export function ToneTool({
             {...registerRange('userExposureEv')}
           />
         </div>
-        <div className="raw-tone-control-field">
-          <label htmlFor={contrastId}>{t('raw.tone.contrast')}</label>
-          <output aria-hidden="true">{Math.round(value.userContrast)}</output>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2.5 gap-y-1.5">
+          <label
+            className="text-[0.76rem] font-semibold text-[color:--color-raw-ink]"
+            htmlFor={contrastId}
+          >
+            {t('raw.tone.contrast')}
+          </label>
+          <output
+            className="text-[color:--color-raw-ink-soft] tabular-nums"
+            aria-hidden="true"
+          >
+            {Math.round(value.userContrast)}
+          </output>
           <input
+            className="col-span-full w-full accent-[color:--color-raw-green]"
             id={contrastId}
             type="range"
             min={-100}
@@ -99,10 +119,21 @@ export function ToneTool({
             {...registerRange('userContrast')}
           />
         </div>
-        <div className="raw-tone-control-field">
-          <label htmlFor={highlightsId}>{t('raw.tone.highlights')}</label>
-          <output aria-hidden="true">{Math.round(value.userHighlights)}</output>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2.5 gap-y-1.5">
+          <label
+            className="text-[0.76rem] font-semibold text-[color:--color-raw-ink]"
+            htmlFor={highlightsId}
+          >
+            {t('raw.tone.highlights')}
+          </label>
+          <output
+            className="text-[color:--color-raw-ink-soft] tabular-nums"
+            aria-hidden="true"
+          >
+            {Math.round(value.userHighlights)}
+          </output>
           <input
+            className="col-span-full w-full accent-[color:--color-raw-green]"
             id={highlightsId}
             type="range"
             min={-100}
@@ -112,10 +143,21 @@ export function ToneTool({
             {...registerRange('userHighlights')}
           />
         </div>
-        <div className="raw-tone-control-field">
-          <label htmlFor={shadowsId}>{t('raw.tone.shadows')}</label>
-          <output aria-hidden="true">{Math.round(value.userShadows)}</output>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2.5 gap-y-1.5">
+          <label
+            className="text-[0.76rem] font-semibold text-[color:--color-raw-ink]"
+            htmlFor={shadowsId}
+          >
+            {t('raw.tone.shadows')}
+          </label>
+          <output
+            className="text-[color:--color-raw-ink-soft] tabular-nums"
+            aria-hidden="true"
+          >
+            {Math.round(value.userShadows)}
+          </output>
           <input
+            className="col-span-full w-full accent-[color:--color-raw-green]"
             id={shadowsId}
             type="range"
             min={-100}
@@ -125,10 +167,21 @@ export function ToneTool({
             {...registerRange('userShadows')}
           />
         </div>
-        <div className="raw-tone-control-field">
-          <label htmlFor={whitesId}>{t('raw.tone.whites')}</label>
-          <output aria-hidden="true">{Math.round(value.userWhites)}</output>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2.5 gap-y-1.5">
+          <label
+            className="text-[0.76rem] font-semibold text-[color:--color-raw-ink]"
+            htmlFor={whitesId}
+          >
+            {t('raw.tone.whites')}
+          </label>
+          <output
+            className="text-[color:--color-raw-ink-soft] tabular-nums"
+            aria-hidden="true"
+          >
+            {Math.round(value.userWhites)}
+          </output>
           <input
+            className="col-span-full w-full accent-[color:--color-raw-green]"
             id={whitesId}
             type="range"
             min={-100}
@@ -138,10 +191,21 @@ export function ToneTool({
             {...registerRange('userWhites')}
           />
         </div>
-        <div className="raw-tone-control-field">
-          <label htmlFor={blacksId}>{t('raw.tone.blacks')}</label>
-          <output aria-hidden="true">{Math.round(value.userBlacks)}</output>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2.5 gap-y-1.5">
+          <label
+            className="text-[0.76rem] font-semibold text-[color:--color-raw-ink]"
+            htmlFor={blacksId}
+          >
+            {t('raw.tone.blacks')}
+          </label>
+          <output
+            className="text-[color:--color-raw-ink-soft] tabular-nums"
+            aria-hidden="true"
+          >
+            {Math.round(value.userBlacks)}
+          </output>
           <input
+            className="col-span-full w-full accent-[color:--color-raw-green]"
             id={blacksId}
             type="range"
             min={-100}
@@ -152,11 +216,17 @@ export function ToneTool({
           />
         </div>
       </div>
-      <p className="raw-tool-note">{t('raw.tone.note')}</p>
-      {!isNeutral && <p className="raw-tool-note">{t('raw.tone.preserved')}</p>}
+      <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+        {t('raw.tone.note')}
+      </p>
+      {!isNeutral && (
+        <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+          {t('raw.tone.preserved')}
+        </p>
+      )}
       <button
         type="button"
-        className="raw-tool-reset-button"
+        className="mt-2.5 inline-flex h-[34px] w-fit max-w-full items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.68_0.042_78_/_0.74)] bg-[color:oklch(0.902_0.034_82_/_0.9)] px-[11px] py-1.5 text-[0.72rem] font-semibold leading-tight text-[color:--color-raw-ink-soft] transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:not-disabled:-translate-y-px hover:not-disabled:border-[color:oklch(0.56_0.12_153_/_0.42)] hover:not-disabled:bg-[color:oklch(0.882_0.046_82)] hover:not-disabled:text-[color:--color-raw-green-deep] focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         disabled={disabled}
         onClick={handleReset}
       >
