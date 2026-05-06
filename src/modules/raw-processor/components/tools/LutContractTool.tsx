@@ -666,7 +666,7 @@ function LUTContractBrowser({
       />
 
       <div
-        className="grid self-stretch min-h-0 gap-1.5 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-color:var(--color-raw-scrollbar-thumb)_transparent] [scrollbar-width:thin]"
+        className="raw-scrollbar grid self-stretch min-h-0 gap-1.5 overflow-y-auto overscroll-contain pr-0.5"
         data-lut-contract-step={step}
       >
         {step === 'input' ? (
@@ -1073,7 +1073,7 @@ function OnlineLutSourceControls({
           }}
         >
           <div
-            className="grid self-stretch min-h-0 gap-1.5 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-color:var(--color-raw-scrollbar-thumb)_transparent] [scrollbar-width:thin]"
+            className="raw-scrollbar grid self-stretch min-h-0 gap-1.5 overflow-y-auto overscroll-contain pr-0.5"
             data-lut-source-scroll="internal"
           >
             {openEntries.length > 0 ? (

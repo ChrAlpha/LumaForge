@@ -233,7 +233,7 @@ export function RawToolSurface(props: {
     >
       {/* Desktop scrollable content */}
       <div
-        className="contain-paint min-h-0 overflow-y-auto pr-0.5 hidden @[981px]:block"
+        className="raw-scrollbar contain-paint min-h-0 overflow-y-auto pr-0.5 hidden @[981px]:block"
         data-raw-scroll-container
       >
         {renderStyleTools({ includeFileFacts: false })}

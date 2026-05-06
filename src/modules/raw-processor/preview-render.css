@@ -1,0 +1,212 @@
+/* Preview canvas rendering — WebGL-dependent, kept separate from Tailwind layout */
+.raw-preview-frame-interactive {
+  cursor: grab;
+  touch-action: none;
+}
+
+.raw-preview-frame-panning {
+  cursor: grabbing;
+  touch-action: none;
+}
+
+.raw-preview-track {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.raw-preview-surface {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  transform: translate3d(
+      var(--raw-preview-pan-x, 0),
+      var(--raw-preview-pan-y, 0),
+      0
+    )
+    scale(var(--raw-preview-zoom, 1));
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.raw-preview-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.raw-preview-embedded {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Compare handle — WebGL-dependent, excluded from UI migration */
+.raw-lab-compare-handle {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 6;
+  width: 44px;
+  min-width: 44px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--color-raw-hero-ink);
+  cursor: ew-resize;
+  touch-action: none;
+  transform: translateX(var(--raw-compare-split-x, 50%)) translateX(-50%);
+  transition: none;
+  will-change: transform;
+}
+
+.raw-lab-compare-handle::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 2px;
+  background: oklch(0.96 0.012 86 / 0.25);
+  transform: translateX(-50%);
+  transition: background 300ms ease-out;
+}
+
+.raw-lab-compare-handle:hover::before,
+.raw-lab-compare-handle:focus-visible::before,
+[data-raw-compare-dragging] .raw-lab-compare-handle::before {
+  background: oklch(0.96 0.012 86 / 0.9);
+}
+
+.raw-lab-compare-handle span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid oklch(0.96 0.012 86 / 0.74);
+  border-radius: 999px;
+  background: oklch(0.17 0.018 76 / 0.78);
+  transform: translate(-50%, -50%);
+  font-size: 0.72rem;
+  font-weight: 800;
+  opacity: 0.62;
+  transition: opacity 300ms ease-out;
+}
+
+.raw-lab-compare-handle:hover span,
+.raw-lab-compare-handle:focus-visible span,
+[data-raw-compare-dragging] .raw-lab-compare-handle span {
+  opacity: 1;
+}
+
+.raw-lab-compare-handle:focus-visible span {
+  outline: 2px solid var(--color-raw-green);
+  outline-offset: 2px;
+}
+
+.raw-lab-compare-handle:disabled {
+  cursor: default;
+}
+
+.raw-lab-compare-label {
+  position: absolute;
+  bottom: 18px;
+  z-index: 4;
+  max-width: calc(50% - 32px);
+  border: 1px solid oklch(0.96 0.012 86 / 0.18);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: oklch(0.16 0.018 76 / 0.76);
+  color: var(--color-raw-hero-ink);
+  font-size: 0.72rem;
+  font-weight: 760;
+  line-height: 1.1;
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+  pointer-events: none;
+}
+
+[data-raw-compare-dragging] .raw-lab-compare-label {
+  opacity: 1;
+}
+
+.raw-lab-compare-label-left {
+  left: 18px;
+}
+
+.raw-lab-compare-label-right {
+  right: 18px;
+}
+
+/* Histogram SVG rendering — keep these for the canvas internals */
+.raw-histogram-grid line,
+.raw-histogram-channel-fill,
+.raw-histogram-channel-line,
+.raw-histogram-luma {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.raw-histogram-grid line {
+  stroke: oklch(0.74 0.035 78 / 0.16);
+  stroke-width: 0.65;
+}
+
+.raw-histogram-grid .raw-histogram-baseline {
+  stroke: oklch(0.9 0.034 82 / 0.24);
+}
+
+.raw-histogram-channel-fill {
+  mix-blend-mode: screen;
+  stroke: none;
+}
+
+.raw-histogram-channel-fill-red {
+  fill: oklch(0.66 0.19 29 / 0.38);
+}
+
+.raw-histogram-channel-fill-green {
+  fill: oklch(0.76 0.16 128 / 0.36);
+}
+
+.raw-histogram-channel-fill-blue {
+  fill: oklch(0.72 0.13 220 / 0.46);
+}
+
+.raw-histogram-channel-line {
+  fill: none;
+  stroke-width: 0.75;
+  mix-blend-mode: screen;
+}
+
+.raw-histogram-channel-line-red {
+  stroke: oklch(0.78 0.18 29 / 0.62);
+}
+
+.raw-histogram-channel-line-green {
+  stroke: oklch(0.86 0.15 126 / 0.58);
+}
+
+.raw-histogram-channel-line-blue {
+  stroke: oklch(0.82 0.12 215 / 0.68);
+}
+
+.raw-histogram-luma {
+  fill: none;
+  stroke: oklch(0.96 0.018 86);
+  stroke-width: 1.6;
+  opacity: 0.94;
+  filter: drop-shadow(0 1px 1px oklch(0.11 0.018 76 / 0.52));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .raw-lab-compare-handle::before,
+  .raw-lab-compare-handle span,
+  .raw-lab-compare-label {
+    transition: none;
+  }
+}

@@ -3,7 +3,7 @@
  * Combines all sub-components into a complete RAW editing interface.
  */
 
-import './raw-lab.css'
+import './preview-render.css'
 
 import { useCallback } from 'react'
 import { useInRouterContext, useLocation } from 'react-router'
