@@ -59,7 +59,7 @@ export function WorkspaceHeader({
             alt=""
             aria-hidden="true"
           />
-          <h1 className="raw-lab-title truncate text-base font-semibold text-[oklch(0.18_0.018_76)]">
+          <h1 className="truncate text-base font-semibold text-[oklch(0.18_0.018_76)]">
             {hasImage ? fileName : t('raw.header.title')}
           </h1>
           {hasImage && (
@@ -68,13 +68,13 @@ export function WorkspaceHeader({
             </span>
           )}
         </div>
-        <p className="raw-lab-status mt-1 truncate text-xs text-[oklch(0.38_0.032_75)]">
+        <p className="mt-1 truncate text-xs text-[oklch(0.38_0.032_75)]">
           {hasImage
             ? t('raw.header.subtitleLoaded')
             : t('raw.header.subtitleEmpty')}
         </p>
         {exportDisabledReason && (
-          <p className="raw-lab-unavailable mt-1 truncate text-xs text-[oklch(0.38_0.032_75)]">
+          <p className="mt-1 truncate text-xs text-[oklch(0.38_0.032_75)]">
             {t('raw.header.unavailablePrefix', {
               reason: exportDisabledReason,
             })}

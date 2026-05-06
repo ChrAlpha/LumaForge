@@ -225,7 +225,7 @@ export function HistogramTool({
   return (
     <ToolSection title={t('raw.histogram.title')}>
       <div className="grid gap-2">
-        <p className="raw-tool-note">
+        <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
           <span>{label}</span>
           {reason && <span>{reason}</span>}
         </p>

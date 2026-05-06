@@ -162,7 +162,10 @@ function useRawLabPortalContainer(open: boolean) {
   useLayoutEffect(() => {
     if (!open || typeof document === 'undefined') return
 
-    setPortalContainer(document.querySelector('.raw-lab') ?? document.body)
+    setPortalContainer(
+      document.querySelector('[data-raw-lab-shell="viewport"]') ??
+        document.body,
+    )
   }, [open])
 
   return portalContainer
@@ -508,7 +511,7 @@ function LUTContractBrowser({
     }
 
     const scrollTargets = [
-      triggerRef.current?.closest('.raw-tool-stack'),
+      triggerRef.current?.closest('[data-raw-scroll-container]'),
       triggerRef.current?.closest('.raw-tool-surface'),
     ].filter((target): target is Element => target instanceof Element)
 
@@ -1020,7 +1023,7 @@ function OnlineLutSourceControls({
     }
     const trigger = openButtonRefs.current.get(openResourceId)
     const scrollTargets = [
-      trigger?.closest('.raw-tool-stack'),
+      trigger?.closest('[data-raw-scroll-container]'),
       trigger?.closest('.raw-tool-surface'),
     ].filter((target): target is Element => target instanceof Element)
 
@@ -1338,7 +1341,9 @@ export function LutContractTool({
           onSelect={onLutProfileSelect}
         />
       ) : (
-        <p className="raw-tool-note">{t('raw.lutContract.empty')}</p>
+        <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+          {t('raw.lutContract.empty')}
+        </p>
       )}
     </ToolSection>
   )

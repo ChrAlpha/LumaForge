@@ -48,8 +48,8 @@ function EmptySampleCompare({ split }: { split: number }) {
       }
       aria-hidden="true"
     >
-      <div className="raw-lab-sample-photo" />
-      <div className="raw-lab-sample-finish" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_54%_28%,oklch(0.9_0.08_68)_0_5%,transparent_5.4%),linear-gradient(140deg,oklch(0.26_0.05_136),oklch(0.58_0.08_72)_46%,oklch(0.24_0.03_53)_47%_100%)] [filter:saturate(0.58)_contrast(0.92)_brightness(0.82)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_54%_28%,oklch(0.92_0.09_68)_0_5%,transparent_5.4%),linear-gradient(140deg,oklch(0.3_0.085_145),oklch(0.68_0.1_72)_46%,oklch(0.32_0.045_54)_47%_100%)] [filter:saturate(1.16)_contrast(1.06)_brightness(1.04)]" />
     </div>
   )
 }
@@ -79,7 +79,7 @@ function UploadDock({
       >
         ↑
       </span>
-      <span className="raw-lab-upload-copy">
+      <span className="block">
         <strong className="block text-[0.86rem] leading-tight">
           {t('raw.stage.uploadTitle')}
         </strong>
@@ -158,10 +158,10 @@ export function ComparePreviewStage({
               <EmptySampleCompare split={split} />
             )}
 
-            <span className="raw-lab-compare-label raw-lab-compare-label-left">
+            <span className="absolute bottom-[18px] z-[4] max-w-[calc(50%-32px)] rounded-full border border-[color:oklch(0.96_0.012_86_/_0.18)] px-2.5 py-1.5 bg-[color:oklch(0.16_0.018_76_/_0.76)] text-[0.72rem] font-semibold leading-tight text-[color:--color-raw-hero-ink] opacity-0 transition-opacity duration-200 ease-out pointer-events-none group-data-[raw-compare-dragging]:opacity-100 left-[18px]">
               {t('raw.stage.leftLabel')}
             </span>
-            <span className="raw-lab-compare-label raw-lab-compare-label-right">
+            <span className="absolute bottom-[18px] z-[4] max-w-[calc(50%-32px)] rounded-full border border-[color:oklch(0.96_0.012_86_/_0.18)] px-2.5 py-1.5 bg-[color:oklch(0.16_0.018_76_/_0.76)] text-[0.72rem] font-semibold leading-tight text-[color:--color-raw-hero-ink] opacity-0 transition-opacity duration-200 ease-out pointer-events-none group-data-[raw-compare-dragging]:opacity-100 right-[18px]">
               {t('raw.stage.rightLabel')}
             </span>
 

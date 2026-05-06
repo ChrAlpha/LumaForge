@@ -149,23 +149,33 @@ export function ExportTool({
             )}
           </div>
           {!exportShareCapability.available && (
-            <p className="raw-tool-note">{shareUnavailableReason}</p>
+            <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+              {shareUnavailableReason}
+            </p>
           )}
           {exportResult.copyCapability.mode !== 'full-resolution' && (
-            <p className="raw-tool-note">{copyUnavailableReason}</p>
+            <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+              {copyUnavailableReason}
+            </p>
           )}
         </div>
       ) : (
         <>
           {isLowMemoryPlan && (
-            <p className="raw-tool-note">{t('raw.export.lowMemory')}</p>
+            <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+              {t('raw.export.lowMemory')}
+            </p>
           )}
           {currentCheckpointDurable === false && isLowMemoryPlan && (
-            <p className="raw-tool-note">{t('raw.export.nonDurable')}</p>
+            <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+              {t('raw.export.nonDurable')}
+            </p>
           )}
           {currentRecovery?.status === 'source-required' && (
             <>
-              <p className="raw-tool-note">{currentRecovery.message}</p>
+              <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+                {currentRecovery.message}
+              </p>
               <button
                 type="button"
                 className="inline-flex w-full min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.72_0.05_78_/_0.78)] px-[11px] py-2 text-[0.74rem] font-semibold leading-tight text-[color:--color-raw-ink] transition-all duration-150 hover:not-disabled:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-[color:oklch(0.936_0.028_84)] hover:not-disabled:border-[color:oklch(0.56_0.12_153_/_0.48)] hover:not-disabled:bg-[color:oklch(0.9_0.05_84)] hover:not-disabled:text-[color:--color-raw-green-deep]"
@@ -186,7 +196,7 @@ export function ExportTool({
             <Download aria-hidden="true" />
             {isProcessing ? t('raw.export.preparing') : t('raw.export.run')}
           </button>
-          <p className="raw-tool-note">
+          <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
             {canExport ? t('raw.export.sourcePath') : unavailableReason}
           </p>
         </>

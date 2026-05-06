@@ -232,7 +232,10 @@ export function RawToolSurface(props: {
       aria-label={t('raw.tools.aria')}
     >
       {/* Desktop scrollable content */}
-      <div className="raw-tool-stack hidden @[981px]:block">
+      <div
+        className="contain-paint min-h-0 overflow-y-auto pr-0.5 hidden @[981px]:block"
+        data-raw-scroll-container
+      >
         {renderStyleTools({ includeFileFacts: false })}
 
         {/* Phase 3: Export — sticky at bottom */}
