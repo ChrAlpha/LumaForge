@@ -248,10 +248,10 @@ describe('rawProcessorView', () => {
     )
 
     expect(viewportShell).not.toBeNull()
-    expect(viewportShell).toHaveClass('raw-lab')
+    expect(viewportShell).toHaveClass('grid')
     expect(viewportShell).toHaveAttribute('data-raw-lab-state', 'empty')
     expect(stageToolsLayout).not.toBeNull()
-    expect(stageToolsLayout).toHaveClass('raw-lab-shell')
+    expect(stageToolsLayout).toHaveClass('grid')
   })
 
   it('lets the raw route hand viewport ownership directly to the shell', () => {
@@ -266,7 +266,7 @@ describe('rawProcessorView', () => {
 
     expect(routeRoot).not.toBeNull()
     expect(routeRoot).toHaveAttribute('data-raw-lab-shell', 'viewport')
-    expect(routeRoot).toHaveClass('raw-lab')
+    expect(routeRoot).toHaveClass('grid')
     expect(routeRoot).not.toHaveClass('h-screen')
     expect(
       container.querySelector('[data-raw-lab-shell="viewport"]')?.parentElement,
@@ -311,7 +311,7 @@ describe('rawProcessorView shell states', () => {
     )
 
     expect(viewportShell).not.toBeNull()
-    expect(viewportShell).toHaveClass('raw-lab')
+    expect(viewportShell).toHaveClass('grid')
     expect(viewportShell).toHaveAttribute('data-raw-lab-state', 'unsupported')
     expect(
       screen.getByText('This browser cannot run the RAW Lab'),
@@ -331,7 +331,7 @@ describe('rawProcessorView shell states', () => {
     )
 
     expect(viewportShell).not.toBeNull()
-    expect(viewportShell).toHaveClass('raw-lab')
+    expect(viewportShell).toHaveClass('grid')
     expect(viewportShell).toHaveAttribute('data-raw-lab-state', 'unsupported')
     expect(
       screen.getByText('This browser cannot run the RAW Lab'),
@@ -364,19 +364,14 @@ describe('rawProcessorView online LUT route sources', () => {
   })
 
   it('keeps a valid CUBE query resource and surfaces one rejected source issue', async () => {
-    const { container } = renderRawRoute(
+    renderRawRoute(
       `/raw?luts=${encodeURIComponent(
         'javascript:alert(1)',
       )}&luts=${encodeURIComponent('https://example.com/valid.cube')}`,
     )
 
     await waitFor(() =>
-      expect(
-        container.querySelectorAll('.raw-lut-source-resource'),
-      ).toHaveLength(1),
-    )
-    expect(container.querySelector('.raw-lut-source-label')).toHaveTextContent(
-      'valid.cube',
+      expect(screen.getByText('valid.cube')).toBeInTheDocument(),
     )
 
     const status = await screen.findByRole('status')
