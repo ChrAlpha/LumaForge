@@ -284,7 +284,7 @@ describe('rawToolSurface', () => {
     expect(
       screen.queryByRole('button', { name: 'Neutral' }),
     ).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Standard' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Standard' })).toBeInTheDocument()
     expect(screen.getByLabelText('Exposure')).toBeInTheDocument()
     expect(screen.queryByText('Log Space')).not.toBeInTheDocument()
   })
@@ -427,11 +427,8 @@ describe('rawToolSurface', () => {
     )
 
     const browser = screen.getByRole('dialog', { name: 'LUT contract browser' })
-    expect(browser).toHaveClass(
-      'raw-lut-browser-dialog',
-      'raw-lut-contract-browser',
-    )
     expect(browser).toHaveAttribute('data-raw-lut-browser-dialog', 'contract')
+    expect(browser).toHaveClass('fixed', 'z-60')
     expect(
       within(browser).getAllByText('Sony S-Gamut3.Cine / S-Log3').length,
     ).toBeGreaterThanOrEqual(1)
@@ -787,7 +784,7 @@ describe('rawToolSurface', () => {
       type: 'image/x-adobe-dng',
     })
 
-    const { container } = render(
+    render(
       <ComparePreviewStage
         hasImage
         imageRef={{ current: null }}
@@ -816,7 +813,8 @@ describe('rawToolSurface', () => {
       />,
     )
 
-    const stageFrame = container.querySelector('.raw-lab-stage-frame')
+    const stage = screen.getByLabelText('RAW preview comparison')
+    const stageFrame = stage.querySelector(':scope > div') as HTMLElement
     expect(
       screen.queryByRole('button', { name: 'Replace RAW file' }),
     ).not.toBeInTheDocument()
@@ -829,12 +827,12 @@ describe('rawToolSurface', () => {
       .spyOn(document, 'createElement')
       .mockReturnValue(input)
 
-    await user.click(stageFrame!)
+    await user.click(stageFrame)
 
     expect(createElement).not.toHaveBeenCalled()
     expect(inputClick).not.toHaveBeenCalled()
 
-    fireEvent.drop(stageFrame!, {
+    fireEvent.drop(stageFrame, {
       dataTransfer: {
         files: [file],
       },
@@ -846,7 +844,7 @@ describe('rawToolSurface', () => {
   it('keeps empty preview stage upload button separate from the compare slider', async () => {
     const user = userEvent.setup()
 
-    const { container } = render(
+    render(
       <ComparePreviewStage
         hasImage={false}
         imageRef={{ current: null }}
@@ -875,7 +873,8 @@ describe('rawToolSurface', () => {
       />,
     )
 
-    const stageFrame = container.querySelector('.raw-lab-stage-frame')
+    const stage = screen.getByLabelText('RAW preview comparison')
+    const stageFrame = stage.querySelector(':scope > div') as HTMLElement
     const uploadButton = screen.getByRole('button', {
       name: /drop one raw here/i,
     })
@@ -887,7 +886,7 @@ describe('rawToolSurface', () => {
     expect(
       screen.queryByRole('button', { name: 'Load RAW file' }),
     ).not.toBeInTheDocument()
-    expect(uploadButton).toHaveClass('raw-lab-upload-dock')
+    expect(uploadButton).toHaveClass('absolute', 'left-1/2')
     expect(uploadButton).not.toContainElement(compareSlider)
     expect(stageFrame).toContainElement(uploadButton)
     expect(stageFrame).toContainElement(compareSlider)
@@ -914,7 +913,9 @@ describe('rawToolSurface', () => {
       const uploadButton = screen.getByRole('button', {
         name: /drop one raw here/i,
       })
-      const sample = container.querySelector<HTMLElement>('.raw-lab-sample')
+      const sample = container.querySelector<HTMLElement>(
+        '[style*="--raw-compare-split-committed"]',
+      )
 
       expect(stage).toBeInTheDocument()
       expect(stage).toContainElement(uploadButton)

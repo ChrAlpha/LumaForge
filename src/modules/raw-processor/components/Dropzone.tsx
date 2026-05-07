@@ -316,21 +316,24 @@ export function LutDropzone({
     : t('raw.lut.add')
 
   return (
-    <div className="raw-lut-dropzone-shell flex min-w-0 max-w-full items-center gap-2 overflow-hidden">
+    <div className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden">
       <Dropzone
         onFileDrop={onFileDrop}
         accept={['.cube']}
         disabled={disabled}
         interactiveMotion={false}
         aria-label={label}
-        className="raw-lut-dropzone min-w-0 flex-1"
+        className="min-w-0 flex-1 min-h-[38px] rounded-lg border border-[color:oklch(0.68_0.042_78_/_0.72)] bg-[color:oklch(0.902_0.034_82_/_0.76)] p-1.5 text-[color:--color-raw-ink-soft] shadow-[inset_0_1px_0_oklch(0.98_0.012_86_/_0.45)] transition-all duration-150 hover:not-aria-disabled:border-[color:oklch(0.56_0.12_153_/_0.4)] hover:not-aria-disabled:bg-[color:oklch(0.882_0.046_82)] hover:not-aria-disabled:text-[color:--color-raw-green-deep] focus-within:outline-2 focus-within:outline-[color:--color-raw-green] focus-within:outline-offset-2"
       >
-        <div className="raw-lut-dropzone-content flex min-w-0 items-center gap-3">
-          <span className="raw-lut-dropzone-icon" aria-hidden="true">
+        <div className="flex min-w-0 items-center gap-3 h-full">
+          <span
+            className="grid size-6 shrink-0 place-items-center rounded-[5px] border border-[color:oklch(0.68_0.042_78_/_0.56)] bg-[color:oklch(0.86_0.03_80_/_0.56)] text-[color:--color-raw-ink-soft]"
+            aria-hidden="true"
+          >
             <Upload />
           </span>
           <span
-            className="raw-lut-dropzone-name block min-w-0 max-w-full truncate"
+            className="block min-w-0 max-w-full truncate text-[0.76rem] font-semibold leading-tight"
             title={currentLut ?? undefined}
           >
             {currentLut || t('raw.lut.add')}
@@ -344,7 +347,7 @@ export function LutDropzone({
             e.stopPropagation()
             onClear()
           }}
-          className="raw-lut-clear-button shrink-0"
+          className="shrink-0 inline-flex size-[38px] items-center justify-center rounded-lg border border-[color:oklch(0.68_0.042_78_/_0.66)] bg-[color:oklch(0.902_0.034_82_/_0.9)] p-0 text-[color:--color-raw-ink-soft] hover:border-[color:oklch(0.56_0.12_153_/_0.38)] hover:bg-[color:oklch(0.882_0.046_82)] hover:text-[color:--color-raw-green-deep] focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2"
           aria-label={t('raw.lut.clear')}
           title={t('raw.lut.clear')}
         >

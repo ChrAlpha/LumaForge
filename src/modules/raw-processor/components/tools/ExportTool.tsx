@@ -83,27 +83,37 @@ export function ExportTool({
       eyebrow={t('raw.export.eyebrow')}
     >
       {exportResult ? (
-        <div className="raw-export-result">
-          <div className="raw-export-result-heading">
-            <span>{t('raw.export.ready')}</span>
-            <strong>{exportResult.filename}</strong>
+        <div className="grid gap-2.5 min-w-0 rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.58)] p-2.5 bg-gradient-to-b from-[color:oklch(0.942_0.026_84)] to-[color:oklch(0.91_0.034_82)]">
+          <div className="grid gap-1 min-w-0">
+            <span className="text-[0.72rem] font-bold uppercase text-[color:--color-raw-green-deep]">
+              {t('raw.export.ready')}
+            </span>
+            <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.86rem] font-bold text-[color:--color-raw-ink]">
+              {exportResult.filename}
+            </strong>
           </div>
-          <dl className="raw-export-result-facts">
-            <div>
-              <dt>{t('raw.export.dimensions')}</dt>
-              <dd>
+          <dl className="grid grid-cols-2 gap-2 m-0">
+            <div className="min-w-0 rounded-[5px] border border-[color:oklch(0.74_0.035_78_/_0.42)] p-2 bg-[color:oklch(0.962_0.018_86_/_0.58)]">
+              <dt className="text-[0.68rem] uppercase text-[color:--color-raw-ink-soft]">
+                {t('raw.export.dimensions')}
+              </dt>
+              <dd className="m-0 text-[0.82rem] tabular-nums text-[color:--color-raw-ink]">
                 {exportResult.width} x {exportResult.height}
               </dd>
             </div>
-            <div>
-              <dt>{t('raw.export.fileSize')}</dt>
-              <dd>{formatBytes(exportResult.size)}</dd>
+            <div className="min-w-0 rounded-[5px] border border-[color:oklch(0.74_0.035_78_/_0.42)] p-2 bg-[color:oklch(0.962_0.018_86_/_0.58)]">
+              <dt className="text-[0.68rem] uppercase text-[color:--color-raw-ink-soft]">
+                {t('raw.export.fileSize')}
+              </dt>
+              <dd className="m-0 text-[0.82rem] tabular-nums text-[color:--color-raw-ink]">
+                {formatBytes(exportResult.size)}
+              </dd>
             </div>
           </dl>
-          <div className="raw-export-actions">
+          <div className="grid grid-cols-1 gap-2">
             <button
               type="button"
-              className="raw-export-button raw-export-button-primary"
+              className="inline-flex w-full min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.72_0.05_78_/_0.78)] px-[11px] py-2 text-[0.74rem] font-semibold leading-tight text-[color:--color-raw-ink] transition-all duration-150 hover:not-disabled:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 border-[color:oklch(0.54_0.14_153)] bg-[color:--color-raw-green] hover:not-disabled:border-[color:oklch(0.5_0.13_153)] hover:not-disabled:bg-[color:oklch(0.66_0.16_153)]"
               disabled={!exportShareCapability.available}
               onClick={onShareExport}
             >
@@ -112,7 +122,7 @@ export function ExportTool({
             </button>
             <button
               type="button"
-              className="raw-export-button raw-export-button-secondary"
+              className="inline-flex w-full min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.72_0.05_78_/_0.78)] px-[11px] py-2 text-[0.74rem] font-semibold leading-tight text-[color:--color-raw-ink] transition-all duration-150 hover:not-disabled:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-[color:oklch(0.936_0.028_84)] hover:not-disabled:border-[color:oklch(0.56_0.12_153_/_0.48)] hover:not-disabled:bg-[color:oklch(0.9_0.05_84)] hover:not-disabled:text-[color:--color-raw-green-deep]"
               onClick={onDownloadExport}
             >
               <Download aria-hidden="true" />
@@ -121,7 +131,7 @@ export function ExportTool({
             {exportResult.copyCapability.mode === 'unavailable' ? (
               <button
                 type="button"
-                className="raw-export-button raw-export-button-secondary"
+                className="inline-flex w-full min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.72_0.05_78_/_0.78)] px-[11px] py-2 text-[0.74rem] font-semibold leading-tight text-[color:--color-raw-ink] transition-all duration-150 hover:not-disabled:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-[color:oklch(0.936_0.028_84)] hover:not-disabled:border-[color:oklch(0.56_0.12_153_/_0.48)] hover:not-disabled:bg-[color:oklch(0.9_0.05_84)] hover:not-disabled:text-[color:--color-raw-green-deep]"
                 disabled
               >
                 <Copy aria-hidden="true" />
@@ -130,7 +140,7 @@ export function ExportTool({
             ) : (
               <button
                 type="button"
-                className="raw-export-button raw-export-button-secondary"
+                className="inline-flex w-full min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.72_0.05_78_/_0.78)] px-[11px] py-2 text-[0.74rem] font-semibold leading-tight text-[color:--color-raw-ink] transition-all duration-150 hover:not-disabled:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-[color:oklch(0.936_0.028_84)] hover:not-disabled:border-[color:oklch(0.56_0.12_153_/_0.48)] hover:not-disabled:bg-[color:oklch(0.9_0.05_84)] hover:not-disabled:text-[color:--color-raw-green-deep]"
                 onClick={onCopyExport}
               >
                 <Copy aria-hidden="true" />
@@ -139,26 +149,36 @@ export function ExportTool({
             )}
           </div>
           {!exportShareCapability.available && (
-            <p className="raw-tool-note">{shareUnavailableReason}</p>
+            <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+              {shareUnavailableReason}
+            </p>
           )}
           {exportResult.copyCapability.mode !== 'full-resolution' && (
-            <p className="raw-tool-note">{copyUnavailableReason}</p>
+            <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+              {copyUnavailableReason}
+            </p>
           )}
         </div>
       ) : (
         <>
           {isLowMemoryPlan && (
-            <p className="raw-tool-note">{t('raw.export.lowMemory')}</p>
+            <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+              {t('raw.export.lowMemory')}
+            </p>
           )}
           {currentCheckpointDurable === false && isLowMemoryPlan && (
-            <p className="raw-tool-note">{t('raw.export.nonDurable')}</p>
+            <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+              {t('raw.export.nonDurable')}
+            </p>
           )}
           {currentRecovery?.status === 'source-required' && (
             <>
-              <p className="raw-tool-note">{currentRecovery.message}</p>
+              <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
+                {currentRecovery.message}
+              </p>
               <button
                 type="button"
-                className="raw-export-button raw-export-button-secondary"
+                className="inline-flex w-full min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.72_0.05_78_/_0.78)] px-[11px] py-2 text-[0.74rem] font-semibold leading-tight text-[color:--color-raw-ink] transition-all duration-150 hover:not-disabled:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-[color:oklch(0.936_0.028_84)] hover:not-disabled:border-[color:oklch(0.56_0.12_153_/_0.48)] hover:not-disabled:bg-[color:oklch(0.9_0.05_84)] hover:not-disabled:text-[color:--color-raw-green-deep]"
                 disabled={!onRecoverExportSource || isProcessing}
                 onClick={onRecoverExportSource}
               >
@@ -169,14 +189,14 @@ export function ExportTool({
           )}
           <button
             type="button"
-            className="raw-export-button raw-export-button-primary"
+            className="inline-flex w-full min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-[color:oklch(0.72_0.05_78_/_0.78)] px-[11px] py-2 text-[0.74rem] font-semibold leading-tight text-[color:--color-raw-ink] transition-all duration-150 hover:not-disabled:-translate-y-px focus-visible:outline-2 focus-visible:outline-[color:--color-raw-green] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 border-[color:oklch(0.54_0.14_153)] bg-[color:--color-raw-green] hover:not-disabled:border-[color:oklch(0.5_0.13_153)] hover:not-disabled:bg-[color:oklch(0.66_0.16_153)]"
             disabled={!canExport || isProcessing}
             onClick={() => onExport({ quality: 'high', fidelity: 'balanced' })}
           >
             <Download aria-hidden="true" />
             {isProcessing ? t('raw.export.preparing') : t('raw.export.run')}
           </button>
-          <p className="raw-tool-note">
+          <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
             {canExport ? t('raw.export.sourcePath') : unavailableReason}
           </p>
         </>

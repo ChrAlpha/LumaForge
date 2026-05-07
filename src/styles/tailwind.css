@@ -164,6 +164,37 @@ body {
   --color-primary: var(--color-accent);
   --color-primary-light: var(--color-accent-light);
   --color-primary-dark: var(--color-accent-dark);
+
+  /* RAW Lab — film darkroom color system */
+  --color-raw-paper: oklch(0.964 0.018 86);
+  --color-raw-paper-high: oklch(0.948 0.022 86);
+  --color-raw-paper-low: oklch(0.918 0.026 86);
+  --color-raw-paper-warm: oklch(0.9 0.034 82);
+  --color-raw-ink: oklch(0.18 0.018 76);
+  --color-raw-ink-soft: oklch(0.38 0.032 75);
+  --color-raw-hairline: oklch(0.74 0.035 78);
+  --color-raw-green: oklch(0.59 0.15 153);
+  --color-raw-green-hover: oklch(0.66 0.16 153);
+  --color-raw-green-deep: oklch(0.37 0.105 155);
+  --color-raw-green-soft: oklch(0.84 0.09 145);
+  --color-raw-amber: oklch(0.78 0.16 63);
+  --color-raw-amber-soft: oklch(0.9 0.055 76);
+  --color-raw-dark: oklch(0.18 0.02 76);
+  --color-raw-hero-ink: oklch(0.97 0.014 86);
+  --color-raw-rose: oklch(0.62 0.17 346);
+  --color-raw-sky: oklch(0.65 0.1 214);
+  --color-raw-scrollbar-thumb: oklch(0.54 0.055 78 / 0.64);
+  --color-raw-scrollbar-thumb-hover: oklch(0.43 0.082 152 / 0.78);
+
+  /* RAW Lab — layout tokens */
+  --spacing-raw-panel-width: 340px;
+  --spacing-raw-panel-max-width: 400px;
+  --spacing-raw-topbar-h: auto;
+  --spacing-raw-mobile-rail-h: 62px;
+
+  /* RAW Lab — shadows */
+  --shadow-raw-photo-panel: 0 24px 80px oklch(0.18 0.018 76 / 0.18);
+  --shadow-raw-mobile-sheet: 0 -24px 54px oklch(0.18 0.018 76 / 0.22);
 }
 
 @layer theme {
@@ -242,6 +273,25 @@ body {
       --sidebar-ring: oklch(0.556 0 0);
     }
   }
+}
+
+@utility raw-scrollbar {
+  scrollbar-color: var(--color-raw-scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+  &::-webkit-scrollbar { width: 10px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb {
+    min-height: 44px;
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: var(--color-raw-scrollbar-thumb);
+    background-clip: content-box;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--color-raw-scrollbar-thumb-hover);
+    background-clip: content-box;
+  }
+  &::-webkit-scrollbar-corner { background: transparent; }
 }
 
 @layer base {

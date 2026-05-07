@@ -13,10 +13,10 @@ test('keeps RAW Lab tool scrolling inside the viewport shell', async ({
     )
     const toolStack = document.querySelector<HTMLElement>('.raw-tool-stack')
     const mobileRail = document.querySelector<HTMLElement>(
-      '.raw-mobile-tool-rail',
+      '[data-raw-tool-surface] nav[aria-label]',
     )
     const mobileSheet = document.querySelector<HTMLElement>(
-      '.raw-mobile-tool-sheet',
+      '[data-raw-mobile-sheet]',
     )
 
     return {

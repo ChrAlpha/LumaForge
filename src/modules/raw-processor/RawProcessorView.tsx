@@ -3,7 +3,7 @@
  * Combines all sub-components into a complete RAW editing interface.
  */
 
-import './raw-lab.css'
+import './preview-render.css'
 
 import { useCallback } from 'react'
 import { useInRouterContext, useLocation } from 'react-router'
@@ -245,7 +245,10 @@ function RawProcessorViewInner({
   if (capability.ready && capability.supportStatus === 'unsupported') {
     return (
       <div
-        className={clsxm('raw-lab', className)}
+        className={clsxm(
+          'grid grid-rows-[auto_minmax(0,1fr)] h-svh min-h-0 overflow-hidden bg-[color:--color-raw-paper] text-[color:--color-raw-ink]',
+          className,
+        )}
         data-raw-lab-shell="viewport"
         data-raw-lab-state="unsupported"
       >
@@ -258,7 +261,10 @@ function RawProcessorViewInner({
 
   return (
     <div
-      className={clsxm('raw-lab', className)}
+      className={clsxm(
+        'grid grid-rows-[auto_minmax(0,1fr)] h-svh min-h-0 overflow-hidden bg-[color:--color-raw-paper] text-[color:--color-raw-ink]',
+        className,
+      )}
       data-raw-lab-shell="viewport"
       data-raw-lab-state={hasImage ? 'loaded' : 'empty'}
     >
@@ -275,7 +281,10 @@ function RawProcessorViewInner({
         }
       />
 
-      <div className="raw-lab-shell" data-raw-lab-layout="stage-tools">
+      <div
+        className="grid grid-cols-[minmax(0,1fr)_minmax(var(--spacing-raw-panel-width),var(--spacing-raw-panel-max-width))] min-w-0 min-h-0 overflow-hidden"
+        data-raw-lab-layout="stage-tools"
+      >
         <ComparePreviewStage
           hasImage={hasImage}
           imageRef={decodedImageRef}

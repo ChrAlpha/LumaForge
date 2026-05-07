@@ -123,7 +123,7 @@ function HistogramPlot({
     <svg
       role="img"
       aria-label={ariaLabel}
-      className="raw-histogram-plot"
+      className="block w-full h-[108px] overflow-hidden rounded-lg border border-[color:oklch(0.74_0.035_78_/_0.68)] bg-gradient-to-b from-[color:oklch(0.235_0.025_78_/_0.96)] to-[color:oklch(0.17_0.022_76_/_0.96)] shadow-[inset_0_1px_0_oklch(0.92_0.026_86_/_0.12),inset_0_-18px_28px_oklch(0.12_0.018_76_/_0.2)]"
       viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
       preserveAspectRatio="none"
     >
@@ -224,8 +224,8 @@ export function HistogramTool({
 
   return (
     <ToolSection title={t('raw.histogram.title')}>
-      <div className="raw-histogram">
-        <p className="raw-tool-note">
+      <div className="grid gap-2">
+        <p className="m-0 mt-1.5 text-[0.72rem] leading-snug text-[color:--color-raw-ink-soft]">
           <span>{label}</span>
           {reason && <span>{reason}</span>}
         </p>
@@ -235,7 +235,7 @@ export function HistogramTool({
               bins={ready.bins}
               ariaLabel={t('raw.histogram.aria')}
             />
-            <div className="raw-histogram-clipping">
+            <div className="flex flex-wrap gap-1.5 text-[0.7rem] tabular-nums text-[color:--color-raw-ink-soft]">
               <span>
                 {t('raw.histogram.shadows', {
                   count: ready.clipping.shadowAnyChannel,

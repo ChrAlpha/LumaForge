@@ -89,7 +89,7 @@ describe('exportTool', () => {
     })
     expect(
       screen.getByRole('button', { name: /export full-resolution jpeg/i }),
-    ).toHaveClass('raw-export-button', 'raw-export-button-primary')
+    ).toHaveClass('bg-[color:--color-raw-green]')
   })
 
   it('renders ready result actions without reusing the export button as download', async () => {
@@ -120,12 +120,10 @@ describe('exportTool', () => {
       screen.getByRole('button', { name: 'Copy preview-size image' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Share' })).toHaveClass(
-      'raw-export-button',
-      'raw-export-button-primary',
+      'bg-[color:--color-raw-green]',
     )
     expect(screen.getByRole('button', { name: 'Download' })).toHaveClass(
-      'raw-export-button',
-      'raw-export-button-secondary',
+      'bg-[color:oklch(0.936_0.028_84)]',
     )
 
     await user.click(screen.getByRole('button', { name: 'Share' }))
