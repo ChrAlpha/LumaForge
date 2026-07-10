@@ -277,6 +277,35 @@ test('intermediate desktop keeps the workflow editorial gutter', async ({
   expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth + 1)
 })
 
+test('mobile first viewport introduces the photograph', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'webkit-ios-safe',
+    'The compact first viewport is covered in mobile WebKit',
+  )
+  await page.setViewportSize({ width: 393, height: 660 })
+  await openEnglishLanding(page)
+
+  const heroFigure = page.locator('.lf-hero-figure')
+  const readVisibleHeight = () =>
+    heroFigure.evaluate((figure) => {
+      const bounds = figure.getBoundingClientRect()
+      return Math.max(
+        0,
+        Math.min(bounds.bottom, window.innerHeight) - Math.max(bounds.top, 0),
+      )
+    })
+
+  await expect.poll(readVisibleHeight).toBeGreaterThanOrEqual(40)
+
+  await page.getByRole('button', { name: 'Switch to Chinese' }).click()
+  await expect(
+    page.getByRole('heading', { level: 1, name: /完成一张 raw/i }),
+  ).toBeVisible()
+  await expect.poll(readVisibleHeight).toBeGreaterThanOrEqual(40)
+})
+
 test.describe('reduced motion', () => {
   test.use({ reducedMotion: 'reduce' })
 
