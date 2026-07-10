@@ -13,16 +13,20 @@ import {
 
 describe('lumaForge OG image', () => {
   it('renders a PNG social image from the page source component', async () => {
-    const [fontData, logoData] = await Promise.all([
+    const [fontData, heroImageData, logoData] = await Promise.all([
       readFile('src/assets/fonts/GeistVF.woff2'),
+      readFile('public/landing-raw-finish.webp'),
       readFile('public/favicon.png'),
     ])
+    const heroImageSrc = `data:image/webp;base64,${Buffer.from(
+      heroImageData,
+    ).toString('base64')}`
     const logoSrc = `data:image/png;base64,${Buffer.from(logoData).toString(
       'base64',
     )}`
     const image = await renderLumaForgeOgImage({
       fontData,
-      heroImageSrc: logoSrc,
+      heroImageSrc,
       logoSrc,
     })
 

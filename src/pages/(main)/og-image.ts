@@ -14,12 +14,12 @@ interface LumaForgeOgImageAssets {
 const colors = {
   bg: 'oklch(0.075 0.006 255)',
   text: 'oklch(0.94 0.012 240)',
-  textMuted: 'oklch(0.56 0.012 255)',
+  textMuted: 'oklch(0.68 0.012 255)',
   amber: 'oklch(0.78 0.14 63)',
   green: 'oklch(0.59 0.15 153)',
-  border: 'oklch(1 0 0 / 0.07)',
+  border: 'oklch(0.9 0.01 255 / 0.08)',
   onPhotoBg: 'oklch(0.08 0.006 255 / 0.72)',
-  onPhotoBorder: 'oklch(1 0 0 / 0.10)',
+  onPhotoBorder: 'oklch(0.9 0.01 255 / 0.16)',
   divider: 'oklch(0.94 0.012 240 / 0.92)',
   dividerHandleBg: 'oklch(0.08 0.006 255 / 0.62)',
 }
@@ -98,7 +98,7 @@ function markLockup(logoSrc: string) {
         width: 36,
         height: 36,
         borderRadius: 5,
-        boxShadow: '0 8px 22px oklch(0 0 0 / 0.40)',
+        boxShadow: '0 8px 22px oklch(0.025 0.008 255 / 0.44)',
       },
     }),
     e(
@@ -127,12 +127,12 @@ function eyebrow() {
         color: colors.amber,
         fontSize: 12.5,
         fontWeight: 700,
-        letterSpacing: '0.08em',
+        letterSpacing: 0,
         lineHeight: 1.2,
         textTransform: 'uppercase',
       },
     },
-    'Browser RAW finishing lab',
+    'Browser-local RAW finishing',
   )
 }
 
@@ -141,25 +141,23 @@ function headlineLine(children: ReactNode) {
 }
 
 function headline() {
-  const accent = (text: string, color: string) =>
-    e('span', { style: { color } }, text)
-
   return e(
     'div',
     {
       style: {
         margin: 0,
         color: colors.text,
-        fontSize: 70,
-        fontWeight: 780,
-        lineHeight: 0.94,
-        letterSpacing: '-0.028em',
+        fontSize: 62,
+        fontWeight: 800,
+        lineHeight: 0.93,
+        letterSpacing: '-0.035em',
       },
     },
-    headlineLine('The easiest'),
-    headlineLine('way to finish'),
-    headlineLine(e('span', null, 'a ', accent('RAW', colors.amber), ' with')),
-    headlineLine(e('span', null, 'a ', accent('LUT', colors.green), '.')),
+    headlineLine('A complete'),
+    headlineLine('RAW finish.'),
+    headlineLine('Tone. Color.'),
+    headlineLine('Compare.'),
+    headlineLine('Export.'),
   )
 }
 
@@ -176,15 +174,12 @@ function statusLine() {
         lineHeight: 1,
       },
     },
-    e('div', {
-      style: {
-        width: 6,
-        height: 6,
-        borderRadius: 999,
-        backgroundColor: colors.green,
-      },
-    }),
-    e('div', { style: { marginLeft: 10 } }, 'Browser-local · no upload'),
+    checkIcon(13, 2.2),
+    e(
+      'div',
+      { style: { marginLeft: 9 } },
+      'Local RAW · reproducible export only',
+    ),
   )
 }
 
@@ -218,7 +213,7 @@ function rawTag() {
         boxShadow: `0 0 8px ${colors.amber}`,
       },
     }),
-    e('div', { style: { marginLeft: 8 } }, 'RAW preview'),
+    e('div', { style: { marginLeft: 8 } }, 'Neutral preview'),
   )
 }
 
@@ -227,7 +222,7 @@ function finishedTag() {
     'div',
     { style: chipStyle({ position: 'absolute', top: 28, right: 28 }) },
     checkIcon(),
-    e('div', { style: { marginLeft: 8 } }, 'Finished JPEG · Rec.709'),
+    e('div', { style: { marginLeft: 8 } }, 'Color finish'),
   )
 }
 
@@ -243,7 +238,7 @@ function contractChip() {
       }),
     },
     checkIcon(),
-    e('div', { style: { marginLeft: 8 } }, 'ARRI LogC → Rec.709'),
+    e('div', { style: { marginLeft: 8 } }, 'Tone · Color · HSL'),
   )
 }
 
@@ -269,16 +264,16 @@ function filePill() {
       },
     },
     imageUpIcon(),
-    e('div', { style: { marginLeft: 10 } }, 'DSC_0421.ARW'),
+    e('div', { style: { marginLeft: 10 } }, 'SGL00940.ARW'),
     e('div', {
       style: {
         width: 1,
         height: 14,
         marginLeft: 10,
-        backgroundColor: 'oklch(1 0 0 / 0.12)',
+        backgroundColor: 'oklch(0.9 0.01 255 / 0.16)',
       },
     }),
-    e('div', { style: { marginLeft: 10, color: colors.textMuted } }, '24.3 MB'),
+    e('div', { style: { marginLeft: 10, color: colors.textMuted } }, '82.8 MB'),
   )
 }
 
@@ -307,7 +302,7 @@ function rightPane(heroImageSrc: string) {
       height: 630,
       style: {
         ...fullImageStyle,
-        filter: 'saturate(0.50) contrast(0.88) brightness(0.82)',
+        filter: 'saturate(0.50) contrast(0.90) brightness(0.84)',
       },
     }),
     e(
@@ -333,21 +328,10 @@ function rightPane(heroImageSrc: string) {
           width: 670,
           height: 630,
           objectFit: 'cover',
-          filter: 'saturate(1.20) contrast(1.08) brightness(1.06)',
+          filter: 'saturate(1.04) contrast(1.04) brightness(1.01)',
         },
       }),
     ),
-    e('div', {
-      style: {
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        left: 335,
-        background:
-          'linear-gradient(90deg, oklch(0.59 0.15 153 / 0.04), oklch(0.59 0.15 153 / 0.10))',
-      },
-    }),
     e('div', {
       style: {
         position: 'absolute',
@@ -356,7 +340,7 @@ function rightPane(heroImageSrc: string) {
         left: 334,
         width: 2,
         backgroundColor: colors.divider,
-        boxShadow: '0 0 14px oklch(0 0 0 / 0.45)',
+        boxShadow: '0 0 14px oklch(0.025 0.008 255 / 0.48)',
       },
     }),
     e(
@@ -372,7 +356,7 @@ function rightPane(heroImageSrc: string) {
           width: 52,
           height: 52,
           borderRadius: '50%',
-          border: '1.5px solid oklch(1 0 0 / 0.14)',
+          border: '1.5px solid oklch(0.9 0.01 255 / 0.2)',
           backgroundColor: colors.dividerHandleBg,
         },
       },

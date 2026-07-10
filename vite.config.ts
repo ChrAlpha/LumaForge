@@ -87,7 +87,7 @@ const LUMAFORGE_OG_IMAGE_FONT_SOURCE = resolve(
 )
 const LUMAFORGE_OG_IMAGE_HERO_SOURCE = resolve(
   ROOT,
-  './public/og-raw-preview.svg',
+  './public/landing-raw-finish.webp',
 )
 const LUMAFORGE_OG_IMAGE_LOGO_SOURCE = resolve(ROOT, './public/favicon.png')
 const CROSS_ORIGIN_ISOLATION_HEADERS = {
@@ -168,7 +168,7 @@ function staticSeoArtifactsPlugin(): Plugin {
       const ogImage = await renderLumaForgeOgImage({
         fontData: readFileSync(LUMAFORGE_OG_IMAGE_FONT_SOURCE),
         heroImageSrc: toDataUrl(
-          'image/svg+xml',
+          'image/webp',
           readFileSync(LUMAFORGE_OG_IMAGE_HERO_SOURCE),
         ),
         logoSrc: toDataUrl(
