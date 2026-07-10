@@ -216,6 +216,19 @@ test('locale choice survives a reload', async ({ page }) => {
       name: /完成一张 raw/i,
     }),
   ).toBeVisible()
+  const titlePhrases = page.locator('.lf-hero-title-phrases > span')
+  await expect(titlePhrases).toHaveText([
+    '完成一张 RAW，',
+    '不必搬进',
+    '调色工作站。',
+  ])
+  expect(
+    await titlePhrases.evaluateAll((phrases) =>
+      phrases.every(
+        (phrase) => getComputedStyle(phrase).whiteSpace === 'nowrap',
+      ),
+    ),
+  ).toBe(true)
   await expect(
     page.getByRole('button', { name: 'Switch to English' }),
   ).toBeVisible()
