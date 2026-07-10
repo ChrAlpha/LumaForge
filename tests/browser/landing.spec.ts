@@ -107,6 +107,25 @@ test('presents the complete RAW workflow without browser errors', async ({
   expect(imageSource.origin).toBe(imageSource.pageOrigin)
   expect(imageSource.pathname).toMatch(/\.webp$/i)
 
+  const workspaceEvidence = page.getByRole('img', {
+    name: /actual lumaforge raw lab session/i,
+  })
+  await workspaceEvidence.scrollIntoViewIfNeeded()
+  await expect
+    .poll(() =>
+      workspaceEvidence.evaluate((image) => ({
+        height: image.naturalHeight,
+        loaded: image.complete && image.naturalWidth > 0,
+        width: image.naturalWidth,
+      })),
+    )
+    .toEqual({ height: 900, loaded: true, width: 1440 })
+
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
+    'content',
+    'oklch(0.075 0.006 255)',
+  )
+
   const productCtas = page.locator(
     'nav a:not([target="_blank"]):not([href="/"]), main a:not([target="_blank"])',
   )
@@ -221,6 +240,30 @@ test('locale choice survives a reload', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
 })
 
+test('intermediate desktop keeps the workflow editorial gutter', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    'The intermediate desktop breakpoint is covered in Chromium',
+  )
+  await page.setViewportSize({ width: 920, height: 900 })
+  await openEnglishLanding(page)
+
+  const layout = await page.locator('.lf-workflow-list').evaluate((list) => {
+    const bounds = list.getBoundingClientRect()
+
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      rightGutter: window.innerWidth - bounds.right,
+      viewportWidth: window.innerWidth,
+    }
+  })
+
+  expect(layout.rightGutter).toBeGreaterThanOrEqual(40)
+  expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth + 1)
+})
+
 test.describe('reduced motion', () => {
   test.use({ reducedMotion: 'reduce' })
 
@@ -244,9 +287,17 @@ test('mobile navigation and controls fit safe touch geometry', async ({
   )
   await openEnglishLanding(page)
 
-  await expect(
-    page.getByRole('navigation').getByRole('link', { name: 'Open RAW lab' }),
-  ).toBeVisible()
+  const navCta = page
+    .getByRole('navigation')
+    .getByRole('link', { name: 'Open RAW lab' })
+  await expect(navCta).toBeVisible()
+  await expect(navCta.locator('span')).toBeVisible()
+  expect(
+    await navCta.evaluate(
+      (element) =>
+        getComputedStyle(element).backgroundColor !== 'rgba(0, 0, 0, 0)',
+    ),
+  ).toBe(true)
   await expect(page.getByRole('slider')).toHaveCSS('touch-action', 'pan-y')
 
   const measurements = await page.evaluate(() => {
