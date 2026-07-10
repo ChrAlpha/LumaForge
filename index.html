@@ -8,8 +8,21 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#ece6dd" />
+    <meta name="theme-color" content="oklch(0.075 0.006 255)" />
     <style>
+      html.luma-route-landing,
+      html.luma-route-landing body,
+      html.luma-route-landing #root {
+        min-height: 100%;
+        background: oklch(0.075 0.006 255);
+        color: oklch(0.94 0.012 240);
+        color-scheme: dark;
+      }
+
+      html.luma-route-landing body {
+        margin: 0;
+      }
+
       html.luma-route-raw,
       html.luma-route-raw body,
       html.luma-route-raw #root {
@@ -110,14 +123,28 @@
     </style>
     <script>
       function setRouteSubstrate() {
-        const rawPath = window.location.pathname.replace(/\/+$/, '') === '/raw'
+        const routePath = window.location.pathname.replace(/\/+$/, '')
+        const rawPath = routePath === '/raw'
+        const landingPath = routePath === ''
         const root = document.documentElement
-        root.dataset.lumaRoute = rawPath ? 'raw' : 'app'
+        root.dataset.lumaRoute = rawPath
+          ? 'raw'
+          : landingPath
+            ? 'landing'
+            : 'app'
         root.classList.toggle('luma-route-raw', rawPath)
+        root.classList.toggle('luma-route-landing', landingPath)
 
         const themeColor = document.querySelector("meta[name='theme-color']")
-        if (rawPath && themeColor) {
-          themeColor.setAttribute('content', '#0a0c10')
+        if (themeColor) {
+          themeColor.setAttribute(
+            'content',
+            rawPath
+              ? 'oklch(0.064 0.006 255)'
+              : landingPath
+                ? 'oklch(0.075 0.006 255)'
+                : 'oklch(0.964 0.018 86)',
+          )
         }
       }
       setRouteSubstrate()
@@ -127,15 +154,11 @@
     <title data-lf-seo="true">LumaForge | Browser-Local RAW Photo Lab</title>
     <meta
       name="description"
-      content="Drop in a camera RAW file, preview it locally, apply a built-in look or declared LUT contract, and export a full-resolution JPEG in the browser."
+      content="Open one camera RAW locally, shape tone and color, inspect the histogram, compare the result, and export a full-resolution JPEG when the pipeline is reproducible."
       data-lf-seo="true"
     />
     <meta name="robots" content="index, follow" data-lf-seo="true" />
-    <link
-      rel="canonical"
-      href="https://luma.ichr.me/"
-      data-lf-seo="true"
-    />
+    <link rel="canonical" href="https://luma.ichr.me/" data-lf-seo="true" />
     <meta property="og:type" content="website" data-lf-seo="true" />
     <meta property="og:site_name" content="LumaForge" data-lf-seo="true" />
     <meta
@@ -189,7 +212,23 @@
       data-lf-seo="true"
     />
     <script type="application/ld+json" data-lf-seo="true">
-      {"@context":"https://schema.org","@type":"WebApplication","name":"LumaForge","url":"https://luma.ichr.me/","description":"Drop in a camera RAW file, preview it locally, apply a built-in look or declared LUT contract, and export a full-resolution JPEG in the browser.","applicationCategory":"PhotographyApplication","operatingSystem":"Web","image":"https://luma.ichr.me/og-image.png","isAccessibleForFree":true,"featureList":["Browser-local RAW photo workflow","Color-safe LUT contract rail","No account or upload requirement","Full-resolution JPEG export in the browser"]}
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "LumaForge",
+        "url": "https://luma.ichr.me/",
+        "description": "Drop in a camera RAW file, preview it locally, apply a built-in look or declared LUT contract, and export a full-resolution JPEG in the browser.",
+        "applicationCategory": "PhotographyApplication",
+        "operatingSystem": "Web",
+        "image": "https://luma.ichr.me/og-image.png",
+        "isAccessibleForFree": true,
+        "featureList": [
+          "Browser-local RAW photo workflow",
+          "Color-safe LUT contract rail",
+          "No account or upload requirement",
+          "Full-resolution JPEG export in the browser"
+        ]
+      }
     </script>
     <script>
       function setTheme() {

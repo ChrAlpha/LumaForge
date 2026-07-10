@@ -14,15 +14,28 @@ function isRawRoutePath(pathname: string) {
   return pathname.replace(/\/+$/, '') === '/raw'
 }
 
+function isLandingRoutePath(pathname: string) {
+  return pathname.replace(/\/+$/, '') === ''
+}
+
 export function syncRouteSubstrate(pathname: string) {
   const rawPath = isRawRoutePath(pathname)
+  const landingPath = isLandingRoutePath(pathname)
   const root = document.documentElement
-  root.dataset.lumaRoute = rawPath ? 'raw' : 'app'
+  root.dataset.lumaRoute = rawPath ? 'raw' : landingPath ? 'landing' : 'app'
   root.classList.toggle('luma-route-raw', rawPath)
+  root.classList.toggle('luma-route-landing', landingPath)
 
   const themeColor = document.querySelector("meta[name='theme-color']")
   if (themeColor) {
-    themeColor.setAttribute('content', rawPath ? '#1d1914' : '#ece6dd')
+    themeColor.setAttribute(
+      'content',
+      rawPath
+        ? 'oklch(0.064 0.006 255)'
+        : landingPath
+          ? 'oklch(0.075 0.006 255)'
+          : 'oklch(0.964 0.018 86)',
+    )
   }
 }
 

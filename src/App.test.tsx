@@ -9,6 +9,7 @@ vi.mock('./components/common/Footer', () => ({
 
 afterEach(() => {
   document.documentElement.classList.remove('luma-route-raw')
+  document.documentElement.classList.remove('luma-route-landing')
   document.documentElement.removeAttribute('data-luma-route')
   document.head.innerHTML = ''
 })
@@ -41,7 +42,8 @@ describe('shouldShowAppFooter', () => {
 
 describe('syncRouteSubstrate', () => {
   it('sets the dark RAW route substrate before the route paints', () => {
-    document.head.innerHTML = '<meta name="theme-color" content="#ece6dd" />'
+    document.head.innerHTML =
+      '<meta name="theme-color" content="oklch(0.964 0.018 86)" />'
 
     syncRouteSubstrate('/raw/')
 
@@ -51,22 +53,41 @@ describe('syncRouteSubstrate', () => {
       document.head
         .querySelector('meta[name="theme-color"]')
         ?.getAttribute('content'),
-    ).toBe('#1d1914')
+    ).toBe('oklch(0.064 0.006 255)')
   })
 
-  it('restores the app substrate outside the RAW route', () => {
-    document.head.innerHTML = '<meta name="theme-color" content="#1d1914" />'
-    document.documentElement.classList.add('luma-route-raw')
-    document.documentElement.dataset.lumaRoute = 'raw'
+  it('sets a dark landing substrate on the root route', () => {
+    document.head.innerHTML =
+      '<meta name="theme-color" content="oklch(0.964 0.018 86)" />'
 
     syncRouteSubstrate('/')
 
+    expect(document.documentElement).toHaveClass('luma-route-landing')
     expect(document.documentElement).not.toHaveClass('luma-route-raw')
+    expect(document.documentElement.dataset.lumaRoute).toBe('landing')
+    expect(
+      document.head
+        .querySelector('meta[name="theme-color"]')
+        ?.getAttribute('content'),
+    ).toBe('oklch(0.075 0.006 255)')
+  })
+
+  it('restores the app substrate outside the RAW and landing routes', () => {
+    document.head.innerHTML =
+      '<meta name="theme-color" content="oklch(0.064 0.006 255)" />'
+    document.documentElement.classList.add('luma-route-raw')
+    document.documentElement.classList.add('luma-route-landing')
+    document.documentElement.dataset.lumaRoute = 'raw'
+
+    syncRouteSubstrate('/profiles')
+
+    expect(document.documentElement).not.toHaveClass('luma-route-raw')
+    expect(document.documentElement).not.toHaveClass('luma-route-landing')
     expect(document.documentElement.dataset.lumaRoute).toBe('app')
     expect(
       document.head
         .querySelector('meta[name="theme-color"]')
         ?.getAttribute('content'),
-    ).toBe('#ece6dd')
+    ).toBe('oklch(0.964 0.018 86)')
   })
 })
