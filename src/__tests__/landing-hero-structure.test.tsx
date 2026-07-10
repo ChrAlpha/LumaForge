@@ -147,14 +147,14 @@ describe('landing semantic structure', () => {
     renderLanding()
 
     const slider = screen.getByRole('slider', {
-      name: /compare a neutral preview and a color finish/,
+      name: /illustrative muted and color treatment/,
     })
     expect(slider).toHaveAttribute('aria-valuemin', '2')
     expect(slider).toHaveAttribute('aria-valuemax', '98')
     expect(slider).toHaveAttribute('aria-valuenow', '50')
     expect(slider).toHaveAttribute(
       'aria-valuetext',
-      '50% Neutral preview, 50% Color finish',
+      '50% Muted treatment, 50% Color treatment',
     )
 
     slider.focus()
@@ -162,14 +162,14 @@ describe('landing semantic structure', () => {
     expect(slider).toHaveAttribute('aria-valuenow', '2')
     expect(slider).toHaveAttribute(
       'aria-valuetext',
-      '2% Neutral preview, 98% Color finish',
+      '2% Muted treatment, 98% Color treatment',
     )
 
     await user.keyboard('{End}')
     expect(slider).toHaveAttribute('aria-valuenow', '98')
     expect(slider).toHaveAttribute(
       'aria-valuetext',
-      '98% Neutral preview, 2% Color finish',
+      '98% Muted treatment, 2% Color treatment',
     )
   })
 })

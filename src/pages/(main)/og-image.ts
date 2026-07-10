@@ -213,7 +213,7 @@ function rawTag() {
         boxShadow: `0 0 8px ${colors.amber}`,
       },
     }),
-    e('div', { style: { marginLeft: 8 } }, 'Neutral preview'),
+    e('div', { style: { marginLeft: 8 } }, 'Muted treatment'),
   )
 }
 
@@ -221,8 +221,7 @@ function finishedTag() {
   return e(
     'div',
     { style: chipStyle({ position: 'absolute', top: 28, right: 28 }) },
-    checkIcon(),
-    e('div', { style: { marginLeft: 8 } }, 'Color finish'),
+    'Color treatment',
   )
 }
 

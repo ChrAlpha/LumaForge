@@ -42,7 +42,7 @@ describe('landing page i18n', () => {
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: '从 RAW 到成片，不必搬进调色工作站。',
+        name: '完成一张 RAW，不必搬进调色工作站。',
       }),
     ).toBeInTheDocument()
     expect(
@@ -77,7 +77,7 @@ describe('landing page i18n', () => {
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: 'A complete RAW finish, without the editing cockpit.',
+        name: 'Finish the RAW, without the editing cockpit.',
       }),
     ).toBeInTheDocument()
     expect(
