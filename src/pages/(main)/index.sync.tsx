@@ -9,10 +9,10 @@ import {
   Star,
 } from 'lucide-react'
 import { m, useReducedMotion } from 'motion/react'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import { Link } from 'react-router'
 
-import { LandingCompareSvg } from '~/components/common/LandingCompareSvg'
+import { LandingPhotoCompare } from '~/components/common/LandingPhotoCompare'
 import { LocaleToggle } from '~/components/common/LocaleToggle'
 import { useI18n } from '~/lib/i18n'
 import type { SeoRouteHandle } from '~/lib/seo'
@@ -84,90 +84,6 @@ function useHeroEntrance() {
 
     return { entrance, fadeIn }
   }, [prefersReduced])
-}
-
-function InteractiveCompare({
-  label,
-  rawTag,
-  finishedTag,
-}: {
-  label: string
-  rawTag: string
-  finishedTag: string
-}) {
-  const [position, setPosition] = useState(0.5)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const dragging = useRef(false)
-
-  const updatePosition = useCallback((clientX: number) => {
-    const el = containerRef.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    setPosition(
-      Math.max(0.02, Math.min(0.98, (clientX - rect.left) / rect.width)),
-    )
-  }, [])
-
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      dragging.current = true
-      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-      updatePosition(e.clientX)
-    },
-    [updatePosition],
-  )
-
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!dragging.current) return
-      updatePosition(e.clientX)
-    },
-    [updatePosition],
-  )
-
-  const onPointerUp = useCallback(() => {
-    dragging.current = false
-  }, [])
-
-  const onKeyDown = useCallback((e: React.KeyboardEvent) => {
-    const step = e.shiftKey ? 0.1 : 0.02
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
-      e.preventDefault()
-      setPosition((p) => Math.max(0.02, p - step))
-    } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
-      e.preventDefault()
-      setPosition((p) => Math.min(0.98, p + step))
-    } else if (e.key === 'Home') {
-      e.preventDefault()
-      setPosition(0.02)
-    } else if (e.key === 'End') {
-      e.preventDefault()
-      setPosition(0.98)
-    }
-  }, [])
-
-  return (
-    <div
-      ref={containerRef}
-      className="lf-compare-container"
-      role="slider"
-      tabIndex={0}
-      aria-label={label}
-      aria-valuemin={2}
-      aria-valuemax={98}
-      aria-valuenow={Math.round(position * 100)}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onKeyDown={onKeyDown}
-    >
-      <LandingCompareSvg label={label} splitPosition={position} />
-      <figcaption className="lf-compare-tag lf-tag-left">{rawTag}</figcaption>
-      <figcaption className="lf-compare-tag lf-tag-right">
-        {finishedTag}
-      </figcaption>
-    </div>
-  )
 }
 
 export const Component = () => {
@@ -247,10 +163,13 @@ export const Component = () => {
             className="lf-window-body"
             aria-label={t('landing.workflowPreview')}
           >
-            <InteractiveCompare
+            <LandingPhotoCompare
               label={t('landing.heroImageAlt')}
-              rawTag={t('landing.rawPreviewTag')}
+              neutralTag={t('landing.rawPreviewTag')}
               finishedTag={t('landing.finishedJpegTag')}
+              valueText={(neutralPercent, finishedPercent) =>
+                `${neutralPercent}% ${t('landing.rawPreviewTag')}, ${finishedPercent}% ${t('landing.finishedJpegTag')}`
+              }
             />
           </figure>
         </m.div>
