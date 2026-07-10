@@ -1,0 +1,404 @@
+.lf-workflow,
+.lf-contract,
+.lf-trust,
+.lf-final {
+  padding: clamp(72px, 9vw, 124px) var(--lf-gutter);
+  border-top: 1px solid var(--lf-border);
+}
+
+.lf-workflow {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.68fr) minmax(520px, 1.32fr);
+  gap: clamp(56px, 8vw, 128px);
+  background: var(--lf-bg-raised);
+}
+
+.lf-section-intro {
+  align-self: start;
+}
+
+.lf-section-intro h2,
+.lf-contract h2,
+.lf-final h2 {
+  max-width: 14ch;
+  margin: 14px 0 0;
+  font-size: clamp(2.1rem, 4vw, 3.7rem);
+  font-weight: 780;
+  letter-spacing: -0.035em;
+  line-height: 1.03;
+  text-wrap: balance;
+}
+
+.lf-section-intro > p:last-child,
+.lf-contract-copy > p,
+.lf-final > div > p:last-child {
+  max-width: 58ch;
+  margin: 24px 0 0;
+  color: var(--lf-text-secondary);
+  font-size: 0.98rem;
+  line-height: 1.7;
+}
+
+.lf-workflow-list,
+.lf-contract-rail {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lf-workflow-list {
+  border-top: 1px solid var(--lf-border-strong);
+}
+
+.lf-workflow-list li {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 18px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--lf-border-strong);
+}
+
+.lf-workflow-list li > div {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.42fr) minmax(240px, 1fr);
+  gap: 28px;
+}
+
+.lf-step-index,
+.lf-contract-rail li > span {
+  color: var(--lf-amber);
+  font-family: ui-monospace, 'Geist Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.lf-workflow-list h3 {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 720;
+  line-height: 1.3;
+}
+
+.lf-workflow-list p {
+  margin: 0;
+  color: var(--lf-text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+.lf-contract {
+  background: var(--lf-bg);
+}
+
+.lf-contract-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.78fr);
+  gap: clamp(48px, 8vw, 128px);
+  align-items: end;
+}
+
+.lf-contract-copy > p {
+  margin: 0;
+}
+
+.lf-contract-rail {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin-top: clamp(48px, 7vw, 84px);
+  border-top: 1px solid var(--lf-border-strong);
+  border-bottom: 1px solid var(--lf-border-strong);
+}
+
+.lf-contract-rail li {
+  min-height: 132px;
+  padding: 22px 14px;
+  border-right: 1px solid var(--lf-border);
+}
+
+.lf-contract-rail li:last-child {
+  border-right: 0;
+}
+
+.lf-contract-rail p {
+  margin: 30px 0 0;
+  color: var(--lf-text);
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.lf-trust {
+  background: var(--lf-bg-raised);
+}
+
+.lf-trust dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid var(--lf-border-strong);
+  border-bottom: 1px solid var(--lf-border-strong);
+}
+
+.lf-trust dl > div {
+  padding: 30px clamp(20px, 3vw, 44px);
+  border-right: 1px solid var(--lf-border);
+}
+
+.lf-trust dl > div:first-child {
+  padding-left: 0;
+}
+
+.lf-trust dl > div:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.lf-trust dt {
+  font-size: 0.94rem;
+  font-weight: 720;
+}
+
+.lf-trust dd {
+  margin: 12px 0 0;
+  color: var(--lf-text-secondary);
+  font-size: 0.87rem;
+  line-height: 1.65;
+}
+
+.lf-final {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 48px;
+  align-items: end;
+  background: var(--lf-bg);
+}
+
+.lf-final h2 {
+  max-width: 17ch;
+}
+
+.lf-final .lf-button {
+  min-width: 172px;
+}
+
+.lf-footer {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--lf-gutter);
+  border-top: 1px solid var(--lf-border);
+  color: var(--lf-text-muted);
+  font-size: 0.76rem;
+  font-weight: 620;
+}
+
+.lf-footer-source {
+  min-height: 44px;
+  gap: 7px;
+  color: inherit;
+  text-decoration: none;
+  transition: color 180ms ease-out;
+}
+
+.lf-footer-source:hover {
+  color: var(--lf-text);
+}
+
+@media (max-width: 1100px) {
+  .lf-hero {
+    grid-template-columns: minmax(0, 0.9fr) minmax(430px, 1.1fr);
+    gap: 42px;
+  }
+
+  .lf-workflow-list li > div {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .lf-contract-rail p {
+    font-size: 0.76rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .lf-hero {
+    min-height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .lf-hero h1 {
+    max-width: 13ch;
+  }
+
+  .lf-hero-figure {
+    width: 100%;
+  }
+
+  .lf-workflow {
+    grid-template-columns: 1fr;
+    gap: 52px;
+  }
+
+  .lf-contract-copy,
+  .lf-final {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .lf-contract-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .lf-contract-rail li {
+    display: grid;
+    min-height: 0;
+    grid-template-columns: 52px 1fr;
+    gap: 16px;
+    padding: 18px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--lf-border);
+  }
+
+  .lf-contract-rail li:last-child {
+    border-bottom: 0;
+  }
+
+  .lf-contract-rail p {
+    margin: 0;
+    font-size: 0.84rem;
+  }
+
+  .lf-trust dl {
+    grid-template-columns: 1fr;
+  }
+
+  .lf-trust dl > div,
+  .lf-trust dl > div:first-child,
+  .lf-trust dl > div:last-child {
+    padding: 24px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--lf-border);
+  }
+
+  .lf-trust dl > div:last-child {
+    border-bottom: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .lf-nav-inner {
+    min-height: 64px;
+  }
+
+  .lf-hero {
+    padding-top: 48px;
+    padding-bottom: 64px;
+  }
+
+  .lf-hero h1 {
+    margin-top: 14px;
+    font-size: clamp(2.65rem, 13vw, 3.8rem);
+  }
+
+  .lf-hero-copy {
+    margin-top: 22px;
+    line-height: 1.62;
+  }
+
+  .lf-hero-actions {
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .lf-hero-actions .lf-button {
+    flex: 1;
+  }
+
+  .lf-hero-feature-rail {
+    margin-top: 28px;
+  }
+
+  .lf-photo-stage {
+    aspect-ratio: 4 / 3;
+  }
+
+  .lf-photo-meta,
+  .lf-photo-caption {
+    padding: 0 12px;
+    font-size: 0.64rem;
+  }
+
+  .lf-workflow,
+  .lf-contract,
+  .lf-trust,
+  .lf-final {
+    padding-top: 64px;
+    padding-bottom: 64px;
+  }
+
+  .lf-section-intro h2,
+  .lf-contract h2,
+  .lf-final h2 {
+    font-size: 2.15rem;
+  }
+
+  .lf-workflow-list li {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .lf-final {
+    gap: 32px;
+  }
+
+  .lf-final .lf-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .lf-wordmark {
+    width: 44px;
+    justify-content: center;
+  }
+
+  .lf-wordmark span,
+  .lf-nav-link span,
+  .lf-locale-toggle span {
+    display: none;
+  }
+
+  .lf-nav-link,
+  .lf-locale-toggle {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .lf-hero-actions {
+    flex-direction: column;
+  }
+
+  .lf-source-link {
+    justify-content: center;
+  }
+
+  .lf-hero-feature-rail li {
+    padding-right: 8px;
+    font-size: 0.68rem;
+  }
+
+  .lf-hero-feature-rail li:nth-child(even) {
+    padding-left: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lf-landing *,
+  .lf-landing *::before,
+  .lf-landing *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
