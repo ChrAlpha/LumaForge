@@ -8,8 +8,10 @@ describe('i18n locale catalogs', () => {
     expect(Object.keys(zhMessages).sort()).toEqual(
       Object.keys(enMessages).sort(),
     )
-    expect(enMessages['landing.kicker']).toBe('Browser RAW finishing lab')
-    expect(zhMessages['landing.kicker']).toBe('浏览器里的 RAW 成片工作台')
+    expect(enMessages['landing.kicker']).toBe('Browser-local RAW finishing')
+    expect(zhMessages['landing.kicker']).toBe('浏览器本地 RAW 成片')
+    expect(enMessages['landing.workflow.2.detail']).toContain('LUT')
+    expect(enMessages['landing.heroCopy']).toContain('A LUT is optional')
     expect(enMessages['raw.onboarding.slogan']).toBe('Finish a RAW with a LUT')
     expect(zhMessages['raw.onboarding.slogan']).toBe('用 LUT 完成一张 RAW')
     expect(enMessages).not.toHaveProperty('raw.mobile.empty.title')
