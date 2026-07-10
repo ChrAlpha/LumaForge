@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -18,7 +19,7 @@ function renderLanding() {
   )
 }
 
-describe('landing hero structure (editorial darkroom redesign)', () => {
+describe('landing semantic structure', () => {
   beforeEach(() => {
     localStorage.setItem('lumaforge.locale', 'en')
   })
@@ -27,54 +28,187 @@ describe('landing hero structure (editorial darkroom redesign)', () => {
     localStorage.clear()
   })
 
-  it('renders a single compare strip as a figure (no duplicate panel)', () => {
-    const { container } = renderLanding()
-
-    const figure = screen.getByRole('figure', {
-      name: 'LumaForge color workflow preview',
-    })
-    expect(figure).toBeInTheDocument()
-
-    expect(within(figure).getByText('RAW preview')).toBeInTheDocument()
-    expect(within(figure).getByText('Finished JPEG')).toBeInTheDocument()
-
-    expect(container.querySelector('.lf-hero-panel')).toBeNull()
-    expect(container.querySelector('.lf-compare-stage')).toBeNull()
-    expect(container.querySelector('.lf-compare-finish')).toBeNull()
-    expect(container.querySelector('.lf-contract-strip')).toBeNull()
-  })
-
-  it('renders the contract rail as an ordered list with six steps', () => {
+  it('uses a real local WebP for the photographic comparison', () => {
     renderLanding()
 
-    const rail = screen.getByRole('list', { name: 'Color contract checks' })
+    const figure = screen.getByRole('figure')
+    const compareImages = figure.querySelectorAll('img')
+
+    expect(compareImages).toHaveLength(2)
+    for (const image of compareImages) {
+      expect(image).toHaveAttribute('src', '/landing-raw-finish.webp')
+      expect(image.getAttribute('src')).not.toMatch(/^https?:\/\//)
+    }
+
+    const assetPath = resolve(
+      __dirname,
+      '..',
+      '..',
+      'public',
+      'landing-raw-finish.webp',
+    )
+    const assetHeader = readFileSync(assetPath).subarray(0, 12)
+    expect(assetHeader.toString('ascii', 0, 4)).toBe('RIFF')
+    expect(assetHeader.toString('ascii', 8, 12)).toBe('WEBP')
+  })
+
+  it('presents the complete five-step finishing workflow', () => {
+    renderLanding()
+
+    const workflowTitle = screen.getByRole('heading', {
+      level: 2,
+      name: 'One file. The whole decision path.',
+    })
+    const workflow = workflowTitle.closest('section')
+    expect(workflow).not.toBeNull()
+
+    const list = within(workflow as HTMLElement).getByRole('list')
+    expect(list.tagName).toBe('OL')
+
+    const items = within(list).getAllByRole('listitem')
+    expect(items).toHaveLength(5)
+    expect(items[0]).toHaveTextContent('01')
+    expect(items[0]).toHaveTextContent('Open the RAW')
+    expect(items[0]).toHaveTextContent('embedded preview')
+    expect(items[1]).toHaveTextContent(
+      'exposure, contrast, highlights, shadows',
+    )
+    expect(items[2]).toHaveTextContent(
+      'temperature, tint, saturation, vibrance',
+    )
+    expect(items[2]).toHaveTextContent('eight-band HSL')
+    expect(items[2]).toHaveTextContent('.cube')
+    expect(items[3]).toHaveTextContent('RGB or luminance histograms')
+    expect(items[3]).toHaveTextContent('compare the original')
+    expect(items[4]).toHaveTextContent('05')
+    expect(items[4]).toHaveTextContent('Export with proof')
+    expect(items[4]).toHaveTextContent('full-resolution JPEG')
+    expect(items[4]).toHaveTextContent('resolved color graph')
+  })
+
+  it('renders the color contract as an ordered seven-step rail', () => {
+    renderLanding()
+
+    const rail = screen.getByRole('list', {
+      name: 'Color pipeline from RAW development to JPEG',
+    })
     expect(rail.tagName).toBe('OL')
 
+    const expectedSteps = [
+      'RAW technical development',
+      'Color balance',
+      'Exposure and regional tone',
+      'Saturation and vibrance',
+      'Eight-band HSL',
+      'Optional declared LUT',
+      'sRGB JPEG',
+    ]
     const items = within(rail).getAllByRole('listitem')
-    expect(items).toHaveLength(6)
-    expect(items[0]).toHaveTextContent('01')
-    expect(items[0]).toHaveTextContent('RAW technical development')
-    expect(items[5]).toHaveTextContent('06')
-    expect(items[5]).toHaveTextContent('Rec.709 JPEG')
+
+    expect(items).toHaveLength(expectedSteps.length)
+    items.forEach((item, index) => {
+      expect(item).toHaveTextContent(String(index + 1).padStart(2, '0'))
+      expect(item).toHaveTextContent(expectedSteps[index])
+    })
+  })
+
+  it('states three processing guarantees', () => {
+    renderLanding()
+
+    const trust = screen.getByRole('region', {
+      name: 'LumaForge processing guarantees',
+    })
+    const terms = [...trust.querySelectorAll('dt')]
+    const definitions = [...trust.querySelectorAll('dd')]
+
+    expect(terms).toHaveLength(3)
+    expect(definitions).toHaveLength(3)
+    expect(terms.map((term) => term.textContent)).toEqual([
+      'Local RAW handling',
+      'Preview is not export',
+      'Fail closed by design',
+    ])
+    expect(definitions[0]).toHaveTextContent('not an upload queue')
+    expect(definitions[1]).toHaveTextContent('Full-resolution export')
+    expect(definitions[2]).toHaveTextContent('export stops')
+  })
+
+  it('provides a skip link to the main content', () => {
+    renderLanding()
+
+    expect(
+      screen.getByRole('link', { name: 'Skip to main content' }),
+    ).toHaveAttribute('href', '#landing-main')
+    expect(screen.getByRole('main')).toHaveAttribute('id', 'landing-main')
+  })
+
+  it('exposes truthful compare bounds and reaches them with Home and End', async () => {
+    const user = userEvent.setup()
+    renderLanding()
+
+    const slider = screen.getByRole('slider', {
+      name: /compare a neutral preview and a color finish/,
+    })
+    expect(slider).toHaveAttribute('aria-valuemin', '2')
+    expect(slider).toHaveAttribute('aria-valuemax', '98')
+    expect(slider).toHaveAttribute('aria-valuenow', '50')
+    expect(slider).toHaveAttribute(
+      'aria-valuetext',
+      '50% Neutral preview, 50% Color finish',
+    )
+
+    slider.focus()
+    await user.keyboard('{Home}')
+    expect(slider).toHaveAttribute('aria-valuenow', '2')
+    expect(slider).toHaveAttribute(
+      'aria-valuetext',
+      '2% Neutral preview, 98% Color finish',
+    )
+
+    await user.keyboard('{End}')
+    expect(slider).toHaveAttribute('aria-valuenow', '98')
+    expect(slider).toHaveAttribute(
+      'aria-valuetext',
+      '98% Neutral preview, 2% Color finish',
+    )
   })
 })
 
-describe('landing hero css contract', () => {
-  it('does not reference any remote image host', () => {
-    const cssPath = resolve(__dirname, '..', 'pages', '(main)', 'index.css')
-    const css = readFileSync(cssPath, 'utf8')
+describe('landing asset and CSS contract', () => {
+  it('does not retain remote, legacy, or synthetic compare surfaces', () => {
+    const cssPaths = [
+      resolve(__dirname, '..', 'pages', '(main)', 'index.css'),
+      resolve(__dirname, '..', 'pages', '(main)', 'index.sections.css'),
+    ]
+    const css = cssPaths.map((path) => readFileSync(path, 'utf8')).join('\n')
+    const removedSelectorPatterns = [
+      /\.lf-compare-svg\b/,
+      /\.lf-compare-finish\b/,
+      /\.lf-compare-stage\b/,
+      /\.lf-contract-strip\b/,
+      /\.lf-hero-glow\b/,
+      /\.lf-hero-panel\b/,
+      /\.lf-product-window\b/,
+      /\.lf-window-body\b/,
+      /\.lf-window-chrome\b/,
+    ]
 
     expect(css).not.toMatch(/images\.unsplash\.com/)
     expect(css).not.toMatch(/https?:\/\//)
-  })
+    for (const selectorPattern of removedSelectorPatterns) {
+      expect(css).not.toMatch(selectorPattern)
+    }
 
-  it('does not retain the removed legacy hero selectors', () => {
-    const cssPath = resolve(__dirname, '..', 'pages', '(main)', 'index.css')
-    const css = readFileSync(cssPath, 'utf8')
-
-    expect(css).not.toMatch(/\.lf-compare-finish\b/)
-    expect(css).not.toMatch(/\.lf-hero-panel\b/)
-    expect(css).not.toMatch(/\.lf-compare-stage\b/)
-    expect(css).not.toMatch(/\.lf-contract-strip\b/)
+    expect(
+      existsSync(
+        resolve(
+          __dirname,
+          '..',
+          'components',
+          'common',
+          'LandingCompareSvg.tsx',
+        ),
+      ),
+    ).toBe(false)
   })
 })
