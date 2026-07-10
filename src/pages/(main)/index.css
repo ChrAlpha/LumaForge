@@ -158,7 +158,8 @@
   display: grid;
   min-height: calc(100svh - 69px);
   grid-template-columns: minmax(0, 0.84fr) minmax(480px, 1.16fr);
-  gap: clamp(40px, 6vw, 96px);
+  column-gap: clamp(40px, 6vw, 96px);
+  row-gap: 36px;
   align-items: center;
   padding: clamp(64px, 8vw, 112px) 0;
   padding-right: var(--lf-gutter-right);
@@ -167,6 +168,9 @@
 
 .lf-hero-copy-column {
   min-width: 0;
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
 }
 
 .lf-kicker,
@@ -260,8 +264,11 @@ html:lang(zh-CN) .lf-hero h1 {
 
 .lf-hero-feature-rail {
   display: grid;
+  grid-column: 1;
+  grid-row: 2;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 36px 0 0;
+  align-self: start;
+  margin: 0;
   padding: 0;
   border-top: 1px solid var(--lf-border);
   border-bottom: 1px solid var(--lf-border);
@@ -287,6 +294,8 @@ html:lang(zh-CN) .lf-hero h1 {
 
 .lf-hero-figure {
   min-width: 0;
+  grid-column: 2;
+  grid-row: 1 / span 2;
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--lf-border-strong);

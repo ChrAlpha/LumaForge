@@ -288,7 +288,7 @@
 @media (max-width: 1100px) {
   .lf-hero {
     grid-template-columns: minmax(0, 0.9fr) minmax(430px, 1.1fr);
-    gap: 42px;
+    column-gap: 42px;
   }
 
   .lf-workflow-list li > div {
@@ -305,6 +305,15 @@
   .lf-hero {
     min-height: auto;
     grid-template-columns: 1fr;
+    row-gap: 40px;
+  }
+
+  .lf-hero-copy-column,
+  .lf-hero-feature-rail,
+  .lf-hero-figure {
+    grid-column: 1;
+    grid-row: auto;
+    align-self: auto;
   }
 
   .lf-hero h1 {
@@ -373,6 +382,7 @@
   }
 
   .lf-hero {
+    row-gap: 32px;
     padding-top: 48px;
     padding-bottom: 64px;
   }
@@ -397,7 +407,7 @@
   }
 
   .lf-hero-feature-rail {
-    margin-top: 28px;
+    margin-top: 0;
   }
 
   .lf-photo-stage {

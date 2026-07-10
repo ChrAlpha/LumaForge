@@ -146,11 +146,6 @@ export const Component = () => {
                 <ArrowUpRight aria-hidden="true" size={15} strokeWidth={1.9} />
               </a>
             </div>
-            <ul className="lf-hero-feature-rail">
-              {heroFeatures.map((feature) => (
-                <li key={feature}>{t(feature)}</li>
-              ))}
-            </ul>
           </m.div>
 
           <m.figure className="lf-hero-figure" {...reveal}>
@@ -173,6 +168,12 @@ export const Component = () => {
               <span>9504 × 6336</span>
             </figcaption>
           </m.figure>
+
+          <m.ul className="lf-hero-feature-rail" {...reveal}>
+            {heroFeatures.map((feature) => (
+              <li key={feature}>{t(feature)}</li>
+            ))}
+          </m.ul>
         </section>
 
         <section className="lf-workflow" aria-labelledby="lf-workflow-title">
