@@ -29,6 +29,12 @@ const heroFeatures = [
   'landing.heroFeature.3',
 ] as const
 
+const heroTitlePhrases = [
+  'landing.heroTitlePhrase.0',
+  'landing.heroTitlePhrase.1',
+  'landing.heroTitlePhrase.2',
+] as const
+
 const workflowSteps = [
   ['landing.workflow.0.label', 'landing.workflow.0.detail'],
   ['landing.workflow.1.label', 'landing.workflow.1.detail'],
@@ -64,7 +70,7 @@ function useHeroReveal() {
 }
 
 export const Component = () => {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   const reveal = useHeroReveal()
 
   return (
@@ -110,7 +116,17 @@ export const Component = () => {
         <section className="lf-hero" aria-labelledby="lf-hero-title">
           <m.div className="lf-hero-copy-column" {...reveal}>
             <p className="lf-kicker">{t('landing.kicker')}</p>
-            <h1 id="lf-hero-title">{t('landing.heroTitle')}</h1>
+            <h1 id="lf-hero-title" aria-label={t('landing.heroTitle')}>
+              {locale === 'zh-CN' ? (
+                <span className="lf-hero-title-phrases">
+                  {heroTitlePhrases.map((phrase) => (
+                    <span key={phrase}>{t(phrase)}</span>
+                  ))}
+                </span>
+              ) : (
+                t('landing.heroTitle')
+              )}
+            </h1>
             <p className="lf-hero-copy">{t('landing.heroCopy')}</p>
             <div
               className="lf-hero-actions"

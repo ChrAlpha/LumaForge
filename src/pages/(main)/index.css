@@ -195,6 +195,15 @@ html:lang(zh-CN) .lf-hero h1 {
   line-height: 1.02;
 }
 
+.lf-hero-title-phrases {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.lf-hero-title-phrases > span {
+  white-space: nowrap;
+}
+
 .lf-hero-copy {
   max-width: 59ch;
   margin: 28px 0 0;
