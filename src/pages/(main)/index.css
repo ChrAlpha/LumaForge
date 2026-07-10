@@ -13,6 +13,8 @@
   --lf-border-strong: oklch(0.9 0.01 255 / 0.16);
   --lf-shadow: oklch(0.025 0.008 255 / 0.58);
   --lf-gutter: max(clamp(18px, 5vw, 72px), calc((100vw - 1440px) / 2));
+  --lf-gutter-left: max(var(--lf-gutter), env(safe-area-inset-left, 0px));
+  --lf-gutter-right: max(var(--lf-gutter), env(safe-area-inset-right, 0px));
 
   min-height: 100vh;
   overflow: clip;
@@ -57,6 +59,7 @@
   top: 0;
   z-index: 30;
   border-bottom: 1px solid var(--lf-border);
+  padding-top: env(safe-area-inset-top, 0px);
   background: var(--lf-bg);
 }
 
@@ -65,7 +68,8 @@
   min-height: 68px;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--lf-gutter);
+  padding-right: var(--lf-gutter-right);
+  padding-left: var(--lf-gutter-left);
 }
 
 .lf-wordmark,
@@ -156,7 +160,9 @@
   grid-template-columns: minmax(0, 0.84fr) minmax(480px, 1.16fr);
   gap: clamp(40px, 6vw, 96px);
   align-items: center;
-  padding: clamp(64px, 8vw, 112px) var(--lf-gutter);
+  padding: clamp(64px, 8vw, 112px) 0;
+  padding-right: var(--lf-gutter-right);
+  padding-left: var(--lf-gutter-left);
 }
 
 .lf-hero-copy-column {
@@ -182,6 +188,11 @@
   letter-spacing: -0.045em;
   line-height: 0.98;
   text-wrap: balance;
+}
+
+html:lang(zh-CN) .lf-hero h1 {
+  letter-spacing: -0.02em;
+  line-height: 1.02;
 }
 
 .lf-hero-copy {
@@ -325,7 +336,7 @@
 .lf-compare-container {
   cursor: ew-resize;
   outline: none;
-  touch-action: none;
+  touch-action: pan-y;
   user-select: none;
 }
 
