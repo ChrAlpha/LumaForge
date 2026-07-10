@@ -194,7 +194,7 @@ test('locale choice survives a reload', async ({ page }) => {
   await expect(
     page.getByRole('heading', {
       level: 1,
-      name: /从 raw 到成片/i,
+      name: /完成一张 raw/i,
     }),
   ).toBeVisible()
   await expect(
@@ -206,17 +206,19 @@ test('locale choice survives a reload', async ({ page }) => {
       LOCALE_STORAGE_KEY,
     ),
   ).toBe('zh-CN')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
 
   await page.reload()
   await expect(
     page.getByRole('heading', {
       level: 1,
-      name: /从 raw 到成片/i,
+      name: /完成一张 raw/i,
     }),
   ).toBeVisible()
   await expect(
     page.getByRole('button', { name: 'Switch to English' }),
   ).toBeVisible()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
 })
 
 test.describe('reduced motion', () => {
@@ -241,6 +243,11 @@ test('mobile navigation and controls fit safe touch geometry', async ({
     'Touch geometry targets the configured iPhone WebKit project',
   )
   await openEnglishLanding(page)
+
+  await expect(
+    page.getByRole('navigation').getByRole('link', { name: 'Open RAW lab' }),
+  ).toBeVisible()
+  await expect(page.getByRole('slider')).toHaveCSS('touch-action', 'pan-y')
 
   const measurements = await page.evaluate(() => {
     const targets = Array.from(
