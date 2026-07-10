@@ -180,6 +180,37 @@ export const Component = () => {
           </ol>
         </section>
 
+        <section className="lf-evidence" aria-labelledby="lf-evidence-title">
+          <div className="lf-evidence-copy">
+            <div>
+              <p className="lf-section-label">{t('landing.evidence.label')}</p>
+              <h2 id="lf-evidence-title">{t('landing.evidence.title')}</h2>
+            </div>
+            <div>
+              <p>{t('landing.evidence.copy')}</p>
+              <ul>
+                {heroFeatures.slice(1).map((feature) => (
+                  <li key={feature}>{t(feature)}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <figure className="lf-evidence-figure">
+            <div className="lf-evidence-image-wrap">
+              <img
+                src="/landing-workspace-evidence.webp"
+                alt={t('landing.evidence.alt')}
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+            <figcaption>
+              <span>{t('landing.evidence.caption')}</span>
+              <span>Chromium · 1440 × 900</span>
+            </figcaption>
+          </figure>
+        </section>
+
         <section className="lf-contract" aria-labelledby="lf-contract-title">
           <div className="lf-contract-copy">
             <div>

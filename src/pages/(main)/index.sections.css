@@ -1,4 +1,5 @@
 .lf-workflow,
+.lf-evidence,
 .lf-contract,
 .lf-trust,
 .lf-final {
@@ -15,11 +16,16 @@
   background: var(--lf-bg-raised);
 }
 
+.lf-evidence {
+  background: var(--lf-bg-sunk);
+}
+
 .lf-section-intro {
   align-self: start;
 }
 
 .lf-section-intro h2,
+.lf-evidence h2,
 .lf-contract h2,
 .lf-final h2 {
   max-width: 14ch;
@@ -32,6 +38,7 @@
 }
 
 .lf-section-intro > p:last-child,
+.lf-evidence-copy > div:last-child > p,
 .lf-contract-copy > p,
 .lf-final > div > p:last-child {
   max-width: 58ch;
@@ -39,6 +46,75 @@
   color: var(--lf-text-secondary);
   font-size: 0.98rem;
   line-height: 1.7;
+}
+
+.lf-evidence-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.78fr);
+  gap: clamp(48px, 8vw, 128px);
+  align-items: end;
+}
+
+.lf-evidence-copy > div:last-child > p {
+  margin-top: 0;
+}
+
+.lf-evidence-copy ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 24px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--lf-border);
+  border-bottom: 1px solid var(--lf-border);
+  list-style: none;
+}
+
+.lf-evidence-copy li {
+  padding: 10px 14px 10px 0;
+  color: var(--lf-text-muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.lf-evidence-copy li + li {
+  padding-left: 14px;
+  border-left: 1px solid var(--lf-border);
+}
+
+.lf-evidence-figure {
+  margin: clamp(44px, 6vw, 72px) 0 0;
+  overflow: hidden;
+  border: 1px solid var(--lf-border-strong);
+  border-radius: 8px;
+  background: var(--lf-bg);
+  box-shadow: 0 28px 72px var(--lf-shadow);
+}
+
+.lf-evidence-image-wrap {
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+}
+
+.lf-evidence-figure img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lf-evidence-figure figcaption {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--lf-border);
+  color: var(--lf-text-muted);
+  font-family: ui-monospace, 'Geist Mono', monospace;
+  font-size: 0.68rem;
+  line-height: 1.4;
 }
 
 .lf-workflow-list,
@@ -225,7 +301,7 @@
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 960px) {
   .lf-hero {
     min-height: auto;
     grid-template-columns: 1fr;
@@ -244,6 +320,7 @@
     gap: 52px;
   }
 
+  .lf-evidence-copy,
   .lf-contract-copy,
   .lf-final {
     grid-template-columns: 1fr;
@@ -333,7 +410,16 @@
     font-size: 0.64rem;
   }
 
+  .lf-evidence-image-wrap {
+    aspect-ratio: 4 / 3;
+  }
+
+  .lf-evidence-figure img {
+    object-position: right center;
+  }
+
   .lf-workflow,
+  .lf-evidence,
   .lf-contract,
   .lf-trust,
   .lf-final {
@@ -368,16 +454,26 @@
   }
 
   .lf-wordmark span,
-  .lf-nav-link span,
   .lf-locale-toggle span {
     display: none;
   }
 
-  .lf-nav-link,
   .lf-locale-toggle {
     width: 44px;
     padding: 0;
     justify-content: center;
+  }
+
+  .lf-nav-link {
+    padding: 0 10px;
+    border-color: oklch(0.72 0.14 153);
+    background: var(--lf-green);
+    color: oklch(0.13 0.02 153);
+  }
+
+  .lf-nav-link:hover {
+    border-color: oklch(0.76 0.15 153);
+    background: var(--lf-green-hover);
   }
 
   .lf-hero-actions {
