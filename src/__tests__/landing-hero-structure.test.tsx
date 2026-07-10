@@ -31,8 +31,13 @@ describe('landing semantic structure', () => {
   it('uses a real local WebP for the photographic comparison', () => {
     renderLanding()
 
-    const figure = screen.getByRole('figure')
-    const compareImages = figure.querySelectorAll('img')
+    const figure = screen
+      .getAllByRole('figure')
+      .find((candidate) =>
+        candidate.querySelector('img[src="/landing-raw-finish.webp"]'),
+      )
+    expect(figure).toBeDefined()
+    const compareImages = figure!.querySelectorAll('img')
 
     expect(compareImages).toHaveLength(2)
     for (const image of compareImages) {
@@ -50,6 +55,41 @@ describe('landing semantic structure', () => {
     const assetHeader = readFileSync(assetPath).subarray(0, 12)
     expect(assetHeader.toString('ascii', 0, 4)).toBe('RIFF')
     expect(assetHeader.toString('ascii', 8, 12)).toBe('WEBP')
+  })
+
+  it('shows a real browser workspace as product evidence', () => {
+    renderLanding()
+
+    const image = screen.getByRole('img', {
+      name: /actual lumaforge raw lab session showing a split comparison/i,
+    })
+    expect(image).toHaveAttribute('src', '/landing-workspace-evidence.webp')
+    expect(image).toHaveAttribute('loading', 'lazy')
+
+    const assetPath = resolve(
+      __dirname,
+      '..',
+      '..',
+      'public',
+      'landing-workspace-evidence.webp',
+    )
+    const assetHeader = readFileSync(assetPath).subarray(0, 12)
+    expect(assetHeader.toString('ascii', 0, 4)).toBe('RIFF')
+    expect(assetHeader.toString('ascii', 8, 12)).toBe('WEBP')
+
+    const section = screen
+      .getByRole('heading', {
+        level: 2,
+        name: 'The same controls feed preview and export.',
+      })
+      .closest('section')
+    expect(section).not.toBeNull()
+    expect(
+      within(section as HTMLElement).getByText(/frame-anchored compare/i),
+    ).toBeInTheDocument()
+    expect(
+      within(section as HTMLElement).getByText(/actual browser session/i),
+    ).toBeInTheDocument()
   })
 
   it('presents the complete five-step finishing workflow', () => {
