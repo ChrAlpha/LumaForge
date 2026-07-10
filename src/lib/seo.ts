@@ -34,7 +34,7 @@ interface ResolvedSeoMetadata {
 const DEFAULT_OG_IMAGE = '/og-image.png'
 
 const DEFAULT_OG_IMAGE_ALT =
-  'LumaForge social preview card showing a browser-local RAW to JPEG comparison workflow.'
+  'LumaForge social preview card showing a local RAW photograph before and after tone and color finishing.'
 
 export const SITE_NAME = 'LumaForge'
 export const DEFAULT_SITE_URL = 'https://luma.ichr.me'
@@ -43,7 +43,7 @@ export const DEFAULT_DEPLOY_ENV: DeployEnvironment = 'production'
 export const HOME_ROUTE_SEO: RouteSeoMetadata = {
   title: 'LumaForge | Browser-Local RAW Photo Lab',
   description:
-    'Drop in a camera RAW file, preview it locally, apply a built-in look or declared LUT contract, and export a full-resolution JPEG in the browser.',
+    'Open one camera RAW locally, shape tone and color, inspect the histogram, compare the result, and export a full-resolution JPEG when the pipeline is reproducible.',
   canonicalPath: '/',
   robots: 'index, follow',
 }
@@ -51,7 +51,7 @@ export const HOME_ROUTE_SEO: RouteSeoMetadata = {
 export const RAW_ROUTE_SEO: RouteSeoMetadata = {
   title: 'RAW Lab | LumaForge',
   description:
-    'Open the browser-local RAW lab to preview camera files, compare looks, and export a color-safe full-resolution JPEG.',
+    'Open the browser-local RAW lab to adjust tone and color, compare the result, and export a trustworthy full-resolution JPEG.',
   canonicalPath: '/raw',
   robots: 'index, follow',
 }
@@ -153,16 +153,18 @@ function createStructuredData(
     featureList:
       routeSeo.canonicalPath === '/raw'
         ? [
-            'Browser-local RAW preview',
-            'Built-in looks and declared LUT contracts',
-            'Original versus processed comparison',
-            'Full-resolution JPEG export',
+            'Progressive browser-local RAW preview',
+            'Tone, color, saturation, vibrance, and eight-band HSL adjustments',
+            'Optional declared LUT contracts',
+            'Histogram and original-versus-processed comparison',
+            'Reproducible full-resolution JPEG export',
           ]
         : [
-            'Browser-local RAW photo workflow',
-            'Color-safe LUT contract rail',
-            'No account or upload requirement',
-            'Full-resolution JPEG export in the browser',
+            'Progressive browser-local RAW preview',
+            'Tone, color, HSL, histogram, and compare workflow',
+            'Optional LUT contract validation',
+            'Fail-closed full-resolution JPEG export',
+            'RAW file remains on the device',
           ],
   }
 }

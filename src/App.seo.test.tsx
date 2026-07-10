@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { ErrorElement } from './components/common/ErrorElement'
 import { NotFound } from './components/common/NotFound'
-import { applyDocumentSeo, HOME_ROUTE_SEO } from './lib/seo'
+import { applyDocumentSeo, HOME_ROUTE_SEO, RAW_ROUTE_SEO } from './lib/seo'
 
 vi.mock('./components/common/Footer', () => ({
   Footer: () => null,
@@ -26,28 +26,12 @@ function renderRoute(initialEntry: string) {
           {
             path: '',
             Component: () => <div>Home</div>,
-            handle: {
-              seo: {
-                title: 'LumaForge | Browser-Local RAW Photo Lab',
-                description:
-                  'Drop in a camera RAW file, preview it locally, apply a built-in look or declared LUT contract, and export a full-resolution JPEG in the browser.',
-                canonicalPath: '/',
-                robots: 'index, follow',
-              },
-            },
+            handle: { seo: HOME_ROUTE_SEO },
           },
           {
             path: 'raw',
             Component: () => <div>RAW lab</div>,
-            handle: {
-              seo: {
-                title: 'RAW Lab | LumaForge',
-                description:
-                  'Open the browser-local RAW lab to preview camera files, compare looks, and export a color-safe full-resolution JPEG.',
-                canonicalPath: '/raw',
-                robots: 'index, follow',
-              },
-            },
+            handle: { seo: RAW_ROUTE_SEO },
           },
         ],
         errorElement: <ErrorElement />,
@@ -93,7 +77,7 @@ describe('route SEO metadata', () => {
     })
 
     expect(getMetaContent('meta[name="description"]')).toBe(
-      'Drop in a camera RAW file, preview it locally, apply a built-in look or declared LUT contract, and export a full-resolution JPEG in the browser.',
+      'Open one camera RAW locally, shape tone and color, inspect the histogram, compare the result, and export a full-resolution JPEG when the pipeline is reproducible.',
     )
     expect(getMetaContent('meta[property="og:title"]')).toBe(
       'LumaForge | Browser-Local RAW Photo Lab',
@@ -120,7 +104,7 @@ describe('route SEO metadata', () => {
     })
 
     expect(getMetaContent('meta[name="description"]')).toBe(
-      'Open the browser-local RAW lab to preview camera files, compare looks, and export a color-safe full-resolution JPEG.',
+      'Open the browser-local RAW lab to adjust tone and color, compare the result, and export a trustworthy full-resolution JPEG.',
     )
     expect(getMetaContent('meta[property="og:url"]')).toBe(
       'https://luma.ichr.me/raw',
@@ -148,7 +132,7 @@ describe('route SEO metadata', () => {
       <title data-lf-seo="true">LumaForge | Browser-Local RAW Photo Lab</title>
       <meta
         name="description"
-        content="Drop in a camera RAW file, preview it locally, apply a built-in look or declared LUT contract, and export a full-resolution JPEG in the browser."
+        content="Open one camera RAW locally, shape tone and color, inspect the histogram, compare the result, and export a full-resolution JPEG when the pipeline is reproducible."
         data-lf-seo="true"
       />
     `
