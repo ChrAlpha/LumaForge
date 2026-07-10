@@ -37,12 +37,20 @@ function resolveInitialLocale(): Locale {
   return 'en'
 }
 
+function syncDocumentLocale(locale: Locale) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = locale
+  }
+}
+
+const initialLocale = resolveInitialLocale()
+
 i18n.init({
   resources: {
     en: { translation: enMessages },
     'zh-CN': { translation: zhMessages },
   },
-  lng: resolveInitialLocale(),
+  lng: initialLocale,
   fallbackLng: 'en',
   supportedLngs: supportedLocales,
   interpolation: {
@@ -51,6 +59,8 @@ i18n.init({
   returnNull: false,
   returnEmptyString: false,
 })
+
+syncDocumentLocale(initialLocale)
 
 export function useI18n() {
   const { t, i18n: i18nInstance, ready } = useTranslation()
@@ -78,6 +88,7 @@ export function useI18n() {
     locale: (i18nInstance.resolvedLanguage ?? resolveInitialLocale()) as Locale,
     setLocale: (locale: Locale) => {
       i18nInstance.changeLanguage(locale)
+      syncDocumentLocale(locale)
       try {
         localStorage.setItem(LOCALE_STORAGE_KEY, locale)
       } catch {}
@@ -87,6 +98,7 @@ export function useI18n() {
         (i18nInstance.resolvedLanguage as Locale) ?? resolveInitialLocale()
       const next = current === 'zh-CN' ? 'en' : 'zh-CN'
       i18nInstance.changeLanguage(next)
+      syncDocumentLocale(next)
       try {
         localStorage.setItem(LOCALE_STORAGE_KEY, next)
       } catch {}
@@ -97,6 +109,8 @@ export function useI18n() {
 
 export function I18nProvider({ children }: PropsWithChildren) {
   const locale = resolveInitialLocale()
+
+  syncDocumentLocale(locale)
 
   if (i18n.resolvedLanguage !== locale) {
     i18n.changeLanguage(locale)

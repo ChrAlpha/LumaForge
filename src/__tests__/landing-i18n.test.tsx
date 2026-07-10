@@ -31,10 +31,13 @@ describe('landing page i18n', () => {
 
   afterEach(() => {
     localStorage.clear()
+    document.documentElement.lang = 'en'
   })
 
   it('renders representative Chinese hero and workflow copy', () => {
     renderLanding()
+
+    expect(document.documentElement).toHaveAttribute('lang', 'zh-CN')
 
     expect(
       screen.getByRole('heading', {
@@ -68,6 +71,8 @@ describe('landing page i18n', () => {
     renderLanding()
 
     await user.click(screen.getByRole('button', { name: 'Switch to English' }))
+
+    expect(document.documentElement).toHaveAttribute('lang', 'en')
 
     expect(
       screen.getByRole('heading', {

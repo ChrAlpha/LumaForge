@@ -84,7 +84,11 @@ export const Component = () => {
             <span>LumaForge</span>
           </Link>
           <div className="lf-nav-actions">
-            <Link to="/raw" className="lf-nav-link">
+            <Link
+              to="/raw"
+              className="lf-nav-link"
+              aria-label={t('landing.openRawLab')}
+            >
               <ImageUp aria-hidden="true" size={16} strokeWidth={1.9} />
               <span>{t('landing.openRawLab')}</span>
             </Link>
