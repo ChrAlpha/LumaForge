@@ -1,3 +1,4 @@
+import { ChevronsLeftRight } from 'lucide-react'
 import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react'
 import { useCallback, useRef, useState } from 'react'
 
@@ -123,8 +124,7 @@ export function LandingPhotoCompare({
         </div>
         <div className="lf-compare-divider">
           <span className="lf-compare-handle" aria-hidden="true">
-            <span>‹</span>
-            <span>›</span>
+            <ChevronsLeftRight size={19} strokeWidth={1.9} />
           </span>
         </div>
       </div>

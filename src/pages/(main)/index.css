@@ -3,7 +3,7 @@
   --lf-bg-raised: oklch(0.105 0.007 255);
   --lf-bg-high: oklch(0.135 0.008 255);
   --lf-bg-sunk: oklch(0.055 0.006 255);
-  --lf-text: oklch(0.94 0.012 240);
+  --lf-text: oklch(0.94 0.012 255);
   --lf-text-secondary: oklch(0.7 0.012 255);
   --lf-text-muted: oklch(0.62 0.012 255);
   --lf-green: oklch(0.59 0.15 153);
@@ -87,8 +87,8 @@
   min-height: 44px;
   gap: 11px;
   color: var(--lf-text);
-  font-size: 0.94rem;
-  font-weight: 720;
+  font-size: 0.9rem;
+  font-weight: 700;
   text-decoration: none;
 }
 
@@ -120,12 +120,13 @@
 .lf-nav-link {
   gap: 8px;
   padding: 0 14px;
-  font-size: 0.8rem;
-  font-weight: 660;
+  font-size: 0.82rem;
+  font-weight: 650;
   text-decoration: none;
 }
 
 .lf-icon-link {
+  flex: 0 0 44px;
   width: 44px;
   justify-content: center;
   text-decoration: none;
@@ -136,8 +137,8 @@
   gap: 7px;
   padding: 0 12px;
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 680;
+  font-size: 0.82rem;
+  font-weight: 650;
 }
 
 .lf-nav-link:hover,
@@ -147,11 +148,12 @@
   background: var(--lf-bg-high);
 }
 
-.lf-nav-link:active,
-.lf-icon-link:active,
-.lf-locale-toggle:active,
-.lf-button:active {
-  transform: translateY(1px);
+@media (prefers-reduced-motion: no-preference) {
+  .lf-nav-link:active,
+  .lf-icon-link:active,
+  .lf-locale-toggle:active {
+    transform: translateY(1px);
+  }
 }
 
 .lf-hero {
@@ -173,11 +175,10 @@
   align-self: end;
 }
 
-.lf-kicker,
-.lf-section-label {
+.lf-kicker {
   margin: 0;
   color: var(--lf-amber);
-  font-size: 0.73rem;
+  font-size: 0.76rem;
   font-weight: 780;
   line-height: 1.25;
   text-transform: uppercase;
@@ -229,13 +230,23 @@ html:lang(zh-CN) .lf-hero h1 {
   gap: 9px;
   border-radius: 8px;
   padding: 0 18px;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   font-weight: 700;
   line-height: 1;
   text-decoration: none;
   transition:
     background 180ms ease-out,
     transform 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lf-button:hover {
+    transform: translateY(-1px);
+  }
+
+  .lf-button:active {
+    transform: translateY(1px);
+  }
 }
 
 .lf-button-primary {
@@ -253,7 +264,7 @@ html:lang(zh-CN) .lf-hero h1 {
   gap: 6px;
   color: var(--lf-text-secondary);
   font-size: 0.82rem;
-  font-weight: 630;
+  font-weight: 650;
   text-decoration: none;
   transition: color 180ms ease-out;
 }
@@ -278,7 +289,7 @@ html:lang(zh-CN) .lf-hero h1 {
 .lf-hero-feature-rail li {
   padding: 13px 12px 13px 0;
   color: var(--lf-text-muted);
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   font-weight: 650;
   line-height: 1.35;
 }
@@ -314,8 +325,8 @@ html:lang(zh-CN) .lf-hero h1 {
   padding: 0 16px;
   color: var(--lf-text-muted);
   font-family: ui-monospace, 'Geist Mono', monospace;
-  font-size: 0.7rem;
-  font-weight: 520;
+  font-size: 0.72rem;
+  font-weight: 500;
   line-height: 1.35;
 }
 
@@ -395,7 +406,7 @@ html:lang(zh-CN) .lf-hero h1 {
   position: absolute;
   inset: 0 auto 0 var(--lf-compare-position);
   width: 1px;
-  background: oklch(0.94 0.012 240 / 0.92);
+  background: oklch(0.94 0.012 255 / 0.92);
   transform: translateX(-0.5px);
 }
 
@@ -412,13 +423,7 @@ html:lang(zh-CN) .lf-hero h1 {
   border-radius: 50%;
   background: oklch(0.09 0.008 255 / 0.86);
   color: var(--lf-text);
-  font-size: 1.35rem;
-  line-height: 1;
   transform: translate(-50%, -50%);
-}
-
-.lf-compare-handle span {
-  margin-top: -2px;
 }
 
 .lf-compare-tag {
@@ -430,8 +435,8 @@ html:lang(zh-CN) .lf-hero h1 {
   padding: 6px 10px;
   background: oklch(0.08 0.008 255 / 0.88);
   color: var(--lf-text);
-  font-size: 0.68rem;
-  font-weight: 690;
+  font-size: 0.72rem;
+  font-weight: 650;
   line-height: 1;
   pointer-events: none;
 }

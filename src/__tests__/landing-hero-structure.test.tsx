@@ -58,7 +58,7 @@ describe('landing semantic structure', () => {
   })
 
   it('shows a real browser workspace as product evidence', () => {
-    renderLanding()
+    const { container } = renderLanding()
 
     const image = screen.getByRole('img', {
       name: /actual lumaforge raw lab session showing a split comparison/i,
@@ -90,6 +90,14 @@ describe('landing semantic structure', () => {
     expect(
       within(section as HTMLElement).getByText(/actual browser session/i),
     ).toBeInTheDocument()
+    expect(within(section as HTMLElement).queryByRole('list')).toBeNull()
+    expect(container.querySelector('.lf-section-label')).toBeNull()
+
+    const copy = section!.querySelector('.lf-evidence-copy')
+    expect(Array.from(copy!.children, (child) => child.tagName)).toEqual([
+      'H2',
+      'P',
+    ])
   })
 
   it('presents the complete five-step finishing workflow', () => {
@@ -135,20 +143,22 @@ describe('landing semantic structure', () => {
     expect(rail.tagName).toBe('OL')
 
     const expectedSteps = [
-      'RAW technical development',
-      'Color balance',
-      'Exposure and regional tone',
-      'Saturation and vibrance',
-      'Eight-band HSL',
-      'Optional declared LUT',
-      'sRGB JPEG',
+      ['RAW technical development', 'stage'],
+      ['Color balance', 'stage'],
+      ['Exposure and regional tone', 'stage'],
+      ['Saturation and vibrance', 'stage'],
+      ['Eight-band HSL', 'stage'],
+      ['Optional declared LUT', 'optional'],
+      ['sRGB JPEG', 'output'],
     ]
     const items = within(rail).getAllByRole('listitem')
 
     expect(items).toHaveLength(expectedSteps.length)
     items.forEach((item, index) => {
+      const [label, role] = expectedSteps[index]
       expect(item).toHaveTextContent(String(index + 1).padStart(2, '0'))
-      expect(item).toHaveTextContent(expectedSteps[index])
+      expect(item).toHaveTextContent(label)
+      expect(item).toHaveAttribute('data-contract-role', role)
     })
   })
 
@@ -196,6 +206,13 @@ describe('landing semantic structure', () => {
       'aria-valuetext',
       '50% Muted treatment, 50% Color treatment',
     )
+
+    const handle = slider.querySelector('.lf-compare-handle')
+    expect(handle).toHaveAttribute('aria-hidden', 'true')
+    expect(handle).toHaveTextContent('')
+    expect(
+      handle!.querySelector('svg.lucide-chevrons-left-right'),
+    ).toHaveAttribute('width', '19')
 
     slider.focus()
     await user.keyboard('{Home}')

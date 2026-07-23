@@ -148,6 +148,52 @@ test('presents the complete RAW workflow without browser errors', async ({
   ).toEqual([])
 })
 
+test('color contract rail preserves responsive stage semantics', async ({
+  page,
+}, testInfo) => {
+  await openEnglishLanding(page)
+
+  const rail = page.getByRole('list', {
+    name: /color pipeline from raw development to jpeg/i,
+  })
+  const layout = await rail.evaluate((element) => {
+    const items = [...element.children] as HTMLElement[]
+    const tick = (index: number) => getComputedStyle(items[index], '::before')
+
+    return {
+      columns: getComputedStyle(element)
+        .gridTemplateColumns.split(/\s+/)
+        .filter(Boolean).length,
+      first: {
+        backgroundColor: tick(0).backgroundColor,
+        display: tick(0).display,
+        height: tick(0).height,
+        width: tick(0).width,
+      },
+      optional: {
+        backgroundImage: tick(5).backgroundImage,
+        borderTopStyle: tick(5).borderTopStyle,
+      },
+      output: {
+        backgroundColor: tick(6).backgroundColor,
+      },
+    }
+  })
+
+  if (testInfo.project.name === 'chromium-desktop') {
+    expect(layout.columns).toBe(7)
+    expect(layout.first.display).not.toBe('none')
+    expect(layout.first.height).toBe('2px')
+    expect(layout.first.width).toBe('22px')
+    expect(layout.optional.backgroundImage).toBe('none')
+    expect(layout.optional.borderTopStyle).toBe('dashed')
+    expect(layout.output.backgroundColor).not.toBe(layout.first.backgroundColor)
+  } else {
+    expect(layout.columns).toBe(1)
+    expect(layout.first.display).toBe('none')
+  }
+})
+
 test('compare supports its complete keyboard range', async ({ page }) => {
   await openEnglishLanding(page)
 
@@ -178,6 +224,27 @@ test('compare supports its complete keyboard range', async ({ page }) => {
 
   await page.keyboard.press('ArrowDown')
   expect(await readSliderValue(page)).toBeLessThan(afterLeft)
+})
+
+test('primary action distinguishes hover and press feedback', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    'Pointer feedback is covered in the desktop browser project',
+  )
+  await openEnglishLanding(page)
+
+  const action = page.locator('.lf-hero .lf-button-primary')
+  await action.hover()
+  await expect(action).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, -1)')
+
+  const bounds = await action.boundingBox()
+  expect(bounds).toBeTruthy()
+  await page.mouse.down()
+  await expect(action).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 1)')
+  await page.mouse.move(bounds!.x - 4, bounds!.y - 4)
+  await page.mouse.up()
 })
 
 test('compare follows a real pointer drag', async ({ page }, testInfo) => {
@@ -307,13 +374,21 @@ test('mobile first viewport introduces the photograph', async ({
 })
 
 test.describe('reduced motion', () => {
-  test.use({ reducedMotion: 'reduce' })
+  test.use({ contextOptions: { reducedMotion: 'reduce' } })
 
   test('keeps the complete landing content visible', async ({ page }) => {
     await openEnglishLanding(page)
 
+    expect(
+      await page.evaluate(
+        () => matchMedia('(prefers-reduced-motion: reduce)').matches,
+      ),
+    ).toBe(true)
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     await expect(page.getByRole('slider')).toBeVisible()
+    const action = page.locator('.lf-hero .lf-button-primary')
+    await action.hover()
+    await expect(action).toHaveCSS('transform', 'none')
     await expect(
       page.getByRole('heading', { name: /open the raw lab.*finish/i }),
     ).toBeVisible()
@@ -327,6 +402,7 @@ test('mobile navigation and controls fit safe touch geometry', async ({
     testInfo.project.name !== 'webkit-ios-safe',
     'Touch geometry targets the configured iPhone WebKit project',
   )
+  await page.setViewportSize({ width: 428, height: 800 })
   await openEnglishLanding(page)
 
   const navCta = page

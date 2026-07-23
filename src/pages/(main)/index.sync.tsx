@@ -44,13 +44,13 @@ const workflowSteps = [
 ] as const
 
 const contractSteps = [
-  'landing.contract.0',
-  'landing.contract.1',
-  'landing.contract.2',
-  'landing.contract.3',
-  'landing.contract.4',
-  'landing.contract.5',
-  'landing.contract.6',
+  ['landing.contract.0', 'stage'],
+  ['landing.contract.1', 'stage'],
+  ['landing.contract.2', 'stage'],
+  ['landing.contract.3', 'stage'],
+  ['landing.contract.4', 'stage'],
+  ['landing.contract.5', 'optional'],
+  ['landing.contract.6', 'output'],
 ] as const
 
 const trustPoints = [
@@ -178,7 +178,6 @@ export const Component = () => {
 
         <section className="lf-workflow" aria-labelledby="lf-workflow-title">
           <header className="lf-section-intro">
-            <p className="lf-section-label">{t('landing.workflow.label')}</p>
             <h2 id="lf-workflow-title">{t('landing.workflow.title')}</h2>
             <p>{t('landing.workflow.intro')}</p>
           </header>
@@ -199,18 +198,8 @@ export const Component = () => {
 
         <section className="lf-evidence" aria-labelledby="lf-evidence-title">
           <div className="lf-evidence-copy">
-            <div>
-              <p className="lf-section-label">{t('landing.evidence.label')}</p>
-              <h2 id="lf-evidence-title">{t('landing.evidence.title')}</h2>
-            </div>
-            <div>
-              <p>{t('landing.evidence.copy')}</p>
-              <ul>
-                {heroFeatures.slice(1).map((feature) => (
-                  <li key={feature}>{t(feature)}</li>
-                ))}
-              </ul>
-            </div>
+            <h2 id="lf-evidence-title">{t('landing.evidence.title')}</h2>
+            <p>{t('landing.evidence.copy')}</p>
           </div>
           <figure className="lf-evidence-figure">
             <div className="lf-evidence-image-wrap">
@@ -230,18 +219,15 @@ export const Component = () => {
 
         <section className="lf-contract" aria-labelledby="lf-contract-title">
           <div className="lf-contract-copy">
-            <div>
-              <p className="lf-section-label">{t('landing.pipeline.label')}</p>
-              <h2 id="lf-contract-title">{t('landing.pipeline.title')}</h2>
-            </div>
+            <h2 id="lf-contract-title">{t('landing.pipeline.title')}</h2>
             <p>{t('landing.pipeline.note')}</p>
           </div>
           <ol
             className="lf-contract-rail"
             aria-label={t('landing.pipelineAria')}
           >
-            {contractSteps.map((step, index) => (
-              <li key={step}>
+            {contractSteps.map(([step, role], index) => (
+              <li key={step} data-contract-role={role}>
                 <span>{String(index + 1).padStart(2, '0')}</span>
                 <p>{t(step)}</p>
               </li>
@@ -262,7 +248,6 @@ export const Component = () => {
 
         <section className="lf-final" aria-labelledby="lf-final-title">
           <div>
-            <p className="lf-section-label">{t('landing.final.label')}</p>
             <h2 id="lf-final-title">{t('landing.final.title')}</h2>
             <p>{t('landing.final.copy')}</p>
           </div>
