@@ -167,8 +167,8 @@ body {
 
   /* LumaForge /raw darkroom tokens: these are DARK by design and are the single
      source of truth. /raw renders them directly; do not expect a light variant.
-     The landing has its own separate warm palette (.lf-landing in
-     src/pages/(main)/index.css). See DESIGN.md "Theme contract". */
+     The landing has its own fixed cool-slate palette (.lf-landing in
+     src/pages/(main)/index.css), aligned to hue 255 but separately scoped. */
   --color-lf-surface:        oklch(0.118 0.006 255);
   --color-lf-surface-raised: oklch(0.16 0.007 255 / 0.9);
   --color-lf-surface-sunk:   oklch(0.085 0.006 255 / 0.74);

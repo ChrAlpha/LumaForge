@@ -2,13 +2,11 @@
 
 name: LumaForge
 description: Browser-local RAW finishing lab with color-safe guardrails.
-# NOTE: the `colors` block below is the warm BRAND / landing palette (it lives
-# at `.lf-landing` in src/pages/(main)/index.css). The /raw runtime does NOT use
-# these warm values. /raw is a fixed cool-slate darkroom whose tokens were
-# renamed to the DARK --color-lf-surface* / --color-lf-on-surface* set in
-# src/styles/tailwind.css @theme (formerly lf-paper / lf-ink). The dark on-photo
-# values are in the `workspace-chrome` block below. See the "Theme contract"
-# section after this front matter.
+# NOTE: this front-matter is a historical token inventory. Its warm `colors`
+# and brand `components` entries are retained only to explain legacy names;
+# they are not implementation guidance. The current contracts begin at
+# "Theme contract" below and live in src/pages/(main)/index.css (landing) and
+# src/styles/tailwind.css plus the raw-lab styles (/raw).
 colors:
 lf-paper: 'oklch(0.964 0.018 86)'
 lf-paper-low: 'oklch(0.918 0.026 86)'
@@ -92,7 +90,7 @@ backgroundColor: 'oklch(0.18 0.02 76)'
 textColor: '{colors.lf-hero-ink}'
 rounded: '{rounded.panel}'
 workspace-chrome:
-description: 'Photo-first dark on-photo chrome used inside /raw. Brand and landing keep the warm paper system above.'
+description: 'Photo-first dark on-photo chrome used inside /raw. The landing uses its own fixed cool-slate tokens.'
 on-photo-paper: 'oklch(0.118 0.006 255)'
 on-photo-paper-high: 'oklch(0.16 0.007 255 / 0.9)'
 on-photo-paper-low: 'oklch(0.085 0.006 255 / 0.74)'
@@ -144,9 +142,10 @@ height-mouse-tabs: '28px'
 
 ## Theme contract (read first)
 
-`/raw` is a fixed cool-slate darkroom (hue ~255). It ignores `data-theme` and is
-dark in every system theme. The rest of the app (landing, toasts, star
-background) follows the system theme via Pastel `data-theme`.
+`/raw` and the landing are both fixed cool-slate surfaces (hue ~255). They
+ignore `data-theme` and stay dark in every system theme. Pastel `data-theme`
+remains available to shared surfaces outside those scoped roots; do not infer
+that it controls either the landing or `/raw`.
 
 The `--color-lf-*` tokens are the darkroom design system, defined once in
 `src/styles/tailwind.css` `@theme` with their true dark values (consumed by the
@@ -155,48 +154,51 @@ utilities). Token roles: `surface` / `surface-raised` / `surface-sunk` /
 `surface-muted` (chrome surfaces), `on-surface` / `on-surface-soft` (text),
 `on-photo-ink` and `on-photo-*` (over the photograph), `darkroom-stage*` (the
 warm export moment), and the hue roles `green` / `amber` / `rose` / `sky` /
-`hist-*`. The landing page has a SEPARATE warm palette under `.lf-landing` in
-`src/pages/(main)/index.css` (its own `--lf-*` names, no `color-` prefix); do not
-confuse the two.
+`hist-*`. The landing has a separate, fixed cool-slate palette under
+`.lf-landing` in `src/pages/(main)/index.css` (its own `--lf-*` names, no
+`color-` prefix). Its neutral hue is deliberately aligned with the darkroom,
+but the two token scopes are not interchangeable.
 
 ## 1. Overview
 
 **Creative North Star: "The Calibrated Photo Lab"**
 
 LumaForge should feel like a precise photo lab that has already removed the unsafe switches before the user arrives.
-The visual system combines photographic drama with product restraint: large confident type, warm paper surfaces, dark image overlays, and explicit color-contract rails.
+The visual system combines photographic drama with product restraint: large confident type, opaque cool-slate surfaces, dark image overlays, and explicit color-contract rails.
 
 The system rejects generic SaaS polish.
 Avoid purple gradients, hero metrics, repeated icon-card grids, glassy panels, and vague technical decoration.
-The brand is not a dark grading suite either.
+The landing is not a generic dark SaaS shell or a dense grading suite.
 It should feel approachable for a casual RAW shooter while still signaling that careful color work is happening underneath.
 
 Product surfaces inherit the same brand atoms — green action affordances, amber contract labels, strict hairlines, and plain-language guardrails — but the substrate splits into two registers:
 
-- **Brand / Landing / Marketing.** Warm paper system described in §§2–5. Day-readable, document-feeling, calm.
+- **Brand / Landing.** Opaque cool-slate canvas with editorial spacing, real photography, and sparse calibrated accents.
 - **Workspace Chrome (`/raw`).** Photo-first dark on-photo chrome described in §6. Photographic-judgement environment, slate-and-glass, the photo owns the surface.
 
-Both registers share `lf-green`, `lf-amber`, `lf-rose`, `lf-sky`, `lf-hero-ink`, Geist Sans, the same rounded scale, and the same component grammar (Compare Panel, Contract Rail). They diverge in substrate (paper vs. slate), in topbar/tool-rail materiality (opaque card vs. translucent glass), and in seam idiom (1px warm hairlines vs. inset shadow with subtle highlights).
+Both registers share the hue-255 neutral family, `lf-green`, `lf-amber`, `lf-rose`, Geist Sans, the same rounded scale, and the same component grammar (Compare Panel, Contract Rail). They diverge in material and density: the landing is opaque and spacious; `/raw` uses translucent photo-owned chrome and tighter task surfaces.
 
 **Key Characteristics:**
 
 - Photographic first: use real image surfaces when explaining RAW, LUTs, comparison, or export.
 - Color-safe: controls expose compatible contracts, not free-form mystery knobs.
 - Scene-referred by default: camera-log LUT work starts from RAW scene-linear data, not from display sRGB.
-- Warm precision: neutrals are tinted toward paper, ink, and darkroom warmth.
+- Calibrated tint: neutral surfaces carry a faint cool-slate hue rather than pure black or white.
 - Visible boundaries: use hairlines, rails, numbered steps, and contract chips instead of decorative cards.
 - Browser-local confidence: repeat no upload, no native helper, no account, and no license friction where relevant.
 
-## 2. Colors
+## 2. Color roles
 
-The palette is a warm lab-paper system with a green action signal and small calibrated accent roles.
-OKLCH is the canonical color notation for implementation.
+The current landing and `/raw` palettes are separate fixed-dark scopes aligned
+to a low-chroma hue-255 neutral family. The warm-paper values in the historical
+front-matter are retired and must not be used as implementation guidance.
+OKLCH is the canonical color notation.
 
 ### Primary
 
 - **Lab Green** (`oklch(0.59 0.15 153)`): Primary action color for starting, exporting, confirming safe contract choices, and active product states.
   Use sparingly so it remains a clear call to action.
-- **Deep Lab Green** (`oklch(0.37 0.105 155)`): Section labels on light surfaces, secondary success markers, and textual emphasis where primary green would be too loud.
+- **Deep Lab Green** (`oklch(0.37 0.105 155)`): Secondary success markers and textual emphasis where primary green would be too loud.
 
 ### Secondary
 
@@ -208,19 +210,16 @@ OKLCH is the canonical color notation for implementation.
 
 ### Neutral
 
-- **Lab Paper** (`oklch(0.964 0.018 86)`): Main light surface.
-  It should read as warm paper, never pure white.
-- **Low Paper** (`oklch(0.918 0.026 86)`): Slightly deeper neutral for broad bands and background transitions.
-- **Warm Proof Surface** (`oklch(0.9 0.034 82)`): Proof and feature bands that need visual separation without becoming cards.
-- **Darkroom Ink** (`oklch(0.18 0.018 76)`): Primary dark text and dark section foundation.
-  It should feel tinted, not black.
-- **Soft Ink** (`oklch(0.38 0.032 75)`): Body copy on light surfaces.
-- **Warm Hairline** (`oklch(0.74 0.035 78)`): Borders, rails, and structural separators.
+- **Landing Base** (`oklch(0.075 0.006 255)`): Fixed landing substrate.
+- **Landing Raised / High / Sunk** (`oklch(0.105 0.007 255)`, `oklch(0.135 0.008 255)`, `oklch(0.055 0.006 255)`): Opaque depth steps for navigation, trust bands, and inset surfaces.
+- **Landing Text** (`oklch(0.94 0.012 255)`): Primary text. Secondary and muted roles lower lightness while retaining the same hue family.
+- **Tinted Hairlines** (`oklch(0.9 0.01 255 / α)`): Borders, rails, and structural separators.
+- **Workspace Neutrals:** Use the `--color-lf-*` roles documented in §6; do not copy landing-local values into `/raw`.
 
 ### Named Rules
 
 **The No Pure Neutral Rule.** Do not use pure black or pure white.
-Every neutral should carry a small warm tint.
+Every neutral should carry a small cool-slate tint.
 
 **The Green Means Go Rule.** Primary green is reserved for the main action or an export-safe state.
 Do not use it as casual decoration.
@@ -263,7 +262,7 @@ Shadows are allowed on floating image comparison panels, but they should feel li
 
 ### Shadow Vocabulary
 
-- **Photo Panel Shadow** (`0 24px 80px oklch(0.18 0.018 76 / 0.18)`): Use for large preview or comparison panels that sit above photography.
+- **Photo Panel Shadow** (`0 28px 72px oklch(0.025 0.008 255 / 0.58)`): Use for large preview or comparison panels that sit above photography.
 - **No Shadow Rest State**: Product controls, lists, chips, and workflow rows should usually rely on borders, tonal surfaces, and spacing instead of drop shadows.
 
 ### Named Rules
@@ -277,18 +276,18 @@ Shadows are allowed on floating image comparison panels, but they should feel li
 ### Buttons
 
 - **Shape:** 8px radius, minimum height 46px, inline icon plus text when action meaning benefits from an icon.
-- **Primary:** Lab Green background, Darkroom Ink text, 12px 17px padding, 1px green border.
+- **Primary:** Lab Green background, dark green-tinted text, 18px inline padding, 1px green border.
   Use for start, export, confirm, and safe primary actions.
-- **Hover / Focus:** Lift by `translateY(-1px)` and shift to Hover Green.
-  Use `cubic-bezier(0.22, 1, 0.36, 1)` for 180ms transitions.
-  Respect reduced motion.
+- **Hover / Active:** With motion enabled, lift hover by `translateY(-1px)` and press to `translateY(1px)`. Shift hover to Hover Green over 180ms ease-out.
+- **Focus:** Keep geometry stable and use the visible Lab Green focus ring.
+- **Reduced motion:** Remove spatial hover and press movement.
 - **Secondary:** Dark translucent ink surface on photographic or dark backgrounds.
-  Use a warm-tinted 1px border.
+  Use a tinted 1px border.
   Never compete with the primary action.
 
 ### Chips
 
-- **Style:** Pills with 999px radius, 1px warm translucent border, compact padding, bold text, and optional check icon.
+- **Style:** Pills with 999px radius, 1px tinted translucent border, compact padding, bold text, and optional check icon.
 - **Role:** Contract chips show resolved safety facts such as RAW technical development, target gamut, target log curve, LUT output, and Rec.709 JPEG.
 - **State:** Selected or verified chips should use an icon plus text, not color alone.
 
@@ -296,24 +295,24 @@ Shadows are allowed on floating image comparison panels, but they should feel li
 
 - **Corner Style:** 8px for image panels and framed previews.
   Avoid large rounded corners on serious product surfaces.
-- **Background:** Use Lab Paper, Low Paper, Warm Proof Surface, or darkroom overlays.
+- **Background:** Use the scoped landing cool-slate roles or `/raw` darkroom overlays.
   Do not put cards inside cards.
 - **Shadow Strategy:** Only large image panels get the Photo Panel Shadow.
-- **Border:** Prefer 1px warm hairlines.
+- **Border:** Prefer 1px tinted hairlines.
   Do not use colored side stripes.
 - **Internal Padding:** Marketing sections use generous responsive padding.
   Product panels should use tighter, task-oriented padding.
 
 ### Inputs / Fields
 
-- **Style:** Use warm paper or darkroom surfaces with a 1px hairline.
+- **Style:** Use scoped cool-slate or darkroom surfaces with a 1px hairline.
   Radius should stay near 8px.
 - **Focus:** Shift border or ring toward Lab Green, paired with text feedback when the state affects export safety.
 - **Error / Disabled:** Disabled export or unsupported source states must explain the blocker in plain language.
 
 ### Navigation
 
-- **Style:** Minimal fixed brand nav over photographic surfaces, then compact product navigation inside tools.
+- **Style:** Minimal sticky brand nav over the landing, then compact product navigation inside tools.
 - **Typography:** 0.82rem to 0.95rem, strong weight, no all-caps body navigation.
 - **Mobile:** Hide secondary text links if necessary, but keep one route to source or support and one route to the RAW lab.
 
@@ -341,14 +340,15 @@ The photograph is the substrate; the topbar, tool rail, and export footer float 
 This is the canonical environment for evaluating RAW color, and it is also the language mobile `/raw` has used from day one — desktop now matches.
 
 This register applies **only inside `/raw`**.
-Marketing, landing, not-found, and any non-workspace surface continues to use the warm paper system from §§2–5.
+The landing uses its own opaque cool-slate register; shared non-workspace
+surfaces may still follow Pastel `data-theme`.
 
 ### Why the split
 
-Lab green, calibration amber, and warm hairlines remain the brand truth, but a warm paper substrate is the wrong evaluation environment for RAW color:
-paper biases perceived saturation downward and competes with the photograph for eye attention.
-Every pro RAW editor ships dark by default for this exact reason.
-The workspace chrome adopts that convention while keeping the brand's accent system intact.
+The landing and `/raw` share neutral hue and accent intent, but `/raw` is the
+photographic evaluation environment. Its translucent chrome lets the photograph
+own the stage without turning the landing into a grading cockpit. The workspace
+keeps the brand accents while using denser, photo-aware material.
 
 ### Palette
 
@@ -421,7 +421,7 @@ Paint contract (cross-platform):
   Paint stays one across all sizes.
 
 The `SegmentGroup` / `SegmentItem` primitives in `src/components/ui/segment/` are intentionally **color-agnostic**.
-Consumers own all color (track, item text, active thumb) so the same primitive can render on paper, on the workspace chrome, and on themed dark mode without color leaks (see Primitive Color Agnosticism Rule below).
+Consumers own all color (track, item text, active thumb) so the same primitive can render on the landing, on the workspace chrome, and on themed shared surfaces without color leaks (see Primitive Color Agnosticism Rule below).
 
 ### Text Opacity Ladder
 
@@ -492,7 +492,7 @@ Avoid letting them diverge again.
 
 ### Do:
 
-- **Do** use warm OKLCH neutrals from the Lab Paper and Darkroom Ink families.
+- **Do** use the scoped, tinted OKLCH neutral roles for the landing and `/raw`.
 - **Do** reserve Lab Green for primary action, export-safe states, and active guardrail states.
 - **Do** use real image material when talking about RAW, preview, LUTs, compare, or export.
 - **Do** explain unsafe states with direct copy: unknown LUT contract, unsupported source, unsupported output, or export not reproducible.
