@@ -105,6 +105,11 @@ image-editor assumptions.
   aligned with the app's `--color-lf-*` hue family (hue 255, low chroma) so
   the two surfaces feel like the same product.
 - Read `DESIGN.md` "Theme contract" before touching tokens or theme code.
+- Before adding or restyling UI, read
+  `docs/specs/2026-06-30-anti-ai-slop-guardrails.md`: the standing anti-AI-slop
+  checklist (register-aware reflex bans plus the preview-vs-export
+  functional-slop rule), derived from the audit in
+  `docs/audits/2026-06-30-ai-slop-audit.md`.
 - Follow existing UI boundaries:
   - primitives in `src/components/ui`
   - shared app components in `src/components/common`
