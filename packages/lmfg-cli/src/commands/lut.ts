@@ -1,13 +1,16 @@
 import type { Command } from 'commander'
 
 import { LutContractInputSchema } from '../schemas/params'
+import type { LutFetchResult } from '../schemas/results'
 import {
   inferContract,
   inspectLut,
   loadLutFile,
   validateContract,
 } from '../services/lut'
-import { readJson } from '../workspace/atomic-fs'
+import { fetchLutFile, isNetworkAllowed } from '../services/lut-fetch'
+import { fileExists, readJson } from '../workspace/atomic-fs'
+import { workspacePaths } from '../workspace/paths'
 import type { CommandHost } from './context'
 import { runCommand } from './context'
 
@@ -29,6 +32,68 @@ export function registerLutCommands(program: Command, host: CommandHost): void {
           ctx,
           { schema: 'lmfg.lut.inspect.v1', command: 'lut.inspect' },
           async () => inspectLut(await loadLutFile(file, ctx.cwd)),
+        ),
+      )
+    })
+
+  lut
+    .command('fetch')
+    .requiredOption('--url <url>', 'http(s) URL of a .cube LUT')
+    .requiredOption('--sha256 <hex>', 'expected SHA-256 of the file')
+    .option(
+      '--out <file>',
+      'destination path (default: <workspace>/luts/<sha256>.cube)',
+    )
+    .option('--allow-network', 'permit outbound HTTP(S) for this command')
+    .description(
+      'Download a LUT into the workspace cache, verifying its SHA-256',
+    )
+    .action(async function (
+      this: Command,
+      options: {
+        url: string
+        sha256: string
+        out?: string
+        allowNetwork?: boolean
+      },
+    ) {
+      const ctx = host.context(this)
+      const expected = options.sha256.trim().toLowerCase()
+      const destination = options.out
+        ? ctx.resolvePath(options.out)
+        : workspacePaths.lutCacheFile(ctx.workspaceRoot, expected)
+      host.setExitCode(
+        await runCommand(
+          ctx,
+          { schema: 'lmfg.lut.fetch.v1', command: 'lut.fetch' },
+          async (): Promise<LutFetchResult> => {
+            const fetched = await fetchLutFile({
+              url: options.url,
+              expectedSha256: expected,
+              destination,
+              allowNetwork: isNetworkAllowed(options.allowNetwork),
+              signal: ctx.signal,
+            })
+            const loaded = await loadLutFile(fetched.path, ctx.cwd)
+            ctx.output.event({
+              event: 'artifact.ready',
+              role: 'lut',
+              uri: fetched.path,
+              cached: fetched.cached,
+            })
+            return {
+              ...fetched,
+              inspect: inspectLut(loaded),
+              contract: inferContract(loaded),
+            }
+          },
+          async () => ({
+            url: options.url,
+            sha256: expected,
+            destination,
+            cached: await fileExists(destination),
+            network_allowed: isNetworkAllowed(options.allowNetwork),
+          }),
         ),
       )
     })

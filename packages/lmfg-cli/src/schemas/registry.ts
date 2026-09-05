@@ -53,6 +53,10 @@ export const SCHEMA_REGISTRY: Record<string, SchemaEntry> = {
     schema: results.LutContractValidateResultSchema,
     description: 'Result of `lmfg lut contract validate`.',
   },
+  'lmfg.lut.fetch.v1': {
+    schema: results.LutFetchResultSchema,
+    description: 'Result of `lmfg lut fetch`.',
+  },
   'lmfg.params.v1': {
     schema: RenderParamsSchema,
     description: 'Render parameters file accepted by `--params`.',
@@ -85,6 +89,10 @@ export const SCHEMA_REGISTRY: Record<string, SchemaEntry> = {
   'lmfg.render.export.v1': {
     schema: results.ExportResultSchema,
     description: 'Result of `lmfg render export`.',
+  },
+  'lmfg.render.replay.v1': {
+    schema: results.ReplayResultSchema,
+    description: 'Result of `lmfg render replay`.',
   },
   'lmfg.compare.sheet.v1': {
     schema: results.CompareSheetResultSchema,
@@ -127,9 +135,7 @@ export function listSchemas(): Array<{ id: string; description: string }> {
   }))
 }
 
-export function showSchema(
-  id: string,
-): {
+export function showSchema(id: string): {
   id: string
   description: string
   json_schema: Record<string, unknown>

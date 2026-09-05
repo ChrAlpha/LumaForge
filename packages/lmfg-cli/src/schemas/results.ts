@@ -218,6 +218,16 @@ export const LutContractValidateResultSchema = z.object({
   export_reason: nullableString,
 })
 
+export const LutFetchResultSchema = z.object({
+  path: z.string(),
+  url: z.string(),
+  sha256,
+  byte_size: z.int(),
+  cached: z.boolean(),
+  inspect: LutInspectResultSchema,
+  contract: LutContractInferResultSchema,
+})
+
 export const RenderOutputSchema = z.object({
   uri: z.string(),
   path: z.string(),
@@ -287,6 +297,21 @@ export const ExportResultSchema = z.object({
   color_graph_fingerprint: sha256,
   raw_render_exposure: ExposureSchema,
   strips: z.int(),
+  timings_ms: z.record(z.string(), z.number()),
+})
+
+export const ReplayResultSchema = z.object({
+  session_id: nullableString,
+  manifest_path: z.string(),
+  kind: z.enum(['preview', 'candidate', 'export']),
+  reproduced: z.boolean(),
+  expected_sha256: sha256,
+  actual_sha256: sha256,
+  fingerprint_match: z.boolean().nullable(),
+  output: RenderOutputSchema,
+  manifest_uri: z.string(),
+  manifest_sha256: sha256,
+  parent_manifest_sha256: sha256,
   timings_ms: z.record(z.string(), z.number()),
 })
 
@@ -390,6 +415,7 @@ export type LutContractInferResult = z.output<
 export type LutContractValidateResult = z.output<
   typeof LutContractValidateResultSchema
 >
+export type LutFetchResult = z.output<typeof LutFetchResultSchema>
 export type RenderOutput = z.output<typeof RenderOutputSchema>
 export type PreviewResult = z.output<typeof PreviewResultSchema>
 export type CandidateSummary = z.output<typeof CandidateSummarySchema>
@@ -397,6 +423,7 @@ export type ContactSheetSummary = z.output<typeof ContactSheetSummarySchema>
 export type IterationResult = z.output<typeof IterationResultSchema>
 export type ExportResult = z.output<typeof ExportResultSchema>
 export type CompareSheetResult = z.output<typeof CompareSheetResultSchema>
+export type ReplayResult = z.output<typeof ReplayResultSchema>
 export type Metrics = z.output<typeof MetricsSchema>
 export type MetricsResult = z.output<typeof MetricsResultSchema>
 export type ManifestVerifyResult = z.output<typeof ManifestVerifyResultSchema>

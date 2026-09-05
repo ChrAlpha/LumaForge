@@ -22,6 +22,9 @@ const candidate = (
 ) => join(iteration(root, id, iterationId), 'candidates', candidateId)
 
 export const workspacePaths = {
+  luts: (root: string) => join(root, 'luts'),
+  lutCacheFile: (root: string, sha256: string) =>
+    join(root, 'luts', `${sha256}.cube`),
   sessions: (root: string) => join(root, 'sessions'),
   session,
   sessionFile: (root: string, id: string) =>
@@ -96,6 +99,14 @@ export const workspacePaths = {
     iterationId: string,
     candidateId: string,
   ) => join(candidate(root, id, iterationId, candidateId), 'tile.json'),
+  replays: (root: string, id: string) => join(session(root, id), 'replays'),
+  replay: (root: string, id: string, key: string) =>
+    join(session(root, id), 'replays', key),
+  replayOutputFile: (root: string, id: string, key: string) =>
+    join(session(root, id), 'replays', key, 'output.jpg'),
+  replayManifestFile: (root: string, id: string, key: string) =>
+    join(session(root, id), 'replays', key, 'manifest.json'),
+  workspaceReplay: (root: string, key: string) => join(root, 'replays', key),
   exports: (root: string, id: string) => join(session(root, id), 'exports'),
   exportFile: (root: string, id: string, name: string) =>
     join(session(root, id), 'exports', `${name}.jpg`),
