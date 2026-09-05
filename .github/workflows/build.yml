@@ -56,7 +56,7 @@ jobs:
           app_paths='^(src/|tests/browser/|scripts/(build|deploy|native-runtime)/|packages/luma-(color|jpeg|raw)-runtime/|public/|index\.html|vite\.config\.ts|vitest.*\.config\.ts|tsconfig.*|eslint.*|postcss.*|tailwind.*)'
           runtime_paths='^(packages/luma-(color|jpeg|raw)-runtime/|packages/render-engine/|src/lib/(export|raw|runtime|workers)/|scripts/native-runtime/)'
           native_paths='^(packages/luma-(jpeg|raw)-runtime/native/|scripts/native-runtime/)'
-          cli_paths='^(packages/lmfg-cli/|packages/render-engine/|packages/luma-(color|jpeg|raw)-runtime/|packages/luma-native-artifacts/|scripts/native-runtime/)'
+          cli_paths='^(packages/lmfg-cli/|packages/lmfg-mcp/|packages/render-engine/|packages/luma-(color|jpeg|raw)-runtime/|packages/luma-native-artifacts/|scripts/native-runtime/)'
 
           app=false
           runtime=false
@@ -289,7 +289,14 @@ jobs:
   cli:
     needs: changes
     if: ${{ needs.changes.outputs.cli == 'true' }}
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - uses: actions/checkout@v4
@@ -305,7 +312,7 @@ jobs:
           run_install: false
 
       - name: Configure pnpm store
-        run: pnpm config set store-dir ~/.pnpm-store
+        run: pnpm config set store-dir "$HOME/.pnpm-store"
 
       - name: Cache pnpm store
         uses: actions/cache@v4
@@ -327,8 +334,8 @@ jobs:
       - name: Build runtime packages and render engine
         run: pnpm cli:build:deps
 
-      - name: Typecheck and build lmfg CLI
-        run: pnpm --filter @lumaforge/lmfg-cli typecheck && pnpm --filter @lumaforge/lmfg-cli build
+      - name: Typecheck and build lmfg CLI and MCP server
+        run: pnpm --filter @lumaforge/lmfg-cli typecheck && pnpm --filter @lumaforge/lmfg-cli build && pnpm --filter @lumaforge/lmfg-mcp typecheck && pnpm --filter @lumaforge/lmfg-mcp build
 
       - name: Cache public RAW fixtures
         uses: actions/cache@v4
@@ -341,16 +348,17 @@ jobs:
           LUMAFORGE_FIXTURE_MIRROR: ${{ vars.LUMAFORGE_FIXTURE_MIRROR }}
         run: pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public
 
-      - name: Test lmfg CLI
+      - name: Test lmfg CLI and MCP server
         env:
           LMFG_REQUIRE_FIXTURE: '1'
-        run: pnpm --filter @lumaforge/lmfg-cli test
+        run: pnpm --filter @lumaforge/lmfg-cli test && pnpm --filter @lumaforge/lmfg-mcp test
 
       - name: Smoke the packaged CLI
         run: |
           node packages/lmfg-cli/bin/lmfg.mjs capabilities --quiet
           pnpm --filter @lumaforge/render-engine exec npm pack --dry-run
           pnpm --filter @lumaforge/lmfg-cli pack:dry-run
+          pnpm --filter @lumaforge/lmfg-mcp pack:dry-run
 
   build:
     needs: [changes, app, runtime, native, cli]
