@@ -28,7 +28,8 @@ export function computeImageMetrics(
   const step = Math.max(1, Math.floor(pixels / maxSamples))
   const sampleCount = Math.floor((pixels - 1) / step) + 1
   const luma = new Float32Array(sampleCount)
-  const histogram = Array.from({ length: HISTOGRAM_BINS }).fill(0)
+  const histogram: number[] = []
+  for (let bin = 0; bin < HISTOGRAM_BINS; bin += 1) histogram.push(0)
   let clippedHigh = 0
   let clippedLow = 0
   let saturationSum = 0

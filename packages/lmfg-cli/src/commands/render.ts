@@ -1,17 +1,28 @@
+import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
+import { verifyManifestSha256 } from '@lumaforge/render-engine'
 import type { Command } from 'commander'
 
+import { LmfgError } from '../protocol/errors'
+import type { RenderParams } from '../schemas/params'
 import type { NormalizedPlan } from '../schemas/plan'
 import { expandSweepPlan, normalizeCandidatePlan } from '../schemas/plan'
-import type { PreviewResult } from '../schemas/results'
+import type { ExportResult, PreviewResult } from '../schemas/results'
+import {
+  exposureFromManifest,
+  runFullResolutionExport,
+} from '../services/export'
 import { runIteration } from '../services/iteration'
+import type { ResolvedLut } from '../services/lut'
 import { resolveLutForParams } from '../services/lut'
 import {
   buildRenderManifest,
   percentToQuality,
+  requireVerifiedManifest,
   toSourceIdentity,
 } from '../services/manifest'
 import { clampMaxPixels, renderPreview } from '../services/preview'
 import {
+  fileExists,
   readJson,
   writeFileAtomic,
   writeJsonAtomic,
@@ -270,6 +281,236 @@ function registerIteration(
     })
 }
 
+type ExportOptions = {
+  iteration?: string
+  candidate?: string
+  params?: string
+  quality: number
+  output: string
+  preferredRows?: number
+}
+
+type ExportInputs = Awaited<ReturnType<typeof openRenderSession>> & {
+  params: RenderParams
+  lut: ResolvedLut | null
+  parent: string | null
+  exposure: RawRenderExposure | null
+  outputPath: string
+}
+
+function registerExport(render: Command, host: CommandHost): void {
+  render
+    .command('export')
+    .description(
+      'Full-resolution JPEG export; refuses to write anything it cannot prove reproducible',
+    )
+    .option('--iteration <id>', 'iteration containing --candidate')
+    .option(
+      '--candidate <id>',
+      'candidate whose params, LUT, and exposure are exported (chains manifests)',
+    )
+    .option('--params <file>', 'params JSON when not exporting a candidate')
+    .option('--quality <n>', 'JPEG quality 1-100', parseQualityPercent, 92)
+    .option('--output <name>', 'artifact base name under exports/', 'final')
+    .option(
+      '--preferred-rows <n>',
+      'strip height in rows',
+      parsePositiveInteger,
+    )
+    .action(async function (this: Command, options: ExportOptions) {
+      const ctx = host.context(this)
+      const resolveInputs = async (): Promise<ExportInputs> => {
+        if (options.candidate && !options.iteration) {
+          throw new LmfgError('args.invalid', {
+            message: '--candidate requires --iteration.',
+          })
+        }
+        let session
+        try {
+          session = await openRenderSession(ctx)
+        } catch (error) {
+          if (error instanceof LmfgError && error.code === 'hash.mismatch') {
+            throw new LmfgError('export.refused', {
+              message: `Export refused: ${error.message}`,
+              details: error.details,
+              suggestedNextActions: error.suggestedNextActions,
+            })
+          }
+          throw error
+        }
+        const { record, environment } = session
+        let params: RenderParams
+        let parent: string | null = null
+        let exposure: RawRenderExposure | null = null
+        let lutSha: string | null = null
+        if (options.candidate && options.iteration) {
+          const iterationStore = createIterationStore(
+            ctx.workspaceRoot,
+            record.id,
+          )
+          const paths = iterationStore.candidatePaths(
+            options.iteration,
+            options.candidate,
+          )
+          const { manifest } = await requireVerifiedManifest(
+            paths.manifest,
+            environment,
+          )
+          params = await iterationStore.readCandidateParams(
+            options.iteration,
+            options.candidate,
+          )
+          parent = manifest.manifest_sha256
+          exposure = exposureFromManifest(manifest)
+          lutSha = manifest.lut?.sha256 ?? null
+        } else {
+          params = await loadParamsFile(ctx, options.params)
+        }
+        const { lut } = await resolveParamsAndLut(ctx, params)
+        if (lutSha && lut && lut.identity.sha256 !== lutSha) {
+          throw new LmfgError('export.refused', {
+            message:
+              'The LUT file changed since the candidate was rendered; export refused.',
+            details: {
+              expected_sha256: lutSha,
+              actual_sha256: lut.identity.sha256,
+            },
+          })
+        }
+        const outputPath = workspacePaths.exportFile(
+          ctx.workspaceRoot,
+          record.id,
+          options.output,
+        )
+        if ((await fileExists(outputPath)) && !ctx.options.yes) {
+          throw new LmfgError('args.invalid', {
+            message: `${outputPath} already exists; pass --yes to overwrite or --output <name>.`,
+          })
+        }
+        return { ...session, params, lut, parent, exposure, outputPath }
+      }
+      host.setExitCode(
+        await runCommand(
+          ctx,
+          { schema: 'lmfg.render.export.v1', command: 'render.export' },
+          async (): Promise<ExportResult> => {
+            const {
+              store,
+              record,
+              source,
+              environment,
+              params,
+              lut,
+              parent,
+              exposure,
+              outputPath,
+            } = await resolveInputs()
+            ctx.output.event({
+              event: 'started',
+              command: 'render.export',
+              session_id: record.id,
+            })
+            return withRuntime(ctx, async (runtime) => {
+              const result = await runFullResolutionExport({
+                runtime,
+                source,
+                params,
+                lut,
+                exposure,
+                quality: options.quality,
+                preferredRows: options.preferredRows,
+                signal: ctx.signal,
+                onProgress: (progress) =>
+                  ctx.output.event({
+                    event: 'export.progress',
+                    completed_strips: progress.completedStrips,
+                    total_strips: progress.totalStrips,
+                    progress: progress.progress,
+                  }),
+              })
+              const manifestPath = workspacePaths.exportManifestFile(
+                ctx.workspaceRoot,
+                record.id,
+                options.output,
+              )
+              const manifest = buildRenderManifest({
+                kind: 'export',
+                source: toSourceIdentity(source, {
+                  width: result.width,
+                  height: result.height,
+                }),
+                lut: lut?.identity ?? null,
+                graph: result.graph,
+                params,
+                exposure: result.exposure,
+                policy: {
+                  kind: 'export-full',
+                  row_slice: options.preferredRows ?? 512,
+                  concurrency: 1,
+                },
+                environment,
+                output: {
+                  width: result.width,
+                  height: result.height,
+                  quality: options.quality,
+                  filename: `${options.output}.jpg`,
+                  sha256: result.sha256,
+                },
+                parentManifestSha256: parent,
+              })
+              if (!verifyManifestSha256(manifest)) {
+                throw new LmfgError('export.refused', {
+                  message:
+                    'Export manifest failed self-verification; nothing was written.',
+                })
+              }
+              await writeFileAtomic(outputPath, result.jpeg)
+              await writeJsonAtomic(manifestPath, manifest)
+              await store.allocate(record.id, 'exports')
+              ctx.output.event({
+                event: 'artifact.ready',
+                role: 'export',
+                uri: toFileUri(outputPath),
+                manifest_sha256: manifest.manifest_sha256,
+              })
+              return {
+                session_id: record.id,
+                output: {
+                  uri: toFileUri(outputPath),
+                  path: outputPath,
+                  width: result.width,
+                  height: result.height,
+                  byte_size: result.jpeg.byteLength,
+                  sha256: result.sha256,
+                  quality: options.quality,
+                },
+                manifest_uri: toFileUri(manifestPath),
+                manifest_sha256: manifest.manifest_sha256,
+                parent_manifest_sha256: parent,
+                color_graph_fingerprint: manifest.color_graph.fingerprint,
+                raw_render_exposure: result.exposure,
+                strips: result.strips,
+                timings_ms: result.timings,
+              }
+            })
+          },
+          async () => {
+            const { record, params, lut, parent, outputPath } =
+              await resolveInputs()
+            return {
+              session_id: record.id,
+              params,
+              lut: lut?.identity ?? null,
+              parent_manifest_sha256: parent,
+              output_path: outputPath,
+              quality: options.quality,
+            }
+          },
+        ),
+      )
+    })
+}
+
 export function registerRenderCommands(
   program: Command,
   host: CommandHost,
@@ -282,4 +523,5 @@ export function registerRenderCommands(
   registerPreview(render, host)
   registerIteration(render, host, 'candidate')
   registerIteration(render, host, 'sweep')
+  registerExport(render, host)
 }
