@@ -14,6 +14,18 @@ export type ExportCopyCapability =
 
 export type ExportResultKind = 'full-resolution' | 'hq-preview'
 
+export type ExportManifestUnavailableReason =
+  | 'lut-unconfirmed'
+  | 'lut-unhashed'
+  | 'output-unhashed'
+  | 'internal'
+
+/** Lifecycle of the sealed manifest for a full-resolution result. */
+export type ExportManifestState =
+  | { status: 'sealing' }
+  | { status: 'ready' }
+  | { status: 'unavailable'; reason: ExportManifestUnavailableReason }
+
 export type ExportShareCapability =
   | { available: true }
   | { available: false; reason: string }
@@ -29,6 +41,8 @@ export type ExportResult = {
   copyCapability: ExportCopyCapability
   /** Sealed render manifest; attached after a full-resolution export completes. */
   manifest?: RenderManifest
+  /** Absent for results that never seal a manifest (HQ preview exports). */
+  manifestState?: ExportManifestState
 }
 
 export function createExportResult({
@@ -40,6 +54,7 @@ export function createExportResult({
   now = () => Date.now(),
   copyCapability,
   manifest,
+  manifestState,
 }: {
   output: ExportOutputResult
   kind?: ExportResultKind
@@ -49,6 +64,7 @@ export function createExportResult({
   now?: () => number
   copyCapability: ExportCopyCapability
   manifest?: RenderManifest
+  manifestState?: ExportManifestState
 }): ExportResult {
   const createdAt = now()
 
@@ -62,5 +78,6 @@ export function createExportResult({
     createdAt,
     copyCapability,
     ...(manifest ? { manifest } : {}),
+    ...(manifestState ? { manifestState } : {}),
   }
 }

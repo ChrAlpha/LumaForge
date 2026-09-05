@@ -33,11 +33,15 @@ export {
   type RunFullResolutionJpegExportInput,
 } from './full-res-export'
 export {
+  JPEG_HEADER_SCAN_BYTES,
   type JpegExportMetadata,
+  type JpegMetadataInjectionPlan,
+  planJpegMetadataInjection,
   preserveJpegMetadata,
   preserveJpegMetadataBytes,
   type PreserveJpegMetadataBytesInput,
   type PreserveJpegMetadataInput,
+  sha256OfJpegWithMetadata,
 } from './jpeg/jpeg-metadata'
 export {
   type BytesJpegEncoder,

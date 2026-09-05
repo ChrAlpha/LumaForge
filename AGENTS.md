@@ -235,7 +235,9 @@ image-editor assumptions.
     app build checks.
   - `runtime` runs runtime package typecheck/test/build and app adapter tests.
   - `native` installs Emscripten and runs native build/verify/smoke only for
-    native artifact paths.
+    native source paths (`packages/luma-*-runtime/native/`,
+    `scripts/native-runtime/`); prebuilt artifact version bumps under
+    `packages/luma-native-artifacts/` run through the `cli` job instead.
 
 ## When Unsure
 

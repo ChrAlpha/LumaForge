@@ -50,6 +50,40 @@ function isTimeout(error: unknown): boolean {
   )
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+const MAX_REDIRECTS = 5
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+
+/**
+ * LUT downloads must use https; plain http is tolerated only for loopback
+ * hosts (local mirrors and tests). Redirect targets go through the same gate.
+ */
+function assertAllowedTransport(url: URL): void {
+  if (url.protocol === 'https:') return
+  if (url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname)) return
+  throw new LmfgError('args.invalid', {
+    message:
+      url.protocol === 'http:'
+        ? `LUT URLs must use https (plain http is only allowed for loopback hosts), got ${url.href}`
+        : `LUT URLs must use https, got ${url.protocol}`,
+  })
+}
+
+function combineSignals(signals: AbortSignal[]): AbortSignal {
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals)
+  const controller = new AbortController()
+  for (const signal of signals) {
+    if (signal.aborted) {
+      controller.abort(signal.reason)
+      break
+    }
+    signal.addEventListener('abort', () => controller.abort(signal.reason), {
+      once: true,
+    })
+  }
+  return controller.signal
+}
+
 function parseHttpUrl(value: string): URL {
   let url: URL
   try {
@@ -59,11 +93,7 @@ function parseHttpUrl(value: string): URL {
       message: `Invalid LUT URL: ${value}`,
     })
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new LmfgError('args.invalid', {
-      message: `LUT URLs must use http or https, got ${url.protocol}`,
-    })
-  }
+  assertAllowedTransport(url)
   return url
 }
 
@@ -121,6 +151,48 @@ async function readBodyWithLimit(
  * `allowNetwork` is true (exit code 5); transport failures, size limits and
  * hash mismatches map to exit code 6.
  */
+async function fetchWithGuardedRedirects(
+  fetchImpl: typeof fetch,
+  url: URL,
+  signal: AbortSignal,
+): Promise<Response> {
+  let current = url
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    const response = await fetchImpl(current, { signal, redirect: 'manual' })
+    if (!REDIRECT_STATUSES.has(response.status)) return response
+    const location = response.headers.get('location')
+    if (!location) {
+      throw new LmfgError('fetch.failed', {
+        message: `${current.href} redirected without a Location header.`,
+        details: { status: response.status },
+      })
+    }
+    let next: URL
+    try {
+      next = new URL(location, current)
+    } catch {
+      throw new LmfgError('fetch.failed', {
+        message: `${current.href} redirected to an invalid URL: ${location}`,
+      })
+    }
+    try {
+      assertAllowedTransport(next)
+    } catch (error) {
+      throw new LmfgError('fetch.failed', {
+        message: `${current.href} redirected to a disallowed transport: ${next.href}`,
+        details: {
+          status: response.status,
+          reason: error instanceof Error ? error.message : String(error),
+        },
+      })
+    }
+    current = next
+  }
+  throw new LmfgError('fetch.failed', {
+    message: `${url.href} exceeded ${MAX_REDIRECTS} redirects.`,
+  })
+}
+
 export async function fetchLutFile(
   input: FetchLutInput,
 ): Promise<FetchLutResult> {
@@ -165,10 +237,11 @@ export async function fetchLutFile(
   const fetchImpl = input.fetchImpl ?? globalThis.fetch
   let response: Response
   try {
-    const signal = input.signal
-      ? AbortSignal.any([AbortSignal.timeout(timeoutMs), input.signal])
-      : AbortSignal.timeout(timeoutMs)
-    response = await fetchImpl(url, { signal, redirect: 'follow' })
+    const signal = combineSignals([
+      AbortSignal.timeout(timeoutMs),
+      ...(input.signal ? [input.signal] : []),
+    ])
+    response = await fetchWithGuardedRedirects(fetchImpl, url, signal)
   } catch (error) {
     throw new LmfgError('fetch.failed', {
       message: isTimeout(error)

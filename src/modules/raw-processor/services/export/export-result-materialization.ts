@@ -6,6 +6,7 @@ import { createBlobOutputResult } from '~/lib/export/output-sink'
 
 import type {
   ExportCopyCapability,
+  ExportManifestState,
   ExportResultKind,
 } from '../../model/export-result'
 import { createExportResult } from '../../model/export-result'
@@ -27,12 +28,18 @@ function withLazyJpegMetadata(input: {
   }
 
   const output = input.output
+  // A producer that recorded the output hash also fixed the metadata it
+  // hashed with; injecting anything else would falsify that identity.
+  const metadata =
+    output.deliveryMetadata !== undefined
+      ? output.deliveryMetadata
+      : (input.metadata as JpegExportMetadata | null | undefined)
   return {
     ...output,
     async openBlob() {
       return preserveJpegMetadata({
         jpeg: await output.openBlob(),
-        metadata: input.metadata as JpegExportMetadata | null | undefined,
+        metadata,
         width: input.width,
         height: input.height,
       })
@@ -48,6 +55,7 @@ export function createCompletedExportResult({
   height,
   copyCapability,
   now,
+  manifestState,
 }: {
   jobResult: CompletedExportJobResult
   kind?: ExportResultKind
@@ -56,6 +64,7 @@ export function createCompletedExportResult({
   height: number
   copyCapability: ExportCopyCapability
   now?: () => number
+  manifestState?: ExportManifestState
 }) {
   const output =
     jobResult.output ??
@@ -78,6 +87,7 @@ export function createCompletedExportResult({
       height,
     }),
     kind,
+    manifestState,
     filename: jobResult.filename,
     width,
     height,

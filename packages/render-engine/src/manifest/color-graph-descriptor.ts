@@ -80,7 +80,9 @@ export function describeLutProfile(
     input: {
       gamut: profile.inputGamut,
       transfer: profile.inputTransfer,
-      range: profile.inputRange,
+      // The row processor only special-cases 'legal'; an unspecified range
+      // renders as full, so the descriptor records that effective value.
+      range: profile.inputRange ?? 'full',
     },
     output: {
       gamut: profile.outputGamut ?? profile.inputGamut,

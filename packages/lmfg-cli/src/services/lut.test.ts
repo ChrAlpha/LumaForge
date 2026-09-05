@@ -3,12 +3,18 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import {
+  describeLutProfile,
+  lutIdentityFromProfile,
+} from '@lumaforge/render-engine/manifest'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
+  contractInputFromIdentity,
   inferContract,
   loadLutFile,
   resolveLutContract,
+  toLutIdentity,
   validateContract,
 } from './lut'
 
@@ -124,5 +130,44 @@ describe('lut service', () => {
     await expect(loadLutFile('missing.cube', dir)).rejects.toMatchObject({
       code: 'file.not_found',
     })
+  })
+  it('never records an unspecified range and replays unknown ranges from the descriptor', async () => {
+    await writeFile(join(dir, 'vlog.cube'), cube(['TITLE "V-Log to Rec709"']))
+    const loaded = await loadLutFile('vlog.cube', dir)
+    const resolved = resolveLutContract(loaded, {
+      role: 'combined-look-output',
+      input_profile: 'panasonic-vgamut-vlog',
+      output_gamut: 'srgb-rec709',
+      output_transfer: 'bt709',
+      output_range: 'full',
+    })
+    expect(resolved.identity.input_contract.range).toBe('full')
+
+    // A browser manifest may carry 'unknown' ranges for the same profile.
+    const unspecified = { ...resolved.profile }
+    delete unspecified.inputRange
+    delete unspecified.outputRange
+    expect(() => toLutIdentity(loaded, unspecified)).toThrow(
+      expect.objectContaining({ code: 'lut.contract.incomplete', exitCode: 4 }),
+    )
+    const browserIdentity = lutIdentityFromProfile({
+      filename: loaded.filename,
+      sha256: loaded.sha256,
+      profile: unspecified,
+    }).identity!
+    expect(browserIdentity.input_contract.range).toBe('unknown')
+
+    expect(() => contractInputFromIdentity(browserIdentity)).toThrow(
+      expect.objectContaining({ code: 'lut.contract.incomplete' }),
+    )
+    const descriptor = describeLutProfile(unspecified)!
+    const replayed = resolveLutContract(
+      loaded,
+      contractInputFromIdentity(browserIdentity, {
+        input_range: descriptor.input.range,
+        output_range: descriptor.output.range,
+      }),
+    )
+    expect(describeLutProfile(replayed.profile)).toEqual(descriptor)
   })
 })

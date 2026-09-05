@@ -478,6 +478,7 @@ test('monitors a full desktop RAW export lifecycle with resource diagnostics', a
       'jpeg-ready',
       'after-preview-restore',
       'download-materialized',
+      'manifest-downloaded',
       'after-reset',
     ])
     samples.forEach(expectFiniteHeapSample)

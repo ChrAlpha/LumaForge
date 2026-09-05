@@ -528,6 +528,18 @@ type ReplayOptions = {
   name?: string
 }
 
+const REPLAY_NAME_PATTERN = /^[A-Z0-9][\w.-]{0,63}$/i
+
+/** Replay directories are basenames only; anything path-like is rejected. */
+function requireReplayName(name: string): string {
+  if (!REPLAY_NAME_PATTERN.test(name) || name === '.' || name === '..') {
+    throw new LmfgError('args.invalid', {
+      message: `--name must be a plain directory name (letters, digits, ".", "_", "-"), got ${JSON.stringify(name)}.`,
+    })
+  }
+  return name
+}
+
 function registerReplay(render: Command, host: CommandHost): void {
   render
     .command('replay')
@@ -575,13 +587,24 @@ function registerReplay(render: Command, host: CommandHost): void {
           workspaceRoot: ctx.workspaceRoot,
           cwd: ctx.cwd,
         })
-        const key = options.name ?? replayKey(manifest)
+        const key = options.name
+          ? requireReplayName(options.name)
+          : replayKey(manifest)
         const outputPath = sessionId
           ? workspacePaths.replayOutputFile(ctx.workspaceRoot, sessionId, key)
           : `${workspacePaths.workspaceReplay(ctx.workspaceRoot, key)}/output.jpg`
         const manifestOutputPath = sessionId
           ? workspacePaths.replayManifestFile(ctx.workspaceRoot, sessionId, key)
           : `${workspacePaths.workspaceReplay(ctx.workspaceRoot, key)}/manifest.json`
+        if (
+          ((await fileExists(outputPath)) ||
+            (await fileExists(manifestOutputPath))) &&
+          !ctx.options.yes
+        ) {
+          throw new LmfgError('args.invalid', {
+            message: `${outputPath} already exists; pass --yes to overwrite or --name <name>.`,
+          })
+        }
         return {
           environment,
           manifestPath,

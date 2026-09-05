@@ -127,7 +127,7 @@ describe('lutIdentityForStyle', () => {
         ...confirmedStyle,
         lutAsset: { ...confirmedStyle.lutAsset!, sha256: undefined },
       }).reason,
-    ).toMatch(/hash/)
+    ).toBe('lut-unhashed')
     expect(
       lutIdentityForStyle({
         ...confirmedStyle,
@@ -136,7 +136,7 @@ describe('lutIdentityForStyle', () => {
           profileResolution: { kind: 'unknown' },
         },
       }).reason,
-    ).toMatch(/contract/)
+    ).toBe('lut-unconfirmed')
   })
 })
 

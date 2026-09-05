@@ -6,6 +6,7 @@ import {
 import type {
   ExportPerfMetric,
   FullResolutionExportProgress,
+  JpegExportMetadata,
 } from '@lumaforge/render-engine/export'
 
 import type {
@@ -41,8 +42,10 @@ export type FullResWorkerFileBackedOutputReference = {
   byteLength: number
   mimeType: string
   outputFileName?: string
-  /** SHA-256 hex of the written bytes, hashed by the worker at write time. */
+  /** SHA-256 hex of the bytes the result will deliver (metadata included), recorded by the worker at publish time. */
   sha256?: string
+  /** Metadata the worker hashed with; the app injects exactly this on delivery. */
+  deliveryMetadata?: JpegExportMetadata | null
 }
 
 export type FullResWorkerOutputResult =

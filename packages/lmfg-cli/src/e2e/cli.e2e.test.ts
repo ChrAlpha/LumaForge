@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { sealRenderManifest } from '@lumaforge/render-engine/manifest'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 
 import {
@@ -386,6 +387,52 @@ describeWithFixture('lmfg agent loop', () => {
     expect(again.code).toBe(2)
     expect(again.envelope.error).toMatchObject({ code: 'args.invalid' })
   }, 120_000)
+
+  it('render replay reports reproduced: false when a valid manifest records different output bytes', async () => {
+    const exportManifest = join(
+      cwd,
+      '.lmfg',
+      'sessions',
+      sessionId,
+      'exports',
+      'final.manifest.json',
+    )
+    const original = JSON.parse(await readFile(exportManifest, 'utf8'))
+    const foreign = sealRenderManifest({
+      ...original,
+      output: { ...original.output, sha256: 'f'.repeat(64) },
+    })
+    const foreignPath = join(cwd, 'foreign.manifest.json')
+    await writeFile(foreignPath, JSON.stringify(foreign))
+    const verify = await cli.run('manifest', 'verify', foreignPath)
+    expect(verify.code, verify.stdout).toBe(0)
+
+    const replayed = await cli.run(
+      'render',
+      'replay',
+      '--session',
+      sessionId,
+      '--manifest',
+      foreignPath,
+      '--name',
+      'foreign',
+    )
+    expect(replayed.code).toBe(8)
+    expect(replayed.envelope.error).toMatchObject({ code: 'replay.mismatch' })
+
+    const traversal = await cli.run(
+      'render',
+      'replay',
+      '--session',
+      sessionId,
+      '--manifest',
+      exportManifest,
+      '--name',
+      '../escape',
+    )
+    expect(traversal.code).toBe(2)
+    expect(traversal.envelope.error).toMatchObject({ code: 'args.invalid' })
+  }, 240_000)
 
   it('render replay reproduces export and candidate manifests byte for byte', async () => {
     const exportManifest = join(

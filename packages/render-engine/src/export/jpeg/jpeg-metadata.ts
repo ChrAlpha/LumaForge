@@ -1,3 +1,5 @@
+import { createStreamingSha256 } from '../../manifest/streaming-sha256'
+
 export type JpegExportMetadata = {
   make?: string
   model?: string
@@ -422,21 +424,78 @@ function findJpegMetadataInsertionOffset(bytes: Uint8Array, fullSize: number) {
   return offset <= fullSize ? offset : null
 }
 
+/**
+ * Where and what to insert so a JPEG carries the export metadata. The plan is
+ * derived from the leading marker segments only, so producers can compute the
+ * identity of the delivered bytes (`sha256OfJpegWithMetadata`) without
+ * materializing a second copy of the file.
+ */
+export type JpegMetadataInjectionPlan = {
+  insertionOffset: number
+  segment: Uint8Array
+}
+
+export function planJpegMetadataInjection({
+  header,
+  fullSize,
+  metadata,
+  width,
+  height,
+}: {
+  /** Leading bytes of the JPEG (at least the SOI and APP0 segments). */
+  header: Uint8Array
+  fullSize: number
+  metadata?: JpegExportMetadata | null
+  width: number
+  height: number
+}): JpegMetadataInjectionPlan | null {
+  const segment = createApp1ExifSegment({ metadata, width, height })
+  if (!segment) return null
+  const insertionOffset = findJpegMetadataInsertionOffset(header, fullSize)
+  if (insertionOffset === null) return null
+  return { insertionOffset, segment }
+}
+
+/** SHA-256 of `jpeg` as it will be delivered once `plan` is applied. */
+export function sha256OfJpegWithMetadata(
+  jpeg: Uint8Array,
+  plan: JpegMetadataInjectionPlan | null,
+): string {
+  const hasher = createStreamingSha256()
+  if (!plan) {
+    hasher.update(jpeg)
+    return hasher.digestHex()
+  }
+  hasher.update(jpeg.subarray(0, plan.insertionOffset))
+  hasher.update(plan.segment)
+  hasher.update(jpeg.subarray(plan.insertionOffset))
+  return hasher.digestHex()
+}
+
 export async function preserveJpegMetadata({
   jpeg,
   metadata,
   width,
   height,
 }: PreserveJpegMetadataInput) {
-  const segment = createApp1ExifSegment({ metadata, width, height })
-  if (!segment) return jpeg
+  if (!createApp1ExifSegment({ metadata, width, height })) return jpeg
 
   const header = await readBlobHead(jpeg)
-  const insertionOffset = findJpegMetadataInsertionOffset(header, jpeg.size)
-  if (insertionOffset === null) return jpeg
+  const plan = planJpegMetadataInjection({
+    header,
+    fullSize: jpeg.size,
+    metadata,
+    width,
+    height,
+  })
+  if (!plan) return jpeg
 
   return new Blob(
-    [jpeg.slice(0, insertionOffset), segment, jpeg.slice(insertionOffset)],
+    [
+      jpeg.slice(0, plan.insertionOffset),
+      plan.segment as BlobPart,
+      jpeg.slice(plan.insertionOffset),
+    ],
     { type: jpeg.type || 'image/jpeg' },
   )
 }
@@ -454,17 +513,24 @@ export function preserveJpegMetadataBytes({
   width,
   height,
 }: PreserveJpegMetadataBytesInput): Uint8Array {
-  const segment = createApp1ExifSegment({ metadata, width, height })
-  if (!segment) return jpeg
+  const plan = planJpegMetadataInjection({
+    header: jpeg.subarray(0, Math.min(jpeg.length, JPEG_HEADER_SCAN_BYTES)),
+    fullSize: jpeg.length,
+    metadata,
+    width,
+    height,
+  })
+  if (!plan) return jpeg
 
-  const headerEnd = Math.min(jpeg.length, 65536)
-  const header = jpeg.subarray(0, headerEnd)
-  const insertionOffset = findJpegMetadataInsertionOffset(header, jpeg.length)
-  if (insertionOffset === null) return jpeg
-
-  const result = new Uint8Array(jpeg.length + segment.length)
-  result.set(jpeg.subarray(0, insertionOffset), 0)
-  result.set(segment, insertionOffset)
-  result.set(jpeg.subarray(insertionOffset), insertionOffset + segment.length)
+  const result = new Uint8Array(jpeg.length + plan.segment.length)
+  result.set(jpeg.subarray(0, plan.insertionOffset), 0)
+  result.set(plan.segment, plan.insertionOffset)
+  result.set(
+    jpeg.subarray(plan.insertionOffset),
+    plan.insertionOffset + plan.segment.length,
+  )
   return result
 }
+
+/** Leading bytes that can hold every APP0 segment a JPEG encoder emits. */
+export const JPEG_HEADER_SCAN_BYTES = 65536

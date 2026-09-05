@@ -27,6 +27,7 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import type { LutLocalFileIdentity } from '@lumaforge/render-engine'
 import { sha256Hex } from '@lumaforge/render-engine'
+import { lutIdentityFromProfile } from '@lumaforge/render-engine/manifest'
 
 import { LmfgError } from '../protocol/errors'
 import type { LutContractInput, LutReference } from '../schemas/params'
@@ -286,63 +287,29 @@ export function applyContractSelection(
   }
 }
 
-function effectiveOutputTransfer(profile: LUTColorProfile): string | undefined {
-  return (
-    profile.outputTransfer ??
-    (profile.role === 'display-look' ? profile.inputTransfer : undefined)
-  )
-}
-
-function explicitRangeOrThrow(
-  range: string | undefined,
-  label: string,
-  path: string,
-): 'full' | 'legal' {
-  if (range === 'full' || range === 'legal') return range
-  throw new LmfgError('lut.contract.incomplete', {
-    message: `${label} range must be explicit ("full" or "legal") before rendering.`,
-    retryable: true,
-    suggestedNextActions: [VALIDATE_ACTION(path)],
-  })
-}
-
 export function toLutIdentity(
   loaded: LoadedLutFile,
   profile: LUTColorProfile,
 ): LutLocalFileIdentity {
-  const outputTransfer = effectiveOutputTransfer(profile)
-  if (!outputTransfer) {
+  const result = lutIdentityFromProfile({
+    filename: loaded.filename,
+    sha256: loaded.sha256,
+    profile,
+    requireExplicitRange: true,
+  })
+  if (result.identity) return result.identity
+  if (result.failure.code === 'output-transfer-missing') {
     throw new LmfgError('lut.contract.incomplete', {
       message: 'Choose a LUT output contract before rendering.',
       retryable: true,
       suggestedNextActions: [INFER_ACTION(loaded.absolutePath)],
     })
   }
-  return {
-    kind: 'local-file',
-    filename: loaded.filename,
-    sha256: loaded.sha256,
-    input_contract: {
-      gamut: profile.inputGamut,
-      transfer: profile.inputTransfer,
-      range: explicitRangeOrThrow(
-        profile.inputRange,
-        'LUT input',
-        loaded.absolutePath,
-      ),
-    },
-    output_contract: {
-      gamut: profile.outputGamut ?? profile.inputGamut,
-      transfer: outputTransfer,
-      range: explicitRangeOrThrow(
-        profile.outputRange ??
-          (profile.role === 'display-look' ? 'full' : undefined),
-        'LUT output',
-        loaded.absolutePath,
-      ),
-      role: profile.role,
-    },
-  }
+  throw new LmfgError('lut.contract.incomplete', {
+    message: result.failure.reason,
+    retryable: true,
+    suggestedNextActions: [VALIDATE_ACTION(loaded.absolutePath)],
+  })
 }
 
 export function resolveLutContract(
@@ -528,16 +495,42 @@ export function validateContract(
  * Rebuild the contract selection recorded in a manifest LUT identity so a
  * replay resolves exactly the same effective color contract.
  */
+export type EffectiveLutRanges = {
+  input_range?: string
+  output_range?: string
+}
+
+function replayRange(
+  recorded: string,
+  effective: string | undefined,
+  label: 'input' | 'output',
+): 'full' | 'legal' {
+  if (recorded === 'full' || recorded === 'legal') return recorded
+  if (effective === 'full' || effective === 'legal') return effective
+  throw new LmfgError('lut.contract.incomplete', {
+    message: `The manifest records an unspecified LUT ${label} range and no effective range to replay; re-export with an explicit contract.`,
+  })
+}
+
 export function contractInputFromIdentity(
   identity: LutLocalFileIdentity,
+  effective: EffectiveLutRanges = {},
 ): LutContractInput {
   return LutContractInputSchema.parse({
     role: identity.output_contract.role ?? 'combined-look-output',
     input_gamut: identity.input_contract.gamut,
     input_transfer: identity.input_contract.transfer,
-    input_range: identity.input_contract.range,
+    input_range: replayRange(
+      identity.input_contract.range,
+      effective.input_range,
+      'input',
+    ),
     output_gamut: identity.output_contract.gamut,
     output_transfer: identity.output_contract.transfer,
-    output_range: identity.output_contract.range,
+    output_range: replayRange(
+      identity.output_contract.range,
+      effective.output_range,
+      'output',
+    ),
   })
 }

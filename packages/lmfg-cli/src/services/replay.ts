@@ -27,7 +27,7 @@ import {
   requireSupportedGraph,
 } from './color-graph'
 import { exposureFromManifest, runFullResolutionExport } from './export'
-import type { ResolvedLut } from './lut'
+import type { EffectiveLutRanges, ResolvedLut } from './lut'
 import {
   contractInputFromIdentity,
   loadLutFile,
@@ -48,6 +48,36 @@ export type ReplayPlan = {
 
 export function replayKey(manifest: RenderManifest): string {
   return manifest.manifest_sha256.slice(0, 12)
+}
+
+/**
+ * The descriptor records the ranges the graph actually applied; browser
+ * manifests may record `'unknown'` in the identity when the user left a
+ * range unspecified, and replay must not guess a different one.
+ */
+function effectiveLutRangesFromManifest(
+  manifest: RenderManifest,
+): EffectiveLutRanges {
+  if (descriptorVersionOf(manifest) !== COLOR_GRAPH_DESCRIPTOR_VERSION) {
+    return {}
+  }
+  const descriptor = manifest.color_graph.descriptor as {
+    lut_profile?: {
+      input?: { range?: unknown }
+      output?: { range?: unknown }
+    } | null
+  }
+  const profile = descriptor.lut_profile
+  return {
+    input_range:
+      typeof profile?.input?.range === 'string'
+        ? profile.input.range
+        : undefined,
+    output_range:
+      typeof profile?.output?.range === 'string'
+        ? profile.output.range
+        : undefined,
+  }
 }
 
 function descriptorVersionOf(manifest: RenderManifest): number | null {
@@ -110,7 +140,13 @@ export async function prepareReplay(input: {
         },
       })
     }
-    lut = resolveLutContract(loaded, contractInputFromIdentity(manifest.lut))
+    lut = resolveLutContract(
+      loaded,
+      contractInputFromIdentity(
+        manifest.lut,
+        effectiveLutRangesFromManifest(manifest),
+      ),
+    )
   }
 
   const params = manifestToRenderParams(manifest.render_params)

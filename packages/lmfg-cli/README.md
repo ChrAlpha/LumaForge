@@ -101,16 +101,18 @@ candidates):
 ```
 
 `selective_color` takes per-band HSL shifts for any of `red`, `orange`,
-`yellow`, `green`, `aqua`, `blue`, `purple`, `magenta` (hue -180..180,
-saturation and lightness -100..100); omitted bands stay neutral.
+`yellow`, `green`, `aqua`, `blue`, `purple`, `magenta` (hue, saturation, and
+lightness each -100..100, matching the app sliders); omitted bands stay
+neutral.
 
 LUTs whose contract cannot be confirmed from `LUMAFORGE_*` comments must carry
 an explicit `contract`; `lut contract infer` returns ready-to-use
 `suggested_contracts`. Rendering never guesses a log/gamut contract.
 
 `lut fetch` only runs with `--allow-network` (or `LMFG_ALLOW_NETWORK=1`),
-requires an `https://` URL and the expected SHA-256, caps the download at
-64 MB, and stores the file as `.lmfg/luts/<sha256>.cube`. A cached file with
+requires an `https://` URL (plain `http://` is accepted only for loopback
+hosts, and redirects must stay on allowed origins) and the expected SHA-256,
+caps the download at 64 MB, and stores the file as `.lmfg/luts/<sha256>.cube`. A cached file with
 the same hash is reused without touching the network. The response includes
 the same inspect and contract summary as `lut inspect`, so an agent can decide
 whether it needs an explicit contract before rendering.
@@ -125,7 +127,7 @@ whether it needs an explicit contract before rendering.
   iterations/iter_0001/{plan.json, events.ndjson, contact-sheet.jpg, contact-sheet.map.json}
   iterations/iter_0001/candidates/cand_0001/{preview.jpg, manifest.json, metrics.json, params.json, tile.rgba, tile.json}
   exports/final.jpg, final.manifest.json
-  replays/replay_<timestamp>_<id>/{output.jpg, manifest.json}
+  replays/<manifest-sha256 prefix or --name>/{output.jpg, manifest.json}
 .lmfg/luts/<sha256>.cube
 ```
 
@@ -148,18 +150,21 @@ self-verification. Unsupported RAWs exit 3; incomplete LUT contracts exit 4.
 
 `render replay --manifest` re-renders from the manifest alone: the recorded
 params, LUT contract, raw-render exposure, decode budget (`policy.max_pixels`),
-and JPEG quality. The source comes from `--source` or the session that owns the
-manifest, and the LUT from `--lut` or the workspace cache by SHA-256. Replay
+and JPEG quality. The source comes from `--source` or from the `--session`
+source, and the LUT from `--lut` or the workspace cache by SHA-256. Replay
 refuses (exit 8, `replay.mismatch`) when the color-graph fingerprint no longer
 matches, exits 6 when the source or LUT bytes differ from the recorded
 hashes, and reports `reproduced: true` only when the new output SHA-256 equals
-the recorded one. The replay writes its own manifest with
+the recorded one. Output lands in `replays/<first 12 hex of the manifest
+sha256>/` (or `--name <basename>`); an existing replay is not overwritten
+without `--yes`. The replay writes its own manifest with
 `parent_manifest_sha256` pointing at the replayed manifest.
 
 The browser app seals the same `RenderManifest` for every completed
-full-resolution export ("Manifest" next to Download on desktop and mobile);
-`lmfg manifest verify` accepts those files, and `render replay` can reproduce
-them when the same LUT file is available.
+full-resolution export ("Manifest" next to Download on desktop and mobile).
+`lmfg manifest verify` accepts those files; `render replay` re-renders them
+when the source RAW and LUT file are available and reports whether the bytes
+were reproduced.
 
 ## Exit codes
 

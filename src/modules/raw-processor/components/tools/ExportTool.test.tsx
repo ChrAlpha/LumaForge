@@ -264,7 +264,10 @@ describe('exportTool', () => {
         canExport
         isProcessing={false}
         onExport={vi.fn()}
-        exportResult={createResult({ manifest })}
+        exportResult={createResult({
+          manifest,
+          manifestState: { status: 'ready' },
+        })}
         exportShareCapability={{ available: true }}
         onShareExport={vi.fn()}
         onDownloadExport={vi.fn()}
@@ -278,6 +281,49 @@ describe('exportTool', () => {
     await user.click(button)
 
     expect(onDownloadExportManifest).toHaveBeenCalledTimes(1)
+  })
+
+  it('reserves the manifest slot while sealing and explains why it is unavailable', () => {
+    const { rerender } = render(
+      <ExportTool
+        canExport
+        isProcessing={false}
+        onExport={vi.fn()}
+        exportResult={createResult({ manifestState: { status: 'sealing' } })}
+        exportShareCapability={{ available: true }}
+        onShareExport={vi.fn()}
+        onDownloadExport={vi.fn()}
+        onDownloadExportManifest={vi.fn()}
+        onCopyExport={vi.fn()}
+      />,
+    )
+
+    const sealing = screen.getByRole('button', { name: /manifest/i })
+    expect(sealing).toBeDisabled()
+    expect(sealing).toHaveAttribute('title', 'Sealing the render manifest')
+
+    rerender(
+      <ExportTool
+        canExport
+        isProcessing={false}
+        onExport={vi.fn()}
+        exportResult={createResult({
+          manifestState: { status: 'unavailable', reason: 'lut-unconfirmed' },
+        })}
+        exportShareCapability={{ available: true }}
+        onShareExport={vi.fn()}
+        onDownloadExport={vi.fn()}
+        onDownloadExportManifest={vi.fn()}
+        onCopyExport={vi.fn()}
+      />,
+    )
+
+    const unavailable = screen.getByRole('button', { name: /manifest/i })
+    expect(unavailable).toBeDisabled()
+    expect(unavailable).toHaveAttribute(
+      'title',
+      'Manifest unavailable: confirm the LUT color contract first.',
+    )
   })
 
   it('keeps download available when share is unsupported', () => {

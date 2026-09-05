@@ -18,6 +18,7 @@ import {
   lutIdentityFromProfile,
 } from '@lumaforge/render-engine/manifest'
 
+import type { ExportManifestUnavailableReason } from '../../model/export-result'
 import type { StyleAsset } from '../../model/session'
 
 export type ExportManifestMemoryProfile = 'desktop' | 'low-memory'
@@ -79,21 +80,15 @@ export function toManifestRenderParams(
  */
 export function lutIdentityForStyle(style: StyleAsset | null | undefined): {
   identity: LutIdentity | null
-  reason?: string
+  reason?: ExportManifestUnavailableReason
 } {
   if (!style || style.kind !== 'custom') return { identity: null }
   const asset = style.lutAsset
   if (!asset?.sha256) {
-    return {
-      identity: null,
-      reason: 'The LUT file hash was not recorded when it was loaded.',
-    }
+    return { identity: null, reason: 'lut-unhashed' }
   }
   if (asset.profileResolution?.kind !== 'confirmed') {
-    return {
-      identity: null,
-      reason: 'The LUT color contract is not confirmed.',
-    }
+    return { identity: null, reason: 'lut-unconfirmed' }
   }
   const result = lutIdentityFromProfile({
     filename: asset.sourceName ?? asset.title ?? style.name,
@@ -102,7 +97,7 @@ export function lutIdentityForStyle(style: StyleAsset | null | undefined): {
   })
   return result.identity
     ? { identity: result.identity }
-    : { identity: null, reason: result.failure.reason }
+    : { identity: null, reason: 'lut-unconfirmed' }
 }
 
 function readBlobWithFileReader(blob: Blob): Promise<ArrayBuffer> {

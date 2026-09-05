@@ -12,6 +12,7 @@ import type {
   ActiveExportPlanState,
   ExportRecoveryState,
 } from '../../model/session'
+import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
 import { currentSessionAtom } from '../../state/session.atoms'
 
 function formatBytes(bytes: number) {
@@ -134,13 +135,17 @@ export function ExportTool({
               <Download aria-hidden="true" />
               {t('raw.export.download')}
             </Button>
-            {exportResult.manifest && onDownloadExportManifest ? (
+            {exportResult.manifestState ? (
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
+                disabled={
+                  exportResult.manifestState.status !== 'ready' ||
+                  !onDownloadExportManifest
+                }
                 onClick={onDownloadExportManifest}
-                title={t('raw.export.downloadManifestTitle')}
+                title={t(manifestActionTitleKey(exportResult.manifestState))}
                 className="[&_svg]:size-3.5"
               >
                 <FileJson aria-hidden="true" />

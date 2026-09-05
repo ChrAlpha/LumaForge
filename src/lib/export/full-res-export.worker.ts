@@ -5,8 +5,11 @@ import type {
   JpegRowSink,
 } from '@lumaforge/render-engine/export'
 import {
+  JPEG_HEADER_SCAN_BYTES,
+  planJpegMetadataInjection,
   preserveJpegMetadata,
   runFullResolutionJpegExport,
+  sha256OfJpegWithMetadata,
 } from '@lumaforge/render-engine/export'
 import { createStreamingSha256 } from '@lumaforge/render-engine/manifest'
 
@@ -54,6 +57,8 @@ function createOpfsJpegRowSink(input: {
   exportId: string
   filename: string
   outputFileName?: string
+  /** Metadata the app injects lazily when the file-backed output is delivered. */
+  metadata?: JpegExportMetadata | null
 }): JpegRowSink {
   const outputFileName = input.outputFileName ?? 'output.jpg'
 
@@ -136,7 +141,24 @@ function createOpfsJpegRowSink(input: {
           try {
             await encoder.finish()
             const writable = await writablePromise
-            const finalized = await writable.close()
+            // File-backed output stays metadata-free on disk; the app injects
+            // EXIF on delivery, so the recorded hash must describe that layout.
+            const finalized = await writable.close({
+              hash: (bytes) =>
+                sha256OfJpegWithMetadata(
+                  bytes,
+                  planJpegMetadataInjection({
+                    header: bytes.subarray(
+                      0,
+                      Math.min(bytes.length, JPEG_HEADER_SCAN_BYTES),
+                    ),
+                    fullSize: bytes.length,
+                    metadata: input.metadata,
+                    width,
+                    height,
+                  }),
+                ),
+            })
             state = 'closed'
             runtime.dispose()
             return createOpfsFileBackedOutputResult({
@@ -164,6 +186,36 @@ function createOpfsJpegRowSink(input: {
   }
 }
 
+const JPEG_EXPORT_METADATA_KEYS = [
+  'make',
+  'model',
+  'lens',
+  'iso',
+  'aperture',
+  'focalLength',
+  'shutter',
+  'shutterSpeed',
+  'timestamp',
+] as const
+
+/**
+ * Project the RAW probe onto the EXIF fields the encoder injects, so the same
+ * plain object is hashed in the worker and injected on delivery.
+ */
+function toJpegExportMetadata(probe: unknown): JpegExportMetadata | null {
+  if (!probe || typeof probe !== 'object') return null
+  const source = probe as Record<string, unknown>
+  const metadata: Record<string, unknown> = {}
+  for (const key of JPEG_EXPORT_METADATA_KEYS) {
+    const value = source[key]
+    if (value === undefined || value === null) continue
+    metadata[key] = value
+  }
+  return Object.keys(metadata).length > 0
+    ? (metadata as JpegExportMetadata)
+    : null
+}
+
 async function prepareSuccessOutput(input: {
   output: ExportOutputResult
   metadata: unknown
@@ -179,6 +231,7 @@ async function prepareSuccessOutput(input: {
       byteLength: input.output.byteLength,
       mimeType: input.output.mimeType,
       ...(input.output.sha256 ? { sha256: input.output.sha256 } : {}),
+      deliveryMetadata: input.metadata as JpegExportMetadata | null | undefined,
     }
   }
 
@@ -304,6 +357,7 @@ async function handleStart(
 
     try {
       const exportSession = createRawExportSession(session)
+      const exportMetadata = toJpegExportMetadata(session.probe)
       const capability = await exportSession.probeExportCapability(
         controller.signal,
       )
@@ -313,6 +367,7 @@ async function handleStart(
               exportId: message.checkpoint.exportId,
               filename:
                 message.filename ?? `${message.checkpoint.exportId}.jpg`,
+              metadata: exportMetadata,
             })
           : undefined
       const output = await runProcessedWindowExportLifecycle({
@@ -381,7 +436,7 @@ async function handleStart(
 
       const result = await prepareSuccessOutput({
         output,
-        metadata: session.probe,
+        metadata: exportMetadata,
         width: capability.width,
         height: capability.height,
       })

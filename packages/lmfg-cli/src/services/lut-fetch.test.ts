@@ -14,6 +14,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from 'vitest'
 
 import { fetchLutFile, isNetworkAllowed } from './lut-fetch'
@@ -44,6 +45,23 @@ beforeAll(async () => {
           'content-type': 'text/plain',
           'content-length': '999999',
         })
+        response.end()
+        return
+      }
+      case '/redirect-ok': {
+        response.writeHead(302, { location: '/display.cube' })
+        response.end()
+        return
+      }
+      case '/redirect-away': {
+        response.writeHead(302, {
+          location: 'http://example.invalid/display.cube',
+        })
+        response.end()
+        return
+      }
+      case '/redirect-loop': {
+        response.writeHead(302, { location: '/redirect-loop' })
         response.end()
         return
       }
@@ -232,6 +250,55 @@ describe('fetchLutFile', () => {
         timeoutMs: 100,
       }),
     ).rejects.toMatchObject({ code: 'fetch.failed', retryable: true })
+  })
+
+  it('follows redirects only to allowed transports', async () => {
+    const followed = await fetchLutFile({
+      url: `${base}/redirect-ok`,
+      expectedSha256: CUBE_SHA,
+      destination: join(dir, 'redirected.cube'),
+      allowNetwork: true,
+    })
+    expect(followed.sha256).toBe(CUBE_SHA)
+
+    await expect(
+      fetchLutFile({
+        url: `${base}/redirect-away`,
+        expectedSha256: CUBE_SHA,
+        destination: join(dir, 'away.cube'),
+        allowNetwork: true,
+      }),
+    ).rejects.toMatchObject({
+      code: 'fetch.failed',
+      exitCode: 6,
+      message: expect.stringContaining('disallowed transport'),
+    })
+
+    await expect(
+      fetchLutFile({
+        url: `${base}/redirect-loop`,
+        expectedSha256: CUBE_SHA,
+        destination: join(dir, 'loop.cube'),
+        allowNetwork: true,
+      }),
+    ).rejects.toMatchObject({
+      code: 'fetch.failed',
+      message: expect.stringContaining('redirects'),
+    })
+  })
+
+  it('requires https for non-loopback hosts before touching the network', async () => {
+    const fetchImpl = vi.fn()
+    await expect(
+      fetchLutFile({
+        url: 'http://example.com/display.cube',
+        expectedSha256: CUBE_SHA,
+        destination: join(dir, 'plain.cube'),
+        allowNetwork: true,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }),
+    ).rejects.toMatchObject({ code: 'args.invalid', exitCode: 2 })
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('validates arguments before any I/O', async () => {

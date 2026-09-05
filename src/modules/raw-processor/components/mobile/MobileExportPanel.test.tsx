@@ -162,7 +162,11 @@ describe('mobileExportPanel', () => {
     } as unknown as RenderManifest
 
     renderPanel({
-      exportResult: createResult({ kind: 'full-resolution', manifest }),
+      exportResult: createResult({
+        kind: 'full-resolution',
+        manifest,
+        manifestState: { status: 'ready' },
+      }),
       onDownloadExportManifest,
     })
 
@@ -181,5 +185,19 @@ describe('mobileExportPanel', () => {
     expect(
       screen.queryByRole('button', { name: /manifest/i }),
     ).not.toBeInTheDocument()
+  })
+  it('keeps a disabled manifest slot while the manifest is still sealing', () => {
+    renderPanel({
+      exportResult: createResult({
+        kind: 'full-resolution',
+        manifestState: { status: 'sealing' },
+      }),
+      onDownloadExportManifest: vi.fn(),
+    })
+
+    const button = screen.getByRole('button', {
+      name: /sealing the render manifest/i,
+    })
+    expect(button).toBeDisabled()
   })
 })

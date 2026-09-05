@@ -1,7 +1,13 @@
+import { createHash } from 'node:crypto'
+
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { preserveJpegMetadataBytes } from './jpeg-metadata'
+import {
+  planJpegMetadataInjection,
+  preserveJpegMetadataBytes,
+  sha256OfJpegWithMetadata,
+} from './jpeg-metadata'
 
 function minimalJpeg(): Uint8Array {
   return new Uint8Array([
@@ -89,5 +95,48 @@ describe('preserveJpegMetadataBytes', () => {
 
     const blobBytes = new Uint8Array(await blobResult.arrayBuffer())
     expect(bytesResult).toEqual(blobBytes)
+  })
+})
+
+describe('sha256OfJpegWithMetadata', () => {
+  const metadata = { make: 'Fujifilm', model: 'GFX100RF', iso: 200 }
+
+  it('matches the hash of the materialized metadata-injected bytes', () => {
+    const jpeg = minimalJpeg()
+    const plan = planJpegMetadataInjection({
+      header: jpeg,
+      fullSize: jpeg.length,
+      metadata,
+      width: 4,
+      height: 2,
+    })
+    expect(plan).not.toBeNull()
+    expect(plan?.insertionOffset).toBe(2)
+
+    const delivered = preserveJpegMetadataBytes({
+      jpeg,
+      metadata,
+      width: 4,
+      height: 2,
+    })
+    expect(sha256OfJpegWithMetadata(jpeg, plan)).toBe(
+      createHash('sha256').update(delivered).digest('hex'),
+    )
+  })
+
+  it('falls back to the raw hash when the stream is not a JPEG', () => {
+    const notJpeg = new Uint8Array([1, 2, 3, 4])
+    expect(
+      planJpegMetadataInjection({
+        header: notJpeg,
+        fullSize: notJpeg.length,
+        metadata,
+        width: 4,
+        height: 2,
+      }),
+    ).toBeNull()
+    expect(sha256OfJpegWithMetadata(notJpeg, null)).toBe(
+      createHash('sha256').update(notJpeg).digest('hex'),
+    )
   })
 })

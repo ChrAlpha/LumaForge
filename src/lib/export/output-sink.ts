@@ -1,3 +1,4 @@
+import type { JpegExportMetadata } from '@lumaforge/render-engine/export'
 import { sha256Hex } from '@lumaforge/render-engine/manifest'
 
 export type BlobOutputResult = {
@@ -18,8 +19,17 @@ export type FileBackedOutputResult = {
   mimeType: string
   openBlob: () => Promise<Blob>
   cleanup?: () => Promise<void>
-  /** SHA-256 hex of the delivered bytes, hashed at write time so the file never has to be reopened. */
+  /**
+   * SHA-256 hex of the bytes `openBlob()` delivers (metadata included),
+   * recorded by the producer at publish time so the file never has to be
+   * reopened to identify the output.
+   */
   sha256?: string
+  /**
+   * Metadata the producer assumed when recording `sha256`; delivery must
+   * inject exactly this so the recorded hash stays truthful.
+   */
+  deliveryMetadata?: JpegExportMetadata | null
 }
 
 export type BytesOutputResult = {
@@ -157,6 +167,15 @@ export type OpfsFinalizedOutput = {
   sha256: string
 }
 
+export type OpfsFinalizeOptions = {
+  /**
+   * Hash of the bytes as they will be delivered. Defaults to the SHA-256 of
+   * the published file; producers that inject metadata lazily on delivery
+   * hash the delivered layout instead.
+   */
+  hash?: (bytes: Uint8Array) => string
+}
+
 export async function createOpfsOutputWritable(input: {
   exportId: string
   outputFileName?: string
@@ -190,7 +209,7 @@ export async function createOpfsOutputWritable(input: {
       if (state !== 'open') throw new Error('OPFS_OUTPUT_WRITER_CLOSED')
       await writable.write(chunk)
     },
-    async close() {
+    async close(options: OpfsFinalizeOptions = {}) {
       if (state !== 'open') throw new Error('OPFS_OUTPUT_WRITER_CLOSED')
       try {
         await writable.close()
@@ -198,7 +217,7 @@ export async function createOpfsOutputWritable(input: {
         // The publish step already loads the finalized bytes once; hashing
         // them here records the output identity without a second read.
         const bytes = new Uint8Array(await tempFile.arrayBuffer())
-        const sha256 = sha256Hex(bytes)
+        const sha256 = (options.hash ?? sha256Hex)(bytes)
         await writeOpfsFile(exportDirectory, outputFileName, bytes)
         await writeOpfsFile(
           exportDirectory,
@@ -243,7 +262,7 @@ export async function createOpfsOutputWritable(input: {
       }
     },
   } satisfies Pick<FileSystemWritableFileStream, 'write' | 'abort'> & {
-    close: () => Promise<OpfsFinalizedOutput>
+    close: (options?: OpfsFinalizeOptions) => Promise<OpfsFinalizedOutput>
   }
 }
 
@@ -255,6 +274,7 @@ export function createOpfsFileBackedOutputResult(input: {
   outputFileName?: string
   storage?: OpfsStorage
   sha256?: string
+  deliveryMetadata?: JpegExportMetadata | null
 }): FileBackedOutputResult {
   const outputFileName = input.outputFileName ?? DEFAULT_OPFS_OUTPUT_FILE
   const tempFileName = `${outputFileName}${OPFS_OUTPUT_TEMP_SUFFIX}`
@@ -267,6 +287,9 @@ export function createOpfsFileBackedOutputResult(input: {
     byteLength: input.byteLength,
     mimeType: input.mimeType,
     ...(input.sha256 ? { sha256: input.sha256 } : {}),
+    ...(input.deliveryMetadata !== undefined
+      ? { deliveryMetadata: input.deliveryMetadata }
+      : {}),
     async openBlob() {
       const exportDirectory = await getOpfsExportDirectory(
         input.exportId,

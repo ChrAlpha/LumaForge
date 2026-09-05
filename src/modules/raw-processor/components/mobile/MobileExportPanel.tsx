@@ -16,6 +16,7 @@ import type {
   ExportShareCapability,
 } from '../../model/export-result'
 import type { ExportRecoveryState } from '../../model/session'
+import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
 
 // Mirrors the handoff spec tokens: --mrl-ease + base 220ms duration so the
 // idle/busy/done transitions feel like the design rather than a hard snap.
@@ -133,7 +134,7 @@ export function MobileExportPanel(props: {
       </div>
       <div
         className={
-          props.exportResult.manifest && props.onDownloadExportManifest
+          props.exportResult.manifestState
             ? 'grid grid-cols-2 gap-1.5'
             : 'grid grid-cols-3 gap-1.5'
         }
@@ -156,11 +157,17 @@ export function MobileExportPanel(props: {
           disabled={props.exportResult.copyCapability.mode === 'unavailable'}
           onClick={props.onCopyExport}
         />
-        {props.exportResult.manifest && props.onDownloadExportManifest ? (
+        {props.exportResult.manifestState ? (
           <MobileExportAction
             icon={FileJson}
             label={t('raw.export.downloadManifest')}
-            srLabel={t('raw.export.downloadManifestTitle')}
+            srLabel={t(
+              manifestActionTitleKey(props.exportResult.manifestState),
+            )}
+            disabled={
+              props.exportResult.manifestState.status !== 'ready' ||
+              !props.onDownloadExportManifest
+            }
             onClick={props.onDownloadExportManifest}
           />
         ) : null}

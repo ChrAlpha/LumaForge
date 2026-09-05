@@ -12,7 +12,10 @@ import type {
 import type { ExportOutputResult } from '~/lib/export/output-sink'
 import { materializeOutputBlob } from '~/lib/export/output-sink'
 
-import type { ExportResult } from '../../model/export-result'
+import type {
+  ExportManifestUnavailableReason,
+  ExportResult,
+} from '../../model/export-result'
 import type { StyleAsset } from '../../model/session'
 import {
   buildFullResExportManifest,
@@ -38,12 +41,23 @@ export type BuildExportManifestInput = {
  * File-backed output is never reopened here: the export worker hashes the
  * bytes as it writes them, and results without that hash cannot be sealed.
  */
+export class ExportManifestUnavailableError extends Error {
+  constructor(
+    readonly reason: ExportManifestUnavailableReason,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'ExportManifestUnavailableError'
+  }
+}
+
 async function resolveOutputSha256(
   output: ExportOutputResult,
 ): Promise<string> {
   if (output.sha256) return output.sha256
   if (output.kind === 'file-backed') {
-    throw new Error(
+    throw new ExportManifestUnavailableError(
+      'output-unhashed',
       'The export output hash was not recorded, so the manifest cannot be sealed without reopening the file.',
     )
   }
@@ -60,7 +74,10 @@ export async function buildManifestForExportResult(
 ): Promise<RenderManifest> {
   const lut = lutIdentityForStyle(input.style)
   if (input.style?.kind === 'custom' && !lut.identity) {
-    throw new Error(lut.reason ?? 'The LUT could not be identified.')
+    throw new ExportManifestUnavailableError(
+      lut.reason ?? 'internal',
+      'The LUT could not be identified for the manifest.',
+    )
   }
   const [sourceSha256, outputSha256] = await Promise.all([
     sha256OfBlob(input.sourceFile),

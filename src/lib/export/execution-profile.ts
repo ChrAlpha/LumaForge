@@ -115,6 +115,7 @@ export type ExportManifestReadyDebugPayload = {
 }
 
 export type ExportManifestFailedDebugPayload = {
+  reason: string
   message: string
 }
 

@@ -27,7 +27,10 @@ import {
   isRetryableFullResExportFailure,
   toUserFacingErrorCode,
 } from '../ingest/workflow-status'
-import { buildManifestForExportResult } from './attach-export-manifest'
+import {
+  buildManifestForExportResult,
+  ExportManifestUnavailableError,
+} from './attach-export-manifest'
 import {
   createPreExportSnapshot,
   evacuateBeforeExport,
@@ -563,6 +566,7 @@ export async function orchestrateFullResExport(
       width: completedCapability.width,
       height: completedCapability.height,
       copyCapability,
+      manifestState: { status: 'sealing' },
     })
     ctx.refs.previewCopyCanvasRef.current = previewCopyCanvas
     ctx.services.registerExportResultResource(exportResult)
@@ -623,7 +627,11 @@ export async function orchestrateFullResExport(
                 ...prev,
                 exportState: {
                   ...prev.exportState,
-                  result: { ...exportResult, manifest },
+                  result: {
+                    ...exportResult,
+                    manifest,
+                    manifestState: { status: 'ready' },
+                  },
                 },
               }
             : prev,
@@ -640,9 +648,35 @@ export async function orchestrateFullResExport(
         })
       })
       .catch((error: unknown) => {
+        const reason =
+          error instanceof ExportManifestUnavailableError
+            ? error.reason
+            : 'internal'
+        if (
+          ctx.refs.isMountedRef.current &&
+          ctx.refs.sessionRef.current?.id === exportSessionId
+        ) {
+          ctx.atoms.setSession((prev) =>
+            prev &&
+            prev.id === exportSessionId &&
+            prev.exportState.result === exportResult
+              ? {
+                  ...prev,
+                  exportState: {
+                    ...prev.exportState,
+                    result: {
+                      ...exportResult,
+                      manifestState: { status: 'unavailable', reason },
+                    },
+                  },
+                }
+              : prev,
+          )
+        }
         emitExportDebugEvent({
           type: 'export-manifest-failed',
           payload: {
+            reason,
             message: error instanceof Error ? error.message : String(error),
           },
         })
