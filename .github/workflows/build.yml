@@ -13,6 +13,7 @@ jobs:
       app: ${{ steps.detect.outputs.app }}
       runtime: ${{ steps.detect.outputs.runtime }}
       native: ${{ steps.detect.outputs.native }}
+      cli: ${{ steps.detect.outputs.cli }}
 
     steps:
       - uses: actions/checkout@v4
@@ -55,24 +56,29 @@ jobs:
           app_paths='^(src/|tests/browser/|scripts/(build|deploy|native-runtime)/|packages/luma-(color|jpeg|raw)-runtime/|public/|index\.html|vite\.config\.ts|vitest.*\.config\.ts|tsconfig.*|eslint.*|postcss.*|tailwind.*)'
           runtime_paths='^(packages/luma-(color|jpeg|raw)-runtime/|src/lib/(export|raw|runtime|workers)/|scripts/native-runtime/)'
           native_paths='^(packages/luma-(jpeg|raw)-runtime/native/|packages/luma-native-artifacts/|scripts/native-runtime/)'
+          cli_paths='^(packages/lmfg-cli/|packages/render-engine/|packages/luma-(color|jpeg|raw)-runtime/|packages/luma-native-artifacts/|scripts/native-runtime/)'
 
           app=false
           runtime=false
           native=false
+          cli=false
 
           if matches "$force_all"; then
             app=true
             runtime=true
             native=true
+            cli=true
           else
             if matches "$app_paths"; then app=true; fi
             if matches "$runtime_paths"; then runtime=true; fi
             if matches "$native_paths"; then native=true; fi
+            if matches "$cli_paths"; then cli=true; fi
           fi
 
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
           echo "native=$native" >> "$GITHUB_OUTPUT"
+          echo "cli=$cli" >> "$GITHUB_OUTPUT"
 
   app:
     needs: changes
@@ -254,8 +260,61 @@ jobs:
       - name: Smoke test CI-built native RAW runtime
         run: pnpm --filter @lumaforge/luma-raw-runtime test:native-smoke
 
+  cli:
+    needs: changes
+    if: ${{ needs.changes.outputs.cli == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Configure pnpm store
+        run: pnpm config set store-dir ~/.pnpm-store
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare prebuilt native assets
+        run: LUMAFORGE_NATIVE_RUNTIME_MODE=prebuilt pnpm native:prepare
+
+      - name: Build runtime packages and render engine
+        run: pnpm cli:build:deps
+
+      - name: Typecheck and build lmfg CLI
+        run: pnpm --filter @lumaforge/lmfg-cli typecheck && pnpm --filter @lumaforge/lmfg-cli build
+
+      - name: Fetch public RAW smoke fixture
+        run: pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public
+
+      - name: Test lmfg CLI
+        run: pnpm --filter @lumaforge/lmfg-cli test
+
+      - name: Smoke the packaged CLI
+        run: |
+          node packages/lmfg-cli/bin/lmfg.mjs capabilities --quiet
+          pnpm --filter @lumaforge/render-engine exec npm pack --dry-run
+          pnpm --filter @lumaforge/lmfg-cli pack:dry-run
+
   build:
-    needs: [changes, app, runtime, native]
+    needs: [changes, app, runtime, native, cli]
     if: always()
     runs-on: ubuntu-latest
 
@@ -265,10 +324,11 @@ jobs:
           APP_RESULT: ${{ needs.app.result }}
           RUNTIME_RESULT: ${{ needs.runtime.result }}
           NATIVE_RESULT: ${{ needs.native.result }}
+          CLI_RESULT: ${{ needs.cli.result }}
         run: |
           set -euo pipefail
 
-          for result in "$APP_RESULT" "$RUNTIME_RESULT" "$NATIVE_RESULT"; do
+          for result in "$APP_RESULT" "$RUNTIME_RESULT" "$NATIVE_RESULT" "$CLI_RESULT"; do
             case "$result" in
               success|skipped) ;;
               *)
