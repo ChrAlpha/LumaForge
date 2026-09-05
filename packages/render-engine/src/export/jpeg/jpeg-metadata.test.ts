@@ -79,7 +79,7 @@ describe('preserveJpegMetadataBytes', () => {
 
     // Import the Blob version dynamically since we're in Node
     const { preserveJpegMetadata } = await import('./jpeg-metadata')
-    const blobInput = new Blob([jpeg], { type: 'image/jpeg' })
+    const blobInput = new Blob([new Uint8Array(jpeg)], { type: 'image/jpeg' })
     const blobResult = await preserveJpegMetadata({
       jpeg: blobInput,
       metadata,
