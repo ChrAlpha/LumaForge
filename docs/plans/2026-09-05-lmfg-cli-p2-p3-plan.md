@@ -85,6 +85,24 @@
 
 ## Execution notes
 
+### Final verification (2026-09-05, local, after the review-fix batch)
+
+| Command | Result |
+|---|---|
+| `pnpm lint:check` | clean |
+| `pnpm --filter @lumaforge/render-engine typecheck && test && build` | clean, 28 files / 166 tests, build ok |
+| `pnpm --filter @lumaforge/lmfg-cli typecheck`, `pnpm --filter @lumaforge/lmfg-mcp typecheck` | clean |
+| `LMFG_REQUIRE_FIXTURE=1 pnpm test:cli` | CLI 31 files / 126 tests; MCP 2 files / 9 tests (stdio e2e included) |
+| `pnpm test:runtime` | 258 + 180 + 55 + 197 tests |
+| `pnpm test:run` | 273 files / 2188 tests |
+| `pnpm cli:build` + `lmfg schema list` / `lmfg-mcp </dev/null` | dist rebuilt; 32 schemas including compare, rank, objective; MCP exits 0 on stdin close |
+| `LUMAFORGE_NATIVE_RUNTIME_MODE=prebuilt pnpm build` | ok |
+| `npm pack --dry-run` (render-engine, lmfg-cli, lmfg-mcp) | 104, 102, 12 files |
+| `LMFG_LARGE_FIXTURES=1 pnpm --filter @lumaforge/lmfg-cli validate:large` | 4 of 4 export/verify/replay chains reproduced (see the audit) |
+| 64-candidate sweep `--concurrency 1` vs `auto` | 36.3 s vs 6.2 s, identical per-candidate SHA-256 |
+
+macOS and Windows matrix results are pending the first CI run after push.
+
 ### Review findings (fresh-context pass over `9d27cfff..HEAD`) and outcomes
 
 | # | Severity | Finding | Outcome |
