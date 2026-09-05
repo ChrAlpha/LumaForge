@@ -11,6 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { computeManifestSha256 } from '@lumaforge/render-engine'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -26,6 +27,10 @@ const JPEG = Buffer.from(
 const sha256 = (bytes: Buffer) =>
   createHash('sha256').update(bytes).digest('hex')
 const SOURCE_SHA = 'a'.repeat(64)
+const seal = (manifest: object) => ({
+  ...manifest,
+  manifest_sha256: computeManifestSha256(manifest),
+})
 
 describe('session image delivery', () => {
   let cwd: string
@@ -50,16 +55,17 @@ describe('session image delivery', () => {
     await writeFile(preview, JPEG)
     await writeFile(
       manifest,
-      JSON.stringify({
-        kind: 'preview',
-        manifest_sha256: 'b'.repeat(64),
-        source_raw: { sha256: SOURCE_SHA },
-        output: {
-          sha256: sha256(JPEG),
-          filename: 'prev_0001.jpg',
-          dimensions: { width: 1, height: 1 },
-        },
-      }),
+      JSON.stringify(
+        seal({
+          kind: 'preview',
+          source_raw: { sha256: SOURCE_SHA },
+          output: {
+            sha256: sha256(JPEG),
+            filename: 'prev_0001.jpg',
+            dimensions: { width: 1, height: 1 },
+          },
+        }),
+      ),
     )
   })
 
@@ -127,7 +133,7 @@ describe('session image delivery', () => {
         output: { ...original.output, dimensions: { width: 2, height: 1 } },
       },
     ]) {
-      await writeFile(manifest, JSON.stringify(changed))
+      await writeFile(manifest, JSON.stringify(seal(changed)))
       expect((await readSessionImage(cwd, args)).isError).toBe(true)
     }
     await writeFile(manifest, JSON.stringify(original))
@@ -157,6 +163,43 @@ describe('session image delivery', () => {
     huge.writeUInt16BE(65535, frame + 7)
     await writeFile(preview, huge)
     expect((await readSessionImage(cwd, args)).isError).toBe(true)
+  })
+
+  it('rejects manifest changes even in fields outside the image projection', async () => {
+    const original = JSON.parse(await readFile(manifest, 'utf8'))
+    await writeFile(
+      manifest,
+      JSON.stringify({ ...original, render_params: { exposure_ev: 5 } }),
+    )
+    const result = await readSessionImage(cwd, args)
+    expect(result.isError).toBe(true)
+    expect(result.structuredContent).toMatchObject({
+      error: { message: expect.stringMatching(/manifest.*hash/i) },
+    })
+  })
+
+  it('rejects a JPEG frame with no scan even when its manifest hash matches', async () => {
+    const frame = JPEG.indexOf(Buffer.from([255, 192]))
+    const truncated = Buffer.concat([
+      JPEG.subarray(0, frame + 2 + JPEG.readUInt16BE(frame + 2)),
+      Buffer.from([255, 217]),
+    ])
+    await writeFile(preview, truncated)
+    const original = JSON.parse(await readFile(manifest, 'utf8'))
+    await writeFile(
+      manifest,
+      JSON.stringify(
+        seal({
+          ...original,
+          output: { ...original.output, sha256: sha256(truncated) },
+        }),
+      ),
+    )
+    const result = await readSessionImage(cwd, args)
+    expect(result.isError).toBe(true)
+    expect(result.structuredContent).toMatchObject({
+      error: { message: expect.stringMatching(/JPEG.*scan/i) },
+    })
   })
 
   it('returns contact sheet candidate labels and bounds, and rejects unknown candidates', async () => {

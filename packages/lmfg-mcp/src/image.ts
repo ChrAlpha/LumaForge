@@ -5,6 +5,7 @@ import { open, realpath } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { verifyManifestSha256 } from '@lumaforge/render-engine'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
@@ -128,6 +129,39 @@ async function readMetadata(path: string): Promise<unknown> {
   return JSON.parse((await readBounded(path, 1024 * 1024)).toString('utf8'))
 }
 
+async function readManifest(path: string) {
+  const raw = await readMetadata(path)
+  if (!verifyManifestSha256(raw)) {
+    throw new Error('Manifest canonical hash does not match its full content.')
+  }
+  return ManifestSchema.parse(raw)
+}
+
+function skipJpegScan(bytes: Buffer, start: number): number {
+  let offset = start
+  let hasData = false
+  while (offset < bytes.length) {
+    if (bytes[offset] !== 255) {
+      hasData = true
+      offset += 1
+      continue
+    }
+    const markerStart = offset
+    while (bytes[offset] === 255) offset += 1
+    const marker = bytes[offset]
+    if (marker === 0) {
+      hasData = true
+      offset += 1
+    } else if (marker >= 208 && marker <= 215) {
+      offset += 1
+    } else {
+      if (!hasData) throw new Error('JPEG scan has no encoded data.')
+      return markerStart
+    }
+  }
+  throw new Error('JPEG scan has no terminating marker.')
+}
+
 function jpegDimensions(bytes: Buffer): { width: number; height: number } {
   if (
     bytes.length < 4 ||
@@ -136,32 +170,48 @@ function jpegDimensions(bytes: Buffer): { width: number; height: number } {
   )
     throw new Error('Artifact is not a complete JPEG.')
   let offset = 2
-  while (offset + 4 <= bytes.length) {
+  let size: { width: number; height: number } | null = null
+  let hasScan = false
+  while (offset + 2 <= bytes.length) {
     if (bytes[offset++] !== 255) throw new Error('Invalid JPEG marker.')
     while (bytes[offset] === 255) offset += 1
     const marker = bytes[offset++]
-    if (marker === 218 || marker === 217) break
+    if (marker === 217) {
+      if (!size || !hasScan || offset !== bytes.length) {
+        throw new Error('JPEG frame or scan is missing or incomplete.')
+      }
+      return size
+    }
     if (marker === 1 || (marker >= 208 && marker <= 215)) continue
     if (offset + 2 > bytes.length) break
     const length = bytes.readUInt16BE(offset)
     if (length < 2 || offset + length > bytes.length) break
+    if (marker === 218) {
+      const components = bytes[offset + 2]
+      if (!size || !components || length !== 6 + 2 * components) {
+        throw new Error('JPEG scan header is invalid.')
+      }
+      offset = skipJpegScan(bytes, offset + length)
+      hasScan = true
+      continue
+    }
     if (
       [
         192, 193, 194, 195, 197, 198, 199, 201, 202, 203, 205, 206, 207,
       ].includes(marker)
     ) {
-      if (length < 8) break
+      if (length < 8 || size) break
       const height = bytes.readUInt16BE(offset + 3)
       const width = bytes.readUInt16BE(offset + 5)
       if (!width || !height || width * height > IMAGE_LIMITS.max_pixels)
         throw new Error(
           `Image exceeds ${IMAGE_LIMITS.max_pixels} pixels or has invalid dimensions. Render a smaller preview or contact sheet.`,
         )
-      return { width, height }
+      size = { width, height }
     }
     offset += length
   }
-  throw new Error('JPEG frame dimensions are missing or malformed.')
+  throw new Error('JPEG frame or scan is missing or malformed.')
 }
 
 async function loadImage(cwd: string, input: ImageReadInput) {
@@ -181,10 +231,8 @@ async function loadImage(cwd: string, input: ImageReadInput) {
   let tags = new Map<string, string | null>()
   if (artifact.kind === 'preview') {
     path = join(dir, 'previews', `${artifact.preview_id}.jpg`)
-    manifest = ManifestSchema.parse(
-      await readMetadata(
-        join(dir, 'previews', `${artifact.preview_id}.manifest.json`),
-      ),
+    manifest = await readManifest(
+      join(dir, 'previews', `${artifact.preview_id}.manifest.json`),
     )
   } else {
     const iterationDir = join(dir, 'iterations', artifact.iteration_id)
@@ -207,14 +255,12 @@ async function loadImage(cwd: string, input: ImageReadInput) {
         artifact.candidate_id,
         'preview.jpg',
       )
-      manifest = ManifestSchema.parse(
-        await readMetadata(
-          join(
-            iterationDir,
-            'candidates',
-            artifact.candidate_id,
-            'manifest.json',
-          ),
+      manifest = await readManifest(
+        join(
+          iterationDir,
+          'candidates',
+          artifact.candidate_id,
+          'manifest.json',
         ),
       )
     } else {
