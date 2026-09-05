@@ -523,3 +523,21 @@ export function validateContract(
     export_reason: exportReason,
   }
 }
+
+/**
+ * Rebuild the contract selection recorded in a manifest LUT identity so a
+ * replay resolves exactly the same effective color contract.
+ */
+export function contractInputFromIdentity(
+  identity: LutLocalFileIdentity,
+): LutContractInput {
+  return LutContractInputSchema.parse({
+    role: identity.output_contract.role ?? 'combined-look-output',
+    input_gamut: identity.input_contract.gamut,
+    input_transfer: identity.input_contract.transfer,
+    input_range: identity.input_contract.range,
+    output_gamut: identity.output_contract.gamut,
+    output_transfer: identity.output_contract.transfer,
+    output_range: identity.output_contract.range,
+  })
+}

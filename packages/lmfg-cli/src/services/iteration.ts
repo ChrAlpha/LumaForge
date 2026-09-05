@@ -213,7 +213,12 @@ export async function runIteration(
         graph: renderParams[result.index].graph,
         params: candidate.params,
         exposure: exposures[result.index],
-        policy: { kind: 'candidate', row_slice: 32, concurrency: 1 },
+        policy: {
+          kind: 'candidate',
+          row_slice: 32,
+          concurrency: 1,
+          max_pixels: maxPixels,
+        },
         environment: input.environment,
         output: {
           width: result.width,

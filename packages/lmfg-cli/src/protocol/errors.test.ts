@@ -20,6 +20,7 @@ describe('lmfgError', () => {
     expect(new LmfgError('export.refused', { message: 'x' }).exitCode).toBe(
       EXIT_CODES.exportRefused,
     )
+    expect(new LmfgError('replay.mismatch', { message: 'x' }).exitCode).toBe(8)
     expect(new LmfgError('cancelled', { message: 'x' }).exitCode).toBe(
       EXIT_CODES.cancelled,
     )

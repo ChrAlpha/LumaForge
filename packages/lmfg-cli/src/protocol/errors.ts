@@ -25,6 +25,7 @@ export type LmfgErrorCode =
   | 'hash.mismatch'
   | 'render.failed'
   | 'export.refused'
+  | 'replay.mismatch'
   | 'cancelled'
   | 'timeout'
   | 'manifest.invalid'
@@ -51,6 +52,7 @@ const EXIT_BY_CODE: Record<LmfgErrorCode, ExitCode> = {
   'hash.mismatch': EXIT_CODES.fetch,
   'render.failed': EXIT_CODES.render,
   'export.refused': EXIT_CODES.exportRefused,
+  'replay.mismatch': EXIT_CODES.exportRefused,
   cancelled: EXIT_CODES.cancelled,
   timeout: EXIT_CODES.cancelled,
   'manifest.invalid': EXIT_CODES.failure,

@@ -3,10 +3,17 @@ import { verifyManifestSha256 } from '@lumaforge/render-engine'
 import type { Command } from 'commander'
 
 import { LmfgError } from '../protocol/errors'
+import { assertTierAvailable } from '../runtime/capability'
+import { loadSourceFile } from '../runtime/source-loader'
+import { resolveRenderEnvironment } from '../runtime/versions'
 import type { RenderParams } from '../schemas/params'
 import type { NormalizedPlan } from '../schemas/plan'
 import { expandSweepPlan, normalizeCandidatePlan } from '../schemas/plan'
-import type { ExportResult, PreviewResult } from '../schemas/results'
+import type {
+  ExportResult,
+  PreviewResult,
+  ReplayResult,
+} from '../schemas/results'
 import {
   exposureFromManifest,
   runFullResolutionExport,
@@ -21,6 +28,7 @@ import {
   toSourceIdentity,
 } from '../services/manifest'
 import { clampMaxPixels, renderPreview } from '../services/preview'
+import { prepareReplay, replayKey, runReplay } from '../services/replay'
 import {
   fileExists,
   readJson,
@@ -30,6 +38,7 @@ import {
 import { formatPreviewId } from '../workspace/ids'
 import { createIterationStore } from '../workspace/iteration-store'
 import { toFileUri, workspacePaths } from '../workspace/paths'
+import { createSessionStore } from '../workspace/session-store'
 import type { CommandHost } from './context'
 import { runCommand } from './context'
 import {
@@ -117,6 +126,7 @@ function registerPreview(render: Command, host: CommandHost): void {
                       : 'preview-bounded-hq',
                   row_slice: 32,
                   concurrency: 1,
+                  max_pixels: maxPixels,
                 },
                 environment,
                 output: {
@@ -511,6 +521,133 @@ function registerExport(render: Command, host: CommandHost): void {
     })
 }
 
+type ReplayOptions = {
+  manifest: string
+  source?: string
+  lut?: string
+  name?: string
+}
+
+function registerReplay(render: Command, host: CommandHost): void {
+  render
+    .command('replay')
+    .description(
+      'Re-render a manifest from its recorded params and LUT contract and prove the output is reproduced',
+    )
+    .requiredOption('--manifest <file>', 'manifest JSON to replay')
+    .option(
+      '--source <raw>',
+      'RAW file to replay against (defaults to the --session source)',
+    )
+    .option(
+      '--lut <file>',
+      'LUT file matching the manifest (defaults to the workspace LUT cache)',
+    )
+    .option(
+      '--name <name>',
+      'replay directory name (default: first 12 chars of the manifest sha256)',
+    )
+    .action(async function (this: Command, options: ReplayOptions) {
+      const ctx = host.context(this)
+      const resolveInputs = async () => {
+        assertTierAvailable(ctx.options.tier)
+        const environment = resolveRenderEnvironment(ctx.options.memoryProfile)
+        const manifestPath = ctx.resolvePath(options.manifest)
+        const { manifest } = await requireVerifiedManifest(
+          manifestPath,
+          environment,
+        )
+        let sessionId: string | null = null
+        let source
+        if (options.source) {
+          source = await loadSourceFile(options.source, ctx.cwd)
+        } else {
+          const record = await createSessionStore(ctx.workspaceRoot).load(
+            ctx.requireSession(),
+          )
+          sessionId = record.id
+          source = await loadSourceFile(record.source.path, '/')
+        }
+        const plan = await prepareReplay({
+          manifest,
+          source,
+          lutPath: options.lut ? ctx.resolvePath(options.lut) : undefined,
+          workspaceRoot: ctx.workspaceRoot,
+          cwd: ctx.cwd,
+        })
+        const key = options.name ?? replayKey(manifest)
+        const outputPath = sessionId
+          ? workspacePaths.replayOutputFile(ctx.workspaceRoot, sessionId, key)
+          : `${workspacePaths.workspaceReplay(ctx.workspaceRoot, key)}/output.jpg`
+        const manifestOutputPath = sessionId
+          ? workspacePaths.replayManifestFile(ctx.workspaceRoot, sessionId, key)
+          : `${workspacePaths.workspaceReplay(ctx.workspaceRoot, key)}/manifest.json`
+        return {
+          environment,
+          manifestPath,
+          manifest,
+          sessionId,
+          source,
+          plan,
+          outputPath,
+          manifestOutputPath,
+        }
+      }
+      host.setExitCode(
+        await runCommand(
+          ctx,
+          { schema: 'lmfg.render.replay.v1', command: 'render.replay' },
+          async (): Promise<ReplayResult> => {
+            const inputs = await resolveInputs()
+            ctx.output.event({
+              event: 'started',
+              command: 'render.replay',
+              kind: inputs.manifest.kind,
+              manifest_sha256: inputs.manifest.manifest_sha256,
+            })
+            return withRuntime(ctx, async (runtime) => {
+              const result = await runReplay({
+                runtime,
+                plan: inputs.plan,
+                source: inputs.source,
+                environment: inputs.environment,
+                manifestPath: inputs.manifestPath,
+                sessionId: inputs.sessionId,
+                outputPath: inputs.outputPath,
+                manifestOutputPath: inputs.manifestOutputPath,
+                signal: ctx.signal,
+                onProgress: (progress) =>
+                  ctx.output.event({
+                    event: 'export.progress',
+                    completed_strips: progress.completedStrips,
+                    total_strips: progress.totalStrips,
+                    progress: progress.progress,
+                  }),
+              })
+              ctx.output.event({
+                event: 'artifact.ready',
+                role: 'replay',
+                uri: result.output.uri,
+                reproduced: result.reproduced,
+              })
+              return result
+            })
+          },
+          async () => {
+            const inputs = await resolveInputs()
+            return {
+              manifest_path: inputs.manifestPath,
+              kind: inputs.manifest.kind,
+              session_id: inputs.sessionId,
+              fingerprint_match: inputs.plan.fingerprintMatch,
+              output_path: inputs.outputPath,
+            }
+          },
+        ),
+      )
+    })
+}
+
 export function registerRenderCommands(
   program: Command,
   host: CommandHost,
@@ -524,4 +661,5 @@ export function registerRenderCommands(
   registerIteration(render, host, 'candidate')
   registerIteration(render, host, 'sweep')
   registerExport(render, host)
+  registerReplay(render, host)
 }

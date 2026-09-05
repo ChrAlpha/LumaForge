@@ -117,6 +117,8 @@ export type PreviewRenderInput = {
   lut: ResolvedLut | null
   maxPixels: number
   quality: number
+  /** Pre-resolved exposure (replays); resolved from params + frame when omitted. */
+  exposure?: RawRenderExposure
   signal?: AbortSignal
 }
 
@@ -145,10 +147,12 @@ export async function renderPreview(
     const decodeStart = performance.now()
     const frame = await decodeFrame(session, maxPixels, input.signal)
     timings.decode_ms = performance.now() - decodeStart
-    const exposure = resolveExposure(input.params, {
-      baselineExposure: session.probe.baselineExposure,
-      frame,
-    })
+    const exposure =
+      input.exposure ??
+      resolveExposure(input.params, {
+        baselineExposure: session.probe.baselineExposure,
+        frame,
+      })
     const graph = requireSupportedGraph(
       buildColorGraph(input.params, input.lut?.lutData ?? null, exposure),
     )
