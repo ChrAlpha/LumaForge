@@ -328,6 +328,213 @@ describeWithFixture('lmfg agent loop', () => {
     ).toBe('lmfg.metrics.v1')
   }, 120_000)
 
+  it('render sweep with worker threads is byte-identical to the serial run', async () => {
+    await writeFile(
+      join(cwd, 'parallel-sweep.json'),
+      JSON.stringify({
+        base: { lut: { path: 'display.cube' } },
+        axes: { exposure_ev: [-0.4, 0, 0.4], contrast: [-15, 20] },
+      }),
+    )
+    const serial = await cli.run(
+      'render',
+      'sweep',
+      '--session',
+      sessionId,
+      '--plan',
+      'parallel-sweep.json',
+      '--concurrency',
+      '1',
+    )
+    expect(serial.code, serial.stdout).toBe(0)
+    const parallel = await cli.run(
+      'render',
+      'sweep',
+      '--session',
+      sessionId,
+      '--plan',
+      'parallel-sweep.json',
+      '--concurrency',
+      '3',
+    )
+    expect(parallel.code, parallel.stdout).toBe(0)
+    const serialResult = serial.envelope.result as {
+      concurrency: number
+      candidates: Array<{
+        index: number
+        sha256: string
+        manifest_sha256: string
+        manifest_uri: string
+      }>
+    }
+    const parallelResult = parallel.envelope.result as typeof serialResult
+    expect(serialResult.concurrency).toBe(1)
+    expect(parallelResult.concurrency).toBe(3)
+    expect(parallelResult.candidates).toHaveLength(6)
+    const byIndex = (list: typeof serialResult.candidates) =>
+      [...list].sort((a, b) => a.index - b.index).map((c) => c.sha256)
+    expect(byIndex(parallelResult.candidates)).toEqual(
+      byIndex(serialResult.candidates),
+    )
+    const fingerprintsOf = async (list: typeof serialResult.candidates) =>
+      Promise.all(
+        [...list]
+          .sort((a, b) => a.index - b.index)
+          .map(async (candidate) => {
+            const manifest = JSON.parse(
+              await readFile(fileURLToPath(candidate.manifest_uri), 'utf8'),
+            ) as {
+              color_graph: { fingerprint: string }
+              policy: { concurrency: number }
+            }
+            return manifest.color_graph.fingerprint
+          }),
+      )
+    expect(await fingerprintsOf(parallelResult.candidates)).toEqual(
+      await fingerprintsOf(serialResult.candidates),
+    )
+    const parallelManifest = JSON.parse(
+      await readFile(
+        fileURLToPath(parallelResult.candidates[0].manifest_uri),
+        'utf8',
+      ),
+    ) as { policy: { concurrency: number } }
+    expect(parallelManifest.policy.concurrency).toBe(3)
+
+    const rejected = await cli.run(
+      'render',
+      'sweep',
+      '--session',
+      sessionId,
+      '--plan',
+      'parallel-sweep.json',
+      '--concurrency',
+      '0',
+    )
+    expect(rejected.code).toBe(2)
+  }, 240_000)
+
+  it('metrics compare and rank evaluate the sweep, and inline JSON options replace files', async () => {
+    const sweep = await cli.run(
+      'render',
+      'sweep',
+      '--session',
+      sessionId,
+      '--plan-json',
+      JSON.stringify({
+        base: { lut: { path: 'display.cube' } },
+        axes: { exposure_ev: [-0.5, 0, 0.5] },
+      }),
+      '--concurrency',
+      '2',
+    )
+    expect(sweep.code, sweep.stdout).toBe(0)
+    const iterationId = (sweep.envelope.result as { iteration_id: string })
+      .iteration_id
+    const compared = await cli.run(
+      'metrics',
+      'compare',
+      '--session',
+      sessionId,
+      '--iteration',
+      iterationId,
+      '--baseline',
+      'cand_0002',
+    )
+    expect(compared.code, compared.stdout).toBe(0)
+    const comparison = compared.envelope.result as {
+      baseline_candidate_id: string
+      candidates: Array<{
+        candidate_id: string
+        deltas: Record<string, { delta: number }>
+      }>
+    }
+    expect(comparison.baseline_candidate_id).toBe('cand_0002')
+    expect(comparison.candidates).toHaveLength(3)
+    const baselineRow = comparison.candidates.find(
+      (c) => c.candidate_id === 'cand_0002',
+    )!
+    expect(baselineRow.deltas['luma.mean'].delta).toBe(0)
+    const darker = comparison.candidates.find(
+      (c) => c.candidate_id === 'cand_0001',
+    )!
+    const brighter = comparison.candidates.find(
+      (c) => c.candidate_id === 'cand_0003',
+    )!
+    expect(darker.deltas['luma.mean'].delta).toBeLessThan(0)
+    expect(brighter.deltas['luma.mean'].delta).toBeGreaterThan(0)
+
+    const ranked = await cli.run(
+      'metrics',
+      'rank',
+      '--session',
+      sessionId,
+      '--iteration',
+      iterationId,
+      '--objective',
+      JSON.stringify({
+        'luma.mean': { target: baselineRow.deltas['luma.mean'].delta + 0 },
+      }),
+    )
+    expect(ranked.code, ranked.stdout).toBe(0)
+    const ranking = (
+      ranked.envelope.result as {
+        ranking: Array<{ rank: number; candidate_id: string; score: number }>
+      }
+    ).ranking
+    expect(ranking.map((entry) => entry.rank)).toEqual([1, 2, 3])
+    expect(ranking[0].score).toBeLessThanOrEqual(ranking[1].score)
+
+    const badObjective = await cli.run(
+      'metrics',
+      'rank',
+      '--session',
+      sessionId,
+      '--iteration',
+      iterationId,
+      '--objective',
+      JSON.stringify({ 'luma.nope': { target: 1 } }),
+    )
+    expect(badObjective.code).toBe(2)
+
+    const inlinePreview = await cli.run(
+      'render',
+      'preview',
+      '--session',
+      sessionId,
+      '--params-json',
+      JSON.stringify({ exposure_ev: 0.1, lut: { path: 'display.cube' } }),
+    )
+    expect(inlinePreview.code, inlinePreview.stdout).toBe(0)
+    const both = await cli.run(
+      'render',
+      'preview',
+      '--session',
+      sessionId,
+      '--params',
+      'params.json',
+      '--params-json',
+      '{}',
+    )
+    expect(both.code).toBe(2)
+
+    const validated = await cli.run(
+      'lut',
+      'contract',
+      'validate',
+      '--lut',
+      'display.cube',
+      '--contract-json',
+      JSON.stringify({
+        role: 'display-look',
+        input_gamut: 'srgb-rec709',
+        input_transfer: 'srgb',
+        input_range: 'full',
+      }),
+    )
+    expect(validated.code, validated.stdout).toBe(0)
+  }, 240_000)
+
   it('render export chains the candidate manifest and refuses unsafe rewrites', async () => {
     const candidateManifest = JSON.parse(
       await readFile(
