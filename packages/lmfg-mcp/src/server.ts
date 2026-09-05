@@ -7,6 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 
+import { registerImageTool } from './image'
 import { TOOLS } from './tools'
 
 export type Envelope = {
@@ -87,6 +88,7 @@ export type ServerOptions = {
 
 export function createLmfgMcpServer(options: ServerOptions): McpServer {
   const server = new McpServer({ name: 'lmfg', version: options.version })
+  registerImageTool(server, options.cwd)
   for (const spec of TOOLS) {
     server.registerTool(
       spec.name,

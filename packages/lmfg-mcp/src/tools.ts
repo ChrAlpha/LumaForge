@@ -254,7 +254,7 @@ export const TOOLS = [
     name: 'lmfg_render_preview',
     title: 'lmfg render preview',
     description:
-      'Render one CPU preview for a params object and store it in the session.',
+      'Render one CPU preview for a params object and store it in the session. Use lmfg_image_read with the returned preview_id to see the image before refining edits.',
     resultSchema: 'lmfg.render.preview.v1',
     inputShape: {
       session,
@@ -280,8 +280,8 @@ export const TOOLS = [
       title: `lmfg render ${kind}`,
       description:
         kind === 'candidate'
-          ? 'Render an explicit list of candidates (lmfg.plan.v1) with per-candidate manifests, metrics, and tiles.'
-          : 'Expand parameter axes (lmfg.sweep.v1) into candidates and render them with per-candidate manifests, metrics, and tiles.',
+          ? 'Render an explicit list of candidates (lmfg.plan.v1) with per-candidate manifests, metrics, and tiles. Use lmfg_image_read to inspect the contact sheet and selected candidates visually.'
+          : 'Expand parameter axes (lmfg.sweep.v1) into candidates and render them with per-candidate manifests, metrics, and tiles. Use lmfg_image_read to inspect the contact sheet and selected candidates visually.',
       resultSchema: `lmfg.render.${kind}.v1`,
       inputShape: {
         session,
