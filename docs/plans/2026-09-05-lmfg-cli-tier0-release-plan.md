@@ -127,7 +127,7 @@ Commit convention: one focused commit per task, no co-authorship metadata; pre-c
 - Modify: `vitest.config.ts` (root), `package.json` (root)
 - Add: `docs/specs/2026-06-23-lmfg-cli-tier0-1-design.md` (untracked spec) to git
 
-- [ ] **Step 1: Confirm scaffold contents**
+- [x] **Step 1: Confirm scaffold contents**
 
 `packages/lmfg-cli/package.json` must contain exactly:
 
@@ -186,7 +186,7 @@ Commit convention: one focused commit per task, no co-authorship metadata; pre-c
 }
 ```
 
-- [ ] **Step 2: Add `tsconfig.build.json`, bin shim, and placeholder entries**
+- [x] **Step 2: Add `tsconfig.build.json`, bin shim, and placeholder entries**
 
 ```json
 {
@@ -220,7 +220,7 @@ export async function runCli(argv: readonly string[]): Promise<number> {
 export { runCli } from './cli'
 ```
 
-- [ ] **Step 3: Write the failing smoke test `src/cli.test.ts`**
+- [x] **Step 3: Write the failing smoke test `src/cli.test.ts`**
 
 ```ts
 // @vitest-environment node
@@ -242,12 +242,12 @@ describe('runCli', () => {
 })
 ```
 
-- [ ] **Step 4: Run it to verify it fails**
+- [x] **Step 4: Run it to verify it fails**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test`
 Expected: FAIL (runCli signature mismatch / `stdout.join('')` empty → JSON parse error). This test is satisfied in Task 9; keep it red until then.
 
-- [ ] **Step 5: Root wiring**
+- [x] **Step 5: Root wiring**
 
 `vitest.config.ts` alias block, add before the `'@lumaforge/luma-raw-runtime'` entry (order matters: subpath aliases must precede the bare package alias):
 
@@ -266,7 +266,7 @@ Root `package.json` scripts, add:
     "test:cli": "pnpm --filter @lumaforge/lmfg-cli test",
 ```
 
-- [ ] **Step 6: Verify typecheck and lint pass, then commit**
+- [x] **Step 6: Verify typecheck and lint pass, then commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli typecheck && pnpm exec eslint "packages/lmfg-cli/src/**/*.ts" "packages/lmfg-cli/*.ts" && pnpm install --frozen-lockfile --offline`
 Expected: exit 0 (lockfile already contains commander from the scaffold install).
@@ -284,7 +284,7 @@ git commit -m "feat(cli): scaffold @lumaforge/lmfg-cli package and commit CLI sp
 - Create: `src/protocol/exit-codes.ts`, `src/protocol/errors.ts`, `src/protocol/envelope.ts`, `src/protocol/output.ts`
 - Test: `src/protocol/errors.test.ts`, `src/protocol/output.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `src/protocol/errors.test.ts`:
 
@@ -426,12 +426,12 @@ describe('Output ndjson mode', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test`
 Expected: FAIL — modules not found.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `src/protocol/exit-codes.ts`:
 
@@ -738,12 +738,12 @@ function describeEvent(event: LmfgEvent): string {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test`
 Expected: `errors.test.ts` and `output.test.ts` PASS (`cli.test.ts` still red until Task 9).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/lmfg-cli/src/protocol
@@ -758,7 +758,7 @@ git commit -m "feat(cli): add lmfg protocol envelopes, error codes, and output w
 - Create: `src/schemas/params.ts`, `src/schemas/plan.ts`, `src/schemas/results.ts`, `src/schemas/registry.ts`
 - Test: `src/schemas/params.test.ts`, `src/schemas/plan.test.ts`, `src/schemas/registry.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `src/schemas/params.test.ts`:
 
@@ -883,12 +883,12 @@ describe('schema registry', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/schemas`
 Expected: FAIL — modules not found.
 
-- [ ] **Step 3: Implement `src/schemas/params.ts`**
+- [x] **Step 3: Implement `src/schemas/params.ts`**
 
 ```ts
 import { z } from 'zod'
@@ -995,7 +995,7 @@ export function mergeRenderParams(base: RenderParams, override: RenderParamsOver
 }
 ```
 
-- [ ] **Step 4: Implement `src/schemas/plan.ts`**
+- [x] **Step 4: Implement `src/schemas/plan.ts`**
 
 ```ts
 import { z } from 'zod'
@@ -1100,7 +1100,7 @@ export function expandSweepPlan(input: unknown): NormalizedPlan {
 }
 ```
 
-- [ ] **Step 5: Implement `src/schemas/results.ts`**
+- [x] **Step 5: Implement `src/schemas/results.ts`**
 
 ```ts
 import { z } from 'zod'
@@ -1462,7 +1462,7 @@ export type ManifestShowResult = z.output<typeof ManifestShowResultSchema>
 export type DryRunResult = z.output<typeof DryRunResultSchema>
 ```
 
-- [ ] **Step 6: Implement `src/schemas/registry.ts`**
+- [x] **Step 6: Implement `src/schemas/registry.ts`**
 
 ```ts
 import type { ZodType } from 'zod'
@@ -1522,12 +1522,12 @@ export function showSchema(id: string): { id: string; description: string; json_
 
 Note: `showSchema` renders the *input* shape (`io: 'input'`) so agents see optional-with-default fields as optional.
 
-- [ ] **Step 7: Run tests to verify they pass**
+- [x] **Step 7: Run tests to verify they pass**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/schemas`
 Expected: PASS (plan tests need `../workspace/ids` from Task 4 — implement `ids.ts` first if running Task 3 in isolation; it is 12 lines and listed in Task 4 Step 3).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/lmfg-cli/src/schemas packages/lmfg-cli/src/workspace/ids.ts
@@ -1542,7 +1542,7 @@ git commit -m "feat(cli): add lmfg params, plan, result schemas and JSON Schema 
 - Create: `src/workspace/paths.ts`, `src/workspace/atomic-fs.ts`, `src/workspace/ids.ts`, `src/workspace/session-store.ts`, `src/workspace/iteration-store.ts`
 - Test: `src/workspace/ids.test.ts`, `src/workspace/atomic-fs.test.ts`, `src/workspace/session-store.test.ts`, `src/workspace/iteration-store.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `src/workspace/ids.test.ts`:
 
@@ -1695,12 +1695,12 @@ describe('iteration store', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/workspace`
 Expected: FAIL — modules not found.
 
-- [ ] **Step 3: Implement `ids.ts` and `paths.ts`**
+- [x] **Step 3: Implement `ids.ts` and `paths.ts`**
 
 `src/workspace/ids.ts`:
 
@@ -1774,7 +1774,7 @@ export const workspacePaths = {
 }
 ```
 
-- [ ] **Step 4: Implement `atomic-fs.ts`**
+- [x] **Step 4: Implement `atomic-fs.ts`**
 
 ```ts
 import { randomBytes } from 'node:crypto'
@@ -1850,7 +1850,7 @@ export async function listDirs(dir: string): Promise<string[]> {
 }
 ```
 
-- [ ] **Step 5: Implement `session-store.ts`**
+- [x] **Step 5: Implement `session-store.ts`**
 
 ```ts
 import { basename } from 'node:path'
@@ -1953,7 +1953,7 @@ export function createSessionStore(root: string): SessionStore {
 }
 ```
 
-- [ ] **Step 6: Implement `iteration-store.ts`**
+- [x] **Step 6: Implement `iteration-store.ts`**
 
 ```ts
 import { readFile } from 'node:fs/promises'
@@ -2097,7 +2097,7 @@ export function createIterationStore(root: string, sessionId: string) {
 export type IterationStore = ReturnType<typeof createIterationStore>
 ```
 
-- [ ] **Step 7: Run tests to verify they pass, then commit**
+- [x] **Step 7: Run tests to verify they pass, then commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/workspace src/schemas`
 Expected: PASS.
@@ -2115,7 +2115,7 @@ git commit -m "feat(cli): add .lmfg workspace session and iteration stores"
 - Create: `src/runtime/versions.ts`, `src/runtime/capability.ts`, `src/runtime/node-runtime.ts`, `src/runtime/source-loader.ts`
 - Test: `src/runtime/versions.test.ts`, `src/runtime/capability.test.ts`, `src/runtime/node-runtime.test.ts`, `src/runtime/source-loader.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `src/runtime/versions.test.ts`:
 
@@ -2246,12 +2246,12 @@ describe('source loader', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/runtime`
 Expected: FAIL — modules not found.
 
-- [ ] **Step 3: Implement `versions.ts`**
+- [x] **Step 3: Implement `versions.ts`**
 
 ```ts
 import { existsSync, readFileSync } from 'node:fs'
@@ -2378,7 +2378,7 @@ export function resolveRenderEnvironment(memoryProfile: MemoryProfile): RenderEn
 }
 ```
 
-- [ ] **Step 4: Implement `capability.ts`**
+- [x] **Step 4: Implement `capability.ts`**
 
 ```ts
 import { BOUNDED_HQ_PREVIEW_MAX_PIXELS, QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
@@ -2440,7 +2440,7 @@ export function assertTierAvailable(tier: RenderTier): void {
 }
 ```
 
-- [ ] **Step 5: Implement `node-runtime.ts`**
+- [x] **Step 5: Implement `node-runtime.ts`**
 
 ```ts
 import type { LumaJpegNodeRuntime } from '@lumaforge/luma-jpeg-runtime/node'
@@ -2502,7 +2502,7 @@ export function createLmfgRuntime(input: { memoryProfile: MemoryProfile }): Lmfg
 }
 ```
 
-- [ ] **Step 6: Implement `source-loader.ts`**
+- [x] **Step 6: Implement `source-loader.ts`**
 
 ```ts
 import { readFile, stat } from 'node:fs/promises'
@@ -2560,7 +2560,7 @@ export function verifySourceIdentity(source: LoadedSource, expectedSha256: strin
 }
 ```
 
-- [ ] **Step 7: Run tests to verify they pass, then commit**
+- [x] **Step 7: Run tests to verify they pass, then commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/runtime`
 Expected: PASS (runtime test needs artifacts; it self-skips otherwise).
@@ -2579,7 +2579,7 @@ git commit -m "feat(cli): add Node runtime adapters, capability report, and sour
 - Modify: `packages/render-engine/src/manifest/index.ts`, `packages/render-engine/src/index.ts` (export `SaturationParams`)
 - Test: `packages/render-engine/src/manifest/canonicalize.test.ts`
 
-- [ ] **Step 1: Write the failing test** (append to `canonicalize.test.ts`)
+- [x] **Step 1: Write the failing test** (append to `canonicalize.test.ts`)
 
 ```ts
 describe('RenderParams additive fields (lmfg)', () => {
@@ -2604,12 +2604,12 @@ describe('RenderParams additive fields (lmfg)', () => {
 
 (`buildMinimalManifest` already exists in `dist-bundle.test.ts`; copy it into `canonicalize.test.ts` if it is not already defined there.)
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `pnpm --filter @lumaforge/render-engine test src/manifest/canonicalize.test.ts`
 Expected: FAIL on type/shape (TS excess property) or missing helper.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Replace the `ColorBalanceParams` / `RenderParams` block in `render-manifest.ts` with:
 
@@ -2642,7 +2642,7 @@ export interface RenderParams {
 
 Add `RawRenderExposureSource` and `SaturationParams` to the `export type {...} from './render-manifest'` lists in `manifest/index.ts` and `src/index.ts`.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run: `pnpm --filter @lumaforge/render-engine typecheck && pnpm --filter @lumaforge/render-engine test && pnpm --filter @lumaforge/render-engine build`
 Expected: PASS; dist rebuilt (the CLI typechecks against it).
@@ -2660,7 +2660,7 @@ git commit -m "feat(render-engine): add additive RenderParams fields for CLI man
 - Create: `src/services/color-graph.ts`
 - Test: `src/services/color-graph.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```ts
 // @vitest-environment node
@@ -2728,12 +2728,12 @@ describe('buildColorGraph + describeColorGraph', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/services/color-graph`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement `src/services/color-graph.ts`**
+- [x] **Step 3: Implement `src/services/color-graph.ts`**
 
 ```ts
 import type {
@@ -2856,7 +2856,7 @@ export function toManifestRenderParams(params: RenderParams, exposure: RawRender
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass, then commit**
+- [x] **Step 4: Run tests to verify they pass, then commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/services/color-graph`
 Expected: PASS.
@@ -2874,7 +2874,7 @@ git commit -m "feat(cli): resolve color graphs and hashable manifest descriptors
 - Create: `src/services/lut.ts`, `src/commands/lut.ts`
 - Test: `src/services/lut.test.ts` (command-level coverage lands in Task 15 e2e)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```ts
 // @vitest-environment node
@@ -2947,12 +2947,12 @@ describe('lut service', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/services/lut`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement `src/services/lut.ts`**
+- [x] **Step 3: Implement `src/services/lut.ts`**
 
 ```ts
 import { readFile, stat } from 'node:fs/promises'
@@ -3281,7 +3281,7 @@ export function validateContract(loaded: LoadedLutFile, input: LutContractInput)
 }
 ```
 
-- [ ] **Step 4: Implement `src/commands/lut.ts`**
+- [x] **Step 4: Implement `src/commands/lut.ts`**
 
 ```ts
 import type { Command } from 'commander'
@@ -3337,7 +3337,7 @@ export function registerLutCommands(program: Command, host: CommandHost): void {
 }
 ```
 
-- [ ] **Step 5: Run tests, then commit**
+- [x] **Step 5: Run tests, then commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/services/lut && pnpm --filter @lumaforge/lmfg-cli typecheck`
 Expected: PASS (typecheck of `commands/lut.ts` requires Task 9's `context.ts`; commit both together if executing sequentially).
@@ -3355,7 +3355,7 @@ git commit -m "feat(cli): add LUT contract inference, validation, and lut comman
 - Create: `src/commands/context.ts`, `src/commands/introspection.ts`
 - Modify: `src/cli.ts`, `src/index.ts`, `src/cli.test.ts`
 
-- [ ] **Step 1: Extend the failing test `src/cli.test.ts`**
+- [x] **Step 1: Extend the failing test `src/cli.test.ts`**
 
 ```ts
 // @vitest-environment node
@@ -3420,12 +3420,12 @@ describe('runCli', () => {
 })
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/cli.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `src/commands/context.ts`**
+- [x] **Step 3: Implement `src/commands/context.ts`**
 
 ```ts
 import { resolve } from 'node:path'
@@ -3548,7 +3548,7 @@ export function defaultIo(): CliIo {
 }
 ```
 
-- [ ] **Step 4: Implement `src/commands/introspection.ts`**
+- [x] **Step 4: Implement `src/commands/introspection.ts`**
 
 ```ts
 import process from 'node:process'
@@ -3621,7 +3621,7 @@ export function registerIntrospectionCommands(program: Command, host: CommandHos
 }
 ```
 
-- [ ] **Step 5: Implement `src/cli.ts` and `src/index.ts`**
+- [x] **Step 5: Implement `src/cli.ts` and `src/index.ts`**
 
 `src/cli.ts`:
 
@@ -3720,7 +3720,7 @@ export { listSchemas, showSchema } from './schemas/registry'
 
 Until Tasks 10–14 land, register only the modules that exist (comment out the others) so `cli.test.ts` can go green early; re-enable each as its task lands.
 
-- [ ] **Step 6: Run tests, lint, typecheck; commit**
+- [x] **Step 6: Run tests, lint, typecheck; commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/cli.test.ts && pnpm --filter @lumaforge/lmfg-cli typecheck && pnpm exec eslint "packages/lmfg-cli/src/**/*.ts"`
 Expected: PASS.
@@ -3739,7 +3739,7 @@ git commit -m "feat(cli): wire the lmfg commander program with global options an
 - Modify: `src/runtime/source-loader.ts` (add `loadSessionSource`), `src/workspace/atomic-fs.ts` (add `listFiles`), `src/schemas/results.ts` (`embedded_preview.uri` nullable)
 - Test: `src/services/inspect.test.ts`, `src/runtime/source-loader.test.ts` (extend)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Append to `src/runtime/source-loader.test.ts`:
 
@@ -3803,12 +3803,12 @@ d('inspectSource', () => {
 })
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/services/inspect src/runtime/source-loader`
 Expected: FAIL — missing exports.
 
-- [ ] **Step 3: Small additions**
+- [x] **Step 3: Small additions**
 
 `src/runtime/source-loader.ts`, append:
 
@@ -3841,7 +3841,7 @@ export async function listFiles(dir: string, suffix?: string): Promise<string[]>
 
 `src/schemas/results.ts`: change `embedded_preview` `uri: z.string()` to `uri: z.string().nullable()`.
 
-- [ ] **Step 4: Implement `src/services/inspect.ts`**
+- [x] **Step 4: Implement `src/services/inspect.ts`**
 
 ```ts
 import type { LumaEmbeddedPreview, LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
@@ -3940,7 +3940,7 @@ export async function inspectSource(input: InspectInput): Promise<InspectResult>
 }
 ```
 
-- [ ] **Step 5: Implement `src/commands/session.ts`**
+- [x] **Step 5: Implement `src/commands/session.ts`**
 
 ```ts
 import type { Command } from 'commander'
@@ -4042,7 +4042,7 @@ export function registerSessionCommands(program: Command, host: CommandHost): vo
 
 (When implementing, drop the `iterationIds`/dynamic-import lines and import `listDirs` statically at the top; they are shown only to make the data flow explicit.)
 
-- [ ] **Step 6: Implement `src/commands/inspect.ts`**
+- [x] **Step 6: Implement `src/commands/inspect.ts`**
 
 ```ts
 import type { Command } from 'commander'
@@ -4102,7 +4102,7 @@ export function registerInspectCommand(program: Command, host: CommandHost): voi
 }
 ```
 
-- [ ] **Step 7: Enable the modules in `cli.ts`, run tests, commit**
+- [x] **Step 7: Enable the modules in `cli.ts`, run tests, commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test && pnpm --filter @lumaforge/lmfg-cli typecheck`
 Expected: PASS.
@@ -4120,7 +4120,7 @@ git commit -m "feat(cli): add session init/status/list and inspect commands"
 - Create: `src/services/manifest.ts`, `src/commands/manifest.ts`
 - Test: `src/services/manifest.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```ts
 // @vitest-environment node
@@ -4189,12 +4189,12 @@ describe('manifest service', () => {
 })
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/services/manifest`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `src/services/manifest.ts`**
+- [x] **Step 3: Implement `src/services/manifest.ts`**
 
 ```ts
 import { readFile } from 'node:fs/promises'
@@ -4322,7 +4322,7 @@ export async function requireVerifiedManifest(path: string, environment: RenderE
 }
 ```
 
-- [ ] **Step 4: Implement `src/commands/manifest.ts`**
+- [x] **Step 4: Implement `src/commands/manifest.ts`**
 
 ```ts
 import type { Command } from 'commander'
@@ -4380,7 +4380,7 @@ export function registerManifestCommands(program: Command, host: CommandHost): v
 }
 ```
 
-- [ ] **Step 5: Run tests, commit**
+- [x] **Step 5: Run tests, commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/services/manifest && pnpm --filter @lumaforge/lmfg-cli typecheck`
 Expected: PASS.
@@ -4398,7 +4398,7 @@ git commit -m "feat(cli): build sealed render manifests and add manifest verify/
 - Create: `src/services/preview.ts`, `src/commands/render-shared.ts`, `src/commands/render.ts`
 - Test: `src/services/preview.test.ts` (fixture-gated), command coverage in Task 15
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // @vitest-environment node
@@ -4438,12 +4438,12 @@ d('renderPreview', () => {
 })
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/services/preview`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `src/services/preview.ts`**
+- [x] **Step 3: Implement `src/services/preview.ts`**
 
 ```ts
 import type { RawRenderExposure, SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
@@ -4541,7 +4541,7 @@ export async function renderPreview(input: PreviewRenderInput): Promise<PreviewR
 }
 ```
 
-- [ ] **Step 4: Implement `src/commands/render-shared.ts`**
+- [x] **Step 4: Implement `src/commands/render-shared.ts`**
 
 ```ts
 import { InvalidArgumentError } from 'commander'
@@ -4608,7 +4608,7 @@ export async function withRuntime<T>(ctx: CommandContext, run: (runtime: LmfgRun
 }
 ```
 
-- [ ] **Step 5: Implement `src/commands/render.ts` (preview only; candidate/sweep/export are added in Tasks 13–14)**
+- [x] **Step 5: Implement `src/commands/render.ts` (preview only; candidate/sweep/export are added in Tasks 13–14)**
 
 ```ts
 import type { Command } from 'commander'
@@ -4687,7 +4687,7 @@ export function registerRenderCommands(program: Command, host: CommandHost): voi
 }
 ```
 
-- [ ] **Step 6: Run, lint, commit**
+- [x] **Step 6: Run, lint, commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test && pnpm --filter @lumaforge/lmfg-cli typecheck && pnpm exec eslint "packages/lmfg-cli/src/**/*.ts"`
 Expected: PASS.
@@ -4706,7 +4706,7 @@ git commit -m "feat(cli): add CPU preview rendering and render preview command"
 - Modify: `src/commands/render.ts` (add `candidate`, `sweep`)
 - Test: `src/services/metrics.test.ts`, `src/services/contact-sheet.test.ts`, `src/services/iteration.test.ts` (fixture-gated)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `src/services/metrics.test.ts`:
 
@@ -4848,12 +4848,12 @@ d('runIteration', () => {
 })
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/services/metrics src/services/contact-sheet src/services/iteration`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `src/services/metrics.ts`**
+- [x] **Step 3: Implement `src/services/metrics.ts`**
 
 ```ts
 import type { Metrics } from '../schemas/results'
@@ -4944,7 +4944,7 @@ export function computeImageMetrics(
 }
 ```
 
-- [ ] **Step 4: Implement `src/services/contact-sheet.ts`**
+- [x] **Step 4: Implement `src/services/contact-sheet.ts`**
 
 ```ts
 import type { ContactSheet } from '@lumaforge/render-engine/preview'
@@ -5026,7 +5026,7 @@ export function buildContactSheet(input: { tiles: SheetTile[]; cols: number; gap
 }
 ```
 
-- [ ] **Step 5: Implement `src/services/iteration.ts`**
+- [x] **Step 5: Implement `src/services/iteration.ts`**
 
 ```ts
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
@@ -5193,7 +5193,7 @@ export async function runIteration(input: IterationRunInput): Promise<IterationR
 }
 ```
 
-- [ ] **Step 6: Add `candidate` and `sweep` to `src/commands/render.ts`**
+- [x] **Step 6: Add `candidate` and `sweep` to `src/commands/render.ts`**
 
 ```ts
 import { expandSweepPlan, normalizeCandidatePlan } from '../schemas/plan'
@@ -5249,7 +5249,7 @@ function registerIteration(render: Command, host: CommandHost, kind: 'candidate'
 
 Call `registerIteration(render, host, 'candidate')` and `registerIteration(render, host, 'sweep')` inside `registerRenderCommands` after `preview`; import `resolveLutForParams` from `../services/lut`.
 
-- [ ] **Step 7: Implement `src/commands/compare.ts` and `src/commands/metrics.ts`**
+- [x] **Step 7: Implement `src/commands/compare.ts` and `src/commands/metrics.ts`**
 
 `compare.ts`:
 
@@ -5364,7 +5364,7 @@ export function registerMetricsCommands(program: Command, host: CommandHost): vo
 }
 ```
 
-- [ ] **Step 8: Run tests, lint, typecheck; commit**
+- [x] **Step 8: Run tests, lint, typecheck; commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test && pnpm --filter @lumaforge/lmfg-cli typecheck && pnpm exec eslint "packages/lmfg-cli/src/**/*.ts"`
 Expected: PASS (iteration test ≈ 10 s).
@@ -5383,7 +5383,7 @@ git commit -m "feat(cli): add candidate sweeps, contact sheets, metrics, and com
 - Modify: `src/commands/render.ts` (add `export`)
 - Test: `src/services/export.test.ts` (fixture-gated)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // @vitest-environment node
@@ -5438,12 +5438,12 @@ d('runFullResolutionExport', () => {
 })
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test src/services/export`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `src/services/export.ts`**
+- [x] **Step 3: Implement `src/services/export.ts`**
 
 ```ts
 import type { RawRenderExposure, SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
@@ -5563,7 +5563,7 @@ export async function runFullResolutionExport(input: ExportRunInput): Promise<Ex
 }
 ```
 
-- [ ] **Step 4: Add `export` to `src/commands/render.ts`**
+- [x] **Step 4: Add `export` to `src/commands/render.ts`**
 
 ```ts
 import { verifyManifestSha256 } from '@lumaforge/render-engine'
@@ -5677,7 +5677,7 @@ render
   })
 ```
 
-- [ ] **Step 5: Run tests, lint, typecheck; commit**
+- [x] **Step 5: Run tests, lint, typecheck; commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli test && pnpm --filter @lumaforge/lmfg-cli typecheck && pnpm exec eslint "packages/lmfg-cli/src/**/*.ts"`
 Expected: PASS (export test ≈ 4 s).
@@ -5694,7 +5694,7 @@ git commit -m "feat(cli): add fail-closed full-resolution export with manifest c
 **Files:**
 - Create: `src/e2e/fixture.ts`, `src/e2e/cli.e2e.test.ts`, `src/e2e/bin.dist.test.ts`
 
-- [ ] **Step 1: Write the harness `src/e2e/fixture.ts`**
+- [x] **Step 1: Write the harness `src/e2e/fixture.ts`**
 
 ```ts
 import { existsSync } from 'node:fs'
@@ -5740,7 +5740,7 @@ export function identityCube(comments: string[]): string {
 }
 ```
 
-- [ ] **Step 2: Write `src/e2e/cli.e2e.test.ts`**
+- [x] **Step 2: Write `src/e2e/cli.e2e.test.ts`**
 
 ```ts
 // @vitest-environment node
@@ -5887,7 +5887,7 @@ describeWithFixture('lmfg agent loop', () => {
 })
 ```
 
-- [ ] **Step 3: Write `src/e2e/bin.dist.test.ts`**
+- [x] **Step 3: Write `src/e2e/bin.dist.test.ts`**
 
 ```ts
 // @vitest-environment node
@@ -5927,7 +5927,7 @@ if (!DIST_AVAILABLE) {
 }
 ```
 
-- [ ] **Step 4: Build, run everything, commit**
+- [x] **Step 4: Build, run everything, commit**
 
 Run: `pnpm --filter @lumaforge/lmfg-cli build && pnpm --filter @lumaforge/lmfg-cli test && pnpm --filter @lumaforge/lmfg-cli typecheck && pnpm exec eslint "packages/lmfg-cli/src/**/*.ts" "packages/lmfg-cli/*.ts"`
 Expected: all PASS; e2e suite ≈ 25 s.
@@ -5945,7 +5945,7 @@ git commit -m "test(cli): add end-to-end agent loop and packaged bin smoke tests
 - Modify: `.github/workflows/build.yml`
 - Modify: `package.json` (root `test:cli` already added in Task 1; add `cli:build`)
 
-- [ ] **Step 1: Extend the `changes` job**
+- [x] **Step 1: Extend the `changes` job**
 
 Add output `cli: ${{ steps.detect.outputs.cli }}`, then in the detect script:
 
@@ -5955,7 +5955,7 @@ Add output `cli: ${{ steps.detect.outputs.cli }}`, then in the detect script:
 
 Initialize `cli=false`, set `cli=true` inside `force_all`, and add `if matches "$cli_paths"; then cli=true; fi` in the else branch; append `echo "cli=$cli" >> "$GITHUB_OUTPUT"`.
 
-- [ ] **Step 2: Add the `cli` job (after `runtime`)**
+- [x] **Step 2: Add the `cli` job (after `runtime`)**
 
 ```yaml
   cli:
@@ -6014,14 +6014,14 @@ Initialize `cli=false`, set `cli=true` inside `force_all`, and add `if matches "
 
 Update the final gate job: `needs: [changes, app, runtime, native, cli]`, add `CLI_RESULT: ${{ needs.cli.result }}` and include `"$CLI_RESULT"` in the loop.
 
-- [ ] **Step 3: Root scripts**
+- [x] **Step 3: Root scripts**
 
 ```json
     "cli:build:deps": "pnpm --filter @lumaforge/luma-color-runtime build && pnpm --filter @lumaforge/luma-jpeg-runtime build && pnpm --filter @lumaforge/luma-raw-runtime build && pnpm --filter @lumaforge/render-engine build",
     "cli:build": "pnpm cli:build:deps && pnpm --filter @lumaforge/lmfg-cli build",
 ```
 
-- [ ] **Step 4: Verify the workflow parses and commit**
+- [x] **Step 4: Verify the workflow parses and commit**
 
 Run: `node -e "require('node:fs').readFileSync('.github/workflows/build.yml','utf8')" && pnpm exec eslint "*.{js,mjs,cjs,ts}" && pnpm cli:build`
 Expected: exit 0.
@@ -6039,7 +6039,7 @@ git commit -m "ci: add lmfg CLI build, test, and pack gate"
 - Create: `packages/lmfg-cli/README.md`, `packages/lmfg-cli/LICENSE` (copy of root `LICENSE`)
 - Modify: `AGENTS.md`, `README.md`, `docs/specs/2026-06-23-lmfg-cli-tier0-1-design.md`
 
-- [ ] **Step 1: Write `packages/lmfg-cli/README.md`**
+- [x] **Step 1: Write `packages/lmfg-cli/README.md`**
 
 ````markdown
 # @lumaforge/lmfg-cli
@@ -6197,7 +6197,7 @@ self-verification. Unsupported RAWs exit 3; incomplete LUT contracts exit 4.
    `@lumaforge/luma-native-artifacts` are already published.
 ````
 
-- [ ] **Step 2: `AGENTS.md` (and therefore `CLAUDE.md`)**
+- [x] **Step 2: `AGENTS.md` (and therefore `CLAUDE.md`)**
 
 Under "Current Architecture", after the `packages/luma-native-artifacts` bullet, add:
 
@@ -6220,7 +6220,7 @@ Under "Verification" progressive list, add:
     (`pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public`).
 ```
 
-- [ ] **Step 3: Root `README.md`**
+- [x] **Step 3: Root `README.md`**
 
 Add under "## Architecture" (end of section):
 
@@ -6233,7 +6233,7 @@ manifests. See `packages/lmfg-cli/README.md` for the agent loop, JSON protocol,
 and exit codes. Build it with `pnpm cli:build`.
 ```
 
-- [ ] **Step 4: Spec status**
+- [x] **Step 4: Spec status**
 
 Insert after the title of `docs/specs/2026-06-23-lmfg-cli-tier0-1-design.md`:
 
@@ -6244,7 +6244,7 @@ Insert after the title of `docs/specs/2026-06-23-lmfg-cli-tier0-1-design.md`:
   unavailable. JSON is the default stdout format (`--json` is a no-op).
 ```
 
-- [ ] **Step 5: LICENSE copy, final verification, commit**
+- [x] **Step 5: LICENSE copy, final verification, commit**
 
 Run:
 
@@ -6278,3 +6278,35 @@ git commit -m "docs(cli): document lmfg usage, protocol, and release checklist"
 **Placeholder scan:** no TBD/TODO; every code step carries the code. Task 10 Step 5 and Task 9 Step 5 carry explicit "when implementing" notes for two import/ordering details instead of leaving gaps.
 
 **Type consistency:** `LmfgError(code, { message, retryable, suggestedNextActions, details, cause })` is used uniformly; `runCommand(ctx, { schema, command }, run, dryRun)` matches every command module; `SessionStore.allocate(id, 'previews'|'iterations'|'exports')` is used by preview, iteration, and export; `IterationStore.candidatePaths/writeCandidate/readCandidateTile/readCandidateParams/readCandidateMetrics/writeContactSheet/read/appendEvent` are used by Tasks 13–14 with the signatures defined in Task 4; `ResolvedLut.identity.sha256` is the LUT file hash used by both manifests and the export guard; `RenderParams` (schema) vs `ManifestRenderParams` (engine) are always converted through `toManifestRenderParams`.
+
+---
+
+## Execution notes (2026-09-05)
+
+All 17 tasks were executed on branch `feat/lmfg-cli-tier0` and fast-forwarded
+into `main`. Deviations from the plan text, all deliberate:
+
+1. `dist` has a single `index.js` entry and `bin/lmfg.mjs` imports
+   `../dist/index.js`; the two-entry build duplicated the program into a
+   `cli2.js` chunk.
+2. `runFullResolutionExport` resolves the raw-render exposure with a throwaway
+   `raw.decodeQuick(...)` before opening the export session. Running a quick
+   decode on the same session makes LibRaw processed-window reads fail
+   (`RAW runtime request failed`), so preview and export never share a session.
+3. `computeImageMetrics` initialises the histogram with a loop; `eslint --fix`
+   rewrote `Array.from({ length }, () => 0)` into an `unknown[]`. Run
+   `typecheck` after lint, not before.
+4. `describeWithFixture` carries an explicit `typeof describe` annotation so
+   declaration emit stays portable.
+5. `@lumaforge/render-engine` `typecheck` has a pre-existing failure in
+   `src/export/jpeg/jpeg-metadata.test.ts` (BlobPart typing) that predates this
+   work; its `build` (which excludes tests) passes and is what the CLI consumes.
+
+Verification evidence at closeout: package suite 25 files / 78 tests (real
+fixture end-to-end loop included); root `pnpm test:run` 257 files / 2085 tests;
+`pnpm test:runtime` green; `pnpm lint:check` clean;
+`LUMAFORGE_NATIVE_RUNTIME_MODE=prebuilt pnpm build` OK; `npm pack --dry-run` OK
+for `render-engine` (96 files) and `lmfg-cli` (bin, dist, README, LICENSE).
+
+Release blocker unchanged (D12): publish `@lumaforge/render-engine` before
+`@lumaforge/lmfg-cli`.
