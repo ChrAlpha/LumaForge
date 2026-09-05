@@ -1,27 +1,14 @@
+/* Sections below the hero, plus every breakpoint for the landing. */
+
 .lf-workflow,
 .lf-evidence,
 .lf-contract,
-.lf-trust,
+.lf-ledger,
 .lf-final {
-  padding: clamp(72px, 9vw, 124px) 0;
+  padding: clamp(64px, 8vw, 112px) 0;
   padding-right: var(--lf-gutter-right);
   padding-left: var(--lf-gutter-left);
   border-top: 1px solid var(--lf-border);
-}
-
-.lf-workflow {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.68fr) minmax(520px, 1.32fr);
-  gap: clamp(56px, 8vw, 128px);
-  background: var(--lf-bg-raised);
-}
-
-.lf-evidence {
-  background: var(--lf-bg-sunk);
-}
-
-.lf-section-intro {
-  align-self: start;
 }
 
 .lf-section-intro h2,
@@ -36,71 +23,29 @@
   text-wrap: balance;
 }
 
-.lf-final h2 {
-  max-width: 17ch;
-  margin: 0;
-  font-size: clamp(2.2rem, 3.8vw, 3.4rem);
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 1.05;
-  text-wrap: balance;
-}
-
 .lf-section-intro > p:last-child,
 .lf-evidence-copy > p,
 .lf-contract-copy > p,
 .lf-final > div > p:last-child {
-  max-width: 58ch;
+  max-width: 60ch;
   margin: 18px 0 0;
   color: var(--lf-text-secondary);
   font-size: 1rem;
   line-height: 1.7;
+  text-wrap: pretty;
 }
 
-.lf-evidence-copy {
+/* Workflow ------------------------------------------------------------ */
+
+.lf-workflow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.78fr);
-  gap: clamp(48px, 8vw, 128px);
-  align-items: end;
+  grid-template-columns: minmax(260px, 0.68fr) minmax(520px, 1.32fr);
+  gap: clamp(56px, 8vw, 128px);
+  background: var(--lf-bg-raised);
 }
 
-.lf-evidence-copy > p {
-  margin: 0;
-}
-
-.lf-evidence-figure {
-  margin: clamp(44px, 6vw, 72px) 0 0;
-  overflow: hidden;
-  border: 1px solid var(--lf-border-strong);
-  border-radius: 8px;
-  background: var(--lf-bg);
-  box-shadow: 0 28px 72px var(--lf-shadow);
-}
-
-.lf-evidence-image-wrap {
-  aspect-ratio: 16 / 10;
-  overflow: hidden;
-}
-
-.lf-evidence-figure img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.lf-evidence-figure figcaption {
-  display: flex;
-  min-height: 44px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 8px 16px;
-  border-top: 1px solid var(--lf-border);
-  color: var(--lf-text-muted);
-  font-family: ui-monospace, 'Geist Mono', monospace;
-  font-size: 0.72rem;
-  line-height: 1.4;
+.lf-section-intro {
+  align-self: start;
 }
 
 .lf-workflow-list,
@@ -131,9 +76,14 @@
 .lf-step-index,
 .lf-contract-rail li > span {
   color: var(--lf-amber);
-  font-family: ui-monospace, 'Geist Mono', monospace;
+  font-family: var(--lf-mono);
   font-size: 0.72rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.lf-step-index {
+  padding-top: 5px;
 }
 
 .lf-workflow-list h3 {
@@ -148,7 +98,63 @@
   color: var(--lf-text-secondary);
   font-size: 0.9rem;
   line-height: 1.65;
+  text-wrap: pretty;
 }
+
+/* Evidence ------------------------------------------------------------ */
+
+.lf-evidence {
+  background: var(--lf-bg-sunk);
+}
+
+.lf-evidence-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.78fr);
+  gap: clamp(48px, 8vw, 128px);
+  align-items: end;
+}
+
+.lf-evidence-copy > p {
+  margin: 0;
+}
+
+.lf-evidence-figure {
+  margin: clamp(40px, 6vw, 64px) 0 0;
+  overflow: hidden;
+  border: 1px solid var(--lf-border-strong);
+  border-radius: 8px;
+  background: var(--lf-bg);
+  box-shadow: 0 28px 72px var(--lf-shadow);
+}
+
+.lf-evidence-image-wrap {
+  display: block;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+}
+
+.lf-evidence-figure img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lf-evidence-figure figcaption {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--lf-border);
+  color: var(--lf-text-muted);
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Contract rail ------------------------------------------------------- */
 
 .lf-contract {
   background: var(--lf-bg);
@@ -204,47 +210,46 @@
   font-size: 0.9rem;
   font-weight: 650;
   line-height: 1.35;
+  text-wrap: balance;
 }
 
-.lf-trust {
+/* Guarantee ledger ---------------------------------------------------- */
+
+.lf-ledger {
   padding-top: clamp(48px, 6vw, 80px);
   padding-bottom: clamp(48px, 6vw, 80px);
   background: var(--lf-bg-raised);
 }
 
-.lf-trust dl {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.lf-ledger dl {
   margin: 0;
   border-top: 1px solid var(--lf-border-strong);
+}
+
+.lf-ledger dl > div {
+  display: grid;
+  grid-template-columns: minmax(200px, 0.3fr) minmax(0, 1fr);
+  gap: 28px;
+  padding: 22px 0;
   border-bottom: 1px solid var(--lf-border-strong);
 }
 
-.lf-trust dl > div {
-  padding: 30px clamp(20px, 3vw, 44px);
-  border-right: 1px solid var(--lf-border);
-}
-
-.lf-trust dl > div:first-child {
-  padding-left: 0;
-}
-
-.lf-trust dl > div:last-child {
-  padding-right: 0;
-  border-right: 0;
-}
-
-.lf-trust dt {
+.lf-ledger dt {
   font-size: 1rem;
   font-weight: 700;
+  line-height: 1.5;
 }
 
-.lf-trust dd {
-  margin: 12px 0 0;
+.lf-ledger dd {
+  max-width: 64ch;
+  margin: 0;
   color: var(--lf-text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   line-height: 1.65;
+  text-wrap: pretty;
 }
+
+/* Final --------------------------------------------------------------- */
 
 .lf-final {
   display: grid;
@@ -256,35 +261,21 @@
   background: var(--lf-bg);
 }
 
+.lf-final h2 {
+  max-width: 17ch;
+  margin: 0;
+  font-size: clamp(2.2rem, 3.8vw, 3.4rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
 .lf-final .lf-button {
   min-width: 172px;
 }
 
-.lf-footer {
-  display: flex;
-  min-height: calc(72px + env(safe-area-inset-bottom, 0px));
-  align-items: center;
-  justify-content: space-between;
-  padding-right: var(--lf-gutter-right);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  padding-left: var(--lf-gutter-left);
-  border-top: 1px solid var(--lf-border);
-  color: var(--lf-text-muted);
-  font-size: 0.76rem;
-  font-weight: 650;
-}
-
-.lf-footer-source {
-  min-height: 44px;
-  gap: 7px;
-  color: inherit;
-  text-decoration: none;
-  transition: color 180ms ease-out;
-}
-
-.lf-footer-source:hover {
-  color: var(--lf-text);
-}
+/* Breakpoints --------------------------------------------------------- */
 
 @media (max-width: 1100px) {
   .lf-hero {
@@ -306,28 +297,23 @@
   .lf-hero {
     min-height: auto;
     grid-template-columns: 1fr;
-    row-gap: 40px;
+    row-gap: 36px;
+    padding-top: 40px;
   }
 
-  .lf-hero-copy-column,
-  .lf-hero-feature-rail,
+  /* Photo first on phones and tablets; DOM order keeps the headline first. */
   .lf-hero-figure {
-    grid-column: 1;
-    grid-row: auto;
-    align-self: auto;
+    order: -1;
+    width: 100%;
   }
 
   .lf-hero h1 {
     max-width: 13ch;
   }
 
-  .lf-hero-figure {
-    width: 100%;
-  }
-
   .lf-workflow {
     grid-template-columns: 1fr;
-    gap: 52px;
+    gap: 44px;
   }
 
   .lf-evidence-copy,
@@ -368,20 +354,16 @@
     font-size: 0.9rem;
   }
 
-  .lf-trust dl {
+  .lf-ledger dl > div {
     grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 20px 0;
   }
+}
 
-  .lf-trust dl > div,
-  .lf-trust dl > div:first-child,
-  .lf-trust dl > div:last-child {
-    padding: 24px 0;
-    border-right: 0;
-    border-bottom: 1px solid var(--lf-border);
-  }
-
-  .lf-trust dl > div:last-child {
-    border-bottom: 0;
+@media (max-width: 640px) {
+  .lf-evidence-image-wrap {
+    aspect-ratio: 4 / 5;
   }
 }
 
@@ -391,9 +373,9 @@
   }
 
   .lf-hero {
-    row-gap: 32px;
-    padding-top: 48px;
-    padding-bottom: 64px;
+    row-gap: 30px;
+    padding-top: 22px;
+    padding-bottom: 56px;
   }
 
   .lf-hero h1 {
@@ -415,38 +397,27 @@
     flex: 1;
   }
 
-  .lf-hero-feature-rail {
-    margin-top: 0;
+  .lf-hero-formats {
+    margin-top: 26px;
   }
 
+  /* 4:3 keeps the split legible while the headline still enters the first
+     viewport under the photograph. */
   .lf-photo-stage {
     aspect-ratio: 4 / 3;
   }
 
-  .lf-photo-meta,
   .lf-photo-caption {
-    padding: 0 12px;
-  }
-
-  .lf-evidence-image-wrap {
-    aspect-ratio: 4 / 3;
-  }
-
-  .lf-evidence-figure img {
-    object-position: right center;
+    padding: 8px 12px;
   }
 
   .lf-workflow,
   .lf-evidence,
   .lf-contract,
-  .lf-trust,
+  .lf-ledger,
   .lf-final {
-    padding-top: 64px;
-    padding-bottom: 64px;
-  }
-
-  .lf-final h2 {
-    font-size: 2rem;
+    padding-top: 56px;
+    padding-bottom: 56px;
   }
 
   .lf-workflow-list li {
@@ -456,6 +427,10 @@
 
   .lf-final {
     gap: 32px;
+  }
+
+  .lf-final h2 {
+    font-size: 2rem;
   }
 
   .lf-final .lf-button {
@@ -477,14 +452,13 @@
   .lf-locale-toggle {
     width: 44px;
     padding: 0;
-    justify-content: center;
   }
 
   .lf-nav-link {
     padding: 0 10px;
-    border-color: oklch(0.72 0.14 153);
+    border-color: var(--lf-green-edge);
     background: var(--lf-green);
-    color: oklch(0.13 0.02 153);
+    color: var(--lf-on-green);
   }
 
   .lf-nav-link:hover {
@@ -500,13 +474,15 @@
     justify-content: center;
   }
 
-  .lf-hero-feature-rail li {
-    padding-right: 8px;
-    font-size: 0.72rem;
+  .lf-photo-caption,
+  .lf-evidence-figure figcaption {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
   }
 
-  .lf-hero-feature-rail li:nth-child(even) {
-    padding-left: 10px;
+  .lf-photo-caption > span:last-child {
+    text-align: left;
   }
 }
 

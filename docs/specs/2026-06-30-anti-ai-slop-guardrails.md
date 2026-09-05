@@ -3,7 +3,7 @@
 **Date:** 2026-06-30
 **Last verified:** 2026-07-23
 **Status:** standing reference (not a point-in-time spec)
-**Applies to:** UI edits under `src/pages/(main)/` (landing), `src/modules/raw-processor/` (`/raw`), and the shared components or primitives those surfaces consume.
+**Applies to:** UI edits under `src/modules/landing/` and `src/pages/(main)/index.sync.tsx` (landing), `src/modules/raw-processor/` (`/raw`), and the shared components or primitives those surfaces consume.
 
 ## Why this exists
 
@@ -11,7 +11,7 @@ LumaForge already bans the textbook AI-slop tells in `PRODUCT.md` (Anti-referenc
 
 ## The test, by register
 
-Pick the register from the surface that consumes the change. `src/pages/(main)/*` is brand. `src/modules/raw-processor/*` and the `/raw` chrome are product. Shared primitives and components inherit the register of their consumer; their directory alone does not decide it.
+Pick the register from the surface that consumes the change. `src/modules/landing/*` and the `/` route entry are brand. `src/modules/raw-processor/*` and the `/raw` chrome are product. Shared primitives and components inherit the register of their consumer; their directory alone does not decide it.
 
 - **Brand (landing):** would a viewer say "AI made this" on sight? Familiarity is a liability. Distinctiveness is the job.
 - **Product (`/raw`):** would a Lightroom or Capture One user trust the tool, or pause at something subtly off? Familiarity is an asset. Slop is strangeness without purpose, half-built states, and functional dishonesty.

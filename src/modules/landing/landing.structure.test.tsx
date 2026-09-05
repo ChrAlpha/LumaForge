@@ -4,10 +4,14 @@ import { resolve } from 'node:path'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '~/lib/i18n'
 import { Component } from '~/pages/(main)/index.sync'
+
+import { countMoreFormats } from './content'
+
+const ROOT = resolve(__dirname, '..', '..', '..')
 
 function renderLanding() {
   return render(
@@ -19,6 +23,31 @@ function renderLanding() {
   )
 }
 
+function expectLocalWebp(relativePath: string) {
+  const header = readFileSync(resolve(ROOT, 'public', relativePath)).subarray(
+    0,
+    12,
+  )
+  expect(header.toString('ascii', 0, 4)).toBe('RIFF')
+  expect(header.toString('ascii', 8, 12)).toBe('WEBP')
+}
+
+function stubReducedMotion(reduced: boolean) {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn((query: string) => ({
+      matches: query.includes('no-preference') ? !reduced : reduced,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  )
+}
+
 describe('landing semantic structure', () => {
   beforeEach(() => {
     localStorage.setItem('lumaforge.locale', 'en')
@@ -26,6 +55,7 @@ describe('landing semantic structure', () => {
 
   afterEach(() => {
     localStorage.clear()
+    vi.unstubAllGlobals()
   })
 
   it('uses a real local WebP for the photographic comparison', () => {
@@ -44,20 +74,14 @@ describe('landing semantic structure', () => {
       expect(image).toHaveAttribute('src', '/landing-raw-finish.webp')
       expect(image.getAttribute('src')).not.toMatch(/^https?:\/\//)
     }
+    expectLocalWebp('landing-raw-finish.webp')
 
-    const assetPath = resolve(
-      __dirname,
-      '..',
-      '..',
-      'public',
-      'landing-raw-finish.webp',
-    )
-    const assetHeader = readFileSync(assetPath).subarray(0, 12)
-    expect(assetHeader.toString('ascii', 0, 4)).toBe('RIFF')
-    expect(assetHeader.toString('ascii', 8, 12)).toBe('WEBP')
+    const caption = figure!.querySelector('figcaption')
+    expect(caption).toHaveTextContent('SGL00940.ARW · 9504 × 6336')
+    expect(caption).toHaveTextContent('Illustrative compare of two treatments')
   })
 
-  it('shows a real browser workspace as product evidence', () => {
+  it('shows a real browser workspace as product evidence on every viewport', () => {
     const { container } = renderLanding()
 
     const image = screen.getByRole('img', {
@@ -65,17 +89,19 @@ describe('landing semantic structure', () => {
     })
     expect(image).toHaveAttribute('src', '/landing-workspace-evidence.webp')
     expect(image).toHaveAttribute('loading', 'lazy')
+    expect(image).toHaveAttribute('width', '1440')
+    expect(image).toHaveAttribute('height', '900')
 
-    const assetPath = resolve(
-      __dirname,
-      '..',
-      '..',
-      'public',
-      'landing-workspace-evidence.webp',
+    const picture = image.closest('picture')
+    expect(picture).not.toBeNull()
+    const source = picture!.querySelector('source')
+    expect(source).toHaveAttribute(
+      'srcset',
+      '/landing-workspace-evidence-mobile.webp',
     )
-    const assetHeader = readFileSync(assetPath).subarray(0, 12)
-    expect(assetHeader.toString('ascii', 0, 4)).toBe('RIFF')
-    expect(assetHeader.toString('ascii', 8, 12)).toBe('WEBP')
+    expect(source).toHaveAttribute('media', '(max-width: 640px)')
+    expectLocalWebp('landing-workspace-evidence.webp')
+    expectLocalWebp('landing-workspace-evidence-mobile.webp')
 
     const section = screen
       .getByRole('heading', {
@@ -98,6 +124,20 @@ describe('landing semantic structure', () => {
       'H2',
       'P',
     ])
+  })
+
+  it('names the real supported formats instead of a feature grid', () => {
+    const { container } = renderLanding()
+
+    const formats = screen.getByText(
+      new RegExp(`and ${countMoreFormats()} more RAW formats`),
+    )
+    expect(formats).toHaveTextContent('.ARW')
+    expect(formats).toHaveTextContent('No account, no install, no upload.')
+    expect(formats.closest('.lf-hero')).not.toBeNull()
+
+    expect(container.querySelector('.lf-hero ul')).toBeNull()
+    expect(container.querySelector('.lf-hero-feature-rail')).toBeNull()
   })
 
   it('presents the complete five-step finishing workflow', () => {
@@ -162,15 +202,17 @@ describe('landing semantic structure', () => {
     })
   })
 
-  it('states three processing guarantees', () => {
+  it('states three processing guarantees as a ledger', () => {
     renderLanding()
 
-    const trust = screen.getByRole('region', {
+    const ledger = screen.getByRole('region', {
       name: 'LumaForge processing guarantees',
     })
-    const terms = [...trust.querySelectorAll('dt')]
-    const definitions = [...trust.querySelectorAll('dd')]
+    const rows = [...ledger.querySelectorAll('dl > div')]
+    const terms = [...ledger.querySelectorAll('dt')]
+    const definitions = [...ledger.querySelectorAll('dd')]
 
+    expect(rows).toHaveLength(3)
     expect(terms).toHaveLength(3)
     expect(definitions).toHaveLength(3)
     expect(terms.map((term) => term.textContent)).toEqual([
@@ -181,6 +223,7 @@ describe('landing semantic structure', () => {
     expect(definitions[0]).toHaveTextContent('not an upload queue')
     expect(definitions[1]).toHaveTextContent('Full-resolution export')
     expect(definitions[2]).toHaveTextContent('export stops')
+    expect(within(ledger).queryByRole('heading')).toBeNull()
   })
 
   it('provides a skip link to the main content', () => {
@@ -208,7 +251,6 @@ describe('landing semantic structure', () => {
     )
 
     const handle = slider.querySelector('.lf-compare-handle')
-    expect(handle).toHaveAttribute('aria-hidden', 'true')
     expect(handle).toHaveTextContent('')
     expect(
       handle!.querySelector('svg.lucide-chevrons-left-right'),
@@ -229,13 +271,33 @@ describe('landing semantic structure', () => {
       '98% Muted treatment, 2% Color treatment',
     )
   })
+
+  it('rests at the centre when the visitor prefers reduced motion', () => {
+    stubReducedMotion(true)
+    renderLanding()
+
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '50')
+  })
+
+  it('arms the reveal sweep only when motion is allowed and yields to input', async () => {
+    stubReducedMotion(false)
+    const user = userEvent.setup()
+    renderLanding()
+
+    const slider = screen.getByRole('slider')
+    expect(slider).toHaveAttribute('aria-valuenow', '86')
+
+    slider.focus()
+    await user.keyboard('{ArrowLeft}')
+    expect(slider).toHaveAttribute('aria-valuenow', '84')
+  })
 })
 
 describe('landing asset and CSS contract', () => {
-  it('does not retain remote, legacy, or synthetic compare surfaces', () => {
+  it('ships local module CSS without legacy, remote, or synthetic surfaces', () => {
     const cssPaths = [
-      resolve(__dirname, '..', 'pages', '(main)', 'index.css'),
-      resolve(__dirname, '..', 'pages', '(main)', 'index.sections.css'),
+      resolve(__dirname, 'landing.css'),
+      resolve(__dirname, 'landing.sections.css'),
     ]
     const css = cssPaths.map((path) => readFileSync(path, 'utf8')).join('\n')
     const removedSelectorPatterns = [
@@ -245,27 +307,31 @@ describe('landing asset and CSS contract', () => {
       /\.lf-contract-strip\b/,
       /\.lf-hero-glow\b/,
       /\.lf-hero-panel\b/,
+      /\.lf-hero-feature-rail\b/,
+      /\.lf-photo-meta\b/,
       /\.lf-product-window\b/,
+      /\.lf-trust\b/,
       /\.lf-window-body\b/,
       /\.lf-window-chrome\b/,
     ]
 
     expect(css).not.toMatch(/images\.unsplash\.com/)
     expect(css).not.toMatch(/https?:\/\//)
+    expect(css).not.toMatch(/backdrop-filter/)
+    expect(css).not.toMatch(/background-clip:\s*text/)
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i)
+    expect(css).not.toMatch(/oklch\(\s*[01](?:\.0+)?\s+0\s+0/)
     for (const selectorPattern of removedSelectorPatterns) {
       expect(css).not.toMatch(selectorPattern)
     }
 
-    expect(
-      existsSync(
-        resolve(
-          __dirname,
-          '..',
-          'components',
-          'common',
-          'LandingCompareSvg.tsx',
-        ),
-      ),
-    ).toBe(false)
+    for (const legacyPath of [
+      'src/pages/(main)/index.css',
+      'src/pages/(main)/index.sections.css',
+      'src/components/common/LandingCompareSvg.tsx',
+      'src/components/common/LandingPhotoCompare.tsx',
+    ]) {
+      expect(existsSync(resolve(ROOT, legacyPath))).toBe(false)
+    }
   })
 })

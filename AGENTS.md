@@ -46,6 +46,10 @@ image-editor assumptions.
 
 - `src/pages/(main)/raw.tsx` is the `/raw` route entry. Route files drive
   `src/generated-routes.ts`; never edit the generated file directly.
+- `src/pages/(main)/index.sync.tsx` is the thin `/` route entry. The landing
+  itself lives in `src/modules/landing`: `LandingPage`, section components,
+  the `PhotoCompare` slider and its sweep hook, `content.ts` (typed key lists
+  and the real supported-format count), module CSS, and colocated tests.
 - `src/providers/root-providers.tsx` owns `LazyMotion`, React Query, Jotai,
   i18n, error boundary, router stability, settings sync, context menu, and
   toasts. Preserve provider order unless a concrete bug requires changing it.
@@ -107,7 +111,8 @@ image-editor assumptions.
 - `/raw` is a fixed cool-slate darkroom defined by `--color-lf-*` tokens in
   `src/styles/tailwind.css` `@theme`. It ignores `data-theme`.
 - The landing page uses a cool-slate palette under `.lf-landing` in
-  `src/pages/(main)/index.css` that is derived from the darkroom aesthetic.
+  `src/modules/landing/landing.css` that is derived from the darkroom
+  aesthetic.
   Landing-specific `--lf-*` tokens (surface, text, accent) are intentionally
   aligned with the app's `--color-lf-*` hue family (hue 255, low chroma) so
   the two surfaces feel like the same product.

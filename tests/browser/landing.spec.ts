@@ -3,8 +3,13 @@ import { expect, test } from '@playwright/test'
 
 const ENGLISH_LOCALE = 'en'
 const LOCALE_STORAGE_KEY = 'lumaforge.locale'
+const COMPARE_REST = 50
+const COMPARE_SWEEP_FROM = 86
 
-async function openEnglishLanding(page: Page) {
+async function openEnglishLanding(
+  page: Page,
+  options: { waitUntil?: 'load' | 'domcontentloaded' } = {},
+) {
   await page.addInitScript(
     ({ key, locale }) => {
       try {
@@ -16,7 +21,7 @@ async function openEnglishLanding(page: Page) {
     { key: LOCALE_STORAGE_KEY, locale: ENGLISH_LOCALE },
   )
 
-  await page.goto('/')
+  await page.goto('/', { waitUntil: options.waitUntil ?? 'load' })
   await expect(page.getByRole('main')).toBeVisible()
 }
 
@@ -41,9 +46,16 @@ async function readSliderValue(page: Page) {
   return Number(value)
 }
 
+/** The load sweep runs once; wait for it so tests start from the rest state. */
+async function waitForCompareRest(page: Page) {
+  await expect
+    .poll(() => readSliderValue(page), { timeout: 8_000 })
+    .toBe(COMPARE_REST)
+}
+
 test('presents the complete RAW workflow without browser errors', async ({
   page,
-}) => {
+}, testInfo) => {
   const browserErrors = captureBrowserErrors(page)
   await openEnglishLanding(page)
 
@@ -74,7 +86,9 @@ test('presents the complete RAW workflow without browser errors', async ({
 
   const landingCopy = await main.textContent()
   for (const feature of [
-    /progressive raw preview/i,
+    /\.ARW, \.NEF, \.CR3/,
+    /\d+ more RAW formats/,
+    /no account, no install, no upload/i,
     /exposure/i,
     /temperature/i,
     /eight-band hsl/i,
@@ -111,6 +125,10 @@ test('presents the complete RAW workflow without browser errors', async ({
     name: /actual lumaforge raw lab session/i,
   })
   await workspaceEvidence.scrollIntoViewIfNeeded()
+  const expectedEvidence =
+    testInfo.project.name === 'webkit-ios-safe'
+      ? { height: 900, loaded: true, width: 720 }
+      : { height: 900, loaded: true, width: 1440 }
   await expect
     .poll(() =>
       workspaceEvidence.evaluate((image) => ({
@@ -119,7 +137,12 @@ test('presents the complete RAW workflow without browser errors', async ({
         width: image.naturalWidth,
       })),
     )
-    .toEqual({ height: 900, loaded: true, width: 1440 })
+    .toEqual(expectedEvidence)
+  expect(
+    await workspaceEvidence.evaluate((image) =>
+      new URL(image.currentSrc).pathname.endsWith('.webp'),
+    ),
+  ).toBe(true)
 
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
     'content',
@@ -194,6 +217,39 @@ test('color contract rail preserves responsive stage semantics', async ({
   }
 })
 
+test('compare reveals the finish once after the photograph loads', async ({
+  page,
+}) => {
+  // Hold the photograph back so the armed state is observable before the sweep.
+  let releaseImage: (() => void) | null = null
+  const held = new Promise<void>((resolve) => {
+    releaseImage = resolve
+  })
+  await page.route('**/landing-raw-finish.webp', async (route) => {
+    await held
+    await route.continue()
+  })
+
+  // The held image would also hold the window load event, so wait for DOM only.
+  await openEnglishLanding(page, { waitUntil: 'domcontentloaded' })
+
+  const slider = page.getByRole('slider')
+  await expect(slider).toHaveAttribute(
+    'aria-valuenow',
+    String(COMPARE_SWEEP_FROM),
+  )
+  await page.waitForTimeout(400)
+  await expect(slider).toHaveAttribute(
+    'aria-valuenow',
+    String(COMPARE_SWEEP_FROM),
+  )
+
+  releaseImage!()
+  await waitForCompareRest(page)
+  await page.waitForTimeout(300)
+  expect(await readSliderValue(page)).toBe(COMPARE_REST)
+})
+
 test('compare supports its complete keyboard range', async ({ page }) => {
   await openEnglishLanding(page)
 
@@ -253,6 +309,7 @@ test('compare follows a real pointer drag', async ({ page }, testInfo) => {
     'Mouse dragging is covered in the desktop browser project',
   )
   await openEnglishLanding(page)
+  await waitForCompareRest(page)
 
   const slider = page.getByRole('slider')
   await slider.scrollIntoViewIfNeeded()
@@ -262,12 +319,14 @@ test('compare follows a real pointer drag', async ({ page }, testInfo) => {
 
   await page.mouse.move(box!.x + box!.width * 0.22, box!.y + box!.height / 2)
   await page.mouse.down()
+  await expect(slider).toHaveAttribute('data-dragging', 'true')
   await page.mouse.move(box!.x + box!.width * 0.78, box!.y + box!.height / 2, {
     steps: 12,
   })
   await page.mouse.up()
 
   await expect.poll(() => readSliderValue(page)).toBeGreaterThan(before)
+  await expect(slider).not.toHaveAttribute('data-dragging', 'true')
 })
 
 test('locale choice survives a reload', async ({ page }) => {
@@ -344,7 +403,7 @@ test('intermediate desktop keeps the workflow editorial gutter', async ({
   expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth + 1)
 })
 
-test('mobile first viewport introduces the photograph', async ({
+test('mobile first viewport opens on the photograph', async ({
   page,
 }, testInfo) => {
   test.skip(
@@ -355,28 +414,48 @@ test('mobile first viewport introduces the photograph', async ({
   await openEnglishLanding(page)
 
   const heroFigure = page.locator('.lf-hero-figure')
-  const readVisibleHeight = () =>
-    heroFigure.evaluate((figure) => {
-      const bounds = figure.getBoundingClientRect()
-      return Math.max(
-        0,
-        Math.min(bounds.bottom, window.innerHeight) - Math.max(bounds.top, 0),
-      )
+  const readGeometry = () =>
+    page.evaluate(() => {
+      const figure = document
+        .querySelector('.lf-hero-figure')!
+        .getBoundingClientRect()
+      const title = document
+        .querySelector('.lf-hero h1')!
+        .getBoundingClientRect()
+      const nav = document.querySelector('nav')!.getBoundingClientRect()
+      return {
+        figureBelowNav: figure.top >= nav.bottom,
+        figureBeforeTitle: figure.bottom <= title.top,
+        visibleHeight: Math.max(
+          0,
+          Math.min(figure.bottom, window.innerHeight) - Math.max(figure.top, 0),
+        ),
+      }
     })
 
-  await expect.poll(readVisibleHeight).toBeGreaterThanOrEqual(40)
+  await expect(heroFigure).toBeVisible()
+  await expect
+    .poll(async () => (await readGeometry()).visibleHeight)
+    .toBeGreaterThanOrEqual(240)
+  const geometry = await readGeometry()
+  expect(geometry.figureBelowNav).toBe(true)
+  expect(geometry.figureBeforeTitle).toBe(true)
 
   await page.getByRole('button', { name: 'Switch to Chinese' }).click()
   await expect(
     page.getByRole('heading', { level: 1, name: /完成一张 raw/i }),
   ).toBeVisible()
-  await expect.poll(readVisibleHeight).toBeGreaterThanOrEqual(40)
+  await expect
+    .poll(async () => (await readGeometry()).visibleHeight)
+    .toBeGreaterThanOrEqual(240)
 })
 
 test.describe('reduced motion', () => {
   test.use({ contextOptions: { reducedMotion: 'reduce' } })
 
-  test('keeps the complete landing content visible', async ({ page }) => {
+  test('keeps the complete landing content visible and skips the sweep', async ({
+    page,
+  }) => {
     await openEnglishLanding(page)
 
     expect(
@@ -385,7 +464,9 @@ test.describe('reduced motion', () => {
       ),
     ).toBe(true)
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-    await expect(page.getByRole('slider')).toBeVisible()
+    const slider = page.getByRole('slider')
+    await expect(slider).toBeVisible()
+    await expect(slider).toHaveAttribute('aria-valuenow', String(COMPARE_REST))
     const action = page.locator('.lf-hero .lf-button-primary')
     await action.hover()
     await expect(action).toHaveCSS('transform', 'none')
@@ -480,6 +561,7 @@ test('mobile navigation and controls fit safe touch geometry', async ({
       .toBeLessThanOrEqual(measurements.viewportWidth + 0.5)
   }
 
+  await waitForCompareRest(page)
   const slider = page.getByRole('slider')
   await slider.scrollIntoViewIfNeeded()
   const box = await slider.boundingBox()

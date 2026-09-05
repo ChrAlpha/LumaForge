@@ -5,7 +5,7 @@ description: Browser-local RAW finishing lab with color-safe guardrails.
 # NOTE: this front-matter is a historical token inventory. Its warm `colors`
 # and brand `components` entries are retained only to explain legacy names;
 # they are not implementation guidance. The current contracts begin at
-# "Theme contract" below and live in src/pages/(main)/index.css (landing) and
+# "Theme contract" below and live in src/modules/landing/landing.css (landing) and
 # src/styles/tailwind.css plus the raw-lab styles (/raw).
 colors:
 lf-paper: 'oklch(0.964 0.018 86)'
@@ -155,7 +155,7 @@ utilities). Token roles: `surface` / `surface-raised` / `surface-sunk` /
 `on-photo-ink` and `on-photo-*` (over the photograph), `darkroom-stage*` (the
 warm export moment), and the hue roles `green` / `amber` / `rose` / `sky` /
 `hist-*`. The landing has a separate, fixed cool-slate palette under
-`.lf-landing` in `src/pages/(main)/index.css` (its own `--lf-*` names, no
+`.lf-landing` in `src/modules/landing/landing.css` (its own `--lf-*` names, no
 `color-` prefix). Its neutral hue is deliberately aligned with the darkroom,
 but the two token scopes are not interchangeable.
 

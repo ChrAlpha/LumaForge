@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { I18nProvider } from '~/lib/i18n'
 import { Component } from '~/pages/(main)/index.sync'
 
+import { countMoreFormats } from './content'
+
 function renderLanding() {
   return render(
     <I18nProvider>
@@ -51,6 +53,13 @@ describe('landing page i18n', () => {
       ),
     ).toBeInTheDocument()
     expect(
+      screen.getByText(
+        new RegExp(
+          `及另外 ${countMoreFormats()} 种 RAW 格式。无需账号、无需安装、不上传。`,
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(
       screen.getByRole('heading', {
         level: 2,
         name: '一张文件，走完整条判断路径。',
@@ -61,6 +70,11 @@ describe('landing page i18n', () => {
         '调整色温、色调、饱和度、自然饱和度与八色 HSL；想要特定风格时，再带上已声明合同的 `.cube` LUT。',
       ),
     ).toBeInTheDocument()
+    expect(screen.getByText('两种处理的示意对比')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'GPL-3.0 开源' })).toHaveAttribute(
+      'target',
+      '_blank',
+    )
 
     expectRawLabLinks('进入 RAW Lab', 2)
     expectRawLabLinks('打开 RAW Lab', 1)
@@ -86,6 +100,13 @@ describe('landing page i18n', () => {
       ),
     ).toBeInTheDocument()
     expect(
+      screen.getByText(
+        new RegExp(
+          `and ${countMoreFormats()} more RAW formats\\. No account, no install, no upload\\.`,
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(
       screen.getByRole('heading', {
         level: 2,
         name: 'One file. The whole decision path.',
@@ -96,6 +117,9 @@ describe('landing page i18n', () => {
         'Adjust temperature, tint, saturation, vibrance, and eight-band HSL. Bring a declared `.cube` LUT only when you want one.',
       ),
     ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Open source under GPL-3.0' }),
+    ).toHaveAttribute('target', '_blank')
 
     expectRawLabLinks('Open RAW lab', 3)
   })
