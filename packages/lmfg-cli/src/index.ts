@@ -1,1 +1,6 @@
-export { runCli } from './cli'
+export { createProgram, runCli } from './cli'
+export type { CliIo } from './commands/context'
+export type { LmfgErrorCode } from './protocol/errors'
+export { LmfgError } from './protocol/errors'
+export { EXIT_CODES } from './protocol/exit-codes'
+export { listSchemas, showSchema } from './schemas/registry'
