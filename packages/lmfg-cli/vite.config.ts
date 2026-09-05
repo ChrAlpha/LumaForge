@@ -9,7 +9,6 @@ export default defineConfig({
     emptyOutDir: !process.env.VITEST,
     lib: {
       entry: {
-        cli: fileURLToPath(new URL('./src/cli.ts', import.meta.url)),
         index: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
       },
       formats: ['es'],
