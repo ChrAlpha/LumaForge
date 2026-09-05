@@ -121,13 +121,30 @@ export interface ToneCurveParams {
 export interface ColorBalanceParams {
   readonly temp_k?: number
   readonly tint?: number
+  /** LumaForge user temperature slider (-100..100); complements `temp_k`. */
+  readonly temperature?: number
 }
+
+export interface SaturationParams {
+  readonly saturation?: number
+  readonly vibrance?: number
+}
+
+export type RawRenderExposureSource =
+  | 'dng-baseline'
+  | 'image-statistics'
+  | 'identity'
+  | 'user'
 
 export interface RenderParams {
   readonly exposure_ev: number
   readonly tone_curve?: ToneCurveParams
   readonly color_balance?: ColorBalanceParams
+  readonly saturation?: SaturationParams
   readonly intensity?: number
+  /** Resolved raw-render exposure (EV) applied before user params. */
+  readonly raw_render_exposure_ev?: number
+  readonly raw_render_exposure_source?: RawRenderExposureSource
 }
 
 export type RenderPolicyKind =
