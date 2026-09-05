@@ -1,7 +1,7 @@
 {
   "name": "@lumaforge/luma-native-artifacts",
   "type": "module",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Prebuilt browser WebAssembly artifacts for LumaForge RAW and JPEG runtimes.",
   "license": "SEE LICENSE IN LICENSE",
   "publishConfig": {
