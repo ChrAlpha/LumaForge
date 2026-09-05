@@ -23,7 +23,8 @@ export interface SourceRawIdentity {
 export interface LutColorContract {
   readonly gamut: string
   readonly transfer: string
-  readonly range: 'full' | 'legal'
+  /** `unknown` records a contract the user left unspecified; readers treat it as unverified. */
+  readonly range: 'full' | 'legal' | 'unknown'
   readonly role?: string
 }
 

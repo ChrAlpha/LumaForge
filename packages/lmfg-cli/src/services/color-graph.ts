@@ -1,9 +1,7 @@
 import type {
   ExportColorGraphDescriptor,
-  ExportColorGraphStep,
   HSLBandId,
   HSLBandShift,
-  LUTColorProfile,
   LUTData,
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
@@ -14,14 +12,29 @@ import {
   resolveRawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
 import type {
+  ColorGraphDescriptor,
   ColorGraphIdentity,
   RenderParams as ManifestRenderParams,
 } from '@lumaforge/render-engine'
-import { canonicalizeJson, sha256Hex } from '@lumaforge/render-engine'
+import {
+  COLOR_GRAPH_DESCRIPTOR_VERSION,
+  colorGraphIdentity,
+  describeColorGraph,
+  fingerprintColorGraph,
+} from '@lumaforge/render-engine'
 
 import { LmfgError } from '../protocol/errors'
 import type { RenderParams, SelectiveColorInput } from '../schemas/params'
 import { HSL_BAND_IDS, parseRenderParams } from '../schemas/params'
+
+// The descriptor and fingerprint live in `@lumaforge/render-engine/manifest`
+// so the browser app and the CLI hash color graphs identically.
+export {
+  COLOR_GRAPH_DESCRIPTOR_VERSION,
+  describeColorGraph,
+  fingerprintColorGraph,
+}
+export type { ColorGraphDescriptor }
 
 export type ExposureSourceFrame = {
   data: Uint16Array
@@ -107,109 +120,10 @@ export function requireSupportedGraph(
   )
 }
 
-export const COLOR_GRAPH_DESCRIPTOR_VERSION = 2 as const
-
-export type ColorGraphLutProfileDescriptor = {
-  role: string
-  input: { gamut: string; transfer: string; range: string }
-  output: { gamut: string; transfer: string; range: string }
-}
-
-export type ColorGraphDescriptorV1 = {
-  descriptor_version: typeof COLOR_GRAPH_DESCRIPTOR_VERSION
-  output_gamut: string
-  output_transfer: string
-  lut_profile: ColorGraphLutProfileDescriptor | null
-  steps: unknown[]
-}
-
-function toJsonSafe(value: unknown): unknown {
-  if (ArrayBuffer.isView(value))
-    return Array.from(value as unknown as ArrayLike<number>)
-  if (Array.isArray(value)) return value.map(toJsonSafe)
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-        key,
-        toJsonSafe(item),
-      ]),
-    )
-  }
-  return value
-}
-
-function describeStep(step: ExportColorGraphStep): unknown {
-  if (step.kind === 'lut3d') {
-    const bytes = new Uint8Array(
-      step.data.buffer,
-      step.data.byteOffset,
-      step.data.byteLength,
-    )
-    return {
-      kind: 'lut3d',
-      size: step.size,
-      domain_min: [...step.domainMin],
-      domain_max: [...step.domainMax],
-      data_length: step.data.length,
-      data_sha256: sha256Hex(bytes),
-      data_encoding: 'float32-le',
-    }
-  }
-  return toJsonSafe(step)
-}
-
-/**
- * Only the effective color contract matters for the rendered result, so the
- * descriptor records that instead of the registry profile object (labels,
- * aliases, and optional-field presence would otherwise leak into the hash).
- */
-function describeLutProfile(
-  profile: LUTColorProfile | null,
-): ColorGraphLutProfileDescriptor | null {
-  if (!profile) return null
-  const outputTransfer =
-    profile.outputTransfer ??
-    (profile.role === 'display-look' ? profile.inputTransfer : 'unknown')
-  return {
-    role: profile.role,
-    input: {
-      gamut: profile.inputGamut,
-      transfer: profile.inputTransfer,
-      range: profile.inputRange,
-    },
-    output: {
-      gamut: profile.outputGamut ?? profile.inputGamut,
-      transfer: outputTransfer,
-      range: profile.outputRange ?? 'full',
-    },
-  }
-}
-
-export function describeColorGraph(
-  graph: SupportedExportColorGraphDescriptor,
-): ColorGraphDescriptorV1 {
-  return {
-    descriptor_version: COLOR_GRAPH_DESCRIPTOR_VERSION,
-    output_gamut: graph.outputGamut,
-    output_transfer: graph.outputTransfer,
-    lut_profile: describeLutProfile(graph.lutProfile),
-    steps: graph.steps.map(describeStep),
-  }
-}
-
-const TEXT_ENCODER = new TextEncoder()
-
-export function fingerprintColorGraph(
-  descriptor: ColorGraphDescriptorV1,
-): string {
-  return sha256Hex(TEXT_ENCODER.encode(canonicalizeJson(descriptor)))
-}
-
 export function toColorGraphIdentity(
   graph: SupportedExportColorGraphDescriptor,
 ): ColorGraphIdentity {
-  const descriptor = describeColorGraph(graph)
-  return { fingerprint: fingerprintColorGraph(descriptor), descriptor }
+  return colorGraphIdentity(graph)
 }
 
 export function toManifestRenderParams(

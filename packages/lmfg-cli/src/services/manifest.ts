@@ -13,14 +13,14 @@ import type {
   SourceRawIdentity,
 } from '@lumaforge/render-engine'
 import {
-  sealRenderManifest,
+  createRenderManifest,
   verifyManifestSha256,
 } from '@lumaforge/render-engine'
 
 import { LmfgError } from '../protocol/errors'
 import type { LoadedSource } from '../runtime/source-loader'
 import type { RenderParams } from '../schemas/params'
-import { toColorGraphIdentity, toManifestRenderParams } from './color-graph'
+import { toManifestRenderParams } from './color-graph'
 
 export type BuildManifestInput = {
   kind: RenderManifestKind
@@ -63,26 +63,17 @@ export function toSourceIdentity(
 }
 
 export function buildRenderManifest(input: BuildManifestInput): RenderManifest {
-  return sealRenderManifest({
-    manifest_version: 1,
+  return createRenderManifest({
     kind: input.kind,
-    produced_at: (input.producedAt ?? new Date()).toISOString(),
-    parent_manifest_sha256: input.parentManifestSha256,
     source_raw: input.source,
-    calibration: null,
     lut: input.lut,
-    color_graph: toColorGraphIdentity(input.graph),
+    graph: input.graph,
     render_params: toManifestRenderParams(input.params, input.exposure),
     policy: input.policy,
     environment: input.environment,
-    output: {
-      format: 'jpeg',
-      dimensions: { width: input.output.width, height: input.output.height },
-      color_space: 'srgb',
-      quality: input.output.quality,
-      filename: input.output.filename,
-      sha256: input.output.sha256,
-    },
+    output: input.output,
+    parent_manifest_sha256: input.parentManifestSha256,
+    produced_at: input.producedAt?.toISOString(),
   })
 }
 
