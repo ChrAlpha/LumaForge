@@ -17,14 +17,12 @@ import type {
   PreviewResult,
   ReplayResult,
 } from '../schemas/results'
+import { prepareCandidateExport } from '../services/candidate-export'
 import {
   parseConcurrency,
   resolveConcurrency,
 } from '../services/candidate-pool'
-import {
-  exposureFromManifest,
-  runFullResolutionExport,
-} from '../services/export'
+import { runFullResolutionExport } from '../services/export'
 import { runIteration } from '../services/iteration'
 import type { ResolvedLut } from '../services/lut'
 import { resolveLutForParams } from '../services/lut'
@@ -401,9 +399,9 @@ function registerExport(render: Command, host: CommandHost): void {
         }
         const { record, environment } = session
         let params: RenderParams
+        let lut: ResolvedLut | null
         let parent: string | null = null
         let exposure: RawRenderExposure | null = null
-        let lutSha: string | null = null
         if (options.candidate && options.iteration) {
           const iterationStore = createIterationStore(
             ctx.workspaceRoot,
@@ -417,26 +415,18 @@ function registerExport(render: Command, host: CommandHost): void {
             paths.manifest,
             environment,
           )
-          params = await iterationStore.readCandidateParams(
-            options.iteration,
-            options.candidate,
-          )
+          const plan = await prepareCandidateExport({
+            manifest,
+            source: session.source,
+            candidateParamsPath: paths.params,
+            workspaceRoot: ctx.workspaceRoot,
+            cwd: ctx.cwd,
+          })
+          ;({ params, lut, exposure } = plan)
           parent = manifest.manifest_sha256
-          exposure = exposureFromManifest(manifest)
-          lutSha = manifest.lut?.sha256 ?? null
         } else {
           params = await loadParams(ctx, options)
-        }
-        const { lut } = await resolveParamsAndLut(ctx, params)
-        if (lutSha && lut && lut.identity.sha256 !== lutSha) {
-          throw new LmfgError('export.refused', {
-            message:
-              'The LUT file changed since the candidate was rendered; export refused.',
-            details: {
-              expected_sha256: lutSha,
-              actual_sha256: lut.identity.sha256,
-            },
-          })
+          ;({ lut } = await resolveParamsAndLut(ctx, params))
         }
         const outputPath = workspacePaths.exportFile(
           ctx.workspaceRoot,
