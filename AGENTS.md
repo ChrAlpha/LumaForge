@@ -94,6 +94,13 @@ image-editor assumptions.
 - `packages/luma-jpeg-runtime` is the bounded row-oriented JPEG encoder runtime.
 - `packages/luma-native-artifacts` packages prebuilt WASM/worker assets for RAW
   and JPEG runtimes.
+- `packages/lmfg-cli` is the `lmfg` agent-facing CLI (cpu-wasm tier). It
+  composes `@lumaforge/render-engine` and the Node entries of the RAW/JPEG
+  runtimes; `src/services/*` holds the domain logic (LUT contracts, color graph
+  descriptors, preview, iterations, fail-closed export, manifests),
+  `src/commands/*` are thin protocol adapters, and `src/protocol/*` owns the
+  JSON/NDJSON envelope and spec exit codes. The browser bridge tier is not
+  shipped; keep `capabilities` honest about it.
 
 ## UI And Design Boundaries
 
@@ -199,6 +206,10 @@ image-editor assumptions.
   - Native/runtime artifact changes under package `native/` folders or
     `packages/luma-native-artifacts`: run relevant `build:native`,
     `native:verify`, and native smoke commands.
+  - CLI changes under `packages/lmfg-cli`: run `pnpm cli:build` once, then
+    `pnpm --filter @lumaforge/lmfg-cli typecheck` and `pnpm test:cli`. The e2e
+    suite needs the public DNG fixture
+    (`pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public`).
 - Default closeout verification for broad app changes remains:
   - `pnpm lint`
   - `pnpm test:run`

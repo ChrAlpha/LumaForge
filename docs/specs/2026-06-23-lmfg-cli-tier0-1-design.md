@@ -1,5 +1,10 @@
 # lmfg CLI — Tier 0+1 Design
 
+- Status: Tier 0 (cpu-wasm) implemented per
+  `docs/plans/2026-09-05-lmfg-cli-tier0-release-plan.md`; Tier 1 (browser
+  bridge, §6) deferred. `capabilities` reports the browser tier as
+  unavailable. JSON is the default stdout format (`--json` is a no-op).
+
 ## 1. Purpose
 
 `lmfg` is an agent-friendly, reproducible RAW/LUT rendering CLI. Its core value

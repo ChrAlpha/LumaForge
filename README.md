@@ -154,6 +154,13 @@ and authoritative export share color intent, but they are not the same executor.
 - `src/modules/raw-processor`: the `/raw` workflow for upload, preview, style
   selection, LUT contract selection, compare, status, and export actions.
 
+### Command line: `lmfg`
+
+`packages/lmfg-cli` ships `lmfg`, a Node.js CLI for agents and scripts that
+runs the same RAW → look → export pipeline headlessly with sealed render
+manifests. See `packages/lmfg-cli/README.md` for the agent loop, JSON protocol,
+and exit codes. Build it with `pnpm cli:build`.
+
 ## Local Development
 
 Requirements:
