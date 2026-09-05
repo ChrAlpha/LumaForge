@@ -15,6 +15,10 @@ import type {
   ReplayResult,
 } from '../schemas/results'
 import {
+  parseConcurrency,
+  resolveConcurrency,
+} from '../services/candidate-pool'
+import {
   exposureFromManifest,
   runFullResolutionExport,
 } from '../services/export'
@@ -42,15 +46,21 @@ import { createSessionStore } from '../workspace/session-store'
 import type { CommandHost } from './context'
 import { runCommand } from './context'
 import {
-  loadParamsFile,
+  loadParams,
   openRenderSession,
+  parseInlineJson,
   parsePositiveInteger,
   parseQualityPercent,
   resolveParamsAndLut,
   withRuntime,
 } from './render-shared'
 
-type PreviewOptions = { params?: string; maxPixels?: number; quality: number }
+type PreviewOptions = {
+  params?: string
+  maxPixels?: number
+  quality: number
+  paramsJson?: string
+}
 
 function registerPreview(render: Command, host: CommandHost): void {
   render
@@ -62,6 +72,7 @@ function registerPreview(render: Command, host: CommandHost): void {
       '--params <file>',
       'params JSON (lmfg.params.v1); defaults apply when omitted',
     )
+    .option('--params-json <json>', 'inline params JSON (lmfg.params.v1)')
     .option(
       '--max-pixels <n>',
       'decode budget in pixels (quick ≤ 2.5 MP, bounded HQ up to 12 MP)',
@@ -79,7 +90,7 @@ function registerPreview(render: Command, host: CommandHost): void {
               await openRenderSession(ctx)
             const { params, lut } = await resolveParamsAndLut(
               ctx,
-              await loadParamsFile(ctx, options.params),
+              await loadParams(ctx, options),
             )
             const maxPixels = clampMaxPixels(options.maxPixels)
             return withRuntime(ctx, async (runtime) => {
@@ -170,7 +181,7 @@ function registerPreview(render: Command, host: CommandHost): void {
             const { record } = await openRenderSession(ctx)
             const { params, lut } = await resolveParamsAndLut(
               ctx,
-              await loadParamsFile(ctx, options.params),
+              await loadParams(ctx, options),
             )
             return {
               session_id: record.id,
@@ -186,12 +197,14 @@ function registerPreview(render: Command, host: CommandHost): void {
 }
 
 type IterationOptions = {
-  plan: string
+  plan?: string
+  planJson?: string
   maxPixels?: number
   quality: number
   contactSheet?: boolean
   sheetCols?: number
   tileWidth?: number
+  concurrency: string
 }
 
 function registerIteration(
@@ -206,11 +219,17 @@ function registerIteration(
         ? 'Render an explicit list of candidates from a plan file'
         : 'Expand parameter axes into a candidate sweep and render it',
     )
-    .requiredOption(
+    .option(
       '--plan <file>',
       kind === 'candidate'
         ? 'plan JSON (lmfg.plan.v1)'
         : 'sweep JSON (lmfg.sweep.v1)',
+    )
+    .option(
+      '--plan-json <json>',
+      kind === 'candidate'
+        ? 'inline plan JSON (lmfg.plan.v1)'
+        : 'inline sweep JSON (lmfg.sweep.v1)',
     )
     .option('--max-pixels <n>', 'decode budget in pixels', parsePositiveInteger)
     .option('--quality <n>', 'JPEG quality 1-100', parseQualityPercent, 85)
@@ -221,10 +240,29 @@ function registerIteration(
       'contact sheet tile width in pixels',
       parsePositiveInteger,
     )
+    .option(
+      '--concurrency <n|auto>',
+      'worker threads for candidate rendering (auto keeps one core free, max 8)',
+      'auto',
+    )
     .action(async function (this: Command, options: IterationOptions) {
       const ctx = host.context(this)
       const loadPlan = async (): Promise<NormalizedPlan> => {
-        const json = await readJson(ctx.resolvePath(options.plan))
+        if (options.plan === undefined && options.planJson === undefined) {
+          throw new LmfgError('args.invalid', {
+            message: 'Pass --plan <file> or --plan-json <json>.',
+          })
+        }
+        if (options.plan !== undefined && options.planJson !== undefined) {
+          throw new LmfgError('args.invalid', {
+            message:
+              'Pass either --plan <file> or --plan-json <json>, not both.',
+          })
+        }
+        const json =
+          options.planJson !== undefined
+            ? parseInlineJson(options.planJson, '--plan-json')
+            : await readJson(ctx.resolvePath(options.plan!))
         return kind === 'candidate'
           ? normalizeCandidatePlan(json)
           : expandSweepPlan(json)
@@ -264,6 +302,7 @@ function registerIteration(
                     options.contactSheet || plan.contactSheet,
                   ),
                   sheetOptions,
+                  concurrency: parseConcurrency(options.concurrency),
                 },
               }),
             )
@@ -284,6 +323,11 @@ function registerIteration(
               })),
               max_pixels: clampMaxPixels(options.maxPixels),
               quality: options.quality,
+              concurrency: resolveConcurrency({
+                requested: parseConcurrency(options.concurrency),
+                candidates: plan.candidates.length,
+                memoryProfile: ctx.options.memoryProfile,
+              }),
             }
           },
         ),
@@ -298,6 +342,7 @@ type ExportOptions = {
   quality: number
   output: string
   preferredRows?: number
+  paramsJson?: string
 }
 
 type ExportInputs = Awaited<ReturnType<typeof openRenderSession>> & {
@@ -320,6 +365,7 @@ function registerExport(render: Command, host: CommandHost): void {
       'candidate whose params, LUT, and exposure are exported (chains manifests)',
     )
     .option('--params <file>', 'params JSON when not exporting a candidate')
+    .option('--params-json <json>', 'inline params JSON (lmfg.params.v1)')
     .option('--quality <n>', 'JPEG quality 1-100', parseQualityPercent, 92)
     .option('--output <name>', 'artifact base name under exports/', 'final')
     .option(
@@ -374,7 +420,7 @@ function registerExport(render: Command, host: CommandHost): void {
           exposure = exposureFromManifest(manifest)
           lutSha = manifest.lut?.sha256 ?? null
         } else {
-          params = await loadParamsFile(ctx, options.params)
+          params = await loadParams(ctx, options)
         }
         const { lut } = await resolveParamsAndLut(ctx, params)
         if (lutSha && lut && lut.identity.sha256 !== lutSha) {
@@ -428,6 +474,7 @@ function registerExport(render: Command, host: CommandHost): void {
                 lut,
                 exposure,
                 quality: options.quality,
+                outputPath,
                 preferredRows: options.preferredRows,
                 signal: ctx.signal,
                 onProgress: (progress) =>
@@ -474,7 +521,6 @@ function registerExport(render: Command, host: CommandHost): void {
                     'Export manifest failed self-verification; nothing was written.',
                 })
               }
-              await writeFileAtomic(outputPath, result.jpeg)
               await writeJsonAtomic(manifestPath, manifest)
               await store.allocate(record.id, 'exports')
               ctx.output.event({
@@ -490,7 +536,7 @@ function registerExport(render: Command, host: CommandHost): void {
                   path: outputPath,
                   width: result.width,
                   height: result.height,
-                  byte_size: result.jpeg.byteLength,
+                  byte_size: result.byteLength,
                   sha256: result.sha256,
                   quality: options.quality,
                 },
@@ -500,6 +546,7 @@ function registerExport(render: Command, host: CommandHost): void {
                 color_graph_fingerprint: manifest.color_graph.fingerprint,
                 raw_render_exposure: result.exposure,
                 strips: result.strips,
+                resource: result.resource,
                 timings_ms: result.timings,
               }
             })

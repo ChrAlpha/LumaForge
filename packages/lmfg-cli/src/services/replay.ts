@@ -201,7 +201,8 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
   const { plan, manifest } = { plan: input.plan, manifest: input.plan.manifest }
   const timings: Record<string, number> = {}
   const total = performance.now()
-  let jpeg: Uint8Array
+  let jpeg: Uint8Array | null = null
+  let byteLength: number
   let sha256: string
   let width: number
   let height: number
@@ -216,11 +217,12 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
       lut: plan.lut,
       exposure: plan.exposure,
       quality,
+      outputPath: input.outputPath,
       preferredRows: manifest.policy.row_slice,
       signal: input.signal,
       onProgress: input.onProgress,
     })
-    ;({ jpeg, sha256, width, height, graph } = result)
+    ;({ byteLength, sha256, width, height, graph } = result)
     Object.assign(timings, result.timings)
   } else {
     const maxPixels =
@@ -237,6 +239,7 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
       signal: input.signal,
     })
     jpeg = result.rendered.jpeg
+    byteLength = jpeg.byteLength
     sha256 = result.rendered.sha256
     width = result.frame.width
     height = result.frame.height
@@ -268,7 +271,7 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
     output: { width, height, quality, filename: 'output.jpg', sha256 },
     parentManifestSha256: manifest.manifest_sha256,
   })
-  await writeFileAtomic(input.outputPath, jpeg)
+  if (jpeg) await writeFileAtomic(input.outputPath, jpeg)
   await writeJsonAtomic(input.manifestOutputPath, replayManifest)
   timings.total_ms = performance.now() - total
 
@@ -285,7 +288,7 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
       path: input.outputPath,
       width,
       height,
-      byte_size: jpeg.byteLength,
+      byte_size: byteLength,
       sha256,
       quality,
     },

@@ -10,6 +10,9 @@ export default defineConfig({
     lib: {
       entry: {
         index: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
+        'candidate-worker': fileURLToPath(
+          new URL('./src/workers/candidate-worker.ts', import.meta.url),
+        ),
       },
       formats: ['es'],
     },

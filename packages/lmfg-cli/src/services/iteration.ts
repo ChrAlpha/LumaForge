@@ -1,9 +1,6 @@
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import type { RenderEnvironment } from '@lumaforge/render-engine'
-import { sha256Hex } from '@lumaforge/render-engine'
-import type { CandidateParams } from '@lumaforge/render-engine/preview'
 import {
-  candidateRender,
   encodePreviewFrameToJpeg,
   QUICK_PREVIEW_MAX_PIXELS,
 } from '@lumaforge/render-engine/preview'
@@ -11,6 +8,7 @@ import {
 import type { Output } from '../protocol/output'
 import type { LmfgRuntime } from '../runtime/node-runtime'
 import type { LoadedSource } from '../runtime/source-loader'
+import { resolveCandidateWorkerScript } from '../runtime/versions'
 import type { ContactSheetOptions, NormalizedPlan } from '../schemas/plan'
 import type {
   CandidateSummary,
@@ -21,13 +19,15 @@ import { formatIterationId } from '../workspace/ids'
 import type { IterationStore } from '../workspace/iteration-store'
 import { toFileUri } from '../workspace/paths'
 import type { SessionStore } from '../workspace/session-store'
+import type { CandidateTask, ConcurrencyRequest } from './candidate-pool'
+import { renderCandidates, resolveConcurrency } from './candidate-pool'
 import {
   buildColorGraph,
   requireSupportedGraph,
   resolveExposure,
 } from './color-graph'
 import type { SheetTile } from './contact-sheet'
-import { buildContactSheet, downsampleRgba, fitTileSize } from './contact-sheet'
+import { buildContactSheet, fitTileSize } from './contact-sheet'
 import type { ResolvedLut } from './lut'
 import { resolveLutForParams } from './lut'
 import {
@@ -35,8 +35,8 @@ import {
   percentToQuality,
   toSourceIdentity,
 } from './manifest'
-import { computeImageMetrics } from './metrics'
 import { clampMaxPixels, decodeFrame } from './preview'
+import { captureResourceUsage } from './resource'
 
 export type IterationRunInput = {
   runtime: LmfgRuntime
@@ -54,6 +54,7 @@ export type IterationRunInput = {
     quality: number
     contactSheet: boolean
     sheetOptions: ContactSheetOptions | null
+    concurrency: ConcurrencyRequest
   }
 }
 
@@ -148,7 +149,7 @@ export async function runIteration(
     )
 
     const exposures: RawRenderExposure[] = []
-    const renderParams: CandidateParams[] = plan.candidates.map(
+    const renderParams: CandidateTask[] = plan.candidates.map(
       (candidate, index) => {
         const exposure = resolveExposure(candidate.params, {
           baselineExposure: session.probe.baselineExposure,
@@ -165,7 +166,6 @@ export async function runIteration(
         return {
           graph,
           quality: percentToQuality(input.options.quality),
-          tag: candidate.id,
         }
       },
     )
@@ -178,32 +178,28 @@ export async function runIteration(
     const tiles: SheetTile[] = []
     const summaries: CandidateSummary[] = []
     const renderStart = performance.now()
-    for await (const result of candidateRender({
-      source: frame,
-      params: renderParams,
-      maxConcurrent: 1,
+    const pool = renderCandidates({
+      frame,
+      tasks: renderParams,
+      tile: tileSize,
+      concurrency: resolveConcurrency({
+        requested: input.options.concurrency,
+        candidates: renderParams.length,
+        memoryProfile: input.runtime.memoryProfile,
+      }),
+      workerScript: resolveCandidateWorkerScript(),
       createEncoder: (options) => jpeg.createEncoder(options),
       signal: input.signal,
-    })) {
+    })
+    for await (const result of pool.results) {
       const candidate = plan.candidates[result.index]
-      const bytes = result.outputBytes as Uint8Array
-      const sha256 = sha256Hex(bytes)
-      const metrics = computeImageMetrics(
-        result.rgba,
-        result.width,
-        result.height,
-      )
+      const bytes = result.jpeg
+      const { sha256, metrics } = result
       const tile: SheetTile = {
         id: candidate.id,
-        rgba: downsampleRgba(
-          result.rgba,
-          result.width,
-          result.height,
-          tileSize.width,
-          tileSize.height,
-        ),
-        width: tileSize.width,
-        height: tileSize.height,
+        rgba: result.tile.rgba,
+        width: result.tile.width,
+        height: result.tile.height,
       }
       tiles[result.index] = tile
       const manifest = buildRenderManifest({
@@ -216,7 +212,7 @@ export async function runIteration(
         policy: {
           kind: 'candidate',
           row_slice: 32,
-          concurrency: 1,
+          concurrency: pool.concurrency,
           max_pixels: maxPixels,
         },
         environment: input.environment,
@@ -335,7 +331,9 @@ export async function runIteration(
       contact_sheet: contactSheet,
       decode: frame.decode,
       raw_render_exposure: exposures[0],
+      concurrency: pool.concurrency,
       timings_ms: timings,
+      resource: captureResourceUsage(),
     }
   } finally {
     session.dispose()

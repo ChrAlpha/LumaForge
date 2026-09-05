@@ -63,6 +63,7 @@ describeWithFixture('runIteration', () => {
           maxPixels: 300_000,
           quality: 80,
           contactSheet: true,
+          concurrency: 1,
           sheetOptions: { cols: 2, tile_width: 160 },
         },
       })

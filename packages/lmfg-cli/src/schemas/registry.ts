@@ -106,6 +106,18 @@ export const SCHEMA_REGISTRY: Record<string, SchemaEntry> = {
     schema: results.MetricsResultSchema,
     description: 'Result of `lmfg metrics compute`.',
   },
+  'lmfg.metrics.compare.v1': {
+    schema: results.MetricsCompareResultSchema,
+    description: 'Result of `lmfg metrics compare`.',
+  },
+  'lmfg.metrics.rank.v1': {
+    schema: results.MetricsRankResultSchema,
+    description: 'Result of `lmfg metrics rank`.',
+  },
+  'lmfg.objective.v1': {
+    schema: results.ObjectiveSchema,
+    description: 'Objective input for `lmfg metrics rank --objective`.',
+  },
   'lmfg.manifest.verify.v1': {
     schema: results.ManifestVerifyResultSchema,
     description: 'Result of `lmfg manifest verify`.',

@@ -53,6 +53,12 @@ function findOwnPackageDir(): string {
 }
 
 export const LMFG_PACKAGE_DIR = findOwnPackageDir()
+
+/** Built candidate worker (`dist/candidate-worker.js`), or `null` before `pnpm cli:build`. */
+export function resolveCandidateWorkerScript(): string | null {
+  const script = join(LMFG_PACKAGE_DIR, 'dist', 'candidate-worker.js')
+  return existsSync(script) ? script : null
+}
 export const LMFG_VERSION =
   readPackageJson(LMFG_PACKAGE_DIR)?.version ?? 'unknown'
 

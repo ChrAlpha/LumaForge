@@ -5,13 +5,8 @@ import type {
 import { exposureMultiplierFromEv } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import type { RenderManifest } from '@lumaforge/render-engine'
-import { sha256Hex } from '@lumaforge/render-engine'
 import type { FullResolutionExportProgress } from '@lumaforge/render-engine/export'
-import {
-  createNodeJpegRowSink,
-  preserveJpegMetadataBytes,
-  runFullResolutionJpegExport,
-} from '@lumaforge/render-engine/export'
+import { runFullResolutionJpegExport } from '@lumaforge/render-engine/export'
 import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 
 import { LmfgError } from '../protocol/errors'
@@ -23,8 +18,11 @@ import {
   requireSupportedGraph,
   resolveExposure,
 } from './color-graph'
+import { createFileJpegRowSink } from './jpeg-file-sink'
 import type { ResolvedLut } from './lut'
 import { percentToQuality } from './manifest'
+import type { ResourceUsage } from './resource'
+import { captureResourceUsage } from './resource'
 
 export const DEFAULT_EXPORT_STRIP_ROWS = 512
 
@@ -76,13 +74,16 @@ export type ExportRunInput = {
   /** Pre-resolved exposure (from a candidate manifest) or `null` to resolve from the quick frame. */
   exposure: RawRenderExposure | null
   quality: number
+  /** Final JPEG path; chunks stream into `<path>.tmp` and rename on success. */
+  outputPath: string
   preferredRows?: number
   signal?: AbortSignal
   onProgress?: (progress: FullResolutionExportProgress) => void
 }
 
 export type ExportRunResult = {
-  jpeg: Uint8Array
+  path: string
+  byteLength: number
   sha256: string
   width: number
   height: number
@@ -90,6 +91,7 @@ export type ExportRunResult = {
   exposure: RawRenderExposure
   strips: number
   timings: Record<string, number>
+  resource: ResourceUsage
 }
 
 export async function runFullResolutionExport(
@@ -98,7 +100,6 @@ export async function runFullResolutionExport(
   const timings: Record<string, number> = {}
   const total = performance.now()
   const raw = await input.runtime.raw()
-  const jpegRuntime = await input.runtime.jpeg()
   // Resolve the raw-render exposure from a throwaway quick decode first: a
   // quick decode must never share the session used for processed-window
   // export (LibRaw state is not repeatable across the two paths).
@@ -132,16 +133,19 @@ export async function runFullResolutionExport(
     let strips = 0
     const exportStart = performance.now()
     await session.beginProcessedWindowExport?.(input.signal)
-    let output
+    const sink = createFileJpegRowSink({
+      path: input.outputPath,
+      metadata: session.probe,
+    })
     try {
-      output = await runFullResolutionJpegExport({
+      await runFullResolutionJpegExport({
         capability,
         graph,
         readProcessedWindow: session.readProcessedWindow,
         quality: percentToQuality(input.quality),
         preferredRows: input.preferredRows ?? DEFAULT_EXPORT_STRIP_ROWS,
         concurrency: 1,
-        jpegSink: createNodeJpegRowSink(jpegRuntime),
+        jpegSink: sink,
         signal: input.signal,
         onProgress: (progress) => {
           strips = progress.totalStrips
@@ -152,28 +156,24 @@ export async function runFullResolutionExport(
       await session.endProcessedWindowExport?.().catch(() => undefined)
     }
     timings.export_ms = performance.now() - exportStart
-    if (output.kind !== 'bytes') {
+    const streamed = sink.result()
+    if (!streamed) {
       throw new LmfgError('export.refused', {
-        message: `Unexpected export output kind "${output.kind}".`,
+        message: 'The export finished without publishing a JPEG file.',
       })
     }
-    const jpeg = preserveJpegMetadataBytes({
-      jpeg: output.bytes,
-      metadata: session.probe,
-      width: capability.width,
-      height: capability.height,
-    })
-    assertJpegBytes(jpeg)
     timings.total_ms = performance.now() - total
     return {
-      jpeg,
-      sha256: sha256Hex(jpeg),
+      path: streamed.path,
+      byteLength: streamed.byteLength,
+      sha256: streamed.sha256,
       width: capability.width,
       height: capability.height,
       graph,
       exposure,
       strips,
       timings,
+      resource: captureResourceUsage(),
     }
   } finally {
     session.dispose()

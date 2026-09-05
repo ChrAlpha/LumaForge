@@ -1,5 +1,6 @@
 import type { Command } from 'commander'
 
+import { LmfgError } from '../protocol/errors'
 import { LutContractInputSchema } from '../schemas/params'
 import type { LutFetchResult } from '../schemas/results'
 import {
@@ -13,6 +14,7 @@ import { fileExists, readJson } from '../workspace/atomic-fs'
 import { workspacePaths } from '../workspace/paths'
 import type { CommandHost } from './context'
 import { runCommand } from './context'
+import { parseInlineJson } from './render-shared'
 
 export function registerLutCommands(program: Command, host: CommandHost): void {
   const lut = program
@@ -125,16 +127,14 @@ export function registerLutCommands(program: Command, host: CommandHost): void {
   contract
     .command('validate')
     .requiredOption('--lut <file>', '.cube LUT file')
-    .requiredOption(
-      '--contract <file>',
-      'contract JSON file (lmfg.contract.v1)',
-    )
+    .option('--contract <file>', 'contract JSON file (lmfg.contract.v1)')
+    .option('--contract-json <json>', 'inline contract JSON (lmfg.contract.v1)')
     .description(
       'Validate an explicit contract against a LUT and report export support',
     )
     .action(async function (
       this: Command,
-      options: { lut: string; contract: string },
+      options: { lut: string; contract?: string; contractJson?: string },
     ) {
       const ctx = host.context(this)
       host.setExitCode(
@@ -147,11 +147,33 @@ export function registerLutCommands(program: Command, host: CommandHost): void {
           async () => {
             const loaded = await loadLutFile(options.lut, ctx.cwd)
             const input = LutContractInputSchema.parse(
-              await readJson(ctx.resolvePath(options.contract)),
+              await loadContractInput(ctx, options),
             )
             return validateContract(loaded, input)
           },
         ),
       )
     })
+}
+
+/** `--contract <file>` or `--contract-json <json>`; both together is an error. */
+async function loadContractInput(
+  ctx: { resolvePath: (path: string) => string },
+  options: { contract?: string; contractJson?: string },
+): Promise<unknown> {
+  if (options.contract !== undefined && options.contractJson !== undefined) {
+    throw new LmfgError('args.invalid', {
+      message:
+        'Pass either --contract <file> or --contract-json <json>, not both.',
+    })
+  }
+  if (options.contractJson !== undefined) {
+    return parseInlineJson(options.contractJson, '--contract-json')
+  }
+  if (options.contract === undefined) {
+    throw new LmfgError('args.invalid', {
+      message: 'Pass --contract <file> or --contract-json <json>.',
+    })
+  }
+  return readJson(ctx.resolvePath(options.contract))
 }

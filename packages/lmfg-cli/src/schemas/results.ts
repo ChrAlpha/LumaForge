@@ -275,6 +275,11 @@ export const ContactSheetSummarySchema = z.object({
   tile_height: z.int(),
 })
 
+export const ResourceUsageSchema = z.object({
+  /** Peak resident set size of the CLI process in bytes. */
+  max_rss_bytes: z.int(),
+})
+
 export const IterationResultSchema = z.object({
   session_id: z.string(),
   iteration_id: z.string(),
@@ -285,7 +290,10 @@ export const IterationResultSchema = z.object({
   contact_sheet: ContactSheetSummarySchema.nullable(),
   decode: z.enum(['quick', 'bounded-hq']),
   raw_render_exposure: ExposureSchema,
+  /** Worker pool size actually used (1 = inline). */
+  concurrency: z.int(),
   timings_ms: z.record(z.string(), z.number()),
+  resource: ResourceUsageSchema,
 })
 
 export const ExportResultSchema = z.object({
@@ -298,6 +306,7 @@ export const ExportResultSchema = z.object({
   raw_render_exposure: ExposureSchema,
   strips: z.int(),
   timings_ms: z.record(z.string(), z.number()),
+  resource: ResourceUsageSchema.optional(),
 })
 
 export const ReplayResultSchema = z.object({
@@ -355,6 +364,78 @@ export const MetricsResultSchema = z.object({
   candidate_id: z.string(),
   metrics_uri: z.string(),
   metrics: MetricsSchema,
+})
+
+export const METRIC_KEY_VALUES = [
+  'luma.mean',
+  'luma.p1',
+  'luma.p50',
+  'luma.p99',
+  'luma.clipped_highlight_ratio',
+  'luma.clipped_shadow_ratio',
+  'chroma.mean_saturation',
+  'chroma.colorfulness',
+] as const
+
+export const MetricKeySchema = z.enum(METRIC_KEY_VALUES)
+
+export const ObjectiveTermSchema = z
+  .strictObject({
+    target: z.number().optional(),
+    min: z.number().optional(),
+    max: z.number().optional(),
+    weight: z.number().min(0).optional(),
+  })
+  .describe(
+    'Aim for target, or stay within [min, max]; penalty = weight × distance.',
+  )
+
+export const ObjectiveSchema = z
+  .partialRecord(MetricKeySchema, ObjectiveTermSchema)
+  .describe('Objective for `lmfg metrics rank`: one term per metric key.')
+
+export const MetricDeltaSchema = z.object({
+  baseline: z.number(),
+  value: z.number(),
+  delta: z.number(),
+})
+
+export const MetricsCompareResultSchema = z.object({
+  session_id: z.string(),
+  iteration_id: z.string(),
+  baseline_candidate_id: z.string(),
+  candidates: z.array(
+    z.object({
+      candidate_id: z.string(),
+      tag: nullableString,
+      metrics_uri: z.string(),
+      deltas: z.record(MetricKeySchema, MetricDeltaSchema),
+    }),
+  ),
+})
+
+export const MetricsRankResultSchema = z.object({
+  session_id: z.string(),
+  iteration_id: z.string(),
+  objective: ObjectiveSchema,
+  ranking: z.array(
+    z.object({
+      rank: z.int(),
+      candidate_id: z.string(),
+      tag: nullableString,
+      score: z.number(),
+      terms: z.array(
+        z.object({
+          key: MetricKeySchema,
+          value: z.number(),
+          penalty: z.number(),
+          weight: z.number(),
+        }),
+      ),
+      preview_uri: z.string(),
+      manifest_sha256: sha256,
+    }),
+  ),
 })
 
 export const ManifestVerifyResultSchema = z.object({
@@ -429,3 +510,5 @@ export type MetricsResult = z.output<typeof MetricsResultSchema>
 export type ManifestVerifyResult = z.output<typeof ManifestVerifyResultSchema>
 export type ManifestShowResult = z.output<typeof ManifestShowResultSchema>
 export type DryRunResult = z.output<typeof DryRunResultSchema>
+export type MetricsCompareResult = z.output<typeof MetricsCompareResultSchema>
+export type MetricsRankResult = z.output<typeof MetricsRankResultSchema>

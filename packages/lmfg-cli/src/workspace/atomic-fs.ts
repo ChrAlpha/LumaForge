@@ -26,6 +26,39 @@ export async function fileExists(path: string): Promise<boolean> {
   }
 }
 
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES'])
+const RENAME_RETRY_DELAYS_MS = [20, 100, 300]
+
+/**
+ * `rename` replaces the target atomically on POSIX and on Windows, but
+ * Windows can refuse transiently while an indexer or scanner holds the old
+ * file open; retry a few times before giving up.
+ */
+export async function renameWithRetry(
+  from: string,
+  to: string,
+  renameImpl: (from: string, to: string) => Promise<void> = rename,
+  sleep: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await renameImpl(from, to)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (
+        !code ||
+        !RENAME_RETRY_CODES.has(code) ||
+        attempt >= RENAME_RETRY_DELAYS_MS.length
+      ) {
+        throw error
+      }
+      await sleep(RENAME_RETRY_DELAYS_MS[attempt])
+    }
+  }
+}
+
 export async function writeFileAtomic(
   path: string,
   data: Uint8Array | string,
@@ -34,7 +67,7 @@ export async function writeFileAtomic(
   const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`
   try {
     await writeFile(tmp, data)
-    await rename(tmp, path)
+    await renameWithRetry(tmp, path)
   } catch (error) {
     await rm(tmp, { force: true })
     throw error

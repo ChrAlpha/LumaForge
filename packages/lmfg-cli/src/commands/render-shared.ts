@@ -1,6 +1,7 @@
 import type { RenderEnvironment } from '@lumaforge/render-engine'
 import { InvalidArgumentError } from 'commander'
 
+import { LmfgError } from '../protocol/errors'
 import { assertTierAvailable } from '../runtime/capability'
 import type { LmfgRuntime } from '../runtime/node-runtime'
 import { createLmfgRuntime } from '../runtime/node-runtime'
@@ -38,6 +39,37 @@ export async function loadParamsFile(
   file: string | undefined,
 ): Promise<RenderParams> {
   return parseRenderParams(file ? await readJson(ctx.resolvePath(file)) : {})
+}
+
+/** Inline JSON for `--params-json` / `--plan-json` (agent hosts pass objects, not files). */
+export function parseInlineJson(value: string, flag: string): unknown {
+  try {
+    return JSON.parse(value)
+  } catch (error) {
+    throw new LmfgError('args.invalid', {
+      message: `${flag} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    })
+  }
+}
+
+export type ParamsSource = { params?: string; paramsJson?: string }
+
+/** `--params <file>` or `--params-json <json>`; both together is an error. */
+export async function loadParams(
+  ctx: CommandContext,
+  source: ParamsSource,
+): Promise<RenderParams> {
+  if (source.params !== undefined && source.paramsJson !== undefined) {
+    throw new LmfgError('args.invalid', {
+      message: 'Pass either --params <file> or --params-json <json>, not both.',
+    })
+  }
+  if (source.paramsJson !== undefined) {
+    return parseRenderParams(
+      parseInlineJson(source.paramsJson, '--params-json'),
+    )
+  }
+  return loadParamsFile(ctx, source.params)
 }
 
 export type RenderSessionContext = {
