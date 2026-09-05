@@ -67,6 +67,7 @@ export interface RawToolSurfaceProps {
   recovery?: ExportRecoveryState
   onShareExport: () => void
   onDownloadExport: () => void
+  onDownloadExportManifest?: () => void
   onCopyExport: () => void
   onRecoverExportSource?: () => void
   hasImage: boolean

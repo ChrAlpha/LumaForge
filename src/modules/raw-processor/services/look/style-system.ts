@@ -110,7 +110,10 @@ export function buildLUTContractSelectionState(
   }
 }
 
-export function toCustomStyle(lut: ParsedLUT) {
+export function toCustomStyle(
+  lut: ParsedLUT,
+  options: { sha256?: string } = {},
+) {
   const warning =
     lut.profileResolution.kind === 'confirmed'
       ? `This LUT uses ${describeLUTContract(lut.profileResolution)}.`
@@ -129,6 +132,7 @@ export function toCustomStyle(lut: ParsedLUT) {
       inputProfile: lut.inputProfile,
       profileResolution: lut.profileResolution,
       fingerprint: lut.fingerprint,
+      sha256: options.sha256 ?? lut.sha256,
       sourceName: lut.sourceName,
     },
   }

@@ -12,6 +12,7 @@ import type {
 import {
   copyCanvasToClipboard,
   copyExportResultToClipboard,
+  downloadExportManifest as downloadStoredExportManifest,
   downloadExportResult as downloadStoredExportResult,
   shareExportResult as shareStoredExportResult,
 } from '../../../services/export/export-result-actions'
@@ -76,6 +77,26 @@ export function useExportResultActions({
         err instanceof Error ? err.message : 'Download action failed.'
       scheduleToast(() =>
         toast.error('Download failed', {
+          description,
+        }),
+      )
+    }
+  }, [createMaterializationDiagnostics, scheduleToast, sessionRef, toast])
+
+  const downloadExportManifest = useCallback(async () => {
+    const result = sessionRef.current?.exportState.result
+    if (!result?.manifest) return
+
+    try {
+      await downloadStoredExportManifest(
+        result,
+        createMaterializationDiagnostics('manifest'),
+      )
+    } catch (err) {
+      const description =
+        err instanceof Error ? err.message : 'Manifest download failed.'
+      scheduleToast(() =>
+        toast.error('Manifest download failed', {
           description,
         }),
       )
@@ -176,6 +197,7 @@ export function useExportResultActions({
 
   return {
     downloadExportResult,
+    downloadExportManifest,
     shareExportResult,
     copyExportResult,
   }

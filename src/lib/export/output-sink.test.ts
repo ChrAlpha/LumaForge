@@ -253,4 +253,32 @@ describe('export output sink', () => {
       new Uint8Array([4, 5, 6]).buffer,
     )
   })
+  it('forwards a write-time sha256 on blob and OPFS results without reopening files', async () => {
+    const digest = 'f'.repeat(64)
+    const blobResult = createBlobOutputResult({
+      filename: 'frame.jpg',
+      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      sha256: digest,
+    })
+    expect(blobResult.sha256).toBe(digest)
+    expect(
+      createBlobOutputResult({
+        filename: 'frame.jpg',
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      }).sha256,
+    ).toBeUndefined()
+
+    const { storage } = createMemoryOpfsStorage()
+    const getDirectory = vi.spyOn(storage, 'getDirectory')
+    const opfsResult = createOpfsFileBackedOutputResult({
+      exportId: 'export-opfs-hash',
+      filename: 'frame.jpg',
+      byteLength: 3,
+      mimeType: 'image/jpeg',
+      storage,
+      sha256: digest,
+    })
+    expect(opfsResult.sha256).toBe(digest)
+    expect(getDirectory).not.toHaveBeenCalled()
+  })
 })

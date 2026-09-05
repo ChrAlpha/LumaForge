@@ -4,6 +4,7 @@ import type {
   LUTData,
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
+import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
 import { toast } from 'sonner'
 
 import { parseCubeLUTOffThread } from '~/lib/lut/cube-parse-async'
@@ -55,6 +56,8 @@ interface LoadLUTContentOptions {
   /** Raw .cube text, or undecoded bytes (decoded on the parse worker). */
   source: string | Uint8Array
   sourceName: string
+  /** SHA-256 of the .cube bytes, recorded on the style for export manifests. */
+  sha256?: string
   trustedContract?: LUTContractSelection
   /** Checked after the off-thread parse so a cancelled load never applies. */
   signal?: AbortSignal
@@ -121,8 +124,12 @@ function reportLUTLoadFailure(error: unknown, ctx: LutLoadContext): void {
   )
 }
 
-function applyLoadedLUT(parsed: ParsedLUT, ctx: LutLoadContext): void {
-  const style = toCustomStyle(parsed)
+function applyLoadedLUT(
+  parsed: ParsedLUT,
+  ctx: LutLoadContext,
+  sha256?: string,
+): void {
+  const style = toCustomStyle(parsed, { sha256 })
   ctx.services.invalidateExportGraph()
   ctx.atoms.setLut(parsed)
   ctx.atoms.setSession((prev) =>
@@ -153,9 +160,12 @@ async function loadLUTContent(
   options: LoadLUTContentOptions,
   ctx: LutLoadContext,
 ): Promise<void> {
-  const parsed = await parseCubeLUTOffThread(options.source, {
+  const parsedLut = await parseCubeLUTOffThread(options.source, {
     sourceName: options.sourceName,
   })
+  const parsed: ParsedLUT = options.sha256
+    ? { ...parsedLut, sha256: options.sha256 }
+    : parsedLut
   if (options.signal?.aborted) {
     throw new DOMException('LUT load aborted.', 'AbortError')
   }
@@ -172,7 +182,15 @@ async function loadLUTContent(
     )
   }
 
-  applyLoadedLUT(contracted, ctx)
+  applyLoadedLUT(contracted, ctx, options.sha256)
+}
+
+/** Browsers expose `arrayBuffer()`; older DOM shims (jsdom) only expose `text()`. */
+async function readFileBytes(file: File): Promise<Uint8Array> {
+  if (typeof file.arrayBuffer === 'function') {
+    return new Uint8Array(await file.arrayBuffer())
+  }
+  return new TextEncoder().encode(await file.text())
 }
 
 export async function orchestrateLutLoadFromFile(
@@ -200,10 +218,12 @@ export async function orchestrateLutLoadFromFile(
   }
 
   try {
+    const bytes = await readFileBytes(file)
     await loadLUTContent(
       {
-        source: await file.text(),
+        source: bytes,
         sourceName: file.name,
+        sha256: (await sourceContentIdFromBytes(bytes)).sha256,
       },
       ctx,
     )
@@ -245,6 +265,7 @@ export async function orchestrateOnlineLutLoad(
       {
         source: bytes,
         sourceName: resolveOnlineLUTSourceName(entry),
+        sha256: (await sourceContentIdFromBytes(bytes)).sha256,
         trustedContract:
           entry.sourceType === 'catalog-entry'
             ? entry.trustedContract
@@ -288,7 +309,9 @@ export function orchestrateProfileSelection(
   }
 
   const style = preserveCustomLookIntensity(
-    toCustomStyle(updatedLut),
+    toCustomStyle(updatedLut, {
+      sha256: ctx.atoms.activeStyle?.lutAsset?.sha256,
+    }),
     ctx.atoms.activeStyle,
   )
 

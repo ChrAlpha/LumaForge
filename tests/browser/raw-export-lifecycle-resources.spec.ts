@@ -1,8 +1,12 @@
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import process from 'node:process'
 
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
+
+import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
 
 type ExportDebugEvent = {
   type: string
@@ -337,6 +341,46 @@ test('monitors a full desktop RAW export lifecycle with resource diagnostics', a
       .toBe(true)
     samples.push(await sampleResourceUsage(page, 'download-materialized'))
 
+    // The sealed manifest is attached after "ready" once the source RAW and
+    // the delivered JPEG have been hashed; it must verify and identify the
+    // exact bytes that were downloaded.
+    const manifestButton = exportRegion.getByRole('button', {
+      name: /^manifest$/i,
+    })
+    await expect(manifestButton).toBeVisible({ timeout: 180_000 })
+    const manifestDownloadPromise = page.waitForEvent('download')
+    await manifestButton.click()
+    const manifestDownload = await manifestDownloadPromise
+    expect(manifestDownload.suggestedFilename()).toMatch(/\.manifest\.json$/)
+    const manifestPath = await manifestDownload.path()
+    expect(manifestPath).toBeTruthy()
+    const manifest = JSON.parse(await readFile(manifestPath!, 'utf8')) as {
+      kind: string
+      manifest_sha256: string
+      policy: { kind: string }
+      source_raw: { sha256: string; byte_size: number }
+      output: { sha256: string; filename: string }
+      environment: { native_artifacts: { variant: string } }
+    }
+    expect(verifyManifestSha256(manifest)).toBe(true)
+    expect(manifest.kind).toBe('export')
+    expect(manifest.policy.kind).toBe('export-full')
+    const jpegPath = await download.path()
+    const jpegBytes = await readFile(jpegPath!)
+    expect(manifest.output.sha256).toBe(
+      createHash('sha256').update(jpegBytes).digest('hex'),
+    )
+    expect(manifest.output.filename).toBe(download.suggestedFilename())
+    const sourceBytes = await readFile(sonyRawPath)
+    expect(manifest.source_raw.byte_size).toBe(sourceBytes.byteLength)
+    expect(manifest.source_raw.sha256).toBe(
+      createHash('sha256').update(sourceBytes).digest('hex'),
+    )
+    expect(['desktop', 'low-memory']).toContain(
+      manifest.environment.native_artifacts.variant,
+    )
+    samples.push(await sampleResourceUsage(page, 'manifest-downloaded'))
+
     await page.getByRole('button', { name: /^reset$/i }).click()
     const resetDialog = page.getByRole('alertdialog', {
       name: 'Reset session',
@@ -360,6 +404,10 @@ test('monitors a full desktop RAW export lifecycle with resource diagnostics', a
     const events = await collectExportEvents(page)
     const planPayload = eventPayload(events, 'export-plan-selected')
     expectDerivedPlanCoherence(planPayload)
+    expect(eventPayload(events, 'export-manifest-ready')).toMatchObject({
+      manifestSha256: manifest.manifest_sha256,
+      outputSha256: manifest.output.sha256,
+    })
 
     const evacuationPayload = eventPayload(events, 'resource-evacuated')
     expect(evacuationPayload).toMatchObject({

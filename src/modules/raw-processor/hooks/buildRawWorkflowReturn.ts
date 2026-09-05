@@ -124,6 +124,7 @@ export function buildRawWorkflowReturn({
     exportPreviewImage: exportStage.exportPreviewImage,
     recoverInterruptedExport: exportStage.recoverInterruptedExport,
     downloadExportResult: exportStage.downloadExportResult,
+    downloadExportManifest: exportStage.downloadExportManifest,
     shareExportResult: exportStage.shareExportResult,
     copyExportResult: exportStage.copyExportResult,
     restorePreviewAfterExport: previewStage.restorePreviewAfterExport,

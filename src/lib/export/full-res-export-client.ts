@@ -3,7 +3,10 @@ import {
   normalizeExportConcurrency,
   normalizePreferredStripRows,
 } from '@lumaforge/render-engine'
-import type { ExportPerfMetric,FullResolutionExportProgress  } from '@lumaforge/render-engine/export'
+import type {
+  ExportPerfMetric,
+  FullResolutionExportProgress,
+} from '@lumaforge/render-engine/export'
 
 import type {
   ExportCheckpointMode,
@@ -38,6 +41,8 @@ export type FullResWorkerFileBackedOutputReference = {
   byteLength: number
   mimeType: string
   outputFileName?: string
+  /** SHA-256 hex of the written bytes, hashed by the worker at write time. */
+  sha256?: string
 }
 
 export type FullResWorkerOutputResult =

@@ -1,3 +1,5 @@
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
+
 import type { ExportOutputResult } from '~/lib/export/output-sink'
 
 export type ExportCopyCapability =
@@ -25,6 +27,8 @@ export type ExportResult = {
   size: number
   createdAt: number
   copyCapability: ExportCopyCapability
+  /** Sealed render manifest; attached after a full-resolution export completes. */
+  manifest?: RenderManifest
 }
 
 export function createExportResult({
@@ -35,6 +39,7 @@ export function createExportResult({
   height,
   now = () => Date.now(),
   copyCapability,
+  manifest,
 }: {
   output: ExportOutputResult
   kind?: ExportResultKind
@@ -43,6 +48,7 @@ export function createExportResult({
   height: number
   now?: () => number
   copyCapability: ExportCopyCapability
+  manifest?: RenderManifest
 }): ExportResult {
   const createdAt = now()
 
@@ -55,5 +61,6 @@ export function createExportResult({
     size: output.byteLength,
     createdAt,
     copyCapability,
+    ...(manifest ? { manifest } : {}),
   }
 }

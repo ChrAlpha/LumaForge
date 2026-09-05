@@ -51,6 +51,7 @@ export function DesktopRawToolSurface() {
             recovery={props.recovery}
             onShareExport={props.onShareExport}
             onDownloadExport={props.onDownloadExport}
+            onDownloadExportManifest={props.onDownloadExportManifest}
             onCopyExport={props.onCopyExport}
             onRecoverExportSource={props.onRecoverExportSource}
             embedded

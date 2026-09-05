@@ -1,7 +1,10 @@
+import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
+
+import { resolveRenderEnvironments } from './scripts/build/runtime-environment.mjs'
 
 export default defineConfig({
   esbuild: {
@@ -11,6 +14,9 @@ export default defineConfig({
     APP_NAME: JSON.stringify('LumaForge'),
     APP_SITE_URL: JSON.stringify('https://luma.ichr.me'),
     APP_DEPLOY_ENV: JSON.stringify('production'),
+    APP_RENDER_ENVIRONMENTS: JSON.stringify(
+      resolveRenderEnvironments({ rootDir: process.cwd() }),
+    ),
   },
   plugins: [react()],
   resolve: {

@@ -27,12 +27,14 @@ import {
   isRetryableFullResExportFailure,
   toUserFacingErrorCode,
 } from '../ingest/workflow-status'
+import { buildManifestForExportResult } from './attach-export-manifest'
 import {
   createPreExportSnapshot,
   evacuateBeforeExport,
   getPreExportEvacuationOwners,
   toResourceEvacuatedDebugPayload,
 } from './export-evacuation'
+import { resolveExportEnvironment } from './export-manifest'
 import { deriveFullResExportReadiness } from './export-readiness'
 import { resolveExportCopyCapability } from './export-result-actions'
 import { createCompletedExportResult } from './export-result-materialization'
@@ -458,10 +460,11 @@ export async function orchestrateFullResExport(
       activeSession.activeStyle?.name ?? 'neutral',
     )
 
+    const jpegQuality = quality === 'high' ? 0.92 : 0.86
     const result = await runFullResolutionExportJob({
       file: activeSourceFile,
       filename,
-      quality: quality === 'high' ? 0.92 : 0.86,
+      quality: jpegQuality,
       executionPlan: jobExecutionPlan,
       checkpoint,
       graph,
@@ -585,6 +588,65 @@ export async function orchestrateFullResExport(
     if (cleanupSuccessfulCheckpoint) {
       deferSuccessfulCheckpointCleanup(cleanupSuccessfulCheckpoint)
     }
+
+    // The manifest is attached after "ready" so hashing the source and the
+    // delivered JPEG never delays the download; a failure only logs.
+    void buildManifestForExportResult({
+      result: exportResult,
+      sourceFile: activeSourceFile,
+      graph,
+      params: ctx.atoms.params,
+      rawRenderExposure: activeRawRenderExposure,
+      style: activeSession.activeStyle,
+      quality: jpegQuality,
+      policy: {
+        kind: 'export-full',
+        row_slice: jobExecutionPlan.preferredRows,
+        concurrency: jobExecutionPlan.concurrency,
+      },
+      environment: resolveExportEnvironment(
+        jobExecutionPlan.runtimeMemoryProfile,
+      ),
+    })
+      .then((manifest) => {
+        if (
+          !ctx.refs.isMountedRef.current ||
+          ctx.refs.sessionRef.current?.id !== exportSessionId
+        ) {
+          return
+        }
+        ctx.atoms.setSession((prev) =>
+          prev &&
+          prev.id === exportSessionId &&
+          prev.exportState.result === exportResult
+            ? {
+                ...prev,
+                exportState: {
+                  ...prev.exportState,
+                  result: { ...exportResult, manifest },
+                },
+              }
+            : prev,
+        )
+        emitExportDebugEvent({
+          type: 'export-manifest-ready',
+          payload: {
+            manifestSha256: manifest.manifest_sha256,
+            outputSha256: manifest.output.sha256,
+            sourceSha256: manifest.source_raw.sha256,
+            filename: manifest.output.filename,
+            producedAt: manifest.produced_at,
+          },
+        })
+      })
+      .catch((error: unknown) => {
+        emitExportDebugEvent({
+          type: 'export-manifest-failed',
+          payload: {
+            message: error instanceof Error ? error.message : String(error),
+          },
+        })
+      })
   } catch (err) {
     if (
       exportAbortController.signal.aborted ||

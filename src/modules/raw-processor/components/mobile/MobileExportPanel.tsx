@@ -1,4 +1,11 @@
-import { AlertTriangle, Copy, Download, FolderOpen, Share2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  Copy,
+  Download,
+  FileJson,
+  FolderOpen,
+  Share2,
+} from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 
 import { localizeCopyLabel, localizeRawReason, useI18n } from '~/lib/i18n'
@@ -73,6 +80,7 @@ export function MobileExportPanel(props: {
   recovery?: ExportRecoveryState
   onShareExport: () => void | Promise<void>
   onDownloadExport: () => void
+  onDownloadExportManifest?: () => void | Promise<void>
   onCopyExport: () => void | Promise<void>
   onRecoverExportSource?: () => void
 }) {
@@ -123,7 +131,13 @@ export function MobileExportPanel(props: {
           </p>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-1.5">
+      <div
+        className={
+          props.exportResult.manifest && props.onDownloadExportManifest
+            ? 'grid grid-cols-2 gap-1.5'
+            : 'grid grid-cols-3 gap-1.5'
+        }
+      >
         <MobileExportAction
           icon={Share2}
           label={t('raw.export.share')}
@@ -142,6 +156,14 @@ export function MobileExportPanel(props: {
           disabled={props.exportResult.copyCapability.mode === 'unavailable'}
           onClick={props.onCopyExport}
         />
+        {props.exportResult.manifest && props.onDownloadExportManifest ? (
+          <MobileExportAction
+            icon={FileJson}
+            label={t('raw.export.downloadManifest')}
+            srLabel={t('raw.export.downloadManifestTitle')}
+            onClick={props.onDownloadExportManifest}
+          />
+        ) : null}
       </div>
     </m.div>
   ) : (

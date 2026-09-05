@@ -1,7 +1,14 @@
 import { createLumaJpegRuntime } from '@lumaforge/luma-jpeg-runtime'
 import { createLumaRawRuntime } from '@lumaforge/luma-raw-runtime'
-import type { JpegExportMetadata,JpegRowSink  } from '@lumaforge/render-engine/export'
-import { preserveJpegMetadata,runFullResolutionJpegExport  } from '@lumaforge/render-engine/export'
+import type {
+  JpegExportMetadata,
+  JpegRowSink,
+} from '@lumaforge/render-engine/export'
+import {
+  preserveJpegMetadata,
+  runFullResolutionJpegExport,
+} from '@lumaforge/render-engine/export'
+import { createStreamingSha256 } from '@lumaforge/render-engine/manifest'
 
 import { createRawExportSession } from '../raw/export-runtime-adapter'
 import type {
@@ -53,6 +60,7 @@ function createOpfsJpegRowSink(input: {
   return {
     createSession({ width, height, quality }) {
       let byteLength = 0
+      const outputHasher = createStreamingSha256()
       let state: 'open' | 'closed' | 'aborted' = 'open'
       const writablePromise = createOpfsOutputWritable({
         exportId: input.exportId,
@@ -66,6 +74,7 @@ function createOpfsJpegRowSink(input: {
             chunk.bytes.byteOffset + chunk.bytes.byteLength,
           ) as ArrayBuffer
           await writable.write(byteBuffer)
+          outputHasher.update(new Uint8Array(byteBuffer))
           byteLength += chunk.bytes.byteLength
         },
       })
@@ -138,6 +147,7 @@ function createOpfsJpegRowSink(input: {
               byteLength,
               mimeType: 'image/jpeg',
               outputFileName,
+              sha256: outputHasher.digestHex(),
             })
           } catch (error) {
             try {
@@ -183,7 +193,31 @@ async function prepareSuccessOutput(input: {
   return createBlobOutputResult({
     filename: input.output.filename,
     blob: blobWithMetadata,
+    sha256: await sha256OfBlobBytes(blobWithMetadata),
   })
+}
+
+function readBlobBytes(blob: Blob): Promise<Uint8Array> {
+  if (typeof blob.arrayBuffer === 'function') {
+    return blob.arrayBuffer().then((buffer) => new Uint8Array(buffer))
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.addEventListener('load', () => {
+      resolve(new Uint8Array(reader.result as ArrayBuffer))
+    })
+    reader.addEventListener('error', () => {
+      reject(reader.error ?? new Error('Blob read failed.'))
+    })
+    reader.readAsArrayBuffer(blob)
+  })
+}
+
+/** The delivered JPEG (after metadata injection) is what the manifest must identify. */
+async function sha256OfBlobBytes(blob: Blob): Promise<string> {
+  const hasher = createStreamingSha256()
+  hasher.update(await readBlobBytes(blob))
+  return hasher.digestHex()
 }
 
 const activeRequests = new Map<string, AbortController>()

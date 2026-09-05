@@ -1,3 +1,4 @@
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -229,6 +230,54 @@ describe('exportTool', () => {
     expect(onDownloadExport).toHaveBeenCalledTimes(1)
     expect(onCopyExport).toHaveBeenCalledTimes(1)
     expect(onExport).not.toHaveBeenCalled()
+  })
+
+  it('offers the manifest download only once a sealed manifest is attached', async () => {
+    const user = userEvent.setup()
+    const onDownloadExportManifest = vi.fn()
+    const manifest = {
+      manifest_version: 1,
+      kind: 'export',
+      manifest_sha256: 'c'.repeat(64),
+    } as unknown as RenderManifest
+
+    const { rerender } = render(
+      <ExportTool
+        canExport
+        isProcessing={false}
+        onExport={vi.fn()}
+        exportResult={createResult()}
+        exportShareCapability={{ available: true }}
+        onShareExport={vi.fn()}
+        onDownloadExport={vi.fn()}
+        onDownloadExportManifest={onDownloadExportManifest}
+        onCopyExport={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /manifest/i }),
+    ).not.toBeInTheDocument()
+
+    rerender(
+      <ExportTool
+        canExport
+        isProcessing={false}
+        onExport={vi.fn()}
+        exportResult={createResult({ manifest })}
+        exportShareCapability={{ available: true }}
+        onShareExport={vi.fn()}
+        onDownloadExport={vi.fn()}
+        onDownloadExportManifest={onDownloadExportManifest}
+        onCopyExport={vi.fn()}
+      />,
+    )
+
+    const button = screen.getByRole('button', { name: /manifest/i })
+    expect(button).toHaveAttribute('title', 'Download render manifest (JSON)')
+    await user.click(button)
+
+    expect(onDownloadExportManifest).toHaveBeenCalledTimes(1)
   })
 
   it('keeps download available when share is unsupported', () => {

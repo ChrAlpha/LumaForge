@@ -1,3 +1,4 @@
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -149,6 +150,36 @@ describe('mobileExportPanel', () => {
     ).not.toBeInTheDocument()
     expect(
       screen.queryByText(/cannot copy full-resolution jpeg files/i),
+    ).not.toBeInTheDocument()
+  })
+  it('adds a manifest action to the ready result when a manifest is attached', async () => {
+    const user = userEvent.setup()
+    const onDownloadExportManifest = vi.fn()
+    const manifest = {
+      manifest_version: 1,
+      kind: 'export',
+      manifest_sha256: 'd'.repeat(64),
+    } as unknown as RenderManifest
+
+    renderPanel({
+      exportResult: createResult({ kind: 'full-resolution', manifest }),
+      onDownloadExportManifest,
+    })
+
+    const button = screen.getByRole('button', { name: /manifest/i })
+    await user.click(button)
+
+    expect(onDownloadExportManifest).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides the manifest action while no manifest is attached', () => {
+    renderPanel({
+      exportResult: createResult(),
+      onDownloadExportManifest: vi.fn(),
+    })
+
+    expect(
+      screen.queryByRole('button', { name: /manifest/i }),
     ).not.toBeInTheDocument()
   })
 })

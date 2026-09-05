@@ -98,12 +98,24 @@ export type ExportProgressDebugPayload = {
 }
 
 export type ExportOutputMaterializedDebugPayload = {
-  action: 'download' | 'share' | 'copy'
+  action: 'download' | 'share' | 'copy' | 'manifest'
   outputKind: ExportOutputSink | 'blob' | 'file-backed' | 'bytes'
   filename: string
   byteLength: number
   materializedAt: string
   cleanup: 'scheduled' | 'not-needed' | 'completed'
+}
+
+export type ExportManifestReadyDebugPayload = {
+  manifestSha256: string
+  outputSha256: string
+  sourceSha256: string
+  filename: string
+  producedAt: string
+}
+
+export type ExportManifestFailedDebugPayload = {
+  message: string
 }
 
 export type ExportDebugEvent =
@@ -134,6 +146,14 @@ export type ExportDebugEvent =
   | {
       type: 'output-materialized'
       payload: ExportOutputMaterializedDebugPayload
+    }
+  | {
+      type: 'export-manifest-ready'
+      payload: ExportManifestReadyDebugPayload
+    }
+  | {
+      type: 'export-manifest-failed'
+      payload: ExportManifestFailedDebugPayload
     }
 
 type RecordedExportDebugEvent = {

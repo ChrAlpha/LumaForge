@@ -116,6 +116,7 @@ export function RawWorkflowToolProvider({
         recovery: workflow.exportRecovery,
         onShareExport: workflow.shareExportResult,
         onDownloadExport: workflow.downloadExportResult,
+        onDownloadExportManifest: workflow.downloadExportManifest,
         onCopyExport: workflow.copyExportResult,
         onRecoverExportSource,
         hasImage: workflow.hasImage,

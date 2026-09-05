@@ -1,5 +1,6 @@
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { renderHook } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ExportResult } from '../../../model/export-result'
 import { useExportResultActions } from './useExportResultActions'
@@ -28,6 +29,11 @@ function createPreviewSizeResult(): ExportResult {
 }
 
 describe('useExportResultActions', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
   it('copies preview-size exports from a rendered hidden canvas', async () => {
     const clipboardWrite = vi.fn().mockResolvedValue(undefined)
     class FakeClipboardItem {
@@ -84,5 +90,51 @@ describe('useExportResultActions', () => {
     )
     expect(clipboardWrite).toHaveBeenCalledTimes(1)
     expect(toastMessages).toEqual(['Preview-size image copied'])
+  })
+  it('downloads the attached manifest and stays silent when none exists', async () => {
+    const createObjectURL = vi.fn(() => 'blob:manifest')
+    const revokeObjectURL = vi.fn()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    vi.stubGlobal(
+      'URL',
+      Object.assign(class extends URL {}, { createObjectURL, revokeObjectURL }),
+    )
+    const manifest = {
+      manifest_version: 1,
+      kind: 'export',
+      manifest_sha256: 'b'.repeat(64),
+    } as unknown as RenderManifest
+    const sessionRef = {
+      current: {
+        exportState: { result: createPreviewSizeResult() },
+      },
+    }
+    const toastError = vi.fn()
+
+    const { result } = renderHook(() =>
+      useExportResultActions({
+        sessionRef,
+        pipelineRef: { current: null },
+        previewCopyCanvasRef: { current: null },
+        previewSize: { width: 640, height: 480 },
+        scheduleToast: (notify) => {
+          notify()
+        },
+        toast: { success: vi.fn(), error: toastError },
+      }),
+    )
+
+    await result.current.downloadExportManifest()
+    expect(createObjectURL).not.toHaveBeenCalled()
+
+    sessionRef.current = {
+      exportState: {
+        result: { ...createPreviewSizeResult(), manifest },
+      },
+    }
+    await result.current.downloadExportManifest()
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(toastError).not.toHaveBeenCalled()
   })
 })

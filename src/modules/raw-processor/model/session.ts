@@ -112,6 +112,8 @@ export type StyleAsset = {
     title?: string
     sourceName?: string
     fingerprint?: string
+    /** SHA-256 of the .cube bytes; recorded in export manifests. */
+    sha256?: string
     inputProfile?: LUTInputProfile
     profileResolution?: LUTContractResolution
   }

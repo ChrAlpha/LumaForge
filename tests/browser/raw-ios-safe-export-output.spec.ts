@@ -1,10 +1,13 @@
 import type { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import process from 'node:process'
 
 import type { Page } from '@playwright/test'
 import { devices, expect, test } from '@playwright/test'
+
+import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
 
 type ExportDebugEvent = {
   type: string
@@ -277,4 +280,29 @@ test('low-memory WebKit export decodes without a bottom color band for the Sony 
   })
   expect(stats.maxAdjacentDelta).toBeLessThan(48)
   expect(stats.terminalDelta).toBeLessThan(18)
+
+  // OPFS-backed output is hashed by the worker as it is written, so the
+  // manifest must identify the downloaded JPEG without reopening the file.
+  const manifestButton = page.getByRole('button', { name: /manifest/i })
+  await expect(manifestButton).toBeVisible({ timeout: 180_000 })
+  const manifestDownloadPromise = page.waitForEvent('download')
+  await manifestButton.click()
+  const manifestDownload = await manifestDownloadPromise
+  const manifestPath = await manifestDownload.path()
+  expect(manifestPath).toBeTruthy()
+  const manifest = JSON.parse(await readFile(manifestPath!, 'utf8')) as {
+    kind: string
+    output: { sha256: string }
+    environment: { native_artifacts: { variant: string } }
+  }
+  await testInfo.attach('sony-low-memory-webkit-manifest.json', {
+    body: JSON.stringify(manifest, null, 2),
+    contentType: 'application/json',
+  })
+  expect(verifyManifestSha256(manifest)).toBe(true)
+  expect(manifest.kind).toBe('export')
+  expect(manifest.output.sha256).toBe(
+    createHash('sha256').update(jpeg).digest('hex'),
+  )
+  expect(manifest.environment.native_artifacts.variant).toBe('low-memory')
 })

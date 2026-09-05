@@ -18,7 +18,11 @@ type ClipboardEnvironment = {
   }
 }
 
-export type ExportOutputMaterializationAction = 'download' | 'share' | 'copy'
+export type ExportOutputMaterializationAction =
+  | 'download'
+  | 'share'
+  | 'copy'
+  | 'manifest'
 
 export type ExportOutputMaterializationEvent = {
   action: ExportOutputMaterializationAction
@@ -227,4 +231,41 @@ export async function copyCanvasToClipboard(
     blob.type === 'image/png' ? blob : new Blob([blob], { type: 'image/png' })
 
   await copyBlobToClipboard(pngBlob, environment)
+}
+
+export function exportManifestFilename(result: Pick<ExportResult, 'filename'>) {
+  return `${result.filename.replace(/\.jpe?g$/i, '')}.manifest.json`
+}
+
+/**
+ * Download the sealed render manifest as a JSON sidecar named after the JPEG
+ * (`<name>.manifest.json`). Requires a result that carries a manifest.
+ */
+export async function downloadExportManifest(
+  result: ExportResult,
+  environment: {
+    document?: Document
+    URL?: typeof URL
+  } & MaterializationDiagnostics = {},
+) {
+  if (!result.manifest) {
+    throw new Error('EXPORT_MANIFEST_UNAVAILABLE')
+  }
+  const documentLike = environment.document ?? document
+  const urlLike = environment.URL ?? URL
+  const blob = new Blob([JSON.stringify(result.manifest, null, 2)], {
+    type: 'application/json',
+  })
+  reportMaterialized(result, 'manifest', blob.size, environment, 'scheduled')
+  const url = urlLike.createObjectURL(blob)
+  const link = documentLike.createElement('a')
+
+  link.href = url
+  link.download = exportManifestFilename(result)
+  documentLike.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => {
+    urlLike.revokeObjectURL(url)
+  }, 0)
 }

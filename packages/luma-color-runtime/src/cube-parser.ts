@@ -20,6 +20,8 @@ export interface ParsedLUT {
   fingerprint: string
   profileResolution: LUTContractResolution
   inputProfile: LUTInputProfile
+  /** SHA-256 of the source .cube bytes when the caller recorded it (content identity for manifests). */
+  sha256?: string
 }
 
 export interface ParseCubeOptions {

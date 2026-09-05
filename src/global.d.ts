@@ -26,6 +26,17 @@ declare global {
   const APP_NAME: string
   const APP_SITE_URL: string
   const APP_DEPLOY_ENV: 'preview' | 'production'
+  /** Build-time runtime versions and native build ids per memory profile (see scripts/build/runtime-environment.mjs). */
+  const APP_RENDER_ENVIRONMENTS: Record<
+    'desktop' | 'low-memory',
+    {
+      render_engine: string
+      luma_color_runtime: string
+      luma_raw_runtime: string
+      luma_jpeg_runtime: string
+      native_artifacts: { build_id: string; variant: 'desktop' | 'low-memory' }
+    }
+  >
 }
 
 declare global {

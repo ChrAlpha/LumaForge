@@ -170,15 +170,19 @@ export function useRawExportStage({
     scheduleToast,
     toast,
   })
-  const { downloadExportResult, shareExportResult, copyExportResult } =
-    useExportResultActions({
-      sessionRef,
-      pipelineRef,
-      previewCopyCanvasRef,
-      previewSize: stats?.previewSize,
-      scheduleToast,
-      toast,
-    })
+  const {
+    downloadExportResult,
+    downloadExportManifest,
+    shareExportResult,
+    copyExportResult,
+  } = useExportResultActions({
+    sessionRef,
+    pipelineRef,
+    previewCopyCanvasRef,
+    previewSize: stats?.previewSize,
+    scheduleToast,
+    toast,
+  })
   const { exportPreviewImage } = useHqPreviewExportAction({
     sessionRef,
     decodedImageRef,
@@ -213,6 +217,7 @@ export function useRawExportStage({
     ) => Promise<void>,
     recoverInterruptedExport,
     downloadExportResult,
+    downloadExportManifest,
     shareExportResult,
     copyExportResult,
     exportPreviewImage,

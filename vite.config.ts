@@ -21,6 +21,7 @@ import {
   resolveRawRouteHtmlOutputPaths,
   selectRawRouteAssets,
 } from './scripts/build/raw-route-html'
+import { resolveRenderEnvironments } from './scripts/build/runtime-environment.mjs'
 import {
   assertNativeRuntimeAssets,
   copyNativeRuntimeAssets,
@@ -297,6 +298,9 @@ export default defineConfig(({ command }) => {
       ),
       APP_SITE_URL: JSON.stringify(seoOptions.siteUrl),
       APP_DEPLOY_ENV: JSON.stringify(seoOptions.deployEnv),
+      APP_RENDER_ENVIRONMENTS: JSON.stringify(
+        resolveRenderEnvironments({ rootDir: process.cwd() }),
+      ),
     },
   }
 })

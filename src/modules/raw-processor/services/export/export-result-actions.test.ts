@@ -1,3 +1,4 @@
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ExportOutputResult } from '~/lib/export/output-sink'
@@ -10,6 +11,7 @@ import { createExportResult } from '../../model/export-result'
 import {
   copyCanvasToClipboard,
   copyExportResultToClipboard,
+  downloadExportManifest,
   downloadExportResult,
   resolveExportCopyCapability,
   resolveExportShareButtonCapability,
@@ -143,6 +145,59 @@ describe('export result actions', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('downloads the sealed manifest as JSON named after the JPEG', async () => {
+    vi.useFakeTimers()
+    const manifest = {
+      manifest_version: 1,
+      kind: 'export',
+      manifest_sha256: 'a'.repeat(64),
+    } as unknown as RenderManifest
+    const result = { ...createResult(), manifest }
+    const click = vi.fn()
+    const remove = vi.fn()
+    const append = vi.fn()
+    const link = { href: '', download: '', click, remove }
+    const documentLike = {
+      createElement: vi.fn(() => link),
+      body: { append },
+    } as unknown as Document
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:manifest')
+    const urlLike = {
+      createObjectURL,
+      revokeObjectURL: vi.fn(),
+    } as unknown as typeof URL
+    const onMaterialize = vi.fn()
+
+    try {
+      await downloadExportManifest(result, {
+        document: documentLike,
+        URL: urlLike,
+        onMaterialize,
+      })
+
+      const blob = createObjectURL.mock.calls[0]?.[0] as Blob | undefined
+      expect(blob?.type).toBe('application/json')
+      expect(blob?.size).toBe(JSON.stringify(manifest, null, 2).length)
+      expect(link.download).toBe('frame_neutral_fullres.manifest.json')
+      expect(click).toHaveBeenCalledTimes(1)
+      expect(onMaterialize).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'manifest' }),
+      )
+
+      vi.runOnlyPendingTimers()
+
+      expect(urlLike.revokeObjectURL).toHaveBeenCalledWith('blob:manifest')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('refuses to download a manifest that was never attached', async () => {
+    await expect(downloadExportManifest(createResult())).rejects.toThrow(
+      'EXPORT_MANIFEST_UNAVAILABLE',
+    )
   })
 
   it('reports file-backed output materialization only inside user actions', async () => {

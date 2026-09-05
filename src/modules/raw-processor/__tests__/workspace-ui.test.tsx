@@ -213,6 +213,7 @@ function rawProcessorViewState(
     exportPreviewImage: vi.fn(),
     recoverInterruptedExport: vi.fn(),
     downloadExportResult: vi.fn(),
+    downloadExportManifest: vi.fn(),
     shareExportResult: vi.fn(),
     copyExportResult: vi.fn(),
     restorePreviewAfterExport: vi.fn(),

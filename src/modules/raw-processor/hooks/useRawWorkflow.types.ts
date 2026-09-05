@@ -110,6 +110,7 @@ export interface UseRawWorkflowReturn {
   exportPreviewImage: () => Promise<void>
   recoverInterruptedExport: (file: File) => Promise<void>
   downloadExportResult: () => Promise<void>
+  downloadExportManifest: () => Promise<void>
   shareExportResult: () => Promise<void>
   copyExportResult: () => Promise<void>
   restorePreviewAfterExport: () => Promise<void>

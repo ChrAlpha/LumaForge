@@ -1,5 +1,5 @@
 import { useAtomValue } from 'jotai'
-import { Copy, Download, FolderOpen, Share2 } from 'lucide-react'
+import { Copy, Download, FileJson, FolderOpen, Share2 } from 'lucide-react'
 
 import { Button } from '~/components/ui/button'
 import { localizeCopyLabel, localizeRawReason, useI18n } from '~/lib/i18n'
@@ -31,6 +31,7 @@ export function ExportTool({
   exportShareCapability,
   onShareExport,
   onDownloadExport,
+  onDownloadExportManifest,
   onCopyExport,
   onRecoverExportSource,
   activePlan,
@@ -51,6 +52,7 @@ export function ExportTool({
   exportShareCapability: ExportShareCapability
   onShareExport: () => void | Promise<void>
   onDownloadExport: () => void
+  onDownloadExportManifest?: () => void | Promise<void>
   onCopyExport: () => void | Promise<void>
   onRecoverExportSource?: () => void
   activePlan?: ActiveExportPlanState
@@ -132,6 +134,19 @@ export function ExportTool({
               <Download aria-hidden="true" />
               {t('raw.export.download')}
             </Button>
+            {exportResult.manifest && onDownloadExportManifest ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={onDownloadExportManifest}
+                title={t('raw.export.downloadManifestTitle')}
+                className="[&_svg]:size-3.5"
+              >
+                <FileJson aria-hidden="true" />
+                {t('raw.export.downloadManifest')}
+              </Button>
+            ) : null}
             {exportResult.copyCapability.mode === 'unavailable' ? (
               <Button
                 type="button"

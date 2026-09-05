@@ -4,6 +4,8 @@ export type BlobOutputResult = {
   blob: Blob
   byteLength: number
   mimeType: string
+  /** SHA-256 hex of the delivered bytes when the producer hashed them. */
+  sha256?: string
 }
 
 export type FileBackedOutputResult = {
@@ -14,6 +16,8 @@ export type FileBackedOutputResult = {
   mimeType: string
   openBlob: () => Promise<Blob>
   cleanup?: () => Promise<void>
+  /** SHA-256 hex of the delivered bytes, hashed at write time so the file never has to be reopened. */
+  sha256?: string
 }
 
 export type BytesOutputResult = {
@@ -22,6 +26,7 @@ export type BytesOutputResult = {
   bytes: Uint8Array
   byteLength: number
   mimeType: string
+  sha256?: string
 }
 
 export type ExportOutputResult =
@@ -101,6 +106,7 @@ async function writeOpfsFile(
 export function createBlobOutputResult(input: {
   filename: string
   blob: Blob
+  sha256?: string
 }): BlobOutputResult {
   return {
     kind: 'blob',
@@ -108,6 +114,7 @@ export function createBlobOutputResult(input: {
     blob: input.blob,
     byteLength: input.blob.size,
     mimeType: input.blob.type || 'image/jpeg',
+    ...(input.sha256 ? { sha256: input.sha256 } : {}),
   }
 }
 
@@ -231,6 +238,7 @@ export function createOpfsFileBackedOutputResult(input: {
   mimeType: string
   outputFileName?: string
   storage?: OpfsStorage
+  sha256?: string
 }): FileBackedOutputResult {
   const outputFileName = input.outputFileName ?? DEFAULT_OPFS_OUTPUT_FILE
   const tempFileName = `${outputFileName}${OPFS_OUTPUT_TEMP_SUFFIX}`
@@ -242,6 +250,7 @@ export function createOpfsFileBackedOutputResult(input: {
     filename: input.filename,
     byteLength: input.byteLength,
     mimeType: input.mimeType,
+    ...(input.sha256 ? { sha256: input.sha256 } : {}),
     async openBlob() {
       const exportDirectory = await getOpfsExportDirectory(
         input.exportId,
