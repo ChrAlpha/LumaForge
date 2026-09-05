@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, promises as fs } from 'node:fs'
+import { createReadStream, promises as fs } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
-import { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
+
+import { downloadToFile } from './download.mjs'
 
 const scriptPath = fileURLToPath(import.meta.url)
 const scriptDir = path.dirname(scriptPath)
@@ -14,7 +14,18 @@ const lockPath = path.join(nativeDir, 'sources.lock.json')
 const cacheDir = path.join(nativeDir, '.cache', 'sources')
 const vendorDir = path.join(nativeDir, 'vendor')
 const vendorTempDir = path.join(nativeDir, `vendor.tmp-${process.pid}`)
-const downloadTimeoutMs = 120_000
+function readPositiveIntEnv(name, fallback) {
+  const raw = process.env[name]
+  if (raw === undefined || raw === '') return fallback
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new TypeError(`${name} must be a positive integer, got ${JSON.stringify(raw)}`)
+  }
+  return parsed
+}
+
+const downloadTimeoutMs = readPositiveIntEnv('LUMAFORGE_NATIVE_FETCH_TIMEOUT_MS', 120_000)
+const downloadAttempts = readPositiveIntEnv('LUMAFORGE_NATIVE_FETCH_ATTEMPTS', 3)
 const sha256Pattern = /^[0-9a-f]{64}$/
 const sourceFields = [
   'name',
@@ -49,31 +60,16 @@ async function sha256File(absolutePath) {
 }
 
 async function downloadArchive(source, archivePath) {
-  const tempPath = `${archivePath}.download-${process.pid}`
-  try {
-    const response = await fetch(source.url, {
-      signal: AbortSignal.timeout(downloadTimeoutMs),
-    })
-    if (!response.ok) {
-      throw new Error(`${response.status} ${response.statusText}`)
-    }
-    if (!response.body) {
-      throw new Error('response body is empty')
-    }
-
-    await pipeline(Readable.fromWeb(response.body), createWriteStream(tempPath))
-    await fs.rename(tempPath, archivePath)
-  } catch (error) {
-    await fs.rm(tempPath, { force: true })
-    const details = error instanceof Error ? error.message : String(error)
-    const timeout =
-      error instanceof Error &&
-      (error.name === 'AbortError' || error.name === 'TimeoutError')
-        ? ` timed out after ${downloadTimeoutMs}ms`
-        : ''
-    throw new Error(
-      `Failed to download ${formatSource(source)} from ${source.url}${timeout}: ${details}`,
-    )
+  const urls = [source.url, ...(source.mirrors ?? [])]
+  const { url, attempt } = await downloadToFile({
+    urls,
+    destination: archivePath,
+    timeoutMs: downloadTimeoutMs,
+    attempts: downloadAttempts,
+    log: (line) => console.warn(line),
+  })
+  if (url !== source.url || attempt > 1) {
+    console.warn(`Downloaded ${formatSource(source)} from ${url} (attempt ${attempt})`)
   }
 }
 
@@ -297,6 +293,23 @@ function validateSource(source, index) {
     throw new TypeError(
       `Invalid native source lockfile: sources[${index}].url must use http or https`,
     )
+  }
+
+  if (source.mirrors !== undefined) {
+    if (!Array.isArray(source.mirrors)) {
+      throw new TypeError(`Invalid native source lockfile: sources[${index}].mirrors must be an array of URLs`)
+    }
+    source.mirrors.forEach((mirror, mirrorIndex) => {
+      let mirrorUrl
+      try {
+        mirrorUrl = new URL(mirror)
+      } catch {
+        throw new TypeError(`Invalid native source lockfile: sources[${index}].mirrors[${mirrorIndex}] must be a valid URL`)
+      }
+      if (mirrorUrl.protocol !== 'http:' && mirrorUrl.protocol !== 'https:') {
+        throw new TypeError(`Invalid native source lockfile: sources[${index}].mirrors[${mirrorIndex}] must use http or https`)
+      }
+    })
   }
 
   validateBasenameOnlyField(source, index, 'archiveName')

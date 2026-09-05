@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import process from 'node:process'
 
 export const rawFamilies = [
   'apple-dng',
@@ -49,17 +50,36 @@ function validateBasenameOnlyFile(value, index) {
   }
 }
 
-function validateFixtureUrl(value, index) {
+function validateHttpUrl(value, label) {
   let url
   try {
     url = new URL(value)
   } catch {
-    throw publicLockfileError(`fixtures[${index}].url must be a valid URL`)
+    throw publicLockfileError(`${label} must be a valid URL`)
   }
 
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw publicLockfileError(`fixtures[${index}].url must use http or https`)
+    throw publicLockfileError(`${label} must use http or https`)
   }
+}
+
+function validateFixtureUrl(value, index) {
+  validateHttpUrl(value, `fixtures[${index}].url`)
+}
+
+function validateFixtureMirrors(mirrors, index) {
+  if (mirrors === undefined) return
+  if (!Array.isArray(mirrors)) {
+    throw publicLockfileError(`fixtures[${index}].mirrors must be an array of URLs`)
+  }
+  mirrors.forEach((mirror, mirrorIndex) => {
+    if (typeof mirror !== 'string' || mirror.length === 0) {
+      throw publicLockfileError(
+        `fixtures[${index}].mirrors[${mirrorIndex}] must be a non-empty string`,
+      )
+    }
+    validateHttpUrl(mirror, `fixtures[${index}].mirrors[${mirrorIndex}]`)
+  })
 }
 
 function validateFixture(fixture, index) {
@@ -108,6 +128,7 @@ function validateFixture(fixture, index) {
   }
 
   validateFixtureUrl(fixture.url, index)
+  validateFixtureMirrors(fixture.mirrors, index)
   validateBasenameOnlyFile(fixture.file, index)
 }
 
@@ -173,4 +194,19 @@ export function selectFixtures(fixtures, options = {}) {
   }
 
   return [...fixtures]
+}
+
+/**
+ * Candidate download URLs in priority order: an optional mirror base from
+ * `LUMAFORGE_FIXTURE_MIRROR` (joined with the fixture file name), then the
+ * canonical URL, then any lockfile mirrors. Duplicates are removed.
+ */
+export function resolveFixtureUrls(fixture, env = process.env) {
+  const urls = []
+  const mirrorBase = env.LUMAFORGE_FIXTURE_MIRROR?.trim()
+  if (mirrorBase) {
+    urls.push(`${mirrorBase.replace(/\/+$/, '')}/${encodeURIComponent(fixture.file)}`)
+  }
+  urls.push(fixture.url, ...(fixture.mirrors ?? []))
+  return [...new Set(urls)]
 }

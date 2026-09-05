@@ -15,7 +15,10 @@
     {
       "name": "lcms2",
       "version": "2.18",
-      "url": "https://downloads.sourceforge.net/project/lcms/lcms/2.18/lcms2-2.18.tar.gz",
+      "url": "https://github.com/mm2/Little-CMS/releases/download/lcms2.18/lcms2-2.18.tar.gz",
+      "mirrors": [
+        "https://downloads.sourceforge.net/project/lcms/lcms/2.18/lcms2-2.18.tar.gz"
+      ],
       "sha256": "ee67be3566f459362c1ee094fde2c159d33fa0390aa4ed5f5af676f9e5004347",
       "archiveName": "lcms2-2.18.tar.gz",
       "extractDir": "lcms2-2.18"

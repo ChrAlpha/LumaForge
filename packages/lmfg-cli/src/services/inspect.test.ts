@@ -1,26 +1,17 @@
 // @vitest-environment node
-import { existsSync } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
 
-import { detectCapabilities } from '../runtime/capability'
 import { createLmfgRuntime } from '../runtime/node-runtime'
 import { loadSourceFile } from '../runtime/source-loader'
+import {
+  describeWithFixture,
+  FIXTURE_PATH,
+} from '../test-support/describe-with-fixture'
 import { inspectSource } from './inspect'
-
-const FIXTURE = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../luma-raw-runtime/fixtures/.cache/public/raw-pixls-iphone-se.dng',
-)
-const ready =
-  existsSync(FIXTURE) &&
-  detectCapabilities({ memoryProfile: 'desktop' }).render_tiers.cpu_wasm
-    .available
-const d = ready ? describe : describe.skip
 
 let dir: string
 beforeEach(async () => {
@@ -30,11 +21,11 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-d('inspectSource', () => {
+describeWithFixture('inspectSource', () => {
   it('reports metadata, capability, exposure, and writes the embedded preview', async () => {
     const runtime = createLmfgRuntime({ memoryProfile: 'desktop' })
     try {
-      const source = await loadSourceFile(FIXTURE, dir)
+      const source = await loadSourceFile(FIXTURE_PATH, dir)
       const previewPath = join(dir, 'embedded-preview.jpg')
       const result = await inspectSource({
         runtime,

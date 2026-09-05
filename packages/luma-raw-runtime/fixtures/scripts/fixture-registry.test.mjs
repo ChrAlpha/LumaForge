@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import {
   fixtureCachePath,
   readFixtureLock,
+  resolveFixtureUrls,
   selectFixtures,
   validateFixtureLock,
 } from './fixture-registry.mjs'
@@ -143,5 +144,40 @@ describe('fixture registry', () => {
     expect(
       selectFixtures(lock.fixtures, { purpose: 'local-compatibility' }),
     ).toHaveLength(3)
+  })
+})
+
+describe('fixture mirrors', () => {
+  const fixture = validLock.fixtures[0]
+
+  it('accepts and validates optional mirrors', () => {
+    const lock = {
+      ...validLock,
+      fixtures: [{ ...fixture, mirrors: ['https://mirror.example/raw.dng'] }],
+    }
+    expect(validateFixtureLock(lock).fixtures[0].mirrors).toEqual([
+      'https://mirror.example/raw.dng',
+    ])
+    expect(() =>
+      validateFixtureLock({ ...validLock, fixtures: [{ ...fixture, mirrors: ['ftp://x'] }] }),
+    ).toThrow(/mirrors\[0\] must use http or https/)
+    expect(() =>
+      validateFixtureLock({ ...validLock, fixtures: [{ ...fixture, mirrors: 'nope' }] }),
+    ).toThrow(/mirrors must be an array/)
+  })
+
+  it('orders urls as env mirror, canonical, lockfile mirrors', () => {
+    const withMirrors = { ...fixture, mirrors: ['https://mirror.example/raw.dng'] }
+    expect(resolveFixtureUrls(withMirrors, {})).toEqual([
+      fixture.url,
+      'https://mirror.example/raw.dng',
+    ])
+    expect(
+      resolveFixtureUrls(withMirrors, { LUMAFORGE_FIXTURE_MIRROR: 'https://cache.example/fixtures/' }),
+    ).toEqual([
+      'https://cache.example/fixtures/raw-pixls-iphone-se.dng',
+      fixture.url,
+      'https://mirror.example/raw.dng',
+    ])
   })
 })

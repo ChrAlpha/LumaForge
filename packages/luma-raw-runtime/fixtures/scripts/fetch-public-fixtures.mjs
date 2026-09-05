@@ -1,15 +1,15 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, promises as fs } from 'node:fs'
+import { createReadStream, promises as fs } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
-import { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 
+import { downloadToFile } from '../../native/scripts/download.mjs'
 import {
   fixtureCacheDir,
   fixtureCachePath,
   readFixtureLock,
+  resolveFixtureUrls,
   selectFixtures,
 } from './fixture-registry.mjs'
 
@@ -18,7 +18,19 @@ const scriptDir = path.dirname(scriptPath)
 const fixturesDir = path.dirname(scriptDir)
 const lockPath = path.join(fixturesDir, 'public.lock.json')
 const cacheDir = fixtureCacheDir(fixturesDir)
-const downloadTimeoutMs = 120_000
+
+function readPositiveIntEnv(name, fallback) {
+  const raw = process.env[name]
+  if (raw === undefined || raw === '') return fallback
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new TypeError(`${name} must be a positive integer, got ${JSON.stringify(raw)}`)
+  }
+  return parsed
+}
+
+const downloadTimeoutMs = readPositiveIntEnv('LUMAFORGE_FIXTURE_TIMEOUT_MS', 120_000)
+const downloadAttempts = readPositiveIntEnv('LUMAFORGE_FIXTURE_ATTEMPTS', 3)
 
 async function pathExists(absolutePath) {
   try {
@@ -40,31 +52,16 @@ async function sha256File(absolutePath) {
 }
 
 async function downloadFixture(fixture, fixturePath) {
-  const tempPath = `${fixturePath}.download-${process.pid}`
-  try {
-    const response = await fetch(fixture.url, {
-      signal: AbortSignal.timeout(downloadTimeoutMs),
-    })
-    if (!response.ok) {
-      throw new Error(`${response.status} ${response.statusText}`)
-    }
-    if (!response.body) {
-      throw new Error('response body is empty')
-    }
-
-    await pipeline(Readable.fromWeb(response.body), createWriteStream(tempPath))
-    await fs.rename(tempPath, fixturePath)
-  } catch (error) {
-    await fs.rm(tempPath, { force: true })
-    const details = error instanceof Error ? error.message : String(error)
-    const timeout =
-      error instanceof Error &&
-      (error.name === 'AbortError' || error.name === 'TimeoutError')
-        ? ` timed out after ${downloadTimeoutMs}ms`
-        : ''
-    throw new Error(
-      `Failed to download ${fixture.name} from ${fixture.url}${timeout}: ${details}`,
-    )
+  const urls = resolveFixtureUrls(fixture, process.env)
+  const { url, attempt } = await downloadToFile({
+    urls,
+    destination: fixturePath,
+    timeoutMs: downloadTimeoutMs,
+    attempts: downloadAttempts,
+    log: (line) => console.warn(line),
+  })
+  if (url !== fixture.url || attempt > 1) {
+    console.warn(`Downloaded ${fixture.name} from ${url} (attempt ${attempt})`)
   }
 }
 

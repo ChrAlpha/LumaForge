@@ -1,31 +1,22 @@
 // @vitest-environment node
-import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
 
 import { Output } from '../protocol/output'
-import { detectCapabilities } from '../runtime/capability'
 import { createLmfgRuntime } from '../runtime/node-runtime'
 import { loadSourceFile } from '../runtime/source-loader'
 import { resolveRenderEnvironment } from '../runtime/versions'
 import { expandSweepPlan } from '../schemas/plan'
+import {
+  describeWithFixture,
+  FIXTURE_PATH,
+} from '../test-support/describe-with-fixture'
 import { createIterationStore } from '../workspace/iteration-store'
 import { createSessionStore } from '../workspace/session-store'
 import { runIteration } from './iteration'
-
-const FIXTURE = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../luma-raw-runtime/fixtures/.cache/public/raw-pixls-iphone-se.dng',
-)
-const ready =
-  existsSync(FIXTURE) &&
-  detectCapabilities({ memoryProfile: 'desktop' }).render_tiers.cpu_wasm
-    .available
-const d = ready ? describe : describe.skip
 
 let root: string
 beforeEach(async () => {
@@ -35,12 +26,12 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-d('runIteration', () => {
+describeWithFixture('runIteration', () => {
   it('renders a sweep with events, manifests, metrics, tiles, and a contact sheet', async () => {
     const runtime = createLmfgRuntime({ memoryProfile: 'desktop' })
     const events: string[] = []
     try {
-      const source = await loadSourceFile(FIXTURE, '/')
+      const source = await loadSourceFile(FIXTURE_PATH, '/')
       const store = createSessionStore(root)
       const record = await store.init({
         sourcePath: source.absolutePath,

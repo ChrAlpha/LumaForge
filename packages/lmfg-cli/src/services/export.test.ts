@@ -1,26 +1,16 @@
 // @vitest-environment node
 import { Buffer } from 'node:buffer'
-import { existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { detectCapabilities } from '../runtime/capability'
 import { createLmfgRuntime } from '../runtime/node-runtime'
 import { loadSourceFile } from '../runtime/source-loader'
 import { parseRenderParams } from '../schemas/params'
+import {
+  describeWithFixture,
+  FIXTURE_PATH,
+} from '../test-support/describe-with-fixture'
 import { assertJpegBytes, runFullResolutionExport } from './export'
-
-const FIXTURE = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../luma-raw-runtime/fixtures/.cache/public/raw-pixls-iphone-se.dng',
-)
-const ready =
-  existsSync(FIXTURE) &&
-  detectCapabilities({ memoryProfile: 'desktop' }).render_tiers.cpu_wasm
-    .available
-const d = ready ? describe : describe.skip
 
 describe('assertJpegBytes', () => {
   it('accepts SOI..EOI and refuses anything else', () => {
@@ -36,12 +26,12 @@ describe('assertJpegBytes', () => {
   })
 })
 
-d('runFullResolutionExport', () => {
+describeWithFixture('runFullResolutionExport', () => {
   it('exports the full-resolution JPEG with EXIF and progress', async () => {
     const runtime = createLmfgRuntime({ memoryProfile: 'desktop' })
     const progress: number[] = []
     try {
-      const source = await loadSourceFile(FIXTURE, '/')
+      const source = await loadSourceFile(FIXTURE_PATH, '/')
       const result = await runFullResolutionExport({
         runtime,
         source,

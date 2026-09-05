@@ -1,31 +1,21 @@
 // @vitest-environment node
-import { existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
-import { describe, expect, it } from 'vitest'
+import { expect, it } from 'vitest'
 
-import { detectCapabilities } from '../runtime/capability'
 import { createLmfgRuntime } from '../runtime/node-runtime'
 import { loadSourceFile } from '../runtime/source-loader'
 import { parseRenderParams } from '../schemas/params'
+import {
+  describeWithFixture,
+  FIXTURE_PATH,
+} from '../test-support/describe-with-fixture'
 import { renderPreview } from './preview'
 
-const FIXTURE = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../luma-raw-runtime/fixtures/.cache/public/raw-pixls-iphone-se.dng',
-)
-const ready =
-  existsSync(FIXTURE) &&
-  detectCapabilities({ memoryProfile: 'desktop' }).render_tiers.cpu_wasm
-    .available
-const d = ready ? describe : describe.skip
-
-d('renderPreview', () => {
+describeWithFixture('renderPreview', () => {
   it('decodes a quick frame, renders through the CPU graph, and encodes a JPEG', async () => {
     const runtime = createLmfgRuntime({ memoryProfile: 'desktop' })
     try {
-      const source = await loadSourceFile(FIXTURE, '/')
+      const source = await loadSourceFile(FIXTURE_PATH, '/')
       const result = await renderPreview({
         runtime,
         source,

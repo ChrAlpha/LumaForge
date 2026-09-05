@@ -1,27 +1,17 @@
-import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { describe } from 'vitest'
-
 import { runCli } from '../cli'
-import { detectCapabilities } from '../runtime/capability'
 
 export const PACKAGE_DIR = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../..',
 )
-export const FIXTURE_PATH = resolve(
-  PACKAGE_DIR,
-  '../luma-raw-runtime/fixtures/.cache/public/raw-pixls-iphone-se.dng',
-)
-export const fixtureReady =
-  existsSync(FIXTURE_PATH) &&
-  detectCapabilities({ memoryProfile: 'desktop' }).render_tiers.cpu_wasm
-    .available
-export const describeWithFixture: typeof describe = (
-  fixtureReady ? describe : describe.skip
-) as typeof describe
+export {
+  describeWithFixture,
+  FIXTURE_PATH,
+  fixtureReady,
+} from '../test-support/describe-with-fixture'
 
 export type CliRun = {
   code: number
