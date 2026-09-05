@@ -5,10 +5,16 @@ import {
   Option,
 } from 'commander'
 
+import { registerCompareCommands } from './commands/compare'
 import type { CliIo, CommandHost, GlobalOptions } from './commands/context'
 import { createCommandContext, defaultIo } from './commands/context'
+import { registerInspectCommand } from './commands/inspect'
 import { registerIntrospectionCommands } from './commands/introspection'
 import { registerLutCommands } from './commands/lut'
+import { registerManifestCommands } from './commands/manifest'
+import { registerMetricsCommands } from './commands/metrics'
+import { registerRenderCommands } from './commands/render'
+import { registerSessionCommands } from './commands/session'
 import { LmfgError } from './protocol/errors'
 import { LMFG_VERSION } from './runtime/versions'
 
@@ -24,7 +30,13 @@ export type RegisterCommands = (program: Command, host: CommandHost) => void
 
 const COMMAND_MODULES: RegisterCommands[] = [
   registerIntrospectionCommands,
+  registerSessionCommands,
+  registerInspectCommand,
   registerLutCommands,
+  registerRenderCommands,
+  registerCompareCommands,
+  registerMetricsCommands,
+  registerManifestCommands,
 ]
 
 export function createProgram(
