@@ -46,7 +46,12 @@ function buildManifest(): Omit<RenderManifest, 'manifest_sha256'> {
       filename: 'out.jpg',
       sha256: '0'.repeat(64),
     },
-    policy: { kind: 'candidate', row_slice: 32, concurrency: 1 },
+    policy: {
+      kind: 'candidate',
+      row_slice: 32,
+      concurrency: 1,
+      max_pixels: 300_000,
+    },
     environment: {
       render_engine: '0.1.0',
       luma_color_runtime: '0.1.0',

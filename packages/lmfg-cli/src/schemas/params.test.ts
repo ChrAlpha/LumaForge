@@ -22,6 +22,7 @@ describe('parseRenderParams', () => {
       vibrance: 0,
       intensity: 1,
       raw_render_exposure: 'auto',
+      selective_color: null,
       lut: null,
     })
   })
@@ -58,5 +59,29 @@ describe('parseRenderParams', () => {
     expect(merged.contrast).toBe(10)
     expect(merged.exposure_ev).toBe(1)
     expect(base.exposure_ev).toBe(0)
+  })
+})
+
+describe('selective color params', () => {
+  it('accepts partial bands and rejects unknown bands or ranges', () => {
+    const params = parseRenderParams({
+      selective_color: {
+        red: { hue: 10 },
+        blue: { saturation: -20, lightness: 5 },
+      },
+    })
+    expect(params.selective_color).toEqual({
+      red: { hue: 10 },
+      blue: { saturation: -20, lightness: 5 },
+    })
+    expect(() =>
+      parseRenderParams({ selective_color: { pink: { hue: 1 } } }),
+    ).toThrow()
+    expect(() =>
+      parseRenderParams({ selective_color: { red: { hue: 101 } } }),
+    ).toThrow()
+    expect(() =>
+      parseRenderParams({ selective_color: { red: { tone: 1 } } }),
+    ).toThrow()
   })
 })

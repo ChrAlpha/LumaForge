@@ -136,11 +136,19 @@ export type RawRenderExposureSource =
   | 'identity'
   | 'user'
 
+export interface SelectiveColorBandShift {
+  readonly hue: number
+  readonly saturation: number
+  readonly lightness: number
+}
+
 export interface RenderParams {
   readonly exposure_ev: number
   readonly tone_curve?: ToneCurveParams
   readonly color_balance?: ColorBalanceParams
   readonly saturation?: SaturationParams
+  /** Per-band HSL shifts keyed by band id (red, orange, yellow, green, aqua, blue, purple, magenta). */
+  readonly selective_color?: Readonly<Record<string, SelectiveColorBandShift>>
   readonly intensity?: number
   /** Resolved raw-render exposure (EV) applied before user params. */
   readonly raw_render_exposure_ev?: number
@@ -157,6 +165,8 @@ export interface PolicyChoice {
   readonly kind: RenderPolicyKind
   readonly row_slice: number
   readonly concurrency: number
+  /** Decode budget (pixels) used for preview/candidate renders; absent for exports. */
+  readonly max_pixels?: number
 }
 
 export interface NativeArtifactEnvironment {

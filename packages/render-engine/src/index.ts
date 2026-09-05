@@ -53,6 +53,7 @@ export type {
   RenderParams,
   RenderPolicyKind,
   SaturationParams,
+  SelectiveColorBandShift,
   SourceRawIdentity,
   ToneCurveParams,
 } from './manifest/render-manifest'

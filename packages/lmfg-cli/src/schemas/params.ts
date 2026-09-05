@@ -26,6 +26,36 @@ export const LutReferenceSchema = z.strictObject({
 
 const slider = (min: number, max: number) => z.number().min(min).max(max)
 
+export const HSL_BAND_IDS = [
+  'red',
+  'orange',
+  'yellow',
+  'green',
+  'aqua',
+  'blue',
+  'purple',
+  'magenta',
+] as const
+export type HslBandId = (typeof HSL_BAND_IDS)[number]
+
+export const BandShiftSchema = z.strictObject({
+  hue: slider(-100, 100).optional(),
+  saturation: slider(-100, 100).optional(),
+  lightness: slider(-100, 100).optional(),
+})
+
+export const SelectiveColorSchema = z.strictObject({
+  red: BandShiftSchema.optional(),
+  orange: BandShiftSchema.optional(),
+  yellow: BandShiftSchema.optional(),
+  green: BandShiftSchema.optional(),
+  aqua: BandShiftSchema.optional(),
+  blue: BandShiftSchema.optional(),
+  purple: BandShiftSchema.optional(),
+  magenta: BandShiftSchema.optional(),
+})
+export type SelectiveColorInput = z.output<typeof SelectiveColorSchema>
+
 /** Field schemas without defaults — shared by the full and override shapes. */
 const PARAM_FIELDS = {
   exposure_ev: slider(-5, 5),
@@ -40,6 +70,7 @@ const PARAM_FIELDS = {
   vibrance: slider(-100, 100),
   intensity: z.number().min(0).max(1),
   raw_render_exposure: z.union([z.literal('auto'), slider(-3, 3)]),
+  selective_color: SelectiveColorSchema.nullable(),
   lut: LutReferenceSchema.nullable(),
 } as const
 
@@ -56,6 +87,7 @@ export const PARAM_DEFAULTS = {
   vibrance: 0,
   intensity: 1,
   raw_render_exposure: 'auto' as const,
+  selective_color: null,
   lut: null,
 }
 
@@ -91,6 +123,9 @@ export const RenderParamsSchema = z
     raw_render_exposure: PARAM_FIELDS.raw_render_exposure.default(
       PARAM_DEFAULTS.raw_render_exposure,
     ),
+    selective_color: PARAM_FIELDS.selective_color.default(
+      PARAM_DEFAULTS.selective_color,
+    ),
     lut: PARAM_FIELDS.lut.default(PARAM_DEFAULTS.lut),
   })
   .transform(({ schema: _schema, ...rest }) => rest)
@@ -108,6 +143,7 @@ export const RenderParamsOverrideSchema = z.strictObject({
   vibrance: PARAM_FIELDS.vibrance.optional(),
   intensity: PARAM_FIELDS.intensity.optional(),
   raw_render_exposure: PARAM_FIELDS.raw_render_exposure.optional(),
+  selective_color: PARAM_FIELDS.selective_color.optional(),
   lut: PARAM_FIELDS.lut.optional(),
 })
 
