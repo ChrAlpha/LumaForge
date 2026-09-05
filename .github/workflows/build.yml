@@ -54,8 +54,8 @@ jobs:
 
           force_all='^(\.github/workflows/build\.yml|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$'
           app_paths='^(src/|tests/browser/|scripts/(build|deploy|native-runtime)/|packages/luma-(color|jpeg|raw)-runtime/|public/|index\.html|vite\.config\.ts|vitest.*\.config\.ts|tsconfig.*|eslint.*|postcss.*|tailwind.*)'
-          runtime_paths='^(packages/luma-(color|jpeg|raw)-runtime/|src/lib/(export|raw|runtime|workers)/|scripts/native-runtime/)'
-          native_paths='^(packages/luma-(jpeg|raw)-runtime/native/|packages/luma-native-artifacts/|scripts/native-runtime/)'
+          runtime_paths='^(packages/luma-(color|jpeg|raw)-runtime/|packages/render-engine/|src/lib/(export|raw|runtime|workers)/|scripts/native-runtime/)'
+          native_paths='^(packages/luma-(jpeg|raw)-runtime/native/|scripts/native-runtime/)'
           cli_paths='^(packages/lmfg-cli/|packages/render-engine/|packages/luma-(color|jpeg|raw)-runtime/|packages/luma-native-artifacts/|scripts/native-runtime/)'
 
           app=false
@@ -180,6 +180,15 @@ jobs:
       - name: Build JPEG runtime package
         run: pnpm --filter @lumaforge/luma-jpeg-runtime build
 
+      - name: Typecheck render engine
+        run: pnpm --filter @lumaforge/render-engine typecheck
+
+      - name: Test render engine
+        run: pnpm --filter @lumaforge/render-engine test
+
+      - name: Build render engine
+        run: pnpm --filter @lumaforge/render-engine build
+
   native:
     needs: changes
     if: ${{ needs.changes.outputs.native == 'true' }}
@@ -239,6 +248,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Native build diagnostics
+        run: |
+          . "$HOME/.cache/lumaforge-emsdk/emsdk_env.sh"
+          node --version
+          pnpm --version
+          emcc --version | head -n 1
+          node packages/luma-raw-runtime/native/scripts/fetch-sources.mjs
+          node packages/luma-jpeg-runtime/native/scripts/fetch-sources.mjs
+
       - name: Build and verify native RAW runtime
         run: |
           . "$HOME/.cache/lumaforge-emsdk/emsdk_env.sh"
@@ -254,7 +272,15 @@ jobs:
       - name: Smoke test CI-built native JPEG runtime
         run: pnpm --filter @lumaforge/luma-jpeg-runtime test:native-smoke
 
+      - name: Cache public RAW fixtures
+        uses: actions/cache@v4
+        with:
+          path: packages/luma-raw-runtime/fixtures/.cache/public
+          key: ${{ runner.os }}-raw-fixtures-${{ hashFiles('packages/luma-raw-runtime/fixtures/public.lock.json') }}
+
       - name: Fetch public RAW smoke fixtures
+        env:
+          LUMAFORGE_FIXTURE_MIRROR: ${{ vars.LUMAFORGE_FIXTURE_MIRROR }}
         run: pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public
 
       - name: Smoke test CI-built native RAW runtime
@@ -295,16 +321,29 @@ jobs:
       - name: Prepare prebuilt native assets
         run: LUMAFORGE_NATIVE_RUNTIME_MODE=prebuilt pnpm native:prepare
 
+      - name: Test native artifact package
+        run: pnpm --filter @lumaforge/luma-native-artifacts test
+
       - name: Build runtime packages and render engine
         run: pnpm cli:build:deps
 
       - name: Typecheck and build lmfg CLI
         run: pnpm --filter @lumaforge/lmfg-cli typecheck && pnpm --filter @lumaforge/lmfg-cli build
 
+      - name: Cache public RAW fixtures
+        uses: actions/cache@v4
+        with:
+          path: packages/luma-raw-runtime/fixtures/.cache/public
+          key: ${{ runner.os }}-raw-fixtures-${{ hashFiles('packages/luma-raw-runtime/fixtures/public.lock.json') }}
+
       - name: Fetch public RAW smoke fixture
+        env:
+          LUMAFORGE_FIXTURE_MIRROR: ${{ vars.LUMAFORGE_FIXTURE_MIRROR }}
         run: pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public
 
       - name: Test lmfg CLI
+        env:
+          LMFG_REQUIRE_FIXTURE: '1'
         run: pnpm --filter @lumaforge/lmfg-cli test
 
       - name: Smoke the packaged CLI
