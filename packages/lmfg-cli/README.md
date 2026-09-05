@@ -56,10 +56,12 @@ stderr; `--quiet` silences them.
 | `lut inspect <cube>`, `lut contract infer --lut`, `lut contract validate --lut --contract` | LUT parsing and color-contract resolution |
 | `lut fetch --url <https-url> --sha256 <hex> [--out <file>] [--allow-network]` | Download a `.cube` into the workspace LUT cache behind a network gate with hash verification |
 | `render preview --params` | One CPU preview (quick ≤ 2.5 MP or bounded HQ up to 12 MP) |
-| `render candidate --plan`, `render sweep --plan` | Multi-candidate iterations with per-candidate manifests, metrics, and tiles |
+| `render candidate --plan`, `render sweep --plan` | Multi-candidate iterations with per-candidate manifests, metrics, and tiles; `--concurrency <n\|auto>` renders on worker threads |
 | `compare sheet --iteration --layout <cols>x<rows>` | Recompose contact sheets from stored tiles |
 | `metrics compute --iteration --candidate` | Luma/chroma statistics for a candidate |
-| `render export (--iteration --candidate \| --params)` | Full-resolution JPEG; refuses when reproducibility cannot be proven |
+| `metrics compare --iteration [--baseline <candidate>]` | Every candidate as signed deltas against a baseline candidate |
+| `metrics rank --iteration --objective <file\|json>` | Score candidates against an objective (`lmfg.objective.v1`) and rank them best-first |
+| `render export (--iteration --candidate \| --params)` | Full-resolution JPEG streamed to disk; refuses when reproducibility cannot be proven |
 | `render replay --manifest <file> [--source <raw>] [--lut <cube>]` | Re-render a preview, candidate, or export manifest and report whether the output SHA-256 was reproduced |
 | `manifest verify <file>`, `manifest show <file>` | Canonical-hash verification and display |
 
@@ -69,6 +71,11 @@ Global flags: `--workspace <dir>` (default `.lmfg`), `--session <id>`,
 
 Environment: `LMFG_ALLOW_NETWORK=1` is equivalent to `--allow-network` for
 `lut fetch`; `NO_COLOR` disables ANSI output. Nothing else reads the network.
+
+Inline JSON: `--params-json`, `--plan-json`, and `--contract-json` accept the
+same objects as their `--params`, `--plan`, and `--contract` file counterparts,
+so hosts that hold parameters in memory (the MCP server) do not need temp
+files. `--objective` for `metrics rank` takes a file or an inline object.
 
 ## Params, plans, sweeps, contracts
 
@@ -116,6 +123,47 @@ caps the download at 64 MB, and stores the file as `.lmfg/luts/<sha256>.cube`. A
 the same hash is reused without touching the network. The response includes
 the same inspect and contract summary as `lut inspect`, so an agent can decide
 whether it needs an explicit contract before rendering.
+
+## Sweeps at scale
+
+`render candidate` and `render sweep` decode the RAW once and render every
+candidate on `node:worker_threads` (`--concurrency auto` keeps one core free
+and caps at 8; `--memory-profile low-memory` stays serial unless a number is
+given). Each worker owns its own JPEG runtime and reads the decoded frame from
+shared memory, so outputs are byte-identical to a serial run: the candidate
+`sha256`, manifest fingerprints, and metrics do not change with concurrency,
+only `policy.concurrency` and the wall time do. On a 16-core machine a
+64-candidate sweep drops from about 36 s to about 6 s.
+
+`render export` streams JPEG chunks straight into `<name>.jpg.<pid>.tmp`,
+inserts the EXIF segment and computes the SHA-256 on the way, and renames
+into place only when the stream ends with EOI; the process never holds the
+full JPEG in memory. Results report `resource.max_rss_bytes` (peak RSS of the
+CLI process) so agents can budget large files.
+
+## Candidate evaluation
+
+`metrics compare --iteration iter_0001 --baseline cand_0001` returns, for every
+candidate, `{ baseline, value, delta }` for each scalar metric (`luma.mean`,
+`luma.p1`, `luma.p50`, `luma.p99`, `luma.clipped_highlight_ratio`,
+`luma.clipped_shadow_ratio`, `chroma.mean_saturation`, `chroma.colorfulness`).
+
+`metrics rank --iteration iter_0001 --objective '{...}'` scores candidates
+with an `lmfg.objective.v1` object: one term per metric, either `{ "target": x }`
+or `{ "min": a, "max": b }`, with an optional `weight` (default 1). The
+penalty per term is `weight × |value − target|` or `weight × distance outside
+[min, max]`; the total is the score, lower ranks first, and ties break on the
+candidate id. The result lists per-term contributions so an agent can see why
+a candidate won.
+
+```json
+{ "luma.mean": { "target": 0.45, "weight": 2 }, "luma.clipped_highlight_ratio": { "max": 0.01 } }
+```
+
+## MCP server
+
+`@lumaforge/lmfg-mcp` wraps every command as an MCP tool over stdio
+(`lmfg-mcp --cwd <dir>`); see `packages/lmfg-mcp/README.md`.
 
 ## Workspace layout
 

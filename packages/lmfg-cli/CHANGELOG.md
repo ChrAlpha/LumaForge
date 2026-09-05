@@ -7,6 +7,16 @@ follows Keep a Changelog; versions follow semver.
 
 ### Added
 
+- `render candidate|sweep --concurrency <n|auto>` renders candidates on
+  worker threads (one JPEG runtime per worker, shared decoded frame) with
+  byte-identical outputs; results and manifests record the pool size and
+  results report `resource.max_rss_bytes`.
+- `render export` streams the JPEG to disk (EXIF and SHA-256 computed
+  in-stream) instead of holding it in memory.
+- `metrics compare` (baseline deltas) and `metrics rank` (objective-based
+  ranking, `lmfg.objective.v1`).
+- Inline JSON options `--params-json`, `--plan-json`, `--contract-json`.
+- `@lumaforge/lmfg-mcp`: MCP stdio server exposing every command as a tool.
 - `lut fetch --url --sha256` downloads a `.cube` into the workspace LUT cache
   behind an explicit network gate (`--allow-network` or
   `LMFG_ALLOW_NETWORK=1`, exit 5 otherwise) with size and timeout limits and

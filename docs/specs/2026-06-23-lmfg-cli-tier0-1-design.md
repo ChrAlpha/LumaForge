@@ -7,6 +7,9 @@
   Hardening per `docs/plans/2026-09-05-lmfg-cli-p0-p1-hardening-plan.md`
   added `selective_color`, `lut fetch`, `render replay`, and a manifest
   builder shared with the browser app; DCP calibration remains deferred.
+  P2/P3 per `docs/plans/2026-09-05-lmfg-cli-p2-p3-plan.md` added worker-thread
+  sweeps, streaming export, candidate evaluation, the `lmfg-mcp` server, and
+  a three-OS CI matrix; Tier 1 stays deferred by design.
 
 ## 1. Purpose
 
