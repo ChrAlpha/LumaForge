@@ -6,7 +6,7 @@ on:
       packages:
         description: 'Comma-separated package names to publish, in dependency order.'
         required: false
-        default: '@lumaforge/luma-color-runtime,@lumaforge/luma-jpeg-runtime,@lumaforge/luma-raw-runtime,@lumaforge/render-engine,@lumaforge/lmfg-cli'
+        default: '@lumaforge/luma-color-runtime,@lumaforge/luma-jpeg-runtime,@lumaforge/luma-raw-runtime,@lumaforge/render-engine,@lumaforge/lmfg-cli,@lumaforge/lmfg-mcp'
         type: string
       dist_tag:
         description: 'npm dist-tag to publish under.'
