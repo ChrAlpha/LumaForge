@@ -29,6 +29,18 @@ export default defineConfig({
       '@lumaforge/luma-color-runtime': fileURLToPath(
         new URL('./packages/luma-color-runtime/src/index.ts', import.meta.url),
       ),
+      '@lumaforge/luma-raw-runtime/node': fileURLToPath(
+        new URL(
+          './packages/luma-raw-runtime/src/runtime-node.ts',
+          import.meta.url,
+        ),
+      ),
+      '@lumaforge/luma-jpeg-runtime/node': fileURLToPath(
+        new URL(
+          './packages/luma-jpeg-runtime/src/runtime-node.ts',
+          import.meta.url,
+        ),
+      ),
       '@lumaforge/luma-raw-runtime': fileURLToPath(
         new URL('./packages/luma-raw-runtime/src/index.ts', import.meta.url),
       ),

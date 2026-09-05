@@ -36,6 +36,7 @@
     "test:app": "vitest run --config vitest.app.config.ts",
     "test:browser": "playwright test",
     "test:browser:webkit": "playwright test --project=webkit-ios-safe",
+    "test:cli": "pnpm --filter @lumaforge/lmfg-cli test",
     "test:coverage": "vitest run --coverage",
     "test:runtime": "pnpm --filter @lumaforge/luma-color-runtime test && pnpm --filter @lumaforge/luma-raw-runtime test && pnpm --filter @lumaforge/luma-jpeg-runtime test && pnpm exec vitest run src/lib/export src/lib/raw src/lib/runtime src/lib/workers --exclude src/lib/export/full-res-export.real.test.ts",
     "test:ui": "vitest run src/modules/raw-processor src/components/ui src/components/common",
