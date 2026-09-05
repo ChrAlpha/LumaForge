@@ -374,6 +374,7 @@ export const EventSchema = z
   })
   .catchall(z.unknown())
 
+export type RuntimeVersions = z.output<typeof RuntimeVersionsSchema>
 export type VersionResult = z.output<typeof VersionResultSchema>
 export type CapabilitiesResult = z.output<typeof CapabilitiesResultSchema>
 export type SessionRecord = z.output<typeof SessionRecordSchema>
