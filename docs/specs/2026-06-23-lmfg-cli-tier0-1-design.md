@@ -4,6 +4,9 @@
   `docs/plans/2026-09-05-lmfg-cli-tier0-release-plan.md`; Tier 1 (browser
   bridge, §6) deferred. `capabilities` reports the browser tier as
   unavailable. JSON is the default stdout format (`--json` is a no-op).
+  Hardening per `docs/plans/2026-09-05-lmfg-cli-p0-p1-hardening-plan.md`
+  added `selective_color`, `lut fetch`, `render replay`, and a manifest
+  builder shared with the browser app; DCP calibration remains deferred.
 
 ## 1. Purpose
 

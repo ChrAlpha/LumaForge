@@ -207,9 +207,15 @@ image-editor assumptions.
     `packages/luma-native-artifacts`: run relevant `build:native`,
     `native:verify`, and native smoke commands.
   - CLI changes under `packages/lmfg-cli`: run `pnpm cli:build` once, then
-    `pnpm --filter @lumaforge/lmfg-cli typecheck` and `pnpm test:cli`. The e2e
-    suite needs the public DNG fixture
-    (`pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public`).
+    `pnpm --filter @lumaforge/lmfg-cli typecheck` and
+    `LMFG_REQUIRE_FIXTURE=1 pnpm test:cli`. The e2e suite needs the public DNG
+    fixture (`pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public`);
+    without `LMFG_REQUIRE_FIXTURE=1` the fixture-gated specs skip instead of
+    failing, which is only acceptable for local UI-only iteration.
+  - Manifest contract changes under `packages/render-engine/src/manifest`
+    affect both the CLI and the browser export manifest: run the render-engine
+    tests, `pnpm test:cli`, and `src/modules/raw-processor/services/export`
+    app tests together.
 - Default closeout verification for broad app changes remains:
   - `pnpm lint`
   - `pnpm test:run`

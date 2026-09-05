@@ -54,16 +54,21 @@ stderr; `--quiet` silences them.
 | `session init --source <raw>`, `session status`, `session list` | `.lmfg/` workspace sessions (full-file SHA-256 identity) |
 | `inspect [file]` | Probe a RAW (or the `--session` source) |
 | `lut inspect <cube>`, `lut contract infer --lut`, `lut contract validate --lut --contract` | LUT parsing and color-contract resolution |
+| `lut fetch --url <https-url> --sha256 <hex> [--out <file>] [--allow-network]` | Download a `.cube` into the workspace LUT cache behind a network gate with hash verification |
 | `render preview --params` | One CPU preview (quick ≤ 2.5 MP or bounded HQ up to 12 MP) |
 | `render candidate --plan`, `render sweep --plan` | Multi-candidate iterations with per-candidate manifests, metrics, and tiles |
 | `compare sheet --iteration --layout <cols>x<rows>` | Recompose contact sheets from stored tiles |
 | `metrics compute --iteration --candidate` | Luma/chroma statistics for a candidate |
 | `render export (--iteration --candidate \| --params)` | Full-resolution JPEG; refuses when reproducibility cannot be proven |
+| `render replay --manifest <file> [--source <raw>] [--lut <cube>]` | Re-render a preview, candidate, or export manifest and report whether the output SHA-256 was reproduced |
 | `manifest verify <file>`, `manifest show <file>` | Canonical-hash verification and display |
 
 Global flags: `--workspace <dir>` (default `.lmfg`), `--session <id>`,
 `--tier cpu|browser`, `--emit json|ndjson`, `--json`, `--quiet`, `--no-color`,
 `--dry-run`, `--yes`, `--timeout <ms>`, `--memory-profile desktop|low-memory`.
+
+Environment: `LMFG_ALLOW_NETWORK=1` is equivalent to `--allow-network` for
+`lut fetch`; `NO_COLOR` disables ANSI output. Nothing else reads the network.
 
 ## Params, plans, sweeps, contracts
 
@@ -74,6 +79,7 @@ Global flags: `--workspace <dir>` (default `.lmfg`), `--session <id>`,
   "exposure_ev": 0.3, "contrast": 15, "highlights": -20, "shadows": 10,
   "whites": 0, "blacks": 0, "temperature": 5, "tint": 0,
   "saturation": 0, "vibrance": 10, "intensity": 1,
+  "selective_color": { "orange": { "hue": -6, "saturation": 12, "lightness": 0 } },
   "raw_render_exposure": "auto",
   "lut": {
     "path": "looks/vlog-to-709.cube",
@@ -94,9 +100,20 @@ candidates):
 { "base": { "lut": { "path": "look.cube" } }, "axes": { "exposure_ev": [-0.5, 0, 0.5], "contrast": [0, 20] } }
 ```
 
+`selective_color` takes per-band HSL shifts for any of `red`, `orange`,
+`yellow`, `green`, `aqua`, `blue`, `purple`, `magenta` (hue -180..180,
+saturation and lightness -100..100); omitted bands stay neutral.
+
 LUTs whose contract cannot be confirmed from `LUMAFORGE_*` comments must carry
 an explicit `contract`; `lut contract infer` returns ready-to-use
 `suggested_contracts`. Rendering never guesses a log/gamut contract.
+
+`lut fetch` only runs with `--allow-network` (or `LMFG_ALLOW_NETWORK=1`),
+requires an `https://` URL and the expected SHA-256, caps the download at
+64 MB, and stores the file as `.lmfg/luts/<sha256>.cube`. A cached file with
+the same hash is reused without touching the network. The response includes
+the same inspect and contract summary as `lut inspect`, so an agent can decide
+whether it needs an explicit contract before rendering.
 
 ## Workspace layout
 
@@ -108,6 +125,8 @@ an explicit `contract`; `lut contract infer` returns ready-to-use
   iterations/iter_0001/{plan.json, events.ndjson, contact-sheet.jpg, contact-sheet.map.json}
   iterations/iter_0001/candidates/cand_0001/{preview.jpg, manifest.json, metrics.json, params.json, tile.rgba, tile.json}
   exports/final.jpg, final.manifest.json
+  replays/replay_<timestamp>_<id>/{output.jpg, manifest.json}
+.lmfg/luts/<sha256>.cube
 ```
 
 All writes are atomic (temp file + rename).
@@ -127,6 +146,21 @@ Export fails closed (exit 8) when the source bytes changed, the LUT file
 changed, the JPEG stream is incomplete, or the manifest fails
 self-verification. Unsupported RAWs exit 3; incomplete LUT contracts exit 4.
 
+`render replay --manifest` re-renders from the manifest alone: the recorded
+params, LUT contract, raw-render exposure, decode budget (`policy.max_pixels`),
+and JPEG quality. The source comes from `--source` or the session that owns the
+manifest, and the LUT from `--lut` or the workspace cache by SHA-256. Replay
+refuses (exit 8, `replay.mismatch`) when the color-graph fingerprint no longer
+matches, exits 6 when the source or LUT bytes differ from the recorded
+hashes, and reports `reproduced: true` only when the new output SHA-256 equals
+the recorded one. The replay writes its own manifest with
+`parent_manifest_sha256` pointing at the replayed manifest.
+
+The browser app seals the same `RenderManifest` for every completed
+full-resolution export ("Manifest" next to Download on desktop and mobile);
+`lmfg manifest verify` accepts those files, and `render replay` can reproduce
+them when the same LUT file is available.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -139,7 +173,7 @@ self-verification. Unsupported RAWs exit 3; incomplete LUT contracts exit 4.
 | 5 | permission denied / network not allowed |
 | 6 | fetch or hash verification failed |
 | 7 | render failed |
-| 8 | export refused (cannot prove reproducibility) |
+| 8 | export refused (cannot prove reproducibility) or replay mismatch (`replay.mismatch`) |
 | 9 | cancelled / timed out |
 | 10 | internal bug |
 

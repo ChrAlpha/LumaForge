@@ -25,7 +25,11 @@ follows Keep a Changelog; versions follow semver.
 - Fixture-gated tests fail instead of skipping when `LMFG_REQUIRE_FIXTURE=1`
   is set; `LMFG_FIXTURE_PATH` overrides the RAW fixture location.
 - Manifest construction and the color-graph descriptor now come from
-  `@lumaforge/render-engine/manifest`, shared with the browser app.
+  `@lumaforge/render-engine/manifest`, shared with the browser app, which
+  now seals the same `RenderManifest` for its full-resolution exports.
+- Native source and fixture downloads retry with mirrors and time limits, and
+  the CLI CI job caches the RAW fixture instead of skipping when the upstream
+  host is unreachable.
 
 ## 0.1.0 - 2026-09-05
 
