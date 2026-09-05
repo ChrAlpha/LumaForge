@@ -1,0 +1,41 @@
+# Changelog
+
+All notable changes to `@lumaforge/lmfg-cli` are documented here. The format
+follows Keep a Changelog; versions follow semver.
+
+## Unreleased
+
+### Added
+
+- `lut fetch --url --sha256` downloads a `.cube` into the workspace LUT cache
+  behind an explicit network gate (`--allow-network` or
+  `LMFG_ALLOW_NETWORK=1`, exit 5 otherwise) with size and timeout limits and
+  SHA-256 verification (exit 6 on mismatch or transport failure).
+- `render replay --manifest` re-renders a preview, candidate, or export
+  manifest from its recorded params, LUT contract, and exposure, refuses on
+  fingerprint, source, or LUT mismatch, and reports whether the output
+  SHA-256 was reproduced (exit 8 when it was not).
+- `selective_color` in `lmfg.params.v1` (per-band hue, saturation, and
+  lightness shifts) flows through the color graph and into manifests.
+- Preview and candidate manifests record `policy.max_pixels` so replays decode
+  at the same budget.
+
+### Changed
+
+- Fixture-gated tests fail instead of skipping when `LMFG_REQUIRE_FIXTURE=1`
+  is set; `LMFG_FIXTURE_PATH` overrides the RAW fixture location.
+- Manifest construction and the color-graph descriptor now come from
+  `@lumaforge/render-engine/manifest`, shared with the browser app.
+
+## 0.1.0 - 2026-09-05
+
+### Added
+
+- Initial release of the cpu-wasm tier: `version`, `capabilities`,
+  `schema list/show`, `session init/status/list`, `inspect`, `lut inspect`,
+  `lut contract infer/validate`, `render preview/candidate/sweep/export`,
+  `compare sheet`, `metrics compute`, `manifest verify/show`.
+- JSON envelope protocol with NDJSON event streaming (`--emit ndjson`),
+  stable error codes, and spec exit codes.
+- `.lmfg/` session workspace with atomic writes and sealed `RenderManifest`
+  chains from preview to full-resolution export.
