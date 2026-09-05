@@ -100,12 +100,50 @@
 - [x] I1 README (lmfg-cli): `lut fetch`, `render replay`, `selective_color`, `LMFG_ALLOW_NETWORK`, replay semantics, exit-code table update; AGENTS.md verification line for `LMFG_REQUIRE_FIXTURE`; CHANGELOG `Unreleased`; execution notes in this plan; spec status line.
 
 ### Task J — review → fix iterations
-- [ ] J1 Fresh-context review subagent over `git diff a892d9d2..HEAD` with a checklist (fail-closed paths, error/exit code mapping, atomicity, schema/registry consistency, CI YAML, docs accuracy). Record findings in execution notes.
-- [ ] J2 Fix every high/medium finding; re-run the full verification set; repeat J1 once more if any fix touched behavior.
+- [x] J1 Fresh-context review subagent over `git diff a892d9d2..HEAD` with a checklist (fail-closed paths, error/exit code mapping, atomicity, schema/registry consistency, CI YAML, docs accuracy). Record findings in execution notes.
+- [x] J2 Fix every high/medium finding; re-run the full verification set; repeat J1 once more if any fix touched behavior.
 
 ---
 
 ## Execution notes
+
+### Final verification (2026-09-05, local, after the review-fix batch)
+
+| Command | Result |
+|---|---|
+| `pnpm lint:check` | clean |
+| `pnpm --filter @lumaforge/render-engine typecheck && test && build` | typecheck clean, 28 files / 166 tests, build ok |
+| `pnpm --filter @lumaforge/lmfg-cli typecheck` | clean |
+| `LMFG_REQUIRE_FIXTURE=1 pnpm test:cli` | 28 files / 106 tests |
+| `LMFG_REQUIRE_FIXTURE=1 LMFG_FIXTURE_PATH=/nonexistent` (manual) | fails at import with the gate reason |
+| `pnpm test:runtime` | 258 + 180 + 55 + 197 tests across the runtime packages |
+| `pnpm test:app` | 186 files / 1625 tests |
+| `pnpm test:run` | 268 files / 2159 tests |
+| `pnpm cli:build` + `lmfg version` / `schema list` | dist rebuilt; 29 schemas including `lmfg.lut.fetch.v1` and `lmfg.render.replay.v1` |
+| `LUMAFORGE_NATIVE_RUNTIME_MODE=prebuilt pnpm build` | ok |
+| `npm pack --dry-run` (render-engine, lmfg-cli) | 104 and 86 files |
+| `pnpm exec playwright test raw-export-lifecycle-resources raw-ios-safe-export-output --project=chromium-desktop` | 2 passed; manifest downloaded, `verifyManifestSha256` true, `output.sha256` equals the downloaded JPEG, `source_raw.sha256` equals the fixture |
+
+### Review findings (fresh-context pass over `a892d9d2..HEAD`) and outcomes
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | high | render-engine typecheck failed on `jpeg-metadata.ts` (`Uint8Array` as `BlobPart`) | Fixed in the same batch (the failing line was the in-progress metadata-plan refactor; `plan.segment as BlobPart`). Engine typecheck, tests, and build are green. |
+| 2 | medium | Two LUT identity builders: the CLI required explicit ranges while the app recorded `'unknown'`, so app manifests could not be replayed | Fixed: the CLI now calls the engine's `lutIdentityFromProfile({ requireExplicitRange: true })`; the descriptor records the effective input range (`?? 'full'`, matching the row processor); `contractInputFromIdentity` fills `'unknown'` from the descriptor's effective ranges and fails closed (exit 4) when none exist. Covered by `lut.test.ts` and `lut-identity.test.ts`. |
+| 3 | medium | Hashing finalized OPFS output loads the whole JPEG into worker memory | No change needed: the publish copy already read the temp file with `arrayBuffer()` before this work (`git show ef62906e:src/lib/export/output-sink.ts`), so the hash adds no allocation. Streaming publish (`write(File)`) is a possible follow-up but was not validated on WebKit here. |
+| 4 | medium | README claims not enforced: https, hue range, replay path, session default | Fixed: `lut fetch` now requires https except loopback hosts and follows redirects only to allowed transports (`redirect: 'manual'`, max 5 hops) with tests; README hue range corrected to -100..100; replay path and `--session` wording corrected. |
+| 5 | low | `AbortSignal.any` needs Node >= 20.3 while engines say >= 20 | Fixed with a manual signal composition fallback. |
+| 6 | low | `render replay --name` allowed path traversal and silent overwrite | Fixed: names are validated as plain basenames (exit 2) and existing replays require `--yes`; e2e covers the traversal case. |
+| 7 | low | `native_paths` no longer routes prebuilt artifact bumps to the native job while AGENTS.md said otherwise | AGENTS.md updated to describe the intended routing (artifact bumps run through the `cli` job). |
+| 8 | low | Manifest action had no pending or error state | Fixed: `ExportResult.manifestState` (`sealing` / `ready` / `unavailable` + reason) reserves the slot on desktop and mobile, keeps the mobile grid stable, and explains unavailability through i18n keys. |
+| 9 | low | Test gaps (`reproduced: false`, redirects, race guards) | `reproduced: false` and `--name` traversal covered in the e2e suite; redirect and transport rules covered in `lut-fetch.test.ts`. The orchestrator attach race guards remain covered only by the browser lifecycle spec (reset after download); a unit harness for the orchestrator is a follow-up. |
+
+Browser validation (Chromium desktop, `raw-export-lifecycle-resources.spec.ts`
+and `raw-ios-safe-export-output.spec.ts` on the chromium-desktop project) now
+downloads the manifest and asserts `verifyManifestSha256`, `output.sha256`
+against the downloaded JPEG, and `source_raw.sha256` against the fixture; the
+WebKit project skips both specs in this environment (processed-window export
+unavailable in the Playwright WebKit build).
 
 ### Deviations from the plan (all intentional)
 
