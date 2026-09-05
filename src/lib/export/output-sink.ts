@@ -1,3 +1,5 @@
+import { sha256Hex } from '@lumaforge/render-engine/manifest'
+
 export type BlobOutputResult = {
   kind: 'blob'
   filename: string
@@ -84,7 +86,7 @@ async function removeOpfsEntryIfExists(
 async function writeOpfsFile(
   directory: FileSystemDirectoryHandle,
   name: string,
-  data: Blob | string,
+  data: Blob | Uint8Array<ArrayBuffer> | string,
 ) {
   const fileHandle = await directory.getFileHandle(name, { create: true })
   const writable = await fileHandle.createWritable()
@@ -149,6 +151,12 @@ export function createMemoryFileBackedOutputResult(input: {
   }
 }
 
+/** Identity of the bytes published by `createOpfsOutputWritable().close()`. */
+export type OpfsFinalizedOutput = {
+  byteLength: number
+  sha256: string
+}
+
 export async function createOpfsOutputWritable(input: {
   exportId: string
   outputFileName?: string
@@ -187,19 +195,25 @@ export async function createOpfsOutputWritable(input: {
       try {
         await writable.close()
         const tempFile = await fileHandle.getFile()
-        await writeOpfsFile(exportDirectory, outputFileName, tempFile)
+        // The publish step already loads the finalized bytes once; hashing
+        // them here records the output identity without a second read.
+        const bytes = new Uint8Array(await tempFile.arrayBuffer())
+        const sha256 = sha256Hex(bytes)
+        await writeOpfsFile(exportDirectory, outputFileName, bytes)
         await writeOpfsFile(
           exportDirectory,
           finalizedFileName,
           JSON.stringify({
             version: 1,
             outputFileName,
-            byteLength: tempFile.size,
+            byteLength: bytes.byteLength,
+            sha256,
             finalizedAt: new Date().toISOString(),
           }),
         )
         await removeOpfsEntryIfExists(exportDirectory, tempFileName)
         state = 'closed'
+        return { byteLength: bytes.byteLength, sha256 }
       } catch (error) {
         state = 'aborted'
         try {
@@ -228,7 +242,9 @@ export async function createOpfsOutputWritable(input: {
         await removeUnfinalizedOutput()
       }
     },
-  } satisfies Pick<FileSystemWritableFileStream, 'write' | 'close' | 'abort'>
+  } satisfies Pick<FileSystemWritableFileStream, 'write' | 'abort'> & {
+    close: () => Promise<OpfsFinalizedOutput>
+  }
 }
 
 export function createOpfsFileBackedOutputResult(input: {

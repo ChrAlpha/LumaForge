@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import { vi } from 'vitest'
 
 import {
@@ -168,8 +170,21 @@ describe('export output sink', () => {
     })
 
     await writable.write(new Uint8Array([1, 2, 3]))
-    await writable.close()
+    const finalized = await writable.close()
 
+    const expectedSha256 = createHash('sha256')
+      .update(new Uint8Array([1, 2, 3]))
+      .digest('hex')
+    expect(finalized).toEqual({ byteLength: 3, sha256: expectedSha256 })
+    const finalizedRecord = files.get(
+      '/.lumaforge-exports/active/export-opfs-finalized/output.jpg.finalized.json',
+    )
+    expect(finalizedRecord).toBeTruthy()
+    expect(
+      JSON.parse(
+        new TextDecoder().decode(await finalizedRecord!.arrayBuffer()),
+      ),
+    ).toMatchObject({ version: 1, byteLength: 3, sha256: expectedSha256 })
     expect(
       files.has('/.lumaforge-exports/active/export-opfs-finalized/output.jpg'),
     ).toBe(true)

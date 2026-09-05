@@ -60,7 +60,6 @@ function createOpfsJpegRowSink(input: {
   return {
     createSession({ width, height, quality }) {
       let byteLength = 0
-      const outputHasher = createStreamingSha256()
       let state: 'open' | 'closed' | 'aborted' = 'open'
       const writablePromise = createOpfsOutputWritable({
         exportId: input.exportId,
@@ -74,7 +73,6 @@ function createOpfsJpegRowSink(input: {
             chunk.bytes.byteOffset + chunk.bytes.byteLength,
           ) as ArrayBuffer
           await writable.write(byteBuffer)
-          outputHasher.update(new Uint8Array(byteBuffer))
           byteLength += chunk.bytes.byteLength
         },
       })
@@ -138,7 +136,7 @@ function createOpfsJpegRowSink(input: {
           try {
             await encoder.finish()
             const writable = await writablePromise
-            await writable.close()
+            const finalized = await writable.close()
             state = 'closed'
             runtime.dispose()
             return createOpfsFileBackedOutputResult({
@@ -147,7 +145,7 @@ function createOpfsJpegRowSink(input: {
               byteLength,
               mimeType: 'image/jpeg',
               outputFileName,
-              sha256: outputHasher.digestHex(),
+              sha256: finalized.sha256,
             })
           } catch (error) {
             try {
@@ -180,6 +178,7 @@ async function prepareSuccessOutput(input: {
       filename: input.output.filename,
       byteLength: input.output.byteLength,
       mimeType: input.output.mimeType,
+      ...(input.output.sha256 ? { sha256: input.output.sha256 } : {}),
     }
   }
 
