@@ -1,3 +1,4 @@
+import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import { lutIdentityFromProfile } from './lut-identity'
@@ -5,13 +6,14 @@ import { lutIdentityFromProfile } from './lut-identity'
 const profile = {
   id: 'vlog',
   label: 'V-Log',
-  role: 'combined-look-output' as const,
+  role: 'combined-look-output',
   inputGamut: 'panasonic-vgamut',
   inputTransfer: 'v-log',
+  inputRange: 'unknown',
   outputGamut: 'srgb-rec709',
   outputTransfer: 'bt709',
   aliases: [],
-}
+} as unknown as LUTColorProfile
 
 describe('lutIdentityFromProfile', () => {
   it('records unspecified ranges as unknown by default', () => {
@@ -41,7 +43,11 @@ describe('lutIdentityFromProfile', () => {
     const explicit = lutIdentityFromProfile({
       filename: 'vlog.cube',
       sha256: 'a'.repeat(64),
-      profile: { ...profile, inputRange: 'full', outputRange: 'legal' },
+      profile: {
+        ...profile,
+        inputRange: 'full',
+        outputRange: 'legal',
+      } as unknown as LUTColorProfile,
       requireExplicitRange: true,
     })
     expect(explicit.identity).toMatchObject({
@@ -54,7 +60,10 @@ describe('lutIdentityFromProfile', () => {
     const result = lutIdentityFromProfile({
       filename: 'x.cube',
       sha256: 'b'.repeat(64),
-      profile: { ...profile, outputTransfer: undefined },
+      profile: {
+        ...profile,
+        outputTransfer: undefined,
+      } as unknown as LUTColorProfile,
     })
     expect(result).toMatchObject({
       identity: null,

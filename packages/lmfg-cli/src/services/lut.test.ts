@@ -144,9 +144,7 @@ describe('lut service', () => {
     expect(resolved.identity.input_contract.range).toBe('full')
 
     // A browser manifest may carry 'unknown' ranges for the same profile.
-    const unspecified = { ...resolved.profile }
-    delete unspecified.inputRange
-    delete unspecified.outputRange
+    const unspecified = { ...resolved.profile, inputRange: 'unknown' as const }
     expect(() => toLutIdentity(loaded, unspecified)).toThrow(
       expect.objectContaining({ code: 'lut.contract.incomplete', exitCode: 4 }),
     )
