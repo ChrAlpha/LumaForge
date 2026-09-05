@@ -178,6 +178,11 @@ export function scoreCandidate(
   return { score: round(score), terms }
 }
 
+/** Locale-independent ordering so ranks are identical on every machine. */
+function compareIds(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
 /** Sorted best-first; ties break on candidate id so the order is reproducible. */
 export function rankCandidates(
   candidates: ReadonlyArray<{ id: string; metrics: Metrics }>,
@@ -189,7 +194,6 @@ export function rankCandidates(
       ...scoreCandidate(candidate.metrics, objective),
     }))
     .sort(
-      (a, b) =>
-        a.score - b.score || a.candidate_id.localeCompare(b.candidate_id),
+      (a, b) => a.score - b.score || compareIds(a.candidate_id, b.candidate_id),
     )
 }

@@ -63,6 +63,8 @@ describe('createStreamingJpegFileWriter', () => {
         await writer.write(part)
       }
       const result = await writer.finish()
+      expect(await readdir(dir)).not.toContain(`out-${size}.jpg`)
+      await result.commit()
       const onDisk = new Uint8Array(await readFile(path))
       expect(Buffer.compare(onDisk, expected)).toBe(0)
       expect(result.byteLength).toBe(expected.byteLength)
@@ -75,8 +77,9 @@ describe('createStreamingJpegFileWriter', () => {
     }
   })
 
-  it('refuses an incomplete stream and leaves nothing behind', async () => {
+  it('refuses an incomplete stream, keeps an existing file, and leaves no temp behind', async () => {
     const path = join(dir, 'broken.jpg')
+    await writeFile(path, fakeJpeg(64))
     const writer = createStreamingJpegFileWriter({
       path,
       metadata: null,
@@ -88,7 +91,26 @@ describe('createStreamingJpegFileWriter', () => {
       code: 'export.refused',
       exitCode: 8,
     })
-    expect(await readdir(dir)).toEqual([])
+    expect(await readdir(dir)).toEqual(['broken.jpg'])
+    expect((await readFile(path)).byteLength).toBe(64)
+  })
+
+  it('discard drops the validated file without touching the target', async () => {
+    const path = join(dir, 'kept.jpg')
+    await writeFile(path, fakeJpeg(64))
+    const writer = createStreamingJpegFileWriter({
+      path,
+      metadata: null,
+      width: 4,
+      height: 2,
+    })
+    await writer.write(fakeJpeg(2_000))
+    const result = await writer.finish()
+    await result.discard()
+    expect(await readdir(dir)).toEqual(['kept.jpg'])
+    expect((await readFile(path)).byteLength).toBe(64)
+    await result.commit()
+    expect((await readFile(path)).byteLength).toBe(64)
   })
 
   it('abort removes the partial file', async () => {

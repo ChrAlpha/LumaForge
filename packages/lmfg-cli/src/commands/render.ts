@@ -5,7 +5,10 @@ import type { Command } from 'commander'
 import { LmfgError } from '../protocol/errors'
 import { assertTierAvailable } from '../runtime/capability'
 import { loadSourceFile } from '../runtime/source-loader'
-import { resolveRenderEnvironment } from '../runtime/versions'
+import {
+  resolveCandidateWorkerScript,
+  resolveRenderEnvironment,
+} from '../runtime/versions'
 import type { RenderParams } from '../schemas/params'
 import type { NormalizedPlan } from '../schemas/plan'
 import { expandSweepPlan, normalizeCandidatePlan } from '../schemas/plan'
@@ -323,11 +326,13 @@ function registerIteration(
               })),
               max_pixels: clampMaxPixels(options.maxPixels),
               quality: options.quality,
-              concurrency: resolveConcurrency({
-                requested: parseConcurrency(options.concurrency),
-                candidates: plan.candidates.length,
-                memoryProfile: ctx.options.memoryProfile,
-              }),
+              concurrency: resolveCandidateWorkerScript()
+                ? resolveConcurrency({
+                    requested: parseConcurrency(options.concurrency),
+                    candidates: plan.candidates.length,
+                    memoryProfile: ctx.options.memoryProfile,
+                  })
+                : 1,
             }
           },
         ),
@@ -516,11 +521,13 @@ function registerExport(render: Command, host: CommandHost): void {
                 parentManifestSha256: parent,
               })
               if (!verifyManifestSha256(manifest)) {
+                await result.discard()
                 throw new LmfgError('export.refused', {
                   message:
                     'Export manifest failed self-verification; nothing was written.',
                 })
               }
+              await result.commit()
               await writeJsonAtomic(manifestPath, manifest)
               await store.allocate(record.id, 'exports')
               ctx.output.event({

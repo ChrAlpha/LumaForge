@@ -446,7 +446,10 @@ describeWithFixture('lmfg agent loop', () => {
       baseline_candidate_id: string
       candidates: Array<{
         candidate_id: string
-        deltas: Record<string, { delta: number }>
+        deltas: Record<
+          string,
+          { baseline: number; value: number; delta: number }
+        >
       }>
     }
     expect(comparison.baseline_candidate_id).toBe('cand_0002')
@@ -473,7 +476,7 @@ describeWithFixture('lmfg agent loop', () => {
       iterationId,
       '--objective',
       JSON.stringify({
-        'luma.mean': { target: baselineRow.deltas['luma.mean'].delta + 0 },
+        'luma.mean': { target: baselineRow.deltas['luma.mean'].value },
       }),
     )
     expect(ranked.code, ranked.stdout).toBe(0)
@@ -483,7 +486,9 @@ describeWithFixture('lmfg agent loop', () => {
       }
     ).ranking
     expect(ranking.map((entry) => entry.rank)).toEqual([1, 2, 3])
-    expect(ranking[0].score).toBeLessThanOrEqual(ranking[1].score)
+    expect(ranking[0]).toMatchObject({ candidate_id: 'cand_0002', score: 0 })
+    expect(ranking[1].score).toBeGreaterThan(0)
+    expect(ranking[2].score).toBeGreaterThanOrEqual(ranking[1].score)
 
     const badObjective = await cli.run(
       'metrics',

@@ -1,4 +1,6 @@
 // @vitest-environment node
+import type { Buffer } from 'node:buffer'
+import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -112,5 +114,20 @@ describeWithDist('lmfg-mcp over stdio', () => {
     expect(shown.structuredContent).toMatchObject({
       result: { id: 'lmfg.objective.v1' },
     })
+  })
+  it('exits cleanly when stdin closes', async () => {
+    const child = spawn(process.execPath, [BIN, '--cwd', cwd], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let stderr = ''
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+    const exited = new Promise<number | null>((resolve) => {
+      child.on('exit', (code) => resolve(code))
+    })
+    child.stdin.end()
+    expect(await exited).toBe(0)
+    expect(stderr).not.toMatch(/unsettled top-level await/i)
   })
 })

@@ -24,7 +24,8 @@ Claude Code / Claude Desktop style configuration:
 ```
 
 `--cwd` sets the directory relative paths resolve against and where the
-`.lmfg` workspace lives by default; every tool also accepts `workspace`.
+`.lmfg` workspace lives by default; tools that touch the workspace also
+accept `workspace`.
 
 ## Tools
 

@@ -83,6 +83,120 @@ describe('tool table', () => {
   })
 })
 
+describe('every tool builds argv', () => {
+  const minimal: Record<string, Record<string, unknown>> = {
+    lmfg_version: {},
+    lmfg_capabilities: {},
+    lmfg_schema_list: {},
+    lmfg_schema_show: { id: 'lmfg.params.v1' },
+    lmfg_session_init: { source: 'a.dng' },
+    lmfg_session_status: { session: 's' },
+    lmfg_session_list: {},
+    lmfg_inspect: { file: 'a.dng' },
+    lmfg_lut_inspect: { lut: 'a.cube' },
+    lmfg_lut_contract_infer: { lut: 'a.cube' },
+    lmfg_lut_contract_validate: {
+      lut: 'a.cube',
+      contract: { role: 'display-look' },
+    },
+    lmfg_lut_fetch: { url: 'https://x/y.cube', sha256: 'a'.repeat(64) },
+    lmfg_render_preview: { session: 's' },
+    lmfg_render_candidate: { session: 's', plan: { candidates: [] } },
+    lmfg_render_sweep: { session: 's', plan: { axes: {} } },
+    lmfg_render_export: { session: 's', params: { exposure_ev: 0 } },
+    lmfg_render_replay: { manifest: 'm.json', session: 's' },
+    lmfg_compare_sheet: { session: 's', iteration: 'i' },
+    lmfg_metrics_compute: { session: 's', iteration: 'i', candidate: 'c' },
+    lmfg_metrics_compare: { session: 's', iteration: 'i' },
+    lmfg_metrics_rank: { session: 's', iteration: 'i', objective: {} },
+    lmfg_manifest_verify: { manifest: 'm.json' },
+    lmfg_manifest_show: { manifest: 'm.json' },
+  }
+  const expectedPrefix: Record<string, string[]> = {
+    lmfg_version: ['version'],
+    lmfg_capabilities: ['capabilities'],
+    lmfg_schema_list: ['schema', 'list'],
+    lmfg_schema_show: ['schema', 'show', 'lmfg.params.v1'],
+    lmfg_session_init: ['session', 'init', '--source', 'a.dng'],
+    lmfg_session_status: ['session', 'status', '--session', 's'],
+    lmfg_session_list: ['session', 'list'],
+    lmfg_inspect: ['inspect', 'a.dng'],
+    lmfg_lut_inspect: ['lut', 'inspect', 'a.cube'],
+    lmfg_lut_contract_infer: ['lut', 'contract', 'infer', '--lut', 'a.cube'],
+    lmfg_lut_contract_validate: [
+      'lut',
+      'contract',
+      'validate',
+      '--lut',
+      'a.cube',
+      '--contract-json',
+    ],
+    lmfg_lut_fetch: ['lut', 'fetch', '--url', 'https://x/y.cube', '--sha256'],
+    lmfg_render_preview: ['render', 'preview', '--session', 's'],
+    lmfg_render_candidate: ['render', 'candidate', '--plan-json'],
+    lmfg_render_sweep: ['render', 'sweep', '--plan-json'],
+    lmfg_render_export: ['render', 'export', '--params-json'],
+    lmfg_render_replay: [
+      'render',
+      'replay',
+      '--manifest',
+      'm.json',
+      '--session',
+      's',
+    ],
+    lmfg_compare_sheet: [
+      'compare',
+      'sheet',
+      '--iteration',
+      'i',
+      '--session',
+      's',
+    ],
+    lmfg_metrics_compute: [
+      'metrics',
+      'compute',
+      '--iteration',
+      'i',
+      '--candidate',
+      'c',
+      '--session',
+      's',
+    ],
+    lmfg_metrics_compare: [
+      'metrics',
+      'compare',
+      '--iteration',
+      'i',
+      '--session',
+      's',
+    ],
+    lmfg_metrics_rank: [
+      'metrics',
+      'rank',
+      '--iteration',
+      'i',
+      '--objective',
+      '{}',
+      '--session',
+      's',
+    ],
+    lmfg_manifest_verify: ['manifest', 'verify', 'm.json'],
+    lmfg_manifest_show: ['manifest', 'show', 'm.json'],
+  }
+
+  it('covers every tool with validated minimal input', () => {
+    expect(Object.keys(minimal).sort()).toEqual(
+      TOOLS.map((tool) => tool.name).sort(),
+    )
+    for (const tool of TOOLS) {
+      const parsed = z.object(tool.inputShape).parse(minimal[tool.name])
+      const argv = tool.argv(parsed)
+      const prefix = expectedPrefix[tool.name]
+      expect(argv.slice(0, prefix.length), tool.name).toEqual(prefix)
+    }
+  })
+})
+
 describe('runCliTool / toCallToolResult', () => {
   it('parses the envelope, forwards --quiet, and maps failures to isError', async () => {
     const calls: string[][] = []

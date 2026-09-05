@@ -41,7 +41,7 @@
 - Create: `packages/render-engine/src/export/jpeg/node-file-row-sink.ts` (+ test) — streaming file sink with in-stream EXIF insertion and SHA-256
 - Modify: `packages/lmfg-cli/src/services/export.ts` (streaming sink, `resource`), `src/services/replay.ts` (same sink for export replays)
 - Create: `packages/lmfg-cli/src/services/evaluation.ts` (+ test), `src/commands/metrics.ts` (compare, rank), `src/schemas/evaluation.ts`
-- Create: `packages/lmfg-cli/scripts/large-file-validation.mjs`, `docs/audits/2026-09-05-lmfg-large-file-validation.md`
+- Create: `packages/lmfg-cli/benchmarks/large-file-validation.mjs`, `docs/audits/2026-09-05-lmfg-large-file-validation.md`
 - Create: `packages/lmfg-mcp/` (package.json, tsconfig, vite config, `src/index.ts`, `src/server.ts`, `src/tools.ts`, `src/tools.test.ts`, `src/e2e/mcp.e2e.test.ts`, `bin/lmfg-mcp.mjs`, README)
 - Modify: `.github/workflows/build.yml` (cli matrix), root `package.json` scripts (`cli:build`, `test:cli`, mcp), `pnpm-workspace.yaml` unchanged (`packages/*`)
 - Docs: `packages/lmfg-cli/README.md`, `packages/lmfg-cli/CHANGELOG.md`, `docs/specs/2026-06-23-lmfg-cli-tier0-1-design.md`, this plan
@@ -60,7 +60,7 @@
 ### Task L — streaming export + large-file validation (P2-2)
 - [x] L1 `node-file-row-sink.ts`: `createNodeFileJpegRowSink({ runtime, path, metadata, width, height })` builds the encoder with `finishMode: 'chunks'`; buffers the first 64 KiB, computes `planJpegMetadataInjection`, then writes `head + segment + rest` straight to a temp file (`<path>.<pid>.tmp`), hashing in-stream; `close()` renames and returns `{ kind: 'file', path, byteLength, sha256 }` (new `FileOutputResult` kind, additive). Abort removes the temp file. Tests with a fake chunk encoder: bytes on disk equal `preserveJpegMetadataBytes(inMemory)` and sha matches.
 - [x] L2 `services/export.ts`: use the file sink (target = the final export path); `assertJpegBytes` becomes `assertJpegFile` (SOI at 0, EOI at end via `fs.open` reads); result `jpeg` bytes are no longer returned; commands write the manifest from `sha256`/`byteLength`; `replay.ts` export path uses the same sink and compares sha. `resource.max_rss_bytes` from `process.resourceUsage().maxRSS * 1024`.
-- [x] L3 `scripts/large-file-validation.mjs` (fixture-gated by `LMFG_LARGE_FIXTURES=1`, paths from `LUMAFORGE_100MP_RAF` / `LUMAFORGE_SONY_ARW` with the `/workspaces/LumaForge/test-images` defaults): for each fixture × profile: `session init`, `render export`, `manifest verify`, `render replay`; prints a table with wall time and `resource.max_rss_bytes`; writes `docs/audits/2026-09-05-lmfg-large-file-validation.md`. Package script `validate:large`.
+- [x] L3 `benchmarks/large-file-validation.mjs` (fixture-gated by `LMFG_LARGE_FIXTURES=1`, paths from `LUMAFORGE_100MP_RAF` / `LUMAFORGE_SONY_ARW` with the `/workspaces/LumaForge/test-images` defaults): for each fixture × profile: `session init`, `render export`, `manifest verify`, `render replay`; prints a Markdown table with wall time and peak RSS that is pasted into `docs/audits/2026-09-05-lmfg-large-file-validation.md`. Package script `validate:large`.
 - [x] L4 Record before/after peak RSS for the RAF export in the execution notes.
 
 ### Task M — candidate evaluation (P3-2)
@@ -79,11 +79,25 @@
 
 ### Task P — docs, review, verification
 - [x] P1 README/CHANGELOG/spec status; execution notes with timing and RSS tables.
-- [ ] P2 Fresh-context review subagent over `git diff 9d27cfff..HEAD` with the same checklist as the P0/P1 pass plus: worker lifecycle, shared-memory safety, streaming sink atomicity, MCP error mapping, CI matrix syntax. Fix high/medium findings; re-run the verification set.
+- [x] P2 Fresh-context review subagent over `git diff 9d27cfff..HEAD` with the same checklist as the P0/P1 pass plus: worker lifecycle, shared-memory safety, streaming sink atomicity, MCP error mapping, CI matrix syntax. Fix high/medium findings; re-run the verification set.
 
 ---
 
 ## Execution notes
+
+### Review findings (fresh-context pass over `9d27cfff..HEAD`) and outcomes
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | high | The streaming writer renamed the temp file before validating it and removed the final path on failure, so a failed export could delete a pre-existing export | Fixed: `finish()` validates the temp file and returns `commit()` / `discard()`; the final path is untouched until commit; tests cover a failed stream next to an existing file and discard. |
+| 2 | medium | `lmfg-mcp` never exited on stdin EOF (exit 13, unsettled top-level await) | Fixed: stdin `end` closes the server and `server.server.onclose` resolves the run; e2e spawns the bin with a closed stdin and asserts exit 0. |
+| 3 | medium | The JPEG landed at the export path before manifest verification, so the "nothing was written" refusal was false | Fixed: `render export` and export replays verify the manifest first, then `commit()` the JPEG, then write the manifest; refusal discards the temp file. |
+| 4 | low | Descriptor input-range normalization changed fingerprints without a version bump | No change: descriptor v2 has never been published (introduced after 0.1.0), so the normalization is part of v2's definition; noted here. |
+| 5 | low | Dry-run reported a concurrency the real run could not use without the built worker | Fixed: dry-run applies the same worker-script fallback. |
+| 6 | low | Pool ignored `messageerror` | Fixed: `messageerror` fails the run. |
+| 7 | low | `ObjectiveSchema` looser than `validateObjective`; `localeCompare` tie-break | Fixed: schema refinements mirror the validator; tie-break uses code-point order. |
+| 8 | low | Docs: temp-file name, EOI-before-rename claim, script path, MCP `workspace` claim, dead `assertJpegBytes` | Fixed in README, MCP README, this plan; dead code removed. |
+| 9 | low | Test gaps | Added: worker crash before ready, failed export keeps an existing file, every MCP tool's argv, MCP exit on stdin close, a meaningful rank assertion. |
 
 ### Measurements
 

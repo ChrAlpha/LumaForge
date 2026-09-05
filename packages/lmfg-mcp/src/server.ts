@@ -139,7 +139,13 @@ export async function runMcpServer(
   const transport = new StdioServerTransport()
   await server.connect(transport)
   await new Promise<void>((resolve) => {
-    transport.onclose = () => resolve()
+    // `Protocol.connect` owns `transport.onclose`; observe the server instead.
+    server.server.onclose = () => resolve()
+    // The stdio transport only listens for data, so EOF on stdin (the host
+    // went away) must close the server explicitly or the process lingers.
+    process.stdin.once('end', () => {
+      void server.close().catch(() => undefined)
+    })
   })
   return 0
 }

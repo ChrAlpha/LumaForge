@@ -135,10 +135,12 @@ shared memory, so outputs are byte-identical to a serial run: the candidate
 only `policy.concurrency` and the wall time do. On a 16-core machine a
 64-candidate sweep drops from about 36 s to about 6 s.
 
-`render export` streams JPEG chunks straight into `<name>.jpg.<pid>.tmp`,
-inserts the EXIF segment and computes the SHA-256 on the way, and renames
-into place only when the stream ends with EOI; the process never holds the
-full JPEG in memory. Results report `resource.max_rss_bytes` (peak RSS of the
+`render export` streams JPEG chunks straight into `<name>.jpg.<pid>.<rand>.tmp`,
+inserts the EXIF segment and computes the SHA-256 on the way, validates the
+temp file (SOI to EOI), and renames it into place only after the export
+manifest has been built and verified; an existing export at that path is
+never touched before then, and the process never holds the full JPEG in
+memory. Results report `resource.max_rss_bytes` (peak RSS of the
 CLI process) so agents can budget large files.
 
 ## Candidate evaluation

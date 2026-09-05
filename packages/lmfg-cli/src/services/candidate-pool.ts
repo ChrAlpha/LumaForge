@@ -309,6 +309,13 @@ async function* renderWithWorkers(
           }),
         )
       })
+      worker.on('messageerror', (error: unknown) => {
+        fail(
+          new LmfgError('render.failed', {
+            message: `Candidate worker message could not be deserialized: ${error instanceof Error ? error.message : String(error)}`,
+          }),
+        )
+      })
       worker.on('exit', (code) => {
         if (code !== 0 && !failure && completed < input.tasks.length) {
           fail(

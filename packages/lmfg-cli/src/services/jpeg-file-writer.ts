@@ -18,9 +18,15 @@ import { LmfgError } from '../protocol/errors'
 import { ensureDir, renameWithRetry } from '../workspace/atomic-fs'
 
 export type StreamedJpegFile = {
+  /** Final path the file will occupy after `commit()`. */
   path: string
+  tmpPath: string
   byteLength: number
   sha256: string
+  /** Rename the validated temp file into place (replaces an existing file). */
+  commit: () => Promise<void>
+  /** Remove the temp file without publishing. */
+  discard: () => Promise<void>
 }
 
 export type StreamingJpegFileWriter = {
@@ -62,8 +68,11 @@ export async function assertJpegFile(path: string): Promise<void> {
 /**
  * Streams encoder chunks to `<path>.<pid>.<rand>.tmp`, inserting the EXIF
  * segment that `preserveJpegMetadataBytes` would insert and hashing the
- * delivered layout on the way, then renames into place. Only the leading
- * 64 KiB are ever buffered, so export memory no longer scales with the JPEG.
+ * delivered layout on the way. `finish()` validates the temp file and hands
+ * back `commit()` so callers publish only after their own checks (manifest
+ * verification) pass; an existing file at `path` is never touched before
+ * that. Only the leading 64 KiB are ever buffered, so export memory no
+ * longer scales with the JPEG.
  */
 export function createStreamingJpegFileWriter(input: {
   path: string
@@ -159,15 +168,31 @@ export function createStreamingJpegFileWriter(input: {
         const target = await ensureHandle()
         await target.close()
         handle = null
-        await renameWithRetry(tmp, input.path)
+        // Validate the temp file; the final path is untouched until commit().
+        await assertJpegFile(tmp)
         state = 'finished'
-        await assertJpegFile(input.path)
-        return { path: input.path, byteLength, sha256: hasher.digestHex() }
       } catch (error) {
         state = 'aborted'
         await discard()
-        await rm(input.path, { force: true }).catch(() => undefined)
         throw error
+      }
+      let published = false
+      let discarded = false
+      return {
+        path: input.path,
+        tmpPath: tmp,
+        byteLength,
+        sha256: hasher.digestHex(),
+        async commit() {
+          if (published || discarded) return
+          await renameWithRetry(tmp, input.path)
+          published = true
+        },
+        async discard() {
+          if (published || discarded) return
+          discarded = true
+          await rm(tmp, { force: true })
+        },
       }
     },
     async abort() {

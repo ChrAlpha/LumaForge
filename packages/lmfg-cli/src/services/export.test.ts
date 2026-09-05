@@ -53,6 +53,8 @@ describeWithFixture('runFullResolutionExport', () => {
       expect(progress.at(-1)).toBe(99)
       expect(result.exposure.source).toBe('dng-baseline')
       expect(result.resource.max_rss_bytes).toBeGreaterThan(0)
+      expect(await readdir(join(dir, 'exports'))).not.toContain('final.jpg')
+      await result.commit()
       const jpeg = await readFile(outputPath)
       expect(jpeg.byteLength).toBe(result.byteLength)
       expect(createHash('sha256').update(jpeg).digest('hex')).toBe(

@@ -202,6 +202,8 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
   const timings: Record<string, number> = {}
   const total = performance.now()
   let jpeg: Uint8Array | null = null
+  let publish: (() => Promise<void>) | null = null
+  let discard: (() => Promise<void>) | null = null
   let byteLength: number
   let sha256: string
   let width: number
@@ -223,6 +225,8 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
       onProgress: input.onProgress,
     })
     ;({ byteLength, sha256, width, height, graph } = result)
+    publish = result.commit
+    discard = result.discard
     Object.assign(timings, result.timings)
   } else {
     const maxPixels =
@@ -249,6 +253,7 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
 
   const expectedDims = manifest.output.dimensions
   if (width !== expectedDims.width || height !== expectedDims.height) {
+    await discard?.()
     throw new LmfgError('replay.mismatch', {
       message: `Replay produced ${width}x${height} but the manifest recorded ${expectedDims.width}x${expectedDims.height}.`,
       details: {
@@ -271,7 +276,8 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
     output: { width, height, quality, filename: 'output.jpg', sha256 },
     parentManifestSha256: manifest.manifest_sha256,
   })
-  if (jpeg) await writeFileAtomic(input.outputPath, jpeg)
+  if (publish) await publish()
+  else if (jpeg) await writeFileAtomic(input.outputPath, jpeg)
   await writeJsonAtomic(input.manifestOutputPath, replayManifest)
   timings.total_ms = performance.now() - total
 

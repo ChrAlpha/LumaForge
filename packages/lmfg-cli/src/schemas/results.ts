@@ -386,12 +386,26 @@ export const ObjectiveTermSchema = z
     max: z.number().optional(),
     weight: z.number().min(0).optional(),
   })
+  .refine(
+    (term) =>
+      (term.target !== undefined) !==
+      (term.min !== undefined || term.max !== undefined),
+    { message: 'Use either a target or a min/max range.' },
+  )
+  .refine(
+    (term) =>
+      term.min === undefined || term.max === undefined || term.min <= term.max,
+    { message: 'min must not exceed max.' },
+  )
   .describe(
     'Aim for target, or stay within [min, max]; penalty = weight × distance.',
   )
 
 export const ObjectiveSchema = z
   .partialRecord(MetricKeySchema, ObjectiveTermSchema)
+  .refine((objective) => Object.keys(objective).length > 0, {
+    message: 'An objective needs at least one metric term.',
+  })
   .describe('Objective for `lmfg metrics rank`: one term per metric key.')
 
 export const MetricDeltaSchema = z.object({

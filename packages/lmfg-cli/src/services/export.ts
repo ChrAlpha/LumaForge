@@ -26,22 +26,6 @@ import { captureResourceUsage } from './resource'
 
 export const DEFAULT_EXPORT_STRIP_ROWS = 512
 
-export function assertJpegBytes(bytes: Uint8Array): void {
-  const ok =
-    bytes.byteLength >= 4 &&
-    bytes[0] === 0xFF &&
-    bytes[1] === 0xD8 &&
-    bytes[bytes.byteLength - 2] === 0xFF &&
-    bytes[bytes.byteLength - 1] === 0xD9
-  if (!ok) {
-    throw new LmfgError('export.refused', {
-      message:
-        'The export produced an incomplete JPEG stream; refusing to write it.',
-      retryable: true,
-    })
-  }
-}
-
 export function exposureFromManifest(
   manifest: RenderManifest,
 ): RawRenderExposure | null {
@@ -92,6 +76,10 @@ export type ExportRunResult = {
   strips: number
   timings: Record<string, number>
   resource: ResourceUsage
+  /** Publish the validated JPEG at `path`; call after the manifest is verified. */
+  commit: () => Promise<void>
+  /** Drop the validated JPEG without publishing. */
+  discard: () => Promise<void>
 }
 
 export async function runFullResolutionExport(
@@ -167,6 +155,8 @@ export async function runFullResolutionExport(
       path: streamed.path,
       byteLength: streamed.byteLength,
       sha256: streamed.sha256,
+      commit: streamed.commit,
+      discard: streamed.discard,
       width: capability.width,
       height: capability.height,
       graph,

@@ -243,4 +243,25 @@ describe('renderCandidates', () => {
     setTimeout(() => controller.abort(new Error('Timed out after 1 ms.')), 30)
     await expect(collect(run)).rejects.toThrow('Timed out after 1 ms.')
   })
+  it('fails with render.failed when a worker crashes before it is ready', async () => {
+    const crashing = join(dir, 'crash-worker.mjs')
+    await writeFile(crashing, "throw new Error('boot failure')\n")
+    const run = renderCandidates({
+      frame,
+      tasks: [
+        { graph: graph(), quality: 0.8 },
+        { graph: graph(), quality: 0.8 },
+      ],
+      tile: { width: 1, height: 1 },
+      concurrency: 2,
+      workerScript: crashing,
+      createEncoder: () => {
+        throw new Error('unused')
+      },
+    })
+    await expect(collect(run)).rejects.toMatchObject({
+      code: 'render.failed',
+      exitCode: 7,
+    })
+  })
 })
