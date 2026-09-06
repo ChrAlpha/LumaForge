@@ -74,6 +74,58 @@ afterEach(() => {
 })
 
 describe('transform demo request lifecycle', () => {
+  it('accepts current-photo frames without reopening files and preserves edits on refresh', async () => {
+    DemoWorker.instances = []
+    vi.stubGlobal('Worker', DemoWorker)
+    const { result, unmount } = renderHook(() =>
+      useTransformDemo({ autoLoadSample: false }),
+    )
+    expect(DemoWorker.instances).toHaveLength(0)
+    const current: PreviewSource = {
+      name: 'current.nef',
+      kind: 'raw',
+      originalWidth: 6000,
+      originalHeight: 4000,
+      frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
+    }
+    await act(() => result.current.loadSource(current))
+    expect(loadImageInput).not.toHaveBeenCalled()
+    act(() => {
+      result.current.setMode('vertical')
+      result.current.setManual((prev) => ({ ...prev, rotate: 2 }))
+    })
+    await act(() =>
+      result.current.loadSource(
+        {
+          ...current,
+          frame: {
+            ...current.frame,
+            data: new Uint8ClampedArray(16).fill(100),
+          },
+        },
+        { preserveTransform: true },
+      ),
+    )
+    expect(result.current.mode).toBe('vertical')
+    expect(result.current.manual.rotate).toBe(2)
+    const worker = DemoWorker.instances[0]
+    act(() =>
+      worker.emit({
+        type: 'analyzed',
+        sourceId: worker.messages[0].sourceId,
+        analysis,
+        elapsedMs: 10,
+      }),
+    )
+    expect(result.current.analysis).toBeNull()
+    act(() => result.current.clearSource())
+    expect(worker.terminated).toBe(true)
+    expect(result.current.source).toBeNull()
+    expect(result.current.mode).toBe('off')
+    expect(result.current.manual.rotate).toBe(0)
+    unmount()
+  })
+
   it('creates a live worker after StrictMode replays the mount effect', async () => {
     DemoWorker.instances = []
     vi.stubGlobal('Worker', DemoWorker)

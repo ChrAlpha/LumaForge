@@ -16,7 +16,7 @@ import type {
 
 type RenderRequest = Extract<TransformWorkerRequest, { type: 'render' }>
 
-export function useTransformDemo() {
+export function useTransformDemo({ autoLoadSample = true } = {}) {
   const [source, setSource] = useState<PreviewSource | null>(null)
   const [analysis, setAnalysis] = useState<UprightAnalysis | null>(null)
   const [result, setResult] = useState<RenderedPreview | null>(null)
@@ -43,7 +43,10 @@ export function useTransformDemo() {
   }, [])
 
   const loadSource = useCallback(
-    async (file?: File) => {
+    async (
+      input?: File | PreviewSource,
+      { preserveTransform = false } = {},
+    ) => {
       const id = ++sourceId.current
       abortRef.current?.abort()
       const abort = new AbortController()
@@ -56,12 +59,16 @@ export function useTransformDemo() {
       setAnalysis(null)
       setResult(null)
       setSource(null)
-      setMode('off')
-      setManual(NEUTRAL_TRANSFORM)
-      setConstrainCrop(true)
+      if (!preserveTransform) {
+        setMode('off')
+        setManual(NEUTRAL_TRANSFORM)
+        setConstrainCrop(true)
+      }
       try {
-        const next = file
-          ? await loadImageInput(file, abort.signal)
+        const next = input
+          ? 'frame' in input
+            ? input
+            : await loadImageInput(input, abort.signal)
           : createDemoSample()
         if (id !== sourceId.current || abort.signal.aborted) return
         setSource(next)
@@ -136,10 +143,23 @@ export function useTransformDemo() {
     pending.current = null
   }, [])
 
+  const clearSource = useCallback(() => {
+    dispose()
+    setSource(null)
+    setAnalysis(null)
+    setResult(null)
+    setError(null)
+    setLoading(false)
+    setRendering(false)
+    setMode('off')
+    setManual(NEUTRAL_TRANSFORM)
+    setConstrainCrop(true)
+  }, [dispose])
+
   useEffect(() => {
-    void loadSource()
+    if (autoLoadSample) void loadSource()
     return dispose
-  }, [dispose, loadSource])
+  }, [autoLoadSample, dispose, loadSource])
 
   useEffect(() => {
     if (!source || !analysis) return
@@ -179,6 +199,7 @@ export function useTransformDemo() {
     error,
     analysisMs,
     loadSource,
+    clearSource,
     reset,
     ready: Boolean(analysis && source),
     solution: analysis?.solutions[mode] ?? {
