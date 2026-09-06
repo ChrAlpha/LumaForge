@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import type { Translate } from '~/lib/i18n'
@@ -47,31 +48,70 @@ export function MobileModeDock(props: {
   disabled?: boolean
   scrubbing?: boolean
   panel: ReactNode
+  /**
+   * Height (px) the dock occupies from the bottom of the viewport: the tab
+   * bar plus the expanded panel. The mobile chrome forwards it to the stage
+   * so the photo re-fits above the dock instead of under it.
+   */
+  onInsetChange?: (inset: number) => void
 }) {
   const { t } = useI18n()
   const disabled = props.disabled ?? false
   const prefersReduced = useReducedMotion() ?? false
+  const panelVisible = props.expanded && !disabled
+  const dockRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [dockHeight, setDockHeight] = useState(0)
+  const [panelHeight, setPanelHeight] = useState(0)
+  const { onInsetChange } = props
+
+  useLayoutEffect(() => {
+    const dock = dockRef.current
+    if (!dock || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      setDockHeight(dock.offsetHeight)
+      setPanelHeight(panelRef.current?.offsetHeight ?? 0)
+    })
+    observer.observe(dock)
+    const panel = panelRef.current
+    if (panel) observer.observe(panel)
+    setDockHeight(dock.offsetHeight)
+    setPanelHeight(panel?.offsetHeight ?? 0)
+    return () => observer.disconnect()
+    // Re-subscribe whenever the panel mounts or changes mode so the observer
+    // tracks the live panel element.
+  }, [panelVisible, props.mode])
+
+  useLayoutEffect(() => {
+    onInsetChange?.(dockHeight + (panelVisible ? panelHeight : 0))
+  }, [dockHeight, onInsetChange, panelHeight, panelVisible])
+
   return (
     <div
+      ref={dockRef}
       data-mobile-dock
       className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-[oklch(0.064_0.006_255/0.92)] via-[oklch(0.085_0.006_255/0.68)] to-transparent pb-[max(8px,calc(env(safe-area-inset-bottom)-24px))] text-lf-on-photo-ink"
     >
       <AnimatePresence initial={false}>
-        {props.expanded && !disabled && (
+        {panelVisible && (
           <m.div
             key="dock-panel"
+            ref={panelRef}
             data-mobile-dock-panel
             data-scrubbing={props.scrubbing || undefined}
             className={clsxm(
               'isolate absolute inset-x-0 bottom-full overflow-y-auto px-3.5 pb-2.5 pt-3.5',
               "before:absolute before:inset-0 before:-z-10 before:bg-gradient-to-t before:from-[oklch(0.085_0.006_255/0.82)] before:via-[oklch(0.118_0.006_255/0.56)] before:to-transparent before:transition-opacity before:duration-150 before:content-['']",
-              props.scrubbing && 'before:opacity-15',
+              props.scrubbing && 'before:opacity-10',
               // Tone mode locks to a fixed height so AdjustListPanel can
               // resolve `h-full` and manage its own internal scroll (chrome
-              // outside the scroll, slider list inside). Other modes still
-              // use max-h since their content sizes itself naturally.
+              // outside the scroll, slider list inside). The height leaves a
+              // 3:2 landscape photo at full width above the dock on a
+              // 393x660 viewport; Tone and HSL lists scroll inside.
+              // Other modes still use max-h since their content sizes
+              // itself naturally.
               props.mode === 'tone'
-                ? 'h-[min(60vh,360px)]'
+                ? 'h-[min(38vh,264px)]'
                 : props.mode === 'export'
                   ? 'max-h-[min(32vh,260px)]'
                   : 'max-h-[24vh]',

@@ -41,6 +41,7 @@ export function MobileLabModeDock({
   onOpenLutContractBrowser,
   onCompareReset,
   onSplitOpenChange,
+  onInsetChange,
 }: {
   mode: MobileMode
   expanded: boolean
@@ -70,6 +71,7 @@ export function MobileLabModeDock({
   onOpenLutContractBrowser: () => void
   onCompareReset: () => void
   onSplitOpenChange: (open: boolean) => void
+  onInsetChange?: (inset: number) => void
 }) {
   return (
     <MobileModeDock
@@ -81,6 +83,7 @@ export function MobileLabModeDock({
       onOpenMore={onOpenMore}
       canExport
       scrubbing={scrubbing}
+      onInsetChange={onInsetChange}
       panel={
         <m.div
           key={mode}

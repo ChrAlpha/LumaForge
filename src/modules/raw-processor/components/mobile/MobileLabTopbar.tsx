@@ -24,6 +24,7 @@ export function MobileLabTopbar({
   onOpenMore,
   onResetSession,
   scrubbing,
+  onHeightChange,
 }: {
   hasImage: boolean
   fileName: string
@@ -36,11 +37,13 @@ export function MobileLabTopbar({
   onOpenMore: () => void
   onResetSession: () => void
   scrubbing?: boolean
+  onHeightChange?: (height: number) => void
 }) {
   const { t } = useI18n()
 
   return (
     <MobileTopbar
+      onHeightChange={onHeightChange}
       hasImage={hasImage}
       fileName={fileName}
       fileMeta={fileMeta}

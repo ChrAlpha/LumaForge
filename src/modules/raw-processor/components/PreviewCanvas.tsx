@@ -113,6 +113,9 @@ function EmbeddedOriginalLayer({ src }: { src: string }) {
   )
 }
 
+/** Trailing delay before the WebGL backing store follows a layout resize. */
+const PREVIEW_RESIZE_SETTLE_MS = 90
+
 export function PreviewCanvas({
   imageRef,
   imageVersion,
@@ -574,18 +577,44 @@ export function PreviewCanvas({
       return
     }
 
+    // The backing store only follows layout once the size has settled. The
+    // mobile stage animates its insets while the chrome opens or closes, and
+    // re-rendering the WebGL frame on every intermediate size would cost a
+    // full pipeline pass per animation frame. In between, the canvas is
+    // CSS-scaled inside a track that keeps the photo aspect ratio, which
+    // reads as continuous motion. The first fit always applies immediately.
+    let settleTimer: number | null = null
+    let pendingBacking: { width: number; height: number } | null = null
+    let hasFitOnce = false
+
+    const applyBackingStore = () => {
+      const next = pendingBacking
+      pendingBacking = null
+      if (!next) return
+      if (canvas.width !== next.width || canvas.height !== next.height) {
+        canvas.width = next.width
+        canvas.height = next.height
+      }
+      const pipeline = pipelineRef.current
+      if (pipeline) {
+        pipeline.resize(canvas.width, canvas.height)
+        if (imageRef.current && !shouldDelayProcessedCompareRender) {
+          renderProcessedPreviewRef.current?.()
+        }
+      }
+    }
+
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect
         const dpr = Math.min(window.devicePixelRatio, 2)
 
         // Calculate aspect-fit dimensions
+        let canvasWidth = width
+        let canvasHeight = height
         if (imageWidth > 0 && imageHeight > 0) {
           const aspectRatio = imageWidth / imageHeight
           const containerAspect = width / height
-
-          let canvasWidth: number
-          let canvasHeight: number
 
           if (aspectRatio > containerAspect) {
             canvasWidth = width
@@ -594,31 +623,32 @@ export function PreviewCanvas({
             canvasHeight = height
             canvasWidth = height * aspectRatio
           }
+        }
 
-          track.style.width = `${canvasWidth}px`
-          track.style.height = `${canvasHeight}px`
-          canvas.style.width = '100%'
-          canvas.style.height = '100%'
-          canvas.width = Math.round(canvasWidth * dpr)
-          canvas.height = Math.round(canvasHeight * dpr)
-        } else {
-          track.style.width = `${width}px`
-          track.style.height = `${height}px`
-          canvas.style.width = '100%'
-          canvas.style.height = '100%'
-          canvas.width = Math.round(width * dpr)
-          canvas.height = Math.round(height * dpr)
+        track.style.width = `${canvasWidth}px`
+        track.style.height = `${canvasHeight}px`
+        canvas.style.width = '100%'
+        canvas.style.height = '100%'
+        pendingBacking = {
+          width: Math.round(canvasWidth * dpr),
+          height: Math.round(canvasHeight * dpr),
         }
 
         setTrackReady(true)
 
-        const pipeline = pipelineRef.current
-        if (pipeline) {
-          pipeline.resize(canvas.width, canvas.height)
-          if (imageRef.current && !shouldDelayProcessedCompareRender) {
-            renderProcessedPreviewRef.current?.()
-          }
+        if (settleTimer !== null) {
+          window.clearTimeout(settleTimer)
+          settleTimer = null
         }
+        if (!hasFitOnce || !pipelineRef.current) {
+          hasFitOnce = true
+          applyBackingStore()
+          continue
+        }
+        settleTimer = window.setTimeout(() => {
+          settleTimer = null
+          applyBackingStore()
+        }, PREVIEW_RESIZE_SETTLE_MS)
       }
     })
 
@@ -626,6 +656,12 @@ export function PreviewCanvas({
 
     return () => {
       resizeObserver.disconnect()
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer)
+        settleTimer = null
+        // Flush so a remount never leaves a stale backing store behind.
+        applyBackingStore()
+      }
     }
   }, [
     imageRef,

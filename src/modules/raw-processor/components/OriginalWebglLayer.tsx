@@ -31,6 +31,9 @@ function createDefaultOriginalPipeline(canvas: HTMLCanvasElement) {
   return new DefaultRawProcessingPipeline(canvas)
 }
 
+/** Trailing delay before the backing store follows a layout resize. */
+const ORIGINAL_RESIZE_SETTLE_MS = 90
+
 export function OriginalWebglLayer({
   imageRef,
   imageVersion,
@@ -152,20 +155,51 @@ export function OriginalWebglLayer({
     const canvas = canvasRef.current
     if (!layer || !canvas || typeof ResizeObserver === 'undefined') return
 
-    const resizeObserver = new ResizeObserver((entries) => {
+    // Mirrors PreviewCanvas: CSS handles intermediate sizes while the stage
+    // insets animate; the backing store and re-render follow once settled.
+    let settleTimer: number | null = null
+    let pending: { width: number; height: number } | null = null
+    let hasFitOnce = false
+
+    const applyBackingStore = () => {
+      const next = pending
+      pending = null
+      if (!next) return
       try {
-        for (const entry of entries) {
-          const { width, height } = entry.contentRect
-          const dpr = Math.min(window.devicePixelRatio || 1, 2)
-          canvas.width = Math.max(1, Math.round(width * dpr))
-          canvas.height = Math.max(1, Math.round(height * dpr))
-          pipelineRef.current?.resize(canvas.width, canvas.height)
-          if (isInitialized && imageRef.current) {
-            pipelineRef.current?.render({ waitForGpu: false })
-          }
+        if (canvas.width !== next.width || canvas.height !== next.height) {
+          canvas.width = next.width
+          canvas.height = next.height
+        }
+        pipelineRef.current?.resize(canvas.width, canvas.height)
+        if (isInitialized && imageRef.current) {
+          pipelineRef.current?.render({ waitForGpu: false })
         }
       } catch (error) {
         reportPipelineError(error)
+      }
+    }
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect
+        const dpr = Math.min(window.devicePixelRatio || 1, 2)
+        pending = {
+          width: Math.max(1, Math.round(width * dpr)),
+          height: Math.max(1, Math.round(height * dpr)),
+        }
+        if (settleTimer !== null) {
+          window.clearTimeout(settleTimer)
+          settleTimer = null
+        }
+        if (!hasFitOnce) {
+          hasFitOnce = true
+          applyBackingStore()
+          continue
+        }
+        settleTimer = window.setTimeout(() => {
+          settleTimer = null
+          applyBackingStore()
+        }, ORIGINAL_RESIZE_SETTLE_MS)
       }
     })
 
@@ -173,6 +207,11 @@ export function OriginalWebglLayer({
 
     return () => {
       resizeObserver.disconnect()
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer)
+        settleTimer = null
+        applyBackingStore()
+      }
     }
   }, [imageRef, isInitialized, reportPipelineError])
 

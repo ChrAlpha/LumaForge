@@ -255,8 +255,16 @@
     color: var(--color-on-stage);
   }
 
+  /* The mobile chrome (topbar, dock tab bar, expanded dock panel) reports
+     its occupied height through these variables so the photo re-fits into
+     the uncovered region instead of sitting under the panel. Immersive and
+     the empty state reset both to 0 for a true full-bleed stage. The
+     padding transition matches DOCK_SPRING's ~240ms band so the photo
+     settles in the same motion as the chrome. */
   .raw-lab-stage {
-    padding: 0;
+    padding: var(--raw-stage-inset-top, 0px) 0
+      var(--raw-stage-inset-bottom, 0px);
+    transition: padding 240ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .raw-lab-stage-frame {

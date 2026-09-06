@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -116,7 +116,7 @@ describe('mobileModeDock', () => {
     // run its own flex-column internal scroll — chrome stays put while the
     // slider list scrolls inside `[data-adjust-list-scroll]`.
     expect(screen.getByTestId('panel').parentElement).toHaveClass(
-      'h-[min(60vh,360px)]',
+      'h-[min(38vh,264px)]',
     )
   })
 
@@ -153,7 +153,7 @@ describe('mobileModeDock', () => {
     )
     const panelFrame = screen.getByTestId('panel').parentElement
     expect(panelFrame).not.toHaveAttribute('data-scrubbing')
-    expect(panelFrame).not.toHaveClass('before:opacity-15')
+    expect(panelFrame).not.toHaveClass('before:opacity-10')
 
     rerender(
       <MobileModeDock
@@ -169,7 +169,7 @@ describe('mobileModeDock', () => {
     )
     const scrubbingPanelFrame = screen.getByTestId('panel').parentElement
     expect(scrubbingPanelFrame).toHaveAttribute('data-scrubbing', 'true')
-    expect(scrubbingPanelFrame).toHaveClass('before:opacity-15')
+    expect(scrubbingPanelFrame).toHaveClass('before:opacity-10')
   })
 
   it('overlays the expanded panel above the dock without growing the dock box', () => {
@@ -247,5 +247,81 @@ describe('mobileModeDock', () => {
     expect(screen.getByRole('tab', { selected: true })).toHaveAccessibleName(
       /adjust/i,
     )
+  })
+})
+
+describe('mobileModeDock stage inset', () => {
+  it('reports tab bar height plus the expanded panel height, and drops the panel when collapsed', () => {
+    const heights = new Map<Element, number>()
+    const offsetHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'offsetHeight',
+    )
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return heights.get(this) ?? 0
+      },
+    })
+    const observers: Array<{ cb: ResizeObserverCallback; targets: Element[] }> =
+      []
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation((cb: ResizeObserverCallback) => {
+        const entry = { cb, targets: [] as Element[] }
+        observers.push(entry)
+        return {
+          observe: (el: Element) => entry.targets.push(el),
+          unobserve: vi.fn(),
+          disconnect: vi.fn(),
+        }
+      }),
+    )
+    try {
+      const onInsetChange = vi.fn()
+      const { rerender, container } = render(
+        <MobileModeDock
+          mode="tone"
+          expanded
+          onModeChange={vi.fn()}
+          onCollapse={vi.fn()}
+          onOpenMore={vi.fn()}
+          canExport
+          onInsetChange={onInsetChange}
+          panel={<div>tone-panel</div>}
+        />,
+      )
+      const dock = container.querySelector('[data-mobile-dock]')!
+      const panel = container.querySelector('[data-mobile-dock-panel]')!
+      heights.set(dock, 70)
+      heights.set(panel, 264)
+      act(() => {
+        for (const o of observers) o.cb([], {} as ResizeObserver)
+      })
+      expect(onInsetChange).toHaveBeenLastCalledWith(334)
+
+      rerender(
+        <MobileModeDock
+          mode="tone"
+          expanded={false}
+          onModeChange={vi.fn()}
+          onCollapse={vi.fn()}
+          onOpenMore={vi.fn()}
+          canExport
+          onInsetChange={onInsetChange}
+          panel={<div>tone-panel</div>}
+        />,
+      )
+      expect(onInsetChange).toHaveBeenLastCalledWith(70)
+    } finally {
+      vi.unstubAllGlobals()
+      if (offsetHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          'offsetHeight',
+          offsetHeight,
+        )
+      }
+    }
   })
 })

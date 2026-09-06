@@ -282,7 +282,7 @@ describe('adjustListPanel', () => {
       />,
     )
     const chrome = container.querySelector('[data-adjust-section-chrome]')!
-    expect(chrome).not.toHaveClass('opacity-25')
+    expect(chrome).not.toHaveClass('opacity-0')
 
     rerender(
       <AdjustListPanel
@@ -299,7 +299,7 @@ describe('adjustListPanel', () => {
         scrubbing
       />,
     )
-    expect(chrome).toHaveClass('opacity-25')
+    expect(chrome).toHaveClass('opacity-0')
     expect(
       container.querySelector('[role="region"][data-scrubbing="true"]'),
     ).toBeInTheDocument()

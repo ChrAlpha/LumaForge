@@ -5,6 +5,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 
 import { DOCK_SPRING } from '../../motion'
 import type { ColorValue } from '../color-fields'
@@ -91,10 +92,35 @@ export function MobileLabChrome(props: {
     onViewModeChange: props.onViewModeChange,
   })
 
+  // Stage insets: the photo re-fits between the topbar and the dock while
+  // the chrome is visible, and returns to full bleed in immersive or when no
+  // image is loaded. The stage reads these from the shell (raw-lab.css).
+  const chromeRef = useRef<HTMLDivElement>(null)
+  const [topbarHeight, setTopbarHeight] = useState(0)
+  const [dockInset, setDockInset] = useState(0)
+  const insetsActive = props.hasImage && !immersive
+  const insetTop = insetsActive ? topbarHeight : 0
+  const insetBottom = insetsActive ? dockInset : 0
+  useLayoutEffect(() => {
+    const shell = chromeRef.current?.closest<HTMLElement>(
+      '[data-raw-lab-shell]',
+    )
+    if (!shell) return
+    shell.style.setProperty('--raw-stage-inset-top', `${insetTop}px`)
+    shell.style.setProperty('--raw-stage-inset-bottom', `${insetBottom}px`)
+    return () => {
+      shell.style.removeProperty('--raw-stage-inset-top')
+      shell.style.removeProperty('--raw-stage-inset-bottom')
+    }
+  }, [insetBottom, insetTop])
+
   return (
     <div
+      ref={chromeRef}
       className="pointer-events-none absolute inset-0 z-20"
       data-mobile-lab-chrome
+      data-stage-inset-top={insetTop}
+      data-stage-inset-bottom={insetBottom}
       data-focus={focusActive ? 'true' : 'false'}
       data-peek={peeking || undefined}
     >
@@ -154,6 +180,7 @@ export function MobileLabChrome(props: {
               onOpenMore={() => setMoreOpen(true)}
               onResetSession={props.onResetSession}
               scrubbing={focusActive}
+              onHeightChange={setTopbarHeight}
             />
             <MobileLabModeDock
               mode={mode}
@@ -181,6 +208,7 @@ export function MobileLabChrome(props: {
               onOpenLutContractBrowser={openLutContractBrowser}
               onCompareReset={props.onCompareReset}
               onSplitOpenChange={setCompareSplitMode}
+              onInsetChange={setDockInset}
             />
           </m.div>
         )}

@@ -134,6 +134,7 @@ export const Slider = ({
         )}
       </SliderPrimitive.Track>
       <SliderPrimitive.Thumb
+        data-slot="slider-thumb"
         aria-label={thumbAriaLabel}
         aria-labelledby={thumbAriaLabelledBy}
         className={clsxm(

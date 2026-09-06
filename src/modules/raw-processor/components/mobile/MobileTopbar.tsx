@@ -1,4 +1,5 @@
 import { BarChart3 } from 'lucide-react'
+import { useLayoutEffect, useRef } from 'react'
 
 import { LocaleToggle } from '~/components/common/LocaleToggle'
 import { IconButton } from '~/components/ui/button'
@@ -26,8 +27,23 @@ export function MobileTopbar(props: {
   onToggleHistogram: () => void
   moreMenuItems: MobileMoreMenuItem[]
   scrubbing?: boolean
+  /** Rendered height (px) so the stage can keep the photo below the topbar. */
+  onHeightChange?: (height: number) => void
 }) {
   const { t } = useI18n()
+  const headerRef = useRef<HTMLElement>(null)
+  const { onHeightChange } = props
+  useLayoutEffect(() => {
+    const header = headerRef.current
+    if (!header || !onHeightChange) return
+    onHeightChange(header.offsetHeight)
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      onHeightChange(header.offsetHeight)
+    })
+    observer.observe(header)
+    return () => observer.disconnect()
+  }, [onHeightChange])
   const title = props.hasImage ? props.fileName : t('raw.header.title')
   const meta = props.hasImage ? props.fileMeta : t('raw.header.subtitleEmpty')
   const scrubbing = props.scrubbing === true
@@ -41,6 +57,7 @@ export function MobileTopbar(props: {
   )
   return (
     <header
+      ref={headerRef}
       data-mobile-topbar
       data-scrubbing={scrubbing || undefined}
       className="pointer-events-none absolute inset-x-0 top-0 z-20 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 bg-gradient-to-b from-[oklch(0.064_0.006_255/0.82)] via-[oklch(0.064_0.006_255/0.4)] to-transparent px-3 pb-5 pt-safe-offset-3 text-lf-on-photo-ink"
