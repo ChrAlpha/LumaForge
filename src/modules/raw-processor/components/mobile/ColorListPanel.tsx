@@ -53,7 +53,7 @@ export function ColorListPanel(props: ColorListPanelProps) {
             step={field.step}
             track={COLOR_FIELD_TRACK[field.key]}
             formatValue={(v) => formatColorValueShort(field.key, v)}
-            resetAriaLabel={t('raw.mobile.adjustList.fieldResetAria', {
+            resetAriaLabel={t('raw.adjust.fieldResetAria', {
               label,
             })}
             activeScrub={isActive}

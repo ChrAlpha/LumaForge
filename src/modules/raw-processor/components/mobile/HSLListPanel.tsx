@@ -149,10 +149,9 @@ export function HSLListPanel(props: HSLListPanelProps) {
                         step={field.step}
                         track={trackForField(band, field.key)}
                         formatValue={(v) => formatHSLValueShort(field.key, v)}
-                        resetAriaLabel={t(
-                          'raw.mobile.adjustList.fieldResetAria',
-                          { label: fieldLabel },
-                        )}
+                        resetAriaLabel={t('raw.adjust.fieldResetAria', {
+                          label: fieldLabel,
+                        })}
                         activeScrub={isActive}
                         siblingScrubbing={isSibling}
                         onChange={(next) =>

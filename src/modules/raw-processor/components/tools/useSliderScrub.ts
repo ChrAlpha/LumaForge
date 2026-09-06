@@ -50,6 +50,13 @@ export interface SliderScrubBind {
 
 const TRACK_SELECTOR = '[data-slot="slider-track"]'
 const THUMB_SELECTOR = '[role="slider"]'
+/**
+ * Controls inside a row that own their own press: the reset value, and any
+ * future affordance a row grows. Without this the row would start a scrub
+ * (jumping the value to the pointer) a frame before the control's click ran.
+ */
+const INTERACTIVE_SELECTOR =
+  'button, a[href], input, select, textarea, [role="button"], [data-scrub-ignore]'
 
 function readTrackGeometry(host: HTMLElement | null) {
   const track = host?.querySelector<HTMLElement>(TRACK_SELECTOR) ?? null
@@ -158,6 +165,8 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
       if (event.isPrimary === false) return
       if (typeof event.button === 'number' && event.button !== 0) return
       if (sessionRef.current) return
+      const origin = event.target as HTMLElement | null
+      if (origin?.closest?.(INTERACTIVE_SELECTOR)) return
       // Radix must not see this pointerdown: stopping propagation during the
       // capture phase prevents its bubble handler on the slider root.
       event.stopPropagation()

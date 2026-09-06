@@ -1,15 +1,15 @@
 import type { HSLBandId, HSLBandShift } from '@lumaforge/luma-color-runtime'
 import { makeNeutralBand } from '@lumaforge/luma-color-runtime'
 import { RotateCcw } from 'lucide-react'
-import { useId, useState } from 'react'
+import { useState } from 'react'
 
 import { Button } from '~/components/ui/button'
-import { Slider } from '~/components/ui/slider'
 import { clsxm } from '~/lib/cn'
 import type { Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 
 import { HSL_BAND_SWATCH } from '../mobile/hsl-fields'
+import { DesktopAdjustRow } from './DesktopAdjustRow'
 import {
   hslHueTrack,
   hslLightnessTrack,
@@ -168,59 +168,30 @@ function HSLAxisSliderRow({
   disabled: boolean
   onChange: (next: number) => void
 }) {
-  const titleId = useId()
-  const dirty = value !== 0
-
   return (
-    <div
-      role="group"
-      data-hsl-band={band}
-      data-hsl-axis={axis}
-      data-dirty={dirty ? '' : undefined}
-      aria-labelledby={titleId}
-      className="grid gap-1 rounded-md px-1.5 py-0.5 transition-colors duration-150 hover:bg-[oklch(0.96_0.006_255/0.04)]"
-    >
-      <div className="flex items-center justify-between text-[0.78rem]">
-        <div className="flex items-center gap-2">
-          <span
-            aria-hidden="true"
-            data-hsl-band-swatch={band}
-            className="size-2.5 shrink-0 rounded-full ring-1 ring-[oklch(from_var(--color-lf-on-surface)_l_c_h_/_0.18)]"
-            style={{ backgroundColor: HSL_BAND_SWATCH[band] }}
-          />
-          <span
-            id={titleId}
-            className={clsxm(
-              'transition-colors duration-150',
-              dirty ? 'text-lf-amber-soft' : 'text-lf-on-surface/82',
-            )}
-          >
-            <span className="sr-only">{axisLabel}: </span>
-            {bandLabel}
-          </span>
-        </div>
-        <output
+    <DesktopAdjustRow
+      label={bandLabel}
+      labelPrefix={axisLabel}
+      value={value}
+      min={-100}
+      max={100}
+      step={1}
+      disabled={disabled}
+      track={trackForAxis(band, axis)}
+      formatValue={formatSignedInteger}
+      onChange={onChange}
+      sliderLabel={axisLabel}
+      asGroup
+      rowProps={{ 'data-hsl-band': band, 'data-hsl-axis': axis }}
+      leading={
+        <span
           aria-hidden="true"
-          className={clsxm(
-            'tabular-nums transition-colors duration-150',
-            dirty ? 'text-lf-amber-soft' : 'text-lf-on-surface/72',
-          )}
-        >
-          {formatSignedInteger(value)}
-        </output>
-      </div>
-      <Slider
-        thumbAriaLabel={axisLabel}
-        value={[value]}
-        min={-100}
-        max={100}
-        step={1}
-        disabled={disabled}
-        bipolar
-        track={trackForAxis(band, axis)}
-        onValueChange={([next]) => onChange(next)}
-      />
-    </div>
+          data-hsl-band-swatch={band}
+          className="size-2.5 shrink-0 rounded-full ring-1 ring-[oklch(from_var(--color-lf-on-surface)_l_c_h_/_0.18)]"
+          style={{ backgroundColor: HSL_BAND_SWATCH[band] }}
+        />
+      }
+    />
   )
 }
 

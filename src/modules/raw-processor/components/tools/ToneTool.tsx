@@ -1,13 +1,11 @@
 import { RotateCcw } from 'lucide-react'
-import { useId } from 'react'
 
 import { Button } from '~/components/ui/button'
-import { Slider } from '~/components/ui/slider'
-import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
 import type { ToneValue } from '../tone-fields'
 import { formatToneValue, isToneNeutral, TONE_FIELDS } from '../tone-fields'
+import { DesktopAdjustRow } from './DesktopAdjustRow'
 
 const BASIC_FIELDS = TONE_FIELDS.filter((field) => field.group === 'basic')
 const FINE_FIELDS = TONE_FIELDS.filter((field) => field.group === 'fine')
@@ -25,47 +23,18 @@ function ToneFieldRow({
   disabled: boolean
   onChange: (value: Partial<ToneValue>) => void
 }) {
-  const labelId = useId()
-  const current = value[field.key]
-  const dirty = current !== 0
-
   return (
-    <div
-      data-tone-field={field.key}
-      data-dirty={dirty ? '' : undefined}
-      className="grid gap-1.5 rounded-md px-1.5 py-0.5 transition-colors duration-150 hover:bg-[oklch(0.96_0.006_255/0.04)]"
-    >
-      <div className="flex items-center justify-between text-[0.8rem]">
-        <label
-          id={labelId}
-          className={clsxm(
-            'font-medium transition-colors duration-150',
-            dirty ? 'text-lf-amber-soft' : 'text-lf-on-surface/80',
-          )}
-        >
-          {label}
-        </label>
-        <output
-          aria-hidden="true"
-          className={clsxm(
-            'tabular-nums font-medium transition-colors duration-150',
-            dirty ? 'text-lf-amber-soft' : 'text-lf-on-surface/80',
-          )}
-        >
-          {formatToneValue(field.key, current)}
-        </output>
-      </div>
-      <Slider
-        thumbAriaLabelledBy={labelId}
-        value={[current]}
-        min={field.min}
-        max={field.max}
-        step={field.step}
-        disabled={disabled}
-        bipolar
-        onValueChange={([v]) => onChange({ [field.key]: v })}
-      />
-    </div>
+    <DesktopAdjustRow
+      label={label}
+      value={value[field.key]}
+      min={field.min}
+      max={field.max}
+      step={field.step}
+      disabled={disabled}
+      formatValue={(next) => formatToneValue(field.key, next)}
+      onChange={(next) => onChange({ [field.key]: next })}
+      rowProps={{ 'data-tone-field': field.key }}
+    />
   )
 }
 

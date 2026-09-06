@@ -308,3 +308,63 @@ describe('useSliderScrub vertical scroll forwarding', () => {
     fireEvent.pointerUp(row, touch(212, 140))
   })
 })
+
+describe('useSliderScrub interactive children', () => {
+  beforeEach(() => {
+    if (typeof window.PointerEvent === 'undefined') {
+      vi.stubGlobal('PointerEvent', PointerEventPolyfill)
+    }
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    )
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('ignores a press that starts on a control inside the row', () => {
+    const onChange = vi.fn()
+    const onScrubChange = vi.fn()
+    function WithButton() {
+      const scrub = useSliderScrub({
+        value: 0,
+        min: -100,
+        max: 100,
+        step: 1,
+        onChange,
+        onScrubChange,
+      })
+      return (
+        <div
+          data-testid="row"
+          data-scrubbing={scrub.scrubbing || undefined}
+          {...scrub.bind}
+        >
+          <button type="button">reset</button>
+          <Slider
+            thumbAriaLabel="Contrast"
+            value={[0]}
+            min={-100}
+            max={100}
+            step={1}
+          />
+        </div>
+      )
+    }
+    render(<WithButton />)
+    const row = screen.getByTestId('row')
+    mockTrackRect(row)
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'reset' }),
+      mouse(250, 50),
+    )
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onScrubChange).not.toHaveBeenCalled()
+    expect(row).not.toHaveAttribute('data-scrubbing')
+  })
+})

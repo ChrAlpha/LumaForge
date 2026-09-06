@@ -37,7 +37,7 @@ export function ToneListPanel(props: ToneListPanelProps) {
             max={field.max}
             step={field.step}
             formatValue={(v) => formatToneValueShort(field.key, v)}
-            resetAriaLabel={t('raw.mobile.adjustList.fieldResetAria', {
+            resetAriaLabel={t('raw.adjust.fieldResetAria', {
               label,
             })}
             activeScrub={isActive}

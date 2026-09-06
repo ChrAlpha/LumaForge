@@ -1,9 +1,6 @@
 import { RotateCcw } from 'lucide-react'
-import { useId } from 'react'
 
 import { Button } from '~/components/ui/button'
-import { Slider } from '~/components/ui/slider'
-import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
 import type { ColorValue } from '../color-fields'
@@ -12,6 +9,7 @@ import {
   formatColorValueShort,
   isColorNeutral,
 } from '../color-fields'
+import { DesktopAdjustRow } from './DesktopAdjustRow'
 import {
   saturationTrack,
   temperatureTrack,
@@ -39,48 +37,19 @@ function ColorFieldRow({
   disabled: boolean
   onChange: (value: Partial<ColorValue>) => void
 }) {
-  const labelId = useId()
-  const current = value[field.key]
-  const dirty = current !== 0
-
   return (
-    <div
-      data-color-field={field.key}
-      data-dirty={dirty ? '' : undefined}
-      className="grid gap-1.5 rounded-md px-1.5 py-0.5 transition-colors duration-150 hover:bg-[oklch(0.96_0.006_255/0.04)]"
-    >
-      <div className="flex items-center justify-between text-[0.8rem]">
-        <label
-          id={labelId}
-          className={clsxm(
-            'font-medium transition-colors duration-150',
-            dirty ? 'text-lf-amber-soft' : 'text-lf-on-surface/80',
-          )}
-        >
-          {label}
-        </label>
-        <output
-          aria-hidden="true"
-          className={clsxm(
-            'tabular-nums font-medium transition-colors duration-150',
-            dirty ? 'text-lf-amber-soft' : 'text-lf-on-surface/80',
-          )}
-        >
-          {formatColorValueShort(field.key, current)}
-        </output>
-      </div>
-      <Slider
-        thumbAriaLabelledBy={labelId}
-        value={[current]}
-        min={field.min}
-        max={field.max}
-        step={field.step}
-        disabled={disabled}
-        bipolar
-        track={COLOR_TRACK[field.key]}
-        onValueChange={([v]) => onChange({ [field.key]: v })}
-      />
-    </div>
+    <DesktopAdjustRow
+      label={label}
+      value={value[field.key]}
+      min={field.min}
+      max={field.max}
+      step={field.step}
+      disabled={disabled}
+      track={COLOR_TRACK[field.key]}
+      formatValue={(next) => formatColorValueShort(field.key, next)}
+      onChange={(next) => onChange({ [field.key]: next })}
+      rowProps={{ 'data-color-field': field.key }}
+    />
   )
 }
 
