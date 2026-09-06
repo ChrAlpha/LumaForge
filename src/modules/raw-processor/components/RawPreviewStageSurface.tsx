@@ -20,6 +20,7 @@ export function RawPreviewStageSurface({
   onPreviewFrameChange,
   onCpuProcessedFrame,
   transformActive,
+  viewportInteractionDisabled,
 }: {
   workflow: UseRawWorkflowReturn
   isCpuMode: boolean
@@ -32,6 +33,7 @@ export function RawPreviewStageSurface({
   onPreviewFrameChange: (node: HTMLDivElement | null) => void
   onCpuProcessedFrame?: (frame: CpuPreviewFrame | null) => void
   transformActive?: boolean
+  viewportInteractionDisabled?: boolean
 }) {
   if (isCpuMode && workflow.hasImage) {
     return (
@@ -51,6 +53,7 @@ export function RawPreviewStageSurface({
 
   return (
     <ComparePreviewStage
+      viewportInteractionDisabled={viewportInteractionDisabled}
       hasImage={workflow.hasImage}
       imageRef={workflow.decodedImageRef}
       imageVersion={workflow.decodedImageVersion}

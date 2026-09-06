@@ -19,10 +19,10 @@ export function RawTransformOverlay({
   const { demo } = feature
   return createPortal(
     <div
-      className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-lf-surface"
+      className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-lf-surface"
+      data-transform-matrix={demo.result?.displayMatrix.join(',')}
       data-raw-transform-preview
       aria-busy={feature.busy}
-      onPointerDown={(event) => event.stopPropagation()}
     >
       {demo.source && demo.result ? (
         <TransformCanvas

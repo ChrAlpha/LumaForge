@@ -259,6 +259,10 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await expect(rotate).toHaveAttribute('aria-valuenow', '1')
     await waitForTransform(page)
     const corrected = await snapshot(page)
+    const geometry = await page
+      .locator('[data-raw-transform-preview]')
+      .getAttribute('data-transform-matrix')
+    expect(geometry).toBeTruthy()
     expect(corrected.colors).toBeGreaterThan(1000)
     expect(Math.max(corrected.width, corrected.height)).toBeLessThanOrEqual(
       1600,
@@ -310,6 +314,11 @@ for (const preview of ['gpu', 'cpu'] as const) {
       transformTool(page).getByRole('button', { name: 'Auto', exact: true }),
     ).toHaveAttribute('aria-pressed', 'true')
     const toned = await snapshot(page)
+    expect(
+      await page
+        .locator('[data-raw-transform-preview]')
+        .getAttribute('data-transform-matrix'),
+    ).toBe(geometry)
     expect(toned.meanLight).toBeGreaterThan(corrected.meanLight)
     await expectStandardExports(page, false)
     await openTool(page, 'Transform')

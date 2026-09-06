@@ -29,6 +29,7 @@ export interface ComparePreviewStageProps {
   originalReferenceFallbackReason?: string | null
   dualWebglAllowed?: boolean
   previewSuspended?: boolean
+  viewportInteractionDisabled?: boolean
   previewViewport?: PreviewViewport
   split: number
   splitEnabled?: boolean
@@ -206,6 +207,7 @@ export function ComparePreviewStage({
   originalReferenceFallbackReason,
   dualWebglAllowed = false,
   previewSuspended = false,
+  viewportInteractionDisabled = false,
   previewViewport,
   split,
   splitEnabled = true,
@@ -285,7 +287,9 @@ export function ComparePreviewStage({
                 }
                 dualWebglAllowed={dualWebglAllowed}
                 suspended={previewSuspended}
-                interactionDisabled={blockStageInteraction}
+                interactionDisabled={
+                  blockStageInteraction || viewportInteractionDisabled
+                }
                 previewViewport={previewViewport}
                 onPreviewViewportChange={onPreviewViewportChange}
                 onStatsUpdate={onStatsUpdate}

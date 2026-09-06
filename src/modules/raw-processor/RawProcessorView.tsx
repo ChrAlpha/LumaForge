@@ -148,6 +148,7 @@ function RawProcessorViewInner({
           onPreviewFrameChange={view.setPreviewFrameEl}
           onCpuProcessedFrame={transform.setCpuFrame}
           transformActive={transform.active}
+          viewportInteractionDisabled={transform.showOverlay}
         />
 
         <RawWorkflowToolProvider
