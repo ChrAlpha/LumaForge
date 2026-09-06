@@ -105,4 +105,72 @@ describe('transformTool', () => {
       ),
     ).toBeNull()
   })
+
+  it('reports the automatic result even when manual adjustments are also applied', () => {
+    const feature = transformFeatureFixture({
+      hasImage: true,
+      available: true,
+      current: true,
+    })
+    feature.demo = {
+      ...feature.demo,
+      ready: true,
+      mode: 'auto',
+      manual: { ...feature.demo.manual, rotate: 1 },
+    }
+    const { rerender } = render(<TransformTool feature={feature} />)
+    expect(screen.getByText('Auto: No correction needed')).toHaveAttribute(
+      'role',
+      'status',
+    )
+    rerender(
+      <TransformTool
+        feature={{
+          ...feature,
+          demo: {
+            ...feature.demo,
+            solution: { ...feature.demo.solution, status: 'corrected' },
+          },
+        }}
+      />,
+    )
+    expect(screen.getByText('Auto: Correction applied')).toHaveAttribute(
+      'role',
+      'status',
+    )
+  })
+
+  it('shows current JPEG dimensions and keeps transient updates out of the controls above', () => {
+    const feature = transformFeatureFixture({
+      hasImage: true,
+      available: true,
+      current: true,
+    })
+    feature.demo = {
+      ...feature.demo,
+      ready: true,
+      result: {
+        frame: { width: 1280, height: 960, data: new Uint8ClampedArray(0) },
+        displayMatrix: feature.demo.solution.matrix,
+        retainedArea: 0.64,
+      },
+    }
+    const { rerender } = render(<TransformTool feature={feature} />)
+    expect(screen.getByText('Preview JPEG: 1280 × 960 px')).toBeInTheDocument()
+    rerender(
+      <TransformTool feature={{ ...feature, busy: true, current: false }} />,
+    )
+    expect(screen.queryByText('Preview JPEG: 1280 × 960 px')).toBeNull()
+    expect(screen.queryByText('Preparing the current photo…')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Save preview JPEG' }),
+    ).toBeDisabled()
+    rerender(<TransformTool feature={{ ...feature, downloading: true }} />)
+    expect(
+      screen.getByRole('button', { name: 'Save preview JPEG' }),
+    ).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: 'Save preview JPEG' }),
+    ).toHaveAttribute('aria-busy', 'true')
+  })
 })

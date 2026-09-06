@@ -462,6 +462,8 @@
   "raw.transform.after": "变换后",
   "raw.transform.awaitImage": "打开一张 RAW 照片后即可调整透视。",
   "raw.transform.preparing": "正在准备当前照片…",
+  "raw.transform.modeResult": "{{mode}}：{{result}}",
+  "raw.transform.outputSize": "预览 JPEG：{{width}} × {{height}} 像素",
   "raw.transform.exportReason": "变换目前仅支持预览 JPEG。导出标准 JPEG 前，请先重置变换。",
   "raw.transform.histogramUnavailable": "变换预览暂不提供直方图。"
 }

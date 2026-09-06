@@ -31,11 +31,20 @@ export function TransformTool({ feature }: { feature: RawTransformFeature }) {
       ? demo.error === 'transform'
         ? t('transform.error.transform')
         : t('raw.transform.unavailable')
-      : feature.busy
+      : feature.busy && !demo.result
         ? t('raw.transform.preparing')
         : demo.mode !== 'off' && demo.solution.status === 'insufficient'
           ? t('transform.insufficient')
-          : null
+          : demo.mode !== 'off'
+            ? t('raw.transform.modeResult', {
+                mode: t(`transform.mode.${demo.mode}`),
+                result: t(
+                  demo.solution.status === 'unchanged'
+                    ? 'transform.unchanged'
+                    : 'transform.applied',
+                ),
+              })
+            : null
 
   return (
     <div data-raw-transform-tool className="min-w-0 text-lf-on-photo-ink">
@@ -123,10 +132,22 @@ export function TransformTool({ feature }: { feature: RawTransformFeature }) {
       <p className="mt-4 text-xs leading-relaxed text-lf-on-photo-ink/72">
         {t('raw.transform.previewNotice')}
       </p>
+      {feature.current && demo.result && (
+        <p className="mt-2 text-xs tabular-nums text-lf-on-photo-ink/90">
+          {t('raw.transform.outputSize', {
+            width: demo.result.frame.width,
+            height: demo.result.frame.height,
+          })}
+        </p>
+      )}
       <Button
         variant="light"
         className="mt-4 h-11 w-full"
         disabled={viewDisabled || feature.downloading}
+        isLoading={feature.downloading}
+        loadingText={t('raw.progress.exporting')}
+        aria-label={t('transform.download')}
+        aria-busy={feature.downloading}
         onClick={() => void feature.download()}
       >
         <Download size={14} aria-hidden />

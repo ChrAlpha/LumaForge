@@ -276,6 +276,12 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await expect(rotate).toHaveAttribute('aria-valuenow', '1')
     await waitForTransform(page)
     const corrected = await snapshot(page)
+    await expect(
+      transformTool(page).getByText(
+        `Preview JPEG: ${corrected.width} × ${corrected.height} px`,
+        { exact: true },
+      ),
+    ).toBeAttached()
     const geometry = await page
       .locator('[data-raw-transform-preview]')
       .getAttribute('data-transform-matrix')

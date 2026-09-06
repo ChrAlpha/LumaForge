@@ -462,6 +462,8 @@
   "raw.transform.after": "After transform",
   "raw.transform.awaitImage": "Open a RAW photo to adjust its perspective.",
   "raw.transform.preparing": "Preparing the current photo…",
+  "raw.transform.modeResult": "{{mode}}: {{result}}",
+  "raw.transform.outputSize": "Preview JPEG: {{width}} × {{height}} px",
   "raw.transform.exportReason": "Transform changes support preview JPEG only. Reset Transform before exporting a standard JPEG.",
   "raw.transform.histogramUnavailable": "Histogram is unavailable for the transformed preview."
 }
