@@ -261,6 +261,11 @@ export async function prepareRunComparison(input: {
 
   await mkdir(dirname(outDir), { recursive: true })
   await mkdir(outDir)
+  await input.record({
+    event: 'comparison_preparation_started',
+    directory: outDir,
+    run_directory: runDir,
+  })
   const workspace = join(outDir, 'workspace')
   await mkdir(workspace)
   const host = await createHost({
