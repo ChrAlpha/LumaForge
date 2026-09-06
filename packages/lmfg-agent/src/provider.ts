@@ -142,7 +142,7 @@ export function createProvider(config: ProviderConfig): Complete {
       'Provider URL must use HTTPS or loopback HTTP, without credentials, query or fragment.',
     )
   }
-  return async ({ messages, tools, signal }) => {
+  return async ({ messages, tools, toolChoice, signal }) => {
     let response: Response
     try {
       response = await fetch(url, {
@@ -158,7 +158,7 @@ export function createProvider(config: ProviderConfig): Complete {
           max_tokens: config.maxOutputTokens,
           messages,
           tools,
-          tool_choice: 'auto',
+          tool_choice: toolChoice ?? 'auto',
           stream: false,
         }),
         signal: signal

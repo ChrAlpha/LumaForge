@@ -133,6 +133,10 @@ describe('independent reversed-position image evaluation', () => {
       expect(request.tools.map((tool) => tool.function.name)).toEqual([
         'submit_comparison',
       ])
+      expect(request.toolChoice).toEqual({
+        type: 'function',
+        function: { name: 'submit_comparison' },
+      })
       expect(serialized).toContain(brief)
       for (const forbidden of [
         baselinePath,
@@ -210,6 +214,7 @@ describe('independent reversed-position image evaluation', () => {
     'wrong-tool',
     'invalid-winner',
     'extra-field',
+    'textual-tool',
   ])('rejects %s grading while keeping its usage', async (failure) => {
     let calls = 0
     const result = await run(async () => {
@@ -221,6 +226,11 @@ describe('independent reversed-position image evaluation', () => {
         output.message.tool_calls!.push(output.message.tool_calls![0])
       if (failure === 'json')
         output.message.tool_calls![0].function.arguments = '{'
+      if (failure === 'textual-tool') {
+        output.finishReason = 'stop'
+        output.message.content = `\`\`\`json\n${JSON.stringify({ name: 'submit_comparison', arguments: verdict('A') })}\n\`\`\``
+        output.message.tool_calls = []
+      }
       if (failure === 'empty-observation')
         output.message.tool_calls![0].function.arguments = JSON.stringify({
           ...verdict('A'),

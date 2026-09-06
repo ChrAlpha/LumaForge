@@ -83,6 +83,7 @@ describe('vision provider protocol', () => {
         reasoning_effort: 'high',
         max_tokens: 8192,
         messages: [{ role: 'user', content: [image] }],
+        tool_choice: 'auto',
         stream: false,
       })
       expect(response.message.tool_calls?.[0].id).toBe('call-1')
@@ -92,6 +93,47 @@ describe('vision provider protocol', () => {
       await service.close()
     }
   })
+
+  it.each([
+    'required',
+    { type: 'function', function: { name: 'submit_comparison' } },
+  ] as const)(
+    'sends an explicit tool choice through the HTTP protocol: %j',
+    async (toolChoice) => {
+      let observed: Record<string, unknown> = {}
+      const service = await endpoint(async (req, res) => {
+        const chunks: Buffer[] = []
+        for await (const chunk of req) chunks.push(Buffer.from(chunk))
+        observed = JSON.parse(Buffer.concat(chunks).toString())
+        res.end(
+          JSON.stringify({
+            choices: [{ finish_reason: 'stop', message: { content: null } }],
+          }),
+        )
+      })
+      try {
+        const tools = [
+          {
+            type: 'function' as const,
+            function: {
+              name: 'submit_comparison',
+              description: 'Submit the visual comparison.',
+              parameters: { type: 'object' },
+            },
+          },
+        ]
+        await createProvider({ ...defaults, baseUrl: service.baseUrl })({
+          messages: [],
+          tools,
+          toolChoice,
+        })
+        expect(observed.tool_choice).toEqual(toolChoice)
+        expect(observed.tools).toEqual(tools)
+      } finally {
+        await service.close()
+      }
+    },
+  )
 
   it('does not follow redirects with credentials or retry ambiguous requests', async () => {
     let requests = 0

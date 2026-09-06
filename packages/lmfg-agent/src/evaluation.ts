@@ -206,6 +206,7 @@ function jpegDimensions(bytes: Buffer): {
 
 function requestFor(brief: string, images: Buffer[]): ModelRequest {
   return {
+    toolChoice: { type: 'function', function: { name: 'submit_comparison' } },
     messages: [
       { role: 'system', content: SYSTEM },
       {

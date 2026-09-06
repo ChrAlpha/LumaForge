@@ -41,6 +41,10 @@ export type ModelResponse = {
 export type ModelRequest = {
   messages: ChatMessage[]
   tools: ModelTool[]
+  toolChoice?:
+    | 'auto'
+    | 'required'
+    | { type: 'function'; function: { name: string } }
   signal?: AbortSignal
 }
 export type Complete = (request: ModelRequest) => Promise<ModelResponse>
