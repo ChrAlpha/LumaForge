@@ -1,3 +1,4 @@
+import { fitFamily } from '~/modules/transform-demo/geometry/fit-family'
 import type {
   AnalysisImage,
   LineSegment,
@@ -20,6 +21,7 @@ function luminance(
   image: AnalysisImage,
   width: number,
   height: number,
+  liftShadows: boolean,
 ): Float32Array {
   const result = new Float32Array(width * height)
   for (let y = 0; y < height; y++) {
@@ -39,6 +41,11 @@ function luminance(
           image.data[offset + 2] * 0.0722) *
           image.data[offset + 3]) /
         255
+    }
+  }
+  if (liftShadows) {
+    for (let index = 0; index < result.length; index++) {
+      result[index] = Math.sqrt(result[index] / 255) * 255
     }
   }
   const blurred = new Float32Array(result.length)
@@ -62,7 +69,13 @@ function luminance(
   return blurred
 }
 
-function findEdges(gray: Float32Array, width: number, height: number): Edge[] {
+function findEdges(
+  gray: Float32Array,
+  width: number,
+  height: number,
+  weak: boolean,
+  wide: boolean,
+): Edge[] {
   const magnitudes = new Float32Array(gray.length)
   const angles = new Float32Array(gray.length)
   let maximum = 0
@@ -89,7 +102,11 @@ function findEdges(gray: Float32Array, width: number, height: number): Edge[] {
       maximum = Math.max(maximum, magnitude)
     }
   }
-  const threshold = Math.max(45, maximum * 0.13)
+  const threshold = weak
+    ? wide
+      ? Math.max(12, maximum * 0.035)
+      : Math.max(20, maximum * 0.05)
+    : Math.max(45, maximum * 0.13)
   const edges: Edge[] = []
   for (let y = 3; y < height - 3; y++) {
     for (let x = 3; x < width - 3; x++) {
@@ -103,13 +120,24 @@ function findEdges(gray: Float32Array, width: number, height: number): Edge[] {
         magnitudes[p] <= magnitudes[p + offset]
       )
         continue
-      edges.push({ x, y, angle, strength: Math.min(2, magnitudes[p] / 128) })
+      edges.push({
+        x,
+        y,
+        angle,
+        strength: Math.max(weak ? 0.5 : 0, Math.min(2, magnitudes[p] / 128)),
+      })
     }
   }
   return edges.length > width * height * 0.2 ? [] : edges
 }
 
-function findPeaks(edges: Edge[], width: number, height: number): Peak[] {
+function findPeaks(
+  edges: Edge[],
+  width: number,
+  height: number,
+  weak: boolean,
+  wide: boolean,
+): Peak[] {
   const diagonal = Math.ceil(Math.hypot(width, height))
   const stride = diagonal * 2 + 1
   const accumulator = new Float32Array(180 * stride)
@@ -121,7 +149,8 @@ function findPeaks(edges: Edge[], width: number, height: number): Peak[] {
   )
   for (const edge of edges) {
     const normal = Math.round((edge.angle * 180) / Math.PI)
-    for (let offset = -3; offset <= 3; offset++) {
+    const angleRadius = wide ? 10 : 3
+    for (let offset = -angleRadius; offset <= angleRadius; offset++) {
       const angle = (normal + offset + 180) % 180
       const rho =
         Math.round(edge.x * cosines[angle] + edge.y * sines[angle]) + diagonal
@@ -129,7 +158,9 @@ function findPeaks(edges: Edge[], width: number, height: number): Peak[] {
     }
   }
   const candidates: Peak[] = []
-  const minimum = Math.max(24, Math.min(width, height) * 0.11)
+  const minimum = weak
+    ? Math.max(20, Math.min(width, height) * 0.065)
+    : Math.max(24, Math.min(width, height) * 0.11)
   for (let angle = 0; angle < 180; angle++) {
     for (let rho = 1; rho < stride - 1; rho++) {
       const index = angle * stride + rho
@@ -157,7 +188,7 @@ function findPeaks(edges: Edge[], width: number, height: number): Peak[] {
     )
       continue
     peaks.push(candidate)
-    if (peaks.length >= 100) break
+    if (peaks.length >= (weak ? 180 : 100)) break
   }
   return peaks
 }
@@ -222,12 +253,22 @@ function duplicate(first: LineSegment, second: LineSegment): boolean {
   return Math.min(start, end) < first.length + 8 && Math.max(start, end) > -8
 }
 
-export function detectLines(image: AnalysisImage): LineSegment[] {
+function detectAtThreshold(
+  image: AnalysisImage,
+  weak: boolean,
+  wide = false,
+): LineSegment[] {
   const scale = Math.min(1, 640 / Math.max(image.width, image.height))
   const width = Math.max(1, Math.round(image.width * scale))
   const height = Math.max(1, Math.round(image.height * scale))
-  const edges = findEdges(luminance(image, width, height), width, height)
-  const peaks = findPeaks(edges, width, height)
+  const edges = findEdges(
+    luminance(image, width, height, weak),
+    width,
+    height,
+    weak,
+    wide,
+  )
+  const peaks = findPeaks(edges, width, height, weak, wide)
   const segments: LineSegment[] = []
   const minimumLength = Math.max(30, Math.min(width, height) * 0.1)
   for (const peak of peaks) {
@@ -266,7 +307,7 @@ export function detectLines(image: AnalysisImage): LineSegment[] {
   for (const segment of segments) {
     if (!unique.some((existing) => duplicate(existing, segment)))
       unique.push(segment)
-    if (unique.length >= 64) break
+    if (unique.length >= (weak ? 128 : 64)) break
   }
   return unique.map((line) => {
     const start = {
@@ -284,4 +325,26 @@ export function detectLines(image: AnalysisImage): LineSegment[] {
       length: Math.hypot(end.x - start.x, end.y - start.y),
     }
   })
+}
+
+export function detectLines(image: AnalysisImage): LineSegment[] {
+  const strong = detectAtThreshold(image, false)
+  const kinds = ['vertical', 'horizontal'] as const
+  const confidence = (lines: LineSegment[], kind: (typeof kinds)[number]) =>
+    fitFamily(lines, kind, image.width, image.height)?.confidence ?? 0
+  if (kinds.every((kind) => confidence(strong, kind) >= 0.65)) return strong
+  const shadows = detectAtThreshold(image, true)
+  const candidates = [strong, shadows]
+  if (kinds.every((kind) => confidence(shadows, kind) < 0.3))
+    candidates.push(detectAtThreshold(image, true, true))
+  const selected = strong.filter((line) => line.kind === 'other')
+  for (const kind of kinds) {
+    const best = candidates.reduce((previous, current) =>
+      confidence(current, kind) > confidence(previous, kind)
+        ? current
+        : previous,
+    )
+    selected.push(...best.filter((line) => line.kind === kind))
+  }
+  return selected
 }

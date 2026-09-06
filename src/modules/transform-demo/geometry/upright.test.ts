@@ -170,6 +170,27 @@ describe('image-based Upright analysis', () => {
     ).toBeLessThan(0.6)
   })
 
+  it('retains dark structural edges in a frame containing bright highlights', () => {
+    const distortion = rotationMatrix(5, width / height)
+    const image = rasterize(distortion)
+    for (let index = 0; index < image.data.length; index += 4) {
+      const value = image.data[index] < 100 ? 18 : 26
+      image.data[index] = value
+      image.data[index + 1] = value
+      image.data[index + 2] = value
+    }
+    for (let y = 5; y < 20; y++) {
+      for (let x = 5; x < 20; x++) {
+        image.data.fill(240, (y * width + x) * 4, (y * width + x) * 4 + 3)
+      }
+    }
+    const analysis = analyzeUpright(image)
+    expect(analysis.solutions.auto.status).toBe('corrected')
+    expect(
+      residual(analysis.solutions.auto.matrix, distortion, 'vertical'),
+    ).toBeLessThan(0.8)
+  })
+
   it.each([-0.65, 0.65])(
     'rectifies vertical convergence %s without a model',
     (perspective) => {
