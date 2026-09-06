@@ -13,6 +13,7 @@ import { HistogramTool } from './tools/HistogramTool'
 import { LutContractTool } from './tools/lut/LutContractTool'
 import { StrengthControl } from './tools/StrengthControl'
 import { ToolCard, ToolCardStack } from './tools/ToolCard'
+import { TransformTool } from './tools/TransformTool'
 
 export function DesktopRawToolSurface() {
   const props = useRawWorkflowContext()
@@ -103,9 +104,14 @@ export function DesktopRawToolSurface() {
             onSelectiveColorReset={props.onSelectiveColorReset}
           />
         </ToolCard>
+        {props.transform && (
+          <ToolCard id="transform" title={t('raw.transform.title')}>
+            <TransformTool feature={props.transform} />
+          </ToolCard>
+        )}
         <ToolCard id="compare" title={t('raw.compare.title')}>
           <CompareTool
-            disabled={editorDisabled}
+            disabled={editorDisabled || props.transform?.active === true}
             onCompareReset={props.onCompareReset}
           />
         </ToolCard>

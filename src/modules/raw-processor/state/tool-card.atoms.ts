@@ -3,6 +3,7 @@ import { atomWithStorage } from 'jotai/utils'
 export const TOOL_CARD_IDS = [
   'look',
   'adjust',
+  'transform',
   'histogram',
   'compare',
   'fileFacts',

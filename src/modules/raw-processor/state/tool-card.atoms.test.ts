@@ -22,6 +22,7 @@ describe('toolCardOpenAtom', () => {
     expect(TOOL_CARD_IDS).toEqual([
       'look',
       'adjust',
+      'transform',
       'histogram',
       'compare',
       'fileFacts',
