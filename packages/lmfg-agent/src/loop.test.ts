@@ -41,6 +41,41 @@ function options(overrides: Partial<AgentOptions>): AgentOptions {
 }
 
 describe('autonomous editing loop', () => {
+  it('stops the rest of a tool batch when cancellation arrives during a tool', async () => {
+    const controller = new AbortController()
+    const response = call('view')
+    response.message.tool_calls!.push(call('edit').message.tool_calls![0])
+    const executed: string[] = []
+    const result = await runAgent(
+      options({
+        signal: controller.signal,
+        complete: async () => response,
+        execute: async (name) => {
+          executed.push(name)
+          controller.abort()
+          return { result: { content: [] } }
+        },
+      }),
+    )
+    expect(executed).toEqual(['view'])
+    expect(result).toMatchObject({ status: 'incomplete', reason: 'cancelled' })
+  })
+
+  it('records cancellation instead of completion when an in-flight finish returns', async () => {
+    const controller = new AbortController()
+    const result = await runAgent(
+      options({
+        signal: controller.signal,
+        execute: async () => {
+          controller.abort()
+          return { result: { content: [] }, completion: { verified: true } }
+        },
+      }),
+    )
+    expect(result).toMatchObject({ status: 'incomplete', reason: 'cancelled' })
+    expect(result.completion).toBeUndefined()
+  })
+
   it('keeps the known billable receipt when the provider response is unusable', async () => {
     const events: Array<Record<string, unknown>> = []
     const receipt = {

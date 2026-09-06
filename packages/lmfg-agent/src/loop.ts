@@ -107,7 +107,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentResult> {
         error: error instanceof Error ? error.message : String(error),
         elapsed_ms: performance.now() - started,
       })
-      return end('provider_error')
+      return end(options.signal?.aborted ? 'cancelled' : 'provider_error')
     }
     usage.push(response.usage)
     await options.record({
@@ -121,6 +121,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentResult> {
         ? response.usage.prompt_tokens
         : projected
     lastEstimate = estimate
+    if (options.signal?.aborted) return end('cancelled')
     if (response.finishReason === 'length') return end('output_limit')
     if (!['stop', 'tool_calls'].includes(response.finishReason))
       return end(`provider_finish_${response.finishReason}`)
@@ -139,6 +140,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentResult> {
     unverifiedStops = 0
     const images: Array<TextPart | ImagePart> = []
     for (const call of calls) {
+      if (options.signal?.aborted) return end('cancelled')
       const toolStart = performance.now()
       await options.record({ event: 'tool_call', step, call })
       let execution: ToolExecution
@@ -188,6 +190,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentResult> {
           })
         }
       }
+      if (options.signal?.aborted) return end('cancelled')
       if (execution.terminal) return end(execution.terminal)
       if (execution.completion && !execution.result.isError)
         return end('verified_export', execution.completion)
