@@ -81,11 +81,12 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
         worker.onerror = () => {
           if (workerRef.current !== worker) return
           workerRef.current = null
+          worker.terminate()
+          if (id !== sourceId.current || abort.signal.aborted) return
           setError('processing')
           setAnalysis(null)
           setLoading(false)
           setRendering(false)
-          worker.terminate()
         }
         worker.onmessage = ({
           data,

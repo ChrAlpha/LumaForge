@@ -227,6 +227,21 @@ describe('transform demo request lifecycle', () => {
     )
   })
 
+  it('disposes a failed worker without reporting its stale error after clearing', async () => {
+    const { result, unmount } = setup()
+    const worker = DemoWorker.instances[0]
+    act(() => result.current.clearSource())
+    act(() => worker.onerror?.())
+
+    expect(worker.terminated).toBe(true)
+    expect(result.current.error).toBeNull()
+    expect(result.current.source).toBeNull()
+    await act(() => result.current.loadSource())
+    expect(DemoWorker.instances).toHaveLength(2)
+    expect(DemoWorker.instances[1].terminated).toBe(false)
+    unmount()
+  })
+
   it('creates a live worker after StrictMode replays the mount effect', async () => {
     DemoWorker.instances = []
     vi.stubGlobal('Worker', DemoWorker)
