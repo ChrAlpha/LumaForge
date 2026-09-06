@@ -119,11 +119,112 @@ describe('transform demo request lifecycle', () => {
     )
     expect(result.current.analysis).toBeNull()
     act(() => result.current.clearSource())
-    expect(worker.terminated).toBe(true)
+    expect(worker.terminated).toBe(false)
+    expect(worker.messages.at(-1)).toMatchObject({ type: 'clear' })
     expect(result.current.source).toBeNull()
     expect(result.current.mode).toBe('off')
     expect(result.current.manual.rotate).toBe(0)
     unmount()
+    expect(worker.terminated).toBe(true)
+  })
+
+  it('reuses its live worker after clearing the source and ignores old queued responses', async () => {
+    const { result, unmount } = setup()
+    const worker = DemoWorker.instances[0]
+    const firstId = worker.messages[0].sourceId
+    act(() =>
+      worker.emit({
+        type: 'analyzed',
+        sourceId: firstId,
+        analysis,
+        elapsedMs: 10,
+      }),
+    )
+    const oldRender = worker.messages.at(-1)!
+    if (oldRender.type !== 'render') throw new Error('expected render')
+    act(() => result.current.setMode('auto'))
+    act(() => result.current.clearSource())
+    const clearedCount = worker.messages.length
+    act(() =>
+      worker.emit({
+        type: 'rendered',
+        sourceId: firstId,
+        requestId: oldRender.requestId,
+        result: {
+          frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
+          displayMatrix: identityMatrix(),
+          retainedArea: 1,
+        },
+      }),
+    )
+    expect(worker.messages).toHaveLength(clearedCount)
+    expect(result.current.result).toBeNull()
+    expect(result.current.ready).toBe(false)
+
+    await act(() => result.current.loadSource())
+    expect(DemoWorker.instances).toHaveLength(1)
+    expect(worker.terminated).toBe(false)
+    const next = worker.messages.at(-1)!
+    expect(next.type).toBe('analyze')
+    expect(next.sourceId).toBeGreaterThan(firstId)
+    act(() =>
+      worker.emit({
+        type: 'analyzed',
+        sourceId: next.sourceId,
+        analysis,
+        elapsedMs: 10,
+      }),
+    )
+    expect(result.current.ready).toBe(true)
+    expect(worker.messages.at(-1)?.type).toBe('render')
+    unmount()
+    expect(worker.terminated).toBe(true)
+  })
+
+  it('clears the worker pixel source until a replacement frame is analyzed', async () => {
+    const postMessage = vi.fn()
+    const workerScope: {
+      postMessage: typeof postMessage
+      onmessage?: (event: MessageEvent<TransformWorkerRequest>) => void
+    } = { postMessage }
+    vi.stubGlobal('self', workerScope)
+    await import('./transform.worker')
+    const send = (data: TransformWorkerRequest) =>
+      workerScope.onmessage!({ data } as MessageEvent<TransformWorkerRequest>)
+    const frame = { width: 2, height: 2, data: new Uint8ClampedArray(16) }
+    send({ type: 'analyze', sourceId: 1, frame })
+    expect(postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'analyzed', sourceId: 1 }),
+    )
+    postMessage.mockClear()
+    send({ type: 'clear', sourceId: 2 })
+    send({
+      type: 'render',
+      sourceId: 1,
+      requestId: 1,
+      matrix: identityMatrix(),
+      constrainCrop: true,
+    })
+    send({
+      type: 'render',
+      sourceId: 2,
+      requestId: 2,
+      matrix: identityMatrix(),
+      constrainCrop: true,
+    })
+    expect(postMessage).not.toHaveBeenCalled()
+    send({ type: 'analyze', sourceId: 3, frame })
+    send({
+      type: 'render',
+      sourceId: 3,
+      requestId: 3,
+      matrix: identityMatrix(),
+      constrainCrop: true,
+    })
+    expect(postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'rendered', sourceId: 3, requestId: 3 }),
+      expect.objectContaining({ transfer: expect.any(Array) }),
+    )
   })
 
   it('creates a live worker after StrictMode replays the mount effect', async () => {

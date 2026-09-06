@@ -11,7 +11,10 @@ let sourceId = 0
 
 self.onmessage = ({ data }: MessageEvent<TransformWorkerRequest>) => {
   try {
-    if (data.type === 'analyze') {
+    if (data.type === 'clear') {
+      source = null
+      sourceId = data.sourceId
+    } else if (data.type === 'analyze') {
       source = data.frame
       sourceId = data.sourceId
       const start = performance.now()

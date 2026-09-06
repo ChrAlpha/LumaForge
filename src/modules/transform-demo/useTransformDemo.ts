@@ -144,7 +144,14 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
   }, [])
 
   const clearSource = useCallback(() => {
-    dispose()
+    const id = ++sourceId.current
+    abortRef.current?.abort()
+    inFlight.current = false
+    pending.current = null
+    workerRef.current?.postMessage({
+      type: 'clear',
+      sourceId: id,
+    } satisfies TransformWorkerRequest)
     setSource(null)
     setAnalysis(null)
     setResult(null)
@@ -154,7 +161,7 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     setMode('off')
     setManual(NEUTRAL_TRANSFORM)
     setConstrainCrop(true)
-  }, [dispose])
+  }, [])
 
   useEffect(() => {
     if (autoLoadSample) void loadSource()

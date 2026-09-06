@@ -3,6 +3,7 @@ import type { PreviewFrame } from './preview-types'
 import type { RenderedPreview } from './transform-types'
 
 export type TransformWorkerRequest =
+  | { type: 'clear'; sourceId: number }
   | { type: 'analyze'; sourceId: number; frame: PreviewFrame }
   | {
       type: 'render'
