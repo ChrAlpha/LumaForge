@@ -244,14 +244,22 @@ export async function verifyCompletion(
     candidate.source_raw.sha256 !== source.sha256 ||
     exported.source_raw.sha256 !== source.sha256 ||
     candidate.source_raw.byte_size !== source.byte_size ||
-    exported.source_raw.byte_size !== source.byte_size ||
+    exported.source_raw.byte_size !== source.byte_size
+  ) {
+    throw new Error(
+      'Candidate, export, and session must match the actual input RAW source.',
+    )
+  }
+  if (
     !same(
       candidate.source_raw.decoded_dimensions,
       exported.source_raw.decoded_dimensions,
     )
   ) {
+    const size = (value: { width: number; height: number }) =>
+      `${value.width}x${value.height}`
     throw new Error(
-      'Candidate, export, and session must match the actual input RAW source.',
+      `Candidate source dimensions ${size(candidate.source_raw.decoded_dimensions)} disagree with export source dimensions ${size(exported.source_raw.decoded_dimensions)}, although source bytes match. Run lmfg_inspect with this session, then render and view a fresh candidate and export it. The input RAW source dimensions must agree before completion.`,
     )
   }
   const observed = context.images.find(({ step, result }) => {

@@ -292,6 +292,38 @@ describe('finish_edit completion evidence', () => {
     )
   })
 
+  it('explains portrait source dimension disagreement without weakening the gate', async () => {
+    await writeJson(
+      candidatePath,
+      sealRenderManifest({
+        ...candidate,
+        source_raw: {
+          ...candidate.source_raw,
+          decoded_dimensions: { width: 8280, height: 5520 },
+        },
+      }),
+    )
+    await writeJson(
+      exportPath,
+      sealRenderManifest({
+        ...exported,
+        source_raw: {
+          ...exported.source_raw,
+          decoded_dimensions: { width: 5520, height: 8280 },
+        },
+      }),
+    )
+    const error = await verifyCompletion(args, context).catch(
+      (failure: Error) => failure,
+    )
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toContain('8280x5520')
+    expect((error as Error).message).toContain('5520x8280')
+    expect((error as Error).message).toContain('lmfg_inspect')
+    expect((error as Error).message).toContain('fresh candidate')
+    expect(context.replay).not.toHaveBeenCalled()
+  })
+
   it('rejects reduced export dimensions even when the JPEG hash is correct', async () => {
     await writeJson(
       exportPath,
