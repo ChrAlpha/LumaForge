@@ -20,7 +20,10 @@ export function TransformTool({ feature }: { feature: RawTransformFeature }) {
   useEffect(() => observe(), [observe])
   const failed = feature.captureError || Boolean(demo.error)
   const controlsDisabled =
-    !feature.available || !demo.ready || feature.isProcessing
+    !feature.available ||
+    !demo.ready ||
+    feature.captureError ||
+    feature.isProcessing
   const viewDisabled = !feature.current || feature.isProcessing
   const message = !feature.hasImage
     ? t('raw.transform.awaitImage')
@@ -30,26 +33,12 @@ export function TransformTool({ feature }: { feature: RawTransformFeature }) {
         : t('raw.transform.unavailable')
       : feature.busy
         ? t('raw.transform.preparing')
-        : null
+        : demo.mode !== 'off' && demo.solution.status === 'insufficient'
+          ? t('transform.insufficient')
+          : null
 
   return (
     <div data-raw-transform-tool className="min-w-0 text-lf-on-photo-ink">
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <p className="text-xs leading-relaxed text-lf-on-photo-ink/72">
-          {t('raw.transform.previewNotice')}
-        </p>
-        <Button
-          variant="ghost"
-          className="h-11 shrink-0 px-2"
-          disabled={
-            feature.isProcessing || (!feature.hasImage && !feature.active)
-          }
-          onClick={feature.reset}
-        >
-          <RotateCcw size={14} aria-hidden />
-          {t('transform.reset')}
-        </Button>
-      </div>
       {message && (
         <p
           role={failed ? 'alert' : 'status'}
@@ -85,7 +74,7 @@ export function TransformTool({ feature }: { feature: RawTransformFeature }) {
         <Button
           variant="ghost"
           className={clsxm(
-            'h-11 flex-1 px-2 text-xs',
+            'h-11 min-w-0 flex-1 whitespace-normal px-2 text-xs',
             SEGMENTED_FOCUS_RING,
             feature.showLines && SEGMENTED_THUMB_BG,
           )}
@@ -98,7 +87,7 @@ export function TransformTool({ feature }: { feature: RawTransformFeature }) {
         <Button
           variant="ghost"
           className={clsxm(
-            'h-11 flex-1 px-2 text-xs',
+            'h-11 min-w-0 flex-1 whitespace-normal px-2 text-xs',
             SEGMENTED_FOCUS_RING,
             feature.showGrid && SEGMENTED_THUMB_BG,
           )}
@@ -107,6 +96,17 @@ export function TransformTool({ feature }: { feature: RawTransformFeature }) {
           onClick={() => feature.setShowGrid(!feature.showGrid)}
         >
           {t('transform.grid')}
+        </Button>
+        <Button
+          variant="ghost"
+          className="h-11 min-w-0 flex-1 whitespace-normal px-2 text-xs"
+          disabled={
+            feature.isProcessing || (!feature.hasImage && !feature.active)
+          }
+          onClick={feature.reset}
+        >
+          <RotateCcw size={14} aria-hidden />
+          {t('transform.reset')}
         </Button>
       </div>
       <TransformControls
@@ -120,6 +120,9 @@ export function TransformTool({ feature }: { feature: RawTransformFeature }) {
         onReset={feature.reset}
         disabled={controlsDisabled}
       />
+      <p className="mt-4 text-xs leading-relaxed text-lf-on-photo-ink/72">
+        {t('raw.transform.previewNotice')}
+      </p>
       <Button
         variant="light"
         className="mt-4 h-11 w-full"

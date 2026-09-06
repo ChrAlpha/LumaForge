@@ -71,4 +71,37 @@ describe('transformTool', () => {
       screen.getByText(/Perspective preview, up to 1600 px/),
     ).toBeInTheDocument()
   })
+
+  it('explains an abstained automatic correction and keeps manual recovery available', () => {
+    const feature = transformFeatureFixture({
+      hasImage: true,
+      available: true,
+      current: true,
+    })
+    feature.demo = {
+      ...feature.demo,
+      ready: true,
+      mode: 'auto',
+      solution: { ...feature.demo.solution, status: 'insufficient' },
+    }
+    const { rerender } = render(<TransformTool feature={feature} />)
+    expect(
+      screen.getByText(
+        'Not enough reliable structure. Try manual adjustments.',
+      ),
+    ).toHaveAttribute('role', 'status')
+    expect(
+      screen.getByRole('slider', { name: 'Rotate', exact: true }),
+    ).not.toHaveAttribute('aria-disabled', 'true')
+    rerender(
+      <TransformTool
+        feature={{ ...feature, demo: { ...feature.demo, mode: 'off' } }}
+      />,
+    )
+    expect(
+      screen.queryByText(
+        'Not enough reliable structure. Try manual adjustments.',
+      ),
+    ).toBeNull()
+  })
 })

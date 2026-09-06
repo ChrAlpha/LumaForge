@@ -91,13 +91,13 @@ export function TransformControls({
           <Button
             key={value}
             data-testid={`mode-${value}`}
-            variant={mode === value ? 'secondary' : 'ghost'}
+            variant={!embedded && mode === value ? 'secondary' : 'ghost'}
             aria-pressed={mode === value}
             onClick={() => onModeChange(value)}
             disabled={disabled}
             className={clsxm(
-              'h-11 text-sm',
-              !embedded && 'border',
+              'h-11',
+              embedded ? 'px-2 text-xs' : 'border text-sm',
               value === 'auto' && 'col-span-2',
               embedded
                 ? [
