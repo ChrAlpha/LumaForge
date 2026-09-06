@@ -82,7 +82,7 @@ export function TransformDemoPage() {
           </Button>
         </div>
       </header>
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_340px] lg:grid-rows-1">
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,2fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_340px] lg:grid-rows-1">
         <section
           className="flex min-h-0 min-w-0 flex-col bg-lf-surface-sunk"
           aria-label={t('transform.workspace')}
@@ -238,8 +238,9 @@ export function TransformDemoPage() {
             disabled={!demo.ready}
           />
           <div className="mt-6 border-t border-lf-on-surface/10 pt-5">
+            {/* lf-surface on green: 5.3:1 contrast; hover: 7.0:1. */}
             <Button
-              className="h-11 w-full"
+              className="h-11 w-full text-lf-surface"
               onClick={() => void download()}
               disabled={
                 !frame || demo.loading || demo.rendering || Boolean(demo.error)

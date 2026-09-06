@@ -325,6 +325,37 @@ test('controls remain reachable without horizontal overflow at a narrow viewport
 }) => {
   await page.setViewportSize({ width: 393, height: 660 })
   await openDemo(page)
+  const save = page.getByRole('button', { name: 'Save preview JPEG' })
+  for (const hover of [false, true]) {
+    if (hover) await save.hover()
+    const contrast = await save.evaluate((button) => {
+      const style = getComputedStyle(button)
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 1
+      const context = canvas.getContext('2d')!
+      const luminance = (color: string) => {
+        context.fillStyle = color
+        context.fillRect(0, 0, 1, 1)
+        const channels = context.getImageData(0, 0, 1, 1).data.slice(0, 3)
+        return Array.from(channels, (byte) => {
+          const value = byte / 255
+          return value <= 0.04045
+            ? value / 12.92
+            : ((value + 0.055) / 1.055) ** 2.4
+        }).reduce(
+          (sum, value, i) => sum + value * [0.2126, 0.7152, 0.0722][i],
+          0,
+        )
+      }
+      const foreground = luminance(style.color)
+      const background = luminance(style.backgroundColor)
+      return (
+        (Math.max(foreground, background) + 0.05) /
+        (Math.min(foreground, background) + 0.05)
+      )
+    })
+    expect(contrast).toBeGreaterThanOrEqual(4.5)
+  }
   const overflow = await page.evaluate(() => ({
     document: document.documentElement.scrollWidth - innerWidth,
     body: document.body.scrollWidth - innerWidth,
@@ -343,7 +374,11 @@ test('controls remain reachable without horizontal overflow at a narrow viewport
       .and(page.locator('button'))
     await control.scrollIntoViewIfNeeded()
     await expect(control).toBeInViewport()
-    await expect(page.getByTestId('transform-canvas')).toBeInViewport()
+    const photo = page.getByTestId('transform-canvas')
+    await expect(photo).toBeInViewport()
+    const preview = (await photo.boundingBox())!
+    expect(preview.width).toBeGreaterThanOrEqual(300)
+    expect(preview.height).toBeGreaterThanOrEqual(200)
     const box = (await control.boundingBox())!
     expect(box.width).toBeGreaterThanOrEqual(44)
     expect(box.height).toBeGreaterThanOrEqual(44)
