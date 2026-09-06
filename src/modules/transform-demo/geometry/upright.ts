@@ -245,11 +245,18 @@ export function analyzeUpright(image: AnalysisImage): UprightAnalysis {
   for (const mode of ['level', 'vertical', 'full'] as const) {
     const candidate = solutions[mode]
     const minimumConfidence =
-      mode === 'full' ? 0.62 : mode === 'vertical' ? 0.5 : 0.3
+      mode === 'full'
+        ? 0.62
+        : mode === 'vertical'
+          ? 0.5
+          : horizontal
+            ? 0.55
+            : 0.65
     const cost = distortionCost(candidate.matrix)
     if (
       candidate.status === 'insufficient' ||
       candidate.confidence < minimumConfidence ||
+      (mode === 'vertical' && !horizontal && (vertical?.count ?? 0) < 4) ||
       cost > 0.85
     )
       continue

@@ -34,7 +34,7 @@ function centered(matrix: Matrix3): Matrix3 {
 
 function rasterize(
   matrix: Matrix3,
-  kind: 'building' | 'diagonal' = 'building',
+  kind: 'building' | 'diagonal' | 'stems' = 'building',
   withOutliers = false,
 ): AnalysisImage {
   const data = new Uint8ClampedArray(width * height * 4).fill(230)
@@ -50,10 +50,18 @@ function rasterize(
         { x: 0.12, y: coordinate },
         { x: 0.88, y: coordinate },
       ])
-    } else {
+    } else if (kind === 'diagonal') {
       lines.push([
         { x: coordinate - 0.3, y: 0.1 },
         { x: coordinate + 0.3, y: 0.87 },
+      ])
+    }
+  }
+  if (kind === 'stems') {
+    for (const coordinate of [0.12, 0.82, 0.86]) {
+      lines.push([
+        { x: coordinate, y: 0.38 },
+        { x: coordinate + 0.06, y: 0.86 },
       ])
     }
   }
@@ -144,6 +152,12 @@ describe('image-based Upright analysis', () => {
     const analysis = analyzeUpright(rasterize(identityMatrix()))
     expect(analysis.lines.length).toBeGreaterThan(8)
     expect(analysis.solutions.auto.status).toBe('unchanged')
+  })
+
+  it('does not automatically level a few aligned plant-like stems', () => {
+    const analysis = analyzeUpright(rasterize(identityMatrix(), 'stems'))
+    expect(analysis.lines.length).toBeGreaterThan(0)
+    expect(analysis.solutions.auto.status).toBe('insufficient')
   })
 
   it('detects and corrects roll from raster pixels', () => {
