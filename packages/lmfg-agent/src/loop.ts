@@ -1,5 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
+import { ProviderResponseError } from './provider.js'
 import type {
   AgentOptions,
   AgentResult,
@@ -96,8 +97,12 @@ export async function runAgent(options: AgentOptions): Promise<AgentResult> {
         signal: options.signal,
       })
     } catch (error) {
+      const receipt =
+        error instanceof ProviderResponseError ? error.receipt : null
+      if (receipt?.usage) usage.push(receipt.usage)
       await options.record({
         event: 'model_error',
+        receipt,
         step,
         error: error instanceof Error ? error.message : String(error),
         elapsed_ms: performance.now() - started,

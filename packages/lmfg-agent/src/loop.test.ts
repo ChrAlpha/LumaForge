@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { runAgent } from './loop.js'
+import { ProviderResponseError } from './provider.js'
 import type { AgentOptions, ChatMessage, ModelResponse } from './types.js'
 
 function call(name: string, args = '{}'): ModelResponse {
@@ -40,6 +41,32 @@ function options(overrides: Partial<AgentOptions>): AgentOptions {
 }
 
 describe('autonomous editing loop', () => {
+  it('keeps the known billable receipt when the provider response is unusable', async () => {
+    const events: Array<Record<string, unknown>> = []
+    const receipt = {
+      id: 'paid-request',
+      model: 'grok-4.6-build',
+      usage: { total_tokens: 168 },
+    }
+    const result = await runAgent(
+      options({
+        complete: async () => {
+          throw new ProviderResponseError('Malformed tool call', receipt)
+        },
+        record: async (event) => {
+          events.push(event)
+        },
+      }),
+    )
+    expect(result).toMatchObject({
+      status: 'incomplete',
+      reason: 'provider_error',
+      usage: [{ total_tokens: 168 }],
+    })
+    expect(
+      events.find((event) => event.event === 'model_error')?.receipt,
+    ).toEqual(receipt)
+  })
   it('delivers actual tool pixels before accepting the next model decision', async () => {
     const seen: ChatMessage[][] = []
     const sequence = [call('view'), call('finish_edit')]
