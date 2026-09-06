@@ -36,6 +36,7 @@ function rasterize(
   matrix: Matrix3,
   kind: 'building' | 'diagonal' | 'stems' = 'building',
   withOutliers = false,
+  horizontalCount = 7,
 ): AnalysisImage {
   const data = new Uint8ClampedArray(width * height * 4).fill(230)
   const lines: [Point, Point][] = []
@@ -46,10 +47,12 @@ function rasterize(
         { x: coordinate, y: 0.12 },
         { x: coordinate, y: 0.88 },
       ])
-      lines.push([
-        { x: 0.12, y: coordinate },
-        { x: 0.88, y: coordinate },
-      ])
+      if (index < horizontalCount) {
+        lines.push([
+          { x: 0.12, y: coordinate },
+          { x: 0.88, y: coordinate },
+        ])
+      }
     } else if (kind === 'diagonal') {
       lines.push([
         { x: coordinate - 0.3, y: 0.1 },
@@ -167,6 +170,18 @@ describe('image-based Upright analysis', () => {
     expect(analysis.solutions.level.rotationDegrees).toBeCloseTo(-7, 0)
     expect(
       residual(analysis.solutions.level.matrix, distortion, 'horizontal'),
+    ).toBeLessThan(0.6)
+  })
+
+  it('levels the more reliable family when receding floors disagree with verticals', () => {
+    const distortion = multiplyMatrices(
+      rotationMatrix(5, width / height),
+      centered([1, 0, 0, 0.04, 1, 0, 0, 0, 1]),
+    )
+    const analysis = analyzeUpright(rasterize(distortion, 'building', false, 4))
+    expect(analysis.solutions.level.status).toBe('corrected')
+    expect(
+      residual(analysis.solutions.level.matrix, distortion, 'vertical'),
     ).toBeLessThan(0.6)
   })
 

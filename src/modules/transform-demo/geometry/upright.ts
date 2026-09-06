@@ -172,18 +172,23 @@ export function analyzeUpright(image: AnalysisImage): UprightAnalysis {
   const horizontal = fitFamily(lines, 'horizontal', image.width, image.height)
   const horizontalRoll = horizontal ? Math.atan(horizontal.direction) : null
   const verticalRoll = vertical ? -Math.atan(vertical.direction) : null
-  let roll = horizontalRoll ?? verticalRoll
+  const preferVertical =
+    (vertical?.confidence ?? 0) > (horizontal?.confidence ?? 0)
+  let roll = preferVertical ? verticalRoll : (horizontalRoll ?? verticalRoll)
   if (
     horizontal &&
     vertical &&
-    Math.abs(horizontalRoll! - verticalRoll!) < 0.045
+    Math.abs(horizontalRoll! - verticalRoll!) < 0.02
   ) {
     roll =
-      (horizontalRoll! * horizontal.support +
-        verticalRoll! * vertical.support) /
-      (horizontal.support + vertical.support)
+      (horizontalRoll! * horizontal.confidence +
+        verticalRoll! * vertical.confidence) /
+      (horizontal.confidence + vertical.confidence)
   }
-  const levelConfidence = horizontal?.confidence ?? vertical?.confidence ?? 0
+  const levelConfidence = Math.max(
+    horizontal?.confidence ?? 0,
+    vertical?.confidence ?? 0,
+  )
   if (roll !== null && levelConfidence >= 0.3 && Math.abs(roll) < Math.PI / 9) {
     solutions.level = solution(
       rotationMatrix((-roll * 180) / Math.PI, image.width / image.height),
