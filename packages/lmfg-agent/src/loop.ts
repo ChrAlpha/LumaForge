@@ -88,6 +88,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentResult> {
       messages,
       tools: options.tools,
     })
+    if (options.signal?.aborted) return end('cancelled')
     let response
     const started = performance.now()
     try {
@@ -143,6 +144,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentResult> {
       if (options.signal?.aborted) return end('cancelled')
       const toolStart = performance.now()
       await options.record({ event: 'tool_call', step, call })
+      if (options.signal?.aborted) return end('cancelled')
       let execution: ToolExecution
       let args: Record<string, unknown> = {}
       try {

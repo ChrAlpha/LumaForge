@@ -41,6 +41,44 @@ function options(overrides: Partial<AgentOptions>): AgentOptions {
 }
 
 describe('autonomous editing loop', () => {
+  it('does not dispatch a queued tool after cancellation during log persistence', async () => {
+    const controller = new AbortController()
+    let executed = 0
+    const result = await runAgent(
+      options({
+        signal: controller.signal,
+        record: async (event) => {
+          if (event.event === 'tool_call') controller.abort()
+        },
+        execute: async () => {
+          executed += 1
+          return { result: { content: [] } }
+        },
+      }),
+    )
+    expect(executed).toBe(0)
+    expect(result.reason).toBe('cancelled')
+  })
+
+  it('does not issue a model request after cancellation while recording it', async () => {
+    const controller = new AbortController()
+    let requested = 0
+    const result = await runAgent(
+      options({
+        signal: controller.signal,
+        record: async (event) => {
+          if (event.event === 'model_request') controller.abort()
+        },
+        complete: async () => {
+          requested += 1
+          return call('finish_edit')
+        },
+      }),
+    )
+    expect(requested).toBe(0)
+    expect(result.reason).toBe('cancelled')
+  })
+
   it('stops the rest of a tool batch when cancellation arrives during a tool', async () => {
     const controller = new AbortController()
     const response = call('view')
