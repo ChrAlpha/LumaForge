@@ -74,6 +74,71 @@ function createDecodedImage(): DecodedImage {
 }
 
 describe('useHqPreviewExportAction', () => {
+  it('discards an HQ render completed after preview geometry invalidates its export', async () => {
+    const sessionRef: { current: ImageSession | null } = {
+      current: createSession(),
+    }
+    const exportGraphVersionRef = { current: 1 }
+    const exportAbortControllerRef: { current: AbortController | null } = {
+      current: null,
+    }
+    let completeRender!: (canvas: HTMLCanvasElement) => void
+    const renderToHiddenCanvas = vi.fn(
+      () =>
+        new Promise<HTMLCanvasElement>((resolve) => {
+          completeRender = resolve
+        }),
+    )
+    const registerExportResultResource = vi.fn()
+    const success = vi.fn()
+    const error = vi.fn()
+    const { result } = renderHook(() =>
+      useHqPreviewExportAction({
+        sessionRef,
+        decodedImageRef: { current: createDecodedImage() },
+        pipelineRef: { current: { renderToHiddenCanvas } },
+        isMountedRef: { current: true },
+        exportGraphVersionRef,
+        exportAbortControllerRef,
+        previewCopyCanvasRef: { current: null },
+        previewSuspended: false,
+        abortExportWork: vi.fn(),
+        queueExportResultResourceDisposal: vi.fn(),
+        registerExportResultResource,
+        scheduleToast: (notify) => notify(),
+        setProgress: vi.fn(),
+        setSession: (updater) => {
+          sessionRef.current =
+            typeof updater === 'function'
+              ? updater(sessionRef.current)
+              : updater
+        },
+        setStatus: vi.fn(),
+        toast: { success, error },
+      }),
+    )
+    const pending = result.current.exportPreviewImage()
+    expect(renderToHiddenCanvas).toHaveBeenCalledTimes(1)
+    exportAbortControllerRef.current!.abort()
+    exportGraphVersionRef.current += 1
+    sessionRef.current = {
+      ...sessionRef.current!,
+      previewTransformActive: true,
+      exportState: { ...sessionRef.current!.exportState, status: 'idle' },
+    }
+    completeRender({
+      toBlob: (callback: BlobCallback) =>
+        callback(new Blob(['jpeg'], { type: 'image/jpeg' })),
+    } as HTMLCanvasElement)
+    await pending
+
+    expect(sessionRef.current.exportState.result).toBeUndefined()
+    expect(sessionRef.current.exportState.status).toBe('idle')
+    expect(registerExportResultResource).not.toHaveBeenCalled()
+    expect(success).not.toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
+  })
+
   it('rejects a previously captured HQ action after geometry becomes active', async () => {
     const sessionRef = { current: createSession() }
     const renderToHiddenCanvas = vi.fn()
