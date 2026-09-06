@@ -23,12 +23,14 @@ import {
   requireSupportedGraph,
   resolveExposure,
 } from './color-graph'
+import { decodedDimensions } from './inspect'
 import type { ResolvedLut } from './lut'
 
 export type DecodedFrame = {
   data: Uint16Array
   width: number
   height: number
+  sourceDimensions: { width: number; height: number }
   decode: 'quick' | 'bounded-hq'
 }
 
@@ -43,6 +45,10 @@ export async function decodeFrame(
   maxPixels: number,
   signal?: AbortSignal,
 ): Promise<DecodedFrame> {
+  const sourceDimensions = decodedDimensions(
+    await session.probeExportCapability(signal),
+    session.probe,
+  )
   if (maxPixels <= QUICK_PREVIEW_MAX_PIXELS) {
     const frame = await session.decodeQuick(
       { maxOutputPixels: maxPixels },
@@ -52,6 +58,7 @@ export async function decodeFrame(
       data: frame.data,
       width: frame.width,
       height: frame.height,
+      sourceDimensions,
       decode: 'quick',
     }
   }
@@ -63,6 +70,7 @@ export async function decodeFrame(
     data: frame.data,
     width: frame.width,
     height: frame.height,
+    sourceDimensions,
     decode: 'bounded-hq',
   }
 }

@@ -142,10 +142,7 @@ export async function runIteration(
     timings.decode_ms = performance.now() - decodeStart
     const sourceIdentity = toSourceIdentity(
       input.source,
-      record.decoded_dimensions ?? {
-        width: session.probe.width ?? frame.width,
-        height: session.probe.height ?? frame.height,
-      },
+      frame.sourceDimensions,
     )
 
     const exposures: RawRenderExposure[] = []

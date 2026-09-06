@@ -120,13 +120,7 @@ function registerPreview(render: Command, host: CommandHost): void {
               )
               const manifest = buildRenderManifest({
                 kind: 'preview',
-                source: toSourceIdentity(
-                  source,
-                  record.decoded_dimensions ?? {
-                    width: result.probe.width ?? result.frame.width,
-                    height: result.probe.height ?? result.frame.height,
-                  },
-                ),
+                source: toSourceIdentity(source, result.frame.sourceDimensions),
                 lut: lut?.identity ?? null,
                 graph: result.graph,
                 params,
