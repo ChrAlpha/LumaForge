@@ -145,9 +145,18 @@ describe('transform demo request lifecycle', () => {
       finishFirst({ ...next, name: 'old.jpg' })
       await first
     })
+    act(() =>
+      oldWorker.emit({
+        type: 'analyzed',
+        sourceId: oldWorker.messages[0].sourceId,
+        analysis,
+        elapsedMs: 10,
+      }),
+    )
+    expect(result.current.analysis).toBeNull()
     expect(result.current.source?.name).toBe('new.jpg')
-    expect(oldWorker.terminated).toBe(true)
-    expect(DemoWorker.instances).toHaveLength(2)
+    expect(oldWorker.terminated).toBe(false)
+    expect(DemoWorker.instances).toHaveLength(1)
     unmount()
   })
 })

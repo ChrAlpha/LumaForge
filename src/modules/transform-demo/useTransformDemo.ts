@@ -46,8 +46,6 @@ export function useTransformDemo() {
     async (file?: File) => {
       const id = ++sourceId.current
       abortRef.current?.abort()
-      workerRef.current?.terminate()
-      workerRef.current = null
       const abort = new AbortController()
       abortRef.current = abort
       inFlight.current = false
@@ -67,13 +65,15 @@ export function useTransformDemo() {
           : createDemoSample()
         if (id !== sourceId.current || abort.signal.aborted) return
         setSource(next)
-        const worker = new Worker(
-          new URL('./transform.worker.ts', import.meta.url),
-          { type: 'module' },
-        )
+        const worker =
+          workerRef.current ??
+          new Worker(new URL('./transform.worker.ts', import.meta.url), {
+            type: 'module',
+          })
         workerRef.current = worker
         worker.onerror = () => {
-          if (sourceId.current !== id) return
+          if (workerRef.current !== worker) return
+          workerRef.current = null
           setError('processing')
           setAnalysis(null)
           setLoading(false)
@@ -85,6 +85,7 @@ export function useTransformDemo() {
         }: MessageEvent<TransformWorkerResponse>) => {
           if (data.sourceId !== sourceId.current) return
           if (data.type === 'analyzed') {
+            setError(null)
             setAnalysis(data.analysis)
             setAnalysisMs(data.elapsedMs)
             setLoading(false)
