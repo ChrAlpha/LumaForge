@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { identityMatrix } from './geometry/matrix'
+import { identityMatrix, rotationMatrix } from './geometry/matrix'
 import type { UprightAnalysis } from './geometry/types'
 import { loadImageInput } from './image-input'
 import type { PreviewSource } from './preview-types'
@@ -74,6 +74,61 @@ afterEach(() => {
 })
 
 describe('transform demo request lifecycle', () => {
+  it('keeps the selected geometry during color refresh until the mode is selected again', async () => {
+    const { result, unmount } = setup()
+    const worker = DemoWorker.instances[0]
+    const selectedMatrix = rotationMatrix(5)
+    const updatedMatrix = rotationMatrix(-3)
+    const first = {
+      ...analysis,
+      solutions: {
+        ...analysis.solutions,
+        auto: { ...solution, matrix: selectedMatrix },
+      },
+    }
+    act(() =>
+      worker.emit({
+        type: 'analyzed',
+        sourceId: worker.messages[0].sourceId,
+        analysis: first,
+        elapsedMs: 10,
+      }),
+    )
+    act(() => result.current.setMode('auto'))
+    const current: PreviewSource = {
+      name: 'same-photo.nef',
+      kind: 'raw',
+      originalWidth: 2,
+      originalHeight: 2,
+      frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
+    }
+    await act(() =>
+      result.current.loadSource(current, { preserveTransform: true }),
+    )
+    const request = worker.messages.at(-1)!
+    const fresh = {
+      ...analysis,
+      solutions: {
+        ...analysis.solutions,
+        auto: { ...solution, matrix: updatedMatrix },
+      },
+    }
+    act(() =>
+      worker.emit({
+        type: 'analyzed',
+        sourceId: request.sourceId,
+        analysis: fresh,
+        elapsedMs: 10,
+      }),
+    )
+    expect(result.current.solution.matrix).toEqual(selectedMatrix)
+    const render = worker.messages.at(-1)!
+    expect(render.type === 'render' && render.matrix).toEqual(selectedMatrix)
+    act(() => result.current.setMode('auto'))
+    expect(result.current.solution.matrix).toEqual(updatedMatrix)
+    unmount()
+  })
+
   it('accepts current-photo frames without reopening files and preserves edits on refresh', async () => {
     DemoWorker.instances = []
     vi.stubGlobal('Worker', DemoWorker)

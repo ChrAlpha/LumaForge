@@ -20,7 +20,11 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
   const [source, setSource] = useState<PreviewSource | null>(null)
   const [analysis, setAnalysis] = useState<UprightAnalysis | null>(null)
   const [result, setResult] = useState<RenderedPreview | null>(null)
-  const [mode, setMode] = useState<UprightMode>('off')
+  const [mode, setModeState] = useState<UprightMode>('off')
+  const [solutions, setSolutions] = useState<
+    UprightAnalysis['solutions'] | null
+  >(null)
+  const modeRef = useRef(mode)
   const [manual, setManual] = useState<ManualTransform>(NEUTRAL_TRANSFORM)
   const [constrainCrop, setConstrainCrop] = useState(true)
   const [loading, setLoading] = useState(false)
@@ -60,7 +64,9 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
       setResult(null)
       setSource(null)
       if (!preserveTransform) {
-        setMode('off')
+        setModeState('off')
+        modeRef.current = 'off'
+        setSolutions(null)
         setManual(NEUTRAL_TRANSFORM)
         setConstrainCrop(true)
       }
@@ -95,6 +101,11 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
           if (data.type === 'analyzed') {
             setError(null)
             setAnalysis(data.analysis)
+            setSolutions((previous) =>
+              preserveTransform && modeRef.current !== 'off' && previous
+                ? previous
+                : data.analysis.solutions,
+            )
             setAnalysisMs(data.elapsedMs)
             setLoading(false)
           } else {
@@ -155,11 +166,13 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     } satisfies TransformWorkerRequest)
     setSource(null)
     setAnalysis(null)
+    setSolutions(null)
     setResult(null)
     setError(null)
     setLoading(false)
     setRendering(false)
-    setMode('off')
+    setModeState('off')
+    modeRef.current = 'off'
     setManual(NEUTRAL_TRANSFORM)
     setConstrainCrop(true)
   }, [])
@@ -170,7 +183,7 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
   }, [autoLoadSample, dispose, loadSource])
 
   useEffect(() => {
-    if (!source || !analysis) return
+    if (!source || !analysis || !solutions) return
     const id = ++requestId.current
     setRendering(true)
     postRender({
@@ -178,16 +191,23 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
       sourceId: sourceId.current,
       requestId: id,
       matrix: composeManualTransform(
-        analysis.solutions[mode].matrix,
+        solutions[mode].matrix,
         manual,
         source.frame.width / source.frame.height,
       ),
       constrainCrop,
     })
-  }, [analysis, constrainCrop, manual, mode, postRender, source])
+  }, [analysis, constrainCrop, manual, mode, postRender, solutions, source])
+
+  const selectMode = (next: UprightMode) => {
+    modeRef.current = next
+    setModeState(next)
+    if (analysis) setSolutions(analysis.solutions)
+  }
 
   const reset = () => {
-    setMode('off')
+    setModeState('off')
+    modeRef.current = 'off'
     setManual({ ...NEUTRAL_TRANSFORM })
     setConstrainCrop(true)
   }
@@ -197,7 +217,7 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     analysis,
     result,
     mode,
-    setMode,
+    setMode: selectMode,
     manual,
     setManual,
     constrainCrop,
@@ -210,7 +230,7 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     clearSource,
     reset,
     ready: Boolean(analysis && source),
-    solution: analysis?.solutions[mode] ?? {
+    solution: solutions?.[mode] ?? {
       matrix: identityMatrix(),
       confidence: 0,
       status: 'unchanged' as const,
