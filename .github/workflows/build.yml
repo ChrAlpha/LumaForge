@@ -56,7 +56,7 @@ jobs:
           app_paths='^(src/|tests/browser/|scripts/(build|deploy|native-runtime)/|packages/luma-(color|jpeg|raw)-runtime/|public/|index\.html|vite\.config\.ts|vitest.*\.config\.ts|tsconfig.*|eslint.*|postcss.*|tailwind.*)'
           runtime_paths='^(packages/luma-(color|jpeg|raw)-runtime/|packages/render-engine/|src/lib/(export|raw|runtime|workers)/|scripts/native-runtime/)'
           native_paths='^(packages/luma-(jpeg|raw)-runtime/native/|scripts/native-runtime/)'
-          cli_paths='^(packages/lmfg-cli/|packages/lmfg-mcp/|packages/render-engine/|packages/luma-(color|jpeg|raw)-runtime/|packages/luma-native-artifacts/|scripts/native-runtime/)'
+          cli_paths='^(packages/lmfg-cli/|packages/lmfg-mcp/|packages/lmfg-agent/|packages/render-engine/|packages/luma-(color|jpeg|raw)-runtime/|packages/luma-native-artifacts/|scripts/native-runtime/)'
 
           app=false
           runtime=false
@@ -304,7 +304,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: '24'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -337,6 +337,9 @@ jobs:
       - name: Typecheck and build lmfg CLI and MCP server
         run: pnpm --filter @lumaforge/lmfg-cli typecheck && pnpm --filter @lumaforge/lmfg-cli build && pnpm --filter @lumaforge/lmfg-mcp typecheck && pnpm --filter @lumaforge/lmfg-mcp build
 
+      - name: Typecheck and build lmfg agent
+        run: pnpm --filter @lumaforge/lmfg-agent typecheck && pnpm --filter @lumaforge/lmfg-agent build
+
       - name: Cache public RAW fixtures
         uses: actions/cache@v4
         with:
@@ -348,10 +351,10 @@ jobs:
           LUMAFORGE_FIXTURE_MIRROR: ${{ vars.LUMAFORGE_FIXTURE_MIRROR }}
         run: pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public
 
-      - name: Test lmfg CLI and MCP server
+      - name: Test lmfg CLI, MCP server, and agent
         env:
           LMFG_REQUIRE_FIXTURE: '1'
-        run: pnpm --filter @lumaforge/lmfg-cli test && pnpm --filter @lumaforge/lmfg-mcp test
+        run: pnpm --filter @lumaforge/lmfg-cli test && pnpm --filter @lumaforge/lmfg-mcp test && pnpm test:agent
 
       - name: Smoke the packaged CLI
         run: |
