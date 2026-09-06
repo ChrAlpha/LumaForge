@@ -10,6 +10,15 @@
     />
     <meta name="theme-color" content="oklch(0.075 0.006 255)" />
     <style>
+      html.luma-route-transform,
+      html.luma-route-transform body,
+      html.luma-route-transform #root {
+        min-height: 100%;
+        margin: 0;
+        background: oklch(0.118 0.006 255);
+        color-scheme: dark;
+      }
+
       html.luma-route-landing,
       html.luma-route-landing body,
       html.luma-route-landing #root {
@@ -126,24 +135,30 @@
         const routePath = window.location.pathname.replace(/\/+$/, '')
         const rawPath = routePath === '/raw'
         const landingPath = routePath === ''
+        const transformPath = routePath === '/transform-demo'
         const root = document.documentElement
         root.dataset.lumaRoute = rawPath
           ? 'raw'
           : landingPath
             ? 'landing'
-            : 'app'
+            : transformPath
+              ? 'transform'
+              : 'app'
         root.classList.toggle('luma-route-raw', rawPath)
         root.classList.toggle('luma-route-landing', landingPath)
+        root.classList.toggle('luma-route-transform', transformPath)
 
         const themeColor = document.querySelector("meta[name='theme-color']")
         if (themeColor) {
           themeColor.setAttribute(
             'content',
-            rawPath
-              ? 'oklch(0.064 0.006 255)'
-              : landingPath
-                ? 'oklch(0.075 0.006 255)'
-                : 'oklch(0.964 0.018 86)',
+            transformPath
+              ? 'oklch(0.118 0.006 255)'
+              : rawPath
+                ? 'oklch(0.064 0.006 255)'
+                : landingPath
+                  ? 'oklch(0.075 0.006 255)'
+                  : 'oklch(0.964 0.018 86)',
           )
         }
       }

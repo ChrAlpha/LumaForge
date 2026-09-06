@@ -10,6 +10,7 @@ vi.mock('./components/common/Footer', () => ({
 afterEach(() => {
   document.documentElement.classList.remove('luma-route-raw')
   document.documentElement.classList.remove('luma-route-landing')
+  document.documentElement.classList.remove('luma-route-transform')
   document.documentElement.removeAttribute('data-luma-route')
   document.head.innerHTML = ''
 })
@@ -31,6 +32,12 @@ describe('shouldShowAppFooter', () => {
     expect(shouldShowAppFooter('/raw/')).toBe(false)
   })
 
+  it('keeps the transform demo a full-viewport photo workspace', () => {
+    expect(shouldShowAppFooter('/transform-demo')).toBe(false)
+    expect(shouldShowAppFooter('/transform-demo/')).toBe(false)
+    expect(shouldShowAppFooter('/transform-demo/unknown')).toBe(true)
+  })
+
   it('shows the footer on the profiles route', () => {
     expect(shouldShowAppFooter('/profiles')).toBe(true)
   })
@@ -41,6 +48,19 @@ describe('shouldShowAppFooter', () => {
 })
 
 describe('syncRouteSubstrate', () => {
+  it('sets the demo substrate and clears it when navigating away', () => {
+    document.head.innerHTML = '<meta name="theme-color" />'
+    syncRouteSubstrate('/transform-demo/')
+    expect(document.documentElement).toHaveClass('luma-route-transform')
+    expect(document.documentElement.dataset.lumaRoute).toBe('transform')
+    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
+      'content',
+      'oklch(0.118 0.006 255)',
+    )
+    syncRouteSubstrate('/raw')
+    expect(document.documentElement).not.toHaveClass('luma-route-transform')
+  })
+
   it('sets the dark RAW route substrate before the route paints', () => {
     document.head.innerHTML =
       '<meta name="theme-color" content="oklch(0.964 0.018 86)" />'

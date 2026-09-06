@@ -55,7 +55,7 @@ export function TransformDemoPage() {
             : 'transform.applied'
   return (
     <main
-      className="flex min-h-dvh flex-col bg-lf-surface text-lf-on-surface selection:bg-lf-green/30 lg:h-dvh lg:overflow-hidden"
+      className="flex h-dvh flex-col overflow-hidden bg-lf-surface text-lf-on-surface selection:bg-lf-green/30"
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault()
@@ -82,13 +82,13 @@ export function TransformDemoPage() {
           </Button>
         </div>
       </header>
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_340px] lg:grid-rows-1">
         <section
-          className="flex min-w-0 flex-col bg-lf-surface-sunk"
+          className="flex min-h-0 min-w-0 flex-col bg-lf-surface-sunk"
           aria-label={t('transform.workspace')}
         >
           <div className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p
                 className="max-w-[50vw] truncate text-sm font-medium"
                 title={demo.source?.name}
@@ -97,7 +97,7 @@ export function TransformDemoPage() {
                   ? t('transform.sampleName')
                   : (demo.source?.name ?? t('transform.openHint'))}
               </p>
-              <p className="mt-1 text-xs text-lf-on-surface/65">
+              <p className="mt-1 truncate text-xs text-lf-on-surface/65">
                 {demo.source?.kind === 'sample'
                   ? t('transform.synthetic')
                   : t('transform.local')}
@@ -158,7 +158,9 @@ export function TransformDemoPage() {
                 onClick={() => setShowLines(!showLines)}
               >
                 <ScanLine size={15} aria-hidden />
-                {t('transform.lines')}
+                <span className="sr-only sm:not-sr-only">
+                  {t('transform.lines')}
+                </span>
               </Button>
               <Button
                 variant="ghost"
@@ -168,12 +170,14 @@ export function TransformDemoPage() {
                 onClick={() => setShowGrid(!showGrid)}
               >
                 <Grid2X2 size={15} aria-hidden />
-                {t('transform.grid')}
+                <span className="sr-only sm:not-sr-only">
+                  {t('transform.grid')}
+                </span>
               </Button>
             </div>
           </div>
           <div
-            className="flex h-[45dvh] min-h-60 flex-1 items-center justify-center overflow-hidden px-3 pb-3 sm:px-6 sm:pb-6 lg:h-auto lg:min-h-0"
+            className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3 pb-3 sm:px-6 sm:pb-6"
             aria-busy={demo.loading || demo.rendering}
           >
             {demo.source ? (
@@ -193,6 +197,7 @@ export function TransformDemoPage() {
           </div>
           <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-t border-lf-on-surface/10 px-4 py-3 text-xs text-lf-on-surface/75 sm:px-6">
             <output
+              role={demo.error ? 'alert' : 'status'}
               data-testid="transform-status"
               data-mode={demo.mode}
               data-busy={demo.loading || demo.rendering}
@@ -200,7 +205,9 @@ export function TransformDemoPage() {
                 demo.solution.status === 'insufficient' && 'text-lf-on-surface',
               )}
             >
-              {t(status)}
+              {demo.error
+                ? t(`transform.error.${demo.error}` as MessageKey)
+                : t(status)}
             </output>
             <span className="tabular-nums">
               {frame ? `${frame.width} × ${frame.height}` : ''}
@@ -210,7 +217,7 @@ export function TransformDemoPage() {
             </span>
           </div>
         </section>
-        <aside className="min-h-0 overflow-y-auto px-5 py-4 lg:border-l lg:border-lf-on-surface/10">
+        <aside className="min-h-0 overflow-y-auto overscroll-contain border-t border-lf-on-surface/10 px-5 py-4 lg:border-t-0 lg:border-l">
           <TransformControls
             mode={demo.mode}
             onModeChange={(mode) => {
@@ -275,16 +282,12 @@ export function TransformDemoPage() {
               </pre>
             </details>
           ) : null}
-          {demo.error || downloadError ? (
+          {downloadError ? (
             <p
               role="alert"
               className="mt-4 rounded-md bg-lf-rose/10 p-3 text-sm leading-relaxed text-lf-on-surface"
             >
-              {t(
-                downloadError
-                  ? 'transform.error.download'
-                  : (`transform.error.${demo.error}` as MessageKey),
-              )}
+              {t('transform.error.download')}
             </p>
           ) : null}
         </aside>
