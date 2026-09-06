@@ -453,5 +453,15 @@
   "transform.error.decode": "This photo could not be decoded. Try another file or load the test image.",
   "transform.error.processing": "Processing stopped. Reopen the photo or load the test image.",
   "transform.error.transform": "This transform leaves too little usable image. Reduce the adjustment or reset.",
-  "transform.error.download": "The preview could not be saved. Try saving it again."
+  "transform.error.download": "The preview could not be saved. Try saving it again.",
+  "raw.transform.title": "Transform",
+  "raw.mobile.mode.transform": "Transform",
+  "raw.transform.previewNotice": "Perspective preview, up to 1600 px. Reset Transform to use split comparison and standard JPEG export.",
+  "raw.transform.unavailable": "The processed preview is unavailable. Wait for it or reset Transform.",
+  "raw.transform.before": "Before transform",
+  "raw.transform.after": "After transform",
+  "raw.transform.awaitImage": "Open a RAW photo to adjust its perspective.",
+  "raw.transform.preparing": "Preparing the current photo…",
+  "raw.transform.exportReason": "Transform changes support preview JPEG only. Reset Transform before exporting a standard JPEG.",
+  "raw.transform.histogramUnavailable": "Histogram is unavailable for the transformed preview."
 }

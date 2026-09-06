@@ -453,5 +453,15 @@
   "transform.error.decode": "无法解码这张照片，请换一个文件或加载测试图。",
   "transform.error.processing": "处理已停止，请重新打开照片或加载测试图。",
   "transform.error.transform": "变换后可用画面过少，请减小调整幅度或重置。",
-  "transform.error.download": "预览保存失败，请重试。"
+  "transform.error.download": "预览保存失败，请重试。",
+  "raw.transform.title": "变换",
+  "raw.mobile.mode.transform": "变换",
+  "raw.transform.previewNotice": "透视预览最长边为 1600 像素。重置变换后可使用原图分屏与标准 JPEG 导出。",
+  "raw.transform.unavailable": "处理后的预览暂不可用，请等待预览就绪或重置变换。",
+  "raw.transform.before": "变换前",
+  "raw.transform.after": "变换后",
+  "raw.transform.awaitImage": "打开一张 RAW 照片后即可调整透视。",
+  "raw.transform.preparing": "正在准备当前照片…",
+  "raw.transform.exportReason": "变换目前仅支持预览 JPEG。导出标准 JPEG 前，请先重置变换。",
+  "raw.transform.histogramUnavailable": "变换预览暂不提供直方图。"
 }
