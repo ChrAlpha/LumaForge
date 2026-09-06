@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   Download,
+  Scan,
   SlidersHorizontal,
   SplitSquareHorizontal,
   Wand2,
@@ -15,7 +16,7 @@ import { useI18n } from '~/lib/i18n'
 
 import { DOCK_SPRING, TAP_SPRING } from '../../motion'
 
-export type MobileMode = 'look' | 'tone' | 'compare' | 'export'
+export type MobileMode = 'look' | 'tone' | 'transform' | 'compare' | 'export'
 
 const TABS: {
   id: MobileMode
@@ -25,6 +26,7 @@ const TABS: {
 }[] = [
   { id: 'look', icon: Wand2, labelKey: 'raw.mobile.mode.look' },
   { id: 'tone', icon: SlidersHorizontal, labelKey: 'raw.mobile.mode.adjust' },
+  { id: 'transform', icon: Scan, labelKey: 'raw.mobile.mode.transform' },
   {
     id: 'compare',
     icon: SplitSquareHorizontal,
@@ -46,6 +48,8 @@ export function MobileModeDock(props: {
   onOpenMore?: () => void
   canExport: boolean
   disabled?: boolean
+  showTransform?: boolean
+  compareDisabled?: boolean
   scrubbing?: boolean
   panel: ReactNode
   /**
@@ -110,7 +114,7 @@ export function MobileModeDock(props: {
               // 393x660 viewport; Tone and HSL lists scroll inside.
               // Other modes still use max-h since their content sizes
               // itself naturally.
-              props.mode === 'tone'
+              props.mode === 'tone' || props.mode === 'transform'
                 ? 'h-[min(38vh,264px)]'
                 : props.mode === 'export'
                   ? 'max-h-[min(32vh,260px)]'
@@ -131,28 +135,33 @@ export function MobileModeDock(props: {
         aria-label={t('raw.mobile.modes.aria')}
         role="tablist"
         className={clsxm(
-          'grid grid-cols-4 gap-1 border-t border-lf-on-photo-bord-soft px-2.5 pb-2 pt-2 transition-opacity duration-150',
+          'grid gap-1 border-t border-lf-on-photo-bord-soft px-2.5 pb-2 pt-2 transition-opacity duration-150',
+          props.showTransform ? 'grid-cols-5' : 'grid-cols-4',
           props.scrubbing && 'opacity-45',
         )}
       >
-        {TABS.map((tab) => {
+        {TABS.filter(
+          (tab) => tab.id !== 'transform' || props.showTransform,
+        ).map((tab) => {
+          const tabDisabled =
+            disabled || (tab.id === 'compare' && props.compareDisabled === true)
           const active = props.mode === tab.id
           // When the dock is collapsed nothing is "active" — the panel that
           // an active tab represents isn't on screen, so showing the
           // indicator/highlight reads as a lie about the current state.
-          const showActive = active && props.expanded && !disabled
+          const showActive = active && props.expanded && !tabDisabled
           return (
             <m.button
               key={tab.id}
               type="button"
               role="tab"
               aria-selected={showActive}
-              aria-disabled={disabled || undefined}
-              disabled={disabled}
-              whileTap={disabled ? undefined : { scale: 0.96 }}
+              aria-disabled={tabDisabled || undefined}
+              disabled={tabDisabled}
+              whileTap={tabDisabled ? undefined : { scale: 0.96 }}
               transition={TAP_SPRING}
               onClick={() => {
-                if (disabled) return
+                if (tabDisabled) return
                 if (props.mode === tab.id && props.expanded) {
                   props.onCollapse()
                   return
@@ -161,7 +170,7 @@ export function MobileModeDock(props: {
               }}
               className={clsxm(
                 'relative grid min-h-[52px] grid-rows-[auto_auto] place-items-center gap-1 rounded-md px-1 py-1.5 text-[0.64rem] font-semibold uppercase tracking-wide transition-colors',
-                disabled
+                tabDisabled
                   ? 'cursor-not-allowed text-lf-on-photo-ink/35'
                   : showActive
                     ? 'text-lf-on-photo-ink'

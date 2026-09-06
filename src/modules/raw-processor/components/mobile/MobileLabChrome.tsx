@@ -7,6 +7,7 @@ import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
 import { useLayoutEffect, useRef, useState } from 'react'
 
+import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import { DOCK_SPRING } from '../../motion'
 import type { ColorValue } from '../color-fields'
 import type { RawRuntimeReadinessState } from '../raw-runtime-readiness'
@@ -26,6 +27,8 @@ type Row = { label: string; value: string }
 type Step = { index: number; label: string; timing: string }
 
 export function MobileLabChrome(props: {
+  transform?: RawTransformFeature
+  canExport?: boolean
   hasImage: boolean
   tone: ToneValue
   color: ColorValue
@@ -90,6 +93,7 @@ export function MobileLabChrome(props: {
     previewFrameEl: props.previewFrameEl,
     viewMode: props.viewMode,
     onViewModeChange: props.onViewModeChange,
+    compareDisabled: props.transform?.active === true,
   })
 
   // Stage insets: the photo re-fits between the topbar and the dock while
@@ -183,6 +187,8 @@ export function MobileLabChrome(props: {
               onHeightChange={setTopbarHeight}
             />
             <MobileLabModeDock
+              transform={props.transform}
+              canExport={props.canExport}
               mode={mode}
               expanded={dockExpanded && props.hasImage}
               disabled={!props.hasImage || props.isProcessing}

@@ -4,9 +4,11 @@ import type { ReactNode } from 'react'
 
 import { surfaceFade } from '~/lib/spring'
 
+import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
+import { TransformTool } from '../tools/TransformTool'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { AdjustListPanel } from './AdjustListPanel'
 import { MobileComparePanel } from './MobileComparePanel'
@@ -16,6 +18,8 @@ import type { MobileMode } from './MobileModeDock'
 import { MobileModeDock } from './MobileModeDock'
 
 export function MobileLabModeDock({
+  transform,
+  canExport,
   mode,
   expanded,
   disabled,
@@ -43,6 +47,8 @@ export function MobileLabModeDock({
   onSplitOpenChange,
   onInsetChange,
 }: {
+  transform?: RawTransformFeature
+  canExport?: boolean
   mode: MobileMode
   expanded: boolean
   disabled: boolean
@@ -75,13 +81,15 @@ export function MobileLabModeDock({
 }) {
   return (
     <MobileModeDock
+      showTransform={Boolean(transform)}
+      compareDisabled={transform?.active === true}
       mode={mode}
       expanded={expanded}
       disabled={disabled}
       onModeChange={onModeChange}
       onCollapse={onCollapse}
       onOpenMore={onOpenMore}
-      canExport
+      canExport={canExport === true && transform?.active !== true}
       scrubbing={scrubbing}
       onInsetChange={onInsetChange}
       panel={
@@ -90,12 +98,15 @@ export function MobileLabModeDock({
           // Tone needs the wrapper to fill the dock so AdjustListPanel can
           // h-full down and run its own internal scroll. Other modes flow
           // at content-derived height.
-          className={mode === 'tone' ? 'h-full' : undefined}
+          className={
+            mode === 'tone' || mode === 'transform' ? 'h-full' : undefined
+          }
           initial={{ opacity: 0, y: prefersReduced ? 0 : 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={surfaceFade}
         >
           <MobileLabModePanel
+            transform={transform}
             mode={mode}
             tone={tone}
             color={color}
@@ -123,6 +134,7 @@ export function MobileLabModeDock({
 }
 
 function MobileLabModePanel({
+  transform,
   mode,
   tone,
   color,
@@ -143,6 +155,7 @@ function MobileLabModePanel({
   onCompareReset,
   onSplitOpenChange,
 }: {
+  transform?: RawTransformFeature
   mode: MobileMode
   tone: ToneValue
   color: ColorValue
@@ -166,6 +179,17 @@ function MobileLabModePanel({
   onCompareReset: () => void
   onSplitOpenChange: (open: boolean) => void
 }) {
+  if (mode === 'transform') {
+    return transform ? (
+      <div
+        data-mobile-transform-panel
+        className="h-full min-h-0 overflow-y-auto overscroll-contain pr-1"
+      >
+        <TransformTool feature={transform} />
+      </div>
+    ) : null
+  }
+
   if (mode === 'tone') {
     return (
       <AdjustListPanel

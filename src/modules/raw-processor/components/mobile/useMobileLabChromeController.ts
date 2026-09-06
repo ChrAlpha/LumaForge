@@ -12,6 +12,7 @@ interface UseMobileLabChromeControllerInput {
   hasImage: boolean
   isProcessing: boolean
   previewSuspended?: boolean
+  compareDisabled?: boolean
   preferExportMode?: boolean
   previewFrameEl?: HTMLDivElement | null
   viewMode: MobileLabViewMode
@@ -22,6 +23,7 @@ export function useMobileLabChromeController({
   hasImage,
   isProcessing,
   previewSuspended,
+  compareDisabled,
   preferExportMode,
   previewFrameEl,
   viewMode,
@@ -51,6 +53,16 @@ export function useMobileLabChromeController({
     hasImage && previewSuspended === true && !isProcessing
   const handoffActive = hasImage && (isProcessing || previewReleasedReady)
   const focusActive = scrubField !== null
+
+  useEffect(() => {
+    if (!compareDisabled) return
+    compareSplitOpenRef.current = false
+    suppressNextPeekRestore.current = false
+    setCompareSplitOpen(false)
+    setPeeking(false)
+    setMode((current) => (current === 'compare' ? 'transform' : current))
+    if (viewMode !== 'processed') onViewModeChange('processed')
+  }, [compareDisabled, onViewModeChange, viewMode])
 
   useEffect(() => {
     if (hasImage) return
@@ -158,6 +170,7 @@ export function useMobileLabChromeController({
   }
 
   const setCompareSplitMode = (open: boolean) => {
+    if (open && compareDisabled) return
     compareSplitOpenRef.current = open
     suppressNextPeekRestore.current = open
     viewModeBeforePeek.current = open ? 'compare' : 'processed'
@@ -205,7 +218,8 @@ export function useMobileLabChromeController({
     }
   }
 
-  const previewGesturesEnabled = hasImage && !handoffActive && !focusActive
+  const previewGesturesEnabled =
+    hasImage && !handoffActive && !focusActive && !compareDisabled
   useMobilePreviewGestures(previewFrameEl ?? null, {
     enabled: previewGesturesEnabled,
     allowPeek: !compareSplitOpen && !lutBrowserOpen && !moreOpen,
@@ -236,6 +250,7 @@ export function useMobileLabChromeController({
   }
 
   const handleModeChange = (nextMode: MobileMode) => {
+    if (nextMode === 'compare' && compareDisabled) return
     if (nextMode !== 'compare' && compareSplitOpen) {
       setCompareSplitMode(false)
     }

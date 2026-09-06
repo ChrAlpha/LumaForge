@@ -1,5 +1,11 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import {
+  cleanup,
+  render as renderWithRoot,
+  screen,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Provider } from 'jotai'
+import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { viewportAtom } from '~/atoms/viewport'
@@ -14,6 +20,14 @@ import { RawToolSurface } from './RawToolSurface'
 import type { RawToolSurfaceProps } from './RawWorkflowContext'
 import { TONE_NEUTRAL } from './tone-fields'
 import { transformFeatureFixture } from './tools/transform-feature.fixture'
+
+function render(ui: ReactNode) {
+  return renderWithRoot(ui, {
+    wrapper: ({ children }) => (
+      <Provider store={jotaiStore}>{children}</Provider>
+    ),
+  })
+}
 
 const base: RawToolSurfaceProps = {
   activeIntensity: 'standard',
@@ -113,5 +127,85 @@ describe('raw Transform tool surfaces', () => {
     expect(
       screen.queryByRole('button', { name: 'Transform', exact: true }),
     ).toBeNull()
+  })
+
+  it('keeps five mobile tabs visible before a RAW photo is loaded', () => {
+    jotaiStore.set(viewportAtom, {
+      ...jotaiStore.get(viewportAtom),
+      w: 390,
+      sm: false,
+    })
+    render(
+      <RawToolSurface
+        {...base}
+        hasImage={false}
+        transform={transformFeatureFixture()}
+      />,
+    )
+    expect(screen.getAllByRole('tab')).toHaveLength(5)
+    expect(screen.getByRole('tab', { name: 'Transform' })).toBeDisabled()
+  })
+
+  it('opens Transform inside the mobile dock and releases observation when switching tools', async () => {
+    jotaiStore.set(viewportAtom, {
+      ...jotaiStore.get(viewportAtom),
+      w: 390,
+      sm: false,
+    })
+    const stop = vi.fn()
+    const transform = transformFeatureFixture({
+      hasImage: true,
+      observe: vi.fn(() => stop),
+    })
+    const { container } = render(
+      <RawToolSurface {...base} transform={transform} />,
+    )
+    expect(transform.observe).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('tab', { name: 'Transform' }))
+    expect(
+      container.querySelector('[data-mobile-transform-panel]'),
+    ).toHaveClass('h-full', 'overflow-y-auto')
+    expect(container.querySelector('[data-mobile-dock-panel]')).toHaveClass(
+      'h-[min(38vh,264px)]',
+    )
+    expect(transform.observe).toHaveBeenCalledOnce()
+    expect(
+      screen.getByRole('button', { name: 'Reset', exact: true }),
+    ).toBeEnabled()
+    await userEvent.click(screen.getByRole('tab', { name: 'Look' }))
+    expect(stop).toHaveBeenCalledOnce()
+    expect(transform.reset).not.toHaveBeenCalled()
+    expect(transform.demo.loadSource).not.toHaveBeenCalled()
+  })
+
+  it('leaves mobile Compare when Transform becomes active and restores the tab after reset', async () => {
+    jotaiStore.set(viewportAtom, {
+      ...jotaiStore.get(viewportAtom),
+      w: 390,
+      sm: false,
+    })
+    const transform = transformFeatureFixture({ hasImage: true })
+    const { rerender } = render(
+      <RawToolSurface {...base} transform={transform} />,
+    )
+    await userEvent.click(screen.getByRole('tab', { name: 'Compare' }))
+    expect(screen.getByRole('tab', { name: 'Compare' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    rerender(
+      <RawToolSurface {...base} transform={{ ...transform, active: true }} />,
+    )
+    expect(screen.getByRole('tab', { name: 'Compare' })).toBeDisabled()
+    expect(screen.getByRole('tab', { name: 'Transform' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    rerender(<RawToolSurface {...base} transform={transform} />)
+    expect(screen.getByRole('tab', { name: 'Compare' })).toBeEnabled()
+    expect(screen.getByRole('tab', { name: 'Transform' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
   })
 })

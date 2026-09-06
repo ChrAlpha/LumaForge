@@ -39,6 +39,8 @@ export function MobileRawToolSurface() {
 
   return (
     <MobileLabChrome
+      transform={props.transform}
+      canExport={props.canExport}
       hasImage={props.hasImage}
       tone={props.tone}
       color={props.color}
