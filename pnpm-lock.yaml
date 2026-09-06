@@ -259,6 +259,21 @@ importers:
         specifier: ^4.85.0
         version: 4.85.0
 
+  packages/lmfg-agent:
+    dependencies:
+      '@lumaforge/lmfg-mcp':
+        specifier: workspace:*
+        version: link:../lmfg-mcp
+      '@lumaforge/render-engine':
+        specifier: workspace:*
+        version: link:../render-engine
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@4.4.3)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   packages/lmfg-cli:
     dependencies:
       '@lumaforge/luma-color-runtime':

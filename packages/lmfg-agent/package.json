@@ -1,0 +1,21 @@
+{
+  "name": "@lumaforge/lmfg-agent",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A traceable vision agent for subjective RAW editing through lmfg MCP.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@lumaforge/lmfg-mcp": "workspace:*",
+    "@lumaforge/render-engine": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  }
+}
