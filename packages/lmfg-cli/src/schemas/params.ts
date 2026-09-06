@@ -165,5 +165,27 @@ export function mergeRenderParams(
   for (const [key, value] of Object.entries(override)) {
     if (value !== undefined) merged[key] = value
   }
+  if (override.selective_color != null) {
+    const selectiveOverride = SelectiveColorSchema.parse(
+      override.selective_color,
+    )
+    let selectiveColor = base.selective_color
+    for (const band of HSL_BAND_IDS) {
+      const shift = selectiveOverride[band]
+      if (shift === undefined) continue
+      const axes = Object.entries(shift).filter(
+        ([, value]) => value !== undefined,
+      )
+      if (axes.length === 0) continue
+      selectiveColor = {
+        ...selectiveColor,
+        [band]: {
+          ...selectiveColor?.[band],
+          ...Object.fromEntries(axes),
+        },
+      }
+    }
+    merged.selective_color = selectiveColor
+  }
   return RenderParamsSchema.parse(merged)
 }

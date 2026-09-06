@@ -38,6 +38,35 @@ describe('normalizeCandidatePlan', () => {
       }),
     ).toThrow(/duplicate/i)
   })
+
+  it('preserves base color adjustments independently for each candidate', () => {
+    const selectiveColor = {
+      red: { hue: 10 },
+      blue: { saturation: -20 },
+    }
+    const plan = normalizeCandidatePlan({
+      base: { contrast: 20, selective_color: selectiveColor },
+      candidates: [
+        { params: { selective_color: { red: { lightness: 5 } } } },
+        { params: { selective_color: { yellow: { saturation: 15 } } } },
+        { params: { selective_color: null } },
+        {},
+      ],
+    })
+
+    expect(plan.candidates.map(({ params }) => params.selective_color)).toEqual(
+      [
+        { ...selectiveColor, red: { hue: 10, lightness: 5 } },
+        { ...selectiveColor, yellow: { saturation: 15 } },
+        null,
+        selectiveColor,
+      ],
+    )
+    expect(plan.base.selective_color).toEqual(selectiveColor)
+    expect(plan.candidates.map(({ params }) => params.contrast)).toEqual([
+      20, 20, 20, 20,
+    ])
+  })
 })
 
 describe('expandSweepPlan', () => {
