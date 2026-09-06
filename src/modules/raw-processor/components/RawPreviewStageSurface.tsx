@@ -1,3 +1,5 @@
+import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
+
 import type { PipelineStats, RawProcessingPipeline } from '~/lib/gl/pipeline'
 
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
@@ -16,6 +18,8 @@ export function RawPreviewStageSurface({
   onStatsUpdate,
   onPipelineChange,
   onPreviewFrameChange,
+  onCpuProcessedFrame,
+  transformActive,
 }: {
   workflow: UseRawWorkflowReturn
   isCpuMode: boolean
@@ -26,6 +30,8 @@ export function RawPreviewStageSurface({
   onStatsUpdate: (stats: PipelineStats) => void
   onPipelineChange: (pipeline: RawProcessingPipeline | null) => void
   onPreviewFrameChange: (node: HTMLDivElement | null) => void
+  onCpuProcessedFrame?: (frame: CpuPreviewFrame | null) => void
+  transformActive?: boolean
 }) {
   if (isCpuMode && workflow.hasImage) {
     return (
@@ -35,6 +41,9 @@ export function RawPreviewStageSurface({
         params={workflow.params}
         lut={workflow.lutDataRef.current}
         fallbackThumbnailUrl={workflow.embeddedPreviewUrl}
+        onProcessedFrame={onCpuProcessedFrame}
+        previewFrameRef={onPreviewFrameChange}
+        transformActive={transformActive}
       />
     )
   }

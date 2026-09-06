@@ -1,5 +1,6 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
-import { useState } from 'react'
+import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
+import { useEffect, useState } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
@@ -14,6 +15,9 @@ export interface RawCpuPreviewStageProps {
   params: ProcessingParams
   lut: LUTData | null
   fallbackThumbnailUrl: string | null
+  onProcessedFrame?: (frame: CpuPreviewFrame | null) => void
+  previewFrameRef?: (element: HTMLDivElement | null) => void
+  transformActive?: boolean
 }
 
 export function RawCpuPreviewStage({
@@ -22,6 +26,9 @@ export function RawCpuPreviewStage({
   params,
   lut,
   fallbackThumbnailUrl,
+  onProcessedFrame,
+  previewFrameRef,
+  transformActive = false,
 }: RawCpuPreviewStageProps) {
   const { t } = useI18n()
   const [variant, setVariant] = useState<'processed' | 'neutral'>('processed')
@@ -51,22 +58,41 @@ export function RawCpuPreviewStage({
       userVibrance: params.userVibrance,
       selectiveColor: params.selectiveColor,
     },
-    variant,
+    variant: transformActive ? 'processed' : variant,
   })
+
+  useEffect(() => {
+    onProcessedFrame?.(
+      !cpuPreview.inFlight &&
+        !cpuPreview.failureReason &&
+        (transformActive || variant === 'processed')
+        ? cpuPreview.frame
+        : null,
+    )
+  }, [
+    cpuPreview.failureReason,
+    cpuPreview.frame,
+    cpuPreview.inFlight,
+    onProcessedFrame,
+    transformActive,
+    variant,
+  ])
 
   return (
     <section
       className="raw-lab-stage relative flex flex-col"
       aria-label={t('raw.stage.aria')}
     >
-      <CpuPreviewCanvas
-        frame={cpuPreview.frame}
-        inFlight={cpuPreview.inFlight}
-        failureReason={cpuPreview.failureReason}
-        fallbackThumbnailUrl={fallbackThumbnailUrl}
-        className="min-h-0 flex-1"
-      />
-      {image && (
+      <div ref={previewFrameRef} className="relative min-h-0 flex-1">
+        <CpuPreviewCanvas
+          frame={cpuPreview.frame}
+          inFlight={cpuPreview.inFlight}
+          failureReason={cpuPreview.failureReason}
+          fallbackThumbnailUrl={fallbackThumbnailUrl}
+          className="h-full min-h-0"
+        />
+      </div>
+      {image && !transformActive && (
         <div className="flex shrink-0 justify-center gap-2 px-3 py-2">
           <button
             type="button"
