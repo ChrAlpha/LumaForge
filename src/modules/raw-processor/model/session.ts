@@ -141,6 +141,7 @@ export type ImageSession = {
   }
   previewBundle: PreviewBundle
   activeStyle: StyleAsset | null
+  previewTransformActive?: boolean
   lutProfileSelection?: LUTContractSelectionState
   viewState: {
     mode: 'processed' | 'original' | 'compare'

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
 
+import { PREVIEW_TRANSFORM_EXPORT_REASON } from '../../../model/derive-session'
 import type { ImageSession } from '../../../model/session'
 import { useHqPreviewExportAction } from './useHqPreviewExportAction'
 
@@ -73,6 +74,42 @@ function createDecodedImage(): DecodedImage {
 }
 
 describe('useHqPreviewExportAction', () => {
+  it('rejects a previously captured HQ action after geometry becomes active', async () => {
+    const sessionRef = { current: createSession() }
+    const renderToHiddenCanvas = vi.fn()
+    const setStatus = vi.fn()
+    const error = vi.fn()
+    const { result } = renderHook(() =>
+      useHqPreviewExportAction({
+        sessionRef,
+        decodedImageRef: { current: createDecodedImage() },
+        pipelineRef: { current: { renderToHiddenCanvas } },
+        isMountedRef: { current: true },
+        exportGraphVersionRef: { current: 1 },
+        exportAbortControllerRef: { current: null },
+        previewCopyCanvasRef: { current: null },
+        previewSuspended: false,
+        abortExportWork: vi.fn(),
+        queueExportResultResourceDisposal: vi.fn(),
+        registerExportResultResource: vi.fn(),
+        scheduleToast: (notify) => notify(),
+        setProgress: vi.fn(),
+        setSession: vi.fn(),
+        setStatus,
+        toast: { success: vi.fn(), error },
+      }),
+    )
+    const exportPreviewImage = result.current.exportPreviewImage
+    sessionRef.current = { ...sessionRef.current, previewTransformActive: true }
+    await exportPreviewImage()
+
+    expect(renderToHiddenCanvas).not.toHaveBeenCalled()
+    expect(setStatus).not.toHaveBeenCalled()
+    expect(error).toHaveBeenCalledWith('HQ preview export is not ready', {
+      description: PREVIEW_TRANSFORM_EXPORT_REASON,
+    })
+  })
+
   it('exports the bounded HQ preview and stores the completed result on the active session', async () => {
     class FakeClipboardItem {
       static supports(type: string) {

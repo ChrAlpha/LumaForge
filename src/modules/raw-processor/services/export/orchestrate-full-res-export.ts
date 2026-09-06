@@ -141,9 +141,11 @@ export async function orchestrateFullResExport(
   const rawRenderExposure =
     ctx.atoms.decodedImageRef.current?.renderExposure ?? null
   const sourceFile = ctx.atoms.loadedImage.file
+  const currentSession = ctx.refs.sessionRef.current
   const exportReadiness = deriveFullResExportReadiness({
     sourceFile,
-    session: ctx.atoms.session,
+    session:
+      currentSession?.id === ctx.atoms.session?.id ? currentSession : null,
     rawRenderExposure,
   })
   if (!exportReadiness.canExport) {

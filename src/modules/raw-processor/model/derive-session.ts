@@ -2,6 +2,9 @@ import { resolveUnsupportedLUTOutputReason } from '@lumaforge/luma-color-runtime
 
 import type { ImageSession, PreviewBundle } from './session'
 
+export const PREVIEW_TRANSFORM_EXPORT_REASON =
+  'Transform changes support preview JPEG only. Reset Transform before exporting a standard JPEG.'
+
 export function selectDisplaySource(
   preview: PreviewBundle,
 ): 'embedded' | 'quick' | 'bounded-hq' | 'none' {
@@ -18,6 +21,8 @@ export function deriveCanEdit(session: ImageSession): boolean {
 function deriveUnsupportedExportPipelineReason(
   session: ImageSession,
 ): string | undefined {
+  if (session.previewTransformActive) return PREVIEW_TRANSFORM_EXPORT_REASON
+
   const activeStyle = session.activeStyle
   if (!activeStyle) {
     return undefined

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { PREVIEW_TRANSFORM_EXPORT_REASON } from '../../model/derive-session'
 import type { ImageSession } from '../../model/session'
 import { deriveFullResExportReadiness } from './export-readiness'
 
@@ -48,6 +49,25 @@ function createSession(
 describe('export readiness helpers', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('blocks preview geometry and restores full-resolution eligibility after reset', () => {
+    const input = {
+      sourceFile: new File(['raw'], 'frame.ARW'),
+      session: { ...createSession(), previewTransformActive: true },
+      rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' as const },
+    }
+
+    expect(deriveFullResExportReadiness(input)).toEqual({
+      canExport: false,
+      disabledReason: PREVIEW_TRANSFORM_EXPORT_REASON,
+    })
+    expect(
+      deriveFullResExportReadiness({
+        ...input,
+        session: { ...input.session, previewTransformActive: false },
+      }).canExport,
+    ).toBe(true)
   })
 
   it('requires a source file and active session before full-resolution export is ready', () => {

@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 import type { PipelineStats } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
+import { PREVIEW_TRANSFORM_EXPORT_REASON } from '../../../model/derive-session'
 import type { ExportShareCapability } from '../../../model/export-result'
 import type {
   DisplaySource,
@@ -76,21 +77,24 @@ export function useExportDerivedState({
       (status === 'exporting' || previewEvacuatedForReadyExport)
     const hqPreviewImage = decodedImageRef.current
     const canPreviewExport =
+      !session?.previewTransformActive &&
       status === 'ready' &&
       !previewSuspended &&
       displaySource === 'bounded-hq' &&
       hqPreviewImage?.source === 'bounded-hq' &&
       Boolean(stats?.inputSize)
-    const previewExportDisabledReason = !hasImage
-      ? 'Load a RAW file before exporting an HQ preview JPEG.'
-      : previewSuspended
-        ? 'Restore the preview before exporting an HQ preview JPEG.'
-        : displaySource !== 'bounded-hq' ||
-            hqPreviewImage?.source !== 'bounded-hq'
-          ? 'HQ preview export is available after the bounded HQ preview finishes.'
-          : !stats?.inputSize
-            ? 'HQ preview export is not ready.'
-            : undefined
+    const previewExportDisabledReason = session?.previewTransformActive
+      ? PREVIEW_TRANSFORM_EXPORT_REASON
+      : !hasImage
+        ? 'Load a RAW file before exporting an HQ preview JPEG.'
+        : previewSuspended
+          ? 'Restore the preview before exporting an HQ preview JPEG.'
+          : displaySource !== 'bounded-hq' ||
+              hqPreviewImage?.source !== 'bounded-hq'
+            ? 'HQ preview export is available after the bounded HQ preview finishes.'
+            : !stats?.inputSize
+              ? 'HQ preview export is not ready.'
+              : undefined
 
     return {
       canExport,

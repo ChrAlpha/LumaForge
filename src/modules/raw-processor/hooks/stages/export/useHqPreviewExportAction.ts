@@ -5,6 +5,7 @@ import { toast as sonnerToast } from 'sonner'
 import type { RawProcessingPipeline } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
+import { PREVIEW_TRANSFORM_EXPORT_REASON } from '../../../model/derive-session'
 import type { ExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
@@ -87,6 +88,15 @@ export function useHqPreviewExportAction({
     const sourceFile = activeSession?.sourceFile.file
     const image = decodedImageRef.current
     const pipeline = pipelineRef.current
+
+    if (activeSession?.previewTransformActive) {
+      scheduleToast(() =>
+        toast.error('HQ preview export is not ready', {
+          description: PREVIEW_TRANSFORM_EXPORT_REASON,
+        }),
+      )
+      return
+    }
 
     if (
       !activeSession ||

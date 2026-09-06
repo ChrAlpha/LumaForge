@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { PipelineStats } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
+import { PREVIEW_TRANSFORM_EXPORT_REASON } from '../../../model/derive-session'
 import type { ExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
 import { useExportDerivedState } from './useExportDerivedState'
@@ -86,6 +87,33 @@ function createBoundedHqImage(): DecodedImage {
 }
 
 describe('useExportDerivedState', () => {
+  it('blocks both standard JPEG actions while preview geometry is active', () => {
+    const session = { ...createSession(), previewTransformActive: true }
+    const { result } = renderHook(() =>
+      useExportDerivedState({
+        session,
+        discoveredRecovery: { status: 'none' },
+        decodedImageRef: { current: createBoundedHqImage() },
+        embeddedPreviewUrl: null,
+        status: 'ready',
+        hasImage: true,
+        displaySource: 'bounded-hq',
+        sourceFile: session.sourceFile.file ?? null,
+        rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+        stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+      }),
+    )
+
+    expect(result.current.canExport).toBe(false)
+    expect(result.current.canPreviewExport).toBe(false)
+    expect(result.current.exportDisabledReason).toBe(
+      PREVIEW_TRANSFORM_EXPORT_REASON,
+    )
+    expect(result.current.previewExportDisabledReason).toBe(
+      PREVIEW_TRANSFORM_EXPORT_REASON,
+    )
+  })
+
   it('enables HQ preview export for a ready bounded-HQ decoded preview', () => {
     const session = createSession()
     const stats = { inputSize: { width: 800, height: 600 } } as PipelineStats
