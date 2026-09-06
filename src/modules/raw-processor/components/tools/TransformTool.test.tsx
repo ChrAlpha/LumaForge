@@ -90,9 +90,10 @@ describe('transformTool', () => {
         'Not enough reliable structure. Try manual adjustments.',
       ),
     ).toHaveAttribute('role', 'status')
-    expect(
-      screen.getByRole('slider', { name: 'Rotate', exact: true }),
-    ).not.toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('slider', { name: 'Rotate' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     rerender(
       <TransformTool
         feature={{ ...feature, demo: { ...feature.demo, mode: 'off' } }}

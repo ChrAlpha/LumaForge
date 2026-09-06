@@ -74,6 +74,18 @@ afterEach(() => {
 })
 
 describe('rAW Transform feature', () => {
+  it('clears transient geometry on leaving the workspace without invalidating neutral exports', () => {
+    const active = workflow()
+    active.previewTransform!.active = true
+    const first = renderHook(() => useRawTransformFeature(active, false))
+    first.unmount()
+    expect(active.previewTransform!.setActive).toHaveBeenCalledWith(false)
+    const neutral = workflow()
+    const second = renderHook(() => useRawTransformFeature(neutral, false))
+    second.unmount()
+    expect(neutral.previewTransform!.setActive).not.toHaveBeenCalled()
+  })
+
   it('captures on demand and refreshes color without reopening the photo or resetting geometry', async () => {
     const initial = workflow()
     const { result, rerender, unmount } = renderHook(

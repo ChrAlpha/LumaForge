@@ -39,14 +39,18 @@ export function useRawTransformFeature(
   const lastCapture = useRef<string | null>(null)
   const generation = useRef(0)
   const { loadSource, clearSource } = demo
-  const image = workflow.decodedImageRef.current
+  const image = workflow.decodedImageRef?.current
   const active = workflow.previewTransform?.active === true
+  const activeRef = useRef(active)
+  activeRef.current = active
   const needed = observing || active
-  const colorKey = transformInputKey(
-    workflow.decodedImageVersion,
-    workflow.lutDataVersion,
-    workflow.params,
-  )
+  const colorKey = sourceId
+    ? transformInputKey(
+        workflow.decodedImageVersion,
+        workflow.lutDataVersion,
+        workflow.params,
+      )
+    : ''
   const key = `${sourceId}|${colorKey}|${isCpuMode ? (cpuFrame?.requestId ?? 'none') : 'gpu'}`
   const available = Boolean(
     sourceId &&
@@ -82,8 +86,10 @@ export function useRawTransformFeature(
       !image ||
       !sourceId ||
       lastCapture.current === key
-    )
+    ) {
+      setCapturing(false)
       return
+    }
     const token = ++generation.current
     setCapturing(true)
     setCaptureError(false)
@@ -127,6 +133,13 @@ export function useRawTransformFeature(
     workflow.stats,
   ])
 
+  const setActiveRef = useRef(workflow.previewTransform?.setActive)
+  setActiveRef.current = workflow.previewTransform?.setActive
+  const disposeIntent = useCallback(() => {
+    if (activeRef.current) setActiveRef.current?.(false)
+  }, [])
+  useEffect(() => disposeIntent, [disposeIntent])
+
   const observe = useCallback(() => {
     setObserving(true)
     return () => setObserving(false)
@@ -157,6 +170,7 @@ export function useRawTransformFeature(
     setShowGrid(false)
   }
   const current =
+    Boolean(demo.result) &&
     available &&
     lastCapture.current === key &&
     !capturing &&
@@ -179,11 +193,20 @@ export function useRawTransformFeature(
     captureError,
     current,
     before,
-    setBefore,
+    setBefore: (value: boolean) => {
+      workflow.setViewMode('processed')
+      setBefore(value)
+    },
     showLines,
-    setShowLines,
+    setShowLines: (value: boolean) => {
+      workflow.setViewMode('processed')
+      setShowLines(value)
+    },
     showGrid,
-    setShowGrid,
+    setShowGrid: (value: boolean) => {
+      workflow.setViewMode('processed')
+      setShowGrid(value)
+    },
     setMode,
     setManual,
     setConstrainCrop,

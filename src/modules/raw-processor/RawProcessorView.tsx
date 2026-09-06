@@ -20,9 +20,11 @@ import {
 import { CpuPreviewBanner } from './components/CpuPreviewBanner'
 import { RawPreviewStageSurface } from './components/RawPreviewStageSurface'
 import { RawResetConfirmationDialog } from './components/RawResetConfirmationDialog'
+import { RawTransformOverlay } from './components/RawTransformOverlay'
 import { RawWorkflowToolProvider } from './components/RawWorkflowToolProvider'
 import { useRawWorkflow } from './hooks'
 import { useRawProcessorViewController } from './hooks/useRawProcessorViewController'
+import { useRawTransformFeature } from './hooks/useRawTransformFeature'
 
 export interface RawProcessorViewProps {
   className?: string
@@ -80,6 +82,7 @@ function RawProcessorViewInner({
     workflow: useRawWorkflow(),
   })
   const { workflow } = view
+  const transform = useRawTransformFeature(workflow, view.isCpuMode)
   const {
     status,
     error,
@@ -143,9 +146,12 @@ function RawProcessorViewInner({
           onStatsUpdate={view.handleStatsUpdate}
           onPipelineChange={view.handlePipelineChange}
           onPreviewFrameChange={view.setPreviewFrameEl}
+          onCpuProcessedFrame={transform.setCpuFrame}
+          transformActive={transform.active}
         />
 
         <RawWorkflowToolProvider
+          transform={transform}
           workflow={workflow}
           onlineLutSources={view.onlineLutSources}
           isCpuMode={view.isCpuMode}
@@ -163,6 +169,8 @@ function RawProcessorViewInner({
           <RawToolSurface />
         </RawWorkflowToolProvider>
       </div>
+
+      <RawTransformOverlay feature={transform} target={view.previewFrameEl} />
 
       <ErrorOverlay
         visible={status === 'error' && !!error}

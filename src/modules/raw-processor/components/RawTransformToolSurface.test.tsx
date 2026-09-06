@@ -97,9 +97,7 @@ describe('raw Transform tool surfaces', () => {
     const transform = transformFeatureFixture()
     render(<RawToolSurface {...base} hasImage={false} transform={transform} />)
     expect(transform.observe).not.toHaveBeenCalled()
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Transform', exact: true }),
-    )
+    await userEvent.click(screen.getByRole('button', { name: 'Transform' }))
     expect(
       screen.getByText('Open a RAW photo to adjust its perspective.'),
     ).toBeInTheDocument()
@@ -114,9 +112,7 @@ describe('raw Transform tool surfaces', () => {
         transform={transformFeatureFixture({ active: true, hasImage: true })}
       />,
     )
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Compare', exact: true }),
-    )
+    await userEvent.click(screen.getByRole('button', { name: 'Compare' }))
     expect(
       screen.getByRole('button', { name: 'Reset compare view' }),
     ).toBeDisabled()
@@ -124,9 +120,7 @@ describe('raw Transform tool surfaces', () => {
 
   it('keeps prior surfaces valid without an optional Transform feature', () => {
     render(<RawToolSurface {...base} />)
-    expect(
-      screen.queryByRole('button', { name: 'Transform', exact: true }),
-    ).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Transform' })).toBeNull()
   })
 
   it('keeps five mobile tabs visible before a RAW photo is loaded', () => {
@@ -169,9 +163,7 @@ describe('raw Transform tool surfaces', () => {
       'h-[min(38vh,264px)]',
     )
     expect(transform.observe).toHaveBeenCalledOnce()
-    expect(
-      screen.getByRole('button', { name: 'Reset', exact: true }),
-    ).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeEnabled()
     await userEvent.click(screen.getByRole('tab', { name: 'Look' }))
     expect(stop).toHaveBeenCalledOnce()
     expect(transform.reset).not.toHaveBeenCalled()
