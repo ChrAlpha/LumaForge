@@ -92,6 +92,21 @@ async function waitForTransform(page: Page) {
   await expect(transformTool(page).getByRole('alert')).toHaveCount(0)
 }
 
+async function expectCpuNoticeBelowHeader(page: Page) {
+  if (!isMobile(page)) return
+  const header = page.getByRole('banner')
+  const dismiss = page.getByRole('button', { name: 'Dismiss', exact: true })
+  await expect(header).toBeVisible()
+  await expect(dismiss).toBeVisible()
+  await expect
+    .poll(async () => {
+      const topbar = (await header.boundingBox())!
+      const notice = (await dismiss.boundingBox())!
+      return notice.y - topbar.y - topbar.height
+    })
+    .toBeGreaterThanOrEqual(0)
+}
+
 async function snapshot(page: Page) {
   await expect(page.locator('[data-raw-transform-preview]')).toHaveAttribute(
     'aria-busy',
@@ -202,8 +217,10 @@ for (const preview of ['gpu', 'cpu'] as const) {
       localStorage.setItem('lumaforge.locale', 'en')
     })
     await page.goto(preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw')
+    if (preview === 'cpu') await expectCpuNoticeBelowHeader(page)
     await loadRaw(page)
     if (preview === 'cpu') {
+      await expectCpuNoticeBelowHeader(page)
       await expect(page.getByText(/GPU preview unavailable/)).toBeVisible()
       await expect(page.getByTestId('cpu-preview-unavailable')).toHaveCount(0)
       await expect(page.locator('.raw-preview-canvas')).toHaveCount(0)

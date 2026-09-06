@@ -112,11 +112,13 @@ export function MobileLabChrome(props: {
     if (!shell) return
     shell.style.setProperty('--raw-stage-inset-top', `${insetTop}px`)
     shell.style.setProperty('--raw-stage-inset-bottom', `${insetBottom}px`)
+    shell.style.setProperty('--raw-topbar-height', `${topbarHeight}px`)
     return () => {
       shell.style.removeProperty('--raw-stage-inset-top')
       shell.style.removeProperty('--raw-stage-inset-bottom')
+      shell.style.removeProperty('--raw-topbar-height')
     }
-  }, [insetBottom, insetTop])
+  }, [insetBottom, insetTop, topbarHeight])
 
   return (
     <div

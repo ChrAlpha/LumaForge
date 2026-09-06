@@ -127,7 +127,7 @@ function RawProcessorViewInner({
         <CpuPreviewBanner
           reason={view.cpuPreviewReason}
           onDismiss={() => view.setCpuPreviewBannerDismissed(true)}
-          className="mx-3 mt-2 max-[640px]:mx-2"
+          className="mx-3 mt-2 max-[640px]:mx-2 max-[640px]:translate-y-[var(--raw-topbar-height,0px)]"
         />
       )}
 
