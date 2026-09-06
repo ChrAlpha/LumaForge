@@ -163,6 +163,24 @@ describe('image-based Upright analysis', () => {
     expect(analysis.solutions.auto.status).toBe('insufficient')
   })
 
+  it.each([-30, -25, 25, 30])(
+    'does not automatically rotate diagonal-only strokes by %s degrees',
+    (degrees) => {
+      const analysis = analyzeUpright(
+        rasterize(
+          rotationMatrix(degrees, width / height),
+          'building',
+          false,
+          0,
+        ),
+      )
+      expect(analysis.solutions.level.status).toBe('insufficient')
+      expect(analysis.solutions.vertical.status).toBe('corrected')
+      expect(analysis.solutions.auto.status).toBe('insufficient')
+      expect(analysis.solutions.auto.matrix).toEqual(identityMatrix())
+    },
+  )
+
   it('detects and corrects roll from raster pixels', () => {
     const distortion = rotationMatrix(7, width / height)
     const analysis = analyzeUpright(rasterize(distortion))

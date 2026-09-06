@@ -261,7 +261,10 @@ export function analyzeUpright(image: AnalysisImage): UprightAnalysis {
     if (
       candidate.status === 'insufficient' ||
       candidate.confidence < minimumConfidence ||
-      (mode === 'vertical' && !horizontal && (vertical?.count ?? 0) < 4) ||
+      (mode === 'vertical' &&
+        !horizontal &&
+        ((vertical?.count ?? 0) < 4 ||
+          Math.abs(candidate.rotationDegrees) >= 20)) ||
       cost > 0.85
     )
       continue
