@@ -137,8 +137,26 @@ describe('compare handle interaction contract', () => {
       rawLabEffectsCss,
       '@media (max-width: 640px)',
     )
-    expect(mobileMedia).toContain('translateY(0.5px)')
+    // `translate`, not `transform`: motion components write transform inline.
+    expect(mobileMedia).toContain('translate: 0 0.5px')
     expect(mobileMedia).toContain('[data-mobile-topbar] button')
     expect(mobileMedia).toContain('[data-adjust-section-chrome] button')
+  })
+})
+
+describe('fixed workspace frames never scroll', () => {
+  it('clips the shell, stage, and tool rail instead of hiding overflow', () => {
+    const surfaceCss = readFileSync(
+      resolve(process.cwd(), 'src/modules/raw-processor/raw-lab.surface.css'),
+      'utf8',
+    )
+    const rule = extractRuleBody(
+      surfaceCss,
+      '.raw-lab,\n.raw-lab-shell,\n.raw-lab-stage,\n.raw-tool-surface',
+    )
+    // `hidden` first as the fallback, `clip` to remove the scroll container
+    // so a focus scroll cannot displace the workspace permanently.
+    expect(rule).toContain('overflow: hidden')
+    expect(rule).toContain('overflow: clip')
   })
 })

@@ -32,6 +32,11 @@ export interface UseSliderScrubOptions {
   min: number
   max: number
   step: number
+  /**
+   * The value a field returns to. Defaults to 0, which every /raw field uses
+   * today; the sticky-zero park and the tap capture window both anchor here.
+   */
+  neutral?: number
   disabled?: boolean
   onChange: (value: number) => void
   /** Fires once when a scrub locks and once when it ends. Taps do not scrub. */
@@ -103,6 +108,7 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
     min,
     max,
     step,
+    neutral = 0,
     disabled = false,
     onChange,
     onScrubChange,
@@ -111,6 +117,7 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
   } = options
   const hostRef = useRef<HTMLElement | null>(null)
   const sessionRef = useRef<ScrubSession | null>(null)
+  const glideFrameRef = useRef<number | null>(null)
   const pointerIdRef = useRef<number | null>(null)
   const lastEmittedRef = useRef<number | null>(null)
   const lastGainRef = useRef<ScrubGainBand>('full')
@@ -141,11 +148,19 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
 
   const teardownRef = useRef<(() => void) | null>(null)
 
+  const stopGlide = useCallback(() => {
+    const frame = glideFrameRef.current
+    if (frame === null) return
+    glideFrameRef.current = null
+    hostRef.current?.ownerDocument.defaultView?.cancelAnimationFrame(frame)
+  }, [])
+
   const finish = useCallback(
     (wasScrubbing: boolean) => {
       sessionRef.current = null
       pointerIdRef.current = null
       lastEmittedRef.current = null
+      stopGlide()
       teardownRef.current?.()
       teardownRef.current = null
       emitGain('full')
@@ -154,7 +169,7 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
         latest.current.onScrubChange?.(false)
       }
     },
-    [emitGain],
+    [emitGain, stopGlide],
   )
 
   const onPointerDownCapture = useCallback(
@@ -165,6 +180,8 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
       if (event.isPrimary === false) return
       if (typeof event.button === 'number' && event.button !== 0) return
       if (sessionRef.current) return
+      // Any press arrests a coasting list, the way a native scroller does.
+      stopGlide()
       const origin = event.target as HTMLElement | null
       if (origin?.closest?.(INTERACTIVE_SELECTOR)) return
       // Radix must not see this pointerdown: stopping propagation during the
@@ -192,6 +209,7 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
         min,
         max,
         step,
+        neutral,
         track: readTrackGeometry(host),
       })
       sessionRef.current = session
@@ -217,6 +235,13 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
       const onDocMove = (native: PointerEvent) => {
         const active = sessionRef.current
         if (!active || native.pointerId !== pointerIdRef.current) return
+        // A mouse-up delivered outside the document (browser chrome, another
+        // window) never reaches these listeners. The next move without a held
+        // button is the signal that the gesture is already over.
+        if (pointerType === 'mouse' && native.buttons === 0) {
+          onDocEnd(native)
+          return
+        }
         if (scrollTarget) {
           const now = native.timeStamp || Date.now()
           const dt = now - lastScrollAt
@@ -258,20 +283,24 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
       }
 
       const glide = (scroller: HTMLElement, velocity: number) => {
-        const raf = host.ownerDocument.defaultView?.requestAnimationFrame
-        if (!raf || Math.abs(velocity) < SCROLL_MOMENTUM_MIN_VELOCITY) return
+        const view = host.ownerDocument.defaultView
+        if (!view?.requestAnimationFrame) return
+        if (Math.abs(velocity) < SCROLL_MOMENTUM_MIN_VELOCITY) return
         let v = velocity
-        let last = performance.now()
-        const step = (now: number) => {
-          const dt = now - last
+        let last = view.performance.now()
+        // The frame handle lives in a ref so a new press, a new flick, or an
+        // unmount can arrest the glide. A scroll view that keeps coasting
+        // under a finger is the tell of a hand-rolled scroller.
+        const advance = (now: number) => {
+          glideFrameRef.current = null
+          const elapsed = now - last
           last = now
-          scroller.scrollTop -= v * dt
-          v *= SCROLL_MOMENTUM_DECAY ** (dt / 16.67)
-          if (Math.abs(v) >= SCROLL_MOMENTUM_MIN_VELOCITY) {
-            host.ownerDocument.defaultView?.requestAnimationFrame(step)
-          }
+          scroller.scrollTop -= v * elapsed
+          v *= SCROLL_MOMENTUM_DECAY ** (elapsed / 16.67)
+          if (Math.abs(v) < SCROLL_MOMENTUM_MIN_VELOCITY) return
+          glideFrameRef.current = view.requestAnimationFrame(advance)
         }
-        host.ownerDocument.defaultView?.requestAnimationFrame(step)
+        glideFrameRef.current = view.requestAnimationFrame(advance)
       }
 
       const onDocEnd = (native: PointerEvent) => {
@@ -307,19 +336,46 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
         doc.removeEventListener('pointermove', onDocMove, true)
         doc.removeEventListener('pointerup', onDocEnd, true)
         doc.removeEventListener('pointercancel', onDocEnd, true)
+        try {
+          if (host.hasPointerCapture?.(event.pointerId)) {
+            host.releasePointerCapture?.(event.pointerId)
+          }
+        } catch {
+          // Best effort; the session state is authoritative.
+        }
       }
 
       if (session.phase === 'locked') {
+        // Mouse pointers have no implicit capture: without this a drag that
+        // leaves the window stops reporting moves.
+        try {
+          host.setPointerCapture?.(event.pointerId)
+        } catch {
+          // Synthetic pointers can lack an active pointer; the document
+          // listeners remain authoritative.
+        }
         setScrubbing(true)
         latest.current.onScrubChange?.(true)
         emitValue(session.value)
       }
     },
-    [disabled, emitGain, emitValue, finish, max, min, step],
+    [disabled, emitGain, emitValue, finish, max, min, neutral, step, stopGlide],
   )
 
-  // Never leave document listeners behind if the row unmounts mid-gesture.
-  useEffect(() => () => teardownRef.current?.(), [])
+  // Unmounting mid-gesture must close the lifecycle, not just drop the
+  // listeners: a stranded `onScrubChange(true)` leaves the mobile Adjust list
+  // faded to zero and non-interactive with the HUD pinned over the photo.
+  const scrubbingRef = useRef(false)
+  scrubbingRef.current = scrubbing
+  const finishRef = useRef(finish)
+  finishRef.current = finish
+  useEffect(
+    () => () => {
+      stopGlide()
+      finishRef.current(scrubbingRef.current)
+    },
+    [stopGlide],
+  )
 
   const onDoubleClick = useCallback(() => {
     if (disabled) return

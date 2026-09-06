@@ -214,6 +214,20 @@ test('keeps the loaded mobile export panel clear of the toolbar', async ({
     }),
   ).toBeVisible()
 
+  // The dock panel enters on a spring (DOCK_SPRING). Sampling mid-flight
+  // reports the panel a fraction of a pixel below the toolbar, which is not
+  // what this test is about; wait for the transform to settle first.
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const panel = document.querySelector<HTMLElement>(
+          '[data-mobile-dock] > *',
+        )
+        return panel ? getComputedStyle(panel).transform : 'missing'
+      }),
+    )
+    .toBe('none')
+
   const metrics = await page.evaluate(() => {
     const documentRoot = document.documentElement
     const dock = document.querySelector<HTMLElement>('[data-mobile-dock]')

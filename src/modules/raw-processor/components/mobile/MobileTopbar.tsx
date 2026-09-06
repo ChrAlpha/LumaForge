@@ -82,6 +82,8 @@ export function MobileTopbar(props: {
           {title}
         </h1>
         <p className="m-0 truncate text-[0.68rem] leading-tight text-lf-on-photo-ink/72 tabular-nums">
+          {/* Glance cue only. The support level is named in the meta string
+              beside it, so the state is never colour-alone. */}
           {props.hasImage && (
             <span
               aria-hidden="true"

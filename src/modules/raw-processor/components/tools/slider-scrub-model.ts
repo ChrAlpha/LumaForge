@@ -37,6 +37,8 @@ export interface ScrubSessionInput {
   min: number
   max: number
   step: number
+  /** Value the field returns to; the sticky park and tap capture anchor here. */
+  neutral?: number
   track: ScrubTrackGeometry
 }
 
@@ -60,7 +62,7 @@ export interface ScrubEndResult {
 
 /** Travel before a touch gesture commits to horizontal scrub or vertical scroll. */
 export const SCRUB_LOCK_SLOP_PX = 6
-/** Pointer within this many px of the neutral tick snaps to exactly 0. */
+/** Pointer within this many px of the neutral tick snaps exactly to it. */
 export const SCRUB_ZERO_CAPTURE_PX = 4
 /** Horizontal travel required to leave the sticky zero once parked. */
 export const SCRUB_STICKY_ZERO_RELEASE_PX = 10
@@ -117,9 +119,10 @@ export function createScrubSession(input: ScrubSessionInput): ScrubSession {
     input.track.width > 0 ? input.track.width : SCRUB_FALLBACK_TRACK_WIDTH
   const hasGeometry = input.track.width > 0
   const unitsPerPx = span / trackWidth
-  const zeroInDomain = min < 0 && max > 0
+  const neutral = input.neutral ?? 0
+  const zeroInDomain = min < neutral && max > neutral
   const zeroX = hasGeometry
-    ? input.track.left + ((0 - min) / span) * trackWidth
+    ? input.track.left + ((neutral - min) / span) * trackWidth
     : Number.NaN
 
   let phase: ScrubPhase = 'pending'
@@ -127,13 +130,13 @@ export function createScrubSession(input: ScrubSessionInput): ScrubSession {
   let value = quantize(input.startValue, step, min, max)
   let gain: ScrubGainBand = 'full'
   let lastX = input.startX
-  let parkedAtZero = false
+  let parkedAtNeutral = false
   let stickyTravelPx = 0
 
   const valueAtX = (x: number) => {
     if (!hasGeometry) return continuous
     if (zeroInDomain && Math.abs(x - zeroX) <= SCRUB_ZERO_CAPTURE_PX) {
-      return 0
+      return neutral
     }
     const t = clamp((x - input.track.left) / trackWidth, 0, 1)
     return min + t * span
@@ -149,7 +152,7 @@ export function createScrubSession(input: ScrubSessionInput): ScrubSession {
     commit(valueAtX(x))
     // The sticky zero only arms when a scrub crosses neutral mid-gesture;
     // a lock that lands on 0 must still follow the pointer immediately.
-    parkedAtZero = false
+    parkedAtNeutral = false
     stickyTravelPx = 0
     lastX = x
   }
@@ -174,31 +177,39 @@ export function createScrubSession(input: ScrubSessionInput): ScrubSession {
     gain = band
     if (dxPx === 0) return
 
-    if (parkedAtZero) {
+    if (parkedAtNeutral) {
       stickyTravelPx += dxPx
       if (Math.abs(stickyTravelPx) < SCRUB_STICKY_ZERO_RELEASE_PX) {
-        commit(0)
+        commit(neutral)
         return
       }
-      parkedAtZero = false
+      parkedAtNeutral = false
       const overshoot =
         stickyTravelPx -
         Math.sign(stickyTravelPx) * SCRUB_STICKY_ZERO_RELEASE_PX
       stickyTravelPx = 0
       commit(
-        Math.sign(overshoot || dxPx) * step + overshoot * unitsPerPx * factor,
+        neutral +
+          Math.sign(overshoot || dxPx) * step +
+          overshoot * unitsPerPx * factor,
       )
       return
     }
 
     const prev = continuous
     const next = prev + dxPx * unitsPerPx * factor
+    // Sticky zero only engages when a scrub *crosses* neutral. Parking on the
+    // way out of neutral would put a dead zone exactly where fine control
+    // matters most: a drag that starts at 0 must answer the first pixel, and
+    // a stepped drag arrives as a run of sub-pixel moves.
     const crossedZero =
-      zeroInDomain && prev !== 0 && Math.sign(prev) !== Math.sign(next)
-    if (crossedZero || (zeroInDomain && Math.abs(next) < step / 2)) {
-      parkedAtZero = true
+      zeroInDomain &&
+      prev !== neutral &&
+      Math.sign(prev - neutral) !== Math.sign(next - neutral)
+    if (crossedZero) {
+      parkedAtNeutral = true
       stickyTravelPx = 0
-      commit(0)
+      commit(neutral)
       return
     }
     commit(next)

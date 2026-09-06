@@ -448,6 +448,7 @@ Hover and active states brighten one or two steps; do not invent intermediate va
 - The handle spans the full frame so its hit area stays a 44px column, but the drawn split line is clipped to the photograph through `--raw-compare-track-top` / `--raw-compare-track-height`, published by `CompareSplitHandle` while it measures.
   A line that runs on through the mat reads as chrome instead of as a cut through the image.
 - The RAW / final labels hang off `--raw-compare-track-bottom` so they sit on the photograph, and they draw above the split line rather than under it.
+  They persist at 72% whenever the split is on the image and brighten to full on hover or drag. Side identity matters most at rest: you drag to place the split, then release to judge.
 
 ### The Adjust Scrub Contract
 
@@ -460,8 +461,20 @@ and pointerup.
 - **Touch direction-locks at 6px.** Horizontal is a scrub; vertical is a list scroll, which the row forwards to the surrounding scroller by hand (with momentum) because Chromium steals a `pan-y` gesture the moment the finger drifts vertically, and that drift is exactly the precision gesture below.
 - **Precision comes from vertical distance** on touch: full speed within 28px of the track, half to 84px, quarter to 150px, then a twentieth. Deltas integrate, so crossing a band never jumps the value. The mobile HUD names the band; desktop uses **Shift** for one tenth and shows a `Fine` hint.
 - **Neutral is sticky.** Crossing zero parks there until 10px of further travel, so returning a field to 0 is reliable on a 180px track.
-- **The amber value is the reset** on both surfaces, double-click also resets on desktop, and a press that starts on a control inside the row never starts a scrub.
-- **Scrub is a state, not a hover.** Rows expose `data-scrubbing`; the pointer routinely leaves the row mid-drag, and mobile has no hover to lean on.
+- **The amber value is the reset** on both surfaces, double-click also resets on desktop, and a press that starts on a control inside the row never starts a scrub. The readout stays one element across states, disabled at neutral, so activating it never unmounts the focused control.
+- **Scrub is a state, not a hover.** Rows expose `data-scrubbing`; the pointer routinely leaves the row mid-drag, and mobile has no hover to lean on. The active row is marked with the cool lift wash on both surfaces; amber stays reserved for "this HSL band is open", a state that can coexist with scrubbing on the same row.
+- **Both surfaces share one row anatomy:** label and value on the first line, a full-width track on the second. On a 393px viewport that gives touch a ~341px track, so the coarse pointer finally gets more resolution than the mouse rather than 58% of it.
+- **Neighbours dim, they do not disappear.** A scrub fades sibling rows and the section chrome to 45%: the tonal neighbourhood is what a photographer reads while a value moves.
+
+### Fixed Frames Never Scroll
+
+`.raw-lab`, `.raw-lab-shell`, `.raw-lab-stage`, and the desktop tool rail use
+`overflow: clip` (with `hidden` first as the fallback). `hidden` still creates
+a scroll container: it only removes the scrollbar, so anything that scrolls an
+ancestor programmatically — a browser bringing a focused control into view, an
+automated click, a screen reader moving the caret — can displace the whole
+workspace with no affordance to put it back. Only the rail's inner region
+(`[data-raw-tool-scroll]`) and the mobile Adjust list actually scroll.
 
 ### Mobile Stage Insets
 
@@ -482,10 +495,22 @@ pipeline pass per frame.
 
 ### Press Feedback
 
-A press answers with a `translateY(0.5px)` shift over 120ms on the desktop
-command cluster, the mobile topbar actions, and the mobile Adjust section
-chrome. The mobile dock tabs keep their `scale(0.96)` tap spring. Nothing in
-the chrome should be inert under a finger or a cursor.
+A press answers with a **0.5px downward shift** over 120ms: the desktop
+command cluster, the mobile topbar actions, the mobile Adjust section chrome,
+the mobile Compare panel, and the mobile Export actions. The mobile dock tabs
+are the one documented exception and keep their `scale(0.96)` tap spring,
+because they are a segmented selector rather than a button.
+
+Write the shift with the CSS **`translate` property**, or with motion's
+`whileTap={{ y: 0.5 }}`, never with `transform: translateY(...)`. Several
+chrome buttons are motion components that own `transform` inline every frame;
+a stylesheet `transform` is both swallowed by them and layers an unwanted
+transition on the animation they are running.
+
+Nothing in the chrome should be inert under a finger or a cursor. The shared
+`Button` primitive still carries its own `active:scale`, which surfaces
+outside `/raw` rely on; the chrome's `translate` composes over it rather than
+fighting it.
 
 ### Export Footer (persistent action zone)
 

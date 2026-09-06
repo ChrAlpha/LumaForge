@@ -101,26 +101,3 @@ describe('scrubValueHud', () => {
     )
   })
 })
-
-describe('scrubValueHud gain band', () => {
-  it('labels the precision band while the finger is away from the track', async () => {
-    const { createStore, Provider } = await import('jotai')
-    const { scrubGainBandAtom } = await import('../../state/scrub.atoms')
-    const store = createStore()
-    store.set(scrubGainBandAtom, 'quarter')
-    render(
-      <Provider store={store}>
-        <ScrubValueHud
-          field={{ kind: 'tone', key: 'userContrast' }}
-          tone={{ ...TONE_NEUTRAL, userContrast: 12 }}
-          color={COLOR_NEUTRAL}
-          selectiveColor={undefined}
-        />
-      </Provider>,
-    )
-    const gain = document.querySelector('[data-scrub-gain]')!
-    expect(gain).toHaveAttribute('data-scrub-gain', 'quarter')
-    expect(gain).toHaveTextContent(/quarter speed/i)
-    expect(gain).toHaveClass('opacity-100')
-  })
-})

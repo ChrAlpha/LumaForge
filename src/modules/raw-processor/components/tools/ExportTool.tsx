@@ -210,7 +210,11 @@ export function ExportTool({
             size="sm"
             disabled={!canExport || isProcessing}
             onClick={() => onExport({ quality: 'high', fidelity: 'balanced' })}
-            className="w-full [&_svg]:size-3.5"
+            // A blocked export must not read as Lab Green. The shared
+            // primitive only drops opacity, which on the near-black darkroom
+            // keeps the hue and says "safe to ship" while the rail says the
+            // opposite. Mobile already de-greens; match it.
+            className="w-full [&_svg]:size-3.5 disabled:border-lf-on-photo-bord-soft disabled:bg-lf-on-photo-bg disabled:text-lf-on-photo-ink/35"
           >
             <Download aria-hidden="true" />
             {isProcessing ? t('raw.export.preparing') : t('raw.export.run')}

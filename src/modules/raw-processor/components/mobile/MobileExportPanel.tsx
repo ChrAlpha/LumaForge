@@ -209,7 +209,7 @@ export function MobileExportPanel(props: {
           type="button"
           disabled={!props.canExport || props.isProcessing}
           whileTap={
-            !props.canExport || props.isProcessing ? undefined : { scale: 0.99 }
+            !props.canExport || props.isProcessing ? undefined : { y: 0.5 }
           }
           transition={PANEL_TRANSITION}
           onClick={() =>
@@ -234,7 +234,7 @@ export function MobileExportPanel(props: {
           whileTap={
             !props.canPreviewExport || props.isProcessing
               ? undefined
-              : { scale: 0.99 }
+              : { y: 0.5 }
           }
           transition={PANEL_TRANSITION}
           onClick={() => props.onPreviewExport?.()}

@@ -116,7 +116,9 @@ export function AdjustListPanel(props: AdjustListPanelProps) {
           // segmented-chrome lift language on the desktop.
           'shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.10)]',
           'transition-opacity duration-150',
-          scrubbing && 'pointer-events-none opacity-0',
+          // Dim, do not delete: the section you are in is context a
+          // photographer keeps reading while a value moves.
+          scrubbing && 'pointer-events-none opacity-45',
         )}
       >
         <div

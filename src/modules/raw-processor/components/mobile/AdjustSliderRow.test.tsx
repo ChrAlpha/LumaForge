@@ -56,9 +56,13 @@ describe('adjustSliderRow', () => {
     expect(props.onChange).toHaveBeenCalledWith(13)
   })
 
-  it('renders the value as plain text when neutral', () => {
+  it('keeps the readout mounted but inert when neutral', () => {
+    // One element across states: unmounting a focused reset would drop focus
+    // to the body mid-edit.
     renderRow({ value: 0 })
-    expect(screen.queryByRole('button', { name: /reset contrast/i })).toBeNull()
+    expect(
+      screen.getByRole('button', { name: /reset contrast/i, hidden: true }),
+    ).toBeDisabled()
     expect(screen.getByText('0')).toBeInTheDocument()
   })
 
@@ -66,7 +70,9 @@ describe('adjustSliderRow', () => {
     const props = renderRow({ value: -42 })
     const resetButton = screen.getByRole('button', { name: /reset contrast/i })
     expect(resetButton).toHaveTextContent('-42')
-    expect(resetButton).toHaveClass('h-11')
+    // Secondary target on a two-line row: comfortably past the 24px floor
+    // without growing the row that carries the full-width track.
+    expect(resetButton).toHaveClass('min-h-9')
     await userEvent.click(resetButton)
     expect(props.onChange).toHaveBeenCalledWith(0)
   })
@@ -139,5 +145,87 @@ describe('adjustSliderRow', () => {
     )
     expect(root).not.toHaveAttribute('data-active-scrub')
     expect(root).toHaveAttribute('data-sibling-scrubbing', 'true')
+  })
+})
+
+describe('adjustSliderRow precision band', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    )
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('names the gain band in place of the label while the finger is off the track', async () => {
+    const { createStore, Provider } = await import('jotai')
+    const { I18nProvider } = await import('~/lib/i18n')
+    const store = createStore()
+    render(
+      <Provider store={store}>
+        <I18nProvider>
+          <AdjustSliderRow
+            label="Contrast"
+            value={12}
+            min={-100}
+            max={100}
+            step={1}
+            formatValue={(v) => `${v}`}
+            resetAriaLabel="Reset Contrast"
+            activeScrub
+            onChange={vi.fn()}
+            onScrubChange={vi.fn()}
+          />
+        </I18nProvider>
+      </Provider>,
+    )
+    // At rest the row shows its label; the band replaces it only while a
+    // scrub is in a reduced-gain zone, and that state lives in the hook.
+    expect(screen.getByText('Contrast')).toBeInTheDocument()
+  })
+
+  it('marks an active scrub with the cool lift wash, leaving amber to mean open', () => {
+    const { container } = render(
+      <AdjustSliderRow
+        label="Contrast"
+        value={0}
+        min={-100}
+        max={100}
+        step={1}
+        formatValue={(v) => `${v}`}
+        resetAriaLabel="Reset Contrast"
+        activeScrub
+        onChange={vi.fn()}
+        onScrubChange={vi.fn()}
+      />,
+    )
+    const row = container.querySelector('[data-adjust-slider-row]')!
+    expect(row.className).toContain('bg-[oklch(0.96_0.006_255/0.06)]')
+    expect(row.className).not.toContain('border-lf-amber')
+  })
+
+  it('dims a sibling row rather than removing it while another row scrubs', () => {
+    const { container } = render(
+      <AdjustSliderRow
+        label="Contrast"
+        value={0}
+        min={-100}
+        max={100}
+        step={1}
+        formatValue={(v) => `${v}`}
+        resetAriaLabel="Reset Contrast"
+        siblingScrubbing
+        onChange={vi.fn()}
+        onScrubChange={vi.fn()}
+      />,
+    )
+    const row = container.querySelector('[data-adjust-slider-row]')!
+    expect(row.className).toContain('opacity-45')
   })
 })

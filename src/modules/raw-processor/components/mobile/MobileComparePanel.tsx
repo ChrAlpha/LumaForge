@@ -46,7 +46,7 @@ export function MobileComparePanel({
         <div className="grid gap-2">
           <m.button
             type="button"
-            whileTap={{ scale: 0.97 }}
+            whileTap={{ y: 0.5 }}
             transition={TAP_SPRING}
             onClick={() => onSplitOpenChange(false)}
             className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg-strong px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors hover:border-lf-amber/55 hover:text-lf-amber-soft"
@@ -56,7 +56,7 @@ export function MobileComparePanel({
           </m.button>
           <m.button
             type="button"
-            whileTap={{ scale: 0.97 }}
+            whileTap={{ y: 0.5 }}
             transition={TAP_SPRING}
             onClick={onCompareReset}
             className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg-strong px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors hover:border-lf-amber/55 hover:text-lf-amber-soft"
@@ -94,7 +94,7 @@ export function MobileComparePanel({
       </div>
       <m.button
         type="button"
-        whileTap={{ scale: 0.97 }}
+        whileTap={{ y: 0.5 }}
         transition={TAP_SPRING}
         onClick={() => onSplitOpenChange(true)}
         className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg-strong px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors hover:border-lf-amber/55 hover:text-lf-amber-soft"

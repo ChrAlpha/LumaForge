@@ -2,8 +2,10 @@ import { useSetAtom } from 'jotai'
 
 import { Slider } from '~/components/ui/slider/Slider'
 import { clsxm } from '~/lib/cn'
+import { useI18n } from '~/lib/i18n'
 
 import { scrubGainBandAtom } from '../../state/scrub.atoms'
+import { GAIN_LABEL_KEY } from '../tools/scrub-gain-copy'
 import { useSliderScrub } from '../tools/useSliderScrub'
 
 type AdjustSliderRowProps = {
@@ -38,6 +40,7 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
   const siblingScrubbing = props.siblingScrubbing === true
   const bipolar = props.bipolar !== false
   const setGainBand = useSetAtom(scrubGainBandAtom)
+  const { t } = useI18n()
   const { onChange } = props
 
   // The row owns pointer interaction (direction lock, gain bands, sticky
@@ -52,6 +55,10 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
     onGainChange: setGainBand,
     onReset: () => onChange(0),
   })
+  const gainLabel =
+    scrub.scrubbing && scrub.gain !== 'full'
+      ? t(GAIN_LABEL_KEY[scrub.gain])
+      : null
 
   return (
     <div
@@ -60,37 +67,76 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
       data-sibling-scrubbing={siblingScrubbing || undefined}
       data-scrubbing={scrub.scrubbing || undefined}
       className={clsxm(
-        'grid min-h-11 grid-cols-[92px_minmax(0,1fr)_46px] items-center gap-2.5 rounded-md border border-transparent px-3 transition-[opacity,background-color,border-color] duration-150',
-        activeScrub && 'border-lf-amber/55 bg-lf-on-photo-bg-strong',
-        // Siblings step fully out of the way while another row scrubs so
-        // the photo is the only thing behind the HUD and the active row.
-        siblingScrubbing && 'pointer-events-none opacity-0',
+        'grid gap-1 rounded-md px-3 py-1.5 transition-[opacity,background-color] duration-150',
+        // Two lines, the same anatomy the desktop rail uses: label and value
+        // above, a full-width track below. On a 393px viewport that takes the
+        // track from ~181px to ~341px, so the coarse pointer finally gets more
+        // resolution than the mouse instead of 58% of it.
+        // The whole row is the scrub surface: a press on the label or the
+        // readout grabs the value too, and one `touch-none` surface means one
+        // set of scroll physics across the row. Chromium locks a pan the
+        // moment a `pan-y` surface sees vertical travel, which would eat the
+        // precision excursion the gain bands are built on, so the hook takes
+        // the gesture and forwards vertical intent to the list scroll itself
+        // (momentum included).
+        'touch-none',
+        // Scrub-active uses the cool lift wash, the same mark desktop uses.
+        // Amber is reserved for "this band is open" in the HSL list, and the
+        // two states can coexist on one row.
+        activeScrub && 'bg-[oklch(0.96_0.006_255/0.06)]',
+        // Neighbours dim rather than disappear: the tonal neighbourhood is
+        // what a photographer reads while a value moves, and behind them in
+        // the default layout is the dock, not the photograph.
+        siblingScrubbing && 'pointer-events-none opacity-45',
       )}
+      {...scrub.bind}
     >
-      <span
-        className={clsxm(
-          'truncate text-[0.8rem] font-semibold leading-tight [text-shadow:0_1px_2px_oklch(0_0_0/0.45)]',
-          dirty ? 'text-lf-amber-soft' : 'text-lf-on-photo-ink',
-        )}
-      >
-        {props.label}
-      </span>
+      <div className="flex min-h-6 items-center justify-between gap-2 [text-shadow:0_1px_2px_oklch(0_0_0/0.45)]">
+        <span
+          className={clsxm(
+            'truncate text-[0.82rem] font-semibold leading-tight',
+            dirty ? 'text-lf-amber-soft' : 'text-lf-on-photo-ink',
+          )}
+        >
+          {props.label}
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          {/* The precision band reads beside the value, under the thumb,
+              rather than at the far end of the screen. */}
+          {gainLabel && (
+            <span className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-lf-on-photo-ink/72">
+              {gainLabel}
+            </span>
+          )}
+          {/* One element across states: swapping button for span on reset
+              would unmount the focused control and drop focus to the body.
+              Negative block margin keeps the 36px target from growing the
+              row. */}
+          <button
+            type="button"
+            disabled={!dirty}
+            aria-label={props.resetAriaLabel}
+            onClick={() => onChange(0)}
+            className={clsxm(
+              '-my-1.5 inline-flex min-h-9 items-center justify-end rounded-md px-1 text-right text-[0.82rem] font-semibold tabular-nums transition-colors',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80',
+              dirty
+                ? 'text-lf-amber-soft hover:text-lf-on-photo-ink'
+                : 'cursor-default text-lf-on-photo-ink/92',
+            )}
+          >
+            {formatted}
+          </button>
+        </span>
+      </div>
       <div
         data-testid="adjust-slider-row-scrub"
-        // pan-y hands vertical intent back to the list scroll; the hook's
-        // direction lock decides horizontal scrub vs vertical scroll.
         className={clsxm(
-          'py-2.5 touch-none',
-          // The row owns the entire touch gesture. Chromium locks a pan the
-          // moment a `pan-y` surface sees vertical travel, which would eat
-          // the precision excursion the gain bands are built on, so the hook
-          // takes the gesture and forwards vertical intent to the list scroll
-          // itself (momentum included).
+          'py-1.5',
           '[&_[data-slot=slider-thumb]]:size-5 [&_[data-slot=slider-thumb]]:transition-[width,height,transform,box-shadow] [&_[data-slot=slider-thumb]]:duration-150',
           activeScrub &&
             '[&_[data-slot=slider-thumb]]:size-6 [&_[data-slot=slider-thumb]]:shadow-[0_2px_6px_oklch(0.18_0.018_76/0.4),0_0_0_1px_oklch(0.96_0.006_255/0.36)]',
         )}
-        {...scrub.bind}
       >
         <Slider
           thumbAriaLabel={props.label}
@@ -108,20 +154,6 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
           }}
         />
       </div>
-      {dirty ? (
-        <button
-          type="button"
-          aria-label={props.resetAriaLabel}
-          onClick={() => onChange(0)}
-          className="inline-flex h-11 items-center justify-end rounded-md px-1 text-right text-[0.82rem] font-semibold tabular-nums text-lf-amber-soft transition-colors [text-shadow:0_1px_2px_oklch(0_0_0/0.45)] hover:text-lf-on-photo-ink"
-        >
-          {formatted}
-        </button>
-      ) : (
-        <span className="inline-flex h-11 items-center justify-end px-1 text-right text-[0.82rem] font-semibold tabular-nums text-lf-on-photo-ink/92 [text-shadow:0_1px_2px_oklch(0_0_0/0.45)]">
-          {formatted}
-        </span>
-      )}
     </div>
   )
 }

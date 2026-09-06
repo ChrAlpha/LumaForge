@@ -1,16 +1,13 @@
 import { makeNeutralBand } from '@lumaforge/luma-color-runtime'
-import { useAtomValue } from 'jotai'
 import { AnimatePresence, m } from 'motion/react'
 
-import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
 
-import { scrubGainBandAtom } from '../../state/scrub.atoms'
 import type { ColorValue } from '../color-fields'
 import { COLOR_FIELDS, formatColorValueShort } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
-import { formatToneValueShort, TONE_FIELDS } from '../tone-fields'
+import { formatToneValue, TONE_FIELDS } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
 import type { ScrubFieldId } from './AdjustListPanel'
 import {
@@ -26,17 +23,9 @@ type ScrubValueHudProps = {
   selectiveColor: HSLToolValue | undefined
 }
 
-const GAIN_LABEL_KEY = {
-  half: 'raw.mobile.adjustList.gain.half',
-  quarter: 'raw.mobile.adjustList.gain.quarter',
-  fine: 'raw.mobile.adjustList.gain.fine',
-} as const
-
 export function ScrubValueHud(props: ScrubValueHudProps) {
   const { t } = useI18n()
   const readout = resolveReadout(props, t)
-  const gain = useAtomValue(scrubGainBandAtom)
-  const gainLabel = gain === 'full' ? null : t(GAIN_LABEL_KEY[gain])
 
   return (
     <AnimatePresence initial={false}>
@@ -57,18 +46,6 @@ export function ScrubValueHud(props: ScrubValueHudProps) {
           <strong className="text-[1.85rem] font-semibold leading-none tabular-nums">
             {readout.formatted}
           </strong>
-          {/* Precision band while the finger is away from the track. Kept in
-              the flow with a fixed line height so the value never shifts. */}
-          <span
-            data-scrub-gain={gain}
-            aria-hidden="true"
-            className={clsxm(
-              'h-3.5 text-[0.62rem] font-semibold uppercase leading-[0.875rem] tracking-[0.14em] text-lf-on-photo-ink/72 transition-opacity duration-150',
-              gainLabel ? 'opacity-100' : 'opacity-0',
-            )}
-          >
-            {gainLabel ?? '\u00A0'}
-          </span>
         </m.div>
       )}
     </AnimatePresence>
@@ -97,7 +74,7 @@ function resolveReadout(
       kind: 'tone',
       key: toneField.key,
       label: t(toneField.labelKey),
-      formatted: formatToneValueShort(toneField.key, value),
+      formatted: formatToneValue(toneField.key, value),
     }
   }
 

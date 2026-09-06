@@ -38,7 +38,7 @@ describe('toneListPanel', () => {
       'Whites',
       'Blacks',
     ])
-    expect(screen.getByText('+1.25')).toBeInTheDocument()
+    expect(screen.getByText('+1.25 EV')).toBeInTheDocument()
   })
 
   it('per-field reset emits a single-key patch', async () => {

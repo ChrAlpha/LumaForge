@@ -13,6 +13,22 @@
   box-sizing: border-box;
 }
 
+/* `overflow: hidden` still creates a scroll container: it only removes the
+   scrollbar. Anything that scrolls an ancestor programmatically — a browser
+   scrolling a focused control into view, an automated click, a screen reader
+   moving the caret — can therefore displace the whole workspace with no
+   affordance to put it back. The shell, the stage, and the tool rail are
+   fixed frames that must never scroll, so they clip instead. The rail's own
+   inner region ([data-raw-tool-scroll]) keeps its real scrolling.
+   `hidden` stays first as the fallback for engines without `clip`. */
+.raw-lab,
+.raw-lab-shell,
+.raw-lab-stage,
+.raw-tool-surface {
+  overflow: hidden;
+  overflow: clip;
+}
+
 .raw-tool-surface,
 [data-raw-lut='source-browser-list'],
 [data-raw-lut='contract-browser-list'],

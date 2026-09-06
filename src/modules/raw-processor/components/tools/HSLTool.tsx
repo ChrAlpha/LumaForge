@@ -11,6 +11,12 @@ import { useI18n } from '~/lib/i18n'
 import { HSL_BAND_SWATCH } from '../mobile/hsl-fields'
 import { DesktopAdjustRow } from './DesktopAdjustRow'
 import {
+  SEGMENTED_FOCUS_RING,
+  SEGMENTED_ITEM_TEXT,
+  SEGMENTED_THUMB_BG,
+  SEGMENTED_TRACK,
+} from './segmented-chrome'
+import {
   hslHueTrack,
   hslLightnessTrack,
   hslSaturationTrack,
@@ -112,13 +118,10 @@ function HSLAxisTabs({
       role="tablist"
       aria-label={labelText}
       data-hsl-axis-tabs
-      className={clsxm(
-        'grid grid-cols-3 gap-0.5 rounded-full p-0.5',
-        // Cool-near-white wash — matches the segmented-chrome track idiom
-        // so HSL axis tabs read as part of the same chrome family as the
-        // Strength control and LUT contract tabs.
-        'bg-[oklch(0.96_0.006_255/0.05)]',
-      )}
+      // One paint for every segmented control in the chrome. Re-stating the
+      // values here is what let this group drift into a pill beside the
+      // rounded-rect Strength group one card away.
+      className={clsxm('grid grid-cols-3 gap-0.5', SEGMENTED_TRACK)}
     >
       {HSL_AXIS_ORDER.map((axis) => {
         const selected = activeAxis === axis
@@ -133,14 +136,11 @@ function HSLAxisTabs({
             disabled={disabled}
             onClick={() => onSelect(axis)}
             className={clsxm(
-              'relative flex h-7 items-center justify-center rounded-full text-[0.78rem] tracking-wide transition-colors duration-150',
-              'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green/80',
+              'relative flex h-7 items-center justify-center rounded-md text-[0.78rem] tracking-wide',
+              SEGMENTED_ITEM_TEXT,
+              SEGMENTED_FOCUS_RING,
               'disabled:cursor-not-allowed disabled:opacity-60',
-              selected
-                ? // Cool lift + inset top highlight — matches
-                  // segmented-chrome SEGMENTED_THUMB_BG.
-                  'bg-[oklch(0.96_0.006_255/0.10)] font-semibold text-lf-on-surface shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.14)]'
-                : 'font-medium text-lf-on-surface/72 hover:text-lf-on-surface/92',
+              selected && `font-semibold ${SEGMENTED_THUMB_BG}`,
             )}
           >
             {axisLabels[axis]}

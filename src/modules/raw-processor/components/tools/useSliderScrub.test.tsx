@@ -66,11 +66,15 @@ const touch = (x: number, y: number) => ({
   clientX: x,
   clientY: y,
 })
+// `buttons: 1` models a held primary button. The hook treats a mouse move
+// with no button down as evidence the pointerup was delivered outside the
+// document, so leaving it off would silently end every synthetic drag.
 const mouse = (x: number, y: number, extra: Record<string, unknown> = {}) => ({
   pointerType: 'mouse',
   pointerId: 1,
   isPrimary: true,
   button: 0,
+  buttons: 1,
   clientX: x,
   clientY: y,
   ...extra,
@@ -366,5 +370,116 @@ describe('useSliderScrub interactive children', () => {
     expect(onChange).not.toHaveBeenCalled()
     expect(onScrubChange).not.toHaveBeenCalled()
     expect(row).not.toHaveAttribute('data-scrubbing')
+  })
+})
+
+describe('useSliderScrub gesture lifecycle safety', () => {
+  beforeEach(() => {
+    if (typeof window.PointerEvent === 'undefined') {
+      vi.stubGlobal('PointerEvent', PointerEventPolyfill)
+    }
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    )
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('ends a mouse scrub whose pointerup was delivered outside the document', () => {
+    const onChange = vi.fn()
+    const onScrubChange = vi.fn()
+    render(
+      <Harness value={0} onChange={onChange} onScrubChange={onScrubChange} />,
+    )
+    const row = screen.getByTestId('row')
+    mockTrackRect(row)
+
+    fireEvent.pointerDown(row, mouse(220, 50))
+    expect(onScrubChange).toHaveBeenLastCalledWith(true)
+    // The button came up over browser chrome; the next move reports no button.
+    fireEvent.pointerMove(row, mouse(260, 50, { buttons: 0 }))
+    expect(onScrubChange).toHaveBeenLastCalledWith(false)
+    expect(row).not.toHaveAttribute('data-scrubbing')
+
+    const callsAfterEnd = onChange.mock.calls.length
+    fireEvent.pointerMove(row, mouse(300, 50, { buttons: 0 }))
+    expect(onChange.mock.calls.length).toBe(callsAfterEnd)
+  })
+
+  it('closes the scrub lifecycle when the row unmounts mid-gesture', () => {
+    const onScrubChange = vi.fn()
+    const { unmount } = render(
+      <Harness value={0} onChange={vi.fn()} onScrubChange={onScrubChange} />,
+    )
+    const row = screen.getByTestId('row')
+    mockTrackRect(row)
+    fireEvent.pointerDown(row, mouse(240, 50))
+    expect(onScrubChange).toHaveBeenLastCalledWith(true)
+    unmount()
+    // Without this the mobile Adjust list stays faded to zero and inert.
+    expect(onScrubChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it('arrests a coasting list on the next press and on unmount', () => {
+    const frames: FrameRequestCallback[] = []
+    const cancelled: number[] = []
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb)
+      return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+      cancelled.push(id)
+    })
+
+    const { unmount } = render(
+      <div data-testid="scroller" style={{ overflowY: 'auto' }}>
+        <Harness value={0} onChange={vi.fn()} />
+      </div>,
+    )
+    const scroller = screen.getByTestId('scroller')
+    Object.defineProperty(scroller, 'scrollHeight', {
+      configurable: true,
+      value: 400,
+    })
+    Object.defineProperty(scroller, 'clientHeight', {
+      configurable: true,
+      value: 100,
+    })
+    let scrollTop = 40
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v
+      },
+    })
+    const row = screen.getByTestId('row')
+    mockTrackRect(row)
+
+    // Flick vertically and release: the list coasts.
+    fireEvent.pointerDown(row, touch(200, 50))
+    fireEvent.pointerMove(row, touch(201, 90))
+    fireEvent.pointerMove(row, touch(201, 130))
+    fireEvent.pointerUp(row, touch(201, 130))
+    const scheduled = frames.length
+    expect(scheduled).toBeGreaterThan(0)
+
+    // A press must stop it, the way every native scroller does.
+    fireEvent.pointerDown(row, touch(200, 50))
+    expect(cancelled).toContain(scheduled)
+
+    // And a coast must not outlive the component.
+    fireEvent.pointerMove(row, touch(201, 90))
+    fireEvent.pointerMove(row, touch(201, 130))
+    fireEvent.pointerUp(row, touch(201, 130))
+    const secondGlide = frames.length
+    unmount()
+    expect(cancelled).toContain(secondGlide)
   })
 })

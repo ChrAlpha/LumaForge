@@ -168,7 +168,17 @@ export function MobileModeDock(props: {
                     : 'text-lf-on-photo-ink/68 hover:text-lf-on-photo-ink',
               )}
             >
-              <tab.icon aria-hidden="true" className="size-[18px]" />
+              <span className="relative inline-flex">
+                <tab.icon aria-hidden="true" className="size-[18px]" />
+                {/* Export readiness is a fact about the pipeline, so it lives
+                    on the action it gates rather than on the selection mark. */}
+                {tab.primary && props.canExport && !disabled && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -right-1 -top-0.5 size-1.5 rounded-lf-pill bg-lf-green shadow-[0_0_0_2px_oklch(0.59_0.15_153/0.26)]"
+                  />
+                )}
+              </span>
               {t(tab.labelKey)}
               {showActive && (
                 <m.span
@@ -179,10 +189,10 @@ export function MobileModeDock(props: {
                     prefersReduced ? undefined : 'mobile-dock-indicator'
                   }
                   transition={DOCK_SPRING}
-                  className={clsxm(
-                    'absolute bottom-0 left-1/2 -ml-[11px] h-0.5 w-[22px] rounded-lf-pill',
-                    tab.primary ? 'bg-lf-green' : 'bg-lf-amber',
-                  )}
+                  // One hue for "this tab is selected". Green on the Export
+                  // tab read as "export is safe" while export was blocked,
+                  // and the shared indicator changed hue mid-slide.
+                  className="absolute bottom-0 left-1/2 -ml-[11px] h-0.5 w-[22px] rounded-lf-pill bg-lf-amber"
                 />
               )}
             </m.button>

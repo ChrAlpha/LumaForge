@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useI18n } from '~/lib/i18n'
 
 import type { ToneValue } from '../tone-fields'
-import { formatToneValueShort, TONE_FIELDS } from '../tone-fields'
+import { formatToneValue, TONE_FIELDS } from '../tone-fields'
 import { AdjustSliderRow } from './AdjustSliderRow'
 
 type ToneListPanelProps = {
@@ -36,7 +36,7 @@ export function ToneListPanel(props: ToneListPanelProps) {
             min={field.min}
             max={field.max}
             step={field.step}
-            formatValue={(v) => formatToneValueShort(field.key, v)}
+            formatValue={(v) => formatToneValue(field.key, v)}
             resetAriaLabel={t('raw.adjust.fieldResetAria', {
               label,
             })}

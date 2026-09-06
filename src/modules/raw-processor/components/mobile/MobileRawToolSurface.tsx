@@ -16,11 +16,14 @@ export function MobileRawToolSurface() {
   const cameraName =
     props.metadata &&
     `${props.metadata.make ?? ''} ${props.metadata.model ?? ''}`.trim()
+  // Support level is a safety fact, so it is named on both surfaces rather
+  // than encoded in the topbar dot alone (PRODUCT.md: never state by colour).
+  // The level leads because the camera name truncates first on a phone.
   const fileMeta = [
-    cameraName || undefined,
     props.supportLevel === 'official'
-      ? t('raw.mobile.more.officialSupport')
-      : undefined,
+      ? t('raw.support.official')
+      : t('raw.support.experimental'),
+    cameraName || undefined,
   ]
     .filter(Boolean)
     .join(' · ')

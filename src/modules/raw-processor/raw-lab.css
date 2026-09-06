@@ -139,6 +139,15 @@
   background: var(--color-stage-background);
 }
 
+/* The side identity matters most at rest: you drag to place the split, then
+   release to judge. Labels stay on the photograph whenever the split is on
+   it, and settle back to a quiet weight once the drag ends rather than
+   disappearing. */
+.raw-lab-compare-label {
+  opacity: 0.72;
+}
+
+.raw-lab-compare-handle:hover ~ .raw-lab-compare-label,
 [data-raw-compare-dragging] .raw-lab-compare-label {
   opacity: 1;
 }

@@ -58,11 +58,13 @@ function mockTrackRect() {
     }) as DOMRect
 }
 
+// `buttons: 1` models a held primary button; see useSliderScrub.test.tsx.
 const mouse = (x: number, extra: Record<string, unknown> = {}) => ({
   pointerType: 'mouse',
   pointerId: 1,
   isPrimary: true,
   button: 0,
+  buttons: 1,
   clientX: x,
   clientY: 50,
   ...extra,
@@ -129,9 +131,15 @@ describe('desktopAdjustRow', () => {
     expect(props.onChange).toHaveBeenLastCalledWith(0)
   })
 
-  it('renders a plain readout and no reset affordance when neutral', () => {
+  it('keeps the readout mounted but inert when neutral', () => {
+    // The element must not swap between button and output: unmounting a
+    // focused reset drops focus to the body.
     renderRow({ value: 0 })
-    expect(screen.queryByRole('button', { name: /reset contrast/i })).toBeNull()
+    const readout = screen.getByRole('button', {
+      name: /reset contrast/i,
+      hidden: true,
+    })
+    expect(readout).toBeDisabled()
   })
 
   it('does not scrub while disabled', () => {

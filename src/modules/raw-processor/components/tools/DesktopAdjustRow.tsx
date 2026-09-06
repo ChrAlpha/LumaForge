@@ -123,29 +123,28 @@ export function DesktopAdjustRow({
               {t('raw.adjust.gain.fine')}
             </span>
           )}
-          {dirty && !disabled ? (
-            <button
-              type="button"
-              aria-label={t('raw.adjust.fieldResetAria', { label })}
-              onClick={reset}
-              // The Slider root expands its hit area by 19px vertically so the
-              // whole row is draggable. That pseudo-element covers this value,
-              // so the reset has to sit above it to stay clickable.
-              className="relative z-10 rounded-sm px-0.5 font-medium tabular-nums text-lf-amber-soft transition-colors hover:text-lf-on-surface focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green/80"
-            >
-              {formatted}
-            </button>
-          ) : (
-            <output
-              aria-hidden="true"
-              className={clsxm(
-                'px-0.5 font-medium tabular-nums transition-colors duration-150',
-                dirty ? 'text-lf-amber-soft' : 'text-lf-on-surface/80',
-              )}
-            >
-              {formatted}
-            </output>
-          )}
+          {/* The readout stays one element across states. Swapping a button
+              for an output on reset would unmount the focused control and
+              drop focus to the body, losing a keyboard user's place in the
+              rail. Disabled at neutral, it simply stops being a target. */}
+          <button
+            type="button"
+            disabled={disabled || !dirty}
+            aria-label={t('raw.adjust.fieldResetAria', { label })}
+            onClick={reset}
+            // The Slider root expands its hit area by 19px vertically so the
+            // whole row is draggable. That pseudo-element covers this value,
+            // so the reset has to sit above it to stay clickable.
+            className={clsxm(
+              'relative z-10 inline-flex min-h-6 items-center rounded-sm px-1 font-medium tabular-nums transition-colors',
+              'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green/80',
+              dirty
+                ? 'text-lf-amber-soft hover:text-lf-on-surface'
+                : 'cursor-default text-lf-on-surface/80',
+            )}
+          >
+            {formatted}
+          </button>
         </span>
       </div>
       <Slider

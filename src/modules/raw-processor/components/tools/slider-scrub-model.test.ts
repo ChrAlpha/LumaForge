@@ -111,6 +111,19 @@ describe('createScrubSession (touch)', () => {
     expect(released.value).toBeLessThan(0)
   })
 
+  it('answers a small drag that starts at neutral (no dead zone at zero)', () => {
+    // Press on the thumb of a neutral field, then move a few px in ten
+    // sub-pixel steps: the shape a slow finger or a stepped pointer drag
+    // produces. Parking here swallowed the whole gesture.
+    const session = mouseSession({ startValue: 0, startX: 200 })
+    expect(session.value).toBe(0)
+    let last = session.value
+    for (let i = 1; i <= 10; i += 1) {
+      last = session.move(200 + i * 0.27, 50, {}).value
+    }
+    expect(last).toBeGreaterThan(0)
+  })
+
   it('treats a release without a lock as a tap that sets the value at the tap point', () => {
     const session = touchSession({ startValue: 40 })
     const result = session.end(150, 52)
@@ -180,5 +193,35 @@ describe('createScrubSession (mouse)', () => {
     })
     expect(session.value).toBe(10)
     expect(session.move(20, 0, {}).value).toBeGreaterThan(10)
+  })
+})
+
+describe('createScrubSession with a non-zero neutral', () => {
+  // A 0..100 domain whose rest value is 50: the park, the tap capture window,
+  // and the sticky release must all anchor there rather than at 0.
+  const UNIPOLAR = { min: 0, max: 100, step: 1, track: TRACK, neutral: 50 }
+
+  it('captures the neutral tick on a tap and parks when crossing it', () => {
+    const tap = createScrubSession({
+      ...UNIPOLAR,
+      pointerType: 'touch',
+      startValue: 80,
+      startX: 200,
+      startY: 50,
+    })
+    // Track centre is the neutral tick for this domain.
+    expect(tap.end(200 + SCRUB_ZERO_CAPTURE_PX - 1, 50).value).toBe(50)
+
+    const drag = createScrubSession({
+      ...UNIPOLAR,
+      pointerType: 'mouse',
+      startValue: 0,
+      startX: 220,
+      startY: 50,
+    })
+    expect(drag.value).toBe(60)
+    // Crossing back down through 50 parks there instead of at 0.
+    expect(drag.move(195, 50, {}).value).toBe(50)
+    expect(drag.move(190, 50, {}).value).toBe(50)
   })
 })
