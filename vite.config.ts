@@ -13,6 +13,7 @@ import { checker } from 'vite-plugin-checker'
 import { routeBuilderPlugin } from 'vite-plugin-route-builder'
 
 import PKG from './package.json'
+import { preserveIsolationHeaders } from './plugins/isolation-headers'
 import { toDataUrl } from './scripts/build/image-data-url'
 import {
   deferRawRouteAppModule,
@@ -236,6 +237,7 @@ export default defineConfig(({ command }) => {
       headers: CROSS_ORIGIN_ISOLATION_HEADERS,
     },
     plugins: [
+      preserveIsolationHeaders(CROSS_ORIGIN_ISOLATION_HEADERS),
       ...(ANALYZE
         ? [
             visualizer({
