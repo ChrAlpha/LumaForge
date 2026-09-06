@@ -1,3 +1,4 @@
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 export type TextPart = { type: 'text'; text: string }
 export type ImagePart = {
   type: 'image_url'
@@ -43,3 +44,31 @@ export type ModelRequest = {
   signal?: AbortSignal
 }
 export type Complete = (request: ModelRequest) => Promise<ModelResponse>
+
+export type ToolExecution = {
+  result: CallToolResult
+  completion?: Record<string, unknown>
+  terminal?: string
+}
+export type AgentOptions = {
+  complete: Complete
+  tools: ModelTool[]
+  messages: ChatMessage[]
+  execute: (
+    name: string,
+    args: Record<string, unknown>,
+    step: number,
+  ) => Promise<ToolExecution>
+  record: (event: Record<string, unknown>) => Promise<void>
+  maxSteps: number
+  contextWindow: number
+  maxOutputTokens: number
+  signal?: AbortSignal
+}
+export type AgentResult = {
+  status: 'completed' | 'incomplete'
+  reason: string
+  steps: number
+  completion?: Record<string, unknown>
+  usage: Array<Record<string, unknown>>
+}
