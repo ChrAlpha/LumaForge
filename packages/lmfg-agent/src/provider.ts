@@ -27,6 +27,66 @@ const ResponseSchema = z.object({
     .min(1),
 })
 
+export type ProviderReceipt = {
+  id: string | null
+  model: string | null
+  usage: Record<string, unknown> | null
+}
+
+export class ProviderResponseError extends Error {
+  readonly receipt: ProviderReceipt
+
+  constructor(message: string, receipt: ProviderReceipt) {
+    super(message)
+    this.name = 'ProviderResponseError'
+    this.receipt = receipt
+  }
+}
+
+function numericUsage(
+  value: unknown,
+  apiKey: string,
+  depth = 0,
+  budget = { remaining: 64 },
+): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || depth >= 4)
+    return null
+  const entries: Array<[string, unknown]> = []
+  for (const [key, item] of Object.entries(value)) {
+    if (budget.remaining-- <= 0) break
+    if (
+      !/^[a-z]\w{0,95}$/i.test(key) ||
+      /^(?:apiKey|authorization|api_key)$/i.test(key) ||
+      redact(key, apiKey) !== key
+    )
+      continue
+    if (typeof item === 'number' && Number.isFinite(item)) {
+      entries.push([key, item])
+    } else {
+      const nested = numericUsage(item, apiKey, depth + 1, budget)
+      if (nested && Object.keys(nested).length) entries.push([key, nested])
+    }
+  }
+  return Object.fromEntries(entries)
+}
+
+function providerReceipt(value: unknown, apiKey: string): ProviderReceipt {
+  const raw =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+  const identity = (item: unknown): string | null => {
+    if (typeof item !== 'string' || !/^[\w./:+-]{1,256}$/.test(item))
+      return null
+    return String(redact(item, apiKey))
+  }
+  return {
+    id: identity(raw.id),
+    model: identity(raw.model),
+    usage: numericUsage(raw.usage, apiKey),
+  }
+}
+
 export function redact(value: unknown, apiKey: string): unknown {
   if (typeof value === 'string') {
     if (value.startsWith('data:image/')) {
@@ -117,19 +177,29 @@ export function createProvider(config: ProviderConfig): Complete {
       )
     }
     let parsed: z.infer<typeof ResponseSchema>
+    let receipt: ProviderReceipt = { id: null, model: null, usage: null }
     try {
-      parsed = ResponseSchema.parse(await response.json())
+      const raw: unknown = await response.json()
+      receipt = providerReceipt(raw, config.apiKey)
+      parsed = ResponseSchema.parse(raw)
     } catch {
-      throw new Error(
+      throw new ProviderResponseError(
         'Malformed provider response; expected one complete assistant message with valid tool calls.',
+        receipt,
       )
     }
     const choice = parsed.choices[0]
     const calls = choice.message.tool_calls
     if (calls && new Set(calls.map((call) => call.id)).size !== calls.length)
-      throw new Error('Malformed provider response: duplicate tool call ids.')
+      throw new ProviderResponseError(
+        'Malformed provider response: duplicate tool call ids.',
+        receipt,
+      )
     if (choice.finish_reason === 'tool_calls' && !calls?.length)
-      throw new Error('Malformed provider response: missing tool calls.')
+      throw new ProviderResponseError(
+        'Malformed provider response: missing tool calls.',
+        receipt,
+      )
     return {
       id: parsed.id,
       model: parsed.model,
