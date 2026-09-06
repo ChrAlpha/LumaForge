@@ -1,4 +1,5 @@
 import { RotateCcw } from 'lucide-react'
+import { useId } from 'react'
 
 import { Button } from '~/components/ui/button'
 import { Checkbox } from '~/components/ui/checkbox'
@@ -6,6 +7,12 @@ import { Slider } from '~/components/ui/slider'
 import { clsxm } from '~/lib/cn'
 import type { MessageKey } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
+import {
+  SEGMENTED_FOCUS_RING,
+  SEGMENTED_ITEM_TEXT,
+  SEGMENTED_THUMB_BG,
+  SEGMENTED_TRACK,
+} from '~/modules/raw-processor/components/tools/segmented-chrome'
 
 import type { UprightMode } from './geometry/types'
 import type { ManualTransform } from './transform-types'
@@ -42,6 +49,7 @@ export function TransformControls({
   onCropChange,
   onReset,
   disabled,
+  embedded = false,
 }: {
   mode: UprightMode
   onModeChange: (mode: UprightMode) => void
@@ -51,26 +59,33 @@ export function TransformControls({
   onCropChange: (value: boolean) => void
   onReset: () => void
   disabled: boolean
+  embedded?: boolean
 }) {
   const { t } = useI18n()
+  const id = useId()
   return (
     <>
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">{t('transform.controls')}</h2>
-        <Button
-          variant="ghost"
-          className="h-11 px-2"
-          onClick={onReset}
-          disabled={disabled}
-        >
-          <RotateCcw size={14} aria-hidden />
-          {t('transform.reset')}
-        </Button>
-      </div>
+      {!embedded && (
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold">{t('transform.controls')}</h2>
+          <Button
+            variant="ghost"
+            className="h-11 px-2"
+            onClick={onReset}
+            disabled={disabled}
+          >
+            <RotateCcw size={14} aria-hidden />
+            {t('transform.reset')}
+          </Button>
+        </div>
+      )}
       <div
         role="group"
         aria-label={t('transform.modes')}
-        className="mt-3 grid grid-cols-3 gap-2"
+        className={clsxm(
+          'grid grid-cols-3 gap-1',
+          embedded ? SEGMENTED_TRACK : 'mt-3 gap-2',
+        )}
       >
         {MODES.map((value) => (
           <Button
@@ -81,11 +96,19 @@ export function TransformControls({
             onClick={() => onModeChange(value)}
             disabled={disabled}
             className={clsxm(
-              'h-11 border text-sm',
+              'h-11 text-sm',
+              !embedded && 'border',
               value === 'auto' && 'col-span-2',
-              mode === value
-                ? 'border-lf-on-surface/30 bg-lf-surface-muted text-lf-on-surface'
-                : 'border-lf-on-surface/10',
+              embedded
+                ? [
+                    SEGMENTED_ITEM_TEXT,
+                    SEGMENTED_FOCUS_RING,
+                    mode === value &&
+                      `${SEGMENTED_THUMB_BG} font-semibold text-lf-on-photo-ink`,
+                  ]
+                : mode === value
+                  ? 'border-lf-on-surface/30 bg-lf-surface-muted text-lf-on-surface'
+                  : 'border-lf-on-surface/10',
             )}
           >
             {t(`transform.mode.${value}`)}
@@ -101,10 +124,7 @@ export function TransformControls({
             key={key}
             className="grid min-h-14 grid-cols-[5.5rem_1fr_2.75rem] items-center gap-3"
           >
-            <span
-              id={`transform-${key}`}
-              className="text-xs text-lf-on-surface/80"
-            >
+            <span id={`${id}-${key}`} className="text-xs text-lf-on-surface/80">
               {t(label)}
             </span>
             <Slider
@@ -116,7 +136,7 @@ export function TransformControls({
                 onManualChange({ ...manual, [key]: value })
               }
               disabled={disabled}
-              thumbAriaLabelledBy={`transform-${key}`}
+              thumbAriaLabelledBy={`${id}-${key}`}
               bipolar={min < 0}
             />
             <output className="text-right text-xs tabular-nums text-lf-on-surface/90">

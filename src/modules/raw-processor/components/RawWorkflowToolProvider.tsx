@@ -3,12 +3,14 @@ import type { ReactNode } from 'react'
 import { useI18n } from '~/lib/i18n'
 
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
+import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { RawToolSurfaceProps } from './RawWorkflowContext'
 import { RawWorkflowProvider } from './RawWorkflowContext'
 
 interface RawWorkflowToolProviderProps {
+  transform?: RawTransformFeature
   workflow: UseRawWorkflowReturn
   onlineLutSources: UseOnlineLutSourcesResult
   isCpuMode: boolean
@@ -26,6 +28,7 @@ interface RawWorkflowToolProviderProps {
 }
 
 export function RawWorkflowToolProvider({
+  transform,
   workflow,
   onlineLutSources,
   isCpuMode,
@@ -42,6 +45,8 @@ export function RawWorkflowToolProvider({
   children,
 }: RawWorkflowToolProviderProps) {
   const { t } = useI18n()
+  const transformActive = transform?.active === true
+  const compareDisabled = isCpuMode || transformActive
   const decodedPreviewSize = workflow.decodedImageRef.current
     ? {
         width: workflow.decodedImageRef.current.width,
@@ -59,6 +64,7 @@ export function RawWorkflowToolProvider({
   return (
     <RawWorkflowProvider
       value={{
+        transform,
         activeIntensity: workflow.activeIntensity,
         tone: {
           userExposureEv: workflow.params.userExposureEv,
@@ -85,11 +91,13 @@ export function RawWorkflowToolProvider({
         fileName: workflow.sourceFileName,
         onReplaceFile,
         onResetSession,
-        onCompareReset,
-        viewMode: isCpuMode ? 'processed' : workflow.viewMode,
-        onViewModeChange: isCpuMode ? () => {} : workflow.setViewMode,
+        onCompareReset: compareDisabled ? () => {} : onCompareReset,
+        viewMode: compareDisabled ? 'processed' : workflow.viewMode,
+        onViewModeChange: compareDisabled ? () => {} : workflow.setViewMode,
         compareSplit: workflow.compareSplit,
-        onCompareSplitChange: isCpuMode ? () => {} : workflow.setCompareSplit,
+        onCompareSplitChange: compareDisabled
+          ? () => {}
+          : workflow.setCompareSplit,
         onLutLoad: onLutDrop,
         onLutClear: workflow.clearLUT,
         currentLutName: workflow.currentLutName,
@@ -100,12 +108,18 @@ export function RawWorkflowToolProvider({
             : null,
         onLutProfileSelect: workflow.selectLUTProfile,
         onlineLutSources,
-        onExport,
-        onPreviewExport: workflow.exportPreviewImage,
-        canExport: workflow.canExport,
-        disabledReason: workflow.exportDisabledReason,
-        canPreviewExport: workflow.canPreviewExport,
-        previewExportDisabledReason: workflow.previewExportDisabledReason,
+        onExport: transformActive ? () => {} : onExport,
+        onPreviewExport: transformActive
+          ? () => {}
+          : workflow.exportPreviewImage,
+        canExport: !transformActive && workflow.canExport,
+        disabledReason: transformActive
+          ? t('raw.transform.exportReason')
+          : workflow.exportDisabledReason,
+        canPreviewExport: !transformActive && workflow.canPreviewExport,
+        previewExportDisabledReason: transformActive
+          ? t('raw.transform.exportReason')
+          : workflow.previewExportDisabledReason,
         isProcessing,
         isExporting: workflow.status === 'exporting',
         runtimeReadinessState,
@@ -123,16 +137,21 @@ export function RawWorkflowToolProvider({
         supportLevel: workflow.supportLevel,
         metadata: workflow.loadedImage.metadata,
         stats: toolStats,
-        histogram: isCpuMode
+        histogram: transformActive
           ? {
               state: 'unsupported',
-              reason: t('raw.preview.cpuDegraded.banner'),
+              reason: t('raw.transform.histogramUnavailable'),
             }
-          : (workflow.histogram ?? {
-              state: 'unavailable',
-              reason: 'no-image',
-            }),
-        previewFrameEl,
+          : isCpuMode
+            ? {
+                state: 'unsupported',
+                reason: t('raw.preview.cpuDegraded.banner'),
+              }
+            : (workflow.histogram ?? {
+                state: 'unavailable',
+                reason: 'no-image',
+              }),
+        previewFrameEl: transformActive ? null : previewFrameEl,
       }}
     >
       {children}

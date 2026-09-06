@@ -9,6 +9,7 @@ import type { ComponentProps, ReactNode } from 'react'
 import { createContext, useContext } from 'react'
 
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
+import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
 import type {
   ExportResult,
   ExportShareCapability,
@@ -25,6 +26,7 @@ import type { HSLToolValue } from './tools/HSLTool'
 import type { StrengthLevel } from './tools/StrengthControl'
 
 export interface RawToolSurfaceProps {
+  transform?: RawTransformFeature
   activeIntensity: StrengthLevel
   tone: ToneValue
   color: ColorValue
