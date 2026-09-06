@@ -408,3 +408,28 @@ describe('compareSplitHandle', () => {
     expect(onChange).toHaveBeenLastCalledWith(1)
   })
 })
+
+describe('compare split handle photo box', () => {
+  it('publishes the letterboxed photo box so the line and labels can hug it', () => {
+    const frame = document.createElement('div')
+    const track = document.createElement('div')
+    track.setAttribute('data-raw-compare-track', 'image')
+    frame.append(track)
+    const handle = document.createElement('button')
+    frame.append(handle)
+    document.body.append(frame)
+
+    frame.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 300 }) as DOMRect
+    track.getBoundingClientRect = () =>
+      ({ left: 0, top: 50, width: 400, height: 200 }) as DOMRect
+    Object.defineProperty(track, 'offsetWidth', { value: 400 })
+    Object.defineProperty(track, 'offsetHeight', { value: 200 })
+
+    const geometry = getCompareSplitPositionGeometry(handle, 0.5)
+    expect(geometry.geometry.trackTop).toBe(50)
+    expect(geometry.geometry.trackHeight).toBe(200)
+
+    frame.remove()
+  })
+})

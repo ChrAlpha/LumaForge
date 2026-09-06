@@ -103,3 +103,42 @@ describe('raw lab css tokens', () => {
     expect(copyBlockRule).toContain('width: min(280px, 100%);')
   })
 })
+
+describe('compare handle interaction contract', () => {
+  it('clips the split line to the published photo box instead of the frame', () => {
+    const rule = extractRuleBody(
+      rawLabEffectsCss,
+      '.raw-lab-compare-handle::before',
+    )
+    expect(rule).toContain('var(--raw-compare-track-top, 0px)')
+    expect(rule).toContain('var(--raw-compare-track-height, 100%)')
+  })
+
+  it('gives both viewports the same accent while the handle is dragged', () => {
+    const rule = extractRuleBody(
+      rawLabEffectsCss,
+      '[data-raw-compare-dragging] .raw-lab-compare-handle span',
+    )
+    expect(rule).toContain('var(--color-lf-green)')
+    expect(rule).toContain('scale(1.06)')
+    // The shared rule must sit outside the desktop-only media block.
+    const desktopBlockEnd = rawLabEffectsCss.indexOf(
+      '/* Histogram visuals (relocated from raw-lab.css). */',
+    )
+    expect(
+      rawLabEffectsCss.indexOf(
+        '[data-raw-compare-dragging] .raw-lab-compare-handle span',
+      ),
+    ).toBeGreaterThan(desktopBlockEnd)
+  })
+
+  it('answers a press on the mobile chrome the way desktop does', () => {
+    const mobileMedia = extractRuleBody(
+      rawLabEffectsCss,
+      '@media (max-width: 640px)',
+    )
+    expect(mobileMedia).toContain('translateY(0.5px)')
+    expect(mobileMedia).toContain('[data-mobile-topbar] button')
+    expect(mobileMedia).toContain('[data-adjust-section-chrome] button')
+  })
+})

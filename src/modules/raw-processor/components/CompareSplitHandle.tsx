@@ -39,9 +39,12 @@ function readPreviewTransform(element: HTMLElement | null) {
 }
 
 interface TrackGeometry {
-  frameRect: { left: number; width: number }
+  frameRect: { left: number; width: number; top: number; height: number }
   trackLeft: number
   trackWidth: number
+  /** Photo box inside the frame, used to clip the split line to the image. */
+  trackTop: number
+  trackHeight: number
   zoom: number
   panX: number
 }
@@ -59,10 +62,14 @@ function getCompareTrackGeometry(target: HTMLElement): TrackGeometry {
     // fall back to the track's own bounding box.
     const offsetWidth = imageTrack.offsetWidth
     const trackWidth = offsetWidth > 0 ? offsetWidth : imageRect.width
+    const offsetHeight = imageTrack.offsetHeight
+    const trackHeight = offsetHeight > 0 ? offsetHeight : imageRect.height
     return {
       frameRect,
       trackLeft: imageRect.left,
       trackWidth,
+      trackTop: imageRect.top - frameRect.top,
+      trackHeight,
       zoom,
       panX,
     }
@@ -72,6 +79,8 @@ function getCompareTrackGeometry(target: HTMLElement): TrackGeometry {
     frameRect,
     trackLeft: frameRect.left,
     trackWidth: frameRect.width,
+    trackTop: 0,
+    trackHeight: frameRect.height,
     zoom,
     panX,
   }
@@ -113,7 +122,7 @@ export function getCompareSplitInteractionGeometry(
   const handleX = getHandlePositionX(geometry.frameRect, split)
   const screenX = geometry.frameRect.left + handleX
   const clipSplit = clipFracFromScreenX(screenX, geometry)
-  return { split, clipSplit, handleX }
+  return { split, clipSplit, handleX, geometry }
 }
 
 export function getCompareSplitPositionGeometry(
@@ -125,23 +134,19 @@ export function getCompareSplitPositionGeometry(
   const handleX = getHandlePositionX(geometry.frameRect, split)
   const screenX = geometry.frameRect.left + handleX
   const clipSplit = clipFracFromScreenX(screenX, geometry)
-  return { split, clipSplit, handleX }
+  return { split, clipSplit, handleX, geometry }
 }
 
 function applyHandlePosition(target: HTMLElement, value: number) {
-  const { split, clipSplit, handleX } = getCompareSplitPositionGeometry(
-    target,
-    value,
-  )
-  applyCompareSplitVariables(target, split, clipSplit, handleX)
+  const { split, clipSplit, handleX, geometry } =
+    getCompareSplitPositionGeometry(target, value)
+  applyCompareSplitVariables(target, split, clipSplit, handleX, geometry)
 }
 
 function applyPointerPosition(target: HTMLElement, clientX: number) {
-  const { split, clipSplit, handleX } = getCompareSplitInteractionGeometry(
-    target,
-    clientX,
-  )
-  applyCompareSplitVariables(target, split, clipSplit, handleX)
+  const { split, clipSplit, handleX, geometry } =
+    getCompareSplitInteractionGeometry(target, clientX)
+  applyCompareSplitVariables(target, split, clipSplit, handleX, geometry)
   return split
 }
 
@@ -154,16 +159,33 @@ function applyCompareSplitVariables(
   _split: number,
   clipSplit: number,
   handleX: number,
+  geometry: TrackGeometry,
 ) {
   const clipSplitPercent = `${roundForCss(clipSplit * 100)}%`
   const handlePosition = `${roundForCss(handleX)}px`
+  // The photo is letterboxed inside the frame. Publishing its vertical box
+  // lets the split line stop at the photograph instead of running through
+  // the empty mat above and below it.
+  const top = Math.max(0, geometry.trackTop)
+  const height = Math.max(0, geometry.trackHeight)
+  const trackTop = `${roundForCss(top)}px`
+  const trackHeight = `${roundForCss(height)}px`
+  // Distance from the frame's bottom edge up to the photo. The RAW / JPEG
+  // labels hang off this so they sit on the photograph instead of floating
+  // in the mat below it.
+  const trackBottom = `${roundForCss(
+    Math.max(0, geometry.frameRect.height - (top + height)),
+  )}px`
 
   target.style.setProperty('--raw-compare-split', clipSplitPercent)
   target.style.setProperty('--raw-compare-split-x', handlePosition)
+  target.style.setProperty('--raw-compare-track-top', trackTop)
+  target.style.setProperty('--raw-compare-track-height', trackHeight)
 
   const frame = target.parentElement
   frame?.style.setProperty('--raw-compare-split', clipSplitPercent)
   frame?.style.setProperty('--raw-compare-split-x', handlePosition)
+  frame?.style.setProperty('--raw-compare-track-bottom', trackBottom)
 }
 
 function trySetPointerCapture(target: HTMLElement, pointerId: number) {

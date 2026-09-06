@@ -61,7 +61,7 @@ export function ScrubValueHud(props: ScrubValueHudProps) {
               the flow with a fixed line height so the value never shifts. */}
           <span
             data-scrub-gain={gain}
-            aria-live="polite"
+            aria-hidden="true"
             className={clsxm(
               'h-3.5 text-[0.62rem] font-semibold uppercase leading-[0.875rem] tracking-[0.14em] text-lf-on-photo-ink/72 transition-opacity duration-150',
               gainLabel ? 'opacity-100' : 'opacity-0',

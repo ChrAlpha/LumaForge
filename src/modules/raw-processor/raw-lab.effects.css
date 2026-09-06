@@ -134,8 +134,9 @@
       inset 0 1px 0 oklch(0.96 0.006 255 / 0.18);
   }
 
-  .raw-lab .raw-lab-compare-handle:hover span,
-  .raw-lab [data-raw-compare-dragging] .raw-lab-compare-handle span {
+  /* Desktop keeps the hover half of the accent; the dragging half is shared
+     with mobile lower down so both viewports commit the same way. */
+  .raw-lab .raw-lab-compare-handle:hover span {
     border-color: oklch(from var(--color-lf-green) l c h);
     box-shadow:
       0 8px 18px oklch(0.04 0.006 255 / 0.5),
@@ -187,6 +188,27 @@
       oklch(0.96 0.006 255 / 0.04) 18% 18.5%,
       transparent 18.5% 100%
     );
+  }
+}
+
+/* Press feedback parity. Desktop's command cluster answers a press with a
+   0.5px shift (DESIGN.md §6 Topbar); mobile had press feedback only on the
+   dock tabs, so the topbar actions, the Adjust section tabs, and the section
+   reset felt inert under the thumb. Same idiom, same duration, both
+   viewports. Reduced motion is handled by the .raw-lab reset in
+   raw-lab.surface.css. */
+@media (max-width: 640px) {
+  .raw-lab [data-mobile-topbar] button:not(:disabled):active,
+  .raw-lab [data-adjust-section-chrome] button:not(:disabled):active {
+    transform: translateY(0.5px);
+  }
+
+  .raw-lab [data-mobile-topbar] button,
+  .raw-lab [data-adjust-section-chrome] button {
+    transition:
+      transform 120ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 150ms cubic-bezier(0.22, 1, 0.36, 1),
+      color 150ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 }
 
@@ -317,20 +339,51 @@
 }
 
 /* Compare-handle decorative pseudo (relocated from raw-lab.css). */
+/* The split line stops at the photograph. The handle spans the whole frame
+   so its hit area stays a full-height 44px column, but the drawn line is
+   clipped to the letterboxed photo box the handle publishes while it
+   measures (see CompareSplitHandle). Without the clip the line runs on
+   through the empty mat, which reads as chrome rather than as a cut through
+   the image. */
 .raw-lab-compare-handle::before {
   content: '';
   position: absolute;
-  inset: 0 auto 0 50%;
+  top: var(--raw-compare-track-top, 0px);
+  height: var(--raw-compare-track-height, 100%);
+  left: 50%;
   width: 2px;
   background: var(--color-stage-hairline);
   transform: translateX(-50%);
-  transition: background 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    background 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .raw-lab-compare-handle:hover::before,
 .raw-lab-compare-handle:focus-visible::before,
 [data-raw-compare-dragging] .raw-lab-compare-handle::before {
   background: var(--color-on-stage);
+}
+
+/* Drag feedback is shared by both viewports: the knob commits to the accent
+   the moment it is grabbed, and settles back on release. Mobile has no
+   hover, so without this the touch drag had no state at all while desktop
+   had two. */
+.raw-lab-compare-handle span {
+  transition:
+    opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-raw-compare-dragging] .raw-lab-compare-handle span {
+  border-color: oklch(from var(--color-lf-green) l c h);
+  box-shadow:
+    0 8px 18px oklch(0.04 0.006 255 / 0.5),
+    0 0 0 4px oklch(from var(--color-lf-green) l c h / 0.18),
+    inset 0 1px 0 oklch(0.96 0.006 255 / 0.22);
+  transform: translate(-50%, -50%) scale(1.06);
 }
 
 /* Progress visuals — base (relocated from raw-lab.css). */

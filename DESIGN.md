@@ -444,6 +444,48 @@ Hover and active states brighten one or two steps; do not invent intermediate va
 - Stage padding is `clamp(14px, 1.45vw, 20px)`. Frame border is `oklch(0.96 0.006 255 / 0.08)` at 10px radius with a soft `0 22px 64px` photo-panel shadow + 1px inset top highlight.
 - Compare handle circle is a glass panel (`backdrop-filter: blur(8px) saturate(120%)`) with `0.72` hero-ink border at rest.
 - Hover and drag earn an `lf-green` accent ring (4px `lf-green/18` halo), matching the same accent system the topbar focus and export-ready stripe use.
+  Hover is desktop-only; **the drag state is shared** and also scales the knob to `1.06`, because mobile has no hover and otherwise had no state at all under the thumb while desktop had two.
+- The handle spans the full frame so its hit area stays a 44px column, but the drawn split line is clipped to the photograph through `--raw-compare-track-top` / `--raw-compare-track-height`, published by `CompareSplitHandle` while it measures.
+  A line that runs on through the mat reads as chrome instead of as a cut through the image.
+- The RAW / final labels hang off `--raw-compare-track-bottom` so they sit on the photograph, and they draw above the split line rather than under it.
+
+### The Adjust Scrub Contract
+
+Both viewports answer a press on an Adjust row the same way, through
+`useSliderScrub` and the pure `slider-scrub-model`. The Radix `Slider` stays
+the visual and keyboard layer; the row owns the gesture between pointerdown
+and pointerup.
+
+- **Grab anywhere on the row.** The value jumps to the pointer, then follows it. No thumb hunting on either surface.
+- **Touch direction-locks at 6px.** Horizontal is a scrub; vertical is a list scroll, which the row forwards to the surrounding scroller by hand (with momentum) because Chromium steals a `pan-y` gesture the moment the finger drifts vertically, and that drift is exactly the precision gesture below.
+- **Precision comes from vertical distance** on touch: full speed within 28px of the track, half to 84px, quarter to 150px, then a twentieth. Deltas integrate, so crossing a band never jumps the value. The mobile HUD names the band; desktop uses **Shift** for one tenth and shows a `Fine` hint.
+- **Neutral is sticky.** Crossing zero parks there until 10px of further travel, so returning a field to 0 is reliable on a 180px track.
+- **The amber value is the reset** on both surfaces, double-click also resets on desktop, and a press that starts on a control inside the row never starts a scrub.
+- **Scrub is a state, not a hover.** Rows expose `data-scrubbing`; the pointer routinely leaves the row mid-drag, and mobile has no hover to lean on.
+
+### Mobile Stage Insets
+
+The mobile stage stays full-bleed, but the photograph re-fits into the region
+the chrome does not cover. The topbar and the dock measure themselves into
+`--raw-stage-inset-top` / `--raw-stage-inset-bottom` on the shell, and
+`.raw-lab-stage` consumes them as padding over a 240ms
+`cubic-bezier(0.22, 1, 0.36, 1)` transition that matches `DOCK_SPRING`.
+
+Immersive and the empty state reset both to `0`, so entering immersive grows
+the photo back to full bleed in the same motion as the chrome fade. The Adjust
+panel is sized (`min(38vh, 264px)`) to leave a 3:2 landscape photo at full
+width above the dock on a 393x660 viewport; its lists scroll internally.
+
+Both WebGL layers defer their backing-store resize until the container size
+settles (90ms trailing), so an animating inset costs CSS scaling rather than a
+pipeline pass per frame.
+
+### Press Feedback
+
+A press answers with a `translateY(0.5px)` shift over 120ms on the desktop
+command cluster, the mobile topbar actions, and the mobile Adjust section
+chrome. The mobile dock tabs keep their `scale(0.96)` tap spring. Nothing in
+the chrome should be inert under a finger or a cursor.
 
 ### Export Footer (persistent action zone)
 
@@ -487,6 +529,13 @@ The chrome reads as one continuous material with the photograph, not as a separa
 Mobile `/raw` has used this language since the first mobile design.
 This section documents desktop catching up — both viewports now share one set of tokens (`lf-on-photo-*`, `lf-hero-ink`, the stage palette), one set of idioms (glass chrome, photo-owned stage, ghost actions, lf-green accent), and one mental model.
 Avoid letting them diverge again.
+
+Parity now extends to interaction, not just paint: one Adjust row component
+(`DesktopAdjustRow`) and one mobile row (`AdjustSliderRow`) run the same
+`useSliderScrub` model, the per-field reset uses one i18n key, the compare
+drag state is one rule, and a press feels the same on both surfaces. When a
+row grows a new affordance, add it to the shared model rather than to one
+viewport.
 
 ## 7. Do's and Don'ts
 
