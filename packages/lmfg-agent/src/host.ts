@@ -233,16 +233,37 @@ export async function createHost(options: HostOptions) {
               return payload(result)
             },
           })
+          const exportDetails = images
+            .filter(
+              (image) =>
+                image.step < step &&
+                image.result.schema === 'lmfg.export.detail.receipt.v1' &&
+                image.result.input_jpeg_sha256 === completion.output_sha256 &&
+                image.result.parent_candidate_manifest_sha256 ===
+                  completion.candidate_manifest_sha256,
+            )
+            .map((image) => ({
+              step: image.step,
+              region: image.result.region,
+              uri: image.result.uri,
+              sha256: image.result.sha256,
+              receipt_uri: image.result.receipt_uri,
+              receipt_sha256: image.result.receipt_sha256,
+            }))
+          const finalCompletion = {
+            ...completion,
+            export_details: exportDetails,
+          }
           return {
             result: {
               content: [
                 {
                   type: 'text',
-                  text: JSON.stringify({ ok: true, result: completion }),
+                  text: JSON.stringify({ ok: true, result: finalCompletion }),
                 },
               ],
             },
-            completion,
+            completion: finalCompletion,
           }
         }
         const spec = available.find((tool) => tool.name === name)
@@ -272,7 +293,7 @@ export async function createHost(options: HostOptions) {
           sessions.add(String(payload(result).id))
         if (
           !result.isError &&
-          name === 'lmfg_image_read' &&
+          ['lmfg_image_read', 'lmfg_export_detail'].includes(name) &&
           result.content.some((part) => part.type === 'image')
         )
           images.push({ step, result: payload(result) })

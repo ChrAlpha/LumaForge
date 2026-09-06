@@ -119,6 +119,17 @@ describe('real MCP editing host', () => {
           { session, iteration, candidate: 'warm', output: 'final' },
           5,
         )
+        const region = { x: 1200, y: 1200, width: 1000, height: 700 }
+        const detail = await execute(
+          'lmfg_export_detail',
+          { session, export_name: 'final', region },
+          6,
+        )
+        expect(
+          detail.result.content.some(
+            (part) => part.type === 'image' && part.mimeType === 'image/png',
+          ),
+        ).toBe(true)
         const completed = await execute(
           'finish_edit',
           {
@@ -129,12 +140,13 @@ describe('real MCP editing host', () => {
             rationale: 'Lift the laptop body while keeping the screen dark.',
             observations: 'White laptop on a black printer.',
           },
-          6,
+          7,
         )
         expect(completed.completion).toMatchObject({
           verified: true,
           dimensions: { width: 4032, height: 3024 },
           replay: { reproduced: true },
+          export_details: [{ step: 6, region }],
         })
       } finally {
         await host.close()
