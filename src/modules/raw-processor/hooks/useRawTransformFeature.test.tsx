@@ -175,4 +175,42 @@ describe('rAW Transform feature', () => {
     )
     unmount()
   })
+
+  it('retains the current RAW CPU frame across HQ upgrades, then clears it for a new session', async () => {
+    const input = workflow()
+    const { result, rerender, unmount } = renderHook(
+      ({ value }) => useRawTransformFeature(value, true),
+      { initialProps: { value: input } },
+    )
+    act(() => {
+      result.current.observe()
+      result.current.setCpuFrame({
+        requestId: 1,
+        sourceId: 'v1:80x60:123',
+        width: 80,
+        height: 60,
+        rgba: frame.frame.data,
+      })
+    })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(result.current.available).toBe(true)
+    rerender({ value: { ...input, decodedImageVersion: 2 } })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(result.current.available).toBe(true)
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    rerender({
+      value: {
+        ...input,
+        decodedImageVersion: 3,
+        previewTransform: {
+          ...input.previewTransform!,
+          sourceId: 'replacement',
+        },
+      },
+    })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(result.current.available).toBe(false)
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    unmount()
+  })
 })

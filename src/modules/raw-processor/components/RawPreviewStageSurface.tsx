@@ -36,6 +36,7 @@ export function RawPreviewStageSurface({
   if (isCpuMode && workflow.hasImage) {
     return (
       <RawCpuPreviewStage
+        key={workflow.previewTransform?.sourceId}
         image={workflow.decodedImageRef.current}
         imageVersion={workflow.decodedImageVersion}
         params={workflow.params}

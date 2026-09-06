@@ -56,9 +56,9 @@ export function useRawTransformFeature(
     sourceId &&
     image &&
     !workflow.previewSuspended &&
-    (isCpuMode
-      ? cpuFrame?.sourceId.startsWith(`v${workflow.decodedImageVersion}:`)
-      : workflow.pipelineRef.current),
+    // The CPU stage is keyed by RAW session and retains its quick frame
+    // when an HQ decode replaces the workflow's image reference.
+    (isCpuMode ? cpuFrame : workflow.pipelineRef.current),
   )
 
   useEffect(() => {

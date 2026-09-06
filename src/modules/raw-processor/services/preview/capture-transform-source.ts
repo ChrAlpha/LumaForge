@@ -27,7 +27,10 @@ export async function captureTransformSource({
   pipeline?: Pick<RawProcessingPipeline, 'renderToHiddenCanvas'> | null
   cpuFrame?: CpuPreviewFrame | null
 }): Promise<PreviewSource> {
-  const target = previewDimensions(width, height)
+  const target = previewDimensions(
+    cpuFrame?.width ?? width,
+    cpuFrame?.height ?? height,
+  )
   let canvas: HTMLCanvasElement
   if (cpuFrame) {
     const input = document.createElement('canvas')
