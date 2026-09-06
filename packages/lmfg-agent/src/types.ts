@@ -72,3 +72,12 @@ export type AgentResult = {
   completion?: Record<string, unknown>
   usage: Array<Record<string, unknown>>
 }
+
+export type HostOptions = {
+  repoRoot: string
+  sourcePath: string
+  workspace: string
+  lutPaths: string[]
+  toolTimeoutMs: number
+  record: (event: Record<string, unknown>) => Promise<void>
+}

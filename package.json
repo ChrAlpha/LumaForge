@@ -9,6 +9,9 @@
     "url": "https://github.com/chralpha/lumaforge"
   },
   "scripts": {
+    "agent:build": "pnpm cli:build && pnpm --filter @lumaforge/lmfg-agent build",
+    "agent:edit": "pnpm --filter @lumaforge/lmfg-agent edit",
+    "test:agent": "pnpm --filter @lumaforge/lmfg-agent test",
     "analyze": "ANALYZE=true pnpm build",
     "build": "vite build",
     "deploy:selected": "node scripts/deploy/deploy.mjs",

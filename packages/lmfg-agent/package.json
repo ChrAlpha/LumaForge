@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "edit": "node dist/cli.js edit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run src"
   },
