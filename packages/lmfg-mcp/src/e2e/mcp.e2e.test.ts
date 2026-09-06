@@ -1,15 +1,25 @@
 // @vitest-environment node
-import type { Buffer } from 'node:buffer'
+import { Buffer } from 'node:buffer'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
+import { computeManifestSha256 } from '@lumaforge/render-engine'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -33,7 +43,7 @@ describeWithDist('lmfg-mcp over stdio', () => {
   let transport: StdioClientTransport
 
   beforeAll(async () => {
-    cwd = await mkdtemp(join(tmpdir(), 'lmfg-mcp-e2e-'))
+    cwd = await realpath(await mkdtemp(join(tmpdir(), 'lmfg-mcp-e2e-')))
     transport = new StdioClientTransport({
       command: process.execPath,
       args: [BIN, '--cwd', cwd],
@@ -62,6 +72,7 @@ describeWithDist('lmfg-mcp over stdio', () => {
         'lmfg_render_replay',
         'lmfg_metrics_rank',
         'lmfg_manifest_verify',
+        'lmfg_export_detail',
       ]),
     )
     for (const tool of tools) {
@@ -113,6 +124,175 @@ describeWithDist('lmfg-mcp over stdio', () => {
     expect(shown.isError).toBeFalsy()
     expect(shown.structuredContent).toMatchObject({
       result: { id: 'lmfg.objective.v1' },
+    })
+  })
+
+  it('delivers a verified export crop as lossless PNG over real SDK stdio transport', async () => {
+    const dir = join(cwd, '.lmfg', 'sessions', 'sess_detail')
+    await mkdir(join(dir, 'exports'), { recursive: true })
+    const full = { width: 32, height: 24 }
+    const pixels = Buffer.from(
+      Array.from(
+        { length: full.width * full.height * 3 },
+        (_, index) => (index * 37 + Math.floor(index / 32) * 11) % 256,
+      ),
+    )
+    const jpeg = await sharp(pixels, { raw: { ...full, channels: 3 } })
+      .withMetadata({ orientation: 1 })
+      .jpeg({ quality: 87 })
+      .toBuffer()
+    const digest = (bytes: Buffer) =>
+      createHash('sha256').update(bytes).digest('hex')
+    const unsealed = {
+      manifest_version: 1,
+      kind: 'export',
+      parent_manifest_sha256: 'b'.repeat(64),
+      source_raw: {
+        sha256: 'a'.repeat(64),
+        byte_size: 123,
+        decoded_dimensions: full,
+      },
+      policy: { kind: 'export-full' },
+      output: {
+        format: 'jpeg',
+        color_space: 'srgb',
+        dimensions: full,
+        filename: 'final.jpg',
+        sha256: digest(jpeg),
+      },
+    }
+    const manifestSha = computeManifestSha256(unsealed)
+    await writeFile(
+      join(dir, 'session.json'),
+      JSON.stringify({
+        schema: 'lmfg.session.v1',
+        id: 'sess_detail',
+        source: { sha256: 'a'.repeat(64), byte_size: 123 },
+      }),
+    )
+    await writeFile(join(dir, 'exports', 'final.jpg'), jpeg)
+    await writeFile(
+      join(dir, 'exports', 'final.manifest.json'),
+      JSON.stringify({
+        ...unsealed,
+        manifest_sha256: manifestSha,
+      }),
+    )
+    const region = { x: 3, y: 5, width: 17, height: 11 }
+    const result = await client.callTool({
+      name: 'lmfg_export_detail',
+      arguments: {
+        session: 'sess_detail',
+        export_name: 'final',
+        region,
+      },
+    })
+    expect(result.isError).toBe(false)
+    expect(result.structuredContent).toMatchObject({
+      schema: 'lmfg.export.detail.v1',
+      ok: true,
+      result: {
+        export_manifest_sha256: manifestSha,
+        input_jpeg_sha256: digest(jpeg),
+        region,
+        width: 17,
+        height: 11,
+        mime_type: 'image/png',
+      },
+    })
+    const content = result.content as Array<{
+      type: string
+      mimeType?: string
+      data?: string
+    }>
+    const image = content.find((part) => part.type === 'image')!
+    expect(image.mimeType).toBe('image/png')
+    const png = Buffer.from(image.data!, 'base64')
+    const output = (
+      result.structuredContent as { result: { uri: string; sha256: string } }
+    ).result
+    expect(await readFile(fileURLToPath(output.uri))).toEqual(png)
+    expect(output.sha256).toBe(digest(png))
+    const fullPixels = await sharp(jpeg).removeAlpha().raw().toBuffer()
+    const expected = Buffer.alloc(region.width * region.height * 3)
+    for (let row = 0; row < region.height; row += 1) {
+      const start = ((region.y + row) * full.width + region.x) * 3
+      fullPixels.copy(
+        expected,
+        row * region.width * 3,
+        start,
+        start + region.width * 3,
+      )
+    }
+    expect(await sharp(png).removeAlpha().raw().toBuffer()).toEqual(expected)
+    const loader = `data:text/javascript,${encodeURIComponent("export async function resolve(name, context, next) { if (name === 'sharp') throw new Error('decoder disabled for test'); return next(name, context) }")}`
+    const bootstrap = `data:text/javascript,${encodeURIComponent(`import { register } from 'node:module'; register(${JSON.stringify(loader)}, import.meta.url)`)}`
+    const missingDecoderClient = new Client({
+      name: 'missing-decoder',
+      version: 'test',
+    })
+    try {
+      await missingDecoderClient.connect(
+        new StdioClientTransport({
+          command: process.execPath,
+          args: ['--import', bootstrap, BIN, '--cwd', cwd],
+          stderr: 'pipe',
+        }),
+      )
+      expect(
+        (
+          await missingDecoderClient.callTool({
+            name: 'lmfg_version',
+            arguments: {},
+          })
+        ).isError,
+      ).toBeFalsy()
+      const unavailable = await missingDecoderClient.callTool({
+        name: 'lmfg_export_detail',
+        arguments: { session: 'sess_detail', export_name: 'final', region },
+      })
+      expect(unavailable.isError).toBe(true)
+      expect(unavailable.structuredContent).toMatchObject({
+        error: {
+          code: 'export_detail.refused',
+          message: expect.stringMatching(/Sharp.*install/i),
+        },
+      })
+    } finally {
+      await missingDecoderClient.close()
+    }
+    const refused = await client.callTool({
+      name: 'lmfg_export_detail',
+      arguments: {
+        session: 'sess_detail',
+        export_name: 'final',
+        region: { x: 31, y: 0, width: 2, height: 1 },
+      },
+    })
+    expect(refused.isError).toBe(true)
+    expect(refused.structuredContent).toMatchObject({
+      error: { code: 'export_detail.refused' },
+    })
+    expect(
+      (refused.content as Array<{ type: string }>).every(
+        (part) => part.type !== 'image',
+      ),
+    ).toBe(true)
+    await writeFile(
+      join(dir, 'exports', 'final.jpg'),
+      Buffer.concat([jpeg, Buffer.from('drift')]),
+    )
+    const tampered = await client.callTool({
+      name: 'lmfg_export_detail',
+      arguments: {
+        session: 'sess_detail',
+        export_name: 'final',
+        region,
+      },
+    })
+    expect(tampered.isError).toBe(true)
+    expect(tampered.structuredContent).toMatchObject({
+      error: { message: expect.stringMatching(/hash/i) },
     })
   })
   it('exits cleanly when stdin closes', async () => {
