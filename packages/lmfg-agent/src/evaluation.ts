@@ -86,6 +86,8 @@ async function readImage(path: string) {
   }
 }
 
+export { readImage as readComparisonImage }
+
 function skipScan(bytes: Buffer, start: number): number {
   let offset = start
   let hasData = false
