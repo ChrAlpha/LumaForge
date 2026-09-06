@@ -14,7 +14,13 @@ export default defineConfig({
       formats: ['es'],
     },
     rollupOptions: {
-      external: [/^node:/, /^@lumaforge\//, /^@modelcontextprotocol\//, 'zod'],
+      external: [
+        /^node:/,
+        /^@lumaforge\//,
+        /^@modelcontextprotocol\//,
+        'sharp',
+        'zod',
+      ],
       output: {
         chunkFileNames: '[name].js',
         entryFileNames: '[name].js',
