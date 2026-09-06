@@ -131,6 +131,9 @@ export function useTransformDemo() {
     ++sourceId.current
     abortRef.current?.abort()
     workerRef.current?.terminate()
+    workerRef.current = null
+    inFlight.current = false
+    pending.current = null
   }, [])
 
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { identityMatrix } from './geometry/matrix'
@@ -73,6 +74,32 @@ afterEach(() => {
 })
 
 describe('transform demo request lifecycle', () => {
+  it('creates a live worker after StrictMode replays the mount effect', async () => {
+    DemoWorker.instances = []
+    vi.stubGlobal('Worker', DemoWorker)
+    const { result, unmount } = renderHook(() => useTransformDemo(), {
+      wrapper: StrictMode,
+    })
+    await waitFor(() => expect(DemoWorker.instances).toHaveLength(2))
+    const [disposed, live] = DemoWorker.instances
+    expect(disposed.terminated).toBe(true)
+    expect(live.terminated).toBe(false)
+    act(() =>
+      live.emit({
+        type: 'analyzed',
+        sourceId: live.messages[0].sourceId,
+        analysis,
+        elapsedMs: 10,
+      }),
+    )
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    expect(live.messages.some((message) => message.type === 'render')).toBe(
+      true,
+    )
+    unmount()
+    expect(live.terminated).toBe(true)
+  })
+
   it('coalesces slider work and only displays the newest render', async () => {
     const { result, unmount } = setup()
     await waitFor(() => expect(DemoWorker.instances).toHaveLength(1))
