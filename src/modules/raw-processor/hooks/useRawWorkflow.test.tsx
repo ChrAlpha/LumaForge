@@ -41,6 +41,7 @@ import {
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
 
+import { PREVIEW_TRANSFORM_EXPORT_REASON } from '../model/derive-session'
 import { currentSessionAtom } from '../state/session.atoms'
 import { getProcessingParams, resetToDefaults } from '../state/workflow.atoms'
 import { useRawWorkflow } from './useRawWorkflow'
@@ -2029,6 +2030,97 @@ describe('useRawWorkflow embedded preview state', () => {
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
 
     expect(result.current.canExport).toBe(false)
+  })
+
+  it('blocks captured standard export actions in the same event as a preview transform edit', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    expect(result.current.canExport).toBe(true)
+    const { exportImage, exportPreviewImage, previewTransform } = result.current
+
+    await act(async () => {
+      previewTransform!.setActive(true)
+      await exportImage({ quality: 'high', fidelity: 'balanced' })
+      await exportPreviewImage()
+    })
+    await flushScheduledToasts()
+
+    expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
+    expect(exportSystemMock.runPreviewExportJob).not.toHaveBeenCalled()
+    expect(result.current.canExport).toBe(false)
+    expect(result.current.canPreviewExport).toBe(false)
+    expect(toastMock.error).toHaveBeenCalledWith(
+      'Full-resolution export is not ready',
+      { description: PREVIEW_TRANSFORM_EXPORT_REASON },
+    )
+    expect(toastMock.error).toHaveBeenCalledWith(
+      'HQ preview export is not ready',
+      {
+        description: PREVIEW_TRANSFORM_EXPORT_REASON,
+      },
+    )
+
+    act(() => result.current.previewTransform!.setActive(false))
+    expect(result.current.canExport).toBe(true)
+  })
+
+  it('does not publish an in-flight JPEG after preview transform invalidation', async () => {
+    const pending = deferred<{ filename: string; blob: Blob }>()
+    exportSystemMock.runFullResolutionExportJob.mockReturnValue(pending.promise)
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    let exportPromise!: Promise<void>
+    await act(async () => {
+      exportPromise = result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+      await Promise.resolve()
+    })
+    await waitFor(() =>
+      expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(
+        1,
+      ),
+    )
+    const request =
+      exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0]
+
+    act(() => result.current.previewTransform!.setActive(true))
+    expect(request.signal.aborted).toBe(true)
+    await act(async () => {
+      pending.resolve({
+        filename: 'stale.jpg',
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      })
+      await exportPromise
+    })
+
+    expect(result.current.exportResult).toBeNull()
+    expect(result.current.exportShareCapability.available).toBe(false)
+    expect(result.current.status).toBe('ready')
+  })
+
+  it('replaces preview transform source identity and resets its active flag with a new RAW', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'first.ARW'))
+    })
+    const first = result.current.previewTransform!
+    act(() => first.setActive(true))
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'second.ARW'))
+    })
+    act(() => first.setActive(true))
+
+    expect(result.current.previewTransform?.sourceId).not.toBe(first.sourceId)
+    expect(result.current.previewTransform?.active).toBe(false)
+    expect(result.current.canExport).toBe(true)
+    act(() => result.current.reset())
+    expect(result.current.previewTransform?.sourceId).toBeNull()
   })
 
   it.each(['missing-color-transform', 'unsupported-orientation'])(

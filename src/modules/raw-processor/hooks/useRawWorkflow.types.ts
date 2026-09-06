@@ -32,6 +32,11 @@ import type { FullResExportOptions } from './stages/export/useFullResExportActio
 import type { PreviewPipelineEvacuationHandle } from './stages/preview/usePreviewPipelineEvacuation'
 
 export interface UseRawWorkflowReturn {
+  previewTransform?: {
+    sourceId: string | null
+    active: boolean
+    setActive: (active: boolean) => void
+  }
   params: ProcessingParams
   loadedImage: { file: File | null; metadata: ImageMetadata | null }
   decodedImageRef: RefObject<DecodedImage | null>

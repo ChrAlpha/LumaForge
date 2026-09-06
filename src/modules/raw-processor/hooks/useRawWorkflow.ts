@@ -22,6 +22,7 @@ import { useRawLookStage } from './stages/look/useRawLookStage'
 import { useRawPreviewStage } from './stages/preview/useRawPreviewStage'
 import { useImageSession } from './useImageSession'
 import { useRawDetachedWorkflowState } from './useRawDetachedWorkflowState'
+import { useRawPreviewTransform } from './useRawPreviewTransform'
 import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 import { useRawWorkflowActions } from './useRawWorkflowActions'
 import { useRawWorkflowRefs } from './useRawWorkflowRefs'
@@ -134,6 +135,12 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setProgress,
   })
   const { lutDataRef, lutDataVersion, setLutDataRef } = useLutDataState(lut)
+  const previewTransform = useRawPreviewTransform({
+    session,
+    sessionRef,
+    setSession,
+    invalidateExportGraph,
+  })
 
   const lookStage = useRawLookStage({
     baseParams: compareStage.params,
@@ -349,6 +356,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   })
 
   return buildRawWorkflowReturn({
+    previewTransform,
     workflowState: {
       status,
       error,
