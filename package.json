@@ -11,6 +11,7 @@
   "scripts": {
     "agent:build": "pnpm cli:build && pnpm --filter @lumaforge/lmfg-agent build",
     "agent:edit": "pnpm --filter @lumaforge/lmfg-agent edit",
+    "agent:evaluate": "pnpm --filter @lumaforge/lmfg-agent evaluate",
     "test:agent": "pnpm --filter @lumaforge/lmfg-agent test",
     "analyze": "ANALYZE=true pnpm build",
     "build": "vite build",

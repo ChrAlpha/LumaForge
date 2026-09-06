@@ -85,13 +85,18 @@ describe('independent reversed-position image evaluation', () => {
     await rm(cwd, { recursive: true, force: true })
   })
 
-  const run = (complete: Complete, seed = 'frozen-seed') =>
+  const run = (
+    complete: Complete,
+    seed = 'frozen-seed',
+    pins: { baselineSha256?: string; candidateSha256?: string } = {},
+  ) =>
     evaluatePair({
       brief,
       baselinePath,
       candidatePath,
       complete,
       seed,
+      ...pins,
       record: async (event) => {
         events.push(event)
       },
@@ -289,13 +294,46 @@ describe('independent reversed-position image evaluation', () => {
 
   it('can select the baseline and freezes pixels before either request', async () => {
     let calls = 0
-    const result = await run(async (request) => {
-      if (calls++ === 0) await writeFile(baselinePath, 'replaced while judging')
-      expect(imageUrls(request)).toContain(`data:image/jpeg;base64,${WHITE}`)
-      return response(imageUrls(request)[0].endsWith(WHITE) ? 'A' : 'B')
-    })
+    const result = await run(
+      async (request) => {
+        if (calls++ === 0)
+          await writeFile(baselinePath, 'replaced while judging')
+        expect(imageUrls(request)).toContain(`data:image/jpeg;base64,${WHITE}`)
+        return response(imageUrls(request)[0].endsWith(WHITE) ? 'A' : 'B')
+      },
+      'frozen-seed',
+      {
+        baselineSha256: createHash('sha256')
+          .update(Buffer.from(WHITE, 'base64'))
+          .digest('hex'),
+        candidateSha256: createHash('sha256')
+          .update(Buffer.from(DARK, 'base64'))
+          .digest('hex'),
+      },
+    )
     expect(result).toMatchObject({ status: 'completed', winner: 'baseline' })
   })
+
+  it.each([
+    ['baselineSha256', '0'.repeat(64), false],
+    ['candidateSha256', '0'.repeat(64), false],
+    ['candidateSha256', '0'.repeat(64), true],
+    ['baselineSha256', 'invalid', false],
+    ['candidateSha256', 'A'.repeat(64), false],
+  ] as const)(
+    'rejects invalid %s pin %s (identical=%s) before any call',
+    async (field, pin, identical) => {
+      if (identical) candidatePath = baselinePath
+      let calls = 0
+      await expect(
+        run(async () => response('tie', calls++), 'frozen-seed', {
+          [field]: pin,
+        }),
+      ).rejects.toThrow()
+      expect(calls).toBe(0)
+      expect(events).toEqual([])
+    },
+  )
 
   it('does not convert unknown provider billing into a successful zero-cost judgment', async () => {
     let calls = 0

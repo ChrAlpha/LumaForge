@@ -264,16 +264,29 @@ export async function evaluatePair(input: {
   brief: string
   baselinePath: string
   candidatePath: string
+  baselineSha256?: string
+  candidateSha256?: string
   complete: Complete
   seed: string
   record: (event: Record<string, unknown>) => Promise<void>
 }): Promise<Record<string, unknown>> {
   const brief = z.string().trim().min(1).max(16_000).parse(input.brief)
   const seed = z.string().min(1).max(256).parse(input.seed)
+  const sha256 = z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional()
+  const baselineSha256 = sha256.parse(input.baselineSha256)
+  const candidateSha256 = sha256.parse(input.candidateSha256)
   const [baseline, candidate] = await Promise.all([
     readImage(input.baselinePath),
     readImage(input.candidatePath),
   ])
+  if (
+    (baselineSha256 && baselineSha256 !== baseline.facts.sha256) ||
+    (candidateSha256 && candidateSha256 !== candidate.facts.sha256)
+  )
+    throw new Error('Comparison input bytes do not match the pinned SHA-256.')
   if (
     baseline.facts.width !== candidate.facts.width ||
     baseline.facts.height !== candidate.facts.height

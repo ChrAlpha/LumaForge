@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "edit": "node dist/cli.js edit",
+    "evaluate": "node dist/evaluation-cli.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run src"
   },
