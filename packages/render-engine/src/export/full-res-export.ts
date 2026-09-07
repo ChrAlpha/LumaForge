@@ -16,7 +16,7 @@ import type {
 import {
   applyGeometryMatte,
   planExportGeometry,
-  preimageRect,
+  planGeometryTiles,
   resampleGeometryTile,
 } from './geometry/export-geometry'
 import type { JpegRowSink, JpegRowWriter } from './jpeg/row-writer'
@@ -114,11 +114,13 @@ const DEFAULT_EXPORT_STRIP_ROWS = 512
  */
 const GEOMETRY_MAX_STRIP_ROWS = 256
 /**
- * Column width of one resample tile. Wide enough that the per-tile window read
- * keeps its share of LibRaw's fixed cost small, narrow enough that a rotated
- * tile's preimage stays a few megabytes rather than a full-width band.
+ * Ceiling on one tile's source window, in pixels. Sized to sit alongside the
+ * ungeometried path, which reads a full-width strip (about 6M pixels for a
+ * 100 MP frame at the default strip height).
  */
-const GEOMETRY_TILE_WIDTH = 2048
+const GEOMETRY_MAX_WINDOW_PIXELS = 4_000_000
+/** Splitting stops here; below this the per-read overhead stops paying off. */
+const GEOMETRY_MIN_TILE_WIDTH = 64
 /** Bilinear taps reach one pixel past the preimage; two covers rounding. */
 const GEOMETRY_HALO = 2
 const NO_HALO = { left: 0, top: 0, right: 0, bottom: 0 } as const
@@ -282,15 +284,24 @@ function createGeometryStripPreparer(
     let rawReadMs = 0
     let colorMs = 0
 
-    for (let tileX = 0; tileX < outputWidth; tileX += GEOMETRY_TILE_WIDTH) {
-      throwIfAborted(signal)
-      const tileRect = {
-        x: tileX,
+    // Tiles are planned per strip: how far the geometry drags a row varies
+    // down the frame, so the split that keeps a read bounded does too.
+    const tiles = planGeometryTiles({
+      planned,
+      stripRect: {
+        x: 0,
         y: stripRect.y,
-        width: Math.min(GEOMETRY_TILE_WIDTH, outputWidth - tileX),
+        width: outputWidth,
         height: stripRect.height,
-      }
-      const sourceRect = preimageRect(planned, tileRect, source, GEOMETRY_HALO)
+      },
+      source,
+      maxWindowPixels: GEOMETRY_MAX_WINDOW_PIXELS,
+      minTileWidth: GEOMETRY_MIN_TILE_WIDTH,
+      halo: GEOMETRY_HALO,
+    })
+
+    for (const { tileRect, sourceRect } of tiles) {
+      throwIfAborted(signal)
       // No source behind this tile at all; it stays uncovered and is matted.
       if (!sourceRect) continue
 

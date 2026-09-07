@@ -5,6 +5,7 @@ import {
   EXPORT_GEOMETRY_MATTE,
   INVALID_EXPORT_GEOMETRY,
   planExportGeometry,
+  planGeometryTiles,
   preimageRect,
   resampleGeometryTile,
 } from './export-geometry'
@@ -117,6 +118,22 @@ describe('planExportGeometry', () => {
     ).toThrow(INVALID_EXPORT_GEOMETRY)
   })
 
+  it('fails closed when the projective horizon crosses the output frame', () => {
+    // The forward denominator keeps its sign across the source square, so the
+    // older check passed this; the inverse still changes sign across the
+    // output square, which is the mapping sampling actually runs.
+    const folding: Matrix3 = [
+      0.8928, -0.0402, 0.0737, 0.7931, 0.5803, -0.1867, 0.9196, 0.2946, 0.3929,
+    ]
+
+    expect(() =>
+      planExportGeometry(
+        { matrix: folding, constrainCrop: false },
+        { width: 1024, height: 1024 },
+      ),
+    ).toThrow(INVALID_EXPORT_GEOMETRY)
+  })
+
   it('fails closed when a constrained crop would retain almost nothing', () => {
     // A severe shear leaves no usable rectangle inside the frame.
     expect(() =>
@@ -176,6 +193,103 @@ describe('preimageRect', () => {
     // spans the image. This is the property that keeps the export bounded.
     expect(rect.width).toBeLessThanOrEqual(70)
     expect(rect.height).toBeLessThanOrEqual(70)
+  })
+})
+
+describe('planGeometryTiles', () => {
+  const strip = { x: 0, y: 0, width: 1024, height: 256 }
+
+  function plan(matrix: Matrix3, maxWindowPixels: number) {
+    const planned = planExportGeometry(
+      { matrix, constrainCrop: false },
+      { width: 1024, height: 1024 },
+    )
+    return planGeometryTiles({
+      planned,
+      stripRect: strip,
+      source: { width: 1024, height: 1024 },
+      maxWindowPixels,
+      minTileWidth: 16,
+      halo: 2,
+    })
+  }
+
+  it('reads the strip in one window when it already fits', () => {
+    const tiles = plan(IDENTITY, 4_000_000)
+
+    expect(tiles).toHaveLength(1)
+    expect(tiles[0]!.tileRect).toEqual(strip)
+  })
+
+  it('splits until every window fits the budget', () => {
+    const tiles = plan(IDENTITY, 20_000)
+
+    expect(tiles.length).toBeGreaterThan(1)
+    for (const tile of tiles) {
+      if (!tile.sourceRect) continue
+      const pixels = tile.sourceRect.width * tile.sourceRect.height
+      // The floor on tile size means a tile can only exceed the budget once it
+      // can no longer be split; nothing here is that small.
+      expect(pixels).toBeLessThanOrEqual(20_000)
+    }
+  })
+
+  it('covers the strip exactly, with no gap and no overlap', () => {
+    const tiles = plan(QUARTER_TURN, 20_000)
+    const seen = new Uint8Array(strip.width * strip.height)
+
+    for (const tile of tiles) {
+      for (let y = 0; y < tile.tileRect.height; y += 1) {
+        for (let x = 0; x < tile.tileRect.width; x += 1) {
+          const column = tile.tileRect.x - strip.x + x
+          const row = tile.tileRect.y - strip.y + y
+          seen[row * strip.width + column]! += 1
+        }
+      }
+    }
+
+    // A gap would leave output pixels silently matted; an overlap would resample
+    // the same pixel twice. Both have to be impossible, not merely unlikely.
+    expect(seen.every((count) => count === 1)).toBe(true)
+  })
+
+  it('splits rows too, not only columns', () => {
+    // A wide-but-short strip forces the column axis to bottom out first.
+    const planned = planExportGeometry(
+      { matrix: IDENTITY, constrainCrop: false },
+      { width: 1024, height: 1024 },
+    )
+    const tiles = planGeometryTiles({
+      planned,
+      stripRect: { x: 0, y: 0, width: 64, height: 256 },
+      source: { width: 1024, height: 1024 },
+      maxWindowPixels: 4_000,
+      minTileWidth: 64,
+      minTileHeight: 8,
+      halo: 0,
+    })
+
+    expect(tiles.length).toBeGreaterThan(1)
+    expect(new Set(tiles.map((tile) => tile.tileRect.y)).size).toBeGreaterThan(
+      1,
+    )
+  })
+
+  it('marks tiles with no source behind them instead of reading', () => {
+    const planned = planExportGeometry(
+      { matrix: [1, 0, 3, 0, 1, 0, 0, 0, 1], constrainCrop: false },
+      { width: 1024, height: 1024 },
+    )
+    const tiles = planGeometryTiles({
+      planned,
+      stripRect: strip,
+      source: { width: 1024, height: 1024 },
+      maxWindowPixels: 4_000_000,
+      minTileWidth: 16,
+      halo: 2,
+    })
+
+    expect(tiles.some((tile) => tile.sourceRect === null)).toBe(true)
   })
 })
 

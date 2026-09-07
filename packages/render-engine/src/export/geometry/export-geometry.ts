@@ -111,6 +111,37 @@ function cropScale(inverse: Matrix3): number {
   return low
 }
 
+/**
+ * Reject a mapping that folds inside the frame being produced.
+ *
+ * `checkedInverse` guards the forward denominator over the source square, but
+ * sampling runs the inverse over the OUTPUT square, and that denominator can
+ * still cross zero there. Past that horizon the preimage is a mirrored,
+ * unbounded region: not a photograph, and a bounding box over it covers the
+ * whole source, so the read stops being bounded too.
+ */
+function assertNoFoldInOutput(inverse: Matrix3, scale: number): void {
+  const start = (1 - scale) / 2
+  const end = start + scale
+  const denominators = [
+    [start, start],
+    [end, start],
+    [end, end],
+    [start, end],
+  ].map(([x, y]) => inverse[6] * x! + inverse[7] * y! + inverse[8])
+
+  if (
+    denominators.some(
+      (value) =>
+        !Number.isFinite(value) ||
+        Math.abs(value) < 1e-6 ||
+        Math.sign(value) !== Math.sign(denominators[0]!),
+    )
+  ) {
+    invalidGeometry()
+  }
+}
+
 export function planExportGeometry(
   geometry: ExportGeometry,
   source: { width: number; height: number },
@@ -127,6 +158,7 @@ export function planExportGeometry(
 
   const inverse = checkedInverse(geometry.matrix)
   const scale = geometry.constrainCrop ? cropScale(inverse) : 1
+  assertNoFoldInOutput(inverse, scale)
 
   return {
     outputWidth: Math.max(1, Math.round(source.width * scale)),
@@ -213,6 +245,75 @@ export function preimageRect(
   if (x1 <= x0 || y1 <= y0) return null
 
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+}
+
+export type GeometryTile = {
+  /** Output columns of the strip this tile covers. */
+  readonly tileRect: LumaRawWindowRect
+  /** Source to read for it; null when no source lies behind the tile. */
+  readonly sourceRect: LumaRawWindowRect | null
+}
+
+/**
+ * Split one output strip into tiles whose source windows fit a pixel budget.
+ *
+ * A fixed tile size is not enough. Magnification, rotation and shear compound,
+ * and a preimage that reaches outside the frame clamps to the source bounds, so
+ * the bounding box of a large skewed quad can cover the whole image even though
+ * the quad barely touches it. Halving the tile shrinks the quad, so splitting
+ * until the window fits keeps the read bounded however extreme the geometry is.
+ *
+ * The split follows the tile's longer output side: splitting columns alone
+ * leaves a tile whose preimage spans every row still asking for every row.
+ */
+export function planGeometryTiles(input: {
+  planned: PlannedExportGeometry
+  stripRect: LumaRawWindowRect
+  source: { width: number; height: number }
+  maxWindowPixels: number
+  minTileWidth: number
+  /** Defaults to `minTileWidth`; the row axis stops splitting here. */
+  minTileHeight?: number
+  halo?: number
+}): GeometryTile[] {
+  const { planned, stripRect, source, maxWindowPixels, minTileWidth } = input
+  const minTileHeight = input.minTileHeight ?? minTileWidth
+  const halo = input.halo ?? 2
+  const tiles: GeometryTile[] = []
+
+  const visit = (x: number, y: number, width: number, height: number) => {
+    if (width <= 0 || height <= 0) return
+    const tileRect = { x, y, width, height }
+    const sourceRect = preimageRect(planned, tileRect, source, halo)
+    if (!sourceRect) {
+      // Nothing behind it; the resampler leaves it uncovered for the matte.
+      tiles.push({ tileRect, sourceRect: null })
+      return
+    }
+
+    const pixels = sourceRect.width * sourceRect.height
+    const canSplitWidth = width > minTileWidth
+    const canSplitHeight = height > minTileHeight
+    if (pixels <= maxWindowPixels || (!canSplitWidth && !canSplitHeight)) {
+      tiles.push({ tileRect, sourceRect })
+      return
+    }
+
+    if (canSplitWidth && (width >= height || !canSplitHeight)) {
+      const left = Math.max(minTileWidth, Math.floor(width / 2))
+      visit(x, y, left, height)
+      visit(x + left, y, width - left, height)
+      return
+    }
+
+    const top = Math.max(minTileHeight, Math.floor(height / 2))
+    visit(x, y, width, top)
+    visit(x, y + top, width, height - top)
+  }
+
+  visit(stripRect.x, stripRect.y, stripRect.width, stripRect.height)
+
+  return tiles
 }
 
 export type GeometrySourceWindow = {

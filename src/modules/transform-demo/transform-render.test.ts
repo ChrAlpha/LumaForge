@@ -63,6 +63,24 @@ describe('transform preview resampling', () => {
     expect(applyMatrix(shifted, { x: 0.5, y: 0.5 })?.x).toBeCloseTo(0.6)
   })
 
+  it('rejects a projection that folds inside the frame it would render', () => {
+    // The forward denominator keeps one sign across the source, so the old
+    // guard passed this; the inverse still changes sign across the output.
+    // Rendering past that line is not a projection of the photograph, and the
+    // full-resolution export refuses it, so the preview must not show it.
+    const folding = [
+      0.8928, -0.0402, 0.0737, 0.7931, 0.5803, -0.1867, 0.9196, 0.2946, 0.3929,
+    ] as const
+
+    expect(() =>
+      renderTransformedPreview(
+        { width: 8, height: 8, data: new Uint8ClampedArray(8 * 8 * 4) },
+        folding,
+        false,
+      ),
+    ).toThrow('invalid-transform')
+  })
+
   it('rejects a singular transform and a projective horizon through the image', () => {
     expect(() =>
       renderTransformedPreview(frame(), [0, 0, 0, 0, 0, 0, 0, 0, 1], true),

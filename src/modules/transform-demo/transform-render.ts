@@ -98,6 +98,37 @@ function cropScale(inverse: Matrix3): number {
   return low
 }
 
+/**
+ * Reject a mapping whose projective horizon falls inside the frame it renders.
+ *
+ * `checkedInverse` guards the forward denominator over the source square, but
+ * sampling runs the inverse over the OUTPUT square, where the denominator can
+ * still cross zero. Past that line the frame stops being a projection of the
+ * photograph, and the full-resolution export refuses it — so the preview has to
+ * refuse it too rather than show something that cannot be delivered.
+ */
+function assertNoFoldInOutput(inverse: Matrix3, scale: number): void {
+  const start = (1 - scale) / 2
+  const end = start + scale
+  const denominators = [
+    [start, start],
+    [end, start],
+    [end, end],
+    [start, end],
+  ].map(([x, y]) => inverse[6] * x! + inverse[7] * y! + inverse[8])
+
+  if (
+    denominators.some(
+      (value) =>
+        !Number.isFinite(value) ||
+        Math.abs(value) < 1e-6 ||
+        Math.sign(value) !== Math.sign(denominators[0]!),
+    )
+  ) {
+    throw new Error('invalid-transform')
+  }
+}
+
 export function renderTransformedPreview(
   source: PreviewFrame,
   matrix: Matrix3,
@@ -112,6 +143,7 @@ export function renderTransformedPreview(
     throw new Error('invalid-image')
   }
   const scale = constrainCrop ? cropScale(inverse) : 1
+  assertNoFoldInOutput(inverse, scale)
   const width = Math.max(1, Math.round(source.width * scale))
   const height = Math.max(1, Math.round(source.height * scale))
   const data = new Uint8ClampedArray(width * height * 4)
