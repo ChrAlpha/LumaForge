@@ -16,6 +16,7 @@ describe('transformTool', () => {
     )
   })
   afterEach(() => vi.unstubAllGlobals())
+
   it('observes the current RAW only while mounted and never loads a sample', () => {
     const stop = vi.fn()
     const feature = transformFeatureFixture({ observe: vi.fn(() => stop) })
@@ -31,48 +32,45 @@ describe('transformTool', () => {
     expect(stop).toHaveBeenCalledOnce()
   })
 
-  it('keeps reset available after capture fails while disabling stale preview saving', () => {
+  it('keeps Reset available after a failed active transform', () => {
     const feature = transformFeatureFixture({
       hasImage: true,
       active: true,
       captureError: true,
       busy: true,
     })
+    feature.demo = { ...feature.demo, mode: 'auto' }
     render(<TransformTool feature={feature} />)
-    expect(
-      screen.getByText(
-        'The processed preview is unavailable. Wait for it or reset Transform.',
-      ),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Save preview JPEG' }),
-    ).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The processed preview is unavailable. Wait for it or reset Transform.',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Reset', exact: true }))
     expect(feature.reset).toHaveBeenCalledOnce()
-    expect(feature.download).not.toHaveBeenCalled()
   })
 
-  it('uses transform comparison and saves only a current processed preview', () => {
+  it('offers modes, view aids and independent geometry controls', () => {
     const feature = transformFeatureFixture({
       hasImage: true,
       available: true,
       current: true,
     })
+    feature.demo = { ...feature.demo, ready: true }
     render(<TransformTool feature={feature} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Before transform' }))
-    expect(feature.setBefore).toHaveBeenCalledWith(true)
-    fireEvent.click(screen.getByRole('button', { name: 'After transform' }))
-    expect(feature.setBefore).toHaveBeenCalledWith(false)
-    fireEvent.click(screen.getByRole('button', { name: 'Grid' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Auto', exact: true }))
+    expect(feature.setMode).toHaveBeenCalledWith('auto')
+    fireEvent.click(screen.getByRole('button', { name: 'Grid', exact: true }))
     expect(feature.setShowGrid).toHaveBeenCalledWith(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Save preview JPEG' }))
-    expect(feature.download).toHaveBeenCalledOnce()
-    expect(
-      screen.getByText(/Perspective preview, up to 1600 px/),
-    ).toBeInTheDocument()
+    fireEvent.keyDown(
+      screen.getByRole('slider', { name: 'Scale', exact: true }),
+      { key: 'ArrowRight' },
+    )
+    expect(feature.setManual).toHaveBeenCalledWith({
+      ...feature.demo.manual,
+      scale: 101,
+    })
   })
 
-  it('explains an abstained automatic correction and keeps manual recovery available', () => {
+  it('explains abstention and allows manual correction', () => {
     const feature = transformFeatureFixture({
       hasImage: true,
       available: true,
@@ -85,28 +83,21 @@ describe('transformTool', () => {
       solution: { ...feature.demo.solution, status: 'insufficient' },
     }
     const { rerender } = render(<TransformTool feature={feature} />)
-    expect(
-      screen.getByText(
-        'Not enough reliable structure. Try manual adjustments.',
-      ),
-    ).toHaveAttribute('role', 'status')
-    expect(screen.getByRole('slider', { name: 'Rotate' })).not.toHaveAttribute(
-      'aria-disabled',
-      'true',
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Not enough reliable structure. Try manual adjustments.',
     )
+    expect(
+      screen.getByRole('slider', { name: 'Rotate', exact: true }),
+    ).not.toHaveAttribute('aria-disabled', 'true')
     rerender(
       <TransformTool
         feature={{ ...feature, demo: { ...feature.demo, mode: 'off' } }}
       />,
     )
-    expect(
-      screen.queryByText(
-        'Not enough reliable structure. Try manual adjustments.',
-      ),
-    ).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('reports the automatic result even when manual adjustments are also applied', () => {
+  it('resets the Scale readout to 100 percent without changing other fields', () => {
     const feature = transformFeatureFixture({
       hasImage: true,
       available: true,
@@ -115,62 +106,15 @@ describe('transformTool', () => {
     feature.demo = {
       ...feature.demo,
       ready: true,
-      mode: 'auto',
-      manual: { ...feature.demo.manual, rotate: 1 },
+      manual: { ...feature.demo.manual, scale: 120, rotate: 2 },
     }
-    const { rerender } = render(<TransformTool feature={feature} />)
-    expect(screen.getByText('Auto: No correction needed')).toHaveAttribute(
-      'role',
-      'status',
+    render(<TransformTool feature={feature} />)
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Reset Scale', exact: true }),
     )
-    rerender(
-      <TransformTool
-        feature={{
-          ...feature,
-          demo: {
-            ...feature.demo,
-            solution: { ...feature.demo.solution, status: 'corrected' },
-          },
-        }}
-      />,
-    )
-    expect(screen.getByText('Auto: Correction applied')).toHaveAttribute(
-      'role',
-      'status',
-    )
-  })
-
-  it('shows current JPEG dimensions and keeps transient updates out of the controls above', () => {
-    const feature = transformFeatureFixture({
-      hasImage: true,
-      available: true,
-      current: true,
+    expect(feature.setManual).toHaveBeenCalledWith({
+      ...feature.demo.manual,
+      scale: 100,
     })
-    feature.demo = {
-      ...feature.demo,
-      ready: true,
-      result: {
-        frame: { width: 1280, height: 960, data: new Uint8ClampedArray(0) },
-        displayMatrix: feature.demo.solution.matrix,
-        retainedArea: 0.64,
-      },
-    }
-    const { rerender } = render(<TransformTool feature={feature} />)
-    expect(screen.getByText('Preview JPEG: 1280 × 960 px')).toBeInTheDocument()
-    rerender(
-      <TransformTool feature={{ ...feature, busy: true, current: false }} />,
-    )
-    expect(screen.queryByText('Preview JPEG: 1280 × 960 px')).toBeNull()
-    expect(screen.queryByText('Preparing the current photo…')).toBeNull()
-    expect(
-      screen.getByRole('button', { name: 'Save preview JPEG' }),
-    ).toBeDisabled()
-    rerender(<TransformTool feature={{ ...feature, downloading: true }} />)
-    expect(
-      screen.getByRole('button', { name: 'Save preview JPEG' }),
-    ).toBeDisabled()
-    expect(
-      screen.getByRole('button', { name: 'Save preview JPEG' }),
-    ).toHaveAttribute('aria-busy', 'true')
   })
 })

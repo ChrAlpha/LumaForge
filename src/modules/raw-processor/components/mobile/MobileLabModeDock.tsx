@@ -8,7 +8,6 @@ import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
-import { TransformTool } from '../tools/TransformTool'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { AdjustListPanel } from './AdjustListPanel'
 import { MobileComparePanel } from './MobileComparePanel'
@@ -16,6 +15,7 @@ import { MobileLookPanel } from './MobileLookPanel'
 import type { MobileLutBrowserProps } from './MobileLutBrowser'
 import type { MobileMode } from './MobileModeDock'
 import { MobileModeDock } from './MobileModeDock'
+import { TransformListPanel } from './TransformListPanel'
 
 export function MobileLabModeDock({
   transform,
@@ -180,14 +180,7 @@ function MobileLabModePanel({
   onSplitOpenChange: (open: boolean) => void
 }) {
   if (mode === 'transform') {
-    return transform ? (
-      <div
-        data-mobile-transform-panel
-        className="h-full min-h-0 overflow-y-auto overscroll-contain pr-1"
-      >
-        <TransformTool feature={transform} />
-      </div>
-    ) : null
+    return transform ? <TransformListPanel feature={transform} /> : null
   }
 
   if (mode === 'tone') {
