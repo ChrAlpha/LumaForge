@@ -12,7 +12,13 @@ const rawPath = fileURLToPath(
 
 test('Transform keeps RAW viewport fixed and lets replacement drops reach the stage', async ({
   page,
-}) => {
+}, testInfo) => {
+  // The wheel-lock half of this check has no equivalent input on mobile
+  // WebKit, where Playwright refuses `mouse.wheel` outright.
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    'Wheel input does not exist in mobile WebKit',
+  )
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.addInitScript(() => localStorage.setItem('lumaforge.locale', 'en'))
   await page.goto('/raw')

@@ -195,7 +195,18 @@ async function expectStandardExports(
   })
   if (geometryActive) {
     await expect(hqButton).toBeDisabled()
-    await expect(page.getByText(hqExportReason, { exact: true })).toBeVisible()
+    // Desktop names the refusal next to the button it blocks. The mobile dock
+    // deliberately carries no secondary helper copy in its height-budgeted
+    // panel, so there the disabled control is the whole signal.
+    if (isMobile(page)) {
+      await expect(page.getByText(hqExportReason, { exact: true })).toHaveCount(
+        0,
+      )
+    } else {
+      await expect(
+        page.getByText(hqExportReason, { exact: true }),
+      ).toBeVisible()
+    }
   } else {
     await expect(page.getByText(hqExportReason, { exact: true })).toHaveCount(0)
     if (hqAvailable) {
