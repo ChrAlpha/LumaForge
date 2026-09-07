@@ -6,6 +6,7 @@ import { TransformTool } from './TransformTool'
 
 describe('transformTool', () => {
   beforeEach(() => {
+    vi.stubGlobal('PointerEvent', MouseEvent)
     vi.stubGlobal(
       'ResizeObserver',
       vi.fn(() => ({
@@ -44,7 +45,7 @@ describe('transformTool', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'The processed preview is unavailable. Wait for it or reset Transform.',
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Reset', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
     expect(feature.reset).toHaveBeenCalledOnce()
   })
 
@@ -56,14 +57,17 @@ describe('transformTool', () => {
     })
     feature.demo = { ...feature.demo, ready: true }
     render(<TransformTool feature={feature} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Auto', exact: true }))
-    expect(feature.setMode).toHaveBeenCalledWith('auto')
-    fireEvent.click(screen.getByRole('button', { name: 'Grid', exact: true }))
-    expect(feature.setShowGrid).toHaveBeenCalledWith(true)
-    fireEvent.keyDown(
-      screen.getByRole('slider', { name: 'Scale', exact: true }),
-      { key: 'ArrowRight' },
+    expect(screen.getByRole('slider', { name: 'Scale' })).toHaveAttribute(
+      'aria-valuetext',
+      '100%',
     )
+    fireEvent.click(screen.getByRole('button', { name: 'Auto' }))
+    expect(feature.setMode).toHaveBeenCalledWith('auto')
+    fireEvent.click(screen.getByRole('button', { name: 'Grid' }))
+    expect(feature.setShowGrid).toHaveBeenCalledWith(true)
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Scale' }), {
+      key: 'ArrowRight',
+    })
     expect(feature.setManual).toHaveBeenCalledWith({
       ...feature.demo.manual,
       scale: 101,
@@ -86,9 +90,10 @@ describe('transformTool', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Not enough reliable structure. Try manual adjustments.',
     )
-    expect(
-      screen.getByRole('slider', { name: 'Rotate', exact: true }),
-    ).not.toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('slider', { name: 'Rotate' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     rerender(
       <TransformTool
         feature={{ ...feature, demo: { ...feature.demo, mode: 'off' } }}
@@ -109,12 +114,51 @@ describe('transformTool', () => {
       manual: { ...feature.demo.manual, scale: 120, rotate: 2 },
     }
     render(<TransformTool feature={feature} />)
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Reset Scale', exact: true }),
+    expect(screen.getByRole('slider', { name: 'Scale' })).toHaveAttribute(
+      'aria-valuetext',
+      '120%',
     )
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Scale' }))
     expect(feature.setManual).toHaveBeenCalledWith({
       ...feature.demo.manual,
       scale: 100,
     })
+  })
+
+  it('allows a full reset when only constrain crop has changed', () => {
+    const feature = transformFeatureFixture({ hasImage: true })
+    feature.demo = { ...feature.demo, constrainCrop: false }
+    render(<TransformTool feature={feature} />)
+    const reset = screen.getByRole('button', { name: 'Reset' })
+    expect(reset).toBeEnabled()
+    fireEvent.click(reset)
+    expect(feature.reset).toHaveBeenCalledOnce()
+  })
+
+  it('ignores an existing scrub after processing disables the controls', () => {
+    const feature = transformFeatureFixture({
+      hasImage: true,
+      available: true,
+      current: true,
+    })
+    feature.demo = { ...feature.demo, ready: true }
+    const { rerender } = render(<TransformTool feature={feature} />)
+    const row = screen
+      .getByRole('slider', { name: 'Scale' })
+      .closest('[data-adjust-row]')!
+    vi.spyOn(
+      row.querySelector('[data-slot="slider-track"]')!,
+      'getBoundingClientRect',
+    ).mockReturnValue({ left: 0, top: 0, width: 200, height: 10 } as DOMRect)
+    fireEvent.pointerDown(row, { clientX: 100, clientY: 5, buttons: 1 })
+    expect(row).toHaveAttribute('data-scrubbing', 'true')
+    vi.mocked(feature.setManual).mockClear()
+    rerender(<TransformTool feature={{ ...feature, isProcessing: true }} />)
+    fireEvent.pointerMove(row, { clientX: 160, clientY: 5, buttons: 1 })
+    fireEvent.pointerUp(row, { clientX: 160, clientY: 5 })
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Scale' }), {
+      key: 'ArrowRight',
+    })
+    expect(feature.setManual).not.toHaveBeenCalled()
   })
 })

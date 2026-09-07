@@ -1,6 +1,6 @@
 import { useSetAtom } from 'jotai'
 import type { ReactNode } from 'react'
-import { useId } from 'react'
+import { useId, useRef } from 'react'
 
 import { Slider } from '~/components/ui/slider'
 import { clsxm } from '~/lib/cn'
@@ -19,6 +19,7 @@ export interface DesktopAdjustRowProps {
   step: number
   disabled: boolean
   formatValue: (value: number) => string
+  valueText?: string
   onChange: (value: number) => void
   /** Directional gradient for the track; see `slider-tracks`. */
   track?: string
@@ -54,6 +55,7 @@ export function DesktopAdjustRow({
   step,
   disabled,
   formatValue,
+  valueText,
   onChange,
   track,
   leading,
@@ -65,14 +67,19 @@ export function DesktopAdjustRow({
   const labelId = useId()
   const dirty = value !== 0
   const setGainBand = useSetAtom(scrubGainBandAtom)
-  const reset = () => onChange(0)
+  const disabledRef = useRef(disabled)
+  disabledRef.current = disabled
+  const change = (next: number) => {
+    if (!disabledRef.current) onChange(next)
+  }
+  const reset = () => change(0)
   const scrub = useSliderScrub({
     value,
     min,
     max,
     step,
     disabled,
-    onChange,
+    onChange: change,
     onGainChange: setGainBand,
     onReset: reset,
   })
@@ -150,6 +157,7 @@ export function DesktopAdjustRow({
       <Slider
         thumbAriaLabel={sliderLabel}
         thumbAriaLabelledBy={sliderLabel ? undefined : labelId}
+        thumbAriaValueText={valueText}
         value={[value]}
         min={min}
         max={max}
@@ -159,7 +167,7 @@ export function DesktopAdjustRow({
         track={track}
         onValueChange={([next]) => {
           if (next !== undefined) {
-            onChange(next)
+            change(next)
           }
         }}
       />

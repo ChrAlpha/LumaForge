@@ -11,6 +11,7 @@ export type SliderProps = SliderRootProps & {
   variant?: 'primary' | 'secondary'
   thumbAriaLabel?: string
   thumbAriaLabelledBy?: string
+  thumbAriaValueText?: string
   /**
    * CSS `background` for the Track. When provided, replaces the default
    * dim cool-slate wash. Use `slider-tracks` helpers for directional cues
@@ -62,6 +63,7 @@ export const Slider = ({
   className,
   thumbAriaLabel,
   thumbAriaLabelledBy,
+  thumbAriaValueText,
   variant = 'primary',
   track,
   range,
@@ -137,6 +139,7 @@ export const Slider = ({
         data-slot="slider-thumb"
         aria-label={thumbAriaLabel}
         aria-labelledby={thumbAriaLabelledBy}
+        aria-valuetext={thumbAriaValueText}
         className={clsxm(
           'block size-[15px] rounded-full bg-lf-surface transition-[transform,box-shadow] duration-150',
           // Cool-tone halo + drop shadow — aligned with segmented-chrome

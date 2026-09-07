@@ -48,7 +48,7 @@ export function TransformTool({ feature }: { feature: RawTransformFeature }) {
     feature.captureError ||
     feature.isProcessing
   const viewDisabled = !feature.current || feature.isProcessing
-  const dirty = isTransformDirty(demo.mode, demo.manual)
+  const dirty = isTransformDirty(demo.mode, demo.manual) || !demo.constrainCrop
 
   return (
     <div data-raw-transform-tool className="grid min-w-0 gap-3">
@@ -250,6 +250,7 @@ function FieldGroup({
             step={field.step}
             disabled={disabled}
             formatValue={(next) => formatTransformValue(field, next)}
+            valueText={formatTransformValue(field, value)}
             onChange={(next) =>
               feature.setManual(applyTransformSlider(field, demo.manual, next))
             }

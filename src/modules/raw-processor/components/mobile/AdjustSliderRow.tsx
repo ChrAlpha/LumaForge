@@ -1,4 +1,5 @@
 import { useSetAtom } from 'jotai'
+import { useRef } from 'react'
 
 import { Slider } from '~/components/ui/slider/Slider'
 import { clsxm } from '~/lib/cn'
@@ -14,7 +15,9 @@ type AdjustSliderRowProps = {
   min: number
   max: number
   step: number
+  disabled?: boolean
   formatValue: (v: number) => string
+  valueText?: string
   resetAriaLabel: string
   activeScrub?: boolean
   siblingScrubbing?: boolean
@@ -41,7 +44,12 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
   const bipolar = props.bipolar !== false
   const setGainBand = useSetAtom(scrubGainBandAtom)
   const { t } = useI18n()
-  const { onChange } = props
+  const disabled = props.disabled === true
+  const disabledRef = useRef(disabled)
+  disabledRef.current = disabled
+  const onChange = (next: number) => {
+    if (!disabledRef.current) props.onChange(next)
+  }
 
   // The row owns pointer interaction (direction lock, gain bands, sticky
   // zero); the Radix Slider inside stays the visual + keyboard layer.
@@ -50,6 +58,7 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
     min: props.min,
     max: props.max,
     step: props.step,
+    disabled,
     onChange,
     onScrubChange: props.onScrubChange,
     onGainChange: setGainBand,
@@ -114,7 +123,7 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
               row. */}
           <button
             type="button"
-            disabled={!dirty}
+            disabled={disabled || !dirty}
             aria-label={props.resetAriaLabel}
             onClick={() => onChange(0)}
             className={clsxm(
@@ -140,10 +149,12 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
       >
         <Slider
           thumbAriaLabel={props.label}
+          thumbAriaValueText={props.valueText}
           value={[props.value]}
           min={props.min}
           max={props.max}
           step={props.step}
+          disabled={disabled}
           bipolar={bipolar}
           track={props.track}
           onValueChange={([next]) => {

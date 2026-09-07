@@ -78,12 +78,16 @@ export function TransformListPanel({
   const resetDisabled =
     feature.isProcessing ||
     (section === 'upright'
-      ? !isTransformDirty(demo.mode, demo.manual)
-      : isTransformGroupNeutral(section, demo.manual))
+      ? !isTransformDirty(demo.mode, demo.manual) && demo.constrainCrop
+      : isTransformGroupNeutral(section, demo.manual) &&
+        (section !== 'frame' || demo.constrainCrop))
   const onSectionReset = () => {
     if (section === 'upright') {
       feature.reset()
       return
+    }
+    if (section === 'frame' && !demo.constrainCrop) {
+      feature.setConstrainCrop(true)
     }
     feature.setManual(resetTransformGroup(section, demo.manual))
   }
@@ -241,6 +245,7 @@ export function TransformListPanel({
               <TransformFieldList
                 fields={transformFieldsIn(section)}
                 manual={demo.manual}
+                disabled={controlsDisabled}
                 onChange={feature.setManual}
                 onScrubChange={setScrubbing}
               />
@@ -268,11 +273,13 @@ export function TransformListPanel({
 function TransformFieldList({
   fields,
   manual,
+  disabled,
   onChange,
   onScrubChange,
 }: {
   fields: TransformField[]
   manual: ManualTransform
+  disabled: boolean
   onChange: (manual: ManualTransform) => void
   onScrubChange: (scrubbing: boolean) => void
 }) {
@@ -292,7 +299,12 @@ function TransformFieldList({
             min={field.min}
             max={field.max}
             step={field.step}
+            disabled={disabled}
             formatValue={(value) => formatTransformValue(field, value)}
+            valueText={formatTransformValue(
+              field,
+              transformSliderValue(field, manual),
+            )}
             resetAriaLabel={t('raw.adjust.fieldResetAria', { label })}
             activeScrub={isActive}
             siblingScrubbing={scrubbingKey !== null && !isActive}
