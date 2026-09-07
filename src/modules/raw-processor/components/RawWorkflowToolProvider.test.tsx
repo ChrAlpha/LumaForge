@@ -62,7 +62,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.canExport).toBe(false)
     expect(result.current.canPreviewExport).toBe(false)
     expect(result.current.disabledReason).toBe(
-      'Transform changes support preview JPEG only. Reset Transform before exporting a standard JPEG.',
+      'Reset Transform to export this photo.',
     )
     expect(result.current.previewExportDisabledReason).toBe(
       result.current.disabledReason,

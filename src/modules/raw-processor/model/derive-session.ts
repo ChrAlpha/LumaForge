@@ -3,7 +3,7 @@ import { resolveUnsupportedLUTOutputReason } from '@lumaforge/luma-color-runtime
 import type { ImageSession, PreviewBundle } from './session'
 
 export const PREVIEW_TRANSFORM_EXPORT_REASON =
-  'Transform changes support preview JPEG only. Reset Transform before exporting a standard JPEG.'
+  'Reset Transform to export this photo.'
 
 export function selectDisplaySource(
   preview: PreviewBundle,

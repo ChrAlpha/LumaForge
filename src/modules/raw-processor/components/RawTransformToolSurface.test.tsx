@@ -158,12 +158,16 @@ describe('raw Transform tool surfaces', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Transform' }))
     expect(
       container.querySelector('[data-mobile-transform-panel]'),
-    ).toHaveClass('h-full', 'overflow-y-auto')
+    ).toHaveClass('h-full', 'flex-col')
+    expect(container.querySelector('[data-transform-list-scroll]')).toHaveClass(
+      'min-h-0',
+      'overflow-y-auto',
+    )
     expect(container.querySelector('[data-mobile-dock-panel]')).toHaveClass(
       'h-[min(38vh,264px)]',
     )
     expect(transform.observe).toHaveBeenCalledOnce()
-    expect(screen.getByRole('button', { name: 'Reset' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Reset Upright' })).toBeDisabled()
     await userEvent.click(screen.getByRole('tab', { name: 'Look' }))
     expect(stop).toHaveBeenCalledOnce()
     expect(transform.reset).not.toHaveBeenCalled()

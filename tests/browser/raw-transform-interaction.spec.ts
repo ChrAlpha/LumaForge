@@ -30,11 +30,13 @@ test('Transform keeps RAW viewport fixed and lets replacement drops reach the st
   )
   await page.locator('[data-tool-card-trigger="transform"]').click()
   const tool = page.locator('[data-raw-transform-tool]')
-  const save = tool.getByRole('button', { name: 'Save preview JPEG' })
-  await expect(save).toBeEnabled({ timeout: 30_000 })
+  const auto = tool.getByRole('button', { name: 'Auto', exact: true })
+  await expect(auto).toBeEnabled({ timeout: 30_000 })
   await tool.getByRole('button', { name: 'Auto', exact: true }).click()
-  await expect(save).toBeEnabled()
   const overlay = page.locator('[data-raw-transform-preview]')
+  await expect(overlay).toHaveAttribute('aria-busy', 'false', {
+    timeout: 30_000,
+  })
   await expect(overlay.locator('canvas')).toBeVisible()
   const track = page.locator('[data-raw-compare-track]')
   const zoom = await track.evaluate((node) =>

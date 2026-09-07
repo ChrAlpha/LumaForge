@@ -13,8 +13,7 @@ const rawPath = fileURLToPath(
 )
 const rawName = 'raw-pixls-iphone-se.dng'
 const replacementName = 'replacement-iphone-se.dng'
-const exportReason =
-  'Transform changes support preview JPEG only. Reset Transform before exporting a standard JPEG.'
+const exportReason = 'Reset Transform to export this photo.'
 
 function isMobile(page: Page) {
   return (page.viewportSize()?.width ?? 1280) <= 640
@@ -83,13 +82,42 @@ async function loadRaw(page: Page) {
 }
 
 async function waitForTransform(page: Page) {
+  const tool = transformTool(page)
+  await expect(tool).toBeVisible()
   await expect(
-    transformTool(page).getByRole('button', {
-      name: 'Save preview JPEG',
-      exact: true,
-    }),
+    tool.locator('[data-testid="mode-auto"], [role="slider"]').first(),
   ).toBeEnabled({ timeout: 30_000 })
-  await expect(transformTool(page).getByRole('alert')).toHaveCount(0)
+  const overlay = page.locator('[data-raw-transform-preview]')
+  if (await overlay.count()) {
+    await expect(overlay).toHaveAttribute('aria-busy', 'false', {
+      timeout: 30_000,
+    })
+  }
+  await expect(tool.getByRole('alert')).toHaveCount(0)
+}
+
+async function selectTransformSection(
+  page: Page,
+  name: 'Upright' | 'Perspective' | 'Frame',
+) {
+  if (!isMobile(page)) return
+  await transformTool(page).getByRole('tab', { name, exact: true }).click()
+  await expect(
+    transformTool(page).locator(
+      `[data-transform-list-section="${name.toLowerCase()}"]`,
+    ),
+  ).toBeVisible()
+}
+
+async function showGrid(page: Page) {
+  await selectTransformSection(page, 'Upright')
+  const grid = transformTool(page).getByRole('button', {
+    name: 'Grid',
+    exact: true,
+  })
+  await expect(grid).toBeEnabled({ timeout: 30_000 })
+  if ((await grid.getAttribute('aria-pressed')) !== 'true') await grid.click()
+  await waitForTransform(page)
 }
 
 async function expectCpuNoticeBelowHeader(page: Page) {
@@ -263,10 +291,20 @@ for (const preview of ['gpu', 'cpu'] as const) {
       transformTool(page).getByRole('button', { name: 'Load test image' }),
     ).toHaveCount(0)
 
+    await expect(
+      transformTool(page).getByRole('button', {
+        name: /before transform|after transform|save preview/i,
+      }),
+    ).toHaveCount(0)
+    await expect(transformTool(page)).not.toContainText(/preview JPEG|1600 px/i)
+    await showGrid(page)
+    const original = await snapshot(page)
+
     await transformTool(page)
       .getByRole('button', { name: 'Auto', exact: true })
       .click()
     await waitForTransform(page)
+    await selectTransformSection(page, 'Perspective')
     const rotate = transformTool(page).getByRole('slider', {
       name: 'Rotate',
       exact: true,
@@ -276,12 +314,6 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await expect(rotate).toHaveAttribute('aria-valuenow', '1')
     await waitForTransform(page)
     const corrected = await snapshot(page)
-    await expect(
-      transformTool(page).getByText(
-        `Preview JPEG: ${corrected.width} × ${corrected.height} px`,
-        { exact: true },
-      ),
-    ).toBeAttached()
     const geometry = await page
       .locator('[data-raw-transform-preview]')
       .getAttribute('data-transform-matrix')
@@ -291,19 +323,6 @@ for (const preview of ['gpu', 'cpu'] as const) {
       1600,
     )
 
-    await transformTool(page)
-      .getByRole('button', { name: 'Before transform' })
-      .click()
-    await expect(transformCanvas(page)).toHaveAttribute('data-view', 'original')
-    const original = await snapshot(page)
-    await transformTool(page)
-      .getByRole('button', { name: 'After transform' })
-      .click()
-    await expect(transformCanvas(page)).toHaveAttribute(
-      'data-view',
-      'corrected',
-    )
-    expect((await snapshot(page)).hash).toBe(corrected.hash)
     expect(corrected.hash).not.toBe(original.hash)
     expect(corrected.width * corrected.height).toBeLessThan(
       original.width * original.height,
@@ -315,6 +334,7 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await expectStandardExports(page, false)
     await openTool(page, 'Transform')
     await waitForTransform(page)
+    await selectTransformSection(page, 'Perspective')
     await expect(rotate).toHaveAttribute('aria-valuenow', '1')
     expect((await snapshot(page)).hash).toBe(corrected.hash)
 
@@ -332,10 +352,12 @@ for (const preview of ['gpu', 'cpu'] as const) {
       .not.toBe(corrected.hash)
     await openTool(page, 'Transform')
     await waitForTransform(page)
-    await expect(rotate).toHaveAttribute('aria-valuenow', '1')
+    await selectTransformSection(page, 'Upright')
     await expect(
       transformTool(page).getByRole('button', { name: 'Auto', exact: true }),
     ).toHaveAttribute('aria-pressed', 'true')
+    await selectTransformSection(page, 'Perspective')
+    await expect(rotate).toHaveAttribute('aria-valuenow', '1')
     const toned = await snapshot(page)
     expect(
       await page
@@ -347,76 +369,20 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await openTool(page, 'Transform')
     await waitForTransform(page)
 
-    const downloading = page.waitForEvent('download')
+    await selectTransformSection(page, 'Upright')
     await transformTool(page)
-      .getByRole('button', { name: 'Save preview JPEG' })
+      .getByRole('button', {
+        name: isMobile(page) ? 'Reset Upright' : 'Reset',
+        exact: true,
+      })
       .click()
-    const download = await downloading
-    expect(download.suggestedFilename()).toBe(
-      'raw-pixls-iphone-se-transform-preview.jpg',
-    )
-    const jpeg = await readFile((await download.path())!)
-    expect(jpeg.subarray(0, 3).toString('hex')).toBe('ffd8ff')
-    const downloaded = await transformCanvas(page).evaluate(
-      async (element, base64) => {
-        const reference = element as HTMLCanvasElement
-        const image = new Image()
-        image.src = `data:image/jpeg;base64,${base64}`
-        await image.decode()
-        const decoded = document.createElement('canvas')
-        decoded.width = image.naturalWidth
-        decoded.height = image.naturalHeight
-        const context = decoded.getContext('2d')!
-        context.drawImage(image, 0, 0)
-        if (
-          decoded.width !== reference.width ||
-          decoded.height !== reference.height
-        ) {
-          return {
-            width: decoded.width,
-            height: decoded.height,
-            meanError: Infinity,
-          }
-        }
-        const actual = context.getImageData(
-          0,
-          0,
-          decoded.width,
-          decoded.height,
-        ).data
-        const expected = reference
-          .getContext('2d')!
-          .getImageData(0, 0, reference.width, reference.height).data
-        let difference = 0
-        for (let offset = 0; offset < actual.length; offset += 4) {
-          for (let channel = 0; channel < 3; channel++) {
-            difference += Math.abs(
-              actual[offset + channel] - expected[offset + channel],
-            )
-          }
-        }
-        return {
-          width: decoded.width,
-          height: decoded.height,
-          meanError: difference / (decoded.width * decoded.height * 3),
-        }
-      },
-      jpeg.toString('base64'),
-    )
-    expect(downloaded).toMatchObject({
-      width: toned.width,
-      height: toned.height,
-    })
-    expect(downloaded.meanError).toBeLessThan(5)
-
-    await transformTool(page)
-      .getByRole('button', { name: 'Reset', exact: true })
-      .click()
+    await selectTransformSection(page, 'Perspective')
     await expect(rotate).toHaveAttribute('aria-valuenow', '0')
     await expect(page.locator('[data-raw-transform-preview]')).toHaveCount(0)
     await expectStandardExports(page, true, hqAvailable)
 
     await openTool(page, 'Transform')
+    await selectTransformSection(page, 'Perspective')
     await rotate.focus()
     await rotate.press('PageUp')
     await waitForTransform(page)
@@ -426,7 +392,9 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await replaceRaw(page)
     await openTool(page, 'Transform')
     await waitForTransform(page)
+    await selectTransformSection(page, 'Perspective')
     await expect(rotate).toHaveAttribute('aria-valuenow', '0')
+    await selectTransformSection(page, 'Upright')
     await expect(
       transformTool(page).getByRole('button', { name: 'Off', exact: true }),
     ).toHaveAttribute('aria-pressed', 'true')
@@ -434,20 +402,26 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await expectStandardExports(page, true, hqAvailable)
 
     await openTool(page, 'Transform')
+    await selectTransformSection(page, 'Perspective')
     await rotate.focus()
     await rotate.press('PageUp')
     await waitForTransform(page)
     const replacement = await snapshot(page)
     expect(replacement.hash).not.toBe(toned.hash)
+    await selectTransformSection(page, 'Upright')
     await transformTool(page)
-      .getByRole('button', { name: 'Before transform' })
+      .getByRole('button', {
+        name: isMobile(page) ? 'Reset Upright' : 'Reset',
+        exact: true,
+      })
       .click()
-    await expect(transformCanvas(page)).toHaveAttribute('data-view', 'original')
+    await showGrid(page)
     expect(await snapshot(page)).toEqual(original)
     await resetSession(page)
     await loadRaw(page)
     await openTool(page, 'Transform')
     await waitForTransform(page)
+    await selectTransformSection(page, 'Perspective')
     await expect(rotate).toHaveAttribute('aria-valuenow', '0')
     await expect(page.locator('[data-raw-transform-preview]')).toHaveCount(0)
     await expectStandardExports(page, true, hqAvailable)
