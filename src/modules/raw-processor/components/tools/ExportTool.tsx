@@ -25,6 +25,7 @@ export function ExportTool({
   canExport,
   disabledReason,
   canPreviewExport = false,
+  previewExportDisabledReason,
   isProcessing,
   onExport,
   onPreviewExport,
@@ -72,6 +73,13 @@ export function ExportTool({
     currentActivePlan?.runtimeMemoryProfile === 'low-memory'
   const unavailableReason =
     localizeRawReason(disabledReason, t) || t('raw.exportSourceLoading')
+  // The HQ preview can be refused on its own terms while full resolution is
+  // fine (a committed Transform does exactly that). Without this the button
+  // just goes dark and the reason prop is never read.
+  const previewUnavailableReason = localizeRawReason(
+    previewExportDisabledReason,
+    t,
+  )
   const copyCapability = exportResult?.copyCapability
   const copyButtonLabel = copyCapability
     ? copyCapability.mode === 'unavailable'
@@ -230,6 +238,12 @@ export function ExportTool({
             <Download aria-hidden="true" />
             {t('raw.export.runPreview')}
           </Button>
+          {!canPreviewExport &&
+            !isProcessing &&
+            previewUnavailableReason &&
+            previewUnavailableReason !== unavailableReason && (
+              <p className={noteClassName}>{previewUnavailableReason}</p>
+            )}
         </>
       )}
     </div>

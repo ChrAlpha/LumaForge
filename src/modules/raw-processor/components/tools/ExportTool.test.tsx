@@ -67,6 +67,61 @@ function createCheckpointManifest(): ExportCheckpointManifest {
 }
 
 describe('exportTool', () => {
+  it('says why HQ preview is refused while full resolution stays available', () => {
+    render(
+      <ExportTool
+        canExport
+        canPreviewExport={false}
+        previewExportDisabledReason="Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG."
+        onPreviewExport={vi.fn()}
+        isProcessing={false}
+        onExport={vi.fn()}
+        exportResult={null}
+        exportShareCapability={{ available: false, reason: 'Export first.' }}
+        onShareExport={vi.fn()}
+        onDownloadExport={vi.fn()}
+        onCopyExport={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.getByRole('button', { name: /export full-resolution jpeg/i }),
+    ).toBeEnabled()
+    expect(
+      screen.getByRole('button', { name: /export hq preview jpeg/i }),
+    ).toBeDisabled()
+    // A disabled control with no reason is the state this whole panel exists
+    // to avoid; the refusal has to be readable, not just encoded in opacity.
+    expect(
+      screen.getByText(
+        'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.',
+      ),
+    ).toBeVisible()
+  })
+
+  it('does not repeat the full-resolution reason under the HQ preview button', () => {
+    render(
+      <ExportTool
+        canExport={false}
+        disabledReason="Load a RAW file before exporting."
+        canPreviewExport={false}
+        previewExportDisabledReason="Load a RAW file before exporting."
+        onPreviewExport={vi.fn()}
+        isProcessing={false}
+        onExport={vi.fn()}
+        exportResult={null}
+        exportShareCapability={{ available: false, reason: 'Export first.' }}
+        onShareExport={vi.fn()}
+        onDownloadExport={vi.fn()}
+        onCopyExport={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.getAllByText('Load a RAW file before exporting.'),
+    ).toHaveLength(1)
+  })
+
   it('starts export from the ready-to-process state', async () => {
     const user = userEvent.setup()
     const onExport = vi.fn()
