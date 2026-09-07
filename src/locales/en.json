@@ -464,6 +464,7 @@
   "raw.transform.unavailable": "The processed preview is unavailable. Wait for it or reset Transform.",
   "raw.transform.awaitImage": "Open a RAW photo to adjust its perspective.",
   "raw.transform.preparing": "Preparing the current photo…",
-  "raw.transform.exportReason": "Reset Transform to export this photo.",
+  "raw.transform.previewReleased": "Restore the preview to keep adjusting Transform.",
+  "raw.transform.hqExportReason": "Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.",
   "raw.transform.histogramUnavailable": "Histogram is unavailable for the transformed preview."
 }

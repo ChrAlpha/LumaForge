@@ -89,7 +89,7 @@ export function MobileLabModeDock({
       onModeChange={onModeChange}
       onCollapse={onCollapse}
       onOpenMore={onOpenMore}
-      canExport={canExport === true && transform?.active !== true}
+      canExport={canExport === true}
       scrubbing={scrubbing}
       onInsetChange={onInsetChange}
       panel={

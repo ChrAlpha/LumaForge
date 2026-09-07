@@ -3,6 +3,7 @@ import type {
   LUTContractResolution,
   LUTInputProfile,
 } from '@lumaforge/luma-color-runtime'
+import type { ExportGeometry } from '@lumaforge/render-engine/export'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
 import type {
@@ -141,7 +142,13 @@ export type ImageSession = {
   }
   previewBundle: PreviewBundle
   activeStyle: StyleAsset | null
-  previewTransformActive?: boolean
+  /**
+   * Geometry the user committed in Transform, in source-normalized space.
+   * Present means a geometry is applied; the full-resolution export reproduces
+   * exactly this matrix, so it is the single source of truth rather than a
+   * flag paired with state living somewhere else.
+   */
+  exportGeometry?: ExportGeometry | null
   lutProfileSelection?: LUTContractSelectionState
   viewState: {
     mode: 'processed' | 'original' | 'compare'

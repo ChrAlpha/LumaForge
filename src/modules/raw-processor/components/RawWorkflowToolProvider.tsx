@@ -108,17 +108,17 @@ export function RawWorkflowToolProvider({
             : null,
         onLutProfileSelect: workflow.selectLUTProfile,
         onlineLutSources,
-        onExport: transformActive ? () => {} : onExport,
+        // Full resolution reproduces the geometry, so it stays available; the
+        // workflow already reports the HQ preview's own refusal.
+        onExport,
         onPreviewExport: transformActive
           ? () => {}
           : workflow.exportPreviewImage,
-        canExport: !transformActive && workflow.canExport,
-        disabledReason: transformActive
-          ? t('raw.transform.exportReason')
-          : workflow.exportDisabledReason,
+        canExport: workflow.canExport,
+        disabledReason: workflow.exportDisabledReason,
         canPreviewExport: !transformActive && workflow.canPreviewExport,
         previewExportDisabledReason: transformActive
-          ? t('raw.transform.exportReason')
+          ? t('raw.transform.hqExportReason')
           : workflow.previewExportDisabledReason,
         isProcessing,
         isExporting: workflow.status === 'exporting',

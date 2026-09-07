@@ -30,7 +30,7 @@ function workflowFixture() {
 }
 
 describe('rawWorkflowToolProvider Transform guards', () => {
-  it('blocks full and HQ export, normal compare and stale histogram while Transform is active', () => {
+  it('keeps full-resolution export while blocking HQ preview, compare and the stale histogram under Transform', () => {
     const workflow = workflowFixture()
     const onExport = vi.fn()
     const onCompareReset = vi.fn()
@@ -59,13 +59,13 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       ),
     })
     expect(result.current.transform).toBe(transform)
-    expect(result.current.canExport).toBe(false)
+    // Full resolution reproduces the geometry, so the promise stays open.
+    expect(result.current.canExport).toBe(true)
+    expect(result.current.disabledReason).toBeUndefined()
+    // The bounded HQ preview cannot, and names the alternative.
     expect(result.current.canPreviewExport).toBe(false)
-    expect(result.current.disabledReason).toBe(
-      'Reset Transform to export this photo.',
-    )
     expect(result.current.previewExportDisabledReason).toBe(
-      result.current.disabledReason,
+      'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.',
     )
     expect(result.current.histogram).toEqual({
       state: 'unsupported',
@@ -78,7 +78,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     result.current.onCompareReset()
     result.current.onViewModeChange('original')
     result.current.onCompareSplitChange(0.2)
-    expect(onExport).not.toHaveBeenCalled()
+    expect(onExport).toHaveBeenCalledOnce()
     expect(workflow.exportPreviewImage).not.toHaveBeenCalled()
     expect(onCompareReset).not.toHaveBeenCalled()
     expect(workflow.setViewMode).not.toHaveBeenCalled()
@@ -95,7 +95,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     result.current.onCompareReset()
     result.current.onViewModeChange('original')
     result.current.onCompareSplitChange(0.2)
-    expect(onExport).toHaveBeenCalledOnce()
+    expect(onExport).toHaveBeenCalledTimes(2)
     expect(workflow.exportPreviewImage).toHaveBeenCalledOnce()
     expect(onCompareReset).toHaveBeenCalledOnce()
     expect(workflow.setViewMode).toHaveBeenCalledWith('original')

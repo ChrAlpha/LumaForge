@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
 
-import { PREVIEW_TRANSFORM_EXPORT_REASON } from '../../../model/derive-session'
+import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type { ImageSession } from '../../../model/session'
 import { useHqPreviewExportAction } from './useHqPreviewExportAction'
 
@@ -73,6 +73,12 @@ function createDecodedImage(): DecodedImage {
   }
 }
 
+/** A committed geometry: a slight rotation with the crop constrained. */
+const SAMPLE_GEOMETRY = {
+  matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
+  constrainCrop: true,
+}
+
 describe('useHqPreviewExportAction', () => {
   it('discards an HQ render completed after preview geometry invalidates its export', async () => {
     const sessionRef: { current: ImageSession | null } = {
@@ -123,7 +129,7 @@ describe('useHqPreviewExportAction', () => {
     exportGraphVersionRef.current += 1
     sessionRef.current = {
       ...sessionRef.current!,
-      previewTransformActive: true,
+      exportGeometry: SAMPLE_GEOMETRY,
       exportState: { ...sessionRef.current!.exportState, status: 'idle' },
     }
     completeRender({
@@ -165,13 +171,16 @@ describe('useHqPreviewExportAction', () => {
       }),
     )
     const exportPreviewImage = result.current.exportPreviewImage
-    sessionRef.current = { ...sessionRef.current, previewTransformActive: true }
+    sessionRef.current = {
+      ...sessionRef.current,
+      exportGeometry: SAMPLE_GEOMETRY,
+    }
     await exportPreviewImage()
 
     expect(renderToHiddenCanvas).not.toHaveBeenCalled()
     expect(setStatus).not.toHaveBeenCalled()
     expect(error).toHaveBeenCalledWith('HQ preview export is not ready', {
-      description: PREVIEW_TRANSFORM_EXPORT_REASON,
+      description: PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
     })
   })
 

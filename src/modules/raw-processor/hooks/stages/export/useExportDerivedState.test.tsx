@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { PipelineStats } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
-import { PREVIEW_TRANSFORM_EXPORT_REASON } from '../../../model/derive-session'
+import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type { ExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
 import { useExportDerivedState } from './useExportDerivedState'
@@ -86,9 +86,15 @@ function createBoundedHqImage(): DecodedImage {
   }
 }
 
+/** A committed geometry: a slight rotation with the crop constrained. */
+const SAMPLE_GEOMETRY = {
+  matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
+  constrainCrop: true,
+}
+
 describe('useExportDerivedState', () => {
-  it('blocks both standard JPEG actions while preview geometry is active', () => {
-    const session = { ...createSession(), previewTransformActive: true }
+  it('keeps full-resolution export and refuses only HQ preview under geometry', () => {
+    const session = { ...createSession(), exportGeometry: SAMPLE_GEOMETRY }
     const { result } = renderHook(() =>
       useExportDerivedState({
         session,
@@ -104,13 +110,13 @@ describe('useExportDerivedState', () => {
       }),
     )
 
-    expect(result.current.canExport).toBe(false)
+    expect(result.current.canExport).toBe(true)
+    expect(result.current.exportDisabledReason).toBeUndefined()
+    // The bounded HQ preview cannot reproduce the geometry, so it says so
+    // instead of quietly delivering an ungeometried frame.
     expect(result.current.canPreviewExport).toBe(false)
-    expect(result.current.exportDisabledReason).toBe(
-      PREVIEW_TRANSFORM_EXPORT_REASON,
-    )
     expect(result.current.previewExportDisabledReason).toBe(
-      PREVIEW_TRANSFORM_EXPORT_REASON,
+      PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
     )
   })
 

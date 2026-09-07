@@ -41,7 +41,7 @@ import {
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
 
-import { PREVIEW_TRANSFORM_EXPORT_REASON } from '../model/derive-session'
+import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../model/derive-session'
 import { currentSessionAtom } from '../state/session.atoms'
 import { getProcessingParams, resetToDefaults } from '../state/workflow.atoms'
 import { useRawWorkflow } from './useRawWorkflow'
@@ -445,6 +445,12 @@ function stubDownloadLink() {
   }) as typeof document.createElement)
 
   return { click, remove }
+}
+
+/** A committed geometry: a slight rotation with the crop constrained. */
+const SAMPLE_GEOMETRY = {
+  matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
+  constrainCrop: true,
 }
 
 describe('useRawWorkflow embedded preview state', () => {
@@ -2032,7 +2038,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.canExport).toBe(false)
   })
 
-  it('blocks captured standard export actions in the same event as a preview transform edit', async () => {
+  it('carries a committed geometry into full-resolution export and refuses only the HQ preview', async () => {
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
     await act(async () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
@@ -2041,29 +2047,29 @@ describe('useRawWorkflow embedded preview state', () => {
     const { exportImage, exportPreviewImage, previewTransform } = result.current
 
     await act(async () => {
-      previewTransform!.setActive(true)
+      previewTransform!.commit(SAMPLE_GEOMETRY)
       await exportImage({ quality: 'high', fidelity: 'balanced' })
       await exportPreviewImage()
     })
     await flushScheduledToasts()
 
-    expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
+    // Full resolution reproduces the geometry, so the job runs and receives it.
+    expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
+    expect(
+      exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0].geometry,
+    ).toEqual(SAMPLE_GEOMETRY)
+    expect(result.current.canExport).toBe(true)
+
+    // The bounded HQ preview cannot, and says so rather than delivering an
+    // ungeometried frame under the same name.
     expect(exportSystemMock.runPreviewExportJob).not.toHaveBeenCalled()
-    expect(result.current.canExport).toBe(false)
     expect(result.current.canPreviewExport).toBe(false)
-    expect(toastMock.error).toHaveBeenCalledWith(
-      'Full-resolution export is not ready',
-      { description: PREVIEW_TRANSFORM_EXPORT_REASON },
-    )
     expect(toastMock.error).toHaveBeenCalledWith(
       'HQ preview export is not ready',
       {
-        description: PREVIEW_TRANSFORM_EXPORT_REASON,
+        description: PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
       },
     )
-
-    act(() => result.current.previewTransform!.setActive(false))
-    expect(result.current.canExport).toBe(true)
   })
 
   it('does not publish an in-flight JPEG after preview transform invalidation', async () => {
@@ -2089,7 +2095,7 @@ describe('useRawWorkflow embedded preview state', () => {
     const request =
       exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0]
 
-    act(() => result.current.previewTransform!.setActive(true))
+    act(() => result.current.previewTransform!.commit(SAMPLE_GEOMETRY))
     expect(request.signal.aborted).toBe(true)
     await act(async () => {
       pending.resolve({
@@ -2110,11 +2116,11 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'first.ARW'))
     })
     const first = result.current.previewTransform!
-    act(() => first.setActive(true))
+    act(() => first.commit(SAMPLE_GEOMETRY))
     await act(async () => {
       await result.current.loadFile(new File(['raw'], 'second.ARW'))
     })
-    act(() => first.setActive(true))
+    act(() => first.commit(SAMPLE_GEOMETRY))
 
     expect(result.current.previewTransform?.sourceId).not.toBe(first.sourceId)
     expect(result.current.previewTransform?.active).toBe(false)

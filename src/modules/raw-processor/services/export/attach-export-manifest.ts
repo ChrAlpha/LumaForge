@@ -4,6 +4,7 @@ import type {
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
 import type {
+  GeometryParams,
   PolicyChoice,
   RenderEnvironment,
   RenderManifest,
@@ -29,6 +30,10 @@ export type BuildExportManifestInput = {
   graph: SupportedExportColorGraphDescriptor
   params: ProcessingParams
   rawRenderExposure: RawRenderExposure
+  /** Decoded frame of the source RAW; differs from the output under geometry. */
+  sourceDimensions?: { width: number; height: number }
+  /** Present only when a geometry was applied at full resolution. */
+  geometry?: GeometryParams
   style: StyleAsset | null | undefined
   /** JPEG quality on the 0..1 scale used by the export job. */
   quality: number
@@ -87,11 +92,15 @@ export async function buildManifestForExportResult(
     graph: input.graph,
     params: input.params,
     rawRenderExposure: input.rawRenderExposure,
+    ...(input.geometry ? { geometry: input.geometry } : {}),
     source: {
       sha256: sourceSha256,
       byte_size: input.sourceFile.size,
       filename: input.sourceFile.name,
-      decoded_dimensions: {
+      // The source's own decoded frame. Under geometry the delivered output
+      // is a different size, and calling that the source's dimensions would
+      // make the manifest describe a RAW file that does not exist.
+      decoded_dimensions: input.sourceDimensions ?? {
         width: input.result.width,
         height: input.result.height,
       },

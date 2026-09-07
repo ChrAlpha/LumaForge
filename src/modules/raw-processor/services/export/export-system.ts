@@ -210,6 +210,7 @@ export async function runFullResolutionExportJob({
   file,
   filename,
   graph,
+  geometry,
   quality,
   preferredRows,
   concurrency,
@@ -225,6 +226,7 @@ export async function runFullResolutionExportJob({
   file: File
   filename: string
   graph: ExportColorGraphDescriptor
+  geometry?: RunFullResolutionJpegExportInWorkerInput['geometry']
   quality?: RunFullResolutionJpegExportInWorkerInput['quality']
   preferredRows?: RunFullResolutionJpegExportInWorkerInput['preferredRows']
   concurrency?: RunFullResolutionJpegExportInWorkerInput['concurrency']
@@ -262,6 +264,7 @@ export async function runFullResolutionExportJob({
         file,
         filename,
         graph,
+        geometry,
         quality,
         preferredRows: attemptPlan?.preferredRows ?? preferredRows,
         concurrency: attemptPlan?.concurrency ?? concurrency,

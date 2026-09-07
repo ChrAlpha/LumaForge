@@ -102,6 +102,22 @@ describe('transformTool', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('points at Restore preview once export released it, not at waiting', () => {
+    const feature = transformFeatureFixture({
+      hasImage: true,
+      available: false,
+      previewSuspended: true,
+    })
+    render(<TransformTool feature={feature} />)
+
+    // "Wait for it" would be a lie here: the preview only comes back when the
+    // photographer restores it, and that button is already on screen.
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Restore the preview to keep adjusting Transform.',
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('resets the Scale readout to 100 percent without changing other fields', () => {
     const feature = transformFeatureFixture({
       hasImage: true,

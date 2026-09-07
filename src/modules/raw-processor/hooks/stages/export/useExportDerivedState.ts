@@ -5,7 +5,7 @@ import { useMemo } from 'react'
 import type { PipelineStats } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
-import { PREVIEW_TRANSFORM_EXPORT_REASON } from '../../../model/derive-session'
+import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type { ExportShareCapability } from '../../../model/export-result'
 import type {
   DisplaySource,
@@ -77,14 +77,14 @@ export function useExportDerivedState({
       (status === 'exporting' || previewEvacuatedForReadyExport)
     const hqPreviewImage = decodedImageRef.current
     const canPreviewExport =
-      !session?.previewTransformActive &&
+      !session?.exportGeometry &&
       status === 'ready' &&
       !previewSuspended &&
       displaySource === 'bounded-hq' &&
       hqPreviewImage?.source === 'bounded-hq' &&
       Boolean(stats?.inputSize)
-    const previewExportDisabledReason = session?.previewTransformActive
-      ? PREVIEW_TRANSFORM_EXPORT_REASON
+    const previewExportDisabledReason = session?.exportGeometry
+      ? PREVIEW_TRANSFORM_HQ_EXPORT_REASON
       : !hasImage
         ? 'Load a RAW file before exporting an HQ preview JPEG.'
         : previewSuspended

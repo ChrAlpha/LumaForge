@@ -130,36 +130,52 @@ export function useRawTransformFeature(
     workflow.stats,
   ])
 
-  const setActiveRef = useRef(workflow.previewTransform?.setActive)
-  setActiveRef.current = workflow.previewTransform?.setActive
+  const commitRef = useRef(workflow.previewTransform?.commit)
+  commitRef.current = workflow.previewTransform?.commit
   const disposeIntent = useCallback(() => {
-    if (activeRef.current) setActiveRef.current?.(false)
+    if (activeRef.current) commitRef.current?.(null)
   }, [])
   useEffect(() => disposeIntent, [disposeIntent])
+
+  /**
+   * Commit the geometry the preview is showing, so a full-resolution export
+   * reproduces it. Committing from an effect (rather than from each control)
+   * keeps the session in step with the matrix that actually rendered instead
+   * of one assembled a moment before the demo state caught up.
+   */
+  const committed =
+    hasTransform(demo.mode, demo.manual) && demo.matrix
+      ? { matrix: Array.from(demo.matrix), constrainCrop: demo.constrainCrop }
+      : null
+  const committedKey = committed ? JSON.stringify(committed) : null
+  const lastCommitted = useRef<string | null>(null)
+  useEffect(() => {
+    if (lastCommitted.current === committedKey) return
+    lastCommitted.current = committedKey
+    commitRef.current?.(committedKey ? JSON.parse(committedKey) : null)
+  }, [committedKey])
 
   const observe = useCallback(() => {
     setObserving(true)
     return () => setObserving(false)
   }, [])
 
-  const request = (mode: UprightMode, manual: ManualTransform) => {
-    workflow.previewTransform?.setActive(hasTransform(mode, manual))
+  const request = () => {
     workflow.setViewMode('processed')
   }
   const setMode = (mode: UprightMode) => {
-    request(mode, demo.manual)
+    request()
     demo.setMode(mode)
   }
   const setManual = (manual: ManualTransform) => {
-    request(demo.mode, manual)
+    request()
     demo.setManual(manual)
   }
   const setConstrainCrop = (crop: boolean) => {
-    request(demo.mode, demo.manual)
+    request()
     demo.setConstrainCrop(crop)
   }
   const reset = () => {
-    workflow.previewTransform?.setActive(false)
     demo.reset()
     setShowLines(false)
     setShowGrid(false)
@@ -178,6 +194,9 @@ export function useRawTransformFeature(
     demo,
     active,
     available,
+    // Export releases the preview to keep the delivered file stable. That is a
+    // different state from "not ready yet", and it has its own way out.
+    previewSuspended: workflow.previewSuspended === true,
     hasImage: workflow.hasImage,
     observe,
     busy: capturing || demo.loading || demo.rendering || (active && !current),

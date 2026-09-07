@@ -32,6 +32,7 @@ export type {
   CalibrationIdentity,
   ColorBalanceParams,
   ColorGraphIdentity,
+  GeometryParams,
   LutCatalogIdentity,
   LutColorContract,
   LutIdentity,

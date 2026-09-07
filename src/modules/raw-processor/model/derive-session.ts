@@ -2,8 +2,12 @@ import { resolveUnsupportedLUTOutputReason } from '@lumaforge/luma-color-runtime
 
 import type { ImageSession, PreviewBundle } from './session'
 
-export const PREVIEW_TRANSFORM_EXPORT_REASON =
-  'Reset Transform to export this photo.'
+/**
+ * Full resolution reproduces the geometry; the bounded HQ preview cannot, so
+ * only that path still refuses.
+ */
+export const PREVIEW_TRANSFORM_HQ_EXPORT_REASON =
+  'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.'
 
 export function selectDisplaySource(
   preview: PreviewBundle,
@@ -21,8 +25,6 @@ export function deriveCanEdit(session: ImageSession): boolean {
 function deriveUnsupportedExportPipelineReason(
   session: ImageSession,
 ): string | undefined {
-  if (session.previewTransformActive) return PREVIEW_TRANSFORM_EXPORT_REASON
-
   const activeStyle = session.activeStyle
   if (!activeStyle) {
     return undefined

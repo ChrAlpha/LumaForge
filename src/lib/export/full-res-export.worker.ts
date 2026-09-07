@@ -378,6 +378,7 @@ async function handleStart(
           return runFullResolutionJpegExport({
             capability,
             graph: message.graph,
+            ...(message.geometry ? { geometry: message.geometry } : {}),
             preferredRows:
               message.executionPlan?.preferredRows ?? message.preferredRows,
             concurrency:

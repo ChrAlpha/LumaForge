@@ -5,6 +5,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { normalizeSelectiveColorParams } from '@lumaforge/luma-color-runtime'
 import type {
+  GeometryParams,
   LutIdentity,
   PolicyChoice,
   RenderEnvironment,
@@ -45,8 +46,10 @@ function hasSelectiveColorShift(params: ProcessingParams): boolean {
 export function toManifestRenderParams(
   params: ProcessingParams,
   exposure: RawRenderExposure,
+  geometry?: GeometryParams,
 ): RenderParams {
   return {
+    ...(geometry ? { geometry } : {}),
     exposure_ev: params.userExposureEv ?? 0,
     tone_curve: {
       contrast: params.userContrast ?? 0,
@@ -159,6 +162,8 @@ export type BuildFullResExportManifestInput = {
   graph: SupportedExportColorGraphDescriptor
   params: ProcessingParams
   rawRenderExposure: RawRenderExposure
+  /** Present only when a geometry was applied at full resolution. */
+  geometry?: GeometryParams
   source: SourceRawIdentity
   lut: LutIdentity | null
   output: {
@@ -185,6 +190,7 @@ export function buildFullResExportManifest(
     render_params: toManifestRenderParams(
       input.params,
       input.rawRenderExposure,
+      input.geometry,
     ),
     policy: input.policy,
     environment: input.environment,

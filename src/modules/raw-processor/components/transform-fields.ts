@@ -203,6 +203,10 @@ export function resolveTransformMessage(
   const { demo } = feature
   if (!feature.hasImage)
     return { tone: 'hint', key: 'raw.transform.awaitImage' }
+  // Naming the action that is actually on screen beats telling someone to wait
+  // for something that will not come back on its own.
+  if (feature.previewSuspended)
+    return { tone: 'hint', key: 'raw.transform.previewReleased' }
   if (feature.captureError || demo.error || !feature.available) {
     return {
       tone: 'alert',

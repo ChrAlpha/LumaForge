@@ -1,5 +1,6 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import { planExportGeometry } from '@lumaforge/render-engine/export'
 import { toast } from 'sonner'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
@@ -163,6 +164,7 @@ export async function orchestrateFullResExport(
   const activeSourceFile = exportReadiness.sourceFile
   const activeRawRenderExposure = exportReadiness.rawRenderExposure
   const exportCapability = exportReadiness.fullResCapability
+  const exportGeometry = activeSession.exportGeometry ?? null
 
   const graph = resolveExportColorGraph({
     styleKind: ctx.atoms.params.styleKind,
@@ -473,6 +475,8 @@ export async function orchestrateFullResExport(
       executionPlan: jobExecutionPlan,
       checkpoint,
       graph,
+      // The geometry the session committed; the worker reproduces exactly it.
+      ...(exportGeometry ? { geometry: exportGeometry } : {}),
       onMetric: (metric) => {
         if (
           !checkpointStore ||
@@ -562,11 +566,29 @@ export async function orchestrateFullResExport(
         })
     }
 
+    // Geometry changes the delivered frame, so the recorded result and the
+    // manifest must describe the transformed output, not the source sensor.
+    const deliveredSize = exportGeometry
+      ? (() => {
+          const plannedGeometry = planExportGeometry(exportGeometry, {
+            width: completedCapability.width,
+            height: completedCapability.height,
+          })
+          return {
+            width: plannedGeometry.outputWidth,
+            height: plannedGeometry.outputHeight,
+          }
+        })()
+      : {
+          width: completedCapability.width,
+          height: completedCapability.height,
+        }
+
     const exportResult = createCompletedExportResult({
       jobResult: result,
       metadata: ctx.atoms.loadedImage.metadata,
-      width: completedCapability.width,
-      height: completedCapability.height,
+      width: deliveredSize.width,
+      height: deliveredSize.height,
       copyCapability,
       manifestState: { status: 'sealing' },
     })
@@ -583,8 +605,8 @@ export async function orchestrateFullResExport(
               result: exportResult,
               retryRecommended: false,
               lastSuccessfulSize: {
-                width: completedCapability.width,
-                height: completedCapability.height,
+                width: deliveredSize.width,
+                height: deliveredSize.height,
               },
             },
           }
@@ -603,6 +625,19 @@ export async function orchestrateFullResExport(
       graph,
       params: ctx.atoms.params,
       rawRenderExposure: activeRawRenderExposure,
+      sourceDimensions: {
+        width: completedCapability.width,
+        height: completedCapability.height,
+      },
+      ...(exportGeometry
+        ? {
+            geometry: {
+              matrix: exportGeometry.matrix,
+              constrain_crop: exportGeometry.constrainCrop,
+              output: deliveredSize,
+            },
+          }
+        : {}),
       style: activeSession.activeStyle,
       quality: jpegQuality,
       policy: {

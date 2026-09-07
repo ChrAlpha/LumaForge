@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PreviewSource } from '~/modules/transform-demo/preview-types'
+import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
 
 import { captureTransformSource } from '../services/preview/capture-transform-source'
 import { useRawTransformFeature } from './useRawTransformFeature'
@@ -29,6 +30,8 @@ const demo = vi.hoisted(() => ({
   loading: false,
   rendering: false,
   error: null,
+  constrainCrop: true,
+  matrix: null as number[] | null,
 }))
 vi.mock('~/modules/transform-demo/useTransformDemo', () => ({
   useTransformDemo: () => demo,
@@ -53,7 +56,12 @@ function workflow(): UseRawWorkflowReturn {
     decodedImageRef: { current: { width: 80, height: 60 } },
     pipelineRef: { current: {} },
     params: { viewMode: 'processed', compareSplit: 0.5, userExposureEv: 0 },
-    previewTransform: { sourceId: 'one', active: false, setActive: vi.fn() },
+    previewTransform: {
+      sourceId: 'one',
+      active: false,
+      geometry: null,
+      commit: vi.fn(),
+    },
     setViewMode: vi.fn(),
   } as unknown as UseRawWorkflowReturn
 }
@@ -67,6 +75,10 @@ const frame: PreviewSource = {
 beforeEach(() => {
   vi.useFakeTimers()
   vi.mocked(captureTransformSource).mockResolvedValue(frame)
+  demo.mode = 'off'
+  demo.manual = { ...NEUTRAL_TRANSFORM }
+  demo.matrix = null
+  demo.constrainCrop = true
 })
 afterEach(() => {
   vi.useRealTimers()
@@ -79,11 +91,11 @@ describe('rAW Transform feature', () => {
     active.previewTransform!.active = true
     const first = renderHook(() => useRawTransformFeature(active, false))
     first.unmount()
-    expect(active.previewTransform!.setActive).toHaveBeenCalledWith(false)
+    expect(active.previewTransform!.commit).toHaveBeenCalledWith(null)
     const neutral = workflow()
     const second = renderHook(() => useRawTransformFeature(neutral, false))
     second.unmount()
-    expect(neutral.previewTransform!.setActive).not.toHaveBeenCalled()
+    expect(neutral.previewTransform!.commit).not.toHaveBeenCalled()
   })
 
   it('captures on demand and refreshes color without reopening the photo or resetting geometry', async () => {
@@ -115,8 +127,41 @@ describe('rAW Transform feature', () => {
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(2)
     act(() => result.current.setMode('vertical'))
-    expect(initial.previewTransform?.setActive).toHaveBeenCalledWith(true)
+    expect(demo.setMode).toHaveBeenCalledWith('vertical')
     expect(initial.setViewMode).toHaveBeenCalledWith('processed')
+    unmount()
+  })
+
+  it('commits the matrix the preview rendered, and clears it when neutral', async () => {
+    const input = workflow()
+    const { rerender, unmount } = renderHook(
+      ({ value }) => useRawTransformFeature(value, false),
+      { initialProps: { value: input } },
+    )
+    expect(input.previewTransform?.commit).not.toHaveBeenCalled()
+
+    // The demo settles on a geometry; the session must record that exact
+    // matrix so the full-resolution export reproduces this framing.
+    demo.mode = 'auto'
+    demo.matrix = [0.99, -0.04, 0.02, 0.04, 0.99, -0.01, 0, 0, 1]
+    demo.constrainCrop = true
+    rerender({ value: input })
+    expect(input.previewTransform?.commit).toHaveBeenLastCalledWith({
+      matrix: [0.99, -0.04, 0.02, 0.04, 0.99, -0.01, 0, 0, 1],
+      constrainCrop: true,
+    })
+
+    // A redundant render must not re-commit and invalidate exports again.
+    const calls = vi.mocked(input.previewTransform!.commit).mock.calls.length
+    rerender({ value: input })
+    expect(vi.mocked(input.previewTransform!.commit).mock.calls).toHaveLength(
+      calls,
+    )
+
+    demo.mode = 'off'
+    demo.matrix = null
+    rerender({ value: input })
+    expect(input.previewTransform?.commit).toHaveBeenLastCalledWith(null)
     unmount()
   })
 

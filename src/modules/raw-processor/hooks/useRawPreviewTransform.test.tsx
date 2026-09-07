@@ -101,6 +101,12 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
   }
 }
 
+/** A committed geometry: a slight rotation with the crop constrained. */
+const SAMPLE_GEOMETRY = {
+  matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
+  constrainCrop: true,
+}
+
 describe('useRawPreviewTransform', () => {
   it('invalidates cached exports and imperative result actions synchronously', async () => {
     const session = createReadySession()
@@ -110,8 +116,10 @@ describe('useRawPreviewTransform', () => {
     const actions = harness.result.current.actions
 
     await act(async () => {
-      harness.result.current.transform.setActive(true)
-      expect(harness.sessionRef.current?.previewTransformActive).toBe(true)
+      harness.result.current.transform.commit(SAMPLE_GEOMETRY)
+      expect(harness.sessionRef.current?.exportGeometry).toEqual(
+        SAMPLE_GEOMETRY,
+      )
       expect(harness.sessionRef.current?.exportState.result).toBeUndefined()
       expect(harness.previewCopyCanvasRef.current).toBeNull()
       await actions.downloadExportResult()
@@ -132,12 +140,12 @@ describe('useRawPreviewTransform', () => {
     const harness = setup(session)
 
     act(() => {
-      harness.result.current.transform.setActive(true)
+      harness.result.current.transform.commit(SAMPLE_GEOMETRY)
       expect(harness.controller.signal.aborted).toBe(true)
       expect(harness.exportGraphVersionRef.current).toBe(1)
       expect(harness.sessionRef.current?.exportState.status).toBe('idle')
     })
-    act(() => harness.result.current.transform.setActive(true))
+    act(() => harness.result.current.transform.commit(SAMPLE_GEOMETRY))
 
     expect(harness.exportGraphVersionRef.current).toBe(2)
     expect(harness.queueExportResultResourceDisposal).toHaveBeenCalledTimes(2)
@@ -147,8 +155,8 @@ describe('useRawPreviewTransform', () => {
 
   it('restores original export readiness after neutral reset', () => {
     const harness = setup()
-    act(() => harness.result.current.transform.setActive(true))
-    act(() => harness.result.current.transform.setActive(false))
+    act(() => harness.result.current.transform.commit(SAMPLE_GEOMETRY))
+    act(() => harness.result.current.transform.commit(null))
     const session = harness.result.current.session!
 
     expect(harness.result.current.transform.active).toBe(false)
@@ -164,22 +172,20 @@ describe('useRawPreviewTransform', () => {
   it('starts a replacement source neutral and rejects callbacks for the old source', () => {
     const harness = setup()
     const previous = harness.result.current.transform
-    act(() => previous.setActive(true))
+    act(() => previous.commit(SAMPLE_GEOMETRY))
     const replacement = createReadySession()
     act(() => harness.result.current.setSession(replacement))
-    act(() => previous.setActive(true))
+    act(() => previous.commit(SAMPLE_GEOMETRY))
 
     expect(harness.result.current.transform.sourceId).toBe(replacement.id)
     expect(harness.result.current.transform.active).toBe(false)
-    expect(
-      harness.result.current.session?.previewTransformActive,
-    ).toBeUndefined()
+    expect(harness.result.current.session?.exportGeometry).toBeUndefined()
     expect(harness.exportGraphVersionRef.current).toBe(1)
   })
 
   it('does not create a session or invalidate exports without a source', () => {
     const harness = setup(null)
-    act(() => harness.result.current.transform.setActive(true))
+    act(() => harness.result.current.transform.commit(SAMPLE_GEOMETRY))
 
     expect(harness.result.current.transform.sourceId).toBeNull()
     expect(harness.result.current.transform.active).toBe(false)

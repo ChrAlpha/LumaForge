@@ -6,6 +6,7 @@ import type {
   PreviewHistogramState,
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
+import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { RefObject } from 'react'
 
 import type { PipelineStats, RawProcessingPipeline } from '~/lib/gl/pipeline'
@@ -35,7 +36,9 @@ export interface UseRawWorkflowReturn {
   previewTransform?: {
     sourceId: string | null
     active: boolean
-    setActive: (active: boolean) => void
+    /** Geometry the export reproduces at full resolution; null when neutral. */
+    geometry: ExportGeometry | null
+    commit: (geometry: ExportGeometry | null) => void
   }
   params: ProcessingParams
   loadedImage: { file: File | null; metadata: ImageMetadata | null }

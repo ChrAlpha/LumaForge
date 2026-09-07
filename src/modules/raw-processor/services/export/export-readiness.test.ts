@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { PREVIEW_TRANSFORM_EXPORT_REASON } from '../../model/derive-session'
 import type { ImageSession } from '../../model/session'
 import { deriveFullResExportReadiness } from './export-readiness'
 
@@ -46,26 +45,32 @@ function createSession(
   }
 }
 
+/** A committed geometry: a slight rotation with the crop constrained. */
+const SAMPLE_GEOMETRY = {
+  matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
+  constrainCrop: true,
+}
+
 describe('export readiness helpers', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('blocks preview geometry and restores full-resolution eligibility after reset', () => {
+  it('keeps full-resolution export available while a geometry is committed', () => {
     const input = {
       sourceFile: new File(['raw'], 'frame.ARW'),
-      session: { ...createSession(), previewTransformActive: true },
+      session: { ...createSession(), exportGeometry: SAMPLE_GEOMETRY },
       rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' as const },
     }
 
-    expect(deriveFullResExportReadiness(input)).toEqual({
-      canExport: false,
-      disabledReason: PREVIEW_TRANSFORM_EXPORT_REASON,
-    })
+    // Full resolution reproduces the geometry, so it is no longer a blocker.
+    const readiness = deriveFullResExportReadiness(input)
+    expect(readiness.canExport).toBe(true)
+    expect(readiness.disabledReason).toBeUndefined()
     expect(
       deriveFullResExportReadiness({
         ...input,
-        session: { ...input.session, previewTransformActive: false },
+        session: { ...input.session, exportGeometry: null },
       }).canExport,
     ).toBe(true)
   })

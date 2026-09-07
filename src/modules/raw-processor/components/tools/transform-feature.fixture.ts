@@ -26,6 +26,7 @@ export function transformFeatureFixture(
       loadSource: vi.fn(),
       clearSource: vi.fn(),
       reset: vi.fn(),
+      matrix: null,
       ready: false,
       solution: {
         matrix: identityMatrix(),
@@ -37,6 +38,7 @@ export function transformFeatureFixture(
     },
     active: false,
     available: false,
+    previewSuspended: false,
     hasImage: false,
     observe: vi.fn(() => vi.fn()),
     busy: false,

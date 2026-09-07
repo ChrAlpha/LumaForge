@@ -127,6 +127,48 @@ describe('buildManifestForExportResult', () => {
 
     await expect(buildManifestForExportResult(input)).rejects.toThrow(/LUT/)
   })
+  it('declares the geometry and keeps the source frame distinct from the output', async () => {
+    const { input } = buildInput(null)
+
+    const manifest = await buildManifestForExportResult({
+      ...input,
+      sourceDimensions: { width: 4032, height: 3024 },
+      geometry: {
+        matrix: [0.99, -0.04, 0.02, 0.04, 0.99, -0.01, 0, 0, 1],
+        constrain_crop: true,
+        output: { width: input.result.width, height: input.result.height },
+      },
+    })
+
+    expect(manifest.render_params.geometry).toEqual({
+      matrix: [0.99, -0.04, 0.02, 0.04, 0.99, -0.01, 0, 0, 1],
+      constrain_crop: true,
+      output: { width: input.result.width, height: input.result.height },
+    })
+    // A geometried export delivers a smaller frame than the RAW it came from;
+    // recording the output as the source's decoded size would describe a file
+    // that never existed.
+    expect(manifest.source_raw.decoded_dimensions).toEqual({
+      width: 4032,
+      height: 3024,
+    })
+    expect(manifest.output.dimensions).toEqual({
+      width: input.result.width,
+      height: input.result.height,
+    })
+  })
+
+  it('falls back to the output frame as the source frame without geometry', async () => {
+    const { input } = buildInput(null)
+
+    const manifest = await buildManifestForExportResult(input)
+
+    expect(manifest.render_params.geometry).toBeUndefined()
+    expect(manifest.source_raw.decoded_dimensions).toEqual(
+      manifest.output.dimensions,
+    )
+  })
+
   it('uses the hash recorded at write time for file-backed output without reopening it', async () => {
     const { input, jpegBytes } = buildInput(null)
     const openBlob = vi.fn(async () => new Blob([jpegBytes]))

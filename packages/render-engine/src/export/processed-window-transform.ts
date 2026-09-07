@@ -76,6 +76,21 @@ export function processedWindowToLinearProPhotoTile(
   return { width: window.width, height: window.height, data }
 }
 
+/**
+ * The window as a flat linear ProPhoto RGB buffer plus the rect it covers.
+ *
+ * The geometry stage samples across rows rather than walking them in order, so
+ * it needs the rect and the buffer together instead of a row accessor.
+ */
+export function processedWindowToSourceWindow(
+  window: LumaRawProcessedWindow,
+  expectedRect: LumaRawWindowRect,
+): { rect: LumaRawWindowRect; data: Uint16Array } {
+  assertValidProcessedWindow(window, expectedRect)
+
+  return { rect: expectedRect, data: window.data }
+}
+
 export function processedWindowToRgb16Rows(
   window: LumaRawProcessedWindow,
   expectedRect: LumaRawWindowRect,

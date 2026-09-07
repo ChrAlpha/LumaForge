@@ -143,6 +143,19 @@ export interface SelectiveColorBandShift {
   readonly lightness: number
 }
 
+/**
+ * Geometry applied at full resolution before the color graph.
+ *
+ * The matrix is in source-normalized to output-normalized space, so it is
+ * resolution independent: a reader can reproduce the same framing from the
+ * source at any size. `output` records the frame it actually produced.
+ */
+export interface GeometryParams {
+  readonly matrix: readonly number[]
+  readonly constrain_crop: boolean
+  readonly output: { readonly width: number; readonly height: number }
+}
+
 export interface RenderParams {
   readonly exposure_ev: number
   readonly tone_curve?: ToneCurveParams
@@ -154,6 +167,8 @@ export interface RenderParams {
   /** Resolved raw-render exposure (EV) applied before user params. */
   readonly raw_render_exposure_ev?: number
   readonly raw_render_exposure_source?: RawRenderExposureSource
+  /** Present only when a geometry was applied. */
+  readonly geometry?: GeometryParams
 }
 
 export type RenderPolicyKind =

@@ -4,6 +4,7 @@ import {
   normalizePreferredStripRows,
 } from '@lumaforge/render-engine'
 import type {
+  ExportGeometry,
   ExportPerfMetric,
   FullResolutionExportProgress,
   JpegExportMetadata,
@@ -63,6 +64,8 @@ export type FullResExportWorkerStartMessage = {
   preferredRows?: number
   concurrency?: number
   quality?: number
+  /** Full-resolution geometry; plain data so it survives structured clone. */
+  geometry?: ExportGeometry
   collectMetrics: boolean
 }
 
@@ -122,6 +125,7 @@ export type RunFullResolutionJpegExportInWorkerInput = {
   preferredRows?: number
   concurrency?: number
   quality?: number
+  geometry?: ExportGeometry
   executionPlan?: FullResWorkerExecutionPlan
   checkpoint?: FullResWorkerCheckpointConfig
   signal?: AbortSignal
@@ -350,6 +354,7 @@ export class FullResolutionExportWorkerClient {
           file: input.file,
           filename: input.filename,
           graph: input.graph,
+          geometry: input.geometry,
           executionPlan: input.executionPlan,
           checkpoint: input.checkpoint,
           preferredRows,

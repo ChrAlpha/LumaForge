@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { createDemoSample } from './demo-sample'
 import { identityMatrix } from './geometry/matrix'
@@ -194,22 +194,35 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     return dispose
   }, [autoLoadSample, dispose, loadSource])
 
+  /**
+   * The geometry currently on screen. The export commits this exact matrix, so
+   * the full-resolution render reproduces the framing the user approved rather
+   * than recomposing it from parts and hoping the two agree.
+   */
+  const matrix = useMemo(
+    () =>
+      source && solutions
+        ? composeManualTransform(
+            solutions[mode].matrix,
+            manual,
+            source.frame.width / source.frame.height,
+          )
+        : null,
+    [manual, mode, solutions, source],
+  )
+
   useEffect(() => {
-    if (!source || !analysis || !solutions) return
+    if (!source || !analysis || !solutions || !matrix) return
     const id = ++requestId.current
     const posted = postRender({
       type: 'render',
       sourceId: sourceId.current,
       requestId: id,
-      matrix: composeManualTransform(
-        solutions[mode].matrix,
-        manual,
-        source.frame.width / source.frame.height,
-      ),
+      matrix,
       constrainCrop,
     })
     if (posted) setRendering(true)
-  }, [analysis, constrainCrop, manual, mode, postRender, solutions, source])
+  }, [analysis, constrainCrop, matrix, postRender, solutions, source])
 
   const selectMode = (next: UprightMode) => {
     modeRef.current = next
@@ -244,6 +257,7 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     loadSource,
     clearSource,
     reset,
+    matrix,
     ready: Boolean(analysis && source),
     solution: solutions?.[mode] ?? {
       matrix: identityMatrix(),

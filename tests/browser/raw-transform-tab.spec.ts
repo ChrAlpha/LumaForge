@@ -13,7 +13,8 @@ const rawPath = fileURLToPath(
 )
 const rawName = 'raw-pixls-iphone-se.dng'
 const replacementName = 'replacement-iphone-se.dng'
-const exportReason = 'Reset Transform to export this photo.'
+const hqExportReason =
+  'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.'
 
 function isMobile(page: Page) {
   return (page.viewportSize()?.width ?? 1280) <= 640
@@ -170,27 +171,38 @@ async function snapshot(page: Page) {
   })
 }
 
+/**
+ * Full-resolution export reproduces the geometry, so it stays enabled whether
+ * or not a Transform is committed. Only the bounded HQ preview refuses, and it
+ * has to say why rather than going quietly dark.
+ */
 async function expectStandardExports(
   page: Page,
-  enabled: boolean,
+  geometryActive: boolean,
   hqAvailable = true,
 ) {
   await openTool(page, 'Export')
-  for (const name of [
-    'Export full-resolution JPEG',
-    'Export HQ preview JPEG',
-  ]) {
-    const button = page.getByRole('button', { name, exact: true })
-    if (enabled && (hqAvailable || name === 'Export full-resolution JPEG')) {
-      await expect(button).toBeEnabled({ timeout: 30_000 })
-    } else {
-      await expect(button).toBeDisabled()
-    }
-  }
-  if (enabled) {
-    await expect(page.getByText(exportReason, { exact: true })).toHaveCount(0)
+  await expect(
+    page.getByRole('button', {
+      name: 'Export full-resolution JPEG',
+      exact: true,
+    }),
+  ).toBeEnabled({ timeout: 30_000 })
+
+  const hqButton = page.getByRole('button', {
+    name: 'Export HQ preview JPEG',
+    exact: true,
+  })
+  if (geometryActive) {
+    await expect(hqButton).toBeDisabled()
+    await expect(page.getByText(hqExportReason, { exact: true })).toBeVisible()
   } else {
-    await expect(page.getByText(exportReason, { exact: true })).toBeVisible()
+    await expect(page.getByText(hqExportReason, { exact: true })).toHaveCount(0)
+    if (hqAvailable) {
+      await expect(hqButton).toBeEnabled({ timeout: 30_000 })
+    } else {
+      await expect(hqButton).toBeDisabled()
+    }
   }
 }
 
@@ -281,7 +293,7 @@ for (const preview of ['gpu', 'cpu'] as const) {
       (await page
         .getByRole('button', { name: 'Export HQ preview JPEG', exact: true })
         .isEnabled())
-    await expectStandardExports(page, true, hqAvailable)
+    await expectStandardExports(page, false, hqAvailable)
     await openTool(page, 'Transform')
     await waitForTransform(page)
     await expect(transformTool(page).locator('input[type="file"]')).toHaveCount(
@@ -331,7 +343,7 @@ for (const preview of ['gpu', 'cpu'] as const) {
       original.width * original.height * 0.25,
     )
 
-    await expectStandardExports(page, false)
+    await expectStandardExports(page, true)
     await openTool(page, 'Transform')
     await waitForTransform(page)
     await selectTransformSection(page, 'Perspective')
@@ -365,7 +377,7 @@ for (const preview of ['gpu', 'cpu'] as const) {
         .getAttribute('data-transform-matrix'),
     ).toBe(geometry)
     expect(toned.meanLight).toBeGreaterThan(corrected.meanLight)
-    await expectStandardExports(page, false)
+    await expectStandardExports(page, true)
     await openTool(page, 'Transform')
     await waitForTransform(page)
 
@@ -379,7 +391,7 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await selectTransformSection(page, 'Perspective')
     await expect(rotate).toHaveAttribute('aria-valuenow', '0')
     await expect(page.locator('[data-raw-transform-preview]')).toHaveCount(0)
-    await expectStandardExports(page, true, hqAvailable)
+    await expectStandardExports(page, false, hqAvailable)
 
     await openTool(page, 'Transform')
     await selectTransformSection(page, 'Perspective')
@@ -399,7 +411,7 @@ for (const preview of ['gpu', 'cpu'] as const) {
       transformTool(page).getByRole('button', { name: 'Off', exact: true }),
     ).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('[data-raw-transform-preview]')).toHaveCount(0)
-    await expectStandardExports(page, true, hqAvailable)
+    await expectStandardExports(page, false, hqAvailable)
 
     await openTool(page, 'Transform')
     await selectTransformSection(page, 'Perspective')
@@ -424,6 +436,6 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await selectTransformSection(page, 'Perspective')
     await expect(rotate).toHaveAttribute('aria-valuenow', '0')
     await expect(page.locator('[data-raw-transform-preview]')).toHaveCount(0)
-    await expectStandardExports(page, true, hqAvailable)
+    await expectStandardExports(page, false, hqAvailable)
   })
 }

@@ -1,3 +1,4 @@
+import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback } from 'react'
 
@@ -21,8 +22,8 @@ export function useRawPreviewTransform({
   UseRawWorkflowReturn['previewTransform']
 > {
   const sourceId = session?.id ?? null
-  const setActive = useCallback(
-    (active: boolean) => {
+  const commit = useCallback(
+    (geometry: ExportGeometry | null) => {
       if (!sourceId || sessionRef.current?.id !== sourceId) return
 
       invalidateExportGraph()
@@ -30,7 +31,7 @@ export function useRawPreviewTransform({
         previous?.id === sourceId
           ? {
               ...clearExportResultState(previous),
-              previewTransformActive: active,
+              exportGeometry: geometry,
             }
           : previous
       sessionRef.current = update(sessionRef.current)
@@ -41,7 +42,8 @@ export function useRawPreviewTransform({
 
   return {
     sourceId,
-    active: Boolean(session?.previewTransformActive),
-    setActive,
+    active: Boolean(session?.exportGeometry),
+    geometry: session?.exportGeometry ?? null,
+    commit,
   }
 }

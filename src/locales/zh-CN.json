@@ -464,6 +464,7 @@
   "raw.transform.unavailable": "处理后的预览暂不可用，请等待预览就绪或重置变换。",
   "raw.transform.awaitImage": "打开一张 RAW 照片后即可调整透视。",
   "raw.transform.preparing": "正在准备当前照片…",
-  "raw.transform.exportReason": "导出这张照片前，请先重置变换。",
+  "raw.transform.previewReleased": "恢复预览后即可继续调整变换。",
+  "raw.transform.hqExportReason": "按全分辨率导出可保留变换；若要导出 HQ 预览 JPEG，请先重置变换。",
   "raw.transform.histogramUnavailable": "变换预览暂不提供直方图。"
 }

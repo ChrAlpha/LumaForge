@@ -7,6 +7,24 @@
 
 export { TypedBufferPool } from './buffer-pool'
 export {
+  applyGeometryMatte,
+  EXPORT_GEOMETRY_MATTE,
+  type ExportGeometry,
+  type GeometryResampleTarget,
+  type GeometrySourceWindow,
+  INVALID_EXPORT_GEOMETRY,
+  planExportGeometry,
+  type PlannedExportGeometry,
+  preimageRect,
+  resampleGeometryTile,
+} from './geometry/export-geometry'
+export {
+  applyMatrix,
+  invertMatrix,
+  isMatrix3,
+  type Matrix3,
+} from './geometry/matrix'
+export {
   normalizeExportConcurrency,
   runOrderedConcurrent,
 } from './pipeline-concurrency'
@@ -15,6 +33,7 @@ export {
   type ProcessedRgb16Rows,
   processedWindowToLinearProPhotoTile,
   processedWindowToRgb16Rows,
+  processedWindowToSourceWindow,
 } from './processed-window-transform'
 export {
   expandRectWithHalo,
