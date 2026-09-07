@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
+
 import { COLOR_NEUTRAL } from '../color-fields'
 import { TONE_NEUTRAL } from '../tone-fields'
 import { ScrubValueHud } from './ScrubValueHud'
@@ -27,6 +29,7 @@ describe('scrubValueHud', () => {
         tone={TONE_NEUTRAL}
         color={COLOR_NEUTRAL}
         selectiveColor={undefined}
+        manualTransform={undefined}
       />,
     )
     expect(container.querySelector('[data-scrub-value-hud]')).toBeNull()
@@ -39,6 +42,7 @@ describe('scrubValueHud', () => {
         tone={{ ...TONE_NEUTRAL, userExposureEv: 1.25 }}
         color={COLOR_NEUTRAL}
         selectiveColor={undefined}
+        manualTransform={undefined}
       />,
     )
     const hud = screen.getByLabelText(/adjustment readout/i)
@@ -55,6 +59,7 @@ describe('scrubValueHud', () => {
         tone={TONE_NEUTRAL}
         color={{ ...COLOR_NEUTRAL, userTint: -18 }}
         selectiveColor={undefined}
+        manualTransform={undefined}
       />,
     )
     const hud = screen.getByLabelText(/adjustment readout/i)
@@ -79,12 +84,43 @@ describe('scrubValueHud', () => {
         tone={TONE_NEUTRAL}
         color={COLOR_NEUTRAL}
         selectiveColor={bands}
+        manualTransform={undefined}
       />,
     )
     const hud = screen.getByLabelText(/adjustment readout/i)
     expect(hud).toHaveTextContent(/orange/i)
     expect(hud).toHaveTextContent(/hue/i)
     expect(hud).toHaveTextContent('+14')
+  })
+
+  it('renders the live geometry offset when scrubbing a Transform field', () => {
+    render(
+      <ScrubValueHud
+        field={{ kind: 'transform', key: 'rotate' }}
+        tone={TONE_NEUTRAL}
+        color={COLOR_NEUTRAL}
+        selectiveColor={undefined}
+        manualTransform={{ ...NEUTRAL_TRANSFORM, rotate: -2.4 }}
+      />,
+    )
+    const hud = screen.getByLabelText(/adjustment readout/i)
+    expect(hud).toHaveTextContent(/rotate/i)
+    expect(hud).toHaveTextContent('-2.4')
+  })
+
+  it('reports Scale as the absolute percentage the row shows, not its offset', () => {
+    render(
+      <ScrubValueHud
+        field={{ kind: 'transform', key: 'scale' }}
+        tone={TONE_NEUTRAL}
+        color={COLOR_NEUTRAL}
+        selectiveColor={undefined}
+        manualTransform={{ ...NEUTRAL_TRANSFORM, scale: 118 }}
+      />,
+    )
+    expect(screen.getByLabelText(/adjustment readout/i)).toHaveTextContent(
+      '118%',
+    )
   })
 
   it('is non-interactive (does not capture pointer events over the preview)', () => {
@@ -94,6 +130,7 @@ describe('scrubValueHud', () => {
         tone={{ ...TONE_NEUTRAL, userContrast: 12 }}
         color={COLOR_NEUTRAL}
         selectiveColor={undefined}
+        manualTransform={undefined}
       />,
     )
     expect(screen.getByLabelText(/adjustment readout/i)).toHaveClass(

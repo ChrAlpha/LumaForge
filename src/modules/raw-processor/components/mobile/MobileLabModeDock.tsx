@@ -180,7 +180,13 @@ function MobileLabModePanel({
   onSplitOpenChange: (open: boolean) => void
 }) {
   if (mode === 'transform') {
-    return transform ? <TransformListPanel feature={transform} /> : null
+    return transform ? (
+      <TransformListPanel
+        feature={transform}
+        scrubbing={scrubbing}
+        onScrubChange={onScrubChange}
+      />
+    ) : null
   }
 
   if (mode === 'tone') {

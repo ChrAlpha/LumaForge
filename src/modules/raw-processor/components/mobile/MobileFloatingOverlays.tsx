@@ -3,6 +3,7 @@ import { AnimatePresence, m } from 'motion/react'
 
 import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
+import type { ManualTransform } from '~/modules/transform-demo/transform-types'
 
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
@@ -23,6 +24,7 @@ export interface MobileFloatingOverlaysProps {
   tone: ToneValue
   color: ColorValue
   selectiveColor: HSLToolValue | undefined
+  manualTransform: ManualTransform | undefined
   onExitImmersive: () => void
 }
 
@@ -38,6 +40,7 @@ export function MobileFloatingOverlays({
   tone,
   color,
   selectiveColor,
+  manualTransform,
   onExitImmersive,
 }: MobileFloatingOverlaysProps) {
   const { t } = useI18n()
@@ -96,6 +99,7 @@ export function MobileFloatingOverlays({
         tone={tone}
         color={color}
         selectiveColor={selectiveColor}
+        manualTransform={manualTransform}
       />
     </>
   )

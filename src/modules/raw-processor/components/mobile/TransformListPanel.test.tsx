@@ -25,6 +25,20 @@ async function openFrame() {
   return screen.findByRole('slider', { name: 'Scale' })
 }
 
+const onScrubChange = vi.fn()
+function renderPanel(feature: RawTransformFeature) {
+  const result = render(
+    <TransformListPanel feature={feature} onScrubChange={onScrubChange} />,
+  )
+  return {
+    ...result,
+    rerender: (next: RawTransformFeature) =>
+      result.rerender(
+        <TransformListPanel feature={next} onScrubChange={onScrubChange} />,
+      ),
+  }
+}
+
 describe('transformListPanel', () => {
   beforeEach(() => {
     vi.stubGlobal('PointerEvent', MouseEvent)
@@ -37,7 +51,10 @@ describe('transformListPanel', () => {
       })),
     )
   })
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    onScrubChange.mockClear()
+  })
 
   it.each([
     { available: false },
@@ -45,7 +62,7 @@ describe('transformListPanel', () => {
     { isProcessing: true },
   ])('disables all manual input while blocked by %j', async (blocked) => {
     const feature = readyFeature(blocked)
-    render(<TransformListPanel feature={feature} />)
+    renderPanel(feature)
     const scale = await openFrame()
     expect(scale.closest('[data-slot="slider-root"]')).toHaveAttribute(
       'data-disabled',
@@ -62,7 +79,7 @@ describe('transformListPanel', () => {
 
   it('ignores a scrub already in progress when processing starts', async () => {
     const feature = readyFeature()
-    const { rerender } = render(<TransformListPanel feature={feature} />)
+    const { rerender } = renderPanel(feature)
     const scale = await openFrame()
     const row = scale.closest('[data-adjust-slider-row]')!
     vi.spyOn(
@@ -72,9 +89,7 @@ describe('transformListPanel', () => {
     fireEvent.pointerDown(row, { clientX: 100, clientY: 5, buttons: 1 })
     expect(row).toHaveAttribute('data-scrubbing', 'true')
     vi.mocked(feature.setManual).mockClear()
-    rerender(
-      <TransformListPanel feature={{ ...feature, isProcessing: true }} />,
-    )
+    rerender({ ...feature, isProcessing: true })
     fireEvent.pointerMove(row, { clientX: 160, clientY: 5, buttons: 1 })
     fireEvent.pointerUp(row, { clientX: 160, clientY: 5 })
     fireEvent.keyDown(scale, { key: 'ArrowRight' })
@@ -84,7 +99,7 @@ describe('transformListPanel', () => {
 
   it('announces absolute Scale and resets it to 100 percent', async () => {
     const feature = readyFeature()
-    const { rerender } = render(<TransformListPanel feature={feature} />)
+    const { rerender } = renderPanel(feature)
     const scale = await openFrame()
     expect(scale).toHaveAttribute('aria-valuetext', '120%')
     fireEvent.click(screen.getByRole('button', { name: 'Reset Scale' }))
@@ -92,24 +107,20 @@ describe('transformListPanel', () => {
       ...feature.demo.manual,
       scale: 100,
     })
-    rerender(
-      <TransformListPanel
-        feature={{
-          ...feature,
-          demo: {
-            ...feature.demo,
-            manual: { ...feature.demo.manual, scale: 100 },
-          },
-        }}
-      />,
-    )
+    rerender({
+      ...feature,
+      demo: {
+        ...feature.demo,
+        manual: { ...feature.demo.manual, scale: 100 },
+      },
+    })
     expect(scale).toHaveAttribute('aria-valuetext', '100%')
   })
 
   it('enables full and Frame reset for a crop-only change', async () => {
     const feature = transformFeatureFixture({ hasImage: true })
     feature.demo = { ...feature.demo, constrainCrop: false }
-    render(<TransformListPanel feature={feature} />)
+    renderPanel(feature)
     const fullReset = screen.getByRole('button', { name: 'Reset Upright' })
     expect(fullReset).toBeEnabled()
     fireEvent.click(fullReset)
@@ -122,10 +133,44 @@ describe('transformListPanel', () => {
     expect(feature.setManual).toHaveBeenCalledWith(feature.demo.manual)
   })
 
+  it('reports the scrubbed field to the shared mobile scrub channel', async () => {
+    const feature = readyFeature()
+    renderPanel(feature)
+    const scale = await openFrame()
+    const row = scale.closest('[data-adjust-slider-row]')!
+    vi.spyOn(
+      row.querySelector('[data-slot="slider-track"]')!,
+      'getBoundingClientRect',
+    ).mockReturnValue({ left: 0, top: 0, width: 200, height: 10 } as DOMRect)
+    fireEvent.pointerDown(row, { clientX: 100, clientY: 5, buttons: 1 })
+    // The HUD, the topbar fade and the dock dim all read this one channel.
+    expect(onScrubChange).toHaveBeenLastCalledWith({
+      kind: 'transform',
+      key: 'scale',
+    })
+    fireEvent.pointerUp(row, { clientX: 100, clientY: 5 })
+    expect(onScrubChange).toHaveBeenLastCalledWith(null)
+  })
+
+  it('releases the scrub when a section swap unmounts the row', async () => {
+    const feature = readyFeature()
+    renderPanel(feature)
+    const scale = await openFrame()
+    const row = scale.closest('[data-adjust-slider-row]')!
+    vi.spyOn(
+      row.querySelector('[data-slot="slider-track"]')!,
+      'getBoundingClientRect',
+    ).mockReturnValue({ left: 0, top: 0, width: 200, height: 10 } as DOMRect)
+    fireEvent.pointerDown(row, { clientX: 100, clientY: 5, buttons: 1 })
+    onScrubChange.mockClear()
+    fireEvent.click(screen.getByRole('tab', { name: 'Upright' }))
+    expect(onScrubChange).toHaveBeenCalledWith(null)
+  })
+
   it('resets Frame without restoring stale geometry activation or other fields', async () => {
     const feature = readyFeature()
     feature.demo = { ...feature.demo, constrainCrop: false }
-    render(<TransformListPanel feature={feature} />)
+    renderPanel(feature)
     await openFrame()
     fireEvent.click(screen.getByRole('button', { name: 'Reset Frame' }))
     expect(feature.setManual).toHaveBeenCalledWith({

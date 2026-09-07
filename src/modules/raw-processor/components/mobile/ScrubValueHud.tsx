@@ -3,12 +3,18 @@ import { AnimatePresence, m } from 'motion/react'
 
 import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
+import type { ManualTransform } from '~/modules/transform-demo/transform-types'
 
 import type { ColorValue } from '../color-fields'
 import { COLOR_FIELDS, formatColorValueShort } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
 import { formatToneValue, TONE_FIELDS } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
+import {
+  formatTransformValue,
+  TRANSFORM_FIELDS,
+  transformSliderValue,
+} from '../transform-fields'
 import type { ScrubFieldId } from './AdjustListPanel'
 import {
   formatHSLValueShort,
@@ -21,6 +27,7 @@ type ScrubValueHudProps = {
   tone: ToneValue
   color: ColorValue
   selectiveColor: HSLToolValue | undefined
+  manualTransform: ManualTransform | undefined
 }
 
 export function ScrubValueHud(props: ScrubValueHudProps) {
@@ -53,7 +60,7 @@ export function ScrubValueHud(props: ScrubValueHudProps) {
 }
 
 type Readout = {
-  kind: 'tone' | 'color' | 'hsl'
+  kind: 'tone' | 'color' | 'hsl' | 'transform'
   key: string
   label: string
   formatted: string
@@ -75,6 +82,22 @@ function resolveReadout(
       key: toneField.key,
       label: t(toneField.labelKey),
       formatted: formatToneValue(toneField.key, value),
+    }
+  }
+
+  // Transform trades in offsets from neutral, so the HUD reports the same
+  // string the row does rather than the raw model value (Scale reads "100%").
+  if (field.kind === 'transform') {
+    const transformField = TRANSFORM_FIELDS.find((f) => f.key === field.key)
+    if (!transformField || !props.manualTransform) return null
+    return {
+      kind: 'transform',
+      key: transformField.key,
+      label: t(transformField.labelKey),
+      formatted: formatTransformValue(
+        transformField,
+        transformSliderValue(transformField, props.manualTransform),
+      ),
     }
   }
 

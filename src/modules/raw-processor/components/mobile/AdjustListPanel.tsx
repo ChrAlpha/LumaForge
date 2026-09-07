@@ -6,6 +6,7 @@ import { useId, useState } from 'react'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
+import type { ManualTransform } from '~/modules/transform-demo/transform-types'
 
 import { DOCK_SPRING } from '../../motion'
 import type { ColorValue } from '../color-fields'
@@ -24,6 +25,9 @@ export type ScrubFieldId =
   | { kind: 'tone'; key: keyof ToneValue }
   | { kind: 'color'; key: keyof ColorValue }
   | { kind: 'hsl'; band: HSLBandId; key: keyof HSLBandShift }
+  // Transform scrubs report on the same channel: the HUD, the topbar fade and
+  // the dock dim are properties of "a value is moving", not of which tool.
+  | { kind: 'transform'; key: keyof ManualTransform }
 
 type AdjustListPanelProps = {
   tone: ToneValue

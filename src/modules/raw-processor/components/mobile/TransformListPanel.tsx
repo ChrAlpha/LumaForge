@@ -32,6 +32,7 @@ import {
   UPRIGHT_MODES,
   uprightModeLabelKey,
 } from '../transform-fields'
+import type { ScrubFieldId } from './AdjustListPanel'
 import { AdjustSliderRow } from './AdjustSliderRow'
 
 type Section = 'upright' | TransformGroup
@@ -54,15 +55,18 @@ function sectionLabelKey(section: Section) {
  */
 export function TransformListPanel({
   feature,
+  scrubbing = false,
+  onScrubChange,
 }: {
   feature: RawTransformFeature
+  scrubbing?: boolean
+  onScrubChange: (field: ScrubFieldId | null) => void
 }) {
   const { t } = useI18n()
   const { demo, observe } = feature
   useEffect(() => observe(), [observe])
 
   const [section, setSection] = useState<Section>('upright')
-  const [scrubbing, setScrubbing] = useState(false)
   const prefersReduced = useReducedMotion() ?? false
   const indicatorLayoutId = useId()
 
@@ -129,7 +133,13 @@ export function TransformListPanel({
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                onClick={() => setSection(entry)}
+                onClick={() => {
+                  if (entry === section) return
+                  // A section swap unmounts the row under the thumb; leaving
+                  // the scrub reported would strand the HUD on a dead field.
+                  onScrubChange(null)
+                  setSection(entry)
+                }}
                 className={clsxm(
                   'relative inline-flex min-h-11 items-center px-1 text-[0.86rem] font-medium leading-none transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80',
                   isActive
@@ -247,7 +257,7 @@ export function TransformListPanel({
                 manual={demo.manual}
                 disabled={controlsDisabled}
                 onChange={feature.setManual}
-                onScrubChange={setScrubbing}
+                onScrubChange={onScrubChange}
               />
               {section === 'frame' && (
                 <label className="mt-1 flex min-h-11 cursor-pointer items-center gap-3 px-3 text-[0.82rem] font-medium text-lf-on-photo-ink [text-shadow:0_1px_2px_oklch(0_0_0/0.45)]">
@@ -281,7 +291,7 @@ function TransformFieldList({
   manual: ManualTransform
   disabled: boolean
   onChange: (manual: ManualTransform) => void
-  onScrubChange: (scrubbing: boolean) => void
+  onScrubChange: (field: ScrubFieldId | null) => void
 }) {
   const { t } = useI18n()
   const [scrubbingKey, setScrubbingKey] = useState<string | null>(null)
@@ -313,7 +323,9 @@ function TransformFieldList({
             }
             onScrubChange={(scrubbing) => {
               setScrubbingKey(scrubbing ? field.key : null)
-              onScrubChange(scrubbing)
+              onScrubChange(
+                scrubbing ? { kind: 'transform', key: field.key } : null,
+              )
             }}
           />
         )
