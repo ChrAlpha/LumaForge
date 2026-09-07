@@ -439,3 +439,138 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await expectStandardExports(page, false, hqAvailable)
   })
 }
+
+test('full-resolution export delivers the committed geometry, not a crop of the original', async ({
+  page,
+}, testInfo) => {
+  testInfo.setTimeout(360_000)
+  expect(
+    existsSync(rawPath),
+    'Required public DNG is missing. Run pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public before browser validation.',
+  ).toBe(true)
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.addInitScript(() => localStorage.setItem('lumaforge.locale', 'en'))
+  await page.goto('/raw')
+  await loadRaw(page)
+
+  await openTool(page, 'Transform')
+  await waitForTransform(page)
+  await transformTool(page)
+    .getByRole('button', { name: 'Full', exact: true })
+    .click()
+  await waitForTransform(page)
+
+  const preview = await page
+    .locator('[data-raw-transform-preview] canvas')
+    .evaluate((canvas) => ({
+      width: (canvas as HTMLCanvasElement).width,
+      height: (canvas as HTMLCanvasElement).height,
+    }))
+
+  // Fingerprint what the photographer approved, and the untransformed frame
+  // it came from, so the delivered file can be told apart from a plain crop.
+  const signatures = await page.evaluate(() => {
+    const sample = (source: CanvasImageSource) => {
+      const off = document.createElement('canvas')
+      off.width = 32
+      off.height = 24
+      const context = off.getContext('2d')!
+      context.drawImage(source, 0, 0, 32, 24)
+      const pixels = context.getImageData(0, 0, 32, 24).data
+      const values: number[] = []
+      for (let index = 0; index < 32 * 24; index += 1) {
+        values.push(
+          (pixels[index * 4]! +
+            pixels[index * 4 + 1]! +
+            pixels[index * 4 + 2]!) /
+            3,
+        )
+      }
+      return values
+    }
+    return {
+      transformed: sample(
+        document.querySelector(
+          '[data-raw-transform-preview] canvas',
+        ) as HTMLCanvasElement,
+      ),
+      original: sample(
+        document.querySelector('.raw-preview-canvas') as HTMLCanvasElement,
+      ),
+    }
+  })
+
+  await openTool(page, 'Export')
+  const exportButton = page.getByRole('button', {
+    name: 'Export full-resolution JPEG',
+    exact: true,
+  })
+  await expect(exportButton).toBeEnabled({ timeout: 30_000 })
+  await exportButton.click()
+
+  const downloadButton = page.getByRole('button', {
+    name: 'Download',
+    exact: true,
+  })
+  await downloadButton.waitFor({ timeout: 180_000 })
+  const downloading = page.waitForEvent('download')
+  await downloadButton.click()
+  const delivered = await downloading
+  const deliveredPath = await delivered.path()
+
+  const measured = await page.evaluate(
+    async (bytes) => {
+      const blob = new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' })
+      const bitmap = await createImageBitmap(blob)
+      const off = document.createElement('canvas')
+      off.width = 32
+      off.height = 24
+      const context = off.getContext('2d')!
+      context.drawImage(bitmap, 0, 0, 32, 24)
+      const pixels = context.getImageData(0, 0, 32, 24).data
+      const values: number[] = []
+      for (let index = 0; index < 32 * 24; index += 1) {
+        values.push(
+          (pixels[index * 4]! +
+            pixels[index * 4 + 1]! +
+            pixels[index * 4 + 2]!) /
+            3,
+        )
+      }
+      return { width: bitmap.width, height: bitmap.height, values }
+    },
+    Array.from(await readFile(deliveredPath!)),
+  )
+
+  const correlate = (left: number[], right: number[]) => {
+    const count = left.length
+    const meanLeft = left.reduce((a, b) => a + b, 0) / count
+    const meanRight = right.reduce((a, b) => a + b, 0) / count
+    let numerator = 0
+    let leftSq = 0
+    let rightSq = 0
+    for (let index = 0; index < count; index += 1) {
+      const dl = left[index]! - meanLeft
+      const dr = right[index]! - meanRight
+      numerator += dl * dr
+      leftSq += dl * dl
+      rightSq += dr * dr
+    }
+    return numerator / Math.sqrt(leftSq * rightSq)
+  }
+
+  // Full resolution, and framed like the preview rather than the sensor.
+  expect(measured.width).toBeGreaterThan(preview.width * 2)
+  expect(measured.width / measured.height).toBeCloseTo(
+    preview.width / preview.height,
+    1,
+  )
+  // The pixels carry the geometry. A crop of the untransformed frame at the
+  // same size would fail this pair of comparisons.
+  expect(correlate(measured.values, signatures.transformed)).toBeGreaterThan(
+    0.85,
+  )
+  expect(correlate(measured.values, signatures.transformed)).toBeGreaterThan(
+    correlate(measured.values, signatures.original) + 0.3,
+  )
+})
