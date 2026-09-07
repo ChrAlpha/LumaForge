@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UprightMode } from '~/modules/transform-demo/geometry/types'
 import type { ManualTransform } from '~/modules/transform-demo/transform-types'
 import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
-import { usePreviewDownload } from '~/modules/transform-demo/usePreviewDownload'
 import { useTransformDemo } from '~/modules/transform-demo/useTransformDemo'
 
 import {
@@ -31,7 +30,6 @@ export function useRawTransformFeature(
   const [cpuFrame, setCpuFrame] = useState<CpuPreviewFrame | null>(null)
   const [capturing, setCapturing] = useState(false)
   const [captureError, setCaptureError] = useState(false)
-  const [before, setBefore] = useState(false)
   const [showLines, setShowLines] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
   const sourceId = workflow.previewTransform?.sourceId ?? null
@@ -70,7 +68,6 @@ export function useRawTransformFeature(
     setCpuFrame(null)
     setCapturing(false)
     setCaptureError(false)
-    setBefore(false)
     setShowLines(false)
     setShowGrid(false)
   }, [clearSource, sourceId])
@@ -148,7 +145,6 @@ export function useRawTransformFeature(
   const request = (mode: UprightMode, manual: ManualTransform) => {
     workflow.previewTransform?.setActive(hasTransform(mode, manual))
     workflow.setViewMode('processed')
-    setBefore(false)
   }
   const setMode = (mode: UprightMode) => {
     request(mode, demo.manual)
@@ -165,7 +161,6 @@ export function useRawTransformFeature(
   const reset = () => {
     workflow.previewTransform?.setActive(false)
     demo.reset()
-    setBefore(false)
     setShowLines(false)
     setShowGrid(false)
   }
@@ -178,10 +173,6 @@ export function useRawTransformFeature(
     !demo.rendering &&
     !demo.error &&
     !captureError
-  const download = usePreviewDownload(
-    current ? demo.result?.frame : undefined,
-    workflow.sourceFileName,
-  )
 
   return {
     demo,
@@ -192,11 +183,6 @@ export function useRawTransformFeature(
     busy: capturing || demo.loading || demo.rendering || (active && !current),
     captureError,
     current,
-    before,
-    setBefore: (value: boolean) => {
-      workflow.setViewMode('processed')
-      setBefore(value)
-    },
     showLines,
     setShowLines: (value: boolean) => {
       workflow.setViewMode('processed')
@@ -220,8 +206,7 @@ export function useRawTransformFeature(
       active ||
       (observing &&
         workflow.viewMode === 'processed' &&
-        (before || showLines || showGrid)),
-    ...download,
+        (showLines || showGrid)),
   }
 }
 

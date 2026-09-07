@@ -29,7 +29,7 @@ export function RawTransformOverlay({
           source={demo.source.frame}
           result={demo.result}
           lines={demo.analysis?.lines ?? NO_LINES}
-          original={feature.before}
+          original={false}
           showLines={feature.showLines}
           showGrid={feature.showGrid}
         />

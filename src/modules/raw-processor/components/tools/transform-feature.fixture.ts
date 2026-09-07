@@ -42,8 +42,6 @@ export function transformFeatureFixture(
     busy: false,
     captureError: false,
     current: false,
-    before: false,
-    setBefore: vi.fn(),
     showLines: false,
     setShowLines: vi.fn(),
     showGrid: false,
@@ -55,9 +53,6 @@ export function transformFeatureFixture(
     setCpuFrame: vi.fn(),
     isProcessing: false,
     showOverlay: false,
-    download: vi.fn(),
-    downloading: false,
-    downloadError: false,
     ...overrides,
   }
 }
