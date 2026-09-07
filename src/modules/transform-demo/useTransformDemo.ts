@@ -38,12 +38,20 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
   const pending = useRef<RenderRequest | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  /**
+   * Returns false when there is no worker to answer the request. Marking a
+   * render in flight against a terminated worker would strand `inFlight`
+   * (and `rendering`) forever, because only a response clears them.
+   */
   const postRender = useCallback((request: RenderRequest) => {
+    const worker = workerRef.current
+    if (!worker) return false
     if (inFlight.current) pending.current = request
     else {
       inFlight.current = true
-      workerRef.current?.postMessage(request)
+      worker.postMessage(request)
     }
+    return true
   }, [])
 
   const loadSource = useCallback(
@@ -91,6 +99,10 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
           if (id !== sourceId.current || abort.signal.aborted) return
           setError('processing')
           setAnalysis(null)
+          // The rendered frame cannot be refreshed without a worker, so it
+          // must not survive as something the UI can report as current.
+          setSolutions(null)
+          setResult(null)
           setLoading(false)
           setRendering(false)
         }
@@ -185,8 +197,7 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
   useEffect(() => {
     if (!source || !analysis || !solutions) return
     const id = ++requestId.current
-    setRendering(true)
-    postRender({
+    const posted = postRender({
       type: 'render',
       sourceId: sourceId.current,
       requestId: id,
@@ -197,6 +208,7 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
       ),
       constrainCrop,
     })
+    if (posted) setRendering(true)
   }, [analysis, constrainCrop, manual, mode, postRender, solutions, source])
 
   const selectMode = (next: UprightMode) => {
@@ -210,6 +222,9 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     modeRef.current = 'off'
     setManual({ ...NEUTRAL_TRANSFORM })
     setConstrainCrop(true)
+    // Reset retires the geometry that failed, so the failure it raised must
+    // not outlive it; the neutral render this queues re-reports any new one.
+    setError(null)
   }
 
   return {

@@ -297,6 +297,74 @@ describe('transform demo request lifecycle', () => {
     unmount()
   })
 
+  it('retires a rejected geometry and its failure together on reset', async () => {
+    const { result, unmount } = setup()
+    await waitFor(() => expect(DemoWorker.instances).toHaveLength(1))
+    const worker = DemoWorker.instances[0]
+    const sourceId = worker.messages[0].sourceId
+    act(() =>
+      worker.emit({ type: 'analyzed', sourceId, analysis, elapsedMs: 4 }),
+    )
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    // Settle the neutral render first; otherwise the next one only queues.
+    const first = worker.messages.findLast((m) => m.type === 'render')!
+    act(() =>
+      worker.emit({
+        type: 'rendered',
+        sourceId,
+        requestId: first.requestId,
+        result: {
+          frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
+          displayMatrix: identityMatrix(),
+          retainedArea: 1,
+        },
+      }),
+    )
+    act(() => result.current.setManual({ ...result.current.manual, scale: 51 }))
+    const rejected = worker.messages.findLast((m) => m.type === 'render')!
+    expect(rejected.requestId).not.toBe(first.requestId)
+    act(() =>
+      worker.emit({
+        type: 'error',
+        sourceId,
+        requestId: rejected.requestId,
+        message: 'invalid-transform',
+      }),
+    )
+    await waitFor(() => expect(result.current.error).toBe('transform'))
+
+    act(() => result.current.reset())
+
+    // The alert named the geometry reset just discarded; it must not outlive
+    // it and keep the tool reading as broken.
+    expect(result.current.error).toBeNull()
+    expect(result.current.manual.scale).toBe(100)
+    unmount()
+  })
+
+  it('does not strand the render queue when the worker is already gone', async () => {
+    const { result, unmount } = setup()
+    await waitFor(() => expect(DemoWorker.instances).toHaveLength(1))
+    const worker = DemoWorker.instances[0]
+    const sourceId = worker.messages[0].sourceId
+    act(() =>
+      worker.emit({ type: 'analyzed', sourceId, analysis, elapsedMs: 4 }),
+    )
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    act(() => worker.onerror?.())
+
+    // A crashed worker cannot refresh the frame it produced, so nothing may
+    // still read as a current render.
+    expect(result.current.result).toBeNull()
+    expect(result.current.rendering).toBe(false)
+
+    act(() => result.current.setManual({ ...result.current.manual, rotate: 3 }))
+    // Without a worker the request cannot be answered, and claiming it is in
+    // flight would leave the tool busy forever.
+    expect(result.current.rendering).toBe(false)
+    unmount()
+  })
+
   it('creates a live worker after StrictMode replays the mount effect', async () => {
     DemoWorker.instances = []
     vi.stubGlobal('Worker', DemoWorker)
