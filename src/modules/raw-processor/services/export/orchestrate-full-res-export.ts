@@ -165,6 +165,26 @@ export async function orchestrateFullResExport(
   const activeRawRenderExposure = exportReadiness.rawRenderExposure
   const exportCapability = exportReadiness.fullResCapability
   const exportGeometry = activeSession.exportGeometry ?? null
+  /**
+   * The frame this export will actually deliver. Geometry crops it, so the
+   * checkpoint, the resume plan and the recorded result all have to size
+   * themselves from here rather than from the sensor. The worker stays the
+   * single authority on rejecting a geometry; the app only declines to guess
+   * a frame for one that will not survive validation.
+   */
+  const deliveredSize = (() => {
+    const sourceSize = {
+      width: exportCapability.width,
+      height: exportCapability.height,
+    }
+    if (!exportGeometry) return sourceSize
+    try {
+      const planned = planExportGeometry(exportGeometry, sourceSize)
+      return { width: planned.outputWidth, height: planned.outputHeight }
+    } catch {
+      return sourceSize
+    }
+  })()
 
   const graph = resolveExportColorGraph({
     styleKind: ctx.atoms.params.styleKind,
@@ -268,8 +288,8 @@ export async function orchestrateFullResExport(
           exportId,
           file: activeSourceFile,
           sourceFingerprint,
-          outputWidth: exportCapability.width,
-          outputHeight: exportCapability.height,
+          outputWidth: deliveredSize.width,
+          outputHeight: deliveredSize.height,
           graphFingerprint,
           profile: executionPlan.profile.name,
           derivedLabel: executionPlan.derivedLabel,
@@ -565,24 +585,6 @@ export async function orchestrateFullResExport(
           recoveredExportId,
         })
     }
-
-    // Geometry changes the delivered frame, so the recorded result and the
-    // manifest must describe the transformed output, not the source sensor.
-    const deliveredSize = exportGeometry
-      ? (() => {
-          const plannedGeometry = planExportGeometry(exportGeometry, {
-            width: completedCapability.width,
-            height: completedCapability.height,
-          })
-          return {
-            width: plannedGeometry.outputWidth,
-            height: plannedGeometry.outputHeight,
-          }
-        })()
-      : {
-          width: completedCapability.width,
-          height: completedCapability.height,
-        }
 
     const exportResult = createCompletedExportResult({
       jobResult: result,

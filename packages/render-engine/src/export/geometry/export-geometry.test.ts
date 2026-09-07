@@ -145,6 +145,40 @@ describe('planExportGeometry', () => {
   })
 })
 
+describe('planExportGeometry on degenerate frames', () => {
+  it('keeps a one-pixel source exportable', () => {
+    const planned = planExportGeometry(
+      { matrix: IDENTITY, constrainCrop: true },
+      { width: 1, height: 1 },
+    )
+
+    expect(planned.outputWidth).toBe(1)
+    expect(planned.outputHeight).toBe(1)
+  })
+
+  it('never plans a zero-sized output frame', () => {
+    // A crop this tight rounds toward zero on a small source; the frame still
+    // has to be at least one pixel for the JPEG writer to accept it.
+    const planned = planExportGeometry(
+      { matrix: [4, 0, -1.5, 0, 4, -1.5, 0, 0, 1], constrainCrop: true },
+      { width: 3, height: 3 },
+    )
+
+    expect(planned.outputWidth).toBeGreaterThanOrEqual(1)
+    expect(planned.outputHeight).toBeGreaterThanOrEqual(1)
+  })
+
+  it.each([
+    ['zero width', { width: 0, height: 8 }],
+    ['negative height', { width: 8, height: -8 }],
+    ['a fractional frame', { width: 8.5, height: 8 }],
+  ])('fails closed on %s', (_label, source) => {
+    expect(() =>
+      planExportGeometry({ matrix: IDENTITY, constrainCrop: true }, source),
+    ).toThrow(INVALID_EXPORT_GEOMETRY)
+  })
+})
+
 describe('preimageRect', () => {
   it('returns the matching source rect plus a halo under identity', () => {
     const planned = planExportGeometry(
@@ -273,6 +307,27 @@ describe('planGeometryTiles', () => {
     expect(new Set(tiles.map((tile) => tile.tileRect.y)).size).toBeGreaterThan(
       1,
     )
+  })
+
+  it('terminates on a strip already smaller than the split floor', () => {
+    const planned = planExportGeometry(
+      { matrix: IDENTITY, constrainCrop: false },
+      { width: 32, height: 32 },
+    )
+
+    const tiles = planGeometryTiles({
+      planned,
+      stripRect: { x: 0, y: 0, width: 32, height: 32 },
+      source: { width: 32, height: 32 },
+      // A budget nothing can satisfy: splitting must stop at the floor rather
+      // than recurse forever on a source smaller than one tile.
+      maxWindowPixels: 1,
+      minTileWidth: 64,
+      halo: 2,
+    })
+
+    expect(tiles).toHaveLength(1)
+    expect(tiles[0]!.tileRect).toEqual({ x: 0, y: 0, width: 32, height: 32 })
   })
 
   it('marks tiles with no source behind them instead of reading', () => {
