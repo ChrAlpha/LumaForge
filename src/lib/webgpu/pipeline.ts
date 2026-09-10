@@ -306,10 +306,11 @@ export class WebGPUProcessingPipeline {
   async readProcessedPixelsAsync(): Promise<Float32Array | null> {
     const { device, images } = this.assertReady()
     if (!images.processed) return null
-    if (this.dirty) this.render()
-    await this.waitForGpu()
     const scope = this.readbacks.create()
     try {
+      if (this.dirty) this.render()
+      await this.waitForGpu()
+      scope.assertActive()
       const result = await readFloat16Texture(device, images.processed, scope)
       this.assertReady()
       return result
