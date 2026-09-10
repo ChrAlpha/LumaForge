@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { GPUReadbackJobs } from './async-resources'
 import {
   decodeFloat16,
   padLut,
@@ -11,6 +12,40 @@ import {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('webGPU texture data contract', () => {
+  it('cancels an in-flight map and releases its tracked bytes on evacuation', async () => {
+    vi.stubGlobal('GPUBufferUsage', { COPY_DST: 8, MAP_READ: 1 })
+    vi.stubGlobal('GPUMapMode', { READ: 1 })
+    const jobs = new GPUReadbackJobs()
+    let rejectMap!: (reason: Error) => void
+    const buffer = {
+      mapState: 'pending',
+      mapAsync: () =>
+        new Promise<void>((_, reject) => {
+          rejectMap = reject
+        }),
+      destroy: vi.fn(() => rejectMap(new Error('map cancelled'))),
+      getMappedRange: vi.fn(),
+    }
+    const device = {
+      createBuffer: () => buffer,
+      createCommandEncoder: () => ({
+        copyTextureToBuffer: vi.fn(),
+        finish: vi.fn(),
+      }),
+      queue: { submit: vi.fn() },
+    } as unknown as GPUDevice
+    const result = readFloat16Texture(
+      device,
+      { width: 1, height: 2 } as GPUTexture,
+      jobs.create(),
+    )
+    expect(jobs.estimatedBytes).toBe(512)
+    jobs.dispose()
+    expect(jobs.estimatedBytes).toBe(0)
+    await expect(result).rejects.toThrow('map cancelled')
+    expect(buffer.destroy).toHaveBeenCalledOnce()
+    expect(buffer.getMappedRange).not.toHaveBeenCalled()
+  })
   it('decodes half precision normal, subnormal, signed zero and special values', () => {
     expect([0x3C00, 0x3800, 0xC000, 1, 0x7BFF].map(decodeFloat16)).toEqual([
       1,

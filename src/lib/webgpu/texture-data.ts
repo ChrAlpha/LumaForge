@@ -1,5 +1,7 @@
 import type { RawUploadInput } from '~/lib/gl/pipeline'
 
+import { GPUReadbackScope } from './async-resources'
+
 export function validateImageUpload(
   input: RawUploadInput,
   maxDimension: number,
@@ -78,14 +80,19 @@ export function decodeFloat16(bits: number): number {
 export async function readFloat16Texture(
   device: GPUDevice,
   texture: GPUTexture,
+  scope = new GPUReadbackScope(),
 ) {
   const { width, height } = texture
   const bytesPerRow = Math.ceil((width * 8) / 256) * 256
-  const buffer = device.createBuffer({
-    label: 'raw-preview-readback',
-    size: bytesPerRow * height,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-  })
+  scope.assertActive()
+  const buffer = scope.track(
+    device.createBuffer({
+      label: 'raw-preview-readback',
+      size: bytesPerRow * height,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    }),
+    bytesPerRow * height,
+  )
   try {
     const encoder = device.createCommandEncoder()
     encoder.copyTextureToBuffer({ texture }, { buffer, bytesPerRow }, [
@@ -94,6 +101,7 @@ export async function readFloat16Texture(
     ])
     device.queue.submit([encoder.finish()])
     await buffer.mapAsync(GPUMapMode.READ)
+    scope.assertActive()
     const mapped = new Uint16Array(buffer.getMappedRange())
     const pixels = new Float32Array(width * height * 4)
     for (let y = 0; y < height; y++) {
@@ -106,6 +114,6 @@ export async function readFloat16Texture(
     return pixels
   } finally {
     if (buffer.mapState === 'mapped') buffer.unmap()
-    buffer.destroy()
+    scope.release(buffer)
   }
 }

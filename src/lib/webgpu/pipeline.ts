@@ -3,7 +3,7 @@ import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
 
 import type { WebGLCapabilities } from '~/lib/gl/context'
 import type { ExportRenderOptions } from '~/lib/gl/export'
-import { ExportRenderError, planExportRenderTarget } from '~/lib/gl/export'
+import { ExportRenderError } from '~/lib/gl/export'
 import type {
   ExportRenderStats,
   PipelineStats,
@@ -14,12 +14,13 @@ import type {
 } from '~/lib/gl/pipeline'
 import { isLUTProfileRenderable } from '~/lib/gl/webgl-pipeline'
 
+import { GPUReadbackJobs } from './async-resources'
 import type { WebGPUDeviceLease } from './device'
 import { acquireWebGPUDevice } from './device'
 import { WebGPUImages } from './images'
 import type { WebGPUPrograms } from './programs'
 import { getWebGPUPrograms } from './programs'
-import { renderSnapshot } from './snapshot'
+import { planSnapshotRender, renderSnapshot } from './snapshot'
 import { readFloat16Texture } from './texture-data'
 import { UNIFORM_BUFFER_SIZE } from './uniform-layout'
 import { DEFAULT_PARAMS, packUniforms } from './uniforms'
@@ -44,6 +45,7 @@ export class WebGPUProcessingPipeline {
   private lossListeners = new Set<(error: Error) => void>()
   private uniformUploads = 0
   private processDraws = 0
+  private readonly readbacks = new GPUReadbackJobs()
 
   constructor(private readonly canvas: HTMLCanvasElement) {}
 
@@ -115,16 +117,18 @@ export class WebGPUProcessingPipeline {
   }
 
   uploadImage(input: RawUploadInput) {
+    this.readbacks.dispose()
     this.assertReady().images.uploadImage(input)
     this.dirty = true
   }
   clearImage() {
+    this.readbacks.dispose()
     this.images?.clearImage()
     this.dirty = true
   }
   uploadLUT(lut: LUTData) {
-    this.assertReady().images.uploadLUT(lut)
     this.dirty = true
+    this.assertReady().images.uploadLUT(lut)
   }
   clearLUT() {
     this.images?.clearLUT()
@@ -256,9 +260,14 @@ export class WebGPUProcessingPipeline {
     const { device, images } = this.assertReady()
     if (!images.processed) return null
     if (this.dirty) this.render()
-    const result = await readFloat16Texture(device, images.processed)
-    this.assertReady()
-    return result
+    const scope = this.readbacks.create()
+    try {
+      const result = await readFloat16Texture(device, images.processed, scope)
+      this.assertReady()
+      return result
+    } finally {
+      scope.dispose()
+    }
   }
 
   async renderToHiddenCanvas({
@@ -273,11 +282,13 @@ export class WebGPUProcessingPipeline {
     const { device, images } = this.assertReady()
     if (!images.inputUpload) throw new Error('EXPORT_SOURCE_MISSING')
     const start = performance.now()
-    const plan = planExportRenderTarget({
+    const plan = planSnapshotRender({
       width,
       height,
       maxTextureSize: device.limits.maxTextureDimension2D,
-      ...exportOptions,
+      source: images.inputUpload,
+      lutSize: images.lutData?.size ?? 0,
+      exportOptions,
     })
     const planningTime = performance.now() - start
     const stats = {
@@ -298,6 +309,7 @@ export class WebGPUProcessingPipeline {
       }
       throw ExportRenderError.fromFailedPlan(plan)
     }
+    const scope = this.readbacks.create()
     try {
       // The snapshot reuses the retained processed target with export view mode.
       // Any subsequent interactive frame must restore the live view parameters.
@@ -312,8 +324,10 @@ export class WebGPUProcessingPipeline {
         height,
         plan,
         assertReady: () => {
+          scope.assertActive()
           this.assertReady()
         },
+        scope,
       })
       const totalTime = performance.now() - start
       this.lastExportStats = {
@@ -338,6 +352,8 @@ export class WebGPUProcessingPipeline {
         totalTime: performance.now() - start,
       }
       throw error
+    } finally {
+      scope.dispose()
     }
   }
 
@@ -383,7 +399,8 @@ export class WebGPUProcessingPipeline {
       backend: this.backend,
       estimatedBytes:
         (this.images?.estimatedBytes ?? 0) +
-        (this.uniformBuffer ? UNIFORM_BUFFER_SIZE : 0),
+        (this.uniformBuffer ? UNIFORM_BUFFER_SIZE : 0) +
+        this.readbacks.estimatedBytes,
       textureAllocations: this.images?.textureAllocations ?? 0,
       uploadedBytes: this.images?.uploadedBytes ?? 0,
       uniformUploads: this.uniformUploads,
@@ -427,6 +444,7 @@ export class WebGPUProcessingPipeline {
   }
   dispose(_options: { releaseContext?: boolean } = {}) {
     this.disposed = true
+    this.readbacks.dispose()
     this.lease?.device.removeEventListener(
       'uncapturederror',
       this.onDeviceError,
