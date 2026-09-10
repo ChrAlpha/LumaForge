@@ -482,6 +482,15 @@ test('full-resolution export delivers the committed geometry, not a crop of the 
   await loadRaw(page)
   await expectWebGPUPreview(page, testInfo)
 
+  // A WebGPU canvas's drawing buffer may be recycled after presentation.
+  // Capture the visible, untransformed photo before the Transform overlay can
+  // cover it, rather than treating an empty drawImage readback as a reference.
+  const originalPng = await page.locator('.raw-preview-canvas').screenshot({
+    animations: 'disabled',
+    style:
+      '.raw-lab-compare-handle, .raw-lab-compare-label { visibility: hidden !important; }',
+  })
+
   await openTool(page, 'Transform')
   await waitForTransform(page)
   await transformTool(page)
@@ -498,7 +507,7 @@ test('full-resolution export delivers the committed geometry, not a crop of the 
 
   // Fingerprint what the photographer approved, and the untransformed frame
   // it came from, so the delivered file can be told apart from a plain crop.
-  const signatures = await page.evaluate(() => {
+  const signatures = await page.evaluate(async (originalBase64) => {
     const sample = (source: CanvasImageSource) => {
       const off = document.createElement('canvas')
       off.width = 32
@@ -517,17 +526,33 @@ test('full-resolution export delivers the committed geometry, not a crop of the 
       }
       return values
     }
-    return {
+    const bitmap = await createImageBitmap(
+      new Blob(
+        [
+          Uint8Array.from(atob(originalBase64), (character) =>
+            character.charCodeAt(0),
+          ),
+        ],
+        { type: 'image/png' },
+      ),
+    )
+    const signatures = {
       transformed: sample(
         document.querySelector(
           '[data-raw-transform-preview] canvas',
         ) as HTMLCanvasElement,
       ),
-      original: sample(
-        document.querySelector('.raw-preview-canvas') as HTMLCanvasElement,
-      ),
+      original: sample(bitmap),
     }
-  })
+    bitmap.close()
+    return signatures
+  }, originalPng.toString('base64'))
+  for (const [name, values] of Object.entries(signatures)) {
+    expect(
+      Math.max(...values) - Math.min(...values),
+      `${name} must contain photo detail`,
+    ).toBeGreaterThan(1)
+  }
 
   await openTool(page, 'Export')
   const exportButton = page.getByRole('button', {

@@ -633,6 +633,14 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
     baseURL,
     viewport: { width: 390, height: 844 },
   })
+  // A mobile UA alone retains the host Chromium memory/limits. Make the
+  // low-memory fixture explicit so this exercises the JPEG fallback policy.
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'deviceMemory', {
+      configurable: true,
+      get: () => 4,
+    })
+  })
   const page = await context.newPage()
   const fixtureName = fixtureFileName()
   const sameOriginFixtureUrl = `/__lumaforge-test-fixtures/${fixtureName}`
