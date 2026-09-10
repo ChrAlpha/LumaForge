@@ -279,6 +279,10 @@ export default defineConfig(({ command }) => {
     },
     resolve: {
       alias: {
+        '@lumaforge/luma-color-runtime/wgsl': resolve(
+          ROOT,
+          './packages/luma-color-runtime/src/wgsl.ts',
+        ),
         '@lumaforge/luma-color-runtime/glsl': LUMA_COLOR_RUNTIME_GLSL_SOURCE,
         '@lumaforge/luma-color-runtime/testing':
           LUMA_COLOR_RUNTIME_TESTING_SOURCE,

@@ -21,6 +21,9 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@lumaforge/luma-color-runtime/wgsl': fileURLToPath(
+        new URL('./packages/luma-color-runtime/src/wgsl.ts', import.meta.url),
+      ),
       '~': fileURLToPath(new URL('./src', import.meta.url)),
       '@pkg': fileURLToPath(new URL('./package.json', import.meta.url)),
       '@lumaforge/luma-color-runtime/glsl': fileURLToPath(
