@@ -49,6 +49,32 @@ describe('luma color runtime package boundary', () => {
     expect(runtime).toHaveProperty('createPreviewHistogramProcessor')
   })
 
+  it('exposes the WGSL shader contract through a separate package subpath', async () => {
+    const manifest = JSON.parse(
+      readFileSync(join(packageRoot, 'package.json'), 'utf8'),
+    )
+    expect(manifest.exports['./wgsl']).toEqual({
+      types: './dist/wgsl.d.ts',
+      import: './dist/wgsl.js',
+    })
+    const runtime = await import('./wgsl')
+    for (const name of [
+      'TRANSFER',
+      'RANGE',
+      'LUT',
+      'BALANCE',
+      'TONE',
+      'OKLAB',
+      'USER_SATURATION',
+      'SELECTIVE_COLOR',
+    ]) {
+      expect(runtime).toHaveProperty(
+        `LUMA_COLOR_${name}_WGSL`,
+        expect.any(String),
+      )
+    }
+  })
+
   it('selective_color_cli_importable: loads the package entry from a file URL far from src/', async () => {
     const entryUrl = pathToFileURL(join(sourceRoot, 'index.ts')).href
     const runtime = await import(/* @vite-ignore */ entryUrl)

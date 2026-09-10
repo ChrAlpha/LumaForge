@@ -15,6 +15,10 @@
     "./glsl": {
       "types": "./dist/glsl.d.ts",
       "import": "./dist/glsl.js"
+    },
+    "./wgsl": {
+      "types": "./dist/wgsl.d.ts",
+      "import": "./dist/wgsl.js"
     }
   },
   "main": "./dist/index.js",

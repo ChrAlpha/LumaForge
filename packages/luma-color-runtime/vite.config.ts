@@ -14,6 +14,7 @@ export default defineConfig({
       entry: {
         index: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
         glsl: fileURLToPath(new URL('./src/glsl.ts', import.meta.url)),
+        wgsl: fileURLToPath(new URL('./src/wgsl.ts', import.meta.url)),
       },
       formats: ['es'],
       fileName: (_format, entryName) => `${entryName}.js`,
