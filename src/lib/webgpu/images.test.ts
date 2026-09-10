@@ -6,7 +6,10 @@ import { WebGPUImages } from './images'
 import type { WebGPUPrograms } from './programs'
 
 function fixture() {
-  const textures: { destroy: ReturnType<typeof vi.fn> }[] = []
+  const textures: {
+    destroy: ReturnType<typeof vi.fn>
+    createView: ReturnType<typeof vi.fn>
+  }[] = []
   const writeTexture = vi.fn()
   const device = {
     features: new Set<string>(),
@@ -36,7 +39,7 @@ function fixture() {
     renderExposureEv: 0,
     renderExposureMultiplier: 1,
   }
-  return { images, upload, textures, writeTexture }
+  return { images, upload, textures, writeTexture, device }
 }
 
 beforeEach(() =>
@@ -50,6 +53,70 @@ beforeEach(() =>
 afterEach(() => vi.unstubAllGlobals())
 
 describe('webGPU image lifecycle and memory', () => {
+  it.each(['validation', 'allocation', 'binding', 'upload', 'reused-upload'])(
+    'clears a previous LUT after replacement %s failure while retaining the RAW image',
+    (failure) => {
+      const { images, upload, textures, writeTexture, device } = fixture()
+      images.uploadImage(upload)
+      const originalLut = {
+        size: 2,
+        data: new Float32Array(24),
+        domainMin: [0, 0, 0],
+        domainMax: [1, 1, 1],
+      } as LUTData
+      images.uploadLUT(originalLut)
+      const source = images.input
+      const processed = images.processed
+      const previousTexture = textures.at(-1)!
+      const replacementSize = failure === 'reused-upload' ? 2 : 3
+      const replacement = {
+        ...originalLut,
+        size: replacementSize,
+        data: new Float32Array(replacementSize ** 3 * 3),
+      }
+      const expected = new Error(`replacement ${failure} failed`)
+      if (failure === 'validation') replacement.size = 257
+      else if (failure === 'allocation')
+        vi.mocked(device.createTexture).mockImplementationOnce(() => {
+          throw expected
+        })
+      else if (failure === 'binding')
+        vi.mocked(device.createBindGroup).mockImplementationOnce(() => {
+          throw expected
+        })
+      else
+        writeTexture.mockImplementationOnce(() => {
+          throw expected
+        })
+
+      expect(() => images.uploadLUT(replacement)).toThrow(
+        failure === 'validation' ? 'GPU_LUT_LAYOUT_INVALID' : expected,
+      )
+
+      expect(images.lutData).toBeNull()
+      expect(previousTexture.destroy).toHaveBeenCalledOnce()
+      if (failure === 'binding' || failure === 'upload')
+        expect(textures.at(-1)!.destroy).toHaveBeenCalledOnce()
+      const fallbackView = textures[0]!.createView.mock.results.at(-1)!.value
+      const bindings = vi.mocked(device.createBindGroup).mock.calls.at(-1)![0]
+      expect(Array.from(bindings.entries)[0]).toEqual({
+        binding: 0,
+        resource: fallbackView,
+      })
+      expect(images.input).toBe(source)
+      expect(images.processed).toBe(processed)
+      expect(images.inputUpload).toBe(upload)
+      expect(source!.destroy).not.toHaveBeenCalled()
+      expect(processed!.destroy).not.toHaveBeenCalled()
+
+      images.uploadLUT(originalLut)
+      expect(images.lutData).toBe(originalLut)
+      images.dispose()
+      for (const texture of textures)
+        expect(texture.destroy).toHaveBeenCalledOnce()
+    },
+  )
+
   it('reuses input, processed texture and bind groups for same-size replacements', () => {
     const { images, upload } = fixture()
     images.uploadImage(upload)

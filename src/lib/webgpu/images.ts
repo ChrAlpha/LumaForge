@@ -145,37 +145,45 @@ export class WebGPUImages {
   }
 
   uploadLUT(lut: LUTData) {
-    if (
-      !Number.isSafeInteger(lut.size) ||
-      lut.size < 2 ||
-      lut.size > this.device.limits.maxTextureDimension3D ||
-      lut.data.length !== lut.size ** 3 * 3
-    ) {
-      throw new Error('GPU_LUT_LAYOUT_INVALID')
-    }
-    if (this.lutData?.data === lut.data && this.lutData.size === lut.size) {
-      this.lutData = lut
-      return
-    }
-    const start = performance.now()
-    if (!this.lut || this.lut.width !== lut.size) {
-      this.lut?.destroy()
-      this.lut = this.createTexture(
+    try {
+      if (
+        !Number.isSafeInteger(lut.size) ||
+        lut.size < 2 ||
+        lut.size > this.device.limits.maxTextureDimension3D ||
+        lut.data.length !== lut.size ** 3 * 3
+      ) {
+        throw new Error('GPU_LUT_LAYOUT_INVALID')
+      }
+      if (this.lutData?.data === lut.data && this.lutData.size === lut.size) {
+        this.lutData = lut
+        return
+      }
+      const start = performance.now()
+      if (!this.lut || this.lut.width !== lut.size) {
+        this.lut?.destroy()
+        this.lut = null
+        this.lut = this.createTexture(
+          [lut.size, lut.size, lut.size],
+          'rgba32float',
+          '3d',
+        )
+        this.rebindLut()
+      }
+      this.device.queue.writeTexture(
+        { texture: this.lut },
+        padLut(lut.data),
+        { bytesPerRow: lut.size * 16, rowsPerImage: lut.size },
         [lut.size, lut.size, lut.size],
-        'rgba32float',
-        '3d',
       )
-      this.rebindLut()
+      this.uploadedBytes += lut.size ** 3 * 16
+      this.lutData = lut
+      this.lutUploadTime = performance.now() - start
+    } catch (error) {
+      // Callers degrade to an unstyled preview after a failed replacement.
+      // Release both a previous LUT and any partially created replacement.
+      this.clearLUT()
+      throw error
     }
-    this.device.queue.writeTexture(
-      { texture: this.lut },
-      padLut(lut.data),
-      { bytesPerRow: lut.size * 16, rowsPerImage: lut.size },
-      [lut.size, lut.size, lut.size],
-    )
-    this.uploadedBytes += lut.size ** 3 * 16
-    this.lutData = lut
-    this.lutUploadTime = performance.now() - start
   }
 
   clearLUT() {
