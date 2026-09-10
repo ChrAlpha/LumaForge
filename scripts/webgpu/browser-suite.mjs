@@ -251,6 +251,130 @@ export async function runAcceptance({ iterations, unfilterable }) {
       await readPresentedCanvas(pair.gpuCanvas),
       await readPresentedCanvas(pair.glCanvas),
     )
+
+    reset(makeImage(false))
+    await render()
+    const beforeBurst = pair.gpu.getResourceStats()
+    let latestTone
+    for (let index = 0; index < 200; index++) {
+      latestTone = {
+        userExposureEv: Math.sin(index * 0.123) * 1.2,
+        userContrast: (index % 61) - 30,
+      }
+      pair.gpu.setParams(latestTone)
+      pair.gpu.render({ waitForGpu: false })
+    }
+    pair.gl.setParams(latestTone)
+    pair.gl.render({ waitForGpu: true })
+    await pair.gpu.waitForGpu()
+    const burstPixels = await pair.gpu.readProcessedPixelsAsync()
+    if (!burstPixels) throw new Error('BURST_READBACK_MISSING')
+    const burstDiff = pixelDiff(burstPixels, pair.gl.readProcessedPixels())
+    const afterBurst = pair.gpu.getResourceStats()
+    add(
+      'tone-edit-burst-latest-state',
+      burstDiff.nonfinite === 0 && burstDiff.max <= LIMITS.maxFloatError,
+      {
+        edits: 200,
+        latestTone,
+        diff: burstDiff,
+      },
+    )
+    add(
+      'tone-edit-burst-bounded-frames',
+      afterBurst.frames?.maxInFlight <= 2 &&
+        afterBurst.frames?.inFlight === 0 &&
+        afterBurst.frames.coalesced > beforeBurst.frames.coalesced,
+      {
+        before: beforeBurst.frames,
+        after: afterBurst.frames,
+      },
+    )
+    add(
+      'tone-edit-burst-resource-reuse',
+      beforeBurst.textureAllocations === afterBurst.textureAllocations &&
+        beforeBurst.uploadedBytes === afterBurst.uploadedBytes &&
+        beforeBurst.estimatedBytes === afterBurst.estimatedBytes,
+      {
+        before: beforeBurst,
+        after: afterBurst,
+      },
+    )
+
+    for (const action of ['clear', 'replace']) {
+      reset(makeImage(false))
+      await render()
+      pair.gpu.setParams({ userExposureEv: 0.6 })
+      pair.gpu.render({ waitForGpu: false })
+      const pending = pair.gpu.readProcessedPixelsAsync().then(
+        (pixels) => ({ resolved: true, length: pixels?.length }),
+        (error) => ({ resolved: false, error: String(error) }),
+      )
+      if (action === 'clear') pair.gpu.clearImage()
+      else pair.gpu.uploadImage(makeImage(true, 83, 57))
+      const outcome = await pending
+      add(
+        `pending-readback-${action}-cancelled`,
+        !outcome.resolved && outcome.error?.includes('GPU_READBACK_CANCELLED'),
+        { outcome },
+      )
+    }
+
+    reset(makeImage(false), { userExposureEv: 0.25 })
+    await render()
+    const victimCanvas = document.createElement('canvas')
+    victimCanvas.width = 97
+    victimCanvas.height = 65
+    const victim = new WebGPUProcessingPipeline(victimCanvas)
+    try {
+      // The main pair retains another lease throughout disposal of this instance.
+      await victim.initialize()
+      victim.uploadImage(makeImage(false))
+      victim.setParams(neutral)
+      victim.render({ waitForGpu: false })
+      await victim.waitForGpu()
+      const idle = victim.getResourceStats()
+      const pending = victim
+        .renderToHiddenCanvas({ width: 97, height: 65 })
+        .then(
+          () => ({ resolved: true }),
+          (error) => ({ resolved: false, error: String(error) }),
+        )
+      const allocated = victim.getResourceStats()
+      victim.dispose()
+      const disposed = victim.getResourceStats()
+      const outcome = await pending
+      const settled = victim.getResourceStats()
+      add(
+        'pending-snapshot-disposal',
+        allocated.estimatedBytes > idle.estimatedBytes &&
+          !outcome.resolved &&
+          /GPU_READBACK_CANCELLED|AbortError/i.test(outcome.error ?? '') &&
+          disposed.estimatedBytes === 0 &&
+          settled.estimatedBytes === 0,
+        {
+          idle,
+          allocated,
+          disposed,
+          settled,
+          outcome,
+        },
+      )
+      pair.gpu.setParams({ userExposureEv: -0.35 })
+      pair.gl.setParams({ userExposureEv: -0.35 })
+      await render()
+      const actual = await pair.gpu.readProcessedPixelsAsync()
+      const diff = pixelDiff(actual, pair.gl.readProcessedPixels())
+      add(
+        'snapshot-disposal-preserves-other-pipeline',
+        diff.nonfinite === 0 &&
+          diff.max <= LIMITS.maxFloatError &&
+          actual.some((value) => value > 0.05 && value < 0.95),
+        { diff },
+      )
+    } finally {
+      victim.dispose()
+    }
   } finally {
     pair.dispose()
   }
