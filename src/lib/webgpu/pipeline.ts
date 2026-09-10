@@ -18,9 +18,11 @@ import { GPUReadbackJobs } from './async-resources'
 import type { WebGPUDeviceLease } from './device'
 import { acquireWebGPUDevice } from './device'
 import { WebGPUImages } from './images'
+import { WebGPUProgramSelection } from './program-selection'
 import type { WebGPUPrograms } from './programs'
 import { getWebGPUPrograms } from './programs'
 import { planSnapshotRender, renderSnapshot } from './snapshot'
+import { getShaderSpecialization } from './specialization'
 import { readFloat16Texture } from './texture-data'
 import { UNIFORM_BUFFER_SIZE } from './uniform-layout'
 import { DEFAULT_PARAMS, packUniforms } from './uniforms'
@@ -29,7 +31,10 @@ import { DEFAULT_PARAMS, packUniforms } from './uniforms'
 export class WebGPUProcessingPipeline {
   readonly backend = 'webgpu' as const
   private lease: WebGPUDeviceLease | null = null
-  private programs!: WebGPUPrograms
+  private variants: WebGPUProgramSelection | null = null
+  private get programs(): WebGPUPrograms {
+    return this.variants!.current
+  }
   private images: WebGPUImages | null = null
   private context: GPUCanvasContext | null = null
   private uniformBuffer: GPUBuffer | null = null
@@ -61,10 +66,26 @@ export class WebGPUProcessingPipeline {
       lease.onLost((info) =>
         this.fail(new Error(`WEBGPU_DEVICE_LOST: ${info.message}`)),
       )
-      this.programs = await getWebGPUPrograms(
+      const format = navigator.gpu.getPreferredCanvasFormat()
+      const generic = await getWebGPUPrograms(lease.device, format)
+      if (this.disposed || this.lost)
+        throw new Error('WEBGPU_INITIALIZATION_CANCELLED')
+      this.variants = new WebGPUProgramSelection(
         lease.device,
-        navigator.gpu.getPreferredCanvasFormat(),
+        format,
+        generic,
+        () => {
+          this.dirty = true
+          if (
+            this.images?.input &&
+            this.context &&
+            !this.disposed &&
+            !this.lost
+          )
+            this.render()
+        },
       )
+      await this.variants.select(getShaderSpecialization(this.params, null))
       if (this.disposed || this.lost)
         throw new Error('WEBGPU_INITIALIZATION_CANCELLED')
       this.images = new WebGPUImages(lease.device, this.programs)
@@ -128,11 +149,16 @@ export class WebGPUProcessingPipeline {
   }
   uploadLUT(lut: LUTData) {
     this.dirty = true
-    this.assertReady().images.uploadLUT(lut)
+    try {
+      this.assertReady().images.uploadLUT(lut)
+    } finally {
+      this.prepareVariant()
+    }
   }
   clearLUT() {
     this.images?.clearLUT()
     this.dirty = true
+    this.prepareVariant()
   }
   setParams(params: Partial<ProcessingParams>) {
     for (const key of Object.keys(params) as (keyof ProcessingParams)[]) {
@@ -142,6 +168,15 @@ export class WebGPUProcessingPipeline {
       }
     }
     this.params = { ...this.params, ...params }
+    this.prepareVariant()
+  }
+  private prepareVariant() {
+    if (this.disposed || this.lost || !this.variants) return
+    void this.variants
+      .select(
+        getShaderSpecialization(this.params, this.images?.lutData ?? null),
+      )
+      .catch((error) => this.fail(error))
   }
   getParams() {
     return { ...this.params }
@@ -250,6 +285,7 @@ export class WebGPUProcessingPipeline {
   }
 
   async waitForGpu() {
+    await this.variants?.wait()
     await this.assertReady().device.queue.onSubmittedWorkDone()
     this.assertReady()
   }
@@ -397,6 +433,7 @@ export class WebGPUProcessingPipeline {
   getResourceStats() {
     return {
       backend: this.backend,
+      shaderVariant: this.variants?.activeKey ?? 'generic',
       estimatedBytes:
         (this.images?.estimatedBytes ?? 0) +
         (this.uniformBuffer ? UNIFORM_BUFFER_SIZE : 0) +
@@ -444,6 +481,7 @@ export class WebGPUProcessingPipeline {
   }
   dispose(_options: { releaseContext?: boolean } = {}) {
     this.disposed = true
+    this.variants?.dispose()
     this.readbacks.dispose()
     this.lease?.device.removeEventListener(
       'uncapturederror',
