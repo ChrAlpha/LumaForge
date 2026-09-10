@@ -7,7 +7,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RawUploadInput } from './pipeline'
-import { RawProcessingPipeline } from './pipeline'
+import { RawProcessingPipeline } from './webgl-pipeline'
 
 const contextMock = vi.hoisted(() => {
   const capabilities = {
