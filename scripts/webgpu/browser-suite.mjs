@@ -8,7 +8,8 @@ import {
 } from './fixtures.mjs'
 import { runPerformance } from './performance.mjs'
 
-export async function runAcceptance({ iterations }) {
+export async function runAcceptance({ iterations, unfilterable }) {
+  const { TRANSFER_FUNCTIONS } = await import('@lumaforge/luma-color-runtime')
   const { WebGPUProcessingPipeline } =
     await import('/src/lib/webgpu/pipeline.ts')
   const { RawProcessingPipeline } =
@@ -102,9 +103,17 @@ export async function runAcceptance({ iterations }) {
       webgl: pair.gl.getCapabilities(),
       webgpu: pair.gpu.getCapabilities(),
     }
+    add(
+      'requested-lut-filtering-mode',
+      !unfilterable || !report.capabilities.webgpu.floatTexturesLinear,
+      {
+        unfilterableRequested: unfilterable,
+        float32FilteringEnabled: report.capabilities.webgpu.floatTexturesLinear,
+      },
+    )
     for (const integer of [false, true]) {
       const fixture = makeImage(integer)
-      for (const scenario of scenarios()) {
+      for (const scenario of scenarios(Object.keys(TRANSFER_FUNCTIONS))) {
         const name = `${integer ? 'u16' : 'float'}/${scenario.name}`
         try {
           reset(fixture, scenario.params)

@@ -70,6 +70,17 @@ export async function runPerformance(makePair, neutral, add, iterations, info) {
         timings[name].complete.push(performance.now() - start)
       }
     }
+    const finalDiff = pixelDiff(
+      await performancePair.gpu.readProcessedPixelsAsync(),
+      performancePair.gl.readProcessedPixels(),
+    )
+    add(
+      'performance-final-pixels',
+      finalDiff.nonfinite === 0 && finalDiff.max <= LIMITS.maxFloatError,
+      { diff: finalDiff },
+    )
+    if (finalDiff.nonfinite > 0 || finalDiff.max > LIMITS.maxFloatError)
+      throw new Error('PERFORMANCE_FINAL_PIXELS_DIFFER')
     const resourcesAfter = performancePair.gpu.getResourceStats()
     add(
       'edit-resources-stable',

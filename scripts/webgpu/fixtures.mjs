@@ -83,7 +83,7 @@ export function makeLut(
   }
 }
 
-export function scenarios() {
+export function scenarios(transferIds = []) {
   const result = [{ name: 'neutral', params: {} }]
   for (const preset of [
     'neutral',
@@ -181,6 +181,23 @@ export function scenarios() {
     lut: domain,
     params: { styleKind: 'custom', intensity: 1 },
   })
+  for (const transfer of transferIds) {
+    const input = makeLut('display-look', transfer)
+    const output = makeLut('display-look', 'srgb')
+    output.profileResolution.profile.outputTransfer = transfer
+    result.push(
+      {
+        name: `transfer-input-${transfer}`,
+        lut: input,
+        params: { styleKind: 'custom', intensity: 1 },
+      },
+      {
+        name: `transfer-output-${transfer}`,
+        lut: output,
+        params: { styleKind: 'custom', intensity: 1 },
+      },
+    )
+  }
   return result
 }
 

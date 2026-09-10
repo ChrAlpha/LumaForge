@@ -15,12 +15,13 @@ const { values } = parseArgs({
     output: { type: 'string' },
     iterations: { type: 'string', default: '30' },
     hardware: { type: 'boolean', default: false },
+    unfilterable: { type: 'boolean', default: false },
     help: { type: 'boolean', default: false },
   },
 })
 if (values.help) {
   process.stdout.write(
-    `${JSON.stringify({ usage: 'node scripts/webgpu/validate.mjs [--root checkout] [--output report.json] [--iterations 1..60] [--hardware]', default: 'Chromium SwiftShader, 1024x768, five warmups, thirty edits per backend', scope: 'Synthetic GPU pipeline parity and software performance; no RAW decoder or authoritative export claim' }, null, 2)}\n`,
+    `${JSON.stringify({ usage: 'node scripts/webgpu/validate.mjs [--root checkout] [--output report.json] [--iterations 1..60] [--hardware] [--unfilterable]', default: 'Chromium SwiftShader, 1024x768, five warmups, thirty edits per backend', scope: 'Synthetic GPU pipeline parity and software performance; no RAW decoder or authoritative export claim' }, null, 2)}\n`,
   )
   process.exit(0)
 }
@@ -63,15 +64,18 @@ async function fingerprintSource() {
   }
   return hash.digest('hex')
 }
-const harnessHash = createHash('sha256')
-for (const name of [
-  'validate.mjs',
-  'browser-suite.mjs',
-  'fixtures.mjs',
-  'performance.mjs',
-]) {
-  harnessHash.update(name)
-  harnessHash.update(await readFile(resolve(ownRoot, 'scripts/webgpu', name)))
+async function fingerprintHarness() {
+  const harnessHash = createHash('sha256')
+  for (const name of [
+    'validate.mjs',
+    'browser-suite.mjs',
+    'fixtures.mjs',
+    'performance.mjs',
+  ]) {
+    harnessHash.update(name)
+    harnessHash.update(await readFile(resolve(ownRoot, 'scripts/webgpu', name)))
+  }
+  return harnessHash.digest('hex')
 }
 const report = {
   schemaVersion: 1,
@@ -83,7 +87,8 @@ const report = {
   branch: git('branch', '--show-current'),
   status: git('status', '--porcelain=v1'),
   sourceSha256: await fingerprintSource(),
-  harnessSha256: harnessHash.digest('hex'),
+  harnessSha256: await fingerprintHarness(),
+  unfilterableRequested: values.unfilterable,
   softwareRequested: !values.hardware,
   iterations,
   errors: [],
@@ -153,6 +158,18 @@ try {
   report.browser = browser.version()
   report.presentationMechanism = 'Playwright canvas compositor screenshot'
   page = await browser.newPage()
+  if (values.unfilterable)
+    await page.addInitScript(() => {
+      const requestDevice = GPUAdapter.prototype.requestDevice
+      GPUAdapter.prototype.requestDevice = function (descriptor = {}) {
+        return requestDevice.call(this, {
+          ...descriptor,
+          requiredFeatures: Array.from(
+            descriptor.requiredFeatures ?? [],
+          ).filter((feature) => feature !== 'float32-filterable'),
+        })
+      }
+    })
   await page.exposeFunction('__captureValidationCanvas', async (id) => {
     const canvas = page.locator(`[data-validation-id="${id}"]`)
     const png = await canvas.screenshot({
@@ -183,11 +200,11 @@ try {
   await page.goto(`http://127.0.0.1:${address.port}/__validation`)
   const suiteUrl = `/@fs/${resolve(ownRoot, 'scripts/webgpu/browser-suite.mjs')}`
   report.result = await page.evaluate(
-    async ({ suiteUrl, iterations }) => {
+    async ({ suiteUrl, iterations, unfilterable }) => {
       const { runAcceptance } = await import(suiteUrl)
-      return runAcceptance({ iterations })
+      return runAcceptance({ iterations, unfilterable })
     },
-    { suiteUrl, iterations },
+    { suiteUrl, iterations, unfilterable: values.unfilterable },
   )
   if (values.hardware && report.result.performance.software)
     report.errors.push({
@@ -215,8 +232,10 @@ try {
   report.finishedAt = new Date().toISOString()
   report.finalRevision = git('rev-parse', 'HEAD')
   report.finalSourceSha256 = await fingerprintSource()
+  report.finalHarnessSha256 = await fingerprintHarness()
+  report.harnessStable = report.harnessSha256 === report.finalHarnessSha256
   report.sourceStable = report.sourceSha256 === report.finalSourceSha256
-  if (!report.sourceStable) {
+  if (!report.sourceStable || !report.harnessStable) {
     report.passed = false
     report.errors.push({
       type: 'source-drift',
