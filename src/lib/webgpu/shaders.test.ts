@@ -1,3 +1,4 @@
+import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -10,6 +11,51 @@ import { UNIFORM_BUFFER_SIZE, UNIFORM_FIELDS } from './uniform-layout'
 import { DEFAULT_PARAMS } from './uniforms'
 
 describe('webGPU shader variants', () => {
+  it('folds resolved LUT contracts and builtin presets while keeping data and tone live', () => {
+    const profile = getLUTColorProfile('display-srgb')!
+    const lut = {
+      size: 2,
+      data: new Float32Array(24),
+      domainMin: [0, 0, 0] as [number, number, number],
+      domainMax: [1, 1, 1] as [number, number, number],
+      inputProfile: 'display-srgb' as const,
+      profileResolution: {
+        kind: 'confirmed' as const,
+        confidence: 'user' as const,
+        profile,
+      },
+    }
+    const custom = createProcessShader(
+      true,
+      false,
+      getShaderSpecialization({ ...DEFAULT_PARAMS, styleKind: 'custom' }, lut),
+    )
+    for (const field of [
+      'lutRole',
+      'lutInputTransfer',
+      'lutOutputTransfer',
+      'lutInputRange',
+      'lutOutputRange',
+    ])
+      expect(custom).not.toContain(`params.${field}`)
+    for (const field of [
+      'lutDomainMin',
+      'lutDomainMax',
+      'inputToLutGamut',
+      'userContrastFactor',
+    ])
+      expect(custom).toContain(`params.${field}`)
+    const builtin = createProcessShader(
+      false,
+      true,
+      getShaderSpecialization(
+        { ...DEFAULT_PARAMS, styleKind: 'builtin', builtinPreset: 'warm' },
+        null,
+      ),
+    )
+    expect(builtin).not.toContain('params.builtinPreset')
+  })
+
   it('eliminates neutral feature branches while preserving live numeric uniforms', () => {
     const neutral = getShaderSpecialization(DEFAULT_PARAMS, null)
     const code = createProcessShader(true, false, neutral)

@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import {
   getShaderSpecialization,
   getShaderSpecializationKey,
-  MAX_SHADER_SPECIALIZATIONS,
   normalizeShaderSpecialization,
 } from './specialization'
 import { DEFAULT_PARAMS } from './uniforms'
@@ -26,7 +25,7 @@ function lut(): LUTData {
 }
 
 describe('shader specialization features', () => {
-  it('keeps numeric edits and builtin choices out of the cache key', () => {
+  it('keeps numeric edits out of the cache key while specializing builtin choices', () => {
     const a = getShaderSpecialization(
       {
         ...DEFAULT_PARAMS,
@@ -40,7 +39,7 @@ describe('shader specialization features', () => {
       {
         ...DEFAULT_PARAMS,
         styleKind: 'builtin',
-        builtinPreset: 'mono',
+        builtinPreset: 'warm',
         userExposureEv: 2,
         userContrast: 50,
         userSaturation: -90,
@@ -50,12 +49,26 @@ describe('shader specialization features', () => {
       lut(),
     )
     expect(getShaderSpecializationKey(a)).toBe(getShaderSpecializationKey(b))
+    expect(
+      getShaderSpecializationKey(
+        getShaderSpecialization(
+          {
+            ...DEFAULT_PARAMS,
+            styleKind: 'builtin',
+            builtinPreset: 'mono',
+            userSaturation: 1,
+          },
+          null,
+        ),
+      ),
+    ).not.toBe(getShaderSpecializationKey(a))
     expect(a).toEqual({
       styleKind: 1,
       useLut: false,
       selectiveColorActive: false,
       saturationActive: true,
       vibranceActive: false,
+      builtinPreset: 1,
     })
   })
 
@@ -136,7 +149,56 @@ describe('shader specialization features', () => {
     })
   })
 
-  it('canonicalizes unused flags to at most 24 keys plus generic', () => {
+  it('keys resolved LUT contracts while leaving texels, domains and numeric edits dynamic', () => {
+    const source = lut()
+    const params = { ...DEFAULT_PARAMS, styleKind: 'custom' as const }
+    const initial = getShaderSpecialization(params, source)
+    expect(initial).toMatchObject({
+      styleKind: 2,
+      useLut: true,
+      lutRole: 0,
+      lutInputTransfer: 0,
+      lutOutputTransfer: 0,
+      lutInputRange: 0,
+      lutOutputRange: 0,
+    })
+    expect(
+      getShaderSpecializationKey(
+        getShaderSpecialization(
+          { ...params, userExposureEv: 2 },
+          {
+            ...source,
+            domainMax: [2, 2, 2],
+            data: new Float32Array(24).fill(0.4),
+          },
+        ),
+      ),
+    ).toBe(getShaderSpecializationKey(initial))
+    if (source.profileResolution.kind !== 'confirmed')
+      throw new Error('Missing fixture')
+    const changed = {
+      ...source,
+      profileResolution: {
+        ...source.profileResolution,
+        profile: {
+          ...source.profileResolution.profile,
+          inputTransfer: 'n-log' as const,
+          outputTransfer: 'bt709' as const,
+          inputRange: 'legal' as const,
+        },
+      },
+    }
+    expect(getShaderSpecialization(params, changed)).toMatchObject({
+      lutInputTransfer: 8,
+      lutOutputTransfer: 1,
+      lutInputRange: 1,
+    })
+    expect(
+      getShaderSpecializationKey(getShaderSpecialization(params, changed)),
+    ).not.toBe(getShaderSpecializationKey(initial))
+  })
+
+  it('canonicalizes the 24 base feature combinations before profile identifiers', () => {
     const keys = new Set<string>()
     for (const styleKind of [0, 1, 2] as const)
       for (const useLut of [false, true])
@@ -155,7 +217,7 @@ describe('shader specialization features', () => {
                 styleKind === 2 && useLut,
               )
             }
-    expect(keys.size).toBe(MAX_SHADER_SPECIALIZATIONS)
+    expect(keys.size).toBe(24)
     expect(getShaderSpecializationKey()).toBe('generic')
   })
 })

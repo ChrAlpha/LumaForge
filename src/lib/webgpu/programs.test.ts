@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ShaderSpecialization } from './specialization'
+import {
+  MAX_CACHED_SHADER_SPECIALIZATIONS,
+  MAX_PARALLEL_SHADER_COMPILATIONS,
+  MAX_QUEUED_SHADER_SPECIALIZATIONS,
+  WEBGPU_SPECIALIZATION_BUSY,
+} from './specialization'
 
 vi.mock('~/lib/webgpu/shaders', () => ({
   VERTEX_SHADER: 'vertex',
@@ -42,11 +48,29 @@ function compilationMessage(type: GPUCompilationMessageType) {
 }
 
 let getPrograms: typeof import('./programs').getWebGPUPrograms
+let getCacheStats: typeof import('./programs').getWebGPUProgramCacheStats
+
+function profileVariant(index: number): ShaderSpecialization {
+  return {
+    styleKind: 2,
+    useLut: true,
+    selectiveColorActive: false,
+    saturationActive: false,
+    vibranceActive: false,
+    lutRole: 1,
+    lutInputTransfer: index % 22,
+    lutOutputTransfer: Math.floor(index / 22),
+    lutInputRange: 0,
+    lutOutputRange: 0,
+  }
+}
 
 beforeEach(async () => {
   vi.resetModules()
   vi.stubGlobal('GPUShaderStage', { FRAGMENT: 2 })
-  getPrograms = (await import('./programs')).getWebGPUPrograms
+  const programs = await import('./programs')
+  getPrograms = programs.getWebGPUPrograms
+  getCacheStats = programs.getWebGPUProgramCacheStats
 })
 
 afterEach(() => {
@@ -54,6 +78,74 @@ afterEach(() => {
 })
 
 describe('cached WebGPU programs', () => {
+  it('bounds per-device compilation to two active and 32 queued jobs without evicting pending requests', async () => {
+    const { device, mocks } = createDevice()
+    let release!: () => void
+    const gate = new Promise<{ messages: never[] }>((resolve) => {
+      release = () => resolve({ messages: [] })
+    })
+    mocks.createShaderModule.mockImplementation(({ label }) => ({
+      label,
+      getCompilationInfo: vi.fn(() => gate),
+    }))
+    const count =
+      MAX_PARALLEL_SHADER_COMPILATIONS + MAX_QUEUED_SHADER_SPECIALIZATIONS
+    const requests = Array.from({ length: count }, (_, index) =>
+      getPrograms(device, 'rgba8unorm', profileVariant(index)),
+    )
+    const busy = getPrograms(device, 'rgba8unorm', profileVariant(count)).catch(
+      (error) => error,
+    )
+    expect(getPrograms(device, 'rgba8unorm', profileVariant(0))).toBe(
+      requests[0],
+    )
+    expect(getCacheStats(device, 'rgba8unorm')).toEqual({
+      settledPrograms: 0,
+      pendingPrograms: 34,
+      activeCompilations: 2,
+      queuedCompilations: 32,
+    })
+    expect((await busy).message).toBe(WEBGPU_SPECIALIZATION_BUSY)
+    const independent = createDevice()
+    await expect(
+      getPrograms(independent.device, 'rgba8unorm'),
+    ).resolves.toBeDefined()
+    release()
+    await Promise.all(requests)
+    await vi.waitFor(() =>
+      expect(getCacheStats(device, 'rgba8unorm')).toEqual({
+        settledPrograms: MAX_CACHED_SHADER_SPECIALIZATIONS,
+        pendingPrograms: 0,
+        activeCompilations: 0,
+        queuedCompilations: 0,
+      }),
+    )
+    await expect(
+      getPrograms(device, 'rgba8unorm', profileVariant(count)),
+    ).resolves.toBeDefined()
+  })
+
+  it('evicts only settled least-recent variants and pins the ready generic fallback', async () => {
+    const { device, mocks } = createDevice()
+    const generic = await getPrograms(device, 'rgba8unorm')
+    const first = await getPrograms(device, 'rgba8unorm', profileVariant(0))
+    for (let index = 1; index <= MAX_CACHED_SHADER_SPECIALIZATIONS; index++)
+      await getPrograms(device, 'rgba8unorm', profileVariant(index))
+    expect(getCacheStats(device, 'rgba8unorm').settledPrograms).toBe(
+      MAX_CACHED_SHADER_SPECIALIZATIONS,
+    )
+    expect(await getPrograms(device, 'rgba8unorm')).toBe(generic)
+    const count = mocks.createRenderPipelineAsync.mock.calls.length
+    expect(await getPrograms(device, 'rgba8unorm', profileVariant(0))).not.toBe(
+      first,
+    )
+    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(count + 2)
+    expect(getCacheStats(device, 'rgba8unorm').settledPrograms).toBe(
+      MAX_CACHED_SHADER_SPECIALIZATIONS,
+    )
+    expect(mocks.createBindGroupLayout).toHaveBeenCalledTimes(6)
+  })
+
   it('shares common layouts/output and only compiles two process pipelines for each new feature key', async () => {
     const { device, mocks } = createDevice()
     const neutral: ShaderSpecialization = {

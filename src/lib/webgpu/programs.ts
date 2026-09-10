@@ -7,7 +7,11 @@ import {
 import type { ShaderSpecialization } from './specialization'
 import {
   getShaderSpecializationKey,
+  MAX_CACHED_SHADER_SPECIALIZATIONS,
+  MAX_PARALLEL_SHADER_COMPILATIONS,
+  MAX_QUEUED_SHADER_SPECIALIZATIONS,
   normalizeShaderSpecialization,
+  WEBGPU_SPECIALIZATION_BUSY,
 } from './specialization'
 
 export interface WebGPUPrograms {
@@ -42,13 +46,41 @@ interface SharedPrograms extends Layouts {
   outputs?: Promise<Outputs>
 }
 interface FormatPrograms {
-  shared: Promise<SharedPrograms>
-  variants: Map<string, Promise<WebGPUPrograms>>
+  shared?: Promise<SharedPrograms>
+  pending: Map<string, Promise<WebGPUPrograms>>
+  settled: Map<string, Promise<WebGPUPrograms>>
 }
-const programsByDevice = new WeakMap<
-  GPUDevice,
-  Map<GPUTextureFormat, FormatPrograms>
->()
+interface DevicePrograms {
+  formats: Map<GPUTextureFormat, FormatPrograms>
+  active: number
+  queue: (() => void)[]
+}
+const programsByDevice = new WeakMap<GPUDevice, DevicePrograms>()
+
+function scheduleCompilation(
+  state: DevicePrograms,
+  compile: () => Promise<WebGPUPrograms>,
+): Promise<WebGPUPrograms> | null {
+  if (
+    state.active >= MAX_PARALLEL_SHADER_COMPILATIONS &&
+    state.queue.length >= MAX_QUEUED_SHADER_SPECIALIZATIONS
+  )
+    return null
+  return new Promise((resolve, reject) => {
+    const run = () => {
+      state.active++
+      void Promise.resolve()
+        .then(compile)
+        .then(resolve, reject)
+        .finally(() => {
+          state.active--
+          state.queue.shift()?.()
+        })
+    }
+    if (state.active < MAX_PARALLEL_SHADER_COMPILATIONS) run()
+    else state.queue.push(run)
+  })
+}
 
 async function compileShader(device: GPUDevice, label: string, code: string) {
   const module = device.createShaderModule({ label, code })
@@ -201,6 +233,13 @@ async function createPrograms(
   specialization?: ShaderSpecialization,
 ): Promise<WebGPUPrograms> {
   const filterable = device.features.has('float32-filterable')
+  if (!cache.shared) {
+    const shared = createSharedPrograms(device)
+    cache.shared = shared
+    void shared.catch(() => {
+      if (cache.shared === shared) cache.shared = undefined
+    })
+  }
   // Validate all shader modules before creating any render pipeline. Common
   // layouts/output modules survive a failed process variant and are reusable.
   const [shared, floatFragment, u16Fragment] = await Promise.all([
@@ -248,37 +287,71 @@ async function createPrograms(
   }
 }
 
-/** At most 24 feature variants plus generic per device/format; no slider values. */
+/** Share layouts/output; only process variants enter the bounded compiler queue. */
 export function getWebGPUPrograms(
   device: GPUDevice,
   canvasFormat: GPUTextureFormat,
   specialization?: ShaderSpecialization,
 ): Promise<WebGPUPrograms> {
-  let formats = programsByDevice.get(device)
-  if (!formats) {
-    formats = new Map()
-    programsByDevice.set(device, formats)
+  let state = programsByDevice.get(device)
+  if (!state) {
+    state = { formats: new Map(), active: 0, queue: [] }
+    programsByDevice.set(device, state)
   }
-  let cache = formats.get(canvasFormat)
+  let cache = state.formats.get(canvasFormat)
   if (!cache) {
-    cache = { shared: createSharedPrograms(device), variants: new Map() }
-    formats.set(canvasFormat, cache)
-    const captured = cache
-    void cache.shared.catch(() => {
-      if (formats.get(canvasFormat) === captured) formats.delete(canvasFormat)
-    })
+    cache = { pending: new Map(), settled: new Map() }
+    state.formats.set(canvasFormat, cache)
   }
   const normalized = specialization
     ? normalizeShaderSpecialization(specialization)
     : undefined
   const key = getShaderSpecializationKey(normalized)
-  const cached = cache.variants.get(key)
-  if (cached) return cached
-  const pending = createPrograms(device, canvasFormat, cache, normalized)
-  cache.variants.set(key, pending)
-  const variants = cache.variants
-  void pending.catch(() => {
-    if (variants.get(key) === pending) variants.delete(key)
-  })
+  const pendingHit = cache.pending.get(key)
+  if (pendingHit) return pendingHit
+  const settledHit = cache.settled.get(key)
+  if (settledHit) {
+    cache.settled.delete(key)
+    cache.settled.set(key, settledHit)
+    return settledHit
+  }
+  const captured = cache
+  const pending = scheduleCompilation(state, () =>
+    createPrograms(device, canvasFormat, captured, normalized),
+  )
+  if (!pending) return Promise.reject(new Error(WEBGPU_SPECIALIZATION_BUSY))
+  cache.pending.set(key, pending)
+  void pending.then(
+    () => {
+      if (captured.pending.get(key) === pending) captured.pending.delete(key)
+      captured.settled.set(key, pending)
+      while (captured.settled.size > MAX_CACHED_SHADER_SPECIALIZATIONS) {
+        // Keep the generic fallback once ready; only settled specialized programs
+        // are evicted, so rapid controls cannot duplicate in-flight compilation.
+        const oldest = [...captured.settled.keys()].find(
+          (value) => value !== 'generic',
+        )
+        if (oldest === undefined) break
+        captured.settled.delete(oldest)
+      }
+    },
+    () => {
+      if (captured.pending.get(key) === pending) captured.pending.delete(key)
+    },
+  )
   return pending
+}
+
+export function getWebGPUProgramCacheStats(
+  device: GPUDevice,
+  canvasFormat: GPUTextureFormat,
+) {
+  const state = programsByDevice.get(device)
+  const cache = state?.formats.get(canvasFormat)
+  return {
+    settledPrograms: cache?.settled.size ?? 0,
+    pendingPrograms: cache?.pending.size ?? 0,
+    activeCompilations: state?.active ?? 0,
+    queuedCompilations: state?.queue.length ?? 0,
+  }
 }
