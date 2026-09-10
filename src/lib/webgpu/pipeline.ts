@@ -1,5 +1,4 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
-import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
 
 import type { WebGLCapabilities } from '~/lib/gl/context'
 import type { ExportRenderOptions } from '~/lib/gl/export'
@@ -7,17 +6,15 @@ import { ExportRenderError } from '~/lib/gl/export'
 import type {
   ExportRenderStats,
   PipelineStats,
-  PipelineTelemetrySnapshot,
-  PipelineTransformPath,
   RawUploadInput,
   RenderOptions,
 } from '~/lib/gl/pipeline'
-import { isLUTProfileRenderable } from '~/lib/gl/webgl-pipeline'
 
 import { GPUReadbackJobs } from './async-resources'
 import type { WebGPUDeviceLease } from './device'
 import { acquireWebGPUDevice } from './device'
 import { WebGPUImages } from './images'
+import { webGPUCapabilities, webGPUTelemetry } from './pipeline-telemetry'
 import { WebGPUProgramSelection } from './program-selection'
 import type { WebGPUPrograms } from './programs'
 import { getWebGPUPrograms } from './programs'
@@ -408,27 +405,7 @@ export class WebGPUProcessingPipeline {
   }
   getCapabilities(): WebGLCapabilities {
     const { device } = this.assertReady()
-    const info = this.lease!.adapter.info
-    return {
-      webgl2: false,
-      maxTextureSize: device.limits.maxTextureDimension2D,
-      max3DTextureSize: device.limits.maxTextureDimension3D,
-      floatTextures: true,
-      floatTexturesLinear: device.features.has('float32-filterable'),
-      halfFloatTextures: true,
-      halfFloatTexturesLinear: true,
-      colorBufferFloat: true,
-      colorBufferHalfFloat: true,
-      maxVertexUniformVectors: 0,
-      maxFragmentUniformVectors: 0,
-      maxVaryingVectors: 0,
-      fragmentHighFloatPrecision: 23,
-      fragmentHighFloatRangeMin: 127,
-      fragmentHighFloatRangeMax: 127,
-      toneHighPrecision: true,
-      rendererInfo: info.description || info.device || 'WebGPU',
-      vendorInfo: info.vendor,
-    }
+    return webGPUCapabilities(device, this.lease!.adapter)
   }
   getResourceStats() {
     return {
@@ -444,40 +421,12 @@ export class WebGPUProcessingPipeline {
       processDraws: this.processDraws,
     }
   }
-  private telemetry(): PipelineTelemetrySnapshot {
-    const lut = this.images?.lutData
-    const graph = resolveExportColorGraph({ ...this.params, lut: lut ?? null })
-    const profile = graph.supported ? graph.lutProfile : null
-    let transformPath: PipelineTransformPath = 'no-lut'
-    if (this.params.styleKind === 'builtin') transformPath = 'builtin-style'
-    else if (this.params.styleKind === 'custom' && lut) {
-      if (!isLUTProfileRenderable(lut.profileResolution))
-        transformPath = 'disabled-lut'
-      else if (lut.profileResolution?.kind === 'confirmed') {
-        const roles = {
-          'display-look': 'display-lut',
-          'scene-creative': 'scene-creative-lut',
-          'combined-look-output': 'combined-output-lut',
-          'technical-output': 'technical-output-lut',
-        } as const
-        transformPath = roles[lut.profileResolution.profile.role]
-      }
-    }
-    return {
-      inputFormat:
-        this.images?.inputUpload?.layout === 'rgb-u16'
-          ? 'uint16-rgb'
-          : 'float-rgba',
-      transformPath,
-      lutRole: profile?.role ?? null,
-      lutInputTransfer: profile?.inputTransfer ?? null,
-      lutOutputTransfer:
-        profile?.outputTransfer ??
-        (profile?.role === 'display-look' ? profile.inputTransfer : null),
-      lutSize: lut?.size ?? null,
-      processTargetPrecision: 'rgba16f',
-      capabilityWarnings: [],
-    }
+  private telemetry() {
+    return webGPUTelemetry(
+      this.params,
+      this.images?.lutData ?? null,
+      this.images?.inputUpload ?? null,
+    )
   }
   dispose(_options: { releaseContext?: boolean } = {}) {
     this.disposed = true
