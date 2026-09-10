@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { ShaderSpecialization } from './specialization'
+
 vi.mock('~/lib/webgpu/shaders', () => ({
   VERTEX_SHADER: 'vertex',
   PREVIEW_OUTPUT_SHADER: 'output',
-  createProcessShader: (integerInput: boolean, filterable: boolean) =>
-    `process:${integerInput}:${filterable}`,
+  createProcessShader: (
+    integerInput: boolean,
+    filterable: boolean,
+    specialization?: ShaderSpecialization,
+  ) =>
+    `process:${integerInput}:${filterable}${specialization ? `:${specialization.styleKind}:${Number(specialization.saturationActive)}` : ''}`,
 }))
 
 function createDevice(filterable = false) {
@@ -48,6 +54,67 @@ afterEach(() => {
 })
 
 describe('cached WebGPU programs', () => {
+  it('shares common layouts/output and only compiles two process pipelines for each new feature key', async () => {
+    const { device, mocks } = createDevice()
+    const neutral: ShaderSpecialization = {
+      styleKind: 0,
+      useLut: false,
+      selectiveColorActive: false,
+      saturationActive: false,
+      vibranceActive: false,
+    }
+    const first = await getPrograms(device, 'bgra8unorm', neutral)
+    const layouts = mocks.createBindGroupLayout.mock.calls.length
+    const active = await getPrograms(device, 'bgra8unorm', {
+      ...neutral,
+      styleKind: 1,
+      saturationActive: true,
+    })
+    expect(mocks.createShaderModule).toHaveBeenCalledTimes(6)
+    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(6)
+    expect(mocks.createBindGroupLayout).toHaveBeenCalledTimes(layouts)
+    for (const field of [
+      'uniformLayout',
+      'inputFloatLayout',
+      'inputU16Layout',
+      'lutLayout',
+      'selectiveLayout',
+      'outputLayout',
+      'output',
+      'snapshotOutput',
+    ] as const)
+      expect(active[field]).toBe(first[field])
+    expect(active.processFloat).not.toBe(first.processFloat)
+    expect(
+      await getPrograms(device, 'bgra8unorm', { ...neutral, useLut: true }),
+    ).toBe(first)
+    const generic = await getPrograms(device, 'bgra8unorm')
+    expect(generic.output).toBe(first.output)
+    expect(mocks.createShaderModule).toHaveBeenCalledTimes(8)
+    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(8)
+  })
+
+  it('removes only a failed feature variant while preserving ready variants', async () => {
+    const { device, mocks } = createDevice()
+    const generic = await getPrograms(device, 'rgba8unorm')
+    const neutral: ShaderSpecialization = {
+      styleKind: 0,
+      useLut: false,
+      selectiveColorActive: false,
+      saturationActive: false,
+      vibranceActive: false,
+    }
+    mocks.createRenderPipelineAsync.mockRejectedValueOnce(
+      new Error('variant failed'),
+    )
+    await expect(getPrograms(device, 'rgba8unorm', neutral)).rejects.toThrow(
+      'variant failed',
+    )
+    expect(await getPrograms(device, 'rgba8unorm')).toBe(generic)
+    const retry = await getPrograms(device, 'rgba8unorm', neutral)
+    expect(retry.output).toBe(generic.output)
+    expect(mocks.createBindGroupLayout).toHaveBeenCalledTimes(6)
+  })
   it('deduplicates concurrent compilation for one device and canvas format', async () => {
     const { device, mocks } = createDevice()
     const first = getPrograms(device, 'bgra8unorm')

@@ -9,6 +9,9 @@ import {
   LUMA_COLOR_USER_SATURATION_WGSL,
 } from '@lumaforge/luma-color-runtime/wgsl'
 
+import type { ShaderSpecialization } from './specialization'
+import { specializeProcessShader } from './specialization'
+
 export const UNIFORM_BUFFER_STRUCT = /* wgsl */ `
 struct ProcessUniforms {
   inputToLutGamut: mat3x3f,
@@ -315,6 +318,7 @@ fn sampleUnfilterableLut(color: vec3f) -> vec3f {
 export function createProcessShader(
   integerInput: boolean,
   filterable: boolean,
+  specialization?: ShaderSpecialization,
 ) {
   let code = integerInput
     ? PROCESS_FRAGMENT_SHADER_U16
@@ -333,5 +337,5 @@ export function createProcessShader(
         'textureSampleLevel(lutTexture, lutSampler, lutTextureCoordinate(normalizedColor), 0.0).rgb',
         'sampleUnfilterableLut(normalizedColor)',
       )
-  return code
+  return specialization ? specializeProcessShader(code, specialization) : code
 }
