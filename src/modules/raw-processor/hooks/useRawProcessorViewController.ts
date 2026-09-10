@@ -147,7 +147,9 @@ export function useRawProcessorViewController({
     capability.ready && capability.supportStatus === 'unsupported'
       ? capability.reason === 'coi-missing'
         ? t('raw.unsupported.coi')
-        : t('raw.unsupported.webgl2')
+        : 'failureMessage' in capability
+          ? capability.failureMessage
+          : t('raw.unsupported.webgl2')
       : t('raw.unsupported.webgl2')
   const cpuPreviewReason =
     capability.supportStatus === 'degraded'

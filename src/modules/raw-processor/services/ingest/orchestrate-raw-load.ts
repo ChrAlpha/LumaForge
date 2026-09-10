@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 
 import type { PipelineStats } from '~/lib/gl/pipeline'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
+import { resolvePreviewBackend } from '~/lib/preview/gpu-backend'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { isSupportedRaw } from '~/lib/raw/decoder'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
@@ -230,6 +231,7 @@ export async function orchestrateRawLoad(
 
     const capability =
       getCapabilityVectorSnapshot() ?? (await detectCapabilityVector())
+    await resolvePreviewBackend()
     if (!matchesActiveSession()) {
       runtimeAbortController.abort()
       return

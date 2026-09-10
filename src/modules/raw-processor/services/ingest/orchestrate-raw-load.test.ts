@@ -18,6 +18,10 @@ const previewGpuBudgetMock = vi.hoisted(() => ({
   derivePreviewGpuBudget: vi.fn(),
 }))
 
+const previewBackendMock = vi.hoisted(() => ({
+  resolvePreviewBackend: vi.fn(),
+}))
+
 vi.mock('~/lib/raw/runtime-adapter', () => ({
   rawRuntimeAdapter: {
     openSession: vi.fn(),
@@ -31,6 +35,7 @@ vi.mock('~/lib/raw/runtime-adapter', () => ({
 
 vi.mock('~/lib/runtime/capability-vector', () => capabilityVectorMock)
 vi.mock('~/lib/runtime/preview-gpu-budget', () => previewGpuBudgetMock)
+vi.mock('~/lib/preview/gpu-backend', () => previewBackendMock)
 
 const defaultParams: ProcessingParams = {
   intensity: 0.7,
@@ -165,6 +170,9 @@ describe('orchestrateRawLoad ack-before-work contract', () => {
   beforeEach(async () => {
     const { rawRuntimeAdapter } = await import('~/lib/raw/runtime-adapter')
     vi.mocked(rawRuntimeAdapter.openSession).mockReset()
+    previewBackendMock.resolvePreviewBackend
+      .mockReset()
+      .mockResolvedValue({ backend: 'cpu' })
 
     capabilityVectorMock.getCapabilityVectorSnapshot.mockReset()
     capabilityVectorMock.detectCapabilityVector
@@ -300,7 +308,7 @@ describe('orchestrateRawLoad ack-before-work contract', () => {
     loadPromise.catch(() => undefined)
   })
 
-  it('uses a GPU-aware bounded HQ budget after opening the RAW session', async () => {
+  it('awaits the backend before opening RAW and applying its bounded HQ budget', async () => {
     const order: string[] = []
     const { rawRuntimeAdapter } = await import('~/lib/raw/runtime-adapter')
     const gpu = {
@@ -338,7 +346,16 @@ describe('orchestrateRawLoad ack-before-work contract', () => {
       getPrewarmState: () => 'ready',
     })
 
-    await orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
+    const backendReady = deferred<{ backend: 'webgpu' }>()
+    previewBackendMock.resolvePreviewBackend.mockReturnValue(
+      backendReady.promise,
+    )
+    const load = orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
+    await flushMicrotasks(8)
+    expect(rawRuntimeAdapter.openSession).not.toHaveBeenCalled()
+    expect(previewGpuBudgetMock.derivePreviewGpuBudget).not.toHaveBeenCalled()
+    backendReady.resolve({ backend: 'webgpu' })
+    await load
 
     expect(previewGpuBudgetMock.derivePreviewGpuBudget).toHaveBeenCalledWith({
       capability: {
@@ -357,6 +374,40 @@ describe('orchestrateRawLoad ack-before-work contract', () => {
       undefined,
       expect.any(AbortSignal),
     )
+  })
+
+  it('does not open RAW when forced backend initialization fails', async () => {
+    const { rawRuntimeAdapter } = await import('~/lib/raw/runtime-adapter')
+    const ctx = buildContext({
+      order: [],
+      yieldToPaint: () => Promise.resolve(),
+      getPrewarmState: () => 'ready',
+    })
+    previewBackendMock.resolvePreviewBackend.mockRejectedValue(
+      new Error('WebGPU preview is unavailable'),
+    )
+    await orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
+    expect(rawRuntimeAdapter.openSession).not.toHaveBeenCalled()
+    expect(ctx.atoms.setStatus).toHaveBeenCalledWith('error')
+  })
+
+  it('does not open a superseded session after delayed backend detection', async () => {
+    const { rawRuntimeAdapter } = await import('~/lib/raw/runtime-adapter')
+    const ctx = buildContext({
+      order: [],
+      yieldToPaint: () => Promise.resolve(),
+      getPrewarmState: () => 'ready',
+    })
+    const backendReady = deferred<void>()
+    previewBackendMock.resolvePreviewBackend.mockReturnValue(
+      backendReady.promise,
+    )
+    const load = orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
+    await flushMicrotasks(8)
+    ctx.refs.runtimeWorkSessionIdRef.current = 'newer-session'
+    backendReady.resolve()
+    await load
+    expect(rawRuntimeAdapter.openSession).not.toHaveBeenCalled()
   })
 
   it('surfaces failures thrown before the session exists instead of sticking in loading', async () => {
