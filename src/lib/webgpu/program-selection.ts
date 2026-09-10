@@ -3,7 +3,7 @@ import { getWebGPUPrograms } from './programs'
 import type { ShaderSpecialization } from './specialization'
 import {
   getShaderSpecializationKey,
-  MAX_SHADER_SPECIALIZATIONS,
+  MAX_CACHED_SHADER_SPECIALIZATIONS,
 } from './specialization'
 
 /** Generic programs remain correct while a new feature category compiles.
@@ -53,7 +53,7 @@ export class WebGPUProgramSelection {
         (programs) => {
           if (this.disposed) return this.current
           this.ready.set(key, programs)
-          if (this.ready.size > MAX_SHADER_SPECIALIZATIONS)
+          if (this.ready.size > MAX_CACHED_SHADER_SPECIALIZATIONS)
             this.ready.delete(this.ready.keys().next().value!)
           if (this.desiredKey === key) {
             this.current = programs
@@ -85,7 +85,11 @@ export class WebGPUProgramSelection {
   }
 
   async wait() {
-    await this.pending
+    let pending: Promise<WebGPUPrograms> | null
+    do {
+      pending = this.pending
+      await pending
+    } while (pending !== this.pending)
   }
 
   dispose() {

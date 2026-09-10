@@ -23,6 +23,36 @@ function deferred() {
 beforeEach(() => vi.resetAllMocks())
 
 describe('webGPU asynchronous program selection', () => {
+  it('drains a newer category requested while waiting for the previous compilation', async () => {
+    const a = deferred()
+    const b = deferred()
+    vi.mocked(getWebGPUPrograms)
+      .mockReturnValueOnce(a.promise)
+      .mockReturnValueOnce(b.promise)
+    const selection = new WebGPUProgramSelection(
+      {} as GPUDevice,
+      'rgba8unorm',
+      {} as WebGPUPrograms,
+      vi.fn(),
+    )
+    const pendingA = selection.select(
+      getShaderSpecialization(DEFAULT_PARAMS, null),
+    )
+    let completed = false
+    const waiting = selection.wait().then(() => {
+      completed = true
+    })
+    const pendingB = selection.select(
+      getShaderSpecialization({ ...DEFAULT_PARAMS, userSaturation: 10 }, null),
+    )
+    a.resolve({} as WebGPUPrograms)
+    await pendingA
+    expect(completed).toBe(false)
+    b.resolve({} as WebGPUPrograms)
+    await pendingB
+    await waiting
+    expect(completed).toBe(true)
+  })
   it('reuses an in-flight category after switching away and back without duplicate redraws', async () => {
     const a = deferred()
     const b = deferred()
