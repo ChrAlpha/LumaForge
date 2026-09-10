@@ -1,4 +1,4 @@
-import { LUT_TRANSFER_UNIFORMS } from './glsl'
+import { LUT_TRANSFER_UNIFORMS } from './shader-uniforms'
 
 export const LUMA_COLOR_TRANSFER_WGSL = /* wgsl */ `
 const TRANSFER_SRGB: i32 = ${LUT_TRANSFER_UNIFORMS.srgb};

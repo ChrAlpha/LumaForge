@@ -4,14 +4,14 @@ import {
   USER_REGIONAL_TONE_PIVOT,
 } from './tone'
 
+export { LUMA_COLOR_OKLAB_WGSL } from './oklab-wgsl'
+export { LUMA_COLOR_USER_SATURATION_WGSL } from './saturation-wgsl'
+export { LUMA_COLOR_SELECTIVE_COLOR_WGSL } from './selective-color-wgsl'
 export {
   LUT_RANGE_UNIFORMS,
   LUT_ROLE_UNIFORMS,
   LUT_TRANSFER_UNIFORMS,
-} from './glsl'
-export { LUMA_COLOR_OKLAB_WGSL } from './oklab-wgsl'
-export { LUMA_COLOR_USER_SATURATION_WGSL } from './saturation-wgsl'
-export { LUMA_COLOR_SELECTIVE_COLOR_WGSL } from './selective-color-wgsl'
+} from './shader-uniforms'
 export { LUMA_COLOR_TRANSFER_WGSL } from './transfer-wgsl'
 
 // Host shader ABI: `params` supplies LUT size/domain/role/range/transfer values,
