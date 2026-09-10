@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url'
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+import { expectWebGPUPreview, rawPreviewUrl } from './raw-preview-backend'
+
 const rawPath = fileURLToPath(
   new URL(
     '../../packages/luma-raw-runtime/fixtures/.cache/public/raw-pixls-iphone-se.dng',
@@ -267,7 +269,12 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await page.addInitScript(() => {
       localStorage.setItem('lumaforge.locale', 'en')
     })
-    await page.goto(preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw')
+    await page.goto(
+      rawPreviewUrl(
+        testInfo,
+        preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
+      ),
+    )
     if (preview === 'cpu') await expectCpuNoticeBelowHeader(page)
     await loadRaw(page)
     if (preview === 'cpu') {
@@ -276,6 +283,7 @@ for (const preview of ['gpu', 'cpu'] as const) {
       await expect(page.getByTestId('cpu-preview-unavailable')).toHaveCount(0)
       await expect(page.locator('.raw-preview-canvas')).toHaveCount(0)
     } else {
+      await expectWebGPUPreview(page, testInfo)
       await expect(page.getByText(/GPU preview unavailable/)).toHaveCount(0)
       await expect(page.locator('[data-preview-track-ready]')).toHaveAttribute(
         'data-preview-track-ready',
@@ -283,7 +291,16 @@ for (const preview of ['gpu', 'cpu'] as const) {
       )
       expect(
         await page.locator('.raw-preview-canvas').evaluate((element) => {
-          const context = (element as HTMLCanvasElement).getContext('webgl2')
+          const canvas = element as HTMLCanvasElement
+          if (canvas.dataset.renderBackend === 'webgpu') {
+            const context = canvas.getContext('webgpu')
+            return Boolean(
+              context?.getConfiguration() &&
+              canvas.width > 1 &&
+              canvas.height > 1,
+            )
+          }
+          const context = canvas.getContext('webgl2')
           return Boolean(
             context &&
             !context.isContextLost() &&
@@ -461,8 +478,9 @@ test('full-resolution export delivers the committed geometry, not a crop of the 
   ).toBe(true)
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.addInitScript(() => localStorage.setItem('lumaforge.locale', 'en'))
-  await page.goto('/raw')
+  await page.goto(rawPreviewUrl(testInfo))
   await loadRaw(page)
+  await expectWebGPUPreview(page, testInfo)
 
   await openTool(page, 'Transform')
   await waitForTransform(page)

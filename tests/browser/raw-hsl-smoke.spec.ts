@@ -5,6 +5,13 @@ import process from 'node:process'
 import type { Locator, Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+import {
+  expectWebGPUPreview,
+  isDesktopChromiumProject,
+  rawPreviewUrl,
+  requireWebGPUFixture,
+} from './raw-preview-backend'
+
 const RAW_FIXTURE =
   process.env.LUMAFORGE_SONY_ARW ??
   '/workspaces/LumaForge/test-images/SGL00940.ARW'
@@ -51,9 +58,10 @@ test('drives selective-color HSL through all 8 bands and resets cleanly', async 
   page,
 }, testInfo) => {
   test.skip(
-    testInfo.project.name !== 'chromium-desktop',
+    !isDesktopChromiumProject(testInfo),
     'HSL smoke targets desktop Chromium only',
   )
+  requireWebGPUFixture(testInfo, RAW_FIXTURE)
   test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
   testInfo.setTimeout(240_000)
 
@@ -62,13 +70,14 @@ test('drives selective-color HSL through all 8 bands and resets cleanly', async 
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
 
-  await page.goto('/raw')
+  await page.goto(rawPreviewUrl(testInfo))
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
 
   await loadRawFixture(page, RAW_FIXTURE)
   await expect(
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
   ).toBeVisible({ timeout: 90_000 })
+  await expectWebGPUPreview(page, testInfo)
 
   // The HSL subpanel lives inside the Adjust tool aria-section.
   const hslSection = page.getByRole('region', { name: 'HSL' }).first()
@@ -141,6 +150,7 @@ test('drives selective-color HSL through all 8 bands and resets cleanly', async 
   expect(downloadedPath).toBeTruthy()
   const jpeg = await readFile(downloadedPath!)
   expect(jpeg.byteLength).toBeGreaterThan(64 * 1024)
+  await expectWebGPUPreview(page, testInfo)
 
   expect(
     consoleErrors,

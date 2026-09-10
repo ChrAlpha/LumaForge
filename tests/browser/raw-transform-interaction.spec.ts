@@ -3,6 +3,12 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, test } from '@playwright/test'
 
+import {
+  expectWebGPUPreview,
+  isDesktopChromiumProject,
+  rawPreviewUrl,
+} from './raw-preview-backend'
+
 const rawPath = fileURLToPath(
   new URL(
     '../../packages/luma-raw-runtime/fixtures/.cache/public/raw-pixls-iphone-se.dng',
@@ -16,12 +22,12 @@ test('Transform keeps RAW viewport fixed and lets replacement drops reach the st
   // The wheel-lock half of this check has no equivalent input on mobile
   // WebKit, where Playwright refuses `mouse.wheel` outright.
   test.skip(
-    testInfo.project.name !== 'chromium-desktop',
+    !isDesktopChromiumProject(testInfo),
     'Wheel input does not exist in mobile WebKit',
   )
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.addInitScript(() => localStorage.setItem('lumaforge.locale', 'en'))
-  await page.goto('/raw')
+  await page.goto(rawPreviewUrl(testInfo))
   const choosing = page.waitForEvent('filechooser')
   await page
     .getByRole('button', { name: /finish a raw with a lut/i })
@@ -34,6 +40,7 @@ test('Transform keeps RAW viewport fixed and lets replacement drops reach the st
     'data-preview-track-ready',
     'true',
   )
+  await expectWebGPUPreview(page, testInfo)
   await page.locator('[data-tool-card-trigger="transform"]').click()
   const tool = page.locator('[data-raw-transform-tool]')
   const auto = tool.getByRole('button', { name: 'Auto', exact: true })

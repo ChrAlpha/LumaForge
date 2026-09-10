@@ -21,6 +21,13 @@ import process from 'node:process'
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+import {
+  expectWebGPUPreview,
+  isDesktopChromiumProject,
+  rawPreviewUrl,
+  requireWebGPUFixture,
+} from './raw-preview-backend'
+
 const RAW_FIXTURE =
   process.env.LUMAFORGE_SONY_ARW ??
   '/workspaces/LumaForge/test-images/SGL00940.ARW'
@@ -61,16 +68,18 @@ test('desktop: a press anywhere on an Adjust row grabs the value, Shift halves t
   page,
 }, testInfo) => {
   test.skip(
-    testInfo.project.name !== 'chromium-desktop',
+    !isDesktopChromiumProject(testInfo),
     'Desktop scrub contract targets desktop Chromium only',
   )
+  requireWebGPUFixture(testInfo, RAW_FIXTURE)
   test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
   testInfo.setTimeout(300_000)
 
-  await page.goto('/raw')
+  await page.goto(rawPreviewUrl(testInfo))
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
   await loadDesktop(page)
   await waitForStageReady(page)
+  await expectWebGPUPreview(page, testInfo)
 
   const row = page.locator('[data-tone-field="userExposureEv"]')
   await row.scrollIntoViewIfNeeded()
@@ -188,16 +197,18 @@ test('compare: the split line and its labels hug the photograph', async ({
   page,
 }, testInfo) => {
   test.skip(
-    testInfo.project.name !== 'chromium-desktop',
+    !isDesktopChromiumProject(testInfo),
     'Compare geometry is asserted once, on desktop Chromium',
   )
+  requireWebGPUFixture(testInfo, RAW_FIXTURE)
   test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
   testInfo.setTimeout(300_000)
 
-  await page.goto('/raw')
+  await page.goto(rawPreviewUrl(testInfo))
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
   await loadDesktop(page)
   await waitForStageReady(page)
+  await expectWebGPUPreview(page, testInfo)
 
   const handle = page.locator('.raw-lab-compare-handle')
   await expect(handle).toBeVisible()

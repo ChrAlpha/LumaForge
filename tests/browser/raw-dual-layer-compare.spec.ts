@@ -1,36 +1,20 @@
 import { existsSync } from 'node:fs'
 import process from 'node:process'
 
-import type { Page, TestInfo } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import { devices, expect, test } from '@playwright/test'
+
+import {
+  expectWebGPUPreview,
+  isDesktopChromiumProject,
+  rawPreviewUrl,
+  requireWebGPUFixture,
+} from './raw-preview-backend'
 
 const RAW_COMPARE_FIXTURE =
   process.env.LUMAFORGE_RAW_COMPARE_FIXTURE ??
   '/workspaces/LumaForge/test-images/SGL_1998.NEF'
 const RAW_COMPARE_URL = process.env.LUMAFORGE_RAW_COMPARE_URL ?? '/raw'
-
-function comparisonUrl(testInfo: TestInfo) {
-  const url = new URL(
-    RAW_COMPARE_URL,
-    testInfo.project.use.baseURL ?? 'http://127.0.0.1:4178',
-  )
-  if (testInfo.project.name === 'chromium-webgpu') {
-    url.searchParams.set('forcePreview', 'webgpu')
-  }
-  return url.href
-}
-
-async function expectWebGPUBackend(page: Page, testInfo: TestInfo) {
-  if (testInfo.project.name !== 'chromium-webgpu') return
-  await expect(page.locator('.raw-preview-canvas')).toHaveAttribute(
-    'data-render-backend',
-    'webgpu',
-  )
-  const original = page.locator('.raw-preview-original-webgl-canvas')
-  if (await original.count()) {
-    await expect(original).toHaveAttribute('data-render-backend', 'webgpu')
-  }
-}
 
 type LayeredCompareMode = 'dual-webgl' | 'jpeg-fallback'
 
@@ -492,15 +476,10 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
   page,
 }, testInfo) => {
   test.skip(
-    !['chromium-desktop', 'chromium-webgpu'].includes(testInfo.project.name),
+    !isDesktopChromiumProject(testInfo),
     'dual GPU compare path is a desktop Chromium regression target',
   )
-  if (testInfo.project.name === 'chromium-webgpu') {
-    expect(
-      existsSync(RAW_COMPARE_FIXTURE),
-      `Missing RAW compare fixture: ${RAW_COMPARE_FIXTURE}`,
-    ).toBe(true)
-  }
+  requireWebGPUFixture(testInfo, RAW_COMPARE_FIXTURE)
   test.skip(
     !existsSync(RAW_COMPARE_FIXTURE),
     `Missing RAW compare fixture: ${RAW_COMPARE_FIXTURE}`,
@@ -511,7 +490,7 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
   expect(page.viewportSize()).toEqual({ width: 1440, height: 900 })
   await installWebglCounters(page)
   await installCompareModeRecorder(page)
-  await page.goto(comparisonUrl(testInfo))
+  await page.goto(rawPreviewUrl(testInfo, RAW_COMPARE_URL))
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
 
   await loadRawFixture(page, RAW_COMPARE_FIXTURE)
@@ -528,7 +507,7 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
   await expect(page.locator('.raw-preview-original-webgl-canvas')).toHaveCount(
     1,
   )
-  await expectWebGPUBackend(page, testInfo)
+  await expectWebGPUPreview(page, testInfo)
   expect((await readWebglStats(page)).drawCalls).toBeGreaterThan(0)
 
   await waitForWebglStatsIdle(page)
@@ -611,7 +590,7 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
     panX: 0,
     panY: 0,
   })
-  await expectWebGPUBackend(page, testInfo)
+  await expectWebGPUPreview(page, testInfo)
 
   await testInfo.attach('raw-dual-layer-compare.json', {
     body: JSON.stringify(
@@ -638,22 +617,17 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
   browser,
 }, testInfo) => {
   test.skip(
-    !['chromium-desktop', 'chromium-webgpu'].includes(testInfo.project.name),
+    !isDesktopChromiumProject(testInfo),
     'mobile-class fallback is exercised in a Chromium context with WebKit-class UA',
   )
-  if (testInfo.project.name === 'chromium-webgpu') {
-    expect(
-      existsSync(RAW_COMPARE_FIXTURE),
-      `Missing RAW compare fixture: ${RAW_COMPARE_FIXTURE}`,
-    ).toBe(true)
-  }
+  requireWebGPUFixture(testInfo, RAW_COMPARE_FIXTURE)
   test.skip(
     !existsSync(RAW_COMPARE_FIXTURE),
     `Missing RAW compare fixture: ${RAW_COMPARE_FIXTURE}`,
   )
   testInfo.setTimeout(240_000)
 
-  const baseURL = comparisonUrl(testInfo)
+  const baseURL = rawPreviewUrl(testInfo, RAW_COMPARE_URL)
   const context = await browser.newContext({
     ...devices['iPhone 14 Pro'],
     baseURL,
@@ -686,7 +660,7 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
     await page.getByRole('tab', { name: /^compare$/i }).click()
     await page.getByRole('button', { name: /^split compare$/i }).click()
     await waitForCompareMode(page, 'jpeg-fallback')
-    await expectWebGPUBackend(page, testInfo)
+    await expectWebGPUPreview(page, testInfo)
     expect((await readWebglStats(page)).drawCalls).toBeGreaterThan(0)
 
     const originalLayer = page.locator('.raw-preview-original-layer').first()
@@ -808,7 +782,7 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
     const viewportWebglStats = await readWebglStats(page)
     expect(viewportWebglStats.drawCalls).toBeLessThanOrEqual(2)
     expect(viewportWebglStats.finishCalls).toBe(0)
-    await expectWebGPUBackend(page, testInfo)
+    await expectWebGPUPreview(page, testInfo)
 
     await testInfo.attach('raw-mobile-jpeg-fallback-compare.json', {
       body: JSON.stringify(

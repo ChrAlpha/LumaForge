@@ -6,6 +6,13 @@ import process from 'node:process'
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+import {
+  expectWebGPUPreview,
+  isDesktopChromiumProject,
+  rawPreviewUrl,
+  requireWebGPUFixture,
+} from './raw-preview-backend'
+
 const sonyRawPath =
   process.env.LUMAFORGE_SONY_ARW ??
   '/workspaces/LumaForge/test-images/SGL00940.ARW'
@@ -40,22 +47,24 @@ test('exports an HQ preview JPEG from a real RAW upload without replacing full-r
   page,
 }, testInfo) => {
   test.skip(
-    testInfo.project.name !== 'chromium-desktop',
+    !isDesktopChromiumProject(testInfo),
     'HQ preview export acceptance uses desktop Chromium download APIs',
   )
+  requireWebGPUFixture(testInfo, sonyRawPath)
   test.skip(
     !existsSync(sonyRawPath),
     `Missing Sony ARW fixture: ${sonyRawPath}`,
   )
   testInfo.setTimeout(240_000)
 
-  await page.goto('/raw')
+  await page.goto(rawPreviewUrl(testInfo))
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
 
   await loadRawFixture(page, sonyRawPath)
   await expect(
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
   ).toBeVisible({ timeout: 90_000 })
+  await expectWebGPUPreview(page, testInfo)
 
   const exportRegion = page.getByRole('region', { name: 'Export' }).first()
   const fullResExportButton = exportRegion.getByRole('button', {
@@ -96,4 +105,5 @@ test('exports an HQ preview JPEG from a real RAW upload without replacing full-r
   expect(megapixels).toBeGreaterThanOrEqual(8_000_000)
   expect(megapixels).toBeLessThanOrEqual(12_000_000)
   expect(size.width / size.height).toBeCloseTo(1.5, 1)
+  await expectWebGPUPreview(page, testInfo)
 })
