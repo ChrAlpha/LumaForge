@@ -13,6 +13,30 @@ function createPipeline(): PreviewPipelineEvacuationHandle {
 }
 
 describe('usePreviewPipelineEvacuation', () => {
+  it('accounts for both GPU backends and clears their bytes on evacuation', async () => {
+    const registry = createResourceRegistry()
+    const processed = {
+      dispose: vi.fn(),
+      getResourceStats: () => ({ estimatedBytes: 4096 }),
+    }
+    const original = {
+      dispose: vi.fn(),
+      getResourceStats: () => ({ estimatedBytes: 8192 }),
+    }
+    const { result } = renderHook(() =>
+      usePreviewPipelineEvacuation({
+        resourceRegistryRef: { current: registry },
+        pipelineRef: { current: processed },
+      }),
+    )
+    result.current.setOriginalPreviewPipeline(original)
+    result.current.registerCurrentPreviewPipelineForEvacuation()
+    expect(registry.snapshot().totalEstimatedBytes).toBe(12288)
+    await registry.disposeOwners(['webgl'])
+    expect(registry.snapshot().totalEstimatedBytes).toBe(0)
+    expect(processed.dispose).toHaveBeenCalledOnce()
+    expect(original.dispose).toHaveBeenCalledOnce()
+  })
   it('registers active processed and original preview pipelines for WebGL evacuation', async () => {
     const registry = createResourceRegistry()
     const processed = createPipeline()

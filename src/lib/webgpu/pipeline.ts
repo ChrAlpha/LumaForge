@@ -12,7 +12,7 @@ import type {
   RawUploadInput,
   RenderOptions,
 } from '~/lib/gl/pipeline'
-import { isLUTProfileRenderable } from '~/lib/gl/pipeline'
+import { isLUTProfileRenderable } from '~/lib/gl/webgl-pipeline'
 
 import type { WebGPUDeviceLease } from './device'
 import { acquireWebGPUDevice } from './device'

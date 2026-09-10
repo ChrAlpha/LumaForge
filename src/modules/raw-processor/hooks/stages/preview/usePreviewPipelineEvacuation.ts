@@ -7,7 +7,8 @@ import type { RawProcessingPipeline } from '~/lib/gl/pipeline'
 export type PreviewPipelineEvacuationHandle = Pick<
   RawProcessingPipeline,
   'dispose'
->
+> &
+  Partial<Pick<RawProcessingPipeline, 'getResourceStats'>>
 
 type UsePreviewPipelineEvacuationInput = {
   resourceRegistryRef: MutableRefObject<ResourceRegistry | null>
@@ -47,8 +48,11 @@ export function usePreviewPipelineEvacuation({
       const id = `webgl-pipeline-${++previewPipelineResourceIdRef.current}-${label}`
       registry.register({
         id,
+        // Stable registry owner includes both GPU APIs during compatibility
+        // rollout; disposal and byte estimates come from the actual backend.
         owner: 'webgl',
         kind: 'webgl-pipeline',
+        estimatedBytes: pipeline.getResourceStats?.().estimatedBytes,
         dispose: () => {
           clearCurrent()
           return pipeline.dispose({ releaseContext: true })
