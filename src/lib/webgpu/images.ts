@@ -43,20 +43,30 @@ export class WebGPUImages {
       magFilter: 'linear',
     })
     this.nearest = device.createSampler()
-    this.fallback = this.createTexture([1, 1, 1], 'rgba32float', '3d')
-    device.queue.writeTexture(
-      { texture: this.fallback },
-      new Float32Array([0, 0, 0, 1]),
-      { bytesPerRow: 16 },
-      [1, 1, 1],
-    )
-    this.selective = this.createTexture([LUT_SIZE, 1], 'rgba32float')
-    this.selectiveGroup = device.createBindGroup({
-      layout: programs.selectiveLayout,
-      entries: [{ binding: 0, resource: this.selective.createView() }],
-    })
-    this.rebindLut()
-    this.updateSelectiveColor(undefined)
+    // A caller cannot register this owner until construction succeeds.
+    // Keep partial allocations local so a failed constructor releases them.
+    const allocated: GPUTexture[] = []
+    try {
+      this.fallback = this.createTexture([1, 1, 1], 'rgba32float', '3d')
+      allocated.push(this.fallback)
+      device.queue.writeTexture(
+        { texture: this.fallback },
+        new Float32Array([0, 0, 0, 1]),
+        { bytesPerRow: 16 },
+        [1, 1, 1],
+      )
+      this.selective = this.createTexture([LUT_SIZE, 1], 'rgba32float')
+      allocated.push(this.selective)
+      this.selectiveGroup = device.createBindGroup({
+        layout: programs.selectiveLayout,
+        entries: [{ binding: 0, resource: this.selective.createView() }],
+      })
+      this.rebindLut()
+      this.updateSelectiveColor(undefined)
+    } catch (error) {
+      for (const texture of allocated) texture.destroy()
+      throw error
+    }
   }
 
   private createTexture(

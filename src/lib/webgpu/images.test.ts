@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebGPUImages } from './images'
 import type { WebGPUPrograms } from './programs'
 
-function fixture() {
+function fixture(beforeConstruct?: (device: GPUDevice) => void) {
   const textures: {
     destroy: ReturnType<typeof vi.fn>
     createView: ReturnType<typeof vi.fn>
@@ -29,6 +29,7 @@ function fixture() {
     }),
     queue: { writeTexture },
   } as unknown as GPUDevice
+  beforeConstruct?.(device)
   const images = new WebGPUImages(device, {} as WebGPUPrograms)
   const upload = {
     data: new Uint16Array([100, 200, 300, 400, 500, 600]),
@@ -53,6 +54,63 @@ beforeEach(() =>
 afterEach(() => vi.unstubAllGlobals())
 
 describe('webGPU image lifecycle and memory', () => {
+  it.each([
+    'fallback-allocation',
+    'fallback-upload',
+    'selective-allocation',
+    'selective-binding',
+    'fallback-rebinding',
+    'selective-upload',
+  ])('releases partial constructor textures after %s failure', (failure) => {
+    let failedDevice!: GPUDevice
+    const registeredByCaller = vi.fn()
+    const expected = new Error(`constructor ${failure} failed`)
+    const fail = () => {
+      throw expected
+    }
+    expect(() => {
+      const { images } = fixture((device) => {
+        failedDevice = device
+        const createTexture = vi.mocked(device.createTexture)
+        const createBindGroup = vi.mocked(device.createBindGroup)
+        const writeTexture = vi.mocked(device.queue.writeTexture)
+        if (failure === 'fallback-allocation')
+          createTexture.mockImplementationOnce(fail)
+        else if (failure === 'selective-allocation')
+          createTexture
+            .mockImplementationOnce(createTexture.getMockImplementation()!)
+            .mockImplementationOnce(fail)
+        else if (failure === 'fallback-upload')
+          writeTexture.mockImplementationOnce(fail)
+        else if (failure === 'selective-upload')
+          writeTexture
+            .mockImplementationOnce(writeTexture.getMockImplementation()!)
+            .mockImplementationOnce(fail)
+        else if (failure === 'selective-binding')
+          createBindGroup.mockImplementationOnce(fail)
+        else
+          createBindGroup
+            .mockImplementationOnce(createBindGroup.getMockImplementation()!)
+            .mockImplementationOnce(fail)
+      })
+      registeredByCaller(images)
+    }).toThrow(expected)
+
+    expect(registeredByCaller).not.toHaveBeenCalled()
+    const allocated = vi
+      .mocked(failedDevice.createTexture)
+      .mock.results.filter((result) => result.type === 'return')
+    expect(allocated).toHaveLength(
+      failure === 'fallback-allocation'
+        ? 0
+        : failure === 'fallback-upload' || failure === 'selective-allocation'
+          ? 1
+          : 2,
+    )
+    for (const texture of allocated)
+      expect(texture.value.destroy).toHaveBeenCalledOnce()
+  })
+
   it.each(['validation', 'allocation', 'binding', 'upload', 'reused-upload'])(
     'clears a previous LUT after replacement %s failure while retaining the RAW image',
     (failure) => {
