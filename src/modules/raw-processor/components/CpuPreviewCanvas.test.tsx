@@ -15,13 +15,17 @@ describe('cpuPreviewCanvas', () => {
   it('draws via backing canvas (putImageData) then drawImage to visible', () => {
     const drawImage = vi.fn()
     const putImageData = vi.fn()
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    const context = {
       drawImage,
       putImageData,
       clearRect: vi.fn(),
       scale: vi.fn(),
       setTransform: vi.fn(),
-    } as unknown as CanvasRenderingContext2D)
+    } as unknown as CanvasRenderingContext2D
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((
+      contextId: string,
+    ) =>
+      contextId === '2d' ? context : null) as HTMLCanvasElement['getContext'])
 
     render(<CpuPreviewCanvas frame={frame} inFlight={false} />)
     expect(putImageData).toHaveBeenCalled()

@@ -23,9 +23,11 @@ describe('preview pipeline facade', () => {
   function createPipeline() {
     const finish = vi.fn()
     const canvas = document.createElement('canvas')
-    vi.spyOn(canvas, 'getContext').mockReturnValue({
-      finish,
-    } as unknown as WebGL2RenderingContext)
+    const context = { finish } as unknown as WebGL2RenderingContext
+    vi.spyOn(canvas, 'getContext').mockImplementation(((contextId: string) =>
+      contextId === 'webgl2'
+        ? context
+        : null) as HTMLCanvasElement['getContext'])
     return { pipeline: new RawProcessingPipeline(canvas), finish }
   }
 
