@@ -13,6 +13,7 @@ import type {
 import { GPUReadbackJobs } from './async-resources'
 import type { WebGPUDeviceLease } from './device'
 import { acquireWebGPUDevice } from './device'
+import { WebGPUFrameScheduler } from './frame-scheduler'
 import { WebGPUImages } from './images'
 import { webGPUCapabilities, webGPUTelemetry } from './pipeline-telemetry'
 import { WebGPUProgramSelection } from './program-selection'
@@ -28,6 +29,7 @@ import { DEFAULT_PARAMS, packUniforms } from './uniforms'
 export class WebGPUProcessingPipeline {
   readonly backend = 'webgpu' as const
   private lease: WebGPUDeviceLease | null = null
+  private frames: WebGPUFrameScheduler | null = null
   private variants: WebGPUProgramSelection | null = null
   private get programs(): WebGPUPrograms {
     return this.variants!.current
@@ -105,6 +107,12 @@ export class WebGPUProcessingPipeline {
         alphaMode: 'opaque',
       })
       lease.device.addEventListener('uncapturederror', this.onDeviceError)
+      this.frames = new WebGPUFrameScheduler(
+        () => this.drawFrame(),
+        () => lease.device.queue.onSubmittedWorkDone(),
+        (error) =>
+          this.fail(error instanceof Error ? error : new Error(String(error))),
+      )
     } catch (error) {
       this.dispose()
       throw error
@@ -189,8 +197,24 @@ export class WebGPUProcessingPipeline {
 
   render(options: RenderOptions = {}): PipelineStats {
     if (options.waitForGpu) throw new Error('WEBGPU_ASYNC_WAIT_REQUIRED')
-    const { device, images } = this.assertReady()
+    const { images } = this.assertReady()
     const start = performance.now()
+    if (images.input && this.context) this.frames!.request()
+    this.assertReady()
+    const elapsed = performance.now() - start
+    return {
+      uploadTime: images.uploadTime,
+      lutUploadTime: images.lutUploadTime,
+      processTime: elapsed,
+      totalTime: elapsed,
+      inputSize: this.getInputDimensions(),
+      previewSize: { width: this.canvas.width, height: this.canvas.height },
+      ...this.telemetry(),
+    }
+  }
+
+  private drawFrame() {
+    const { device, images } = this.assertReady()
     if (images.input && images.processedView && this.context) {
       const encoder = device.createCommandEncoder({
         label: 'raw-preview-frame',
@@ -216,16 +240,6 @@ export class WebGPUProcessingPipeline {
         this.programs.output,
       )
       device.queue.submit([encoder.finish()])
-    }
-    const elapsed = performance.now() - start
-    return {
-      uploadTime: images.uploadTime,
-      lutUploadTime: images.lutUploadTime,
-      processTime: elapsed,
-      totalTime: elapsed,
-      inputSize: this.getInputDimensions(),
-      previewSize: { width: this.canvas.width, height: this.canvas.height },
-      ...this.telemetry(),
     }
   }
 
@@ -283,7 +297,7 @@ export class WebGPUProcessingPipeline {
 
   async waitForGpu() {
     await this.variants?.wait()
-    await this.assertReady().device.queue.onSubmittedWorkDone()
+    await this.frames?.wait()
     this.assertReady()
   }
   readProcessedPixels(): Float32Array | null {
@@ -293,6 +307,7 @@ export class WebGPUProcessingPipeline {
     const { device, images } = this.assertReady()
     if (!images.processed) return null
     if (this.dirty) this.render()
+    await this.waitForGpu()
     const scope = this.readbacks.create()
     try {
       const result = await readFloat16Texture(device, images.processed, scope)
@@ -411,6 +426,7 @@ export class WebGPUProcessingPipeline {
     return {
       backend: this.backend,
       shaderVariant: this.variants?.activeKey ?? 'generic',
+      frames: this.frames?.getStats(),
       estimatedBytes:
         (this.images?.estimatedBytes ?? 0) +
         (this.uniformBuffer ? UNIFORM_BUFFER_SIZE : 0) +
@@ -430,6 +446,7 @@ export class WebGPUProcessingPipeline {
   }
   dispose(_options: { releaseContext?: boolean } = {}) {
     this.disposed = true
+    this.frames?.dispose()
     this.variants?.dispose()
     this.readbacks.dispose()
     this.lease?.device.removeEventListener(
