@@ -32,5 +32,24 @@ export default defineConfig({
         baseURL: 'http://127.0.0.1:4178',
       },
     },
+    {
+      name: 'chromium-webgpu',
+      use: {
+        ...devices['Desktop Chrome'],
+        browserName: 'chromium',
+        baseURL: 'http://127.0.0.1:4178',
+        launchOptions: {
+          args: [
+            '--enable-unsafe-webgpu',
+            '--enable-unsafe-swiftshader',
+            '--no-sandbox',
+            '--enable-features=Vulkan',
+            '--use-vulkan=swiftshader',
+            '--disable-vulkan-surface',
+            '--use-angle=swiftshader',
+          ],
+        },
+      },
+    },
   ],
 })
