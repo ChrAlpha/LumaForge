@@ -16,6 +16,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
 
+import { createCpuRecoverySource } from '../services/preview/cpu-recovery-source'
+
 // ---------------------------------------------------------------------------
 // Public param type
 // ---------------------------------------------------------------------------
@@ -209,9 +211,18 @@ export function useCpuPreview({
       return
     }
 
-    if (!isQuickU16(image)) {
-      return
-    }
+    // Keep an existing quick worker source across HQ upgrades. When CPU mode
+    // mounts after GPU loss there is no quick source, so seed from bounded HQ.
+    const source = isQuickU16(image)
+      ? {
+          width: image.width,
+          height: image.height,
+          data: image.data as Uint16Array,
+        }
+      : !lastSourceIdRef.current
+        ? createCpuRecoverySource(image)
+        : null
+    if (!source) return
 
     const sourceId = deriveSourceId(image, imageVersion)
     if (sourceId === lastSourceIdRef.current) {
@@ -227,9 +238,7 @@ export function useCpuPreview({
     const client = getClient()
     client.loadSource({
       sourceId,
-      width: image.width,
-      height: image.height,
-      data: image.data as Uint16Array,
+      ...source,
     })
     // imageVersion drives the dep so a new decode is detected even when
     // width/height/byteLength happen to match.

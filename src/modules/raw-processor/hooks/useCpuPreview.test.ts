@@ -91,6 +91,40 @@ afterEach(() => {
 })
 
 describe('useCpuPreview helpers', () => {
+  it('starts an editable CPU frame when mounted after a GPU bounded-HQ upgrade', () => {
+    vi.stubGlobal('Worker', FakeWorker)
+    const image = makeDecodedImage('bounded-hq')
+    const { result } = renderHook(() =>
+      useCpuPreview({
+        enabled: true,
+        image,
+        imageVersion: 3,
+        params: baseParams,
+        variant: 'processed',
+      }),
+    )
+    const worker = FakeWorker.instances[0]
+    expect(worker).toBeDefined()
+    expect(worker.posted[0]).toMatchObject({
+      type: 'loadSource',
+      width: 2,
+      height: 2,
+    })
+    const render = worker.posted.find((message) => message.type === 'render')!
+    if (render.type !== 'render') throw new Error('expected CPU render request')
+    act(() =>
+      worker.respond({
+        type: 'rendered',
+        sourceId: render.sourceId,
+        requestId: render.requestId,
+        width: 2,
+        height: 2,
+        rgba: new Uint8ClampedArray(16),
+      }),
+    )
+    expect(result.current.frame?.width).toBe(2)
+    expect(result.current.inFlight).toBe(false)
+  })
   it('neutral cache key changes only with source + render exposure', () => {
     expect(neutralFrameCacheKey('s1', 0.5)).toBe(
       neutralFrameCacheKey('s1', 0.5),
