@@ -20,7 +20,128 @@ const decodedImage: DecodedImage = {
   renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
 }
 
+function deferred() {
+  let resolve!: () => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<void>((onResolve, onReject) => {
+    resolve = onResolve
+    reject = onReject
+  })
+  return { promise, resolve, reject }
+}
+
 describe('originalWebglLayer', () => {
+  it('reports only the latest generation after its GPU work completes', async () => {
+    const firstFrame = deferred()
+    const secondFrame = deferred()
+    const onReady = vi.fn()
+    const onError = vi.fn()
+    const pipeline = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      uploadImage: vi.fn(),
+      setParams: vi.fn(),
+      render: vi.fn(),
+      resize: vi.fn(),
+      dispose: vi.fn(),
+      waitForGpu: vi
+        .fn()
+        .mockReturnValueOnce(firstFrame.promise)
+        .mockReturnValueOnce(secondFrame.promise),
+    }
+    const createPipeline = () => pipeline as never
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      createPipeline,
+      onReady,
+      onError,
+    }
+    const { rerender } = render(<OriginalWebglLayer {...props} />)
+    await waitFor(() => expect(pipeline.waitForGpu).toHaveBeenCalledOnce())
+    expect(onReady).not.toHaveBeenCalled()
+
+    rerender(<OriginalWebglLayer {...props} imageVersion={2} />)
+    await waitFor(() => expect(pipeline.waitForGpu).toHaveBeenCalledTimes(2))
+    await act(async () => firstFrame.reject(new Error('stale GPU failure')))
+    expect(onReady).not.toHaveBeenCalled()
+    expect(onError).not.toHaveBeenCalled()
+    expect(pipeline.dispose).not.toHaveBeenCalled()
+
+    await act(async () => secondFrame.resolve())
+    expect(onReady).toHaveBeenCalledExactlyOnceWith('2')
+    expect(pipeline.render).toHaveBeenLastCalledWith({ waitForGpu: false })
+  })
+
+  it.each(['unmount', 'evacuate'] as const)(
+    'ignores GPU completion after %s',
+    async (stop) => {
+      const frame = deferred()
+      const onReady = vi.fn()
+      const onError = vi.fn()
+      const onPipelineChange = vi.fn()
+      const pipeline = {
+        initialize: vi.fn().mockResolvedValue(undefined),
+        uploadImage: vi.fn(),
+        setParams: vi.fn(),
+        render: vi.fn(),
+        resize: vi.fn(),
+        dispose: vi.fn(),
+        waitForGpu: vi.fn(() => frame.promise),
+      }
+      const { unmount } = render(
+        <OriginalWebglLayer
+          imageRef={{ current: decodedImage }}
+          imageVersion={1}
+          createPipeline={() => pipeline as never}
+          onReady={onReady}
+          onError={onError}
+          onPipelineChange={onPipelineChange}
+        />,
+      )
+      await waitFor(() => expect(pipeline.waitForGpu).toHaveBeenCalledOnce())
+      if (stop === 'unmount') unmount()
+      else act(() => onPipelineChange.mock.calls.at(-1)![0].dispose())
+      await act(async () => frame.resolve())
+
+      expect(pipeline.dispose).toHaveBeenCalledOnce()
+      expect(onReady).not.toHaveBeenCalled()
+      expect(onError).not.toHaveBeenCalled()
+    },
+  )
+
+  it('reports a current GPU completion failure and disposes its pipeline', async () => {
+    const frame = deferred()
+    const onReady = vi.fn()
+    const onError = vi.fn()
+    const dispose = vi.fn()
+    const waitForGpu = vi.fn(() => frame.promise)
+    render(
+      <OriginalWebglLayer
+        imageRef={{ current: decodedImage }}
+        imageVersion={1}
+        createPipeline={() =>
+          ({
+            initialize: vi.fn().mockResolvedValue(undefined),
+            uploadImage: vi.fn(),
+            setParams: vi.fn(),
+            render: vi.fn(),
+            resize: vi.fn(),
+            dispose,
+            waitForGpu,
+          }) as never
+        }
+        onReady={onReady}
+        onError={onError}
+      />,
+    )
+    await waitFor(() => expect(waitForGpu).toHaveBeenCalledOnce())
+    const failure = new Error('GPU completion failed')
+    await act(async () => frame.reject(failure))
+    expect(onError).toHaveBeenCalledExactlyOnceWith(failure, '1')
+    expect(dispose).toHaveBeenCalledExactlyOnceWith({ releaseContext: true })
+    expect(onReady).not.toHaveBeenCalled()
+  })
+
   it('renders technical-base original params into a left WebGL canvas', async () => {
     const setParams = vi.fn()
     const renderPipeline = vi.fn()

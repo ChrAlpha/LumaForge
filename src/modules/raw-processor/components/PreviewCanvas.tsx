@@ -148,10 +148,14 @@ export function PreviewCanvas({
   const suspendedRef = useRef(suspended)
   const previewViewportRef = useRef(previewViewport)
   const processedUploadGenerationKeyRef = useRef('')
+  const processedGenerationKeyRef = useRef('')
+  const processedRenderRequestRef = useRef(0)
   const processedFrameStatusRef = useRef<PreviewFrameStatus>(
     EMPTY_PREVIEW_FRAME_STATUS,
   )
-  const renderProcessedPreviewRef = useRef<(() => boolean) | null>(null)
+  const renderProcessedPreviewRef = useRef<(() => Promise<boolean>) | null>(
+    null,
+  )
   const activePointersRef = useRef(new Map<number, TrackedPointer>())
   const pinchStartRef = useRef<{
     distance: number
@@ -208,6 +212,7 @@ export function PreviewCanvas({
     shouldMountOriginalWebglLayer,
     shouldDelayProcessedCompareRender,
   } = previewCompareReadiness
+  processedGenerationKeyRef.current = processedImageGenerationKey
   const showEmbeddedHandoffPreview =
     displaySource === 'quick' &&
     Boolean(embeddedPreviewUrl) &&
@@ -454,22 +459,38 @@ export function PreviewCanvas({
     return uploaded
   }, [imageRef, isInitialized, processedImageGenerationKey])
 
-  const renderProcessedPreview = useCallback(() => {
+  const renderProcessedPreview = useCallback(async () => {
     const pipeline = pipelineRef.current
     if (!pipeline || !isInitialized) return false
-    if (!syncProcessedImageUpload()) return false
-
-    pipeline.setParams(processedCanvasParams)
-    const stats = pipeline.render()
-    const renderedImage = imageRef.current
-    commitProcessedFrameStatus({
-      generationKey: processedImageGenerationKey,
-      displaySource,
-      source: renderedImage?.source ?? 'preview',
-      state: 'ready',
-    })
-    onStatsUpdate?.(stats)
-    return true
+    const request = ++processedRenderRequestRef.current
+    const isCurrent = () =>
+      pipelineRef.current === pipeline &&
+      !suspendedRef.current &&
+      processedRenderRequestRef.current === request &&
+      processedGenerationKeyRef.current === processedImageGenerationKey
+    try {
+      if (!syncProcessedImageUpload()) return false
+      pipeline.setParams(processedCanvasParams)
+      const stats = pipeline.render({ waitForGpu: false })
+      const renderedImage = imageRef.current
+      await pipeline.waitForGpu()
+      if (!isCurrent()) return false
+      commitProcessedFrameStatus({
+        generationKey: processedImageGenerationKey,
+        displaySource,
+        source: renderedImage?.source ?? 'preview',
+        state: 'ready',
+      })
+      onStatsUpdate?.(stats)
+      return true
+    } catch (error) {
+      if (isCurrent()) {
+        setError(
+          error instanceof Error ? error.message : 'Preview rendering failed',
+        )
+      }
+      return false
+    }
   }, [
     commitProcessedFrameStatus,
     displaySource,

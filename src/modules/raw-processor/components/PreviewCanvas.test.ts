@@ -25,6 +25,7 @@ const pipelineMock = vi.hoisted(() => ({
     disposeMock: ReturnType<typeof vi.fn>
     resize: ReturnType<typeof vi.fn>
     render: ReturnType<typeof vi.fn>
+    waitForGpu: ReturnType<typeof vi.fn>
     clearImage: ReturnType<typeof vi.fn>
     uploadImage: ReturnType<typeof vi.fn>
     clearLUT: ReturnType<typeof vi.fn>
@@ -32,6 +33,7 @@ const pipelineMock = vi.hoisted(() => ({
     setParams: ReturnType<typeof vi.fn>
   }>,
   initialize: vi.fn(),
+  waitForGpu: vi.fn(),
   renderEvents: [] as Array<{ kind: 'original' | 'processed' }>,
   pipelineEvents: [] as Array<{
     kind: 'original' | 'processed'
@@ -68,6 +70,7 @@ vi.mock('~/lib/gl/pipeline', () => ({
           })
           return { renderMs: 1 }
         }),
+        waitForGpu: vi.fn(() => pipelineMock.waitForGpu(canvas)),
         clearImage: vi.fn(),
         uploadImage: vi.fn((input) => {
           const kind = getKind()
@@ -229,6 +232,8 @@ describe('preview canvas upload descriptor', () => {
     pipelineMock.pipelineEvents.length = 0
     pipelineMock.initialize.mockReset()
     pipelineMock.initialize.mockResolvedValue(undefined)
+    pipelineMock.waitForGpu.mockReset()
+    pipelineMock.waitForGpu.mockResolvedValue(undefined)
     window.PointerEvent = MouseEvent as typeof PointerEvent
     HTMLElement.prototype.setPointerCapture = vi.fn()
     HTMLElement.prototype.releasePointerCapture = vi.fn()
@@ -247,6 +252,62 @@ describe('preview canvas upload descriptor', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
+
+  it('publishes processed frames only after the current generation finishes on the GPU', async () => {
+    const firstFrame = deferred<void>()
+    const nextFrame = deferred<void>()
+    pipelineMock.waitForGpu.mockReturnValue(firstFrame.promise)
+    const onStatsUpdate = vi.fn()
+    const imageRef = { current: decodedImage }
+    const props = {
+      imageRef,
+      imageVersion: 1,
+      params: defaultParams,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      onStatsUpdate,
+    }
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() => expect(pipelineMock.waitForGpu).toHaveBeenCalled())
+    expect(onStatsUpdate).not.toHaveBeenCalled()
+
+    pipelineMock.waitForGpu.mockClear().mockReturnValue(nextFrame.promise)
+    imageRef.current = { ...decodedImage }
+    rerender(createElement(PreviewCanvas, { ...props, imageVersion: 2 }))
+    await waitFor(() => expect(pipelineMock.waitForGpu).toHaveBeenCalled())
+    await act(async () => firstFrame.reject(new Error('stale frame failed')))
+    expect(onStatsUpdate).not.toHaveBeenCalled()
+    expect(screen.queryByText('stale frame failed')).toBeNull()
+
+    await act(async () => nextFrame.resolve())
+    expect(onStatsUpdate).toHaveBeenCalledOnce()
+    expect(pipelineMock.instances[0]?.render).toHaveBeenLastCalledWith({
+      waitForGpu: false,
+    })
+  })
+
+  it.each(['unmount', 'suspend'] as const)(
+    'ignores processed GPU completion after %s',
+    async (stop) => {
+      const completed = deferred<void>()
+      pipelineMock.waitForGpu.mockReturnValue(completed.promise)
+      const onStatsUpdate = vi.fn()
+      const props = {
+        imageRef: { current: decodedImage },
+        imageVersion: 1,
+        params: defaultParams,
+        lutDataRef: { current: null },
+        lutDataVersion: 0,
+        onStatsUpdate,
+      }
+      const { unmount, rerender } = render(createElement(PreviewCanvas, props))
+      await waitFor(() => expect(pipelineMock.waitForGpu).toHaveBeenCalled())
+      if (stop === 'unmount') unmount()
+      else rerender(createElement(PreviewCanvas, { ...props, suspended: true }))
+      await act(async () => completed.resolve())
+      expect(onStatsUpdate).not.toHaveBeenCalled()
+    },
+  )
 
   it('accepts legacy Float32 RGBA display-sRGB input', () => {
     const data = new Float32Array(4)
@@ -842,6 +903,9 @@ describe('preview canvas upload descriptor', () => {
     expect(
       container.querySelector('[data-raw-compare-track="image"]'),
     ).toHaveAttribute('data-preview-track-ready', 'true')
+    await act(async () => {
+      await Promise.resolve()
+    })
   })
 
   it('keeps the quick preview canvas visible while bounded-HQ catches up', async () => {
@@ -909,6 +973,9 @@ describe('preview canvas upload descriptor', () => {
     expect(
       container.querySelector('[data-raw-compare-track="image"]'),
     ).toHaveAttribute('data-preview-track-ready', 'true')
+    await act(async () => {
+      await Promise.resolve()
+    })
   })
 
   it('promotes bounded-HQ dual-webgl compare after the processed layer uploads the same generation', async () => {
@@ -1026,6 +1093,9 @@ describe('preview canvas upload descriptor', () => {
       container.querySelector('[data-compare-mode="dual-webgl"]'),
     ).toBeTruthy()
     expect(onCompareRenderModeChange).not.toHaveBeenCalledWith('processed-only')
+    await act(async () => {
+      await Promise.resolve()
+    })
   })
 
   it('keeps dual-webgl compare ready after the preview image version changes', async () => {
@@ -1353,7 +1423,7 @@ describe('preview canvas upload descriptor', () => {
     expect(getComputedStyle(originalImage!).transform).toBe('')
   })
 
-  it('keeps the preview track hidden until aspect-fit sizing is ready', () => {
+  it('keeps the preview track hidden until aspect-fit sizing is ready', async () => {
     const { container } = render(
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
@@ -1372,6 +1442,9 @@ describe('preview canvas upload descriptor', () => {
     expect(previewCanvasCss).toContain(
       "[data-raw-compare-track='image'][data-preview-track-ready='false']",
     )
+    await act(async () => {
+      await Promise.resolve()
+    })
   })
 
   it('scopes transform will-change to active preview panning', async () => {

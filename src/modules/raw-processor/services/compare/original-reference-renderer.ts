@@ -9,7 +9,8 @@ import type { OriginalReferenceSnapshot } from './original-reference-snapshot'
 type PipelineLike = Pick<
   RawProcessingPipeline,
   'initialize' | 'uploadImage' | 'setParams' | 'render' | 'dispose'
->
+> &
+  Partial<Pick<RawProcessingPipeline, 'waitForGpu'>>
 
 export type RenderOriginalReferenceSnapshotInput = {
   image: DecodedImage
@@ -223,7 +224,9 @@ export async function renderOriginalReferenceSnapshot({
     throwIfAborted(signal)
     pipeline.uploadImage(createSnapshotUploadInput(image, target))
     pipeline.setParams(ORIGINAL_REFERENCE_PARAMS)
-    pipeline.render({ waitForGpu: true })
+    pipeline.render({ waitForGpu: !pipeline.waitForGpu })
+    if (pipeline.waitForGpu) await pipeline.waitForGpu()
+    throwIfAborted(signal)
 
     const blob = await canvasToJpegBlob(canvas)
     throwIfAborted(signal)

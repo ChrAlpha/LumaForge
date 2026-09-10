@@ -31,6 +31,64 @@ describe('renderOriginalReferenceSnapshot', () => {
     revokeObjectURL.mockClear()
   })
 
+  it.each([false, true])(
+    'waits for GPU completion before encoding and honors abort=%s',
+    async (abort) => {
+      let finishGpu!: () => void
+      const completed = new Promise<void>((resolve) => {
+        finishGpu = resolve
+      })
+      const waitForGpu = vi.fn(() => completed)
+      const dispose = vi.fn()
+      const render = vi.fn()
+      const toBlob = vi.fn((callback: BlobCallback) =>
+        callback(new Blob(['jpeg'], { type: 'image/jpeg' })),
+      )
+      const controller = new AbortController()
+      const snapshotPromise = renderOriginalReferenceSnapshot({
+        image: createImage(),
+        key: 'completed-frame',
+        maxPixels: 1_000_000,
+        signal: controller.signal,
+        createPipeline: () =>
+          ({
+            initialize: vi.fn().mockResolvedValue(undefined),
+            uploadImage: vi.fn(),
+            setParams: vi.fn(),
+            render,
+            waitForGpu,
+            dispose,
+          }) as never,
+        createCanvas: () => ({ width: 0, height: 0, toBlob }) as never,
+        createObjectURL,
+      })
+      await vi.waitFor(() => expect(waitForGpu).toHaveBeenCalledOnce())
+      expect(render).toHaveBeenCalledExactlyOnceWith({ waitForGpu: false })
+      expect(toBlob).not.toHaveBeenCalled()
+      expect(createObjectURL).not.toHaveBeenCalled()
+      if (abort) {
+        controller.abort()
+        expect(dispose).toHaveBeenCalledOnce()
+      }
+      finishGpu()
+
+      if (abort) {
+        await expect(snapshotPromise).rejects.toThrow(
+          'ORIGINAL_REFERENCE_SNAPSHOT_ABORTED',
+        )
+        expect(toBlob).not.toHaveBeenCalled()
+        expect(createObjectURL).not.toHaveBeenCalled()
+      } else {
+        await expect(snapshotPromise).resolves.toMatchObject({
+          key: 'completed-frame',
+          objectUrl: 'blob:original-rendered',
+        })
+        expect(toBlob).toHaveBeenCalledOnce()
+      }
+      expect(dispose).toHaveBeenCalledExactlyOnceWith({ releaseContext: true })
+    },
+  )
+
   it('renders original params, encodes a JPEG blob, and disposes the pipeline', async () => {
     const dispose = vi.fn()
     const uploadImage = vi.fn()

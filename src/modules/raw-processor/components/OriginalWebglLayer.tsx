@@ -9,7 +9,8 @@ import { createRawUploadInput } from './preview-canvas-helpers'
 type OriginalPipeline = Pick<
   RawProcessingPipeline,
   'initialize' | 'uploadImage' | 'setParams' | 'render' | 'resize' | 'dispose'
->
+> &
+  Partial<Pick<RawProcessingPipeline, 'waitForGpu'>>
 
 export type OriginalWebglPipelineHandle = Pick<OriginalPipeline, 'dispose'>
 
@@ -237,13 +238,25 @@ export function OriginalWebglLayer({
     })
     if (!uploadInput) return
 
-    try {
-      pipeline.uploadImage(uploadInput)
-      pipeline.setParams(ORIGINAL_LAYER_PARAMS)
-      pipeline.render({ waitForGpu: true })
-      onReadyRef.current?.(generationKey)
-    } catch (error) {
-      reportPipelineError(error)
+    let cancelled = false
+    const isCurrent = () =>
+      !cancelled &&
+      pipelineRef.current === pipeline &&
+      generationKeyRef.current === generationKey
+    const renderOriginal = async () => {
+      try {
+        pipeline.uploadImage(uploadInput)
+        pipeline.setParams(ORIGINAL_LAYER_PARAMS)
+        pipeline.render({ waitForGpu: !pipeline.waitForGpu })
+        if (pipeline.waitForGpu) await pipeline.waitForGpu()
+        if (isCurrent()) onReadyRef.current?.(generationKey)
+      } catch (error) {
+        if (isCurrent()) reportPipelineError(error)
+      }
+    }
+    void renderOriginal()
+    return () => {
+      cancelled = true
     }
   }, [
     generationKey,
