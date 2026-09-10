@@ -319,6 +319,7 @@ vi.mock('~/lib/gl/pipeline', async (importOriginal) => {
     ...actual,
     RawProcessingPipeline: class {
       async initialize() {}
+      async waitForGpu() {}
       resize() {}
       uploadImage() {}
       clearImage() {}
