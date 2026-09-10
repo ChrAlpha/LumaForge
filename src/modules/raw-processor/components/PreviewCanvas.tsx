@@ -150,6 +150,11 @@ export function PreviewCanvas({
   const processedUploadGenerationKeyRef = useRef('')
   const processedGenerationKeyRef = useRef('')
   const processedRenderRequestRef = useRef(0)
+  const firstFrameWaitRef = useRef<{
+    pipeline: RawProcessingPipeline
+    generationKey: string
+    completion: Promise<void>
+  } | null>(null)
   const processedFrameStatusRef = useRef<PreviewFrameStatus>(
     EMPTY_PREVIEW_FRAME_STATUS,
   )
@@ -329,6 +334,7 @@ export function PreviewCanvas({
   )
 
   const resetProcessedFrameStatus = useCallback(() => {
+    firstFrameWaitRef.current = null
     commitProcessedFrameStatus(EMPTY_PREVIEW_FRAME_STATUS)
   }, [commitProcessedFrameStatus])
 
@@ -473,7 +479,26 @@ export function PreviewCanvas({
       pipeline.setParams(processedCanvasParams)
       const stats = pipeline.render({ waitForGpu: false })
       const renderedImage = imageRef.current
-      await pipeline.waitForGpu()
+      const readyFrame = processedFrameStatusRef.current
+      if (
+        readyFrame.state !== 'ready' ||
+        readyFrame.generationKey !== processedImageGenerationKey
+      ) {
+        // One completion proves the new image has rendered. Parameter edits
+        // reuse that proof; already-ready generations never stall for the GPU.
+        if (
+          firstFrameWaitRef.current?.pipeline !== pipeline ||
+          firstFrameWaitRef.current.generationKey !==
+            processedImageGenerationKey
+        ) {
+          firstFrameWaitRef.current = {
+            pipeline,
+            generationKey: processedImageGenerationKey,
+            completion: pipeline.waitForGpu(),
+          }
+        }
+        await firstFrameWaitRef.current.completion
+      }
       if (!isCurrent()) return false
       commitProcessedFrameStatus({
         generationKey: processedImageGenerationKey,
@@ -485,6 +510,7 @@ export function PreviewCanvas({
       return true
     } catch (error) {
       if (isCurrent()) {
+        firstFrameWaitRef.current = null
         setError(
           error instanceof Error ? error.message : 'Preview rendering failed',
         )

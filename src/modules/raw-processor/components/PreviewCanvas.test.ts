@@ -286,6 +286,50 @@ describe('preview canvas upload descriptor', () => {
     })
   })
 
+  it('reuses the first-ready fence while sliders change and stops fencing after ready', async () => {
+    const completed = deferred<void>()
+    pipelineMock.waitForGpu.mockReturnValue(completed.promise)
+    const onStatsUpdate = vi.fn()
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      params: defaultParams,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      onStatsUpdate,
+    }
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() => expect(pipelineMock.waitForGpu).toHaveBeenCalled())
+    for (const userExposureEv of [0.1, 0.2, 0.3]) {
+      rerender(
+        createElement(PreviewCanvas, {
+          ...props,
+          params: { ...defaultParams, userExposureEv },
+        }),
+      )
+    }
+    expect(pipelineMock.waitForGpu).toHaveBeenCalledOnce()
+    expect(onStatsUpdate).not.toHaveBeenCalled()
+
+    await act(async () => completed.resolve())
+    expect(onStatsUpdate).toHaveBeenCalledOnce()
+    onStatsUpdate.mockClear()
+    pipelineMock.waitForGpu.mockClear()
+    pipelineMock.instances[0]!.render.mockClear()
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        params: { ...defaultParams, userExposureEv: 0.4 },
+      }),
+    )
+
+    expect(pipelineMock.instances[0]!.render).toHaveBeenCalledWith({
+      waitForGpu: false,
+    })
+    expect(onStatsUpdate).toHaveBeenCalled()
+    expect(pipelineMock.waitForGpu).not.toHaveBeenCalled()
+  })
+
   it.each(['unmount', 'suspend'] as const)(
     'ignores processed GPU completion after %s',
     async (stop) => {
