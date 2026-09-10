@@ -92,6 +92,23 @@ const originalReferenceSnapshotMock = vi.hoisted(() => ({
   releaseOriginalReferenceSnapshot: vi.fn(),
 }))
 
+// Workflow tests provide a usable GPU explicitly; jsdom's missing canvas API
+// must not turn the decoded-size and dual-preview assertions into CPU tests.
+vi.mock('~/lib/preview/gpu-backend', () => {
+  const facts = {
+    backend: 'webgpu',
+    maxTextureSize: 16384,
+    maxRenderbufferSize: 16384,
+    toneHighPrecision: true,
+    reason: null,
+  }
+  return {
+    resolvePreviewBackend: vi.fn(async () => facts),
+    getPreviewBackendSnapshot: () => facts,
+    reportGpuPreviewFailure: vi.fn(),
+  }
+})
+
 vi.mock('~/lib/raw/runtime-adapter', () => ({
   rawRuntimeAdapter: rawRuntimeAdapterMock,
 }))
@@ -1537,6 +1554,15 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('opens one runtime session for a load and disposes it after preview completion', async () => {
+    setCapabilityVectorForTest({
+      coi: true,
+      pthread: true,
+      deviceMemoryGB: 4,
+      hwConcurrency: 8,
+      webKitClass: 'chromium',
+      deviceFormFactor: 'desktop',
+      maybeOpfsSupported: true,
+    })
     const file = new File(['raw'], 'frame.ARW')
     const extractEmbeddedPreview = vi.fn().mockResolvedValue(null)
     const decodeQuickRaw = vi
