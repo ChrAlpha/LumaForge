@@ -36,8 +36,13 @@ export function planSnapshotRender({
     maxTextureSize,
     ...exportOptions,
   })
-  if (plan.strategy !== 'tiled') return plan
+  if (plan.strategy === 'fail') return plan
   const budget = exportOptions.memoryBudgetBytes ?? 768 * 1024 * 1024
+  const fullReadbackBytes =
+    width * height * 4 +
+    Math.ceil((width * 4) / 256) * 256 * height +
+    UNIFORM_BUFFER_SIZE
+  if (plan.strategy === 'full-frame' && fullReadbackBytes <= budget) return plan
   const fixedBytes =
     lutSize ** 3 * 16 + LUT_SIZE * 16 + 16 + UNIFORM_BUFFER_SIZE
   const inputBytesPerPixel = source.layout === 'rgb-u16' ? 8 : 16
@@ -65,7 +70,10 @@ export function planSnapshotRender({
       retryable: false,
     }
   return {
-    ...plan,
+    strategy: 'tiled',
+    width,
+    height,
+    reason: plan.strategy === 'tiled' ? plan.reason : 'memory-budget',
     tileWidth: Math.min(width, side),
     tileHeight: Math.min(height, side),
   }
