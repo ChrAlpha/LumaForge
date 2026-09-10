@@ -80,7 +80,7 @@ describe('progressOverlay', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByText(
-        'LumaForge freed the WebGL preview before encoding this full-resolution JPEG.',
+        'LumaForge freed the GPU preview before encoding this full-resolution JPEG.',
       ),
     ).toBeInTheDocument()
   })
