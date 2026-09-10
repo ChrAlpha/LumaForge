@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { getPreviewBackendSnapshot } from '~/lib/preview/gpu-backend'
 import {
   BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
@@ -11,6 +12,10 @@ import {
   detectPreviewGpuCapabilitySnapshot,
   resetPreviewGpuCapabilityForTest,
 } from './preview-gpu-budget'
+
+vi.mock('~/lib/preview/gpu-backend', () => ({
+  getPreviewBackendSnapshot: vi.fn(() => null),
+}))
 
 const baseCapability: CapabilityVector = {
   coi: true,
@@ -30,9 +35,47 @@ const strongGpu = {
 
 describe('derivePreviewGpuBudget', () => {
   afterEach(() => {
+    vi.mocked(getPreviewBackendSnapshot).mockReturnValue(null)
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     resetPreviewGpuCapabilityForTest()
+  })
+
+  it('uses the resolved WebGPU limits without opening a WebGL context', () => {
+    vi.mocked(getPreviewBackendSnapshot).mockReturnValue({
+      backend: 'webgpu',
+      maxTextureSize: 4096,
+      maxRenderbufferSize: 4096,
+      toneHighPrecision: true,
+      reason: null,
+    })
+    const createElement = vi.spyOn(document, 'createElement')
+    expect(detectPreviewGpuCapabilitySnapshot()).toEqual({
+      webgl2: true,
+      maxTextureSize: 4096,
+      maxRenderbufferSize: 4096,
+    })
+    expect(createElement).not.toHaveBeenCalled()
+  })
+
+  it('uses the CPU budget after a resolved GPU failure', () => {
+    vi.mocked(getPreviewBackendSnapshot).mockReturnValue({
+      backend: 'cpu',
+      maxTextureSize: 0,
+      maxRenderbufferSize: 0,
+      toneHighPrecision: false,
+      reason: 'webgl2-missing',
+    })
+    const gpu = detectPreviewGpuCapabilitySnapshot()!
+    expect(gpu.webgl2).toBe(false)
+    expect(
+      derivePreviewGpuBudget({
+        capability: baseCapability,
+        gpu,
+        sourceWidth: 6000,
+        sourceHeight: 4000,
+      }).dualWebglAllowed,
+    ).toBe(false)
   })
 
   it('allows 12MP bounded HQ preview on a strong GPU without requiring pthread', () => {

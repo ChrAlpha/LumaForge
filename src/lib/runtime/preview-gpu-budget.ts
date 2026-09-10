@@ -1,3 +1,4 @@
+import { getPreviewBackendSnapshot } from '~/lib/preview/gpu-backend'
 import {
   BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
@@ -158,6 +159,15 @@ function requestPreviewWebGL2Context(
 }
 
 export function detectPreviewGpuCapabilitySnapshot(): PreviewGpuCapabilitySnapshot | null {
+  const backend = getPreviewBackendSnapshot()
+  if (backend) {
+    return Object.freeze({
+      // Preserve the existing policy ABI; this flag means a usable GPU preview.
+      webgl2: backend.backend !== 'cpu',
+      maxTextureSize: backend.maxTextureSize,
+      maxRenderbufferSize: backend.maxRenderbufferSize,
+    })
+  }
   if (cachedPreviewGpuCapability !== undefined) {
     return cachedPreviewGpuCapability
   }
