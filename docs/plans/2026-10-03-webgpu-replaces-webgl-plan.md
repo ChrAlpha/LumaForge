@@ -79,4 +79,9 @@ Candidate: this branch after unit 8 (WebGPU, CPU fallback).
   decode bridge's 10 s idle timer killed open sessions, disabling
   full-resolution and HQ preview export for large RAWs on slow machines in
   both preview modes. Fixed by leasing the worker to open sessions.
+- With WebGL gone, every browser without WebGPU lands on the CPU preview, so
+  two more pre-existing CPU-path defects were fixed: the CPU stage had no way
+  back after a full-resolution export released the preview, and the CPU
+  notice broke the `/raw` grid (hidden on desktop, half the mobile stage).
+- Evidence for the QA pass is in `docs/audits/2026-10-03-webgpu-migration-qa.md`.
 
