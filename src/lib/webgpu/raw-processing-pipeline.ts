@@ -21,6 +21,16 @@ export type PreviewPipelineBackend = Pick<
   keyof WebGPUProcessingPipeline
 >
 
+export interface RawProcessingPipelineOptions {
+  /**
+   * Whether this pipeline's failures move the whole preview to the CPU
+   * executor. Only the primary preview does; auxiliary pipelines (the
+   * original compare layer, reference snapshots) report to their owner, which
+   * degrades compare along `dual-gpu -> jpeg-fallback -> processed-only`.
+   */
+  reportFailures?: boolean
+}
+
 /**
  * Stable preview boundary shared by interactive, compare, and export clients.
  * Construction is synchronous; `initialize()` resolves the preview backend and
@@ -31,8 +41,14 @@ export class RawProcessingPipeline {
   private backendName: 'webgpu' | null = null
   private disposed = false
   private initialization: Promise<void> | null = null
+  private readonly reportFailures: boolean
 
-  constructor(private readonly canvas: HTMLCanvasElement) {}
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    { reportFailures = true }: RawProcessingPipelineOptions = {},
+  ) {
+    this.reportFailures = reportFailures
+  }
 
   private get renderer(): WebGPUProcessingPipeline {
     if (!this.activeRenderer)
@@ -64,12 +80,17 @@ export class RawProcessingPipeline {
         throw new Error('PREVIEW_PIPELINE_DISPOSED')
       }
       this.canvas.dataset.renderBackend = this.backendName
-      this.renderer.onLost(() => {
-        if (!this.disposed) reportGpuPreviewFailure()
+      this.renderer.onLost((error) => {
+        if (!this.disposed && this.reportFailures)
+          reportGpuPreviewFailure(error)
       })
     } catch (error) {
-      if (!this.disposed && this.backendName === 'webgpu')
-        reportGpuPreviewFailure()
+      if (
+        !this.disposed &&
+        this.reportFailures &&
+        this.backendName === 'webgpu'
+      )
+        reportGpuPreviewFailure(error)
       throw error
     }
   }

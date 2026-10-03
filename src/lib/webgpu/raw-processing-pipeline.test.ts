@@ -93,7 +93,7 @@ describe('preview pipeline facade', () => {
     fixtures.gpu.initialize.mockRejectedValueOnce(failure)
     const failed = new RawProcessingPipeline(document.createElement('canvas'))
     await expect(failed.initialize()).rejects.toBe(failure)
-    expect(reportGpuPreviewFailure).toHaveBeenCalledOnce()
+    expect(reportGpuPreviewFailure).toHaveBeenCalledExactlyOnceWith(failure)
     failed.dispose()
     const active = new RawProcessingPipeline(document.createElement('canvas'))
     await active.initialize()
@@ -103,6 +103,25 @@ describe('preview pipeline facade', () => {
     active.dispose()
     listener(failure)
     expect(reportGpuPreviewFailure).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps auxiliary pipeline failures with their owner instead of the global gate', async () => {
+    const failure = new Error('original layer allocation failed')
+    fixtures.gpu.initialize.mockRejectedValueOnce(failure)
+    const auxiliary = new RawProcessingPipeline(
+      document.createElement('canvas'),
+      { reportFailures: false },
+    )
+    await expect(auxiliary.initialize()).rejects.toBe(failure)
+    expect(reportGpuPreviewFailure).not.toHaveBeenCalled()
+    auxiliary.dispose()
+    const active = new RawProcessingPipeline(document.createElement('canvas'), {
+      reportFailures: false,
+    })
+    await active.initialize()
+    fixtures.gpu.onLost.mock.calls[0][0](failure)
+    expect(reportGpuPreviewFailure).not.toHaveBeenCalled()
+    active.dispose()
   })
 
   it('cancels before backend selection without creating a late renderer or changing the global gate', async () => {

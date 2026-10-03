@@ -35,6 +35,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   window.history.replaceState(null, '', '/')
   vi.mocked(acquireWebGPUDevice).mockRejectedValue(new Error('no WebGPU'))
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
 afterEach(() => {
   vi.useRealTimers()
@@ -114,7 +115,12 @@ describe('preview backend selection', () => {
   it('switches a selected WebGPU backend to CPU after a runtime failure', async () => {
     vi.mocked(acquireWebGPUDevice).mockResolvedValue(createLease())
     expect((await resolvePreviewBackend()).backend).toBe('webgpu')
-    reportGpuPreviewFailure()
+    const failure = new Error('device lost')
+    reportGpuPreviewFailure(failure)
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('CPU preview'),
+      failure,
+    )
     expect(await resolvePreviewBackend()).toMatchObject({
       backend: 'cpu',
       reason: 'gpu-preview-failed',

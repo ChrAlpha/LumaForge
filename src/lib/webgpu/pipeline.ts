@@ -43,6 +43,7 @@ export class WebGPUProcessingPipeline {
   private dirty = true
   private disposed = false
   private lost = false
+  private lostError: Error | null = null
   private initialization: Promise<void> | null = null
   private lastExportStats: ExportRenderStats | null = null
   private lossListeners = new Set<(error: Error) => void>()
@@ -125,10 +126,13 @@ export class WebGPUProcessingPipeline {
   private fail(error: Error) {
     if (this.disposed || this.lost) return
     this.lost = true
+    this.lostError = error
     for (const listener of this.lossListeners) listener(error)
   }
 
+  /** Subscribers that arrive after a loss still hear about it. */
   onLost(listener: (error: Error) => void) {
+    if (this.lostError && !this.disposed) listener(this.lostError)
     this.lossListeners.add(listener)
     return () => {
       this.lossListeners.delete(listener)

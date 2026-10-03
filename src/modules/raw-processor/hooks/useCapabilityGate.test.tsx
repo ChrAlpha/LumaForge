@@ -24,6 +24,7 @@ describe('useCapabilityGate', () => {
   beforeEach(() => {
     resetPreviewBackendForTest()
     vi.mocked(acquireWebGPUDevice).mockResolvedValue(createLease())
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
   })
   afterEach(cleanup)
   afterEach(() => vi.restoreAllMocks())

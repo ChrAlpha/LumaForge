@@ -34,7 +34,9 @@ const ORIGINAL_LAYER_PARAMS = {
 } as const
 
 function createDefaultOriginalPipeline(canvas: HTMLCanvasElement) {
-  return new DefaultRawProcessingPipeline(canvas)
+  // A failed original layer demotes compare to the JPEG fallback; it must not
+  // move the primary preview to the CPU executor.
+  return new DefaultRawProcessingPipeline(canvas, { reportFailures: false })
 }
 
 /** Trailing delay before the backing store follows a layout resize. */

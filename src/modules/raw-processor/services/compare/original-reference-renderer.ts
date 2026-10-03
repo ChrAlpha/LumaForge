@@ -202,7 +202,8 @@ export async function renderOriginalReferenceSnapshot({
   maxPixels,
   signal,
   createCanvas = () => document.createElement('canvas'),
-  createPipeline = (canvas) => new RawProcessingPipeline(canvas),
+  createPipeline = (canvas) =>
+    new RawProcessingPipeline(canvas, { reportFailures: false }),
   createObjectURL = URL.createObjectURL.bind(URL),
 }: RenderOriginalReferenceSnapshotInput): Promise<OriginalReferenceSnapshot> {
   const canvas = createCanvas()

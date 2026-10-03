@@ -120,8 +120,9 @@ export function subscribePreviewBackend(listener: () => void): () => void {
 }
 
 /** Renderer initialization/device failures remount the existing CPU surface. */
-export function reportGpuPreviewFailure(): void {
+export function reportGpuPreviewFailure(error?: unknown): void {
   if (state.status === 'ready' && state.facts.backend === 'cpu') return
+  console.warn('WebGPU preview failed; continuing with the CPU preview.', error)
   publish({ status: 'ready', facts: cpuFacts('gpu-preview-failed') })
 }
 
