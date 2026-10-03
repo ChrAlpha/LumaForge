@@ -7,13 +7,13 @@ import {
   LUT_RANGE_UNIFORMS,
   LUT_ROLE_UNIFORMS,
   LUT_TRANSFER_UNIFORMS,
-} from '@lumaforge/luma-color-runtime/glsl'
+} from '@lumaforge/luma-color-runtime/wgsl'
 import { describe, expect, it } from 'vitest'
 
 import {
   isLUTProfileRenderable,
   resolveLUTPipelineProfileUniforms,
-} from './pipeline'
+} from './lut-profile'
 
 function resolved(profile: LUTColorProfile) {
   return {

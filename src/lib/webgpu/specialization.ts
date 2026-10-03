@@ -8,7 +8,7 @@ import { normalizeSelectiveColorParams } from '@lumaforge/luma-color-runtime'
 import {
   isLUTProfileRenderable,
   resolveLUTPipelineProfileUniforms,
-} from '~/lib/gl/webgl-pipeline'
+} from './lut-profile'
 
 export interface ShaderSpecialization {
   readonly styleKind: 0 | 1 | 2

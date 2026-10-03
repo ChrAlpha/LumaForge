@@ -13,8 +13,7 @@ import {
 import {
   isLUTProfileRenderable,
   resolveLUTPipelineProfileUniforms,
-} from '~/lib/gl/webgl-pipeline'
-
+} from './lut-profile'
 import {
   writeUniformF32,
   writeUniformI32,

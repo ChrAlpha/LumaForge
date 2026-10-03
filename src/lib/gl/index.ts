@@ -1,4 +1,4 @@
 export * from './context'
-export * from './export'
 export * from './pipeline'
 export * from './shaders'
+export * from '~/lib/webgpu/export-plan'

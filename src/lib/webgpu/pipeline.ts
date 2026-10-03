@@ -1,18 +1,17 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
 
-import type { WebGLCapabilities } from '~/lib/gl/context'
-import type { ExportRenderOptions } from '~/lib/gl/export'
-import { ExportRenderError } from '~/lib/gl/export'
+import { GPUReadbackJobs } from './async-resources'
 import type {
   ExportRenderStats,
   PipelineStats,
+  PreviewGpuCapabilities,
   RawUploadInput,
   RenderOptions,
-} from '~/lib/gl/pipeline'
-
-import { GPUReadbackJobs } from './async-resources'
+} from './contract'
 import type { WebGPUDeviceLease } from './device'
 import { acquireWebGPUDevice } from './device'
+import type { ExportRenderOptions } from './export-plan'
+import { ExportRenderError } from './export-plan'
 import { WebGPUFrameScheduler } from './frame-scheduler'
 import { WebGPUImages } from './images'
 import { webGPUCapabilities, webGPUTelemetry } from './pipeline-telemetry'
@@ -419,7 +418,7 @@ export class WebGPUProcessingPipeline {
       height: this.images?.inputUpload?.height ?? 0,
     }
   }
-  getCapabilities(): WebGLCapabilities {
+  getCapabilities(): PreviewGpuCapabilities {
     const { device } = this.assertReady()
     return webGPUCapabilities(device, this.lease!.adapter)
   }

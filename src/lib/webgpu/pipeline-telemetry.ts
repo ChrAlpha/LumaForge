@@ -1,18 +1,18 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
 
-import type { WebGLCapabilities } from '~/lib/gl/context'
 import type {
   PipelineTelemetrySnapshot,
   PipelineTransformPath,
+  PreviewGpuCapabilities,
   RawUploadInput,
-} from '~/lib/gl/pipeline'
-import { isLUTProfileRenderable } from '~/lib/gl/webgl-pipeline'
+} from './contract'
+import { isLUTProfileRenderable } from './lut-profile'
 
 export function webGPUCapabilities(
   device: GPUDevice,
   adapter: GPUAdapter,
-): WebGLCapabilities {
+): PreviewGpuCapabilities {
   const info = adapter.info
   return {
     webgl2: false,

@@ -6,32 +6,42 @@
 import type {
   BuiltinStylePreset,
   LumaColorSelectiveColorParams,
-  LUTColorProfile,
-  LUTContractResolution,
   LUTData,
-  LUTRole,
   ProcessingParams,
-  TransferFunctionId,
 } from '@lumaforge/luma-color-runtime'
 import {
   CHROMA_CLAMP_HIGH,
   CHROMA_CLAMP_LOW,
-  getLinearProPhotoToGamutMatrix,
-  getLUTOutputToTargetMatrix,
   LUT_SIZE as SELECTIVE_COLOR_LUT_SIZE,
-  mat3Identity,
-  mat3ToGLSL,
   normalizeSelectiveColorParams,
   resolveColorBalanceParams,
   resolveExportColorGraph,
   resolveSelectiveColorParams,
   resolveToneParams,
 } from '@lumaforge/luma-color-runtime'
+
+import type {
+  ExportRenderStats,
+  PipelineStats,
+  PipelineTelemetrySnapshot,
+  PipelineTransformPath,
+  RawUploadInput,
+  RawUploadInputFormat,
+  RenderOptions,
+} from '~/lib/webgpu/contract'
+import { describeRawUploadInput } from '~/lib/webgpu/contract'
+import type { ExportRenderOptions } from '~/lib/webgpu/export-plan'
 import {
-  LUT_RANGE_UNIFORMS,
-  LUT_ROLE_UNIFORMS,
-  LUT_TRANSFER_UNIFORMS,
-} from '@lumaforge/luma-color-runtime/glsl'
+  createExportTiles,
+  cropRawUploadInput,
+  ExportRenderError,
+  planExportRenderTarget,
+} from '~/lib/webgpu/export-plan'
+import {
+  isLUTProfileRenderable,
+  resolveLUTOutputTransfer,
+  resolveLUTPipelineProfileUniforms,
+} from '~/lib/webgpu/lut-profile'
 
 import type {
   PipelineCapabilityWarning,
@@ -51,13 +61,6 @@ import {
   getRecommendedTextureFormat,
   selectProcessingTextureFormat,
 } from './context'
-import type { ExportRenderOptions } from './export'
-import {
-  createExportTiles,
-  cropRawUploadInput,
-  ExportRenderError,
-  planExportRenderTarget,
-} from './export'
 import {
   PREVIEW_OUTPUT_SHADER,
   PROCESS_FRAGMENT_SHADER_FLOAT,
@@ -77,106 +80,21 @@ export {
   LUT_ROLE_UNIFORMS,
   LUT_TRANSFER_UNIFORMS,
 } from '@lumaforge/luma-color-runtime/glsl'
-
-export interface PipelineStats {
-  uploadTime: number
-  lutUploadTime: number
-  processTime: number
-  totalTime: number
-  inputSize: { width: number; height: number }
-  previewSize: { width: number; height: number }
-  inputFormat: RawUploadInputFormat
-  transformPath: PipelineTransformPath
-  lutRole: LUTRole | null
-  lutInputTransfer: TransferFunctionId | null
-  lutOutputTransfer: TransferFunctionId | null
-  lutSize: number | null
-  processTargetPrecision: ProcessTargetPrecision
-  capabilityWarnings: PipelineCapabilityWarning[]
-}
-
-export interface RenderOptions {
-  waitForGpu?: boolean
-}
-
-export type RawUploadInput =
-  | {
-      data: Float32Array
-      width: number
-      height: number
-      layout: 'rgba-float32'
-      colorSpace: 'display-srgb-preview'
-    }
-  | {
-      data: Uint16Array
-      width: number
-      height: number
-      layout: 'rgb-u16'
-      colorSpace: 'linear-prophoto-rgb'
-      renderExposureEv: number
-      renderExposureMultiplier: number
-    }
-
-export type RawUploadInputFormat = 'float-rgba' | 'uint16-rgb'
-
-export type PipelineTransformPath =
-  | 'no-lut'
-  | 'builtin-style'
-  | 'display-lut'
-  | 'scene-creative-lut'
-  | 'combined-output-lut'
-  | 'technical-output-lut'
-  | 'disabled-lut'
-
-export interface PipelineTelemetrySnapshot {
-  inputFormat: RawUploadInputFormat
-  transformPath: PipelineTransformPath
-  lutRole: LUTRole | null
-  lutInputTransfer: TransferFunctionId | null
-  lutOutputTransfer: TransferFunctionId | null
-  lutSize: number | null
-  processTargetPrecision: ProcessTargetPrecision
-  capabilityWarnings: PipelineCapabilityWarning[]
-}
-
-export interface ExportRenderStats extends PipelineTelemetrySnapshot {
-  strategy: 'full-frame' | 'tiled' | 'fail'
-  width: number
-  height: number
-  tileCount: number
-  planningTime: number
-  renderTime: number
-  totalTime: number
-  reason?:
-    | 'texture-limit'
-    | 'memory-budget'
-    | 'canvas-limit'
-    | 'gpu-limit'
-    | 'render-failure'
-  failureCode?: string
-  failureMessage?: string
-  retryable?: boolean
-}
-
-export function describeRawUploadInput(input: RawUploadInput): {
-  inputFormat: RawUploadInputFormat
-  channelCount: 3 | 4
-  bytesPerPixel: 6 | 16
-} {
-  if (input.layout === 'rgb-u16') {
-    return {
-      inputFormat: 'uint16-rgb',
-      channelCount: 3,
-      bytesPerPixel: 6,
-    }
-  }
-
-  return {
-    inputFormat: 'float-rgba',
-    channelCount: 4,
-    bytesPerPixel: 16,
-  }
-}
+export type {
+  ExportRenderStats,
+  PipelineStats,
+  PipelineTelemetrySnapshot,
+  PipelineTransformPath,
+  RawUploadInput,
+  RawUploadInputFormat,
+  RenderOptions,
+} from '~/lib/webgpu/contract'
+export { describeRawUploadInput } from '~/lib/webgpu/contract'
+export type { LUTPipelineProfileUniforms } from '~/lib/webgpu/lut-profile'
+export {
+  isLUTProfileRenderable,
+  resolveLUTPipelineProfileUniforms,
+} from '~/lib/webgpu/lut-profile'
 
 // Returns true when at least one band scalar is non-zero. The shader bypass
 // uses this to skip the OKLab roundtrip and keep WebGL bit-identical with the
@@ -268,104 +186,6 @@ const BUILTIN_PRESET_UNIFORMS: Record<BuiltinStylePreset, number> = {
   cinematic: 5,
   fade: 6,
   mono: 7,
-}
-
-export interface LUTPipelineProfileUniforms {
-  inputToLutGamut: Float32Array
-  lutOutputToDisplayGamut: Float32Array
-  lutInputTransfer: number
-  lutOutputTransfer: number
-  lutRole: number
-  lutInputRange: number
-  lutOutputRange: number
-}
-
-const DISPLAY_TARGET_GAMUT = 'srgb-rec709'
-
-const DISPLAY_PROFILE_UNIFORMS: LUTPipelineProfileUniforms = {
-  inputToLutGamut: mat3ToGLSL(mat3Identity()),
-  lutOutputToDisplayGamut: mat3ToGLSL(mat3Identity()),
-  lutInputTransfer: LUT_TRANSFER_UNIFORMS.srgb,
-  lutOutputTransfer: LUT_TRANSFER_UNIFORMS.srgb,
-  lutRole: LUT_ROLE_UNIFORMS['display-look'],
-  lutInputRange: LUT_RANGE_UNIFORMS.full,
-  lutOutputRange: LUT_RANGE_UNIFORMS.full,
-}
-
-export function isLUTProfileRenderable(
-  profileResolution?: LUTContractResolution | null,
-): boolean {
-  if (!profileResolution || profileResolution.kind !== 'confirmed') {
-    return false
-  }
-
-  const { profile } = profileResolution
-  if (profile.role === 'display-look') {
-    return true
-  }
-
-  return Boolean(
-    profile.outputGamut &&
-    profile.outputTransfer &&
-    profile.outputRange &&
-    profile.outputRange !== 'unknown',
-  )
-}
-
-function resolveLUTOutputTransfer(
-  profile: LUTColorProfile,
-): TransferFunctionId | undefined {
-  if (profile.outputTransfer) return profile.outputTransfer
-
-  if (profile.role === 'display-look') return profile.inputTransfer
-
-  return undefined
-}
-
-export function resolveLUTPipelineProfileUniforms(
-  profileResolution?: LUTContractResolution | null,
-): LUTPipelineProfileUniforms {
-  if (
-    !isLUTProfileRenderable(profileResolution) ||
-    profileResolution?.kind !== 'confirmed'
-  ) {
-    return DISPLAY_PROFILE_UNIFORMS
-  }
-
-  const { profile } = profileResolution
-  if (profile.role === 'display-look') {
-    return {
-      ...DISPLAY_PROFILE_UNIFORMS,
-      lutInputTransfer:
-        LUT_TRANSFER_UNIFORMS[profile.inputTransfer] ??
-        DISPLAY_PROFILE_UNIFORMS.lutInputTransfer,
-      lutOutputTransfer:
-        LUT_TRANSFER_UNIFORMS[
-          profile.outputTransfer ?? profile.inputTransfer
-        ] ?? DISPLAY_PROFILE_UNIFORMS.lutOutputTransfer,
-      lutInputRange: LUT_RANGE_UNIFORMS[profile.inputRange],
-      lutOutputRange: LUT_RANGE_UNIFORMS[profile.outputRange ?? 'full'],
-    }
-  }
-
-  const outputGamut = profile.outputGamut!
-  const outputTransfer = resolveLUTOutputTransfer(profile)
-  const lutOutputToDisplayGamut =
-    outputGamut === DISPLAY_TARGET_GAMUT
-      ? mat3Identity()
-      : getLUTOutputToTargetMatrix(outputGamut, DISPLAY_TARGET_GAMUT)
-
-  return {
-    inputToLutGamut: mat3ToGLSL(
-      getLinearProPhotoToGamutMatrix(profile.inputGamut),
-    ),
-    lutOutputToDisplayGamut: mat3ToGLSL(lutOutputToDisplayGamut),
-    lutInputTransfer: LUT_TRANSFER_UNIFORMS[profile.inputTransfer],
-    lutOutputTransfer: LUT_TRANSFER_UNIFORMS[outputTransfer!],
-    lutRole: LUT_ROLE_UNIFORMS[profile.role],
-    lutInputRange: LUT_RANGE_UNIFORMS[profile.inputRange],
-    lutOutputRange: LUT_RANGE_UNIFORMS[profile.outputRange!],
-  }
 }
 
 /**

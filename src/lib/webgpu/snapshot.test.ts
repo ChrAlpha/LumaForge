@@ -1,8 +1,7 @@
 import { LUT_SIZE } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
-import type { RawUploadInput } from '~/lib/gl/pipeline'
-
+import type { RawUploadInput } from './contract'
 import { planSnapshotRender } from './snapshot'
 import { UNIFORM_BUFFER_SIZE } from './uniform-layout'
 

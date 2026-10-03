@@ -5,8 +5,7 @@ import {
   resolveSelectiveColorParams,
 } from '@lumaforge/luma-color-runtime'
 
-import type { RawUploadInput } from '~/lib/gl/pipeline'
-
+import type { RawUploadInput } from './contract'
 import type { WebGPUPrograms } from './programs'
 import { padLut, uploadRgb16, validateImageUpload } from './texture-data'
 

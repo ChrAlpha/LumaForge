@@ -4,7 +4,7 @@ import {
   ExportRenderError,
   getExportRenderOptionsForFidelity,
   planExportRenderTarget,
-} from './export'
+} from './export-plan'
 
 describe('export render target planner', () => {
   it('uses a full-frame render when GPU and canvas limits can hold the image', () => {

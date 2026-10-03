@@ -1,11 +1,8 @@
-// Type lives in `@lumaforge/render-engine/policy` so the engine's
-// pipeline-concurrency helper can normalize concurrency without crossing
-// back into `src/lib/gl/`. App-side consumers continue importing from
-// `~/lib/gl/export` for compatibility; P5 retires this re-export when
-// the policy module fully migrates.
+// HQ preview snapshot planning: full-frame vs tiled readback of the GPU
+// preview. The authoritative full-resolution export does not use this module.
 import type { ExportFidelity } from '@lumaforge/render-engine'
 
-import type { RawUploadInput } from './pipeline'
+import type { RawUploadInput } from './contract'
 
 export type ExportRenderPlan =
   | {
@@ -43,8 +40,6 @@ export type ExportRenderOptions = Omit<
   ExportRenderPlanInput,
   'width' | 'height' | 'maxTextureSize'
 >
-
-export type { ExportFidelity }
 
 export type ExportRenderErrorCode =
   | 'EXPORT_CANVAS_LIMIT_EXCEEDED'

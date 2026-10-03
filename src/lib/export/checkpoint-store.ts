@@ -1,4 +1,5 @@
-import type { ExportFidelity } from '~/lib/gl/export'
+import type { ExportFidelity } from '@lumaforge/render-engine'
+
 import { detectCapabilityVector } from '~/lib/runtime/capability-vector'
 import { snapshotExportRuntimeResources } from '~/lib/runtime/export-runtime-resources'
 

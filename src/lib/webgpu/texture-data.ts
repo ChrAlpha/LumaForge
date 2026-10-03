@@ -1,6 +1,5 @@
-import type { RawUploadInput } from '~/lib/gl/pipeline'
-
 import { GPUReadbackScope } from './async-resources'
+import type { RawUploadInput } from './contract'
 
 export function validateImageUpload(
   input: RawUploadInput,
