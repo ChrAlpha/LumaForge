@@ -36,12 +36,19 @@ fn srgbToLinear(color: vec3f) -> vec3f {
   return mix(higher, lower, lowerMix);
 }
 
-fn linearToSrgb(color: vec3f) -> vec3f {
+// sRGB encode without the upper clamp, mirroring the CPU row-band processor's
+// linearToSrgb. Display-domain LUT mixes must keep values above white so a
+// partial-strength look blends the same highlights the export blends.
+fn linearToSrgbExtended(color: vec3f) -> vec3f {
   let c = max(color, vec3f(0.0));
   let lower = c * 12.92;
   let higher = 1.055 * pow(c, vec3f(1.0 / 2.4)) - vec3f(0.055);
   let lowerMix = vec3f(1.0) - step(vec3f(0.0031308), c);
-  return clamp01v(mix(higher, lower, lowerMix));
+  return mix(higher, lower, lowerMix);
+}
+
+fn linearToSrgb(color: vec3f) -> vec3f {
+  return clamp01v(linearToSrgbExtended(color));
 }
 
 fn encodeSrgbTransfer(linearValue: f32) -> f32 {

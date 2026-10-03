@@ -10,6 +10,25 @@ import { getShaderSpecialization } from './specialization'
 import { UNIFORM_BUFFER_SIZE, UNIFORM_FIELDS } from './uniform-layout'
 import { DEFAULT_PARAMS } from './uniforms'
 
+describe('webGPU display-domain LUT blending', () => {
+  it('blends partial-strength display and output LUTs against the unclamped base like export', () => {
+    const shader = createProcessShader(true, true)
+    // The CPU row-band processor encodes base and styled colors without an
+    // upper clamp before the intensity mix; only the final output clamps.
+    expect(shader).toContain(
+      'mix(editedBaseDisplayExtended, applyDisplayLut(editedBaseSceneLinearProPhoto), intensity)',
+    )
+    expect(shader).toContain(
+      'mix(editedBaseDisplayExtended, applyCombinedOutputLut(editedBaseSceneLinearProPhoto), intensity)',
+    )
+    expect(shader).toContain(
+      'return linearToSrgbExtended(displayLinearOutput);',
+    )
+    expect(shader).toContain('return linearToSrgbExtended(displayLinear);')
+    expect(shader).toContain('return vec4f(clamp01v(styledColor), 1.0);')
+  })
+})
+
 describe('webGPU shader variants', () => {
   it('folds resolved LUT contracts and builtin presets while keeping data and tone live', () => {
     const profile = getLUTColorProfile('display-srgb')!

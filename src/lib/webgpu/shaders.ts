@@ -193,6 +193,8 @@ fn processColor(technicalBaseSceneLinearProPhoto: vec3f, texCoord: vec2f) -> vec
     max(linearProPhotoToLinearSrgb(editedBaseSceneLinearProPhoto), vec3f(0.0));
   let technicalBaseDisplayColor = linearToSrgb(technicalBaseDisplayLinear);
   let editedBaseDisplayColor = linearToSrgb(editedBaseDisplayLinear);
+  // Export blends display-domain LUT looks against the unclamped encoded base.
+  let editedBaseDisplayExtended = linearToSrgbExtended(editedBaseDisplayLinear);
   var styledColor = editedBaseDisplayColor;
   let intensity = clamp(params.intensity, 0.0, 1.0);
 
@@ -204,9 +206,9 @@ fn processColor(technicalBaseSceneLinearProPhoto: vec3f, texCoord: vec2f) -> vec
       let mixedDisplayLinear = mix(editedBaseDisplayLinear, styledDisplayLinear, intensity);
       styledColor = linearToSrgb(mixedDisplayLinear);
     } else if (isOutputLut()) {
-      styledColor = mix(editedBaseDisplayColor, applyCombinedOutputLut(editedBaseSceneLinearProPhoto), intensity);
+      styledColor = mix(editedBaseDisplayExtended, applyCombinedOutputLut(editedBaseSceneLinearProPhoto), intensity);
     } else {
-      styledColor = mix(editedBaseDisplayColor, applyDisplayLut(editedBaseSceneLinearProPhoto), intensity);
+      styledColor = mix(editedBaseDisplayExtended, applyDisplayLut(editedBaseSceneLinearProPhoto), intensity);
     }
   }
 

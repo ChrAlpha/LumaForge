@@ -100,7 +100,7 @@ fn applyDisplayLut(sceneLinearProPhoto: vec3f) -> vec3f {
   let lutInput = applySignalRangeForLutInput(lutInputEncoded, params.lutInputRange);
   let lutOutputEncoded = removeSignalRangeFromLutOutput(applyLut(lutInput), params.lutOutputRange);
   let displayLinearOutput = decodeTransfer(lutOutputEncoded, params.lutOutputTransfer);
-  return linearToSrgb(displayLinearOutput);
+  return linearToSrgbExtended(displayLinearOutput);
 }
 
 fn applySceneLutToDisplayLinear(sceneLinearProPhoto: vec3f) -> vec3f {
@@ -116,7 +116,7 @@ fn applyCombinedOutputLut(sceneLinearProPhoto: vec3f) -> vec3f {
   let lutInputEncoded = applySignalRangeForLutInput(encodeTransfer(lutInputLinear, params.lutInputTransfer), params.lutInputRange);
   let lutOutputEncoded = removeSignalRangeFromLutOutput(applyLut(lutInputEncoded), params.lutOutputRange);
   let displayLinear = max(params.lutOutputToDisplayGamut * decodeTransfer(lutOutputEncoded, params.lutOutputTransfer), vec3f(0.0));
-  return linearToSrgb(displayLinear);
+  return linearToSrgbExtended(displayLinear);
 }
 `
 
