@@ -949,6 +949,7 @@ export function PreviewCanvas({
     <div
       ref={setFrameElement}
       data-raw-preview-frame
+      data-display-source={displaySource}
       className={clsxm(
         'relative w-full h-full flex items-center justify-center bg-[var(--color-preview-mat)]',
         canInteractWithPreview &&

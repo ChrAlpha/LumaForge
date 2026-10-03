@@ -492,6 +492,13 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
   await expectWebGPUPreview(page, testInfo)
   expect((await readGpuStats(page)).drawCalls).toBeGreaterThan(0)
 
+  // The bounded HQ upgrade re-renders both layers; on WebGPU that work
+  // completes asynchronously, so settle it before counting split-only draws.
+  await expect(page.locator('[data-raw-preview-frame]')).toHaveAttribute(
+    'data-display-source',
+    'bounded-hq',
+    { timeout: 120_000 },
+  )
   await waitForGpuStatsIdle(page)
   const stagedModeSamples = await readCompareModeSamples(page)
   expectNoProcessedOnlyAfterDualGpu(stagedModeSamples)
