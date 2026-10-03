@@ -54,9 +54,30 @@ describe('derivePreviewCompareReadiness', () => {
       retainedOriginalGpuFrameReady: true,
       retainedProcessedFrameReady: true,
       retainedCompareFrameReady: true,
+      compareFrameBridgeReady: true,
       embeddedPreviewFallbackReady: false,
       shouldDelayProcessedCompareRender: true,
       shouldMountOriginalGpuLayer: true,
+    })
+  })
+
+  it('keeps the compare pair while the processed HQ frame is still completing on the GPU', () => {
+    // The original layer reports its bounded-HQ frame first; the processed
+    // frame commits only after its own GPU completion.
+    expect(
+      derive({
+        originalGpuStatus: {
+          generationKey: '2:bounded-hq:dual:compare:active',
+          displaySource: 'bounded-hq',
+          state: 'ready',
+        },
+      }),
+    ).toMatchObject({
+      originalGpuReady: true,
+      currentProcessedFrameReady: false,
+      retainedCompareFrameReady: false,
+      compareFrameBridgeReady: true,
+      shouldDelayProcessedCompareRender: false,
     })
   })
 
@@ -69,6 +90,7 @@ describe('derivePreviewCompareReadiness', () => {
       retainedOriginalGpuFrameReady: true,
       retainedProcessedFrameReady: false,
       retainedCompareFrameReady: false,
+      compareFrameBridgeReady: false,
       embeddedPreviewFallbackReady: true,
       shouldDelayProcessedCompareRender: false,
     })

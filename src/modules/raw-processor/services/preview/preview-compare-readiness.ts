@@ -175,6 +175,12 @@ export function derivePreviewCompareReadiness({
     imageSource === 'bounded-hq'
   const retainedCompareFrameReady =
     retainedOriginalGpuFrameReady && retainedProcessedFrameReady
+  // GPU frames complete asynchronously: the original layer can report its
+  // bounded-HQ frame before the processed one commits. The retained quick
+  // processed frame keeps the compare pair on screen across that gap.
+  const compareFrameBridgeReady =
+    retainedProcessedFrameReady &&
+    (retainedOriginalGpuFrameReady || originalGpuReady)
   const embeddedPreviewFallbackReady =
     Boolean(embeddedPreviewUrl) &&
     originalGpuLayerEligible &&
@@ -192,6 +198,7 @@ export function derivePreviewCompareReadiness({
     retainedOriginalGpuFrameReady,
     retainedProcessedFrameReady,
     retainedCompareFrameReady,
+    compareFrameBridgeReady,
     embeddedPreviewFallbackReady,
     shouldMountOriginalGpuLayer: originalGpuLayerEligible && !originalGpuFailed,
     shouldDelayProcessedCompareRender: retainedCompareFrameReady,
