@@ -240,10 +240,9 @@ export function getLUTOutputToTargetMatrix(
 }
 
 /**
- * Converts matrix to GLSL-compatible format (column-major)
+ * Converts a row-major Mat3 to the column-major layout shader uniforms use.
  */
-export function mat3ToGLSL(m: Mat3): Float32Array {
-  // WebGL uses column-major order
+export function mat3ToColumnMajor(m: Mat3): Float32Array {
   return new Float32Array([
     m[0],
     m[3],

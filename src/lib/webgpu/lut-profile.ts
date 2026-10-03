@@ -12,7 +12,7 @@ import {
   getLinearProPhotoToGamutMatrix,
   getLUTOutputToTargetMatrix,
   mat3Identity,
-  mat3ToGLSL,
+  mat3ToColumnMajor,
 } from '@lumaforge/luma-color-runtime'
 import {
   LUT_RANGE_UNIFORMS,
@@ -33,8 +33,8 @@ export interface LUTPipelineProfileUniforms {
 const DISPLAY_TARGET_GAMUT = 'srgb-rec709'
 
 const DISPLAY_PROFILE_UNIFORMS: LUTPipelineProfileUniforms = {
-  inputToLutGamut: mat3ToGLSL(mat3Identity()),
-  lutOutputToDisplayGamut: mat3ToGLSL(mat3Identity()),
+  inputToLutGamut: mat3ToColumnMajor(mat3Identity()),
+  lutOutputToDisplayGamut: mat3ToColumnMajor(mat3Identity()),
   lutInputTransfer: LUT_TRANSFER_UNIFORMS.srgb,
   lutOutputTransfer: LUT_TRANSFER_UNIFORMS.srgb,
   lutRole: LUT_ROLE_UNIFORMS['display-look'],
@@ -106,10 +106,10 @@ export function resolveLUTPipelineProfileUniforms(
       : getLUTOutputToTargetMatrix(outputGamut, DISPLAY_TARGET_GAMUT)
 
   return {
-    inputToLutGamut: mat3ToGLSL(
+    inputToLutGamut: mat3ToColumnMajor(
       getLinearProPhotoToGamutMatrix(profile.inputGamut),
     ),
-    lutOutputToDisplayGamut: mat3ToGLSL(lutOutputToDisplayGamut),
+    lutOutputToDisplayGamut: mat3ToColumnMajor(lutOutputToDisplayGamut),
     lutInputTransfer: LUT_TRANSFER_UNIFORMS[profile.inputTransfer],
     lutOutputTransfer: LUT_TRANSFER_UNIFORMS[outputTransfer!],
     lutRole: LUT_ROLE_UNIFORMS[profile.role],

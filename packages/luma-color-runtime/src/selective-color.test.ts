@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import * as glslReExports from './glsl'
 import { getLinearProPhotoToGamutMatrix, mat3Invert } from './matrix'
-import * as oklabModule from './oklab'
 import {
   linearProPhotoToOklab,
-  LUMA_COLOR_OKLAB_GLSL,
   oklabToLinearProPhoto,
   oklabToOklch,
   oklchToOklab,
@@ -23,7 +20,6 @@ import {
   CHROMA_CLAMP_LOW,
   HUE_MAX_DELTA_RAD,
   LIGHT_MAX_DELTA,
-  LUMA_COLOR_SELECTIVE_COLOR_GLSL,
   LUT_CONSTANTS_VERSION,
   LUT_SIZE,
   makeNeutralBand,
@@ -32,6 +28,7 @@ import {
   SAT_MAX_FACTOR,
   wrapFraction,
 } from './selective-color'
+import { LUMA_COLOR_SELECTIVE_COLOR_WGSL } from './selective-color-wgsl'
 
 const BAND_IDS_ORDERED: readonly HSLBandId[] = [
   'red',
@@ -1013,60 +1010,34 @@ describe('applySelectiveColorRow cross-talk smoothness (cross_talk_smoothness)',
   })
 })
 
-describe('selective-color GLSL contract', () => {
-  it('exports sampleSelectiveColorLut with 256-entry linear interpolation', () => {
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toContain(
-      'vec4 sampleSelectiveColorLut(sampler2D lut, float hNorm)',
+describe('selective-color WGSL contract', () => {
+  it('samples the 256-entry hue table with wrap-around linear interpolation', () => {
+    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain(
+      'fn sampleSelectiveColorLut(hNorm: f32) -> vec4f',
     )
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toContain('fract(hNorm) * 256.0')
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toContain(
-      'texelFetch(lut, ivec2(i0, 0), 0)',
+    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain(
+      `fract(hNorm) * ${LUT_SIZE.toFixed(1)}`,
     )
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toContain(
-      'texelFetch(lut, ivec2(i1, 0), 0)',
+    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain(
+      `let i1 = (i0 + 1u) % ${LUT_SIZE}u;`,
     )
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toContain('mix(a, b, t)')
-  })
-
-  it('exports applyUserSelectiveColor with the documented signature', () => {
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toContain(
-      'vec3 applyUserSelectiveColor(vec3 rgbProPhoto, sampler2D lut, vec2 chromaClamp)',
-    )
+    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain('mix(a, b, vec4f(t))')
   })
 
   it('mirrors the CPU apply algorithm: oklab roundtrip, smoothstep chroma clamp, direct rotation', () => {
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toContain('linearProPhotoToOklab')
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toContain('oklabToLinearProPhoto')
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toContain(
-      'smoothstep(chromaClamp.x, chromaClamp.y',
+    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain(
+      'fn applyUserSelectiveColor(rgbProPhoto: vec3f) -> vec3f',
     )
-    // GLSL's polar form is atan(y, x); guard that the implementer used the
-    // two-argument overload by matching the `atan(` token (single-arg atan
-    // would compile but would not be the polar form).
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toMatch(/atan\(/)
+    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain('linearProPhotoToOklab')
+    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain('oklabToLinearProPhoto')
+    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toMatch(
+      /smoothstep\(params\.selectiveColorChromaClamp\.x,\s*params\.selectiveColorChromaClamp\.y/,
+    )
+    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain('atan2(b_val, a_val)')
     // Chroma scale formula matches the CPU 1 + strength * (satMul - 1).
-    // The local LUT sample is named `lutSample` to avoid GLSL ES 3.00's
-    // reserved `sample` keyword; the test asserts the scale formula shape
-    // regardless of that exact identifier.
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toMatch(/mix\(1\.0,\s*\w+\.g/)
-    // Direct-(a,b) rotation: both cos(delta) and sin(delta) appear, and the
-    // rotation expression a*cosD - b*sinD is materialised.
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toContain('cos(delta)')
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toContain('sin(delta)')
-    expect(LUMA_COLOR_SELECTIVE_COLOR_GLSL).toMatch(
-      /a\s*\*\s*cosD\s*-\s*b\s*\*\s*sinD/,
+    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toMatch(/mix\(1\.0,\s*\w+\.g/)
+    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toMatch(
+      /a_val\s*\*\s*cosD\s*-\s*b_val\s*\*\s*sinD/,
     )
-  })
-
-  it('re-exports both GLSL strings from glsl.ts (the package subpath entry)', () => {
-    expect(glslReExports.LUMA_COLOR_OKLAB_GLSL).toBe(LUMA_COLOR_OKLAB_GLSL)
-    expect(glslReExports.LUMA_COLOR_SELECTIVE_COLOR_GLSL).toBe(
-      LUMA_COLOR_SELECTIVE_COLOR_GLSL,
-    )
-  })
-
-  it('renames OKLAB_GLSL -> LUMA_COLOR_OKLAB_GLSL (regression guard)', () => {
-    expect('OKLAB_GLSL' in oklabModule).toBe(false)
-    expect('LUMA_COLOR_OKLAB_GLSL' in oklabModule).toBe(true)
   })
 })

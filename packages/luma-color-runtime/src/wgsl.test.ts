@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-import * as glsl from './glsl'
 import { TRANSFER_FUNCTIONS } from './log-encoding'
 import {
   M_LMS_TO_OKLAB,
@@ -13,10 +12,7 @@ import { LINEAR_PROPHOTO_LUMINANCE } from './tone'
 import * as wgsl from './wgsl'
 
 describe('wGSL color contract', () => {
-  it('shares enum values with the existing shader and CPU registry', () => {
-    expect(wgsl.LUT_TRANSFER_UNIFORMS).toBe(glsl.LUT_TRANSFER_UNIFORMS)
-    expect(wgsl.LUT_RANGE_UNIFORMS).toBe(glsl.LUT_RANGE_UNIFORMS)
-    expect(wgsl.LUT_ROLE_UNIFORMS).toBe(glsl.LUT_ROLE_UNIFORMS)
+  it('shares enum values with the CPU registry', () => {
     expect(Object.keys(wgsl.LUT_TRANSFER_UNIFORMS).sort()).toEqual(
       Object.keys(TRANSFER_FUNCTIONS).sort(),
     )

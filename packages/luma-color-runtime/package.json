@@ -1,7 +1,7 @@
 {
   "name": "@lumaforge/luma-color-runtime",
   "type": "module",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },
@@ -11,10 +11,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./glsl": {
-      "types": "./dist/glsl.d.ts",
-      "import": "./dist/glsl.js"
     },
     "./wgsl": {
       "types": "./dist/wgsl.d.ts",

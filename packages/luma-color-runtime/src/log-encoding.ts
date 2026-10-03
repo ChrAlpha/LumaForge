@@ -97,7 +97,7 @@ const TRANSFER_SOURCE_URLS: Record<TransferFunctionId, string> = {
 export function sLog2Encode(linear: number): number {
   // S-Log2 is log-based with a hard real domain limit, so sub-black linear has
   // no signed extension; clamp to the curve black to stay finite and match the
-  // GLSL encoder for consistent LUT-domain sampling.
+  // WGSL encoder for consistent LUT-domain sampling.
   const reflectedLinear = 0.9 * Math.max(linear, 0)
   return 0.432699 * Math.log10(reflectedLinear + 0.037584) + 0.616596 + 0.03
 }

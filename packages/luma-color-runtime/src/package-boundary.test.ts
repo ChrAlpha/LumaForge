@@ -85,7 +85,5 @@ describe('luma color runtime package boundary', () => {
     expect(typeof runtime.applySelectiveColorRow).toBe('function')
     expect(typeof runtime.resolveSelectiveColorParams).toBe('function')
     expect(typeof runtime.normalizeSelectiveColorParams).toBe('function')
-    expect(typeof runtime.LUMA_COLOR_SELECTIVE_COLOR_GLSL).toBe('string')
-    expect(typeof runtime.LUMA_COLOR_OKLAB_GLSL).toBe('string')
   })
 })
