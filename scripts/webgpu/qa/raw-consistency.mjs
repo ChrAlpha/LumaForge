@@ -1248,19 +1248,21 @@ class DesktopDriver {
   async waitForTransform() {
     const tool = this.transformTool()
     await tool.waitFor({ timeout: 60_000 })
-    await tool
-      .locator('[data-testid="mode-auto"]')
-      .first()
-      .waitFor({ state: 'visible' })
     const deadline = Date.now() + 300_000
     while (Date.now() < deadline) {
       const ready = await this.page.evaluate(() => {
         const tool = document.querySelector('[data-raw-transform-tool]')
+        // Mobile mounts only the active section (Upright, Perspective or
+        // Frame), so the Auto button exists only while Upright is open.
         const auto = tool?.querySelector('[data-testid="mode-auto"]')
+        const activeTab = tool
+          ?.querySelector('[role="tab"][aria-selected="true"]')
+          ?.textContent?.trim()
+        const uprightShown = !activeTab || activeTab === 'Upright'
         const overlay = document.querySelector('[data-raw-transform-preview]')
         return (
-          Boolean(auto) &&
-          !auto.disabled &&
+          Boolean(tool) &&
+          (uprightShown ? Boolean(auto) && !auto.disabled : true) &&
           (!overlay || overlay.getAttribute('aria-busy') === 'false')
         )
       })
