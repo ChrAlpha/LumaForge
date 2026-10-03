@@ -44,7 +44,7 @@ single RAW file -> preview -> look or LUT -> compare -> JPEG export
 
 Preview and export share color intent, but they are different executors.
 Interactive preview is allowed to optimize for responsiveness and may use
-embedded, quick, bounded HQ, WebGL, or CPU-degraded stages. Full-resolution
+embedded, quick, bounded HQ, WebGPU, or CPU-degraded stages. Full-resolution
 export is authoritative: it must either reproduce the declared pipeline at the
 declared output size or fail closed.
 
@@ -230,12 +230,14 @@ allowConcurrentDecodeAndLutParse = budget.allowConcurrentDecodeAndLutParse
 Preview capability is then decided from graphics facts:
 
 ```text
-if WebGL2 is available and fragment high-float precision is sufficient:
+if a WebGPU adapter and device are available within the probe timeout:
   previewMode = "gpu"
-else if WebGL2 is missing:
-  previewMode = "cpu", reason = "webgl2-missing"
+else if ?forcePreview=cpu on a dev or localhost build:
+  previewMode = "cpu", reason = "forced"
 else:
-  previewMode = "cpu", reason = "tone-float-precision-low"
+  previewMode = "cpu", reason = "webgpu-unavailable"
+after a WebGPU initialization failure or device loss:
+  previewMode = "cpu", reason = "gpu-preview-failed"
 ```
 
 Cross-origin isolation is not a preview capability gate by itself. The RAW
@@ -380,8 +382,8 @@ device family.
 | Previous resource failure                        | Session/export state marks resource-looking failure    | Halve rows, force concurrency `1`, fresh worker retry                                         | Do not retry near the same heap boundary.                                    |
 | Previous crash-like interruption                 | Interrupted checkpoint/recovery state                  | Quarter rows, force concurrency `1`, safer copy                                               | Treat tab/process interruption as stronger pressure.                         |
 | User cancel                                      | Explicit user interruption                             | No row or concurrency penalty                                                                 | Intent is not evidence of resource pressure.                                 |
-| WebGL2 missing                                   | Preview GPU facts                                      | CPU preview mode, reason `webgl2-missing`                                                     | Preserve preview usability when RAW decode still works.                      |
-| Fragment high-float precision too low            | Preview GPU facts                                      | CPU preview mode, reason `tone-float-precision-low`                                           | Avoid inaccurate tone preview on weak GPU precision.                         |
+| WebGPU unavailable                               | Preview GPU facts                                      | CPU preview mode, reason `webgpu-unavailable`                                                 | Preserve preview usability when RAW decode still works.                      |
+| WebGPU initialization failure or device loss     | Preview renderer failure                               | CPU preview mode, reason `gpu-preview-failed`                                                 | Keep the session usable on the CPU executor instead of a blank stage.        |
 | Missing or hostile navigator fields              | Sanitized at capability boundary                       | Clamp integers, convert invalid memory to `null`, use `unknown` UA                            | Bad input should not unlock higher budgets.                                  |
 
 These constraints stack. For example, a high-core Android Chromium phone with
@@ -399,7 +401,7 @@ snapshot and disposes large preview-owned resources. Required owners are:
 ```text
 preview
 bounded-hq
-webgl
+gpu
 export-result
 lut-fetch
 ```
@@ -411,7 +413,7 @@ user starts full-resolution export
 -> freeze export graph, source facts, current params, LUT contract, and policy
 -> abort in-flight preview and bounded-HQ work
 -> dispose active preview RAW runtime session
--> dispose WebGL preview pipeline and textures
+-> dispose WebGPU preview pipeline and textures
 -> release bounded-HQ decoded buffer
 -> release previous export Blob/object URLs
 -> release obsolete LUT fetch buffers
@@ -438,7 +440,7 @@ compatibility strategy.
   must distinguish desktop touch hardware from phone/tablet UAs.
 - Do not use missing `deviceMemoryGB` as evidence of abundant memory.
 - Do not silently downscale a full-resolution export and keep the full-res label.
-- Do not keep preview buffers, WebGL textures, previous export blobs, or in-flight
+- Do not keep preview buffers, WebGPU textures, previous export blobs, or in-flight
   bounded-HQ work alive while export starts.
 - Do not reintroduce a named-profile table as the decision source. Names are
   telemetry/product-copy labels only; policy is derived from capability, intent,

@@ -81,7 +81,7 @@ finished JPEG with a look they already enjoy.
   extensions.
 - See an early visible image through embedded, quick, and bounded HQ preview
   stages.
-- Compare original and processed output with the WebGL2 preview renderer.
+- Compare original and processed output with the WebGPU preview renderer.
 - Choose built-in finishes: Neutral, Warm, Cool, Film Soft, Film Contrast,
   Cinematic, Fade, and Mono.
 - Adjust light finishing controls such as exposure, contrast, and look strength
@@ -124,7 +124,8 @@ export until the final JPEG can be reproduced by the authoritative worker path.
 
 LumaForge is an active browser RAW + LUT pipeline.
 The current supported baseline
-is a modern desktop browser with WebGL2.
+is a modern desktop browser with WebGPU. Browsers without WebGPU use a slower
+CPU preview with the same color output as export.
 Mobile browsers, unusual RAW layouts,
 and files that cannot expose the required processed-window facts may be marked
 experimental or unsupported.
@@ -147,9 +148,10 @@ and authoritative export share color intent, but they are not the same executor.
   sessions, processed-window access, export capability facts, and pinned native
   artifacts.
 - `packages/luma-color-runtime`: pure TypeScript color math, LUT contracts,
-  transfer/gamut transforms, graph logic, row processing, and GLSL helpers.
+  transfer/gamut transforms, graph logic, row processing, and WGSL helpers.
 - `packages/luma-jpeg-runtime`: bounded row-oriented JPEG encoding.
-- `src/lib/gl`: WebGL2 interactive preview rendering.
+- `src/lib/webgpu`: WebGPU interactive preview rendering (CPU fallback in
+  `src/lib/preview`).
 - `src/lib/export`: worker-driven full-resolution export path.
 - `src/modules/raw-processor`: the `/raw` workflow for upload, preview, style
   selection, LUT contract selection, compare, status, and export actions.
@@ -167,7 +169,7 @@ Requirements:
 
 - Node.js compatible with the repo toolchain
 - pnpm 10.18.0
-- A modern desktop browser with WebGL2
+- A modern desktop browser with WebGPU
 
 Install dependencies:
 

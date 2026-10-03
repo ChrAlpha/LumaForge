@@ -73,7 +73,7 @@
 - 从常见相机格式（如 ARW、NEF、RAF、RW2、ORF、DNG、CR2、CR3、PEF、SRW、
   IIQ、3FR、FFF 及相关 RAW 扩展名）本地加载单张 RAW 文件。
 - 通过嵌入式预览、快速预览和受控高品质预览逐步看到图像。
-- 使用 WebGL2 预览渲染器对比原始和处理后的输出。
+- 使用 WebGPU 预览渲染器对比原始和处理后的输出。
 - 选择内置风格：Neutral、Warm、Cool、Film Soft、Film Contrast、Cinematic、
   Fade 和 Mono。
 - 调整轻度润色控制（如曝光、对比度和风格强度），而不会把应用变成完整的
@@ -111,7 +111,7 @@ LumaForge 可以直接使用。当需要更多信息时，应用会通过可搜�
 ## 产品边界
 
 LumaForge 是一套运行在浏览器中的 RAW + LUT 处理管线。当前支持的运行环境是
-配备 WebGL2 的现代桌面浏览器。移动端浏览器、不常见的 RAW 布局，以及无法暴露所需处理窗口信息的文件
+配备 WebGPU 的现代桌面浏览器。不支持 WebGPU 的浏览器会使用较慢的 CPU 预览，颜色输出与导出一致。移动端浏览器、不常见的 RAW 布局，以及无法暴露所需处理窗口信息的文件
 可能被标记为实验性或不受支持。
 
 产品有意不包含：
@@ -131,9 +131,9 @@ LumaForge 是一套运行在浏览器中的 RAW + LUT 处理管线。当前支�
 - `packages/luma-raw-runtime`：浏览器 RAW 元数据、预览提取、解码会话、
   处理窗口访问、导出能力信息，以及锁定的原生构建产物。
 - `packages/luma-color-runtime`：纯 TypeScript 色彩运算、LUT 合约、
-  传递函数/色域变换、图谱解析、行处理和 GLSL 辅助函数。
+  传递函数/色域变换、图谱解析、行处理和 WGSL 辅助函数。
 - `packages/luma-jpeg-runtime`：受控的逐行 JPEG 编码器。
-- `src/lib/gl`：WebGL2 交互式预览渲染。
+- `src/lib/webgpu`：WebGPU 交互式预览渲染（CPU 回退位于 `src/lib/preview`）。
 - `src/lib/export`：Worker 驱动的全分辨率导出路径。
 - `src/modules/raw-processor`：`/raw` 工作流，涵盖上传、预览、风格选择、
   LUT 合约选择、对比、状态和导出操作。
@@ -144,7 +144,7 @@ LumaForge 是一套运行在浏览器中的 RAW + LUT 处理管线。当前支�
 
 - 与仓库工具链兼容的 Node.js
 - pnpm 10.18.0
-- 支持 WebGL2 的现代桌面浏览器
+- 支持 WebGPU 的现代桌面浏览器
 
 安装依赖：
 

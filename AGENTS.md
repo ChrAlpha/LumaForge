@@ -34,7 +34,7 @@ image-editor assumptions.
 - LumaForge is a browser-local RAW photo lab for a narrow workflow:
   `single RAW file -> preview -> look or LUT -> compare -> JPEG export`.
 - Preview may optimize for responsiveness through embedded, quick, bounded HQ,
-  WebGL, or CPU-degraded stages.
+  WebGPU, or CPU-degraded stages.
 - Export is the authoritative full-resolution path. If the runtime cannot prove
   the declared pipeline can be reproduced, fail closed instead of exporting a
   degraded or preview-only result.
@@ -81,7 +81,11 @@ image-editor assumptions.
 - `src/modules/raw-processor/raw-lab.css`,
   `raw-lab.surface.css`, and `raw-lab.effects.css` hold `/raw` surface and
   effect CSS that cannot reasonably live as Tailwind utilities.
-- `src/lib/gl` is the WebGL2 interactive preview renderer.
+- `src/lib/webgpu` is the only GPU preview executor (WGSL).
+  `raw-processing-pipeline.ts` is the facade the app consumes; `contract.ts`
+  holds renderer-neutral types. There is no WebGL tier: without WebGPU, or
+  after a GPU failure, the preview falls back to the CPU preview worker
+  (`webgpu -> cpu`). Do not reintroduce WebGL or GLSL.
 - `src/lib/preview` is the CPU/degraded preview worker path and capability
   helpers.
 - `src/lib/export` is the worker-driven full-resolution export path.
@@ -91,7 +95,9 @@ image-editor assumptions.
   contracts.
 - `packages/luma-color-runtime` is pure TypeScript color math: tone,
   temperature/tint color balance, LUT contracts, transfer/gamut transforms,
-  graph resolution, row-band processing, and GLSL helpers.
+  graph resolution, row-band processing, and WGSL helpers (`./wgsl`). The TS
+  row-band processor is the authoritative executor for export, `lmfg`, and the
+  CPU preview; the WGSL preview must agree with it (`pnpm test:webgpu`).
 - `packages/luma-raw-runtime` is the browser RAW metadata/decode/runtime
   boundary, including worker protocol, native artifacts, processed-window facts,
   HDR analysis, fixtures, benchmarks, and native verification.
@@ -150,8 +156,8 @@ image-editor assumptions.
   authoritative export may share color intent, but they are not interchangeable
   executors.
 - The current compare fallback ladder is
-  `dual-webgl -> jpeg-fallback -> processed-only`. Do not revive old
-  `shader`/`css-snapshot` vocabulary.
+  `dual-gpu -> jpeg-fallback -> processed-only`. Do not revive old
+  `dual-webgl`, `shader`, or `css-snapshot` vocabulary.
 - Compare split state is frame-anchored. Photo clipping and zoom/pan are derived
   from the committed frame split; avoid mixing photo-space and frame-space state.
 - Original reference snapshots are capped and lifecycle-managed. Treat object
@@ -233,6 +239,11 @@ image-editor assumptions.
   behavior.
 - Browser specs live under `tests/browser`. Use `pnpm test:browser` or a focused
   `pnpm exec playwright test <spec>` run as appropriate.
+- Changes to WGSL, `src/lib/webgpu`, or the color graph must keep
+  `pnpm test:webgpu` green: it holds the WebGPU preview to the TS export
+  executor on synthetic scenes (Chromium SwiftShader). The `chromium-desktop`
+  Playwright project runs software WebGPU; the WebKit project has no WebGPU and
+  exercises the CPU preview.
 - Built-app preview validation can use `pnpm serve` or
   `pnpm exec vite preview` after `pnpm build`.
 - CI follows the same split:

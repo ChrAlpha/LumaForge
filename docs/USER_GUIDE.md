@@ -14,7 +14,7 @@ export until it can reproduce that look through the full-resolution path.
 
 ## 1. Open The RAW Lab
 
-Open `/raw` in a modern browser. A desktop browser with WebGL2 is the supported
+Open `/raw` in a modern browser. A desktop browser with WebGPU is the supported
 baseline. Mobile browsers may work for some files, but large RAW files and
 browser memory limits can make them less reliable.
 
@@ -87,7 +87,7 @@ approved.
 
 If the preview does not appear:
 
-- Try a modern desktop browser with WebGL2.
+- Try a modern desktop browser with WebGPU.
 - Try a smaller RAW file or a different file from the same camera.
 - Refresh the page and load the file again.
 

@@ -87,7 +87,7 @@ daemon.
 
 ## Which Browser Should I Use?
 
-Use a modern desktop browser with WebGL2 for the best baseline. Large RAW files
+Use a modern desktop browser with WebGPU for the best baseline. Large RAW files
 can stress browser memory, especially on mobile devices.
 
 Mobile browsers are useful for experimentation and lighter files, but they are

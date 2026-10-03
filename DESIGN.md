@@ -489,7 +489,7 @@ the photo back to full bleed in the same motion as the chrome fade. The Adjust
 panel is sized (`min(38vh, 264px)`) to leave a 3:2 landscape photo at full
 width above the dock on a 393x660 viewport; its lists scroll internally.
 
-Both WebGL layers defer their backing-store resize until the container size
+Both GPU preview layers defer their backing-store resize until the container size
 settles (90ms trailing), so an animating inset costs CSS scaling rather than a
 pipeline pass per frame.
 
