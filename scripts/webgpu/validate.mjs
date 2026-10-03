@@ -21,7 +21,7 @@ const { values } = parseArgs({
 })
 if (values.help) {
   process.stdout.write(
-    `${JSON.stringify({ usage: 'node scripts/webgpu/validate.mjs [--root checkout] [--output report.json] [--iterations 1..60] [--hardware] [--unfilterable]', default: 'Chromium SwiftShader, 1024x768, five warmups, thirty edits per backend', scope: 'Synthetic GPU pipeline parity and software performance; no RAW decoder or authoritative export claim' }, null, 2)}\n`,
+    `${JSON.stringify({ usage: 'node scripts/webgpu/validate.mjs [--root checkout] [--output report.json] [--iterations 1..60] [--hardware] [--unfilterable]', default: 'Chromium SwiftShader, 1024x768, five warmups, thirty edits', scope: 'WebGPU preview vs the TS export executor on synthetic scenes, plus WebGPU resource and frame acceptance; no RAW decoder' }, null, 2)}\n`,
   )
   process.exit(0)
 }
@@ -42,9 +42,9 @@ async function fingerprintSource() {
     '--others',
     '--exclude-standard',
     '--',
-    'src/lib/gl',
     'src/lib/webgpu',
     'packages/luma-color-runtime',
+    'packages/render-engine/src/preview',
   )
     .split('\n')
     .filter(
@@ -80,7 +80,7 @@ async function fingerprintHarness() {
 const report = {
   schemaVersion: 1,
   scope:
-    'Synthetic GPU pipeline acceptance; excludes RAW decoding and authoritative full-resolution export',
+    'WebGPU preview vs the TS export executor (renderCpuPreviewFrame) on synthetic scenes; excludes RAW decoding',
   startedAt: new Date().toISOString(),
   root,
   revision: git('rev-parse', 'HEAD'),
@@ -106,10 +106,6 @@ try {
         {
           find: '@lumaforge/luma-color-runtime/wgsl',
           replacement: resolve(root, 'packages/luma-color-runtime/src/wgsl.ts'),
-        },
-        {
-          find: '@lumaforge/luma-color-runtime/glsl',
-          replacement: resolve(root, 'packages/luma-color-runtime/src/glsl.ts'),
         },
         {
           find: '@lumaforge/luma-color-runtime',

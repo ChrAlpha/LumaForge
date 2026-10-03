@@ -36,6 +36,7 @@
     "test:app": "vitest run --config vitest.app.config.ts",
     "test:browser": "playwright test",
     "test:browser:webkit": "playwright test --project=webkit-ios-safe",
+    "test:webgpu": "node scripts/webgpu/validate.mjs",
     "test:cli": "pnpm --filter @lumaforge/lmfg-cli test && pnpm --filter @lumaforge/lmfg-mcp test",
     "cli:build:deps": "pnpm --filter @lumaforge/luma-color-runtime build && pnpm --filter @lumaforge/luma-jpeg-runtime build && pnpm --filter @lumaforge/luma-raw-runtime build && pnpm --filter @lumaforge/render-engine build",
     "cli:build": "pnpm cli:build:deps && pnpm --filter @lumaforge/lmfg-cli build && pnpm --filter @lumaforge/lmfg-mcp build",

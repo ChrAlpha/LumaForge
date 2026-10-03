@@ -5,15 +5,36 @@ import {
   readCanvas,
   readPresentedCanvas,
   scenarios,
+  toDisplayBytes,
 } from './fixtures.mjs'
 import { runPerformance } from './performance.mjs'
 
+// Params the authoritative color graph consumes. View mode and compare split
+// are presentation-only and are composed separately below.
+const GRAPH_PARAM_KEYS = [
+  'styleKind',
+  'intensity',
+  'builtinPreset',
+  'userExposureEv',
+  'userContrast',
+  'userHighlights',
+  'userShadows',
+  'userWhites',
+  'userBlacks',
+  'userTemperature',
+  'userTint',
+  'userSaturation',
+  'userVibrance',
+  'selectiveColor',
+]
+
 export async function runAcceptance({ iterations, unfilterable }) {
-  const { TRANSFER_FUNCTIONS } = await import('@lumaforge/luma-color-runtime')
+  const { TRANSFER_FUNCTIONS, resolveExportColorGraph } =
+    await import('@lumaforge/luma-color-runtime')
+  const { renderCpuPreviewFrame } =
+    await import('/packages/render-engine/src/preview/preview-render.ts')
   const { WebGPUProcessingPipeline } =
     await import('/src/lib/webgpu/pipeline.ts')
-  const { RawProcessingPipeline } =
-    await import('/src/lib/gl/webgl-pipeline.ts')
   const adapter = await navigator.gpu?.requestAdapter()
   if (!adapter) throw new Error('WEBGPU_ADAPTER_UNAVAILABLE')
   const info = adapter.info
@@ -25,6 +46,8 @@ export async function runAcceptance({ iterations, unfilterable }) {
       description: info.description,
       isFallbackAdapter: info.isFallbackAdapter,
     },
+    reference:
+      'renderCpuPreviewFrame(resolveExportColorGraph(params)): the TS row-band executor behind full-resolution export, lmfg, and the CPU preview',
     limits: LIMITS,
     tests: [],
     performance: {},
@@ -32,113 +55,178 @@ export async function runAcceptance({ iterations, unfilterable }) {
   window.__webgpuValidationReport = report
   const add = (name, passed, evidence) =>
     report.tests.push({ name, passed, ...evidence })
-  const byteCheck = (name, actual, expected, extra = {}) => {
+  const check = (name, actual, expected, limits, extra = {}) => {
     const diff = pixelDiff(actual, expected)
     add(
       name,
       diff.nonfinite === 0 &&
-        diff.max <= LIMITS.maxByteError &&
-        diff.mean <= LIMITS.meanByteError,
+        diff.max <= limits.max &&
+        diff.mean <= limits.mean,
       { diff, ...extra },
     )
+    return diff
   }
-  let canvasSequence = 0
-  const makePair = async (width, height) => {
-    const glCanvas = document.createElement('canvas')
-    const gpuCanvas = document.createElement('canvas')
-    for (const canvas of [glCanvas, gpuCanvas]) {
-      canvas.dataset.validationId = String(canvasSequence++)
-      canvas.width = width
-      canvas.height = height
-      document.body.append(canvas)
+  const PRESENTED = { max: LIMITS.maxByteError, mean: LIMITS.meanByteError }
+  const REFERENCE = {
+    max: LIMITS.referenceMaxByteError,
+    mean: LIMITS.referenceMeanByteError,
+  }
+
+  const renderReference = (fixture, params, lut, variant) => {
+    if (fixture.layout !== 'rgb-u16')
+      throw new Error('REFERENCE_REQUIRES_LINEAR_PROPHOTO_INPUT')
+    const rawRenderExposure = {
+      ev: fixture.renderExposureEv,
+      multiplier: fixture.renderExposureMultiplier,
+      source: 'user',
     }
-    const gl = new RawProcessingPipeline(glCanvas)
-    const gpu = new WebGPUProcessingPipeline(gpuCanvas)
+    const input =
+      variant === 'technical-base'
+        ? {
+            styleKind: 'none',
+            intensity: 0,
+            builtinPreset: null,
+            lut: null,
+            rawRenderExposure,
+          }
+        : {
+            ...Object.fromEntries(
+              GRAPH_PARAM_KEYS.map((key) => [key, params[key]]),
+            ),
+            lut: lut ?? null,
+            rawRenderExposure,
+          }
+    const graph = resolveExportColorGraph(input)
+    if (!graph.supported)
+      throw new Error(`REFERENCE_GRAPH_UNSUPPORTED: ${graph.reason}`)
+    return renderCpuPreviewFrame({
+      data: fixture.data,
+      width: fixture.width,
+      height: fixture.height,
+      graph,
+    })
+  }
+  const exportRefusal = (params, lut) => {
+    const graph = resolveExportColorGraph({
+      ...Object.fromEntries(GRAPH_PARAM_KEYS.map((key) => [key, params[key]])),
+      lut: lut ?? null,
+    })
+    return graph.supported ? null : graph.message
+  }
+  // Compose the reference the same way the preview presents view modes: the
+  // technical base on the left of the split, the edited image on the right.
+  const referenceFrame = (fixture, params, lut) => {
+    const viewMode = params.viewMode ?? 'processed'
+    if (viewMode === 'original')
+      return renderReference(fixture, params, lut, 'technical-base')
+    const edited = renderReference(fixture, params, lut, 'edited')
+    if (viewMode !== 'compare') return edited
+    const base = renderReference(fixture, params, lut, 'technical-base')
+    const split = Math.min(Math.max(params.compareSplit ?? 0.5, 0), 1)
+    const frame = new Uint8ClampedArray(edited)
+    for (let y = 0; y < fixture.height; y++)
+      for (let x = 0; x < fixture.width; x++) {
+        if ((x + 0.5) / fixture.width >= split) continue
+        const offset = (y * fixture.width + x) * 4
+        frame.set(base.subarray(offset, offset + 4), offset)
+      }
+    return frame
+  }
+
+  let canvasSequence = 0
+  const createPipeline = async (width, height) => {
+    const canvas = document.createElement('canvas')
+    canvas.dataset.validationId = String(canvasSequence++)
+    canvas.width = width
+    canvas.height = height
+    document.body.append(canvas)
+    const pipeline = new WebGPUProcessingPipeline(canvas)
     try {
-      await gl.initialize()
-      await gpu.initialize()
+      await pipeline.initialize()
     } catch (error) {
-      gl.dispose({ releaseContext: true })
-      gpu.dispose()
+      pipeline.dispose()
+      canvas.remove()
       throw error
     }
-    gpu.onLost((error) =>
+    pipeline.onLost((error) =>
       add('webgpu-device-loss', false, { error: String(error) }),
     )
     return {
-      gl,
-      gpu,
-      glCanvas,
-      gpuCanvas,
+      pipeline,
+      canvas,
       dispose() {
-        gl.dispose({ releaseContext: true })
-        gpu.dispose()
-        glCanvas.remove()
-        gpuCanvas.remove()
+        pipeline.dispose()
+        canvas.remove()
       },
     }
   }
-  const pair = await makePair(97, 65)
+  const surface = await createPipeline(97, 65)
+  const gpu = surface.pipeline
   const neutral = {
-    ...pair.gl.getParams(),
+    ...gpu.getParams(),
     viewMode: 'processed',
     styleKind: 'none',
     intensity: 1,
     selectiveColor: undefined,
   }
   const reset = (fixture, params = {}) => {
-    for (const pipeline of [pair.gl, pair.gpu]) {
-      pipeline.clearLUT()
-      pipeline.uploadImage(fixture)
-      pipeline.setParams({ ...neutral, ...params })
-    }
+    gpu.clearLUT()
+    gpu.uploadImage(fixture)
+    gpu.setParams({ ...neutral, ...params })
+    return { ...neutral, ...params }
   }
   const render = async () => {
-    pair.gl.render({ waitForGpu: true })
-    pair.gpu.render({ waitForGpu: false })
-    await pair.gpu.waitForGpu()
+    gpu.render({ waitForGpu: false })
+    await gpu.waitForGpu()
+  }
+  const readProcessedBytes = async () => {
+    const pixels = await gpu.readProcessedPixelsAsync()
+    if (!pixels) throw new Error('PROCESSED_PIXELS_MISSING')
+    return toDisplayBytes(pixels)
   }
   try {
-    report.capabilities = {
-      webgl: pair.gl.getCapabilities(),
-      webgpu: pair.gpu.getCapabilities(),
-    }
+    report.capabilities = gpu.getCapabilities()
     add(
       'requested-lut-filtering-mode',
-      !unfilterable || !report.capabilities.webgpu.floatTexturesLinear,
+      !unfilterable || !report.capabilities.float32Filterable,
       {
         unfilterableRequested: unfilterable,
-        float32FilteringEnabled: report.capabilities.webgpu.floatTexturesLinear,
+        float32FilteringEnabled: report.capabilities.float32Filterable,
       },
     )
     for (const integer of [false, true]) {
+      const format = integer ? 'u16' : 'float'
       const fixture = makeImage(integer)
       for (const scenario of scenarios(Object.keys(TRANSFER_FUNCTIONS))) {
-        const name = `${integer ? 'u16' : 'float'}/${scenario.name}`
+        const name = `${format}/${scenario.name}`
         try {
-          reset(fixture, scenario.params)
-          if (scenario.lut) {
-            pair.gl.uploadLUT(scenario.lut)
-            pair.gpu.uploadLUT(scenario.lut)
-          }
+          const params = reset(fixture, scenario.params)
+          if (scenario.lut) gpu.uploadLUT(scenario.lut)
           await render()
-          // Validate the presented image through compositor screenshots.
-          // Snapshot tests independently validate durable pixel output.
-          byteCheck(
-            `${name}/visible`,
-            await readPresentedCanvas(pair.gpuCanvas),
-            await readPresentedCanvas(pair.glCanvas),
+          const processed = await readProcessedBytes()
+          // Presentation must show exactly what the process pass produced.
+          check(
+            `${name}/presented`,
+            await readPresentedCanvas(surface.canvas),
+            processed,
+            PRESENTED,
           )
-          const glPixels = pair.gl.readProcessedPixels()
-          const gpuPixels = await pair.gpu.readProcessedPixelsAsync()
-          if (!glPixels || !gpuPixels)
-            throw new Error('PROCESSED_PIXELS_MISSING')
-          const diff = pixelDiff(gpuPixels, glPixels)
-          add(
-            `${name}/processed`,
-            diff.nonfinite === 0 && diff.max <= LIMITS.maxFloatError,
-            { diff },
-          )
+          // The linear ProPhoto RAW path must agree with the export executor.
+          // The display-sRGB float path feeds embedded/quick previews only, and
+          // built-in styles and some LUT output contracts are refused by export
+          // (it fails closed); those have no export counterpart to match.
+          const exportable = integer && exportRefusal(params, scenario.lut) === null
+          if (exportable)
+            check(
+              `${name}/reference`,
+              processed,
+              referenceFrame(fixture, params, scenario.lut),
+              REFERENCE,
+            )
+          else if (integer)
+            add(`${name}/reference`, true, {
+              skipped: exportRefusal(params, scenario.lut),
+            })
         } catch (error) {
           add(name, false, { error: String(error), stack: error.stack })
           if (
@@ -149,169 +237,155 @@ export async function runAcceptance({ iterations, unfilterable }) {
             throw error
         }
       }
-      for (const [label, width, height] of [
-        ['full', 97, 65],
-        ['resized', 43, 29],
-      ]) {
-        reset(fixture, {
-          userExposureEv: 0.35,
-          styleKind: 'builtin',
-          builtinPreset: 'warm',
-          intensity: 0.8,
-          viewMode: 'compare',
-          compareSplit: 0.27,
+      const snapshotParams = {
+        userExposureEv: 0.35,
+        userTemperature: 30,
+        userSaturation: 20,
+        viewMode: 'compare',
+        compareSplit: 0.27,
+      }
+      try {
+        const params = reset(fixture, snapshotParams)
+        await render()
+        const presentedBefore = await readPresentedCanvas(surface.canvas)
+        const full = readCanvas(
+          await gpu.renderToHiddenCanvas({ width: 97, height: 65 }),
+        )
+        // Snapshots export the edited image, never the compare composite.
+        if (integer)
+          check(
+            `${format}/snapshot-full`,
+            full,
+            referenceFrame(fixture, { ...params, viewMode: 'processed' }),
+            REFERENCE,
+            { stats: gpu.getLastExportStats() },
+          )
+        const resized = await gpu.renderToHiddenCanvas({
+          width: 43,
+          height: 29,
         })
-        try {
-          const actual = await pair.gpu.renderToHiddenCanvas({ width, height })
-          const expected = await pair.gl.renderToHiddenCanvas({ width, height })
-          byteCheck(
-            `${integer ? 'u16' : 'float'}/snapshot-${label}`,
-            readCanvas(actual),
-            readCanvas(expected),
-            {
-              gpuStats: pair.gpu.getLastExportStats(),
-              glStats: pair.gl.getLastExportStats(),
-            },
-          )
-          await render()
-          byteCheck(
-            `${integer ? 'u16' : 'float'}/compare-restored-${label}`,
-            await readPresentedCanvas(pair.gpuCanvas),
-            await readPresentedCanvas(pair.glCanvas),
-          )
-        } catch (error) {
-          add(`snapshot-${label}`, false, {
-            error: String(error),
-            stack: error.stack,
-          })
-        }
+        add(
+          `${format}/snapshot-resized-dimensions`,
+          resized.width === 43 && resized.height === 29,
+          { width: resized.width, height: resized.height },
+        )
+        await render()
+        check(
+          `${format}/compare-restored-after-snapshot`,
+          await readPresentedCanvas(surface.canvas),
+          presentedBefore,
+          PRESENTED,
+        )
+      } catch (error) {
+        add(`${format}/snapshot`, false, {
+          error: String(error),
+          stack: error.stack,
+        })
       }
     }
-    const fixture = makeImage(true, 513, 289)
-    reset(fixture, { userSaturation: 35, userShadows: 25 })
-    const exportOptions = { memoryBudgetBytes: 256 * 256 * 32 }
+    const tiledFixture = makeImage(true, 513, 289)
+    const tiledParams = reset(tiledFixture, {
+      userSaturation: 35,
+      userShadows: 25,
+    })
     try {
-      const actual = await pair.gpu.renderToHiddenCanvas({
-        width: fixture.width,
-        height: fixture.height,
-        exportOptions,
+      const actual = await gpu.renderToHiddenCanvas({
+        width: tiledFixture.width,
+        height: tiledFixture.height,
+        exportOptions: { memoryBudgetBytes: 256 * 256 * 32 },
       })
-      const expected = await pair.gl.renderToHiddenCanvas({
-        width: fixture.width,
-        height: fixture.height,
-        exportOptions,
-      })
-      const gpuStats = pair.gpu.getLastExportStats()
-      const glStats = pair.gl.getLastExportStats()
-      byteCheck(
+      const stats = gpu.getLastExportStats()
+      check(
         'u16/snapshot-tiled',
         readCanvas(actual),
-        readCanvas(expected),
-        { gpuStats, glStats },
+        referenceFrame(tiledFixture, tiledParams),
+        REFERENCE,
+        { stats },
       )
       add(
         'snapshot-tiled-strategy',
-        gpuStats.strategy === 'tiled' &&
-          glStats.strategy === 'tiled' &&
-          gpuStats.tileCount > 1,
-        { gpuStats, glStats },
+        stats.strategy === 'tiled' && stats.tileCount > 1,
+        { stats },
       )
     } catch (error) {
       add('snapshot-tiled', false, { error: String(error), stack: error.stack })
     }
-    for (const pipeline of [pair.gl, pair.gpu]) pipeline.clearImage()
+    gpu.clearImage()
+    add('clear-image-dimensions', gpu.getInputDimensions().width === 0, {})
     add(
-      'clear-image-dimensions',
-      pair.gpu.getInputDimensions().width === 0 &&
-        pair.gl.getInputDimensions().width === 0,
+      'clear-image-readback',
+      (await gpu.readProcessedPixelsAsync()) === null,
       {},
     )
-    const cleared = await pair.gpu.readProcessedPixelsAsync()
-    add('clear-image-readback', cleared === null, {})
-    for (const [name, pipeline] of [
-      ['webgl', pair.gl],
-      ['webgpu', pair.gpu],
-    ]) {
-      let error
-      try {
-        await pipeline.renderToHiddenCanvas({ width: 16, height: 16 })
-      } catch (caught) {
-        error = String(caught)
-      }
-      add(
-        `${name}/clear-image-export-refused`,
-        error?.includes('EXPORT_SOURCE_MISSING') === true,
-        { error },
-      )
+    let clearedExportError
+    try {
+      await gpu.renderToHiddenCanvas({ width: 16, height: 16 })
+    } catch (caught) {
+      clearedExportError = String(caught)
     }
-    reset(makeImage(false), { userExposureEv: -0.2 })
+    add(
+      'clear-image-export-refused',
+      clearedExportError?.includes('EXPORT_SOURCE_MISSING') === true,
+      { error: clearedExportError },
+    )
+    const reuploadFixture = makeImage(true)
+    const reuploadParams = reset(reuploadFixture, { userExposureEv: -0.2 })
     await render()
-    byteCheck(
+    check(
       'clear-and-reupload',
-      await readPresentedCanvas(pair.gpuCanvas),
-      await readPresentedCanvas(pair.glCanvas),
+      await readProcessedBytes(),
+      referenceFrame(reuploadFixture, reuploadParams),
+      REFERENCE,
     )
 
-    reset(makeImage(false))
+    const burstFixture = makeImage(true)
+    const burstBase = reset(burstFixture)
     await render()
-    const beforeBurst = pair.gpu.getResourceStats()
+    const beforeBurst = gpu.getResourceStats()
     let latestTone
     for (let index = 0; index < 200; index++) {
       latestTone = {
         userExposureEv: Math.sin(index * 0.123) * 1.2,
         userContrast: (index % 61) - 30,
       }
-      pair.gpu.setParams(latestTone)
-      pair.gpu.render({ waitForGpu: false })
+      gpu.setParams(latestTone)
+      gpu.render({ waitForGpu: false })
     }
-    pair.gl.setParams(latestTone)
-    pair.gl.render({ waitForGpu: true })
-    await pair.gpu.waitForGpu()
-    const burstPixels = await pair.gpu.readProcessedPixelsAsync()
-    if (!burstPixels) throw new Error('BURST_READBACK_MISSING')
-    const burstDiff = pixelDiff(burstPixels, pair.gl.readProcessedPixels())
-    const afterBurst = pair.gpu.getResourceStats()
-    add(
+    await gpu.waitForGpu()
+    const afterBurst = gpu.getResourceStats()
+    check(
       'tone-edit-burst-latest-state',
-      burstDiff.nonfinite === 0 && burstDiff.max <= LIMITS.maxFloatError,
-      {
-        edits: 200,
-        latestTone,
-        diff: burstDiff,
-      },
+      await readProcessedBytes(),
+      referenceFrame(burstFixture, { ...burstBase, ...latestTone }),
+      REFERENCE,
+      { edits: 200, latestTone },
     )
     add(
       'tone-edit-burst-bounded-frames',
       afterBurst.frames?.maxInFlight <= 2 &&
         afterBurst.frames?.inFlight === 0 &&
         afterBurst.frames.coalesced > beforeBurst.frames.coalesced,
-      {
-        before: beforeBurst.frames,
-        after: afterBurst.frames,
-      },
+      { before: beforeBurst.frames, after: afterBurst.frames },
     )
     add(
       'tone-edit-burst-resource-reuse',
       beforeBurst.textureAllocations === afterBurst.textureAllocations &&
         beforeBurst.uploadedBytes === afterBurst.uploadedBytes &&
         beforeBurst.estimatedBytes === afterBurst.estimatedBytes,
-      {
-        before: beforeBurst,
-        after: afterBurst,
-      },
+      { before: beforeBurst, after: afterBurst },
     )
 
     for (const action of ['clear', 'replace']) {
-      reset(makeImage(false))
+      reset(makeImage(true))
       await render()
-      pair.gpu.setParams({ userExposureEv: 0.6 })
-      pair.gpu.render({ waitForGpu: false })
-      const pending = pair.gpu.readProcessedPixelsAsync().then(
+      gpu.setParams({ userExposureEv: 0.6 })
+      gpu.render({ waitForGpu: false })
+      const pending = gpu.readProcessedPixelsAsync().then(
         (pixels) => ({ resolved: true, length: pixels?.length }),
         (error) => ({ resolved: false, error: String(error) }),
       )
-      if (action === 'clear') pair.gpu.clearImage()
-      else pair.gpu.uploadImage(makeImage(true, 83, 57))
+      if (action === 'clear') gpu.clearImage()
+      else gpu.uploadImage(makeImage(true, 83, 57))
       const outcome = await pending
       add(
         `pending-readback-${action}-cancelled`,
@@ -320,16 +394,17 @@ export async function runAcceptance({ iterations, unfilterable }) {
       )
     }
 
-    reset(makeImage(false), { userExposureEv: 0.25 })
+    const survivorFixture = makeImage(true)
+    const survivorParams = reset(survivorFixture, { userExposureEv: 0.25 })
     await render()
     const victimCanvas = document.createElement('canvas')
     victimCanvas.width = 97
     victimCanvas.height = 65
     const victim = new WebGPUProcessingPipeline(victimCanvas)
     try {
-      // The main pair retains another lease throughout disposal of this instance.
+      // The surviving pipeline retains another device lease throughout this disposal.
       await victim.initialize()
-      victim.uploadImage(makeImage(false))
+      victim.uploadImage(makeImage(true))
       victim.setParams(neutral)
       victim.render({ waitForGpu: false })
       await victim.waitForGpu()
@@ -352,40 +427,40 @@ export async function runAcceptance({ iterations, unfilterable }) {
           /GPU_READBACK_CANCELLED|AbortError/i.test(outcome.error ?? '') &&
           disposed.estimatedBytes === 0 &&
           settled.estimatedBytes === 0,
-        {
-          idle,
-          allocated,
-          disposed,
-          settled,
-          outcome,
-        },
+        { idle, allocated, disposed, settled, outcome },
       )
-      pair.gpu.setParams({ userExposureEv: -0.35 })
-      pair.gl.setParams({ userExposureEv: -0.35 })
+      gpu.setParams({ userExposureEv: -0.35 })
       await render()
-      const actual = await pair.gpu.readProcessedPixelsAsync()
-      const diff = pixelDiff(actual, pair.gl.readProcessedPixels())
-      add(
+      check(
         'snapshot-disposal-preserves-other-pipeline',
-        diff.nonfinite === 0 &&
-          diff.max <= LIMITS.maxFloatError &&
-          actual.some((value) => value > 0.05 && value < 0.95),
-        { diff },
+        await readProcessedBytes(),
+        referenceFrame(survivorFixture, {
+          ...survivorParams,
+          userExposureEv: -0.35,
+        }),
+        REFERENCE,
       )
     } finally {
       victim.dispose()
     }
   } finally {
-    pair.dispose()
+    surface.dispose()
   }
 
-  report.performance = await runPerformance(
-    makePair,
+  report.performance = await runPerformance({
+    createPipeline,
     neutral,
     add,
     iterations,
     info,
-  )
+    reference: (fixture, params) => referenceFrame(fixture, params),
+    readProcessedBytes: async (pipeline) => {
+      const pixels = await pipeline.readProcessedPixelsAsync()
+      if (!pixels) throw new Error('PROCESSED_PIXELS_MISSING')
+      return toDisplayBytes(pixels)
+    },
+    check: (name, actual, expected) => check(name, actual, expected, REFERENCE),
+  })
 
   return report
 }

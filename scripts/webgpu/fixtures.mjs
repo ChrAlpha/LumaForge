@@ -1,7 +1,10 @@
 export const LIMITS = Object.freeze({
+  // Presented canvas vs the processed texture it samples.
   maxByteError: 2,
   meanByteError: 0.25,
-  maxFloatError: 0.008,
+  // WebGPU preview vs the TS export executor, in 8-bit display code values.
+  referenceMaxByteError: 2,
+  referenceMeanByteError: 0.1,
 })
 
 export function makeImage(integer = false, width = 97, height = 65) {
@@ -156,9 +159,8 @@ export function scenarios(transferIds = []) {
       params: {
         viewMode: 'compare',
         compareSplit: split,
-        styleKind: 'builtin',
-        builtinPreset: 'mono',
-        intensity: 1,
+        userSaturation: -100,
+        userContrast: 25,
       },
     })
   for (const [role, transfer, legal] of [
@@ -167,11 +169,12 @@ export function scenarios(transferIds = []) {
     ['combined-look-output', 's-log3', true],
     ['technical-output', 'acescct', false],
   ]) {
-    result.push({
-      name: `lut-${role}`,
-      lut: makeLut(role, transfer, legal),
-      params: { styleKind: 'custom', intensity: 0.71 },
-    })
+    for (const intensity of [0.71, 1])
+      result.push({
+        name: `lut-${role}${intensity === 1 ? '-full' : ''}`,
+        lut: makeLut(role, transfer, legal),
+        params: { styleKind: 'custom', intensity },
+      })
   }
   const domain = makeLut()
   domain.domainMin = [-0.15, -0.05, -0.2]
@@ -230,6 +233,14 @@ export function pixelDiff(actual, expected, channels = 4) {
     samples: count,
     nonfinite,
   }
+}
+
+/** Quantize processed float RGBA the way the canvas and JPEG encoder do. */
+export function toDisplayBytes(pixels) {
+  const bytes = new Uint8ClampedArray(pixels.length)
+  for (let index = 0; index < pixels.length; index++)
+    bytes[index] = Math.round(pixels[index] * 255)
+  return bytes
 }
 
 export function readCanvas(canvas) {
