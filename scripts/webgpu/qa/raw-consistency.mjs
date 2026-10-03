@@ -1877,7 +1877,14 @@ async function runExport(h, d, kind) {
         return (
           /Preparing JPEG/.test(text) ||
           document.querySelector('[data-preview-state="exporting-released"]') ||
-          !text.split('\n').some((line) => line.trim() === readyText)
+          !text
+            .split('\n')
+            .some(
+              (line) =>
+                line.trim() === readyText ||
+                (readyText === 'JPEG ready' &&
+                  /\.jpe?g ready$/i.test(line.trim())),
+            )
         )
       },
       { readyText },
@@ -1898,7 +1905,15 @@ async function runExport(h, d, kind) {
       )
       if (failure) return { state: 'failed', text: failure.text }
       const busy = /Preparing JPEG|Sealing/.test(text)
-      const hasReady = text.split('\n').some((line) => line.trim() === readyText)
+      // Desktop says "JPEG ready"; the mobile dock names the file instead
+      // ("<name>.jpg ready").
+      const hasReady = text
+        .split('\n')
+        .some(
+          (line) =>
+            line.trim() === readyText ||
+            (readyText === 'JPEG ready' && /\.jpe?g ready$/i.test(line.trim())),
+        )
       const download = [...(region?.querySelectorAll('button') ?? [])].some(
         // eslint-disable-next-line unicorn/prefer-dom-node-text-content -- the rendered text a user sees, not hidden nodes
         (element) => element.innerText.trim() === 'Download' && !element.disabled,
