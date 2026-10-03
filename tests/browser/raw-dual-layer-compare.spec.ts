@@ -7,6 +7,8 @@ import { devices, expect, test } from '@playwright/test'
 import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
+  NO_WEBGPU_SKIP_REASON,
+  projectHasWebGPU,
   rawPreviewUrl,
   requireWebGPUFixture,
 } from './raw-preview-backend'
@@ -24,8 +26,8 @@ type PreviewViewport = {
   panY: number
 }
 
-type WebglStats = {
-  // Legacy diagnostic names count either backend: draw, completion wait, submit.
+type GpuStats = {
+  // Render pass draws, completion waits, and queue submits.
   drawCalls: number
   finishCalls: number
   flushCalls: number
@@ -37,17 +39,17 @@ type CompareModeSample = {
   at: number
 }
 
-async function installWebglCounters(page: Page) {
+async function installGpuCounters(page: Page) {
   await page.addInitScript(() => {
     type CounterWindow = Window & {
-      __LUMAFORGE_COMPARE_WEBGL_STATS__?: WebglStats
-      __LUMAFORGE_COMPARE_WEBGL_RESET__?: () => void
+      __LUMAFORGE_COMPARE_GPU_STATS__?: GpuStats
+      __LUMAFORGE_COMPARE_GPU_RESET__?: () => void
     }
     type PatchedFunction = ((...args: unknown[]) => unknown) & {
       __lumaforgeComparePatched?: true
     }
 
-    const stats: WebglStats = {
+    const stats: GpuStats = {
       drawCalls: 0,
       finishCalls: 0,
       flushCalls: 0,
@@ -55,8 +57,8 @@ async function installWebglCounters(page: Page) {
     }
     const counterWindow = window as CounterWindow
 
-    counterWindow.__LUMAFORGE_COMPARE_WEBGL_STATS__ = stats
-    counterWindow.__LUMAFORGE_COMPARE_WEBGL_RESET__ = () => {
+    counterWindow.__LUMAFORGE_COMPARE_GPU_STATS__ = stats
+    counterWindow.__LUMAFORGE_COMPARE_GPU_RESET__ = () => {
       stats.drawCalls = 0
       stats.finishCalls = 0
       stats.flushCalls = 0
@@ -66,10 +68,7 @@ async function installWebglCounters(page: Page) {
     function patchMethod(
       prototype: object | undefined,
       method: string,
-      counter: keyof Pick<
-        WebglStats,
-        'drawCalls' | 'finishCalls' | 'flushCalls'
-      >,
+      counter: keyof Pick<GpuStats, 'drawCalls' | 'finishCalls' | 'flushCalls'>,
     ) {
       if (!prototype) return
 
@@ -89,21 +88,6 @@ async function installWebglCounters(page: Page) {
       target[method] = wrapped
     }
 
-    const webglPrototypes = [
-      typeof WebGLRenderingContext === 'undefined'
-        ? undefined
-        : WebGLRenderingContext.prototype,
-      typeof WebGL2RenderingContext === 'undefined'
-        ? undefined
-        : WebGL2RenderingContext.prototype,
-    ]
-
-    for (const prototype of webglPrototypes) {
-      patchMethod(prototype, 'drawArrays', 'drawCalls')
-      patchMethod(prototype, 'drawElements', 'drawCalls')
-      patchMethod(prototype, 'finish', 'finishCalls')
-      patchMethod(prototype, 'flush', 'flushCalls')
-    }
     const queue =
       typeof GPUQueue === 'undefined' ? undefined : GPUQueue.prototype
     const pass =
@@ -181,7 +165,7 @@ async function readCompareModeSamples(
   })
 }
 
-function expectNoProcessedOnlyAfterDualWebgl(samples: CompareModeSample[]) {
+function expectNoProcessedOnlyAfterDualGpu(samples: CompareModeSample[]) {
   const firstDualIndex = samples.findIndex((sample) => {
     return sample.mode === 'dual-gpu'
   })
@@ -402,31 +386,31 @@ async function waitForCompareMode(page: Page, expected: LayeredCompareMode) {
     .toBe(expected)
 }
 
-async function resetWebglStats(page: Page) {
+async function resetGpuStats(page: Page) {
   await page.evaluate(() => {
     ;(
       window as Window & {
-        __LUMAFORGE_COMPARE_WEBGL_RESET__?: () => void
+        __LUMAFORGE_COMPARE_GPU_RESET__?: () => void
       }
-    ).__LUMAFORGE_COMPARE_WEBGL_RESET__?.()
+    ).__LUMAFORGE_COMPARE_GPU_RESET__?.()
   })
 }
 
-async function waitForWebglStatsIdle(page: Page) {
-  await resetWebglStats(page)
+async function waitForGpuStatsIdle(page: Page) {
+  await resetGpuStats(page)
 
   await expect
     .poll(
       async () => {
         await page.waitForTimeout(3_000)
-        const stats = await readWebglStats(page)
+        const stats = await readGpuStats(page)
         const idle =
           stats.drawCalls === 0 &&
           stats.finishCalls === 0 &&
           stats.flushCalls === 0
 
         if (!idle) {
-          await resetWebglStats(page)
+          await resetGpuStats(page)
         }
 
         return idle
@@ -436,14 +420,14 @@ async function waitForWebglStatsIdle(page: Page) {
     .toBe(true)
 }
 
-async function readWebglStats(page: Page): Promise<WebglStats> {
+async function readGpuStats(page: Page): Promise<GpuStats> {
   return page.evaluate(() => {
     return (
       (
         window as Window & {
-          __LUMAFORGE_COMPARE_WEBGL_STATS__?: WebglStats
+          __LUMAFORGE_COMPARE_GPU_STATS__?: GpuStats
         }
-      ).__LUMAFORGE_COMPARE_WEBGL_STATS__ ?? {
+      ).__LUMAFORGE_COMPARE_GPU_STATS__ ?? {
         drawCalls: 0,
         finishCalls: 0,
         flushCalls: 0,
@@ -463,9 +447,9 @@ async function waitForAnimationFrames(page: Page, count: number) {
   }, count)
 }
 
-async function expectNoSplitOnlyWebglRender(page: Page): Promise<WebglStats> {
+async function expectNoSplitOnlyGpuRender(page: Page): Promise<GpuStats> {
   await waitForAnimationFrames(page, 3)
-  const stats = await readWebglStats(page)
+  const stats = await readGpuStats(page)
   expect(stats.drawCalls).toBe(0)
   expect(stats.finishCalls).toBe(0)
 
@@ -488,7 +472,7 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
 
   await page.setViewportSize({ width: 1440, height: 900 })
   expect(page.viewportSize()).toEqual({ width: 1440, height: 900 })
-  await installWebglCounters(page)
+  await installGpuCounters(page)
   await installCompareModeRecorder(page)
   await page.goto(rawPreviewUrl(testInfo, RAW_COMPARE_URL))
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
@@ -506,11 +490,11 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
   await expect(compareLayer).toBeVisible()
   await expect(page.locator('.raw-preview-original-gpu-canvas')).toHaveCount(1)
   await expectWebGPUPreview(page, testInfo)
-  expect((await readWebglStats(page)).drawCalls).toBeGreaterThan(0)
+  expect((await readGpuStats(page)).drawCalls).toBeGreaterThan(0)
 
-  await waitForWebglStatsIdle(page)
+  await waitForGpuStatsIdle(page)
   const stagedModeSamples = await readCompareModeSamples(page)
-  expectNoProcessedOnlyAfterDualWebgl(stagedModeSamples)
+  expectNoProcessedOnlyAfterDualGpu(stagedModeSamples)
 
   const split = await dragSlider(
     page,
@@ -520,8 +504,8 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
   expect(split.after).toBeGreaterThan(split.before)
   const compareHandleCenterBeforeZoom = await readCompareHandleCenterX(page)
   await expect(compareLayer).toHaveAttribute('data-compare-mode', mode)
-  const splitOnlyWebglStats = await expectNoSplitOnlyWebglRender(page)
-  await resetWebglStats(page)
+  const splitOnlyGpuStats = await expectNoSplitOnlyGpuRender(page)
+  await resetGpuStats(page)
 
   const previewFrame = page.locator('[data-raw-preview-frame]')
   const previewBox = await previewFrame.boundingBox()
@@ -572,9 +556,9 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
   expect(transforms.surface).not.toBe('none')
   expect(transforms.processed).toBe(transforms.original)
 
-  const viewportWebglStats = await readWebglStats(page)
-  expect(viewportWebglStats.drawCalls).toBeLessThanOrEqual(2)
-  expect(viewportWebglStats.finishCalls).toBe(0)
+  const viewportGpuStats = await readGpuStats(page)
+  expect(viewportGpuStats.drawCalls).toBeLessThanOrEqual(2)
+  expect(viewportGpuStats.finishCalls).toBe(0)
 
   await page.mouse.dblclick(
     previewBox!.x + previewBox!.width * 0.2,
@@ -600,8 +584,8 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
         mode,
         viewport: page.viewportSize(),
         split,
-        splitOnlyWebglStats,
-        viewportWebglStats,
+        splitOnlyGpuStats,
+        viewportGpuStats,
         stagedModeSamples,
       },
       null,
@@ -645,7 +629,7 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
 
   try {
     await routeSameOriginFixture(page, sameOriginFixtureUrl)
-    await installWebglCounters(page)
+    await installGpuCounters(page)
     await page.goto(baseURL)
     expect(page.viewportSize()).toEqual({ width: 390, height: 844 })
     await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
@@ -655,7 +639,7 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
       sameOriginFixtureUrl,
       fixtureName,
     )
-    if (testInfo.project.name === 'chromium-webgpu') {
+    if (isDesktopChromiumProject(testInfo)) {
       expect(dropResult.ok, dropResult.reason).toBe(true)
     }
     test.skip(!dropResult.ok, dropResult.reason)
@@ -667,7 +651,7 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
     await page.getByRole('button', { name: /^split compare$/i }).click()
     await waitForCompareMode(page, 'jpeg-fallback')
     await expectWebGPUPreview(page, testInfo)
-    expect((await readWebglStats(page)).drawCalls).toBeGreaterThan(0)
+    expect((await readGpuStats(page)).drawCalls).toBeGreaterThan(0)
 
     const originalLayer = page.locator('.raw-preview-original-layer').first()
     await expect(originalLayer).toBeVisible()
@@ -679,7 +663,7 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
       'data-original-reference-source',
     )
 
-    await waitForWebglStatsIdle(page)
+    await waitForGpuStatsIdle(page)
 
     const split = await dragSlider(
       page,
@@ -688,8 +672,8 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
     )
     expect(split.after).toBeGreaterThan(split.before)
     const compareHandleCenterBeforeZoom = await readCompareHandleCenterX(page)
-    const splitOnlyWebglStats = await expectNoSplitOnlyWebglRender(page)
-    await resetWebglStats(page)
+    const splitOnlyGpuStats = await expectNoSplitOnlyGpuRender(page)
+    await resetGpuStats(page)
 
     const previewFrame = page.locator('[data-raw-preview-frame]')
     const previewBox = await previewFrame.boundingBox()
@@ -785,9 +769,9 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
       viewportAfterInteraction,
     )
 
-    const viewportWebglStats = await readWebglStats(page)
-    expect(viewportWebglStats.drawCalls).toBeLessThanOrEqual(2)
-    expect(viewportWebglStats.finishCalls).toBe(0)
+    const viewportGpuStats = await readGpuStats(page)
+    expect(viewportGpuStats.drawCalls).toBeLessThanOrEqual(2)
+    expect(viewportGpuStats.finishCalls).toBe(0)
     await expectWebGPUPreview(page, testInfo)
 
     await testInfo.attach('raw-mobile-jpeg-fallback-compare.json', {
@@ -803,8 +787,8 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
           finalSource,
           splitAfterInteraction,
           viewportAfterInteraction,
-          splitOnlyWebglStats,
-          viewportWebglStats,
+          splitOnlyGpuStats,
+          viewportGpuStats,
         },
         null,
         2,
@@ -823,6 +807,7 @@ test('validates WebKit-class JPEG fallback compare when local WebKit is availabl
     testInfo.project.name !== 'webkit-ios-safe',
     'WebKit proxy validation runs only on the WebKit mobile project',
   )
+  test.skip(!projectHasWebGPU(testInfo), NO_WEBGPU_SKIP_REASON)
   test.skip(
     !existsSync(RAW_COMPARE_FIXTURE),
     `Missing RAW compare fixture: ${RAW_COMPARE_FIXTURE}`,
@@ -835,7 +820,7 @@ test('validates WebKit-class JPEG fallback compare when local WebKit is availabl
   const fixtureName = fixtureFileName()
   const sameOriginFixtureUrl = `/__lumaforge-test-fixtures/${fixtureName}`
   await routeSameOriginFixture(page, sameOriginFixtureUrl)
-  await installWebglCounters(page)
+  await installGpuCounters(page)
 
   await page.goto(RAW_COMPARE_URL)
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
@@ -864,7 +849,7 @@ test('validates WebKit-class JPEG fallback compare when local WebKit is availabl
     /quick|bounded-hq/,
   )
 
-  await waitForWebglStatsIdle(page)
+  await waitForGpuStatsIdle(page)
 
   const split = await dragSlider(
     page,
@@ -872,7 +857,7 @@ test('validates WebKit-class JPEG fallback compare when local WebKit is availabl
     0.68,
   )
   expect(split.after).toBeGreaterThan(split.before)
-  const splitOnlyWebglStats = await expectNoSplitOnlyWebglRender(page)
+  const splitOnlyGpuStats = await expectNoSplitOnlyGpuRender(page)
 
   const transforms = await readLayerTransforms(page)
   expect(transforms.surface).toBeTruthy()
@@ -888,7 +873,7 @@ test('validates WebKit-class JPEG fallback compare when local WebKit is availabl
           'data-original-reference-source',
         ),
         split,
-        splitOnlyWebglStats,
+        splitOnlyGpuStats,
       },
       null,
       2,

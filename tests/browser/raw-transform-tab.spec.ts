@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url'
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-import { expectWebGPUPreview, rawPreviewUrl } from './raw-preview-backend'
+import {
+  expectWebGPUPreview,
+  NO_WEBGPU_SKIP_REASON,
+  projectHasWebGPU,
+  rawPreviewUrl,
+} from './raw-preview-backend'
 
 const rawPath = fileURLToPath(
   new URL(
@@ -261,6 +266,10 @@ for (const preview of ['gpu', 'cpu'] as const) {
   test(`${preview}: RAW Transform preserves geometry across tabs and tone edits, guards exports, and clears with the RAW session`, async ({
     page,
   }, testInfo) => {
+    test.skip(
+      preview === 'gpu' && !projectHasWebGPU(testInfo),
+      NO_WEBGPU_SKIP_REASON,
+    )
     testInfo.setTimeout(360_000)
     expect(
       existsSync(rawPath),
@@ -292,19 +301,12 @@ for (const preview of ['gpu', 'cpu'] as const) {
       expect(
         await page.locator('.raw-preview-canvas').evaluate((element) => {
           const canvas = element as HTMLCanvasElement
-          if (canvas.dataset.renderBackend === 'webgpu') {
-            const context = canvas.getContext('webgpu')
-            return Boolean(
-              context?.getConfiguration() &&
-              canvas.width > 1 &&
-              canvas.height > 1,
-            )
-          }
-          const context = canvas.getContext('webgl2')
+          const context = canvas.getContext('webgpu')
           return Boolean(
-            context &&
-            !context.isContextLost() &&
-            context.drawingBufferWidth > 1,
+            canvas.dataset.renderBackend === 'webgpu' &&
+            context?.getConfiguration() &&
+            canvas.width > 1 &&
+            canvas.height > 1,
           )
         }),
       ).toBe(true)
@@ -471,6 +473,7 @@ for (const preview of ['gpu', 'cpu'] as const) {
 test('full-resolution export delivers the committed geometry, not a crop of the original', async ({
   page,
 }, testInfo) => {
+  test.skip(!projectHasWebGPU(testInfo), NO_WEBGPU_SKIP_REASON)
   testInfo.setTimeout(360_000)
   expect(
     existsSync(rawPath),

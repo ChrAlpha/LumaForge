@@ -3,26 +3,30 @@ import { existsSync } from 'node:fs'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect } from '@playwright/test'
 
+/** The Chromium project runs the WebGPU preview on a software adapter. */
 export function isDesktopChromiumProject(testInfo: TestInfo) {
-  return ['chromium-desktop', 'chromium-webgpu'].includes(testInfo.project.name)
+  return testInfo.project.name === 'chromium-desktop'
 }
 
 export function rawPreviewUrl(testInfo: TestInfo, path = '/raw') {
-  const url = new URL(
-    path,
-    testInfo.project.use.baseURL ?? 'http://127.0.0.1:4178',
-  )
-  if (
-    testInfo.project.name === 'chromium-webgpu' &&
-    url.searchParams.get('forcePreview') !== 'cpu'
-  ) {
-    url.searchParams.set('forcePreview', 'webgpu')
-  }
-  return url.href
+  return new URL(path, testInfo.project.use.baseURL ?? 'http://127.0.0.1:4178')
+    .href
 }
 
+/**
+ * Whether the project's browser exposes a WebGPU adapter. Playwright's WebKit
+ * build has none (Safari 26 does), so WebKit runs the CPU preview here.
+ */
+export function projectHasWebGPU(testInfo: TestInfo) {
+  return isDesktopChromiumProject(testInfo)
+}
+
+export const NO_WEBGPU_SKIP_REASON =
+  'Needs the GPU preview; this browser build has no WebGPU adapter and runs the CPU preview'
+
+/** The WebGPU project must not silently skip its RAW fixtures. */
 export function requireWebGPUFixture(testInfo: TestInfo, path: string) {
-  if (testInfo.project.name === 'chromium-webgpu') {
+  if (isDesktopChromiumProject(testInfo)) {
     expect(
       existsSync(path),
       `Required WebGPU RAW fixture is missing: ${path}`,
@@ -31,7 +35,7 @@ export function requireWebGPUFixture(testInfo: TestInfo, path: string) {
 }
 
 export async function expectWebGPUPreview(page: Page, testInfo: TestInfo) {
-  if (testInfo.project.name !== 'chromium-webgpu') return
+  if (!isDesktopChromiumProject(testInfo)) return
   await expect(page.locator('.raw-preview-canvas')).toHaveAttribute(
     'data-render-backend',
     'webgpu',

@@ -227,7 +227,7 @@ test('browser preflight records expected export policy before export', async ({
     expect(evacuationPayload?.requiredOwners).toEqual([
       'preview',
       'bounded-hq',
-      'webgl',
+      'gpu',
       'export-result',
       'lut-fetch',
     ])

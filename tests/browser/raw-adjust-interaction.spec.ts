@@ -24,6 +24,8 @@ import { expect, test } from '@playwright/test'
 import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
+  NO_WEBGPU_SKIP_REASON,
+  projectHasWebGPU,
   rawPreviewUrl,
   requireWebGPUFixture,
 } from './raw-preview-backend'
@@ -123,15 +125,21 @@ test('desktop: a press anywhere on an Adjust row grabs the value, Shift halves t
 })
 
 test('mobile: the stage keeps the photo clear of the chrome and returns it in immersive', async ({
-  page,
+  browser,
 }, testInfo) => {
-  test.skip(
-    testInfo.project.name !== 'webkit-ios-safe',
-    'Stage inset contract targets iOS WebKit only',
-  )
+  test.skip(!projectHasWebGPU(testInfo), NO_WEBGPU_SKIP_REASON)
   test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
   testInfo.setTimeout(300_000)
 
+  // A touch phone context on the WebGPU browser; Playwright's WebKit build
+  // has no WebGPU, so it cannot host the GPU stage this contract measures.
+  const context = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+    viewport: { width: 393, height: 852 },
+    isMobile: true,
+    hasTouch: true,
+  })
+  const page = await context.newPage()
   await page.goto('/raw')
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
   await loadMobile(page)
@@ -191,6 +199,7 @@ test('mobile: the stage keeps the photo clear of the chrome and returns it in im
   })
   expect(insets.top).toBe('0px')
   expect(insets.bottom).toBe('0px')
+  await context.close()
 })
 
 test('compare: the split line and its labels hug the photograph', async ({

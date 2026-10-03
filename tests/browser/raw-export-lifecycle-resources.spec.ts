@@ -416,14 +416,14 @@ test('monitors a full desktop RAW export lifecycle with resource diagnostics', a
     expect(evacuationPayload?.requiredOwners).toEqual([
       'preview',
       'bounded-hq',
-      'webgl',
+      'gpu',
       'export-result',
       'lut-fetch',
     ])
     expect(evacuationPayload?.disposedOwners).toEqual([
       'preview',
       'bounded-hq',
-      'webgl',
+      'gpu',
       'export-result',
       'lut-fetch',
     ])

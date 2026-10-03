@@ -25,15 +25,9 @@ export default defineConfig({
       },
     },
     {
+      // The primary GPU path: Chromium with a software WebGPU adapter. Browsers
+      // without WebGPU (including this WebKit build) cover the CPU preview.
       name: 'chromium-desktop',
-      use: {
-        ...devices['Desktop Chrome'],
-        browserName: 'chromium',
-        baseURL: 'http://127.0.0.1:4178',
-      },
-    },
-    {
-      name: 'chromium-webgpu',
       use: {
         ...devices['Desktop Chrome'],
         browserName: 'chromium',
@@ -46,6 +40,7 @@ export default defineConfig({
             '--enable-features=Vulkan',
             '--use-vulkan=swiftshader',
             '--disable-vulkan-surface',
+            // Canvas presentation of WebGPU frames needs the ANGLE compositor.
             '--use-angle=swiftshader',
           ],
         },
