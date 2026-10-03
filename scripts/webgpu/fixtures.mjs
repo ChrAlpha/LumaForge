@@ -5,6 +5,9 @@ export const LIMITS = Object.freeze({
   // WebGPU preview vs the TS export executor, in 8-bit display code values.
   referenceMaxByteError: 2,
   referenceMeanByteError: 0.1,
+  // WebGPU preview vs frozen WebGL output, for paths export does not cover.
+  goldenMaxByteError: 2,
+  goldenMeanByteError: 0.25,
 })
 
 export function makeImage(integer = false, width = 97, height = 65) {
@@ -296,4 +299,40 @@ export function distribution(values) {
     max: sorted.at(-1),
     mean: values.reduce((a, b) => a + b, 0) / values.length,
   }
+}
+
+// Scenarios with no TS export counterpart (the display-sRGB preview input and
+// built-in styles, which export refuses) are held to frozen WebGL output from
+// the last checkout that had both renderers. Partial-strength display-domain
+// LUT blends and wide-gamut display looks are excluded on purpose: the WebGPU
+// preview now matches export there, where WebGL did not.
+export const GOLDEN_STRIDE = 3
+
+export function isGoldenScenario(name) {
+  if (name.startsWith('u16/'))
+    return /^u16\/(?:preset-|transfer-output-linear$)/.test(name)
+  return !/^float\/(?:transfer-|lut-(?:display-look|combined-look-output|technical-output)$|lut-display-look-.+-output$)/.test(
+    name,
+  )
+}
+
+/** RGB bytes of every `stride`-th pixel in both axes of an RGBA frame. */
+export function subsampleRgb(rgba, width, height, stride = GOLDEN_STRIDE) {
+  const out = []
+  for (let y = 0; y < height; y += stride)
+    for (let x = 0; x < width; x += stride) {
+      const offset = (y * width + x) * 4
+      out.push(rgba[offset], rgba[offset + 1], rgba[offset + 2])
+    }
+  return Uint8Array.from(out)
+}
+
+export function bytesToBase64(bytes) {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
+export function base64ToBytes(base64) {
+  return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
 }

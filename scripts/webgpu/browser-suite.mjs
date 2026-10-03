@@ -1,10 +1,12 @@
 import {
+  base64ToBytes,
   LIMITS,
   makeImage,
   pixelDiff,
   readCanvas,
   readPresentedCanvas,
   scenarios,
+  subsampleRgb,
   toDisplayBytes,
 } from './fixtures.mjs'
 import { runPerformance } from './performance.mjs'
@@ -28,7 +30,7 @@ const GRAPH_PARAM_KEYS = [
   'selectiveColor',
 ]
 
-export async function runAcceptance({ iterations, unfilterable }) {
+export async function runAcceptance({ iterations, unfilterable, goldens }) {
   const { TRANSFER_FUNCTIONS, resolveExportColorGraph } =
     await import('@lumaforge/luma-color-runtime')
   const { renderCpuPreviewFrame } =
@@ -48,8 +50,11 @@ export async function runAcceptance({ iterations, unfilterable }) {
     },
     reference:
       'renderCpuPreviewFrame(resolveExportColorGraph(params)): the TS row-band executor behind full-resolution export, lmfg, and the CPU preview',
+    goldens: goldens?.source ?? null,
     limits: LIMITS,
     tests: [],
+    // Scenarios with neither an export counterpart nor a WebGL golden.
+    uncovered: [],
     performance: {},
   }
   window.__webgpuValidationReport = report
@@ -70,6 +75,19 @@ export async function runAcceptance({ iterations, unfilterable }) {
   const REFERENCE = {
     max: LIMITS.referenceMaxByteError,
     mean: LIMITS.referenceMeanByteError,
+  }
+  const GOLDEN = { max: LIMITS.goldenMaxByteError, mean: LIMITS.goldenMeanByteError }
+  const checkGolden = (name, processed, width, height) => {
+    const frame = goldens?.frames?.[name]
+    if (!frame) return false
+    const actual = subsampleRgb(processed, width, height, goldens.stride)
+    const diff = pixelDiff(actual, base64ToBytes(frame), 3)
+    add(
+      `${name}/webgl-golden`,
+      diff.nonfinite === 0 && diff.max <= GOLDEN.max && diff.mean <= GOLDEN.mean,
+      { diff },
+    )
+    return true
   }
 
   const renderReference = (fixture, params, lut, variant) => {
@@ -223,9 +241,12 @@ export async function runAcceptance({ iterations, unfilterable }) {
               referenceFrame(fixture, params, scenario.lut),
               REFERENCE,
             )
-          else if (integer)
-            add(`${name}/reference`, true, {
-              skipped: exportRefusal(params, scenario.lut),
+          else if (!checkGolden(name, processed, fixture.width, fixture.height))
+            report.uncovered.push({
+              name,
+              reason: integer
+                ? exportRefusal(params, scenario.lut)
+                : 'display-sRGB preview input has no export counterpart',
             })
         } catch (error) {
           add(name, false, { error: String(error), stack: error.stack })
