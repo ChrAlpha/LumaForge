@@ -14,6 +14,7 @@ jobs:
       runtime: ${{ steps.detect.outputs.runtime }}
       native: ${{ steps.detect.outputs.native }}
       cli: ${{ steps.detect.outputs.cli }}
+      webgpu: ${{ steps.detect.outputs.webgpu }}
 
     steps:
       - uses: actions/checkout@v4
@@ -56,29 +57,34 @@ jobs:
           app_paths='^(src/|tests/browser/|scripts/(build|deploy|native-runtime)/|packages/luma-(color|jpeg|raw)-runtime/|public/|index\.html|vite\.config\.ts|vitest.*\.config\.ts|tsconfig.*|eslint.*|postcss.*|tailwind.*)'
           runtime_paths='^(packages/luma-(color|jpeg|raw)-runtime/|packages/render-engine/|src/lib/(export|raw|runtime|workers)/|scripts/native-runtime/)'
           native_paths='^(packages/luma-(jpeg|raw)-runtime/native/|scripts/native-runtime/)'
+          webgpu_paths='^(src/lib/webgpu/|packages/luma-color-runtime/|packages/render-engine/src/preview/|scripts/webgpu/)'
           cli_paths='^(packages/lmfg-cli/|packages/lmfg-mcp/|packages/render-engine/|packages/luma-(color|jpeg|raw)-runtime/|packages/luma-native-artifacts/|scripts/native-runtime/)'
 
           app=false
           runtime=false
           native=false
           cli=false
+          webgpu=false
 
           if matches "$force_all"; then
             app=true
             runtime=true
             native=true
             cli=true
+            webgpu=true
           else
             if matches "$app_paths"; then app=true; fi
             if matches "$runtime_paths"; then runtime=true; fi
             if matches "$native_paths"; then native=true; fi
             if matches "$cli_paths"; then cli=true; fi
+            if matches "$webgpu_paths"; then webgpu=true; fi
           fi
 
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
           echo "native=$native" >> "$GITHUB_OUTPUT"
           echo "cli=$cli" >> "$GITHUB_OUTPUT"
+          echo "webgpu=$webgpu" >> "$GITHUB_OUTPUT"
 
   app:
     needs: changes
@@ -126,6 +132,52 @@ jobs:
 
       - name: Verify app build artifact
         run: pnpm run deploy:check
+
+  webgpu:
+    # Holds the WGSL preview to the TS export executor on a software adapter.
+    needs: changes
+    if: ${{ needs.changes.outputs.webgpu == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Configure pnpm store
+        run: pnpm config set store-dir ~/.pnpm-store
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Check WebGPU preview parity
+        run: pnpm test:webgpu --iterations 5 --output webgpu-validation.json
+
+      - name: Upload parity report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: webgpu-validation
+          path: webgpu-validation.json
 
   runtime:
     needs: changes
@@ -361,7 +413,7 @@ jobs:
           pnpm --filter @lumaforge/lmfg-mcp pack:dry-run
 
   build:
-    needs: [changes, app, runtime, native, cli]
+    needs: [changes, app, webgpu, runtime, native, cli]
     if: always()
     runs-on: ubuntu-latest
 
@@ -372,10 +424,11 @@ jobs:
           RUNTIME_RESULT: ${{ needs.runtime.result }}
           NATIVE_RESULT: ${{ needs.native.result }}
           CLI_RESULT: ${{ needs.cli.result }}
+          WEBGPU_RESULT: ${{ needs.webgpu.result }}
         run: |
           set -euo pipefail
 
-          for result in "$APP_RESULT" "$RUNTIME_RESULT" "$NATIVE_RESULT" "$CLI_RESULT"; do
+          for result in "$APP_RESULT" "$WEBGPU_RESULT" "$RUNTIME_RESULT" "$NATIVE_RESULT" "$CLI_RESULT"; do
             case "$result" in
               success|skipped) ;;
               *)
