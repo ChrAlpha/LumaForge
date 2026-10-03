@@ -77,7 +77,7 @@
   "raw.header.fullRes": "全分辨率 JPEG",
   "raw.onboarding.slogan": "用 LUT 完成一张 RAW",
   "raw.exportSourceLoading": "全分辨率导出源还在加载。",
-  "raw.unsupported.webgl2": "GPU 预览不可用",
+  "raw.unsupported.gpu": "GPU 预览不可用",
   "raw.unsupported.coi": "RAW 解码需要跨域隔离支持",
   "raw.unsupported.title": "当前浏览器无法运行 RAW Lab",
   "raw.unsupported.copy": "请尝试使用已启用 GPU 加速的浏览器。",

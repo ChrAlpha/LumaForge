@@ -1,38 +1,23 @@
+import type { CpuPreviewReason, PreviewBackendFacts } from './gpu-backend'
+
 export type RawPreviewCapability =
   | { supportStatus: 'unsupported'; previewMode: null; reason: 'coi-missing' }
-  | {
-      supportStatus: 'degraded'
-      previewMode: 'cpu'
-      reason: 'webgl2-missing' | 'tone-float-precision-low'
-    }
+  | { supportStatus: 'degraded'; previewMode: 'cpu'; reason: CpuPreviewReason }
   | { supportStatus: 'supported'; previewMode: 'gpu'; reason: null }
-
-export type RawPreviewGpuFacts = {
-  webgl2: boolean
-  toneHighPrecision: boolean
-}
 
 /**
  * Pure preview-capability decision. RAW runtime memory-profile selection is
  * handled by the runtime policy layer; this gate only decides whether the
- * interactive preview can use GPU or must degrade to CPU.
+ * interactive preview runs on WebGPU or degrades to the CPU executor.
  */
 export function resolveRawPreviewCapability(
-  gpu: RawPreviewGpuFacts,
-  _crossOriginIsolated?: boolean,
+  facts: Pick<PreviewBackendFacts, 'backend' | 'reason'>,
 ): RawPreviewCapability {
-  if (!gpu.webgl2) {
+  if (facts.backend === 'cpu') {
     return {
       supportStatus: 'degraded',
       previewMode: 'cpu',
-      reason: 'webgl2-missing',
-    }
-  }
-  if (!gpu.toneHighPrecision) {
-    return {
-      supportStatus: 'degraded',
-      previewMode: 'cpu',
-      reason: 'tone-float-precision-low',
+      reason: facts.reason ?? 'webgpu-unavailable',
     }
   }
   return { supportStatus: 'supported', previewMode: 'gpu', reason: null }

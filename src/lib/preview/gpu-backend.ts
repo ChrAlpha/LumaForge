@@ -1,23 +1,30 @@
-import { createWebGL2Context, detectCapabilities } from '~/lib/gl/context'
 import { acquireWebGPUDevice } from '~/lib/webgpu/device'
 
-export type PreviewBackend = 'webgpu' | 'webgl2' | 'cpu'
-type CpuReason = 'webgl2-missing' | 'tone-float-precision-low'
+export type PreviewBackend = 'webgpu' | 'cpu'
+
+/**
+ * Why the interactive preview runs on the CPU executor:
+ * - `webgpu-unavailable`: no WebGPU API, adapter or device, or the probe timed out.
+ * - `gpu-preview-failed`: WebGPU was selected but initialization or the device failed.
+ * - `forced`: a local validation build requested `?forcePreview=cpu`.
+ */
+export type CpuPreviewReason =
+  | 'webgpu-unavailable'
+  | 'gpu-preview-failed'
+  | 'forced'
 
 export interface PreviewBackendFacts {
   readonly backend: PreviewBackend
   readonly maxTextureSize: number
-  readonly maxRenderbufferSize: number
-  readonly toneHighPrecision: boolean
-  readonly reason: CpuReason | null
+  readonly reason: CpuPreviewReason | null
 }
 
 export type PreviewBackendState =
   | { readonly status: 'pending' }
   | { readonly status: 'ready'; readonly facts: PreviewBackendFacts }
-  | { readonly status: 'failed'; readonly error: Error }
 
 const INITIAL_STATE: PreviewBackendState = Object.freeze({ status: 'pending' })
+const WEBGPU_PROBE_TIMEOUT_MS = 5000
 const listeners = new Set<() => void>()
 let state: PreviewBackendState = INITIAL_STATE
 let pending: Promise<PreviewBackendFacts> | null = null
@@ -28,37 +35,28 @@ function publish(next: PreviewBackendState) {
   for (const listener of listeners) listener()
 }
 
-function cpuFacts(reason: CpuReason): PreviewBackendFacts {
-  return Object.freeze({
-    backend: 'cpu',
-    maxTextureSize: 0,
-    maxRenderbufferSize: 0,
-    toneHighPrecision: false,
-    reason,
-  })
+function cpuFacts(reason: CpuPreviewReason): PreviewBackendFacts {
+  return Object.freeze({ backend: 'cpu', maxTextureSize: 0, reason })
 }
 
-export function getPreviewBackendOverride(): PreviewBackend | null {
+/** `?forcePreview=cpu` is honored on dev builds and on localhost only. */
+export function getPreviewBackendOverride(): 'cpu' | null {
   if (typeof window === 'undefined') return null
   const value = new URLSearchParams(window.location.search).get('forcePreview')
+  if (value !== 'cpu') return null
   const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(
     window.location.hostname,
   )
-  if (value === 'cpu' && (!import.meta.env.PROD || local)) return value
-  if (local && (value === 'webgpu' || value === 'webgl2')) return value
-  return null
+  return !import.meta.env.PROD || local ? 'cpu' : null
 }
 
 async function probeWebGPU(): Promise<PreviewBackendFacts> {
   // The probe owns its reference even when the caller stops waiting for it.
   const lease = await acquireWebGPUDevice()
   try {
-    const maxTextureSize = lease.device.limits.maxTextureDimension2D
     return Object.freeze({
       backend: 'webgpu',
-      maxTextureSize,
-      maxRenderbufferSize: maxTextureSize,
-      toneHighPrecision: true,
+      maxTextureSize: lease.device.limits.maxTextureDimension2D,
       reason: null,
     })
   } finally {
@@ -74,7 +72,7 @@ async function boundedWebGPUProbe() {
       new Promise<never>((_, reject) => {
         timeout = setTimeout(
           () => reject(new Error('WebGPU probe timed out')),
-          5000,
+          WEBGPU_PROBE_TIMEOUT_MS,
         )
       }),
     ])
@@ -83,76 +81,25 @@ async function boundedWebGPUProbe() {
   }
 }
 
-function probeWebGL(): PreviewBackendFacts {
-  if (typeof document === 'undefined') return cpuFacts('webgl2-missing')
-  const canvas = document.createElement('canvas')
-  const gl = createWebGL2Context(canvas)
-  if (!gl) return cpuFacts('webgl2-missing')
-  try {
-    const capabilities = detectCapabilities(gl)
-    if (!capabilities.toneHighPrecision)
-      return cpuFacts('tone-float-precision-low')
-    return Object.freeze({
-      backend: 'webgl2',
-      maxTextureSize: capabilities.maxTextureSize,
-      maxRenderbufferSize: Number(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)),
-      toneHighPrecision: true,
-      reason: null,
-    })
-  } finally {
-    gl.getExtension('WEBGL_lose_context')?.loseContext()
-  }
-}
-
 async function probeBackend(): Promise<PreviewBackendFacts> {
-  const forced = getPreviewBackendOverride()
-  if (forced === 'cpu') return cpuFacts('tone-float-precision-low')
-  if (forced !== 'webgl2') {
-    try {
-      return await boundedWebGPUProbe()
-    } catch (error) {
-      if (forced === 'webgpu')
-        throw new Error('WebGPU preview is unavailable on this device.', {
-          cause: error,
-        })
-    }
-  }
-  let facts: PreviewBackendFacts
+  if (getPreviewBackendOverride() === 'cpu') return cpuFacts('forced')
   try {
-    facts = probeWebGL()
+    return await boundedWebGPUProbe()
   } catch {
-    facts = cpuFacts('webgl2-missing')
+    return cpuFacts('webgpu-unavailable')
   }
-  if (forced === 'webgl2' && facts.backend !== 'webgl2') {
-    throw new Error('WebGL2 preview is unavailable on this device.')
-  }
-  return facts
 }
 
 export function resolvePreviewBackend(): Promise<PreviewBackendFacts> {
   if (state.status === 'ready') return Promise.resolve(state.facts)
-  if (state.status === 'failed') return Promise.reject(state.error)
   if (!pending) {
     const requestGeneration = generation
-    pending = probeBackend().then(
-      (facts) => {
-        if (requestGeneration !== generation) return facts
-        if (state.status === 'pending') publish({ status: 'ready', facts })
-        if (state.status === 'failed') throw state.error
-        return state.status === 'ready' ? state.facts : facts
-      },
-      (error: unknown) => {
-        const failure =
-          error instanceof Error ? error : new Error(String(error))
-        if (requestGeneration === generation) {
-          if (state.status === 'pending')
-            publish({ status: 'failed', error: failure })
-          if (state.status === 'ready') return state.facts
-          if (state.status === 'failed') throw state.error
-        }
-        throw failure
-      },
-    )
+    pending = probeBackend().then((facts) => {
+      if (requestGeneration !== generation) return facts
+      // A runtime failure published while probing wins over a late probe.
+      if (state.status === 'pending') publish({ status: 'ready', facts })
+      return state.status === 'ready' ? state.facts : facts
+    })
   }
   return pending
 }
@@ -173,18 +120,9 @@ export function subscribePreviewBackend(listener: () => void): () => void {
 }
 
 /** Renderer initialization/device failures remount the existing CPU surface. */
-export function reportGpuPreviewFailure(error?: unknown): void {
-  const forced = getPreviewBackendOverride()
-  if (forced === 'webgpu' || forced === 'webgl2') {
-    publish({
-      status: 'failed',
-      error:
-        error instanceof Error ? error : new Error(`${forced} preview failed.`),
-    })
-    return
-  }
+export function reportGpuPreviewFailure(): void {
   if (state.status === 'ready' && state.facts.backend === 'cpu') return
-  publish({ status: 'ready', facts: cpuFacts('webgl2-missing') })
+  publish({ status: 'ready', facts: cpuFacts('gpu-preview-failed') })
 }
 
 export function resetPreviewBackendForTest(): void {

@@ -10,7 +10,6 @@ import type { CapabilityVector } from './capability-vector'
 import {
   derivePreviewGpuBudget,
   detectPreviewGpuCapabilitySnapshot,
-  resetPreviewGpuCapabilityForTest,
 } from './preview-gpu-budget'
 
 vi.mock('~/lib/preview/gpu-backend', () => ({
@@ -38,15 +37,12 @@ describe('derivePreviewGpuBudget', () => {
     vi.mocked(getPreviewBackendSnapshot).mockReturnValue(null)
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
-    resetPreviewGpuCapabilityForTest()
   })
 
-  it('uses the resolved WebGPU limits without opening a WebGL context', () => {
+  it('uses the resolved WebGPU limits without opening a canvas', () => {
     vi.mocked(getPreviewBackendSnapshot).mockReturnValue({
       backend: 'webgpu',
       maxTextureSize: 4096,
-      maxRenderbufferSize: 4096,
-      toneHighPrecision: true,
       reason: null,
     })
     const createElement = vi.spyOn(document, 'createElement')
@@ -62,9 +58,7 @@ describe('derivePreviewGpuBudget', () => {
     vi.mocked(getPreviewBackendSnapshot).mockReturnValue({
       backend: 'cpu',
       maxTextureSize: 0,
-      maxRenderbufferSize: 0,
-      toneHighPrecision: false,
-      reason: 'webgl2-missing',
+      reason: 'gpu-preview-failed',
     })
     const gpu = detectPreviewGpuCapabilitySnapshot()!
     expect(gpu.webgl2).toBe(false)
@@ -124,72 +118,9 @@ describe('derivePreviewGpuBudget', () => {
     })
   })
 
-  it('detects WebGL2 through canvas fallback when strict attributes fail', () => {
-    vi.stubGlobal('WebGL2RenderingContext', undefined)
-    const gl = {
-      MAX_TEXTURE_SIZE: 3379,
-      MAX_RENDERBUFFER_SIZE: 34024,
-      getExtension: vi.fn((name: string) =>
-        name === 'WEBGL_lose_context' ? { loseContext: vi.fn() } : null,
-      ),
-      getParameter: vi.fn((parameter: number) => {
-        switch (parameter) {
-          case 3379:
-          case 34024:
-            return 8192
-          default:
-            return 0
-        }
-      }),
-    }
-    const getContext = vi.fn(
-      (_name: string, attributes?: WebGLContextAttributes) =>
-        attributes ? null : gl,
-    )
-    vi.spyOn(document, 'createElement').mockReturnValue({
-      getContext,
-    } as unknown as HTMLCanvasElement)
-
-    expect(detectPreviewGpuCapabilitySnapshot()).toEqual({
-      webgl2: true,
-      maxTextureSize: 8192,
-      maxRenderbufferSize: 8192,
-    })
-    expect(getContext).toHaveBeenCalledWith('webgl2')
-  })
-
-  it('detects WebGL2 through canvas fallback when strict attributes throw', () => {
-    const gl = {
-      MAX_TEXTURE_SIZE: 3379,
-      MAX_RENDERBUFFER_SIZE: 34024,
-      getExtension: vi.fn((name: string) =>
-        name === 'WEBGL_lose_context' ? { loseContext: vi.fn() } : null,
-      ),
-      getParameter: vi.fn((parameter: number) => {
-        switch (parameter) {
-          case 3379:
-          case 34024:
-            return 8192
-          default:
-            return 0
-        }
-      }),
-    }
-    const getContext = vi.fn(
-      (_name: string, attributes?: WebGLContextAttributes) => {
-        if (attributes) throw new Error('strict attributes rejected')
-        return gl
-      },
-    )
-    vi.spyOn(document, 'createElement').mockReturnValue({
-      getContext,
-    } as unknown as HTMLCanvasElement)
-
-    expect(detectPreviewGpuCapabilitySnapshot()).toEqual({
-      webgl2: true,
-      maxTextureSize: 8192,
-      maxRenderbufferSize: 8192,
-    })
-    expect(getContext).toHaveBeenCalledWith('webgl2')
+  it('reports no GPU facts before the preview backend resolves', () => {
+    const createElement = vi.spyOn(document, 'createElement')
+    expect(detectPreviewGpuCapabilitySnapshot()).toBeNull()
+    expect(createElement).not.toHaveBeenCalled()
   })
 })

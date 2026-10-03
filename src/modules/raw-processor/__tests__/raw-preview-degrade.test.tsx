@@ -48,12 +48,12 @@ beforeEach(() => {
 })
 
 describe('rawProcessorView CPU preview degraded path', () => {
-  it('renders workspace shell (not UnsupportedState) when degraded/cpu with tone-float-precision-low', () => {
+  it('renders workspace shell (not UnsupportedState) when degraded/cpu with gpu-preview-failed', () => {
     mockedUseCapabilityGate.mockReturnValue({
       ready: true,
       supportStatus: 'degraded',
       previewMode: 'cpu',
-      reason: 'tone-float-precision-low',
+      reason: 'gpu-preview-failed',
     })
 
     const { container } = render(<RawProcessorView />)
@@ -92,12 +92,12 @@ describe('rawProcessorView CPU preview degraded path', () => {
     ).toBeNull()
   })
 
-  it('renders workspace shell (not UnsupportedState) when degraded/cpu with webgl2-missing', () => {
+  it('renders workspace shell (not UnsupportedState) when degraded/cpu with webgpu-unavailable', () => {
     mockedUseCapabilityGate.mockReturnValue({
       ready: true,
       supportStatus: 'degraded',
       previewMode: 'cpu',
-      reason: 'webgl2-missing',
+      reason: 'webgpu-unavailable',
     })
 
     const { container } = render(<RawProcessorView />)

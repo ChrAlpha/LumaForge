@@ -21,7 +21,6 @@ export interface PreviewGpuBudget {
 
 const DESKTOP_PERFORMANCE_PREVIEW_MAX_PIXELS = 16_000_000
 const DUAL_WEBGL_MIN_DIMENSION = 4096
-let cachedPreviewGpuCapability: PreviewGpuCapabilitySnapshot | null | undefined
 
 function hasKnownLowMemory(capability: CapabilityVector) {
   return capability.deviceMemoryGB != null && capability.deviceMemoryGB <= 4
@@ -118,94 +117,13 @@ export function derivePreviewGpuBudget({
   })
 }
 
-function toPositiveInteger(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : 0
-}
-
-function shouldSkipDefaultCanvasWebgl2Probe(canvas: HTMLCanvasElement) {
-  return (
-    typeof WebGL2RenderingContext === 'undefined' &&
-    typeof HTMLCanvasElement !== 'undefined' &&
-    canvas instanceof HTMLCanvasElement &&
-    canvas.getContext === HTMLCanvasElement.prototype.getContext
-  )
-}
-
-function requestPreviewWebGL2Context(
-  canvas: HTMLCanvasElement,
-): WebGL2RenderingContext | null {
-  try {
-    const strictContext = canvas.getContext('webgl2', {
-      alpha: false,
-      depth: false,
-      stencil: false,
-      antialias: false,
-      premultipliedAlpha: false,
-      preserveDrawingBuffer: false,
-      powerPreference: 'high-performance',
-    })
-    if (strictContext) return strictContext
-  } catch {
-    // Plain WebGL2 is still enough to size preview resources.
-  }
-
-  try {
-    return canvas.getContext('webgl2')
-  } catch {
-    return null
-  }
-}
-
+/** GPU facts come from the resolved preview backend; there is no second probe. */
 export function detectPreviewGpuCapabilitySnapshot(): PreviewGpuCapabilitySnapshot | null {
   const backend = getPreviewBackendSnapshot()
-  if (backend) {
-    return Object.freeze({
-      // Preserve the existing policy ABI; this flag means a usable GPU preview.
-      webgl2: backend.backend !== 'cpu',
-      maxTextureSize: backend.maxTextureSize,
-      maxRenderbufferSize: backend.maxRenderbufferSize,
-    })
-  }
-  if (cachedPreviewGpuCapability !== undefined) {
-    return cachedPreviewGpuCapability
-  }
-
-  if (typeof document === 'undefined') {
-    return null
-  }
-
-  const canvas = document.createElement('canvas')
-  if (shouldSkipDefaultCanvasWebgl2Probe(canvas)) {
-    return null
-  }
-
-  const gl = requestPreviewWebGL2Context(canvas)
-
-  if (!gl) {
-    cachedPreviewGpuCapability = Object.freeze({
-      webgl2: false,
-      maxTextureSize: 0,
-      maxRenderbufferSize: 0,
-    })
-    return cachedPreviewGpuCapability
-  }
-
-  try {
-    cachedPreviewGpuCapability = Object.freeze({
-      webgl2: true,
-      maxTextureSize: toPositiveInteger(gl.getParameter(gl.MAX_TEXTURE_SIZE)),
-      maxRenderbufferSize: toPositiveInteger(
-        gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
-      ),
-    })
-    return cachedPreviewGpuCapability
-  } finally {
-    gl.getExtension('WEBGL_lose_context')?.loseContext()
-  }
-}
-
-export function resetPreviewGpuCapabilityForTest() {
-  cachedPreviewGpuCapability = undefined
+  if (!backend) return null
+  return Object.freeze({
+    webgl2: backend.backend !== 'cpu',
+    maxTextureSize: backend.maxTextureSize,
+    maxRenderbufferSize: backend.maxTextureSize,
+  })
 }

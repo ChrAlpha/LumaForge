@@ -1,44 +1,31 @@
 import {
-  getPreviewBackendSnapshot,
   reportGpuPreviewFailure,
   resolvePreviewBackend,
 } from '~/lib/preview/gpu-backend'
-
-import { RawProcessingPipeline as WebGLPipeline } from './webgl-pipeline'
+import type { WebGPUProcessingPipeline } from '~/lib/webgpu/pipeline'
 
 export * from './webgl-pipeline'
 
-/** Public renderer contract, without the backend's private resource state. */
-export type PreviewPipelineBackend = Pick<WebGLPipeline, keyof WebGLPipeline>
+/** Public renderer contract, without the executor's private resource state. */
+export type PreviewPipelineBackend = Pick<
+  WebGPUProcessingPipeline,
+  keyof WebGPUProcessingPipeline
+>
 
-type Renderer = PreviewPipelineBackend & {
-  waitForGpu?: () => Promise<void>
-  readProcessedPixelsAsync?: () => Promise<Float32Array | null>
-  onLost?: (listener: (error: Error) => void) => () => void
-  getResourceStats?: () => { estimatedBytes: number }
-}
-
-/** Stable preview boundary shared by interactive, compare, and export clients. */
-export class RawProcessingPipeline implements PreviewPipelineBackend {
-  private activeRenderer: Renderer | null = null
-  private backendName: 'webgpu' | 'webgl2' | null = null
+/**
+ * Stable preview boundary shared by interactive, compare, and export clients.
+ * Construction is synchronous; `initialize()` resolves the preview backend and
+ * lazy-loads the WebGPU executor. A CPU backend is never rendered from here.
+ */
+export class RawProcessingPipeline {
+  private activeRenderer: WebGPUProcessingPipeline | null = null
+  private backendName: 'webgpu' | null = null
   private disposed = false
   private initialization: Promise<void> | null = null
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
-    // Preserve the existing synchronous WebGL interface in environments with
-    // no WebGPU API. WebGPU-capable browsers select a backend asynchronously.
-    if (
-      typeof navigator === 'undefined' ||
-      !navigator.gpu ||
-      getPreviewBackendSnapshot()?.backend === 'webgl2'
-    ) {
-      this.activeRenderer = new WebGLPipeline(canvas)
-      this.backendName = 'webgl2'
-    }
-  }
+  constructor(private readonly canvas: HTMLCanvasElement) {}
 
-  private get renderer(): Renderer {
+  private get renderer(): WebGPUProcessingPipeline {
     if (!this.activeRenderer)
       throw new Error('PREVIEW_PIPELINE_NOT_INITIALIZED')
     return this.activeRenderer
@@ -55,30 +42,25 @@ export class RawProcessingPipeline implements PreviewPipelineBackend {
   private async initializeRenderer() {
     try {
       if (this.disposed) throw new Error('PREVIEW_PIPELINE_DISPOSED')
-      if (!this.activeRenderer) {
-        const facts = await resolvePreviewBackend()
-        if (this.disposed) throw new Error('PREVIEW_PIPELINE_DISPOSED')
-        if (facts.backend === 'cpu') throw new Error('GPU_PREVIEW_UNAVAILABLE')
-        this.backendName = facts.backend
-        if (facts.backend === 'webgpu') {
-          const { WebGPUProcessingPipeline } =
-            await import('~/lib/webgpu/pipeline')
-          if (this.disposed) throw new Error('PREVIEW_PIPELINE_DISPOSED')
-          this.activeRenderer = new WebGPUProcessingPipeline(this.canvas)
-        } else this.activeRenderer = new WebGLPipeline(this.canvas)
-      }
+      const facts = await resolvePreviewBackend()
+      if (this.disposed) throw new Error('PREVIEW_PIPELINE_DISPOSED')
+      if (facts.backend !== 'webgpu') throw new Error('GPU_PREVIEW_UNAVAILABLE')
+      this.backendName = 'webgpu'
+      const { WebGPUProcessingPipeline } = await import('~/lib/webgpu/pipeline')
+      if (this.disposed) throw new Error('PREVIEW_PIPELINE_DISPOSED')
+      this.activeRenderer = new WebGPUProcessingPipeline(this.canvas)
       await this.renderer.initialize()
       if (this.disposed) {
         this.renderer.dispose({ releaseContext: true })
         throw new Error('PREVIEW_PIPELINE_DISPOSED')
       }
-      this.canvas.dataset.renderBackend = this.backendName!
-      this.renderer.onLost?.((error) => {
-        if (!this.disposed) reportGpuPreviewFailure(error)
+      this.canvas.dataset.renderBackend = this.backendName
+      this.renderer.onLost(() => {
+        if (!this.disposed) reportGpuPreviewFailure()
       })
     } catch (error) {
       if (!this.disposed && this.backendName === 'webgpu')
-        reportGpuPreviewFailure(error)
+        reportGpuPreviewFailure()
       throw error
     }
   }
@@ -112,19 +94,12 @@ export class RawProcessingPipeline implements PreviewPipelineBackend {
   }
 
   /** Wait only when a consumer needs completed pixels; never issue a new draw. */
-  async waitForGpu(): Promise<void> {
-    if (this.renderer.waitForGpu) await this.renderer.waitForGpu()
-    else this.canvas.getContext('webgl2')?.finish()
+  waitForGpu(): Promise<void> {
+    return this.renderer.waitForGpu()
   }
 
-  readProcessedPixels() {
-    return this.renderer.readProcessedPixels()
-  }
-
-  async readProcessedPixelsAsync(): Promise<Float32Array | null> {
-    if (this.renderer.readProcessedPixelsAsync)
-      return this.renderer.readProcessedPixelsAsync()
-    return this.renderer.readProcessedPixels()
+  readProcessedPixelsAsync(): Promise<Float32Array | null> {
+    return this.renderer.readProcessedPixelsAsync()
   }
 
   renderToHiddenCanvas(
@@ -150,7 +125,7 @@ export class RawProcessingPipeline implements PreviewPipelineBackend {
   }
 
   getResourceStats() {
-    return this.activeRenderer?.getResourceStats?.() ?? { estimatedBytes: 0 }
+    return this.activeRenderer?.getResourceStats() ?? { estimatedBytes: 0 }
   }
 
   dispose(...args: Parameters<PreviewPipelineBackend['dispose']>) {

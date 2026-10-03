@@ -126,8 +126,8 @@ export function localizeRawReason(reason: string | undefined, t: Translate) {
     return t('raw.exportSourceLoading')
   }
 
-  if (reason === enMessages['raw.unsupported.webgl2']) {
-    return t('raw.unsupported.webgl2')
+  if (reason === enMessages['raw.unsupported.gpu']) {
+    return t('raw.unsupported.gpu')
   }
 
   if (reason === enMessages['raw.export.copyUnsupported']) {

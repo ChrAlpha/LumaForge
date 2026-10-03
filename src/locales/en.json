@@ -77,7 +77,7 @@
   "raw.header.fullRes": "Full-res JPEG",
   "raw.onboarding.slogan": "Finish a RAW with a LUT",
   "raw.exportSourceLoading": "Full-resolution export source is still loading.",
-  "raw.unsupported.webgl2": "GPU preview is unavailable",
+  "raw.unsupported.gpu": "GPU preview is unavailable",
   "raw.unsupported.coi": "Cross-origin isolation is required for RAW decode",
   "raw.unsupported.title": "This browser cannot run the RAW Lab",
   "raw.unsupported.copy": "Try a browser with GPU acceleration enabled.",

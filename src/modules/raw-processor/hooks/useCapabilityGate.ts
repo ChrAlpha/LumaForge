@@ -12,13 +12,6 @@ import { resolveRawPreviewCapability } from '~/lib/preview/raw-preview-capabilit
 export type RawCapabilityGate =
   | ({ ready: true } & RawPreviewCapability)
   | { ready: false; supportStatus: 'checking'; previewMode: null; reason: null }
-  | {
-      ready: true
-      supportStatus: 'unsupported'
-      previewMode: null
-      reason: 'gpu-unavailable'
-      failureMessage: string
-    }
 
 export function useCapabilityGate(): RawCapabilityGate {
   const state = useSyncExternalStore(
@@ -27,8 +20,8 @@ export function useCapabilityGate(): RawCapabilityGate {
     getServerPreviewBackendState,
   )
   useEffect(() => {
-    // Failures are published by the resolver and rendered by this same store.
-    void resolvePreviewBackend().catch(() => {})
+    // The resolver never rejects: an unusable GPU resolves to the CPU backend.
+    void resolvePreviewBackend()
   }, [])
   if (state.status === 'pending') {
     return {
@@ -38,28 +31,5 @@ export function useCapabilityGate(): RawCapabilityGate {
       reason: null,
     }
   }
-  if (state.status === 'failed') {
-    return {
-      ready: true,
-      supportStatus: 'unsupported',
-      previewMode: null,
-      reason: 'gpu-unavailable',
-      failureMessage: state.error.message,
-    }
-  }
-  if (state.facts.backend === 'cpu') {
-    return {
-      ready: true,
-      supportStatus: 'degraded',
-      previewMode: 'cpu',
-      reason: state.facts.reason ?? 'webgl2-missing',
-    }
-  }
-  return {
-    ready: true,
-    ...resolveRawPreviewCapability({
-      webgl2: true,
-      toneHighPrecision: state.facts.toneHighPrecision,
-    }),
-  }
+  return { ready: true, ...resolveRawPreviewCapability(state.facts) }
 }

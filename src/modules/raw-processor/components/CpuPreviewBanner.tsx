@@ -1,13 +1,14 @@
 /**
  * Dismissible degraded-GPU notice shown when the CPU preview safety net
- * is active because WebGL2 is unavailable or float precision is too low.
+ * is active because WebGPU is unavailable or the GPU preview failed.
  */
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
+import type { CpuPreviewReason } from '~/lib/preview/gpu-backend'
 
 export interface CpuPreviewBannerProps {
-  reason: 'webgl2-missing' | 'tone-float-precision-low'
+  reason: CpuPreviewReason
   onDismiss?: () => void
   className?: string
 }

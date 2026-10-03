@@ -145,16 +145,12 @@ export function useRawProcessorViewController({
   const isCpuMode = capability.ready && capability.previewMode === 'cpu'
   const unsupportedReason =
     capability.ready && capability.supportStatus === 'unsupported'
-      ? capability.reason === 'coi-missing'
-        ? t('raw.unsupported.coi')
-        : 'failureMessage' in capability
-          ? capability.failureMessage
-          : t('raw.unsupported.webgl2')
-      : t('raw.unsupported.webgl2')
+      ? t('raw.unsupported.coi')
+      : t('raw.unsupported.gpu')
   const cpuPreviewReason =
     capability.supportStatus === 'degraded'
       ? capability.reason
-      : 'webgl2-missing'
+      : 'webgpu-unavailable'
 
   return {
     workflow,

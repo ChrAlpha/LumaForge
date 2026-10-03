@@ -6,7 +6,7 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it, vi } from 'vitest'
 
-import { RawProcessingPipeline } from './pipeline'
+import { RawProcessingPipeline } from './webgl-pipeline'
 
 const contextMock = vi.hoisted(() => {
   const capabilities = {
