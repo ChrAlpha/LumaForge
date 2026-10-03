@@ -1,14 +1,35 @@
-import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
+import {
+  getLUTColorProfile,
+  getProPhotoToTargetMatrix,
+} from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import {
   createProcessShader,
+  PROCESS_FRAGMENT_SHADER_U16,
   UNIFORM_BUFFER_STRUCT,
   VERTEX_SHADER,
 } from './shaders'
 import { getShaderSpecialization } from './specialization'
 import { UNIFORM_BUFFER_SIZE, UNIFORM_FIELDS } from './uniform-layout'
 import { DEFAULT_PARAMS } from './uniforms'
+
+describe('webGPU linear ProPhoto input', () => {
+  it('keeps the inlined ProPhoto to sRGB matrix in sync with the export executor', () => {
+    const body = PROCESS_FRAGMENT_SHADER_U16.split(
+      'fn linearProPhotoToLinearSrgb(color: vec3f) -> vec3f {',
+    )[1]!.split('}')[0]!
+    const rows = Array.from(
+      body.matchAll(/dot\(color, vec3f\(([^)]+)\)\)/g),
+      (match) => match[1]!.split(',').map(Number),
+    )
+    expect(rows).toHaveLength(3)
+    const computed = getProPhotoToTargetMatrix('srgb-rec709')
+    for (let row = 0; row < 3; row++)
+      for (let column = 0; column < 3; column++)
+        expect(rows[row]![column]).toBeCloseTo(computed[row * 3 + column]!, 6)
+  })
+})
 
 describe('webGPU display-domain LUT blending', () => {
   it('blends partial-strength display and output LUTs against the unclamped base like export', () => {
