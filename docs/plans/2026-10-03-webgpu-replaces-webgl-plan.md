@@ -64,3 +64,19 @@ Candidate: this branch after unit 8 (WebGPU, CPU fallback).
    `?forcePreview=cpu`: every tool, sheet, dock mode, scrub HUD, reset, file
    replacement, and console errors.
 4. Record evidence in `docs/audits/2026-10-03-webgpu-migration-qa.md`.
+
+## Follow-ups that landed during execution
+
+- Holding the preview to the export executor exposed two preview-vs-export
+  mismatches that the WebGL preview shared: partial-strength display-domain
+  LUT blending (up to 35/255) and display looks with a declared wide output
+  gamut (up to 153/255). Both were fixed on the GPU side.
+- An independent review led to: auxiliary GPU pipelines no longer flipping the
+  whole app to CPU, device-loss replay to late subscribers, removal of the
+  render option and synchronous readback that only threw, a WGSL matrix sync
+  test, WebGL goldens for paths without an export oracle, and a CI job.
+- Browser QA in CPU mode surfaced a pre-existing RAW worker lifetime bug: the
+  decode bridge's 10 s idle timer killed open sessions, disabling
+  full-resolution and HQ preview export for large RAWs on slow machines in
+  both preview modes. Fixed by leasing the worker to open sessions.
+

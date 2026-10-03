@@ -53,9 +53,15 @@ the cost is interaction latency, live dual-layer compare, and the histogram
     backend, lazy-loads the WebGPU executor, and reports device loss to the
     backend store. It never constructs any other renderer.
   - `pipeline.ts`: `WebGPUProcessingPipeline`, the executor.
-  - `contract.ts`: renderer-neutral types and helpers (`RawUploadInput`,
-    `PipelineStats`, `ExportRenderStats`, `RenderOptions`,
-    `PipelineTelemetrySnapshot`, `PreviewGpuCapabilities`, ...).
+  - `contract.ts`: renderer-neutral types (`RawUploadInput`, `PipelineStats`,
+    `ExportRenderStats`, `PipelineTelemetrySnapshot`,
+    `PreviewGpuCapabilities`, ...). `render()` only requests a frame; callers
+    await `waitForGpu()` when they need completed pixels. Readback is
+    asynchronous only.
+  - Only the primary preview pipeline reports failures to the backend store.
+    Auxiliary pipelines (the original compare layer, reference snapshots) are
+    constructed with `reportFailures: false` and degrade compare along the
+    ladder instead of moving the whole preview to the CPU.
   - `lut-profile.ts`: LUT contract to shader-uniform resolution.
   - `export-plan.ts`: HQ preview snapshot planning (tiles, crop, errors).
 - `src/lib/gl/` no longer exists.
@@ -97,7 +103,11 @@ the cost is interaction latency, live dual-layer compare, and the histogram
    authoritative TS executor: for each scenario, the WebGPU processed output is
    compared with `renderCpuPreviewFrame` driven by `resolveExportColorGraph`
    for the same params. This is the contract that matters to users, preview
-   agrees with export, and it replaces "WGSL agrees with GLSL".
+   agrees with export, and it replaces "WGSL agrees with GLSL". Paths export
+   does not cover (built-in styles, the display-sRGB preview input) are held to
+   WebGL output frozen from e9ccf140 (`scripts/webgpu/goldens.json`), and the
+   harness lists anything left without an oracle instead of passing it. CI runs
+   the harness in a `webgpu` job.
 3. **Unit tests.** WebGPU unit tests stay; WebGL unit tests are deleted with
    their implementation; contract/planning tests move with their modules.
 4. **Browser specs.** The primary Chromium project runs with software WebGPU;
