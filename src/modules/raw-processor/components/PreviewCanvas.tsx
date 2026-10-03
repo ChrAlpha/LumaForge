@@ -16,11 +16,11 @@ import {
 } from 'react'
 
 import { clsxm } from '~/lib/cn'
-import type { PipelineStats } from '~/lib/gl/pipeline'
-import { RawProcessingPipeline } from '~/lib/gl/pipeline'
 import { useI18n } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { Spring } from '~/lib/spring'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
+import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { DisplaySource } from '../model/session'
 import type { CompareRenderMode } from '../services/compare/compare-render-mode'

@@ -1,8 +1,8 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 
-import type { RawUploadInput } from '~/lib/gl/pipeline'
-import { RawProcessingPipeline } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
+import type { RawUploadInput } from '~/lib/webgpu/raw-processing-pipeline'
+import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { OriginalReferenceSnapshot } from './original-reference-snapshot'
 

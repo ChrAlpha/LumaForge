@@ -43,7 +43,7 @@ const pipelineMock = vi.hoisted(() => ({
   }>,
 }))
 
-vi.mock('~/lib/gl/pipeline', () => ({
+vi.mock('~/lib/webgpu/raw-processing-pipeline', () => ({
   RawProcessingPipeline: vi
     .fn()
     .mockImplementation((canvas: HTMLCanvasElement) => {

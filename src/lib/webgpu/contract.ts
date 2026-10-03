@@ -14,33 +14,11 @@ export type {
 } from '@lumaforge/luma-color-runtime'
 
 export interface PreviewGpuCapabilities {
-  webgl2: boolean
   maxTextureSize: number
   max3DTextureSize: number
-  floatTextures: boolean
-  floatTexturesLinear: boolean
-  halfFloatTextures: boolean
-  halfFloatTexturesLinear: boolean
-  colorBufferFloat: boolean
-  colorBufferHalfFloat: boolean
-  maxVertexUniformVectors: number
-  maxFragmentUniformVectors: number
-  maxVaryingVectors: number
-  fragmentHighFloatPrecision: number
-  fragmentHighFloatRangeMin: number
-  fragmentHighFloatRangeMax: number
-  toneHighPrecision: boolean
+  float32Filterable: boolean
   rendererInfo: string
   vendorInfo: string
-}
-
-export type ProcessTargetPrecision = 'rgba16f' | 'rgba8'
-
-export type PipelineCapabilityWarningCode = 'LOW_PRECISION_RENDER_TARGET'
-
-export interface PipelineCapabilityWarning {
-  code: PipelineCapabilityWarningCode
-  message: string
 }
 
 export interface PipelineStats {
@@ -56,8 +34,6 @@ export interface PipelineStats {
   lutInputTransfer: TransferFunctionId | null
   lutOutputTransfer: TransferFunctionId | null
   lutSize: number | null
-  processTargetPrecision: ProcessTargetPrecision
-  capabilityWarnings: PipelineCapabilityWarning[]
 }
 
 export interface RenderOptions {
@@ -100,8 +76,6 @@ export interface PipelineTelemetrySnapshot {
   lutInputTransfer: TransferFunctionId | null
   lutOutputTransfer: TransferFunctionId | null
   lutSize: number | null
-  processTargetPrecision: ProcessTargetPrecision
-  capabilityWarnings: PipelineCapabilityWarning[]
 }
 
 export interface ExportRenderStats extends PipelineTelemetrySnapshot {
@@ -121,24 +95,4 @@ export interface ExportRenderStats extends PipelineTelemetrySnapshot {
   failureCode?: string
   failureMessage?: string
   retryable?: boolean
-}
-
-export function describeRawUploadInput(input: RawUploadInput): {
-  inputFormat: RawUploadInputFormat
-  channelCount: 3 | 4
-  bytesPerPixel: 6 | 16
-} {
-  if (input.layout === 'rgb-u16') {
-    return {
-      inputFormat: 'uint16-rgb',
-      channelCount: 3,
-      bytesPerPixel: 6,
-    }
-  }
-
-  return {
-    inputFormat: 'float-rgba',
-    channelCount: 4,
-    bytesPerPixel: 16,
-  }
 }

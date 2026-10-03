@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { RawProcessingPipeline } from '~/lib/gl/pipeline'
-import { RawProcessingPipeline as DefaultRawProcessingPipeline } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
+import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
+import { RawProcessingPipeline as DefaultRawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import { createRawUploadInput } from './preview-canvas-helpers'
 

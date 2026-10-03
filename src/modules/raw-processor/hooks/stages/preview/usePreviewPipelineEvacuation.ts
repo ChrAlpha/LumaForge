@@ -2,7 +2,7 @@ import type { MutableRefObject } from 'react'
 import { useCallback, useRef } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
-import type { RawProcessingPipeline } from '~/lib/gl/pipeline'
+import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 export type PreviewPipelineEvacuationHandle = Pick<
   RawProcessingPipeline,

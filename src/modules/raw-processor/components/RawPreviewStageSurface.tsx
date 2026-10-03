@@ -1,6 +1,9 @@
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 
-import type { PipelineStats, RawProcessingPipeline } from '~/lib/gl/pipeline'
+import type {
+  PipelineStats,
+  RawProcessingPipeline,
+} from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
 import { clampCompareSplit } from '../services/compare/compare-split'

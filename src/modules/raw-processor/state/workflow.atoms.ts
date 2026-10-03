@@ -1,9 +1,9 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { atom } from 'jotai'
 
-import type { PipelineStats } from '~/lib/gl/pipeline'
 import { createAtomHooks } from '~/lib/jotai'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ProcessingStatus } from '../model/workflow'
 

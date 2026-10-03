@@ -2,7 +2,7 @@ import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
 import { useCallback } from 'react'
 
-import type { PipelineStats } from '~/lib/gl/pipeline'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ProcessingStatus } from '../model/workflow'
 

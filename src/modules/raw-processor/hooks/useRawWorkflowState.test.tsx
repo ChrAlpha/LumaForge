@@ -25,8 +25,6 @@ describe('useRawWorkflowState', () => {
       lutInputTransfer: null,
       lutOutputTransfer: null,
       lutSize: null,
-      processTargetPrecision: 'rgba16f' as const,
-      capabilityWarnings: [],
     }
 
     act(() => {

@@ -2,9 +2,18 @@ import {
   reportGpuPreviewFailure,
   resolvePreviewBackend,
 } from '~/lib/preview/gpu-backend'
-import type { WebGPUProcessingPipeline } from '~/lib/webgpu/pipeline'
 
-export * from './webgl-pipeline'
+import type { WebGPUProcessingPipeline } from './pipeline'
+
+export type {
+  ExportRenderStats,
+  PipelineStats,
+  PipelineTelemetrySnapshot,
+  PipelineTransformPath,
+  RawUploadInput,
+  RawUploadInputFormat,
+  RenderOptions,
+} from './contract'
 
 /** Public renderer contract, without the executor's private resource state. */
 export type PreviewPipelineBackend = Pick<
@@ -46,7 +55,7 @@ export class RawProcessingPipeline {
       if (this.disposed) throw new Error('PREVIEW_PIPELINE_DISPOSED')
       if (facts.backend !== 'webgpu') throw new Error('GPU_PREVIEW_UNAVAILABLE')
       this.backendName = 'webgpu'
-      const { WebGPUProcessingPipeline } = await import('~/lib/webgpu/pipeline')
+      const { WebGPUProcessingPipeline } = await import('./pipeline')
       if (this.disposed) throw new Error('PREVIEW_PIPELINE_DISPOSED')
       this.activeRenderer = new WebGPUProcessingPipeline(this.canvas)
       await this.renderer.initialize()

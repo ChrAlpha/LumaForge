@@ -1,8 +1,8 @@
 import type { MutableRefObject } from 'react'
 import { useEffect } from 'react'
 
-import type { PipelineStats } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'

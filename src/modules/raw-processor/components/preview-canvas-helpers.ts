@@ -1,4 +1,7 @@
-import type { RawProcessingPipeline, RawUploadInput } from '~/lib/gl/pipeline'
+import type {
+  RawProcessingPipeline,
+  RawUploadInput,
+} from '~/lib/webgpu/raw-processing-pipeline'
 
 export type RawUploadPipeline = Pick<
   RawProcessingPipeline,

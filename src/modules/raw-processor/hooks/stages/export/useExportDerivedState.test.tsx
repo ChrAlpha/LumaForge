@@ -1,8 +1,8 @@
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import type { PipelineStats } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type { ExportResult } from '../../../model/export-result'

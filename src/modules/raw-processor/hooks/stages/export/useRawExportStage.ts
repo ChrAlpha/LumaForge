@@ -6,8 +6,11 @@ import type {
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
-import type { PipelineStats, RawProcessingPipeline } from '~/lib/gl/pipeline'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
+import type {
+  PipelineStats,
+  RawProcessingPipeline,
+} from '~/lib/webgpu/raw-processing-pipeline'
 
 import type {
   DisplaySource,

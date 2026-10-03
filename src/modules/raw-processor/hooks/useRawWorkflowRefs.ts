@@ -6,9 +6,9 @@ import { useMemo, useRef } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
-import type { RawProcessingPipeline } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
+import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession } from '../model/session'
 

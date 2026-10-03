@@ -3,7 +3,6 @@ import { deriveInteractivePolicy } from '@lumaforge/render-engine/policy'
 import { createProgressivePreviewPlan } from '@lumaforge/render-engine/preview'
 import { toast } from 'sonner'
 
-import type { PipelineStats } from '~/lib/gl/pipeline'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import { resolvePreviewBackend } from '~/lib/preview/gpu-backend'
 import type { DecodedImage } from '~/lib/raw/decoder'
@@ -18,6 +17,7 @@ import {
   derivePreviewGpuBudget,
   detectPreviewGpuCapabilitySnapshot,
 } from '~/lib/runtime/preview-gpu-budget'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { DisplaySource, ImageSession } from '../../model/session'
 import type { RetainedSessionState } from '../../model/session-factory'

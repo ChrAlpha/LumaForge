@@ -1,9 +1,12 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
 
 import { clsxm } from '~/lib/cn'
-import type { PipelineStats, RawProcessingPipeline } from '~/lib/gl/pipeline'
 import { useI18n } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
+import type {
+  PipelineStats,
+  RawProcessingPipeline,
+} from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { DisplaySource } from '../model/session'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'

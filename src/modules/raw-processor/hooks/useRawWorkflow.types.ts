@@ -9,10 +9,13 @@ import type {
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { RefObject } from 'react'
 
-import type { PipelineStats, RawProcessingPipeline } from '~/lib/gl/pipeline'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
+import type {
+  PipelineStats,
+  RawProcessingPipeline,
+} from '~/lib/webgpu/raw-processing-pipeline'
 
 import type {
   ExportResult,

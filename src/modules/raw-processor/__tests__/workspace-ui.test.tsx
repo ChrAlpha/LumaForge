@@ -312,8 +312,11 @@ async function clickOverlayAt(
   }
 }
 
-vi.mock('~/lib/gl/pipeline', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('~/lib/gl/pipeline')>()
+vi.mock('~/lib/webgpu/raw-processing-pipeline', async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import('~/lib/webgpu/raw-processing-pipeline')
+    >()
 
   return {
     ...actual,

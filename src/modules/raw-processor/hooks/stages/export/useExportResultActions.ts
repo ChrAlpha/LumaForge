@@ -2,7 +2,10 @@ import type { MutableRefObject } from 'react'
 import { useCallback } from 'react'
 
 import { emitExportDebugEvent } from '~/lib/export/execution-profile'
-import type { PipelineStats, RawProcessingPipeline } from '~/lib/gl/pipeline'
+import type {
+  PipelineStats,
+  RawProcessingPipeline,
+} from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ExportResult } from '../../../model/export-result'
 import type {

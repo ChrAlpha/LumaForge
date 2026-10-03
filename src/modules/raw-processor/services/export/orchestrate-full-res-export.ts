@@ -17,8 +17,11 @@ import {
 import type { FullResWorkerCheckpointConfig } from '~/lib/export/full-res-export-client'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createSourceFingerprint } from '~/lib/export/source-fingerprint'
-import type { PipelineStats, RawProcessingPipeline } from '~/lib/gl/pipeline'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
+import type {
+  PipelineStats,
+  RawProcessingPipeline,
+} from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ExportResult } from '../../model/export-result'
 import type { ExportRecoveryState, ImageSession } from '../../model/session'

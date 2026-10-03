@@ -1,7 +1,7 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 
-import type { RawProcessingPipeline } from '~/lib/gl/pipeline'
+import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 import { previewDimensions } from '~/modules/transform-demo/image-input'
 import type { PreviewSource } from '~/modules/transform-demo/preview-types'
 

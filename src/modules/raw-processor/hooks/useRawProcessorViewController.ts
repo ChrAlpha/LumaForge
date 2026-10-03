@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type { PipelineStats, RawProcessingPipeline } from '~/lib/gl/pipeline'
 import { useI18n } from '~/lib/i18n'
+import type {
+  PipelineStats,
+  RawProcessingPipeline,
+} from '~/lib/webgpu/raw-processing-pipeline'
 
 import { RAW_FILE_ACCEPT } from '../components/Dropzone'
 import { useRawRuntimeReadiness } from './stages/ingest/useRawRuntimeReadiness'

@@ -1,7 +1,10 @@
 import type { MutableRefObject } from 'react'
 
-import type { PipelineStats, RawProcessingPipeline } from '~/lib/gl/pipeline'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
+import type {
+  PipelineStats,
+  RawProcessingPipeline,
+} from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ProcessingStatus } from '../model/workflow'
 import type { useRawCalibrationStage } from './stages/calibration/useRawCalibrationStage'

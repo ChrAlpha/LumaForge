@@ -16,8 +16,11 @@ vi.mock('../hooks/useCapabilityGate', () => ({
   useCapabilityGate: mockUseCapabilityGate,
 }))
 
-vi.mock('~/lib/gl/pipeline', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('~/lib/gl/pipeline')>()
+vi.mock('~/lib/webgpu/raw-processing-pipeline', async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import('~/lib/webgpu/raw-processing-pipeline')
+    >()
 
   return {
     ...actual,
@@ -43,8 +46,6 @@ vi.mock('~/lib/gl/pipeline', async (importOriginal) => {
           lutInputTransfer: null,
           lutOutputTransfer: null,
           lutSize: null,
-          processTargetPrecision: 'rgba16f',
-          capabilityWarnings: [],
         }
       }
       dispose() {}
@@ -132,8 +133,6 @@ function createLoadedProcessorState(
       lutInputTransfer: null,
       lutOutputTransfer: null,
       lutSize: null,
-      processTargetPrecision: 'rgba16f',
-      capabilityWarnings: [],
     },
     hasImage: true,
     canExport: true,

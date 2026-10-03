@@ -2,7 +2,6 @@ import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 
 import type { ExportResourceCleanupReason } from '~/lib/export/execution-profile'
-import type { PipelineStats } from '~/lib/gl/pipeline'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type {
@@ -10,6 +9,7 @@ import type {
   PrewarmState,
   RawRuntimeSession,
 } from '~/lib/raw/runtime-adapter'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession, StyleAsset } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'

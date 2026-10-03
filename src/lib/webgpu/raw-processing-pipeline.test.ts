@@ -5,7 +5,7 @@ import {
   resolvePreviewBackend,
 } from '~/lib/preview/gpu-backend'
 
-import { RawProcessingPipeline } from './pipeline'
+import { RawProcessingPipeline } from './raw-processing-pipeline'
 
 const fixtures = vi.hoisted(() => ({
   gpu: {
@@ -24,7 +24,7 @@ vi.mock('~/lib/preview/gpu-backend', () => ({
   resolvePreviewBackend: vi.fn(),
   reportGpuPreviewFailure: vi.fn(),
 }))
-vi.mock('~/lib/webgpu/pipeline', () => ({
+vi.mock('./pipeline', () => ({
   WebGPUProcessingPipeline: vi.fn(() => {
     fixtures.createGpu()
     return fixtures.gpu

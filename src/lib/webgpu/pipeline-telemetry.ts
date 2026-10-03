@@ -15,22 +15,9 @@ export function webGPUCapabilities(
 ): PreviewGpuCapabilities {
   const info = adapter.info
   return {
-    webgl2: false,
     maxTextureSize: device.limits.maxTextureDimension2D,
     max3DTextureSize: device.limits.maxTextureDimension3D,
-    floatTextures: true,
-    floatTexturesLinear: device.features.has('float32-filterable'),
-    halfFloatTextures: true,
-    halfFloatTexturesLinear: true,
-    colorBufferFloat: true,
-    colorBufferHalfFloat: true,
-    maxVertexUniformVectors: 0,
-    maxFragmentUniformVectors: 0,
-    maxVaryingVectors: 0,
-    fragmentHighFloatPrecision: 23,
-    fragmentHighFloatRangeMin: 127,
-    fragmentHighFloatRangeMax: 127,
-    toneHighPrecision: true,
+    float32Filterable: device.features.has('float32-filterable'),
     rendererInfo: info.description || info.device || 'WebGPU',
     vendorInfo: info.vendor,
   }
@@ -67,7 +54,5 @@ export function webGPUTelemetry(
       profile?.outputTransfer ??
       (profile?.role === 'display-look' ? profile.inputTransfer : null),
     lutSize: lut?.size ?? null,
-    processTargetPrecision: 'rgba16f',
-    capabilityWarnings: [],
   }
 }

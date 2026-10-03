@@ -2,8 +2,8 @@ import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
 import { useMemo } from 'react'
 
-import type { PipelineStats } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type { ExportShareCapability } from '../../../model/export-result'

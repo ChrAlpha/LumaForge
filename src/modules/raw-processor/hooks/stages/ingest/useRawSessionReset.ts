@@ -2,8 +2,8 @@ import type { MutableRefObject } from 'react'
 import { useCallback } from 'react'
 
 import type { ExportResourceCleanupReason } from '~/lib/export/execution-profile'
-import type { PipelineStats } from '~/lib/gl/pipeline'
 import type { DecodedImage } from '~/lib/raw/decoder'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'

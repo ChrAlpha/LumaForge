@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createResourceRegistry } from '~/lib/export/resource-registry'
-import type { RawProcessingPipeline } from '~/lib/gl/pipeline'
+import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ExportRecoveryState, ImageSession } from '../../../model/session'
 import { useRawExportStage } from './useRawExportStage'

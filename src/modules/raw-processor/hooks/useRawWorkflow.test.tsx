@@ -2532,8 +2532,6 @@ describe('useRawWorkflow embedded preview state', () => {
         lutInputTransfer: null,
         lutOutputTransfer: null,
         lutSize: null,
-        processTargetPrecision: 'rgba16f',
-        capabilityWarnings: [],
       })
     })
 
@@ -2638,8 +2636,6 @@ describe('useRawWorkflow embedded preview state', () => {
         lutInputTransfer: null,
         lutOutputTransfer: null,
         lutSize: null,
-        processTargetPrecision: 'rgba16f',
-        capabilityWarnings: [],
       })
     })
 
@@ -4772,8 +4768,6 @@ describe('useRawWorkflow embedded preview state', () => {
         lutInputTransfer: null,
         lutOutputTransfer: null,
         lutSize: null,
-        processTargetPrecision: 'rgba16f',
-        capabilityWarnings: [],
       })
       result.current.pipelineRef.current = {
         renderToHiddenCanvas,

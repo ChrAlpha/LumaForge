@@ -2,7 +2,7 @@ import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { PipelineStats } from '~/lib/gl/pipeline'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import { useRawWorkflowActions } from './useRawWorkflowActions'
 
