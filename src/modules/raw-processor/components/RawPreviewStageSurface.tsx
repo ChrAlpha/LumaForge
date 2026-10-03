@@ -38,7 +38,9 @@ export function RawPreviewStageSurface({
   transformActive?: boolean
   viewportInteractionDisabled?: boolean
 }) {
-  if (isCpuMode && workflow.hasImage) {
+  // Export releases the decoded preview; the shared stage then shows the
+  // export-ready handoff with Restore preview, which the CPU stage lacks.
+  if (isCpuMode && workflow.hasImage && !workflow.previewSuspended) {
     return (
       <RawCpuPreviewStage
         key={workflow.previewTransform?.sourceId}
