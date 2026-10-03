@@ -48,8 +48,7 @@ export function usePreviewPipelineEvacuation({
       const id = `gpu-pipeline-${++previewPipelineResourceIdRef.current}-${label}`
       registry.register({
         id,
-        // Stable registry owner includes both GPU APIs during compatibility
-        // rollout; disposal and byte estimates come from the actual backend.
+        // Disposal and byte estimates come from the live WebGPU executor.
         owner: 'gpu',
         kind: 'gpu-pipeline',
         estimatedBytes: pipeline.getResourceStats?.().estimatedBytes,

@@ -12,7 +12,6 @@ export type {
   PipelineTransformPath,
   RawUploadInput,
   RawUploadInputFormat,
-  RenderOptions,
 } from './contract'
 
 /** Public renderer contract, without the executor's private resource state. */
@@ -119,8 +118,8 @@ export class RawProcessingPipeline {
     return this.renderer.getParams()
   }
 
-  render(...args: Parameters<PreviewPipelineBackend['render']>) {
-    return this.renderer.render(...args)
+  render() {
+    return this.renderer.render()
   }
 
   /** Wait only when a consumer needs completed pixels; never issue a new draw. */

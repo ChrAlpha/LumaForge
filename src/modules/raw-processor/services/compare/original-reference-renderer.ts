@@ -229,7 +229,7 @@ export async function renderOriginalReferenceSnapshot({
     throwIfAborted(signal)
     pipeline.uploadImage(createSnapshotUploadInput(image, target))
     pipeline.setParams(ORIGINAL_REFERENCE_PARAMS)
-    pipeline.render({ waitForGpu: false })
+    pipeline.render()
     await pipeline.waitForGpu()
     throwIfAborted(signal)
 

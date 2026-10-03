@@ -69,7 +69,7 @@ describe('originalGpuLayer', () => {
 
     await act(async () => secondFrame.resolve())
     expect(onReady).toHaveBeenCalledExactlyOnceWith('2')
-    expect(pipeline.render).toHaveBeenLastCalledWith({ waitForGpu: false })
+    expect(pipeline.render).toHaveBeenCalled()
   })
 
   it.each(['unmount', 'evacuate'] as const)(

@@ -36,10 +36,6 @@ export interface PipelineStats {
   lutSize: number | null
 }
 
-export interface RenderOptions {
-  waitForGpu?: boolean
-}
-
 export type RawUploadInput =
   | {
       data: Float32Array

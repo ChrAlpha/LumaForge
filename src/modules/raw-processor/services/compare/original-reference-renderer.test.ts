@@ -63,7 +63,7 @@ describe('renderOriginalReferenceSnapshot', () => {
         createObjectURL,
       })
       await vi.waitFor(() => expect(waitForGpu).toHaveBeenCalledOnce())
-      expect(render).toHaveBeenCalledExactlyOnceWith({ waitForGpu: false })
+      expect(render).toHaveBeenCalledOnce()
       expect(toBlob).not.toHaveBeenCalled()
       expect(createObjectURL).not.toHaveBeenCalled()
       if (abort) {
@@ -135,7 +135,7 @@ describe('renderOriginalReferenceSnapshot', () => {
         intensity: 0,
       }),
     )
-    expect(render).toHaveBeenCalledWith({ waitForGpu: false })
+    expect(render).toHaveBeenCalled()
     expect(dispose).toHaveBeenCalledWith({ releaseContext: true })
     expect(snapshot.width * snapshot.height).toBeLessThanOrEqual(1_000_000)
     expect(snapshot).toMatchObject({

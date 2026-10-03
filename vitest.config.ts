@@ -26,9 +26,6 @@ export default defineConfig({
       ),
       '~': fileURLToPath(new URL('./src', import.meta.url)),
       '@pkg': fileURLToPath(new URL('./package.json', import.meta.url)),
-      '@lumaforge/luma-color-runtime/glsl': fileURLToPath(
-        new URL('./packages/luma-color-runtime/src/glsl.ts', import.meta.url),
-      ),
       '@lumaforge/luma-color-runtime/testing': fileURLToPath(
         new URL(
           './packages/luma-color-runtime/src/testing.ts',

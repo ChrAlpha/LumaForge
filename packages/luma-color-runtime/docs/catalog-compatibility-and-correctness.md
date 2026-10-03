@@ -353,7 +353,7 @@ CUBE domain bounds are `domainMin = [minR, minG, minB]` and
 `domainMax = [maxR, maxG, maxB]`. Before sampling, the runtime compresses
 out-of-domain values by preserving channel ratios after normalization. CPU
 export samples red-fastest, then green, then blue data with trilinear
-interpolation. WebGL preview uses the same compression and samples the 3D
+interpolation. The WebGPU preview uses the same compression and samples the 3D
 texture at `(sampleCoord * (N - 1) + 0.5) / N`.
 
 ```text

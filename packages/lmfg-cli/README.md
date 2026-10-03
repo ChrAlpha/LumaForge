@@ -7,7 +7,7 @@ runtimes) from Node.js, and records every render in a sealed `RenderManifest`.
 
 This release ships the **cpu-wasm tier**: in-process WebAssembly decode, CPU
 color pipeline, and the authoritative full-resolution JPEG export. The browser
-bridge tier (WebGL2 via Playwright) is not included; `lmfg capabilities` reports
+bridge tier (WebGPU via Playwright) is not included; `lmfg capabilities` reports
 it as unavailable and `--tier browser` exits with code 3.
 
 Requirements: Node.js 20 or newer.

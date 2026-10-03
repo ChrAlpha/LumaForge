@@ -11,9 +11,6 @@
       "@lumaforge/luma-color-runtime": [
         "./packages/luma-color-runtime/src/index.ts"
       ],
-      "@lumaforge/luma-color-runtime/glsl": [
-        "./packages/luma-color-runtime/src/glsl.ts"
-      ],
       "@lumaforge/luma-color-runtime/wgsl": [
         "./packages/luma-color-runtime/src/wgsl.ts"
       ],

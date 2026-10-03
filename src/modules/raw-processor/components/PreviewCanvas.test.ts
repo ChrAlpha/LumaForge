@@ -281,9 +281,7 @@ describe('preview canvas upload descriptor', () => {
 
     await act(async () => nextFrame.resolve())
     expect(onStatsUpdate).toHaveBeenCalledOnce()
-    expect(pipelineMock.instances[0]?.render).toHaveBeenLastCalledWith({
-      waitForGpu: false,
-    })
+    expect(pipelineMock.instances[0]?.render).toHaveBeenLastCalledWith()
   })
 
   it('reuses the first-ready fence while sliders change and stops fencing after ready', async () => {
@@ -323,9 +321,7 @@ describe('preview canvas upload descriptor', () => {
       }),
     )
 
-    expect(pipelineMock.instances[0]!.render).toHaveBeenCalledWith({
-      waitForGpu: false,
-    })
+    expect(pipelineMock.instances[0]!.render).toHaveBeenCalledWith()
     expect(onStatsUpdate).toHaveBeenCalled()
     expect(pipelineMock.waitForGpu).not.toHaveBeenCalled()
   })

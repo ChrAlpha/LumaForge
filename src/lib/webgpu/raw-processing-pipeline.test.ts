@@ -66,11 +66,9 @@ describe('preview pipeline facade', () => {
   it('waits for a submitted frame without rendering it a second time', async () => {
     const pipeline = new RawProcessingPipeline(document.createElement('canvas'))
     await pipeline.initialize()
-    pipeline.render({ waitForGpu: false })
+    pipeline.render()
     await pipeline.waitForGpu()
-    expect(fixtures.gpu.render).toHaveBeenCalledExactlyOnceWith({
-      waitForGpu: false,
-    })
+    expect(fixtures.gpu.render).toHaveBeenCalledOnce()
   })
 
   it('never constructs a renderer when the resolved backend is the CPU executor', async () => {

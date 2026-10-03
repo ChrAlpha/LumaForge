@@ -176,7 +176,7 @@ export async function runAcceptance({ iterations, unfilterable }) {
     return { ...neutral, ...params }
   }
   const render = async () => {
-    gpu.render({ waitForGpu: false })
+    gpu.render()
     await gpu.waitForGpu()
   }
   const readProcessedBytes = async () => {
@@ -349,7 +349,7 @@ export async function runAcceptance({ iterations, unfilterable }) {
         userContrast: (index % 61) - 30,
       }
       gpu.setParams(latestTone)
-      gpu.render({ waitForGpu: false })
+      gpu.render()
     }
     await gpu.waitForGpu()
     const afterBurst = gpu.getResourceStats()
@@ -379,7 +379,7 @@ export async function runAcceptance({ iterations, unfilterable }) {
       reset(makeImage(true))
       await render()
       gpu.setParams({ userExposureEv: 0.6 })
-      gpu.render({ waitForGpu: false })
+      gpu.render()
       const pending = gpu.readProcessedPixelsAsync().then(
         (pixels) => ({ resolved: true, length: pixels?.length }),
         (error) => ({ resolved: false, error: String(error) }),
@@ -406,7 +406,7 @@ export async function runAcceptance({ iterations, unfilterable }) {
       await victim.initialize()
       victim.uploadImage(makeImage(true))
       victim.setParams(neutral)
-      victim.render({ waitForGpu: false })
+      victim.render()
       await victim.waitForGpu()
       const idle = victim.getResourceStats()
       const pending = victim

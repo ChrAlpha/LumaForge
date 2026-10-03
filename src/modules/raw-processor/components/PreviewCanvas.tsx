@@ -477,7 +477,7 @@ export function PreviewCanvas({
     try {
       if (!syncProcessedImageUpload()) return false
       pipeline.setParams(processedCanvasParams)
-      const stats = pipeline.render({ waitForGpu: false })
+      const stats = pipeline.render()
       const renderedImage = imageRef.current
       const readyFrame = processedFrameStatusRef.current
       if (

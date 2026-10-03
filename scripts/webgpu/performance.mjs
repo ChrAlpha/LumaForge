@@ -21,7 +21,7 @@ export async function runPerformance({
     for (let index = 0; index < 5; index++) {
       params = { ...params, userExposureEv: index / 100 }
       gpu.setParams(params)
-      gpu.render({ waitForGpu: false })
+      gpu.render()
       await gpu.waitForGpu()
     }
     const preflight = await readProcessedBytes(gpu)
@@ -43,7 +43,7 @@ export async function runPerformance({
       }
       gpu.setParams(params)
       const start = performance.now()
-      gpu.render({ waitForGpu: false })
+      gpu.render()
       const submitted = performance.now()
       await gpu.waitForGpu()
       timings.submit.push(submitted - start)
@@ -68,10 +68,10 @@ export async function runPerformance({
       reupload.textureAllocations === resourcesAfter.textureAllocations,
       { before: resourcesAfter, after: reupload },
     )
-    gpu.render({ waitForGpu: false })
+    gpu.render()
     await gpu.waitForGpu()
     const steady = gpu.getResourceStats()
-    gpu.render({ waitForGpu: false })
+    gpu.render()
     await gpu.waitForGpu()
     const unchanged = gpu.getResourceStats()
     add(

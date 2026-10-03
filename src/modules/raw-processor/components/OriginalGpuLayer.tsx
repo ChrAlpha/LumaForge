@@ -180,7 +180,7 @@ export function OriginalGpuLayer({
         }
         pipelineRef.current?.resize(canvas.width, canvas.height)
         if (isInitialized && imageRef.current) {
-          pipelineRef.current?.render({ waitForGpu: false })
+          pipelineRef.current?.render()
         }
       } catch (error) {
         reportPipelineError(error)
@@ -254,7 +254,7 @@ export function OriginalGpuLayer({
       try {
         pipeline.uploadImage(uploadInput)
         pipeline.setParams(ORIGINAL_LAYER_PARAMS)
-        pipeline.render({ waitForGpu: false })
+        pipeline.render()
         await pipeline.waitForGpu()
         if (isCurrent()) onReadyRef.current?.(generationKey)
       } catch (error) {

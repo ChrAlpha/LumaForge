@@ -6,7 +6,6 @@ import type {
   PipelineStats,
   PreviewGpuCapabilities,
   RawUploadInput,
-  RenderOptions,
 } from './contract'
 import type { WebGPUDeviceLease } from './device'
 import { acquireWebGPUDevice } from './device'
@@ -198,8 +197,8 @@ export class WebGPUProcessingPipeline {
       : 1
   }
 
-  render(options: RenderOptions = {}): PipelineStats {
-    if (options.waitForGpu) throw new Error('WEBGPU_ASYNC_WAIT_REQUIRED')
+  /** Requests a frame; await `waitForGpu()` when completed pixels matter. */
+  render(): PipelineStats {
     const { images } = this.assertReady()
     const start = performance.now()
     if (images.input && this.context) this.frames!.request()
@@ -302,9 +301,6 @@ export class WebGPUProcessingPipeline {
     await this.variants?.wait()
     await this.frames?.wait()
     this.assertReady()
-  }
-  readProcessedPixels(): Float32Array | null {
-    throw new Error('WEBGPU_ASYNC_READBACK_REQUIRED')
   }
   async readProcessedPixelsAsync(): Promise<Float32Array | null> {
     const { device, images } = this.assertReady()
