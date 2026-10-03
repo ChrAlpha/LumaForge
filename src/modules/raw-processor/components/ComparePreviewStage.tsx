@@ -13,7 +13,7 @@ import type { OriginalReferenceSnapshot } from '../services/compare/original-ref
 import type { PreviewViewport } from '../services/preview/preview-viewport'
 import { CompareSplitHandle } from './CompareSplitHandle'
 import { Dropzone, RAW_FILE_ACCEPT } from './Dropzone'
-import type { OriginalWebglPipelineHandle } from './OriginalWebglLayer'
+import type { OriginalGpuPipelineHandle } from './OriginalGpuLayer'
 import { PreviewCanvas } from './PreviewCanvas'
 import { ProgressOverlay } from './ProgressOverlay'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
@@ -30,7 +30,7 @@ export interface ComparePreviewStageProps {
   displaySource?: DisplaySource
   originalReferenceSnapshot?: OriginalReferenceSnapshot | null
   originalReferenceFallbackReason?: string | null
-  dualWebglAllowed?: boolean
+  dualGpuAllowed?: boolean
   previewSuspended?: boolean
   viewportInteractionDisabled?: boolean
   previewViewport?: PreviewViewport
@@ -49,7 +49,7 @@ export interface ComparePreviewStageProps {
   onStatsUpdate?: (stats: PipelineStats) => void
   onPipelineChange?: (pipeline: RawProcessingPipeline | null) => void
   onOriginalPreviewPipelineChange?: (
-    pipeline: OriginalWebglPipelineHandle | null,
+    pipeline: OriginalGpuPipelineHandle | null,
   ) => void
   onRequestOriginalReferenceFallback?: () => void
   onRestorePreview?: () => void | Promise<void>
@@ -208,7 +208,7 @@ export function ComparePreviewStage({
   displaySource = 'none',
   originalReferenceSnapshot,
   originalReferenceFallbackReason,
-  dualWebglAllowed = false,
+  dualGpuAllowed = false,
   previewSuspended = false,
   viewportInteractionDisabled = false,
   previewViewport,
@@ -288,7 +288,7 @@ export function ComparePreviewStage({
                 originalReferenceFallbackReason={
                   originalReferenceFallbackReason
                 }
-                dualWebglAllowed={dualWebglAllowed}
+                dualGpuAllowed={dualGpuAllowed}
                 suspended={previewSuspended}
                 interactionDisabled={
                   blockStageInteraction || viewportInteractionDisabled

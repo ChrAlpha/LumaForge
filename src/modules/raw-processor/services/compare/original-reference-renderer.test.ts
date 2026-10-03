@@ -105,6 +105,7 @@ describe('renderOriginalReferenceSnapshot', () => {
           uploadImage,
           setParams,
           render,
+          waitForGpu: vi.fn().mockResolvedValue(undefined),
           dispose,
         }) as never,
       createCanvas: () =>
@@ -134,7 +135,7 @@ describe('renderOriginalReferenceSnapshot', () => {
         intensity: 0,
       }),
     )
-    expect(render).toHaveBeenCalledWith({ waitForGpu: true })
+    expect(render).toHaveBeenCalledWith({ waitForGpu: false })
     expect(dispose).toHaveBeenCalledWith({ releaseContext: true })
     expect(snapshot.width * snapshot.height).toBeLessThanOrEqual(1_000_000)
     expect(snapshot).toMatchObject({
@@ -162,6 +163,7 @@ describe('renderOriginalReferenceSnapshot', () => {
             uploadImage: vi.fn(),
             setParams: vi.fn(),
             render: vi.fn(),
+            waitForGpu: vi.fn().mockResolvedValue(undefined),
             dispose,
           }) as never,
         createCanvas: () =>
@@ -198,6 +200,7 @@ describe('renderOriginalReferenceSnapshot', () => {
           uploadImage,
           setParams,
           render,
+          waitForGpu: vi.fn().mockResolvedValue(undefined),
           dispose,
         }) as never,
       createCanvas: () =>

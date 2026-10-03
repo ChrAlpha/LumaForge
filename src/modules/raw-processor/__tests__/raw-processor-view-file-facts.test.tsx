@@ -158,7 +158,7 @@ function createLoadedProcessorState(
     displaySource: 'bounded-hq',
     originalReferenceSnapshot: null,
     originalReferenceFallbackReason: null,
-    dualWebglAllowed: false,
+    dualGpuAllowed: false,
     histogram: { state: 'unavailable', reason: 'no-image' },
     previewSuspended: false,
     loadFile: vi.fn(),

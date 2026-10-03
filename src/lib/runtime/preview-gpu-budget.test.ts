@@ -27,9 +27,8 @@ const baseCapability: CapabilityVector = {
 }
 
 const strongGpu = {
-  webgl2: true,
+  webgpu: true,
   maxTextureSize: 8192,
-  maxRenderbufferSize: 8192,
 }
 
 describe('derivePreviewGpuBudget', () => {
@@ -47,9 +46,8 @@ describe('derivePreviewGpuBudget', () => {
     })
     const createElement = vi.spyOn(document, 'createElement')
     expect(detectPreviewGpuCapabilitySnapshot()).toEqual({
-      webgl2: true,
+      webgpu: true,
       maxTextureSize: 4096,
-      maxRenderbufferSize: 4096,
     })
     expect(createElement).not.toHaveBeenCalled()
   })
@@ -61,14 +59,14 @@ describe('derivePreviewGpuBudget', () => {
       reason: 'gpu-preview-failed',
     })
     const gpu = detectPreviewGpuCapabilitySnapshot()!
-    expect(gpu.webgl2).toBe(false)
+    expect(gpu.webgpu).toBe(false)
     expect(
       derivePreviewGpuBudget({
         capability: baseCapability,
         gpu,
         sourceWidth: 6000,
         sourceHeight: 4000,
-      }).dualWebglAllowed,
+      }).dualGpuAllowed,
     ).toBe(false)
   })
 
@@ -82,7 +80,7 @@ describe('derivePreviewGpuBudget', () => {
       }),
     ).toMatchObject({
       boundedHqMaxPixels: BOUNDED_HQ_PREVIEW_MAX_PIXELS,
-      dualWebglAllowed: true,
+      dualGpuAllowed: true,
       originalReferenceSnapshotMaxPixels: BOUNDED_HQ_PREVIEW_MAX_PIXELS,
     })
   })
@@ -92,9 +90,8 @@ describe('derivePreviewGpuBudget', () => {
       derivePreviewGpuBudget({
         capability: { ...baseCapability, pthread: false },
         gpu: {
-          webgl2: true,
+          webgpu: true,
           maxTextureSize: 4096,
-          maxRenderbufferSize: 4096,
         },
         sourceWidth: 6000,
         sourceHeight: 4000,
@@ -112,7 +109,7 @@ describe('derivePreviewGpuBudget', () => {
       }),
     ).toMatchObject({
       boundedHqMaxPixels: BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
-      dualWebglAllowed: false,
+      dualGpuAllowed: false,
       originalReferenceSnapshotMaxPixels:
         BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
     })

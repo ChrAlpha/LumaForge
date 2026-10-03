@@ -6,25 +6,25 @@ import {
 } from './compare-render-mode'
 
 describe('selectCompareRenderMode', () => {
-  it('prefers dual WebGL when capability allows two live preview pipelines', () => {
+  it('prefers dual GPU when capability allows two live preview pipelines', () => {
     expect(
       selectCompareRenderMode({
         requestedViewMode: 'compare',
         supportsCssClip: true,
-        dualWebglAllowed: true,
-        originalWebglReady: true,
+        dualGpuAllowed: true,
+        originalGpuReady: true,
         jpegSnapshotReady: false,
       }),
-    ).toEqual({ kind: 'dual-webgl' })
+    ).toEqual({ kind: 'dual-gpu' })
   })
 
-  it('does not select dual WebGL while the current original layer generation is pending', () => {
+  it('does not select dual GPU while the current original layer generation is pending', () => {
     expect(
       selectCompareRenderMode({
         requestedViewMode: 'compare',
         supportsCssClip: true,
-        dualWebglAllowed: true,
-        originalWebglReady: false,
+        dualGpuAllowed: true,
+        originalGpuReady: false,
         jpegSnapshotReady: false,
       }),
     ).toEqual({
@@ -33,59 +33,59 @@ describe('selectCompareRenderMode', () => {
     })
   })
 
-  it('keeps dual WebGL while a retained compare frame covers a preview upgrade', () => {
+  it('keeps dual GPU while a retained compare frame covers a preview upgrade', () => {
     expect(
       selectCompareRenderMode({
         requestedViewMode: 'compare',
         supportsCssClip: true,
-        dualWebglAllowed: true,
-        originalWebglReady: false,
+        dualGpuAllowed: true,
+        originalGpuReady: false,
         retainedCompareFrameReady: true,
         jpegSnapshotReady: false,
       }),
-    ).toEqual({ kind: 'dual-webgl' })
+    ).toEqual({ kind: 'dual-gpu' })
   })
 
-  it('uses embedded fallback while original WebGL is pending', () => {
+  it('uses embedded fallback while original GPU is pending', () => {
     expect(
       selectCompareRenderMode({
         requestedViewMode: 'compare',
         supportsCssClip: true,
-        dualWebglAllowed: true,
-        originalWebglReady: false,
-        originalWebglFailed: false,
+        dualGpuAllowed: true,
+        originalGpuReady: false,
+        originalGpuFailed: false,
         embeddedPreviewReady: true,
         jpegSnapshotReady: false,
       }),
     ).toEqual({
       kind: 'embedded-fallback',
-      reason: 'original-webgl-pending',
+      reason: 'original-gpu-pending',
     })
   })
 
-  it('uses JPEG fallback when dual WebGL is not allowed and a snapshot is ready', () => {
+  it('uses JPEG fallback when dual GPU is not allowed and a snapshot is ready', () => {
     expect(
       selectCompareRenderMode({
         requestedViewMode: 'compare',
         supportsCssClip: true,
-        dualWebglAllowed: false,
-        originalWebglReady: false,
+        dualGpuAllowed: false,
+        originalGpuReady: false,
         jpegSnapshotReady: true,
       }),
-    ).toEqual({ kind: 'jpeg-fallback', reason: 'dual-webgl-unavailable' })
+    ).toEqual({ kind: 'jpeg-fallback', reason: 'dual-gpu-unavailable' })
   })
 
-  it('uses JPEG fallback when left WebGL fails after dual WebGL was allowed', () => {
+  it('uses JPEG fallback when left GPU fails after dual GPU was allowed', () => {
     expect(
       selectCompareRenderMode({
         requestedViewMode: 'compare',
         supportsCssClip: true,
-        dualWebglAllowed: true,
-        originalWebglReady: false,
-        originalWebglFailed: true,
+        dualGpuAllowed: true,
+        originalGpuReady: false,
+        originalGpuFailed: true,
         jpegSnapshotReady: true,
       }),
-    ).toEqual({ kind: 'jpeg-fallback', reason: 'original-webgl-failed' })
+    ).toEqual({ kind: 'jpeg-fallback', reason: 'original-gpu-failed' })
   })
 
   it('does not select the legacy single-canvas shader compare path', () => {
@@ -93,8 +93,8 @@ describe('selectCompareRenderMode', () => {
       selectCompareRenderMode({
         requestedViewMode: 'compare',
         supportsCssClip: false,
-        dualWebglAllowed: true,
-        originalWebglReady: false,
+        dualGpuAllowed: true,
+        originalGpuReady: false,
         jpegSnapshotReady: true,
       }),
     ).toEqual({ kind: 'processed-only', reason: 'css-clip-unavailable' })

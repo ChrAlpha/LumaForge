@@ -1,5 +1,5 @@
 /**
- * WebGL canvas component for rendering processed RAW images.
+ * WebGPU canvas component for rendering processed RAW images.
  */
 
 import './preview-canvas.css'
@@ -34,7 +34,7 @@ import {
   derivePreviewCompareReadiness,
   derivePreviewFrameStatusTransition,
   derivePreviewTrackReadinessTransition,
-  EMPTY_ORIGINAL_WEBGL_FRAME_STATUS,
+  EMPTY_ORIGINAL_GPU_FRAME_STATUS,
   EMPTY_PREVIEW_FRAME_STATUS,
 } from '../services/preview/preview-compare-readiness'
 import type {
@@ -49,9 +49,9 @@ import {
   resetPreviewViewport,
   zoomPreviewViewportAtPoint,
 } from '../services/preview/preview-viewport'
+import type { OriginalGpuPipelineHandle } from './OriginalGpuLayer'
+import { OriginalGpuLayer } from './OriginalGpuLayer'
 import { OriginalReferenceLayer } from './OriginalReferenceLayer'
-import type { OriginalWebglPipelineHandle } from './OriginalWebglLayer'
-import { OriginalWebglLayer } from './OriginalWebglLayer'
 import type { TrackedPointer } from './preview-canvas-helpers'
 import {
   createRawUploadInput,
@@ -72,7 +72,7 @@ export interface PreviewCanvasProps {
   displaySource?: DisplaySource
   originalReferenceSnapshot?: OriginalReferenceSnapshot | null
   originalReferenceFallbackReason?: string | null
-  dualWebglAllowed?: boolean
+  dualGpuAllowed?: boolean
   suspended?: boolean
   interactionDisabled?: boolean
   previewViewport?: PreviewViewport
@@ -80,7 +80,7 @@ export interface PreviewCanvasProps {
   onStatsUpdate?: (stats: PipelineStats) => void
   onPipelineChange?: (pipeline: RawProcessingPipeline | null) => void
   onOriginalPreviewPipelineChange?: (
-    pipeline: OriginalWebglPipelineHandle | null,
+    pipeline: OriginalGpuPipelineHandle | null,
   ) => void
   onCompareRenderModeChange?: (mode: CompareRenderMode['kind']) => void
   onRequestOriginalReferenceFallback?: () => void
@@ -113,7 +113,7 @@ function EmbeddedOriginalLayer({ src }: { src: string }) {
   )
 }
 
-/** Trailing delay before the WebGL backing store follows a layout resize. */
+/** Trailing delay before the GPU canvas backing store follows a layout resize. */
 const PREVIEW_RESIZE_SETTLE_MS = 90
 
 export function PreviewCanvas({
@@ -126,7 +126,7 @@ export function PreviewCanvas({
   displaySource = 'none',
   originalReferenceSnapshot = null,
   originalReferenceFallbackReason = null,
-  dualWebglAllowed = false,
+  dualGpuAllowed = false,
   suspended = false,
   interactionDisabled = false,
   previewViewport = DEFAULT_PREVIEW_VIEWPORT,
@@ -174,8 +174,8 @@ export function PreviewCanvas({
   const [isPointerPanning, setIsPointerPanning] = useState(false)
   const [isWheelInteracting, setIsWheelInteracting] = useState(false)
   const [trackReady, setTrackReady] = useState(false)
-  const [originalWebglStatus, setOriginalWebglStatus] = useState(
-    EMPTY_ORIGINAL_WEBGL_FRAME_STATUS,
+  const [originalGpuStatus, setOriginalGpuStatus] = useState(
+    EMPTY_ORIGINAL_GPU_FRAME_STATUS,
   )
   const [processedFrameStatus, setProcessedFrameStatus] =
     useState<PreviewFrameStatus>(EMPTY_PREVIEW_FRAME_STATUS)
@@ -198,23 +198,23 @@ export function PreviewCanvas({
     trackReady,
     embeddedPreviewUrl,
     viewMode: params.viewMode,
-    dualWebglAllowed,
+    dualGpuAllowed,
     suspended,
     supportsCssClip,
-    originalWebglStatus,
+    originalGpuStatus,
     processedFrameStatus,
   })
   const {
     processedImageGenerationKey,
     currentProcessedFrameReady,
     processedPreviewVisible,
-    originalWebglGenerationKey,
-    originalWebglReady,
-    originalWebglFailed,
+    originalGpuGenerationKey,
+    originalGpuReady,
+    originalGpuFailed,
     retainedProcessedFrameReady,
     retainedCompareFrameReady,
     embeddedPreviewFallbackReady,
-    shouldMountOriginalWebglLayer,
+    shouldMountOriginalGpuLayer,
     shouldDelayProcessedCompareRender,
   } = previewCompareReadiness
   processedGenerationKeyRef.current = processedImageGenerationKey
@@ -255,15 +255,15 @@ export function PreviewCanvas({
   const compareRenderMode: CompareRenderMode = selectCompareRenderMode({
     requestedViewMode: showEmbeddedPreview ? 'processed' : params.viewMode,
     supportsCssClip,
-    dualWebglAllowed,
-    originalWebglReady: originalWebglReady && currentProcessedFrameReady,
+    dualGpuAllowed,
+    originalGpuReady: originalGpuReady && currentProcessedFrameReady,
     retainedCompareFrameReady,
-    originalWebglFailed,
+    originalGpuFailed,
     embeddedPreviewReady: embeddedPreviewFallbackReady,
     jpegSnapshotReady: Boolean(originalReferenceSnapshot),
   })
   const isLayeredCompareActive =
-    compareRenderMode.kind === 'dual-webgl' ||
+    compareRenderMode.kind === 'dual-gpu' ||
     compareRenderMode.kind === 'embedded-fallback' ||
     compareRenderMode.kind === 'jpeg-fallback'
   const pipelineCompareSplit =
@@ -596,7 +596,9 @@ export function PreviewCanvas({
         }
 
         setError(
-          err instanceof Error ? err.message : 'WebGL initialization failed',
+          err instanceof Error
+            ? err.message
+            : 'GPU preview initialization failed',
         )
       }
     }
@@ -626,7 +628,7 @@ export function PreviewCanvas({
 
     // The backing store only follows layout once the size has settled. The
     // mobile stage animates its insets while the chrome opens or closes, and
-    // re-rendering the WebGL frame on every intermediate size would cost a
+    // re-rendering the GPU frame on every intermediate size would cost a
     // full pipeline pass per animation frame. In between, the canvas is
     // CSS-scaled inside a track that keeps the photo aspect ratio, which
     // reads as continuous motion. The first fit always applies immediately.
@@ -981,40 +983,40 @@ export function PreviewCanvas({
           data-raw-preview-surface
           className="raw-preview-surface"
         >
-          {shouldMountOriginalWebglLayer && (
+          {shouldMountOriginalGpuLayer && (
             <div
               className={clsxm(
-                'raw-preview-original-webgl-shell',
-                compareRenderMode.kind === 'dual-webgl'
+                'raw-preview-original-gpu-shell',
+                compareRenderMode.kind === 'dual-gpu'
                   ? 'raw-preview-layer-clipped'
                   : 'opacity-0 pointer-events-none',
               )}
             >
-              <OriginalWebglLayer
+              <OriginalGpuLayer
                 imageRef={imageRef}
                 imageVersion={imageVersion}
-                generationKey={originalWebglGenerationKey}
+                generationKey={originalGpuGenerationKey}
                 onPipelineChange={onOriginalPreviewPipelineChange}
                 onReady={(readyGenerationKey) => {
                   if (
-                    readyGenerationKey === originalWebglGenerationKey &&
+                    readyGenerationKey === originalGpuGenerationKey &&
                     shouldDelayProcessedCompareRender
                   ) {
                     renderProcessedPreview()
                   }
-                  setOriginalWebglStatus({
+                  setOriginalGpuStatus({
                     generationKey: readyGenerationKey,
                     displaySource,
                     state: 'ready',
                   })
                 }}
                 onError={(_, failedGenerationKey) => {
-                  setOriginalWebglStatus({
+                  setOriginalGpuStatus({
                     generationKey: failedGenerationKey,
                     displaySource,
                     state: 'failed',
                   })
-                  if (failedGenerationKey === originalWebglGenerationKey) {
+                  if (failedGenerationKey === originalGpuGenerationKey) {
                     onRequestOriginalReferenceFallback?.()
                   }
                 }}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type {
-  OriginalWebglFrameStatus,
+  OriginalGpuFrameStatus,
   PreviewFrameStatus,
 } from './preview-compare-readiness'
 import {
@@ -18,7 +18,7 @@ const quickProcessedFrame: PreviewFrameStatus = {
   state: 'ready',
 }
 
-const quickOriginalFrame: OriginalWebglFrameStatus = {
+const quickOriginalFrame: OriginalGpuFrameStatus = {
   generationKey: '1:quick:dual:compare:active',
   displaySource: 'quick',
   state: 'ready',
@@ -37,10 +37,10 @@ function derive(
     trackReady: true,
     embeddedPreviewUrl: 'blob:embedded',
     viewMode: 'compare',
-    dualWebglAllowed: true,
+    dualGpuAllowed: true,
     suspended: false,
     supportsCssClip: true,
-    originalWebglStatus: quickOriginalFrame,
+    originalGpuStatus: quickOriginalFrame,
     processedFrameStatus: quickProcessedFrame,
     ...overrides,
   })
@@ -50,13 +50,13 @@ describe('derivePreviewCompareReadiness', () => {
   it('keeps a synchronized quick compare pair active during bounded-HQ handoff', () => {
     expect(derive()).toMatchObject({
       currentProcessedFrameReady: false,
-      originalWebglReady: false,
-      retainedOriginalWebglFrameReady: true,
+      originalGpuReady: false,
+      retainedOriginalGpuFrameReady: true,
       retainedProcessedFrameReady: true,
       retainedCompareFrameReady: true,
       embeddedPreviewFallbackReady: false,
       shouldDelayProcessedCompareRender: true,
-      shouldMountOriginalWebglLayer: true,
+      shouldMountOriginalGpuLayer: true,
     })
   })
 
@@ -66,7 +66,7 @@ describe('derivePreviewCompareReadiness', () => {
         processedFrameStatus: EMPTY_PREVIEW_FRAME_STATUS,
       }),
     ).toMatchObject({
-      retainedOriginalWebglFrameReady: true,
+      retainedOriginalGpuFrameReady: true,
       retainedProcessedFrameReady: false,
       retainedCompareFrameReady: false,
       embeddedPreviewFallbackReady: true,
@@ -81,7 +81,7 @@ describe('derivePreviewCompareReadiness', () => {
       source: 'bounded-hq',
       state: 'ready',
     }
-    const currentOriginalFrame: OriginalWebglFrameStatus = {
+    const currentOriginalFrame: OriginalGpuFrameStatus = {
       generationKey: '2:bounded-hq:dual:compare:active',
       displaySource: 'bounded-hq',
       state: 'ready',
@@ -90,12 +90,12 @@ describe('derivePreviewCompareReadiness', () => {
     expect(
       derive({
         processedFrameStatus: currentProcessedFrame,
-        originalWebglStatus: currentOriginalFrame,
+        originalGpuStatus: currentOriginalFrame,
       }),
     ).toMatchObject({
       currentProcessedFrameReady: true,
       processedPreviewVisible: true,
-      originalWebglReady: true,
+      originalGpuReady: true,
       retainedCompareFrameReady: false,
       embeddedPreviewFallbackReady: false,
       shouldDelayProcessedCompareRender: false,
@@ -110,7 +110,7 @@ describe('derivePreviewCompareReadiness', () => {
         embeddedPreviewUrl: null,
       }),
     ).toMatchObject({
-      originalWebglLayerEligible: true,
+      originalGpuLayerEligible: true,
       embeddedPreviewFallbackReady: false,
     })
   })

@@ -107,7 +107,7 @@ describe('useOriginalReferenceSnapshotResources', () => {
       {
         id: 'original-reference-snapshot-render-1',
         owner: 'preview',
-        kind: 'webgl-pipeline',
+        kind: 'gpu-pipeline',
       },
     ])
 

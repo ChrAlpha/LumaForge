@@ -340,7 +340,7 @@ export async function orchestrateFullResExport(
     }
 
     if (jobExecutionPlan.profile.releasePreviewPipelineBeforeExport) {
-      // Capture the current WebGL pipeline before activePlan state and
+      // Capture the current GPU pipeline before activePlan state and
       // preview-copy prep can suspend PreviewCanvas and clear the ref.
       ctx.services.registerCurrentPreviewPipelineForEvacuation()
     }

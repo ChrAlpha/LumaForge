@@ -77,7 +77,7 @@ export interface UseRawWorkflowReturn {
   displaySource: DisplaySource
   originalReferenceSnapshot: OriginalReferenceSnapshot | null
   originalReferenceFallbackReason: string | null
-  dualWebglAllowed: boolean
+  dualGpuAllowed: boolean
   histogram: PreviewHistogramState
   previewSuspended: boolean
   loadFile: (file: File) => Promise<void>

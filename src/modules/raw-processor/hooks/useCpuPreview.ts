@@ -61,7 +61,7 @@ export function neutralFrameCacheKey(
  *
  * - 'processed': uses all params as-is.
  * - 'neutral': zeros every look + tone field (mirrors ORIGINAL_LAYER_PARAMS
- *   in OriginalWebglLayer.tsx) but keeps rawRenderExposure so the intrinsic
+ *   in OriginalGpuLayer.tsx) but keeps rawRenderExposure so the intrinsic
  *   camera exposure is preserved.
  */
 export function buildCpuPreviewGraph(

@@ -22,7 +22,7 @@ export type OriginalReferenceSnapshotCapability = {
   previewGpuBudget?: Pick<
     PreviewGpuBudget,
     | 'boundedHqMaxPixels'
-    | 'dualWebglAllowed'
+    | 'dualGpuAllowed'
     | 'originalReferenceSnapshotMaxPixels'
   >
 }

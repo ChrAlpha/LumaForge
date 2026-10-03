@@ -63,7 +63,7 @@ describe('useOriginalReferenceStage', () => {
       }),
     )
 
-    expect(typeof result.current.dualWebglAllowed).toBe('boolean')
+    expect(typeof result.current.dualGpuAllowed).toBe('boolean')
     expect(result.current.originalReferenceSnapshot).toBeNull()
     expect(result.current.originalReferenceFallbackReason).toBeNull()
     expect(typeof result.current.requestOriginalReferenceFallback).toBe(

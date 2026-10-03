@@ -70,11 +70,9 @@ function getOriginalReferenceSnapshotCapability({
   }
 }
 
-function allowDualWebglCompare(
-  capability: OriginalReferenceSnapshotCapability,
-) {
+function allowDualGpuCompare(capability: OriginalReferenceSnapshotCapability) {
   if (capability.previewGpuBudget) {
-    return capability.previewGpuBudget.dualWebglAllowed
+    return capability.previewGpuBudget.dualGpuAllowed
   }
 
   return capability.webKitClass === 'chromium' && capability.pthread
@@ -97,7 +95,7 @@ export function useOriginalReferencePolicy({
     previewSourceWidth,
     previewSourceHeight,
   })
-  const dualWebglAllowed = allowDualWebglCompare(originalReferenceCapability)
+  const dualGpuAllowed = allowDualGpuCompare(originalReferenceCapability)
   const cssCompareSupported = supportsCssCompare()
   const originalReferenceFallbackRequested =
     Boolean(sessionId) && fallbackRequestSessionId === sessionId
@@ -116,11 +114,11 @@ export function useOriginalReferencePolicy({
     viewMode === 'compare' &&
     !previewSuspended &&
     cssCompareSupported &&
-    (!dualWebglAllowed || originalReferenceFallbackRequested)
+    (!dualGpuAllowed || originalReferenceFallbackRequested)
 
   return {
     originalReferenceCapability,
-    dualWebglAllowed,
+    dualGpuAllowed,
     supportsCssCompare: cssCompareSupported,
     shouldPrepareOriginalReferenceSnapshot,
     requestOriginalReferenceFallback,

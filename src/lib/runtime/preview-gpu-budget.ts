@@ -8,19 +8,18 @@ import {
 import type { CapabilityVector } from './capability-vector'
 
 export interface PreviewGpuCapabilitySnapshot {
-  readonly webgl2: boolean
+  readonly webgpu: boolean
   readonly maxTextureSize: number
-  readonly maxRenderbufferSize: number
 }
 
 export interface PreviewGpuBudget {
   readonly boundedHqMaxPixels: number
-  readonly dualWebglAllowed: boolean
+  readonly dualGpuAllowed: boolean
   readonly originalReferenceSnapshotMaxPixels: number
 }
 
 const DESKTOP_PERFORMANCE_PREVIEW_MAX_PIXELS = 16_000_000
-const DUAL_WEBGL_MIN_DIMENSION = 4096
+const DUAL_GPU_MIN_DIMENSION = 4096
 
 function hasKnownLowMemory(capability: CapabilityVector) {
   return capability.deviceMemoryGB != null && capability.deviceMemoryGB <= 4
@@ -88,15 +87,15 @@ export function derivePreviewGpuBudget({
   sourceWidth: number
   sourceHeight: number
 }): PreviewGpuBudget {
-  if (!gpu.webgl2) {
+  if (!gpu.webgpu) {
     return Object.freeze({
       boundedHqMaxPixels: QUICK_PREVIEW_MAX_PIXELS,
-      dualWebglAllowed: false,
+      dualGpuAllowed: false,
       originalReferenceSnapshotMaxPixels: QUICK_PREVIEW_MAX_PIXELS,
     })
   }
 
-  const maxDimension = Math.min(gpu.maxTextureSize, gpu.maxRenderbufferSize)
+  const maxDimension = gpu.maxTextureSize
   const targetPixels = getPreviewTargetPixels(capability)
   const dimensionLimitedPixels = getDimensionLimitedPixels({
     sourceWidth,
@@ -105,14 +104,14 @@ export function derivePreviewGpuBudget({
   })
 
   const boundedHqMaxPixels = Math.min(targetPixels, dimensionLimitedPixels)
-  const dualWebglAllowed =
+  const dualGpuAllowed =
     !hasKnownLowMemory(capability) &&
-    maxDimension >= DUAL_WEBGL_MIN_DIMENSION &&
+    maxDimension >= DUAL_GPU_MIN_DIMENSION &&
     boundedHqMaxPixels >= BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS
 
   return Object.freeze({
     boundedHqMaxPixels,
-    dualWebglAllowed,
+    dualGpuAllowed,
     originalReferenceSnapshotMaxPixels: boundedHqMaxPixels,
   })
 }
@@ -122,8 +121,7 @@ export function detectPreviewGpuCapabilitySnapshot(): PreviewGpuCapabilitySnapsh
   const backend = getPreviewBackendSnapshot()
   if (!backend) return null
   return Object.freeze({
-    webgl2: backend.backend !== 'cpu',
+    webgpu: backend.backend === 'webgpu',
     maxTextureSize: backend.maxTextureSize,
-    maxRenderbufferSize: backend.maxTextureSize,
   })
 }

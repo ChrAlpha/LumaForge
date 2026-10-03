@@ -113,7 +113,7 @@ export function syncRawUploadInput({
 
   if (!uploadInput) {
     pipeline.clearImage()
-    setError('Decoded image data does not match the WebGL upload layout')
+    setError('Decoded image data does not match the GPU upload layout')
     return false
   }
 

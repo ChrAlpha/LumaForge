@@ -67,7 +67,7 @@ export function RawPreviewStageSurface({
       displaySource={workflow.displaySource}
       originalReferenceSnapshot={workflow.originalReferenceSnapshot}
       originalReferenceFallbackReason={workflow.originalReferenceFallbackReason}
-      dualWebglAllowed={workflow.dualWebglAllowed}
+      dualGpuAllowed={workflow.dualGpuAllowed}
       previewSuspended={workflow.previewSuspended}
       previewViewport={workflow.previewViewport}
       split={workflow.compareSplit}

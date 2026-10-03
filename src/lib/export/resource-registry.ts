@@ -1,7 +1,7 @@
 export type LargeResourceOwner =
   | 'preview'
   | 'bounded-hq'
-  | 'webgl'
+  | 'gpu'
   | 'export-result'
   | 'export-worker'
   | 'lut-fetch'
@@ -9,7 +9,7 @@ export type LargeResourceOwner =
 export type LargeResourceKind =
   | 'worker'
   | 'raw-session'
-  | 'webgl-pipeline'
+  | 'gpu-pipeline'
   | 'array-buffer'
   | 'blob'
   | 'object-url'

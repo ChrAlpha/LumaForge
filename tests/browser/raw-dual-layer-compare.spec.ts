@@ -16,7 +16,7 @@ const RAW_COMPARE_FIXTURE =
   '/workspaces/LumaForge/test-images/SGL_1998.NEF'
 const RAW_COMPARE_URL = process.env.LUMAFORGE_RAW_COMPARE_URL ?? '/raw'
 
-type LayeredCompareMode = 'dual-webgl' | 'jpeg-fallback'
+type LayeredCompareMode = 'dual-gpu' | 'jpeg-fallback'
 
 type PreviewViewport = {
   zoom: number
@@ -183,7 +183,7 @@ async function readCompareModeSamples(
 
 function expectNoProcessedOnlyAfterDualWebgl(samples: CompareModeSample[]) {
   const firstDualIndex = samples.findIndex((sample) => {
-    return sample.mode === 'dual-webgl'
+    return sample.mode === 'dual-gpu'
   })
 
   expect(firstDualIndex).toBeGreaterThanOrEqual(0)
@@ -363,7 +363,7 @@ async function readLayerTransforms(page: Page) {
     )
     const processed = document.querySelector<HTMLElement>('.raw-preview-canvas')
     const original = document.querySelector<HTMLElement>(
-      '.raw-preview-original-image, .raw-preview-original-webgl-canvas',
+      '.raw-preview-original-image, .raw-preview-original-gpu-canvas',
     )
 
     return {
@@ -500,13 +500,11 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
   ).toBeVisible({ timeout: 90_000 })
   await expect(page.getByRole('slider', { name: 'Exposure' })).toBeVisible()
 
-  await waitForCompareMode(page, 'dual-webgl')
-  const mode: LayeredCompareMode = 'dual-webgl'
-  const compareLayer = page.locator('[data-compare-mode="dual-webgl"]').first()
+  await waitForCompareMode(page, 'dual-gpu')
+  const mode: LayeredCompareMode = 'dual-gpu'
+  const compareLayer = page.locator('[data-compare-mode="dual-gpu"]').first()
   await expect(compareLayer).toBeVisible()
-  await expect(page.locator('.raw-preview-original-webgl-canvas')).toHaveCount(
-    1,
-  )
+  await expect(page.locator('.raw-preview-original-gpu-canvas')).toHaveCount(1)
   await expectWebGPUPreview(page, testInfo)
   expect((await readWebglStats(page)).drawCalls).toBeGreaterThan(0)
 

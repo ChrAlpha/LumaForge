@@ -59,7 +59,7 @@ const webkitGpuBudgetNoPthread: OriginalReferenceSnapshotCapability = {
   pthread: false,
   previewGpuBudget: {
     boundedHqMaxPixels: 12_000_000,
-    dualWebglAllowed: true,
+    dualGpuAllowed: true,
     originalReferenceSnapshotMaxPixels: 12_000_000,
   },
 }
@@ -81,7 +81,7 @@ describe('useOriginalReferencePolicy', () => {
       { initialProps: { previewSuspended: false } },
     )
 
-    expect(result.current.dualWebglAllowed).toBe(true)
+    expect(result.current.dualGpuAllowed).toBe(true)
     expect(result.current.shouldPrepareOriginalReferenceSnapshot).toBe(false)
 
     act(() => {
@@ -97,7 +97,7 @@ describe('useOriginalReferencePolicy', () => {
     expect(result.current.shouldPrepareOriginalReferenceSnapshot).toBe(false)
   })
 
-  it('prepares a CSS original-reference snapshot when dual WebGL compare is unavailable', () => {
+  it('prepares a CSS original-reference snapshot when dual GPU compare is unavailable', () => {
     const session = createSession()
 
     const { result } = renderHook(() =>
@@ -111,11 +111,11 @@ describe('useOriginalReferencePolicy', () => {
       }),
     )
 
-    expect(result.current.dualWebglAllowed).toBe(false)
+    expect(result.current.dualGpuAllowed).toBe(false)
     expect(result.current.shouldPrepareOriginalReferenceSnapshot).toBe(true)
   })
 
-  it('allows dual WebGL on non-pthread engines when the GPU budget supports it', () => {
+  it('allows dual GPU on non-pthread engines when the GPU budget supports it', () => {
     const session = createSession()
 
     const { result } = renderHook(() =>
@@ -129,7 +129,7 @@ describe('useOriginalReferencePolicy', () => {
       }),
     )
 
-    expect(result.current.dualWebglAllowed).toBe(true)
+    expect(result.current.dualGpuAllowed).toBe(true)
     expect(result.current.shouldPrepareOriginalReferenceSnapshot).toBe(false)
   })
 })

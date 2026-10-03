@@ -15,7 +15,7 @@ import {
 const expectedFullEvacuationOwners: LargeResourceOwner[] = [
   'preview',
   'bounded-hq',
-  'webgl',
+  'gpu',
   'export-result',
   'lut-fetch',
 ]
@@ -67,11 +67,11 @@ describe('export evacuation', () => {
     const registry = createResourceRegistry()
     const events: string[] = []
     registry.register({
-      id: 'webgl-pipeline',
-      owner: 'webgl',
-      kind: 'webgl-pipeline',
+      id: 'gpu-pipeline',
+      owner: 'gpu',
+      kind: 'gpu-pipeline',
       dispose: () => {
-        events.push('dispose-webgl-pipeline')
+        events.push('dispose-gpu-pipeline')
       },
     })
     registry.register({
@@ -98,20 +98,20 @@ describe('export evacuation', () => {
       'abort-bounded-hq',
       'release-export-result',
       'stop-lut-fetches',
+      'dispose-gpu-pipeline',
       'dispose-stale-result',
-      'dispose-webgl-pipeline',
     ])
     expect(result.requiredOwners).toEqual([
       'preview',
       'bounded-hq',
-      'webgl',
+      'gpu',
       'export-result',
       'lut-fetch',
     ])
     expect(result.disposedOwners).toEqual([
       'preview',
       'bounded-hq',
-      'webgl',
+      'gpu',
       'export-result',
       'lut-fetch',
     ])
@@ -143,12 +143,12 @@ describe('export evacuation', () => {
       },
     })
     registry.register({
-      id: 'webgl-pipeline',
-      owner: 'webgl',
-      kind: 'webgl-pipeline',
+      id: 'gpu-pipeline',
+      owner: 'gpu',
+      kind: 'gpu-pipeline',
       estimatedBytes: 4096,
       dispose: () => {
-        events.push('dispose-webgl-pipeline')
+        events.push('dispose-gpu-pipeline')
       },
     })
 
@@ -168,8 +168,8 @@ describe('export evacuation', () => {
       'release-export-result',
       'stop-lut-fetches',
       'dispose-bounded-hq-buffer',
+      'dispose-gpu-pipeline',
       'dispose-preview-worker',
-      'dispose-webgl-pipeline',
     ])
     expect(result.registryCheck).toEqual({ ok: true })
     expect(result.remainingLive).toEqual([])
@@ -180,9 +180,9 @@ describe('export evacuation', () => {
   it('throws a stable evacuation error when owner disposal fails', async () => {
     const registry = createResourceRegistry()
     registry.register({
-      id: 'stuck-webgl',
-      owner: 'webgl',
-      kind: 'webgl-pipeline',
+      id: 'stuck-gpu',
+      owner: 'gpu',
+      kind: 'gpu-pipeline',
       dispose: () => {
         throw new Error('dispose failed')
       },
@@ -212,23 +212,23 @@ describe('export evacuation', () => {
           ok: false,
           live: [
             {
-              id: 'webgl-pipeline',
-              owner: 'webgl',
-              kind: 'webgl-pipeline',
+              id: 'gpu-pipeline',
+              owner: 'gpu',
+              kind: 'gpu-pipeline',
             },
           ],
         },
-        requiredOwners: ['preview', 'webgl'],
+        requiredOwners: ['preview', 'gpu'],
         disposedOwners: ['preview'],
         remainingLive: [
           {
-            id: 'webgl-pipeline',
-            owner: 'webgl',
-            kind: 'webgl-pipeline',
+            id: 'gpu-pipeline',
+            owner: 'gpu',
+            kind: 'gpu-pipeline',
             estimatedBytes: 4096,
           },
         ],
-        estimatedBytesByOwner: { webgl: 4096 },
+        estimatedBytesByOwner: { gpu: 4096 },
         totalEstimatedBytes: 4096,
         evacuatedAt: '2026-05-04T00:00:00.000Z',
       },
@@ -236,27 +236,27 @@ describe('export evacuation', () => {
 
     expect(payload).toEqual({
       profile: 'mobile-balanced',
-      requiredOwners: ['preview', 'webgl'],
+      requiredOwners: ['preview', 'gpu'],
       disposedOwners: ['preview'],
       registryCheck: {
         ok: false,
         live: [
           {
-            id: 'webgl-pipeline',
-            owner: 'webgl',
-            kind: 'webgl-pipeline',
+            id: 'gpu-pipeline',
+            owner: 'gpu',
+            kind: 'gpu-pipeline',
           },
         ],
       },
       remainingLive: [
         {
-          id: 'webgl-pipeline',
-          owner: 'webgl',
-          kind: 'webgl-pipeline',
+          id: 'gpu-pipeline',
+          owner: 'gpu',
+          kind: 'gpu-pipeline',
           estimatedBytes: 4096,
         },
       ],
-      estimatedBytesByOwner: { webgl: 4096 },
+      estimatedBytesByOwner: { gpu: 4096 },
       totalEstimatedBytes: 4096,
       evacuatedAt: '2026-05-04T00:00:00.000Z',
     })
@@ -270,23 +270,23 @@ describe('export evacuation', () => {
         ok: false,
         live: [
           {
-            id: 'webgl-pipeline',
-            owner: 'webgl',
-            kind: 'webgl-pipeline',
+            id: 'gpu-pipeline',
+            owner: 'gpu',
+            kind: 'gpu-pipeline',
           },
         ],
       },
       snapshot: {
         live: [
           {
-            id: 'webgl-pipeline',
-            owner: 'webgl',
-            kind: 'webgl-pipeline',
+            id: 'gpu-pipeline',
+            owner: 'gpu',
+            kind: 'gpu-pipeline',
             estimatedBytes: 4096,
           },
         ],
-        liveByOwner: { webgl: 1 },
-        estimatedBytesByOwner: { webgl: 4096 },
+        liveByOwner: { gpu: 1 },
+        estimatedBytesByOwner: { gpu: 4096 },
         totalEstimatedBytes: 4096,
       },
       cleanedAt: '2026-05-04T00:00:02.000Z',
@@ -299,21 +299,21 @@ describe('export evacuation', () => {
         ok: false,
         live: [
           {
-            id: 'webgl-pipeline',
-            owner: 'webgl',
-            kind: 'webgl-pipeline',
+            id: 'gpu-pipeline',
+            owner: 'gpu',
+            kind: 'gpu-pipeline',
           },
         ],
       },
       remainingLive: [
         {
-          id: 'webgl-pipeline',
-          owner: 'webgl',
-          kind: 'webgl-pipeline',
+          id: 'gpu-pipeline',
+          owner: 'gpu',
+          kind: 'gpu-pipeline',
           estimatedBytes: 4096,
         },
       ],
-      estimatedBytesByOwner: { webgl: 4096 },
+      estimatedBytesByOwner: { gpu: 4096 },
       totalEstimatedBytes: 4096,
       cleanedAt: '2026-05-04T00:00:02.000Z',
     })

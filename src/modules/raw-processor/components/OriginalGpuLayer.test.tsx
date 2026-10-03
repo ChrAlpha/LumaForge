@@ -2,7 +2,7 @@ import { act, render, waitFor } from '@testing-library/react'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
 
-import { OriginalWebglLayer } from './OriginalWebglLayer'
+import { OriginalGpuLayer } from './OriginalGpuLayer'
 
 const decodedImage: DecodedImage = {
   width: 400,
@@ -30,7 +30,7 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-describe('originalWebglLayer', () => {
+describe('originalGpuLayer', () => {
   it('reports only the latest generation after its GPU work completes', async () => {
     const firstFrame = deferred()
     const secondFrame = deferred()
@@ -56,11 +56,11 @@ describe('originalWebglLayer', () => {
       onReady,
       onError,
     }
-    const { rerender } = render(<OriginalWebglLayer {...props} />)
+    const { rerender } = render(<OriginalGpuLayer {...props} />)
     await waitFor(() => expect(pipeline.waitForGpu).toHaveBeenCalledOnce())
     expect(onReady).not.toHaveBeenCalled()
 
-    rerender(<OriginalWebglLayer {...props} imageVersion={2} />)
+    rerender(<OriginalGpuLayer {...props} imageVersion={2} />)
     await waitFor(() => expect(pipeline.waitForGpu).toHaveBeenCalledTimes(2))
     await act(async () => firstFrame.reject(new Error('stale GPU failure')))
     expect(onReady).not.toHaveBeenCalled()
@@ -89,7 +89,7 @@ describe('originalWebglLayer', () => {
         waitForGpu: vi.fn(() => frame.promise),
       }
       const { unmount } = render(
-        <OriginalWebglLayer
+        <OriginalGpuLayer
           imageRef={{ current: decodedImage }}
           imageVersion={1}
           createPipeline={() => pipeline as never}
@@ -116,7 +116,7 @@ describe('originalWebglLayer', () => {
     const dispose = vi.fn()
     const waitForGpu = vi.fn(() => frame.promise)
     render(
-      <OriginalWebglLayer
+      <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
         imageVersion={1}
         createPipeline={() =>
@@ -142,12 +142,12 @@ describe('originalWebglLayer', () => {
     expect(onReady).not.toHaveBeenCalled()
   })
 
-  it('renders technical-base original params into a left WebGL canvas', async () => {
+  it('renders technical-base original params into a left GPU canvas', async () => {
     const setParams = vi.fn()
     const renderPipeline = vi.fn()
 
     render(
-      <OriginalWebglLayer
+      <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
         imageVersion={1}
         createPipeline={() =>
@@ -156,6 +156,7 @@ describe('originalWebglLayer', () => {
             uploadImage: vi.fn(),
             setParams,
             render: renderPipeline,
+            waitForGpu: vi.fn().mockResolvedValue(undefined),
             resize: vi.fn(),
             dispose: vi.fn(),
           }) as never
@@ -182,12 +183,13 @@ describe('originalWebglLayer', () => {
         uploadImage: vi.fn(),
         setParams: vi.fn(),
         render: renderPipeline,
+        waitForGpu: vi.fn().mockResolvedValue(undefined),
         resize: vi.fn(),
         dispose: vi.fn(),
       }) as never
 
     const { rerender } = render(
-      <OriginalWebglLayer
+      <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
         imageVersion={1}
         createPipeline={createPipeline}
@@ -203,7 +205,7 @@ describe('originalWebglLayer', () => {
     renderPipeline.mockClear()
 
     rerender(
-      <OriginalWebglLayer
+      <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
         imageVersion={2}
         createPipeline={createPipeline}
@@ -217,11 +219,11 @@ describe('originalWebglLayer', () => {
     })
   })
 
-  it('does not force WebGL context loss on ordinary unmount', async () => {
+  it('does not force GPU context loss on ordinary unmount', async () => {
     const dispose = vi.fn()
     const renderPipeline = vi.fn()
     const { unmount } = render(
-      <OriginalWebglLayer
+      <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
         imageVersion={1}
         createPipeline={() =>
@@ -230,6 +232,7 @@ describe('originalWebglLayer', () => {
             uploadImage: vi.fn(),
             setParams: vi.fn(),
             render: renderPipeline,
+            waitForGpu: vi.fn().mockResolvedValue(undefined),
             resize: vi.fn(),
             dispose,
           }) as never
@@ -249,7 +252,7 @@ describe('originalWebglLayer', () => {
     const onPipelineChange = vi.fn()
 
     render(
-      <OriginalWebglLayer
+      <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
         imageVersion={1}
         createPipeline={() =>
@@ -258,6 +261,7 @@ describe('originalWebglLayer', () => {
             uploadImage: vi.fn(),
             setParams: vi.fn(),
             render: vi.fn(),
+            waitForGpu: vi.fn().mockResolvedValue(undefined),
             resize: vi.fn(),
             dispose,
           }) as never
@@ -288,11 +292,11 @@ describe('originalWebglLayer', () => {
     const onError = vi.fn()
 
     render(
-      <OriginalWebglLayer
+      <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
         imageVersion={1}
         createPipeline={() => {
-          throw new Error('WebGL2 is not supported on this device')
+          throw new Error('WebGPU is not supported on this device')
         }}
         onError={onError}
       />,
@@ -301,19 +305,19 @@ describe('originalWebglLayer', () => {
     await waitFor(() => {
       expect(onError).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'WebGL2 is not supported on this device',
+          message: 'WebGPU is not supported on this device',
         }),
         '1',
       )
     })
   })
 
-  it('reports render failures and releases the original WebGL context', async () => {
+  it('reports render failures and releases the original GPU context', async () => {
     const dispose = vi.fn()
     const onError = vi.fn()
 
     render(
-      <OriginalWebglLayer
+      <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
         imageVersion={1}
         createPipeline={() =>
@@ -324,6 +328,7 @@ describe('originalWebglLayer', () => {
             }),
             setParams: vi.fn(),
             render: vi.fn(),
+            waitForGpu: vi.fn().mockResolvedValue(undefined),
             resize: vi.fn(),
             dispose,
           }) as never

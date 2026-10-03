@@ -11,7 +11,7 @@ export type PreviewFrameStatus = {
   state: 'idle' | 'ready'
 }
 
-export type OriginalWebglFrameStatus = {
+export type OriginalGpuFrameStatus = {
   generationKey: string
   displaySource: DisplaySource
   state: 'idle' | 'ready' | 'failed'
@@ -24,7 +24,7 @@ export const EMPTY_PREVIEW_FRAME_STATUS: PreviewFrameStatus = {
   state: 'idle',
 }
 
-export const EMPTY_ORIGINAL_WEBGL_FRAME_STATUS: OriginalWebglFrameStatus = {
+export const EMPTY_ORIGINAL_GPU_FRAME_STATUS: OriginalGpuFrameStatus = {
   generationKey: '',
   displaySource: 'none',
   state: 'idle',
@@ -57,10 +57,10 @@ type DerivePreviewCompareReadinessInput = {
   trackReady: boolean
   embeddedPreviewUrl?: string | null
   viewMode: ProcessingParams['viewMode']
-  dualWebglAllowed: boolean
+  dualGpuAllowed: boolean
   suspended: boolean
   supportsCssClip: boolean
-  originalWebglStatus: OriginalWebglFrameStatus
+  originalGpuStatus: OriginalGpuFrameStatus
   processedFrameStatus: PreviewFrameStatus
 }
 
@@ -90,24 +90,20 @@ export function getProcessedImageGenerationKey({
   ].join(':')
 }
 
-export function getOriginalWebglGenerationKey({
+export function getOriginalGpuGenerationKey({
   imageVersion,
   displaySource,
-  dualWebglAllowed,
+  dualGpuAllowed,
   viewMode,
   suspended,
 }: Pick<
   DerivePreviewCompareReadinessInput,
-  | 'imageVersion'
-  | 'displaySource'
-  | 'dualWebglAllowed'
-  | 'viewMode'
-  | 'suspended'
+  'imageVersion' | 'displaySource' | 'dualGpuAllowed' | 'viewMode' | 'suspended'
 >) {
   return [
     imageVersion,
     displaySource,
-    dualWebglAllowed ? 'dual' : 'fallback',
+    dualGpuAllowed ? 'dual' : 'fallback',
     viewMode,
     suspended ? 'suspended' : 'active',
   ].join(':')
@@ -123,10 +119,10 @@ export function derivePreviewCompareReadiness({
   trackReady,
   embeddedPreviewUrl,
   viewMode,
-  dualWebglAllowed,
+  dualGpuAllowed,
   suspended,
   supportsCssClip,
-  originalWebglStatus,
+  originalGpuStatus,
   processedFrameStatus,
 }: DerivePreviewCompareReadinessInput) {
   const showEmbeddedPreview =
@@ -143,32 +139,32 @@ export function derivePreviewCompareReadiness({
     processedFrameStatus.generationKey === processedImageGenerationKey &&
     processedFrameStatus.state === 'ready'
   const processedPreviewVisible = trackReady && currentProcessedFrameReady
-  const originalWebglGenerationKey = getOriginalWebglGenerationKey({
+  const originalGpuGenerationKey = getOriginalGpuGenerationKey({
     imageVersion,
     displaySource,
-    dualWebglAllowed,
+    dualGpuAllowed,
     viewMode,
     suspended,
   })
-  const originalWebglReady =
-    originalWebglStatus.generationKey === originalWebglGenerationKey &&
-    originalWebglStatus.state === 'ready'
-  const originalWebglFailed =
-    originalWebglStatus.generationKey === originalWebglGenerationKey &&
-    originalWebglStatus.state === 'failed'
-  const originalWebglLayerEligible =
+  const originalGpuReady =
+    originalGpuStatus.generationKey === originalGpuGenerationKey &&
+    originalGpuStatus.state === 'ready'
+  const originalGpuFailed =
+    originalGpuStatus.generationKey === originalGpuGenerationKey &&
+    originalGpuStatus.state === 'failed'
+  const originalGpuLayerEligible =
     !showEmbeddedPreview &&
     !suspended &&
     hasImageData &&
     viewMode === 'compare' &&
     supportsCssClip &&
-    dualWebglAllowed
-  const retainedOriginalWebglFrameReady =
-    originalWebglLayerEligible &&
-    !originalWebglReady &&
-    !originalWebglFailed &&
-    originalWebglStatus.state === 'ready' &&
-    originalWebglStatus.displaySource === 'quick' &&
+    dualGpuAllowed
+  const retainedOriginalGpuFrameReady =
+    originalGpuLayerEligible &&
+    !originalGpuReady &&
+    !originalGpuFailed &&
+    originalGpuStatus.state === 'ready' &&
+    originalGpuStatus.displaySource === 'quick' &&
     displaySource === 'bounded-hq' &&
     imageSource === 'bounded-hq'
   const retainedProcessedFrameReady =
@@ -178,27 +174,26 @@ export function derivePreviewCompareReadiness({
     displaySource === 'bounded-hq' &&
     imageSource === 'bounded-hq'
   const retainedCompareFrameReady =
-    retainedOriginalWebglFrameReady && retainedProcessedFrameReady
+    retainedOriginalGpuFrameReady && retainedProcessedFrameReady
   const embeddedPreviewFallbackReady =
     Boolean(embeddedPreviewUrl) &&
-    originalWebglLayerEligible &&
-    !originalWebglReady &&
+    originalGpuLayerEligible &&
+    !originalGpuReady &&
     !retainedCompareFrameReady
 
   return {
     processedImageGenerationKey,
     currentProcessedFrameReady,
     processedPreviewVisible,
-    originalWebglGenerationKey,
-    originalWebglReady,
-    originalWebglFailed,
-    originalWebglLayerEligible,
-    retainedOriginalWebglFrameReady,
+    originalGpuGenerationKey,
+    originalGpuReady,
+    originalGpuFailed,
+    originalGpuLayerEligible,
+    retainedOriginalGpuFrameReady,
     retainedProcessedFrameReady,
     retainedCompareFrameReady,
     embeddedPreviewFallbackReady,
-    shouldMountOriginalWebglLayer:
-      originalWebglLayerEligible && !originalWebglFailed,
+    shouldMountOriginalGpuLayer: originalGpuLayerEligible && !originalGpuFailed,
     shouldDelayProcessedCompareRender: retainedCompareFrameReady,
   }
 }

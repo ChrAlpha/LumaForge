@@ -46,7 +46,7 @@ export class ExportEvacuationError extends Error {
 const PRE_EXPORT_DISPOSABLE_OWNERS: LargeResourceOwner[] = [
   'preview',
   'bounded-hq',
-  'webgl',
+  'gpu',
   'export-result',
   'lut-fetch',
 ]
@@ -147,7 +147,7 @@ export async function evacuateBeforeExport(input: {
   const owners = [...input.owners]
 
   try {
-    if (hasOwner(owners, 'preview') || hasOwner(owners, 'webgl')) {
+    if (hasOwner(owners, 'preview') || hasOwner(owners, 'gpu')) {
       input.abortPreview?.()
     }
     if (hasOwner(owners, 'bounded-hq')) {

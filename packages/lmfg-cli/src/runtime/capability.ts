@@ -24,7 +24,7 @@ export const CPU_TIER_SUPPORTS = [
 ] as const
 
 export const BROWSER_TIER_SUPPORTS = [
-  'webgl2-preview',
+  'webgpu-preview',
   'candidate-render',
   'contact-sheet',
   'full-res-export',

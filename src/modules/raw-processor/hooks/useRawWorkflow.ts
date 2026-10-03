@@ -325,7 +325,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const {
     originalReferenceSnapshot,
     originalReferenceFallbackReason,
-    dualWebglAllowed,
+    dualGpuAllowed,
     requestOriginalReferenceFallback,
   } = useOriginalReferenceStage({
     sessionId: session?.id ?? null,
@@ -340,7 +340,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const originalReferenceStage = {
     originalReferenceSnapshot,
     originalReferenceFallbackReason,
-    dualWebglAllowed,
+    dualGpuAllowed,
     requestOriginalReferenceFallback,
   }
 

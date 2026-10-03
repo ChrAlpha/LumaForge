@@ -98,8 +98,6 @@ vi.mock('~/lib/preview/gpu-backend', () => {
   const facts = {
     backend: 'webgpu',
     maxTextureSize: 16384,
-    maxRenderbufferSize: 16384,
-    toneHighPrecision: true,
     reason: null,
   }
   return {
@@ -1696,7 +1694,7 @@ describe('useRawWorkflow embedded preview state', () => {
     ).toBe('strong')
   })
 
-  it('starts an original reference fallback snapshot after dual WebGL fails', async () => {
+  it('starts an original reference fallback snapshot after dual GPU fails', async () => {
     vi.stubGlobal('CSS', {
       supports: vi.fn(() => true),
     })
@@ -1720,7 +1718,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushPromises()
 
-    expect(result.current.dualWebglAllowed).toBe(true)
+    expect(result.current.dualGpuAllowed).toBe(true)
     expect(
       originalReferenceSnapshotMock.renderOriginalReferenceSnapshot,
     ).not.toHaveBeenCalled()
@@ -1760,7 +1758,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushPromises()
 
-    expect(result.current.dualWebglAllowed).toBe(false)
+    expect(result.current.dualGpuAllowed).toBe(false)
     expect(
       originalReferenceSnapshotMock.renderOriginalReferenceSnapshot,
     ).not.toHaveBeenCalled()
@@ -3691,14 +3689,14 @@ describe('useRawWorkflow embedded preview state', () => {
         requiredOwners: [
           'preview',
           'bounded-hq',
-          'webgl',
+          'gpu',
           'export-result',
           'lut-fetch',
         ],
         disposedOwners: [
           'preview',
           'bounded-hq',
-          'webgl',
+          'gpu',
           'export-result',
           'lut-fetch',
         ],

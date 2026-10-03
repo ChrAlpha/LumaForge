@@ -38,7 +38,7 @@ export function useOriginalReferenceStage({
   } = useOriginalReferenceSnapshotResources({ resourceRegistryRef })
   const {
     originalReferenceCapability,
-    dualWebglAllowed,
+    dualGpuAllowed,
     shouldPrepareOriginalReferenceSnapshot,
     requestOriginalReferenceFallback,
   } = useOriginalReferencePolicy({
@@ -65,7 +65,7 @@ export function useOriginalReferenceStage({
   return {
     originalReferenceSnapshot: originalReference.snapshot,
     originalReferenceFallbackReason: originalReference.fallbackReason,
-    dualWebglAllowed,
+    dualGpuAllowed,
     requestOriginalReferenceFallback,
   }
 }

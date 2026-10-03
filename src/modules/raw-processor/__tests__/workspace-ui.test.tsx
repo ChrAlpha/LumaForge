@@ -191,7 +191,7 @@ function rawProcessorViewState(
     displaySource: 'none',
     originalReferenceSnapshot: null,
     originalReferenceFallbackReason: null,
-    dualWebglAllowed: false,
+    dualGpuAllowed: false,
     histogram: { state: 'unavailable', reason: 'no-image' },
     previewSuspended: false,
     loadFile: vi.fn(),
@@ -1403,7 +1403,7 @@ describe('rawToolSurface', () => {
           <ComparePreviewStage
             {...compareStageProps({
               hasImage: true,
-              dualWebglAllowed: true,
+              dualGpuAllowed: true,
               imageRef: {
                 current: {
                   data: new Float32Array(4),
@@ -1447,7 +1447,7 @@ describe('rawToolSurface', () => {
           <ComparePreviewStage
             {...compareStageProps({
               hasImage: true,
-              dualWebglAllowed: false,
+              dualGpuAllowed: false,
               originalReferenceSnapshot: null,
               imageRef: {
                 current: {
@@ -1499,7 +1499,7 @@ describe('rawToolSurface', () => {
         <ComparePreviewStage
           {...compareStageProps({
             hasImage: true,
-            dualWebglAllowed: false,
+            dualGpuAllowed: false,
             originalReferenceSnapshot: snapshot,
             imageRef: {
               current: {
@@ -1538,12 +1538,12 @@ describe('rawToolSurface', () => {
       expect(screen.getByText('Final JPEG')).toBeInTheDocument()
     })
 
-    it('threads dual-webgl compare DOM into the loaded preview surface', async () => {
+    it('threads dual-gpu compare DOM into the loaded preview surface', async () => {
       const { container } = render(
         <ComparePreviewStage
           {...compareStageProps({
             hasImage: true,
-            dualWebglAllowed: true,
+            dualGpuAllowed: true,
             imageRef: {
               current: {
                 data: new Float32Array(4),
@@ -1570,10 +1570,10 @@ describe('rawToolSurface', () => {
       })
 
       expect(
-        container.querySelector('[data-compare-mode="dual-webgl"]'),
+        container.querySelector('[data-compare-mode="dual-gpu"]'),
       ).toBeInTheDocument()
       expect(
-        container.querySelector('.raw-preview-original-webgl-layer'),
+        container.querySelector('.raw-preview-original-gpu-layer'),
       ).toBeInTheDocument()
       expect(
         container.querySelector('.raw-preview-processed-layer'),
@@ -1595,7 +1595,7 @@ describe('rawToolSurface', () => {
         <ComparePreviewStage
           {...compareStageProps({
             hasImage: true,
-            dualWebglAllowed: false,
+            dualGpuAllowed: false,
             originalReferenceSnapshot: snapshot,
             imageRef: {
               current: {
@@ -1665,7 +1665,7 @@ describe('rawToolSurface', () => {
             },
           },
         }),
-        dualWebglAllowed: false,
+        dualGpuAllowed: false,
         originalReferenceSnapshot: snapshot,
         originalReferenceFallbackReason: null,
       })

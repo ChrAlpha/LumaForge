@@ -32,12 +32,12 @@ describe('usePreviewPipelineEvacuation', () => {
     result.current.setOriginalPreviewPipeline(original)
     result.current.registerCurrentPreviewPipelineForEvacuation()
     expect(registry.snapshot().totalEstimatedBytes).toBe(12288)
-    await registry.disposeOwners(['webgl'])
+    await registry.disposeOwners(['gpu'])
     expect(registry.snapshot().totalEstimatedBytes).toBe(0)
     expect(processed.dispose).toHaveBeenCalledOnce()
     expect(original.dispose).toHaveBeenCalledOnce()
   })
-  it('registers active processed and original preview pipelines for WebGL evacuation', async () => {
+  it('registers active processed and original preview pipelines for GPU evacuation', async () => {
     const registry = createResourceRegistry()
     const processed = createPipeline()
     const original = createPipeline()
@@ -55,18 +55,18 @@ describe('usePreviewPipelineEvacuation', () => {
 
     expect(registry.snapshot().live).toEqual([
       {
-        id: 'webgl-pipeline-1-processed',
-        owner: 'webgl',
-        kind: 'webgl-pipeline',
+        id: 'gpu-pipeline-1-processed',
+        owner: 'gpu',
+        kind: 'gpu-pipeline',
       },
       {
-        id: 'webgl-pipeline-2-original',
-        owner: 'webgl',
-        kind: 'webgl-pipeline',
+        id: 'gpu-pipeline-2-original',
+        owner: 'gpu',
+        kind: 'gpu-pipeline',
       },
     ])
 
-    await registry.disposeOwners(['webgl'])
+    await registry.disposeOwners(['gpu'])
 
     expect(processed.dispose).toHaveBeenCalledWith({ releaseContext: true })
     expect(original.dispose).toHaveBeenCalledWith({ releaseContext: true })
@@ -92,7 +92,7 @@ describe('usePreviewPipelineEvacuation', () => {
     result.current.registerCurrentPreviewPipelineForEvacuation()
     pipelineRef.current = nextProcessed
 
-    await registry.disposeOwners(['webgl'])
+    await registry.disposeOwners(['gpu'])
 
     expect(processed.dispose).toHaveBeenCalledWith({ releaseContext: true })
     expect(pipelineRef.current).toBe(nextProcessed)

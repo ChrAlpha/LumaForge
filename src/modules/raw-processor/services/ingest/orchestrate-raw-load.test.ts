@@ -312,9 +312,8 @@ describe('orchestrateRawLoad ack-before-work contract', () => {
     const order: string[] = []
     const { rawRuntimeAdapter } = await import('~/lib/raw/runtime-adapter')
     const gpu = {
-      webgl2: true,
+      webgpu: true,
       maxTextureSize: 8192,
-      maxRenderbufferSize: 8192,
     }
     const quick = createDecodedImage(1600, 1067)
     const bounded = createDecodedImage(4243, 2828)

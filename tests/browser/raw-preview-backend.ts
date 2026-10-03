@@ -36,7 +36,7 @@ export async function expectWebGPUPreview(page: Page, testInfo: TestInfo) {
     'data-render-backend',
     'webgpu',
   )
-  const original = page.locator('.raw-preview-original-webgl-canvas')
+  const original = page.locator('.raw-preview-original-gpu-canvas')
   if (await original.count()) {
     await expect(original).toHaveAttribute('data-render-backend', 'webgpu')
   }

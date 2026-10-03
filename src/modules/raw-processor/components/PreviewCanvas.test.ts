@@ -50,7 +50,7 @@ vi.mock('~/lib/webgpu/raw-processing-pipeline', () => ({
       const disposeMock = vi.fn()
       let lastUploadedSize: { width: number; height: number } | null = null
       const getKind = () =>
-        canvas.className.includes('raw-preview-original-webgl-canvas')
+        canvas.className.includes('raw-preview-original-gpu-canvas')
           ? 'original'
           : 'processed'
       const instance = {
@@ -396,7 +396,7 @@ describe('preview canvas upload descriptor', () => {
     })
   })
 
-  it('passes decoded raw render exposure into WebGL upload input', () => {
+  it('passes decoded raw render exposure into GPU upload input', () => {
     const data = new Uint16Array([1024, 1024, 1024])
     expect(
       createRawUploadInput({
@@ -482,7 +482,7 @@ describe('preview canvas upload descriptor', () => {
     expect(pipeline.clearImage).toHaveBeenCalledTimes(1)
     expect(pipeline.uploadImage).not.toHaveBeenCalled()
     expect(setError).toHaveBeenCalledWith(
-      'Decoded image data does not match the WebGL upload layout',
+      'Decoded image data does not match the GPU upload layout',
     )
   })
 
@@ -656,9 +656,9 @@ describe('preview canvas upload descriptor', () => {
     expect(onPipelineChange).not.toHaveBeenCalledWith(pipeline)
   })
 
-  it('threads selectiveColor params through to the WebGL pipeline (regression)', async () => {
+  it('threads selectiveColor params through to the GPU pipeline (regression)', async () => {
     // Regression for a bug where processedCanvasParams omitted
-    // params.selectiveColor — the WebGL preview ignored every HSL slider
+    // params.selectiveColor — the GPU preview ignored every HSL slider
     // even though the bake, CPU preview, histogram, and export-state paths
     // all consumed it. The shader saw a permanently-undefined
     // selectiveColor and the u_selectiveColorActive gate stayed off.
@@ -739,7 +739,7 @@ describe('preview canvas upload descriptor', () => {
     })
   })
 
-  it('uses layered dual-webgl compare and keeps the processed canvas out of shader compare mode', async () => {
+  it('uses layered dual-gpu compare and keeps the processed canvas out of shader compare mode', async () => {
     const snapshot: OriginalReferenceSnapshot = {
       key: 'original-reference|session:test',
       objectUrl: 'blob:original-reference',
@@ -760,19 +760,19 @@ describe('preview canvas upload descriptor', () => {
         },
         lutDataRef: { current: null },
         lutDataVersion: 0,
-        dualWebglAllowed: true,
+        dualGpuAllowed: true,
         originalReferenceSnapshot: snapshot,
       }),
     )
 
     await waitFor(() => {
       expect(
-        container.querySelector('[data-compare-mode="dual-webgl"]'),
+        container.querySelector('[data-compare-mode="dual-gpu"]'),
       ).toBeTruthy()
     })
 
     expect(
-      container.querySelector('.raw-preview-original-webgl-layer'),
+      container.querySelector('.raw-preview-original-gpu-layer'),
     ).toBeTruthy()
     expect(container.querySelector('.raw-preview-original-layer')).toBeNull()
     expect(container.querySelector('.raw-preview-processed-layer')).toHaveClass(
@@ -791,10 +791,10 @@ describe('preview canvas upload descriptor', () => {
     )
   })
 
-  it('keeps the embedded preview clipped on the left while original WebGL warms', async () => {
+  it('keeps the embedded preview clipped on the left while original GPU warms', async () => {
     const originalInitialize = deferred<void>()
     pipelineMock.initialize.mockImplementation((canvas: HTMLCanvasElement) => {
-      if (canvas.className.includes('raw-preview-original-webgl-canvas')) {
+      if (canvas.className.includes('raw-preview-original-gpu-canvas')) {
         return originalInitialize.promise
       }
 
@@ -813,7 +813,7 @@ describe('preview canvas upload descriptor', () => {
         lutDataVersion: 0,
         embeddedPreviewUrl: 'blob:embedded-preview',
         displaySource: 'quick',
-        dualWebglAllowed: true,
+        dualGpuAllowed: true,
       }),
     )
 
@@ -1022,7 +1022,7 @@ describe('preview canvas upload descriptor', () => {
     })
   })
 
-  it('promotes bounded-HQ dual-webgl compare after the processed layer uploads the same generation', async () => {
+  it('promotes bounded-HQ dual-gpu compare after the processed layer uploads the same generation', async () => {
     const imageRef: RefObject<DecodedImage | null> = {
       current: { ...decodedImage, source: 'quick' as const },
     }
@@ -1036,13 +1036,13 @@ describe('preview canvas upload descriptor', () => {
       lutDataRef: { current: null },
       lutDataVersion: 0,
       displaySource: 'quick',
-      dualWebglAllowed: true,
+      dualGpuAllowed: true,
     }
     const { container, rerender } = render(createElement(PreviewCanvas, props))
 
     await waitFor(() => {
       expect(
-        container.querySelector('[data-compare-mode="dual-webgl"]'),
+        container.querySelector('[data-compare-mode="dual-gpu"]'),
       ).toBeTruthy()
     })
     pipelineMock.renderEvents.length = 0
@@ -1087,11 +1087,11 @@ describe('preview canvas upload descriptor', () => {
     expect(processedUploadIndex).toBeGreaterThanOrEqual(0)
     expect(processedRenderIndex).toBeGreaterThan(processedUploadIndex)
     expect(
-      container.querySelector('[data-compare-mode="dual-webgl"]'),
+      container.querySelector('[data-compare-mode="dual-gpu"]'),
     ).toBeTruthy()
   })
 
-  it('keeps retained dual-webgl compare visible while bounded-HQ layers catch up', async () => {
+  it('keeps retained dual-gpu compare visible while bounded-HQ layers catch up', async () => {
     const imageRef: RefObject<DecodedImage | null> = {
       current: { ...decodedImage, source: 'quick' as const },
     }
@@ -1106,14 +1106,14 @@ describe('preview canvas upload descriptor', () => {
       lutDataRef: { current: null },
       lutDataVersion: 0,
       displaySource: 'quick',
-      dualWebglAllowed: true,
+      dualGpuAllowed: true,
       onCompareRenderModeChange,
     }
     const { container, rerender } = render(createElement(PreviewCanvas, props))
 
     await waitFor(() => {
       expect(
-        container.querySelector('[data-compare-mode="dual-webgl"]'),
+        container.querySelector('[data-compare-mode="dual-gpu"]'),
       ).toBeTruthy()
     })
     onCompareRenderModeChange.mockClear()
@@ -1134,7 +1134,7 @@ describe('preview canvas upload descriptor', () => {
     )
 
     expect(
-      container.querySelector('[data-compare-mode="dual-webgl"]'),
+      container.querySelector('[data-compare-mode="dual-gpu"]'),
     ).toBeTruthy()
     expect(onCompareRenderModeChange).not.toHaveBeenCalledWith('processed-only')
     await act(async () => {
@@ -1142,7 +1142,7 @@ describe('preview canvas upload descriptor', () => {
     })
   })
 
-  it('keeps dual-webgl compare ready after the preview image version changes', async () => {
+  it('keeps dual-gpu compare ready after the preview image version changes', async () => {
     const imageRef = { current: decodedImage }
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
@@ -1153,13 +1153,13 @@ describe('preview canvas upload descriptor', () => {
       },
       lutDataRef: { current: null },
       lutDataVersion: 0,
-      dualWebglAllowed: true,
+      dualGpuAllowed: true,
     }
     const { container, rerender } = render(createElement(PreviewCanvas, props))
 
     await waitFor(() => {
       expect(
-        container.querySelector('[data-compare-mode="dual-webgl"]'),
+        container.querySelector('[data-compare-mode="dual-gpu"]'),
       ).toBeTruthy()
     })
 
@@ -1190,17 +1190,17 @@ describe('preview canvas upload descriptor', () => {
     })
 
     expect(
-      container.querySelector('[data-compare-mode="dual-webgl"]'),
+      container.querySelector('[data-compare-mode="dual-gpu"]'),
     ).toBeTruthy()
     expect(
-      container.querySelector('.raw-preview-original-webgl-shell'),
+      container.querySelector('.raw-preview-original-gpu-shell'),
     ).toHaveClass('raw-preview-layer-clipped')
   })
 
-  it('requests jpeg fallback when the original WebGL layer fails', async () => {
+  it('requests jpeg fallback when the original GPU layer fails', async () => {
     const requestOriginalReferenceFallback = vi.fn()
     pipelineMock.initialize.mockImplementation((canvas: HTMLCanvasElement) => {
-      if (canvas.className.includes('raw-preview-original-webgl-canvas')) {
+      if (canvas.className.includes('raw-preview-original-gpu-canvas')) {
         return Promise.reject(new Error('Original layer failed'))
       }
 
@@ -1217,7 +1217,7 @@ describe('preview canvas upload descriptor', () => {
         },
         lutDataRef: { current: null },
         lutDataVersion: 0,
-        dualWebglAllowed: true,
+        dualGpuAllowed: true,
         onRequestOriginalReferenceFallback: requestOriginalReferenceFallback,
       }),
     )
@@ -1227,7 +1227,7 @@ describe('preview canvas upload descriptor', () => {
     })
   })
 
-  it('uses jpeg fallback compare when a snapshot is ready and dual-webgl is unavailable', async () => {
+  it('uses jpeg fallback compare when a snapshot is ready and dual-gpu is unavailable', async () => {
     const snapshot: OriginalReferenceSnapshot = {
       key: 'original-reference|session:test',
       objectUrl: 'blob:original-reference',
@@ -1248,7 +1248,7 @@ describe('preview canvas upload descriptor', () => {
         },
         lutDataRef: { current: null },
         lutDataVersion: 0,
-        dualWebglAllowed: false,
+        dualGpuAllowed: false,
         originalReferenceSnapshot: snapshot,
       }),
     )
@@ -1289,7 +1289,7 @@ describe('preview canvas upload descriptor', () => {
         },
         lutDataRef: { current: null },
         lutDataVersion: 0,
-        dualWebglAllowed: false,
+        dualGpuAllowed: false,
       }),
     )
 
@@ -1316,7 +1316,7 @@ describe('preview canvas upload descriptor', () => {
         },
         lutDataRef: { current: null },
         lutDataVersion: 0,
-        dualWebglAllowed: true,
+        dualGpuAllowed: true,
       }),
     )
 
@@ -1422,7 +1422,7 @@ describe('preview canvas upload descriptor', () => {
         },
         lutDataRef: { current: null },
         lutDataVersion: 0,
-        dualWebglAllowed: false,
+        dualGpuAllowed: false,
         originalReferenceSnapshot: snapshot,
         previewViewport: {
           zoom: 2,
@@ -1521,7 +1521,7 @@ describe('preview canvas upload descriptor', () => {
     expect(getComputedStyle(surface!).willChange).toContain('transform')
   })
 
-  it('does not rerender WebGL during split or viewport changes when layered compare is active', async () => {
+  it('does not rerender the GPU preview during split or viewport changes when layered compare is active', async () => {
     const snapshot: OriginalReferenceSnapshot = {
       key: 'original-reference|session:test',
       objectUrl: 'blob:original-reference',
@@ -1541,7 +1541,7 @@ describe('preview canvas upload descriptor', () => {
       },
       lutDataRef: { current: null },
       lutDataVersion: 0,
-      dualWebglAllowed: false,
+      dualGpuAllowed: false,
       originalReferenceSnapshot: snapshot,
       previewViewport: DEFAULT_PREVIEW_VIEWPORT,
     }

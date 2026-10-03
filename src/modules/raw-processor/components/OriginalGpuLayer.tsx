@@ -8,11 +8,16 @@ import { createRawUploadInput } from './preview-canvas-helpers'
 
 type OriginalPipeline = Pick<
   RawProcessingPipeline,
-  'initialize' | 'uploadImage' | 'setParams' | 'render' | 'resize' | 'dispose'
-> &
-  Partial<Pick<RawProcessingPipeline, 'waitForGpu'>>
+  | 'initialize'
+  | 'uploadImage'
+  | 'setParams'
+  | 'render'
+  | 'waitForGpu'
+  | 'resize'
+  | 'dispose'
+>
 
-export type OriginalWebglPipelineHandle = Pick<OriginalPipeline, 'dispose'>
+export type OriginalGpuPipelineHandle = Pick<OriginalPipeline, 'dispose'>
 
 const ORIGINAL_LAYER_PARAMS = {
   viewMode: 'original',
@@ -35,7 +40,7 @@ function createDefaultOriginalPipeline(canvas: HTMLCanvasElement) {
 /** Trailing delay before the backing store follows a layout resize. */
 const ORIGINAL_RESIZE_SETTLE_MS = 90
 
-export function OriginalWebglLayer({
+export function OriginalGpuLayer({
   imageRef,
   imageVersion,
   generationKey = String(imageVersion),
@@ -50,12 +55,12 @@ export function OriginalWebglLayer({
   createPipeline?: (canvas: HTMLCanvasElement) => OriginalPipeline
   onReady?: (generationKey: string) => void
   onError?: (error: unknown, generationKey: string) => void
-  onPipelineChange?: (pipeline: OriginalWebglPipelineHandle | null) => void
+  onPipelineChange?: (pipeline: OriginalGpuPipelineHandle | null) => void
 }) {
   const layerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const pipelineRef = useRef<OriginalPipeline | null>(null)
-  const pipelineHandleRef = useRef<OriginalWebglPipelineHandle | null>(null)
+  const pipelineHandleRef = useRef<OriginalGpuPipelineHandle | null>(null)
   const generationKeyRef = useRef(generationKey)
   const onReadyRef = useRef(onReady)
   const onErrorRef = useRef(onError)
@@ -87,7 +92,7 @@ export function OriginalWebglLayer({
     const activeCanvas = canvas
 
     let pipeline: OriginalPipeline | null = null
-    let handle: OriginalWebglPipelineHandle | null = null
+    let handle: OriginalGpuPipelineHandle | null = null
     let cancelled = false
     let disposed = false
 
@@ -247,8 +252,8 @@ export function OriginalWebglLayer({
       try {
         pipeline.uploadImage(uploadInput)
         pipeline.setParams(ORIGINAL_LAYER_PARAMS)
-        pipeline.render({ waitForGpu: !pipeline.waitForGpu })
-        if (pipeline.waitForGpu) await pipeline.waitForGpu()
+        pipeline.render({ waitForGpu: false })
+        await pipeline.waitForGpu()
         if (isCurrent()) onReadyRef.current?.(generationKey)
       } catch (error) {
         if (isCurrent()) reportPipelineError(error)
@@ -269,10 +274,10 @@ export function OriginalWebglLayer({
   return (
     <div
       ref={layerRef}
-      className="raw-preview-original-webgl-layer"
+      className="raw-preview-original-gpu-layer"
       aria-hidden="true"
     >
-      <canvas ref={canvasRef} className="raw-preview-original-webgl-canvas" />
+      <canvas ref={canvasRef} className="raw-preview-original-gpu-canvas" />
     </div>
   )
 }

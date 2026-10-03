@@ -106,7 +106,7 @@ export function buildRawWorkflowReturn({
     originalReferenceSnapshot: originalReferenceStage.originalReferenceSnapshot,
     originalReferenceFallbackReason:
       originalReferenceStage.originalReferenceFallbackReason,
-    dualWebglAllowed: originalReferenceStage.dualWebglAllowed,
+    dualGpuAllowed: originalReferenceStage.dualGpuAllowed,
     histogram: previewStage.histogram,
     previewSuspended: exportStage.previewSuspended,
     loadFile: ingestStage.loadFile,

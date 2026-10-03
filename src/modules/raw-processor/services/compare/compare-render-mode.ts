@@ -2,14 +2,14 @@ import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 
 export type CompareRenderMode =
   | { kind: 'off' }
-  | { kind: 'dual-webgl' }
+  | { kind: 'dual-gpu' }
   | {
       kind: 'embedded-fallback'
-      reason: 'original-webgl-pending'
+      reason: 'original-gpu-pending'
     }
   | {
       kind: 'jpeg-fallback'
-      reason: 'dual-webgl-unavailable' | 'original-webgl-failed'
+      reason: 'dual-gpu-unavailable' | 'original-gpu-failed'
     }
   | {
       kind: 'processed-only'
@@ -22,10 +22,10 @@ export type CompareRenderMode =
 export type SelectCompareRenderModeInput = {
   requestedViewMode: ProcessingParams['viewMode']
   supportsCssClip: boolean
-  dualWebglAllowed: boolean
-  originalWebglReady: boolean
+  dualGpuAllowed: boolean
+  originalGpuReady: boolean
   retainedCompareFrameReady?: boolean
-  originalWebglFailed?: boolean
+  originalGpuFailed?: boolean
   embeddedPreviewReady?: boolean
   jpegSnapshotReady: boolean
 }
@@ -44,10 +44,10 @@ export function supportsLayeredCompareCss(): boolean {
 export function selectCompareRenderMode({
   requestedViewMode,
   supportsCssClip,
-  dualWebglAllowed,
-  originalWebglReady,
+  dualGpuAllowed,
+  originalGpuReady,
   retainedCompareFrameReady = false,
-  originalWebglFailed = false,
+  originalGpuFailed = false,
   embeddedPreviewReady = false,
   jpegSnapshotReady,
 }: SelectCompareRenderModeInput): CompareRenderMode {
@@ -55,19 +55,19 @@ export function selectCompareRenderMode({
   if (!supportsCssClip) {
     return { kind: 'processed-only', reason: 'css-clip-unavailable' }
   }
-  if (dualWebglAllowed && (originalWebglReady || retainedCompareFrameReady)) {
-    return { kind: 'dual-webgl' }
+  if (dualGpuAllowed && (originalGpuReady || retainedCompareFrameReady)) {
+    return { kind: 'dual-gpu' }
   }
   if (jpegSnapshotReady) {
     return {
       kind: 'jpeg-fallback',
-      reason: originalWebglFailed
-        ? 'original-webgl-failed'
-        : 'dual-webgl-unavailable',
+      reason: originalGpuFailed
+        ? 'original-gpu-failed'
+        : 'dual-gpu-unavailable',
     }
   }
   if (embeddedPreviewReady) {
-    return { kind: 'embedded-fallback', reason: 'original-webgl-pending' }
+    return { kind: 'embedded-fallback', reason: 'original-gpu-pending' }
   }
 
   return { kind: 'processed-only', reason: 'jpeg-fallback-unavailable' }

@@ -73,7 +73,7 @@ export function useOriginalReferenceSnapshotResources({
       tracked = registry.register({
         id: `original-reference-snapshot-render-${++pendingResourceIdRef.current}`,
         owner: 'preview',
-        kind: 'webgl-pipeline',
+        kind: 'gpu-pipeline',
         dispose: () => {
           if (pendingResourceRef.current === tracked) {
             pendingResourceRef.current = null

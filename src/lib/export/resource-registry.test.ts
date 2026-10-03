@@ -8,9 +8,9 @@ describe('resource registry', () => {
     const registry = createResourceRegistry()
 
     registry.register({
-      id: 'webgl-pipeline',
-      owner: 'webgl',
-      kind: 'webgl-pipeline',
+      id: 'gpu-pipeline',
+      owner: 'gpu',
+      kind: 'gpu-pipeline',
       estimatedBytes: 16,
       dispose: vi.fn(),
     })
@@ -32,6 +32,12 @@ describe('resource registry', () => {
     expect(registry.snapshot()).toEqual({
       live: [
         {
+          id: 'gpu-pipeline',
+          owner: 'gpu',
+          kind: 'gpu-pipeline',
+          estimatedBytes: 16,
+        },
+        {
           id: 'preview-buffer',
           owner: 'preview',
           kind: 'array-buffer',
@@ -43,20 +49,14 @@ describe('resource registry', () => {
           kind: 'worker',
           estimatedBytes: 8,
         },
-        {
-          id: 'webgl-pipeline',
-          owner: 'webgl',
-          kind: 'webgl-pipeline',
-          estimatedBytes: 16,
-        },
       ],
       liveByOwner: {
         preview: 2,
-        webgl: 1,
+        gpu: 1,
       },
       estimatedBytesByOwner: {
         preview: 12,
-        webgl: 16,
+        gpu: 16,
       },
       totalEstimatedBytes: 28,
     })
@@ -183,12 +183,12 @@ describe('resource registry', () => {
 
   it('reports assertZeroLive failure and success with deterministic records', async () => {
     const registry = createResourceRegistry()
-    const owners: LargeResourceOwner[] = ['preview', 'webgl']
+    const owners: LargeResourceOwner[] = ['preview', 'gpu']
 
-    const webgl = registry.register({
-      id: 'webgl-pipeline',
-      owner: 'webgl',
-      kind: 'webgl-pipeline',
+    const gpu = registry.register({
+      id: 'gpu-pipeline',
+      owner: 'gpu',
+      kind: 'gpu-pipeline',
       dispose: vi.fn(),
     })
     registry.register({
@@ -201,13 +201,13 @@ describe('resource registry', () => {
     expect(registry.assertZeroLive(owners)).toEqual({
       ok: false,
       live: [
+        { id: 'gpu-pipeline', owner: 'gpu', kind: 'gpu-pipeline' },
         { id: 'preview-worker', owner: 'preview', kind: 'worker' },
-        { id: 'webgl-pipeline', owner: 'webgl', kind: 'webgl-pipeline' },
       ],
     })
 
     await registry.disposeOwners(['preview'])
-    await webgl.dispose()
+    await gpu.dispose()
 
     expect(registry.assertZeroLive(owners)).toEqual({ ok: true })
   })
