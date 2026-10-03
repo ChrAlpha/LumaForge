@@ -44,6 +44,53 @@ describe('rawDecodeBridge', () => {
     expect(factory).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps the runtime alive while an opened session is open', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = fakeRuntime()
+      const sessionDispose = vi.fn()
+      vi.mocked(runtime.openSession).mockResolvedValue({
+        sessionId: 'session-1',
+        dispose: sessionDispose,
+      } as never)
+      const bridge = new RawDecodeBridge({
+        runtimeFactory: () => runtime,
+        idleMs: 100,
+      })
+
+      const session = await bridge.openSession(
+        new AbortController().signal,
+        new File([], 'a.raf'),
+      )
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(runtime.dispose).not.toHaveBeenCalled()
+
+      session.dispose()
+      expect(sessionDispose).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(100)
+      expect(runtime.dispose).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('still disposes the runtime on an explicit terminate while a session is open', async () => {
+    const runtime = fakeRuntime()
+    vi.mocked(runtime.openSession).mockResolvedValue({
+      sessionId: 'session-1',
+      dispose: vi.fn(),
+    } as never)
+    const bridge = new RawDecodeBridge({ runtimeFactory: () => runtime })
+
+    await bridge.openSession(
+      new AbortController().signal,
+      new File([], 'a.raf'),
+    )
+    await bridge.terminate()
+
+    expect(runtime.dispose).toHaveBeenCalledTimes(1)
+  })
+
   it('prewarms by calling runtime init through the bridge', async () => {
     const runtime = fakeRuntime()
     const bridge = new RawDecodeBridge({ runtimeFactory: () => runtime })

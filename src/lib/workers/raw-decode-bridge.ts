@@ -46,11 +46,30 @@ export class RawDecodeBridge {
     return this.bridge.call('init', signal)
   }
 
-  openSession(
+  /**
+   * The session talks to the runtime worker directly (quick decode, export
+   * probe, bounded HQ), never through this queue, so it holds the worker open
+   * until `dispose()`; the idle timer would otherwise kill it mid-decode.
+   */
+  async openSession(
     signal: AbortSignal,
     ...args: Parameters<LumaRawRuntime['openSession']>
   ): ReturnType<LumaRawRuntime['openSession']> {
-    return this.bridge.call('openSession', signal, ...args)
+    const { value: session, release } = await this.bridge.callRetained(
+      'openSession',
+      signal,
+      ...args,
+    )
+    return {
+      ...session,
+      dispose() {
+        try {
+          session.dispose()
+        } finally {
+          release()
+        }
+      },
+    }
   }
 
   probe(

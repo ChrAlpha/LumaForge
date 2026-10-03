@@ -492,6 +492,74 @@ describe('raw runtime adapter', () => {
     expect(jpegRuntimeAvailabilityProbe).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps an open session usable past the decode bridge idle window', async () => {
+    vi.useFakeTimers()
+    try {
+      // Mirrors LumaRawWorkerClient: once the runtime is disposed, every
+      // session request rejects with this message.
+      let runtimeDisposed = false
+      const probeExportCapability = vi.fn(async () => {
+        if (runtimeDisposed) {
+          throw new Error('RAW runtime worker was disposed.')
+        }
+        return makeCapability()
+      })
+      const sessionDispose = vi.fn()
+      const { runtime } = makeLumaRuntime({
+        dispose: vi.fn<LumaRawRuntime['dispose']>(() => {
+          runtimeDisposed = true
+        }),
+        openSession: vi.fn<LumaRawRuntime['openSession']>().mockResolvedValue({
+          sessionId: 'session-1',
+          probe: {
+            jobId: 'probe',
+            width: 11648,
+            height: 8736,
+            supportLevel: 'experimental',
+            timings: { total: 1 },
+          },
+          timings: { total: 1 },
+          extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
+          probeExportCapability,
+          readRawWindow: vi.fn(),
+          readProcessedWindow: vi.fn(),
+          decodeQuick: vi.fn().mockResolvedValue(makeLumaFrame('quick')),
+          decodeBoundedHq: vi
+            .fn()
+            .mockResolvedValue(makeLumaFrame('bounded-hq')),
+          applyCalibration: vi
+            .fn()
+            .mockResolvedValue({ applied: true } as const),
+          dispose: sessionDispose,
+        }),
+      })
+      const adapter = createRawRuntimeAdapter({
+        lumaRuntimeFactory: () => runtime,
+        jpegRuntimeAvailabilityProbe: () => true,
+      })
+
+      const session = await adapter.openSession(
+        new File(['raw'], 'GFX100RF.RAF'),
+      )
+      // A 100 MP quick decode can outlast the bridge idle window on its own;
+      // the session's requests never pass through the bridge queue.
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      await expect(session.probeExportCapability?.()).resolves.toMatchObject({
+        supported: true,
+      })
+      expect(runtime.dispose).not.toHaveBeenCalled()
+
+      // Once the session closes, the idle window reclaims the worker again.
+      session.dispose()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(sessionDispose).toHaveBeenCalledTimes(1)
+      expect(runtime.dispose).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('fails export capability closed when the JPEG runtime is unavailable', async () => {
     const probeExportCapability = vi.fn().mockResolvedValue(makeCapability())
     const jpegRuntimeAvailabilityProbe = vi.fn().mockReturnValue(false)

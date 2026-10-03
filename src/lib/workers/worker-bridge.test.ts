@@ -164,4 +164,112 @@ describe('workerBridge', () => {
       vi.useRealTimers()
     }
   })
+
+  it('keeps the worker past the idle window until a retained result is released', async () => {
+    vi.useFakeTimers()
+    try {
+      const terminate = vi.fn()
+      const startWorker = vi.fn(() => ({
+        api: { echo: async (v: number) => v } as FakeApi,
+        terminate,
+      }))
+      const bridge = new WorkerBridge<FakeApi>({ startWorker, idleMs: 100 })
+      const { value, release } = await bridge.callRetained(
+        'echo',
+        new AbortController().signal,
+        7,
+      )
+      expect(value).toBe(7)
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(terminate).not.toHaveBeenCalled()
+
+      release()
+      release()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(terminate).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not idle-terminate an in-flight call when a lease is released mid-call', async () => {
+    vi.useFakeTimers()
+    try {
+      const terminate = vi.fn()
+      const pending: { resolve: ((value: number) => void) | null } = {
+        resolve: null,
+      }
+      let first = true
+      const startWorker = vi.fn(() => ({
+        api: {
+          echo: (v: number) => {
+            if (first) {
+              first = false
+              return Promise.resolve(v)
+            }
+            return new Promise<number>((resolve) => {
+              pending.resolve = resolve
+            })
+          },
+        } as FakeApi,
+        terminate,
+      }))
+      const bridge = new WorkerBridge<FakeApi>({ startWorker, idleMs: 100 })
+      const { release } = await bridge.callRetained(
+        'echo',
+        new AbortController().signal,
+        1,
+      )
+      const slow = bridge.call('echo', new AbortController().signal, 2)
+      await vi.waitFor(() => expect(pending.resolve).toBeTypeOf('function'))
+
+      release()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(terminate).not.toHaveBeenCalled()
+
+      pending.resolve?.(2)
+      await expect(slow).resolves.toBe(2)
+      await vi.advanceTimersByTimeAsync(100)
+      expect(terminate).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('drops leases on terminate so a stale release cannot pin or idle the next worker', async () => {
+    vi.useFakeTimers()
+    try {
+      const terminate = vi.fn()
+      const startWorker = vi.fn(() => ({
+        api: { echo: async (v: number) => v } as FakeApi,
+        terminate,
+      }))
+      const bridge = new WorkerBridge<FakeApi>({ startWorker, idleMs: 100 })
+      const { release } = await bridge.callRetained(
+        'echo',
+        new AbortController().signal,
+        1,
+      )
+
+      await bridge.terminate()
+      expect(terminate).toHaveBeenCalledTimes(1)
+
+      const next = await bridge.callRetained(
+        'echo',
+        new AbortController().signal,
+        2,
+      )
+      expect(startWorker).toHaveBeenCalledTimes(2)
+      release()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(terminate).toHaveBeenCalledTimes(1)
+
+      next.release()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(terminate).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
