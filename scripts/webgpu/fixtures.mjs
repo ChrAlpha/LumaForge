@@ -176,6 +176,16 @@ export function scenarios(transferIds = []) {
         params: { styleKind: 'custom', intensity },
       })
   }
+  // Display looks may declare a wider output gamut; export converts it to sRGB.
+  for (const outputGamut of ['display-p3', 'rec2020']) {
+    const wide = makeLut('display-look', 'srgb')
+    wide.profileResolution.profile.outputGamut = outputGamut
+    result.push({
+      name: `lut-display-look-${outputGamut}-output`,
+      lut: wide,
+      params: { styleKind: 'custom', intensity: 1 },
+    })
+  }
   const domain = makeLut()
   domain.domainMin = [-0.15, -0.05, -0.2]
   domain.domainMax = [0.7, 0.9, 0.8]

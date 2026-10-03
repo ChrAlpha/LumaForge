@@ -84,8 +84,17 @@ export function resolveLUTPipelineProfileUniforms(
 
   const { profile } = profileResolution
   if (profile.role === 'display-look') {
+    // Display looks read display sRGB, but may declare a wider output gamut;
+    // export converts that output to sRGB, so the preview must as well.
+    const outputGamut = profile.outputGamut ?? profile.inputGamut
     return {
       ...DISPLAY_PROFILE_UNIFORMS,
+      lutOutputToDisplayGamut:
+        outputGamut === DISPLAY_TARGET_GAMUT
+          ? DISPLAY_PROFILE_UNIFORMS.lutOutputToDisplayGamut
+          : mat3ToColumnMajor(
+              getLUTOutputToTargetMatrix(outputGamut, DISPLAY_TARGET_GAMUT),
+            ),
       lutInputTransfer:
         LUT_TRANSFER_UNIFORMS[profile.inputTransfer] ??
         DISPLAY_PROFILE_UNIFORMS.lutInputTransfer,

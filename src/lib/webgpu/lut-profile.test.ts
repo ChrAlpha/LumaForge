@@ -1,6 +1,8 @@
 import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 import {
   getLUTColorProfile,
+  getLUTOutputToTargetMatrix,
+  mat3ToColumnMajor,
   TIER1_LUT_COLOR_PROFILES,
 } from '@lumaforge/luma-color-runtime'
 import {
@@ -116,6 +118,28 @@ describe('lUT pipeline profile uniforms', () => {
     expect(uniforms.lutInputRange).toBe(LUT_RANGE_UNIFORMS.full)
     expect(uniforms.lutOutputRange).toBe(LUT_RANGE_UNIFORMS.full)
     expect(Array.from(uniforms.inputToLutGamut)).toEqual(IDENTITY_MATRIX)
+  })
+
+  it('converts a display look with a declared wide output gamut back to sRGB like export', () => {
+    const profile: LUTColorProfile = {
+      ...getLUTColorProfile('display-srgb')!,
+      id: 'test-display-p3-output',
+      outputGamut: 'display-p3',
+      outputTransfer: 'srgb',
+      outputRange: 'full',
+    }
+
+    const uniforms = resolveLUTPipelineProfileUniforms(resolved(profile))
+
+    expect(uniforms.lutRole).toBe(LUT_ROLE_UNIFORMS['display-look'])
+    expect(Array.from(uniforms.inputToLutGamut)).toEqual(IDENTITY_MATRIX)
+    expect(Array.from(uniforms.lutOutputToDisplayGamut)).toEqual(
+      Array.from(
+        mat3ToColumnMajor(
+          getLUTOutputToTargetMatrix('display-p3', 'srgb-rec709'),
+        ),
+      ),
+    )
   })
 
   it('maps combined Rec.709 output LUTs through explicit BT.709 output', () => {
