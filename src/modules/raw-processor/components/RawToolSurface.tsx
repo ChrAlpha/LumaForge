@@ -10,13 +10,18 @@ import {
 
 const selectIsNarrowViewport = (v: { w: number }) => v.w <= 640 && v.w !== 0
 
+/** Whether `/raw` is showing the mobile surface rather than the desktop one. */
+export function useIsMobileRawSurface() {
+  return useViewport(selectIsNarrowViewport)
+}
+
 type RawToolSurfaceComponentProps = Partial<RawToolSurfaceProps>
 
 export function RawToolSurface(props: RawToolSurfaceComponentProps = {}) {
   const workflow = useRawWorkflowContext(
     hasToolSurfaceOverride(props) ? props : undefined,
   )
-  const isMobileViewport = useViewport(selectIsNarrowViewport)
+  const isMobileViewport = useIsMobileRawSurface()
 
   const content = isMobileViewport ? (
     // Photo-first scaffold is ALWAYS present on mobile, even before a RAW

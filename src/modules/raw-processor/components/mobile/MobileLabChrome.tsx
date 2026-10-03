@@ -10,6 +10,8 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import { DOCK_SPRING } from '../../motion'
 import type { ColorValue } from '../color-fields'
+import type { CpuPreviewNotice } from '../CpuPreviewBanner'
+import { CpuPreviewBanner } from '../CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from '../raw-runtime-readiness'
 import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
@@ -53,6 +55,7 @@ export function MobileLabChrome(props: {
   isProcessing: boolean
   runtimeReadinessState?: RawRuntimeReadinessState
   onPrepareRuntime?: () => void
+  cpuPreviewNotice?: CpuPreviewNotice
   lutBrowser: Omit<MobileLutBrowserProps, 'open' | 'onClose'>
   onCompareReset: () => void
   exportPanel: ReactNode
@@ -189,6 +192,15 @@ export function MobileLabChrome(props: {
               scrubbing={focusActive}
               onHeightChange={setTopbarHeight}
             />
+            {/* Floats below the topbar instead of taking a row of the page
+                grid. Stacks over the empty state (z 11), under the histogram
+                card (15) and the sheets the user opens. */}
+            {props.cpuPreviewNotice && (
+              <CpuPreviewBanner
+                {...props.cpuPreviewNotice}
+                className="pointer-events-auto absolute inset-x-2 top-[calc(var(--raw-topbar-height,0px)+0.5rem)] z-[13]"
+              />
+            )}
             <MobileLabModeDock
               transform={props.transform}
               canExport={props.canExport}

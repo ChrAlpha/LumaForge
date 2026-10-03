@@ -19,6 +19,7 @@ import type {
   LUTContractSelectionState,
 } from '../model/session'
 import type { ColorValue } from './color-fields'
+import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { ToneValue } from './tone-fields'
 import type { FileFactsTool } from './tools/FileFactsTool'
@@ -84,6 +85,8 @@ export interface RawToolSurfaceProps {
   metadata: ComponentProps<typeof FileFactsTool>['metadata']
   stats: ComponentProps<typeof FileFactsTool>['stats']
   previewFrameEl?: HTMLDivElement | null
+  /** Set while the CPU preview notice is showing; mobile renders it. */
+  cpuPreviewNotice?: CpuPreviewNotice
 }
 
 const RawWorkflowContext = createContext<RawToolSurfaceProps | null>(null)

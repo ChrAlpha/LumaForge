@@ -62,6 +62,7 @@ export function MobileRawToolSurface() {
       isProcessing={props.isProcessing}
       runtimeReadinessState={props.runtimeReadinessState}
       onPrepareRuntime={props.onPrepareRuntime}
+      cpuPreviewNotice={props.cpuPreviewNotice}
       lutBrowser={{
         currentLutName: props.currentLutName,
         disabled: props.isProcessing || lutDropDisabled,

@@ -133,6 +133,27 @@ describe('mobileLabChrome', () => {
     ).toBeDisabled()
   })
 
+  it('shows the CPU preview notice in the chrome, over the empty state, until dismissed', () => {
+    const onDismiss = vi.fn()
+    const { container, rerender } = render(
+      <MobileLabChrome
+        {...base}
+        hasImage={false}
+        cpuPreviewNotice={{ reason: 'webgpu-unavailable', onDismiss }}
+      />,
+    )
+
+    const chrome = container.querySelector('[data-mobile-lab-chrome]')!
+    const notice = within(chrome as HTMLElement).getByRole('status')
+    expect(notice).toHaveAttribute('data-cpu-preview-banner')
+    expect(notice.className).toContain('pointer-events-auto')
+    fireEvent.click(within(notice).getByRole('button', { name: 'Dismiss' }))
+    expect(onDismiss).toHaveBeenCalledOnce()
+
+    rerender(<MobileLabChrome {...base} hasImage={false} />)
+    expect(container.querySelector('[data-cpu-preview-banner]')).toBeNull()
+  })
+
   it('tears down adjust sheets when the RAW is cleared (hasImage→false)', async () => {
     const { rerender } = render(<MobileLabChrome {...base} />)
     const dock = screen.getByRole('tablist', { name: /lab modes/i })

@@ -13,6 +13,12 @@ export interface CpuPreviewBannerProps {
   className?: string
 }
 
+/** The notice while it is showing: what to say and how to dismiss it. */
+export interface CpuPreviewNotice {
+  reason: CpuPreviewReason
+  onDismiss: () => void
+}
+
 export function CpuPreviewBanner({
   reason: _reason,
   onDismiss,

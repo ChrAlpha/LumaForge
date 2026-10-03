@@ -181,6 +181,46 @@ test('keeps RAW Lab tool scrolling inside the viewport shell', async ({
   }
 })
 
+test('keeps the CPU preview notice visible without taking the stage', async ({
+  page,
+}) => {
+  await page.goto('/raw?forcePreview=cpu')
+  const banner = page.locator('[data-cpu-preview-banner]')
+  await expect(banner).toBeVisible()
+
+  const layout = await page.evaluate(() => {
+    const box = (selector: string) => {
+      const rect = document.querySelector(selector)?.getBoundingClientRect()
+      return rect ? { top: rect.top, bottom: rect.bottom } : null
+    }
+    const root = document.querySelector<HTMLElement>(
+      '[data-raw-lab-shell="viewport"]',
+    )!
+    return {
+      isMobile: window.innerWidth <= 640,
+      viewportHeight: window.innerHeight,
+      rootScrollOverflow: root.scrollHeight - root.clientHeight,
+      banner: box('[data-cpu-preview-banner]')!,
+      stageTools: box('[data-raw-lab-layout="stage-tools"]')!,
+      topbar: box('[data-mobile-topbar]'),
+    }
+  })
+
+  expect(layout.rootScrollOverflow).toBe(0)
+  if (layout.isMobile) {
+    // The stage keeps the full viewport; the notice floats below the topbar.
+    expect(layout.stageTools.top).toBe(0)
+    expect(layout.stageTools.bottom).toBe(layout.viewportHeight)
+    expect(layout.banner.top).toBeGreaterThanOrEqual(layout.topbar!.bottom)
+  } else {
+    // The notice sits in flow above the stage instead of underneath it.
+    expect(layout.banner.bottom).toBeLessThanOrEqual(layout.stageTools.top)
+  }
+
+  await page.getByRole('button', { name: 'Dismiss', exact: true }).click()
+  await expect(banner).toHaveCount(0)
+})
+
 test('keeps the loaded mobile export panel clear of the toolbar', async ({
   page,
 }, testInfo) => {

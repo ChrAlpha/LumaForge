@@ -5,6 +5,7 @@ import { useI18n } from '~/lib/i18n'
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
 import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
+import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { RawToolSurfaceProps } from './RawWorkflowContext'
 import { RawWorkflowProvider } from './RawWorkflowContext'
@@ -14,6 +15,7 @@ interface RawWorkflowToolProviderProps {
   workflow: UseRawWorkflowReturn
   onlineLutSources: UseOnlineLutSourcesResult
   isCpuMode: boolean
+  cpuPreviewNotice?: CpuPreviewNotice
   isProcessing: boolean
   runtimeReadinessState: RawRuntimeReadinessState
   previewFrameEl: HTMLDivElement | null
@@ -32,6 +34,7 @@ export function RawWorkflowToolProvider({
   workflow,
   onlineLutSources,
   isCpuMode,
+  cpuPreviewNotice,
   isProcessing,
   runtimeReadinessState,
   previewFrameEl,
@@ -152,6 +155,7 @@ export function RawWorkflowToolProvider({
                 reason: 'no-image',
               }),
         previewFrameEl: transformActive ? null : previewFrameEl,
+        cpuPreviewNotice,
       }}
     >
       {children}

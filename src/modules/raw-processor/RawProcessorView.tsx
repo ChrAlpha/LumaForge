@@ -17,9 +17,11 @@ import {
   UnsupportedState,
   WorkspaceHeader,
 } from './components'
+import type { CpuPreviewNotice } from './components/CpuPreviewBanner'
 import { CpuPreviewBanner } from './components/CpuPreviewBanner'
 import { RawPreviewStageSurface } from './components/RawPreviewStageSurface'
 import { RawResetConfirmationDialog } from './components/RawResetConfirmationDialog'
+import { useIsMobileRawSurface } from './components/RawToolSurface'
 import { RawTransformOverlay } from './components/RawTransformOverlay'
 import { RawWorkflowToolProvider } from './components/RawWorkflowToolProvider'
 import { useRawWorkflow } from './hooks'
@@ -83,6 +85,14 @@ function RawProcessorViewInner({
   })
   const { workflow } = view
   const transform = useRawTransformFeature(workflow, view.isCpuMode)
+  const isMobileSurface = useIsMobileRawSurface()
+  const cpuPreviewNotice: CpuPreviewNotice | undefined =
+    view.isCpuMode && !view.cpuPreviewBannerDismissed
+      ? {
+          reason: view.cpuPreviewReason,
+          onDismiss: () => view.setCpuPreviewBannerDismissed(true),
+        }
+      : undefined
   const {
     status,
     error,
@@ -113,6 +123,9 @@ function RawProcessorViewInner({
       data-raw-lab-shell="viewport"
       data-raw-lab-state={hasImage ? 'loaded' : 'empty'}
     >
+      {/* The CPU notice shares the header's grid row so it sits in flow
+          above the stage. Mobile has no header row; its chrome shows the
+          notice below the topbar instead, so only one copy is mounted. */}
       <div className="max-[640px]:hidden">
         <WorkspaceHeader
           fileName={sourceFileName}
@@ -121,15 +134,10 @@ function RawProcessorViewInner({
           onReplaceFile={view.handleReplaceFile}
           onResetSession={view.requestSessionReset}
         />
+        {cpuPreviewNotice && !isMobileSurface && (
+          <CpuPreviewBanner {...cpuPreviewNotice} className="mx-3 mt-2" />
+        )}
       </div>
-
-      {view.isCpuMode && !view.cpuPreviewBannerDismissed && (
-        <CpuPreviewBanner
-          reason={view.cpuPreviewReason}
-          onDismiss={() => view.setCpuPreviewBannerDismissed(true)}
-          className="mx-3 mt-2 max-[640px]:mx-2 max-[640px]:translate-y-[var(--raw-topbar-height,0px)]"
-        />
-      )}
 
       <div
         className="raw-lab-shell grid min-h-0 min-w-0 overflow-hidden [grid-template-columns:minmax(0,1fr)_minmax(332px,376px)] max-[980px]:[grid-template-columns:minmax(0,1fr)] max-[980px]:[grid-template-rows:minmax(0,1fr)_auto] max-[640px]:[grid-template-columns:minmax(0,1fr)] max-[640px]:[grid-template-rows:minmax(0,1fr)]"
@@ -156,6 +164,7 @@ function RawProcessorViewInner({
           workflow={workflow}
           onlineLutSources={view.onlineLutSources}
           isCpuMode={view.isCpuMode}
+          cpuPreviewNotice={cpuPreviewNotice}
           isProcessing={view.isProcessing}
           runtimeReadinessState={view.runtimeReadinessState}
           previewFrameEl={view.previewFrameEl}
