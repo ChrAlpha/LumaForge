@@ -1,11 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import {
-  Download,
-  Scan,
-  SlidersHorizontal,
-  SplitSquareHorizontal,
-  Wand2,
-} from 'lucide-react'
+import { Scan, SlidersHorizontal, Wand2 } from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import type { ReactNode } from 'react'
 import { useLayoutEffect, useRef, useState } from 'react'
@@ -16,28 +10,20 @@ import { useI18n } from '~/lib/i18n'
 
 import { DOCK_SPRING, TAP_SPRING } from '../../motion'
 
-export type MobileMode = 'look' | 'tone' | 'transform' | 'compare' | 'export'
+/**
+ * The dock holds tools only. Compare is a lens over the photo and Export is a
+ * terminal action in the topbar; neither is a mutually exclusive mode.
+ */
+export type MobileMode = 'look' | 'tone' | 'transform'
 
 const TABS: {
   id: MobileMode
   icon: LucideIcon
   labelKey: Parameters<Translate>[0]
-  primary?: boolean
 }[] = [
   { id: 'look', icon: Wand2, labelKey: 'raw.mobile.mode.look' },
   { id: 'tone', icon: SlidersHorizontal, labelKey: 'raw.mobile.mode.adjust' },
   { id: 'transform', icon: Scan, labelKey: 'raw.mobile.mode.transform' },
-  {
-    id: 'compare',
-    icon: SplitSquareHorizontal,
-    labelKey: 'raw.mobile.mode.compare',
-  },
-  {
-    id: 'export',
-    icon: Download,
-    labelKey: 'raw.mobile.mode.export',
-    primary: true,
-  },
 ]
 
 export function MobileModeDock(props: {
@@ -46,10 +32,18 @@ export function MobileModeDock(props: {
   onModeChange: (mode: MobileMode) => void
   onCollapse: () => void
   onOpenMore?: () => void
-  canExport: boolean
   disabled?: boolean
   showTransform?: boolean
-  compareDisabled?: boolean
+  /**
+   * The export panel has borrowed the deck. No tool panel is on screen, so
+   * no tab reads as selected and tapping any tool hands the deck back.
+   */
+  exportOpen?: boolean
+  /**
+   * Keep the deck visible while the dock is otherwise disabled. Export
+   * progress lives in the deck, and a running export disables the tools.
+   */
+  panelVisibleWhileDisabled?: boolean
   scrubbing?: boolean
   panel: ReactNode
   /**
@@ -62,7 +56,9 @@ export function MobileModeDock(props: {
   const { t } = useI18n()
   const disabled = props.disabled ?? false
   const prefersReduced = useReducedMotion() ?? false
-  const panelVisible = props.expanded && !disabled
+  const exportOpen = props.exportOpen === true
+  const panelVisible =
+    props.expanded && (!disabled || props.panelVisibleWhileDisabled === true)
   const dockRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const [dockHeight, setDockHeight] = useState(0)
@@ -84,7 +80,7 @@ export function MobileModeDock(props: {
     return () => observer.disconnect()
     // Re-subscribe whenever the panel mounts or changes mode so the observer
     // tracks the live panel element.
-  }, [panelVisible, props.mode])
+  }, [panelVisible, props.mode, exportOpen])
 
   useLayoutEffect(() => {
     onInsetChange?.(dockHeight + (panelVisible ? panelHeight : 0))
@@ -112,14 +108,13 @@ export function MobileModeDock(props: {
               // outside the scroll, slider list inside). The height leaves a
               // 3:2 landscape photo at full width above the dock on a
               // 393x660 viewport; Tone and HSL lists scroll inside.
-              // Other modes still use max-h since their content sizes
-              // itself naturally.
-              props.mode === 'tone' || props.mode === 'transform'
-                ? 'h-[min(38vh,264px)]'
-                : props.mode === 'export'
-                  ? 'max-h-[min(32vh,260px)]'
+              // Look and the export panel use max-h since their content
+              // sizes itself naturally.
+              exportOpen
+                ? 'max-h-[min(32vh,260px)] pb-4'
+                : props.mode === 'tone' || props.mode === 'transform'
+                  ? 'h-[min(38vh,264px)]'
                   : 'max-h-[24vh]',
-              props.mode === 'export' && 'pb-4',
             )}
             initial={{ opacity: 0, y: prefersReduced ? 0 : 8 }}
             animate={{ opacity: 1, y: 0 }}
@@ -136,19 +131,18 @@ export function MobileModeDock(props: {
         role="tablist"
         className={clsxm(
           'grid gap-1 border-t border-lf-on-photo-bord-soft px-2.5 pb-2 pt-2 transition-opacity duration-150',
-          props.showTransform ? 'grid-cols-5' : 'grid-cols-4',
+          props.showTransform ? 'grid-cols-3' : 'grid-cols-2',
           props.scrubbing && 'opacity-45',
         )}
       >
         {TABS.filter(
           (tab) => tab.id !== 'transform' || props.showTransform,
         ).map((tab) => {
-          const tabDisabled =
-            disabled || (tab.id === 'compare' && props.compareDisabled === true)
-          const active = props.mode === tab.id
-          // When the dock is collapsed nothing is "active" — the panel that
-          // an active tab represents isn't on screen, so showing the
-          // indicator/highlight reads as a lie about the current state.
+          const tabDisabled = disabled
+          const active = props.mode === tab.id && !exportOpen
+          // When the dock is collapsed, or the export panel holds the deck,
+          // nothing is "active": the panel that an active tab represents is
+          // not on screen, so the indicator would lie about the current state.
           const showActive = active && props.expanded && !tabDisabled
           return (
             <m.button
@@ -162,15 +156,15 @@ export function MobileModeDock(props: {
               transition={TAP_SPRING}
               onClick={() => {
                 if (tabDisabled) return
-                if (props.mode === tab.id && props.expanded) {
+                if (active && props.expanded) {
                   props.onCollapse()
                   return
                 }
                 props.onModeChange(tab.id)
               }}
               className={clsxm(
-                // Sentence case at 0.7rem: uppercase tracking made the five labels
-                // collide at 393px ("TRANSFORM" touched "COMPARE").
+                // Sentence case at 0.7rem: uppercase tracking made the labels
+                // collide at 393px when the dock carried five modes.
                 'relative grid min-h-[52px] grid-rows-[auto_auto] place-items-center gap-1 rounded-md px-1 py-1.5 text-[0.7rem] font-semibold leading-tight tracking-normal transition-colors',
                 tabDisabled
                   ? 'cursor-not-allowed text-lf-on-photo-ink/35'
@@ -179,17 +173,7 @@ export function MobileModeDock(props: {
                     : 'text-lf-on-photo-ink/68 hover:text-lf-on-photo-ink',
               )}
             >
-              <span className="relative inline-flex">
-                <tab.icon aria-hidden="true" className="size-[18px]" />
-                {/* Export readiness is a fact about the pipeline, so it lives
-                    on the action it gates rather than on the selection mark. */}
-                {tab.primary && props.canExport && !disabled && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute -right-1 -top-0.5 size-1.5 rounded-lf-pill bg-lf-green shadow-[0_0_0_2px_oklch(0.59_0.15_153/0.26)]"
-                  />
-                )}
-              </span>
+              <tab.icon aria-hidden="true" className="size-[18px]" />
               {t(tab.labelKey)}
               {showActive && (
                 <m.span
@@ -200,11 +184,9 @@ export function MobileModeDock(props: {
                     prefersReduced ? undefined : 'mobile-dock-indicator'
                   }
                   transition={DOCK_SPRING}
-                  // One hue for "this tab is selected". Green on the Export
-                  // tab read as "export is safe" while export was blocked,
-                  // and the shared indicator changed hue mid-slide. Selection
-                  // is structural, so it is the cool lift white: amber
-                  // explains colour contracts, it does not mark tabs.
+                  // One hue for "this tab is selected". Selection is
+                  // structural, so it is the cool lift white: green marks
+                  // ready / committed and amber explains colour contracts.
                   className="absolute bottom-0 left-1/2 -ml-[11px] h-0.5 w-[22px] rounded-lf-pill bg-[oklch(0.96_0.006_255/0.85)]"
                 />
               )}

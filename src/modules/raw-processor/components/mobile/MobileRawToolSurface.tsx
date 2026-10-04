@@ -65,6 +65,7 @@ export function MobileRawToolSurface() {
       onReplaceFile={props.onReplaceFile}
       onResetSession={props.onResetSession}
       isProcessing={props.isProcessing}
+      isExporting={props.isExporting === true}
       runtimeReadinessState={props.runtimeReadinessState}
       onPrepareRuntime={props.onPrepareRuntime}
       cpuPreviewNotice={props.cpuPreviewNotice}
@@ -81,7 +82,6 @@ export function MobileRawToolSurface() {
         onIntensitySelect: props.onIntensitySelect,
         strengthDisabled: mobileStrengthDisabled,
       }}
-      onCompareReset={props.onCompareReset}
       exportPanel={
         <MobileExportPanel
           canExport={props.canExport}

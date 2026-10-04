@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { MobileModeDock } from './MobileModeDock'
 
 describe('mobileModeDock', () => {
-  it('renders the handoff mode tabs and switches mode when expanded', async () => {
+  it('renders the tool tabs only and switches tool when expanded', async () => {
     const onModeChange = vi.fn()
     const onOpenMore = vi.fn()
     render(
@@ -15,40 +15,115 @@ describe('mobileModeDock', () => {
         onModeChange={onModeChange}
         onCollapse={vi.fn()}
         onOpenMore={onOpenMore}
-        canExport={false}
         panel={<div data-testid="panel">tone-panel</div>}
       />,
     )
     expect(screen.getByTestId('panel')).toHaveTextContent('tone-panel')
     const tabs = screen.getAllByRole('tab')
-    expect(tabs).toHaveLength(4)
-    expect(tabs.map((tab) => tab.textContent)).toEqual([
-      'Look',
-      'Adjust',
-      'Compare',
-      'Export',
-    ])
+    expect(tabs).toHaveLength(2)
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Look', 'Adjust'])
+    // Compare is a lens over the photo and Export a topbar action: neither
+    // is a tool, so neither takes a tab.
+    expect(
+      screen.queryByRole('tab', { name: /compare/i }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('tab', { name: /export/i }),
+    ).not.toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: /more/i })).not.toBeInTheDocument()
     expect(
       screen.queryByRole('tab', { name: /strength/i }),
     ).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: /look/i }))
     expect(onModeChange).toHaveBeenCalledWith('look')
-    await userEvent.click(screen.getByRole('tab', { name: /compare/i }))
-    expect(onModeChange).toHaveBeenCalledWith('compare')
     expect(onOpenMore).not.toHaveBeenCalled()
+  })
+
+  it('adds Transform as the third tool when the feature exists', () => {
+    render(
+      <MobileModeDock
+        mode="look"
+        expanded
+        showTransform
+        onModeChange={vi.fn()}
+        onCollapse={vi.fn()}
+        panel={<div>x</div>}
+      />,
+    )
+    const tablist = screen.getByRole('tablist', { name: /lab modes/i })
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Look',
+      'Adjust',
+      'Transform',
+    ])
+    expect(tablist).toHaveClass('grid-cols-3')
+  })
+
+  it('marks no tab while the export panel holds the deck, and a tap hands it back', async () => {
+    const onModeChange = vi.fn()
+    const onCollapse = vi.fn()
+    render(
+      <MobileModeDock
+        mode="tone"
+        expanded
+        exportOpen
+        onModeChange={onModeChange}
+        onCollapse={onCollapse}
+        panel={<div data-testid="panel">export-panel</div>}
+      />,
+    )
+    expect(screen.getByTestId('panel')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('tab', { selected: true }),
+    ).not.toBeInTheDocument()
+
+    // The last tool is not "active" while export is open, so tapping it
+    // returns to it instead of collapsing the deck.
+    await userEvent.click(screen.getByRole('tab', { name: /adjust/i }))
+    expect(onModeChange).toHaveBeenCalledWith('tone')
+    expect(onCollapse).not.toHaveBeenCalled()
+  })
+
+  it('carries no export readiness mark: readiness lives on the export action', () => {
+    render(
+      <MobileModeDock
+        mode="look"
+        expanded
+        onModeChange={vi.fn()}
+        onCollapse={vi.fn()}
+        panel={<div>x</div>}
+      />,
+    )
+    expect(screen.getByRole('tablist').innerHTML).not.toMatch(/lf-green/)
+  })
+
+  it('keeps the deck on screen while disabled only when asked to', () => {
+    const common = {
+      mode: 'look' as const,
+      expanded: true,
+      disabled: true,
+      exportOpen: true,
+      onModeChange: vi.fn(),
+      onCollapse: vi.fn(),
+      panel: <div data-testid="panel">export-progress</div>,
+    }
+    const { rerender } = render(<MobileModeDock {...common} />)
+    expect(screen.queryByTestId('panel')).toBeNull()
+
+    rerender(<MobileModeDock {...common} panelVisibleWhileDisabled />)
+    expect(screen.getByTestId('panel')).toBeInTheDocument()
+    for (const tab of screen.getAllByRole('tab')) expect(tab).toBeDisabled()
   })
 
   it('keeps the bottom dock close to the visible mobile viewport edge', () => {
     render(
       <MobileModeDock
-        mode="export"
+        mode="look"
         expanded
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
-        canExport
-        panel={<div>export-panel</div>}
+        panel={<div>look-panel</div>}
       />,
     )
 
@@ -63,15 +138,15 @@ describe('mobileModeDock', () => {
     expect(tablist).not.toHaveClass('pb-3')
   })
 
-  it('gives Export enough room while keeping non-editor modes compact', () => {
+  it('gives the export panel enough room while keeping non-editor tools compact', () => {
     const { rerender } = render(
       <MobileModeDock
-        mode="export"
+        mode="look"
+        exportOpen
         expanded
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
-        canExport
         panel={<div data-testid="panel">export-panel</div>}
       />,
     )
@@ -91,7 +166,6 @@ describe('mobileModeDock', () => {
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
-        canExport
         panel={<div data-testid="panel">look-panel</div>}
       />,
     )
@@ -107,7 +181,6 @@ describe('mobileModeDock', () => {
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
-        canExport
         panel={<div data-testid="panel">tone-panel</div>}
       />,
     )
@@ -129,7 +202,6 @@ describe('mobileModeDock', () => {
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
-        canExport
         panel={<div>tone-panel</div>}
       />,
     )
@@ -147,7 +219,6 @@ describe('mobileModeDock', () => {
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
-        canExport
         panel={<div data-testid="panel">tone-panel</div>}
       />,
     )
@@ -163,7 +234,6 @@ describe('mobileModeDock', () => {
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
-        canExport
         panel={<div data-testid="panel">tone-panel</div>}
       />,
     )
@@ -180,7 +250,6 @@ describe('mobileModeDock', () => {
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
-        canExport
         panel={<div data-testid="panel">look-panel</div>}
       />,
     )
@@ -205,7 +274,6 @@ describe('mobileModeDock', () => {
         onModeChange={onModeChange}
         onCollapse={onCollapse}
         onOpenMore={vi.fn()}
-        canExport
         panel={<div data-testid="p">x</div>}
       />,
     )
@@ -220,7 +288,6 @@ describe('mobileModeDock', () => {
         onModeChange={onModeChange}
         onCollapse={onCollapse}
         onOpenMore={vi.fn()}
-        canExport
         panel={<div data-testid="p">x</div>}
       />,
     )
@@ -235,7 +302,6 @@ describe('mobileModeDock', () => {
       onModeChange: vi.fn(),
       onCollapse: vi.fn(),
       onOpenMore: vi.fn(),
-      canExport: true,
       panel: <div>x</div>,
     }
     const { rerender } = render(<MobileModeDock {...common} expanded={false} />)
@@ -257,7 +323,6 @@ describe('mobileModeDock', () => {
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
-        canExport={false}
         panel={<div>x</div>}
       />,
     )
@@ -268,7 +333,7 @@ describe('mobileModeDock', () => {
     expect(screen.getByRole('tablist').innerHTML).not.toMatch(/amber/)
   })
 
-  it('sets tab labels in sentence case so five tabs fit at 393px', () => {
+  it('sets tab labels in sentence case', () => {
     render(
       <MobileModeDock
         mode="look"
@@ -277,13 +342,12 @@ describe('mobileModeDock', () => {
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
-        canExport={false}
         panel={<div>x</div>}
       />,
     )
 
     const tabs = screen.getAllByRole('tab')
-    expect(tabs).toHaveLength(5)
+    expect(tabs).toHaveLength(3)
     for (const tab of tabs) {
       expect(tab).toHaveClass('text-[0.7rem]', 'font-semibold')
       expect(tab).not.toHaveClass('uppercase')
@@ -328,7 +392,6 @@ describe('mobileModeDock stage inset', () => {
           onModeChange={vi.fn()}
           onCollapse={vi.fn()}
           onOpenMore={vi.fn()}
-          canExport
           onInsetChange={onInsetChange}
           panel={<div>tone-panel</div>}
         />,
@@ -349,7 +412,6 @@ describe('mobileModeDock stage inset', () => {
           onModeChange={vi.fn()}
           onCollapse={vi.fn()}
           onOpenMore={vi.fn()}
-          canExport
           onInsetChange={onInsetChange}
           panel={<div>tone-panel</div>}
         />,

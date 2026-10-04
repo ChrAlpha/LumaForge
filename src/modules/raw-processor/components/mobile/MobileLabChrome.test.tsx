@@ -44,7 +44,6 @@ const base = {
     onLutProfileSelect: vi.fn(),
     onlineLutSources: undefined,
   },
-  onCompareReset: vi.fn(),
   exportPanel: <div>export</div>,
   moreSheet: { pipelineSteps: [], lutRows: [], fileRows: [] },
 }
@@ -176,7 +175,7 @@ describe('mobileLabChrome', () => {
   it('look mode opens the LUT browser and dock has no strength tab', async () => {
     render(<MobileLabChrome {...base} />)
     const dock = screen.getByRole('tablist', { name: /lab modes/i })
-    expect(within(dock).getAllByRole('tab')).toHaveLength(4)
+    expect(within(dock).getAllByRole('tab')).toHaveLength(2)
     expect(
       within(dock).queryByRole('tab', { name: /strength/i }),
     ).not.toBeInTheDocument()
@@ -197,7 +196,30 @@ describe('mobileLabChrome', () => {
 
     expect(await screen.findByText('ready export actions')).toBeInTheDocument()
     expect(screen.queryByText('No LUT yet, tone only.')).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /export/i })).toHaveAttribute(
+    // Export borrows the deck; no tool tab claims the panel on screen.
+    expect(
+      screen.queryByRole('tab', { selected: true }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('hands the deck back to a tool when one is tapped while export is open', async () => {
+    render(
+      <MobileLabChrome
+        {...base}
+        preferExportMode
+        exportPanel={<div>ready export actions</div>}
+      />,
+    )
+    expect(await screen.findByText('ready export actions')).toBeInTheDocument()
+
+    const dock = screen.getByRole('tablist', { name: /lab modes/i })
+    await userEvent.click(within(dock).getByRole('tab', { name: /look/i }))
+
+    expect(screen.queryByText('ready export actions')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /lut browser/i }),
+    ).toBeInTheDocument()
+    expect(within(dock).getByRole('tab', { name: /look/i })).toHaveAttribute(
       'aria-selected',
       'true',
     )
@@ -212,7 +234,7 @@ describe('mobileLabChrome', () => {
     expect(screen.getByRole('banner')).toBeInTheDocument()
     const dock = screen.getByRole('tablist', { name: /lab modes/i })
     expect(within(dock).getByRole('tab', { name: /look/i })).toBeDisabled()
-    expect(within(dock).getByRole('tab', { name: /export/i })).toBeDisabled()
+    expect(within(dock).getByRole('tab', { name: /adjust/i })).toBeDisabled()
   })
 
   it('closes transient mobile sheets when the blocking handoff starts', async () => {
@@ -479,7 +501,7 @@ describe('mobileLabChrome', () => {
       />,
     )
     const dock = screen.getByRole('tablist', { name: /lab modes/i })
-    expect(within(dock).getAllByRole('tab')).toHaveLength(4)
+    expect(within(dock).getAllByRole('tab')).toHaveLength(2)
 
     await userEvent.click(within(dock).getByRole('tab', { name: /adjust/i }))
     await userEvent.click(screen.getByRole('tab', { name: /color/i }))
@@ -701,110 +723,6 @@ describe('mobileLabChrome', () => {
     previewFrameEl.dispatchEvent(second)
     vi.advanceTimersByTime(500)
     expect(onViewModeChange).not.toHaveBeenCalled()
-    vi.useRealTimers()
-  })
-
-  it('uses long-press peek as the default Compare interaction', () => {
-    vi.useFakeTimers()
-    const onViewModeChange = vi.fn()
-    render(
-      <MobileLabChrome
-        {...base}
-        previewFrameEl={previewFrameEl}
-        onViewModeChange={onViewModeChange}
-      />,
-    )
-    const dock = screen.getByRole('tablist', { name: /lab modes/i })
-    fireEvent.click(within(dock).getByRole('tab', { name: /compare/i }))
-    expect(screen.getByText(/touch and hold the photo/i)).toBeInTheDocument()
-    expect(screen.queryByText('compare')).not.toBeInTheDocument()
-
-    act(() => {
-      previewFrameEl.dispatchEvent(new Event('pointerdown', { bubbles: true }))
-      vi.advanceTimersByTime(400)
-    })
-    expect(onViewModeChange).toHaveBeenLastCalledWith('original')
-    act(() => {
-      previewFrameEl.dispatchEvent(new Event('pointerup', { bubbles: true }))
-    })
-    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
-    vi.useRealTimers()
-  })
-
-  it('enables split compare only through the explicit Compare panel action', () => {
-    vi.useFakeTimers()
-    const onViewModeChange = vi.fn()
-    render(
-      <MobileLabChrome
-        {...base}
-        previewFrameEl={previewFrameEl}
-        onViewModeChange={onViewModeChange}
-      />,
-    )
-    const dock = screen.getByRole('tablist', { name: /lab modes/i })
-    fireEvent.click(within(dock).getByRole('tab', { name: /compare/i }))
-    expect(
-      screen.queryByText(/pins raw and final jpeg/i),
-    ).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /split compare/i }))
-    expect(onViewModeChange).toHaveBeenLastCalledWith('compare')
-    expect(screen.getByText(/pins raw and final jpeg/i)).toBeInTheDocument()
-
-    onViewModeChange.mockClear()
-    act(() => {
-      previewFrameEl.dispatchEvent(new Event('pointerdown', { bubbles: true }))
-      vi.advanceTimersByTime(400)
-    })
-    act(() => {
-      previewFrameEl.dispatchEvent(new Event('pointerup', { bubbles: true }))
-    })
-    expect(onViewModeChange).not.toHaveBeenCalledWith('original')
-
-    fireEvent.click(
-      screen.getByRole('button', { name: /touch and hold instead/i }),
-    )
-    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
-    expect(screen.getByText(/touch and hold the photo/i)).toBeInTheDocument()
-    vi.useRealTimers()
-  })
-
-  it('keeps split compare active when opened from an active long-press peek', () => {
-    vi.useFakeTimers()
-    const onViewModeChange = vi.fn()
-    const { container } = render(
-      <MobileLabChrome
-        {...base}
-        previewFrameEl={previewFrameEl}
-        onViewModeChange={onViewModeChange}
-      />,
-    )
-    const dock = screen.getByRole('tablist', { name: /lab modes/i })
-    fireEvent.click(within(dock).getByRole('tab', { name: /compare/i }))
-
-    act(() => {
-      previewFrameEl.dispatchEvent(new Event('pointerdown', { bubbles: true }))
-      vi.advanceTimersByTime(400)
-    })
-    expect(onViewModeChange).toHaveBeenLastCalledWith('original')
-    expect(container.querySelector('[data-mobile-lab-chrome]')).toHaveAttribute(
-      'data-peek',
-      'true',
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: /split compare/i }))
-    expect(onViewModeChange).toHaveBeenLastCalledWith('compare')
-    expect(
-      container.querySelector('[data-mobile-lab-chrome]'),
-    ).not.toHaveAttribute('data-peek')
-
-    act(() => {
-      previewFrameEl.dispatchEvent(new Event('pointerup', { bubbles: true }))
-    })
-    expect(onViewModeChange.mock.calls.map(([mode]) => mode)).toEqual([
-      'original',
-      'compare',
-    ])
     vi.useRealTimers()
   })
 })

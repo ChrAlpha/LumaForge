@@ -10,7 +10,6 @@ import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { AdjustListPanel } from './AdjustListPanel'
-import { MobileComparePanel } from './MobileComparePanel'
 import { MobileLookPanel } from './MobileLookPanel'
 import type { MobileLutBrowserProps } from './MobileLutBrowser'
 import type { MobileMode } from './MobileModeDock'
@@ -19,8 +18,9 @@ import { TransformListPanel } from './TransformListPanel'
 
 export function MobileLabModeDock({
   transform,
-  canExport,
   mode,
+  exportOpen,
+  exportBusy,
   expanded,
   disabled,
   scrubbing,
@@ -29,7 +29,6 @@ export function MobileLabModeDock({
   color,
   selectiveColor,
   lutBrowser,
-  compareSplitOpen,
   exportPanel,
   onModeChange,
   onCollapse,
@@ -43,13 +42,14 @@ export function MobileLabModeDock({
   onScrubChange,
   onOpenLutBrowser,
   onOpenLutContractBrowser,
-  onCompareReset,
-  onSplitOpenChange,
   onInsetChange,
 }: {
   transform?: RawTransformFeature
-  canExport?: boolean
   mode: MobileMode
+  /** The export panel holds the deck instead of the active tool's panel. */
+  exportOpen: boolean
+  /** An export is running; its progress stays visible in the deck. */
+  exportBusy?: boolean
   expanded: boolean
   disabled: boolean
   scrubbing: boolean
@@ -58,7 +58,6 @@ export function MobileLabModeDock({
   color: ColorValue
   selectiveColor: HSLToolValue | undefined
   lutBrowser: Omit<MobileLutBrowserProps, 'open' | 'onClose'>
-  compareSplitOpen: boolean
   exportPanel: ReactNode
   onModeChange: (mode: MobileMode) => void
   onCollapse: () => void
@@ -75,58 +74,58 @@ export function MobileLabModeDock({
   onScrubChange: (field: ScrubFieldId | null) => void
   onOpenLutBrowser: () => void
   onOpenLutContractBrowser: () => void
-  onCompareReset: () => void
-  onSplitOpenChange: (open: boolean) => void
   onInsetChange?: (inset: number) => void
 }) {
   return (
     <MobileModeDock
       showTransform={Boolean(transform)}
-      compareDisabled={transform?.active === true}
       mode={mode}
+      exportOpen={exportOpen}
+      panelVisibleWhileDisabled={exportOpen && exportBusy === true}
       expanded={expanded}
       disabled={disabled}
       onModeChange={onModeChange}
       onCollapse={onCollapse}
       onOpenMore={onOpenMore}
-      canExport={canExport === true}
       scrubbing={scrubbing}
       onInsetChange={onInsetChange}
       panel={
         <m.div
-          key={mode}
+          key={exportOpen ? 'export' : mode}
           // Tone needs the wrapper to fill the dock so AdjustListPanel can
-          // h-full down and run its own internal scroll. Other modes flow
+          // h-full down and run its own internal scroll. Other panels flow
           // at content-derived height.
           className={
-            mode === 'tone' || mode === 'transform' ? 'h-full' : undefined
+            !exportOpen && (mode === 'tone' || mode === 'transform')
+              ? 'h-full'
+              : undefined
           }
           initial={{ opacity: 0, y: prefersReduced ? 0 : 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={surfaceFade}
         >
-          <MobileLabModePanel
-            transform={transform}
-            mode={mode}
-            tone={tone}
-            color={color}
-            selectiveColor={selectiveColor}
-            lutBrowser={lutBrowser}
-            compareSplitOpen={compareSplitOpen}
-            exportPanel={exportPanel}
-            scrubbing={scrubbing}
-            onToneChange={onToneChange}
-            onToneReset={onToneReset}
-            onColorChange={onColorChange}
-            onColorReset={onColorReset}
-            onSelectiveColorChange={onSelectiveColorChange}
-            onSelectiveColorReset={onSelectiveColorReset}
-            onScrubChange={onScrubChange}
-            onOpenLutBrowser={onOpenLutBrowser}
-            onOpenLutContractBrowser={onOpenLutContractBrowser}
-            onCompareReset={onCompareReset}
-            onSplitOpenChange={onSplitOpenChange}
-          />
+          {exportOpen ? (
+            exportPanel
+          ) : (
+            <MobileLabModePanel
+              transform={transform}
+              mode={mode}
+              tone={tone}
+              color={color}
+              selectiveColor={selectiveColor}
+              lutBrowser={lutBrowser}
+              scrubbing={scrubbing}
+              onToneChange={onToneChange}
+              onToneReset={onToneReset}
+              onColorChange={onColorChange}
+              onColorReset={onColorReset}
+              onSelectiveColorChange={onSelectiveColorChange}
+              onSelectiveColorReset={onSelectiveColorReset}
+              onScrubChange={onScrubChange}
+              onOpenLutBrowser={onOpenLutBrowser}
+              onOpenLutContractBrowser={onOpenLutContractBrowser}
+            />
+          )}
         </m.div>
       }
     />
@@ -140,8 +139,6 @@ function MobileLabModePanel({
   color,
   selectiveColor,
   lutBrowser,
-  compareSplitOpen,
-  exportPanel,
   scrubbing,
   onToneChange,
   onToneReset,
@@ -152,8 +149,6 @@ function MobileLabModePanel({
   onScrubChange,
   onOpenLutBrowser,
   onOpenLutContractBrowser,
-  onCompareReset,
-  onSplitOpenChange,
 }: {
   transform?: RawTransformFeature
   mode: MobileMode
@@ -161,8 +156,6 @@ function MobileLabModePanel({
   color: ColorValue
   selectiveColor: HSLToolValue | undefined
   lutBrowser: Omit<MobileLutBrowserProps, 'open' | 'onClose'>
-  compareSplitOpen: boolean
-  exportPanel: ReactNode
   scrubbing: boolean
   onToneChange: (patch: Partial<ToneValue>) => void
   onToneReset: () => void
@@ -176,8 +169,6 @@ function MobileLabModePanel({
   onScrubChange: (field: ScrubFieldId | null) => void
   onOpenLutBrowser: () => void
   onOpenLutContractBrowser: () => void
-  onCompareReset: () => void
-  onSplitOpenChange: (open: boolean) => void
 }) {
   if (mode === 'transform') {
     return transform ? (
@@ -207,25 +198,11 @@ function MobileLabModePanel({
     )
   }
 
-  if (mode === 'look') {
-    return (
-      <MobileLookPanel
-        lutBrowser={lutBrowser}
-        onOpenLutBrowser={onOpenLutBrowser}
-        onOpenLutContractBrowser={onOpenLutContractBrowser}
-      />
-    )
-  }
-
-  if (mode === 'compare') {
-    return (
-      <MobileComparePanel
-        splitOpen={compareSplitOpen}
-        onCompareReset={onCompareReset}
-        onSplitOpenChange={onSplitOpenChange}
-      />
-    )
-  }
-
-  return exportPanel
+  return (
+    <MobileLookPanel
+      lutBrowser={lutBrowser}
+      onOpenLutBrowser={onOpenLutBrowser}
+      onOpenLutContractBrowser={onOpenLutContractBrowser}
+    />
+  )
 }

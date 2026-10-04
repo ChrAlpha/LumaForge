@@ -41,6 +41,9 @@ export function useMobileLabChromeController({
   const [histogramOpen, setHistogramOpen] = useState(false)
   const [dockExpanded, setDockExpanded] = useState(true)
   const [compareSplitOpen, setCompareSplitOpen] = useState(false)
+  // Export is a terminal action, not a tool: it borrows the deck slot while
+  // open and hands it back to the tool that was there (`mode` is untouched).
+  const [exportOpen, setExportOpen] = useState(false)
   const viewModeBeforePeek = useRef<MobileLabViewMode>('processed')
   const compareSplitOpenRef = useRef(false)
   const suppressNextPeekRestore = useRef(false)
@@ -60,7 +63,6 @@ export function useMobileLabChromeController({
     suppressNextPeekRestore.current = false
     setCompareSplitOpen(false)
     setPeeking(false)
-    setMode((current) => (current === 'compare' ? 'transform' : current))
     if (viewMode !== 'processed') onViewModeChange('processed')
   }, [compareDisabled, onViewModeChange, viewMode])
 
@@ -81,6 +83,7 @@ export function useMobileLabChromeController({
     suppressNextPeekRestore.current = false
     setCompareSplitOpen(false)
     setHistogramOpen(false)
+    setExportOpen(false)
     setMode('look')
   }, [hasImage])
 
@@ -122,7 +125,7 @@ export function useMobileLabChromeController({
     }
     expandedBeforeImmersive.current = false
 
-    setMode('export')
+    setExportOpen(true)
     setDockExpanded(true)
     setScrubField(null)
     setImmersive(false)
@@ -249,13 +252,22 @@ export function useMobileLabChromeController({
     setLutBrowserStartsInContract(false)
   }
 
+  // Tools own the deck; Compare is a lens over the photo, so switching tools
+  // never touches the split.
   const handleModeChange = (nextMode: MobileMode) => {
-    if (nextMode === 'compare' && compareDisabled) return
-    if (nextMode !== 'compare' && compareSplitOpen) {
-      setCompareSplitMode(false)
-    }
+    setExportOpen(false)
     setMode(nextMode)
     setDockExpanded(true)
+  }
+
+  const openExport = () => {
+    closeSheets()
+    setExportOpen(true)
+    setDockExpanded(true)
+  }
+
+  const closeExport = () => {
+    setExportOpen(false)
   }
 
   return {
@@ -270,6 +282,7 @@ export function useMobileLabChromeController({
     histogramOpen,
     dockExpanded,
     compareSplitOpen,
+    exportOpen,
     previewReleasedReady,
     handoffActive,
     focusActive,
@@ -283,5 +296,7 @@ export function useMobileLabChromeController({
     openLutContractBrowser,
     closeLutBrowser,
     handleModeChange,
+    openExport,
+    closeExport,
   }
 }

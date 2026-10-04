@@ -2,7 +2,6 @@ import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
 import { render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { MobileComparePanel } from './MobileComparePanel'
 import { MobileExportPanel } from './MobileExportPanel'
 import { MobileLookPanel } from './MobileLookPanel'
 
@@ -22,20 +21,6 @@ const lutBrowser = {
 }
 
 describe('mobile accent grammar', () => {
-  it('keeps Compare panels free of amber in both modes', () => {
-    for (const splitOpen of [false, true]) {
-      const { container, unmount } = render(
-        <MobileComparePanel
-          splitOpen={splitOpen}
-          onCompareReset={vi.fn()}
-          onSplitOpenChange={vi.fn()}
-        />,
-      )
-      expect(container.innerHTML).not.toMatch(/amber/)
-      unmount()
-    }
-  })
-
   it('keeps Export actions on the cool lift, not amber hover', () => {
     const { container } = render(
       <MobileExportPanel

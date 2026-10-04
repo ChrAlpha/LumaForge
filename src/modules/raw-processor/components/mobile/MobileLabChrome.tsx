@@ -51,11 +51,11 @@ export function MobileLabChrome(props: {
   onReplaceFile: () => void
   onResetSession: () => void
   isProcessing: boolean
+  isExporting?: boolean
   runtimeReadinessState?: RawRuntimeReadinessState
   onPrepareRuntime?: () => void
   cpuPreviewNotice?: CpuPreviewNotice
   lutBrowser: Omit<MobileLutBrowserProps, 'open' | 'onClose'>
-  onCompareReset: () => void
   exportPanel: ReactNode
   moreSheet: MobileDetailsSheet
   previewSuspended?: boolean
@@ -73,14 +73,13 @@ export function MobileLabChrome(props: {
     immersive,
     histogramOpen,
     dockExpanded,
-    compareSplitOpen,
+    exportOpen,
     handoffActive,
     focusActive,
     setScrubField,
     setMoreOpen,
     setHistogramOpen,
     setDockExpanded,
-    setCompareSplitMode,
     exitImmersive,
     openLutBrowser,
     openLutContractBrowser,
@@ -201,8 +200,9 @@ export function MobileLabChrome(props: {
             )}
             <MobileLabModeDock
               transform={props.transform}
-              canExport={props.canExport}
               mode={mode}
+              exportOpen={exportOpen}
+              exportBusy={props.isExporting === true}
               expanded={dockExpanded && props.hasImage}
               disabled={!props.hasImage || props.isProcessing}
               onModeChange={handleModeChange}
@@ -214,7 +214,6 @@ export function MobileLabChrome(props: {
               color={props.color}
               selectiveColor={props.selectiveColor}
               lutBrowser={props.lutBrowser}
-              compareSplitOpen={compareSplitOpen}
               exportPanel={props.exportPanel}
               onToneChange={props.onToneChange}
               onToneReset={props.onToneReset}
@@ -225,8 +224,6 @@ export function MobileLabChrome(props: {
               onScrubChange={setScrubField}
               onOpenLutBrowser={openLutBrowser}
               onOpenLutContractBrowser={openLutContractBrowser}
-              onCompareReset={props.onCompareReset}
-              onSplitOpenChange={setCompareSplitMode}
               onInsetChange={setDockInset}
             />
           </m.div>

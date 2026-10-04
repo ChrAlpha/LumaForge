@@ -1301,7 +1301,7 @@ describe('rawToolSurface', () => {
       )
 
       const dock = screen.getByRole('tablist', { name: /lab modes/i })
-      expect(within(dock).getAllByRole('tab')).toHaveLength(4)
+      expect(within(dock).getAllByRole('tab')).toHaveLength(2)
       expect(
         within(dock).queryByRole('tab', { name: /strength/i }),
       ).not.toBeInTheDocument()
@@ -1513,37 +1513,5 @@ describe('rawToolSurface', () => {
     expect(
       screen.getByRole('dialog', { name: 'LUT contract browser' }),
     ).toBeInTheDocument()
-  })
-
-  it('mobile Compare defaults to hold-to-peek before exposing split reset', async () => {
-    const user = userEvent.setup()
-    const prev = jotaiStore.get(viewportAtom)
-    jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
-    try {
-      render(
-        <Provider store={jotaiStore}>
-          <RawToolSurface {...baseProps} hasImage />
-        </Provider>,
-      )
-
-      const dock = screen.getByRole('tablist', { name: /lab modes/i })
-      await user.click(within(dock).getByRole('tab', { name: /compare/i }))
-
-      expect(screen.getByText(/touch and hold the photo/i)).toBeInTheDocument()
-      expect(
-        screen.queryByText(/pins raw and final jpeg/i),
-      ).not.toBeInTheDocument()
-      expect(
-        screen.queryByRole('button', { name: /reset compare view/i }),
-      ).not.toBeInTheDocument()
-
-      await user.click(screen.getByRole('button', { name: /split compare/i }))
-      expect(screen.getByText(/pins raw and final jpeg/i)).toBeInTheDocument()
-      expect(
-        screen.getByRole('button', { name: /reset compare view/i }),
-      ).toBeInTheDocument()
-    } finally {
-      jotaiStore.set(viewportAtom, prev)
-    }
   })
 })

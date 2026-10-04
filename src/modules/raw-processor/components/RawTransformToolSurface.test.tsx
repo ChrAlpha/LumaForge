@@ -123,7 +123,7 @@ describe('raw Transform tool surfaces', () => {
     expect(screen.queryByRole('button', { name: 'Transform' })).toBeNull()
   })
 
-  it('keeps five mobile tabs visible before a RAW photo is loaded', () => {
+  it('keeps the three mobile tools visible before a RAW photo is loaded', () => {
     jotaiStore.set(viewportAtom, {
       ...jotaiStore.get(viewportAtom),
       w: 390,
@@ -136,7 +136,11 @@ describe('raw Transform tool surfaces', () => {
         transform={transformFeatureFixture()}
       />,
     )
-    expect(screen.getAllByRole('tab')).toHaveLength(5)
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Look',
+      'Adjust',
+      'Transform',
+    ])
     expect(screen.getByRole('tab', { name: 'Transform' })).toBeDisabled()
   })
 
@@ -174,7 +178,7 @@ describe('raw Transform tool surfaces', () => {
     expect(transform.demo.loadSource).not.toHaveBeenCalled()
   })
 
-  it('leaves mobile Compare when Transform becomes active and restores the tab after reset', async () => {
+  it('keeps the open tool when Transform becomes active and after reset', async () => {
     jotaiStore.set(viewportAtom, {
       ...jotaiStore.get(viewportAtom),
       w: 390,
@@ -184,22 +188,19 @@ describe('raw Transform tool surfaces', () => {
     const { rerender } = render(
       <RawToolSurface {...base} transform={transform} />,
     )
-    await userEvent.click(screen.getByRole('tab', { name: 'Compare' }))
-    expect(screen.getByRole('tab', { name: 'Compare' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
+    await userEvent.click(screen.getByRole('tab', { name: 'Adjust' }))
+    // Compare is a stage lens now, so Transform no longer has a Compare tab
+    // to evict: the open tool stays put either way.
+    expect(screen.queryByRole('tab', { name: 'Compare' })).toBeNull()
     rerender(
       <RawToolSurface {...base} transform={{ ...transform, active: true }} />,
     )
-    expect(screen.getByRole('tab', { name: 'Compare' })).toBeDisabled()
-    expect(screen.getByRole('tab', { name: 'Transform' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'Adjust' })).toHaveAttribute(
       'aria-selected',
       'true',
     )
     rerender(<RawToolSurface {...base} transform={transform} />)
-    expect(screen.getByRole('tab', { name: 'Compare' })).toBeEnabled()
-    expect(screen.getByRole('tab', { name: 'Transform' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'Adjust' })).toHaveAttribute(
       'aria-selected',
       'true',
     )
