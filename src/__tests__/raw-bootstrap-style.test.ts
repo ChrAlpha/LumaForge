@@ -14,8 +14,13 @@ describe('raw route bootstrap paint', () => {
     expect(indexHtml).toContain('dataset.lumaRoute')
     expect(indexHtml).toContain('luma-route-raw')
     expect(indexHtml).toContain("meta[name='theme-color']")
-    expect(indexHtml).toContain('#1d1914')
-    expect(indexHtml).toContain('oklch(0.16 0.02 76)')
+    // Stage base slate, not the retired warm oklch(0.16 0.02 76) that
+    // flashed before the slate UI mounted.
+    expect(indexHtml).toMatch(
+      /html\.luma-route-raw #root \{[^}]*background: #010102;\s*background: oklch\(0\.064 0\.006 255\);/,
+    )
+    expect(indexHtml).not.toContain('#1d1914')
+    expect(indexHtml).not.toContain('oklch(0.16 0.02 76)')
   })
 
   it('renders a visible /raw boot shell inside the root before React mounts', () => {

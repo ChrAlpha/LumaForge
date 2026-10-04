@@ -36,8 +36,10 @@
       html.luma-route-raw body,
       html.luma-route-raw #root {
         min-height: 100%;
-        background: #1d1914;
-        background: oklch(0.16 0.02 76);
+        /* Stage base slate (DESIGN.md §6), so the boot frame does not flash
+           the retired warm substrate before the /raw chrome mounts. */
+        background: #010102;
+        background: oklch(0.064 0.006 255);
         color: #f4efe7;
         color: oklch(0.97 0.014 86);
         color-scheme: dark;
