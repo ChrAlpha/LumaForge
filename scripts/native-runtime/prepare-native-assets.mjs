@@ -1,6 +1,6 @@
-import { execFile } from 'node:child_process'
+import { exec, execFile } from 'node:child_process'
 import { cp, mkdir, readFile, rm } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, relative } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
@@ -13,6 +13,7 @@ import {
   resolveWorkspaceRoot,
 } from './assets.mjs'
 
+const execAsync = promisify(exec)
 const execFileAsync = promisify(execFile)
 const artifactPackageDir = 'packages/luma-native-artifacts'
 
@@ -28,16 +29,28 @@ async function fetchPrebuiltAssetsFromNpm({ rootDir, packageSpec }) {
   await rm(cacheDir, { force: true, recursive: true })
   await mkdir(cacheDir, { recursive: true })
 
-  const { stdout } = await execFileAsync(
-    'npm',
-    ['pack', packageSpec, '--pack-destination', cacheDir, '--json'],
-    { cwd: rootDir },
-  )
+  // Every argument is a package spec or a path relative to the working
+  // directory, so none of them carries a drive letter or a space. That keeps
+  // the Windows shell from splitting them and keeps Git for Windows' GNU tar
+  // from reading `D:` as a remote host.
+  const npmArgs = [
+    'pack',
+    packageSpec,
+    '--pack-destination',
+    relative(rootDir, cacheDir),
+    '--json',
+  ]
+  // On Windows `npm` is `npm.cmd`, which Node only starts through a shell.
+  const { stdout } =
+    process.platform === 'win32'
+      ? await execAsync(`npm ${npmArgs.join(' ')}`, { cwd: rootDir })
+      : await execFileAsync('npm', npmArgs, { cwd: rootDir })
   const [packResult] = JSON.parse(stdout)
-  const tarballPath = resolve(cacheDir, packResult.filename)
   const unpackDir = join(cacheDir, 'unpacked')
   await mkdir(unpackDir, { recursive: true })
-  await execFileAsync('tar', ['-xzf', tarballPath, '-C', unpackDir])
+  await execFileAsync('tar', ['-xzf', packResult.filename, '-C', 'unpacked'], {
+    cwd: cacheDir,
+  })
 
   const unpackedPackageDir = join(unpackDir, 'package')
   await Promise.all([
