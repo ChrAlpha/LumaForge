@@ -392,20 +392,36 @@ export function useOnlineLutSources({
         throw error
       } finally {
         loadControllersRef.current.delete(controller)
+        // A cancelled load already handed its state back (and a newer load
+        // may own it now, even for the same entry), so only a load that is
+        // still the active one clears it.
         if (activeEntryLoadRef.current?.controller === controller) {
           activeEntryLoadRef.current = null
+          setLoadingEntryId((current) => (current === entryId ? null : current))
+          setEntryLoadProgress((current) =>
+            current?.entryId === entryId ? null : current,
+          )
         }
-        setLoadingEntryId((current) => (current === entryId ? null : current))
-        setEntryLoadProgress((current) =>
-          current?.entryId === entryId ? null : current,
-        )
       }
     },
     [loadOnlineLUT],
   )
 
+  // Cancelling releases the one-load lock at once, so a surface can cancel
+  // and start another entry in the same tap. The aborted load never applies:
+  // its pipeline checks the signal after every await, and its own cleanup
+  // only clears state that is still its own.
   const cancelEntryLoad = useCallback(() => {
-    activeEntryLoadRef.current?.controller.abort()
+    const active = activeEntryLoadRef.current
+    if (!active) return
+    active.controller.abort()
+    activeEntryLoadRef.current = null
+    setLoadingEntryId((current) =>
+      current === active.entryId ? null : current,
+    )
+    setEntryLoadProgress((current) =>
+      current?.entryId === active.entryId ? null : current,
+    )
   }, [])
 
   const shareResources = useMemo(

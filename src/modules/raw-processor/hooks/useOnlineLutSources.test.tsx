@@ -609,6 +609,57 @@ describe('useOnlineLutSources', () => {
     expect(result.current.entryLoadProgress).toBeNull()
   })
 
+  it('releases the lock on cancel so another entry can load in the same tap', async () => {
+    hideDefaultSource()
+    setupFetchJson({
+      [catalogUrl]: catalogDocument(),
+      [entryUrl]: entryManifest(),
+    })
+
+    const loadOnlineLUT = vi.fn(
+      (
+        _entry: OnlineLUTEntry,
+        options?: { signal?: AbortSignal },
+      ): Promise<LutLoadOutcome> =>
+        new Promise((resolve) => {
+          options?.signal?.addEventListener('abort', () => resolve('aborted'))
+        }),
+    )
+    const { result } = renderHook(() =>
+      useOnlineLutSources({
+        search: `?luts=${encodeURIComponent(catalogUrl)}`,
+        pathname: '/raw',
+        loadOnlineLUT,
+      }),
+    )
+    await waitFor(() => expect(result.current.state.entries).toHaveLength(1))
+
+    let first!: Promise<unknown>
+    act(() => {
+      first = result.current.loadEntry('kodak-2383-rec709')
+    })
+    await waitFor(() => expect(loadOnlineLUT).toHaveBeenCalledTimes(1))
+    const firstSignal = loadOnlineLUT.mock.calls[0][1]!.signal!
+
+    let second!: Promise<unknown>
+    act(() => {
+      result.current.cancelEntryLoad()
+      second = result.current.loadEntry('kodak-2383-rec709')
+    })
+    expect(firstSignal.aborted).toBe(true)
+    await waitFor(() => expect(loadOnlineLUT).toHaveBeenCalledTimes(2))
+    await expect(first).resolves.toBe('aborted')
+    // The aborted load's cleanup leaves the new load's state alone.
+    expect(result.current.loadingEntryId).toBe('kodak-2383-rec709')
+
+    await act(async () => {
+      result.current.cancelEntryLoad()
+      await expect(second).resolves.toBe('aborted')
+    })
+    expect(result.current.loadingEntryId).toBeNull()
+    expect(result.current.failedEntryId).toBeNull()
+  })
+
   it('fetches the entry manifest only when loading a selected catalog LUT', async () => {
     hideDefaultSource()
     setupFetchJson({
