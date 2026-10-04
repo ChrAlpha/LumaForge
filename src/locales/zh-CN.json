@@ -116,6 +116,8 @@
   "raw.mobile.compare.split": "分割对比",
   "raw.mobile.compare.lensHint": "点按分屏 · 按住看原片",
   "raw.mobile.compare.unavailable": "已应用变换，暂不能对比",
+  "raw.mobile.compare.showOriginal": "显示原片",
+  "raw.mobile.compare.originalHint": "点按显示原片 · 按住临时查看",
   "raw.mobile.immersive.show": "显示控件",
   "raw.mobile.immersive.hint": "点按照片可显示或隐藏控件",
   "raw.mobile.empty.subtitle": "在浏览器中完成 RAW 成片",

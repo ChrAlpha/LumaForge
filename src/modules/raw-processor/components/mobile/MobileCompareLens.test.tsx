@@ -182,6 +182,43 @@ describe('mobileCompareLens', () => {
     expect(status).not.toHaveTextContent(/transform applied/i)
   })
 
+  it('becomes a pressed original toggle where there is no split surface', () => {
+    const onToggle = vi.fn()
+    const { rerender } = render(
+      <MobileCompareLens
+        mode="original"
+        splitOn={false}
+        disabled={false}
+        onToggle={onToggle}
+        onPeekStart={vi.fn()}
+        onPeekEnd={vi.fn()}
+      />,
+    )
+    // One stable name; the pressed state says whether the original shows.
+    const lens = screen.getByRole('button', { name: 'Show original' })
+    expect(lens).toHaveAttribute('aria-pressed', 'false')
+    expect(lens).toHaveAttribute('data-lens-mode', 'original')
+    expect(lens).toHaveAccessibleDescription(
+      'Tap to show the original · hold to peek',
+    )
+    tap(lens)
+    expect(onToggle).toHaveBeenCalledOnce()
+
+    rerender(
+      <MobileCompareLens
+        mode="original"
+        splitOn
+        disabled={false}
+        onToggle={onToggle}
+        onPeekStart={vi.fn()}
+        onPeekEnd={vi.fn()}
+      />,
+    )
+    expect(
+      screen.getByRole('button', { name: 'Show original' }),
+    ).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('describes both gestures for assistive tech', () => {
     const { lens } = renderLens()
     expect(lens).toHaveAccessibleDescription(

@@ -116,6 +116,8 @@
   "raw.mobile.compare.split": "Split compare",
   "raw.mobile.compare.lensHint": "Tap to split · hold to see the RAW",
   "raw.mobile.compare.unavailable": "Transform applied: compare is unavailable",
+  "raw.mobile.compare.showOriginal": "Show original",
+  "raw.mobile.compare.originalHint": "Tap to show the original · hold to peek",
   "raw.mobile.immersive.show": "Show controls",
   "raw.mobile.immersive.hint": "Tap the photo to show or hide controls",
   "raw.mobile.empty.subtitle": "RAW finishing in your browser",

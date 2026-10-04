@@ -8,11 +8,19 @@ import { useMobilePreviewGestures } from './useMobilePreviewGestures'
 
 export type MobileLabViewMode = 'processed' | 'original' | 'compare'
 
+/**
+ * What the compare lens does. `split` opens the RAW / final split; the CPU
+ * preview has no split surface, so there the lens is an `original` toggle
+ * between the unprocessed and the processed photo.
+ */
+export type MobileCompareLensMode = 'split' | 'original'
+
 interface UseMobileLabChromeControllerInput {
   hasImage: boolean
   isProcessing: boolean
   previewSuspended?: boolean
   compareDisabled?: boolean
+  compareMode?: MobileCompareLensMode
   preferExportMode?: boolean
   previewFrameEl?: HTMLDivElement | null
   viewMode: MobileLabViewMode
@@ -24,6 +32,7 @@ export function useMobileLabChromeController({
   isProcessing,
   previewSuspended,
   compareDisabled,
+  compareMode = 'split',
   preferExportMode,
   previewFrameEl,
   viewMode,
@@ -41,6 +50,9 @@ export function useMobileLabChromeController({
   const [histogramOpen, setHistogramOpen] = useState(false)
   const [dockExpanded, setDockExpanded] = useState(true)
   const [compareSplitOpen, setCompareSplitOpen] = useState(false)
+  // The original toggle (CPU preview): the view a peek hands back to.
+  const [originalShown, setOriginalShown] = useState(false)
+  const originalShownRef = useRef(false)
   // Export is a terminal action, not a tool: it borrows the deck slot while
   // open and hands it back to the tool that was there (`mode` is untouched).
   const [exportOpen, setExportOpen] = useState(false)
@@ -55,6 +67,14 @@ export function useMobileLabChromeController({
     null,
   )
   const expandedBeforeImmersive = useRef(false)
+  // What a peek restores when it ends: the split, the pinned original, or
+  // the processed photo.
+  const restingViewMode = (): MobileLabViewMode =>
+    compareSplitOpenRef.current
+      ? 'compare'
+      : originalShownRef.current
+        ? 'original'
+        : 'processed'
   const previewReleasedReady =
     hasImage && previewSuspended === true && !isProcessing
   const handoffActive = hasImage && (isProcessing || previewReleasedReady)
@@ -65,6 +85,8 @@ export function useMobileLabChromeController({
     compareSplitOpenRef.current = false
     suppressNextPeekRestore.current = false
     lensPeekActive.current = false
+    originalShownRef.current = false
+    setOriginalShown(false)
     setCompareSplitOpen(false)
     setPeeking(false)
     if (viewMode !== 'processed') onViewModeChange('processed')
@@ -86,6 +108,8 @@ export function useMobileLabChromeController({
     compareSplitOpenRef.current = false
     suppressNextPeekRestore.current = false
     lensPeekActive.current = false
+    originalShownRef.current = false
+    setOriginalShown(false)
     setCompareSplitOpen(false)
     setHistogramOpen(false)
     setExportOpen(false)
@@ -172,7 +196,9 @@ export function useMobileLabChromeController({
         return
       }
       onViewModeChange(
-        compareSplitOpenRef.current ? viewModeBeforePeek.current : 'processed',
+        compareSplitOpenRef.current
+          ? viewModeBeforePeek.current
+          : restingViewMode(),
       )
       return
     }
@@ -203,7 +229,17 @@ export function useMobileLabChromeController({
     if (!lensPeekActive.current) return
     lensPeekActive.current = false
     setPeeking(false)
-    onViewModeChange(compareSplitOpenRef.current ? 'compare' : 'processed')
+    onViewModeChange(restingViewMode())
+  }
+
+  // The CPU preview's lens: a tap pins the original or hands back the
+  // processed photo. A hold still peeks, and its release returns here.
+  const toggleOriginal = () => {
+    if (compareDisabled || compareMode !== 'original') return
+    const next = !originalShownRef.current
+    originalShownRef.current = next
+    setOriginalShown(next)
+    onViewModeChange(next ? 'original' : 'processed')
   }
 
   const clearImmersiveStagger = () => {
@@ -306,6 +342,7 @@ export function useMobileLabChromeController({
     histogramOpen,
     dockExpanded,
     compareSplitOpen,
+    originalShown,
     exportOpen,
     previewReleasedReady,
     handoffActive,
@@ -315,6 +352,7 @@ export function useMobileLabChromeController({
     setHistogramOpen,
     setDockExpanded,
     setCompareSplitMode,
+    toggleOriginal,
     startLensPeek,
     endLensPeek,
     exitImmersive,

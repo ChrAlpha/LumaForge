@@ -71,7 +71,10 @@ export function MobileLabChrome(props: {
   onSelectiveColorReset: () => void
   viewMode: MobileLabViewMode
   onViewModeChange: (mode: MobileLabViewMode) => void
-  /** False when the stage has no split surface (CPU preview). */
+  /**
+   * False when the stage has no split surface (CPU preview); the lens then
+   * toggles the original instead of opening a split.
+   */
   compareSupported?: boolean
   histogram: PreviewHistogramState
   fileName: string
@@ -98,6 +101,8 @@ export function MobileLabChrome(props: {
   photoAspect?: number | null
 }) {
   const compareDisabled = props.transform?.active === true
+  // Without a split surface (CPU preview) the lens toggles the original.
+  const compareMode = props.compareSupported === false ? 'original' : 'split'
   const {
     prefersReduced,
     mode,
@@ -110,6 +115,7 @@ export function MobileLabChrome(props: {
     histogramOpen,
     dockExpanded,
     compareSplitOpen,
+    originalShown,
     exportOpen,
     handoffActive,
     focusActive,
@@ -118,6 +124,7 @@ export function MobileLabChrome(props: {
     setHistogramOpen,
     setDockExpanded,
     setCompareSplitMode,
+    toggleOriginal,
     startLensPeek,
     endLensPeek,
     exitImmersive,
@@ -136,13 +143,10 @@ export function MobileLabChrome(props: {
     viewMode: props.viewMode,
     onViewModeChange: props.onViewModeChange,
     compareDisabled,
+    compareMode,
   })
   const lensVisible =
-    props.hasImage &&
-    props.compareSupported !== false &&
-    !immersive &&
-    !focusActive &&
-    !handoffActive
+    props.hasImage && !immersive && !focusActive && !handoffActive
 
   const isExporting = props.isExporting === true
   const exportActionState = getMobileExportActionState({
@@ -273,9 +277,16 @@ export function MobileLabChrome(props: {
         {lensVisible && (
           <MobileCompareLens
             key="compare-lens"
-            splitOn={compareSplitOpen}
+            mode={compareMode}
+            splitOn={
+              compareMode === 'original' ? originalShown : compareSplitOpen
+            }
             disabled={compareDisabled}
-            onToggle={() => setCompareSplitMode(!compareSplitOpen)}
+            onToggle={
+              compareMode === 'original'
+                ? toggleOriginal
+                : () => setCompareSplitMode(!compareSplitOpen)
+            }
             onPeekStart={startLensPeek}
             onPeekEnd={endLensPeek}
             hintPlacement={getLensHintPlacement(photoWidth)}

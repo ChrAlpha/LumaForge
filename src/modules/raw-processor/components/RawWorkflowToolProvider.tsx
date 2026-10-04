@@ -106,8 +106,20 @@ export function RawWorkflowToolProvider({
         onReplaceFile,
         onResetSession,
         onCompareReset: compareDisabled ? () => {} : onCompareReset,
-        viewMode: compareDisabled ? 'processed' : workflow.viewMode,
-        onViewModeChange: compareDisabled ? () => {} : workflow.setViewMode,
+        // The CPU preview has no split surface but can still show the
+        // original, so it keeps original / processed and drops only
+        // `compare`. A committed Transform shows the processed photo alone.
+        viewMode: transformActive
+          ? 'processed'
+          : isCpuMode && workflow.viewMode === 'compare'
+            ? 'processed'
+            : workflow.viewMode,
+        onViewModeChange: transformActive
+          ? () => {}
+          : isCpuMode
+            ? (mode) =>
+                workflow.setViewMode(mode === 'compare' ? 'processed' : mode)
+            : workflow.setViewMode,
         compareSplit: workflow.compareSplit,
         compareSupported: !isCpuMode,
         onCompareSplitChange: compareDisabled

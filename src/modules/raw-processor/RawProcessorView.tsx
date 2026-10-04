@@ -158,6 +158,15 @@ function RawProcessorViewInner({
           onCompareReset={view.handleCompareReset}
           transformActive={transform.active}
           viewportInteractionDisabled={transform.showOverlay}
+          // Mobile has no room for the CPU stage's own toggle row under the
+          // photo; its compare lens drives original / processed instead.
+          cpuVariant={
+            isMobileSurface
+              ? workflow.viewMode === 'original'
+                ? 'neutral'
+                : 'processed'
+              : undefined
+          }
         />
 
         <RawWorkflowToolProvider

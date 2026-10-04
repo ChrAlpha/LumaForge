@@ -608,6 +608,8 @@ function collectDomState() {
       exportPanel: isVisible(q('[data-mobile-export-panel]')),
       exportAction: q('[data-mobile-export-action]')?.dataset.state ?? null,
       compareLens: q('[data-mobile-compare-lens]')?.dataset.state ?? null,
+      compareLensMode:
+        q('[data-mobile-compare-lens]')?.dataset.lensMode ?? null,
       peek: Boolean(q('[data-peek]')),
     },
     alerts: qa('[role="alert"], [role="alertdialog"]')
@@ -1427,6 +1429,21 @@ class MobileDriver extends DesktopDriver {
     await lens.click()
     await this.page.waitForTimeout(300)
     return true
+  }
+
+  // The mobile CPU preview has no toggle row under the photo: the compare
+  // lens is an original toggle there (aria-pressed while the original shows).
+  async setCpuVariant(name) {
+    const lens = this.compareLens()
+    if (!(await lens.count()))
+      return this.h.record({ type: 'cpu-variant', skipped: true })
+    const wantOriginal = name === 'Original'
+    const pressed = (await lens.getAttribute('aria-pressed')) === 'true'
+    if (pressed !== wantOriginal) {
+      await lens.click()
+      await this.page.waitForTimeout(300)
+    }
+    return this.h.record({ type: 'cpu-variant', name })
   }
 
   exportAction() {

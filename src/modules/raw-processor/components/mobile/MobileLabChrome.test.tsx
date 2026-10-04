@@ -866,12 +866,67 @@ describe('mobileLabChrome', () => {
         .getAttribute('style'),
     ).toContain('--raw-compare-lens-top')
 
-    // The CPU preview has no split surface.
+    // The CPU preview has no split surface: the lens stays, as an original
+    // toggle.
     rerender(<MobileLabChrome {...base} compareSupported={false} />)
-    expect(container.querySelector('[data-mobile-compare-lens]')).toBeNull()
+    const cpuLens = container.querySelector('[data-mobile-compare-lens]')
+    expect(cpuLens).toHaveAccessibleName('Show original')
+    expect(cpuLens).toHaveAttribute('data-lens-mode', 'original')
 
     rerender(<MobileLabChrome {...base} hasImage={false} />)
     expect(container.querySelector('[data-mobile-compare-lens]')).toBeNull()
+  })
+
+  it('makes the lens an original toggle in the CPU preview, and a hold still peeks', () => {
+    vi.useFakeTimers()
+    const onViewModeChange = vi.fn()
+    const { container } = render(
+      <MobileLabChrome
+        {...base}
+        compareSupported={false}
+        onViewModeChange={onViewModeChange}
+      />,
+    )
+    const lens = container.querySelector<HTMLElement>(
+      '[data-mobile-compare-lens]',
+    )!
+    expect(lens).toHaveAttribute('aria-pressed', 'false')
+
+    // A tap pins the original; there is no split to open.
+    fireEvent.click(lens)
+    expect(onViewModeChange).toHaveBeenLastCalledWith('original')
+    expect(onViewModeChange).not.toHaveBeenCalledWith('compare')
+    expect(lens).toHaveAttribute('aria-pressed', 'true')
+    expect(lens).toHaveAttribute('data-state', 'on')
+    expect(lens).toHaveAccessibleName('Show original')
+
+    // A hold peeks and its release hands back the pinned original.
+    fireEvent.pointerDown(lens)
+    act(() => {
+      vi.advanceTimersByTime(260)
+    })
+    expect(container.querySelector('[data-mobile-lab-chrome]')).toHaveAttribute(
+      'data-peek',
+      'true',
+    )
+    fireEvent.pointerUp(lens)
+    fireEvent.click(lens)
+    expect(onViewModeChange).toHaveBeenLastCalledWith('original')
+    expect(lens).toHaveAttribute('aria-pressed', 'true')
+
+    // A second tap shows the processed photo again.
+    fireEvent.click(lens)
+    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
+    expect(lens).toHaveAttribute('aria-pressed', 'false')
+
+    // Unpinned, a hold returns to the processed photo.
+    fireEvent.pointerDown(lens)
+    act(() => {
+      vi.advanceTimersByTime(260)
+    })
+    expect(onViewModeChange).toHaveBeenLastCalledWith('original')
+    fireEvent.pointerUp(lens)
+    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
   })
 
   it('keeps the split on while switching tools', async () => {

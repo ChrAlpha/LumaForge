@@ -1,4 +1,7 @@
-import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
+import type {
+  CpuPreviewFrame,
+  CpuPreviewVariant,
+} from '@lumaforge/render-engine/preview'
 
 import type {
   PipelineStats,
@@ -25,6 +28,7 @@ export function RawPreviewStageSurface({
   onCompareReset,
   transformActive,
   viewportInteractionDisabled,
+  cpuVariant,
 }: {
   workflow: UseRawWorkflowReturn
   isCpuMode: boolean
@@ -40,6 +44,11 @@ export function RawPreviewStageSurface({
   onCompareReset?: () => void
   transformActive?: boolean
   viewportInteractionDisabled?: boolean
+  /**
+   * The CPU preview's original / processed choice when another control owns
+   * it (the mobile compare lens); unset, the CPU stage keeps its own toggle.
+   */
+  cpuVariant?: CpuPreviewVariant
 }) {
   // Export releases the decoded preview; the shared stage then shows the
   // export-ready handoff with Restore preview, which the CPU stage lacks.
@@ -55,6 +64,7 @@ export function RawPreviewStageSurface({
         onProcessedFrame={onCpuProcessedFrame}
         previewFrameRef={onPreviewFrameChange}
         transformActive={transformActive}
+        variant={cpuVariant}
       />
     )
   }

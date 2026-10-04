@@ -139,6 +139,40 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.compareSupported).toBe(false)
   })
 
+  it('lets the CPU preview show the original but never the split', () => {
+    const workflow = workflowFixture()
+    const { result } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <RawWorkflowToolProvider
+          workflow={workflow}
+          transform={transformFeatureFixture({ hasImage: true })}
+          onlineLutSources={{} as UseOnlineLutSourcesResult}
+          isCpuMode
+          isProcessing={false}
+          runtimeReadinessState="ready"
+          previewFrameEl={null}
+          onReplaceFile={vi.fn()}
+          onResetSession={vi.fn()}
+          onCompareReset={vi.fn()}
+          onLutDrop={vi.fn()}
+          onExport={vi.fn()}
+          onRecoverExportSource={vi.fn()}
+          onPrepareRuntime={vi.fn()}
+        >
+          {children}
+        </RawWorkflowToolProvider>
+      ),
+    })
+    // A split left over from the GPU path reads as the processed photo.
+    expect(result.current.viewMode).toBe('processed')
+    result.current.onViewModeChange('original')
+    expect(workflow.setViewMode).toHaveBeenLastCalledWith('original')
+    result.current.onViewModeChange('compare')
+    expect(workflow.setViewMode).toHaveBeenLastCalledWith('processed')
+    result.current.onCompareSplitChange(0.2)
+    expect(workflow.setCompareSplit).not.toHaveBeenCalled()
+  })
+
   it('reports the aspect the stage is displaying', () => {
     const decoded = { width: 6000, height: 4000 }
     const workflow = {

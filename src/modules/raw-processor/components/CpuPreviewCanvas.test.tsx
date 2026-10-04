@@ -1,7 +1,11 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { CpuPreviewCanvas } from './CpuPreviewCanvas'
+import {
+  CPU_CANVAS_RESIZE_SETTLE_MS,
+  CpuPreviewCanvas,
+} from './CpuPreviewCanvas'
 
 const frame = {
   requestId: 1,
@@ -12,6 +16,51 @@ const frame = {
 }
 
 describe('cpuPreviewCanvas', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('redraws at the new box once a resize settles, never per frame of it', () => {
+    vi.useFakeTimers()
+    let onResize: () => void = () => {}
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn((callback: () => void) => {
+        onResize = callback
+        return { observe: vi.fn(), disconnect: vi.fn(), unobserve: vi.fn() }
+      }),
+    )
+    const drawImage = vi.fn()
+    const context = {
+      drawImage,
+      putImageData: vi.fn(),
+      clearRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((
+      contextId: string,
+    ) =>
+      contextId === '2d' ? context : null) as HTMLCanvasElement['getContext'])
+
+    render(<CpuPreviewCanvas frame={frame} inFlight={false} />)
+    expect(drawImage).toHaveBeenCalledTimes(1)
+    // The canvas keeps its last draw undistorted while the box animates.
+    expect(screen.getByLabelText(/preview/i)).toHaveClass('object-contain')
+
+    act(() => {
+      onResize()
+      vi.advanceTimersByTime(CPU_CANVAS_RESIZE_SETTLE_MS / 2)
+      onResize()
+      vi.advanceTimersByTime(CPU_CANVAS_RESIZE_SETTLE_MS - 1)
+    })
+    expect(drawImage).toHaveBeenCalledTimes(1)
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(drawImage).toHaveBeenCalledTimes(2)
+  })
+
   it('draws via backing canvas (putImageData) then drawImage to visible', () => {
     const drawImage = vi.fn()
     const putImageData = vi.fn()

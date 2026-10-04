@@ -1,4 +1,4 @@
-import { Columns2 } from 'lucide-react'
+import { Columns2, Contrast } from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
@@ -8,6 +8,7 @@ import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
 
 import { TAP_SPRING } from '../../motion'
+import type { MobileCompareLensMode } from './useMobileLabChromeController'
 import { LONG_PRESS_MS, TAP_SLOP_PX } from './useMobilePreviewGestures'
 
 /**
@@ -95,8 +96,17 @@ function tryRelease(target: Element, pointerId: number) {
  * Compare is a lens over the photo, orthogonal to the dock's tools: a tap
  * toggles the RAW / final split, which stays on while tools change, and a
  * hold peeks the unprocessed RAW until release. A hold never toggles.
+ *
+ * The CPU preview has no split surface, so there the lens is an `original`
+ * toggle: a tap pins the unprocessed photo (or hands back the processed
+ * one) and a hold still peeks. Its accessible name stays "Show original"
+ * while `aria-pressed` carries the state, so the name never flips under a
+ * screen reader as the state changes.
  */
 export function MobileCompareLens(props: {
+  /** `split` opens the RAW / final split; `original` toggles the RAW. */
+  mode?: MobileCompareLensMode
+  /** The split is open, or (`original` mode) the original is pinned. */
   splitOn: boolean
   /** A committed Transform cannot be compared; a tap explains why. */
   disabled: boolean
@@ -107,6 +117,7 @@ export function MobileCompareLens(props: {
   hintPlacement?: LensHintPlacement
 }) {
   const { t } = useI18n()
+  const originalMode = props.mode === 'original'
   const hintBelow = props.hintPlacement === 'below'
   const reduced = useReducedMotion() ?? false
   const descriptionId = useId()
@@ -240,11 +251,15 @@ export function MobileCompareLens(props: {
   }
 
   const state = props.disabled ? 'disabled' : props.splitOn ? 'on' : 'off'
+  const gestureHint = originalMode
+    ? t('raw.mobile.compare.originalHint')
+    : t('raw.mobile.compare.lensHint')
   const hint = blockedHint
     ? t('raw.mobile.compare.unavailable')
     : introHint
-      ? t('raw.mobile.compare.lensHint')
+      ? gestureHint
       : null
+  const LensIcon = originalMode ? Contrast : Columns2
 
   return (
     <m.div
@@ -308,15 +323,18 @@ export function MobileCompareLens(props: {
         </AnimatePresence>
       </div>
       <span id={descriptionId} className="sr-only">
-        {props.disabled
-          ? t('raw.mobile.compare.unavailable')
-          : t('raw.mobile.compare.lensHint')}
+        {props.disabled ? t('raw.mobile.compare.unavailable') : gestureHint}
       </span>
       <m.button
         type="button"
         data-mobile-compare-lens
+        data-lens-mode={originalMode ? 'original' : 'split'}
         data-state={state}
-        aria-label={t('raw.mobile.compare.split')}
+        aria-label={
+          originalMode
+            ? t('raw.mobile.compare.showOriginal')
+            : t('raw.mobile.compare.split')
+        }
         aria-pressed={props.splitOn}
         aria-disabled={props.disabled || undefined}
         aria-describedby={descriptionId}
@@ -351,7 +369,8 @@ export function MobileCompareLens(props: {
             'grid size-[var(--raw-compare-lens-size,32px)] place-items-center rounded-full transition-[background-color,color,box-shadow,opacity] duration-[180ms] ease-out',
             'group-focus-visible:outline-2 group-focus-visible:-outline-offset-1 group-focus-visible:outline-lf-green/80',
             props.splitOn
-              ? // Slate icon on the bright lift: the split is on.
+              ? // Slate icon on the bright lift: the split (or the pinned
+                // original) is on.
                 'bg-[oklch(0.96_0.006_255/0.9)] text-lf-surface shadow-[0_1px_6px_oklch(0.04_0.006_255/0.4)]'
               : 'bg-[oklch(0.1_0.006_255/0.72)] text-lf-on-photo-ink shadow-[inset_0_0_0_1px_oklch(0.96_0.006_255/0.2)] backdrop-blur-background',
             !props.disabled &&
@@ -360,7 +379,7 @@ export function MobileCompareLens(props: {
             props.disabled && 'opacity-40',
           )}
         >
-          <Columns2 className="size-4" />
+          <LensIcon className="size-4" />
         </span>
       </m.button>
     </m.div>

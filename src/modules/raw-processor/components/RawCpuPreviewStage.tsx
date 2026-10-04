@@ -1,5 +1,8 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
-import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
+import type {
+  CpuPreviewFrame,
+  CpuPreviewVariant,
+} from '@lumaforge/render-engine/preview'
 import { useEffect, useState } from 'react'
 
 import { clsxm } from '~/lib/cn'
@@ -18,6 +21,12 @@ export interface RawCpuPreviewStageProps {
   onProcessedFrame?: (frame: CpuPreviewFrame | null) => void
   previewFrameRef?: (element: HTMLDivElement | null) => void
   transformActive?: boolean
+  /**
+   * Set when the caller owns the original / processed choice (the mobile
+   * compare lens). The stage then shows this variant and renders no toggle
+   * row of its own, so the photo keeps the whole stage region.
+   */
+  variant?: CpuPreviewVariant
 }
 
 export function RawCpuPreviewStage({
@@ -29,9 +38,12 @@ export function RawCpuPreviewStage({
   onProcessedFrame,
   previewFrameRef,
   transformActive = false,
+  variant: controlledVariant,
 }: RawCpuPreviewStageProps) {
   const { t } = useI18n()
-  const [variant, setVariant] = useState<'processed' | 'neutral'>('processed')
+  const [localVariant, setVariant] = useState<CpuPreviewVariant>('processed')
+  const variantControlled = controlledVariant !== undefined
+  const variant = controlledVariant ?? localVariant
   const cpuPreview = useCpuPreview({
     enabled: Boolean(image),
     image,
@@ -92,7 +104,7 @@ export function RawCpuPreviewStage({
           className="h-full min-h-0"
         />
       </div>
-      {image && !transformActive && (
+      {image && !transformActive && !variantControlled && (
         <div className="flex shrink-0 justify-center gap-2 px-3 py-2">
           <button
             type="button"
