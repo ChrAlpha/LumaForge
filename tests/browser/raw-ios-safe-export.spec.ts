@@ -105,15 +105,16 @@ async function openExportControls(page: Page) {
   const isMobileViewport = await page.evaluate(() => window.innerWidth <= 640)
   if (!isMobileViewport) return
 
-  const mobileExportTab = page.getByRole('tab', { name: /^export$/i })
-  await expect(mobileExportTab).toBeVisible({ timeout: 120_000 })
-  await expect
-    .poll(
-      async () => (await mobileExportTab.getAttribute('aria-disabled')) ?? '',
-      { timeout: 120_000 },
-    )
-    .not.toBe('true')
-  await mobileExportTab.click()
+  // Export is a topbar action, not a dock tab. It mounts once a RAW is
+  // loaded and stays disabled while the pipeline is busy; a tap opens the
+  // export panel in the deck.
+  const mobileExportAction = page.locator('[data-mobile-export-action]')
+  await expect(mobileExportAction).toBeVisible({ timeout: 120_000 })
+  await expect(mobileExportAction).toBeEnabled({ timeout: 120_000 })
+  if ((await mobileExportAction.getAttribute('aria-expanded')) !== 'true') {
+    await mobileExportAction.click()
+  }
+  await expect(page.locator('[data-mobile-export-panel]')).toBeVisible()
 }
 
 test('browser preflight records expected export policy before export', async ({

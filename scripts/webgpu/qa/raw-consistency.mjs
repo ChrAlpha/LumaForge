@@ -523,7 +523,7 @@ function collectDomState() {
   const transformTool = q('[data-raw-transform-tool]')
   const exportBlock =
     q('[data-raw-export-block]') ??
-    q('[data-mobile-dock-panel] [data-mobile-substrate="glass-panel"]')
+    q('[data-mobile-export-panel]')
   const histogramCard = q('[data-tool-card="histogram"]')
   const histogramImage = q('[role="img"][aria-label*="histogram" i]')
   const cropBox = transformTool
@@ -605,6 +605,9 @@ function collectDomState() {
         q('[role="tablist"][aria-label="Lab modes"] [aria-selected="true"]'),
       ),
       dockPanel: isVisible(q('[data-mobile-dock-panel]')),
+      exportPanel: isVisible(q('[data-mobile-export-panel]')),
+      exportAction: q('[data-mobile-export-action]')?.dataset.state ?? null,
+      compareLens: q('[data-mobile-compare-lens]')?.dataset.state ?? null,
       peek: Boolean(q('[data-peek]')),
     },
     alerts: qa('[role="alert"], [role="alertdialog"]')
@@ -1395,6 +1398,8 @@ class MobileDriver extends DesktopDriver {
       .click()
   }
 
+  // The dock holds tools only (Look, Adjust, Transform). Compare is a lens
+  // over the stage and Export is a topbar action; neither is a tab.
   dockTab(name) {
     return this.page
       .getByRole('tablist', { name: 'Lab modes' })
@@ -1410,7 +1415,46 @@ class MobileDriver extends DesktopDriver {
     }
   }
 
+  compareLens() {
+    return this.page.locator('[data-mobile-compare-lens]')
+  }
+
+  async setCompareLens(on) {
+    const lens = this.compareLens()
+    if (!(await lens.count())) return false
+    const state = await lens.getAttribute('data-state')
+    if (state === 'disabled' || (state === 'on') === on) return false
+    await lens.click()
+    await this.page.waitForTimeout(300)
+    return true
+  }
+
+  exportAction() {
+    return this.page.locator('[data-mobile-export-action]')
+  }
+
+  async openExport() {
+    const panel = this.page.locator('[data-mobile-export-panel]')
+    if (!(await panel.isVisible().catch(() => false))) {
+      await this.exportAction().click()
+      await panel.waitFor()
+      await this.page.waitForTimeout(400)
+    }
+    return panel
+  }
+
+  async closeExport() {
+    const close = this.page.locator('[data-mobile-export-close]')
+    if (await close.isVisible().catch(() => false)) {
+      await close.click()
+      await this.page.waitForTimeout(400)
+    }
+  }
+
   async closeDock() {
+    // The export panel borrows the deck with no tab selected; hand it back
+    // first so the selected tool can collapse it.
+    await this.closeExport()
     const selected = this.page
       .getByRole('tablist', { name: 'Lab modes' })
       .locator('[aria-selected="true"]')
@@ -1613,21 +1657,13 @@ class MobileDriver extends DesktopDriver {
   async setSplit(value) {
     if (this.h.cpu) return this.setCpuVariant(value >= 1 ? 'Original' : 'Processed')
     if (value <= 0) {
-      // Processed only: the mobile surface has no split open by default.
-      const handle = this.compareHandle()
-      if (await handle.count()) {
-        await this.openMode('Compare')
-        await this.h.clickIfEnabled(
-          this.page.getByRole('button', { name: /touch and hold instead/i }),
-          'Close split compare',
-        )
-      }
+      // Processed only: the mobile surface has no split open by default. A
+      // tap on the lens closes an open split.
+      if (await this.compareHandle().count()) await this.setCompareLens(false)
       return this.h.record({ type: 'split', requested: 0, actual: 'closed' })
     }
-    await this.openMode('Compare')
     const handle = this.compareHandle()
-    if (!(await handle.count()))
-      await this.page.getByRole('button', { name: /^split compare$/i }).click()
+    if (!(await handle.count())) await this.setCompareLens(true)
     await handle.waitFor({ timeout: 30_000 })
     return super.setSplit(value)
   }
@@ -1674,22 +1710,29 @@ class MobileDriver extends DesktopDriver {
   }
 
   async exportRegion() {
-    await this.openMode('Export')
-    return this.page.locator('[data-mobile-dock-panel]').first()
+    return this.openExport()
+  }
+
+  // The histogram is a checkable item in the More menu.
+  async setHistogram(shown) {
+    await this.page.getByRole('button', { name: 'More actions' }).click()
+    const item = this.page.getByRole('menuitemcheckbox', { name: 'Histogram' })
+    await item.waitFor()
+    if (((await item.getAttribute('aria-checked')) === 'true') === shown) {
+      await this.page.keyboard.press('Escape')
+      return false
+    }
+    await item.click()
+    this.h.record({ type: shown ? 'show-histogram' : 'hide-histogram' })
+    return true
   }
 
   async showHistogram() {
-    await this.h.clickIfEnabled(
-      this.page.getByRole('button', { name: 'Show histogram', exact: true }),
-      'Show histogram',
-    )
+    return this.setHistogram(true)
   }
 
   async hideHistogram() {
-    await this.h.clickIfEnabled(
-      this.page.getByRole('button', { name: 'Hide histogram', exact: true }),
-      'Hide histogram',
-    )
+    return this.setHistogram(false)
   }
 
   async histogramLocator() {

@@ -239,9 +239,12 @@ test('keeps the loaded mobile export panel clear of the toolbar', async ({
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
   ).toBeVisible({ timeout: 120_000 })
 
-  const exportTab = page.getByRole('tab', { name: /^export$/i })
-  await expect(exportTab).toBeVisible()
-  await exportTab.click()
+  // Export opens from the topbar action into the deck above the tab bar.
+  const exportAction = page.locator('[data-mobile-export-action]')
+  await expect(exportAction).toBeEnabled({ timeout: 120_000 })
+  await exportAction.click()
+  await expect(exportAction).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('[data-mobile-export-panel]')).toBeVisible()
 
   await expect(
     page.getByRole('button', {

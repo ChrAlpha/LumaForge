@@ -654,8 +654,10 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
     await expect(
       page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
     ).toBeVisible({ timeout: 90_000 })
-    await page.getByRole('tab', { name: /^compare$/i }).click()
-    await page.getByRole('button', { name: /^split compare$/i }).click()
+    // Compare is a lens over the stage on mobile: a tap opens the split.
+    const compareLens = page.locator('[data-mobile-compare-lens]')
+    await compareLens.click()
+    await expect(compareLens).toHaveAttribute('data-state', 'on')
     await waitForCompareMode(page, 'jpeg-fallback')
     await expectWebGPUPreview(page, testInfo)
     expect((await readGpuStats(page)).drawCalls).toBeGreaterThan(0)
@@ -845,8 +847,10 @@ test('validates WebKit-class JPEG fallback compare when local WebKit is availabl
   await expect(
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
   ).toBeVisible({ timeout: 90_000 })
-  await page.getByRole('tab', { name: /^compare$/i }).click()
-  await page.getByRole('button', { name: /^split compare$/i }).click()
+  // Compare is a lens over the stage on mobile: a tap opens the split.
+  const compareLens = page.locator('[data-mobile-compare-lens]')
+  await compareLens.click()
+  await expect(compareLens).toHaveAttribute('data-state', 'on')
   await waitForCompareMode(page, 'jpeg-fallback')
 
   const originalLayer = page.locator('.raw-preview-original-layer').first()
