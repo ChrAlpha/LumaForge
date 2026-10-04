@@ -169,7 +169,9 @@ export function MobileModeDock(props: {
                 props.onModeChange(tab.id)
               }}
               className={clsxm(
-                'relative grid min-h-[52px] grid-rows-[auto_auto] place-items-center gap-1 rounded-md px-1 py-1.5 text-[0.64rem] font-semibold uppercase tracking-wide transition-colors',
+                // Sentence case at 0.7rem: uppercase tracking made the five labels
+                // collide at 393px ("TRANSFORM" touched "COMPARE").
+                'relative grid min-h-[52px] grid-rows-[auto_auto] place-items-center gap-1 rounded-md px-1 py-1.5 text-[0.7rem] font-semibold leading-tight tracking-normal transition-colors',
                 tabDisabled
                   ? 'cursor-not-allowed text-lf-on-photo-ink/35'
                   : showActive

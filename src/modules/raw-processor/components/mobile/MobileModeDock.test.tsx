@@ -267,6 +267,29 @@ describe('mobileModeDock', () => {
     expect(bar).toHaveClass('bg-[oklch(0.96_0.006_255/0.85)]')
     expect(screen.getByRole('tablist').innerHTML).not.toMatch(/amber/)
   })
+
+  it('sets tab labels in sentence case so five tabs fit at 393px', () => {
+    render(
+      <MobileModeDock
+        mode="look"
+        expanded
+        showTransform
+        onModeChange={vi.fn()}
+        onCollapse={vi.fn()}
+        onOpenMore={vi.fn()}
+        canExport={false}
+        panel={<div>x</div>}
+      />,
+    )
+
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs).toHaveLength(5)
+    for (const tab of tabs) {
+      expect(tab).toHaveClass('text-[0.7rem]', 'font-semibold')
+      expect(tab).not.toHaveClass('uppercase')
+      expect(tab).not.toHaveClass('tracking-wide')
+    }
+  })
 })
 
 describe('mobileModeDock stage inset', () => {

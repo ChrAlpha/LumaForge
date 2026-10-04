@@ -301,7 +301,7 @@ describe('mobileLabChrome', () => {
     // Primary action swaps the LUT itself — must be the most prominent affordance.
     expect(
       screen.getByRole('button', {
-        name: /change lut — browse, upload, or load a different lut/i,
+        name: /change lut: browse, upload, or load a different lut/i,
       }),
     ).toBeInTheDocument()
 
@@ -352,7 +352,7 @@ describe('mobileLabChrome', () => {
 
     await userEvent.click(
       screen.getByRole('button', {
-        name: /change lut — browse, upload, or load a different lut/i,
+        name: /change lut: browse, upload, or load a different lut/i,
       }),
     )
 

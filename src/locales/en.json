@@ -189,7 +189,7 @@
   "raw.mobile.lut.noCurrent": "No LUT yet, tone only.",
   "raw.mobile.lut.add": "Add LUT",
   "raw.mobile.lut.change": "Change LUT",
-  "raw.mobile.lut.changeAria": "Change LUT — browse, upload, or load a different LUT",
+  "raw.mobile.lut.changeAria": "Change LUT: browse, upload, or load a different LUT",
   "raw.mobile.lut.editContract": "Edit contract",
   "raw.mobile.lut.editContractAria": "Edit color contract for {{label}}",
   "raw.stage.aria": "RAW preview comparison",
