@@ -114,6 +114,8 @@
   "raw.mobile.export.close": "Close export",
   "raw.mobile.peek.note": "Touch and hold the photo to peek the unprocessed RAW.",
   "raw.mobile.compare.split": "Split compare",
+  "raw.mobile.compare.lensHint": "Tap to split · hold to see the RAW",
+  "raw.mobile.compare.unavailable": "Transform applied: compare is unavailable",
   "raw.mobile.immersive.show": "Show controls",
   "raw.mobile.immersive.hint": "Tap the photo to show or hide controls",
   "raw.mobile.histogram.show": "Show histogram",

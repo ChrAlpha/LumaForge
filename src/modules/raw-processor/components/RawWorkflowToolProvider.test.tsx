@@ -101,4 +101,41 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(workflow.setViewMode).toHaveBeenCalledWith('original')
     expect(workflow.setCompareSplit).toHaveBeenCalledWith(0.2)
   })
+  it('reports compare support and export progress to the tool surfaces', () => {
+    const workflow = {
+      ...workflowFixture(),
+      status: 'exporting',
+      progress: 42,
+    } as unknown as UseRawWorkflowReturn
+    let isCpuMode = false
+    const { result, rerender } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <RawWorkflowToolProvider
+          workflow={workflow}
+          onlineLutSources={{} as UseOnlineLutSourcesResult}
+          isCpuMode={isCpuMode}
+          isProcessing
+          runtimeReadinessState="ready"
+          previewFrameEl={null}
+          onReplaceFile={vi.fn()}
+          onResetSession={vi.fn()}
+          onCompareReset={vi.fn()}
+          onLutDrop={vi.fn()}
+          onExport={vi.fn()}
+          onRecoverExportSource={vi.fn()}
+          onPrepareRuntime={vi.fn()}
+        >
+          {children}
+        </RawWorkflowToolProvider>
+      ),
+    })
+    expect(result.current.compareSupported).toBe(true)
+    expect(result.current.isExporting).toBe(true)
+    expect(result.current.progress).toBe(42)
+
+    // The CPU preview has no split surface to compare on.
+    isCpuMode = true
+    rerender()
+    expect(result.current.compareSupported).toBe(false)
+  })
 })

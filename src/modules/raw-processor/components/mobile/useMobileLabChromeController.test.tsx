@@ -102,4 +102,29 @@ describe('useMobileLabChromeController', () => {
     expect(result.current.exportOpen).toBe(false)
     expect(result.current.mode).toBe('look')
   })
+  it('restores the processed view when a held lens peek outlives a handoff', () => {
+    const { result, rerender, initialProps, onViewModeChange } =
+      renderController()
+
+    act(() => result.current.startLensPeek())
+    expect(onViewModeChange).toHaveBeenLastCalledWith('original')
+    expect(result.current.peeking).toBe(true)
+
+    rerender({ ...initialProps, isProcessing: true })
+    expect(result.current.peeking).toBe(false)
+
+    // The lens unmounts with the handoff and ends its own peek.
+    act(() => result.current.endLensPeek())
+    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
+  })
+
+  it('does not peek through the lens while compare is unavailable', () => {
+    const { result, onViewModeChange } = renderController({
+      compareDisabled: true,
+    })
+    onViewModeChange.mockClear()
+    act(() => result.current.startLensPeek())
+    expect(onViewModeChange).not.toHaveBeenCalled()
+    expect(result.current.peeking).toBe(false)
+  })
 })

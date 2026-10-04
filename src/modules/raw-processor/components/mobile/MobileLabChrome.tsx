@@ -16,6 +16,7 @@ import type { RawRuntimeReadinessState } from '../raw-runtime-readiness'
 import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
 import type { MobileDetailsSheet } from './mobile-details-sheet'
+import { COMPARE_LENS_POSITION, MobileCompareLens } from './MobileCompareLens'
 import { MobileEmptyState } from './MobileEmptyState'
 import {
   getMobileExportActionState,
@@ -48,6 +49,8 @@ export function MobileLabChrome(props: {
   onSelectiveColorReset: () => void
   viewMode: MobileLabViewMode
   onViewModeChange: (mode: MobileLabViewMode) => void
+  /** False when the stage has no split surface (CPU preview). */
+  compareSupported?: boolean
   histogram: PreviewHistogramState
   fileName: string
   fileMeta: string
@@ -70,6 +73,7 @@ export function MobileLabChrome(props: {
   preferExportMode?: boolean
   previewFrameEl?: HTMLDivElement | null
 }) {
+  const compareDisabled = props.transform?.active === true
   const {
     prefersReduced,
     mode,
@@ -81,6 +85,7 @@ export function MobileLabChrome(props: {
     immersive,
     histogramOpen,
     dockExpanded,
+    compareSplitOpen,
     exportOpen,
     handoffActive,
     focusActive,
@@ -88,6 +93,9 @@ export function MobileLabChrome(props: {
     setMoreOpen,
     setHistogramOpen,
     setDockExpanded,
+    setCompareSplitMode,
+    startLensPeek,
+    endLensPeek,
     exitImmersive,
     openLutBrowser,
     openLutContractBrowser,
@@ -103,8 +111,14 @@ export function MobileLabChrome(props: {
     previewFrameEl: props.previewFrameEl,
     viewMode: props.viewMode,
     onViewModeChange: props.onViewModeChange,
-    compareDisabled: props.transform?.active === true,
+    compareDisabled,
   })
+  const lensVisible =
+    props.hasImage &&
+    props.compareSupported !== false &&
+    !immersive &&
+    !focusActive &&
+    !handoffActive
 
   const isExporting = props.isExporting === true
   const exportActionState = getMobileExportActionState({
@@ -154,10 +168,24 @@ export function MobileLabChrome(props: {
       data-stage-inset-bottom={insetBottom}
       data-focus={focusActive ? 'true' : 'false'}
       data-peek={peeking || undefined}
+      style={COMPARE_LENS_POSITION}
     >
-      {/* Peek (long-press) and the Compare split are alternate RAW-vs-finished
-          affordances. Both are wired via `useMobilePreviewGestures` above so
-          they share the same DOM target as pinch / pan and never block it. */}
+      {/* Long-press peek on the photo is wired via `useMobilePreviewGestures`
+          so it shares the DOM target with pinch / pan. The compare lens is
+          the explicit RAW-vs-finished control: it is orthogonal to the dock
+          tools, so the split survives tool switches. */}
+      <AnimatePresence>
+        {lensVisible && (
+          <MobileCompareLens
+            key="compare-lens"
+            splitOn={compareSplitOpen}
+            disabled={compareDisabled}
+            onToggle={() => setCompareSplitMode(!compareSplitOpen)}
+            onPeekStart={startLensPeek}
+            onPeekEnd={endLensPeek}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {!props.hasImage && (

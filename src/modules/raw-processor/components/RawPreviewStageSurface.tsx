@@ -22,6 +22,7 @@ export function RawPreviewStageSurface({
   onPipelineChange,
   onPreviewFrameChange,
   onCpuProcessedFrame,
+  onCompareReset,
   transformActive,
   viewportInteractionDisabled,
 }: {
@@ -35,6 +36,8 @@ export function RawPreviewStageSurface({
   onPipelineChange: (pipeline: RawProcessingPipeline | null) => void
   onPreviewFrameChange: (node: HTMLDivElement | null) => void
   onCpuProcessedFrame?: (frame: CpuPreviewFrame | null) => void
+  /** Same reset the desktop Compare tool runs; the split handle reuses it. */
+  onCompareReset?: () => void
   transformActive?: boolean
   viewportInteractionDisabled?: boolean
 }) {
@@ -78,6 +81,7 @@ export function RawPreviewStageSurface({
       onSplitPreviewChange={(split) => {
         workflow.setParams({ compareSplit: clampCompareSplit(split) })
       }}
+      onSplitReset={onCompareReset}
       onPreviewViewportChange={workflow.setPreviewViewport}
       isProcessing={isProcessing}
       runtimeReadinessState={runtimeReadinessState}

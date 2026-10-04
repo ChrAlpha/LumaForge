@@ -98,6 +98,7 @@ export function RawWorkflowToolProvider({
         viewMode: compareDisabled ? 'processed' : workflow.viewMode,
         onViewModeChange: compareDisabled ? () => {} : workflow.setViewMode,
         compareSplit: workflow.compareSplit,
+        compareSupported: !isCpuMode,
         onCompareSplitChange: compareDisabled
           ? () => {}
           : workflow.setCompareSplit,

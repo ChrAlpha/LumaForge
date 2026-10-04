@@ -47,6 +47,11 @@ export interface RawToolSurfaceProps {
   onViewModeChange: (mode: 'processed' | 'original' | 'compare') => void
   compareSplit: number
   onCompareSplitChange: (split: number) => void
+  /**
+   * The stage can render a RAW / final comparison. False in the CPU preview,
+   * which has no split surface; a committed Transform is reported separately.
+   */
+  compareSupported?: boolean
   onLutLoad: (files: File[]) => void
   onLutClear: () => void
   onLutProfileSelect: (profile: LUTColorProfile) => void

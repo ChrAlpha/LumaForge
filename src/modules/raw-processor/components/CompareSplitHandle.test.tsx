@@ -409,6 +409,114 @@ describe('compareSplitHandle', () => {
   })
 })
 
+function firePointer(
+  el: HTMLElement,
+  type: 'pointerdown' | 'pointerup',
+  init: { clientX: number; clientY?: number; pointerType: string },
+) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: init.clientX,
+    clientY: init.clientY ?? 0,
+  })
+  Object.defineProperty(event, 'pointerId', { value: 7 })
+  Object.defineProperty(event, 'pointerType', { value: init.pointerType })
+  fireEvent(el, event)
+}
+
+describe('compare split handle reset', () => {
+  function renderHandle(value = 0.3) {
+    const onChange = vi.fn()
+    const onPreviewChange = vi.fn()
+    const onReset = vi.fn()
+    const onParentDoubleClick = vi.fn()
+    render(
+      <div data-testid="track" onDoubleClick={onParentDoubleClick}>
+        <CompareSplitHandle
+          value={value}
+          onChange={onChange}
+          onPreviewChange={onPreviewChange}
+          onReset={onReset}
+        />
+      </div>,
+    )
+    const track = screen.getByTestId('track')
+    Object.defineProperty(track, 'getBoundingClientRect', {
+      value: () => ({ left: 0, top: 0, width: 400, height: 300 }),
+    })
+    return {
+      slider: screen.getByRole('slider'),
+      onChange,
+      onPreviewChange,
+      onReset,
+      onParentDoubleClick,
+    }
+  }
+
+  it('resets the split to 50% on double-click and runs the compare reset', () => {
+    const { slider, onChange, onPreviewChange, onReset, onParentDoubleClick } =
+      renderHandle()
+
+    fireEvent.doubleClick(slider)
+
+    expect(onChange).toHaveBeenLastCalledWith(0.5)
+    expect(onPreviewChange).toHaveBeenLastCalledWith(0.5)
+    expect(onReset).toHaveBeenCalledOnce()
+    expect(slider.style.getPropertyValue('--raw-compare-split-x')).toBe('200px')
+    // The stage's own double-click (viewport reset) stays out of it.
+    expect(onParentDoubleClick).not.toHaveBeenCalled()
+  })
+
+  it('resets on a touch double-tap within 300ms and 24px, once', () => {
+    const now = vi.spyOn(Date, 'now')
+    const { slider, onChange, onReset } = renderHandle()
+
+    now.mockReturnValue(1000)
+    firePointer(slider, 'pointerdown', { clientX: 120, pointerType: 'touch' })
+    firePointer(slider, 'pointerup', { clientX: 120, pointerType: 'touch' })
+    expect(onReset).not.toHaveBeenCalled()
+
+    now.mockReturnValue(1250)
+    firePointer(slider, 'pointerdown', { clientX: 136, pointerType: 'touch' })
+    firePointer(slider, 'pointerup', { clientX: 136, pointerType: 'touch' })
+    expect(onReset).toHaveBeenCalledOnce()
+    expect(onChange).toHaveBeenLastCalledWith(0.5)
+
+    // A browser-synthesized dblclick after the taps must not reset twice.
+    fireEvent.doubleClick(slider)
+    expect(onReset).toHaveBeenCalledOnce()
+    now.mockRestore()
+  })
+
+  it('does not reset on slow taps, distant taps, or a drag', () => {
+    const now = vi.spyOn(Date, 'now')
+    const { slider, onReset } = renderHandle()
+
+    now.mockReturnValue(1000)
+    firePointer(slider, 'pointerdown', { clientX: 120, pointerType: 'touch' })
+    firePointer(slider, 'pointerup', { clientX: 120, pointerType: 'touch' })
+    now.mockReturnValue(1400)
+    firePointer(slider, 'pointerdown', { clientX: 120, pointerType: 'touch' })
+    firePointer(slider, 'pointerup', { clientX: 120, pointerType: 'touch' })
+    expect(onReset).not.toHaveBeenCalled()
+
+    now.mockReturnValue(1500)
+    firePointer(slider, 'pointerdown', { clientX: 200, pointerType: 'touch' })
+    firePointer(slider, 'pointerup', { clientX: 200, pointerType: 'touch' })
+    expect(onReset).not.toHaveBeenCalled()
+
+    now.mockReturnValue(1600)
+    firePointer(slider, 'pointerdown', { clientX: 120, pointerType: 'touch' })
+    firePointer(slider, 'pointerup', { clientX: 260, pointerType: 'touch' })
+    now.mockReturnValue(1700)
+    firePointer(slider, 'pointerdown', { clientX: 260, pointerType: 'touch' })
+    firePointer(slider, 'pointerup', { clientX: 260, pointerType: 'touch' })
+    expect(onReset).not.toHaveBeenCalled()
+    now.mockRestore()
+  })
+})
+
 describe('compare split handle photo box', () => {
   it('publishes the letterboxed photo box so the line and labels can hug it', () => {
     const frame = document.createElement('div')

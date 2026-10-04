@@ -47,6 +47,9 @@ export function useMobileLabChromeController({
   const viewModeBeforePeek = useRef<MobileLabViewMode>('processed')
   const compareSplitOpenRef = useRef(false)
   const suppressNextPeekRestore = useRef(false)
+  // Set while the compare lens is held: the lens owns this peek, and it ends
+  // it on release no matter what the split is doing underneath.
+  const lensPeekActive = useRef(false)
   const preferExportModeWasActive = useRef(false)
   const immersiveStaggerTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -61,6 +64,7 @@ export function useMobileLabChromeController({
     if (!compareDisabled) return
     compareSplitOpenRef.current = false
     suppressNextPeekRestore.current = false
+    lensPeekActive.current = false
     setCompareSplitOpen(false)
     setPeeking(false)
     if (viewMode !== 'processed') onViewModeChange('processed')
@@ -81,6 +85,7 @@ export function useMobileLabChromeController({
     setDockExpanded(true)
     compareSplitOpenRef.current = false
     suppressNextPeekRestore.current = false
+    lensPeekActive.current = false
     setCompareSplitOpen(false)
     setHistogramOpen(false)
     setExportOpen(false)
@@ -101,6 +106,8 @@ export function useMobileLabChromeController({
     setMoreOpen(false)
     compareSplitOpenRef.current = false
     suppressNextPeekRestore.current = false
+    // A lens held into a handoff is not reset here: the lens leaves with the
+    // handoff and ends its own peek, which restores the processed view.
     setCompareSplitOpen(false)
     setHistogramOpen(false)
     setPeeking(false)
@@ -180,6 +187,23 @@ export function useMobileLabChromeController({
     setPeeking(false)
     setCompareSplitOpen(open)
     onViewModeChange(open ? 'compare' : 'processed')
+  }
+
+  // Holding the compare lens peeks the unprocessed RAW over the whole frame,
+  // split or not, through the same view-mode path as the photo long-press.
+  // Release restores whatever the lens toggle left in place.
+  const startLensPeek = () => {
+    if (compareDisabled || lensPeekActive.current) return
+    lensPeekActive.current = true
+    setPeeking(true)
+    onViewModeChange('original')
+  }
+
+  const endLensPeek = () => {
+    if (!lensPeekActive.current) return
+    lensPeekActive.current = false
+    setPeeking(false)
+    onViewModeChange(compareSplitOpenRef.current ? 'compare' : 'processed')
   }
 
   const clearImmersiveStagger = () => {
@@ -291,6 +315,8 @@ export function useMobileLabChromeController({
     setHistogramOpen,
     setDockExpanded,
     setCompareSplitMode,
+    startLensPeek,
+    endLensPeek,
     exitImmersive,
     openLutBrowser,
     openLutContractBrowser,

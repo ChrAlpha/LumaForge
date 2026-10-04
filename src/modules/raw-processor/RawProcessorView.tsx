@@ -155,6 +155,7 @@ function RawProcessorViewInner({
           onPipelineChange={view.handlePipelineChange}
           onPreviewFrameChange={view.setPreviewFrameEl}
           onCpuProcessedFrame={transform.setCpuFrame}
+          onCompareReset={view.handleCompareReset}
           transformActive={transform.active}
           viewportInteractionDisabled={transform.showOverlay}
         />

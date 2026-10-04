@@ -16,6 +16,11 @@ export {
 } from '../services/compare/compare-split'
 
 const KEYBOARD_STEP = 0.01
+// Double-tap to reset (touch / pen): two taps inside this window and radius.
+// Mouse uses the native dblclick instead.
+const DOUBLE_TAP_MS = 300
+const DOUBLE_TAP_SLOP_PX = 24
+const RESET_SPLIT = 0.5
 const IMAGE_TRACK_SELECTOR = '[data-raw-compare-track="image"]'
 
 function isUsableRect(rect: Pick<DOMRect, 'width'>) {
@@ -208,18 +213,27 @@ export function CompareSplitHandle({
   value,
   onChange,
   onPreviewChange,
+  onReset,
   disabled = false,
   className,
 }: {
   value: number
   onChange: (value: number) => void
   onPreviewChange?: (value: number) => void
+  /**
+   * Called after a double-click (mouse) or double-tap (touch / pen) has put
+   * the split back at 50%: the compare reset, shared by both viewports.
+   */
+  onReset?: () => void
   disabled?: boolean
   className?: string
 }) {
   const { t } = useI18n()
   const handleRef = useRef<HTMLButtonElement>(null)
   const activePointerIdRef = useRef<number | null>(null)
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null)
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null)
+  const lastPointerTypeRef = useRef<string | null>(null)
   const pendingClientXRef = useRef<number | null>(null)
   const pendingAnimationFrameRef = useRef<number | null>(null)
   const latestPreviewSplitRef = useRef(clampCompareSplit(value))
@@ -305,11 +319,28 @@ export function CompareSplitHandle({
     [],
   )
 
+  const resetSplit = useCallback(
+    (target: HTMLElement) => {
+      pendingClientXRef.current = null
+      cancelPendingPreview()
+      latestPreviewSplitRef.current = RESET_SPLIT
+      // Paint now: when the committed value is already 50% no re-render
+      // would move the handle back from where the second tap left it.
+      applyHandlePosition(target, RESET_SPLIT)
+      onPreviewChange?.(RESET_SPLIT)
+      onChange(RESET_SPLIT)
+      onReset?.()
+    },
+    [cancelPendingPreview, onChange, onPreviewChange, onReset],
+  )
+
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
       event.stopPropagation()
+      lastPointerTypeRef.current = event.pointerType
       if (disabled) return
 
+      pressStartRef.current = { x: event.clientX, y: event.clientY }
       trySetPointerCapture(event.currentTarget, event.pointerId)
       activePointerIdRef.current = event.pointerId
       setFrameDragging(event.currentTarget, true)
@@ -340,8 +371,33 @@ export function CompareSplitHandle({
       setFrameDragging(event.currentTarget, false)
       tryReleasePointerCapture(event.currentTarget, event.pointerId)
       onChange(nextSplit)
+
+      if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return
+      const start = pressStartRef.current
+      pressStartRef.current = null
+      const travelled = start
+        ? Math.hypot(event.clientX - start.x, event.clientY - start.y)
+        : 0
+      if (travelled > DOUBLE_TAP_SLOP_PX) {
+        // A drag, not a tap.
+        lastTapRef.current = null
+        return
+      }
+      const now = Date.now()
+      const last = lastTapRef.current
+      if (
+        last &&
+        now - last.time <= DOUBLE_TAP_MS &&
+        Math.hypot(event.clientX - last.x, event.clientY - last.y) <=
+          DOUBLE_TAP_SLOP_PX
+      ) {
+        lastTapRef.current = null
+        resetSplit(event.currentTarget)
+        return
+      }
+      lastTapRef.current = { time: now, x: event.clientX, y: event.clientY }
     },
-    [disabled, flushPointerPreview, onChange, setFrameDragging],
+    [disabled, flushPointerPreview, onChange, resetSplit, setFrameDragging],
   )
 
   const handlePointerCancel = useCallback(
@@ -351,6 +407,8 @@ export function CompareSplitHandle({
 
       activePointerIdRef.current = null
       pendingClientXRef.current = null
+      pressStartRef.current = null
+      lastTapRef.current = null
       cancelPendingPreview()
       setFrameDragging(event.currentTarget, false)
       tryReleasePointerCapture(event.currentTarget, event.pointerId)
@@ -379,6 +437,21 @@ export function CompareSplitHandle({
       }
     },
     [disabled, onChange, value],
+  )
+
+  const handleDoubleClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      // Keep the stage's own double-click (viewport reset) out of this.
+      event.stopPropagation()
+      event.preventDefault()
+      if (disabled) return
+      // Touch and pen reset through the double-tap path; a synthesized
+      // dblclick after it must not reset twice.
+      const pointerType = lastPointerTypeRef.current
+      if (pointerType === 'touch' || pointerType === 'pen') return
+      resetSplit(event.currentTarget)
+    },
+    [disabled, resetSplit],
   )
 
   const stopInteractionPropagation = useCallback(
@@ -411,6 +484,7 @@ export function CompareSplitHandle({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onClick={stopInteractionPropagation}
+      onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
     >
       <span aria-hidden="true">↔</span>

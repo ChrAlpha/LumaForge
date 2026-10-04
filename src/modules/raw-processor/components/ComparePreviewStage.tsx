@@ -45,6 +45,8 @@ export interface ComparePreviewStageProps {
   onPrepareRuntime?: () => void
   onSplitChange: (split: number) => void
   onSplitPreviewChange?: (split: number) => void
+  /** Double-click / double-tap on the split handle: the compare reset. */
+  onSplitReset?: () => void
   onPreviewViewportChange?: (viewport: PreviewViewport) => void
   onStatsUpdate?: (stats: PipelineStats) => void
   onPipelineChange?: (pipeline: RawProcessingPipeline | null) => void
@@ -223,6 +225,7 @@ export function ComparePreviewStage({
   onPrepareRuntime,
   onSplitChange,
   onSplitPreviewChange,
+  onSplitReset,
   onPreviewViewportChange,
   onStatsUpdate,
   onPipelineChange,
@@ -322,6 +325,7 @@ export function ComparePreviewStage({
                   value={split}
                   onChange={onSplitChange}
                   onPreviewChange={onSplitPreviewChange}
+                  onReset={onSplitReset}
                   disabled={blockStageInteraction}
                 />
               </>

@@ -58,6 +58,7 @@ export function MobileRawToolSurface() {
       onSelectiveColorReset={props.onSelectiveColorReset}
       viewMode={props.viewMode}
       onViewModeChange={props.onViewModeChange}
+      compareSupported={props.compareSupported !== false}
       histogram={props.histogram}
       fileName={props.fileName}
       fileMeta={fileMeta || props.fileName}

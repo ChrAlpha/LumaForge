@@ -850,4 +850,170 @@ describe('mobileLabChrome', () => {
     await userEvent.click(action)
     expect(screen.getByText('result actions')).toBeInTheDocument()
   })
+  it('puts the compare lens over the stage only when there is a photo to compare', () => {
+    const { container, rerender } = render(<MobileLabChrome {...base} />)
+    const lens = container.querySelector('[data-mobile-compare-lens]')
+    expect(lens).toHaveAccessibleName('Split compare')
+    expect(lens).toHaveAttribute('data-state', 'off')
+    expect(
+      container
+        .querySelector('[data-mobile-lab-chrome]')!
+        .getAttribute('style'),
+    ).toContain('--raw-compare-lens-top')
+
+    // The CPU preview has no split surface.
+    rerender(<MobileLabChrome {...base} compareSupported={false} />)
+    expect(container.querySelector('[data-mobile-compare-lens]')).toBeNull()
+
+    rerender(<MobileLabChrome {...base} hasImage={false} />)
+    expect(container.querySelector('[data-mobile-compare-lens]')).toBeNull()
+  })
+
+  it('keeps the split on while switching tools', async () => {
+    const onViewModeChange = vi.fn()
+    const { container } = render(
+      <MobileLabChrome {...base} onViewModeChange={onViewModeChange} />,
+    )
+    const lens = container.querySelector<HTMLElement>(
+      '[data-mobile-compare-lens]',
+    )!
+    fireEvent.click(lens)
+    expect(onViewModeChange).toHaveBeenLastCalledWith('compare')
+    expect(lens).toHaveAttribute('aria-pressed', 'true')
+    expect(lens).toHaveAttribute('data-state', 'on')
+    onViewModeChange.mockClear()
+
+    const dock = screen.getByRole('tablist', { name: /lab modes/i })
+    await userEvent.click(within(dock).getByRole('tab', { name: /adjust/i }))
+    await userEvent.click(within(dock).getByRole('tab', { name: /look/i }))
+
+    expect(onViewModeChange).not.toHaveBeenCalledWith('processed')
+    expect(lens).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(lens)
+    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
+    expect(lens).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('peeks the unprocessed RAW while the lens is held, then restores the split', () => {
+    vi.useFakeTimers()
+    const onViewModeChange = vi.fn()
+    const { container } = render(
+      <MobileLabChrome {...base} onViewModeChange={onViewModeChange} />,
+    )
+    const lens = container.querySelector<HTMLElement>(
+      '[data-mobile-compare-lens]',
+    )!
+    fireEvent.click(lens)
+    expect(onViewModeChange).toHaveBeenLastCalledWith('compare')
+
+    fireEvent.pointerDown(lens)
+    act(() => {
+      vi.advanceTimersByTime(260)
+    })
+    expect(onViewModeChange).toHaveBeenLastCalledWith('original')
+    expect(container.querySelector('[data-mobile-lab-chrome]')).toHaveAttribute(
+      'data-peek',
+      'true',
+    )
+    expect(screen.getByText('Showing unprocessed RAW')).toBeInTheDocument()
+
+    fireEvent.pointerUp(lens)
+    fireEvent.click(lens)
+    expect(onViewModeChange).toHaveBeenLastCalledWith('compare')
+    expect(lens).toHaveAttribute('aria-pressed', 'true')
+    expect(
+      container.querySelector('[data-mobile-lab-chrome]'),
+    ).not.toHaveAttribute('data-peek')
+  })
+
+  it('returns a lens peek to the processed view when the split is off', () => {
+    vi.useFakeTimers()
+    const onViewModeChange = vi.fn()
+    const { container } = render(
+      <MobileLabChrome {...base} onViewModeChange={onViewModeChange} />,
+    )
+    const lens = container.querySelector<HTMLElement>(
+      '[data-mobile-compare-lens]',
+    )!
+    fireEvent.pointerDown(lens)
+    act(() => {
+      vi.advanceTimersByTime(260)
+    })
+    expect(onViewModeChange).toHaveBeenLastCalledWith('original')
+    fireEvent.pointerUp(lens)
+    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
+    expect(lens).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('blocks the lens while a Transform is applied and says why', () => {
+    const onViewModeChange = vi.fn()
+    const { container } = render(
+      <MobileLabChrome
+        {...base}
+        transform={{ active: true, demo: { manual: undefined } } as never}
+        onViewModeChange={onViewModeChange}
+      />,
+    )
+    const lens = container.querySelector<HTMLElement>(
+      '[data-mobile-compare-lens]',
+    )!
+    expect(lens).toHaveAttribute('data-state', 'disabled')
+    expect(lens).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(lens)
+    expect(onViewModeChange).not.toHaveBeenCalledWith('compare')
+    expect(
+      container.querySelector('[data-mobile-compare-lens-hint="blocked"]'),
+    ).toHaveTextContent('Transform applied: compare is unavailable')
+  })
+
+  it('hides the lens during a scrub, while processing, and in immersive', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { container, rerender } = render(
+      <MobileLabChrome {...base} previewFrameEl={previewFrameEl} />,
+    )
+    const dock = screen.getByRole('tablist', { name: /lab modes/i })
+    fireEvent.click(within(dock).getByRole('tab', { name: /adjust/i }))
+    const exposureRow = screen
+      .getByRole('slider', { name: 'Exposure' })
+      .closest('[data-testid="adjust-slider-row-scrub"]')!
+    fireEvent.pointerDown(exposureRow)
+    await waitFor(() =>
+      expect(container.querySelector('[data-mobile-compare-lens]')).toBeNull(),
+    )
+    fireEvent.pointerUp(exposureRow)
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-mobile-compare-lens]'),
+      ).not.toBeNull(),
+    )
+
+    rerender(
+      <MobileLabChrome
+        {...base}
+        previewFrameEl={previewFrameEl}
+        isProcessing
+      />,
+    )
+    await waitFor(() =>
+      expect(container.querySelector('[data-mobile-compare-lens]')).toBeNull(),
+    )
+    rerender(<MobileLabChrome {...base} previewFrameEl={previewFrameEl} />)
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-mobile-compare-lens]'),
+      ).not.toBeNull(),
+    )
+
+    act(() => {
+      previewFrameEl.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      previewFrameEl.dispatchEvent(new Event('pointerup', { bubbles: true }))
+    })
+    act(() => {
+      vi.advanceTimersByTime(160)
+    })
+    await waitFor(() =>
+      expect(container.querySelector('[data-mobile-compare-lens]')).toBeNull(),
+    )
+  })
 })

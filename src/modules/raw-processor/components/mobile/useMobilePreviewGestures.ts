@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react'
 
-const LONG_PRESS_MS = 250
-const TAP_SLOP_PX = 8
+/** Hold time that turns a press into a peek; shared by photo and lens. */
+export const LONG_PRESS_MS = 250
+/** Travel that turns a press into a pan instead of a tap or peek. */
+export const TAP_SLOP_PX = 8
 
 type ActivePointer = {
   startX: number
