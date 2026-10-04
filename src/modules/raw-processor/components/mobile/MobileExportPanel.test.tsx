@@ -99,19 +99,60 @@ describe('mobileExportPanel', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('omits secondary HQ preview helper copy while the preview export is not ready', () => {
+  it('names why the HQ preview export is disabled under the button', () => {
+    const reason =
+      'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.'
     renderPanel({
       canPreviewExport: false,
-      previewExportDisabledReason:
-        'HQ preview export is available after the bounded HQ preview finishes.',
+      previewExportDisabledReason: reason,
+      onPreviewExport: vi.fn(),
     })
 
+    const previewButton = screen.getByRole('button', {
+      name: /export hq preview jpeg/i,
+    })
+    expect(previewButton).toBeDisabled()
+    const note = screen.getByText(reason)
+    expect(previewButton).toHaveAttribute('aria-describedby', note.id)
+    expect(previewButton.nextElementSibling).toBe(note)
+  })
+
+  it('does not repeat an HQ reason the full-resolution box already states', () => {
+    const reason = 'Loading export source'
+    renderPanel({
+      canExport: false,
+      disabledReason: reason,
+      canPreviewExport: false,
+      previewExportDisabledReason: reason,
+      onPreviewExport: vi.fn(),
+    })
+
+    expect(screen.getAllByText(reason)).toHaveLength(1)
     expect(
       screen.getByRole('button', { name: /export hq preview jpeg/i }),
-    ).toBeDisabled()
-    expect(
-      screen.queryByText(/hq preview export is available after/i),
-    ).not.toBeInTheDocument()
+    ).not.toHaveAttribute('aria-describedby')
+  })
+
+  it('explains a blocked full-resolution export in a neutral well, not destructive rose', () => {
+    const { container } = render(
+      <MobileExportPanel
+        canExport={false}
+        disabledReason="The LUT contract is not confirmed."
+        isProcessing={false}
+        onExport={vi.fn()}
+        exportResult={null}
+        exportShareCapability={{ available: false, reason: '' }}
+        onShareExport={vi.fn()}
+        onDownloadExport={vi.fn()}
+        onCopyExport={vi.fn()}
+      />,
+    )
+
+    const box = container.querySelector('[data-export-unavailable-reason]')!
+    expect(box).toHaveTextContent('The LUT contract is not confirmed.')
+    expect(box).toHaveClass('bg-[oklch(0.96_0.006_255/0.05)]')
+    expect(box.outerHTML).not.toMatch(/lf-rose/)
+    expect(box.querySelector('svg')).not.toBeNull()
   })
 
   it('does not show a blocked export error while export progress is already visible', () => {
@@ -152,6 +193,19 @@ describe('mobileExportPanel', () => {
       screen.queryByText(/cannot copy full-resolution jpeg files/i),
     ).not.toBeInTheDocument()
   })
+  it('names the delivered file in the full-resolution ready title', () => {
+    renderPanel({
+      exportResult: createResult({
+        kind: 'full-resolution',
+        filename: 'DSC09142.jpg',
+      }),
+    })
+
+    expect(
+      screen.getByRole('heading', { name: 'DSC09142.jpg ready' }),
+    ).toBeInTheDocument()
+  })
+
   it('adds a manifest action to the ready result when a manifest is attached', async () => {
     const user = userEvent.setup()
     const onDownloadExportManifest = vi.fn()

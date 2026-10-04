@@ -353,6 +353,7 @@
   "raw.export.eyebrow": "Full-res JPEG",
   "raw.export.ready": "JPEG ready",
   "raw.export.previewReady": "HQ preview JPEG ready",
+  "raw.export.fileReady": "{{filename}} ready",
   "raw.export.dimensions": "Dimensions",
   "raw.export.fileSize": "File size",
   "raw.export.share": "Share",

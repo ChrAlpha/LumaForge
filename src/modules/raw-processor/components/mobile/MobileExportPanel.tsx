@@ -7,6 +7,7 @@ import {
   Share2,
 } from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
+import { useId } from 'react'
 
 import { localizeCopyLabel, localizeRawReason, useI18n } from '~/lib/i18n'
 
@@ -86,6 +87,7 @@ export function MobileExportPanel(props: {
   onRecoverExportSource?: () => void
 }) {
   const { t } = useI18n()
+  const previewReasonId = useId()
   const unavailableReason =
     localizeRawReason(props.disabledReason, t) || t('raw.exportSourceLoading')
   const copyCapability = props.exportResult?.copyCapability
@@ -95,6 +97,21 @@ export function MobileExportPanel(props: {
       : localizeCopyLabel(copyCapability.label, t)
     : t('raw.export.copy')
   const showUnavailableReason = !props.isProcessing && !props.canExport
+  // The HQ preview can be refused on its own terms while full resolution is
+  // fine (a committed Transform does exactly that), so a disabled HQ button
+  // names its reason instead of going quietly dark. A reason the full-res
+  // box above already states is not repeated.
+  const previewUnavailableReason = localizeRawReason(
+    props.previewExportDisabledReason,
+    t,
+  )
+  const previewExportDisabled =
+    !props.canPreviewExport || props.isProcessing || !props.onPreviewExport
+  const showPreviewUnavailableReason =
+    !props.isProcessing &&
+    !props.canPreviewExport &&
+    Boolean(previewUnavailableReason) &&
+    !(showUnavailableReason && previewUnavailableReason === unavailableReason)
   const showRecovery =
     !props.isProcessing && props.recovery?.status === 'source-required'
   const resultKind = props.exportResult?.kind ?? 'full-resolution'
@@ -124,7 +141,9 @@ export function MobileExportPanel(props: {
           >
             {resultKind === 'hq-preview'
               ? resultReadyLabel
-              : `${props.exportResult.filename} ready`}
+              : t('raw.export.fileReady', {
+                  filename: props.exportResult.filename,
+                })}
           </h3>
           <p className="m-0 text-[0.7rem] text-lf-on-photo-ink/68 tabular-nums">
             {props.exportResult.width} x {props.exportResult.height} ·{' '}
@@ -182,13 +201,19 @@ export function MobileExportPanel(props: {
       exit={{ opacity: 0, y: -4 }}
       transition={PANEL_TRANSITION}
     >
+      {/* A blocked export is a state to explain, not a destructive act:
+          neutral lift-soft well (DESIGN.md One Accent Rule keeps rose for
+          destructive intent), icon plus text so it never reads by colour. */}
       {showUnavailableReason && (
-        <div className="grid grid-cols-[18px_1fr] gap-2 rounded-md border border-lf-rose/45 bg-lf-rose/10 px-2.5 py-2 text-lf-on-photo-ink">
+        <div
+          data-export-unavailable-reason
+          className="grid grid-cols-[18px_1fr] gap-2 rounded-md bg-[oklch(0.96_0.006_255/0.05)] px-2.5 py-2"
+        >
           <AlertTriangle
             aria-hidden="true"
-            className="mt-0.5 size-4 text-lf-rose"
+            className="mt-0.5 size-4 text-lf-on-photo-ink/72"
           />
-          <span className="block text-[0.72rem] leading-snug text-lf-on-photo-ink/72">
+          <span className="block text-[0.72rem] leading-snug text-lf-on-photo-ink/80">
             {unavailableReason}
           </span>
         </div>
@@ -226,16 +251,11 @@ export function MobileExportPanel(props: {
         </m.button>
         <m.button
           type="button"
-          disabled={
-            !props.canPreviewExport ||
-            props.isProcessing ||
-            !props.onPreviewExport
+          disabled={previewExportDisabled}
+          aria-describedby={
+            showPreviewUnavailableReason ? previewReasonId : undefined
           }
-          whileTap={
-            !props.canPreviewExport || props.isProcessing
-              ? undefined
-              : { y: 0.5 }
-          }
+          whileTap={previewExportDisabled ? undefined : { y: 0.5 }}
           transition={PANEL_TRANSITION}
           onClick={() => props.onPreviewExport?.()}
           className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-3 text-[0.8rem] font-semibold text-lf-on-photo-ink transition-colors hover:border-lf-amber/55 hover:text-lf-amber-soft disabled:cursor-not-allowed disabled:bg-lf-on-photo-bg/60 disabled:text-lf-on-photo-ink/35"
@@ -243,6 +263,14 @@ export function MobileExportPanel(props: {
           <Download aria-hidden="true" className="size-4 shrink-0" />
           {t('raw.export.runPreview')}
         </m.button>
+        {showPreviewUnavailableReason && (
+          <p
+            id={previewReasonId}
+            className="m-0 px-0.5 text-[0.72rem] leading-snug text-lf-on-photo-ink/72"
+          >
+            {previewUnavailableReason}
+          </p>
+        )}
       </div>
     </m.div>
   )

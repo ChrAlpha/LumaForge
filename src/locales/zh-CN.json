@@ -353,6 +353,7 @@
   "raw.export.eyebrow": "全分辨率 JPEG",
   "raw.export.ready": "JPEG 已就绪",
   "raw.export.previewReady": "HQ 预览 JPEG 已就绪",
+  "raw.export.fileReady": "{{filename}} 已就绪",
   "raw.export.dimensions": "尺寸",
   "raw.export.fileSize": "文件大小",
   "raw.export.share": "分享",
