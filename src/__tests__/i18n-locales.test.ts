@@ -23,6 +23,9 @@ describe('i18n locale catalogs', () => {
     expect(zhMessages['raw.mobile.mode.look']).not.toBe(
       zhMessages['raw.color.tint'],
     )
+    // UI copy uses a period, colon, or parentheses, never an em dash.
+    expect(enMessages['raw.preview.cpuDegraded.banner']).not.toMatch(/—/)
+    expect(zhMessages['raw.preview.cpuDegraded.banner']).not.toMatch(/—/)
     expect(enMessages['raw.export.derivedLabelHint']).toContain('{{label}}')
     expect(zhMessages['raw.export.derivedLabelHint']).toContain('{{label}}')
   })

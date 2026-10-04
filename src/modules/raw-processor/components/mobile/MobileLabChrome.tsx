@@ -7,6 +7,8 @@ import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
 import { useLayoutEffect, useRef, useState } from 'react'
 
+import { clsxm } from '~/lib/cn'
+
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import { DOCK_SPRING } from '../../motion'
 import type { ColorValue } from '../color-fields'
@@ -28,6 +30,8 @@ import {
   MobileExportAction,
 } from './MobileExportAction'
 import {
+  getCpuNoticePlacement,
+  getCpuNoticeStyle,
   getPeekPillPlacement,
   MobileFloatingOverlays,
 } from './MobileFloatingOverlays'
@@ -194,6 +198,7 @@ export function MobileLabChrome(props: {
     width: photoWidth,
     height: photoHeight,
   } = layout.photoRect
+  const cpuNoticePlacement = getCpuNoticePlacement(photoWidth, lensVisible)
 
   useLayoutEffect(() => {
     const chrome = chromeRef.current
@@ -360,13 +365,21 @@ export function MobileLabChrome(props: {
               scrubbing={focusActive}
               onHeightChange={setTopbarHeight}
             />
-            {/* Floats below the topbar instead of taking a row of the page
-                grid. Stacks over the empty state (z 11), under the histogram
-                card (15) and the sheets the user opens. */}
+            {/* Sits on the photo, 8px inside its top edge and clear of the
+                lens, instead of taking a row of the page grid. Stacks over
+                the empty state (z 11), under the lens (16), the histogram
+                card (15) and the sheets the user opens. A peek wants the
+                photo clean, so the notice steps aside while it lasts. */}
             {props.cpuPreviewNotice && (
               <CpuPreviewBanner
                 {...props.cpuPreviewNotice}
-                className="pointer-events-auto absolute inset-x-2 top-[calc(var(--raw-topbar-height,0px)+0.5rem)] z-[13]"
+                density="compact"
+                placement={cpuNoticePlacement}
+                style={getCpuNoticeStyle(cpuNoticePlacement)}
+                className={clsxm(
+                  'pointer-events-auto absolute z-[13] transition-[top,right,opacity] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+                  peeking && 'pointer-events-none opacity-0',
+                )}
               />
             )}
             {/* No dock until a RAW is open: there is nothing for a tool to

@@ -207,7 +207,7 @@
   "raw.preview.embeddedAlt": "嵌入式 RAW 预览",
   "raw.preview.unavailable": "预览不可用",
   "raw.preview.noImage": "未载入图像",
-  "raw.preview.cpuDegraded.banner": "GPU 预览不可用 — 正在使用较慢的 CPU 预览。实时对比和直方图已关闭。",
+  "raw.preview.cpuDegraded.banner": "GPU 预览不可用：正在使用较慢的 CPU 预览。实时对比和直方图已关闭。",
   "raw.preview.cpuDegraded.dismiss": "知道了",
   "raw.preview.cpuDegraded.unavailable": "CPU 预览不可用",
   "raw.drop.toLoad": "松开以载入",

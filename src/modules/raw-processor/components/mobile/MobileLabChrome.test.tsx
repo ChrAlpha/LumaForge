@@ -157,12 +157,51 @@ describe('mobileLabChrome', () => {
     const chrome = container.querySelector('[data-mobile-lab-chrome]')!
     const notice = within(chrome as HTMLElement).getByRole('status')
     expect(notice).toHaveAttribute('data-cpu-preview-banner')
+    expect(notice).toHaveAttribute('data-density', 'compact')
     expect(notice.className).toContain('pointer-events-auto')
-    fireEvent.click(within(notice).getByRole('button', { name: 'Dismiss' }))
+    // No lens before a RAW is open, so the notice spans the photo rect,
+    // which never starts above the topbar.
+    expect(notice).toHaveAttribute('data-placement', 'full')
+    expect(notice.style.top).toContain('var(--raw-topbar-height')
+    expect(notice.textContent).not.toMatch(/—/)
+    // Neutral ink, never amber: a degraded preview is not a colour contract.
+    expect(notice.innerHTML).not.toMatch(/amber|color-progress/)
+    const dismiss = within(notice).getByRole('button', { name: 'Dismiss' })
+    expect(dismiss).toHaveClass('size-11')
+    fireEvent.click(dismiss)
     expect(onDismiss).toHaveBeenCalledOnce()
 
     rerender(<MobileLabChrome {...base} hasImage={false} />)
     expect(container.querySelector('[data-cpu-preview-banner]')).toBeNull()
+  })
+
+  it('sets the CPU preview notice on the photo beside the lens, and clears it for a peek', () => {
+    vi.useFakeTimers()
+    const { container } = render(
+      <MobileLabChrome
+        {...base}
+        compareSupported={false}
+        cpuPreviewNotice={{ reason: 'webgpu-unavailable', onDismiss: vi.fn() }}
+      />,
+    )
+    const notice = container.querySelector<HTMLElement>(
+      '[data-cpu-preview-banner]',
+    )!
+    // The lens is on screen: the notice keeps its column clear.
+    expect(notice).toHaveAttribute('data-placement', 'side')
+    expect(notice.style.right).toBe('calc(var(--raw-photo-right, 0px) + 48px)')
+    expect(notice).not.toHaveClass('opacity-0')
+
+    const lens = container.querySelector<HTMLElement>(
+      '[data-mobile-compare-lens]',
+    )!
+    fireEvent.pointerDown(lens)
+    act(() => {
+      vi.advanceTimersByTime(260)
+    })
+    expect(notice).toHaveClass('opacity-0', 'pointer-events-none')
+    fireEvent.pointerUp(lens)
+    expect(notice).not.toHaveClass('opacity-0')
   })
 
   it('tears down adjust sheets when the RAW is cleared (hasImage→false)', async () => {

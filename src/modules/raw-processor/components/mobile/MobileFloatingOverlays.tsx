@@ -1,5 +1,6 @@
 import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
 import { AnimatePresence, m } from 'motion/react'
+import type { CSSProperties } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
@@ -37,6 +38,56 @@ export function getPeekPillPlacement(
     PEEK_PILL_MIN_ROW_WIDTH_PX
     ? 'row'
     : 'below'
+}
+
+/**
+ * The CPU preview notice reserves the lens column on its right (8px inset,
+ * the 32px circle, an 8px gap); below this much room left of the lens it
+ * would wrap past two lines, so it drops under the lens instead.
+ */
+const CPU_NOTICE_LENS_CLEARANCE_PX = 48
+const CPU_NOTICE_MIN_SIDE_WIDTH_PX = 240
+
+export type CpuNoticePlacement = 'full' | 'side' | 'below'
+
+/**
+ * The CPU preview notice sits on the photo, 8px inside its top edge, and
+ * never covers the lens: beside it while the photo leaves room, below it on
+ * a narrow photo, across the photo's width when no lens is on screen.
+ */
+export function getCpuNoticePlacement(
+  photoWidth: number,
+  lensVisible: boolean,
+): CpuNoticePlacement {
+  if (!lensVisible) return 'full'
+  if (!(photoWidth > 0)) return 'side'
+  return photoWidth - 8 - CPU_NOTICE_LENS_CLEARANCE_PX >=
+    CPU_NOTICE_MIN_SIDE_WIDTH_PX
+    ? 'side'
+    : 'below'
+}
+
+// The photo rect never starts above the topbar's bottom edge (the empty
+// state is full bleed, so its photo top is 0).
+const CPU_NOTICE_TOP =
+  'max(var(--raw-photo-top, 0px), var(--raw-topbar-height, 0px))'
+
+/** Where the notice sits for each placement, in the photo-rect variables. */
+export function getCpuNoticeStyle(
+  placement: CpuNoticePlacement,
+): CSSProperties {
+  const lensRow = 'calc(var(--raw-compare-lens-size, 32px) + 8px)'
+  return {
+    top:
+      placement === 'below'
+        ? `calc(${CPU_NOTICE_TOP} + 8px + ${lensRow})`
+        : `calc(${CPU_NOTICE_TOP} + 8px)`,
+    left: 'calc(var(--raw-photo-left, 0px) + 8px)',
+    right:
+      placement === 'side'
+        ? `calc(var(--raw-photo-right, 0px) + ${CPU_NOTICE_LENS_CLEARANCE_PX}px)`
+        : 'calc(var(--raw-photo-right, 0px) + 8px)',
+  }
 }
 
 export interface MobileFloatingOverlaysProps {

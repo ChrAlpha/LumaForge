@@ -207,7 +207,7 @@
   "raw.preview.embeddedAlt": "Embedded RAW preview",
   "raw.preview.unavailable": "Preview unavailable",
   "raw.preview.noImage": "No image loaded",
-  "raw.preview.cpuDegraded.banner": "GPU preview unavailable — using a slower CPU preview. Live compare and histogram are off.",
+  "raw.preview.cpuDegraded.banner": "GPU preview unavailable: using a slower CPU preview. Live compare and histogram are off.",
   "raw.preview.cpuDegraded.dismiss": "Dismiss",
   "raw.preview.cpuDegraded.unavailable": "CPU preview unavailable",
   "raw.drop.toLoad": "Drop to load",

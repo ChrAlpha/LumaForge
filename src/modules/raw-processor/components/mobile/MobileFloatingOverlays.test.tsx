@@ -5,6 +5,8 @@ import { COLOR_NEUTRAL } from '../color-fields'
 import { TONE_NEUTRAL } from '../tone-fields'
 import type { MobileFloatingOverlaysProps } from './MobileFloatingOverlays'
 import {
+  getCpuNoticePlacement,
+  getCpuNoticeStyle,
   getPeekPillPlacement,
   MobileFloatingOverlays,
 } from './MobileFloatingOverlays'
@@ -30,6 +32,37 @@ function renderOverlays(overrides: Partial<MobileFloatingOverlaysProps> = {}) {
     />,
   )
 }
+
+describe('getCpuNoticePlacement', () => {
+  it('keeps the CPU notice beside the lens while the photo has room, else below it', () => {
+    // A 3:2 landscape at 393px leaves 393 - 8 - 48 = 337px beside the lens.
+    expect(getCpuNoticePlacement(393, true)).toBe('side')
+    expect(getCpuNoticePlacement(296, true)).toBe('side')
+    // A 2:3 portrait in Look (~267px) leaves ~211px: drop under the lens.
+    expect(getCpuNoticePlacement(266.7, true)).toBe('below')
+    // No lens on screen (empty state, a handoff): the photo's full width.
+    expect(getCpuNoticePlacement(393, false)).toBe('full')
+    expect(getCpuNoticePlacement(0, true)).toBe('side')
+  })
+
+  it('pins the notice 8px inside the photo and never over the lens column', () => {
+    const side = getCpuNoticeStyle('side')
+    expect(side.top).toBe(
+      'calc(max(var(--raw-photo-top, 0px), var(--raw-topbar-height, 0px)) + 8px)',
+    )
+    expect(side.left).toBe('calc(var(--raw-photo-left, 0px) + 8px)')
+    expect(side.right).toBe('calc(var(--raw-photo-right, 0px) + 48px)')
+
+    const below = getCpuNoticeStyle('below')
+    expect(below.top).toBe(
+      'calc(max(var(--raw-photo-top, 0px), var(--raw-topbar-height, 0px)) + 8px + calc(var(--raw-compare-lens-size, 32px) + 8px))',
+    )
+    expect(below.right).toBe('calc(var(--raw-photo-right, 0px) + 8px)')
+    expect(getCpuNoticeStyle('full').right).toBe(
+      'calc(var(--raw-photo-right, 0px) + 8px)',
+    )
+  })
+})
 
 describe('getPeekPillPlacement', () => {
   it('shares the lens row only while the photo holds the pill clear of the lens', () => {
