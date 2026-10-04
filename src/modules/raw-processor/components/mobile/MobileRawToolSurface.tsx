@@ -1,6 +1,7 @@
 import { useI18n } from '~/lib/i18n'
 
 import { useRawWorkflowContext } from '../RawWorkflowContext'
+import { buildMobileExportRecap } from './export-recap'
 import { buildMobileDetailsSheet, getCameraName } from './mobile-details-sheet'
 import { MobileExportPanel } from './MobileExportPanel'
 import { MobileLabChrome } from './MobileLabChrome'
@@ -41,6 +42,16 @@ export function MobileRawToolSurface() {
     },
     t,
   )
+
+  const exportRecap = buildMobileExportRecap({
+    deliveredSize: props.deliveredExportSize,
+    lutName: props.currentLutName,
+    strength: props.activeIntensity,
+    tone: props.tone,
+    color: props.color,
+    selectiveColor: props.selectiveColor,
+    transformApplied: props.transform?.active === true,
+  })
 
   return (
     <MobileLabChrome
@@ -105,6 +116,7 @@ export function MobileRawToolSurface() {
           isExporting={props.isExporting === true}
           progress={props.progress}
           onClose={onClose}
+          recap={exportRecap}
         />
       )}
       moreSheet={moreSheet}

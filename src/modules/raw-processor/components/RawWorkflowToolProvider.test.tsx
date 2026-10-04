@@ -132,6 +132,14 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.compareSupported).toBe(true)
     expect(result.current.isExporting).toBe(true)
     expect(result.current.progress).toBe(42)
+    // The export recap's size is unknown until the workflow reports it.
+    expect(result.current.deliveredExportSize).toBeNull()
+    workflow.deliveredExportSize = { width: 9728, height: 6656 }
+    rerender()
+    expect(result.current.deliveredExportSize).toEqual({
+      width: 9728,
+      height: 6656,
+    })
 
     // The CPU preview has no split surface to compare on.
     isCpuMode = true

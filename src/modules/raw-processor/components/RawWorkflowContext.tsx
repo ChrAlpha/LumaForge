@@ -18,6 +18,7 @@ import type {
   ExportRecoveryState,
   LUTContractSelectionState,
 } from '../model/session'
+import type { DeliveredExportSize } from '../services/export/delivered-export-size'
 import type { ColorValue } from './color-fields'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
@@ -64,6 +65,11 @@ export interface RawToolSurfaceProps {
   onPreviewExport?: () => void | Promise<void>
   canExport: boolean
   disabledReason?: string
+  /**
+   * The frame a full-resolution export will write (Transform included);
+   * null or unset while unknown.
+   */
+  deliveredExportSize?: DeliveredExportSize | null
   isProcessing: boolean
   isExporting?: boolean
   /** Workflow progress, 0-100; the export action reads it while exporting. */

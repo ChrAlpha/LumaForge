@@ -29,6 +29,7 @@ import type {
 } from '../model/session'
 import type { ProcessingStatus } from '../model/workflow'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
+import type { DeliveredExportSize } from '../services/export/delivered-export-size'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import type { PreviewViewport } from '../services/preview/preview-viewport'
 import type { UseRawCalibrationStageReturn } from './stages/calibration/useRawCalibrationStage'
@@ -58,6 +59,11 @@ export interface UseRawWorkflowReturn {
   hasImage: boolean
   canExport: boolean
   exportDisabledReason?: string
+  /**
+   * The frame a full-resolution export will write (Transform included);
+   * null while unknown.
+   */
+  deliveredExportSize?: DeliveredExportSize | null
   canPreviewExport: boolean
   previewExportDisabledReason?: string
   exportResult: ExportResult | null

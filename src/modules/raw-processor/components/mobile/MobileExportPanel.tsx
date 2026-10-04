@@ -20,6 +20,7 @@ import type {
 import type { ExportRecoveryState } from '../../model/session'
 import { TAP_SPRING } from '../../motion'
 import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
+import type { MobileExportRecap } from './export-recap'
 
 // Mirrors the handoff spec tokens: --mrl-ease + base 220ms duration so the
 // idle/busy/done transitions feel like the design rather than a hard snap.
@@ -68,6 +69,63 @@ function ExportResultAction(props: {
   )
 }
 
+/**
+ * One quiet line pair before the export button that says what will be
+ * written, from state only: the full-resolution JPEG and its delivered size
+ * when known, then the look, the Adjust fields moved off neutral, and an
+ * applied Transform. Nothing here is a promise the export does not keep.
+ */
+function ExportRecapLines({ recap }: { recap: MobileExportRecap }) {
+  const { t } = useI18n()
+  const details = [
+    recap.adjustments > 0
+      ? recap.adjustments === 1
+        ? t('raw.mobile.export.recap.adjustmentsOne')
+        : t('raw.mobile.export.recap.adjustments', {
+            count: recap.adjustments,
+          })
+      : null,
+    recap.transformApplied ? t('raw.mobile.export.recap.transform') : null,
+  ].filter((item): item is string => item !== null)
+
+  return (
+    <p
+      data-export-recap
+      className="m-0 grid gap-0.5 px-0.5 text-[0.72rem] leading-snug text-lf-on-photo-ink/68 tabular-nums"
+    >
+      <span className="truncate">
+        {t('raw.mobile.export.recap.fullRes')}
+        {recap.size && (
+          <>
+            {' · '}
+            {recap.size.width}×{recap.size.height}
+          </>
+        )}
+      </span>
+      <span className="flex min-w-0 whitespace-nowrap">
+        {recap.look ? (
+          <>
+            <span className="min-w-0 truncate">
+              {t('raw.mobile.export.recap.look', { name: recap.look.name })}
+            </span>
+            <span className="shrink-0">
+              {' · '}
+              {recap.look.strength === 'off'
+                ? t('raw.strength.off')
+                : `${recap.look.percent}%`}
+            </span>
+          </>
+        ) : (
+          <span className="shrink-0">{t('raw.mobile.export.recap.noLut')}</span>
+        )}
+        {details.length > 0 && (
+          <span className="shrink-0">{` · ${details.join(' · ')}`}</span>
+        )}
+      </span>
+    </p>
+  )
+}
+
 export function MobileExportPanel(props: {
   canExport: boolean
   disabledReason?: string
@@ -93,6 +151,8 @@ export function MobileExportPanel(props: {
   progress?: number
   /** Hands the deck back to the tool that held it before export opened. */
   onClose?: () => void
+  /** What the full-resolution export will write; omitted, no recap. */
+  recap?: MobileExportRecap
 }) {
   const { t } = useI18n()
   const previewReasonId = useId()
@@ -248,6 +308,7 @@ export function MobileExportPanel(props: {
           {t('raw.export.reselect')}
         </button>
       )}
+      {props.recap && <ExportRecapLines recap={props.recap} />}
       <div className="grid gap-2">
         <m.button
           type="button"

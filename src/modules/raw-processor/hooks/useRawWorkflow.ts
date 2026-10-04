@@ -252,6 +252,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const {
     canExport,
     exportDisabledReason,
+    deliveredExportSize,
     exportResult,
     exportShareCapability,
     exportRecovery,
@@ -307,6 +308,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const exportStage = {
     canExport,
     exportDisabledReason,
+    deliveredExportSize,
     exportResult,
     exportShareCapability,
     exportRecovery,

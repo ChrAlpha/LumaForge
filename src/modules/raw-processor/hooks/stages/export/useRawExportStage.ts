@@ -142,6 +142,7 @@ export function useRawExportStage({
   const {
     canExport,
     exportDisabledReason,
+    deliveredExportSize,
     exportResult,
     exportShareCapability,
     exportRecovery,
@@ -209,6 +210,7 @@ export function useRawExportStage({
   return {
     canExport,
     exportDisabledReason,
+    deliveredExportSize,
     exportResult,
     exportShareCapability,
     exportRecovery,

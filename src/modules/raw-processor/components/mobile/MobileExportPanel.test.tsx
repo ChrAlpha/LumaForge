@@ -58,6 +58,64 @@ function createResult(overrides: Partial<ExportResult> = {}): ExportResult {
 }
 
 describe('mobileExportPanel', () => {
+  it('recaps what the export will write before the export button', () => {
+    renderPanel({
+      recap: {
+        size: { width: 9728, height: 6656 },
+        look: { name: 'ARRI 3110 Film A', strength: 'standard', percent: 70 },
+        adjustments: 3,
+        transformApplied: true,
+      },
+    })
+    const recap = document.querySelector<HTMLElement>('[data-export-recap]')!
+    expect(recap).toHaveTextContent('Full-resolution JPEG · 9728×6656')
+    expect(recap).toHaveTextContent(
+      'Look: ARRI 3110 Film A · 70% · 3 adjustments · Transform applied',
+    )
+    // Quiet: body ink at the 68 step, small, tabular.
+    expect(recap).toHaveClass(
+      'text-[0.72rem]',
+      'text-lf-on-photo-ink/68',
+      'tabular-nums',
+    )
+    // It sits before the primary action.
+    const run = screen.getByRole('button', {
+      name: 'Export full-resolution JPEG',
+    })
+    expect(
+      recap.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('never states what is not in state', () => {
+    renderPanel({
+      recap: {
+        size: null,
+        look: null,
+        adjustments: 0,
+        transformApplied: false,
+      },
+    })
+    const recap = document.querySelector<HTMLElement>('[data-export-recap]')!
+    // No size known: none claimed. No LUT, no adjustments, no Transform.
+    expect(recap.textContent).toBe('Full-resolution JPEGNo LUT')
+    expect(recap).not.toHaveTextContent(/×|adjustment|Transform/)
+  })
+
+  it('names one adjustment in the singular and an Off strength in words', () => {
+    renderPanel({
+      recap: {
+        size: null,
+        look: { name: 'Kodak 2383', strength: 'off', percent: 0 },
+        adjustments: 1,
+        transformApplied: false,
+      },
+    })
+    expect(document.querySelector('[data-export-recap]')).toHaveTextContent(
+      'Look: Kodak 2383 · Off · 1 adjustment',
+    )
+  })
+
   it('keeps full-resolution export primary and shows HQ preview export as secondary', async () => {
     const user = userEvent.setup()
     const onExport = vi.fn()

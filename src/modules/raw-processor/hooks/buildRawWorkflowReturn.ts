@@ -86,6 +86,7 @@ export function buildRawWorkflowReturn({
     hasImage: sourceState.hasImage,
     canExport: exportStage.canExport,
     exportDisabledReason: exportStage.exportDisabledReason,
+    deliveredExportSize: exportStage.deliveredExportSize,
     canPreviewExport: exportStage.canPreviewExport,
     previewExportDisabledReason: exportStage.previewExportDisabledReason,
     exportResult: exportStage.exportResult,

@@ -143,6 +143,7 @@ export function RawWorkflowToolProvider({
           : workflow.exportPreviewImage,
         canExport: workflow.canExport,
         disabledReason: workflow.exportDisabledReason,
+        deliveredExportSize: workflow.deliveredExportSize ?? null,
         canPreviewExport: !transformActive && workflow.canPreviewExport,
         previewExportDisabledReason: transformActive
           ? t('raw.transform.hqExportReason')

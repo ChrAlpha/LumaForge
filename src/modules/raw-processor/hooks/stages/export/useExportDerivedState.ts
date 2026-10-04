@@ -13,6 +13,7 @@ import type {
   ImageSession,
 } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
+import { resolveDeliveredExportSize } from '../../../services/export/delivered-export-size'
 import { deriveFullResExportReadiness } from '../../../services/export/export-readiness'
 import { resolveExportShareButtonCapability } from '../../../services/export/export-result-actions'
 
@@ -96,9 +97,15 @@ export function useExportDerivedState({
               ? 'HQ preview export is not ready.'
               : undefined
 
+    const deliveredExportSize = resolveDeliveredExportSize({
+      fullResCapability: session?.exportState.fullResCapability,
+      exportGeometry: session?.exportGeometry,
+    })
+
     return {
       canExport,
       exportDisabledReason,
+      deliveredExportSize,
       exportResult,
       exportShareCapability,
       exportRecovery,
