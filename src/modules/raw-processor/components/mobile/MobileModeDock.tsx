@@ -200,8 +200,10 @@ export function MobileModeDock(props: {
                   transition={DOCK_SPRING}
                   // One hue for "this tab is selected". Green on the Export
                   // tab read as "export is safe" while export was blocked,
-                  // and the shared indicator changed hue mid-slide.
-                  className="absolute bottom-0 left-1/2 -ml-[11px] h-0.5 w-[22px] rounded-lf-pill bg-lf-amber"
+                  // and the shared indicator changed hue mid-slide. Selection
+                  // is structural, so it is the cool lift white: amber
+                  // explains colour contracts, it does not mark tabs.
+                  className="absolute bottom-0 left-1/2 -ml-[11px] h-0.5 w-[22px] rounded-lf-pill bg-[oklch(0.96_0.006_255/0.85)]"
                 />
               )}
             </m.button>

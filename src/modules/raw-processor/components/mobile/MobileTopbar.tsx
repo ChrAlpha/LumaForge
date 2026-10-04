@@ -116,7 +116,7 @@ export function MobileTopbar(props: {
             className={clsxm(
               'size-11 rounded-md transition-colors [&_svg]:size-5 [&_svg]:stroke-current',
               props.histogramShown
-                ? 'bg-lf-amber/15 text-lf-amber-soft'
+                ? 'bg-[oklch(0.96_0.006_255/0.10)] text-lf-on-photo-ink'
                 : 'bg-transparent text-lf-on-photo-ink hover:bg-[oklch(0.96_0.006_255/0.06)]',
             )}
           />

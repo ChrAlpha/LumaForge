@@ -49,7 +49,7 @@ export function MobileLutCurrentSections({
                 ? t('raw.lut.selectedAria', { name: currentLutName })
                 : t('raw.mobile.lut.uploadAria')
             }
-            className="flex min-h-[44px] min-w-0 items-center rounded-none border-0 border-solid bg-transparent p-0 text-left shadow-none hover:bg-transparent focus-within:ring-lf-amber/35 focus-visible:ring-lf-amber/35"
+            className="flex min-h-[44px] min-w-0 items-center rounded-none border-0 border-solid bg-transparent p-0 text-left shadow-none hover:bg-transparent focus-within:ring-lf-green/80 focus-visible:ring-lf-green/80"
             interactiveMotion={false}
           >
             <span className="flex min-w-0 items-center gap-2">
@@ -72,7 +72,7 @@ export function MobileLutCurrentSections({
           {currentLutName && (
             <button
               type="button"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg-strong px-2.5 text-xs font-semibold text-lf-on-photo-ink/82 transition-colors hover:border-lf-amber/55 hover:text-lf-amber-soft disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg-strong px-2.5 text-xs font-semibold text-lf-on-photo-ink/82 transition-colors hover:bg-[oklch(0.96_0.006_255/0.08)] hover:text-lf-on-photo-ink disabled:cursor-not-allowed disabled:opacity-50"
               disabled={disabled}
               onClick={onLutClear}
             >

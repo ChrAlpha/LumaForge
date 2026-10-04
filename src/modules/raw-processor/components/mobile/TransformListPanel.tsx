@@ -153,7 +153,7 @@ export function TransformListPanel({
                     aria-hidden="true"
                     layoutId={prefersReduced ? undefined : indicatorLayoutId}
                     transition={DOCK_SPRING}
-                    className="absolute inset-x-1 -bottom-px h-0.5 rounded-lf-pill bg-lf-amber"
+                    className="absolute inset-x-1 -bottom-px h-0.5 rounded-lf-pill bg-[oklch(0.96_0.006_255/0.85)]"
                   />
                 )}
               </button>
@@ -165,7 +165,7 @@ export function TransformListPanel({
           onClick={onSectionReset}
           disabled={resetDisabled}
           aria-label={t('raw.adjust.fieldResetAria', { label: sectionLabel })}
-          className="-mr-1 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md bg-transparent text-lf-on-photo-ink/82 transition-colors hover:bg-[oklch(0.96_0.006_255/0.08)] hover:text-lf-amber-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-lf-on-photo-ink/82"
+          className="-mr-1 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md bg-transparent text-lf-on-photo-ink/82 transition-colors hover:bg-[oklch(0.96_0.006_255/0.08)] hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-lf-on-photo-ink/82"
         >
           <RotateCcw
             aria-hidden="true"

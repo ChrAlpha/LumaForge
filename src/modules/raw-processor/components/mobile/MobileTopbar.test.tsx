@@ -58,6 +58,9 @@ describe('mobileTopbar', () => {
     })
     const toggle = screen.getByRole('button', { name: /hide histogram/i })
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    // Pressed is a structural state: the lift-strong wash, not amber.
+    expect(toggle).toHaveClass('bg-[oklch(0.96_0.006_255/0.10)]')
+    expect(toggle.className).not.toMatch(/amber/)
   })
 
   it('opens the more menu and invokes an item', async () => {

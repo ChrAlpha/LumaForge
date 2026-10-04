@@ -58,7 +58,7 @@ function MobileExportAction(props: {
       onClick={props.onClick}
       aria-label={props.srLabel}
       title={props.srLabel ?? props.label}
-      className="inline-flex min-h-[44px] min-w-0 items-center justify-center gap-1.5 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-2 text-[0.74rem] font-semibold text-lf-on-photo-ink transition-colors hover:border-lf-amber/55 hover:text-lf-amber-soft disabled:cursor-not-allowed disabled:opacity-45"
+      className="inline-flex min-h-[44px] min-w-0 items-center justify-center gap-1.5 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-2 text-[0.74rem] font-semibold text-lf-on-photo-ink transition-colors enabled:hover:bg-[oklch(0.96_0.006_255/0.08)] disabled:cursor-not-allowed disabled:opacity-45"
     >
       <props.icon aria-hidden="true" className="size-3.5 shrink-0" />
       <span className="truncate">{props.label}</span>
@@ -223,7 +223,7 @@ export function MobileExportPanel(props: {
           type="button"
           disabled={!props.onRecoverExportSource}
           onClick={props.onRecoverExportSource}
-          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors hover:border-lf-amber/55 hover:text-lf-amber-soft disabled:cursor-not-allowed disabled:opacity-45"
+          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors enabled:hover:bg-[oklch(0.96_0.006_255/0.08)] disabled:cursor-not-allowed disabled:opacity-45"
         >
           <FolderOpen aria-hidden="true" className="size-4" />
           {t('raw.export.reselect')}
@@ -258,7 +258,7 @@ export function MobileExportPanel(props: {
           whileTap={previewExportDisabled ? undefined : { y: 0.5 }}
           transition={PANEL_TRANSITION}
           onClick={() => props.onPreviewExport?.()}
-          className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-3 text-[0.8rem] font-semibold text-lf-on-photo-ink transition-colors hover:border-lf-amber/55 hover:text-lf-amber-soft disabled:cursor-not-allowed disabled:bg-lf-on-photo-bg/60 disabled:text-lf-on-photo-ink/35"
+          className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-3 text-[0.8rem] font-semibold text-lf-on-photo-ink transition-colors enabled:hover:bg-[oklch(0.96_0.006_255/0.08)] disabled:cursor-not-allowed disabled:bg-lf-on-photo-bg/60 disabled:text-lf-on-photo-ink/35"
         >
           <Download aria-hidden="true" className="size-4 shrink-0" />
           {t('raw.export.runPreview')}

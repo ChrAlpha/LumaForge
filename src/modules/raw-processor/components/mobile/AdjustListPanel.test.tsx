@@ -74,13 +74,14 @@ describe('adjustListPanel', () => {
       'min-w-11',
     )
     expect(screen.getByRole('button', { name: /reset tone/i })).toBeEnabled()
-    // The active tab carries the amber underline indicator; the chrome row
-    // wears a single hairline divider instead of a free-floating dark chip.
+    // The active tab carries a cool lift-white underline (selection is
+    // structural; amber explains colour); the chrome row wears a single
+    // hairline divider instead of a free-floating dark chip.
     const toneTab = screen.getByRole('tab', { name: /^tone$/i })
     expect(toneTab).toHaveAttribute('aria-selected', 'true')
-    expect(toneTab.querySelector('span[aria-hidden="true"]')).toHaveClass(
-      'bg-lf-amber',
-    )
+    const indicator = toneTab.querySelector('span[aria-hidden="true"]')
+    expect(indicator).toHaveClass('bg-[oklch(0.96_0.006_255/0.85)]')
+    expect(indicator?.className).not.toMatch(/amber/)
     expect(document.querySelector('[data-adjust-section-chrome]')).toHaveClass(
       'border-b',
       'border-lf-on-photo-bord-soft',

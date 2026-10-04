@@ -248,6 +248,25 @@ describe('mobileModeDock', () => {
       /adjust/i,
     )
   })
+
+  it('marks the selected tab with the cool lift bar, not amber', () => {
+    render(
+      <MobileModeDock
+        mode="look"
+        expanded
+        onModeChange={vi.fn()}
+        onCollapse={vi.fn()}
+        onOpenMore={vi.fn()}
+        canExport={false}
+        panel={<div>x</div>}
+      />,
+    )
+
+    const selected = screen.getByRole('tab', { selected: true })
+    const bar = selected.querySelector(':scope > span:last-child')
+    expect(bar).toHaveClass('bg-[oklch(0.96_0.006_255/0.85)]')
+    expect(screen.getByRole('tablist').innerHTML).not.toMatch(/amber/)
+  })
 })
 
 describe('mobileModeDock stage inset', () => {

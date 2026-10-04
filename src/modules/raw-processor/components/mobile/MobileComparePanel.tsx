@@ -31,7 +31,7 @@ export function MobileComparePanel({
         data-mobile-compare-panel="split"
       >
         <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-3">
-          <span className="grid size-9 place-items-center rounded-md border border-lf-amber/35 bg-lf-amber/12 text-lf-amber-soft">
+          <span className="grid size-9 place-items-center rounded-md bg-[oklch(0.96_0.006_255/0.06)] text-lf-on-photo-ink/80">
             <SplitSquareHorizontal aria-hidden="true" className="size-4" />
           </span>
           <div className="min-w-0">
@@ -49,7 +49,7 @@ export function MobileComparePanel({
             whileTap={{ y: 0.5 }}
             transition={TAP_SPRING}
             onClick={() => onSplitOpenChange(false)}
-            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg-strong px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors hover:border-lf-amber/55 hover:text-lf-amber-soft"
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg-strong px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors hover:bg-[oklch(0.96_0.006_255/0.08)]"
           >
             <Eye aria-hidden="true" className="size-4" />
             {t('raw.mobile.compare.holdMode')}
@@ -59,7 +59,7 @@ export function MobileComparePanel({
             whileTap={{ y: 0.5 }}
             transition={TAP_SPRING}
             onClick={onCompareReset}
-            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg-strong px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors hover:border-lf-amber/55 hover:text-lf-amber-soft"
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg-strong px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors hover:bg-[oklch(0.96_0.006_255/0.08)]"
           >
             <RotateCcw aria-hidden="true" className="size-4" />
             {t('raw.compare.reset')}
@@ -80,7 +80,7 @@ export function MobileComparePanel({
       data-mobile-compare-panel="peek"
     >
       <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-3">
-        <span className="grid size-9 place-items-center rounded-md border border-lf-amber/35 bg-lf-amber/12 text-lf-amber-soft">
+        <span className="grid size-9 place-items-center rounded-md bg-[oklch(0.96_0.006_255/0.06)] text-lf-on-photo-ink/80">
           <Eye aria-hidden="true" className="size-4" />
         </span>
         <div className="min-w-0">
@@ -97,7 +97,7 @@ export function MobileComparePanel({
         whileTap={{ y: 0.5 }}
         transition={TAP_SPRING}
         onClick={() => onSplitOpenChange(true)}
-        className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg-strong px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors hover:border-lf-amber/55 hover:text-lf-amber-soft"
+        className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg-strong px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors hover:bg-[oklch(0.96_0.006_255/0.08)]"
       >
         <SplitSquareHorizontal aria-hidden="true" className="size-4" />
         {t('raw.mobile.compare.split')}

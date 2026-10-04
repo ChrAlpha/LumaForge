@@ -17,6 +17,12 @@ export interface MobileLookPanelProps {
   onOpenLutContractBrowser: () => void
 }
 
+// "Add LUT" and "Change LUT" are plain actions, so they take the neutral lift
+// (DESIGN.md §6 Cool Lift Rule). Amber stays on the contract cards below,
+// where it explains what the LUT expects.
+const lookActionClass =
+  'inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lf-pill bg-[oklch(0.96_0.006_255/0.06)] px-3 text-lf-label font-semibold text-lf-on-photo-ink transition-colors hover:bg-[oklch(0.96_0.006_255/0.10)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80'
+
 export function MobileLookPanel({
   lutBrowser,
   onOpenLutBrowser,
@@ -51,7 +57,7 @@ export function MobileLookPanel({
               type="button"
               aria-label={t('raw.mobile.lut.changeAria')}
               onClick={onOpenLutBrowser}
-              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lf-pill border border-lf-amber/35 bg-lf-amber/12 px-3 text-lf-label font-semibold text-lf-amber-soft transition-colors hover:border-lf-amber/60 hover:text-lf-on-photo-ink"
+              className={lookActionClass}
             >
               {t('raw.mobile.lut.change')}
               <ChevronRight aria-hidden="true" className="size-3" />
@@ -122,11 +128,11 @@ export function MobileLookPanel({
               aria-label={t('raw.mobile.lut.editContractAria', {
                 label: resolvedLutProfile.label,
               })}
-              className="grid gap-1.5 rounded-lf-control border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-2.5 py-2 text-left transition-colors hover:border-lf-amber/40"
+              className="grid gap-1.5 rounded-lf-control border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-2.5 py-2 text-left transition-colors hover:bg-[oklch(0.96_0.006_255/0.06)]"
             >
               <span className="flex items-center justify-between gap-2 text-lf-eyebrow font-semibold uppercase tracking-wide text-lf-on-photo-ink/45">
                 {t('raw.mobile.lut.contractHeading')}
-                <span className="inline-flex items-center gap-1 text-lf-amber/80">
+                <span className="inline-flex items-center gap-1 text-lf-on-photo-ink/72">
                   <SlidersHorizontal aria-hidden="true" className="size-3" />
                   {t('raw.mobile.lut.editContract')}
                 </span>
@@ -176,7 +182,7 @@ export function MobileLookPanel({
               type="button"
               onClick={onOpenLutContractBrowser}
               aria-label={t('raw.mobile.lut.chooseContract')}
-              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lf-control border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-2.5 py-2 text-left text-xs leading-relaxed text-lf-on-photo-ink/68 transition-colors hover:border-lf-amber/40 hover:text-lf-on-photo-ink"
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lf-control border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-2.5 py-2 text-left text-xs leading-relaxed text-lf-on-photo-ink/68 transition-colors hover:bg-[oklch(0.96_0.006_255/0.06)] hover:text-lf-on-photo-ink"
             >
               <span className="min-w-0">{t('raw.mobile.lut.noContract')}</span>
               <span className="inline-flex shrink-0 items-center gap-1 text-lf-eyebrow font-semibold uppercase tracking-wide text-lf-amber-soft">
@@ -195,7 +201,7 @@ export function MobileLookPanel({
             type="button"
             aria-label={t('raw.mobile.lut.title')}
             onClick={onOpenLutBrowser}
-            className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lf-pill border border-lf-amber/35 bg-lf-amber/12 px-3 text-lf-label font-semibold text-lf-amber-soft transition-colors hover:border-lf-amber/60 hover:text-lf-on-photo-ink"
+            className={lookActionClass}
           >
             {t('raw.mobile.lut.add')}
             <ChevronRight aria-hidden="true" className="size-3" />
