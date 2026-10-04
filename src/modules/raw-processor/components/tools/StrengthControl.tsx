@@ -46,6 +46,7 @@ export function StrengthControl({
   size = 'sm',
   className,
   itemClassName,
+  ariaDescribedBy,
 }: {
   value: StrengthLevel
   onChange: (value: StrengthLevel) => void
@@ -53,6 +54,8 @@ export function StrengthControl({
   size?: StrengthControlSize
   className?: string
   itemClassName?: string
+  /** Id of text that explains the control, e.g. why it is disabled. */
+  ariaDescribedBy?: string
 }) {
   const { t } = useI18n()
   const labels: Record<StrengthLevel, string> = {
@@ -72,6 +75,7 @@ export function StrengthControl({
           }
         }}
         aria-label={t('raw.strength.title')}
+        aria-describedby={ariaDescribedBy}
         disabled={disabled}
         className={cn(TRACK_BASE, SIZE_TRACK[size], className)}
       >

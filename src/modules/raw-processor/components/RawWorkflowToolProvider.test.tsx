@@ -171,6 +171,8 @@ describe('rawWorkflowToolProvider Transform guards', () => {
         </RawWorkflowToolProvider>
       ),
     })
+    // No custom style: no applied LUT for the Look strip to match.
+    expect(result.current.appliedLut).toBeNull()
     // A split left over from the GPU path reads as the processed photo.
     expect(result.current.viewMode).toBe('processed')
     result.current.onViewModeChange('original')
@@ -179,6 +181,50 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(workflow.setViewMode).toHaveBeenLastCalledWith('processed')
     result.current.onCompareSplitChange(0.2)
     expect(workflow.setCompareSplit).not.toHaveBeenCalled()
+  })
+
+  it('tells the Look strip which LUT is applied by its cube hash', () => {
+    const workflow = {
+      ...workflowFixture(),
+      activeStyle: {
+        kind: 'custom',
+        name: 'Kodak 2383',
+        defaultIntensityLevel: 'standard',
+        currentIntensityLevel: 'standard',
+        lutAsset: {
+          format: 'cube',
+          dimension: 33,
+          sha256: 'a'.repeat(64),
+          sourceName: 'kodak-2383.cube',
+        },
+      },
+    } as unknown as UseRawWorkflowReturn
+    const { result } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <RawWorkflowToolProvider
+          workflow={workflow}
+          onlineLutSources={{} as UseOnlineLutSourcesResult}
+          isCpuMode={false}
+          isProcessing={false}
+          runtimeReadinessState="ready"
+          previewFrameEl={null}
+          onReplaceFile={vi.fn()}
+          onResetSession={vi.fn()}
+          onCompareReset={vi.fn()}
+          onLutDrop={vi.fn()}
+          onExport={vi.fn()}
+          onRecoverExportSource={vi.fn()}
+          onPrepareRuntime={vi.fn()}
+        >
+          {children}
+        </RawWorkflowToolProvider>
+      ),
+    })
+    expect(result.current.appliedLut).toEqual({
+      name: 'Kodak 2383',
+      sha256: 'a'.repeat(64),
+      sourceName: 'kodak-2383.cube',
+    })
   })
 
   it('reports the aspect the stage is displaying', () => {

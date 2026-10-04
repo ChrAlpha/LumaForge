@@ -37,7 +37,7 @@ import {
 } from './MobileFloatingOverlays'
 import { MobileLabModeDock } from './MobileLabModeDock'
 import { MobileLabTopbar } from './MobileLabTopbar'
-import type { MobileLutBrowserProps } from './MobileLutBrowser'
+import type { MobileLookControls } from './MobileLookDeck'
 import { MobileLutBrowser } from './MobileLutBrowser'
 import { isMobileDeckVisible } from './MobileModeDock'
 import { MobileMoreSheet } from './MobileMoreSheet'
@@ -94,7 +94,7 @@ export function MobileLabChrome(props: {
   runtimeReadinessState?: RawRuntimeReadinessState
   onPrepareRuntime?: () => void
   cpuPreviewNotice?: CpuPreviewNotice
-  lutBrowser: Omit<MobileLutBrowserProps, 'open' | 'onClose'>
+  lutBrowser: MobileLookControls
   /** Rendered in the deck while export is open; `onClose` hands it back. */
   exportPanel: (controls: { onClose: () => void }) => ReactNode
   moreSheet: MobileDetailsSheet

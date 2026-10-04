@@ -11,8 +11,8 @@ import type { HSLToolValue } from '../tools/HSLTool'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { AdjustListPanel } from './AdjustListPanel'
 import { isMobileListDeck } from './mobile-stage-layout'
-import { MobileLookPanel } from './MobileLookPanel'
-import type { MobileLutBrowserProps } from './MobileLutBrowser'
+import type { MobileLookControls } from './MobileLookDeck'
+import { MobileLookDeck } from './MobileLookDeck'
 import type { MobileMode } from './MobileModeDock'
 import { MobileModeDock } from './MobileModeDock'
 import { TransformListPanel } from './TransformListPanel'
@@ -60,7 +60,7 @@ export function MobileLabModeDock({
   tone: ToneValue
   color: ColorValue
   selectiveColor: HSLToolValue | undefined
-  lutBrowser: Omit<MobileLutBrowserProps, 'open' | 'onClose'>
+  lutBrowser: MobileLookControls
   exportPanel: ReactNode
   onModeChange: (mode: MobileMode) => void
   onCollapse: () => void
@@ -158,7 +158,7 @@ function MobileLabModePanel({
   tone: ToneValue
   color: ColorValue
   selectiveColor: HSLToolValue | undefined
-  lutBrowser: Omit<MobileLutBrowserProps, 'open' | 'onClose'>
+  lutBrowser: MobileLookControls
   scrubbing: boolean
   onToneChange: (patch: Partial<ToneValue>) => void
   onToneReset: () => void
@@ -202,10 +202,10 @@ function MobileLabModePanel({
   }
 
   return (
-    <MobileLookPanel
-      lutBrowser={lutBrowser}
-      onOpenLutBrowser={onOpenLutBrowser}
-      onOpenLutContractBrowser={onOpenLutContractBrowser}
+    <MobileLookDeck
+      look={lutBrowser}
+      onOpenSources={onOpenLutBrowser}
+      onOpenContract={() => onOpenLutContractBrowser()}
     />
   )
 }

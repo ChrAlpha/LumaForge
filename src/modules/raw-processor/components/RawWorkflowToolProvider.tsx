@@ -128,6 +128,14 @@ export function RawWorkflowToolProvider({
         onLutLoad: onLutDrop,
         onLutClear: workflow.clearLUT,
         currentLutName: workflow.currentLutName,
+        appliedLut:
+          workflow.activeStyle?.kind === 'custom'
+            ? {
+                name: workflow.activeStyle.name,
+                sha256: workflow.activeStyle.lutAsset?.sha256 ?? null,
+                sourceName: workflow.activeStyle.lutAsset?.sourceName ?? null,
+              }
+            : null,
         lutProfileSelection: workflow.lutProfileSelection,
         lutProfileResolution:
           workflow.activeStyle?.kind === 'custom'

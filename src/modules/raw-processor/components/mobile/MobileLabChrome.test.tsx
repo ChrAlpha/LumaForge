@@ -223,14 +223,14 @@ describe('mobileLabChrome', () => {
     ).toBeInTheDocument()
   })
 
-  it('look mode opens the LUT browser and dock has no strength tab', async () => {
+  it('look mode opens the LUT sources and dock has no strength tab', async () => {
     render(<MobileLabChrome {...base} />)
     const dock = screen.getByRole('tablist', { name: /lab modes/i })
     expect(within(dock).getAllByRole('tab')).toHaveLength(2)
     expect(
       within(dock).queryByRole('tab', { name: /strength/i }),
     ).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /lut browser/i }))
+    await userEvent.click(screen.getByRole('button', { name: /lut sources/i }))
     expect(
       screen.getByRole('dialog', { name: /lut browser/i }),
     ).toBeInTheDocument()
@@ -268,7 +268,7 @@ describe('mobileLabChrome', () => {
 
     expect(screen.queryByText('ready export actions')).not.toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: /lut browser/i }),
+      screen.getByRole('button', { name: /lut sources/i }),
     ).toBeInTheDocument()
     expect(within(dock).getByRole('tab', { name: /look/i })).toHaveAttribute(
       'aria-selected',
@@ -291,7 +291,7 @@ describe('mobileLabChrome', () => {
   it('closes transient mobile sheets when the blocking handoff starts', async () => {
     const { rerender } = render(<MobileLabChrome {...base} />)
 
-    await userEvent.click(screen.getByRole('button', { name: /lut browser/i }))
+    await userEvent.click(screen.getByRole('button', { name: /lut sources/i }))
     expect(
       screen.getByRole('dialog', { name: /lut browser/i }),
     ).toBeInTheDocument()
@@ -367,72 +367,34 @@ describe('mobileLabChrome', () => {
       />,
     )
 
-    expect(screen.getByText('client-look.cube')).toBeInTheDocument()
-    expect(screen.getByText('Sony S-Gamut3.Cine / S-Log3')).toBeInTheDocument()
-    expect(screen.getByText('Rec.709 display')).toBeInTheDocument()
-
-    // Primary action swaps the LUT itself — must be the most prominent affordance.
+    // The applied file is a tile on the strip, pressed.
     expect(
-      screen.getByRole('button', {
-        name: /change lut: browse, upload, or load a different lut/i,
-      }),
-    ).toBeInTheDocument()
-
-    // Tapping the contract row deep-links to the contract editor.
-    await userEvent.click(
-      screen.getByRole('button', {
-        name: /edit color contract for sony s-gamut3\.cine \/ s-log3/i,
-      }),
+      screen.getByRole('button', { name: 'client-look.cube' }),
+    ).toHaveAttribute('aria-pressed', 'true')
+    // A confirmed contract reads as one quiet line in the footer.
+    const confirmed = screen.getByRole('button', {
+      name: /edit color contract for sony s-gamut3\.cine \/ s-log3/i,
+    })
+    expect(confirmed).toHaveTextContent(
+      'Sony S-Gamut3.Cine / S-Log3 → Rec.709 display',
     )
+    expect(confirmed.className).not.toMatch(/amber/)
 
+    // Tapping it opens the contract editor.
+    await userEvent.click(confirmed)
     expect(
       screen.getByRole('dialog', { name: /edit contract/i }),
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole('tablist', { name: 'LUT contract panels' }),
-    ).toBeInTheDocument()
   })
 
-  it('opens the LUT browser at the default view when changing LUT from Look mode', async () => {
-    const detectedProfile = {
-      ...getLUTColorProfile('sony-sgamut3cine-slog3')!,
-      role: 'combined-look-output' as const,
-      outputGamut: 'srgb-rec709' as const,
-      outputTransfer: 'srgb' as const,
-      outputRange: 'full' as const,
-    }
+  it('opens the LUT sources at their default view from the Look footer', async () => {
+    render(<MobileLabChrome {...base} />)
 
-    render(
-      <MobileLabChrome
-        {...base}
-        lutBrowser={{
-          ...base.lutBrowser,
-          currentLutName: 'client-look.cube',
-          lutProfileSelection: {
-            status: 'confirmed',
-            fingerprint: 'lut-fingerprint',
-            profileId: detectedProfile.id,
-            confidence: 'metadata',
-          },
-          lutProfileResolution: {
-            kind: 'confirmed',
-            profile: detectedProfile,
-            confidence: 'metadata',
-          },
-        }}
-      />,
-    )
-
-    await userEvent.click(
-      screen.getByRole('button', {
-        name: /change lut: browse, upload, or load a different lut/i,
-      }),
-    )
+    await userEvent.click(screen.getByRole('button', { name: /lut sources/i }))
 
     expect(
       screen.getByRole('dialog', { name: /lut browser/i }),
     ).toBeInTheDocument()
-    // The contract editor stays collapsed — default view shows the LUT roster.
     expect(
       screen.queryByRole('tablist', { name: 'LUT contract panels' }),
     ).not.toBeInTheDocument()
@@ -458,15 +420,13 @@ describe('mobileLabChrome', () => {
       />,
     )
 
-    expect(
-      screen.getByText(
-        'Choose the LUT input and output contract before preview or export.',
-      ),
-    ).toBeInTheDocument()
+    const choose = screen.getByRole('button', {
+      name: /choose what this lut expects/i,
+    })
+    // Amber here explains a colour contract that still needs a choice.
+    expect(choose.className).toContain('text-lf-amber-soft')
 
-    await userEvent.click(
-      screen.getByRole('button', { name: /choose lut contract/i }),
-    )
+    await userEvent.click(choose)
 
     expect(
       screen.getByRole('dialog', { name: /edit contract/i }),
@@ -478,7 +438,7 @@ describe('mobileLabChrome', () => {
     render(<MobileLabChrome {...base} />)
     // Controls are present on load — dock expanded by default, not immersive.
     expect(
-      screen.getByRole('button', { name: /lut browser/i }),
+      screen.getByRole('button', { name: /lut sources/i }),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: 'DSC09142.ARW' }),
@@ -486,7 +446,7 @@ describe('mobileLabChrome', () => {
     // Tapping the active Look tab collapses the panel.
     const dock = screen.getByRole('tablist', { name: /lab modes/i })
     await userEvent.click(within(dock).getByRole('tab', { name: /look/i }))
-    expect(screen.queryByRole('button', { name: /lut browser/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /lut sources/i })).toBeNull()
   })
 
   it('opens Adjust inline with tone sliders and keeps the topbar visible', async () => {
@@ -606,7 +566,7 @@ describe('mobileLabChrome', () => {
     render(<MobileLabChrome {...base} previewFrameEl={previewFrameEl} />)
     // Dock panel is expanded by default (Look mode) — its LUT button is present.
     expect(
-      screen.getByRole('button', { name: /lut browser/i }),
+      screen.getByRole('button', { name: /lut sources/i }),
     ).toBeInTheDocument()
 
     act(() => {
@@ -615,7 +575,7 @@ describe('mobileLabChrome', () => {
     })
 
     // Phase 1: panel collapsed, but chrome (topbar) is still present.
-    expect(screen.queryByRole('button', { name: /lut browser/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /lut sources/i })).toBeNull()
     expect(
       screen.getByRole('heading', { name: 'DSC09142.ARW' }),
     ).toBeInTheDocument()
@@ -645,12 +605,12 @@ describe('mobileLabChrome', () => {
     ).not.toBeInTheDocument()
     // Exit: chrome returns immediately, the panel re-expands after the stagger.
     fireEvent.click(screen.getByRole('button', { name: /show controls/i }))
-    expect(screen.queryByRole('button', { name: /lut browser/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /lut sources/i })).toBeNull()
     act(() => {
       vi.advanceTimersByTime(160)
     })
     expect(
-      screen.getByRole('button', { name: /lut browser/i }),
+      screen.getByRole('button', { name: /lut sources/i }),
     ).toBeInTheDocument()
     vi.useRealTimers()
   })
@@ -659,7 +619,7 @@ describe('mobileLabChrome', () => {
     vi.useFakeTimers()
     render(<MobileLabChrome {...base} previewFrameEl={previewFrameEl} />)
     expect(
-      screen.getByRole('button', { name: /lut browser/i }),
+      screen.getByRole('button', { name: /lut sources/i }),
     ).toBeInTheDocument()
     // Tap 1 begins the collapse→recede stagger.
     act(() => {
@@ -680,14 +640,14 @@ describe('mobileLabChrome', () => {
       vi.advanceTimersByTime(160)
     })
     expect(
-      screen.getByRole('button', { name: /lut browser/i }),
+      screen.getByRole('button', { name: /lut sources/i }),
     ).toBeInTheDocument()
     vi.useRealTimers()
   })
 
   it('tap on the exposed preview closes an open sheet instead of toggling immersive', async () => {
     render(<MobileLabChrome {...base} previewFrameEl={previewFrameEl} />)
-    await userEvent.click(screen.getByRole('button', { name: /lut browser/i }))
+    await userEvent.click(screen.getByRole('button', { name: /lut sources/i }))
     expect(
       screen.getByRole('dialog', { name: /lut browser/i }),
     ).toBeInTheDocument()
@@ -721,7 +681,7 @@ describe('mobileLabChrome', () => {
     // fireEvent (sync) is intentional: lutBrowserOpen must be set before we
     // switch to fake timers below. userEvent.click is async and can't be
     // awaited before vi.useFakeTimers() in the same test.
-    fireEvent.click(screen.getByRole('button', { name: /lut browser/i }))
+    fireEvent.click(screen.getByRole('button', { name: /lut sources/i }))
     vi.useFakeTimers()
     act(() => {
       previewFrameEl.dispatchEvent(new Event('pointerdown', { bubbles: true }))
@@ -833,7 +793,7 @@ describe('mobileLabChrome', () => {
     await userEvent.click(action)
     expect(screen.queryByText('export panel')).not.toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: /lut browser/i }),
+      screen.getByRole('button', { name: /lut sources/i }),
     ).toBeInTheDocument()
   })
 

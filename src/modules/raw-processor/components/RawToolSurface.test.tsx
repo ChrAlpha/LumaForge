@@ -1302,12 +1302,8 @@ describe('rawToolSurface', () => {
         within(dock).queryByRole('tab', { name: /strength/i }),
       ).not.toBeInTheDocument()
 
-      await user.click(screen.getByRole('button', { name: /lut browser/i }))
-
-      const lutBrowser = screen.getByRole('dialog', { name: /lut browser/i })
-      const strength = within(lutBrowser).getByRole('tablist', {
-        name: 'Strength',
-      })
+      // Strength lives in the Look deck; it stays off until a LUT applies.
+      const strength = screen.getByRole('tablist', { name: 'Strength' })
       const strong = within(strength).getByRole('tab', { name: 'Strong' })
 
       expect(strong).toBeDisabled()

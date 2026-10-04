@@ -3,10 +3,10 @@ import { render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { MobileExportPanel } from './MobileExportPanel'
-import { MobileLookPanel } from './MobileLookPanel'
+import { MobileLookDeck } from './MobileLookDeck'
 
-// DESIGN.md §6: Lab Green marks ready / focus / committed, amber explains
-// colour contracts, and structural selection or hover uses the cool Lift Wash
+// Lab Green marks ready / focus / committed, amber explains colour
+// contracts, and structural selection or hover uses the cool Lift Wash
 // Ladder. These surfaces carry no contract state, so they carry no amber.
 
 const lutBrowser = {
@@ -41,15 +41,15 @@ describe('mobile accent grammar', () => {
     expect(container.innerHTML).not.toMatch(/amber/)
   })
 
-  it('paints Add LUT and Change LUT as neutral actions', () => {
+  it('keeps the Look deck neutral without a LUT and with a confirmed contract', () => {
     const { container, getByRole, rerender } = render(
-      <MobileLookPanel
-        lutBrowser={lutBrowser}
-        onOpenLutBrowser={vi.fn()}
-        onOpenLutContractBrowser={vi.fn()}
+      <MobileLookDeck
+        look={lutBrowser}
+        onOpenSources={vi.fn()}
+        onOpenContract={vi.fn()}
       />,
     )
-    expect(getByRole('button', { name: 'LUT browser' }).className).not.toMatch(
+    expect(getByRole('button', { name: /lut sources/i }).className).not.toMatch(
       /amber/,
     )
     expect(container.innerHTML).not.toMatch(/amber/)
@@ -62,8 +62,8 @@ describe('mobile accent grammar', () => {
       outputRange: 'full' as const,
     }
     rerender(
-      <MobileLookPanel
-        lutBrowser={{
+      <MobileLookDeck
+        look={{
           ...lutBrowser,
           currentLutName: 'Film.cube',
           lutProfileResolution: {
@@ -72,8 +72,8 @@ describe('mobile accent grammar', () => {
             confidence: 'user',
           },
         }}
-        onOpenLutBrowser={vi.fn()}
-        onOpenLutContractBrowser={vi.fn()}
+        onOpenSources={vi.fn()}
+        onOpenContract={vi.fn()}
       />,
     )
     // A confirmed contract needs no explanation, so nothing here is amber.
@@ -82,14 +82,14 @@ describe('mobile accent grammar', () => {
 
   it('keeps amber on a LUT contract that still needs a choice', () => {
     const { container } = render(
-      <MobileLookPanel
-        lutBrowser={{
+      <MobileLookDeck
+        look={{
           ...lutBrowser,
           currentLutName: 'Film.cube',
           lutProfileResolution: { kind: 'unknown' },
         }}
-        onOpenLutBrowser={vi.fn()}
-        onOpenLutContractBrowser={vi.fn()}
+        onOpenSources={vi.fn()}
+        onOpenContract={vi.fn()}
       />,
     )
     expect(container.innerHTML).toMatch(/lf-amber/)

@@ -21,6 +21,7 @@ import type {
 import type { DeliveredExportSize } from '../services/export/delivered-export-size'
 import type { ColorValue } from './color-fields'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
+import type { AppliedLut } from './mobile/mobile-lut-strip'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { ToneValue } from './tone-fields'
 import type { FileFactsTool } from './tools/FileFactsTool'
@@ -91,6 +92,11 @@ export interface RawToolSurfaceProps {
   onReplaceFile: () => void
   onResetSession: () => void
   currentLutName?: string | null
+  /**
+   * The applied LUT's identity (name, .cube SHA-256, source name), so a
+   * surface can tell which catalog entry, if any, is the applied look.
+   */
+  appliedLut?: AppliedLut | null
   lutProfileSelection?: LUTContractSelectionState | null
   lutProfileResolution?: LUTContractResolution | null
   onlineLutSources?: UseOnlineLutSourcesResult
