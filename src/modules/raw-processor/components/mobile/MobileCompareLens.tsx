@@ -25,6 +25,29 @@ export const COMPARE_LENS_POSITION = {
   '--raw-compare-lens-size': '32px',
 } as CSSProperties
 
+/**
+ * Width (px) of the photo the lens column takes from a hint beside it: the
+ * 8px inset, the 32px circle, the 6px of hit area past it, a 4px gap, and
+ * 8px kept clear of the photo's left edge.
+ */
+const LENS_HINT_SIDE_RESERVE_PX = 58
+/** Below this, a hint beside the lens would wrap into a tall sliver. */
+const LENS_HINT_MIN_SIDE_WIDTH_PX = 150
+
+export type LensHintPlacement = 'side' | 'below'
+
+/**
+ * A hint sits beside the lens while the photo leaves it room to the left,
+ * and flips below the lens on a photo too narrow for that. Before the photo
+ * is measured it keeps the side.
+ */
+export function getLensHintPlacement(photoWidth: number): LensHintPlacement {
+  if (!(photoWidth > 0)) return 'side'
+  return photoWidth - LENS_HINT_SIDE_RESERVE_PX >= LENS_HINT_MIN_SIDE_WIDTH_PX
+    ? 'side'
+    : 'below'
+}
+
 export const LENS_HINT_STORAGE_KEY = 'lumaforge.raw.mobile.lensHintSeen.v1'
 const LENS_HINT_MS = 4000
 const BLOCKED_HINT_MS = 2000
@@ -80,8 +103,11 @@ export function MobileCompareLens(props: {
   onToggle: () => void
   onPeekStart: () => void
   onPeekEnd: () => void
+  /** Where hints go, from the photo's width (getLensHintPlacement). */
+  hintPlacement?: LensHintPlacement
 }) {
   const { t } = useI18n()
+  const hintBelow = props.hintPlacement === 'below'
   const reduced = useReducedMotion() ?? false
   const descriptionId = useId()
   const [blockedHint, setBlockedHint] = useState(false)
@@ -236,24 +262,45 @@ export function MobileCompareLens(props: {
       exit={{ opacity: 0 }}
       transition={surfaceFade}
     >
-      {/* Live region stays mounted so the blocked reason is announced. It
-          hangs off the lens's left edge, centred on it, so a wrapped hint
-          never pushes the lens. */}
+      {/* Live region stays mounted so the blocked reason is announced. A
+          hint hangs off the lens's left edge, centred on it, so a wrapped
+          hint never pushes the lens; its width is capped by the room the
+          photo leaves there. On a photo too narrow for that it drops below
+          the lens, right-aligned to the circle, capped by the photo width.
+          Either way it stays on the photo. */}
       <div
         role="status"
         aria-live="polite"
-        className="absolute right-full top-0 flex h-11 items-center pr-1"
+        data-mobile-compare-lens-hint-slot={hintBelow ? 'below' : 'side'}
+        className={
+          hintBelow
+            ? 'absolute right-1.5 top-full flex justify-end pt-0.5'
+            : 'absolute right-full top-0 flex h-11 items-center pr-1'
+        }
       >
         <AnimatePresence mode="wait" initial={false}>
           {hint && (
             <m.span
               key={blockedHint ? 'blocked' : 'intro'}
               data-mobile-compare-lens-hint={blockedHint ? 'blocked' : 'intro'}
-              initial={{ opacity: 0, x: reduced ? 0 : 4 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: reduced ? 0 : 4 }}
+              initial={{
+                opacity: 0,
+                x: reduced || hintBelow ? 0 : 4,
+                y: reduced || !hintBelow ? 0 : -4,
+              }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              exit={{
+                opacity: 0,
+                x: reduced || hintBelow ? 0 : 4,
+                y: reduced || !hintBelow ? 0 : -4,
+              }}
               transition={surfaceFade}
-              className="w-max max-w-[min(62vw,232px)] rounded-lf-pill bg-[oklch(0.1_0.006_255/0.84)] px-2.5 py-1.5 text-right text-[0.7rem] font-semibold leading-snug text-lf-on-photo-ink/92 shadow-[inset_0_0_0_1px_oklch(0.96_0.006_255/0.16)] backdrop-blur-background"
+              className={clsxm(
+                'w-max rounded-lf-pill bg-[oklch(0.1_0.006_255/0.84)] px-2.5 py-1.5 text-right text-[0.7rem] font-semibold leading-snug text-lf-on-photo-ink/92 shadow-[inset_0_0_0_1px_oklch(0.96_0.006_255/0.16)] backdrop-blur-background',
+                hintBelow
+                  ? 'max-w-[min(232px,calc(var(--raw-photo-width,100vw)-16px))]'
+                  : 'max-w-[min(232px,calc(var(--raw-photo-width,100vw)-58px))]',
+              )}
             >
               {hint}
             </m.span>

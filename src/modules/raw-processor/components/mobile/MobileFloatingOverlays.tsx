@@ -1,6 +1,7 @@
 import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
 import { AnimatePresence, m } from 'motion/react'
 
+import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
 import type { ManualTransform } from '~/modules/transform-demo/transform-types'
@@ -11,6 +12,32 @@ import type { HSLToolValue } from '../tools/HSLTool'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { FloatingHistogramCard } from './FloatingHistogramCard'
 import { ScrubValueHud } from './ScrubValueHud'
+
+/**
+ * The lens column the peek pill must keep clear of, on both sides so the
+ * pill stays centred: 8px inset, the 32px circle, and an 8px gap.
+ */
+const PEEK_PILL_LENS_CLEARANCE_PX = 48
+/** The pill's one-line width, with a little slack for the zh copy. */
+const PEEK_PILL_MIN_ROW_WIDTH_PX = 200
+
+export type PeekPillPlacement = 'row' | 'below'
+
+/**
+ * The peek pill shares the lens's row at the top centre of the photo while
+ * the photo is wide enough to hold it clear of the lens; on a narrower photo
+ * it drops just below the lens row. With no lens on screen the row is free.
+ */
+export function getPeekPillPlacement(
+  photoWidth: number,
+  lensVisible: boolean,
+): PeekPillPlacement {
+  if (!lensVisible || !(photoWidth > 0)) return 'row'
+  return photoWidth - 2 * PEEK_PILL_LENS_CLEARANCE_PX >=
+    PEEK_PILL_MIN_ROW_WIDTH_PX
+    ? 'row'
+    : 'below'
+}
 
 export interface MobileFloatingOverlaysProps {
   immersive: boolean
@@ -26,6 +53,9 @@ export interface MobileFloatingOverlaysProps {
   selectiveColor: HSLToolValue | undefined
   manualTransform: ManualTransform | undefined
   onExitImmersive: () => void
+  /** Whether the compare lens is on screen beside the peek pill. */
+  lensVisible?: boolean
+  peekPlacement?: PeekPillPlacement
 }
 
 export function MobileFloatingOverlays({
@@ -42,8 +72,11 @@ export function MobileFloatingOverlays({
   selectiveColor,
   manualTransform,
   onExitImmersive,
+  lensVisible = false,
+  peekPlacement = 'row',
 }: MobileFloatingOverlaysProps) {
   const { t } = useI18n()
+  const peekBelow = peekPlacement === 'below'
 
   return (
     <>
@@ -66,16 +99,32 @@ export function MobileFloatingOverlays({
       </AnimatePresence>
 
       <AnimatePresence>
-        {peeking && hasImage && !handoffActive && (
+        {/* The pill names the state on screen, so unlike the chrome it
+            stays in immersive (clear of the status bar there). A scrub and
+            a handoff cannot peek. */}
+        {peeking && hasImage && !handoffActive && !focusActive && (
           <m.div
             key="peek-hint"
+            data-mobile-peek-hint={peekPlacement}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={surfaceFade}
             // Top centre of the photo rect, so the pill names what is on the
-            // photo rather than floating in the stage around it.
-            className="pointer-events-none absolute left-[calc(var(--raw-photo-left,0px)+var(--raw-photo-width,100vw)/2)] top-[calc(var(--raw-photo-top,var(--raw-stage-inset-top,0px))+8px)] z-[12] -translate-x-1/2 rounded-lf-pill border border-lf-on-photo-bord bg-lf-on-photo-bg-strong px-2.5 py-1.5 text-[0.7rem] font-semibold uppercase tracking-wide text-lf-on-photo-ink"
+            // photo rather than floating in the stage around it. In the
+            // lens's row it is a 32px pill like the lens circle, and its
+            // width keeps it clear of the lens column on both sides.
+            className={clsxm(
+              'pointer-events-none absolute left-[calc(var(--raw-photo-left,0px)+var(--raw-photo-width,100vw)/2)] z-[12] inline-flex min-h-8 -translate-x-1/2 items-center justify-center rounded-lf-pill border border-lf-on-photo-bord bg-lf-on-photo-bg-strong px-2.5 py-1 text-center text-[0.7rem] font-semibold uppercase leading-snug tracking-wide text-lf-on-photo-ink',
+              peekBelow
+                ? 'top-[calc(var(--raw-compare-lens-top,8px)+var(--raw-compare-lens-size,32px)+8px)] w-max max-w-[calc(var(--raw-photo-width,100vw)-16px)]'
+                : clsxm(
+                    'top-[max(calc(var(--raw-photo-top,var(--raw-stage-inset-top,0px))+8px),calc(env(safe-area-inset-top)+8px))] w-max',
+                    lensVisible
+                      ? 'max-w-[calc(var(--raw-photo-width,100vw)-96px)]'
+                      : 'max-w-[calc(var(--raw-photo-width,100vw)-16px)]',
+                  ),
+            )}
           >
             {t('raw.mobile.peek.hint')}
           </m.div>

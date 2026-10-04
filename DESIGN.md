@@ -489,6 +489,7 @@ A portrait photo takes all the height the deck leaves.
 A scrub never changes the layout's inputs, so it never resizes the photo.
 Without a known aspect the stage falls back to the whole region above the deck.
 The compare lens, its hints, the peek pill, and the floating histogram read the `--raw-photo-*` rect, so they ride on the photo rather than on the stage around it.
+On a photo too narrow to hold them clear of the lens, a lens hint drops below the lens and the peek pill leaves the lens's row the same way; both stay on the photo.
 
 Immersive and the empty state reset both insets to `0`, so entering immersive grows the photo back to full bleed in the same motion as the chrome fade.
 

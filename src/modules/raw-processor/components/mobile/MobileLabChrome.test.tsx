@@ -1162,6 +1162,101 @@ describe('mobileLabChrome stage layout', () => {
     expect(px('--raw-stage-inset-bottom')).toBeCloseTo(64 + 250.8)
   })
 
+  it('flips the lens hint below the lens on a photo too narrow to hold it beside', async () => {
+    localStorage.clear()
+    const { container, rerender } = renderInShell({ photoAspect: 2 / 3 })
+    const slot = () =>
+      container
+        .querySelector('[data-mobile-compare-lens-hint-slot]')!
+        .getAttribute('data-mobile-compare-lens-hint-slot')
+    // 2:3 in Look is ~267px wide: room beside the lens.
+    expect(slot()).toBe('side')
+    expect(
+      container.querySelector('[data-mobile-compare-lens-hint="intro"]'),
+    ).not.toBeNull()
+
+    // 9:16 in Adjust is ~191px wide: the hint drops below the lens.
+    rerender(
+      <div data-raw-lab-shell="viewport">
+        <MobileLabChrome {...base} photoAspect={9 / 16} />
+      </div>,
+    )
+    await openAdjust()
+    expect(slot()).toBe('below')
+  })
+
+  it('keeps the peek pill clear of the lens, dropping below its row on a narrow photo', () => {
+    vi.useFakeTimers()
+    try {
+      const { container, rerender } = renderInShell({ photoAspect: 3 / 2 })
+      const lens = () =>
+        container.querySelector<HTMLElement>('[data-mobile-compare-lens]')!
+      const holdLens = () => {
+        fireEvent.pointerDown(lens())
+        act(() => {
+          vi.advanceTimersByTime(260)
+        })
+      }
+      const pill = () => container.querySelector('[data-mobile-peek-hint]')
+
+      holdLens()
+      // A full-width landscape photo holds the pill in the lens's row.
+      expect(pill()).toHaveAttribute('data-mobile-peek-hint', 'row')
+      expect(pill()).toHaveClass(
+        'max-w-[calc(var(--raw-photo-width,100vw)-96px)]',
+      )
+      fireEvent.pointerUp(lens())
+
+      rerender(
+        <div data-raw-lab-shell="viewport">
+          <MobileLabChrome {...base} photoAspect={2 / 3} />
+        </div>,
+      )
+      holdLens()
+      expect(pill()).toHaveAttribute('data-mobile-peek-hint', 'below')
+      fireEvent.pointerUp(lens())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the peek label in immersive, where the lens has gone', () => {
+    vi.useFakeTimers()
+    const previewFrameEl = mountPreviewFrame()
+    try {
+      const { container } = renderInShell({
+        photoAspect: 2 / 3,
+        previewFrameEl,
+      })
+      act(() => {
+        previewFrameEl.dispatchEvent(
+          new Event('pointerdown', { bubbles: true }),
+        )
+        previewFrameEl.dispatchEvent(new Event('pointerup', { bubbles: true }))
+      })
+      act(() => {
+        vi.advanceTimersByTime(400)
+      })
+      expect(container.querySelector('[data-mobile-compare-lens]')).toBeNull()
+      act(() => {
+        previewFrameEl.dispatchEvent(
+          new Event('pointerdown', { bubbles: true }),
+        )
+        vi.advanceTimersByTime(260)
+      })
+      const pill = container.querySelector('[data-mobile-peek-hint]')
+      expect(pill).toHaveAttribute('data-mobile-peek-hint', 'row')
+      // Clear of the status bar over a full-bleed photo.
+      expect(pill!.className).toContain('env(safe-area-inset-top)')
+      act(() => {
+        previewFrameEl.dispatchEvent(new Event('pointerup', { bubbles: true }))
+      })
+    } finally {
+      previewFrameEl.remove()
+      vi.useRealTimers()
+    }
+  })
+
   it('returns the stage to full bleed without an image and clears its variables on unmount', () => {
     const { px, shell, unmount } = renderInShell({
       hasImage: false,

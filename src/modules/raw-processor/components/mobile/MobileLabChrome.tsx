@@ -17,13 +17,20 @@ import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
 import type { MobileDetailsSheet } from './mobile-details-sheet'
 import { computeMobileStageLayout } from './mobile-stage-layout'
-import { COMPARE_LENS_POSITION, MobileCompareLens } from './MobileCompareLens'
+import {
+  COMPARE_LENS_POSITION,
+  getLensHintPlacement,
+  MobileCompareLens,
+} from './MobileCompareLens'
 import { MobileEmptyState } from './MobileEmptyState'
 import {
   getMobileExportActionState,
   MobileExportAction,
 } from './MobileExportAction'
-import { MobileFloatingOverlays } from './MobileFloatingOverlays'
+import {
+  getPeekPillPlacement,
+  MobileFloatingOverlays,
+} from './MobileFloatingOverlays'
 import { MobileLabModeDock } from './MobileLabModeDock'
 import { MobileLabTopbar } from './MobileLabTopbar'
 import type { MobileLutBrowserProps } from './MobileLutBrowser'
@@ -271,6 +278,7 @@ export function MobileLabChrome(props: {
             onToggle={() => setCompareSplitMode(!compareSplitOpen)}
             onPeekStart={startLensPeek}
             onPeekEnd={endLensPeek}
+            hintPlacement={getLensHintPlacement(photoWidth)}
           />
         )}
       </AnimatePresence>
@@ -299,6 +307,8 @@ export function MobileLabChrome(props: {
         selectiveColor={props.selectiveColor}
         manualTransform={props.transform?.demo.manual}
         onExitImmersive={exitImmersive}
+        lensVisible={lensVisible}
+        peekPlacement={getPeekPillPlacement(photoWidth, lensVisible)}
       />
 
       {/* Topbar + dock recede together as one surface when immersive takes over,

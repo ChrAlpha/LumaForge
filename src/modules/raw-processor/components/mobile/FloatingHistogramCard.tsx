@@ -14,6 +14,7 @@ export function FloatingHistogramCard(props: {
   const lift = prefersReduced ? 0 : -6
   return (
     <m.div
+      data-mobile-histogram-card
       aria-hidden={props.hidden || undefined}
       // Motion owns opacity for both the enter/exit (AnimatePresence at the call
       // site) and the peek-hide, so the card never hard-cuts onto the photo.

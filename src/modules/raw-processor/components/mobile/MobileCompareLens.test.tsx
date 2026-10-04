@@ -9,7 +9,11 @@ import {
   vi,
 } from 'vitest'
 
-import { LENS_HINT_STORAGE_KEY, MobileCompareLens } from './MobileCompareLens'
+import {
+  getLensHintPlacement,
+  LENS_HINT_STORAGE_KEY,
+  MobileCompareLens,
+} from './MobileCompareLens'
 import { LONG_PRESS_MS } from './useMobilePreviewGestures'
 
 function renderLens(
@@ -227,5 +231,38 @@ describe('mobileCompareLens', () => {
       throw new Error('denied')
     })
     expect(() => renderLens()).not.toThrow()
+  })
+
+  it('keeps a hint beside the lens while the photo has room, else below it', () => {
+    // Unmeasured: the side, with the CSS cap doing the work.
+    expect(getLensHintPlacement(0)).toBe('side')
+    expect(getLensHintPlacement(393)).toBe('side')
+    // 2:3 portrait in Adjust on a 393x660 phone.
+    expect(getLensHintPlacement(226.7)).toBe('side')
+    // 58px of lens column leaves under 150px beside it.
+    expect(getLensHintPlacement(207)).toBe('below')
+    expect(getLensHintPlacement(191)).toBe('below')
+  })
+
+  it('caps a side hint by the room left of the lens on the photo', () => {
+    localStorage.clear()
+    renderLens()
+    const slot = document.querySelector('[data-mobile-compare-lens-hint-slot]')
+    expect(slot).toHaveAttribute('data-mobile-compare-lens-hint-slot', 'side')
+    expect(slot).toHaveClass('right-full')
+    expect(
+      document.querySelector('[data-mobile-compare-lens-hint="intro"]'),
+    ).toHaveClass('max-w-[min(232px,calc(var(--raw-photo-width,100vw)-58px))]')
+  })
+
+  it('drops a hint below the lens, right-aligned to the circle, on a narrow photo', () => {
+    const { lens } = renderLens({ disabled: true, hintPlacement: 'below' })
+    tap(lens)
+    const slot = document.querySelector('[data-mobile-compare-lens-hint-slot]')
+    expect(slot).toHaveAttribute('data-mobile-compare-lens-hint-slot', 'below')
+    expect(slot).toHaveClass('top-full', 'right-1.5')
+    expect(
+      document.querySelector('[data-mobile-compare-lens-hint="blocked"]'),
+    ).toHaveClass('max-w-[min(232px,calc(var(--raw-photo-width,100vw)-16px))]')
   })
 })
