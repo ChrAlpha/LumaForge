@@ -124,7 +124,7 @@ describe('mobileLabChrome', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows RAW engine readiness on the mobile empty state and disables browse until ready', () => {
+  it('shows RAW engine readiness on the mobile empty state and keeps browse available', () => {
     render(
       <MobileLabChrome
         {...base}
@@ -141,7 +141,7 @@ describe('mobileLabChrome', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /browse raw files/i }),
-    ).toBeDisabled()
+    ).toBeEnabled()
   })
 
   it('shows the CPU preview notice in the chrome, over the empty state, until dismissed', () => {

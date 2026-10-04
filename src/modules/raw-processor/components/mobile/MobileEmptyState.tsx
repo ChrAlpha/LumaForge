@@ -68,8 +68,6 @@ export function MobileEmptyState({
     ? getRawRuntimeReadinessCopy(t, runtimeReadinessState)
     : null
   const formats = getMobileEmptyFormats()
-  const browseDisabled =
-    runtimeReadinessState !== 'ready' && runtimeReadinessState !== undefined
 
   return (
     <m.div
@@ -173,7 +171,6 @@ export function MobileEmptyState({
         <button
           type="button"
           data-mobile-empty-cta
-          disabled={browseDisabled}
           onClick={() => {
             onPrepareRuntime?.()
             onReplaceFile()
@@ -184,10 +181,10 @@ export function MobileEmptyState({
             'inline-flex h-12 w-full items-center justify-center gap-2 rounded-md text-[0.9rem] font-semibold',
             'transition-[background-color,color,translate] duration-[120ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
             'outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80',
-            // Dark slate on Lab Green while the engine is ready (~4.9:1);
-            // a cool lift, not green, while it is not.
-            'enabled:bg-lf-green enabled:text-lf-surface enabled:hover:bg-lf-green-hover enabled:active:translate-y-[0.5px]',
-            'disabled:cursor-not-allowed disabled:bg-[oklch(0.96_0.006_255/0.08)] disabled:text-lf-on-photo-ink/45',
+            // Dark slate on Lab Green (~4.9:1). The action never waits on the
+            // engine: every readiness state tells the user they can choose a
+            // file now, and the pick itself retries a failed warm-up.
+            'bg-lf-green text-lf-surface hover:bg-lf-green-hover active:translate-y-[0.5px]',
           )}
         >
           <FolderOpen aria-hidden="true" className="size-[18px]" />

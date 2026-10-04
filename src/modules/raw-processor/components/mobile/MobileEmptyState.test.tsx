@@ -84,7 +84,7 @@ describe('mobileEmptyState', () => {
     const { container, onReplaceFile, onPrepareRuntime } = renderEmpty()
     const cta = screen.getByRole('button', { name: 'Browse RAW files' })
     expect(cta).toHaveAttribute('data-mobile-empty-cta')
-    expect(cta).toHaveClass('h-12', 'w-full', 'enabled:bg-lf-green')
+    expect(cta).toHaveClass('h-12', 'w-full', 'bg-lf-green')
     expect(cta.parentElement).toHaveClass('px-3', 'pb-safe-offset-4')
     // The action sits after the copy, in the bottom grid row.
     expect(
@@ -101,13 +101,13 @@ describe('mobileEmptyState', () => {
   })
 
   it.each([
-    ['ready', 'RAW engine ready', false],
-    ['pending', 'Waking RAW engine', true],
-    ['idle', 'RAW engine warms before processing', true],
-    ['failed', 'RAW engine starts when needed', true],
+    ['ready', 'RAW engine ready'],
+    ['pending', 'Waking RAW engine'],
+    ['idle', 'RAW engine warms before processing'],
+    ['failed', 'RAW engine starts when needed'],
   ] as const)(
-    'names the %s engine state and gates the action on it',
-    (state, label, disabled) => {
+    'names the %s engine state and keeps the action available',
+    (state, label) => {
       const { container } = renderEmpty({ runtimeReadinessState: state })
       const readiness = container.querySelector<HTMLElement>(
         '[data-raw-runtime-readiness]',
@@ -121,9 +121,11 @@ describe('mobileEmptyState', () => {
       if (state === 'ready') expect(dot).toHaveClass('bg-lf-green')
       else expect(dot).not.toHaveClass('bg-lf-green')
 
-      const cta = screen.getByRole('button', { name: 'Browse RAW files' })
-      if (disabled) expect(cta).toBeDisabled()
-      else expect(cta).toBeEnabled()
+      // Every state's copy says a file can be chosen now; a disabled button
+      // would contradict it, and on touch nothing could ever wake the engine.
+      expect(
+        screen.getByRole('button', { name: 'Browse RAW files' }),
+      ).toBeEnabled()
     },
   )
 
