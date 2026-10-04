@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { resolve } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -14,7 +16,8 @@ describe('fixture gate', () => {
     })
     expect(gate.ready).toBe(false)
     expect(gate.required).toBe(false)
-    expect(gate.fixturePath).toBe('/nonexistent/raw.dng')
+    // The gate resolves the override, which adds a drive letter on Windows.
+    expect(gate.fixturePath).toBe(resolve('/nonexistent/raw.dng'))
     expect(gate.reasons[0]).toMatch(/RAW fixture missing/)
     expect(() => assertFixtureGate(gate)).not.toThrow()
   })
