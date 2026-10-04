@@ -21,46 +21,26 @@ describe('mobileTopbar', () => {
     localStorage.clear()
   })
 
-  it('shows the file title and toggles the histogram (no file-details dupe)', async () => {
-    const onToggleHistogram = vi.fn()
+  it('shows the file title with only More and the export action beside it', () => {
     renderMobileTopbar({
       hasImage: true,
       fileName: 'DSC09142.ARW',
       fileMeta: 'Sony α7 IV · 47.8 MB',
       supportLevel: 'official',
-      histogramShown: false,
-      onToggleHistogram,
       moreMenuItems: [],
+      exportAction: <button type="button">Export</button>,
     })
     expect(
       screen.getByRole('heading', { name: 'DSC09142.ARW' }),
     ).toBeInTheDocument()
-    // The standalone topbar control is the histogram toggle, not a second
-    // "File & pipeline details" entry point (that lives only in the More menu).
+    // The histogram toggle and file details live in the More menu; the
+    // topbar keeps one filled action, export, at the far right.
     expect(
-      screen.queryByRole('button', { name: /pipeline details/i }),
+      screen.queryByRole('button', { name: /histogram/i }),
     ).not.toBeInTheDocument()
-    const toggle = screen.getByRole('button', { name: /show histogram/i })
-    expect(toggle).toHaveAttribute('aria-pressed', 'false')
-    await userEvent.click(toggle)
-    expect(onToggleHistogram).toHaveBeenCalledTimes(1)
-  })
-
-  it('reflects the histogram-shown state on the toggle', () => {
-    renderMobileTopbar({
-      hasImage: true,
-      fileName: 'DSC09142.ARW',
-      fileMeta: 'Sony α7 IV',
-      supportLevel: 'official',
-      histogramShown: true,
-      onToggleHistogram: vi.fn(),
-      moreMenuItems: [],
-    })
-    const toggle = screen.getByRole('button', { name: /hide histogram/i })
-    expect(toggle).toHaveAttribute('aria-pressed', 'true')
-    // Pressed is a structural state: the lift-strong wash, not amber.
-    expect(toggle).toHaveClass('bg-[oklch(0.96_0.006_255/0.10)]')
-    expect(toggle.className).not.toMatch(/amber/)
+    const buttons = screen.getAllByRole('button')
+    expect(buttons.map((button) => button.textContent)).toEqual(['', 'Export'])
+    expect(buttons[0]).toHaveAccessibleName(/more actions/i)
   })
 
   it('opens the more menu and invokes an item', async () => {
@@ -70,8 +50,6 @@ describe('mobileTopbar', () => {
       fileName: 'DSC09142.ARW',
       fileMeta: 'Sony α7 IV',
       supportLevel: 'experimental',
-      histogramShown: false,
-      onToggleHistogram: vi.fn(),
       moreMenuItems: [
         {
           kind: 'item',
@@ -94,17 +72,14 @@ describe('mobileTopbar', () => {
       fileName: 'DSC09142.ARW',
       fileMeta: 'Official RAW support · Sony ILCE-7M4',
       supportLevel: 'official',
-      histogramShown: false,
-      onToggleHistogram: vi.fn(),
       moreMenuItems: [],
     })
 
     expect(
       screen.queryByRole('button', { name: /switch to (english|chinese)/i }),
     ).not.toBeInTheDocument()
-    // Only the histogram toggle and the More trigger compete with the meta
-    // line for width.
-    expect(screen.getAllByRole('button')).toHaveLength(2)
+    // Only the More trigger competes with the meta line for width.
+    expect(screen.getAllByRole('button')).toHaveLength(1)
   })
 
   it('renders trailing detail text on a More menu item', async () => {
@@ -113,8 +88,6 @@ describe('mobileTopbar', () => {
       fileName: 'DSC09142.ARW',
       fileMeta: 'Sony α7 IV',
       supportLevel: 'official',
-      histogramShown: false,
-      onToggleHistogram: vi.fn(),
       moreMenuItems: [
         {
           kind: 'item',
@@ -136,8 +109,6 @@ describe('mobileTopbar', () => {
       fileName: 'DSC09142.ARW',
       fileMeta: 'Sony α7 IV',
       supportLevel: 'official',
-      histogramShown: false,
-      onToggleHistogram: vi.fn(),
       moreMenuItems: [],
     })
 
@@ -156,8 +127,6 @@ describe('mobileTopbar', () => {
           fileName="DSC09142.ARW"
           fileMeta="Sony α7 IV"
           supportLevel="official"
-          histogramShown={false}
-          onToggleHistogram={vi.fn()}
           moreMenuItems={[]}
           scrubbing
         />
@@ -183,22 +152,18 @@ describe('mobileTopbar', () => {
     )
   })
 
-  it('reserves the histogram action slot before a RAW is loaded', () => {
+  it('keeps no histogram slot before a RAW is loaded', () => {
     const { container } = renderMobileTopbar({
       hasImage: false,
       fileName: '',
       fileMeta: '',
       supportLevel: 'experimental',
-      histogramShown: false,
-      onToggleHistogram: vi.fn(),
       moreMenuItems: [],
     })
 
-    expect(container.querySelector('[data-mobile-histogram-slot]')).toHaveClass(
-      'size-11',
-    )
     expect(
-      screen.queryByRole('button', { name: /show histogram/i }),
+      container.querySelector('[data-mobile-histogram-slot]'),
     ).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button')).toHaveLength(1)
   })
 })

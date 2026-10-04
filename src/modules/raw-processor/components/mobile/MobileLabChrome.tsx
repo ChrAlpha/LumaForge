@@ -236,7 +236,6 @@ export function MobileLabChrome(props: {
               histogramShown={histogramOpen}
               onToggleHistogram={() => setHistogramOpen((v) => !v)}
               onReplaceFile={props.onReplaceFile}
-              onOpenLutBrowser={openLutBrowser}
               onOpenMore={() => setMoreOpen(true)}
               onResetSession={props.onResetSession}
               exportAction={

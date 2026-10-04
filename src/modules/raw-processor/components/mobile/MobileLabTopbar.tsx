@@ -1,9 +1,10 @@
-import { ImageUp, Info, Languages, RotateCcw, Wand2 } from 'lucide-react'
+import { BarChart3, ImageUp, Info, Languages, RotateCcw } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { useI18n } from '~/lib/i18n'
 
 import type { SupportLevel } from '../../model/session'
+import type { MobileMoreMenuItem } from './MobileMoreMenu'
 import { MobileTopbar } from './MobileTopbar'
 
 export function MobileLabTopbar({
@@ -14,7 +15,6 @@ export function MobileLabTopbar({
   histogramShown,
   onToggleHistogram,
   onReplaceFile,
-  onOpenLutBrowser,
   onOpenMore,
   onResetSession,
   exportAction,
@@ -28,7 +28,6 @@ export function MobileLabTopbar({
   histogramShown: boolean
   onToggleHistogram: () => void
   onReplaceFile: () => void
-  onOpenLutBrowser: () => void
   onOpenMore: () => void
   onResetSession: () => void
   exportAction?: ReactNode
@@ -37,18 +36,20 @@ export function MobileLabTopbar({
 }) {
   const { t, toggleLocale } = useI18n()
 
-  return (
-    <MobileTopbar
-      onHeightChange={onHeightChange}
-      hasImage={hasImage}
-      fileName={fileName}
-      fileMeta={fileMeta}
-      supportLevel={supportLevel}
-      histogramShown={histogramShown}
-      onToggleHistogram={onToggleHistogram}
-      exportAction={exportAction}
-      scrubbing={scrubbing}
-      moreMenuItems={[
+  // Same switch as the shared LocaleToggle; it lives here so the topbar's
+  // meta line keeps room for the camera name.
+  const language: MobileMoreMenuItem = {
+    kind: 'item',
+    icon: Languages,
+    label: t('raw.mobile.more.language'),
+    detail: t('raw.mobile.more.languageCurrent'),
+    onSelect: toggleLocale,
+  }
+
+  // File actions only exist once a RAW is open. Reset is destructive, so it
+  // sits last behind a separator. LUT import lives in the Look tool.
+  const moreMenuItems: MobileMoreMenuItem[] = hasImage
+    ? [
         {
           kind: 'item',
           icon: ImageUp,
@@ -57,34 +58,39 @@ export function MobileLabTopbar({
         },
         {
           kind: 'item',
-          icon: Wand2,
-          label: t('raw.mobile.more.addLut'),
-          onSelect: onOpenLutBrowser,
-        },
-        {
-          kind: 'item',
           icon: Info,
           label: t('raw.mobile.more.fileDetails'),
           onSelect: onOpenMore,
         },
+        {
+          kind: 'checkbox',
+          icon: BarChart3,
+          label: t('raw.histogram.title'),
+          checked: histogramShown,
+          onCheckedChange: onToggleHistogram,
+        },
+        language,
         { kind: 'separator' },
         {
           kind: 'item',
           icon: RotateCcw,
           label: t('raw.mobile.more.reset'),
           onSelect: onResetSession,
+          tone: 'destructive',
         },
-        { kind: 'separator' },
-        // Same switch as the shared LocaleToggle; it lives here so the
-        // topbar's meta line keeps room for the camera name.
-        {
-          kind: 'item',
-          icon: Languages,
-          label: t('raw.mobile.more.language'),
-          detail: t('raw.mobile.more.languageCurrent'),
-          onSelect: toggleLocale,
-        },
-      ]}
+      ]
+    : [language]
+
+  return (
+    <MobileTopbar
+      onHeightChange={onHeightChange}
+      hasImage={hasImage}
+      fileName={fileName}
+      fileMeta={fileMeta}
+      supportLevel={supportLevel}
+      exportAction={exportAction}
+      scrubbing={scrubbing}
+      moreMenuItems={moreMenuItems}
     />
   )
 }

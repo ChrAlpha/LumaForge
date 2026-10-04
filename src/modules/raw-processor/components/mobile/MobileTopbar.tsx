@@ -1,8 +1,6 @@
-import { BarChart3 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useLayoutEffect, useRef } from 'react'
 
-import { IconButton } from '~/components/ui/button'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
@@ -16,8 +14,6 @@ export function MobileTopbar(props: {
   fileName: string
   fileMeta: string
   supportLevel: 'official' | 'experimental'
-  histogramShown: boolean
-  onToggleHistogram: () => void
   moreMenuItems: MobileMoreMenuItem[]
   /** Terminal export action, rendered at the far right after More. */
   exportAction?: ReactNode
@@ -100,36 +96,10 @@ export function MobileTopbar(props: {
           fadeWhenScrubbing,
         )}
       >
-        {/* Ghost actions per DESIGN.md §6 Topbar: transparent at rest, a
-            lift-medium cool wash on hover, no per-button border. The locale
-            switch lives in the More menu so the meta line keeps room for the
-            camera name. */}
-        {props.hasImage ? (
-          <IconButton
-            icon={BarChart3}
-            size="md"
-            data-mobile-histogram-slot
-            aria-label={
-              props.histogramShown
-                ? t('raw.mobile.histogram.hide')
-                : t('raw.mobile.histogram.show')
-            }
-            aria-pressed={props.histogramShown}
-            onClick={props.onToggleHistogram}
-            className={clsxm(
-              'size-11 rounded-md transition-colors [&_svg]:size-5 [&_svg]:stroke-current',
-              props.histogramShown
-                ? 'bg-[oklch(0.96_0.006_255/0.10)] text-lf-on-photo-ink'
-                : 'bg-transparent text-lf-on-photo-ink hover:bg-[oklch(0.96_0.006_255/0.06)]',
-            )}
-          />
-        ) : (
-          <span
-            aria-hidden="true"
-            data-mobile-histogram-slot
-            className="size-11 shrink-0"
-          />
-        )}
+        {/* Ghost actions: transparent at rest, a cool wash on hover, no
+            per-button border. The locale switch and the histogram toggle live
+            in the More menu so the meta line keeps room for the camera name;
+            export is the one filled action, at the far right. */}
         <MobileMoreMenu
           ariaLabel={t('raw.mobile.more.menuAria')}
           items={props.moreMenuItems}
