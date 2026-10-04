@@ -127,15 +127,12 @@ test('keeps RAW Lab tool scrolling inside the viewport shell', async ({
       '[data-raw-lab-shell="viewport"]',
     )
     const toolStack = document.querySelector<HTMLElement>('.raw-tool-stack')
-    const mobileRail =
-      document.querySelector<HTMLElement>('[data-mobile-dock]') ??
-      document.querySelector<HTMLElement>(
-        '[data-mobile-lab-chrome] [role="tablist"]',
-      ) ??
-      document.querySelector<HTMLElement>('.raw-mobile-tool-rail')
-    const mobileRailTablist = mobileRail?.matches('[role="tablist"]')
-      ? mobileRail
-      : mobileRail?.querySelector<HTMLElement>('[role="tablist"]')
+    // The empty mobile lab has no dock: its one action is pinned in the
+    // thumb zone instead.
+    const mobileDock = document.querySelector<HTMLElement>('[data-mobile-dock]')
+    const mobileCta = document.querySelector<HTMLElement>(
+      '[data-mobile-empty-cta]',
+    )
     const mobileSheet = document.querySelector<HTMLElement>(
       '.raw-mobile-tool-sheet',
     )
@@ -154,16 +151,19 @@ test('keeps RAW Lab tool scrolling inside the viewport shell', async ({
         ? getComputedStyle(toolStack).overflowY
         : '',
       isMobile: window.innerWidth <= 640,
-      mobileRailVisible: mobileRail
-        ? getComputedStyle(mobileRail).display !== 'none'
+      mobileDockPresent: Boolean(mobileDock),
+      mobileCtaVisible: mobileCta
+        ? getComputedStyle(mobileCta).display !== 'none'
         : false,
-      mobileRailBottomGap: mobileRailTablist
-        ? window.innerHeight - mobileRailTablist.getBoundingClientRect().bottom
+      mobileCtaBottomGap: mobileCta
+        ? window.innerHeight - mobileCta.getBoundingClientRect().bottom
         : null,
+      mobileCtaWidth: mobileCta?.getBoundingClientRect().width ?? 0,
       mobileSheetClosed: mobileSheet
         ? mobileSheet.hidden || getComputedStyle(mobileSheet).display === 'none'
         : true,
       viewportHeight: window.innerHeight,
+      viewportWidth: window.innerWidth,
     }
   })
 
@@ -172,9 +172,15 @@ test('keeps RAW Lab tool scrolling inside the viewport shell', async ({
   expect(metrics.documentScrollOverflow).toBe(0)
 
   if (metrics.isMobile) {
-    expect(metrics.mobileRailVisible).toBe(true)
-    expect(metrics.mobileRailBottomGap).not.toBeNull()
-    expect(metrics.mobileRailBottomGap).toBeLessThanOrEqual(10)
+    expect(metrics.mobileDockPresent).toBe(false)
+    expect(metrics.mobileCtaVisible).toBe(true)
+    // 16px plus the bottom safe area, full width less 12px a side.
+    expect(metrics.mobileCtaBottomGap).not.toBeNull()
+    expect(metrics.mobileCtaBottomGap).toBeGreaterThanOrEqual(16)
+    expect(metrics.mobileCtaBottomGap).toBeLessThanOrEqual(64)
+    expect(metrics.mobileCtaWidth).toBeGreaterThanOrEqual(
+      metrics.viewportWidth - 24 - 1,
+    )
     expect(metrics.mobileSheetClosed).toBe(true)
   } else if (metrics.toolStackOverflowY === 'auto') {
     expect(metrics.toolStackScrollOverflow).toBeGreaterThan(0)

@@ -278,7 +278,6 @@ export function MobileLabChrome(props: {
       <AnimatePresence>
         {!props.hasImage && (
           <MobileEmptyState
-            prefersReduced={prefersReduced}
             runtimeReadinessState={props.runtimeReadinessState}
             onPrepareRuntime={props.onPrepareRuntime}
             onReplaceFile={props.onReplaceFile}
@@ -349,36 +348,41 @@ export function MobileLabChrome(props: {
                 className="pointer-events-auto absolute inset-x-2 top-[calc(var(--raw-topbar-height,0px)+0.5rem)] z-[13]"
               />
             )}
-            <MobileLabModeDock
-              transform={props.transform}
-              mode={mode}
-              exportOpen={exportOpen}
-              exportBusy={isExporting}
-              expanded={dockExpanded && props.hasImage}
-              disabled={!props.hasImage || props.isProcessing}
-              onModeChange={handleModeChange}
-              onCollapse={() => setDockExpanded(false)}
-              onOpenMore={() => setMoreOpen(true)}
-              scrubbing={focusActive}
-              prefersReduced={prefersReduced}
-              tone={props.tone}
-              color={props.color}
-              selectiveColor={props.selectiveColor}
-              lutBrowser={props.lutBrowser}
-              exportPanel={props.exportPanel({ onClose: closeExport })}
-              onToneChange={props.onToneChange}
-              onToneReset={props.onToneReset}
-              onColorChange={props.onColorChange}
-              onColorReset={props.onColorReset}
-              onSelectiveColorChange={props.onSelectiveColorChange}
-              onSelectiveColorReset={props.onSelectiveColorReset}
-              onScrubChange={setScrubField}
-              onOpenLutBrowser={openLutBrowser}
-              onOpenLutContractBrowser={openLutContractBrowser}
-              deckHeight={layout.deckHeight}
-              onTabBarHeightChange={setTabBarHeight}
-              onDeckNaturalHeightChange={setDeckNaturalHeight}
-            />
+            {/* No dock until a RAW is open: there is nothing for a tool to
+                act on, so the empty state shows its one action instead of
+                a row of disabled tabs. */}
+            {props.hasImage && (
+              <MobileLabModeDock
+                transform={props.transform}
+                mode={mode}
+                exportOpen={exportOpen}
+                exportBusy={isExporting}
+                expanded={dockExpanded}
+                disabled={props.isProcessing}
+                onModeChange={handleModeChange}
+                onCollapse={() => setDockExpanded(false)}
+                onOpenMore={() => setMoreOpen(true)}
+                scrubbing={focusActive}
+                prefersReduced={prefersReduced}
+                tone={props.tone}
+                color={props.color}
+                selectiveColor={props.selectiveColor}
+                lutBrowser={props.lutBrowser}
+                exportPanel={props.exportPanel({ onClose: closeExport })}
+                onToneChange={props.onToneChange}
+                onToneReset={props.onToneReset}
+                onColorChange={props.onColorChange}
+                onColorReset={props.onColorReset}
+                onSelectiveColorChange={props.onSelectiveColorChange}
+                onSelectiveColorReset={props.onSelectiveColorReset}
+                onScrubChange={setScrubField}
+                onOpenLutBrowser={openLutBrowser}
+                onOpenLutContractBrowser={openLutContractBrowser}
+                deckHeight={layout.deckHeight}
+                onTabBarHeightChange={setTabBarHeight}
+                onDeckNaturalHeightChange={setDeckNaturalHeight}
+              />
+            )}
           </m.div>
         )}
       </AnimatePresence>

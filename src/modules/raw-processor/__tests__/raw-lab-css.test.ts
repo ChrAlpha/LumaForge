@@ -80,28 +80,6 @@ describe('raw lab css tokens', () => {
     expect(mobileTokens['--color-preview-mat-edge']).toBe('var(--color-fill)')
     expect(mobileTokens['--color-preview-border']).toBe('transparent')
   })
-
-  it('reserves stable mobile runtime-readiness space to avoid empty-state CLS', () => {
-    // .raw-mobile-empty-readiness was relocated to raw-lab.effects.css
-    const readinessRule = extractRuleBody(
-      rawLabEffectsCss,
-      '.raw-mobile-empty-readiness',
-    )
-
-    expect(readinessRule).toContain('width: min(320px, 100%);')
-    expect(readinessRule).toContain('min-height: 64px;')
-  })
-
-  it('keeps the mobile empty-state onboarding copy centered as a block', () => {
-    const copyBlockRule = extractRuleBody(
-      rawLabEffectsCss,
-      '.raw-mobile-empty-copy-block',
-    )
-
-    expect(copyBlockRule).toContain('display: grid;')
-    expect(copyBlockRule).toContain('justify-items: center;')
-    expect(copyBlockRule).toContain('width: min(280px, 100%);')
-  })
 })
 
 describe('compare handle interaction contract', () => {

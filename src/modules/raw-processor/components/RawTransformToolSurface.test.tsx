@@ -2,6 +2,7 @@ import {
   cleanup,
   render as renderWithRoot,
   screen,
+  within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Provider } from 'jotai'
@@ -123,25 +124,34 @@ describe('raw Transform tool surfaces', () => {
     expect(screen.queryByRole('button', { name: 'Transform' })).toBeNull()
   })
 
-  it('keeps the three mobile tools visible before a RAW photo is loaded', () => {
+  it('brings the three mobile tools in with the RAW photo, not before', () => {
     jotaiStore.set(viewportAtom, {
       ...jotaiStore.get(viewportAtom),
       w: 390,
       sm: false,
     })
-    render(
+    const { rerender } = render(
       <RawToolSurface
         {...base}
         hasImage={false}
         transform={transformFeatureFixture()}
       />,
     )
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Look',
-      'Adjust',
-      'Transform',
-    ])
-    expect(screen.getByRole('tab', { name: 'Transform' })).toBeDisabled()
+    // Nothing for a tool to act on yet: no dock, not a row of disabled tabs.
+    expect(screen.queryByRole('tablist', { name: /lab modes/i })).toBeNull()
+
+    rerender(
+      <RawToolSurface
+        {...base}
+        transform={transformFeatureFixture({ hasImage: true })}
+      />,
+    )
+    const dock = screen.getByRole('tablist', { name: /lab modes/i })
+    expect(
+      within(dock)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['Look', 'Adjust', 'Transform'])
   })
 
   it('opens Transform inside the mobile dock and releases observation when switching tools', async () => {

@@ -81,7 +81,7 @@ describe('mobileLabChrome', () => {
     previewFrameEl.remove()
   })
 
-  it('empty state keeps onboarding upload affordance between topbar and toolbar', async () => {
+  it('empty state shows the onboarding and one action, with no dock', async () => {
     const onReplaceFile = vi.fn()
     const { container } = render(
       <MobileLabChrome
@@ -91,32 +91,37 @@ describe('mobileLabChrome', () => {
       />,
     )
     expect(
-      container.querySelector('[data-mobile-empty-hero]'),
+      container.querySelector('[data-mobile-empty-state]'),
     ).toBeInTheDocument()
-    expect(
-      container.querySelector('[data-mobile-empty-prestage]'),
-    ).not.toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: /lumaforge raw lab/i }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: /finish a raw with a lut/i }),
+      screen.getByRole('heading', {
+        name: 'Turn one RAW into a finished photo',
+      }),
     ).toBeInTheDocument()
+    // The topbar subtitle names the product, not a drag gesture.
     expect(
-      screen.getByRole('heading', { name: /finish a raw with a lut/i })
-        .parentElement,
-    ).toHaveClass('raw-mobile-empty-copy-block')
+      container.querySelector('[data-mobile-topbar]')!.textContent,
+    ).not.toMatch(/drag|drop/i)
 
-    expect(
-      screen.getByRole('tablist', { name: /lab modes/i }),
-    ).toBeInTheDocument()
+    // Nothing for a tool to act on yet: no tab bar at all, not disabled tabs.
+    expect(screen.queryByRole('tablist', { name: /lab modes/i })).toBeNull()
+    expect(container.querySelector('[data-mobile-dock]')).toBeNull()
     await userEvent.click(
       screen.getByRole('button', { name: /browse raw files/i }),
     )
     expect(onReplaceFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('mounts the dock once a RAW is open', () => {
+    const { rerender } = render(<MobileLabChrome {...base} hasImage={false} />)
+    expect(screen.queryByRole('tablist', { name: /lab modes/i })).toBeNull()
+    rerender(<MobileLabChrome {...base} />)
     expect(
-      screen.queryByRole('tablist', { name: /tone parameters/i }),
-    ).toBeNull()
+      screen.getByRole('tablist', { name: /lab modes/i }),
+    ).toBeInTheDocument()
   })
 
   it('shows RAW engine readiness on the mobile empty state and disables browse until ready', () => {

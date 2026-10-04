@@ -36,7 +36,8 @@ export function MobileTopbar(props: {
     return () => observer.disconnect()
   }, [onHeightChange])
   const title = props.hasImage ? props.fileName : t('raw.header.title')
-  const meta = props.hasImage ? props.fileMeta : t('raw.header.subtitleEmpty')
+  // The desktop empty subtitle invites a drop; a phone has nothing to drag.
+  const meta = props.hasImage ? props.fileMeta : t('raw.mobile.empty.subtitle')
   const scrubbing = props.scrubbing === true
   // During a slider scrub the topbar yields its content slot to the
   // ScrubValueHud: same band, same solid backdrop. The file title, app mark,

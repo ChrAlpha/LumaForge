@@ -1218,7 +1218,7 @@ describe('rawToolSurface', () => {
     expect(within(resource).getByText('Issue')).toBeInTheDocument()
   })
 
-  it('mobile + no image keeps onboarding upload between branded topbar and toolbar', () => {
+  it('mobile + no image shows onboarding under the branded topbar, without a dock', () => {
     const prev = jotaiStore.get(viewportAtom)
     jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
     try {
@@ -1237,17 +1237,13 @@ describe('rawToolSurface', () => {
         container.querySelector('[data-mobile-empty-state]'),
       ).toBeInTheDocument()
       expect(
-        container.querySelector('[data-mobile-empty-prestage]'),
-      ).not.toBeInTheDocument()
-      expect(
         screen.getByRole('button', { name: /browse raw files/i }),
       ).toBeInTheDocument()
       expect(
         container.querySelector('[data-mobile-topbar]'),
       ).toBeInTheDocument()
-      expect(
-        screen.getByRole('tablist', { name: /lab modes/i }),
-      ).toBeInTheDocument()
+      // The dock only arrives with a RAW to act on.
+      expect(screen.queryByRole('tablist', { name: /lab modes/i })).toBeNull()
       expect(
         container.querySelector('[data-testid="mobile-peek-surface"]'),
       ).toBeNull()
