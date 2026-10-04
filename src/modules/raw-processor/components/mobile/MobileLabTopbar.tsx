@@ -1,11 +1,4 @@
-import {
-  ImageUp,
-  Info,
-  LockKeyhole,
-  RotateCcw,
-  ShieldCheck,
-  Wand2,
-} from 'lucide-react'
+import { ImageUp, Info, Languages, RotateCcw, Wand2 } from 'lucide-react'
 
 import { useI18n } from '~/lib/i18n'
 
@@ -39,7 +32,7 @@ export function MobileLabTopbar({
   scrubbing?: boolean
   onHeightChange?: (height: number) => void
 }) {
-  const { t } = useI18n()
+  const { t, toggleLocale } = useI18n()
 
   return (
     <MobileTopbar
@@ -78,19 +71,14 @@ export function MobileLabTopbar({
           onSelect: onResetSession,
         },
         { kind: 'separator' },
+        // Same switch as the shared LocaleToggle; it lives here so the
+        // topbar's meta line keeps room for the camera name.
         {
           kind: 'item',
-          icon: LockKeyhole,
-          label: t('raw.mobile.more.browserLocal'),
-          onSelect: () => {},
-          disabled: true,
-        },
-        {
-          kind: 'item',
-          icon: ShieldCheck,
-          label: t('raw.mobile.more.officialSupport'),
-          onSelect: () => {},
-          disabled: true,
+          icon: Languages,
+          label: t('raw.mobile.more.language'),
+          detail: t('raw.mobile.more.languageCurrent'),
+          onSelect: toggleLocale,
         },
       ]}
     />

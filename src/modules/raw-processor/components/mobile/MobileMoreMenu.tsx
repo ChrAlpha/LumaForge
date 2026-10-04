@@ -12,6 +12,8 @@ export type MobileMoreMenuItem =
       kind: 'item'
       icon: LucideIcon | (() => null)
       label: string
+      /** Trailing secondary text, e.g. the current language on a Language item. */
+      detail?: string
       onSelect: () => void
       disabled?: boolean
     }
@@ -102,9 +104,14 @@ export function MobileMoreMenu(props: {
                 >
                   <it.icon
                     aria-hidden="true"
-                    className="size-[15px] text-lf-on-photo-ink/68"
+                    className="size-[15px] shrink-0 text-lf-on-photo-ink/68"
                   />
-                  {it.label}
+                  <span className="min-w-0 flex-1 truncate">{it.label}</span>
+                  {it.detail && (
+                    <span className="shrink-0 text-[0.72rem] font-medium text-lf-on-photo-ink/56">
+                      {it.detail}
+                    </span>
+                  )}
                 </button>
               ),
             )}

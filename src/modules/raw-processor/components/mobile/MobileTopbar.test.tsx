@@ -85,33 +85,46 @@ describe('mobileTopbar', () => {
     expect(onSelect).toHaveBeenCalledTimes(1)
   })
 
-  it('exposes the locale switch in the mobile raw topbar', async () => {
-    localStorage.setItem('lumaforge.locale', 'zh-CN')
+  it('keeps the locale switch out of the topbar (it lives in the More menu)', () => {
     renderMobileTopbar({
-      hasImage: false,
-      fileName: '',
-      fileMeta: '',
-      supportLevel: 'experimental',
+      hasImage: true,
+      fileName: 'DSC09142.ARW',
+      fileMeta: 'Official RAW support · Sony ILCE-7M4',
+      supportLevel: 'official',
       histogramShown: false,
       onToggleHistogram: vi.fn(),
       moreMenuItems: [],
     })
 
-    const switchToEnglish = screen.getByRole('button', {
-      name: 'Switch to English',
+    expect(
+      screen.queryByRole('button', { name: /switch to (english|chinese)/i }),
+    ).not.toBeInTheDocument()
+    // Only the histogram toggle and the More trigger compete with the meta
+    // line for width.
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+  })
+
+  it('renders trailing detail text on a More menu item', async () => {
+    renderMobileTopbar({
+      hasImage: true,
+      fileName: 'DSC09142.ARW',
+      fileMeta: 'Sony α7 IV',
+      supportLevel: 'official',
+      histogramShown: false,
+      onToggleHistogram: vi.fn(),
+      moreMenuItems: [
+        {
+          kind: 'item',
+          icon: () => null,
+          label: 'Language',
+          detail: 'English',
+          onSelect: vi.fn(),
+        },
+      ],
     })
-    expect(switchToEnglish).toHaveTextContent('EN')
-
-    await userEvent.click(switchToEnglish)
-
-    expect(
-      screen.getByRole('button', { name: 'Switch to Chinese' }),
-    ).toHaveTextContent('中文')
-    expect(
-      screen.getByText(
-        'Drop one RAW to preview, compare, finish, and export locally.',
-      ),
-    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /more actions/i }))
+    const item = await screen.findByRole('menuitem', { name: /language/i })
+    expect(item).toHaveTextContent('LanguageEnglish')
   })
 
   it('yields the safe-area slot to the scrub HUD by fading content while scrubbing', () => {

@@ -1,7 +1,6 @@
 import { BarChart3 } from 'lucide-react'
 import { useLayoutEffect, useRef } from 'react'
 
-import { LocaleToggle } from '~/components/common/LocaleToggle'
 import { IconButton } from '~/components/ui/button'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
@@ -10,13 +9,6 @@ import type { MobileMoreMenuItem } from './MobileMoreMenu'
 import { MobileMoreMenu } from './MobileMoreMenu'
 
 const appIcon = '/favicon.png'
-
-// Ghost action style per DESIGN.md §6 Topbar: transparent at rest, lift-medium
-// cool-white wash on hover. No per-button border or fill — three bordered
-// boxes read as competing chips over the photo; the slate scrim below carries
-// legibility instead.
-const ghostAction =
-  'inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-md bg-transparent text-lf-on-photo-ink transition-colors hover:bg-[oklch(0.96_0.006_255/0.06)] [&_svg]:size-5 [&_svg]:stroke-current'
 
 export function MobileTopbar(props: {
   hasImage: boolean
@@ -105,13 +97,10 @@ export function MobileTopbar(props: {
           fadeWhenScrubbing,
         )}
       >
-        <LocaleToggle
-          className={clsxm(ghostAction, 'px-2.5 text-[0.72rem] font-semibold')}
-        />
-        <span
-          aria-hidden="true"
-          className="mx-0.5 h-5 w-px shrink-0 bg-[oklch(0.96_0.006_255/0.14)]"
-        />
+        {/* Ghost actions per DESIGN.md §6 Topbar: transparent at rest, a
+            lift-medium cool wash on hover, no per-button border. The locale
+            switch lives in the More menu so the meta line keeps room for the
+            camera name. */}
         {props.hasImage ? (
           <IconButton
             icon={BarChart3}
