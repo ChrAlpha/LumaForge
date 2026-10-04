@@ -92,6 +92,12 @@ export interface RawToolSurfaceProps {
   metadata: ComponentProps<typeof FileFactsTool>['metadata']
   stats: ComponentProps<typeof FileFactsTool>['stats']
   previewFrameEl?: HTMLDivElement | null
+  /**
+   * Width / height of what the stage is displaying: the Transform result
+   * while its overlay is up, otherwise the decoded preview. Null while no
+   * decoded preview is held (before decode, or released for export).
+   */
+  previewAspect?: number | null
   /** Set while the CPU preview notice is showing; mobile renders it. */
   cpuPreviewNotice?: CpuPreviewNotice
 }

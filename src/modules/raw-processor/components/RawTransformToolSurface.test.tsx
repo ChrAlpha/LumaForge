@@ -167,8 +167,10 @@ describe('raw Transform tool surfaces', () => {
       'min-h-0',
       'overflow-y-auto',
     )
-    expect(container.querySelector('[data-mobile-dock-panel]')).toHaveClass(
-      'h-[min(38vh,264px)]',
+    // Transform is a list tool: it fills the deck the stage layout sizes.
+    expect(container.querySelector('[data-mobile-dock-panel]')).toHaveAttribute(
+      'data-deck-fill',
+      'true',
     )
     expect(transform.observe).toHaveBeenCalledOnce()
     expect(screen.getByRole('button', { name: 'Reset Upright' })).toBeDisabled()

@@ -10,6 +10,7 @@ import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { AdjustListPanel } from './AdjustListPanel'
+import { isMobileListDeck } from './mobile-stage-layout'
 import { MobileLookPanel } from './MobileLookPanel'
 import type { MobileLutBrowserProps } from './MobileLutBrowser'
 import type { MobileMode } from './MobileModeDock'
@@ -42,7 +43,9 @@ export function MobileLabModeDock({
   onScrubChange,
   onOpenLutBrowser,
   onOpenLutContractBrowser,
-  onInsetChange,
+  deckHeight,
+  onTabBarHeightChange,
+  onDeckNaturalHeightChange,
 }: {
   transform?: RawTransformFeature
   mode: MobileMode
@@ -74,7 +77,9 @@ export function MobileLabModeDock({
   onScrubChange: (field: ScrubFieldId | null) => void
   onOpenLutBrowser: () => void
   onOpenLutContractBrowser: () => void
-  onInsetChange?: (inset: number) => void
+  deckHeight?: number
+  onTabBarHeightChange?: (height: number) => void
+  onDeckNaturalHeightChange?: (height: number) => void
 }) {
   return (
     <MobileModeDock
@@ -88,18 +93,16 @@ export function MobileLabModeDock({
       onCollapse={onCollapse}
       onOpenMore={onOpenMore}
       scrubbing={scrubbing}
-      onInsetChange={onInsetChange}
+      deckHeight={deckHeight}
+      onTabBarHeightChange={onTabBarHeightChange}
+      onDeckNaturalHeightChange={onDeckNaturalHeightChange}
       panel={
         <m.div
           key={exportOpen ? 'export' : mode}
-          // Tone needs the wrapper to fill the dock so AdjustListPanel can
-          // h-full down and run its own internal scroll. Other panels flow
-          // at content-derived height.
-          className={
-            !exportOpen && (mode === 'tone' || mode === 'transform')
-              ? 'h-full'
-              : undefined
-          }
+          // List tools fill the deck so their panels can h-full down and
+          // run their own internal scroll. Other panels flow at their
+          // natural height, which sizes the deck.
+          className={isMobileListDeck(mode, exportOpen) ? 'h-full' : undefined}
           initial={{ opacity: 0, y: prefersReduced ? 0 : 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={surfaceFade}

@@ -29,6 +29,12 @@ interface RawWorkflowToolProviderProps {
   children: ReactNode
 }
 
+function getAspect(size: { width: number; height: number } | null | undefined) {
+  return size && size.width > 0 && size.height > 0
+    ? size.width / size.height
+    : null
+}
+
 export function RawWorkflowToolProvider({
   transform,
   workflow,
@@ -56,6 +62,11 @@ export function RawWorkflowToolProvider({
         height: workflow.decodedImageRef.current.height,
       }
     : null
+  const transformFrame = transform?.showOverlay
+    ? transform.demo.result?.frame
+    : undefined
+  const previewAspect =
+    getAspect(transformFrame) ?? getAspect(decodedPreviewSize)
   const toolStats = workflow.stats
     ? {
         processTime: workflow.stats.processTime,
@@ -157,6 +168,7 @@ export function RawWorkflowToolProvider({
                 reason: 'no-image',
               }),
         previewFrameEl: transformActive ? null : previewFrameEl,
+        previewAspect,
         cpuPreviewNotice,
       }}
     >

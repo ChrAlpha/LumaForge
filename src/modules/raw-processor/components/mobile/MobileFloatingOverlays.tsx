@@ -73,7 +73,9 @@ export function MobileFloatingOverlays({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={surfaceFade}
-            className="pointer-events-none absolute left-1/2 top-safe-offset-14 z-[12] -translate-x-1/2 rounded-lf-pill border border-lf-on-photo-bord bg-lf-on-photo-bg-strong px-2.5 py-1.5 text-[0.7rem] font-semibold uppercase tracking-wide text-lf-on-photo-ink"
+            // Top centre of the photo rect, so the pill names what is on the
+            // photo rather than floating in the stage around it.
+            className="pointer-events-none absolute left-[calc(var(--raw-photo-left,0px)+var(--raw-photo-width,100vw)/2)] top-[calc(var(--raw-photo-top,var(--raw-stage-inset-top,0px))+8px)] z-[12] -translate-x-1/2 rounded-lf-pill border border-lf-on-photo-bord bg-lf-on-photo-bg-strong px-2.5 py-1.5 text-[0.7rem] font-semibold uppercase tracking-wide text-lf-on-photo-ink"
           >
             {t('raw.mobile.peek.hint')}
           </m.div>

@@ -111,6 +111,7 @@ export function MobileRawToolSurface() {
       previewSuspended={previewSuspended}
       preferExportMode={previewSuspended && props.exportResult != null}
       previewFrameEl={props.previewFrameEl ?? null}
+      photoAspect={props.previewAspect ?? null}
     />
   )
 }

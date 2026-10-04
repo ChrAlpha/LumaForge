@@ -16,6 +16,7 @@ import type { RawRuntimeReadinessState } from '../raw-runtime-readiness'
 import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
 import type { MobileDetailsSheet } from './mobile-details-sheet'
+import { computeMobileStageLayout } from './mobile-stage-layout'
 import { COMPARE_LENS_POSITION, MobileCompareLens } from './MobileCompareLens'
 import { MobileEmptyState } from './MobileEmptyState'
 import {
@@ -27,9 +28,23 @@ import { MobileLabModeDock } from './MobileLabModeDock'
 import { MobileLabTopbar } from './MobileLabTopbar'
 import type { MobileLutBrowserProps } from './MobileLutBrowser'
 import { MobileLutBrowser } from './MobileLutBrowser'
+import { isMobileDeckVisible } from './MobileModeDock'
 import { MobileMoreSheet } from './MobileMoreSheet'
 import type { MobileLabViewMode } from './useMobileLabChromeController'
 import { useMobileLabChromeController } from './useMobileLabChromeController'
+
+/** Stage geometry the chrome publishes on the shell, in px. */
+const STAGE_LAYOUT_VARS = [
+  '--raw-stage-inset-top',
+  '--raw-stage-inset-bottom',
+  '--raw-topbar-height',
+  '--raw-photo-top',
+  '--raw-photo-left',
+  '--raw-photo-width',
+  '--raw-photo-height',
+  '--raw-photo-right',
+] as const
+type StageLayoutVar = (typeof STAGE_LAYOUT_VARS)[number]
 
 export function MobileLabChrome(props: {
   transform?: RawTransformFeature
@@ -72,6 +87,8 @@ export function MobileLabChrome(props: {
   previewSuspended?: boolean
   preferExportMode?: boolean
   previewFrameEl?: HTMLDivElement | null
+  /** Width / height of the displayed preview; null while unknown. */
+  photoAspect?: number | null
 }) {
   const compareDisabled = props.transform?.active === true
   const {
@@ -127,37 +144,107 @@ export function MobileLabChrome(props: {
     isExporting,
     hasResult: props.hasExportResult === true,
   })
-  // Mirrors the deck's own visibility rule: tools are disabled while the
-  // pipeline is busy, but a running export keeps its panel on screen.
-  const exportPanelVisible =
-    exportOpen &&
-    dockExpanded &&
-    props.hasImage &&
-    (!props.isProcessing || isExporting)
+  // The deck's own visibility rule: tools are disabled while the pipeline is
+  // busy, but a running export keeps its panel on screen.
+  const deckVisible = isMobileDeckVisible({
+    expanded: dockExpanded && props.hasImage,
+    disabled: !props.hasImage || props.isProcessing,
+    panelVisibleWhileDisabled: exportOpen && isExporting,
+  })
+  const exportPanelVisible = exportOpen && deckVisible
 
-  // Stage insets: the photo re-fits between the topbar and the dock while
-  // the chrome is visible, and returns to full bleed in immersive or when no
-  // image is loaded. The stage reads these from the shell (raw-lab.css).
+  // Photo-first stage layout. The stage region is sized to the photo, so the
+  // frame's centring anchors it under the topbar, and the deck takes what the
+  // photo leaves. Inputs are chrome geometry and tool / deck state only: a
+  // scrub never resizes the photo. The stage reads the insets from the shell
+  // (raw-lab.css); overlays read the photo rect.
   const chromeRef = useRef<HTMLDivElement>(null)
+  const [shellSize, setShellSize] = useState({ width: 0, height: 0 })
   const [topbarHeight, setTopbarHeight] = useState(0)
-  const [dockInset, setDockInset] = useState(0)
-  const insetsActive = props.hasImage && !immersive
-  const insetTop = insetsActive ? topbarHeight : 0
-  const insetBottom = insetsActive ? dockInset : 0
+  const [tabBarHeight, setTabBarHeight] = useState(0)
+  const [deckNaturalHeight, setDeckNaturalHeight] = useState(0)
+  const layout = computeMobileStageLayout({
+    viewportWidth: shellSize.width,
+    viewportHeight: shellSize.height,
+    topbarHeight,
+    dockBarHeight: tabBarHeight,
+    photoAspect: props.photoAspect ?? null,
+    tool: mode,
+    deck: deckVisible ? 'expanded' : 'collapsed',
+    exportOpen,
+    deckNaturalHeight,
+    immersive,
+    hasImage: props.hasImage,
+  })
+  const { insetTop, insetBottom } = layout
+  const {
+    top: photoTop,
+    left: photoLeft,
+    width: photoWidth,
+    height: photoHeight,
+  } = layout.photoRect
+
+  useLayoutEffect(() => {
+    const chrome = chromeRef.current
+    if (!chrome) return
+    const shell = chrome.closest<HTMLElement>('[data-raw-lab-shell]') ?? chrome
+    const measure = () =>
+      setShellSize((current) =>
+        current.width === shell.clientWidth &&
+        current.height === shell.clientHeight
+          ? current
+          : { width: shell.clientWidth, height: shell.clientHeight },
+      )
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(shell)
+    return () => observer.disconnect()
+  }, [])
+
+  // Values are overwritten in place as the layout moves; removing them
+  // between updates would let the stage start a transition toward 0.
   useLayoutEffect(() => {
     const shell = chromeRef.current?.closest<HTMLElement>(
       '[data-raw-lab-shell]',
     )
     if (!shell) return
-    shell.style.setProperty('--raw-stage-inset-top', `${insetTop}px`)
-    shell.style.setProperty('--raw-stage-inset-bottom', `${insetBottom}px`)
-    shell.style.setProperty('--raw-topbar-height', `${topbarHeight}px`)
     return () => {
-      shell.style.removeProperty('--raw-stage-inset-top')
-      shell.style.removeProperty('--raw-stage-inset-bottom')
-      shell.style.removeProperty('--raw-topbar-height')
+      for (const name of STAGE_LAYOUT_VARS) shell.style.removeProperty(name)
     }
-  }, [insetBottom, insetTop, topbarHeight])
+  }, [])
+
+  useLayoutEffect(() => {
+    const shell = chromeRef.current?.closest<HTMLElement>(
+      '[data-raw-lab-shell]',
+    )
+    if (!shell) return
+    const vars: Record<StageLayoutVar, number> = {
+      '--raw-stage-inset-top': insetTop,
+      '--raw-stage-inset-bottom': insetBottom,
+      '--raw-topbar-height': topbarHeight,
+      '--raw-photo-top': photoTop,
+      '--raw-photo-left': photoLeft,
+      '--raw-photo-width': photoWidth,
+      '--raw-photo-height': photoHeight,
+      '--raw-photo-right': Math.max(
+        0,
+        shellSize.width - photoLeft - photoWidth,
+      ),
+    }
+    for (const [name, value] of Object.entries(vars)) {
+      shell.style.setProperty(name, `${value}px`)
+    }
+  }, [
+    insetBottom,
+    insetTop,
+    photoHeight,
+    photoLeft,
+    photoTop,
+    photoWidth,
+    shellSize.width,
+    topbarHeight,
+  ])
 
   return (
     <div
@@ -166,6 +253,7 @@ export function MobileLabChrome(props: {
       data-mobile-lab-chrome
       data-stage-inset-top={insetTop}
       data-stage-inset-bottom={insetBottom}
+      data-deck-height={layout.deckHeight}
       data-focus={focusActive ? 'true' : 'false'}
       data-peek={peeking || undefined}
       style={COMPARE_LENS_POSITION}
@@ -287,7 +375,9 @@ export function MobileLabChrome(props: {
               onScrubChange={setScrubField}
               onOpenLutBrowser={openLutBrowser}
               onOpenLutContractBrowser={openLutContractBrowser}
-              onInsetChange={setDockInset}
+              deckHeight={layout.deckHeight}
+              onTabBarHeightChange={setTabBarHeight}
+              onDeckNaturalHeightChange={setDeckNaturalHeight}
             />
           </m.div>
         )}

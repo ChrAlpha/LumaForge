@@ -138,12 +138,13 @@ describe('mobileModeDock', () => {
     expect(tablist).not.toHaveClass('pb-3')
   })
 
-  it('gives the export panel enough room while keeping non-editor tools compact', () => {
+  it('takes its height from the stage layout and anchors natural content to the bottom', () => {
     const { rerender } = render(
       <MobileModeDock
         mode="look"
         exportOpen
         expanded
+        deckHeight={212}
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
@@ -151,33 +152,25 @@ describe('mobileModeDock', () => {
       />,
     )
 
+    const deck = () =>
+      screen
+        .getByTestId('panel')
+        .closest<HTMLElement>('[data-mobile-dock-panel]')!
+    expect(deck().style.height).toBe('212px')
+    expect(deck()).toHaveClass('overflow-y-auto', 'flex', 'flex-col')
+    expect(deck()).not.toHaveAttribute('data-deck-fill')
+    // Export and Look size the deck: their content sits at its natural
+    // height, pushed to the bottom of the deck near the thumb.
     expect(screen.getByTestId('panel').parentElement).toHaveClass(
-      'max-h-[min(32vh,260px)]',
-    )
-    expect(screen.getByTestId('panel').parentElement).toHaveClass(
-      'overflow-y-auto',
-    )
-    expect(screen.getByTestId('panel').parentElement).toHaveClass('pb-4')
-
-    rerender(
-      <MobileModeDock
-        mode="look"
-        expanded
-        onModeChange={vi.fn()}
-        onCollapse={vi.fn()}
-        onOpenMore={vi.fn()}
-        panel={<div data-testid="panel">look-panel</div>}
-      />,
-    )
-
-    expect(screen.getByTestId('panel').parentElement).toHaveClass(
-      'max-h-[24vh]',
+      'mt-auto',
+      'shrink-0',
     )
 
     rerender(
       <MobileModeDock
         mode="tone"
         expanded
+        deckHeight={250}
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
         onOpenMore={vi.fn()}
@@ -185,11 +178,31 @@ describe('mobileModeDock', () => {
       />,
     )
 
-    // Tone locks to a fixed height (`h-[...]`, not `max-h`) so the panel can
-    // run its own flex-column internal scroll — chrome stays put while the
-    // slider list scrolls inside `[data-adjust-list-scroll]`.
-    expect(screen.getByTestId('panel').parentElement).toHaveClass(
-      'h-[min(38vh,264px)]',
+    // List tools fill the deck so the panel can run its own internal scroll
+    // with the section chrome held still.
+    expect(deck().style.height).toBe('250px')
+    expect(deck()).toHaveAttribute('data-deck-fill', 'true')
+    expect(screen.getByTestId('panel').parentElement).toHaveClass('h-full')
+    expect(deck().className).not.toMatch(/vh/)
+  })
+
+  it('moves the deck height on the stage curve, and not under reduced motion', () => {
+    render(
+      <MobileModeDock
+        mode="tone"
+        expanded
+        deckHeight={250}
+        onModeChange={vi.fn()}
+        onCollapse={vi.fn()}
+        panel={<div data-testid="panel">tone-panel</div>}
+      />,
+    )
+    const deck = screen.getByTestId('panel').closest('[data-mobile-dock-panel]')
+    expect(deck).toHaveClass(
+      'transition-[height]',
+      'duration-[240ms]',
+      'ease-[cubic-bezier(0.22,1,0.36,1)]',
+      'motion-reduce:transition-none',
     )
   })
 
@@ -222,7 +235,9 @@ describe('mobileModeDock', () => {
         panel={<div data-testid="panel">tone-panel</div>}
       />,
     )
-    const panelFrame = screen.getByTestId('panel').parentElement
+    const panelFrame = screen
+      .getByTestId('panel')
+      .closest('[data-mobile-dock-panel]')
     expect(panelFrame).not.toHaveAttribute('data-scrubbing')
     expect(panelFrame).not.toHaveClass('before:opacity-10')
 
@@ -237,7 +252,9 @@ describe('mobileModeDock', () => {
         panel={<div data-testid="panel">tone-panel</div>}
       />,
     )
-    const scrubbingPanelFrame = screen.getByTestId('panel').parentElement
+    const scrubbingPanelFrame = screen
+      .getByTestId('panel')
+      .closest('[data-mobile-dock-panel]')
     expect(scrubbingPanelFrame).toHaveAttribute('data-scrubbing', 'true')
     expect(scrubbingPanelFrame).toHaveClass('before:opacity-10')
   })
@@ -254,7 +271,9 @@ describe('mobileModeDock', () => {
       />,
     )
 
-    const panelFrame = screen.getByTestId('panel').parentElement
+    const panelFrame = screen
+      .getByTestId('panel')
+      .closest('[data-mobile-dock-panel]')
     const tablist = screen.getByRole('tablist', { name: /lab modes/i })
     const dock = tablist.parentElement
 
@@ -356,8 +375,8 @@ describe('mobileModeDock', () => {
   })
 })
 
-describe('mobileModeDock stage inset', () => {
-  it('reports tab bar height plus the expanded panel height, and drops the panel when collapsed', () => {
+describe('mobileModeDock measurements', () => {
+  function stubLayout() {
     const heights = new Map<Element, number>()
     const offsetHeight = Object.getOwnPropertyDescriptor(
       HTMLElement.prototype,
@@ -383,49 +402,90 @@ describe('mobileModeDock stage inset', () => {
         }
       }),
     )
+    return {
+      heights,
+      flush: () =>
+        act(() => {
+          for (const o of observers) o.cb([], {} as ResizeObserver)
+        }),
+      restore: () => {
+        vi.unstubAllGlobals()
+        if (offsetHeight) {
+          Object.defineProperty(
+            HTMLElement.prototype,
+            'offsetHeight',
+            offsetHeight,
+          )
+        }
+      },
+    }
+  }
+
+  it('reports the tab bar alone, since the deck floats above it', () => {
+    const layout = stubLayout()
     try {
-      const onInsetChange = vi.fn()
-      const { rerender, container } = render(
+      const onTabBarHeightChange = vi.fn()
+      const { container } = render(
         <MobileModeDock
           mode="tone"
           expanded
+          deckHeight={250}
           onModeChange={vi.fn()}
           onCollapse={vi.fn()}
-          onOpenMore={vi.fn()}
-          onInsetChange={onInsetChange}
+          onTabBarHeightChange={onTabBarHeightChange}
           panel={<div>tone-panel</div>}
         />,
       )
-      const dock = container.querySelector('[data-mobile-dock]')!
-      const panel = container.querySelector('[data-mobile-dock-panel]')!
-      heights.set(dock, 70)
-      heights.set(panel, 264)
-      act(() => {
-        for (const o of observers) o.cb([], {} as ResizeObserver)
-      })
-      expect(onInsetChange).toHaveBeenLastCalledWith(334)
+      layout.heights.set(container.querySelector('[data-mobile-dock]')!, 64)
+      layout.heights.set(
+        container.querySelector('[data-mobile-dock-panel]')!,
+        250,
+      )
+      layout.flush()
+      expect(onTabBarHeightChange).toHaveBeenLastCalledWith(64)
+    } finally {
+      layout.restore()
+    }
+  })
 
+  it('reports the natural content height plus deck padding for content that sizes the deck', () => {
+    const layout = stubLayout()
+    try {
+      const onDeckNaturalHeightChange = vi.fn()
+      const { container, rerender } = render(
+        <MobileModeDock
+          mode="look"
+          expanded
+          deckHeight={0}
+          onModeChange={vi.fn()}
+          onCollapse={vi.fn()}
+          onDeckNaturalHeightChange={onDeckNaturalHeightChange}
+          panel={<div>look-panel</div>}
+        />,
+      )
+      layout.heights.set(
+        container.querySelector('[data-mobile-deck-content]')!,
+        116,
+      )
+      layout.flush()
+      expect(onDeckNaturalHeightChange).toHaveBeenLastCalledWith(140)
+
+      // A list tool fills the deck; its height is the layout's, not content's.
+      onDeckNaturalHeightChange.mockClear()
       rerender(
         <MobileModeDock
           mode="tone"
-          expanded={false}
+          expanded
+          deckHeight={250}
           onModeChange={vi.fn()}
           onCollapse={vi.fn()}
-          onOpenMore={vi.fn()}
-          onInsetChange={onInsetChange}
+          onDeckNaturalHeightChange={onDeckNaturalHeightChange}
           panel={<div>tone-panel</div>}
         />,
       )
-      expect(onInsetChange).toHaveBeenLastCalledWith(70)
+      expect(onDeckNaturalHeightChange).not.toHaveBeenCalled()
     } finally {
-      vi.unstubAllGlobals()
-      if (offsetHeight) {
-        Object.defineProperty(
-          HTMLElement.prototype,
-          'offsetHeight',
-          offsetHeight,
-        )
-      }
+      layout.restore()
     }
   })
 })

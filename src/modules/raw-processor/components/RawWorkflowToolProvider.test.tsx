@@ -138,4 +138,58 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     rerender()
     expect(result.current.compareSupported).toBe(false)
   })
+
+  it('reports the aspect the stage is displaying', () => {
+    const decoded = { width: 6000, height: 4000 }
+    const workflow = {
+      ...workflowFixture(),
+      decodedImageRef: { current: decoded },
+    } as unknown as UseRawWorkflowReturn
+    let transform = transformFeatureFixture({ hasImage: true })
+    const { result, rerender } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <RawWorkflowToolProvider
+          workflow={workflow}
+          transform={transform}
+          onlineLutSources={{} as UseOnlineLutSourcesResult}
+          isCpuMode={false}
+          isProcessing={false}
+          runtimeReadinessState="ready"
+          previewFrameEl={null}
+          onReplaceFile={vi.fn()}
+          onResetSession={vi.fn()}
+          onCompareReset={vi.fn()}
+          onLutDrop={vi.fn()}
+          onExport={vi.fn()}
+          onRecoverExportSource={vi.fn()}
+          onPrepareRuntime={vi.fn()}
+        >
+          {children}
+        </RawWorkflowToolProvider>
+      ),
+    })
+    // The decoded preview is what the canvas aspect-fits.
+    expect(result.current.previewAspect).toBe(1.5)
+
+    // The Transform overlay draws its own result frame over the stage.
+    const base = transformFeatureFixture({ hasImage: true, showOverlay: true })
+    transform = {
+      ...base,
+      demo: {
+        ...base.demo,
+        result: {
+          frame: { width: 800, height: 1000 },
+        } as NonNullable<typeof base.demo.result>,
+      },
+    }
+    rerender()
+    expect(result.current.previewAspect).toBe(0.8)
+
+    // Export releases the decoded preview; the aspect is unknown until the
+    // preview is restored.
+    transform = transformFeatureFixture({ hasImage: true })
+    workflow.decodedImageRef.current = null
+    rerender()
+    expect(result.current.previewAspect).toBeNull()
+  })
 })

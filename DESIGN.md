@@ -478,16 +478,19 @@ workspace with no affordance to put it back. Only the rail's inner region
 
 ### Mobile Stage Insets
 
-The mobile stage stays full-bleed, but the photograph re-fits into the region
-the chrome does not cover. The topbar and the dock measure themselves into
-`--raw-stage-inset-top` / `--raw-stage-inset-bottom` on the shell, and
-`.raw-lab-stage` consumes them as padding over a 240ms
-`cubic-bezier(0.22, 1, 0.36, 1)` transition that matches `DOCK_SPRING`.
+The mobile stage is photo-first.
+`computeMobileStageLayout` (`components/mobile/mobile-stage-layout.ts`) turns the shell size, the measured topbar and tab bar, the displayed preview's aspect, and the tool / deck / export state into `--raw-stage-inset-top` / `--raw-stage-inset-bottom` and a `--raw-photo-*` rect on the shell.
+`.raw-lab-stage` consumes the insets as padding over a 240ms `cubic-bezier(0.22, 1, 0.36, 1)` transition that matches `DOCK_SPRING`, and the deck height moves on the same curve.
 
-Immersive and the empty state reset both to `0`, so entering immersive grows
-the photo back to full bleed in the same motion as the chrome fade. The Adjust
-panel is sized (`min(38vh, 264px)`) to leave a 3:2 landscape photo at full
-width above the dock on a 393x660 viewport; its lists scroll internally.
+The stage region is exactly the photo's displayed height, so the frame's own centring anchors the photo flush under the topbar.
+A 3:2 landscape photo is 393x262 on a 393x660 viewport in every tool and never moves on a tool switch.
+List tools (Adjust, Transform) take what the photo leaves, between 200px and `min(38% of the viewport, 264px)`, and scroll their rows inside; Look and the export panel are as tall as their content, under the same cap.
+A portrait photo takes all the height the deck leaves.
+A scrub never changes the layout's inputs, so it never resizes the photo.
+Without a known aspect the stage falls back to the whole region above the deck.
+The compare lens, its hints, the peek pill, and the floating histogram read the `--raw-photo-*` rect, so they ride on the photo rather than on the stage around it.
+
+Immersive and the empty state reset both insets to `0`, so entering immersive grows the photo back to full bleed in the same motion as the chrome fade.
 
 Both GPU preview layers defer their backing-store resize until the container size
 settles (90ms trailing), so an animating inset costs CSS scaling rather than a

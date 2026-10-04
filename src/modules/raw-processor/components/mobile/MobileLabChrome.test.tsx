@@ -1017,3 +1017,155 @@ describe('mobileLabChrome', () => {
     )
   })
 })
+
+describe('mobileLabChrome stage layout', () => {
+  const restore: Array<() => void> = []
+
+  function stubGeometry(heights: Record<string, number>) {
+    const sizeOf = (el: Element) =>
+      Object.entries(heights).find(([selector]) => el.matches(selector))?.[1]
+    for (const [prop, read] of [
+      [
+        'clientWidth',
+        (el: HTMLElement) => (el.hasAttribute('data-raw-lab-shell') ? 393 : 0),
+      ],
+      [
+        'clientHeight',
+        (el: HTMLElement) => (el.hasAttribute('data-raw-lab-shell') ? 660 : 0),
+      ],
+      ['offsetHeight', (el: HTMLElement) => sizeOf(el) ?? 0],
+    ] as const) {
+      const original = Object.getOwnPropertyDescriptor(
+        HTMLElement.prototype,
+        prop,
+      )
+      Object.defineProperty(HTMLElement.prototype, prop, {
+        configurable: true,
+        get(this: HTMLElement) {
+          return read(this)
+        },
+      })
+      restore.push(() => {
+        if (original) {
+          Object.defineProperty(HTMLElement.prototype, prop, original)
+        }
+      })
+    }
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    )
+    stubGeometry({
+      '[data-mobile-topbar]': 56,
+      '[data-mobile-dock]': 64,
+      // Look's content; the deck adds 24px of padding.
+      '[data-mobile-deck-content]': 116,
+    })
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    while (restore.length) restore.pop()!()
+  })
+
+  function renderInShell(
+    props: Partial<Parameters<typeof MobileLabChrome>[0]>,
+  ) {
+    const result = render(
+      <div data-raw-lab-shell="viewport">
+        <MobileLabChrome {...base} {...props} />
+      </div>,
+    )
+    const shell = result.container.querySelector<HTMLElement>(
+      '[data-raw-lab-shell]',
+    )!
+    const px = (name: string) =>
+      Number.parseFloat(shell.style.getPropertyValue(name))
+    const deck = () =>
+      result.container.querySelector<HTMLElement>('[data-mobile-dock-panel]')
+    return { ...result, shell, px, deck }
+  }
+
+  async function openAdjust() {
+    const dock = screen.getByRole('tablist', { name: /lab modes/i })
+    await userEvent.click(within(dock).getByRole('tab', { name: /adjust/i }))
+  }
+
+  it('anchors a landscape photo under the topbar and keeps it there across tools', async () => {
+    const { px, deck } = renderInShell({ photoAspect: 3 / 2 })
+    expect(px('--raw-stage-inset-top')).toBe(56)
+    expect(px('--raw-stage-inset-bottom')).toBeCloseTo(660 - 56 - 262)
+    expect(px('--raw-photo-top')).toBe(56)
+    expect(px('--raw-photo-width')).toBeCloseTo(393)
+    expect(px('--raw-photo-height')).toBeCloseTo(262)
+    expect(px('--raw-photo-right')).toBeCloseTo(0)
+    expect(deck()!.style.height).toBe('140px')
+
+    await openAdjust()
+    expect(px('--raw-stage-inset-bottom')).toBeCloseTo(660 - 56 - 262)
+    expect(Number.parseFloat(deck()!.style.height)).toBeCloseTo(250.8)
+  })
+
+  it('trades height between a portrait photo and the deck, but never on a scrub', async () => {
+    const { container, px, deck } = renderInShell({ photoAspect: 2 / 3 })
+    // Look: 660 - 56 - 64 - 140 = 400px of photo, ~267px wide, centred.
+    expect(px('--raw-photo-height')).toBeCloseTo(400)
+    expect(px('--raw-photo-width')).toBeCloseTo(266.67, 1)
+    expect(px('--raw-photo-left')).toBeCloseTo(63.17, 1)
+    expect(px('--raw-photo-right')).toBeCloseTo(63.17, 1)
+    expect(px('--raw-stage-inset-bottom')).toBeCloseTo(204)
+
+    await openAdjust()
+    expect(deck()!.style.height).toBe('200px')
+    expect(px('--raw-photo-height')).toBeCloseTo(340)
+    const restingInset = px('--raw-stage-inset-bottom')
+    expect(restingInset).toBeCloseTo(264)
+
+    const exposureRow = screen
+      .getByRole('slider', { name: 'Exposure' })
+      .closest('[data-testid="adjust-slider-row-scrub"]')!
+    fireEvent.pointerDown(exposureRow)
+    expect(
+      container.querySelector('[data-scrub-value-hud]'),
+    ).toBeInTheDocument()
+    expect(px('--raw-stage-inset-bottom')).toBe(restingInset)
+    expect(deck()!.style.height).toBe('200px')
+    fireEvent.pointerUp(exposureRow)
+    expect(px('--raw-stage-inset-bottom')).toBe(restingInset)
+  })
+
+  it('collapses the deck and gives the photo the room', async () => {
+    const { px } = renderInShell({ photoAspect: 2 / 3 })
+    const dock = screen.getByRole('tablist', { name: /lab modes/i })
+    // Tapping the active tool collapses the deck.
+    await userEvent.click(within(dock).getByRole('tab', { name: /look/i }))
+    expect(px('--raw-photo-height')).toBeCloseTo(540)
+    expect(px('--raw-photo-width')).toBeCloseTo(360)
+    expect(px('--raw-stage-inset-bottom')).toBeCloseTo(64)
+  })
+
+  it('falls back to the region above the deck while the aspect is unknown', async () => {
+    const { px, deck } = renderInShell({ photoAspect: null })
+    await openAdjust()
+    expect(Number.parseFloat(deck()!.style.height)).toBeCloseTo(250.8)
+    expect(px('--raw-stage-inset-bottom')).toBeCloseTo(64 + 250.8)
+  })
+
+  it('returns the stage to full bleed without an image and clears its variables on unmount', () => {
+    const { px, shell, unmount } = renderInShell({
+      hasImage: false,
+      photoAspect: null,
+    })
+    expect(px('--raw-stage-inset-top')).toBe(0)
+    expect(px('--raw-stage-inset-bottom')).toBe(0)
+    unmount()
+    expect(shell.style.getPropertyValue('--raw-stage-inset-bottom')).toBe('')
+    expect(shell.style.getPropertyValue('--raw-photo-top')).toBe('')
+  })
+})

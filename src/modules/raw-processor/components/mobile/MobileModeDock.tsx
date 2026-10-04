@@ -2,13 +2,14 @@ import type { LucideIcon } from 'lucide-react'
 import { Scan, SlidersHorizontal, Wand2 } from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import type { ReactNode } from 'react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import type { Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 
 import { DOCK_SPRING, TAP_SPRING } from '../../motion'
+import { DECK_PADDING_Y_PX, isMobileListDeck } from './mobile-stage-layout'
 
 /**
  * The dock holds tools only. Compare is a lens over the photo and Export is a
@@ -25,6 +26,21 @@ const TABS: {
   { id: 'tone', icon: SlidersHorizontal, labelKey: 'raw.mobile.mode.adjust' },
   { id: 'transform', icon: Scan, labelKey: 'raw.mobile.mode.transform' },
 ]
+
+/**
+ * Whether the deck is on screen. Tools are disabled while the pipeline is
+ * busy, but a running export keeps its panel visible.
+ */
+export function isMobileDeckVisible(input: {
+  expanded: boolean
+  disabled?: boolean
+  panelVisibleWhileDisabled?: boolean
+}) {
+  return (
+    input.expanded &&
+    (input.disabled !== true || input.panelVisibleWhileDisabled === true)
+  )
+}
 
 export function MobileModeDock(props: {
   mode: MobileMode
@@ -47,44 +63,59 @@ export function MobileModeDock(props: {
   scrubbing?: boolean
   panel: ReactNode
   /**
-   * Height (px) the dock occupies from the bottom of the viewport: the tab
-   * bar plus the expanded panel. The mobile chrome forwards it to the stage
-   * so the photo re-fits above the dock instead of under it.
+   * Deck height (px) from the stage layout. List tools fill it; Look and
+   * the export panel are sized to their content through it. Unset, the deck
+   * follows its content.
    */
-  onInsetChange?: (inset: number) => void
+  deckHeight?: number
+  /** Height (px) of the tab bar, safe-area padding included. */
+  onTabBarHeightChange?: (height: number) => void
+  /**
+   * Natural height (px) of the deck's content, deck padding included, for
+   * the panels that size the deck (Look and export).
+   */
+  onDeckNaturalHeightChange?: (height: number) => void
 }) {
   const { t } = useI18n()
   const disabled = props.disabled ?? false
   const prefersReduced = useReducedMotion() ?? false
   const exportOpen = props.exportOpen === true
-  const panelVisible =
-    props.expanded && (!disabled || props.panelVisibleWhileDisabled === true)
+  const panelVisible = isMobileDeckVisible({
+    expanded: props.expanded,
+    disabled,
+    panelVisibleWhileDisabled: props.panelVisibleWhileDisabled,
+  })
+  const fillsDeck = isMobileListDeck(props.mode, exportOpen)
   const dockRef = useRef<HTMLDivElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-  const [dockHeight, setDockHeight] = useState(0)
-  const [panelHeight, setPanelHeight] = useState(0)
-  const { onInsetChange } = props
+  const contentRef = useRef<HTMLDivElement>(null)
+  const { onTabBarHeightChange, onDeckNaturalHeightChange } = props
 
+  // The panel is absolutely positioned above the dock, so the dock's own box
+  // is the tab bar alone.
   useLayoutEffect(() => {
     const dock = dockRef.current
-    if (!dock || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => {
-      setDockHeight(dock.offsetHeight)
-      setPanelHeight(panelRef.current?.offsetHeight ?? 0)
-    })
+    if (!dock || !onTabBarHeightChange) return
+    const report = () => onTabBarHeightChange(dock.offsetHeight)
+    report()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(report)
     observer.observe(dock)
-    const panel = panelRef.current
-    if (panel) observer.observe(panel)
-    setDockHeight(dock.offsetHeight)
-    setPanelHeight(panel?.offsetHeight ?? 0)
     return () => observer.disconnect()
-    // Re-subscribe whenever the panel mounts or changes mode so the observer
-    // tracks the live panel element.
-  }, [panelVisible, props.mode, exportOpen])
+  }, [onTabBarHeightChange])
 
+  // Content that sizes the deck is never stretched, so its box is its
+  // natural height whatever height the deck currently has.
   useLayoutEffect(() => {
-    onInsetChange?.(dockHeight + (panelVisible ? panelHeight : 0))
-  }, [dockHeight, onInsetChange, panelHeight, panelVisible])
+    const content = contentRef.current
+    if (!content || fillsDeck || !onDeckNaturalHeightChange) return
+    const report = () =>
+      onDeckNaturalHeightChange(content.offsetHeight + DECK_PADDING_Y_PX)
+    report()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(report)
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [fillsDeck, onDeckNaturalHeightChange, panelVisible, props.mode])
 
   return (
     <div
@@ -96,32 +127,40 @@ export function MobileModeDock(props: {
         {panelVisible && (
           <m.div
             key="dock-panel"
-            ref={panelRef}
             data-mobile-dock-panel
+            data-deck-fill={fillsDeck || undefined}
             data-scrubbing={props.scrubbing || undefined}
+            // The stage layout owns the deck height. It moves on the same
+            // 240ms curve as the stage insets, so a portrait photo and the
+            // deck trade space in one motion instead of overlapping.
+            style={
+              props.deckHeight === undefined
+                ? undefined
+                : { height: props.deckHeight }
+            }
             className={clsxm(
-              'isolate absolute inset-x-0 bottom-full overflow-y-auto px-3.5 pb-2.5 pt-3.5',
+              // Padding is DECK_PADDING_Y_PX top + bottom; keep them in step.
+              'isolate absolute inset-x-0 bottom-full flex flex-col overflow-y-auto px-3.5 pb-2.5 pt-3.5',
+              'transition-[height] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
               "before:absolute before:inset-0 before:-z-10 before:bg-gradient-to-t before:from-[oklch(0.085_0.006_255/0.82)] before:via-[oklch(0.118_0.006_255/0.56)] before:to-transparent before:transition-opacity before:duration-150 before:content-['']",
               props.scrubbing && 'before:opacity-10',
-              // Tone mode locks to a fixed height so AdjustListPanel can
-              // resolve `h-full` and manage its own internal scroll (chrome
-              // outside the scroll, slider list inside). The height leaves a
-              // 3:2 landscape photo at full width above the dock on a
-              // 393x660 viewport; Tone and HSL lists scroll inside.
-              // Look and the export panel use max-h since their content
-              // sizes itself naturally.
-              exportOpen
-                ? 'max-h-[min(32vh,260px)] pb-4'
-                : props.mode === 'tone' || props.mode === 'transform'
-                  ? 'h-[min(38vh,264px)]'
-                  : 'max-h-[24vh]',
             )}
             initial={{ opacity: 0, y: prefersReduced ? 0 : 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: prefersReduced ? 0 : 8 }}
             transition={DOCK_SPRING}
           >
-            {props.panel}
+            {/* List tools fill the deck so their rows scroll inside it with
+                the section chrome held still. Look and export sit at their
+                natural height, anchored to the bottom near the thumb; taller
+                content scrolls the deck. */}
+            <div
+              ref={contentRef}
+              data-mobile-deck-content
+              className={fillsDeck ? 'h-full min-h-0' : 'mt-auto shrink-0'}
+            >
+              {props.panel}
+            </div>
           </m.div>
         )}
       </AnimatePresence>

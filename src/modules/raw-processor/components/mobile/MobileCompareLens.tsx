@@ -12,14 +12,16 @@ import { LONG_PRESS_MS, TAP_SLOP_PX } from './useMobilePreviewGestures'
 
 /**
  * Where the lens sits, as CSS variables on the mobile chrome. The values
- * place the visible 32px circle 8px inside the top-right corner of the stage
- * region below the topbar; anything that must clear the lens (the floating
- * histogram) reads the same variables, so moving the lens to the photo rect
- * later is a change here only.
+ * place the visible 32px circle 8px inside the top-right corner of the photo
+ * rect the stage layout publishes on the shell, so the lens rides on the
+ * photo for portrait images too. Anything that must clear the lens (the
+ * floating histogram, the peek pill) reads the same variables. Before the
+ * layout has measured, the fallbacks put it under the topbar at the edge.
  */
 export const COMPARE_LENS_POSITION = {
-  '--raw-compare-lens-top': 'calc(var(--raw-stage-inset-top, 0px) + 8px)',
-  '--raw-compare-lens-right': '8px',
+  '--raw-compare-lens-top':
+    'calc(var(--raw-photo-top, var(--raw-stage-inset-top, 0px)) + 8px)',
+  '--raw-compare-lens-right': 'calc(var(--raw-photo-right, 0px) + 8px)',
   '--raw-compare-lens-size': '32px',
 } as CSSProperties
 
@@ -222,8 +224,9 @@ export function MobileCompareLens(props: {
     <m.div
       data-mobile-compare-lens-anchor
       // The 44px hit area is centred on the 32px circle, so it sits 6px
-      // outside the published circle position on both axes.
-      className="pointer-events-none absolute z-[16] size-11"
+      // outside the published circle position on both axes. It follows the
+      // photo rect on the stage's own 240ms curve.
+      className="pointer-events-none absolute z-[16] size-11 transition-[top,right] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
       style={{
         top: 'calc(var(--raw-compare-lens-top) - 6px)',
         right: 'calc(var(--raw-compare-lens-right) - 6px)',
