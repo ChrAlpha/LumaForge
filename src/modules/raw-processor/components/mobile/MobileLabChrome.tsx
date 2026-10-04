@@ -15,6 +15,7 @@ import { CpuPreviewBanner } from '../CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from '../raw-runtime-readiness'
 import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
+import type { MobileDetailsSheet } from './mobile-details-sheet'
 import { MobileEmptyState } from './MobileEmptyState'
 import { MobileFloatingOverlays } from './MobileFloatingOverlays'
 import { MobileLabModeDock } from './MobileLabModeDock'
@@ -24,9 +25,6 @@ import { MobileLutBrowser } from './MobileLutBrowser'
 import { MobileMoreSheet } from './MobileMoreSheet'
 import type { MobileLabViewMode } from './useMobileLabChromeController'
 import { useMobileLabChromeController } from './useMobileLabChromeController'
-
-type Row = { label: string; value: string }
-type Step = { index: number; label: string; timing: string }
 
 export function MobileLabChrome(props: {
   transform?: RawTransformFeature
@@ -59,7 +57,7 @@ export function MobileLabChrome(props: {
   lutBrowser: Omit<MobileLutBrowserProps, 'open' | 'onClose'>
   onCompareReset: () => void
   exportPanel: ReactNode
-  moreSheet: { pipelineSteps: Step[]; lutRows: Row[]; fileRows: Row[] }
+  moreSheet: MobileDetailsSheet
   previewSuspended?: boolean
   preferExportMode?: boolean
   previewFrameEl?: HTMLDivElement | null

@@ -1,6 +1,7 @@
 import { useI18n } from '~/lib/i18n'
 
 import { useRawWorkflowContext } from '../RawWorkflowContext'
+import { buildMobileDetailsSheet, getCameraName } from './mobile-details-sheet'
 import { MobileExportPanel } from './MobileExportPanel'
 import { MobileLabChrome } from './MobileLabChrome'
 
@@ -13,9 +14,7 @@ export function MobileRawToolSurface() {
     !props.hasImage || props.isProcessing || previewSuspended
   const hasAppliedLut = Boolean(props.currentLutName)
   const mobileStrengthDisabled = mobileEditorDisabled || !hasAppliedLut
-  const cameraName =
-    props.metadata &&
-    `${props.metadata.make ?? ''} ${props.metadata.model ?? ''}`.trim()
+  const cameraName = getCameraName(props.metadata)
   // Support level is a safety fact, so it is named on both surfaces rather
   // than encoded in the topbar dot alone (PRODUCT.md: never state by colour).
   // The level leads because the camera name truncates first on a phone.
@@ -27,15 +26,21 @@ export function MobileRawToolSurface() {
   ]
     .filter(Boolean)
     .join(' · ')
-  const renderTime = props.stats
-    ? `${Math.round(props.stats.processTime)} ms`
-    : '—'
-  const lutResolved =
-    props.lutProfileResolution?.kind === 'confirmed'
-      ? props.lutProfileResolution.profile.role
-      : props.lutProfileResolution
-        ? t('raw.histogram.notLoaded')
-        : '—'
+  const moreSheet = buildMobileDetailsSheet(
+    {
+      supportLevel: props.supportLevel,
+      metadata: props.metadata,
+      stats: props.stats,
+      tone: props.tone,
+      color: props.color,
+      selectiveColor: props.selectiveColor,
+      currentLutName: props.currentLutName,
+      lutProfileSelection: props.lutProfileSelection,
+      lutProfileResolution: props.lutProfileResolution,
+      transformActive: props.transform?.active === true,
+    },
+    t,
+  )
 
   return (
     <MobileLabChrome
@@ -96,41 +101,7 @@ export function MobileRawToolSurface() {
           onRecoverExportSource={props.onRecoverExportSource}
         />
       }
-      moreSheet={{
-        pipelineSteps: [
-          { index: 1, label: 'RAW decode', timing: '—' },
-          { index: 2, label: t('raw.adjust.title'), timing: '—' },
-          {
-            index: 3,
-            label: props.currentLutName ?? t('raw.mobile.more.lutHeading'),
-            timing: '—',
-          },
-          { index: 4, label: 'JPEG output', timing: renderTime },
-        ],
-        lutRows: [
-          {
-            label: t('raw.mobile.more.lutHeading'),
-            value: props.currentLutName ?? '—',
-          },
-          { label: t('raw.fileFacts.support'), value: lutResolved },
-        ],
-        fileRows: [
-          { label: t('raw.fileFacts.camera'), value: cameraName || '—' },
-          {
-            label: t('raw.fileFacts.size'),
-            value: props.metadata
-              ? `${props.metadata.width} x ${props.metadata.height}`
-              : '—',
-          },
-          {
-            label: t('raw.fileFacts.preview'),
-            value: props.stats
-              ? `${props.stats.previewSize.width} x ${props.stats.previewSize.height}`
-              : '—',
-          },
-          { label: t('raw.fileFacts.render'), value: renderTime },
-        ],
-      }}
+      moreSheet={moreSheet}
       previewSuspended={previewSuspended}
       preferExportMode={previewSuspended && props.exportResult != null}
       previewFrameEl={props.previewFrameEl ?? null}

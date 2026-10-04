@@ -36,9 +36,9 @@ describe('mobileTopbar', () => {
       screen.getByRole('heading', { name: 'DSC09142.ARW' }),
     ).toBeInTheDocument()
     // The standalone topbar control is the histogram toggle, not a second
-    // "File details" entry point (that lives only in the More menu).
+    // "File & pipeline details" entry point (that lives only in the More menu).
     expect(
-      screen.queryByRole('button', { name: /file details/i }),
+      screen.queryByRole('button', { name: /pipeline details/i }),
     ).not.toBeInTheDocument()
     const toggle = screen.getByRole('button', { name: /show histogram/i })
     expect(toggle).toHaveAttribute('aria-pressed', 'false')

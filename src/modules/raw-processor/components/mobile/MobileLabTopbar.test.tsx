@@ -43,7 +43,7 @@ describe('mobileLabTopbar', () => {
     expect(items.map((item) => item.textContent)).toEqual([
       'Replace RAW',
       'Add .cube LUT',
-      'File details',
+      'File & pipeline details',
       'Reset session',
       'LanguageEnglish',
     ])
