@@ -9,6 +9,8 @@ import { useMemo } from 'react'
 import type { Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 
+import { histogramClippingLabels } from './histogram-clipping'
+
 const VIEWBOX_WIDTH = 128
 const VIEWBOX_HEIGHT = 88
 const PLOT_PADDING = 3
@@ -212,37 +214,60 @@ function HistogramPlot({
 
 export function HistogramTool({
   histogram,
+  heading = false,
 }: {
   histogram: PreviewHistogramState
+  /**
+   * Render the "Histogram" title in the card itself. Desktop leaves it off
+   * because its tool card trigger already carries the title; the floating
+   * mobile card has no trigger, so without this the source label read as the
+   * title.
+   */
+  heading?: boolean
 }) {
   const { t } = useI18n()
   const ready = readyHistogram(histogram)
   const label = statusLabel(histogram, t)
   const reason = statusReason(histogram, t)
+  const clipping = ready ? histogramClippingLabels(ready, t) : null
 
   return (
     <div className="grid gap-3">
-      <p className="flex flex-wrap gap-x-2 gap-y-1 text-[0.78rem] text-lf-on-surface/72">
-        <span>{label}</span>
-        {reason && <span>{reason}</span>}
-      </p>
-      {ready ? (
+      <div className="grid gap-1">
+        <div className="flex items-baseline justify-between gap-2">
+          {heading && (
+            <h2 className="m-0 text-[0.82rem] font-semibold leading-tight text-lf-on-surface">
+              {t('raw.histogram.title')}
+            </h2>
+          )}
+          {/* Source (Quick / HQ preview) or pipeline state, as meta. */}
+          <span
+            data-histogram-source
+            className="text-[0.68rem] font-medium text-lf-on-surface/56"
+          >
+            {label}
+          </span>
+        </div>
+        {reason && (
+          <p className="m-0 text-[0.78rem] leading-snug text-lf-on-surface/72">
+            {reason}
+          </p>
+        )}
+      </div>
+      {ready && clipping ? (
         <>
           <HistogramPlot
             bins={ready.bins}
             ariaLabel={t('raw.histogram.aria')}
           />
-          <div className="flex flex-wrap gap-1.5 text-[0.72rem] tabular-nums text-lf-on-surface/76">
-            <span>
-              {t('raw.histogram.shadows', {
-                count: ready.clipping.shadowAnyChannel,
-              })}
-            </span>
-            <span>
-              {t('raw.histogram.highlights', {
-                count: ready.clipping.highlightAnyChannel,
-              })}
-            </span>
+          {/* Clipping as a share of sampled pixels; raw counts said nothing
+              without the total. */}
+          <div
+            data-histogram-clipping
+            className="flex flex-wrap gap-x-3 gap-y-1 text-[0.72rem] tabular-nums text-lf-on-surface/76"
+          >
+            <span>{clipping.shadows}</span>
+            <span>{clipping.highlights}</span>
           </div>
         </>
       ) : null}

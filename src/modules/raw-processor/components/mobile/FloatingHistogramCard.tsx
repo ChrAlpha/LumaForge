@@ -31,7 +31,7 @@ export function FloatingHistogramCard(props: {
         'shadow-[0_10px_30px_oklch(0.02_0.006_255/0.5),inset_0_1px_0_oklch(0.96_0.006_255/0.08)]',
       )}
     >
-      <HistogramTool histogram={props.histogram} />
+      <HistogramTool histogram={props.histogram} heading />
     </m.div>
   )
 }

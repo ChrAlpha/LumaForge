@@ -9,6 +9,7 @@ import { AdjustTool } from './tools/AdjustTool'
 import { CompareTool } from './tools/CompareTool'
 import { ExportTool } from './tools/ExportTool'
 import { FileFactsTool } from './tools/FileFactsTool'
+import { histogramClippingLabels } from './tools/histogram-clipping'
 import { HistogramTool } from './tools/HistogramTool'
 import { LutContractTool } from './tools/lut/LutContractTool'
 import { StrengthControl } from './tools/StrengthControl'
@@ -24,10 +25,13 @@ export function DesktopRawToolSurface() {
   const lutDropDisabled = props.isExporting === true || previewSuspended
   const hasAppliedLut = Boolean(props.currentLutName)
   const strengthDisabled = editorDisabled || !hasAppliedLut
-  const histogramMeta =
+  const histogramClipping =
     props.histogram.state === 'ready'
-      ? `Shadows ${props.histogram.clipping.shadowAnyChannel} · Highlights ${props.histogram.clipping.highlightAnyChannel}`
+      ? histogramClippingLabels(props.histogram, t)
       : undefined
+  const histogramMeta = histogramClipping
+    ? `${histogramClipping.shadows} · ${histogramClipping.highlights}`
+    : undefined
 
   return (
     <DesktopToolAside

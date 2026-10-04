@@ -406,6 +406,10 @@ describe('rawToolSurface', () => {
       />,
     )
 
+    // The trigger meta speaks in shares of the frame, like the card body.
+    expect(screen.getByText('Shadows 50% · Highlights 50%')).toHaveClass(
+      'tabular-nums',
+    )
     await user.click(screen.getByRole('button', { name: 'Histogram' }))
     const regions = await screen.findAllByRole('region', { name: 'Histogram' })
     expect(regions.length).toBeGreaterThanOrEqual(1)
