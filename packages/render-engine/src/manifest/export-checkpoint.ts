@@ -1,9 +1,9 @@
-// ExportCheckpointManifest — see spec §7 (Mid-Render Journal).
+// ExportCheckpointManifest — the mid-render export journal.
 //
-// Composes the shared `RenderIdentity` (§6.1) without being a subtype of
+// Composes the shared `RenderIdentity` without being a subtype of
 // `RenderManifest`. v1 supports safe-retry only: on interrupt, resume
 // restarts from a verified RenderIdentity rather than reusing partial
-// output bytes. row-resume is deferred (Q7).
+// output bytes. row-resume is deferred.
 
 import type { RenderIdentity } from './render-manifest'
 
@@ -59,7 +59,7 @@ export interface ExportCheckpointManifest extends RenderIdentity {
   /** Intended output — dimensions/format known up-front; sha256 only on completion. */
   readonly output_intended: OutputIntent
 
-  /** Fast resume validation token. NOT content identity (see §6.6). */
+  /** Fast resume validation token. NOT content identity (see `source-content-id.ts`). */
   readonly resume_fingerprint: ResumeFingerprint
 
   readonly in_progress: ExportInProgress

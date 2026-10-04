@@ -15,8 +15,8 @@ export const nextFrame = (fn: (...args: any[]) => any) => {
 
 /**
  * Promise-flavoured single-frame yield. Resolves after the next animation
- * frame has fired — used as the paint boundary required by the
- * `/raw` heavy-interaction spec §2 (ack-before-work).
+ * frame has fired — used as the paint boundary for `/raw` heavy
+ * interactions, which acknowledge input before starting work.
  *
  * In jsdom (vitest) requestAnimationFrame is shimmed via setTimeout, so this
  * still resolves; tests that need to observe the boundary should spy on the

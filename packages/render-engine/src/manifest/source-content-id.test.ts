@@ -37,8 +37,8 @@ describe('sourceContentIdFromBytes', () => {
 })
 
 describe('sourceContentIdFromFile (cache by object identity)', () => {
-  // Per spec §6.6: caching MUST be by source object identity
-  // (WeakMap<File>), never by metadata. Test fixture for spec §9: two
+  // Caching MUST be by source object identity
+  // (WeakMap<File>), never by metadata. Fixture: two
   // files with identical {name, size, lastModified} but different bytes
   // produce different sha256.
   it('does not collide across distinct content with identical metadata', async () => {

@@ -5,9 +5,7 @@
 // is supplied as a static default by the consumer (Node / CLI).
 //
 // This type intentionally mirrors `src/lib/runtime/capability-vector.ts`
-// shape so a browser-detected value passes straight through. When the
-// policy migration (§3 P5) lands, the engine's version will become the
-// source of truth and src/ will re-export from here.
+// shape so a browser-detected value passes straight through.
 
 export interface CapabilityVector {
   readonly coi: boolean

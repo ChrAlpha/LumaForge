@@ -58,7 +58,7 @@ describe('streaming-sha256 (FIPS 180-4 known vectors)', () => {
 })
 
 describe('streaming-sha256 (chunk-size equivalence)', () => {
-  // Per spec §9: streaming the same bytes in different chunk sizes must
+  // Streaming the same bytes in different chunk sizes must
   // produce an identical final digest, equal to a single one-shot
   // crypto.subtle.digest over the same bytes (node:crypto is the
   // canonical reference in Node).

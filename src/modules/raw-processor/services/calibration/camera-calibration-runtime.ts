@@ -11,7 +11,7 @@
  *      API accepts `whiteNeutral` so the future swap is forward-compatible.
  *
  *   2. Decodes the producer-baked tone-curve LUT (when present) into a
- *      Float32Array for the worker payload. The producer is the spec source
+ *      Float32Array for the worker payload. The producer is the source
  *      of truth for the curve shape — runtime never re-evaluates the spline.
  *
  *   3. Forwards the structured calibration profile across the worker boundary
@@ -96,7 +96,7 @@ function emit(
  *   `{ applied: false, reason: 'rejected' }` + `camera_profile.rejected`.
  * - Solver exhausts `maxIterations` without converging →
  *   `camera_profile.interpolation_capped` is emitted but the profile is still
- *   applied (the spec calls capping an audit event, not a rejection); the
+ *   applied (capping is an audit event, not a rejection); the
  *   returned envelope still reflects `applied: true` with `reason:
  *   'interpolation_capped'` so the caller can surface diagnostic chrome
  *   later if needed.

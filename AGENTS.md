@@ -126,8 +126,7 @@ image-editor assumptions.
 - Before adding or restyling UI, read
   `docs/specs/2026-06-30-anti-ai-slop-guardrails.md`: the standing anti-AI-slop
   checklist (register-aware reflex bans plus the preview-vs-export
-  functional-slop rule), derived from the audit in
-  `docs/audits/2026-06-30-ai-slop-audit.md`.
+  functional-slop rule).
 - Follow existing UI boundaries:
   - primitives in `src/components/ui`
   - shared app components in `src/components/common`
@@ -174,18 +173,17 @@ image-editor assumptions.
   Production validation should include `/raw?forcePreview=cpu` when touching
   degraded-preview behavior.
 
-## Spec And Planning Artifacts
+## Docs
 
-- Spec-driven development artifacts live directly under `docs/`, not under
-  `docs/superpowers/` or plugin-owned directories.
-- Use `docs/specs/` for design/spec documents, `docs/plans/` for
-  implementation plans, and `docs/audits/` for audit/review artifacts when a
-  written artifact is required.
-- If an external workflow or agent skill defaults to `docs/superpowers/...`,
-  override that path to the matching `docs/...` directory before writing or
-  committing the artifact.
-- For non-trivial feature work, establish the module boundary, observable
-  interface, test strategy, and complexity budget before coding.
+- Do not commit spec, plan, audit, or execution-plan documents. Code, tests,
+  commit messages, this file, `DESIGN.md`, and `PRODUCT.md` are the durable
+  record. If a workflow or agent skill wants to write one (for example under
+  `docs/superpowers/`), keep it out of the repository unless the user asks.
+- `docs/` holds user guides plus living references
+  (`PERFORMANCE_RESOURCE_MANAGEMENT.md`, the anti-AI-slop guardrails). Update
+  them when the behavior they describe changes.
+- Code comments state the rule in place; do not point them at design
+  documents or spec section numbers.
 - Keep docs self-contained when the user asks for calculation or architecture
   explanations. Links are provenance, not required reading.
 

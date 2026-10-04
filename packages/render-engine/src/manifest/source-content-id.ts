@@ -1,4 +1,4 @@
-// Source content identity — see spec §6.6.
+// Source content identity.
 //
 // `source_raw.sha256` is the **full-file streaming SHA-256** of the RAW
 // source bytes. This is content identity, not a resume token. Two files
@@ -11,7 +11,7 @@
 //   - Fall back to the pure-JS streaming SHA-256 (`./streaming-sha256.ts`)
 //     when WebCrypto is missing.
 //
-// Cache contract (§6.6):
+// Cache contract:
 //   - Browser: `WeakMap<File | Blob, result>` keyed by source object
 //     identity. Cache invalidates naturally when the source is GC'd.
 //   - Node: no cache here. The caller owns the lifetime of their
@@ -45,7 +45,7 @@ async function sha256OfBytes(bytes: Uint8Array): Promise<string> {
   if (subtle) {
     // `subtle.digest` hashes the bytes described by the view (not the whole
     // underlying buffer), so passing the Uint8Array directly is correct AND
-    // matches the spec §6.6 memory budget (peak ≈ byte_size). The earlier
+    // keeps peak memory at ≈ byte_size. The earlier
     // defensive copy doubled peak to 2×byte_size without benefit; only
     // re-copy when the view is a subarray of a larger underlying buffer
     // AND we need an explicit `ArrayBuffer` to satisfy the BufferSource

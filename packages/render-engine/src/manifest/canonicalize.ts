@@ -1,4 +1,4 @@
-// Canonical-JSON + manifest_sha256 — see spec §6.4.
+// Canonical-JSON + manifest_sha256.
 //
 // Canonical form rules:
 //   1. Object keys sorted lexicographically at every nesting level.
@@ -89,7 +89,7 @@ function sha256HexOfString(input: string): string {
  *
  * Accepts a manifest-shaped object (the typed `RenderManifest`) OR an
  * already-parsed JSON object that may carry unknown fields (forward
- * compatibility). Per spec §6.4 readers must hash the FULL parsed object
+ * compatibility). Readers must hash the FULL parsed object
  * including unknown fields before projecting onto a typed interface.
  */
 export function computeManifestSha256(manifest: object): string {
@@ -123,7 +123,7 @@ export function sealRenderManifest(
  * iff the recomputed canonical hash matches the embedded one.
  *
  * Accepts `unknown` so callers can call it on freshly-parsed JSON before
- * projecting onto their typed interface (the spec's recommended order).
+ * projecting onto their typed interface (the recommended order).
  */
 export function verifyManifestSha256(manifest: unknown): boolean {
   if (typeof manifest !== 'object' || manifest === null) return false

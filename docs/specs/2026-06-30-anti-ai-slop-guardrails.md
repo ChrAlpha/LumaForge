@@ -7,7 +7,7 @@
 
 ## Why this exists
 
-LumaForge already bans the textbook AI-slop tells in `PRODUCT.md` (Anti-references) and `DESIGN.md` (Theme contract). The live risk is therefore **regression, not origination**: an AI-generated change reintroducing a banned pattern or bypassing a contract that already exists. The 2026-06-30 audit (`docs/audits/2026-06-30-ai-slop-audit.md`) found exactly this on the landing page. Those landing defects were later remediated; this document remains the standing checklist that prevents their return. It operationalizes the lessons from that audit and from a study of `openclaw-control-ui` as a non-slop reference.
+LumaForge already bans the textbook AI-slop tells in `PRODUCT.md` (Anti-references) and `DESIGN.md` (Theme contract). The live risk is therefore **regression, not origination**: an AI-generated change reintroducing a banned pattern or bypassing a contract that already exists. A June 2026 audit found exactly this on the landing page. Those defects were remediated; this document is the standing checklist that prevents their return. It also draws on a study of `openclaw-control-ui` as a non-slop reference.
 
 ## The test, by register
 
@@ -20,7 +20,7 @@ Pick the register from the surface that consumes the change. `src/modules/landin
 
 These are what a model reaches for by default. If you are about to write one, stop and rewrite with different structure.
 
-- **Gradient text.** No `background-clip:text` over a gradient. Use a solid `--lf-text` / `--color-lf-on-*`; carry emphasis with weight and scale. (Audit: `index.css:178`.)
+- **Gradient text.** No `background-clip:text` over a gradient. Use a solid `--lf-text` / `--color-lf-on-*`; carry emphasis with weight and scale.
 - **Decorative glow blobs / radial orbs** behind sections. Use a tonal band (`--lf-bg-raised`) or a hairline for separation.
 - **Glassmorphism as default.** `backdrop-filter` is a `/raw` photographic-substrate tool only. Never landing or generic chrome.
 - **Three identical icon cards** (hero plus three features). Use the Contract Rail (numbered rows tied to real color transforms).
@@ -30,10 +30,10 @@ These are what a model reaches for by default. If you are about to write one, st
 - **Pure neutrals.** Never `#fff`/`#000`, never `oklch(1 0 0)` / `oklch(0 0 0)`, even at low alpha. Tint toward the scoped hue-255 slate; minimum chroma 0.005 to 0.01.
 - **Raw hex in component code.** OKLCH plus tokens only. The documented oklch-with-hex-fallback idiom in CSS is the one exception.
 - **Generic CTAs** ("Get started", "Learn more", "Submit"). Name the action ("Open RAW lab").
-- **Em dashes and `--` in UI copy.** Use a period, colon, or parentheses. (Audit: `en.json:170,183,272,273`.)
+- **Em dashes and `--` in UI copy.** Use a period, colon, or parentheses.
 - **Modal as first thought.** Exhaust inline and progressive disclosure first. `RawResetConfirmationDialog` (a real destructive `alertdialog`) is the bar for when a dialog is justified.
-- **Theme-following Tailwind colors in `/raw`** (`green`, `yellow`, `red`, `text`, `fill`, `bg`). `/raw` is a theme-fixed darkroom; use `--color-lf-*` tokens or the shared `Chip`. (Audit: `SupportBadge`, `ErrorOverlay`.)
-- **Forking centralized chrome.** Import `segmented-chrome.ts` and `slider-tracks.ts`; never re-hardcode their values "to match." (Audit: `HSLTool`.)
+- **Theme-following Tailwind colors in `/raw`** (`green`, `yellow`, `red`, `text`, `fill`, `bg`). `/raw` is a theme-fixed darkroom; use `--color-lf-*` tokens or the shared `Chip`.
+- **Forking centralized chrome.** Import `segmented-chrome.ts` and `slider-tracks.ts`; never re-hardcode their values "to match."
 - **Leftover component-gallery content** on product surfaces (dead, barrel-exported components carrying off-palette tokens). Delete it.
 
 ## The positive contract: do this
@@ -74,4 +74,4 @@ Preview and export are not interchangeable, and this is the contract worth prote
 
 ## Provenance
 
-Derived from `docs/audits/2026-06-30-ai-slop-audit.md` and a study of `openclaw-control-ui` (github.com/openclaw/openclaw) as a non-slop reference. Links are provenance, not required reading; this document is self-contained.
+Derived from a June 2026 AI-slop audit of the landing page and `/raw`, and a study of `openclaw-control-ui` (github.com/openclaw/openclaw) as a non-slop reference. This document is self-contained.

@@ -189,7 +189,7 @@ describe('sealRenderManifest / verifyManifestSha256 roundtrip', () => {
   })
 
   it('preserves unknown fields in the hash (forward compatibility)', () => {
-    // Per spec §6.4: readers must hash the FULL parsed object including
+    // Readers must hash the FULL parsed object including
     // fields they don't recognize. A writer that adds a new field gets a
     // different hash; that hash still verifies for a reader that ignores
     // the new field, as long as the reader hashes what's on disk.

@@ -1,11 +1,10 @@
-// Multi-param candidate render — see spec §9 (P4 net-new).
+// Multi-param candidate render.
 //
 // Signature returns an AsyncIterable<CandidateResult> with a maxConcurrent
 // cap, so callers can `for await (...)` and process / discard candidates
 // as they complete instead of buffering N output blobs in memory. This is
-// the floor of safety per spec §14 round-6 finding — the broader
-// preview/candidate/export back-pressure budget lands at P5
-// (`render-budget`).
+// the floor of safety until a shared preview/candidate/export back-pressure
+// budget (`render-budget`) exists.
 
 import type { SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 

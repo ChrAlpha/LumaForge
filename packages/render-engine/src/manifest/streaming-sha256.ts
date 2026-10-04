@@ -1,10 +1,10 @@
-// Incremental SHA-256 — see spec §5 (OutputSink), §6.7, §9.
+// Incremental SHA-256 for chunked OutputSink writes.
 //
 // Pure-JS FIPS 180-4 implementation. Used by browser OutputSink
 // implementations that need to digest chunked writes without buffering the
 // full output (the OPFS path's whole reason for existing). Node sinks MAY
 // use `node:crypto.createHash('sha256')` directly for native speed; this
-// module is the universal fallback and the spec's v1 reference.
+// module is the universal fallback and the v1 reference.
 //
 // Algorithm: FIPS PUB 180-4 §6.2 SHA-256.
 // JS arithmetic notes: bitwise operators coerce to int32, so the `>>> 0`

@@ -1,4 +1,4 @@
-// LumaRenderContext — see spec §5.
+// LumaRenderContext.
 //
 // The single injection surface. Consumers (app, future CLI) construct one
 // and pass it to every engine call. The engine never embeds OPFS, fs,
@@ -31,8 +31,7 @@ export interface OutputSinkMeta {
  * a streaming SHA-256 state per `writeChunk` and finalizes the digest on
  * `close()`. Sinks MUST NOT accumulate the full output in memory; doing so
  * would defeat the OPFS / Node-streaming purpose for large full-resolution
- * exports. See §6.7 for the source-vs-output hashing asymmetry and the
- * `streaming-sha256` helper.
+ * exports. See the `streaming-sha256` helper.
  *
  * The engine reads `sha256` + `byteSize` from this result to populate the
  * final `RenderManifest.output` identity without re-reading output bytes.
@@ -73,8 +72,7 @@ export interface ManifestStore {
 /**
  * Persistence of the in-progress `ExportCheckpointManifest` journal.
  * `put()` overwrites the existing journal at the same name atomically.
- * `list()` supports session-start recovery (see spec §7 Finalization
- * ordering).
+ * `list()` supports session-start recovery.
  */
 export interface CheckpointStore {
   put: (name: string, manifest: ExportCheckpointManifest) => Promise<void>
@@ -131,7 +129,7 @@ export type RenderEvent =
  * The engine receives an already-calibrated session and a
  * `CalibrationIdentity` (returned by the orchestrator's
  * `applySelectedCameraProfile`, never assembled by the caller) to write
- * into the manifest. See spec §5 "Identity origin contract".
+ * into the manifest.
  */
 export interface LumaRenderContext {
   readonly rawRuntime: LumaRawRuntime

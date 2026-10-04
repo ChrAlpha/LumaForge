@@ -1,4 +1,4 @@
-// ExportFidelity — see spec §4 policy/.
+// ExportFidelity.
 //
 // Discrete export-quality input that policy decisions branch on. Lives in
 // engine policy so the pipeline-concurrency helper (now under

@@ -1,10 +1,6 @@
 // `@lumaforge/render-engine` top-level public surface.
-//
-// P2 of the render-engine extraction spec ships the skeleton: types +
-// manifest utilities. Engine entry points (preview render, candidate
-// render, export render) arrive in P3+.
 
-// Context (the injection surface — see spec §5)
+// Context (the injection surface)
 export type {
   CheckpointStore,
   LumaRenderContext,
@@ -19,7 +15,7 @@ export type {
   RenderEvent,
 } from './context/runtime-context'
 
-// Manifest (types + canonicalize + hashes — spec §6, §6.6, §6.7, §7)
+// Manifest (types + canonicalize + hashes)
 export {
   canonicalizeJson,
   computeManifestSha256,
@@ -86,13 +82,13 @@ export {
   type StreamingSha256,
 } from './manifest/streaming-sha256'
 
-// Policy (input types — spec §4 policy/)
+// Policy (input types)
 export type { CapabilityVector } from './policy/capability-input'
 export { NODE_DEFAULT_CAPABILITY } from './policy/capability-input'
 export type { ExportFidelity } from './policy/export-fidelity'
 export type { RenderBudget } from './policy/render-budget'
 
-// Export (pure-logic primitives migrated at P3a — spec §8)
+// Export (pure-logic primitives)
 export { TypedBufferPool } from './export/buffer-pool'
 export {
   normalizeExportConcurrency,

@@ -818,9 +818,8 @@ int maxOutputPixelsFromOptions(val options) {
 
 // Production subclass exposing the protected LibRaw::cam_xyz_coeff helper so
 // applyCalibration() can rebuild rgb_cam / pre_mul from a caller-provided
-// XYZ-to-Camera matrix. This is "strategy A" from the DCP native spike audit
-// (docs/audits/2026-06-13-dcp-native-spike.md); we deliberately inherit the
-// LibRaw normalize+pseudoinverse path rather than reimplementing it.
+// XYZ-to-Camera matrix. We deliberately inherit the LibRaw
+// normalize+pseudoinverse path rather than reimplementing it.
 class LumaCalibrationLibRaw : public LibRaw {
  public:
   using LibRaw::cam_xyz_coeff;
@@ -971,16 +970,15 @@ class LumaRawProcessor {
   // never sees raw illuminants. See
   // packages/luma-color-runtime/src/dcp-interpolate.ts (phase 2 producer).
   //
-  // Sequencing requirements verified by the native spike (audit at
-  // docs/audits/2026-06-13-dcp-native-spike.md):
+  // Sequencing requirements verified by the native spike:
   //   1. Mirror cam_xyz into BOTH imgdata.color AND imgdata.rawdata.color.
   //      raw2image_start (src/preprocessing/raw2image.cpp:21) memmoves
   //      &imgdata.rawdata.color over &imgdata.color at the top of every
   //      dcraw_process; mutations to imgdata.color alone are silently
   //      reverted to the cmatrix-derived baseline.
   //   2. Rebuild rgb_cam / pre_mul via LibRaw::cam_xyz_coeff (exposed via
-  //      LumaCalibrationLibRaw). Strategy B (manual math) and C (write
-  //      rgb_cam directly) are documented fallbacks in the audit but unused.
+  //      LumaCalibrationLibRaw). Computing rgb_cam by hand or writing it
+  //      directly are possible fallbacks, both unused.
   //   3. Mirror the rebuilt rgb_cam and pre_mul into imgdata.rawdata.color
   //      for the same raw2image_start reason.
   //   4. Leave params.use_camera_matrix = 1 (the strict-export default).
@@ -995,10 +993,7 @@ class LumaRawProcessor {
   // PHASE 1 LIMITATION: when toneCurveLut is provided, the wrapper stashes
   // it on the session as a std::vector<float> for a future post-process pass
   // (per DNG spec, ToneCurve runs after the matrix in linear working space,
-  // before output gamma). The actual per-pixel LUT pass is NOT implemented
-  // in this PR — it lands in a follow-up to keep this PR shippable. See the
-  // spec at docs/specs/2026-06-13-dcp-via-libraw-lcms2-design.md "Pipeline
-  // Math: What Changes in the Wrapper" for the intended ordering.
+  // before output gamma). The per-pixel LUT pass is NOT implemented yet.
   void applyCalibration(val params) {
     if (input_buffer_.empty()) {
       throw std::runtime_error(

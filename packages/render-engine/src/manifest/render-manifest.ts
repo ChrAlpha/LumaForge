@@ -1,15 +1,15 @@
-// RenderManifest v1 — see docs/specs/2026-06-13-render-engine-extraction-design.md
-//   §6.1 RenderIdentity / RenderManifest composition
-//   §6.2 SourceRawIdentity / LutIdentity / CalibrationIdentity / ColorGraphIdentity / OutputIdentity
-//   §6.3 RenderParams / PolicyChoice / RenderEnvironment
-//   §6.4 Canonicalization + self-hash (implemented in `./canonicalize.ts`)
+// RenderManifest v1:
+//   - RenderIdentity / RenderManifest composition
+//   - SourceRawIdentity / LutIdentity / CalibrationIdentity / ColorGraphIdentity / OutputIdentity
+//   - RenderParams / PolicyChoice / RenderEnvironment
+//   Canonicalization + self-hash live in `./canonicalize.ts`.
 
 // ---------------------------------------------------------------------------
-// §6.2 — identity sub-types
+// Identity sub-types
 // ---------------------------------------------------------------------------
 
 export interface SourceRawIdentity {
-  /** Full-file streaming SHA-256 of the source bytes (see §6.6). */
+  /** Full-file streaming SHA-256 of the source bytes (see `source-content-id.ts`). */
   readonly sha256: string
   readonly byte_size: number
   /** Basename only, no directory. */
@@ -87,13 +87,10 @@ export interface ColorGraphIdentity {
   /** SHA-256 of the canonical descriptor. */
   readonly fingerprint: string
   /**
-   * Serialized `resolveExportColorGraph` output. Treated as opaque at P2.
-   *
-   * Spec §14 Q4: P3 (when the export engine migration lands) MUST freeze a
-   * `descriptor_version` field on this structure so future descriptor-shape
-   * changes don't invalidate canonical hashes silently. Until then,
-   * downstream readers should treat the descriptor as opaque bytes and rely
-   * on `fingerprint` for equality comparison.
+   * Serialized `resolveExportColorGraph` output, versioned by its
+   * `descriptor_version` field (see `./color-graph-descriptor.ts`) so
+   * descriptor-shape changes don't change canonical hashes silently. Typed as
+   * opaque here; rely on `fingerprint` for equality comparison.
    */
   readonly descriptor: unknown
 }
@@ -108,7 +105,7 @@ export interface OutputIdentity {
 }
 
 // ---------------------------------------------------------------------------
-// §6.3 — params / policy / environment
+// Params / policy / environment
 // ---------------------------------------------------------------------------
 
 export interface ToneCurveParams {
@@ -199,13 +196,13 @@ export interface RenderEnvironment {
 }
 
 // ---------------------------------------------------------------------------
-// §6.1 — identity composition
+// Identity composition
 // ---------------------------------------------------------------------------
 
 /**
  * Identity block — what is known when a render STARTS. Shared between the
  * final `RenderManifest` and the mid-render `ExportCheckpointManifest` via
- * composition, not subtype. See §7 for the journal lifecycle.
+ * composition, not subtype.
  */
 export interface RenderIdentity {
   readonly source_raw: SourceRawIdentity
@@ -221,8 +218,8 @@ export type RenderManifestKind = 'preview' | 'candidate' | 'export'
 
 /**
  * Final, post-render manifest — written ONCE after output bytes exist and
- * `OutputSink.close()` returns the output sha256. See §6.4 for the
- * canonicalization + self-hash contract.
+ * `OutputSink.close()` returns the output sha256. See `./canonicalize.ts`
+ * for the canonicalization + self-hash contract.
  */
 export interface RenderManifest extends RenderIdentity {
   readonly manifest_version: 1

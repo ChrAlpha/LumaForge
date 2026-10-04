@@ -1,10 +1,8 @@
 // `@lumaforge/render-engine/preview` subpath entry.
 //
-// P4a (this phase) ships the migrated CPU preview path:
-// preview-render.ts (was cpu-preview-frame.ts), preview-plan.ts (was
-// preview-resolution-policy.ts), and the worker-bridge module (CPU
-// preview Worker abstraction). P4b adds the net-new candidate-render +
-// contact-sheet primitives on top of these.
+// CPU preview path: preview-render.ts, preview-plan.ts, and the
+// worker-bridge module (CPU preview Worker abstraction), plus the
+// candidate-render and contact-sheet primitives built on top of them.
 
 export {
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
@@ -31,7 +29,7 @@ export type {
   CpuPreviewVariant,
 } from './worker-bridge/protocol'
 
-// P4b net-new
+// Candidate render + contact sheet
 export {
   type CandidateParams,
   candidateRender,

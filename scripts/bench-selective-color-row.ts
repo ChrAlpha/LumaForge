@@ -2,8 +2,8 @@
  * Selective-color CPU micro-benchmark.
  *
  * Wall-clock timing for the row-band path of the selective-color OKLab/OKLch
- * shift. Used as a measured baseline anchor in the Selective Color HSL MVP
- * spec's performance budget. Intentionally observational — no asserts, no
+ * shift. Used as a measured baseline for the selective-color performance
+ * budget. Intentionally observational — no asserts, no
  * acceptance threshold. Capture the output in commit/PR notes when shipping
  * changes that touch the row path.
  *

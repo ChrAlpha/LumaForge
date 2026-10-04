@@ -1,9 +1,9 @@
 /// <reference types="node" />
 // @vitest-environment node
 
-// Bundle smoke — mirrors the P0/P1 pattern. If the build output regresses
-// (e.g. vite externalization breaks a node:* import, or the subpath
-// exports stop resolving), this test catches it before P3+ consumers do.
+// Bundle smoke. If the build output regresses (e.g. vite externalization
+// breaks a node:* import, or the subpath exports stop resolving), this test
+// catches it before consumers do.
 
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'

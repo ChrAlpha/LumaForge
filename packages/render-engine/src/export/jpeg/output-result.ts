@@ -5,10 +5,10 @@
 // exports these types for backwards compatibility with app-side
 // consumers (the OPFS impls stay there, they're env-bound).
 //
-// NOTE: This is not the spec's `OutputSinkResult` (which carries
-// `{sha256, byteSize}` for incremental hashing — see §5/§6.7). The
-// migration from `ExportOutputResult` to `OutputSinkResult` is the
-// remaining adapter refactor; tracked for a follow-up phase.
+// NOTE: This is not the context's `OutputSinkResult` (which carries
+// `{sha256, byteSize}` for incremental hashing). Moving from
+// `ExportOutputResult` to `OutputSinkResult` is an unfinished adapter
+// refactor.
 
 export type BlobOutputResult = {
   kind: 'blob'

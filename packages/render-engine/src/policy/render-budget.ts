@@ -1,8 +1,7 @@
 // RenderBudget — type sketch.
 //
-// P2 ships the type only; the unified back-pressure logic across
-// preview / candidate / export lands in P5 alongside the policy migration.
-// See spec §9 (`render-budget.ts`) and §14 Q7.
+// Type only: no unified back-pressure logic across preview / candidate /
+// export consumes it yet.
 
 export interface RenderBudget {
   /**

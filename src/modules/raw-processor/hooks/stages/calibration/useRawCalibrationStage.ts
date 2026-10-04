@@ -148,7 +148,7 @@ export function useRawCalibrationStage({
       }
 
       // Silent-by-default: an entry without a dcp-params sidecar is
-      // unselectable in the spec's UI sense, but the runtime treats it as
+      // unselectable in the UI, but the runtime treats it as
       // unsupported. We still surface the apply call to the service so the
       // structured telemetry event fires consistently.
       const runtimeSession = runtimeSessionRef.current
@@ -168,7 +168,7 @@ export function useRawCalibrationStage({
           setCachedDcpParams?.(entry, dcpParams)
         } catch {
           // Treat fetch/parse failures the same as missing params: silent
-          // unsupported. The service will emit the spec-shaped event.
+          // unsupported. The service will emit the structured event.
           dcpParams = null
         } finally {
           inflightRef.current = Math.max(0, inflightRef.current - 1)

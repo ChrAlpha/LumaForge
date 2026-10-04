@@ -1,4 +1,4 @@
-// Contact-sheet composition — see spec §9 (P4 net-new).
+// Contact-sheet composition.
 //
 // CPU-only grid composer. Takes N RGBA tiles + a grid spec, paints them
 // into one big RGBA buffer that callers can hand to

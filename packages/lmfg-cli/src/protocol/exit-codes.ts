@@ -1,4 +1,4 @@
-// Spec §4.4 exit codes.
+// lmfg process exit codes (part of the CLI protocol contract).
 export const EXIT_CODES = {
   ok: 0,
   failure: 1,

@@ -5,7 +5,7 @@ export { NODE_DEFAULT_CAPABILITY } from './capability-input'
 export type { ExportFidelity } from './export-fidelity'
 export type { RenderBudget } from './render-budget'
 
-// P5: policy decisions migrated from src/lib/runtime
+// Policy decisions (migrated from src/lib/runtime)
 export {
   deriveExportPolicy,
   type ExportIntent,
