@@ -254,4 +254,59 @@ describe('mobileExportPanel', () => {
     })
     expect(button).toBeDisabled()
   })
+  it('titles the panel by export state in a labelled region', () => {
+    const { unmount } = render(
+      <MobileExportPanel
+        canExport
+        isProcessing={false}
+        onExport={vi.fn()}
+        exportResult={null}
+        exportShareCapability={{ available: false, reason: '' }}
+        onShareExport={vi.fn()}
+        onDownloadExport={vi.fn()}
+        onCopyExport={vi.fn()}
+      />,
+    )
+    const region = screen.getByRole('region', { name: 'Export' })
+    expect(region).toHaveAttribute('data-mobile-export-panel')
+    unmount()
+
+    renderPanel({ isProcessing: true, isExporting: true, progress: 41.6 })
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(
+      'Exporting42%',
+    )
+  })
+
+  it('titles a finished export and keeps the result card naming the file', () => {
+    renderPanel({
+      exportResult: createResult({
+        kind: 'full-resolution',
+        filename: 'DSC09142.jpg',
+      }),
+    })
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Exported' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'DSC09142.jpg ready' }),
+    ).toBeInTheDocument()
+  })
+
+  it('closes from a 44px header button', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    renderPanel({ onClose })
+    const close = screen.getByRole('button', { name: 'Close export' })
+    expect(close).toHaveClass('size-11')
+    expect(close).toHaveClass('focus-visible:outline-lf-green/80')
+    await user.click(close)
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('omits the close button when nothing can take the deck back', () => {
+    renderPanel()
+    expect(
+      screen.queryByRole('button', { name: 'Close export' }),
+    ).not.toBeInTheDocument()
+  })
 })

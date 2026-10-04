@@ -66,6 +66,8 @@ export function MobileRawToolSurface() {
       onResetSession={props.onResetSession}
       isProcessing={props.isProcessing}
       isExporting={props.isExporting === true}
+      exportProgress={props.progress}
+      hasExportResult={props.exportResult != null}
       runtimeReadinessState={props.runtimeReadinessState}
       onPrepareRuntime={props.onPrepareRuntime}
       cpuPreviewNotice={props.cpuPreviewNotice}
@@ -82,7 +84,7 @@ export function MobileRawToolSurface() {
         onIntensitySelect: props.onIntensitySelect,
         strengthDisabled: mobileStrengthDisabled,
       }}
-      exportPanel={
+      exportPanel={({ onClose }) => (
         <MobileExportPanel
           canExport={props.canExport}
           disabledReason={props.disabledReason}
@@ -99,8 +101,11 @@ export function MobileRawToolSurface() {
           onDownloadExportManifest={props.onDownloadExportManifest}
           onCopyExport={props.onCopyExport}
           onRecoverExportSource={props.onRecoverExportSource}
+          isExporting={props.isExporting === true}
+          progress={props.progress}
+          onClose={onClose}
         />
-      }
+      )}
       moreSheet={moreSheet}
       previewSuspended={previewSuspended}
       preferExportMode={previewSuspended && props.exportResult != null}

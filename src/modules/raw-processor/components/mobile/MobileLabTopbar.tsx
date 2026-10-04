@@ -1,4 +1,5 @@
 import { ImageUp, Info, Languages, RotateCcw, Wand2 } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 import { useI18n } from '~/lib/i18n'
 
@@ -16,6 +17,7 @@ export function MobileLabTopbar({
   onOpenLutBrowser,
   onOpenMore,
   onResetSession,
+  exportAction,
   scrubbing,
   onHeightChange,
 }: {
@@ -29,6 +31,7 @@ export function MobileLabTopbar({
   onOpenLutBrowser: () => void
   onOpenMore: () => void
   onResetSession: () => void
+  exportAction?: ReactNode
   scrubbing?: boolean
   onHeightChange?: (height: number) => void
 }) {
@@ -43,6 +46,7 @@ export function MobileLabTopbar({
       supportLevel={supportLevel}
       histogramShown={histogramShown}
       onToggleHistogram={onToggleHistogram}
+      exportAction={exportAction}
       scrubbing={scrubbing}
       moreMenuItems={[
         {

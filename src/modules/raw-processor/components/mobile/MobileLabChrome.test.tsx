@@ -44,7 +44,14 @@ const base = {
     onLutProfileSelect: vi.fn(),
     onlineLutSources: undefined,
   },
-  exportPanel: <div>export</div>,
+  exportPanel: ({ onClose }: { onClose: () => void }) => (
+    <div>
+      export panel
+      <button type="button" onClick={onClose}>
+        Close export
+      </button>
+    </div>
+  ),
   moreSheet: { pipelineSteps: [], lutRows: [], fileRows: [] },
 }
 
@@ -190,7 +197,7 @@ describe('mobileLabChrome', () => {
       <MobileLabChrome
         {...base}
         preferExportMode
-        exportPanel={<div>ready export actions</div>}
+        exportPanel={() => <div>ready export actions</div>}
       />,
     )
 
@@ -207,7 +214,7 @@ describe('mobileLabChrome', () => {
       <MobileLabChrome
         {...base}
         preferExportMode
-        exportPanel={<div>ready export actions</div>}
+        exportPanel={() => <div>ready export actions</div>}
       />,
     )
     expect(await screen.findByText('ready export actions')).toBeInTheDocument()
@@ -270,7 +277,7 @@ describe('mobileLabChrome', () => {
         {...base}
         previewSuspended
         preferExportMode
-        exportPanel={<button type="button">Download JPEG</button>}
+        exportPanel={() => <button type="button">Download JPEG</button>}
       />,
     )
 
@@ -724,5 +731,123 @@ describe('mobileLabChrome', () => {
     vi.advanceTimersByTime(500)
     expect(onViewModeChange).not.toHaveBeenCalled()
     vi.useRealTimers()
+  })
+  it('puts the export action at the far right of the topbar, after More', () => {
+    const { container } = render(<MobileLabChrome {...base} canExport />)
+    const topbar = container.querySelector('[data-mobile-topbar]')!
+    const buttons = within(topbar as HTMLElement).getAllByRole('button')
+    const action = buttons.at(-1)!
+    expect(action).toHaveAttribute('data-mobile-export-action')
+    expect(action).toHaveAttribute('data-state', 'ready')
+    expect(action).toHaveAccessibleName('Export ready: open options')
+    expect(buttons.at(-2)).toHaveAccessibleName(/more actions/i)
+  })
+
+  it('has no export action before a RAW is loaded', () => {
+    const { container } = render(<MobileLabChrome {...base} hasImage={false} />)
+    expect(container.querySelector('[data-mobile-export-action]')).toBeNull()
+  })
+
+  it('opens the export panel in the deck from the topbar and returns to the last tool', async () => {
+    const { container } = render(<MobileLabChrome {...base} />)
+    const dock = screen.getByRole('tablist', { name: /lab modes/i })
+    await userEvent.click(within(dock).getByRole('tab', { name: /adjust/i }))
+
+    const action = container.querySelector<HTMLButtonElement>(
+      '[data-mobile-export-action]',
+    )!
+    // Blocked export is still tappable: the panel explains why.
+    expect(action).toHaveAttribute('data-state', 'idle')
+    expect(action).toBeEnabled()
+    expect(action).toHaveAttribute('aria-expanded', 'false')
+
+    await userEvent.click(action)
+    expect(screen.getByText('export panel')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('group', { name: /tone sliders/i }),
+    ).not.toBeInTheDocument()
+    expect(action).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      screen.queryByRole('tab', { selected: true }),
+    ).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close export' }))
+    expect(screen.queryByText('export panel')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: /tone sliders/i }),
+    ).toBeInTheDocument()
+    expect(action).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('toggles the export panel closed from the action while it is open', async () => {
+    const { container } = render(<MobileLabChrome {...base} />)
+    const action = container.querySelector<HTMLButtonElement>(
+      '[data-mobile-export-action]',
+    )!
+    await userEvent.click(action)
+    expect(screen.getByText('export panel')).toBeInTheDocument()
+    await userEvent.click(action)
+    expect(screen.queryByText('export panel')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /lut browser/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the export panel on screen while an export runs, and shows progress on the action', async () => {
+    const { container, rerender } = render(
+      <MobileLabChrome {...base} canExport />,
+    )
+    const action = container.querySelector<HTMLButtonElement>(
+      '[data-mobile-export-action]',
+    )!
+    await userEvent.click(action)
+    expect(screen.getByText('export panel')).toBeInTheDocument()
+
+    rerender(
+      <MobileLabChrome
+        {...base}
+        canExport={false}
+        isProcessing
+        isExporting
+        exportProgress={42.4}
+      />,
+    )
+    const busy = container.querySelector<HTMLButtonElement>(
+      '[data-mobile-export-action]',
+    )!
+    expect(busy).toHaveAttribute('data-state', 'exporting')
+    expect(busy).toHaveAccessibleName('Exporting 42%')
+    expect(busy).toBeEnabled()
+    expect(screen.getByText('export panel')).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('tablist', { name: /lab modes/i })).getByRole(
+        'tab',
+        { name: /look/i },
+      ),
+    ).toBeDisabled()
+  })
+
+  it('disables the export action while the pipeline is busy with something other than export', () => {
+    const { container } = render(<MobileLabChrome {...base} isProcessing />)
+    expect(
+      container.querySelector('[data-mobile-export-action]'),
+    ).toBeDisabled()
+  })
+
+  it('marks a finished export on the action and opens the result', async () => {
+    const { container } = render(
+      <MobileLabChrome
+        {...base}
+        hasExportResult
+        exportPanel={() => <div>result actions</div>}
+      />,
+    )
+    const action = container.querySelector<HTMLButtonElement>(
+      '[data-mobile-export-action]',
+    )!
+    expect(action).toHaveAttribute('data-state', 'done')
+    expect(action).toHaveAccessibleName('Exported: open result')
+    await userEvent.click(action)
+    expect(screen.getByText('result actions')).toBeInTheDocument()
   })
 })

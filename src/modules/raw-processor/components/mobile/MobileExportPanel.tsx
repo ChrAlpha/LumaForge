@@ -5,6 +5,7 @@ import {
   FileJson,
   FolderOpen,
   Share2,
+  X,
 } from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import { useId } from 'react'
@@ -17,6 +18,7 @@ import type {
   ExportShareCapability,
 } from '../../model/export-result'
 import type { ExportRecoveryState } from '../../model/session'
+import { TAP_SPRING } from '../../motion'
 import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
 
 // Mirrors the handoff spec tokens: --mrl-ease + base 220ms duration so the
@@ -40,7 +42,7 @@ function BusySpinner() {
   )
 }
 
-function MobileExportAction(props: {
+function ExportResultAction(props: {
   icon: typeof Share2
   label: string
   // Full descriptive name for assistive tech / hover when the visible face is
@@ -85,9 +87,26 @@ export function MobileExportPanel(props: {
   onDownloadExportManifest?: () => void | Promise<void>
   onCopyExport: () => void | Promise<void>
   onRecoverExportSource?: () => void
+  /** A full-resolution or HQ export is running (not just any processing). */
+  isExporting?: boolean
+  /** Export progress, 0-100, shown beside the title while exporting. */
+  progress?: number
+  /** Hands the deck back to the tool that held it before export opened. */
+  onClose?: () => void
 }) {
   const { t } = useI18n()
   const previewReasonId = useId()
+  const titleId = useId()
+  const isExporting = props.isExporting === true
+  const percent =
+    typeof props.progress === 'number' && Number.isFinite(props.progress)
+      ? Math.round(Math.min(100, Math.max(0, props.progress)))
+      : null
+  const title = isExporting
+    ? t('raw.mobile.export.exporting')
+    : props.exportResult
+      ? t('raw.mobile.export.done')
+      : t('raw.export.title')
   const unavailableReason =
     localizeRawReason(props.disabledReason, t) || t('raw.exportSourceLoading')
   const copyCapability = props.exportResult?.copyCapability
@@ -158,18 +177,18 @@ export function MobileExportPanel(props: {
             : 'grid grid-cols-3 gap-1.5'
         }
       >
-        <MobileExportAction
+        <ExportResultAction
           icon={Share2}
           label={t('raw.export.share')}
           disabled={!props.exportShareCapability.available}
           onClick={props.onShareExport}
         />
-        <MobileExportAction
+        <ExportResultAction
           icon={Download}
           label={t('raw.export.download')}
           onClick={props.onDownloadExport}
         />
-        <MobileExportAction
+        <ExportResultAction
           icon={Copy}
           label={t('raw.export.copy')}
           srLabel={copyButtonLabel}
@@ -177,7 +196,7 @@ export function MobileExportPanel(props: {
           onClick={props.onCopyExport}
         />
         {props.exportResult.manifestState ? (
-          <MobileExportAction
+          <ExportResultAction
             icon={FileJson}
             label={t('raw.export.downloadManifest')}
             srLabel={t(
@@ -276,8 +295,40 @@ export function MobileExportPanel(props: {
   )
 
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      {body}
-    </AnimatePresence>
+    <section
+      aria-labelledby={titleId}
+      data-mobile-export-panel
+      className="grid gap-1.5"
+    >
+      <div className="-mt-2 flex min-h-11 items-center justify-between gap-2">
+        <h2
+          id={titleId}
+          className="m-0 min-w-0 truncate pl-0.5 text-[0.88rem] font-semibold text-lf-on-photo-ink"
+        >
+          {title}
+          {isExporting && percent !== null && (
+            <span className="ml-1.5 font-medium text-lf-on-photo-ink/80 tabular-nums">
+              {percent}%
+            </span>
+          )}
+        </h2>
+        {props.onClose && (
+          <m.button
+            type="button"
+            aria-label={t('raw.mobile.export.close')}
+            data-mobile-export-close
+            whileTap={{ y: 0.5 }}
+            transition={TAP_SPRING}
+            onClick={props.onClose}
+            className="-mr-2 inline-flex size-11 shrink-0 items-center justify-center rounded-md text-lf-on-photo-ink/72 transition-colors hover:bg-[oklch(0.96_0.006_255/0.06)] hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-lf-green/80 active:bg-[oklch(0.96_0.006_255/0.1)]"
+          >
+            <X aria-hidden="true" className="size-[18px]" />
+          </m.button>
+        )}
+      </div>
+      <AnimatePresence mode="wait" initial={false}>
+        {body}
+      </AnimatePresence>
+    </section>
   )
 }

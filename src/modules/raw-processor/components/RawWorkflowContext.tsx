@@ -61,6 +61,8 @@ export interface RawToolSurfaceProps {
   disabledReason?: string
   isProcessing: boolean
   isExporting?: boolean
+  /** Workflow progress, 0-100; the export action reads it while exporting. */
+  progress?: number
   runtimeReadinessState?: RawRuntimeReadinessState
   onPrepareRuntime?: () => void
   previewSuspended?: boolean

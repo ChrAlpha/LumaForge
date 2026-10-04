@@ -17,6 +17,10 @@ import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
 import type { MobileDetailsSheet } from './mobile-details-sheet'
 import { MobileEmptyState } from './MobileEmptyState'
+import {
+  getMobileExportActionState,
+  MobileExportAction,
+} from './MobileExportAction'
 import { MobileFloatingOverlays } from './MobileFloatingOverlays'
 import { MobileLabModeDock } from './MobileLabModeDock'
 import { MobileLabTopbar } from './MobileLabTopbar'
@@ -52,11 +56,15 @@ export function MobileLabChrome(props: {
   onResetSession: () => void
   isProcessing: boolean
   isExporting?: boolean
+  /** Export progress, 0-100. */
+  exportProgress?: number
+  hasExportResult?: boolean
   runtimeReadinessState?: RawRuntimeReadinessState
   onPrepareRuntime?: () => void
   cpuPreviewNotice?: CpuPreviewNotice
   lutBrowser: Omit<MobileLutBrowserProps, 'open' | 'onClose'>
-  exportPanel: ReactNode
+  /** Rendered in the deck while export is open; `onClose` hands it back. */
+  exportPanel: (controls: { onClose: () => void }) => ReactNode
   moreSheet: MobileDetailsSheet
   previewSuspended?: boolean
   preferExportMode?: boolean
@@ -85,6 +93,8 @@ export function MobileLabChrome(props: {
     openLutContractBrowser,
     closeLutBrowser,
     handleModeChange,
+    openExport,
+    closeExport,
   } = useMobileLabChromeController({
     hasImage: props.hasImage,
     isProcessing: props.isProcessing,
@@ -95,6 +105,21 @@ export function MobileLabChrome(props: {
     onViewModeChange: props.onViewModeChange,
     compareDisabled: props.transform?.active === true,
   })
+
+  const isExporting = props.isExporting === true
+  const exportActionState = getMobileExportActionState({
+    canExport: props.canExport === true,
+    isProcessing: props.isProcessing,
+    isExporting,
+    hasResult: props.hasExportResult === true,
+  })
+  // Mirrors the deck's own visibility rule: tools are disabled while the
+  // pipeline is busy, but a running export keeps its panel on screen.
+  const exportPanelVisible =
+    exportOpen &&
+    dockExpanded &&
+    props.hasImage &&
+    (!props.isProcessing || isExporting)
 
   // Stage insets: the photo re-fits between the topbar and the dock while
   // the chrome is visible, and returns to full bleed in immersive or when no
@@ -186,6 +211,17 @@ export function MobileLabChrome(props: {
               onOpenLutBrowser={openLutBrowser}
               onOpenMore={() => setMoreOpen(true)}
               onResetSession={props.onResetSession}
+              exportAction={
+                props.hasImage ? (
+                  <MobileExportAction
+                    state={exportActionState}
+                    progress={props.exportProgress}
+                    expanded={exportPanelVisible}
+                    disabled={props.isProcessing && !isExporting}
+                    onClick={exportPanelVisible ? closeExport : openExport}
+                  />
+                ) : null
+              }
               scrubbing={focusActive}
               onHeightChange={setTopbarHeight}
             />
@@ -202,7 +238,7 @@ export function MobileLabChrome(props: {
               transform={props.transform}
               mode={mode}
               exportOpen={exportOpen}
-              exportBusy={props.isExporting === true}
+              exportBusy={isExporting}
               expanded={dockExpanded && props.hasImage}
               disabled={!props.hasImage || props.isProcessing}
               onModeChange={handleModeChange}
@@ -214,7 +250,7 @@ export function MobileLabChrome(props: {
               color={props.color}
               selectiveColor={props.selectiveColor}
               lutBrowser={props.lutBrowser}
-              exportPanel={props.exportPanel}
+              exportPanel={props.exportPanel({ onClose: closeExport })}
               onToneChange={props.onToneChange}
               onToneReset={props.onToneReset}
               onColorChange={props.onColorChange}

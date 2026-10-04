@@ -1,4 +1,5 @@
 import { BarChart3 } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useLayoutEffect, useRef } from 'react'
 
 import { IconButton } from '~/components/ui/button'
@@ -18,6 +19,8 @@ export function MobileTopbar(props: {
   histogramShown: boolean
   onToggleHistogram: () => void
   moreMenuItems: MobileMoreMenuItem[]
+  /** Terminal export action, rendered at the far right after More. */
+  exportAction?: ReactNode
   scrubbing?: boolean
   /** Rendered height (px) so the stage can keep the photo below the topbar. */
   onHeightChange?: (height: number) => void
@@ -131,6 +134,7 @@ export function MobileTopbar(props: {
           ariaLabel={t('raw.mobile.more.menuAria')}
           items={props.moreMenuItems}
         />
+        {props.exportAction}
       </div>
     </header>
   )

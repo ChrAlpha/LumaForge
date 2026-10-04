@@ -125,6 +125,7 @@ export function RawWorkflowToolProvider({
           : workflow.previewExportDisabledReason,
         isProcessing,
         isExporting: workflow.status === 'exporting',
+        progress: workflow.progress,
         runtimeReadinessState,
         onPrepareRuntime,
         previewSuspended: workflow.previewSuspended,
