@@ -109,16 +109,11 @@ export function AdjustListPanel(props: AdjustListPanelProps) {
           // px-3.5 restores the inner content position.
           '-mx-3.5 px-3.5',
           'grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2',
+          // The bar sits flush under the deck's own top hairline and paints
+          // nothing of its own above: one seam at the top of the deck. Its
+          // only line is the divider under the tabs, which the active
+          // underline rides.
           'border-b border-lf-on-photo-bord-soft',
-          // Delicate frosted glass over the photo above the dock. Because
-          // no content can scroll behind it (internal scroll lives below
-          // in its own region), the alpha can stay low without leaking —
-          // and the bar reads as part of the dock's transparent-to-dark
-          // gradient instead of a separate dark slab pasted on top.
-          'bg-[oklch(0.118_0.006_255/0.40)] backdrop-blur-xl',
-          // 1px inset top highlight — soft "edge of light" matching the
-          // segmented-chrome lift language on the desktop.
-          'shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.10)]',
           'transition-opacity duration-150',
           // Dim, do not delete: the section you are in is context a
           // photographer keeps reading while a value moves.

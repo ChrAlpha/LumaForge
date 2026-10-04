@@ -191,6 +191,7 @@ describe('mobileModeDock', () => {
     expect(deck().style.height).toBe('212px')
     expect(deck()).toHaveClass('overflow-y-auto', 'flex', 'flex-col')
     expect(deck()).not.toHaveAttribute('data-deck-fill')
+    expect(deck()).toHaveClass('pt-3.5')
     // Export and Look size the deck: their content sits at its natural
     // height, pushed to the bottom of the deck near the thumb.
     expect(screen.getByTestId('panel').parentElement).toHaveClass(
@@ -214,6 +215,10 @@ describe('mobileModeDock', () => {
     // with the section chrome held still.
     expect(deck().style.height).toBe('250px')
     expect(deck()).toHaveAttribute('data-deck-fill', 'true')
+    // The list's section chrome is the deck's top edge: no empty band
+    // between the deck hairline and the sub-tabs.
+    expect(deck()).toHaveClass('pt-0')
+    expect(deck()).not.toHaveClass('pt-3.5')
     expect(screen.getByTestId('panel').parentElement).toHaveClass('h-full')
     expect(deck().className).not.toMatch(/vh/)
   })

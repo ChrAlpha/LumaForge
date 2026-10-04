@@ -87,15 +87,12 @@ describe('adjustListPanel', () => {
       'border-lf-on-photo-bord-soft',
     )
     // The chrome lives in a flex column as a non-shrinking header above an
-    // independent scroll region — the slider list scrolls inside its own
-    // container and never crosses the chrome. That removes the need for
-    // an opaque "obscurer" bg, so the bar stays a delicate frosted glass.
-    expect(document.querySelector('[data-adjust-section-chrome]')).toHaveClass(
-      'shrink-0',
-      '-mx-3.5',
-      'bg-[oklch(0.118_0.006_255/0.40)]',
-      'backdrop-blur-xl',
-    )
+    // independent scroll region. It sits flush under the deck's hairline,
+    // so it paints no surface or top highlight of its own: one seam.
+    const chrome = document.querySelector('[data-adjust-section-chrome]')!
+    expect(chrome).toHaveClass('shrink-0', '-mx-3.5')
+    expect(chrome.className).not.toMatch(/backdrop-blur|shadow-\[inset_0_1px/)
+    expect(chrome.className).not.toMatch(/\bbg-/)
     expect(document.querySelector('[data-adjust-list-scroll]')).toHaveClass(
       'overflow-y-auto',
       'flex-1',

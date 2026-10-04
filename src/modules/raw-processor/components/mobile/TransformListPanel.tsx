@@ -113,9 +113,8 @@ export function TransformListPanel({
           'shrink-0',
           '-mx-3.5 px-3.5',
           'grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2',
+          // Flush under the deck's top hairline, like Adjust: one seam.
           'border-b border-lf-on-photo-bord-soft',
-          'bg-[oklch(0.118_0.006_255/0.40)] backdrop-blur-xl',
-          'shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.10)]',
           'transition-opacity duration-150',
           scrubbing && 'pointer-events-none opacity-45',
         )}

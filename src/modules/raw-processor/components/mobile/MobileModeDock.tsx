@@ -142,7 +142,10 @@ export function MobileModeDock(props: {
             }
             className={clsxm(
               // Padding is DECK_PADDING_Y_PX top + bottom; keep them in step.
-              'isolate absolute inset-x-0 bottom-full flex flex-col overflow-y-auto px-3.5 pb-2.5 pt-3.5',
+              // A list tool's section chrome is its own top edge, so it sits
+              // flush under the deck's hairline with no empty band above it.
+              'isolate absolute inset-x-0 bottom-full flex flex-col overflow-y-auto px-3.5 pb-2.5',
+              fillsDeck ? 'pt-0' : 'pt-3.5',
               'transition-[height] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
               // The surface is its own layer so a scrub can fade it to 10%
               // while the rows above it dim to 45%: the stage reads through
