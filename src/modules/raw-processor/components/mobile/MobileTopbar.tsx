@@ -39,9 +39,9 @@ export function MobileTopbar(props: {
   const meta = props.hasImage ? props.fileMeta : t('raw.header.subtitleEmpty')
   const scrubbing = props.scrubbing === true
   // During a slider scrub the topbar yields its content slot to the
-  // ScrubValueHud — same vertical band, same gradient backdrop. We fade the
-  // file title, app mark, and action cluster instead of competing for the
-  // safe-area row, keeping the gradient alone to back the HUD readout.
+  // ScrubValueHud: same band, same solid backdrop. The file title, app mark,
+  // and action cluster fade out instead of competing for the row, leaving
+  // the plate alone to back the HUD readout.
   const fadeWhenScrubbing = clsxm(
     'transition-opacity duration-150',
     scrubbing && 'pointer-events-none opacity-0',
@@ -51,7 +51,10 @@ export function MobileTopbar(props: {
       ref={headerRef}
       data-mobile-topbar
       data-scrubbing={scrubbing || undefined}
-      className="pointer-events-none absolute inset-x-0 top-0 z-20 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 bg-gradient-to-b from-[oklch(0.064_0.006_255/0.82)] via-[oklch(0.064_0.006_255/0.4)] to-transparent px-3 pb-5 pt-safe-offset-3 text-lf-on-photo-ink"
+      // The photo is anchored below the topbar rather than under it, so the
+      // plate is the solid stage base and only as tall as its content: the
+      // top safe area, 12px, and one 44px row.
+      className="pointer-events-none absolute inset-x-0 top-0 z-20 grid auto-rows-[minmax(2.75rem,auto)] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 bg-[oklch(0.064_0.006_255)] px-3 pt-safe-offset-3 text-lf-on-photo-ink"
     >
       <img
         src={appIcon}

@@ -492,6 +492,11 @@ The compare lens, its hints, the peek pill, and the floating histogram read the 
 
 Immersive and the empty state reset both insets to `0`, so entering immersive grows the photo back to full bleed in the same motion as the chrome fade.
 
+Because the photo sits below the mobile topbar and above the deck rather than under them, those two are solid plates, not glass.
+The topbar is the stage base (`oklch(0.064 0.006 255)`), only the top safe area plus 12px plus one 44px row tall, and the scrub HUD takes that same band.
+The tab bar (48px tabs, 4px above and below, plus the safe area) and the deck are `oklch(0.085 0.006 255)`; the deck carries a lift-card top highlight and the tab bar a lift-soft seam.
+Glass stays with the overlays that sit on the photo: the compare lens, its hints, the peek pill, and the histogram card.
+
 Both GPU preview layers defer their backing-store resize until the container size
 settles (90ms trailing), so an animating inset costs CSS scaling rather than a
 pipeline pass per frame.

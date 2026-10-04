@@ -134,8 +134,40 @@ describe('mobileModeDock', () => {
       'pb-[max(8px,calc(env(safe-area-inset-bottom)-24px))]',
     )
     expect(dock).not.toHaveClass('pb-safe-offset-3')
-    expect(tablist).toHaveClass('pb-2')
-    expect(tablist).not.toHaveClass('pb-3')
+    // 48px tabs with 4px above and below: a ~64px bar with the dock's 8px.
+    expect(tablist).toHaveClass('py-1')
+    for (const tab of screen.getAllByRole('tab')) {
+      expect(tab).toHaveClass('min-h-12')
+    }
+  })
+
+  it('paints the tab bar and deck as solid surfaces with inset seams', () => {
+    render(
+      <MobileModeDock
+        mode="tone"
+        expanded
+        onModeChange={vi.fn()}
+        onCollapse={vi.fn()}
+        panel={<div data-testid="panel">tone-panel</div>}
+      />,
+    )
+    const tablist = screen.getByRole('tablist', { name: /lab modes/i })
+    const dock = tablist.parentElement!
+    expect(dock).toHaveClass(
+      'bg-[oklch(0.085_0.006_255)]',
+      'shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.05)]',
+    )
+    expect(tablist.className).not.toMatch(/border-t/)
+    expect(dock.className).not.toMatch(/gradient/)
+
+    const deck = screen
+      .getByTestId('panel')
+      .closest('[data-mobile-dock-panel]')!
+    expect(deck).toHaveClass(
+      'before:bg-[oklch(0.085_0.006_255)]',
+      'before:shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.08)]',
+    )
+    expect(deck.className).not.toMatch(/gradient/)
   })
 
   it('takes its height from the stage layout and anchors natural content to the bottom', () => {

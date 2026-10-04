@@ -144,12 +144,27 @@ describe('mobileTopbar', () => {
       expect(child).toHaveClass('pointer-events-none')
       expect(child).not.toHaveClass('pointer-events-auto')
     }
-    // The gradient backdrop on the header itself stays — that's what backs
-    // the HUD readout.
-    expect(scrubbingHeader).toHaveClass(
-      'bg-gradient-to-b',
-      'from-[oklch(0.064_0.006_255/0.82)]',
+    // The solid plate on the header itself stays: that is what backs the
+    // HUD readout.
+    expect(scrubbingHeader).toHaveClass('bg-[oklch(0.064_0.006_255)]')
+  })
+
+  it('sits on a solid stage-base plate no taller than its 44px row', () => {
+    const { container } = renderMobileTopbar({
+      hasImage: true,
+      fileName: 'DSC09142.ARW',
+      fileMeta: 'Sony α7 IV',
+      supportLevel: 'official',
+      moreMenuItems: [],
+    })
+    const header = container.querySelector('[data-mobile-topbar]')!
+    // The photo is anchored below the topbar, so nothing reads through it.
+    expect(header).toHaveClass(
+      'bg-[oklch(0.064_0.006_255)]',
+      'pt-safe-offset-3',
+      'auto-rows-[minmax(2.75rem,auto)]',
     )
+    expect(header.className).not.toMatch(/gradient|pb-5|backdrop-blur/)
   })
 
   it('keeps no histogram slot before a RAW is loaded', () => {

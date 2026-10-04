@@ -45,9 +45,11 @@ export function ScrubValueHud(props: ScrubValueHudProps) {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
           transition={surfaceFade}
-          className="pointer-events-none absolute left-1/2 top-safe-offset-3 z-30 grid -translate-x-1/2 gap-0.5 px-4 text-center text-lf-on-photo-ink [text-shadow:0_1px_2px_oklch(0_0_0/0.55)]"
+          // Centred in the topbar band (safe area + 56px) on its solid
+          // plate, so the readout needs no shadow to hold over the photo.
+          className="pointer-events-none absolute left-1/2 top-safe-offset-2 z-30 grid -translate-x-1/2 gap-1 px-4 text-center text-lf-on-photo-ink"
         >
-          <span className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-lf-amber-soft">
+          <span className="text-[0.62rem] font-bold uppercase leading-none tracking-[0.18em] text-lf-amber-soft">
             {readout.label}
           </span>
           <strong className="text-[1.85rem] font-semibold leading-none tabular-nums">

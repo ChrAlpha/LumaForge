@@ -137,4 +137,21 @@ describe('scrubValueHud', () => {
       'pointer-events-none',
     )
   })
+
+  it('fits the readout inside the topbar band on its solid plate', () => {
+    render(
+      <ScrubValueHud
+        field={{ kind: 'tone', key: 'userContrast' }}
+        tone={{ ...TONE_NEUTRAL, userContrast: 12 }}
+        color={COLOR_NEUTRAL}
+        selectiveColor={undefined}
+        manualTransform={undefined}
+      />,
+    )
+    const hud = screen.getByLabelText(/adjustment readout/i)
+    // 8px + a 10px label + 4px + a 1.85rem value stays inside 56px.
+    expect(hud).toHaveClass('top-safe-offset-2', 'gap-1')
+    expect(hud.firstElementChild).toHaveClass('leading-none')
+    expect(hud.className).not.toMatch(/text-shadow/)
+  })
 })

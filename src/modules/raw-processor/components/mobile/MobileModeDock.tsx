@@ -121,7 +121,9 @@ export function MobileModeDock(props: {
     <div
       ref={dockRef}
       data-mobile-dock
-      className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-[oklch(0.064_0.006_255/0.92)] via-[oklch(0.085_0.006_255/0.68)] to-transparent pb-[max(8px,calc(env(safe-area-inset-bottom)-24px))] text-lf-on-photo-ink"
+      // A solid deck-tone plate under the photo region, its top seam a
+      // lift-soft inset hairline rather than a drawn border.
+      className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 bg-[oklch(0.085_0.006_255)] pb-[max(8px,calc(env(safe-area-inset-bottom)-24px))] text-lf-on-photo-ink shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.05)]"
     >
       <AnimatePresence initial={false}>
         {panelVisible && (
@@ -142,7 +144,11 @@ export function MobileModeDock(props: {
               // Padding is DECK_PADDING_Y_PX top + bottom; keep them in step.
               'isolate absolute inset-x-0 bottom-full flex flex-col overflow-y-auto px-3.5 pb-2.5 pt-3.5',
               'transition-[height] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
-              "before:absolute before:inset-0 before:-z-10 before:bg-gradient-to-t before:from-[oklch(0.085_0.006_255/0.82)] before:via-[oklch(0.118_0.006_255/0.56)] before:to-transparent before:transition-opacity before:duration-150 before:content-['']",
+              // The surface is its own layer so a scrub can fade it to 10%
+              // while the rows above it dim to 45%: the stage reads through
+              // and the value under the thumb stays legible. A 1px cool top
+              // highlight seats it under the photo.
+              "before:absolute before:inset-0 before:-z-10 before:bg-[oklch(0.085_0.006_255)] before:shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.08)] before:transition-opacity before:duration-150 before:content-['']",
               props.scrubbing && 'before:opacity-10',
             )}
             initial={{ opacity: 0, y: prefersReduced ? 0 : 8 }}
@@ -169,7 +175,8 @@ export function MobileModeDock(props: {
         aria-label={t('raw.mobile.modes.aria')}
         role="tablist"
         className={clsxm(
-          'grid gap-1 border-t border-lf-on-photo-bord-soft px-2.5 pb-2 pt-2 transition-opacity duration-150',
+          // 48px tabs + 4px above and below; the dock adds the safe area.
+          'grid gap-1 px-2.5 py-1 transition-opacity duration-150',
           props.showTransform ? 'grid-cols-3' : 'grid-cols-2',
           props.scrubbing && 'opacity-45',
         )}
@@ -204,7 +211,7 @@ export function MobileModeDock(props: {
               className={clsxm(
                 // Sentence case at 0.7rem: uppercase tracking made the labels
                 // collide at 393px when the dock carried five modes.
-                'relative grid min-h-[52px] grid-rows-[auto_auto] place-items-center gap-1 rounded-md px-1 py-1.5 text-[0.7rem] font-semibold leading-tight tracking-normal transition-colors',
+                'relative grid min-h-12 grid-rows-[auto_auto] place-items-center gap-1 rounded-md px-1 py-1.5 text-[0.7rem] font-semibold leading-tight tracking-normal transition-colors',
                 tabDisabled
                   ? 'cursor-not-allowed text-lf-on-photo-ink/35'
                   : showActive
