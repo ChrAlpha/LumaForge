@@ -7,6 +7,7 @@ import { afterEach, beforeEach, vi } from 'vitest'
 
 import { viewportAtom } from '~/atoms/viewport'
 import { jotaiStore } from '~/lib/jotai'
+import { SUPPORTED_RAW_EXTENSIONS } from '~/lib/raw/decoder'
 
 import { ComparePreviewStage } from '../components/ComparePreviewStage'
 import { LutDropzone } from '../components/Dropzone'
@@ -34,6 +35,10 @@ vi.mock('../hooks/useCapabilityGate', () => ({
 vi.mock('~/lib/raw/runtime-adapter', () => ({
   rawRuntimeAdapter: mockRawRuntimeAdapter,
 }))
+
+const DOTTED_DECODER_EXTENSIONS = new Set(
+  Array.from(SUPPORTED_RAW_EXTENSIONS, (extension) => `.${extension}`),
+)
 
 function rawToolSurfaceProps(
   overrides: Partial<ComponentProps<typeof RawToolSurface>> = {},
@@ -394,6 +399,28 @@ describe('rawProcessorView', () => {
     expect(
       screen.getByRole('button', { name: /finish a raw with a lut/i }),
     ).toBeEnabled()
+  })
+
+  it('gives every RAW file input the decoder extension set', async () => {
+    mockUseRawWorkflow.mockReturnValue(rawProcessorViewState())
+
+    let container!: HTMLElement
+    await act(async () => {
+      ;({ container } = render(<RawProcessorView />))
+      await Promise.resolve()
+    })
+
+    const rawInputs = Array.from(
+      container.querySelectorAll<HTMLInputElement>('input[type="file"]'),
+    ).filter((input) => input.accept !== '.cube')
+
+    // Stage dropzone plus the replace and recovery pickers.
+    expect(rawInputs.length).toBeGreaterThanOrEqual(3)
+    for (const input of rawInputs) {
+      expect(new Set(input.accept.split(','))).toEqual(
+        DOTTED_DECODER_EXTENSIONS,
+      )
+    }
   })
 
   it('passes hook histogram state into RAW tools with Histogram', async () => {
@@ -1303,11 +1330,9 @@ describe('rawToolSurface', () => {
       stageFrame?.querySelector<HTMLInputElement>('input[type="file"]')
     expect(fileInput).toBeTruthy()
     expect(fileInput).toHaveAttribute('aria-hidden', 'true')
-    expect(fileInput).toHaveAttribute(
-      'accept',
-      expect.stringContaining('image/*'),
+    expect(new Set(fileInput!.accept.split(','))).toEqual(
+      DOTTED_DECODER_EXTENSIONS,
     )
-    expect(fileInput).toHaveAttribute('accept', expect.stringContaining('.dng'))
     const inputClick = vi
       .spyOn(fileInput!, 'click')
       .mockImplementation(() => {})

@@ -8,26 +8,19 @@ import { useCallback, useId, useRef, useState } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
+import { SUPPORTED_RAW_EXTENSIONS } from '~/lib/raw/decoder'
 import { Spring } from '~/lib/spring'
 
-export const RAW_FILE_EXTENSIONS = [
-  '.cr2',
-  '.cr3',
-  '.nef',
-  '.arw',
-  '.raf',
-  '.rw2',
-  '.orf',
-  '.dng',
-  '.pef',
-  '.srw',
-  '.3fr',
-  '.fff',
-  '.iiq',
-  '.raw',
-]
+/**
+ * RAW pickers and drop targets accept exactly what the decoder accepts.
+ * Raster images are not RAW input, so no `image/*` MIME wildcard.
+ */
+export const RAW_FILE_EXTENSIONS = Array.from(
+  SUPPORTED_RAW_EXTENSIONS,
+  (extension) => `.${extension}`,
+)
 
-export const RAW_FILE_ACCEPT = ['image/*', ...RAW_FILE_EXTENSIONS]
+export const RAW_FILE_ACCEPT = RAW_FILE_EXTENSIONS
 
 export interface DropzoneProps {
   onFileDrop: (files: File[]) => void
