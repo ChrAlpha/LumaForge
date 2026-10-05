@@ -1,5 +1,6 @@
+import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
 import { makeNeutralBand } from '@lumaforge/luma-color-runtime'
-import { AnimatePresence, m } from 'motion/react'
+import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 
 import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
@@ -13,6 +14,7 @@ import {
 } from '../strength-field'
 import type { ToneValue } from '../tone-fields'
 import { formatToneValue, TONE_FIELDS } from '../tone-fields'
+import { HistogramPlot, readyHistogram } from '../tools/HistogramTool'
 import type { HSLToolValue } from '../tools/HSLTool'
 import {
   formatTransformValue,
@@ -34,11 +36,22 @@ type ScrubValueHudProps = {
   manualTransform: ManualTransform | undefined
   /** How much of the applied LUT reaches the photo, 0..1. */
   lookIntensity?: number
+  /**
+   * The preview histogram while the user has it turned on; null when it is
+   * off. Unsupported or not yet computed, it draws nothing.
+   */
+  histogram?: PreviewHistogramState | null
 }
 
 export function ScrubValueHud(props: ScrubValueHudProps) {
   const { t } = useI18n()
+  const reduced = useReducedMotion() ?? false
   const readout = resolveReadout(props, t)
+  // A Transform scrub moves geometry, not tone: no histogram beside it.
+  const bins =
+    readout && readout.kind !== 'transform' && props.histogram
+      ? readyHistogram(props.histogram)
+      : null
 
   return (
     <AnimatePresence initial={false}>
@@ -58,9 +71,32 @@ export function ScrubValueHud(props: ScrubValueHudProps) {
           <span className="text-[0.62rem] font-bold uppercase leading-none tracking-[0.18em] text-lf-amber-soft">
             {readout.label}
           </span>
-          <strong className="text-[1.85rem] font-semibold leading-none tabular-nums">
-            {readout.formatted}
-          </strong>
+          <span className="flex items-center justify-center gap-3">
+            <strong className="text-[1.85rem] font-semibold leading-none tabular-nums">
+              {readout.formatted}
+            </strong>
+            {/* The tonal answer to the move, beside the number and inside
+                the topbar band, so it never covers the photo. */}
+            <AnimatePresence initial={false}>
+              {bins && (
+                <m.span
+                  key="histogram"
+                  data-scrub-hud-histogram
+                  className="block"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={reduced ? { duration: 0 } : surfaceFade}
+                >
+                  <HistogramPlot
+                    bins={bins.bins}
+                    ariaLabel={t('raw.histogram.aria')}
+                    variant="mini"
+                  />
+                </m.span>
+              )}
+            </AnimatePresence>
+          </span>
         </m.div>
       )}
     </AnimatePresence>

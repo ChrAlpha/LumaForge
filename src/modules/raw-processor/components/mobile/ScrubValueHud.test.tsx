@@ -1,3 +1,4 @@
+import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,6 +7,41 @@ import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
 import { COLOR_NEUTRAL } from '../color-fields'
 import { TONE_NEUTRAL } from '../tone-fields'
 import { ScrubValueHud } from './ScrubValueHud'
+
+function readyHistogram(): Extract<PreviewHistogramState, { state: 'ready' }> {
+  const luma = new Uint32Array(256)
+  const red = new Uint32Array(256)
+  luma[40] = 3
+  luma[200] = 1
+  red[60] = 2
+  return {
+    state: 'ready',
+    source: 'quick',
+    width: 2,
+    height: 2,
+    sampledPixels: 4,
+    totalPixels: 4,
+    bins: {
+      luma,
+      red,
+      green: new Uint32Array(256),
+      blue: new Uint32Array(256),
+    },
+    clipping: {
+      shadowAnyChannel: 0,
+      highlightAnyChannel: 0,
+      shadowLuma: 0,
+      highlightLuma: 0,
+    },
+    diagnostics: {
+      ownership: 'main-thread-chunked-no-copy',
+      copiedInputBytes: 0,
+      transferredInput: false,
+      inputByteLength: 24,
+      rowBandRows: 32,
+    },
+  } as Extract<PreviewHistogramState, { state: 'ready' }>
+}
 
 describe('scrubValueHud', () => {
   beforeEach(() => {
@@ -183,5 +219,85 @@ describe('scrubValueHud', () => {
     expect(hud).toHaveClass('top-safe-offset-2', 'gap-1')
     expect(hud.firstElementChild).toHaveClass('leading-none')
     expect(hud.className).not.toMatch(/text-shadow/)
+  })
+
+  describe('mini histogram', () => {
+    const hud = (
+      field: Parameters<typeof ScrubValueHud>[0]['field'],
+      histogram: PreviewHistogramState | null,
+    ) =>
+      render(
+        <ScrubValueHud
+          field={field}
+          tone={{ ...TONE_NEUTRAL, userExposureEv: 0.5 }}
+          color={COLOR_NEUTRAL}
+          selectiveColor={undefined}
+          manualTransform={NEUTRAL_TRANSFORM}
+          lookIntensity={0.62}
+          histogram={histogram}
+        />,
+      )
+
+    it('draws the histogram at 96 x 28 to the right of the value while the user has it on', () => {
+      const { container } = hud(
+        { kind: 'tone', key: 'userExposureEv' },
+        readyHistogram(),
+      )
+      const mini = container.querySelector('[data-scrub-hud-histogram]')!
+      const plot = mini.querySelector('svg[data-histogram-plot="mini"]')
+      expect(plot).toHaveClass('h-7', 'w-24')
+      // The same drawing as the floating card: RGB under the luma line.
+      expect(plot?.querySelector('.raw-histogram-luma')).not.toBeNull()
+      expect(
+        plot?.querySelector('.raw-histogram-channel-fill-red'),
+      ).not.toBeNull()
+      // No grid at this size.
+      expect(plot?.querySelector('.raw-histogram-grid')).toBeNull()
+      // To the right of the value, in one row.
+      const value = screen.getByText('+0.50 EV')
+      expect(value.nextElementSibling).toBe(mini)
+    })
+
+    it('keeps drawing the last bins while a newer run is due', () => {
+      const { container } = hud(
+        { kind: 'hsl', band: 'red', key: 'hue' },
+        { state: 'stale', previous: readyHistogram() },
+      )
+      expect(
+        container.querySelector('[data-scrub-hud-histogram]'),
+      ).not.toBeNull()
+    })
+
+    it('rides a Strength scrub too', () => {
+      const { container } = hud({ kind: 'strength' }, readyHistogram())
+      expect(screen.getByLabelText(/adjustment readout/i)).toHaveTextContent(
+        '62%',
+      )
+      expect(
+        container.querySelector('[data-scrub-hud-histogram]'),
+      ).not.toBeNull()
+    })
+
+    it('draws nothing when it is off, unsupported, not computed yet, or the scrub is a Transform', () => {
+      for (const [field, histogram] of [
+        [{ kind: 'tone', key: 'userExposureEv' }, null],
+        [
+          { kind: 'tone', key: 'userExposureEv' },
+          { state: 'unsupported', reason: 'CPU preview' },
+        ],
+        [
+          { kind: 'tone', key: 'userExposureEv' },
+          { state: 'computing', previous: null },
+        ],
+        [{ kind: 'transform', key: 'rotate' }, readyHistogram()],
+      ] as const) {
+        const { container, unmount } = hud(
+          field as Parameters<typeof ScrubValueHud>[0]['field'],
+          histogram as PreviewHistogramState | null,
+        )
+        expect(container.querySelector('[data-scrub-hud-histogram]')).toBeNull()
+        unmount()
+      }
+    })
   })
 })

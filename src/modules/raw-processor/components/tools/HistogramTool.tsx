@@ -6,6 +6,7 @@ import { scaleLinear } from '@visx/scale'
 import { AreaClosed, LinePath } from '@visx/shape'
 import { useMemo } from 'react'
 
+import { clsxm } from '~/lib/cn'
 import type { Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 
@@ -52,7 +53,8 @@ function sourceLabel(source: ReadyPreviewHistogram['source'], t: Translate) {
     : t('raw.histogram.quick')
 }
 
-function readyHistogram(
+/** The bins on screen: ready, or the previous ones while a run is due. */
+export function readyHistogram(
   histogram: PreviewHistogramState,
 ): ReadyPreviewHistogram | null {
   if (histogram.state === 'ready') {
@@ -102,13 +104,23 @@ function statusReason(histogram: PreviewHistogramState, t: Translate) {
   return null
 }
 
-function HistogramPlot({
+/**
+ * The histogram drawing: RGB fills and lines under the luminance line. The
+ * `mini` variant is the same drawing at 96 x 28 for the mobile scrub HUD,
+ * without the grid, and with strokes held at their pixel width so the
+ * curves stay legible at that size.
+ */
+export function HistogramPlot({
   bins,
   ariaLabel,
+  variant = 'card',
 }: {
   bins: ReadyPreviewHistogram['bins']
   ariaLabel: string
+  variant?: 'card' | 'mini'
 }) {
+  const mini = variant === 'mini'
+  const stroke = mini ? 'non-scaling-stroke' : undefined
   const series = useMemo(
     () => ({
       red: binsToPoints(bins.red),
@@ -123,40 +135,46 @@ function HistogramPlot({
     <svg
       role="img"
       aria-label={ariaLabel}
-      className="raw-histogram-plot block h-[108px] w-full overflow-hidden rounded-md"
+      data-histogram-plot={variant}
+      className={clsxm(
+        'raw-histogram-plot block overflow-hidden',
+        mini ? 'h-7 w-24 rounded-[3px]' : 'h-[108px] w-full rounded-md',
+      )}
       viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
       preserveAspectRatio="none"
     >
-      <g className="raw-histogram-grid" aria-hidden="true">
-        {GRID_X.map((x) => (
+      {!mini && (
+        <g className="raw-histogram-grid" aria-hidden="true">
+          {GRID_X.map((x) => (
+            <line
+              key={`x-${x}`}
+              x1={x}
+              x2={x}
+              y1={PLOT_PADDING}
+              y2={BASELINE_Y}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          {GRID_Y.map((y) => (
+            <line
+              key={`y-${y}`}
+              x1="0"
+              x2={VIEWBOX_WIDTH}
+              y1={y}
+              y2={y}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
           <line
-            key={`x-${x}`}
-            x1={x}
-            x2={x}
-            y1={PLOT_PADDING}
+            className="raw-histogram-baseline"
+            x1="0"
+            x2={VIEWBOX_WIDTH}
+            y1={BASELINE_Y}
             y2={BASELINE_Y}
             vectorEffect="non-scaling-stroke"
           />
-        ))}
-        {GRID_Y.map((y) => (
-          <line
-            key={`y-${y}`}
-            x1="0"
-            x2={VIEWBOX_WIDTH}
-            y1={y}
-            y2={y}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        <line
-          className="raw-histogram-baseline"
-          x1="0"
-          x2={VIEWBOX_WIDTH}
-          y1={BASELINE_Y}
-          y2={BASELINE_Y}
-          vectorEffect="non-scaling-stroke"
-        />
-      </g>
+        </g>
+      )}
       <AreaClosed
         className="raw-histogram-channel-fill raw-histogram-channel-fill-red"
         data={series.red.points}
@@ -184,6 +202,7 @@ function HistogramPlot({
           data={series.red.points}
           x={(d) => d.x}
           y={(d) => d.y}
+          vectorEffect={stroke}
         />
       )}
       {hasNonZeroBins(bins.green) && (
@@ -192,6 +211,7 @@ function HistogramPlot({
           data={series.green.points}
           x={(d) => d.x}
           y={(d) => d.y}
+          vectorEffect={stroke}
         />
       )}
       {hasNonZeroBins(bins.blue) && (
@@ -200,6 +220,7 @@ function HistogramPlot({
           data={series.blue.points}
           x={(d) => d.x}
           y={(d) => d.y}
+          vectorEffect={stroke}
         />
       )}
       <LinePath
@@ -207,6 +228,7 @@ function HistogramPlot({
         data={series.luma.points}
         x={(d) => d.x}
         y={(d) => d.y}
+        vectorEffect={stroke}
       />
     </svg>
   )

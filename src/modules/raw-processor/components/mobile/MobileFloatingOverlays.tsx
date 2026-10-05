@@ -206,6 +206,9 @@ export function MobileFloatingOverlays({
         selectiveColor={selectiveColor}
         manualTransform={manualTransform}
         lookIntensity={lookIntensity}
+        // The histogram rides the HUD while the user has it on: the card
+        // steps aside during a scrub, the curve does not.
+        histogram={histogramOpen && hasImage ? histogram : null}
       />
     </>
   )

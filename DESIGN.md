@@ -500,6 +500,8 @@ Immersive and the empty state reset both insets to `0`, so entering immersive gr
 
 Because the photo sits below the mobile topbar and above the deck rather than under them, those two are solid plates, not glass.
 The topbar is the stage base (`oklch(0.064 0.006 255)`), only the top safe area plus 12px plus one 44px row tall, and the scrub HUD takes that same band.
+With the histogram turned on, an Adjust, HSL or Strength scrub (not Transform) draws the same histogram at 96x28 to the right of the HUD value, in the band rather than on the photo, while the floating card steps aside; it fades over the surface fade (none under reduced motion) and is absent when the histogram is unsupported (CPU preview, Transform applied).
+The histogram stays live during a scrub: runs are throttled to one per 150ms, sample at most 40k pixels while values move, and refine at the full budget once input settles.
 The tab bar (48px tabs, 4px above and below, plus the safe area) and the deck are `oklch(0.085 0.006 255)`; the deck carries a lift-card top highlight and the tab bar a lift-soft seam.
 Glass stays with the overlays that sit on the photo: the compare lens, its hints, the peek pill, the CPU preview notice, and the histogram card.
 

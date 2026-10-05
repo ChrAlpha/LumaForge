@@ -142,4 +142,53 @@ describe('mobileFloatingOverlays', () => {
       unmount()
     }
   })
+
+  it('hands the histogram to the scrub HUD only while the user has it on', () => {
+    const luma = new Uint32Array(256)
+    luma[128] = 4
+    const histogram = {
+      state: 'ready',
+      source: 'quick',
+      width: 2,
+      height: 2,
+      sampledPixels: 4,
+      totalPixels: 4,
+      bins: {
+        luma,
+        red: new Uint32Array(256),
+        green: new Uint32Array(256),
+        blue: new Uint32Array(256),
+      },
+      clipping: {
+        shadowAnyChannel: 0,
+        highlightAnyChannel: 0,
+        shadowLuma: 0,
+        highlightLuma: 0,
+      },
+      diagnostics: {
+        ownership: 'main-thread-chunked-no-copy',
+        copiedInputBytes: 0,
+        transferredInput: false,
+        inputByteLength: 24,
+        rowBandRows: 32,
+      },
+    } as MobileFloatingOverlaysProps['histogram']
+    const scrub = {
+      focusActive: true,
+      scrubField: { kind: 'tone', key: 'userContrast' },
+      histogram,
+    } as const
+    const on = renderOverlays({ ...scrub, histogramOpen: true })
+    // The card steps aside during a scrub; the curve rides the HUD.
+    expect(
+      on.container.querySelector('[data-mobile-histogram-card]'),
+    ).toBeNull()
+    expect(
+      on.container.querySelector('[data-scrub-hud-histogram]'),
+    ).not.toBeNull()
+    on.unmount()
+
+    const off = renderOverlays({ ...scrub, histogramOpen: false })
+    expect(off.container.querySelector('[data-scrub-hud-histogram]')).toBeNull()
+  })
 })
