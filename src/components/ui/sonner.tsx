@@ -51,7 +51,10 @@ const rawRouteTitleClass =
 const rawRouteDescriptionClass =
   '[.luma-route-raw_&]:!text-[0.72rem] [.luma-route-raw_&]:!leading-relaxed [.luma-route-raw_&]:!text-lf-on-photo-ink/68'
 
-const rawRouteIconClass = '[.luma-route-raw_&]:!text-lf-green'
+// Lab Green means ready, so on /raw only a success toast earns it; an error
+// or info toast states its message in neutral ink beside a neutral icon.
+const rawRouteIconClass =
+  '[.luma-route-raw_&]:!text-lf-on-photo-ink/72 [.luma-route-raw_&]:group-data-[type=success]:!text-lf-green'
 
 const rawRouteCloseButtonClass =
   '[.luma-route-raw_&]:!size-7 [.luma-route-raw_&]:!min-h-7 [.luma-route-raw_&]:!min-w-7 [.luma-route-raw_&]:!rounded-md [.luma-route-raw_&]:!border-lf-on-photo-bord-soft [.luma-route-raw_&]:!bg-lf-on-photo-bg [.luma-route-raw_&]:!text-lf-on-photo-ink/64 [.luma-route-raw_&]:hover:!text-lf-on-photo-ink'

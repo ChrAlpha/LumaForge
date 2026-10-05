@@ -98,4 +98,19 @@ describe('toaster', () => {
     expect(classNames?.closeButton).toContain('[.luma-route-raw_&]:!size-7')
     expect(classNames?.closeButton).toContain('[.luma-route-raw_&]:!rounded-md')
   })
+
+  it('keeps Lab Green for success toast icons on /raw only', () => {
+    render(
+      <MemoryRouter initialEntries={['/raw']}>
+        <Toaster />
+      </MemoryRouter>,
+    )
+    const icon = vi.mocked(Sonner).mock.calls.at(-1)?.[0]?.toastOptions
+      ?.classNames?.icon
+    expect(icon).toContain('[.luma-route-raw_&]:!text-lf-on-photo-ink/72')
+    expect(icon).toContain(
+      '[.luma-route-raw_&]:group-data-[type=success]:!text-lf-green',
+    )
+    expect(icon).not.toContain('[.luma-route-raw_&]:!text-lf-green')
+  })
 })
