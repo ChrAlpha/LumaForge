@@ -1,5 +1,6 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
+import { atom, createStore } from 'jotai'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
@@ -22,6 +23,51 @@ const params: ProcessingParams = {
   userTint: 0,
   userSaturation: 0,
   userVibrance: 0,
+}
+
+function createStats(overrides: Partial<PipelineStats> = {}): PipelineStats {
+  return {
+    uploadTime: 1,
+    lutUploadTime: 0,
+    processTime: 2,
+    totalTime: 3,
+    inputSize: { width: 800, height: 600 },
+    previewSize: { width: 640, height: 480 },
+    inputFormat: 'uint16-rgb',
+    transformPath: 'no-lut',
+    lutRole: null,
+    lutInputTransfer: null,
+    lutOutputTransfer: null,
+    lutSize: null,
+    ...overrides,
+  }
+}
+
+function renderStatsHarness(status: 'ready' | 'error' = 'ready') {
+  const store = createStore()
+  const statsAtom = atom<PipelineStats | null>(null)
+  const notifications = vi.fn()
+  store.sub(statsAtom, notifications)
+  const setError = vi.fn()
+  const setStatus = vi.fn()
+  const { result } = renderHook(() =>
+    useRawWorkflowActions({
+      paramsRef: { current: params },
+      isMountedRef: { current: true },
+      status,
+      setError,
+      setStatus,
+      setStats: (update) => store.set(statsAtom, update),
+    }),
+  )
+
+  return {
+    result,
+    setError,
+    setStatus,
+    notifications,
+    readStats: () => store.get(statsAtom),
+  }
 }
 
 describe('useRawWorkflowActions', () => {
@@ -66,27 +112,69 @@ describe('useRawWorkflowActions', () => {
     expect(notify).toHaveBeenCalledTimes(1)
   })
 
-  it('dismisses errors and forwards stat updates', () => {
-    const setError = vi.fn()
-    const setStatus = vi.fn()
-    const setStats = vi.fn()
-    const stats = { inputSize: { width: 800, height: 600 } } as PipelineStats
-    const { result } = renderHook(() =>
-      useRawWorkflowActions({
-        paramsRef: { current: params },
-        isMountedRef: { current: true },
-        status: 'error',
-        setError,
-        setStatus,
-        setStats,
-      }),
-    )
+  it('dismisses errors and publishes only changed stat updates', () => {
+    const { result, setError, setStatus, notifications, readStats } =
+      renderStatsHarness('error')
 
     result.current.dismissError()
-    result.current.updateStats(stats)
 
     expect(setError).toHaveBeenCalledWith(null)
     expect(setStatus).toHaveBeenCalledWith('idle')
-    expect(setStats).toHaveBeenCalledWith(stats)
+
+    const stats = createStats()
+    result.current.updateStats(stats)
+
+    expect(readStats()).toBe(stats)
+    expect(notifications).toHaveBeenCalledTimes(1)
+
+    const equalStats = createStats()
+    expect(equalStats).not.toBe(stats)
+    expect(equalStats.inputSize).not.toBe(stats.inputSize)
+    expect(equalStats.previewSize).not.toBe(stats.previewSize)
+    result.current.updateStats(equalStats)
+
+    expect(readStats()).toBe(stats)
+    expect(notifications).toHaveBeenCalledTimes(1)
+
+    const changedTiming = createStats({ processTime: 2.5 })
+    result.current.updateStats(changedTiming)
+
+    expect(readStats()).toBe(changedTiming)
+    expect(notifications).toHaveBeenCalledTimes(2)
+
+    const changedDimension = createStats({
+      processTime: 2.5,
+      previewSize: { width: 640, height: 481 },
+    })
+    result.current.updateStats(changedDimension)
+
+    expect(readStats()).toBe(changedDimension)
+    expect(notifications).toHaveBeenCalledTimes(3)
+  })
+
+  it.each<[string, Partial<PipelineStats>]>([
+    ['uploadTime', { uploadTime: 1.5 }],
+    ['lutUploadTime', { lutUploadTime: 0.5 }],
+    ['processTime', { processTime: 2.5 }],
+    ['totalTime', { totalTime: 3.5 }],
+    ['inputSize.width', { inputSize: { width: 801, height: 600 } }],
+    ['inputSize.height', { inputSize: { width: 800, height: 601 } }],
+    ['previewSize.width', { previewSize: { width: 641, height: 480 } }],
+    ['previewSize.height', { previewSize: { width: 640, height: 481 } }],
+    ['inputFormat', { inputFormat: 'float-rgba' }],
+    ['transformPath', { transformPath: 'display-lut' }],
+    ['lutRole', { lutRole: 'display-look' }],
+    ['lutInputTransfer', { lutInputTransfer: 's-log3' }],
+    ['lutOutputTransfer', { lutOutputTransfer: 's-log3' }],
+    ['lutSize', { lutSize: 33 }],
+  ])('publishes a stat update when %s changes', (_field, overrides) => {
+    const { result, notifications, readStats } = renderStatsHarness()
+
+    result.current.updateStats(createStats())
+    const changed = createStats(overrides)
+    result.current.updateStats(changed)
+
+    expect(readStats()).toBe(changed)
+    expect(notifications).toHaveBeenCalledTimes(2)
   })
 })

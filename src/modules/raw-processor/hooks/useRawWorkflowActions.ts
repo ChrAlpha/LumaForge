@@ -1,5 +1,5 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
-import type { MutableRefObject } from 'react'
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback } from 'react'
 
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
@@ -10,13 +10,58 @@ function enqueuePostCommitTask(task: () => void) {
   setTimeout(task, 0)
 }
 
+type PipelineSize = PipelineStats['inputSize']
+
+function isSamePipelineSize(a: PipelineSize, b: PipelineSize) {
+  return a.width === b.width && a.height === b.height
+}
+
+// Every stats field must be listed, so a new field cannot be silently ignored.
+const PIPELINE_STATS_FIELD_EQUALITY: {
+  [Key in keyof PipelineStats]: (
+    a: PipelineStats[Key],
+    b: PipelineStats[Key],
+  ) => boolean
+} = {
+  uploadTime: Object.is,
+  lutUploadTime: Object.is,
+  processTime: Object.is,
+  totalTime: Object.is,
+  inputSize: isSamePipelineSize,
+  previewSize: isSamePipelineSize,
+  inputFormat: Object.is,
+  transformPath: Object.is,
+  lutRole: Object.is,
+  lutInputTransfer: Object.is,
+  lutOutputTransfer: Object.is,
+  lutSize: Object.is,
+}
+
+const PIPELINE_STATS_FIELDS = Object.keys(
+  PIPELINE_STATS_FIELD_EQUALITY,
+) as Array<keyof PipelineStats>
+
+function isSamePipelineStatsField<Key extends keyof PipelineStats>(
+  key: Key,
+  a: PipelineStats,
+  b: PipelineStats,
+) {
+  return PIPELINE_STATS_FIELD_EQUALITY[key](a[key], b[key])
+}
+
+function areSamePipelineStats(a: PipelineStats, b: PipelineStats) {
+  return PIPELINE_STATS_FIELDS.every((key) =>
+    isSamePipelineStatsField(key, a, b),
+  )
+}
+
 type UseRawWorkflowActionsInput = {
   paramsRef: MutableRefObject<ProcessingParams>
   isMountedRef: MutableRefObject<boolean>
   status: ProcessingStatus
   setError: (error: string | null) => void
   setStatus: (status: ProcessingStatus) => void
-  setStats: (stats: PipelineStats | null) => void
+  setStats: Dispatch<SetStateAction<PipelineStats | null>>
   postCommitTask?: (task: () => void) => void
 }
 
@@ -58,7 +103,11 @@ export function useRawWorkflowActions({
 
   const updateStats = useCallback(
     (newStats: PipelineStats) => {
-      setStats(newStats)
+      // Preview renders report freshly allocated stats; keep the current value
+      // when nothing changed so stats subscribers are not notified again.
+      setStats((current) =>
+        current && areSamePipelineStats(current, newStats) ? current : newStats,
+      )
     },
     [setStats],
   )
