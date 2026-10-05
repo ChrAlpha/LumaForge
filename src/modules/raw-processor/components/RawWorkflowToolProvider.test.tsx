@@ -642,6 +642,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
 
   it('lets the CPU preview show the original but never the split', () => {
     const workflow = workflowFixture()
+    const onCompareReset = vi.fn()
     const { result } = renderHook(useRawWorkflowContext, {
       wrapper: ({ children }) => (
         <RawWorkflowToolProvider
@@ -654,7 +655,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
           previewFrameEl={null}
           onReplaceFile={vi.fn()}
           onResetSession={vi.fn()}
-          onCompareReset={vi.fn()}
+          onCompareReset={onCompareReset}
           onLutDrop={vi.fn()}
           onExport={vi.fn()}
           onRecoverExportSource={vi.fn()}
@@ -674,6 +675,11 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(workflow.setViewMode).toHaveBeenLastCalledWith('processed')
     result.current.onCompareSplitChange(0.2)
     expect(workflow.setCompareSplit).not.toHaveBeenCalled()
+    // No split surface, so no split reset: the surfaces read the fact and the
+    // callback refuses too.
+    expect(result.current.compareSupported).toBe(false)
+    result.current.onCompareReset()
+    expect(onCompareReset).not.toHaveBeenCalled()
   })
 
   it('tells the Look strip which LUT is applied by its cube hash', () => {

@@ -621,6 +621,42 @@ describe('rawToolSurface', () => {
     expect(onCompareReset).toHaveBeenCalledTimes(1)
   })
 
+  it('disables desktop Compare reset where the stage has no split to reset', async () => {
+    const user = userEvent.setup()
+    const onCompareReset = vi.fn()
+    const { rerender } = render(
+      <RawToolSurface
+        {...baseProps}
+        hasImage
+        compareSupported={false}
+        onCompareReset={onCompareReset}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Compare' }))
+    const resetButton = screen.getByRole('button', {
+      name: 'Reset compare view',
+    })
+    expect(resetButton).toBeDisabled()
+    await user.click(resetButton)
+    expect(onCompareReset).not.toHaveBeenCalled()
+
+    // Back on a stage that can split, the reset is live again.
+    rerender(
+      <RawToolSurface
+        {...baseProps}
+        hasImage
+        compareSupported
+        onCompareReset={onCompareReset}
+      />,
+    )
+    expect(
+      screen.getByRole('button', { name: 'Reset compare view' }),
+    ).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Reset compare view' }))
+    expect(onCompareReset).toHaveBeenCalledOnce()
+  })
+
   it('sets a continuous strength on the desktop rail, with presets as detents', () => {
     const onChange = vi.fn()
     const { container } = render(

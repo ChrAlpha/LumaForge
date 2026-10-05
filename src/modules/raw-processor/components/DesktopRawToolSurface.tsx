@@ -25,6 +25,12 @@ export function DesktopRawToolSurface() {
   const lutDropDisabled = props.isExporting === true || previewSuspended
   const hasAppliedLut = Boolean(props.currentLutName)
   const strengthDisabled = editorDisabled || !hasAppliedLut
+  // Reset returns the stage to its split, so it is off where the stage has
+  // none: the CPU preview, or a committed Transform.
+  const compareResetDisabled =
+    editorDisabled ||
+    props.compareSupported === false ||
+    props.transform?.active === true
   const histogramClipping =
     props.histogram.state === 'ready'
       ? histogramClippingLabels(props.histogram, t)
@@ -113,7 +119,7 @@ export function DesktopRawToolSurface() {
         )}
         <ToolCard id="compare" title={t('raw.compare.title')}>
           <CompareTool
-            disabled={editorDisabled || props.transform?.active === true}
+            disabled={compareResetDisabled}
             onCompareReset={props.onCompareReset}
           />
         </ToolCard>
