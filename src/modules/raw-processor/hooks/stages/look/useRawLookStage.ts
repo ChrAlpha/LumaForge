@@ -23,8 +23,11 @@ import {
   orchestrateProfileSelection,
 } from '../../../services/look/orchestrate-lut-load'
 import {
-  computeClearLUT,
-  computeIntensityChange,
+  computeDetachedClearLUT,
+  computeDetachedIntensityChange,
+  computeSessionClearLUT,
+  computeSessionIntensityChange,
+  projectSessionLookIntensity,
 } from '../../../services/look/orchestrate-params-update'
 import {
   buildLUTContractSelectionState,
@@ -86,7 +89,7 @@ export function useRawLookStage({
     if (!session.activeStyle) {
       const nextParams: ProcessingParams = {
         ...baseParams,
-        intensity: DEFAULT_LOOK_INTENSITY,
+        intensity: projectSessionLookIntensity(session),
         styleKind: 'none',
         builtinPreset: null,
       }
@@ -98,7 +101,7 @@ export function useRawLookStage({
         : nextParams
     }
 
-    const intensity = session.activeStyle.currentIntensity
+    const intensity = projectSessionLookIntensity(session)
     const stylePatch =
       session.activeStyle.kind === 'custom'
         ? { styleKind: 'custom' as const, builtinPreset: null }
@@ -169,70 +172,80 @@ export function useRawLookStage({
     [lutCtx],
   )
 
-  // A Strength scrub calls this on every pointer move, so the session is
-  // updated from its latest state rather than this render's snapshot: a
-  // render-state or export change landing mid-scrub must survive it.
+  // Look actions read the session and detached params through updaters, which
+  // the stores apply synchronously, so every decision is made against the
+  // state current when the action fires rather than the render that created
+  // the callback. Side effects run only after both updaters have returned. A
+  // Strength scrub calls this on every pointer move, so a render-state or
+  // export change landing mid-scrub must survive it.
   const setIntensity = useCallback(
     (value: number) => {
-      const { params: nextParams, shouldInvalidateExportGraph } =
-        computeIntensityChange(params, session, activeStyle, value)
+      let hasSession = false
+      let sessionOwnsLook = false
+      let shouldInvalidateExportGraph = false
+
+      setSession((prev) => {
+        if (!prev) return prev
+
+        const change = computeSessionIntensityChange(prev, value)
+        hasSession = true
+        sessionOwnsLook = Boolean(prev.activeStyle)
+        shouldInvalidateExportGraph = change.shouldInvalidateExportGraph
+        return change.session
+      })
+      // Detached params carry the amount whenever no session owns a look, but
+      // decide the graph change only when no session projects over them.
+      if (!sessionOwnsLook) {
+        setParams((prev) => {
+          const change = computeDetachedIntensityChange(prev, value)
+          if (!hasSession) {
+            shouldInvalidateExportGraph = change.shouldInvalidateExportGraph
+          }
+          return change.params
+        })
+      }
 
       if (shouldInvalidateExportGraph) {
         invalidateExportGraph()
       }
-      if (!session?.activeStyle) {
-        setParams(nextParams)
-      }
-      setSession(
-        (prev) =>
-          computeIntensityChange(params, prev, prev?.activeStyle ?? null, value)
-            .session,
-      )
     },
-    [
-      activeStyle,
-      invalidateExportGraph,
-      params,
-      session,
-      setParams,
-      setSession,
-    ],
+    [invalidateExportGraph, setParams, setSession],
   )
 
   const clearLUT = useCallback(() => {
-    const {
-      params: nextParams,
-      session: nextSession,
-      shouldInvalidateExportGraph,
-    } = computeClearLUT(
-      params,
-      session,
-      activeStyle,
-      Boolean(lut),
-      Boolean(lutDataRef.current),
-      Boolean(lutProfileSelection),
-    )
+    const hasLoadedLut = Boolean(lut) || Boolean(lutDataRef.current)
+    let hasSession = false
+    let shouldInvalidateExportGraph = false
 
+    setSession((prev) => {
+      if (!prev) return prev
+
+      const change = computeSessionClearLUT(prev, hasLoadedLut)
+      hasSession = true
+      shouldInvalidateExportGraph = change.shouldInvalidateExportGraph
+      return change.session
+    })
+    // The session owns the look once it exists; before that, the detached
+    // params do.
+    if (!hasSession) {
+      setParams((prev) => {
+        const change = computeDetachedClearLUT(prev, hasLoadedLut)
+        shouldInvalidateExportGraph = change.shouldInvalidateExportGraph
+        return change.params
+      })
+    }
+
+    setLut(null)
+    setLutDataRef(null)
     if (shouldInvalidateExportGraph) {
       invalidateExportGraph()
     }
-    setLut(null)
-    setLutDataRef(null)
-    setSession(nextSession)
-    if (!sessionRef.current) {
-      setParams(nextParams)
-    }
     scheduleToast(() => toast.info('LUT cleared'))
   }, [
-    activeStyle,
     invalidateExportGraph,
     lut,
     lutDataRef,
-    lutProfileSelection,
-    params,
     scheduleToast,
-    session,
-    sessionRef,
     setLut,
     setLutDataRef,
     setParams,
