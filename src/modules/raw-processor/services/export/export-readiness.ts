@@ -1,4 +1,6 @@
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
+import type { ExportGeometry } from '@lumaforge/render-engine/export'
+import { planExportGeometry } from '@lumaforge/render-engine/export'
 
 import {
   getExportModeCopy,
@@ -15,6 +17,8 @@ import type { ImageSession } from '../../model/session'
 
 const MISSING_RAW_RENDER_EXPOSURE_EXPORT_REASON =
   'RAW preview exposure is still being prepared.'
+const INVALID_EXPORT_GEOMETRY_REASON =
+  'This Transform cannot be reproduced at full resolution. Adjust or reset Transform to export.'
 
 function isOpfsAvailableForReadiness() {
   if (typeof navigator === 'undefined') return false
@@ -37,6 +41,8 @@ export type FullResExportReadiness =
       session: ImageSession
       rawRenderExposure: RawRenderExposure
       fullResCapability: SupportedFullResCapability
+      /** The frame the export delivers: the sensor, or the geometry's crop. */
+      deliveredSize: { width: number; height: number }
       disabledReason?: undefined
     }
   | {
@@ -92,6 +98,26 @@ function getUnsafeFullResExportReason(input: {
     : undefined
 }
 
+/**
+ * The frame a committed geometry delivers, or null when the engine would
+ * refuse to plan it. Planning is cheap and synchronous, so a malformed or
+ * folding geometry is refused here, before any export resource is touched,
+ * rather than being sized as the sensor frame. The engine still validates
+ * the geometry itself and stays the final authority.
+ */
+function planDeliveredSize(
+  geometry: ExportGeometry | null | undefined,
+  source: { width: number; height: number },
+) {
+  if (!geometry) return source
+  try {
+    const planned = planExportGeometry(geometry, source)
+    return { width: planned.outputWidth, height: planned.outputHeight }
+  } catch {
+    return null
+  }
+}
+
 export function deriveFullResExportReadiness(input: {
   sourceFile: File | null
   session: ImageSession | null
@@ -119,6 +145,14 @@ export function deriveFullResExportReadiness(input: {
     }
   }
 
+  const deliveredSize = planDeliveredSize(input.session.exportGeometry, {
+    width: fullResCapability.width,
+    height: fullResCapability.height,
+  })
+  if (!deliveredSize) {
+    return { canExport: false, disabledReason: INVALID_EXPORT_GEOMETRY_REASON }
+  }
+
   if (!input.rawRenderExposure) {
     return {
       canExport: false,
@@ -140,6 +174,7 @@ export function deriveFullResExportReadiness(input: {
     session: input.session,
     rawRenderExposure: input.rawRenderExposure,
     fullResCapability,
+    deliveredSize,
     disabledReason: undefined,
   }
 }

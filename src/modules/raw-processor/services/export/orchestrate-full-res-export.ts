@@ -1,6 +1,5 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
-import { planExportGeometry } from '@lumaforge/render-engine/export'
 import { toast } from 'sonner'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
@@ -193,24 +192,11 @@ export async function orchestrateFullResExport(
   const exportGeometry = activeSession.exportGeometry ?? null
   /**
    * The frame this export will actually deliver. Geometry crops it, so the
-   * checkpoint, the resume plan and the recorded result all have to size
-   * themselves from here rather than from the sensor. The worker stays the
-   * single authority on rejecting a geometry; the app only declines to guess
-   * a frame for one that will not survive validation.
+   * checkpoint, the resume plan and the recorded result all size themselves
+   * from here rather than from the sensor. Readiness already refused any
+   * geometry that will not plan; the worker validates it again on its own.
    */
-  const deliveredSize = (() => {
-    const sourceSize = {
-      width: exportCapability.width,
-      height: exportCapability.height,
-    }
-    if (!exportGeometry) return sourceSize
-    try {
-      const planned = planExportGeometry(exportGeometry, sourceSize)
-      return { width: planned.outputWidth, height: planned.outputHeight }
-    } catch {
-      return sourceSize
-    }
-  })()
+  const deliveredSize = exportReadiness.deliveredSize
 
   const graph = resolveExportColorGraph({
     styleKind: ctx.atoms.params.styleKind,

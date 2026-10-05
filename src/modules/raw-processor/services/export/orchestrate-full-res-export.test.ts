@@ -1,6 +1,9 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
-import { planExportGeometry } from '@lumaforge/render-engine/export'
+import {
+  INVALID_EXPORT_GEOMETRY,
+  planExportGeometry,
+} from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -21,6 +24,7 @@ import { createBlobOutputResult } from '~/lib/export/output-sink'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { SourceFingerprintFacts } from '~/lib/export/source-fingerprint'
+import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { CapabilityVector } from '~/lib/runtime/capability-vector'
 import {
@@ -28,6 +32,7 @@ import {
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
 import type { ExportRuntimeResources } from '~/lib/runtime/export-runtime-resources'
+import { composeManualTransform } from '~/modules/transform-demo/transform-render'
 
 import type { ExportResult } from '../../model/export-result'
 import type { ExportRecoveryState, ImageSession } from '../../model/session'
@@ -185,6 +190,35 @@ const SEALED_MANIFEST = {
 } as unknown as RenderManifest
 
 const OPTIONS = { quality: 'high', fidelity: 'balanced' } as const
+
+/** Its projective horizon crosses the unconstrained output frame. */
+const FOLDING_MATRIX = composeManualTransform(
+  [1, 0, 0, 0, 1, 0, 0, 0, 1],
+  FOLDING_TRANSFORM,
+  6000 / 4000,
+)
+
+/** Committed geometries the engine refuses to plan. */
+const INVALID_GEOMETRIES: ReadonlyArray<
+  readonly [label: string, geometry: ExportGeometry]
+> = [
+  [
+    'a fold inside the unconstrained frame',
+    { matrix: FOLDING_MATRIX, constrainCrop: false },
+  ],
+  [
+    'a matrix missing an entry',
+    { matrix: [1, 0, 0, 0, 1, 0, 0, 0], constrainCrop: true },
+  ],
+  [
+    'a non-finite entry',
+    { matrix: [1, 0, 0, 0, Number.NaN, 0, 0, 0, 1], constrainCrop: true },
+  ],
+  [
+    'a singular matrix',
+    { matrix: [1, 2, 0, 2, 4, 0, 0, 0, 1], constrainCrop: false },
+  ],
+]
 
 function createSession(
   id = 'session-1',
@@ -969,6 +1003,43 @@ describe('orchestrateFullResExport success', () => {
     })
   })
 
+  it('journals the frame a committed geometry delivers, not the sensor frame', async () => {
+    // Constraining the crop pulls the fold back inside its horizon.
+    const geometry: ExportGeometry = {
+      matrix: FOLDING_MATRIX,
+      constrainCrop: true,
+    }
+    const planned = planExportGeometry(geometry, { width: 6000, height: 4000 })
+    const delivered = {
+      width: planned.outputWidth,
+      height: planned.outputHeight,
+    }
+    expect(delivered.width).toBeLessThan(6000)
+    const h = createHarness({
+      runtime: OPFS_RUNTIME,
+      session: createSession('session-1', { exportGeometry: geometry }),
+    })
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+
+    expect(await h.checkpointStore.list()).toEqual([
+      expect.objectContaining({
+        exportId: EXPORT_ID,
+        outputWidth: delivered.width,
+        outputHeight: delivered.height,
+        totalRows: delivered.height,
+      }),
+    ])
+    expect(input.geometry).toBe(geometry)
+    job.resolve()
+    await run
+
+    expect(h.state.session?.exportState.result).toMatchObject(delivered)
+    expect(h.state.session?.exportState.lastSuccessfulSize).toEqual(delivered)
+  })
+
   it('writes a durable checkpoint on resume, clears recovery and removes both manifests after success', async () => {
     const recoveredManifest = createRecoveredManifest()
     const h = createHarness({ runtime: OPFS_RUNTIME })
@@ -1247,6 +1318,73 @@ describe('orchestrateFullResExport refusals', () => {
     expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
     expect(mocks.selectCurrentExportExecutionPlan).not.toHaveBeenCalled()
   })
+
+  it.each(INVALID_GEOMETRIES)(
+    'refuses %s before checkpoint, evacuation or worker work',
+    async (_label, geometry) => {
+      expect(() =>
+        planExportGeometry(geometry, { width: 6000, height: 4000 }),
+      ).toThrow(INVALID_EXPORT_GEOMETRY)
+      const registry = createResourceRegistry()
+      const previousResult = createPreviousResult()
+      // A durable OPFS plan journals before the worker starts, so a refusal
+      // that came late would leave a checkpoint behind.
+      const h = createHarness({
+        registry,
+        runtime: OPFS_RUNTIME,
+        session: createSession('session-1', {
+          exportGeometry: geometry,
+          exportState: { status: 'ready', result: previousResult },
+        }),
+      })
+      registry.register({
+        id: 'preview-gpu-pipeline',
+        owner: 'gpu',
+        kind: 'gpu-pipeline',
+        estimatedBytes: 4096,
+        dispose: () => {
+          h.trace.push('service:dispose:preview-gpu-pipeline')
+        },
+      })
+      const liveSession = h.state.session
+      const otherExport = new AbortController()
+      h.ctx.refs.exportAbortControllerRef.current = otherExport
+
+      await orchestrateFullResExport(OPTIONS, h.ctx)
+
+      expect(h.trace).toEqual([
+        'service:scheduleToast',
+        'toast:error:Full-resolution export is not ready',
+      ])
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        'Full-resolution export is not ready',
+        {
+          description:
+            'This Transform cannot be reproduced at full resolution. Adjust or reset Transform to export.',
+        },
+      )
+      // Nothing was planned, journaled, evacuated or started.
+      expect(h.planInputs).toEqual([])
+      expect(mocks.createOpfsCheckpointBackend).not.toHaveBeenCalled()
+      expect(await h.checkpointStore.list()).toEqual([])
+      expect(
+        h.ctx.services.registerCurrentPreviewPipelineForEvacuation,
+      ).not.toHaveBeenCalled()
+      expect(h.ctx.services.abortRuntimeWork).not.toHaveBeenCalled()
+      expect(registry.snapshot().live).toHaveLength(1)
+      expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+      expect(h.state).toEqual({
+        status: null,
+        error: undefined,
+        progress: null,
+        session: liveSession,
+        recovery: null,
+      })
+      expect(liveSession?.exportState.result).toBe(previousResult)
+      expect(otherExport.signal.aborted).toBe(false)
+      expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
+    },
+  )
 
   it('refuses an unsupported color graph without touching other export work', async () => {
     const lut: LUTData = {

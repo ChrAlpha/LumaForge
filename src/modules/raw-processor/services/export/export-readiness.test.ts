@@ -1,4 +1,12 @@
+import type { ExportGeometry } from '@lumaforge/render-engine/export'
+import {
+  INVALID_EXPORT_GEOMETRY,
+  planExportGeometry,
+} from '@lumaforge/render-engine/export'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
+import { composeManualTransform } from '~/modules/transform-demo/transform-render'
 
 import type { ImageSession } from '../../model/session'
 import { deriveFullResExportReadiness } from './export-readiness'
@@ -50,6 +58,63 @@ const SAMPLE_GEOMETRY = {
   matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
   constrainCrop: true,
 }
+
+const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1] as const
+const SOURCE = { width: 4000, height: 3000 }
+const IDENTITY_EXPOSURE = { ev: 0, multiplier: 1, source: 'identity' } as const
+const INVALID_GEOMETRY_REASON =
+  'This Transform cannot be reproduced at full resolution. Adjust or reset Transform to export.'
+
+/** Its projective horizon crosses the unconstrained output frame. */
+const FOLDING_MATRIX = composeManualTransform(
+  IDENTITY,
+  FOLDING_TRANSFORM,
+  SOURCE.width / SOURCE.height,
+)
+
+/**
+ * Committed geometries the engine refuses to plan: the known fold, then state
+ * that is malformed, non-finite or singular.
+ */
+const INVALID_GEOMETRIES: ReadonlyArray<
+  readonly [label: string, geometry: ExportGeometry]
+> = [
+  [
+    'a fold inside the unconstrained frame',
+    { matrix: FOLDING_MATRIX, constrainCrop: false },
+  ],
+  [
+    'a matrix missing an entry',
+    { matrix: IDENTITY.slice(0, 8), constrainCrop: true },
+  ],
+  [
+    'a matrix that is not an array',
+    { matrix: {} as never, constrainCrop: true },
+  ],
+  [
+    'a NaN entry',
+    { matrix: [1, 0, 0, 0, Number.NaN, 0, 0, 0, 1], constrainCrop: true },
+  ],
+  [
+    'an infinite entry',
+    {
+      matrix: [1, 0, Number.POSITIVE_INFINITY, 0, 1, 0, 0, 0, 1],
+      constrainCrop: false,
+    },
+  ],
+  [
+    'a singular matrix',
+    { matrix: [1, 2, 0, 2, 4, 0, 0, 0, 1], constrainCrop: true },
+  ],
+  [
+    'an all-zero matrix',
+    { matrix: [0, 0, 0, 0, 0, 0, 0, 0, 0], constrainCrop: false },
+  ],
+  [
+    'a horizon crossing the source frame',
+    { matrix: [1, 0, 0, 0, 1, 0, -2, 0, 1], constrainCrop: true },
+  ],
+]
 
 describe('export readiness helpers', () => {
   afterEach(() => {
@@ -182,6 +247,53 @@ describe('export readiness helpers', () => {
     expect(readiness.disabledReason).toMatch(
       /cannot safely complete this large local full-resolution export/i,
     )
+  })
+
+  it.each(INVALID_GEOMETRIES)(
+    'refuses %s before any export work is planned',
+    (_label, geometry) => {
+      // The engine is the final authority; readiness only mirrors its verdict.
+      expect(() => planExportGeometry(geometry, SOURCE)).toThrow(
+        INVALID_EXPORT_GEOMETRY,
+      )
+
+      expect(
+        deriveFullResExportReadiness({
+          sourceFile: new File(['raw'], 'frame.ARW'),
+          session: { ...createSession(), exportGeometry: geometry },
+          rawRenderExposure: IDENTITY_EXPOSURE,
+        }),
+      ).toEqual({ canExport: false, disabledReason: INVALID_GEOMETRY_REASON })
+    },
+  )
+
+  it('plans the delivered frame from the committed geometry', () => {
+    // Constraining the crop pulls the same fold back inside its horizon.
+    const geometry = { matrix: FOLDING_MATRIX, constrainCrop: true }
+    const planned = planExportGeometry(geometry, SOURCE)
+    expect(planned.outputWidth).toBeLessThan(SOURCE.width)
+
+    const cropped = deriveFullResExportReadiness({
+      sourceFile: new File(['raw'], 'frame.ARW'),
+      session: { ...createSession(), exportGeometry: geometry },
+      rawRenderExposure: IDENTITY_EXPOSURE,
+    })
+    expect(cropped.canExport).toBe(true)
+    if (!cropped.canExport) throw new Error('expected export readiness')
+    expect(cropped.deliveredSize).toEqual({
+      width: planned.outputWidth,
+      height: planned.outputHeight,
+    })
+
+    for (const exportGeometry of [null, undefined]) {
+      const neutral = deriveFullResExportReadiness({
+        sourceFile: new File(['raw'], 'frame.ARW'),
+        session: { ...createSession(), exportGeometry },
+        rawRenderExposure: IDENTITY_EXPOSURE,
+      })
+      if (!neutral.canExport) throw new Error('expected export readiness')
+      expect(neutral.deliveredSize).toEqual(SOURCE)
+    }
   })
 
   it('marks export ready only when source, session, quick preview, capability, exposure, and plan are safe', () => {
