@@ -37,6 +37,16 @@ function transformCanvas(page: Page) {
 
 async function openTool(page: Page, name: 'Transform' | 'Adjust' | 'Export') {
   if (isMobile(page)) {
+    // Export is not a tool on mobile: the topbar action opens its panel in
+    // the deck, and a tool tab hands the deck back.
+    if (name === 'Export') {
+      const panel = page.locator('[data-mobile-export-panel]')
+      if (!(await panel.isVisible())) {
+        await page.locator('[data-mobile-export-action]').click()
+      }
+      await expect(panel).toBeVisible()
+      return
+    }
     const tab = page.getByRole('tab', { name, exact: true })
     if ((await tab.getAttribute('aria-selected')) !== 'true') {
       await tab.click()
