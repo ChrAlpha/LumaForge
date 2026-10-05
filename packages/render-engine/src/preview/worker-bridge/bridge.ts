@@ -37,15 +37,22 @@ export class CpuPreviewClient {
   private sourceId: string | null = null
   private nextRequestId = 1
   private inFlightId: number | null = null
+  private inFlightRequest: PendingRender | null = null
   private pending: PendingRender | null = null
-  private frameHandler: ((f: CpuPreviewFrame) => void) | null = null
+  private frameHandler:
+    | ((f: CpuPreviewFrame, request: PendingRender) => void)
+    | null = null
   private errorHandler: ((r: CpuPreviewFailureReason) => void) | null = null
 
   constructor(
     private readonly factory: () => CpuPreviewWorkerLike = defaultWorkerFactory,
   ) {}
 
-  onFrame(fn: (f: CpuPreviewFrame) => void) {
+  /**
+   * Each frame comes with the request it answers: the render that was in
+   * flight, not a request still queued behind it.
+   */
+  onFrame(fn: (f: CpuPreviewFrame, request: PendingRender) => void) {
     this.frameHandler = fn
   }
   onError(fn: (r: CpuPreviewFailureReason) => void) {
@@ -129,6 +136,7 @@ export class CpuPreviewClient {
     if (!worker) return
     const requestId = this.nextRequestId++
     this.inFlightId = requestId
+    this.inFlightRequest = req
     try {
       worker.postMessage({
         type: 'render',
@@ -156,17 +164,22 @@ export class CpuPreviewClient {
       this.flushPending()
       return
     }
+    const request = this.inFlightRequest
     const isLatest =
       res.requestId === this.inFlightId && res.sourceId === this.sourceId
     this.inFlightId = null
-    if (isLatest) {
-      this.frameHandler?.({
-        requestId: res.requestId,
-        sourceId: res.sourceId,
-        rgba: res.rgba,
-        width: res.width,
-        height: res.height,
-      })
+    this.inFlightRequest = null
+    if (isLatest && request) {
+      this.frameHandler?.(
+        {
+          requestId: res.requestId,
+          sourceId: res.sourceId,
+          rgba: res.rgba,
+          width: res.width,
+          height: res.height,
+        },
+        request,
+      )
     }
     this.flushPending()
   }

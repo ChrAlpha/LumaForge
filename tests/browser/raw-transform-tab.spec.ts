@@ -22,6 +22,8 @@ const rawName = 'raw-pixls-iphone-se.dng'
 const replacementName = 'replacement-iphone-se.dng'
 const hqExportReason =
   'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.'
+const refusedTransformReason =
+  'This transform leaves too little usable image. Reduce the adjustment or reset.'
 
 function isMobile(page: Page) {
   return (page.viewportSize()?.width ?? 1280) <= 640
@@ -195,6 +197,11 @@ async function snapshot(page: Page) {
     'false',
     { timeout: 30_000 },
   )
+  return readTransformFrame(page)
+}
+
+/** Pixels on the Transform overlay now, whether or not a render is pending. */
+async function readTransformFrame(page: Page) {
   await expect(transformCanvas(page)).toBeVisible()
   return transformCanvas(page).evaluate(async (element) => {
     const canvas = element as HTMLCanvasElement
@@ -259,6 +266,66 @@ async function expectStandardExports(
       await expect(hqButton).toBeDisabled()
     }
   }
+}
+
+/** Where the export actions and their reasons live on each surface. */
+function exportSurface(page: Page) {
+  return isMobile(page)
+    ? page.locator('[data-mobile-export-panel]')
+    : page.locator('[data-raw-export-block="persistent"]')
+}
+
+/** Moves a Transform slider to one end of its range with the keyboard. */
+async function setTransformSliderEdge(
+  page: Page,
+  name: 'Vertical' | 'Horizontal' | 'Rotate' | 'Scale',
+  key: 'Home' | 'End',
+  valueNow: string,
+) {
+  const slider = transformTool(page).getByRole('slider', { name, exact: true })
+  await expect(slider).toBeEnabled({ timeout: 30_000 })
+  await slider.focus()
+  await slider.press(key)
+  await expect(slider).toHaveAttribute('aria-valuenow', valueNow)
+}
+
+function constrainCrop(page: Page) {
+  return transformTool(page).getByRole('checkbox', {
+    name: 'Constrain crop',
+    exact: true,
+  })
+}
+
+/**
+ * The worker refused the geometry the controls ask for: the tool says so,
+ * and the overlay stays on the photo with the last frame it rendered.
+ */
+async function expectRefusedTransform(page: Page) {
+  await expect(transformTool(page).getByRole('alert')).toHaveText(
+    refusedTransformReason,
+    { timeout: 30_000 },
+  )
+  await expect(page.locator('[data-raw-transform-preview]')).toBeVisible()
+}
+
+/**
+ * Neither export runs while the session cannot hold the geometry on screen.
+ * The reason is named where the export button is, not left to a dark button.
+ */
+async function expectTransformExportBlocked(page: Page) {
+  await openTool(page, 'Export')
+  await expect(
+    page.getByRole('button', {
+      name: 'Export full-resolution JPEG',
+      exact: true,
+    }),
+  ).toBeDisabled()
+  await expect(
+    page.getByRole('button', { name: 'Export HQ preview JPEG', exact: true }),
+  ).toBeDisabled()
+  await expect(
+    exportSurface(page).getByText(refusedTransformReason, { exact: true }),
+  ).toBeVisible()
 }
 
 async function replaceRaw(page: Page) {
@@ -505,6 +572,172 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await expect(rotate).toHaveAttribute('aria-valuenow', '0')
     await expect(page.locator('[data-raw-transform-preview]')).toHaveCount(0)
     await expectStandardExports(page, false, hqAvailable)
+  })
+}
+
+for (const preview of ['gpu', 'cpu'] as const) {
+  test(`${preview}: a refused folding Transform keeps the last valid frame, blocks export, and recovers`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      preview === 'gpu' && !projectHasWebGPU(testInfo),
+      NO_WEBGPU_SKIP_REASON,
+    )
+    testInfo.setTimeout(360_000)
+    expect(
+      existsSync(rawPath),
+      'Required public DNG is missing. Run pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public before browser validation.',
+    ).toBe(true)
+    await page.addInitScript(() => {
+      localStorage.setItem('lumaforge.locale', 'en')
+    })
+    await page.goto(
+      rawPreviewUrl(
+        testInfo,
+        preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
+      ),
+    )
+    await loadRaw(page)
+    if (preview === 'gpu') {
+      await expectWebGPUPreview(page, testInfo)
+    } else {
+      await expect(page.locator('.raw-preview-canvas')).toHaveCount(0)
+    }
+    await openTool(page, 'Export')
+    await expect(
+      page.getByRole('button', {
+        name: 'Export full-resolution JPEG',
+        exact: true,
+      }),
+    ).toBeEnabled({ timeout: 30_000 })
+    const hqAvailable =
+      preview === 'gpu' ||
+      (await page
+        .getByRole('button', { name: 'Export HQ preview JPEG', exact: true })
+        .isEnabled())
+
+    // The folding geometry, set through the controls: both perspective axes
+    // and rotate at their limits, the frame scaled fully out. Constrained,
+    // the crop stays inside the projective horizon, so it renders.
+    const overlay = page.locator('[data-raw-transform-preview]')
+    const setFoldingGeometry = async () => {
+      await openTool(page, 'Transform')
+      await waitForTransform(page)
+      await selectTransformSection(page, 'Perspective')
+      await setTransformSliderEdge(page, 'Vertical', 'End', '60')
+      await setTransformSliderEdge(page, 'Horizontal', 'End', '60')
+      await setTransformSliderEdge(page, 'Rotate', 'End', '30')
+      await selectTransformSection(page, 'Frame')
+      await setTransformSliderEdge(page, 'Scale', 'Home', '-50')
+      await expect(constrainCrop(page)).toBeChecked()
+      await waitForTransform(page)
+      return snapshot(page)
+    }
+    const accepted = await setFoldingGeometry()
+    const acceptedMatrix = await overlay.getAttribute('data-transform-matrix')
+    expect(acceptedMatrix).toBeTruthy()
+    expect(accepted.colors).toBeGreaterThan(1000)
+    await expectStandardExports(page, true)
+
+    // Unconstrained, the same geometry folds: the worker refuses it. The
+    // overlay keeps the accepted frame and export is blocked.
+    const refuse = async () => {
+      await openTool(page, 'Transform')
+      await selectTransformSection(page, 'Frame')
+      await constrainCrop(page).click()
+      await expect(constrainCrop(page)).not.toBeChecked()
+      await expectRefusedTransform(page)
+      expect(await overlay.getAttribute('data-transform-matrix')).toBe(
+        acceptedMatrix,
+      )
+      expect((await readTransformFrame(page)).hash).toBe(accepted.hash)
+      await expectTransformExportBlocked(page)
+      // Nothing late replaces the accepted frame or reopens export.
+      await page.waitForTimeout(1_500)
+      await expectTransformExportBlocked(page)
+      await openTool(page, 'Transform')
+      await expectRefusedTransform(page)
+      expect(await overlay.getAttribute('data-transform-matrix')).toBe(
+        acceptedMatrix,
+      )
+      expect((await readTransformFrame(page)).hash).toBe(accepted.hash)
+    }
+    await refuse()
+
+    // A valid geometry again (the crop constrained) renders the same frame
+    // and full resolution exports again.
+    await selectTransformSection(page, 'Frame')
+    await constrainCrop(page).click()
+    await expect(constrainCrop(page)).toBeChecked()
+    await waitForTransform(page)
+    expect((await snapshot(page)).hash).toBe(accepted.hash)
+    await expect(transformTool(page).getByRole('alert')).toHaveCount(0)
+    await expectStandardExports(page, true)
+
+    // Refused once more, then Reset retires the geometry and both exports
+    // come back.
+    await refuse()
+    await selectTransformSection(page, 'Upright')
+    await transformTool(page)
+      .getByRole('button', {
+        name: isMobile(page) ? 'Reset Upright' : 'Reset',
+        exact: true,
+      })
+      .click()
+    await expect(overlay).toHaveCount(0)
+    await expect(transformTool(page).getByRole('alert')).toHaveCount(0)
+    await selectTransformSection(page, 'Frame')
+    await expect(constrainCrop(page)).toBeChecked()
+    await expectStandardExports(page, false, hqAvailable)
+
+    // The accepted geometry, set again, exports at full resolution with the
+    // framing the preview showed.
+    const again = await setFoldingGeometry()
+    expect(await overlay.getAttribute('data-transform-matrix')).toBe(
+      acceptedMatrix,
+    )
+    expect([again.width, again.height]).toEqual([
+      accepted.width,
+      accepted.height,
+    ])
+    await expectStandardExports(page, true)
+    await page
+      .getByRole('button', { name: 'Export full-resolution JPEG', exact: true })
+      .click()
+    const downloadButton = exportSurface(page).getByRole('button', {
+      name: 'Download',
+      exact: true,
+    })
+    await expect(downloadButton).toBeVisible({ timeout: 240_000 })
+    const downloading = page.waitForEvent('download')
+    await downloadButton.click()
+    const delivered = await readFile((await (await downloading).path())!)
+    const deliveredSize = await page.evaluate(async (bytes) => {
+      const bitmap = await createImageBitmap(
+        new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }),
+      )
+      const size = { width: bitmap.width, height: bitmap.height }
+      bitmap.close()
+      return size
+    }, Array.from(delivered))
+    expect(deliveredSize.width).toBeGreaterThan(accepted.width)
+    expect(deliveredSize.width / deliveredSize.height).toBeCloseTo(
+      accepted.width / accepted.height,
+      1,
+    )
+
+    // The export released the preview; restoring it keeps the geometry.
+    await page.getByRole('button', { name: 'Restore preview' }).click()
+    await openTool(page, 'Transform')
+    await waitForTransform(page)
+    expect(await overlay.getAttribute('data-transform-matrix')).toBe(
+      acceptedMatrix,
+    )
+    const restored = await snapshot(page)
+    expect([restored.width, restored.height]).toEqual([
+      accepted.width,
+      accepted.height,
+    ])
   })
 }
 

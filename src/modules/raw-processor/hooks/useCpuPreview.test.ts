@@ -359,6 +359,148 @@ describe('useCpuPreview hook', () => {
   })
 })
 
+describe('useCpuPreview original / processed toggle', () => {
+  type RenderRequest = Extract<CpuPreviewRequest, { type: 'render' }>
+
+  function mountToggle() {
+    vi.stubGlobal('Worker', FakeWorker)
+    const image = makeDecodedImage('quick')
+    const props = (variant: 'processed' | 'neutral') => ({
+      enabled: true,
+      image,
+      imageVersion: 1,
+      params: baseParams,
+      variant,
+    })
+    const hook = renderHook((input) => useCpuPreview(input), {
+      initialProps: props('processed'),
+    })
+    const worker = FakeWorker.instances[0]!
+    const renders = () =>
+      worker.posted.filter(
+        (message): message is RenderRequest => message.type === 'render',
+      )
+    // Answers the latest render posted to the worker unless told which.
+    const answer = (
+      fill: number,
+      request: RenderRequest = renders().at(-1)!,
+    ) => {
+      act(() => {
+        worker.respond({
+          type: 'rendered',
+          sourceId: request.sourceId,
+          requestId: request.requestId,
+          rgba: new Uint8ClampedArray(2 * 2 * 4).fill(fill),
+          width: 2,
+          height: 2,
+        })
+      })
+    }
+    const show = (variant: 'processed' | 'neutral') =>
+      hook.rerender(props(variant))
+
+    return { result: hook.result, renders, answer, show }
+  }
+
+  it('shows the processed frame again after a cached original', () => {
+    const { result, renders, answer, show } = mountToggle()
+
+    answer(200)
+    expect(result.current.frame?.rgba[0]).toBe(200)
+
+    // The first original is rendered, then cached.
+    show('neutral')
+    expect(renders().at(-1)?.variant).toBe('neutral')
+    answer(40)
+    expect(result.current.frame?.rgba[0]).toBe(40)
+
+    show('processed')
+    expect(renders().at(-1)?.variant).toBe('processed')
+    answer(200)
+    expect(result.current.frame?.rgba[0]).toBe(200)
+
+    // The second original comes from the cache, without a render.
+    const rendersBeforeCachedOriginal = renders().length
+    show('neutral')
+    expect(renders()).toHaveLength(rendersBeforeCachedOriginal)
+    expect(result.current.frame?.rgba[0]).toBe(40)
+
+    // Back to processed: the photo on screen is the original, so the
+    // processed photo is rendered again instead of being taken as current.
+    show('processed')
+    expect(renders()).toHaveLength(rendersBeforeCachedOriginal + 1)
+    expect(renders().at(-1)?.variant).toBe('processed')
+    expect(result.current.inFlight).toBe(true)
+    answer(200)
+    expect(result.current.frame?.rgba[0]).toBe(200)
+  })
+
+  it('drops a processed frame that lands after a cached original replaced it', () => {
+    const { result, renders, answer, show } = mountToggle()
+
+    answer(200)
+    show('neutral')
+    answer(40)
+    show('processed')
+    answer(200)
+    show('neutral')
+    expect(result.current.frame?.rgba[0]).toBe(40)
+
+    // Processed is asked for, then the cached original returns before the
+    // processed render lands.
+    show('processed')
+    const lateProcessed = renders().at(-1)!
+    expect(lateProcessed.variant).toBe('processed')
+    expect(result.current.inFlight).toBe(true)
+    const rendersBeforeReturn = renders().length
+    show('neutral')
+    expect(renders()).toHaveLength(rendersBeforeReturn)
+    expect(result.current.frame?.rgba[0]).toBe(40)
+    expect(result.current.inFlight).toBe(false)
+
+    answer(200, lateProcessed)
+    expect(result.current.frame?.rgba[0]).toBe(40)
+    expect(result.current.inFlight).toBe(false)
+
+    // The late frame was not cached as the original either.
+    show('processed')
+    expect(renders()).toHaveLength(rendersBeforeReturn + 1)
+    answer(200)
+    expect(result.current.frame?.rgba[0]).toBe(200)
+    show('neutral')
+    expect(renders()).toHaveLength(rendersBeforeReturn + 1)
+    expect(result.current.frame?.rgba[0]).toBe(40)
+  })
+
+  it('caches an original only from a render requested as the original', () => {
+    const { result, renders, answer, show } = mountToggle()
+    const firstProcessed = renders().at(-1)!
+
+    // The original is asked for while the first processed render is still
+    // running, so it waits behind it.
+    show('neutral')
+    expect(renders()).toHaveLength(1)
+    answer(200, firstProcessed)
+    expect(result.current.frame?.rgba[0]).not.toBe(200)
+    expect(result.current.inFlight).toBe(true)
+    const original = renders().at(-1)!
+    expect(original.variant).toBe('neutral')
+
+    // Processed is asked for again before the original lands.
+    show('processed')
+    answer(40, original)
+    expect(result.current.frame?.rgba[0]).not.toBe(40)
+    expect(renders().at(-1)?.variant).toBe('processed')
+    answer(200)
+    expect(result.current.frame?.rgba[0]).toBe(200)
+
+    const rendersBeforeCachedOriginal = renders().length
+    show('neutral')
+    expect(renders()).toHaveLength(rendersBeforeCachedOriginal)
+    expect(result.current.frame?.rgba[0]).toBe(40)
+  })
+})
+
 describe('useCpuPreview look degradation (LUT-before-RAW)', () => {
   const unconfirmedLut: LUTData = {
     size: 2,

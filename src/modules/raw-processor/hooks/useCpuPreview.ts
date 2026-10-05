@@ -155,12 +155,17 @@ export function useCpuPreview({
   // Track the last source id to detect image identity changes.
   const lastSourceIdRef = useRef<string | null>(null)
 
-  // Refs so the once-created onFrame handler reads current values rather than
-  // the stale closure captured when the client was first constructed.
+  // Ref so the once-created onFrame handler reads the current variant rather
+  // than the stale closure captured when the client was first constructed.
   const variantRef = useRef(variant)
   variantRef.current = variant
-  const rawRenderExposureEvRef = useRef(params.rawRenderExposure.ev)
-  rawRenderExposureEvRef.current = params.rawRenderExposure.ev
+
+  // Renders whose frames may still be shown, with the neutral cache key each
+  // was requested under (null for processed). A frame is judged by the request
+  // it answers, not by the variant selected when it lands: a request can wait
+  // behind a render of the other variant. Replacing the map drops every
+  // render still outstanding.
+  const liveRendersRef = useRef(new WeakMap<object, string | null>())
 
   // Guard against re-requesting an identical render on every React re-render:
   // `params` is rebuilt as a fresh object upstream each render, so the render
@@ -175,17 +180,18 @@ export function useCpuPreview({
   function getClient(): CpuPreviewClient {
     if (!clientRef.current) {
       const client = new CpuPreviewClient()
-      client.onFrame((f) => {
+      client.onFrame((f, request) => {
+        const neutralKey = liveRendersRef.current.get(request)
+        // A cached original replaced this render: neither show nor cache it.
+        if (neutralKey === undefined) return
+        if (neutralKey !== null) {
+          neutralCacheRef.current.set(neutralKey, f)
+        }
+        // A frame of the other variant leaves the photo on screen; the render
+        // for the selected variant is queued behind it.
+        if (request.variant !== variantRef.current) return
         setFrame(f)
         setInFlight(false)
-        // Cache neutral frames by their source + exposure key.
-        if (variantRef.current === 'neutral') {
-          const key = neutralFrameCacheKey(
-            f.sourceId,
-            rawRenderExposureEvRef.current,
-          )
-          neutralCacheRef.current.set(key, f)
-        }
       })
       client.onError((r) => {
         setFailureReason(r)
@@ -258,6 +264,12 @@ export function useCpuPreview({
       const cached = neutralCacheRef.current.get(key)
       if (cached) {
         setFrame(cached)
+        // The cached original replaces whatever is still rendering, and the
+        // next processed request has to render again rather than match the
+        // render it would otherwise duplicate.
+        liveRendersRef.current = new WeakMap()
+        lastRenderKeyRef.current = null
+        setInFlight(false)
         return
       }
     }
@@ -304,8 +316,15 @@ export function useCpuPreview({
     }
     lastRenderKeyRef.current = { sig: renderSig, lut: effectiveLut }
 
+    const request = { variant, graph }
+    liveRendersRef.current.set(
+      request,
+      variant === 'neutral'
+        ? neutralFrameCacheKey(sourceId, params.rawRenderExposure.ev)
+        : null,
+    )
     setInFlight(true)
-    getClient().requestRender({ variant, graph })
+    getClient().requestRender(request)
   }, [enabled, params, variant])
 
   // Memoise the return shape to avoid unnecessary re-renders downstream.

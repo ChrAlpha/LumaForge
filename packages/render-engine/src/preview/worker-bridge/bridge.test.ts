@@ -119,6 +119,54 @@ describe('cpuPreviewClient', () => {
     expect(frames).toEqual([renders[0].requestId, renders2[1].requestId])
   })
 
+  it('hands each frame the render request it answers', () => {
+    const { worker, posted, respond } = fakeWorker()
+    const client = new CpuPreviewClient(() => worker)
+    const answered: unknown[] = []
+    client.onFrame((_frame, request) => answered.push(request))
+    client.loadSource({
+      sourceId: 's1',
+      width: 2,
+      height: 2,
+      data: new Uint16Array(12),
+    })
+
+    const first = { variant: 'processed' as const, graph }
+    const replaced = { variant: 'processed' as const, graph }
+    const latest = { variant: 'neutral' as const, graph }
+    client.requestRender(first)
+    client.requestRender(replaced)
+    client.requestRender(latest)
+
+    const renderAt = (index: number) =>
+      (
+        posted.filter((m) => m.type === 'render') as Array<
+          Extract<CpuPreviewRequest, { type: 'render' }>
+        >
+      )[index]
+    respond({
+      type: 'rendered',
+      sourceId: 's1',
+      requestId: renderAt(0).requestId,
+      rgba: new Uint8ClampedArray(16),
+      width: 2,
+      height: 2,
+    })
+    expect(renderAt(1).variant).toBe('neutral')
+    respond({
+      type: 'rendered',
+      sourceId: 's1',
+      requestId: renderAt(1).requestId,
+      rgba: new Uint8ClampedArray(16),
+      width: 2,
+      height: 2,
+    })
+
+    expect(answered).toHaveLength(2)
+    expect(answered[0]).toBe(first)
+    expect(answered[1]).toBe(latest)
+  })
+
   it('reports a render requested with no loaded source instead of dropping it', () => {
     const { worker, posted } = fakeWorker()
     const client = new CpuPreviewClient(() => worker)
