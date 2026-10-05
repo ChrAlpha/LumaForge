@@ -287,6 +287,21 @@ test('keeps the loaded mobile export panel clear of the toolbar', async ({
     )
     .toBe('none')
 
+  // The deck takes the export panel's height one layout pass after the
+  // panel mounts (the content is measured, then the stage layout resizes the
+  // deck on its 240ms curve), so the first frames can still clip the content.
+  // A clip that persists fails this poll; a settling one does not.
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const panel = document.querySelector<HTMLElement>(
+          '[data-mobile-dock] > *',
+        )
+        return panel ? panel.scrollHeight - panel.clientHeight : null
+      }),
+    )
+    .toBeLessThanOrEqual(1)
+
   const metrics = await page.evaluate(() => {
     const documentRoot = document.documentElement
     const dock = document.querySelector<HTMLElement>('[data-mobile-dock]')
