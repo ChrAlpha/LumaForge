@@ -104,6 +104,9 @@ const slug = (text) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
 
+// Strength presets in percent: the detents on the Strength slider row.
+const STRENGTH_PERCENT = { Off: 0, Light: 40, Standard: 70, Strong: 100 }
+
 function approxEqual(a, b, step) {
   return Math.abs(Number(a) - Number(b)) <= Math.max(1e-6, step / 2)
 }
@@ -490,12 +493,14 @@ function collectDomState() {
   for (const element of qa('[role="slider"]')) {
     if (!isVisible(element)) continue
     const row = element.closest(
-      '[data-tone-field],[data-color-field],[data-hsl-band],[data-hsl-band-row],[data-raw-transform-group],[data-adjust-list-section],[data-transform-list-section]',
+      '[data-tone-field],[data-color-field],[data-hsl-band],[data-hsl-band-row],[data-raw-transform-group],[data-adjust-list-section],[data-transform-list-section],[data-raw-desktop-strength],[data-mobile-look-strength]',
     )
     const name = nameOf(element)
     let key
     if (element.classList.contains('raw-lab-compare-handle'))
       key = 'compare.split'
+    else if (row?.dataset.rawDesktopStrength || row?.hasAttribute('data-mobile-look-strength'))
+      key = 'look.strength'
     else if (row?.dataset.toneField) key = `tone.${row.dataset.toneField}`
     else if (row?.dataset.colorField) key = `color.${row.dataset.colorField}`
     else if (row?.dataset.hslBand)
@@ -513,10 +518,6 @@ function collectDomState() {
     root
       ? qa('[aria-pressed="true"]', root).map((element) => text(element))
       : null
-  const selectedIn = (label) => {
-    const list = q(`[role="tablist"][aria-label="${label}"]`)
-    return list ? text(q('[aria-selected="true"]', list)) : null
-  }
   const track = q('[data-raw-compare-track="image"]')
   const trackStyle = track ? getComputedStyle(track) : null
   const transformOverlay = q('[data-raw-transform-preview]')
@@ -568,7 +569,11 @@ function collectDomState() {
     ),
     canvases,
     sliders,
-    strength: selectedIn('Strength'),
+    // Strength is a slider row on both surfaces: "62%", or "Off" at 0.
+    strength:
+      q(
+        '[data-raw-desktop-strength] [role="slider"], [data-mobile-look-strength] [role="slider"]',
+      )?.getAttribute('aria-valuetext') ?? null,
     hslAxis: text(q('[data-hsl-axis-tabs] [aria-selected="true"]')),
     lookText: text(q('[data-tool-card="look"]')),
     lutDropzone: text(q('[data-raw-lut="dropzone"]')),
@@ -650,7 +655,8 @@ class Harness {
     // controls happen to be mounted (the mobile dock shows one panel).
     this.dirty = { tone: false, color: false, hsl: false, transform: false }
     this.lut = null
-    this.strength = 'Standard'
+    // Strength in percent; a look starts at Standard.
+    this.strength = STRENGTH_PERCENT.Standard
     page.on('console', (message) => {
       if (message.type() === 'error')
         this.consoleErrors.push({ at: Date.now(), text: message.text() })
@@ -960,6 +966,18 @@ const COLOR = [
   ['userVibrance', 'Vibrance', 1],
 ]
 const HSL_AXES = { hue: 'Hue', saturation: 'Saturation', lightness: 'Lightness' }
+// Strength is a continuous slider row on both surfaces (0-100%, step 1);
+// it is set like any Adjust slider, through the row's track and the keys.
+async function setStrengthSlider(h, thumb, percent) {
+  await thumb.waitFor()
+  if (Number(await thumb.getAttribute('aria-valuenow')) === percent) return false
+  if ((await thumb.getAttribute('data-disabled')) !== null) return false
+  await h.setSlider(thumb, percent, { step: 1, label: 'look.strength' })
+  h.strength = percent
+  h.record({ type: 'strength', percent })
+  return true
+}
+
 const fieldOf = (table, key) => {
   const field = table.find(([id]) => id === key)
   if (!field) throw new Error(`UNKNOWN_FIELD ${key}`)
@@ -1138,21 +1156,15 @@ class DesktopDriver {
     )
   }
 
-  strengthTab(level) {
-    return this.page
-      .getByRole('tablist', { name: 'Strength' })
-      .getByRole('tab', { name: level, exact: true })
+  strengthSlider() {
+    return this.page.locator('[data-raw-desktop-strength]').getByRole('slider')
   }
 
-  async setStrength(level) {
+  // Strength is a continuous slider row (0-100%); `percent` is any whole
+  // percent, presets included (STRENGTH_PERCENT).
+  async setStrength(percent) {
     await this.openCard('look')
-    const tab = this.strengthTab(level)
-    if ((await tab.getAttribute('aria-selected')) === 'true') return false
-    if (!(await tab.isEnabled())) return false
-    await tab.click()
-    this.h.strength = level
-    this.h.record({ type: 'strength', level })
-    return true
+    return setStrengthSlider(this.h, this.strengthSlider(), percent)
   }
 
   async setLutContract(input, output) {
@@ -1660,17 +1672,13 @@ class MobileDriver extends DesktopDriver {
     return this.h.clickIfEnabled(original, 'Original (clear LUT)')
   }
 
-  async setStrength(level) {
+  async setStrength(percent) {
     await this.openLook()
-    const tab = this.page
-      .getByRole('tablist', { name: 'Strength' })
-      .getByRole('tab', { name: level, exact: true })
-    if ((await tab.getAttribute('aria-selected')) === 'true') return false
-    if (!(await tab.isEnabled())) return false
-    await tab.click()
-    this.h.strength = level
-    this.h.record({ type: 'strength', level })
-    return true
+    return setStrengthSlider(
+      this.h,
+      this.page.locator('[data-mobile-look-strength]').getByRole('slider'),
+      percent,
+    )
   }
 
   async setLutContract(input, output) {
@@ -1826,8 +1834,8 @@ async function neutralize(h, d, { keepLut = false } = {}) {
   if (h.dirty.color || visiblyDirty('color.'))
     changed = (await d.resetColor()) || changed
   if (h.dirty.hsl || visiblyDirty('hsl.')) changed = (await d.resetHsl()) || changed
-  if (h.lut && h.strength !== 'Standard')
-    changed = (await d.setStrength('Standard')) || changed
+  if (h.lut && h.strength !== STRENGTH_PERCENT.Standard)
+    changed = (await d.setStrength(STRENGTH_PERCENT.Standard)) || changed
   if (h.lut && !keepLut) changed = (await d.clearLut()) || changed
   if (h.cpu) {
     await d.setCpuVariant('Processed')
@@ -2215,12 +2223,19 @@ function buildScenarios({ surface, preview, looks }) {
       keepLut: true,
       run: async (h, d) => d.loadCatalogLook(index, title),
     })
+    // The presets, plus one amount between them: strength is continuous
+    // through preview, export and the manifest.
     if (index === 0)
-      for (const level of ['Light', 'Strong', 'Off'])
+      for (const [level, percent] of [
+        ['light', STRENGTH_PERCENT.Light],
+        ['strong', STRENGTH_PERCENT.Strong],
+        ['off', STRENGTH_PERCENT.Off],
+        ['62', 62],
+      ])
         add({
-          name: `look-${slug(title)}-strength-${level.toLowerCase()}`,
+          name: `look-${slug(title)}-strength-${level}`,
           keepLut: true,
-          run: async (h, d) => d.setStrength(level),
+          run: async (h, d) => d.setStrength(percent),
         })
   })
 

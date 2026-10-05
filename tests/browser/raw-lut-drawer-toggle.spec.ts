@@ -401,11 +401,11 @@ test('mobile tries a catalog look on the photo from the Look strip', async ({
     strip.getByRole('button', { name: 'Import .cube' }),
   ).toBeVisible()
   await expect(page.getByText('No LUT · tone and color only')).toBeVisible()
-  await expect(
-    page
-      .getByRole('tablist', { name: 'Strength' })
-      .getByRole('tab', { name: 'Strong' }),
-  ).toBeDisabled()
+  // Strength is a slider row in the deck; without a LUT it is off.
+  const strength = page
+    .locator('[data-mobile-look-strength]')
+    .getByRole('slider', { name: 'Strength' })
+  await expect(strength).toHaveAttribute('data-disabled', '')
 
   // A tap applies it on the photo; the sheet never opens.
   await look.click()
@@ -419,19 +419,21 @@ test('mobile tries a catalog look on the photo from the Look strip', async ({
   await expect(
     page.getByRole('button', { name: /^Edit color contract for/ }),
   ).toContainText('Rec.709 display')
-  await expect(
-    page
-      .getByRole('tablist', { name: 'Strength' })
-      .getByRole('tab', { name: 'Strong' }),
-  ).toBeEnabled()
+  await expect(strength).not.toHaveAttribute('data-disabled')
+  await expect(strength).toHaveAttribute('aria-valuetext', '70%')
+  // Continuous: arrows step 1%, Shift+arrows 10%; the value is the reset.
+  await strength.focus()
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('Shift+ArrowLeft')
+  await expect(strength).toHaveAttribute('aria-valuetext', '59%')
+  await page.getByRole('button', { name: 'Reset Strength' }).click()
+  await expect(strength).toHaveAttribute('aria-valuetext', '70%')
 
   // LUT sources is a sheet for the sources only.
   await page.getByRole('button', { name: 'LUT sources' }).click()
   const sources = page.getByRole('dialog', { name: 'LUT sources' })
   await expect(sources).toBeVisible()
-  await expect(sources.getByRole('tablist', { name: 'Strength' })).toHaveCount(
-    0,
-  )
+  await expect(sources.getByRole('slider', { name: 'Strength' })).toHaveCount(0)
   await sources.getByRole('button', { name: 'Close LUT sources' }).click()
   await expect(sources).toHaveCount(0)
 })
