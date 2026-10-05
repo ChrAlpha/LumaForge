@@ -140,6 +140,7 @@ function onlineLutSourcesFixture(
     failedEntryId: null,
     entryLoadProgress: null,
     cancelEntryLoad: vi.fn(),
+    loadedEntry: null,
     share: {
       enabled: true,
       url: '/raw?luts=https%3A%2F%2Fprofiles.example.com%2Freleases%2Fv2026.05.01%2Fcatalog.json',

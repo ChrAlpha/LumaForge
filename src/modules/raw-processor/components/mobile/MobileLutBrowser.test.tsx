@@ -64,6 +64,7 @@ function onlineLutSourcesFixture(
     failedEntryId: null,
     entryLoadProgress: null,
     cancelEntryLoad: vi.fn(),
+    loadedEntry: null,
     share: {
       enabled: false,
       url: '',

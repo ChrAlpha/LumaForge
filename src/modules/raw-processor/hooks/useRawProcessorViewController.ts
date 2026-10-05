@@ -46,6 +46,10 @@ export function useRawProcessorViewController({
     search: rawRouteLocation.search,
     pathname: rawRouteLocation.pathname,
     loadOnlineLUT,
+    appliedLutSha256:
+      workflow.activeStyle?.kind === 'custom'
+        ? (workflow.activeStyle.lutAsset?.sha256 ?? null)
+        : null,
   })
   const { runtimeReadinessState, triggerRawRuntimePrewarm } =
     useRawRuntimeReadiness()

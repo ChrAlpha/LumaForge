@@ -14,7 +14,7 @@ import { DEFAULT_LOOK_INTENSITY } from '../../services/look/style-system'
 import { useLutContractSummary } from '../tools/lut/useLutContractSummary'
 import { useOnlineLutEntryLoader } from '../tools/lut/useOnlineLutEntryLoader'
 import type { ScrubFieldId } from './AdjustListPanel'
-import type { AppliedLut, LoadedLutEntry } from './mobile-lut-strip'
+import type { AppliedLut } from './mobile-lut-strip'
 import { buildLutStripItems, resolveAppliedLookTitle } from './mobile-lut-strip'
 import type { MobileLookView } from './mobile-stage-layout'
 import type { LookContractStep } from './MobileLookFooter'
@@ -83,10 +83,9 @@ export function MobileLookDeck(props: {
   const [dismissedFailureId, setDismissedFailureId] = useState<string | null>(
     null,
   )
-  const [loaded, setLoaded] = useState<LoadedLutEntry | null>(null)
-  const [justLoadedEntryId, setJustLoadedEntryId] = useState<string | null>(
-    null,
-  )
+  // Recorded by the LUT sources for every surface, so the applied tile
+  // survives this deck remounting and loads made from LUT sources count.
+  const loaded = sources?.loadedEntry ?? null
   const { loadingEntryId, failedEntryId, loadOnlineLutEntry } =
     useOnlineLutEntryLoader(sources, { replace: true })
   const summary = useLutContractSummary({
@@ -120,14 +119,6 @@ export function MobileLookDeck(props: {
         : null,
     [appliedName, appliedSha, appliedSourceName],
   )
-
-  // An entry with no declared hash is matched by the load the strip made:
-  // once the session reports the hash it applied, remember the pair.
-  useEffect(() => {
-    if (!justLoadedEntryId || !appliedSha) return
-    setLoaded({ entryId: justLoadedEntryId, sha256: appliedSha })
-    setJustLoadedEntryId(null)
-  }, [appliedSha, justLoadedEntryId])
 
   // Opened here, the editor starts at the step and draft asked for. Opened
   // from elsewhere (the export panel's blocked state), the deck mounts into
@@ -186,7 +177,7 @@ export function MobileLookDeck(props: {
 
   const loadEntry = (entryId: string) => {
     setDismissedFailureId(null)
-    void loadOnlineLutEntry(entryId, () => setJustLoadedEntryId(entryId))
+    void loadOnlineLutEntry(entryId)
   }
 
   if (view === 'contract' && lutApplied) {

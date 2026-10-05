@@ -1025,6 +1025,36 @@ describe('useOnlineLutSources', () => {
     })
   })
 
+  it('pairs a loaded hashless entry with the hash the session applies for it', async () => {
+    hideDefaultSource()
+    const loadOnlineLUT = createLoadOnlineLUT()
+    const { result, rerender } = renderHook(
+      ({ appliedLutSha256 }: { appliedLutSha256: string | null }) =>
+        useOnlineLutSources({
+          search: `?luts=${encodeURIComponent(cubeUrl)}`,
+          pathname: '/raw',
+          loadOnlineLUT,
+          appliedLutSha256,
+        }),
+      { initialProps: { appliedLutSha256: null as string | null } },
+    )
+    await waitFor(() => expect(result.current.state.entries).toHaveLength(1))
+    const entryId = result.current.state.entries[0].id
+    expect(result.current.loadedEntry).toBeNull()
+
+    await act(async () => {
+      await result.current.loadEntry(entryId)
+    })
+    // Not paired until the session reports the hash it applied.
+    expect(result.current.loadedEntry).toBeNull()
+    rerender({ appliedLutSha256: sha256 })
+    expect(result.current.loadedEntry).toEqual({ entryId, sha256 })
+
+    // A later LUT from elsewhere does not re-pair the entry.
+    rerender({ appliedLutSha256: 'e'.repeat(64) })
+    expect(result.current.loadedEntry).toEqual({ entryId, sha256 })
+  })
+
   it('aborts an in-flight metadata request when refreshing the same resource', async () => {
     hideDefaultSource()
     const pending = setupPendingFetchJson()

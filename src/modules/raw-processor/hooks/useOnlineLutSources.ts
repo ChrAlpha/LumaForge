@@ -38,6 +38,22 @@ export interface UseOnlineLutSourcesOptions {
       onProgress?: (receivedBytes: number, totalBytes?: number) => void
     },
   ) => Promise<LutLoadOutcome>
+  /**
+   * SHA-256 of the LUT the session applies, if any. An entry that declares
+   * no hash (a direct .cube URL) is known applied only by pairing its load
+   * with the hash the session reports after it.
+   */
+  appliedLutSha256?: string | null
+}
+
+/**
+ * The last entry this hook loaded, paired with the hash the session applied
+ * for it. Kept here, not on a surface, so every surface's load is
+ * remembered and a remounted surface still knows which tile is applied.
+ */
+export interface OnlineLutLoadedEntry {
+  entryId: string
+  sha256: string
 }
 
 export interface OnlineLutEntryLoadProgress {
@@ -59,6 +75,8 @@ export interface UseOnlineLutSourcesResult {
   failedEntryId: string | null
   entryLoadProgress: OnlineLutEntryLoadProgress | null
   cancelEntryLoad: () => void
+  /** The last loaded entry and the hash it applied; null before one. */
+  loadedEntry: OnlineLutLoadedEntry | null
   share: {
     enabled: boolean
     url: string
@@ -158,6 +176,7 @@ export function useOnlineLutSources({
   search,
   pathname,
   loadOnlineLUT,
+  appliedLutSha256 = null,
 }: UseOnlineLutSourcesOptions): UseOnlineLutSourcesResult {
   const [state, setState] = useState<OnlineLUTSourceState>(emptyState)
   const [sourceUrlInput, setSourceUrlInput] = useState('')
@@ -170,6 +189,14 @@ export function useOnlineLutSources({
     useState<OnlineLutEntryLoadProgress | null>(null)
   const [loadingEntryId, setLoadingEntryId] = useState<string | null>(null)
   const [failedEntryId, setFailedEntryId] = useState<string | null>(null)
+  const [loadedEntry, setLoadedEntry] = useState<OnlineLutLoadedEntry | null>(
+    null,
+  )
+  // An entry whose load applied, waiting for the session to report the hash
+  // it applied.
+  const [justLoadedEntryId, setJustLoadedEntryId] = useState<string | null>(
+    null,
+  )
   const activeEntryLoadRef = useRef<{
     entryId: string
     controller: AbortController
@@ -395,6 +422,7 @@ export function useOnlineLutSources({
           onProgress,
         })
         if (outcome === 'failed') setFailedEntryId(entryId)
+        if (outcome === 'loaded') setJustLoadedEntryId(entryId)
         return outcome
       } catch (error) {
         if (!controller.signal.aborted) setFailedEntryId(entryId)
@@ -415,6 +443,14 @@ export function useOnlineLutSources({
     },
     [loadOnlineLUT],
   )
+
+  // The session reports the applied hash once the load's style lands; pair
+  // it with the entry that loaded it.
+  useEffect(() => {
+    if (!justLoadedEntryId || !appliedLutSha256) return
+    setLoadedEntry({ entryId: justLoadedEntryId, sha256: appliedLutSha256 })
+    setJustLoadedEntryId(null)
+  }, [appliedLutSha256, justLoadedEntryId])
 
   // Cancelling releases the one-load lock at once, so a surface can cancel
   // and start another entry in the same tap. The aborted load never applies:
@@ -477,6 +513,7 @@ export function useOnlineLutSources({
     failedEntryId,
     entryLoadProgress,
     cancelEntryLoad,
+    loadedEntry,
     share,
   }
 }

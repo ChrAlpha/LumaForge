@@ -52,6 +52,7 @@ export function MobileRawToolSurface() {
     applied: props.currentLutName
       ? (props.appliedLut ?? { name: props.currentLutName })
       : null,
+    loaded: props.onlineLutSources?.loadedEntry,
   })
   const exportRecap = buildMobileExportRecap({
     canExport: props.canExport,

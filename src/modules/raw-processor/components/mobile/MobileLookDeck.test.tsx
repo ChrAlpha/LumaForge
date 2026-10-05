@@ -61,6 +61,7 @@ function sourcesFixture(
     failedEntryId: null,
     entryLoadProgress: null,
     cancelEntryLoad: vi.fn(),
+    loadedEntry: null,
     share: { enabled: false, url: '', copy: vi.fn() },
     ...overrides,
   }
@@ -212,6 +213,37 @@ describe('mobileLookDeck', () => {
     expect(portra.querySelector('[data-applied-check]')).not.toBeNull()
     expect(tile('Original')).toHaveAttribute('aria-pressed', 'false')
     // The catalog matched, so there is no file tile.
+    expect(
+      container.querySelector('[data-mobile-lut-tile="custom"]'),
+    ).toBeNull()
+  })
+
+  it('marks a hashless direct .cube look applied from the load the sources recorded', () => {
+    // A direct .cube URL declares no hash. The pairing of its load with the
+    // applied hash lives with the LUT sources, so a freshly mounted deck
+    // (or a load made from the LUT sources sheet) still rings its tile.
+    const direct = {
+      id: 'direct',
+      resourceId: 'profiles',
+      title: 'direct.cube',
+      sourceUrl: 'https://example.com/direct.cube',
+      sourceType: 'direct-cube' as const,
+      cube: { url: 'https://example.com/direct.cube', sha256: '' },
+      tags: [],
+    }
+    const base = sourcesFixture()
+    const sources = sourcesFixture({
+      state: { ...base.state, entries: [...base.state.entries, direct] },
+      loadedEntry: { entryId: 'direct', sha256: 'd'.repeat(64) },
+    })
+    const { container } = renderDeck(
+      look({
+        currentLutName: 'Direct',
+        appliedLut: { name: 'Direct', sha256: 'd'.repeat(64) },
+        onlineLutSources: sources,
+      }),
+    )
+    expect(tile('direct.cube')).toHaveAttribute('aria-pressed', 'true')
     expect(
       container.querySelector('[data-mobile-lut-tile="custom"]'),
     ).toBeNull()

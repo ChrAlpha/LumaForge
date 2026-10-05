@@ -1,4 +1,7 @@
-import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
+import type {
+  OnlineLutLoadedEntry,
+  UseOnlineLutSourcesResult,
+} from '../../hooks/useOnlineLutSources'
 
 type OnlineEntry = UseOnlineLutSourcesResult['state']['entries'][number]
 type OnlineResource = UseOnlineLutSourcesResult['state']['resources'][number]
@@ -15,13 +18,10 @@ export interface AppliedLut {
 
 /**
  * A catalog entry with no declared hash (a direct .cube URL) cannot be
- * matched by content up front, so the strip remembers which entry it loaded
- * and the hash the session reported for it.
+ * matched by content up front, so the LUT sources remember which entry
+ * loaded last and the hash the session reported for it.
  */
-export interface LoadedLutEntry {
-  entryId: string
-  sha256: string
-}
+export type LoadedLutEntry = OnlineLutLoadedEntry
 
 export type LutStripItem =
   | { kind: 'original'; key: 'original'; applied: boolean }
@@ -52,8 +52,7 @@ function sameSha(a: string | null | undefined, b: string | null | undefined) {
 
 /**
  * An entry is applied when its cube's SHA-256 is the applied style's. An
- * entry without a declared hash matches only the load the strip itself
- * recorded for it.
+ * entry without a declared hash matches only the load recorded for it.
  */
 export function isLutEntryApplied(
   entry: OnlineEntry,
