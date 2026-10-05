@@ -41,8 +41,15 @@ const MAX_HISTOGRAM_SAMPLED_PIXELS = 500_000
 export const SCRUB_HISTOGRAM_SAMPLED_PIXELS = 40_000
 const UNSUPPORTED_PREVIEW_REASON =
   'Preview histogram requires RGB16 Linear ProPhoto preview data.'
+const HISTOGRAM_OFF_REASON = 'No surface shows the preview histogram.'
 
 type PreviewHistogramInput = {
+  /**
+   * False while no surface shows the histogram (a phone with it turned
+   * off, the CPU preview, an applied Transform): no run starts, and any run
+   * in flight stops. Defaults to true.
+   */
+  enabled?: boolean
   imageRef: RefObject<DecodedImage | null>
   imageVersion: number
   imageIdentity?: string
@@ -95,6 +102,7 @@ function hasExpectedRgb16DataLength(image: DecodedImage) {
 }
 
 function createHistogramJob({
+  enabled = true,
   imageRef,
   imageVersion,
   imageIdentity = 'unscoped-preview',
@@ -103,6 +111,13 @@ function createHistogramJob({
   lutDataVersion,
   displaySource,
 }: PreviewHistogramInput): HistogramJob {
+  if (!enabled) {
+    return {
+      kind: 'unsupported',
+      key: 'off',
+      state: { state: 'unsupported', reason: HISTOGRAM_OFF_REASON },
+    }
+  }
   const image = imageRef.current
   const imageIdentityKey = imageIdentity
   const toneKey = [
@@ -264,6 +279,7 @@ export function usePreviewHistogram(
   input: PreviewHistogramInput,
 ): PreviewHistogramState {
   const {
+    enabled = true,
     imageRef,
     imageVersion,
     imageIdentity,
@@ -327,6 +343,7 @@ export function usePreviewHistogram(
   const job = useMemo(
     () =>
       createHistogramJob({
+        enabled,
         imageRef,
         imageIdentity,
         imageVersion,
@@ -337,6 +354,7 @@ export function usePreviewHistogram(
       }),
     [
       displaySource,
+      enabled,
       histogramParams,
       imageRef,
       imageIdentity,

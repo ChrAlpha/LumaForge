@@ -7,9 +7,11 @@ import {
   within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createStore, Provider as JotaiProvider } from 'jotai'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
 import { COLOR_NEUTRAL } from '../color-fields'
 import { TONE_NEUTRAL } from '../tone-fields'
 import { MobileLabChrome } from './MobileLabChrome'
@@ -1383,5 +1385,26 @@ describe('mobileLabChrome stage layout', () => {
     unmount()
     expect(shell.style.getPropertyValue('--raw-stage-inset-bottom')).toBe('')
     expect(shell.style.getPropertyValue('--raw-photo-top')).toBe('')
+  })
+
+  it('tells the view whether the phone shows the histogram, so it runs only then', async () => {
+    localStorage.setItem('lumaforge.locale', 'en')
+    const store = createStore()
+    const { unmount } = render(
+      <JotaiProvider store={store}>
+        <MobileLabChrome {...base} />
+      </JotaiProvider>,
+    )
+    expect(store.get(mobileHistogramShownAtom)).toBe(false)
+
+    await userEvent.click(screen.getByRole('button', { name: /more actions/i }))
+    await userEvent.click(
+      await screen.findByRole('menuitemcheckbox', { name: /histogram/i }),
+    )
+    expect(store.get(mobileHistogramShownAtom)).toBe(true)
+
+    // Leaving the mobile surface takes its histogram with it.
+    unmount()
+    expect(store.get(mobileHistogramShownAtom)).toBe(false)
   })
 })

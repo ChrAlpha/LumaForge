@@ -85,6 +85,7 @@ function createLutData(): LUTData {
 }
 
 function renderPreviewHistogram(options: {
+  enabled?: boolean
   image: DecodedImage | null
   imageVersion?: number
   params?: ProcessingParams
@@ -94,7 +95,11 @@ function renderPreviewHistogram(options: {
 }) {
   const imageRef = mutableRef<DecodedImage | null>(options.image)
   const lutDataRef = mutableRef<LUTData | null>(options.lutData ?? null)
-  const props = {
+  const props: Parameters<typeof usePreviewHistogram>[0] & {
+    imageRef: typeof imageRef
+    lutDataRef: typeof lutDataRef
+  } = {
+    enabled: options.enabled ?? true,
     imageRef,
     imageVersion: options.imageVersion ?? 1,
     params: options.params ?? defaultParams,
@@ -403,6 +408,41 @@ describe('usePreviewHistogram', () => {
       state: 'ready',
       source: 'bounded-hq',
     })
+  })
+
+  it('runs nothing while no surface shows it, and computes once one does', async () => {
+    const image = createImage('quick')
+    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+      enabled: false,
+      image,
+    })
+    await runAllWork()
+    expect(result.current.state).toBe('unsupported')
+
+    rerender({
+      enabled: true,
+      imageRef,
+      imageVersion: 1,
+      params: defaultParams,
+      lutDataRef,
+      lutDataVersion: 0,
+      displaySource: 'quick',
+    })
+    await runChunkedWorkUntilReady(result)
+    expect(result.current).toMatchObject({ state: 'ready', source: 'quick' })
+
+    // Turned off mid-session, it stops reporting bins it no longer updates.
+    rerender({
+      enabled: false,
+      imageRef,
+      imageVersion: 1,
+      params: { ...defaultParams, userExposureEv: 1 },
+      lutDataRef,
+      lutDataVersion: 0,
+      displaySource: 'quick',
+    })
+    await runAllWork()
+    expect(result.current.state).toBe('unsupported')
   })
 
   it('reports embedded-only preview as unavailable', () => {

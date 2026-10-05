@@ -3,6 +3,7 @@ import type {
   ProcessingParams,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
+import { useAtomValue } from 'jotai'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
@@ -12,6 +13,7 @@ import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline
 
 import type { DisplaySource, ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
+import { previewHistogramEnabledAtom } from '../../../state/histogram.atoms'
 import { usePreviewHistogram } from '../../usePreviewHistogram'
 import { useDecodedPreviewResource } from './useDecodedPreviewResource'
 import { useEmbeddedPreviewUrlLifecycle } from './useEmbeddedPreviewUrlLifecycle'
@@ -97,7 +99,9 @@ export function useRawPreviewStage({
     resourceRegistryRef,
     pipelineRef,
   })
+  const histogramEnabled = useAtomValue(previewHistogramEnabledAtom)
   const histogram = usePreviewHistogram({
+    enabled: histogramEnabled,
     imageRef: decodedImageRef,
     imageVersion: decodedImageVersion,
     imageIdentity: session?.id ?? pendingLoadSessionIdRef.current ?? undefined,

@@ -3,15 +3,17 @@ import type {
   HSLBandShift,
   PreviewHistogramState,
 } from '@lumaforge/luma-color-runtime'
+import { useSetAtom } from 'jotai'
 import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { clsxm } from '~/lib/cn'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ExportResultKind } from '../../model/export-result'
 import { DOCK_SPRING } from '../../motion'
+import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
 import type { ColorValue } from '../color-fields'
 import type { CpuPreviewNotice } from '../CpuPreviewBanner'
 import { CpuPreviewBanner } from '../CpuPreviewBanner'
@@ -163,6 +165,14 @@ export function MobileLabChrome(props: {
   })
   const lensVisible =
     props.hasImage && !immersive && !focusActive && !handoffActive
+
+  // The histogram runs only while a surface draws it; on a phone that is
+  // while it is turned on.
+  const setHistogramShown = useSetAtom(mobileHistogramShownAtom)
+  useEffect(() => {
+    setHistogramShown(histogramOpen)
+  }, [histogramOpen, setHistogramShown])
+  useEffect(() => () => setHistogramShown(false), [setHistogramShown])
 
   const isExporting = props.isExporting === true
   const exportActionState = getMobileExportActionState({

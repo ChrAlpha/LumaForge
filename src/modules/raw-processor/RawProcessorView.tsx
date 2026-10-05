@@ -7,6 +7,8 @@ import './raw-lab.css'
 import './raw-lab.surface.css'
 import './raw-lab.effects.css'
 
+import { useAtomValue, useSetAtom } from 'jotai'
+import { useEffect } from 'react'
 import { useInRouterContext, useLocation } from 'react-router'
 
 import { clsxm } from '~/lib/cn'
@@ -27,6 +29,11 @@ import { RawWorkflowToolProvider } from './components/RawWorkflowToolProvider'
 import { useRawWorkflow } from './hooks'
 import { useRawProcessorViewController } from './hooks/useRawProcessorViewController'
 import { useRawTransformFeature } from './hooks/useRawTransformFeature'
+import {
+  isPreviewHistogramShown,
+  mobileHistogramShownAtom,
+  previewHistogramEnabledAtom,
+} from './state/histogram.atoms'
 
 export interface RawProcessorViewProps {
   className?: string
@@ -86,6 +93,18 @@ function RawProcessorViewInner({
   const { workflow } = view
   const transform = useRawTransformFeature(workflow, view.isCpuMode)
   const isMobileSurface = useIsMobileRawSurface()
+  // The histogram runs only while a surface draws it.
+  const mobileHistogramShown = useAtomValue(mobileHistogramShownAtom)
+  const histogramEnabled = isPreviewHistogramShown({
+    mobileSurface: isMobileSurface,
+    mobileHistogramShown,
+    cpuPreview: view.isCpuMode,
+    transformActive: transform.active,
+  })
+  const setHistogramEnabled = useSetAtom(previewHistogramEnabledAtom)
+  useEffect(() => {
+    setHistogramEnabled(histogramEnabled)
+  }, [histogramEnabled, setHistogramEnabled])
   const cpuPreviewNotice: CpuPreviewNotice | undefined =
     view.isCpuMode && !view.cpuPreviewBannerDismissed
       ? {
