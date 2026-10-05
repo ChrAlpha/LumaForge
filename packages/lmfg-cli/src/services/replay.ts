@@ -196,6 +196,108 @@ export async function prepareReplay(input: {
   return { manifest, params, exposure, lut, graph, fingerprintMatch }
 }
 
+type ReplayEnvironmentField =
+  | 'luma_raw_runtime'
+  | 'native_artifacts.build_id'
+  | 'native_artifacts.variant'
+
+type ReplayEnvironment = Record<ReplayEnvironmentField, string | null>
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function recordedString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+/** Reads defensively: a verified manifest is not schema-checked field by field. */
+function replayEnvironmentOf(environment: unknown): ReplayEnvironment {
+  const recorded = isRecord(environment) ? environment : {}
+  const native = isRecord(recorded.native_artifacts)
+    ? recorded.native_artifacts
+    : {}
+  return {
+    luma_raw_runtime: recordedString(recorded.luma_raw_runtime),
+    'native_artifacts.build_id': recordedString(native.build_id),
+    'native_artifacts.variant': recordedString(native.variant),
+  }
+}
+
+function environmentDetails(environment: ReplayEnvironment) {
+  return {
+    luma_raw_runtime: environment.luma_raw_runtime,
+    native_artifacts: {
+      build_id: environment['native_artifacts.build_id'],
+      variant: environment['native_artifacts.variant'],
+    },
+  }
+}
+
+function isKnown(value: string | null): value is string {
+  return value !== null && value !== 'unknown'
+}
+
+/**
+ * The RAW decode belongs to the luma-raw-runtime version and the native
+ * build and variant; the color-graph fingerprint does not cover it. Replay
+ * refuses before decoding unless the manifest and this install record the
+ * same known values, so a different build never renders or publishes output
+ * it cannot reproduce. Other environment drift still surfaces through the
+ * output SHA-256 check.
+ */
+function requireReplayEnvironment(
+  manifest: RenderManifest,
+  environment: RenderEnvironment,
+): void {
+  const expected = replayEnvironmentOf(manifest.environment)
+  const actual = replayEnvironmentOf(environment)
+  const fields = Object.keys(expected) as ReplayEnvironmentField[]
+  const mismatched = fields.filter(
+    (field) =>
+      !isKnown(expected[field]) ||
+      !isKnown(actual[field]) ||
+      expected[field] !== actual[field],
+  )
+  if (mismatched.length === 0) return
+
+  const shown = (value: string | null) => value ?? 'not recorded'
+  const differences = mismatched
+    .map(
+      (field) =>
+        `${field}: manifest ${shown(expected[field])}, current ${shown(actual[field])}`,
+    )
+    .join('; ')
+  const recordedVariant = expected['native_artifacts.variant']
+  const suggestedNextActions: string[] = []
+  if (
+    mismatched.includes('native_artifacts.variant') &&
+    (recordedVariant === 'desktop' || recordedVariant === 'low-memory')
+  ) {
+    suggestedNextActions.push(
+      `Re-run the replay with --memory-profile ${recordedVariant}.`,
+    )
+  }
+  if (
+    isKnown(expected.luma_raw_runtime) &&
+    isKnown(expected['native_artifacts.build_id'])
+  ) {
+    suggestedNextActions.push(
+      `Replay with an lmfg install that has luma-raw-runtime ${expected.luma_raw_runtime} and native build ${expected['native_artifacts.build_id']}.`,
+    )
+  }
+  throw new LmfgError('replay.mismatch', {
+    message: `Replay refused before decoding: the manifest's RAW runtime environment differs from this install (${differences}). Reproducing a manifest needs the luma-raw-runtime version and native build it was rendered with.`,
+    suggestedNextActions,
+    details: {
+      stage: 'environment',
+      mismatched_fields: mismatched,
+      expected: environmentDetails(expected),
+      actual: environmentDetails(actual),
+    },
+  })
+}
+
 export type ReplayRunInput = {
   runtime: LmfgRuntime
   plan: ReplayPlan
@@ -216,6 +318,7 @@ export type ReplayRunInput = {
 export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
   const { plan, manifest } = { plan: input.plan, manifest: input.plan.manifest }
   refuseUnsupportedGeometry(manifest)
+  requireReplayEnvironment(manifest, input.environment)
   const timings: Record<string, number> = {}
   const total = performance.now()
   let jpeg: Uint8Array | null = null

@@ -209,7 +209,12 @@ params, LUT contract, raw-render exposure, decode budget (`policy.max_pixels`),
 and JPEG quality. The source comes from `--source` or from the `--session`
 source, and the LUT from `--lut` or the workspace cache by SHA-256. Replay
 refuses (exit 8, `replay.mismatch`) when the color-graph fingerprint no longer
-matches, exits 6 when the source or LUT bytes differ from the recorded
+matches, and refuses the same way before decoding when the manifest's
+`luma_raw_runtime` version or native `build_id`/`variant` is missing,
+`unknown`, or differs from this install: a different RAW runtime build can
+decode the same file to different pixels, so old manifests replay only on the
+build that rendered them (pass `--memory-profile` to match the recorded
+variant). It exits 6 when the source or LUT bytes differ from the recorded
 hashes, and reports `reproduced: true` only when the new output SHA-256 equals
 the recorded one. Output lands in `replays/<first 12 hex of the manifest
 sha256>/` (or `--name <basename>`); an existing replay is not overwritten

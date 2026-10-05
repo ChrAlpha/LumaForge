@@ -1,8 +1,14 @@
 // @vitest-environment node
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import type {
+  RenderEnvironment,
+  RenderManifest,
+  RenderManifestKind,
+} from '@lumaforge/render-engine'
 import {
   createRenderManifest,
   verifyManifestSha256,
@@ -56,9 +62,12 @@ function fakeSource(sha256: string) {
   }
 }
 
-function manifestFor(params = parseRenderParams({ contrast: 5 })) {
+function manifestFor(
+  params = parseRenderParams({ contrast: 5 }),
+  options: { kind?: RenderManifestKind; environment?: RenderEnvironment } = {},
+) {
   return buildRenderManifest({
-    kind: 'preview',
+    kind: options.kind ?? 'preview',
     source: {
       sha256: 'a'.repeat(64),
       byte_size: 1,
@@ -75,7 +84,7 @@ function manifestFor(params = parseRenderParams({ contrast: 5 })) {
       concurrency: 1,
       max_pixels: 8,
     },
-    environment,
+    environment: options.environment ?? environment,
     output: {
       width: 4,
       height: 2,
@@ -302,6 +311,219 @@ describe('runReplay with a geometry', () => {
     expect(runtime.jpeg).not.toHaveBeenCalled()
     expect(await fileExists(outputPath)).toBe(false)
     expect(await fileExists(manifestOutputPath)).toBe(false)
+  })
+})
+
+describe('runReplay environment gate', () => {
+  const recorded: RenderEnvironment = {
+    render_engine: '0.1.0',
+    luma_color_runtime: '0.1.0',
+    luma_raw_runtime: '0.1.2',
+    luma_jpeg_runtime: '0.1.0',
+    native_artifacts: {
+      build_id: 'raw:111111111111+jpeg:222222222222',
+      variant: 'desktop',
+    },
+  }
+
+  function withNative(
+    base: RenderEnvironment,
+    native: Partial<RenderEnvironment['native_artifacts']>,
+  ): RenderEnvironment {
+    return {
+      ...base,
+      native_artifacts: { ...base.native_artifacts, ...native },
+    }
+  }
+
+  /** A runtime that records any attempt to decode or encode. */
+  function recordingRuntime() {
+    const calls: string[] = []
+    const runtime: LmfgRuntime = {
+      memoryProfile: 'desktop',
+      raw: () => {
+        calls.push('raw')
+        return Promise.reject(new Error('decode started'))
+      },
+      jpeg: () => {
+        calls.push('jpeg')
+        return Promise.reject(new Error('encode started'))
+      },
+      dispose: () => undefined,
+    }
+    return { runtime, calls }
+  }
+
+  async function replayAgainst(
+    manifest: RenderManifest,
+    current: RenderEnvironment,
+  ) {
+    const source = fakeSource('a'.repeat(64))
+    const plan = await prepareReplay({
+      manifest,
+      source,
+      workspaceRoot: dir,
+      cwd: dir,
+    })
+    const { runtime, calls } = recordingRuntime()
+    const replayDir = join(dir, 'replay')
+    const outcome = runReplay({
+      runtime,
+      plan,
+      source,
+      environment: current,
+      manifestPath: join(dir, 'm.json'),
+      sessionId: null,
+      outputPath: join(replayDir, 'output.jpg'),
+      manifestOutputPath: join(replayDir, 'manifest.json'),
+    })
+    return { outcome, calls, replayDir }
+  }
+
+  it.each(['preview', 'export'] as const)(
+    'refuses a %s manifest from a different native build before decoding',
+    async (kind) => {
+      const current = withNative(recorded, {
+        build_id: 'raw:333333333333+jpeg:222222222222',
+      })
+      const { outcome, calls, replayDir } = await replayAgainst(
+        manifestFor(undefined, { kind, environment: recorded }),
+        current,
+      )
+      await expect(outcome).rejects.toMatchObject({
+        code: 'replay.mismatch',
+        exitCode: 8,
+        details: {
+          stage: 'environment',
+          mismatched_fields: ['native_artifacts.build_id'],
+          expected: {
+            luma_raw_runtime: '0.1.2',
+            native_artifacts: {
+              build_id: 'raw:111111111111+jpeg:222222222222',
+              variant: 'desktop',
+            },
+          },
+          actual: {
+            luma_raw_runtime: '0.1.2',
+            native_artifacts: {
+              build_id: 'raw:333333333333+jpeg:222222222222',
+              variant: 'desktop',
+            },
+          },
+        },
+      })
+      expect(calls).toEqual([])
+      expect(existsSync(replayDir)).toBe(false)
+    },
+  )
+
+  it('refuses a manifest whose native build is unknown', async () => {
+    const { outcome, calls, replayDir } = await replayAgainst(
+      manifestFor(undefined, {
+        environment: withNative(recorded, { build_id: 'unknown' }),
+      }),
+      recorded,
+    )
+    await expect(outcome).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      message: expect.stringMatching(
+        /native_artifacts\.build_id: manifest unknown, current raw:111111111111\+jpeg:222222222222/,
+      ),
+      details: {
+        stage: 'environment',
+        mismatched_fields: ['native_artifacts.build_id'],
+        expected: { native_artifacts: { build_id: 'unknown' } },
+      },
+    })
+    expect(calls).toEqual([])
+    expect(existsSync(replayDir)).toBe(false)
+  })
+
+  it('refuses when the current native artifacts are unknown', async () => {
+    const { outcome, calls } = await replayAgainst(
+      manifestFor(undefined, { environment: recorded }),
+      withNative(recorded, { build_id: 'unknown' }),
+    )
+    await expect(outcome).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      details: {
+        stage: 'environment',
+        mismatched_fields: ['native_artifacts.build_id'],
+        actual: { native_artifacts: { build_id: 'unknown' } },
+      },
+    })
+    expect(calls).toEqual([])
+  })
+
+  it('refuses a different luma-raw-runtime version', async () => {
+    const { outcome, calls } = await replayAgainst(
+      manifestFor(undefined, { environment: recorded }),
+      { ...recorded, luma_raw_runtime: '0.1.3' },
+    )
+    await expect(outcome).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      details: {
+        stage: 'environment',
+        mismatched_fields: ['luma_raw_runtime'],
+        expected: { luma_raw_runtime: '0.1.2' },
+        actual: { luma_raw_runtime: '0.1.3' },
+      },
+    })
+    expect(calls).toEqual([])
+  })
+
+  it('refuses a different native variant and points at the recorded memory profile', async () => {
+    const { outcome, calls } = await replayAgainst(
+      manifestFor(undefined, {
+        environment: withNative(recorded, { variant: 'low-memory' }),
+      }),
+      recorded,
+    )
+    await expect(outcome).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      suggestedNextActions: expect.arrayContaining([
+        expect.stringContaining('--memory-profile low-memory'),
+      ]),
+      details: {
+        stage: 'environment',
+        mismatched_fields: ['native_artifacts.variant'],
+      },
+    })
+    expect(calls).toEqual([])
+  })
+
+  it('refuses a manifest that does not record the RAW environment', async () => {
+    const manifest = manifestFor(undefined, { environment: recorded })
+    const legacy = {
+      ...manifest,
+      environment: { render_engine: '0.1.0' },
+    } as unknown as RenderManifest
+    const { outcome, calls } = await replayAgainst(legacy, recorded)
+    await expect(outcome).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      details: {
+        stage: 'environment',
+        mismatched_fields: [
+          'luma_raw_runtime',
+          'native_artifacts.build_id',
+          'native_artifacts.variant',
+        ],
+        expected: {
+          luma_raw_runtime: null,
+          native_artifacts: { build_id: null, variant: null },
+        },
+      },
+    })
+    expect(calls).toEqual([])
+  })
+
+  it('lets a matching environment through to the decode', async () => {
+    const { outcome, calls } = await replayAgainst(
+      manifestFor(undefined, { environment: recorded }),
+      { ...recorded, render_engine: '9.9.9', luma_jpeg_runtime: '9.9.9' },
+    )
+    await expect(outcome).rejects.toThrow('decode started')
+    expect(calls).toEqual(['raw'])
   })
 })
 
