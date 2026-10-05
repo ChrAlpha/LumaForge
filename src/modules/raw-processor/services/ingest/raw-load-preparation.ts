@@ -8,6 +8,7 @@ import { clampCompareSplit } from '../compare/compare-split'
 import { preserveCustomLookIntensity } from '../look/look-session-state'
 import {
   buildLUTContractSelectionState,
+  DEFAULT_LOOK_INTENSITY,
   toCustomStyle,
 } from '../look/style-system'
 
@@ -37,7 +38,7 @@ export function prepareRawLoadState(input: {
     processingParamsPatch: preservedCustomStyle
       ? {}
       : {
-          intensity: 0.7,
+          intensity: DEFAULT_LOOK_INTENSITY,
           styleKind: 'none',
           builtinPreset: null,
         },

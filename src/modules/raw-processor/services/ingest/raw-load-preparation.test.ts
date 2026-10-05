@@ -48,8 +48,8 @@ function createActiveStyle(overrides: Partial<StyleAsset> = {}): StyleAsset {
   return {
     kind: 'custom',
     name: 'Previous LUT',
-    defaultIntensityLevel: 'standard',
-    currentIntensityLevel: 'strong',
+    defaultIntensity: 0.7,
+    currentIntensity: 1,
     lutAsset: {
       format: 'cube',
       dimension: 17,
@@ -102,7 +102,7 @@ describe('raw load preparation', () => {
     expect(prepared.retainedSessionState.activeStyle).toMatchObject({
       kind: 'custom',
       name: 'Client LUT',
-      currentIntensityLevel: 'standard',
+      currentIntensity: 0.7,
     })
     expect(prepared.retainedSessionState.lutProfileSelection).toEqual({
       status: 'unknown',
@@ -124,12 +124,12 @@ describe('raw load preparation', () => {
     const prepared = prepareRawLoadState({
       params: createParams(),
       lut,
-      activeStyle: createActiveStyle({ currentIntensityLevel: 'strong' }),
+      activeStyle: createActiveStyle({ currentIntensity: 1 }),
     })
 
     expect(prepared.retainedSessionState.activeStyle).toMatchObject({
       kind: 'custom',
-      currentIntensityLevel: 'strong',
+      currentIntensity: 1,
     })
     expect(prepared.processingParamsPatch).toEqual({})
     expect(prepared.processingParamsPatch).not.toHaveProperty('intensity')
@@ -143,14 +143,14 @@ describe('raw load preparation', () => {
       lut,
       activeStyle: createActiveStyle({
         kind: 'builtin',
-        currentIntensityLevel: 'light',
+        currentIntensity: 0.4,
         lutAsset: undefined,
       }),
     })
 
     expect(prepared.retainedSessionState.activeStyle).toMatchObject({
       kind: 'custom',
-      currentIntensityLevel: 'standard',
+      currentIntensity: 0.7,
     })
     expect(prepared.processingParamsPatch).toEqual({})
     expect(prepared.processingParamsPatch).not.toHaveProperty('intensity')

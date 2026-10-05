@@ -77,8 +77,8 @@ function look(overrides: Partial<MobileLookControls> = {}): MobileLookControls {
     lutProfileResolution: null,
     onLutProfileSelect: vi.fn(),
     onlineLutSources: sourcesFixture(),
-    activeIntensity: 'standard',
-    onIntensitySelect: vi.fn(),
+    activeIntensity: 0.7,
+    onIntensityChange: vi.fn(),
     ...overrides,
   }
 }
@@ -385,7 +385,7 @@ describe('mobileLookDeck', () => {
     const strength = screen.getByRole('tablist', { name: 'Strength' })
     expect(strength).toHaveClass('h-11')
     await userEvent.click(within(strength).getByRole('tab', { name: 'Strong' }))
-    expect(controls.onIntensitySelect).toHaveBeenCalledWith('strong')
+    expect(controls.onIntensityChange).toHaveBeenCalledWith(1)
   })
 
   it('offers a recommended contract as a one-tap Apply', async () => {

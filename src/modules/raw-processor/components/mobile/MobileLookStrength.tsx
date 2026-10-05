@@ -1,6 +1,5 @@
 import { useI18n } from '~/lib/i18n'
 
-import type { StrengthLevel } from '../tools/StrengthControl'
 import { StrengthControl } from '../tools/StrengthControl'
 
 /**
@@ -9,8 +8,8 @@ import { StrengthControl } from '../tools/StrengthControl'
  * amount) replaces it here without touching the rest of the deck.
  */
 export function MobileLookStrength(props: {
-  value: StrengthLevel
-  onChange?: (level: StrengthLevel) => void
+  value: number
+  onChange?: (value: number) => void
   disabled: boolean
   /** Id of the text that says why the control is disabled. */
   describedBy?: string
@@ -29,7 +28,7 @@ export function MobileLookStrength(props: {
       <div className="relative min-w-0">
         <StrengthControl
           value={props.value}
-          onChange={(level) => props.onChange?.(level)}
+          onChange={(value) => props.onChange?.(value)}
           disabled={props.disabled}
           size="md"
           ariaDescribedBy={props.disabled ? props.describedBy : undefined}

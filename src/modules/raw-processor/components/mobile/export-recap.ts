@@ -1,19 +1,20 @@
 import type { DeliveredExportSize } from '../../services/export/delivered-export-size'
-import { mapIntensityLevel } from '../../services/look/style-system'
 import type { ColorValue } from '../color-fields'
 import { COLOR_FIELDS } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
 import { TONE_FIELDS } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
-import type { StrengthLevel } from '../tools/StrengthControl'
 import { HSL_BAND_ORDER } from './hsl-fields'
 
 /** What the export panel says it will write, read from state only. */
 export interface MobileExportRecap {
   /** Null while the full-resolution size is not known. */
   size: DeliveredExportSize | null
-  /** Null when no LUT is applied. */
-  look: { name: string; strength: StrengthLevel; percent: number } | null
+  /**
+   * Null when no LUT is applied. `percent` is the strength the export
+   * writes, rounded to the whole percent the Strength row sets; 0 is Off.
+   */
+  look: { name: string; percent: number } | null
   /** Tone, colour, and HSL fields away from neutral. */
   adjustments: number
   transformApplied: boolean
@@ -47,7 +48,8 @@ export function countAdjustments(input: {
 export function buildMobileExportRecap(input: {
   deliveredSize: DeliveredExportSize | null | undefined
   lutName: string | null | undefined
-  strength: StrengthLevel
+  /** How much of the look reaches the photo, 0..1. */
+  intensity: number
   tone: ToneValue
   color: ColorValue
   selectiveColor: HSLToolValue | undefined
@@ -58,8 +60,7 @@ export function buildMobileExportRecap(input: {
     look: input.lutName
       ? {
           name: input.lutName,
-          strength: input.strength,
-          percent: Math.round(mapIntensityLevel(input.strength) * 100),
+          percent: Math.round(input.intensity * 100),
         }
       : null,
     adjustments: countAdjustments(input),

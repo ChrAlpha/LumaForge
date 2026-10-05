@@ -36,11 +36,7 @@ import {
   resolveLUTContractProfile,
   resolveOnlineLUTSourceName,
 } from './lut-workflow'
-import {
-  buildLUTContractSelectionState,
-  mapIntensityLevel,
-  toCustomStyle,
-} from './style-system'
+import { buildLUTContractSelectionState, toCustomStyle } from './style-system'
 
 const MAX_ONLINE_CUBE_BYTES = 64 * 1024 * 1024
 const onlineProfileCache = createBrowserOnlineProfileCache()
@@ -146,7 +142,7 @@ function applyLoadedLUT(
       ...prev,
       styleKind: 'custom',
       builtinPreset: null,
-      intensity: mapIntensityLevel(style.defaultIntensityLevel),
+      intensity: style.defaultIntensity,
     }))
   }
   ctx.services.scheduleToast(() =>
@@ -331,7 +327,7 @@ export function orchestrateProfileSelection(
       ...prev,
       styleKind: 'custom',
       builtinPreset: null,
-      intensity: mapIntensityLevel(style.currentIntensityLevel),
+      intensity: style.currentIntensity,
     }))
   }
 }

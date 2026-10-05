@@ -114,7 +114,7 @@ export function buildRawWorkflowReturn({
     loadLUT: lookStage.loadLUT,
     loadOnlineLUT: lookStage.loadOnlineLUT,
     selectLUTProfile: lookStage.selectLUTProfile,
-    selectIntensityLevel: lookStage.selectIntensityLevel,
+    setIntensity: lookStage.setIntensity,
     setViewMode: compareStage.setViewMode,
     setCompareSplit: compareStage.setCompareSplit,
     setPreviewViewport: compareStage.setPreviewViewport,

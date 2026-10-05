@@ -39,7 +39,7 @@ function rawToolSurfaceProps(
   overrides: Partial<ComponentProps<typeof RawToolSurface>> = {},
 ): ComponentProps<typeof RawToolSurface> {
   return {
-    activeIntensity: 'standard',
+    activeIntensity: 0.7,
     tone: {
       userExposureEv: 0,
       userContrast: 0,
@@ -54,7 +54,7 @@ function rawToolSurfaceProps(
       userSaturation: 0,
       userVibrance: 0,
     },
-    onIntensitySelect: () => {},
+    onIntensityChange: () => {},
     onToneChange: () => {},
     onToneReset: () => {},
     onColorChange: () => {},
@@ -180,7 +180,7 @@ function rawProcessorViewState(
     exportRecovery: { status: 'none' },
     activeStyle: null,
     lutProfileSelection: null,
-    activeIntensity: 'standard',
+    activeIntensity: 0.7,
     viewMode: 'compare',
     compareSplit: 0.5,
     currentLutName: null,
@@ -198,7 +198,7 @@ function rawProcessorViewState(
     loadLUT: vi.fn(),
     loadOnlineLUT: vi.fn(),
     selectLUTProfile: vi.fn(),
-    selectIntensityLevel: vi.fn(),
+    setIntensity: vi.fn(),
     setViewMode: vi.fn(),
     setCompareSplit: vi.fn(),
     clearLUT: vi.fn(),

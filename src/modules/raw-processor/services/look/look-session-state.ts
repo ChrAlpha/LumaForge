@@ -2,17 +2,16 @@ import type { ParsedLUT } from '~/lib/lut/cube-parser'
 
 import type {
   ImageSession,
-  IntensityLevel,
   LUTContractSelectionState,
   StyleAsset,
 } from '../../model/session'
 import { clearExportResultState } from '../export/export-state'
-import { intensityLevelFromValue, toCustomStyle } from './style-system'
+import { clampLookIntensity, toCustomStyle } from './style-system'
 
 /**
  * Resolve the detached (pre-session) look from the standalone LUT atom.
  * The canonical detached intensity lives in processing params, so the
- * synthesized style reflects the user's current level instead of a default.
+ * synthesized style carries the user's current amount instead of a default.
  */
 export function resolveDetachedLookStyle(
   lut: ParsedLUT | null,
@@ -24,7 +23,7 @@ export function resolveDetachedLookStyle(
 
   return {
     ...toCustomStyle(lut),
-    currentIntensityLevel: intensityLevelFromValue(intensity),
+    currentIntensity: clampLookIntensity(intensity),
   }
 }
 
@@ -56,7 +55,7 @@ export function preserveCustomLookIntensity(
 
   return {
     ...style,
-    currentIntensityLevel: activeStyle.currentIntensityLevel,
+    currentIntensity: activeStyle.currentIntensity,
   }
 }
 
@@ -82,7 +81,7 @@ export function applyActiveLookToSession(
 export function applyLookIntensityToSession(
   session: ImageSession,
   input: {
-    level: IntensityLevel
+    intensity: number
     clearExportResult: boolean
   },
 ): ImageSession {
@@ -94,7 +93,7 @@ export function applyLookIntensityToSession(
     ...session,
     activeStyle: {
       ...session.activeStyle,
-      currentIntensityLevel: input.level,
+      currentIntensity: clampLookIntensity(input.intensity),
     },
   }
 

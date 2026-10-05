@@ -30,8 +30,8 @@ function createSession(): ImageSession {
     activeStyle: {
       kind: 'builtin',
       name: 'cinema',
-      defaultIntensityLevel: 'standard',
-      currentIntensityLevel: 'standard',
+      defaultIntensity: 0.7,
+      currentIntensity: 0.7,
     },
     viewState: {
       mode: 'processed',

@@ -948,11 +948,11 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     act(() => {
-      result.current.selectIntensityLevel('strong')
+      result.current.setIntensity(0.62)
     })
 
-    expect(result.current.activeIntensity).toBe('strong')
-    expect(result.current.params.intensity).toBe(1)
+    expect(result.current.activeIntensity).toBe(0.62)
+    expect(result.current.params.intensity).toBe(0.62)
 
     await act(async () => {
       await result.current.loadFile(new File(['raw-one'], 'frame-1.ARW'))
@@ -961,11 +961,11 @@ describe('useRawWorkflow embedded preview state', () => {
     await waitFor(() => {
       expect(result.current.currentLutName).toBe('Client Secret Sauce')
     })
-    expect(result.current.activeIntensity).toBe('strong')
-    expect(result.current.params.intensity).toBe(1)
+    expect(result.current.activeIntensity).toBe(0.62)
+    expect(result.current.params.intensity).toBe(0.62)
     expect(jotaiStore.get(currentSessionAtom)?.activeStyle).toMatchObject({
       kind: 'custom',
-      currentIntensityLevel: 'strong',
+      currentIntensity: 0.62,
     })
   })
 
@@ -1674,8 +1674,8 @@ describe('useRawWorkflow embedded preview state', () => {
       activeStyle: {
         kind: 'builtin',
         name: 'Warm',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
       },
     })
 
@@ -1683,15 +1683,15 @@ describe('useRawWorkflow embedded preview state', () => {
     const storedParamsBefore = getProcessingParams()
 
     act(() => {
-      result.current.selectIntensityLevel('strong')
+      result.current.setIntensity(0.62)
     })
 
-    expect(result.current.activeIntensity).toBe('strong')
-    expect(result.current.params.intensity).toBe(1)
+    expect(result.current.activeIntensity).toBe(0.62)
+    expect(result.current.params.intensity).toBe(0.62)
     expect(getProcessingParams()).toBe(storedParamsBefore)
     expect(
-      jotaiStore.get(currentSessionAtom)?.activeStyle?.currentIntensityLevel,
-    ).toBe('strong')
+      jotaiStore.get(currentSessionAtom)?.activeStyle?.currentIntensity,
+    ).toBe(0.62)
   })
 
   it('starts an original reference fallback snapshot after dual GPU fails', async () => {
@@ -4192,7 +4192,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(cleanup).not.toHaveBeenCalled()
 
     act(() => {
-      result.current.selectIntensityLevel('strong')
+      result.current.setIntensity(1)
     })
     expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('idle')
     expect(
@@ -4570,7 +4570,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()
 
     act(() => {
-      result.current.selectIntensityLevel(result.current.activeIntensity)
+      result.current.setIntensity(result.current.activeIntensity)
     })
     expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
     expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()
@@ -4617,7 +4617,7 @@ describe('useRawWorkflow embedded preview state', () => {
     )
 
     act(() => {
-      result.current.selectIntensityLevel('strong')
+      result.current.setIntensity(1)
     })
 
     expect(exportSignal?.aborted).toBe(true)

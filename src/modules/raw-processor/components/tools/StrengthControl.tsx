@@ -2,6 +2,7 @@ import { SegmentGroup, SegmentItem } from '~/components/ui/segment'
 import { cn } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
+import { LOOK_INTENSITY_PRESETS } from '../../services/look/style-system'
 import {
   SEGMENTED_FOCUS_RING,
   SEGMENTED_ITEM_TEXT,
@@ -12,11 +13,21 @@ import {
 
 const LEVELS = ['off', 'light', 'standard', 'strong'] as const
 
-export type StrengthLevel = (typeof LEVELS)[number]
+type StrengthLevel = (typeof LEVELS)[number]
 export type StrengthControlSize = 'sm' | 'md'
+
+const LEVEL_AMOUNT: Record<StrengthLevel, number> = {
+  off: 0,
+  ...LOOK_INTENSITY_PRESETS,
+}
 
 function isStrengthLevel(value: string): value is StrengthLevel {
   return (LEVELS as readonly string[]).includes(value)
+}
+
+/** The segment an amount reads as; none between the presets. */
+function levelForAmount(amount: number): StrengthLevel | '' {
+  return LEVELS.find((level) => LEVEL_AMOUNT[level] === amount) ?? ''
 }
 
 const TRACK_BASE = cn('w-full', SEGMENTED_TRACK)
@@ -48,8 +59,9 @@ export function StrengthControl({
   itemClassName,
   ariaDescribedBy,
 }: {
-  value: StrengthLevel
-  onChange: (value: StrengthLevel) => void
+  /** How much of the look reaches the photo, 0..1. */
+  value: number
+  onChange: (value: number) => void
   disabled: boolean
   size?: StrengthControlSize
   className?: string
@@ -68,10 +80,10 @@ export function StrengthControl({
   return (
     <div aria-disabled={disabled} className={disabled ? 'opacity-50' : ''}>
       <SegmentGroup
-        value={value}
-        onValueChanged={(value) => {
-          if (isStrengthLevel(value)) {
-            onChange(value)
+        value={levelForAmount(value)}
+        onValueChanged={(next) => {
+          if (isStrengthLevel(next)) {
+            onChange(LEVEL_AMOUNT[next])
           }
         }}
         aria-label={t('raw.strength.title')}

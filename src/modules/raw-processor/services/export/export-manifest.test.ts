@@ -60,6 +60,14 @@ describe('toManifestRenderParams', () => {
     })
   })
 
+  it('records a continuous look strength exactly', () => {
+    // Strength is set in whole percents; the manifest keeps the amount the
+    // preview and export used rather than a snapped preset.
+    expect(
+      toManifestRenderParams(params({ intensity: 0.62 }), exposure).intensity,
+    ).toBe(0.62)
+  })
+
   it('records selective color only when a band is shifted', () => {
     const shifted = toManifestRenderParams(
       params({
@@ -82,8 +90,8 @@ describe('lutIdentityForStyle', () => {
   const confirmedStyle: StyleAsset = {
     kind: 'custom',
     name: 'Look',
-    defaultIntensityLevel: 'standard',
-    currentIntensityLevel: 'standard',
+    defaultIntensity: 0.7,
+    currentIntensity: 0.7,
     lutAsset: {
       format: 'cube',
       dimension: 33,

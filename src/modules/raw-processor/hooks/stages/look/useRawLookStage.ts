@@ -28,7 +28,7 @@ import {
 } from '../../../services/look/orchestrate-params-update'
 import {
   buildLUTContractSelectionState,
-  mapIntensityLevel,
+  DEFAULT_LOOK_INTENSITY,
 } from '../../../services/look/style-system'
 import { useRawAdjustmentActions } from './useRawAdjustmentActions'
 
@@ -76,7 +76,8 @@ export function useRawLookStage({
   const lutProfileSelection =
     session?.lutProfileSelection ||
     (lut ? buildLUTContractSelectionState(lut) : null)
-  const activeIntensity = activeStyle?.currentIntensityLevel || 'standard'
+  const activeIntensity =
+    activeStyle?.currentIntensity ?? DEFAULT_LOOK_INTENSITY
   const currentLutName =
     activeStyle?.kind === 'custom' ? activeStyle.name : null
 
@@ -85,7 +86,7 @@ export function useRawLookStage({
     if (!session.activeStyle) {
       const nextParams: ProcessingParams = {
         ...baseParams,
-        intensity: 0.7,
+        intensity: DEFAULT_LOOK_INTENSITY,
         styleKind: 'none',
         builtinPreset: null,
       }
@@ -97,9 +98,7 @@ export function useRawLookStage({
         : nextParams
     }
 
-    const intensity = mapIntensityLevel(
-      session.activeStyle.currentIntensityLevel,
-    )
+    const intensity = session.activeStyle.currentIntensity
     const stylePatch =
       session.activeStyle.kind === 'custom'
         ? { styleKind: 'custom' as const, builtinPreset: null }
@@ -170,13 +169,13 @@ export function useRawLookStage({
     [lutCtx],
   )
 
-  const selectIntensityLevel = useCallback(
-    (level: 'off' | 'light' | 'standard' | 'strong') => {
-      const {
-        params: nextParams,
-        session: nextSession,
-        shouldInvalidateExportGraph,
-      } = computeIntensityChange(params, session, activeStyle, level)
+  // A Strength scrub calls this on every pointer move, so the session is
+  // updated from its latest state rather than this render's snapshot: a
+  // render-state or export change landing mid-scrub must survive it.
+  const setIntensity = useCallback(
+    (value: number) => {
+      const { params: nextParams, shouldInvalidateExportGraph } =
+        computeIntensityChange(params, session, activeStyle, value)
 
       if (shouldInvalidateExportGraph) {
         invalidateExportGraph()
@@ -184,7 +183,11 @@ export function useRawLookStage({
       if (!session?.activeStyle) {
         setParams(nextParams)
       }
-      setSession(nextSession)
+      setSession(
+        (prev) =>
+          computeIntensityChange(params, prev, prev?.activeStyle ?? null, value)
+            .session,
+      )
     },
     [
       activeStyle,
@@ -262,7 +265,7 @@ export function useRawLookStage({
     loadLUT,
     loadOnlineLUT,
     selectLUTProfile,
-    selectIntensityLevel,
+    setIntensity,
     clearLUT,
     setParams: setProcessingParams,
     setToneParams,

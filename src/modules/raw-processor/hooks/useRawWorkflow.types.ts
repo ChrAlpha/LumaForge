@@ -71,7 +71,8 @@ export interface UseRawWorkflowReturn {
   exportRecovery: ExportRecoveryState
   activeStyle: StyleAsset | null
   lutProfileSelection: LUTContractSelectionState | null
-  activeIntensity: 'off' | 'light' | 'standard' | 'strong'
+  /** How much of the look reaches the photo, 0..1. */
+  activeIntensity: number
   viewMode: ProcessingParams['viewMode']
   compareSplit: number
   previewViewport: PreviewViewport
@@ -96,7 +97,8 @@ export interface UseRawWorkflowReturn {
     },
   ) => Promise<LutLoadOutcome>
   selectLUTProfile: (profile: LUTColorProfile | string) => void
-  selectIntensityLevel: (level: 'off' | 'light' | 'standard' | 'strong') => void
+  /** Set how much of the look reaches the photo, 0..1. */
+  setIntensity: (value: number) => void
   setViewMode: (mode: ProcessingParams['viewMode']) => void
   setCompareSplit: (split: number) => void
   setPreviewViewport: (viewport: PreviewViewport) => void

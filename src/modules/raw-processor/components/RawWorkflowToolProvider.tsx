@@ -99,7 +99,7 @@ export function RawWorkflowToolProvider({
           userVibrance: workflow.params.userVibrance,
         },
         selectiveColor: workflow.params.selectiveColor,
-        onIntensitySelect: workflow.selectIntensityLevel,
+        onIntensityChange: workflow.setIntensity,
         onToneChange: workflow.setToneParams,
         onToneReset: workflow.resetTone,
         onColorChange: workflow.setColorParams,

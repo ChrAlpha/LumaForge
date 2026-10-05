@@ -26,15 +26,16 @@ import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { ToneValue } from './tone-fields'
 import type { FileFactsTool } from './tools/FileFactsTool'
 import type { HSLToolValue } from './tools/HSLTool'
-import type { StrengthLevel } from './tools/StrengthControl'
 
 export interface RawToolSurfaceProps {
   transform?: RawTransformFeature
-  activeIntensity: StrengthLevel
+  /** How much of the look reaches the photo, 0..1. */
+  activeIntensity: number
   tone: ToneValue
   color: ColorValue
   selectiveColor: HSLToolValue | undefined
-  onIntensitySelect: (level: StrengthLevel) => void
+  /** Set how much of the look reaches the photo, 0..1. */
+  onIntensityChange: (value: number) => void
   onToneChange: (value: Partial<ToneValue>) => void
   onToneReset: () => void
   onColorChange: (value: Partial<ColorValue>) => void

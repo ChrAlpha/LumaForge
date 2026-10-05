@@ -45,8 +45,8 @@ function createSession(): ImageSession {
     activeStyle: {
       kind: 'custom',
       name: 'Client Look',
-      defaultIntensityLevel: 'standard',
-      currentIntensityLevel: 'strong',
+      defaultIntensity: 0.7,
+      currentIntensity: 1,
     },
     viewState: {
       mode: 'processed',
@@ -128,7 +128,7 @@ describe('useRawLookStage', () => {
     expect(result.current.params.intensity).toBe(1)
     expect(result.current.params.styleKind).toBe('custom')
     expect(result.current.params.builtinPreset).toBeNull()
-    expect(result.current.activeIntensity).toBe('strong')
+    expect(result.current.activeIntensity).toBe(1)
     expect(result.current.currentLutName).toBe('Client Look')
   })
 
@@ -159,7 +159,7 @@ describe('useRawLookStage', () => {
     expect(result.current.params.intensity).toBe(0.7)
     expect(result.current.params.styleKind).toBe('none')
     expect(result.current.params.builtinPreset).toBeNull()
-    expect(result.current.activeIntensity).toBe('standard')
+    expect(result.current.activeIntensity).toBe(0.7)
   })
 
   it('normalizes tone params and invalidates export when the render graph changes', () => {
@@ -297,5 +297,51 @@ describe('useRawLookStage', () => {
     expect(setLutDataRef).toHaveBeenCalledWith(null)
     expect(setSession).toHaveBeenCalledTimes(1)
     expect(setParams).not.toHaveBeenCalled()
+  })
+})
+
+describe('useRawLookStage setIntensity', () => {
+  it('sets a continuous amount on the latest session, keeping changes made since this render', () => {
+    const session = createSession()
+    const setParams = vi.fn()
+    const setSession = vi.fn()
+    const invalidateExportGraph = vi.fn()
+    const { result } = renderHook(() =>
+      useRawLookStage({
+        baseParams,
+        session,
+        sessionRef: { current: session },
+        setSession,
+        lut: null,
+        setLut: vi.fn(),
+        setParams,
+        getProcessingParams: () => baseParams,
+        lutDataRef: { current: null },
+        setLutDataRef: vi.fn(),
+        scheduleToast: vi.fn(),
+        invalidateExportGraph,
+      }),
+    )
+
+    act(() => {
+      result.current.setIntensity(0.62)
+    })
+
+    expect(invalidateExportGraph).toHaveBeenCalledTimes(1)
+    // The session owns the look, so params are derived, not written.
+    expect(setParams).not.toHaveBeenCalled()
+    const updater = setSession.mock.calls[0]?.[0] as (
+      prev: ImageSession | null,
+    ) => ImageSession | null
+    expect(typeof updater).toBe('function')
+    // A render-state change that landed mid-scrub survives the update.
+    const latest: ImageSession = {
+      ...session,
+      renderState: { status: 'rendering' },
+    }
+    const next = updater(latest)
+    expect(next?.activeStyle?.currentIntensity).toBe(0.62)
+    expect(next?.renderState.status).toBe('rendering')
+    expect(updater(null)).toBeNull()
   })
 })

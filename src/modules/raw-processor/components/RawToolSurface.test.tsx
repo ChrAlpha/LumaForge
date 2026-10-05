@@ -23,7 +23,7 @@ import { LutDropzone } from './Dropzone'
 import { RawToolSurface } from './RawToolSurface'
 
 const baseProps = {
-  activeIntensity: 'standard' as const,
+  activeIntensity: 0.7,
   tone: {
     userExposureEv: 0,
     userContrast: 0,
@@ -38,7 +38,7 @@ const baseProps = {
     userSaturation: 0,
     userVibrance: 0,
   },
-  onIntensitySelect: vi.fn(),
+  onIntensityChange: vi.fn(),
   onToneChange: vi.fn(),
   onToneReset: vi.fn(),
   onColorChange: vi.fn(),
@@ -628,7 +628,7 @@ describe('rawToolSurface', () => {
         {...baseProps}
         hasImage
         currentLutName="Sony Look.cube"
-        onIntensitySelect={onChange}
+        onIntensityChange={onChange}
       />,
     )
 
@@ -645,7 +645,7 @@ describe('rawToolSurface', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Strong' }))
 
-    expect(onChange).toHaveBeenCalledWith('strong')
+    expect(onChange).toHaveBeenCalledWith(1)
   })
 
   it('selects the next strength level with keyboard arrows', async () => {
@@ -656,7 +656,7 @@ describe('rawToolSurface', () => {
         {...baseProps}
         hasImage
         currentLutName="Sony Look.cube"
-        onIntensitySelect={onChange}
+        onIntensityChange={onChange}
       />,
     )
 
@@ -668,7 +668,7 @@ describe('rawToolSurface', () => {
     standard.focus()
     await user.keyboard('{ArrowRight}')
 
-    expect(onChange).toHaveBeenCalledWith('strong')
+    expect(onChange).toHaveBeenCalledWith(1)
     expect(within(strength).getByRole('tab', { name: 'Strong' })).toHaveFocus()
   })
 
@@ -691,7 +691,7 @@ describe('rawToolSurface', () => {
         {...baseProps}
         hasImage
         currentLutName="Sony Look.cube"
-        activeIntensity="strong"
+        activeIntensity={1}
       />,
     )
 
@@ -710,7 +710,7 @@ describe('rawToolSurface', () => {
         {...baseProps}
         hasImage
         currentLutName="Sony Look.cube"
-        onIntensitySelect={onChange}
+        onIntensityChange={onChange}
       />,
     )
 
@@ -718,15 +718,15 @@ describe('rawToolSurface', () => {
 
     await user.click(within(strength).getByRole('tab', { name: 'Strong' }))
 
-    expect(onChange).toHaveBeenCalledWith('strong')
+    expect(onChange).toHaveBeenCalledWith(1)
 
     rerender(
       <RawToolSurface
         {...baseProps}
         hasImage
         currentLutName="Sony Look.cube"
-        activeIntensity="standard"
-        onIntensitySelect={onChange}
+        activeIntensity={0.7}
+        onIntensityChange={onChange}
       />,
     )
 
@@ -746,7 +746,7 @@ describe('rawToolSurface', () => {
         {...baseProps}
         hasImage
         onlineLutSources={onlineLutSourcesFixture()}
-        onIntensitySelect={onChange}
+        onIntensityChange={onChange}
       />,
     )
 
@@ -764,7 +764,7 @@ describe('rawToolSurface', () => {
   it('disables strength tabs before upload', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
-    render(<RawToolSurface {...baseProps} onIntensitySelect={onChange} />)
+    render(<RawToolSurface {...baseProps} onIntensityChange={onChange} />)
 
     const strength = screen.getByRole('tablist', { name: 'Strength' })
     const strong = within(strength).getByRole('tab', { name: 'Strong' })
@@ -780,7 +780,7 @@ describe('rawToolSurface', () => {
   it('does not select disabled strength tabs from keyboard input', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
-    render(<RawToolSurface {...baseProps} onIntensitySelect={onChange} />)
+    render(<RawToolSurface {...baseProps} onIntensityChange={onChange} />)
 
     const strength = screen.getByRole('tablist', { name: 'Strength' })
     const standard = within(strength).getByRole('tab', { name: 'Standard' })
@@ -1291,7 +1291,7 @@ describe('rawToolSurface', () => {
             {...baseProps}
             hasImage
             onlineLutSources={onlineLutSourcesFixture()}
-            onIntensitySelect={onChange}
+            onIntensityChange={onChange}
           />
         </Provider>,
       )

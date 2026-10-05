@@ -179,8 +179,8 @@ describe('session derivation', () => {
       activeStyle: {
         kind: 'builtin',
         name: 'Neutral',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
       },
     }
 
@@ -205,8 +205,8 @@ describe('session derivation', () => {
       activeStyle: {
         kind: 'custom',
         name: 'Display LUT',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
         lutAsset: {
           format: 'cube',
           dimension: 33,
@@ -239,8 +239,8 @@ describe('session derivation', () => {
       activeStyle: {
         kind: 'custom',
         name: 'Recommended LUT',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
         lutAsset: {
           format: 'cube',
           dimension: 33,
@@ -273,8 +273,8 @@ describe('session derivation', () => {
       activeStyle: {
         kind: 'custom',
         name: 'Unknown LUT',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
         lutAsset: {
           format: 'cube',
           dimension: 33,
@@ -309,8 +309,8 @@ describe('session derivation', () => {
       activeStyle: {
         kind: 'custom',
         name: 'Technical LUT',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
         lutAsset: {
           format: 'cube',
           dimension: 33,
@@ -353,8 +353,8 @@ describe('session derivation', () => {
       activeStyle: {
         kind: 'custom',
         name: 'Technical LUT',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
         lutAsset: {
           format: 'cube',
           dimension: 33,
@@ -385,16 +385,16 @@ describe('session derivation', () => {
       deriveLutContractExportReason({
         kind: 'builtin',
         name: 'Builtin',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
       }),
     ).toBeUndefined()
     expect(
       deriveLutContractExportReason({
         kind: 'custom',
         name: 'Unknown',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
         lutAsset: {
           format: 'cube',
           dimension: 33,
@@ -413,8 +413,8 @@ describe('session derivation', () => {
       deriveLutContractExportReason({
         kind: 'custom',
         name: 'Display',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
         lutAsset: {
           format: 'cube',
           dimension: 33,

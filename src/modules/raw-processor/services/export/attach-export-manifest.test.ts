@@ -114,8 +114,8 @@ describe('buildManifestForExportResult', () => {
     const style = {
       kind: 'custom',
       name: 'Unconfirmed',
-      defaultIntensityLevel: 'medium',
-      currentIntensityLevel: 'medium',
+      defaultIntensity: 0.7,
+      currentIntensity: 0.7,
       lutAsset: {
         format: 'cube',
         dimension: 17,

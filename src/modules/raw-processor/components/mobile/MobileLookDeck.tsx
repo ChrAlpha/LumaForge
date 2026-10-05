@@ -9,9 +9,9 @@ import { surfaceFade } from '~/lib/spring'
 
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
 import type { LUTContractSelectionState } from '../../model/session'
+import { DEFAULT_LOOK_INTENSITY } from '../../services/look/style-system'
 import { useLutContractSummary } from '../tools/lut/useLutContractSummary'
 import { useOnlineLutEntryLoader } from '../tools/lut/useOnlineLutEntryLoader'
-import type { StrengthLevel } from '../tools/StrengthControl'
 import type { AppliedLut, LoadedLutEntry } from './mobile-lut-strip'
 import { buildLutStripItems, resolveAppliedLookTitle } from './mobile-lut-strip'
 import type { MobileLookView } from './mobile-stage-layout'
@@ -38,8 +38,9 @@ export interface MobileLookControls {
   lutProfileResolution?: LUTContractResolution | null
   onLutProfileSelect: (profile: LUTColorProfile) => void
   onlineLutSources?: UseOnlineLutSourcesResult
-  activeIntensity?: StrengthLevel
-  onIntensitySelect?: (level: StrengthLevel) => void
+  /** How much of the look reaches the photo, 0..1. */
+  activeIntensity?: number
+  onIntensityChange?: (value: number) => void
   strengthDisabled?: boolean
 }
 
@@ -231,8 +232,8 @@ export function MobileLookDeck(props: {
         }}
       />
       <MobileLookStrength
-        value={look.activeIntensity ?? 'standard'}
-        onChange={look.onIntensitySelect}
+        value={look.activeIntensity ?? DEFAULT_LOOK_INTENSITY}
+        onChange={look.onIntensityChange}
         disabled={look.strengthDisabled ?? !lutApplied}
         describedBy={lutApplied ? undefined : strengthReasonId}
         onBlockedPress={

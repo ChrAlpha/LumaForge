@@ -83,8 +83,8 @@ describe('createImageSession', () => {
     const activeStyle: StyleAsset = {
       kind: 'custom',
       name: 'Client LUT',
-      defaultIntensityLevel: 'standard',
-      currentIntensityLevel: 'strong',
+      defaultIntensity: 0.7,
+      currentIntensity: 1,
       lutAsset: {
         format: 'cube',
         dimension: 17,

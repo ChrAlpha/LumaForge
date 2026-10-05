@@ -189,8 +189,8 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       activeStyle: {
         kind: 'custom',
         name: 'Kodak 2383',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
         lutAsset: {
           format: 'cube',
           dimension: 33,
@@ -239,8 +239,8 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       activeStyle: {
         kind: 'custom',
         name: 'Unknown',
-        defaultIntensityLevel: 'standard',
-        currentIntensityLevel: 'standard',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
         lutAsset: {
           format: 'cube',
           dimension: 33,

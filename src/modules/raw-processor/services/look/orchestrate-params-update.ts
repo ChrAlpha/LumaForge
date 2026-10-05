@@ -18,7 +18,7 @@ import {
   applyLookIntensityToSession,
   clearActiveLookFromSession,
 } from './look-session-state'
-import { mapIntensityLevel } from './style-system'
+import { clampLookIntensity } from './style-system'
 
 export function computeViewModeChange(
   session: ImageSession | null,
@@ -54,28 +54,34 @@ export function computeViewportChange(
   return applyPreviewViewportToSession(session, viewport)
 }
 
+/**
+ * Set how much of the look reaches the photo. The amount is continuous
+ * (0..1) and lands in params and the session style exactly, so the export
+ * manifest records what the preview showed.
+ */
 export function computeIntensityChange(
   prevParams: ProcessingParams,
   prevSession: ImageSession | null,
   activeStyle: StyleAsset | null,
-  level: 'off' | 'light' | 'standard' | 'strong',
+  value: number,
 ): {
   params: ProcessingParams
   session: ImageSession | null
   shouldInvalidateExportGraph: boolean
 } {
+  const intensity = clampLookIntensity(value)
   const shouldInvalidateExportGraph =
-    prevParams.intensity !== mapIntensityLevel(level) ||
-    (activeStyle ? activeStyle.currentIntensityLevel !== level : false)
+    prevParams.intensity !== intensity ||
+    (activeStyle ? activeStyle.currentIntensity !== intensity : false)
 
   const nextParams: ProcessingParams = {
     ...prevParams,
-    intensity: mapIntensityLevel(level),
+    intensity,
   }
 
   const nextSession = prevSession
     ? applyLookIntensityToSession(prevSession, {
-        level,
+        intensity,
         clearExportResult: shouldInvalidateExportGraph,
       })
     : null

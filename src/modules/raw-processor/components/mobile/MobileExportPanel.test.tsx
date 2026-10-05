@@ -62,7 +62,7 @@ describe('mobileExportPanel', () => {
     renderPanel({
       recap: {
         size: { width: 9728, height: 6656 },
-        look: { name: 'ARRI 3110 Film A', strength: 'standard', percent: 70 },
+        look: { name: 'ARRI 3110 Film A', percent: 70 },
         adjustments: 3,
         transformApplied: true,
       },
@@ -140,7 +140,7 @@ describe('mobileExportPanel', () => {
     renderPanel({
       recap: {
         size: null,
-        look: { name: 'Kodak 2383', strength: 'off', percent: 0 },
+        look: { name: 'Kodak 2383', percent: 0 },
         adjustments: 1,
         transformApplied: false,
       },

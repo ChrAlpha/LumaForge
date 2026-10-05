@@ -31,11 +31,11 @@ function render(ui: ReactNode) {
 }
 
 const base: RawToolSurfaceProps = {
-  activeIntensity: 'standard',
+  activeIntensity: 0.7,
   tone: TONE_NEUTRAL,
   color: COLOR_NEUTRAL,
   selectiveColor: undefined,
-  onIntensitySelect: vi.fn(),
+  onIntensityChange: vi.fn(),
   onToneChange: vi.fn(),
   onToneReset: vi.fn(),
   onColorChange: vi.fn(),

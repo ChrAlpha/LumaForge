@@ -111,7 +111,7 @@ function ExportRecapLines({ recap }: { recap: MobileExportRecap }) {
         t('raw.mobile.export.recap.look', {
           name: LOOK_NAME_SLOT,
           strength:
-            recap.look.strength === 'off'
+            recap.look.percent === 0
               ? t('raw.strength.off')
               : `${recap.look.percent}%`,
         }),

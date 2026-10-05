@@ -18,8 +18,8 @@ function createStyle(overrides: Partial<StyleAsset> = {}): StyleAsset {
   return {
     kind: 'custom',
     name: 'Client LUT',
-    defaultIntensityLevel: 'standard',
-    currentIntensityLevel: 'standard',
+    defaultIntensity: 0.7,
+    currentIntensity: 0.7,
     warning:
       'Choose the LUT input and output contract before preview or export.',
     lutAsset: {
@@ -157,28 +157,37 @@ describe('look session state transitions', () => {
 
   it('updates active style intensity and clears a ready export only when requested', () => {
     const session = createSession({
-      activeStyle: createStyle({ currentIntensityLevel: 'standard' }),
+      activeStyle: createStyle({ currentIntensity: 0.7 }),
       exportState: readyExportState(),
     })
 
     const next = applyLookIntensityToSession(session, {
-      level: 'strong',
+      intensity: 0.62,
       clearExportResult: true,
     })
 
-    expect(next.activeStyle).toMatchObject({ currentIntensityLevel: 'strong' })
+    // Continuous: the amount lands exactly, not snapped to a preset.
+    expect(next.activeStyle).toMatchObject({ currentIntensity: 0.62 })
     expect(next.exportState.status).toBe('idle')
     expect(next.exportState.result).toBeUndefined()
 
     const repeated = applyLookIntensityToSession(next, {
-      level: 'strong',
+      intensity: 0.62,
       clearExportResult: false,
     })
 
     expect(repeated).not.toBe(next)
     expect(repeated.activeStyle).toMatchObject({
-      currentIntensityLevel: 'strong',
+      currentIntensity: 0.62,
     })
+
+    // Out-of-range amounts clamp to 0..1.
+    expect(
+      applyLookIntensityToSession(next, {
+        intensity: 1.4,
+        clearExportResult: false,
+      }).activeStyle,
+    ).toMatchObject({ currentIntensity: 1 })
     expect(repeated.exportState.status).toBe('idle')
   })
 
@@ -187,7 +196,7 @@ describe('look session state transitions', () => {
 
     expect(
       applyLookIntensityToSession(session, {
-        level: 'standard',
+        intensity: 0.7,
         clearExportResult: false,
       }),
     ).toBe(session)
@@ -216,19 +225,16 @@ describe('look session state transitions', () => {
   })
 
   it('preserves current custom intensity only across custom look replacements', () => {
-    const style = createStyle({ currentIntensityLevel: 'standard' })
+    const style = createStyle({ currentIntensity: 0.7 })
+
+    expect(
+      preserveCustomLookIntensity(style, createStyle({ currentIntensity: 1 })),
+    ).toMatchObject({ currentIntensity: 1 })
 
     expect(
       preserveCustomLookIntensity(
         style,
-        createStyle({ currentIntensityLevel: 'strong' }),
-      ),
-    ).toMatchObject({ currentIntensityLevel: 'strong' })
-
-    expect(
-      preserveCustomLookIntensity(
-        style,
-        createStyle({ kind: 'builtin', currentIntensityLevel: 'light' }),
+        createStyle({ kind: 'builtin', currentIntensity: 0.4 }),
       ),
     ).toBe(style)
   })
@@ -252,7 +258,7 @@ function createParsedLut(overrides: Partial<ParsedLUT> = {}): ParsedLUT {
 
 describe('resolveActiveLook', () => {
   it('resolves the session style once a session exists, ignoring the detached LUT', () => {
-    const sessionStyle = createStyle({ currentIntensityLevel: 'light' })
+    const sessionStyle = createStyle({ currentIntensity: 0.4 })
     const session = createSession({ activeStyle: sessionStyle })
 
     expect(
@@ -273,7 +279,7 @@ describe('resolveActiveLook', () => {
     expect(detached).toMatchObject({
       kind: 'custom',
       name: 'Detached Look',
-      currentIntensityLevel: 'strong',
+      currentIntensity: 1,
     })
   })
 
@@ -284,20 +290,23 @@ describe('resolveActiveLook', () => {
     expect(resolveDetachedLookStyle(null, 0.7)).toBeNull()
   })
 
-  it('maps every detached intensity value back to its discrete level', () => {
+  it('carries every detached intensity value through exactly', () => {
     const lut = createParsedLut()
 
+    expect(resolveDetachedLookStyle(lut, 0.62)).toMatchObject({
+      currentIntensity: 0.62,
+    })
     expect(resolveDetachedLookStyle(lut, 0)).toMatchObject({
-      currentIntensityLevel: 'off',
+      currentIntensity: 0,
     })
     expect(resolveDetachedLookStyle(lut, 0.4)).toMatchObject({
-      currentIntensityLevel: 'light',
+      currentIntensity: 0.4,
     })
     expect(resolveDetachedLookStyle(lut, 0.7)).toMatchObject({
-      currentIntensityLevel: 'standard',
+      currentIntensity: 0.7,
     })
     expect(resolveDetachedLookStyle(lut, 1)).toMatchObject({
-      currentIntensityLevel: 'strong',
+      currentIntensity: 1,
     })
   })
 })

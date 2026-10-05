@@ -54,7 +54,7 @@ export function MobileRawToolSurface() {
   const exportRecap = buildMobileExportRecap({
     deliveredSize: props.deliveredExportSize,
     lutName: lookTitle,
-    strength: props.activeIntensity,
+    intensity: props.activeIntensity,
     tone: props.tone,
     color: props.color,
     selectiveColor: props.selectiveColor,
@@ -102,7 +102,7 @@ export function MobileRawToolSurface() {
         onLutProfileSelect: props.onLutProfileSelect,
         onlineLutSources: props.onlineLutSources,
         activeIntensity: props.activeIntensity,
-        onIntensitySelect: props.onIntensitySelect,
+        onIntensityChange: props.onIntensityChange,
         strengthDisabled: mobileStrengthDisabled,
       }}
       exportPanel={({ onClose, onChooseLutContract }) => (

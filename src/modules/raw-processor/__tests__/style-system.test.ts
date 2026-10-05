@@ -4,7 +4,9 @@ import { parseCubeLUT } from '~/lib/lut/cube-parser'
 
 import {
   buildLUTContractSelectionState,
-  mapIntensityLevel,
+  clampLookIntensity,
+  DEFAULT_LOOK_INTENSITY,
+  LOOK_INTENSITY_PRESETS,
   toCustomStyle,
 } from '../services/look/style-system'
 
@@ -27,10 +29,25 @@ function makeCube(title: string, comments: string[] = []) {
 }
 
 describe('style-system', () => {
-  it('maps finite intensity levels to blend values', () => {
-    expect(mapIntensityLevel('off')).toBe(0)
-    expect(mapIntensityLevel('standard')).toBe(0.7)
-    expect(mapIntensityLevel('strong')).toBe(1)
+  it('names the strength presets and starts a look at Standard', () => {
+    expect(LOOK_INTENSITY_PRESETS).toEqual({
+      light: 0.4,
+      standard: 0.7,
+      strong: 1,
+    })
+    expect(DEFAULT_LOOK_INTENSITY).toBe(0.7)
+    const style = toCustomStyle(parseCubeLUT(makeCube('Any')))
+    expect(style).toMatchObject({
+      currentIntensity: 0.7,
+      defaultIntensity: 0.7,
+    })
+  })
+
+  it('keeps a look amount continuous inside 0..1', () => {
+    expect(clampLookIntensity(0.62)).toBe(0.62)
+    expect(clampLookIntensity(-0.2)).toBe(0)
+    expect(clampLookIntensity(1.3)).toBe(1)
+    expect(clampLookIntensity(Number.NaN)).toBe(0.7)
   })
 
   it('asks for input and output contracts on unresolved custom LUT styles', () => {

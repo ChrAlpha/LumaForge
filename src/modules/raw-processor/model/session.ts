@@ -19,7 +19,6 @@ import type { ExportResult } from './export-result'
 export type SupportLevel = 'official' | 'experimental' | 'unsupported'
 export type PreviewStatus = 'idle' | 'loading' | 'ready' | 'failed' | 'skipped'
 export type DisplaySource = 'embedded' | 'quick' | 'bounded-hq' | 'none'
-export type IntensityLevel = 'off' | 'light' | 'standard' | 'strong'
 export type ExportFidelity = 'safe' | 'balanced' | 'max'
 export type FullResExportCapabilityState =
   | { status: 'unknown' }
@@ -104,8 +103,13 @@ export type PreviewBundle = {
 export type StyleAsset = {
   kind: 'builtin' | 'custom'
   name: string
-  defaultIntensityLevel: Exclude<IntensityLevel, 'off'>
-  currentIntensityLevel: IntensityLevel
+  /**
+   * How much of the look reaches the photo, 0 (off) to 1 (all of it). The
+   * preview, export and manifest all read this one continuous amount.
+   */
+  currentIntensity: number
+  /** The amount a fresh look starts at and a Strength reset returns to. */
+  defaultIntensity: number
   warning?: string
   lutAsset?: {
     format: 'cube'

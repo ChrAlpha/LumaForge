@@ -89,7 +89,7 @@ export function DesktopRawToolSurface() {
             </span>
             <StrengthControl
               value={props.activeIntensity}
-              onChange={props.onIntensitySelect}
+              onChange={props.onIntensityChange}
               disabled={strengthDisabled}
             />
           </div>

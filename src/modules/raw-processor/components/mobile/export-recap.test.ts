@@ -39,12 +39,13 @@ describe('buildMobileExportRecap', () => {
         ...neutral,
         deliveredSize: { width: 9728, height: 6656 },
         lutName: 'ARRI 3110 Film A',
-        strength: 'standard',
+        intensity: 0.62,
         transformApplied: true,
       }),
     ).toEqual({
       size: { width: 9728, height: 6656 },
-      look: { name: 'ARRI 3110 Film A', strength: 'standard', percent: 70 },
+      // The exact amount, as the whole percent the Strength row sets.
+      look: { name: 'ARRI 3110 Film A', percent: 62 },
       adjustments: 0,
       transformApplied: true,
     })
@@ -54,7 +55,7 @@ describe('buildMobileExportRecap', () => {
         ...neutral,
         deliveredSize: undefined,
         lutName: null,
-        strength: 'standard',
+        intensity: 0.7,
         transformApplied: false,
       }),
     ).toEqual({

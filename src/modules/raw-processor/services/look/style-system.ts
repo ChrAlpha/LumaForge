@@ -13,27 +13,25 @@ import type { LUTContractSelectionState } from '../../model/session'
 
 const DISPLAY_LIKE_INPUT_TRANSFERS = new Set(['srgb', 'bt709', 'gamma24'])
 
-export function mapIntensityLevel(
-  level: 'off' | 'light' | 'standard' | 'strong',
-) {
-  if (level === 'off') return 0
-  if (level === 'light') return 0.4
-  if (level === 'standard') return 0.7
-  return 1
-}
-
 /**
- * Inverse of {@link mapIntensityLevel}: recover the discrete intensity level
- * from a stored params intensity. Used to keep the detached (pre-session)
- * look in sync with the canonical intensity stored in processing params.
+ * Named amounts of a look. Strength is continuous; these only mark the
+ * detents (and their labels) on the Strength row.
  */
-export function intensityLevelFromValue(
-  intensity: number,
-): 'off' | 'light' | 'standard' | 'strong' {
-  if (intensity <= 0) return 'off'
-  if (intensity <= 0.4) return 'light'
-  if (intensity <= 0.7) return 'standard'
-  return 'strong'
+export const LOOK_INTENSITY_PRESETS = {
+  light: 0.4,
+  standard: 0.7,
+  strong: 1,
+} as const
+
+export type LookIntensityPreset = keyof typeof LOOK_INTENSITY_PRESETS
+
+/** Where a fresh look starts, and what a Strength reset returns to. */
+export const DEFAULT_LOOK_INTENSITY = LOOK_INTENSITY_PRESETS.standard
+
+/** Keep a look amount inside 0..1; a non-number falls back to the default. */
+export function clampLookIntensity(intensity: number): number {
+  if (!Number.isFinite(intensity)) return DEFAULT_LOOK_INTENSITY
+  return Math.min(1, Math.max(0, intensity))
 }
 
 function describeLUTOutput(profile: LUTColorProfile): string {
@@ -122,8 +120,8 @@ export function toCustomStyle(
   return {
     kind: 'custom' as const,
     name: lut.title || 'Custom LUT',
-    defaultIntensityLevel: 'standard' as const,
-    currentIntensityLevel: 'standard' as const,
+    currentIntensity: DEFAULT_LOOK_INTENSITY,
+    defaultIntensity: DEFAULT_LOOK_INTENSITY,
     warning,
     lutAsset: {
       format: 'cube' as const,
