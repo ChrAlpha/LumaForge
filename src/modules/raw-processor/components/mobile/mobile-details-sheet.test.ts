@@ -7,9 +7,9 @@ import enMessages from '~/locales/en.json'
 import { COLOR_NEUTRAL } from '../color-fields'
 import { TONE_NEUTRAL } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
+import { countAdjustments } from './adjustment-count'
 import {
   buildMobileDetailsSheet,
-  countAdjustedFields,
   getLutContractStatus,
 } from './mobile-details-sheet'
 
@@ -58,25 +58,23 @@ const base = {
   canPreviewExport: true,
 }
 
-describe('countAdjustedFields', () => {
-  it('counts every tone, color, and HSL field away from neutral', () => {
-    expect(
-      countAdjustedFields({
-        tone: TONE_NEUTRAL,
-        color: COLOR_NEUTRAL,
-        selectiveColor: neutralHsl,
-      }),
-    ).toBe(0)
-    expect(
-      countAdjustedFields({
-        tone: { ...TONE_NEUTRAL, userExposureEv: 0.3, userShadows: 12 },
-        color: { ...COLOR_NEUTRAL, userTint: -4 },
-        selectiveColor: {
-          ...neutralHsl,
-          blue: { hue: 0, saturation: -20, lightness: 5 },
-        },
-      }),
-    ).toBe(5)
+describe('the Adjust step', () => {
+  it('names the same adjustment count the export recap does', () => {
+    const edits = {
+      tone: { ...TONE_NEUTRAL, userExposureEv: 0.3, userShadows: 12 },
+      color: { ...COLOR_NEUTRAL, userTint: -4 },
+      selectiveColor: {
+        ...neutralHsl,
+        blue: { hue: 0, saturation: -20, lightness: 5 },
+      },
+    }
+    const sheet = buildMobileDetailsSheet({ ...base, ...edits }, t)
+    expect(countAdjustments(edits)).toBe(5)
+    expect(sheet.pipelineSteps[1]).toEqual({
+      index: 2,
+      label: 'Adjust',
+      detail: '5 fields changed',
+    })
   })
 })
 

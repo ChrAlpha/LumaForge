@@ -4,9 +4,7 @@ import type { Translate } from '~/lib/i18n'
 
 import type { LUTContractSelectionState } from '../../model/session'
 import type { ColorValue } from '../color-fields'
-import { COLOR_FIELDS } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
-import { TONE_FIELDS } from '../tone-fields'
 import type { FileFactsTool } from '../tools/FileFactsTool'
 import type { HSLToolValue } from '../tools/HSLTool'
 import { OUTPUT_REQUIRED_LABEL } from '../tools/lut/useLutContractSummary'
@@ -14,8 +12,8 @@ import {
   getProfileOutputLabel,
   getResolvedProfile,
 } from '../tools/lut-contract'
+import { countAdjustments } from './adjustment-count'
 import { getAvailableExportOutput } from './export-recap'
-import { HSL_BAND_ORDER, MOBILE_HSL_FIELDS } from './hsl-fields'
 
 type FileFactsProps = Parameters<typeof FileFactsTool>[0]
 
@@ -32,26 +30,6 @@ export type LutContractStatus = 'confirmed' | 'needs-contract' | 'not-used'
 export function getCameraName(metadata: FileFactsProps['metadata']) {
   if (!metadata) return ''
   return `${metadata.make ?? ''} ${metadata.model ?? ''}`.trim()
-}
-
-/** Every tone, color, and HSL field that is away from neutral. */
-export function countAdjustedFields(input: {
-  tone: ToneValue
-  color: ColorValue
-  selectiveColor: HSLToolValue | undefined
-}) {
-  const tone = TONE_FIELDS.filter((f) => input.tone[f.key] !== 0).length
-  const color = COLOR_FIELDS.filter((f) => input.color[f.key] !== 0).length
-  const selective = input.selectiveColor
-  const hsl = selective
-    ? HSL_BAND_ORDER.reduce(
-        (sum, band) =>
-          sum +
-          MOBILE_HSL_FIELDS.filter((f) => selective[band][f.key] !== 0).length,
-        0,
-      )
-    : 0
-  return tone + color + hsl
 }
 
 /**
@@ -106,7 +84,7 @@ export function buildMobileDetailsSheet(
       ? t('raw.support.official')
       : t('raw.support.experimental')
 
-  const adjusted = countAdjustedFields(input)
+  const adjusted = countAdjustments(input)
   const adjustDetail =
     adjusted === 0
       ? t('raw.mobile.more.adjustNone')
