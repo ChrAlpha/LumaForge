@@ -6,6 +6,7 @@ import type {
 } from '@lumaforge/render-engine/export'
 import {
   JPEG_HEADER_SCAN_BYTES,
+  planExportGeometry,
   planJpegMetadataInjection,
   preserveJpegMetadata,
   runFullResolutionJpegExport,
@@ -280,6 +281,20 @@ function toJpegExportMetadata(probe: unknown): JpegExportMetadata | null {
     : null
 }
 
+/**
+ * Size of the frame the encoder wrote. Geometry crops it out of the source
+ * frame, so it is read off the same plan the export engine ran rather than
+ * the source capability.
+ */
+function deliveredFrameSize(
+  geometry: FullResExportWorkerStartMessage['geometry'],
+  source: { width: number; height: number },
+) {
+  if (!geometry) return { width: source.width, height: source.height }
+  const planned = planExportGeometry(geometry, source)
+  return { width: planned.outputWidth, height: planned.outputHeight }
+}
+
 async function prepareSuccessOutput(input: {
   output: ExportOutputResult
   metadata: unknown
@@ -520,11 +535,12 @@ async function handleStart(
       })
 
       await discardUnclaimedOpfsOutput()
+      const delivered = deliveredFrameSize(message.geometry, capability)
       const result = await prepareSuccessOutput({
         output,
         metadata: exportMetadata,
-        width: capability.width,
-        height: capability.height,
+        width: delivered.width,
+        height: delivered.height,
       })
       disposeSession()
       disposeRuntime()

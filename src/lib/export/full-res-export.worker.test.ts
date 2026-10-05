@@ -1,6 +1,13 @@
+import { createHash } from 'node:crypto'
+
+import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
 import { createLumaJpegRuntime } from '@lumaforge/luma-jpeg-runtime'
+import type { LumaRawProcessedWindowRequest } from '@lumaforge/luma-raw-runtime'
 import { createLumaRawRuntime } from '@lumaforge/luma-raw-runtime'
-import { runFullResolutionJpegExport } from '@lumaforge/render-engine/export'
+import {
+  preserveJpegMetadata,
+  runFullResolutionJpegExport,
+} from '@lumaforge/render-engine/export'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runProcessedWindowExportLifecycle } from './full-res-export.worker'
@@ -801,6 +808,437 @@ describe('full-resolution export worker lifecycle responses', () => {
     expect(session.dispose).toHaveBeenCalledTimes(1)
     expect(runtime.dispose).toHaveBeenCalledTimes(1)
   })
+})
+
+describe('full-resolution export worker delivered JPEG metadata', () => {
+  const SENSOR = { width: 96, height: 64 } as const
+  const JPEG_SOI = [255, 216] as const
+  const JPEG_EOI = [255, 217] as const
+  const JFIF_APP0 = [
+    255, 224, 0, 16, 74, 70, 73, 70, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0,
+  ] as const
+  const MARKER_APP0 = 224
+  const MARKER_APP1 = 225
+  const MARKER_SOF0 = 192
+  const MARKER_SOS = 218
+  const MARKER_EOI = 217
+  const TAG_EXIF_IFD_POINTER = 34_665
+  const TAG_PIXEL_X_DIMENSION = 40_962
+  const TAG_PIXEL_Y_DIMENSION = 40_963
+  const TIFF_TYPE_SHORT = 3
+  // Make, Model, Orientation, Software, DateTime and the Exif IFD pointer.
+  const IFD0_TAGS = [271, 272, 274, 305, 306, 34_665]
+  // ExposureTime, FNumber, ISO, ExifVersion, DateTimeOriginal,
+  // DateTimeDigitized, FocalLength, ColorSpace, PixelX/YDimension, LensModel.
+  const EXIF_IFD_TAGS = [
+    33_434, 33_437, 34_855, 36_864, 36_867, 36_868, 37_386, 40_961, 40_962,
+    40_963, 42_036,
+  ]
+  const probe = {
+    make: 'Sony',
+    model: 'ILCE-7RM5',
+    lens: 'FE 50mm F1.4 GM',
+    iso: 125,
+    aperture: 1.4,
+    focalLength: 50,
+    shutter: 0.005,
+    timestamp: 1_704_067_200,
+    width: SENSOR.width,
+    height: SENSOR.height,
+    supportLevel: 'full',
+    timings: { total: 1 },
+  }
+  const graph = resolveExportColorGraph({
+    styleKind: 'none',
+    intensity: 1,
+    builtinPreset: null,
+    lut: null,
+  })
+
+  /** Source-normalized to output-normalized turn about the frame centre. */
+  function turnAboutCentre(radians: number) {
+    const cos = Math.cos(radians)
+    const sin = Math.sin(radians)
+    return [
+      cos,
+      -sin,
+      0.5 - 0.5 * cos + 0.5 * sin,
+      sin,
+      cos,
+      0.5 - 0.5 * sin - 0.5 * cos,
+      0,
+      0,
+      1,
+    ]
+  }
+
+  // Delivered sizes are worked out by hand rather than asked of the planner,
+  // so the expectation does not share code with what it checks.
+  const cases = [
+    { name: 'no geometry', geometry: undefined, delivered: SENSOR },
+    {
+      name: 'neutral geometry',
+      geometry: { matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1], constrainCrop: true },
+      delivered: SENSOR,
+    },
+    {
+      // Zooming out by two leaves source behind only the centred half.
+      name: 'a cropped zoom-out',
+      geometry: {
+        matrix: [0.5, 0, 0.25, 0, 0.5, 0.25, 0, 0, 1],
+        constrainCrop: true,
+      },
+      delivered: { width: 48, height: 32 },
+    },
+    {
+      // A turn of t about the centre keeps 1 / (cos t + sin t) of each side:
+      // 0.848 of 96 x 64.
+      name: 'a cropped rotation',
+      geometry: { matrix: turnAboutCentre(0.2), constrainCrop: true },
+      delivered: { width: 81, height: 54 },
+    },
+  ]
+  const transformedCases = cases.filter(
+    ({ delivered }) =>
+      delivered.width !== SENSOR.width || delivered.height !== SENSOR.height,
+  )
+
+  function makeBaselineJpeg(width: number, height: number) {
+    return new Uint8Array([
+      ...JPEG_SOI,
+      ...JFIF_APP0,
+      // SOF0: 8-bit precision, height, width, three components.
+      255,
+      MARKER_SOF0,
+      0,
+      17,
+      8,
+      height >> 8,
+      height & 255,
+      width >> 8,
+      width & 255,
+      3,
+      1,
+      17,
+      0,
+      2,
+      17,
+      0,
+      3,
+      17,
+      0,
+      ...JPEG_EOI,
+    ])
+  }
+
+  function readJpegSegments(bytes: Uint8Array) {
+    const segments: Array<{ marker: number; offset: number; length: number }> =
+      []
+    let offset = 2
+    while (offset + 4 <= bytes.length && bytes[offset] === 255) {
+      const marker = bytes[offset + 1]!
+      if (marker === MARKER_SOS || marker === MARKER_EOI) break
+      const length = (bytes[offset + 2]! << 8) | bytes[offset + 3]!
+      segments.push({ marker, offset, length })
+      offset += 2 + length
+    }
+    return segments
+  }
+
+  function readSofDimensions(bytes: Uint8Array) {
+    const sof = readJpegSegments(bytes).find(
+      ({ marker }) => marker === MARKER_SOF0,
+    )
+    if (!sof) throw new Error('Expected a baseline SOF segment.')
+    return {
+      width: (bytes[sof.offset + 7]! << 8) | bytes[sof.offset + 8]!,
+      height: (bytes[sof.offset + 5]! << 8) | bytes[sof.offset + 6]!,
+    }
+  }
+
+  function exifSegments(bytes: Uint8Array) {
+    return readJpegSegments(bytes).filter(
+      ({ marker, offset }) =>
+        marker === MARKER_APP1 &&
+        String.fromCharCode(...bytes.subarray(offset + 4, offset + 10)) ===
+          'Exif\0\0',
+    )
+  }
+
+  /** Tag to inline value (or value offset) for one IFD. */
+  function readIfd(view: DataView, ifdOffset: number, littleEndian: boolean) {
+    const entries = new Map<number, number>()
+    const entryCount = view.getUint16(ifdOffset, littleEndian)
+    for (let index = 0; index < entryCount; index += 1) {
+      const entry = ifdOffset + 2 + index * 12
+      entries.set(
+        view.getUint16(entry, littleEndian),
+        view.getUint16(entry + 2, littleEndian) === TIFF_TYPE_SHORT
+          ? view.getUint16(entry + 8, littleEndian)
+          : view.getUint32(entry + 8, littleEndian),
+      )
+    }
+    return entries
+  }
+
+  function readExif(bytes: Uint8Array) {
+    const segments = exifSegments(bytes)
+    expect(segments).toHaveLength(1)
+    const segment = segments[0]!
+    const tiff = new DataView(
+      bytes.buffer,
+      bytes.byteOffset + segment.offset + 10,
+      segment.length - 8,
+    )
+    const littleEndian = tiff.getUint16(0) === 0x4949
+    const ifd0 = readIfd(tiff, tiff.getUint32(4, littleEndian), littleEndian)
+    const exifIfdOffset = ifd0.get(TAG_EXIF_IFD_POINTER)
+    if (exifIfdOffset === undefined) throw new Error('Expected an Exif IFD.')
+    const exifIfd = readIfd(tiff, exifIfdOffset, littleEndian)
+    return {
+      ifd0Tags: [...ifd0.keys()],
+      exifIfdTags: [...exifIfd.keys()],
+      pixelDimensions: {
+        width: exifIfd.get(TAG_PIXEL_X_DIMENSION),
+        height: exifIfd.get(TAG_PIXEL_Y_DIMENSION),
+      },
+    }
+  }
+
+  function withoutExif(bytes: Uint8Array) {
+    const [segment] = exifSegments(bytes)
+    if (!segment) return bytes
+    return new Uint8Array([
+      ...bytes.subarray(0, segment.offset),
+      ...bytes.subarray(segment.offset + 2 + segment.length),
+    ])
+  }
+
+  function sha256Hex(bytes: Uint8Array) {
+    return createHash('sha256').update(bytes).digest('hex')
+  }
+
+  function installSession() {
+    const capability = {
+      supported: true,
+      strategy: 'libraw-processed-window',
+      width: SENSOR.width,
+      height: SENSOR.height,
+      windows: { librawProcessed: true, rawMosaic: false },
+      color: {
+        workingSpace: 'linear-prophoto-rgb',
+        librawOutputColor: 'prophoto',
+        gamma: 'linear',
+        cameraWhiteBalanceAppliedByRuntime: true,
+        cameraMatrixAppliedByRuntime: true,
+      },
+      reasons: [],
+    }
+    const session = {
+      probe,
+      probeExportCapability: vi.fn(async () => capability),
+      readProcessedWindow: vi.fn(
+        async (request: LumaRawProcessedWindowRequest) => {
+          const { width, height } = request.outputRect
+          return {
+            rect: request.outputRect,
+            workingSpace: 'linear-prophoto-rgb',
+            data: new Uint16Array(width * height * 3).fill(16384),
+            width,
+            height,
+            stride: width * 3,
+            normalized: false,
+            orientationApplied: true,
+            colorApplied: true,
+            warnings: [],
+          }
+        },
+      ),
+      beginProcessedWindowExport: vi.fn(async () => undefined),
+      endProcessedWindowExport: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+    }
+    vi.mocked(createLumaRawRuntime).mockReturnValue({
+      init: vi.fn(async () => undefined),
+      openSession: vi.fn(async () => session),
+      dispose: vi.fn(),
+    } as never)
+  }
+
+  /** An encoder that emits a real JPEG header for whatever frame it is given. */
+  function installBaselineJpegRuntime() {
+    const encoded: Uint8Array[] = []
+    vi.mocked(createLumaJpegRuntime).mockImplementation(
+      (options) =>
+        ({
+          createEncoder({ width, height }: { width: number; height: number }) {
+            return {
+              writeRows: vi.fn(async () => undefined),
+              async finish() {
+                const bytes = makeBaselineJpeg(width, height)
+                encoded.push(bytes)
+                if (options?.onChunk) {
+                  await options.onChunk({ bytes } as never)
+                  return undefined
+                }
+                return new Blob([bytes], { type: 'image/jpeg' })
+              },
+              abort: vi.fn(),
+            }
+          },
+          dispose: vi.fn(),
+        }) as never,
+    )
+    return encoded
+  }
+
+  function installCapturingOpfsWritable() {
+    const chunks: Uint8Array[] = []
+    const written = () => new Uint8Array(chunks.flatMap((chunk) => [...chunk]))
+    vi.mocked(createOpfsOutputWritable).mockResolvedValueOnce({
+      write: vi.fn(async (chunk: ArrayBuffer) => {
+        chunks.push(new Uint8Array(chunk))
+      }),
+      close: vi.fn(
+        async (options?: { hash?: (bytes: Uint8Array) => string }) => {
+          const bytes = written()
+          return {
+            byteLength: bytes.length,
+            sha256: options?.hash?.(bytes) ?? '',
+          }
+        },
+      ),
+      abort: vi.fn(async () => undefined),
+    } as never)
+    return written
+  }
+
+  async function startExport(fields: Record<string, unknown>) {
+    const terminal = new Promise<FullResExportWorkerResponse>((resolve) => {
+      vi.spyOn(self, 'postMessage').mockImplementation((message) => {
+        const response = message as FullResExportWorkerResponse
+        if (response.kind === 'success' || response.kind === 'error') {
+          resolve(response)
+        }
+      })
+    })
+
+    self.onmessage?.({
+      data: {
+        kind: 'start',
+        requestId: 'request-delivered-metadata',
+        file: new File(['raw'], 'sony.ARW'),
+        filename: 'sony.jpg',
+        graph,
+        collectMetrics: false,
+        ...fields,
+      },
+    } as MessageEvent)
+
+    const response = await terminal
+    if (response.kind !== 'success') {
+      throw new Error(
+        `Expected a successful export, got ${JSON.stringify(response)}.`,
+      )
+    }
+    return response.result
+  }
+
+  beforeEach(async () => {
+    // The real engine plans the frame, so the encoder sees the size the
+    // geometry actually delivers.
+    const actual = await vi.importActual<
+      typeof import('@lumaforge/render-engine/export')
+    >('@lumaforge/render-engine/export')
+    vi.mocked(runFullResolutionJpegExport).mockReset()
+    vi.mocked(runFullResolutionJpegExport).mockImplementation(
+      actual.runFullResolutionJpegExport,
+    )
+    installSession()
+  })
+
+  afterEach(() => {
+    vi.mocked(runFullResolutionJpegExport).mockReset()
+    vi.mocked(createLumaJpegRuntime).mockReset()
+  })
+
+  it.each(cases)(
+    'describes the encoded frame in blob EXIF under $name',
+    async ({ geometry, delivered }) => {
+      const encoded = installBaselineJpegRuntime()
+
+      const result = await startExport(geometry ? { geometry } : {})
+
+      if (result.kind !== 'blob') throw new Error('Expected a blob result.')
+      const bytes = await readBlobBytes(await materializeOutputBlob(result))
+      expect(encoded).toHaveLength(1)
+      expect(readSofDimensions(bytes)).toEqual(delivered)
+      const exif = readExif(bytes)
+      expect(exif.pixelDimensions).toEqual(readSofDimensions(bytes))
+      // Geometry changes the dimension values only, never which tags exist.
+      expect(exif.ifd0Tags).toEqual(IFD0_TAGS)
+      expect(exif.exifIfdTags).toEqual(EXIF_IFD_TAGS)
+      // EXIF lands straight after APP0 and is the only change to the encoder's
+      // bytes, and the reported hash identifies what is delivered.
+      expect(readJpegSegments(bytes).map(({ marker }) => marker)).toEqual([
+        MARKER_APP0,
+        MARKER_APP1,
+        MARKER_SOF0,
+      ])
+      expect(withoutExif(bytes)).toEqual(encoded[0])
+      expect(result.sha256).toBe(sha256Hex(bytes))
+    },
+  )
+
+  it.each(transformedCases)(
+    'hashes file-backed output as delivered at the encoded frame under $name',
+    async ({ geometry, delivered }) => {
+      installBaselineJpegRuntime()
+      const written = installCapturingOpfsWritable()
+
+      const result = await startExport({
+        geometry,
+        executionPlan: {
+          profileName: 'ios-safe',
+          preferredRows: 64,
+          concurrency: 1,
+          runtimeMemoryProfile: 'low-memory',
+          outputSink: 'opfs-file',
+          checkpointMode: 'safe-retry',
+        },
+        outputLocation: { sink: 'opfs-file', exportId: 'export-delivered' },
+      })
+
+      if (result.kind !== 'file-backed') {
+        throw new Error('Expected a file-backed result.')
+      }
+      // File-backed output stays metadata-free on disk; delivery injects the
+      // recorded metadata at the frame the file holds.
+      const onDisk = written()
+      expect(exifSegments(onDisk)).toHaveLength(0)
+      expect(readSofDimensions(onDisk)).toEqual(delivered)
+      expect(result.deliveryMetadata).toEqual({
+        make: probe.make,
+        model: probe.model,
+        lens: probe.lens,
+        iso: probe.iso,
+        aperture: probe.aperture,
+        focalLength: probe.focalLength,
+        shutter: probe.shutter,
+        timestamp: probe.timestamp,
+      })
+      const deliveredBytes = await readBlobBytes(
+        await preserveJpegMetadata({
+          jpeg: new Blob([onDisk], { type: 'image/jpeg' }),
+          metadata: result.deliveryMetadata,
+          width: delivered.width,
+          height: delivered.height,
+        }),
+      )
+      expect(readExif(deliveredBytes).pixelDimensions).toEqual(delivered)
+      expect(result.sha256).toBe(sha256Hex(deliveredBytes))
+    },
+  )
 })
 
 describe('full-resolution export worker output sink', () => {
