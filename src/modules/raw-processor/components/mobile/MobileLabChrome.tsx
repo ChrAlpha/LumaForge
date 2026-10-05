@@ -166,6 +166,14 @@ export function MobileLabChrome(props: {
   const lensVisible =
     props.hasImage && !immersive && !focusActive && !handoffActive
 
+  // The export panel's close button leaves with the panel; focus goes back
+  // to the action that opened it rather than dropping to the body.
+  const exportActionRef = useRef<HTMLButtonElement>(null)
+  const closeExportPanel = () => {
+    closeExport()
+    exportActionRef.current?.focus({ preventScroll: true })
+  }
+
   // The histogram runs only while a surface draws it; on a phone that is
   // while it is turned on.
   const setHistogramShown = useSetAtom(mobileHistogramShownAtom)
@@ -378,6 +386,7 @@ export function MobileLabChrome(props: {
               exportAction={
                 props.hasImage ? (
                   <MobileExportAction
+                    ref={exportActionRef}
                     state={exportActionState}
                     progress={props.exportProgress}
                     expanded={exportPanelVisible}
@@ -427,7 +436,7 @@ export function MobileLabChrome(props: {
                 selectiveColor={props.selectiveColor}
                 lutBrowser={props.lutBrowser}
                 exportPanel={props.exportPanel({
-                  onClose: closeExport,
+                  onClose: closeExportPanel,
                   onChooseLutContract: openLookContract,
                 })}
                 onToneChange={props.onToneChange}

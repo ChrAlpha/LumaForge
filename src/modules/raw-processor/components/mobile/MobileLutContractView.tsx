@@ -6,6 +6,7 @@ import { useI18n } from '~/lib/i18n'
 import { LUTOutputOptionButton } from '../tools/lut/LUTOutputOptionButton'
 import { LUTProfileButton } from '../tools/lut/LUTProfileButton'
 import { toSelectableContract } from '../tools/lut-contract'
+import { handLostFocusTo } from './focus-handoff'
 import type { useMobileLutContractEditor } from './useMobileLutContractEditor'
 
 type ContractEditor = ReturnType<typeof useMobileLutContractEditor>
@@ -33,12 +34,20 @@ export function MobileLutContractView({
   const titleId = useId()
   const searchId = useId()
   const listRef = useRef<HTMLDivElement>(null)
+  const backRef = useRef<HTMLButtonElement>(null)
   const step = editor.contractStep
   const isInput = step === 'input'
 
   // A new step starts at the top of its list.
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0
+  }, [step])
+
+  // Entering the view (from the strip's footer, the export panel, or an
+  // import) and moving between its steps both swap out the control that
+  // had focus; the back button takes it so a keyboard user keeps a place.
+  useEffect(() => {
+    handLostFocusTo(backRef.current)
   }, [step])
 
   return (
@@ -50,6 +59,7 @@ export function MobileLutContractView({
     >
       <header className="-mx-3.5 grid shrink-0 grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-1 border-b border-lf-on-photo-bord-soft pl-2 pr-3.5">
         <button
+          ref={backRef}
           type="button"
           aria-label={
             isInput

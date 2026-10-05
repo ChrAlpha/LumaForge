@@ -1407,4 +1407,43 @@ describe('mobileLabChrome stage layout', () => {
     unmount()
     expect(store.get(mobileHistogramShownAtom)).toBe(false)
   })
+
+  it('returns focus to the export action when the export panel closes', async () => {
+    const { container } = render(<MobileLabChrome {...base} canExport />)
+    const action = container.querySelector<HTMLButtonElement>(
+      '[data-mobile-export-action]',
+    )!
+    await userEvent.click(action)
+    await userEvent.click(screen.getByRole('button', { name: 'Close export' }))
+    expect(screen.queryByText('export panel')).toBeNull()
+    expect(action).toHaveFocus()
+  })
+
+  it('hands focus into the Look contract when export routes there', async () => {
+    const { container } = render(
+      <MobileLabChrome
+        {...base}
+        lutBrowser={{
+          ...base.lutBrowser,
+          currentLutName: 'Client Look',
+          appliedLut: { name: 'Client Look', sha256: 'c'.repeat(64) },
+          lutProfileResolution: { kind: 'unknown' },
+        }}
+        exportPanel={({ onChooseLutContract }) => (
+          <button type="button" onClick={onChooseLutContract}>
+            Choose LUT contract
+          </button>
+        )}
+      />,
+    )
+    await userEvent.click(
+      container.querySelector<HTMLButtonElement>(
+        '[data-mobile-export-action]',
+      )!,
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Choose LUT contract' }),
+    )
+    expect(screen.getByRole('button', { name: 'Back to looks' })).toHaveFocus()
+  })
 })

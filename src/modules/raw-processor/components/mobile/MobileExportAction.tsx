@@ -1,5 +1,6 @@
 import { Check, Download } from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
+import type { Ref } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
@@ -77,6 +78,7 @@ export function MobileExportAction(props: {
   expanded: boolean
   disabled?: boolean
   onClick: () => void
+  ref?: Ref<HTMLButtonElement>
 }) {
   const { t } = useI18n()
   const reduced = useReducedMotion() ?? false
@@ -119,6 +121,7 @@ export function MobileExportAction(props: {
 
   return (
     <button
+      ref={props.ref}
       type="button"
       data-mobile-export-action
       data-state={state}

@@ -706,6 +706,45 @@ describe('mobileLookDeck', () => {
       expect(screen.getByRole('group', { name: 'Looks' })).toBeInTheDocument()
     })
 
+    it('keeps focus on a control through every panel swap of the contract', async () => {
+      renderDeck(unknownFile())
+      const footerButton = screen.getByRole('button', {
+        name: /choose what this lut expects/i,
+      })
+      await userEvent.click(footerButton)
+      // The footer button left with the strip: the back button takes focus.
+      expect(
+        screen.getByRole('button', { name: 'Back to looks' }),
+      ).toHaveFocus()
+
+      await userEvent.type(
+        screen.getByLabelText('Search LUT contract'),
+        'panasonic',
+      )
+      await userEvent.click(
+        screen.getByRole('button', {
+          name: 'Use Panasonic V-Gamut / V-Log as LUT input',
+        }),
+      )
+      // The chosen option left with the input step.
+      expect(
+        screen.getByRole('button', { name: 'Back to input' }),
+      ).toHaveFocus()
+
+      await userEvent.type(
+        screen.getByLabelText('Search LUT contract'),
+        'display srgb',
+      )
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Use Display sRGB as LUT output' }),
+      )
+      // Complete: back on the strip, the footer's contract button.
+      expect(
+        screen.getByRole('button', { name: /choose what this lut expects/i }),
+      ).toHaveFocus()
+      expect(document.body).not.toHaveFocus()
+    })
+
     it('titles the contract by the catalog title of the applied look', () => {
       renderDeck(
         look({

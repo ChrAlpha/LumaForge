@@ -14,6 +14,7 @@ import { DEFAULT_LOOK_INTENSITY } from '../../services/look/style-system'
 import { useLutContractSummary } from '../tools/lut/useLutContractSummary'
 import { useOnlineLutEntryLoader } from '../tools/lut/useOnlineLutEntryLoader'
 import type { ScrubFieldId } from './AdjustListPanel'
+import { handLostFocusTo } from './focus-handoff'
 import type { AppliedLut } from './mobile-lut-strip'
 import { buildLutStripItems, resolveAppliedLookTitle } from './mobile-lut-strip'
 import type { MobileLookView } from './mobile-stage-layout'
@@ -145,6 +146,27 @@ export function MobileLookDeck(props: {
     if (view === 'contract' && !lutApplied) onViewChange('strip')
   }, [lutApplied, onViewChange, view])
 
+  // Leaving the contract view (complete, or back) removes the control that
+  // had focus. The footer's contract button takes it, or the applied tile
+  // when the footer has none. The contract view takes focus on its own way
+  // in.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const shownView: MobileLookView =
+    view === 'contract' && lutApplied ? 'contract' : 'strip'
+  const previousShownView = useRef(shownView)
+  useEffect(() => {
+    const previous = previousShownView.current
+    previousShownView.current = shownView
+    if (previous !== 'contract' || shownView !== 'strip') return
+    const root = rootRef.current
+    handLostFocusTo(
+      root?.querySelector<HTMLElement>('[data-look-contract-button]') ??
+        root?.querySelector<HTMLElement>(
+          '[data-mobile-lut-tile][aria-pressed="true"]',
+        ),
+    )
+  }, [shownView])
+
   // A .cube the user imports opens its contract when nothing resolved it,
   // once the session reports the new LUT. Armed by the import alone: a
   // failed or no-op import, or a look chosen from the strip, disarms it,
@@ -205,6 +227,7 @@ export function MobileLookDeck(props: {
   if (view === 'contract' && lutApplied) {
     return (
       <m.div
+        ref={rootRef}
         key="contract"
         data-mobile-look-deck="contract"
         className="h-full min-h-0"
@@ -223,6 +246,7 @@ export function MobileLookDeck(props: {
 
   return (
     <m.div
+      ref={rootRef}
       key="strip"
       data-mobile-look-deck="strip"
       // A single shrinkable column: the strip's scroller is as wide as all

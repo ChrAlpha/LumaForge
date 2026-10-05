@@ -85,6 +85,7 @@ export function MobileLookFooter(props: {
         <button
           type="button"
           data-look-footer="confirmed"
+          data-look-contract-button
           disabled={props.disabled}
           aria-label={t('raw.mobile.lut.editContractAria', {
             label: view.profile.label,
@@ -113,6 +114,7 @@ export function MobileLookFooter(props: {
         >
           <button
             type="button"
+            data-look-contract-button
             disabled={props.disabled}
             onClick={() =>
               completesContract
@@ -155,6 +157,7 @@ export function MobileLookFooter(props: {
       <button
         type="button"
         data-look-footer="needs-contract"
+        data-look-contract-button
         disabled={props.disabled}
         onClick={() =>
           props.onOpenContract(
