@@ -326,6 +326,95 @@ describe('preview canvas upload descriptor', () => {
     expect(pipelineMock.waitForGpu).not.toHaveBeenCalled()
   })
 
+  it('draws one processed frame per processed input change', async () => {
+    const onStatsUpdate = vi.fn()
+    const imageRef = { current: decodedImage }
+    const props = {
+      imageRef,
+      imageVersion: 1,
+      params: defaultParams,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      onStatsUpdate,
+    }
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() => expect(onStatsUpdate).toHaveBeenCalled())
+    const pipeline = pipelineMock.instances[0]!
+    expect(pipeline.render).toHaveBeenCalledOnce()
+    expect(onStatsUpdate).toHaveBeenCalledOnce()
+
+    pipeline.render.mockClear()
+    pipeline.setParams.mockClear()
+    onStatsUpdate.mockClear()
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        params: { ...defaultParams, userExposureEv: 0.5 },
+      }),
+    )
+
+    expect(pipeline.setParams).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ userExposureEv: 0.5 }),
+    )
+    expect(pipeline.render).toHaveBeenCalledOnce()
+    expect(onStatsUpdate).toHaveBeenCalledOnce()
+
+    pipeline.render.mockClear()
+    onStatsUpdate.mockClear()
+    imageRef.current = { ...decodedImage }
+    await act(async () => {
+      rerender(
+        createElement(PreviewCanvas, {
+          ...props,
+          imageVersion: 2,
+          params: { ...defaultParams, userExposureEv: 0.5 },
+        }),
+      )
+    })
+
+    expect(pipeline.render).toHaveBeenCalledOnce()
+    expect(onStatsUpdate).toHaveBeenCalledOnce()
+  })
+
+  it('redraws once after a LUT-only version change uploads the new LUT', async () => {
+    const onStatsUpdate = vi.fn()
+    const createLut = () => ({
+      size: 2,
+      data: new Float32Array(2 * 2 * 2 * 3),
+      domainMin: [0, 0, 0] as [number, number, number],
+      domainMax: [1, 1, 1] as [number, number, number],
+      inputProfile: 'display-srgb' as const,
+      profileResolution: { kind: 'unknown' as const },
+    })
+    const lutDataRef = { current: createLut() }
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      params: { ...defaultParams, styleKind: 'custom' as const },
+      lutDataRef,
+      lutDataVersion: 1,
+      onStatsUpdate,
+    } satisfies ComponentProps<typeof PreviewCanvas>
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() => expect(onStatsUpdate).toHaveBeenCalled())
+    const pipeline = pipelineMock.instances[0]!
+
+    pipeline.uploadLUT.mockClear()
+    pipeline.setParams.mockClear()
+    pipeline.render.mockClear()
+    onStatsUpdate.mockClear()
+    const nextLut = createLut()
+    lutDataRef.current = nextLut
+    rerender(createElement(PreviewCanvas, { ...props, lutDataVersion: 2 }))
+
+    expect(pipeline.uploadLUT).toHaveBeenCalledExactlyOnceWith(nextLut)
+    expect(pipeline.render).toHaveBeenCalledOnce()
+    expect(pipeline.uploadLUT.mock.invocationCallOrder[0]).toBeLessThan(
+      pipeline.render.mock.invocationCallOrder[0]!,
+    )
+    expect(onStatsUpdate).toHaveBeenCalledOnce()
+  })
+
   it.each(['unmount', 'suspend'] as const)(
     'ignores processed GPU completion after %s',
     async (stop) => {

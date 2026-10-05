@@ -931,15 +931,10 @@ export function PreviewCanvas({
     }
   }, [lutDataRef, lutDataVersion, isInitialized])
 
-  // Update params and render when the processed preview inputs change.
-  // Compare mode now stays in CSS/DOM space, so the processed canvas never
-  // enters the legacy single-canvas shader split path.
-  useEffect(() => {
-    if (shouldDelayProcessedCompareRender) return
-    renderProcessedPreview()
-  }, [imageVersion, renderProcessedPreview, shouldDelayProcessedCompareRender])
-
-  // Re-render when LUT changes
+  // Draw once per processed input change: image, params, or LUT. It runs
+  // after the LUT upload effect above, so a LUT-only version change renders
+  // with the new LUT. Compare mode stays in CSS/DOM space, so the processed
+  // canvas never enters the legacy single-canvas shader split path.
   useEffect(() => {
     if (shouldDelayProcessedCompareRender) return
     renderProcessedPreview()
