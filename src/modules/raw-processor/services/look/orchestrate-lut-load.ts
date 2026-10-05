@@ -12,6 +12,7 @@ import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import { isSupportedLUT, validateLUT } from '~/lib/lut/cube-parser'
 import {
   applyLUTContractSelection,
+  applyTrustedLUTContract,
   toLUTContractSelection,
 } from '~/lib/lut/profile-resolution'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
@@ -54,6 +55,7 @@ interface LoadLUTContentOptions {
   sourceName: string
   /** SHA-256 of the .cube bytes, recorded on the style for export manifests. */
   sha256?: string
+  /** Catalog contract: applied as metadata, never stored as a user choice. */
   trustedContract?: LUTContractSelection
   /** Checked after the off-thread parse so a cancelled load never applies. */
   signal?: AbortSignal
@@ -166,7 +168,7 @@ async function loadLUTContent(
     throw new DOMException('LUT load aborted.', 'AbortError')
   }
   const contracted = options.trustedContract
-    ? applyLUTContractSelection(parsed, options.trustedContract)
+    ? applyTrustedLUTContract(parsed, options.trustedContract)
     : parsed
   if (!contracted) throw new Error('Unsupported LUT color contract.')
 
@@ -289,6 +291,7 @@ export function orchestrateProfileSelection(
   }
 
   const contractProfile = resolveLUTContractProfile(profile)
+  // An explicit user choice is the only contract persisted for later loads.
   const updatedLut = contractProfile
     ? applyLUTContractSelection(
         ctx.atoms.lut,

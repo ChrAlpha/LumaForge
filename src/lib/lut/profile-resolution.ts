@@ -244,13 +244,17 @@ export function getStoredLUTProfileSelection(
   return contract ? contractToLUTColorProfile(contract) : undefined
 }
 
+function buildAppContractSelection(
+  selection: LUTContractSelection,
+): StoredLUTContractSelection | undefined {
+  return buildStoredContractSelection(normalizeAppContractSelection(selection))
+}
+
 export function storeLUTContractSelection(
   fingerprint: string,
   selection: LUTContractSelection,
 ): LUTColorProfile | undefined {
-  const contract = buildStoredContractSelection(
-    normalizeAppContractSelection(selection),
-  )
+  const contract = buildAppContractSelection(selection)
   if (!contract) return undefined
 
   writeStoredLUTContractSelections({
@@ -271,16 +275,19 @@ export function storeLUTProfileSelection(
   return storeLUTContractSelection(fingerprint, toLUTContractSelection(profile))
 }
 
-export function applyLUTContractSelection(
-  lut: ParsedLUT,
-  selection: LUTContractSelection,
-): ParsedLUT | undefined {
-  const profile = storeLUTContractSelection(lut.fingerprint, selection)
-  if (!profile) return undefined
+type ConfirmedLUTContractConfidence = Extract<
+  LUTContractResolution,
+  { kind: 'confirmed' }
+>['confidence']
 
+function withConfirmedProfile(
+  lut: ParsedLUT,
+  profile: LUTColorProfile,
+  confidence: ConfirmedLUTContractConfidence,
+): ParsedLUT {
   const profileResolution: LUTContractResolution = {
     kind: 'confirmed',
-    confidence: 'user',
+    confidence,
     profile,
   }
 
@@ -289,6 +296,57 @@ export function applyLUTContractSelection(
     profileResolution,
     inputProfile: toCompatInputProfile(profileResolution),
   }
+}
+
+/** Pure contract application: never reads or writes user storage. */
+function withLUTContract(
+  lut: ParsedLUT,
+  selection: LUTContractSelection,
+  confidence: ConfirmedLUTContractConfidence,
+): ParsedLUT | undefined {
+  const contract = buildAppContractSelection(selection)
+  return contract
+    ? withConfirmedProfile(lut, contractToLUTColorProfile(contract), confidence)
+    : undefined
+}
+
+/**
+ * Applies an explicit user selection and persists it by fingerprint so the
+ * same LUT content resolves to it on a later load.
+ */
+export function applyLUTContractSelection(
+  lut: ParsedLUT,
+  selection: LUTContractSelection,
+): ParsedLUT | undefined {
+  const selected = withLUTContract(lut, selection, 'user')
+  if (selected) storeLUTContractSelection(lut.fingerprint, selection)
+  return selected
+}
+
+/**
+ * Applies a contract that ships with the LUT source (a trusted catalog entry)
+ * as metadata. It is not a user choice, so user storage is left untouched.
+ */
+export function applyTrustedLUTContract(
+  lut: ParsedLUT,
+  selection: LUTContractSelection,
+): ParsedLUT | undefined {
+  return withLUTContract(lut, selection, 'metadata')
+}
+
+/**
+ * Re-applies a persisted user contract to a LUT parsed without storage access
+ * (the parse worker has none), keyed by fingerprint so the cube text is not
+ * scanned again. Confirmed contracts already outrank stored ones; recommended,
+ * unknown and unsupported-output resolutions yield to a stored selection.
+ */
+export function restorePersistedLUTContract(lut: ParsedLUT): ParsedLUT {
+  if (lut.profileResolution.kind === 'confirmed') return lut
+
+  const storedProfile = getStoredLUTProfileSelection(lut.fingerprint)
+  return storedProfile
+    ? withConfirmedProfile(lut, storedProfile, 'persisted-user')
+    : lut
 }
 
 export function applyLUTProfileSelection(

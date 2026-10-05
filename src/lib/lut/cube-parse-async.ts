@@ -1,6 +1,8 @@
+import type { ParsedLUT } from '@lumaforge/luma-color-runtime'
+import { parseCubeLUT } from '@lumaforge/luma-color-runtime'
+
 import type { CubeParseRequest, CubeParseResponse } from './cube-parse.worker'
-import type { ParsedLUT } from './cube-parser'
-import { parseCubeLUT } from './cube-parser'
+import { restorePersistedLUTContract } from './profile-resolution'
 
 export interface CubeParseWorkerLike {
   postMessage: (msg: CubeParseRequest) => void
@@ -31,7 +33,9 @@ function parseSyncFallback(
   source: string | Uint8Array,
   sourceName?: string,
 ): ParsedLUT {
-  return parseCubeLUT(decodeSource(source), { sourceName })
+  return restorePersistedLUTContract(
+    parseCubeLUT(decodeSource(source), { sourceName }),
+  )
 }
 
 function disposeSharedWorker(worker: CubeParseWorkerLike): void {
@@ -43,7 +47,9 @@ function disposeSharedWorker(worker: CubeParseWorkerLike): void {
  * Parse a .cube on a worker so the 50k–800k line text scan does not block the
  * main thread (a 65³ cube freezes interaction for ~0.8–1.6 s otherwise).
  * Transport failures (no Worker support, worker death) fall back to the
- * synchronous parser; real parse errors reject either way.
+ * synchronous parser; real parse errors reject either way. Both paths parse
+ * without storage, then persisted user contracts are restored here by
+ * fingerprint, since the worker cannot read them.
  */
 export function parseCubeLUTOffThread(
   source: string | Uint8Array,
@@ -88,8 +94,15 @@ export function parseCubeLUTOffThread(
       const response = event.data
       settle(() => {
         if (!usesSharedWorker) worker.terminate()
-        if (response.ok) resolve(response.parsed)
-        else reject(new Error(response.message))
+        if (!response.ok) {
+          reject(new Error(response.message))
+          return
+        }
+        try {
+          resolve(restorePersistedLUTContract(response.parsed))
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)))
+        }
       })
     }
 

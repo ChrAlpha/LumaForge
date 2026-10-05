@@ -1,13 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { LUTContractSelection } from './profile-resolution'
 import {
   applyLUTContractSelection,
   applyLUTProfileSelection,
+  applyTrustedLUTContract,
   getStoredLUTContractSelection,
   getStoredLUTProfileSelection,
   resolveLUTProfile,
+  restorePersistedLUTContract,
   storeLUTProfileSelection,
 } from './profile-resolution'
+
+const SELECTIONS_KEY = 'lumaforge.lutProfileSelections.v1'
 
 function makeParsedLUTForProfileSelection(sourceName: string) {
   const profileResolution = resolveLUTProfile({
@@ -198,6 +203,146 @@ describe('lUT profile selection persistence', () => {
         fingerprint: 'broken',
       }),
     ).not.toThrow()
+  })
+})
+
+describe('lUT contract provenance', () => {
+  const vLogToRec709: LUTContractSelection = {
+    role: 'combined-look-output',
+    inputProfile: 'panasonic-vgamut-vlog',
+    outputGamut: 'srgb-rec709',
+    outputTransfer: 'bt709',
+    outputRange: 'full',
+  }
+
+  function selectionWrites(setItem: { mock: { calls: unknown[][] } }) {
+    return setItem.mock.calls.filter(([key]) => key === SELECTIONS_KEY)
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    localStorage.clear()
+  })
+
+  it('applies trusted catalog contracts as metadata without writing user storage', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    const lut = makeParsedLUTForProfileSelection('catalog-entry.cube')
+
+    const trusted = applyTrustedLUTContract(lut, vLogToRec709)
+
+    expect(trusted?.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'metadata',
+      profile: {
+        id: 'panasonic-vgamut-vlog',
+        inputGamut: 'v-gamut',
+        inputTransfer: 'v-log',
+        role: 'combined-look-output',
+        outputGamut: 'srgb-rec709',
+        outputTransfer: 'bt709',
+        outputRange: 'full',
+      },
+    })
+    expect(trusted?.inputProfile).toBe('v-log')
+    expect(trusted?.fingerprint).toBe(lut.fingerprint)
+    expect(lut.profileResolution.kind).not.toBe('confirmed')
+    expect(selectionWrites(setItem)).toHaveLength(0)
+    expect(getStoredLUTContractSelection('catalog-entry.cube')).toBeUndefined()
+  })
+
+  it('rejects incomplete trusted contracts without writing user storage', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+
+    expect(
+      applyTrustedLUTContract(
+        makeParsedLUTForProfileSelection('catalog-incomplete.cube'),
+        { role: 'combined-look-output', inputProfile: 'panasonic-vgamut-vlog' },
+      ),
+    ).toBeUndefined()
+    expect(selectionWrites(setItem)).toHaveLength(0)
+  })
+
+  it('persists explicit user selections with user confidence', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+
+    const selected = applyLUTContractSelection(
+      makeParsedLUTForProfileSelection('user-choice.cube'),
+      vLogToRec709,
+    )
+
+    expect(selected?.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'user',
+      profile: { id: 'panasonic-vgamut-vlog' },
+    })
+    expect(selectionWrites(setItem)).toHaveLength(1)
+    expect(getStoredLUTContractSelection('user-choice.cube')).toMatchObject({
+      inputProfile: 'panasonic-vgamut-vlog',
+      outputTransfer: 'bt709',
+    })
+  })
+
+  it('restores a persisted user contract by fingerprint', () => {
+    applyLUTContractSelection(
+      makeParsedLUTForProfileSelection('reloaded.cube'),
+      vLogToRec709,
+    )
+    const reloaded = makeParsedLUTForProfileSelection('reloaded.cube')
+
+    const restored = restorePersistedLUTContract(reloaded)
+
+    expect(restored.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'persisted-user',
+      profile: { id: 'panasonic-vgamut-vlog', outputTransfer: 'bt709' },
+    })
+    expect(restored.inputProfile).toBe('v-log')
+    expect(restored.data).toBe(reloaded.data)
+  })
+
+  it('keeps unmatched LUTs unchanged when restoring', () => {
+    const lut = makeParsedLUTForProfileSelection('never-selected.cube')
+
+    expect(restorePersistedLUTContract(lut)).toBe(lut)
+  })
+
+  it('keeps confirmed metadata ahead of a persisted user contract', () => {
+    applyLUTContractSelection(
+      makeParsedLUTForProfileSelection('metadata.cube'),
+      vLogToRec709,
+    )
+    const withMetadata = applyTrustedLUTContract(
+      makeParsedLUTForProfileSelection('metadata.cube'),
+      {
+        role: 'display-look',
+        inputGamut: 'srgb-rec709',
+        inputTransfer: 'srgb',
+        inputRange: 'full',
+      },
+    )!
+
+    expect(restorePersistedLUTContract(withMetadata)).toBe(withMetadata)
+  })
+
+  it('keeps the parsed resolution when storage is absent or throws', () => {
+    applyLUTContractSelection(
+      makeParsedLUTForProfileSelection('blocked.cube'),
+      vLogToRec709,
+    )
+    const lut = makeParsedLUTForProfileSelection('blocked.cube')
+
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage is blocked')
+    })
+    expect(restorePersistedLUTContract(lut)).toBe(lut)
+
+    vi.stubGlobal('localStorage', undefined)
+    expect(restorePersistedLUTContract(lut)).toBe(lut)
   })
 })
 

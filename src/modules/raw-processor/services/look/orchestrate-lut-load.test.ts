@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { ParsedLUT } from '~/lib/lut/cube-parser'
+import { getStoredLUTContractSelection } from '~/lib/lut/profile-resolution'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 import {
   fetchCachedBytesWithLimit,
@@ -10,6 +13,7 @@ import type { LutLoadContext } from './orchestrate-lut-load'
 import {
   orchestrateLutLoadFromFile,
   orchestrateOnlineLutLoad,
+  orchestrateProfileSelection,
 } from './orchestrate-lut-load'
 
 vi.mock('~/lib/profiles/fetch', () => ({
@@ -173,6 +177,141 @@ describe('orchestrateOnlineLutLoad outcome', () => {
 
     expect(outcome).toBe('aborted')
     expect(scheduledToasts).toHaveLength(0)
+  })
+})
+
+describe('lUT contract provenance', () => {
+  const SELECTIONS_KEY = 'lumaforge.lutProfileSelections.v1'
+  const catalogEntry: OnlineLUTEntry = {
+    ...entry,
+    id: 'catalog-vlog',
+    title: 'Catalog V-Log',
+    trustedContract: {
+      role: 'combined-look-output',
+      inputProfile: 'panasonic-vgamut-vlog',
+      outputGamut: 'srgb-rec709',
+      outputTransfer: 'bt709',
+      outputRange: 'full',
+    },
+  }
+
+  function selectionWrites(setItem: { mock: { calls: unknown[][] } }) {
+    return setItem.mock.calls.filter(([key]) => key === SELECTIONS_KEY)
+  }
+
+  function lastLoadedLut(ctx: LutLoadContext): ParsedLUT {
+    const calls = vi.mocked(ctx.atoms.setLut).mock.calls
+    const lut = calls.at(-1)?.[0]
+    if (!lut) throw new Error('Expected a loaded LUT')
+    return lut
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.mocked(fetchVerifiedCubeAsset).mockReset()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    localStorage.clear()
+  })
+
+  it('applies catalog contracts as metadata without creating a user selection', async () => {
+    vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
+      new TextEncoder().encode(cubeText(17)),
+    )
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    const { ctx } = buildCtx()
+
+    const outcome = await orchestrateOnlineLutLoad(catalogEntry, undefined, ctx)
+
+    expect(outcome).toBe('loaded')
+    const loaded = lastLoadedLut(ctx)
+    expect(loaded.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'metadata',
+      profile: { id: 'panasonic-vgamut-vlog', outputTransfer: 'bt709' },
+    })
+    expect(selectionWrites(setItem)).toHaveLength(0)
+    expect(getStoredLUTContractSelection(loaded.fingerprint)).toBeUndefined()
+
+    const { ctx: reloadCtx } = buildCtx()
+    await orchestrateLutLoadFromFile(
+      asTextFile(cubeText(17), 'catalog-vlog.cube'),
+      reloadCtx,
+    )
+    expect(lastLoadedLut(reloadCtx).fingerprint).toBe(loaded.fingerprint)
+    expect(lastLoadedLut(reloadCtx).profileResolution.kind).not.toBe(
+      'confirmed',
+    )
+  })
+
+  it('fails closed on incomplete catalog contracts without writing storage', async () => {
+    vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
+      new TextEncoder().encode(cubeText(17)),
+    )
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    const { ctx } = buildCtx()
+
+    const outcome = await orchestrateOnlineLutLoad(
+      {
+        ...catalogEntry,
+        trustedContract: {
+          role: 'combined-look-output',
+          inputProfile: 'panasonic-vgamut-vlog',
+        },
+      },
+      undefined,
+      ctx,
+    )
+
+    expect(outcome).toBe('failed')
+    expect(ctx.atoms.setLut).not.toHaveBeenCalled()
+    expect(selectionWrites(setItem)).toHaveLength(0)
+  })
+
+  it('persists explicit user selections and restores them on reload', async () => {
+    const { ctx } = buildCtx()
+    await orchestrateLutLoadFromFile(
+      asTextFile(cubeText(17), 'user-look.cube'),
+      ctx,
+    )
+    ctx.atoms.lut = lastLoadedLut(ctx)
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+
+    orchestrateProfileSelection(
+      {
+        ...getLUTColorProfile('panasonic-vgamut-vlog')!,
+        role: 'combined-look-output',
+        outputGamut: 'srgb-rec709',
+        outputTransfer: 'bt709',
+        outputRange: 'full',
+      },
+      ctx,
+    )
+
+    const selected = lastLoadedLut(ctx)
+    expect(selected.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'user',
+      profile: { id: 'panasonic-vgamut-vlog' },
+    })
+    expect(selectionWrites(setItem)).toHaveLength(1)
+    expect(getStoredLUTContractSelection(selected.fingerprint)).toMatchObject({
+      inputProfile: 'panasonic-vgamut-vlog',
+      outputTransfer: 'bt709',
+    })
+
+    const { ctx: reloadCtx } = buildCtx()
+    await orchestrateLutLoadFromFile(
+      asTextFile(cubeText(17), 'renamed-look.cube'),
+      reloadCtx,
+    )
+    expect(lastLoadedLut(reloadCtx).profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'persisted-user',
+      profile: { id: 'panasonic-vgamut-vlog' },
+    })
   })
 })
 

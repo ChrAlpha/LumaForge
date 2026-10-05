@@ -1226,7 +1226,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(fetchCachedBytesWithLimit).not.toHaveBeenCalled()
     expect(result.current.lut?.profileResolution).toMatchObject({
       kind: 'confirmed',
-      confidence: 'user',
+      confidence: 'metadata',
       profile: {
         id: 'display-srgb',
         role: 'display-look',
@@ -1242,8 +1242,11 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.lutProfileSelection).toMatchObject({
       status: 'confirmed',
       profileId: 'display-srgb',
-      confidence: 'user',
+      confidence: 'metadata',
     })
+    expect(
+      getStoredLUTContractSelection(result.current.lut!.fingerprint),
+    ).toBeUndefined()
   })
 
   it('rejects unsupported trusted contracts and leaves the active LUT unchanged', async () => {

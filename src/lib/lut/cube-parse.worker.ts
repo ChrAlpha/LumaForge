@@ -1,5 +1,8 @@
-import type { ParsedLUT } from './cube-parser'
-import { parseCubeLUT } from './cube-parser'
+import type { ParsedLUT } from '@lumaforge/luma-color-runtime'
+import { parseCubeLUT } from '@lumaforge/luma-color-runtime'
+
+// Workers have no localStorage: parse with the pure package parser and let the
+// main thread restore persisted user contracts by fingerprint.
 
 export interface CubeParseRequest {
   id: number

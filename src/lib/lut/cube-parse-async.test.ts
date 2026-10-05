@@ -1,10 +1,18 @@
-import { describe, expect, it, vi } from 'vitest'
+import type { LUTContractSelection } from '@lumaforge/luma-color-runtime'
+import { parseCubeLUT as parseCubeLUTWithoutStorage } from '@lumaforge/luma-color-runtime'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { CubeParseRequest, CubeParseResponse } from './cube-parse.worker'
 import { parseCubeLUTOffThread } from './cube-parse-async'
 import { parseCubeLUT } from './cube-parser'
+import { storeLUTContractSelection } from './profile-resolution'
 
-function cubeText(size: number): string {
-  const lines = [`TITLE "Async Fixture"`, `LUT_3D_SIZE ${size}`]
+function cubeText(size: number, comments: string[] = []): string {
+  const lines = [
+    `TITLE "Async Fixture"`,
+    ...comments.map((comment) => `# ${comment}`),
+    `LUT_3D_SIZE ${size}`,
+  ]
   const step = 1 / (size - 1)
   for (let b = 0; b < size; b++) {
     for (let g = 0; g < size; g++) {
@@ -18,16 +26,95 @@ function cubeText(size: number): string {
   return lines.join('\n')
 }
 
+const noWorker = () => {
+  throw new Error('no worker in this environment')
+}
+
+const userVLogContract: LUTContractSelection = {
+  role: 'combined-look-output',
+  inputProfile: 'panasonic-vgamut-vlog',
+  outputGamut: 'srgb-rec709',
+  outputTransfer: 'bt709',
+  outputRange: 'full',
+}
+
+const displayMetadataComments = [
+  'LUMAFORGE_INPUT_PROFILE=display-srgb',
+  'LUMAFORGE_ROLE=display-look',
+]
+
+/**
+ * Stands in for the module worker, which has no localStorage: it runs the
+ * package parser with no stored-profile lookup and replies asynchronously,
+ * preceded by a reply addressed to some other request.
+ */
+function createStoragelessWorker() {
+  const listeners = new Map<string, Set<(event: unknown) => void>>()
+  const dispatch = (type: string, event: unknown) => {
+    for (const listener of listeners.get(type) ?? []) listener(event)
+  }
+  const requests: CubeParseRequest[] = []
+
+  const worker = {
+    postMessage: vi.fn((request: CubeParseRequest) => {
+      requests.push(request)
+      queueMicrotask(() => {
+        const { id, source, sourceName } = request
+        let response: CubeParseResponse
+        try {
+          const content =
+            typeof source === 'string'
+              ? source
+              : new TextDecoder().decode(source)
+          response = {
+            id,
+            ok: true,
+            parsed: parseCubeLUTWithoutStorage(content, { sourceName }),
+          }
+        } catch (error) {
+          response = { id, ok: false, message: (error as Error).message }
+        }
+        dispatch('message', {
+          data: { id: id + 1000, ok: false, message: 'not this request' },
+        })
+        dispatch('message', { data: response })
+      })
+    }),
+    terminate: vi.fn(),
+    addEventListener: vi.fn(
+      (type: string, listener: (event: unknown) => void) => {
+        if (!listeners.has(type)) listeners.set(type, new Set())
+        listeners.get(type)!.add(listener)
+      },
+    ),
+    removeEventListener: vi.fn(
+      (type: string, listener: (event: unknown) => void) => {
+        listeners.get(type)?.delete(listener)
+      },
+    ),
+  }
+
+  return { worker, requests, factory: () => worker as never }
+}
+
 describe('parseCubeLUTOffThread', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    localStorage.clear()
+  })
+
   it('matches the synchronous parser when no worker is available', async () => {
     const content = cubeText(17)
     const expected = parseCubeLUT(content, { sourceName: 'fixture.cube' })
 
     const actual = await parseCubeLUTOffThread(content, {
       sourceName: 'fixture.cube',
-      workerFactory: () => {
-        throw new Error('no worker in this environment')
-      },
+      workerFactory: noWorker,
     })
 
     expect(actual.title).toBe(expected.title)
@@ -40,15 +127,12 @@ describe('parseCubeLUTOffThread', () => {
   it('decodes byte input identically to string input', async () => {
     const content = cubeText(17)
     const bytes = new TextEncoder().encode(content)
-    const factory = () => {
-      throw new Error('no worker in this environment')
-    }
 
     const fromString = await parseCubeLUTOffThread(content, {
-      workerFactory: factory,
+      workerFactory: noWorker,
     })
     const fromBytes = await parseCubeLUTOffThread(bytes, {
-      workerFactory: factory,
+      workerFactory: noWorker,
     })
 
     expect(fromBytes.fingerprint).toBe(fromString.fingerprint)
@@ -57,9 +141,7 @@ describe('parseCubeLUTOffThread', () => {
   it('rejects with the parse error from the fallback path', async () => {
     await expect(
       parseCubeLUTOffThread('not a cube', {
-        workerFactory: () => {
-          throw new Error('no worker in this environment')
-        },
+        workerFactory: noWorker,
       }),
     ).rejects.toThrow()
   })
@@ -80,5 +162,177 @@ describe('parseCubeLUTOffThread', () => {
 
     expect(result.size).toBe(17)
     expect(workerLike.terminate).toHaveBeenCalled()
+  })
+
+  it('restores a stored user contract after a storage-free worker parse', async () => {
+    const content = cubeText(17)
+    const { fingerprint } = parseCubeLUTWithoutStorage(content)
+    storeLUTContractSelection(fingerprint, userVLogContract)
+    const { worker, requests, factory } = createStoragelessWorker()
+
+    const reloaded = await parseCubeLUTOffThread(content, {
+      sourceName: 'renamed.cube',
+      workerFactory: factory,
+    })
+
+    expect(requests).toEqual([
+      { id: expect.any(Number), source: content, sourceName: 'renamed.cube' },
+    ])
+    expect(reloaded.fingerprint).toBe(fingerprint)
+    expect(reloaded.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'persisted-user',
+      profile: {
+        id: 'panasonic-vgamut-vlog',
+        role: 'combined-look-output',
+        outputGamut: 'srgb-rec709',
+        outputTransfer: 'bt709',
+        outputRange: 'full',
+      },
+    })
+    expect(reloaded.inputProfile).toBe('v-log')
+    expect(worker.terminate).toHaveBeenCalledTimes(1)
+    expect(worker.removeEventListener).toHaveBeenCalledWith(
+      'message',
+      expect.any(Function),
+    )
+  })
+
+  it('prefers a stored user contract over filename inference after a worker parse', async () => {
+    const content = cubeText(17)
+    const sourceName = 'SLog3_SGamut3Cine_to_Rec709.cube'
+    const { fingerprint } = parseCubeLUTWithoutStorage(content, { sourceName })
+    storeLUTContractSelection(fingerprint, userVLogContract)
+
+    const reloaded = await parseCubeLUTOffThread(content, {
+      sourceName,
+      workerFactory: createStoragelessWorker().factory,
+    })
+
+    expect(reloaded.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'persisted-user',
+      profile: { id: 'panasonic-vgamut-vlog' },
+    })
+  })
+
+  it('keeps embedded metadata ahead of a stored user contract', async () => {
+    const content = cubeText(17, displayMetadataComments)
+    const { fingerprint } = parseCubeLUTWithoutStorage(content)
+    storeLUTContractSelection(fingerprint, userVLogContract)
+
+    const reloaded = await parseCubeLUTOffThread(content, {
+      workerFactory: createStoragelessWorker().factory,
+    })
+
+    expect(reloaded.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'metadata',
+      profile: { id: 'display-srgb', role: 'display-look' },
+    })
+    expect(reloaded.inputProfile).toBe('display-srgb')
+  })
+
+  it('keeps the worker resolution when storage is absent', async () => {
+    vi.stubGlobal('localStorage', undefined)
+
+    const parsed = await parseCubeLUTOffThread(cubeText(17), {
+      workerFactory: createStoragelessWorker().factory,
+    })
+
+    expect(parsed.profileResolution).toEqual({ kind: 'unknown' })
+    expect(parsed.inputProfile).toBe('display-srgb')
+  })
+
+  it('keeps the worker resolution when storage throws', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage is blocked')
+    })
+
+    const parsed = await parseCubeLUTOffThread(cubeText(17), {
+      sourceName: 'SLog3_SGamut3Cine_to_Rec709.cube',
+      workerFactory: createStoragelessWorker().factory,
+    })
+
+    expect(parsed.profileResolution).toMatchObject({ kind: 'recommended' })
+  })
+
+  it('agrees with the synchronous fallback on restored contracts', async () => {
+    const plain = cubeText(17)
+    const withMetadata = cubeText(17, displayMetadataComments)
+    storeLUTContractSelection(
+      parseCubeLUTWithoutStorage(plain).fingerprint,
+      userVLogContract,
+    )
+    storeLUTContractSelection(
+      parseCubeLUTWithoutStorage(withMetadata).fingerprint,
+      userVLogContract,
+    )
+
+    for (const content of [plain, withMetadata, cubeText(2)]) {
+      const viaWorker = await parseCubeLUTOffThread(content, {
+        sourceName: 'fixture.cube',
+        workerFactory: createStoragelessWorker().factory,
+      })
+      const viaFallback = await parseCubeLUTOffThread(content, {
+        sourceName: 'fixture.cube',
+        workerFactory: noWorker,
+      })
+
+      expect(viaWorker.fingerprint).toBe(viaFallback.fingerprint)
+      expect(viaWorker.profileResolution).toEqual(viaFallback.profileResolution)
+      expect(viaWorker.inputProfile).toBe(viaFallback.inputProfile)
+    }
+  })
+
+  it('rejects worker parse errors without consulting storage', async () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem')
+
+    await expect(
+      parseCubeLUTOffThread('LUT_3D_SIZE 2\n0 0 0', {
+        workerFactory: createStoragelessWorker().factory,
+      }),
+    ).rejects.toThrow('Invalid .cube file: expected 8 entries, got 1')
+    expect(getItem).not.toHaveBeenCalled()
+  })
+})
+
+describe('cube parse worker', () => {
+  afterEach(() => {
+    globalThis.onmessage = null
+    vi.doUnmock('./profile-resolution')
+    vi.resetModules()
+    vi.unstubAllGlobals()
+    localStorage.clear()
+  })
+
+  it('parses and transfers the LUT without loading app profile storage', async () => {
+    vi.resetModules()
+    vi.doMock('./profile-resolution', () => {
+      throw new Error('the parse worker must not load app profile storage')
+    })
+    const postMessage = vi.fn()
+    vi.stubGlobal('postMessage', postMessage)
+    const content = cubeText(2)
+    const bytes = new TextEncoder().encode(content)
+
+    await import('./cube-parse.worker')
+    const onMessage = globalThis.onmessage as unknown as (event: {
+      data: CubeParseRequest
+    }) => void
+    onMessage({ data: { id: 7, source: bytes, sourceName: 'fixture.cube' } })
+
+    expect(postMessage).toHaveBeenCalledTimes(1)
+    const [response, transfer] = postMessage.mock.calls[0] as [
+      Extract<CubeParseResponse, { ok: true }>,
+      Transferable[],
+    ]
+    expect(response).toMatchObject({ id: 7, ok: true })
+    expect(response.parsed.fingerprint).toBe(
+      parseCubeLUTWithoutStorage(content, { sourceName: 'fixture.cube' })
+        .fingerprint,
+    )
+    expect(response.parsed.profileResolution).toEqual({ kind: 'unknown' })
+    expect(transfer).toEqual([response.parsed.data.buffer])
   })
 })
