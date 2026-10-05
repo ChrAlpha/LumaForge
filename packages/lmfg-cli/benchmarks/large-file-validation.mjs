@@ -2,26 +2,30 @@
 // Large-fixture validation for the lmfg CLI: export, verify, and replay
 // 60-100 MP RAW files under both memory profiles, recording wall time and
 // peak RSS. Gated by LMFG_LARGE_FIXTURES=1 because the fixtures are not
-// redistributable and each run takes minutes.
+// redistributable and each run takes minutes. The fixtures have no default
+// location: once enabled, each must be named by its own variable (relative
+// paths resolve against the repository root), and an unset or missing one
+// fails the run.
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..')
+const REPO_ROOT = join(PACKAGE_DIR, '..', '..')
 const FIXTURES = [
   {
     label: 'GFX100RF RAF (102 MP)',
-    path:
-      process.env.LUMAFORGE_100MP_RAF ??
-      '/workspaces/LumaForge/test-images/Fujifilm - GFX100RF - 16bit lossless compressed (4_3).RAF',
+    envName: 'LUMAFORGE_100MP_RAF',
+    description: 'a local 100MP Fujifilm RAF (GFX100RF, 16-bit lossless compressed)',
   },
   {
     label: 'Sony ARW (61 MP)',
-    path: process.env.LUMAFORGE_SONY_ARW ?? '/workspaces/LumaForge/test-images/SGL00940.ARW',
+    envName: 'LUMAFORGE_SONY_ARW',
+    description: 'a local 61MP Sony ARW',
   },
 ]
 const PROFILES = ['desktop', 'low-memory']
@@ -31,8 +35,14 @@ if (process.env.LMFG_LARGE_FIXTURES !== '1') {
   process.exit(0)
 }
 for (const fixture of FIXTURES) {
+  const value = process.env[fixture.envName]?.trim()
+  if (!value) {
+    console.error(`Missing fixture: set ${fixture.envName} to ${fixture.description}.`)
+    process.exit(2)
+  }
+  fixture.path = resolve(REPO_ROOT, value)
   if (!existsSync(fixture.path)) {
-    console.error(`Missing fixture: ${fixture.path}`)
+    console.error(`Missing fixture: ${fixture.envName} is set to "${value}", but ${fixture.path} does not exist.`)
     process.exit(2)
   }
 }

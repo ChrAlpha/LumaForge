@@ -3,6 +3,7 @@
 import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
+import process from 'node:process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
@@ -13,6 +14,7 @@ import {
   createWasmJpegRowSink,
   runFullResolutionJpegExport,
 } from '@lumaforge/render-engine/export'
+import type { TestContext } from 'vitest'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -52,33 +54,107 @@ type JpegWorkerErrorResponse = {
   error: { message: string }
 }
 type JpegWorkerMessage = JpegWorkerResponse | JpegWorkerErrorResponse
+type PrivateFixture = {
+  path: string | null
+  ready: boolean
+  required: boolean
+  reason: string
+}
+type PrivateFixtureOptions = {
+  env?: Record<string, string | undefined>
+  exists?: (path: string) => boolean
+}
 
 const JPEG_SOI_MARKER = 65_496
 const JPEG_EOI_MARKER = 65_497
 const JPEG_MARKER_PREFIX = 255
 const JPEG_SOS_MARKER = 218
 const JPEG_SOF0_MARKER = 192
-const packageDir = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../packages/luma-raw-runtime',
-)
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
+const packageDir = join(repoRoot, 'packages', 'luma-raw-runtime')
 const defaultNativeProfile = 'desktop'
 const nativeJsPath = nativeArtifactPath(defaultNativeProfile, 'luma_raw.js')
 const nativeWasmPath = nativeArtifactPath(defaultNativeProfile, 'luma_raw.wasm')
-const gfxRawPath =
-  '/workspaces/LumaForge/test-images/Fujifilm - GFX100RF - 16bit lossless compressed (4_3).RAF'
-const sonyRawPath = '/workspaces/LumaForge/test-images/SGL00940.ARW'
-const vLogLutPath =
-  '/workspaces/LumaForge/V-Log-Alchemy/Luts/Arri/ARRI_LogC2Video_Classic709_VLog.cube'
-const hasRealFixture =
-  existsSync(nativeJsPath) &&
-  existsSync(nativeWasmPath) &&
-  existsSync(gfxRawPath) &&
-  existsSync(vLogLutPath)
-const hasSonyLowMemoryFixture =
+const hasDesktopNativeArtifacts =
+  existsSync(nativeJsPath) && existsSync(nativeWasmPath)
+const hasLowMemoryNativeArtifacts =
   existsSync(nativeArtifactPath('low-memory', 'luma_raw.js')) &&
-  existsSync(nativeArtifactPath('low-memory', 'luma_raw.wasm')) &&
-  existsSync(sonyRawPath)
+  existsSync(nativeArtifactPath('low-memory', 'luma_raw.wasm'))
+
+const requirePrivateFixturesEnv = 'LUMAFORGE_REQUIRE_PRIVATE_FIXTURES'
+
+function isTruthyFlag(value: string | undefined) {
+  return value === '1' || value === 'true'
+}
+
+// These cases expect one particular local RAF, ARW and V-Log LUT, which the
+// repository cannot ship, so each input resolves only from its own variable.
+// Once the native artifacts exist, an unset input skips the case as optional
+// private coverage unless LUMAFORGE_REQUIRE_PRIVATE_FIXTURES=1, and a named
+// file that is missing fails it. Relative paths resolve against the
+// repository root.
+function resolvePrivateFixture(
+  envName: string,
+  description: string,
+  { env = process.env, exists = existsSync }: PrivateFixtureOptions = {},
+): PrivateFixture {
+  const value = env[envName]?.trim()
+  if (!value) {
+    const required = isTruthyFlag(env[requirePrivateFixturesEnv])
+    return {
+      path: null,
+      ready: false,
+      required,
+      reason: required
+        ? `${requirePrivateFixturesEnv} is set, but ${envName} is not: set it to ${description}.`
+        : `Optional private coverage: set ${envName} to ${description}.`,
+    }
+  }
+
+  const path = resolve(repoRoot, value)
+  const ready = exists(path)
+  return {
+    path,
+    ready,
+    required: true,
+    reason: ready
+      ? ''
+      : `${envName} is set to "${value}", but ${path} does not exist.`,
+  }
+}
+
+// Vitest's `context.skip` throws; the final throw keeps a skip that returns
+// from handing the case a missing path.
+function privateFixturePath(
+  context: { skip: (note?: string) => void },
+  fixture: PrivateFixture,
+) {
+  if (fixture.ready && fixture.path) return fixture.path
+  if (!fixture.required) context.skip(fixture.reason)
+  throw new Error(fixture.reason)
+}
+
+function resolveRealExportFixtures(options?: PrivateFixtureOptions) {
+  return {
+    gfxRaf: resolvePrivateFixture(
+      'LUMAFORGE_100MP_RAF',
+      'a local 100MP Fujifilm RAF (GFX100RF, 16-bit lossless compressed)',
+      options,
+    ),
+    sonyArw: resolvePrivateFixture(
+      'LUMAFORGE_SONY_ARW',
+      'a local 61MP Sony ARW that decodes to 9566x6374',
+      options,
+    ),
+    vLogLut: resolvePrivateFixture(
+      'LUMAFORGE_VLOG_LUT',
+      'a local V-Log to Rec.709 .cube LUT, such as V-Log Alchemy ARRI_LogC2Video_Classic709_VLog.cube',
+      options,
+    ),
+  }
+}
+
+const realExportFixtures = resolveRealExportFixtures()
 
 function nativeArtifactPath(profile: 'desktop' | 'low-memory', file: string) {
   return join(packageDir, 'dist', 'native', profile, file)
@@ -89,6 +165,19 @@ async function requireFile(absolutePath: string, label: string) {
   if (!entry.isFile()) {
     throw new Error(`Expected ${label} to be a file: ${absolutePath}`)
   }
+}
+
+async function requireGfxExportInputs(context: TestContext) {
+  const rawPath = privateFixturePath(context, realExportFixtures.gfxRaf)
+  const lutPath = privateFixturePath(context, realExportFixtures.vLogLut)
+
+  await Promise.all([
+    requireFile(nativeJsPath, 'native runtime JS artifact'),
+    requireFile(nativeWasmPath, 'native runtime WASM artifact'),
+    requireFile(rawPath, 'GFX100RF RAF fixture'),
+    requireFile(lutPath, 'V-Log Classic709 LUT fixture'),
+  ])
+  return { rawPath, lutPath }
 }
 
 function markCrossOriginIsolated() {
@@ -283,9 +372,12 @@ async function createFileFromPath(absolutePath: string) {
   })
 }
 
-function createResolvedVLogClassic709Graph(lutContent: string) {
+function createResolvedVLogClassic709Graph(
+  lutPath: string,
+  lutContent: string,
+) {
   const parsedLut = parseCubeLUT(lutContent, {
-    sourceName: basename(vLogLutPath),
+    sourceName: basename(lutPath),
   })
   const lut = applyLUTContractSelection(parsedLut, {
     role: 'combined-look-output',
@@ -475,15 +567,9 @@ async function expectBaselineJpeg(
 describe('full-resolution export real RAW fixtures', () => {
   let restoreFetch: (() => void) | undefined
 
-  beforeAll(async () => {
-    if (!hasRealFixture) return
+  beforeAll(() => {
+    if (!hasDesktopNativeArtifacts && !hasLowMemoryNativeArtifacts) return
 
-    await Promise.all([
-      requireFile(nativeJsPath, 'native runtime JS artifact'),
-      requireFile(nativeWasmPath, 'native runtime WASM artifact'),
-      requireFile(gfxRawPath, 'GFX100RF RAF fixture'),
-      requireFile(vLogLutPath, 'V-Log Classic709 LUT fixture'),
-    ])
     markCrossOriginIsolated()
     restoreFetch = installFileUrlFetchFallback()
   })
@@ -492,11 +578,13 @@ describe('full-resolution export real RAW fixtures', () => {
     restoreFetch?.()
   })
 
-  it.skipIf(!hasRealFixture)(
+  it.skipIf(!hasDesktopNativeArtifacts)(
     'exports the GFX100RF RAF through the real processed-window path with the V-Log Classic709 LUT',
-    async () => {
+    async (context) => {
+      const { rawPath, lutPath } = await requireGfxExportInputs(context)
       const graph = createResolvedVLogClassic709Graph(
-        await readFile(vLogLutPath, 'utf8'),
+        lutPath,
+        await readFile(lutPath, 'utf8'),
       )
       const runtime = createLumaRawRuntime({
         workerFactory: () => new RealNativeWorker() as unknown as Worker,
@@ -507,7 +595,7 @@ describe('full-resolution export real RAW fixtures', () => {
       try {
         await runtime.init()
         const session = await runtime.openSession(
-          await createFileFromPath(gfxRawPath),
+          await createFileFromPath(rawPath),
           { maxOutputPixels: 2_500_000 },
         )
 
@@ -564,9 +652,10 @@ describe('full-resolution export real RAW fixtures', () => {
     900_000,
   )
 
-  it.skipIf(!hasSonyLowMemoryFixture)(
+  it.skipIf(!hasLowMemoryNativeArtifacts)(
     'reads continuous bottom-edge processed windows for the Sony ARW low-memory export profile',
-    async () => {
+    async (context) => {
+      const rawPath = privateFixturePath(context, realExportFixtures.sonyArw)
       const runtime = createLumaRawRuntime({
         workerFactory: () =>
           new RealNativeWorker('low-memory') as unknown as Worker,
@@ -575,7 +664,7 @@ describe('full-resolution export real RAW fixtures', () => {
       try {
         await runtime.init()
         const session = await runtime.openSession(
-          await createFileFromPath(sonyRawPath),
+          await createFileFromPath(rawPath),
           { maxOutputPixels: 2_500_000 },
         )
 
@@ -666,11 +755,13 @@ describe('full-resolution export real RAW fixtures', () => {
     180_000,
   )
 
-  it.skipIf(!hasRealFixture)(
+  it.skipIf(!hasDesktopNativeArtifacts)(
     'encodes a representative GFX100RF RAF export region through the real JPEG row sink',
-    async () => {
+    async (context) => {
+      const { rawPath, lutPath } = await requireGfxExportInputs(context)
       const graph = createResolvedVLogClassic709Graph(
-        await readFile(vLogLutPath, 'utf8'),
+        lutPath,
+        await readFile(lutPath, 'utf8'),
       )
       const runtime = createLumaRawRuntime({
         workerFactory: () => new RealNativeWorker() as unknown as Worker,
@@ -679,7 +770,7 @@ describe('full-resolution export real RAW fixtures', () => {
       try {
         await runtime.init()
         const session = await runtime.openSession(
-          await createFileFromPath(gfxRawPath),
+          await createFileFromPath(rawPath),
           { maxOutputPixels: 2_500_000 },
         )
 
@@ -719,4 +810,106 @@ describe('full-resolution export real RAW fixtures', () => {
     },
     120_000,
   )
+})
+
+describe('full-resolution export real fixture inputs', () => {
+  const inputs = {
+    gfxRaf: 'LUMAFORGE_100MP_RAF',
+    sonyArw: 'LUMAFORGE_SONY_ARW',
+    vLogLut: 'LUMAFORGE_VLOG_LUT',
+  } as const
+  const unnamed = () => {
+    throw new Error('no local path was named')
+  }
+  const skipContext = () => {
+    const notes: (string | undefined)[] = []
+    return {
+      notes,
+      skip: (note?: string) => {
+        notes.push(note)
+      },
+    }
+  }
+
+  it('has no default file for any real-export input', () => {
+    const fixtures = resolveRealExportFixtures({ env: {}, exists: unnamed })
+
+    expect(Object.keys(fixtures).sort()).toEqual(Object.keys(inputs).sort())
+    for (const [key, envName] of Object.entries(inputs)) {
+      const fixture = fixtures[key as keyof typeof inputs]
+      expect(fixture).toMatchObject({
+        path: null,
+        ready: false,
+        required: false,
+      })
+      expect(fixture.reason).toContain(envName)
+
+      const context = skipContext()
+      expect(() => privateFixturePath(context, fixture)).toThrow(fixture.reason)
+      expect(context.notes).toEqual([fixture.reason])
+    }
+  })
+
+  it('fails unset inputs in the required-private mode', () => {
+    const fixtures = resolveRealExportFixtures({
+      env: { LUMAFORGE_REQUIRE_PRIVATE_FIXTURES: '1' },
+      exists: unnamed,
+    })
+
+    for (const [key, envName] of Object.entries(inputs)) {
+      const fixture = fixtures[key as keyof typeof inputs]
+      expect(fixture).toMatchObject({
+        path: null,
+        ready: false,
+        required: true,
+      })
+      expect(fixture.reason).toContain('LUMAFORGE_REQUIRE_PRIVATE_FIXTURES')
+      expect(fixture.reason).toContain(envName)
+
+      const context = skipContext()
+      expect(() => privateFixturePath(context, fixture)).toThrow(fixture.reason)
+      expect(context.notes).toEqual([])
+    }
+  })
+
+  it('fails a named input that does not exist instead of skipping', () => {
+    const env = Object.fromEntries(
+      Object.values(inputs).map((envName) => [
+        envName,
+        `/nonexistent/${envName}`,
+      ]),
+    )
+    const fixtures = resolveRealExportFixtures({ env, exists: () => false })
+
+    for (const [key, envName] of Object.entries(inputs)) {
+      const fixture = fixtures[key as keyof typeof inputs]
+      expect(fixture).toMatchObject({
+        path: `/nonexistent/${envName}`,
+        ready: false,
+        required: true,
+      })
+      expect(fixture.reason).toContain(envName)
+
+      const context = skipContext()
+      expect(() => privateFixturePath(context, fixture)).toThrow(fixture.reason)
+      expect(context.notes).toEqual([])
+    }
+  })
+
+  it('runs named inputs, resolving relative paths against the repository root', () => {
+    const existing = fileURLToPath(import.meta.url)
+    const env = Object.fromEntries(
+      Object.values(inputs).map((envName) => [
+        envName,
+        ' src/lib/export/full-res-export.real.test.ts ',
+      ]),
+    )
+    const fixtures = resolveRealExportFixtures({ env })
+
+    for (const key of Object.keys(inputs)) {
+      const fixture = fixtures[key as keyof typeof inputs]
+      expect(fixture).toMatchObject({ path: existing, ready: true })
+      expect(privateFixturePath(skipContext(), fixture)).toBe(existing)
+    }
+  })
 })

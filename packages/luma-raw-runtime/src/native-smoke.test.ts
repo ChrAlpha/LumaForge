@@ -3,6 +3,7 @@
 import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
+import process from 'node:process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -46,19 +47,17 @@ const publicRawFixturePath = join(
   'public',
   'raw-pixls-iphone-se.dng',
 )
+const repoRoot = resolve(packageDir, '../..')
+const requirePrivateFixturesEnv = 'LUMAFORGE_REQUIRE_PRIVATE_FIXTURES'
+// Camera-compatibility files cannot ship with the package, so each case runs
+// only on a local file its own variable names. Unset, the case skips as
+// optional private coverage unless LUMAFORGE_REQUIRE_PRIVATE_FIXTURES=1; a
+// named file that is missing always fails. Relative paths resolve against the
+// repository root. The public DNG smoke above stays mandatory either way.
 const localCompatibilityFixtures = [
-  {
-    label: 'Sony ARW',
-    path: '/workspaces/LumaForge/test-images/SGL00940.ARW',
-  },
-  {
-    label: 'Nikon NEF',
-    path: '/workspaces/LumaForge/test-images/SGL_1998.NEF',
-  },
-  {
-    label: 'Fujifilm GFX RAF',
-    path: '/workspaces/LumaForge/test-images/Fujifilm - GFX100RF - 16bit lossless compressed (4_3).RAF',
-  },
+  { label: 'Sony ARW', envName: 'LUMAFORGE_SONY_ARW' },
+  { label: 'Nikon NEF', envName: 'LUMAFORGE_NIKON_NEF' },
+  { label: 'Fujifilm GFX RAF', envName: 'LUMAFORGE_100MP_RAF' },
 ] as const
 const artifactHint =
   'Run `pnpm --filter @lumaforge/luma-raw-runtime build:native` before `pnpm --filter @lumaforge/luma-raw-runtime test:native-smoke`.'
@@ -66,6 +65,63 @@ const fixtureHint =
   'Run `pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public` before `pnpm --filter @lumaforge/luma-raw-runtime test:native-smoke`.'
 const quickDecodeMaxOutputPixels = 2_500_000
 const smokeTimeoutMs = 120_000
+
+type LocalCompatibilityFixture = {
+  path: string | null
+  ready: boolean
+  required: boolean
+  reason: string
+}
+
+function isTruthyFlag(value: string | undefined) {
+  return value === '1' || value === 'true'
+}
+
+function resolveLocalCompatibilityFixture(
+  { label, envName }: { label: string; envName: string },
+  {
+    env = process.env,
+    exists = existsSync,
+  }: {
+    env?: Record<string, string | undefined>
+    exists?: (path: string) => boolean
+  } = {},
+): LocalCompatibilityFixture {
+  const value = env[envName]?.trim()
+  if (!value) {
+    const required = isTruthyFlag(env[requirePrivateFixturesEnv])
+    return {
+      path: null,
+      ready: false,
+      required,
+      reason: required
+        ? `${requirePrivateFixturesEnv} is set, but ${envName} is not: set it to a local ${label}.`
+        : `Optional private coverage: set ${envName} to a local ${label}.`,
+    }
+  }
+
+  const path = resolve(repoRoot, value)
+  const ready = exists(path)
+  return {
+    path,
+    ready,
+    required: true,
+    reason: ready
+      ? ''
+      : `${envName} is set to "${value}", but ${path} does not exist.`,
+  }
+}
+
+// Vitest's `context.skip` throws; the final throw keeps a skip that returns
+// from handing the case a missing path.
+function localFixturePath(
+  context: { skip: (note?: string) => void },
+  fixture: LocalCompatibilityFixture,
+) {
+  if (fixture.ready && fixture.path) return fixture.path
+  if (!fixture.required) context.skip(fixture.reason)
+  throw new Error(fixture.reason)
+}
 
 async function requireFile(absolutePath: string, label: string, hint: string) {
   let entry: Awaited<ReturnType<typeof stat>>
@@ -327,9 +383,12 @@ describe('native RAW runtime smoke test', () => {
   )
 
   for (const fixture of localCompatibilityFixtures) {
-    it.skipIf(!existsSync(fixture.path))(
+    const local = resolveLocalCompatibilityFixture(fixture)
+
+    it(
       `processes a bounded LibRaw cropbox window for ${fixture.label}`,
-      async () => {
+      async (context) => {
+        const rawPath = localFixturePath(context, local)
         const runtime = createLumaRawRuntime({
           workerFactory: () => new NativeSmokeWorker() as unknown as Worker,
         })
@@ -337,7 +396,7 @@ describe('native RAW runtime smoke test', () => {
         try {
           await runtime.init()
           const session = await runtime.openSession(
-            await createLocalRawFixtureFile(fixture.path),
+            await createLocalRawFixtureFile(rawPath),
             {
               maxOutputPixels: quickDecodeMaxOutputPixels,
             },
@@ -401,4 +460,108 @@ describe('native RAW runtime smoke test', () => {
       smokeTimeoutMs,
     )
   }
+})
+
+describe('native RAW smoke fixture inputs', () => {
+  const [sonyArw] = localCompatibilityFixtures
+  const unnamed = () => {
+    throw new Error('no local path was named')
+  }
+  const skipContext = () => {
+    const notes: (string | undefined)[] = []
+    return {
+      notes,
+      skip: (note?: string) => {
+        notes.push(note)
+      },
+    }
+  }
+
+  it('skips unset camera-compatibility cases as optional private coverage', () => {
+    for (const fixture of localCompatibilityFixtures) {
+      for (const flag of [undefined, '', '0', 'false']) {
+        const local = resolveLocalCompatibilityFixture(fixture, {
+          env: { LUMAFORGE_REQUIRE_PRIVATE_FIXTURES: flag },
+          exists: unnamed,
+        })
+
+        expect(local).toEqual({
+          path: null,
+          ready: false,
+          required: false,
+          reason: `Optional private coverage: set ${fixture.envName} to a local ${fixture.label}.`,
+        })
+
+        const context = skipContext()
+        expect(() => localFixturePath(context, local)).toThrow(local.reason)
+        expect(context.notes).toEqual([local.reason])
+      }
+    }
+  })
+
+  it('fails unset cases in the required-private mode', () => {
+    for (const flag of ['1', 'true']) {
+      const local = resolveLocalCompatibilityFixture(sonyArw, {
+        env: { LUMAFORGE_REQUIRE_PRIVATE_FIXTURES: flag },
+        exists: unnamed,
+      })
+
+      expect(local).toMatchObject({ path: null, ready: false, required: true })
+      expect(local.reason).toContain('LUMAFORGE_REQUIRE_PRIVATE_FIXTURES')
+      expect(local.reason).toContain(sonyArw.envName)
+
+      const context = skipContext()
+      expect(() => localFixturePath(context, local)).toThrow(local.reason)
+      expect(context.notes).toEqual([])
+    }
+  })
+
+  it('fails a named file that does not exist instead of skipping', () => {
+    const local = resolveLocalCompatibilityFixture(sonyArw, {
+      env: { [sonyArw.envName]: '/nonexistent/raw.ARW' },
+      exists: () => false,
+    })
+
+    expect(local).toEqual({
+      path: '/nonexistent/raw.ARW',
+      ready: false,
+      required: true,
+      reason: `${sonyArw.envName} is set to "/nonexistent/raw.ARW", but /nonexistent/raw.ARW does not exist.`,
+    })
+
+    const context = skipContext()
+    expect(() => localFixturePath(context, local)).toThrow(local.reason)
+    expect(context.notes).toEqual([])
+  })
+
+  it('runs a named file, resolving relative paths against the repository root', () => {
+    const relativePath = 'packages/luma-raw-runtime/src/native-smoke.test.ts'
+    const local = resolveLocalCompatibilityFixture(sonyArw, {
+      env: { [sonyArw.envName]: ` ${relativePath} ` },
+    })
+
+    expect(local).toEqual({
+      path: fileURLToPath(import.meta.url),
+      ready: true,
+      required: true,
+      reason: '',
+    })
+    expect(localFixturePath(skipContext(), local)).toBe(local.path)
+  })
+
+  it('keeps the public smoke fixture a hard requirement', async () => {
+    const missing = join(
+      packageDir,
+      'fixtures',
+      '.cache',
+      'public',
+      'missing.dng',
+    )
+
+    await expect(
+      requireFile(missing, 'public RAW smoke fixture', fixtureHint),
+    ).rejects.toThrow(
+      `Missing public RAW smoke fixture: ${missing}\n${fixtureHint}`,
+    )
+  })
 })
