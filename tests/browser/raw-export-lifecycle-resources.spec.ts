@@ -199,6 +199,9 @@ async function loadRawFixture(page: Page, fixture: string) {
 async function dragSlider(page: Page, sliderName: string, targetRatio: number) {
   const slider = page.getByRole('slider', { name: sliderName })
   await expect(slider).toBeVisible()
+  // The rail scrolls under a pinned export footer: a row below the fold
+  // still has a box, and a press there lands on the footer instead.
+  await slider.scrollIntoViewIfNeeded()
   const box = await slider.boundingBox()
 
   expect(box).toBeTruthy()

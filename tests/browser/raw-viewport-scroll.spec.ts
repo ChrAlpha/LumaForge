@@ -41,6 +41,11 @@ async function loadRawFixture(page: Page) {
 async function dragSlider(page: Page, sliderName: string, targetRatio: number) {
   const slider = page.getByRole('slider', { name: sliderName })
   await expect(slider).toBeVisible()
+  // A rail row can sit below the fold under the pinned export footer; the
+  // compare handle lives on the stage, which never scrolls.
+  if (sliderName !== 'Compare unprocessed RAW and final JPEG') {
+    await slider.scrollIntoViewIfNeeded()
+  }
   const box = await slider.boundingBox()
 
   expect(box).toBeTruthy()
