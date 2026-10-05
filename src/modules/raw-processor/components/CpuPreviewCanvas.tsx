@@ -6,6 +6,8 @@
  *     2D-transform corruption of raw pixel data.
  *   - drawImage(backing, ...) onto the visible canvas with aspect-fit scaling.
  *   - Never use ctx.scale() + putImageData on the visible canvas.
+ *   - A container resize re-fits the already-uploaded backing frame; it never
+ *     re-uploads pixels or re-runs color processing.
  */
 
 import type {
@@ -39,6 +41,7 @@ export function CpuPreviewCanvas({
   const { t } = useI18n()
   const visibleRef = useRef<HTMLCanvasElement>(null)
   const backingRef = useRef<HTMLCanvasElement | null>(null)
+  // The frame whose pixels currently sit on the backing canvas.
   const frameRef = useRef<CpuPreviewFrame | null>(null)
 
   // Lazily create the backing canvas once
@@ -55,12 +58,23 @@ export function CpuPreviewCanvas({
     const backing = backingRef.current
     if (!visible || !backing) return
 
+    const containerWidth = visible.clientWidth
+    const containerHeight = visible.clientHeight
+
+    // A collapsed or hidden box has nothing to fit. Sizing from the canvas
+    // bitmap instead would multiply it by the DPR on every redraw; the resize
+    // observer draws again once the box has a layout size.
+    if (
+      !(containerWidth > 0) ||
+      !(containerHeight > 0) ||
+      !(current.width > 0) ||
+      !(current.height > 0)
+    ) {
+      return
+    }
+
     const visibleCtx = visible.getContext('2d')
     if (!visibleCtx) return
-
-    const containerWidth = visible.clientWidth || visible.width
-    const containerHeight = visible.clientHeight || visible.height
-    if (!(containerWidth > 0) || !(containerHeight > 0)) return
 
     const aspectRatio = current.width / current.height
     const containerAspect = containerWidth / containerHeight
@@ -79,8 +93,10 @@ export function CpuPreviewCanvas({
       typeof window !== 'undefined' ? window.devicePixelRatio : 1,
       2,
     )
-    visible.width = Math.round(containerWidth * dpr)
-    visible.height = Math.round(containerHeight * dpr)
+    const visibleWidth = Math.round(containerWidth * dpr)
+    const visibleHeight = Math.round(containerHeight * dpr)
+    if (visible.width !== visibleWidth) visible.width = visibleWidth
+    if (visible.height !== visibleHeight) visible.height = visibleHeight
 
     visibleCtx.clearRect(0, 0, visible.width, visible.height)
     visibleCtx.drawImage(
@@ -99,6 +115,7 @@ export function CpuPreviewCanvas({
   useEffect(() => {
     const visible = visibleRef.current
     const backing = backingRef.current
+    frameRef.current = null
     if (!frame || !visible || !backing) return
 
     // Size the backing canvas to the exact frame dimensions
@@ -150,15 +167,20 @@ export function CpuPreviewCanvas({
     const visible = visibleRef.current
     if (!hasFrame || !visible || typeof ResizeObserver === 'undefined') return
     let timer: ReturnType<typeof setTimeout> | null = null
+    // Nothing is left queued once the observer disconnects, even for a
+    // notification that was already in flight.
+    let observing = true
     const observer = new ResizeObserver(() => {
+      if (!observing) return
       if (timer !== null) clearTimeout(timer)
       timer = setTimeout(() => {
         timer = null
-        if (frameRef.current) present(frameRef.current)
+        if (observing && frameRef.current) present(frameRef.current)
       }, CPU_CANVAS_RESIZE_SETTLE_MS)
     })
     observer.observe(visible)
     return () => {
+      observing = false
       observer.disconnect()
       if (timer !== null) clearTimeout(timer)
     }
