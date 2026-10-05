@@ -15,12 +15,13 @@
  *     instead of running through the mat.
  */
 
-import { existsSync } from 'node:fs'
-import process from 'node:process'
-
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+import {
+  gateRawFixture,
+  resolvePublicRawFixture,
+} from '../../scripts/ci/raw-fixtures.mjs'
 import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
@@ -30,9 +31,7 @@ import {
   requireWebGPUFixture,
 } from './raw-preview-backend'
 
-const RAW_FIXTURE =
-  process.env.LUMAFORGE_SONY_ARW ??
-  '/workspaces/LumaForge/test-images/SGL00940.ARW'
+const RAW_FIXTURE = resolvePublicRawFixture()
 
 /**
  * The stage keeps a blocking progress overlay up through decode and the
@@ -46,21 +45,21 @@ async function waitForStageReady(page: Page) {
   await page.waitForTimeout(400)
 }
 
-async function loadDesktop(page: Page) {
+async function loadDesktop(page: Page, fixture: string) {
   const chooser = page.waitForEvent('filechooser')
   await page
     .getByRole('button', { name: /finish a raw with a lut/i })
     .click({ position: { x: 24, y: 24 } })
-  await (await chooser).setFiles(RAW_FIXTURE)
+  await (await chooser).setFiles(fixture)
   await expect(
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
   ).toBeVisible({ timeout: 90_000 })
 }
 
-async function loadMobile(page: Page) {
+async function loadMobile(page: Page, fixture: string) {
   const chooser = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: /browse raw files/i }).click()
-  await (await chooser).setFiles(RAW_FIXTURE)
+  await (await chooser).setFiles(fixture)
   await expect(
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
   ).toBeVisible({ timeout: 90_000 })
@@ -73,13 +72,13 @@ test('desktop: a press anywhere on an Adjust row grabs the value, Shift halves t
     !isDesktopChromiumProject(testInfo),
     'Desktop scrub contract targets desktop Chromium only',
   )
-  requireWebGPUFixture(testInfo, RAW_FIXTURE)
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  requireWebGPUFixture(testInfo, RAW_FIXTURE.path)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(300_000)
 
   await page.goto(rawPreviewUrl(testInfo))
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-  await loadDesktop(page)
+  await loadDesktop(page, rawPath)
   await waitForStageReady(page)
   await expectWebGPUPreview(page, testInfo)
 
@@ -128,7 +127,7 @@ test('mobile: the stage keeps the photo clear of the chrome and returns it in im
   browser,
 }, testInfo) => {
   test.skip(!projectHasWebGPU(testInfo), NO_WEBGPU_SKIP_REASON)
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(300_000)
 
   // A touch phone context on the WebGPU browser; Playwright's WebKit build
@@ -142,7 +141,7 @@ test('mobile: the stage keeps the photo clear of the chrome and returns it in im
   const page = await context.newPage()
   await page.goto('/raw')
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-  await loadMobile(page)
+  await loadMobile(page, rawPath)
   await waitForStageReady(page)
 
   const readGeometry = async () =>
@@ -209,13 +208,13 @@ test('compare: the split line and its labels hug the photograph', async ({
     !isDesktopChromiumProject(testInfo),
     'Compare geometry is asserted once, on desktop Chromium',
   )
-  requireWebGPUFixture(testInfo, RAW_FIXTURE)
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  requireWebGPUFixture(testInfo, RAW_FIXTURE.path)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(300_000)
 
   await page.goto(rawPreviewUrl(testInfo))
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-  await loadDesktop(page)
+  await loadDesktop(page, rawPath)
   await waitForStageReady(page)
   await expectWebGPUPreview(page, testInfo)
 

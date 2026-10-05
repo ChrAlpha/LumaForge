@@ -1,7 +1,7 @@
 /**
  * Ad-hoc visual evidence run for the mobile Adjust section bar fix.
  *
- * Loads the Sony ARW fixture in the iPhone 14 Pro webkit profile, opens
+ * Loads the public RAW fixture in the iPhone 14 Pro webkit profile, opens
  * the Adjust dock on Tone (longest list = guaranteed scroll), and saves
  * two screenshots:
  *
@@ -20,9 +20,12 @@ import process from 'node:process'
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-const RAW_FIXTURE =
-  process.env.LUMAFORGE_SONY_ARW ??
-  '/workspaces/LumaForge/test-images/SGL00940.ARW'
+import {
+  gateRawFixture,
+  resolvePublicRawFixture,
+} from '../../scripts/ci/raw-fixtures.mjs'
+
+const RAW_FIXTURE = resolvePublicRawFixture()
 
 const OUTPUT_DIR = path.resolve(process.cwd(), 'tmp')
 
@@ -41,7 +44,7 @@ test('adjust bar visual evidence', async ({ page }, testInfo) => {
     testInfo.project.name !== 'webkit-ios-safe',
     'Visual evidence targets iOS WebKit only',
   )
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(180_000)
 
   if (!existsSync(OUTPUT_DIR)) {
@@ -50,7 +53,7 @@ test('adjust bar visual evidence', async ({ page }, testInfo) => {
 
   await page.goto('/raw')
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-  await loadRawFixtureMobile(page, RAW_FIXTURE)
+  await loadRawFixtureMobile(page, rawPath)
 
   await page.getByRole('tab', { name: 'Adjust' }).click()
   const dockPanel = page.locator('[data-mobile-dock-panel]')

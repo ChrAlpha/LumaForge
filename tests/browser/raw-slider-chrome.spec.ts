@@ -14,15 +14,15 @@
  * both surfaces.
  */
 
-import { existsSync } from 'node:fs'
-import process from 'node:process'
-
 import type { Locator, Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-const RAW_FIXTURE =
-  process.env.LUMAFORGE_SONY_ARW ??
-  '/workspaces/LumaForge/test-images/SGL00940.ARW'
+import {
+  gateRawFixture,
+  resolvePublicRawFixture,
+} from '../../scripts/ci/raw-fixtures.mjs'
+
+const RAW_FIXTURE = resolvePublicRawFixture()
 
 async function loadRawFixtureDesktop(page: Page, fixture: string) {
   const fileChooserPromise = page.waitForEvent('filechooser')
@@ -70,12 +70,12 @@ test('directional sliders carry gradient tracks and a bipolar Range overlay', as
     testInfo.project.name !== 'chromium-desktop',
     'Slider chrome contract targets desktop Chromium only',
   )
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(180_000)
 
   await page.goto('/raw')
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-  await loadRawFixtureDesktop(page, RAW_FIXTURE)
+  await loadRawFixtureDesktop(page, rawPath)
 
   // ----- Color tool: Temperature has a gradient track + bipolar overlay -----
   const colorRegion = page.getByRole('region', { name: 'Color' }).first()
@@ -146,12 +146,12 @@ test('mobile Adjust list panels carry directional tracks and bipolar overlay', a
     testInfo.project.name !== 'webkit-ios-safe',
     'Mobile slider chrome contract targets iOS WebKit only',
   )
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(180_000)
 
   await page.goto('/raw')
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-  await loadRawFixtureMobile(page, RAW_FIXTURE)
+  await loadRawFixtureMobile(page, rawPath)
 
   // Open the Adjust dock — same code-path as a thumb-tap on the bottom rail.
   await page.getByRole('tab', { name: 'Adjust' }).click()

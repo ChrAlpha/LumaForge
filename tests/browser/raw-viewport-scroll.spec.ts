@@ -1,10 +1,14 @@
-import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-const RAW_FIXTURE = '/workspaces/LumaForge/test-images/SGL_1998.NEF'
+import {
+  gateRawFixture,
+  resolvePublicRawFixture,
+} from '../../scripts/ci/raw-fixtures.mjs'
+
+const RAW_FIXTURE = resolvePublicRawFixture()
 
 function createIdentityCube(title: string) {
   return [
@@ -21,7 +25,7 @@ function createIdentityCube(title: string) {
   ].join('\n')
 }
 
-async function loadRawFixture(page: Page) {
+async function loadRawFixture(page: Page, fixture: string) {
   const isMobileViewport = await page.evaluate(() => window.innerWidth <= 640)
   const trigger = isMobileViewport
     ? page.getByRole('button', { name: /browse raw files/i })
@@ -35,7 +39,7 @@ async function loadRawFixture(page: Page) {
     await trigger.click({ position: { x: 24, y: 24 } })
   }
   const fileChooser = await fileChooserPromise
-  await fileChooser.setFiles(RAW_FIXTURE)
+  await fileChooser.setFiles(fixture)
 }
 
 async function dragSlider(page: Page, sliderName: string, targetRatio: number) {
@@ -239,12 +243,12 @@ test('keeps the loaded mobile export panel clear of the toolbar', async ({
     testInfo.project.name !== 'webkit-ios-safe',
     'mobile export dock regression',
   )
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
 
   await page.goto('/raw')
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
 
-  await loadRawFixture(page)
+  await loadRawFixture(page, rawPath)
 
   await expect(
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
@@ -376,12 +380,12 @@ test('keeps desktop RAW load toasts out of the persistent export action lane', a
     testInfo.project.name !== 'chromium-desktop',
     'desktop export action lane regression',
   )
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
 
   await page.goto('/raw')
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
 
-  await loadRawFixture(page)
+  await loadRawFixture(page, rawPath)
 
   const exportButton = page
     .getByRole('region', { name: 'Export' })
@@ -499,12 +503,12 @@ test('keeps desktop tone, compare, zoom, and pan interactions live after RAW loa
     testInfo.project.name !== 'chromium-desktop',
     'desktop RAW interaction regression',
   )
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
 
   await page.goto('/raw')
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
 
-  await loadRawFixture(page)
+  await loadRawFixture(page, rawPath)
 
   await expect(
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),

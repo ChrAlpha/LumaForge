@@ -1,10 +1,12 @@
-import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import process from 'node:process'
 
 import type { Locator, Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+import {
+  gateRawFixture,
+  resolvePublicRawFixture,
+} from '../../scripts/ci/raw-fixtures.mjs'
 import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
@@ -12,9 +14,7 @@ import {
   requireWebGPUFixture,
 } from './raw-preview-backend'
 
-const RAW_FIXTURE =
-  process.env.LUMAFORGE_SONY_ARW ??
-  '/workspaces/LumaForge/test-images/SGL00940.ARW'
+const RAW_FIXTURE = resolvePublicRawFixture()
 
 const HSL_BANDS = [
   'red',
@@ -61,8 +61,8 @@ test('drives selective-color HSL through all 8 bands and resets cleanly', async 
     !isDesktopChromiumProject(testInfo),
     'HSL smoke targets desktop Chromium only',
   )
-  requireWebGPUFixture(testInfo, RAW_FIXTURE)
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  requireWebGPUFixture(testInfo, RAW_FIXTURE.path)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(240_000)
 
   const consoleErrors: string[] = []
@@ -73,7 +73,7 @@ test('drives selective-color HSL through all 8 bands and resets cleanly', async 
   await page.goto(rawPreviewUrl(testInfo))
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
 
-  await loadRawFixture(page, RAW_FIXTURE)
+  await loadRawFixture(page, rawPath)
   await expect(
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
   ).toBeVisible({ timeout: 90_000 })
