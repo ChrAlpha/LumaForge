@@ -94,6 +94,21 @@ function descriptorVersionOf(manifest: RenderManifest): number | null {
   return null
 }
 
+/**
+ * Replay rebuilds the color graph only. A recorded geometry (crop, rotation,
+ * perspective) would be dropped from the output, so a manifest that carries
+ * one is refused before anything is decoded or written.
+ */
+function refuseUnsupportedGeometry(manifest: RenderManifest): void {
+  if (manifest.render_params.geometry === undefined) return
+  throw new LmfgError('args.invalid', {
+    message:
+      'Replaying a manifest with a geometry (render_params.geometry) is not supported; lmfg replays the color graph only and would drop the recorded crop, rotation, and perspective. Only manifests without a geometry can be replayed; `lmfg manifest verify` still checks this one.',
+    details: { unsupported: 'render_params.geometry' },
+    suggestedNextActions: ['lmfg manifest verify <manifest.json>'],
+  })
+}
+
 export async function prepareReplay(input: {
   manifest: RenderManifest
   source: LoadedSource
@@ -102,6 +117,7 @@ export async function prepareReplay(input: {
   cwd: string
 }): Promise<ReplayPlan> {
   const { manifest, source } = input
+  refuseUnsupportedGeometry(manifest)
   if (source.sha256 !== manifest.source_raw.sha256) {
     throw new LmfgError('hash.mismatch', {
       message: `Source ${source.filename} does not match the manifest (expected sha256 ${manifest.source_raw.sha256.slice(0, 12)}…, got ${source.sha256.slice(0, 12)}…).`,
@@ -199,6 +215,7 @@ export type ReplayRunInput = {
 
 export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
   const { plan, manifest } = { plan: input.plan, manifest: input.plan.manifest }
+  refuseUnsupportedGeometry(manifest)
   const timings: Record<string, number> = {}
   const total = performance.now()
   let jpeg: Uint8Array | null = null

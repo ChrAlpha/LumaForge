@@ -3,8 +3,13 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import {
+  createRenderManifest,
+  verifyManifestSha256,
+} from '@lumaforge/render-engine'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { LmfgRuntime } from '../runtime/node-runtime'
 import { createLmfgRuntime } from '../runtime/node-runtime'
 import { loadSourceFile } from '../runtime/source-loader'
 import { resolveRenderEnvironment } from '../runtime/versions'
@@ -13,9 +18,16 @@ import {
   describeWithFixture,
   FIXTURE_PATH,
 } from '../test-support/describe-with-fixture'
-import { buildColorGraph, requireSupportedGraph } from './color-graph'
+import { fileExists } from '../workspace/atomic-fs'
+import {
+  buildColorGraph,
+  manifestToRenderParams,
+  requireSupportedGraph,
+  toManifestRenderParams,
+} from './color-graph'
 import { buildRenderManifest } from './manifest'
 import { renderPreview } from './preview'
+import type { ReplayPlan } from './replay'
 import { prepareReplay, replayKey, runReplay } from './replay'
 
 let dir: string
@@ -73,6 +85,50 @@ function manifestFor(params = parseRenderParams({ contrast: 5 })) {
     },
     parentManifestSha256: null,
   })
+}
+
+/**
+ * A sealed export manifest shaped like the one the browser writes for a
+ * committed geometry: the matrix and cropped output frame sit beside the color
+ * params, outside the color graph.
+ */
+function geometryManifestFor(params = parseRenderParams({ contrast: 5 })) {
+  const output = { width: 3900, height: 2900 }
+  return createRenderManifest({
+    kind: 'export',
+    source_raw: {
+      sha256: 'a'.repeat(64),
+      byte_size: 1,
+      filename: 'a.dng',
+      decoded_dimensions: { width: 4032, height: 3024 },
+    },
+    lut: null,
+    graph: requireSupportedGraph(buildColorGraph(params, null, exposure)),
+    render_params: {
+      ...toManifestRenderParams(params, exposure),
+      geometry: {
+        matrix: [0.99, -0.04, 0.02, 0.04, 0.99, -0.01, 0, 0, 1],
+        constrain_crop: true,
+        output,
+      },
+    },
+    policy: { kind: 'export-full', row_slice: 256, concurrency: 1 },
+    environment,
+    output: {
+      ...output,
+      quality: 92,
+      filename: 'a_fullres.jpg',
+      sha256: 'b'.repeat(64),
+    },
+    parent_manifest_sha256: null,
+  })
+}
+
+const geometryRefusal = {
+  code: 'args.invalid',
+  exitCode: 2,
+  message: expect.stringContaining('geometry'),
+  details: { unsupported: 'render_params.geometry' },
 }
 
 describe('prepareReplay', () => {
@@ -169,6 +225,83 @@ describe('prepareReplay', () => {
         cwd: dir,
       }),
     ).rejects.toMatchObject({ code: 'file.not_found' })
+  })
+
+  it('refuses a sealed manifest that records a geometry', async () => {
+    const manifest = geometryManifestFor()
+    // The manifest is otherwise replayable: sealed, and its color graph
+    // rebuilds to the recorded fingerprint.
+    expect(verifyManifestSha256(manifest)).toBe(true)
+    await expect(
+      prepareReplay({
+        manifest,
+        source: fakeSource('a'.repeat(64)),
+        workspaceRoot: dir,
+        cwd: dir,
+      }),
+    ).rejects.toMatchObject(geometryRefusal)
+  })
+
+  it('refuses a geometry even when the descriptor version skips the fingerprint gate', async () => {
+    const manifest = geometryManifestFor()
+    const legacy = {
+      ...manifest,
+      color_graph: {
+        fingerprint: 'f'.repeat(64),
+        descriptor: { descriptor_version: 1 },
+      },
+    }
+    await expect(
+      prepareReplay({
+        manifest: legacy,
+        source: fakeSource('a'.repeat(64)),
+        workspaceRoot: dir,
+        cwd: dir,
+      }),
+    ).rejects.toMatchObject(geometryRefusal)
+  })
+})
+
+describe('runReplay with a geometry', () => {
+  it('refuses before the RAW runtime runs or any output is written', async () => {
+    const manifest = geometryManifestFor()
+    const params = manifestToRenderParams(manifest.render_params)
+    const plan: ReplayPlan = {
+      manifest,
+      params,
+      exposure,
+      lut: null,
+      graph: requireSupportedGraph(buildColorGraph(params, null, exposure)),
+      fingerprintMatch: true,
+    }
+    const runtime: LmfgRuntime = {
+      memoryProfile: 'desktop',
+      raw: vi.fn(async () => {
+        throw new Error('the RAW runtime must not be used')
+      }),
+      jpeg: vi.fn(async () => {
+        throw new Error('the JPEG runtime must not be used')
+      }),
+      dispose: vi.fn(),
+    }
+    const outputPath = join(dir, 'replay', 'output.jpg')
+    const manifestOutputPath = join(dir, 'replay', 'manifest.json')
+    await expect(
+      runReplay({
+        runtime,
+        plan,
+        source: fakeSource('a'.repeat(64)),
+        environment,
+        manifestPath: join(dir, 'm.json'),
+        sessionId: null,
+        outputPath,
+        manifestOutputPath,
+      }),
+    ).rejects.toMatchObject(geometryRefusal)
+    expect(runtime.raw).not.toHaveBeenCalled()
+    expect(runtime.jpeg).not.toHaveBeenCalled()
+    expect(await fileExists(outputPath)).toBe(false)
+    expect(await fileExists(manifestOutputPath)).toBe(false)
   })
 })
 
