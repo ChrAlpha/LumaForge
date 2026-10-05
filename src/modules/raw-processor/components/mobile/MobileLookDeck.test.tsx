@@ -155,6 +155,15 @@ describe('mobileLookDeck', () => {
     vi.unstubAllGlobals()
   })
 
+  it('keeps the deck to one shrinkable column so the strip cannot widen it', () => {
+    const { container } = renderDeck()
+    // The strip scroller is as wide as every tile; an auto grid column grows
+    // to that width and pushes Strength and the footer off the screen.
+    expect(
+      container.querySelector('[data-mobile-look-deck="strip"]'),
+    ).toHaveClass('grid-cols-[minmax(0,1fr)]')
+  })
+
   it('lays the strip out as Original, the catalog, then Import', () => {
     const { container } = renderDeck()
     const tiles = Array.from(

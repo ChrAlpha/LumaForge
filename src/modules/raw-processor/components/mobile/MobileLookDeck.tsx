@@ -212,7 +212,10 @@ export function MobileLookDeck(props: {
     <m.div
       key="strip"
       data-mobile-look-deck="strip"
-      className="grid gap-2"
+      // A single shrinkable column: the strip's scroller is as wide as all
+      // of its tiles, and an auto column would grow to that width and push
+      // Strength and the footer off the screen.
+      className="grid grid-cols-[minmax(0,1fr)] gap-2"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={surfaceFade}
