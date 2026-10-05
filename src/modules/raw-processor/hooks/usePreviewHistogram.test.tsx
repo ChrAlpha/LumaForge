@@ -1,4 +1,8 @@
-import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type {
+  LUTData,
+  PreviewHistogramState,
+  ProcessingParams,
+} from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -108,12 +112,17 @@ function renderPreviewHistogram(options: {
     displaySource: options.displaySource ?? 'quick',
   }
 
+  const renders: PreviewHistogramState[] = []
   const hook = renderHook(
-    (currentProps: typeof props) => usePreviewHistogram(currentProps),
+    (currentProps: typeof props) => {
+      const state = usePreviewHistogram(currentProps)
+      renders.push(state)
+      return state
+    },
     { initialProps: props },
   )
 
-  return { ...hook, imageRef, lutDataRef }
+  return { ...hook, imageRef, lutDataRef, renders }
 }
 
 async function runDebouncedWork(ms = 150) {
@@ -288,127 +297,152 @@ describe('usePreviewHistogram', () => {
     })
   })
 
-  it('keeps a superseded first quick histogram observable before bounded-HQ is ready', async () => {
-    const quickWidth = 1000
-    const quickHeight = 501
-    const hqWidth = 1000
-    const hqHeight = 1001
-    const quickData = new Uint16Array(quickWidth * quickHeight * 3)
-    const hqData = new Uint16Array(hqWidth * hqHeight * 3)
-    quickData.fill(32768)
-    hqData.fill(49152)
-    const quick = createImage('quick', {
-      width: quickWidth,
-      height: quickHeight,
-      data: quickData,
-    })
-    const boundedHq = createImage('bounded-hq', {
-      width: hqWidth,
-      height: hqHeight,
-      data: hqData,
-    })
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
-      image: quick,
-    })
-
-    imageRef.current = boundedHq
-    rerender({
-      imageRef,
-      imageVersion: 2,
-      params: defaultParams,
-      lutDataRef,
-      lutDataVersion: 0,
-      displaySource: 'bounded-hq',
-    })
-
-    let observedQuick = false
-    for (let attempt = 0; attempt < 128 && !observedQuick; attempt += 1) {
-      await act(async () => {
-        await vi.advanceTimersToNextTimerAsync()
+  it.each<[string, ProcessingParams]>([
+    ['look inputs are unchanged', defaultParams],
+    [
+      'saturation and vibrance are omitted',
+      {
+        ...defaultParams,
+        userSaturation: undefined,
+        userVibrance: undefined,
+      } as unknown as ProcessingParams,
+    ],
+  ])(
+    'keeps a superseded first quick histogram observable before bounded-HQ is ready when %s',
+    async (_case, hqParams) => {
+      const quickWidth = 1000
+      const quickHeight = 501
+      const hqWidth = 1000
+      const hqHeight = 1001
+      const quickData = new Uint16Array(quickWidth * quickHeight * 3)
+      const hqData = new Uint16Array(hqWidth * hqHeight * 3)
+      quickData.fill(32768)
+      hqData.fill(49152)
+      const quick = createImage('quick', {
+        width: quickWidth,
+        height: quickHeight,
+        data: quickData,
       })
-      observedQuick =
-        result.current.state === 'ready' && result.current.source === 'quick'
-    }
-
-    expect(observedQuick).toBe(true)
-
-    for (
-      let attempt = 0;
-      attempt < 128 &&
-      !(
-        result.current.state === 'ready' &&
-        result.current.source === 'bounded-hq'
-      );
-      attempt += 1
-    ) {
-      await act(async () => {
-        await vi.advanceTimersToNextTimerAsync()
+      const boundedHq = createImage('bounded-hq', {
+        width: hqWidth,
+        height: hqHeight,
+        data: hqData,
       })
-    }
+      const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram(
+        {
+          image: quick,
+        },
+      )
 
-    expect(result.current).toMatchObject({
-      state: 'ready',
-      source: 'bounded-hq',
-    })
-  })
-
-  it('cancels superseded first quick work when look inputs change before bounded-HQ is ready', async () => {
-    const quickWidth = 1000
-    const quickHeight = 501
-    const hqWidth = 1000
-    const hqHeight = 1001
-    const quickData = new Uint16Array(quickWidth * quickHeight * 3)
-    const hqData = new Uint16Array(hqWidth * hqHeight * 3)
-    quickData.fill(32768)
-    hqData.fill(49152)
-    const quick = createImage('quick', {
-      width: quickWidth,
-      height: quickHeight,
-      data: quickData,
-    })
-    const boundedHq = createImage('bounded-hq', {
-      width: hqWidth,
-      height: hqHeight,
-      data: hqData,
-    })
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
-      image: quick,
-    })
-
-    imageRef.current = boundedHq
-    rerender({
-      imageRef,
-      imageVersion: 2,
-      params: { ...defaultParams, userHighlights: -40 },
-      lutDataRef,
-      lutDataVersion: 0,
-      displaySource: 'bounded-hq',
-    })
-
-    let observedQuick = false
-    for (
-      let attempt = 0;
-      attempt < 128 &&
-      !(
-        result.current.state === 'ready' &&
-        result.current.source === 'bounded-hq'
-      );
-      attempt += 1
-    ) {
-      await act(async () => {
-        await vi.advanceTimersToNextTimerAsync()
+      imageRef.current = boundedHq
+      rerender({
+        imageRef,
+        imageVersion: 2,
+        params: hqParams,
+        lutDataRef,
+        lutDataVersion: 0,
+        displaySource: 'bounded-hq',
       })
-      observedQuick =
-        observedQuick ||
-        (result.current.state === 'ready' && result.current.source === 'quick')
-    }
 
-    expect(observedQuick).toBe(false)
-    expect(result.current).toMatchObject({
-      state: 'ready',
-      source: 'bounded-hq',
-    })
-  })
+      let observedQuick = false
+      for (let attempt = 0; attempt < 128 && !observedQuick; attempt += 1) {
+        await act(async () => {
+          await vi.advanceTimersToNextTimerAsync()
+        })
+        observedQuick =
+          result.current.state === 'ready' && result.current.source === 'quick'
+      }
+
+      expect(observedQuick).toBe(true)
+
+      for (
+        let attempt = 0;
+        attempt < 128 &&
+        !(
+          result.current.state === 'ready' &&
+          result.current.source === 'bounded-hq'
+        );
+        attempt += 1
+      ) {
+        await act(async () => {
+          await vi.advanceTimersToNextTimerAsync()
+        })
+      }
+
+      expect(result.current).toMatchObject({
+        state: 'ready',
+        source: 'bounded-hq',
+      })
+    },
+  )
+
+  it.each<[string, Partial<ProcessingParams>]>([
+    ['highlights', { userHighlights: -40 }],
+    ['saturation', { userSaturation: 40 }],
+    ['vibrance', { userVibrance: 40 }],
+  ])(
+    'cancels superseded first quick work when %s changes before bounded-HQ is ready',
+    async (_field, lookChange) => {
+      const quickWidth = 1000
+      const quickHeight = 501
+      const hqWidth = 1000
+      const hqHeight = 1001
+      const quickData = new Uint16Array(quickWidth * quickHeight * 3)
+      const hqData = new Uint16Array(hqWidth * hqHeight * 3)
+      quickData.fill(32768)
+      hqData.fill(49152)
+      const quick = createImage('quick', {
+        width: quickWidth,
+        height: quickHeight,
+        data: quickData,
+      })
+      const boundedHq = createImage('bounded-hq', {
+        width: hqWidth,
+        height: hqHeight,
+        data: hqData,
+      })
+      const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram(
+        {
+          image: quick,
+        },
+      )
+
+      imageRef.current = boundedHq
+      rerender({
+        imageRef,
+        imageVersion: 2,
+        params: { ...defaultParams, ...lookChange },
+        lutDataRef,
+        lutDataVersion: 0,
+        displaySource: 'bounded-hq',
+      })
+
+      let observedQuick = false
+      for (
+        let attempt = 0;
+        attempt < 128 &&
+        !(
+          result.current.state === 'ready' &&
+          result.current.source === 'bounded-hq'
+        );
+        attempt += 1
+      ) {
+        await act(async () => {
+          await vi.advanceTimersToNextTimerAsync()
+        })
+        observedQuick =
+          observedQuick ||
+          (result.current.state === 'ready' &&
+            result.current.source === 'quick')
+      }
+
+      expect(observedQuick).toBe(false)
+      expect(result.current).toMatchObject({
+        state: 'ready',
+        source: 'bounded-hq',
+      })
+    },
+  )
 
   it('runs nothing while no surface shows it, and computes once one does', async () => {
     const image = createImage('quick')
@@ -537,35 +571,47 @@ describe('usePreviewHistogram', () => {
     expect(result.current).toBe(ready)
   })
 
-  it('recomputes on color changes while compare split remains irrelevant', async () => {
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
-      image: createImage('quick'),
-    })
+  it.each<[string, Partial<ProcessingParams>]>([
+    ['temperature', { userTemperature: 25 }],
+    ['saturation', { userSaturation: 25 }],
+    ['vibrance', { userVibrance: 25 }],
+  ])(
+    'recomputes on %s changes while compare split remains irrelevant',
+    async (_field, colorChange) => {
+      const { result, rerender, imageRef, lutDataRef, renders } =
+        renderPreviewHistogram({
+          image: createImage('quick'),
+        })
 
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    const previous = result.current
+      await runAllWork()
+      expect(result.current.state).toBe('ready')
+      const previous = result.current
+      const rendersBeforeChange = renders.length
 
-    rerender({
-      imageRef,
-      imageVersion: 1,
-      params: {
-        ...defaultParams,
-        viewMode: 'compare',
-        compareSplit: 0.82,
-        userTemperature: 25,
-      },
-      lutDataRef,
-      lutDataVersion: 0,
-      displaySource: 'quick',
-    })
+      rerender({
+        imageRef,
+        imageVersion: 1,
+        params: {
+          ...defaultParams,
+          viewMode: 'compare',
+          compareSplit: 0.82,
+          ...colorChange,
+        },
+        lutDataRef,
+        lutDataVersion: 0,
+        displaySource: 'quick',
+      })
 
-    expect(result.current).toEqual({ state: 'stale', previous })
+      expect(renders.slice(rendersBeforeChange)).not.toContain(previous)
+      expect(result.current).toEqual({ state: 'stale', previous })
 
-    await runDebouncedWork(1)
-    expect(result.current.state).toBe('ready')
-    expect(result.current).not.toBe(previous)
-  })
+      // A scrub run on the same source never flips the label to computing:
+      // the bins stay until the new run lands.
+      await runDebouncedWork(1)
+      expect(result.current.state).toBe('ready')
+      expect(result.current).not.toBe(previous)
+    },
+  )
 
   it('keeps previous bins on screen, marked stale, until the new run lands', async () => {
     const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({

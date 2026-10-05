@@ -132,6 +132,8 @@ function createHistogramJob({
     params.userBlacks ?? 0,
     params.userTemperature ?? 0,
     params.userTint ?? 0,
+    params.userSaturation ?? 0,
+    params.userVibrance ?? 0,
     params.selectiveColor ? JSON.stringify(params.selectiveColor) : '',
   ].join(':')
 
