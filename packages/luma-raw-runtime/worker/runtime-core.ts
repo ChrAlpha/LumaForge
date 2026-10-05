@@ -1,3 +1,4 @@
+import { version as runtimeVersion } from '../package.json'
 import { LumaRawRuntimeError, normalizeRawRuntimeError } from '../src/errors'
 import type {
   LumaEmbeddedPreview,
@@ -112,7 +113,7 @@ function getRuntimeInfo(
 
   return {
     runtime: 'luma',
-    version: '0.1.0',
+    version: runtimeVersion,
     simd: true,
     pthreads: memoryProfile === 'desktop',
     crossOriginIsolated: isolated,

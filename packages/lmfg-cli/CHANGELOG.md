@@ -3,7 +3,10 @@
 All notable changes to `@lumaforge/lmfg-cli` are documented here. The format
 follows Keep a Changelog; versions follow semver.
 
-## Unreleased
+## 0.1.1 - Unreleased
+
+Requires `@lumaforge/luma-raw-runtime` 0.1.2 and
+`@lumaforge/luma-native-artifacts` 0.0.4; publish those packages first.
 
 ### Added
 
@@ -26,8 +29,13 @@ follows Keep a Changelog; versions follow semver.
 - `render replay --manifest` re-renders a preview, candidate, or export
   manifest from its recorded params, LUT contract, and exposure, refuses on
   fingerprint, source, or LUT mismatch, and reports whether the output
-  SHA-256 was reproduced (exit 8 when it was not). `--name` must be a plain
-  directory name and existing replays are not overwritten without `--yes`.
+  SHA-256 was reproduced (exit 8 when it was not). It also refuses
+  (`replay.mismatch`, exit 8) before decoding when the manifest's
+  `luma_raw_runtime` version or native `build_id`/`variant` is missing,
+  `unknown`, or differs from this install: a manifest replays only on the
+  runtime build that rendered it, so manifests recorded with 0.1.0
+  (luma-raw-runtime 0.1.1) are refused. `--name` must be a plain directory
+  name and existing replays are not overwritten without `--yes`.
   Manifests written by the browser app (which may record `unknown` LUT
   ranges) replay with the effective ranges recorded in the color-graph
   descriptor.
@@ -38,6 +46,12 @@ follows Keep a Changelog; versions follow semver.
 
 ### Changed
 
+- RAW decodes run on `@lumaforge/luma-raw-runtime` 0.1.2, which disables
+  LibRaw's adaptive white point for every decode. Preview, candidate, and
+  export output can change for frames, and for export windows, whose decoded
+  peak sat between 75% and 100% of the white level: those rendered brighter
+  before, and export strips no longer brighten independently. Manifests now
+  record the new runtime version and native build id.
 - Fixture-gated tests fail instead of skipping when `LMFG_REQUIRE_FIXTURE=1`
   is set; `LMFG_FIXTURE_PATH` overrides the RAW fixture location.
 - Manifest construction and the color-graph descriptor now come from

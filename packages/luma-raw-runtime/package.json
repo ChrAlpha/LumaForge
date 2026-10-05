@@ -1,7 +1,7 @@
 {
   "name": "@lumaforge/luma-raw-runtime",
   "type": "module",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publishConfig": {
     "access": "public"
   },
@@ -24,6 +24,7 @@
   "main": "./dist/index.js",
   "types": "./dist/src/index.d.ts",
   "files": [
+    "CHANGELOG.md",
     "LICENSE",
     "README.md",
     "THIRD_PARTY_LICENSES",

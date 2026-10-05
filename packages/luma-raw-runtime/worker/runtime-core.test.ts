@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { version as packageVersion } from '../package.json'
 import { LumaRawRuntimeError } from '../src/errors'
 import type { LumaRawExportCapability } from '../src/types'
 import type { LumaRawNativeFactory } from './native-types'
@@ -106,6 +107,24 @@ describe('runtime-core', () => {
         memoryProfile: 'low-memory',
         workerPoolSize: 1,
       },
+    })
+  })
+
+  it('reports the package version as the runtime version', async () => {
+    const core = createRuntimeCore(makeNativeFactory())
+
+    await expect(
+      core.handleRequest({
+        id: 'init-version',
+        type: 'init',
+        payload: {
+          requireCrossOriginIsolation: false,
+          memoryProfile: 'desktop',
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      payload: { runtime: 'luma', version: packageVersion },
     })
   })
 

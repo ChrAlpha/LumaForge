@@ -1,7 +1,7 @@
 {
   "name": "@lumaforge/lmfg-cli",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "description": "Agent-friendly, reproducible RAW/LUT rendering CLI for LumaForge.",
   "license": "SEE LICENSE IN LICENSE",
@@ -15,6 +15,7 @@
     "lmfg": "./bin/lmfg.mjs"
   },
   "files": [
+    "CHANGELOG.md",
     "LICENSE",
     "README.md",
     "bin",
