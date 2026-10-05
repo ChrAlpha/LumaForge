@@ -286,6 +286,9 @@ jobs:
       - name: Typecheck JPEG runtime package
         run: pnpm --filter @lumaforge/luma-jpeg-runtime typecheck
 
+      - name: Typecheck color and JPEG runtime tests
+        run: pnpm typecheck:runtime-tests
+
       - name: Test runtime packages and app adapters
         run: pnpm test:runtime
 

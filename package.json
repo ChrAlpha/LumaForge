@@ -45,7 +45,8 @@
     "test:coverage": "vitest run --coverage",
     "test:runtime": "pnpm --filter @lumaforge/luma-color-runtime test && pnpm --filter @lumaforge/luma-raw-runtime test && pnpm --filter @lumaforge/luma-jpeg-runtime test && pnpm exec vitest run src/lib/export src/lib/raw src/lib/runtime src/lib/workers --exclude src/lib/export/full-res-export.real.test.ts",
     "test:ui": "vitest run src/modules/raw-processor src/modules/transform-demo src/modules/landing src/components/ui src/components/common",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "typecheck:runtime-tests": "tsc --noEmit -p packages/luma-color-runtime/tsconfig.tests.json && tsc --noEmit -p packages/luma-jpeg-runtime/tsconfig.tests.json"
   },
   "dependencies": {
     "@lumaforge/luma-color-runtime": "workspace:*",
