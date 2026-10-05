@@ -1,5 +1,5 @@
 {
-  "source": "07cd794e1696739b03216751fcb8d43292eea870",
+  "source": "93846b90167866aa92102bceffb94f8919e0ea71",
   "tools": {
     "knip": "6.39.0",
     "madge": "8.0.0"
@@ -103,7 +103,6 @@
     "exports src/modules/raw-processor/components/index.ts: ProgressOverlay",
     "exports src/modules/raw-processor/components/index.ts: RAW_FILE_ACCEPT",
     "exports src/modules/raw-processor/components/index.ts: RawWorkflowProvider",
-    "exports src/modules/raw-processor/components/index.ts: StrengthControl",
     "exports src/modules/raw-processor/components/index.ts: SuccessToast",
     "exports src/modules/raw-processor/components/index.ts: SupportBadge",
     "exports src/modules/raw-processor/components/index.ts: ToolCard",
@@ -118,6 +117,7 @@
     "exports src/modules/raw-processor/components/index.ts: syncRawUploadInput",
     "exports src/modules/raw-processor/components/index.ts: toSelectableContract",
     "exports src/modules/raw-processor/components/mobile/hsl-fields.ts: HSL_NEUTRAL_BAND",
+    "exports src/modules/raw-processor/components/tools/segmented-chrome.ts: SEGMENTED_THUMB_ACTIVE_VIA_PARENT",
     "exports src/modules/raw-processor/components/transform-fields.ts: TRANSFORM_GROUPS",
     "exports src/modules/raw-processor/hooks/index.ts: useCapabilityGate",
     "exports src/modules/raw-processor/hooks/index.ts: useImageSession",
@@ -148,6 +148,8 @@
     "files src/components/ui/scroll-areas/ScrollArea.tsx",
     "files src/components/ui/scroll-areas/ctx.ts",
     "files src/components/ui/scroll-areas/hooks.ts",
+    "files src/components/ui/segment/ctx.tsx",
+    "files src/components/ui/segment/index.tsx",
     "files src/components/ui/select/ComboboxSelect.tsx",
     "files src/components/ui/select/MultiSelect.tsx",
     "files src/components/ui/select/ResponsiveSelect.tsx",
@@ -190,7 +192,6 @@
     "types src/lib/webgpu/raw-processing-pipeline.ts: PipelineTelemetrySnapshot",
     "types src/lib/webgpu/raw-processing-pipeline.ts: PipelineTransformPath",
     "types src/lib/webgpu/raw-processing-pipeline.ts: RawUploadInputFormat",
-    "types src/modules/raw-processor/components/index.ts: StrengthLevel",
     "types src/modules/raw-processor/hooks/stages/calibration/useRawCalibrationStage.ts: CalibrationStateSetter",
     "types src/modules/raw-processor/services/calibration/camera-calibration-runtime.ts: FetchDcpParamsOptions",
     "types src/modules/raw-processor/services/calibration/index.ts: ApplySelectedCameraProfileInput",
@@ -199,6 +200,7 @@
     "types src/modules/raw-processor/services/calibration/index.ts: CameraProfileTelemetryEvent",
     "types src/modules/raw-processor/services/calibration/index.ts: CameraProfileTelemetrySink",
     "types src/modules/raw-processor/services/look/online-lut-sources.ts: OnlineLUTLoadRequest",
+    "types src/modules/raw-processor/services/look/style-system.ts: LookIntensityPreset",
     "unresolved packages/luma-jpeg-runtime/benchmarks/bench-jpeg-runtime.ts: ../../../src/lib/export/jpeg/row-writer",
     "unresolved scripts/webgpu/browser-suite.mjs: /packages/render-engine/src/preview/preview-render.ts",
     "unresolved scripts/webgpu/browser-suite.mjs: /src/lib/webgpu/pipeline.ts",
@@ -207,6 +209,7 @@
   "cycles": [
     "src/lib/profiles/catalog.ts > src/lib/profiles/lut-contract.ts",
     "src/lib/raw/luma-runtime-adapter.ts > src/lib/raw/runtime-adapter.ts",
+    "src/modules/raw-processor/components/mobile/MobileModeDock.tsx > src/modules/raw-processor/components/mobile/mobile-stage-layout.ts",
     "src/modules/raw-processor/components/mobile/hsl-fields.ts > src/modules/raw-processor/components/tools/HSLTool.tsx"
   ]
 }
