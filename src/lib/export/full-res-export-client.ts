@@ -29,10 +29,24 @@ export type FullResWorkerExecutionPlan = {
   checkpointMode: ExportCheckpointMode
 }
 
+/**
+ * Recovery journal identity. It only drives checkpoint metrics; it never
+ * selects where the JPEG is written.
+ */
 export type FullResWorkerCheckpointConfig = {
   exportId: string
   graphFingerprint: string
   sourceFingerprint: SourceFingerprint
+}
+
+/**
+ * Where the worker writes the JPEG. An `opfs-file` plan must carry exactly
+ * this location; every other plan hands the JPEG back in memory and carries
+ * none.
+ */
+export type FullResWorkerOutputLocation = {
+  sink: 'opfs-file'
+  exportId: string
 }
 
 export type FullResWorkerFileBackedOutputReference = {
@@ -60,6 +74,7 @@ export type FullResExportWorkerStartMessage = {
   filename?: string
   graph: ExportColorGraphDescriptor
   executionPlan?: FullResWorkerExecutionPlan
+  outputLocation?: FullResWorkerOutputLocation
   checkpoint?: FullResWorkerCheckpointConfig
   preferredRows?: number
   concurrency?: number
@@ -127,6 +142,7 @@ export type RunFullResolutionJpegExportInWorkerInput = {
   quality?: number
   geometry?: ExportGeometry
   executionPlan?: FullResWorkerExecutionPlan
+  outputLocation?: FullResWorkerOutputLocation
   checkpoint?: FullResWorkerCheckpointConfig
   signal?: AbortSignal
   onProgress?: (progress: FullResolutionExportProgress) => void
@@ -356,6 +372,7 @@ export class FullResolutionExportWorkerClient {
           graph: input.graph,
           geometry: input.geometry,
           executionPlan: input.executionPlan,
+          outputLocation: input.outputLocation,
           checkpoint: input.checkpoint,
           preferredRows,
           concurrency,

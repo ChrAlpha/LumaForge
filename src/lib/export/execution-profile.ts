@@ -1,5 +1,6 @@
 import type { ExportFidelity } from '@lumaforge/render-engine'
 import type {
+  ExportIntent,
   ExportOrchestrationCopy,
   ExportPolicy,
   PerformancePreference,
@@ -197,6 +198,8 @@ export type ExportExecutionPlan = {
   productCopy: ExportOrchestrationCopy
   derivedLabel: string
   policyVector: ExportPolicy
+  /** The intent the policy was derived from, so a replacement plan can re-derive it. */
+  policyIntent: ExportIntent
   sourceWidth?: number
   sourceHeight?: number
   capabilitySnapshot?: CapabilityVector
@@ -351,21 +354,20 @@ export function selectExportExecutionPlan(
     input.performancePreference ?? input.fidelity ?? 'balanced'
   const capability = input.capability
   const runtime = input.runtime
+  const intent: ExportIntent = {
+    performancePreference,
+    previousResourceFailure: input.previousResourceFailure ?? false,
+    previousCrashLikeInterruption:
+      input.previousCrashLikeInterruption ?? input.previousInterrupted ?? false,
+    previousUserInterrupted: input.previousUserInterrupted ?? false,
+  }
   const policy = deriveExportPolicy(
     capability,
     {
       width: input.sourceWidth ?? 0,
       height: input.sourceHeight ?? 0,
     },
-    {
-      performancePreference,
-      previousResourceFailure: input.previousResourceFailure ?? false,
-      previousCrashLikeInterruption:
-        input.previousCrashLikeInterruption ??
-        input.previousInterrupted ??
-        false,
-      previousUserInterrupted: input.previousUserInterrupted ?? false,
-    },
+    intent,
     runtime,
   )
   const profileName = chooseProfile(policy, capability)
@@ -382,6 +384,7 @@ export function selectExportExecutionPlan(
     productCopy: policy.productCopy,
     derivedLabel: policy.derivedLabel,
     policyVector: policy,
+    policyIntent: intent,
     sourceWidth: input.sourceWidth,
     sourceHeight: input.sourceHeight,
     capabilitySnapshot: capability,

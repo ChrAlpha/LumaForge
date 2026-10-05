@@ -1,17 +1,28 @@
+import { createLumaJpegRuntime } from '@lumaforge/luma-jpeg-runtime'
 import { createLumaRawRuntime } from '@lumaforge/luma-raw-runtime'
 import { runFullResolutionJpegExport } from '@lumaforge/render-engine/export'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runProcessedWindowExportLifecycle } from './full-res-export.worker'
 import type { FullResExportWorkerResponse } from './full-res-export-client'
 import {
   createBlobOutputResult,
   createMemoryFileBackedOutputResult,
+  createOpfsOutputWritable,
   materializeOutputBlob,
 } from './output-sink'
 
 vi.mock('@lumaforge/luma-raw-runtime', () => ({
   createLumaRawRuntime: vi.fn(),
+}))
+
+vi.mock('@lumaforge/luma-jpeg-runtime', () => ({
+  createLumaJpegRuntime: vi.fn(),
+}))
+
+vi.mock('./output-sink', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./output-sink')>()),
+  createOpfsOutputWritable: vi.fn(),
 }))
 
 vi.mock('@lumaforge/render-engine/export', async (importOriginal) => {
@@ -21,6 +32,21 @@ vi.mock('@lumaforge/render-engine/export', async (importOriginal) => {
     ...actual,
     runFullResolutionJpegExport: vi.fn(),
   }
+})
+
+function createFakeOpfsWritable() {
+  return {
+    write: vi.fn(async () => undefined),
+    close: vi.fn(async () => ({ byteLength: 3, sha256: 'f'.repeat(64) })),
+    abort: vi.fn(async () => undefined),
+  }
+}
+
+beforeEach(() => {
+  vi.mocked(createOpfsOutputWritable).mockReset()
+  vi.mocked(createOpfsOutputWritable).mockImplementation(
+    async () => createFakeOpfsWritable() as never,
+  )
 })
 
 afterEach(() => {
@@ -261,6 +287,7 @@ describe('full-resolution export worker lifecycle responses', () => {
           outputSink: 'opfs-file',
           checkpointMode: 'safe-retry',
         },
+        outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
         checkpoint: {
           exportId: 'export-1',
           graphFingerprint: 'graph-1',
@@ -375,6 +402,7 @@ describe('full-resolution export worker lifecycle responses', () => {
           outputSink: 'opfs-file',
           checkpointMode: 'safe-retry',
         },
+        outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
         checkpoint: {
           exportId: 'export-1',
           graphFingerprint: 'graph-1',
@@ -476,6 +504,7 @@ describe('full-resolution export worker lifecycle responses', () => {
           outputSink: 'opfs-file',
           checkpointMode: 'safe-retry',
         },
+        outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
         checkpoint: {
           exportId: 'export-1',
           graphFingerprint: 'graph-1',
@@ -771,5 +800,321 @@ describe('full-resolution export worker lifecycle responses', () => {
     expect(self.postMessage).toHaveBeenCalledTimes(1)
     expect(session.dispose).toHaveBeenCalledTimes(1)
     expect(runtime.dispose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('full-resolution export worker output sink', () => {
+  const graph = {
+    supported: true,
+    outputGamut: 'srgb-rec709',
+    outputTransfer: 'srgb',
+    lutProfile: null,
+    steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
+  }
+  const opfsPlan = {
+    profileName: 'ios-safe',
+    preferredRows: 64,
+    concurrency: 1,
+    runtimeMemoryProfile: 'low-memory',
+    outputSink: 'opfs-file',
+    checkpointMode: 'safe-retry',
+  }
+  const blobPlan = {
+    profileName: 'desktop-fast',
+    preferredRows: 512,
+    concurrency: 2,
+    runtimeMemoryProfile: 'desktop',
+    outputSink: 'blob-handoff',
+    checkpointMode: 'safe-retry',
+  }
+  const checkpoint = {
+    exportId: 'export-1',
+    graphFingerprint: 'graph-1',
+    sourceFingerprint: {
+      name: 'sample.RAF',
+      size: 3,
+      lastModified: 0,
+      hashPrefixHex: 'abc',
+    },
+  }
+
+  beforeEach(() => {
+    // Any export that reaches the encoder succeeds, so a sink the worker
+    // should have refused shows up as a success.
+    vi.mocked(runFullResolutionJpegExport).mockReset()
+    vi.mocked(runFullResolutionJpegExport).mockImplementation(async () =>
+      createBlobOutputResult({
+        filename: 'sample.jpg',
+        blob: makeJfifOnlyJpeg(),
+      }),
+    )
+  })
+
+  function installRawRuntime() {
+    const session = {
+      probe: {
+        width: 4,
+        height: 4,
+        supportLevel: 'full',
+        timings: { total: 1 },
+      },
+      probeExportCapability: vi.fn(async () => ({
+        supported: true,
+        width: 4,
+        height: 4,
+      })),
+      readProcessedWindow: vi.fn(),
+      beginProcessedWindowExport: vi.fn(async () => undefined),
+      endProcessedWindowExport: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+    }
+    const runtime = {
+      init: vi.fn(async () => undefined),
+      openSession: vi.fn(async () => session),
+      dispose: vi.fn(),
+    }
+    vi.mocked(createLumaRawRuntime).mockReturnValue(runtime as never)
+    return { session, runtime }
+  }
+
+  function installJpegRuntime() {
+    const encoder = {
+      writeRows: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+      abort: vi.fn(),
+    }
+    vi.mocked(createLumaJpegRuntime).mockReturnValue({
+      createEncoder: vi.fn(() => encoder),
+      dispose: vi.fn(),
+    } as never)
+    return encoder
+  }
+
+  function startExport(fields: Record<string, unknown>) {
+    const terminal = new Promise<FullResExportWorkerResponse>((resolve) => {
+      vi.spyOn(self, 'postMessage').mockImplementation((message) => {
+        const response = message as FullResExportWorkerResponse
+        if (response.kind === 'success' || response.kind === 'error') {
+          resolve(response)
+        }
+      })
+    })
+
+    self.onmessage?.({
+      data: {
+        kind: 'start',
+        requestId: 'request-sink',
+        file: new File(['raw'], 'sample.RAF'),
+        filename: 'sample.jpg',
+        graph,
+        collectMetrics: false,
+        ...fields,
+      },
+    } as MessageEvent)
+
+    return terminal
+  }
+
+  it('writes an opfs-file plan to its OPFS location even when no recovery checkpoint was journaled', async () => {
+    installRawRuntime()
+    installJpegRuntime()
+    const writable = createFakeOpfsWritable()
+    vi.mocked(createOpfsOutputWritable).mockResolvedValueOnce(writable as never)
+    vi.mocked(runFullResolutionJpegExport).mockImplementation(async (input) => {
+      if (!input.jpegSink) throw new Error('Expected an OPFS JPEG sink.')
+      const session = input.jpegSink.createSession({
+        width: 4,
+        height: 4,
+        quality: 0.92,
+      })
+      return session.close()
+    })
+
+    const response = await startExport({
+      executionPlan: opfsPlan,
+      outputLocation: { sink: 'opfs-file', exportId: 'export-7' },
+    })
+
+    expect(createOpfsOutputWritable).toHaveBeenCalledTimes(1)
+    expect(createOpfsOutputWritable).toHaveBeenCalledWith({
+      exportId: 'export-7',
+      outputFileName: 'output.jpg',
+    })
+    expect(writable.close).toHaveBeenCalledTimes(1)
+    expect(writable.abort).not.toHaveBeenCalled()
+    expect(runFullResolutionJpegExport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jpegSink: expect.any(Object),
+        onCheckpoint: undefined,
+      }),
+    )
+    expect(response).toMatchObject({
+      kind: 'success',
+      result: {
+        kind: 'file-backed',
+        storage: 'opfs',
+        exportId: 'export-7',
+        filename: 'sample.jpg',
+        sha256: 'f'.repeat(64),
+      },
+    })
+  })
+
+  it('refuses an opfs-file plan that carries only a recovery checkpoint', async () => {
+    const { runtime } = installRawRuntime()
+
+    const response = await startExport({
+      executionPlan: opfsPlan,
+      checkpoint,
+    })
+
+    expect(response).toEqual({
+      kind: 'error',
+      requestId: 'request-sink',
+      message: 'FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID',
+    })
+    expect(runtime.init).not.toHaveBeenCalled()
+    expect(createOpfsOutputWritable).not.toHaveBeenCalled()
+    expect(runFullResolutionJpegExport).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    {
+      name: 'an empty export id',
+      location: { sink: 'opfs-file', exportId: '' },
+    },
+    { name: 'a missing export id', location: { sink: 'opfs-file' } },
+    {
+      name: 'a parent-directory export id',
+      location: { sink: 'opfs-file', exportId: '..' },
+    },
+    {
+      name: 'a nested export id',
+      location: { sink: 'opfs-file', exportId: 'export-1/output' },
+    },
+    {
+      name: 'another sink',
+      location: { sink: 'blob-handoff', exportId: 'export-1' },
+    },
+    { name: 'a bare string', location: 'export-1' },
+  ])(
+    'refuses an opfs-file plan whose output location has $name',
+    async ({ location }) => {
+      installRawRuntime()
+
+      const response = await startExport({
+        executionPlan: opfsPlan,
+        outputLocation: location,
+        checkpoint,
+      })
+
+      expect(response).toMatchObject({
+        kind: 'error',
+        message: 'FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID',
+      })
+      expect(createOpfsOutputWritable).not.toHaveBeenCalled()
+      expect(runFullResolutionJpegExport).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    { name: 'a blob-handoff plan', executionPlan: blobPlan },
+    { name: 'no execution plan', executionPlan: undefined },
+  ])('refuses an OPFS location for $name', async ({ executionPlan }) => {
+    installRawRuntime()
+
+    const response = await startExport({
+      executionPlan,
+      outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
+    })
+
+    expect(response).toMatchObject({
+      kind: 'error',
+      message: 'FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID',
+    })
+    expect(createOpfsOutputWritable).not.toHaveBeenCalled()
+    expect(runFullResolutionJpegExport).not.toHaveBeenCalled()
+  })
+
+  it('reports an OPFS output that cannot open instead of encoding in memory', async () => {
+    const { runtime } = installRawRuntime()
+    vi.mocked(createOpfsOutputWritable).mockRejectedValueOnce(
+      new DOMException('Access denied', 'NotAllowedError'),
+    )
+
+    const response = await startExport({
+      executionPlan: opfsPlan,
+      outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
+      checkpoint,
+    })
+
+    expect(response).toEqual({
+      kind: 'error',
+      requestId: 'request-sink',
+      message: 'FULL_RES_EXPORT_OPFS_OUTPUT_UNAVAILABLE',
+    })
+    expect(runtime.init).not.toHaveBeenCalled()
+    expect(runFullResolutionJpegExport).not.toHaveBeenCalled()
+  })
+
+  it('discards an opened OPFS output that the export never wrote to', async () => {
+    installRawRuntime()
+    const writable = createFakeOpfsWritable()
+    vi.mocked(createOpfsOutputWritable).mockResolvedValueOnce(writable as never)
+    vi.mocked(runFullResolutionJpegExport).mockRejectedValue(
+      new Error('FULL_RES_EXPORT_UNSUPPORTED_SOURCE'),
+    )
+
+    const response = await startExport({
+      executionPlan: opfsPlan,
+      outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
+    })
+
+    expect(response).toMatchObject({
+      kind: 'error',
+      message: 'FULL_RES_EXPORT_UNSUPPORTED_SOURCE',
+    })
+    expect(writable.abort).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a streaming plan because no streaming sink is wired', async () => {
+    installRawRuntime()
+
+    const response = await startExport({
+      executionPlan: { ...blobPlan, outputSink: 'streaming' },
+    })
+
+    expect(response).toMatchObject({
+      kind: 'error',
+      message: 'FULL_RES_EXPORT_OUTPUT_SINK_UNAVAILABLE',
+    })
+    expect(runFullResolutionJpegExport).not.toHaveBeenCalled()
+  })
+
+  it('encodes a blob-handoff plan in memory while still reporting checkpoint metrics', async () => {
+    installRawRuntime()
+    vi.mocked(runFullResolutionJpegExport).mockResolvedValue(
+      createBlobOutputResult({
+        filename: 'sample.jpg',
+        blob: makeJfifOnlyJpeg(),
+      }),
+    )
+
+    const response = await startExport({
+      executionPlan: blobPlan,
+      checkpoint,
+    })
+
+    expect(response).toMatchObject({
+      kind: 'success',
+      result: { kind: 'blob' },
+    })
+    expect(createOpfsOutputWritable).not.toHaveBeenCalled()
+    expect(runFullResolutionJpegExport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jpegSink: undefined,
+        onCheckpoint: expect.any(Function),
+      }),
+    )
   })
 })

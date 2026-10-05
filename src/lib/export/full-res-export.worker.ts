@@ -17,6 +17,8 @@ import { createRawExportSession } from '../raw/export-runtime-adapter'
 import type {
   FullResExportWorkerRequest,
   FullResExportWorkerResponse,
+  FullResExportWorkerStartMessage,
+  FullResWorkerOutputLocation,
   FullResWorkerOutputResult,
 } from './full-res-export-client'
 import type { ExportOutputResult } from './output-sink'
@@ -53,23 +55,85 @@ function getErrorNextRows(error: unknown) {
   return undefined
 }
 
+const OPFS_OUTPUT_FILE_NAME = 'output.jpg'
+
+type OpfsOutputWritable = Awaited<ReturnType<typeof createOpfsOutputWritable>>
+
+function isOpfsEntryName(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value !== '.' &&
+    value !== '..' &&
+    !/[/\\]/.test(value)
+  )
+}
+
+/**
+ * The sink comes from the execution plan and its output location alone; the
+ * recovery checkpoint never selects it. An `opfs-file` plan needs a
+ * well-formed OPFS location, any other plan must not carry one, and a plan
+ * this worker has no sink for is refused rather than encoded in memory.
+ */
+function resolveOutputLocation(
+  message: FullResExportWorkerStartMessage,
+): FullResWorkerOutputLocation | null {
+  const outputSink = message.executionPlan?.outputSink
+  const location: unknown = message.outputLocation
+
+  if (outputSink === 'opfs-file') {
+    if (
+      typeof location !== 'object' ||
+      location === null ||
+      (location as { sink?: unknown }).sink !== 'opfs-file' ||
+      !isOpfsEntryName((location as { exportId?: unknown }).exportId)
+    ) {
+      throw new Error('FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID')
+    }
+    return location as FullResWorkerOutputLocation
+  }
+
+  if (location !== undefined && location !== null) {
+    throw new Error('FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID')
+  }
+  if (outputSink === 'streaming') {
+    throw new Error('FULL_RES_EXPORT_OUTPUT_SINK_UNAVAILABLE')
+  }
+  return null
+}
+
+async function openOpfsOutput(location: FullResWorkerOutputLocation) {
+  try {
+    return await createOpfsOutputWritable({
+      exportId: location.exportId,
+      outputFileName: OPFS_OUTPUT_FILE_NAME,
+    })
+  } catch {
+    throw new Error('FULL_RES_EXPORT_OPFS_OUTPUT_UNAVAILABLE')
+  }
+}
+
 function createOpfsJpegRowSink(input: {
   exportId: string
   filename: string
-  outputFileName?: string
   /** Metadata the app injects lazily when the file-backed output is delivered. */
   metadata?: JpegExportMetadata | null
+  /** Hands over the output opened before decode; null once it is taken. */
+  takeOpenedWritable: () => OpfsOutputWritable | null
 }): JpegRowSink {
-  const outputFileName = input.outputFileName ?? 'output.jpg'
+  const outputFileName = OPFS_OUTPUT_FILE_NAME
 
   return {
     createSession({ width, height, quality }) {
       let byteLength = 0
       let state: 'open' | 'closed' | 'aborted' = 'open'
-      const writablePromise = createOpfsOutputWritable({
-        exportId: input.exportId,
-        outputFileName,
-      })
+      const openedWritable = input.takeOpenedWritable()
+      const writablePromise = openedWritable
+        ? Promise.resolve(openedWritable)
+        : createOpfsOutputWritable({
+            exportId: input.exportId,
+            outputFileName,
+          })
       const runtime = createLumaJpegRuntime({
         async onChunk(chunk) {
           const writable = await writablePromise
@@ -337,8 +401,29 @@ async function handleStart(
     runtimeDisposed = true
     runtime.dispose()
   }
+  let unclaimedOpfsOutput: OpfsOutputWritable | null = null
+  const takeOpenedOpfsOutput = () => {
+    const writable = unclaimedOpfsOutput
+    unclaimedOpfsOutput = null
+    return writable
+  }
+  const discardUnclaimedOpfsOutput = async () => {
+    const writable = takeOpenedOpfsOutput()
+    if (!writable) return
+    try {
+      await writable.abort()
+    } catch {
+      // Preserve the export outcome.
+    }
+  }
 
   try {
+    const outputLocation = resolveOutputLocation(message)
+    // Opening the OPFS output before any decode work lets an unusable sink be
+    // re-planned up front instead of failing part way through the file.
+    if (outputLocation) {
+      unclaimedOpfsOutput = await openOpfsOutput(outputLocation)
+    }
     await runtime.init()
     const session = await runtime.openSession(
       message.file,
@@ -361,15 +446,14 @@ async function handleStart(
       const capability = await exportSession.probeExportCapability(
         controller.signal,
       )
-      const jpegSink =
-        message.executionPlan?.outputSink === 'opfs-file' && message.checkpoint
-          ? createOpfsJpegRowSink({
-              exportId: message.checkpoint.exportId,
-              filename:
-                message.filename ?? `${message.checkpoint.exportId}.jpg`,
-              metadata: exportMetadata,
-            })
-          : undefined
+      const jpegSink = outputLocation
+        ? createOpfsJpegRowSink({
+            exportId: outputLocation.exportId,
+            filename: message.filename ?? `${outputLocation.exportId}.jpg`,
+            metadata: exportMetadata,
+            takeOpenedWritable: takeOpenedOpfsOutput,
+          })
+        : undefined
       const output = await runProcessedWindowExportLifecycle({
         beginProcessedWindowExport: exportSession.beginProcessedWindowExport,
         endProcessedWindowExport: exportSession.endProcessedWindowExport,
@@ -435,6 +519,7 @@ async function handleStart(
         },
       })
 
+      await discardUnclaimedOpfsOutput()
       const result = await prepareSuccessOutput({
         output,
         metadata: exportMetadata,
@@ -452,6 +537,7 @@ async function handleStart(
       disposeSession()
     }
   } catch (error) {
+    await discardUnclaimedOpfsOutput()
     const nextRows = getErrorNextRows(error)
     self.postMessage({
       kind: 'error',

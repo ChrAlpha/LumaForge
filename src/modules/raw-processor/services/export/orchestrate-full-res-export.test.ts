@@ -825,6 +825,7 @@ describe('orchestrateFullResExport success', () => {
       quality: 0.92,
       checkpoint: undefined,
     })
+    expect(input.outputLocation).toBeUndefined()
     expect(input).not.toHaveProperty('geometry')
     expect(input.executionPlan).toBe(h.plans[0])
     expect(input.beforeStart).toBe(h.ctx.services.terminateRawDecodeBridge)
@@ -1036,6 +1037,10 @@ describe('orchestrateFullResExport success', () => {
       outputSink: 'opfs-file',
       productCopy: 'interrupted-retry',
     })
+    expect(input.outputLocation).toEqual({
+      sink: 'opfs-file',
+      exportId: EXPORT_ID,
+    })
     expect(input.checkpoint).toEqual({
       exportId: EXPORT_ID,
       graphFingerprint: JSON.stringify(input.graph.steps),
@@ -1084,36 +1089,131 @@ describe('orchestrateFullResExport success', () => {
     expect(await h.checkpointStore.list()).toEqual([])
   })
 
-  it('continues without durability when the checkpoint write fails', async () => {
-    const h = createHarness({
-      runtime: OPFS_RUNTIME,
-      checkpointWrite: { error: new Error('QuotaExceededError') },
+  it.each([
+    {
+      name: 'the checkpoint write fails',
+      options: {
+        checkpointWrite: { error: new Error('QuotaExceededError') },
+      },
+      failFingerprint: false,
+    },
+    {
+      name: 'fingerprinting the source fails',
+      options: {},
+      failFingerprint: true,
+    },
+  ])(
+    'keeps writing to OPFS without durability when $name',
+    async ({ options, failFingerprint }) => {
+      const h = createHarness({ runtime: OPFS_RUNTIME, ...options })
+      if (failFingerprint) {
+        mocks.createSourceFingerprint.mockRejectedValue(
+          new Error('NotReadableError'),
+        )
+      }
+      const job = h.installJob()
+
+      const run = orchestrateFullResExport(OPTIONS, h.ctx)
+      const input = await job.started
+      job.resolve()
+      await run
+
+      expect(h.channel('debug')).toEqual([
+        'debug:export-plan-selected',
+        'debug:resource-evacuated',
+        'debug:export-worker-attempt',
+        'debug:export-worker-attempt',
+      ])
+      // The plan diagnostic reports the durability the plan expected, not the
+      // durability the failed write actually delivered.
+      expect(h.debugPayloads('export-plan-selected')).toEqual([
+        expect.objectContaining({
+          outputSink: 'opfs-file',
+          checkpointDurableExpected: true,
+        }),
+      ])
+      // Only durability changes: the job still writes the planned OPFS file.
+      expect(input.executionPlan?.outputSink).toBe('opfs-file')
+      expect(input.outputLocation).toEqual({
+        sink: 'opfs-file',
+        exportId: EXPORT_ID,
+      })
+      expect(input.checkpoint).toBeUndefined()
+      expect(h.state.session?.exportState).toMatchObject({
+        status: 'ready',
+        checkpointDurable: false,
+        activePlan: { outputSink: 'opfs-file' },
+      })
+      expect(h.idleTasks).toEqual([])
+      expect(await h.checkpointStore.list()).toEqual([])
+    },
+  )
+
+  it('reports a replacement plan from the job as the active plan before its worker runs', async () => {
+    const h = createHarness({ runtime: OPFS_RUNTIME })
+    const job = h.installJob()
+    const blobPlan = selectExportExecutionPlan({
+      performancePreference: 'balanced',
+      sourceWidth: 6000,
+      sourceHeight: 4000,
+      capability: DESKTOP_CAPABILITY,
+      runtime: BLOB_RUNTIME,
     })
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+    expect(h.state.session?.exportState.activePlan?.outputSink).toBe(
+      'opfs-file',
+    )
+    const replacedAt = h.mark('replacement-plan')
+    input.onPlan?.(blobPlan)
+
+    expect(h.since(replacedAt)).toEqual([
+      'test:replacement-plan',
+      'debug:export-plan-selected',
+      'state:session:exporting',
+    ])
+    expect(h.state.session?.exportState).toMatchObject({
+      status: 'exporting',
+      activePlan: DESKTOP_ACTIVE_PLAN,
+      // The journal was written for this export; the sink change does not
+      // rewrite its durability.
+      checkpointDurable: true,
+    })
+    expect(h.debugPayloads('export-plan-selected')).toEqual([
+      expect.objectContaining({
+        outputSink: 'opfs-file',
+        checkpointDurableExpected: true,
+      }),
+      expect.objectContaining({
+        outputSink: 'blob-handoff',
+        checkpointDurableExpected: false,
+      }),
+    ])
+
+    job.resolve()
+    await run
+    expect(h.state.session?.exportState).toMatchObject({
+      status: 'ready',
+      activePlan: DESKTOP_ACTIVE_PLAN,
+    })
+  })
+
+  it('ignores a replacement plan reported after the export was superseded', async () => {
+    const h = createHarness({ runtime: OPFS_RUNTIME })
     const job = h.installJob()
 
     const run = orchestrateFullResExport(OPTIONS, h.ctx)
     const input = await job.started
+    h.ctx.refs.exportGraphVersionRef.current += 1
+    const sessionAfterSupersession = h.state.session
+    const replacedAt = h.mark('replacement-plan')
+    input.onPlan?.(h.plans[0]!)
     job.resolve()
     await run
 
-    expect(h.channel('debug')).toEqual([
-      'debug:export-plan-selected',
-      'debug:resource-evacuated',
-      'debug:export-worker-attempt',
-      'debug:export-worker-attempt',
-    ])
-    // The plan diagnostic reports the durability the plan expected, not the
-    // durability the failed write actually delivered.
-    expect(h.debugPayloads('export-plan-selected')).toEqual([
-      expect.objectContaining({ checkpointDurableExpected: true }),
-    ])
-    expect(input.checkpoint).toBeUndefined()
-    expect(h.state.session?.exportState).toMatchObject({
-      status: 'ready',
-      checkpointDurable: false,
-    })
-    expect(h.idleTasks).toEqual([])
-    expect(await h.checkpointStore.list()).toEqual([])
+    expect(h.since(replacedAt)).toEqual(['test:replacement-plan'])
+    expect(h.state.session).toBe(sessionAfterSupersession)
   })
 })
 

@@ -3,10 +3,14 @@ import type { ExportFidelity } from '@lumaforge/render-engine'
 import type { FullResolutionExportProgress } from '@lumaforge/render-engine/export'
 
 import type { ExportExecutionPlan } from '~/lib/export/execution-profile'
-import { selectExportExecutionPlan } from '~/lib/export/execution-profile'
+import {
+  getExportModeCopy,
+  selectExportExecutionPlan,
+} from '~/lib/export/execution-profile'
 import type {
   FullResWorkerCheckpointConfig,
   FullResWorkerExecutionPlan,
+  FullResWorkerOutputLocation,
   RunFullResolutionJpegExportInWorkerInput,
 } from '~/lib/export/full-res-export-client'
 import { FullResolutionExportWorkerClient } from '~/lib/export/full-res-export-client'
@@ -174,6 +178,79 @@ function createFullResolutionExportBridge(
   })
 }
 
+const MAX_EXPORT_ATTEMPTS = 3
+
+const NO_DURABLE_SINK_RUNTIME = {
+  opfsSinkAvailable: false,
+  opfsAvailableMB: null,
+  streamingSinkAvailable: false,
+} satisfies ExportRuntimeResources
+
+/** The refusal for a plan the policy says cannot safely complete. */
+export function createExportPolicyRefusal() {
+  return Object.assign(new Error(getExportModeCopy('cannot-safely-complete')), {
+    code: 'EXPORT_POLICY_CANNOT_COMPLETE',
+  })
+}
+
+/**
+ * Refuses a cannot-safely-complete plan. Replacement plans are checked before
+ * a retry is announced, so a refusal never follows a scheduled retry.
+ */
+function assertPlanCanSafelyComplete(plan: ExportExecutionPlan | undefined) {
+  if (plan?.productCopy === 'cannot-safely-complete') {
+    throw createExportPolicyRefusal()
+  }
+}
+
+/** Only an opfs-file attempt is handed the reserved OPFS location. */
+function resolveAttemptOutputLocation(
+  plan: ExportExecutionPlan | undefined,
+  outputLocation: FullResWorkerOutputLocation | undefined,
+) {
+  if (plan?.outputSink !== 'opfs-file') return undefined
+  if (!outputLocation) {
+    throw new Error('FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID')
+  }
+  return outputLocation
+}
+
+function errorIsOpfsOutputUnavailable(error: unknown): error is Error {
+  return (
+    error instanceof Error &&
+    error.message === 'FULL_RES_EXPORT_OPFS_OUTPUT_UNAVAILABLE'
+  )
+}
+
+/**
+ * Re-derives the same intent with OPFS treated as unavailable. The policy
+ * decides whether the remaining sink may run, and the replacement never
+ * exceeds the current attempt's strip budget: losing the sink is not evidence
+ * of memory pressure, but rows or concurrency an earlier retry reduced stay
+ * reduced.
+ */
+async function selectPlanWithoutOpfsOutput(
+  plan: ExportExecutionPlan,
+): Promise<ExportExecutionPlan> {
+  const fallbackPlan = selectExportExecutionPlan({
+    ...plan.policyIntent,
+    sourceWidth: plan.sourceWidth,
+    sourceHeight: plan.sourceHeight,
+    capability: plan.capabilitySnapshot ?? (await detectCapabilityVector()),
+    runtime: {
+      ...(plan.runtimeSnapshot ?? NO_DURABLE_SINK_RUNTIME),
+      opfsSinkAvailable: false,
+    },
+  })
+  const preferredRows = Math.min(fallbackPlan.preferredRows, plan.preferredRows)
+  const concurrency = Math.min(fallbackPlan.concurrency, plan.concurrency)
+
+  return preferredRows === fallbackPlan.preferredRows &&
+    concurrency === fallbackPlan.concurrency
+    ? fallbackPlan
+    : { ...fallbackPlan, preferredRows, concurrency }
+}
+
 function errorLooksLikeFreshWorkerRetry(error: unknown) {
   return (
     error instanceof Error &&
@@ -215,10 +292,12 @@ export async function runFullResolutionExportJob({
   preferredRows,
   concurrency,
   executionPlan,
+  outputLocation,
   checkpoint,
   onProgress,
   onMetric,
   onAttempt,
+  onPlan,
   beforeStart,
   signal,
   clientFactory = createFullResolutionExportClient,
@@ -231,10 +310,15 @@ export async function runFullResolutionExportJob({
   preferredRows?: RunFullResolutionJpegExportInWorkerInput['preferredRows']
   concurrency?: RunFullResolutionJpegExportInWorkerInput['concurrency']
   executionPlan?: ExportExecutionPlan
+  /** OPFS address reserved for this job; used by every opfs-file attempt. */
+  outputLocation?: FullResWorkerOutputLocation
+  /** Recovery journal identity; independent of where the JPEG is written. */
   checkpoint?: FullResWorkerCheckpointConfig
   onProgress?: (progress: FullResolutionExportProgress) => void
   onMetric?: RunFullResolutionJpegExportInWorkerInput['onMetric']
   onAttempt?: (event: FullResolutionExportAttemptEvent) => void
+  /** Reports each replacement plan before its worker starts. */
+  onPlan?: (plan: ExportExecutionPlan) => void
   beforeStart?: () => void | Promise<void>
   signal?: AbortSignal
   clientFactory?: () => FullResolutionExportWorkerClient
@@ -244,8 +328,18 @@ export async function runFullResolutionExportJob({
 
   while (true) {
     attempts += 1
-    const bridge = createFullResolutionExportBridge(clientFactory)
     const attemptPlan = plan
+    // Every attempt, retries included, is held to the policy refusal and to
+    // a sink it can actually address before any worker starts.
+    assertPlanCanSafelyComplete(attemptPlan)
+    const attemptOutputLocation = resolveAttemptOutputLocation(
+      attemptPlan,
+      outputLocation,
+    )
+    if (attemptPlan && attemptPlan !== executionPlan) {
+      onPlan?.(attemptPlan)
+    }
+    const bridge = createFullResolutionExportBridge(clientFactory)
     const attemptSignal = signal ?? new AbortController().signal
 
     try {
@@ -271,6 +365,7 @@ export async function runFullResolutionExportJob({
         executionPlan: attemptPlan
           ? toWorkerExecutionPlan(attemptPlan)
           : undefined,
+        outputLocation: attemptOutputLocation,
         checkpoint: attemptPlan?.profile.checkpointOutput
           ? checkpoint
           : undefined,
@@ -280,11 +375,37 @@ export async function runFullResolutionExportJob({
 
       return { filename, output, attempts }
     } catch (error) {
+      if (!attemptPlan || attempts >= MAX_EXPORT_ATTEMPTS) {
+        throw error
+      }
+
       if (
-        !attemptPlan ||
-        attempts >= 3 ||
-        !errorLooksLikeFreshWorkerRetry(error)
+        attemptPlan.outputSink === 'opfs-file' &&
+        errorIsOpfsOutputUnavailable(error)
       ) {
+        const fallbackPlan = await selectPlanWithoutOpfsOutput(attemptPlan)
+        assertPlanCanSafelyComplete(fallbackPlan)
+
+        emitFullResolutionExportAttempt(onAttempt, {
+          attempt: attempts,
+          profile: attemptPlan.profile.name,
+          preferredRows: attemptPlan.preferredRows,
+          concurrency: attemptPlan.concurrency,
+          phase: 'retry-scheduled',
+          retryReason: error.message,
+          previousRows: attemptPlan.preferredRows,
+          nextRows: fallbackPlan.preferredRows,
+          previousConcurrency: attemptPlan.concurrency,
+          nextConcurrency: fallbackPlan.concurrency,
+          freshWorker: true,
+          priorClientDisposed: false,
+        })
+
+        plan = fallbackPlan
+        continue
+      }
+
+      if (!errorLooksLikeFreshWorkerRetry(error)) {
         throw error
       }
 
@@ -297,13 +418,7 @@ export async function runFullResolutionExportJob({
         previousUserInterrupted: false,
         capability:
           attemptPlan.capabilitySnapshot ?? (await detectCapabilityVector()),
-        runtime:
-          attemptPlan.runtimeSnapshot ??
-          ({
-            opfsSinkAvailable: false,
-            opfsAvailableMB: null,
-            streamingSinkAvailable: false,
-          } satisfies ExportRuntimeResources),
+        runtime: attemptPlan.runtimeSnapshot ?? NO_DURABLE_SINK_RUNTIME,
       })
 
       const workerNextRows = getFreshWorkerRetryRows(error)
@@ -311,6 +426,7 @@ export async function runFullResolutionExportJob({
         workerNextRows != null
           ? Math.min(workerNextRows, retryPlan.preferredRows)
           : retryPlan.preferredRows
+      assertPlanCanSafelyComplete(retryPlan)
 
       emitFullResolutionExportAttempt(onAttempt, {
         attempt: attempts,

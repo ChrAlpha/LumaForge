@@ -1,0 +1,462 @@
+import type { ExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
+import { describe, expect, it, vi } from 'vitest'
+
+import type { ExportExecutionPlan } from '~/lib/export/execution-profile'
+import {
+  getExportModeCopy,
+  selectExportExecutionPlan,
+} from '~/lib/export/execution-profile'
+import type {
+  FullResWorkerCheckpointConfig,
+  RunFullResolutionJpegExportInWorkerInput,
+} from '~/lib/export/full-res-export-client'
+import { createBlobOutputResult } from '~/lib/export/output-sink'
+import type { CapabilityVector } from '~/lib/runtime/capability-vector'
+import type { ExportRuntimeResources } from '~/lib/runtime/export-runtime-resources'
+
+import { runFullResolutionExportJob } from './export-system'
+
+const FILE = new File(['raw'], 'frame.ARW')
+const FILENAME = 'frame_neutral_fullres.jpg'
+const GRAPH: ExportColorGraphDescriptor = {
+  supported: true,
+  outputGamut: 'srgb-rec709',
+  outputTransfer: 'srgb',
+  lutProfile: null,
+  steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
+}
+const OUTPUT = createBlobOutputResult({
+  filename: FILENAME,
+  blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+})
+const OUTPUT_LOCATION = { sink: 'opfs-file', exportId: 'export-1' } as const
+const CHECKPOINT: FullResWorkerCheckpointConfig = {
+  exportId: 'export-1',
+  graphFingerprint: 'graph-1',
+  sourceFingerprint: {
+    name: 'frame.ARW',
+    size: 3,
+    lastModified: 0,
+    hashPrefixHex: 'abc',
+  },
+}
+
+const DESKTOP: CapabilityVector = {
+  coi: true,
+  pthread: true,
+  deviceMemoryGB: 16,
+  hwConcurrency: 8,
+  webKitClass: 'chromium',
+  deviceFormFactor: 'desktop',
+  maybeOpfsSupported: true,
+}
+const MOBILE: CapabilityVector = {
+  coi: false,
+  pthread: false,
+  deviceMemoryGB: null,
+  hwConcurrency: 4,
+  webKitClass: 'webkit-mobile',
+  deviceFormFactor: 'mobile',
+  maybeOpfsSupported: true,
+}
+const OPFS_RUNTIME: ExportRuntimeResources = {
+  opfsSinkAvailable: true,
+  opfsAvailableMB: 10_000,
+  streamingSinkAvailable: false,
+}
+const BLOB_RUNTIME: ExportRuntimeResources = {
+  opfsSinkAvailable: false,
+  opfsAvailableMB: null,
+  streamingSinkAvailable: false,
+}
+/** Above the large-export threshold, where a mobile blob handoff is refused. */
+const LARGE = { sourceWidth: 9000, sourceHeight: 6700 }
+const NORMAL = { sourceWidth: 6000, sourceHeight: 4000 }
+
+function plan(
+  capability: CapabilityVector,
+  runtime: ExportRuntimeResources,
+  size: { sourceWidth: number; sourceHeight: number },
+) {
+  return selectExportExecutionPlan({
+    performancePreference: 'balanced',
+    ...size,
+    capability,
+    runtime,
+  })
+}
+
+type Outcome = { error: unknown } | { output: typeof OUTPUT }
+
+/** One fresh client per attempt, settling with the next scripted outcome. */
+function scriptClients(...outcomes: Outcome[]) {
+  const runs: RunFullResolutionJpegExportInWorkerInput[] = []
+  const clients: Array<{
+    run: ReturnType<typeof vi.fn>
+    dispose: ReturnType<typeof vi.fn>
+  }> = []
+  const order: string[] = []
+  const clientFactory = vi.fn(() => {
+    const outcome = outcomes[clients.length]
+    if (!outcome) throw new Error('No scripted outcome for this attempt.')
+    const client = {
+      run: vi.fn(async (input: RunFullResolutionJpegExportInWorkerInput) => {
+        order.push(`run:${input.executionPlan?.outputSink}`)
+        runs.push(input)
+        if ('error' in outcome) throw outcome.error
+        return outcome.output
+      }),
+      dispose: vi.fn(),
+    }
+    clients.push(client)
+    return client
+  })
+
+  return { runs, clients, order, clientFactory: clientFactory as never }
+}
+
+const OPFS_UNAVAILABLE = {
+  error: new Error('FULL_RES_EXPORT_OPFS_OUTPUT_UNAVAILABLE'),
+}
+const RESOURCE_FAILURE = {
+  error: new Error('FULL_RES_EXPORT_RESOURCE_FAILURE'),
+}
+const SUCCESS = { output: OUTPUT }
+
+describe('runFullResolutionExportJob output location', () => {
+  it('hands the reserved OPFS location to an opfs-file attempt alongside the checkpoint', async () => {
+    const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
+    expect(executionPlan.outputSink).toBe('opfs-file')
+    const script = scriptClients(SUCCESS)
+
+    const result = await runFullResolutionExportJob({
+      file: FILE,
+      filename: FILENAME,
+      graph: GRAPH,
+      executionPlan,
+      outputLocation: OUTPUT_LOCATION,
+      checkpoint: CHECKPOINT,
+      clientFactory: script.clientFactory,
+    })
+
+    expect(result).toEqual({ filename: FILENAME, output: OUTPUT, attempts: 1 })
+    expect(script.runs).toEqual([
+      expect.objectContaining({
+        executionPlan: expect.objectContaining({ outputSink: 'opfs-file' }),
+        outputLocation: OUTPUT_LOCATION,
+        checkpoint: CHECKPOINT,
+      }),
+    ])
+  })
+
+  it('refuses an opfs-file plan without a reserved location before starting a worker', async () => {
+    const script = scriptClients(SUCCESS)
+
+    await expect(
+      runFullResolutionExportJob({
+        file: FILE,
+        filename: FILENAME,
+        graph: GRAPH,
+        executionPlan: plan(DESKTOP, OPFS_RUNTIME, NORMAL),
+        checkpoint: CHECKPOINT,
+        clientFactory: script.clientFactory,
+      }),
+    ).rejects.toThrow('FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID')
+    expect(script.clientFactory).not.toHaveBeenCalled()
+  })
+
+  it('keeps an ordinary blob export in memory with its checkpoint metrics', async () => {
+    const executionPlan = plan(DESKTOP, BLOB_RUNTIME, NORMAL)
+    expect(executionPlan.outputSink).toBe('blob-handoff')
+    const script = scriptClients(SUCCESS)
+    const onPlan = vi.fn()
+
+    await runFullResolutionExportJob({
+      file: FILE,
+      filename: FILENAME,
+      graph: GRAPH,
+      executionPlan,
+      outputLocation: OUTPUT_LOCATION,
+      checkpoint: CHECKPOINT,
+      onPlan,
+      clientFactory: script.clientFactory,
+    })
+
+    expect(script.runs).toHaveLength(1)
+    expect(script.runs[0]).toMatchObject({
+      executionPlan: { outputSink: 'blob-handoff' },
+      checkpoint: CHECKPOINT,
+    })
+    expect(script.runs[0]!.outputLocation).toBeUndefined()
+    expect(onPlan).not.toHaveBeenCalled()
+  })
+})
+
+describe('runFullResolutionExportJob plan safety', () => {
+  it('refuses an initial plan that cannot safely complete before starting a worker', async () => {
+    const executionPlan = plan(MOBILE, BLOB_RUNTIME, LARGE)
+    expect(executionPlan.productCopy).toBe('cannot-safely-complete')
+    const script = scriptClients(SUCCESS)
+
+    await expect(
+      runFullResolutionExportJob({
+        file: FILE,
+        filename: FILENAME,
+        graph: GRAPH,
+        executionPlan,
+        clientFactory: script.clientFactory,
+      }),
+    ).rejects.toMatchObject({
+      code: 'EXPORT_POLICY_CANNOT_COMPLETE',
+      message: getExportModeCopy('cannot-safely-complete'),
+    })
+    expect(script.clientFactory).not.toHaveBeenCalled()
+  })
+
+  it('refuses a retry plan that cannot safely complete instead of starting another worker', async () => {
+    // Without a runtime snapshot the retry re-derives with no durable sink.
+    const executionPlan: ExportExecutionPlan = {
+      ...plan(MOBILE, OPFS_RUNTIME, LARGE),
+      runtimeSnapshot: undefined,
+    }
+    expect(executionPlan.outputSink).toBe('opfs-file')
+    expect(executionPlan.productCopy).not.toBe('cannot-safely-complete')
+    const script = scriptClients(RESOURCE_FAILURE, SUCCESS)
+    const onPlan = vi.fn()
+    const onAttempt = vi.fn()
+
+    await expect(
+      runFullResolutionExportJob({
+        file: FILE,
+        filename: FILENAME,
+        graph: GRAPH,
+        executionPlan,
+        outputLocation: OUTPUT_LOCATION,
+        onPlan,
+        onAttempt,
+        clientFactory: script.clientFactory,
+      }),
+    ).rejects.toMatchObject({ code: 'EXPORT_POLICY_CANNOT_COMPLETE' })
+    expect(script.clientFactory).toHaveBeenCalledTimes(1)
+    expect(script.clients[0]!.dispose).toHaveBeenCalledTimes(1)
+    expect(onPlan).not.toHaveBeenCalled()
+    // A refused replacement is never announced as a scheduled retry.
+    expect(onAttempt.mock.calls.map(([event]) => event.phase)).toEqual([
+      'started',
+      'disposed',
+    ])
+  })
+
+  it('reports the blob plan and continues on a fresh worker when the OPFS output cannot open and policy allows it', async () => {
+    const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
+    const script = scriptClients(OPFS_UNAVAILABLE, SUCCESS)
+    const onPlan = vi.fn((next: ExportExecutionPlan) => {
+      script.order.push(`plan:${next.outputSink}`)
+    })
+    const onAttempt = vi.fn()
+
+    const result = await runFullResolutionExportJob({
+      file: FILE,
+      filename: FILENAME,
+      graph: GRAPH,
+      executionPlan,
+      outputLocation: OUTPUT_LOCATION,
+      checkpoint: CHECKPOINT,
+      onPlan,
+      onAttempt,
+      clientFactory: script.clientFactory,
+    })
+
+    expect(result).toEqual({ filename: FILENAME, output: OUTPUT, attempts: 2 })
+    expect(script.order).toEqual([
+      'run:opfs-file',
+      'plan:blob-handoff',
+      'run:blob-handoff',
+    ])
+    const fallback = onPlan.mock.calls[0]![0]
+    expect(fallback).toMatchObject({
+      outputSink: 'blob-handoff',
+      // Losing the sink is not memory pressure: the strip budget holds.
+      preferredRows: executionPlan.preferredRows,
+      concurrency: executionPlan.concurrency,
+      runtimeMemoryProfile: executionPlan.runtimeMemoryProfile,
+    })
+    expect(fallback.productCopy).not.toBe('cannot-safely-complete')
+    expect(script.runs[1]).toMatchObject({
+      executionPlan: {
+        outputSink: 'blob-handoff',
+        preferredRows: executionPlan.preferredRows,
+        concurrency: executionPlan.concurrency,
+      },
+      checkpoint: CHECKPOINT,
+    })
+    expect(script.runs[1]!.outputLocation).toBeUndefined()
+    expect(
+      script.clients.map((client) => client.dispose.mock.calls.length),
+    ).toEqual([1, 1])
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attempt: 1,
+        phase: 'retry-scheduled',
+        retryReason: 'FULL_RES_EXPORT_OPFS_OUTPUT_UNAVAILABLE',
+        freshWorker: true,
+      }),
+    )
+  })
+
+  it('refuses with cannot-safely-complete when the OPFS output cannot open for a large mobile export', async () => {
+    const executionPlan = plan(MOBILE, OPFS_RUNTIME, LARGE)
+    expect(executionPlan.outputSink).toBe('opfs-file')
+    const script = scriptClients(OPFS_UNAVAILABLE, SUCCESS)
+    const onPlan = vi.fn()
+    const onAttempt = vi.fn()
+
+    await expect(
+      runFullResolutionExportJob({
+        file: FILE,
+        filename: FILENAME,
+        graph: GRAPH,
+        executionPlan,
+        outputLocation: OUTPUT_LOCATION,
+        onPlan,
+        onAttempt,
+        clientFactory: script.clientFactory,
+      }),
+    ).rejects.toMatchObject({
+      code: 'EXPORT_POLICY_CANNOT_COMPLETE',
+      message: getExportModeCopy('cannot-safely-complete'),
+    })
+    expect(script.clientFactory).toHaveBeenCalledTimes(1)
+    expect(script.clients[0]!.dispose).toHaveBeenCalledTimes(1)
+    expect(onPlan).not.toHaveBeenCalled()
+    expect(onAttempt.mock.calls.map(([event]) => event.phase)).toEqual([
+      'started',
+      'disposed',
+    ])
+  })
+
+  it('keeps the OPFS sink and location across a fresh-worker resource retry and reports the retry plan', async () => {
+    const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
+    const script = scriptClients(RESOURCE_FAILURE, SUCCESS)
+    const onPlan = vi.fn()
+
+    await runFullResolutionExportJob({
+      file: FILE,
+      filename: FILENAME,
+      graph: GRAPH,
+      executionPlan,
+      outputLocation: OUTPUT_LOCATION,
+      onPlan,
+      clientFactory: script.clientFactory,
+    })
+
+    expect(script.runs[1]).toMatchObject({
+      executionPlan: { outputSink: 'opfs-file', concurrency: 1 },
+      outputLocation: OUTPUT_LOCATION,
+    })
+    expect(onPlan).toHaveBeenCalledTimes(1)
+    expect(onPlan.mock.calls[0]![0]).toMatchObject({
+      outputSink: 'opfs-file',
+      preferredRows: script.runs[1]!.executionPlan!.preferredRows,
+      concurrency: 1,
+    })
+  })
+
+  it('keeps a sink fallback within the strip budget a resource retry already reduced', async () => {
+    const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
+    const script = scriptClients(
+      {
+        error: Object.assign(new Error('FULL_RES_EXPORT_RESOURCE_FAILURE'), {
+          nextRows: 128,
+        }),
+      },
+      OPFS_UNAVAILABLE,
+      SUCCESS,
+    )
+    const onPlan = vi.fn()
+    const onAttempt = vi.fn()
+
+    await runFullResolutionExportJob({
+      file: FILE,
+      filename: FILENAME,
+      graph: GRAPH,
+      executionPlan,
+      outputLocation: OUTPUT_LOCATION,
+      onPlan,
+      onAttempt,
+      clientFactory: script.clientFactory,
+    })
+
+    expect(script.order).toEqual([
+      'run:opfs-file',
+      'run:opfs-file',
+      'run:blob-handoff',
+    ])
+    expect(script.runs[1]).toMatchObject({
+      executionPlan: { preferredRows: 128, concurrency: 1 },
+    })
+    expect(script.runs[2]).toMatchObject({
+      preferredRows: 128,
+      concurrency: 1,
+      executionPlan: {
+        outputSink: 'blob-handoff',
+        preferredRows: 128,
+        concurrency: 1,
+      },
+    })
+    expect(onPlan).toHaveBeenCalledTimes(2)
+    expect(onPlan.mock.calls[1]![0]).toMatchObject({
+      outputSink: 'blob-handoff',
+      preferredRows: 128,
+      concurrency: 1,
+    })
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attempt: 2,
+        phase: 'retry-scheduled',
+        retryReason: 'FULL_RES_EXPORT_OPFS_OUTPUT_UNAVAILABLE',
+        nextRows: 128,
+        nextConcurrency: 1,
+      }),
+    )
+  })
+
+  it('stays off OPFS for later retries and still bounds the attempts after a sink fallback', async () => {
+    const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
+    const script = scriptClients(
+      OPFS_UNAVAILABLE,
+      RESOURCE_FAILURE,
+      RESOURCE_FAILURE,
+      SUCCESS,
+    )
+    const onPlan = vi.fn()
+
+    await expect(
+      runFullResolutionExportJob({
+        file: FILE,
+        filename: FILENAME,
+        graph: GRAPH,
+        executionPlan,
+        outputLocation: OUTPUT_LOCATION,
+        onPlan,
+        clientFactory: script.clientFactory,
+      }),
+    ).rejects.toThrow('FULL_RES_EXPORT_RESOURCE_FAILURE')
+    expect(script.order).toEqual([
+      'run:opfs-file',
+      'run:blob-handoff',
+      'run:blob-handoff',
+    ])
+    expect(script.runs.slice(1).map((run) => run.outputLocation)).toEqual([
+      undefined,
+      undefined,
+    ])
+    expect(onPlan.mock.calls.map(([next]) => next.outputSink)).toEqual([
+      'blob-handoff',
+      'blob-handoff',
+    ])
+    expect(
+      script.clients.map((client) => client.dispose.mock.calls.length),
+    ).toEqual([1, 1, 1])
+  })
+})

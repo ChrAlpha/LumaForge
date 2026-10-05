@@ -9,12 +9,15 @@ import {
   createOpfsCheckpointBackend,
   selectCheckpointResumeExecutionPlan,
 } from '~/lib/export/checkpoint-store'
+import type { ExportExecutionPlan } from '~/lib/export/execution-profile'
 import {
   emitExportDebugEvent,
-  getExportModeCopy,
   toExportPlanSelectedDebugPayload,
 } from '~/lib/export/execution-profile'
-import type { FullResWorkerCheckpointConfig } from '~/lib/export/full-res-export-client'
+import type {
+  FullResWorkerCheckpointConfig,
+  FullResWorkerOutputLocation,
+} from '~/lib/export/full-res-export-client'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createSourceFingerprint } from '~/lib/export/source-fingerprint'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
@@ -24,7 +27,11 @@ import type {
 } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ExportResult } from '../../model/export-result'
-import type { ExportRecoveryState, ImageSession } from '../../model/session'
+import type {
+  ActiveExportPlanState,
+  ExportRecoveryState,
+  ImageSession,
+} from '../../model/session'
 import type { ProcessingStatus } from '../../model/workflow'
 import {
   getStableErrorCode,
@@ -53,6 +60,7 @@ import {
 } from './export-state'
 import {
   buildExportFilename,
+  createExportPolicyRefusal,
   recommendRetryLevel,
   runFullResolutionExportJob,
   selectCurrentExportExecutionPlan,
@@ -99,6 +107,21 @@ export interface ExportContext {
 
 function createExportId() {
   return globalThis.crypto?.randomUUID?.() ?? `export-${Date.now()}`
+}
+
+function toActivePlanState(plan: ExportExecutionPlan): ActiveExportPlanState {
+  return {
+    profileName: plan.profile.name,
+    preferredRows: plan.preferredRows,
+    concurrency: plan.concurrency,
+    runtimeMemoryProfile: plan.runtimeMemoryProfile,
+    outputSink: plan.outputSink,
+    checkpointMode: plan.checkpointMode,
+  }
+}
+
+function expectsDurableCheckpoint(plan: ExportExecutionPlan) {
+  return plan.profile.checkpointOutput && plan.outputSink === 'opfs-file'
 }
 
 function deferSuccessfulCheckpointCleanup(task: () => void) {
@@ -263,23 +286,24 @@ export async function orchestrateFullResExport(
             previousUserInterrupted: false,
           })
     if (executionPlan.productCopy === 'cannot-safely-complete') {
-      throw Object.assign(
-        new Error(getExportModeCopy(executionPlan.productCopy)),
-        { code: 'EXPORT_POLICY_CANNOT_COMPLETE' },
-      )
+      throw createExportPolicyRefusal()
     }
     const jobExecutionPlan = executionPlan
+    // An OPFS plan always gets its output address. The recovery journal below
+    // is best-effort and shares the address, but its failure only changes
+    // durability, never the sink.
+    const outputLocation: FullResWorkerOutputLocation | undefined =
+      jobExecutionPlan.outputSink === 'opfs-file'
+        ? { sink: 'opfs-file', exportId: createExportId() }
+        : undefined
     let checkpointStore: ReturnType<typeof createCheckpointStore> | null = null
     let checkpointManifest: ExportCheckpointManifest | null = null
     let checkpoint: FullResWorkerCheckpointConfig | undefined
 
-    if (
-      executionPlan.profile.checkpointOutput &&
-      executionPlan.outputSink === 'opfs-file'
-    ) {
+    if (outputLocation && expectsDurableCheckpoint(jobExecutionPlan)) {
       try {
         checkpointStore = createCheckpointStore(createOpfsCheckpointBackend())
-        const exportId = createExportId()
+        const exportId = outputLocation.exportId
         const sourceFingerprint = await createSourceFingerprint(
           activeSourceFile,
           {
@@ -330,14 +354,7 @@ export async function orchestrateFullResExport(
     if (previousInterrupted) {
       ctx.atoms.setDiscoveredRecoveryState({ status: 'none' })
     }
-    const activePlan = {
-      profileName: jobExecutionPlan.profile.name,
-      preferredRows: jobExecutionPlan.preferredRows,
-      concurrency: jobExecutionPlan.concurrency,
-      runtimeMemoryProfile: jobExecutionPlan.runtimeMemoryProfile,
-      outputSink: jobExecutionPlan.outputSink,
-      checkpointMode: jobExecutionPlan.checkpointMode,
-    }
+    const activePlan = toActivePlanState(jobExecutionPlan)
 
     if (jobExecutionPlan.profile.releasePreviewPipelineBeforeExport) {
       // Capture the current GPU pipeline before activePlan state and
@@ -349,8 +366,7 @@ export async function orchestrateFullResExport(
       type: 'export-plan-selected',
       payload: toExportPlanSelectedDebugPayload(
         jobExecutionPlan,
-        jobExecutionPlan.profile.checkpointOutput &&
-          jobExecutionPlan.outputSink === 'opfs-file',
+        expectsDurableCheckpoint(jobExecutionPlan),
       ),
     })
 
@@ -496,6 +512,7 @@ export async function orchestrateFullResExport(
       filename,
       quality: jpegQuality,
       executionPlan: jobExecutionPlan,
+      outputLocation,
       checkpoint,
       graph,
       // The geometry the session committed; the worker reproduces exactly it.
@@ -523,6 +540,30 @@ export async function orchestrateFullResExport(
           type: 'export-worker-attempt',
           payload: attempt,
         })
+      },
+      // A retry or sink fallback replaces the plan; the reported plan has to
+      // follow it so it always names the sink the worker writes to.
+      onPlan: (plan) => {
+        if (!isCurrentExport()) return
+
+        emitExportDebugEvent({
+          type: 'export-plan-selected',
+          payload: toExportPlanSelectedDebugPayload(
+            plan,
+            expectsDurableCheckpoint(plan),
+          ),
+        })
+        ctx.atoms.setSession((prev) =>
+          prev && prev.id === exportSessionId
+            ? {
+                ...prev,
+                exportState: {
+                  ...prev.exportState,
+                  activePlan: toActivePlanState(plan),
+                },
+              }
+            : prev,
+        )
       },
       onProgress: (entry) => {
         if (

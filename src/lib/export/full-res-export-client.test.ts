@@ -140,6 +140,56 @@ describe('fullResolutionExportWorkerClient', () => {
     client.dispose()
   })
 
+  it('carries the output location to the worker independently of the checkpoint', async () => {
+    const worker = new FakeWorker()
+    const client = new FullResolutionExportWorkerClient(
+      () => worker as unknown as Worker,
+    )
+    const executionPlan = {
+      profileName: 'desktop-fast',
+      preferredRows: 512,
+      concurrency: 2,
+      runtimeMemoryProfile: 'desktop',
+      outputSink: 'opfs-file',
+      checkpointMode: 'safe-retry',
+    } as const
+
+    const run = client.run({
+      file: new File(['raw'], 'sample.RAF'),
+      graph: supportedGraph,
+      executionPlan,
+      outputLocation: { sink: 'opfs-file', exportId: 'export-9' },
+    })
+
+    const start = worker.requests[0]
+    if (!start || start.kind !== 'start')
+      throw new Error('missing start request')
+    expect(start).toMatchObject({
+      executionPlan,
+      outputLocation: { sink: 'opfs-file', exportId: 'export-9' },
+    })
+    expect(start.checkpoint).toBeUndefined()
+
+    worker.emit({
+      kind: 'success',
+      requestId: start.requestId,
+      result: {
+        kind: 'file-backed',
+        storage: 'opfs',
+        exportId: 'export-9',
+        filename: 'sample.jpg',
+        byteLength: 4,
+        mimeType: 'image/jpeg',
+      },
+    })
+
+    await expect(run).resolves.toMatchObject({
+      kind: 'file-backed',
+      exportId: 'export-9',
+    })
+    client.dispose()
+  })
+
   it('streams progress, resolves success, and the one-shot helper disposes its worker', async () => {
     const worker = new FakeWorker()
     const workerFactory = vi.fn(() => worker as unknown as Worker)
