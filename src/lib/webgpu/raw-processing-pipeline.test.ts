@@ -1,3 +1,4 @@
+import type { LUTData } from '@lumaforge/luma-color-runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -17,6 +18,7 @@ const fixtures = vi.hoisted(() => ({
     readProcessedPixelsAsync: vi.fn<() => Promise<Float32Array | null>>(),
     renderToHiddenCanvas: vi.fn(),
     getResourceStats: vi.fn(),
+    uploadLUT: vi.fn(),
   },
   createGpu: vi.fn(),
 }))
@@ -36,6 +38,24 @@ const WEBGPU_FACTS = {
   maxTextureSize: 8192,
   reason: null,
 } as const
+
+const LUT: LUTData = {
+  size: 2,
+  data: new Float32Array(2 * 2 * 2 * 3),
+  domainMin: [0, 0, 0],
+  domainMax: [1, 1, 1],
+  inputProfile: 'display-srgb',
+  profileResolution: { kind: 'unknown' },
+}
+
+function captureThrown(action: () => unknown) {
+  try {
+    action()
+  } catch (error) {
+    return error
+  }
+  throw new Error('expected the action to throw')
+}
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -120,6 +140,53 @@ describe('preview pipeline facade', () => {
     fixtures.gpu.onLost.mock.calls[0][0](failure)
     expect(reportGpuPreviewFailure).not.toHaveBeenCalled()
     active.dispose()
+  })
+
+  it('demotes the primary preview after a LUT upload failure and still throws it to the caller', async () => {
+    const pipeline = new RawProcessingPipeline(document.createElement('canvas'))
+    await pipeline.initialize()
+    pipeline.uploadLUT(LUT)
+    expect(fixtures.gpu.uploadLUT).toHaveBeenCalledExactlyOnceWith(LUT)
+    expect(reportGpuPreviewFailure).not.toHaveBeenCalled()
+
+    const failure = new Error('Failed to create LUT texture')
+    fixtures.gpu.uploadLUT.mockImplementationOnce(() => {
+      throw failure
+    })
+    expect(captureThrown(() => pipeline.uploadLUT(LUT))).toBe(failure)
+    expect(reportGpuPreviewFailure).toHaveBeenCalledExactlyOnceWith(failure)
+    pipeline.dispose()
+  })
+
+  it('keeps auxiliary LUT upload failures with their owner', async () => {
+    const failure = new Error('Failed to create LUT texture')
+    fixtures.gpu.uploadLUT.mockImplementation(() => {
+      throw failure
+    })
+    const auxiliary = new RawProcessingPipeline(
+      document.createElement('canvas'),
+      { reportFailures: false },
+    )
+    await auxiliary.initialize()
+    expect(captureThrown(() => auxiliary.uploadLUT(LUT))).toBe(failure)
+    expect(reportGpuPreviewFailure).not.toHaveBeenCalled()
+    auxiliary.dispose()
+  })
+
+  it('does not demote the preview for LUT uploads outside a live renderer', async () => {
+    const failure = new Error('PREVIEW_PIPELINE_DISPOSED')
+    fixtures.gpu.uploadLUT.mockImplementation(() => {
+      throw failure
+    })
+    const pending = new RawProcessingPipeline(document.createElement('canvas'))
+    expect(() => pending.uploadLUT(LUT)).toThrow(
+      'PREVIEW_PIPELINE_NOT_INITIALIZED',
+    )
+    const disposed = new RawProcessingPipeline(document.createElement('canvas'))
+    await disposed.initialize()
+    disposed.dispose()
+    expect(captureThrown(() => disposed.uploadLUT(LUT))).toBe(failure)
+    expect(reportGpuPreviewFailure).not.toHaveBeenCalled()
   })
 
   it('cancels before backend selection without creating a late renderer or changing the global gate', async () => {

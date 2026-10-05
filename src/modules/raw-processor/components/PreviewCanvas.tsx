@@ -150,6 +150,7 @@ export function PreviewCanvas({
   const processedUploadGenerationKeyRef = useRef('')
   const processedGenerationKeyRef = useRef('')
   const processedRenderRequestRef = useRef(0)
+  const lutUploadFailedRef = useRef(false)
   const firstFrameWaitRef = useRef<{
     pipeline: RawProcessingPipeline
     generationKey: string
@@ -469,6 +470,9 @@ export function PreviewCanvas({
     const pipeline = pipelineRef.current
     if (!pipeline || !isInitialized) return false
     const request = ++processedRenderRequestRef.current
+    // Withhold frames (and supersede in-flight ones) while the selected LUT
+    // is missing from the GPU.
+    if (lutUploadFailedRef.current) return false
     const isCurrent = () =>
       pipelineRef.current === pipeline &&
       !suspendedRef.current &&
@@ -917,11 +921,13 @@ export function PreviewCanvas({
       } else {
         pipeline.clearLUT()
       }
-    } catch (err) {
-      // A failed LUT texture upload degrades to a LUT-less preview (the
-      // pipeline clears its LUT state on failure); it must not escape this
-      // passive effect and tear down the whole /raw surface.
-      console.warn('LUT upload failed; rendering preview without the LUT:', err)
+      lutUploadFailedRef.current = false
+    } catch {
+      // The pipeline has dropped its LUT and reported the failure, which
+      // moves the preview to the CPU executor. Until then the canvas must not
+      // draw a LUT-less frame as the selected look, and the failure must not
+      // escape this passive effect and tear down the whole /raw surface.
+      lutUploadFailedRef.current = true
     }
   }, [lutDataRef, lutDataVersion, isInitialized])
 

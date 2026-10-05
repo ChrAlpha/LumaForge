@@ -103,7 +103,16 @@ export class RawProcessingPipeline {
   }
 
   uploadLUT(...args: Parameters<PreviewPipelineBackend['uploadLUT']>) {
-    return this.renderer.uploadLUT(...args)
+    const renderer = this.renderer
+    try {
+      return renderer.uploadLUT(...args)
+    } catch (error) {
+      // The executor drops its LUT on a failed upload. A primary preview
+      // without the selected LUT would misstate the look, so it moves to the
+      // CPU executor; the caller still sees the failure.
+      if (!this.disposed && this.reportFailures) reportGpuPreviewFailure(error)
+      throw error
+    }
   }
 
   clearLUT() {

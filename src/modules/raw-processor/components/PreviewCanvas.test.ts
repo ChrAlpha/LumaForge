@@ -531,32 +531,36 @@ describe('preview canvas upload descriptor', () => {
     expect(screen.getByText('Context restore failed')).toBeTruthy()
   })
 
-  it('keeps the preview alive when the LUT texture upload fails', async () => {
+  it('withholds GPU frames after a LUT upload failure without tearing down the preview', async () => {
     const initialize = deferred<void>()
     pipelineMock.initialize.mockReturnValueOnce(initialize.promise)
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const onStatsUpdate = vi.fn()
+    const onPipelineChange = vi.fn()
+    const createLut = () => ({
+      size: 2,
+      data: new Float32Array(2 * 2 * 2 * 3),
+      domainMin: [0, 0, 0] as [number, number, number],
+      domainMax: [1, 1, 1] as [number, number, number],
+      inputProfile: 'display-srgb' as const,
+      profileResolution: { kind: 'unknown' as const },
+    })
+    const failedLut = createLut()
+    const lutDataRef = { current: failedLut }
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      params: { ...defaultParams, styleKind: 'custom' as const },
+      lutDataRef,
+      lutDataVersion: 1,
+      onStatsUpdate,
+      onPipelineChange,
+    } satisfies ComponentProps<typeof PreviewCanvas>
 
-    render(
-      createElement(PreviewCanvas, {
-        imageRef: { current: decodedImage },
-        imageVersion: 1,
-        params: { ...defaultParams, styleKind: 'custom' },
-        lutDataRef: {
-          current: {
-            size: 2,
-            data: new Float32Array(2 * 2 * 2 * 3),
-            domainMin: [0, 0, 0],
-            domainMax: [1, 1, 1],
-            inputProfile: 'display-srgb',
-            profileResolution: { kind: 'unknown' },
-          },
-        },
-        lutDataVersion: 1,
-      }),
-    )
+    const { container, rerender } = render(createElement(PreviewCanvas, props))
 
     expect(pipelineMock.instances).toHaveLength(1)
-    pipelineMock.instances[0]!.uploadLUT.mockImplementation(() => {
+    const [pipeline] = pipelineMock.instances
+    pipeline!.uploadLUT.mockImplementationOnce(() => {
       throw new Error('Failed to create LUT texture')
     })
 
@@ -564,16 +568,26 @@ describe('preview canvas upload descriptor', () => {
       initialize.resolve()
     })
 
-    // The LUT failure degrades to a LUT-less preview: no error overlay, the
-    // processed render still happens, and the failure is logged.
-    expect(pipelineMock.instances[0]!.uploadLUT).toHaveBeenCalled()
+    // The failure stays inside the component: the surface and its pipeline
+    // remain mounted, but no LUT-less frame or stats stand in for the look.
+    expect(pipeline!.uploadLUT).toHaveBeenCalledExactlyOnceWith(failedLut)
+    expect(onPipelineChange).toHaveBeenLastCalledWith(pipeline)
+    expect(pipeline!.disposeMock).not.toHaveBeenCalled()
+    expect(container.querySelector('canvas.raw-preview-canvas')).not.toBeNull()
     expect(screen.queryByText('Preview unavailable')).toBeNull()
-    expect(pipelineMock.instances[0]!.render).toHaveBeenCalled()
-    expect(warn).toHaveBeenCalledWith(
-      'LUT upload failed; rendering preview without the LUT:',
-      expect.any(Error),
-    )
-    warn.mockRestore()
+    expect(pipeline!.render).not.toHaveBeenCalled()
+    expect(onStatsUpdate).not.toHaveBeenCalled()
+
+    const replacementLut = createLut()
+    lutDataRef.current = replacementLut
+    await act(async () => {
+      rerender(createElement(PreviewCanvas, { ...props, lutDataVersion: 2 }))
+    })
+
+    expect(pipeline!.uploadLUT).toHaveBeenLastCalledWith(replacementLut)
+    await waitFor(() => expect(onStatsUpdate).toHaveBeenCalled())
+    expect(pipeline!.render).toHaveBeenCalled()
+    expect(pipeline!.disposeMock).not.toHaveBeenCalled()
   })
 
   it('uploads decoded image render exposure through the component path', async () => {
