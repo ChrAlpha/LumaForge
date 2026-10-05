@@ -5,7 +5,15 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 
 import { createLmfgRuntime } from '../runtime/node-runtime'
 import { loadSourceFile } from '../runtime/source-loader'
@@ -16,21 +24,148 @@ import {
 } from '../test-support/describe-with-fixture'
 import { runFullResolutionExport } from './export'
 
+const LOCKED_FIXTURE_SHA256 =
+  '7a2a9747a0cb1537007233ce7e8b7233c5ee641d683b7b3da29e22387994a0d7'
+
+// The APP1 segment the export injects for the locked fixture, byte for byte.
+const EXPORT_APP1_HEX = [
+  'ffe10185', // APP1 marker, segment length 389
+  '457869660000', // "Exif\0\0"
+  '49492a0008000000', // TIFF header: little-endian, 42, IFD0 at 8
+  '0600', // IFD0: 6 entries
+  '0f0102000600000056000000', // Make ASCII[6] at 86
+  '10010200160000005c000000', // Model ASCII[22] at 92
+  '120103000100000001000000', // Orientation SHORT = 1
+  '310102000a00000072000000', // Software ASCII[10] at 114
+  '32010200140000007c000000', // DateTime ASCII[20] at 124
+  '698704000100000090000000', // ExifIFDPointer LONG = 144
+  '00000000', // next IFD: none
+  '4170706c6500', // Make 'Apple'
+  '6950686f6e65382c34206261636b2063616d65726100', // Model 'iPhone8,4 back camera'
+  '4c756d61466f72676500', // Software 'LumaForge'
+  '323031373a30333a32332031323a30333a303600', // DateTime '2017:03:23 12:03:06'
+  '0b00', // Exif IFD: 11 entries
+  '9a820500010000001a010000', // ExposureTime RATIONAL[1] at 282
+  '9d8205000100000022010000', // FNumber RATIONAL[1] at 290
+  '2788030001000000a0000000', // ISOSpeedRatings SHORT = 160
+  '009007000400000030323331', // ExifVersion UNDEFINED = '0231'
+  '03900200140000002a010000', // DateTimeOriginal ASCII[20] at 298
+  '04900200140000003e010000', // DateTimeDigitized ASCII[20] at 318
+  '0a9205000100000052010000', // FocalLength RATIONAL[1] at 338
+  '01a003000100000001000000', // ColorSpace SHORT = 1
+  '02a0040001000000c00f0000', // PixelXDimension LONG = 4032
+  '03a0040001000000d00b0000', // PixelYDimension LONG = 3024
+  '34a40200230000005a010000', // LensModel ASCII[35] at 346
+  '00000000', // next IFD: none
+  '5f76000040420f00', // ExposureTime 30303/1000000
+  '0b00000005000000', // FNumber 11/5
+  '323031373a30333a32332031323a30333a303600', // DateTimeOriginal
+  '323031373a30333a32332031323a30333a303600', // DateTimeDigitized
+  '5300000014000000', // FocalLength 83/20
+  '6950686f6e65205345206261636b2063616d65726120342e31356d6d20662f322e3200', // LensModel
+].join('')
+
+type JpegSegment = { marker: number; offset: number; length: number }
+
+/** Marker segments between SOI and the first SOS. */
+function headerSegments(jpeg: Uint8Array): JpegSegment[] {
+  const segments: JpegSegment[] = []
+  let offset = 2
+  while (offset + 4 <= jpeg.byteLength && jpeg[offset] === 0xFF) {
+    const marker = jpeg[offset + 1]
+    if (marker === 0xDA) break
+    const length = ((jpeg[offset + 2] << 8) | jpeg[offset + 3]) + 2
+    segments.push({ marker, offset, length })
+    offset += length
+  }
+  return segments
+}
+
+type ExifEntry = [tag: number, value: number | string]
+
+/** Reads a little-endian EXIF APP1 segment without the export's own writer. */
+function decodeApp1Exif(segment: Uint8Array): {
+  ifd0: ExifEntry[]
+  exif: ExifEntry[]
+} {
+  const tiff = new DataView(
+    segment.buffer,
+    segment.byteOffset + 10,
+    segment.byteLength - 10,
+  )
+  const text = (offset: number, length: number) =>
+    Buffer.from(segment.subarray(10 + offset, 10 + offset + length)).toString(
+      'latin1',
+    )
+  const readIfd = (offset: number): ExifEntry[] => {
+    const entries: ExifEntry[] = []
+    const count = tiff.getUint16(offset, true)
+    for (let index = 0; index < count; index += 1) {
+      const entry = offset + 2 + index * 12
+      const tag = tiff.getUint16(entry, true)
+      const type = tiff.getUint16(entry + 2, true)
+      const valueCount = tiff.getUint32(entry + 4, true)
+      const pointer = tiff.getUint32(entry + 8, true)
+      if (type === 2) {
+        const at = valueCount > 4 ? pointer : entry + 8
+        entries.push([tag, text(at, valueCount).replace(/\0$/, '')])
+      } else if (type === 3) {
+        entries.push([tag, tiff.getUint16(entry + 8, true)])
+      } else if (type === 4) {
+        entries.push([tag, pointer])
+      } else if (type === 5) {
+        const numerator = tiff.getUint32(pointer, true)
+        const denominator = tiff.getUint32(pointer + 4, true)
+        entries.push([tag, `${numerator}/${denominator}`])
+      } else if (type === 7) {
+        entries.push([
+          tag,
+          text(valueCount > 4 ? pointer : entry + 8, valueCount),
+        ])
+      } else {
+        throw new Error(`Unexpected TIFF type ${type} for tag ${tag}`)
+      }
+    }
+    return entries
+  }
+  expect(Buffer.from(segment.subarray(4, 18)).toString('hex')).toBe(
+    '45786966000049492a0008000000',
+  )
+  const ifd0 = readIfd(tiff.getUint32(4, true))
+  const exifPointer = ifd0.find(([tag]) => tag === 0x8769)?.[1]
+  return {
+    ifd0,
+    exif: typeof exifPointer === 'number' ? readIfd(exifPointer) : [],
+  }
+}
+
 let dir: string
+beforeAll(() => {
+  // LibRaw resolves the capture time with local-time mktime, so the EXIF
+  // dates follow the host timezone; the golden is recorded under UTC.
+  vi.stubEnv('TZ', 'UTC')
+})
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'lmfg-export-'))
 })
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
+afterAll(() => {
+  vi.unstubAllEnvs()
+})
 
 describeWithFixture('runFullResolutionExport', () => {
   it('streams the full-resolution JPEG with EXIF to disk and reports progress', async () => {
+    expect(new Date(2017, 2, 23, 12, 3, 6).getTime()).toBe(
+      Date.UTC(2017, 2, 23, 12, 3, 6),
+    )
     const runtime = createLmfgRuntime({ memoryProfile: 'desktop' })
     const progress: number[] = []
     const outputPath = join(dir, 'exports', 'final.jpg')
     try {
       const source = await loadSourceFile(FIXTURE_PATH, '/')
+      expect(source.sha256).toBe(LOCKED_FIXTURE_SHA256)
       const result = await runFullResolutionExport({
         runtime,
         source,
@@ -49,7 +184,7 @@ describeWithFixture('runFullResolutionExport', () => {
       expect(result.height).toBe(3024)
       expect(result.byteLength).toBeGreaterThan(1_000_000)
       expect(result.sha256).toMatch(/^[0-9a-f]{64}$/)
-      expect(result.strips).toBeGreaterThan(1)
+      expect(result.strips).toBe(6)
       expect(progress.at(-1)).toBe(99)
       expect(result.exposure.source).toBe('dng-baseline')
       expect(result.resource.max_rss_bytes).toBeGreaterThan(0)
@@ -60,12 +195,47 @@ describeWithFixture('runFullResolutionExport', () => {
       expect(createHash('sha256').update(jpeg).digest('hex')).toBe(
         result.sha256,
       )
-      expect(Buffer.from(jpeg.subarray(0, 64)).toString('latin1')).toContain(
-        'Exif',
-      )
       expect(jpeg[jpeg.byteLength - 2]).toBe(0xFF)
       expect(jpeg[jpeg.byteLength - 1]).toBe(0xD9)
       expect(await readdir(join(dir, 'exports'))).toEqual(['final.jpg'])
+
+      // One EXIF APP1 lands right after the encoder's JFIF APP0.
+      const segments = headerSegments(jpeg)
+      expect(segments.slice(0, 2)).toEqual([
+        { marker: 0xE0, offset: 2, length: 18 },
+        { marker: 0xE1, offset: 20, length: 391 },
+      ])
+      expect(
+        segments.filter((segment) => segment.marker === 0xE1),
+      ).toHaveLength(1)
+      const app1 = jpeg.subarray(20, 20 + 391)
+      expect(Buffer.from(app1).toString('hex')).toBe(EXPORT_APP1_HEX)
+      expect(createHash('sha256').update(app1).digest('hex')).toBe(
+        'fcb3ea3f36b0f1d4da8bd83d974da9013b3546d7a222a3a0231d69aeb6e24c9e',
+      )
+      expect(decodeApp1Exif(app1)).toEqual({
+        ifd0: [
+          [0x010F, 'Apple'], // Make
+          [0x0110, 'iPhone8,4 back camera'], // Model
+          [0x0112, 1], // Orientation
+          [0x0131, 'LumaForge'], // Software
+          [0x0132, '2017:03:23 12:03:06'], // DateTime
+          [0x8769, 144], // ExifIFDPointer
+        ],
+        exif: [
+          [0x829A, '30303/1000000'], // ExposureTime
+          [0x829D, '11/5'], // FNumber
+          [0x8827, 160], // ISOSpeedRatings
+          [0x9000, '0231'], // ExifVersion
+          [0x9003, '2017:03:23 12:03:06'], // DateTimeOriginal
+          [0x9004, '2017:03:23 12:03:06'], // DateTimeDigitized
+          [0x920A, '83/20'], // FocalLength
+          [0xA001, 1], // ColorSpace
+          [0xA002, 4032], // PixelXDimension
+          [0xA003, 3024], // PixelYDimension
+          [0xA434, 'iPhone SE back camera 4.15mm f/2.2'], // LensModel
+        ],
+      })
     } finally {
       runtime.dispose()
     }

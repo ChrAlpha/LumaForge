@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { sealRenderManifest } from '@lumaforge/render-engine/manifest'
-import { afterAll, beforeAll, expect, it } from 'vitest'
+import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 
 import {
   createCliHarness,
@@ -29,8 +29,27 @@ const DISPLAY_CUBE = identityCube([
   'LUMAFORGE_INPUT_PROFILE=display-srgb',
 ])
 const DISPLAY_CUBE_SHA = createHash('sha256').update(DISPLAY_CUBE).digest('hex')
+const LOCKED_FIXTURE_SHA256 =
+  '7a2a9747a0cb1537007233ce7e8b7233c5ee641d683b7b3da29e22387994a0d7'
+// The APP1 EXIF segment that services/export.test.ts pins byte for byte.
+const EXPORT_APP1_SHA256 =
+  'fcb3ea3f36b0f1d4da8bd83d974da9013b3546d7a222a3a0231d69aeb6e24c9e'
+
+async function exportApp1Sha256(path: string): Promise<string> {
+  const jpeg = await readFile(path)
+  // SOI, the encoder's 18-byte JFIF APP0, then the 391-byte EXIF APP1.
+  expect(jpeg.subarray(0, 4).toString('hex')).toBe('ffd8ffe0')
+  expect(jpeg.subarray(20, 24).toString('hex')).toBe('ffe10185')
+  return createHash('sha256')
+    .update(jpeg.subarray(20, 20 + 391))
+    .digest('hex')
+}
 
 beforeAll(async () => {
+  // LibRaw resolves the capture time with local-time mktime, so the EXIF
+  // dates follow the host timezone; the goldens are recorded under UTC.
+  vi.stubEnv('TZ', 'UTC')
+  expect(new Date(0).getTimezoneOffset()).toBe(0)
   cwd = await mkdtemp(join(tmpdir(), 'lmfg-e2e-'))
   cli = createCliHarness(cwd)
   await writeFile(join(cwd, 'display.cube'), DISPLAY_CUBE)
@@ -71,6 +90,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()))
   await rm(cwd, { recursive: true, force: true })
+  vi.unstubAllEnvs()
 })
 
 describeWithFixture('lmfg agent loop', () => {
@@ -587,6 +607,69 @@ describeWithFixture('lmfg agent loop', () => {
     expect((show.envelope.result!.manifest as { kind: string }).kind).toBe(
       'export',
     )
+    expect(result.strips).toBe(6)
+    expect(result.output).toMatchObject({
+      width: 4032,
+      height: 3024,
+      quality: 92,
+    })
+    const exportManifest = JSON.parse(
+      await readFile(fileURLToPath(result.manifest_uri as string), 'utf8'),
+    )
+    expect(exportManifest.source_raw).toMatchObject({
+      sha256: LOCKED_FIXTURE_SHA256,
+      byte_size: 11_115_746,
+    })
+    expect(exportManifest.policy).toStrictEqual({
+      kind: 'export-full',
+      row_slice: 512,
+      concurrency: 1,
+    })
+    expect(exportManifest.output).toMatchObject({
+      format: 'jpeg',
+      dimensions: { width: 4032, height: 3024 },
+      color_space: 'srgb',
+      quality: 92,
+      filename: 'final.jpg',
+    })
+    expect(
+      await exportApp1Sha256((result.output as { path: string }).path),
+    ).toBe(EXPORT_APP1_SHA256)
+
+    const rows = await cli.run(
+      'render',
+      'export',
+      '--session',
+      sessionId,
+      '--params-json',
+      JSON.stringify({ exposure_ev: 0.3 }),
+      '--quality',
+      '90',
+      '--preferred-rows',
+      '5000',
+      '--output',
+      'rows',
+    )
+    expect(rows.code, rows.stdout).toBe(0)
+    const rowsResult = rows.envelope.result!
+    // The requested strip height is recorded verbatim even though the engine
+    // clamps it and covers the frame in a single strip.
+    expect(rowsResult.strips).toBe(1)
+    const rowsManifest = JSON.parse(
+      await readFile(fileURLToPath(rowsResult.manifest_uri as string), 'utf8'),
+    )
+    expect(rowsManifest.policy).toStrictEqual({
+      kind: 'export-full',
+      row_slice: 5000,
+      concurrency: 1,
+    })
+    expect(rowsManifest.output).toMatchObject({
+      quality: 90,
+      filename: 'rows.jpg',
+    })
+    expect(
+      await exportApp1Sha256((rowsResult.output as { path: string }).path),
+    ).toBe(EXPORT_APP1_SHA256)
 
     const again = await cli.run(
       'render',
