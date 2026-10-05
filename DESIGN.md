@@ -386,7 +386,7 @@ That hue was used briefly in early drafts and left a single warm wash inside an 
 - Brand block on the left (24px icon with 1px inset ring, title at 0.875rem semibold tracking-tight, subtitle at 0.685rem at 52% opacity).
 - Action cluster on the right is **ghost-style**: rest is `bg-transparent`, hover is the **lift-medium wash** (`oklch(0.96 0.006 255 / 0.06)`), focus is 2px `lf-green/80` outline with -1px offset.
   Hover wash must come from the ladder above, not from `bg-on-photo-bg` — on the topbar's near-floor substrate that token resolves to ~L=0.11 over L=0.09 and the hover becomes invisible.
-- A 1px hairline divides the locale toggle from the file actions.
+- On desktop a 1px hairline divides the locale toggle from the file actions. The mobile topbar has no locale toggle: Language lives in its More menu so the meta line keeps room for the camera name.
 - Destructive action (reset) gains a `lf-rose/14` hover and `lf-rose/70` focus ring; it never asserts itself at rest.
 - Press feedback is a `translateY(0.5px)` micro-shift, not a scale.
 
@@ -478,6 +478,17 @@ automated click, a screen reader moving the caret — can displace the whole
 workspace with no affordance to put it back. Only the rail's inner region
 (`[data-raw-tool-scroll]`) and the mobile Adjust list actually scroll.
 
+### Mobile Shell: Tools, Lens, Action
+
+Mobile `/raw` is built for finishing one photo quickly: choose a look, fine-tune, compare, export. The shell separates three kinds of control instead of making them peers.
+
+- **Tools live in the dock.** The tab bar holds only Look, Adjust and Transform (Transform only when the feature is available). Tapping the active tool collapses or reopens the deck; the shared-layout indicator under the active tab is the cool lift, and it only shows while that tool's panel is on screen. With no RAW loaded there is no tab bar at all.
+- **Compare is a lens on the stage.** A 32px glass button (44px hit area) at the top-right inside the photo. A tap turns the split on or off and the split survives tool switches, so a value can be adjusted while comparing. Holding the lens, or long-pressing anywhere on the photo, peeks the RAW until release. A double-click or double-tap on the split handle returns it to 50% and resets zoom. When Transform geometry is applied the lens is disabled and a tap says why for 2s. The first image on a device shows a one-time hint beside it.
+- **Export is an action, not a tab.** The topbar's far-right pill states the pipeline fact: neutral lift when not ready (still tappable, the panel explains why), Lab Green when a full-resolution export is possible, a spinner and `NN%` while exporting, deep green with a check once a result exists. It opens the export panel in the deck, where the photo stays visible; the panel recaps what will be written (resolution, look and strength, adjustment count, Transform) from real state only, and a close button returns to the previous tool. Blocked reasons are neutral unless the cause is a color contract, which is amber and offers the route into the contract.
+- **Look is a strip on the photo.** The deck shows a horizontal strip of looks (Original, a user file that matches no catalog entry, catalog entries grouped by family behind a slim vertical label, then Import .cube), the Strength row, and one footer line: the contract, quiet when confirmed and amber when it needs a choice, plus `LUT sources ›`. A tap loads and applies a look while the photo keeps the current one until the new LUT is ready; tapping another look cancels the one still loading. The applied tile carries a cool-white inset ring and a check, a loading tile a 2px progress bar, a failed tile a neutral `!` with Retry in the footer, a file still missing its contract a 7px amber dot. Choosing a contract happens inside the deck (input, then output) with the photo in view; a user `.cube` without a confirmed contract opens it on import. The LUT sources sheet is administration only: add a catalog URL, refresh, remove, share, and browse a big catalog in full.
+- **More holds real actions only.** Replace RAW, File & pipeline details, Histogram (a checkable item), Language, then Reset session last behind a separator with rose only on hover and focus. Before a RAW is open it offers Language alone.
+- **The empty state is a page, not a card.** Left-aligned: an eyebrow, the headline, a three-step numbered rail with amber numbers, the RAW engine readiness line, and the real supported-format count, with one full-width Lab Green action pinned in the thumb zone. The action never waits on the engine; choosing a file retries a failed warm-up.
+
 ### Mobile Stage Insets
 
 The mobile stage is photo-first.
@@ -512,8 +523,9 @@ pipeline pass per frame.
 ### Press Feedback
 
 A press answers with a **0.5px downward shift** over 120ms: the desktop
-command cluster, the mobile topbar actions, the mobile Adjust section chrome,
-the mobile Compare panel, and the mobile Export actions. The mobile dock tabs
+command cluster, the mobile topbar actions (including the Export action and
+the compare lens), the mobile Adjust section chrome, the Look strip tiles, and
+the mobile Export panel actions. The mobile dock tabs
 are the one documented exception and keep their `scale(0.96)` tap spring,
 because they are a segmented selector rather than a button.
 

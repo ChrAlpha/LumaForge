@@ -76,8 +76,11 @@ image-editor assumptions.
   Adjust, Tone, Color, Compare, Export, File Facts, Histogram, LUT contract, and
   shared tool chrome.
 - `src/modules/raw-processor/components/mobile/*` is the mobile photo-first
-  shell: persistent topbar, bottom mode dock, mobile LUT browser, mobile export,
-  compare panel, Adjust list panels, and scrub HUD.
+  shell: topbar with the Export action, a dock of tools (Look, Adjust,
+  Transform) over a deck, the compare lens on the stage, the Look deck (LUT
+  strip, Strength row, inline LUT contract), the LUT sources sheet, the export
+  panel, Adjust list panels, and the scrub HUD. `mobile-stage-layout.ts` fits
+  the photo first and sizes the deck from what is left.
 - `src/modules/raw-processor/raw-lab.css`,
   `raw-lab.surface.css`, and `raw-lab.effects.css` hold `/raw` surface and
   effect CSS that cannot reasonably live as Tailwind utilities.
