@@ -44,6 +44,11 @@ describe('toaster', () => {
     }
     expect(RAW_MOBILE_TOAST_TOP).toBe('calc(env(safe-area-inset-top) + 64px)')
     expect(lastProps()?.position).toBe('top-center')
+    // A top toast enters and leaves through a full toast height above its
+    // slot; clipped at the topbar's bottom edge, it never crosses the bar.
+    expect(lastProps()?.className).toContain(
+      '[clip-path:inset(-8px_-100vw_-100vh_-100vw)]',
+    )
 
     // Another route on a phone keeps the default edge offset.
     render(
@@ -53,6 +58,7 @@ describe('toaster', () => {
     )
     expect(lastProps()?.offset).toBe('16px')
     expect(lastProps()?.mobileOffset).toBe('16px')
+    expect(lastProps()?.className).toBe('toaster group')
 
     // Desktop /raw has no mobile topbar.
     viewport.w = 1280

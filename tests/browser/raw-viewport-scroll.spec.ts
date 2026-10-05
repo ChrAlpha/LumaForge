@@ -423,8 +423,36 @@ test('keeps mobile /raw toasts below the topbar and its Export action', async ({
   const cubePath = testInfo.outputPath('mobile-toast-lane.cube')
   await writeFile(cubePath, createIdentityCube('Mobile Toast Lane'), 'utf8')
   await page.locator('[data-mobile-lut-import-input]').setInputFiles(cubePath)
-  await expect(page.locator('[data-sonner-toast]').first()).toBeVisible()
+  const toast = page.locator('[data-sonner-toast]').first()
+  await expect(toast).toBeVisible()
 
+  // A toast slides in from a full toast height above its slot. Mid-flight
+  // its box crosses the topbar, but the toaster clips everything above the
+  // topbar's bottom edge, so what shows (and takes taps) stays below it.
+  const clip = await page.evaluate(() => {
+    const toaster = document.querySelector<HTMLElement>('[data-sonner-toaster]')
+    const topbar = document.querySelector('[data-mobile-topbar]')
+    if (!toaster || !topbar) return null
+    return {
+      clipPath: getComputedStyle(toaster).clipPath,
+      toasterTop: toaster.getBoundingClientRect().top,
+      topbarBottom: topbar.getBoundingClientRect().bottom,
+    }
+  })
+  expect(clip).toBeTruthy()
+  // The clip opens 8px above the toaster's top edge: the topbar's bottom.
+  expect(clip!.clipPath).toMatch(/^inset\(-8px /)
+  expect(clip!.toasterTop - 8).toBeGreaterThanOrEqual(clip!.topbarBottom - 1)
+
+  // At rest the toast's own slot is below the topbar and its Export action.
+  await expect
+    .poll(() =>
+      toast.evaluate((element) => {
+        const { transform } = getComputedStyle(element)
+        return transform === 'none' || transform === 'matrix(1, 0, 0, 1, 0, 0)'
+      }),
+    )
+    .toBe(true)
   const metrics = await page.evaluate(() => ({
     topbar: document
       .querySelector('[data-mobile-topbar]')

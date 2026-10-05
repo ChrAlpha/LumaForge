@@ -28,6 +28,16 @@ const rawMobileToastOffset = {
   left: TOAST_EDGE_OFFSET,
 }
 
+/**
+ * Sonner slides a top toast in from a full toast height above its slot and
+ * out the same way, which carried it across the topbar and over the Export
+ * action on every entrance and exit. On mobile /raw the toaster clips
+ * everything above the topbar's bottom edge (8px above its own top), so a
+ * toast emerges from under the topbar and leaves the same way, and the
+ * clipped part takes no taps.
+ */
+const RAW_MOBILE_TOASTER_CLASS = '[clip-path:inset(-8px_-100vw_-100vh_-100vw)]'
+
 function isRawRoute(pathname: string) {
   return pathname.replace(/\/+$/, '') === '/raw'
 }
@@ -88,7 +98,11 @@ function AppToaster({
       duration={isMobile ? 2200 : 3500}
       offset={offset}
       mobileOffset={offset}
-      className="toaster group"
+      className={
+        rawMobile
+          ? `toaster group ${RAW_MOBILE_TOASTER_CLASS}`
+          : 'toaster group'
+      }
       toastOptions={{
         classNames: {
           // Card shell
