@@ -151,6 +151,25 @@ jobs:
       - name: Verify app build artifact
         run: pnpm run deploy:check
 
+      # Fixture-free smoke only: none of the selected tests loads a RAW file.
+      # Each Playwright command builds and serves the app itself through the
+      # config's webServer, so the steps run one at a time on its fixed port and
+      # build with the same prebuilt native assets as the checks above.
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Smoke the landing page in Chromium
+        timeout-minutes: 10
+        env:
+          LUMAFORGE_NATIVE_RUNTIME_MODE: prebuilt
+        run: pnpm exec playwright test tests/browser/landing.spec.ts --project=chromium-desktop --grep 'presents the complete RAW workflow'
+
+      - name: Smoke the empty RAW Lab shell in Chromium
+        timeout-minutes: 10
+        env:
+          LUMAFORGE_NATIVE_RUNTIME_MODE: prebuilt
+        run: pnpm exec playwright test tests/browser/raw-viewport-scroll.spec.ts --project=chromium-desktop --grep 'keeps RAW Lab tool scrolling|keeps the CPU preview notice|opens the RAW picker'
+
   webgpu:
     # Holds the WGSL preview to the TS export executor on a software adapter.
     needs: changes
