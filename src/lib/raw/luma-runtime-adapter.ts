@@ -251,7 +251,9 @@ export function prewarmLumaRawRuntime(
   if (prewarmState === 'ready' && prewarmOutcome) {
     return Promise.resolve(prewarmOutcome)
   }
-  if (prewarmState === 'failed' && prewarmOutcome) {
+  // Only an irrecoverable failure stays cached until dispose; after a
+  // recoverable one the next explicit call starts a fresh attempt.
+  if (prewarmState === 'failed' && prewarmOutcome?.recoverable === false) {
     return Promise.resolve(prewarmOutcome)
   }
   if (prewarmInFlight) {
