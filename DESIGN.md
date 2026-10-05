@@ -405,7 +405,7 @@ That hue was used briefly in early drafts and left a single warm wash inside an 
 
 ### Segmented Controls
 
-Strength (LUT lift amount) and the LUT contract tabs (input / output, both viewports) all render segmented controls.
+Strength (LUT lift amount) and the desktop LUT contract tabs (input / output) render segmented controls; mobile chooses the contract in the Look deck as two steps under a back-and-step header instead of tabs.
 Their paint is centralized in `src/modules/raw-processor/components/tools/segmented-chrome.ts` — a single source so a future polish loop changes the look in one file and every consumer follows.
 
 Paint contract (cross-platform):
@@ -417,7 +417,7 @@ Paint contract (cross-platform):
 - **Active thumb**: **lift-strong wash** (`oklch(0.96 0.006 255 / 0.10)`) + 1px **lift-highlight** top inset.
   No outline ring, no drop shadow, no glass border — earlier drafts stacked all three and the segment read as crystalline rather than as one of the chrome's surfaces.
 - **Focus ring**: 2px `lf-green/80` outline with -1px offset, matching topbar and tool card focus.
-- **Sizes diverge by interaction only**: 44px min-height for touch (mobile Strength, mobile LUT contract tabs), 36px for desktop Strength (mouse density), 28px for desktop LUT contract tabs (tab density).
+- **Sizes diverge by interaction only**: 44px min-height for touch (mobile Strength), 36px for desktop Strength (mouse density), 28px for desktop LUT contract tabs (tab density).
   Paint stays one across all sizes.
 
 The `SegmentGroup` / `SegmentItem` primitives in `src/components/ui/segment/` are intentionally **color-agnostic**.
@@ -484,11 +484,14 @@ The mobile stage is photo-first.
 
 The stage region is exactly the photo's displayed height, so the frame's own centring anchors the photo flush under the topbar.
 A 3:2 landscape photo is 393x262 on a 393x660 viewport in every tool and never moves on a tool switch.
-List tools (Adjust, Transform) take what the photo leaves, between 200px and `min(38% of the viewport, 264px)`, and scroll their rows inside; Look and the export panel are as tall as their content, under the same cap.
+List tools (Adjust, Transform, and Look while its LUT contract is open inline) take what the photo leaves, between 200px and `min(38% of the viewport, 264px)`, and scroll their rows inside; Look's strip and the export panel are as tall as their content, under the same cap.
+A list deck has no top padding: its section chrome sits flush under the deck's one top hairline.
 A portrait photo takes all the height the deck leaves.
 A scrub never changes the layout's inputs, so it never resizes the photo.
 Without a known aspect the stage falls back to the whole region above the deck.
-The compare lens, its hints, the peek pill, and the floating histogram read the `--raw-photo-*` rect, so they ride on the photo rather than on the stage around it.
+The compare lens, its hints, the peek pill, the CPU preview notice, and the floating histogram read the `--raw-photo-*` rect, so they ride on the photo rather than on the stage around it.
+The CPU preview notice sits 8px inside the photo's top edge, beside the lens or below it on a narrow photo, never over it.
+In the CPU preview, which has no split surface, the lens is an original toggle (`aria-pressed`, a hold still peeks) and the CPU stage draws no toggle row under the photo.
 On a photo too narrow to hold them clear of the lens, a lens hint drops below the lens and the peek pill leaves the lens's row the same way; both stay on the photo.
 
 Immersive and the empty state reset both insets to `0`, so entering immersive grows the photo back to full bleed in the same motion as the chrome fade.
@@ -496,7 +499,7 @@ Immersive and the empty state reset both insets to `0`, so entering immersive gr
 Because the photo sits below the mobile topbar and above the deck rather than under them, those two are solid plates, not glass.
 The topbar is the stage base (`oklch(0.064 0.006 255)`), only the top safe area plus 12px plus one 44px row tall, and the scrub HUD takes that same band.
 The tab bar (48px tabs, 4px above and below, plus the safe area) and the deck are `oklch(0.085 0.006 255)`; the deck carries a lift-card top highlight and the tab bar a lift-soft seam.
-Glass stays with the overlays that sit on the photo: the compare lens, its hints, the peek pill, and the histogram card.
+Glass stays with the overlays that sit on the photo: the compare lens, its hints, the peek pill, the CPU preview notice, and the histogram card.
 
 Both GPU preview layers defer their backing-store resize until the container size
 settles (90ms trailing), so an animating inset costs CSS scaling rather than a

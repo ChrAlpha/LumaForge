@@ -392,6 +392,53 @@ test('keeps desktop RAW load toasts out of the persistent export action lane', a
   expect(metrics.toast!.right).toBeLessThanOrEqual(metrics.button!.left)
 })
 
+test('keeps mobile /raw toasts below the topbar and its Export action', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'webkit-ios-safe',
+    'mobile toast lane targets the iOS project',
+  )
+  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  testInfo.setTimeout(180_000)
+
+  await page.goto('/raw')
+  await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
+  await loadRawFixture(page)
+  await expect(
+    page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
+  ).toBeVisible({ timeout: 90_000 })
+
+  // The Look strip's Import .cube input: loading a LUT announces itself.
+  const cubePath = testInfo.outputPath('mobile-toast-lane.cube')
+  await writeFile(cubePath, createIdentityCube('Mobile Toast Lane'), 'utf8')
+  await page.locator('[data-mobile-lut-import-input]').setInputFiles(cubePath)
+  await expect(page.locator('[data-sonner-toast]').first()).toBeVisible()
+
+  const metrics = await page.evaluate(() => ({
+    topbar: document
+      .querySelector('[data-mobile-topbar]')
+      ?.getBoundingClientRect()
+      .toJSON(),
+    exportAction: document
+      .querySelector('[data-mobile-export-action]')
+      ?.getBoundingClientRect()
+      .toJSON(),
+    toast: document
+      .querySelector('[data-sonner-toast]')
+      ?.getBoundingClientRect()
+      .toJSON(),
+  }))
+
+  expect(metrics.topbar).toBeTruthy()
+  expect(metrics.exportAction).toBeTruthy()
+  expect(metrics.toast).toBeTruthy()
+  expect(metrics.toast!.top).toBeGreaterThanOrEqual(metrics.topbar!.bottom)
+  expect(metrics.toast!.top).toBeGreaterThanOrEqual(
+    metrics.exportAction!.bottom,
+  )
+})
+
 test('keeps desktop tone, compare, zoom, and pan interactions live after RAW load', async ({
   page,
 }, testInfo) => {

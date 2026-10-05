@@ -610,6 +610,15 @@ function collectDomState() {
       compareLens: q('[data-mobile-compare-lens]')?.dataset.state ?? null,
       compareLensMode:
         q('[data-mobile-compare-lens]')?.dataset.lensMode ?? null,
+      look: {
+        view: q('[data-mobile-look-deck]')?.dataset.mobileLookDeck ?? null,
+        applied:
+          q('[data-mobile-lut-tile][aria-pressed="true"]')?.dataset.lutTitle ??
+          null,
+        footer: text(q('[data-mobile-look-footer]')),
+        contractStep:
+          q('[data-mobile-look-contract]')?.dataset.lutContractStep ?? null,
+      },
       peek: Boolean(q('[data-peek]')),
     },
     alerts: qa('[role="alert"], [role="alertdialog"]')
@@ -1551,24 +1560,37 @@ class MobileDriver extends DesktopDriver {
     return this.resetSection('HSL', 'HSL reset')
   }
 
-  async lutBrowser() {
+  // Looks are tried on the photo from the Look deck: a strip of tiles
+  // (Original, the applied file, every catalog look, Import .cube), the
+  // Strength row, and a footer that states the LUT contract. The contract is
+  // chosen inside the deck; the LUT sources sheet only administers sources.
+  lookStrip() {
+    return this.page.getByRole('group', { name: 'Looks' })
+  }
+
+  lookContract() {
+    return this.page.locator('[data-mobile-look-contract]')
+  }
+
+  async openLook() {
     await this.openMode('Look')
-    const sheet = this.page.locator('[data-mobile-lut-view]')
-    if (!(await sheet.isVisible().catch(() => false))) {
-      const add = this.page.getByRole('button', { name: 'LUT browser' })
-      if (await add.count()) await add.first().click()
-      else
-        await this.page
-          .getByRole('button', { name: /^Change LUT/ })
-          .first()
-          .click()
-      await sheet.waitFor()
-    }
-    return sheet
+    await this.closeLookContract()
+    await this.lookStrip().waitFor()
+    return this.lookStrip()
+  }
+
+  async closeLookContract() {
+    const contract = this.lookContract()
+    if (!(await contract.isVisible().catch(() => false))) return
+    const back = contract.getByRole('button', { name: /^Back to/ })
+    // Output step goes back to the input; the input step leaves the editor.
+    for (let i = 0; i < 2 && (await contract.isVisible().catch(() => false)); i++)
+      await back.first().click()
+    await contract.waitFor({ state: 'hidden' }).catch(() => {})
   }
 
   async closeLutBrowser() {
-    const close = this.page.getByRole('button', { name: 'Close LUT browser' })
+    const close = this.page.getByRole('button', { name: 'Close LUT sources' })
     if (await close.count()) {
       await close.first().click()
       await this.page
@@ -1578,97 +1600,92 @@ class MobileDriver extends DesktopDriver {
     }
   }
 
-  async openCatalogView(sheet) {
-    await sheet
-      .getByRole('button', { name: 'Open LumaForge Profiles' })
-      .first()
-      .click()
-    await this.page.locator('[data-mobile-lut-view="catalog"]').waitFor()
+  catalogTiles() {
+    return this.lookStrip().locator('[data-mobile-lut-tile="entry"]')
   }
 
   async lookTitles() {
-    const sheet = await this.lutBrowser()
-    await this.openCatalogView(sheet)
-    const titles = await this.page
-      .locator('[data-mobile-lut-view="catalog"]')
-      .getByRole('button', { name: /^Load / })
-      .evaluateAll((elements) =>
-        elements.map((element) =>
-          element.getAttribute('aria-label').replace(/^Load /, ''),
-        ),
-      )
-    await this.closeLutBrowser()
-    return titles
+    await this.openLook()
+    await this.catalogTiles().first().waitFor({ timeout: 60_000 })
+    return this.catalogTiles().evaluateAll((elements) =>
+      elements.map((element) => element.dataset.lutTitle),
+    )
   }
 
+  // Strip tiles are addressed by position, like the desktop catalog: an
+  // entry relabels itself with its manifest title once loaded.
   async loadCatalogLook(index, title) {
-    const sheet = await this.lutBrowser()
-    await this.openCatalogView(sheet)
-    const entry = this.page
-      .locator('[data-mobile-lut-view="catalog"]')
-      .getByRole('button', { name: /^Load / })
-      .nth(index)
-    const label = await entry.getAttribute('aria-label')
+    await this.openLook()
+    await this.catalogTiles().first().waitFor({ timeout: 60_000 })
+    const tile = this.catalogTiles().nth(index)
+    const label = await tile.getAttribute('data-lut-title')
+    if ((await tile.getAttribute('aria-pressed')) === 'true') {
+      // Tapping the applied look is a no-op; it is already on the photo.
+      this.h.lut = { kind: 'catalog', index, title, label }
+      return this.h.record({
+        type: 'lut-load',
+        kind: 'catalog',
+        index,
+        title,
+        label,
+        ok: true,
+        alreadyApplied: true,
+      })
+    }
     const since = await this.h.pageNow()
-    await entry.click()
-    const result = await this.h.lutLoaded(
-      { kind: 'catalog', index, title, label },
-      since,
-    )
-    await this.closeLutBrowser()
-    return result
+    await tile.click()
+    return this.h.lutLoaded({ kind: 'catalog', index, title, label }, since)
   }
 
   async loadLutFile(path) {
-    await this.lutBrowser()
+    await this.openLook()
     const since = await this.h.pageNow()
     await this.page
-      .locator('input[type="file"][accept=".cube"]')
-      .first()
+      .locator('[data-mobile-lut-import-input]')
       .setInputFiles(path)
     const result = await this.h.lutLoaded({ kind: 'file', file: basename(path) }, since)
-    await this.closeLutBrowser()
+    // An import nothing resolved opens its contract in the deck; hand the
+    // deck back to the strip so the next step starts from it.
+    await this.page.waitForTimeout(300)
+    await this.closeLookContract()
     return result
   }
 
   async clearLut() {
     this.h.lut = null
-    const sheet = await this.lutBrowser()
-    const clicked = await this.h.clickIfEnabled(
-      sheet.getByRole('button', { name: 'Clear LUT', exact: true }),
-      'Clear LUT',
-    )
-    await this.closeLutBrowser()
-    return clicked
+    const strip = await this.openLook()
+    const original = strip.getByRole('button', { name: 'Original', exact: true })
+    if ((await original.getAttribute('aria-pressed')) === 'true') return false
+    return this.h.clickIfEnabled(original, 'Original (clear LUT)')
   }
 
   async setStrength(level) {
-    const sheet = await this.lutBrowser()
-    const tab = sheet.getByRole('tab', { name: level, exact: true })
-    let changed = false
-    if (
-      (await tab.getAttribute('aria-selected')) !== 'true' &&
-      (await tab.isEnabled())
-    ) {
-      await tab.click()
-      changed = true
-      this.h.strength = level
-      this.h.record({ type: 'strength', level })
-    }
-    await this.closeLutBrowser()
-    return changed
+    await this.openLook()
+    const tab = this.page
+      .getByRole('tablist', { name: 'Strength' })
+      .getByRole('tab', { name: level, exact: true })
+    if ((await tab.getAttribute('aria-selected')) === 'true') return false
+    if (!(await tab.isEnabled())) return false
+    await tab.click()
+    this.h.strength = level
+    this.h.record({ type: 'strength', level })
+    return true
   }
 
   async setLutContract(input, output) {
-    await this.openMode('Look')
-    const edit = this.page.getByRole('button', {
-      name: /^(Edit color contract for|Choose LUT contract)/,
-    })
-    await edit.first().click()
-    const sheet = this.page.locator('[data-mobile-lut-view]')
-    await sheet.waitFor()
-    await this.pickContract(sheet, input, output)
-    await this.closeLutBrowser()
+    await this.openLook()
+    // The footer opens the contract: the confirmed line, the amber prompt,
+    // or a recommendation's label.
+    const open = this.page
+      .locator('[data-mobile-look-footer]')
+      .getByRole('button', {
+        name: /^(Edit color contract for|Choose what this LUT expects|Recommended:)/,
+      })
+    await open.first().click()
+    const contract = this.lookContract()
+    await contract.waitFor()
+    await this.pickContract(contract, input, output)
+    await this.closeLookContract()
   }
 
   async setSplit(value) {

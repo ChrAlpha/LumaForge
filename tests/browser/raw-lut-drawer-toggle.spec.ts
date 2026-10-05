@@ -1,6 +1,8 @@
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
+import process from 'node:process'
 
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
@@ -95,18 +97,23 @@ function createCatalogFixture() {
   }
 }
 
-async function openRawToolsIfNeeded(page: Page) {
-  if ((page.viewportSize()?.width ?? Number.POSITIVE_INFINITY) > 640) return
+const RAW_FIXTURE =
+  process.env.LUMAFORGE_MOBILE_RAW ??
+  '/workspaces/LumaForge/test-images/SGL_1998.NEF'
 
-  const toolsTab = page.getByRole('button', { name: 'Tools' })
-  const sheet = page.locator('.raw-mobile-tool-sheet')
+async function loadRawFixtureMobile(page: Page) {
+  const fileChooserPromise = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: /browse raw files/i }).click()
+  const fileChooser = await fileChooserPromise
+  await fileChooser.setFiles(RAW_FIXTURE)
+  await expect(
+    page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
+  ).toBeVisible({ timeout: 90_000 })
+}
 
-  await expect(toolsTab).toBeVisible()
-  await toolsTab.click()
-  await expect(sheet).toBeVisible()
-  await expect(page.locator('.raw-mobile-tool-sheet-header h2')).toHaveText(
-    'Tools',
-  )
+/** The mobile Look deck: its strip of looks and its footer. */
+function lookStrip(page: Page) {
+  return page.getByRole('group', { name: 'Looks' })
 }
 
 test('closes the online LUT resource browser when its trigger is clicked again', async ({
@@ -120,7 +127,6 @@ test('closes the online LUT resource browser when its trigger is clicked again',
   await page.goto(
     `/raw?luts=${encodeURIComponent('https://example.com/valid.cube')}`,
   )
-  await openRawToolsIfNeeded(page)
 
   const trigger = page.getByRole('button', { name: 'Open valid.cube' })
   await expect(trigger).toBeVisible()
@@ -152,7 +158,6 @@ test('closes the online LUT resource browser after a rapid repeated trigger clic
   await page.goto(
     `/raw?luts=${encodeURIComponent('https://example.com/rapid.cube')}`,
   )
-  await openRawToolsIfNeeded(page)
 
   const trigger = page.getByRole('button', { name: 'Open rapid.cube' })
   await expect(trigger).toBeVisible()
@@ -181,7 +186,6 @@ test('closes the LUT contract browser when its trigger is clicked again', async 
     .locator('input[type="file"][accept=".cube"]')
     .first()
     .setInputFiles(cubePath)
-  await openRawToolsIfNeeded(page)
 
   const trigger = page.getByRole('button', { name: 'Change LUT contract' })
   await expect(trigger).toBeVisible()
@@ -353,4 +357,146 @@ test('keeps sparse online LUT resource entries compact on desktop', async ({
   await expect(page.getByText('LUT output:')).toBeVisible()
   await expect(page.getByText('Rec.709 display')).toBeVisible()
   await expect(page.getByText('LUT intent is unsupported')).toHaveCount(0)
+})
+
+test('mobile tries a catalog look on the photo from the Look strip', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'webkit-ios-safe',
+    'mobile Look deck targets the iOS project',
+  )
+  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  testInfo.setTimeout(180_000)
+
+  const fixture = createCatalogFixture()
+  await page.route('https://example.com/catalog.json', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(fixture.catalog),
+    }),
+  )
+  await page.route('https://example.com/entries/audit-rec709.json', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(fixture.entry),
+    }),
+  )
+  await page.route('https://example.com/audit-rec709.cube', (route) =>
+    route.fulfill({ contentType: 'text/plain', body: fixture.cube }),
+  )
+  await page.goto(
+    `/raw?luts=${encodeURIComponent('https://example.com/catalog.json')}`,
+  )
+  await loadRawFixtureMobile(page)
+
+  // Look opens with the strip: Original applied, the catalog's look, Import.
+  const strip = lookStrip(page)
+  await expect(strip).toBeVisible()
+  const original = strip.getByRole('button', { name: 'Original' })
+  await expect(original).toHaveAttribute('aria-pressed', 'true')
+  const look = strip.locator('[data-mobile-lut-tile="entry"]').first()
+  await expect(look).toBeVisible({ timeout: 60_000 })
+  await expect(
+    strip.getByRole('button', { name: 'Import .cube' }),
+  ).toBeVisible()
+  await expect(page.getByText('No LUT · tone and color only')).toBeVisible()
+  await expect(
+    page
+      .getByRole('tablist', { name: 'Strength' })
+      .getByRole('tab', { name: 'Strong' }),
+  ).toBeDisabled()
+
+  // A tap applies it on the photo; the sheet never opens.
+  await look.click()
+  await expect(look).toHaveAttribute('aria-pressed', 'true', {
+    timeout: 60_000,
+  })
+  await expect(look).toHaveAttribute('data-state', 'applied')
+  await expect(original).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  // The catalog declares its contract, so the footer reads it quietly.
+  await expect(
+    page.getByRole('button', { name: /^Edit color contract for/ }),
+  ).toContainText('Rec.709 display')
+  await expect(
+    page
+      .getByRole('tablist', { name: 'Strength' })
+      .getByRole('tab', { name: 'Strong' }),
+  ).toBeEnabled()
+
+  // LUT sources is a sheet for the sources only.
+  await page.getByRole('button', { name: 'LUT sources' }).click()
+  const sources = page.getByRole('dialog', { name: 'LUT sources' })
+  await expect(sources).toBeVisible()
+  await expect(sources.getByRole('tablist', { name: 'Strength' })).toHaveCount(
+    0,
+  )
+  await sources.getByRole('button', { name: 'Close LUT sources' }).click()
+  await expect(sources).toHaveCount(0)
+})
+
+test("mobile chooses an imported LUT's contract inline, with the photo in view", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'webkit-ios-safe',
+    'mobile Look deck targets the iOS project',
+  )
+  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  testInfo.setTimeout(180_000)
+
+  await page.goto('/raw')
+  await loadRawFixtureMobile(page)
+
+  const cubePath = testInfo.outputPath('inline-contract.cube')
+  await writeFile(cubePath, createIdentityCube('Inline Contract'), 'utf8')
+  await page.locator('[data-mobile-lut-import-input]').setInputFiles(cubePath)
+
+  // Nothing resolved this file, so its contract opens by itself, in the
+  // deck: no sheet over the photo.
+  const input = page.getByRole('region', { name: /: input$/ })
+  await expect(input).toBeVisible({ timeout: 60_000 })
+  await expect(input).toContainText('1 / 2')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.locator('[data-mobile-dock-panel]')).toHaveAttribute(
+    'data-deck-fill',
+    'true',
+  )
+  // The deck takes list sizing: it starts where the photo ends, so the
+  // photo stays in view above it (polled past the 240ms inset motion).
+  await expect
+    .poll(async () => {
+      const photo = await page
+        .locator('[data-raw-preview-frame]')
+        .first()
+        .boundingBox()
+      const deck = await page.locator('[data-mobile-dock-panel]').boundingBox()
+      if (!photo || !deck) return Number.NaN
+      return Math.round(deck.y - (photo.y + photo.height))
+    })
+    .toBeGreaterThanOrEqual(-1)
+
+  await page.getByLabel('Search LUT contract').fill('display srgb')
+  await page
+    .getByRole('button', { name: 'Use Display sRGB as LUT input', exact: true })
+    .click()
+  const output = page.getByRole('region', { name: /: output$/ })
+  await expect(output).toContainText('2 / 2')
+  await page.getByLabel('Search LUT contract').fill('display srgb')
+  await page
+    .getByRole('button', {
+      name: 'Use Display sRGB as LUT output',
+      exact: true,
+    })
+    .click()
+
+  // Complete: back on the strip, the file applied, its contract confirmed.
+  await expect(lookStrip(page)).toBeVisible()
+  await expect(
+    lookStrip(page).locator('[data-mobile-lut-tile="custom"]'),
+  ).toHaveAttribute('data-state', 'applied')
+  await expect(
+    page.getByRole('button', { name: /^Edit color contract for/ }),
+  ).toBeVisible()
 })

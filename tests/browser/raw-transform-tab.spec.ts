@@ -141,6 +141,42 @@ async function expectCpuNoticeBelowHeader(page: Page) {
       return notice.y - topbar.y - topbar.height
     })
     .toBeGreaterThanOrEqual(0)
+  // On the photo it keeps clear of the compare lens: beside it or below it.
+  const lens = page.locator('[data-mobile-compare-lens]')
+  if (await lens.count()) {
+    await expect
+      .poll(async () => {
+        const notice = (await page
+          .locator('[data-cpu-preview-banner]')
+          .boundingBox())!
+        const circle = (await lens.boundingBox())!
+        const beside = notice.x + notice.width <= circle.x + 1
+        const below = notice.y >= circle.y + circle.height - 1
+        return beside || below
+      })
+      .toBe(true)
+  }
+}
+
+/**
+ * Mobile CPU preview: no toggle row under the photo; the compare lens
+ * toggles the original instead (aria-pressed while it shows).
+ */
+async function expectMobileCpuLensToggle(page: Page) {
+  if (!isMobile(page)) return
+  await expect(
+    page
+      .locator('.raw-lab-stage')
+      .getByRole('button', { name: 'Original', exact: true }),
+  ).toHaveCount(0)
+  const lens = page.locator('[data-mobile-compare-lens]')
+  await expect(lens).toHaveAttribute('data-lens-mode', 'original')
+  await expect(lens).toHaveAccessibleName('Show original')
+  await expect(lens).toHaveAttribute('aria-pressed', 'false')
+  await lens.click()
+  await expect(lens).toHaveAttribute('aria-pressed', 'true')
+  await lens.click()
+  await expect(lens).toHaveAttribute('aria-pressed', 'false')
 }
 
 async function snapshot(page: Page) {
@@ -279,6 +315,7 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await loadRaw(page)
     if (preview === 'cpu') {
       await expectCpuNoticeBelowHeader(page)
+      await expectMobileCpuLensToggle(page)
       await expect(page.getByText(/GPU preview unavailable/)).toBeVisible()
       await expect(page.getByTestId('cpu-preview-unavailable')).toHaveCount(0)
       await expect(page.locator('.raw-preview-canvas')).toHaveCount(0)
