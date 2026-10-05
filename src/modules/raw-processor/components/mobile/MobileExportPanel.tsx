@@ -4,7 +4,6 @@ import {
   Copy,
   Download,
   FileJson,
-  FolderOpen,
   Share2,
   X,
 } from 'lucide-react'
@@ -182,6 +181,10 @@ export function MobileExportPanel(props: {
   onDownloadExport: () => void
   onDownloadExportManifest?: () => void | Promise<void>
   onCopyExport: () => void | Promise<void>
+  /**
+   * Never rendered: an interrupted export is only a hint for the next export
+   * the user starts, so the panel offers no file picker for it.
+   */
   onRecoverExportSource?: () => void
   /** A full-resolution or HQ export is running (not just any processing). */
   isExporting?: boolean
@@ -244,8 +247,13 @@ export function MobileExportPanel(props: {
     !props.canPreviewExport &&
     Boolean(previewUnavailableReason) &&
     !(showUnavailableReason && previewUnavailableReason === unavailableReason)
-  const showRecovery =
-    !props.isProcessing && props.recovery?.status === 'source-required'
+  // Any interruption, legacy source-required included, reads as the same
+  // hint: the next export the user starts uses the current RAW and edits on a
+  // safer plan. The journal's own sentence is never shown.
+  const showInterruption =
+    !props.isProcessing &&
+    props.recovery !== undefined &&
+    props.recovery.status !== 'none'
   const resultReadyLabel =
     resultKind === 'hq-preview'
       ? t('raw.export.previewReady')
@@ -377,16 +385,13 @@ export function MobileExportPanel(props: {
           <ChevronRight aria-hidden="true" className="size-3.5" />
         </m.button>
       )}
-      {showRecovery && (
-        <button
-          type="button"
-          disabled={!props.onRecoverExportSource}
-          onClick={props.onRecoverExportSource}
-          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-3 text-sm font-semibold text-lf-on-photo-ink transition-colors enabled:hover:bg-[oklch(0.96_0.006_255/0.08)] disabled:cursor-not-allowed disabled:opacity-45"
+      {showInterruption && (
+        <p
+          data-export-interruption
+          className="m-0 px-0.5 text-[0.72rem] leading-snug text-lf-on-photo-ink/72"
         >
-          <FolderOpen aria-hidden="true" className="size-4" />
-          {t('raw.export.reselect')}
-        </button>
+          {t('raw.export.interrupted')}
+        </p>
       )}
       {props.recap && <ExportRecapLines recap={props.recap} />}
       {/* The deck gives this panel its natural height when it can. Where it

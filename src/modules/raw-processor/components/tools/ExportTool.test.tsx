@@ -7,7 +7,17 @@ import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
 import { createBlobOutputResult } from '~/lib/export/output-sink'
 
 import type { ExportResult } from '../../model/export-result'
+import { createInterruptedExportRecovery } from '../../services/export/export-recovery'
 import { ExportTool } from './ExportTool'
+
+const INTERRUPTED_HINT =
+  'The previous export was interrupted. The next export you start uses the current RAW and adjustments with a safer setting.'
+
+function buttonNames() {
+  return screen
+    .getAllByRole('button')
+    .map((button) => button.getAttribute('aria-label') ?? button.textContent)
+}
 
 type ExportToolProps = Parameters<typeof ExportTool>[0] & {
   canPreviewExport?: boolean
@@ -465,15 +475,63 @@ describe('exportTool', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows recovery source reselect action', async () => {
+  it('presents an interrupted export as a hint for the next export the user starts', async () => {
     const user = userEvent.setup()
+    const onExport = vi.fn()
+    const onRecoverExportSource = vi.fn()
+    const recovery = createInterruptedExportRecovery(createCheckpointManifest())
+    const props: ExportToolProps = {
+      canExport: false,
+      isProcessing: false,
+      onExport,
+      exportResult: null,
+      exportShareCapability: { available: false, reason: 'Export first.' },
+      onShareExport: vi.fn(),
+      onDownloadExport: vi.fn(),
+      onCopyExport: vi.fn(),
+      onRecoverExportSource,
+      recovery,
+    }
+
+    const { container, rerender } = render(<ExportTool {...props} />)
+
+    expect(screen.getByText(INTERRUPTED_HINT)).toBeVisible()
+    // The journal's own sentence is not the panel's copy, and nothing here
+    // promises the old settings, bytes or strips come back.
+    expect(screen.queryByText(recovery.message)).toBeNull()
+    expect(container).not.toHaveTextContent(/reselect|resum|restor|continu/i)
+    // The hint is not an action: the panel still offers only its two exports.
+    expect(buttonNames()).toEqual([
+      'Export full-resolution JPEG',
+      'Export HQ preview JPEG',
+    ])
+
+    // Readiness arriving starts nothing on its own.
+    rerender(<ExportTool {...props} canExport />)
+    expect(screen.getByText(INTERRUPTED_HINT)).toBeVisible()
+    expect(onExport).not.toHaveBeenCalled()
+    expect(onRecoverExportSource).not.toHaveBeenCalled()
+
+    await user.click(
+      screen.getByRole('button', { name: /export full-resolution jpeg/i }),
+    )
+
+    expect(onExport).toHaveBeenCalledExactlyOnceWith({
+      quality: 'high',
+      fidelity: 'balanced',
+    })
+    expect(onRecoverExportSource).not.toHaveBeenCalled()
+  })
+
+  it('reduces a legacy source-required recovery to the same hint, with no file picker', () => {
+    const onExport = vi.fn()
     const onRecoverExportSource = vi.fn()
 
-    render(
+    const { container } = render(
       <ExportTool
-        canExport={false}
+        canExport
         isProcessing={false}
-        onExport={vi.fn()}
+        onExport={onExport}
         exportResult={null}
         exportShareCapability={{ available: false, reason: 'Export first.' }}
         onShareExport={vi.fn()}
@@ -491,12 +549,82 @@ describe('exportTool', () => {
       />,
     )
 
-    expect(screen.getByText(/reselect the same RAW file/i)).toBeInTheDocument()
+    expect(screen.getByText(INTERRUPTED_HINT)).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Reselect RAW and retry' }),
+    ).toBeNull()
+    expect(container).not.toHaveTextContent(/reselect|frame\.RAF/i)
+    expect(buttonNames()).toEqual([
+      'Export full-resolution JPEG',
+      'Export HQ preview JPEG',
+    ])
+    expect(onExport).not.toHaveBeenCalled()
+    expect(onRecoverExportSource).not.toHaveBeenCalled()
+  })
 
-    await user.click(
-      screen.getByRole('button', { name: 'Reselect RAW and retry' }),
+  it('shows no interruption hint without one, or while an export is running', () => {
+    const props: ExportToolProps = {
+      canExport: true,
+      isProcessing: false,
+      onExport: vi.fn(),
+      exportResult: null,
+      exportShareCapability: { available: false, reason: 'Export first.' },
+      onShareExport: vi.fn(),
+      onDownloadExport: vi.fn(),
+      onCopyExport: vi.fn(),
+      recovery: { status: 'none' },
+    }
+    const { rerender } = render(<ExportTool {...props} />)
+    expect(screen.queryByText(INTERRUPTED_HINT)).toBeNull()
+
+    rerender(
+      <ExportTool
+        {...props}
+        isProcessing
+        recovery={createInterruptedExportRecovery(createCheckpointManifest())}
+      />,
+    )
+    expect(screen.queryByText(INTERRUPTED_HINT)).toBeNull()
+  })
+
+  it('keeps the result actions of a finished export beside an interruption', async () => {
+    const user = userEvent.setup()
+    const onExport = vi.fn()
+    const onShareExport = vi.fn()
+    const onDownloadExport = vi.fn()
+    const onDownloadExportManifest = vi.fn()
+    const onCopyExport = vi.fn()
+    const onRecoverExportSource = vi.fn()
+
+    render(
+      <ExportTool
+        canExport
+        isProcessing={false}
+        onExport={onExport}
+        exportResult={createResult({ manifestState: { status: 'ready' } })}
+        exportShareCapability={{ available: true }}
+        onShareExport={onShareExport}
+        onDownloadExport={onDownloadExport}
+        onDownloadExportManifest={onDownloadExportManifest}
+        onCopyExport={onCopyExport}
+        onRecoverExportSource={onRecoverExportSource}
+        recovery={createInterruptedExportRecovery(createCheckpointManifest())}
+      />,
     )
 
-    expect(onRecoverExportSource).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('JPEG ready')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Share' }))
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+    await user.click(screen.getByRole('button', { name: /manifest/i }))
+    await user.click(
+      screen.getByRole('button', { name: 'Copy preview-size image' }),
+    )
+
+    expect(onShareExport).toHaveBeenCalledOnce()
+    expect(onDownloadExport).toHaveBeenCalledOnce()
+    expect(onDownloadExportManifest).toHaveBeenCalledOnce()
+    expect(onCopyExport).toHaveBeenCalledOnce()
+    expect(onExport).not.toHaveBeenCalled()
+    expect(onRecoverExportSource).not.toHaveBeenCalled()
   })
 })

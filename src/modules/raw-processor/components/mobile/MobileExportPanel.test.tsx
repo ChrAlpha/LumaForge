@@ -3,10 +3,50 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
 import { createBlobOutputResult } from '~/lib/export/output-sink'
 
 import type { ExportResult } from '../../model/export-result'
+import { createInterruptedExportRecovery } from '../../services/export/export-recovery'
 import { MobileExportPanel } from './MobileExportPanel'
+
+const INTERRUPTED_HINT =
+  'The previous export was interrupted. The next export you start uses the current RAW and adjustments with a safer setting.'
+
+function buttonNames() {
+  return screen
+    .getAllByRole('button')
+    .map((button) => button.getAttribute('aria-label') ?? button.textContent)
+}
+
+function createCheckpointManifest(): ExportCheckpointManifest {
+  return {
+    version: 1,
+    exportId: 'export-1',
+    sourceFingerprint: {
+      name: 'frame.RAF',
+      size: 3,
+      lastModified: 123,
+      hashPrefixHex: 'abc',
+    },
+    fileName: 'frame.RAF',
+    sourceSize: 3,
+    sourceLastModified: 123,
+    outputWidth: 11662,
+    outputHeight: 8746,
+    graphFingerprint: 'graph-1',
+    profile: 'ios-safe',
+    attempt: 1,
+    preferredRows: 64,
+    totalRows: 8746,
+    recoveryMode: 'safe-retry',
+    outputSink: 'opfs-file',
+    sourceReacquisition: 'user-reselect-required',
+    completedRowsForDiagnostics: 64,
+    jpegState: 'restart-required',
+    updatedAt: '2026-05-01T00:00:00.000Z',
+  }
+}
 
 type MobileExportPanelProps = Parameters<typeof MobileExportPanel>[0] & {
   canPreviewExport?: boolean
@@ -478,5 +518,204 @@ describe('mobileExportPanel', () => {
     expect(
       screen.queryByRole('button', { name: 'Close export' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('notes an interrupted export in the idle content as a hint for the next export', async () => {
+    const user = userEvent.setup()
+    const onExport = vi.fn()
+    const onRecoverExportSource = vi.fn()
+    const onClose = vi.fn()
+    const recovery = createInterruptedExportRecovery(createCheckpointManifest())
+    const props: MobileExportPanelProps = {
+      canExport: false,
+      disabledReason: 'Loading export source',
+      canPreviewExport: false,
+      onPreviewExport: vi.fn(),
+      isProcessing: false,
+      onExport,
+      exportResult: null,
+      exportShareCapability: { available: false, reason: '' },
+      recovery,
+      onShareExport: vi.fn(),
+      onDownloadExport: vi.fn(),
+      onCopyExport: vi.fn(),
+      onRecoverExportSource,
+      onClose,
+      recap: {
+        output: 'full-resolution',
+        size: { width: 9728, height: 6656 },
+        look: { name: 'Kodak 2383', percent: 35 },
+        adjustments: 2,
+        transformApplied: false,
+      },
+    }
+
+    const { container, rerender, unmount } = render(
+      <MobileExportPanel {...props} />,
+    )
+
+    // The state title stays the panel's, and the hint lives in the idle
+    // content: after any block, before the recap and the actions.
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(
+      'Export',
+    )
+    const hint = screen.getByText(INTERRUPTED_HINT)
+    const recap = container.querySelector<HTMLElement>('[data-export-recap]')!
+    const actions = container.querySelector<HTMLElement>(
+      '[data-export-actions]',
+    )!
+    expect(
+      container
+        .querySelector('[data-export-unavailable-reason]')!
+        .compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      hint.compareDocumentPosition(recap) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(actions).not.toContainElement(hint)
+    // The recap still describes what can be written now.
+    expect(recap).toHaveTextContent('Full-resolution JPEG · 9728×6656')
+    expect(recap).toHaveTextContent('Look: Kodak 2383 · 35% · 2 adjustments')
+    // Neither the journal's sentence nor a promise to bring back the old
+    // settings, bytes or strips; no picker and no extra export button.
+    expect(screen.queryByText(recovery.message)).toBeNull()
+    expect(container).not.toHaveTextContent(/reselect|resum|restor|continu/i)
+    expect(buttonNames()).toEqual([
+      'Close export',
+      'Export full-resolution JPEG',
+      'Export HQ preview JPEG',
+    ])
+
+    // Readiness arriving starts nothing on its own.
+    rerender(
+      <MobileExportPanel {...props} canExport disabledReason={undefined} />,
+    )
+    expect(screen.getByText(INTERRUPTED_HINT)).toBeVisible()
+    expect(onExport).not.toHaveBeenCalled()
+    expect(onRecoverExportSource).not.toHaveBeenCalled()
+
+    // Closing hands the deck back; reopening shows the hint again. Neither
+    // starts an export or a picker.
+    await user.click(screen.getByRole('button', { name: 'Close export' }))
+    expect(onClose).toHaveBeenCalledOnce()
+    unmount()
+    render(
+      <MobileExportPanel {...props} canExport disabledReason={undefined} />,
+    )
+    expect(screen.getByText(INTERRUPTED_HINT)).toBeVisible()
+    expect(onExport).not.toHaveBeenCalled()
+    expect(onRecoverExportSource).not.toHaveBeenCalled()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Export full-resolution JPEG' }),
+    )
+    expect(onExport).toHaveBeenCalledExactlyOnceWith({
+      quality: 'high',
+      fidelity: 'balanced',
+    })
+    expect(onRecoverExportSource).not.toHaveBeenCalled()
+  })
+
+  it('reduces a legacy source-required recovery to the same hint, with no file picker', () => {
+    const onExport = vi.fn()
+    const onRecoverExportSource = vi.fn()
+    renderPanel({
+      onExport,
+      onRecoverExportSource,
+      recovery: {
+        status: 'source-required',
+        exportId: 'export-1',
+        expectedFileName: 'frame.RAF',
+        manifest: createCheckpointManifest(),
+        message:
+          'The browser interrupted the previous export. Please reselect the same RAW file so LumaForge can retry with a safer setting.',
+      },
+    })
+
+    expect(screen.getByText(INTERRUPTED_HINT)).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Reselect RAW and retry' }),
+    ).toBeNull()
+    expect(document.body).not.toHaveTextContent(/reselect|frame\.RAF/i)
+    expect(buttonNames()).toEqual([
+      'Export full-resolution JPEG',
+      'Export HQ preview JPEG',
+    ])
+    expect(onExport).not.toHaveBeenCalled()
+    expect(onRecoverExportSource).not.toHaveBeenCalled()
+  })
+
+  it('keeps the LUT contract route beside an interruption hint', async () => {
+    const onChooseLutContract = vi.fn()
+    renderPanel({
+      canExport: false,
+      disabledReason:
+        'Choose a LUT input profile before full-resolution export.',
+      onChooseLutContract,
+      recovery: createInterruptedExportRecovery(createCheckpointManifest()),
+    })
+
+    expect(screen.getByText(INTERRUPTED_HINT)).toBeVisible()
+    expect(
+      document.querySelector('[data-export-unavailable-reason]'),
+    ).toHaveAttribute('data-tone', 'contract')
+    await userEvent.click(
+      screen.getByRole('button', { name: /choose lut contract/i }),
+    )
+    expect(onChooseLutContract).toHaveBeenCalledOnce()
+  })
+
+  it('drops the interruption hint while an export runs and keeps its progress title', () => {
+    renderPanel({
+      isProcessing: true,
+      isExporting: true,
+      progress: 41.6,
+      recovery: createInterruptedExportRecovery(createCheckpointManifest()),
+    })
+
+    expect(screen.queryByText(INTERRUPTED_HINT)).toBeNull()
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(
+      'Exporting42%',
+    )
+  })
+
+  it('keeps the result actions of a finished export beside an interruption', async () => {
+    const user = userEvent.setup()
+    const onExport = vi.fn()
+    const onShareExport = vi.fn()
+    const onDownloadExport = vi.fn()
+    const onDownloadExportManifest = vi.fn()
+    const onCopyExport = vi.fn()
+    const onRecoverExportSource = vi.fn()
+    renderPanel({
+      onExport,
+      exportResult: createResult({
+        kind: 'full-resolution',
+        filename: 'DSC09142.jpg',
+        manifestState: { status: 'ready' },
+      }),
+      exportShareCapability: { available: true },
+      onShareExport,
+      onDownloadExport,
+      onDownloadExportManifest,
+      onCopyExport,
+      onRecoverExportSource,
+      recovery: createInterruptedExportRecovery(createCheckpointManifest()),
+    })
+
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Exported' }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Share' }))
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+    await user.click(screen.getByRole('button', { name: /copy preview-size/i }))
+    await user.click(screen.getByRole('button', { name: /manifest/i }))
+
+    expect(onShareExport).toHaveBeenCalledOnce()
+    expect(onDownloadExport).toHaveBeenCalledOnce()
+    expect(onCopyExport).toHaveBeenCalledOnce()
+    expect(onDownloadExportManifest).toHaveBeenCalledOnce()
+    expect(onExport).not.toHaveBeenCalled()
+    expect(onRecoverExportSource).not.toHaveBeenCalled()
   })
 })

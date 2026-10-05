@@ -1,5 +1,5 @@
 import { useAtomValue } from 'jotai'
-import { Copy, Download, FileJson, FolderOpen, Share2 } from 'lucide-react'
+import { Copy, Download, FileJson, Share2 } from 'lucide-react'
 
 import { Button } from '~/components/ui/button'
 import { localizeCopyLabel, localizeRawReason, useI18n } from '~/lib/i18n'
@@ -35,7 +35,6 @@ export function ExportTool({
   onDownloadExport,
   onDownloadExportManifest,
   onCopyExport,
-  onRecoverExportSource,
   activePlan,
   recovery,
   checkpointDurable,
@@ -56,6 +55,10 @@ export function ExportTool({
   onDownloadExport: () => void
   onDownloadExportManifest?: () => void | Promise<void>
   onCopyExport: () => void | Promise<void>
+  /**
+   * Never rendered: an interrupted export is only a hint for the next export
+   * the user starts, so the panel offers no file picker for it.
+   */
   onRecoverExportSource?: () => void
   activePlan?: ActiveExportPlanState
   recovery?: ExportRecoveryState
@@ -71,6 +74,13 @@ export function ExportTool({
     checkpointDurable ?? session?.exportState.checkpointDurable
   const isLowMemoryPlan =
     currentActivePlan?.runtimeMemoryProfile === 'low-memory'
+  // Any interruption, legacy source-required included, reads as the same
+  // hint: the next export the user starts uses the current RAW and edits on a
+  // safer plan. The journal's own sentence is never shown.
+  const showInterruption =
+    !isProcessing &&
+    currentRecovery !== undefined &&
+    currentRecovery.status !== 'none'
   const unavailableReason =
     localizeRawReason(disabledReason, t) || t('raw.exportSourceLoading')
   // The HQ preview can be refused on its own terms while full resolution is
@@ -193,21 +203,10 @@ export function ExportTool({
           {currentCheckpointDurable === false && isLowMemoryPlan && (
             <p className={noteClassName}>{t('raw.export.nonDurable')}</p>
           )}
-          {currentRecovery?.status === 'source-required' && (
-            <>
-              <p className={noteClassName}>{currentRecovery.message}</p>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={!onRecoverExportSource || isProcessing}
-                onClick={onRecoverExportSource}
-                className="[&_svg]:size-3.5"
-              >
-                <FolderOpen aria-hidden="true" />
-                {t('raw.export.reselect')}
-              </Button>
-            </>
+          {showInterruption && (
+            <p data-export-interruption className={noteClassName}>
+              {t('raw.export.interrupted')}
+            </p>
           )}
           {!canExport && !isProcessing && (
             <p className={noteClassName}>{unavailableReason}</p>
