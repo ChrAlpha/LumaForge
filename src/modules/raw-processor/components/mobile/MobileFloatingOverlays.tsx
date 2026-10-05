@@ -103,6 +103,8 @@ export interface MobileFloatingOverlaysProps {
   color: ColorValue
   selectiveColor: HSLToolValue | undefined
   manualTransform: ManualTransform | undefined
+  /** How much of the applied LUT reaches the photo, 0..1. */
+  lookIntensity?: number
   onExitImmersive: () => void
   /** Whether the compare lens is on screen beside the peek pill. */
   lensVisible?: boolean
@@ -122,6 +124,7 @@ export function MobileFloatingOverlays({
   color,
   selectiveColor,
   manualTransform,
+  lookIntensity,
   onExitImmersive,
   lensVisible = false,
   peekPlacement = 'row',
@@ -202,6 +205,7 @@ export function MobileFloatingOverlays({
         color={color}
         selectiveColor={selectiveColor}
         manualTransform={manualTransform}
+        lookIntensity={lookIntensity}
       />
     </>
   )

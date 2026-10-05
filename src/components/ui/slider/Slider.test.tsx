@@ -80,6 +80,8 @@ describe('slider', () => {
     expect(overlay).not.toBeNull()
     expect(overlay?.style.left).toBe('50%')
     expect(overlay?.style.width).toBe('0%')
+    // No offset, no amber.
+    expect(overlay?.style.background).toBe('')
   })
 
   it('bipolar renders an overlay extending right of centre for a positive value', () => {
@@ -122,6 +124,30 @@ describe('slider', () => {
     expect(overlay).not.toBeNull()
     expect(overlay?.style.left).toBe('25%')
     expect(overlay?.style.width).toBe('25%')
+  })
+
+  it('bipolar grows the fill from the anchor it is given', () => {
+    render(
+      <Slider
+        value={[40]}
+        min={0}
+        max={100}
+        bipolar
+        bipolarAnchor={70}
+        thumbAriaLabel="Strength"
+        thumbAriaDescribedBy="strength-reason"
+      />,
+    )
+    const thumb = screen.getByRole('slider', { name: 'Strength' })
+    expect(thumb).toHaveAttribute('aria-describedby', 'strength-reason')
+    const overlay = thumb
+      .closest('[data-slot="slider-root"]')
+      ?.querySelector(
+        '[data-slot="slider-range"][data-bipolar]',
+      ) as HTMLElement | null
+    // From 40 up to the anchor at 70.
+    expect(overlay?.style.left).toBe('40%')
+    expect(overlay?.style.width).toBe('30%')
   })
 
   it('bipolar with a directional track uses the lower-opacity amber overlay default', () => {

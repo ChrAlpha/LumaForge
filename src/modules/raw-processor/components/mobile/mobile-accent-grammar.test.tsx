@@ -1,6 +1,6 @@
 import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
 import { render } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MobileExportPanel } from './MobileExportPanel'
 import { MobileLookDeck } from './MobileLookDeck'
@@ -21,6 +21,21 @@ const lutBrowser = {
 }
 
 describe('mobile accent grammar', () => {
+  beforeEach(() => {
+    // The Look deck's Strength slider (Radix) measures its thumb.
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    )
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('keeps Export actions on the cool lift, not amber hover', () => {
     const { container } = render(
       <MobileExportPanel

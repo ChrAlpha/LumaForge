@@ -5,6 +5,7 @@ import type {
 import { m } from 'motion/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
+import { clsxm } from '~/lib/cn'
 import { surfaceFade } from '~/lib/spring'
 
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
@@ -12,6 +13,7 @@ import type { LUTContractSelectionState } from '../../model/session'
 import { DEFAULT_LOOK_INTENSITY } from '../../services/look/style-system'
 import { useLutContractSummary } from '../tools/lut/useLutContractSummary'
 import { useOnlineLutEntryLoader } from '../tools/lut/useOnlineLutEntryLoader'
+import type { ScrubFieldId } from './AdjustListPanel'
 import type { AppliedLut, LoadedLutEntry } from './mobile-lut-strip'
 import { buildLutStripItems, resolveAppliedLookTitle } from './mobile-lut-strip'
 import type { MobileLookView } from './mobile-stage-layout'
@@ -61,8 +63,20 @@ export function MobileLookDeck(props: {
    */
   view: MobileLookView
   onViewChange: (view: MobileLookView) => void
+  /**
+   * A Strength scrub reports on the Adjust channel, so it takes the same
+   * focus: the HUD in the topbar band, the dock and topbar receding.
+   */
+  onScrubChange?: (field: ScrubFieldId | null) => void
 }) {
   const { look, view, onViewChange } = props
+  const [strengthScrubbing, setStrengthScrubbing] = useState(false)
+  // Neighbours dim, they do not disappear: the look a scrub is weighing
+  // stays in view.
+  const siblingClass = clsxm(
+    'transition-opacity duration-150',
+    strengthScrubbing && 'pointer-events-none opacity-45',
+  )
   const sources = look.onlineLutSources
   const strengthReasonId = useId()
   const [strengthReasonShown, setStrengthReasonShown] = useState(false)
@@ -203,34 +217,39 @@ export function MobileLookDeck(props: {
       animate={{ opacity: 1 }}
       transition={surfaceFade}
     >
-      <MobileLutStrip
-        items={items}
-        loadingEntryId={loadingEntryId}
-        failedEntryId={failedEntryId}
-        entryLoadProgress={sources?.entryLoadProgress ?? null}
-        disabled={look.disabled}
-        appliedNeedsContract={appliedNeedsContract}
-        onSelectOriginal={() => {
-          setDismissedFailureId(failedEntryId)
-          // A look still on its way must not land after the Original.
-          sources?.cancelEntryLoad()
-          if (lutApplied) look.onLutClear()
-        }}
-        onSelectEntry={(entryId) => {
-          const item = items
-            .flatMap((entry) => (entry.kind === 'group' ? entry.entries : []))
-            .find((entry) => entry.entry.id === entryId)
-          if (item?.applied) return
-          loadEntry(entryId)
-        }}
-        onCancelEntry={() => sources?.cancelEntryLoad()}
-        onImport={(files) => {
-          setDismissedFailureId(failedEntryId)
-          sources?.cancelEntryLoad()
-          importBaseline.current = appliedIdentity
-          look.onLutLoad(files)
-        }}
-      />
+      <div
+        data-sibling-scrubbing={strengthScrubbing || undefined}
+        className={siblingClass}
+      >
+        <MobileLutStrip
+          items={items}
+          loadingEntryId={loadingEntryId}
+          failedEntryId={failedEntryId}
+          entryLoadProgress={sources?.entryLoadProgress ?? null}
+          disabled={look.disabled}
+          appliedNeedsContract={appliedNeedsContract}
+          onSelectOriginal={() => {
+            setDismissedFailureId(failedEntryId)
+            // A look still on its way must not land after the Original.
+            sources?.cancelEntryLoad()
+            if (lutApplied) look.onLutClear()
+          }}
+          onSelectEntry={(entryId) => {
+            const item = items
+              .flatMap((entry) => (entry.kind === 'group' ? entry.entries : []))
+              .find((entry) => entry.entry.id === entryId)
+            if (item?.applied) return
+            loadEntry(entryId)
+          }}
+          onCancelEntry={() => sources?.cancelEntryLoad()}
+          onImport={(files) => {
+            setDismissedFailureId(failedEntryId)
+            sources?.cancelEntryLoad()
+            importBaseline.current = appliedIdentity
+            look.onLutLoad(files)
+          }}
+        />
+      </div>
       <MobileLookStrength
         value={look.activeIntensity ?? DEFAULT_LOOK_INTENSITY}
         onChange={look.onIntensityChange}
@@ -239,26 +258,36 @@ export function MobileLookDeck(props: {
         onBlockedPress={
           lutApplied ? undefined : () => setStrengthReasonShown(true)
         }
+        activeScrub={strengthScrubbing}
+        onScrubChange={(scrubbing) => {
+          setStrengthScrubbing(scrubbing)
+          props.onScrubChange?.(scrubbing ? { kind: 'strength' } : null)
+        }}
       />
-      <MobileLookFooter
-        lutApplied={lutApplied}
-        contractView={summary.contractView}
-        displayOutputLabel={summary.displayOutputLabel}
-        failure={
-          failedEntry
-            ? {
-                label: failedEntry.title,
-                onRetry: () => loadEntry(failedEntry.id),
-              }
-            : null
-        }
-        strengthReasonShown={strengthReasonShown && !lutApplied}
-        strengthReasonId={strengthReasonId}
-        disabled={look.disabled}
-        onOpenContract={openContract}
-        onApplyRecommendation={look.onLutProfileSelect}
-        onOpenSources={props.onOpenSources}
-      />
+      <div
+        data-sibling-scrubbing={strengthScrubbing || undefined}
+        className={siblingClass}
+      >
+        <MobileLookFooter
+          lutApplied={lutApplied}
+          contractView={summary.contractView}
+          displayOutputLabel={summary.displayOutputLabel}
+          failure={
+            failedEntry
+              ? {
+                  label: failedEntry.title,
+                  onRetry: () => loadEntry(failedEntry.id),
+                }
+              : null
+          }
+          strengthReasonShown={strengthReasonShown && !lutApplied}
+          strengthReasonId={strengthReasonId}
+          disabled={look.disabled}
+          onOpenContract={openContract}
+          onApplyRecommendation={look.onLutProfileSelect}
+          onOpenSources={props.onOpenSources}
+        />
+      </div>
     </m.div>
   )
 }

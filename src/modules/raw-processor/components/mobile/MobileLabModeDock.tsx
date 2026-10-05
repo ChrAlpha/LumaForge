@@ -216,6 +216,7 @@ function MobileLabModePanel({
       onOpenSources={onOpenLutBrowser}
       view={lookView}
       onViewChange={onLookViewChange}
+      onScrubChange={onScrubChange}
     />
   )
 }

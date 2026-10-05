@@ -594,7 +594,7 @@ describe('rawToolSurface', () => {
     expect(
       screen.queryByRole('button', { name: 'Neutral' }),
     ).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Standard' })).toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: 'Strength' })).toBeInTheDocument()
     expect(screen.getByLabelText('Exposure')).toBeInTheDocument()
     expect(screen.queryByText('Log Space')).not.toBeInTheDocument()
   })

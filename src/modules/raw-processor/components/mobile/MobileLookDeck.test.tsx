@@ -140,6 +140,15 @@ describe('mobileLookDeck', () => {
       callback(0)
       return 0
     })
+    // The Strength slider (Radix) measures its thumb.
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    )
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -355,8 +364,8 @@ describe('mobileLookDeck', () => {
   it('keeps Strength off without a LUT and says why when it is pressed', () => {
     vi.useFakeTimers()
     const { container } = renderDeck()
-    const strength = screen.getByRole('tablist', { name: 'Strength' })
-    expect(within(strength).getByRole('tab', { name: 'Strong' })).toBeDisabled()
+    const strength = screen.getByRole('slider', { name: 'Strength' })
+    expect(strength).toHaveAttribute('data-disabled')
     expect(strength).toHaveAccessibleDescription(
       'Choose a LUT to set its strength',
     )
@@ -375,17 +384,148 @@ describe('mobileLookDeck', () => {
     ).not.toBeNull()
   })
 
-  it('sets the strength of an applied LUT on 44px segments', async () => {
+  it('sets a continuous strength on a slider with Light, Standard and Strong detents', () => {
+    const controls = look({
+      currentLutName: 'Kodak 2383',
+      appliedLut: { name: 'Kodak 2383', sha256: SHA_KODAK },
+      activeIntensity: 0.62,
+      strengthDisabled: false,
+    })
+    const { container } = renderDeck(controls)
+    const strength = screen.getByRole('slider', { name: 'Strength' })
+    expect(strength).toHaveAttribute('aria-valuenow', '62')
+    expect(strength).toHaveAttribute('aria-valuetext', '62%')
+
+    // The presets are ticks on the track with their names under it.
+    const row = container.querySelector<HTMLElement>(
+      '[data-mobile-look-strength]',
+    )!
+    expect(
+      Array.from(row.querySelectorAll('[data-slider-tick]')).map((tick) =>
+        tick.getAttribute('data-slider-tick'),
+      ),
+    ).toEqual(['40', '70', '100'])
+    const labels = row.querySelector('[data-slider-tick-labels]')!
+    expect(labels).toHaveTextContent('LightStandardStrong')
+    expect(labels).toHaveClass('text-[0.6rem]', 'text-lf-on-photo-ink/52')
+
+    // Arrows step 1%, Shift+arrows 10%.
+    fireEvent.keyDown(strength, { key: 'ArrowRight' })
+    expect(controls.onIntensityChange).toHaveBeenLastCalledWith(0.63)
+    fireEvent.keyDown(strength, { key: 'ArrowLeft', shiftKey: true })
+    expect(controls.onIntensityChange).toHaveBeenLastCalledWith(0.52)
+
+    // Away from Standard the value is amber and is the reset.
+    const reset = screen.getByRole('button', { name: 'Reset Strength' })
+    expect(reset).toHaveTextContent('62%')
+    expect(reset).toHaveClass('text-lf-amber-soft', 'tabular-nums')
+    fireEvent.click(reset)
+    expect(controls.onIntensityChange).toHaveBeenLastCalledWith(0.7)
+  })
+
+  it('reads Standard as the rest value and 0 as Off', () => {
+    const applied = {
+      currentLutName: 'Kodak 2383',
+      appliedLut: { name: 'Kodak 2383', sha256: SHA_KODAK },
+      strengthDisabled: false,
+    }
+    const { rerenderDeck } = renderDeck(
+      look({ ...applied, activeIntensity: 0.7 }),
+    )
+    const reset = screen.getByRole('button', { name: 'Reset Strength' })
+    expect(reset).toHaveTextContent('70%')
+    expect(reset).toBeDisabled()
+    expect(reset.className).not.toMatch(/amber/)
+
+    rerenderDeck(look({ ...applied, activeIntensity: 0 }))
+    expect(screen.getByRole('slider', { name: 'Strength' })).toHaveAttribute(
+      'aria-valuetext',
+      'Off',
+    )
+    expect(reset).toHaveTextContent('Off')
+  })
+
+  it('takes the Adjust focus while Strength scrubs: the HUD channel, the strip and footer dimmed', () => {
+    // jsdom has no PointerEvent: without one the press carries no pointer
+    // type or coordinates.
+    class PointerEventPolyfill extends MouseEvent {
+      pointerType: string
+      pointerId: number
+      isPrimary: boolean
+      constructor(type: string, init: PointerEventInit = {}) {
+        super(type, init)
+        this.pointerType = init.pointerType ?? ''
+        this.pointerId = init.pointerId ?? 0
+        this.isPrimary = init.isPrimary ?? true
+      }
+    }
+    vi.stubGlobal('PointerEvent', PointerEventPolyfill)
+    const onScrubChange = vi.fn()
     const controls = look({
       currentLutName: 'Kodak 2383',
       appliedLut: { name: 'Kodak 2383', sha256: SHA_KODAK },
       strengthDisabled: false,
     })
-    renderDeck(controls)
-    const strength = screen.getByRole('tablist', { name: 'Strength' })
-    expect(strength).toHaveClass('h-11')
-    await userEvent.click(within(strength).getByRole('tab', { name: 'Strong' }))
-    expect(controls.onIntensityChange).toHaveBeenCalledWith(1)
+    const { container } = render(
+      <MobileLookDeck
+        look={controls}
+        onOpenSources={vi.fn()}
+        view="strip"
+        onViewChange={vi.fn()}
+        onScrubChange={onScrubChange}
+      />,
+    )
+    const row = container.querySelector<HTMLElement>(
+      '[data-mobile-look-strength] [data-adjust-slider-row]',
+    )!
+    const pointer = {
+      pointerType: 'mouse',
+      pointerId: 1,
+      isPrimary: true,
+      button: 0,
+      buttons: 1,
+      clientX: 120,
+      clientY: 20,
+    }
+    fireEvent.pointerDown(row, pointer)
+    expect(onScrubChange).toHaveBeenLastCalledWith({ kind: 'strength' })
+    expect(row).toHaveAttribute('data-active-scrub', 'true')
+    const dimmed = container.querySelectorAll('[data-sibling-scrubbing]')
+    expect(dimmed).toHaveLength(2)
+    for (const node of dimmed) {
+      expect(node).toHaveClass('pointer-events-none', 'opacity-45')
+    }
+    expect(dimmed[0]).toContainElement(
+      screen.getByRole('group', { name: 'Looks' }),
+    )
+    expect(dimmed[1]).toContainElement(
+      container.querySelector('[data-mobile-look-footer]') as HTMLElement,
+    )
+
+    fireEvent.pointerUp(row, pointer)
+    expect(onScrubChange).toHaveBeenLastCalledWith(null)
+    expect(container.querySelector('[data-sibling-scrubbing]')).toBeNull()
+  })
+
+  it('sits compact in the deck, about the touch target the segmented control was', () => {
+    const { container } = renderDeck(
+      look({
+        currentLutName: 'Kodak 2383',
+        appliedLut: { name: 'Kodak 2383', sha256: SHA_KODAK },
+        strengthDisabled: false,
+      }),
+    )
+    const row = container.querySelector<HTMLElement>(
+      '[data-mobile-look-strength] [data-adjust-slider-row]',
+    )!
+    // No list padding: a 16px label line, a 21px track and a 10px name
+    // line, against the 44px segmented control it replaced.
+    expect(row).not.toHaveClass('py-1.5')
+    expect(row).not.toHaveClass('px-3')
+    expect(row.firstElementChild).toHaveClass('min-h-4')
+    expect(
+      row.querySelector('[data-testid="adjust-slider-row-scrub"]'),
+    ).toHaveClass('py-2')
   })
 
   it('offers a recommended contract as a one-tap Apply', async () => {

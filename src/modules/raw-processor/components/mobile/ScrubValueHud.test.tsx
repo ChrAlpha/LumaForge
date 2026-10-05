@@ -52,6 +52,36 @@ describe('scrubValueHud', () => {
     expect(hud).toHaveAttribute('data-scrub-value-hud')
   })
 
+  it('reads a Strength scrub as the whole percent, and 0 as Off', () => {
+    const { rerender } = render(
+      <ScrubValueHud
+        field={{ kind: 'strength' }}
+        tone={TONE_NEUTRAL}
+        color={COLOR_NEUTRAL}
+        selectiveColor={undefined}
+        manualTransform={undefined}
+        lookIntensity={0.62}
+      />,
+    )
+    const hud = screen.getByLabelText(/adjustment readout/i)
+    expect(hud).toHaveTextContent('Strength')
+    expect(hud).toHaveTextContent('62%')
+
+    rerender(
+      <ScrubValueHud
+        field={{ kind: 'strength' }}
+        tone={TONE_NEUTRAL}
+        color={COLOR_NEUTRAL}
+        selectiveColor={undefined}
+        manualTransform={undefined}
+        lookIntensity={0}
+      />,
+    )
+    expect(screen.getByLabelText(/adjustment readout/i)).toHaveTextContent(
+      'Off',
+    )
+  })
+
   it('renders the live color value when scrubbing a color field', () => {
     render(
       <ScrubValueHud

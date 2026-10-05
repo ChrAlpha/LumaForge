@@ -73,7 +73,7 @@ export function MobileLookFooter(props: {
           aria-hidden={props.strengthReasonShown || undefined}
         >
           {props.strengthReasonShown
-            ? t('raw.mobile.look.strengthReason')
+            ? t('raw.strength.reason')
             : t('raw.mobile.look.noLut')}
         </span>
       )
@@ -183,7 +183,7 @@ export function MobileLookFooter(props: {
       <div className="flex min-w-0 flex-1 items-center">{renderStatus()}</div>
       {!props.lutApplied && (
         <span id={props.strengthReasonId} className="sr-only">
-          {t('raw.mobile.look.strengthReason')}
+          {t('raw.strength.reason')}
         </span>
       )}
       <button

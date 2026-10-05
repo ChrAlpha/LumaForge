@@ -7,6 +7,10 @@ import type { ManualTransform } from '~/modules/transform-demo/transform-types'
 
 import type { ColorValue } from '../color-fields'
 import { COLOR_FIELDS, formatColorValueShort } from '../color-fields'
+import {
+  formatStrengthPercent,
+  intensityToStrengthPercent,
+} from '../strength-field'
 import type { ToneValue } from '../tone-fields'
 import { formatToneValue, TONE_FIELDS } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
@@ -28,6 +32,8 @@ type ScrubValueHudProps = {
   color: ColorValue
   selectiveColor: HSLToolValue | undefined
   manualTransform: ManualTransform | undefined
+  /** How much of the applied LUT reaches the photo, 0..1. */
+  lookIntensity?: number
 }
 
 export function ScrubValueHud(props: ScrubValueHudProps) {
@@ -62,7 +68,7 @@ export function ScrubValueHud(props: ScrubValueHudProps) {
 }
 
 type Readout = {
-  kind: 'tone' | 'color' | 'hsl' | 'transform'
+  kind: 'tone' | 'color' | 'hsl' | 'transform' | 'strength'
   key: string
   label: string
   formatted: string
@@ -74,6 +80,20 @@ function resolveReadout(
 ): Readout | null {
   const { field } = props
   if (!field) return null
+
+  // The row reads in whole percents; so does the HUD ("62%", 0 is Off).
+  if (field.kind === 'strength') {
+    if (props.lookIntensity === undefined) return null
+    return {
+      kind: 'strength',
+      key: 'strength',
+      label: t('raw.strength.title'),
+      formatted: formatStrengthPercent(
+        intensityToStrengthPercent(props.lookIntensity),
+        t,
+      ),
+    }
+  }
 
   if (field.kind === 'tone') {
     const toneField = TONE_FIELDS.find((f) => f.key === field.key)

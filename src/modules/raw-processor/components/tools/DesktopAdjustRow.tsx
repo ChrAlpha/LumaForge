@@ -7,6 +7,8 @@ import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
 import { scrubGainBandAtom } from '../../state/scrub.atoms'
+import type { SliderTickMark } from './SliderTicks'
+import { SliderTickLabels, SliderTickMarks } from './SliderTicks'
 import { useSliderScrub } from './useSliderScrub'
 
 export interface DesktopAdjustRowProps {
@@ -34,6 +36,17 @@ export interface DesktopAdjustRowProps {
   /** Expose the row as a labelled group (HSL band rows). */
   asGroup?: boolean
   rowProps?: Record<string, string | undefined>
+  /**
+   * The value the field rests at and resets to. Defaults to 0; the value
+   * reads amber (and is the reset) whenever it is anywhere else.
+   */
+  neutral?: number
+  /** Values the scrub sticks to; defaults to the neutral alone. */
+  detents?: readonly number[]
+  /** Marks on the track with tiny names under it. */
+  ticks?: readonly SliderTickMark[]
+  /** Id of text that explains the slider, e.g. why it is disabled. */
+  describedBy?: string
 }
 
 /**
@@ -62,22 +75,28 @@ export function DesktopAdjustRow({
   sliderLabel,
   asGroup,
   rowProps,
+  neutral = 0,
+  detents,
+  ticks,
+  describedBy,
 }: DesktopAdjustRowProps) {
   const { t } = useI18n()
   const labelId = useId()
-  const dirty = value !== 0
+  const dirty = value !== neutral
   const setGainBand = useSetAtom(scrubGainBandAtom)
   const disabledRef = useRef(disabled)
   disabledRef.current = disabled
   const change = (next: number) => {
     if (!disabledRef.current) onChange(next)
   }
-  const reset = () => change(0)
+  const reset = () => change(neutral)
   const scrub = useSliderScrub({
     value,
     min,
     max,
     step,
+    neutral,
+    detents,
     disabled,
     onChange: change,
     onGainChange: setGainBand,
@@ -154,23 +173,43 @@ export function DesktopAdjustRow({
           </button>
         </span>
       </div>
-      <Slider
-        thumbAriaLabel={sliderLabel}
-        thumbAriaLabelledBy={sliderLabel ? undefined : labelId}
-        thumbAriaValueText={valueText}
-        value={[value]}
-        min={min}
-        max={max}
-        step={step}
-        disabled={disabled}
-        bipolar
-        track={track}
-        onValueChange={([next]) => {
-          if (next !== undefined) {
-            change(next)
-          }
-        }}
-      />
+      <div className="relative">
+        {ticks && (
+          <SliderTickMarks
+            ticks={ticks}
+            min={min}
+            max={max}
+            disabled={disabled}
+          />
+        )}
+        <Slider
+          thumbAriaLabel={sliderLabel}
+          thumbAriaLabelledBy={sliderLabel ? undefined : labelId}
+          thumbAriaValueText={valueText}
+          thumbAriaDescribedBy={describedBy}
+          value={[value]}
+          min={min}
+          max={max}
+          step={step}
+          disabled={disabled}
+          bipolar
+          bipolarAnchor={neutral}
+          track={track}
+          onValueChange={([next]) => {
+            if (next !== undefined) {
+              change(next)
+            }
+          }}
+        />
+      </div>
+      {ticks && (
+        <SliderTickLabels
+          ticks={ticks}
+          min={min}
+          max={max}
+          className="-mt-0.5"
+        />
+      )}
     </div>
   )
 }

@@ -620,59 +620,44 @@ describe('rawToolSurface', () => {
     expect(onCompareReset).toHaveBeenCalledTimes(1)
   })
 
-  it('selects a strength level', async () => {
-    const user = userEvent.setup()
+  it('sets a continuous strength on the desktop rail, with presets as detents', () => {
     const onChange = vi.fn()
-    render(
+    const { container } = render(
       <RawToolSurface
         {...baseProps}
         hasImage
         currentLutName="Sony Look.cube"
+        activeIntensity={0.62}
         onIntensityChange={onChange}
       />,
     )
 
-    expect(screen.getByRole('tab', { name: 'Off' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Light' })).toBeInTheDocument()
-    expect(
-      screen.getByRole('tablist', { name: 'Strength' }),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Standard' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
-    expect(screen.getByRole('tab', { name: 'Strong' })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('tab', { name: 'Strong' }))
-
-    expect(onChange).toHaveBeenCalledWith(1)
-  })
-
-  it('selects the next strength level with keyboard arrows', async () => {
-    const user = userEvent.setup()
-    const onChange = vi.fn()
-    render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        currentLutName="Sony Look.cube"
-        onIntensityChange={onChange}
-      />,
+    const row = container.querySelector<HTMLElement>(
+      '[data-raw-desktop-strength="row"]',
+    )!
+    const strength = within(row).getByRole('slider', { name: 'Strength' })
+    expect(strength).toHaveAttribute('aria-valuenow', '62')
+    expect(strength).toHaveAttribute('aria-valuetext', '62%')
+    // No segmented control is left behind.
+    expect(screen.queryByRole('tablist', { name: 'Strength' })).toBeNull()
+    expect(row.querySelector('[data-slider-tick-labels]')).toHaveTextContent(
+      'LightStandardStrong',
     )
 
-    const strength = screen.getByRole('tablist', { name: 'Strength' })
-    const standard = within(strength).getByRole('tab', { name: 'Standard' })
+    // Arrows step 1%, Shift+arrows 10%.
+    fireEvent.keyDown(strength, { key: 'ArrowRight' })
+    expect(onChange).toHaveBeenLastCalledWith(0.63)
+    fireEvent.keyDown(strength, { key: 'ArrowRight', shiftKey: true })
+    expect(onChange).toHaveBeenLastCalledWith(0.72)
 
-    expect(standard).toHaveAttribute('tabIndex', '0')
-
-    standard.focus()
-    await user.keyboard('{ArrowRight}')
-
-    expect(onChange).toHaveBeenCalledWith(1)
-    expect(within(strength).getByRole('tab', { name: 'Strong' })).toHaveFocus()
+    // The amber value returns it to Standard.
+    const reset = within(row).getByRole('button', { name: 'Reset Strength' })
+    expect(reset).toHaveClass('text-lf-amber-soft')
+    fireEvent.click(reset)
+    expect(onChange).toHaveBeenLastCalledWith(0.7)
   })
 
-  it('updates selected strength from props without remounting the tablist', () => {
+  it('updates the strength from props without remounting the slider', () => {
     const { rerender } = render(
       <RawToolSurface
         {...baseProps}
@@ -681,65 +666,23 @@ describe('rawToolSurface', () => {
       />,
     )
 
-    const strength = screen.getByRole('tablist', { name: 'Strength' })
-    expect(
-      within(strength).getByRole('tab', { name: 'Standard' }),
-    ).toHaveAttribute('aria-selected', 'true')
+    const strength = screen.getByRole('slider', { name: 'Strength' })
+    expect(strength).toHaveAttribute('aria-valuetext', '70%')
 
     rerender(
       <RawToolSurface
         {...baseProps}
         hasImage
         currentLutName="Sony Look.cube"
-        activeIntensity={1}
+        activeIntensity={0}
       />,
     )
 
-    const updatedStrength = screen.getByRole('tablist', { name: 'Strength' })
-    expect(updatedStrength).toBe(strength)
-    expect(
-      within(updatedStrength).getByRole('tab', { name: 'Strong' }),
-    ).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('slider', { name: 'Strength' })).toBe(strength)
+    expect(strength).toHaveAttribute('aria-valuetext', 'Off')
   })
 
-  it('keeps controlled strength selection when the parent rejects a change', async () => {
-    const user = userEvent.setup()
-    const onChange = vi.fn()
-    const { rerender } = render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        currentLutName="Sony Look.cube"
-        onIntensityChange={onChange}
-      />,
-    )
-
-    const strength = screen.getByRole('tablist', { name: 'Strength' })
-
-    await user.click(within(strength).getByRole('tab', { name: 'Strong' }))
-
-    expect(onChange).toHaveBeenCalledWith(1)
-
-    rerender(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        currentLutName="Sony Look.cube"
-        activeIntensity={0.7}
-        onIntensityChange={onChange}
-      />,
-    )
-
-    expect(
-      within(strength).getByRole('tab', { name: 'Standard' }),
-    ).toHaveAttribute('aria-selected', 'true')
-    expect(
-      within(strength).getByRole('tab', { name: 'Strong' }),
-    ).toHaveAttribute('aria-selected', 'false')
-  })
-
-  it('keeps strength disabled for catalog-only online LUT sources', async () => {
-    const user = userEvent.setup()
+  it('keeps strength disabled for catalog-only online LUT sources and says why', () => {
     const onChange = vi.fn()
     render(
       <RawToolSurface
@@ -750,44 +693,23 @@ describe('rawToolSurface', () => {
       />,
     )
 
-    const strength = screen.getByRole('tablist', { name: 'Strength' })
-    const strong = within(strength).getByRole('tab', { name: 'Strong' })
-
-    expect(strong).toBeDisabled()
-    expect(strong).toHaveAttribute('aria-disabled', 'true')
-
-    await user.click(strong)
-
+    const strength = screen.getByRole('slider', { name: 'Strength' })
+    expect(strength).toHaveAttribute('data-disabled')
+    expect(strength).toHaveAccessibleDescription(
+      'Choose a LUT to set its strength',
+    )
+    fireEvent.keyDown(strength, { key: 'ArrowRight' })
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('disables strength tabs before upload', async () => {
-    const user = userEvent.setup()
+  it('disables strength before upload', () => {
     const onChange = vi.fn()
     render(<RawToolSurface {...baseProps} onIntensityChange={onChange} />)
 
-    const strength = screen.getByRole('tablist', { name: 'Strength' })
-    const strong = within(strength).getByRole('tab', { name: 'Strong' })
-
-    expect(strong).toBeDisabled()
-    expect(strong).toHaveAttribute('aria-disabled', 'true')
-
-    await user.click(strong)
-
-    expect(onChange).not.toHaveBeenCalled()
-  })
-
-  it('does not select disabled strength tabs from keyboard input', async () => {
-    const user = userEvent.setup()
-    const onChange = vi.fn()
-    render(<RawToolSurface {...baseProps} onIntensityChange={onChange} />)
-
-    const strength = screen.getByRole('tablist', { name: 'Strength' })
-    const standard = within(strength).getByRole('tab', { name: 'Standard' })
-
-    standard.focus()
-    await user.keyboard('{ArrowRight}')
-
+    const strength = screen.getByRole('slider', { name: 'Strength' })
+    expect(strength).toHaveAttribute('data-disabled')
+    expect(strength).not.toHaveAttribute('tabindex')
+    fireEvent.keyDown(strength, { key: 'ArrowRight' })
     expect(onChange).not.toHaveBeenCalled()
   })
 
@@ -1303,13 +1225,14 @@ describe('rawToolSurface', () => {
       ).not.toBeInTheDocument()
 
       // Strength lives in the Look deck; it stays off until a LUT applies.
-      const strength = screen.getByRole('tablist', { name: 'Strength' })
-      const strong = within(strength).getByRole('tab', { name: 'Strong' })
+      const strength = screen.getByRole('slider', { name: 'Strength' })
+      expect(strength).toHaveAttribute('data-disabled')
+      expect(strength).toHaveAccessibleDescription(
+        'Choose a LUT to set its strength',
+      )
 
-      expect(strong).toBeDisabled()
-      expect(strong).toHaveAttribute('aria-disabled', 'true')
-
-      await user.click(strong)
+      await user.keyboard('{ArrowRight}')
+      fireEvent.keyDown(strength, { key: 'ArrowRight' })
 
       expect(onChange).not.toHaveBeenCalled()
     } finally {

@@ -12,6 +12,8 @@ export type SliderProps = SliderRootProps & {
   thumbAriaLabel?: string
   thumbAriaLabelledBy?: string
   thumbAriaValueText?: string
+  /** Id of text that explains the thumb, e.g. why it is disabled. */
+  thumbAriaDescribedBy?: string
   /**
    * CSS `background` for the Track. When provided, replaces the default
    * dim cool-slate wash. Use `slider-tracks` helpers for directional cues
@@ -31,6 +33,11 @@ export type SliderProps = SliderRootProps & {
    * to the default Radix Range behaviour.
    */
   bipolar?: boolean
+  /**
+   * The value the bipolar fill grows from. Defaults to 0; a field whose
+   * rest value sits elsewhere in its domain anchors the fill there.
+   */
+  bipolarAnchor?: number
   ref?: React.Ref<React.ElementRef<typeof SliderPrimitive.Root> | null>
 }
 
@@ -45,13 +52,14 @@ function computeBipolar(
   value: readonly number[] | undefined,
   min: number,
   max: number,
+  anchor: number,
 ): { start: number; width: number } | null {
   if (!value || value.length !== 1) return null
   const span = max - min
   if (span <= 0) return null
   const current = value[0]
   if (typeof current !== 'number' || Number.isNaN(current)) return null
-  const centerPct = clampPct(((0 - min) / span) * 100)
+  const centerPct = clampPct(((anchor - min) / span) * 100)
   const valuePct = clampPct(((current - min) / span) * 100)
   const start = Math.min(centerPct, valuePct)
   const width = Math.abs(valuePct - centerPct)
@@ -64,10 +72,12 @@ export const Slider = ({
   thumbAriaLabel,
   thumbAriaLabelledBy,
   thumbAriaValueText,
+  thumbAriaDescribedBy,
   variant = 'primary',
   track,
   range,
   bipolar = false,
+  bipolarAnchor = 0,
   ...props
 }: SliderProps) => {
   const min = props.min ?? 0
@@ -76,7 +86,9 @@ export const Slider = ({
     | readonly number[]
     | undefined
 
-  const bipolarOverlay = bipolar ? computeBipolar(liveValue, min, max) : null
+  const bipolarOverlay = bipolar
+    ? computeBipolar(liveValue, min, max, bipolarAnchor)
+    : null
 
   // Default Range/Track backgrounds when caller doesn't override.
   const defaultBipolarRangeBg = track
@@ -115,7 +127,12 @@ export const Slider = ({
             style={{
               left: `${bipolarOverlay.start}%`,
               width: `${bipolarOverlay.width}%`,
-              background: range ?? defaultBipolarRangeBg,
+              // At rest the fill has no width; it carries no paint either,
+              // so a field at its neutral holds no amber at all.
+              background:
+                bipolarOverlay.width > 0
+                  ? (range ?? defaultBipolarRangeBg)
+                  : undefined,
             }}
             className="pointer-events-none absolute top-0 h-full group-data-[disabled]:opacity-50"
           />
@@ -140,6 +157,7 @@ export const Slider = ({
         aria-label={thumbAriaLabel}
         aria-labelledby={thumbAriaLabelledBy}
         aria-valuetext={thumbAriaValueText}
+        aria-describedby={thumbAriaDescribedBy}
         className={clsxm(
           'block size-[15px] rounded-full bg-lf-surface transition-[transform,box-shadow] duration-150',
           // Cool-tone halo + drop shadow — aligned with segmented-chrome

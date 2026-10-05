@@ -29,7 +29,6 @@ export {
   hasDisplayLikeInput,
   toSelectableContract,
 } from './tools/lut-contract'
-export { StrengthControl } from './tools/StrengthControl'
 export { ToolCard, ToolCardStack } from './tools/ToolCard'
 export { UnsupportedState } from './UnsupportedState'
 export { WorkspaceHeader } from './WorkspaceHeader'

@@ -1,9 +1,9 @@
 /**
  * Shared segmented-control language for /raw chrome.
  *
- * Strength (LUT lift amount), the mobile LUT contract tabs (input/output),
- * and the desktop LUT contract tabs all render segmented controls on the
- * photo-first dark chrome. Before this contract they had three different
+ * The desktop LUT contract tabs (input/output) and the Adjust axis and
+ * Transform tab groups render segmented controls on the photo-first dark
+ * chrome. Before this contract they had three different
  * paints — paper-warm, on-photo depressed, and a glassy variant — which
  * drifted in readability and cross-platform consistency.
  *

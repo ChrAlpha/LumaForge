@@ -28,6 +28,8 @@ export type ScrubFieldId =
   // Transform scrubs report on the same channel: the HUD, the topbar fade and
   // the dock dim are properties of "a value is moving", not of which tool.
   | { kind: 'transform'; key: keyof ManualTransform }
+  // The Look deck's Strength row: how much of the LUT reaches the photo.
+  | { kind: 'strength' }
 
 type AdjustListPanelProps = {
   tone: ToneValue

@@ -112,7 +112,7 @@ test('directional sliders carry gradient tracks and a bipolar Range overlay', as
   const hueTab = hslRegion.getByRole('tab', { name: 'Hue' })
   await expect(hueTab).toHaveAttribute('aria-selected', 'true')
   // The selected axis tab paints itself with the cool near-white wash and an
-  // inset top highlight — same lift idiom as the Strength segmented control.
+  // inset top highlight — the segmented-chrome lift idiom.
   const hueTabClass = (await hueTab.getAttribute('class')) ?? ''
   expect(hueTabClass).toContain('bg-[oklch(0.96_0.006_255/0.10)]')
   expect(hueTabClass).toContain(

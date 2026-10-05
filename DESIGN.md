@@ -124,7 +124,7 @@ text-value: 'oklch(from {colors.lf-hero-ink} l c h / 0.80)' # numeric readouts (
 text-dt-label: 'oklch(from {colors.lf-hero-ink} l c h / 0.62)' # dt labels (ExportTool, FileFactsTool)
 text-meta: 'oklch(from {colors.lf-hero-ink} l c h / 0.44)'   # tool card meta strings, disclosure chevrons (rest)
 segmented:
-description: 'Strength and the LUT contract tabs share one paint via segmented-chrome.ts. Sizes diverge for touch vs mouse; paint stays one.'
+description: 'The LUT contract tabs and the Adjust / Transform tab groups share one paint via segmented-chrome.ts. Sizes diverge for touch vs mouse; paint stays one.'
 track: '{workspace-chrome.lift-soft}'              # borderless 5% cool-white fill
 thumb-active: '{workspace-chrome.lift-strong}'     # 10% cool-white wash
 thumb-active-highlight: '{workspace-chrome.lift-highlight}' # 1px inset top highlight
@@ -405,7 +405,8 @@ That hue was used briefly in early drafts and left a single warm wash inside an 
 
 ### Segmented Controls
 
-Strength (LUT lift amount) and the desktop LUT contract tabs (input / output) render segmented controls; mobile chooses the contract in the Look deck as two steps under a back-and-step header instead of tabs.
+The desktop LUT contract tabs (input / output) and the Adjust / Transform tab groups render segmented controls; mobile chooses the contract in the Look deck as two steps under a back-and-step header instead of tabs.
+Strength is not a segmented control: it is a continuous slider row (see The Adjust Scrub Contract).
 Their paint is centralized in `src/modules/raw-processor/components/tools/segmented-chrome.ts` — a single source so a future polish loop changes the look in one file and every consumer follows.
 
 Paint contract (cross-platform):
@@ -417,7 +418,7 @@ Paint contract (cross-platform):
 - **Active thumb**: **lift-strong wash** (`oklch(0.96 0.006 255 / 0.10)`) + 1px **lift-highlight** top inset.
   No outline ring, no drop shadow, no glass border — earlier drafts stacked all three and the segment read as crystalline rather than as one of the chrome's surfaces.
 - **Focus ring**: 2px `lf-green/80` outline with -1px offset, matching topbar and tool card focus.
-- **Sizes diverge by interaction only**: 44px min-height for touch (mobile Strength), 36px for desktop Strength (mouse density), 28px for desktop LUT contract tabs (tab density).
+- **Sizes diverge by interaction only**: 44px min-height for touch, 28px for desktop LUT contract tabs (tab density).
   Paint stays one across all sizes.
 
 The `SegmentGroup` / `SegmentItem` primitives in `src/components/ui/segment/` are intentionally **color-agnostic**.
@@ -434,7 +435,7 @@ The ladder lands every role above the WCAG AA floor on the slate substrate and p
 - **Hover-state previews** (`/92`) — inactive segmented item hover, ghost button hover.
 - **Body / hints / notes** (`/72`) — tool card body copy, Tone / Compare / Histogram notes, LUT contract empty hints, online LUT source hints.
 - **DT label** (`/62`) — definition terms in dl rows (ExportTool dimensions / file size, FileFactsTool, LUTProfileStatus input/output terms).
-- **Closed trigger / subtitle / topbar subtitle** (`/52` – `/56`) — accordion closed-state title, subtitle copy, eyebrow labels (e.g. "STRENGTH").
+- **Closed trigger / subtitle / topbar subtitle** (`/52` – `/56`) — accordion closed-state title, subtitle copy, eyebrow labels.
 - **Meta / disclosure dim** (`/40` – `/44`) — tool card meta strings, accordion chevron at rest.
 
 Hover and active states brighten one or two steps; do not invent intermediate values mid-component.
@@ -460,11 +461,12 @@ and pointerup.
 - **Grab anywhere on the row.** The value jumps to the pointer, then follows it. No thumb hunting on either surface.
 - **Touch direction-locks at 6px.** Horizontal is a scrub; vertical is a list scroll, which the row forwards to the surrounding scroller by hand (with momentum) because Chromium steals a `pan-y` gesture the moment the finger drifts vertically, and that drift is exactly the precision gesture below.
 - **Precision comes from vertical distance** on touch: full speed within 28px of the track, half to 84px, quarter to 150px, then a twentieth. Deltas integrate, so crossing a band never jumps the value. The mobile HUD names the band; desktop uses **Shift** for one tenth and shows a `Fine` hint.
-- **Neutral is sticky.** Crossing zero parks there until 10px of further travel, so returning a field to 0 is reliable on a 180px track.
+- **Detents are sticky.** Crossing one parks there until 10px of further travel, and a tap within 4px of its tick lands on it, so returning a field to 0 is reliable on a 180px track. Neutral is the one detent unless a row names others.
 - **The amber value is the reset** on both surfaces, double-click also resets on desktop, and a press that starts on a control inside the row never starts a scrub. The readout stays one element across states, disabled at neutral, so activating it never unmounts the focused control.
 - **Scrub is a state, not a hover.** Rows expose `data-scrubbing`; the pointer routinely leaves the row mid-drag, and mobile has no hover to lean on. The active row is marked with the cool lift wash on both surfaces; amber stays reserved for "this HSL band is open", a state that can coexist with scrubbing on the same row.
 - **Both surfaces share one row anatomy:** label and value on the first line, a full-width track on the second. On a 393px viewport that gives touch a ~341px track, so the coarse pointer finally gets more resolution than the mouse rather than 58% of it.
 - **Neighbours dim, they do not disappear.** A scrub fades sibling rows and the section chrome to 45%: the tonal neighbourhood is what a photographer reads while a value moves.
+- **Strength is an Adjust row.** How much of the LUT reaches the photo is continuous, 0-100% in steps of 1 ("62%", 0 reads Off), on the same row on both surfaces. Its rest value is Standard (70%), so the readout goes amber and becomes the reset anywhere else, and the fill grows from 70. Light (40%), Standard and Strong (100%) are detents with a tick on the track and a 0.6rem name under it at /52. Arrows step 1%, Shift+arrows 10%. Without a LUT the row is disabled and says why. On mobile it sits compact in the Look deck (about the 44px the segmented control took) and a scrub takes the Adjust focus: the HUD reads "Strength 62%", the strip and footer dim.
 
 ### Fixed Frames Never Scroll
 

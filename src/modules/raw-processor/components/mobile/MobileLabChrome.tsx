@@ -330,6 +330,7 @@ export function MobileLabChrome(props: {
         color={props.color}
         selectiveColor={props.selectiveColor}
         manualTransform={props.transform?.demo.manual}
+        lookIntensity={props.lutBrowser.activeIntensity}
         onExitImmersive={exitImmersive}
         lensVisible={lensVisible}
         peekPlacement={getPeekPillPlacement(photoWidth, lensVisible)}

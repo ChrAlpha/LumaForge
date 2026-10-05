@@ -7,6 +7,8 @@ import { useI18n } from '~/lib/i18n'
 
 import { scrubGainBandAtom } from '../../state/scrub.atoms'
 import { GAIN_LABEL_KEY } from '../tools/scrub-gain-copy'
+import type { SliderTickMark } from '../tools/SliderTicks'
+import { SliderTickLabels, SliderTickMarks } from '../tools/SliderTicks'
 import { useSliderScrub } from '../tools/useSliderScrub'
 
 type AdjustSliderRowProps = {
@@ -27,17 +29,36 @@ type AdjustSliderRowProps = {
    */
   track?: string
   /**
-   * When true (default) the Slider renders a bipolar Range anchored at 0,
-   * so the dirty fill reads as "offset from neutral". Set false for
-   * unipolar domains (e.g. 0..1 strength meters).
+   * When true (default) the Slider renders a bipolar Range anchored at the
+   * neutral, so the dirty fill reads as "offset from neutral". Set false
+   * for unipolar domains.
    */
   bipolar?: boolean
+  /**
+   * The value the field rests at and resets to. Defaults to 0; the value
+   * reads amber (and is the reset) whenever it is anywhere else.
+   */
+  neutral?: number
+  /** Values the scrub sticks to; defaults to the neutral alone. */
+  detents?: readonly number[]
+  /** Marks on the track with tiny names under it. */
+  ticks?: readonly SliderTickMark[]
+  /**
+   * `list` for the Adjust lists; `compact` for a single row set inside a
+   * deck, which drops the list padding so the row is about one touch
+   * target tall.
+   */
+  density?: 'list' | 'compact'
+  /** Id of text that explains the slider, e.g. why it is disabled. */
+  describedBy?: string
   onChange: (value: number) => void
   onScrubChange: (scrubbing: boolean) => void
 }
 
 export function AdjustSliderRow(props: AdjustSliderRowProps) {
-  const dirty = props.value !== 0
+  const neutral = props.neutral ?? 0
+  const compact = props.density === 'compact'
+  const dirty = props.value !== neutral
   const formatted = props.formatValue(props.value)
   const activeScrub = props.activeScrub === true
   const siblingScrubbing = props.siblingScrubbing === true
@@ -58,11 +79,13 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
     min: props.min,
     max: props.max,
     step: props.step,
+    neutral,
+    detents: props.detents,
     disabled,
     onChange,
     onScrubChange: props.onScrubChange,
     onGainChange: setGainBand,
-    onReset: () => onChange(0),
+    onReset: () => onChange(neutral),
   })
   const gainLabel =
     scrub.scrubbing && scrub.gain !== 'full'
@@ -76,7 +99,8 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
       data-sibling-scrubbing={siblingScrubbing || undefined}
       data-scrubbing={scrub.scrubbing || undefined}
       className={clsxm(
-        'grid gap-1 rounded-md px-3 py-1.5 transition-[opacity,background-color] duration-150',
+        'grid rounded-md transition-[opacity,background-color] duration-150',
+        compact ? '-mx-1.5 px-1.5' : 'gap-1 px-3 py-1.5',
         // Two lines, the same anatomy the desktop rail uses: label and value
         // above, a full-width track below. On a 393px viewport that takes the
         // track from ~181px to ~341px, so the coarse pointer finally gets more
@@ -100,7 +124,12 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
       )}
       {...scrub.bind}
     >
-      <div className="flex min-h-6 items-center justify-between gap-2 [text-shadow:0_1px_2px_oklch(0_0_0/0.45)]">
+      <div
+        className={clsxm(
+          'flex items-center justify-between gap-2 [text-shadow:0_1px_2px_oklch(0_0_0/0.45)]',
+          compact ? 'min-h-4' : 'min-h-6',
+        )}
+      >
         <span
           className={clsxm(
             'truncate text-[0.82rem] font-semibold leading-tight',
@@ -125,9 +154,10 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
             type="button"
             disabled={disabled || !dirty}
             aria-label={props.resetAriaLabel}
-            onClick={() => onChange(0)}
+            onClick={() => onChange(neutral)}
             className={clsxm(
-              '-my-1.5 inline-flex min-h-9 items-center justify-end rounded-md px-1 text-right text-[0.82rem] font-semibold tabular-nums transition-colors',
+              'inline-flex min-h-9 items-center justify-end rounded-md px-1 text-right text-[0.82rem] font-semibold tabular-nums transition-colors',
+              compact ? '-my-2.5' : '-my-1.5',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80',
               dirty
                 ? 'text-lf-amber-soft hover:text-lf-on-photo-ink'
@@ -141,21 +171,32 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
       <div
         data-testid="adjust-slider-row-scrub"
         className={clsxm(
-          'py-1.5',
+          'relative',
+          compact ? 'py-2' : 'py-1.5',
           '[&_[data-slot=slider-thumb]]:size-5 [&_[data-slot=slider-thumb]]:transition-[width,height,transform,box-shadow] [&_[data-slot=slider-thumb]]:duration-150',
           activeScrub &&
             '[&_[data-slot=slider-thumb]]:size-6 [&_[data-slot=slider-thumb]]:shadow-[0_2px_6px_oklch(0.18_0.018_76/0.4),0_0_0_1px_oklch(0.96_0.006_255/0.36)]',
         )}
       >
+        {props.ticks && (
+          <SliderTickMarks
+            ticks={props.ticks}
+            min={props.min}
+            max={props.max}
+            disabled={disabled}
+          />
+        )}
         <Slider
           thumbAriaLabel={props.label}
           thumbAriaValueText={props.valueText}
+          thumbAriaDescribedBy={props.describedBy}
           value={[props.value]}
           min={props.min}
           max={props.max}
           step={props.step}
           disabled={disabled}
           bipolar={bipolar}
+          bipolarAnchor={neutral}
           track={props.track}
           onValueChange={([next]) => {
             // Keyboard path (arrow keys on the Radix thumb).
@@ -165,6 +206,9 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
           }}
         />
       </div>
+      {props.ticks && (
+        <SliderTickLabels ticks={props.ticks} min={props.min} max={props.max} />
+      )}
     </div>
   )
 }

@@ -7,12 +7,12 @@ import { useI18n } from '~/lib/i18n'
 import { useRawWorkflowContext } from './RawWorkflowContext'
 import { AdjustTool } from './tools/AdjustTool'
 import { CompareTool } from './tools/CompareTool'
+import { DesktopStrengthRow } from './tools/DesktopStrengthRow'
 import { ExportTool } from './tools/ExportTool'
 import { FileFactsTool } from './tools/FileFactsTool'
 import { histogramClippingLabels } from './tools/histogram-clipping'
 import { HistogramTool } from './tools/HistogramTool'
 import { LutContractTool } from './tools/lut/LutContractTool'
-import { StrengthControl } from './tools/StrengthControl'
 import { ToolCard, ToolCardStack } from './tools/ToolCard'
 import { TransformTool } from './tools/TransformTool'
 
@@ -83,14 +83,12 @@ export function DesktopRawToolSurface() {
             onLutProfileSelect={props.onLutProfileSelect}
             onlineLutSources={props.onlineLutSources}
           />
-          <div className="mt-3 grid gap-1.5" data-raw-desktop-strength="row">
-            <span className="text-[0.7rem] font-semibold uppercase tracking-[0.04em] text-lf-on-photo-ink/56">
-              {t('raw.strength.title')}
-            </span>
-            <StrengthControl
-              value={props.activeIntensity}
-              onChange={props.onIntensityChange}
+          <div className="mt-3">
+            <DesktopStrengthRow
+              intensity={props.activeIntensity}
+              onIntensityChange={props.onIntensityChange}
               disabled={strengthDisabled}
+              noLut={props.hasImage && !hasAppliedLut}
             />
           </div>
         </ToolCard>
