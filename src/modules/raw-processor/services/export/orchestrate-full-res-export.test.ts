@@ -1463,8 +1463,8 @@ describe('orchestrateFullResExport refusals', () => {
         activeStyle: {
           kind: 'custom',
           name: 'Teal',
-          defaultIntensityLevel: 'standard',
-          currentIntensityLevel: 'standard',
+          defaultIntensity: 0.7,
+          currentIntensity: 0.7,
           lutAsset: { format: 'cube', dimension: 17 },
         },
         exportState: {
