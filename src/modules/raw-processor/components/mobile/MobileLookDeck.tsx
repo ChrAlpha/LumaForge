@@ -87,8 +87,12 @@ export function MobileLookDeck(props: {
   // Recorded by the LUT sources for every surface, so the applied tile
   // survives this deck remounting and loads made from LUT sources count.
   const loaded = sources?.loadedEntry ?? null
-  const { loadingEntryId, failedEntryId, loadOnlineLutEntry } =
-    useOnlineLutEntryLoader(sources, { replace: true })
+  const {
+    loadingEntryId,
+    failedEntryId,
+    loadOnlineLutEntry,
+    cancelOnlineLutEntry,
+  } = useOnlineLutEntryLoader(sources, { replace: true })
   const summary = useLutContractSummary({
     lutProfileSelection: look.lutProfileSelection,
     lutProfileResolution: look.lutProfileResolution,
@@ -244,7 +248,7 @@ export function MobileLookDeck(props: {
             disarmImport()
             setDismissedFailureId(failedEntryId)
             // A look still on its way must not land after the Original.
-            sources?.cancelEntryLoad()
+            cancelOnlineLutEntry()
             if (lutApplied) look.onLutClear()
           }}
           onSelectEntry={(entryId) => {
@@ -254,10 +258,10 @@ export function MobileLookDeck(props: {
             if (item?.applied) return
             loadEntry(entryId)
           }}
-          onCancelEntry={() => sources?.cancelEntryLoad()}
+          onCancelEntry={cancelOnlineLutEntry}
           onImport={(files) => {
             setDismissedFailureId(failedEntryId)
-            sources?.cancelEntryLoad()
+            cancelOnlineLutEntry()
             importBaseline.current = appliedIdentity
             const attempt = {}
             importAttempt.current = attempt

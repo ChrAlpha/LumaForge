@@ -63,6 +63,41 @@ describe('useOnlineLutEntryLoader', () => {
     expect(result.current.loadingEntryId).toBeNull()
   })
 
+  it('cancels a tap still waiting out its frame, so its load never starts', async () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    })
+    const loadEntry = vi.fn(async (): Promise<LutLoadOutcome> => 'loaded')
+    const cancelEntryLoad = vi.fn()
+    const onLoaded = vi.fn()
+    const { result } = renderHook(() =>
+      useOnlineLutEntryLoader(buildSource({ loadEntry, cancelEntryLoad }), {
+        replace: true,
+      }),
+    )
+
+    let loading!: Promise<void>
+    act(() => {
+      loading = result.current.loadOnlineLutEntry('entry-1', onLoaded)
+    })
+    expect(result.current.loadingEntryId).toBe('entry-1')
+
+    // Original is tapped within the same frame.
+    act(() => result.current.cancelOnlineLutEntry())
+    expect(result.current.loadingEntryId).toBeNull()
+    expect(cancelEntryLoad).toHaveBeenCalledOnce()
+
+    await act(async () => {
+      for (const frame of frames.splice(0)) frame(0)
+      await loading
+    })
+    expect(loadEntry).not.toHaveBeenCalled()
+    expect(onLoaded).not.toHaveBeenCalled()
+    expect(result.current.loadingEntryId).toBeNull()
+  })
+
   it('does not run the success callback when loading rejects', async () => {
     const loadEntry = vi.fn(() => Promise.reject(new Error('network')))
     const onLoaded = vi.fn()

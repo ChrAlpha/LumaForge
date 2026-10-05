@@ -363,6 +363,22 @@ describe('mobileLookDeck', () => {
     )
   })
 
+  it('stops a look tapped this frame when Original is tapped before it starts', async () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    })
+    const sources = sourcesFixture()
+    renderDeck(look({ onlineLutSources: sources }))
+    fireEvent.click(tile('Kodak 2383'))
+    fireEvent.click(tile('Original'))
+    await act(async () => {
+      for (const frame of frames.splice(0)) frame(0)
+    })
+    expect(sources.loadEntry).not.toHaveBeenCalled()
+  })
+
   it('clears the look from the Original tile and stops a look on its way', async () => {
     const sources = sourcesFixture()
     const controls = look({

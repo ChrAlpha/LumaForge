@@ -69,5 +69,19 @@ export function useOnlineLutEntryLoader(
     [source, replace],
   )
 
-  return { loadingEntryId, failedEntryId, loadOnlineLutEntry }
+  // Cancels the tap still waiting out its frame as well as the shared load.
+  // Cancelling the shared load alone misses a tap made this frame: its load
+  // has not started, so it would start right after the cancel.
+  const cancelOnlineLutEntry = useCallback(() => {
+    pendingRef.current = null
+    setPendingEntryId(null)
+    source?.cancelEntryLoad?.()
+  }, [source])
+
+  return {
+    loadingEntryId,
+    failedEntryId,
+    loadOnlineLutEntry,
+    cancelOnlineLutEntry,
+  }
 }
