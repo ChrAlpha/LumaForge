@@ -87,7 +87,9 @@ jobs:
           echo "webgpu=$webgpu" >> "$GITHUB_OUTPUT"
 
   quality:
-    # Never path-selected, so docs-only changes are checked too. Needs only Node.
+    # Never path-selected, so docs-only changes are checked too. The path
+    # check and both script tests need only Node; the structure check runs the
+    # pinned knip and madge from the lockfile.
     runs-on: ubuntu-latest
 
     steps:
@@ -103,6 +105,33 @@ jobs:
 
       - name: Check agent-map paths
         run: node scripts/quality/check-agent-paths.mjs
+
+      - name: Test the structure check
+        run: node --test scripts/quality/check-structure.test.mjs
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Configure pnpm store
+        run: pnpm config set store-dir ~/.pnpm-store
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Fails on a dead-code finding or dependency cycle that
+      # scripts/quality/baseline.json does not list, and on any tool error.
+      - name: Check dead code and dependency cycles
+        run: pnpm check:structure
 
   app:
     needs: changes

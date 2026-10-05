@@ -438,9 +438,14 @@ These are owner decisions. They override cleanup advice that says otherwise.
   `pnpm exec vite preview` after `pnpm build`.
 - CI follows the same split (jobs in `.github/workflows/build.yml`, aggregated
   by its `build` job; every job except `quality` is path-selected):
-  - `quality` runs on every change, docs-only ones included, and needs only
-    Node: it tests and runs `scripts/quality/check-agent-paths.mjs` against
-    this file.
+  - `quality` runs on every change, docs-only ones included. It tests and runs
+    `scripts/quality/check-agent-paths.mjs` against this file, then installs
+    dependencies and runs `pnpm check:structure`
+    (`scripts/quality/check-structure.mjs`): knip and madge fail any unused
+    file, export, dependency, unresolved import, or import cycle that
+    `scripts/quality/baseline.json` does not list. Code that resolves a
+    baseline entry drops it in the same commit (`pnpm check:structure --prune`);
+    the baseline never gains an entry without review.
   - `app` uses `pnpm lint:check`, `pnpm test:app`, prebuilt native assets, and
     app build checks.
   - `runtime` runs runtime package typecheck/test/build and app adapter tests,

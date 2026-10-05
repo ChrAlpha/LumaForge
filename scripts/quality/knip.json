@@ -1,0 +1,68 @@
+{
+  "$schema": "https://unpkg.com/knip@6.39.0/schema.json",
+  "ignoreExportsUsedInFile": true,
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/main.tsx",
+        "src/pages/**/*.{ts,tsx}",
+        "src/**/*.worker.ts",
+        "scripts/**/*.{js,mjs,ts}",
+        "plugins/**/*.ts"
+      ],
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignoreUnresolved": ["./generated-routes"]
+    },
+    "packages/lmfg-cli": {
+      "entry": [
+        "src/index.ts",
+        "src/workers/candidate-worker.ts",
+        "bin/lmfg.mjs",
+        "benchmarks/*.mjs"
+      ],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/lmfg-mcp": {
+      "entry": ["src/index.ts", "bin/lmfg-mcp.mjs"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/luma-color-runtime": {
+      "entry": ["src/index.ts", "src/wgsl.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/luma-jpeg-runtime": {
+      "entry": [
+        "index.ts",
+        "src/index.ts",
+        "src/runtime-node.ts",
+        "worker/runtime.worker.ts",
+        "benchmarks/*.ts"
+      ],
+      "project": ["src/**/*.ts", "worker/**/*.ts"]
+    },
+    "packages/luma-raw-runtime": {
+      "entry": [
+        "src/index.ts",
+        "src/runtime-node.ts",
+        "worker/runtime.worker.ts",
+        "benchmarks/*.ts",
+        "fixtures/scripts/*.mjs"
+      ],
+      "project": ["src/**/*.ts", "worker/**/*.ts"]
+    },
+    "packages/render-engine": {
+      "entry": [
+        "src/index.ts",
+        "src/export/index.ts",
+        "src/manifest/index.ts",
+        "src/policy/index.ts",
+        "src/preview/index.ts",
+        "src/preview/worker-bridge/browser-worker.ts"
+      ],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/luma-native-artifacts": {
+      "entry": ["load-for-node.mjs"]
+    }
+  }
+}

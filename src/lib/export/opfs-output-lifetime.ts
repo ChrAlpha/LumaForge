@@ -486,11 +486,6 @@ export function reserveOpfsOutputDirectory() {
   return pageOutputLifetime.reserveOutputDirectory()
 }
 
-/** Collects OPFS outputs left behind by closed tabs; never rejects. */
-export function collectAbandonedOpfsOutputs() {
-  return pageOutputLifetime.collectAbandonedOutputs()
-}
-
 /** Schedules one off-path collection per page; safe to call on every plan. */
 export function scheduleAbandonedOpfsOutputCollection() {
   pageOutputLifetime.scheduleAbandonedOutputCollection()

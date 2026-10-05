@@ -15,12 +15,10 @@ import { Spring } from '~/lib/spring'
  * RAW pickers and drop targets accept exactly what the decoder accepts.
  * Raster images are not RAW input, so no `image/*` MIME wildcard.
  */
-export const RAW_FILE_EXTENSIONS = Array.from(
+export const RAW_FILE_ACCEPT = Array.from(
   SUPPORTED_RAW_EXTENSIONS,
   (extension) => `.${extension}`,
 )
-
-export const RAW_FILE_ACCEPT = RAW_FILE_EXTENSIONS
 
 export interface DropzoneProps {
   onFileDrop: (files: File[]) => void
