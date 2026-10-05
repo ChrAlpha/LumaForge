@@ -9,15 +9,36 @@ import {
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 import type { RefObject } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { DisplaySource } from '../model/session'
 
 const ROW_BAND_ROWS = 32
-const COMPUTE_DEBOUNCE_MS = 150
+/**
+ * Live feedback cadence: while the look moves, a histogram run starts at
+ * most this often (leading and trailing), one at a time, always on the
+ * latest params.
+ */
+export const HISTOGRAM_THROTTLE_MS = 150
+/** Quiet time after the last change before a coarse result is refined. */
+export const HISTOGRAM_SETTLE_MS = 150
+/**
+ * During a scrub the main thread may be busy with the histogram at most one
+ * part in this many: the interval stretches to this multiple of the last
+ * run's busy time when a device is slow enough to need it.
+ */
+export const HISTOGRAM_BUSY_SHARE_DENOMINATOR = 6
 const MAX_HISTOGRAM_SAMPLED_PIXELS = 500_000
+/**
+ * Sample budget of a run made while the look is moving. A run costs about
+ * 0.5us per sampled pixel with a LUT on a desktop CPU (~240ms at the full
+ * budget, ~25ms at 48k), so this budget keeps a scrub run near 21ms, under
+ * 1/6 of the 150ms interval. The full budget comes back once the input
+ * settles.
+ */
+export const SCRUB_HISTOGRAM_SAMPLED_PIXELS = 40_000
 const UNSUPPORTED_PREVIEW_REASON =
   'Preview histogram requires RGB16 Linear ProPhoto preview data.'
 
@@ -70,21 +91,6 @@ function hasExpectedRgb16DataLength(image: DecodedImage) {
     Number.isSafeInteger(expectedLength) &&
     expectedLength > 0 &&
     image.data.length === expectedLength
-  )
-}
-
-function isBoundedHqSupersedingQuick(
-  quickJob: ComputeHistogramJob,
-  nextJob: HistogramJob,
-  state: PreviewHistogramState,
-) {
-  return (
-    quickJob.image.source === 'quick' &&
-    nextJob.kind === 'compute' &&
-    (nextJob.image.source === 'quick' ||
-      nextJob.image.source === 'bounded-hq') &&
-    nextJob.handoffKey === quickJob.handoffKey &&
-    getPreviousReady(state) === null
   )
 }
 
@@ -207,16 +213,51 @@ function scheduleChunk(work: () => void) {
   return window.setTimeout(work, 0)
 }
 
-function getPreviewHistogramRowStep(width: number, height: number) {
+function getPreviewHistogramRowStep(
+  width: number,
+  height: number,
+  budget = MAX_HISTOGRAM_SAMPLED_PIXELS,
+) {
   const totalPixels = width * height
-  if (
-    !Number.isSafeInteger(totalPixels) ||
-    totalPixels <= MAX_HISTOGRAM_SAMPLED_PIXELS
-  ) {
+  if (!Number.isSafeInteger(totalPixels) || totalPixels <= budget) {
     return 1
   }
 
-  return Math.max(1, Math.ceil(totalPixels / MAX_HISTOGRAM_SAMPLED_PIXELS))
+  return Math.max(1, Math.ceil(totalPixels / budget))
+}
+
+function sameHistogramImage(a: ComputeHistogramJob, b: HistogramJob) {
+  return (
+    b.kind === 'compute' &&
+    a.image === b.image &&
+    a.image.source === b.image.source
+  )
+}
+
+/**
+ * `full` samples up to the full budget; `scrub` is a cheap run made while
+ * the look moves; `refine` brings a scrub result back to the full budget
+ * once the input settles.
+ */
+type HistogramRunKind = 'full' | 'scrub' | 'refine'
+
+interface HistogramRun {
+  job: ComputeHistogramJob
+  kind: HistogramRunKind
+  cancelled: boolean
+  chunkTimer: number | null
+}
+
+interface HistogramScheduler {
+  running: HistogramRun | null
+  /** A newer job arrived while a run that may finish was in flight. */
+  pending: boolean
+  startTimer: number | null
+  /** The job the start timer was set for. */
+  queuedJob: ComputeHistogramJob | null
+  refineTimer: number | null
+  lastStartAt: number | null
+  intervalMs: number
 }
 
 export function usePreviewHistogram(
@@ -310,23 +351,232 @@ export function usePreviewHistogram(
   const stateRef = useRef(state)
   const jobKeyRef = useRef(job.key)
   const latestJobRef = useRef(job)
-  const versionRef = useRef(0)
+  const schedulerRef = useRef<HistogramScheduler>({
+    running: null,
+    pending: false,
+    startTimer: null,
+    queuedJob: null,
+    refineTimer: null,
+    lastStartAt: null,
+    intervalMs: HISTOGRAM_THROTTLE_MS,
+  })
   latestJobRef.current = job
 
   useEffect(() => {
     stateRef.current = state
   }, [state])
 
+  const commitState = useCallback((nextState: PreviewHistogramState) => {
+    stateRef.current = nextState
+    setState(nextState)
+  }, [])
+
+  const cancelRun = useCallback((run: HistogramRun | null) => {
+    if (!run) return
+    run.cancelled = true
+    if (run.chunkTimer !== null) window.clearTimeout(run.chunkTimer)
+    const scheduler = schedulerRef.current
+    if (scheduler.running === run) scheduler.running = null
+  }, [])
+
+  const clearTimers = useCallback(() => {
+    const scheduler = schedulerRef.current
+    if (scheduler.startTimer !== null) window.clearTimeout(scheduler.startTimer)
+    if (scheduler.refineTimer !== null) {
+      window.clearTimeout(scheduler.refineTimer)
+    }
+    scheduler.startTimer = null
+    scheduler.queuedJob = null
+    scheduler.refineTimer = null
+  }, [])
+
+  // Runs are chunked across macrotasks, so the scheduler, not the effect
+  // that saw a job, owns them: a scrub never cancels the run that would
+  // have answered it, and two runs never interleave.
+  const startRunRef = useRef<
+    (kind: HistogramRunKind, job: HistogramJob) => void
+  >(() => {})
+  const scheduleRef = useRef<
+    (kind: 'full' | 'scrub', job: ComputeHistogramJob) => void
+  >(() => {})
+
+  // The first quick histogram is worth finishing while bounded-HQ takes
+  // over the same look: it is the first thing the user sees.
+  const isSupersededFirstQuick = (
+    candidate: ComputeHistogramJob | null,
+    next: HistogramJob,
+  ): candidate is ComputeHistogramJob =>
+    candidate !== null &&
+    next.kind === 'compute' &&
+    candidate !== next &&
+    candidate.image.source === 'quick' &&
+    getPreviousReady(stateRef.current) === null &&
+    candidate.handoffKey === next.handoffKey
+
+  startRunRef.current = (kind, job) => {
+    const scheduler = schedulerRef.current
+    if (job.kind !== 'compute' || scheduler.running) return
+
+    const previous = getPreviousReady(stateRef.current)
+    const run: HistogramRun = { job, kind, cancelled: false, chunkTimer: null }
+    scheduler.running = run
+    // A run on anything but the latest job owes the latest a run after it.
+    scheduler.pending = job !== latestJobRef.current
+    scheduler.lastStartAt = Date.now()
+    // A full run says it is computing; a scrub or refine run lands within a
+    // frame or two and keeps the bins on screen meanwhile.
+    if (kind === 'full') commitState({ state: 'computing', previous })
+
+    const { image } = job
+    const processor = createPreviewHistogramProcessor({
+      width: image.width,
+      rowBandRows: ROW_BAND_ROWS,
+      graph: job.graph,
+    })
+    const rowStep = getPreviewHistogramRowStep(
+      image.width,
+      image.height,
+      kind === 'scrub'
+        ? SCRUB_HISTOGRAM_SAMPLED_PIXELS
+        : MAX_HISTOGRAM_SAMPLED_PIXELS,
+    )
+    const isFirstQuickRun = previous === null && image.source === 'quick'
+    const bandsPerChunk = isFirstQuickRun ? 4 : 1
+    let nextRow = 0
+    let processedRows = 0
+    let busyMs = 0
+
+    const processOneBand = () => {
+      if (rowStep === 1) {
+        const rowCount = Math.min(ROW_BAND_ROWS, image.height - nextRow)
+        const start = nextRow * image.width * 3
+        const end = start + rowCount * image.width * 3
+        processor.processUint16Rows(image.data.subarray(start, end), rowCount)
+        nextRow += rowCount
+        processedRows += rowCount
+      } else {
+        let rowsThisChunk = 0
+        while (rowsThisChunk < ROW_BAND_ROWS && nextRow < image.height) {
+          const start = nextRow * image.width * 3
+          const end = start + image.width * 3
+          processor.processUint16Rows(image.data.subarray(start, end), 1)
+          nextRow += rowStep
+          processedRows += 1
+          rowsThisChunk += 1
+        }
+      }
+    }
+
+    const finish = () => {
+      const ready = processor.finish({
+        source: image.source,
+        width: image.width,
+        height: image.height,
+        totalRows: processedRows,
+        ownership: 'main-thread-chunked-no-copy',
+        inputByteLength: image.data.buffer.byteLength,
+      })
+      scheduler.running = null
+      if (kind === 'scrub') {
+        scheduler.intervalMs = Math.max(
+          HISTOGRAM_THROTTLE_MS,
+          busyMs * HISTOGRAM_BUSY_SHARE_DENOMINATOR,
+        )
+      }
+
+      const latest = latestJobRef.current
+      if (latest.key === job.key) {
+        scheduler.pending = false
+        commitState(ready)
+        // A scrub run sampled less than a settled histogram should; once
+        // the input stays put, refine it at the full budget.
+        if (kind === 'scrub' && rowStep > 1) {
+          scheduler.refineTimer = window.setTimeout(() => {
+            scheduler.refineTimer = null
+            if (latestJobRef.current.key === job.key) {
+              startRunRef.current('refine', job)
+            }
+          }, HISTOGRAM_SETTLE_MS)
+        }
+        return
+      }
+      if (latest.kind !== 'compute') return
+      // The first quick histogram stands on its own while bounded-HQ takes
+      // over the same look; any other result that lags the latest params
+      // shows, marked stale, until the run for them lands.
+      commitState(
+        isFirstQuickRun && latest.handoffKey === job.handoffKey
+          ? ready
+          : { state: 'stale', previous: ready },
+      )
+      if (scheduler.pending) {
+        scheduleRef.current(
+          latest.image.source === image.source ? 'scrub' : 'full',
+          latest,
+        )
+      }
+    }
+
+    const processNextBand = () => {
+      run.chunkTimer = null
+      if (run.cancelled) return
+      const startedAt = performance.now()
+      for (
+        let band = 0;
+        band < bandsPerChunk && nextRow < image.height;
+        band += 1
+      ) {
+        processOneBand()
+      }
+      busyMs += performance.now() - startedAt
+      if (nextRow >= image.height) {
+        finish()
+      } else {
+        run.chunkTimer = scheduleChunk(processNextBand)
+      }
+    }
+
+    processNextBand()
+  }
+
+  scheduleRef.current = (kind, job) => {
+    const scheduler = schedulerRef.current
+    if (scheduler.startTimer !== null || scheduler.running) return
+    scheduler.queuedJob = job
+    // Leading edge when the last run started an interval ago or more,
+    // trailing edge otherwise; a first look or a new source never waits.
+    const delay =
+      kind === 'scrub' && scheduler.lastStartAt !== null
+        ? Math.max(0, scheduler.lastStartAt + scheduler.intervalMs - Date.now())
+        : 0
+    scheduler.startTimer = window.setTimeout(() => {
+      const queued = scheduler.queuedJob
+      scheduler.startTimer = null
+      scheduler.queuedJob = null
+      // Skip to the latest params, unless the queued job is the first
+      // quick histogram the latest one only takes over from.
+      const latest = latestJobRef.current
+      if (isSupersededFirstQuick(queued, latest)) {
+        startRunRef.current('full', queued)
+        return
+      }
+      startRunRef.current(kind, latest)
+    }, delay)
+  }
+
   useEffect(() => {
-    const runVersion = versionRef.current + 1
-    versionRef.current = runVersion
     jobKeyRef.current = job.key
-    const commitState = (nextState: PreviewHistogramState) => {
-      stateRef.current = nextState
-      setState(nextState)
+    const scheduler = schedulerRef.current
+    // Any change outdates a settled-input refinement.
+    if (scheduler.refineTimer !== null) {
+      window.clearTimeout(scheduler.refineTimer)
+      scheduler.refineTimer = null
     }
 
     if (job.kind !== 'compute') {
+      cancelRun(scheduler.running)
+      clearTimers()
+      scheduler.pending = false
       commitState(job.state)
       return
     }
@@ -337,109 +587,44 @@ export function usePreviewHistogram(
         ? { state: 'stale', previous }
         : { state: 'computing', previous: null },
     )
+    const kind: 'full' | 'scrub' =
+      previous && previous.source === job.image.source ? 'scrub' : 'full'
 
-    let chunkTimer: number | null = null
-    const computeDelayMs =
-      previous && previous.source === job.image.source ? COMPUTE_DEBOUNCE_MS : 0
-    const isFirstQuickRun = previous === null && job.image.source === 'quick'
-    const bandsPerChunk = isFirstQuickRun ? 4 : 1
-    const canCompleteSupersededQuick = () =>
-      isFirstQuickRun &&
-      isBoundedHqSupersedingQuick(job, latestJobRef.current, stateRef.current)
-    const canContinueRun = () =>
-      versionRef.current === runVersion || canCompleteSupersededQuick()
-
-    const computeTimer = window.setTimeout(() => {
-      if (!canContinueRun()) return
-
-      commitState({ state: 'computing', previous })
-
-      const { image } = job
-      const processor = createPreviewHistogramProcessor({
-        width: image.width,
-        rowBandRows: ROW_BAND_ROWS,
-        graph: job.graph,
-      })
-      const rowStep = getPreviewHistogramRowStep(image.width, image.height)
-      let nextRow = 0
-      let processedRows = 0
-
-      const finishReady = () => {
-        if (nextRow >= image.height) {
-          const ready = processor.finish({
-            source: image.source,
-            width: image.width,
-            height: image.height,
-            totalRows: processedRows,
-            ownership: 'main-thread-chunked-no-copy',
-            inputByteLength: image.data.buffer.byteLength,
-          })
-          if (canContinueRun()) {
-            commitState(ready)
-          }
-        }
+    const running = scheduler.running
+    if (running) {
+      // Let a run finish when its answer is still worth showing: any run
+      // on the same image but a settled-input refinement (the next run
+      // starts after it, on the latest params), or the first quick
+      // histogram bounded-HQ is taking over.
+      const worthFinishing =
+        (running.kind !== 'refine' && sameHistogramImage(running.job, job)) ||
+        isSupersededFirstQuick(running.job, job)
+      if (worthFinishing) {
+        scheduler.pending = true
+        return
       }
-
-      const processOneBand = () => {
-        if (rowStep === 1) {
-          const rowCount = Math.min(ROW_BAND_ROWS, image.height - nextRow)
-          const start = nextRow * image.width * 3
-          const end = start + rowCount * image.width * 3
-          processor.processUint16Rows(image.data.subarray(start, end), rowCount)
-          nextRow += rowCount
-          processedRows += rowCount
-        } else {
-          let rowsThisChunk = 0
-          while (rowsThisChunk < ROW_BAND_ROWS && nextRow < image.height) {
-            const start = nextRow * image.width * 3
-            const end = start + image.width * 3
-            processor.processUint16Rows(image.data.subarray(start, end), 1)
-            nextRow += rowStep
-            processedRows += 1
-            rowsThisChunk += 1
-          }
-        }
-      }
-
-      const processNextBand = () => {
-        if (!canContinueRun()) return
-
-        if (nextRow >= image.height) {
-          finishReady()
-          return
-        }
-
-        for (
-          let band = 0;
-          band < bandsPerChunk && nextRow < image.height;
-          band += 1
-        ) {
-          processOneBand()
-        }
-
-        if (nextRow >= image.height && isFirstQuickRun) {
-          finishReady()
-        } else {
-          chunkTimer = scheduleChunk(processNextBand)
-        }
-      }
-
-      processNextBand()
-    }, computeDelayMs)
-
-    return () => {
-      const mayBecomeBoundedHqHandoff =
-        isFirstQuickRun &&
-        isBoundedHqSupersedingQuick(job, latestJobRef.current, stateRef.current)
-
-      if (!mayBecomeBoundedHqHandoff) {
-        window.clearTimeout(computeTimer)
-        if (chunkTimer !== null) {
-          window.clearTimeout(chunkTimer)
-        }
+      cancelRun(running)
+    }
+    if (scheduler.startTimer !== null) {
+      // The queued first quick run goes ahead; the latest follows it.
+      if (isSupersededFirstQuick(scheduler.queuedJob, job)) return
+      // A first look or a new source does not wait out a scrub's interval.
+      if (kind === 'full') {
+        window.clearTimeout(scheduler.startTimer)
+        scheduler.startTimer = null
+        scheduler.queuedJob = null
       }
     }
-  }, [job])
+    scheduleRef.current(kind, job)
+  }, [cancelRun, clearTimers, commitState, job])
+
+  useEffect(
+    () => () => {
+      cancelRun(schedulerRef.current.running)
+      clearTimers()
+    },
+    [cancelRun, clearTimers],
+  )
 
   if (jobKeyRef.current !== job.key) {
     if (job.kind !== 'compute') return job.state

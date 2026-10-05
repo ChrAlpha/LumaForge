@@ -522,11 +522,12 @@ describe('usePreviewHistogram', () => {
 
     expect(result.current).toEqual({ state: 'stale', previous })
 
-    await runDebouncedWork(150)
-    expect(result.current).toEqual({ state: 'computing', previous })
+    await runDebouncedWork(1)
+    expect(result.current.state).toBe('ready')
+    expect(result.current).not.toBe(previous)
   })
 
-  it('keeps previous bins as stale while tone recomputation is pending', async () => {
+  it('keeps previous bins on screen, marked stale, until the new run lands', async () => {
     const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
       image: createImage('quick'),
     })
@@ -544,18 +545,14 @@ describe('usePreviewHistogram', () => {
       displaySource: 'quick',
     })
 
+    // A scrub run never flips the label to computing: the bins stay.
     expect(result.current).toEqual({ state: 'stale', previous })
-
-    await runDebouncedWork(149)
-    expect(result.current).toEqual({ state: 'stale', previous })
-
-    await runDebouncedWork(1)
-    expect(result.current).toEqual({ state: 'computing', previous })
 
     await act(async () => {
       await vi.runOnlyPendingTimersAsync()
     })
     expect(result.current.state).toBe('ready')
+    expect(result.current).not.toBe(previous)
   })
 
   it('fails closed for built-in styles', () => {
