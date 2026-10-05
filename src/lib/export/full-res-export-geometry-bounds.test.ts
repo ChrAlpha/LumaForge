@@ -8,7 +8,11 @@ import { describe, expect, it } from 'vitest'
 
 import { composeManualTransform } from '~/modules/transform-demo/transform-render'
 import type { ManualTransform } from '~/modules/transform-demo/transform-types'
-import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
+
+import {
+  FOLDING_TRANSFORM,
+  transformGeometryCases,
+} from './transform-geometry-test-cases'
 
 // Mirrors the export's own constants; see `full-res-export.ts`.
 const MAX_STRIP_ROWS = 256
@@ -20,17 +24,6 @@ const HALO = 2
 const SOURCE = { width: 11648, height: 8736 }
 
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1] as const
-
-/** The full slider range of every Transform field. */
-const EXTREMES: Record<keyof ManualTransform, number[]> = {
-  vertical: [-60, 60],
-  horizontal: [-60, 60],
-  rotate: [-30, 30],
-  aspect: [-50, 50],
-  scale: [50, 150],
-  offsetX: [-30, 30],
-  offsetY: [-30, 30],
-}
 
 function matrixFor(manual: ManualTransform) {
   return composeManualTransform(IDENTITY, manual, SOURCE.width / SOURCE.height)
@@ -82,52 +75,8 @@ function measureWorstWindow(
   return { rejected: false, worstWindowPixels, worstRect }
 }
 
-const COMBINATIONS: Array<[string, Partial<ManualTransform>]> = [
-  ['rotate + zoom out', { rotate: 30, scale: 50 }],
-  ['rotate + zoom out + vertical', { rotate: 30, scale: 50, vertical: 60 }],
-  ['zoom out + aspect', { scale: 50, aspect: -50 }],
-  ['both perspective axes', { vertical: 60, horizontal: 60 }],
-  [
-    'every field at its limit',
-    {
-      rotate: 30,
-      scale: 50,
-      vertical: 60,
-      horizontal: 60,
-      aspect: -50,
-      offsetX: 30,
-      offsetY: 30,
-    },
-  ],
-]
-
-function cases(): Array<[string, ManualTransform, boolean]> {
-  const out: Array<[string, ManualTransform, boolean]> = []
-  for (const key of Object.keys(EXTREMES) as Array<keyof ManualTransform>) {
-    for (const value of EXTREMES[key]!) {
-      for (const crop of [true, false]) {
-        out.push([
-          `${key}=${value} crop=${crop}`,
-          { ...NEUTRAL_TRANSFORM, [key]: value },
-          crop,
-        ])
-      }
-    }
-  }
-  for (const [label, patch] of COMBINATIONS) {
-    for (const crop of [true, false]) {
-      out.push([
-        `${label} crop=${crop}`,
-        { ...NEUTRAL_TRANSFORM, ...patch },
-        crop,
-      ])
-    }
-  }
-  return out
-}
-
 describe('geometried export memory bound', () => {
-  it.each(cases())(
+  it.each(transformGeometryCases())(
     'keeps every tile read inside the budget for %s',
     (_label, manual, crop) => {
       const measured = measureWorstWindow(manual, crop)
@@ -143,7 +92,7 @@ describe('geometried export memory bound', () => {
   )
 
   it('never asks for a window larger than the source it reads from', () => {
-    for (const [, manual, crop] of cases()) {
+    for (const [, manual, crop] of transformGeometryCases()) {
       const measured = measureWorstWindow(manual, crop)
       if (measured.rejected) continue
       expect(measured.worstRect.width).toBeLessThanOrEqual(SOURCE.width)
@@ -156,17 +105,9 @@ describe('geometried export memory bound', () => {
     // changes sign inside that square, so the frame folds. The bounding box of
     // a folded preimage covers the whole source, which is how this showed up:
     // one tile asking for 582 MB on a 100 MP file.
-    const folded = {
-      ...NEUTRAL_TRANSFORM,
-      rotate: 30,
-      scale: 50,
-      vertical: 60,
-      horizontal: 60,
-    }
-
     expect(() =>
       planExportGeometry(
-        { matrix: matrixFor(folded), constrainCrop: false },
+        { matrix: matrixFor(FOLDING_TRANSFORM), constrainCrop: false },
         SOURCE,
       ),
     ).toThrow(INVALID_EXPORT_GEOMETRY)
@@ -175,7 +116,7 @@ describe('geometried export memory bound', () => {
     // same geometry stays exportable with the default crop mode.
     expect(() =>
       planExportGeometry(
-        { matrix: matrixFor(folded), constrainCrop: true },
+        { matrix: matrixFor(FOLDING_TRANSFORM), constrainCrop: true },
         SOURCE,
       ),
     ).not.toThrow()
