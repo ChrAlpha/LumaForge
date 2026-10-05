@@ -55,7 +55,7 @@ export function createWasmJpegRowSink(
         runtime.dispose()
       }
 
-      let encoder
+      let encoder: ReturnType<LumaJpegRuntime['createEncoder']>
       try {
         encoder = runtime.createEncoder({ width, height, quality })
       } catch (error) {

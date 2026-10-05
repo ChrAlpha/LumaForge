@@ -40,7 +40,7 @@
     "resolveJsonModule": true,
     "allowJs": false,
     "strict": true,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "noEmit": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,

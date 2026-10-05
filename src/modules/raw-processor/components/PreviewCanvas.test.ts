@@ -790,8 +790,11 @@ describe('preview canvas upload descriptor', () => {
   })
 
   it.each([
-    ['resolves', () => undefined],
-    ['rejects', () => new Error('PREVIEW_PIPELINE_DISPOSED')],
+    ['resolves', (): Error | undefined => undefined],
+    [
+      'rejects',
+      (): Error | undefined => new Error('PREVIEW_PIPELINE_DISPOSED'),
+    ],
   ] as const)(
     'never revives a pipeline disposed while its initialization is pending (initialization %s late)',
     async (_outcome, lateOutcome) => {
