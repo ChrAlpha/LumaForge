@@ -127,4 +127,59 @@ describe('useMobileLabChromeController', () => {
     expect(onViewModeChange).not.toHaveBeenCalled()
     expect(result.current.peeking).toBe(false)
   })
+
+  it('closes the split when something else moves the stage off compare', () => {
+    const { result, rerender, initialProps, onViewModeChange } =
+      renderController()
+
+    act(() => result.current.setCompareSplitMode(true))
+    // The split's own request lands: the lens stays on.
+    rerender({ ...initialProps, viewMode: 'compare' })
+    expect(result.current.compareSplitOpen).toBe(true)
+    onViewModeChange.mockClear()
+
+    // Transform's Grid toggle asks for the processed photo.
+    rerender({ ...initialProps, viewMode: 'processed' })
+    expect(result.current.compareSplitOpen).toBe(false)
+    // The lens follows the stage; it does not fight it.
+    expect(onViewModeChange).not.toHaveBeenCalled()
+    // A lens hold now hands back the processed photo, not a split.
+    act(() => result.current.startLensPeek())
+    act(() => result.current.endLensPeek())
+    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
+  })
+
+  it('unpins the original when something else moves the stage off it', () => {
+    const { result, rerender, initialProps } = renderController({
+      compareMode: 'original',
+    })
+
+    act(() => result.current.toggleOriginal())
+    rerender({ ...initialProps, compareMode: 'original', viewMode: 'original' })
+    expect(result.current.originalShown).toBe(true)
+
+    rerender({
+      ...initialProps,
+      compareMode: 'original',
+      viewMode: 'processed',
+    })
+    expect(result.current.originalShown).toBe(false)
+  })
+
+  it('resets the lens when the compare mode changes under an open split', () => {
+    const { result, rerender, initialProps, onViewModeChange } =
+      renderController()
+
+    act(() => result.current.setCompareSplitMode(true))
+    rerender({ ...initialProps, viewMode: 'compare' })
+    expect(result.current.compareSplitOpen).toBe(true)
+    onViewModeChange.mockClear()
+
+    // The GPU preview fails over to the CPU one; the stage still reports
+    // compare for a moment.
+    rerender({ ...initialProps, viewMode: 'compare', compareMode: 'original' })
+    expect(result.current.compareSplitOpen).toBe(false)
+    expect(result.current.originalShown).toBe(false)
+    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
+  })
 })

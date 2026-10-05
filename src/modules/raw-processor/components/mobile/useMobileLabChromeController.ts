@@ -1,5 +1,5 @@
 import { useReducedMotion } from 'motion/react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { IMMERSIVE_STAGGER_MS } from '../../motion'
 import type { ScrubFieldId } from './AdjustListPanel'
@@ -81,6 +81,50 @@ export function useMobileLabChromeController({
   const handoffActive = hasImage && (isProcessing || previewReleasedReady)
   const focusActive = scrubField !== null
 
+  // The view mode this controller last asked the stage for. A view mode
+  // that lands without being asked for came from elsewhere (Transform's
+  // Lines and Grid ask for the processed photo, the CPU fallback drops the
+  // split), and the lens state follows the stage instead of claiming a
+  // split or an original that is no longer on screen.
+  const requestedViewMode = useRef<MobileLabViewMode>(viewMode)
+  const requestViewMode = useCallback(
+    (mode: MobileLabViewMode) => {
+      requestedViewMode.current = mode
+      onViewModeChange(mode)
+    },
+    [onViewModeChange],
+  )
+
+  useEffect(() => {
+    if (viewMode === requestedViewMode.current) return
+    requestedViewMode.current = viewMode
+    if (viewMode !== 'compare' && compareSplitOpenRef.current) {
+      compareSplitOpenRef.current = false
+      suppressNextPeekRestore.current = false
+      setCompareSplitOpen(false)
+    }
+    if (viewMode !== 'original' && originalShownRef.current) {
+      originalShownRef.current = false
+      setOriginalShown(false)
+    }
+  }, [viewMode])
+
+  // A new compare mode (the GPU preview falling back to the CPU one) has a
+  // different lens: nothing the old one held carries over.
+  const previousCompareMode = useRef(compareMode)
+  useEffect(() => {
+    if (previousCompareMode.current === compareMode) return
+    previousCompareMode.current = compareMode
+    compareSplitOpenRef.current = false
+    suppressNextPeekRestore.current = false
+    lensPeekActive.current = false
+    originalShownRef.current = false
+    setCompareSplitOpen(false)
+    setOriginalShown(false)
+    setPeeking(false)
+    if (viewMode !== 'processed') requestViewMode('processed')
+  }, [compareMode, requestViewMode, viewMode])
+
   useEffect(() => {
     if (!compareDisabled) return
     compareSplitOpenRef.current = false
@@ -90,8 +134,8 @@ export function useMobileLabChromeController({
     setOriginalShown(false)
     setCompareSplitOpen(false)
     setPeeking(false)
-    if (viewMode !== 'processed') onViewModeChange('processed')
-  }, [compareDisabled, onViewModeChange, viewMode])
+    if (viewMode !== 'processed') requestViewMode('processed')
+  }, [compareDisabled, requestViewMode, viewMode])
 
   useEffect(() => {
     if (hasImage) return
@@ -139,8 +183,8 @@ export function useMobileLabChromeController({
 
   useEffect(() => {
     if (!hasImage || compareSplitOpen || viewMode !== 'compare') return
-    onViewModeChange('processed')
-  }, [compareSplitOpen, hasImage, onViewModeChange, viewMode])
+    requestViewMode('processed')
+  }, [compareSplitOpen, hasImage, requestViewMode, viewMode])
 
   useEffect(() => {
     const shouldActivate =
@@ -186,14 +230,14 @@ export function useMobileLabChromeController({
     if (p) {
       if (compareSplitOpenRef.current) return
       viewModeBeforePeek.current = 'processed'
-      onViewModeChange('original')
+      requestViewMode('original')
     } else {
       setPeeking(false)
       if (suppressNextPeekRestore.current) {
         suppressNextPeekRestore.current = false
         return
       }
-      onViewModeChange(
+      requestViewMode(
         compareSplitOpenRef.current
           ? viewModeBeforePeek.current
           : restingViewMode(),
@@ -210,7 +254,7 @@ export function useMobileLabChromeController({
     viewModeBeforePeek.current = open ? 'compare' : 'processed'
     setPeeking(false)
     setCompareSplitOpen(open)
-    onViewModeChange(open ? 'compare' : 'processed')
+    requestViewMode(open ? 'compare' : 'processed')
   }
 
   // Holding the compare lens peeks the unprocessed RAW over the whole frame,
@@ -220,14 +264,14 @@ export function useMobileLabChromeController({
     if (compareDisabled || lensPeekActive.current) return
     lensPeekActive.current = true
     setPeeking(true)
-    onViewModeChange('original')
+    requestViewMode('original')
   }
 
   const endLensPeek = () => {
     if (!lensPeekActive.current) return
     lensPeekActive.current = false
     setPeeking(false)
-    onViewModeChange(restingViewMode())
+    requestViewMode(restingViewMode())
   }
 
   // The CPU preview's lens: a tap pins the original or hands back the
@@ -237,7 +281,7 @@ export function useMobileLabChromeController({
     const next = !originalShownRef.current
     originalShownRef.current = next
     setOriginalShown(next)
-    onViewModeChange(next ? 'original' : 'processed')
+    requestViewMode(next ? 'original' : 'processed')
   }
 
   const clearImmersiveStagger = () => {
