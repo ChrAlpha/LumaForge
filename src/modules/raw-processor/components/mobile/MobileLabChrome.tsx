@@ -131,6 +131,7 @@ export function MobileLabChrome(props: {
     compareSplitOpen,
     originalShown,
     exportOpen,
+    previewReleasedReady,
     handoffActive,
     focusActive,
     setScrubField,
@@ -189,12 +190,17 @@ export function MobileLabChrome(props: {
     isExporting,
     resultKind: props.exportResultKind ?? null,
   })
-  // The deck's own visibility rule: tools are disabled while the pipeline is
-  // busy, but a running export keeps its panel on screen.
+  // The deck's own visibility rule, shared with the dock: tools are disabled
+  // while the pipeline is busy, and while export holds the preview released
+  // (an edit would discard the delivered JPEG). Only the export panel keeps
+  // the deck then, for a running export's progress or the delivered result;
+  // closing it leaves the deck empty rather than hand it to a tool.
+  const toolsDisabled = props.isProcessing || props.previewSuspended === true
+  const exportPanelHeld = exportOpen && (isExporting || previewReleasedReady)
   const deckVisible = isMobileDeckVisible({
     expanded: dockExpanded && props.hasImage,
-    disabled: !props.hasImage || props.isProcessing,
-    panelVisibleWhileDisabled: exportOpen && isExporting,
+    disabled: !props.hasImage || toolsDisabled,
+    panelVisibleWhileDisabled: exportPanelHeld,
   })
   const exportPanelVisible = exportOpen && deckVisible
 
@@ -423,9 +429,9 @@ export function MobileLabChrome(props: {
                 transform={props.transform}
                 mode={mode}
                 exportOpen={exportOpen}
-                exportBusy={isExporting}
+                panelVisibleWhileDisabled={exportPanelHeld}
                 expanded={dockExpanded}
-                disabled={props.isProcessing}
+                disabled={toolsDisabled}
                 onModeChange={handleModeChange}
                 onCollapse={() => setDockExpanded(false)}
                 onOpenMore={() => setMoreOpen(true)}

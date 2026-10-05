@@ -1,3 +1,4 @@
+import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import { act, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
@@ -16,12 +17,16 @@ import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
 import { useRawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import type { ExportResult } from '../model/export-result'
+import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { captureTransformSource } from '../services/preview/capture-transform-source'
 import { COLOR_NEUTRAL } from './color-fields'
+import type { RawToolSurfaceProps } from './RawWorkflowContext'
 import { useRawWorkflowContext } from './RawWorkflowContext'
 import { RawWorkflowToolProvider } from './RawWorkflowToolProvider'
 import { TONE_NEUTRAL } from './tone-fields'
+import { useOnlineLutEntryLoader } from './tools/lut/useOnlineLutEntryLoader'
 import { transformFeatureFixture } from './tools/transform-feature.fixture'
+import { resetTransformGroup } from './transform-fields'
 
 vi.mock(
   '../services/preview/capture-transform-source',
@@ -300,7 +305,9 @@ describe('rawWorkflowToolProvider Transform guards', () => {
         </RawWorkflowToolProvider>
       ),
     })
-    expect(result.current.transform).toBe(transform)
+    // The surfaces read the feature itself; only its edits are wrapped.
+    expect(result.current.transform?.demo).toBe(transform.demo)
+    expect(result.current.transform?.active).toBe(true)
     // Full resolution reproduces the geometry, so the promise stays open.
     expect(result.current.canExport).toBe(true)
     expect(result.current.disabledReason).toBeUndefined()
@@ -829,5 +836,269 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     workflow.decodedImageRef.current = null
     rerender()
     expect(result.current.previewAspect).toBeNull()
+  })
+})
+
+/**
+ * A provider over a workflow whose every edit is a spy, so a test can say
+ * exactly which edits reached the session. `release` stands for a finished
+ * export that released the preview and holds the delivered JPEG; `restore`
+ * for the photographer bringing the preview back.
+ */
+function renderReleasablePreview() {
+  const workflow = {
+    ...workflowFixture(),
+    previewSuspended: false,
+    exportResult: null,
+    setIntensity: vi.fn(),
+    setToneParams: vi.fn(),
+    resetTone: vi.fn(),
+    setColorParams: vi.fn(),
+    resetColor: vi.fn(),
+    setSelectiveColorBand: vi.fn(),
+    resetSelectiveColor: vi.fn(),
+    clearLUT: vi.fn(),
+    selectLUTProfile: vi.fn(),
+    shareExportResult: vi.fn(),
+    downloadExportResult: vi.fn(),
+    downloadExportManifest: vi.fn(),
+    copyExportResult: vi.fn(),
+  } as unknown as UseRawWorkflowReturn
+  const onLutDrop = vi.fn()
+  const onExport = vi.fn()
+  const transform = transformFeatureFixture({ hasImage: true, available: true })
+  const loadEntry = vi.fn(async (): Promise<LutLoadOutcome> => 'loaded')
+  const cancelEntryLoad = vi.fn()
+  let onlineLutSources = {
+    loadEntry,
+    loadingEntryId: null,
+    failedEntryId: null,
+    cancelEntryLoad,
+  } as unknown as UseOnlineLutSourcesResult
+  const hook = renderHook(useRawWorkflowContext, {
+    wrapper: ({ children }) => (
+      <RawWorkflowToolProvider
+        workflow={workflow}
+        transform={transform}
+        onlineLutSources={onlineLutSources}
+        isCpuMode={false}
+        isProcessing={false}
+        runtimeReadinessState="ready"
+        previewFrameEl={null}
+        onReplaceFile={vi.fn()}
+        onResetSession={vi.fn()}
+        onCompareReset={vi.fn()}
+        onLutDrop={onLutDrop}
+        onExport={onExport}
+        onRecoverExportSource={vi.fn()}
+        onPrepareRuntime={vi.fn()}
+      >
+        {children}
+      </RawWorkflowToolProvider>
+    ),
+  })
+  const edits = [
+    workflow.setToneParams,
+    workflow.resetTone,
+    workflow.setColorParams,
+    workflow.resetColor,
+    workflow.setSelectiveColorBand,
+    workflow.resetSelectiveColor,
+    workflow.setIntensity,
+    onLutDrop,
+    workflow.clearLUT,
+    workflow.selectLUTProfile,
+    transform.setMode,
+    transform.setManual,
+    transform.setConstrainCrop,
+    transform.reset,
+    loadEntry,
+  ]
+  return {
+    ...hook,
+    workflow,
+    onExport,
+    edits,
+    loadEntry,
+    cancelEntryLoad,
+    setOnlineLutSources(
+      patch: Partial<Pick<UseOnlineLutSourcesResult, 'loadingEntryId'>>,
+    ) {
+      onlineLutSources = { ...onlineLutSources, ...patch }
+      hook.rerender()
+    },
+    release() {
+      workflow.previewSuspended = true
+      workflow.exportResult = delivered
+      hook.rerender()
+    },
+    restore() {
+      workflow.previewSuspended = false
+      hook.rerender()
+    },
+  }
+}
+
+/** Every edit a tool surface can make: Adjust, Look, its contract, Transform. */
+function editEverything(surface: RawToolSurfaceProps) {
+  surface.onToneChange({ userExposureEv: 1 })
+  surface.onToneReset()
+  surface.onColorChange({ userSaturation: 20 })
+  surface.onColorReset()
+  surface.onSelectiveColorChange('red', { hue: 10 })
+  surface.onSelectiveColorReset()
+  surface.onIntensityChange(0.4)
+  void surface.onLutLoad([new File(['LUT_3D_SIZE 2'], 'look.cube')])
+  surface.onLutClear()
+  surface.onLutProfileSelect({ id: 'slog3' } as unknown as LUTColorProfile)
+  surface.transform!.setMode('auto')
+  surface.transform!.setManual({ ...NEUTRAL_TRANSFORM, rotate: 2 })
+  surface.transform!.setConstrainCrop(false)
+  surface.transform!.reset()
+  return surface.onlineLutSources!.loadEntry('kodak-2383')
+}
+
+describe('rawWorkflowToolProvider released preview', () => {
+  it('refuses every edit while the preview is released, through callbacks held from before it', async () => {
+    const session = renderReleasablePreview()
+    const { result, workflow, onExport, edits, release, restore } = session
+    // A scrub, a deferred strength step or a panel still leaving holds the
+    // callbacks of the render it started in.
+    const held = result.current
+
+    release()
+    expect(result.current.previewSuspended).toBe(true)
+    await expect(editEverything(held)).resolves.toBe('aborted')
+    await expect(editEverything(result.current)).resolves.toBe('aborted')
+    for (const edit of edits) expect(edit).not.toHaveBeenCalled()
+
+    // The delivered JPEG stays deliverable, and Export stays open.
+    result.current.onDownloadExport()
+    void result.current.onDownloadExportManifest?.()
+    result.current.onShareExport()
+    result.current.onCopyExport()
+    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    expect(workflow.downloadExportResult).toHaveBeenCalledOnce()
+    expect(workflow.downloadExportManifest).toHaveBeenCalledOnce()
+    expect(workflow.shareExportResult).toHaveBeenCalledOnce()
+    expect(workflow.copyExportResult).toHaveBeenCalledOnce()
+    expect(onExport).toHaveBeenCalledOnce()
+    expect(result.current.exportResult).toBe(delivered)
+
+    // Restored, the same held callbacks edit again.
+    restore()
+    await expect(editEverything(held)).resolves.toBe('loaded')
+    for (const edit of edits) expect(edit).toHaveBeenCalledOnce()
+  })
+
+  it('cancels a catalog load still in flight when the preview is released', () => {
+    const { release, restore, cancelEntryLoad, setOnlineLutSources } =
+      renderReleasablePreview()
+    setOnlineLutSources({ loadingEntryId: 'kodak-2383' })
+    expect(cancelEntryLoad).not.toHaveBeenCalled()
+
+    release()
+    expect(cancelEntryLoad).toHaveBeenCalledOnce()
+
+    // Nothing is loading once the preview is back.
+    setOnlineLutSources({ loadingEntryId: null })
+    restore()
+    expect(cancelEntryLoad).toHaveBeenCalledOnce()
+  })
+
+  it('does not load a catalog tap that was still waiting out its frame when the preview was released', async () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
+      frames.push(callback),
+    )
+    const workflow = {
+      ...workflowFixture(),
+      previewSuspended: false,
+    } as unknown as UseRawWorkflowReturn
+    const loadEntry = vi.fn(async (): Promise<LutLoadOutcome> => 'loaded')
+    const onlineLutSources = {
+      loadEntry,
+      loadingEntryId: null,
+      failedEntryId: null,
+      cancelEntryLoad: vi.fn(),
+    } as unknown as UseOnlineLutSourcesResult
+    const { result, rerender } = renderHook(
+      () => useOnlineLutEntryLoader(useRawWorkflowContext().onlineLutSources),
+      {
+        wrapper: ({ children }) => (
+          <RawWorkflowToolProvider
+            workflow={workflow}
+            onlineLutSources={onlineLutSources}
+            isCpuMode={false}
+            isProcessing={false}
+            runtimeReadinessState="ready"
+            previewFrameEl={null}
+            onReplaceFile={vi.fn()}
+            onResetSession={vi.fn()}
+            onCompareReset={vi.fn()}
+            onLutDrop={vi.fn()}
+            onExport={vi.fn()}
+            onRecoverExportSource={vi.fn()}
+            onPrepareRuntime={vi.fn()}
+          >
+            {children}
+          </RawWorkflowToolProvider>
+        ),
+      },
+    )
+    const onLoaded = vi.fn()
+    let tap: Promise<void> | undefined
+    act(() => {
+      tap = result.current.loadOnlineLutEntry('kodak-2383', onLoaded)
+    })
+    expect(frames).toHaveLength(1)
+
+    workflow.previewSuspended = true
+    rerender()
+    await act(async () => {
+      frames.shift()!(0)
+      await tap
+    })
+    expect(loadEntry).not.toHaveBeenCalled()
+    expect(onLoaded).not.toHaveBeenCalled()
+    expect(result.current.loadingEntryId).toBeNull()
+  })
+
+  it('keeps the delivered JPEG and the committed geometry through Transform edits held across the release', async () => {
+    const session = await renderTransformSession()
+    const { result, rerender, state, commit, worker } = session
+    act(() =>
+      result.current.transform!.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }),
+    )
+    worker.answer()
+    expect(commit).toHaveBeenCalledOnce()
+    const held = result.current.transform!
+
+    state.released = true
+    rerender()
+    const posted = worker.messages.length
+    act(() => {
+      // Each mobile section reset, and the desktop controls, from a panel
+      // that was on screen before the release.
+      held.setConstrainCrop(true)
+      held.setManual(resetTransformGroup('perspective', held.demo.manual))
+      held.reset()
+      result.current.transform!.setMode('auto')
+      result.current.transform!.setConstrainCrop(false)
+    })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(worker.messages).toHaveLength(posted)
+    expect(commit).toHaveBeenCalledOnce()
+    expect(result.current.transform?.active).toBe(true)
+    expect(result.current.transform?.demo.manual.rotate).toBe(3)
+    expect(result.current.exportResult).toBe(delivered)
+    expect(result.current.canExport).toBe(true)
+
+    // Restored, Transform edits again.
+    state.released = false
+    rerender()
+    act(() => result.current.transform!.reset())
+    expect(commit).toHaveBeenLastCalledWith(null)
+    session.unmount()
   })
 })

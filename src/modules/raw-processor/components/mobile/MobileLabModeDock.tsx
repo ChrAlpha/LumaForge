@@ -22,7 +22,7 @@ export function MobileLabModeDock({
   transform,
   mode,
   exportOpen,
-  exportBusy,
+  panelVisibleWhileDisabled,
   expanded,
   disabled,
   scrubbing,
@@ -53,8 +53,11 @@ export function MobileLabModeDock({
   mode: MobileMode
   /** The export panel holds the deck instead of the active tool's panel. */
   exportOpen: boolean
-  /** An export is running; its progress stays visible in the deck. */
-  exportBusy?: boolean
+  /**
+   * The export panel keeps the deck while the tools are disabled: a running
+   * export's progress, or the delivered result while the preview is released.
+   */
+  panelVisibleWhileDisabled?: boolean
   expanded: boolean
   disabled: boolean
   scrubbing: boolean
@@ -89,7 +92,7 @@ export function MobileLabModeDock({
       showTransform={Boolean(transform)}
       mode={mode}
       exportOpen={exportOpen}
-      panelVisibleWhileDisabled={exportOpen && exportBusy === true}
+      panelVisibleWhileDisabled={panelVisibleWhileDisabled}
       expanded={expanded}
       disabled={disabled}
       onModeChange={onModeChange}

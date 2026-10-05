@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
 import { COLOR_NEUTRAL } from '../color-fields'
 import { TONE_NEUTRAL } from '../tone-fields'
+import { transformFeatureFixture } from '../tools/transform-feature.fixture'
 import { MobileLabChrome } from './MobileLabChrome'
 
 const base = {
@@ -337,6 +338,160 @@ describe('mobileLabChrome', () => {
     expect(
       screen.getByRole('tablist', { name: /lab modes/i }),
     ).toBeInTheDocument()
+  })
+
+  describe('while the preview is released after export', () => {
+    const confirmedLook = {
+      ...base.lutBrowser,
+      currentLutName: 'client-look.cube',
+      activeIntensity: 0.7,
+      onIntensityChange: vi.fn(),
+      strengthDisabled: false,
+      lutProfileSelection: {
+        status: 'confirmed' as const,
+        fingerprint: 'lut-fingerprint',
+        profileId: 'sony-sgamut3cine-slog3',
+        confidence: 'metadata' as const,
+      },
+      lutProfileResolution: {
+        kind: 'confirmed' as const,
+        profile: {
+          ...getLUTColorProfile('sony-sgamut3cine-slog3')!,
+          role: 'combined-look-output' as const,
+          outputGamut: 'srgb-rec709' as const,
+          outputTransfer: 'srgb' as const,
+          outputRange: 'full' as const,
+        },
+        confidence: 'metadata' as const,
+      },
+    }
+    const props = {
+      ...base,
+      transform: transformFeatureFixture({ hasImage: true }),
+      lutBrowser: confirmedLook,
+      exportResultKind: 'full-resolution' as const,
+      exportPanel: ({ onClose }: { onClose: () => void }) => (
+        <div>
+          delivered JPEG
+          <button type="button" onClick={onClose}>
+            Close export
+          </button>
+        </div>
+      ),
+    }
+    const tab = (name: RegExp) =>
+      within(screen.getByRole('tablist', { name: /lab modes/i })).getByRole(
+        'tab',
+        { name },
+      )
+    const pressRow = (slider: string) =>
+      fireEvent.pointerDown(
+        screen
+          .getByRole('slider', { name: slider })
+          .closest('[data-testid="adjust-slider-row-scrub"]')!,
+      )
+
+    it.each([
+      {
+        tool: 'the Look strip',
+        open: async () => {},
+        shown: () => screen.queryByRole('group', { name: 'Looks' }),
+      },
+      {
+        tool: 'a Strength scrub',
+        open: async () => pressRow('Strength'),
+        shown: () => document.querySelector('[data-scrub-value-hud]'),
+      },
+      {
+        tool: 'the inline LUT contract',
+        open: () =>
+          userEvent.click(
+            screen.getByRole('button', {
+              name: /edit color contract for sony s-gamut3\.cine \/ s-log3/i,
+            }),
+          ),
+        shown: () =>
+          screen.queryByRole('region', { name: 'client-look.cube: input' }),
+      },
+      {
+        tool: 'Adjust',
+        open: () => userEvent.click(tab(/adjust/i)),
+        shown: () => screen.queryByRole('group', { name: /tone sliders/i }),
+      },
+      {
+        tool: 'an Adjust scrub',
+        open: async () => {
+          await userEvent.click(tab(/adjust/i))
+          pressRow('Exposure')
+        },
+        shown: () => document.querySelector('[data-scrub-value-hud]'),
+      },
+      {
+        tool: 'Transform',
+        open: () => userEvent.click(tab(/transform/i)),
+        shown: () => screen.queryByRole('region', { name: 'Transform panel' }),
+      },
+    ])(
+      'takes $tool off screen and locks every tool',
+      async ({ open, shown }) => {
+        const { container, rerender } = render(<MobileLabChrome {...props} />)
+        await open()
+        expect(shown()).not.toBeNull()
+
+        rerender(<MobileLabChrome {...props} previewSuspended />)
+        await waitFor(() => expect(shown()).toBeNull())
+        expect(container.querySelector('[data-mobile-dock-panel]')).toBeNull()
+        expect(
+          container.querySelector('[data-mobile-lab-chrome]'),
+        ).toHaveAttribute('data-focus', 'false')
+        for (const name of [/look/i, /adjust/i, /transform/i]) {
+          expect(tab(name)).toBeDisabled()
+        }
+        // The result stays one tap away from the topbar.
+        expect(
+          container.querySelector('[data-mobile-export-action]'),
+        ).toBeEnabled()
+      },
+    )
+
+    it('closes the delivered result without handing the deck back, reopens it, and unlocks on Restore', async () => {
+      const { container, rerender } = render(<MobileLabChrome {...props} />)
+      await userEvent.click(tab(/adjust/i))
+
+      rerender(<MobileLabChrome {...props} previewSuspended preferExportMode />)
+      expect(await screen.findByText('delivered JPEG')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('group', { name: /tone sliders/i }),
+      ).not.toBeInTheDocument()
+
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Close export' }),
+      )
+      expect(screen.queryByText('delivered JPEG')).not.toBeInTheDocument()
+      expect(container.querySelector('[data-mobile-dock-panel]')).toBeNull()
+      // A tap on a locked tab hands nothing back.
+      fireEvent.click(tab(/adjust/i))
+      expect(
+        screen.queryByRole('group', { name: /tone sliders/i }),
+      ).not.toBeInTheDocument()
+
+      const action = container.querySelector<HTMLButtonElement>(
+        '[data-mobile-export-action]',
+      )!
+      expect(action).toHaveAttribute('data-state', 'done')
+      expect(action).toHaveAttribute('aria-expanded', 'false')
+      await userEvent.click(action)
+      expect(screen.getByText('delivered JPEG')).toBeInTheDocument()
+      expect(action).toHaveAttribute('aria-expanded', 'true')
+
+      // Restore brings the preview back, and the tools with it.
+      rerender(<MobileLabChrome {...props} />)
+      expect(tab(/adjust/i)).toBeEnabled()
+      await userEvent.click(tab(/adjust/i))
+      expect(
+        screen.getByRole('group', { name: /tone sliders/i }),
+      ).toBeInTheDocument()
+    })
   })
 
   it('surfaces the current mobile LUT contract directly in Look mode', async () => {
@@ -1270,6 +1425,51 @@ describe('mobileLabChrome stage layout', () => {
     await userEvent.click(within(dock).getByRole('tab', { name: /look/i }))
     expect(px('--raw-photo-height')).toBeCloseTo(540)
     expect(px('--raw-photo-width')).toBeCloseTo(360)
+    expect(px('--raw-stage-inset-bottom')).toBeCloseTo(64)
+  })
+
+  it('sizes the stage for the deck an export and its released result actually show', async () => {
+    const { container, rerender, px, deck } = renderInShell({
+      photoAspect: 2 / 3,
+    })
+    const rerenderInShell = (
+      props: Partial<Parameters<typeof MobileLabChrome>[0]>,
+    ) =>
+      rerender(
+        <div data-raw-lab-shell="viewport">
+          <MobileLabChrome {...base} photoAspect={2 / 3} {...props} />
+        </div>,
+      )
+    await userEvent.click(
+      container.querySelector<HTMLButtonElement>(
+        '[data-mobile-export-action]',
+      )!,
+    )
+    // Look's deck and the export panel both measure 140px here.
+    expect(px('--raw-photo-height')).toBeCloseTo(400)
+
+    // The running export keeps its panel, and the stage keeps its room.
+    rerenderInShell({
+      isProcessing: true,
+      isExporting: true,
+      previewSuspended: true,
+    })
+    expect(deck()).not.toBeNull()
+    expect(px('--raw-photo-height')).toBeCloseTo(400)
+
+    // So does the delivered result once the preview is released.
+    rerenderInShell({
+      previewSuspended: true,
+      exportResultKind: 'full-resolution',
+    })
+    expect(deck()).not.toBeNull()
+    expect(screen.getByText('export panel')).toBeInTheDocument()
+    expect(px('--raw-photo-height')).toBeCloseTo(400)
+
+    // Closing it collapses the deck, and the stage takes the room.
+    await userEvent.click(screen.getByRole('button', { name: 'Close export' }))
+    expect(deck()).toBeNull()
+    expect(px('--raw-photo-height')).toBeCloseTo(540)
     expect(px('--raw-stage-inset-bottom')).toBeCloseTo(64)
   })
 

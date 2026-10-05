@@ -1355,6 +1355,101 @@ describe('rawToolSurface', () => {
     }
   })
 
+  it('mobile locks the tools while the preview is released, and keeps every delivery action on the result', async () => {
+    const user = userEvent.setup()
+    const prev = jotaiStore.get(viewportAtom)
+    jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
+    const onToneChange = vi.fn()
+    const onDownloadExport = vi.fn()
+    const onDownloadExportManifest = vi.fn()
+    const onShareExport = vi.fn()
+    const onCopyExport = vi.fn()
+    const delivered = {
+      ...baseProps,
+      hasImage: true,
+      canExport: true,
+      disabledReason: undefined,
+      onToneChange,
+      onDownloadExport,
+      onDownloadExportManifest,
+      onShareExport,
+      onCopyExport,
+      exportResult: {
+        output: {
+          kind: 'blob' as const,
+          filename: 'DSC09142_fullres.jpg',
+          blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+          byteLength: 4,
+          mimeType: 'image/jpeg' as const,
+        },
+        filename: 'DSC09142_fullres.jpg',
+        width: 6000,
+        height: 4000,
+        size: 4,
+        createdAt: 0,
+        copyCapability: {
+          mode: 'preview-size' as const,
+          label: 'Copy preview-size image' as const,
+          reason: 'Full-resolution copy is not available.',
+        },
+        manifestState: { status: 'ready' as const },
+      },
+      exportShareCapability: { available: true as const },
+    }
+    try {
+      const { container, rerender } = render(
+        <Provider store={jotaiStore}>
+          <RawToolSurface {...delivered} previewSuspended />
+        </Provider>,
+      )
+      const dock = screen.getByRole('tablist', { name: /lab modes/i })
+      for (const tab of within(dock).getAllByRole('tab')) {
+        expect(tab).toBeDisabled()
+      }
+
+      // The result opens on its own, and every delivery action works.
+      await user.click(await screen.findByRole('button', { name: 'Download' }))
+      await user.click(
+        screen.getByRole('button', { name: 'Download render manifest (JSON)' }),
+      )
+      await user.click(screen.getByRole('button', { name: 'Share' }))
+      await user.click(
+        screen.getByRole('button', { name: 'Copy preview-size image' }),
+      )
+      expect(onDownloadExport).toHaveBeenCalledOnce()
+      expect(onDownloadExportManifest).toHaveBeenCalledOnce()
+      expect(onShareExport).toHaveBeenCalledOnce()
+      expect(onCopyExport).toHaveBeenCalledOnce()
+
+      // Closing it reveals no tool; the topbar Export opens it again.
+      await user.click(screen.getByRole('button', { name: 'Close export' }))
+      expect(screen.queryByRole('button', { name: 'Download' })).toBeNull()
+      expect(screen.queryByRole('slider')).toBeNull()
+      await user.click(
+        container.querySelector<HTMLButtonElement>(
+          '[data-mobile-export-action]',
+        )!,
+      )
+      expect(
+        screen.getByRole('button', { name: 'Download' }),
+      ).toBeInTheDocument()
+
+      // Restored, the tools edit again.
+      rerender(
+        <Provider store={jotaiStore}>
+          <RawToolSurface {...delivered} />
+        </Provider>,
+      )
+      await user.click(within(dock).getByRole('tab', { name: /adjust/i }))
+      fireEvent.keyDown(screen.getByRole('slider', { name: 'Exposure' }), {
+        key: 'ArrowRight',
+      })
+      expect(onToneChange).toHaveBeenCalled()
+    } finally {
+      jotaiStore.set(viewportAtom, prev)
+    }
+  })
+
   it('renders input and output rows with apply-contract button for a complete recommendation', async () => {
     const vlog709 = getLUTColorProfile('panasonic-vgamut-vlog')!
     const completeProfile = {

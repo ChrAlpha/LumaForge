@@ -86,6 +86,14 @@ export function useMobileLabChromeController({
     hasImage && previewSuspended === true && !isProcessing
   const handoffActive = hasImage && (isProcessing || previewReleasedReady)
   const focusActive = scrubField !== null
+  // While export holds the preview released, an edit would discard the
+  // delivered JPEG. Until Restore nothing hands the deck back to a tool or
+  // opens the contract, the LUT sources or a scrub. The lock is read when an
+  // entry point is called, so a panel still leaving the screen cannot
+  // re-enter through the callbacks it holds from an earlier render.
+  const editsLocked = hasImage && previewSuspended === true
+  const editsLockedRef = useRef(editsLocked)
+  editsLockedRef.current = editsLocked
 
   // The view mode this controller last asked the stage for. A view mode
   // that lands without being asked for came from elsewhere (Transform's
@@ -134,7 +142,10 @@ export function useMobileLabChromeController({
   }, [appliedLookKey, dropOriginalPin])
 
   const startScrub = (field: ScrubFieldId | null) => {
-    if (field !== null) dropOriginalPin()
+    if (field !== null) {
+      if (editsLockedRef.current) return
+      dropOriginalPin()
+    }
     setScrubField(field)
   }
 
@@ -369,6 +380,7 @@ export function useMobileLabChromeController({
   })
 
   const openLutBrowser = () => {
+    if (editsLockedRef.current) return
     setLutBrowserOpen(true)
   }
 
@@ -379,6 +391,7 @@ export function useMobileLabChromeController({
   // Tools own the deck; Compare is a lens over the photo, so switching tools
   // never touches the split.
   const handleModeChange = (nextMode: MobileMode) => {
+    if (editsLockedRef.current) return
     if (nextMode !== mode) dropOriginalPin()
     setExportOpen(false)
     setMode(nextMode)
@@ -389,6 +402,7 @@ export function useMobileLabChromeController({
   // Export blocked on an unresolved LUT contract: hand the deck to Look and
   // open the contract there, with the photo still in view.
   const openLookContract = () => {
+    if (editsLockedRef.current) return
     closeSheets()
     setExportOpen(false)
     setMode('look')
@@ -404,6 +418,11 @@ export function useMobileLabChromeController({
 
   const closeExport = () => {
     setExportOpen(false)
+  }
+
+  const changeLookView = (view: MobileLookView) => {
+    if (view === 'contract' && editsLockedRef.current) return
+    setLookView(view)
   }
 
   return {
@@ -434,7 +453,7 @@ export function useMobileLabChromeController({
     exitImmersive,
     openLutBrowser,
     closeLutBrowser,
-    setLookView,
+    setLookView: changeLookView,
     openLookContract,
     handleModeChange,
     openExport,

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 import type { MessageKey } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
@@ -10,6 +11,7 @@ import type {
 } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import { deriveLutContractExportReason } from '../model/derive-session'
+import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { RawToolSurfaceProps } from './RawWorkflowContext'
@@ -47,6 +49,15 @@ function getAspect(size: { width: number; height: number } | null | undefined) {
     : null
 }
 
+/** `edit`, refused whenever `refused` reads true at the moment it is called. */
+function unlessRefused<Args extends unknown[], Result>(
+  refused: { readonly current: boolean },
+  edit: (...args: Args) => Result,
+) {
+  return (...args: Args): Result | undefined =>
+    refused.current ? undefined : edit(...args)
+}
+
 export function RawWorkflowToolProvider({
   transform,
   workflow,
@@ -66,6 +77,87 @@ export function RawWorkflowToolProvider({
   children,
 }: RawWorkflowToolProviderProps) {
   const { t } = useI18n()
+  const previewSuspended = workflow.previewSuspended === true
+  // While export holds the preview released, an edit would discard the
+  // delivered JPEG, so edits refuse until the preview is restored. The state
+  // is read when an edit is called: a scrub, a deferred strength step or a
+  // panel still leaving the screen is refused through the callbacks it holds
+  // from an earlier render. Delivery, Export and Restore stay open.
+  const editsRefusedRef = useRef(previewSuspended)
+  editsRefusedRef.current = previewSuspended
+  const {
+    setIntensity,
+    setToneParams,
+    resetTone,
+    setColorParams,
+    resetColor,
+    setSelectiveColorBand,
+    resetSelectiveColor,
+    clearLUT,
+    selectLUTProfile,
+  } = workflow
+  const edits = useMemo(
+    () => ({
+      onIntensityChange: unlessRefused(editsRefusedRef, setIntensity),
+      onToneChange: unlessRefused(editsRefusedRef, setToneParams),
+      onToneReset: unlessRefused(editsRefusedRef, resetTone),
+      onColorChange: unlessRefused(editsRefusedRef, setColorParams),
+      onColorReset: unlessRefused(editsRefusedRef, resetColor),
+      onSelectiveColorChange: unlessRefused(
+        editsRefusedRef,
+        setSelectiveColorBand,
+      ),
+      onSelectiveColorReset: unlessRefused(
+        editsRefusedRef,
+        resetSelectiveColor,
+      ),
+      onLutLoad: unlessRefused(editsRefusedRef, onLutDrop),
+      onLutClear: unlessRefused(editsRefusedRef, clearLUT),
+      onLutProfileSelect: unlessRefused(editsRefusedRef, selectLUTProfile),
+    }),
+    [
+      clearLUT,
+      onLutDrop,
+      resetColor,
+      resetSelectiveColor,
+      resetTone,
+      selectLUTProfile,
+      setColorParams,
+      setIntensity,
+      setSelectiveColorBand,
+      setToneParams,
+    ],
+  )
+  const editableTransform = useMemo(
+    () =>
+      transform && {
+        ...transform,
+        setMode: unlessRefused(editsRefusedRef, transform.setMode),
+        setManual: unlessRefused(editsRefusedRef, transform.setManual),
+        setConstrainCrop: unlessRefused(
+          editsRefusedRef,
+          transform.setConstrainCrop,
+        ),
+        reset: unlessRefused(editsRefusedRef, transform.reset),
+      },
+    [transform],
+  )
+  // A catalog look applies on load, so a load is refused with the outcome
+  // the one-load lock already uses, and one still downloading is cancelled.
+  const editableOnlineLutSources = useMemo(
+    () => ({
+      ...onlineLutSources,
+      loadEntry: (entryId: string) =>
+        editsRefusedRef.current
+          ? Promise.resolve<LutLoadOutcome>('aborted')
+          : onlineLutSources.loadEntry(entryId),
+    }),
+    [onlineLutSources],
+  )
+  const { loadingEntryId, cancelEntryLoad } = onlineLutSources
+  useEffect(() => {
+    if (previewSuspended && loadingEntryId) cancelEntryLoad()
+  }, [cancelEntryLoad, loadingEntryId, previewSuspended])
   const transformActive = transform?.active === true
   const compareDisabled = isCpuMode || transformActive
   // Until the session holds the geometry the preview rendered, neither
@@ -110,7 +202,7 @@ export function RawWorkflowToolProvider({
   return (
     <RawWorkflowProvider
       value={{
-        transform,
+        transform: editableTransform,
         activeIntensity: workflow.activeIntensity,
         tone: {
           userExposureEv: workflow.params.userExposureEv,
@@ -127,13 +219,7 @@ export function RawWorkflowToolProvider({
           userVibrance: workflow.params.userVibrance,
         },
         selectiveColor: workflow.params.selectiveColor,
-        onIntensityChange: workflow.setIntensity,
-        onToneChange: workflow.setToneParams,
-        onToneReset: workflow.resetTone,
-        onColorChange: workflow.setColorParams,
-        onColorReset: workflow.resetColor,
-        onSelectiveColorChange: workflow.setSelectiveColorBand,
-        onSelectiveColorReset: workflow.resetSelectiveColor,
+        ...edits,
         fileName: workflow.sourceFileName,
         onReplaceFile,
         onResetSession,
@@ -157,8 +243,6 @@ export function RawWorkflowToolProvider({
         onCompareSplitChange: compareDisabled
           ? () => {}
           : workflow.setCompareSplit,
-        onLutLoad: onLutDrop,
-        onLutClear: workflow.clearLUT,
         currentLutName: workflow.currentLutName,
         appliedLut:
           workflow.activeStyle?.kind === 'custom'
@@ -173,8 +257,7 @@ export function RawWorkflowToolProvider({
           workflow.activeStyle?.kind === 'custom'
             ? workflow.activeStyle.lutAsset?.profileResolution
             : null,
-        onLutProfileSelect: workflow.selectLUTProfile,
-        onlineLutSources,
+        onlineLutSources: editableOnlineLutSources,
         // Full resolution reproduces a committed geometry, so it stays
         // available once the preview has rendered it.
         onExport: transformExportBlock ? () => {} : onExport,
@@ -200,7 +283,7 @@ export function RawWorkflowToolProvider({
         progress: workflow.progress,
         runtimeReadinessState,
         onPrepareRuntime,
-        previewSuspended: workflow.previewSuspended,
+        previewSuspended,
         exportResult: workflow.exportResult,
         exportShareCapability: workflow.exportShareCapability,
         recovery: workflow.exportRecovery,

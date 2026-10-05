@@ -183,6 +183,69 @@ describe('useMobileLabChromeController', () => {
     expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
   })
 
+  describe('while the preview is released after export', () => {
+    function released() {
+      const hook = renderController()
+      act(() => hook.result.current.handleModeChange('tone'))
+      act(() =>
+        hook.result.current.setScrubField({
+          kind: 'tone',
+          key: 'userExposureEv',
+        }),
+      )
+      // What a surface still holds from the render before the release.
+      const held = hook.result.current
+      hook.rerender({
+        ...hook.initialProps,
+        previewSuspended: true,
+        preferExportMode: true,
+      })
+      return { ...hook, held }
+    }
+
+    it('ends the scrub and hands the deck to the delivered result', () => {
+      const { result } = released()
+      expect(result.current.exportOpen).toBe(true)
+      expect(result.current.scrubField).toBeNull()
+      expect(result.current.mode).toBe('tone')
+    })
+
+    it('hands the deck to no tool, contract or LUT source, from callbacks old or new', () => {
+      const { result, held } = released()
+      for (const surface of [held, result.current]) {
+        act(() => surface.handleModeChange('look'))
+        act(() => surface.openLookContract())
+        act(() => surface.setLookView('contract'))
+        act(() => surface.openLutBrowser())
+        act(() => surface.setScrubField({ kind: 'tone', key: 'userContrast' }))
+      }
+      expect(result.current.exportOpen).toBe(true)
+      expect(result.current.mode).toBe('tone')
+      expect(result.current.lookView).toBe('strip')
+      expect(result.current.lutBrowserOpen).toBe(false)
+      expect(result.current.scrubField).toBeNull()
+    })
+
+    it('keeps the tools locked when the result closes, reopens it, and unlocks on Restore', () => {
+      const { result, rerender, initialProps } = released()
+      act(() => result.current.closeExport())
+      act(() => result.current.handleModeChange('look'))
+      expect(result.current.exportOpen).toBe(false)
+      expect(result.current.mode).toBe('tone')
+
+      act(() => result.current.openExport())
+      expect(result.current.exportOpen).toBe(true)
+      expect(result.current.dockExpanded).toBe(true)
+
+      rerender({ ...initialProps, previewSuspended: false })
+      act(() => result.current.handleModeChange('look'))
+      expect(result.current.exportOpen).toBe(false)
+      expect(result.current.mode).toBe('look')
+      act(() => result.current.setLookView('contract'))
+      expect(result.current.lookView).toBe('contract')
+    })
+  })
+
   describe('a pinned original (CPU preview lens)', () => {
     function pinned() {
       const hook = renderController({ compareMode: 'original' })
