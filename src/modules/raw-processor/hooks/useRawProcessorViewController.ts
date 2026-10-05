@@ -36,6 +36,7 @@ export function useRawProcessorViewController({
     loadOnlineLUT,
     setViewMode,
     setCompareSplit,
+    resetPreviewViewport,
     exportImage,
     recoverInterruptedExport,
     reset,
@@ -120,10 +121,15 @@ export function useRawProcessorViewController({
     [pipelineRef],
   )
 
+  // Resetting the compare view puts the split back at 50% and the photo
+  // back at fit: a centred split over a zoomed crop is not the side by side
+  // the reset promises. The stage's own double-click still resets the
+  // viewport alone.
   const handleCompareReset = useCallback(() => {
     setViewMode('compare')
     setCompareSplit(0.5)
-  }, [setCompareSplit, setViewMode])
+    resetPreviewViewport()
+  }, [resetPreviewViewport, setCompareSplit, setViewMode])
 
   const requestSessionReset = useCallback(() => {
     setResetConfirmationOpen(true)
