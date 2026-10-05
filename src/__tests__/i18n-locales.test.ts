@@ -26,6 +26,17 @@ describe('i18n locale catalogs', () => {
     // UI copy uses a period, colon, or parentheses, never an em dash.
     expect(enMessages['raw.preview.cpuDegraded.banner']).not.toMatch(/—/)
     expect(zhMessages['raw.preview.cpuDegraded.banner']).not.toMatch(/—/)
+    // The mobile Look and export surfaces call the colour contract 契约,
+    // as the details sheet beside them does.
+    for (const key of [
+      'raw.mobile.look.needsContract',
+      'raw.mobile.lut.chooseContract',
+      'raw.mobile.lut.editContractAria',
+      'raw.mobile.more.lutNeedsContract',
+    ] as const) {
+      expect(zhMessages[key]).toContain('契约')
+      expect(zhMessages[key]).not.toContain('合同')
+    }
     expect(enMessages['raw.export.derivedLabelHint']).toContain('{{label}}')
     expect(zhMessages['raw.export.derivedLabelHint']).toContain('{{label}}')
   })
