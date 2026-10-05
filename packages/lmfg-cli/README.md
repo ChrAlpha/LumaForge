@@ -112,6 +112,9 @@ candidates):
 lightness each -100..100, matching the app sliders); omitted bands stay
 neutral.
 
+`lmfg.params.v1` has no geometry field, so the CLI cannot apply the app's
+Transform (upright, perspective, rotation, aspect, scale, offset, or crop).
+
 LUTs whose contract cannot be confirmed from `LUMAFORGE_*` comments must carry
 an explicit `contract`; `lut contract infer` returns ready-to-use
 `suggested_contracts`. Rendering never guesses a log/gamut contract.
@@ -164,8 +167,11 @@ a candidate won.
 
 ## MCP server
 
-`@lumaforge/lmfg-mcp` wraps every command as an MCP tool over stdio
-(`lmfg-mcp --cwd <dir>`); see `packages/lmfg-mcp/README.md`.
+`@lumaforge/lmfg-mcp` serves `lmfg` over stdio (`lmfg-mcp --cwd <dir>`): one
+MCP tool per command, plus two MCP-only tools that read images the CLI already
+wrote (`lmfg_image_read` for previews, candidates, and contact sheets;
+`lmfg_export_detail` for a 1:1 region of a full-resolution export). See
+`packages/lmfg-mcp/README.md`.
 
 ## Workspace layout
 
@@ -214,7 +220,8 @@ The browser app seals the same `RenderManifest` for every completed
 full-resolution export ("Manifest" next to Download on desktop and mobile).
 `lmfg manifest verify` accepts those files; `render replay` re-renders them
 when the source RAW and LUT file are available and reports whether the bytes
-were reproduced.
+were reproduced. Replay rebuilds the color graph only, so it cannot reproduce
+an export that records a Transform geometry (`render_params.geometry`).
 
 ## Exit codes
 
@@ -234,9 +241,13 @@ were reproduced.
 
 ## Releasing
 
-1. `pnpm cli:build && pnpm --filter @lumaforge/lmfg-cli test`
-2. `pnpm --filter @lumaforge/render-engine exec npm pack --dry-run` and
-   `pnpm --filter @lumaforge/lmfg-cli pack:dry-run` — both must succeed.
+1. `pnpm cli:build && LMFG_REQUIRE_FIXTURE=1 pnpm test:cli` (runs the CLI and
+   MCP suites).
+2. `pnpm --filter @lumaforge/render-engine exec npm pack --dry-run`,
+   `pnpm --filter @lumaforge/lmfg-cli pack:dry-run`, and
+   `pnpm --filter @lumaforge/lmfg-mcp pack:dry-run` — all must succeed.
 3. Publish `@lumaforge/render-engine` first (it is a `workspace:*` dependency),
-   then `@lumaforge/lmfg-cli`. The runtime packages and
+   then `@lumaforge/lmfg-cli`, then `@lumaforge/lmfg-mcp` (it depends on
+   both). The `Publish` workflow (`.github/workflows/publish.yml`) publishes in
+   that order and defaults to a dry run. The runtime packages and
    `@lumaforge/luma-native-artifacts` are already published.

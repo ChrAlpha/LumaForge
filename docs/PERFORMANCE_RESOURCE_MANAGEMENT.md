@@ -7,17 +7,20 @@ understand how LumaForge preserves compatibility without leaving available
 performance unused.
 
 Snapshot checked on 2026-06-01 against the resource policy current at
-verification time.
+verification time. The source and test paths below were refreshed on
+2026-10-05, after the policy and preview-plan modules moved into
+`@lumaforge/render-engine`.
 
 Primary implementation sources:
 
 - `src/lib/runtime/capability-vector.ts`
-- `src/lib/runtime/resource-budget.ts`
-- `src/lib/runtime/interactive-policy.ts`
-- `src/lib/runtime/export-policy.ts`
+- `packages/render-engine/src/policy/resource-budget.ts`
+- `packages/render-engine/src/policy/interactive-policy.ts`
+- `packages/render-engine/src/policy/export-policy.ts`
 - `src/lib/runtime/export-runtime-resources.ts`
+- `src/lib/runtime/preview-gpu-budget.ts`
 - `src/lib/export/execution-profile.ts`
-- `src/modules/raw-processor/services/preview/preview-resolution-policy.ts`
+- `packages/render-engine/src/preview/preview-plan.ts`
 - `src/modules/raw-processor/services/export/export-evacuation.ts`
 - `src/lib/raw/luma-runtime-adapter.ts`
 
@@ -452,10 +455,11 @@ compatibility strategy.
 Policy and invariant tests:
 
 - `src/lib/runtime/capability-vector.test.ts`
-- `src/lib/runtime/resource-budget.test.ts`
-- `src/lib/runtime/interactive-policy.test.ts`
-- `src/lib/runtime/export-policy.test.ts`
-- `src/lib/runtime/export-policy.property.test.ts`
+- `packages/render-engine/src/policy/resource-budget.test.ts`
+- `packages/render-engine/src/policy/interactive-policy.test.ts`
+- `packages/render-engine/src/policy/export-policy.test.ts`
+- `packages/render-engine/src/policy/export-policy.property.test.ts`
+- `src/lib/runtime/preview-gpu-budget.test.ts`
 - `src/lib/export/execution-profile.test.ts`
 
 Preview capability and degraded-mode tests:
@@ -463,7 +467,8 @@ Preview capability and degraded-mode tests:
 - `src/lib/preview/raw-preview-capability.test.ts`
 - `src/modules/raw-processor/hooks/useCapabilityGate.test.tsx`
 - `src/modules/raw-processor/__tests__/raw-preview-degrade.test.tsx`
-- `src/lib/preview/cpu-preview-parity.test.ts`
+- `packages/render-engine/src/preview/preview-plan.test.ts`
+- `packages/render-engine/src/preview/preview-parity.test.ts`
 
 Export lifecycle and resource tests:
 
@@ -475,4 +480,7 @@ Export lifecycle and resource tests:
 
 When changing this policy, run the smallest focused unit set first, then
 production-like browser validation for any user-visible RAW preview, export
-handoff, or mobile/WebKit behavior change.
+handoff, or mobile/WebKit behavior change. The `packages/render-engine` tests
+run with `pnpm --filter @lumaforge/render-engine test` once the runtime
+packages are built (`pnpm cli:build:deps`); neither `pnpm test:app` nor
+`pnpm test:runtime` includes them.

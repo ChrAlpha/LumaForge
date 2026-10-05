@@ -59,4 +59,4 @@ It should give users confidence that the pipeline is doing the careful work they
 Target WCAG AA contrast for all production UI.
 Do not encode safety state with color alone; pair color with text, icons, or disabled-state explanations.
 Respect `prefers-reduced-motion`; use motion as light orientation, not as a requirement to understand the workflow.
-Keep buttons and drop targets large enough for touch when the browser and source file workflow allow mobile use, while making desktop WebGL2 the supported baseline.
+Keep buttons and drop targets large enough for touch when the browser and source file workflow allow mobile use, while making a desktop browser with WebGPU the supported baseline; browsers without WebGPU fall back to the slower CPU preview.

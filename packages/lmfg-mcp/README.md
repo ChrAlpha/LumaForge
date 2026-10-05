@@ -1,10 +1,12 @@
 # @lumaforge/lmfg-mcp
 
 MCP (Model Context Protocol) server that exposes the [`lmfg`](../lmfg-cli/README.md)
-RAW/LUT rendering CLI as tools over stdio. It is a thin wrapper: every tool
+RAW/LUT rendering CLI as tools over stdio. Most tools are thin wrappers: each
 maps to one CLI command, runs it in-process, and returns the CLI's JSON
 envelope unchanged as structured content, so exit codes, error codes, fail-closed
-export rules, and manifests are exactly those of the CLI.
+export rules, and manifests are exactly those of the CLI. Two MCP-only tools
+return image content for artifacts the CLI already wrote; see
+[Image tools](#image-tools).
 
 ## Install and run
 
@@ -45,11 +47,26 @@ accept `workspace`.
 | `lmfg_metrics_compute`, `lmfg_metrics_compare`, `lmfg_metrics_rank` | `metrics …` | `objective` inline (`lmfg.objective.v1`) |
 | `lmfg_manifest_verify`, `lmfg_manifest_show` | `manifest …` | |
 
-Every result is `{ schema, ok, result | error, exit_code }`. Failures set
-`isError: true` and keep the CLI error code (for example `export.refused`,
-`lut.contract.incomplete`, `replay.mismatch`) so an agent can branch on it.
-Progress events (`--emit ndjson`) are not streamed through MCP; long renders
-simply return when done, and `timeout_ms` maps to the CLI `--timeout`.
+Every result of these tools is `{ schema, ok, result | error, exit_code }`.
+Failures set `isError: true` and keep the CLI error code (for example
+`export.refused`, `lut.contract.incomplete`, `replay.mismatch`) so an agent can
+branch on it. Progress events (`--emit ndjson`) are not streamed through MCP;
+long renders simply return when done, and `timeout_ms` maps to the CLI
+`--timeout`.
+
+## Image tools
+
+These two tools have no CLI command. They read files from the session
+workspace that earlier tools wrote, verify them, and return
+`{ schema, ok, result | error }` (no `exit_code`) together with an image.
+
+| Tool | Returns | Notes |
+|---|---|---|
+| `lmfg_image_read` | JPEG of one session preview, candidate, or contact sheet, plus its SHA-256, source identity, dimensions, and the contact-sheet tile-to-candidate map | schema `lmfg.image.read.v1`; refuses with `image.refused`; at most 8 MiB and 16 MP |
+| `lmfg_export_detail` | Lossless 1:1 PNG of a region of an existing full-resolution export, after verifying its sealed manifest, source identity, dimensions, and JPEG hash | schema `lmfg.export.detail.v1`; refuses with `export_detail.refused`; source at most 120 MP / 512 MiB, region at most 2 MP, PNG at most 8 MiB; writes the PNG and a receipt under the session's `exports/details` |
+
+They view pixels that already exist: neither renders new RAW pixels nor
+enlarges a preview.
 
 ## Development
 

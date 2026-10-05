@@ -138,6 +138,13 @@ LumaForge 是一套运行在浏览器中的 RAW + LUT 处理管线。当前支�
 - `src/modules/raw-processor`：`/raw` 工作流，涵盖上传、预览、风格选择、
   LUT 合约选择、对比、状态和导出操作。
 
+### 命令行：`lmfg`
+
+`packages/lmfg-cli` 提供 `lmfg`：面向智能体和脚本的 Node.js CLI，以无界面方式
+运行同一条 RAW → 风格 → 导出管线，并为每次渲染生成密封的渲染清单。智能体
+工作循环、JSON 协议和退出码见 `packages/lmfg-cli/README.md`。使用
+`pnpm cli:build` 构建。
+
 ## 本地开发
 
 环境要求：

@@ -20,7 +20,7 @@ image-editor assumptions.
   router utilities cover the case.
 - For animation, use `m` from `motion/react` inside the existing `LazyMotion`
   setup in `src/providers/root-providers.tsx`. Prefer presets in
-  `src/lib/spring`.
+  `src/lib/spring.ts`.
 - Do not describe or reintroduce the RAW runtime as `libraw-wasm`. The current
   runtime boundary is `@lumaforge/luma-raw-runtime`.
 - Do not add catalogs, batch workflows, accounts, cloud upload requirements,
@@ -41,6 +41,11 @@ image-editor assumptions.
 - HQ preview export is a fallback or compromise, not the primary promise.
 - Color and LUT work is contract work. Preserve input gamut, transfer/log curve,
   LUT intent, scene-referred working assumptions, and output handling.
+- The editing controls are a bounded set the export path reproduces: tone,
+  temperature/tint and saturation/vibrance, eight HSL bands, and Transform.
+  Transform is in scope as upright modes plus manual vertical/horizontal
+  perspective, rotate, aspect, scale, and offset, with constrained crop (on by
+  default). Lens correction is out of scope.
 
 ## Current Architecture
 
@@ -50,6 +55,9 @@ image-editor assumptions.
   itself lives in `src/modules/landing`: `LandingPage`, section components,
   the `PhotoCompare` slider and its sweep hook, `content.ts` (typed key lists
   and the real supported-format count), module CSS, and colocated tests.
+- `src/pages/(main)/transform-demo.tsx` still ships the noindex
+  `/transform-demo` route on top of `src/modules/transform-demo`, which `/raw`
+  Transform also depends on (see Retained And Scheduled Slices).
 - `src/providers/root-providers.tsx` owns `LazyMotion`, React Query, Jotai,
   i18n, error boundary, router stability, settings sync, context menu, and
   toasts. Preserve provider order unless a concrete bug requires changing it.
@@ -59,48 +67,93 @@ image-editor assumptions.
   route/runtime state, hidden file pickers, runtime readiness, reset
   confirmation, CPU preview state, and workflow actions for the view.
 - `src/modules/raw-processor/hooks/useRawWorkflow.ts` and
-  `hooks/stages/*` are the workflow state machine boundary. Stage hooks are
-  grouped by `ingest`, `preview`, `look`, `compare`, and `export`.
-- `src/modules/raw-processor/services/*` contains scriptable domain behavior:
-  `ingest`, `preview`, `look`, `compare`, and `export`. Prefer adding tested
-  logic here before growing React components.
-- `src/modules/raw-processor/model/*` defines session/workflow/export result
+  `src/modules/raw-processor/hooks/stages/` are the workflow state machine
+  boundary. Stage hooks are grouped by `ingest`, `preview`, `look`, `compare`,
+  and `export`; the `calibration` stage folder is dormant (see Retained And
+  Scheduled Slices). Transform is not a stage folder:
+  `src/modules/raw-processor/hooks/useRawTransformFeature.ts` owns Transform
+  tool state and the preview overlay, and
+  `src/modules/raw-processor/hooks/useRawPreviewTransform.ts` commits the
+  geometry that export reproduces.
+- `src/modules/raw-processor/services/` contains scriptable domain behavior:
+  `ingest`, `preview`, `look`, `compare`, and `export` (`calibration` is
+  dormant). Prefer adding tested logic here before growing React components.
+- `src/modules/raw-processor/model/` defines session/workflow/export result
   shapes. Keep model changes small and contract-like.
-- `src/modules/raw-processor/state/*` contains Jotai atoms for workflow and tool
-  state. Prefer these over introducing a second state model.
+- `src/modules/raw-processor/state/` contains Jotai atoms for workflow and tool
+  state; `src/modules/raw-processor/state/calibration.atoms.ts` belongs to the
+  dormant calibration slice. Prefer these over introducing a second state
+  model.
 - `src/modules/raw-processor/components/RawWorkflowToolProvider.tsx` is the
   context bridge from workflow state/actions to tool surfaces.
 - `src/modules/raw-processor/components/RawToolSurface.tsx` switches desktop vs
   mobile surfaces by viewport. Respect that split.
-- `src/modules/raw-processor/components/tools/*` is the desktop command rail:
-  Adjust, Tone, Color, Compare, Export, File Facts, Histogram, LUT contract, and
-  shared tool chrome.
-- `src/modules/raw-processor/components/mobile/*` is the mobile photo-first
+- `src/modules/raw-processor/components/tools/` is the desktop command rail:
+  Adjust (Tone, Color, and HSL sections), Transform, Compare, Export, File
+  Facts, Histogram, the LUT contract tool under
+  `src/modules/raw-processor/components/tools/lut/`, and shared tool chrome.
+- `src/modules/raw-processor/components/mobile/` is the mobile photo-first
   shell: topbar with the Export action, a dock of tools (Look, Adjust,
   Transform) over a deck, the compare lens on the stage, the Look deck (LUT
   strip, Strength row, inline LUT contract), the LUT sources sheet, the export
-  panel, Adjust list panels, and the scrub HUD. `mobile-stage-layout.ts` fits
-  the photo first and sizes the deck from what is left.
+  panel, Adjust list panels (Tone, Color, HSL), the Transform list panel, the
+  More menu, and the scrub HUD.
+  `src/modules/raw-processor/components/mobile/mobile-stage-layout.ts` fits the
+  photo first and sizes the deck from what is left.
 - `src/modules/raw-processor/raw-lab.css`,
-  `raw-lab.surface.css`, and `raw-lab.effects.css` hold `/raw` surface and
+  `src/modules/raw-processor/raw-lab.surface.css`, and
+  `src/modules/raw-processor/raw-lab.effects.css` hold `/raw` surface and
   effect CSS that cannot reasonably live as Tailwind utilities.
 - `src/lib/webgpu` is the only GPU preview executor (WGSL).
-  `raw-processing-pipeline.ts` is the facade the app consumes; `contract.ts`
-  holds renderer-neutral types. There is no WebGL tier: without WebGPU, or
-  after a GPU failure, the preview falls back to the CPU preview worker
-  (`webgpu -> cpu`). Do not reintroduce WebGL or GLSL.
-- `src/lib/preview` is the CPU/degraded preview worker path and capability
-  helpers.
-- `src/lib/export` is the worker-driven full-resolution export path.
+  `src/lib/webgpu/raw-processing-pipeline.ts` is the facade the app consumes;
+  `src/lib/webgpu/contract.ts` holds renderer-neutral types. There is no WebGL
+  tier: without WebGPU, or after a GPU failure, the preview falls back to the
+  CPU preview worker (`webgpu -> cpu`). Do not reintroduce WebGL or GLSL.
+- `src/lib/preview` holds the preview backend probe
+  (`src/lib/preview/gpu-backend.ts`: WebGPU or CPU, and why) and the preview
+  capability decision (`src/lib/preview/raw-preview-capability.ts`). The CPU
+  preview worker is not here: it lives in
+  `packages/render-engine/src/preview/worker-bridge`, and
+  `src/modules/raw-processor/hooks/useCpuPreview.ts` drives it.
+- `src/lib/export` adapts the engine's full-resolution export to the browser:
+  the export worker shell (`src/lib/export/full-res-export.worker.ts`), its
+  client, OPFS and blob output sinks, the checkpoint store, source
+  fingerprints, the large-resource registry, and execution-plan selection
+  (`src/lib/export/execution-profile.ts`). The export algorithm and its
+  fail-closed gates live in `packages/render-engine/src/export`.
+- `src/lib/workers` holds the idle-terminating worker bridges for RAW decode
+  and export.
 - `src/lib/raw` adapts the app to `@lumaforge/luma-raw-runtime`.
-- `src/lib/runtime` owns capability and export policy decisions.
-- `src/lib/lut` and `src/lib/profiles` parse LUTs and resolve profile/catalog
-  contracts.
+- `src/lib/runtime` detects browser facts: the capability vector, export
+  storage (OPFS) resources, and preview GPU facts, plus the per-source preview
+  GPU budget derived from them (`src/lib/runtime/preview-gpu-budget.ts`).
+  Export and interactive policy decisions live in
+  `packages/render-engine/src/policy`.
+- `src/lib/lut` wraps the `@lumaforge/luma-color-runtime` `.cube` parser
+  (including an off-main-thread parse worker) and persists LUT contract
+  choices in the browser. `src/lib/profiles` parses and fetches online LUT
+  catalogs and source URLs, maps catalog LUT contracts, and holds the dormant
+  DCP calibration catalog.
 - `packages/luma-color-runtime` is pure TypeScript color math: tone,
   temperature/tint color balance, LUT contracts, transfer/gamut transforms,
   graph resolution, row-band processing, and WGSL helpers (`./wgsl`). The TS
   row-band processor is the authoritative executor for export, `lmfg`, and the
   CPU preview; the WGSL preview must agree with it (`pnpm test:webgpu`).
+- `packages/render-engine` (`@lumaforge/render-engine`) is the headless engine
+  shared by `/raw` and `lmfg`. It takes capability facts as input and never
+  detects them. It owns:
+  - `packages/render-engine/src/export`: the authoritative full-resolution
+    JPEG export (`runFullResolutionJpegExport` and its fail-closed gates),
+    strip scheduling, JPEG row writers, sinks and metadata, and export
+    geometry.
+  - `packages/render-engine/src/preview`: the CPU preview renderer, the
+    quick/bounded-HQ preview plan, candidates and contact sheets, and the CPU
+    preview worker bridge and protocol.
+  - `packages/render-engine/src/policy`: export and interactive policy
+    decisions and resource budgets.
+  - `packages/render-engine/src/manifest`: `RenderManifest` types,
+    canonical-JSON `manifest_sha256`, source and LUT identity, and the color
+    graph descriptor.
 - `packages/luma-raw-runtime` is the browser RAW metadata/decode/runtime
   boundary, including worker protocol, native artifacts, processed-window facts,
   HDR analysis, fixtures, benchmarks, and native verification.
@@ -109,11 +162,122 @@ image-editor assumptions.
   and JPEG runtimes.
 - `packages/lmfg-cli` is the `lmfg` agent-facing CLI (cpu-wasm tier). It
   composes `@lumaforge/render-engine` and the Node entries of the RAW/JPEG
-  runtimes; `src/services/*` holds the domain logic (LUT contracts, color graph
-  descriptors, preview, iterations, fail-closed export, manifests),
-  `src/commands/*` are thin protocol adapters, and `src/protocol/*` owns the
-  JSON/NDJSON envelope and spec exit codes. The browser bridge tier is not
-  shipped; keep `capabilities` honest about it.
+  runtimes; `packages/lmfg-cli/src/services/` holds the domain logic (LUT
+  contracts, color graph descriptors, preview, iterations, fail-closed export,
+  manifests), `packages/lmfg-cli/src/commands/` are thin protocol adapters, and
+  `packages/lmfg-cli/src/protocol/` owns the JSON/NDJSON envelope and spec exit
+  codes. The browser bridge tier is not shipped; keep `capabilities` honest
+  about it. The CLI params have no geometry, so it cannot apply Transform.
+- `packages/lmfg-mcp` is the `lmfg-mcp` stdio MCP server. The tools declared in
+  `packages/lmfg-mcp/src/tools.ts` map one-to-one to `lmfg` commands: each runs
+  the CLI in-process and returns its envelope unchanged. Two tools are
+  MCP-native, with their own result schemas and error codes and no CLI
+  command: `lmfg_image_read` (`packages/lmfg-mcp/src/image.ts`: view a session
+  preview, candidate, or contact sheet) and `lmfg_export_detail`
+  (`packages/lmfg-mcp/src/export-detail-tool.ts`: a verified 1:1 PNG region of
+  a full-resolution `lmfg` export). `pnpm cli:build` builds it and
+  `pnpm test:cli` runs its tests.
+
+## Canonical Owners
+
+Put code where its contract already lives and import it from there instead of
+mirroring it. Packages never import from `src/`; the app imports shared types
+from the packages.
+
+- Color intent, tone/color/HSL math, LUT parsing and contract resolution, the
+  export color graph, and the row-band executor: `packages/luma-color-runtime`.
+- Full-resolution export, export geometry planning and resampling, CPU preview
+  rendering and the preview plan, policy and resource budgets, and render
+  manifests: `packages/render-engine`.
+- RAW decode, metadata, processed windows, and the RAW worker protocol:
+  `packages/luma-raw-runtime`.
+- Browser fact detection: `src/lib/runtime` and `src/lib/preview`. Browser
+  storage, transport, and worker shells: `src/lib/export` and `src/lib/workers`.
+- Agent protocol (commands, envelopes, exit codes, workspace layout):
+  `packages/lmfg-cli`; `packages/lmfg-mcp` adapts it.
+
+Known duplication. These copies exist today. Do not extend them; remove one
+only by finishing the move it belongs to:
+
+- `packages/render-engine/src/policy/capability-input.ts`,
+  `packages/render-engine/src/policy/export-runtime-resources.ts`, and
+  `packages/render-engine/src/policy/preview-gpu-budget.ts` mirror the type
+  shapes declared again in `src/lib/runtime`.
+- The quick and bounded-HQ preview pixel caps are defined in both
+  `packages/render-engine/src/preview/preview-plan.ts` and
+  `src/lib/raw/decoder.ts`.
+- `src/lib/export/output-sink.ts` redefines the output-result types of
+  `packages/render-engine/src/export/jpeg/output-result.ts` and has diverged
+  from them (delivered hash and metadata fields).
+- `src/lib/export/checkpoint-store.ts` owns the checkpoint manifest the app
+  uses; `packages/render-engine/src/manifest/export-checkpoint.ts` exports an
+  unused type with the same name. `LumaRenderContext`
+  (`packages/render-engine/src/context/runtime-context.ts`) is exported, but no
+  engine function, app code, or CLI code consumes it.
+- `src/lib/lut/profile-resolution.ts` keeps an app fork of the LUT profile
+  resolver next to `packages/luma-color-runtime/src/lut-profile-resolution.ts`.
+- `packages/render-engine/src/export/geometry/matrix.ts` mirrors
+  `src/modules/transform-demo/geometry/matrix.ts`.
+  `src/lib/export/full-res-export-geometry-bounds.test.ts` runs app-composed
+  Transform matrices through the engine's geometry planner.
+- The app (`src/modules/raw-processor/services/export/export-manifest.ts`) and
+  the CLI (`packages/lmfg-cli/src/services/manifest.ts`) each project their own
+  parameters into `RenderManifest`. Intent keys, defaults, and the manifest
+  projection are not yet one shared definition.
+- `lmfg_image_read` and `lmfg_export_detail` read the CLI workspace layout by
+  convention instead of through `packages/lmfg-cli/src/workspace/paths.ts`.
+
+Close the extraction:
+
+- When you move code to its canonical owner, finish the move in the same
+  change: switch every consumer to the owner's export and delete the old copy.
+  Do not leave type-only mirrors, "keep these in step" comments, or app-side
+  forwarding shims behind.
+- The one exception is the exported API of the published packages
+  (`@lumaforge/render-engine`, `@lumaforge/luma-raw-runtime`,
+  `@lumaforge/luma-color-runtime`, `@lumaforge/luma-jpeg-runtime`). Never
+  remove or rename an exported symbol: mark it `@deprecated`, keep it compiling
+  (a forwarding export is fine), move internal consumers off it, and record the
+  deprecation in that package's CHANGELOG.
+
+## Retained And Scheduled Slices
+
+These are owner decisions. They override cleanup advice that says otherwise.
+
+- Transform: `/raw` Transform is built on `src/modules/transform-demo`.
+  `src/modules/raw-processor/hooks/useRawTransformFeature.ts` wraps
+  `src/modules/transform-demo/useTransformDemo.ts`, the preview overlay renders
+  through its `TransformCanvas` and worker, and the Transform types and upright
+  geometry come from that module. Treat it as production code. Its useful
+  code, tests, and fixtures move to a production home later; only then are the
+  `/transform-demo` route and the demo module deleted.
+- DCP calibration: the app slice is dormant.
+  `src/modules/raw-processor/hooks/useRawWorkflow.ts` calls
+  `useRawCalibrationStage` with no profile matcher, and no UI consumes it. It
+  is scheduled for deletion together with
+  `src/modules/raw-processor/hooks/stages/calibration`,
+  `src/modules/raw-processor/services/calibration`,
+  `src/modules/raw-processor/state/calibration.atoms.ts`,
+  `src/lib/profiles/calibration-catalog.ts`, and
+  `src/lib/profiles/dcp-params.ts`; do not extend it. The runtime side stays:
+  `applyCalibration` in `@lumaforge/luma-raw-runtime`, `solveDcpInterpolation`
+  in `@lumaforge/luma-color-runtime`, the manifest's null `calibration` slot,
+  and the exported HDR analysis (`analyzeRawDynamicRange`).
+- Built-in style presets are retained: keep `styleKind: 'builtin'`,
+  `builtinPreset`, their WGSL branches and uniforms in `src/lib/webgpu`, and
+  their goldens in `scripts/webgpu/goldens.json`. No UI entry point selects a
+  preset today, and full-resolution export refuses one:
+  `resolveExportColorGraph` in `packages/luma-color-runtime/src/color-graph.ts`
+  returns `unsupported-pipeline` for `styleKind: 'builtin'`. Do not delete the
+  plumbing and do not restore a preset picker without a request. Product docs
+  that still describe choosing built-in finishes are intentionally left as
+  they are.
+- Online LUT catalog: `src/modules/raw-processor/hooks/useOnlineLutSources.ts`
+  resolves the default and saved catalog sources as soon as it mounts, so every
+  `/raw` visit fetches them. Lazy activation (fetch on first catalog use) is
+  approved for later; `?luts=` deep links and Share stay.
+- Export crash recovery is scheduled to shrink to an interruption marker and a
+  safer retry plan. Do not add source reselection or automatic re-export.
 
 ## UI And Design Boundaries
 
@@ -160,18 +324,30 @@ image-editor assumptions.
 - The current compare fallback ladder is
   `dual-gpu -> jpeg-fallback -> processed-only`. Do not revive old
   `dual-webgl`, `shader`, or `css-snapshot` vocabulary.
+- `embedded-fallback` in
+  `src/modules/raw-processor/services/compare/compare-render-mode.ts` shows the
+  camera's embedded JPEG as a provisional reference while neither a dual-GPU
+  original nor a JPEG snapshot is ready. It is a camera-rendered stand-in, not
+  another technical-original rung of the ladder; do not present it as one.
 - Compare split state is frame-anchored. Photo clipping and zoom/pan are derived
   from the committed frame split; avoid mixing photo-space and frame-space state.
 - Original reference snapshots are capped and lifecycle-managed. Treat object
   URL release as part of the compare contract.
 - The Adjust workflow is shared color-pipeline behavior, not a local UI-only
-  tweak. Tone/color params flow through preview, histogram, export, CPU preview,
-  and mobile focus/list UI.
-- Desktop Adjust lives in `components/tools/AdjustTool.tsx`; mobile Adjust uses
-  `AdjustListPanel`, `ToneListPanel`, `ColorListPanel`, `AdjustSliderRow`, and
-  `ScrubValueHud`.
+  tweak. Tone, color, and HSL params flow through preview, histogram, export,
+  CPU preview, and mobile focus/list UI.
+- Desktop Adjust lives in
+  `src/modules/raw-processor/components/tools/AdjustTool.tsx` (`ToneTool`,
+  `ColorTool`, `HSLTool`); mobile Adjust uses `AdjustListPanel`,
+  `ToneListPanel`, `ColorListPanel`, `HSLListPanel`, `AdjustSliderRow`, and
+  `ScrubValueHud`. Transform is `TransformTool` on desktop and
+  `TransformListPanel` on mobile.
 - The stable color insertion point for user tone and color balance is after
   raw-render exposure and before LUT input conversion.
+- Transform geometry is not a color step. Export resamples the committed
+  geometry at full resolution before the color graph and paints the matte in
+  output space afterwards. The preview must show the same framing, and a
+  geometry the engine cannot plan fails export closed.
 - CPU preview/degraded mode must have a usable startup/empty-state path.
   Production validation should include `/raw?forcePreview=cpu` when touching
   degraded-preview behavior.
@@ -212,16 +388,23 @@ image-editor assumptions.
   - App-surface changes under `src`, `scripts`, or non-native package adapters:
     run `pnpm lint:check`, `pnpm test:app`, `pnpm native:prepare`, and
     `LUMAFORGE_NATIVE_RUNTIME_MODE=prebuilt pnpm build`.
-  - Runtime contract changes under `packages/luma-*-runtime`, `src/lib/export`,
-    `src/lib/raw`, `src/lib/runtime`, or `src/lib/workers`: run
-    `pnpm test:runtime` plus touched package `typecheck` and `build` commands.
+  - Runtime contract changes under `packages/luma-*-runtime`,
+    `packages/render-engine`, `src/lib/export`, `src/lib/raw`,
+    `src/lib/runtime`, or `src/lib/workers`: run `pnpm test:runtime` plus
+    touched package `typecheck`, `test`, and `build` commands.
+    `pnpm test:runtime` does not run the render-engine tests; for engine
+    changes run `pnpm cli:build:deps` (the engine tests resolve the built
+    runtime packages), then `pnpm --filter @lumaforge/render-engine test`.
   - Native/runtime artifact changes under package `native/` folders or
     `packages/luma-native-artifacts`: run relevant `build:native`,
     `native:verify`, and native smoke commands.
-  - CLI changes under `packages/lmfg-cli`: run `pnpm cli:build` once, then
-    `pnpm --filter @lumaforge/lmfg-cli typecheck` and
-    `LMFG_REQUIRE_FIXTURE=1 pnpm test:cli`. The e2e suite needs the public DNG
-    fixture (`pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public`);
+  - CLI or MCP changes under `packages/lmfg-cli` or `packages/lmfg-mcp`: run
+    `pnpm cli:build` once, then the touched package's typecheck
+    (`pnpm --filter @lumaforge/lmfg-cli typecheck`,
+    `pnpm --filter @lumaforge/lmfg-mcp typecheck`) and
+    `LMFG_REQUIRE_FIXTURE=1 pnpm test:cli`, which runs both packages' suites.
+    The e2e suites need the public DNG fixture
+    (`pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public`);
     without `LMFG_REQUIRE_FIXTURE=1` the fixture-gated specs skip instead of
     failing, which is only acceptable for local UI-only iteration.
   - Manifest contract changes under `packages/render-engine/src/manifest`
@@ -247,10 +430,12 @@ image-editor assumptions.
   exercises the CPU preview.
 - Built-app preview validation can use `pnpm serve` or
   `pnpm exec vite preview` after `pnpm build`.
-- CI follows the same split:
+- CI follows the same split (path-selected jobs in
+  `.github/workflows/build.yml`, aggregated by its `build` job):
   - `app` uses `pnpm lint:check`, `pnpm test:app`, prebuilt native assets, and
     app build checks.
-  - `runtime` runs runtime package typecheck/test/build and app adapter tests.
+  - `runtime` runs runtime package typecheck/test/build and app adapter tests,
+    then typechecks, tests, and builds `packages/render-engine`.
   - `webgpu` installs Chromium and runs `pnpm test:webgpu` (WebGPU preview vs
     the TS export executor and frozen WebGL output) for `src/lib/webgpu`, the
     color runtime, render-engine preview, and `scripts/webgpu` changes.
@@ -258,6 +443,10 @@ image-editor assumptions.
     native source paths (`packages/luma-*-runtime/native/`,
     `scripts/native-runtime/`); prebuilt artifact version bumps under
     `packages/luma-native-artifacts/` run through the `cli` job instead.
+  - `cli` tests the native artifact package, builds the runtimes and render
+    engine, typechecks and builds `lmfg-cli` and `lmfg-mcp`, runs both suites
+    with the public fixture and `LMFG_REQUIRE_FIXTURE=1`, and dry-run packs
+    render-engine, `lmfg-cli`, and `lmfg-mcp`.
 
 ## When Unsure
 
