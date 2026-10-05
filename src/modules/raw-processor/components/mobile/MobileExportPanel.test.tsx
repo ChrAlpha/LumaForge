@@ -404,6 +404,19 @@ describe('mobileExportPanel', () => {
     ).toBeInTheDocument()
   })
 
+  it('titles an HQ preview result as a preview, never as Exported', () => {
+    renderPanel({ exportResult: createResult({ kind: 'hq-preview' }) })
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'HQ preview ready' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { level: 2, name: 'Exported' }),
+    ).toBeNull()
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'HQ preview JPEG ready' }),
+    ).toBeInTheDocument()
+  })
+
   it('closes from a 44px header button', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()

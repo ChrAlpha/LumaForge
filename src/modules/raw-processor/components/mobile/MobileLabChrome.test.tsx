@@ -893,7 +893,7 @@ describe('mobileLabChrome', () => {
     const { container } = render(
       <MobileLabChrome
         {...base}
-        hasExportResult
+        exportResultKind="full-resolution"
         exportPanel={() => <div>result actions</div>}
       />,
     )
@@ -904,6 +904,17 @@ describe('mobileLabChrome', () => {
     expect(action).toHaveAccessibleName('Exported: open result')
     await userEvent.click(action)
     expect(screen.getByText('result actions')).toBeInTheDocument()
+  })
+
+  it('marks an HQ preview result as a preview, not as the export', () => {
+    const { container } = render(
+      <MobileLabChrome {...base} canExport exportResultKind="hq-preview" />,
+    )
+    const action = container.querySelector<HTMLButtonElement>(
+      '[data-mobile-export-action]',
+    )!
+    expect(action).toHaveAttribute('data-state', 'preview-done')
+    expect(action).toHaveAccessibleName('HQ preview JPEG ready: open result')
   })
   it('puts the compare lens over the stage only when there is a photo to compare', () => {
     const { container, rerender } = render(<MobileLabChrome {...base} />)

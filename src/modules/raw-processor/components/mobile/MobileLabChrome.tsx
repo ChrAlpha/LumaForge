@@ -10,6 +10,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { clsxm } from '~/lib/cn'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
+import type { ExportResultKind } from '../../model/export-result'
 import { DOCK_SPRING } from '../../motion'
 import type { ColorValue } from '../color-fields'
 import type { CpuPreviewNotice } from '../CpuPreviewBanner'
@@ -90,7 +91,8 @@ export function MobileLabChrome(props: {
   isExporting?: boolean
   /** Export progress, 0-100. */
   exportProgress?: number
-  hasExportResult?: boolean
+  /** The kind of the export result on hand; null or unset without one. */
+  exportResultKind?: ExportResultKind | null
   runtimeReadinessState?: RawRuntimeReadinessState
   onPrepareRuntime?: () => void
   cpuPreviewNotice?: CpuPreviewNotice
@@ -164,7 +166,7 @@ export function MobileLabChrome(props: {
     canExport: props.canExport === true,
     isProcessing: props.isProcessing,
     isExporting,
-    hasResult: props.hasExportResult === true,
+    resultKind: props.exportResultKind ?? null,
   })
   // The deck's own visibility rule: tools are disabled while the pipeline is
   // busy, but a running export keeps its panel on screen.

@@ -4,7 +4,18 @@ import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
-export type MobileExportActionState = 'idle' | 'ready' | 'exporting' | 'done'
+import type { ExportResultKind } from '../../model/export-result'
+
+/**
+ * `done` is a full-resolution JPEG. `preview-done` is an HQ preview JPEG,
+ * the bounded compromise, which never borrows the full-resolution state.
+ */
+export type MobileExportActionState =
+  | 'idle'
+  | 'ready'
+  | 'exporting'
+  | 'done'
+  | 'preview-done'
 
 /**
  * One state for the topbar export action, derived from workflow facts. A
@@ -15,10 +26,12 @@ export function getMobileExportActionState(input: {
   canExport: boolean
   isProcessing: boolean
   isExporting: boolean
-  hasResult: boolean
+  /** The kind of the export result on hand; null without one. */
+  resultKind: ExportResultKind | null
 }): MobileExportActionState {
   if (input.isExporting) return 'exporting'
-  if (input.hasResult) return 'done'
+  if (input.resultKind === 'hq-preview') return 'preview-done'
+  if (input.resultKind === 'full-resolution') return 'done'
   if (input.canExport && !input.isProcessing) return 'ready'
   return 'idle'
 }
@@ -77,7 +90,9 @@ export function MobileExportAction(props: {
         ? t('raw.mobile.export.actionExporting', { percent })
         : state === 'done'
           ? t('raw.mobile.export.actionDone')
-          : t('raw.mobile.export.actionIdle')
+          : state === 'preview-done'
+            ? t('raw.mobile.export.actionPreviewDone')
+            : t('raw.mobile.export.actionIdle')
 
   const face =
     state === 'exporting' ? (
@@ -89,6 +104,11 @@ export function MobileExportAction(props: {
       <>
         <Check aria-hidden="true" className="size-3.5 shrink-0" />
         {t('raw.mobile.export.done')}
+      </>
+    ) : state === 'preview-done' ? (
+      <>
+        <Check aria-hidden="true" className="size-3.5 shrink-0" />
+        {t('raw.mobile.export.previewDoneShort')}
       </>
     ) : (
       <>
@@ -126,7 +146,10 @@ export function MobileExportAction(props: {
             : state === 'done'
               ? // Ink on Deep Lab Green: ~9:1.
                 'bg-lf-green-deep text-lf-on-photo-ink group-enabled:group-hover:bg-[oklch(from_var(--color-lf-green-deep)_calc(l+0.04)_c_h)]'
-              : clsxm(
+              : // Blocked, or an HQ preview result: the neutral lift. The
+                // preview is the compromise, not the committed export, so
+                // it never takes the green the full-resolution result does.
+                clsxm(
                   'text-lf-on-photo-ink/80 group-enabled:group-hover:text-lf-on-photo-ink',
                   expanded
                     ? 'bg-[oklch(0.96_0.006_255/0.14)]'

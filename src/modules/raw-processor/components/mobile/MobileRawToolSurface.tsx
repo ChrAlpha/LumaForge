@@ -87,7 +87,11 @@ export function MobileRawToolSurface() {
       isProcessing={props.isProcessing}
       isExporting={props.isExporting === true}
       exportProgress={props.progress}
-      hasExportResult={props.exportResult != null}
+      exportResultKind={
+        props.exportResult
+          ? (props.exportResult.kind ?? 'full-resolution')
+          : null
+      }
       runtimeReadinessState={props.runtimeReadinessState}
       onPrepareRuntime={props.onPrepareRuntime}
       cpuPreviewNotice={props.cpuPreviewNotice}

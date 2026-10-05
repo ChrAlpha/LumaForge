@@ -197,10 +197,15 @@ export function MobileExportPanel(props: {
     typeof props.progress === 'number' && Number.isFinite(props.progress)
       ? Math.round(Math.min(100, Math.max(0, props.progress)))
       : null
+  const resultKind = props.exportResult?.kind ?? 'full-resolution'
+  // An HQ preview result is the bounded compromise: it never takes the
+  // full-resolution "Exported" title.
   const title = isExporting
     ? t('raw.mobile.export.exporting')
     : props.exportResult
-      ? t('raw.mobile.export.done')
+      ? resultKind === 'hq-preview'
+        ? t('raw.mobile.export.previewDone')
+        : t('raw.mobile.export.done')
       : t('raw.export.title')
   const unavailableReason =
     localizeRawReason(props.disabledReason, t) || t('raw.exportSourceLoading')
@@ -228,7 +233,6 @@ export function MobileExportPanel(props: {
     !(showUnavailableReason && previewUnavailableReason === unavailableReason)
   const showRecovery =
     !props.isProcessing && props.recovery?.status === 'source-required'
-  const resultKind = props.exportResult?.kind ?? 'full-resolution'
   const resultReadyLabel =
     resultKind === 'hq-preview'
       ? t('raw.export.previewReady')

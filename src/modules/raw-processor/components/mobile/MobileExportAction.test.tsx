@@ -17,8 +17,8 @@ describe('getMobileExportActionState', () => {
     canExport: false,
     isProcessing: false,
     isExporting: false,
-    hasResult: false,
-  }
+    resultKind: null,
+  } as const
 
   it('is ready only when export can run and the pipeline is idle', () => {
     expect(getMobileExportActionState(idle)).toBe('idle')
@@ -35,17 +35,30 @@ describe('getMobileExportActionState', () => {
   })
 
   it('lets a running export outrank a previous result', () => {
-    expect(getMobileExportActionState({ ...idle, hasResult: true })).toBe(
-      'done',
-    )
+    expect(
+      getMobileExportActionState({ ...idle, resultKind: 'full-resolution' }),
+    ).toBe('done')
     expect(
       getMobileExportActionState({
         ...idle,
-        hasResult: true,
+        resultKind: 'full-resolution',
         isProcessing: true,
         isExporting: true,
       }),
     ).toBe('exporting')
+  })
+
+  it('never gives an HQ preview result the full-resolution done state', () => {
+    expect(
+      getMobileExportActionState({ ...idle, resultKind: 'hq-preview' }),
+    ).toBe('preview-done')
+    expect(
+      getMobileExportActionState({
+        ...idle,
+        canExport: true,
+        resultKind: 'hq-preview',
+      }),
+    ).toBe('preview-done')
   })
 })
 
@@ -111,6 +124,16 @@ describe('mobileExportAction', () => {
     expect(button).toHaveTextContent('Exported')
     expect(button.querySelector('svg')).not.toBeNull()
     expect(pillOf(button)).toHaveClass('bg-lf-green-deep')
+  })
+
+  it('names an HQ preview result as such on the neutral lift, never green', () => {
+    const { button } = renderAction('preview-done')
+    expect(button).toHaveAccessibleName('HQ preview JPEG ready: open result')
+    expect(button).toHaveTextContent('HQ preview')
+    expect(button).not.toHaveTextContent('Exported')
+    expect(button.querySelector('svg')).not.toBeNull()
+    expect(pillOf(button)).toHaveClass('bg-[oklch(0.96_0.006_255/0.1)]')
+    expect(pillOf(button).className).not.toMatch(/bg-lf-green/)
   })
 
   it('reflects the open panel and lifts the pill', () => {
