@@ -16,8 +16,6 @@ import type { LUTContractSelectionState } from '../../model/session'
 import { useToolMotion } from '../../motion'
 import type { StrengthLevel } from '../tools/StrengthControl'
 import { MobileLutCatalogView } from './MobileLutCatalogView'
-import { MobileLutContractStatusSection } from './MobileLutContractStatusSection'
-import { MobileLutContractView } from './MobileLutContractView'
 import { MobileLutCurrentSections } from './MobileLutCurrentSections'
 import { MobileLutOnlineSourcesSection } from './MobileLutOnlineSourcesSection'
 import { useMobileLutBrowserController } from './useMobileLutBrowserController'
@@ -25,7 +23,6 @@ import { useMobileLutBrowserController } from './useMobileLutBrowserController'
 export interface MobileLutBrowserProps {
   open: boolean
   onClose: () => void
-  initialContractEditorOpen?: boolean
   currentLutName?: string | null
   disabled: boolean
   onLutLoad: (files: File[]) => void
@@ -57,10 +54,6 @@ export function MobileLutBrowser(props: MobileLutBrowserProps) {
     onlineSourceInputId,
     overviewBodyRef,
     catalogBodyRef,
-    contractBodyRef,
-    contractStep,
-    contractQuery,
-    draftInputProfile,
     entriesByResourceId,
     issuesByResourceId,
     selectedResource,
@@ -68,29 +61,11 @@ export function MobileLutBrowser(props: MobileLutBrowserProps) {
     selectedIssues,
     selectedResourceLoading,
     selectedEntryGroups,
-    displayOutputLabel,
-    contractView,
-    visibleSuggestions,
-    groupedInputProfiles,
-    suggestedOutputOptions,
-    groupedOutputOptions,
-    activeOutputOptionId,
-    hasInputMatches,
-    hasOutputMatches,
-    setContractStep,
-    setContractQuery,
     returnToOverview,
     openCatalogResource,
-    openContractView,
-    handleInputSelect,
-    handleOutputSelect,
   } = useMobileLutBrowserController({
     open: props.open,
-    initialContractEditorOpen: props.initialContractEditorOpen,
-    lutProfileSelection: props.lutProfileSelection,
-    lutProfileResolution: props.lutProfileResolution,
     onlineLutSources: props.onlineLutSources,
-    onLutProfileSelect: props.onLutProfileSelect,
   })
 
   const handleOpenChange = (open: boolean) => {
@@ -126,18 +101,6 @@ export function MobileLutBrowser(props: MobileLutBrowserProps) {
         onIntensitySelect={props.onIntensitySelect}
         strengthDisabled={strengthDisabled}
       />
-      <MobileLutContractStatusSection
-        visible={Boolean(
-          props.currentLutName ||
-          props.lutProfileSelection ||
-          props.lutProfileResolution,
-        )}
-        contractView={contractView}
-        displayOutputLabel={displayOutputLabel}
-        disabled={props.disabled}
-        onLutProfileSelect={props.onLutProfileSelect}
-        onOpenContractView={openContractView}
-      />
       <MobileLutOnlineSourcesSection
         onlineLutSources={props.onlineLutSources}
         sourceInputId={onlineSourceInputId}
@@ -165,33 +128,10 @@ export function MobileLutBrowser(props: MobileLutBrowserProps) {
     />
   )
 
-  const renderContract = () => (
-    <MobileLutContractView
-      bodyRef={contractBodyRef}
-      viewMotion={viewMotion}
-      contractStep={contractStep}
-      onContractStepChange={setContractStep}
-      contractQuery={contractQuery}
-      onContractQueryChange={setContractQuery}
-      visibleSuggestions={visibleSuggestions}
-      groupedInputProfiles={groupedInputProfiles}
-      suggestedOutputOptions={suggestedOutputOptions}
-      groupedOutputOptions={groupedOutputOptions}
-      activeOutputOptionId={activeOutputOptionId}
-      hasInputMatches={hasInputMatches}
-      hasOutputMatches={hasOutputMatches}
-      draftInputProfile={draftInputProfile}
-      onInputSelect={handleInputSelect}
-      onOutputSelect={handleOutputSelect}
-    />
-  )
-
   const title =
-    view === 'contract'
-      ? t('raw.mobile.lut.editContract')
-      : view === 'catalog' && selectedResource
-        ? resourceLabel(selectedResource)
-        : t('raw.mobile.lut.title')
+    view === 'catalog' && selectedResource
+      ? resourceLabel(selectedResource)
+      : t('raw.mobile.lut.title')
   const canGoBack = view !== 'overview'
 
   return (
@@ -262,11 +202,7 @@ export function MobileLutBrowser(props: MobileLutBrowserProps) {
                 </div>
 
                 <AnimatePresence mode="popLayout" initial={false}>
-                  {view === 'overview'
-                    ? renderOverview()
-                    : view === 'catalog'
-                      ? renderCatalog()
-                      : renderContract()}
+                  {view === 'overview' ? renderOverview() : renderCatalog()}
                 </AnimatePresence>
               </m.aside>
             </DialogPrimitive.Content>

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { IMMERSIVE_STAGGER_MS } from '../../motion'
 import type { ScrubFieldId } from './AdjustListPanel'
+import type { MobileLookView } from './mobile-stage-layout'
 import type { MobileMode } from './MobileModeDock'
 import { useMobilePreviewGestures } from './useMobilePreviewGestures'
 
@@ -43,8 +44,8 @@ export function useMobileLabChromeController({
   const [scrubField, setScrubField] = useState<ScrubFieldId | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
   const [lutBrowserOpen, setLutBrowserOpen] = useState(false)
-  const [lutBrowserStartsInContract, setLutBrowserStartsInContract] =
-    useState(false)
+  // The Look deck shows its strip or the LUT contract chosen inline.
+  const [lookView, setLookView] = useState<MobileLookView>('strip')
   const [peeking, setPeeking] = useState(false)
   const [immersive, setImmersive] = useState(false)
   const [histogramOpen, setHistogramOpen] = useState(false)
@@ -102,7 +103,7 @@ export function useMobileLabChromeController({
     setScrubField(null)
     setImmersive(false)
     setLutBrowserOpen(false)
-    setLutBrowserStartsInContract(false)
+    setLookView('strip')
     setMoreOpen(false)
     setDockExpanded(true)
     compareSplitOpenRef.current = false
@@ -126,7 +127,6 @@ export function useMobileLabChromeController({
     setScrubField(null)
     setImmersive(false)
     setLutBrowserOpen(false)
-    setLutBrowserStartsInContract(false)
     setMoreOpen(false)
     compareSplitOpenRef.current = false
     suppressNextPeekRestore.current = false
@@ -161,7 +161,6 @@ export function useMobileLabChromeController({
     setScrubField(null)
     setImmersive(false)
     setLutBrowserOpen(false)
-    setLutBrowserStartsInContract(false)
     setMoreOpen(false)
     compareSplitOpenRef.current = false
     suppressNextPeekRestore.current = false
@@ -180,7 +179,6 @@ export function useMobileLabChromeController({
 
   const closeSheets = () => {
     setLutBrowserOpen(false)
-    setLutBrowserStartsInContract(false)
     setMoreOpen(false)
   }
 
@@ -298,18 +296,11 @@ export function useMobileLabChromeController({
   })
 
   const openLutBrowser = () => {
-    setLutBrowserStartsInContract(false)
-    setLutBrowserOpen(true)
-  }
-
-  const openLutContractBrowser = () => {
-    setLutBrowserStartsInContract(true)
     setLutBrowserOpen(true)
   }
 
   const closeLutBrowser = () => {
     setLutBrowserOpen(false)
-    setLutBrowserStartsInContract(false)
   }
 
   // Tools own the deck; Compare is a lens over the photo, so switching tools
@@ -317,6 +308,17 @@ export function useMobileLabChromeController({
   const handleModeChange = (nextMode: MobileMode) => {
     setExportOpen(false)
     setMode(nextMode)
+    setLookView('strip')
+    setDockExpanded(true)
+  }
+
+  // Export blocked on an unresolved LUT contract: hand the deck to Look and
+  // open the contract there, with the photo still in view.
+  const openLookContract = () => {
+    closeSheets()
+    setExportOpen(false)
+    setMode('look')
+    setLookView('contract')
     setDockExpanded(true)
   }
 
@@ -336,7 +338,7 @@ export function useMobileLabChromeController({
     scrubField,
     moreOpen,
     lutBrowserOpen,
-    lutBrowserStartsInContract,
+    lookView,
     peeking,
     immersive,
     histogramOpen,
@@ -357,8 +359,9 @@ export function useMobileLabChromeController({
     endLensPeek,
     exitImmersive,
     openLutBrowser,
-    openLutContractBrowser,
     closeLutBrowser,
+    setLookView,
+    openLookContract,
     handleModeChange,
     openExport,
     closeExport,

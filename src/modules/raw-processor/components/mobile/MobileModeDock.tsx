@@ -9,6 +9,7 @@ import type { Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 
 import { DOCK_SPRING, TAP_SPRING } from '../../motion'
+import type { MobileLookView } from './mobile-stage-layout'
 import { DECK_PADDING_Y_PX, isMobileListDeck } from './mobile-stage-layout'
 
 /**
@@ -61,6 +62,8 @@ export function MobileModeDock(props: {
    */
   panelVisibleWhileDisabled?: boolean
   scrubbing?: boolean
+  /** The Look deck's view; its contract view fills the deck like a list. */
+  lookView?: MobileLookView
   panel: ReactNode
   /**
    * Deck height (px) from the stage layout. List tools fill it; Look and
@@ -85,7 +88,7 @@ export function MobileModeDock(props: {
     disabled,
     panelVisibleWhileDisabled: props.panelVisibleWhileDisabled,
   })
-  const fillsDeck = isMobileListDeck(props.mode, exportOpen)
+  const fillsDeck = isMobileListDeck(props.mode, exportOpen, props.lookView)
   const dockRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const { onTabBarHeightChange, onDeckNaturalHeightChange } = props

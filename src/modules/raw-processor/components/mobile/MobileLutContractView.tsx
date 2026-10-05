@@ -1,194 +1,166 @@
-import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
-import type { HTMLMotionProps } from 'motion/react'
-import { m } from 'motion/react'
-import type { Ref } from 'react'
+import { ArrowLeft } from 'lucide-react'
+import { useEffect, useId, useRef } from 'react'
 
 import { useI18n } from '~/lib/i18n'
-import { sheetSpring } from '~/lib/spring'
 
-import type { LUTOutputOption } from '../tools/lut/lut-output-options'
 import { LUTOutputOptionButton } from '../tools/lut/LUTOutputOptionButton'
 import { LUTProfileButton } from '../tools/lut/LUTProfileButton'
-import {
-  SEGMENTED_FOCUS_RING,
-  SEGMENTED_ITEM_TEXT,
-  SEGMENTED_ITEM_TEXT_ACTIVE,
-  SEGMENTED_THUMB_BG,
-  SEGMENTED_TRACK,
-} from '../tools/segmented-chrome'
+import { toSelectableContract } from '../tools/lut-contract'
+import type { useMobileLutContractEditor } from './useMobileLutContractEditor'
 
-export type MobileLutContractStep = 'input' | 'output'
+type ContractEditor = ReturnType<typeof useMobileLutContractEditor>
 
-type ViewMotion = Pick<HTMLMotionProps<'div'>, 'animate' | 'exit' | 'initial'>
+const groupHeading =
+  'm-0 px-1 text-[0.7rem] font-medium tracking-tight text-lf-on-photo-ink/52'
 
-type ProfileGroup = {
-  label: string
-  items: LUTColorProfile[]
-}
-
-type OutputGroup = {
-  label: string
-  items: LUTOutputOption[]
-}
-
-export interface MobileLutContractViewProps {
-  bodyRef: Ref<HTMLDivElement>
-  viewMotion: ViewMotion
-  contractStep: MobileLutContractStep
-  onContractStepChange: (step: MobileLutContractStep) => void
-  contractQuery: string
-  onContractQueryChange: (query: string) => void
-  visibleSuggestions: LUTColorProfile[]
-  groupedInputProfiles: ProfileGroup[]
-  suggestedOutputOptions: LUTOutputOption[]
-  groupedOutputOptions: OutputGroup[]
-  activeOutputOptionId?: string
-  hasInputMatches: boolean
-  hasOutputMatches: boolean
-  draftInputProfile: LUTColorProfile | null
-  onInputSelect: (profile: LUTColorProfile) => void
-  onOutputSelect: (option: LUTOutputOption) => void
-}
-
+/**
+ * The LUT contract, chosen inside the Look deck with the photo still in
+ * view: what the LUT expects as input (step 1), then what it delivers
+ * (step 2). Recommendations come first and apply in one tap when they
+ * already name both sides.
+ */
 export function MobileLutContractView({
-  bodyRef,
-  viewMotion,
-  contractStep,
-  onContractStepChange,
-  contractQuery,
-  onContractQueryChange,
-  visibleSuggestions,
-  groupedInputProfiles,
-  suggestedOutputOptions,
-  groupedOutputOptions,
-  activeOutputOptionId,
-  hasInputMatches,
-  hasOutputMatches,
-  draftInputProfile,
-  onInputSelect,
-  onOutputSelect,
-}: MobileLutContractViewProps) {
+  lutName,
+  editor,
+  onExit,
+}: {
+  lutName: string
+  editor: ContractEditor
+  /** Leave the contract view for the strip. */
+  onExit: () => void
+}) {
   const { t } = useI18n()
+  const titleId = useId()
+  const searchId = useId()
+  const listRef = useRef<HTMLDivElement>(null)
+  const step = editor.contractStep
+  const isInput = step === 'input'
+
+  // A new step starts at the top of its list.
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = 0
+  }, [step])
 
   return (
-    <m.div
-      key="contract"
-      ref={bodyRef}
-      className="grid min-h-0 content-start gap-2.5 overflow-y-auto px-4 pb-5 pt-1"
-      {...viewMotion}
-      transition={sheetSpring}
+    <section
+      aria-labelledby={titleId}
+      data-mobile-look-contract
+      data-lut-contract-step={step}
+      className="flex h-full min-h-0 flex-col"
     >
-      <div
-        className={`relative grid grid-cols-2 ${SEGMENTED_TRACK}`}
-        role="tablist"
-        aria-label={t('raw.lutContract.panels')}
-      >
-        {(['input', 'output'] as const).map((tabId) => {
-          const isActive = contractStep === tabId
-          const labelText =
-            tabId === 'input'
-              ? t('raw.lutContract.inputTab')
-              : t('raw.lutContract.outputTab')
-          return (
-            <button
-              key={tabId}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              data-state={isActive ? 'active' : 'inactive'}
-              className={[
-                'relative z-10 min-h-[44px] rounded-[5px] px-2 text-lf-control transition-colors duration-150',
-                SEGMENTED_ITEM_TEXT,
-                SEGMENTED_ITEM_TEXT_ACTIVE,
-                SEGMENTED_FOCUS_RING,
-              ].join(' ')}
-              onClick={() => onContractStepChange(tabId)}
-            >
-              {isActive && (
-                <m.span
-                  layoutId="mobile-lut-contract-tab-indicator"
-                  aria-hidden="true"
-                  data-mobile-lut-contract-thumb
-                  className={`absolute inset-0 -z-10 rounded-[5px] ${SEGMENTED_THUMB_BG}`}
-                  transition={{
-                    type: 'spring',
-                    stiffness: 460,
-                    damping: 38,
-                    mass: 0.6,
-                  }}
-                />
-              )}
-              <span className="relative">{labelText}</span>
-            </button>
-          )
-        })}
+      <header className="-mx-3.5 grid shrink-0 grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-1 border-b border-lf-on-photo-bord-soft pl-2 pr-3.5">
+        <button
+          type="button"
+          aria-label={
+            isInput
+              ? t('raw.mobile.look.contractBackToLooks')
+              : t('raw.mobile.look.contractBackToInput')
+          }
+          onClick={isInput ? onExit : editor.back}
+          className="grid size-11 place-items-center rounded-md text-lf-on-photo-ink/72 transition-[color,translate] duration-[120ms] hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lf-green/80 active:translate-y-[0.5px]"
+        >
+          <ArrowLeft aria-hidden="true" className="size-[18px]" />
+        </button>
+        <h3
+          id={titleId}
+          className="m-0 min-w-0 truncate text-[0.86rem] font-semibold text-lf-on-photo-ink"
+        >
+          {isInput
+            ? t('raw.mobile.look.contractInputTitle', { name: lutName })
+            : t('raw.mobile.look.contractOutputTitle', { name: lutName })}
+        </h3>
+        <span className="text-[0.72rem] font-medium text-lf-on-photo-ink/52 tabular-nums">
+          {isInput ? '1 / 2' : '2 / 2'}
+        </span>
+      </header>
+
+      <div className="grid shrink-0 gap-2 pt-2">
+        {!isInput && editor.draftInputProfile && (
+          <p className="m-0 truncate px-1 text-[0.72rem] text-lf-on-photo-ink/62">
+            {t('raw.lutContract.inputPrefix', {
+              label: editor.draftInputProfile.label,
+            })}
+          </p>
+        )}
+        {isInput && editor.visibleSuggestions.length > 0 && (
+          <div
+            role="group"
+            aria-label={t('raw.lutContract.suggestedInput')}
+            data-mobile-look-contract-recommendations
+            className="flex flex-wrap gap-1.5"
+          >
+            {editor.visibleSuggestions.map((profile) => {
+              const completes = Boolean(toSelectableContract(profile))
+              return (
+                <button
+                  key={profile.id}
+                  type="button"
+                  data-completes-contract={completes || undefined}
+                  aria-label={
+                    completes
+                      ? undefined
+                      : t('raw.lutContract.useInput', { label: profile.label })
+                  }
+                  onClick={() => editor.applyRecommendation(profile)}
+                  className="inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-lf-pill bg-[oklch(0.96_0.006_255/0.06)] px-3 text-[0.74rem] font-semibold text-lf-on-photo-ink transition-[background-color,translate] duration-[120ms] hover:bg-[oklch(0.96_0.006_255/0.1)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lf-green/80 active:translate-y-[0.5px]"
+                >
+                  <span className="min-w-0 truncate">{profile.label}</span>
+                  {completes && (
+                    <span className="shrink-0 text-lf-on-photo-ink/72">
+                      {' · '}
+                      {t('raw.mobile.look.apply')}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        <label className="sr-only" htmlFor={searchId}>
+          {t('raw.lutContract.search')}
+        </label>
+        <input
+          id={searchId}
+          type="search"
+          aria-label={t('raw.lutContract.search')}
+          value={editor.contractQuery}
+          placeholder={t('raw.lutContract.searchPlaceholder')}
+          onChange={(event) =>
+            editor.setContractQuery(event.currentTarget.value)
+          }
+          className="min-h-[44px] rounded-md border border-transparent bg-[oklch(0.96_0.006_255/0.05)] px-3 text-lf-control text-lf-on-photo-ink outline-none placeholder:text-lf-on-photo-ink/40 focus:bg-[oklch(0.96_0.006_255/0.08)] focus:ring-2 focus:ring-lf-green/25"
+        />
       </div>
 
-      <label className="sr-only" htmlFor="mobile-lut-contract-search">
-        {t('raw.lutContract.search')}
-      </label>
-      <input
-        id="mobile-lut-contract-search"
-        type="search"
-        aria-label={t('raw.lutContract.search')}
-        value={contractQuery}
-        placeholder={t('raw.lutContract.searchPlaceholder')}
-        onChange={(event) => onContractQueryChange(event.currentTarget.value)}
-        className="min-h-[44px] rounded-md border border-transparent bg-lf-on-photo-bg px-3 text-lf-control text-lf-on-photo-ink outline-none placeholder:text-lf-on-photo-ink/40 focus:border-transparent focus:bg-lf-on-photo-bg-strong focus:ring-2 focus:ring-lf-green/25"
-      />
-
       <div
-        className="grid min-h-0 content-start gap-2 overflow-y-auto overscroll-contain pr-0.5"
+        ref={listRef}
+        className="-mx-3.5 grid min-h-0 flex-1 content-start gap-2 overflow-y-auto overscroll-contain px-3.5 pb-1 pt-2"
         data-raw-mobile-lut="contract-list"
-        data-lut-contract-step={contractStep}
+        data-lut-contract-step={step}
       >
-        {contractStep === 'input' ? (
+        {isInput ? (
           <>
-            {visibleSuggestions.length > 0 && (
-              <section className="grid gap-1">
-                <h3 className="m-0 px-1 text-[0.7rem] font-medium tracking-tight text-lf-on-photo-ink/50">
-                  {t('raw.lutContract.suggestedInput')}
-                </h3>
-                {visibleSuggestions.map((profile) => (
-                  <LUTProfileButton
-                    key={profile.id}
-                    profile={profile}
-                    activeProfileId={draftInputProfile?.id}
-                    size="touch"
-                    surface="on-photo"
-                    ariaLabel={t('raw.lutContract.useInput', {
-                      label: profile.label,
-                    })}
-                    onSelect={onInputSelect}
-                  />
-                ))}
-              </section>
-            )}
-
-            {groupedInputProfiles.map((group) => (
+            {editor.groupedInputProfiles.map((group) => (
               <section key={`input-${group.label}`} className="grid gap-1">
-                <h3 className="m-0 px-1 text-[0.7rem] font-medium tracking-tight text-lf-on-photo-ink/50">
-                  {t('raw.lutContract.groupInput', {
-                    group: group.label,
-                  })}
-                </h3>
+                <h4 className={groupHeading}>
+                  {t('raw.lutContract.groupInput', { group: group.label })}
+                </h4>
                 {group.items.map((profile) => (
                   <LUTProfileButton
                     key={profile.id}
                     profile={profile}
-                    activeProfileId={draftInputProfile?.id}
+                    activeProfileId={editor.draftInputProfile?.id}
                     size="touch"
                     surface="on-photo"
                     ariaLabel={t('raw.lutContract.useInput', {
                       label: profile.label,
                     })}
-                    onSelect={onInputSelect}
+                    onSelect={editor.selectInput}
                   />
                 ))}
               </section>
             ))}
-
-            {!hasInputMatches && (
+            {!editor.hasInputMatches && (
               <p className="m-0 text-lf-control leading-relaxed text-lf-on-photo-ink/64">
                 {t('raw.lutContract.noInput')}
               </p>
@@ -196,45 +168,41 @@ export function MobileLutContractView({
           </>
         ) : (
           <>
-            {suggestedOutputOptions.length > 0 && (
+            {editor.suggestedOutputOptions.length > 0 && (
               <section className="grid gap-1">
-                <h3 className="m-0 px-1 text-[0.7rem] font-medium tracking-tight text-lf-on-photo-ink/50">
+                <h4 className={groupHeading}>
                   {t('raw.lutContract.suggestedOutput')}
-                </h3>
-                {suggestedOutputOptions.map((option) => (
+                </h4>
+                {editor.suggestedOutputOptions.map((option) => (
                   <LUTOutputOptionButton
                     key={option.id}
                     option={option}
-                    activeOptionId={activeOutputOptionId}
+                    activeOptionId={editor.activeOutputOptionId}
                     size="touch"
                     surface="on-photo"
-                    onSelect={onOutputSelect}
+                    onSelect={editor.selectOutput}
                   />
                 ))}
               </section>
             )}
-
-            {groupedOutputOptions.map((group) => (
+            {editor.groupedOutputOptions.map((group) => (
               <section key={`output-${group.label}`} className="grid gap-1">
-                <h3 className="m-0 px-1 text-[0.7rem] font-medium tracking-tight text-lf-on-photo-ink/50">
-                  {t('raw.lutContract.groupOutput', {
-                    group: group.label,
-                  })}
-                </h3>
+                <h4 className={groupHeading}>
+                  {t('raw.lutContract.groupOutput', { group: group.label })}
+                </h4>
                 {group.items.map((option) => (
                   <LUTOutputOptionButton
                     key={option.id}
                     option={option}
-                    activeOptionId={activeOutputOptionId}
+                    activeOptionId={editor.activeOutputOptionId}
                     size="touch"
                     surface="on-photo"
-                    onSelect={onOutputSelect}
+                    onSelect={editor.selectOutput}
                   />
                 ))}
               </section>
             ))}
-
-            {!hasOutputMatches && (
+            {!editor.hasOutputMatches && (
               <p className="m-0 text-lf-control leading-relaxed text-lf-on-photo-ink/64">
                 {t('raw.lutContract.noOutput')}
               </p>
@@ -242,6 +210,6 @@ export function MobileLutContractView({
           </>
         )}
       </div>
-    </m.div>
+    </section>
   )
 }

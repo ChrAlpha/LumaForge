@@ -380,11 +380,24 @@ describe('mobileLabChrome', () => {
     )
     expect(confirmed.className).not.toMatch(/amber/)
 
-    // Tapping it opens the contract editor.
+    // Tapping it opens the contract editor inline, in the deck: no sheet
+    // over the photo, and the deck takes list sizing so the photo stays.
     await userEvent.click(confirmed)
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(
-      screen.getByRole('dialog', { name: /edit contract/i }),
+      screen.getByRole('region', { name: 'client-look.cube: input' }),
     ).toBeInTheDocument()
+    expect(document.querySelector('[data-mobile-dock-panel]')).toHaveAttribute(
+      'data-deck-fill',
+      'true',
+    )
+
+    // Leaving it returns the strip at its natural height.
+    await userEvent.click(screen.getByRole('button', { name: 'Back to looks' }))
+    expect(screen.getByRole('group', { name: 'Looks' })).toBeInTheDocument()
+    expect(
+      document.querySelector('[data-mobile-dock-panel]'),
+    ).not.toHaveAttribute('data-deck-fill')
   })
 
   it('opens the LUT sources at their default view from the Look footer', async () => {
@@ -428,10 +441,48 @@ describe('mobileLabChrome', () => {
 
     await userEvent.click(choose)
 
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(
-      screen.getByRole('dialog', { name: /edit contract/i }),
+      screen.getByRole('region', { name: 'unknown-look.cube: input' }),
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Search LUT contract')).toBeInTheDocument()
+  })
+
+  it('routes a LUT-contract export block to the Look contract view', async () => {
+    render(
+      <MobileLabChrome
+        {...base}
+        preferExportMode
+        lutBrowser={{
+          ...base.lutBrowser,
+          currentLutName: 'unknown-look.cube',
+          lutProfileResolution: { kind: 'unknown' },
+        }}
+        exportPanel={({ onChooseLutContract }) => (
+          <button type="button" onClick={onChooseLutContract}>
+            Choose LUT contract
+          </button>
+        )}
+      />,
+    )
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Choose LUT contract' }),
+    )
+
+    // Export hands the deck to Look, opened on the contract.
+    const dock = screen.getByRole('tablist', { name: /lab modes/i })
+    expect(within(dock).getByRole('tab', { name: /look/i })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(
+      screen.getByRole('region', { name: 'unknown-look.cube: input' }),
+    ).toBeInTheDocument()
+
+    // Switching tools hands Look back its strip next time.
+    await userEvent.click(within(dock).getByRole('tab', { name: /adjust/i }))
+    await userEvent.click(within(dock).getByRole('tab', { name: /look/i }))
+    expect(screen.getByRole('group', { name: 'Looks' })).toBeInTheDocument()
   })
 
   it('starts with controls visible on the Look workflow, not bare', async () => {

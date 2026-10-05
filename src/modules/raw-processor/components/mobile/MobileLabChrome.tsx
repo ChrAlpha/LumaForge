@@ -95,8 +95,14 @@ export function MobileLabChrome(props: {
   onPrepareRuntime?: () => void
   cpuPreviewNotice?: CpuPreviewNotice
   lutBrowser: MobileLookControls
-  /** Rendered in the deck while export is open; `onClose` hands it back. */
-  exportPanel: (controls: { onClose: () => void }) => ReactNode
+  /**
+   * Rendered in the deck while export is open. `onClose` hands the deck
+   * back; `onChooseLutContract` hands it to Look's contract view.
+   */
+  exportPanel: (controls: {
+    onClose: () => void
+    onChooseLutContract: () => void
+  }) => ReactNode
   moreSheet: MobileDetailsSheet
   previewSuspended?: boolean
   preferExportMode?: boolean
@@ -113,7 +119,7 @@ export function MobileLabChrome(props: {
     scrubField,
     moreOpen,
     lutBrowserOpen,
-    lutBrowserStartsInContract,
+    lookView,
     peeking,
     immersive,
     histogramOpen,
@@ -133,8 +139,9 @@ export function MobileLabChrome(props: {
     endLensPeek,
     exitImmersive,
     openLutBrowser,
-    openLutContractBrowser,
     closeLutBrowser,
+    setLookView,
+    openLookContract,
     handleModeChange,
     openExport,
     closeExport,
@@ -185,6 +192,7 @@ export function MobileLabChrome(props: {
     dockBarHeight: tabBarHeight,
     photoAspect: props.photoAspect ?? null,
     tool: mode,
+    lookView,
     deck: deckVisible ? 'expanded' : 'collapsed',
     exportOpen,
     deckNaturalHeight,
@@ -402,7 +410,10 @@ export function MobileLabChrome(props: {
                 color={props.color}
                 selectiveColor={props.selectiveColor}
                 lutBrowser={props.lutBrowser}
-                exportPanel={props.exportPanel({ onClose: closeExport })}
+                exportPanel={props.exportPanel({
+                  onClose: closeExport,
+                  onChooseLutContract: openLookContract,
+                })}
                 onToneChange={props.onToneChange}
                 onToneReset={props.onToneReset}
                 onColorChange={props.onColorChange}
@@ -411,7 +422,8 @@ export function MobileLabChrome(props: {
                 onSelectiveColorReset={props.onSelectiveColorReset}
                 onScrubChange={setScrubField}
                 onOpenLutBrowser={openLutBrowser}
-                onOpenLutContractBrowser={openLutContractBrowser}
+                lookView={lookView}
+                onLookViewChange={setLookView}
                 deckHeight={layout.deckHeight}
                 onTabBarHeightChange={setTabBarHeight}
                 onDeckNaturalHeightChange={setDeckNaturalHeight}
@@ -423,7 +435,6 @@ export function MobileLabChrome(props: {
 
       <MobileLutBrowser
         open={!handoffActive && lutBrowserOpen}
-        initialContractEditorOpen={lutBrowserStartsInContract}
         onClose={closeLutBrowser}
         {...props.lutBrowser}
       />

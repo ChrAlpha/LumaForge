@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ChevronRight,
   Copy,
   Download,
   FileJson,
@@ -153,6 +154,11 @@ export function MobileExportPanel(props: {
   onClose?: () => void
   /** What the full-resolution export will write; omitted, no recap. */
   recap?: MobileExportRecap
+  /**
+   * Set when the applied LUT's colour contract is what blocks export: the
+   * panel offers to go and choose it.
+   */
+  onChooseLutContract?: () => void
 }) {
   const { t } = useI18n()
   const previewReasonId = useId()
@@ -296,6 +302,19 @@ export function MobileExportPanel(props: {
             {unavailableReason}
           </span>
         </div>
+      )}
+      {showUnavailableReason && props.onChooseLutContract && (
+        <m.button
+          type="button"
+          data-export-choose-lut-contract
+          whileTap={{ y: 0.5 }}
+          transition={TAP_SPRING}
+          onClick={props.onChooseLutContract}
+          className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md bg-[oklch(0.96_0.006_255/0.06)] px-3 text-[0.8rem] font-semibold text-lf-on-photo-ink transition-colors hover:bg-[oklch(0.96_0.006_255/0.1)] focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-lf-green/80"
+        >
+          {t('raw.mobile.lut.chooseContract')}
+          <ChevronRight aria-hidden="true" className="size-3.5" />
+        </m.button>
       )}
       {showRecovery && (
         <button

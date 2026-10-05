@@ -46,7 +46,8 @@ describe('mobile accent grammar', () => {
       <MobileLookDeck
         look={lutBrowser}
         onOpenSources={vi.fn()}
-        onOpenContract={vi.fn()}
+        view="strip"
+        onViewChange={vi.fn()}
       />,
     )
     expect(getByRole('button', { name: /lut sources/i }).className).not.toMatch(
@@ -73,7 +74,8 @@ describe('mobile accent grammar', () => {
           },
         }}
         onOpenSources={vi.fn()}
-        onOpenContract={vi.fn()}
+        view="strip"
+        onViewChange={vi.fn()}
       />,
     )
     // A confirmed contract needs no explanation, so nothing here is amber.
@@ -89,7 +91,8 @@ describe('mobile accent grammar', () => {
           lutProfileResolution: { kind: 'unknown' },
         }}
         onOpenSources={vi.fn()}
-        onOpenContract={vi.fn()}
+        view="strip"
+        onViewChange={vi.fn()}
       />,
     )
     expect(container.innerHTML).toMatch(/lf-amber/)

@@ -5,6 +5,7 @@ import { useI18n } from '~/lib/i18n'
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
 import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
+import { deriveLutContractExportReason } from '../model/derive-session'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { RawToolSurfaceProps } from './RawWorkflowContext'
@@ -67,6 +68,9 @@ export function RawWorkflowToolProvider({
     : undefined
   const previewAspect =
     getAspect(transformFrame) ?? getAspect(decodedPreviewSize)
+  const lutContractExportReason = deriveLutContractExportReason(
+    workflow.activeStyle,
+  )
   const toolStats = workflow.stats
     ? {
         processTime: workflow.stats.processTime,
@@ -151,6 +155,12 @@ export function RawWorkflowToolProvider({
           : workflow.exportPreviewImage,
         canExport: workflow.canExport,
         disabledReason: workflow.exportDisabledReason,
+        // Only when the contract is the reason export states; an earlier
+        // gate (the source still loading) would make the action a detour.
+        exportBlockedByLutContract:
+          !workflow.canExport &&
+          lutContractExportReason !== undefined &&
+          workflow.exportDisabledReason === lutContractExportReason,
         deliveredExportSize: workflow.deliveredExportSize ?? null,
         canPreviewExport: !transformActive && workflow.canPreviewExport,
         previewExportDisabledReason: transformActive

@@ -10,6 +10,7 @@ import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { AdjustListPanel } from './AdjustListPanel'
+import type { MobileLookView } from './mobile-stage-layout'
 import { isMobileListDeck } from './mobile-stage-layout'
 import type { MobileLookControls } from './MobileLookDeck'
 import { MobileLookDeck } from './MobileLookDeck'
@@ -42,7 +43,8 @@ export function MobileLabModeDock({
   onSelectiveColorReset,
   onScrubChange,
   onOpenLutBrowser,
-  onOpenLutContractBrowser,
+  lookView,
+  onLookViewChange,
   deckHeight,
   onTabBarHeightChange,
   onDeckNaturalHeightChange,
@@ -76,7 +78,8 @@ export function MobileLabModeDock({
   onSelectiveColorReset: () => void
   onScrubChange: (field: ScrubFieldId | null) => void
   onOpenLutBrowser: () => void
-  onOpenLutContractBrowser: () => void
+  lookView: MobileLookView
+  onLookViewChange: (view: MobileLookView) => void
   deckHeight?: number
   onTabBarHeightChange?: (height: number) => void
   onDeckNaturalHeightChange?: (height: number) => void
@@ -93,6 +96,7 @@ export function MobileLabModeDock({
       onCollapse={onCollapse}
       onOpenMore={onOpenMore}
       scrubbing={scrubbing}
+      lookView={lookView}
       deckHeight={deckHeight}
       onTabBarHeightChange={onTabBarHeightChange}
       onDeckNaturalHeightChange={onDeckNaturalHeightChange}
@@ -102,7 +106,9 @@ export function MobileLabModeDock({
           // List tools fill the deck so their panels can h-full down and
           // run their own internal scroll. Other panels flow at their
           // natural height, which sizes the deck.
-          className={isMobileListDeck(mode, exportOpen) ? 'h-full' : undefined}
+          className={
+            isMobileListDeck(mode, exportOpen, lookView) ? 'h-full' : undefined
+          }
           initial={{ opacity: 0, y: prefersReduced ? 0 : 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={surfaceFade}
@@ -126,7 +132,8 @@ export function MobileLabModeDock({
               onSelectiveColorReset={onSelectiveColorReset}
               onScrubChange={onScrubChange}
               onOpenLutBrowser={onOpenLutBrowser}
-              onOpenLutContractBrowser={onOpenLutContractBrowser}
+              lookView={lookView}
+              onLookViewChange={onLookViewChange}
             />
           )}
         </m.div>
@@ -151,7 +158,8 @@ function MobileLabModePanel({
   onSelectiveColorReset,
   onScrubChange,
   onOpenLutBrowser,
-  onOpenLutContractBrowser,
+  lookView,
+  onLookViewChange,
 }: {
   transform?: RawTransformFeature
   mode: MobileMode
@@ -171,7 +179,8 @@ function MobileLabModePanel({
   onSelectiveColorReset: () => void
   onScrubChange: (field: ScrubFieldId | null) => void
   onOpenLutBrowser: () => void
-  onOpenLutContractBrowser: () => void
+  lookView: MobileLookView
+  onLookViewChange: (view: MobileLookView) => void
 }) {
   if (mode === 'transform') {
     return transform ? (
@@ -205,7 +214,8 @@ function MobileLabModePanel({
     <MobileLookDeck
       look={lutBrowser}
       onOpenSources={onOpenLutBrowser}
-      onOpenContract={() => onOpenLutContractBrowser()}
+      view={lookView}
+      onViewChange={onLookViewChange}
     />
   )
 }

@@ -87,6 +87,30 @@ describe('mobileExportPanel', () => {
     ).toBeTruthy()
   })
 
+  it('offers to choose the LUT contract when that is what blocks export', async () => {
+    const onChooseLutContract = vi.fn()
+    renderPanel({
+      canExport: false,
+      disabledReason:
+        'Choose a LUT input profile before full-resolution export.',
+      onChooseLutContract,
+    })
+    const action = screen.getByRole('button', { name: /choose lut contract/i })
+    expect(action).toHaveClass('min-h-[44px]')
+    // A blocked export explains itself; it is neither destructive nor a
+    // contract paint of its own.
+    expect(action.className).not.toMatch(/amber|rose/)
+    await userEvent.click(action)
+    expect(onChooseLutContract).toHaveBeenCalledOnce()
+  })
+
+  it('offers no contract route for any other block', () => {
+    renderPanel({ canExport: false, disabledReason: 'Something else.' })
+    expect(
+      screen.queryByRole('button', { name: /choose lut contract/i }),
+    ).toBeNull()
+  })
+
   it('never states what is not in state', () => {
     renderPanel({
       recap: {

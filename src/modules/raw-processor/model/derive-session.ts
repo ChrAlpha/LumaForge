@@ -1,6 +1,6 @@
 import { resolveUnsupportedLUTOutputReason } from '@lumaforge/luma-color-runtime'
 
-import type { ImageSession, PreviewBundle } from './session'
+import type { ImageSession, PreviewBundle, StyleAsset } from './session'
 
 /**
  * Full resolution reproduces the geometry; the bounded HQ preview cannot, so
@@ -33,6 +33,20 @@ function deriveUnsupportedExportPipelineReason(
   if (activeStyle.kind === 'builtin') {
     return 'Built-in styles are not supported by full-resolution JPEG export.'
   }
+
+  return deriveLutContractExportReason(activeStyle)
+}
+
+/**
+ * Why a custom LUT's colour contract keeps full-resolution export from
+ * reproducing it (an input to choose, an output to choose, or an output this
+ * build cannot deliver); undefined when the contract is exportable. Choosing
+ * a different contract is the fix for every one of these.
+ */
+export function deriveLutContractExportReason(
+  activeStyle: StyleAsset | null | undefined,
+): string | undefined {
+  if (activeStyle?.kind !== 'custom') return undefined
 
   const profileResolution = activeStyle.lutAsset?.profileResolution
   if (!profileResolution) {

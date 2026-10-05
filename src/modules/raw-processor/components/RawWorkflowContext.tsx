@@ -67,6 +67,11 @@ export interface RawToolSurfaceProps {
   canExport: boolean
   disabledReason?: string
   /**
+   * Full-resolution export is blocked by the applied LUT's colour contract,
+   * so choosing a contract is the way forward.
+   */
+  exportBlockedByLutContract?: boolean
+  /**
    * The frame a full-resolution export will write (Transform included);
    * null or unset while unknown.
    */

@@ -97,7 +97,7 @@ export function MobileRawToolSurface() {
         onIntensitySelect: props.onIntensitySelect,
         strengthDisabled: mobileStrengthDisabled,
       }}
-      exportPanel={({ onClose }) => (
+      exportPanel={({ onClose, onChooseLutContract }) => (
         <MobileExportPanel
           canExport={props.canExport}
           disabledReason={props.disabledReason}
@@ -117,6 +117,9 @@ export function MobileRawToolSurface() {
           isExporting={props.isExporting === true}
           progress={props.progress}
           onClose={onClose}
+          onChooseLutContract={
+            props.exportBlockedByLutContract ? onChooseLutContract : undefined
+          }
           recap={exportRecap}
         />
       )}

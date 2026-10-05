@@ -161,6 +161,26 @@ describe('computeMobileStageLayout at 393x660', () => {
     expect(exporting.photoRect.height).toBeCloseTo(320)
   })
 
+  it("sizes Look's inline contract view like a list tool, keeping the photo", () => {
+    expect(isMobileListDeck('look', false, 'contract')).toBe(true)
+    expect(isMobileListDeck('look', false, 'strip')).toBe(false)
+    // Export borrows the deck whatever Look was showing.
+    expect(isMobileListDeck('look', true, 'contract')).toBe(false)
+
+    const contract = computeMobileStageLayout(input({ lookView: 'contract' }))
+    const adjust = computeMobileStageLayout(input({ tool: 'tone' }))
+    expect(contract.deckHeight).toBe(adjust.deckHeight)
+    // A 3:2 landscape photo keeps its full 393x262 above the list.
+    expect(contract.photoRect.width).toBeCloseTo(393)
+    expect(contract.photoRect.height).toBeCloseTo(262)
+
+    const portrait = computeMobileStageLayout(
+      input({ photoAspect: PORTRAIT, lookView: 'contract' }),
+    )
+    expect(portrait.deckHeight).toBe(200)
+    expect(portrait.photoRect.height).toBeCloseTo(340)
+  })
+
   it('caps a tall export panel at the list maximum and gives the photo the rest', () => {
     const layout = computeMobileStageLayout(
       input({

@@ -225,6 +225,57 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       sha256: 'a'.repeat(64),
       sourceName: 'kodak-2383.cube',
     })
+    // No contract on the style: nothing for the export panel to route to.
+    expect(result.current.exportBlockedByLutContract).toBe(false)
+  })
+
+  it('flags an export blocked by the LUT contract, and only that block', () => {
+    const contractReason =
+      'Choose a LUT input profile before full-resolution export.'
+    const workflow = {
+      ...workflowFixture(),
+      canExport: false,
+      exportDisabledReason: contractReason,
+      activeStyle: {
+        kind: 'custom',
+        name: 'Unknown',
+        defaultIntensityLevel: 'standard',
+        currentIntensityLevel: 'standard',
+        lutAsset: {
+          format: 'cube',
+          dimension: 33,
+          profileResolution: { kind: 'unknown' },
+        },
+      },
+    } as unknown as UseRawWorkflowReturn
+    const { result, rerender } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <RawWorkflowToolProvider
+          workflow={workflow}
+          onlineLutSources={{} as UseOnlineLutSourcesResult}
+          isCpuMode={false}
+          isProcessing={false}
+          runtimeReadinessState="ready"
+          previewFrameEl={null}
+          onReplaceFile={vi.fn()}
+          onResetSession={vi.fn()}
+          onCompareReset={vi.fn()}
+          onLutDrop={vi.fn()}
+          onExport={vi.fn()}
+          onRecoverExportSource={vi.fn()}
+          onPrepareRuntime={vi.fn()}
+        >
+          {children}
+        </RawWorkflowToolProvider>
+      ),
+    })
+    expect(result.current.exportBlockedByLutContract).toBe(true)
+
+    // An earlier gate is what export states: choosing a contract would not
+    // unblock it, so no route is offered.
+    workflow.exportDisabledReason = 'Quick preview is still being prepared.'
+    rerender()
+    expect(result.current.exportBlockedByLutContract).toBe(false)
   })
 
   it('reports the aspect the stage is displaying', () => {

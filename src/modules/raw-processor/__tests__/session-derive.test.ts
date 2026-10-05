@@ -4,6 +4,7 @@ import {
   deriveCanEdit,
   deriveCanExport,
   deriveExportDisabledReason,
+  deriveLutContractExportReason,
   selectDisplaySource,
 } from '../model/derive-session'
 import type { ImageSession } from '../model/session'
@@ -376,5 +377,54 @@ describe('session derivation', () => {
     expect(deriveExportDisabledReason(session)).toBe(
       'This LUT output range must be explicit before full-resolution JPEG export.',
     )
+  })
+
+  it('names a LUT contract export block only for a custom LUT', () => {
+    expect(deriveLutContractExportReason(null)).toBeUndefined()
+    expect(
+      deriveLutContractExportReason({
+        kind: 'builtin',
+        name: 'Builtin',
+        defaultIntensityLevel: 'standard',
+        currentIntensityLevel: 'standard',
+      }),
+    ).toBeUndefined()
+    expect(
+      deriveLutContractExportReason({
+        kind: 'custom',
+        name: 'Unknown',
+        defaultIntensityLevel: 'standard',
+        currentIntensityLevel: 'standard',
+        lutAsset: {
+          format: 'cube',
+          dimension: 33,
+          profileResolution: { kind: 'unknown' },
+        },
+      }),
+    ).toBe('Choose a LUT input profile before full-resolution export.')
+    const display = {
+      ...getLUTColorProfile('sony-sgamut3cine-slog3')!,
+      role: 'combined-look-output' as const,
+      outputGamut: 'srgb-rec709' as const,
+      outputTransfer: 'srgb' as const,
+      outputRange: 'full' as const,
+    }
+    expect(
+      deriveLutContractExportReason({
+        kind: 'custom',
+        name: 'Display',
+        defaultIntensityLevel: 'standard',
+        currentIntensityLevel: 'standard',
+        lutAsset: {
+          format: 'cube',
+          dimension: 33,
+          profileResolution: {
+            kind: 'confirmed',
+            profile: display,
+            confidence: 'metadata',
+          },
+        },
+      }),
+    ).toBeUndefined()
   })
 })

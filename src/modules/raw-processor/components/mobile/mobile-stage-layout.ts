@@ -13,6 +13,12 @@ import type { MobileMode } from './MobileModeDock'
 /** List tools fill the deck and scroll their rows inside it. */
 const LIST_TOOLS: ReadonlySet<MobileMode> = new Set(['tone', 'transform'])
 
+/**
+ * What the Look deck shows: its strip, or the LUT contract chosen inline,
+ * which is a list and takes list-tool sizing so the photo stays above it.
+ */
+export type MobileLookView = 'strip' | 'contract'
+
 /** The deck's vertical padding (14px top + 10px bottom). */
 export const DECK_PADDING_Y_PX = 24
 
@@ -20,8 +26,13 @@ export const DECK_PADDING_Y_PX = 24
  * Whether the deck holds a list tool, which fills whatever height the
  * layout gives it, rather than content that sizes the deck.
  */
-export function isMobileListDeck(tool: MobileMode, exportOpen: boolean) {
-  return !exportOpen && LIST_TOOLS.has(tool)
+export function isMobileListDeck(
+  tool: MobileMode,
+  exportOpen: boolean,
+  lookView: MobileLookView = 'strip',
+) {
+  if (exportOpen) return false
+  return LIST_TOOLS.has(tool) || (tool === 'look' && lookView === 'contract')
 }
 
 /** A list deck never drops below this, so a few rows stay in reach. */
@@ -47,6 +58,8 @@ export interface MobileStageLayoutInput {
   /** Width / height of the displayed preview; null while unknown. */
   photoAspect: number | null
   tool: MobileMode
+  /** The Look deck's view; its contract view sizes like a list tool. */
+  lookView?: MobileLookView
   deck: 'expanded' | 'collapsed'
   /** The export panel holds the deck instead of the tool's panel. */
   exportOpen: boolean
@@ -80,14 +93,20 @@ function finitePositive(value: number) {
 }
 
 /**
- * List tools take what the photo leaves, between 200px and the list cap.
- * Look and the export panel are as tall as their content (never above the
+ * List tools (and Look's contract view) take what the photo leaves,
+ * between 200px and the list cap. Look's strip and the export panel are as
+ * tall as their content (never above the
  * list cap; taller content scrolls inside). A collapsed deck is 0.
  */
 export function getMobileDeckBounds(
   input: Pick<
     MobileStageLayoutInput,
-    'viewportHeight' | 'tool' | 'deck' | 'exportOpen' | 'deckNaturalHeight'
+    | 'viewportHeight'
+    | 'tool'
+    | 'lookView'
+    | 'deck'
+    | 'exportOpen'
+    | 'deckNaturalHeight'
   >,
 ): DeckBounds {
   if (input.deck === 'collapsed') return { min: 0, max: 0, fill: false }
@@ -95,7 +114,7 @@ export function getMobileDeckBounds(
     DECK_LIST_MAX_VIEWPORT_SHARE * finitePositive(input.viewportHeight),
     DECK_LIST_MAX_PX,
   )
-  if (isMobileListDeck(input.tool, input.exportOpen)) {
+  if (isMobileListDeck(input.tool, input.exportOpen, input.lookView)) {
     return {
       min: Math.min(DECK_LIST_MIN_PX, listMax),
       max: listMax,

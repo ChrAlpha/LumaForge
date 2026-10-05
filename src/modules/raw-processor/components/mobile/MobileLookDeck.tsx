@@ -2,7 +2,10 @@ import type {
   LUTColorProfile,
   LUTContractResolution,
 } from '@lumaforge/luma-color-runtime'
-import { useEffect, useId, useMemo, useState } from 'react'
+import { m } from 'motion/react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+
+import { surfaceFade } from '~/lib/spring'
 
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
 import type { LUTContractSelectionState } from '../../model/session'
@@ -11,10 +14,13 @@ import { useOnlineLutEntryLoader } from '../tools/lut/useOnlineLutEntryLoader'
 import type { StrengthLevel } from '../tools/StrengthControl'
 import type { AppliedLut, LoadedLutEntry } from './mobile-lut-strip'
 import { buildLutStripItems } from './mobile-lut-strip'
+import type { MobileLookView } from './mobile-stage-layout'
 import type { LookContractStep } from './MobileLookFooter'
 import { MobileLookFooter } from './MobileLookFooter'
 import { MobileLookStrength } from './MobileLookStrength'
+import { MobileLutContractView } from './MobileLutContractView'
 import { MobileLutStrip } from './MobileLutStrip'
+import { useMobileLutContractEditor } from './useMobileLutContractEditor'
 
 /** How long the Strength row's disabled reason stays in the footer. */
 const STRENGTH_REASON_MS = 2500
@@ -48,12 +54,14 @@ const EMPTY_ENTRIES: UseOnlineLutSourcesResult['state']['entries'] = []
 export function MobileLookDeck(props: {
   look: MobileLookControls
   onOpenSources: () => void
-  onOpenContract: (
-    step: LookContractStep,
-    draft?: LUTColorProfile | null,
-  ) => void
+  /**
+   * The strip, or the LUT contract chosen inline. The chrome owns it: the
+   * contract view takes list-tool sizing, so the photo stays above it.
+   */
+  view: MobileLookView
+  onViewChange: (view: MobileLookView) => void
 }) {
-  const { look } = props
+  const { look, view, onViewChange } = props
   const sources = look.onlineLutSources
   const strengthReasonId = useId()
   const [strengthReasonShown, setStrengthReasonShown] = useState(false)
@@ -69,6 +77,14 @@ export function MobileLookDeck(props: {
   const summary = useLutContractSummary({
     lutProfileSelection: look.lutProfileSelection,
     lutProfileResolution: look.lutProfileResolution,
+  })
+  const editor = useMobileLutContractEditor({
+    lutProfileSelection: look.lutProfileSelection,
+    lutProfileResolution: look.lutProfileResolution,
+    onLutProfileSelect: look.onLutProfileSelect,
+    // A complete contract hands the deck back to the strip, whose footer
+    // then reads the confirmed line.
+    onComplete: () => onViewChange('strip'),
   })
   const lutApplied = Boolean(look.currentLutName)
   const appliedName = lutApplied
@@ -98,6 +114,41 @@ export function MobileLookDeck(props: {
     setJustLoadedEntryId(null)
   }, [appliedSha, justLoadedEntryId])
 
+  // Opened here, the editor starts at the step and draft asked for. Opened
+  // from elsewhere (the export panel's blocked state), the deck mounts into
+  // the contract view and the editor starts where the contract stands.
+  const openContract = (
+    step?: LookContractStep,
+    draft?: LUTColorProfile | null,
+  ) => {
+    editor.start(step, draft)
+    onViewChange('contract')
+  }
+  const openContractRef = useRef(openContract)
+  useEffect(() => {
+    openContractRef.current = openContract
+  })
+
+  // No LUT, no contract to choose.
+  useEffect(() => {
+    if (view === 'contract' && !lutApplied) onViewChange('strip')
+  }, [lutApplied, onViewChange, view])
+
+  // A .cube the user imports opens its contract when nothing resolved it,
+  // once the session reports the new LUT.
+  const importBaseline = useRef<string | null | undefined>(undefined)
+  const appliedIdentity = applied
+    ? `${applied.sha256 ?? ''}|${applied.name}`
+    : null
+  const contractStatus = summary.contractView.status
+  useEffect(() => {
+    const baseline = importBaseline.current
+    if (baseline === undefined || !appliedIdentity) return
+    if (appliedIdentity === baseline) return
+    importBaseline.current = undefined
+    if (contractStatus !== 'confirmed') openContractRef.current()
+  }, [appliedIdentity, contractStatus])
+
   useEffect(() => {
     if (!strengthReasonShown) return
     const timer = setTimeout(setStrengthReasonShown, STRENGTH_REASON_MS, false)
@@ -123,8 +174,34 @@ export function MobileLookDeck(props: {
     void loadOnlineLutEntry(entryId, () => setJustLoadedEntryId(entryId))
   }
 
+  if (view === 'contract' && lutApplied) {
+    return (
+      <m.div
+        key="contract"
+        data-mobile-look-deck="contract"
+        className="h-full min-h-0"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={surfaceFade}
+      >
+        <MobileLutContractView
+          lutName={applied?.sourceName || applied?.name || ''}
+          editor={editor}
+          onExit={() => onViewChange('strip')}
+        />
+      </m.div>
+    )
+  }
+
   return (
-    <div data-mobile-look-deck className="grid gap-2">
+    <m.div
+      key="strip"
+      data-mobile-look-deck="strip"
+      className="grid gap-2"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={surfaceFade}
+    >
       <MobileLutStrip
         items={items}
         loadingEntryId={loadingEntryId}
@@ -149,6 +226,7 @@ export function MobileLookDeck(props: {
         onImport={(files) => {
           setDismissedFailureId(failedEntryId)
           sources?.cancelEntryLoad()
+          importBaseline.current = appliedIdentity
           look.onLutLoad(files)
         }}
       />
@@ -176,10 +254,10 @@ export function MobileLookDeck(props: {
         strengthReasonShown={strengthReasonShown && !lutApplied}
         strengthReasonId={strengthReasonId}
         disabled={look.disabled}
-        onOpenContract={props.onOpenContract}
+        onOpenContract={openContract}
         onApplyRecommendation={look.onLutProfileSelect}
         onOpenSources={props.onOpenSources}
       />
-    </div>
+    </m.div>
   )
 }

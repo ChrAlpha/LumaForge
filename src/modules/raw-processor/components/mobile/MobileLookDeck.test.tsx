@@ -8,9 +8,11 @@ import {
   within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
+import type { MobileLookView } from './mobile-stage-layout'
 import type { MobileLookControls } from './MobileLookDeck'
 import { MobileLookDeck } from './MobileLookDeck'
 
@@ -89,20 +91,40 @@ const confirmedDisplayLook = {
   outputRange: 'full' as const,
 }
 
+function DeckHarness(props: {
+  controls: MobileLookControls
+  onOpenSources?: () => void
+  onViewChange?: (view: MobileLookView) => void
+  initialView?: MobileLookView
+}) {
+  const [view, setView] = useState<MobileLookView>(props.initialView ?? 'strip')
+  return (
+    <MobileLookDeck
+      look={props.controls}
+      onOpenSources={props.onOpenSources ?? vi.fn()}
+      view={view}
+      onViewChange={(next) => {
+        props.onViewChange?.(next)
+        setView(next)
+      }}
+    />
+  )
+}
+
 function renderDeck(
   controls: MobileLookControls = look(),
   handlers: {
     onOpenSources?: () => void
-    onOpenContract?: () => void
+    onViewChange?: (view: MobileLookView) => void
+    initialView?: MobileLookView
   } = {},
 ) {
-  return render(
-    <MobileLookDeck
-      look={controls}
-      onOpenSources={handlers.onOpenSources ?? vi.fn()}
-      onOpenContract={handlers.onOpenContract ?? vi.fn()}
-    />,
-  )
+  const utils = render(<DeckHarness controls={controls} {...handlers} />)
+  return {
+    ...utils,
+    rerenderDeck: (next: MobileLookControls) =>
+      utils.rerender(<DeckHarness controls={next} {...handlers} />),
+  }
 }
 
 function tile(name: string | RegExp) {
@@ -146,7 +168,7 @@ describe('mobileLookDeck', () => {
     expect(tile('Original')).toHaveAttribute('aria-pressed', 'true')
     expect(tile('Original')).toHaveAttribute('data-state', 'applied')
     expect(tile('Kodak 2383')).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByText('No LUT · tone and color only')).toBeVisible()
+    expect(screen.getByText('No LUT · tone and color only')).toBeInTheDocument()
   })
 
   it('reads the applied look from the cube hash and rings its tile', () => {
@@ -371,11 +393,11 @@ describe('mobileLookDeck', () => {
         recommendations: [recommendation],
       } as never,
     })
-    const onOpenContract = vi.fn()
-    renderDeck(controls, { onOpenContract })
+    const onViewChange = vi.fn()
+    renderDeck(controls, { onViewChange })
     expect(
       screen.getByText(`Recommended: ${recommendation.label}`),
-    ).toBeVisible()
+    ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /apply/i }))
     expect(controls.onLutProfileSelect).toHaveBeenCalledWith(recommendation)
 
@@ -384,7 +406,10 @@ describe('mobileLookDeck', () => {
         name: `Recommended: ${recommendation.label}`,
       }),
     )
-    expect(onOpenContract).toHaveBeenCalledWith('input')
+    expect(onViewChange).toHaveBeenLastCalledWith('contract')
+    expect(
+      screen.getByRole('region', { name: 'SLog3 Look: input' }),
+    ).toBeInTheDocument()
   })
 
   it('opens the LUT sources from the footer on a 44px target', async () => {
@@ -394,5 +419,236 @@ describe('mobileLookDeck', () => {
     expect(sources).toHaveClass('min-h-11')
     await userEvent.click(sources)
     expect(onOpenSources).toHaveBeenCalledOnce()
+  })
+
+  describe('inline contract view', () => {
+    const unknownFile = () =>
+      look({
+        currentLutName: 'Client Look',
+        appliedLut: {
+          name: 'Client Look',
+          sha256: 'c'.repeat(64),
+          sourceName: 'client.cube',
+        },
+        lutProfileSelection: {
+          status: 'unknown',
+          fingerprint: 'fp',
+          title: 'Client Look',
+        },
+        lutProfileResolution: { kind: 'unknown' },
+      })
+
+    it('chooses input then output inside the deck and returns to the strip', async () => {
+      const controls = unknownFile()
+      const onViewChange = vi.fn()
+      renderDeck(controls, { onViewChange })
+
+      await userEvent.click(
+        screen.getByRole('button', { name: /choose what this lut expects/i }),
+      )
+      expect(onViewChange).toHaveBeenLastCalledWith('contract')
+      const input = screen.getByRole('region', { name: 'client.cube: input' })
+      expect(input).toHaveTextContent('1 / 2')
+      // No sheet: the contract lives in the deck, touch-first.
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(screen.getByLabelText('Search LUT contract')).toHaveClass(
+        'min-h-[44px]',
+      )
+      expect(screen.getByRole('button', { name: 'Back to looks' })).toHaveClass(
+        'size-11',
+      )
+
+      await userEvent.type(
+        screen.getByLabelText('Search LUT contract'),
+        'panasonic',
+      )
+      const panasonic = screen.getByRole('button', {
+        name: 'Use Panasonic V-Gamut / V-Log as LUT input',
+      })
+      expect(panasonic).toHaveClass('min-h-[44px]')
+      await userEvent.click(panasonic)
+
+      const output = screen.getByRole('region', { name: 'client.cube: output' })
+      expect(output).toHaveTextContent('2 / 2')
+      expect(output).toHaveTextContent('Input: Panasonic V-Gamut / V-Log')
+      // Back from the output goes to the input, not out of the editor.
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Back to input' }),
+      )
+      expect(
+        screen.getByRole('region', { name: 'client.cube: input' }),
+      ).toBeInTheDocument()
+      await userEvent.click(
+        screen.getByRole('button', {
+          name: 'Use Panasonic V-Gamut / V-Log as LUT input',
+        }),
+      )
+
+      await userEvent.type(
+        screen.getByLabelText('Search LUT contract'),
+        'display srgb',
+      )
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Use Display sRGB as LUT output' }),
+      )
+      expect(controls.onLutProfileSelect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inputGamut: 'v-gamut',
+          inputTransfer: 'v-log',
+          outputGamut: 'srgb-rec709',
+          outputTransfer: 'srgb',
+          outputRange: 'full',
+        }),
+      )
+      expect(onViewChange).toHaveBeenLastCalledWith('strip')
+      expect(screen.getByRole('group', { name: 'Looks' })).toBeInTheDocument()
+    })
+
+    it('leads with recommendations: one tap applies a complete one', async () => {
+      const complete = confirmedDisplayLook
+      const controls = look({
+        currentLutName: 'SLog3 Look',
+        appliedLut: { name: 'SLog3 Look', sha256: 'd'.repeat(64) },
+        lutProfileResolution: {
+          kind: 'recommended',
+          recommendations: [complete],
+        } as never,
+      })
+      const onViewChange = vi.fn()
+      renderDeck(controls, { onViewChange, initialView: 'contract' })
+
+      const chips = screen.getByRole('group', { name: 'Recommended input' })
+      await userEvent.click(within(chips).getByRole('button'))
+      expect(controls.onLutProfileSelect).toHaveBeenCalledWith(complete)
+      expect(onViewChange).toHaveBeenLastCalledWith('strip')
+    })
+
+    it('drafts an input-only recommendation and moves on to the output', async () => {
+      const inputOnly = getLUTColorProfile('panasonic-vgamut-vlog')!
+      const controls = look({
+        currentLutName: 'VLog Look',
+        appliedLut: { name: 'VLog Look', sha256: 'e'.repeat(64) },
+        lutProfileResolution: {
+          kind: 'recommended',
+          recommendations: [inputOnly],
+        } as never,
+      })
+      renderDeck(controls, { initialView: 'contract' })
+
+      await userEvent.click(
+        screen.getByRole('button', {
+          name: 'Use Panasonic V-Gamut / V-Log as LUT input',
+        }),
+      )
+      expect(controls.onLutProfileSelect).not.toHaveBeenCalled()
+      expect(
+        screen.getByRole('region', { name: 'VLog Look: output' }),
+      ).toHaveTextContent('Input: Panasonic V-Gamut / V-Log')
+    })
+
+    it('starts at the output when only the output is missing, and marks a resolved output', async () => {
+      const inputOnly = getLUTColorProfile('panasonic-vgamut-vlog')!
+      renderDeck(
+        look({
+          currentLutName: 'VLog Look',
+          appliedLut: { name: 'VLog Look', sha256: 'e'.repeat(64) },
+          lutProfileResolution: {
+            kind: 'confirmed',
+            profile: inputOnly,
+            confidence: 'user',
+          },
+        }),
+        { initialView: 'contract' },
+      )
+      expect(
+        screen.getByRole('region', { name: 'VLog Look: output' }),
+      ).toBeInTheDocument()
+    })
+
+    it('marks the resolved output as active when changing a confirmed contract', async () => {
+      renderDeck(
+        look({
+          currentLutName: 'SLog3 Look',
+          appliedLut: { name: 'SLog3 Look', sha256: 'f'.repeat(64) },
+          lutProfileResolution: {
+            kind: 'confirmed',
+            profile: confirmedDisplayLook,
+            confidence: 'metadata',
+          },
+        }),
+      )
+      await userEvent.click(
+        screen.getByRole('button', {
+          name: /edit color contract for sony s-gamut3\.cine \/ s-log3/i,
+        }),
+      )
+      await userEvent.click(
+        screen.getByRole('button', {
+          name: 'Use Sony S-Gamut3.Cine / S-Log3 as LUT input',
+        }),
+      )
+      expect(
+        screen.getByRole('button', {
+          name: 'Use Rec.709 display as LUT output',
+        }),
+      ).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('opens the contract by itself after an import that nothing resolved', async () => {
+      const controls = look()
+      const onViewChange = vi.fn()
+      const { container, rerenderDeck } = renderDeck(controls, {
+        onViewChange,
+      })
+      const input = container.querySelector<HTMLInputElement>(
+        'input[type="file"][accept=".cube"]',
+      )!
+      fireEvent.change(input, {
+        target: { files: [new File(['x'], 'client.cube')] },
+      })
+      expect(onViewChange).not.toHaveBeenCalled()
+
+      // The session reports the imported LUT, its contract unknown.
+      rerenderDeck(unknownFile())
+      expect(onViewChange).toHaveBeenLastCalledWith('contract')
+      expect(
+        screen.getByRole('region', { name: 'client.cube: input' }),
+      ).toBeInTheDocument()
+    })
+
+    it('leaves the strip alone after an import whose contract resolved', () => {
+      const onViewChange = vi.fn()
+      const { container, rerenderDeck } = renderDeck(look(), { onViewChange })
+      fireEvent.change(
+        container.querySelector<HTMLInputElement>('input[type="file"]')!,
+        { target: { files: [new File(['x'], 'display.cube')] } },
+      )
+      rerenderDeck(
+        look({
+          currentLutName: 'Display',
+          appliedLut: { name: 'Display', sha256: '1'.repeat(64) },
+          lutProfileResolution: {
+            kind: 'confirmed',
+            profile: confirmedDisplayLook,
+            confidence: 'metadata',
+          },
+        }),
+      )
+      expect(onViewChange).not.toHaveBeenCalled()
+    })
+
+    it('falls back to the strip when the LUT goes away', () => {
+      const onViewChange = vi.fn()
+      const { rerenderDeck } = renderDeck(unknownFile(), {
+        onViewChange,
+        initialView: 'contract',
+      })
+      expect(
+        screen.getByRole('region', { name: 'client.cube: input' }),
+      ).toBeInTheDocument()
+      rerenderDeck(look())
+      expect(onViewChange).toHaveBeenLastCalledWith('strip')
+      expect(screen.getByRole('group', { name: 'Looks' })).toBeInTheDocument()
+    })
   })
 })
