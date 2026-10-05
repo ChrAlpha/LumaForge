@@ -191,6 +191,26 @@ describe('mobileExportPanel', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('holds the export actions at the bottom of a deck too short for the panel', () => {
+    renderPanel({
+      canExport: false,
+      disabledReason:
+        'Checking full-resolution export support for this RAW file.',
+      canPreviewExport: false,
+      previewExportDisabledReason: 'HQ preview export is not ready.',
+      onPreviewExport: vi.fn(),
+    })
+    const actions = document.querySelector<HTMLElement>(
+      '[data-export-actions]',
+    )!
+    expect(actions).toContainElement(
+      screen.getByRole('button', { name: /export full-resolution jpeg/i }),
+    )
+    // Sticky on the deck's own tone: the notes above scroll under it.
+    expect(actions).toHaveClass('sticky', 'bottom-0')
+    expect(actions.className).toContain('bg-[oklch(0.085_0.006_255)]')
+  })
+
   it('names why the HQ preview export is disabled under the button', () => {
     const reason =
       'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.'

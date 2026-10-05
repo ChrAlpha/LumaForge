@@ -74,10 +74,25 @@ describe('mobile deck bounds', () => {
     })
   })
 
-  it('caps natural content at the list maximum, so taller content scrolls', () => {
+  it('caps Look content at the list maximum, so taller content scrolls', () => {
+    expect(getMobileDeckBounds(input({ deckNaturalHeight: 400 }))).toEqual({
+      min: 250.8,
+      max: 250.8,
+      fill: false,
+    })
+  })
+
+  it('lets the export panel pass the list cap down to the photo minimum', () => {
+    // A blocked export at 393x660: reason, recap, both buttons and the HQ
+    // reason measure ~297px, more than the 250.8px list cap. Clipped, the
+    // primary action fell below the fold.
     expect(
-      getMobileDeckBounds(input({ exportOpen: true, deckNaturalHeight: 400 })),
-    ).toEqual({ min: 250.8, max: 250.8, fill: false })
+      getMobileDeckBounds(input({ exportOpen: true, deckNaturalHeight: 297 })),
+    ).toEqual({ min: 297, max: 297, fill: false })
+    // The photo keeps 40% of the 540px region between topbar and tab bar.
+    expect(
+      getMobileDeckBounds(input({ exportOpen: true, deckNaturalHeight: 600 })),
+    ).toEqual({ min: 324, max: 324, fill: false })
   })
 
   it('never lets the list minimum exceed the list maximum on a short viewport', () => {
@@ -181,16 +196,25 @@ describe('computeMobileStageLayout at 393x660', () => {
     expect(portrait.photoRect.height).toBeCloseTo(340)
   })
 
-  it('caps a tall export panel at the list maximum and gives the photo the rest', () => {
-    const layout = computeMobileStageLayout(
+  it('gives a tall export panel its height and the photo the rest', () => {
+    const portrait = computeMobileStageLayout(
       input({
         photoAspect: PORTRAIT,
         exportOpen: true,
         deckNaturalHeight: 400,
       }),
     )
-    expect(layout.deckHeight).toBeCloseTo(250.8)
-    expect(layout.photoRect.height).toBeCloseTo(540 - 250.8)
+    // 60% of the 540px region at most, so the photo keeps 216px.
+    expect(portrait.deckHeight).toBeCloseTo(324)
+    expect(portrait.photoRect.height).toBeCloseTo(540 - 324)
+
+    // A landscape photo gives up only what the panel needs past 278px.
+    const landscape = computeMobileStageLayout(
+      input({ exportOpen: true, deckNaturalHeight: 297 }),
+    )
+    expect(landscape.deckHeight).toBe(297)
+    expect(landscape.photoRect.height).toBeCloseTo(540 - 297)
+    expect(landscape.photoRect.top).toBe(TOPBAR)
   })
 })
 

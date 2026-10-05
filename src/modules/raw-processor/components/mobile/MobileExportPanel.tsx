@@ -357,7 +357,14 @@ export function MobileExportPanel(props: {
         </button>
       )}
       {props.recap && <ExportRecapLines recap={props.recap} />}
-      <div className="grid gap-2">
+      {/* The deck gives this panel its natural height when it can. Where it
+          cannot (a short screen, a long localized reason), the actions hold
+          the deck's bottom edge on its own tone and the notes above scroll
+          under them, so the primary action never falls below the fold. */}
+      <div
+        data-export-actions
+        className="sticky bottom-0 z-[1] grid gap-2 bg-[oklch(0.085_0.006_255)]"
+      >
         <m.button
           type="button"
           disabled={!props.canExport || props.isProcessing}

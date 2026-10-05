@@ -497,7 +497,8 @@ The mobile stage is photo-first.
 
 The stage region is exactly the photo's displayed height, so the frame's own centring anchors the photo flush under the topbar.
 A 3:2 landscape photo is 393x262 on a 393x660 viewport in every tool and never moves on a tool switch.
-List tools (Adjust, Transform, and Look while its LUT contract is open inline) take what the photo leaves, between 200px and `min(38% of the viewport, 264px)`, and scroll their rows inside; Look's strip and the export panel are as tall as their content, under the same cap.
+List tools (Adjust, Transform, and Look while its LUT contract is open inline) take what the photo leaves, between 200px and `min(38% of the viewport, 264px)`, and scroll their rows inside; Look's strip is as tall as its content, under the same cap.
+The export panel is as tall as its content too, but a blocked reason, the recap, both buttons and the HQ preview's reason can pass that cap, so it takes the height from the photo the way a list tool does, leaving the photo at least 40% of the region between the topbar and the tab bar. Its actions hold the deck's bottom edge, so the primary action is never below the fold.
 A list deck has no top padding: its section chrome sits flush under the deck's one top hairline.
 A portrait photo takes all the height the deck leaves.
 A scrub never changes the layout's inputs, so it never resizes the photo.

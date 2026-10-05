@@ -40,6 +40,14 @@ export const DECK_LIST_MIN_PX = 200
 /** A list deck never grows past this, nor past a share of the viewport. */
 export const DECK_LIST_MAX_PX = 264
 export const DECK_LIST_MAX_VIEWPORT_SHARE = 0.38
+/**
+ * The export panel can need more than the list cap: a blocked reason, the
+ * recap, both export buttons and the HQ preview's reason. Rather than hide
+ * its primary action below the fold, it takes height from the photo the way
+ * a list tool does, leaving the photo at least this share of the region
+ * between the topbar and the tab bar.
+ */
+export const EXPORT_PHOTO_MIN_SHARE = 0.4
 
 export interface MobileStageRect {
   top: number
@@ -94,9 +102,10 @@ function finitePositive(value: number) {
 
 /**
  * List tools (and Look's contract view) take what the photo leaves,
- * between 200px and the list cap. Look's strip and the export panel are as
- * tall as their content (never above the
- * list cap; taller content scrolls inside). A collapsed deck is 0.
+ * between 200px and the list cap. Look's strip is as tall as its content,
+ * never above the list cap (taller content scrolls inside). The export
+ * panel is as tall as its content too, and may pass the list cap down to
+ * the photo's minimum share. A collapsed deck is 0.
  */
 export function getMobileDeckBounds(
   input: Pick<
@@ -107,13 +116,26 @@ export function getMobileDeckBounds(
     | 'deck'
     | 'exportOpen'
     | 'deckNaturalHeight'
-  >,
+  > &
+    Partial<Pick<MobileStageLayoutInput, 'topbarHeight' | 'dockBarHeight'>>,
 ): DeckBounds {
   if (input.deck === 'collapsed') return { min: 0, max: 0, fill: false }
+  const viewportHeight = finitePositive(input.viewportHeight)
   const listMax = Math.min(
-    DECK_LIST_MAX_VIEWPORT_SHARE * finitePositive(input.viewportHeight),
+    DECK_LIST_MAX_VIEWPORT_SHARE * viewportHeight,
     DECK_LIST_MAX_PX,
   )
+  if (input.exportOpen) {
+    const region = Math.max(
+      0,
+      viewportHeight -
+        finitePositive(input.topbarHeight ?? 0) -
+        finitePositive(input.dockBarHeight ?? 0),
+    )
+    const exportMax = Math.max(listMax, region * (1 - EXPORT_PHOTO_MIN_SHARE))
+    const natural = clamp(finitePositive(input.deckNaturalHeight), 0, exportMax)
+    return { min: natural, max: natural, fill: false }
+  }
   if (isMobileListDeck(input.tool, input.exportOpen, input.lookView)) {
     return {
       min: Math.min(DECK_LIST_MIN_PX, listMax),

@@ -268,16 +268,21 @@ test('keeps the loaded mobile export panel clear of the toolbar', async ({
     }),
   ).toBeVisible()
 
-  // The dock panel enters on a spring (DOCK_SPRING). Sampling mid-flight
-  // reports the panel a fraction of a pixel below the toolbar, which is not
-  // what this test is about; wait for the transform to settle first.
+  // The dock panel enters on a spring (DOCK_SPRING) and its height moves
+  // on a 240ms curve as the layout hands it the export panel's height.
+  // Sampling mid-flight reports a deck that has not reached its height
+  // yet, which is not what this test is about; wait for both to settle.
   await expect
     .poll(async () =>
       page.evaluate(() => {
         const panel = document.querySelector<HTMLElement>(
           '[data-mobile-dock] > *',
         )
-        return panel ? getComputedStyle(panel).transform : 'missing'
+        if (!panel) return 'missing'
+        const moving = panel
+          .getAnimations()
+          .some((animation) => animation.playState === 'running')
+        return moving ? 'moving' : getComputedStyle(panel).transform
       }),
     )
     .toBe('none')
