@@ -55,4 +55,18 @@ describe('useRawProcessorViewController', () => {
     expect(workflow.setCompareSplit).toHaveBeenCalledWith(0.5)
     expect(workflow.resetPreviewViewport).toHaveBeenCalledOnce()
   })
+
+  it('hands a LUT load back to the caller so it can wait for it to settle', async () => {
+    const workflow = workflowFixture()
+    vi.mocked(workflow.loadLUT).mockResolvedValue('failed')
+    const { result } = renderHook(() =>
+      useRawProcessorViewController({
+        rawRouteLocation: { search: '', pathname: '/raw' },
+        workflow,
+      }),
+    )
+    const file = new File(['x'], 'look.cube')
+    await expect(result.current.handleLutDrop([file])).resolves.toBe('failed')
+    expect(result.current.handleLutDrop([])).toBeUndefined()
+  })
 })
