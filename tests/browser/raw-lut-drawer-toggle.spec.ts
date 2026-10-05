@@ -467,15 +467,22 @@ test("mobile chooses an imported LUT's contract inline, with the photo in view",
   )
   // The deck takes list sizing: it starts where the photo ends, so the
   // photo stays in view above it (polled past the 240ms inset motion).
+  // The stage region is the photo's height on both preview paths; the CPU
+  // preview this project runs has no GPU preview frame to measure.
   await expect
     .poll(async () => {
-      const photo = await page
-        .locator('[data-raw-preview-frame]')
-        .first()
-        .boundingBox()
+      const photoBottom = await page.evaluate(() => {
+        const stage = document.querySelector<HTMLElement>('.raw-lab-stage')
+        if (!stage) return null
+        const rect = stage.getBoundingClientRect()
+        const padding = getComputedStyle(stage)
+        const top = rect.top + Number.parseFloat(padding.paddingTop)
+        const bottom = rect.bottom - Number.parseFloat(padding.paddingBottom)
+        return bottom - top > 100 ? bottom : null
+      })
       const deck = await page.locator('[data-mobile-dock-panel]').boundingBox()
-      if (!photo || !deck) return Number.NaN
-      return Math.round(deck.y - (photo.y + photo.height))
+      if (photoBottom === null || !deck) return Number.NaN
+      return Math.round(deck.y - photoBottom)
     })
     .toBeGreaterThanOrEqual(-1)
 
