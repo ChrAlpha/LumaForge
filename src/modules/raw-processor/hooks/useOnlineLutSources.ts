@@ -122,6 +122,11 @@ function issueBelongsToEntry(
   return issue.entryId === entry.id || issue.sourceUrl === entry.sourceUrl
 }
 
+/**
+ * A resolved entry manifest replaces the listed entry, but the entry keeps
+ * the title (and family) its catalog listed it under: the name the user
+ * tapped must not change under them once the look loads.
+ */
 function mergeEntryResolution(
   state: OnlineLUTSourceState,
   requestedEntry: OnlineLUTSourceEntry,
@@ -133,7 +138,11 @@ function mergeEntryResolution(
     entries: state.entries.map((entry) =>
       entry.resourceId === requestedEntry.resourceId &&
       entry.id === requestedEntry.id
-        ? { ...resolvedEntry, family: resolvedEntry.family ?? entry.family }
+        ? {
+            ...resolvedEntry,
+            title: entry.title || resolvedEntry.title,
+            family: resolvedEntry.family ?? entry.family,
+          }
         : entry,
     ),
     issues: [

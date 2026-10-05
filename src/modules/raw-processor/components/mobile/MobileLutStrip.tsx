@@ -162,7 +162,6 @@ export function MobileLutStrip(props: MobileLutStripProps) {
         kind="entry"
         state={state}
         applied={item.applied}
-        eyebrow={item.eyebrow}
         title={entry.title}
         percent={percent}
         ariaLabel={
@@ -215,24 +214,24 @@ export function MobileLutStrip(props: MobileLutStripProps) {
         }
         if (item.kind === 'custom') {
           return (
-            <LutTile
-              key={item.key}
-              ref={tileRef(item.key)}
-              kind="custom"
-              state={
-                props.disabled
-                  ? 'disabled'
-                  : props.appliedNeedsContract
-                    ? 'needs-contract'
-                    : 'applied'
-              }
-              applied
-              eyebrow={t('raw.mobile.look.myFile')}
-              title={item.title}
-              ariaLabel={item.title}
-              // A file only shows while it is the applied look.
-              onClick={() => {}}
-            />
+            <LutTileGroup key={item.key} label={t('raw.mobile.look.myFile')}>
+              <LutTile
+                ref={tileRef(item.key)}
+                kind="custom"
+                state={
+                  props.disabled
+                    ? 'disabled'
+                    : props.appliedNeedsContract
+                      ? 'needs-contract'
+                      : 'applied'
+                }
+                applied
+                title={item.title}
+                ariaLabel={item.title}
+                // A file only shows while it is the applied look.
+                onClick={() => {}}
+              />
+            </LutTileGroup>
           )
         }
         if (item.kind === 'import') {
@@ -250,25 +249,11 @@ export function MobileLutStrip(props: MobileLutStripProps) {
           )
         }
         const tiles = item.entries.map(renderEntry)
-        if (!item.labelled) return tiles
+        if (!item.label) return tiles
         return (
-          <div
-            key={item.key}
-            role="group"
-            aria-label={item.label}
-            className="flex shrink-0 items-stretch gap-1.5"
-          >
-            <span
-              aria-hidden="true"
-              data-mobile-lut-source-label
-              className="flex w-3.5 shrink-0 items-center justify-center overflow-hidden"
-            >
-              <span className="max-h-[60px] rotate-180 truncate text-[0.56rem] font-semibold uppercase tracking-wide text-lf-on-photo-ink/44 [writing-mode:vertical-rl]">
-                {item.label}
-              </span>
-            </span>
+          <LutTileGroup key={item.key} label={item.label}>
             {tiles}
-          </div>
+          </LutTileGroup>
         )
       })}
       <input
@@ -290,12 +275,38 @@ export function MobileLutStrip(props: MobileLutStripProps) {
   )
 }
 
+/**
+ * Tiles of one family (or one source, or the user's file) behind a slim
+ * vertical divider label. The label names the group once, so no tile
+ * repeats it.
+ */
+function LutTileGroup(props: { label: string; children: ReactNode }) {
+  return (
+    <div
+      role="group"
+      aria-label={props.label}
+      data-mobile-lut-group={props.label}
+      className="flex shrink-0 items-stretch gap-1.5"
+    >
+      <span
+        aria-hidden="true"
+        data-mobile-lut-group-label
+        className="flex w-3.5 shrink-0 items-center justify-center overflow-hidden"
+      >
+        <span className="max-h-[60px] rotate-180 truncate text-[0.56rem] font-semibold tracking-wide text-lf-on-photo-ink/44 [writing-mode:vertical-rl]">
+          {props.label}
+        </span>
+      </span>
+      {props.children}
+    </div>
+  )
+}
+
 function LutTile(props: {
   ref?: (node: HTMLButtonElement | null) => void
   kind: 'original' | 'custom' | 'entry' | 'import'
   state: LutTileState
   applied: boolean
-  eyebrow?: string
   title: string
   ariaLabel: string
   icon?: ReactNode
@@ -326,9 +337,11 @@ function LutTile(props: {
         // Inset so the strip's own clipping never cuts the ring.
         'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lf-green/80',
         'disabled:cursor-not-allowed disabled:opacity-45',
+        // A look's name sits at the foot of its tile, clear of the applied
+        // check and the contract dot in the top corner.
         props.kind === 'import' || props.kind === 'original'
           ? 'place-content-center justify-items-center text-center'
-          : 'content-between',
+          : 'content-end',
         state === 'failed' && 'opacity-60',
       )}
     >
@@ -343,11 +356,6 @@ function LutTile(props: {
       />
       {props.icon && (
         <span className="text-lf-on-photo-ink/80">{props.icon}</span>
-      )}
-      {props.eyebrow && (
-        <span className="min-w-0 truncate pr-3 text-[0.56rem] font-semibold uppercase leading-none tracking-wide text-lf-on-photo-ink/52">
-          {props.eyebrow}
-        </span>
       )}
       <span
         className={clsxm(

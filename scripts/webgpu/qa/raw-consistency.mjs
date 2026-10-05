@@ -1099,9 +1099,9 @@ class DesktopDriver {
     return titles
   }
 
-  // Catalog entries are addressed by position: an entry relabels itself with
-  // the title from its entry manifest once loaded ("ARRI 3110 Film A" becomes
-  // "3110 Film A"), so the listing title is only a name for the scenario.
+  // Catalog entries are addressed by position. An entry keeps its catalog
+  // title once loaded, but two catalogs can list one title, so the listing
+  // title is only a name for the scenario.
   async loadCatalogLook(index, title) {
     await this.openCard('look')
     await this.page
@@ -1612,8 +1612,9 @@ class MobileDriver extends DesktopDriver {
     )
   }
 
-  // Strip tiles are addressed by position, like the desktop catalog: an
-  // entry relabels itself with its manifest title once loaded.
+  // Strip tiles are addressed by position, like the desktop catalog. A tile
+  // keeps its catalog title in every state; family dividers sit between
+  // groups and are not tiles.
   async loadCatalogLook(index, title) {
     await this.openLook()
     await this.catalogTiles().first().waitFor({ timeout: 60_000 })

@@ -704,6 +704,39 @@ describe('useOnlineLutSources', () => {
     })
   })
 
+  it('keeps the catalog title an entry was listed under once its manifest resolves', async () => {
+    hideDefaultSource()
+    setupFetchJson({
+      [catalogUrl]: catalogDocument(),
+      // The entry manifest names the look without its brand.
+      [entryUrl]: entryManifest({ title: '2383 Rec.709' }),
+    })
+
+    const loadOnlineLUT = createLoadOnlineLUT()
+    const { result } = renderHook(() =>
+      useOnlineLutSources({
+        search: `?luts=${encodeURIComponent(catalogUrl)}`,
+        pathname: '/raw',
+        loadOnlineLUT,
+      }),
+    )
+
+    await waitFor(() => expect(result.current.state.entries).toHaveLength(1))
+    await act(async () => {
+      await result.current.loadEntry('kodak-2383-rec709')
+    })
+
+    expect(result.current.state.entries[0]).toMatchObject({
+      title: 'Kodak 2383 Rec.709',
+      trustedContract: { outputTransfer: 'gamma24' },
+    })
+    // The load itself still runs on the resolved manifest.
+    expect(loadOnlineLUT).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '2383 Rec.709' }),
+      expect.anything(),
+    )
+  })
+
   it('does not duplicate resources when re-rendering with the same search string', async () => {
     hideDefaultSource()
     setupFetchJson({

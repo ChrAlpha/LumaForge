@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
 import {
   buildLutStripItems,
+  getAppliedStripEntry,
   getAppliedStripKey,
+  humanizeLutFamily,
   isLutEntryApplied,
 } from './mobile-lut-strip'
 
@@ -43,11 +45,31 @@ function entry(
 
 function kinds(items: ReturnType<typeof buildLutStripItems>) {
   return items.map((item) =>
-    item.kind === 'source'
-      ? `source:${item.resourceId}[${item.entries.map((e) => e.entry.id).join(',')}]`
+    item.kind === 'group'
+      ? `${item.label ?? '-'}@${item.resourceId}[${item.entries.map((e) => e.entry.id).join(',')}]`
       : item.kind,
   )
 }
+
+describe('humanizeLutFamily', () => {
+  it('keeps a short first token uppercase and title-cases a longer one', () => {
+    expect(humanizeLutFamily('arri-look-library')).toBe('ARRI')
+    expect(humanizeLutFamily('fujifilm-film-simulation')).toBe('Fujifilm')
+    expect(humanizeLutFamily('FUJIFILM-FILM-SIMULATION')).toBe('Fujifilm')
+    expect(humanizeLutFamily('kodak_print')).toBe('Kodak')
+    expect(humanizeLutFamily('Print Film')).toBe('Print')
+    expect(humanizeLutFamily('sony')).toBe('SONY')
+    expect(humanizeLutFamily('3d')).toBe('3D')
+  })
+
+  it('has no label for a missing or empty family', () => {
+    expect(humanizeLutFamily(undefined)).toBeNull()
+    expect(humanizeLutFamily(null)).toBeNull()
+    expect(humanizeLutFamily('')).toBeNull()
+    expect(humanizeLutFamily('  ')).toBeNull()
+    expect(humanizeLutFamily('-')).toBeNull()
+  })
+})
 
 describe('buildLutStripItems', () => {
   it('orders Original, then every source in source order, then Import', () => {
@@ -60,41 +82,81 @@ describe('buildLutStripItems', () => {
       ],
       applied: null,
     })
+    // Family-less entries fall back to their source label.
     expect(kinds(items)).toEqual([
       'original',
-      'source:one[a1,a2]',
-      'source:two[b1]',
+      'One@one[a1,a2]',
+      'Two@two[b1]',
       'import',
     ])
     // Nothing applied: the Original is.
     expect(items[0]).toMatchObject({ kind: 'original', applied: true })
-    // Two sources have entries, so each gets its label.
-    expect(items[1]).toMatchObject({ labelled: true, label: 'One' })
   })
 
-  it('labels no source when only one has entries, and skips empty sources', () => {
+  it('draws no divider for a lone family-less group, and skips empty sources', () => {
     const items = buildLutStripItems({
       resources: [resource('one', 'One'), resource('empty', 'Empty')],
       entries: [entry('a1', 'one', SHA_A)],
       applied: null,
     })
-    expect(kinds(items)).toEqual(['original', 'source:one[a1]', 'import'])
-    expect(items[1]).toMatchObject({ labelled: false })
+    expect(kinds(items)).toEqual(['original', '-@one[a1]', 'import'])
   })
 
-  it('uses the family as eyebrow, else the source label', () => {
+  it('groups consecutive entries by their humanized family, one divider each', () => {
     const items = buildLutStripItems({
       resources: [resource('one', 'LumaForge Profiles')],
       entries: [
-        entry('a1', 'one', SHA_A, { family: 'Print Film' }),
-        entry('a2', 'one', SHA_A),
+        entry('a1', 'one', SHA_A, { family: 'arri-look-library' }),
+        entry('a2', 'one', SHA_A, { family: 'arri-look-library' }),
+        entry('f1', 'one', SHA_A, { family: 'fujifilm-film-simulation' }),
+        entry('f2', 'one', SHA_A, { family: 'fujifilm-film-simulation' }),
+        entry('n1', 'one', SHA_A),
+        // Two slugs that read the same stay one group when they meet.
+        entry('a3', 'one', SHA_A, { family: 'arri-legacy' }),
+        entry('a4', 'one', SHA_A, { family: 'arri-look-library' }),
       ],
       applied: null,
     })
-    const source = items[1]
-    expect(
-      source.kind === 'source' && source.entries.map((e) => e.eyebrow),
-    ).toEqual(['Print Film', 'LumaForge Profiles'])
+    expect(kinds(items)).toEqual([
+      'original',
+      'ARRI@one[a1,a2]',
+      'Fujifilm@one[f1,f2]',
+      'LumaForge Profiles@one[n1]',
+      'ARRI@one[a3,a4]',
+      'import',
+    ])
+    // Keys stay unique when a family label comes back later in the list.
+    const keys = items.map((item) => item.key)
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('labels a lone group that has a family', () => {
+    const items = buildLutStripItems({
+      resources: [resource('one', 'LumaForge Profiles')],
+      entries: [entry('a1', 'one', SHA_A, { family: 'arri-look-library' })],
+      applied: null,
+    })
+    expect(kinds(items)).toEqual(['original', 'ARRI@one[a1]', 'import'])
+  })
+
+  it('titles every entry tile by its catalog title alone', () => {
+    const items = buildLutStripItems({
+      resources: [resource('one', 'LumaForge Profiles')],
+      entries: [
+        entry('a1', 'one', SHA_A, {
+          family: 'arri-look-library',
+          title: 'ARRI 3110 Film A',
+        }),
+      ],
+      applied: { name: '3110 Film A', sha256: SHA_A },
+    })
+    const group = items[1]
+    expect(group.kind === 'group' && group.entries[0]).toEqual({
+      key: 'one:a1',
+      entry: expect.objectContaining({ title: 'ARRI 3110 Film A' }),
+      applied: true,
+    })
+    expect(getAppliedStripEntry(items)?.entry.title).toBe('ARRI 3110 Film A')
   })
 
   it('puts the applied file after the Original when no entry matches it', () => {
@@ -103,10 +165,12 @@ describe('buildLutStripItems', () => {
       entries: [entry('a1', 'one', SHA_A)],
       applied: { name: 'Film', sha256: SHA_B, sourceName: 'film.cube' },
     })
+    // The file tile carries its own My file divider, so the catalog
+    // after it keeps one too.
     expect(kinds(items)).toEqual([
       'original',
       'custom',
-      'source:one[a1]',
+      'One@one[a1]',
       'import',
     ])
     expect(items[0]).toMatchObject({ applied: false })
@@ -120,10 +184,10 @@ describe('buildLutStripItems', () => {
       entries: [entry('a1', 'one', SHA_A), entry('b1', 'one', SHA_B)],
       applied: { name: 'B', sha256: SHA_B.toUpperCase() },
     })
-    expect(kinds(items)).toEqual(['original', 'source:one[a1,b1]', 'import'])
-    const source = items[1]
+    expect(kinds(items)).toEqual(['original', '-@one[a1,b1]', 'import'])
+    const group = items[1]
     expect(
-      source.kind === 'source' && source.entries.map((e) => e.applied),
+      group.kind === 'group' && group.entries.map((e) => e.applied),
     ).toEqual([false, true])
     expect(getAppliedStripKey(items)).toBe('one:b1')
   })

@@ -27,12 +27,15 @@ export type LutStripItem =
   | { kind: 'original'; key: 'original'; applied: boolean }
   | { kind: 'custom'; key: 'custom'; title: string }
   | {
-      kind: 'source'
+      kind: 'group'
       key: string
       resourceId: string
-      label: string
-      /** Only drawn when more than one source has entries. */
-      labelled: boolean
+      /**
+       * The slim divider label before the group: the humanized family, or
+       * the source label for entries without one. Null for a lone
+       * family-less group, which has nothing to tell apart.
+       */
+      label: string | null
       entries: LutStripEntryItem[]
     }
   | { kind: 'import'; key: 'import' }
@@ -40,7 +43,6 @@ export type LutStripItem =
 export interface LutStripEntryItem {
   key: string
   entry: OnlineEntry
-  eyebrow: string
   applied: boolean
 }
 
@@ -68,10 +70,26 @@ function resourceLabel(resource: OnlineResource) {
 }
 
 /**
+ * A family slug (`arri-look-library`, `fujifilm-film-simulation`) reads as
+ * its first token: kept uppercase when it is a short mark of four letters
+ * or fewer (ARRI), title case otherwise (Fujifilm). Null when the slug has
+ * no token to show.
+ */
+export function humanizeLutFamily(
+  family: string | null | undefined,
+): string | null {
+  const token = family?.trim().split(/[\s_-]+/)[0]
+  if (!token) return null
+  if (token.length <= 4) return token.toUpperCase()
+  return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase()
+}
+
+/**
  * Strip order: Original, then the applied LUT when it is a file that no
  * catalog entry matches, then every online source's entries in source
- * order (a source label before each when more than one source has any),
- * then Import .cube.
+ * order, then Import .cube. Consecutive entries of one source that share a
+ * family label form a group with one divider before it; entries without a
+ * family take the source label instead.
  */
 export function buildLutStripItems(input: {
   resources: readonly OnlineResource[]
@@ -79,48 +97,68 @@ export function buildLutStripItems(input: {
   applied: AppliedLut | null | undefined
   loaded?: LoadedLutEntry | null
 }): LutStripItem[] {
-  const sources = input.resources
-    .map((resource) => {
-      const label = resourceLabel(resource)
-      const entries = input.entries
-        .filter((entry) => entry.resourceId === resource.id)
-        .map<LutStripEntryItem>((entry) => ({
-          key: `${resource.id}:${entry.id}`,
-          entry,
-          eyebrow: entry.family || label,
-          applied: isLutEntryApplied(entry, input.applied, input.loaded),
-        }))
-      return { resource, label, entries }
-    })
-    .filter((source) => source.entries.length > 0)
-
-  const labelled = sources.length > 1
-  const anyEntryApplied = sources.some((source) =>
-    source.entries.some((item) => item.applied),
+  const groups: Extract<LutStripItem, { kind: 'group' }>[] = []
+  const familyLabelled = new Set<string>()
+  for (const resource of input.resources) {
+    const sourceLabel = resourceLabel(resource)
+    let current: (typeof groups)[number] | null = null
+    for (const entry of input.entries) {
+      if (entry.resourceId !== resource.id) continue
+      const family = humanizeLutFamily(entry.family)
+      const label = family ?? sourceLabel
+      const item: LutStripEntryItem = {
+        key: `${resource.id}:${entry.id}`,
+        entry,
+        applied: isLutEntryApplied(entry, input.applied, input.loaded),
+      }
+      if (current && current.label === label) {
+        current.entries.push(item)
+      } else {
+        current = {
+          kind: 'group',
+          key: `group:${resource.id}:${entry.id}`,
+          resourceId: resource.id,
+          label,
+          entries: [item],
+        }
+        groups.push(current)
+      }
+      if (family) familyLabelled.add(current.key)
+    }
+  }
+  const anyEntryApplied = groups.some((group) =>
+    group.entries.some((item) => item.applied),
   )
+  const custom = Boolean(input.applied && !anyEntryApplied)
+  // A lone family-less group has nothing to tell apart, unless the file
+  // tile (labelled My file) sits right before it.
+  if (groups.length === 1 && !custom && !familyLabelled.has(groups[0].key)) {
+    groups[0].label = null
+  }
 
   const items: LutStripItem[] = [
     { kind: 'original', key: 'original', applied: !input.applied },
   ]
-  if (input.applied && !anyEntryApplied) {
+  if (input.applied && custom) {
     items.push({
       kind: 'custom',
       key: 'custom',
       title: input.applied.sourceName || input.applied.name,
     })
   }
-  for (const source of sources) {
-    items.push({
-      kind: 'source',
-      key: `source:${source.resource.id}`,
-      resourceId: source.resource.id,
-      label: source.label,
-      labelled,
-      entries: source.entries,
-    })
-  }
+  items.push(...groups)
   items.push({ kind: 'import', key: 'import' })
   return items
+}
+
+/** The strip entry that reads as applied, when a catalog entry does. */
+export function getAppliedStripEntry(items: readonly LutStripItem[]) {
+  for (const item of items) {
+    if (item.kind !== 'group') continue
+    const applied = item.entries.find((entry) => entry.applied)
+    if (applied) return applied
+  }
+  return null
 }
 
 /** The key of the tile that reads as applied, for scrolling it into view. */
@@ -128,10 +166,6 @@ export function getAppliedStripKey(items: readonly LutStripItem[]) {
   for (const item of items) {
     if (item.kind === 'original' && item.applied) return item.key
     if (item.kind === 'custom') return item.key
-    if (item.kind === 'source') {
-      const applied = item.entries.find((entry) => entry.applied)
-      if (applied) return applied.key
-    }
   }
-  return null
+  return getAppliedStripEntry(items)?.key ?? null
 }

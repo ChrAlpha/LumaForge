@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { LutStripItem } from './mobile-lut-strip'
@@ -21,7 +21,6 @@ function rect(left: number, width: number): DOMRect {
 function items(appliedId: string | null): LutStripItem[] {
   const entry = (id: string) => ({
     key: `src:${id}`,
-    eyebrow: 'Film',
     applied: id === appliedId,
     entry: {
       id,
@@ -36,11 +35,10 @@ function items(appliedId: string | null): LutStripItem[] {
   return [
     { kind: 'original', key: 'original', applied: appliedId === null },
     {
-      kind: 'source',
-      key: 'source:src',
+      kind: 'group',
+      key: 'group:src:a',
       resourceId: 'src',
-      label: 'Source',
-      labelled: false,
+      label: null,
       entries: ['a', 'b', 'c', 'd', 'e', 'f'].map(entry),
     },
     { kind: 'import', key: 'import' },
@@ -153,5 +151,66 @@ describe('mobileLutStrip', () => {
     })
     expect(strip).toHaveAttribute('data-fade-left', 'true')
     expect(strip).toHaveAttribute('data-fade-right', 'true')
+  })
+
+  it('names a tile by its catalog title in every state, under one divider per group', () => {
+    const entry = {
+      id: '3110',
+      resourceId: 'src',
+      title: 'ARRI 3110 Film A',
+      family: 'arri-look-library',
+      sourceUrl: '',
+      sourceType: 'catalog-entry' as const,
+      cube: { url: '', sha256: 'a'.repeat(64) },
+      tags: [],
+    }
+    const strip = (applied: boolean): LutStripItem[] => [
+      { kind: 'original', key: 'original', applied: !applied },
+      {
+        kind: 'group',
+        key: 'group:src:3110',
+        resourceId: 'src',
+        label: 'ARRI',
+        entries: [{ key: 'src:3110', entry, applied }],
+      },
+      { kind: 'import', key: 'import' },
+    ]
+    const props = {
+      failedEntryId: null,
+      entryLoadProgress: null,
+      disabled: false,
+      appliedNeedsContract: false,
+      onSelectOriginal: vi.fn(),
+      onSelectEntry: vi.fn(),
+      onCancelEntry: vi.fn(),
+      onImport: vi.fn(),
+    }
+    const titleOf = () => {
+      const tile = document.querySelector<HTMLElement>(
+        '[data-mobile-lut-tile="entry"]',
+      )!
+      return { state: tile.dataset.state, text: tile.textContent }
+    }
+    const { rerender } = render(
+      <MobileLutStrip {...props} items={strip(false)} loadingEntryId={null} />,
+    )
+    expect(titleOf()).toEqual({ state: 'idle', text: 'ARRI 3110 Film A' })
+
+    rerender(
+      <MobileLutStrip {...props} items={strip(false)} loadingEntryId="3110" />,
+    )
+    expect(titleOf()).toEqual({ state: 'loading', text: 'ARRI 3110 Film A' })
+
+    rerender(
+      <MobileLutStrip {...props} items={strip(true)} loadingEntryId={null} />,
+    )
+    expect(titleOf()).toEqual({ state: 'applied', text: 'ARRI 3110 Film A' })
+
+    // No eyebrow on the tile; the family is named once, by the divider.
+    const group = screen.getByRole('group', { name: 'ARRI' })
+    const divider = group.querySelector('[data-mobile-lut-group-label]')
+    expect(divider).toHaveTextContent('ARRI')
+    expect(divider).toHaveAttribute('aria-hidden', 'true')
+    expect(within(group).getAllByRole('button')).toHaveLength(1)
   })
 })

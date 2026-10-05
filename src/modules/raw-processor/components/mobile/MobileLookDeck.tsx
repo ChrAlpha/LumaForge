@@ -217,7 +217,7 @@ export function MobileLookDeck(props: {
         }}
         onSelectEntry={(entryId) => {
           const item = items
-            .flatMap((entry) => (entry.kind === 'source' ? entry.entries : []))
+            .flatMap((entry) => (entry.kind === 'group' ? entry.entries : []))
             .find((entry) => entry.entry.id === entryId)
           if (item?.applied) return
           loadEntry(entryId)

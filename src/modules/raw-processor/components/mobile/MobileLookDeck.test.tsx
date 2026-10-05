@@ -214,7 +214,12 @@ describe('mobileLookDeck', () => {
     const file = tile('client-look.cube')
     expect(file).toHaveAttribute('aria-pressed', 'true')
     expect(file).toHaveAttribute('data-state', 'needs-contract')
-    expect(file).toHaveTextContent('My file')
+    // My file names the tile's group, the way a family names its looks.
+    expect(
+      within(screen.getByRole('group', { name: 'My file' })).getByRole(
+        'button',
+      ),
+    ).toBe(file)
     // Amber marks the contract, and words carry it too.
     expect(file.querySelector('[data-needs-contract-dot]')).toHaveClass(
       'bg-lf-amber',
