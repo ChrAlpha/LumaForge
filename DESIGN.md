@@ -505,7 +505,7 @@ A scrub never changes the layout's inputs, so it never resizes the photo.
 Without a known aspect the stage falls back to the whole region above the deck.
 The compare lens, its hints, the peek pill, the CPU preview notice, and the floating histogram read the `--raw-photo-*` rect, so they ride on the photo rather than on the stage around it.
 The CPU preview notice sits 8px inside the photo's top edge, beside the lens or below it on a narrow photo, never over it.
-In the CPU preview, which has no split surface, the lens is an original toggle (`aria-pressed`, a hold still peeks) and the CPU stage draws no toggle row under the photo.
+In the CPU preview, which has no split surface, the lens is an original toggle (`aria-pressed`, a hold still peeks) and the CPU stage draws no toggle row under the photo. A pinned original would hide every edit made under it, so a scrub starting, a tool change, or a look applied or cleared drops the pin.
 On a photo too narrow to hold them clear of the lens, a lens hint drops below the lens and the peek pill leaves the lens's row the same way; both stay on the photo.
 
 Immersive and the empty state reset both insets to `0`, so entering immersive grows the photo back to full bleed in the same motion as the chrome fade.

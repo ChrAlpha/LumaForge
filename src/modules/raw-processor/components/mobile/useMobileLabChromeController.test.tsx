@@ -182,4 +182,54 @@ describe('useMobileLabChromeController', () => {
     expect(result.current.originalShown).toBe(false)
     expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
   })
+
+  describe('a pinned original (CPU preview lens)', () => {
+    function pinned() {
+      const hook = renderController({ compareMode: 'original' })
+      act(() => hook.result.current.toggleOriginal())
+      hook.rerender({
+        ...hook.initialProps,
+        compareMode: 'original',
+        viewMode: 'original',
+      })
+      expect(hook.result.current.originalShown).toBe(true)
+      hook.onViewModeChange.mockClear()
+      return hook
+    }
+
+    it('drops when a scrub starts, so the edit shows', () => {
+      const { result, onViewModeChange } = pinned()
+      act(() =>
+        result.current.setScrubField({ kind: 'tone', key: 'userExposureEv' }),
+      )
+      expect(result.current.originalShown).toBe(false)
+      expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
+    })
+
+    it('drops when the tool changes', () => {
+      const { result, onViewModeChange } = pinned()
+      act(() => result.current.handleModeChange('tone'))
+      expect(result.current.originalShown).toBe(false)
+      expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
+    })
+
+    it('drops when a look is applied', () => {
+      const { result, rerender, initialProps, onViewModeChange } = pinned()
+      rerender({
+        ...initialProps,
+        compareMode: 'original',
+        viewMode: 'original',
+        appliedLookKey: 'abc|Portra 400',
+      })
+      expect(result.current.originalShown).toBe(false)
+      expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
+    })
+
+    it('stays through a scrub ending and a tap on the open tool', () => {
+      const { result } = pinned()
+      act(() => result.current.setScrubField(null))
+      act(() => result.current.handleModeChange('look'))
+      expect(result.current.originalShown).toBe(true)
+    })
+  })
 })

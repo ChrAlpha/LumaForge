@@ -26,6 +26,11 @@ interface UseMobileLabChromeControllerInput {
   previewFrameEl?: HTMLDivElement | null
   viewMode: MobileLabViewMode
   onViewModeChange: (mode: MobileLabViewMode) => void
+  /**
+   * Identifies the applied look (null without one). A change means a look
+   * was applied or cleared, which drops a pinned original.
+   */
+  appliedLookKey?: string | null
 }
 
 export function useMobileLabChromeController({
@@ -38,6 +43,7 @@ export function useMobileLabChromeController({
   previewFrameEl,
   viewMode,
   onViewModeChange,
+  appliedLookKey = null,
 }: UseMobileLabChromeControllerInput) {
   const prefersReduced = useReducedMotion() ?? false
   const [mode, setMode] = useState<MobileMode>('look')
@@ -108,6 +114,29 @@ export function useMobileLabChromeController({
       setOriginalShown(false)
     }
   }, [viewMode])
+
+  // A pinned original (the CPU preview's lens) shows the unprocessed photo,
+  // so it would hide every edit made under it. An edit drops it: a scrub
+  // starting, a tool change, a look applied or cleared. A lens still held
+  // restores the processed photo on release.
+  const dropOriginalPin = useCallback(() => {
+    if (!originalShownRef.current) return
+    originalShownRef.current = false
+    setOriginalShown(false)
+    if (!lensPeekActive.current) requestViewMode('processed')
+  }, [requestViewMode])
+
+  const previousLookKey = useRef(appliedLookKey)
+  useEffect(() => {
+    if (previousLookKey.current === appliedLookKey) return
+    previousLookKey.current = appliedLookKey
+    dropOriginalPin()
+  }, [appliedLookKey, dropOriginalPin])
+
+  const startScrub = (field: ScrubFieldId | null) => {
+    if (field !== null) dropOriginalPin()
+    setScrubField(field)
+  }
 
   // A new compare mode (the GPU preview falling back to the CPU one) has a
   // different lens: nothing the old one held carries over.
@@ -350,6 +379,7 @@ export function useMobileLabChromeController({
   // Tools own the deck; Compare is a lens over the photo, so switching tools
   // never touches the split.
   const handleModeChange = (nextMode: MobileMode) => {
+    if (nextMode !== mode) dropOriginalPin()
     setExportOpen(false)
     setMode(nextMode)
     setLookView('strip')
@@ -393,7 +423,7 @@ export function useMobileLabChromeController({
     previewReleasedReady,
     handoffActive,
     focusActive,
-    setScrubField,
+    setScrubField: startScrub,
     setMoreOpen,
     setHistogramOpen,
     setDockExpanded,

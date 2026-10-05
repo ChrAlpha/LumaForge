@@ -157,6 +157,9 @@ export function MobileLabChrome(props: {
     onViewModeChange: props.onViewModeChange,
     compareDisabled,
     compareMode,
+    appliedLookKey: props.lutBrowser.currentLutName
+      ? `${props.lutBrowser.appliedLut?.sha256 ?? ''}|${props.lutBrowser.currentLutName}`
+      : null,
   })
   const lensVisible =
     props.hasImage && !immersive && !focusActive && !handoffActive
