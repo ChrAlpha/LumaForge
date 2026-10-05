@@ -65,6 +65,24 @@ export function isLutEntryApplied(
   return loaded?.entryId === entry.id && sameSha(loaded.sha256, applied.sha256)
 }
 
+/**
+ * The name the applied look goes by everywhere it is named: a catalog look
+ * by the title its catalog lists, a user's file by its file name, else the
+ * LUT's own title. Null with no LUT applied.
+ */
+export function resolveAppliedLookTitle(input: {
+  entries: readonly OnlineEntry[]
+  applied: AppliedLut | null | undefined
+  loaded?: LoadedLutEntry | null
+}): string | null {
+  const { applied } = input
+  if (!applied) return null
+  const entry = input.entries.find((candidate) =>
+    isLutEntryApplied(candidate, applied, input.loaded),
+  )
+  return entry?.title || applied.sourceName || applied.name
+}
+
 function resourceLabel(resource: OnlineResource) {
   return resource.label || resource.url
 }

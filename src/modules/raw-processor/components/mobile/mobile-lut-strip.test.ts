@@ -7,6 +7,7 @@ import {
   getAppliedStripKey,
   humanizeLutFamily,
   isLutEntryApplied,
+  resolveAppliedLookTitle,
 } from './mobile-lut-strip'
 
 type Entry = UseOnlineLutSourcesResult['state']['entries'][number]
@@ -216,5 +217,63 @@ describe('isLutEntryApplied', () => {
     expect(
       isLutEntryApplied(direct, applied, { entryId: 'other', sha256: SHA_A }),
     ).toBe(false)
+  })
+})
+
+describe('resolveAppliedLookTitle', () => {
+  const catalog = [
+    entry('3110', 'one', SHA_A, { title: 'ARRI 3110 Film A' }),
+    entry('direct', 'one', '', {
+      sourceType: 'direct-cube',
+      title: 'teal.cube',
+    }),
+  ]
+
+  it('names a catalog look by its catalog title, not the LUT title', () => {
+    expect(
+      resolveAppliedLookTitle({
+        entries: catalog,
+        applied: {
+          name: '3110 Film A',
+          sha256: SHA_A,
+          sourceName: '3110 Film A',
+        },
+      }),
+    ).toBe('ARRI 3110 Film A')
+    // An entry without a declared hash, through the load the strip made.
+    expect(
+      resolveAppliedLookTitle({
+        entries: [
+          entry('direct', 'one', '', {
+            sourceType: 'direct-cube',
+            title: 'Teal Direct',
+          }),
+        ],
+        applied: { name: 'TEAL', sha256: SHA_B, sourceName: 'teal.cube' },
+        loaded: { entryId: 'direct', sha256: SHA_B },
+      }),
+    ).toBe('Teal Direct')
+  })
+
+  it("names the user's file by its file name, else the LUT title", () => {
+    expect(
+      resolveAppliedLookTitle({
+        entries: catalog,
+        applied: {
+          name: 'Client Look',
+          sha256: SHA_B,
+          sourceName: 'client-look.cube',
+        },
+      }),
+    ).toBe('client-look.cube')
+    expect(
+      resolveAppliedLookTitle({
+        entries: catalog,
+        applied: { name: 'Client Look' },
+      }),
+    ).toBe('Client Look')
+    expect(resolveAppliedLookTitle({ entries: catalog, applied: null })).toBe(
+      null,
+    )
   })
 })

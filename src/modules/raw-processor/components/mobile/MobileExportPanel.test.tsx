@@ -72,6 +72,16 @@ describe('mobileExportPanel', () => {
     expect(recap).toHaveTextContent(
       'Look: ARRI 3110 Film A · 70% · 3 adjustments · Transform applied',
     )
+    // Every part that opens on a separator keeps its leading space: a
+    // flex item would drop it ("3110 Film A· 70%").
+    const parts = Array.from(
+      recap.querySelectorAll<HTMLElement>('span > span'),
+    ).filter((part) => /^\s/.test(part.textContent ?? ''))
+    expect(parts.map((part) => part.textContent)).toEqual([
+      ' · 70%',
+      ' · 3 adjustments · Transform applied',
+    ])
+    for (const part of parts) expect(part).toHaveClass('whitespace-pre')
     // Quiet: body ink at the 68 step, small, tabular.
     expect(recap).toHaveClass(
       'text-[0.72rem]',

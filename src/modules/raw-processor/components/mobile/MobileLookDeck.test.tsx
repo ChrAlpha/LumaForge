@@ -509,6 +509,24 @@ describe('mobileLookDeck', () => {
       expect(screen.getByRole('group', { name: 'Looks' })).toBeInTheDocument()
     })
 
+    it('titles the contract by the catalog title of the applied look', () => {
+      renderDeck(
+        look({
+          currentLutName: '2383 cube title',
+          appliedLut: {
+            name: '2383 cube title',
+            sha256: SHA_KODAK,
+            sourceName: '2383 manifest title',
+          },
+          lutProfileResolution: { kind: 'unknown' },
+        }),
+        { initialView: 'contract' },
+      )
+      expect(
+        screen.getByRole('region', { name: 'Kodak 2383: input' }),
+      ).toBeInTheDocument()
+    })
+
     it('leads with recommendations: one tap applies a complete one', async () => {
       const complete = confirmedDisplayLook
       const controls = look({

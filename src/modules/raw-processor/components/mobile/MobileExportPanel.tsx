@@ -76,6 +76,24 @@ function ExportResultAction(props: {
  * when known, then the look, the Adjust fields moved off neutral, and an
  * applied Transform. Nothing here is a promise the export does not keep.
  */
+/** Marks the look's name in its recap template; never part of a name. */
+const LOOK_NAME_SLOT = '\u2063'
+
+/**
+ * Cut the localized look line around the name, so the name alone truncates
+ * and the strength after it always shows, in whatever order a locale puts
+ * them.
+ */
+function splitLookRecap(line: string, name: string) {
+  const at = line.indexOf(LOOK_NAME_SLOT)
+  if (at < 0) return { lead: line, name: '', tail: '' }
+  return {
+    lead: line.slice(0, at),
+    name,
+    tail: line.slice(at + LOOK_NAME_SLOT.length),
+  }
+}
+
 function ExportRecapLines({ recap }: { recap: MobileExportRecap }) {
   const { t } = useI18n()
   const details = [
@@ -88,6 +106,18 @@ function ExportRecapLines({ recap }: { recap: MobileExportRecap }) {
       : null,
     recap.transformApplied ? t('raw.mobile.export.recap.transform') : null,
   ].filter((item): item is string => item !== null)
+  const look = recap.look
+    ? splitLookRecap(
+        t('raw.mobile.export.recap.look', {
+          name: LOOK_NAME_SLOT,
+          strength:
+            recap.look.strength === 'off'
+              ? t('raw.strength.off')
+              : `${recap.look.percent}%`,
+        }),
+        recap.look.name,
+      )
+    : null
 
   return (
     <p
@@ -103,24 +133,23 @@ function ExportRecapLines({ recap }: { recap: MobileExportRecap }) {
           </>
         )}
       </span>
+      {/* Each part is a flex item, and a flex item drops the white space
+          it starts with: parts that open on a separator keep it with
+          whitespace-pre. */}
       <span className="flex min-w-0 whitespace-nowrap">
-        {recap.look ? (
+        {look ? (
           <>
             <span className="min-w-0 truncate">
-              {t('raw.mobile.export.recap.look', { name: recap.look.name })}
+              {look.lead}
+              {look.name}
             </span>
-            <span className="shrink-0">
-              {' · '}
-              {recap.look.strength === 'off'
-                ? t('raw.strength.off')
-                : `${recap.look.percent}%`}
-            </span>
+            <span className="shrink-0 whitespace-pre">{look.tail}</span>
           </>
         ) : (
           <span className="shrink-0">{t('raw.mobile.export.recap.noLut')}</span>
         )}
         {details.length > 0 && (
-          <span className="shrink-0">{` · ${details.join(' · ')}`}</span>
+          <span className="shrink-0 whitespace-pre">{` · ${details.join(' · ')}`}</span>
         )}
       </span>
     </p>

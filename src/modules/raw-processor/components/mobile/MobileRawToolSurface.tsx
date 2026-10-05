@@ -3,6 +3,7 @@ import { useI18n } from '~/lib/i18n'
 import { useRawWorkflowContext } from '../RawWorkflowContext'
 import { buildMobileExportRecap } from './export-recap'
 import { buildMobileDetailsSheet, getCameraName } from './mobile-details-sheet'
+import { resolveAppliedLookTitle } from './mobile-lut-strip'
 import { MobileExportPanel } from './MobileExportPanel'
 import { MobileLabChrome } from './MobileLabChrome'
 
@@ -43,9 +44,16 @@ export function MobileRawToolSurface() {
     t,
   )
 
+  // The recap names a catalog look the way its tile does.
+  const lookTitle = resolveAppliedLookTitle({
+    entries: props.onlineLutSources?.state.entries ?? [],
+    applied: props.currentLutName
+      ? (props.appliedLut ?? { name: props.currentLutName })
+      : null,
+  })
   const exportRecap = buildMobileExportRecap({
     deliveredSize: props.deliveredExportSize,
-    lutName: props.currentLutName,
+    lutName: lookTitle,
     strength: props.activeIntensity,
     tone: props.tone,
     color: props.color,

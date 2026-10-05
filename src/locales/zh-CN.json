@@ -113,7 +113,7 @@
   "raw.mobile.export.done": "已导出",
   "raw.mobile.export.close": "关闭导出",
   "raw.mobile.export.recap.fullRes": "全分辨率 JPEG",
-  "raw.mobile.export.recap.look": "风格：{{name}}",
+  "raw.mobile.export.recap.look": "风格：{{name}} · {{strength}}",
   "raw.mobile.export.recap.noLut": "未使用 LUT",
   "raw.mobile.export.recap.adjustmentsOne": "1 项调整",
   "raw.mobile.export.recap.adjustments": "{{count}} 项调整",

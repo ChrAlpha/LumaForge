@@ -13,7 +13,7 @@ import { useLutContractSummary } from '../tools/lut/useLutContractSummary'
 import { useOnlineLutEntryLoader } from '../tools/lut/useOnlineLutEntryLoader'
 import type { StrengthLevel } from '../tools/StrengthControl'
 import type { AppliedLut, LoadedLutEntry } from './mobile-lut-strip'
-import { buildLutStripItems } from './mobile-lut-strip'
+import { buildLutStripItems, resolveAppliedLookTitle } from './mobile-lut-strip'
 import type { MobileLookView } from './mobile-stage-layout'
 import type { LookContractStep } from './MobileLookFooter'
 import { MobileLookFooter } from './MobileLookFooter'
@@ -185,7 +185,7 @@ export function MobileLookDeck(props: {
         transition={surfaceFade}
       >
         <MobileLutContractView
-          lutName={applied?.sourceName || applied?.name || ''}
+          lutName={resolveAppliedLookTitle({ entries, applied, loaded }) ?? ''}
           editor={editor}
           onExit={() => onViewChange('strip')}
         />

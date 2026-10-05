@@ -113,7 +113,7 @@
   "raw.mobile.export.done": "Exported",
   "raw.mobile.export.close": "Close export",
   "raw.mobile.export.recap.fullRes": "Full-resolution JPEG",
-  "raw.mobile.export.recap.look": "Look: {{name}}",
+  "raw.mobile.export.recap.look": "Look: {{name}} · {{strength}}",
   "raw.mobile.export.recap.noLut": "No LUT",
   "raw.mobile.export.recap.adjustmentsOne": "1 adjustment",
   "raw.mobile.export.recap.adjustments": "{{count}} adjustments",
