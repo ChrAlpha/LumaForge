@@ -428,12 +428,12 @@ test('keeps mobile /raw toasts below the topbar and its Export action', async ({
     testInfo.project.name !== 'webkit-ios-safe',
     'mobile toast lane targets the iOS project',
   )
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(180_000)
 
   await page.goto('/raw')
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-  await loadRawFixture(page)
+  await loadRawFixture(page, rawPath)
   await expect(
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
   ).toBeVisible({ timeout: 90_000 })

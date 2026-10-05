@@ -1,11 +1,14 @@
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import process from 'node:process'
 
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
+
+import {
+  gateRawFixture,
+  resolvePublicRawFixture,
+} from '../../scripts/ci/raw-fixtures.mjs'
 
 function createIdentityCube(title: string, size = 17) {
   const lines = [`TITLE "${title}"`, `LUT_3D_SIZE ${size}`]
@@ -97,15 +100,13 @@ function createCatalogFixture() {
   }
 }
 
-const RAW_FIXTURE =
-  process.env.LUMAFORGE_MOBILE_RAW ??
-  '/workspaces/LumaForge/test-images/SGL_1998.NEF'
+const RAW_FIXTURE = resolvePublicRawFixture()
 
-async function loadRawFixtureMobile(page: Page) {
+async function loadRawFixtureMobile(page: Page, fixture: string) {
   const fileChooserPromise = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: /browse raw files/i }).click()
   const fileChooser = await fileChooserPromise
-  await fileChooser.setFiles(RAW_FIXTURE)
+  await fileChooser.setFiles(fixture)
   await expect(
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
   ).toBeVisible({ timeout: 90_000 })
@@ -366,7 +367,7 @@ test('mobile tries a catalog look on the photo from the Look strip', async ({
     testInfo.project.name !== 'webkit-ios-safe',
     'mobile Look deck targets the iOS project',
   )
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  const rawFixture = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(180_000)
 
   const fixture = createCatalogFixture()
@@ -388,7 +389,7 @@ test('mobile tries a catalog look on the photo from the Look strip', async ({
   await page.goto(
     `/raw?luts=${encodeURIComponent('https://example.com/catalog.json')}`,
   )
-  await loadRawFixtureMobile(page)
+  await loadRawFixtureMobile(page, rawFixture)
 
   // Look opens with the strip: Original applied, the catalog's look, Import.
   const strip = lookStrip(page)
@@ -445,11 +446,11 @@ test("mobile chooses an imported LUT's contract inline, with the photo in view",
     testInfo.project.name !== 'webkit-ios-safe',
     'mobile Look deck targets the iOS project',
   )
-  test.skip(!existsSync(RAW_FIXTURE), `Missing RAW fixture: ${RAW_FIXTURE}`)
+  const rawFixture = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(180_000)
 
   await page.goto('/raw')
-  await loadRawFixtureMobile(page)
+  await loadRawFixtureMobile(page, rawFixture)
 
   const cubePath = testInfo.outputPath('inline-contract.cube')
   await writeFile(cubePath, createIdentityCube('Inline Contract'), 'utf8')
