@@ -1,4 +1,7 @@
-import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
+import type {
+  ExportColorGraphStep,
+  RawRenderExposure,
+} from '@lumaforge/luma-color-runtime'
 import {
   CHROMA_CLAMP_HIGH,
   CHROMA_CLAMP_LOW,
@@ -423,6 +426,8 @@ function createFileWithSize(name: string, size: number) {
   return file
 }
 
+// Workflow atom hooks are bound to the shared jotaiStore, so a fresh Provider
+// would not isolate them: each test resets that store in beforeEach/afterEach.
 function wrapper({ children }: { children: ReactNode }) {
   return <Provider store={jotaiStore}>{children}</Provider>
 }
@@ -1630,6 +1635,51 @@ describe('useRawWorkflow embedded preview state', () => {
     })
   })
 
+  it('routes a compare split written in the loadFile tick into the new session only', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+
+    act(() => {
+      result.current.setCompareSplit(0.8)
+    })
+    expect(getProcessingParams().compareSplit).toBe(0.8)
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+
+    // Both callbacks come from the pre-load render: the split is written
+    // before React re-renders with the session that loadFile just created.
+    const { loadFile, setCompareSplit } = result.current
+    let loadPromise!: Promise<void>
+    await act(async () => {
+      loadPromise = loadFile(new File(['raw'], 'frame.ARW'))
+      setCompareSplit(0.3)
+
+      expect(jotaiStore.get(currentSessionAtom)?.sourceFile.name).toBe(
+        'frame.ARW',
+      )
+      expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
+        mode: 'compare',
+        compareSplit: 0.3,
+      })
+      expect(getProcessingParams()).toMatchObject({
+        viewMode: 'compare',
+        compareSplit: 0.8,
+      })
+
+      await loadPromise
+    })
+
+    expect(result.current.status).toBe('ready')
+    expect(result.current.viewMode).toBe('compare')
+    expect(result.current.compareSplit).toBe(0.3)
+    expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
+      mode: 'compare',
+      compareSplit: 0.3,
+    })
+    expect(getProcessingParams()).toMatchObject({
+      viewMode: 'compare',
+      compareSplit: 0.8,
+    })
+  })
+
   it('keeps view mode params and session view state in sync', () => {
     jotaiStore.set(currentSessionAtom, createTestSession())
 
@@ -2121,6 +2171,10 @@ describe('useRawWorkflow embedded preview state', () => {
 
     act(() => result.current.previewTransform!.commit(SAMPLE_GEOMETRY))
     expect(request.signal.aborted).toBe(true)
+    const committedSession = jotaiStore.get(currentSessionAtom)
+    expect(committedSession?.exportGeometry).toEqual(SAMPLE_GEOMETRY)
+    expect(committedSession?.exportState.status).toBe('idle')
+    expect(committedSession?.exportState.result).toBeUndefined()
     await act(async () => {
       pending.resolve({
         filename: 'stale.jpg',
@@ -2132,6 +2186,84 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.exportResult).toBeNull()
     expect(result.current.exportShareCapability.available).toBe(false)
     expect(result.current.status).toBe('ready')
+    expect(jotaiStore.get(currentSessionAtom)).toBe(committedSession)
+  })
+
+  it('clears a completed export and releases its output when a geometry is committed', async () => {
+    const cleanup = vi.fn(async () => undefined)
+    const output: FileBackedOutputResult = {
+      kind: 'file-backed',
+      exportId: 'export-geometry-invalidation',
+      filename: 'frame_neutral_fullres.jpg',
+      byteLength: 4,
+      mimeType: 'image/jpeg',
+      openBlob: vi.fn(async () => new Blob(['jpeg'], { type: 'image/jpeg' })),
+      cleanup,
+    }
+    exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
+      filename: 'frame_neutral_fullres.jpg',
+      output,
+    })
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    await act(async () => {
+      await result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+    })
+
+    expect(result.current.exportResult?.filename).toBe(
+      'frame_neutral_fullres.jpg',
+    )
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
+
+    act(() => result.current.previewTransform!.commit(SAMPLE_GEOMETRY))
+
+    expect(result.current.exportResult).toBeNull()
+    expect(result.current.status).toBe('ready')
+    expect(result.current.canExport).toBe(true)
+    expect(result.current.previewTransform?.active).toBe(true)
+    expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
+      exportGeometry: SAMPLE_GEOMETRY,
+      exportState: { status: 'idle', result: undefined },
+    })
+    await waitFor(() => {
+      expect(cleanup).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('keeps a geometry commit and a view mode change from one tick in the session only', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    const storedParamsBefore = getProcessingParams()
+    const { previewTransform, setViewMode } = result.current
+
+    act(() => {
+      previewTransform!.commit(SAMPLE_GEOMETRY)
+      setViewMode('original')
+
+      expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
+        exportGeometry: SAMPLE_GEOMETRY,
+        viewState: { mode: 'original', compareSplit: 0.5 },
+      })
+      expect(getProcessingParams()).toBe(storedParamsBefore)
+    })
+
+    expect(result.current.viewMode).toBe('original')
+    expect(result.current.params.viewMode).toBe('original')
+    expect(result.current.previewTransform?.active).toBe(true)
+    expect(result.current.previewTransform?.geometry).toEqual(SAMPLE_GEOMETRY)
+    expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
+      exportGeometry: SAMPLE_GEOMETRY,
+      viewState: { mode: 'original', compareSplit: 0.5 },
+    })
+    expect(getProcessingParams()).toBe(storedParamsBefore)
+    expect(getProcessingParams().viewMode).toBe('compare')
   })
 
   it('replaces preview transform source identity and resets its active flag with a new RAW', async () => {
@@ -2144,13 +2276,64 @@ describe('useRawWorkflow embedded preview state', () => {
     await act(async () => {
       await result.current.loadFile(new File(['raw'], 'second.ARW'))
     })
+    const replacementSession = jotaiStore.get(currentSessionAtom)
     act(() => first.commit(SAMPLE_GEOMETRY))
 
+    expect(jotaiStore.get(currentSessionAtom)).toBe(replacementSession)
+    expect(replacementSession?.exportGeometry).toBeUndefined()
     expect(result.current.previewTransform?.sourceId).not.toBe(first.sourceId)
     expect(result.current.previewTransform?.active).toBe(false)
     expect(result.current.canExport).toBe(true)
     act(() => result.current.reset())
     expect(result.current.previewTransform?.sourceId).toBeNull()
+  })
+
+  it('keeps a replacement session export when a previous source commits a geometry', async () => {
+    const cleanup = vi.fn(async () => undefined)
+    exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
+      filename: 'second_neutral_fullres.jpg',
+      output: {
+        kind: 'file-backed',
+        exportId: 'export-replacement-session',
+        filename: 'second_neutral_fullres.jpg',
+        byteLength: 4,
+        mimeType: 'image/jpeg',
+        openBlob: vi.fn(async () => new Blob(['jpeg'], { type: 'image/jpeg' })),
+        cleanup,
+      } satisfies FileBackedOutputResult,
+    })
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'first.ARW'))
+    })
+    const first = result.current.previewTransform!
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'second.ARW'))
+    })
+    await act(async () => {
+      await result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+    })
+    await waitFor(() => {
+      expect(
+        jotaiStore.get(currentSessionAtom)?.exportState.result?.manifestState
+          ?.status,
+      ).not.toBe('sealing')
+    })
+    const readySession = jotaiStore.get(currentSessionAtom)
+    expect(readySession?.exportState.status).toBe('ready')
+
+    act(() => first.commit(SAMPLE_GEOMETRY))
+    await flushPostCommitTasks()
+
+    expect(jotaiStore.get(currentSessionAtom)).toBe(readySession)
+    expect(result.current.exportResult?.filename).toBe(
+      'second_neutral_fullres.jpg',
+    )
+    expect(result.current.previewTransform?.active).toBe(false)
+    expect(cleanup).not.toHaveBeenCalled()
   })
 
   it.each(['missing-color-transform', 'unsupported-orientation'])(
@@ -4432,13 +4615,13 @@ describe('useRawWorkflow embedded preview state', () => {
     const [{ graph }] =
       exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
     const userExposureStep = graph.steps.find(
-      (step) => step.kind === 'user-exposure',
+      (step: ExportColorGraphStep) => step.kind === 'user-exposure',
     )
     const userContrastStep = graph.steps.find(
-      (step) => step.kind === 'user-contrast',
+      (step: ExportColorGraphStep) => step.kind === 'user-contrast',
     )
     const userRegionalToneStep = graph.steps.find(
-      (step) => step.kind === 'user-regional-tone',
+      (step: ExportColorGraphStep) => step.kind === 'user-regional-tone',
     )
     expect(userExposureStep).toMatchObject({
       kind: 'user-exposure',
@@ -4492,7 +4675,9 @@ describe('useRawWorkflow embedded preview state', () => {
     const [{ graph }] =
       exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
     expect(
-      graph.steps.find((step) => step.kind === 'user-color-balance'),
+      graph.steps.find(
+        (step: ExportColorGraphStep) => step.kind === 'user-color-balance',
+      ),
     ).toMatchObject({
       kind: 'user-color-balance',
       temperature: 35,
@@ -4868,13 +5053,75 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(currentSignal).toBeInstanceOf(AbortSignal)
     expect(currentSignal?.aborted).toBe(false)
     expect(currentSession.dispose).toHaveBeenCalledTimes(1)
+    const replacementSession = jotaiStore.get(currentSessionAtom)
+    expect(replacementSession?.sourceFile.name).toBe('current.ARW')
 
     await act(async () => {
       staleQuickDecode.reject(new Error('stale decode aborted'))
       await staleLoadPromise
     })
+    await flushScheduledToasts()
 
     expect(staleSession.dispose).toHaveBeenCalledTimes(1)
+    expect(jotaiStore.get(currentSessionAtom)).toBe(replacementSession)
+    expect(result.current.status).toBe('ready')
+    expect(result.current.error).toBeNull()
+    expect(toastMock.error).not.toHaveBeenCalled()
+  })
+
+  it('ignores a stale quick decode success after a replacement session is ready', async () => {
+    const staleQuickDecode = deferred<DecodedImage>()
+    const staleSession = {
+      sourceDimensions: defaultSourceDimensions,
+      extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
+      decodeQuickRaw: vi.fn().mockReturnValue(staleQuickDecode.promise),
+      decodeBoundedHqRaw: vi
+        .fn()
+        .mockResolvedValue(createDecodedImage('bounded-hq')),
+      probeExportCapability: vi
+        .fn()
+        .mockResolvedValue(createSupportedCapability()),
+      dispose: vi.fn(),
+    }
+    rawRuntimeAdapterMock.openSession.mockImplementationOnce(() =>
+      Promise.resolve(staleSession),
+    )
+
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    let staleLoadPromise!: Promise<void>
+
+    await act(async () => {
+      staleLoadPromise = result.current.loadFile(
+        new File(['stale'], 'stale.ARW'),
+      )
+      await Promise.resolve()
+    })
+    await waitFor(() => {
+      expect(staleSession.decodeQuickRaw).toHaveBeenCalled()
+    })
+    await act(async () => {
+      await result.current.loadFile(new File(['current'], 'current.ARW'))
+    })
+    await flushScheduledToasts()
+    toastMock.success.mockClear()
+    const replacementSession = jotaiStore.get(currentSessionAtom)
+    expect(replacementSession?.sourceFile.name).toBe('current.ARW')
+    expect(result.current.status).toBe('ready')
+
+    await act(async () => {
+      staleQuickDecode.resolve(
+        createDecodedImage('quick', { width: 10, height: 10 }),
+      )
+      await staleLoadPromise
+    })
+    await flushScheduledToasts()
+
+    expect(jotaiStore.get(currentSessionAtom)).toBe(replacementSession)
+    expect(result.current.sourceFileName).toBe('current.ARW')
+    expect(result.current.displaySource).toBe('bounded-hq')
+    expect(result.current.status).toBe('ready')
+    expect(staleSession.probeExportCapability).not.toHaveBeenCalled()
+    expect(toastMock.success).not.toHaveBeenCalled()
   })
 
   it('aborts in-flight export when a replacement file starts and ignores stale completion', async () => {
@@ -4943,6 +5190,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     expect(staleExportSignal?.aborted).toBe(true)
+    const replacementSession = jotaiStore.get(currentSessionAtom)
 
     await act(async () => {
       staleExport.resolve({
@@ -4957,6 +5205,57 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(append).not.toHaveBeenCalled()
     expect(result.current.sourceFileName).toBe('current.ARW')
     expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('idle')
+    expect(jotaiStore.get(currentSessionAtom)).toBe(replacementSession)
+    expect(result.current.exportResult).toBeNull()
+  })
+
+  it('ignores a stale export failure after a replacement file is ready', async () => {
+    const staleExport = deferred<{ filename: string; blob: Blob }>()
+    exportSystemMock.runFullResolutionExportJob.mockReturnValue(
+      staleExport.promise,
+    )
+
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['stale'], 'stale.ARW'))
+    })
+    let staleExportPromise!: Promise<void>
+    await act(async () => {
+      staleExportPromise = result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+      await Promise.resolve()
+    })
+    await waitFor(() => {
+      expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(
+        1,
+      )
+    })
+    const staleRequest =
+      exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0]
+
+    await act(async () => {
+      await result.current.loadFile(new File(['current'], 'current.ARW'))
+    })
+    expect(staleRequest.signal.aborted).toBe(true)
+    const replacementSession = jotaiStore.get(currentSessionAtom)
+    expect(replacementSession?.sourceFile.name).toBe('current.ARW')
+
+    await act(async () => {
+      staleExport.reject(new Error('stale export worker failed'))
+      await staleExportPromise
+    })
+    await flushScheduledToasts()
+
+    expect(jotaiStore.get(currentSessionAtom)).toBe(replacementSession)
+    expect(result.current.status).toBe('ready')
+    expect(result.current.error).toBeNull()
+    expect(result.current.exportResult).toBeNull()
+    expect(toastMock.error).not.toHaveBeenCalledWith(
+      'Export failed',
+      expect.anything(),
+    )
   })
 
   it('preserves ready session across unmount while bounded HQ is still pending', async () => {
@@ -4984,6 +5283,7 @@ describe('useRawWorkflow embedded preview state', () => {
       mounted.unmount()
     })
 
+    const preservedSession = jotaiStore.get(currentSessionAtom)
     const remounted = renderHook(() => useRawWorkflow(), { wrapper })
     expect(remounted.result.current.status).toBe('ready')
     expect(remounted.result.current.displaySource).toBe('quick')
@@ -4992,8 +5292,214 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(jotaiStore.get(currentSessionAtom)?.sourceFile.name).toBe(
       'frame.ARW',
     )
+    expect(jotaiStore.get(currentSessionAtom)).toBe(preservedSession)
+    await flushScheduledToasts()
+    toastMock.success.mockClear()
+
+    // The previous mount's bounded HQ decode settles into a workflow that no
+    // longer owns it.
+    await act(async () => {
+      boundedHqDecode.resolve(createDecodedImage('bounded-hq'))
+      await flushPromises()
+    })
+    await flushScheduledToasts()
+
+    expect(jotaiStore.get(currentSessionAtom)).toBe(preservedSession)
+    expect(remounted.result.current.displaySource).toBe('quick')
+    expect(toastMock.success).not.toHaveBeenCalled()
+
+    // The remounted workflow still routes view writes into the kept session.
+    const storedParamsBefore = getProcessingParams()
+    act(() => {
+      remounted.result.current.setCompareSplit(0.3)
+    })
+    expect(jotaiStore.get(currentSessionAtom)?.viewState.compareSplit).toBe(0.3)
+    expect(remounted.result.current.compareSplit).toBe(0.3)
+    expect(getProcessingParams()).toBe(storedParamsBefore)
 
     remounted.unmount()
+  })
+
+  it('keeps a preserved session and its write routing across a StrictMode remount', async () => {
+    const mounted = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await mounted.result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    act(() => {
+      mounted.unmount()
+    })
+    const preservedSession = jotaiStore.get(currentSessionAtom)
+    expect(preservedSession?.sourceFile.name).toBe('frame.ARW')
+    checkpointStoreMock.listSafeRetryCandidates.mockClear()
+
+    const remounted = renderHook(() => useRawWorkflow(), {
+      wrapper,
+      reactStrictMode: true,
+    })
+
+    // StrictMode replays mount effects, including the unmount cleanup.
+    expect(checkpointStoreMock.listSafeRetryCandidates).toHaveBeenCalledTimes(2)
+    expect(jotaiStore.get(currentSessionAtom)).toBe(preservedSession)
+    expect(remounted.result.current.status).toBe('ready')
+    expect(remounted.result.current.sourceFileName).toBe('frame.ARW')
+    expect(remounted.result.current.previewTransform?.sourceId).toBe(
+      preservedSession?.id,
+    )
+
+    const storedParamsBefore = getProcessingParams()
+    act(() => {
+      remounted.result.current.setCompareSplit(0.3)
+      remounted.result.current.previewTransform!.commit(SAMPLE_GEOMETRY)
+    })
+
+    expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
+      id: preservedSession?.id,
+      exportGeometry: SAMPLE_GEOMETRY,
+      viewState: { compareSplit: 0.3 },
+    })
+    expect(getProcessingParams()).toBe(storedParamsBefore)
+    expect(remounted.result.current.previewTransform?.active).toBe(true)
+
+    remounted.unmount()
+    expect(jotaiStore.get(currentSessionAtom)?.id).toBe(preservedSession?.id)
+  })
+
+  it('loads, routes compare writes and exports under StrictMode effect replay', async () => {
+    exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
+      filename: 'frame_neutral_fullres.jpg',
+      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+    })
+    const { result, unmount } = renderHook(() => useRawWorkflow(), {
+      wrapper,
+      reactStrictMode: true,
+    })
+
+    expect(checkpointStoreMock.listSafeRetryCandidates).toHaveBeenCalledTimes(2)
+
+    act(() => {
+      result.current.setCompareSplit(0.7)
+    })
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    expect(getProcessingParams().compareSplit).toBe(0.7)
+
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+
+    expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(1)
+    expect(result.current.status).toBe('ready')
+    expect(result.current.displaySource).toBe('bounded-hq')
+    expect(result.current.canExport).toBe(true)
+    expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
+      mode: 'compare',
+      compareSplit: 0.7,
+    })
+
+    await act(async () => {
+      await result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+    })
+
+    expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
+    expect(result.current.exportResult?.filename).toBe(
+      'frame_neutral_fullres.jpg',
+    )
+    const exportedSession = jotaiStore.get(currentSessionAtom)
+    expect(exportedSession?.exportState.status).toBe('ready')
+
+    unmount()
+
+    expect(jotaiStore.get(currentSessionAtom)?.id).toBe(exportedSession?.id)
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
+  })
+
+  it('does not mutate the kept session when an export resolves after unmount', async () => {
+    const pendingExport = deferred<{ filename: string; blob: Blob }>()
+    exportSystemMock.runFullResolutionExportJob.mockReturnValue(
+      pendingExport.promise,
+    )
+    const mounted = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await mounted.result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    let exportPromise!: Promise<void>
+    await act(async () => {
+      exportPromise = mounted.result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+      await Promise.resolve()
+    })
+    await waitFor(() => {
+      expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(
+        1,
+      )
+    })
+    const request =
+      exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0]
+
+    act(() => {
+      mounted.unmount()
+    })
+    expect(request.signal.aborted).toBe(true)
+    const keptSession = jotaiStore.get(currentSessionAtom)
+    expect(keptSession?.sourceFile.name).toBe('frame.ARW')
+
+    await act(async () => {
+      pendingExport.resolve({
+        filename: 'late_neutral_fullres.jpg',
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      })
+      await exportPromise
+    })
+    await flushScheduledToasts()
+
+    expect(jotaiStore.get(currentSessionAtom)).toBe(keptSession)
+    expect(keptSession?.exportState.result).toBeUndefined()
+  })
+
+  it('does not mutate the kept session when an export rejects after unmount', async () => {
+    const pendingExport = deferred<{ filename: string; blob: Blob }>()
+    exportSystemMock.runFullResolutionExportJob.mockReturnValue(
+      pendingExport.promise,
+    )
+    const mounted = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await mounted.result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    let exportPromise!: Promise<void>
+    await act(async () => {
+      exportPromise = mounted.result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+      await Promise.resolve()
+    })
+    await waitFor(() => {
+      expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(
+        1,
+      )
+    })
+
+    act(() => {
+      mounted.unmount()
+    })
+    const keptSession = jotaiStore.get(currentSessionAtom)
+    expect(keptSession?.sourceFile.name).toBe('frame.ARW')
+
+    await act(async () => {
+      pendingExport.reject(new Error('late export worker failed'))
+      await exportPromise
+    })
+    await flushScheduledToasts()
+
+    expect(jotaiStore.get(currentSessionAtom)).toBe(keptSession)
+    expect(toastMock.error).not.toHaveBeenCalledWith(
+      'Export failed',
+      expect.anything(),
+    )
   })
 
   it('aborts and disposes pending bounded HQ runtime session on reset', async () => {
@@ -5299,13 +5805,60 @@ describe('useRawWorkflow embedded preview state', () => {
       quickDecode.reject(new Error('late decode failed'))
       await loadPromise
     })
+    await flushScheduledToasts()
 
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
     expect(remounted.result.current.status).toBe('idle')
     expect(remounted.result.current.error).toBeNull()
     expect(toastMock.error).not.toHaveBeenCalledWith(
       'Failed to load RAW file',
       expect.anything(),
     )
+
+    remounted.unmount()
+  })
+
+  it('does not recreate the discarded session when a quick decode resolves after unmount', async () => {
+    const quickDecode = deferred<DecodedImage>()
+
+    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeAdapterMock.decodeQuickRaw.mockReturnValue(quickDecode.promise)
+    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+      createDecodedImage('bounded-hq'),
+    )
+
+    const mounted = renderHook(() => useRawWorkflow(), { wrapper })
+    let loadPromise!: Promise<void>
+
+    await act(async () => {
+      loadPromise = mounted.result.current.loadFile(
+        new File(['raw'], 'frame.ARW'),
+      )
+      await Promise.resolve()
+    })
+    await waitFor(() => {
+      expect(rawRuntimeAdapterMock.decodeQuickRaw).toHaveBeenCalled()
+    })
+
+    act(() => {
+      mounted.unmount()
+    })
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+
+    const remounted = renderHook(() => useRawWorkflow(), { wrapper })
+
+    await act(async () => {
+      quickDecode.resolve(createDecodedImage('quick'))
+      await loadPromise
+    })
+    await flushScheduledToasts()
+
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    expect(remounted.result.current.status).toBe('idle')
+    expect(remounted.result.current.displaySource).toBe('none')
+    expect(rawRuntimeAdapterMock.probeExportCapability).not.toHaveBeenCalled()
+    expect(toastMock.success).not.toHaveBeenCalled()
+    expect(toastMock.error).not.toHaveBeenCalled()
 
     remounted.unmount()
   })
