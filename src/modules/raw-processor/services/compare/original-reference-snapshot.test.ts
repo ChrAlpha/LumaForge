@@ -113,7 +113,7 @@ describe('original reference snapshot policy', () => {
     ).toBe(8_000_000)
   })
 
-  it('revokes object URLs exactly once', () => {
+  it('revokes the snapshot URL without keeping a history of released URLs', () => {
     const revokeObjectURL = vi.fn()
     const snapshot = {
       key: 'snapshot-a',
@@ -128,8 +128,11 @@ describe('original reference snapshot policy', () => {
     releaseOriginalReferenceSnapshot(snapshot, { revokeObjectURL })
     releaseOriginalReferenceSnapshot(snapshot, { revokeObjectURL })
 
-    expect(revokeObjectURL).toHaveBeenCalledTimes(1)
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:original-a')
+    // Release-once belongs to the snapshot's lifecycle owner, not to a
+    // module-wide record of every URL ever released.
+    expect(revokeObjectURL).toHaveBeenCalledTimes(2)
+    expect(revokeObjectURL).toHaveBeenNthCalledWith(1, 'blob:original-a')
+    expect(revokeObjectURL).toHaveBeenNthCalledWith(2, 'blob:original-a')
   })
 
   it('ignores missing snapshots before resolving the default URL revoker', () => {

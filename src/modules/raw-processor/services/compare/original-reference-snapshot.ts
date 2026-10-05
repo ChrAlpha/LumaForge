@@ -32,8 +32,6 @@ export type SnapshotCapabilityPolicyInput = {
   previewGpuBudgetMaxPixels?: number
 }
 
-const releasedSnapshotUrls = new Set<string>()
-
 export function createOriginalReferenceSnapshotKey({
   sessionId,
   displaySource,
@@ -81,6 +79,8 @@ export function getOriginalReferenceSnapshotMaxPixels({
   return Math.max(1, Math.min(displaySourcePixels, policyCap))
 }
 
+// Revokes the snapshot URL on every call. Releasing each snapshot once is the
+// job of its lifecycle owner, so nothing here remembers released URLs.
 export function releaseOriginalReferenceSnapshot(
   snapshot: OriginalReferenceSnapshot | null | undefined,
   {
@@ -89,8 +89,7 @@ export function releaseOriginalReferenceSnapshot(
     revokeObjectURL?: (url: string) => void
   } = {},
 ): void {
-  if (!snapshot || releasedSnapshotUrls.has(snapshot.objectUrl)) return
-  releasedSnapshotUrls.add(snapshot.objectUrl)
+  if (!snapshot) return
   const revoke =
     revokeObjectURL ??
     (typeof URL.revokeObjectURL === 'function'

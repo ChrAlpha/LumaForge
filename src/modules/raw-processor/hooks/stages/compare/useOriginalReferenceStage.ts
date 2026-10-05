@@ -1,6 +1,5 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
-import { useEffect } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage } from '~/lib/raw/decoder'
@@ -35,6 +34,7 @@ export function useOriginalReferenceStage({
   const {
     setPendingOriginalReferenceSnapshotRender,
     trackOriginalReferenceSnapshot,
+    discardOriginalReferenceSnapshot,
   } = useOriginalReferenceSnapshotResources({ resourceRegistryRef })
   const {
     originalReferenceCapability,
@@ -55,12 +55,10 @@ export function useOriginalReferenceStage({
     imageVersion: decodedImageVersion,
     displaySource,
     capability: originalReferenceCapability,
+    trackSnapshot: trackOriginalReferenceSnapshot,
+    discardSnapshot: discardOriginalReferenceSnapshot,
     onPendingRenderChange: setPendingOriginalReferenceSnapshotRender,
   })
-
-  useEffect(() => {
-    trackOriginalReferenceSnapshot(originalReference.snapshot)
-  }, [originalReference.snapshot, trackOriginalReferenceSnapshot])
 
   return {
     originalReferenceSnapshot: originalReference.snapshot,

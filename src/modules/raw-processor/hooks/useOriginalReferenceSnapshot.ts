@@ -9,7 +9,6 @@ import type { OriginalReferenceSnapshot } from '../services/compare/original-ref
 import {
   createOriginalReferenceSnapshotKey,
   getOriginalReferenceSnapshotMaxPixels,
-  releaseOriginalReferenceSnapshot,
 } from '../services/compare/original-reference-snapshot'
 
 export type OriginalReferenceSnapshotCapability = {
@@ -35,7 +34,11 @@ export type UseOriginalReferenceSnapshotInput = {
   capability: OriginalReferenceSnapshotCapability
   styleVersion?: number
   renderSnapshot?: typeof renderOriginalReferenceSnapshot
-  releaseSnapshot?: typeof releaseOriginalReferenceSnapshot
+  // The snapshot URL owner. `trackSnapshot` takes a resolved snapshot before
+  // it is published and retires the previous one; `null` hands the current
+  // snapshot back. `discardSnapshot` takes results that will never publish.
+  trackSnapshot: (snapshot: OriginalReferenceSnapshot | null) => void
+  discardSnapshot: (snapshot: OriginalReferenceSnapshot) => void
   onPendingRenderChange?: (
     pending: PendingOriginalReferenceSnapshotRender | null,
     key?: string,
@@ -68,7 +71,8 @@ export function useOriginalReferenceSnapshot({
   displaySource,
   capability,
   renderSnapshot = renderOriginalReferenceSnapshot,
-  releaseSnapshot = releaseOriginalReferenceSnapshot,
+  trackSnapshot,
+  discardSnapshot,
   onPendingRenderChange,
 }: UseOriginalReferenceSnapshotInput) {
   const [snapshot, setSnapshot] = useState<OriginalReferenceSnapshot | null>(
@@ -101,23 +105,21 @@ export function useOriginalReferenceSnapshot({
       !image ||
       (displaySource !== 'quick' && displaySource !== 'bounded-hq')
     ) {
-      const previous = snapshotRef.current
-      if (previous) {
+      if (snapshotRef.current) {
         snapshotRef.current = null
         snapshotSessionIdRef.current = null
         setSnapshot(null)
-        releaseSnapshot(previous)
+        trackSnapshot(null)
       }
       setFallbackReason(null)
       return
     }
 
     if (snapshotRef.current && snapshotSessionIdRef.current !== sessionId) {
-      const previous = snapshotRef.current
       snapshotRef.current = null
       snapshotSessionIdRef.current = null
       setSnapshot(null)
-      releaseSnapshot(previous)
+      trackSnapshot(null)
     }
 
     if (snapshotRef.current?.key === key) return
@@ -141,16 +143,14 @@ export function useOriginalReferenceSnapshot({
     })
       .then((nextSnapshot) => {
         if (cancelled) {
-          releaseSnapshot(nextSnapshot)
+          discardSnapshot(nextSnapshot)
           return
         }
-        const previous = snapshotRef.current
+        // Ownership moves before React state can expose the URL.
+        trackSnapshot(nextSnapshot)
         snapshotRef.current = nextSnapshot
         snapshotSessionIdRef.current = sessionId
         setSnapshot(nextSnapshot)
-        if (previous && previous.objectUrl !== nextSnapshot.objectUrl) {
-          releaseSnapshot(previous)
-        }
       })
       .catch((error: unknown) => {
         if (cancelled) return
@@ -176,23 +176,26 @@ export function useOriginalReferenceSnapshot({
   }, [
     capability.pthread,
     capability.webKitClass,
+    discardSnapshot,
     displaySource,
     image,
     key,
-    releaseSnapshot,
     renderSnapshot,
     sessionId,
+    trackSnapshot,
     onPendingRenderChange,
     previewGpuBudgetMaxPixels,
   ])
 
   useEffect(() => {
     return () => {
-      releaseSnapshot(snapshotRef.current)
+      if (snapshotRef.current) {
+        trackSnapshot(null)
+      }
       snapshotRef.current = null
       snapshotSessionIdRef.current = null
     }
-  }, [releaseSnapshot])
+  }, [trackSnapshot])
 
   return {
     snapshot,

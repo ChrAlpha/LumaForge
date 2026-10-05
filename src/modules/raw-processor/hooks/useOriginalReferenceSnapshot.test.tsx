@@ -24,6 +24,20 @@ function createImage(
   }
 }
 
+function createOwner() {
+  return {
+    trackSnapshot:
+      vi.fn<(snapshot: OriginalReferenceSnapshot | null) => void>(),
+    discardSnapshot: vi.fn<(snapshot: OriginalReferenceSnapshot) => void>(),
+  }
+}
+
+function trackedUrls(owner: ReturnType<typeof createOwner>) {
+  return owner.trackSnapshot.mock.calls.map(
+    ([snapshot]) => snapshot?.objectUrl ?? null,
+  )
+}
+
 describe('useOriginalReferenceSnapshot', () => {
   it('creates a snapshot and keeps it stable across style-only rerenders', async () => {
     const renderSnapshot = vi.fn().mockResolvedValue({
@@ -37,6 +51,7 @@ describe('useOriginalReferenceSnapshot', () => {
     })
 
     const image = createImage('quick')
+    const owner = createOwner()
     const { result, rerender } = renderHook(
       ({ styleVersion }) =>
         useOriginalReferenceSnapshot({
@@ -47,6 +62,7 @@ describe('useOriginalReferenceSnapshot', () => {
           capability: { webKitClass: 'chromium', pthread: true },
           styleVersion,
           renderSnapshot,
+          ...owner,
         }),
       { initialProps: { styleVersion: 1 } },
     )
@@ -57,6 +73,47 @@ describe('useOriginalReferenceSnapshot', () => {
     rerender({ styleVersion: 2 })
 
     expect(renderSnapshot).toHaveBeenCalledTimes(1)
+    expect(trackedUrls(owner)).toEqual(['blob:a'])
+  })
+
+  it('hands a resolved snapshot to its owner before publishing it', async () => {
+    const published: Array<OriginalReferenceSnapshot | null> = []
+    const publishedWhenTracked: Array<OriginalReferenceSnapshot | null> = []
+    const owner = createOwner()
+    owner.trackSnapshot.mockImplementation(() => {
+      publishedWhenTracked.push(published.at(-1) ?? null)
+    })
+    const renderSnapshot = vi.fn().mockResolvedValue({
+      key: 'key-a',
+      objectUrl: 'blob:a',
+      width: 100,
+      height: 50,
+      source: 'quick',
+      mimeType: 'image/jpeg',
+      estimatedBytes: 10,
+    })
+
+    const image = createImage('quick')
+    const { result } = renderHook(() => {
+      const value = useOriginalReferenceSnapshot({
+        sessionId: 'session-a',
+        image,
+        imageVersion: 1,
+        displaySource: 'quick',
+        capability: { webKitClass: 'chromium', pthread: true },
+        renderSnapshot,
+        ...owner,
+      })
+      published.push(value.snapshot)
+      return value
+    })
+
+    await waitFor(() =>
+      expect(result.current.snapshot?.objectUrl).toBe('blob:a'),
+    )
+    expect(trackedUrls(owner)).toEqual(['blob:a'])
+    expect(publishedWhenTracked).toEqual([null])
+    expect(owner.discardSnapshot).not.toHaveBeenCalled()
   })
 
   it('keeps the old snapshot visible until bounded HQ replacement is ready', async () => {
@@ -77,7 +134,7 @@ describe('useOriginalReferenceSnapshot', () => {
           resolveSecond = resolve
         }),
       )
-    const releaseSnapshot = vi.fn()
+    const owner = createOwner()
 
     const { result, rerender } = renderHook(
       ({ image, displaySource, imageVersion }) =>
@@ -88,7 +145,7 @@ describe('useOriginalReferenceSnapshot', () => {
           displaySource,
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
-          releaseSnapshot,
+          ...owner,
         }),
       {
         initialProps: {
@@ -110,6 +167,7 @@ describe('useOriginalReferenceSnapshot', () => {
     })
 
     expect(result.current.snapshot?.objectUrl).toBe('blob:quick')
+    expect(trackedUrls(owner)).toEqual(['blob:quick'])
     resolveSecond({
       key: 'hq-key',
       objectUrl: 'blob:hq',
@@ -123,13 +181,13 @@ describe('useOriginalReferenceSnapshot', () => {
     await waitFor(() =>
       expect(result.current.snapshot?.objectUrl).toBe('blob:hq'),
     )
-    expect(releaseSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ objectUrl: 'blob:quick' }),
-    )
+    // Tracking the replacement is what retires the quick snapshot.
+    expect(trackedUrls(owner)).toEqual(['blob:quick', 'blob:hq'])
+    expect(owner.discardSnapshot).not.toHaveBeenCalled()
   })
 
-  it('replaces and releases the previous snapshot when the quick source changes', async () => {
-    const releaseSnapshot = vi.fn()
+  it('hands the replacement to its owner when the quick source changes', async () => {
+    const owner = createOwner()
     const renderSnapshot = vi
       .fn()
       .mockResolvedValueOnce({
@@ -160,7 +218,7 @@ describe('useOriginalReferenceSnapshot', () => {
           displaySource: 'quick',
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
-          releaseSnapshot,
+          ...owner,
         }),
       {
         initialProps: {
@@ -182,13 +240,11 @@ describe('useOriginalReferenceSnapshot', () => {
     await waitFor(() =>
       expect(result.current.snapshot?.objectUrl).toBe('blob:quick-b'),
     )
-    expect(releaseSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ objectUrl: 'blob:quick-a' }),
-    )
+    expect(trackedUrls(owner)).toEqual(['blob:quick-a', 'blob:quick-b'])
   })
 
-  it('releases and clears the snapshot when the source becomes ineligible', async () => {
-    const releaseSnapshot = vi.fn()
+  it('hands the snapshot back and clears it when the source becomes ineligible', async () => {
+    const owner = createOwner()
     const renderSnapshot = vi.fn().mockResolvedValue({
       key: 'quick-key-a',
       objectUrl: 'blob:quick-a',
@@ -208,7 +264,7 @@ describe('useOriginalReferenceSnapshot', () => {
           displaySource,
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
-          releaseSnapshot,
+          ...owner,
         }),
       {
         initialProps: {
@@ -228,13 +284,11 @@ describe('useOriginalReferenceSnapshot', () => {
     })
 
     await waitFor(() => expect(result.current.snapshot).toBeNull())
-    expect(releaseSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ objectUrl: 'blob:quick-a' }),
-    )
+    expect(trackedUrls(owner)).toEqual(['blob:quick-a', null])
   })
 
-  it('releases and clears the snapshot when the session becomes unavailable', async () => {
-    const releaseSnapshot = vi.fn()
+  it('hands the snapshot back and clears it when the session becomes unavailable', async () => {
+    const owner = createOwner()
     const renderSnapshot = vi.fn().mockResolvedValue({
       key: 'quick-key-a',
       objectUrl: 'blob:quick-a',
@@ -245,16 +299,18 @@ describe('useOriginalReferenceSnapshot', () => {
       estimatedBytes: 10,
     })
 
+    const image = createImage('quick')
+
     const { result, rerender } = renderHook(
       ({ sessionId }) =>
         useOriginalReferenceSnapshot({
           sessionId,
-          image: createImage('quick'),
+          image,
           imageVersion: 1,
           displaySource: 'quick',
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
-          releaseSnapshot,
+          ...owner,
         }),
       {
         initialProps: {
@@ -270,14 +326,12 @@ describe('useOriginalReferenceSnapshot', () => {
     rerender({ sessionId: null })
 
     await waitFor(() => expect(result.current.snapshot).toBeNull())
-    expect(releaseSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ objectUrl: 'blob:quick-a' }),
-    )
+    expect(trackedUrls(owner)).toEqual(['blob:quick-a', null])
   })
 
   it('clears the previous session snapshot while the replacement is pending', async () => {
     let resolveReplacement!: (value: OriginalReferenceSnapshot) => void
-    const releaseSnapshot = vi.fn()
+    const owner = createOwner()
     const replacementPromise = new Promise<OriginalReferenceSnapshot>(
       (resolve) => {
         resolveReplacement = resolve
@@ -311,7 +365,7 @@ describe('useOriginalReferenceSnapshot', () => {
           displaySource: 'quick',
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
-          releaseSnapshot,
+          ...owner,
         }),
       {
         initialProps: {
@@ -327,9 +381,7 @@ describe('useOriginalReferenceSnapshot', () => {
     rerender({ sessionId: 'session-b' })
 
     expect(result.current.snapshot).toBeNull()
-    expect(releaseSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ objectUrl: 'blob:quick-a' }),
-    )
+    expect(trackedUrls(owner)).toEqual(['blob:quick-a', null])
 
     resolveReplacement({
       key: 'quick-key-b',
@@ -344,11 +396,12 @@ describe('useOriginalReferenceSnapshot', () => {
     await waitFor(() =>
       expect(result.current.snapshot?.objectUrl).toBe('blob:quick-b'),
     )
+    expect(trackedUrls(owner)).toEqual(['blob:quick-a', null, 'blob:quick-b'])
   })
 
-  it('releases a cancelled replacement snapshot when it resolves late', async () => {
+  it('discards a cancelled replacement snapshot when it resolves late', async () => {
     let resolveReplacement!: (value: unknown) => void
-    const releaseSnapshot = vi.fn()
+    const owner = createOwner()
     const renderSnapshot = vi
       .fn()
       .mockResolvedValueOnce({
@@ -375,7 +428,7 @@ describe('useOriginalReferenceSnapshot', () => {
           displaySource,
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
-          releaseSnapshot,
+          ...owner,
         }),
       {
         initialProps: {
@@ -414,11 +467,57 @@ describe('useOriginalReferenceSnapshot', () => {
     })
 
     await waitFor(() =>
-      expect(releaseSnapshot).toHaveBeenCalledWith(
+      expect(owner.discardSnapshot).toHaveBeenCalledWith(
         expect.objectContaining({ objectUrl: 'blob:hq' }),
       ),
     )
+    expect(owner.discardSnapshot).toHaveBeenCalledTimes(1)
+    expect(trackedUrls(owner)).toEqual(['blob:quick', null])
     expect(result.current.snapshot).toBeNull()
+  })
+
+  it('discards a snapshot that completes after unmount', async () => {
+    let resolveLate!: (value: OriginalReferenceSnapshot) => void
+    const owner = createOwner()
+    const renderSnapshot = vi.fn().mockReturnValue(
+      new Promise<OriginalReferenceSnapshot>((resolve) => {
+        resolveLate = resolve
+      }),
+    )
+
+    const { unmount } = renderHook(() =>
+      useOriginalReferenceSnapshot({
+        sessionId: 'session-a',
+        image: createImage('quick'),
+        imageVersion: 1,
+        displaySource: 'quick',
+        capability: { webKitClass: 'chromium', pthread: true },
+        renderSnapshot,
+        ...owner,
+      }),
+    )
+
+    await waitFor(() => expect(renderSnapshot).toHaveBeenCalledTimes(1))
+    const signal = renderSnapshot.mock.calls[0]?.[0]?.signal as AbortSignal
+    unmount()
+    expect(signal.aborted).toBe(true)
+
+    resolveLate({
+      key: 'quick-key',
+      objectUrl: 'blob:late',
+      width: 100,
+      height: 50,
+      source: 'quick',
+      mimeType: 'image/jpeg',
+      estimatedBytes: 10,
+    })
+
+    await waitFor(() =>
+      expect(owner.discardSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({ objectUrl: 'blob:late' }),
+      ),
+    )
+    expect(owner.trackSnapshot).not.toHaveBeenCalled()
   })
 
   it('clears pending render notifications by key so stale renders cannot clear newer work', async () => {
@@ -441,6 +540,7 @@ describe('useOriginalReferenceSnapshot', () => {
           resolveHq = resolve
         }),
       )
+    const owner = createOwner()
 
     const { rerender } = renderHook(
       ({ image, displaySource, imageVersion }) =>
@@ -451,6 +551,7 @@ describe('useOriginalReferenceSnapshot', () => {
           displaySource,
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
+          ...owner,
           onPendingRenderChange: (pending, clearKey) => {
             pendingChanges.push({
               key: pending?.key ?? null,
@@ -527,6 +628,7 @@ describe('useOriginalReferenceSnapshot', () => {
   })
 
   it('reports fallback when generation fails', async () => {
+    const owner = createOwner()
     const { result } = renderHook(() =>
       useOriginalReferenceSnapshot({
         sessionId: 'session-a',
@@ -539,6 +641,7 @@ describe('useOriginalReferenceSnapshot', () => {
           .mockRejectedValue(
             new Error('ORIGINAL_REFERENCE_SNAPSHOT_ENCODE_FAILED'),
           ),
+        ...owner,
       }),
     )
 
@@ -552,6 +655,7 @@ describe('useOriginalReferenceSnapshot', () => {
   it('uses a generic fallback reason when generation fails without a message', async () => {
     const emptyMessageError = new Error('snapshot failed without a message')
     emptyMessageError.message = ''
+    const owner = createOwner()
 
     const { result } = renderHook(() =>
       useOriginalReferenceSnapshot({
@@ -561,6 +665,7 @@ describe('useOriginalReferenceSnapshot', () => {
         displaySource: 'quick',
         capability: { webKitClass: 'chromium', pthread: true },
         renderSnapshot: vi.fn().mockRejectedValue(emptyMessageError),
+        ...owner,
       }),
     )
 
@@ -572,6 +677,7 @@ describe('useOriginalReferenceSnapshot', () => {
   })
 
   it('uses an Error-like rejection message as the fallback reason', async () => {
+    const owner = createOwner()
     const { result } = renderHook(() =>
       useOriginalReferenceSnapshot({
         sessionId: 'session-a',
@@ -582,6 +688,7 @@ describe('useOriginalReferenceSnapshot', () => {
         renderSnapshot: vi.fn().mockRejectedValue({
           message: 'ORIGINAL_REFERENCE_SNAPSHOT_TIMEOUT',
         }),
+        ...owner,
       }),
     )
 
@@ -592,8 +699,8 @@ describe('useOriginalReferenceSnapshot', () => {
     )
   })
 
-  it('releases the current snapshot on unmount', async () => {
-    const releaseSnapshot = vi.fn()
+  it('hands the current snapshot back on unmount', async () => {
+    const owner = createOwner()
     const renderSnapshot = vi.fn().mockResolvedValue({
       key: 'key-a',
       objectUrl: 'blob:a',
@@ -604,15 +711,17 @@ describe('useOriginalReferenceSnapshot', () => {
       estimatedBytes: 10,
     })
 
+    const image = createImage('quick')
+
     const { result, unmount } = renderHook(() =>
       useOriginalReferenceSnapshot({
         sessionId: 'session-a',
-        image: createImage('quick'),
+        image,
         imageVersion: 1,
         displaySource: 'quick',
         capability: { webKitClass: 'chromium', pthread: true },
         renderSnapshot,
-        releaseSnapshot,
+        ...owner,
       }),
     )
 
@@ -622,8 +731,7 @@ describe('useOriginalReferenceSnapshot', () => {
 
     unmount()
 
-    expect(releaseSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ objectUrl: 'blob:a' }),
-    )
+    expect(trackedUrls(owner)).toEqual(['blob:a', null])
+    expect(owner.discardSnapshot).not.toHaveBeenCalled()
   })
 })
