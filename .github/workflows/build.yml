@@ -54,7 +54,7 @@ jobs:
           }
 
           force_all='^(\.github/workflows/build\.yml|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$'
-          app_paths='^(src/|tests/browser/|scripts/(build|deploy|native-runtime)/|packages/luma-(color|jpeg|raw)-runtime/|public/|index\.html|vite\.config\.ts|vitest.*\.config\.ts|tsconfig.*|eslint.*|postcss.*|tailwind.*)'
+          app_paths='^(src/|tests/browser/|scripts/(build|ci|deploy|native-runtime)/|plugins/|packages/luma-(color|jpeg|raw)-runtime/|packages/render-engine/|public/|index\.html|vite\.config\.ts|vitest.*\.config\.ts|tsconfig.*|eslint.*|postcss.*|tailwind.*)'
           runtime_paths='^(packages/luma-(color|jpeg|raw)-runtime/|packages/render-engine/|src/lib/(export|raw|runtime|workers)/|scripts/native-runtime/)'
           native_paths='^(packages/luma-(jpeg|raw)-runtime/native/|scripts/native-runtime/)'
           webgpu_paths='^(src/lib/webgpu/|packages/luma-color-runtime/|packages/render-engine/src/preview/|scripts/webgpu/)'
