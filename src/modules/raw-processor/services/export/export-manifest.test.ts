@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto'
 
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
-import { verifyManifestSha256 } from '@lumaforge/render-engine/manifest'
+import {
+  canonicalizeJson,
+  verifyManifestSha256,
+} from '@lumaforge/render-engine/manifest'
 import { describe, expect, it } from 'vitest'
 
 import type { StyleAsset } from '../../model/session'
@@ -83,6 +86,135 @@ describe('toManifestRenderParams', () => {
       lightness: 0,
     })
     expect(Object.keys(shifted.selective_color ?? {})).toHaveLength(8)
+  })
+})
+
+describe('toManifestRenderParams canonical bytes', () => {
+  // Reviewed literal canonical JSON. The CLI writer keeps its own goldens for
+  // the same inputs; the two must only differ where noted below.
+  const NON_NEUTRAL_SCALARS_GOLDEN =
+    '{"color_balance":{"temperature":10,"tint":-4},"exposure_ev":0.5,' +
+    '"intensity":0.75,"raw_render_exposure_ev":-0.25,' +
+    '"raw_render_exposure_source":"dng-baseline",' +
+    '"saturation":{"saturation":7,"vibrance":18},' +
+    '"tone_curve":{"blacks":6,"contrast":12,"highlights":-20,"shadows":15,"whites":-8}}'
+  const NEUTRAL_GOLDEN =
+    '{"color_balance":{"temperature":0,"tint":0},"exposure_ev":0,' +
+    '"intensity":1,"raw_render_exposure_ev":0,' +
+    '"raw_render_exposure_source":"identity",' +
+    '"saturation":{"saturation":0,"vibrance":0},' +
+    '"tone_curve":{"blacks":0,"contrast":0,"highlights":0,"shadows":0,"whites":0}}'
+  const SHIFTED_HSL_GOLDEN =
+    '{"color_balance":{"temperature":0,"tint":0},"exposure_ev":0,' +
+    '"intensity":1,"raw_render_exposure_ev":0,' +
+    '"raw_render_exposure_source":"identity",' +
+    '"saturation":{"saturation":0,"vibrance":0},' +
+    '"selective_color":{' +
+    '"aqua":{"hue":0,"lightness":0,"saturation":0},' +
+    '"blue":{"hue":0,"lightness":5,"saturation":-30},' +
+    '"green":{"hue":0,"lightness":0,"saturation":0},' +
+    '"magenta":{"hue":0,"lightness":0,"saturation":0},' +
+    '"orange":{"hue":0,"lightness":0,"saturation":0},' +
+    '"purple":{"hue":0,"lightness":0,"saturation":0},' +
+    '"red":{"hue":10,"lightness":0,"saturation":0},' +
+    '"yellow":{"hue":0,"lightness":0,"saturation":0}},' +
+    '"tone_curve":{"blacks":0,"contrast":0,"highlights":0,"shadows":0,"whites":0}}'
+
+  const dngExposure = {
+    ev: -0.25,
+    multiplier: 2 ** -0.25,
+    source: 'dng-baseline' as const,
+  }
+  const identityExposure = { ev: 0, multiplier: 1, source: 'identity' as const }
+  const neutralBand = { hue: 0, saturation: 0, lightness: 0 }
+  const neutralSelectiveColor = {
+    red: neutralBand,
+    orange: neutralBand,
+    yellow: neutralBand,
+    green: neutralBand,
+    aqua: neutralBand,
+    blue: neutralBand,
+    purple: neutralBand,
+    magenta: neutralBand,
+  }
+
+  function neutralParams(
+    overrides: Partial<ProcessingParams> = {},
+  ): ProcessingParams {
+    return {
+      intensity: 1,
+      viewMode: 'processed',
+      compareSplit: 0.5,
+      styleKind: 'none',
+      builtinPreset: null,
+      userExposureEv: 0,
+      userContrast: 0,
+      userHighlights: 0,
+      userShadows: 0,
+      userWhites: 0,
+      userBlacks: 0,
+      userTemperature: 0,
+      userTint: 0,
+      userSaturation: 0,
+      userVibrance: 0,
+      ...overrides,
+    }
+  }
+
+  it('freezes non-neutral scalars', () => {
+    const renderParams = toManifestRenderParams(
+      neutralParams({
+        intensity: 0.75,
+        userExposureEv: 0.5,
+        userContrast: 12,
+        userHighlights: -20,
+        userShadows: 15,
+        userWhites: -8,
+        userBlacks: 6,
+        userTemperature: 10,
+        userTint: -4,
+        userSaturation: 7,
+        userVibrance: 18,
+      }),
+      dngExposure,
+    )
+
+    expect(canonicalizeJson(renderParams)).toBe(NON_NEUTRAL_SCALARS_GOLDEN)
+  })
+
+  it('freezes shifted selective color as all eight bands', () => {
+    const renderParams = toManifestRenderParams(
+      neutralParams({
+        selectiveColor: {
+          ...neutralSelectiveColor,
+          red: { hue: 10, saturation: 0, lightness: 0 },
+          blue: { hue: 0, saturation: -30, lightness: 5 },
+        },
+      }),
+      identityExposure,
+    )
+
+    expect(canonicalizeJson(renderParams)).toBe(SHIFTED_HSL_GOLDEN)
+  })
+
+  it('freezes absent selective color as an omitted key', () => {
+    const renderParams = toManifestRenderParams(
+      neutralParams(),
+      identityExposure,
+    )
+
+    expect(canonicalizeJson(renderParams)).toBe(NEUTRAL_GOLDEN)
+  })
+
+  it('omits an explicit all-neutral selective color record', () => {
+    // The CLI writer records this input as eight neutral bands; the browser
+    // writer drops it, so the two manifests hash differently today.
+    const renderParams = toManifestRenderParams(
+      neutralParams({ selectiveColor: neutralSelectiveColor }),
+      identityExposure,
+    )
+
+    expect(canonicalizeJson(renderParams)).toBe(NEUTRAL_GOLDEN)
   })
 })
 

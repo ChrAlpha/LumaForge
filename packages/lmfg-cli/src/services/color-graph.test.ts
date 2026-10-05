@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { generateIdentityLUT, toLUTData } from '@lumaforge/luma-color-runtime'
+import { canonicalizeJson } from '@lumaforge/render-engine'
 import { describe, expect, it } from 'vitest'
 
 import { parseRenderParams } from '../schemas/params'
@@ -123,6 +124,128 @@ describe('buildColorGraph + describeColorGraph', () => {
       raw_render_exposure_ev: -0.2,
       raw_render_exposure_source: 'dng-baseline',
     })
+  })
+})
+
+describe('toManifestRenderParams canonical bytes', () => {
+  // Reviewed literal canonical JSON. The browser export writer keeps its own
+  // goldens for the same inputs; the two must only differ where noted below.
+  const NON_NEUTRAL_SCALARS_GOLDEN =
+    '{"color_balance":{"temperature":10,"tint":-4},"exposure_ev":0.5,' +
+    '"intensity":0.75,"raw_render_exposure_ev":-0.25,' +
+    '"raw_render_exposure_source":"dng-baseline",' +
+    '"saturation":{"saturation":7,"vibrance":18},' +
+    '"tone_curve":{"blacks":6,"contrast":12,"highlights":-20,"shadows":15,"whites":-8}}'
+  const NEUTRAL_GOLDEN =
+    '{"color_balance":{"temperature":0,"tint":0},"exposure_ev":0,' +
+    '"intensity":1,"raw_render_exposure_ev":0,' +
+    '"raw_render_exposure_source":"identity",' +
+    '"saturation":{"saturation":0,"vibrance":0},' +
+    '"tone_curve":{"blacks":0,"contrast":0,"highlights":0,"shadows":0,"whites":0}}'
+  const SHIFTED_HSL_GOLDEN =
+    '{"color_balance":{"temperature":0,"tint":0},"exposure_ev":0,' +
+    '"intensity":1,"raw_render_exposure_ev":0,' +
+    '"raw_render_exposure_source":"identity",' +
+    '"saturation":{"saturation":0,"vibrance":0},' +
+    '"selective_color":{' +
+    '"aqua":{"hue":0,"lightness":0,"saturation":0},' +
+    '"blue":{"hue":0,"lightness":5,"saturation":-30},' +
+    '"green":{"hue":0,"lightness":0,"saturation":0},' +
+    '"magenta":{"hue":0,"lightness":0,"saturation":0},' +
+    '"orange":{"hue":0,"lightness":0,"saturation":0},' +
+    '"purple":{"hue":0,"lightness":0,"saturation":0},' +
+    '"red":{"hue":10,"lightness":0,"saturation":0},' +
+    '"yellow":{"hue":0,"lightness":0,"saturation":0}},' +
+    '"tone_curve":{"blacks":0,"contrast":0,"highlights":0,"shadows":0,"whites":0}}'
+  const EXPLICIT_NEUTRAL_HSL_GOLDEN =
+    '{"color_balance":{"temperature":0,"tint":0},"exposure_ev":0,' +
+    '"intensity":1,"raw_render_exposure_ev":0,' +
+    '"raw_render_exposure_source":"identity",' +
+    '"saturation":{"saturation":0,"vibrance":0},' +
+    '"selective_color":{' +
+    '"aqua":{"hue":0,"lightness":0,"saturation":0},' +
+    '"blue":{"hue":0,"lightness":0,"saturation":0},' +
+    '"green":{"hue":0,"lightness":0,"saturation":0},' +
+    '"magenta":{"hue":0,"lightness":0,"saturation":0},' +
+    '"orange":{"hue":0,"lightness":0,"saturation":0},' +
+    '"purple":{"hue":0,"lightness":0,"saturation":0},' +
+    '"red":{"hue":0,"lightness":0,"saturation":0},' +
+    '"yellow":{"hue":0,"lightness":0,"saturation":0}},' +
+    '"tone_curve":{"blacks":0,"contrast":0,"highlights":0,"shadows":0,"whites":0}}'
+
+  const dngExposure = {
+    ev: -0.25,
+    multiplier: Math.pow(2, -0.25),
+    source: 'dng-baseline' as const,
+  }
+  const identityExposure = { ev: 0, multiplier: 1, source: 'identity' as const }
+  const neutralBand = { hue: 0, saturation: 0, lightness: 0 }
+
+  it('freezes non-neutral scalars', () => {
+    const renderParams = toManifestRenderParams(
+      parseRenderParams({
+        exposure_ev: 0.5,
+        contrast: 12,
+        highlights: -20,
+        shadows: 15,
+        whites: -8,
+        blacks: 6,
+        temperature: 10,
+        tint: -4,
+        saturation: 7,
+        vibrance: 18,
+        intensity: 0.75,
+      }),
+      dngExposure,
+    )
+
+    expect(canonicalizeJson(renderParams)).toBe(NON_NEUTRAL_SCALARS_GOLDEN)
+  })
+
+  it('freezes shifted selective color as all eight bands', () => {
+    const renderParams = toManifestRenderParams(
+      parseRenderParams({
+        selective_color: {
+          red: { hue: 10 },
+          blue: { saturation: -30, lightness: 5 },
+        },
+      }),
+      identityExposure,
+    )
+
+    expect(canonicalizeJson(renderParams)).toBe(SHIFTED_HSL_GOLDEN)
+  })
+
+  it('freezes absent selective color as an omitted key', () => {
+    const renderParams = toManifestRenderParams(
+      parseRenderParams({}),
+      identityExposure,
+    )
+
+    expect(canonicalizeJson(renderParams)).toBe(NEUTRAL_GOLDEN)
+  })
+
+  it('records an explicit all-neutral selective color record', () => {
+    // The browser export writer omits this record, so the two manifests hash
+    // differently today.
+    const renderParams = toManifestRenderParams(
+      parseRenderParams({
+        selective_color: {
+          red: neutralBand,
+          orange: neutralBand,
+          yellow: neutralBand,
+          green: neutralBand,
+          aqua: neutralBand,
+          blue: neutralBand,
+          purple: neutralBand,
+          magenta: neutralBand,
+        },
+      }),
+      identityExposure,
+    )
+
+    expect(canonicalizeJson(renderParams)).toBe(EXPLICIT_NEUTRAL_HSL_GOLDEN)
+    expect(canonicalizeJson(renderParams)).not.toBe(NEUTRAL_GOLDEN)
   })
 })
 

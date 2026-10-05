@@ -109,6 +109,161 @@ function createCapability(
   }
 }
 
+type ProcessingParamClass = 'render' | 'look' | 'view'
+
+// Every ProcessingParams key must be classified; a new field fails the
+// typecheck until it is placed here. 'render' (user tone/color intent) and
+// 'look' (style, preset, intensity) keys reach the export color graph, so
+// changing them must invalidate a ready export. 'view' keys only change how
+// the preview is presented and must not.
+const PROCESSING_PARAM_CLASSES = {
+  styleKind: 'look',
+  builtinPreset: 'look',
+  intensity: 'look',
+  viewMode: 'view',
+  compareSplit: 'view',
+  userExposureEv: 'render',
+  userContrast: 'render',
+  userHighlights: 'render',
+  userShadows: 'render',
+  userWhites: 'render',
+  userBlacks: 'render',
+  userTemperature: 'render',
+  userTint: 'render',
+  userSaturation: 'render',
+  userVibrance: 'render',
+  selectiveColor: 'render',
+} satisfies Record<keyof ProcessingParams, ProcessingParamClass>
+
+type ProcessingParamKey = keyof typeof PROCESSING_PARAM_CLASSES
+
+const NEUTRAL_HSL_BAND = { hue: 0, saturation: 0, lightness: 0 } as const
+
+// Matches the app's default processing params: no look, neutral user intent,
+// and no selective color record yet.
+const DEFAULT_PARAMS: ProcessingParams = {
+  intensity: 0.7,
+  viewMode: 'compare',
+  compareSplit: 0.5,
+  styleKind: 'none',
+  builtinPreset: null,
+  userExposureEv: 0,
+  userContrast: 0,
+  userHighlights: 0,
+  userShadows: 0,
+  userWhites: 0,
+  userBlacks: 0,
+  userTemperature: 0,
+  userTint: 0,
+  userSaturation: 0,
+  userVibrance: 0,
+}
+
+// A meaningful value for every key that differs from DEFAULT_PARAMS.
+const NON_DEFAULT_VALUES: {
+  [K in ProcessingParamKey]-?: NonNullable<ProcessingParams[K]>
+} = {
+  styleKind: 'custom',
+  builtinPreset: 'film-contrast',
+  intensity: 0.35,
+  viewMode: 'original',
+  compareSplit: 0.8,
+  userExposureEv: 0.5,
+  userContrast: 20,
+  userHighlights: -30,
+  userShadows: 25,
+  userWhites: -15,
+  userBlacks: 10,
+  userTemperature: 12,
+  userTint: -8,
+  userSaturation: 15,
+  userVibrance: 30,
+  selectiveColor: {
+    red: { hue: 25, saturation: 0, lightness: 0 },
+    orange: NEUTRAL_HSL_BAND,
+    yellow: NEUTRAL_HSL_BAND,
+    green: NEUTRAL_HSL_BAND,
+    aqua: { hue: 0, saturation: -20, lightness: 10 },
+    blue: NEUTRAL_HSL_BAND,
+    purple: NEUTRAL_HSL_BAND,
+    magenta: NEUTRAL_HSL_BAND,
+  },
+}
+
+const PROCESSING_PARAM_KEYS = Object.keys(
+  PROCESSING_PARAM_CLASSES,
+) as ProcessingParamKey[]
+
+function keysOfClass(...classes: ProcessingParamClass[]) {
+  return PROCESSING_PARAM_KEYS.filter((key) =>
+    classes.includes(PROCESSING_PARAM_CLASSES[key]),
+  )
+}
+
+function patchOf<K extends ProcessingParamKey>(
+  key: K,
+  value: ProcessingParams[K],
+): Partial<ProcessingParams> {
+  return { [key]: value } as Partial<ProcessingParams>
+}
+
+describe('render graph param classification', () => {
+  it('has a non-default value for every classified key', () => {
+    expect(Object.keys(NON_DEFAULT_VALUES).sort()).toEqual(
+      [...PROCESSING_PARAM_KEYS].sort(),
+    )
+    for (const key of PROCESSING_PARAM_KEYS) {
+      expect(NON_DEFAULT_VALUES[key]).not.toEqual(DEFAULT_PARAMS[key])
+    }
+  })
+
+  it.each(keysOfClass('render', 'look'))(
+    'invalidates the render graph when %s changes',
+    (key) => {
+      const changed: ProcessingParams = {
+        ...DEFAULT_PARAMS,
+        ...patchOf(key, NON_DEFAULT_VALUES[key]),
+      }
+
+      expect(
+        changesRenderGraphParams(
+          DEFAULT_PARAMS,
+          patchOf(key, NON_DEFAULT_VALUES[key]),
+        ),
+      ).toBe(true)
+      expect(
+        changesRenderGraphParams(changed, patchOf(key, DEFAULT_PARAMS[key])),
+      ).toBe(true)
+      expect(
+        changesRenderGraphParams(
+          DEFAULT_PARAMS,
+          patchOf(key, DEFAULT_PARAMS[key]),
+        ),
+      ).toBe(false)
+    },
+  )
+
+  it.each(keysOfClass('view'))(
+    'keeps the render graph when %s changes',
+    (key) => {
+      const changed: ProcessingParams = {
+        ...DEFAULT_PARAMS,
+        ...patchOf(key, NON_DEFAULT_VALUES[key]),
+      }
+
+      expect(
+        changesRenderGraphParams(
+          DEFAULT_PARAMS,
+          patchOf(key, NON_DEFAULT_VALUES[key]),
+        ),
+      ).toBe(false)
+      expect(
+        changesRenderGraphParams(changed, patchOf(key, DEFAULT_PARAMS[key])),
+      ).toBe(false)
+    },
+  )
+})
+
 describe('export state helpers', () => {
   it('leaves an idle session without a ready result unchanged by reference', () => {
     const session = createSession()
