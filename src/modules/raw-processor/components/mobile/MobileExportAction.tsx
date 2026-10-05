@@ -130,7 +130,8 @@ export function MobileExportAction(props: {
       disabled={props.disabled}
       onClick={props.onClick}
       // 44px hit area around a ~32px pill. The press is the shared 0.5px
-      // `translate` shift (DESIGN.md Press Feedback), never a transform.
+      // `translate` shift, never a transform: the pill inside is a motion
+      // layout element that owns `transform` inline every frame.
       className="group -mr-1 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center px-1 outline-none transition-[translate] duration-[120ms] ease-[cubic-bezier(0.22,1,0.36,1)] enabled:active:translate-y-[0.5px] disabled:cursor-not-allowed"
     >
       <m.span

@@ -152,7 +152,7 @@ describe('mobileExportAction', () => {
       'group-disabled:opacity-45',
     )
     expect(button).toBeDisabled()
-    // No stylesheet transform for the press (DESIGN.md Press Feedback).
+    // The press is a `translate` shift, never a stylesheet transform.
     expect(button.className).not.toMatch(/active:transform|active:scale/)
   })
 })

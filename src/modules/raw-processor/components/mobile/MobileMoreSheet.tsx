@@ -10,9 +10,9 @@ import type {
   MobileDetailsStep as Step,
 } from './mobile-details-sheet'
 
-// Facts sit in a borderless lift-soft well (DESIGN.md §6 "Borderless Track
-// Rule"): the 5% cool-white fill carries the edge instead of a drawn hairline,
-// which reads consistently on the flat sheet.
+// Facts sit in a borderless lift-soft well: the 5% cool-white fill carries
+// the edge instead of a drawn hairline, which reads consistently on the flat
+// sheet.
 function FactRows({ rows }: { rows: Row[] }) {
   return (
     <dl className="m-0 grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-lf-control bg-[oklch(0.96_0.006_255/0.05)] px-3 py-2.5">
@@ -30,9 +30,9 @@ function FactRows({ rows }: { rows: Row[] }) {
   )
 }
 
-// The pipeline is the Contract Rail signature (DESIGN.md §5): ordered, numbered
-// color-math steps with a connecting spine. Amber numbers per "Amber Explains
-// Color"; the spine links the steps so they read as one sequence, not a list.
+// The pipeline is a contract rail: ordered, numbered color-math steps with a
+// connecting spine. The numbers are amber because amber explains color; the
+// spine links the steps so they read as one sequence, not a list.
 // Each step names its live state (camera and support, changed fields, LUT
 // contract, transform, output) rather than a timing it cannot measure.
 function PipelineRail({ steps }: { steps: Step[] }) {
