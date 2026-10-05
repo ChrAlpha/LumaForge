@@ -53,8 +53,9 @@ image-editor assumptions.
   `src/generated-routes.ts`; never edit the generated file directly.
 - `src/pages/(main)/index.sync.tsx` is the thin `/` route entry. The landing
   itself lives in `src/modules/landing`: `LandingPage`, section components,
-  the `PhotoCompare` slider and its sweep hook, `content.ts` (typed key lists
-  and the real supported-format count), module CSS, and colocated tests.
+  the `PhotoCompare` slider and its sweep hook,
+  `src/modules/landing/content.ts` (typed key lists and the real
+  supported-format count), module CSS, and colocated tests.
 - `src/pages/(main)/transform-demo.tsx` still ships the noindex
   `/transform-demo` route on top of `src/modules/transform-demo`, which `/raw`
   Transform also depends on (see Retained And Scheduled Slices).
@@ -136,9 +137,10 @@ image-editor assumptions.
   DCP calibration catalog.
 - `packages/luma-color-runtime` is pure TypeScript color math: tone,
   temperature/tint color balance, LUT contracts, transfer/gamut transforms,
-  graph resolution, row-band processing, and WGSL helpers (`./wgsl`). The TS
-  row-band processor is the authoritative executor for export, `lmfg`, and the
-  CPU preview; the WGSL preview must agree with it (`pnpm test:webgpu`).
+  graph resolution, row-band processing, and WGSL helpers
+  (`@lumaforge/luma-color-runtime/wgsl`). The TS row-band processor is the
+  authoritative executor for export, `lmfg`, and the CPU preview; the WGSL
+  preview must agree with it (`pnpm test:webgpu`).
 - `packages/render-engine` (`@lumaforge/render-engine`) is the headless engine
   shared by `/raw` and `lmfg`. It takes capability facts as input and never
   detects them. It owns:
@@ -359,8 +361,11 @@ These are owner decisions. They override cleanup advice that says otherwise.
   record. If a workflow or agent skill wants to write one (for example under
   `docs/superpowers/`), keep it out of the repository unless the user asks.
 - `docs/` holds user guides plus living references
-  (`PERFORMANCE_RESOURCE_MANAGEMENT.md`, the anti-AI-slop guardrails). Update
-  them when the behavior they describe changes.
+  (`docs/PERFORMANCE_RESOURCE_MANAGEMENT.md`, the anti-AI-slop guardrails).
+  Update them when the behavior they describe changes.
+- Write every repository path in this file in full from the repository root.
+  `pnpm check:agent-paths` fails on a backticked path that does not resolve;
+  CI runs it on every change, docs-only ones included.
 - Code comments state the rule in place; do not point them at design
   documents or spec section numbers.
 - Keep docs self-contained when the user asks for calculation or architecture
@@ -395,8 +400,9 @@ These are owner decisions. They override cleanup advice that says otherwise.
     `pnpm test:runtime` does not run the render-engine tests; for engine
     changes run `pnpm cli:build:deps` (the engine tests resolve the built
     runtime packages), then `pnpm --filter @lumaforge/render-engine test`.
-  - Native/runtime artifact changes under package `native/` folders or
-    `packages/luma-native-artifacts`: run relevant `build:native`,
+  - Native/runtime artifact changes under
+    `packages/luma-raw-runtime/native/`, `packages/luma-jpeg-runtime/native/`,
+    or `packages/luma-native-artifacts`: run relevant `build:native`,
     `native:verify`, and native smoke commands.
   - CLI or MCP changes under `packages/lmfg-cli` or `packages/lmfg-mcp`: run
     `pnpm cli:build` once, then the touched package's typecheck
@@ -430,8 +436,11 @@ These are owner decisions. They override cleanup advice that says otherwise.
   exercises the CPU preview.
 - Built-app preview validation can use `pnpm serve` or
   `pnpm exec vite preview` after `pnpm build`.
-- CI follows the same split (path-selected jobs in
-  `.github/workflows/build.yml`, aggregated by its `build` job):
+- CI follows the same split (jobs in `.github/workflows/build.yml`, aggregated
+  by its `build` job; every job except `quality` is path-selected):
+  - `quality` runs on every change, docs-only ones included, and needs only
+    Node: it tests and runs `scripts/quality/check-agent-paths.mjs` against
+    this file.
   - `app` uses `pnpm lint:check`, `pnpm test:app`, prebuilt native assets, and
     app build checks.
   - `runtime` runs runtime package typecheck/test/build and app adapter tests,
