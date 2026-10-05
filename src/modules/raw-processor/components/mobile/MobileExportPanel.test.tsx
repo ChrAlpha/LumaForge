@@ -61,6 +61,7 @@ describe('mobileExportPanel', () => {
   it('recaps what the export will write before the export button', () => {
     renderPanel({
       recap: {
+        output: 'full-resolution',
         size: { width: 9728, height: 6656 },
         look: { name: 'ARRI 3110 Film A', percent: 70 },
         adjustments: 3,
@@ -124,6 +125,7 @@ describe('mobileExportPanel', () => {
   it('never states what is not in state', () => {
     renderPanel({
       recap: {
+        output: 'full-resolution',
         size: null,
         look: null,
         adjustments: 0,
@@ -136,9 +138,44 @@ describe('mobileExportPanel', () => {
     expect(recap).not.toHaveTextContent(/×|adjustment|Transform/)
   })
 
+  it('recaps the HQ preview alone when full resolution cannot run', () => {
+    renderPanel({
+      canExport: false,
+      disabledReason: 'Full-resolution export is not available for this file.',
+      canPreviewExport: true,
+      onPreviewExport: vi.fn(),
+      recap: {
+        output: 'hq-preview',
+        size: null,
+        look: null,
+        adjustments: 0,
+        transformApplied: false,
+      },
+    })
+    const recap = document.querySelector<HTMLElement>('[data-export-recap]')!
+    expect(recap).toHaveTextContent('HQ preview JPEG only')
+    expect(recap).not.toHaveTextContent(/full-resolution/i)
+  })
+
+  it('names no output when nothing can be written', () => {
+    renderPanel({
+      canExport: false,
+      recap: {
+        output: null,
+        size: null,
+        look: null,
+        adjustments: 0,
+        transformApplied: false,
+      },
+    })
+    const recap = document.querySelector<HTMLElement>('[data-export-recap]')!
+    expect(recap.textContent).toBe('No LUT')
+  })
+
   it('names one adjustment in the singular and an Off strength in words', () => {
     renderPanel({
       recap: {
+        output: 'full-resolution',
         size: null,
         look: { name: 'Kodak 2383', percent: 0 },
         adjustments: 1,

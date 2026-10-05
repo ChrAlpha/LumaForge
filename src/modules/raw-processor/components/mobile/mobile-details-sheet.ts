@@ -14,6 +14,7 @@ import {
   getProfileOutputLabel,
   getResolvedProfile,
 } from '../tools/lut-contract'
+import { getAvailableExportOutput } from './export-recap'
 import { HSL_BAND_ORDER, MOBILE_HSL_FIELDS } from './hsl-fields'
 
 type FileFactsProps = Parameters<typeof FileFactsTool>[0]
@@ -91,6 +92,10 @@ export function buildMobileDetailsSheet(
     lutProfileSelection?: LUTContractSelectionState | null
     lutProfileResolution?: LUTContractResolution | null
     transformActive: boolean
+    /** The full-resolution export can run. */
+    canExport: boolean
+    /** The bounded HQ preview export can run. */
+    canPreviewExport: boolean
   },
   t: Translate,
 ): MobileDetailsSheet {
@@ -127,6 +132,16 @@ export function buildMobileDetailsSheet(
         )
       : undefined
 
+  // The Output step names what can be written now, not what the pipeline
+  // would write once every gate opens.
+  const output = getAvailableExportOutput(input)
+  const outputDetail =
+    output === 'full-resolution'
+      ? t('raw.mobile.more.outputJpeg')
+      : output === 'hq-preview'
+        ? t('raw.mobile.export.previewOnly')
+        : t('raw.mobile.more.outputUnavailable')
+
   return {
     pipelineSteps: [
       {
@@ -146,7 +161,7 @@ export function buildMobileDetailsSheet(
       {
         index: 5,
         label: t('raw.mobile.more.stepOutput'),
-        detail: t('raw.mobile.more.outputJpeg'),
+        detail: outputDetail,
       },
     ],
     lutRows: input.currentLutName

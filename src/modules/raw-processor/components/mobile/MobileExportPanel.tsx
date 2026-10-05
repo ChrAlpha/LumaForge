@@ -70,12 +70,6 @@ function ExportResultAction(props: {
   )
 }
 
-/**
- * One quiet line pair before the export button that says what will be
- * written, from state only: the full-resolution JPEG and its delivered size
- * when known, then the look, the Adjust fields moved off neutral, and an
- * applied Transform. Nothing here is a promise the export does not keep.
- */
 /** Marks the look's name in its recap template; never part of a name. */
 const LOOK_NAME_SLOT = '\u2063'
 
@@ -94,6 +88,13 @@ function splitLookRecap(line: string, name: string) {
   }
 }
 
+/**
+ * One quiet line pair before the export button that says what will be
+ * written, from state only: the JPEG that can be written (and the
+ * full-resolution size when known), then the look, the Adjust fields moved
+ * off neutral, and an applied Transform. Nothing here is a promise the
+ * export does not keep.
+ */
 function ExportRecapLines({ recap }: { recap: MobileExportRecap }) {
   const { t } = useI18n()
   const details = [
@@ -124,15 +125,21 @@ function ExportRecapLines({ recap }: { recap: MobileExportRecap }) {
       data-export-recap
       className="m-0 grid gap-0.5 px-0.5 text-[0.72rem] leading-snug text-lf-on-photo-ink/68 tabular-nums"
     >
-      <span className="truncate">
-        {t('raw.mobile.export.recap.fullRes')}
-        {recap.size && (
-          <>
-            {' · '}
-            {recap.size.width}×{recap.size.height}
-          </>
-        )}
-      </span>
+      {/* Only what can be written: full resolution when it can run, the
+          HQ preview when only that can, and no output line otherwise. */}
+      {recap.output === 'full-resolution' ? (
+        <span className="truncate">
+          {t('raw.mobile.export.recap.fullRes')}
+          {recap.size && (
+            <>
+              {' · '}
+              {recap.size.width}×{recap.size.height}
+            </>
+          )}
+        </span>
+      ) : recap.output === 'hq-preview' ? (
+        <span className="truncate">{t('raw.mobile.export.previewOnly')}</span>
+      ) : null}
       {/* Each part is a flex item, and a flex item drops the white space
           it starts with: parts that open on a separator keep it with
           whitespace-pre. */}

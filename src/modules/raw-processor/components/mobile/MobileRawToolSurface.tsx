@@ -40,6 +40,8 @@ export function MobileRawToolSurface() {
       lutProfileSelection: props.lutProfileSelection,
       lutProfileResolution: props.lutProfileResolution,
       transformActive: props.transform?.active === true,
+      canExport: props.canExport,
+      canPreviewExport: props.canPreviewExport === true,
     },
     t,
   )
@@ -52,6 +54,8 @@ export function MobileRawToolSurface() {
       : null,
   })
   const exportRecap = buildMobileExportRecap({
+    canExport: props.canExport,
+    canPreviewExport: props.canPreviewExport === true,
     deliveredSize: props.deliveredExportSize,
     lutName: lookTitle,
     intensity: props.activeIntensity,

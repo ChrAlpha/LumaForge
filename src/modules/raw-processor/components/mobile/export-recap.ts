@@ -6,9 +6,29 @@ import { TONE_FIELDS } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
 import { HSL_BAND_ORDER } from './hsl-fields'
 
+/**
+ * The JPEG export can write right now: the full-resolution export when it
+ * can run, else the bounded HQ preview when that can, else nothing. The
+ * full-resolution recap is never shown for a session that cannot write it.
+ */
+export type MobileExportOutput = 'full-resolution' | 'hq-preview' | null
+
+export function getAvailableExportOutput(input: {
+  canExport: boolean
+  canPreviewExport: boolean
+}): MobileExportOutput {
+  if (input.canExport) return 'full-resolution'
+  if (input.canPreviewExport) return 'hq-preview'
+  return null
+}
+
 /** What the export panel says it will write, read from state only. */
 export interface MobileExportRecap {
-  /** Null while the full-resolution size is not known. */
+  output: MobileExportOutput
+  /**
+   * The full-resolution size; null while it is not known or when the
+   * full-resolution export cannot run.
+   */
   size: DeliveredExportSize | null
   /**
    * Null when no LUT is applied. `percent` is the strength the export
@@ -46,6 +66,8 @@ export function countAdjustments(input: {
 }
 
 export function buildMobileExportRecap(input: {
+  canExport: boolean
+  canPreviewExport: boolean
   deliveredSize: DeliveredExportSize | null | undefined
   lutName: string | null | undefined
   /** How much of the look reaches the photo, 0..1. */
@@ -55,8 +77,10 @@ export function buildMobileExportRecap(input: {
   selectiveColor: HSLToolValue | undefined
   transformApplied: boolean
 }): MobileExportRecap {
+  const output = getAvailableExportOutput(input)
   return {
-    size: input.deliveredSize ?? null,
+    output,
+    size: output === 'full-resolution' ? (input.deliveredSize ?? null) : null,
     look: input.lutName
       ? {
           name: input.lutName,

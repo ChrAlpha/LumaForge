@@ -54,6 +54,8 @@ const base = {
   selectiveColor: undefined,
   currentLutName: null,
   transformActive: false,
+  canExport: true,
+  canPreviewExport: true,
 }
 
 describe('countAdjustedFields', () => {
@@ -133,6 +135,15 @@ describe('buildMobileDetailsSheet', () => {
     ])
     expect(JSON.stringify(sheet)).not.toContain('—')
     expect(sheet.lutRows).toEqual([{ label: 'LUT', value: 'Not used' }])
+  })
+
+  it('names the output that can be written now, not the full-resolution promise', () => {
+    const output = (canExport: boolean, canPreviewExport: boolean) =>
+      buildMobileDetailsSheet({ ...base, canExport, canPreviewExport }, t)
+        .pipelineSteps[4]
+    expect(output(true, false).detail).toBe('Full-resolution JPEG')
+    expect(output(false, true).detail).toBe('HQ preview JPEG only')
+    expect(output(false, false).detail).toBe('No JPEG can be written yet')
   })
 
   it('labels the preview render time as a preview fact, next to support and location', () => {
