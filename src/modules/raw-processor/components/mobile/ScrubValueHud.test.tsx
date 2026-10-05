@@ -86,6 +86,11 @@ describe('scrubValueHud', () => {
     expect(hud).toHaveTextContent(/exposure/i)
     expect(hud).toHaveTextContent('+1.25')
     expect(hud).toHaveAttribute('data-scrub-value-hud')
+    // Sized to its content so the value and unit never wrap apart.
+    expect(hud).toHaveClass('w-max')
+    expect(screen.getByText('+1.25 EV', { exact: false })).toHaveClass(
+      'whitespace-nowrap',
+    )
   })
 
   it('reads a Strength scrub as the whole percent, and 0 as Off', () => {

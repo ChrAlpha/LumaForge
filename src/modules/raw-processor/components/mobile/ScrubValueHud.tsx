@@ -66,13 +66,16 @@ export function ScrubValueHud(props: ScrubValueHudProps) {
           transition={surfaceFade}
           // Centred in the topbar band (safe area + 56px) on its solid
           // plate, so the readout needs no shadow to hold over the photo.
-          className="pointer-events-none absolute left-1/2 top-safe-offset-2 z-30 grid -translate-x-1/2 gap-1 px-4 text-center text-lf-on-photo-ink"
+          // `w-max` keeps the readout on one line: an absolutely placed box
+          // centred from 50% would otherwise shrink to the right half of the
+          // band and wrap the unit under the number.
+          className="pointer-events-none absolute left-1/2 top-safe-offset-2 z-30 grid w-max max-w-[calc(100vw-1.5rem)] -translate-x-1/2 gap-1 px-4 text-center text-lf-on-photo-ink"
         >
           <span className="text-[0.62rem] font-bold uppercase leading-none tracking-[0.18em] text-lf-amber-soft">
             {readout.label}
           </span>
           <span className="flex items-center justify-center gap-3">
-            <strong className="text-[1.85rem] font-semibold leading-none tabular-nums">
+            <strong className="whitespace-nowrap text-[1.85rem] font-semibold leading-none tabular-nums">
               {readout.formatted}
             </strong>
             {/* The tonal answer to the move, beside the number and inside
