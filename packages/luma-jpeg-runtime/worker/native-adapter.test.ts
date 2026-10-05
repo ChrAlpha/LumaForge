@@ -135,7 +135,7 @@ describe('createNativeJpegEncoderFactory', () => {
     let decrementedException: unknown
     const factory = createNativeJpegEncoderFactory({
       LumaJpegEncoder: class extends FakeNativeEncoder {
-        writeRows() {
+        writeRows(): never {
           throw nativeException
         }
       },
@@ -185,7 +185,7 @@ describe('createNativeJpegEncoderFactory', () => {
     let deleted = false
     const factory = createNativeJpegEncoderFactory({
       LumaJpegEncoder: class extends FakeNativeEncoder {
-        writeRows() {
+        writeRows(): never {
           throw nativeException
         }
 
@@ -215,7 +215,7 @@ describe('createNativeJpegEncoderFactory', () => {
     let deleted = false
     const factory = createNativeJpegEncoderFactory({
       LumaJpegEncoder: class extends FakeNativeEncoder {
-        finish() {
+        finish(): never {
           throw nativeException
         }
 

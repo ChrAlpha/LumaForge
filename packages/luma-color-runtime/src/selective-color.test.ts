@@ -580,7 +580,7 @@ function mat3MultiplyF64(
   a: readonly number[],
   b: readonly number[],
 ): readonly number[] {
-  const out: number[] = Array.from({ length: 9 }).fill(0)
+  const out: number[] = Array.from<number>({ length: 9 }).fill(0)
   for (let row = 0; row < 3; row++) {
     for (let col = 0; col < 3; col++) {
       out[row * 3 + col] =
@@ -770,7 +770,7 @@ describe('applySelectiveColorRow seam continuity (seam_continuity)', () => {
     const lab = new Float32Array(3)
     const lch = new Float32Array(3)
     const rgbScratch = new Float32Array(3)
-    const inputHues = Array.from({ length: N })
+    const inputHues = Array.from<number>({ length: N }).fill(0)
     for (let i = 0; i < N; i++) {
       const hNorm = i / N
       lch[0] = L
@@ -788,7 +788,7 @@ describe('applySelectiveColorRow seam continuity (seam_continuity)', () => {
     const out = new Float32Array(N * 3)
     applySelectiveColorRow(ramp, out, prepared)
 
-    const shifts = Array.from({ length: N })
+    const shifts = Array.from<number>({ length: N }).fill(0)
     const labOut = new Float32Array(3)
     for (let i = 0; i < N; i++) {
       // The ramp is constructed from linearly-known hues; recover the input
@@ -970,7 +970,7 @@ describe('applySelectiveColorRow cross-talk smoothness (cross_talk_smoothness)',
     const params = makeBandsWithScalar(0, 'hue', 50)
     const { prepared } = resolveSelectiveColorParams(params)
     const ramp = new Float32Array(N * 3)
-    const inputHues = Array.from({ length: N })
+    const inputHues = Array.from<number>({ length: N }).fill(0)
     const lab = new Float32Array(3)
     const rgbScratch = new Float32Array(3)
     for (let i = 0; i < N; i++) {
@@ -986,7 +986,7 @@ describe('applySelectiveColorRow cross-talk smoothness (cross_talk_smoothness)',
     }
     const out = new Float32Array(N * 3)
     applySelectiveColorRow(ramp, out, prepared)
-    const shifts = Array.from({ length: N })
+    const shifts = Array.from<number>({ length: N }).fill(0)
     const labOut = new Float32Array(3)
     for (let i = 0; i < N; i++) {
       linearProPhotoToOklab(

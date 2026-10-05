@@ -13,7 +13,24 @@ import {
   toLUTContractSelection,
 } from './lut-contract'
 import { getLUTColorProfile } from './registry'
-import type { StoredLUTContractSelection } from './types'
+import type { LUTContractSelection, StoredLUTContractSelection } from './types'
+
+type DisplayLabelField =
+  | 'inputGamut'
+  | 'inputTransfer'
+  | 'outputGamut'
+  | 'outputTransfer'
+
+// buildStoredContractSelection re-resolves gamut and transfer through the
+// alias tables, so selections from untyped sources (persisted JSON, JS
+// callers) that still carry display labels normalize to canonical ids. The
+// published selection type stays canonical-only; only this test casts.
+function withDisplayLabels(
+  selection: Omit<LUTContractSelection, DisplayLabelField> &
+    Partial<Record<DisplayLabelField, string>>,
+): LUTContractSelection {
+  return selection as LUTContractSelection
+}
 
 describe('generic LUT contract validation', () => {
   it('normalizes gamut and transfer aliases', () => {
@@ -53,26 +70,30 @@ describe('generic LUT contract validation', () => {
       }),
     ).toBe(false)
     expect(
-      buildStoredContractSelection({
-        role: 'scene-creative',
-        inputGamut: 'S-Gamut3.Cine',
-        inputTransfer: 'S-Log3',
-        inputRange: 'full',
-      }),
+      buildStoredContractSelection(
+        withDisplayLabels({
+          role: 'scene-creative',
+          inputGamut: 'S-Gamut3.Cine',
+          inputTransfer: 'S-Log3',
+          inputRange: 'full',
+        }),
+      ),
     ).toBeUndefined()
   })
 
   it('builds a persistable combined-output contract', () => {
     expect(
-      buildStoredContractSelection({
-        role: 'combined-look-output',
-        inputGamut: 'S-Gamut3.Cine',
-        inputTransfer: 'S-Log3',
-        inputRange: 'legal',
-        outputGamut: 'Rec.709',
-        outputTransfer: 'Gamma 2.4',
-        outputRange: 'full',
-      }),
+      buildStoredContractSelection(
+        withDisplayLabels({
+          role: 'combined-look-output',
+          inputGamut: 'S-Gamut3.Cine',
+          inputTransfer: 'S-Log3',
+          inputRange: 'legal',
+          outputGamut: 'Rec.709',
+          outputTransfer: 'Gamma 2.4',
+          outputRange: 'full',
+        }),
+      ),
     ).toEqual({
       inputProfile: 'sony-sgamut3cine-slog3',
       role: 'combined-look-output',

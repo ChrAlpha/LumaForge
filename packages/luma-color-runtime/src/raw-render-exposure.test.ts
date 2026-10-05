@@ -56,9 +56,9 @@ describe('raw render exposure', () => {
 
   it('limits statistical lift when sparse high-key highlights need headroom', () => {
     const luminance = [
-      ...Array.from({ length: 90 }).fill(0.02),
-      ...Array.from({ length: 5 }).fill(0.15181709606469823),
-      ...Array.from({ length: 4 }).fill(0.26330750196536207),
+      ...Array.from<number>({ length: 90 }).fill(0.02),
+      ...Array.from<number>({ length: 5 }).fill(0.15181709606469823),
+      ...Array.from<number>({ length: 4 }).fill(0.26330750196536207),
       0.7245288776989395,
     ]
 
@@ -75,8 +75,8 @@ describe('raw render exposure', () => {
 
   it('does not turn highlight protection into negative EV for dark frames', () => {
     const luminance = [
-      ...Array.from({ length: 95 }).fill(0.1),
-      ...Array.from({ length: 5 }).fill(0.9),
+      ...Array.from<number>({ length: 95 }).fill(0.1),
+      ...Array.from<number>({ length: 5 }).fill(0.9),
     ]
 
     const exposure = estimateRawRenderExposureFromRgbU16({
