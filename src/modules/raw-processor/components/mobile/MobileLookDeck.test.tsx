@@ -820,6 +820,67 @@ describe('mobileLookDeck', () => {
       ).toBeInTheDocument()
     })
 
+    it("does not open a later look's contract after an import that failed", async () => {
+      let settle!: (outcome: string) => void
+      const onLutLoad = vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            settle = resolve
+          }),
+      )
+      const onViewChange = vi.fn()
+      const { container, rerenderDeck } = renderDeck(look({ onLutLoad }), {
+        onViewChange,
+      })
+      fireEvent.change(
+        container.querySelector<HTMLInputElement>('input[type="file"]')!,
+        { target: { files: [new File(['x'], 'broken.cube')] } },
+      )
+      expect(onLutLoad).toHaveBeenCalledOnce()
+      // The parse fails: nothing new is applied.
+      await act(async () => settle('failed'))
+
+      // Much later, a look from elsewhere lands without a contract.
+      rerenderDeck(unknownFile())
+      expect(onViewChange).not.toHaveBeenCalledWith('contract')
+    })
+
+    it('still opens the contract when the imported LUT lands before the import settles', async () => {
+      let settle!: (outcome: string) => void
+      const onLutLoad = vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            settle = resolve
+          }),
+      )
+      const onViewChange = vi.fn()
+      const { container, rerenderDeck } = renderDeck(look({ onLutLoad }), {
+        onViewChange,
+      })
+      fireEvent.change(
+        container.querySelector<HTMLInputElement>('input[type="file"]')!,
+        { target: { files: [new File(['x'], 'client.cube')] } },
+      )
+      rerenderDeck({ ...unknownFile(), onLutLoad })
+      await act(async () => settle('loaded'))
+      expect(onViewChange).toHaveBeenLastCalledWith('contract')
+    })
+
+    it('disarms an import that never reported back once a strip tile is tapped', async () => {
+      const onViewChange = vi.fn()
+      const controls = look()
+      const { container, rerenderDeck } = renderDeck(controls, {
+        onViewChange,
+      })
+      fireEvent.change(
+        container.querySelector<HTMLInputElement>('input[type="file"]')!,
+        { target: { files: [new File(['x'], 'client.cube')] } },
+      )
+      await userEvent.click(tile('Kodak 2383'))
+      rerenderDeck(unknownFile())
+      expect(onViewChange).not.toHaveBeenCalledWith('contract')
+    })
+
     it('leaves the strip alone after an import whose contract resolved', () => {
       const onViewChange = vi.fn()
       const { container, rerenderDeck } = renderDeck(look(), { onViewChange })

@@ -55,7 +55,8 @@ export interface RawToolSurfaceProps {
    * which has no split surface; a committed Transform is reported separately.
    */
   compareSupported?: boolean
-  onLutLoad: (files: File[]) => void
+  /** Resolves once the load settles, applied or not. */
+  onLutLoad: (files: File[]) => void | Promise<unknown>
   onLutClear: () => void
   onLutProfileSelect: (profile: LUTColorProfile) => void
   onExport: (options: {

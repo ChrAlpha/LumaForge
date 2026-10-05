@@ -34,7 +34,8 @@ export interface MobileLookControls {
   appliedLut?: AppliedLut | null
   /** Processing or exporting: the look cannot change. */
   disabled: boolean
-  onLutLoad: (files: File[]) => void
+  /** Resolves once the load settles, applied or not. */
+  onLutLoad: (files: File[]) => void | Promise<unknown>
   onLutClear: () => void
   lutProfileSelection?: LUTContractSelectionState | null
   lutProfileResolution?: LUTContractResolution | null
@@ -141,8 +142,16 @@ export function MobileLookDeck(props: {
   }, [lutApplied, onViewChange, view])
 
   // A .cube the user imports opens its contract when nothing resolved it,
-  // once the session reports the new LUT.
+  // once the session reports the new LUT. Armed by the import alone: a
+  // failed or no-op import, or a look chosen from the strip, disarms it,
+  // so a later unrelated look never opens a contract by surprise.
   const importBaseline = useRef<string | null | undefined>(undefined)
+  const importAttempt = useRef<object | null>(null)
+  const [importSettled, setImportSettled] = useState<object | null>(null)
+  const disarmImport = () => {
+    importBaseline.current = undefined
+    importAttempt.current = null
+  }
   const appliedIdentity = applied
     ? `${applied.sha256 ?? ''}|${applied.name}`
     : null
@@ -152,8 +161,16 @@ export function MobileLookDeck(props: {
     if (baseline === undefined || !appliedIdentity) return
     if (appliedIdentity === baseline) return
     importBaseline.current = undefined
+    importAttempt.current = null
     if (contractStatus !== 'confirmed') openContractRef.current()
   }, [appliedIdentity, contractStatus])
+  // Runs after the effect above in the commit that carries the import's
+  // result, so a LUT that did land has already been answered.
+  useEffect(() => {
+    if (!importSettled || importAttempt.current !== importSettled) return
+    importBaseline.current = undefined
+    importAttempt.current = null
+  }, [importSettled])
 
   useEffect(() => {
     if (!strengthReasonShown) return
@@ -176,6 +193,7 @@ export function MobileLookDeck(props: {
       : undefined
 
   const loadEntry = (entryId: string) => {
+    disarmImport()
     setDismissedFailureId(null)
     void loadOnlineLutEntry(entryId)
   }
@@ -223,6 +241,7 @@ export function MobileLookDeck(props: {
           disabled={look.disabled}
           appliedNeedsContract={appliedNeedsContract}
           onSelectOriginal={() => {
+            disarmImport()
             setDismissedFailureId(failedEntryId)
             // A look still on its way must not land after the Original.
             sources?.cancelEntryLoad()
@@ -240,7 +259,15 @@ export function MobileLookDeck(props: {
             setDismissedFailureId(failedEntryId)
             sources?.cancelEntryLoad()
             importBaseline.current = appliedIdentity
-            look.onLutLoad(files)
+            const attempt = {}
+            importAttempt.current = attempt
+            const settling = look.onLutLoad(files)
+            // Without a promise there is no settle to wait for; the next
+            // strip tap disarms it instead.
+            if (settling) {
+              const settle = () => setImportSettled(attempt)
+              settling.then(settle, settle)
+            }
           }}
         />
       </div>

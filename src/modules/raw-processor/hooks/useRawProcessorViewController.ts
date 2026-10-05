@@ -70,11 +70,7 @@ export function useRawProcessorViewController({
   )
 
   const handleLutDrop = useCallback(
-    (files: File[]) => {
-      if (files.length > 0) {
-        loadLUT(files[0])
-      }
-    },
+    (files: File[]) => (files.length > 0 ? loadLUT(files[0]) : undefined),
     [loadLUT],
   )
 
