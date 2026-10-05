@@ -33,10 +33,16 @@ export interface UseSliderScrubOptions {
   max: number
   step: number
   /**
-   * The value a field returns to. Defaults to 0, which every /raw field uses
-   * today; the sticky-zero park and the tap capture window both anchor here.
+   * The value a field returns to. Defaults to 0. Without `detents` it is
+   * the one value the scrub sticks to.
    */
   neutral?: number
+  /**
+   * Values the scrub sticks to: crossing one parks there until 10px of
+   * further travel, and a tap near its tick lands exactly on it. Defaults
+   * to the neutral alone.
+   */
+  detents?: readonly number[]
   disabled?: boolean
   onChange: (value: number) => void
   /** Fires once when a scrub locks and once when it ends. Taps do not scrub. */
@@ -109,6 +115,7 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
     max,
     step,
     neutral = 0,
+    detents,
     disabled = false,
     onChange,
     onScrubChange,
@@ -123,6 +130,9 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
   const lastGainRef = useRef<ScrubGainBand>('full')
   const valueRef = useRef(value)
   valueRef.current = value
+  // Read at pointerdown; a fresh array each render must not rebuild the bind.
+  const detentsRef = useRef(detents)
+  detentsRef.current = detents
   const [scrubbing, setScrubbing] = useState(false)
   const [gain, setGain] = useState<ScrubGainBand>('full')
 
@@ -210,6 +220,7 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
         max,
         step,
         neutral,
+        detents: detentsRef.current,
         track: readTrackGeometry(host),
       })
       sessionRef.current = session

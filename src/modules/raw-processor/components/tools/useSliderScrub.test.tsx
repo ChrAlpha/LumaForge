@@ -13,12 +13,14 @@ function Harness(props: {
   onReset?: () => void
   onGainChange?: (g: string) => void
   disabled?: boolean
+  detents?: number[]
 }) {
   const scrub = useSliderScrub({
     value: props.value,
     min: -100,
     max: 100,
     step: 1,
+    detents: props.detents,
     disabled: props.disabled,
     onChange: props.onChange,
     onScrubChange: props.onScrubChange,
@@ -137,6 +139,25 @@ describe('useSliderScrub', () => {
     expect(onScrubChange).toHaveBeenCalledTimes(2)
     expect(onScrubChange).toHaveBeenLastCalledWith(false)
     expect(row).not.toHaveAttribute('data-scrubbing')
+  })
+
+  it('parks on the detents it is given instead of the neutral', () => {
+    const onChange = vi.fn()
+    render(<Harness value={0} onChange={onChange} detents={[50]} />)
+    const row = screen.getByTestId('row')
+    mockTrackRect(row)
+
+    // 40 → would be 55: parks on 50 until 10px more travel.
+    fireEvent.pointerDown(row, mouse(240, 50))
+    fireEvent.pointerMove(row, mouse(255, 50))
+    expect(onChange).toHaveBeenLastCalledWith(50)
+    fireEvent.pointerMove(row, mouse(260, 50))
+    expect(onChange).toHaveBeenLastCalledWith(50)
+    // Back down through 0 no longer parks there: 125px of travel leaves
+    // the detent after its 10px and runs on to 50 - 1 - 115.
+    fireEvent.pointerMove(row, mouse(130, 50))
+    expect(onChange).toHaveBeenLastCalledWith(-66)
+    fireEvent.pointerUp(row, mouse(130, 50))
   })
 
   it('touch: a mostly vertical move abandons the gesture without changing the value', () => {

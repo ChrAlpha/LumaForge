@@ -225,3 +225,105 @@ describe('createScrubSession with a non-zero neutral', () => {
     expect(drag.move(190, 50, {}).value).toBe(50)
   })
 })
+
+describe('createScrubSession with detents', () => {
+  // A 0..100 strength domain on the 200px track: 2px per unit, detents at
+  // 40, 70 and 100 (ticks at x=180, 240, 300).
+  const STRENGTH = {
+    min: 0,
+    max: 100,
+    step: 1,
+    track: TRACK,
+    neutral: 70,
+    detents: [40, 70, 100],
+  }
+
+  it('parks on every detent it crosses until 10px of further travel', () => {
+    const session = createScrubSession({
+      ...STRENGTH,
+      pointerType: 'mouse',
+      startValue: 0,
+      startX: 160, // 30
+      startY: 50,
+    })
+    expect(session.value).toBe(30)
+    // 30 → would be 45: parks on 40.
+    expect(session.move(190, 50, {}).value).toBe(40)
+    expect(
+      session.move(190 + SCRUB_STICKY_ZERO_RELEASE_PX - 1, 50, {}).value,
+    ).toBe(40)
+    const released = session.move(
+      190 + SCRUB_STICKY_ZERO_RELEASE_PX + 4,
+      50,
+      {},
+    )
+    expect(released.value).toBeGreaterThan(40)
+    // On up through 70 (43 → would be 71): parks there too.
+    expect(session.move(260, 50, {}).value).toBe(70)
+    expect(session.move(265, 50, {}).value).toBe(70)
+  })
+
+  it('parks on the first detent a long move crosses, nearest where it started', () => {
+    const session = createScrubSession({
+      ...STRENGTH,
+      pointerType: 'mouse',
+      startValue: 0,
+      startX: 140, // 20
+      startY: 50,
+    })
+    // 20 → would be 90, past 40 and 70: the near one holds it.
+    expect(session.move(280, 50, {}).value).toBe(40)
+    // Coming back down from above 70 parks on 70 first.
+    const down = createScrubSession({
+      ...STRENGTH,
+      pointerType: 'mouse',
+      startValue: 0,
+      startX: 290, // 95
+      startY: 50,
+    })
+    expect(down.move(150, 50, {}).value).toBe(70)
+  })
+
+  it('leaves a detent it starts on without a dead zone', () => {
+    const session = createScrubSession({
+      ...STRENGTH,
+      pointerType: 'mouse',
+      startValue: 0,
+      startX: 240, // exactly 70
+      startY: 50,
+    })
+    expect(session.value).toBe(70)
+    expect(session.move(242, 50, {}).value).toBe(71)
+  })
+
+  it('lands a tap within the capture window exactly on the nearest tick', () => {
+    const tap = (x: number) =>
+      createScrubSession({
+        ...STRENGTH,
+        pointerType: 'touch',
+        startValue: 20,
+        startX: x,
+        startY: 50,
+      }).end(x, 50).value
+    expect(tap(180 + SCRUB_ZERO_CAPTURE_PX - 1)).toBe(40)
+    expect(tap(240 - SCRUB_ZERO_CAPTURE_PX + 1)).toBe(70)
+    // The domain's own end is a detent too.
+    expect(tap(300 - 2)).toBe(100)
+    // Outside every window, the tap point is the value.
+    expect(tap(220)).toBe(60)
+  })
+
+  it('replaces the neutral with the given detents', () => {
+    // A bipolar field given detents away from 0 no longer parks at 0.
+    const session = mouseSession({
+      startValue: 0,
+      startX: 215,
+      detents: [50],
+    })
+    expect(session.value).toBe(15)
+    expect(session.move(195, 50, {}).value).toBe(-5)
+    // An empty list turns sticking off entirely.
+    const free = mouseSession({ startX: 215, detents: [] })
+    expect(free.move(195, 50, {}).value).toBe(-5)
+  })
+})
