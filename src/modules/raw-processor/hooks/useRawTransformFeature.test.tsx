@@ -1,11 +1,16 @@
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
+import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 import { act, renderHook } from '@testing-library/react'
 import { useCallback, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { identityMatrix } from '~/modules/transform-demo/geometry/matrix'
+import {
+  identityMatrix,
+  rotationMatrix,
+} from '~/modules/transform-demo/geometry/matrix'
 import type { UprightAnalysis } from '~/modules/transform-demo/geometry/types'
 import type { PreviewSource } from '~/modules/transform-demo/preview-types'
+import { composeManualTransform } from '~/modules/transform-demo/transform-render'
 import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
 import type {
   TransformWorkerRequest,
@@ -81,17 +86,46 @@ function lastRender(): RenderRequest {
   return request
 }
 
-function analyzeCapture() {
+/** An analysis whose Auto and Level solutions rotate by `degrees`. */
+function uprightAnalysis(degrees: number): UprightAnalysis {
+  const corrected = {
+    ...solution,
+    matrix: rotationMatrix(degrees, 80 / 60),
+    rotationDegrees: degrees,
+  }
+  return {
+    lines: [],
+    solutions: { ...analysis.solutions, auto: corrected, level: corrected },
+  }
+}
+
+function lastAnalyze() {
   const request = worker().messages.findLast(
     (message) => message.type === 'analyze',
   )
   if (!request) throw new Error('expected analyze')
+  return request
+}
+
+function analyzeCapture(result: UprightAnalysis = analysis) {
+  const request = lastAnalyze()
   act(() =>
     worker().emit({
       type: 'analyzed',
       sourceId: request.sourceId,
-      analysis,
+      analysis: result,
       elapsedMs: 1,
+    }),
+  )
+}
+
+function failAnalysis() {
+  const request = lastAnalyze()
+  act(() =>
+    worker().emit({
+      type: 'error',
+      sourceId: request.sourceId,
+      message: 'processing',
     }),
   )
 }
@@ -111,6 +145,17 @@ function answer(request: RenderRequest) {
   )
 }
 
+/** Answers renders in order until the newest one asked for is answered. */
+function answerLatest(): RenderRequest {
+  let request = lastRender()
+  answer(request)
+  while (lastRender() !== request) {
+    request = lastRender()
+    answer(request)
+  }
+  return request
+}
+
 function refuse(request: RenderRequest) {
   act(() =>
     worker().emit({
@@ -127,6 +172,31 @@ function geometryOf(request: RenderRequest): ExportGeometry {
     matrix: Array.from(request.matrix),
     constrainCrop: request.constrainCrop,
   }
+}
+
+/** Frames the Transform worker was asked to analyse, across workers. */
+function analyses() {
+  return FakeWorker.instances
+    .flatMap((instance) => instance.messages)
+    .filter((message) => message.type === 'analyze').length
+}
+
+/** A finished processed CPU frame, as the CPU stage hands it over. */
+function cpuFrameOf(
+  requestId: number,
+  sourceId = 'v1:80x60:28800',
+): CpuPreviewFrame {
+  return {
+    requestId,
+    sourceId,
+    width: 80,
+    height: 60,
+    rgba: new Uint8ClampedArray(80 * 60 * 4),
+  }
+}
+
+function lastCapturedCpuFrame() {
+  return vi.mocked(captureTransformSource).mock.lastCall?.[0].cpuFrame
 }
 
 function workflow(): UseRawWorkflowReturn {
@@ -158,7 +228,13 @@ const commits =
 interface SessionInput {
   session?: string
   decodedImageVersion?: number
+  lutDataVersion?: number
   userExposureEv?: number
+  userSaturation?: number
+  intensity?: number
+  viewMode?: 'processed' | 'compare'
+  /** The preview runs on the CPU worker instead of WebGPU. */
+  cpu?: boolean
   /** A finished export released the preview. */
   released?: boolean
 }
@@ -170,7 +246,12 @@ interface SessionInput {
 function useSessionHarness({
   session = 'one',
   decodedImageVersion = 1,
+  lutDataVersion = 1,
   userExposureEv = 0,
+  userSaturation = 0,
+  intensity = 1,
+  viewMode = 'processed',
+  cpu = false,
   released = false,
 }: SessionInput) {
   const [geometries, setGeometries] = useState<
@@ -190,10 +271,17 @@ function useSessionHarness({
       sourceFileName: 'current.nef',
       status: 'ready',
       decodedImageVersion,
-      lutDataVersion: 1,
+      lutDataVersion,
       decodedImageRef: { current: released ? null : image },
       pipelineRef,
-      params: { viewMode: 'processed', compareSplit: 0.5, userExposureEv },
+      viewMode,
+      params: {
+        viewMode,
+        compareSplit: 0.5,
+        userExposureEv,
+        userSaturation,
+        intensity,
+      },
       previewSuspended: released,
       previewTransform: {
         sourceId: session,
@@ -203,7 +291,7 @@ function useSessionHarness({
       },
       setViewMode,
     } as unknown as UseRawWorkflowReturn,
-    false,
+    cpu,
   )
   return { feature, geometry }
 }
@@ -289,6 +377,7 @@ describe('rAW Transform feature', () => {
       input: { ...initial, params: { ...initial.params, userExposureEv: 1 } },
     })
     await act(() => vi.advanceTimersByTimeAsync(150))
+    // A Transform the controls ask for follows the colour on screen.
     expect(captureTransformSource).toHaveBeenCalledTimes(2)
     expect(
       worker().messages.filter((message) => message.type === 'analyze'),
@@ -296,6 +385,351 @@ describe('rAW Transform feature', () => {
     expect(result.current.demo.mode).toBe('vertical')
     expect(initial.setViewMode).toHaveBeenCalledWith('processed')
     unmount()
+  })
+
+  it('analyses a neutral Transform once, whatever the colour, LUT or strength does next', async () => {
+    const hook = renderSession()
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).not.toHaveBeenCalled()
+    await captureNeutral(hook)
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    expect(analyses()).toBe(1)
+
+    // None of these is a new photo, and a neutral Transform shows none of
+    // them: re-reading the frame would only repeat the same analysis.
+    const edits: SessionInput[] = [
+      { userExposureEv: 1 },
+      { userExposureEv: 1.5, userSaturation: 20 },
+      { userExposureEv: 1.5, userSaturation: 20, lutDataVersion: 2 },
+      {
+        userExposureEv: 1.5,
+        userSaturation: 20,
+        lutDataVersion: 2,
+        intensity: 0.4,
+      },
+      {
+        userExposureEv: 1.5,
+        userSaturation: 20,
+        lutDataVersion: 2,
+        intensity: 0.7,
+        viewMode: 'compare',
+      },
+    ]
+    for (const edit of edits) {
+      hook.rerender(edit)
+      await act(() => vi.advanceTimersByTimeAsync(150))
+    }
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    expect(analyses()).toBe(1)
+    expect(hook.result.current.feature.current).toBe(true)
+    expect(hook.result.current.feature.busy).toBe(false)
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    expect(commits).not.toHaveBeenCalled()
+    hook.unmount()
+  })
+
+  it('captures the photo as it now looks before a first Transform can commit', async () => {
+    const hook = renderSession()
+    await captureNeutral(hook)
+    hook.rerender({ userExposureEv: 1, lutDataVersion: 2, intensity: 0.5 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+
+    const latest: PreviewSource = {
+      ...frame,
+      frame: { ...frame.frame, data: new Uint8ClampedArray(80 * 60 * 4) },
+    }
+    vi.mocked(captureTransformSource).mockResolvedValueOnce(latest)
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    // The request is posted on the frame from before the edits. Its answer
+    // shows the old colour, so it is never what export reproduces.
+    const stale = lastRender()
+    answer(stale)
+    expect(commits).not.toHaveBeenCalled()
+    expect(hook.result.current.feature.active).toBe(false)
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    expect(hook.result.current.feature.demo.source).toBe(latest)
+    expect(hook.result.current.feature.demo.manual.rotate).toBe(3)
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+    analyzeCapture()
+    const fresh = lastRender()
+    expect(fresh.sourceId).toBeGreaterThan(stale.sourceId)
+    answer(fresh)
+    expect(commits).toHaveBeenCalledOnce()
+    expect(commits).toHaveBeenLastCalledWith('one', geometryOf(fresh))
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+
+    // Back to neutral with the panel still open, colour edits stop costing a
+    // capture again.
+    act(() => hook.result.current.feature.reset())
+    expect(commits).toHaveBeenLastCalledWith('one', null)
+    hook.rerender({ userExposureEv: 2, lutDataVersion: 2, intensity: 0.5 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    hook.unmount()
+  })
+
+  it('solves a first Upright on the photo as it now looks, and keeps a committed one where it is', async () => {
+    // Every read-back is a new frame.
+    vi.mocked(captureTransformSource).mockImplementation(async () => ({
+      ...frame,
+    }))
+    const hook = renderSession()
+    let stop!: () => void
+    act(() => {
+      stop = hook.result.current.feature.observe()
+    })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    analyzeCapture(uprightAnalysis(1))
+    answer(lastRender())
+    hook.rerender({ userExposureEv: 1 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+
+    // Auto is picked from the analysis of the frame before the edit, so
+    // the frame captured for it has to solve it again.
+    act(() => hook.result.current.feature.setMode('auto'))
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    analyzeCapture(uprightAnalysis(2))
+    const first = answerLatest()
+    expect(first.matrix).toEqual(
+      composeManualTransform(
+        rotationMatrix(2, 80 / 60),
+        NEUTRAL_TRANSFORM,
+        80 / 60,
+      ),
+    )
+    expect(commits).toHaveBeenCalledOnce()
+    expect(commits).toHaveBeenLastCalledWith('one', geometryOf(first))
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+
+    // Once committed, the colour moving on does not move the geometry,
+    // whatever the new frame's analysis would solve.
+    hook.rerender({ userExposureEv: 2 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(3)
+    analyzeCapture(uprightAnalysis(3))
+    const refreshed = answerLatest()
+    expect(refreshed.matrix).toEqual(first.matrix)
+    expect(refreshed.sourceId).toBeGreaterThan(first.sourceId)
+    expect(commits).toHaveBeenCalledOnce()
+    expect(hook.result.current.geometry).toEqual(geometryOf(first))
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+
+    // Nor does a mobile tool switch that closes the panel.
+    act(() => stop())
+    hook.rerender({ userExposureEv: 3 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(4)
+    analyzeCapture(uprightAnalysis(4))
+    expect(answerLatest().matrix).toEqual(first.matrix)
+    expect(commits).toHaveBeenCalledOnce()
+    expect(hook.result.current.feature.demo.mode).toBe('auto')
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    hook.unmount()
+  })
+
+  it('captures again on the next edit once the Transform worker failed the frame', async () => {
+    const hook = renderSession()
+    await captureNeutral(hook)
+
+    // The worker crashes. Nothing retries by itself...
+    act(() => worker().onerror?.())
+    expect(hook.result.current.feature.demo.error).toBe('processing')
+    expect(hook.result.current.feature.current).toBe(false)
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    // ...but the next change of input does, on a new worker.
+    hook.rerender({ userExposureEv: 1 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    expect(FakeWorker.instances).toHaveLength(2)
+    expect(hook.result.current.feature.demo.error).toBeNull()
+    analyzeCapture()
+    answer(lastRender())
+    expect(hook.result.current.feature.current).toBe(true)
+
+    // So does an analysis the worker failed.
+    hook.rerender({ userExposureEv: 1, decodedImageVersion: 2 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(3)
+    failAnalysis()
+    expect(hook.result.current.feature.demo.error).toBe('processing')
+    expect(hook.result.current.feature.demo.ready).toBe(false)
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(3)
+    hook.rerender({ userExposureEv: 2, decodedImageVersion: 2 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(4)
+    expect(hook.result.current.feature.demo.error).toBeNull()
+    analyzeCapture()
+    answer(lastRender())
+    expect(hook.result.current.feature.current).toBe(true)
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    expect(commits).not.toHaveBeenCalled()
+    hook.unmount()
+  })
+
+  it('keeps the view aids drawn on the colour on screen', async () => {
+    const hook = renderSession()
+    await captureNeutral(hook)
+    // Lines and Grid draw over the captured frame, so it must follow.
+    act(() => hook.result.current.feature.setShowLines(true))
+    expect(hook.result.current.feature.showOverlay).toBe(true)
+    hook.rerender({ userExposureEv: 1 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    analyzeCapture()
+    answer(lastRender())
+    expect(hook.result.current.feature.current).toBe(true)
+
+    act(() => hook.result.current.feature.setShowLines(false))
+    hook.rerender({ userExposureEv: 2 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    hook.unmount()
+  })
+
+  it('keeps a neutral CPU analysis across colour frames and an original peek', async () => {
+    const hook = renderSession({ cpu: true })
+    let stop!: () => void
+    act(() => {
+      stop = hook.result.current.feature.observe()
+    })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).not.toHaveBeenCalled()
+    const first = cpuFrameOf(1)
+    act(() => hook.result.current.feature.setCpuFrame(first))
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    expect(lastCapturedCpuFrame()).toBe(first)
+    analyzeCapture()
+    answer(lastRender())
+    const analysed = hook.result.current.feature.demo.source
+
+    // Peeking at the original hands Transform nothing, and the processed
+    // frame that comes back is the same photo, not a new one.
+    act(() => hook.result.current.feature.setCpuFrame(null))
+    expect(hook.result.current.feature.available).toBe(false)
+    expect(hook.result.current.feature.demo.source).toBe(analysed)
+    act(() => hook.result.current.feature.setCpuFrame(cpuFrameOf(2)))
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    // So is every frame a colour edit renders.
+    hook.rerender({ cpu: true, userExposureEv: 1 })
+    act(() => hook.result.current.feature.setCpuFrame(null))
+    const edited = cpuFrameOf(3)
+    act(() => hook.result.current.feature.setCpuFrame(edited))
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    expect(analyses()).toBe(1)
+    expect(worker().messages.some((message) => message.type === 'clear')).toBe(
+      false,
+    )
+    expect(hook.result.current.feature.demo.source).toBe(analysed)
+    expect(hook.result.current.feature.available).toBe(true)
+    expect(hook.result.current.feature.current).toBe(true)
+
+    // A first request reads the newest processed frame.
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    expect(lastCapturedCpuFrame()).toBe(edited)
+    analyzeCapture()
+    const committed = lastRender()
+    answer(committed)
+    expect(commits).toHaveBeenCalledOnce()
+    expect(commits).toHaveBeenLastCalledWith('one', geometryOf(committed))
+
+    // A committed Transform keeps its overlay in colour after the panel
+    // closes, and keeps its geometry while the new frame answers.
+    act(() => stop())
+    hook.rerender({ cpu: true, userExposureEv: 2 })
+    act(() => hook.result.current.feature.setCpuFrame(null))
+    const refreshed = cpuFrameOf(4)
+    act(() => hook.result.current.feature.setCpuFrame(refreshed))
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(3)
+    expect(lastCapturedCpuFrame()).toBe(refreshed)
+    expect(hook.result.current.geometry).toEqual(geometryOf(committed))
+    analyzeCapture()
+    answer(lastRender())
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    expect(commits).toHaveBeenCalledOnce()
+    hook.unmount()
+  })
+
+  it('analyses again for a new decoded source, a new preview executor or a new RAW', async () => {
+    const hook = renderSession()
+    await captureNeutral(hook)
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+
+    // The HQ decode replaces the photo WebGPU renders.
+    hook.rerender({ decodedImageVersion: 2 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    analyzeCapture()
+    answer(lastRender())
+    expect(analyses()).toBe(2)
+
+    // Falling back to the CPU waits for its first finished frame.
+    hook.rerender({ decodedImageVersion: 2, cpu: true })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    const onCpu = cpuFrameOf(1, 'v2:80x60:28800')
+    act(() => hook.result.current.feature.setCpuFrame(onCpu))
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(3)
+    expect(lastCapturedCpuFrame()).toBe(onCpu)
+    analyzeCapture()
+    answer(lastRender())
+
+    // The CPU stage keeps rendering its source across an HQ decode...
+    hook.rerender({ decodedImageVersion: 3, cpu: true })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(3)
+    expect(hook.result.current.feature.available).toBe(true)
+    // ...until it loads a new one.
+    const reseeded = cpuFrameOf(2, 'v3:80x60:28800')
+    act(() => hook.result.current.feature.setCpuFrame(reseeded))
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(4)
+    expect(lastCapturedCpuFrame()).toBe(reseeded)
+    analyzeCapture()
+    answer(lastRender())
+
+    // Back on WebGPU.
+    hook.rerender({ decodedImageVersion: 3 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(5)
+    expect(lastCapturedCpuFrame()).toBeNull()
+    analyzeCapture()
+    answer(lastRender())
+
+    // A new RAW starts over.
+    hook.rerender({ session: 'two', decodedImageVersion: 4 })
+    expect(worker().messages.at(-1)).toMatchObject({ type: 'clear' })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(6)
+    expect(analyses()).toBe(6)
+    expect(commits).not.toHaveBeenCalled()
+    hook.unmount()
   })
 
   it('commits a first Transform only once the preview renders it, and blocks export until then', async () => {
@@ -560,6 +994,37 @@ describe('rAW Transform feature', () => {
     hook.unmount()
   })
 
+  it('tries the capture again after a failure even once the Transform is neutral', async () => {
+    const hook = renderSession()
+    await captureNeutral(hook)
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    answer(lastRender())
+    expect(commits).toHaveBeenCalledOnce()
+
+    vi.mocked(captureTransformSource).mockRejectedValueOnce(new Error('lost'))
+    hook.rerender({ userExposureEv: 1 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(hook.result.current.feature.captureError).toBe(true)
+
+    // Neutral no longer needs the new colour, but the failed frame cannot be
+    // trusted as the photo either.
+    act(() => hook.result.current.feature.reset())
+    expect(commits).toHaveBeenLastCalledWith('one', null)
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(3)
+    expect(hook.result.current.feature.captureError).toBe(false)
+    analyzeCapture()
+    answer(lastRender())
+    expect(hook.result.current.feature.current).toBe(true)
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    hook.unmount()
+  })
+
   it('never commits a first answer that lands while the HQ frame is being re-captured', async () => {
     const hook = renderSession()
     await captureNeutral(hook)
@@ -769,7 +1234,8 @@ describe('rAW Transform feature', () => {
     rerender({ value: { ...input, decodedImageVersion: 2 } })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(result.current.available).toBe(true)
-    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    // The retained quick frame is the photo already analysed.
+    expect(captureTransformSource).toHaveBeenCalledOnce()
     rerender({
       value: {
         ...input,
@@ -782,7 +1248,7 @@ describe('rAW Transform feature', () => {
     })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(result.current.available).toBe(false)
-    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    expect(captureTransformSource).toHaveBeenCalledOnce()
     unmount()
   })
 })

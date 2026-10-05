@@ -7,6 +7,7 @@ import type {
   Matrix3,
   UprightMode,
 } from '~/modules/transform-demo/geometry/types'
+import type { PreviewSource } from '~/modules/transform-demo/preview-types'
 import type { ManualTransform } from '~/modules/transform-demo/transform-types'
 import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
 import { useTransformDemo } from '~/modules/transform-demo/useTransformDemo'
@@ -25,6 +26,14 @@ import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
  * captured or processed (`unavailable`).
  */
 export type TransformExportBlock = 'pending' | 'invalid' | 'unavailable'
+
+interface CapturedFrame {
+  sourceId: string
+  /** The decoded source the frame was drawn from. */
+  decodedKey: string
+  /** That source as processed when the frame was read back. */
+  key: string
+}
 
 function hasTransform(mode: UprightMode, manual: ManualTransform) {
   return (
@@ -76,16 +85,26 @@ export function useRawTransformFeature(
   const [captureError, setCaptureError] = useState(false)
   const [showLines, setShowLines] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
-  // The RAW session and the inputs the demo's frame was captured for.
-  const [captured, setCaptured] = useState<{
-    sourceId: string
-    key: string
-  } | null>(null)
+  // The decoded source and the processed frame the demo's frame was captured
+  // from, for this RAW session.
+  const [captured, setCaptured] = useState<CapturedFrame | null>(null)
   const sourceId = workflow.previewTransform?.sourceId ?? null
   const lastSource = useRef<string | null>(null)
-  const lastCapture = useRef<string | null>(null)
+  // The capture the demo holds; null asks the next pass to capture again.
+  const lastCapture = useRef<Omit<CapturedFrame, 'sourceId'> | null>(null)
+  // The frame a capture loaded, until its analysis lands. Matching the frame
+  // tells that analysis apart from the one it replaces.
+  const analysing = useRef<PreviewSource | null>(null)
   const generation = useRef(0)
-  const { loadSource, clearSource } = demo
+  const {
+    loadSource,
+    clearSource,
+    source: loaded,
+    analysis: analysed,
+    error: demoError,
+    mode: uprightMode,
+    setMode: selectUpright,
+  } = demo
   const image = workflow.decodedImageRef?.current
   const active = workflow.previewTransform?.active === true
   const activeRef = useRef(active)
@@ -94,6 +113,17 @@ export function useRawTransformFeature(
   // A Transform the session does not hold yet still owns the export gate, so
   // its frame has to keep up with the photo after the panel closes.
   const needed = observing || active || intended
+  const showOverlay =
+    active ||
+    (observing && workflow.viewMode === 'processed' && (showLines || showGrid))
+  // The frame's colour counts only where it is seen or a geometry is answered
+  // on it. A neutral analysis needs the decoded source alone, so tone, colour,
+  // LUT and strength edits do not read the frame back and analyse it again.
+  const colorNeeded = intended || showOverlay
+  // The CPU stage keeps rendering its quick source across HQ decodes and
+  // names that source on every finished frame; WebGPU renders each decode.
+  // Switching executor is a new source as well.
+  const decodedKey = `${sourceId}|${isCpuMode ? `cpu:${cpuFrame?.sourceId ?? 'none'}` : `gpu:${workflow.decodedImageVersion}`}`
   const colorKey = sourceId
     ? transformInputKey(
         workflow.decodedImageVersion,
@@ -101,7 +131,7 @@ export function useRawTransformFeature(
         workflow.params,
       )
     : ''
-  const key = `${sourceId}|${colorKey}|${isCpuMode ? (cpuFrame?.requestId ?? 'none') : 'gpu'}`
+  const key = `${decodedKey}|${colorKey}|${isCpuMode ? (cpuFrame?.requestId ?? 'none') : 'gpu'}`
   const available = Boolean(
     sourceId &&
     image &&
@@ -129,14 +159,20 @@ export function useRawTransformFeature(
     generation.current++
   }, [])
 
+  // A frame the worker crashed on or could not analyse is no frame to keep:
+  // the next change of input captures again. A refused geometry is the
+  // geometry's failure, not the frame's.
   useEffect(() => {
-    if (
-      !needed ||
-      !available ||
-      !image ||
-      !sourceId ||
-      lastCapture.current === key
-    ) {
+    if (demoError && demoError !== 'transform') lastCapture.current = null
+  }, [demoError])
+
+  useEffect(() => {
+    const last = lastCapture.current
+    const stale =
+      !last ||
+      last.decodedKey !== decodedKey ||
+      (colorNeeded && last.key !== key)
+    if (!needed || !available || !image || !sourceId || !stale) {
       setCapturing(false)
       return
     }
@@ -154,12 +190,17 @@ export function useRawTransformFeature(
         .then(async (source) => {
           if (generation.current !== token || lastSource.current !== sourceId)
             return
-          lastCapture.current = key
-          setCaptured({ sourceId, key })
+          lastCapture.current = { decodedKey, key }
+          setCaptured({ sourceId, decodedKey, key })
+          analysing.current = source
           await loadSource(source, { preserveTransform: true })
         })
         .catch(() => {
-          if (generation.current === token) setCaptureError(true)
+          if (generation.current !== token) return
+          // The demo still holds the earlier frame, but the next change of
+          // input has to try again rather than trust it.
+          lastCapture.current = null
+          setCaptureError(true)
         })
         .finally(() => {
           if (generation.current === token) setCapturing(false)
@@ -171,7 +212,9 @@ export function useRawTransformFeature(
     }
   }, [
     available,
+    colorNeeded,
     cpuFrame,
+    decodedKey,
     image,
     invalidateCapture,
     isCpuMode,
@@ -183,6 +226,16 @@ export function useRawTransformFeature(
     workflow.sourceFileName,
     workflow.stats,
   ])
+
+  // A new frame keeps the Upright solutions the demo holds, so a committed
+  // geometry stays where it is when only the colour moves on. With nothing
+  // committed, the Upright the controls ask for is solved again on the
+  // frame captured for it, which is the photo as it now looks.
+  useEffect(() => {
+    if (!analysed || loaded !== analysing.current) return
+    analysing.current = null
+    if (!activeRef.current && uprightMode !== 'off') selectUpright(uprightMode)
+  }, [analysed, loaded, selectUpright, uprightMode])
 
   const commitRef = useRef(workflow.previewTransform?.commit)
   commitRef.current = workflow.previewTransform?.commit
@@ -263,10 +316,16 @@ export function useRawTransformFeature(
     setShowLines(false)
     setShowGrid(false)
   }
+  // The demo's frame is the photo the tool works on: the same decoded source,
+  // and the same colour wherever the colour counts.
+  const frameMatches =
+    captured !== null &&
+    captured.sourceId === sourceId &&
+    (colorNeeded ? captured.key === key : captured.decodedKey === decodedKey)
   const current =
     Boolean(demo.result) &&
     available &&
-    lastCapture.current === key &&
+    frameMatches &&
     !capturing &&
     !demo.loading &&
     !demo.rendering &&
@@ -305,11 +364,7 @@ export function useRawTransformFeature(
       workflow.status === 'exporting' ||
       workflow.status === 'loading' ||
       workflow.status === 'decoding',
-    showOverlay:
-      active ||
-      (observing &&
-        workflow.viewMode === 'processed' &&
-        (showLines || showGrid)),
+    showOverlay,
   }
 }
 
