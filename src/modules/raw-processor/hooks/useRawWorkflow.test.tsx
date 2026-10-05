@@ -606,16 +606,12 @@ describe('useRawWorkflow embedded preview state', () => {
     renderHook(() => useRawWorkflow(), { wrapper })
 
     await waitFor(() => {
-      expect(jotaiStore.get(currentSessionAtom)?.exportState.recovery).toEqual(
-        expect.objectContaining({
-          status: 'source-required',
-          exportId: 'export-1',
-          expectedFileName: 'frame.ARW',
-          manifest: checkpointManifest,
-          message:
-            'The browser interrupted the previous export. Please reselect the same RAW file so LumaForge can retry with a safer setting.',
-        }),
-      )
+      expect(jotaiStore.get(currentSessionAtom)?.exportState.recovery).toEqual({
+        status: 'ready-to-retry',
+        exportId: 'export-1',
+        message:
+          'The browser interrupted the previous export. Your next export will use a safer low-memory setting.',
+      })
     })
   })
 
@@ -628,51 +624,82 @@ describe('useRawWorkflow embedded preview state', () => {
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
 
     await waitFor(() => {
-      expect(result.current.exportRecovery).toEqual(
-        expect.objectContaining({
-          status: 'source-required',
-          exportId: 'export-1',
-          expectedFileName: 'frame.ARW',
-          manifest: checkpointManifest,
-        }),
-      )
+      expect(result.current.exportRecovery).toEqual({
+        status: 'ready-to-retry',
+        exportId: 'export-1',
+        message: expect.any(String),
+      })
     })
     expect(jotaiStore.get(currentSessionAtom)).toBeNull()
   })
 
-  it('rejects recovery RAW reselection when the source fingerprint mismatches', async () => {
+  it('does not reselect, load or export through the retired recovery action', async () => {
     jotaiStore.set(currentSessionAtom, createTestSession())
     checkpointStoreMock.listSafeRetryCandidates.mockResolvedValue([
       createCheckpointManifest(),
     ])
-    sourceFingerprintMock.sourceFingerprintMatches.mockResolvedValue(false)
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
 
     await waitFor(() => {
-      expect(
-        jotaiStore.get(currentSessionAtom)?.exportState.recovery.status,
-      ).toBe('source-required')
+      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
     })
 
     await act(async () => {
       await result.current.recoverInterruptedExport(
+        new File(['raw'], 'frame.ARW', { lastModified: 123 }),
+      )
+      await result.current.recoverInterruptedExport(
         new File(['other'], 'other.ARW'),
       )
     })
-    await flushScheduledToasts()
+    await flushPostCommitTasks()
 
-    expect(toastMock.error).toHaveBeenCalledWith('RAW file does not match', {
-      description:
-        'The selected RAW does not match the interrupted export source.',
-    })
+    expect(
+      sourceFingerprintMock.sourceFingerprintMatches,
+    ).not.toHaveBeenCalled()
+    expect(toastMock.error).not.toHaveBeenCalled()
     expect(rawRuntimeAdapterMock.openSession).not.toHaveBeenCalled()
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
 
-  it('loads a matching recovery RAW and retries export with safe fidelity', async () => {
+  it('never exports when an interrupted source loads and becomes ready', async () => {
+    checkpointStoreMock.listSafeRetryCandidates.mockResolvedValue([
+      createCheckpointManifest(),
+    ])
+
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+
+    await waitFor(() => {
+      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
+    })
+
+    await act(async () => {
+      await result.current.loadFile(
+        new File(['raw'], 'frame.ARW', { lastModified: 123 }),
+      )
+    })
+    await waitFor(() => {
+      expect(result.current.canExport).toBe(true)
+    })
+    await flushPostCommitTasks()
+
+    expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
+    expect(
+      sourceFingerprintMock.sourceFingerprintMatches,
+    ).not.toHaveBeenCalled()
+    // The hint survives the load so the next explicit export can use it.
+    expect(result.current.exportRecovery.status).toBe('ready-to-retry')
+  })
+
+  it('requests the safer plan from the current source on the next explicit export', async () => {
     vi.stubGlobal('crossOriginIsolated', true)
-    const checkpointManifest = createCheckpointManifest()
+    // A geometry export journals its delivered crop, not the sensor frame.
+    const checkpointManifest = createCheckpointManifest({
+      outputWidth: 5000,
+      outputHeight: 3000,
+      totalRows: 3000,
+    })
     checkpointStoreMock.listSafeRetryCandidates.mockResolvedValue([
       checkpointManifest,
     ])
@@ -684,90 +711,38 @@ describe('useRawWorkflow embedded preview state', () => {
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
 
     await waitFor(() => {
-      expect(result.current.exportRecovery.status).toBe('source-required')
+      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
     })
-
     await act(async () => {
-      await result.current.recoverInterruptedExport(
+      await result.current.loadFile(
         new File(['raw'], 'frame.ARW', { lastModified: 123 }),
       )
     })
-
-    expect(sourceFingerprintMock.sourceFingerprintMatches).toHaveBeenCalledWith(
-      expect.any(File),
-      checkpointManifest.sourceFingerprint,
-      {
-        width: 6048,
-        height: 4024,
-      },
-    )
-    await waitFor(() => {
-      expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledWith(
-        expect.objectContaining({
-          quality: 0.92,
-          executionPlan: expect.objectContaining({
-            preferredRows: 128,
-            productCopy: 'interrupted-retry',
-            runtimeMemoryProfile: 'low-memory',
-          }),
-        }),
-      )
-    })
-  })
-
-  it('does not auto-export a superseded recovery load', async () => {
-    const recoveryFile = new File(['raw'], 'frame.ARW', { lastModified: 123 })
-    const replacementFile = new File(['other'], 'other.ARW')
-    const recoverySession =
-      deferred<Awaited<ReturnType<typeof rawRuntimeAdapterMock.openSession>>>()
-    const checkpointManifest = createCheckpointManifest()
-    checkpointStoreMock.listSafeRetryCandidates.mockResolvedValue([
-      checkpointManifest,
-    ])
-    rawRuntimeAdapterMock.openSession.mockImplementation((file) => {
-      if (file.name === recoveryFile.name) {
-        return recoverySession.promise
-      }
-
-      return Promise.resolve({
-        sourceDimensions: defaultSourceDimensions,
-        extractEmbeddedPreview: rawRuntimeAdapterMock.extractEmbeddedPreview,
-        decodeQuickRaw: rawRuntimeAdapterMock.decodeQuickRaw,
-        decodeBoundedHqRaw: rawRuntimeAdapterMock.decodeBoundedHqRaw,
-        probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
-        dispose: vi.fn(),
-      })
-    })
-
-    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
-
-    await waitFor(() => {
-      expect(result.current.exportRecovery.status).toBe('source-required')
-    })
-
-    let recoverPromise!: Promise<void>
-    await act(async () => {
-      recoverPromise = result.current.recoverInterruptedExport(recoveryFile)
-      await Promise.resolve()
-    })
-
-    await act(async () => {
-      await result.current.loadFile(replacementFile)
-    })
-
-    await act(async () => {
-      recoverySession.resolve({
-        sourceDimensions: defaultSourceDimensions,
-        extractEmbeddedPreview: rawRuntimeAdapterMock.extractEmbeddedPreview,
-        decodeQuickRaw: rawRuntimeAdapterMock.decodeQuickRaw,
-        decodeBoundedHqRaw: rawRuntimeAdapterMock.decodeBoundedHqRaw,
-        probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
-        dispose: vi.fn(),
-      })
-      await recoverPromise
-    })
-
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+    })
+
+    expect(
+      sourceFingerprintMock.sourceFingerprintMatches,
+    ).not.toHaveBeenCalled()
+    expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
+    expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        quality: 0.92,
+        executionPlan: expect.objectContaining({
+          productCopy: 'interrupted-retry',
+          runtimeMemoryProfile: 'low-memory',
+          sourceWidth: 6048,
+          sourceHeight: 4024,
+        }),
+      }),
+    )
+    expect(result.current.exportRecovery.status).toBe('none')
   })
 
   it('exposes pending LUT profile selection and applies a user-selected profile', async () => {
@@ -3484,7 +3459,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(checkpointStoreMock.removeActiveManifest).toHaveBeenCalledTimes(1)
   })
 
-  it('removes the original interrupted manifest after a successful recovery retry', async () => {
+  it('removes the interrupted journal after a successful explicit export', async () => {
     vi.stubGlobal('navigator', {
       userAgent:
         'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
@@ -3510,13 +3485,19 @@ describe('useRawWorkflow embedded preview state', () => {
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
 
     await waitFor(() => {
-      expect(result.current.exportRecovery.status).toBe('source-required')
+      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
     })
 
     await act(async () => {
-      await result.current.recoverInterruptedExport(
+      await result.current.loadFile(
         new File(['raw'], 'frame.ARW', { lastModified: 123 }),
       )
+    })
+    await act(async () => {
+      await result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
     })
     await flushPostCommitTasks()
 

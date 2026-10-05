@@ -1,12 +1,10 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
-import { useCallback, useEffect } from 'react'
-import { toast as sonnerToast } from 'sonner'
+import { useCallback } from 'react'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
 
 import type { ExportRecoveryState, ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
-import { validateRecoveryReselection } from '../../../services/export/export-recovery'
 
 export type PendingRecoveryRetry = {
   sourceExportId: string
@@ -43,117 +41,13 @@ type UseExportRecoveryActionInput = {
   toast?: ExportRecoveryToast
 }
 
-export function useExportRecoveryAction({
-  pendingRecoveryRetry,
-  setPendingRecoveryRetry,
-  sessionRef,
-  discoveredRecoveryRef,
-  loadedFile,
-  canExport,
-  status,
-  loadFile,
-  exportImage,
-  scheduleToast,
-  toast = sonnerToast,
-}: UseExportRecoveryActionInput) {
-  useEffect(() => {
-    if (!pendingRecoveryRetry) return
-
-    if (status === 'error') {
-      setPendingRecoveryRetry(null)
-      return
-    }
-
-    const activeSession = sessionRef.current
-    const activeFile = loadedFile
-    if (
-      !activeSession ||
-      activeSession.id !== pendingRecoveryRetry.sessionId ||
-      !activeFile ||
-      activeFile.name !== pendingRecoveryRetry.fileName ||
-      activeFile.size !== pendingRecoveryRetry.size ||
-      activeFile.lastModified !== pendingRecoveryRetry.lastModified
-    ) {
-      setPendingRecoveryRetry(null)
-      return
-    }
-
-    if (!canExport || status !== 'ready') {
-      return
-    }
-
-    setPendingRecoveryRetry(null)
-    void exportImage({
-      quality: 'high',
-      fidelity: 'safe',
-      previousInterrupted: true,
-      recoveredExportId: pendingRecoveryRetry.sourceExportId,
-      recoveredManifest: pendingRecoveryRetry.manifest,
-    })
-  }, [
-    canExport,
-    exportImage,
-    loadedFile,
-    pendingRecoveryRetry,
-    sessionRef,
-    setPendingRecoveryRetry,
-    status,
-  ])
-
-  const recoverInterruptedExport = useCallback(
-    async (file: File) => {
-      const sessionRecovery = sessionRef.current?.exportState.recovery
-      const recovery =
-        sessionRecovery?.status === 'source-required'
-          ? sessionRecovery
-          : discoveredRecoveryRef.current.status === 'source-required'
-            ? discoveredRecoveryRef.current
-            : null
-      if (!recovery || recovery.status !== 'source-required') {
-        return
-      }
-
-      const validation = await validateRecoveryReselection(
-        file,
-        recovery.manifest,
-      )
-      if (!validation.ok) {
-        scheduleToast(() =>
-          toast.error('RAW file does not match', {
-            description: validation.reason,
-          }),
-        )
-        return
-      }
-
-      await loadFile(file)
-
-      const activeSession = sessionRef.current
-      if (
-        activeSession?.sourceFile.name !== file.name ||
-        activeSession.sourceFile.sizeBytes !== file.size
-      ) {
-        return
-      }
-
-      setPendingRecoveryRetry({
-        sourceExportId: recovery.exportId,
-        manifest: recovery.manifest,
-        sessionId: activeSession.id,
-        fileName: file.name,
-        size: file.size,
-        lastModified: file.lastModified,
-      })
-    },
-    [
-      discoveredRecoveryRef,
-      loadFile,
-      scheduleToast,
-      sessionRef,
-      setPendingRecoveryRetry,
-      toast,
-    ],
-  )
+/**
+ * An interrupted export is only a hint for the next export the user starts.
+ * Picking a file here neither reselects nor reloads a source, and no pending
+ * retry, source load or readiness change may start an export on its own.
+ */
+export function useExportRecoveryAction(_input: UseExportRecoveryActionInput) {
+  const recoverInterruptedExport = useCallback(async (_file: File) => {}, [])
 
   return { recoverInterruptedExport }
 }

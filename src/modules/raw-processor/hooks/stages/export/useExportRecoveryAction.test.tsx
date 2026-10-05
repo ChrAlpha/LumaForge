@@ -2,10 +2,17 @@ import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
+import { sourceFingerprintMatches } from '~/lib/export/source-fingerprint'
 
 import type { ExportRecoveryState, ImageSession } from '../../../model/session'
 import type { PendingRecoveryRetry } from './useExportRecoveryAction'
 import { useExportRecoveryAction } from './useExportRecoveryAction'
+
+vi.mock('~/lib/export/source-fingerprint', () => ({
+  sourceFingerprintMatches: vi.fn(async () => true),
+}))
+
+type RecoveryActionInput = Parameters<typeof useExportRecoveryAction>[0]
 
 function createFile(name = 'frame.dng') {
   return new File(['raw'], name, { lastModified: 123 })
@@ -41,7 +48,10 @@ function createManifest(file = createFile()): ExportCheckpointManifest {
   }
 }
 
-function createSession(file = createFile()): ImageSession {
+function createSession(
+  file = createFile(),
+  overrides: Partial<ImageSession> = {},
+): ImageSession {
   return {
     id: 'session-1',
     createdAt: 1,
@@ -78,88 +88,189 @@ function createSession(file = createFile()): ImageSession {
       checkpointDurable: false,
       retryRecommended: false,
     },
+    ...overrides,
+  }
+}
+
+function createPendingRetry(file = createFile()): PendingRecoveryRetry {
+  const manifest = createManifest(file)
+  return {
+    sourceExportId: manifest.exportId,
+    manifest,
+    sessionId: 'session-1',
+    fileName: file.name,
+    size: file.size,
+    lastModified: file.lastModified,
+  }
+}
+
+function createSourceRequiredRecovery(
+  file = createFile(),
+): ExportRecoveryState {
+  const manifest = createManifest(file)
+  return {
+    status: 'source-required',
+    exportId: manifest.exportId,
+    expectedFileName: file.name,
+    manifest,
+    message: 'Reselect the RAW file.',
+  }
+}
+
+/**
+ * Renders the hook through a sequence of workflow states. Every export
+ * callback handed to the hook records into one list, so a later step that
+ * swaps the callback (a new look, graph or geometry) is still observed.
+ */
+function renderRecoveryAction(
+  steps: Array<Partial<RecoveryActionInput> & { replaceExportImage?: true }>,
+) {
+  const file = createFile()
+  const exportCalls: unknown[] = []
+  const createExportImage = () =>
+    vi.fn(async (options: unknown) => {
+      exportCalls.push(options)
+    })
+  const loadFile = vi.fn(async () => undefined)
+  const setPendingRecoveryRetry = vi.fn()
+  const toastError = vi.fn()
+  let exportImage = createExportImage()
+  const sessionRef = { current: createSession(file) as ImageSession | null }
+  const discoveredRecoveryRef = {
+    current: createSourceRequiredRecovery(file),
+  }
+  const base: RecoveryActionInput = {
+    pendingRecoveryRetry: createPendingRetry(file),
+    setPendingRecoveryRetry,
+    sessionRef,
+    discoveredRecoveryRef,
+    loadedFile: file,
+    canExport: true,
+    status: 'ready',
+    loadFile,
+    exportImage,
+    scheduleToast: (notify) => notify(),
+    toast: { error: toastError },
+  }
+
+  const inputFor = (
+    step: Partial<RecoveryActionInput> & { replaceExportImage?: true },
+  ): RecoveryActionInput => {
+    const { replaceExportImage, ...overrides } = step
+    if (replaceExportImage) exportImage = createExportImage()
+    return { ...base, exportImage, ...overrides }
+  }
+
+  const [first = {}, ...rest] = steps
+  const view = renderHook(
+    (input: RecoveryActionInput) => useExportRecoveryAction(input),
+    {
+      initialProps: inputFor(first),
+    },
+  )
+  for (const step of rest) {
+    view.rerender(inputFor(step))
+  }
+
+  return {
+    ...view,
+    file,
+    exportCalls,
+    loadFile,
+    setPendingRecoveryRetry,
+    toastError,
+    sessionRef,
   }
 }
 
 describe('useExportRecoveryAction', () => {
-  it('starts a safe retry once the matching recovery source is ready to export', async () => {
-    const file = createFile()
-    const manifest = createManifest(file)
-    const pendingRecoveryRetry: PendingRecoveryRetry = {
-      sourceExportId: manifest.exportId,
-      manifest,
-      sessionId: 'session-1',
-      fileName: file.name,
-      size: file.size,
-      lastModified: file.lastModified,
-    }
-    const setPendingRecoveryRetry = vi.fn()
-    const exportImage = vi.fn().mockResolvedValue(undefined)
-
-    renderHook(() =>
-      useExportRecoveryAction({
-        pendingRecoveryRetry,
-        setPendingRecoveryRetry,
-        sessionRef: { current: createSession(file) },
-        discoveredRecoveryRef: { current: { status: 'none' } },
-        loadedFile: file,
-        canExport: true,
-        status: 'ready',
-        loadFile: vi.fn(),
-        exportImage,
-        scheduleToast: (notify) => notify(),
-        toast: { error: vi.fn() },
-      }),
-    )
-
-    expect(setPendingRecoveryRetry).toHaveBeenCalledWith(null)
-    expect(exportImage).toHaveBeenCalledWith({
-      quality: 'high',
-      fidelity: 'safe',
-      previousInterrupted: true,
-      recoveredExportId: manifest.exportId,
-      recoveredManifest: manifest,
-    })
-  })
-
-  it('rejects a reselected RAW file that does not match the interrupted export source', async () => {
-    const expectedFile = createFile('expected.dng')
-    const manifest = createManifest(expectedFile)
-    const discoveredRecovery: ExportRecoveryState = {
-      status: 'source-required',
-      exportId: manifest.exportId,
-      expectedFileName: expectedFile.name,
-      manifest,
-      message: 'Reselect the RAW file.',
-    }
-    const toastErrors: string[] = []
-    const loadFile = vi.fn()
-
-    const { result } = renderHook(() =>
-      useExportRecoveryAction({
-        pendingRecoveryRetry: null,
-        setPendingRecoveryRetry: vi.fn(),
-        sessionRef: { current: null },
-        discoveredRecoveryRef: { current: discoveredRecovery },
-        loadedFile: null,
-        canExport: false,
-        status: 'idle',
-        loadFile,
-        exportImage: vi.fn(),
-        scheduleToast: (notify) => notify(),
-        toast: {
-          error: (message) => {
-            toastErrors.push(message)
+  it.each<
+    [
+      string,
+      Array<Partial<RecoveryActionInput> & { replaceExportImage?: true }>,
+    ]
+  >([
+    ['a ready matching source', [{}]],
+    [
+      'a matching source that becomes ready after loading',
+      [{ status: 'decoding', canExport: false }, {}],
+    ],
+    [
+      'a LUT or graph change once the matching source is ready',
+      [{}, { replaceExportImage: true }],
+    ],
+    [
+      'a geometry change on the matching session',
+      [
+        {},
+        {
+          replaceExportImage: true,
+          sessionRef: {
+            current: createSession(createFile(), {
+              exportGeometry: {
+                matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+                constrainCrop: true,
+              },
+            }),
           },
         },
-      }),
-    )
+      ],
+    ],
+    ['an unrelated loaded source', [{ loadedFile: createFile('other.dng') }]],
+    ['a workflow error', [{ status: 'error', canExport: false }]],
+    [
+      'a cancelled export returning the workflow to ready',
+      [{ status: 'exporting', canExport: false }, { status: 'ready' }],
+    ],
+  ])('never starts an export for %s', (_label, steps) => {
+    const { exportCalls, loadFile, toastError } = renderRecoveryAction(steps)
+
+    expect(exportCalls).toEqual([])
+    expect(loadFile).not.toHaveBeenCalled()
+    expect(toastError).not.toHaveBeenCalled()
+  })
+
+  it('never starts an export around unmount', () => {
+    const view = renderRecoveryAction([
+      { status: 'decoding', canExport: false },
+    ])
+
+    view.unmount()
+
+    expect(view.exportCalls).toEqual([])
+  })
+
+  it('does not reselect, reload or arm a retry for a picked RAW file', async () => {
+    const view = renderRecoveryAction([
+      { pendingRecoveryRetry: null, status: 'idle', canExport: false },
+    ])
 
     await act(async () => {
-      await result.current.recoverInterruptedExport(createFile('wrong.dng'))
+      await view.result.current.recoverInterruptedExport(view.file)
+      await view.result.current.recoverInterruptedExport(
+        createFile('wrong.dng'),
+      )
     })
 
-    expect(loadFile).not.toHaveBeenCalled()
-    expect(toastErrors).toEqual(['RAW file does not match'])
+    expect(sourceFingerprintMatches).not.toHaveBeenCalled()
+    expect(view.loadFile).not.toHaveBeenCalled()
+    expect(view.setPendingRecoveryRetry).not.toHaveBeenCalled()
+    expect(view.toastError).not.toHaveBeenCalled()
+    expect(view.exportCalls).toEqual([])
+  })
+
+  it('does not export when unmounted while a picked RAW file is handled', async () => {
+    const view = renderRecoveryAction([
+      { pendingRecoveryRetry: null, status: 'idle', canExport: false },
+    ])
+
+    const recovering = view.result.current.recoverInterruptedExport(view.file)
+    view.unmount()
+    await act(async () => {
+      await recovering
+    })
+
+    expect(view.loadFile).not.toHaveBeenCalled()
+    expect(view.exportCalls).toEqual([])
   })
 })

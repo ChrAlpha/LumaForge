@@ -6,6 +6,7 @@ import { sourceFingerprintMatches } from '~/lib/export/source-fingerprint'
 import {
   createInterruptedExportRecovery,
   validateRecoveryReselection,
+  withInterruptionHistory,
 } from './export-recovery'
 
 vi.mock('~/lib/export/source-fingerprint', () => ({
@@ -41,25 +42,107 @@ function manifest(): ExportCheckpointManifest {
   }
 }
 
-describe('export recovery', () => {
-  it('creates source-required copy without saying resume', () => {
-    const checkpointManifest = manifest()
-    const recovery = createInterruptedExportRecovery(checkpointManifest)
+/**
+ * A journal written by a geometry export records the delivered (cropped)
+ * frame, which no longer matches the sensor dimensions of its source.
+ */
+function transformedManifest(): ExportCheckpointManifest {
+  return {
+    ...manifest(),
+    exportId: 'export-transformed',
+    outputWidth: 9120,
+    outputHeight: 5130,
+    totalRows: 5130,
+  }
+}
 
-    expect(recovery.status).toBe('source-required')
-    expect(recovery.message).toBe(
-      'The browser interrupted the previous export. Please reselect the same RAW file so LumaForge can retry with a safer setting.',
-    )
-    expect(recovery.message).toMatch(/reselect the same RAW file/i)
-    expect(recovery.message).toMatch(/retry/i)
-    expect(recovery.message).not.toMatch(/resume/i)
-    expect(recovery).toEqual(
-      expect.objectContaining({
-        exportId: 'export-1',
+describe('export recovery', () => {
+  it('turns an interrupted journal into an interruption-only hint', () => {
+    const recovery = createInterruptedExportRecovery(manifest())
+
+    expect(recovery).toEqual({
+      status: 'ready-to-retry',
+      exportId: 'export-1',
+      message:
+        'The browser interrupted the previous export. Your next export will use a safer low-memory setting.',
+    })
+    expect(recovery.message).not.toMatch(/reselect|resume|restor|reproduc/i)
+  })
+
+  it('reports a transformed journal without any source or dimension check', () => {
+    vi.mocked(sourceFingerprintMatches).mockClear()
+
+    expect(createInterruptedExportRecovery(transformedManifest())).toEqual({
+      status: 'ready-to-retry',
+      exportId: 'export-transformed',
+      message: expect.any(String),
+    })
+    expect(sourceFingerprintMatches).not.toHaveBeenCalled()
+  })
+
+  it('leaves an explicit export untouched without interruption history', () => {
+    expect(
+      withInterruptionHistory(
+        { quality: 'high', fidelity: 'balanced' },
+        { status: 'none' },
+        undefined,
+        null,
+      ),
+    ).toEqual({ quality: 'high', fidelity: 'balanced' })
+  })
+
+  it('asks an explicit export for the safer plan while keeping the current choice', () => {
+    expect(
+      withInterruptionHistory(
+        { quality: 'standard', fidelity: 'max' },
+        { status: 'none' },
+        createInterruptedExportRecovery(transformedManifest()),
+      ),
+    ).toEqual({
+      quality: 'standard',
+      fidelity: 'max',
+      previousInterrupted: true,
+      recoveredExportId: 'export-transformed',
+    })
+  })
+
+  it('takes the first interruption the caller lists', () => {
+    expect(
+      withInterruptionHistory(
+        { quality: 'high', fidelity: 'balanced' },
+        {
+          status: 'ready-to-retry',
+          exportId: 'session-export',
+          message: 'Interrupted.',
+        },
+        createInterruptedExportRecovery(manifest()),
+      ),
+    ).toMatchObject({ recoveredExportId: 'session-export' })
+  })
+
+  it('never forwards a journal for sizing or look restoration', () => {
+    const request = withInterruptionHistory(
+      {
+        quality: 'high',
+        fidelity: 'balanced',
+        recoveredManifest: transformedManifest(),
+      } as Parameters<typeof withInterruptionHistory>[0],
+      {
+        status: 'source-required',
+        exportId: 'export-transformed',
         expectedFileName: 'frame.RAF',
-        manifest: checkpointManifest,
-      }),
+        manifest: transformedManifest(),
+        message: 'Legacy hint.',
+      },
     )
+
+    expect(request).toEqual({
+      quality: 'high',
+      fidelity: 'balanced',
+      previousInterrupted: true,
+      recoveredExportId: 'export-transformed',
+    })
+    expect(request).not.toHaveProperty('recoveredManifest')
   })
 
   it('accepts a reselected matching source', async () => {

@@ -3,11 +3,25 @@ import type { Dispatch, SetStateAction } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
+import {
+  createSourceFingerprint,
+  sourceFingerprintMatches,
+} from '~/lib/export/source-fingerprint'
 
 import type { ExportRecoveryState, ImageSession } from '../../../model/session'
 import { useExportRecoveryDiscovery } from './useExportRecoveryDiscovery'
 
-function createManifest(): ExportCheckpointManifest {
+vi.mock('~/lib/export/source-fingerprint', () => ({
+  createSourceFingerprint: vi.fn(),
+  sourceFingerprintMatches: vi.fn(),
+}))
+
+const INTERRUPTION_HINT =
+  'The browser interrupted the previous export. Your next export will use a safer low-memory setting.'
+
+function createManifest(
+  overrides: Partial<ExportCheckpointManifest> = {},
+): ExportCheckpointManifest {
   return {
     version: 1,
     exportId: 'export-1',
@@ -33,6 +47,7 @@ function createManifest(): ExportCheckpointManifest {
     completedRowsForDiagnostics: 0,
     jpegState: 'restart-required',
     updatedAt: '2026-06-01T00:00:00.000Z',
+    ...overrides,
   }
 }
 
@@ -75,40 +90,83 @@ function createSession(): ImageSession {
   }
 }
 
-describe('useExportRecoveryDiscovery', () => {
-  it('discovers a safe-retry checkpoint and stores source-required recovery on the active session', async () => {
-    const manifest = createManifest()
-    let session: ImageSession | null = createSession()
-    let discovered: ExportRecoveryState = { status: 'none' }
-    const setSession: Dispatch<SetStateAction<ImageSession | null>> = vi.fn(
-      (updater) => {
-        session = typeof updater === 'function' ? updater(session) : updater
-      },
-    )
-    const setDiscoveredRecoveryState = vi.fn((next: ExportRecoveryState) => {
-      discovered = next
-    })
+function renderDiscovery(
+  manifests: ExportCheckpointManifest[],
+  initialSession: ImageSession | null,
+) {
+  const state: {
+    session: ImageSession | null
+    discovered: ExportRecoveryState
+  } = { session: initialSession, discovered: { status: 'none' } }
+  const setSession: Dispatch<SetStateAction<ImageSession | null>> = vi.fn(
+    (updater) => {
+      state.session =
+        typeof updater === 'function' ? updater(state.session) : updater
+    },
+  )
+  const setDiscoveredRecoveryState = vi.fn((next: ExportRecoveryState) => {
+    state.discovered = next
+  })
 
-    renderHook(() =>
-      useExportRecoveryDiscovery({
-        setDiscoveredRecoveryState,
-        setSession,
-        createRecoveryStore: () => ({
-          listSafeRetryCandidates: async () => [manifest],
-        }),
+  renderHook(() =>
+    useExportRecoveryDiscovery({
+      setDiscoveredRecoveryState,
+      setSession,
+      createRecoveryStore: () => ({
+        listSafeRetryCandidates: async () => manifests,
       }),
+    }),
+  )
+
+  return { state, setDiscoveredRecoveryState }
+}
+
+describe('useExportRecoveryDiscovery', () => {
+  it('discovers a safe-retry checkpoint as an interruption hint on the active session', async () => {
+    const manifest = createManifest()
+    const { state, setDiscoveredRecoveryState } = renderDiscovery(
+      [manifest],
+      createSession(),
     )
 
     await waitFor(() => {
       expect(setDiscoveredRecoveryState).toHaveBeenCalledTimes(1)
     })
 
-    expect(discovered).toMatchObject({
-      status: 'source-required',
+    expect(state.discovered).toEqual({
+      status: 'ready-to-retry',
       exportId: manifest.exportId,
-      expectedFileName: manifest.fileName,
-      manifest,
+      message: INTERRUPTION_HINT,
     })
-    expect(session?.exportState.recovery).toEqual(discovered)
+    expect(state.session?.exportState.recovery).toEqual(state.discovered)
+  })
+
+  it('reports a transformed old journal without reselect or dimension prerequisites', async () => {
+    // A geometry export journals its delivered crop, not the sensor frame.
+    const manifest = createManifest({
+      exportId: 'export-transformed',
+      outputWidth: 640,
+      outputHeight: 360,
+      totalRows: 360,
+    })
+    const { state, setDiscoveredRecoveryState } = renderDiscovery(
+      [manifest],
+      null,
+    )
+
+    await waitFor(() => {
+      expect(setDiscoveredRecoveryState).toHaveBeenCalledTimes(1)
+    })
+
+    expect(state.discovered).toEqual({
+      status: 'ready-to-retry',
+      exportId: 'export-transformed',
+      message: INTERRUPTION_HINT,
+    })
+    expect(state.discovered).not.toHaveProperty('manifest')
+    expect(state.discovered).not.toHaveProperty('expectedFileName')
+    expect(state.session).toBeNull()
+    expect(sourceFingerprintMatches).not.toHaveBeenCalled()
+    expect(createSourceFingerprint).not.toHaveBeenCalled()
   })
 })

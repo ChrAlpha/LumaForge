@@ -4,6 +4,7 @@ import type {
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
+import { useCallback } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
@@ -18,6 +19,7 @@ import type {
   ImageSession,
 } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
+import { withInterruptionHistory } from '../../../services/export/export-recovery'
 import { useExportDerivedState } from './useExportDerivedState'
 import type { PendingRecoveryRetry } from './useExportRecoveryAction'
 import { useExportRecoveryAction } from './useExportRecoveryAction'
@@ -161,6 +163,19 @@ export function useRawExportStage({
     rawRenderExposure,
     stats,
   })
+  // Full-resolution export starts only from an explicit user action. An
+  // interruption hint asks it for the safer plan; the journal is not passed on.
+  const exportWithInterruptionHistory = useCallback(
+    (options: FullResExportOptions) =>
+      exportImage(
+        withInterruptionHistory(
+          options,
+          sessionRef.current?.exportState.recovery,
+          discoveredRecoveryRef.current,
+        ),
+      ),
+    [discoveredRecoveryRef, exportImage, sessionRef],
+  )
   const { recoverInterruptedExport } = useExportRecoveryAction({
     pendingRecoveryRetry,
     setPendingRecoveryRetry,
@@ -217,9 +232,7 @@ export function useRawExportStage({
     previewSuspended,
     canPreviewExport,
     previewExportDisabledReason,
-    exportImage: exportImage as (
-      options: FullResExportOptions,
-    ) => Promise<void>,
+    exportImage: exportWithInterruptionHistory,
     recoverInterruptedExport,
     downloadExportResult,
     downloadExportManifest,
