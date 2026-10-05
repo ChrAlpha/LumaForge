@@ -48,6 +48,7 @@
     "native:fetch": "node native/scripts/fetch-sources.mjs",
     "native:verify": "node native/scripts/verify-native-artifacts.mjs && pnpm --filter @lumaforge/luma-raw-runtime native:verify-baseline",
     "native:verify-baseline": "node native/scripts/verify-no-baseline-deps.mjs",
+    "native:check-window-normalization": "node native/scripts/check-window-normalization.mjs --profile desktop && node native/scripts/check-window-normalization.mjs --profile low-memory",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run src worker fixtures/scripts native/scripts --exclude src/native-smoke.test.ts",
     "test:native-smoke": "vitest run src/native-smoke.test.ts --environment jsdom",

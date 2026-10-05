@@ -329,8 +329,9 @@ bool usesFixedExportPolicy(const libraw_output_params_t &params) {
          params.no_auto_bright == 1 && params.use_auto_wb == 0 &&
          params.use_camera_wb == 1 && params.use_camera_matrix == 1 &&
          params.bright == 1 && params.highlight == 2 && params.user_qual >= 0 &&
-         params.gamm[0] == 1 && params.gamm[1] == 1 && params.gamm[2] == 1 &&
-         params.gamm[3] == 1 && params.gamm[4] == 0 && params.gamm[5] == 0;
+         params.adjust_maximum_thr == 0.0f && params.gamm[0] == 1 &&
+         params.gamm[1] == 1 && params.gamm[2] == 1 && params.gamm[3] == 1 &&
+         params.gamm[4] == 0 && params.gamm[5] == 0;
 }
 
 int normalizedOrientationCode(int code) {
@@ -532,6 +533,10 @@ void applyStrictExportProcessingSettings(libraw_output_params_t &params) {
   params.highlight = 2;
   params.user_qual = 0;
   params.user_flip = 0;
+  // LibRaw otherwise lowers the white point to the decoded region's own peak
+  // (adjust_maximum), so each processed window would be scaled differently.
+  // The white point must not depend on which part of the frame is decoded.
+  params.adjust_maximum_thr = 0.0f;
   params.gamm[0] = 1;
   params.gamm[1] = 1;
   params.gamm[2] = 1;
@@ -1445,6 +1450,9 @@ class LumaRawProcessor {
     params.bright = settings["bright"].as<float>();
     params.highlight = settings["highlight"].as<int>();
     params.user_qual = settings["userQual"].as<int>();
+    // Preview decodes keep the processed-window white-point rule: no
+    // adjustment to the decoded region's own peak.
+    params.adjust_maximum_thr = 0.0f;
 
     val gamma = settings["gamm"];
     for (int i = 0; i < 6; ++i) {
