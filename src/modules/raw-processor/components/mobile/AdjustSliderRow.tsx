@@ -149,14 +149,16 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
           {/* One element across states: swapping button for span on reset
               would unmount the focused control and drop focus to the body.
               Negative block margin keeps the 36px target from growing the
-              row. */}
+              row. The Slider root reaches 19px above its track so the whole
+              row scrubs; in a compact row that band covers this readout, so
+              it stacks above it or a tap on the value scrubs instead. */}
           <button
             type="button"
             disabled={disabled || !dirty}
             aria-label={props.resetAriaLabel}
             onClick={() => onChange(neutral)}
             className={clsxm(
-              'inline-flex min-h-9 items-center justify-end rounded-md px-1 text-right text-[0.82rem] font-semibold tabular-nums transition-colors',
+              'relative z-10 inline-flex min-h-9 items-center justify-end rounded-md px-1 text-right text-[0.82rem] font-semibold tabular-nums transition-colors',
               compact ? '-my-2.5' : '-my-1.5',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80',
               dirty

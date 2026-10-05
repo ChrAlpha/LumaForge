@@ -77,6 +77,21 @@ describe('adjustSliderRow', () => {
     expect(props.onChange).toHaveBeenCalledWith(0)
   })
 
+  it.each(['list', 'compact'] as const)(
+    'stacks the %s reset above the slider hit area that overlaps it',
+    (density) => {
+      // The Slider root reaches 19px above its track so the whole row
+      // scrubs. In a compact row that band covers the readout's centre, so
+      // a tap on the amber value scrubbed to the far end instead of
+      // resetting unless the readout is stacked above it.
+      renderRow({ value: 59, density })
+      const resetButton = screen.getByRole('button', {
+        name: /reset contrast/i,
+      })
+      expect(resetButton).toHaveClass('relative', 'z-10')
+    },
+  )
+
   it('emits onScrubChange on pointerdown and pointerup over the slider track', () => {
     const props = renderRow({ value: 12 })
     const scrubTarget = screen.getByTestId('adjust-slider-row-scrub')
