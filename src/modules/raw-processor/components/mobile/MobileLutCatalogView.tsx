@@ -27,7 +27,7 @@ export interface MobileLutCatalogViewProps {
   disabled: boolean
   lutSources?: Pick<
     UseOnlineLutSourcesResult,
-    'loadEntry' | 'loadingEntryId' | 'failedEntryId'
+    'loadEntry' | 'loadingEntryId' | 'failedEntryId' | 'cancelEntryLoad'
   >
   entryLoadProgress: UseOnlineLutSourcesResult['entryLoadProgress']
   onCancelEntryLoad?: UseOnlineLutSourcesResult['cancelEntryLoad']
@@ -50,7 +50,7 @@ export function MobileLutCatalogView({
 }: MobileLutCatalogViewProps) {
   const { t } = useI18n()
   const { loadingEntryId, failedEntryId, loadOnlineLutEntry } =
-    useOnlineLutEntryLoader(lutSources)
+    useOnlineLutEntryLoader(lutSources, { replace: true })
 
   const renderCatalogEntry = (entry: OnlineEntry) => {
     const isEntryLoading = loadingEntryId === entry.id
@@ -96,12 +96,16 @@ export function MobileLutCatalogView({
               })}
             </span>
             {selectedResourceLoading && (
-              <output className="shrink-0 rounded-lf-pill border border-lf-green/35 bg-lf-green/15 px-1.5 py-0.5 text-lf-eyebrow font-medium leading-none text-lf-green-soft">
+              <output className="shrink-0 px-1.5 py-0.5 text-lf-eyebrow font-medium leading-none text-lf-on-photo-ink/62">
                 {t('raw.lutSource.loading')}
               </output>
             )}
           </div>
-          <LutSourceWarning issues={selectedIssues} surface="on-photo" />
+          <LutSourceWarning
+            issues={selectedIssues}
+            surface="on-photo"
+            tone="neutral"
+          />
         </div>
       )}
 

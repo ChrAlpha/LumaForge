@@ -15,10 +15,16 @@ import { summarizeLutIssues } from './lut-issue-copy'
 export function LutSourceWarning({
   issues,
   surface = 'paper',
+  tone = 'amber',
   className,
 }: {
   issues: readonly OnlineLUTSourceIssue[]
   surface?: ChipSurface
+  /**
+   * `neutral` states a source problem in plain ink, for surfaces that keep
+   * amber for colour contracts alone (mobile LUT sources).
+   */
+  tone?: 'amber' | 'neutral'
   className?: string
 }) {
   const { t } = useI18n()
@@ -35,7 +41,7 @@ export function LutSourceWarning({
       data-raw-lut="source-warning"
     >
       <Chip
-        tone="amber"
+        tone={tone}
         surface={surface}
         size="sm"
         className="min-w-0 max-w-full normal-case tracking-normal"

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,16 +9,7 @@ import { MobileLutBrowser } from './MobileLutBrowser'
 const baseProps = {
   open: true,
   onClose: vi.fn(),
-  currentLutName: 'Kodak 2383.cube',
   disabled: false,
-  onLutLoad: vi.fn(),
-  onLutClear: vi.fn(),
-  lutProfileSelection: null,
-  lutProfileResolution: null,
-  onLutProfileSelect: vi.fn(),
-  activeIntensity: 'standard' as const,
-  onIntensitySelect: vi.fn(),
-  strengthDisabled: false,
 }
 
 function onlineLutSourcesFixture(
@@ -154,7 +145,7 @@ describe('mobileLutBrowser', () => {
     vi.clearAllMocks()
   })
 
-  it('renders the dialog with the current LUT and closes via the close button', async () => {
+  it('renders the LUT sources sheet and closes via the close button', async () => {
     const onClose = vi.fn()
     render(<MobileLutBrowser {...baseProps} onClose={onClose} />)
 
@@ -172,182 +163,27 @@ describe('mobileLutBrowser', () => {
     expect(dialog.className).not.toMatch(
       /bg-material|bg-background|bg-fill|text-text|border-border/,
     )
-    expect(screen.getByText('Kodak 2383.cube')).toBeInTheDocument()
+    expect(dialog).toHaveAccessibleName('LUT sources')
+    // Choosing and tuning the look lives in the Look deck now: no current
+    // LUT card, no Strength, no contract editor in the sheet.
+    expect(screen.queryByText('Current LUT')).toBeNull()
+    expect(screen.queryByRole('tablist', { name: 'Strength' })).toBeNull()
+    expect(screen.queryByLabelText('Search LUT contract')).toBeNull()
 
     await userEvent.click(
-      screen.getByRole('button', { name: /close lut browser/i }),
+      screen.getByRole('button', { name: /close lut sources/i }),
     )
 
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('clears the current LUT', async () => {
-    const onLutClear = vi.fn()
-    render(<MobileLutBrowser {...baseProps} onLutClear={onLutClear} />)
-
-    await userEvent.click(screen.getByRole('button', { name: /clear lut/i }))
-
-    expect(onLutClear).toHaveBeenCalled()
-  })
-
-  it('uses Add .cube LUT as the empty Current LUT card state', () => {
-    render(<MobileLutBrowser {...baseProps} currentLutName={null} />)
-
-    const currentSection = screen
-      .getByRole('heading', { name: 'Current LUT' })
-      .closest('section')
-    expect(currentSection).toHaveAttribute('data-raw-mobile-lut', 'current')
-    const currentCard = within(currentSection!).getByTestId(
-      'raw-mobile-current-lut-card',
-    )
-    expect(
-      within(currentCard).getByLabelText('Upload .cube LUT'),
-    ).toBeInTheDocument()
-    expect(within(currentCard).getByText('Add .cube LUT')).toBeVisible()
-    expect(within(currentCard).queryByText('-')).not.toBeInTheDocument()
-    expect(
-      within(currentCard).queryByText('Choose .cube LUT'),
-    ).not.toBeInTheDocument()
-    expect(
-      within(currentCard).queryByText('Tap to browse or drop a file'),
-    ).not.toBeInTheDocument()
-    expect(
-      within(currentCard).queryByRole('button', { name: 'Clear LUT' }),
-    ).not.toBeInTheDocument()
-    expect(
-      within(currentCard).getByLabelText('Upload .cube LUT').closest('label'),
-    ).not.toHaveClass('border-2')
-    expect(
-      within(currentCard).getByLabelText('Upload .cube LUT').closest('label'),
-    ).not.toHaveClass('border-dashed')
-    expect(
-      within(currentCard).getByLabelText('Upload .cube LUT').closest('label'),
-    ).not.toHaveClass('border-t')
-    expect(
-      screen.queryByRole('heading', { name: 'Upload .cube' }),
-    ).not.toBeInTheDocument()
-  })
-
-  it('uses the selected LUT name and Clear action as the loaded Current LUT card state', () => {
-    render(<MobileLutBrowser {...baseProps} />)
-
-    const currentSection = screen
-      .getByRole('heading', { name: 'Current LUT' })
-      .closest('section')
-    const currentCard = within(currentSection!).getByTestId(
-      'raw-mobile-current-lut-card',
-    )
-
-    expect(within(currentCard).getByText('Kodak 2383.cube')).toBeVisible()
-    expect(
-      within(currentCard).getByRole('button', { name: 'Clear LUT' }),
-    ).toBeEnabled()
-    expect(
-      within(currentCard).queryByText('Add .cube LUT'),
-    ).not.toBeInTheDocument()
-  })
-
-  it('renders strength in overview and disables it when requested', () => {
-    render(
-      <MobileLutBrowser
-        {...baseProps}
-        currentLutName={null}
-        strengthDisabled
-      />,
-    )
-
-    const strengthSection = screen
-      .getByRole('heading', { name: 'Strength' })
-      .closest('section')
-
-    expect(strengthSection).toHaveAttribute('data-raw-mobile-lut', 'strength')
-    // Section itself is a clean wrapper; the track carries the local mobile
-    // substrate. Keep the LUT sheet in the dark on-photo family instead of
-    // importing the desktop paper surface.
-    expect(strengthSection?.className ?? '').not.toMatch(/bg-\[oklch/)
-    expect(strengthSection?.className ?? '').not.toMatch(/bg-lf-surface-muted/)
-
-    const tablist = screen.getByRole('tablist', { name: 'Strength' })
-    expect(tablist).toBeInTheDocument()
-    // Borderless track per §6 Inset Hairline Rule — the track defines its
-    // edge by a 5% cool-white fill against the chrome surface, not a drawn
-    // hairline. This keeps the segmented control from reading heavier on
-    // the flatter mobile sheet than on the structured desktop tool card.
-    expect(tablist.className).toMatch(/bg-\[oklch\(0\.96_0\.006_255\/0\.05\)\]/)
-    expect(tablist).not.toHaveClass('border-lf-on-photo-bord-soft')
-    expect(tablist).not.toHaveClass('bg-lf-on-photo-bg')
-    expect(tablist).not.toHaveClass('bg-lf-surface-muted/55')
-    expect(tablist).not.toHaveClass('border-lf-hairline/45')
-    expect(tablist.className).not.toMatch(
-      /bg-\[oklch\(from_var\(--color-lf-on-surface\)/,
-    )
-    // The active segment renders a motion-animated thumb (layoutId-driven
-    // spring) and earns the cool-white wash + top highlight that matches
-    // the rest of the chrome's seam idiom (oklch(0.96 0.006 255 / *)).
-    const standardTab = screen.getByRole('tab', { name: 'Standard' })
-    expect(standardTab.querySelector('[data-segment-thumb]')).not.toBeNull()
-    // Active-thumb wash: 10% cool-white, brighter than the 5% track wash so
-    // the segment lifts visibly without depending on a drawn outline.
-    expect(standardTab.className).toMatch(
-      /data-\[state=active\]:\[&_span\[data-segment-thumb\]\]:bg-\[oklch\(0\.96_0\.006_255\/0\.10\)\]/,
-    )
-    // Weight contrast carries the readability when the bg delta is subtle.
-    expect(standardTab.className).toMatch(/data-\[state=active\]:font-semibold/)
-    expect(standardTab.className).toMatch(
-      /data-\[state=active\]:text-lf-on-photo-ink/,
-    )
-    expect(standardTab.className).not.toMatch(/bg-lf-surface-raised/)
-    expect(standardTab.className).not.toMatch(/bg-lf-on-photo-bg-strong/)
-    expect(standardTab).toBeDisabled()
-  })
-
-  it('opens a source catalog, loads an online LUT entry, and returns to overview', async () => {
+  it('opens a big source in full, loads a look from it, and closes so the photo shows it', async () => {
+    const onClose = vi.fn()
     const loadEntry = vi.fn().mockResolvedValue('loaded' as const)
     render(
       <MobileLutBrowser
         {...baseProps}
-        onlineLutSources={onlineLutSourcesFixture(loadEntry)}
-      />,
-    )
-
-    expect(screen.getByRole('dialog')).toHaveAttribute(
-      'data-mobile-lut-view',
-      'overview',
-    )
-
-    await userEvent.click(
-      screen.getByRole('button', { name: /open profiles catalog/i }),
-    )
-
-    expect(screen.getByRole('dialog')).toHaveAttribute(
-      'data-mobile-lut-view',
-      'catalog',
-    )
-    expect(
-      screen.queryByRole('button', { name: /open profiles catalog/i }),
-    ).toBeNull()
-
-    await userEvent.click(
-      screen.getByRole('button', { name: /load kodak 2383 rec.709/i }),
-    )
-    await act(async () => {
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-    })
-
-    expect(loadEntry).toHaveBeenCalledWith('kodak-2383-rec709')
-    await waitFor(() => {
-      expect(screen.getByRole('dialog')).toHaveAttribute(
-        'data-mobile-lut-view',
-        'overview',
-      )
-    })
-  })
-
-  it('surfaces first profile LUT entries inline in the overview', async () => {
-    const loadEntry = vi.fn().mockResolvedValue(undefined)
-    render(
-      <MobileLutBrowser
-        {...baseProps}
+        onClose={onClose}
         onlineLutSources={withManyOnlineEntries(
           onlineLutSourcesFixture(loadEntry),
         )}
@@ -358,6 +194,20 @@ describe('mobileLutBrowser', () => {
       'data-mobile-lut-view',
       'overview',
     )
+    // The looks themselves are on the strip; the sheet lists none inline.
+    expect(screen.queryByRole('button', { name: /^load /i })).toBeNull()
+
+    const all = screen.getByRole('button', {
+      name: 'All 5 LUTs from Profiles catalog',
+    })
+    expect(all).toHaveTextContent('All 5 LUTs')
+    expect(all).toHaveClass('min-h-11')
+    await userEvent.click(all)
+
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'data-mobile-lut-view',
+      'catalog',
+    )
 
     await userEvent.click(
       screen.getByRole('button', { name: /load kodak 2383 rec.709/i }),
@@ -367,13 +217,18 @@ describe('mobileLutBrowser', () => {
     })
 
     expect(loadEntry).toHaveBeenCalledWith('kodak-2383-rec709')
-    expect(screen.queryByText('Velvia 50')).not.toBeInTheDocument()
-    // The source card's FolderOpen button is the only path into the catalog
-    // view; the inline strip stays preview-only so 5+ entries don't fight for
-    // a redundant "Browse all" pill at the end of the scroller.
-    expect(
-      screen.getByRole('button', { name: /open profiles catalog/i }),
-    ).toBeInTheDocument()
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('offers no full catalog for a source with a single look', () => {
+    render(
+      <MobileLutBrowser
+        {...baseProps}
+        onlineLutSources={onlineLutSourcesFixture()}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /^all /i })).toBeNull()
+    expect(screen.getByText('1 LUT')).toBeInTheDocument()
   })
 
   it('acks the mobile LUT entry load click before the load resolves', async () => {
@@ -397,12 +252,16 @@ describe('mobileLutBrowser', () => {
       render(
         <MobileLutBrowser
           {...baseProps}
-          onlineLutSources={onlineLutSourcesFixture(loadEntry)}
+          onlineLutSources={withManyOnlineEntries(
+            onlineLutSourcesFixture(loadEntry),
+          )}
         />,
       )
 
       await userEvent.click(
-        screen.getByRole('button', { name: /open profiles catalog/i }),
+        screen.getByRole('button', {
+          name: /all 5 luts from profiles catalog/i,
+        }),
       )
 
       const loadButton = screen.getByRole('button', {
@@ -534,17 +393,14 @@ describe('mobileLutBrowser', () => {
     ).toBeDisabled()
   })
 
-  it('keeps current LUT and online source controls at mobile touch-target size', () => {
+  it('keeps the source controls at mobile touch-target size', () => {
     const fixture = onlineLutSourcesFixture()
     fixture.sourceUrlInput = 'https://profiles.example.com/extra.json'
     render(<MobileLutBrowser {...baseProps} onlineLutSources={fixture} />)
 
     expect(
-      screen.getByRole('button', { name: /close lut browser/i }),
+      screen.getByRole('button', { name: /close lut sources/i }),
     ).toHaveClass('size-[44px]')
-    expect(screen.getByRole('button', { name: /clear lut/i })).toHaveClass(
-      'min-h-[44px]',
-    )
     expect(
       screen.getByRole('button', { name: /copy lut source link/i }),
     ).toHaveClass('size-[44px]')
@@ -563,11 +419,11 @@ describe('mobileLutBrowser', () => {
   })
 
   it('keeps catalog entry rows at mobile touch-target size', async () => {
-    const fixture = onlineLutSourcesFixture()
+    const fixture = withManyOnlineEntries(onlineLutSourcesFixture())
     render(<MobileLutBrowser {...baseProps} onlineLutSources={fixture} />)
 
     await userEvent.click(
-      screen.getByRole('button', { name: /open profiles catalog/i }),
+      screen.getByRole('button', { name: /all 5 luts from profiles catalog/i }),
     )
 
     expect(
@@ -576,7 +432,7 @@ describe('mobileLutBrowser', () => {
   })
 
   it('keeps mobile catalog browsing in the dark on-photo surface family', async () => {
-    const fixture = onlineLutSourcesFixture()
+    const fixture = withManyOnlineEntries(onlineLutSourcesFixture())
     render(<MobileLutBrowser {...baseProps} onlineLutSources={fixture} />)
 
     const sourceCard = document.querySelector(
@@ -590,7 +446,7 @@ describe('mobileLutBrowser', () => {
     expect(sourceInput).not.toHaveClass('focus:border-lf-amber')
 
     await userEvent.click(
-      screen.getByRole('button', { name: /open profiles catalog/i }),
+      screen.getByRole('button', { name: /all 5 luts from profiles catalog/i }),
     )
 
     const entry = screen.getByRole('button', {
@@ -635,10 +491,26 @@ describe('mobileLutBrowser', () => {
     render(<MobileLutBrowser {...baseProps} onlineLutSources={fixture} />)
 
     // The raw runtime string (with its URL) is replaced by translated copy.
-    expect(
-      screen.getByText('This source could not be reached.'),
-    ).toBeInTheDocument()
+    const warning = screen.getByText('This source could not be reached.')
+    expect(warning).toBeInTheDocument()
     expect(screen.queryByText(/https:\/\//)).not.toBeInTheDocument()
+    // A source failure is not a colour contract: neutral, never amber.
+    const chip = warning.closest('[data-raw-lut="source-warning"]')!
+    expect(chip.innerHTML).not.toMatch(/amber/)
+  })
+
+  it('names a failed catalog download in neutral ink with Retry', async () => {
+    const fixture = withManyOnlineEntries(onlineLutSourcesFixture())
+    fixture.failedEntryId = 'kodak-2383-rec709'
+    render(<MobileLutBrowser {...baseProps} onlineLutSources={fixture} />)
+    await userEvent.click(
+      screen.getByRole('button', { name: /all 5 luts from profiles catalog/i }),
+    )
+    const failed = screen.getByRole('button', {
+      name: "Couldn't load Kodak 2383 Rec.709. Tap to retry.",
+    })
+    expect(failed).toHaveTextContent('Retry')
+    expect(failed.innerHTML).not.toMatch(/amber|rose/)
   })
 
   it('collapses multiple resource issues into one warning with a count', () => {

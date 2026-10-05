@@ -1,4 +1,4 @@
-import { Aperture, Download, TriangleAlert, X } from 'lucide-react'
+import { Aperture, CircleAlert, Download, X } from 'lucide-react'
 
 import { useI18n } from '~/lib/i18n'
 
@@ -45,8 +45,10 @@ export function MobileLutCatalogEntryButton(props: {
           {t('raw.mobile.lut.cancel')}
         </span>
       ) : props.failed ? (
-        <span className="inline-flex items-center gap-1 text-xs font-semibold text-lf-amber">
-          <TriangleAlert aria-hidden="true" className="size-3.5" />
+        // A failed download is not a colour contract: neutral ink, with
+        // the icon and the word.
+        <span className="inline-flex items-center gap-1 text-xs font-semibold text-lf-on-photo-ink/80">
+          <CircleAlert aria-hidden="true" className="size-3.5" />
           {t('raw.mobile.lut.retry')}
         </span>
       ) : (
@@ -65,7 +67,7 @@ export function MobileLutCatalogEntryButton(props: {
           className="absolute inset-x-0 bottom-0 h-0.5 bg-[oklch(0.96_0.006_255/0.05)]"
         >
           <span
-            className="block h-full bg-lf-green/70 transition-[width] duration-150 ease-out"
+            className="block h-full bg-[oklch(0.96_0.006_255/0.72)] transition-[width] duration-150 ease-out motion-reduce:transition-none"
             style={{ width: `${percent}%` }}
           />
         </span>

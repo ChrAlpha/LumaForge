@@ -232,7 +232,7 @@ describe('mobileLabChrome', () => {
     ).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /lut sources/i }))
     expect(
-      screen.getByRole('dialog', { name: /lut browser/i }),
+      screen.getByRole('dialog', { name: /lut sources/i }),
     ).toBeInTheDocument()
   })
 
@@ -293,13 +293,13 @@ describe('mobileLabChrome', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /lut sources/i }))
     expect(
-      screen.getByRole('dialog', { name: /lut browser/i }),
+      screen.getByRole('dialog', { name: /lut sources/i }),
     ).toBeInTheDocument()
 
     rerender(<MobileLabChrome {...base} isProcessing />)
 
     expect(
-      screen.queryByRole('dialog', { name: /lut browser/i }),
+      screen.queryByRole('dialog', { name: /lut sources/i }),
     ).not.toBeInTheDocument()
   })
 
@@ -406,7 +406,7 @@ describe('mobileLabChrome', () => {
     await userEvent.click(screen.getByRole('button', { name: /lut sources/i }))
 
     expect(
-      screen.getByRole('dialog', { name: /lut browser/i }),
+      screen.getByRole('dialog', { name: /lut sources/i }),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('tablist', { name: 'LUT contract panels' }),
@@ -700,7 +700,7 @@ describe('mobileLabChrome', () => {
     render(<MobileLabChrome {...base} previewFrameEl={previewFrameEl} />)
     await userEvent.click(screen.getByRole('button', { name: /lut sources/i }))
     expect(
-      screen.getByRole('dialog', { name: /lut browser/i }),
+      screen.getByRole('dialog', { name: /lut sources/i }),
     ).toBeInTheDocument()
 
     act(() => {
@@ -711,7 +711,7 @@ describe('mobileLabChrome', () => {
     // The sheet closes; immersive does NOT engage (topbar still present).
     await waitFor(() =>
       expect(
-        screen.queryByRole('dialog', { name: /lut browser/i }),
+        screen.queryByRole('dialog', { name: /lut sources/i }),
       ).not.toBeInTheDocument(),
     )
     expect(
@@ -728,7 +728,7 @@ describe('mobileLabChrome', () => {
         onViewModeChange={onViewModeChange}
       />,
     )
-    // Open the LUT browser synchronously, then drive the hold on fake timers.
+    // Open the LUT sources synchronously, then drive the hold on fake timers.
     // fireEvent (sync) is intentional: lutBrowserOpen must be set before we
     // switch to fake timers below. userEvent.click is async and can't be
     // awaited before vi.useFakeTimers() in the same test.

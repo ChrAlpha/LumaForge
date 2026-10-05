@@ -436,7 +436,8 @@ export function MobileLabChrome(props: {
       <MobileLutBrowser
         open={!handoffActive && lutBrowserOpen}
         onClose={closeLutBrowser}
-        {...props.lutBrowser}
+        disabled={props.lutBrowser.disabled}
+        onlineLutSources={props.lutBrowser.onlineLutSources}
       />
 
       <MobileMoreSheet

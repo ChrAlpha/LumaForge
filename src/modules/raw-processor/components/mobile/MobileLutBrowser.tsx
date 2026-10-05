@@ -1,7 +1,3 @@
-import type {
-  LUTColorProfile,
-  LUTContractResolution,
-} from '@lumaforge/luma-color-runtime'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { ArrowLeft, X } from 'lucide-react'
 import { AnimatePresence, m, useDragControls } from 'motion/react'
@@ -12,28 +8,23 @@ import { useI18n } from '~/lib/i18n'
 import { sheetSpring } from '~/lib/spring'
 
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
-import type { LUTContractSelectionState } from '../../model/session'
 import { useToolMotion } from '../../motion'
-import type { StrengthLevel } from '../tools/StrengthControl'
 import { MobileLutCatalogView } from './MobileLutCatalogView'
-import { MobileLutCurrentSections } from './MobileLutCurrentSections'
 import { MobileLutOnlineSourcesSection } from './MobileLutOnlineSourcesSection'
 import { useMobileLutBrowserController } from './useMobileLutBrowserController'
 
+/**
+ * LUT sources: where looks come from. Adding a catalog URL, refreshing,
+ * removing and sharing sources, their issues, and a full catalog view for a
+ * big source. Choosing and tuning the applied look lives in the Look deck,
+ * on the photo.
+ */
 export interface MobileLutBrowserProps {
   open: boolean
   onClose: () => void
-  currentLutName?: string | null
+  /** Processing or exporting: no look can load. */
   disabled: boolean
-  onLutLoad: (files: File[]) => void
-  onLutClear: () => void
-  lutProfileSelection?: LUTContractSelectionState | null
-  lutProfileResolution?: LUTContractResolution | null
-  onLutProfileSelect: (profile: LUTColorProfile) => void
   onlineLutSources?: UseOnlineLutSourcesResult
-  activeIntensity?: StrengthLevel
-  onIntensitySelect?: (level: StrengthLevel) => void
-  strengthDisabled?: boolean
 }
 
 type OnlineResource = UseOnlineLutSourcesResult['state']['resources'][number]
@@ -46,8 +37,6 @@ export function MobileLutBrowser(props: MobileLutBrowserProps) {
   const { t } = useI18n()
   const { prefersReduced } = useToolMotion()
   const dragControls = useDragControls()
-  const activeIntensity = props.activeIntensity ?? 'standard'
-  const strengthDisabled = props.strengthDisabled ?? true
 
   const {
     view,
@@ -92,15 +81,6 @@ export function MobileLutBrowser(props: MobileLutBrowserProps) {
       {...viewMotion}
       transition={sheetSpring}
     >
-      <MobileLutCurrentSections
-        currentLutName={props.currentLutName}
-        disabled={props.disabled}
-        onLutLoad={props.onLutLoad}
-        onLutClear={props.onLutClear}
-        activeIntensity={activeIntensity}
-        onIntensitySelect={props.onIntensitySelect}
-        strengthDisabled={strengthDisabled}
-      />
       <MobileLutOnlineSourcesSection
         onlineLutSources={props.onlineLutSources}
         sourceInputId={onlineSourceInputId}
@@ -124,7 +104,8 @@ export function MobileLutBrowser(props: MobileLutBrowserProps) {
       lutSources={props.onlineLutSources}
       entryLoadProgress={props.onlineLutSources?.entryLoadProgress ?? null}
       onCancelEntryLoad={props.onlineLutSources?.cancelEntryLoad}
-      onEntryLoaded={returnToOverview}
+      // The look lands on the photo, so the sheet gets out of its way.
+      onEntryLoaded={props.onClose}
     />
   )
 

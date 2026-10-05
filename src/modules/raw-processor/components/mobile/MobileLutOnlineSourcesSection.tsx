@@ -1,21 +1,17 @@
-import { Plus, Share2, TriangleAlert, X } from 'lucide-react'
+import { Plus, Share2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Input } from '~/components/ui/input'
 import { useI18n } from '~/lib/i18n'
 
-import type {
-  OnlineLutEntryLoadProgress,
-  UseOnlineLutSourcesResult,
-} from '../../hooks/useOnlineLutSources'
-import { entryLoadPercent } from '../tools/lut/OnlineLutSourceResourceList'
-import { useOnlineLutEntryLoader } from '../tools/lut/useOnlineLutEntryLoader'
+import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
 import { MobileLutSourceCard } from './MobileLutSourceCard'
 
 type OnlineEntry = UseOnlineLutSourcesResult['state']['entries'][number]
 type OnlineIssue = UseOnlineLutSourcesResult['state']['issues'][number]
 
-const inlineEntryLimit = 4
+const iconButton =
+  'grid size-[44px] shrink-0 place-items-center rounded-md bg-transparent text-lf-on-photo-ink/55 transition-[color,background-color,translate] duration-[120ms] hover:bg-[oklch(0.96_0.006_255/0.06)] hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lf-green/80 enabled:active:translate-y-[0.5px] disabled:cursor-not-allowed disabled:opacity-50'
 
 export interface MobileLutOnlineSourcesSectionProps {
   onlineLutSources?: UseOnlineLutSourcesResult
@@ -25,6 +21,10 @@ export interface MobileLutOnlineSourcesSectionProps {
   onBrowseResource: (resourceId: string) => void
 }
 
+/**
+ * Source administration: add a catalog URL, share the list, and per source
+ * refresh, remove, read its issues, or open its full catalog.
+ */
 export function MobileLutOnlineSourcesSection({
   onlineLutSources,
   sourceInputId,
@@ -33,36 +33,13 @@ export function MobileLutOnlineSourcesSection({
   onBrowseResource,
 }: MobileLutOnlineSourcesSectionProps) {
   const { t } = useI18n()
-  const { loadingEntryId, failedEntryId, loadOnlineLutEntry } =
-    useOnlineLutEntryLoader(onlineLutSources)
-  const entryLoadProgress = onlineLutSources?.entryLoadProgress ?? null
-  const cancelEntryLoad = onlineLutSources?.cancelEntryLoad
 
   if (!onlineLutSources) return null
 
   return (
-    <section className="grid gap-2">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="m-0 text-lf-body font-semibold text-lf-on-photo-ink">
-          {t('raw.mobile.lut.onlineHeading')}
-        </h3>
-        <button
-          type="button"
-          aria-label={t('raw.lutSource.copy')}
-          disabled={!onlineLutSources.share.enabled}
-          onClick={() => {
-            void onlineLutSources.share.copy().then(
-              () => toast.success(t('raw.lutSource.copied')),
-              () => toast.error(t('raw.lutSource.copyFailed')),
-            )
-          }}
-          className="grid size-[44px] shrink-0 place-items-center rounded-md bg-transparent text-lf-on-photo-ink/55 transition-colors hover:bg-lf-on-photo-bg-strong hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Share2 aria-hidden="true" className="size-5" />
-        </button>
-      </div>
+    <section className="grid gap-2" data-raw-mobile-lut="sources">
       <form
-        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
+        className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1"
         onSubmit={(event) => {
           event.preventDefault()
           if (!onlineLutSources.sourceUrlInput.trim()) {
@@ -87,23 +64,37 @@ export function MobileLutOnlineSourcesSection({
           onChange={(event) =>
             onlineLutSources.setSourceUrlInput(event.currentTarget.value)
           }
-          inputClassName="h-[44px] rounded-md border-transparent bg-lf-on-photo-bg text-lf-control text-lf-on-photo-ink shadow-none placeholder:text-lf-on-photo-ink/40 focus:border-transparent focus:bg-lf-on-photo-bg-strong focus:ring-2 focus:ring-lf-green/25"
+          inputClassName="h-[44px] rounded-md border-transparent bg-[oklch(0.96_0.006_255/0.05)] text-lf-control text-lf-on-photo-ink shadow-none placeholder:text-lf-on-photo-ink/40 focus:border-transparent focus:bg-[oklch(0.96_0.006_255/0.08)] focus:ring-2 focus:ring-lf-green/25"
         />
         <button
           type="submit"
           aria-label={t('raw.lutSource.add')}
           disabled={!onlineLutSources.sourceUrlInput.trim()}
-          className="grid size-[44px] shrink-0 place-items-center rounded-md bg-transparent text-lf-on-photo-ink/55 transition-colors hover:bg-lf-on-photo-bg-strong hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green disabled:cursor-not-allowed disabled:opacity-50"
+          className={iconButton}
         >
           <Plus aria-hidden="true" className="size-5" />
         </button>
+        <button
+          type="button"
+          aria-label={t('raw.lutSource.copy')}
+          disabled={!onlineLutSources.share.enabled}
+          onClick={() => {
+            void onlineLutSources.share.copy().then(
+              () => toast.success(t('raw.lutSource.copied')),
+              () => toast.error(t('raw.lutSource.copyFailed')),
+            )
+          }}
+          className={iconButton}
+        >
+          <Share2 aria-hidden="true" className="size-5" />
+        </button>
       </form>
       {onlineLutSources.state.resources.length === 0 && (
-        <p className="m-0 text-xs leading-relaxed text-lf-on-photo-ink/64">
+        <p className="m-0 text-xs leading-relaxed text-lf-on-photo-ink/72">
           {t('raw.lutSource.emptyHint')}
         </p>
       )}
-      <div className="grid gap-2" aria-busy={onlineLutSources.state.isLoading}>
+      <div className="grid gap-1" aria-busy={onlineLutSources.state.isLoading}>
         {/* Announce loading without inserting layout: the resource card's
             refresh spinner is the visual signal. */}
         <p className="sr-only" role="status">
@@ -117,145 +108,19 @@ export function MobileLutOnlineSourcesSection({
             onlineLutSources.state.activeResourceId === resource.id
 
           return (
-            <div key={resource.id} className="grid gap-1.5">
-              <MobileLutSourceCard
-                resource={resource}
-                entryCount={entries.length}
-                isLoading={isResourceLoading}
-                issues={resourceIssues}
-                onBrowse={() => onBrowseResource(resource.id)}
-                onRefresh={() =>
-                  void onlineLutSources.refreshSource(resource.id)
-                }
-                onRemove={() => onlineLutSources.removeSource(resource.id)}
-              />
-              <MobileLutInlineEntryStrip
-                entries={entries}
-                loadingEntryId={loadingEntryId}
-                failedEntryId={failedEntryId}
-                entryLoadProgress={entryLoadProgress}
-                onEntryLoad={(entryId) => {
-                  void loadOnlineLutEntry(entryId)
-                }}
-                onCancelEntryLoad={cancelEntryLoad}
-              />
-            </div>
+            <MobileLutSourceCard
+              key={resource.id}
+              resource={resource}
+              entryCount={entries.length}
+              isLoading={isResourceLoading}
+              issues={resourceIssues}
+              onBrowse={() => onBrowseResource(resource.id)}
+              onRefresh={() => void onlineLutSources.refreshSource(resource.id)}
+              onRemove={() => onlineLutSources.removeSource(resource.id)}
+            />
           )
         })}
       </div>
     </section>
-  )
-}
-
-function MobileLutInlineEntryStrip({
-  entries,
-  loadingEntryId,
-  failedEntryId,
-  entryLoadProgress,
-  onEntryLoad,
-  onCancelEntryLoad,
-}: {
-  entries: OnlineEntry[]
-  loadingEntryId: string | null
-  failedEntryId: string | null
-  entryLoadProgress: OnlineLutEntryLoadProgress | null
-  onEntryLoad: (entryId: string) => void
-  onCancelEntryLoad?: () => void
-}) {
-  const { t } = useI18n()
-  const visibleEntries = entries.slice(0, inlineEntryLimit)
-
-  if (visibleEntries.length === 0) return null
-
-  return (
-    <div
-      className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-      data-raw-mobile-lut="source-inline-entries"
-    >
-      {visibleEntries.map((entry) => {
-        const isLoading = loadingEntryId === entry.id
-        const isLocked = loadingEntryId !== null && !isLoading
-        const isFailed = failedEntryId === entry.id
-        return (
-          <MobileLutInlineEntryPill
-            key={entry.id}
-            title={entry.title}
-            isLoading={isLoading}
-            isLocked={isLocked}
-            isFailed={isFailed}
-            percent={
-              isLoading && entryLoadProgress?.entryId === entry.id
-                ? entryLoadPercent(entryLoadProgress)
-                : null
-            }
-            ariaLabel={
-              isLoading
-                ? t('raw.lutSource.cancelDownload', { label: entry.title })
-                : isFailed
-                  ? t('raw.lutSource.loadFailedRetry', { label: entry.title })
-                  : t('raw.mobile.lut.loadEntry', { label: entry.title })
-            }
-            onClick={() =>
-              isLoading ? onCancelEntryLoad?.() : onEntryLoad(entry.id)
-            }
-          />
-        )
-      })}
-    </div>
-  )
-}
-
-function MobileLutInlineEntryPill({
-  title,
-  isLoading,
-  isLocked,
-  isFailed,
-  percent,
-  ariaLabel,
-  onClick,
-}: {
-  title: string
-  isLoading: boolean
-  isLocked: boolean
-  isFailed: boolean
-  percent: number | null
-  ariaLabel: string
-  onClick: () => void
-}) {
-  const disabled = isLocked
-
-  return (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      aria-busy={isLoading || undefined}
-      disabled={disabled}
-      onClick={onClick}
-      data-raw-mobile-lut="source-inline-entry"
-      data-raw-mobile-lut-entry-loading={isLoading ? 'true' : undefined}
-      data-raw-mobile-lut-entry-failed={isFailed ? 'true' : undefined}
-      className={[
-        'inline-flex min-h-[44px] max-w-[14rem] shrink-0 snap-start items-center gap-1.5 rounded-lf-pill border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-3.5 text-lf-control font-medium text-lf-on-photo-ink/85 transition-colors hover:border-lf-on-photo-bord hover:bg-lf-on-photo-bg-strong hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green',
-        isLocked
-          ? 'disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-lf-on-photo-bord-soft disabled:hover:bg-lf-on-photo-bg disabled:hover:text-lf-on-photo-ink/85'
-          : '',
-        isFailed
-          ? 'border-lf-amber/45 bg-[oklch(from_var(--color-lf-amber)_l_c_h_/_0.10)]'
-          : '',
-      ].join(' ')}
-    >
-      <span className="truncate">{title}</span>
-      {isLoading ? (
-        <span className="inline-flex shrink-0 items-center gap-1 text-[0.7rem] font-semibold text-lf-on-photo-text-soft tabular-nums">
-          {percent !== null && <span>{percent}%</span>}
-          <X aria-hidden="true" className="size-3.5" />
-        </span>
-      ) : isFailed ? (
-        <TriangleAlert
-          aria-hidden="true"
-          className="size-3.5 shrink-0 text-lf-amber"
-        />
-      ) : null}
-    </button>
   )
 }

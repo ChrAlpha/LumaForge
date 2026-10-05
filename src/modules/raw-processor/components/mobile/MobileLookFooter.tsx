@@ -195,7 +195,7 @@ export function MobileLookFooter(props: {
           '-mr-1.5 shrink-0 px-1.5 font-semibold text-lf-on-photo-ink/72 hover:text-lf-on-photo-ink/92',
         )}
       >
-        {t('raw.mobile.look.sources')}
+        {t('raw.mobile.lut.title')}
         <ChevronRight aria-hidden="true" className="size-3.5" />
       </button>
     </div>
