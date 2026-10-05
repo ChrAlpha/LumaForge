@@ -1,9 +1,13 @@
-import { existsSync } from 'node:fs'
+import { basename } from 'node:path'
 import process from 'node:process'
 
 import type { Page } from '@playwright/test'
 import { devices, expect, test } from '@playwright/test'
 
+import {
+  gateRawFixture,
+  resolvePublicRawFixture,
+} from '../../scripts/ci/raw-fixtures.mjs'
 import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
@@ -13,9 +17,9 @@ import {
   requireWebGPUFixture,
 } from './raw-preview-backend'
 
-const RAW_COMPARE_FIXTURE =
-  process.env.LUMAFORGE_RAW_COMPARE_FIXTURE ??
-  '/workspaces/LumaForge/test-images/SGL_1998.NEF'
+// The compare ladder, split, zoom/pan and bounded-HQ handoff hold for any RAW
+// above the quick-preview cap, so the public fixture covers them.
+const RAW_COMPARE_FIXTURE = resolvePublicRawFixture()
 const RAW_COMPARE_URL = process.env.LUMAFORGE_RAW_COMPARE_URL ?? '/raw'
 
 type LayeredCompareMode = 'dual-gpu' | 'jpeg-fallback'
@@ -253,17 +257,17 @@ async function loadRawFixtureViaSameOriginDrop(
   )
 }
 
-async function routeSameOriginFixture(page: Page, fixtureUrl: string) {
+async function routeSameOriginFixture(
+  page: Page,
+  fixtureUrl: string,
+  fixture: string,
+) {
   await page.route(fixtureUrl, async (route) => {
     await route.fulfill({
-      path: RAW_COMPARE_FIXTURE,
+      path: fixture,
       contentType: 'application/octet-stream',
     })
   })
-}
-
-function fixtureFileName() {
-  return RAW_COMPARE_FIXTURE.split('/').pop() ?? 'fixture.raw'
 }
 
 async function dragSlider(page: Page, sliderName: string, targetRatio: number) {
@@ -463,11 +467,8 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
     !isDesktopChromiumProject(testInfo),
     'dual GPU compare path is a desktop Chromium regression target',
   )
-  requireWebGPUFixture(testInfo, RAW_COMPARE_FIXTURE)
-  test.skip(
-    !existsSync(RAW_COMPARE_FIXTURE),
-    `Missing RAW compare fixture: ${RAW_COMPARE_FIXTURE}`,
-  )
+  requireWebGPUFixture(testInfo, RAW_COMPARE_FIXTURE.path)
+  const rawPath = gateRawFixture(testInfo, RAW_COMPARE_FIXTURE)
   testInfo.setTimeout(180_000)
 
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -477,7 +478,7 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
   await page.goto(rawPreviewUrl(testInfo, RAW_COMPARE_URL))
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
 
-  await loadRawFixture(page, RAW_COMPARE_FIXTURE)
+  await loadRawFixture(page, rawPath)
 
   await expect(
     page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
@@ -584,7 +585,7 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
   await testInfo.attach('raw-dual-layer-compare.json', {
     body: JSON.stringify(
       {
-        fixture: RAW_COMPARE_FIXTURE,
+        fixture: rawPath,
         rendererBackend: await page
           .locator('.raw-preview-canvas')
           .getAttribute('data-render-backend'),
@@ -609,11 +610,8 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
     !isDesktopChromiumProject(testInfo),
     'mobile-class fallback is exercised in a Chromium context with WebKit-class UA',
   )
-  requireWebGPUFixture(testInfo, RAW_COMPARE_FIXTURE)
-  test.skip(
-    !existsSync(RAW_COMPARE_FIXTURE),
-    `Missing RAW compare fixture: ${RAW_COMPARE_FIXTURE}`,
-  )
+  requireWebGPUFixture(testInfo, RAW_COMPARE_FIXTURE.path)
+  const rawPath = gateRawFixture(testInfo, RAW_COMPARE_FIXTURE)
   testInfo.setTimeout(240_000)
 
   const baseURL = rawPreviewUrl(testInfo, RAW_COMPARE_URL)
@@ -631,11 +629,11 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
     })
   })
   const page = await context.newPage()
-  const fixtureName = fixtureFileName()
+  const fixtureName = basename(rawPath)
   const sameOriginFixtureUrl = `/__lumaforge-test-fixtures/${fixtureName}`
 
   try {
-    await routeSameOriginFixture(page, sameOriginFixtureUrl)
+    await routeSameOriginFixture(page, sameOriginFixtureUrl, rawPath)
     await installGpuCounters(page)
     await page.goto(baseURL)
     expect(page.viewportSize()).toEqual({ width: 390, height: 844 })
@@ -786,7 +784,7 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
     await testInfo.attach('raw-mobile-jpeg-fallback-compare.json', {
       body: JSON.stringify(
         {
-          fixture: RAW_COMPARE_FIXTURE,
+          fixture: rawPath,
           rendererBackend: await page
             .locator('.raw-preview-canvas')
             .getAttribute('data-render-backend'),
@@ -817,18 +815,15 @@ test('validates WebKit-class JPEG fallback compare when local WebKit is availabl
     'WebKit proxy validation runs only on the WebKit mobile project',
   )
   test.skip(!projectHasWebGPU(testInfo), NO_WEBGPU_SKIP_REASON)
-  test.skip(
-    !existsSync(RAW_COMPARE_FIXTURE),
-    `Missing RAW compare fixture: ${RAW_COMPARE_FIXTURE}`,
-  )
+  const rawPath = gateRawFixture(testInfo, RAW_COMPARE_FIXTURE)
   testInfo.setTimeout(240_000)
 
   await page.setViewportSize({ width: 390, height: 844 })
   expect(page.viewportSize()).toEqual({ width: 390, height: 844 })
 
-  const fixtureName = fixtureFileName()
+  const fixtureName = basename(rawPath)
   const sameOriginFixtureUrl = `/__lumaforge-test-fixtures/${fixtureName}`
-  await routeSameOriginFixture(page, sameOriginFixtureUrl)
+  await routeSameOriginFixture(page, sameOriginFixtureUrl, rawPath)
   await installGpuCounters(page)
 
   await page.goto(RAW_COMPARE_URL)
@@ -877,7 +872,7 @@ test('validates WebKit-class JPEG fallback compare when local WebKit is availabl
   await testInfo.attach('raw-webkit-jpeg-fallback-compare.json', {
     body: JSON.stringify(
       {
-        fixture: RAW_COMPARE_FIXTURE,
+        fixture: rawPath,
         mode: await readCompareMode(page),
         viewport: page.viewportSize(),
         source: await originalLayer.getAttribute(

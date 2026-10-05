@@ -13,8 +13,11 @@ import { fileURLToPath } from 'node:url'
  * a skip into a failure.
  *
  * Private coverage (camera- or size-specific files that cannot be published)
- * has no default. It runs only when its own variable names a local file, and
- * otherwise skips as optional private coverage, whatever the public flag says.
+ * has no default and never falls back to the public file. It runs only when
+ * its own variable names a local file, and otherwise skips as optional private
+ * coverage, whatever the public flag says. Acceptance runs set
+ * `LUMAFORGE_REQUIRE_PRIVATE_FIXTURES=1`, which fails every selected test whose
+ * private variable is unset.
  *
  * An explicitly named file that does not exist always fails, so a mistyped
  * path never turns into a skip or a fallback. Relative paths resolve against
@@ -25,6 +28,7 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 
 export const PUBLIC_RAW_FIXTURE_ENV = 'LUMAFORGE_RAW_FIXTURE'
 export const REQUIRE_PUBLIC_FIXTURE_ENV = 'LUMAFORGE_REQUIRE_PUBLIC_FIXTURE'
+export const REQUIRE_PRIVATE_FIXTURES_ENV = 'LUMAFORGE_REQUIRE_PRIVATE_FIXTURES'
 export const PUBLIC_RAW_FIXTURE =
   'packages/luma-raw-runtime/fixtures/.cache/public/raw-pixls-iphone-se.dng'
 
@@ -122,12 +126,15 @@ export function resolvePrivateRawFixture(
   if (value) {
     return explicitFixture('private', envName, value, { exists, rootDir })
   }
+  const required = isTruthyFlag(env[REQUIRE_PRIVATE_FIXTURES_ENV])
   return {
     coverage: 'private',
     path: null,
     ready: false,
-    required: false,
-    reason: `Optional private coverage: set ${envName} to ${description}.`,
+    required,
+    reason: required
+      ? `${REQUIRE_PRIVATE_FIXTURES_ENV} is set, but ${envName} is not: set it to ${description}.`
+      : `Optional private coverage: set ${envName} to ${description}.`,
   }
 }
 

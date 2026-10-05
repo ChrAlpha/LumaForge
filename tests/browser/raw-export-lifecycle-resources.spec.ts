@@ -1,12 +1,11 @@
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import process from 'node:process'
 
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
 import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
+import { resolveSonyArwFixture } from './raw-export-fixtures'
 
 type ExportDebugEvent = {
   type: string
@@ -33,10 +32,6 @@ type LifecycleResourceSample = {
     duration: number
   }>
 }
-
-const sonyRawPath =
-  process.env.LUMAFORGE_SONY_ARW ??
-  '/workspaces/LumaForge/test-images/SGL00940.ARW'
 
 async function collectExportEvents(page: Page) {
   return (await page.evaluate(() => {
@@ -250,10 +245,8 @@ test('monitors a full desktop RAW export lifecycle with resource diagnostics', a
     testInfo.project.name !== 'chromium-desktop',
     'desktop lifecycle resource monitor uses Chromium performance APIs and OPFS',
   )
-  test.skip(
-    !existsSync(sonyRawPath),
-    `Missing Sony ARW fixture: ${sonyRawPath}`,
-  )
+  // Resource diagnostics are meant for a large export, so this needs the ARW.
+  const sonyRawPath = resolveSonyArwFixture(testInfo)
   testInfo.setTimeout(600_000)
 
   const samples: LifecycleResourceSample[] = []

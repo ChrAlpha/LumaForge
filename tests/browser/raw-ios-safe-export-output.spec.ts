@@ -1,13 +1,12 @@
 import type { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import process from 'node:process'
 
 import type { Page } from '@playwright/test'
 import { devices, expect, test } from '@playwright/test'
 
 import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
+import { resolveSonyArwFixture } from './raw-export-fixtures'
 
 type ExportDebugEvent = {
   type: string
@@ -15,9 +14,6 @@ type ExportDebugEvent = {
 }
 
 const iPhone = devices['iPhone 14 Pro']
-const sonyRawPath =
-  process.env.LUMAFORGE_SONY_ARW ??
-  '/workspaces/LumaForge/test-images/SGL00940.ARW'
 
 test.use({
   viewport: iPhone.viewport,
@@ -36,7 +32,7 @@ async function collectExportEvents(page: Page) {
   })) as ExportDebugEvent[]
 }
 
-async function loadRawFixture(page: Page) {
+async function loadRawFixture(page: Page, fixture: string) {
   const mobileBrowseButton = page.getByRole('button', {
     name: /browse raw files/i,
   })
@@ -45,7 +41,7 @@ async function loadRawFixture(page: Page) {
   const fileChooserPromise = page.waitForEvent('filechooser')
   await mobileBrowseButton.click()
   const fileChooser = await fileChooserPromise
-  await fileChooser.setFiles(sonyRawPath)
+  await fileChooser.setFiles(fixture)
 }
 
 async function openExportControls(page: Page) {
@@ -177,10 +173,8 @@ async function decodeJpegBottomStats(page: Page, jpeg: Buffer) {
 test('low-memory WebKit export decodes without a bottom color band for the Sony ARW', async ({
   page,
 }, testInfo) => {
-  test.skip(
-    !existsSync(sonyRawPath),
-    `Missing Sony ARW fixture: ${sonyRawPath}`,
-  )
+  // The decoded size and bottom-band limits below belong to the Sony ARW.
+  const sonyRawPath = resolveSonyArwFixture(testInfo)
   testInfo.setTimeout(600_000)
 
   await page.addInitScript(() => {
@@ -196,7 +190,7 @@ test('low-memory WebKit export decodes without a bottom color band for the Sony 
   })
 
   await page.goto('/raw')
-  await loadRawFixture(page)
+  await loadRawFixture(page, sonyRawPath)
   await openExportControls(page)
 
   const exportButton = page

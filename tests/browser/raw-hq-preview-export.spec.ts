@@ -1,21 +1,15 @@
 import type { Buffer } from 'node:buffer'
-import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import process from 'node:process'
 
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+import { resolveSonyArwFixture } from './raw-export-fixtures'
 import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
   rawPreviewUrl,
-  requireWebGPUFixture,
 } from './raw-preview-backend'
-
-const sonyRawPath =
-  process.env.LUMAFORGE_SONY_ARW ??
-  '/workspaces/LumaForge/test-images/SGL00940.ARW'
 
 async function loadRawFixture(page: Page, fixture: string) {
   const fileChooserPromise = page.waitForEvent('filechooser')
@@ -50,11 +44,8 @@ test('exports an HQ preview JPEG from a real RAW upload without replacing full-r
     !isDesktopChromiumProject(testInfo),
     'HQ preview export acceptance uses desktop Chromium download APIs',
   )
-  requireWebGPUFixture(testInfo, sonyRawPath)
-  test.skip(
-    !existsSync(sonyRawPath),
-    `Missing Sony ARW fixture: ${sonyRawPath}`,
-  )
+  // The 8-12MP, 3:2 output bounds need the Sony ARW's size and aspect.
+  const sonyRawPath = resolveSonyArwFixture(testInfo)
   testInfo.setTimeout(240_000)
 
   await page.goto(rawPreviewUrl(testInfo))

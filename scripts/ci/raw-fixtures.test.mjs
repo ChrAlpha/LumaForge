@@ -14,6 +14,7 @@ import {
 import {
   gateRawFixture,
   PUBLIC_RAW_FIXTURE_ENV,
+  REQUIRE_PRIVATE_FIXTURES_ENV,
   REQUIRE_PUBLIC_FIXTURE_ENV,
   resolvePrivateRawFixture,
   resolvePublicRawFixture,
@@ -162,19 +163,55 @@ describe('private RAW fixture resolution', () => {
   const description = 'a local 100MP RAF'
 
   it('labels unset private coverage optional, apart from public coverage', () => {
-    const fixture = resolvePrivateRawFixture(name, description, {
-      // The public requirement does not extend to private coverage.
-      env: { [REQUIRE_PUBLIC_FIXTURE_ENV]: '1' },
-      exists: () => assert.fail('no private path was named'),
+    for (const flag of [undefined, '', '0', 'false']) {
+      const fixture = resolvePrivateRawFixture(name, description, {
+        // The public requirement does not extend to private coverage.
+        env: {
+          [REQUIRE_PUBLIC_FIXTURE_ENV]: '1',
+          [REQUIRE_PRIVATE_FIXTURES_ENV]: flag,
+        },
+        exists: () => assert.fail('no private path was named'),
+      })
+
+      assert.deepEqual(
+        fixture,
+        {
+          coverage: 'private',
+          path: null,
+          ready: false,
+          required: false,
+          reason: `Optional private coverage: set ${name} to ${description}.`,
+        },
+        `flag ${flag} must not require`,
+      )
+    }
+  })
+
+  it('fails unset private coverage in the required-private mode', () => {
+    for (const flag of ['1', 'true']) {
+      const fixture = resolvePrivateRawFixture(name, description, {
+        env: { [REQUIRE_PRIVATE_FIXTURES_ENV]: flag },
+        exists: () => assert.fail('no private path was named'),
+      })
+
+      assert.equal(fixture.coverage, 'private')
+      assert.equal(fixture.path, null)
+      assert.equal(fixture.ready, false)
+      assert.equal(fixture.required, true, `flag ${flag} must require`)
+      assert.ok(fixture.reason.includes(REQUIRE_PRIVATE_FIXTURES_ENV))
+      assert.ok(fixture.reason.includes(name))
+      assert.ok(fixture.reason.includes(description))
+    }
+  })
+
+  it('leaves the public requirement to its own flag', () => {
+    const fixture = resolvePublicRawFixture({
+      env: { [REQUIRE_PRIVATE_FIXTURES_ENV]: '1' },
+      exists: filesystem().exists,
     })
 
-    assert.deepEqual(fixture, {
-      coverage: 'private',
-      path: null,
-      ready: false,
-      required: false,
-      reason: `Optional private coverage: set ${name} to ${description}.`,
-    })
+    assert.equal(fixture.ready, false)
+    assert.equal(fixture.required, false)
   })
 
   it('runs private coverage when its explicit path exists', () => {
@@ -237,6 +274,9 @@ describe('fixture gate for a browser test', () => {
         env: { [PUBLIC_RAW_FIXTURE_ENV]: '/nonexistent/raw.dng' },
         exists: filesystem().exists,
       }),
+      resolvePrivateRawFixture('LUMAFORGE_SONY_ARW', 'an ARW', {
+        env: { [REQUIRE_PRIVATE_FIXTURES_ENV]: '1' },
+      }),
     ]) {
       const testInfo = fakeTestInfo()
       assert.throws(() => gateRawFixture(testInfo, fixture), {
@@ -283,28 +323,42 @@ describe('working-directory independence', () => {
 })
 
 describe('browser specs', () => {
-  // Specs that still name private files on one machine. They move to explicit
-  // fixture inputs separately; no other spec may join them.
-  const pendingPrivatePaths = new Set([
-    'raw-dual-layer-compare.spec.ts',
-    'raw-export-fixtures.ts',
-    'raw-export-lifecycle-resources.spec.ts',
-    'raw-hq-preview-export.spec.ts',
-    'raw-ios-safe-export-output.spec.ts',
-  ])
+  const browserDir = fileURLToPath(
+    new URL('../../tests/browser/', import.meta.url),
+  )
+  const readSpec = (file) => readFileSync(join(browserDir, file), 'utf8')
   const machinePath = /['"`](?:\/(?:workspaces|home|Users)\/|[a-z]:[\\/])/i
 
   it('keep machine-specific fixture paths out of the specs', () => {
-    const browserDir = fileURLToPath(
-      new URL('../../tests/browser/', import.meta.url),
-    )
     const offenders = readdirSync(browserDir)
       .filter((file) => file.endsWith('.ts'))
-      .filter((file) => !pendingPrivatePaths.has(file))
-      .filter((file) =>
-        machinePath.test(readFileSync(join(browserDir, file), 'utf8')),
-      )
+      .filter((file) => machinePath.test(readSpec(file)))
 
     assert.deepEqual(offenders, [])
+  })
+
+  it('keep size- and camera-specific expectations on private fixtures', () => {
+    // Compare holds for any RAW above the quick-preview cap. The export specs
+    // expect one file's plan, output size, aspect or resource load, so they
+    // name that file privately instead of inheriting the public default.
+    const coverage = {
+      'raw-dual-layer-compare.spec.ts': 'resolvePublicRawFixture',
+      'raw-export-lifecycle-resources.spec.ts': 'resolveSonyArwFixture',
+      'raw-hq-preview-export.spec.ts': 'resolveSonyArwFixture',
+      'raw-ios-safe-export-output.spec.ts': 'resolveSonyArwFixture',
+      'raw-ios-safe-export.spec.ts': 'resolveRawFixture',
+    }
+    for (const [file, resolver] of Object.entries(coverage)) {
+      const source = readSpec(file)
+      assert.ok(source.includes(`${resolver}(`), `${file} uses ${resolver}`)
+      if (resolver !== 'resolvePublicRawFixture') {
+        assert.ok(!source.includes('resolvePublicRawFixture'), file)
+      }
+    }
+
+    const registry = readSpec('raw-export-fixtures.ts')
+    assert.match(registry, /resolvePrivateRawFixture\(\s*'LUMAFORGE_100MP_RAF'/)
+    assert.match(registry, /resolvePrivateRawFixture\(\s*'LUMAFORGE_SONY_ARW'/)
+    assert.ok(!registry.includes('resolvePublicRawFixture'))
   })
 })
