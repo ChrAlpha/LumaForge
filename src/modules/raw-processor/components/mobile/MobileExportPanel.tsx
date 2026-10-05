@@ -11,6 +11,7 @@ import {
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import { useId } from 'react'
 
+import { clsxm } from '~/lib/cn'
 import { localizeCopyLabel, localizeRawReason, useI18n } from '~/lib/i18n'
 
 import { formatBytes } from '../../format-bytes'
@@ -223,6 +224,11 @@ export function MobileExportPanel(props: {
       : localizeCopyLabel(copyCapability.label, t)
     : t('raw.export.copy')
   const showUnavailableReason = !props.isProcessing && !props.canExport
+  // A block caused by the LUT's colour contract reads in amber, the
+  // contract colour, and offers the route into the contract. Every other
+  // block stays neutral.
+  const contractBlock =
+    showUnavailableReason && Boolean(props.onChooseLutContract)
   // The HQ preview can be refused on its own terms while full resolution is
   // fine (a committed Transform does exactly that), so a disabled HQ button
   // names its reason instead of going quietly dark. A reason the full-res
@@ -327,30 +333,45 @@ export function MobileExportPanel(props: {
       transition={PANEL_TRANSITION}
     >
       {/* A blocked export is a state to explain, not a destructive act:
-          neutral lift-soft well (DESIGN.md One Accent Rule keeps rose for
-          destructive intent), icon plus text so it never reads by colour. */}
+          rose stays reserved for destructive intent, and the icon plus the
+          words carry the state, never the colour alone. Neutral lift-soft
+          well, or amber when the cause is a colour contract. */}
       {showUnavailableReason && (
         <div
           data-export-unavailable-reason
-          className="grid grid-cols-[18px_1fr] gap-2 rounded-md bg-[oklch(0.96_0.006_255/0.05)] px-2.5 py-2"
+          data-tone={contractBlock ? 'contract' : 'neutral'}
+          className={clsxm(
+            'grid grid-cols-[18px_1fr] gap-2 rounded-md px-2.5 py-2',
+            contractBlock
+              ? 'bg-lf-amber/10'
+              : 'bg-[oklch(0.96_0.006_255/0.05)]',
+          )}
         >
           <AlertTriangle
             aria-hidden="true"
-            className="mt-0.5 size-4 text-lf-on-photo-ink/72"
+            className={clsxm(
+              'mt-0.5 size-4',
+              contractBlock ? 'text-lf-amber' : 'text-lf-on-photo-ink/72',
+            )}
           />
-          <span className="block text-[0.72rem] leading-snug text-lf-on-photo-ink/80">
+          <span
+            className={clsxm(
+              'block text-[0.72rem] leading-snug',
+              contractBlock ? 'text-lf-amber-soft' : 'text-lf-on-photo-ink/80',
+            )}
+          >
             {unavailableReason}
           </span>
         </div>
       )}
-      {showUnavailableReason && props.onChooseLutContract && (
+      {contractBlock && (
         <m.button
           type="button"
           data-export-choose-lut-contract
           whileTap={{ y: 0.5 }}
           transition={TAP_SPRING}
           onClick={props.onChooseLutContract}
-          className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md bg-[oklch(0.96_0.006_255/0.06)] px-3 text-[0.8rem] font-semibold text-lf-on-photo-ink transition-colors hover:bg-[oklch(0.96_0.006_255/0.1)] focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-lf-green/80"
+          className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md bg-lf-amber/10 px-3 text-[0.8rem] font-semibold text-lf-amber-soft transition-colors hover:bg-lf-amber/15 hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-lf-green/80"
         >
           {t('raw.mobile.lut.chooseContract')}
           <ChevronRight aria-hidden="true" className="size-3.5" />

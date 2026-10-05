@@ -108,9 +108,14 @@ describe('mobileExportPanel', () => {
     })
     const action = screen.getByRole('button', { name: /choose lut contract/i })
     expect(action).toHaveClass('min-h-[44px]')
-    // A blocked export explains itself; it is neither destructive nor a
-    // contract paint of its own.
-    expect(action.className).not.toMatch(/amber|rose/)
+    // A contract block is the colour contract's to explain: amber, the
+    // contract colour, on the reason and the route; never rose.
+    expect(action).toHaveClass('text-lf-amber-soft', 'bg-lf-amber/10')
+    const reason = document.querySelector('[data-export-unavailable-reason]')!
+    expect(reason).toHaveAttribute('data-tone', 'contract')
+    expect(reason).toHaveClass('bg-lf-amber/10')
+    expect(reason.querySelector('svg')).toHaveClass('text-lf-amber')
+    expect(document.body.innerHTML).not.toMatch(/lf-rose/)
     await userEvent.click(action)
     expect(onChooseLutContract).toHaveBeenCalledOnce()
   })
@@ -299,7 +304,10 @@ describe('mobileExportPanel', () => {
 
     const box = container.querySelector('[data-export-unavailable-reason]')!
     expect(box).toHaveTextContent('The LUT contract is not confirmed.')
+    // Without the contract route, the block is not the contract's to paint.
+    expect(box).toHaveAttribute('data-tone', 'neutral')
     expect(box).toHaveClass('bg-[oklch(0.96_0.006_255/0.05)]')
+    expect(box.outerHTML).not.toMatch(/amber/)
     expect(box.outerHTML).not.toMatch(/lf-rose/)
     expect(box.querySelector('svg')).not.toBeNull()
   })
