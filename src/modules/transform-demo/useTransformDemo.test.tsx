@@ -6,6 +6,7 @@ import { identityMatrix, rotationMatrix } from './geometry/matrix'
 import type { UprightAnalysis } from './geometry/types'
 import { loadImageInput } from './image-input'
 import type { PreviewSource } from './preview-types'
+import { NEUTRAL_TRANSFORM } from './transform-types'
 import { useTransformDemo } from './useTransformDemo'
 import type {
   TransformWorkerRequest,
@@ -66,6 +67,36 @@ function setup() {
   DemoWorker.instances = []
   vi.stubGlobal('Worker', DemoWorker)
   return renderHook(() => useTransformDemo())
+}
+
+type RenderRequest = Extract<TransformWorkerRequest, { type: 'render' }>
+
+function lastRender(worker: DemoWorker): RenderRequest {
+  const request = worker.messages.findLast(
+    (message) => message.type === 'render',
+  )
+  if (request?.type !== 'render') throw new Error('expected render')
+  return request
+}
+
+function renderedFrame() {
+  return {
+    frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
+    displayMatrix: identityMatrix(),
+    retainedArea: 1,
+  }
+}
+
+function answer(
+  request: RenderRequest,
+  result = renderedFrame(),
+): TransformWorkerResponse {
+  return {
+    type: 'rendered',
+    sourceId: request.sourceId,
+    requestId: request.requestId,
+    result,
+  }
 }
 
 afterEach(() => {
@@ -434,6 +465,177 @@ describe('transform demo request lifecycle', () => {
     expect(result.current.rendering).toBe(false)
     unmount()
     expect(worker.terminated).toBe(true)
+  })
+
+  it('acknowledges only the geometry the worker rendered for the newest request', () => {
+    const { result, unmount } = setup()
+    const worker = DemoWorker.instances[0]
+    const sourceId = worker.messages[0].sourceId
+    act(() =>
+      worker.emit({ type: 'analyzed', sourceId, analysis, elapsedMs: 1 }),
+    )
+    const neutral = lastRender(worker)
+    // A request nobody has answered acknowledges nothing.
+    expect(result.current.acknowledged).toBeNull()
+    act(() => worker.emit(answer(neutral)))
+    expect(result.current.acknowledged).toEqual({
+      sourceId,
+      requestId: neutral.requestId,
+      matrix: neutral.matrix,
+      constrainCrop: true,
+    })
+
+    const frameA = renderedFrame()
+    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }))
+    const a = lastRender(worker)
+    expect(a.requestId).toBeGreaterThan(neutral.requestId)
+    expect(result.current.acknowledged).toBeNull()
+    act(() => worker.emit(answer(a, frameA)))
+    expect(result.current.acknowledged).toEqual({
+      sourceId,
+      requestId: a.requestId,
+      matrix: a.matrix,
+      constrainCrop: true,
+    })
+
+    // B is pending: A's frame stays on screen but no longer answers.
+    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 6 }))
+    const b = lastRender(worker)
+    expect(b.requestId).toBeGreaterThan(a.requestId)
+    expect(result.current.acknowledged).toBeNull()
+    expect(result.current.result).toBe(frameA)
+
+    // B is refused: the last valid frame survives, still unacknowledged.
+    act(() =>
+      worker.emit({
+        type: 'error',
+        sourceId,
+        requestId: b.requestId,
+        message: 'invalid-transform',
+      }),
+    )
+    expect(result.current.error).toBe('transform')
+    expect(result.current.result).toBe(frameA)
+    expect(result.current.acknowledged).toBeNull()
+
+    // A late copy of A's answer cannot stand in for B.
+    act(() => worker.emit(answer(a)))
+    expect(result.current.result).toBe(frameA)
+    expect(result.current.acknowledged).toBeNull()
+    unmount()
+  })
+
+  it('ignores answers to superseded requests, whatever the controls ask when they land', () => {
+    const { result, unmount } = setup()
+    const worker = DemoWorker.instances[0]
+    const sourceId = worker.messages[0].sourceId
+    act(() =>
+      worker.emit({ type: 'analyzed', sourceId, analysis, elapsedMs: 1 }),
+    )
+    const neutral = lastRender(worker)
+    // Two edits queue behind the neutral render; only the newest is posted.
+    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }))
+    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 4 }))
+    act(() => worker.emit(answer(neutral)))
+    expect(result.current.result).toBeNull()
+    expect(result.current.acknowledged).toBeNull()
+    const b = lastRender(worker)
+    expect(b.requestId).toBeGreaterThan(neutral.requestId)
+
+    // The controls move on while B is in flight, so B's answer is stale.
+    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 5 }))
+    act(() => worker.emit(answer(b)))
+    expect(result.current.result).toBeNull()
+    expect(result.current.acknowledged).toBeNull()
+    const c = lastRender(worker)
+    expect(c.requestId).toBeGreaterThan(b.requestId)
+
+    const frameC = renderedFrame()
+    act(() => worker.emit(answer(c, frameC)))
+    expect(result.current.result).toBe(frameC)
+    // The acknowledgement carries the geometry C asked for.
+    expect(result.current.acknowledged).toEqual({
+      sourceId,
+      requestId: c.requestId,
+      matrix: c.matrix,
+      constrainCrop: true,
+    })
+
+    // Out-of-order answers to older requests change nothing.
+    act(() => worker.emit(answer(b)))
+    act(() => worker.emit(answer(neutral)))
+    expect(result.current.result).toBe(frameC)
+    expect(result.current.acknowledged?.requestId).toBe(c.requestId)
+    unmount()
+  })
+
+  it('drops the acknowledgement when the frame is replaced or the geometry reset', async () => {
+    const { result, unmount } = setup()
+    const worker = DemoWorker.instances[0]
+    const firstId = worker.messages[0].sourceId
+    act(() =>
+      worker.emit({
+        type: 'analyzed',
+        sourceId: firstId,
+        analysis,
+        elapsedMs: 1,
+      }),
+    )
+    act(() => worker.emit(answer(lastRender(worker))))
+    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }))
+    const a = lastRender(worker)
+    act(() => worker.emit(answer(a)))
+    expect(result.current.acknowledged?.requestId).toBe(a.requestId)
+
+    // A colour refresh replaces the frame; A answered the old one.
+    await act(() =>
+      result.current.loadSource(
+        {
+          name: 'refresh.nef',
+          kind: 'raw',
+          originalWidth: 2,
+          originalHeight: 2,
+          frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
+        },
+        { preserveTransform: true },
+      ),
+    )
+    expect(result.current.manual.rotate).toBe(3)
+    expect(result.current.acknowledged).toBeNull()
+    act(() => worker.emit(answer(a)))
+    expect(result.current.acknowledged).toBeNull()
+
+    const refresh = worker.messages.at(-1)!
+    expect(refresh.type).toBe('analyze')
+    act(() =>
+      worker.emit({
+        type: 'analyzed',
+        sourceId: refresh.sourceId,
+        analysis,
+        elapsedMs: 1,
+      }),
+    )
+    const again = lastRender(worker)
+    // Same geometry, asked again of the new frame.
+    expect(again.sourceId).toBe(refresh.sourceId)
+    expect(again.matrix).toEqual(a.matrix)
+    expect(result.current.acknowledged).toBeNull()
+    act(() => worker.emit(answer(again)))
+    expect(result.current.acknowledged).toEqual({
+      sourceId: refresh.sourceId,
+      requestId: again.requestId,
+      matrix: a.matrix,
+      constrainCrop: true,
+    })
+
+    act(() => result.current.reset())
+    expect(result.current.acknowledged).toBeNull()
+    act(() => worker.emit(answer(lastRender(worker))))
+    expect(result.current.acknowledged?.matrix).toEqual(identityMatrix())
+
+    act(() => result.current.clearSource())
+    expect(result.current.acknowledged).toBeNull()
+    unmount()
   })
 
   it('ignores a previous image that finishes decoding after its replacement', async () => {

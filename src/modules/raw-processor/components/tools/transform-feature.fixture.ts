@@ -27,6 +27,8 @@ export function transformFeatureFixture(
       clearSource: vi.fn(),
       reset: vi.fn(),
       matrix: null,
+      // No render has been answered yet.
+      acknowledged: null,
       ready: false,
       solution: {
         matrix: identityMatrix(),
@@ -44,6 +46,8 @@ export function transformFeatureFixture(
     busy: false,
     captureError: false,
     current: false,
+    // A neutral Transform holds no geometry, so nothing blocks export.
+    exportBlock: null,
     showLines: false,
     setShowLines: vi.fn(),
     showGrid: false,

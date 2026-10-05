@@ -31,9 +31,14 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
   const [rendering, setRendering] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [analysisMs, setAnalysisMs] = useState(0)
+  // The newest render asked of the current frame, and the request whose
+  // answer is on screen. Each keeps the geometry it was posted with.
+  const [requested, setRequested] = useState<RenderRequest | null>(null)
+  const [rendered, setRendered] = useState<RenderRequest | null>(null)
   const workerRef = useRef<Worker | null>(null)
   const sourceId = useRef(0)
   const requestId = useRef(0)
+  const latestRequest = useRef<RenderRequest | null>(null)
   const inFlight = useRef(false)
   const pending = useRef<RenderRequest | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -65,11 +70,14 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
       abortRef.current = abort
       inFlight.current = false
       pending.current = null
+      latestRequest.current = null
       setLoading(true)
       setRendering(false)
       setError(null)
       setAnalysis(null)
       setResult(null)
+      setRequested(null)
+      setRendered(null)
       setSource(null)
       if (!preserveTransform) {
         setModeState('off')
@@ -103,6 +111,7 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
           // must not survive as something the UI can report as current.
           setSolutions(null)
           setResult(null)
+          setRendered(null)
           setLoading(false)
           setRendering(false)
         }
@@ -122,9 +131,17 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
             setLoading(false)
           } else {
             inFlight.current = false
-            if (data.requestId === requestId.current) {
+            const answered = latestRequest.current
+            if (
+              answered &&
+              data.sourceId === answered.sourceId &&
+              data.requestId === answered.requestId
+            ) {
               if (data.type === 'rendered') {
                 setResult(data.result)
+                // The frame carries the geometry its request was posted
+                // with, whatever the controls have moved to since.
+                setRendered(answered)
                 setError(null)
               } else
                 setError(
@@ -165,6 +182,7 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     workerRef.current = null
     inFlight.current = false
     pending.current = null
+    latestRequest.current = null
   }, [])
 
   const clearSource = useCallback(() => {
@@ -172,6 +190,7 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     abortRef.current?.abort()
     inFlight.current = false
     pending.current = null
+    latestRequest.current = null
     workerRef.current?.postMessage({
       type: 'clear',
       sourceId: id,
@@ -180,6 +199,8 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     setAnalysis(null)
     setSolutions(null)
     setResult(null)
+    setRequested(null)
+    setRendered(null)
     setError(null)
     setLoading(false)
     setRendering(false)
@@ -195,9 +216,8 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
   }, [autoLoadSample, dispose, loadSource])
 
   /**
-   * The geometry currently on screen. The export commits this exact matrix, so
-   * the full-resolution render reproduces the framing the user approved rather
-   * than recomposing it from parts and hoping the two agree.
+   * The geometry the controls ask for. It is only a request: what reaches the
+   * screen, and what an export may reproduce, is `acknowledged`.
    */
   const matrix = useMemo(
     () =>
@@ -213,16 +233,43 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
 
   useEffect(() => {
     if (!source || !analysis || !solutions || !matrix) return
-    const id = ++requestId.current
-    const posted = postRender({
+    const request: RenderRequest = {
       type: 'render',
       sourceId: sourceId.current,
-      requestId: id,
+      requestId: ++requestId.current,
       matrix,
       constrainCrop,
-    })
-    if (posted) setRendering(true)
+    }
+    latestRequest.current = request
+    setRequested(request)
+    if (postRender(request)) setRendering(true)
   }, [analysis, constrainCrop, matrix, postRender, solutions, source])
+
+  /**
+   * The geometry of the frame on screen, while that frame answers the newest
+   * request against the current source and the controls still ask for it.
+   * Null while that request is pending, after it was refused, and before any
+   * answer: a refused edit keeps the last valid frame on screen, but that
+   * frame no longer answers what the controls ask.
+   */
+  const acknowledged = useMemo(
+    () =>
+      rendered &&
+      requested &&
+      matrix &&
+      rendered.sourceId === requested.sourceId &&
+      rendered.requestId === requested.requestId &&
+      rendered.constrainCrop === constrainCrop &&
+      rendered.matrix.every((value, index) => value === matrix[index])
+        ? {
+            sourceId: rendered.sourceId,
+            requestId: rendered.requestId,
+            matrix: rendered.matrix,
+            constrainCrop: rendered.constrainCrop,
+          }
+        : null,
+    [constrainCrop, matrix, rendered, requested],
+  )
 
   const selectMode = (next: UprightMode) => {
     modeRef.current = next
@@ -258,6 +305,7 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     clearSource,
     reset,
     matrix,
+    acknowledged,
     ready: Boolean(analysis && source),
     solution: solutions?.[mode] ?? {
       matrix: identityMatrix(),

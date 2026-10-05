@@ -1,13 +1,42 @@
-import { renderHook } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import type { ExportGeometry } from '@lumaforge/render-engine/export'
+import { act, renderHook } from '@testing-library/react'
+import type { ReactNode } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { identityMatrix } from '~/modules/transform-demo/geometry/matrix'
+import type { UprightAnalysis } from '~/modules/transform-demo/geometry/types'
+import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
+import type {
+  TransformWorkerRequest,
+  TransformWorkerResponse,
+} from '~/modules/transform-demo/worker-protocol'
 
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
+import { useRawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
+import type { ExportResult } from '../model/export-result'
+import { captureTransformSource } from '../services/preview/capture-transform-source'
 import { COLOR_NEUTRAL } from './color-fields'
 import { useRawWorkflowContext } from './RawWorkflowContext'
 import { RawWorkflowToolProvider } from './RawWorkflowToolProvider'
 import { TONE_NEUTRAL } from './tone-fields'
 import { transformFeatureFixture } from './tools/transform-feature.fixture'
+
+vi.mock(
+  '../services/preview/capture-transform-source',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('../services/preview/capture-transform-source')
+    >()),
+    captureTransformSource: vi.fn(),
+  }),
+)
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 function workflowFixture() {
   return {
@@ -27,6 +56,219 @@ function workflowFixture() {
     exportPreviewImage: vi.fn(),
     histogram: { state: 'unavailable', reason: 'no-image' },
   } as unknown as UseRawWorkflowReturn
+}
+
+function ProviderWith({
+  workflow,
+  transform,
+  onExport = vi.fn(),
+  children,
+}: {
+  workflow: UseRawWorkflowReturn
+  transform?: ReturnType<typeof transformFeatureFixture>
+  onExport?: () => void
+  children: ReactNode
+}) {
+  return (
+    <RawWorkflowToolProvider
+      workflow={workflow}
+      transform={transform}
+      onlineLutSources={{} as UseOnlineLutSourcesResult}
+      isCpuMode={false}
+      isProcessing={false}
+      runtimeReadinessState="ready"
+      previewFrameEl={null}
+      onReplaceFile={vi.fn()}
+      onResetSession={vi.fn()}
+      onCompareReset={vi.fn()}
+      onLutDrop={vi.fn()}
+      onExport={onExport}
+      onRecoverExportSource={vi.fn()}
+      onPrepareRuntime={vi.fn()}
+    >
+      {children}
+    </RawWorkflowToolProvider>
+  )
+}
+
+class FakeWorker {
+  static instances: FakeWorker[] = []
+  onmessage: ((event: MessageEvent<TransformWorkerResponse>) => void) | null =
+    null
+  onerror: (() => void) | null = null
+  messages: TransformWorkerRequest[] = []
+  constructor() {
+    FakeWorker.instances.push(this)
+  }
+  postMessage(message: TransformWorkerRequest) {
+    this.messages.push(message)
+  }
+  terminate() {}
+  emit(data: TransformWorkerResponse) {
+    act(() =>
+      this.onmessage?.({ data } as MessageEvent<TransformWorkerResponse>),
+    )
+  }
+  lastRender() {
+    const request = this.messages.findLast(
+      (message) => message.type === 'render',
+    )
+    if (request?.type !== 'render') throw new Error('expected render')
+    return request
+  }
+  analyze() {
+    const request = this.messages.findLast(
+      (message) => message.type === 'analyze',
+    )
+    const solution = {
+      matrix: identityMatrix(),
+      confidence: 0.8,
+      status: 'corrected' as const,
+      reason: '',
+      rotationDegrees: 0,
+    }
+    const analysis: UprightAnalysis = {
+      lines: [],
+      solutions: {
+        off: solution,
+        auto: solution,
+        level: solution,
+        vertical: solution,
+        full: solution,
+      },
+    }
+    this.emit({
+      type: 'analyzed',
+      sourceId: request!.sourceId,
+      analysis,
+      elapsedMs: 1,
+    })
+  }
+  answer(request = this.lastRender()) {
+    this.emit({
+      type: 'rendered',
+      sourceId: request.sourceId,
+      requestId: request.requestId,
+      result: {
+        frame: { width: 80, height: 60, data: new Uint8ClampedArray(19200) },
+        displayMatrix: request.matrix,
+        retainedArea: 1,
+      },
+    })
+  }
+  refuse(request = this.lastRender()) {
+    this.emit({
+      type: 'error',
+      sourceId: request.sourceId,
+      requestId: request.requestId,
+      message: 'invalid-transform',
+    })
+  }
+}
+
+const capturedImage = { width: 80, height: 60 }
+const capturePipelineRef = { current: {} }
+const delivered = {
+  kind: 'full-resolution',
+  filename: 'current.jpg',
+} as ExportResult
+
+/**
+ * The real Transform feature over a workflow whose session keeps one
+ * committed geometry, changed only through `commit`. `observing` stands for
+ * the Transform panel being mounted; `released` for a finished export that
+ * released the preview and holds a delivered JPEG; `exposure` for a colour
+ * edit that the Transform frame has to be re-captured for.
+ */
+function TransformSession({
+  observing,
+  released,
+  exposure,
+  commit,
+  workflowOverrides,
+  onExport,
+  children,
+}: {
+  observing: boolean
+  released: boolean
+  exposure: number
+  commit: (geometry: ExportGeometry | null) => void
+  workflowOverrides: Partial<UseRawWorkflowReturn>
+  onExport: () => void
+  children: ReactNode
+}) {
+  const [geometry, setGeometry] = useState<ExportGeometry | null>(null)
+  const commitGeometry = useCallback(
+    (next: ExportGeometry | null) => {
+      commit(next)
+      setGeometry(next)
+    },
+    [commit],
+  )
+  const base = workflowFixture()
+  const workflow = {
+    ...base,
+    params: { ...base.params, userExposureEv: exposure },
+    viewMode: 'processed',
+    decodedImageRef: { current: released ? null : capturedImage },
+    decodedImageVersion: released ? 2 : 1,
+    lutDataVersion: 1,
+    pipelineRef: capturePipelineRef,
+    previewSuspended: released,
+    exportResult: released ? delivered : null,
+    previewTransform: {
+      sourceId: 'one',
+      active: Boolean(geometry),
+      geometry,
+      commit: commitGeometry,
+    },
+    ...workflowOverrides,
+  } as unknown as UseRawWorkflowReturn
+  const transform = useRawTransformFeature(workflow, false)
+  const { observe } = transform
+  useEffect(() => (observing ? observe() : undefined), [observe, observing])
+  return (
+    <ProviderWith workflow={workflow} transform={transform} onExport={onExport}>
+      {children}
+    </ProviderWith>
+  )
+}
+
+async function renderTransformSession(
+  workflowOverrides: Partial<UseRawWorkflowReturn> = {},
+) {
+  vi.useFakeTimers()
+  FakeWorker.instances = []
+  vi.stubGlobal('Worker', FakeWorker)
+  vi.mocked(captureTransformSource).mockResolvedValue({
+    name: 'current.nef',
+    kind: 'raw',
+    originalWidth: 80,
+    originalHeight: 60,
+    frame: { width: 80, height: 60, data: new Uint8ClampedArray(19200) },
+  })
+  const state = { observing: true, released: false, exposure: 0 }
+  const commit = vi.fn()
+  const onExport = vi.fn()
+  const hook = renderHook(useRawWorkflowContext, {
+    wrapper: ({ children }) => (
+      <TransformSession
+        observing={state.observing}
+        released={state.released}
+        exposure={state.exposure}
+        commit={commit}
+        workflowOverrides={workflowOverrides}
+        onExport={onExport}
+      >
+        {children}
+      </TransformSession>
+    ),
+  })
+  await act(() => vi.advanceTimersByTimeAsync(150))
+  const worker = FakeWorker.instances[0]!
+  worker.analyze()
+  worker.answer()
+  return { ...hook, state, commit, onExport, worker }
 }
 
 describe('rawWorkflowToolProvider Transform guards', () => {
@@ -101,6 +343,257 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(workflow.setViewMode).toHaveBeenCalledWith('original')
     expect(workflow.setCompareSplit).toHaveBeenCalledWith(0.2)
   })
+  it('refuses both exports, in facts and callbacks, while Transform is unanswered or refused', () => {
+    const workflow = workflowFixture()
+    const onExport = vi.fn()
+    let transform = transformFeatureFixture({
+      hasImage: true,
+      exportBlock: 'pending',
+    })
+    const { result, rerender } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <ProviderWith
+          workflow={workflow}
+          transform={transform}
+          onExport={onExport}
+        >
+          {children}
+        </ProviderWith>
+      ),
+    })
+    const attempt = () => {
+      result.current.onExport({ quality: 'high', fidelity: 'safe' })
+      void result.current.onPreviewExport?.()
+    }
+
+    // A first Transform that has not rendered yet: nothing is committed, so
+    // either export would write a photo without it.
+    expect(result.current.canExport).toBe(false)
+    expect(result.current.disabledReason).toBe('Preparing the current photo…')
+    expect(result.current.canPreviewExport).toBe(false)
+    expect(result.current.previewExportDisabledReason).toBe(
+      'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.',
+    )
+    attempt()
+
+    transform = { ...transform, active: true, exportBlock: 'invalid' }
+    rerender()
+    expect(result.current.canExport).toBe(false)
+    expect(result.current.disabledReason).toBe(
+      'This transform leaves too little usable image. Reduce the adjustment or reset.',
+    )
+    expect(result.current.canPreviewExport).toBe(false)
+    attempt()
+
+    transform = { ...transform, exportBlock: 'unavailable' }
+    rerender()
+    expect(result.current.disabledReason).toBe(
+      'The processed preview is unavailable. Wait for it or reset Transform.',
+    )
+    attempt()
+    expect(onExport).not.toHaveBeenCalled()
+    expect(workflow.exportPreviewImage).not.toHaveBeenCalled()
+
+    // The answered geometry is committed: full resolution reproduces it.
+    transform = { ...transform, exportBlock: null }
+    rerender()
+    expect(result.current.canExport).toBe(true)
+    expect(result.current.disabledReason).toBeUndefined()
+    expect(result.current.canPreviewExport).toBe(false)
+    attempt()
+    expect(onExport).toHaveBeenCalledOnce()
+    expect(workflow.exportPreviewImage).not.toHaveBeenCalled()
+  })
+
+  it('leaves an earlier workflow reason in place while Transform also blocks export', () => {
+    const earlier = 'Export is already running.'
+    const workflow = {
+      ...workflowFixture(),
+      canExport: false,
+      exportDisabledReason: earlier,
+    } as unknown as UseRawWorkflowReturn
+    const onExport = vi.fn()
+    const { result } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <ProviderWith
+          workflow={workflow}
+          transform={transformFeatureFixture({
+            hasImage: true,
+            exportBlock: 'pending',
+          })}
+          onExport={onExport}
+        >
+          {children}
+        </ProviderWith>
+      ),
+    })
+    expect(result.current.canExport).toBe(false)
+    expect(result.current.disabledReason).toBe(earlier)
+    expect(result.current.exportBlockedByLutContract).toBe(false)
+    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    expect(onExport).not.toHaveBeenCalled()
+  })
+
+  it('does not route to the LUT contract while Transform is what blocks export', () => {
+    const contractReason =
+      'Choose a LUT input profile before full-resolution export.'
+    const workflow = {
+      ...workflowFixture(),
+      canExport: false,
+      exportDisabledReason: contractReason,
+      activeStyle: {
+        kind: 'custom',
+        name: 'Unknown',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
+        lutAsset: {
+          format: 'cube',
+          dimension: 33,
+          profileResolution: { kind: 'unknown' },
+        },
+      },
+    } as unknown as UseRawWorkflowReturn
+    let transform = transformFeatureFixture({
+      hasImage: true,
+      exportBlock: 'pending',
+    })
+    const { result, rerender } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <ProviderWith workflow={workflow} transform={transform}>
+          {children}
+        </ProviderWith>
+      ),
+    })
+    expect(result.current.canExport).toBe(false)
+    expect(result.current.disabledReason).toBe('Preparing the current photo…')
+    expect(result.current.exportBlockedByLutContract).toBe(false)
+
+    transform = { ...transform, exportBlock: null }
+    rerender()
+    expect(result.current.disabledReason).toBe(contractReason)
+    expect(result.current.exportBlockedByLutContract).toBe(true)
+  })
+
+  it('follows the answered geometry, not the Transform panel, through export and preview release', async () => {
+    const download = vi.fn()
+    const session = await renderTransformSession({
+      downloadExportResult: download,
+    })
+    const { result, rerender, state, commit, onExport, worker } = session
+    // Opening a neutral Transform and analysing the photo blocks nothing.
+    expect(result.current.canExport).toBe(true)
+    expect(commit).not.toHaveBeenCalled()
+
+    act(() =>
+      result.current.transform!.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }),
+    )
+    expect(result.current.canExport).toBe(false)
+    expect(result.current.disabledReason).toBe('Preparing the current photo…')
+    expect(result.current.canPreviewExport).toBe(false)
+
+    // The topbar Export opens the export panel and unmounts Transform; the
+    // request still decides the gate.
+    state.observing = false
+    rerender()
+    expect(result.current.canExport).toBe(false)
+    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    expect(onExport).not.toHaveBeenCalled()
+
+    worker.answer()
+    expect(commit).toHaveBeenCalledOnce()
+    expect(result.current.transform?.active).toBe(true)
+    expect(result.current.canExport).toBe(true)
+    expect(result.current.canPreviewExport).toBe(false)
+    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    expect(onExport).toHaveBeenCalledOnce()
+
+    // The export finishes and releases the preview: the geometry stays
+    // committed and the delivered JPEG stays deliverable.
+    state.released = true
+    rerender()
+    expect(result.current.previewSuspended).toBe(true)
+    expect(result.current.exportResult).toBe(delivered)
+    expect(result.current.transform?.active).toBe(true)
+    expect(result.current.canExport).toBe(true)
+    expect(commit).toHaveBeenCalledOnce()
+    result.current.onDownloadExport()
+    expect(download).toHaveBeenCalledOnce()
+    session.unmount()
+  })
+
+  it('refuses export from a colour edit until the new frame answers, and while its capture fails', async () => {
+    const session = await renderTransformSession()
+    const { result, rerender, state, commit, onExport, worker } = session
+    act(() =>
+      result.current.transform!.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }),
+    )
+    worker.answer()
+    expect(commit).toHaveBeenCalledOnce()
+    expect(result.current.canExport).toBe(true)
+
+    // The frame that answered is no longer the photo once the colour moves.
+    state.exposure = 1
+    rerender()
+    expect(result.current.canExport).toBe(false)
+    expect(result.current.disabledReason).toBe('Preparing the current photo…')
+    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    await act(() => vi.advanceTimersByTimeAsync(60))
+    expect(result.current.canExport).toBe(false)
+    await act(() => vi.advanceTimersByTimeAsync(90))
+    worker.analyze()
+    worker.answer()
+    expect(result.current.canExport).toBe(true)
+    expect(commit).toHaveBeenCalledOnce()
+
+    // A capture that fails leaves nothing showing the geometry on the photo.
+    vi.mocked(captureTransformSource).mockRejectedValueOnce(new Error('lost'))
+    state.exposure = 2
+    rerender()
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(result.current.transform?.active).toBe(true)
+    expect(result.current.canExport).toBe(false)
+    expect(result.current.disabledReason).toBe(
+      'The processed preview is unavailable. Wait for it or reset Transform.',
+    )
+    expect(result.current.canPreviewExport).toBe(false)
+    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    expect(onExport).not.toHaveBeenCalled()
+    session.unmount()
+  })
+
+  it('keeps the last valid geometry but refuses export while the newest edit is refused', async () => {
+    const session = await renderTransformSession()
+    const { result, commit, onExport, worker } = session
+    act(() =>
+      result.current.transform!.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }),
+    )
+    worker.answer()
+    expect(commit).toHaveBeenCalledOnce()
+    const committed = commit.mock.calls[0]![0]
+
+    act(() =>
+      result.current.transform!.setManual({ ...NEUTRAL_TRANSFORM, rotate: 9 }),
+    )
+    worker.refuse()
+    expect(result.current.transform?.active).toBe(true)
+    expect(commit).toHaveBeenCalledOnce()
+    expect(result.current.canExport).toBe(false)
+    expect(result.current.disabledReason).toBe(
+      'This transform leaves too little usable image. Reduce the adjustment or reset.',
+    )
+    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    expect(onExport).not.toHaveBeenCalled()
+
+    // Reset retires the refused edit and the committed geometry together.
+    act(() => result.current.transform!.reset())
+    expect(commit).toHaveBeenLastCalledWith(null)
+    expect(committed).not.toBeNull()
+    expect(result.current.transform?.active).toBe(false)
+    expect(result.current.canExport).toBe(true)
+    expect(result.current.canPreviewExport).toBe(true)
+    session.unmount()
+  })
+
   it('reports compare support and export progress to the tool surfaces', () => {
     const workflow = {
       ...workflowFixture(),
