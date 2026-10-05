@@ -551,13 +551,14 @@ export function PreviewCanvas({
     if (!canvas) return
 
     let pipeline: RawProcessingPipeline | null = null
-    let originalDispose: RawProcessingPipeline['dispose'] | null = null
+    let unsubscribeDisposed: (() => void) | null = null
     let cancelled = false
     let disposed = false
 
-    const disposePipeline = (
-      options?: Parameters<RawProcessingPipeline['dispose']>[0],
-    ) => {
+    // The canvas forgets its pipeline once, whoever disposes it: this effect
+    // on unmount or suspension, or an owner of the published pipeline such as
+    // export memory evacuation.
+    const forgetPipeline = () => {
       if (!pipeline || disposed) {
         return
       }
@@ -565,6 +566,8 @@ export function PreviewCanvas({
       const disposedPipeline = pipeline
       pipeline = null
       disposed = true
+      unsubscribeDisposed?.()
+      unsubscribeDisposed = null
       if (pipelineRef.current === disposedPipeline) {
         pipelineRef.current = null
         processedUploadGenerationKeyRef.current = ''
@@ -572,30 +575,27 @@ export function PreviewCanvas({
         onPipelineChange?.(null)
       }
       setIsInitialized(false)
-      ;(originalDispose ?? disposedPipeline.dispose)(options)
     }
 
     const init = async () => {
       try {
-        pipeline = new RawProcessingPipeline(canvas)
-        originalDispose = pipeline.dispose.bind(pipeline)
-        pipeline.dispose = (options) => {
-          disposePipeline(options)
-        }
-        await pipeline.initialize()
-        if (cancelled) {
-          disposePipeline()
+        const createdPipeline = new RawProcessingPipeline(canvas)
+        pipeline = createdPipeline
+        unsubscribeDisposed = createdPipeline.onDisposed(forgetPipeline)
+        await createdPipeline.initialize()
+        // A pipeline disposed while it initialized stays unpublished.
+        if (cancelled || disposed) {
           return
         }
 
-        pipelineRef.current = pipeline
+        pipelineRef.current = createdPipeline
         processedUploadGenerationKeyRef.current = ''
         resetProcessedFrameStatus()
-        onPipelineChange?.(pipeline)
+        onPipelineChange?.(createdPipeline)
         setIsInitialized(true)
         setError(null)
       } catch (err) {
-        if (cancelled) {
+        if (cancelled || disposed) {
           return
         }
 
@@ -611,7 +611,9 @@ export function PreviewCanvas({
 
     return () => {
       cancelled = true
-      disposePipeline({ releaseContext: suspendedRef.current })
+      const ownedPipeline = pipeline
+      forgetPipeline()
+      ownedPipeline?.dispose({ releaseContext: suspendedRef.current })
       pipelineRef.current = null
       onPipelineChange?.(null)
     }

@@ -22,7 +22,10 @@ const pipelineMock = vi.hoisted(() => ({
     canvas: HTMLCanvasElement
     initialize: ReturnType<typeof vi.fn>
     dispose: ReturnType<typeof vi.fn>
+    facadeDispose: ReturnType<typeof vi.fn>
     disposeMock: ReturnType<typeof vi.fn>
+    onDisposed: ReturnType<typeof vi.fn>
+    unsubscribeDisposed: ReturnType<typeof vi.fn>
     resize: ReturnType<typeof vi.fn>
     render: ReturnType<typeof vi.fn>
     waitForGpu: ReturnType<typeof vi.fn>
@@ -47,7 +50,32 @@ vi.mock('~/lib/webgpu/raw-processing-pipeline', () => ({
   RawProcessingPipeline: vi
     .fn()
     .mockImplementation((canvas: HTMLCanvasElement) => {
+      // `disposeMock` counts renderer releases; `dispose` is the facade call,
+      // which releases once and notifies disposal subscribers once.
       const disposeMock = vi.fn()
+      const disposeListeners = new Set<() => void>()
+      let disposed = false
+      const dispose = vi.fn((options?: { releaseContext?: boolean }) => {
+        if (disposed) return
+        disposed = true
+        if (options) disposeMock(options)
+        else disposeMock()
+        const listeners = [...disposeListeners]
+        disposeListeners.clear()
+        for (const listener of listeners) listener()
+      })
+      const unsubscribeDisposed = vi.fn()
+      const onDisposed = vi.fn((listener: () => void) => {
+        if (disposed) {
+          listener()
+          return unsubscribeDisposed
+        }
+        disposeListeners.add(listener)
+        return () => {
+          unsubscribeDisposed()
+          disposeListeners.delete(listener)
+        }
+      })
       let lastUploadedSize: { width: number; height: number } | null = null
       const getKind = () =>
         canvas.className.includes('raw-preview-original-gpu-canvas')
@@ -56,8 +84,11 @@ vi.mock('~/lib/webgpu/raw-processing-pipeline', () => ({
       const instance = {
         canvas,
         initialize: vi.fn(() => pipelineMock.initialize(canvas)),
-        dispose: disposeMock,
+        dispose,
+        facadeDispose: dispose,
         disposeMock,
+        onDisposed,
+        unsubscribeDisposed,
         resize: vi.fn(),
         render: vi.fn(() => {
           const kind = getKind()
@@ -751,8 +782,149 @@ describe('preview canvas upload descriptor', () => {
     })
 
     expect(pipeline.disposeMock).toHaveBeenCalledTimes(1)
+    expect(pipeline.dispose).toHaveBeenCalledOnce()
+    expect(pipeline.onDisposed).toHaveBeenCalledOnce()
+    expect(pipeline.unsubscribeDisposed).toHaveBeenCalledOnce()
     expect(onPipelineChange).toHaveBeenCalledWith(null)
     expect(onPipelineChange).not.toHaveBeenCalledWith(pipeline)
+  })
+
+  it.each([
+    ['resolves', () => undefined],
+    ['rejects', () => new Error('PREVIEW_PIPELINE_DISPOSED')],
+  ] as const)(
+    'never revives a pipeline disposed while its initialization is pending (initialization %s late)',
+    async (_outcome, lateOutcome) => {
+      const initialize = deferred<void>()
+      const onPipelineChange = vi.fn()
+      const onStatsUpdate = vi.fn()
+      pipelineMock.initialize.mockReturnValueOnce(initialize.promise)
+
+      const { unmount } = render(
+        createElement(PreviewCanvas, {
+          imageRef: { current: decodedImage },
+          imageVersion: 1,
+          params: defaultParams,
+          lutDataRef: { current: null },
+          lutDataVersion: 0,
+          onPipelineChange,
+          onStatsUpdate,
+        }),
+      )
+
+      expect(pipelineMock.instances).toHaveLength(1)
+      const [pipeline] = pipelineMock.instances
+      act(() => {
+        pipeline.dispose({ releaseContext: true })
+      })
+
+      await act(async () => {
+        const failure = lateOutcome()
+        if (failure) initialize.reject(failure)
+        else initialize.resolve()
+        await initialize.promise.catch(() => {})
+        await Promise.resolve()
+      })
+
+      expect(onPipelineChange).not.toHaveBeenCalled()
+      expect(pipeline.uploadImage).not.toHaveBeenCalled()
+      expect(pipeline.render).not.toHaveBeenCalled()
+      expect(onStatsUpdate).not.toHaveBeenCalled()
+      expect(screen.queryByText('Preview unavailable')).toBeNull()
+
+      unmount()
+      expect(pipeline.dispose).toHaveBeenCalledOnce()
+      expect(pipeline.disposeMock).toHaveBeenCalledExactlyOnceWith({
+        releaseContext: true,
+      })
+      expect(pipelineMock.instances).toHaveLength(1)
+    },
+  )
+
+  it('forgets an externally disposed pipeline once without replacing its dispose', async () => {
+    const resizeCallbacks: ResizeObserverCallback[] = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation((callback: ResizeObserverCallback) => ({
+        observe: vi.fn(() => {
+          resizeCallbacks.push(callback)
+        }),
+        disconnect: vi.fn(),
+      })),
+    )
+    const onPipelineChange = vi.fn()
+    const props = {
+      imageRef: { current: { ...decodedImage, source: 'quick' as const } },
+      imageVersion: 1,
+      params: defaultParams,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      embeddedPreviewUrl: 'blob:embedded-preview',
+      displaySource: 'quick' as const,
+      onPipelineChange,
+    } satisfies ComponentProps<typeof PreviewCanvas>
+    const { container, rerender, unmount } = render(
+      createElement(PreviewCanvas, props),
+    )
+    const handoffPreview = () =>
+      container.querySelector('[data-raw-preview-handoff-preview]')
+
+    const [pipeline] = pipelineMock.instances
+    await waitFor(() => {
+      expect(onPipelineChange).toHaveBeenLastCalledWith(pipeline)
+      expect(pipeline!.render).toHaveBeenCalled()
+      expect(resizeCallbacks).toHaveLength(1)
+    })
+    act(() => {
+      resizeCallbacks[0]?.(
+        [
+          {
+            contentRect: elementRect({ width: 400, height: 300 }),
+          } as ResizeObserverEntry,
+        ],
+        {} as ResizeObserver,
+      )
+    })
+    await waitFor(() => expect(handoffPreview()).toBeNull())
+    expect(pipeline!.dispose).toBe(pipeline!.facadeDispose)
+    expect(pipeline!.onDisposed).toHaveBeenCalledOnce()
+
+    // Export memory evacuation disposes the published pipeline directly.
+    act(() => {
+      pipeline!.dispose({ releaseContext: true })
+    })
+
+    const nullPublications = () =>
+      onPipelineChange.mock.calls.filter(([value]) => value === null).length
+    expect(onPipelineChange).toHaveBeenLastCalledWith(null)
+    expect(nullPublications()).toBe(1)
+    expect(handoffPreview()).toHaveAttribute('src', 'blob:embedded-preview')
+    expect(pipeline!.disposeMock).toHaveBeenCalledExactlyOnceWith({
+      releaseContext: true,
+    })
+
+    act(() => {
+      pipeline!.dispose({ releaseContext: true })
+    })
+    const renders = pipeline!.render.mock.calls.length
+    await act(async () => {
+      rerender(
+        createElement(PreviewCanvas, {
+          ...props,
+          params: { ...defaultParams, userExposureEv: 0.5 },
+        }),
+      )
+    })
+
+    expect(nullPublications()).toBe(1)
+    expect(pipeline!.render).toHaveBeenCalledTimes(renders)
+    expect(pipeline!.disposeMock).toHaveBeenCalledOnce()
+    expect(pipelineMock.instances).toHaveLength(1)
+
+    unmount()
+    expect(pipeline!.dispose).toHaveBeenCalledTimes(2)
+    expect(pipeline!.disposeMock).toHaveBeenCalledOnce()
+    expect(pipeline!.unsubscribeDisposed).toHaveBeenCalledOnce()
   })
 
   it('threads selectiveColor params through to the GPU pipeline (regression)', async () => {
@@ -820,9 +992,11 @@ describe('preview canvas upload descriptor', () => {
       }),
     )
 
-    expect(firstPipeline.disposeMock).toHaveBeenCalledWith({
+    expect(firstPipeline.disposeMock).toHaveBeenCalledExactlyOnceWith({
       releaseContext: true,
     })
+    expect(firstPipeline.dispose).toHaveBeenCalledOnce()
+    expect(firstPipeline.unsubscribeDisposed).toHaveBeenCalledOnce()
     expect(onPipelineChange).toHaveBeenCalledWith(null)
     expect(pipelineMock.instances).toHaveLength(1)
 
@@ -836,6 +1010,15 @@ describe('preview canvas upload descriptor', () => {
     await waitFor(() => {
       expect(onPipelineChange).toHaveBeenCalledWith(pipelineMock.instances[1])
     })
+
+    // A stale handle to the suspended pipeline cannot clear its successor.
+    const secondPipeline = pipelineMock.instances[1]!
+    act(() => {
+      firstPipeline.dispose({ releaseContext: true })
+    })
+    expect(onPipelineChange).toHaveBeenLastCalledWith(secondPipeline)
+    expect(firstPipeline.disposeMock).toHaveBeenCalledOnce()
+    expect(secondPipeline.disposeMock).not.toHaveBeenCalled()
   })
 
   it('uses layered dual-gpu compare and keeps the processed canvas out of shader compare mode', async () => {

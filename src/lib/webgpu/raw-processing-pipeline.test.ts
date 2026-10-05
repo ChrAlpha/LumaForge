@@ -218,6 +218,79 @@ describe('preview pipeline facade', () => {
     })
   })
 
+  it('notifies disposal subscribers once however often the pipeline is disposed', async () => {
+    const pipeline = new RawProcessingPipeline(document.createElement('canvas'))
+    await pipeline.initialize()
+    const owner = vi.fn()
+    const departed = vi.fn()
+    pipeline.onDisposed(owner)
+    pipeline.onDisposed(departed)()
+
+    pipeline.dispose({ releaseContext: true })
+    pipeline.dispose()
+    pipeline.dispose({ releaseContext: true })
+
+    expect(fixtures.gpu.dispose).toHaveBeenCalledExactlyOnceWith({
+      releaseContext: true,
+    })
+    expect(owner).toHaveBeenCalledOnce()
+    expect(departed).not.toHaveBeenCalled()
+    // Owners that subscribe late still learn the pipeline is gone.
+    const late = vi.fn()
+    pipeline.onDisposed(late)
+    expect(late).toHaveBeenCalledOnce()
+    expect(owner).toHaveBeenCalledOnce()
+    expect(fixtures.gpu.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('notifies disposal before initialization without creating a renderer', async () => {
+    const pipeline = new RawProcessingPipeline(document.createElement('canvas'))
+    const owner = vi.fn()
+    pipeline.onDisposed(owner)
+    pipeline.dispose()
+    expect(owner).toHaveBeenCalledOnce()
+    await expect(pipeline.initialize()).rejects.toThrow(
+      'PREVIEW_PIPELINE_DISPOSED',
+    )
+    expect(fixtures.createGpu).not.toHaveBeenCalled()
+    expect(owner).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a renderer disposed during its initialization from going live', async () => {
+    let finishInitialization!: () => void
+    fixtures.gpu.initialize.mockReturnValue(
+      new Promise<void>((done) => {
+        finishInitialization = done
+      }),
+    )
+    const canvas = document.createElement('canvas')
+    const pipeline = new RawProcessingPipeline(canvas)
+    const owner = vi.fn()
+    pipeline.onDisposed(owner)
+    const init = pipeline.initialize()
+    await vi.waitFor(() => expect(fixtures.gpu.initialize).toHaveBeenCalled())
+
+    pipeline.dispose()
+    expect(owner).toHaveBeenCalledOnce()
+    expect(fixtures.gpu.dispose).toHaveBeenCalledExactlyOnceWith()
+    finishInitialization()
+    await expect(init).rejects.toThrow('PREVIEW_PIPELINE_DISPOSED')
+
+    // The late initialization releases what it acquired after the first
+    // disposal, without telling the owner a second time.
+    expect(fixtures.gpu.dispose).toHaveBeenCalledTimes(2)
+    expect(fixtures.gpu.dispose).toHaveBeenLastCalledWith({
+      releaseContext: true,
+    })
+    expect(owner).toHaveBeenCalledOnce()
+    expect(canvas.dataset.renderBackend).toBeUndefined()
+    expect(fixtures.gpu.onLost).not.toHaveBeenCalled()
+    expect(reportGpuPreviewFailure).not.toHaveBeenCalled()
+    pipeline.dispose({ releaseContext: true })
+    expect(fixtures.gpu.dispose).toHaveBeenCalledTimes(2)
+    expect(owner).toHaveBeenCalledOnce()
+  })
+
   it('preserves the hidden 2D canvas and render limits used by export and Transform', async () => {
     const pipeline = new RawProcessingPipeline(document.createElement('canvas'))
     await pipeline.initialize()

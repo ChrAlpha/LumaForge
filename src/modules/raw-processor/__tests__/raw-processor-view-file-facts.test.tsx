@@ -49,6 +49,9 @@ vi.mock('~/lib/webgpu/raw-processing-pipeline', async (importOriginal) => {
         }
       }
       dispose() {}
+      onDisposed() {
+        return () => {}
+      }
     },
   }
 })

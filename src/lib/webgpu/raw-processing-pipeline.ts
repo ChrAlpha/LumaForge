@@ -39,6 +39,7 @@ export class RawProcessingPipeline {
   private activeRenderer: WebGPUProcessingPipeline | null = null
   private backendName: 'webgpu' | null = null
   private disposed = false
+  private readonly disposeListeners = new Set<() => void>()
   private initialization: Promise<void> | null = null
   private readonly reportFailures: boolean
 
@@ -166,8 +167,32 @@ export class RawProcessingPipeline {
     return this.activeRenderer?.getResourceStats() ?? { estimatedBytes: 0 }
   }
 
+  /**
+   * Owners hear about disposal whoever triggers it, including export memory
+   * evacuation through a published handle. Each listener runs once, after the
+   * renderer is released; subscribers that arrive after disposal hear at once.
+   */
+  onDisposed(listener: () => void): () => void {
+    if (this.disposed) {
+      listener()
+      return () => {}
+    }
+    this.disposeListeners.add(listener)
+    return () => {
+      this.disposeListeners.delete(listener)
+    }
+  }
+
+  /** Releases the renderer once; repeated calls are no-ops. */
   dispose(...args: Parameters<PreviewPipelineBackend['dispose']>) {
+    if (this.disposed) return
     this.disposed = true
-    return this.activeRenderer?.dispose(...args)
+    try {
+      return this.activeRenderer?.dispose(...args)
+    } finally {
+      const listeners = [...this.disposeListeners]
+      this.disposeListeners.clear()
+      for (const listener of listeners) listener()
+    }
   }
 }
