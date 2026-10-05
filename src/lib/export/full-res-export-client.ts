@@ -42,16 +42,19 @@ export type FullResWorkerCheckpointConfig = {
 /**
  * Where the worker writes the JPEG. An `opfs-file` plan must carry exactly
  * this location; every other plan hands the JPEG back in memory and carries
- * none.
+ * none. The page reserves the directory and guards it with its lifetime
+ * lock when it holds one; the worker only writes inside it.
  */
 export type FullResWorkerOutputLocation = {
   sink: 'opfs-file'
+  tabDirectory: string
   exportId: string
 }
 
 export type FullResWorkerFileBackedOutputReference = {
   kind: 'file-backed'
   storage: 'opfs'
+  tabDirectory: string
   exportId: string
   filename: string
   byteLength: number

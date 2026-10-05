@@ -73,8 +73,9 @@ function isOpfsEntryName(value: unknown): value is string {
 /**
  * The sink comes from the execution plan and its output location alone; the
  * recovery checkpoint never selects it. An `opfs-file` plan needs a
- * well-formed OPFS location, any other plan must not carry one, and a plan
- * this worker has no sink for is refused rather than encoded in memory.
+ * well-formed OPFS location inside a tab directory, any other plan must not
+ * carry one, and a plan this worker has no sink for is refused rather than
+ * encoded in memory.
  */
 function resolveOutputLocation(
   message: FullResExportWorkerStartMessage,
@@ -87,6 +88,7 @@ function resolveOutputLocation(
       typeof location !== 'object' ||
       location === null ||
       (location as { sink?: unknown }).sink !== 'opfs-file' ||
+      !isOpfsEntryName((location as { tabDirectory?: unknown }).tabDirectory) ||
       !isOpfsEntryName((location as { exportId?: unknown }).exportId)
     ) {
       throw new Error('FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID')
@@ -106,6 +108,7 @@ function resolveOutputLocation(
 async function openOpfsOutput(location: FullResWorkerOutputLocation) {
   try {
     return await createOpfsOutputWritable({
+      tabDirectory: location.tabDirectory,
       exportId: location.exportId,
       outputFileName: OPFS_OUTPUT_FILE_NAME,
     })
@@ -115,7 +118,7 @@ async function openOpfsOutput(location: FullResWorkerOutputLocation) {
 }
 
 function createOpfsJpegRowSink(input: {
-  exportId: string
+  location: FullResWorkerOutputLocation
   filename: string
   /** Metadata the app injects lazily when the file-backed output is delivered. */
   metadata?: JpegExportMetadata | null
@@ -132,7 +135,8 @@ function createOpfsJpegRowSink(input: {
       const writablePromise = openedWritable
         ? Promise.resolve(openedWritable)
         : createOpfsOutputWritable({
-            exportId: input.exportId,
+            tabDirectory: input.location.tabDirectory,
+            exportId: input.location.exportId,
             outputFileName,
           })
       const runtime = createLumaJpegRuntime({
@@ -227,7 +231,8 @@ function createOpfsJpegRowSink(input: {
             state = 'closed'
             runtime.dispose()
             return createOpfsFileBackedOutputResult({
-              exportId: input.exportId,
+              tabDirectory: input.location.tabDirectory,
+              exportId: input.location.exportId,
               filename: input.filename,
               byteLength,
               mimeType: 'image/jpeg',
@@ -297,14 +302,20 @@ function deliveredFrameSize(
 
 async function prepareSuccessOutput(input: {
   output: ExportOutputResult
+  outputLocation: FullResWorkerOutputLocation | null
   metadata: unknown
   width: number
   height: number
 }): Promise<FullResWorkerOutputResult> {
   if (input.output.kind === 'file-backed') {
+    // A file-backed result is only addressable inside the reserved location.
+    if (!input.outputLocation) {
+      throw new Error('FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID')
+    }
     return {
       kind: 'file-backed',
       storage: 'opfs',
+      tabDirectory: input.outputLocation.tabDirectory,
       exportId: input.output.exportId,
       filename: input.output.filename,
       byteLength: input.output.byteLength,
@@ -463,7 +474,7 @@ async function handleStart(
       )
       const jpegSink = outputLocation
         ? createOpfsJpegRowSink({
-            exportId: outputLocation.exportId,
+            location: outputLocation,
             filename: message.filename ?? `${outputLocation.exportId}.jpg`,
             metadata: exportMetadata,
             takeOpenedWritable: takeOpenedOpfsOutput,
@@ -538,6 +549,7 @@ async function handleStart(
       const delivered = deliveredFrameSize(message.geometry, capability)
       const result = await prepareSuccessOutput({
         output,
+        outputLocation,
         metadata: exportMetadata,
         width: delivered.width,
         height: delivered.height,

@@ -17,6 +17,10 @@ import type {
   FullResWorkerCheckpointConfig,
   FullResWorkerOutputLocation,
 } from '~/lib/export/full-res-export-client'
+import {
+  reserveOpfsOutputDirectory,
+  scheduleAbandonedOpfsOutputCollection,
+} from '~/lib/export/opfs-output-lifetime'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createSourceFingerprint } from '~/lib/export/source-fingerprint'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
@@ -271,16 +275,23 @@ export async function orchestrateFullResExport(
             previousResourceFailure: false,
             previousUserInterrupted: false,
           })
+    // Outputs left by closed tabs are collected once per page at idle time;
+    // this export never waits for it and cannot fail because of it.
+    scheduleAbandonedOpfsOutputCollection()
     if (executionPlan.productCopy === 'cannot-safely-complete') {
       throw createExportPolicyRefusal()
     }
     const jobExecutionPlan = executionPlan
-    // An OPFS plan always gets its output address. The recovery journal below
-    // is best-effort and shares the address, but its failure only changes
-    // durability, never the sink.
+    // An OPFS plan always gets its output address, inside the directory this
+    // page reserved. The recovery journal below is best-effort and shares the
+    // export id, but its failure only changes durability, never the sink.
     const outputLocation: FullResWorkerOutputLocation | undefined =
       jobExecutionPlan.outputSink === 'opfs-file'
-        ? { sink: 'opfs-file', exportId: createExportId() }
+        ? {
+            sink: 'opfs-file',
+            tabDirectory: await reserveOpfsOutputDirectory(),
+            exportId: createExportId(),
+          }
         : undefined
     let checkpointStore: ReturnType<typeof createCheckpointStore> | null = null
     let checkpointManifest: ExportCheckpointManifest | null = null

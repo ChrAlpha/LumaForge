@@ -55,6 +55,8 @@ const mocks = vi.hoisted(() => ({
   createOpfsCheckpointBackend: vi.fn(),
   createSourceFingerprint: vi.fn(),
   buildManifestForExportResult: vi.fn(),
+  reserveOpfsOutputDirectory: vi.fn(),
+  scheduleAbandonedOpfsOutputCollection: vi.fn(),
   toastError: vi.fn(),
   toastDismiss: vi.fn(),
 }))
@@ -85,6 +87,12 @@ vi.mock('~/lib/export/source-fingerprint', () => ({
   createSourceFingerprint: mocks.createSourceFingerprint,
 }))
 
+vi.mock('~/lib/export/opfs-output-lifetime', () => ({
+  reserveOpfsOutputDirectory: mocks.reserveOpfsOutputDirectory,
+  scheduleAbandonedOpfsOutputCollection:
+    mocks.scheduleAbandonedOpfsOutputCollection,
+}))
+
 type JobInput = Parameters<typeof runFullResolutionExportJob>[0]
 type PlanInput = Parameters<typeof selectCurrentExportExecutionPlan>[0]
 type ResumePlanInput = {
@@ -96,6 +104,7 @@ type SetSessionValue = Parameters<ExportContext['atoms']['setSession']>[0]
 const FIXED_ISO = '2026-10-05T12:00:00.000Z'
 const FIXED_NOW = Date.parse(FIXED_ISO)
 const EXPORT_ID = '00000000-0000-4000-8000-000000000001'
+const TAB_DIRECTORY = 'tab-page-1'
 const FULL_RES_FILENAME = 'frame_neutral_fullres.jpg'
 
 const SOURCE_FILE = new File([new Uint8Array([73, 73, 42, 0])], 'frame.dng', {
@@ -568,6 +577,7 @@ function createHarness(options: HarnessOptions = {}) {
       },
     }),
   )
+  mocks.reserveOpfsOutputDirectory.mockResolvedValue(TAB_DIRECTORY)
   mocks.createSourceFingerprint.mockImplementation(
     async (file: File, facts: SourceFingerprintFacts = {}) => ({
       name: file.name,
@@ -1110,6 +1120,7 @@ describe('orchestrateFullResExport success', () => {
     })
     expect(input.outputLocation).toEqual({
       sink: 'opfs-file',
+      tabDirectory: TAB_DIRECTORY,
       exportId: EXPORT_ID,
     })
     expect(input.checkpoint).toEqual({
@@ -1160,6 +1171,54 @@ describe('orchestrateFullResExport success', () => {
     expect(await h.checkpointStore.list()).toEqual([])
   })
 
+  it("writes an OPFS output under this tab's directory and leaves collecting closed tabs to idle time", async () => {
+    const h = createHarness({ runtime: OPFS_RUNTIME })
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+
+    // Scheduled once the plan exists, and never awaited by the export.
+    expect(mocks.scheduleAbandonedOpfsOutputCollection).toHaveBeenCalledTimes(1)
+    expect(mocks.scheduleAbandonedOpfsOutputCollection).toHaveBeenCalledWith()
+    const [scheduledAt] =
+      mocks.scheduleAbandonedOpfsOutputCollection.mock.invocationCallOrder
+    expect(scheduledAt).toBeGreaterThan(
+      mocks.selectCurrentExportExecutionPlan.mock.invocationCallOrder[0]!,
+    )
+    expect(scheduledAt).toBeLessThan(
+      mocks.runFullResolutionExportJob.mock.invocationCallOrder[0]!,
+    )
+    expect(mocks.reserveOpfsOutputDirectory).toHaveBeenCalledTimes(1)
+    expect(input.outputLocation).toEqual({
+      sink: 'opfs-file',
+      tabDirectory: TAB_DIRECTORY,
+      exportId: EXPORT_ID,
+    })
+    expect(input.checkpoint?.exportId).toBe(EXPORT_ID)
+
+    job.resolve()
+    await run
+
+    expect(h.state.session?.exportState.status).toBe('ready')
+  })
+
+  it('schedules the collection for an in-memory plan without reserving a tab directory', async () => {
+    const h = createHarness()
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+    job.resolve()
+    await run
+
+    expect(input.executionPlan?.outputSink).toBe('blob-handoff')
+    expect(input.outputLocation).toBeUndefined()
+    expect(mocks.scheduleAbandonedOpfsOutputCollection).toHaveBeenCalledTimes(1)
+    expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
+    expect(h.state.session?.exportState.status).toBe('ready')
+  })
+
   it.each([
     {
       name: 'the checkpoint write fails',
@@ -1207,6 +1266,7 @@ describe('orchestrateFullResExport success', () => {
       expect(input.executionPlan?.outputSink).toBe('opfs-file')
       expect(input.outputLocation).toEqual({
         sink: 'opfs-file',
+        tabDirectory: TAB_DIRECTORY,
         exportId: EXPORT_ID,
       })
       expect(input.checkpoint).toBeUndefined()

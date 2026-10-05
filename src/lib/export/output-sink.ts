@@ -48,11 +48,21 @@ export type ExportOutputResult =
 
 type OpfsStorage = Pick<StorageManager, 'getDirectory'>
 
-const OPFS_EXPORTS_DIR = '.lumaforge-exports'
-const OPFS_ACTIVE_DIR = 'active'
+export const OPFS_EXPORTS_DIRECTORY = '.lumaforge-exports'
+export const OPFS_ACTIVE_DIRECTORY = 'active'
 const DEFAULT_OPFS_OUTPUT_FILE = 'output.jpg'
 const OPFS_OUTPUT_TEMP_SUFFIX = '.tmp'
-const OPFS_OUTPUT_FINALIZED_SUFFIX = '.finalized.json'
+export const OPFS_OUTPUT_FINALIZED_SUFFIX = '.finalized.json'
+
+/**
+ * An OPFS output lives at `active/<tabDirectory>/<exportId>/`. The tab
+ * directory belongs to the page that reserved the output, so another tab can
+ * tell whether its owner is still alive before collecting it.
+ */
+export type OpfsOutputAddress = {
+  tabDirectory: string
+  exportId: string
+}
 
 function getDefaultOpfsStorage(): OpfsStorage {
   const storage = globalThis.navigator?.storage
@@ -64,19 +74,24 @@ function getDefaultOpfsStorage(): OpfsStorage {
 }
 
 async function getOpfsExportDirectory(
-  exportId: string,
+  address: OpfsOutputAddress,
   storage: OpfsStorage = getDefaultOpfsStorage(),
 ) {
   const root = await storage.getDirectory()
-  const exportsDirectory = await root.getDirectoryHandle(OPFS_EXPORTS_DIR, {
-    create: true,
-  })
+  const exportsDirectory = await root.getDirectoryHandle(
+    OPFS_EXPORTS_DIRECTORY,
+    { create: true },
+  )
   const activeDirectory = await exportsDirectory.getDirectoryHandle(
-    OPFS_ACTIVE_DIR,
+    OPFS_ACTIVE_DIRECTORY,
+    { create: true },
+  )
+  const tabDirectory = await activeDirectory.getDirectoryHandle(
+    address.tabDirectory,
     { create: true },
   )
 
-  return activeDirectory.getDirectoryHandle(exportId, { create: true })
+  return tabDirectory.getDirectoryHandle(address.exportId, { create: true })
 }
 
 async function removeOpfsEntryIfExists(
@@ -176,15 +191,13 @@ export type OpfsFinalizeOptions = {
   hash?: (bytes: Uint8Array) => string
 }
 
-export async function createOpfsOutputWritable(input: {
-  exportId: string
-  outputFileName?: string
-  storage?: OpfsStorage
-}) {
-  const exportDirectory = await getOpfsExportDirectory(
-    input.exportId,
-    input.storage,
-  )
+export async function createOpfsOutputWritable(
+  input: OpfsOutputAddress & {
+    outputFileName?: string
+    storage?: OpfsStorage
+  },
+) {
+  const exportDirectory = await getOpfsExportDirectory(input, input.storage)
   const outputFileName = input.outputFileName ?? DEFAULT_OPFS_OUTPUT_FILE
   const tempFileName = `${outputFileName}${OPFS_OUTPUT_TEMP_SUFFIX}`
   const finalizedFileName = `${outputFileName}${OPFS_OUTPUT_FINALIZED_SUFFIX}`
@@ -266,16 +279,17 @@ export async function createOpfsOutputWritable(input: {
   }
 }
 
-export function createOpfsFileBackedOutputResult(input: {
-  exportId: string
-  filename: string
-  byteLength: number
-  mimeType: string
-  outputFileName?: string
-  storage?: OpfsStorage
-  sha256?: string
-  deliveryMetadata?: JpegExportMetadata | null
-}): FileBackedOutputResult {
+export function createOpfsFileBackedOutputResult(
+  input: OpfsOutputAddress & {
+    filename: string
+    byteLength: number
+    mimeType: string
+    outputFileName?: string
+    storage?: OpfsStorage
+    sha256?: string
+    deliveryMetadata?: JpegExportMetadata | null
+  },
+): FileBackedOutputResult {
   const outputFileName = input.outputFileName ?? DEFAULT_OPFS_OUTPUT_FILE
   const tempFileName = `${outputFileName}${OPFS_OUTPUT_TEMP_SUFFIX}`
   const finalizedFileName = `${outputFileName}${OPFS_OUTPUT_FINALIZED_SUFFIX}`
@@ -291,10 +305,7 @@ export function createOpfsFileBackedOutputResult(input: {
       ? { deliveryMetadata: input.deliveryMetadata }
       : {}),
     async openBlob() {
-      const exportDirectory = await getOpfsExportDirectory(
-        input.exportId,
-        input.storage,
-      )
+      const exportDirectory = await getOpfsExportDirectory(input, input.storage)
       await exportDirectory.getFileHandle(finalizedFileName)
       const fileHandle = await exportDirectory.getFileHandle(outputFileName)
       const file = await fileHandle.getFile()
@@ -308,10 +319,7 @@ export function createOpfsFileBackedOutputResult(input: {
       return blob
     },
     async cleanup() {
-      const exportDirectory = await getOpfsExportDirectory(
-        input.exportId,
-        input.storage,
-      )
+      const exportDirectory = await getOpfsExportDirectory(input, input.storage)
       await removeOpfsEntryIfExists(exportDirectory, tempFileName)
       await removeOpfsEntryIfExists(exportDirectory, finalizedFileName)
       await removeOpfsEntryIfExists(exportDirectory, outputFileName)

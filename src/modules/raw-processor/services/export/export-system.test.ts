@@ -29,7 +29,11 @@ const OUTPUT = createBlobOutputResult({
   filename: FILENAME,
   blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
 })
-const OUTPUT_LOCATION = { sink: 'opfs-file', exportId: 'export-1' } as const
+const OUTPUT_LOCATION = {
+  sink: 'opfs-file',
+  tabDirectory: 'tab-1',
+  exportId: 'export-1',
+} as const
 const CHECKPOINT: FullResWorkerCheckpointConfig = {
   exportId: 'export-1',
   graphFingerprint: 'graph-1',

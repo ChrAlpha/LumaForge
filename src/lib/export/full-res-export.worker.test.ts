@@ -294,7 +294,11 @@ describe('full-resolution export worker lifecycle responses', () => {
           outputSink: 'opfs-file',
           checkpointMode: 'safe-retry',
         },
-        outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
+        outputLocation: {
+          sink: 'opfs-file',
+          tabDirectory: 'tab-1',
+          exportId: 'export-1',
+        },
         checkpoint: {
           exportId: 'export-1',
           graphFingerprint: 'graph-1',
@@ -409,7 +413,11 @@ describe('full-resolution export worker lifecycle responses', () => {
           outputSink: 'opfs-file',
           checkpointMode: 'safe-retry',
         },
-        outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
+        outputLocation: {
+          sink: 'opfs-file',
+          tabDirectory: 'tab-1',
+          exportId: 'export-1',
+        },
         checkpoint: {
           exportId: 'export-1',
           graphFingerprint: 'graph-1',
@@ -433,6 +441,7 @@ describe('full-resolution export worker lifecycle responses', () => {
       result: {
         kind: 'file-backed',
         storage: 'opfs',
+        tabDirectory: 'tab-1',
         exportId: 'export-1',
         filename: 'safe-output.jpg',
         byteLength: 3,
@@ -511,7 +520,11 @@ describe('full-resolution export worker lifecycle responses', () => {
           outputSink: 'opfs-file',
           checkpointMode: 'safe-retry',
         },
-        outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
+        outputLocation: {
+          sink: 'opfs-file',
+          tabDirectory: 'tab-1',
+          exportId: 'export-1',
+        },
         checkpoint: {
           exportId: 'export-1',
           graphFingerprint: 'graph-1',
@@ -1206,7 +1219,11 @@ describe('full-resolution export worker delivered JPEG metadata', () => {
           outputSink: 'opfs-file',
           checkpointMode: 'safe-retry',
         },
-        outputLocation: { sink: 'opfs-file', exportId: 'export-delivered' },
+        outputLocation: {
+          sink: 'opfs-file',
+          tabDirectory: 'tab-1',
+          exportId: 'export-delivered',
+        },
       })
 
       if (result.kind !== 'file-backed') {
@@ -1370,11 +1387,16 @@ describe('full-resolution export worker output sink', () => {
 
     const response = await startExport({
       executionPlan: opfsPlan,
-      outputLocation: { sink: 'opfs-file', exportId: 'export-7' },
+      outputLocation: {
+        sink: 'opfs-file',
+        tabDirectory: 'tab-1',
+        exportId: 'export-7',
+      },
     })
 
     expect(createOpfsOutputWritable).toHaveBeenCalledTimes(1)
     expect(createOpfsOutputWritable).toHaveBeenCalledWith({
+      tabDirectory: 'tab-1',
       exportId: 'export-7',
       outputFileName: 'output.jpg',
     })
@@ -1391,6 +1413,7 @@ describe('full-resolution export worker output sink', () => {
       result: {
         kind: 'file-backed',
         storage: 'opfs',
+        tabDirectory: 'tab-1',
         exportId: 'export-7',
         filename: 'sample.jpg',
         sha256: 'f'.repeat(64),
@@ -1419,20 +1442,51 @@ describe('full-resolution export worker output sink', () => {
   it.each([
     {
       name: 'an empty export id',
-      location: { sink: 'opfs-file', exportId: '' },
+      location: { sink: 'opfs-file', tabDirectory: 'tab-1', exportId: '' },
     },
-    { name: 'a missing export id', location: { sink: 'opfs-file' } },
+    {
+      name: 'a missing export id',
+      location: { sink: 'opfs-file', tabDirectory: 'tab-1' },
+    },
     {
       name: 'a parent-directory export id',
-      location: { sink: 'opfs-file', exportId: '..' },
+      location: { sink: 'opfs-file', tabDirectory: 'tab-1', exportId: '..' },
     },
     {
       name: 'a nested export id',
-      location: { sink: 'opfs-file', exportId: 'export-1/output' },
+      location: {
+        sink: 'opfs-file',
+        tabDirectory: 'tab-1',
+        exportId: 'export-1/output',
+      },
+    },
+    {
+      name: 'a missing tab directory',
+      location: { sink: 'opfs-file', exportId: 'export-1' },
+    },
+    {
+      name: 'an empty tab directory',
+      location: { sink: 'opfs-file', tabDirectory: '', exportId: 'export-1' },
+    },
+    {
+      name: 'a parent-directory tab directory',
+      location: { sink: 'opfs-file', tabDirectory: '..', exportId: 'export-1' },
+    },
+    {
+      name: 'a nested tab directory',
+      location: {
+        sink: 'opfs-file',
+        tabDirectory: 'tab-1/export-0',
+        exportId: 'export-1',
+      },
     },
     {
       name: 'another sink',
-      location: { sink: 'blob-handoff', exportId: 'export-1' },
+      location: {
+        sink: 'blob-handoff',
+        tabDirectory: 'tab-1',
+        exportId: 'export-1',
+      },
     },
     { name: 'a bare string', location: 'export-1' },
   ])(
@@ -1463,7 +1517,11 @@ describe('full-resolution export worker output sink', () => {
 
     const response = await startExport({
       executionPlan,
-      outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
+      outputLocation: {
+        sink: 'opfs-file',
+        tabDirectory: 'tab-1',
+        exportId: 'export-1',
+      },
     })
 
     expect(response).toMatchObject({
@@ -1482,7 +1540,11 @@ describe('full-resolution export worker output sink', () => {
 
     const response = await startExport({
       executionPlan: opfsPlan,
-      outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
+      outputLocation: {
+        sink: 'opfs-file',
+        tabDirectory: 'tab-1',
+        exportId: 'export-1',
+      },
       checkpoint,
     })
 
@@ -1505,7 +1567,11 @@ describe('full-resolution export worker output sink', () => {
 
     const response = await startExport({
       executionPlan: opfsPlan,
-      outputLocation: { sink: 'opfs-file', exportId: 'export-1' },
+      outputLocation: {
+        sink: 'opfs-file',
+        tabDirectory: 'tab-1',
+        exportId: 'export-1',
+      },
     })
 
     expect(response).toMatchObject({
@@ -1513,6 +1579,25 @@ describe('full-resolution export worker output sink', () => {
       message: 'FULL_RES_EXPORT_UNSUPPORTED_SOURCE',
     })
     expect(writable.abort).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a file-backed result for a plan that reserved no OPFS location', async () => {
+    installRawRuntime()
+    vi.mocked(runFullResolutionJpegExport).mockResolvedValue(
+      createMemoryFileBackedOutputResult({
+        exportId: 'export-1',
+        filename: 'sample.jpg',
+        mimeType: 'image/jpeg',
+        bytes: new Uint8Array([1, 2, 3]),
+      }),
+    )
+
+    const response = await startExport({ executionPlan: blobPlan })
+
+    expect(response).toMatchObject({
+      kind: 'error',
+      message: 'FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID',
+    })
   })
 
   it('refuses a streaming plan because no streaming sink is wired', async () => {

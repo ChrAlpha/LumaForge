@@ -10,6 +10,9 @@ import {
   materializeOutputBlob,
 } from './output-sink'
 
+const TAB_DIRECTORY = 'tab-1'
+const TAB_PATH = `/.lumaforge-exports/active/${TAB_DIRECTORY}`
+
 function createMemoryOpfsStorage() {
   const files = new Map<string, Blob>()
 
@@ -138,6 +141,7 @@ describe('export output sink', () => {
   it('opens and cleans up OPFS-backed output lazily', async () => {
     const { storage, files } = createMemoryOpfsStorage()
     const writable = await createOpfsOutputWritable({
+      tabDirectory: TAB_DIRECTORY,
       exportId: 'export-opfs',
       storage,
     })
@@ -145,6 +149,7 @@ describe('export output sink', () => {
     await writable.close()
 
     const result = createOpfsFileBackedOutputResult({
+      tabDirectory: TAB_DIRECTORY,
       exportId: 'export-opfs',
       filename: 'frame.jpg',
       byteLength: 3,
@@ -162,9 +167,57 @@ describe('export output sink', () => {
     expect(files.size).toBe(0)
   })
 
+  it('keeps every OPFS output file inside the tab directory that reserved it', async () => {
+    const { storage, files } = createMemoryOpfsStorage()
+    const writable = await createOpfsOutputWritable({
+      tabDirectory: 'tab-a',
+      exportId: 'export-1',
+      storage,
+    })
+    await writable.write(new Uint8Array([7, 8, 9]))
+    await writable.close()
+
+    expect([...files.keys()].sort()).toEqual([
+      '/.lumaforge-exports/active/tab-a/export-1/output.jpg',
+      '/.lumaforge-exports/active/tab-a/export-1/output.jpg.finalized.json',
+    ])
+
+    const result = createOpfsFileBackedOutputResult({
+      tabDirectory: 'tab-a',
+      exportId: 'export-1',
+      filename: 'frame.jpg',
+      byteLength: 3,
+      mimeType: 'image/jpeg',
+      storage,
+    })
+    await expect(
+      (await materializeOutputBlob(result)).arrayBuffer(),
+    ).resolves.toEqual(new Uint8Array([7, 8, 9]).buffer)
+
+    // The same export id under another tab is a different output.
+    const otherTab = createOpfsFileBackedOutputResult({
+      tabDirectory: 'tab-b',
+      exportId: 'export-1',
+      filename: 'frame.jpg',
+      byteLength: 3,
+      mimeType: 'image/jpeg',
+      storage,
+    })
+    await expect(materializeOutputBlob(otherTab)).rejects.toThrow(
+      /missing-file/,
+    )
+
+    // Owner cleanup is immediate and safe to repeat.
+    await result.cleanup?.()
+    expect(files.size).toBe(0)
+    await expect(result.cleanup?.()).resolves.toBeUndefined()
+    expect(files.size).toBe(0)
+  })
+
   it('publishes OPFS output only after a finalized temp write', async () => {
     const { storage, files } = createMemoryOpfsStorage()
     const writable = await createOpfsOutputWritable({
+      tabDirectory: TAB_DIRECTORY,
       exportId: 'export-opfs-finalized',
       storage,
     })
@@ -177,7 +230,7 @@ describe('export output sink', () => {
       .digest('hex')
     expect(finalized).toEqual({ byteLength: 3, sha256: expectedSha256 })
     const finalizedRecord = files.get(
-      '/.lumaforge-exports/active/export-opfs-finalized/output.jpg.finalized.json',
+      `${TAB_PATH}/export-opfs-finalized/output.jpg.finalized.json`,
     )
     expect(finalizedRecord).toBeTruthy()
     expect(
@@ -185,24 +238,16 @@ describe('export output sink', () => {
         new TextDecoder().decode(await finalizedRecord!.arrayBuffer()),
       ),
     ).toMatchObject({ version: 1, byteLength: 3, sha256: expectedSha256 })
-    expect(
-      files.has('/.lumaforge-exports/active/export-opfs-finalized/output.jpg'),
-    ).toBe(true)
-    expect(
-      files.has(
-        '/.lumaforge-exports/active/export-opfs-finalized/output.jpg.finalized.json',
-      ),
-    ).toBe(true)
-    expect(
-      files.has(
-        '/.lumaforge-exports/active/export-opfs-finalized/output.jpg.tmp',
-      ),
-    ).toBe(false)
+    expect([...files.keys()].sort()).toEqual([
+      `${TAB_PATH}/export-opfs-finalized/output.jpg`,
+      `${TAB_PATH}/export-opfs-finalized/output.jpg.finalized.json`,
+    ])
   })
 
   it('removes OPFS temp output after abort without publishing final output', async () => {
     const { storage, files } = createMemoryOpfsStorage()
     const writable = await createOpfsOutputWritable({
+      tabDirectory: TAB_DIRECTORY,
       exportId: 'export-opfs-aborted',
       storage,
     })
@@ -216,11 +261,12 @@ describe('export output sink', () => {
   it('refuses to open OPFS output without a finalized marker', async () => {
     const { storage, files } = createMemoryOpfsStorage()
     files.set(
-      '/.lumaforge-exports/active/export-opfs-unfinalized/output.jpg',
+      `${TAB_PATH}/export-opfs-unfinalized/output.jpg`,
       new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' }),
     )
 
     const result = createOpfsFileBackedOutputResult({
+      tabDirectory: TAB_DIRECTORY,
       exportId: 'export-opfs-unfinalized',
       filename: 'frame.jpg',
       byteLength: 3,
@@ -234,14 +280,14 @@ describe('export output sink', () => {
   it('snapshots OPFS file bytes when materializing for browser handoff', async () => {
     const { storage, files } = createMemoryOpfsStorage()
     const writable = await createOpfsOutputWritable({
+      tabDirectory: TAB_DIRECTORY,
       exportId: 'export-opfs-snapshot',
       storage,
     })
     await writable.write(new Uint8Array([4, 5, 6]))
     await writable.close()
 
-    const filePath =
-      '/.lumaforge-exports/active/export-opfs-snapshot/output.jpg'
+    const filePath = `${TAB_PATH}/export-opfs-snapshot/output.jpg`
     const file = files.get(filePath)
     if (!file) throw new Error('expected in-memory OPFS fixture file')
     const originalArrayBuffer = file.arrayBuffer.bind(file)
@@ -252,6 +298,7 @@ describe('export output sink', () => {
     })
 
     const result = createOpfsFileBackedOutputResult({
+      tabDirectory: TAB_DIRECTORY,
       exportId: 'export-opfs-snapshot',
       filename: 'frame.jpg',
       byteLength: 3,
@@ -286,6 +333,7 @@ describe('export output sink', () => {
     const { storage } = createMemoryOpfsStorage()
     const getDirectory = vi.spyOn(storage, 'getDirectory')
     const opfsResult = createOpfsFileBackedOutputResult({
+      tabDirectory: TAB_DIRECTORY,
       exportId: 'export-opfs-hash',
       filename: 'frame.jpg',
       byteLength: 3,

@@ -158,7 +158,11 @@ describe('fullResolutionExportWorkerClient', () => {
       file: new File(['raw'], 'sample.RAF'),
       graph: supportedGraph,
       executionPlan,
-      outputLocation: { sink: 'opfs-file', exportId: 'export-9' },
+      outputLocation: {
+        sink: 'opfs-file',
+        tabDirectory: 'tab-1',
+        exportId: 'export-9',
+      },
     })
 
     const start = worker.requests[0]
@@ -166,7 +170,11 @@ describe('fullResolutionExportWorkerClient', () => {
       throw new Error('missing start request')
     expect(start).toMatchObject({
       executionPlan,
-      outputLocation: { sink: 'opfs-file', exportId: 'export-9' },
+      outputLocation: {
+        sink: 'opfs-file',
+        tabDirectory: 'tab-1',
+        exportId: 'export-9',
+      },
     })
     expect(start.checkpoint).toBeUndefined()
 
@@ -176,6 +184,7 @@ describe('fullResolutionExportWorkerClient', () => {
       result: {
         kind: 'file-backed',
         storage: 'opfs',
+        tabDirectory: 'tab-1',
         exportId: 'export-9',
         filename: 'sample.jpg',
         byteLength: 4,
@@ -259,6 +268,7 @@ describe('fullResolutionExportWorkerClient', () => {
       result: {
         kind: 'file-backed',
         storage: 'opfs',
+        tabDirectory: 'tab-1',
         exportId: 'export-1',
         filename: 'sample.jpg',
         byteLength: 42,
@@ -266,7 +276,8 @@ describe('fullResolutionExportWorkerClient', () => {
       },
     })
 
-    await expect(run).resolves.toMatchObject({
+    const output = await run
+    expect(output).toMatchObject({
       kind: 'file-backed',
       exportId: 'export-1',
       filename: 'sample.jpg',
@@ -276,6 +287,34 @@ describe('fullResolutionExportWorkerClient', () => {
       cleanup: expect.any(Function),
     })
     client.dispose()
+
+    // The rehydrated output addresses the file inside the worker's tab directory.
+    const opened: string[] = []
+    const directory = (): FileSystemDirectoryHandle =>
+      ({
+        async getDirectoryHandle(name: string) {
+          opened.push(name)
+          return directory()
+        },
+        async removeEntry() {},
+      }) as unknown as FileSystemDirectoryHandle
+    Object.defineProperty(window.navigator, 'storage', {
+      configurable: true,
+      value: { getDirectory: async () => directory() },
+    })
+    try {
+      if (output.kind !== 'file-backed')
+        throw new Error('Expected file-backed.')
+      await output.cleanup?.()
+    } finally {
+      delete (window.navigator as { storage?: unknown }).storage
+    }
+    expect(opened).toEqual([
+      '.lumaforge-exports',
+      'active',
+      'tab-1',
+      'export-1',
+    ])
   })
 
   it('rejects with the worker error message', async () => {

@@ -120,6 +120,25 @@ export type ExportManifestFailedDebugPayload = {
   message: string
 }
 
+/** One best-effort pass over OPFS outputs left behind by closed tabs. */
+export type ExportOpfsOutputCollectionDebugPayload = {
+  /** Names listed from `active/`. */
+  scannedEntries: number
+  /** Listed entries that cost a lock probe or storage reads. */
+  examinedEntries: number
+  removedEntries: string[]
+  keptEntries: number
+  skippedEntries: number
+  /** Entries were left for a later pass. */
+  truncated: boolean
+  /** Swallowed storage errors; `entry` is null when `active/` itself failed. */
+  failures: Array<{ entry: string | null; message: string }>
+}
+
+export type ExportOpfsOutputTabLockFailedDebugPayload = {
+  message: string
+}
+
 export type ExportDebugEvent =
   | {
       type: 'export-plan-selected'
@@ -156,6 +175,14 @@ export type ExportDebugEvent =
   | {
       type: 'export-manifest-failed'
       payload: ExportManifestFailedDebugPayload
+    }
+  | {
+      type: 'opfs-output-collection'
+      payload: ExportOpfsOutputCollectionDebugPayload
+    }
+  | {
+      type: 'opfs-output-tab-lock-failed'
+      payload: ExportOpfsOutputTabLockFailedDebugPayload
     }
 
 type RecordedExportDebugEvent = {
