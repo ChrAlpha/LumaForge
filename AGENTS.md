@@ -70,21 +70,18 @@ image-editor assumptions.
 - `src/modules/raw-processor/hooks/useRawWorkflow.ts` and
   `src/modules/raw-processor/hooks/stages/` are the workflow state machine
   boundary. Stage hooks are grouped by `ingest`, `preview`, `look`, `compare`,
-  and `export`; the `calibration` stage folder is dormant (see Retained And
-  Scheduled Slices). Transform is not a stage folder:
+  and `export`. Transform is not a stage folder:
   `src/modules/raw-processor/hooks/useRawTransformFeature.ts` owns Transform
   tool state and the preview overlay, and
   `src/modules/raw-processor/hooks/useRawPreviewTransform.ts` commits the
   geometry that export reproduces.
 - `src/modules/raw-processor/services/` contains scriptable domain behavior:
-  `ingest`, `preview`, `look`, `compare`, and `export` (`calibration` is
-  dormant). Prefer adding tested logic here before growing React components.
+  `ingest`, `preview`, `look`, `compare`, and `export`. Prefer adding tested
+  logic here before growing React components.
 - `src/modules/raw-processor/model/` defines session/workflow/export result
   shapes. Keep model changes small and contract-like.
 - `src/modules/raw-processor/state/` contains Jotai atoms for workflow and tool
-  state; `src/modules/raw-processor/state/calibration.atoms.ts` belongs to the
-  dormant calibration slice. Prefer these over introducing a second state
-  model.
+  state. Prefer these over introducing a second state model.
 - `src/modules/raw-processor/components/RawWorkflowToolProvider.tsx` is the
   context bridge from workflow state/actions to tool surfaces.
 - `src/modules/raw-processor/components/RawToolSurface.tsx` switches desktop vs
@@ -253,15 +250,11 @@ These are owner decisions. They override cleanup advice that says otherwise.
   geometry come from that module. Treat it as production code. Its useful
   code, tests, and fixtures move to a production home later; only then are the
   `/transform-demo` route and the demo module deleted.
-- DCP calibration: the app slice is dormant.
-  `src/modules/raw-processor/hooks/useRawWorkflow.ts` calls
-  `useRawCalibrationStage` with no profile matcher, and no UI consumes it. It
-  is scheduled for deletion together with
-  `src/modules/raw-processor/hooks/stages/calibration`,
-  `src/modules/raw-processor/services/calibration`,
-  `src/modules/raw-processor/state/calibration.atoms.ts`,
-  `src/lib/profiles/calibration-catalog.ts`, and
-  `src/lib/profiles/dcp-params.ts`; do not extend it. The runtime side stays:
+- DCP calibration: the app slice (stage hook, service, and atoms) is
+  removed, and the workflow applies no camera calibration. The remaining
+  `src/lib/profiles/calibration-catalog.ts` and
+  `src/lib/profiles/dcp-params.ts` are scheduled for deletion; do not extend
+  them. The runtime side stays:
   `applyCalibration` in `@lumaforge/luma-raw-runtime`, `solveDcpInterpolation`
   in `@lumaforge/luma-color-runtime`, the manifest's null `calibration` slot,
   and the exported HDR analysis (`analyzeRawDynamicRange`).
