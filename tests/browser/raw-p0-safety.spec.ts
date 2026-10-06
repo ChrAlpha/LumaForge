@@ -491,75 +491,54 @@ function createIdentityCube(title: string, size = 17) {
 }
 
 /**
- * A journal an interrupted export leaves in OPFS, in the checkpoint store's
- * own format: the active directory, one folder per export, manifest.json.
- * It names a source that needs reselecting, the legacy case that used to
- * offer a file picker.
+ * What a page that closed mid-export leaves behind: an unfinished
+ * interruption marker for the public DNG's file tuple, written while its
+ * owner held a lifetime lock that nobody holds any more. A marker matches
+ * only the exact tuple, so it is seeded for the file's mtime as a browser may
+ * report it (floored, rounded, or at second precision).
  */
-function interruptedJournal(sourceSize: number) {
-  return {
-    version: 1,
-    exportId: 'p0-safety-interrupted-export',
-    sourceFingerprint: {
-      name: basename(PUBLIC_DNG.path),
-      size: sourceSize,
-      lastModified: 0,
-      ...PUBLIC_DNG_SIZE,
-      hashPrefixHex: '00',
-    },
-    fileName: basename(PUBLIC_DNG.path),
-    sourceSize,
-    sourceLastModified: 0,
-    outputWidth: PUBLIC_DNG_SIZE.width,
-    outputHeight: PUBLIC_DNG_SIZE.height,
-    graphFingerprint: 'interrupted-graph',
-    profile: 'mobile-balanced',
-    attempt: 1,
-    preferredRows: 256,
-    totalRows: PUBLIC_DNG_SIZE.height,
-    recoveryMode: 'safe-retry',
-    outputSink: 'opfs-file',
-    sourceReacquisition: 'user-reselect-required',
-    completedRowsForDiagnostics: 768,
-    jpegState: 'restart-required',
-    updatedAt: new Date().toISOString(),
-  }
-}
-
-/** Seeds the journal on the app origin before /raw mounts and discovers it. */
-async function seedInterruptedJournal(page: Page, testInfo: TestInfo) {
-  const { size } = await stat(PUBLIC_DNG.path)
+async function seedInterruptedExport(page: Page, testInfo: TestInfo) {
+  const { size, mtimeMs } = await stat(PUBLIC_DNG.path)
   await page.goto(rawPreviewUrl(testInfo, '/'))
-  // Journals live in OPFS, written through a writable stream. A browser
-  // build without them cannot hold one, so it has no interruption to report;
-  // the Chromium project must have both.
-  const journals = await page.evaluate(
-    () =>
-      Boolean(navigator.storage?.getDirectory) &&
-      typeof FileSystemFileHandle !== 'undefined' &&
-      'createWritable' in FileSystemFileHandle.prototype,
-  )
+  // Only a released owner lock proves the page is gone; a browser without
+  // Web Locks never reports an interruption.
+  const locks = await page.evaluate(() => Boolean(navigator.locks?.request))
   if (!isDesktopChromiumProject(testInfo)) {
     test.skip(
-      !journals,
-      'This browser build has no OPFS writable streams to hold an export journal',
+      !locks,
+      'This browser build has no Web Locks to prove an export page closed',
     )
   }
-  expect(journals, 'OPFS is required to seed an export journal').toBe(true)
-  await page.evaluate(async (journal) => {
-    const root = await navigator.storage.getDirectory()
-    const exports = await root.getDirectoryHandle('.lumaforge-exports', {
-      create: true,
-    })
-    const active = await exports.getDirectoryHandle('active', { create: true })
-    const folder = await active.getDirectoryHandle(journal.exportId, {
-      create: true,
-    })
-    const file = await folder.getFileHandle('manifest.json', { create: true })
-    const writable = await file.createWritable()
-    await writable.write(JSON.stringify(journal))
-    await writable.close()
-  }, interruptedJournal(size))
+  expect(locks, 'Web Locks are required to report an interruption').toBe(true)
+  const lastModifiedCandidates = [
+    ...new Set([
+      Math.floor(mtimeMs),
+      Math.round(mtimeMs),
+      Math.floor(mtimeMs / 1000) * 1000,
+    ]),
+  ]
+  await page.evaluate(
+    ({ name, size, lastModifiedCandidates }) => {
+      const now = Date.now()
+      lastModifiedCandidates.forEach((lastModified, index) => {
+        const attempt = `p0-safety-interrupted-${index}`
+        localStorage.setItem(
+          `lumaforge.export-interruption.v1.${attempt}`,
+          JSON.stringify({
+            version: 1,
+            attempt,
+            owner: 'p0-safety-closed-page',
+            ownerLocked: true,
+            source: JSON.stringify([name, size, lastModified]),
+            startedAt: now,
+            updatedAt: now,
+            terminal: null,
+          }),
+        )
+      })
+    },
+    { name: basename(PUBLIC_DNG.path), size, lastModifiedCandidates },
+  )
 }
 
 test.describe('mobile CPU lab', () => {
@@ -1026,7 +1005,7 @@ test.describe('mobile CPU lab', () => {
     if (isDesktopChromiumProject(testInfo)) {
       await page.setViewportSize(MOBILE_VIEWPORT)
     }
-    await seedInterruptedJournal(page, testInfo)
+    await seedInterruptedExport(page, testInfo)
     // Loading the RAW opens the one file chooser this test expects.
     let choosers = 0
     page.on('filechooser', () => {
@@ -1130,7 +1109,7 @@ test('desktop forced CPU: Reset compare view is off, the original row switches e
   testInfo.setTimeout(240_000)
   await prepareLab(page)
   await page.setViewportSize({ width: 1440, height: 1000 })
-  await seedInterruptedJournal(page, testInfo)
+  await seedInterruptedExport(page, testInfo)
   await page.goto(rawPreviewUrl(testInfo, '/raw?forcePreview=cpu'))
   await expect(page.locator('[data-cpu-preview-banner]')).toBeVisible()
 

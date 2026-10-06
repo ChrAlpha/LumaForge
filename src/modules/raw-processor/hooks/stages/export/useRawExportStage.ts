@@ -4,7 +4,7 @@ import type {
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
@@ -13,12 +13,12 @@ import type {
   RawProcessingPipeline,
 } from '~/lib/webgpu/raw-processing-pipeline'
 
-import type {
-  DisplaySource,
-  ExportRecoveryState,
-  ImageSession,
-} from '../../../model/session'
+import type { DisplaySource, ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
+import type {
+  ExportInterruptionMarkers,
+  SourceInterruptionHint,
+} from '../../../services/export/export-recovery'
 import { withInterruptionHistory } from '../../../services/export/export-recovery'
 import { useExportDerivedState } from './useExportDerivedState'
 import type { PendingRecoveryRetry } from './useExportRecoveryAction'
@@ -44,7 +44,8 @@ type UseRawExportStageInput = {
   lutDataRef: MutableRefObject<LUTData | null>
   decodedImageRef: MutableRefObject<DecodedImage | null>
   stats: PipelineStats | null
-  setDiscoveredRecoveryState: (next: ExportRecoveryState) => void
+  refreshExportInterruption: () => void
+  interruptionMarkers: ExportInterruptionMarkers
   exportAbortControllerRef: MutableRefObject<AbortController | null>
   exportGraphVersionRef: MutableRefObject<number>
   isMountedRef: MutableRefObject<boolean>
@@ -61,7 +62,8 @@ type UseRawExportStageInput = {
     Parameters<typeof useFullResExportAction>[0]['registerExportResultResource']
   >
   revokeCurrentEmbeddedPreviewUrl: () => void
-  discoveredRecovery: ExportRecoveryState
+  exportInterruption: SourceInterruptionHint | null
+  exportInterruptionRef: MutableRefObject<SourceInterruptionHint | null>
   embeddedPreviewUrl: string | null
   status: ProcessingStatus
   hasImage: boolean
@@ -69,7 +71,6 @@ type UseRawExportStageInput = {
   rawRenderExposure: RawRenderExposure | null
   pendingRecoveryRetry: PendingRecoveryRetry | null
   setPendingRecoveryRetry: Dispatch<SetStateAction<PendingRecoveryRetry | null>>
-  discoveredRecoveryRef: MutableRefObject<ExportRecoveryState>
   loadFile: (file: File) => Promise<void>
   queueExportResultResourceDisposal: () => void
   toast: ExportToast
@@ -86,7 +87,8 @@ export function useRawExportStage({
   lutDataRef,
   decodedImageRef,
   stats,
-  setDiscoveredRecoveryState,
+  refreshExportInterruption,
+  interruptionMarkers,
   exportAbortControllerRef,
   exportGraphVersionRef,
   isMountedRef,
@@ -101,7 +103,8 @@ export function useRawExportStage({
   registerCurrentPreviewPipelineForEvacuation,
   registerExportResultResource,
   revokeCurrentEmbeddedPreviewUrl,
-  discoveredRecovery,
+  exportInterruption,
+  exportInterruptionRef,
   embeddedPreviewUrl,
   status,
   hasImage,
@@ -109,7 +112,6 @@ export function useRawExportStage({
   rawRenderExposure,
   pendingRecoveryRetry,
   setPendingRecoveryRetry,
-  discoveredRecoveryRef,
   loadFile,
   queueExportResultResourceDisposal,
   toast,
@@ -125,7 +127,7 @@ export function useRawExportStage({
     lutDataRef,
     decodedImageRef,
     stats,
-    setDiscoveredRecoveryState,
+    refreshExportInterruption,
     exportAbortControllerRef,
     exportGraphVersionRef,
     isMountedRef,
@@ -140,6 +142,7 @@ export function useRawExportStage({
     registerCurrentPreviewPipelineForEvacuation,
     registerExportResultResource,
     revokeCurrentEmbeddedPreviewUrl,
+    interruptionMarkers,
   })
   const {
     canExport,
@@ -153,7 +156,7 @@ export function useRawExportStage({
     previewExportDisabledReason,
   } = useExportDerivedState({
     session,
-    discoveredRecovery,
+    exportInterruption,
     decodedImageRef,
     embeddedPreviewUrl,
     status,
@@ -163,24 +166,26 @@ export function useRawExportStage({
     rawRenderExposure,
     stats,
   })
-  // Full-resolution export starts only from an explicit user action. An
-  // interruption hint asks it for the safer plan; the journal is not passed on.
+  // Full-resolution export starts only from an explicit user action. The
+  // loaded source's interruption hint asks it for the safer plan.
   const exportWithInterruptionHistory = useCallback(
     (options: FullResExportOptions) =>
       exportImage(
-        withInterruptionHistory(
-          options,
-          sessionRef.current?.exportState.recovery,
-          discoveredRecoveryRef.current,
-        ),
+        withInterruptionHistory(options, exportInterruptionRef.current),
       ),
-    [discoveredRecoveryRef, exportImage, sessionRef],
+    [exportImage, exportInterruptionRef],
+  )
+  // The retired recovery action still takes a recovery ref; it reads the
+  // same projection the surfaces do.
+  const exportRecoveryRef = useMemo(
+    () => ({ current: exportRecovery }),
+    [exportRecovery],
   )
   const { recoverInterruptedExport } = useExportRecoveryAction({
     pendingRecoveryRetry,
     setPendingRecoveryRetry,
     sessionRef,
-    discoveredRecoveryRef,
+    discoveredRecoveryRef: exportRecoveryRef,
     loadedFile: loadedImage.file,
     canExport,
     status,

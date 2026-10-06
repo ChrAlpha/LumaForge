@@ -7,19 +7,17 @@ import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type { ExportShareCapability } from '../../../model/export-result'
-import type {
-  DisplaySource,
-  ExportRecoveryState,
-  ImageSession,
-} from '../../../model/session'
+import type { DisplaySource, ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
 import { resolveDeliveredExportSize } from '../../../services/export/delivered-export-size'
 import { deriveFullResExportReadiness } from '../../../services/export/export-readiness'
+import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
+import { projectExportRecovery } from '../../../services/export/export-recovery'
 import { resolveExportShareButtonCapability } from '../../../services/export/export-result-actions'
 
 type UseExportDerivedStateInput = {
   session: ImageSession | null
-  discoveredRecovery: ExportRecoveryState
+  exportInterruption: SourceInterruptionHint | null
   decodedImageRef: MutableRefObject<DecodedImage | null>
   embeddedPreviewUrl: string | null
   status: ProcessingStatus
@@ -32,7 +30,7 @@ type UseExportDerivedStateInput = {
 
 export function useExportDerivedState({
   session,
-  discoveredRecovery,
+  exportInterruption,
   decodedImageRef,
   embeddedPreviewUrl,
   status,
@@ -56,11 +54,8 @@ export function useExportDerivedState({
     const exportShareCapability: ExportShareCapability = exportResult
       ? resolveExportShareButtonCapability()
       : { available: false, reason: 'Export a JPEG before sharing.' }
-    const sessionRecovery = session?.exportState.recovery
-    const exportRecovery =
-      sessionRecovery && sessionRecovery.status !== 'none'
-        ? sessionRecovery
-        : discoveredRecovery
+    // Read-only, and only for the loaded source the hint was read for.
+    const exportRecovery = projectExportRecovery(exportInterruption, sourceFile)
     const exportState = session?.exportState
     const activeExportPlan =
       exportState?.status === 'exporting' ||
@@ -115,8 +110,8 @@ export function useExportDerivedState({
     }
   }, [
     decodedImageRef,
-    discoveredRecovery,
     displaySource,
+    exportInterruption,
     embeddedPreviewUrl,
     hasImage,
     rawRenderExposure,

@@ -7,6 +7,7 @@ import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type { ExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
+import { encodeExportSourceHint } from '../../../services/export/export-interruption'
 import { useExportDerivedState } from './useExportDerivedState'
 
 function createExportResult(): ExportResult {
@@ -98,7 +99,7 @@ describe('useExportDerivedState', () => {
     const { result } = renderHook(() =>
       useExportDerivedState({
         session,
-        discoveredRecovery: { status: 'none' },
+        exportInterruption: null,
         decodedImageRef: { current: createBoundedHqImage() },
         embeddedPreviewUrl: null,
         status: 'ready',
@@ -128,7 +129,7 @@ describe('useExportDerivedState', () => {
     const { result } = renderHook(() =>
       useExportDerivedState({
         session,
-        discoveredRecovery: { status: 'none' },
+        exportInterruption: null,
         decodedImageRef,
         embeddedPreviewUrl: null,
         status: 'ready',
@@ -168,7 +169,7 @@ describe('useExportDerivedState', () => {
     const { result } = renderHook(() =>
       useExportDerivedState({
         session,
-        discoveredRecovery: { status: 'none' },
+        exportInterruption: null,
         decodedImageRef: { current: null },
         embeddedPreviewUrl: null,
         status: 'ready',
@@ -186,5 +187,55 @@ describe('useExportDerivedState', () => {
     expect(result.current.previewExportDisabledReason).toBe(
       'Restore the preview before exporting an HQ preview JPEG.',
     )
+  })
+
+  it('projects the recovery state only from the hint read for the loaded source', () => {
+    const session = createSession()
+    const sourceFile = session.sourceFile.file ?? null
+    if (!sourceFile) throw new Error('Expected a session source file.')
+    const exportInterruption = {
+      source: encodeExportSourceHint(sourceFile) ?? '',
+      hint: {
+        previousCrashLikeInterruption: true,
+        previousResourceFailure: false,
+        attempts: ['attempt-a'],
+      },
+    }
+    const render = (file: File | null) =>
+      renderHook(() =>
+        useExportDerivedState({
+          // A recovery left on the session is not a second source of hints.
+          session: {
+            ...session,
+            exportState: {
+              ...session.exportState,
+              recovery: {
+                status: 'ready-to-retry',
+                exportId: 'session-left-over',
+                message: 'Interrupted.',
+              },
+            },
+          },
+          exportInterruption,
+          decodedImageRef: { current: null },
+          embeddedPreviewUrl: null,
+          status: 'ready',
+          hasImage: true,
+          displaySource: 'quick',
+          sourceFile: file,
+          rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+          stats: null,
+        }),
+      ).result.current.exportRecovery
+
+    expect(render(sourceFile)).toEqual({
+      status: 'ready-to-retry',
+      exportId: 'attempt-a',
+      message: expect.any(String),
+    })
+    expect(
+      render(new File(['other'], 'other.dng', { lastModified: 1 })),
+    ).toEqual({ status: 'none' })
+    expect(render(null)).toEqual({ status: 'none' })
   })
 })

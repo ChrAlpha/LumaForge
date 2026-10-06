@@ -8,27 +8,17 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import { toast } from 'sonner'
 
-import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
-import {
-  createCheckpointStore,
-  createOpfsCheckpointBackend,
-  selectCheckpointResumeExecutionPlan,
-} from '~/lib/export/checkpoint-store'
 import type { ExportExecutionPlan } from '~/lib/export/execution-profile'
 import {
   emitExportDebugEvent,
   toExportPlanSelectedDebugPayload,
 } from '~/lib/export/execution-profile'
-import type {
-  FullResWorkerCheckpointConfig,
-  FullResWorkerOutputLocation,
-} from '~/lib/export/full-res-export-client'
+import type { FullResWorkerOutputLocation } from '~/lib/export/full-res-export-client'
 import {
   reserveOpfsOutputDirectory,
   scheduleAbandonedOpfsOutputCollection,
 } from '~/lib/export/opfs-output-lifetime'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
-import { createSourceFingerprint } from '~/lib/export/source-fingerprint'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
 import type {
   PipelineStats,
@@ -36,11 +26,7 @@ import type {
 } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ExportResult } from '../../model/export-result'
-import type {
-  ActiveExportPlanState,
-  ExportRecoveryState,
-  ImageSession,
-} from '../../model/session'
+import type { ActiveExportPlanState, ImageSession } from '../../model/session'
 import type { ProcessingStatus } from '../../model/workflow'
 import {
   getStableErrorCode,
@@ -57,15 +43,23 @@ import {
   getPreExportEvacuationOwners,
   toResourceEvacuatedDebugPayload,
 } from './export-evacuation'
+import type { ExportAttemptOutcome } from './export-interruption'
 import { resolveExportEnvironment } from './export-manifest'
 import { deriveFullResExportReadiness } from './export-readiness'
+import type {
+  ExportInterruptionMarkers,
+  SourceInterruptionHint,
+} from './export-recovery'
+import {
+  classifyExportAttemptOutcome,
+  interruptionForSource,
+  toExportSourceTuple,
+} from './export-recovery'
 import { resolveExportCopyCapability } from './export-result-actions'
 import { createCompletedExportResult } from './export-result-materialization'
 import {
   buildExportFailureDescription,
   clearExportResultForActiveExport,
-  createSafeRetryManifest,
-  isCheckpointMetric,
 } from './export-state'
 import {
   buildExportFilename,
@@ -93,7 +87,8 @@ export interface ExportContext {
     lutDataRef: { current: LUTData | null }
     decodedImageRef: { current: DecodedImage | null }
     stats: PipelineStats | null
-    setDiscoveredRecoveryState: (next: ExportRecoveryState) => void
+    /** Asks the page to read the loaded source's interruption hint again. */
+    refreshExportInterruption: () => void
   }
   refs: {
     exportAbortControllerRef: { current: AbortController | null }
@@ -112,6 +107,10 @@ export interface ExportContext {
     registerCurrentPreviewPipelineForEvacuation: () => void
     registerExportResultResource: (result: ExportResult) => void
     revokeCurrentEmbeddedPreviewUrl: () => void
+    interruptionMarkers: Pick<
+      ExportInterruptionMarkers,
+      'begin' | 'finish' | 'retire'
+    >
   }
 }
 
@@ -130,50 +129,16 @@ function toActivePlanState(plan: ExportExecutionPlan): ActiveExportPlanState {
   }
 }
 
-function expectsDurableCheckpoint(plan: ExportExecutionPlan) {
-  return plan.profile.checkpointOutput && plan.outputSink === 'opfs-file'
-}
-
-function deferSuccessfulCheckpointCleanup(task: () => void) {
-  if (typeof globalThis.requestIdleCallback === 'function') {
-    globalThis.requestIdleCallback(() => task(), { timeout: 2000 })
-    return
-  }
-
-  globalThis.setTimeout(task, 0)
-}
-
-function scheduleSuccessfulCheckpointCleanup(input: {
-  checkpointStore: ReturnType<typeof createCheckpointStore>
-  checkpoint: FullResWorkerCheckpointConfig
-  recoveredExportId?: string
-}) {
-  void (async () => {
-    await input.checkpointStore
-      .removeActiveManifest(input.checkpoint.exportId)
-      .catch(() => undefined)
-    if (
-      input.recoveredExportId &&
-      input.recoveredExportId !== input.checkpoint.exportId
-    ) {
-      await input.checkpointStore
-        .removeActiveManifest(input.recoveredExportId)
-        .catch(() => undefined)
-    }
-  })()
-}
-
 export async function orchestrateFullResExport(
   options: {
     quality: 'standard' | 'high'
     fidelity: 'safe' | 'balanced' | 'max'
-    previousInterrupted?: boolean
-    recoveredExportId?: string
-    recoveredManifest?: ExportCheckpointManifest
+    /** The hint read for the loaded source; it applies only to that file. */
+    interruption?: SourceInterruptionHint
   },
   ctx: ExportContext,
 ): Promise<void> {
-  const { quality, fidelity, previousInterrupted, recoveredExportId } = options
+  const { quality, fidelity } = options
 
   const rawRenderExposure =
     ctx.atoms.decodedImageRef.current?.renderExposure ?? null
@@ -203,11 +168,17 @@ export async function orchestrateFullResExport(
   const exportGeometry = activeSession.exportGeometry ?? null
   /**
    * The frame this export will actually deliver. Geometry crops it, so the
-   * checkpoint, the resume plan and the recorded result all size themselves
-   * from here rather than from the sensor. Readiness already refused any
-   * geometry that will not plan; the worker validates it again on its own.
+   * recorded result sizes itself from here rather than from the sensor.
+   * Readiness already refused any geometry that will not plan; the worker
+   * validates it again on its own.
    */
   const deliveredSize = exportReadiness.deliveredSize
+  // A hint read for another file, or for an older copy of this one, asks
+  // for nothing: the plan, its size and its flags come from this source.
+  const interruption = interruptionForSource(
+    options.interruption,
+    activeSourceFile,
+  )
 
   // One copy of the full intent feeds both the graph and the pre-export
   // snapshot. The strength goes in as given: zero keeps the LUT and its
@@ -253,26 +224,32 @@ export async function orchestrateFullResExport(
     ctx.refs.exportGraphVersionRef.current === exportGraphVersion &&
     ctx.refs.sessionRef.current?.id === exportSessionId
 
+  // This attempt's marker, from just before the worker work until the
+  // attempt ends; each attempt ends only its own marker.
+  const markers = ctx.services.interruptionMarkers
+  let markedAttempt: string | null = null
+  const endAttempt = (outcome: ExportAttemptOutcome) => {
+    if (markedAttempt === null) return
+    const ended = markedAttempt
+    markedAttempt = null
+    markers.finish(ended, outcome)
+  }
+
   try {
     ctx.atoms.setStatus('exporting')
     ctx.atoms.setProgress(0)
     ctx.atoms.setError(null)
     toast.dismiss()
     ctx.refs.previewCopyCanvasRef.current = null
-    const executionPlan =
-      previousInterrupted && options.recoveredManifest
-        ? await selectCheckpointResumeExecutionPlan({
-            manifest: options.recoveredManifest,
-            fidelity,
-          })
-        : await selectCurrentExportExecutionPlan({
-            fidelity,
-            sourceWidth: exportCapability.width,
-            sourceHeight: exportCapability.height,
-            previousCrashLikeInterruption: previousInterrupted,
-            previousResourceFailure: false,
-            previousUserInterrupted: false,
-          })
+    const executionPlan = await selectCurrentExportExecutionPlan({
+      fidelity,
+      sourceWidth: exportCapability.width,
+      sourceHeight: exportCapability.height,
+      previousCrashLikeInterruption:
+        interruption?.previousCrashLikeInterruption ?? false,
+      previousResourceFailure: interruption?.previousResourceFailure ?? false,
+      previousUserInterrupted: false,
+    })
     // Outputs left by closed tabs are collected once per page at idle time;
     // this export never waits for it and cannot fail because of it.
     scheduleAbandonedOpfsOutputCollection()
@@ -281,8 +258,7 @@ export async function orchestrateFullResExport(
     }
     const jobExecutionPlan = executionPlan
     // An OPFS plan always gets its output address, inside the directory this
-    // page reserved. The recovery journal below is best-effort and shares the
-    // export id, but its failure only changes durability, never the sink.
+    // page reserved. No recovery journal is written next to it.
     const outputLocation: FullResWorkerOutputLocation | undefined =
       jobExecutionPlan.outputSink === 'opfs-file'
         ? {
@@ -291,64 +267,21 @@ export async function orchestrateFullResExport(
             exportId: createExportId(),
           }
         : undefined
-    let checkpointStore: ReturnType<typeof createCheckpointStore> | null = null
-    let checkpointManifest: ExportCheckpointManifest | null = null
-    let checkpoint: FullResWorkerCheckpointConfig | undefined
-
-    if (outputLocation && expectsDurableCheckpoint(jobExecutionPlan)) {
-      try {
-        checkpointStore = createCheckpointStore(createOpfsCheckpointBackend())
-        const exportId = outputLocation.exportId
-        const sourceFingerprint = await createSourceFingerprint(
-          activeSourceFile,
-          {
-            width: exportCapability.width,
-            height: exportCapability.height,
-          },
-        )
-        checkpointManifest = createSafeRetryManifest({
-          exportId,
-          file: activeSourceFile,
-          sourceFingerprint,
-          outputWidth: deliveredSize.width,
-          outputHeight: deliveredSize.height,
-          graphFingerprint,
-          profile: executionPlan.profile.name,
-          derivedLabel: executionPlan.derivedLabel,
-          preferredRows: executionPlan.preferredRows,
-          outputSink: executionPlan.outputSink,
-        })
-        await checkpointStore.writeActive(checkpointManifest)
-        if (isCurrentExport()) {
-          emitExportDebugEvent({
-            type: 'checkpoint-written',
-            payload: {
-              exportId,
-              completedRowsForDiagnostics:
-                checkpointManifest.completedRowsForDiagnostics,
-              totalRows: checkpointManifest.totalRows,
-              updatedAt: checkpointManifest.updatedAt,
-            },
-          })
-        }
-        checkpoint = {
-          exportId,
-          graphFingerprint,
-          sourceFingerprint,
-        }
-      } catch {
-        checkpointStore = null
-        checkpointManifest = null
-      }
-    }
 
     if (!isCurrentExport()) {
       return
     }
 
-    if (previousInterrupted) {
-      ctx.atoms.setDiscoveredRecoveryState({ status: 'none' })
+    // Readiness, graph, geometry and plan have all passed, so only an export
+    // that is about to run leaves a marker. The marker is a hint and never
+    // blocks: when it cannot be stored the export goes ahead unmarked.
+    markedAttempt = (await markers.begin(toExportSourceTuple(activeSourceFile)))
+      .attempt
+
+    if (!isCurrentExport()) {
+      return
     }
+
     const activePlan = toActivePlanState(jobExecutionPlan)
 
     if (jobExecutionPlan.profile.releasePreviewPipelineBeforeExport) {
@@ -357,12 +290,11 @@ export async function orchestrateFullResExport(
       ctx.services.registerCurrentPreviewPipelineForEvacuation()
     }
 
+    // No export state outlives the tab: an interrupted export always starts
+    // again from the first row, whatever the sink.
     emitExportDebugEvent({
       type: 'export-plan-selected',
-      payload: toExportPlanSelectedDebugPayload(
-        jobExecutionPlan,
-        expectsDurableCheckpoint(jobExecutionPlan),
-      ),
+      payload: toExportPlanSelectedDebugPayload(jobExecutionPlan, false),
     })
 
     ctx.atoms.setSession((prev) =>
@@ -375,7 +307,7 @@ export async function orchestrateFullResExport(
               qualityPreset: quality,
               fidelityLevel: fidelity,
               activePlan,
-              checkpointDurable: Boolean(checkpoint),
+              checkpointDurable: false,
               recovery: { status: 'none' },
               result: undefined,
               lastProgress: undefined,
@@ -495,26 +427,9 @@ export async function orchestrateFullResExport(
       quality: jpegQuality,
       executionPlan: jobExecutionPlan,
       outputLocation,
-      checkpoint,
       graph,
       // The geometry the session committed; the worker reproduces exactly it.
       ...(exportGeometry ? { geometry: exportGeometry } : {}),
-      onMetric: (metric) => {
-        if (
-          !checkpointStore ||
-          !checkpointManifest ||
-          !isCheckpointMetric(metric)
-        ) {
-          return
-        }
-
-        checkpointManifest = {
-          ...checkpointManifest,
-          completedRowsForDiagnostics: metric.completedRowsForDiagnostics,
-          totalRows: metric.totalRows,
-          updatedAt: metric.timestamp,
-        }
-      },
       onAttempt: (attempt) => {
         if (!isCurrentExport()) return
 
@@ -530,10 +445,7 @@ export async function orchestrateFullResExport(
 
         emitExportDebugEvent({
           type: 'export-plan-selected',
-          payload: toExportPlanSelectedDebugPayload(
-            plan,
-            expectsDurableCheckpoint(plan),
-          ),
+          payload: toExportPlanSelectedDebugPayload(plan, false),
         })
         ctx.atoms.setSession((prev) =>
           prev && prev.id === exportSessionId
@@ -588,6 +500,8 @@ export async function orchestrateFullResExport(
       beforeStart: ctx.services.terminateRawDecodeBridge,
       signal: exportAbortController.signal,
     })
+    // The job finished, so the attempt is over even if its JPEG is dropped.
+    endAttempt('completed')
 
     const completedSession = ctx.refs.sessionRef.current
     if (
@@ -601,16 +515,6 @@ export async function orchestrateFullResExport(
       return
     }
     const completedCapability = completedSession.exportState.fullResCapability
-
-    let cleanupSuccessfulCheckpoint: (() => void) | null = null
-    if (checkpointStore && checkpoint) {
-      cleanupSuccessfulCheckpoint = () =>
-        scheduleSuccessfulCheckpointCleanup({
-          checkpointStore,
-          checkpoint,
-          recoveredExportId,
-        })
-    }
 
     const exportResult = createCompletedExportResult({
       jobResult: result,
@@ -641,8 +545,11 @@ export async function orchestrateFullResExport(
         : prev,
     )
     ctx.atoms.setStatus('ready')
-    if (cleanupSuccessfulCheckpoint) {
-      deferSuccessfulCheckpointCleanup(cleanupSuccessfulCheckpoint)
+    if (interruption) {
+      // The safer export of this source delivered, whatever its sink: the
+      // hint has been used, and the page reads the source's hint again.
+      markers.retire(interruption.attempts)
+      ctx.atoms.refreshExportInterruption()
     }
 
     // The manifest is attached after "ready" so hashing the source and the
@@ -747,6 +654,20 @@ export async function orchestrateFullResExport(
         })
       })
   } catch (err) {
+    const message = err instanceof Error ? err.message : 'Export failed'
+    const rawErrorCode = toUserFacingErrorCode(
+      getStableErrorCode(err) ?? message,
+    )
+    const errorCode =
+      rawErrorCode === 'RAW_UNKNOWN' ? 'EXPORT_RENDER_FAILED' : rawErrorCode
+    const hadAttempt = markedAttempt !== null
+    const outcome = classifyExportAttemptOutcome({
+      aborted: exportAbortController.signal.aborted,
+      errorCode,
+      error: err,
+    })
+    endAttempt(outcome)
+
     if (
       exportAbortController.signal.aborted ||
       !ctx.refs.isMountedRef.current ||
@@ -756,12 +677,11 @@ export async function orchestrateFullResExport(
       return
     }
 
-    const message = err instanceof Error ? err.message : 'Export failed'
-    const rawErrorCode = toUserFacingErrorCode(
-      getStableErrorCode(err) ?? message,
-    )
-    const errorCode =
-      rawErrorCode === 'RAW_UNKNOWN' ? 'EXPORT_RENDER_FAILED' : rawErrorCode
+    if (hadAttempt && outcome === 'resource-failure') {
+      // The failure stays as a hint for the next export of this source.
+      ctx.atoms.refreshExportInterruption()
+    }
+
     const retryLevel = isRetryableFullResExportFailure(errorCode)
       ? recommendRetryLevel(fidelity)
       : null
@@ -788,6 +708,8 @@ export async function orchestrateFullResExport(
       }),
     )
   } finally {
+    // An export dropped before its job ran ended without an interruption.
+    endAttempt('cancelled')
     if (ctx.refs.exportAbortControllerRef.current === exportAbortController) {
       ctx.refs.exportAbortControllerRef.current = null
     }

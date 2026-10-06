@@ -11,9 +11,6 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 
-import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
-import type { FullResWorkerCheckpointMetric } from '~/lib/export/full-res-export-client'
-
 import type { ImageSession } from '../../model/session'
 
 export function toFullResCapabilityState(capability: LumaRawExportCapability) {
@@ -47,55 +44,6 @@ export function buildExportFailureDescription(
   }
 
   return `${message}. Retry with ${retryLevel} fidelity.`
-}
-
-export function createSafeRetryManifest(input: {
-  exportId: string
-  file: File
-  sourceFingerprint: ExportCheckpointManifest['sourceFingerprint']
-  outputWidth: number
-  outputHeight: number
-  graphFingerprint: string
-  profile: ExportCheckpointManifest['profile']
-  derivedLabel: string
-  preferredRows: number
-  outputSink: ExportCheckpointManifest['outputSink']
-  completedRowsForDiagnostics?: number
-  updatedAt?: string
-}): ExportCheckpointManifest {
-  return {
-    version: 1,
-    exportId: input.exportId,
-    sourceFingerprint: input.sourceFingerprint,
-    fileName: input.file.name,
-    sourceSize: input.file.size,
-    sourceLastModified: input.file.lastModified,
-    outputWidth: input.outputWidth,
-    outputHeight: input.outputHeight,
-    graphFingerprint: input.graphFingerprint,
-    profile: input.profile,
-    derivedLabel: input.derivedLabel,
-    attempt: 1,
-    preferredRows: input.preferredRows,
-    totalRows: input.outputHeight,
-    recoveryMode: 'safe-retry',
-    outputSink: input.outputSink,
-    sourceReacquisition: 'user-reselect-required',
-    completedRowsForDiagnostics: input.completedRowsForDiagnostics ?? 0,
-    jpegState: 'restart-required',
-    updatedAt: input.updatedAt ?? new Date().toISOString(),
-  }
-}
-
-export function isCheckpointMetric(
-  metric: unknown,
-): metric is FullResWorkerCheckpointMetric {
-  return (
-    typeof metric === 'object' &&
-    metric !== null &&
-    'kind' in metric &&
-    metric.kind === 'checkpoint'
-  )
 }
 
 /** An export owns the session: its abort handle is live or it is exporting. */

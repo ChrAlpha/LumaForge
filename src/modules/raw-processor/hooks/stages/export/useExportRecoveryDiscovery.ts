@@ -1,71 +1,49 @@
-import type { Dispatch, SetStateAction } from 'react'
 import { useEffect } from 'react'
 
-import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
-import {
-  createCheckpointStore,
-  createOpfsCheckpointBackend,
-} from '~/lib/export/checkpoint-store'
-
-import type { ExportRecoveryState, ImageSession } from '../../../model/session'
-import { createInterruptedExportRecovery } from '../../../services/export/export-recovery'
-
-type ExportRecoveryStore = {
-  listSafeRetryCandidates: () => Promise<ExportCheckpointManifest[]>
-}
+import type {
+  ExportInterruptionMarkers,
+  SourceInterruptionHint,
+} from '../../../services/export/export-recovery'
+import { readSourceInterruption } from '../../../services/export/export-recovery'
 
 type UseExportRecoveryDiscoveryInput = {
-  setDiscoveredRecoveryState: (next: ExportRecoveryState) => void
-  setSession: Dispatch<SetStateAction<ImageSession | null>>
-  createRecoveryStore?: () => ExportRecoveryStore
+  /** The loaded source; without one there is no hint to read. */
+  sourceFile: File | null
+  /** Bumped after an export ends so the hint is read again. */
+  interruptionCheck: number
+  markers: Pick<ExportInterruptionMarkers, 'inspect'>
+  setExportInterruption: (next: SourceInterruptionHint | null) => void
 }
 
-function createDefaultRecoveryStore() {
-  return createCheckpointStore(createOpfsCheckpointBackend())
-}
-
+/**
+ * Reads the interruption hint for the loaded source tuple. Loading a source,
+ * reading a hint or a readiness change never starts an export; the hint only
+ * waits for the next export the user starts.
+ */
 export function useExportRecoveryDiscovery({
-  setDiscoveredRecoveryState,
-  setSession,
-  createRecoveryStore = createDefaultRecoveryStore,
+  sourceFile,
+  interruptionCheck,
+  markers,
+  setExportInterruption,
 }: UseExportRecoveryDiscoveryInput) {
   useEffect(() => {
-    let cancelled = false
-
-    try {
-      const store = createRecoveryStore()
-
-      void store
-        .listSafeRetryCandidates()
-        .then((manifests) => {
-          if (cancelled || manifests.length === 0) return
-
-          const manifest = manifests[0]
-          if (!manifest) return
-
-          const recovery = createInterruptedExportRecovery(manifest)
-          setDiscoveredRecoveryState(recovery)
-          setSession((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  exportState: {
-                    ...prev.exportState,
-                    recovery,
-                  },
-                }
-              : prev,
-          )
-        })
-        .catch(() => undefined)
-    } catch {
-      return () => {
-        cancelled = true
-      }
+    if (!sourceFile) {
+      setExportInterruption(null)
+      return
     }
+
+    let cancelled = false
+    readSourceInterruption(markers, sourceFile).then(
+      (next) => {
+        if (!cancelled) setExportInterruption(next)
+      },
+      () => {
+        if (!cancelled) setExportInterruption(null)
+      },
+    )
 
     return () => {
       cancelled = true
     }
-  }, [createRecoveryStore, setDiscoveredRecoveryState, setSession])
+  }, [interruptionCheck, markers, setExportInterruption, sourceFile])
 }

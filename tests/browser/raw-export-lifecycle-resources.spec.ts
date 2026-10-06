@@ -430,11 +430,11 @@ test('monitors a full desktop RAW export lifecycle with resource diagnostics', a
       phase: 'started',
       freshWorker: true,
     })
-    if (planPayload?.checkpointDurableExpected === true) {
-      expect(events).toContainEqual(
-        expect.objectContaining({ type: 'checkpoint-written' }),
-      )
-    }
+    // No export writes a recovery journal, whatever its sink.
+    expect(planPayload?.checkpointDurableExpected).toBe(false)
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: 'checkpoint-written' }),
+    )
     const outputMaterialized = eventPayload(events, 'output-materialized')
     expect(outputMaterialized).toMatchObject({
       action: 'download',

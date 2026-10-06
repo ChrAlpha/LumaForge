@@ -26,7 +26,6 @@ import { Provider } from 'jotai'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
 import { createMemoryFileBackedOutputResult } from '~/lib/export/output-sink'
 import { jotaiStore } from '~/lib/jotai'
 import {
@@ -46,6 +45,9 @@ import {
 } from '~/lib/runtime/capability-vector'
 
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../model/derive-session'
+import { createExportInterruptionMarkers } from '../services/export/export-interruption'
+import type { ExportInterruptionMarkers } from '../services/export/export-recovery'
+import { readSourceInterruption } from '../services/export/export-recovery'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { getDetachedPreviewView } from '../state/preview-view.atoms'
 import { currentSessionAtom } from '../state/session.atoms'
@@ -81,6 +83,10 @@ const checkpointStoreMock = vi.hoisted(() => ({
   listSafeRetryCandidates: vi.fn(),
   writeActive: vi.fn(),
   removeActiveManifest: vi.fn(),
+}))
+
+const interruptionMarkersMock = vi.hoisted(() => ({
+  current: null as ExportInterruptionMarkers | null,
 }))
 
 const sourceFingerprintMock = vi.hoisted(() => ({
@@ -146,6 +152,18 @@ vi.mock('~/lib/export/source-fingerprint', async () => {
     ...actual,
     createSourceFingerprint: sourceFingerprintMock.createSourceFingerprint,
     sourceFingerprintMatches: sourceFingerprintMock.sourceFingerprintMatches,
+  }
+})
+
+// Each test gets its own page of markers over jsdom's localStorage and a
+// shared fake Web Locks, so a closed page's attempt reads as crash-like.
+vi.mock('../services/export/export-recovery', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../services/export/export-recovery')>()
+  return {
+    ...actual,
+    getExportInterruptionMarkers: () =>
+      interruptionMarkersMock.current ?? actual.getExportInterruptionMarkers(),
   }
 })
 
@@ -352,36 +370,68 @@ function createTestSession() {
   }
 }
 
-function createCheckpointManifest(
-  overrides: Partial<ExportCheckpointManifest> = {},
-): ExportCheckpointManifest {
-  return {
-    version: 1,
-    exportId: 'export-1',
-    sourceFingerprint: {
-      name: 'frame.ARW',
-      size: 3,
-      lastModified: 123,
-      hashPrefixHex: 'abc',
+const MARKER_PREFIX = 'lumaforge.export-interruption.v1.'
+const OWNER_LOCK_PREFIX = 'lumaforge-export-attempt-owner:'
+
+/** Exclusive `ifAvailable` Web Locks shared by the pages of one test. */
+function createFakeLocks() {
+  const held = new Set<string>()
+  const locks = {
+    async request(
+      name: string,
+      _options: LockOptions,
+      callback: LockGrantedCallback<unknown>,
+    ) {
+      if (held.has(name)) return callback(null)
+      held.add(name)
+      try {
+        return await callback({ name, mode: 'exclusive' } as Lock)
+      } finally {
+        held.delete(name)
+      }
     },
-    fileName: 'frame.ARW',
-    sourceSize: 3,
-    sourceLastModified: 123,
-    outputWidth: 6048,
-    outputHeight: 4024,
-    graphFingerprint: 'graph-1',
-    profile: 'ios-safe',
-    attempt: 1,
-    preferredRows: 64,
-    totalRows: 4024,
-    recoveryMode: 'safe-retry',
-    outputSink: 'opfs-file',
-    sourceReacquisition: 'user-reselect-required',
-    completedRowsForDiagnostics: 64,
-    jpegState: 'restart-required',
-    updatedAt: '2026-05-01T00:00:00.000Z',
-    ...overrides,
+  } as unknown as Pick<LockManager, 'request'>
+  return {
+    locks,
+    closePage(page: string) {
+      held.delete(`${OWNER_LOCK_PREFIX}${page}`)
+    },
   }
+}
+
+let fakeLocks = createFakeLocks()
+
+function createMarkerPage(page: string) {
+  let attempts = 0
+  return createExportInterruptionMarkers({
+    getStorage: () => localStorage,
+    getLocks: () => fakeLocks.locks,
+    createId: (kind) =>
+      kind === 'owner' ? page : `${page}-attempt-${++attempts}`,
+  })
+}
+
+/** Another page began exporting `file` and closed before the export ended. */
+async function seedCrashedExport(file: File) {
+  const closedPage = createMarkerPage('closed-page')
+  await closedPage.begin({
+    name: file.name,
+    size: file.size,
+    lastModified: file.lastModified,
+  })
+  fakeLocks.closePage('closed-page')
+}
+
+function storedMarkers() {
+  return Object.keys(localStorage)
+    .filter((key) => key.startsWith(MARKER_PREFIX))
+    .map((key) => JSON.parse(localStorage.getItem(key)!) as { attempt: string })
+}
+
+function pageMarkers() {
+  const markers = interruptionMarkersMock.current
+  if (!markers) throw new Error('Expected test markers.')
+  return markers
 }
 
 function createSupportedCapability() {
@@ -526,6 +576,9 @@ describe('useRawWorkflow embedded preview state', () => {
     toastMock.dismiss.mockReset()
     localStorage.clear()
     resetCapabilityVectorForTest()
+    fakeLocks = createFakeLocks()
+    interruptionMarkersMock.current = createMarkerPage('this-page')
+    vi.spyOn(interruptionMarkersMock.current, 'inspect')
 
     vi.stubGlobal('URL', {
       createObjectURL: vi.fn(() => 'blob:embedded-preview'),
@@ -582,6 +635,7 @@ describe('useRawWorkflow embedded preview state', () => {
     vi.useRealTimers()
     localStorage.clear()
     resetCapabilityVectorForTest()
+    interruptionMarkersMock.current = null
   })
 
   it('rejects unsupported files without replacing the active session or opening the runtime', async () => {
@@ -640,54 +694,62 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(applyCalibration).not.toHaveBeenCalled()
   })
 
-  it('discovers interrupted safe-retry checkpoints on mount', async () => {
-    const checkpointManifest = createCheckpointManifest()
-    jotaiStore.set(currentSessionAtom, createTestSession())
-    checkpointStoreMock.listSafeRetryCandidates.mockResolvedValue([
-      checkpointManifest,
-    ])
-
-    renderHook(() => useRawWorkflow(), { wrapper })
-
-    await waitFor(() => {
-      expect(jotaiStore.get(currentSessionAtom)?.exportState.recovery).toEqual({
-        status: 'ready-to-retry',
-        exportId: 'export-1',
-        message:
-          'The browser interrupted the previous export. Your next export will use a safer low-memory setting.',
-      })
-    })
-  })
-
-  it('preserves discovered interrupted checkpoints before a session exists', async () => {
-    const checkpointManifest = createCheckpointManifest()
-    checkpointStoreMock.listSafeRetryCandidates.mockResolvedValue([
-      checkpointManifest,
-    ])
+  it('reads an interruption hint only once its source is loaded', async () => {
+    const source = new File(['raw'], 'frame.ARW', { lastModified: 123 })
+    await seedCrashedExport(source)
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await flushPostCommitTasks()
+
+    // No source, no hint: a stored marker never surfaces on its own.
+    expect(result.current.exportRecovery).toEqual({ status: 'none' })
+    expect(pageMarkers().inspect).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await result.current.loadFile(source)
+    })
 
     await waitFor(() => {
       expect(result.current.exportRecovery).toEqual({
         status: 'ready-to-retry',
-        exportId: 'export-1',
-        message: expect.any(String),
+        exportId: 'closed-page-attempt-1',
+        message:
+          'The browser interrupted the previous export. Your next export will use a safer low-memory setting.',
       })
     })
-    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    // The session keeps no second copy of the hint.
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.recovery).toEqual({
+      status: 'none',
+    })
+  })
+
+  it('shows no hint for a loaded source other than the interrupted one', async () => {
+    await seedCrashedExport(
+      new File(['raw'], 'frame.ARW', { lastModified: 123 }),
+    )
+
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(
+        new File(['raw'], 'other.ARW', { lastModified: 123 }),
+      )
+    })
+    await waitFor(() => {
+      expect(pageMarkers().inspect).toHaveBeenCalled()
+    })
+    await flushPostCommitTasks()
+
+    expect(result.current.exportRecovery).toEqual({ status: 'none' })
   })
 
   it('does not reselect, load or export through the retired recovery action', async () => {
     jotaiStore.set(currentSessionAtom, createTestSession())
-    checkpointStoreMock.listSafeRetryCandidates.mockResolvedValue([
-      createCheckpointManifest(),
-    ])
+    await seedCrashedExport(
+      new File(['raw'], 'frame.ARW', { lastModified: 123 }),
+    )
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
-
-    await waitFor(() => {
-      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
-    })
+    await flushPostCommitTasks()
 
     await act(async () => {
       await result.current.recoverInterruptedExport(
@@ -708,15 +770,11 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('never exports when an interrupted source loads and becomes ready', async () => {
-    checkpointStoreMock.listSafeRetryCandidates.mockResolvedValue([
-      createCheckpointManifest(),
-    ])
+    await seedCrashedExport(
+      new File(['raw'], 'frame.ARW', { lastModified: 123 }),
+    )
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
-
-    await waitFor(() => {
-      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
-    })
 
     await act(async () => {
       await result.current.loadFile(
@@ -725,6 +783,9 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await waitFor(() => {
       expect(result.current.canExport).toBe(true)
+    })
+    await waitFor(() => {
+      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
     })
     await flushPostCommitTasks()
 
@@ -738,15 +799,9 @@ describe('useRawWorkflow embedded preview state', () => {
 
   it('requests the safer plan from the current source on the next explicit export', async () => {
     vi.stubGlobal('crossOriginIsolated', true)
-    // A geometry export journals its delivered crop, not the sensor frame.
-    const checkpointManifest = createCheckpointManifest({
-      outputWidth: 5000,
-      outputHeight: 3000,
-      totalRows: 3000,
-    })
-    checkpointStoreMock.listSafeRetryCandidates.mockResolvedValue([
-      checkpointManifest,
-    ])
+    await seedCrashedExport(
+      new File(['raw'], 'frame.ARW', { lastModified: 123 }),
+    )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
       filename: 'frame_neutral_fullres.jpg',
       blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
@@ -754,13 +809,13 @@ describe('useRawWorkflow embedded preview state', () => {
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
 
-    await waitFor(() => {
-      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
-    })
     await act(async () => {
       await result.current.loadFile(
         new File(['raw'], 'frame.ARW', { lastModified: 123 }),
       )
+    })
+    await waitFor(() => {
+      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
     })
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
 
@@ -786,7 +841,50 @@ describe('useRawWorkflow embedded preview state', () => {
         }),
       }),
     )
-    expect(result.current.exportRecovery.status).toBe('none')
+    // The delivered export used the hint up; nothing is left to read again.
+    await waitFor(() => {
+      expect(result.current.exportRecovery.status).toBe('none')
+    })
+    expect(storedMarkers()).toEqual([])
+  })
+
+  it("does not hand an interrupted source's safer plan to another file", async () => {
+    vi.stubGlobal('crossOriginIsolated', true)
+    await seedCrashedExport(
+      new File(['raw'], 'frame.ARW', { lastModified: 123 }),
+    )
+    exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
+      filename: 'other_neutral_fullres.jpg',
+      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+    })
+
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(
+        new File(['raw'], 'other.ARW', { lastModified: 123 }),
+      )
+    })
+    await waitFor(() => {
+      expect(pageMarkers().inspect).toHaveBeenCalled()
+    })
+    await flushPostCommitTasks()
+    await act(async () => {
+      await result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+    })
+
+    const [request] = exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
+    expect(request.executionPlan).toMatchObject({
+      productCopy: 'safe-export',
+      sourceWidth: 6048,
+      sourceHeight: 4024,
+    })
+    // The interrupted file's hint waits for that file.
+    expect(storedMarkers()).toEqual([
+      expect.objectContaining({ attempt: 'closed-page-attempt-1' }),
+    ])
   })
 
   it('exposes pending LUT profile selection and applies a user-selected profile', async () => {
@@ -3702,7 +3800,7 @@ describe('useRawWorkflow embedded preview state', () => {
     )
   })
 
-  it('writes OPFS safe-retry checkpoint manifests for durable ios-safe exports', async () => {
+  it('writes an ios-safe OPFS export without a recovery journal or fingerprint', async () => {
     vi.stubGlobal('navigator', {
       userAgent:
         'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
@@ -3725,9 +3823,13 @@ describe('useRawWorkflow embedded preview state', () => {
     rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue(
       createSupportedCapability(),
     )
-    exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
-      filename: 'frame_neutral_fullres.jpg',
-      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+    let markersDuringJob: unknown[] = []
+    exportSystemMock.runFullResolutionExportJob.mockImplementation(async () => {
+      markersDuringJob = storedMarkers()
+      return {
+        filename: 'frame_neutral_fullres.jpg',
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      }
     })
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
@@ -3744,214 +3846,62 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushPostCommitTasks()
 
-    expect(sourceFingerprintMock.createSourceFingerprint).toHaveBeenCalledWith(
-      file,
-      { width: 6048, height: 4024 },
-    )
-    expect(checkpointStoreMock.writeActive).toHaveBeenCalledWith(
-      expect.objectContaining({
-        version: 1,
-        fileName: 'frame.ARW',
-        profile: 'ios-safe',
+    expect(sourceFingerprintMock.createSourceFingerprint).not.toHaveBeenCalled()
+    expect(checkpointStoreMock.createCheckpointStore).not.toHaveBeenCalled()
+    expect(checkpointStoreMock.writeActive).not.toHaveBeenCalled()
+    const [request] = exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
+    expect(request).toMatchObject({
+      executionPlan: expect.objectContaining({
         preferredRows: 128,
-        recoveryMode: 'safe-retry',
+        concurrency: 1,
+        runtimeMemoryProfile: 'low-memory',
         outputSink: 'opfs-file',
-        sourceReacquisition: 'user-reselect-required',
-        completedRowsForDiagnostics: 0,
-        jpegState: 'restart-required',
+        checkpointMode: 'safe-retry',
+        derivedLabel: expect.stringContaining('wkwebkit-mobile'),
       }),
-    )
-    expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledWith(
+      outputLocation: expect.objectContaining({ sink: 'opfs-file' }),
+    })
+    expect(request).not.toHaveProperty('checkpoint')
+    // The running attempt was marked by its tuple and ended with the job.
+    expect(markersDuringJob).toEqual([
       expect.objectContaining({
-        executionPlan: expect.objectContaining({
-          preferredRows: 128,
-          concurrency: 1,
-          runtimeMemoryProfile: 'low-memory',
-          outputSink: 'opfs-file',
-          checkpointMode: 'safe-retry',
-          derivedLabel: expect.stringContaining('wkwebkit-mobile'),
-        }),
-        checkpoint: expect.objectContaining({
-          graphFingerprint: expect.any(String),
-          sourceFingerprint: expect.objectContaining({
-            hashPrefixHex: 'abc',
-          }),
-        }),
+        attempt: 'this-page-attempt-1',
+        source: JSON.stringify(['frame.ARW', 3, 123]),
+        terminal: null,
       }),
-    )
-    expect(checkpointStoreMock.removeActiveManifest).toHaveBeenCalledWith(
-      expect.any(String),
-    )
-  })
-
-  it('defers successful checkpoint manifest cleanup until after the ready handoff', async () => {
-    let idleCallback: IdleRequestCallback | null = null
-    vi.stubGlobal(
-      'requestIdleCallback',
-      vi.fn((callback: IdleRequestCallback) => {
-        idleCallback = callback
-        return 1
-      }),
-    )
-    vi.stubGlobal('navigator', {
-      userAgent:
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
-      maxTouchPoints: 1,
-      storage: {
-        getDirectory: vi.fn(),
-        estimate: vi.fn(async () => ({ quota: 1_000_000_000, usage: 0 })),
-      },
-      hardwareConcurrency: 4,
-    })
-    vi.stubGlobal('crossOriginIsolated', false)
-    const manifestRemoval = deferred<void>()
-    checkpointStoreMock.removeActiveManifest.mockReturnValue(
-      manifestRemoval.promise,
-    )
-    exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
-      filename: 'frame_neutral_fullres.jpg',
-      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
-    })
-
-    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
-    await act(async () => {
-      await result.current.loadFile(
-        new File(['raw'], 'frame.ARW', { lastModified: 123 }),
-      )
-    })
-    let exportPromise!: Promise<void>
-    await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
-      await exportPromise
-    })
-
-    expect(result.current.exportResult?.filename).toBe(
-      'frame_neutral_fullres.jpg',
-    )
-    expect(checkpointStoreMock.removeActiveManifest).not.toHaveBeenCalled()
-    expect(idleCallback).toEqual(expect.any(Function))
-
-    await act(async () => {
-      idleCallback?.({
-        didTimeout: false,
-        timeRemaining: () => 50,
-      } as IdleDeadline)
-      await flushPromises()
-    })
-    expect(checkpointStoreMock.removeActiveManifest).toHaveBeenCalledTimes(1)
-
-    await act(async () => {
-      manifestRemoval.resolve()
-      await flushPromises()
-    })
-  })
-
-  it('does not write OPFS checkpoint manifests for every strip metric', async () => {
-    vi.stubGlobal('navigator', {
-      userAgent:
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
-      maxTouchPoints: 1,
-      storage: {
-        getDirectory: vi.fn(),
-        estimate: vi.fn(async () => ({ quota: 1_000_000_000, usage: 0 })),
-      },
-      hardwareConcurrency: 4,
-    })
-    vi.stubGlobal('crossOriginIsolated', false)
-
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
-      createDecodedImage('bounded-hq'),
-    )
-    rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue(
-      createSupportedCapability(),
-    )
-    exportSystemMock.runFullResolutionExportJob.mockImplementation(
-      async (request) => {
-        for (const completedRowsForDiagnostics of [128, 256, 384, 512]) {
-          request.onMetric?.({
-            kind: 'checkpoint',
-            requestId: 'request-1',
-            completedRowsForDiagnostics,
-            totalRows: 4024,
-            stripRows: 128,
-            timestamp: '2026-05-01T00:00:01.000Z',
-          })
-        }
-        return {
-          filename: 'frame_neutral_fullres.jpg',
-          blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
-        }
-      },
-    )
-
-    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
-    await act(async () => {
-      await result.current.loadFile(
-        new File(['raw'], 'frame.ARW', { lastModified: 123 }),
-      )
-    })
-
-    let exportPromise!: Promise<void>
-    await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
-      await exportPromise
-    })
-
-    await flushPostCommitTasks()
-
-    expect(checkpointStoreMock.writeActive).toHaveBeenCalledTimes(1)
-    expect(checkpointStoreMock.writeActive).toHaveBeenCalledWith(
-      expect.objectContaining({
-        completedRowsForDiagnostics: 0,
-        jpegState: 'restart-required',
-      }),
-    )
-    expect(checkpointStoreMock.removeActiveManifest).toHaveBeenCalledTimes(1)
-  })
-
-  it('removes the interrupted journal after a successful explicit export', async () => {
-    vi.stubGlobal('navigator', {
-      userAgent:
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
-      maxTouchPoints: 1,
-      storage: {
-        getDirectory: vi.fn(),
-        estimate: vi.fn(async () => ({ quota: 1_000_000_000, usage: 0 })),
-      },
-      hardwareConcurrency: 4,
-    })
-    vi.stubGlobal('crossOriginIsolated', false)
-    const checkpointManifest = createCheckpointManifest({
-      exportId: 'interrupted-export',
-    })
-    checkpointStoreMock.listSafeRetryCandidates.mockResolvedValue([
-      checkpointManifest,
     ])
+    expect(storedMarkers()).toEqual([])
+    expect(jotaiStore.get(currentSessionAtom)?.exportState).toMatchObject({
+      status: 'ready',
+      checkpointDurable: false,
+    })
+  })
+
+  it('retires the matching hint after a successful OPFS export, so it is gone on the next visit', async () => {
+    vi.stubGlobal('navigator', {
+      userAgent:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
+      maxTouchPoints: 1,
+      storage: {
+        getDirectory: vi.fn(),
+        estimate: vi.fn(async () => ({ quota: 1_000_000_000, usage: 0 })),
+      },
+      hardwareConcurrency: 4,
+    })
+    vi.stubGlobal('crossOriginIsolated', false)
+    const file = new File(['raw'], 'frame.ARW', { lastModified: 123 })
+    await seedCrashedExport(file)
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
       filename: 'frame_neutral_fullres.jpg',
       blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
     })
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
-
+    await act(async () => {
+      await result.current.loadFile(file)
+    })
     await waitFor(() => {
       expect(result.current.exportRecovery.status).toBe('ready-to-retry')
-    })
-
-    await act(async () => {
-      await result.current.loadFile(
-        new File(['raw'], 'frame.ARW', { lastModified: 123 }),
-      )
     })
     await act(async () => {
       await result.current.exportImage({
@@ -3961,9 +3911,18 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushPostCommitTasks()
 
-    expect(checkpointStoreMock.removeActiveManifest).toHaveBeenCalledWith(
-      'interrupted-export',
-    )
+    const [request] = exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
+    expect(request.executionPlan).toMatchObject({
+      outputSink: 'opfs-file',
+      productCopy: 'interrupted-retry',
+    })
+    await waitFor(() => {
+      expect(result.current.exportRecovery.status).toBe('none')
+    })
+    expect(storedMarkers()).toEqual([])
+    await expect(
+      readSourceInterruption(createMarkerPage('next-visit'), file),
+    ).resolves.toBeNull()
   })
 
   it('evacuates preview resources and clears stale export result before full-resolution export', async () => {
@@ -6017,7 +5976,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     const preservedSession = jotaiStore.get(currentSessionAtom)
     expect(preservedSession?.sourceFile.name).toBe('frame.ARW')
-    checkpointStoreMock.listSafeRetryCandidates.mockClear()
+    vi.mocked(pageMarkers().inspect).mockClear()
 
     const remounted = renderHook(() => useRawWorkflow(), {
       wrapper,
@@ -6025,7 +5984,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     // StrictMode replays mount effects, including the unmount cleanup.
-    expect(checkpointStoreMock.listSafeRetryCandidates).toHaveBeenCalledTimes(2)
+    expect(pageMarkers().inspect).toHaveBeenCalledTimes(2)
     expect(jotaiStore.get(currentSessionAtom)).toBe(preservedSession)
     expect(remounted.result.current.status).toBe('ready')
     expect(remounted.result.current.sourceFileName).toBe('frame.ARW')
@@ -6061,7 +6020,8 @@ describe('useRawWorkflow embedded preview state', () => {
       reactStrictMode: true,
     })
 
-    expect(checkpointStoreMock.listSafeRetryCandidates).toHaveBeenCalledTimes(2)
+    // Without a source there is no hint to read, even on effect replay.
+    expect(pageMarkers().inspect).not.toHaveBeenCalled()
 
     act(() => {
       result.current.setCompareSplit(0.7)

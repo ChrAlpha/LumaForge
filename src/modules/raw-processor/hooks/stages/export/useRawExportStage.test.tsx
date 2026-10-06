@@ -6,9 +6,10 @@ import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
-import type { ExportRecoveryState, ImageSession } from '../../../model/session'
+import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
-import { createInterruptedExportRecovery } from '../../../services/export/export-recovery'
+import { encodeExportSourceHint } from '../../../services/export/export-interruption'
+import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
 import { orchestrateFullResExport } from '../../../services/export/orchestrate-full-res-export'
 import type { PendingRecoveryRetry } from './useExportRecoveryAction'
 import { useRawExportStage } from './useRawExportStage'
@@ -44,10 +45,7 @@ const RAW_RENDER_EXPOSURE = {
   source: 'identity',
 } as const
 
-/**
- * The journal of a geometry export: it records the delivered crop, not the
- * sensor frame the current session reports.
- */
+/** A journal an older build left: the delivered crop, not the sensor frame. */
 function createTransformedJournal(): ExportCheckpointManifest {
   return {
     version: 1,
@@ -75,6 +73,15 @@ function createTransformedJournal(): ExportCheckpointManifest {
     jpegState: 'restart-required',
     updatedAt: '2026-06-01T00:00:00.000Z',
   }
+}
+
+const INTERRUPTION: SourceInterruptionHint = {
+  source: encodeExportSourceHint(SOURCE_FILE) ?? '',
+  hint: {
+    previousCrashLikeInterruption: true,
+    previousResourceFailure: false,
+    attempts: ['attempt-interrupted'],
+  },
 }
 
 function createReadySession(): ImageSession {
@@ -131,7 +138,13 @@ function createStageInput(
     lutDataRef: { current: null },
     decodedImageRef: { current: null },
     stats: null,
-    setDiscoveredRecoveryState: vi.fn(),
+    refreshExportInterruption: vi.fn(),
+    interruptionMarkers: {
+      begin: vi.fn(),
+      finish: vi.fn(),
+      inspect: vi.fn(),
+      retire: vi.fn(),
+    },
     exportAbortControllerRef: { current: null },
     exportGraphVersionRef: { current: 0 },
     isMountedRef: { current: true },
@@ -146,7 +159,8 @@ function createStageInput(
     registerCurrentPreviewPipelineForEvacuation: vi.fn(),
     registerExportResultResource: vi.fn(),
     revokeCurrentEmbeddedPreviewUrl: vi.fn(),
-    discoveredRecovery: { status: 'none' },
+    exportInterruption: null,
+    exportInterruptionRef: { current: null },
     embeddedPreviewUrl: null,
     status: 'idle',
     hasImage: false,
@@ -154,9 +168,6 @@ function createStageInput(
     rawRenderExposure: null,
     pendingRecoveryRetry: null,
     setPendingRecoveryRetry: vi.fn(),
-    discoveredRecoveryRef: {
-      current: { status: 'none' } as ExportRecoveryState,
-    },
     loadFile: vi.fn(),
     queueExportResultResourceDisposal: vi.fn(),
     toast: { error: vi.fn(), success: vi.fn() },
@@ -174,7 +185,6 @@ function createInterruptedReadyInput(
 ): ExportStageInput {
   const session = createReadySession()
   const journal = createTransformedJournal()
-  const hint = createInterruptedExportRecovery(journal)
   const pendingRecoveryRetry: PendingRecoveryRetry = {
     sourceExportId: journal.exportId,
     manifest: journal,
@@ -188,8 +198,8 @@ function createInterruptedReadyInput(
     loadedImage: { file: SOURCE_FILE, metadata: null },
     session,
     sessionRef: { current: session },
-    discoveredRecovery: hint,
-    discoveredRecoveryRef: { current: hint },
+    exportInterruption: INTERRUPTION,
+    exportInterruptionRef: { current: INTERRUPTION },
     pendingRecoveryRetry,
     status,
     hasImage: true,
@@ -232,6 +242,25 @@ describe('useRawExportStage', () => {
     )
 
     expect(orchestrateFullResExport).not.toHaveBeenCalled()
+    expect(view.result.current.exportRecovery).toEqual({
+      status: 'ready-to-retry',
+      exportId: 'attempt-interrupted',
+      message: expect.any(String),
+    })
+  })
+
+  it('projects no recovery for a loaded source the hint was not read for', () => {
+    const other = new File(['other'], 'other.dng', { lastModified: 9 })
+    const { result } = renderHook(() =>
+      useRawExportStage(
+        createInterruptedReadyInput('ready', {
+          loadedImage: { file: other, metadata: null },
+        }),
+      ),
+    )
+
+    expect(result.current.exportRecovery).toEqual({ status: 'none' })
+    expect(orchestrateFullResExport).not.toHaveBeenCalled()
   })
 
   it('sends interruption history with one explicit export of the current look', async () => {
@@ -256,14 +285,14 @@ describe('useRawExportStage', () => {
 
     expect(orchestrateFullResExport).toHaveBeenCalledTimes(1)
     const [options, ctx] = vi.mocked(orchestrateFullResExport).mock.calls[0]!
-    // Only the safer-plan request travels: no journal, so the plan sizes from
-    // the current source and the graph renders the current look.
+    // Only the source-scoped hint travels: no journal, so the plan sizes
+    // from the current source and the graph renders the current look.
     expect(options).toEqual({
       quality: 'high',
       fidelity: 'balanced',
-      previousInterrupted: true,
-      recoveredExportId: 'export-interrupted',
+      interruption: INTERRUPTION,
     })
+    expect(ctx.services.interruptionMarkers).toBe(input.interruptionMarkers)
     expect(ctx.atoms.params).toBe(currentParams)
     expect(ctx.atoms.loadedImage.file).toBe(SOURCE_FILE)
     expect(ctx.atoms.session?.exportState.fullResCapability).toEqual({

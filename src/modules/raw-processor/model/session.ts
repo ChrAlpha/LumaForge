@@ -182,7 +182,13 @@ export type ImageSession = {
     fidelityLevel: ExportFidelity
     fullResCapability: FullResExportCapabilityState
     activePlan?: ActiveExportPlanState
+    /**
+     * Always `none`. The interruption hint lives in the page's marker state
+     * and reaches surfaces only as a read-only projection for the loaded
+     * source.
+     */
     recovery: ExportRecoveryState
+    /** False: no export state outlives the tab, whatever the sink. */
     checkpointDurable: boolean
     result?: ExportResult
     lastProgress?: {

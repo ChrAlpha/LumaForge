@@ -83,9 +83,12 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   })
   const [decodedImageVersion, setDecodedImageVersion] = useState(0)
   const {
-    discoveredRecovery,
-    discoveredRecoveryRef,
-    setDiscoveredRecoveryState,
+    interruptionMarkers,
+    exportInterruption,
+    exportInterruptionRef,
+    setExportInterruption,
+    interruptionCheck,
+    refreshExportInterruption,
     pendingRecoveryRetry,
     setPendingRecoveryRetry,
   } = useExportRecoveryState()
@@ -230,8 +233,10 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   }
 
   useExportRecoveryDiscovery({
-    setDiscoveredRecoveryState,
-    setSession,
+    sourceFile: loadedImage.file,
+    interruptionCheck,
+    markers: interruptionMarkers,
+    setExportInterruption,
   })
 
   const { loadFile, reset } = useRawIngestStage({
@@ -302,7 +307,8 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     lutDataRef,
     decodedImageRef,
     stats,
-    setDiscoveredRecoveryState,
+    refreshExportInterruption,
+    interruptionMarkers,
     exportAbortControllerRef,
     exportGraphVersionRef,
     isMountedRef,
@@ -317,7 +323,8 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     registerCurrentPreviewPipelineForEvacuation,
     registerExportResultResource,
     revokeCurrentEmbeddedPreviewUrl,
-    discoveredRecovery,
+    exportInterruption,
+    exportInterruptionRef,
     embeddedPreviewUrl,
     status,
     hasImage,
@@ -325,7 +332,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     rawRenderExposure,
     pendingRecoveryRetry,
     setPendingRecoveryRetry,
-    discoveredRecoveryRef,
     loadFile,
     queueExportResultResourceDisposal,
     toast,

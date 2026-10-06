@@ -14,7 +14,6 @@ type ExpectedProjectPlan = {
   runtimeMemoryProfile: string
   checkpointMode: string
   outputSink: string
-  checkpointExpected: boolean
   derivedLabelFragment: string
 }
 
@@ -26,7 +25,6 @@ function getExpectedProjectPlan(projectName: string): ExpectedProjectPlan {
       runtimeMemoryProfile: 'desktop',
       checkpointMode: 'safe-retry',
       outputSink: 'opfs-file',
-      checkpointExpected: true,
       derivedLabelFragment: 'wkchromium',
     }
   }
@@ -37,7 +35,6 @@ function getExpectedProjectPlan(projectName: string): ExpectedProjectPlan {
     runtimeMemoryProfile: 'low-memory',
     checkpointMode: 'safe-retry',
     outputSink: 'opfs-file',
-    checkpointExpected: true,
     derivedLabelFragment: 'wkwebkit-mobile',
   }
 }
@@ -188,7 +185,6 @@ test('browser preflight records expected export policy before export', async ({
       'export-plan-selected',
       'resource-evacuated',
       'export-worker-attempt',
-      ...(expectedPlan.checkpointExpected ? ['checkpoint-written'] : []),
     ]
     await expect
       .poll(async () => {
@@ -241,13 +237,13 @@ test('browser preflight records expected export policy before export', async ({
       freshWorker: true,
     })
 
-    if (expectedPlan.checkpointExpected) {
-      expect(events).toContainEqual(
-        expect.objectContaining({
-          type: 'checkpoint-written',
-        }),
-      )
-    }
+    // The OPFS sink keeps its output address but writes no recovery journal.
+    expect(planPayload?.checkpointDurableExpected).toBe(false)
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        type: 'checkpoint-written',
+      }),
+    )
   } finally {
     await testInfo.attach('export-events.json', {
       body: JSON.stringify(await collectExportEvents(page), null, 2),

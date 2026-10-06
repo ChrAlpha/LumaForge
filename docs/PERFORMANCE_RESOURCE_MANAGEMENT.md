@@ -176,7 +176,7 @@ within quick preview, bounded HQ is skipped rather than decoded redundantly.
 ### Export Row And Concurrency Ceilings
 
 Export rows are more conservative than preview pixels because full-resolution
-export owns RAW/JPEG workers, checkpoint state, row buffers, and output sinks.
+export owns RAW/JPEG workers, row buffers, and output sinks.
 
 Row ceiling:
 
@@ -383,8 +383,8 @@ device family.
 | OPFS absent, unknown, private, or low quota      | Runtime snapshot has no fitting OPFS sink              | Use streaming if wired; otherwise `blob-handoff`                                              | Storage capability is volatile and cannot be cached from boot.               |
 | Worker cannot open the reserved OPFS output      | OPFS writable fails to open before any decode          | Re-derive without OPFS on a fresh worker, never above the current rows/concurrency            | The reported plan names the real sink; refusals still apply.                 |
 | Mobile form factor + large export + blob handoff | `mobileFormFactor`, `megapixels > 50`, no durable sink | `cannot-safely-complete`                                                                      | Fail closed instead of risking process termination or false full-res output. |
-| Previous resource failure                        | Session/export state marks resource-looking failure    | Halve rows, force concurrency `1`, fresh worker retry                                         | Do not retry near the same heap boundary.                                    |
-| Previous crash-like interruption                 | Interrupted checkpoint/recovery state                  | Quarter rows, force concurrency `1`, safer copy                                               | Treat tab/process interruption as stronger pressure.                         |
+| Previous resource failure                        | Resource-failure marker for the same file tuple        | Halve rows, force concurrency `1`, fresh worker retry                                         | Do not retry near the same heap boundary.                                    |
+| Previous crash-like interruption                 | Unfinished marker for the same file tuple, owner gone  | Quarter rows, force concurrency `1`, safer copy                                               | Treat tab/process interruption as stronger pressure.                         |
 | User cancel                                      | Explicit user interruption                             | No row or concurrency penalty                                                                 | Intent is not evidence of resource pressure.                                 |
 | WebGPU unavailable                               | Preview GPU facts                                      | CPU preview mode, reason `webgpu-unavailable`                                                 | Preserve preview usability when RAW decode still works.                      |
 | WebGPU initialization failure or device loss     | Preview renderer failure                               | CPU preview mode, reason `gpu-preview-failed`                                                 | Keep the session usable on the CPU executor instead of a blank stage.        |

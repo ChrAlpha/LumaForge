@@ -4,8 +4,6 @@ import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { describe, expect, it } from 'vitest'
 
-import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
-
 import { createExportResult } from '../../model/export-result'
 import type { ImageSession } from '../../model/session'
 import {
@@ -13,9 +11,7 @@ import {
   changesRenderGraphParams,
   clearExportResultForActiveExport,
   clearExportResultState,
-  createSafeRetryManifest,
   hasSameRawRenderExposure,
-  isCheckpointMetric,
   toFullResCapabilityState,
 } from './export-state'
 
@@ -688,71 +684,6 @@ describe('export state helpers', () => {
       status: 'unsupported',
       reason: 'missing-export-facts, processed-window-unavailable',
     })
-  })
-
-  it('creates safe-retry checkpoint manifests with restart-only jpeg state', () => {
-    const file = new File(['raw'], 'frame.ARW', { lastModified: 456 })
-    const sourceFingerprint: ExportCheckpointManifest['sourceFingerprint'] = {
-      name: 'frame.ARW',
-      size: file.size,
-      lastModified: file.lastModified,
-      width: 4000,
-      height: 3000,
-      hashPrefixHex: 'abc123',
-    }
-
-    expect(
-      createSafeRetryManifest({
-        exportId: 'export-1',
-        file,
-        sourceFingerprint,
-        outputWidth: 4000,
-        outputHeight: 3000,
-        graphFingerprint: '[graph]',
-        profile: 'ios-safe',
-        derivedLabel: 'low-memory-thr1-rs64-opfs-file-wkwebkit-mobile',
-        preferredRows: 64,
-        outputSink: 'opfs-file',
-        completedRowsForDiagnostics: 128,
-        updatedAt: '2026-05-04T00:00:00.000Z',
-      }),
-    ).toEqual({
-      version: 1,
-      exportId: 'export-1',
-      sourceFingerprint,
-      fileName: 'frame.ARW',
-      sourceSize: file.size,
-      sourceLastModified: file.lastModified,
-      outputWidth: 4000,
-      outputHeight: 3000,
-      graphFingerprint: '[graph]',
-      profile: 'ios-safe',
-      derivedLabel: 'low-memory-thr1-rs64-opfs-file-wkwebkit-mobile',
-      attempt: 1,
-      preferredRows: 64,
-      totalRows: 3000,
-      recoveryMode: 'safe-retry',
-      outputSink: 'opfs-file',
-      sourceReacquisition: 'user-reselect-required',
-      completedRowsForDiagnostics: 128,
-      jpegState: 'restart-required',
-      updatedAt: '2026-05-04T00:00:00.000Z',
-    })
-  })
-
-  it('recognizes checkpoint metrics by kind only', () => {
-    expect(
-      isCheckpointMetric({
-        kind: 'checkpoint',
-        requestId: 'request-1',
-        completedRowsForDiagnostics: 64,
-        totalRows: 3000,
-        stripRows: 64,
-        timestamp: '2026-05-04T00:00:00.000Z',
-      }),
-    ).toBe(true)
-    expect(isCheckpointMetric({ kind: 'metric' })).toBe(false)
-    expect(isCheckpointMetric(null)).toBe(false)
   })
 
   it('adds retry guidance only when a retry level exists', () => {

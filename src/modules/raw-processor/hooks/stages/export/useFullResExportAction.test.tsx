@@ -39,7 +39,7 @@ function createInput(
     setError: vi.fn(),
     setProgress: vi.fn(),
     setSession: vi.fn(),
-    setDiscoveredRecoveryState: vi.fn(),
+    refreshExportInterruption: vi.fn(),
     scheduleToast: vi.fn(),
     abortExportWork: vi.fn(),
     abortRuntimeWork: vi.fn(),
@@ -47,6 +47,11 @@ function createInput(
     registerCurrentPreviewPipelineForEvacuation: vi.fn(),
     registerExportResultResource: vi.fn(),
     revokeCurrentEmbeddedPreviewUrl: vi.fn(),
+    interruptionMarkers: {
+      begin: vi.fn(),
+      finish: vi.fn(),
+      retire: vi.fn(),
+    },
     orchestrateExport,
   }
 }
@@ -82,5 +87,30 @@ describe('useFullResExportAction', () => {
         }),
       }),
     )
+  })
+
+  it('hands the export the page markers and the interruption refresh', async () => {
+    const orchestrateExport = vi.fn().mockResolvedValue(undefined)
+    const input = createInput(orchestrateExport)
+    const { result } = renderHook(() => useFullResExportAction(input))
+
+    await result.current.exportImage({ quality: 'high', fidelity: 'balanced' })
+
+    const [, ctx] = orchestrateExport.mock.calls[0]!
+    expect(ctx.services.interruptionMarkers).toBe(input.interruptionMarkers)
+    expect(ctx.atoms.refreshExportInterruption).toBe(
+      input.refreshExportInterruption,
+    )
+    expect(ctx.atoms).not.toHaveProperty('setDiscoveredRecoveryState')
+  })
+
+  it('starts nothing on render or rerender', () => {
+    const orchestrateExport = vi.fn().mockResolvedValue(undefined)
+    const input = createInput(orchestrateExport)
+    const view = renderHook(() => useFullResExportAction(input))
+    view.rerender()
+
+    expect(orchestrateExport).not.toHaveBeenCalled()
+    expect(input.interruptionMarkers.begin).not.toHaveBeenCalled()
   })
 })
