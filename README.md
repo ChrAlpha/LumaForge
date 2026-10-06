@@ -81,7 +81,9 @@ finished JPEG with a look they already enjoy.
   extensions.
 - See an early visible image through embedded, quick, and bounded HQ preview
   stages.
-- Compare original and processed output with the WebGPU preview renderer.
+- Compare original and processed output: a split with the WebGPU preview, or
+  an original toggle in the slower CPU preview. On a phone the compare lens
+  sits on the photo, and a hold peeks at the original.
 - Choose built-in finishes: Neutral, Warm, Cool, Film Soft, Film Contrast,
   Cinematic, Fade, and Mono.
 - Adjust light finishing controls such as exposure, contrast, and look strength
@@ -90,8 +92,10 @@ finished JPEG with a look they already enjoy.
 - Work with profile families such as ARRI LogC, RED Log3G10, Sony S-Log,
   Panasonic V-Log, Fujifilm F-Log, Canon Log, Nikon N-Log, ACES, and display
   sRGB.
-- Export a full-resolution JPEG through a bounded worker path, with download,
-  share, and clipboard actions where the browser supports them.
+- Export a full-resolution JPEG (quality 0.92) through a bounded worker path,
+  with download, share, and clipboard actions where the browser supports them.
+  If an earlier export of the same file was interrupted, the next export you
+  start uses a safer setting; nothing resumes or exports on its own.
 
 ## LUT Contracts
 
@@ -150,9 +154,13 @@ and authoritative export share color intent, but they are not the same executor.
 - `packages/luma-color-runtime`: pure TypeScript color math, LUT contracts,
   transfer/gamut transforms, graph logic, row processing, and WGSL helpers.
 - `packages/luma-jpeg-runtime`: bounded row-oriented JPEG encoding.
-- `src/lib/webgpu`: WebGPU interactive preview rendering (CPU fallback in
-  `src/lib/preview`).
-- `src/lib/export`: worker-driven full-resolution export path.
+- `packages/render-engine`: the headless engine shared by `/raw` and `lmfg`:
+  full-resolution export and its fail-closed gates, the CPU preview renderer,
+  resource policy, and render manifests.
+- `src/lib/webgpu`: WebGPU interactive preview rendering. Without WebGPU the
+  preview falls back to the engine's CPU preview worker.
+- `src/lib/export`: the browser worker shell and output sinks for the engine's
+  full-resolution export.
 - `src/modules/raw-processor`: the `/raw` workflow for upload, preview, style
   selection, LUT contract selection, compare, status, and export actions.
 

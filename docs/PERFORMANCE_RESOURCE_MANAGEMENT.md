@@ -9,7 +9,9 @@ performance unused.
 Snapshot checked on 2026-06-01 against the resource policy current at
 verification time. The source and test paths below were refreshed on
 2026-10-05, after the policy and preview-plan modules moved into
-`@lumaforge/render-engine`.
+`@lumaforge/render-engine`, and again on 2026-10-06, after browser plan
+selection moved into `src/lib/export/export-plan.ts` and export interruption
+history moved to source-scoped markers.
 
 Primary implementation sources:
 
@@ -19,9 +21,10 @@ Primary implementation sources:
 - `packages/render-engine/src/policy/export-policy.ts`
 - `src/lib/runtime/export-runtime-resources.ts`
 - `src/lib/runtime/preview-gpu-budget.ts`
-- `src/lib/export/execution-profile.ts`
+- `src/lib/export/export-plan.ts`
 - `packages/render-engine/src/preview/preview-plan.ts`
 - `src/modules/raw-processor/services/export/export-evacuation.ts`
+- `src/modules/raw-processor/services/export/export-interruption.ts`
 - `src/lib/raw/luma-runtime-adapter.ts`
 
 External API facts checked during the 2026-06-01 refresh:
@@ -307,7 +310,7 @@ else:
 ```
 
 The `64MB` margin exists because OPFS quota is advisory and the export path has
-metadata, checkpoint, encoder, and handoff overhead beyond image megapixels.
+metadata, encoder, and handoff overhead beyond image megapixels.
 
 Persist cadence:
 
@@ -316,6 +319,35 @@ targetRows = rowSlice <= 128 ? 2048 : 4096
 persistEveryNRows =
   clamp(ceil(targetRows / rowSlice) * rowSlice, rowSlice, 4096)
 ```
+
+The engine still reports `persistEveryNRows`, but neither the app nor `lmfg`
+persists export progress: there is no checkpoint or export journal, and every
+attempt, retries included, encodes from the first row.
+
+Interruption history:
+
+```text
+on export start:
+  write a marker for the attempt, keyed by the source file tuple
+  (name, size, lastModified), owned by this page's lifetime lock
+on completed, cancelled, or failed:
+  remove the marker
+on resource failure:
+  keep the marker, marked terminal "resource-failure"
+
+when the same file tuple is loaded again:
+  previousCrashLikeInterruption =
+    an unfinished marker whose owner's lifetime lock is now free
+  previousResourceFailure =
+    a terminal "resource-failure" marker
+```
+
+Markers live in browser storage, at most `8` per origin, and are ignored after
+`7` days. They only shape the next export the user starts and the panel copy
+that explains it: nothing resumes partial output, reselects the source, or
+exports on its own. The markers behind a hint are removed once the safer
+export of that source delivers. When storage or locks are unavailable the export still runs, without
+a hint.
 
 Product copy classification:
 
@@ -426,7 +458,9 @@ user starts full-resolution export
 ```
 
 Export completion may restore preview best-effort from the current session file.
-Failure to restore bounded HQ preview must not invalidate a completed export.
+The restored preview keeps the source's RAW render exposure, which the first
+quick frame pinned and the export also used. Failure to restore bounded HQ
+preview must not invalidate a completed export.
 
 On resource-looking export failure, retry uses a fresh worker/runtime context and
 a lower policy. WebAssembly memory is effectively grow-only for this product, so
@@ -460,6 +494,7 @@ Policy and invariant tests:
 - `packages/render-engine/src/policy/export-policy.test.ts`
 - `packages/render-engine/src/policy/export-policy.property.test.ts`
 - `src/lib/runtime/preview-gpu-budget.test.ts`
+- `src/lib/export/export-plan.test.ts`
 - `src/lib/export/execution-profile.test.ts`
 
 Preview capability and degraded-mode tests:
@@ -474,6 +509,8 @@ Export lifecycle and resource tests:
 
 - `src/modules/raw-processor/services/export/export-evacuation.test.ts`
 - `src/modules/raw-processor/hooks/stages/export/useExportResourceManagement.test.tsx`
+- `src/modules/raw-processor/services/export/export-interruption.test.ts`
+- `src/modules/raw-processor/services/export/export-recovery.test.ts`
 - `tests/browser/raw-export-lifecycle-resources.spec.ts`
 - `tests/browser/raw-ios-safe-export.spec.ts`
 - `tests/browser/raw-hq-preview-export.spec.ts`

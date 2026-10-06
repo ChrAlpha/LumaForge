@@ -76,12 +76,17 @@ image-editor assumptions.
   `src/modules/raw-processor/hooks/useRawPreviewTransform.ts` commits the
   geometry that export reproduces.
 - `src/modules/raw-processor/services/` contains scriptable domain behavior:
-  `ingest`, `preview`, `look`, `compare`, and `export`. Prefer adding tested
-  logic here before growing React components.
+  `ingest`, `preview`, `look`, `compare`, `export`, and `surface` (which
+  actions a tool surface may run, and why not). Prefer adding tested logic
+  here before growing React components.
 - `src/modules/raw-processor/model/` defines session/workflow/export result
   shapes. Keep model changes small and contract-like.
 - `src/modules/raw-processor/state/` contains Jotai atoms for workflow and tool
   state. Prefer these over introducing a second state model.
+  `src/modules/raw-processor/state/workflow.atoms.ts` stores the color intent
+  and holds no view state;
+  `src/modules/raw-processor/state/preview-view.atoms.ts` holds only the view
+  of the sample shown before a source loads.
 - `src/modules/raw-processor/components/RawWorkflowToolProvider.tsx` is the
   context bridge from workflow state/actions to tool surfaces.
 - `src/modules/raw-processor/components/RawToolSurface.tsx` switches desktop vs
@@ -91,13 +96,26 @@ image-editor assumptions.
   Facts, Histogram, the LUT contract tool under
   `src/modules/raw-processor/components/tools/lut/`, and shared tool chrome.
 - `src/modules/raw-processor/components/mobile/` is the mobile photo-first
-  shell: topbar with the Export action, a dock of tools (Look, Adjust,
-  Transform) over a deck, the compare lens on the stage, the Look deck (LUT
-  strip, Strength row, inline LUT contract), the LUT sources sheet, the export
-  panel, Adjust list panels (Tone, Color, HSL), the Transform list panel, the
-  More menu, and the scrub HUD.
-  `src/modules/raw-processor/components/mobile/mobile-stage-layout.ts` fits the
-  photo first and sizes the deck from what is left.
+  shell (`DESIGN.md` "Mobile Shell: Tools, Lens, Action" holds the full
+  spec):
+  - the topbar carries the Export action, which opens the export panel in the
+    deck, and the More menu, which holds real actions only: Replace RAW, File
+    & pipeline details (measured file facts and pipeline steps from current
+    state), the Histogram toggle, Language, and Reset session;
+  - the dock holds tools only (Look, Adjust, and Transform when available)
+    over a deck; compare and export are not dock tabs;
+  - the compare lens sits on the photo: a tap toggles the split under the
+    WebGPU preview; in the CPU preview, which has no split, it toggles the
+    original; a hold peeks in both;
+  - the Look deck is the LUT strip, the Strength row, and a footer line whose
+    LUT contract is chosen inline in the deck; the LUT sources sheet only
+    administers catalogs;
+  - Adjust list panels (Tone, Color, HSL), the Transform list panel, and the
+    scrub HUD;
+  - the histogram runs only while it is turned on from More, and never in the
+    CPU preview or over an applied Transform;
+  - `src/modules/raw-processor/components/mobile/mobile-stage-layout.ts` fits
+    the photo first and sizes the deck from what is left.
 - `src/modules/raw-processor/raw-lab.css`,
   `src/modules/raw-processor/raw-lab.surface.css`, and
   `src/modules/raw-processor/raw-lab.effects.css` hold `/raw` surface and
@@ -108,16 +126,19 @@ image-editor assumptions.
   tier: without WebGPU, or after a GPU failure, the preview falls back to the
   CPU preview worker (`webgpu -> cpu`). Do not reintroduce WebGL or GLSL.
 - `src/lib/preview` holds the preview backend probe
-  (`src/lib/preview/gpu-backend.ts`: WebGPU or CPU, and why) and the preview
-  capability decision (`src/lib/preview/raw-preview-capability.ts`). The CPU
+  (`src/lib/preview/gpu-backend.ts`: WebGPU or CPU, and why), the preview
+  capability decision (`src/lib/preview/raw-preview-capability.ts`), and the
+  renderer-neutral view contract (`src/lib/preview/preview-view.ts`). The CPU
   preview worker is not here: it lives in
   `packages/render-engine/src/preview/worker-bridge`, and
   `src/modules/raw-processor/hooks/useCpuPreview.ts` drives it.
 - `src/lib/export` adapts the engine's full-resolution export to the browser:
   the export worker shell (`src/lib/export/full-res-export.worker.ts`), its
-  client, OPFS and blob output sinks, the checkpoint store, source
-  fingerprints, the large-resource registry, and execution-plan selection
-  (`src/lib/export/execution-profile.ts`). The export algorithm and its
+  client, OPFS and blob output sinks and the cross-tab OPFS output lifetime
+  (`src/lib/export/opfs-output-lifetime.ts`), the large-resource registry,
+  browser plan selection (`src/lib/export/export-plan.ts`), and export debug
+  events and mode copy (`src/lib/export/execution-profile.ts`). It holds no
+  checkpoint store or export journal. The export algorithm and its
   fail-closed gates live in `packages/render-engine/src/export`.
 - `src/lib/workers` holds the idle-terminating worker bridges for RAW decode
   and export.
@@ -129,9 +150,11 @@ image-editor assumptions.
   `packages/render-engine/src/policy`.
 - `src/lib/lut` wraps the `@lumaforge/luma-color-runtime` `.cube` parser
   (including an off-main-thread parse worker) and persists LUT contract
-  choices in the browser. `src/lib/profiles` parses and fetches online LUT
-  catalogs and source URLs, maps catalog LUT contracts, and holds the dormant
-  DCP calibration catalog.
+  choices in the browser (`src/lib/lut/profile-resolution.ts` is a storage
+  adapter over the package resolver, not a second resolver).
+  `src/lib/profiles` parses and fetches online LUT catalogs and source URLs
+  (catalog entries and source URLs pass one shared transport URL check) and
+  maps catalog LUT contracts.
 - `packages/luma-color-runtime` is pure TypeScript color math: tone,
   temperature/tint color balance, LUT contracts, transfer/gamut transforms,
   graph resolution, row-band processing, and WGSL helpers
@@ -146,8 +169,10 @@ image-editor assumptions.
     strip scheduling, JPEG row writers, sinks and metadata, and export
     geometry.
   - `packages/render-engine/src/preview`: the CPU preview renderer, the
-    quick/bounded-HQ preview plan, candidates and contact sheets, and the CPU
-    preview worker bridge and protocol.
+    quick/bounded-HQ preview plan, the preview color plan
+    (`resolvePreviewColorPlan`: what each preview executor draws for the
+    selected look, and why when that differs), candidates and contact sheets,
+    and the CPU preview worker bridge and protocol.
   - `packages/render-engine/src/policy`: export and interactive policy
     decisions and resource budgets.
   - `packages/render-engine/src/manifest`: `RenderManifest` types,
@@ -155,7 +180,7 @@ image-editor assumptions.
     graph descriptor.
 - `packages/luma-raw-runtime` is the browser RAW metadata/decode/runtime
   boundary, including worker protocol, native artifacts, processed-window facts,
-  HDR analysis, fixtures, benchmarks, and native verification.
+  the deprecated HDR analysis, fixtures, benchmarks, and native verification.
 - `packages/luma-jpeg-runtime` is the bounded row-oriented JPEG encoder runtime.
 - `packages/luma-native-artifacts` packages prebuilt WASM/worker assets for RAW
   and JPEG runtimes.
@@ -195,36 +220,82 @@ from the packages.
 - Agent protocol (commands, envelopes, exit codes, workspace layout):
   `packages/lmfg-cli`; `packages/lmfg-mcp` adapts it.
 
+Contract owners inside those homes. Extend these instead of defining a local
+variant:
+
+- Color intent: `packages/luma-color-runtime/src/user-color-intent.ts` defines
+  `UserColorIntent` (tone, color balance, saturation, HSL), `LookSelection`
+  (none, built-in preset, or custom LUT, with a continuous strength), and
+  their union `ColorGraphIntent`, plus the field bounds, normalization, and
+  signatures. View state, RAW render exposure, LUT bytes, and geometry are not
+  part of it. Each entry point keeps its own look strength default: the app's
+  standard Strength preset, `lmfg`'s `intensity` 1.
+- View: `src/lib/preview/preview-view.ts` defines `PreviewView` (view mode and
+  frame-anchored compare split) and maps a mode to what each executor draws.
+  The session's `viewState` owns the view once a source loads; zoom and pan
+  stay with the preview viewport. Executors receive only their output
+  selection. The deprecated `ProcessingParams.viewMode` and
+  `ProcessingParams.compareSplit` are optional and never read.
+- Export output results: `packages/render-engine/src/export/jpeg/output-result.ts`.
+  `src/lib/export/output-sink.ts`, the export worker and client, and the
+  workflow import these types; the sink adds only OPFS addressing and
+  finalization types.
+- Manifest render parameters: `projectManifestRenderParams` in
+  `packages/render-engine/src/manifest/render-params.ts` writes
+  `render_params` for both the app
+  (`src/modules/raw-processor/services/export/export-manifest.ts`) and `lmfg`
+  (`packages/lmfg-cli/src/services/color-graph.ts`). Its inverse and the
+  verified reader live next to it.
+- Preview color policy: `resolvePreviewColorPlan`
+  (`packages/render-engine/src/preview/preview-color-plan.ts`) decides what the
+  WebGPU preview, the CPU preview, and the histogram draw for the selected
+  look, and the typed reason when that differs from the selection.
+  `src/modules/raw-processor/services/surface/raw-reason.ts` turns those
+  reasons into surface copy.
+- Surface availability:
+  `src/modules/raw-processor/services/surface/derive-tool-availability.ts`
+  decides each tool action separately (edit, strength, LUT application,
+  original view, split, export entry, full and HQ export, delivery, restore).
+  The desktop rail, the mobile dock, and the compare lens read it through
+  `src/modules/raw-processor/components/RawWorkflowToolProvider.tsx`; do not
+  fold actions back into one compare or edit flag.
+- Browser export plan: `selectExportPlan` in `src/lib/export/export-plan.ts`
+  is the one entry from the export request, device facts, and interruption
+  history to the engine's `deriveExportPolicy`.
+- LUT contract composition:
+  `src/modules/raw-processor/services/look/lut-contract.ts`,
+  `src/modules/raw-processor/services/look/lut-output-options.ts`, and
+  `src/modules/raw-processor/services/look/lut-source-grouping.ts` compose
+  contracts, output options, and source groups for both surfaces;
+  `src/modules/raw-processor/components/tools/lut-contract-labels.ts` holds
+  only their labels.
+
 Known duplication. These copies exist today. Do not extend them; remove one
 only by finishing the move it belongs to:
 
-- `packages/render-engine/src/policy/capability-input.ts`,
-  `packages/render-engine/src/policy/export-runtime-resources.ts`, and
-  `packages/render-engine/src/policy/preview-gpu-budget.ts` mirror the type
-  shapes declared again in `src/lib/runtime`.
 - The quick and bounded-HQ preview pixel caps are defined in both
   `packages/render-engine/src/preview/preview-plan.ts` and
   `src/lib/raw/decoder.ts`.
-- `src/lib/export/output-sink.ts` redefines the output-result types of
-  `packages/render-engine/src/export/jpeg/output-result.ts` and has diverged
-  from them (delivered hash and metadata fields).
-- `packages/render-engine/src/manifest/export-checkpoint.ts` exports a
-  deprecated checkpoint manifest type that no app or CLI code uses; the app
-  writes no export journal. `LumaRenderContext`
-  (`packages/render-engine/src/context/runtime-context.ts`) is exported, but no
-  engine function, app code, or CLI code consumes it.
-- `src/lib/lut/profile-resolution.ts` keeps an app fork of the LUT profile
-  resolver next to `packages/luma-color-runtime/src/lut-profile-resolution.ts`.
 - `packages/render-engine/src/export/geometry/matrix.ts` mirrors
   `src/modules/transform-demo/geometry/matrix.ts`.
   `src/lib/export/full-res-export-geometry-bounds.test.ts` runs app-composed
   Transform matrices through the engine's geometry planner.
-- The app (`src/modules/raw-processor/services/export/export-manifest.ts`) and
-  the CLI (`packages/lmfg-cli/src/services/manifest.ts`) each project their own
-  parameters into `RenderManifest`. Intent keys, defaults, and the manifest
-  projection are not yet one shared definition.
 - `lmfg_image_read` and `lmfg_export_detail` read the CLI workspace layout by
   convention instead of through `packages/lmfg-cli/src/workspace/paths.ts`.
+
+Deprecated public API. These stay exported and compiling under the deprecation
+window; no app or CLI code may start using them again:
+
+- `@lumaforge/render-engine`: `ExportCheckpointManifest` and its parts
+  (`packages/render-engine/src/manifest/export-checkpoint.ts`; the app writes
+  no export journal), `LumaRenderContext` and its parts
+  (`packages/render-engine/src/context/runtime-context.ts`), `RenderBudget`,
+  `NODE_DEFAULT_CAPABILITY`, `ExportFidelity` (use `PerformancePreference`),
+  and `sourceContentIdFromFile`.
+- `@lumaforge/luma-color-runtime`: `ProcessingParams.viewMode` and
+  `ProcessingParams.compareSplit`.
+- `@lumaforge/luma-raw-runtime`: `analyzeRawDynamicRange` and
+  `RawDynamicRangeInfo`.
 
 Close the extraction:
 
@@ -249,7 +320,8 @@ These are owner decisions. They override cleanup advice that says otherwise.
   through its `TransformCanvas` and worker, and the Transform types and upright
   geometry come from that module. Treat it as production code. Its useful
   code, tests, and fixtures move to a production home later; only then are the
-  `/transform-demo` route and the demo module deleted.
+  `/transform-demo` route and the demo module deleted. `lmfg` params carry no
+  geometry, and `lmfg` replay refuses a manifest that records one.
 - DCP calibration: the app slice (stage hook, service, atoms, and the
   calibration catalog and DCP params parsers) is removed, and the workflow
   applies no camera calibration. The LUT catalog parser rejects calibration
@@ -257,22 +329,47 @@ These are owner decisions. They override cleanup advice that says otherwise.
   stays:
   `applyCalibration` in `@lumaforge/luma-raw-runtime`, `solveDcpInterpolation`
   in `@lumaforge/luma-color-runtime`, the manifest's null `calibration` slot,
-  and the exported HDR analysis (`analyzeRawDynamicRange`).
+  and the exported HDR analysis (`analyzeRawDynamicRange`, deprecated but
+  still exported with unchanged results).
 - Built-in style presets are retained: keep `styleKind: 'builtin'`,
   `builtinPreset`, their WGSL branches and uniforms in `src/lib/webgpu`, and
   their goldens in `scripts/webgpu/goldens.json`. No UI entry point selects a
   preset today, and full-resolution export refuses one:
   `resolveExportColorGraph` in `packages/luma-color-runtime/src/color-graph.ts`
-  returns `unsupported-pipeline` for `styleKind: 'builtin'`. Do not delete the
+  returns `unsupported-pipeline` for `styleKind: 'builtin'`. The preview color
+  plan lets the WebGPU preview keep drawing a preset, while the CPU preview
+  and the histogram leave it out with a typed reason. Do not delete the
   plumbing and do not restore a preset picker without a request. Product docs
   that still describe choosing built-in finishes are intentionally left as
   they are.
-- Online LUT catalog: `src/modules/raw-processor/hooks/useOnlineLutSources.ts`
-  resolves the default and saved catalog sources as soon as it mounts, so every
-  `/raw` visit fetches them. Lazy activation (fetch on first catalog use) is
-  approved for later; `?luts=` deep links and Share stay.
-- Export crash recovery is scheduled to shrink to an interruption marker and a
-  safer retry plan. Do not add source reselection or automatic re-export.
+- Online LUT catalog activation is lazy.
+  `src/modules/raw-processor/hooks/useOnlineLutSources.ts` requests no catalog
+  when it mounts. A listed source (the default or a saved one) is requested
+  when a surface that shows its catalog asks for it: opening that source on
+  the desktop rail, the mobile Look strip coming on screen, or the mobile LUT
+  sources sheet opening. A `?luts=` link, adding a source, and Refresh request
+  at once; a failed source waits for Retry or Refresh. `?luts=` deep links and
+  Share stay.
+- Export interruption is a hint, not a recovery.
+  `src/modules/raw-processor/services/export/export-interruption.ts` writes a
+  bounded, attempt-scoped marker per export, located by the source's file
+  tuple (name, size, last modified) and owned by the page that started it.
+  When the same file is loaded again after an attempt was left running by a
+  page that is gone, or ended in a resource failure, the export panels say
+  so, and the next export the user starts gets the safer plan (fewer rows,
+  one worker). Nothing resumes partial output, reselects a source, or exports
+  on its own; the app writes no export journal or checkpoint. Do not add
+  source reselection or automatic re-export.
+- The RAW render exposure is pinned per source: the first quick frame sets it
+  (`src/modules/raw-processor/hooks/stages/preview/useDecodedPreviewResource.ts`),
+  and bounded-HQ frames, preview restored after export, and the export carry
+  the same value until the source is replaced or reset. `lmfg` measures
+  automatic exposure on the same standard quick frame.
+- The app encodes every JPEG, full-resolution and HQ preview export alike, at
+  the one quality `EXPORT_JPEG_QUALITY` (0.92) in
+  `src/modules/raw-processor/services/export/export-system.ts`. There is no
+  quality option, and the internal performance preference sizes the export
+  plan without changing the quality.
 
 ## UI And Design Boundaries
 
@@ -326,14 +423,21 @@ These are owner decisions. They override cleanup advice that says otherwise.
   another technical-original rung of the ladder; do not present it as one.
 - Compare split state is frame-anchored. Photo clipping and zoom/pan are derived
   from the committed frame split; avoid mixing photo-space and frame-space state.
+  A split drag moves only CSS and commits the split once, when the gesture
+  ends.
+- The CPU preview has no split surface, but it still shows the original: the
+  desktop CPU stage has a processed/original toggle under the photo, and the
+  mobile compare lens toggles the original (a hold peeks). Split commands are
+  refused there while the original view stays available; keep the `split` and
+  `originalView` actions separate.
 - Original reference snapshots are capped and lifecycle-managed. Treat object
   URL release as part of the compare contract.
 - The Adjust workflow is shared color-pipeline behavior, not a local UI-only
   tweak. Tone, color, and HSL params flow through preview, histogram, export,
   CPU preview, and mobile focus/list UI.
 - Desktop Adjust lives in
-  `src/modules/raw-processor/components/tools/AdjustTool.tsx` (`ToneTool`,
-  `ColorTool`, `HSLTool`); mobile Adjust uses `AdjustListPanel`,
+  `src/modules/raw-processor/components/tools/AdjustTool.tsx`, which composes
+  `ToneTool`, `ColorTool`, and `HSLTool`; mobile Adjust uses `AdjustListPanel`,
   `ToneListPanel`, `ColorListPanel`, `HSLListPanel`, `AdjustSliderRow`, and
   `ScrubValueHud`. Transform is `TransformTool` on desktop and
   `TransformListPanel` on mobile.

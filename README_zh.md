@@ -73,7 +73,8 @@
 - 从常见相机格式（如 ARW、NEF、RAF、RW2、ORF、DNG、CR2、CR3、PEF、SRW、
   IIQ、3FR、FFF 及相关 RAW 扩展名）本地加载单张 RAW 文件。
 - 通过嵌入式预览、快速预览和受控高品质预览逐步看到图像。
-- 使用 WebGPU 预览渲染器对比原始和处理后的输出。
+- 对比原始和处理后的输出：WebGPU 预览下为分屏对比，较慢的 CPU 预览下为
+  原图切换。在手机上，对比镜头位于照片上，长按可临时查看原图。
 - 选择内置风格：Neutral、Warm、Cool、Film Soft、Film Contrast、Cinematic、
   Fade 和 Mono。
 - 调整轻度润色控制（如曝光、对比度和风格强度），而不会把应用变成完整的
@@ -81,8 +82,9 @@
 - 上传自定义 `.cube` LUT 并声明其输入和输出合约。
 - 处理各种配置文件系列，如 ARRI LogC、RED Log3G10、Sony S-Log、Panasonic
   V-Log、Fujifilm F-Log、Canon Log、Nikon N-Log、ACES 和显示 sRGB。
-- 通过受控 Worker 路径导出全分辨率 JPEG，浏览器支持时提供下载、分享和
-  剪贴板操作。
+- 通过受控 Worker 路径导出全分辨率 JPEG（质量 0.92），浏览器支持时提供
+  下载、分享和剪贴板操作。如果同一文件上一次导出被中断，你下一次发起的
+  导出会使用更稳妥的设置；应用不会自行续传或自动导出。
 
 ## LUT 合约
 
@@ -133,8 +135,11 @@ LumaForge 是一套运行在浏览器中的 RAW + LUT 处理管线。当前支�
 - `packages/luma-color-runtime`：纯 TypeScript 色彩运算、LUT 合约、
   传递函数/色域变换、图谱解析、行处理和 WGSL 辅助函数。
 - `packages/luma-jpeg-runtime`：受控的逐行 JPEG 编码器。
-- `src/lib/webgpu`：WebGPU 交互式预览渲染（CPU 回退位于 `src/lib/preview`）。
-- `src/lib/export`：Worker 驱动的全分辨率导出路径。
+- `packages/render-engine`：`/raw` 与 `lmfg` 共用的无界面引擎，包含全分辨率
+  导出及其失败即停（fail-closed）检查、CPU 预览渲染、资源策略和渲染清单。
+- `src/lib/webgpu`：WebGPU 交互式预览渲染。没有 WebGPU 时，预览回退到引擎的
+  CPU 预览 Worker。
+- `src/lib/export`：引擎全分辨率导出在浏览器中的 Worker 外壳和输出通道。
 - `src/modules/raw-processor`：`/raw` 工作流，涵盖上传、预览、风格选择、
   LUT 合约选择、对比、状态和导出操作。
 

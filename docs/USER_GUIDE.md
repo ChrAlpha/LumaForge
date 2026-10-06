@@ -50,6 +50,10 @@ For a custom `.cube` LUT, add the LUT and choose the input and output contract i
 LumaForge asks for it. The contract tells the app what kind of image the LUT
 expects and what kind of image it produces.
 
+Online LUT catalogs are requested only when a view that lists them opens, such
+as a catalog source in the desktop LUT tool, or the Look strip or LUT sources
+sheet on a phone. A shared `?luts=` link loads the catalog it names right away.
+
 Good defaults:
 
 - If the LUT is described as a Rec.709 or sRGB creative LUT, start with a display
@@ -69,6 +73,13 @@ Use compare mode to check the original and processed result. This is especially
 useful for strong LUTs, because a look that feels good at first can push skin
 tones, skies, or shadow detail too far.
 
+On a phone, tap the round compare lens on the photo to turn the split on or
+off, and hold it to see the original until you let go.
+
+Without WebGPU, the slower CPU preview has no split. Switch between the
+original and the processed photo instead: with the Processed and Original
+buttons under the photo on desktop, or by tapping the compare lens on a phone.
+
 Light finishing controls are there to help you land the JPEG. They are not meant
 to turn the app into a full desktop RAW editor.
 
@@ -82,6 +93,16 @@ final result.
 This is intentional. LumaForge should fail closed rather than silently export a
 lower-resolution preview or a JPEG with a different color path than the one you
 approved.
+
+On a phone, Export is the button at the top right. It opens the export panel
+with the photo still in view and explains what is missing when export is not
+ready.
+
+The JPEG is written at a fixed quality of 0.92. If an earlier export of the same
+file was interrupted, for example because the tab closed or the device ran out
+of memory, the export panel tells you, and the next export you start uses a
+safer setting. That export starts from the beginning: LumaForge does not resume a
+partial file and never exports on its own.
 
 ## Quick Troubleshooting
 

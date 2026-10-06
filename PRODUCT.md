@@ -24,6 +24,9 @@ For camera-log LUTs, the product expectation is scene-referred preview and expor
 
 Success means a user can open the page on a modern browser, drop a single RAW file, see a useful preview quickly, select a built-in look or declared LUT contract, compare original and processed output, and export a full-resolution JPEG when the source and graph can be reproduced safely.
 
+On a phone the same workflow stays photo-first rather than becoming a smaller desktop: the editing tools sit in a bottom dock, compare is a lens on the photo, Export is an action in the top bar, and the More menu offers only actions and facts that are real for the loaded file.
+An interrupted export is never resumed or restarted on its own; the next export the user starts simply takes a safer plan.
+
 ## Brand Personality
 
 Calibrated, protective, photographic.
