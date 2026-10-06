@@ -11,10 +11,7 @@ import {
   getExportModeCopy,
   selectExportExecutionPlan,
 } from '~/lib/export/execution-profile'
-import type {
-  FullResWorkerCheckpointConfig,
-  RunFullResolutionJpegExportInWorkerInput,
-} from '~/lib/export/full-res-export-client'
+import type { RunFullResolutionJpegExportInWorkerInput } from '~/lib/export/full-res-export-client'
 
 import {
   EXPORT_JPEG_QUALITY,
@@ -39,16 +36,6 @@ const OUTPUT_LOCATION = {
   tabDirectory: 'tab-1',
   exportId: 'export-1',
 } as const
-const CHECKPOINT: FullResWorkerCheckpointConfig = {
-  exportId: 'export-1',
-  graphFingerprint: 'graph-1',
-  sourceFingerprint: {
-    name: 'frame.ARW',
-    size: 3,
-    lastModified: 0,
-    hashPrefixHex: 'abc',
-  },
-}
 
 const DESKTOP: CapabilityVector = {
   coi: true,
@@ -133,7 +120,7 @@ const RESOURCE_FAILURE = {
 const SUCCESS = { output: OUTPUT }
 
 describe('runFullResolutionExportJob output location', () => {
-  it('hands the reserved OPFS location to an opfs-file attempt alongside the checkpoint', async () => {
+  it('hands the reserved OPFS location to an opfs-file attempt', async () => {
     const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
     expect(executionPlan.outputSink).toBe('opfs-file')
     const script = scriptClients(SUCCESS)
@@ -144,7 +131,6 @@ describe('runFullResolutionExportJob output location', () => {
       graph: GRAPH,
       executionPlan,
       outputLocation: OUTPUT_LOCATION,
-      checkpoint: CHECKPOINT,
       clientFactory: script.clientFactory,
     })
 
@@ -153,9 +139,9 @@ describe('runFullResolutionExportJob output location', () => {
       expect.objectContaining({
         executionPlan: expect.objectContaining({ outputSink: 'opfs-file' }),
         outputLocation: OUTPUT_LOCATION,
-        checkpoint: CHECKPOINT,
       }),
     ])
+    expect(script.runs[0]).not.toHaveProperty('checkpoint')
   })
 
   it('refuses an opfs-file plan without a reserved location before starting a worker', async () => {
@@ -167,14 +153,13 @@ describe('runFullResolutionExportJob output location', () => {
         filename: FILENAME,
         graph: GRAPH,
         executionPlan: plan(DESKTOP, OPFS_RUNTIME, NORMAL),
-        checkpoint: CHECKPOINT,
         clientFactory: script.clientFactory,
       }),
     ).rejects.toThrow('FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID')
     expect(script.clientFactory).not.toHaveBeenCalled()
   })
 
-  it('keeps an ordinary blob export in memory with its checkpoint metrics', async () => {
+  it('keeps an ordinary blob export in memory', async () => {
     const executionPlan = plan(DESKTOP, BLOB_RUNTIME, NORMAL)
     expect(executionPlan.outputSink).toBe('blob-handoff')
     const script = scriptClients(SUCCESS)
@@ -186,7 +171,6 @@ describe('runFullResolutionExportJob output location', () => {
       graph: GRAPH,
       executionPlan,
       outputLocation: OUTPUT_LOCATION,
-      checkpoint: CHECKPOINT,
       onPlan,
       clientFactory: script.clientFactory,
     })
@@ -194,8 +178,8 @@ describe('runFullResolutionExportJob output location', () => {
     expect(script.runs).toHaveLength(1)
     expect(script.runs[0]).toMatchObject({
       executionPlan: { outputSink: 'blob-handoff' },
-      checkpoint: CHECKPOINT,
     })
+    expect(script.runs[0]).not.toHaveProperty('checkpoint')
     expect(script.runs[0]!.outputLocation).toBeUndefined()
     expect(onPlan).not.toHaveBeenCalled()
   })
@@ -270,7 +254,6 @@ describe('runFullResolutionExportJob plan safety', () => {
       graph: GRAPH,
       executionPlan,
       outputLocation: OUTPUT_LOCATION,
-      checkpoint: CHECKPOINT,
       onPlan,
       onAttempt,
       clientFactory: script.clientFactory,
@@ -297,8 +280,8 @@ describe('runFullResolutionExportJob plan safety', () => {
         preferredRows: executionPlan.preferredRows,
         concurrency: executionPlan.concurrency,
       },
-      checkpoint: CHECKPOINT,
     })
+    expect(script.runs[1]).not.toHaveProperty('checkpoint')
     expect(script.runs[1]!.outputLocation).toBeUndefined()
     expect(
       script.clients.map((client) => client.dispose.mock.calls.length),

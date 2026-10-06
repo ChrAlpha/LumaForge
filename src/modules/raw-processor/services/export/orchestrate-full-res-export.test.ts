@@ -16,8 +16,6 @@ import type {
 } from '@lumaforge/render-engine/policy'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { CheckpointBackend } from '~/lib/export/checkpoint-store'
-import { createMemoryCheckpointBackend } from '~/lib/export/checkpoint-store'
 import type {
   ExportDebugEvent,
   ExportExecutionPlan,
@@ -61,8 +59,6 @@ import { orchestrateFullResExport } from './orchestrate-full-res-export'
 const mocks = vi.hoisted(() => ({
   selectCurrentExportExecutionPlan: vi.fn(),
   runFullResolutionExportJob: vi.fn(),
-  createOpfsCheckpointBackend: vi.fn(),
-  createSourceFingerprint: vi.fn(),
   buildManifestForExportResult: vi.fn(),
   reserveOpfsOutputDirectory: vi.fn(),
   scheduleAbandonedOpfsOutputCollection: vi.fn(),
@@ -91,17 +87,6 @@ vi.mock('./export-evacuation', async (importOriginal) => {
 vi.mock('./attach-export-manifest', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./attach-export-manifest')>()),
   buildManifestForExportResult: mocks.buildManifestForExportResult,
-}))
-
-// Export no longer journals; these stay observable so a journal write or a
-// source fingerprint would show up in a test.
-vi.mock('~/lib/export/checkpoint-store', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('~/lib/export/checkpoint-store')>()),
-  createOpfsCheckpointBackend: mocks.createOpfsCheckpointBackend,
-}))
-
-vi.mock('~/lib/export/source-fingerprint', () => ({
-  createSourceFingerprint: mocks.createSourceFingerprint,
 }))
 
 vi.mock('~/lib/export/opfs-output-lifetime', () => ({
@@ -441,7 +426,6 @@ function createHarness(options: HarnessOptions = {}) {
   const capability = options.capability ?? DESKTOP_CAPABILITY
   const runtime = options.runtime ?? BLOB_RUNTIME
   const manifest = deferred<RenderManifest>()
-  const checkpointStore = createMemoryCheckpointBackend()
   const markerStore = createMarkerStorage(options.markerStorage ?? 'available')
   const markerLocks = createMarkerLocks()
   const beginStarted = deferred()
@@ -608,23 +592,6 @@ function createHarness(options: HarnessOptions = {}) {
       return plan
     },
   )
-  mocks.createOpfsCheckpointBackend.mockImplementation(
-    (): CheckpointBackend => ({
-      async write(exportId, checkpointManifest) {
-        trace.push(`service:checkpoint-write:${exportId}`)
-        await checkpointStore.write(exportId, checkpointManifest)
-      },
-      list: () => checkpointStore.list(),
-      async remove(exportId) {
-        trace.push(`service:checkpoint-remove:${exportId}`)
-        await checkpointStore.remove(exportId)
-      },
-      async removeManifest(exportId) {
-        trace.push(`service:checkpoint-remove-manifest:${exportId}`)
-        await checkpointStore.removeManifest?.(exportId)
-      },
-    }),
-  )
   mocks.reserveOpfsOutputDirectory.mockResolvedValue(TAB_DIRECTORY)
 
   mocks.buildManifestForExportResult.mockImplementation(
@@ -702,7 +669,6 @@ function createHarness(options: HarnessOptions = {}) {
     planInputs,
     manifestInputs,
     manifest,
-    checkpointStore,
     markerStore,
     beginStarted: beginStarted.promise,
     createMarkerPage,
@@ -1080,7 +1046,7 @@ describe('orchestrateFullResExport success', () => {
     })
   })
 
-  it('marks a geometry export by its source tuple and writes no journal', async () => {
+  it('marks a geometry export by its source tuple and sends no checkpoint', async () => {
     // Constraining the crop pulls the fold back inside its horizon.
     const geometry: ExportGeometry = {
       matrix: FOLDING_MATRIX,
@@ -1101,9 +1067,6 @@ describe('orchestrateFullResExport success', () => {
     const run = orchestrateFullResExport(OPTIONS, h.ctx)
     const input = await job.started
 
-    expect(await h.checkpointStore.list()).toEqual([])
-    expect(mocks.createOpfsCheckpointBackend).not.toHaveBeenCalled()
-    expect(mocks.createSourceFingerprint).not.toHaveBeenCalled()
     const [marker] = h.markerStore.markers()
     expect(Object.keys(marker ?? {}).sort()).toEqual([
       'attempt',
@@ -1116,7 +1079,7 @@ describe('orchestrateFullResExport success', () => {
       'version',
     ])
     expect(input.geometry).toBe(geometry)
-    expect(input.checkpoint).toBeUndefined()
+    expect(input).not.toHaveProperty('checkpoint')
     job.resolve()
     await run
 
@@ -1160,9 +1123,8 @@ describe('orchestrateFullResExport success', () => {
       // The safer plan changes rows and concurrency, never the JPEG quality.
       expect(input.quality).toBe(0.92)
       // Sized from the current source and rendering the current look; no
-      // journal, fingerprint or checkpoint travels with the job.
-      expect(input.checkpoint).toBeUndefined()
-      expect(mocks.createSourceFingerprint).not.toHaveBeenCalled()
+      // checkpoint identity travels with the job.
+      expect(input).not.toHaveProperty('checkpoint')
       expect(h.markerStore.markers().map((marker) => marker.attempt)).toEqual(
         expect.arrayContaining([
           'closed-page-attempt-1',
@@ -1187,7 +1149,6 @@ describe('orchestrateFullResExport success', () => {
       await expect(
         readSourceInterruption(h.createMarkerPage('next-page'), SOURCE_FILE),
       ).resolves.toBeNull()
-      expect(await h.checkpointStore.list()).toEqual([])
       expect(h.idleTasks).toEqual([])
     },
   )
@@ -1281,8 +1242,7 @@ describe('orchestrateFullResExport success', () => {
       tabDirectory: TAB_DIRECTORY,
       exportId: EXPORT_ID,
     })
-    expect(input.checkpoint).toBeUndefined()
-    expect(mocks.createOpfsCheckpointBackend).not.toHaveBeenCalled()
+    expect(input).not.toHaveProperty('checkpoint')
 
     job.resolve()
     await run
@@ -1339,7 +1299,7 @@ describe('orchestrateFullResExport success', () => {
         tabDirectory: TAB_DIRECTORY,
         exportId: EXPORT_ID,
       })
-      expect(input.checkpoint).toBeUndefined()
+      expect(input).not.toHaveProperty('checkpoint')
       expect(h.state.session?.exportState).toMatchObject({
         status: 'ready',
         checkpointDurable: false,
@@ -1347,7 +1307,6 @@ describe('orchestrateFullResExport success', () => {
       })
       expect(h.markerStore.markers()).toEqual([])
       expect(h.idleTasks).toEqual([])
-      expect(await h.checkpointStore.list()).toEqual([])
     },
   )
 
@@ -2056,7 +2015,6 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
 
     expect(h.since(supersededAt)).toEqual(['test:superseded'])
     expect(h.markerStore.markers()).toEqual([])
-    expect(await h.checkpointStore.list()).toEqual([])
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
 

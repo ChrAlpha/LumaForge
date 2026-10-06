@@ -71,11 +71,10 @@ function isOpfsEntryName(value: unknown): value is string {
 }
 
 /**
- * The sink comes from the execution plan and its output location alone; the
- * recovery checkpoint never selects it. An `opfs-file` plan needs a
- * well-formed OPFS location inside a tab directory, any other plan must not
- * carry one, and a plan this worker has no sink for is refused rather than
- * encoded in memory.
+ * The sink comes from the execution plan and its output location alone. An
+ * `opfs-file` plan needs a well-formed OPFS location inside a tab directory,
+ * any other plan must not carry one, and a plan this worker has no sink for
+ * is refused rather than encoded in memory.
  */
 function resolveOutputLocation(
   message: FullResExportWorkerStartMessage,
@@ -501,23 +500,6 @@ async function handleStart(
               message.executionPlan?.checkpointMode === 'safe-retry'
                 ? 'surface-resource-failure'
                 : 'in-process',
-            onCheckpoint: message.checkpoint
-              ? async (entry) => {
-                  self.postMessage({
-                    kind: 'metric',
-                    requestId: message.requestId,
-                    metric: {
-                      kind: 'checkpoint',
-                      requestId: message.requestId,
-                      completedRowsForDiagnostics:
-                        entry.completedRowsForDiagnostics,
-                      totalRows: entry.totalRows,
-                      stripRows: entry.stripRows,
-                      timestamp: new Date().toISOString(),
-                    },
-                  } satisfies FullResExportWorkerResponse)
-                }
-              : undefined,
             onProgress(progress) {
               self.postMessage({
                 kind: 'progress',

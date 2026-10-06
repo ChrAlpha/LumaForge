@@ -1,11 +1,6 @@
 import { materializeOutputBlob } from '@lumaforge/render-engine/export'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ExportCheckpointManifest } from './checkpoint-store'
-import {
-  createCheckpointStore,
-  createOpfsCheckpointBackend,
-} from './checkpoint-store'
 import type { ExportDebugEvent } from './execution-profile'
 import type {
   OpfsOutputCollectionReport,
@@ -895,36 +890,6 @@ describe('scheduleAbandonedOutputCollection', () => {
   })
 })
 
-/** A journal the recovery store would write for a checkpointed export. */
-function checkpointManifest(exportId: string): ExportCheckpointManifest {
-  return {
-    version: 1,
-    exportId,
-    sourceFingerprint: {
-      name: 'frame.dng',
-      size: 4,
-      lastModified: NOW,
-      hashPrefixHex: '00',
-    },
-    fileName: 'frame.dng',
-    sourceSize: 4,
-    sourceLastModified: NOW,
-    outputWidth: 2,
-    outputHeight: 2,
-    graphFingerprint: 'graph',
-    profile: 'desktop-fast',
-    attempt: 1,
-    preferredRows: 2,
-    totalRows: 2,
-    recoveryMode: 'safe-retry',
-    outputSink: 'opfs-file',
-    sourceReacquisition: 'current-session-file',
-    completedRowsForDiagnostics: 0,
-    jpegState: 'restart-required',
-    updatedAt: new Date(NOW).toISOString(),
-  }
-}
-
 function exportIdFor(index: number) {
   return `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`
 }
@@ -933,15 +898,12 @@ describe('collection across pages', () => {
   it('reaches a closed tab behind entries every pass keeps or skips', async () => {
     const opfs = createMemoryOpfs()
     const lockManager = createFakeLockManager()
-    const checkpoints = createCheckpointStore(
-      createOpfsCheckpointBackend(opfs.storage),
-    )
-    // A page finished 70 checkpointed exports, then closed. A finished
-    // export drops only its journal's manifest, so every one leaves an empty
-    // journal directory named before `tab-`.
+    // A page of an earlier version finished 70 journaled exports, then
+    // closed. A finished export dropped only its journal's manifest, so every
+    // one left an empty journal directory named before `tab-`.
     for (let index = 0; index < 70; index += 1) {
       const exportId = exportIdFor(index)
-      await checkpoints.writeActive(checkpointManifest(exportId))
+      opfs.makeDirectory(`${ACTIVE}/${exportId}`)
       const writable = await createOpfsOutputWritable({
         tabDirectory: 'tab-closed',
         exportId,
@@ -949,11 +911,10 @@ describe('collection across pages', () => {
       })
       await writable.write(new Uint8Array([1, 2, 3]))
       await writable.close()
-      await checkpoints.removeActiveManifest(exportId)
     }
-    // Interrupted exports whose journals recovery still owns.
+    // Journals interrupted exports of that version left behind.
     for (let index = 70; index < 78; index += 1) {
-      await checkpoints.writeActive(checkpointManifest(exportIdFor(index)))
+      opfs.writeFile(`${ACTIVE}/${exportIdFor(index)}/manifest.json`, '{}')
     }
     // Pages that are still open, named before the closed one.
     for (let index = 0; index < 3; index += 1) {
@@ -985,11 +946,11 @@ describe('collection across pages', () => {
     expect(opfs.entries(ACTIVE)).toEqual(
       entries.filter((name) => name !== 'tab-closed'),
     )
-    expect(
-      (await checkpoints.listActive()).map(({ exportId }) => exportId).sort(),
-    ).toEqual(
-      Array.from({ length: 8 }, (_, offset) => exportIdFor(70 + offset)),
-    )
+    for (let index = 70; index < 78; index += 1) {
+      expect(opfs.exists(`${ACTIVE}/${exportIdFor(index)}/manifest.json`)).toBe(
+        true,
+      )
+    }
   })
 
   it.each([

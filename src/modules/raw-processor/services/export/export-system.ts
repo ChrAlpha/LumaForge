@@ -11,7 +11,6 @@ import {
   selectExportExecutionPlan,
 } from '~/lib/export/execution-profile'
 import type {
-  FullResWorkerCheckpointConfig,
   FullResWorkerExecutionPlan,
   FullResWorkerOutputLocation,
   RunFullResolutionJpegExportInWorkerInput,
@@ -299,7 +298,6 @@ export async function runFullResolutionExportJob({
   concurrency,
   executionPlan,
   outputLocation,
-  checkpoint,
   onProgress,
   onMetric,
   onAttempt,
@@ -318,8 +316,6 @@ export async function runFullResolutionExportJob({
   executionPlan?: ExportExecutionPlan
   /** OPFS address reserved for this job; used by every opfs-file attempt. */
   outputLocation?: FullResWorkerOutputLocation
-  /** Recovery journal identity; independent of where the JPEG is written. */
-  checkpoint?: FullResWorkerCheckpointConfig
   onProgress?: (progress: FullResolutionExportProgress) => void
   onMetric?: RunFullResolutionJpegExportInWorkerInput['onMetric']
   onAttempt?: (event: FullResolutionExportAttemptEvent) => void
@@ -372,9 +368,6 @@ export async function runFullResolutionExportJob({
           ? toWorkerExecutionPlan(attemptPlan)
           : undefined,
         outputLocation: attemptOutputLocation,
-        checkpoint: attemptPlan?.profile.checkpointOutput
-          ? checkpoint
-          : undefined,
         onProgress,
         onMetric,
       })

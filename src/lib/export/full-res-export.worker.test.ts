@@ -234,7 +234,7 @@ describe('runProcessedWindowExportLifecycle', () => {
 })
 
 describe('full-resolution export worker lifecycle responses', () => {
-  it('uses execution plan runtime profile and emits checkpoint metrics', async () => {
+  it('uses execution plan runtime profile and posts no checkpoint metrics', async () => {
     const responses: FullResExportWorkerResponse[] = []
     vi.spyOn(self, 'postMessage').mockImplementation((message) => {
       responses.push(message as FullResExportWorkerResponse)
@@ -299,6 +299,8 @@ describe('full-resolution export worker lifecycle responses', () => {
           tabDirectory: 'tab-1',
           exportId: 'export-1',
         },
+        // A start message from an older page may still carry the journal
+        // identity it once used; the worker ignores it.
         checkpoint: {
           exportId: 'export-1',
           graphFingerprint: 'graph-1',
@@ -331,21 +333,13 @@ describe('full-resolution export worker lifecycle responses', () => {
         quality: 0.9,
         jpegSink: expect.any(Object),
         retryPolicy: 'surface-resource-failure',
-        onCheckpoint: expect.any(Function),
       }),
     )
-    expect(responses).toContainEqual(
-      expect.objectContaining({
-        kind: 'metric',
-        requestId: 'request-low-memory',
-        metric: expect.objectContaining({
-          kind: 'checkpoint',
-          requestId: 'request-low-memory',
-          completedRowsForDiagnostics: 64,
-          totalRows: 128,
-          stripRows: 64,
-        }),
-      }),
+    expect(
+      vi.mocked(runFullResolutionJpegExport).mock.lastCall?.[0],
+    ).not.toHaveProperty('onCheckpoint')
+    expect(responses.filter((response) => response.kind === 'metric')).toEqual(
+      [],
     )
   })
 
@@ -417,16 +411,6 @@ describe('full-resolution export worker lifecycle responses', () => {
           sink: 'opfs-file',
           tabDirectory: 'tab-1',
           exportId: 'export-1',
-        },
-        checkpoint: {
-          exportId: 'export-1',
-          graphFingerprint: 'graph-1',
-          sourceFingerprint: {
-            name: 'sample.RAF',
-            size: 3,
-            lastModified: 0,
-            hashPrefixHex: 'abc',
-          },
         },
         collectMetrics: false,
       },
@@ -524,16 +508,6 @@ describe('full-resolution export worker lifecycle responses', () => {
           sink: 'opfs-file',
           tabDirectory: 'tab-1',
           exportId: 'export-1',
-        },
-        checkpoint: {
-          exportId: 'export-1',
-          graphFingerprint: 'graph-1',
-          sourceFingerprint: {
-            name: 'sample.RAF',
-            size: 3,
-            lastModified: 0,
-            hashPrefixHex: 'abc',
-          },
         },
         collectMetrics: false,
       },
@@ -668,9 +642,11 @@ describe('full-resolution export worker lifecycle responses', () => {
     expect(runFullResolutionJpegExport).toHaveBeenCalledWith(
       expect.objectContaining({
         retryPolicy: 'in-process',
-        onCheckpoint: undefined,
       }),
     )
+    expect(
+      vi.mocked(runFullResolutionJpegExport).mock.lastCall?.[0],
+    ).not.toHaveProperty('onCheckpoint')
   })
 
   it('writes EXIF metadata into the successful JPEG response', async () => {
@@ -1282,17 +1258,6 @@ describe('full-resolution export worker output sink', () => {
     outputSink: 'blob-handoff',
     checkpointMode: 'safe-retry',
   }
-  const checkpoint = {
-    exportId: 'export-1',
-    graphFingerprint: 'graph-1',
-    sourceFingerprint: {
-      name: 'sample.RAF',
-      size: 3,
-      lastModified: 0,
-      hashPrefixHex: 'abc',
-    },
-  }
-
   beforeEach(() => {
     // Any export that reaches the encoder succeeds, so a sink the worker
     // should have refused shows up as a success.
@@ -1370,7 +1335,7 @@ describe('full-resolution export worker output sink', () => {
     return terminal
   }
 
-  it('writes an opfs-file plan to its OPFS location even when no recovery checkpoint was journaled', async () => {
+  it('writes an opfs-file plan to its OPFS location', async () => {
     installRawRuntime()
     installJpegRuntime()
     const writable = createFakeOpfsWritable()
@@ -1405,9 +1370,11 @@ describe('full-resolution export worker output sink', () => {
     expect(runFullResolutionJpegExport).toHaveBeenCalledWith(
       expect.objectContaining({
         jpegSink: expect.any(Object),
-        onCheckpoint: undefined,
       }),
     )
+    expect(
+      vi.mocked(runFullResolutionJpegExport).mock.lastCall?.[0],
+    ).not.toHaveProperty('onCheckpoint')
     expect(response).toMatchObject({
       kind: 'success',
       result: {
@@ -1421,12 +1388,11 @@ describe('full-resolution export worker output sink', () => {
     })
   })
 
-  it('refuses an opfs-file plan that carries only a recovery checkpoint', async () => {
+  it('refuses an opfs-file plan that carries no output location', async () => {
     const { runtime } = installRawRuntime()
 
     const response = await startExport({
       executionPlan: opfsPlan,
-      checkpoint,
     })
 
     expect(response).toEqual({
@@ -1497,7 +1463,6 @@ describe('full-resolution export worker output sink', () => {
       const response = await startExport({
         executionPlan: opfsPlan,
         outputLocation: location,
-        checkpoint,
       })
 
       expect(response).toMatchObject({
@@ -1545,7 +1510,6 @@ describe('full-resolution export worker output sink', () => {
         tabDirectory: 'tab-1',
         exportId: 'export-1',
       },
-      checkpoint,
     })
 
     expect(response).toEqual({
@@ -1614,7 +1578,7 @@ describe('full-resolution export worker output sink', () => {
     expect(runFullResolutionJpegExport).not.toHaveBeenCalled()
   })
 
-  it('encodes a blob-handoff plan in memory while still reporting checkpoint metrics', async () => {
+  it('encodes a blob-handoff plan in memory', async () => {
     installRawRuntime()
     vi.mocked(runFullResolutionJpegExport).mockResolvedValue(
       createBlobOutputResult({
@@ -1625,7 +1589,6 @@ describe('full-resolution export worker output sink', () => {
 
     const response = await startExport({
       executionPlan: blobPlan,
-      checkpoint,
     })
 
     expect(response).toMatchObject({
@@ -1636,8 +1599,10 @@ describe('full-resolution export worker output sink', () => {
     expect(runFullResolutionJpegExport).toHaveBeenCalledWith(
       expect.objectContaining({
         jpegSink: undefined,
-        onCheckpoint: expect.any(Function),
       }),
     )
+    expect(
+      vi.mocked(runFullResolutionJpegExport).mock.lastCall?.[0],
+    ).not.toHaveProperty('onCheckpoint')
   })
 })

@@ -44,7 +44,10 @@ export const LEGACY_OPFS_OUTPUT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
  * alone.
  */
 const LEGACY_OUTPUT_FILE_BUDGET = 16
-/** The recovery journal shares `active/`; recovery owns its lifetime. */
+/**
+ * Recovery journals earlier versions wrote share `active/`; a directory
+ * holding one is never collected.
+ */
 const RECOVERY_JOURNAL_FILE = 'manifest.json'
 const COLLECTION_IDLE_TIMEOUT_MS = 10_000
 

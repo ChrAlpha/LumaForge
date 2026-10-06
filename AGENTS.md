@@ -208,9 +208,9 @@ only by finishing the move it belongs to:
 - `src/lib/export/output-sink.ts` redefines the output-result types of
   `packages/render-engine/src/export/jpeg/output-result.ts` and has diverged
   from them (delivered hash and metadata fields).
-- `src/lib/export/checkpoint-store.ts` owns the checkpoint manifest the app
-  uses; `packages/render-engine/src/manifest/export-checkpoint.ts` exports an
-  unused type with the same name. `LumaRenderContext`
+- `packages/render-engine/src/manifest/export-checkpoint.ts` exports a
+  deprecated checkpoint manifest type that no app or CLI code uses; the app
+  writes no export journal. `LumaRenderContext`
   (`packages/render-engine/src/context/runtime-context.ts`) is exported, but no
   engine function, app code, or CLI code consumes it.
 - `src/lib/lut/profile-resolution.ts` keeps an app fork of the LUT profile

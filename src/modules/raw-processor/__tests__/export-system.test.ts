@@ -323,22 +323,27 @@ describe('export-system', () => {
     })
   })
 
-  it('passes checkpoint metrics through the worker job wrapper', async () => {
+  it('passes worker metrics through the job wrapper without a checkpoint identity', async () => {
     const file = new File(['raw'], 'frame.ARW')
     const output = createBlobOutputResult({
       filename: 'frame_neutral_fullres.jpg',
       blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
     })
-    const checkpointMetric = {
-      kind: 'checkpoint' as const,
+    const summaryMetric = {
+      kind: 'summary' as const,
       requestId: 'request-1',
-      completedRowsForDiagnostics: 64,
-      totalRows: 128,
-      stripRows: 64,
+      width: 4,
+      height: 4,
+      megapixels: 0,
       timestamp: '2026-05-01T00:00:00.000Z',
+      stripRows: 4,
+      retries: 0,
+      concurrency: 1,
+      totalMs: 12,
+      outputBytes: 128,
     }
     const run = vi.fn(async (request) => {
-      request.onMetric?.(checkpointMetric)
+      request.onMetric?.(summaryMetric)
       return output
     })
     const dispose = vi.fn()
@@ -361,16 +366,6 @@ describe('export-system', () => {
       filename: 'frame_neutral_fullres.jpg',
       graph,
       executionPlan,
-      checkpoint: {
-        exportId: 'export-1',
-        graphFingerprint: 'graph-1',
-        sourceFingerprint: {
-          name: 'frame.ARW',
-          size: 3,
-          lastModified: 0,
-          hashPrefixHex: 'abc',
-        },
-      },
       onMetric,
       clientFactory: () =>
         ({
@@ -379,16 +374,9 @@ describe('export-system', () => {
         }) as never,
     })
 
-    expect(run).toHaveBeenCalledWith(
-      expect.objectContaining({
-        checkpoint: expect.objectContaining({
-          exportId: 'export-1',
-          graphFingerprint: 'graph-1',
-        }),
-        onMetric,
-      }),
-    )
-    expect(onMetric).toHaveBeenCalledWith(checkpointMetric)
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ onMetric }))
+    expect(run.mock.calls[0]![0]).not.toHaveProperty('checkpoint')
+    expect(onMetric).toHaveBeenCalledWith(summaryMetric)
   })
 
   it('retries fresh workers for resource failures and disposes each client once', async () => {

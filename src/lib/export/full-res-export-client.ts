@@ -19,7 +19,6 @@ import type {
   ExportRuntimeMemoryProfile,
 } from './execution-profile'
 import { createOpfsFileBackedOutputResult } from './output-sink'
-import type { SourceFingerprint } from './source-fingerprint'
 
 export type FullResWorkerExecutionPlan = {
   profileName: ExportExecutionProfileName
@@ -28,16 +27,6 @@ export type FullResWorkerExecutionPlan = {
   runtimeMemoryProfile: ExportRuntimeMemoryProfile
   outputSink: ExportOutputSink
   checkpointMode: ExportCheckpointMode
-}
-
-/**
- * Recovery journal identity. It only drives checkpoint metrics; it never
- * selects where the JPEG is written.
- */
-export type FullResWorkerCheckpointConfig = {
-  exportId: string
-  graphFingerprint: string
-  sourceFingerprint: SourceFingerprint
 }
 
 /**
@@ -79,7 +68,6 @@ export type FullResExportWorkerStartMessage = {
   graph: ExportColorGraphDescriptor
   executionPlan?: FullResWorkerExecutionPlan
   outputLocation?: FullResWorkerOutputLocation
-  checkpoint?: FullResWorkerCheckpointConfig
   preferredRows?: number
   concurrency?: number
   quality?: number
@@ -109,15 +97,6 @@ export type FullResExportWorkerSuccessMessage = {
   result: FullResWorkerOutputResult
 }
 
-export type FullResWorkerCheckpointMetric = {
-  kind: 'checkpoint'
-  requestId: string
-  completedRowsForDiagnostics: number
-  totalRows: number
-  stripRows: number
-  timestamp: string
-}
-
 export type FullResExportWorkerErrorMessage = {
   kind: 'error'
   requestId: string
@@ -128,7 +107,7 @@ export type FullResExportWorkerErrorMessage = {
 export type FullResExportWorkerMetricMessage = {
   kind: 'metric'
   requestId: string
-  metric: ExportPerfMetric | FullResWorkerCheckpointMetric
+  metric: ExportPerfMetric
 }
 
 export type FullResExportWorkerResponse =
@@ -147,17 +126,16 @@ export type RunFullResolutionJpegExportInWorkerInput = {
   geometry?: ExportGeometry
   executionPlan?: FullResWorkerExecutionPlan
   outputLocation?: FullResWorkerOutputLocation
-  checkpoint?: FullResWorkerCheckpointConfig
   signal?: AbortSignal
   onProgress?: (progress: FullResolutionExportProgress) => void
-  onMetric?: (metric: ExportPerfMetric | FullResWorkerCheckpointMetric) => void
+  onMetric?: (metric: ExportPerfMetric) => void
 }
 
 type PendingRequest = {
   resolve: (value: ExportOutputResult) => void
   reject: (reason?: unknown) => void
   onProgress?: (progress: FullResolutionExportProgress) => void
-  onMetric?: (metric: ExportPerfMetric | FullResWorkerCheckpointMetric) => void
+  onMetric?: (metric: ExportPerfMetric) => void
   cleanup: () => void
 }
 
@@ -377,7 +355,6 @@ export class FullResolutionExportWorkerClient {
           geometry: input.geometry,
           executionPlan: input.executionPlan,
           outputLocation: input.outputLocation,
-          checkpoint: input.checkpoint,
           preferredRows,
           concurrency,
           quality: input.quality,

@@ -76,22 +76,8 @@ const exportSystemMock = vi.hoisted(() => ({
   runPreviewExportJob: vi.fn(),
 }))
 
-const checkpointStoreMock = vi.hoisted(() => ({
-  backend: {},
-  createCheckpointStore: vi.fn(),
-  createOpfsCheckpointBackend: vi.fn(),
-  listSafeRetryCandidates: vi.fn(),
-  writeActive: vi.fn(),
-  removeActiveManifest: vi.fn(),
-}))
-
 const interruptionMarkersMock = vi.hoisted(() => ({
   current: null as ExportInterruptionMarkers | null,
-}))
-
-const sourceFingerprintMock = vi.hoisted(() => ({
-  createSourceFingerprint: vi.fn(),
-  sourceFingerprintMatches: vi.fn(),
 }))
 
 const onlineProfileFetchMock = vi.hoisted(() => ({
@@ -143,25 +129,6 @@ vi.mock('../services/export/export-system', async () => {
     ...actual,
     runFullResolutionExportJob: exportSystemMock.runFullResolutionExportJob,
     runPreviewExportJob: exportSystemMock.runPreviewExportJob,
-  }
-})
-
-vi.mock('~/lib/export/checkpoint-store', async () => {
-  const actual = await vi.importActual('~/lib/export/checkpoint-store')
-  return {
-    ...actual,
-    createCheckpointStore: checkpointStoreMock.createCheckpointStore,
-    createOpfsCheckpointBackend:
-      checkpointStoreMock.createOpfsCheckpointBackend,
-  }
-})
-
-vi.mock('~/lib/export/source-fingerprint', async () => {
-  const actual = await vi.importActual('~/lib/export/source-fingerprint')
-  return {
-    ...actual,
-    createSourceFingerprint: sourceFingerprintMock.createSourceFingerprint,
-    sourceFingerprintMatches: sourceFingerprintMock.sourceFingerprintMatches,
   }
 })
 
@@ -575,13 +542,6 @@ describe('useRawWorkflow embedded preview state', () => {
       .mockResolvedValue({ status: 'ready' })
     exportSystemMock.runFullResolutionExportJob.mockReset()
     exportSystemMock.runPreviewExportJob.mockReset()
-    checkpointStoreMock.createCheckpointStore.mockReset()
-    checkpointStoreMock.createOpfsCheckpointBackend.mockReset()
-    checkpointStoreMock.listSafeRetryCandidates.mockReset()
-    checkpointStoreMock.writeActive.mockReset()
-    checkpointStoreMock.removeActiveManifest.mockReset()
-    sourceFingerprintMock.createSourceFingerprint.mockReset()
-    sourceFingerprintMock.sourceFingerprintMatches.mockReset()
     onlineProfileFetchMock.fetchCachedBytesWithLimit.mockReset()
     onlineProfileFetchMock.fetchVerifiedCubeAsset.mockReset()
     originalReferenceSnapshotMock.renderOriginalReferenceSnapshot
@@ -624,26 +584,6 @@ describe('useRawWorkflow embedded preview state', () => {
     rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue(
       createSupportedCapability(),
     )
-    checkpointStoreMock.createOpfsCheckpointBackend.mockReturnValue(
-      checkpointStoreMock.backend,
-    )
-    checkpointStoreMock.createCheckpointStore.mockReturnValue({
-      listSafeRetryCandidates: checkpointStoreMock.listSafeRetryCandidates,
-      writeActive: checkpointStoreMock.writeActive,
-      removeActiveManifest: checkpointStoreMock.removeActiveManifest,
-    })
-    checkpointStoreMock.listSafeRetryCandidates.mockResolvedValue([])
-    checkpointStoreMock.writeActive.mockResolvedValue(undefined)
-    checkpointStoreMock.removeActiveManifest.mockResolvedValue(undefined)
-    sourceFingerprintMock.createSourceFingerprint.mockResolvedValue({
-      name: 'frame.ARW',
-      size: 3,
-      lastModified: 123,
-      width: 6048,
-      height: 4024,
-      hashPrefixHex: 'abc',
-    })
-    sourceFingerprintMock.sourceFingerprintMatches.mockResolvedValue(true)
   })
 
   afterEach(() => {
@@ -773,9 +713,6 @@ describe('useRawWorkflow embedded preview state', () => {
     // Export starts only through exportImage; nothing reselects, reloads or
     // arms a retry for the interrupted file.
     expect(exportRecoveryKeys(result.current)).toEqual([])
-    expect(
-      sourceFingerprintMock.sourceFingerprintMatches,
-    ).not.toHaveBeenCalled()
     expect(rawRuntimeAdapterMock.openSession).not.toHaveBeenCalled()
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
@@ -840,9 +777,6 @@ describe('useRawWorkflow embedded preview state', () => {
     await flushPostCommitTasks()
 
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
-    expect(
-      sourceFingerprintMock.sourceFingerprintMatches,
-    ).not.toHaveBeenCalled()
     // The hint survives the load so the next explicit export can use it.
     expect(result.current.exportInterrupted).toBe(true)
   })
@@ -873,9 +807,6 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.exportImage()
     })
 
-    expect(
-      sourceFingerprintMock.sourceFingerprintMatches,
-    ).not.toHaveBeenCalled()
     expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
     expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -3891,7 +3822,7 @@ describe('useRawWorkflow embedded preview state', () => {
     )
   })
 
-  it('writes an ios-safe OPFS export without a recovery journal or fingerprint', async () => {
+  it('writes an ios-safe OPFS export without a checkpoint identity', async () => {
     vi.stubGlobal('navigator', {
       userAgent:
         'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
@@ -3934,9 +3865,6 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushPostCommitTasks()
 
-    expect(sourceFingerprintMock.createSourceFingerprint).not.toHaveBeenCalled()
-    expect(checkpointStoreMock.createCheckpointStore).not.toHaveBeenCalled()
-    expect(checkpointStoreMock.writeActive).not.toHaveBeenCalled()
     const [request] = exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
     expect(request).toMatchObject({
       executionPlan: expect.objectContaining({

@@ -80,7 +80,7 @@ const supportedGraph = {
 }
 
 describe('fullResolutionExportWorkerClient', () => {
-  it('passes execution plan and checkpoint config to the worker', async () => {
+  it('passes the execution plan to the worker without a checkpoint identity', async () => {
     const worker = new FakeWorker()
     const client = new FullResolutionExportWorkerClient(
       () => worker as unknown as Worker,
@@ -97,16 +97,20 @@ describe('fullResolutionExportWorkerClient', () => {
         outputSink: 'opfs-file',
         checkpointMode: 'safe-retry',
       },
-      checkpoint: {
-        exportId: 'export-1',
-        graphFingerprint: 'graph-1',
-        sourceFingerprint: {
-          name: 'sample.RAF',
-          size: 3,
-          lastModified: 0,
-          hashPrefixHex: 'abc',
+      // A caller that still hands over a journal identity gets nothing
+      // forwarded to the worker.
+      ...({
+        checkpoint: {
+          exportId: 'export-1',
+          graphFingerprint: 'graph-1',
+          sourceFingerprint: {
+            name: 'sample.RAF',
+            size: 3,
+            lastModified: 0,
+            hashPrefixHex: 'abc',
+          },
         },
-      },
+      } as object),
     })
 
     const start = worker.requests[0]
@@ -117,11 +121,8 @@ describe('fullResolutionExportWorkerClient', () => {
         preferredRows: 64,
         runtimeMemoryProfile: 'low-memory',
       },
-      checkpoint: {
-        exportId: 'export-1',
-        graphFingerprint: 'graph-1',
-      },
     })
+    expect(start).not.toHaveProperty('checkpoint')
 
     if (!start || start.kind !== 'start')
       throw new Error('missing start request')
@@ -141,7 +142,7 @@ describe('fullResolutionExportWorkerClient', () => {
     client.dispose()
   })
 
-  it('carries the output location to the worker independently of the checkpoint', async () => {
+  it('carries the output location to the worker', async () => {
     const worker = new FakeWorker()
     const client = new FullResolutionExportWorkerClient(
       () => worker as unknown as Worker,
@@ -177,7 +178,7 @@ describe('fullResolutionExportWorkerClient', () => {
         exportId: 'export-9',
       },
     })
-    expect(start.checkpoint).toBeUndefined()
+    expect(start).not.toHaveProperty('checkpoint')
 
     worker.emit({
       kind: 'success',
