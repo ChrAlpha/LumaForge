@@ -46,6 +46,7 @@ import {
 
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../model/derive-session'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
+import { getDetachedPreviewView } from '../state/preview-view.atoms'
 import { currentSessionAtom } from '../state/session.atoms'
 import { getProcessingParams, resetToDefaults } from '../state/workflow.atoms'
 import { useRawWorkflow } from './useRawWorkflow'
@@ -1680,7 +1681,7 @@ describe('useRawWorkflow embedded preview state', () => {
     act(() => {
       result.current.setCompareSplit(0.8)
     })
-    expect(getProcessingParams().compareSplit).toBe(0.8)
+    expect(getDetachedPreviewView().compareSplit).toBe(0.8)
     expect(jotaiStore.get(currentSessionAtom)).toBeNull()
 
     // Both callbacks come from the pre-load render: the split is written
@@ -1698,8 +1699,8 @@ describe('useRawWorkflow embedded preview state', () => {
         mode: 'compare',
         compareSplit: 0.3,
       })
-      expect(getProcessingParams()).toMatchObject({
-        viewMode: 'compare',
+      expect(getDetachedPreviewView()).toEqual({
+        mode: 'compare',
         compareSplit: 0.8,
       })
 
@@ -1713,8 +1714,8 @@ describe('useRawWorkflow embedded preview state', () => {
       mode: 'compare',
       compareSplit: 0.3,
     })
-    expect(getProcessingParams()).toMatchObject({
-      viewMode: 'compare',
+    expect(getDetachedPreviewView()).toEqual({
+      mode: 'compare',
       compareSplit: 0.8,
     })
   })
@@ -1733,7 +1734,7 @@ describe('useRawWorkflow embedded preview state', () => {
       expect(jotaiStore.get(currentSessionAtom)?.viewState.mode).toBe(
         'original',
       )
-      expect(getProcessingParams().viewMode).toBe('compare')
+      expect(getDetachedPreviewView().mode).toBe('compare')
 
       await loadPromise
     })
@@ -1742,7 +1743,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.viewMode).toBe('original')
     expect(result.current.params.viewMode).toBe('original')
     expect(jotaiStore.get(currentSessionAtom)?.viewState.mode).toBe('original')
-    expect(getProcessingParams().viewMode).toBe('compare')
+    expect(getDetachedPreviewView().mode).toBe('compare')
   })
 
   it('routes view writes made in the reset tick to the detached view', async () => {
@@ -1780,6 +1781,116 @@ describe('useRawWorkflow embedded preview state', () => {
       mode: 'compare',
       compareSplit: 0.37,
     })
+  })
+
+  it('keeps sample view writes made before any source out of the color intent', () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    const storedIntentBefore = getProcessingParams()
+
+    act(() => {
+      result.current.setViewMode('original')
+      result.current.setCompareSplit(0.25)
+    })
+
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    expect(result.current.viewMode).toBe('original')
+    expect(result.current.compareSplit).toBe(0.25)
+    expect(result.current.params).toMatchObject({
+      viewMode: 'original',
+      compareSplit: 0.25,
+    })
+    expect(getDetachedPreviewView()).toEqual({
+      mode: 'original',
+      compareSplit: 0.25,
+    })
+    expect(getProcessingParams()).toBe(storedIntentBefore)
+  })
+
+  it('keeps a continuous look strength independent of sample view writes', () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+
+    act(() => {
+      result.current.setIntensity(0.37)
+    })
+    const storedIntentAfterStrength = getProcessingParams()
+    expect(storedIntentAfterStrength.intensity).toBe(0.37)
+
+    act(() => {
+      result.current.setCompareSplit(0.2)
+      result.current.setViewMode('processed')
+    })
+
+    expect(getProcessingParams()).toBe(storedIntentAfterStrength)
+    expect(result.current.params).toMatchObject({
+      intensity: 0.37,
+      viewMode: 'processed',
+      compareSplit: 0.2,
+    })
+
+    act(() => {
+      result.current.setIntensity(0.81)
+    })
+
+    expect(result.current.params).toMatchObject({
+      intensity: 0.81,
+      viewMode: 'processed',
+      compareSplit: 0.2,
+    })
+  })
+
+  it('carries the replaced session split into the next source and reopens in compare', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'first.ARW'))
+    })
+    act(() => {
+      result.current.setViewMode('original')
+      result.current.setCompareSplit(0.62)
+    })
+
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'second.ARW'))
+    })
+
+    expect(jotaiStore.get(currentSessionAtom)?.sourceFile.name).toBe(
+      'second.ARW',
+    )
+    expect(result.current.viewMode).toBe('compare')
+    expect(result.current.compareSplit).toBe(0.62)
+    expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
+      mode: 'compare',
+      compareSplit: 0.62,
+    })
+    expect(getProcessingParams()).not.toHaveProperty('viewMode')
+    expect(getProcessingParams()).not.toHaveProperty('compareSplit')
+  })
+
+  it('returns to the detached sample view when reset drops the session', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    act(() => {
+      result.current.setCompareSplit(0.8)
+    })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    act(() => {
+      result.current.setViewMode('processed')
+      result.current.setCompareSplit(0.4)
+    })
+    expect(result.current.compareSplit).toBe(0.4)
+
+    act(() => {
+      result.current.reset()
+    })
+
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    expect(result.current.viewMode).toBe('compare')
+    expect(result.current.compareSplit).toBe(0.8)
+    expect(getDetachedPreviewView()).toEqual({
+      mode: 'compare',
+      compareSplit: 0.8,
+    })
+    expect(getProcessingParams()).not.toHaveProperty('compareSplit')
   })
 
   it('keeps view mode params and session view state in sync', () => {
@@ -2365,7 +2476,7 @@ describe('useRawWorkflow embedded preview state', () => {
       viewState: { mode: 'original', compareSplit: 0.5 },
     })
     expect(getProcessingParams()).toBe(storedParamsBefore)
-    expect(getProcessingParams().viewMode).toBe('compare')
+    expect(getDetachedPreviewView().mode).toBe('compare')
   })
 
   it('replaces preview transform source identity and resets its active flag with a new RAW', async () => {
@@ -5792,7 +5903,7 @@ describe('useRawWorkflow embedded preview state', () => {
       result.current.setCompareSplit(0.7)
     })
     expect(jotaiStore.get(currentSessionAtom)).toBeNull()
-    expect(getProcessingParams().compareSplit).toBe(0.7)
+    expect(getDetachedPreviewView().compareSplit).toBe(0.7)
 
     await act(async () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))

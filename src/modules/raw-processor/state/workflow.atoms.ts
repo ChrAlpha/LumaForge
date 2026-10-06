@@ -1,4 +1,5 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { atom } from 'jotai'
 
 import { createAtomHooks } from '~/lib/jotai'
@@ -6,27 +7,23 @@ import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ProcessingStatus } from '../model/workflow'
+import { DEFAULT_LOOK_INTENSITY } from '../services/look/style-system'
+import { resetDetachedPreviewView } from './preview-view.atoms'
 
-const DEFAULT_PROCESSING_PARAMS: ProcessingParams = {
-  intensity: 0.7,
-  viewMode: 'compare',
-  compareSplit: 0.5,
+/**
+ * The stored color intent: the user's color, plus the look selection while no
+ * session owns the look. It holds no view state; the session, or the detached
+ * sample view before one exists, owns view mode and compare split.
+ */
+const DEFAULT_COLOR_INTENT: ColorGraphIntent = Object.freeze({
+  ...NEUTRAL_USER_COLOR_INTENT,
   styleKind: 'none',
   builtinPreset: null,
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
-}
+  intensity: DEFAULT_LOOK_INTENSITY,
+})
 
-const baseProcessingParamsAtom = atom<ProcessingParams>({
-  ...DEFAULT_PROCESSING_PARAMS,
+const baseProcessingParamsAtom = atom<ColorGraphIntent>({
+  ...DEFAULT_COLOR_INTENT,
 })
 
 export const [
@@ -85,5 +82,6 @@ export function resetProcessorState(): void {
 export function resetToDefaults(): void {
   resetProcessorState()
   setLut(null)
-  setProcessingParams({ ...DEFAULT_PROCESSING_PARAMS })
+  setProcessingParams({ ...DEFAULT_COLOR_INTENT })
+  resetDetachedPreviewView()
 }

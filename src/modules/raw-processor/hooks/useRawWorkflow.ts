@@ -8,7 +8,10 @@ import { hasActiveExport } from '../services/export/export-state'
 import { getLut } from '../state/workflow.atoms'
 import { buildRawWorkflowReturn } from './buildRawWorkflowReturn'
 import { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
-import { useRawCompareStage } from './stages/compare/useRawCompareStage'
+import {
+  composeProcessingParams,
+  useRawCompareStage,
+} from './stages/compare/useRawCompareStage'
 import { useExportGraphInvalidation } from './stages/export/useExportGraphInvalidation'
 import { useExportRecoveryDiscovery } from './stages/export/useExportRecoveryDiscovery'
 import { useExportRecoveryState } from './stages/export/useExportRecoveryState'
@@ -31,7 +34,8 @@ import { useRawWorkflowState } from './useRawWorkflowState'
 export type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
 export function useRawWorkflow(): UseRawWorkflowReturn {
-  const { baseParams, setParams, lut, setLut } = useRawDetachedWorkflowState()
+  const { colorIntent, setParams, detachedView, setDetachedView, lut, setLut } =
+    useRawDetachedWorkflowState()
   const {
     status,
     setStatus,
@@ -61,12 +65,16 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     decodedImageRef,
     paramsRef,
     rawRenderExposureRef,
-  } = useRawWorkflowRefs({ session, initialParams: baseParams })
+  } = useRawWorkflowRefs({
+    session,
+    initialParams: composeProcessingParams(colorIntent, detachedView),
+  })
   const compareStage = useRawCompareStage({
-    baseParams,
+    colorIntent,
+    detachedView,
+    setDetachedView,
     session,
     sessionRef,
-    setParams,
     setSession,
   })
   const [decodedImageVersion, setDecodedImageVersion] = useState(0)

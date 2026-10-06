@@ -1,6 +1,11 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  ProcessingParams,
+} from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useMemo } from 'react'
+
+import type { PreviewView, PreviewViewMode } from '~/lib/preview/preview-view'
 
 import type { ImageSession } from '../../../model/session'
 import {
@@ -14,23 +19,34 @@ import {
   normalizePreviewViewport,
 } from '../../../services/preview/preview-viewport'
 
-type SetProcessingParams = (
-  value: ProcessingParams | ((prev: ProcessingParams) => ProcessingParams),
-) => void
+/**
+ * The combined record the preview, histogram and export stages still read:
+ * the color intent with the view laid over it. View fields never flow back
+ * into the color intent.
+ */
+export function composeProcessingParams(
+  intent: ColorGraphIntent,
+  view: PreviewView,
+): ProcessingParams {
+  return { ...intent, viewMode: view.mode, compareSplit: view.compareSplit }
+}
 
 type UseRawCompareStageInput = {
-  baseParams: ProcessingParams
+  colorIntent: ColorGraphIntent
+  /** The sample's view while no session exists. */
+  detachedView: PreviewView
+  setDetachedView: Dispatch<SetStateAction<PreviewView>>
   session: ImageSession | null
   sessionRef: MutableRefObject<ImageSession | null>
-  setParams: SetProcessingParams
   setSession: Dispatch<SetStateAction<ImageSession | null>>
 }
 
 export function useRawCompareStage({
-  baseParams,
+  colorIntent,
+  detachedView,
+  setDetachedView,
   session,
   sessionRef,
-  setParams,
   setSession,
 }: UseRawCompareStageInput) {
   const sessionViewMode = session?.viewState.mode
@@ -40,17 +56,21 @@ export function useRawCompareStage({
   const sessionPanY = session?.viewState.panY
   const sessionFitMode = session?.viewState.fitMode
 
-  const params = useMemo<ProcessingParams>(() => {
+  // A session owns the view once it exists; before that the detached sample
+  // view does. Only one of them is read at a time, and neither is written into
+  // the color intent.
+  const view = useMemo<PreviewView>(() => {
     if (!sessionViewMode || sessionCompareSplit === undefined) {
-      return baseParams
+      return detachedView
     }
 
-    return {
-      ...baseParams,
-      viewMode: sessionViewMode,
-      compareSplit: sessionCompareSplit,
-    }
-  }, [baseParams, sessionCompareSplit, sessionViewMode])
+    return { mode: sessionViewMode, compareSplit: sessionCompareSplit }
+  }, [detachedView, sessionCompareSplit, sessionViewMode])
+
+  const params = useMemo<ProcessingParams>(
+    () => composeProcessingParams(colorIntent, view),
+    [colorIntent, view],
+  )
 
   const previewViewport = useMemo(
     () =>
@@ -68,18 +88,19 @@ export function useRawCompareStage({
     [sessionFitMode, sessionPanX, sessionPanY, sessionZoom],
   )
 
+  // Writes route through the session ref, which load and reset update
+  // synchronously, so a write in the same tick as a load or reset reaches the
+  // owner that exists after it rather than the one this render saw.
   const setViewMode = useCallback(
-    (mode: ProcessingParams['viewMode']) => {
+    (mode: PreviewViewMode) => {
       if (sessionRef.current) {
         setSession((prev) => computeViewModeChange(prev, mode))
         return
       }
 
-      setParams((prev) =>
-        prev.viewMode === mode ? prev : { ...prev, viewMode: mode },
-      )
+      setDetachedView((prev) => (prev.mode === mode ? prev : { ...prev, mode }))
     },
-    [sessionRef, setParams, setSession],
+    [sessionRef, setDetachedView, setSession],
   )
 
   const setCompareSplit = useCallback(
@@ -91,13 +112,13 @@ export function useRawCompareStage({
         return
       }
 
-      setParams((prev) =>
+      setDetachedView((prev) =>
         prev.compareSplit === nextSplit
           ? prev
           : { ...prev, compareSplit: nextSplit },
       )
     },
-    [sessionRef, setParams, setSession],
+    [sessionRef, setDetachedView, setSession],
   )
 
   const setPreviewViewport = useCallback(
@@ -113,8 +134,9 @@ export function useRawCompareStage({
 
   return {
     params,
-    viewMode: params.viewMode,
-    compareSplit: params.compareSplit,
+    view,
+    viewMode: view.mode,
+    compareSplit: view.compareSplit,
     previewViewport,
     setViewMode,
     setCompareSplit,

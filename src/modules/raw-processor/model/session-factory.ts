@@ -1,5 +1,7 @@
 import type { LumaRawSupportLevel } from '@lumaforge/luma-raw-runtime'
 
+import { DEFAULT_PREVIEW_VIEW } from '~/lib/preview/preview-view'
+
 import type {
   ImageSession,
   LUTContractSelectionState,
@@ -45,8 +47,8 @@ export function createImageSession(
     activeStyle: retained?.activeStyle ?? null,
     lutProfileSelection: retained?.lutProfileSelection,
     viewState: {
-      mode: 'compare',
-      compareSplit: 0.5,
+      mode: DEFAULT_PREVIEW_VIEW.mode,
+      compareSplit: DEFAULT_PREVIEW_VIEW.compareSplit,
       zoom: 1,
       panX: 0,
       panY: 0,

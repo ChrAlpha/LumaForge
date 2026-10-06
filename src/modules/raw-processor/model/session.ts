@@ -12,6 +12,7 @@ import type {
   ExportOutputSink,
   ExportRuntimeMemoryProfile,
 } from '~/lib/export/execution-profile'
+import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { ImageMetadata } from '~/lib/raw/decoder'
 
 import type { ExportResult } from './export-result'
@@ -158,8 +159,12 @@ export type ImageSession = {
    */
   exportGeometry?: ExportGeometry | null
   lutProfileSelection?: LUTContractSelectionState
+  /**
+   * The view of this source. The session is the only view owner while it
+   * exists; mode and split never live in the color intent.
+   */
   viewState: {
-    mode: 'processed' | 'original' | 'compare'
+    mode: PreviewViewMode
     compareSplit: number
     zoom: number
     panX: number
