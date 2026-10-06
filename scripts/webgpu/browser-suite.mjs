@@ -17,8 +17,8 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     TRANSFER_FUNCTIONS,
     resolveExportColorGraph,
   } = await import('@lumaforge/luma-color-runtime')
-  // Params the authoritative color graph consumes. View mode and compare
-  // split are presentation-only and are composed separately below.
+  // Params the authoritative color graph consumes. The view mode only selects
+  // which of the two frames below the preview presents.
   const graphParams = (params) =>
     Object.fromEntries(COLOR_GRAPH_INTENT_KEYS.map((key) => [key, params[key]]))
   const { renderCpuPreviewFrame } =
@@ -117,25 +117,14 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     })
     return graph.supported ? null : graph.message
   }
-  // Compose the reference the same way the preview presents view modes: the
-  // technical base on the left of the split, the edited image on the right.
-  const referenceFrame = (fixture, params, lut) => {
-    const viewMode = params.viewMode ?? 'processed'
-    if (viewMode === 'original')
-      return renderReference(fixture, params, lut, 'technical-base')
-    const edited = renderReference(fixture, params, lut, 'edited')
-    if (viewMode !== 'compare') return edited
-    const base = renderReference(fixture, params, lut, 'technical-base')
-    const split = Math.min(Math.max(params.compareSplit ?? 0.5, 0), 1)
-    const frame = new Uint8ClampedArray(edited)
-    for (let y = 0; y < fixture.height; y++)
-      for (let x = 0; x < fixture.width; x++) {
-        if ((x + 0.5) / fixture.width >= split) continue
-        const offset = (y * fixture.width + x) * 4
-        frame.set(base.subarray(offset, offset + 4), offset)
-      }
-    return frame
-  }
+  // The preview presents either the technical base or the edited image.
+  const referenceFrame = (fixture, params, lut) =>
+    renderReference(
+      fixture,
+      params,
+      lut,
+      params.viewMode === 'original' ? 'technical-base' : 'edited',
+    )
 
   let canvasSequence = 0
   const createPipeline = async (width, height) => {
@@ -248,8 +237,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         userExposureEv: 0.35,
         userTemperature: 30,
         userSaturation: 20,
-        viewMode: 'compare',
-        compareSplit: 0.27,
+        viewMode: 'original',
       }
       try {
         const params = reset(fixture, snapshotParams)
@@ -258,7 +246,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         const full = readCanvas(
           await gpu.renderToHiddenCanvas({ width: 97, height: 65 }),
         )
-        // Snapshots export the edited image, never the compare composite.
+        // Snapshots export the edited image whichever output is presented.
         if (integer)
           check(
             `${format}/snapshot-full`,
@@ -278,7 +266,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         )
         await render()
         check(
-          `${format}/compare-restored-after-snapshot`,
+          `${format}/presented-restored-after-snapshot`,
           await readPresentedCanvas(surface.canvas),
           presentedBefore,
           PRESENTED,

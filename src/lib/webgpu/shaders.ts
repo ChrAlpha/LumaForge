@@ -32,9 +32,8 @@ struct ProcessUniforms {
   userBlacks: f32,
   userSaturation: f32,
   userVibrance: f32,
-  compareSplit: f32,
-  lutSize: f32,
   selectiveColorChromaClamp: vec2f,
+  lutSize: f32,
 
   viewMode: i32,
   styleKind: i32,
@@ -48,6 +47,7 @@ struct ProcessUniforms {
   selectiveColorActive: i32,
   _pad0: i32,
   _pad1: i32,
+  _pad2: i32,
 }
 `
 
@@ -92,7 +92,6 @@ ${UNIFORM_BUFFER_STRUCT}
 const PROCESS_FRAGMENT_BODY = /* wgsl */ `
 const VIEW_MODE_PROCESSED: i32 = 0;
 const VIEW_MODE_ORIGINAL: i32 = 1;
-const VIEW_MODE_COMPARE: i32 = 2;
 const STYLE_NONE: i32 = 0;
 const STYLE_BUILTIN: i32 = 1;
 const STYLE_CUSTOM: i32 = 2;
@@ -164,7 +163,7 @@ fn applyBuiltinStyle(displayColor: vec3f) -> vec3f {
   return linearToSrgb(color);
 }
 
-fn processColor(technicalBaseSceneLinearProPhoto: vec3f, texCoord: vec2f) -> vec4f {
+fn processColor(technicalBaseSceneLinearProPhoto: vec3f) -> vec4f {
   let colorBalancedSceneLinearProPhoto = applyUserColorBalance(
     technicalBaseSceneLinearProPhoto,
     params.userColorBalanceGain
@@ -214,9 +213,6 @@ fn processColor(technicalBaseSceneLinearProPhoto: vec3f, texCoord: vec2f) -> vec
 
   if (params.viewMode == VIEW_MODE_ORIGINAL) {
     styledColor = technicalBaseDisplayColor;
-  } else if (params.viewMode == VIEW_MODE_COMPARE) {
-    let finalSide = step(clamp(params.compareSplit, 0.0, 1.0), texCoord.x);
-    styledColor = mix(technicalBaseDisplayColor, styledColor, finalSide);
   }
 
   return vec4f(clamp01v(styledColor), 1.0);
@@ -239,7 +235,7 @@ ${PROCESS_FRAGMENT_BODY}
 @fragment
 fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
   let sceneLinear = readInputSceneLinearProPhoto(texCoord) * params.rawRenderExposureMultiplier;
-  return processColor(sceneLinear, texCoord);
+  return processColor(sceneLinear);
 }
 `
 
@@ -269,7 +265,7 @@ ${PROCESS_FRAGMENT_BODY}
 @fragment
 fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
   let sceneLinear = readInputSceneLinearProPhoto(texCoord) * params.rawRenderExposureMultiplier;
-  return processColor(sceneLinear, texCoord);
+  return processColor(sceneLinear);
 }
 `
 

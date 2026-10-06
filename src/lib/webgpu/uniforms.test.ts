@@ -78,12 +78,75 @@ describe('webGPU uniform ABI', () => {
     expect(f('userColorBalanceGain')).toBe(1)
     expect(f('userSaturation')).toBe(0)
   })
+
+  it('lays every host field out at the offset the WGSL struct declares', () => {
+    expect(UNIFORM_FIELDS).toEqual({
+      inputToLutGamut: { offset: 0, type: 'mat3x3f' },
+      lutOutputToDisplayGamut: { offset: 48, type: 'mat3x3f' },
+      lutDomainMin: { offset: 96, type: 'vec3f' },
+      intensity: { offset: 108, type: 'f32' },
+      lutDomainMax: { offset: 112, type: 'vec3f' },
+      rawRenderExposureMultiplier: { offset: 124, type: 'f32' },
+      userColorBalanceGain: { offset: 128, type: 'vec3f' },
+      userExposureMultiplier: { offset: 140, type: 'f32' },
+      userContrastAmount: { offset: 144, type: 'f32' },
+      userContrastFactor: { offset: 148, type: 'f32' },
+      userHighlights: { offset: 152, type: 'f32' },
+      userShadows: { offset: 156, type: 'f32' },
+      userWhites: { offset: 160, type: 'f32' },
+      userBlacks: { offset: 164, type: 'f32' },
+      userSaturation: { offset: 168, type: 'f32' },
+      userVibrance: { offset: 172, type: 'f32' },
+      selectiveColorChromaClamp: { offset: 176, type: 'vec2f' },
+      lutSize: { offset: 184, type: 'f32' },
+      viewMode: { offset: 188, type: 'i32' },
+      styleKind: { offset: 192, type: 'i32' },
+      builtinPreset: { offset: 196, type: 'i32' },
+      useLut: { offset: 200, type: 'i32' },
+      lutInputTransfer: { offset: 204, type: 'i32' },
+      lutOutputTransfer: { offset: 208, type: 'i32' },
+      lutRole: { offset: 212, type: 'i32' },
+      lutInputRange: { offset: 216, type: 'i32' },
+      lutOutputRange: { offset: 220, type: 'i32' },
+      selectiveColorActive: { offset: 224, type: 'i32' },
+    })
+    expect(UNIFORM_BUFFER_SIZE).toBe(240)
+  })
+
+  it('carries no compare split and packs a legacy compare view as the processed output', () => {
+    expect(UNIFORM_FIELDS).not.toHaveProperty('compareSplit')
+    const compare = packedBytes((view) =>
+      packUniforms(
+        view,
+        { ...DEFAULT_PARAMS, ...LOOK, viewMode: 'compare', compareSplit: 0.1 },
+        null,
+        2,
+        false,
+      ),
+    )
+    const processed = packedBytes((view) =>
+      packUniforms(
+        view,
+        {
+          ...DEFAULT_PARAMS,
+          ...LOOK,
+          viewMode: 'processed',
+          compareSplit: 0.9,
+        },
+        null,
+        2,
+        false,
+      ),
+    )
+    expect(compare).toEqual(processed)
+    const view = new DataView(new Uint8Array(compare).buffer)
+    expect(view.getInt32(UNIFORM_FIELDS.viewMode.offset, true)).toBe(0)
+  })
 })
 
 describe('webGPU preview input', () => {
-  it('keeps the legacy default on shader compare until that axis is retired', () => {
-    expect(DEFAULT_PARAMS.viewMode).toBe('compare')
-    expect(DEFAULT_PARAMS.compareSplit).toBe(0.5)
+  it('starts the pipeline on the processed output', () => {
+    expect(DEFAULT_PARAMS.viewMode).toBe('processed')
   })
 
   it('defaults to the processed output of the app default color', () => {

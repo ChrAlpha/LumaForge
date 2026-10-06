@@ -107,7 +107,6 @@ describe('webGPU shader variants', () => {
     expect(code).toContain('params.userExposureMultiplier')
     expect(code).toContain('params.userContrastFactor')
     expect(code).toContain('params.viewMode')
-    expect(code).toContain('params.compareSplit')
     expect(code).toContain('sampleUnfilterableLut(normalizedColor)')
     expect(createProcessShader(true, false)).toContain('params.userSaturation')
     const active = getShaderSpecialization(
@@ -133,6 +132,20 @@ describe('webGPU shader variants', () => {
       'textureSampleLevel(lutTexture',
     )
     expect(VERTEX_SHADER).toContain('@builtin(vertex_index)')
+  })
+  it('keeps the technical original and built-in branches without a shader compare', () => {
+    expect(UNIFORM_BUFFER_STRUCT).not.toContain('compareSplit')
+    for (const integer of [true, false]) {
+      const code = createProcessShader(integer, false)
+      expect(code).not.toContain('compareSplit')
+      expect(code).not.toContain('VIEW_MODE_COMPARE')
+      expect(code).toContain(
+        'if (params.viewMode == VIEW_MODE_ORIGINAL) {\n    styledColor = technicalBaseDisplayColor;\n  }\n',
+      )
+      expect(code).toContain('params.styleKind == STYLE_BUILTIN')
+      for (let preset = 1; preset <= 7; preset++)
+        expect(code).toContain(`params.builtinPreset == ${preset}`)
+    }
   })
   it('matches packed field offsets to WGSL alignment and final struct size', () => {
     let offset = 0

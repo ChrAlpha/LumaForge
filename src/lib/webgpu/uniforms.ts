@@ -26,7 +26,7 @@ import {
 
 export const DEFAULT_PARAMS: ProcessingParams = {
   intensity: 0.7,
-  viewMode: 'compare',
+  viewMode: 'processed',
   compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
@@ -57,8 +57,7 @@ const OUTPUT_VIEW_MODES: Record<
 
 /**
  * The uniform-level params for a preview input. The output selects the shader
- * branch; the color intent passes through unchanged and never turns on the
- * shader compare.
+ * branch; the color intent passes through unchanged.
  */
 export function gpuPreviewInputParams(
   input: GpuPreviewInput,
@@ -86,10 +85,13 @@ export function packGpuPreviewUniforms(
   )
 }
 
-const VIEW_MODE_UNIFORMS: Record<ProcessingParams['viewMode'], number> = {
+// The shader renders one output per draw. Compare is composed from
+// frame-anchored layers above the canvas, so a compare view mode packs as the
+// processed output and the compare split never reaches the GPU.
+const VIEW_MODE_UNIFORMS: Record<ProcessingParams['viewMode'], 0 | 1> = {
   processed: 0,
   original: 1,
-  compare: 2,
+  compare: 0,
 }
 
 const STYLE_KIND_UNIFORMS: Record<ProcessingParams['styleKind'], number> = {
@@ -173,7 +175,6 @@ export function packUniforms(
   writeUniformF32(v, 'userBlacks', tone.userBlacks)
   writeUniformF32(v, 'userSaturation', p.userSaturation)
   writeUniformF32(v, 'userVibrance', p.userVibrance)
-  writeUniformF32(v, 'compareSplit', Math.min(1, Math.max(0, p.compareSplit)))
   writeUniformF32(
     v,
     'lutSize',

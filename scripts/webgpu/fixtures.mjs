@@ -156,16 +156,6 @@ export function scenarios(transferIds = []) {
       params: { viewMode: 'original', userExposureEv: 1, userContrast: 40 },
     },
   )
-  for (const split of [0, 0.27, 0.73, 1])
-    result.push({
-      name: `compare-${split}`,
-      params: {
-        viewMode: 'compare',
-        compareSplit: split,
-        userSaturation: -100,
-        userContrast: 25,
-      },
-    })
   for (const [role, transfer, legal] of [
     ['display-look', 'srgb', false],
     ['scene-creative', 'n-log', false],
