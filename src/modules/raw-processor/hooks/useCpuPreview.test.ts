@@ -676,3 +676,58 @@ describe('useCpuPreview look degradation (LUT-before-RAW)', () => {
     expect(result.current.failureReason).toBeNull()
   })
 })
+
+describe('useCpuPreview queued renders', () => {
+  type RenderRequest = Extract<CpuPreviewRequest, { type: 'render' }>
+
+  it('stays in flight while a newer render waits behind the frame that landed', () => {
+    vi.stubGlobal('Worker', FakeWorker)
+    const image = makeDecodedImage('quick')
+    const props = (userTemperature: number) => ({
+      enabled: true,
+      image,
+      imageVersion: 1,
+      params: { ...baseParams, userTemperature },
+      variant: 'processed' as const,
+    })
+    const { result, rerender } = renderHook((input) => useCpuPreview(input), {
+      initialProps: props(0),
+    })
+    const worker = FakeWorker.instances[0]!
+    const renders = () =>
+      worker.posted.filter(
+        (message): message is RenderRequest => message.type === 'render',
+      )
+    const answer = (request: RenderRequest, fill: number) => {
+      act(() => {
+        worker.respond({
+          type: 'rendered',
+          sourceId: request.sourceId,
+          requestId: request.requestId,
+          rgba: new Uint8ClampedArray(2 * 2 * 4).fill(fill),
+          width: 2,
+          height: 2,
+        })
+      })
+    }
+    answer(renders().at(-1)!, 10)
+    expect(result.current.inFlight).toBe(false)
+
+    rerender(props(10))
+    const older = renders().at(-1)!
+    // A second edit waits behind the render still on the worker.
+    rerender(props(20))
+    expect(renders()).toHaveLength(2)
+
+    answer(older, 100)
+    const newer = renders().at(-1)!
+    expect(newer.requestId).toBeGreaterThan(older.requestId)
+    // The older colour may stand in on screen, but it is not settled.
+    expect(result.current.frame?.requestId).toBe(older.requestId)
+    expect(result.current.inFlight).toBe(true)
+
+    answer(newer, 200)
+    expect(result.current.frame?.requestId).toBe(newer.requestId)
+    expect(result.current.inFlight).toBe(false)
+  })
+})

@@ -167,6 +167,12 @@ export function useCpuPreview({
   // render still outstanding.
   const liveRendersRef = useRef(new WeakMap<object, string | null>())
 
+  // The render the current params asked for last. Only its frame settles the
+  // preview: an older frame of the selected variant may stand in on screen
+  // while the newer render is still on the worker, but it is not the photo
+  // the params describe, so nothing downstream may take it as finished.
+  const latestRequestRef = useRef<object | null>(null)
+
   // Guard against re-requesting an identical render on every React re-render:
   // `params` is rebuilt as a fresh object upstream each render, so the render
   // effect's dep changes every render; without this guard the worker would be
@@ -191,7 +197,7 @@ export function useCpuPreview({
         // for the selected variant is queued behind it.
         if (request.variant !== variantRef.current) return
         setFrame(f)
-        setInFlight(false)
+        if (request === latestRequestRef.current) setInFlight(false)
       })
       client.onError((r) => {
         setFailureReason(r)
@@ -209,6 +215,7 @@ export function useCpuPreview({
     if (!enabled || !image) {
       lastSourceIdRef.current = null
       lastRenderKeyRef.current = null
+      latestRequestRef.current = null
       setFrame(null)
       setInFlight(false)
       setFailureReason(null)
@@ -269,6 +276,7 @@ export function useCpuPreview({
         // render it would otherwise duplicate.
         liveRendersRef.current = new WeakMap()
         lastRenderKeyRef.current = null
+        latestRequestRef.current = null
         setInFlight(false)
         return
       }
@@ -323,6 +331,7 @@ export function useCpuPreview({
         ? neutralFrameCacheKey(sourceId, params.rawRenderExposure.ev)
         : null,
     )
+    latestRequestRef.current = request
     setInFlight(true)
     getClient().requestRender(request)
   }, [enabled, params, variant])
