@@ -15,6 +15,9 @@ import type { PreviewLookReason } from './raw-reason'
 import {
   PREVIEW_LOOK_REASON_COPY,
   previewLookReasonMessageKey,
+  RAW_REASON_CODES,
+  RAW_REASON_COPY,
+  rawReasonMessageKey,
   resolvePreviewLookReason,
   supportLevelMessageKey,
 } from './raw-reason'
@@ -228,5 +231,52 @@ describe('supportLevelMessageKey', () => {
     expect(supportLevelMessageKey('experimental')).toBe(
       'raw.support.experimental',
     )
+  })
+})
+
+describe('rawReasonMessageKey', () => {
+  it('maps every surface reason to existing copy in both locales', () => {
+    expect(Object.keys(RAW_REASON_COPY).sort()).toEqual(
+      [...RAW_REASON_CODES].sort(),
+    )
+    for (const code of RAW_REASON_CODES) {
+      const key = rawReasonMessageKey(code)
+      expect(enMessages[key]).toBeTruthy()
+      expect(zhMessages[key]).toBeTruthy()
+    }
+  })
+
+  it('reuses the copy the surfaces already show for the same block', () => {
+    expect(rawReasonMessageKey('transform-pending')).toBe(
+      'raw.transform.preparing',
+    )
+    expect(rawReasonMessageKey('transform-invalid')).toBe(
+      'transform.error.transform',
+    )
+    expect(rawReasonMessageKey('transform-unavailable')).toBe(
+      'raw.transform.unavailable',
+    )
+    expect(rawReasonMessageKey('transform-hq-export')).toBe(
+      'raw.transform.hqExportReason',
+    )
+    expect(rawReasonMessageKey('transform-compare')).toBe(
+      'raw.mobile.compare.unavailable',
+    )
+    expect(rawReasonMessageKey('cpu-preview')).toBe(
+      'raw.preview.cpuDegraded.banner',
+    )
+    expect(rawReasonMessageKey('no-lut')).toBe('raw.strength.reason')
+  })
+
+  it('names each running stage with its progress copy', () => {
+    expect(rawReasonMessageKey('runtime-warming')).toBe('raw.progress.warming')
+    expect(rawReasonMessageKey('source-loading')).toBe('raw.progress.loading')
+    expect(rawReasonMessageKey('preview-decoding')).toBe(
+      'raw.progress.decoding',
+    )
+    expect(rawReasonMessageKey('look-processing')).toBe(
+      'raw.progress.processing',
+    )
+    expect(rawReasonMessageKey('export-running')).toBe('raw.progress.exporting')
   })
 })
