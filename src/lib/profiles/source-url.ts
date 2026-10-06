@@ -50,6 +50,21 @@ export function classifyProfileSourceUrl(value: string): ProfileSourceType {
   return parseProfileSourceUrl(value).type
 }
 
+// Transport rule shared by every online profile URL (query sources, catalog
+// roots, entries, CUBE and preview assets): absolute HTTPS, or HTTP on a
+// loopback host, never with credentials. It says nothing about resource
+// shape; each caller classifies the resource on its own terms.
+export function isProfileTransportUrl(value: string | undefined): boolean {
+  if (!value) return false
+
+  try {
+    validateTransportUrl(new URL(value))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function parseLUTResourceQuery(query: string): LUTResourceQueryResult {
   const params = new URLSearchParams(
     query.startsWith('?') ? query.slice(1) : query,
@@ -112,7 +127,7 @@ function parseProfileSourceUrl(value: string): ParsedProfileSourceUrl {
 
   const url = parseUrl(raw)
 
-  validateSupportedUrl(url)
+  validateTransportUrl(url)
 
   const type = classifySupportedUrl(url)
 
@@ -131,7 +146,7 @@ function parseUrl(value: string): URL {
   }
 }
 
-function validateSupportedUrl(url: URL): void {
+function validateTransportUrl(url: URL): void {
   if (url.protocol === 'https:') {
     validateCredentials(url)
     return

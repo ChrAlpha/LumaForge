@@ -1,6 +1,7 @@
 import type { LUTContractSelection } from '@lumaforge/luma-color-runtime'
 
 import { mapProfileLUTContract } from './lut-contract'
+import { isProfileTransportUrl } from './source-url'
 
 export type OnlineProfileIssueCode =
   | 'invalid-catalog'
@@ -78,24 +79,6 @@ function issue(
   return { code, message, entryId }
 }
 
-function isRuntimeUrl(value: string | undefined): boolean {
-  if (!value) return false
-
-  try {
-    const url = new URL(value)
-
-    if (url.protocol === 'https:') return true
-
-    if (url.protocol !== 'http:') return false
-
-    const host = url.hostname.toLowerCase()
-
-    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
-  } catch {
-    return false
-  }
-}
-
 function hasCubeMediaTypeOrExtension(asset: Record<string, unknown>): boolean {
   const mediaType = readString(asset, 'mediaType')?.toLowerCase()
   const url = readString(asset, 'url')
@@ -161,7 +144,7 @@ function validatePreviewAsset(
   if (role !== 'preview-image' && role !== 'thumbnail') return undefined
 
   const url = readString(asset, 'url')
-  if (!isRuntimeUrl(url)) return undefined
+  if (!isProfileTransportUrl(url)) return undefined
 
   const mediaType = inferPreviewMediaType(asset)
   if (!mediaType) return undefined
@@ -242,7 +225,7 @@ function validateCubeAsset(
     )
   }
 
-  if (!isRuntimeUrl(url)) {
+  if (!isProfileTransportUrl(url)) {
     issues.push(
       issue(
         'invalid-url',
@@ -390,7 +373,7 @@ export function parseReleaseCatalog(
   document: unknown,
   sourceUrl: string,
 ): OnlineProfileResult<OnlineCatalogEntry[]> {
-  if (!isRuntimeUrl(sourceUrl)) {
+  if (!isProfileTransportUrl(sourceUrl)) {
     return {
       ok: false,
       issues: [issue('invalid-url', 'Catalog source URL is invalid.')],
@@ -445,7 +428,7 @@ export function parseReleaseCatalog(
     entryIssues.push(...validateCatalogEntryFields(entry))
 
     const entryUrl = readString(entry, 'entryUrl')
-    if (!isRuntimeUrl(entryUrl)) {
+    if (!isProfileTransportUrl(entryUrl)) {
       entryIssues.push(
         issue(
           'invalid-url',
@@ -467,7 +450,7 @@ export function parseReleaseCatalog(
       continue
     }
 
-    if (entryUrl && isRuntimeUrl(entryUrl)) {
+    if (entryUrl && isProfileTransportUrl(entryUrl)) {
       const validatedAsset = asset.value
       entries.push(buildEntry(entry, entryUrl, validatedAsset))
     }
@@ -506,7 +489,7 @@ export function parseReleaseEntry(
   document: unknown,
   sourceUrl: string,
 ): OnlineProfileResult<OnlineLUTEntry> {
-  if (!isRuntimeUrl(sourceUrl)) {
+  if (!isProfileTransportUrl(sourceUrl)) {
     return {
       ok: false,
       issues: [issue('invalid-url', 'Entry source URL is invalid.')],
@@ -540,7 +523,7 @@ export function parseReleaseEntry(
   }
 
   const entryUrl = readString(document, 'entryUrl')
-  if (entryUrl && !isRuntimeUrl(entryUrl)) {
+  if (entryUrl && !isProfileTransportUrl(entryUrl)) {
     issues.push(
       issue(
         'invalid-url',

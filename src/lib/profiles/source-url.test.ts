@@ -4,6 +4,7 @@ import type { ProfileSourceResource } from './source-url'
 import {
   classifyProfileSourceUrl,
   createLUTResourceShareUrl,
+  isProfileTransportUrl,
   normalizeProfileSourceUrl,
   parseLUTResourceQuery,
 } from './source-url'
@@ -69,6 +70,45 @@ describe('profile source URLs', () => {
     expect(
       parseLUTResourceQuery(
         '?luts=https%3A%2F%2Fuser%3Apass%40example.com%2Ftest.cube',
+      ).issues[0]?.code,
+    ).toBe('credentialed-url')
+  })
+
+  it.each([
+    ['HTTPS', 'https://cdn.example.com/look.cube', true],
+    ['localhost HTTP', 'http://localhost:4173/look.cube', true],
+    ['loopback IPv4 HTTP', 'http://127.0.0.1:4173/look.cube', true],
+    ['loopback IPv6 HTTP', 'http://[::1]:4173/look.cube', true],
+    ['remote HTTP', 'http://cdn.example.com/look.cube', false],
+    ['a username', 'https://user@cdn.example.com/look.cube', false],
+    ['a password', 'https://:secret@cdn.example.com/look.cube', false],
+    ['localhost credentials', 'http://user:pass@localhost/look.cube', false],
+    ['a query', 'https://cdn.example.com/look.cube?v=2', true],
+    ['no extension', 'https://cdn.example.com/blobs/sha256/abc', true],
+    ['an unsupported scheme', 'ftp://cdn.example.com/look.cube', false],
+    ['a relative path', '/luts/look.cube', false],
+    ['an empty value', '', false],
+    ['a missing value', undefined, false],
+  ])('applies the shared transport rule to %s', (_label, value, expected) => {
+    expect(isProfileTransportUrl(value)).toBe(expected)
+  })
+
+  it('keeps resource classification separate from the transport rule', () => {
+    const extensionless = 'https://cdn.example.com/blobs/sha256/abc'
+
+    expect(isProfileTransportUrl(extensionless)).toBe(true)
+    expect(
+      parseLUTResourceQuery(`?luts=${encodeURIComponent(extensionless)}`)
+        .issues[0]?.code,
+    ).toBe('unsupported-resource')
+    expect(
+      parseLUTResourceQuery(
+        `?luts=${encodeURIComponent('http://cdn.example.com/look.cube')}`,
+      ).issues[0]?.code,
+    ).toBe('unsupported-scheme')
+    expect(
+      parseLUTResourceQuery(
+        `?luts=${encodeURIComponent('https://user@cdn.example.com/look.cube')}`,
       ).issues[0]?.code,
     ).toBe('credentialed-url')
   })
