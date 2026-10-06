@@ -1694,6 +1694,69 @@ describe('useRawWorkflow embedded preview state', () => {
     })
   })
 
+  it('routes a view mode written in the loadFile tick into the new session only', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+
+    // Both callbacks come from the pre-load render: the mode is written
+    // before React re-renders with the session that loadFile just created.
+    const { loadFile, setViewMode } = result.current
+    let loadPromise!: Promise<void>
+    await act(async () => {
+      loadPromise = loadFile(new File(['raw'], 'frame.ARW'))
+      setViewMode('original')
+
+      expect(jotaiStore.get(currentSessionAtom)?.viewState.mode).toBe(
+        'original',
+      )
+      expect(getProcessingParams().viewMode).toBe('compare')
+
+      await loadPromise
+    })
+
+    expect(result.current.status).toBe('ready')
+    expect(result.current.viewMode).toBe('original')
+    expect(result.current.params.viewMode).toBe('original')
+    expect(jotaiStore.get(currentSessionAtom)?.viewState.mode).toBe('original')
+    expect(getProcessingParams().viewMode).toBe('compare')
+  })
+
+  it('routes view writes made in the reset tick to the detached view', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'first.ARW'))
+    })
+    act(() => {
+      result.current.setViewMode('processed')
+    })
+
+    // Every callback comes from the session render; the view writes land
+    // after reset has already dropped the session.
+    const { reset, setViewMode, setCompareSplit } = result.current
+    act(() => {
+      reset()
+      setViewMode('original')
+      setCompareSplit(0.37)
+
+      expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    })
+
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    expect(result.current.viewMode).toBe('original')
+    expect(result.current.compareSplit).toBe(0.37)
+
+    // The next RAW keeps the detached split but always opens in compare.
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'second.ARW'))
+    })
+
+    expect(result.current.viewMode).toBe('compare')
+    expect(result.current.compareSplit).toBe(0.37)
+    expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
+      mode: 'compare',
+      compareSplit: 0.37,
+    })
+  })
+
   it('keeps view mode params and session view state in sync', () => {
     jotaiStore.set(currentSessionAtom, createTestSession())
 
@@ -4940,6 +5003,218 @@ describe('useRawWorkflow embedded preview state', () => {
       'JPEG ready',
       expect.anything(),
     )
+  })
+
+  it('keeps a ready export and its output through view-only changes', async () => {
+    const cleanup = vi.fn(async () => undefined)
+    exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
+      filename: 'frame_neutral_fullres.jpg',
+      output: {
+        kind: 'file-backed',
+        exportId: 'export-view-only',
+        filename: 'frame_neutral_fullres.jpg',
+        byteLength: 4,
+        mimeType: 'image/jpeg',
+        openBlob: vi.fn(async () => new Blob(['jpeg'], { type: 'image/jpeg' })),
+        cleanup,
+      } satisfies FileBackedOutputResult,
+    })
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    await act(async () => {
+      await result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+    })
+    await waitFor(() => {
+      expect(
+        jotaiStore.get(currentSessionAtom)?.exportState.result?.manifestState
+          ?.status,
+      ).not.toBe('sealing')
+    })
+    const readyResult = jotaiStore.get(currentSessionAtom)?.exportState.result
+    expect(readyResult).toBeDefined()
+
+    act(() => result.current.setViewMode('original'))
+    act(() => result.current.setViewMode('processed'))
+    act(() => result.current.setCompareSplit(0.37))
+    act(() => result.current.setViewMode('compare'))
+    act(() =>
+      result.current.setPreviewViewport({
+        zoom: 2,
+        panX: 40,
+        panY: -20,
+        fitMode: 'custom',
+      }),
+    )
+    act(() => result.current.resetPreviewViewport())
+    await flushPostCommitTasks()
+
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBe(
+      readyResult,
+    )
+    expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
+      mode: 'compare',
+      compareSplit: 0.37,
+      zoom: 1,
+    })
+    expect(result.current.exportResult?.filename).toBe(
+      'frame_neutral_fullres.jpg',
+    )
+    expect(result.current.canExport).toBe(true)
+    expect(cleanup).not.toHaveBeenCalled()
+  })
+
+  it('lets an in-flight export finish through view-only changes', async () => {
+    const pendingExport = deferred<{
+      filename: string
+      blob: Blob
+    }>()
+    let exportSignal: AbortSignal | undefined
+    exportSystemMock.runFullResolutionExportJob.mockImplementation(
+      ({ signal }: { signal?: AbortSignal }) => {
+        exportSignal = signal
+        return pendingExport.promise
+      },
+    )
+
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    let exportPromise!: Promise<void>
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    await act(async () => {
+      exportPromise = result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+      await Promise.resolve()
+    })
+
+    expect(exportSignal).toBeInstanceOf(AbortSignal)
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe(
+      'exporting',
+    )
+
+    act(() => {
+      result.current.setViewMode('original')
+      result.current.setCompareSplit(0.62)
+      result.current.setPreviewViewport({
+        zoom: 2,
+        panX: 40,
+        panY: -20,
+        fitMode: 'custom',
+      })
+    })
+
+    expect(exportSignal?.aborted).toBe(false)
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe(
+      'exporting',
+    )
+
+    await act(async () => {
+      pendingExport.resolve({
+        filename: 'frame_neutral_fullres.jpg',
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      })
+      await exportPromise
+    })
+
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
+    expect(result.current.exportResult?.filename).toBe(
+      'frame_neutral_fullres.jpg',
+    )
+    expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
+      mode: 'original',
+      compareSplit: 0.62,
+      zoom: 2,
+    })
+  })
+
+  it('exports and seals a non-detent look strength exactly', async () => {
+    exportSystemMock.runFullResolutionExportJob.mockImplementation(
+      async ({ filename }: { filename: string }) => ({
+        filename,
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      }),
+    )
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    await act(async () => {
+      await result.current.loadLUT(
+        createCubeFile('Client Secret Sauce', 'client-look.cube'),
+      )
+    })
+    act(() => {
+      result.current.selectLUTProfile({
+        ...getLUTColorProfile('sony-sgamut3cine-slog3')!,
+        role: 'combined-look-output',
+        outputGamut: 'srgb-rec709',
+        outputTransfer: 'bt709',
+        outputRange: 'full',
+      })
+    })
+    await waitFor(() => {
+      expect(result.current.lutData?.profileResolution.kind).toBe('confirmed')
+    })
+
+    // 0.37 sits between the Light (0.4) and Standard (0.7) detents.
+    act(() => {
+      result.current.setIntensity(0.37)
+    })
+    expect(result.current.activeIntensity).toBe(0.37)
+    expect(result.current.params.intensity).toBe(0.37)
+
+    await act(async () => {
+      await result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+    })
+
+    const [{ graph }] =
+      exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
+    expect(
+      graph.steps.find(
+        (step: ExportColorGraphStep) => step.kind === 'lut-output-to-srgb',
+      ),
+    ).toMatchObject({ intensity: 0.37 })
+    await waitFor(() => {
+      expect(
+        jotaiStore.get(currentSessionAtom)?.exportState.result?.manifestState
+          ?.status,
+      ).toBe('ready')
+    })
+    const readyResult = jotaiStore.get(currentSessionAtom)?.exportState.result
+    expect(readyResult?.manifest).toMatchObject({
+      calibration: null,
+      lut: { kind: 'local-file', filename: 'client-look.cube' },
+      render_params: { intensity: 0.37 },
+    })
+
+    // Repeating the exported amount keeps the result; any other amount is a
+    // different render, whether or not it sits on a detent.
+    act(() => {
+      result.current.setIntensity(0.37)
+    })
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBe(
+      readyResult,
+    )
+
+    act(() => {
+      result.current.setIntensity(0.62)
+    })
+    expect(result.current.activeIntensity).toBe(0.62)
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('idle')
+    expect(
+      jotaiStore.get(currentSessionAtom)?.exportState.result,
+    ).toBeUndefined()
   })
 
   it('clears a ready export when active render exposure is refreshed', async () => {

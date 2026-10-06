@@ -63,12 +63,35 @@ describe('toManifestRenderParams', () => {
     })
   })
 
-  it('records a continuous look strength exactly', () => {
-    // Strength is set in whole percents; the manifest keeps the amount the
-    // preview and export used rather than a snapped preset.
+  it.each([0, 0.37, 0.62, 0.7, 1])(
+    'records a continuous look strength of %s exactly',
+    (intensity) => {
+      // Strength is set in whole percents; the manifest keeps the amount the
+      // preview and export used rather than a snapped preset.
+      expect(
+        toManifestRenderParams(params({ intensity }), exposure).intensity,
+      ).toBe(intensity)
+    },
+  )
+
+  it('describes the same render whatever the preview view state', () => {
+    const projected = toManifestRenderParams(
+      params({ viewMode: 'processed', compareSplit: 0.5 }),
+      exposure,
+    )
+
     expect(
-      toManifestRenderParams(params({ intensity: 0.62 }), exposure).intensity,
-    ).toBe(0.62)
+      toManifestRenderParams(
+        params({ viewMode: 'original', compareSplit: 0.37 }),
+        exposure,
+      ),
+    ).toEqual(projected)
+    expect(
+      toManifestRenderParams(
+        params({ viewMode: 'compare', compareSplit: 0.62 }),
+        exposure,
+      ),
+    ).toEqual(projected)
   })
 
   it('records selective color only when a band is shifted', () => {
@@ -118,6 +141,12 @@ describe('toManifestRenderParams canonical bytes', () => {
     '"purple":{"hue":0,"lightness":0,"saturation":0},' +
     '"red":{"hue":10,"lightness":0,"saturation":0},' +
     '"yellow":{"hue":0,"lightness":0,"saturation":0}},' +
+    '"tone_curve":{"blacks":0,"contrast":0,"highlights":0,"shadows":0,"whites":0}}'
+  const NON_DETENT_STRENGTH_GOLDEN =
+    '{"color_balance":{"temperature":0,"tint":0},"exposure_ev":0,' +
+    '"intensity":0.37,"raw_render_exposure_ev":0,' +
+    '"raw_render_exposure_source":"identity",' +
+    '"saturation":{"saturation":0,"vibrance":0},' +
     '"tone_curve":{"blacks":0,"contrast":0,"highlights":0,"shadows":0,"whites":0}}'
 
   const dngExposure = {
@@ -216,35 +245,81 @@ describe('toManifestRenderParams canonical bytes', () => {
 
     expect(canonicalizeJson(renderParams)).toBe(NEUTRAL_GOLDEN)
   })
+
+  it.each([
+    ['a partial record of neutral bands', { blue: neutralBand }],
+    ['bands missing their scalars', { red: { hue: 0 }, aqua: {} }],
+    [
+      'negative zero shifts',
+      { red: { hue: -0, saturation: -0, lightness: 0 } },
+    ],
+    [
+      'non-finite shifts',
+      { green: { hue: Number.NaN, saturation: Infinity, lightness: 0 } },
+    ],
+  ])('omits selective color written as %s', (_label, selectiveColor) => {
+    const renderParams = toManifestRenderParams(
+      neutralParams({
+        selectiveColor: selectiveColor as ProcessingParams['selectiveColor'],
+      }),
+      identityExposure,
+    )
+
+    expect(canonicalizeJson(renderParams)).toBe(NEUTRAL_GOLDEN)
+  })
+
+  it('freezes a partial shifted record as all eight normalized bands', () => {
+    const renderParams = toManifestRenderParams(
+      neutralParams({
+        selectiveColor: {
+          red: { hue: 10 },
+          blue: { saturation: -30, lightness: 5 },
+        } as ProcessingParams['selectiveColor'],
+      }),
+      identityExposure,
+    )
+
+    expect(canonicalizeJson(renderParams)).toBe(SHIFTED_HSL_GOLDEN)
+  })
+
+  it('freezes a non-detent look strength unrounded', () => {
+    // 0.37 sits between the Light (0.4) and Standard (0.7) detents.
+    const renderParams = toManifestRenderParams(
+      neutralParams({ styleKind: 'custom', intensity: 0.37 }),
+      identityExposure,
+    )
+
+    expect(canonicalizeJson(renderParams)).toBe(NON_DETENT_STRENGTH_GOLDEN)
+  })
 })
 
-describe('lutIdentityForStyle', () => {
-  const confirmedStyle: StyleAsset = {
-    kind: 'custom',
-    name: 'Look',
-    defaultIntensity: 0.7,
-    currentIntensity: 0.7,
-    lutAsset: {
-      format: 'cube',
-      dimension: 33,
-      sourceName: 'look.cube',
-      sha256: 'a'.repeat(64),
-      profileResolution: {
-        kind: 'confirmed',
-        confidence: 'metadata',
-        profile: {
-          id: 'display-srgb',
-          label: 'Display sRGB',
-          role: 'display-look',
-          inputGamut: 'srgb-rec709',
-          inputTransfer: 'srgb',
-          inputRange: 'full',
-          aliases: [],
-        },
+const confirmedStyle: StyleAsset = {
+  kind: 'custom',
+  name: 'Look',
+  defaultIntensity: 0.7,
+  currentIntensity: 0.7,
+  lutAsset: {
+    format: 'cube',
+    dimension: 33,
+    sourceName: 'look.cube',
+    sha256: 'a'.repeat(64),
+    profileResolution: {
+      kind: 'confirmed',
+      confidence: 'metadata',
+      profile: {
+        id: 'display-srgb',
+        label: 'Display sRGB',
+        role: 'display-look',
+        inputGamut: 'srgb-rec709',
+        inputTransfer: 'srgb',
+        inputRange: 'full',
+        aliases: [],
       },
     },
-  }
+  },
+}
 
+describe('lutIdentityForStyle', () => {
   it('builds a local-file identity from a confirmed contract', () => {
     expect(lutIdentityForStyle(confirmedStyle).identity).toEqual({
       kind: 'local-file',
@@ -327,5 +402,47 @@ describe('buildFullResExportManifest', () => {
     expect(manifest.environment.native_artifacts.variant).toBe('desktop')
     expect(manifest.environment.render_engine).toMatch(/^\d+\.\d+\.\d+|unknown/)
     expect(manifest.render_params.exposure_ev).toBe(0.3)
+  })
+
+  it('records a null calibration slot and the exact look strength', () => {
+    const graph = resolveExportColorGraph({
+      styleKind: 'none',
+      intensity: 0.37,
+      builtinPreset: null,
+      lut: null,
+      rawRenderExposure: exposure,
+    })
+    if (!graph.supported) throw new Error(graph.message)
+    const manifest = buildFullResExportManifest({
+      graph,
+      params: params({ intensity: 0.37 }),
+      rawRenderExposure: exposure,
+      source: {
+        sha256: 'b'.repeat(64),
+        byte_size: 10,
+        filename: 'x.arw',
+        decoded_dimensions: { width: 4, height: 2 },
+      },
+      lut: lutIdentityForStyle({ ...confirmedStyle, currentIntensity: 0.37 })
+        .identity,
+      output: {
+        sha256: 'c'.repeat(64),
+        width: 4,
+        height: 2,
+        quality: 0.92,
+        filename: 'x_look_fullres.jpg',
+      },
+      policy: { kind: 'export-full', row_slice: 512, concurrency: 2 },
+      environment: resolveExportEnvironment('low-memory'),
+      producedAt: new Date('2026-09-05T00:00:00Z'),
+    })
+
+    // The browser writer has no camera-calibration step: the slot stays in
+    // the hashed manifest as an explicit null, even next to a LUT identity.
+    expect(manifest.lut?.kind).toBe('local-file')
+    expect(manifest).toHaveProperty('calibration', null)
+    expect(canonicalizeJson(manifest)).toContain('"calibration":null')
+    expect(manifest.render_params.intensity).toBe(0.37)
+    expect(verifyManifestSha256(manifest)).toBe(true)
   })
 })

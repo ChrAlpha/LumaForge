@@ -262,6 +262,54 @@ describe('render graph param classification', () => {
       ).toBe(false)
     },
   )
+
+  it('compares only the keys a patch carries', () => {
+    const allNonDefault = { ...DEFAULT_PARAMS, ...NON_DEFAULT_VALUES }
+
+    expect(changesRenderGraphParams(allNonDefault, {})).toBe(false)
+    expect(
+      changesRenderGraphParams(allNonDefault, {
+        viewMode: 'compare',
+        compareSplit: 0.37,
+      }),
+    ).toBe(false)
+    expect(
+      changesRenderGraphParams(allNonDefault, {
+        viewMode: 'compare',
+        intensity: 0.62,
+      }),
+    ).toBe(true)
+  })
+})
+
+describe('continuous look strength', () => {
+  // Light 0.4, Standard 0.7 and Strong 1 are only detents on the Strength
+  // row; any amount in between is a distinct render graph input.
+  function withIntensity(intensity: number): ProcessingParams {
+    return { ...DEFAULT_PARAMS, styleKind: 'custom', intensity }
+  }
+
+  it.each([
+    [0.37, 0.62],
+    [0.62, 0.37],
+    [0.62, 0.7],
+    [0.4, 0.37],
+    [0.62, 0.63],
+    [0.37, 0],
+  ])('invalidates the render graph from %s to %s', (from, to) => {
+    expect(
+      changesRenderGraphParams(withIntensity(from), { intensity: to }),
+    ).toBe(true)
+  })
+
+  it.each([0, 0.37, 0.62, 1])(
+    'keeps the render graph when %s repeats',
+    (intensity) => {
+      expect(
+        changesRenderGraphParams(withIntensity(intensity), { intensity }),
+      ).toBe(false)
+    },
+  )
 })
 
 describe('export state helpers', () => {
@@ -508,6 +556,44 @@ describe('export state helpers', () => {
         },
       }),
     ).toBe(false)
+  })
+
+  it('compares selective color by its normalized bands, not its record shape', () => {
+    const neutralBand = { hue: 0, saturation: 0, lightness: 0 } as const
+    const fullShifted = {
+      red: { hue: 25, saturation: 0, lightness: 0 },
+      orange: neutralBand,
+      yellow: neutralBand,
+      green: neutralBand,
+      aqua: neutralBand,
+      blue: neutralBand,
+      purple: neutralBand,
+      magenta: neutralBand,
+    }
+    const partialShifted = {
+      red: { hue: 25, saturation: 0, lightness: 0 },
+    } as ProcessingParams['selectiveColor']
+    const partialNeutral = {
+      blue: neutralBand,
+    } as ProcessingParams['selectiveColor']
+
+    expect(
+      changesRenderGraphParams(
+        { ...DEFAULT_PARAMS, selectiveColor: fullShifted },
+        { selectiveColor: partialShifted },
+      ),
+    ).toBe(false)
+    expect(
+      changesRenderGraphParams(DEFAULT_PARAMS, {
+        selectiveColor: partialNeutral,
+      }),
+    ).toBe(false)
+    expect(
+      changesRenderGraphParams(
+        { ...DEFAULT_PARAMS, selectiveColor: partialShifted },
+        { selectiveColor: partialNeutral },
+      ),
+    ).toBe(true)
   })
 
   it('compares raw render exposure by value while preserving null semantics', () => {
