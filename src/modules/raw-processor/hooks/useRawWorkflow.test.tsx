@@ -106,15 +106,25 @@ const originalReferenceSnapshotMock = vi.hoisted(() => ({
 
 // Workflow tests provide a usable GPU explicitly; jsdom's missing canvas API
 // must not turn the decoded-size and dual-preview assertions into CPU tests.
-vi.mock('~/lib/preview/gpu-backend', () => {
-  const facts = {
-    backend: 'webgpu',
-    maxTextureSize: 16384,
-    reason: null,
+// A test that drops to the CPU preview mid-session swaps `state` and puts
+// the GPU back afterwards.
+const previewBackendMock = vi.hoisted(() => {
+  const gpu = {
+    status: 'ready' as const,
+    facts: {
+      backend: 'webgpu' as 'webgpu' | 'cpu',
+      maxTextureSize: 16384,
+      reason: null as 'gpu-preview-failed' | null,
+    },
   }
+  return { gpu, state: gpu }
+})
+vi.mock('~/lib/preview/gpu-backend', () => {
+  const { facts } = previewBackendMock.gpu
   return {
     resolvePreviewBackend: vi.fn(async () => facts),
     getPreviewBackendSnapshot: () => facts,
+    getPreviewBackendState: () => previewBackendMock.state,
     reportGpuPreviewFailure: vi.fn(),
   }
 })
@@ -2628,25 +2638,107 @@ describe('useRawWorkflow embedded preview state', () => {
 
     act(() => {
       previewTransform!.commit(SAMPLE_GEOMETRY)
+      setViewMode('processed')
+      // The committed Transform shows the processed photo alone, so the
+      // original is refused even through a callback from before the commit.
       setViewMode('original')
 
       expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
         exportGeometry: SAMPLE_GEOMETRY,
-        viewState: { mode: 'original', compareSplit: 0.5 },
+        viewState: { mode: 'processed', compareSplit: 0.5 },
       })
       expect(getProcessingParams()).toBe(storedParamsBefore)
     })
 
-    expect(result.current.viewMode).toBe('original')
+    expect(result.current.viewMode).toBe('processed')
     expect(result.current.params).not.toHaveProperty('viewMode')
     expect(result.current.previewTransform?.active).toBe(true)
     expect(result.current.previewTransform?.geometry).toEqual(SAMPLE_GEOMETRY)
     expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
       exportGeometry: SAMPLE_GEOMETRY,
-      viewState: { mode: 'original', compareSplit: 0.5 },
+      viewState: { mode: 'processed', compareSplit: 0.5 },
     })
     expect(getProcessingParams()).toBe(storedParamsBefore)
     expect(getDetachedPreviewView().mode).toBe('compare')
+  })
+
+  it('refuses the split once the GPU preview falls back to the CPU, and keeps the original', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    const { setCompareSplit, setViewMode, resetCompareView } = result.current
+    act(() => {
+      setCompareSplit(0.7)
+      result.current.setPreviewViewport({
+        zoom: 2,
+        panX: 30,
+        panY: 10,
+        fitMode: 'custom',
+      })
+    })
+    const storedParamsBefore = getProcessingParams()
+
+    previewBackendMock.state = {
+      status: 'ready',
+      facts: {
+        backend: 'cpu',
+        maxTextureSize: 0,
+        reason: 'gpu-preview-failed',
+      },
+    }
+    try {
+      const sessionBefore = jotaiStore.get(currentSessionAtom)
+      act(() => {
+        setCompareSplit(0.2)
+        setViewMode('compare')
+        resetCompareView()
+      })
+      expect(jotaiStore.get(currentSessionAtom)).toBe(sessionBefore)
+
+      act(() => setViewMode('original'))
+      expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
+        mode: 'original',
+        compareSplit: 0.7,
+        zoom: 2,
+        fitMode: 'custom',
+      })
+      expect(getProcessingParams()).toBe(storedParamsBefore)
+    } finally {
+      previewBackendMock.state = previewBackendMock.gpu
+    }
+  })
+
+  it('resets the compare view as one write on the GPU preview', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    act(() => {
+      result.current.setViewMode('processed')
+      result.current.setCompareSplit(0.2)
+      result.current.setPreviewViewport({
+        zoom: 3,
+        panX: 40,
+        panY: -20,
+        fitMode: 'custom',
+      })
+    })
+    const storedParamsBefore = getProcessingParams()
+
+    act(() => result.current.resetCompareView())
+
+    expect(jotaiStore.get(currentSessionAtom)?.viewState).toEqual({
+      mode: 'compare',
+      compareSplit: 0.5,
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      fitMode: 'screen',
+    })
+    expect(result.current.viewMode).toBe('compare')
+    expect(result.current.compareSplit).toBe(0.5)
+    expect(getProcessingParams()).toBe(storedParamsBefore)
   })
 
   it('replaces preview transform source identity and resets its active flag with a new RAW', async () => {
@@ -5148,11 +5240,16 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     const readyResult = jotaiStore.get(currentSessionAtom)?.exportState.result
     expect(readyResult).toBeDefined()
+    // This plan released the preview for the export, so the original and the
+    // split are refused until it is restored; the processed photo and the
+    // viewport stay open.
+    expect(result.current.previewSuspended).toBe(true)
 
     act(() => result.current.setViewMode('original'))
     act(() => result.current.setViewMode('processed'))
     act(() => result.current.setCompareSplit(0.37))
     act(() => result.current.setViewMode('compare'))
+    act(() => result.current.resetCompareView())
     act(() =>
       result.current.setPreviewViewport({
         zoom: 2,
@@ -5169,8 +5266,8 @@ describe('useRawWorkflow embedded preview state', () => {
       readyResult,
     )
     expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
-      mode: 'compare',
-      compareSplit: 0.37,
+      mode: 'processed',
+      compareSplit: 0.5,
       zoom: 1,
     })
     expect(result.current.exportResult?.filename).toBe(
@@ -5236,9 +5333,11 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.exportResult?.filename).toBe(
       'frame_neutral_fullres.jpg',
     )
+    // The export held the preview while it ran, so the original and the
+    // split were refused; the viewport change landed.
     expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
-      mode: 'original',
-      compareSplit: 0.62,
+      mode: 'compare',
+      compareSplit: 0.5,
       zoom: 2,
     })
   })

@@ -29,6 +29,7 @@ function workflowFixture() {
     loadOnlineLUT: vi.fn(),
     setViewMode: vi.fn(),
     setCompareSplit: vi.fn(),
+    resetCompareView: vi.fn(),
     resetPreviewViewport: vi.fn(),
     exportImage: vi.fn(),
     recoverInterruptedExport: vi.fn(),
@@ -40,7 +41,7 @@ function workflowFixture() {
 }
 
 describe('useRawProcessorViewController', () => {
-  it('resets the compare view to a centred split at fit, zoom and pan included', () => {
+  it('resets the compare view through one guarded workflow transaction', () => {
     const workflow = workflowFixture()
     const { result } = renderHook(() =>
       useRawProcessorViewController({
@@ -51,9 +52,31 @@ describe('useRawProcessorViewController', () => {
 
     act(() => result.current.handleCompareReset())
 
-    expect(workflow.setViewMode).toHaveBeenCalledWith('compare')
-    expect(workflow.setCompareSplit).toHaveBeenCalledWith(0.5)
-    expect(workflow.resetPreviewViewport).toHaveBeenCalledOnce()
+    expect(workflow.resetCompareView).toHaveBeenCalledOnce()
+    // Never split into separate mode, split and viewport writes, so a
+    // refused reset cannot still move the viewport.
+    expect(workflow.setViewMode).not.toHaveBeenCalled()
+    expect(workflow.setCompareSplit).not.toHaveBeenCalled()
+    expect(workflow.resetPreviewViewport).not.toHaveBeenCalled()
+  })
+
+  it('reads the reset command of the workflow it is handed now', () => {
+    const first = workflowFixture()
+    const second = workflowFixture()
+    const { result, rerender } = renderHook(
+      ({ workflow }) =>
+        useRawProcessorViewController({
+          rawRouteLocation: { search: '', pathname: '/raw' },
+          workflow,
+        }),
+      { initialProps: { workflow: first } },
+    )
+
+    rerender({ workflow: second })
+    act(() => result.current.handleCompareReset())
+
+    expect(first.resetCompareView).not.toHaveBeenCalled()
+    expect(second.resetCompareView).toHaveBeenCalledOnce()
   })
 
   it('starts the explicit export with no choices, whatever a surface hands over', () => {

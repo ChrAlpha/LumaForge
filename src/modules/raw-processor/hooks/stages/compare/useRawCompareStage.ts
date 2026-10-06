@@ -1,12 +1,22 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useMemo } from 'react'
 
+import { getPreviewBackendState } from '~/lib/preview/gpu-backend'
 import type { PreviewView, PreviewViewMode } from '~/lib/preview/preview-view'
+import { DEFAULT_PREVIEW_VIEW } from '~/lib/preview/preview-view'
+import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { ImageSession } from '../../../model/session'
+import type { SessionViewCommand } from '../../../services/compare/view-session-state'
+import {
+  applyCompareSplitToSession,
+  applyCompareViewResetToSession,
+  applyViewModeToSession,
+  canRunSessionViewCommand,
+  sessionViewCommandForMode,
+} from '../../../services/compare/view-session-state'
 import {
   computeCompareSplitChange,
-  computeViewModeChange,
   computeViewportChange,
 } from '../../../services/look/orchestrate-params-update'
 import type { PreviewViewport } from '../../../services/preview/preview-viewport'
@@ -22,6 +32,7 @@ type UseRawCompareStageInput = {
   session: ImageSession | null
   sessionRef: MutableRefObject<ImageSession | null>
   setSession: Dispatch<SetStateAction<ImageSession | null>>
+  decodedImageRef: { readonly current: DecodedImage | null }
 }
 
 export function useRawCompareStage({
@@ -30,6 +41,7 @@ export function useRawCompareStage({
   session,
   sessionRef,
   setSession,
+  decodedImageRef,
 }: UseRawCompareStageInput) {
   const sessionViewMode = session?.viewState.mode
   const sessionCompareSplit = session?.viewState.compareSplit
@@ -67,25 +79,63 @@ export function useRawCompareStage({
 
   // Writes route through the session ref, which load and reset update
   // synchronously, so a write in the same tick as a load or reset reaches the
-  // owner that exists after it rather than the one this render saw.
+  // owner that exists after it rather than the one this render saw. The
+  // guard reads that owner, its decoded preview and the preview backend when
+  // the command runs, so a callback held from an earlier render cannot split
+  // a CPU preview or compare a committed Transform. A refused command writes
+  // nothing, and a write lands only on the source it was guarded for. The
+  // result says whether a session owned the write, applied or refused.
+  const writeSessionView = useCallback(
+    (
+      command: SessionViewCommand | null,
+      update: (session: ImageSession) => ImageSession,
+    ) => {
+      const target = sessionRef.current
+      if (!target) return false
+
+      if (
+        command &&
+        !canRunSessionViewCommand(command, {
+          session: target,
+          hasDecodedImage: decodedImageRef.current !== null,
+          backend: getPreviewBackendState(),
+        })
+      ) {
+        return true
+      }
+
+      setSession((prev) => (prev?.id === target.id ? update(prev) : prev))
+      return true
+    },
+    [decodedImageRef, sessionRef, setSession],
+  )
+
+  // Before a source the detached sample compare owns the view, so its
+  // original, split and reset stay open whatever the backend.
   const setViewMode = useCallback(
     (mode: PreviewViewMode) => {
-      if (sessionRef.current) {
-        setSession((prev) => computeViewModeChange(prev, mode))
+      if (
+        writeSessionView(sessionViewCommandForMode(mode), (session) =>
+          applyViewModeToSession(session, mode),
+        )
+      ) {
         return
       }
 
       setDetachedView((prev) => (prev.mode === mode ? prev : { ...prev, mode }))
     },
-    [sessionRef, setDetachedView, setSession],
+    [setDetachedView, writeSessionView],
   )
 
   const setCompareSplit = useCallback(
     (split: number) => {
       const { nextSplit } = computeCompareSplitChange(null, split)
 
-      if (sessionRef.current) {
-        setSession((prev) => computeCompareSplitChange(prev, nextSplit).session)
+      if (
+        writeSessionView('split', (session) =>
+          applyCompareSplitToSession(session, nextSplit),
+        )
+      ) {
         return
       }
 
@@ -95,8 +145,21 @@ export function useRawCompareStage({
           : { ...prev, compareSplit: nextSplit },
       )
     },
-    [sessionRef, setDetachedView, setSession],
+    [setDetachedView, writeSessionView],
   )
+
+  // Mode, split and viewport move together or not at all: a refused reset
+  // leaves the zoomed crop where it was too.
+  const resetCompareView = useCallback(() => {
+    if (writeSessionView('splitReset', applyCompareViewResetToSession)) return
+
+    setDetachedView((prev) =>
+      prev.mode === DEFAULT_PREVIEW_VIEW.mode &&
+      prev.compareSplit === DEFAULT_PREVIEW_VIEW.compareSplit
+        ? prev
+        : DEFAULT_PREVIEW_VIEW,
+    )
+  }, [setDetachedView, writeSessionView])
 
   const setPreviewViewport = useCallback(
     (viewport: PreviewViewport) => {
@@ -116,6 +179,7 @@ export function useRawCompareStage({
     previewViewport,
     setViewMode,
     setCompareSplit,
+    resetCompareView,
     setPreviewViewport,
     resetPreviewViewport,
   }

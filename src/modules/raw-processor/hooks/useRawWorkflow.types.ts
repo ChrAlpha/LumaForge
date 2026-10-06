@@ -107,6 +107,11 @@ export interface UseRawWorkflowReturn {
   setIntensity: (value: number) => void
   setViewMode: (mode: PreviewViewMode) => void
   setCompareSplit: (split: number) => void
+  /**
+   * Put the split back at its centre and the photo at fit in one write, or
+   * change nothing when the split is refused.
+   */
+  resetCompareView: () => void
   setPreviewViewport: (viewport: PreviewViewport) => void
   resetPreviewViewport: () => void
   clearLUT: () => void

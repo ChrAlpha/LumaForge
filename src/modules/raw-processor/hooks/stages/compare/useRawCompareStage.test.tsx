@@ -2,18 +2,39 @@ import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { useRef, useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { PreviewBackendState } from '~/lib/preview/gpu-backend'
 import type { PreviewView } from '~/lib/preview/preview-view'
 import {
   cpuPreviewVariantForViewMode,
   DEFAULT_PREVIEW_VIEW,
   previewSurfaceOutputForViewMode,
 } from '~/lib/preview/preview-view'
+import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { ImageSession } from '../../../model/session'
 import { createImageSession } from '../../../model/session-factory'
 import { useRawCompareStage } from './useRawCompareStage'
+
+const GPU_BACKEND: PreviewBackendState = {
+  status: 'ready',
+  facts: { backend: 'webgpu', maxTextureSize: 16384, reason: null },
+}
+const CPU_BACKEND: PreviewBackendState = {
+  status: 'ready',
+  facts: { backend: 'cpu', maxTextureSize: 0, reason: 'gpu-preview-failed' },
+}
+
+const previewBackend = vi.hoisted(() => ({
+  state: null as PreviewBackendState | null,
+}))
+
+vi.mock('~/lib/preview/gpu-backend', () => ({
+  getPreviewBackendState: () => previewBackend.state ?? { status: 'pending' },
+}))
+
+previewBackend.state = GPU_BACKEND
 
 const INTENT: ColorGraphIntent = {
   ...NEUTRAL_USER_COLOR_INTENT,
@@ -26,6 +47,7 @@ const INTENT: ColorGraphIntent = {
 function useHarness(initial: {
   session?: ImageSession | null
   detachedView?: PreviewView
+  decoded?: boolean
 }) {
   const [colorIntent, setColorIntent] = useState<ColorGraphIntent>(INTENT)
   const [detachedView, setDetachedView] = useState<PreviewView>(
@@ -36,6 +58,9 @@ function useHarness(initial: {
   )
   const sessionRef = useRef<ImageSession | null>(session)
   sessionRef.current = session
+  const decodedImageRef = useRef<DecodedImage | null>(
+    initial.decoded === false ? null : ({} as DecodedImage),
+  )
 
   const stage = useRawCompareStage({
     detachedView,
@@ -43,6 +68,7 @@ function useHarness(initial: {
     session,
     sessionRef,
     setSession,
+    decodedImageRef,
   })
 
   return {
@@ -53,6 +79,7 @@ function useHarness(initial: {
     session,
     setSession,
     sessionRef,
+    decodedImageRef,
   }
 }
 
@@ -224,6 +251,302 @@ describe('useRawCompareStage', () => {
     expect(result.current.stage.view).toEqual({
       mode: 'processed',
       compareSplit: 0.12,
+    })
+  })
+})
+
+const TRANSFORM_GEOMETRY = {
+  version: 1,
+} as unknown as NonNullable<ImageSession['exportGeometry']>
+
+function withView(
+  session: ImageSession,
+  viewState: Partial<ImageSession['viewState']>,
+): ImageSession {
+  return { ...session, viewState: { ...session.viewState, ...viewState } }
+}
+
+function zoomedSession(overrides: Partial<ImageSession> = {}): ImageSession {
+  return {
+    ...withView(createSession(), {
+      mode: 'processed',
+      compareSplit: 0.2,
+      zoom: 3,
+      panX: 40,
+      panY: -12,
+      fitMode: 'custom',
+    }),
+    ...overrides,
+  }
+}
+
+function releasedSession(): ImageSession {
+  const session = zoomedSession()
+  return {
+    ...session,
+    exportState: {
+      ...session.exportState,
+      status: 'ready',
+      activePlan: {} as NonNullable<ImageSession['exportState']['activePlan']>,
+      result: {} as NonNullable<ImageSession['exportState']['result']>,
+    },
+  }
+}
+
+describe('useRawCompareStage command guards', () => {
+  afterEach(() => {
+    previewBackend.state = GPU_BACKEND
+  })
+
+  it('lets the CPU preview show the original and the processed photo', () => {
+    previewBackend.state = CPU_BACKEND
+    const { result } = renderHook(() =>
+      useHarness({ session: zoomedSession() }),
+    )
+    const intentBefore = result.current.colorIntent
+
+    act(() => result.current.stage.setViewMode('original'))
+    expect(result.current.session?.viewState.mode).toBe('original')
+
+    act(() => result.current.stage.setViewMode('processed'))
+    expect(result.current.session?.viewState.mode).toBe('processed')
+    expect(result.current.colorIntent).toBe(intentBefore)
+  })
+
+  it('refuses the split, its handle and its reset on the CPU preview', () => {
+    previewBackend.state = CPU_BACKEND
+    const { result } = renderHook(() =>
+      useHarness({ session: zoomedSession() }),
+    )
+    const sessionBefore = result.current.session
+
+    act(() => {
+      result.current.stage.setViewMode('compare')
+      result.current.stage.setCompareSplit(0.8)
+      result.current.stage.resetCompareView()
+    })
+
+    expect(result.current.session).toBe(sessionBefore)
+    expect(result.current.stage.previewViewport).toMatchObject({
+      zoom: 3,
+      fitMode: 'custom',
+    })
+  })
+
+  it('refuses a split while the preview backend is still being resolved', () => {
+    previewBackend.state = { status: 'pending' }
+    const { result } = renderHook(() =>
+      useHarness({ session: zoomedSession() }),
+    )
+    const sessionBefore = result.current.session
+
+    act(() => {
+      result.current.stage.setViewMode('compare')
+      result.current.stage.setCompareSplit(0.8)
+    })
+    expect(result.current.session).toBe(sessionBefore)
+
+    act(() => result.current.stage.setViewMode('original'))
+    expect(result.current.session?.viewState.mode).toBe('original')
+  })
+
+  it('reads the backend when a command runs, not when its callback was made', () => {
+    const { result } = renderHook(() =>
+      useHarness({ session: zoomedSession() }),
+    )
+    const { setCompareSplit, setViewMode, resetCompareView } =
+      result.current.stage
+
+    act(() => setCompareSplit(0.7))
+    expect(result.current.session?.viewState.compareSplit).toBe(0.7)
+
+    // The GPU preview fails without a render in between.
+    previewBackend.state = CPU_BACKEND
+    const sessionBefore = result.current.session
+    act(() => {
+      setCompareSplit(0.3)
+      setViewMode('compare')
+      resetCompareView()
+    })
+    expect(result.current.session).toBe(sessionBefore)
+
+    act(() => setViewMode('original'))
+    expect(result.current.session?.viewState.mode).toBe('original')
+  })
+
+  it('keeps a committed Transform on the processed photo alone', () => {
+    const { result } = renderHook(() =>
+      useHarness({
+        session: withView(
+          zoomedSession({ exportGeometry: TRANSFORM_GEOMETRY }),
+          { mode: 'original' },
+        ),
+      }),
+    )
+    const sessionBefore = result.current.session
+
+    act(() => {
+      result.current.stage.setViewMode('original')
+      result.current.stage.setViewMode('compare')
+      result.current.stage.setCompareSplit(0.8)
+      result.current.stage.resetCompareView()
+    })
+    expect(result.current.session).toBe(sessionBefore)
+
+    // Leaving for the processed photo is always open.
+    act(() => result.current.stage.setViewMode('processed'))
+    expect(result.current.session?.viewState.mode).toBe('processed')
+  })
+
+  it('refuses a callback from before a Transform commit in the same tick', () => {
+    const { result } = renderHook(() =>
+      useHarness({ session: zoomedSession() }),
+    )
+    const { setViewMode, setCompareSplit } = result.current.stage
+
+    act(() => {
+      const committed: ImageSession = {
+        ...result.current.sessionRef.current!,
+        exportGeometry: TRANSFORM_GEOMETRY,
+      }
+      result.current.sessionRef.current = committed
+      result.current.setSession(committed)
+      setViewMode('original')
+      setCompareSplit(0.9)
+    })
+
+    expect(result.current.session?.exportGeometry).toBe(TRANSFORM_GEOMETRY)
+    expect(result.current.session?.viewState).toMatchObject({
+      mode: 'processed',
+      compareSplit: 0.2,
+    })
+  })
+
+  it('refuses the original and the split while export holds the preview released', () => {
+    const { result } = renderHook(() =>
+      useHarness({ session: releasedSession(), decoded: false }),
+    )
+    const sessionBefore = result.current.session
+
+    act(() => {
+      result.current.stage.setViewMode('original')
+      result.current.stage.setViewMode('compare')
+      result.current.stage.setCompareSplit(0.8)
+      result.current.stage.resetCompareView()
+    })
+    expect(result.current.session).toBe(sessionBefore)
+    expect(result.current.session?.exportState.result).toBeDefined()
+    expect(result.current.stage.previewViewport).toMatchObject({ zoom: 3 })
+
+    // Once the decoded preview is back, the view is the user's again.
+    act(() => {
+      result.current.decodedImageRef.current = {} as DecodedImage
+      result.current.stage.setViewMode('original')
+    })
+    expect(result.current.session?.viewState.mode).toBe('original')
+  })
+
+  it('refuses the original and the split while a full-resolution export runs', () => {
+    const exporting = releasedSession()
+    const { result } = renderHook(() =>
+      useHarness({
+        session: {
+          ...exporting,
+          exportState: {
+            ...exporting.exportState,
+            status: 'exporting',
+            result: undefined,
+          },
+        },
+      }),
+    )
+    const sessionBefore = result.current.session
+
+    act(() => {
+      result.current.stage.setViewMode('original')
+      result.current.stage.setCompareSplit(0.8)
+    })
+    expect(result.current.session).toBe(sessionBefore)
+
+    act(() => result.current.stage.setViewMode('processed'))
+    expect(result.current.session?.viewState.mode).toBe('processed')
+  })
+
+  it('guards a write against the source that replaced the one it was made for', () => {
+    const { result } = renderHook(() =>
+      useHarness({
+        session: zoomedSession({ exportGeometry: TRANSFORM_GEOMETRY }),
+      }),
+    )
+    const { setCompareSplit, setViewMode } = result.current.stage
+
+    act(() => {
+      const replacement = createSession()
+      result.current.sessionRef.current = replacement
+      result.current.setSession(replacement)
+      setViewMode('original')
+      setCompareSplit(0.3)
+    })
+
+    expect(result.current.session?.exportGeometry).toBeUndefined()
+    expect(result.current.session?.viewState).toMatchObject({
+      mode: 'original',
+      compareSplit: 0.3,
+    })
+  })
+
+  it('never lands a write guarded for one source on another', () => {
+    const first = zoomedSession()
+    const { result } = renderHook(() => useHarness({ session: first }))
+    const replacement = createSession()
+
+    act(() => {
+      // The replacement is queued before its ref catches up.
+      result.current.setSession(replacement)
+      result.current.stage.setCompareSplit(0.9)
+      result.current.stage.resetCompareView()
+    })
+
+    expect(result.current.session).toBe(replacement)
+  })
+
+  it('resets mode, split and viewport in one guarded transaction', () => {
+    const { result } = renderHook(() =>
+      useHarness({ session: zoomedSession() }),
+    )
+    const intentBefore = result.current.colorIntent
+    const sessionBefore = result.current.session!
+
+    act(() => result.current.stage.resetCompareView())
+
+    expect(result.current.session).toMatchObject({
+      id: sessionBefore.id,
+      exportState: sessionBefore.exportState,
+      viewState: {
+        mode: 'compare',
+        compareSplit: 0.5,
+        zoom: 1,
+        panX: 0,
+        panY: 0,
+        fitMode: 'screen',
+      },
+    })
+    expect(result.current.colorIntent).toBe(intentBefore)
+  })
+
+  it('keeps the sample compare open before a source on any backend', () => {
+    previewBackend.state = CPU_BACKEND
+    const { result } = renderHook(() => useHarness({}))
+
+    act(() => {
+      result.current.stage.setViewMode('processed')
+      result.current.stage.setCompareSplit(0.3)
+    })
+    act(() => result.current.stage.resetCompareView())
+
+    expect(result.current.detachedView).toEqual({
+      mode: 'compare',
+      compareSplit: 0.5,
     })
   })
 })

@@ -13,7 +13,6 @@ import { clampCompareSplit } from '../compare/compare-split'
 import {
   applyCompareSplitToSession,
   applyPreviewViewportToSession,
-  applyViewModeToSession,
 } from '../compare/view-session-state'
 import { changesRenderGraphParams } from '../export/export-state'
 import type { PreviewViewport } from '../preview/preview-viewport'
@@ -22,17 +21,6 @@ import {
   clearActiveLookFromSession,
 } from './look-session-state'
 import { clampLookIntensity, DEFAULT_LOOK_INTENSITY } from './style-system'
-
-export function computeViewModeChange(
-  session: ImageSession | null,
-  mode: ProcessingParams['viewMode'],
-): ImageSession | null {
-  if (!session) {
-    return null
-  }
-
-  return applyViewModeToSession(session, mode)
-}
 
 export function computeCompareSplitChange(
   session: ImageSession | null,

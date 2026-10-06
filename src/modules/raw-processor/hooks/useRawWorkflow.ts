@@ -80,6 +80,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     session,
     sessionRef,
     setSession,
+    decodedImageRef,
   })
   const [decodedImageVersion, setDecodedImageVersion] = useState(0)
   const {

@@ -114,6 +114,7 @@ export function buildRawWorkflowReturn({
     setIntensity: lookStage.setIntensity,
     setViewMode: compareStage.setViewMode,
     setCompareSplit: compareStage.setCompareSplit,
+    resetCompareView: compareStage.resetCompareView,
     setPreviewViewport: compareStage.setPreviewViewport,
     resetPreviewViewport: compareStage.resetPreviewViewport,
     clearLUT: lookStage.clearLUT,

@@ -171,6 +171,7 @@ function createLoadedProcessorState(
     setIntensity: vi.fn(),
     setViewMode: vi.fn(),
     setCompareSplit: vi.fn(),
+    resetCompareView: vi.fn(),
     clearLUT: vi.fn(),
     setParams: vi.fn(),
     setToneParams: vi.fn(),
