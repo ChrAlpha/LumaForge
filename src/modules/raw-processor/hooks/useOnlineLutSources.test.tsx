@@ -155,6 +155,16 @@ function hideDefaultSource() {
   )
 }
 
+function hideDefaultSourceKeepingStored(url: string) {
+  localStorage.setItem(
+    sourcesStorageKey,
+    JSON.stringify({
+      resources: [{ url, type: 'catalog', label: 'Saved catalog' }],
+      removedDefaultUrls: [defaultCatalogUrl],
+    }),
+  )
+}
+
 describe('useOnlineLutSources', () => {
   beforeEach(() => {
     mockedFetchJson.mockReset()
@@ -1137,5 +1147,371 @@ describe('useOnlineLutSources', () => {
     unmount()
 
     expect(pending.signals[0].aborted).toBe(true)
+  })
+
+  describe('catalog activation', () => {
+    function storeSource(url: string) {
+      localStorage.setItem(
+        sourcesStorageKey,
+        JSON.stringify({
+          resources: [{ url, type: 'catalog', label: 'Saved catalog' }],
+          removedDefaultUrls: [],
+        }),
+      )
+    }
+
+    function requestsFor(
+      requests: ReturnType<typeof setupDeferredFetchJson>['requests'],
+      url: string,
+    ) {
+      return requests.filter((request) => request.url === url)
+    }
+
+    it('lists default and saved sources as inactive before any catalog request', () => {
+      storeSource(catalogUrl)
+      setupPendingFetchJson()
+      const renders: Array<ReturnType<typeof useOnlineLutSources>> = []
+
+      renderHook(() => {
+        const result = useOnlineLutSources({
+          search: '',
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        })
+        renders.push(result)
+        return result
+      })
+
+      const [firstRender] = renders
+      expect(firstRender.state.resources).toEqual([
+        expect.objectContaining({
+          id: 'lumaforge-default-profiles',
+          label: 'LumaForge Profiles',
+          isDefault: true,
+        }),
+        expect.objectContaining({
+          id: 'stored-lut-source-1',
+          url: catalogUrl,
+          label: 'Saved catalog',
+        }),
+      ])
+      expect(firstRender.resourceActivation).toEqual({})
+      expect(firstRender.catalogActivation).toBe('inactive')
+    })
+
+    it('moves sources from loading to ready without applying a look', async () => {
+      const { requests } = setupDeferredFetchJson()
+      const loadOnlineLUT = createLoadOnlineLUT()
+      const { result } = renderHook(() =>
+        useOnlineLutSources({ search: '', pathname: '/raw', loadOnlineLUT }),
+      )
+
+      await waitFor(() => expect(requests).toHaveLength(1))
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'loading',
+      })
+      expect(result.current.catalogActivation).toBe('loading')
+
+      await act(async () => {
+        requests[0].resolve(catalogDocument())
+      })
+
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'ready',
+      })
+      expect(result.current.catalogActivation).toBe('ready')
+      expect(result.current.state.entries).toHaveLength(1)
+      expect(loadOnlineLUT).not.toHaveBeenCalled()
+      expect(result.current.loadedEntry).toBeNull()
+    })
+
+    it('dedupes repeated and concurrent activation intents', async () => {
+      storeSource(catalogUrl)
+      const { requests } = setupDeferredFetchJson()
+      const { result } = renderHook(() =>
+        useOnlineLutSources({
+          search: '',
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        }),
+      )
+      await waitFor(() => expect(requests).toHaveLength(2))
+
+      act(() => {
+        result.current.activateCatalogs?.()
+        result.current.activateCatalogs?.()
+      })
+      act(() => {
+        result.current.activateCatalogs?.()
+      })
+      expect(requests).toHaveLength(2)
+
+      await act(async () => {
+        for (const request of requests) request.resolve(catalogDocument())
+      })
+      act(() => {
+        result.current.activateCatalogs?.()
+      })
+
+      expect(requests).toHaveLength(2)
+      expect(result.current.catalogActivation).toBe('ready')
+    })
+
+    it('activates the default source once when a ?luts= query names its URL', async () => {
+      const { requests } = setupDeferredFetchJson()
+      const { result } = renderHook(() =>
+        useOnlineLutSources({
+          search: `?luts=${encodeURIComponent(defaultCatalogUrl)}`,
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        }),
+      )
+
+      await waitFor(() => expect(requests).toHaveLength(1))
+      await act(async () => {
+        requests[0].resolve(catalogDocument())
+      })
+
+      expect(requests).toHaveLength(1)
+      expect(result.current.state.resources).toEqual([
+        expect.objectContaining({
+          id: 'lumaforge-default-profiles',
+          isDefault: true,
+        }),
+      ])
+      expect(result.current.state.entries).toHaveLength(1)
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'ready',
+      })
+    })
+
+    it('activates a saved source once when a ?luts= query names its URL', async () => {
+      storeSource(catalogUrl)
+      hideDefaultSourceKeepingStored(catalogUrl)
+      const { requests } = setupDeferredFetchJson()
+      const { result } = renderHook(() =>
+        useOnlineLutSources({
+          search: `?luts=${encodeURIComponent(catalogUrl)}`,
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        }),
+      )
+
+      await waitFor(() => expect(requests).toHaveLength(1))
+      await act(async () => {
+        requests[0].resolve(catalogDocument())
+      })
+
+      expect(requests).toHaveLength(1)
+      expect(result.current.state.resources).toEqual([
+        expect.objectContaining({ id: 'stored-lut-source-1', url: catalogUrl }),
+      ])
+      expect(result.current.share.url).toBe(
+        `/raw?luts=${encodeURIComponent(catalogUrl)}`,
+      )
+    })
+
+    it('restarts activation after StrictMode cleanup aborts the first pass and ignores its late completion', async () => {
+      const { requests } = setupDeferredFetchJson()
+      const { result } = renderHook(
+        () =>
+          useOnlineLutSources({
+            search: '',
+            pathname: '/raw',
+            loadOnlineLUT: createLoadOnlineLUT(),
+          }),
+        { wrapper: StrictMode },
+      )
+
+      await waitFor(() => expect(requests).toHaveLength(2))
+      const [aborted, live] = requests
+      expect(aborted.signal?.aborted).toBe(true)
+      expect(live.signal?.aborted).toBe(false)
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'loading',
+      })
+
+      act(() => {
+        result.current.activateCatalogs?.()
+      })
+      expect(requests).toHaveLength(2)
+
+      await act(async () => {
+        live.resolve(catalogDocument())
+      })
+      await act(async () => {
+        aborted.resolve({ schemaVersion: 1, entries: [] })
+      })
+
+      expect(result.current.state.entries).toHaveLength(1)
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'ready',
+      })
+    })
+
+    it('ignores a superseded catalog response that lands after the refresh', async () => {
+      const { requests } = setupDeferredFetchJson()
+      const { result } = renderHook(() =>
+        useOnlineLutSources({
+          search: '',
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        }),
+      )
+      await waitFor(() => expect(requests).toHaveLength(1))
+
+      act(() => {
+        void result.current.refreshSource('lumaforge-default-profiles')
+      })
+      await waitFor(() => expect(requests).toHaveLength(2))
+
+      await act(async () => {
+        requests[1].resolve(catalogDocument())
+      })
+      await act(async () => {
+        requests[0].resolve({ schemaVersion: 1, entries: [] })
+      })
+
+      expect(result.current.state.entries).toHaveLength(1)
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'ready',
+      })
+    })
+
+    it('keeps a failed source failed until an explicit retry', async () => {
+      const { requests } = setupDeferredFetchJson()
+      const { result } = renderHook(() =>
+        useOnlineLutSources({
+          search: '',
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        }),
+      )
+      await waitFor(() => expect(requests).toHaveLength(1))
+
+      await act(async () => {
+        requests[0].reject(new Error('offline'))
+      })
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'error',
+      })
+      expect(result.current.catalogActivation).toBe('error')
+
+      act(() => {
+        result.current.activateCatalogs?.()
+      })
+      expect(requests).toHaveLength(1)
+
+      act(() => {
+        result.current.activateCatalogs?.({ retryFailed: true })
+      })
+      expect(requests).toHaveLength(2)
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'loading',
+      })
+
+      await act(async () => {
+        requests[1].resolve(catalogDocument())
+      })
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'ready',
+      })
+      expect(
+        result.current.state.issues.filter((issue) => issue.resourceId),
+      ).toHaveLength(0)
+    })
+
+    it('activates only the named sources', async () => {
+      storeSource(catalogUrl)
+      const { requests } = setupDeferredFetchJson()
+      const { result } = renderHook(() =>
+        useOnlineLutSources({
+          search: '',
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        }),
+      )
+      await waitFor(() => expect(requests).toHaveLength(2))
+      await act(async () => {
+        requestsFor(requests, defaultCatalogUrl)[0].reject(new Error('offline'))
+        requestsFor(requests, catalogUrl)[0].reject(new Error('offline'))
+      })
+
+      act(() => {
+        result.current.activateCatalogs?.({
+          resourceIds: ['stored-lut-source-1'],
+          retryFailed: true,
+        })
+      })
+
+      expect(requests).toHaveLength(3)
+      expect(requests[2].url).toBe(catalogUrl)
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'error',
+        'stored-lut-source-1': 'loading',
+      })
+    })
+
+    it('drops a removed source from activation and ignores its late response', async () => {
+      const { requests } = setupDeferredFetchJson()
+      const { result } = renderHook(() =>
+        useOnlineLutSources({
+          search: '',
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        }),
+      )
+      await waitFor(() => expect(requests).toHaveLength(1))
+
+      act(() => {
+        result.current.removeSource('lumaforge-default-profiles')
+      })
+      expect(requests[0].signal?.aborted).toBe(true)
+      expect(result.current.resourceActivation).toEqual({})
+
+      await act(async () => {
+        requests[0].resolve(catalogDocument())
+      })
+      act(() => {
+        result.current.activateCatalogs?.()
+      })
+
+      expect(requests).toHaveLength(1)
+      expect(result.current.state.resources).toHaveLength(0)
+      expect(result.current.state.entries).toHaveLength(0)
+    })
+
+    it('starts a remounted hook inactive and activates it afresh', async () => {
+      const { requests } = setupDeferredFetchJson()
+      const first = renderHook(() =>
+        useOnlineLutSources({
+          search: '',
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        }),
+      )
+      await waitFor(() => expect(requests).toHaveLength(1))
+      first.unmount()
+      expect(requests[0].signal?.aborted).toBe(true)
+
+      const renders: Array<ReturnType<typeof useOnlineLutSources>> = []
+      const second = renderHook(() => {
+        const result = useOnlineLutSources({
+          search: '',
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        })
+        renders.push(result)
+        return result
+      })
+
+      expect(renders[0].catalogActivation).toBe('inactive')
+      await waitFor(() => expect(requests).toHaveLength(2))
+      await act(async () => {
+        requests[1].resolve(catalogDocument())
+      })
+      expect(second.result.current.catalogActivation).toBe('ready')
+      expect(second.result.current.state.entries).toHaveLength(1)
+    })
   })
 })

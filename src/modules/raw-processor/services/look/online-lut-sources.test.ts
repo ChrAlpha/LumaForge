@@ -9,11 +9,14 @@ import type {
   OnlineLUTSourceState,
 } from './online-lut-sources'
 import {
+  findOnlineLUTSourceResourceByUrl,
+  getOnlineLUTSourceResolutionActivation,
   getShareableOnlineLUTSourceResources,
   mergeOnlineLUTSourceResolution,
   removeOnlineLUTSourceResource,
   resolveOnlineLUTSourceEntry,
   resolveProfileSourceResource,
+  summarizeOnlineLUTCatalogActivation,
 } from './online-lut-sources'
 
 const sha256 =
@@ -618,5 +621,82 @@ describe('online LUT source metadata service', () => {
         }),
       ),
     ).toEqual([valid])
+  })
+})
+
+describe('online LUT catalog activation', () => {
+  it('reports a resolution ready when it lists entries or fails nothing', () => {
+    const entry: OnlineLUTSourceEntry = {
+      id: 'kodak-2383-rec709',
+      resourceId: 'source-1',
+      title: 'Kodak 2383 Rec.709',
+      sourceUrl: entryUrl,
+      sourceType: 'catalog-entry',
+      cube: { url: cubeUrl, sha256 },
+      tags: [],
+    }
+
+    expect(
+      getOnlineLUTSourceResolutionActivation({
+        resource: resource({}),
+        entries: [entry],
+        issues: [],
+      }),
+    ).toBe('ready')
+    // An empty catalog is a settled answer, not a failure to retry.
+    expect(
+      getOnlineLUTSourceResolutionActivation({
+        resource: resource({}),
+        entries: [],
+        issues: [],
+      }),
+    ).toBe('ready')
+  })
+
+  it('reports a resolution that only produced issues as an error', () => {
+    expect(
+      getOnlineLUTSourceResolutionActivation({
+        resource: resource({}),
+        entries: [],
+        issues: [
+          {
+            code: 'network',
+            message: 'Failed to fetch.',
+            resourceId: 'source-1',
+          },
+        ],
+      }),
+    ).toBe('error')
+  })
+
+  it('summarizes resource activation with in-flight and untouched sources first', () => {
+    expect(summarizeOnlineLUTCatalogActivation([])).toBe('ready')
+    expect(summarizeOnlineLUTCatalogActivation(['ready', 'inactive'])).toBe(
+      'inactive',
+    )
+    expect(
+      summarizeOnlineLUTCatalogActivation(['inactive', 'loading', 'error']),
+    ).toBe('loading')
+    expect(summarizeOnlineLUTCatalogActivation(['error', 'ready'])).toBe(
+      'ready',
+    )
+    expect(summarizeOnlineLUTCatalogActivation(['error', 'error'])).toBe(
+      'error',
+    )
+  })
+
+  it('finds a known resource by its normalized URL', () => {
+    const known = resource({ id: 'known', url: catalogUrl })
+
+    expect(
+      findOnlineLUTSourceResourceByUrl(
+        [known],
+        'HTTPS://profiles.example.com/releases/v2026.05.01/catalog.json',
+      ),
+    ).toBe(known)
+    expect(findOnlineLUTSourceResourceByUrl([known], entryUrl)).toBeUndefined()
+    expect(
+      findOnlineLUTSourceResourceByUrl([known], 'not a url'),
+    ).toBeUndefined()
   })
 })

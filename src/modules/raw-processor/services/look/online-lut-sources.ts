@@ -51,6 +51,17 @@ export interface OnlineLUTSourceState {
   isLoading: boolean
 }
 
+/**
+ * Where a source's catalog metadata stands. A source is listed (from the
+ * defaults, storage or a query) before anything is fetched for it; it stays
+ * `inactive` until a surface or query asks for its catalog.
+ */
+export type OnlineLUTSourceActivation =
+  | 'inactive'
+  | 'loading'
+  | 'ready'
+  | 'error'
+
 export interface OnlineLUTLoadRequest {
   entryId: string
   signal?: AbortSignal
@@ -497,6 +508,50 @@ export async function resolveOnlineLUTSourceEntry(
       ],
     }
   }
+}
+
+/**
+ * A resolution that produced no entries but reported issues failed; anything
+ * else, an empty catalog included, is a settled answer that needs no retry.
+ */
+export function getOnlineLUTSourceResolutionActivation(
+  resolution: OnlineLUTSourceResolution,
+): OnlineLUTSourceActivation {
+  return resolution.entries.length === 0 && resolution.issues.length > 0
+    ? 'error'
+    : 'ready'
+}
+
+/**
+ * One activation for a set of sources: any request in flight reads as
+ * loading, any untouched source as inactive, and the set is an error only
+ * when every source failed. No sources leaves nothing to activate.
+ */
+export function summarizeOnlineLUTCatalogActivation(
+  activations: readonly OnlineLUTSourceActivation[],
+): OnlineLUTSourceActivation {
+  if (activations.includes('loading')) return 'loading'
+  if (activations.includes('inactive')) return 'inactive'
+  if (activations.length > 0 && activations.every((item) => item === 'error')) {
+    return 'error'
+  }
+  return 'ready'
+}
+
+export function findOnlineLUTSourceResourceByUrl(
+  resources: readonly ProfileSourceResource[],
+  url: string,
+): ProfileSourceResource | undefined {
+  let normalizedUrl: string
+  try {
+    normalizedUrl = normalizeProfileSourceUrl(url)
+  } catch {
+    return undefined
+  }
+
+  return resources.find(
+    (resource) => normalizeResourceUrl(resource) === normalizedUrl,
+  )
 }
 
 export function mergeOnlineLUTSourceResolution(

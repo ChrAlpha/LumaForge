@@ -12,12 +12,15 @@ import {
 } from '~/lib/profiles/source-url'
 
 import type {
+  OnlineLUTSourceActivation,
   OnlineLUTSourceEntry,
   OnlineLUTSourceIssue,
   OnlineLUTSourceState,
 } from '../services/look/online-lut-sources'
 import {
+  findOnlineLUTSourceResourceByUrl,
   getInitialOnlineLUTSourceResources,
+  getOnlineLUTSourceResolutionActivation,
   getShareableOnlineLUTSourceResources,
   mergeOnlineLUTSourceResolution,
   persistOnlineLUTSourceRemoval,
@@ -25,6 +28,7 @@ import {
   removeOnlineLUTSourceResource,
   resolveOnlineLUTSourceEntry,
   resolveProfileSourceResource,
+  summarizeOnlineLUTCatalogActivation,
 } from '../services/look/online-lut-sources'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 
@@ -62,6 +66,13 @@ export interface OnlineLutEntryLoadProgress {
   totalBytes?: number
 }
 
+export interface ActivateOnlineLutCatalogsOptions {
+  /** Activate only these listed sources; every listed source otherwise. */
+  resourceIds?: readonly string[]
+  /** Request sources whose last catalog request failed once more. */
+  retryFailed?: boolean
+}
+
 export interface UseOnlineLutSourcesResult {
   state: OnlineLUTSourceState
   sourceUrlInput: string
@@ -77,6 +88,19 @@ export interface UseOnlineLutSourcesResult {
   cancelEntryLoad: () => void
   /** The last loaded entry and the hash it applied; null before one. */
   loadedEntry: OnlineLutLoadedEntry | null
+  // The activation members are optional on the type so surface fixtures may
+  // omit them; the hook always provides them.
+  /**
+   * Fetches catalog metadata for listed sources that have none yet. Repeated
+   * or concurrent calls never start a second request for a source that is
+   * loading or ready, and a failed source waits for `retryFailed` or Refresh.
+   * Activation only lists entries; it never applies a look.
+   */
+  activateCatalogs?: (options?: ActivateOnlineLutCatalogsOptions) => void
+  /** Activation per listed source; a source missing here is inactive. */
+  resourceActivation?: Readonly<Record<string, OnlineLUTSourceActivation>>
+  /** Activation across every listed source. */
+  catalogActivation?: OnlineLUTSourceActivation
   share: {
     enabled: boolean
     url: string
@@ -84,12 +108,16 @@ export interface UseOnlineLutSourcesResult {
   }
 }
 
-const emptyState: OnlineLUTSourceState = {
-  resources: [],
-  entries: [],
-  issues: [],
-  activeResourceId: null,
-  isLoading: false,
+// Default and saved sources are listed from the first render, before any
+// catalog request, so a surface can show them while they are inactive.
+function createInitialState(): OnlineLUTSourceState {
+  return {
+    resources: getInitialOnlineLUTSourceResources(),
+    entries: [],
+    issues: [],
+    activeResourceId: null,
+    isLoading: false,
+  }
 }
 
 function parseIssuesToSourceIssues(
@@ -178,7 +206,7 @@ export function useOnlineLutSources({
   loadOnlineLUT,
   appliedLutSha256 = null,
 }: UseOnlineLutSourcesOptions): UseOnlineLutSourcesResult {
-  const [state, setState] = useState<OnlineLUTSourceState>(emptyState)
+  const [state, setState] = useState<OnlineLUTSourceState>(createInitialState)
   const [sourceUrlInput, setSourceUrlInput] = useState('')
   const queryResourceUrlsRef = useRef(new Set<string>())
   const resourceIdsByUrlRef = useRef(new Map<string, string>())
@@ -203,6 +231,13 @@ export function useOnlineLutSources({
   } | null>(null)
   const lastProgressEmitRef = useRef(0)
   const stateRef = useRef(state)
+  // The ref answers "is this source already requested?" synchronously, so
+  // intents racing in the same tick dedupe; the state mirrors it for render.
+  // Inactive sources are absent from both.
+  const activationRef = useRef(new Map<string, OnlineLUTSourceActivation>())
+  const [resourceActivation, setResourceActivation] = useState<
+    Readonly<Record<string, OnlineLUTSourceActivation>>
+  >({})
 
   useEffect(() => {
     stateRef.current = state
@@ -239,17 +274,36 @@ export function useOnlineLutSources({
     [createResourceId],
   )
 
-  const abortResourceRequest = useCallback((resourceId: string) => {
-    const controller = resourceControllersRef.current.get(resourceId)
-    if (!controller) return
+  const setActivation = useCallback(
+    (resourceId: string, activation: OnlineLUTSourceActivation) => {
+      if (activation === 'inactive') {
+        activationRef.current.delete(resourceId)
+      } else {
+        activationRef.current.set(resourceId, activation)
+      }
+      setResourceActivation(Object.fromEntries(activationRef.current))
+    },
+    [],
+  )
 
-    controller.abort()
-    resourceControllersRef.current.delete(resourceId)
-    setState((current) => ({
-      ...current,
-      isLoading: resourceControllersRef.current.size > 0,
-    }))
-  }, [])
+  // An aborted request leaves its source inactive, so the next activation
+  // intent requests it again instead of waiting on a response that will be
+  // ignored.
+  const abortResourceRequest = useCallback(
+    (resourceId: string) => {
+      const controller = resourceControllersRef.current.get(resourceId)
+      if (!controller) return
+
+      controller.abort()
+      resourceControllersRef.current.delete(resourceId)
+      setActivation(resourceId, 'inactive')
+      setState((current) => ({
+        ...current,
+        isLoading: resourceControllersRef.current.size > 0,
+      }))
+    },
+    [setActivation],
+  )
 
   const resolveResource = useCallback(
     async (resource: ProfileSourceResource) => {
@@ -257,6 +311,7 @@ export function useOnlineLutSources({
 
       const controller = new AbortController()
       resourceControllersRef.current.set(resource.id, controller)
+      setActivation(resource.id, 'loading')
       setState((current) => ({
         ...current,
         resources: [
@@ -275,45 +330,98 @@ export function useOnlineLutSources({
       if (controller.signal.aborted) return
 
       resourceControllersRef.current.delete(resource.id)
+      // A resolution whose URL another listed source already holds merges
+      // into that source, which then owns the activation.
+      const mergeTarget = findOnlineLUTSourceResourceByUrl(
+        stateRef.current.resources.filter((item) => item.id !== resource.id),
+        resource.url,
+      )
+      if (mergeTarget) setActivation(resource.id, 'inactive')
+      setActivation(
+        mergeTarget?.id ?? resource.id,
+        getOnlineLUTSourceResolutionActivation(resolution),
+      )
       setState((current) => ({
         ...mergeOnlineLUTSourceResolution(current, resolution),
         isLoading: resourceControllersRef.current.size > 0,
       }))
     },
-    [abortResourceRequest],
+    [abortResourceRequest, setActivation],
   )
 
-  useEffect(() => {
-    for (const resource of getInitialOnlineLUTSourceResources()) {
-      void resolveResource(resource)
-    }
-  }, [resolveResource])
+  const activateResource = useCallback(
+    (resource: ProfileSourceResource, retryFailed: boolean) => {
+      const activation = activationRef.current.get(resource.id) ?? 'inactive'
+      if (activation === 'loading' || activation === 'ready') return
+      if (activation === 'error' && !retryFailed) return
 
+      void resolveResource(resource)
+    },
+    [resolveResource],
+  )
+
+  const activateCatalogs = useCallback(
+    (options: ActivateOnlineLutCatalogsOptions = {}) => {
+      const resourceIds = options.resourceIds
+        ? new Set(options.resourceIds)
+        : null
+
+      for (const resource of stateRef.current.resources) {
+        if (resourceIds && !resourceIds.has(resource.id)) continue
+        activateResource(resource, options.retryFailed ?? false)
+      }
+    },
+    [activateResource],
+  )
+
+  // Every listed source activates on mount.
+  useEffect(() => {
+    activateCatalogs()
+  }, [activateCatalogs])
+
+  // A ?luts= resource is an explicit activation intent. One that names a
+  // source already listed (the default or a saved source) activates that
+  // source instead of listing and requesting the same catalog twice.
   useEffect(() => {
     const parsed = parseLUTResourceQuery(search)
-    const resources = parsed.resources
-      .filter((resource) => !queryResourceUrlsRef.current.has(resource.url))
-      .map((resource) => {
-        queryResourceUrlsRef.current.add(resource.url)
-
-        return retargetResource(resource, resolveResourceId(resource), true)
-      })
+    const resources = parsed.resources.filter(
+      (resource) => !queryResourceUrlsRef.current.has(resource.url),
+    )
+    for (const resource of resources) {
+      queryResourceUrlsRef.current.add(resource.url)
+    }
     const issues = parseIssuesToSourceIssues(parsed.issues)
 
     setState((current) => withLooseIssues(current, issues))
 
     for (const resource of resources) {
-      void resolveResource(resource)
+      const listedResource = findOnlineLUTSourceResourceByUrl(
+        stateRef.current.resources,
+        resource.url,
+      )
+      if (listedResource) {
+        activateResource(listedResource, false)
+        continue
+      }
+
+      void resolveResource(
+        retargetResource(resource, resolveResourceId(resource), true),
+      )
     }
-  }, [resolveResource, resolveResourceId, search])
+  }, [activateResource, resolveResource, resolveResourceId, search])
 
   useEffect(
     () => () => {
-      for (const controller of resourceControllersRef.current.values()) {
+      for (const [
+        resourceId,
+        controller,
+      ] of resourceControllersRef.current.entries()) {
         controller.abort()
+        activationRef.current.delete(resourceId)
       }
       resourceControllersRef.current.clear()
       queryResourceUrlsRef.current.clear()
+      setResourceActivation(Object.fromEntries(activationRef.current))
 
       for (const controller of loadControllersRef.current) {
         controller.abort()
@@ -361,9 +469,10 @@ export function useOnlineLutSources({
       )
       if (resource) persistOnlineLUTSourceRemoval(resource)
       abortResourceRequest(resourceId)
+      setActivation(resourceId, 'inactive')
       setState((current) => removeOnlineLUTSourceResource(current, resourceId))
     },
-    [abortResourceRequest],
+    [abortResourceRequest, setActivation],
   )
 
   const loadEntry = useCallback(
@@ -469,6 +578,16 @@ export function useOnlineLutSources({
     )
   }, [])
 
+  const catalogActivation = useMemo(
+    () =>
+      summarizeOnlineLUTCatalogActivation(
+        state.resources.map(
+          (resource) => resourceActivation[resource.id] ?? 'inactive',
+        ),
+      ),
+    [resourceActivation, state.resources],
+  )
+
   const shareResources = useMemo(
     () => getShareableOnlineLUTSourceResources(state),
     [state],
@@ -514,6 +633,9 @@ export function useOnlineLutSources({
     entryLoadProgress,
     cancelEntryLoad,
     loadedEntry,
+    activateCatalogs,
+    resourceActivation,
+    catalogActivation,
     share,
   }
 }
