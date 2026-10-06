@@ -1,13 +1,13 @@
+import type { LUTContractSelection } from '@lumaforge/luma-color-runtime'
+import { resolveLUTProfile } from '@lumaforge/luma-color-runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { LUTContractSelection } from './profile-resolution'
 import {
   applyLUTContractSelection,
   applyLUTProfileSelection,
   applyTrustedLUTContract,
   getStoredLUTContractSelection,
   getStoredLUTProfileSelection,
-  resolveLUTProfile,
   restorePersistedLUTContract,
   storeLUTProfileSelection,
 } from './profile-resolution'
@@ -71,6 +71,7 @@ describe('lUT profile selection persistence', () => {
         sourceName: 'Panasonic_VLog.cube',
         comments: [],
         fingerprint: 'lut-fingerprint-2',
+        lookupStoredProfile: getStoredLUTProfileSelection,
       }),
     ).toMatchObject({
       kind: 'confirmed',
@@ -109,6 +110,7 @@ describe('lUT profile selection persistence', () => {
         sourceName: 'SLog3_SGamut3Cine_to_Rec709.cube',
         comments: [],
         fingerprint: 'legacy',
+        lookupStoredProfile: getStoredLUTProfileSelection,
       }),
     ).toMatchObject({
       kind: 'recommended',
@@ -201,6 +203,7 @@ describe('lUT profile selection persistence', () => {
         sourceName: 'Panasonic_VLog.cube',
         comments: [],
         fingerprint: 'broken',
+        lookupStoredProfile: getStoredLUTProfileSelection,
       }),
     ).not.toThrow()
   })
@@ -346,219 +349,13 @@ describe('lUT contract provenance', () => {
   })
 })
 
-describe('lUT explicit profile labels', () => {
-  it('does not resolve LUT contracts from filename or free-form comments', () => {
-    const resolution = resolveLUTProfile({
-      title: 'Generated',
-      sourceName: 'technical-vlog-to-rec709.cube',
-      comments: ['LUMIXPHOTOSTYLE VLOG'],
-    })
-
-    expect(resolution).not.toMatchObject({
-      kind: 'confirmed',
-    })
-    expect(resolution.kind).not.toBe('confirmed')
+describe('lUT legacy profile selection', () => {
+  beforeEach(() => {
+    localStorage.clear()
   })
 
-  it('resolves structured metadata as a full input and output contract', () => {
-    const resolution = resolveLUTProfile({
-      title: 'Trusted LUT',
-      sourceName: 'renamed-file.cube',
-      comments: [
-        'LUMAFORGE_INPUT_PROFILE=panasonic-vgamut-vlog',
-        'LUMAFORGE_ROLE=combined-look-output',
-        'LUMAFORGE_OUTPUT_GAMUT=srgb-rec709',
-        'LUMAFORGE_OUTPUT_TRANSFER=bt709',
-        'LUMAFORGE_OUTPUT_RANGE=full',
-      ],
-    })
-
-    expect(resolution).toMatchObject({
-      kind: 'confirmed',
-      confidence: 'metadata',
-      profile: {
-        inputGamut: 'v-gamut',
-        inputTransfer: 'v-log',
-        role: 'combined-look-output',
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'bt709',
-        outputRange: 'full',
-      },
-    })
-  })
-
-  it('does not resolve structured metadata when input profile conflicts with explicit input fields', () => {
-    const resolution = resolveLUTProfile({
-      title: 'Contradictory LUT',
-      sourceName: 'contradictory.cube',
-      comments: [
-        'LUMAFORGE_INPUT_PROFILE=display-srgb',
-        'LUMAFORGE_ROLE=display-look',
-        'LUMAFORGE_INPUT_GAMUT=v-gamut',
-        'LUMAFORGE_INPUT_TRANSFER=v-log',
-        'LUMAFORGE_INPUT_RANGE=full',
-        'LUMAFORGE_OUTPUT_GAMUT=srgb-rec709',
-        'LUMAFORGE_OUTPUT_TRANSFER=bt709',
-        'LUMAFORGE_OUTPUT_RANGE=full',
-      ],
-    })
-
-    expect(resolution.kind).not.toBe('confirmed')
-    expect(resolution).not.toMatchObject({
-      kind: 'confirmed',
-    })
-  })
-
-  it('does not resolve display-look metadata for non-display input without output fields', () => {
-    const resolution = resolveLUTProfile({
-      title: 'Incomplete Camera LUT',
-      sourceName: 'Panasonic_VLog.cube',
-      comments: [
-        'LUMAFORGE_INPUT_PROFILE=panasonic-vgamut-vlog',
-        'LUMAFORGE_ROLE=display-look',
-      ],
-    })
-
-    expect(resolution.kind).not.toBe('confirmed')
-    expect(resolution).not.toMatchObject({
-      kind: 'confirmed',
-    })
-  })
-
-  it('does not resolve display-look metadata for non-display input with output fields', () => {
-    const resolution = resolveLUTProfile({
-      title: 'Malformed Camera LUT',
-      sourceName: 'Panasonic_VLog_to_Rec709.cube',
-      comments: [
-        'LUMAFORGE_INPUT_PROFILE=panasonic-vgamut-vlog',
-        'LUMAFORGE_ROLE=display-look',
-        'LUMAFORGE_OUTPUT_GAMUT=srgb-rec709',
-        'LUMAFORGE_OUTPUT_TRANSFER=bt709',
-        'LUMAFORGE_OUTPUT_RANGE=full',
-      ],
-    })
-
-    expect(resolution.kind).not.toBe('confirmed')
-    expect(resolution).not.toMatchObject({
-      kind: 'confirmed',
-    })
-  })
-
-  it('does not resolve input profile labels as explicit input profiles', () => {
-    expect(
-      resolveLUTProfile({
-        title: 'Client LUT',
-        comments: ['Input profile: V-Log'],
-      }),
-    ).toMatchObject({
-      kind: 'recommended',
-      recommendations: expect.arrayContaining([
-        expect.objectContaining({ id: 'panasonic-vgamut-vlog' }),
-      ]),
-    })
-  })
-
-  it('does not resolve output profile labels as input profiles', () => {
-    const resolution = resolveLUTProfile({
-      title: 'Client LUT',
-      comments: ['Output profile: V-Log'],
-    })
-
-    expect(resolution).not.toMatchObject({
-      kind: 'confirmed',
-      profile: { id: 'panasonic-vgamut-vlog' },
-    })
-    expect(resolution.kind).toBe('unknown')
-  })
-
-  it('does not resolve target profile labels as input profiles', () => {
-    const resolution = resolveLUTProfile({
-      title: 'Client LUT',
-      comments: ['Target profile = VLog'],
-    })
-
-    expect(resolution.kind).toBe('unknown')
-  })
-
-  it('does not resolve destination profile labels as input profiles', () => {
-    const resolution = resolveLUTProfile({
-      title: 'Client LUT',
-      comments: ['Destination profile: V-Log'],
-    })
-
-    expect(resolution.kind).toBe('unknown')
-  })
-
-  it('does not resolve bare profile labels as input profiles', () => {
-    const resolution = resolveLUTProfile({
-      title: 'Client LUT',
-      comments: ['Profile: V-Log'],
-    })
-
-    expect(resolution.kind).toBe('unknown')
-  })
-
-  it('ignores mixed-case output-side to markers for input inference', () => {
-    const resolution = resolveLUTProfile({
-      title: 'UnknownCamera_To_VLog',
-      sourceName: 'UnknownCamera_To_VLog.cube',
-      comments: [],
-    })
-
-    expect(resolution.kind).toBe('unknown')
-  })
-
-  it('ignores mixed-case output-side for markers for input inference', () => {
-    const resolution = resolveLUTProfile({
-      title: 'UnknownCamera_FOR_VLog',
-      sourceName: 'UnknownCamera_FOR_VLog.cube',
-      comments: [],
-    })
-
-    expect(resolution.kind).toBe('unknown')
-  })
-
-  it('does not resolve unsupported Cineon output annotations as renderable profiles', () => {
-    const resolution = resolveLUTProfile({
-      title: 'Sony technical LUT',
-      sourceName: 'SLog3_SGamut3Cine_to_Cineon.cube',
-      comments: [],
-    })
-
-    expect(resolution.kind).toBe('unsupported-output')
-    if (resolution.kind !== 'unsupported-output') {
-      throw new Error('Expected Cineon LUT to require profile selection')
-    }
-    expect(resolution.recommendations).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'sony-sgamut3cine-slog3' }),
-      ]),
-    )
-    expect(resolution).not.toMatchObject({
-      kind: 'confirmed',
-      profile: {
-        role: 'combined-look-output',
-      },
-    })
-  })
-
-  it('detects unsupported for Cineon and unknown LogC directional outputs', () => {
-    for (const sourceName of [
-      'SLog3_SGamut3Cine_for_Cineon.cube',
-      'SLog3_SGamut3Cine_toCineon.cube',
-      'SLog3_SGamut3Cine_to_LogC.cube',
-      'SLog3_SGamut3Cine_for_LogC.cube',
-    ]) {
-      const resolution = resolveLUTProfile({
-        title: 'Sony technical LUT',
-        sourceName,
-        comments: [],
-      })
-
-      expect(resolution).toMatchObject({
-        kind: 'unsupported-output',
-      })
-    }
+  afterEach(() => {
+    localStorage.clear()
   })
 
   it('rejects legacy input-profile-only selection for unsupported filename annotations', () => {

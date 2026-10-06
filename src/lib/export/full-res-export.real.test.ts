@@ -17,11 +17,8 @@ import {
 import type { TestContext } from 'vitest'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import {
-  applyLUTContractSelection,
-  parseCubeLUT,
-  toLUTData,
-} from '~/lib/lut/cube-parser'
+import { parseCubeLUT, toLUTData } from '~/lib/lut/cube-parser'
+import { applyLUTContractSelection } from '~/lib/lut/profile-resolution'
 
 import { createLumaJpegRuntime } from '../../../packages/luma-jpeg-runtime/src/runtime'
 import { createBaselineJpegEncoder } from '../../../packages/luma-jpeg-runtime/worker/baseline-encoder'

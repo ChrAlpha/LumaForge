@@ -4,6 +4,7 @@ import type {
   LUTData,
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
+import { toLUTContractSelection } from '@lumaforge/luma-color-runtime'
 import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
 import { toast } from 'sonner'
 
@@ -13,7 +14,6 @@ import { isSupportedLUT, validateLUT } from '~/lib/lut/cube-parser'
 import {
   applyLUTContractSelection,
   applyTrustedLUTContract,
-  toLUTContractSelection,
 } from '~/lib/lut/profile-resolution'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 import type { OnlineProfileFetchProgress } from '~/lib/profiles/fetch'

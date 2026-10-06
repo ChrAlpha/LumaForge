@@ -10,16 +10,6 @@ import { parseCubeLUT as parseCubeLUTCore } from '@lumaforge/luma-color-runtime'
 
 import { getStoredLUTProfileSelection } from './profile-resolution'
 
-export {
-  applyLUTContractSelection,
-  applyLUTProfileSelection,
-  getStoredLUTContractSelection,
-  getStoredLUTProfileSelection,
-  inferLUTInputProfile,
-  resolveLUTProfile,
-  storeLUTContractSelection,
-  storeLUTProfileSelection,
-} from './profile-resolution'
 export type { ParsedLUT } from '@lumaforge/luma-color-runtime'
 export {
   generateIdentityLUT,

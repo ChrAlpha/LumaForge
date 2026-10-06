@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import {
-  applyLUTContractSelection,
-  parseCubeLUT,
-  toLUTData,
-} from './cube-parser'
+import { parseCubeLUT, toLUTData } from './cube-parser'
+import { applyLUTContractSelection } from './profile-resolution'
 
 function makeCube({
   comments = [],
