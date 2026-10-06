@@ -1,6 +1,6 @@
 // HQ preview snapshot planning: full-frame vs tiled readback of the GPU
 // preview. The authoritative full-resolution export does not use this module.
-import type { ExportFidelity } from '@lumaforge/render-engine'
+import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 
 import type { RawUploadInput } from './contract'
 
@@ -63,8 +63,8 @@ const DEFAULT_MEMORY_BUDGET_BYTES = 768 * 1024 * 1024
 const DEFAULT_RENDER_BYTES_PER_PIXEL = 32
 const MIN_TILE_SIZE = 256
 
-const EXPORT_OPTIONS_BY_FIDELITY: Record<
-  ExportFidelity,
+const EXPORT_OPTIONS_BY_PREFERENCE: Record<
+  PerformancePreference,
   Required<ExportRenderOptions>
 > = {
   safe: {
@@ -140,10 +140,10 @@ export function isExportRenderError(
   return error instanceof ExportRenderError
 }
 
-export function getExportRenderOptionsForFidelity(
-  fidelity: ExportFidelity,
+export function getExportRenderOptionsForPreference(
+  preference: PerformancePreference,
 ): Required<ExportRenderOptions> {
-  return { ...EXPORT_OPTIONS_BY_FIDELITY[fidelity] }
+  return { ...EXPORT_OPTIONS_BY_PREFERENCE[preference] }
 }
 
 export function planExportRenderTarget({
