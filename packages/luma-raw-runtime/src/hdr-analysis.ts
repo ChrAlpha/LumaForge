@@ -1,5 +1,16 @@
 import type { LumaRawMetadata } from './types'
 
+/**
+ * Level-derived range facts read from RAW metadata alone, plus a coarse
+ * SDR/HDR label. `engineeringDynamicRange` is the stops between white and
+ * black level, `sensorUtilization` the share of that span the frame's peak
+ * reaches, and `highlightHeadroom` the stops left between that peak and white.
+ *
+ * @deprecated Kept only so existing imports keep compiling. Nothing in
+ * LumaForge reads it, and its `recommendation` drives neither preview nor
+ * export, which are SDR JPEG paths. It may be removed in a future major
+ * version; do not build new behaviour on it.
+ */
 export type RawDynamicRangeInfo = {
   engineeringDynamicRange: number | null
   sensorUtilization: number | null
@@ -45,6 +56,16 @@ function recommendationFromFacts(facts: {
   return 'sdr'
 }
 
+/**
+ * Derives {@link RawDynamicRangeInfo} from metadata black, white, peak, and
+ * per-channel black levels without decoding pixels. Facts are null when the
+ * black level is missing or zero, or white does not sit above black.
+ *
+ * @deprecated Kept only so existing callers keep compiling and get the same
+ * results. Nothing in LumaForge calls it, and its recommendation drives
+ * neither preview nor export. It may be removed in a future major version;
+ * do not build new behaviour on it.
+ */
 export function analyzeRawDynamicRange(
   metadata: LumaRawMetadata,
 ): RawDynamicRangeInfo {

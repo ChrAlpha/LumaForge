@@ -47,3 +47,11 @@ RAW artifacts; publish that package before this one.
   512-row, and full-height processed windows with the exporter's 2px halo, top
   down and then bottom up in a fresh session, for each memory profile, and
   requires byte-identical RGB16 rows.
+
+### Deprecated
+
+- `analyzeRawDynamicRange` and its result type `RawDynamicRangeInfo` are
+  deprecated. They stay exported from the package entry, and existing calls
+  return the same results. Nothing in LumaForge calls them, and their SDR/HDR
+  `recommendation` drives neither preview nor export. They may be removed in a
+  future major version.
