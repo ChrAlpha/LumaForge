@@ -38,7 +38,6 @@ function workflowFixture() {
     resetCompareView: vi.fn(),
     resetPreviewViewport: vi.fn(),
     exportImage: vi.fn(),
-    recoverInterruptedExport: vi.fn(),
     reset: vi.fn(),
     updateStats: vi.fn(),
     pipelineRef: { current: null },
@@ -72,7 +71,6 @@ describe('useRawProcessorViewController', () => {
     const file = new File(['x'], 'photo.dng')
     act(() => pickerCalls[0].onFile(file))
     expect(workflow.loadFile).toHaveBeenCalledWith(file)
-    expect(workflow.recoverInterruptedExport).not.toHaveBeenCalled()
     expect(workflow.exportImage).not.toHaveBeenCalled()
   })
 

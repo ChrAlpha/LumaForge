@@ -1137,22 +1137,14 @@ describe('rawWorkflowToolProvider released preview', () => {
 const INTERRUPTED_HINT =
   'The previous export was interrupted. The next export you start uses the current RAW and adjustments with a safer setting.'
 
-function interruptedWorkflow(
-  exportRecovery: UseRawWorkflowReturn['exportRecovery'],
-) {
+function interruptedWorkflow(exportInterrupted: boolean) {
   return {
     ...workflowFixture(),
     supportLevel: 'experimental',
     exportResult: null,
     exportShareCapability: { available: false, reason: 'Export first.' },
-    exportRecovery,
+    exportInterrupted,
   } as unknown as UseRawWorkflowReturn
-}
-
-const INTERRUPTED: UseRawWorkflowReturn['exportRecovery'] = {
-  status: 'ready-to-retry',
-  exportId: 'attempt-1',
-  message: 'The journal sentence the surfaces never show.',
 }
 
 function emptyOnlineLutSources() {
@@ -1224,7 +1216,7 @@ describe('rawWorkflowToolProvider interruption note', () => {
   })
 
   it('hands the surfaces one typed note for the loaded source, and no recovery entry', () => {
-    let workflow = interruptedWorkflow(INTERRUPTED)
+    let workflow = interruptedWorkflow(true)
     const onExport = vi.fn()
     const { result, rerender } = renderHook(useRawWorkflowContext, {
       wrapper: ({ children }) => (
@@ -1243,19 +1235,8 @@ describe('rawWorkflowToolProvider interruption note', () => {
     expect(result.current).not.toHaveProperty('recovery')
     expect(result.current).not.toHaveProperty('onRecoverExportSource')
 
-    // A legacy shape reads as the same note.
-    workflow = interruptedWorkflow({
-      status: 'source-required',
-      exportId: 'export-1',
-      message: 'Please reselect frame.RAF.',
-      expectedFileName: 'frame.RAF',
-      manifest: {} as never,
-    })
-    rerender()
-    expect(result.current.interruptionNote).toEqual({ kind: 'interrupted' })
-
     // Another source has no hint of its own, so the note goes.
-    workflow = interruptedWorkflow({ status: 'none' })
+    workflow = interruptedWorkflow(false)
     rerender()
     expect(result.current.interruptionNote).toBeNull()
 
@@ -1273,7 +1254,7 @@ describe('rawWorkflowToolProvider interruption note', () => {
     try {
       const { container, rerender } = render(
         <SurfaceWith
-          workflow={interruptedWorkflow(INTERRUPTED)}
+          workflow={interruptedWorkflow(true)}
           onExport={onExport}
         />,
       )
@@ -1283,11 +1264,10 @@ describe('rawWorkflowToolProvider interruption note', () => {
       expect(within(block).getByText(INTERRUPTED_HINT)).toHaveAttribute(
         'data-export-interruption',
       )
-      expect(container).not.toHaveTextContent(/journal sentence/)
 
       rerender(
         <SurfaceWith
-          workflow={interruptedWorkflow({ status: 'none' })}
+          workflow={interruptedWorkflow(false)}
           onExport={onExport}
         />,
       )
@@ -1313,7 +1293,7 @@ describe('rawWorkflowToolProvider interruption note', () => {
     try {
       const { container } = render(
         <SurfaceWith
-          workflow={interruptedWorkflow(INTERRUPTED)}
+          workflow={interruptedWorkflow(true)}
           onExport={onExport}
         />,
       )
@@ -1331,7 +1311,6 @@ describe('rawWorkflowToolProvider interruption note', () => {
       expect(within(panel).getByText(INTERRUPTED_HINT)).toHaveAttribute(
         'data-export-interruption',
       )
-      expect(container).not.toHaveTextContent(/journal sentence/)
 
       // Closing and reopening the deck starts nothing.
       await user.click(
@@ -1375,7 +1354,7 @@ function PolicySurface({
     'processed' | 'original' | 'compare'
   >('processed')
   const workflow = {
-    ...interruptedWorkflow({ status: 'none' }),
+    ...interruptedWorkflow(false),
     viewMode,
     setViewMode: (mode: 'processed' | 'original' | 'compare') => {
       commands.setViewMode(mode)

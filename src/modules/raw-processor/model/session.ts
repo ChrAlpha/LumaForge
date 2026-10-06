@@ -6,7 +6,6 @@ import type {
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 
-import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
 import type {
   ExportCheckpointMode,
   ExportExecutionProfileName,
@@ -31,20 +30,11 @@ export type FullResExportCapabilityState =
   | { status: 'supported'; width: number; height: number }
   | { status: 'unsupported'; reason: string }
 
-export type ExportRecoveryState =
-  | { status: 'none' }
-  | {
-      status: 'source-required'
-      exportId: string
-      message: string
-      expectedFileName: string
-      manifest: ExportCheckpointManifest
-    }
-  | {
-      status: 'ready-to-retry'
-      exportId: string
-      message: string
-    }
+/**
+ * A session holds no export recovery: an interrupted export is only a hint in
+ * the page's markers for the next explicit export of the same source.
+ */
+export type ExportRecoveryState = { status: 'none' }
 
 export type ActiveExportPlanState = {
   profileName: ExportExecutionProfileName
@@ -182,8 +172,7 @@ export type ImageSession = {
     activePlan?: ActiveExportPlanState
     /**
      * Always `none`. The interruption hint lives in the page's marker state
-     * and reaches surfaces only as a read-only projection for the loaded
-     * source.
+     * and reaches surfaces only as a note for the loaded source.
      */
     recovery: ExportRecoveryState
     /** False: no export state outlives the tab, whatever the sink. */

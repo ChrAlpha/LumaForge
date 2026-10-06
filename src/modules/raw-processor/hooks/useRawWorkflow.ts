@@ -10,8 +10,7 @@ import { buildRawWorkflowReturn } from './buildRawWorkflowReturn'
 import { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
 import { useRawCompareStage } from './stages/compare/useRawCompareStage'
 import { useExportGraphInvalidation } from './stages/export/useExportGraphInvalidation'
-import { useExportRecoveryDiscovery } from './stages/export/useExportRecoveryDiscovery'
-import { useExportRecoveryState } from './stages/export/useExportRecoveryState'
+import { useExportInterruptionState } from './stages/export/useExportInterruptionState'
 import { useExportResourceManagement } from './stages/export/useExportResourceManagement'
 import { useRawExportStage } from './stages/export/useRawExportStage'
 import { useRawIngestStage } from './stages/ingest/useRawIngestStage'
@@ -83,16 +82,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     decodedImageRef,
   })
   const [decodedImageVersion, setDecodedImageVersion] = useState(0)
-  const {
-    interruptionMarkers,
-    exportInterruption,
-    exportInterruptionRef,
-    setExportInterruption,
-    interruptionCheck,
-    refreshExportInterruption,
-    pendingRecoveryRetry,
-    setPendingRecoveryRetry,
-  } = useExportRecoveryState()
   const {
     getCurrentColorIntent,
     getCurrentView,
@@ -233,12 +222,12 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setOriginalPreviewPipeline,
   }
 
-  useExportRecoveryDiscovery({
-    sourceFile: loadedImage.file,
-    interruptionCheck,
-    markers: interruptionMarkers,
-    setExportInterruption,
-  })
+  const {
+    interruptionMarkers,
+    exportInterruption,
+    exportInterruptionRef,
+    refreshExportInterruption,
+  } = useExportInterruptionState(loadedImage.file)
 
   const { loadFile, reset } = useRawIngestStage({
     setStatus,
@@ -285,12 +274,11 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     deliveredExportSize,
     exportResult,
     exportShareCapability,
-    exportRecovery,
+    exportInterrupted,
     previewSuspended,
     canPreviewExport,
     previewExportDisabledReason,
     exportImage,
-    recoverInterruptedExport,
     downloadExportResult,
     downloadExportManifest,
     shareExportResult,
@@ -330,9 +318,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     hasImage,
     displaySource,
     rawRenderExposure,
-    pendingRecoveryRetry,
-    setPendingRecoveryRetry,
-    loadFile,
     queueExportResultResourceDisposal,
     toast,
   })
@@ -349,12 +334,11 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     deliveredExportSize,
     exportResult,
     exportShareCapability,
-    exportRecovery,
+    exportInterrupted,
     previewSuspended,
     canPreviewExport,
     previewExportDisabledReason,
     exportImage,
-    recoverInterruptedExport,
     downloadExportResult,
     downloadExportManifest,
     shareExportResult,

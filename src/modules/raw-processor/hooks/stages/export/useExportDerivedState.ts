@@ -12,7 +12,7 @@ import type { ProcessingStatus } from '../../../model/workflow'
 import { resolveDeliveredExportSize } from '../../../services/export/delivered-export-size'
 import { deriveFullResExportReadiness } from '../../../services/export/export-readiness'
 import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
-import { projectExportRecovery } from '../../../services/export/export-recovery'
+import { isInterruptedSource } from '../../../services/export/export-recovery'
 import { resolveExportShareButtonCapability } from '../../../services/export/export-result-actions'
 
 type UseExportDerivedStateInput = {
@@ -55,7 +55,10 @@ export function useExportDerivedState({
       ? resolveExportShareButtonCapability()
       : { available: false, reason: 'Export a JPEG before sharing.' }
     // Read-only, and only for the loaded source the hint was read for.
-    const exportRecovery = projectExportRecovery(exportInterruption, sourceFile)
+    const exportInterrupted = isInterruptedSource(
+      exportInterruption,
+      sourceFile,
+    )
     const exportState = session?.exportState
     const activeExportPlan =
       exportState?.status === 'exporting' ||
@@ -103,7 +106,7 @@ export function useExportDerivedState({
       deliveredExportSize,
       exportResult,
       exportShareCapability,
-      exportRecovery,
+      exportInterrupted,
       previewSuspended,
       canPreviewExport,
       previewExportDisabledReason,

@@ -11,7 +11,6 @@ import type {
 } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import { deriveLutContractExportReason } from '../model/derive-session'
-import type { ExportRecoveryState } from '../model/session'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { deriveToolAvailability } from '../services/surface/derive-tool-availability'
 import { resolvePreviewLookReason } from '../services/surface/raw-reason'
@@ -59,14 +58,14 @@ function getAspect(size: { width: number; height: number } | null | undefined) {
 const INTERRUPTED_NOTE: ExportInterruptionNote = { kind: 'interrupted' }
 
 /**
- * The note for the loaded source's interruption hint. Any interruption,
- * legacy shapes included, reads as the same note; its own sentence, source
- * name and dimensions never reach a surface.
+ * The note for the loaded source's interruption hint. It names no source,
+ * dimensions or attempt, and it is not a recovery entry: only the explicit
+ * Export starts an export.
  */
 function toInterruptionNote(
-  recovery: ExportRecoveryState | undefined,
+  exportInterrupted: boolean | undefined,
 ): ExportInterruptionNote | null {
-  return !recovery || recovery.status === 'none' ? null : INTERRUPTED_NOTE
+  return exportInterrupted ? INTERRUPTED_NOTE : null
 }
 
 /** `edit`, refused whenever `refused` reads true at the moment it is called. */
@@ -360,7 +359,7 @@ export function RawWorkflowToolProvider({
         previewSuspended,
         exportResult: workflow.exportResult,
         exportShareCapability: workflow.exportShareCapability,
-        interruptionNote: toInterruptionNote(workflow.exportRecovery),
+        interruptionNote: toInterruptionNote(workflow.exportInterrupted),
         onShareExport: workflow.shareExportResult,
         onDownloadExport: workflow.downloadExportResult,
         onDownloadExportManifest: workflow.downloadExportManifest,

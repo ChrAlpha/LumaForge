@@ -4,7 +4,7 @@ import type {
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
@@ -21,8 +21,6 @@ import type {
 } from '../../../services/export/export-recovery'
 import { withInterruptionHistory } from '../../../services/export/export-recovery'
 import { useExportDerivedState } from './useExportDerivedState'
-import type { PendingRecoveryRetry } from './useExportRecoveryAction'
-import { useExportRecoveryAction } from './useExportRecoveryAction'
 import { useExportResultActions } from './useExportResultActions'
 import { useFullResExportAction } from './useFullResExportAction'
 import { useHqPreviewExportAction } from './useHqPreviewExportAction'
@@ -68,9 +66,6 @@ type UseRawExportStageInput = {
   hasImage: boolean
   displaySource: DisplaySource
   rawRenderExposure: RawRenderExposure | null
-  pendingRecoveryRetry: PendingRecoveryRetry | null
-  setPendingRecoveryRetry: Dispatch<SetStateAction<PendingRecoveryRetry | null>>
-  loadFile: (file: File) => Promise<void>
   queueExportResultResourceDisposal: () => void
   toast: ExportToast
 }
@@ -109,9 +104,6 @@ export function useRawExportStage({
   hasImage,
   displaySource,
   rawRenderExposure,
-  pendingRecoveryRetry,
-  setPendingRecoveryRetry,
-  loadFile,
   queueExportResultResourceDisposal,
   toast,
 }: UseRawExportStageInput) {
@@ -149,7 +141,7 @@ export function useRawExportStage({
     deliveredExportSize,
     exportResult,
     exportShareCapability,
-    exportRecovery,
+    exportInterrupted,
     previewSuspended,
     canPreviewExport,
     previewExportDisabledReason,
@@ -172,25 +164,6 @@ export function useRawExportStage({
     () => exportImage(withInterruptionHistory(exportInterruptionRef.current)),
     [exportImage, exportInterruptionRef],
   )
-  // The retired recovery action still takes a recovery ref; it reads the
-  // same projection the surfaces do.
-  const exportRecoveryRef = useMemo(
-    () => ({ current: exportRecovery }),
-    [exportRecovery],
-  )
-  const { recoverInterruptedExport } = useExportRecoveryAction({
-    pendingRecoveryRetry,
-    setPendingRecoveryRetry,
-    sessionRef,
-    discoveredRecoveryRef: exportRecoveryRef,
-    loadedFile: loadedImage.file,
-    canExport,
-    status,
-    loadFile,
-    exportImage: exportWithInterruptionHistory,
-    scheduleToast,
-    toast,
-  })
   const {
     downloadExportResult,
     downloadExportManifest,
@@ -230,12 +203,11 @@ export function useRawExportStage({
     deliveredExportSize,
     exportResult,
     exportShareCapability,
-    exportRecovery,
+    exportInterrupted,
     previewSuspended,
     canPreviewExport,
     previewExportDisabledReason,
     exportImage: exportWithInterruptionHistory,
-    recoverInterruptedExport,
     downloadExportResult,
     downloadExportManifest,
     shareExportResult,

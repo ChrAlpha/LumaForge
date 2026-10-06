@@ -436,6 +436,18 @@ function storedMarkers() {
     .map((key) => JSON.parse(localStorage.getItem(key)!) as { attempt: string })
 }
 
+/**
+ * Workflow keys naming an export recovery, retry or reselection. The load
+ * progress hint is about decoding, not export.
+ */
+function exportRecoveryKeys(workflow: object) {
+  return Object.keys(workflow).filter(
+    (key) =>
+      key !== 'progressRecoveryHint' &&
+      /recover|retry|discovered|reselect/i.test(key),
+  )
+}
+
 function pageMarkers() {
   const markers = interruptionMarkersMock.current
   if (!markers) throw new Error('Expected test markers.')
@@ -710,7 +722,7 @@ describe('useRawWorkflow embedded preview state', () => {
     await flushPostCommitTasks()
 
     // No source, no hint: a stored marker never surfaces on its own.
-    expect(result.current.exportRecovery).toEqual({ status: 'none' })
+    expect(result.current.exportInterrupted).toBe(false)
     expect(pageMarkers().inspect).not.toHaveBeenCalled()
 
     await act(async () => {
@@ -718,13 +730,11 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.exportRecovery).toEqual({
-        status: 'ready-to-retry',
-        exportId: 'closed-page-attempt-1',
-        message:
-          'The browser interrupted the previous export. Your next export will use a safer low-memory setting.',
-      })
+      expect(result.current.exportInterrupted).toBe(true)
     })
+    // The workflow publishes only that the loaded source was interrupted:
+    // no attempt id, sentence or legacy recovery state.
+    expect(exportRecoveryKeys(result.current)).toEqual([])
     // The session keeps no second copy of the hint.
     expect(jotaiStore.get(currentSessionAtom)?.exportState.recovery).toEqual({
       status: 'none',
@@ -747,10 +757,11 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushPostCommitTasks()
 
-    expect(result.current.exportRecovery).toEqual({ status: 'none' })
+    expect(result.current.exportInterrupted).toBe(false)
+    expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
 
-  it('does not reselect, load or export through the retired recovery action', async () => {
+  it('offers no recovery command or continuation for an interrupted source', async () => {
     jotaiStore.set(currentSessionAtom, createTestSession())
     await seedCrashedExport(
       new File(['raw'], 'frame.ARW', { lastModified: 123 }),
@@ -759,22 +770,53 @@ describe('useRawWorkflow embedded preview state', () => {
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
     await flushPostCommitTasks()
 
-    await act(async () => {
-      await result.current.recoverInterruptedExport(
-        new File(['raw'], 'frame.ARW', { lastModified: 123 }),
-      )
-      await result.current.recoverInterruptedExport(
-        new File(['other'], 'other.ARW'),
-      )
-    })
-    await flushPostCommitTasks()
-
+    // Export starts only through exportImage; nothing reselects, reloads or
+    // arms a retry for the interrupted file.
+    expect(exportRecoveryKeys(result.current)).toEqual([])
     expect(
       sourceFingerprintMock.sourceFingerprintMatches,
     ).not.toHaveBeenCalled()
-    expect(toastMock.error).not.toHaveBeenCalled()
     expect(rawRuntimeAdapterMock.openSession).not.toHaveBeenCalled()
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
+  })
+
+  it('never exports on its own after a look change or a cancelled explicit export', async () => {
+    vi.stubGlobal('crossOriginIsolated', true)
+    await seedCrashedExport(
+      new File(['raw'], 'frame.ARW', { lastModified: 123 }),
+    )
+    exportSystemMock.runFullResolutionExportJob.mockRejectedValueOnce(
+      new DOMException('The operation was aborted.', 'AbortError'),
+    )
+
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(
+        new File(['raw'], 'frame.ARW', { lastModified: 123 }),
+      )
+    })
+    await waitFor(() => {
+      expect(result.current.exportInterrupted).toBe(true)
+    })
+
+    act(() => {
+      result.current.setParams({ userExposureEv: 0.5 })
+    })
+    await flushPostCommitTasks()
+    expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await result.current.exportImage()
+    })
+    await flushPostCommitTasks()
+    act(() => {
+      result.current.setParams({ userContrast: 10 })
+    })
+    await flushPostCommitTasks()
+
+    // The cancelled attempt is the only one: its end, the readiness that
+    // follows and the next look change start nothing.
+    expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
   })
 
   it('never exports when an interrupted source loads and becomes ready', async () => {
@@ -793,7 +835,7 @@ describe('useRawWorkflow embedded preview state', () => {
       expect(result.current.canExport).toBe(true)
     })
     await waitFor(() => {
-      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
+      expect(result.current.exportInterrupted).toBe(true)
     })
     await flushPostCommitTasks()
 
@@ -802,7 +844,7 @@ describe('useRawWorkflow embedded preview state', () => {
       sourceFingerprintMock.sourceFingerprintMatches,
     ).not.toHaveBeenCalled()
     // The hint survives the load so the next explicit export can use it.
-    expect(result.current.exportRecovery.status).toBe('ready-to-retry')
+    expect(result.current.exportInterrupted).toBe(true)
   })
 
   it('requests the safer plan from the current source on the next explicit export', async () => {
@@ -823,7 +865,7 @@ describe('useRawWorkflow embedded preview state', () => {
       )
     })
     await waitFor(() => {
-      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
+      expect(result.current.exportInterrupted).toBe(true)
     })
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
 
@@ -848,7 +890,7 @@ describe('useRawWorkflow embedded preview state', () => {
     )
     // The delivered export used the hint up; nothing is left to read again.
     await waitFor(() => {
-      expect(result.current.exportRecovery.status).toBe('none')
+      expect(result.current.exportInterrupted).toBe(false)
     })
     expect(storedMarkers()).toEqual([])
   })
@@ -3947,7 +3989,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(file)
     })
     await waitFor(() => {
-      expect(result.current.exportRecovery.status).toBe('ready-to-retry')
+      expect(result.current.exportInterrupted).toBe(true)
     })
     await act(async () => {
       await result.current.exportImage()
@@ -3960,7 +4002,7 @@ describe('useRawWorkflow embedded preview state', () => {
       productCopy: 'interrupted-retry',
     })
     await waitFor(() => {
-      expect(result.current.exportRecovery.status).toBe('none')
+      expect(result.current.exportInterrupted).toBe(false)
     })
     expect(storedMarkers()).toEqual([])
     await expect(

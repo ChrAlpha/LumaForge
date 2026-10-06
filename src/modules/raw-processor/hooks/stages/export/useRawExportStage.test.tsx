@@ -2,7 +2,6 @@ import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
@@ -11,7 +10,6 @@ import type { ProcessingStatus } from '../../../model/workflow'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
 import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
 import { orchestrateFullResExport } from '../../../services/export/orchestrate-full-res-export'
-import type { PendingRecoveryRetry } from './useExportRecoveryAction'
 import { useRawExportStage } from './useRawExportStage'
 
 vi.mock('../../../services/export/orchestrate-full-res-export', () => ({
@@ -44,36 +42,6 @@ const RAW_RENDER_EXPOSURE = {
   multiplier: 1,
   source: 'identity',
 } as const
-
-/** A journal an older build left: the delivered crop, not the sensor frame. */
-function createTransformedJournal(): ExportCheckpointManifest {
-  return {
-    version: 1,
-    exportId: 'export-interrupted',
-    sourceFingerprint: {
-      name: SOURCE_FILE.name,
-      size: SOURCE_FILE.size,
-      lastModified: SOURCE_FILE.lastModified,
-      hashPrefixHex: 'hash',
-    },
-    fileName: SOURCE_FILE.name,
-    sourceSize: SOURCE_FILE.size,
-    sourceLastModified: SOURCE_FILE.lastModified,
-    outputWidth: 640,
-    outputHeight: 360,
-    graphFingerprint: 'graph-before-interruption',
-    profile: 'ios-safe',
-    attempt: 1,
-    preferredRows: 64,
-    totalRows: 360,
-    recoveryMode: 'safe-retry',
-    outputSink: 'opfs-file',
-    sourceReacquisition: 'user-reselect-required',
-    completedRowsForDiagnostics: 64,
-    jpegState: 'restart-required',
-    updatedAt: '2026-06-01T00:00:00.000Z',
-  }
-}
 
 const INTERRUPTION: SourceInterruptionHint = {
   source: encodeExportSourceHint(SOURCE_FILE) ?? '',
@@ -164,33 +132,18 @@ function createStageInput(
     hasImage: false,
     displaySource: 'none',
     rawRenderExposure: null,
-    pendingRecoveryRetry: null,
-    setPendingRecoveryRetry: vi.fn(),
-    loadFile: vi.fn(),
     queueExportResultResourceDisposal: vi.fn(),
     toast: { error: vi.fn(), success: vi.fn() },
     ...overrides,
   }
 }
 
-/**
- * A matching source with an interruption hint and a legacy armed retry: the
- * strongest state the retired recovery flow would have exported from.
- */
+/** A ready matching source with a crash-like interruption hint. */
 function createInterruptedReadyInput(
   status: ProcessingStatus,
   overrides: Partial<ExportStageInput> = {},
 ): ExportStageInput {
   const session = createReadySession()
-  const journal = createTransformedJournal()
-  const pendingRecoveryRetry: PendingRecoveryRetry = {
-    sourceExportId: journal.exportId,
-    manifest: journal,
-    sessionId: session.id,
-    fileName: SOURCE_FILE.name,
-    size: SOURCE_FILE.size,
-    lastModified: SOURCE_FILE.lastModified,
-  }
 
   return createStageInput({
     loadedImage: { file: SOURCE_FILE, metadata: null },
@@ -198,7 +151,6 @@ function createInterruptedReadyInput(
     sessionRef: { current: session },
     exportInterruption: INTERRUPTION,
     exportInterruptionRef: { current: INTERRUPTION },
-    pendingRecoveryRetry,
     status,
     hasImage: true,
     displaySource: 'quick',
@@ -220,8 +172,11 @@ describe('useRawExportStage', () => {
     expect(result.current.previewSuspended).toBe(false)
     expect(typeof result.current.exportImage).toBe('function')
     expect(typeof result.current.exportPreviewImage).toBe('function')
-    expect(typeof result.current.recoverInterruptedExport).toBe('function')
     expect(typeof result.current.downloadExportResult).toBe('function')
+    // The explicit export is the only way in: no recovery or retry action.
+    expect(
+      Object.keys(result.current).filter((key) => /recover|retry/i.test(key)),
+    ).toEqual([])
   })
 
   it('never exports from discovery, source load or readiness changes', () => {
@@ -232,7 +187,7 @@ describe('useRawExportStage', () => {
 
     view.rerender(createInterruptedReadyInput('ready'))
     expect(view.result.current.canExport).toBe(true)
-    expect(view.result.current.exportRecovery.status).toBe('ready-to-retry')
+    expect(view.result.current.exportInterrupted).toBe(true)
     view.rerender(
       createInterruptedReadyInput('ready', {
         params: { ...params, userContrast: 0.4 },
@@ -240,14 +195,10 @@ describe('useRawExportStage', () => {
     )
 
     expect(orchestrateFullResExport).not.toHaveBeenCalled()
-    expect(view.result.current.exportRecovery).toEqual({
-      status: 'ready-to-retry',
-      exportId: 'attempt-interrupted',
-      message: expect.any(String),
-    })
+    expect(view.result.current.exportInterrupted).toBe(true)
   })
 
-  it('projects no recovery for a loaded source the hint was not read for', () => {
+  it('notes no interruption for a loaded source the hint was not read for', () => {
     const other = new File(['other'], 'other.dng', { lastModified: 9 })
     const { result } = renderHook(() =>
       useRawExportStage(
@@ -257,7 +208,7 @@ describe('useRawExportStage', () => {
       ),
     )
 
-    expect(result.current.exportRecovery).toEqual({ status: 'none' })
+    expect(result.current.exportInterrupted).toBe(false)
     expect(orchestrateFullResExport).not.toHaveBeenCalled()
   })
 

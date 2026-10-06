@@ -24,7 +24,6 @@ import type {
 } from '../model/export-result'
 import type {
   DisplaySource,
-  ExportRecoveryState,
   LUTContractSelectionState,
   StyleAsset,
   SupportLevel,
@@ -73,7 +72,11 @@ export interface UseRawWorkflowReturn {
   previewExportDisabledReason?: string
   exportResult: ExportResult | null
   exportShareCapability: ExportShareCapability
-  exportRecovery: ExportRecoveryState
+  /**
+   * Whether the loaded source's previous export was interrupted. The next
+   * explicit export uses a safer plan for it; nothing starts one on its own.
+   */
+  exportInterrupted: boolean
   activeStyle: StyleAsset | null
   lutProfileSelection: LUTContractSelectionState | null
   /** How much of the look reaches the photo, 0..1. */
@@ -140,7 +143,6 @@ export interface UseRawWorkflowReturn {
   /** Starts the explicit full-resolution export; it takes no choices. */
   exportImage: () => Promise<void>
   exportPreviewImage: () => Promise<void>
-  recoverInterruptedExport: (file: File) => Promise<void>
   downloadExportResult: () => Promise<void>
   downloadExportManifest: () => Promise<void>
   shareExportResult: () => Promise<void>

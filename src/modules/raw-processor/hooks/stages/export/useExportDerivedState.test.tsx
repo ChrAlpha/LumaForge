@@ -187,7 +187,7 @@ describe('useExportDerivedState', () => {
     )
   })
 
-  it('projects the recovery state only from the hint read for the loaded source', () => {
+  it('notes an interruption only from the hint read for the loaded source', () => {
     const session = createSession()
     const sourceFile = session.sourceFile.file ?? null
     if (!sourceFile) throw new Error('Expected a session source file.')
@@ -202,18 +202,7 @@ describe('useExportDerivedState', () => {
     const render = (file: File | null) =>
       renderHook(() =>
         useExportDerivedState({
-          // A recovery left on the session is not a second source of hints.
-          session: {
-            ...session,
-            exportState: {
-              ...session.exportState,
-              recovery: {
-                status: 'ready-to-retry',
-                exportId: 'session-left-over',
-                message: 'Interrupted.',
-              },
-            },
-          },
+          session,
           exportInterruption,
           decodedImageRef: { current: null },
           embeddedPreviewUrl: null,
@@ -224,16 +213,12 @@ describe('useExportDerivedState', () => {
           rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
           stats: null,
         }),
-      ).result.current.exportRecovery
+      ).result.current.exportInterrupted
 
-    expect(render(sourceFile)).toEqual({
-      status: 'ready-to-retry',
-      exportId: 'attempt-a',
-      message: expect.any(String),
-    })
-    expect(
-      render(new File(['other'], 'other.dng', { lastModified: 1 })),
-    ).toEqual({ status: 'none' })
-    expect(render(null)).toEqual({ status: 'none' })
+    expect(render(sourceFile)).toBe(true)
+    expect(render(new File(['other'], 'other.dng', { lastModified: 1 }))).toBe(
+      false,
+    )
+    expect(render(null)).toBe(false)
   })
 })

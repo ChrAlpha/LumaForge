@@ -1,7 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
-
-import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
-import { sourceFingerprintMatches } from '~/lib/export/source-fingerprint'
+import { describe, expect, it } from 'vitest'
 
 import type { ExportInterruptionHint } from './export-interruption'
 import {
@@ -11,46 +8,11 @@ import {
 import type { SourceInterruptionHint } from './export-recovery'
 import {
   classifyExportAttemptOutcome,
-  createInterruptedExportRecovery,
   interruptionForSource,
-  projectExportRecovery,
+  isInterruptedSource,
   readSourceInterruption,
-  validateRecoveryReselection,
   withInterruptionHistory,
 } from './export-recovery'
-
-vi.mock('~/lib/export/source-fingerprint', () => ({
-  sourceFingerprintMatches: vi.fn(),
-}))
-
-function manifest(): ExportCheckpointManifest {
-  return {
-    version: 1,
-    exportId: 'export-1',
-    sourceFingerprint: {
-      name: 'frame.RAF',
-      size: 3,
-      lastModified: 123,
-      hashPrefixHex: 'abc',
-    },
-    fileName: 'frame.RAF',
-    sourceSize: 3,
-    sourceLastModified: 123,
-    outputWidth: 11662,
-    outputHeight: 8746,
-    graphFingerprint: 'graph-1',
-    profile: 'ios-safe',
-    attempt: 1,
-    preferredRows: 64,
-    totalRows: 8746,
-    recoveryMode: 'safe-retry',
-    outputSink: 'opfs-file',
-    sourceReacquisition: 'user-reselect-required',
-    completedRowsForDiagnostics: 64,
-    jpegState: 'restart-required',
-    updatedAt: '2026-05-01T00:00:00.000Z',
-  }
-}
 
 const SOURCE = new File(['raw'], 'frame.RAF', { lastModified: 123 })
 const OTHER_SOURCE = new File(['other raw'], 'other.RAF', { lastModified: 456 })
@@ -108,46 +70,24 @@ describe('source-scoped interruption hints', () => {
     ).toBeNull()
   })
 
-  it('projects the legacy recovery state from the same hint and source', () => {
+  it('notes an interruption only for the file tuple the hint was read for', () => {
     const interruption = hintFor(SOURCE, crashHint(['attempt-a', 'attempt-b']))
 
-    expect(projectExportRecovery(interruption, SOURCE)).toEqual({
-      status: 'ready-to-retry',
-      exportId: 'attempt-a',
-      message:
-        'The browser interrupted the previous export. Your next export will use a safer low-memory setting.',
-    })
-    expect(projectExportRecovery(interruption, OTHER_SOURCE)).toEqual({
-      status: 'none',
-    })
-    expect(projectExportRecovery(interruption, null)).toEqual({
-      status: 'none',
-    })
-    expect(projectExportRecovery(null, SOURCE)).toEqual({ status: 'none' })
+    expect(isInterruptedSource(interruption, SOURCE)).toBe(true)
+    expect(isInterruptedSource(interruption, OTHER_SOURCE)).toBe(false)
+    expect(isInterruptedSource(interruption, null)).toBe(false)
+    expect(isInterruptedSource(null, SOURCE)).toBe(false)
   })
 
-  it('projects a resource failure as no interruption while keeping it for the plan', () => {
+  it('notes a resource failure as no interruption while keeping it for the plan', () => {
     const interruption = hintFor(SOURCE, {
       previousCrashLikeInterruption: false,
       previousResourceFailure: true,
       attempts: ['attempt-failed'],
     })
 
-    expect(projectExportRecovery(interruption, SOURCE)).toEqual({
-      status: 'none',
-    })
+    expect(isInterruptedSource(interruption, SOURCE)).toBe(false)
     expect(interruptionForSource(interruption, SOURCE)).toBe(interruption.hint)
-  })
-
-  it('shows an old journal as the same interruption-only hint', () => {
-    const recovery = createInterruptedExportRecovery(manifest())
-
-    expect(recovery).toEqual(
-      projectExportRecovery(hintFor(SOURCE, crashHint(['export-1'])), SOURCE),
-    )
-    expect(recovery).not.toHaveProperty('manifest')
-    expect(recovery).not.toHaveProperty('expectedFileName')
-    expect(recovery.message).not.toMatch(/reselect|resume|restor|reproduc/i)
   })
 
   it('reads a source hint from the markers without starting anything', async () => {
@@ -228,39 +168,5 @@ describe('source-scoped interruption hints', () => {
         error: new DOMException('Aborted', 'AbortError'),
       }),
     ).toBe('cancelled')
-  })
-})
-
-describe('export recovery reselection', () => {
-  it('accepts a reselected matching source', async () => {
-    const checkpointManifest = manifest()
-    vi.mocked(sourceFingerprintMatches).mockResolvedValue(true)
-
-    await expect(
-      validateRecoveryReselection(
-        new File(['raw'], 'frame.RAF'),
-        checkpointManifest,
-      ),
-    ).resolves.toEqual({ ok: true })
-
-    expect(sourceFingerprintMatches).toHaveBeenCalledWith(
-      expect.any(File),
-      checkpointManifest.sourceFingerprint,
-      {
-        width: 11662,
-        height: 8746,
-      },
-    )
-  })
-
-  it('rejects a mismatched reselected source with product-safe reason', async () => {
-    vi.mocked(sourceFingerprintMatches).mockResolvedValue(false)
-
-    await expect(
-      validateRecoveryReselection(new File(['other'], 'other.RAF'), manifest()),
-    ).resolves.toEqual({
-      ok: false,
-      reason: 'The selected RAW does not match the interrupted export source.',
-    })
   })
 })
