@@ -36,8 +36,6 @@ interface RawWorkflowToolProviderProps {
   onCompareReset: () => void
   onLutDrop: (files: File[]) => void
   onExport: RawToolSurfaceProps['onExport']
-  /** Unused: an interrupted export offers no file picker. */
-  onRecoverExportSource?: () => void
   onPrepareRuntime: () => void
   children: ReactNode
 }

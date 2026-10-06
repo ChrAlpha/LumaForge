@@ -10,9 +10,17 @@ import {
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Provider as JotaiProvider } from 'jotai'
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from 'vitest'
 
 import { viewportAtom } from '~/atoms/viewport'
 import { jotaiStore } from '~/lib/jotai'
@@ -1743,5 +1751,99 @@ describe('rawWorkflowToolProvider surface policy', () => {
     rerender(<PolicySurface commands={commands} />)
     expect(dockTab(/adjust/i)).toBeEnabled()
     expect(action()).toBeEnabled()
+  })
+})
+
+describe('rawWorkflowToolProvider surface contract', () => {
+  it('takes no recovery, reselect or export-choice inputs, and hands none on', () => {
+    type ProviderProps = ComponentProps<typeof RawWorkflowToolProvider>
+    expectTypeOf<ProviderProps>().not.toHaveProperty('onRecoverExportSource')
+    expectTypeOf<ProviderProps>().not.toHaveProperty('recovery')
+    expectTypeOf<RawToolSurfaceProps>().not.toHaveProperty('recovery')
+    expectTypeOf<RawToolSurfaceProps>().not.toHaveProperty(
+      'onRecoverExportSource',
+    )
+    expectTypeOf<RawToolSurfaceProps['onExport']>().parameters.toEqualTypeOf<
+      []
+    >()
+
+    const { result } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <ProviderWith workflow={interruptedWorkflow(true)}>
+          {children}
+        </ProviderWith>
+      ),
+    })
+
+    // What the surfaces get: action-specific availability, one typed note,
+    // a continuous strength, the size export will really deliver, guarded
+    // commands and the delivered result's actions. Nothing else.
+    expect(Object.keys(result.current).sort()).toEqual(
+      [
+        'activeIntensity',
+        'appliedLut',
+        'canExport',
+        'canPreviewExport',
+        'color',
+        'compareSplit',
+        'compareSupported',
+        'cpuPreviewNotice',
+        'currentLutName',
+        'deliveredExportSize',
+        'disabledReason',
+        'exportBlockedByLutContract',
+        'exportResult',
+        'exportShareCapability',
+        'fileName',
+        'hasImage',
+        'histogram',
+        'interruptionNote',
+        'isExporting',
+        'isProcessing',
+        'lutProfileResolution',
+        'lutProfileSelection',
+        'metadata',
+        'onColorChange',
+        'onColorReset',
+        'onCompareReset',
+        'onCompareSplitChange',
+        'onCopyExport',
+        'onDownloadExport',
+        'onDownloadExportManifest',
+        'onExport',
+        'onIntensityChange',
+        'onLutClear',
+        'onLutLoad',
+        'onLutProfileSelect',
+        'onPrepareRuntime',
+        'onPreviewExport',
+        'onReplaceFile',
+        'onResetSession',
+        'onSelectiveColorChange',
+        'onSelectiveColorReset',
+        'onShareExport',
+        'onToneChange',
+        'onToneReset',
+        'onViewModeChange',
+        'onlineLutSources',
+        'previewAspect',
+        'previewExportDisabledReason',
+        'previewFrameEl',
+        'previewLookReason',
+        'previewSuspended',
+        'progress',
+        'runtimeReadinessState',
+        'selectiveColor',
+        'stats',
+        'supportLevel',
+        'tone',
+        'toolAvailability',
+        'transform',
+        'viewMode',
+      ].sort(),
+    )
+    expect(result.current.interruptionNote).toEqual({ kind: 'interrupted' })
+    // The GPU stage can split; the CPU one is reported separately.
+    expect(result.current.compareSupported).toBe(true)
   })
 })

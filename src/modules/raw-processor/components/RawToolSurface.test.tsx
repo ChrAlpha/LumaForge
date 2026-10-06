@@ -31,6 +31,8 @@ function RawToolSurface(props: Partial<RawToolSurfaceProps>) {
   )
 }
 
+// Held to the surface contract, so a fixture cannot carry a field the
+// surfaces no longer take.
 const baseProps = {
   activeIntensity: 0.7,
   tone: {
@@ -85,7 +87,7 @@ const baseProps = {
   supportLevel: 'experimental' as const,
   metadata: null,
   stats: null,
-}
+} satisfies Partial<RawToolSurfaceProps>
 
 function onlineLutSourcesFixture(
   overrides: Partial<UseOnlineLutSourcesResult> = {},
