@@ -1,10 +1,11 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { deriveInteractivePolicy } from '@lumaforge/render-engine/policy'
 import { createProgressivePreviewPlan } from '@lumaforge/render-engine/preview'
 import { toast } from 'sonner'
 
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import { resolvePreviewBackend } from '~/lib/preview/gpu-backend'
+import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { isSupportedRaw } from '~/lib/raw/decoder'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
@@ -56,10 +57,14 @@ export interface RawLoadContext {
     setStatus: (status: ProcessingStatus) => void
     setError: (error: string | null) => void
     setProgress: (progress: number) => void
-    getProcessingParams: () => ProcessingParams
+    /** The color intent the photo renders with when the load starts. */
+    getColorIntent: () => ColorGraphIntent
+    /** The view in effect when the load starts; its split carries over. */
+    getView: () => PreviewView
     getLut: () => ParsedLUT | null
-    setParams: (
-      value: ProcessingParams | ((prev: ProcessingParams) => ProcessingParams),
+    /** Writes the detached color intent; it never carries view state. */
+    setColorIntent: (
+      value: ColorGraphIntent | ((prev: ColorGraphIntent) => ColorGraphIntent),
     ) => void
     setSession: (
       value:
@@ -141,15 +146,15 @@ export async function orchestrateRawLoad(
     // Read the current look from the store at load time (not from caller
     // closures) so a LUT loaded before any RAW — or replaced while the picker
     // was open — is always the one retained into the new session.
-    const params = ctx.atoms.getProcessingParams()
+    const colorIntent = ctx.atoms.getColorIntent()
     const lut = ctx.atoms.getLut()
     const activeStyle = resolveActiveLook({
       session: ctx.refs.sessionRef.current,
       lut,
-      intensity: params.intensity,
+      intensity: colorIntent.intensity,
     })
     const loadState = prepareRawLoadState({
-      params,
+      view: ctx.atoms.getView(),
       lut,
       activeStyle,
     })
@@ -166,9 +171,9 @@ export async function orchestrateRawLoad(
     ctx.refs.runtimeWorkSessionIdRef.current = nextSession.id
     ctx.refs.pendingLoadSessionIdRef.current = nextSession.id
     ctx.services.setDecodedImageRef(null)
-    ctx.atoms.setParams((prev) => ({
+    ctx.atoms.setColorIntent((prev) => ({
       ...prev,
-      ...loadState.processingParamsPatch,
+      ...loadState.lookSelectionPatch,
     }))
 
     ctx.atoms.setSession((prev) => {

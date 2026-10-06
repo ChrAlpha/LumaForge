@@ -1,32 +1,13 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import { parseCubeLUT } from '~/lib/lut/cube-parser'
+import type { PreviewView } from '~/lib/preview/preview-view'
 
 import type { StyleAsset } from '../../model/session'
 import { prepareRawLoadState } from './raw-load-preparation'
 
-function createParams(
-  overrides: Partial<ProcessingParams> = {},
-): ProcessingParams {
-  return {
-    intensity: 0.7,
-    viewMode: 'processed',
-    compareSplit: 0.5,
-    styleKind: 'builtin',
-    builtinPreset: 'warm',
-    userExposureEv: 1,
-    userContrast: 50,
-    userHighlights: -40,
-    userShadows: 40,
-    userWhites: -20,
-    userBlacks: 20,
-    userTemperature: 0,
-    userTint: 0,
-    userSaturation: 0,
-    userVibrance: 0,
-    ...overrides,
-  }
+function createView(overrides: Partial<PreviewView> = {}): PreviewView {
+  return { mode: 'processed', compareSplit: 0.5, ...overrides }
 }
 
 function makeCube(title: string) {
@@ -60,9 +41,47 @@ function createActiveStyle(overrides: Partial<StyleAsset> = {}): StyleAsset {
 }
 
 describe('raw load preparation', () => {
+  it.each([0.37, 0.62])(
+    'carries the split %s of the view in effect into the next session',
+    (split) => {
+      const prepared = prepareRawLoadState({
+        view: createView({ mode: 'original', compareSplit: split }),
+        lut: null,
+        activeStyle: null,
+      })
+
+      expect(prepared.compareSplit).toBe(split)
+    },
+  )
+
+  it('reads a non-finite split as the centre', () => {
+    const prepared = prepareRawLoadState({
+      view: createView({ compareSplit: Number.NaN }),
+      lut: null,
+      activeStyle: null,
+    })
+
+    expect(prepared.compareSplit).toBe(0.5)
+  })
+
+  it('keeps a continuous custom strength when the next source retains the LUT', () => {
+    const lut = parseCubeLUT(makeCube('Client LUT'))
+
+    const prepared = prepareRawLoadState({
+      view: createView(),
+      lut,
+      activeStyle: createActiveStyle({ currentIntensity: 0.37 }),
+    })
+
+    expect(prepared.retainedSessionState.activeStyle?.currentIntensity).toBe(
+      0.37,
+    )
+    expect(prepared.lookSelectionPatch).toEqual({})
+  })
+
   it('prepares neutral load state while leaving view state canonical in the session', () => {
     const prepared = prepareRawLoadState({
-      params: createParams({ compareSplit: 2 }),
+      view: createView({ compareSplit: 2 }),
       lut: null,
       activeStyle: createActiveStyle(),
     })
@@ -72,19 +91,19 @@ describe('raw load preparation', () => {
       activeStyle: null,
       lutProfileSelection: undefined,
     })
-    expect(prepared.processingParamsPatch).toEqual({
+    expect(prepared.lookSelectionPatch).toEqual({
       intensity: 0.7,
       styleKind: 'none',
       builtinPreset: null,
     })
-    expect(prepared.processingParamsPatch).not.toHaveProperty('viewMode')
-    expect(prepared.processingParamsPatch).not.toHaveProperty('compareSplit')
-    expect(prepared.processingParamsPatch).not.toHaveProperty('userExposureEv')
-    expect(prepared.processingParamsPatch).not.toHaveProperty('userContrast')
-    expect(prepared.processingParamsPatch).not.toHaveProperty('userHighlights')
-    expect(prepared.processingParamsPatch).not.toHaveProperty('userShadows')
-    expect(prepared.processingParamsPatch).not.toHaveProperty('userWhites')
-    expect(prepared.processingParamsPatch).not.toHaveProperty('userBlacks')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('viewMode')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('compareSplit')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('userExposureEv')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('userContrast')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('userHighlights')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('userShadows')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('userWhites')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('userBlacks')
   })
 
   it('carries detached LUT state into a new RAW session with default custom intensity', () => {
@@ -93,7 +112,7 @@ describe('raw load preparation', () => {
     })
 
     const prepared = prepareRawLoadState({
-      params: createParams({ compareSplit: 0.8 }),
+      view: createView({ compareSplit: 0.8 }),
       lut,
       activeStyle: null,
     })
@@ -110,19 +129,19 @@ describe('raw load preparation', () => {
       title: 'Client LUT',
       sourceName: 'client.cube',
     })
-    expect(prepared.processingParamsPatch).toEqual({})
-    expect(prepared.processingParamsPatch).not.toHaveProperty('intensity')
-    expect(prepared.processingParamsPatch).not.toHaveProperty('styleKind')
-    expect(prepared.processingParamsPatch).not.toHaveProperty('builtinPreset')
-    expect(prepared.processingParamsPatch).not.toHaveProperty('viewMode')
-    expect(prepared.processingParamsPatch).not.toHaveProperty('compareSplit')
+    expect(prepared.lookSelectionPatch).toEqual({})
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('intensity')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('styleKind')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('builtinPreset')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('viewMode')
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('compareSplit')
   })
 
   it('preserves active custom intensity when replacing a RAW with a custom LUT loaded', () => {
     const lut = parseCubeLUT(makeCube('Client LUT'))
 
     const prepared = prepareRawLoadState({
-      params: createParams(),
+      view: createView(),
       lut,
       activeStyle: createActiveStyle({ currentIntensity: 1 }),
     })
@@ -131,15 +150,15 @@ describe('raw load preparation', () => {
       kind: 'custom',
       currentIntensity: 1,
     })
-    expect(prepared.processingParamsPatch).toEqual({})
-    expect(prepared.processingParamsPatch).not.toHaveProperty('intensity')
+    expect(prepared.lookSelectionPatch).toEqual({})
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('intensity')
   })
 
   it('does not preserve builtin intensity as custom LUT intensity', () => {
     const lut = parseCubeLUT(makeCube('Client LUT'))
 
     const prepared = prepareRawLoadState({
-      params: createParams(),
+      view: createView(),
       lut,
       activeStyle: createActiveStyle({
         kind: 'builtin',
@@ -152,7 +171,7 @@ describe('raw load preparation', () => {
       kind: 'custom',
       currentIntensity: 0.7,
     })
-    expect(prepared.processingParamsPatch).toEqual({})
-    expect(prepared.processingParamsPatch).not.toHaveProperty('intensity')
+    expect(prepared.lookSelectionPatch).toEqual({})
+    expect(prepared.lookSelectionPatch).not.toHaveProperty('intensity')
   })
 })

@@ -1,3 +1,4 @@
+import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -34,8 +35,14 @@ import { useRawWorkflowState } from './useRawWorkflowState'
 export type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
 export function useRawWorkflow(): UseRawWorkflowReturn {
-  const { colorIntent, setParams, detachedView, setDetachedView, lut, setLut } =
-    useRawDetachedWorkflowState()
+  const {
+    colorIntent,
+    setColorIntent,
+    detachedView,
+    setDetachedView,
+    lut,
+    setLut,
+  } = useRawDetachedWorkflowState()
   const {
     status,
     setStatus,
@@ -86,7 +93,8 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setPendingRecoveryRetry,
   } = useExportRecoveryState()
   const {
-    getCurrentProcessingParams,
+    getCurrentColorIntent,
+    getCurrentView,
     scheduleToast,
     dismissError,
     updateStats,
@@ -166,18 +174,30 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setSession,
     lut,
     setLut,
-    setParams,
-    getProcessingParams: getCurrentProcessingParams,
+    setColorIntent,
     lutDataRef,
     setLutDataRef,
     scheduleToast,
     invalidateExportGraph,
     canApplyLoadedLut,
-    setViewMode,
-    setCompareSplit,
   })
-  const { params, setParams: handleSetParams } = lookStage
+  const { params, setParams: setColorPatch } = lookStage
   paramsRef.current = params
+  // The published setParams still takes view fields. It routes them to the
+  // view owner; the color patch it forwards never carries them.
+  const handleSetParams = useCallback(
+    (patch: Partial<ProcessingParams>) => {
+      const { viewMode, compareSplit, ...colorPatch } = patch
+      setColorPatch(colorPatch)
+      if (viewMode) {
+        setViewMode(viewMode)
+      }
+      if (compareSplit !== undefined) {
+        setCompareSplit(compareSplit)
+      }
+    },
+    [setColorPatch, setCompareSplit, setViewMode],
+  )
   const {
     histogram,
     clearSessionEmbeddedPreviewUrl,
@@ -232,9 +252,10 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setStatus,
     setError,
     setProgress,
-    getProcessingParams: getCurrentProcessingParams,
+    getColorIntent: getCurrentColorIntent,
+    getView: getCurrentView,
     getLut,
-    setParams,
+    setColorIntent,
     setSession,
     setDecodedImageVersion,
     setStats,

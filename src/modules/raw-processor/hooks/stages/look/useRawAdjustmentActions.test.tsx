@@ -1,9 +1,13 @@
 import type {
+  ColorGraphIntent,
   HSLBandId,
   HSLBandShift,
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
-import { makeNeutralBand } from '@lumaforge/luma-color-runtime'
+import {
+  makeNeutralBand,
+  NEUTRAL_USER_COLOR_INTENT,
+} from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -33,75 +37,143 @@ function makeNeutralSelectiveColorFixture(): Record<HSLBandId, HSLBandShift> {
   }
 }
 
-const baseParams: ProcessingParams = {
+const baseParams: ColorGraphIntent = {
+  ...NEUTRAL_USER_COLOR_INTENT,
   intensity: 0.7,
-  viewMode: 'processed',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
 }
+
+type ColorIntentUpdate =
+  | ColorGraphIntent
+  | ((prev: ColorGraphIntent) => ColorGraphIntent)
 
 type MutableParamsRef = {
-  current: ProcessingParams
+  current: ColorGraphIntent
 }
 
-function createParamsHarness(initial: ProcessingParams) {
+function createParamsHarness(initial: ColorGraphIntent) {
   const ref: MutableParamsRef = { current: initial }
-  const setParams = vi.fn(
-    (
-      value: ProcessingParams | ((prev: ProcessingParams) => ProcessingParams),
-    ) => {
-      ref.current =
-        typeof value === 'function'
-          ? (value as (prev: ProcessingParams) => ProcessingParams)(ref.current)
-          : value
-    },
-  )
-  return { ref, setParams }
+  const setColorIntent = vi.fn((value: ColorIntentUpdate) => {
+    ref.current = typeof value === 'function' ? value(ref.current) : value
+  })
+  return { ref, setColorIntent }
 }
 
 describe('useRawAdjustmentActions', () => {
-  it('routes view-only params separately from render params', () => {
-    const setParams = vi.fn()
-    const setViewMode = vi.fn()
-    const setCompareSplit = vi.fn()
+  it('writes a color patch to the color intent and invalidates a changed graph', () => {
+    const { ref, setColorIntent } = createParamsHarness(baseParams)
     const invalidateExportGraph = vi.fn()
     const { result } = renderHook(() =>
       useRawAdjustmentActions({
         params: baseParams,
-        setParams,
+        setColorIntent,
         invalidateExportGraph,
-        setViewMode,
-        setCompareSplit,
       }),
     )
 
-    result.current.setParams({
-      viewMode: 'compare',
-      compareSplit: 0.25,
-      userExposureEv: 1,
+    act(() => {
+      result.current.setParams({ userExposureEv: 1, intensity: 0.37 })
     })
 
-    expect(setViewMode).toHaveBeenCalledWith('compare')
-    expect(setCompareSplit).toHaveBeenCalledWith(0.25)
-    expect(setParams).toHaveBeenCalledTimes(1)
+    expect(setColorIntent).toHaveBeenCalledTimes(1)
+    expect(ref.current).toEqual({
+      ...baseParams,
+      userExposureEv: 1,
+      intensity: 0.37,
+    })
     expect(invalidateExportGraph).toHaveBeenCalledTimes(1)
+  })
+
+  it('never carries view fields in the color patch', () => {
+    const { ref, setColorIntent } = createParamsHarness(baseParams)
+    const invalidateExportGraph = vi.fn()
+    const { result } = renderHook(() =>
+      useRawAdjustmentActions({
+        params: baseParams,
+        setColorIntent,
+        invalidateExportGraph,
+      }),
+    )
+    // A record that still carries view fields, as the published params do.
+    const mixedPatch: Partial<ProcessingParams> = {
+      viewMode: 'original',
+      compareSplit: 0.25,
+      userContrast: 20,
+    }
+
+    act(() => {
+      result.current.setParams(mixedPatch)
+    })
+
+    expect(ref.current).toEqual({ ...baseParams, userContrast: 20 })
+    expect(ref.current).not.toHaveProperty('viewMode')
+    expect(ref.current).not.toHaveProperty('compareSplit')
+    expect(invalidateExportGraph).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the color intent and the export alone for a view-only record', () => {
+    const { ref, setColorIntent } = createParamsHarness(baseParams)
+    const invalidateExportGraph = vi.fn()
+    const { result } = renderHook(() =>
+      useRawAdjustmentActions({
+        params: baseParams,
+        setColorIntent,
+        invalidateExportGraph,
+      }),
+    )
+    const viewOnly: Partial<ProcessingParams> = {
+      viewMode: 'processed',
+      compareSplit: 0.8,
+    }
+
+    act(() => {
+      result.current.setParams(viewOnly)
+    })
+
+    expect(setColorIntent).not.toHaveBeenCalled()
+    expect(ref.current).toBe(baseParams)
+    expect(invalidateExportGraph).not.toHaveBeenCalled()
+  })
+
+  it('composes tone and color updates issued before a rerender', () => {
+    const { ref, setColorIntent } = createParamsHarness(baseParams)
+    const invalidateExportGraph = vi.fn()
+    const { result } = renderHook(() =>
+      useRawAdjustmentActions({
+        params: baseParams,
+        setColorIntent,
+        invalidateExportGraph,
+      }),
+    )
+
+    act(() => {
+      result.current.setToneParams({ userContrast: 140 })
+      result.current.setToneParams({ userShadows: 15 })
+      result.current.setColorParams({ userTemperature: 30 })
+      result.current.setSelectiveColorBand('red', { hue: 12 })
+    })
+
+    expect(ref.current).toMatchObject({
+      userContrast: 100,
+      userShadows: 15,
+      userTemperature: 30,
+      intensity: 0.7,
+    })
+    expect(ref.current.selectiveColor.red).toEqual({
+      hue: 12,
+      saturation: 0,
+      lightness: 0,
+    })
+    expect(ref.current).not.toHaveProperty('viewMode')
+    expect(ref.current).not.toHaveProperty('compareSplit')
+    expect(invalidateExportGraph).toHaveBeenCalledTimes(4)
   })
 
   describe('setSelectiveColorBand', () => {
     it('state safety at action layer leaves other bands untouched', () => {
       // Pre-populate non-target bands with sentinel values that must be preserved.
-      const initial: ProcessingParams = {
+      const initial: ColorGraphIntent = {
         ...baseParams,
         selectiveColor: {
           red: { hue: 0, saturation: 0, lightness: 0 },
@@ -115,12 +187,12 @@ describe('useRawAdjustmentActions', () => {
         },
       }
 
-      const { ref, setParams } = createParamsHarness(initial)
+      const { ref, setColorIntent } = createParamsHarness(initial)
       const invalidateExportGraph = vi.fn()
       const { result } = renderHook(() =>
         useRawAdjustmentActions({
           params: ref.current,
-          setParams,
+          setColorIntent,
           invalidateExportGraph,
         }),
       )
@@ -174,19 +246,19 @@ describe('useRawAdjustmentActions', () => {
     })
 
     it('partial band update preserves other fields in the same band', () => {
-      const initial: ProcessingParams = {
+      const initial: ColorGraphIntent = {
         ...baseParams,
         selectiveColor: {
           ...makeNeutralSelectiveColorFixture(),
           red: { hue: 10, saturation: 25, lightness: -12 },
         },
       }
-      const { ref, setParams } = createParamsHarness(initial)
+      const { ref, setColorIntent } = createParamsHarness(initial)
       const invalidateExportGraph = vi.fn()
       const { result } = renderHook(() =>
         useRawAdjustmentActions({
           params: ref.current,
-          setParams,
+          setColorIntent,
           invalidateExportGraph,
         }),
       )
@@ -202,14 +274,14 @@ describe('useRawAdjustmentActions', () => {
       })
     })
 
-    it('initializes selectiveColor to all-neutral when previously undefined', () => {
-      const initial: ProcessingParams = { ...baseParams }
-      const { ref, setParams } = createParamsHarness(initial)
+    it('keeps every other band neutral when shifting one band of a neutral record', () => {
+      const initial: ColorGraphIntent = { ...baseParams }
+      const { ref, setColorIntent } = createParamsHarness(initial)
       const invalidateExportGraph = vi.fn()
       const { result } = renderHook(() =>
         useRawAdjustmentActions({
           params: ref.current,
-          setParams,
+          setColorIntent,
           invalidateExportGraph,
         }),
       )
@@ -240,7 +312,7 @@ describe('useRawAdjustmentActions', () => {
 
   describe('resetSelectiveColor', () => {
     it('reset scope isolation clears all 24 selective-color scalars but preserves tone and color balance', () => {
-      const initial: ProcessingParams = {
+      const initial: ColorGraphIntent = {
         ...baseParams,
         userExposureEv: 1.5,
         userContrast: -20,
@@ -257,12 +329,12 @@ describe('useRawAdjustmentActions', () => {
           magenta: { hue: 5, saturation: 5, lightness: 5 },
         },
       }
-      const { ref, setParams } = createParamsHarness(initial)
+      const { ref, setColorIntent } = createParamsHarness(initial)
       const invalidateExportGraph = vi.fn()
       const { result } = renderHook(() =>
         useRawAdjustmentActions({
           params: ref.current,
-          setParams,
+          setColorIntent,
           invalidateExportGraph,
         }),
       )
@@ -289,7 +361,7 @@ describe('useRawAdjustmentActions', () => {
     })
 
     it('resetTone does not touch selective color', () => {
-      const initial: ProcessingParams = {
+      const initial: ColorGraphIntent = {
         ...baseParams,
         userExposureEv: 1.0,
         selectiveColor: {
@@ -297,12 +369,12 @@ describe('useRawAdjustmentActions', () => {
           red: { hue: 50, saturation: 0, lightness: 0 },
         },
       }
-      const { ref, setParams } = createParamsHarness(initial)
+      const { ref, setColorIntent } = createParamsHarness(initial)
       const invalidateExportGraph = vi.fn()
       const { result } = renderHook(() =>
         useRawAdjustmentActions({
           params: ref.current,
-          setParams,
+          setColorIntent,
           invalidateExportGraph,
         }),
       )
@@ -320,7 +392,7 @@ describe('useRawAdjustmentActions', () => {
     })
 
     it('resetColor does not touch selective color', () => {
-      const initial: ProcessingParams = {
+      const initial: ColorGraphIntent = {
         ...baseParams,
         userTemperature: 18,
         userTint: -5,
@@ -329,12 +401,12 @@ describe('useRawAdjustmentActions', () => {
           red: { hue: 50, saturation: 0, lightness: 0 },
         },
       }
-      const { ref, setParams } = createParamsHarness(initial)
+      const { ref, setColorIntent } = createParamsHarness(initial)
       const invalidateExportGraph = vi.fn()
       const { result } = renderHook(() =>
         useRawAdjustmentActions({
           params: ref.current,
-          setParams,
+          setColorIntent,
           invalidateExportGraph,
         }),
       )
@@ -353,16 +425,16 @@ describe('useRawAdjustmentActions', () => {
     })
 
     it('does not invalidate the export graph when already neutral', () => {
-      const initial: ProcessingParams = {
+      const initial: ColorGraphIntent = {
         ...baseParams,
         selectiveColor: makeNeutralSelectiveColorFixture(),
       }
-      const { ref, setParams } = createParamsHarness(initial)
+      const { ref, setColorIntent } = createParamsHarness(initial)
       const invalidateExportGraph = vi.fn()
       const { result } = renderHook(() =>
         useRawAdjustmentActions({
           params: ref.current,
-          setParams,
+          setColorIntent,
           invalidateExportGraph,
         }),
       )

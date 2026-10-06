@@ -1,7 +1,12 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  ProcessingParams,
+} from '@lumaforge/luma-color-runtime'
+import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback } from 'react'
 
+import type { PreviewView } from '~/lib/preview/preview-view'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ProcessingStatus } from '../model/workflow'
@@ -74,10 +79,18 @@ export function useRawWorkflowActions({
   setStats,
   postCommitTask = enqueuePostCommitTask,
 }: UseRawWorkflowActionsInput) {
-  const getCurrentProcessingParams = useCallback(
-    () => paramsRef.current,
+  // The published params still lay the view over the color intent; these
+  // ports read them apart, at call time, so a consumer gets the color or the
+  // view it asks for and never the other.
+  const getCurrentColorIntent = useCallback(
+    (): ColorGraphIntent => pickColorGraphIntent(paramsRef.current),
     [paramsRef],
   )
+
+  const getCurrentView = useCallback((): PreviewView => {
+    const { viewMode, compareSplit } = paramsRef.current
+    return { mode: viewMode, compareSplit }
+  }, [paramsRef])
 
   const scheduleToast = useCallback(
     (notify: () => void) => {
@@ -113,7 +126,8 @@ export function useRawWorkflowActions({
   )
 
   return {
-    getCurrentProcessingParams,
+    getCurrentColorIntent,
+    getCurrentView,
     scheduleToast,
     dismissError,
     updateStats,

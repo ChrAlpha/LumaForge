@@ -1,9 +1,14 @@
 import type {
+  ColorGraphIntent,
+  ColorGraphIntentSource,
   HSLBandId,
   HSLBandShift,
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
-import { makeNeutralBand } from '@lumaforge/luma-color-runtime'
+import {
+  COLOR_GRAPH_INTENT_KEYS,
+  makeNeutralBand,
+} from '@lumaforge/luma-color-runtime'
 import { useCallback } from 'react'
 
 import { changesRenderGraphParams } from '../../../services/export/export-state'
@@ -25,46 +30,57 @@ function makeNeutralSelectiveColor(): Record<HSLBandId, HSLBandShift> {
   }
 }
 
-type SetProcessingParams = (
-  value: ProcessingParams | ((prev: ProcessingParams) => ProcessingParams),
+export type SetColorIntent = (
+  value: ColorGraphIntent | ((prev: ColorGraphIntent) => ColorGraphIntent),
 ) => void
 
+/**
+ * The color fields a patch carries, and only those. Fields are kept when the
+ * patch owns them, so an explicit undefined still counts as written.
+ */
+function pickColorIntentPatch(
+  patch: Partial<ColorGraphIntent>,
+): Partial<ColorGraphIntent> {
+  const colorPatch: Record<string, unknown> = {}
+  for (const key of COLOR_GRAPH_INTENT_KEYS) {
+    if (Object.hasOwn(patch, key)) {
+      colorPatch[key] = patch[key]
+    }
+  }
+  return colorPatch as Partial<ColorGraphIntent>
+}
+
 type UseRawAdjustmentActionsInput = {
-  params: ProcessingParams
-  setParams: SetProcessingParams
+  /** The color the photo renders with now; decides whether a patch changes the graph. */
+  params: ColorGraphIntentSource
+  setColorIntent: SetColorIntent
   invalidateExportGraph: () => void
-  setViewMode?: (mode: ProcessingParams['viewMode']) => void
-  setCompareSplit?: (split: number) => void
 }
 
 export function useRawAdjustmentActions({
   params,
-  setParams,
+  setColorIntent,
   invalidateExportGraph,
-  setViewMode,
-  setCompareSplit,
 }: UseRawAdjustmentActionsInput) {
+  // A color patch writes color only. View mode and compare split have their
+  // own setters on the view owner, so a view field in the record is dropped.
   const setProcessingParams = useCallback(
-    (newParams: Partial<ProcessingParams>) => {
-      const { viewMode, compareSplit, ...renderParamPatch } = newParams
+    (newParams: Partial<ColorGraphIntent>) => {
+      const colorPatch = pickColorIntentPatch(newParams)
+      if (Object.keys(colorPatch).length === 0) {
+        return
+      }
+
       const shouldClearExportResult = changesRenderGraphParams(
         params,
-        renderParamPatch,
+        colorPatch,
       )
-      if (Object.keys(renderParamPatch).length > 0) {
-        setParams((prev) => ({ ...prev, ...renderParamPatch }))
-      }
-      if (viewMode) {
-        setViewMode?.(viewMode)
-      }
-      if (compareSplit !== undefined) {
-        setCompareSplit?.(compareSplit)
-      }
+      setColorIntent((prev) => ({ ...prev, ...colorPatch }))
       if (shouldClearExportResult) {
         invalidateExportGraph()
       }
     },
-    [invalidateExportGraph, params, setCompareSplit, setParams, setViewMode],
+    [invalidateExportGraph, params, setColorIntent],
   )
 
   const setToneParams = useCallback(
@@ -82,7 +98,7 @@ export function useRawAdjustmentActions({
       >,
     ) => {
       let shouldClearExportResult = false
-      setParams((prev) => {
+      setColorIntent((prev) => {
         const { params: nextParams, shouldClearExportResult: shouldClear } =
           computeToneParams(prev, toneParams)
         shouldClearExportResult = shouldClear
@@ -93,7 +109,7 @@ export function useRawAdjustmentActions({
         invalidateExportGraph()
       }
     },
-    [invalidateExportGraph, setParams],
+    [invalidateExportGraph, setColorIntent],
   )
 
   const resetTone = useCallback(() => {
@@ -117,7 +133,7 @@ export function useRawAdjustmentActions({
       >,
     ) => {
       let shouldClearExportResult = false
-      setParams((prev) => {
+      setColorIntent((prev) => {
         const { params: nextParams, shouldClearExportResult: shouldClear } =
           computeColorParams(prev, colorParams)
         shouldClearExportResult = shouldClear
@@ -128,7 +144,7 @@ export function useRawAdjustmentActions({
         invalidateExportGraph()
       }
     },
-    [invalidateExportGraph, setParams],
+    [invalidateExportGraph, setColorIntent],
   )
 
   const resetColor = useCallback(() => {
@@ -143,8 +159,8 @@ export function useRawAdjustmentActions({
   const setSelectiveColorBand = useCallback(
     (band: HSLBandId, shift: Partial<HSLBandShift>) => {
       let shouldClearExportResult = false
-      setParams((prev) => {
-        const baseRecord = prev.selectiveColor ?? makeNeutralSelectiveColor()
+      setColorIntent((prev) => {
+        const baseRecord = prev.selectiveColor
         const previousBand = baseRecord[band] ?? makeNeutralBand()
         const nextBand: HSLBandShift = {
           hue: shift.hue ?? previousBand.hue,
@@ -172,12 +188,12 @@ export function useRawAdjustmentActions({
         invalidateExportGraph()
       }
     },
-    [invalidateExportGraph, setParams],
+    [invalidateExportGraph, setColorIntent],
   )
 
   const resetSelectiveColor = useCallback(() => {
     let shouldClearExportResult = false
-    setParams((prev) => {
+    setColorIntent((prev) => {
       const nextSelectiveColor = makeNeutralSelectiveColor()
       shouldClearExportResult = changesRenderGraphParams(prev, {
         selectiveColor: nextSelectiveColor,
@@ -188,7 +204,7 @@ export function useRawAdjustmentActions({
     if (shouldClearExportResult) {
       invalidateExportGraph()
     }
-  }, [invalidateExportGraph, setParams])
+  }, [invalidateExportGraph, setColorIntent])
 
   return {
     setParams: setProcessingParams,

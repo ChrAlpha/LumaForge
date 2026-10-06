@@ -1,4 +1,11 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  ProcessingParams,
+} from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_USER_COLOR_INTENT,
+  pickColorGraphIntent,
+} from '@lumaforge/luma-color-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { act, renderHook } from '@testing-library/react'
 import { atom, createStore } from 'jotai'
@@ -34,6 +41,14 @@ const baseParams: ProcessingParams = {
   userSaturation: 0,
   userVibrance: 0,
 }
+
+/** The stored color intent behind `baseParams`: the same color, no view. */
+const baseIntent: ColorGraphIntent = Object.freeze({
+  ...NEUTRAL_USER_COLOR_INTENT,
+  intensity: 0.7,
+  styleKind: 'none',
+  builtinPreset: null,
+})
 
 function createSession(): ImageSession {
   return {
@@ -174,9 +189,9 @@ function publishPreviewAndCapability(
   }
 }
 
-type SetParamsUpdate =
-  | ProcessingParams
-  | ((prev: ProcessingParams) => ProcessingParams)
+type SetColorIntentUpdate =
+  | ColorGraphIntent
+  | ((prev: ColorGraphIntent) => ColorGraphIntent)
 
 /**
  * Backs the hook with a real store, so updaters run against whatever is
@@ -186,20 +201,20 @@ type SetParamsUpdate =
  */
 function renderLookStageHarness({
   session,
-  params = baseParams,
-  renderedParams = params,
+  params = baseIntent,
+  renderedParams = { ...baseParams, ...params },
   lut = null,
 }: {
   session: ImageSession | null
-  /** Detached params held by the store. */
-  params?: ProcessingParams
-  /** Params the hook renders with (compare-projected in the workflow). */
+  /** Detached color intent held by the store. */
+  params?: ColorGraphIntent
+  /** Params the hook renders with (the intent with the view laid over it). */
   renderedParams?: ProcessingParams
   lut?: ParsedLUT | null
 }) {
   const store = createStore()
   const sessionAtom = atom<ImageSession | null>(session)
-  const paramsAtom = atom<ProcessingParams>(params)
+  const paramsAtom = atom<ColorGraphIntent>(params)
   const sessionNotifications = vi.fn()
   const paramsNotifications = vi.fn()
   store.sub(sessionAtom, sessionNotifications)
@@ -209,7 +224,7 @@ function renderLookStageHarness({
   const setSession = vi.fn((update: SetStateAction<ImageSession | null>) =>
     store.set(sessionAtom, update),
   )
-  const setParams = vi.fn((update: SetParamsUpdate) =>
+  const setColorIntent = vi.fn((update: SetColorIntentUpdate) =>
     store.set(paramsAtom, update),
   )
   const invalidateExportGraph = vi.fn(() =>
@@ -227,8 +242,7 @@ function renderLookStageHarness({
       setSession,
       lut,
       setLut,
-      setParams,
-      getProcessingParams: () => renderedParams,
+      setColorIntent,
       lutDataRef: { current: lut },
       setLutDataRef,
       scheduleToast,
@@ -241,7 +255,7 @@ function renderLookStageHarness({
     actions: result.current,
     sessionRef,
     setSession,
-    setParams,
+    setColorIntent,
     invalidateExportGraph,
     setLut,
     setLutDataRef,
@@ -252,7 +266,8 @@ function renderLookStageHarness({
     readParams: () => store.get(paramsAtom),
     publishSession: (update: SetStateAction<ImageSession | null>) =>
       store.set(sessionAtom, update),
-    publishParams: (update: SetParamsUpdate) => store.set(paramsAtom, update),
+    publishParams: (update: SetColorIntentUpdate) =>
+      store.set(paramsAtom, update),
   }
 }
 
@@ -267,8 +282,7 @@ describe('useRawLookStage', () => {
         setSession: vi.fn(),
         lut: null,
         setLut: vi.fn(),
-        setParams: vi.fn(),
-        getProcessingParams: () => baseParams,
+        setColorIntent: vi.fn(),
         lutDataRef: { current: null },
         setLutDataRef: vi.fn(),
         scheduleToast: vi.fn(),
@@ -299,8 +313,7 @@ describe('useRawLookStage', () => {
         setSession: vi.fn(),
         lut: null,
         setLut: vi.fn(),
-        setParams: vi.fn(),
-        getProcessingParams: () => staleParams,
+        setColorIntent: vi.fn(),
         lutDataRef: { current: null },
         setLutDataRef: vi.fn(),
         scheduleToast: vi.fn(),
@@ -316,12 +329,12 @@ describe('useRawLookStage', () => {
   })
 
   it('normalizes tone params and invalidates export when the render graph changes', () => {
-    const setParams = vi.fn(
+    const setColorIntent = vi.fn(
       (
         value:
-          | ProcessingParams
-          | ((prev: ProcessingParams) => ProcessingParams),
-      ) => (typeof value === 'function' ? value(baseParams) : value),
+          | ColorGraphIntent
+          | ((prev: ColorGraphIntent) => ColorGraphIntent),
+      ) => (typeof value === 'function' ? value(baseIntent) : value),
     )
     const invalidateExportGraph = vi.fn()
     const session = createSession()
@@ -333,32 +346,31 @@ describe('useRawLookStage', () => {
         setSession: vi.fn(),
         lut: null,
         setLut: vi.fn(),
-        setParams,
-        getProcessingParams: () => baseParams,
+        setColorIntent,
         lutDataRef: { current: null },
         setLutDataRef: vi.fn(),
         scheduleToast: vi.fn(),
         invalidateExportGraph,
         canApplyLoadedLut: () => true,
-        setViewMode: vi.fn(),
-        setCompareSplit: vi.fn(),
       }),
     )
 
     result.current.setToneParams({ userContrast: 120 })
 
-    expect(setParams).toHaveBeenCalledTimes(1)
-    const updater = setParams.mock.calls[0]?.[0]
+    expect(setColorIntent).toHaveBeenCalledTimes(1)
+    const updater = setColorIntent.mock.calls[0]?.[0]
     expect(typeof updater).toBe('function')
-    expect(
-      (updater as (prev: ProcessingParams) => ProcessingParams)(baseParams),
-    ).toMatchObject({ userContrast: 100 })
+    const written = (updater as (prev: ColorGraphIntent) => ColorGraphIntent)(
+      baseIntent,
+    )
+    expect(written).toEqual({ ...baseIntent, userContrast: 100 })
+    expect(written).not.toHaveProperty('viewMode')
     expect(invalidateExportGraph).toHaveBeenCalledTimes(1)
   })
 
-  it('loads custom LUTs into the active session without writing legacy params', async () => {
+  it('loads custom LUTs into the active session without writing the detached intent', async () => {
     const session = createSession()
-    const setParams = vi.fn()
+    const setColorIntent = vi.fn()
     const setLut = vi.fn()
     const setSession = vi.fn()
     const { result } = renderHook(() =>
@@ -369,8 +381,7 @@ describe('useRawLookStage', () => {
         setSession,
         lut: null,
         setLut,
-        setParams,
-        getProcessingParams: () => baseParams,
+        setColorIntent,
         lutDataRef: { current: null },
         setLutDataRef: vi.fn(),
         scheduleToast: vi.fn(),
@@ -385,12 +396,12 @@ describe('useRawLookStage', () => {
 
     expect(setLut).toHaveBeenCalledTimes(1)
     expect(setSession).toHaveBeenCalledTimes(1)
-    expect(setParams).not.toHaveBeenCalled()
+    expect(setColorIntent).not.toHaveBeenCalled()
   })
 
-  it('selects LUT profiles in the active session without writing legacy params', () => {
+  it('selects LUT profiles in the active session without writing the detached intent', () => {
     const session = createSession()
-    const setParams = vi.fn()
+    const setColorIntent = vi.fn()
     const setLut = vi.fn()
     const setSession = vi.fn()
     const lut = parseCubeLUT(createCubeContent('Client Look'), {
@@ -404,8 +415,7 @@ describe('useRawLookStage', () => {
         setSession,
         lut,
         setLut,
-        setParams,
-        getProcessingParams: () => baseParams,
+        setColorIntent,
         lutDataRef: { current: null },
         setLutDataRef: vi.fn(),
         scheduleToast: vi.fn(),
@@ -418,10 +428,10 @@ describe('useRawLookStage', () => {
 
     expect(setLut).toHaveBeenCalledTimes(1)
     expect(setSession).toHaveBeenCalledTimes(1)
-    expect(setParams).not.toHaveBeenCalled()
+    expect(setColorIntent).not.toHaveBeenCalled()
   })
 
-  it('clears session LUTs without writing legacy params', () => {
+  it('clears session LUTs without writing the detached intent', () => {
     const lut = createLut()
     const session = {
       ...createSession(),
@@ -438,8 +448,8 @@ describe('useRawLookStage', () => {
       activeStyle: null,
       lutProfileSelection: undefined,
     })
-    expect(harness.setParams).not.toHaveBeenCalled()
-    expect(harness.readParams()).toBe(baseParams)
+    expect(harness.setColorIntent).not.toHaveBeenCalled()
+    expect(harness.readParams()).toBe(baseIntent)
     expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(1)
     expect(harness.scheduleToast).toHaveBeenCalledTimes(1)
   })
@@ -504,8 +514,8 @@ describe('useRawLookStage', () => {
 
     it('applies look actions to a session created after a session-less render', () => {
       const lut = createLut()
-      const detachedParams: ProcessingParams = {
-        ...baseParams,
+      const detachedParams: ColorGraphIntent = {
+        ...baseIntent,
         styleKind: 'custom',
       }
       const harness = renderLookStageHarness({
@@ -538,8 +548,8 @@ describe('useRawLookStage', () => {
 
     it('does not resurrect a session reset after render', () => {
       const lut = createLut()
-      const detachedParams: ProcessingParams = {
-        ...baseParams,
+      const detachedParams: ColorGraphIntent = {
+        ...baseIntent,
         styleKind: 'custom',
       }
       const harness = renderLookStageHarness({
@@ -601,7 +611,7 @@ describe('useRawLookStage', () => {
         exportState: { status: 'idle', result: undefined },
       })
       expect(harness.readSession()?.viewState).toBe(session.viewState)
-      expect(harness.readParams()).toEqual({ ...baseParams, intensity: 0.4 })
+      expect(harness.readParams()).toEqual({ ...baseIntent, intensity: 0.4 })
     })
 
     it('leaves both stores untouched when the session look already has the selected intensity', () => {
@@ -611,7 +621,7 @@ describe('useRawLookStage', () => {
       harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.strong)
 
       expect(harness.readSession()).toBe(session)
-      expect(harness.readParams()).toBe(baseParams)
+      expect(harness.readParams()).toBe(baseIntent)
       expect(harness.sessionNotifications).not.toHaveBeenCalled()
       expect(harness.paramsNotifications).not.toHaveBeenCalled()
       expect(harness.invalidateExportGraph).not.toHaveBeenCalled()
@@ -619,8 +629,8 @@ describe('useRawLookStage', () => {
 
     it('leaves detached params untouched when they already carry the selected intensity', () => {
       const lut = createLut()
-      const detachedParams: ProcessingParams = {
-        ...baseParams,
+      const detachedParams: ColorGraphIntent = {
+        ...baseIntent,
         styleKind: 'custom',
       }
       const harness = renderLookStageHarness({
@@ -638,12 +648,10 @@ describe('useRawLookStage', () => {
       expect(harness.invalidateExportGraph).not.toHaveBeenCalled()
     })
 
-    it('keeps detached view changes published after a session-less render', () => {
+    it('keeps detached color changes published after a session-less render', () => {
       const lut = createLut()
-      const detachedParams: ProcessingParams = {
-        ...baseParams,
-        viewMode: 'compare',
-        compareSplit: 0.5,
+      const detachedParams: ColorGraphIntent = {
+        ...baseIntent,
         styleKind: 'custom',
       }
       const harness = renderLookStageHarness({
@@ -652,17 +660,12 @@ describe('useRawLookStage', () => {
         lut,
       })
 
-      harness.publishParams((prev) => ({
-        ...prev,
-        viewMode: 'original',
-        compareSplit: 0.25,
-      }))
+      harness.publishParams((prev) => ({ ...prev, userContrast: 25 }))
       harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.strong)
 
       expect(harness.readParams()).toEqual({
         ...detachedParams,
-        viewMode: 'original',
-        compareSplit: 0.25,
+        userContrast: 25,
         intensity: 1,
       })
 
@@ -670,17 +673,18 @@ describe('useRawLookStage', () => {
 
       expect(harness.readParams()).toEqual({
         ...detachedParams,
-        viewMode: 'original',
-        compareSplit: 0.25,
+        userContrast: 25,
         intensity: 1,
         styleKind: 'none',
         builtinPreset: null,
       })
+      expect(harness.readParams()).not.toHaveProperty('viewMode')
+      expect(harness.readParams()).not.toHaveProperty('compareSplit')
       expect(harness.readSession()).toBeNull()
       expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(2)
     })
 
-    it('carries a look-less session intensity in detached params without copying session view state', () => {
+    it('carries a look-less session intensity in the detached intent without copying session view state', () => {
       const session: ImageSession = {
         ...createSessionWithoutLook(),
         viewState: {
@@ -689,16 +693,11 @@ describe('useRawLookStage', () => {
           compareSplit: 0.3,
         },
       }
-      const detachedParams: ProcessingParams = {
-        ...baseParams,
-        viewMode: 'compare',
-        compareSplit: 0.5,
-      }
       const harness = renderLookStageHarness({
         session,
-        params: detachedParams,
+        params: baseIntent,
         renderedParams: {
-          ...detachedParams,
+          ...baseParams,
           viewMode: 'original',
           compareSplit: 0.3,
         },
@@ -706,9 +705,170 @@ describe('useRawLookStage', () => {
 
       harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.strong)
 
-      expect(harness.readParams()).toEqual({ ...detachedParams, intensity: 1 })
+      expect(harness.readParams()).toEqual({ ...baseIntent, intensity: 1 })
+      expect(harness.readParams()).not.toHaveProperty('viewMode')
+      expect(harness.readParams()).not.toHaveProperty('compareSplit')
       expect(harness.readSession()?.viewState).toBe(session.viewState)
       expect(harness.readSession()?.activeStyle).toBeNull()
+    })
+
+    it('keeps view and geometry published after render through every look action', () => {
+      const lut = createLut()
+      const session = withReadyExport({
+        ...createSession(),
+        lutProfileSelection: buildLUTContractSelectionState(lut),
+      })
+      const harness = renderLookStageHarness({ session, lut })
+      const publishedViewState: ImageSession['viewState'] = {
+        ...session.viewState,
+        mode: 'compare',
+        compareSplit: 0.62,
+      }
+      const publishedGeometry = {
+        matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
+        constrainCrop: true,
+      }
+      harness.publishSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              viewState: publishedViewState,
+              exportGeometry: publishedGeometry,
+            }
+          : prev,
+      )
+
+      harness.actions.setIntensity(0.37)
+      expect(harness.readSession()?.activeStyle?.currentIntensity).toBe(0.37)
+      harness.actions.setToneParams({ userShadows: 20 })
+      harness.actions.setParams({ userTint: 6 })
+      harness.actions.clearLUT()
+
+      const current = harness.readSession()
+      expect(current?.viewState).toBe(publishedViewState)
+      expect(current?.exportGeometry).toBe(publishedGeometry)
+      expect(current?.activeStyle).toBeNull()
+      expect(harness.readParams()).toEqual({
+        ...baseIntent,
+        userShadows: 20,
+        userTint: 6,
+      })
+    })
+  })
+})
+
+describe('useRawLookStage continuous strength', () => {
+  it.each([0.37, 0.62])(
+    'stores the detached strength %s as given and leaves the view out',
+    (value) => {
+      const lut = createLut()
+      const harness = renderLookStageHarness({
+        session: null,
+        params: { ...baseIntent, styleKind: 'custom' },
+        lut,
+      })
+
+      harness.actions.setIntensity(value)
+
+      expect(harness.readParams().intensity).toBe(value)
+      expect(harness.readParams()).not.toHaveProperty('viewMode')
+      expect(harness.readParams()).not.toHaveProperty('compareSplit')
+      expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('clamps a non-number strength to the default on both owners', () => {
+    const lut = createLut()
+    const detached = renderLookStageHarness({
+      session: null,
+      params: { ...baseIntent, styleKind: 'custom', intensity: 0.37 },
+      lut,
+    })
+    detached.actions.setIntensity(Number.NaN)
+    expect(detached.readParams().intensity).toBe(0.7)
+
+    const attached = renderLookStageHarness({ session: createSession() })
+    attached.actions.setIntensity(Number.NaN)
+    expect(attached.readSession()?.activeStyle?.currentIntensity).toBe(0.7)
+    attached.actions.setIntensity(1.6)
+    expect(attached.readSession()?.activeStyle?.currentIntensity).toBe(1)
+  })
+
+  it('keeps a continuous detached strength when the LUT contract changes', () => {
+    const lut = createLut()
+    const harness = renderLookStageHarness({
+      session: null,
+      params: { ...baseIntent, styleKind: 'custom', intensity: 0.37 },
+      lut,
+    })
+
+    harness.actions.selectLUTProfile('display-srgb')
+
+    expect(harness.readParams()).toEqual({
+      ...baseIntent,
+      styleKind: 'custom',
+      builtinPreset: null,
+      intensity: 0.37,
+    })
+  })
+
+  it('starts a LUT loaded after a clear at the default strength', async () => {
+    const lut = createLut()
+    const harness = renderLookStageHarness({
+      session: null,
+      params: { ...baseIntent, styleKind: 'custom', intensity: 0.62 },
+      lut,
+    })
+
+    harness.actions.clearLUT()
+    expect(harness.readParams()).toEqual({
+      ...baseIntent,
+      styleKind: 'none',
+      builtinPreset: null,
+      intensity: 0.62,
+    })
+
+    await act(async () => {
+      await harness.actions.loadLUT(
+        createCubeFile('Second Look', 'second.cube'),
+      )
+    })
+
+    expect(harness.readParams()).toEqual({
+      ...baseIntent,
+      styleKind: 'custom',
+      builtinPreset: null,
+      intensity: 0.7,
+    })
+  })
+
+  it('keeps a continuous session strength on the session look and off the detached intent', () => {
+    const harness = renderLookStageHarness({ session: createSession() })
+
+    harness.actions.setIntensity(0.37)
+    harness.actions.setIntensity(0.62)
+
+    expect(harness.readSession()?.activeStyle?.currentIntensity).toBe(0.62)
+    expect(harness.readParams()).toBe(baseIntent)
+    expect(harness.setColorIntent).not.toHaveBeenCalled()
+  })
+
+  it('projects a continuous session strength into the rendered params', () => {
+    const session: ImageSession = {
+      ...createSession(),
+      activeStyle: {
+        ...createSession().activeStyle!,
+        currentIntensity: 0.37,
+      },
+    }
+    const harness = renderLookStageHarness({ session })
+
+    expect(harness.actions.params.intensity).toBe(0.37)
+    expect(harness.actions.activeIntensity).toBe(0.37)
+    expect(pickColorGraphIntent(harness.actions.params)).toEqual({
+      ...baseIntent,
+      styleKind: 'custom',
+      intensity: 0.37,
     })
   })
 })
@@ -728,7 +888,7 @@ describe('useRawLookStage setIntensity', () => {
 
     expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(1)
     // The session owns the look, so params are derived, not written.
-    expect(harness.setParams).not.toHaveBeenCalled()
+    expect(harness.setColorIntent).not.toHaveBeenCalled()
     expect(harness.readSession()?.activeStyle?.currentIntensity).toBe(0.62)
     expect(harness.readSession()?.renderState.status).toBe('rendering')
   })

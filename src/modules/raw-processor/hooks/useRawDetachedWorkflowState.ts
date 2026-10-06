@@ -1,9 +1,7 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { useCallback } from 'react'
 
 import {
-  getDetachedPreviewView,
   useDetachedPreviewViewValue,
   useSetDetachedPreviewView,
 } from '../state/preview-view.atoms'
@@ -13,47 +11,38 @@ import {
   useSetLut,
   useSetProcessingParams,
 } from '../state/workflow.atoms'
-import { composeProcessingParams } from './stages/compare/useRawCompareStage'
-
-type SetDetachedProcessingParams = (
-  value: ProcessingParams | ((prev: ProcessingParams) => ProcessingParams),
-) => void
+import type { SetColorIntent } from './stages/look/useRawAdjustmentActions'
 
 /**
  * The state that exists before and between sessions: the color intent, the
  * detached sample view and the loaded LUT.
  *
- * `setParams` takes the combined record the look and ingest stages still
- * write. It stores only the color intent: an updater sees the intent with the
- * detached view laid over it, and any view fields it returns are dropped,
- * because view writes go through the compare stage to whichever owner exists.
- * An updater that returns its input leaves the stored intent untouched.
+ * `setColorIntent` is the only write into the stored intent. It keeps the
+ * intent strict: whatever a caller hands it is copied down to the color
+ * fields, so view state can never land there. An updater that returns its
+ * input leaves the stored intent untouched.
  */
 export function useRawDetachedWorkflowState() {
   const colorIntent = useProcessingParamsValue()
-  const setColorIntent = useSetProcessingParams()
+  const setStoredColorIntent = useSetProcessingParams()
   const detachedView = useDetachedPreviewViewValue()
   const setDetachedView = useSetDetachedPreviewView()
   const lut = useLutValue()
   const setLut = useSetLut()
 
-  const setParams = useCallback<SetDetachedProcessingParams>(
+  const setColorIntent = useCallback<SetColorIntent>(
     (value) => {
-      setColorIntent((prev) => {
-        if (typeof value !== 'function') {
-          return pickColorGraphIntent(value)
-        }
-        const combined = composeProcessingParams(prev, getDetachedPreviewView())
-        const next = value(combined)
-        return next === combined ? prev : pickColorGraphIntent(next)
+      setStoredColorIntent((prev) => {
+        const next = typeof value === 'function' ? value(prev) : value
+        return next === prev ? prev : pickColorGraphIntent(next)
       })
     },
-    [setColorIntent],
+    [setStoredColorIntent],
   )
 
   return {
     colorIntent,
-    setParams,
+    setColorIntent,
     detachedView,
     setDetachedView,
     lut,

@@ -1,8 +1,9 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 
 import type { ExportResourceCleanupReason } from '~/lib/export/execution-profile'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
+import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type {
   PrewarmOutcome,
@@ -18,17 +19,18 @@ import { useRawLoadAction } from './useRawLoadAction'
 import { useRawProcessorLifecycle } from './useRawProcessorLifecycle'
 import { useRawSessionReset } from './useRawSessionReset'
 
-type SetProcessingParams = (
-  value: ProcessingParams | ((prev: ProcessingParams) => ProcessingParams),
+type SetColorIntent = (
+  value: ColorGraphIntent | ((prev: ColorGraphIntent) => ColorGraphIntent),
 ) => void
 
 type UseRawIngestStageInput = {
   setStatus: (status: ProcessingStatus) => void
   setError: (error: string | null) => void
   setProgress: (progress: number) => void
-  getProcessingParams: () => ProcessingParams
+  getColorIntent: () => ColorGraphIntent
+  getView: () => PreviewView
   getLut: () => ParsedLUT | null
-  setParams: SetProcessingParams
+  setColorIntent: SetColorIntent
   setSession: Dispatch<SetStateAction<ImageSession | null>>
   setDecodedImageVersion: Dispatch<SetStateAction<number>>
   setStats: (stats: PipelineStats | null) => void

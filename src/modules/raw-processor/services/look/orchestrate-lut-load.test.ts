@@ -51,8 +51,7 @@ function buildCtx() {
     atoms: {
       setLut: vi.fn(),
       setSession: vi.fn(),
-      setParams: vi.fn(),
-      getProcessingParams: vi.fn(() => ({}) as never),
+      setColorIntent: vi.fn(),
       lut: null,
       activeStyle: null,
     },
@@ -87,7 +86,7 @@ function deferredCubeFile(name: string) {
 function expectUntouched(ctx: LutLoadContext, scheduledToasts: unknown[]) {
   expect(ctx.atoms.setLut).not.toHaveBeenCalled()
   expect(ctx.atoms.setSession).not.toHaveBeenCalled()
-  expect(ctx.atoms.setParams).not.toHaveBeenCalled()
+  expect(ctx.atoms.setColorIntent).not.toHaveBeenCalled()
   expect(ctx.services.invalidateExportGraph).not.toHaveBeenCalled()
   expect(scheduledToasts).toHaveLength(0)
 }

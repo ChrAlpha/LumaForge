@@ -1,4 +1,5 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -8,22 +9,11 @@ import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 import type { ImageSession } from '../../../model/session'
 import { useRawIngestStage } from './useRawIngestStage'
 
-const params: ProcessingParams = {
+const colorIntent: ColorGraphIntent = {
+  ...NEUTRAL_USER_COLOR_INTENT,
   intensity: 0.7,
-  viewMode: 'processed',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
 }
 
 describe('useRawIngestStage', () => {
@@ -33,9 +23,10 @@ describe('useRawIngestStage', () => {
         setStatus: vi.fn(),
         setError: vi.fn(),
         setProgress: vi.fn(),
-        getProcessingParams: () => params,
+        getColorIntent: () => colorIntent,
+        getView: () => ({ mode: 'processed', compareSplit: 0.5 }),
         getLut: () => null,
-        setParams: vi.fn(),
+        setColorIntent: vi.fn(),
         setSession: vi.fn(),
         setDecodedImageVersion: vi.fn(),
         setStats: vi.fn(),

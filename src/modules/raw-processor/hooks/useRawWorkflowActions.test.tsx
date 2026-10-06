@@ -71,10 +71,19 @@ function renderStatsHarness(status: 'ready' | 'error' = 'ready') {
 }
 
 describe('useRawWorkflowActions', () => {
-  it('reads current params from the imperative ref', () => {
+  it('reads the current color intent and view from the imperative ref as separate ports', () => {
+    const paramsRef = {
+      current: {
+        ...params,
+        viewMode: 'original',
+        compareSplit: 0.62,
+        intensity: 0.37,
+        userContrast: 12,
+      } as ProcessingParams,
+    }
     const { result } = renderHook(() =>
       useRawWorkflowActions({
-        paramsRef: { current: params },
+        paramsRef,
         isMountedRef: { current: true },
         status: 'ready',
         setError: vi.fn(),
@@ -83,7 +92,27 @@ describe('useRawWorkflowActions', () => {
       }),
     )
 
-    expect(result.current.getCurrentProcessingParams()).toBe(params)
+    const colorIntent = result.current.getCurrentColorIntent()
+    expect(colorIntent).toMatchObject({ intensity: 0.37, userContrast: 12 })
+    expect(colorIntent).not.toHaveProperty('viewMode')
+    expect(colorIntent).not.toHaveProperty('compareSplit')
+    expect(result.current.getCurrentView()).toEqual({
+      mode: 'original',
+      compareSplit: 0.62,
+    })
+
+    // The ports read the ref when called, not the render that made them.
+    paramsRef.current = {
+      ...paramsRef.current,
+      viewMode: 'compare',
+      compareSplit: 0.2,
+      intensity: 0.62,
+    }
+    expect(result.current.getCurrentColorIntent().intensity).toBe(0.62)
+    expect(result.current.getCurrentView()).toEqual({
+      mode: 'compare',
+      compareSplit: 0.2,
+    })
   })
 
   it('runs scheduled toasts only while mounted', () => {

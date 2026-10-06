@@ -33,28 +33,27 @@ import {
   buildLUTContractSelectionState,
   DEFAULT_LOOK_INTENSITY,
 } from '../../../services/look/style-system'
+import type { SetColorIntent } from './useRawAdjustmentActions'
 import { useRawAdjustmentActions } from './useRawAdjustmentActions'
 
-type SetProcessingParams = (
-  value: ProcessingParams | ((prev: ProcessingParams) => ProcessingParams),
-) => void
-
 type UseRawLookStageInput = {
+  /** The params the photo renders with, before the session look is projected. */
   baseParams: ProcessingParams
   session: ImageSession | null
   sessionRef: MutableRefObject<ImageSession | null>
   setSession: Dispatch<SetStateAction<ImageSession | null>>
   lut: ParsedLUT | null
   setLut: (lut: ParsedLUT | null) => void
-  setParams: SetProcessingParams
-  getProcessingParams: () => ProcessingParams
+  /**
+   * Writes the detached color intent. Look actions write color here and
+   * nowhere else; the view has its own owner and is never part of a write.
+   */
+  setColorIntent: SetColorIntent
   lutDataRef: MutableRefObject<LUTData | null>
   setLutDataRef: (nextLutData: LUTData | null) => void
   scheduleToast: (notify: () => void) => void
   invalidateExportGraph: () => void
   canApplyLoadedLut: () => boolean
-  setViewMode?: (mode: ProcessingParams['viewMode']) => void
-  setCompareSplit?: (split: number) => void
 }
 
 export function useRawLookStage({
@@ -64,15 +63,12 @@ export function useRawLookStage({
   setSession,
   lut,
   setLut,
-  setParams,
-  getProcessingParams,
+  setColorIntent,
   lutDataRef,
   setLutDataRef,
   scheduleToast,
   invalidateExportGraph,
   canApplyLoadedLut,
-  setViewMode,
-  setCompareSplit,
 }: UseRawLookStageInput) {
   const activeStyle = useMemo(
     () => resolveActiveLook({ session, lut, intensity: baseParams.intensity }),
@@ -122,8 +118,7 @@ export function useRawLookStage({
       atoms: {
         setLut,
         setSession,
-        setParams,
-        getProcessingParams,
+        setColorIntent,
         lut,
         activeStyle,
       },
@@ -141,15 +136,14 @@ export function useRawLookStage({
     [
       activeStyle,
       canApplyLoadedLut,
-      getProcessingParams,
       invalidateExportGraph,
       lut,
       lutDataRef,
       scheduleToast,
       sessionRef,
+      setColorIntent,
       setLut,
       setLutDataRef,
-      setParams,
       setSession,
     ],
   )
@@ -193,7 +187,7 @@ export function useRawLookStage({
     [lutCtx],
   )
 
-  // Look actions read the session and detached params through updaters, which
+  // Look actions read the session and detached intent through updaters, which
   // the stores apply synchronously, so every decision is made against the
   // state current when the action fires rather than the render that created
   // the callback. Side effects run only after both updaters have returned. A
@@ -214,10 +208,11 @@ export function useRawLookStage({
         shouldInvalidateExportGraph = change.shouldInvalidateExportGraph
         return change.session
       })
-      // Detached params carry the amount whenever no session owns a look, but
-      // decide the graph change only when no session projects over them.
+      // The detached intent carries the amount whenever no session owns a
+      // look, but decides the graph change only when no session projects over
+      // it. The amount is stored as given (0..1), never snapped to a detent.
       if (!sessionOwnsLook) {
-        setParams((prev) => {
+        setColorIntent((prev) => {
           const change = computeDetachedIntensityChange(prev, value)
           if (!hasSession) {
             shouldInvalidateExportGraph = change.shouldInvalidateExportGraph
@@ -230,7 +225,7 @@ export function useRawLookStage({
         invalidateExportGraph()
       }
     },
-    [invalidateExportGraph, setParams, setSession],
+    [invalidateExportGraph, setColorIntent, setSession],
   )
 
   const clearLUT = useCallback(() => {
@@ -247,9 +242,9 @@ export function useRawLookStage({
       return change.session
     })
     // The session owns the look once it exists; before that, the detached
-    // params do.
+    // intent does.
     if (!hasSession) {
-      setParams((prev) => {
+      setColorIntent((prev) => {
         const change = computeDetachedClearLUT(prev, hasLoadedLut)
         shouldInvalidateExportGraph = change.shouldInvalidateExportGraph
         return change.params
@@ -267,9 +262,9 @@ export function useRawLookStage({
     lut,
     lutDataRef,
     scheduleToast,
+    setColorIntent,
     setLut,
     setLutDataRef,
-    setParams,
     setSession,
   ])
 
@@ -283,10 +278,8 @@ export function useRawLookStage({
     resetSelectiveColor,
   } = useRawAdjustmentActions({
     params,
-    setParams,
+    setColorIntent,
     invalidateExportGraph,
-    setViewMode,
-    setCompareSplit,
   })
 
   return {

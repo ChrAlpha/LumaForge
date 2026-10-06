@@ -1,3 +1,4 @@
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -6,25 +7,14 @@ import type { PrewarmState } from '~/lib/raw/runtime-adapter'
 import type { UseRawLoadActionInput } from './useRawLoadAction'
 import { useRawLoadAction } from './useRawLoadAction'
 
-function createParams(): ReturnType<
-  UseRawLoadActionInput['getProcessingParams']
+function createColorIntent(): ReturnType<
+  UseRawLoadActionInput['getColorIntent']
 > {
   return {
+    ...NEUTRAL_USER_COLOR_INTENT,
     intensity: 0.7,
-    viewMode: 'compare',
-    compareSplit: 0.5,
     styleKind: 'none',
     builtinPreset: null,
-    userExposureEv: 0,
-    userContrast: 0,
-    userHighlights: 0,
-    userShadows: 0,
-    userWhites: 0,
-    userBlacks: 0,
-    userTemperature: 0,
-    userTint: 0,
-    userSaturation: 0,
-    userVibrance: 0,
   }
 }
 
@@ -35,9 +25,10 @@ function createInput(
     setStatus: vi.fn(),
     setError: vi.fn(),
     setProgress: vi.fn(),
-    getProcessingParams: vi.fn(createParams),
+    getColorIntent: vi.fn(createColorIntent),
+    getView: vi.fn(() => ({ mode: 'compare' as const, compareSplit: 0.5 })),
     getLut: vi.fn(() => null),
-    setParams: vi.fn(),
+    setColorIntent: vi.fn(),
     setSession: vi.fn(),
     setDecodedImageVersion: vi.fn(),
     setStats: vi.fn(),
@@ -86,8 +77,10 @@ describe('useRawLoadAction', () => {
       expect.objectContaining({
         atoms: expect.objectContaining({
           setStatus: input.setStatus,
-          getProcessingParams: input.getProcessingParams,
+          getColorIntent: input.getColorIntent,
+          getView: input.getView,
           getLut: input.getLut,
+          setColorIntent: input.setColorIntent,
           setPendingRecoveryRetry: input.setPendingRecoveryRetry,
         }),
         services: expect.objectContaining({

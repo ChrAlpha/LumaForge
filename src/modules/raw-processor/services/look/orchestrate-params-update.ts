@@ -1,4 +1,7 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  ProcessingParams,
+} from '@lumaforge/luma-color-runtime'
 import {
   normalizeColorBalanceParams,
   normalizeSaturationParams,
@@ -55,9 +58,9 @@ export function computeViewportChange(
 }
 
 /**
- * Look intensity an existing session projects into processing params. A
+ * Look intensity an existing session projects into the color intent. A
  * session that owns no look projects the default intensity, whatever the
- * detached params still hold.
+ * detached intent still holds.
  */
 export function projectSessionLookIntensity(session: ImageSession): number {
   return session.activeStyle
@@ -70,7 +73,8 @@ export function projectSessionLookIntensity(session: ImageSession): number {
  * amount is continuous (0..1) and lands in the session style exactly, so the
  * export manifest records what the preview showed. A session that owns no
  * look keeps projecting the default intensity while the caller carries the
- * amount in detached params. An unchanged amount returns the session itself.
+ * amount in the detached intent. An unchanged amount returns the session
+ * itself.
  */
 export function computeSessionIntensityChange(
   prevSession: ImageSession,
@@ -92,14 +96,15 @@ export function computeSessionIntensityChange(
 }
 
 /**
- * Sets the look intensity on the detached params. A detached look derives its
- * amount from this intensity, so the intensity alone decides whether the
- * graph changes. An unchanged amount returns the params themselves.
+ * Sets the look intensity on the detached color intent. The amount is
+ * continuous (0..1); a detached look derives its amount from it, so the
+ * intensity alone decides whether the graph changes. An unchanged amount
+ * returns the intent itself.
  */
 export function computeDetachedIntensityChange(
-  prevParams: ProcessingParams,
+  prevParams: ColorGraphIntent,
   value: number,
-): { params: ProcessingParams; shouldInvalidateExportGraph: boolean } {
+): { params: ColorGraphIntent; shouldInvalidateExportGraph: boolean } {
   const intensity = clampLookIntensity(value)
   const shouldInvalidateExportGraph = prevParams.intensity !== intensity
 
@@ -134,14 +139,14 @@ export function computeSessionClearLUT(
 }
 
 /**
- * Clears the look from the detached params. A detached style or a
- * still-loaded LUT means the graph changes; params that already carry no
- * style are returned themselves.
+ * Clears the look from the detached color intent, keeping its strength. A
+ * detached style or a still-loaded LUT means the graph changes; an intent
+ * that already carries no style is returned itself.
  */
 export function computeDetachedClearLUT(
-  prevParams: ProcessingParams,
+  prevParams: ColorGraphIntent,
   hasLoadedLut: boolean,
-): { params: ProcessingParams; shouldInvalidateExportGraph: boolean } {
+): { params: ColorGraphIntent; shouldInvalidateExportGraph: boolean } {
   const hasDetachedStyle =
     prevParams.styleKind !== 'none' || prevParams.builtinPreset !== null
 
@@ -154,7 +159,7 @@ export function computeDetachedClearLUT(
 }
 
 export function computeToneParams(
-  prevParams: ProcessingParams,
+  prevParams: ColorGraphIntent,
   toneParams: Partial<
     Pick<
       ProcessingParams,
@@ -166,7 +171,7 @@ export function computeToneParams(
       | 'userBlacks'
     >
   >,
-): { params: ProcessingParams; shouldClearExportResult: boolean } {
+): { params: ColorGraphIntent; shouldClearExportResult: boolean } {
   const normalized = normalizeToneParams({
     userExposureEv: toneParams.userExposureEv ?? prevParams.userExposureEv,
     userContrast: toneParams.userContrast ?? prevParams.userContrast,
@@ -188,14 +193,14 @@ export function computeToneParams(
 }
 
 export function computeColorParams(
-  prevParams: ProcessingParams,
+  prevParams: ColorGraphIntent,
   colorParams: Partial<
     Pick<
       ProcessingParams,
       'userTemperature' | 'userTint' | 'userSaturation' | 'userVibrance'
     >
   >,
-): { params: ProcessingParams; shouldClearExportResult: boolean } {
+): { params: ColorGraphIntent; shouldClearExportResult: boolean } {
   const normalizedBalance = normalizeColorBalanceParams({
     userTemperature: colorParams.userTemperature ?? prevParams.userTemperature,
     userTint: colorParams.userTint ?? prevParams.userTint,

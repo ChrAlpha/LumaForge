@@ -1,8 +1,8 @@
 import type {
+  ColorGraphIntent,
   LUTColorProfile,
   LUTContractSelection,
   LUTData,
-  ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
 import { toLUTContractSelection } from '@lumaforge/luma-color-runtime'
 import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
@@ -80,10 +80,10 @@ export interface LutLoadContext {
         | null
         | ((prev: ImageSession | null) => ImageSession | null),
     ) => void
-    setParams: (
-      value: ProcessingParams | ((prev: ProcessingParams) => ProcessingParams),
+    /** Writes the detached color intent; it never carries view state. */
+    setColorIntent: (
+      value: ColorGraphIntent | ((prev: ColorGraphIntent) => ColorGraphIntent),
     ) => void
-    getProcessingParams: () => ProcessingParams
     lut: ParsedLUT | null
     activeStyle: StyleAsset | null
   }
@@ -145,7 +145,7 @@ function applyLoadedLUT(
       : prev,
   )
   if (!ctx.refs.sessionRef.current) {
-    ctx.atoms.setParams((prev) => ({
+    ctx.atoms.setColorIntent((prev) => ({
       ...prev,
       styleKind: 'custom',
       builtinPreset: null,
@@ -345,7 +345,7 @@ export function orchestrateProfileSelection(
       : prev,
   )
   if (!ctx.refs.sessionRef.current) {
-    ctx.atoms.setParams((prev) => ({
+    ctx.atoms.setColorIntent((prev) => ({
       ...prev,
       styleKind: 'custom',
       builtinPreset: null,

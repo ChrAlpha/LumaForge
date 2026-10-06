@@ -1,7 +1,9 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import { createImageSession } from '../../model/session-factory'
@@ -37,23 +39,14 @@ vi.mock('~/lib/runtime/capability-vector', () => capabilityVectorMock)
 vi.mock('~/lib/runtime/preview-gpu-budget', () => previewGpuBudgetMock)
 vi.mock('~/lib/preview/gpu-backend', () => previewBackendMock)
 
-const defaultParams: ProcessingParams = {
+const defaultIntent: ColorGraphIntent = {
+  ...NEUTRAL_USER_COLOR_INTENT,
   intensity: 0.7,
-  viewMode: 'compare',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
 }
+
+const defaultView: PreviewView = { mode: 'compare', compareSplit: 0.5 }
 
 interface OrderingHooks {
   order: string[]
@@ -74,9 +67,10 @@ function buildContext(hooks: OrderingHooks): RawLoadContext {
       setStatus: vi.fn((status) => order.push(`status:${status}`)),
       setError: vi.fn(),
       setProgress: vi.fn(),
-      getProcessingParams: vi.fn(() => defaultParams),
+      getColorIntent: vi.fn(() => defaultIntent),
+      getView: vi.fn(() => defaultView),
       getLut: vi.fn(() => null),
-      setParams: vi.fn(),
+      setColorIntent: vi.fn(),
       setSession: vi.fn(),
       setDecodedImageVersion: vi.fn(),
       setStats: vi.fn(),
@@ -228,6 +222,63 @@ describe('orchestrateRawLoad ack-before-work contract', () => {
     expect(order.indexOf('yieldToPaint')).toBeLessThan(
       order.indexOf('openSession'),
     )
+
+    loadPromise.catch(() => undefined)
+  })
+
+  it('reads the split from the view port and resets only the look through the color port', async () => {
+    const { rawRuntimeAdapter } = await import('~/lib/raw/runtime-adapter')
+    vi.mocked(rawRuntimeAdapter.openSession).mockImplementation(
+      () => new Promise(() => {}),
+    )
+    const ctx = buildContext({
+      order: [],
+      yieldToPaint: () => Promise.resolve(),
+      getPrewarmState: () => 'ready',
+    })
+    const intent: ColorGraphIntent = {
+      ...defaultIntent,
+      intensity: 0.37,
+      userContrast: 24,
+    }
+    vi.mocked(ctx.atoms.getColorIntent).mockReturnValue(intent)
+    vi.mocked(ctx.atoms.getView).mockReturnValue({
+      mode: 'original',
+      compareSplit: 0.62,
+    })
+
+    const loadPromise = orchestrateRawLoad(new File(['raw'], 'next.ARW'), ctx)
+    await flushMicrotasks()
+
+    expect(ctx.atoms.setColorIntent).toHaveBeenCalledTimes(1)
+    const writeIntent = vi.mocked(ctx.atoms.setColorIntent).mock.calls[0]![0]
+    const written =
+      typeof writeIntent === 'function' ? writeIntent(intent) : writeIntent
+    expect(written).toEqual({
+      ...intent,
+      intensity: 0.7,
+      styleKind: 'none',
+      builtinPreset: null,
+    })
+    expect(written).not.toHaveProperty('viewMode')
+    expect(written).not.toHaveProperty('compareSplit')
+
+    const nextSession = vi.mocked(ctx.services.replaceFile).mock.results[0]!
+      .value as ReturnType<typeof createImageSession>
+    const startSession = vi
+      .mocked(ctx.atoms.setSession)
+      .mock.calls.map(([update]) => update)
+      .find((update) => typeof update === 'function')
+    expect(startSession).toBeDefined()
+    const started = (
+      startSession as (
+        prev: ReturnType<typeof createImageSession> | null,
+      ) => ReturnType<typeof createImageSession> | null
+    )(nextSession)
+    expect(started?.viewState).toMatchObject({
+      mode: 'compare',
+      compareSplit: 0.62,
+    })
 
     loadPromise.catch(() => undefined)
   })
