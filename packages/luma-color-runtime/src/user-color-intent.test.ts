@@ -230,6 +230,8 @@ describe('field sets', () => {
   it('covers every legacy params field except the view', () => {
     const everyLegacyField = {
       ...LEGACY_PARAMS,
+      viewMode: 'compare',
+      compareSplit: 0.25,
       selectiveColor: bands(),
     } satisfies Required<ProcessingParams>
     const legacyColorFields = Object.keys(everyLegacyField).filter(
@@ -896,6 +898,49 @@ describe('compatibility', () => {
     >().toExtend<ExportColorGraphInput>()
     expectTypeOf<ExportColorGraphInput>().toEqualTypeOf<
       Parameters<typeof resolveExportColorGraph>[0]
+    >()
+  })
+
+  it('keeps the deprecated view fields optional on legacy params', () => {
+    const {
+      viewMode: _mode,
+      compareSplit: _split,
+      ...withoutView
+    } = LEGACY_PARAMS
+    const noView: ProcessingParams = withoutView
+    const noViewNoHsl: ProcessingParams = {
+      ...withoutView,
+      selectiveColor: undefined,
+    }
+    const fullLegacy: ProcessingParams = {
+      ...LEGACY_PARAMS,
+      selectiveColor: bands({
+        red: { hue: 4, saturation: -10, lightness: 2 },
+      }),
+    }
+    const lut = displayLookLut()
+
+    expect(noView).not.toHaveProperty('viewMode')
+    expect(noView).not.toHaveProperty('compareSplit')
+    expect(pickColorGraphIntent(noView)).toEqual(
+      pickColorGraphIntent(LEGACY_PARAMS),
+    )
+    expect(colorGraphIntentEquals(noViewNoHsl, LEGACY_PARAMS)).toBe(true)
+    expect(colorGraphIntentEquals(fullLegacy, LEGACY_PARAMS)).toBe(false)
+    expect(resolveExportColorGraph({ ...noView, lut })).toEqual(
+      resolveExportColorGraph({ ...LEGACY_PARAMS, lut }),
+    )
+    expectTypeOf<ProcessingParams['viewMode']>().toEqualTypeOf<
+      'processed' | 'original' | 'compare' | undefined
+    >()
+    expectTypeOf<ProcessingParams['compareSplit']>().toEqualTypeOf<
+      number | undefined
+    >()
+    expectTypeOf<ProcessingParams['styleKind']>().toEqualTypeOf<
+      'none' | 'builtin' | 'custom'
+    >()
+    expectTypeOf<ProcessingParams['selectiveColor']>().toEqualTypeOf<
+      UserColorIntent['selectiveColor'] | undefined
     >()
   })
 

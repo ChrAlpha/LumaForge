@@ -45,5 +45,13 @@ The format follows Keep a Changelog; versions follow semver. Releases before
 - `normalizeSelectiveColorParams` accepts partial bands and axes and a `null`
   `selectiveColor` in its parameter type. It already handled them at runtime;
   its output is unchanged.
-- `ProcessingParams` is unchanged: `selectiveColor` stays optional and the
-  view fields stay on it.
+- `ProcessingParams` keeps its name and every field. `selectiveColor` stays
+  optional, and `styleKind: 'builtin'` with `builtinPreset` stays valid.
+
+### Deprecated
+
+- `ProcessingParams.viewMode` and `ProcessingParams.compareSplit` are now
+  optional and marked `@deprecated`. The color graph never read them; pass
+  view state to the preview on its own. Records that still carry them, or
+  that omit them, type-check, and `resolveExportColorGraph` accepts both
+  unchanged.
