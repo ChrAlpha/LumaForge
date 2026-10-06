@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -65,6 +65,9 @@ function onlineLutSourcesFixture(
     entryLoadProgress: null,
     cancelEntryLoad: vi.fn(),
     loadedEntry: null,
+    activateCatalogs: vi.fn(),
+    resourceActivation: { 'source-1': 'ready' },
+    catalogActivation: 'ready',
     share: {
       enabled: false,
       url: '',
@@ -354,6 +357,8 @@ describe('mobileLutBrowser', () => {
       isLoading: true,
       activeResourceId: 'source-1',
     }
+    fixture.resourceActivation = { 'source-1': 'loading' }
+    fixture.catalogActivation = 'loading'
     render(<MobileLutBrowser {...baseProps} onlineLutSources={fixture} />)
 
     const refreshButton = screen.getByRole('button', {
@@ -539,5 +544,78 @@ describe('mobileLutBrowser', () => {
       screen.getByText("Some entries aren't supported LUTs."),
     ).toBeInTheDocument()
     expect(screen.getByText('+1 more')).toBeInTheDocument()
+  })
+
+  it('activates the catalogs only while the sheet is open', () => {
+    const fixture = onlineLutSourcesFixture()
+    const { rerender } = render(
+      <MobileLutBrowser
+        {...baseProps}
+        open={false}
+        onlineLutSources={fixture}
+      />,
+    )
+    // Mounted closed is not a visit.
+    expect(fixture.activateCatalogs).not.toHaveBeenCalled()
+
+    rerender(<MobileLutBrowser {...baseProps} onlineLutSources={fixture} />)
+    expect(fixture.activateCatalogs).toHaveBeenCalledOnce()
+    expect(fixture.activateCatalogs).toHaveBeenCalledWith()
+
+    // A re-render while open asks nothing more.
+    rerender(
+      <MobileLutBrowser
+        {...baseProps}
+        onlineLutSources={{ ...fixture, sourceUrlInput: 'https://' }}
+      />,
+    )
+    expect(fixture.activateCatalogs).toHaveBeenCalledOnce()
+
+    rerender(
+      <MobileLutBrowser
+        {...baseProps}
+        open={false}
+        onlineLutSources={fixture}
+      />,
+    )
+    expect(fixture.activateCatalogs).toHaveBeenCalledOnce()
+
+    // Reopening asks again; activation itself skips a loaded catalog.
+    rerender(<MobileLutBrowser {...baseProps} onlineLutSources={fixture} />)
+    expect(fixture.activateCatalogs).toHaveBeenCalledTimes(2)
+  })
+
+  it('states a source that has not loaded and one that is loading', () => {
+    const fixture = onlineLutSourcesFixture()
+    fixture.state = {
+      ...fixture.state,
+      resources: [
+        ...fixture.state.resources,
+        {
+          id: 'source-2',
+          url: 'https://looks.example.com/catalog.json',
+          type: 'catalog',
+          label: 'Looks catalog',
+          fromQuery: false,
+        },
+      ],
+      entries: [],
+    }
+    fixture.resourceActivation = { 'source-1': 'loading' }
+    fixture.catalogActivation = 'loading'
+    render(<MobileLutBrowser {...baseProps} onlineLutSources={fixture} />)
+
+    const card = (label: string) =>
+      screen
+        .getByText(label)
+        .closest<HTMLElement>('[data-raw-mobile-lut="source-card"]')!
+    expect(within(card('Profiles catalog')).getByText('Loading')).toBeVisible()
+    expect(
+      within(card('Profiles catalog')).getByRole('button', {
+        name: 'Refresh Profiles catalog',
+      }),
+    ).toBeDisabled()
+    expect(within(card('Looks catalog')).getByText('Not loaded')).toBeVisible()
+    expect(within(card('Looks catalog')).queryByText('No LUTs')).toBeNull()
   })
 })

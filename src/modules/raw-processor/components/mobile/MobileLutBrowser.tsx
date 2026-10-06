@@ -1,6 +1,7 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { ArrowLeft, X } from 'lucide-react'
 import { AnimatePresence, m, useDragControls } from 'motion/react'
+import { useEffect } from 'react'
 
 import { IconButton } from '~/components/ui/button'
 import { Dialog } from '~/components/ui/dialog'
@@ -56,6 +57,14 @@ export function MobileLutBrowser(props: MobileLutBrowserProps) {
     open: props.open,
     onlineLutSources: props.onlineLutSources,
   })
+
+  // The sheet lists every source's catalog, so it asks for them while it is
+  // open, never while it is mounted closed. Activation skips a catalog
+  // already requested; a failed one waits for its Refresh.
+  const activateCatalogs = props.onlineLutSources?.activateCatalogs
+  useEffect(() => {
+    if (props.open) activateCatalogs?.()
+  }, [activateCatalogs, props.open])
 
   const handleOpenChange = (open: boolean) => {
     if (!open) props.onClose()

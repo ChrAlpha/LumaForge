@@ -3,9 +3,11 @@ import { FolderOpen, RefreshCw, Trash2 } from 'lucide-react'
 import { useI18n } from '~/lib/i18n'
 
 import type {
+  ActivateOnlineLutCatalogsOptions,
   OnlineLutEntryLoadProgress,
   UseOnlineLutSourcesResult,
 } from '../../../hooks/useOnlineLutSources'
+import type { OnlineLUTSourceActivation } from '../../../services/look/online-lut-sources'
 import { LutIconButton } from './LutIconButton'
 import { LutSourceWarning } from './LutSourceWarning'
 import { OnlineLutCatalogEntryButton } from './OnlineLutCatalogEntryButton'
@@ -18,6 +20,23 @@ type OnlineLutIssue = UseOnlineLutSourcesResult['state']['issues'][number]
 
 const inlineEntryLimit = 4
 
+/**
+ * Where a row's catalog stands. Without per-source activation (a surface
+ * fixture), a row reads as listed and loading only while it is the source
+ * being resolved.
+ */
+function getRowActivation(
+  resourceId: string,
+  resourceActivation:
+    | Readonly<Record<string, OnlineLUTSourceActivation>>
+    | undefined,
+  isLoading: boolean,
+  activeResourceId: string | null,
+): OnlineLUTSourceActivation {
+  if (resourceActivation) return resourceActivation[resourceId] ?? 'inactive'
+  return isLoading && activeResourceId === resourceId ? 'loading' : 'ready'
+}
+
 export function OnlineLutSourceResourceList({
   resources,
   isLoading,
@@ -27,12 +46,14 @@ export function OnlineLutSourceResourceList({
   entryLoadProgress,
   entriesByResourceId,
   issuesByResourceId,
+  resourceActivation,
   openResourceId,
   browserId,
   onOpenResource,
   onCloseResource,
   onRefreshResource,
   onRemoveResource,
+  onActivateResource,
   onEntryLoad,
   onCancelEntryLoad,
   setOpenButtonRef,
@@ -45,12 +66,19 @@ export function OnlineLutSourceResourceList({
   entryLoadProgress: OnlineLutEntryLoadProgress | null
   entriesByResourceId: ReadonlyMap<string, OnlineLutEntry[]>
   issuesByResourceId: ReadonlyMap<string, OnlineLutIssue[]>
+  /** Catalog activation per source; a source missing here is inactive. */
+  resourceActivation?: Readonly<Record<string, OnlineLUTSourceActivation>>
   openResourceId: string | null
   browserId: string
   onOpenResource: (resourceId: string) => void
   onCloseResource: (resourceId: string) => void
   onRefreshResource: (resourceId: string) => void
   onRemoveResource: (resourceId: string) => void
+  /** Requests a source's catalog: Load when inactive, Retry after a failure. */
+  onActivateResource?: (
+    resourceId: string,
+    options?: Pick<ActivateOnlineLutCatalogsOptions, 'retryFailed'>,
+  ) => void
   onEntryLoad: (entryId: string) => void
   onCancelEntryLoad: () => void
   setOpenButtonRef: (resourceId: string, node: HTMLButtonElement | null) => void
@@ -61,7 +89,12 @@ export function OnlineLutSourceResourceList({
         <OnlineLutSourceResourceRow
           key={resource.id}
           resource={resource}
-          isLoading={isLoading && activeResourceId === resource.id}
+          activation={getRowActivation(
+            resource.id,
+            resourceActivation,
+            isLoading,
+            activeResourceId,
+          )}
           entries={entriesByResourceId.get(resource.id) ?? []}
           issues={issuesByResourceId.get(resource.id) ?? []}
           isOpen={openResourceId === resource.id}
@@ -73,6 +106,7 @@ export function OnlineLutSourceResourceList({
           onClose={() => onCloseResource(resource.id)}
           onRefresh={() => onRefreshResource(resource.id)}
           onRemove={() => onRemoveResource(resource.id)}
+          onActivate={(options) => onActivateResource?.(resource.id, options)}
           onEntryLoad={onEntryLoad}
           onCancelEntryLoad={onCancelEntryLoad}
           setOpenButtonRef={(node) => setOpenButtonRef(resource.id, node)}
@@ -84,7 +118,7 @@ export function OnlineLutSourceResourceList({
 
 function OnlineLutSourceResourceRow({
   resource,
-  isLoading,
+  activation,
   entries,
   issues,
   isOpen,
@@ -96,12 +130,13 @@ function OnlineLutSourceResourceRow({
   onClose,
   onRefresh,
   onRemove,
+  onActivate,
   onEntryLoad,
   onCancelEntryLoad,
   setOpenButtonRef,
 }: {
   resource: OnlineLutResource
-  isLoading: boolean
+  activation: OnlineLUTSourceActivation
   entries: OnlineLutEntry[]
   issues: OnlineLutIssue[]
   isOpen: boolean
@@ -113,11 +148,15 @@ function OnlineLutSourceResourceRow({
   onClose: () => void
   onRefresh: () => void
   onRemove: () => void
+  onActivate: (
+    options?: Pick<ActivateOnlineLutCatalogsOptions, 'retryFailed'>,
+  ) => void
   onEntryLoad: (entryId: string) => void
   onCancelEntryLoad: () => void
   setOpenButtonRef: (node: HTMLButtonElement | null) => void
 }) {
   const { t } = useI18n()
+  const isLoading = activation === 'loading'
   const formatEntryCount = (count: number) =>
     count === 1
       ? t('raw.lutSource.countOne')
@@ -142,7 +181,9 @@ function OnlineLutSourceResourceRow({
           >
             {isLoading
               ? t('raw.lutSource.loading')
-              : formatEntryCount(entries.length)}
+              : activation === 'inactive' && entries.length === 0
+                ? t('raw.lutSource.notLoaded')
+                : formatEntryCount(entries.length)}
           </span>
           {hasIssue && (
             <span className="shrink-0 rounded-full bg-[oklch(from_var(--color-lf-amber)_l_c_h_/_0.14)] px-1.5 py-0.5 text-[0.66rem] font-medium leading-none text-lf-on-surface/80">
@@ -182,6 +223,14 @@ function OnlineLutSourceResourceRow({
           </LutIconButton>
         </div>
       </div>
+      {entries.length === 0 &&
+        (activation === 'inactive' || activation === 'error') && (
+          <OnlineLutSourceActivateButton
+            label={resource.label}
+            retry={activation === 'error'}
+            onActivate={onActivate}
+          />
+        )}
       <OnlineLutSourceInlineEntries
         entries={entries}
         isResourceLoading={isLoading}
@@ -195,6 +244,40 @@ function OnlineLutSourceResourceRow({
       />
       <LutSourceWarning issues={issues} surface="on-photo" className="pt-1.5" />
     </div>
+  )
+}
+
+/**
+ * A source listed before its catalog is requested, or whose request failed,
+ * has no rows to choose from; this asks for them without opening anything.
+ */
+function OnlineLutSourceActivateButton({
+  label,
+  retry,
+  onActivate,
+}: {
+  label: string
+  retry: boolean
+  onActivate: (
+    options?: Pick<ActivateOnlineLutCatalogsOptions, 'retryFailed'>,
+  ) => void
+}) {
+  const { t } = useI18n()
+
+  return (
+    <button
+      type="button"
+      aria-label={
+        retry
+          ? t('raw.lutSource.retryAria', { label })
+          : t('raw.lutSource.activateAria', { label })
+      }
+      onClick={() => onActivate(retry ? { retryFailed: true } : undefined)}
+      className="justify-self-start rounded-md px-1.5 py-0.5 text-[0.7rem] font-medium text-lf-on-surface/60 transition-colors hover:text-lf-on-surface focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green"
+      data-raw-lut="source-activate"
+    >
+      {retry ? t('raw.lutSource.retry') : t('raw.lutSource.activate')}
+    </button>
   )
 }
 

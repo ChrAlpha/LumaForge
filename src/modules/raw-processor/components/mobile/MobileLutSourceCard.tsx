@@ -18,6 +18,8 @@ export function MobileLutSourceCard(props: {
   resource: Resource
   entryCount: number
   isLoading: boolean
+  /** Listed, its catalog not requested yet: no count to state. */
+  notLoaded?: boolean
   issues: Issue[]
   onBrowse: () => void
   onRefresh: () => void
@@ -56,9 +58,11 @@ export function MobileLutSourceCard(props: {
             </button>
           ) : (
             <span className="text-[0.7rem] text-lf-on-photo-ink/62 tabular-nums">
-              {props.entryCount === 0
-                ? t('raw.lutSource.countZero')
-                : t('raw.lutSource.countOne')}
+              {props.notLoaded
+                ? t('raw.lutSource.notLoaded')
+                : props.entryCount === 0
+                  ? t('raw.lutSource.countZero')
+                  : t('raw.lutSource.countOne')}
             </span>
           )}
         </div>

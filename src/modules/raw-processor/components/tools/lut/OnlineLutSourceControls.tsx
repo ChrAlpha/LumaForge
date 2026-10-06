@@ -63,13 +63,27 @@ export function OnlineLutSourceControls({
     },
     [openResourceId],
   )
-  const openBrowserForResource = useCallback((resourceId: string) => {
-    const trigger = openButtonRefs.current.get(resourceId)
-    if (!trigger) return
+  const { activateCatalogs } = onlineLutSources
+  const activateResource = useCallback(
+    (resourceId: string, options: { retryFailed?: boolean } = {}) => {
+      activateCatalogs?.({ resourceIds: [resourceId], ...options })
+    },
+    [activateCatalogs],
+  )
+  // Opening a source is a request for its catalog: one not yet requested
+  // starts loading as the browser opens. Activation skips a source that is
+  // loading or ready, and a failed one waits for Retry or Refresh.
+  const openBrowserForResource = useCallback(
+    (resourceId: string) => {
+      const trigger = openButtonRefs.current.get(resourceId)
+      if (!trigger) return
 
-    setBrowserLayout(getViewportBoundedBrowserLayout(trigger))
-    setOpenResourceId(resourceId)
-  }, [])
+      activateResource(resourceId)
+      setBrowserLayout(getViewportBoundedBrowserLayout(trigger))
+      setOpenResourceId(resourceId)
+    },
+    [activateResource],
+  )
   const updateBrowserLayout = useCallback(() => {
     if (!openResourceId) return
 
@@ -205,6 +219,7 @@ export function OnlineLutSourceControls({
           entryLoadProgress={onlineLutSources.entryLoadProgress}
           entriesByResourceId={entriesByResourceId}
           issuesByResourceId={issuesByResourceId}
+          resourceActivation={onlineLutSources.resourceActivation}
           openResourceId={openResourceId}
           browserId={browserId}
           onOpenResource={openBrowserForResource}
@@ -218,6 +233,7 @@ export function OnlineLutSourceControls({
             if (openResourceId === resourceId) closeBrowser(resourceId)
             onlineLutSources.removeSource(resourceId)
           }}
+          onActivateResource={activateResource}
           onEntryLoad={(entryId) => {
             void loadOnlineLutEntry(entryId)
           }}

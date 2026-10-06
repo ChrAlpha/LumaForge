@@ -205,6 +205,24 @@ export function MobileLabChrome(props: {
   })
   const exportPanelVisible = exportOpen && deckVisible
 
+  // The Look strip lists every online look, so its first time on screen is
+  // the first use of the catalogs. On screen means a RAW that is ready, the
+  // deck expanded on Look's strip and the chrome not receded: a deck that is
+  // mounted but collapsed, borrowed by export, showing the inline contract
+  // or leaving the screen does not count. Activation skips a catalog already
+  // requested, so coming back to the strip asks for nothing new.
+  const lookStripVisible =
+    props.hasImage &&
+    !immersive &&
+    deckVisible &&
+    !exportOpen &&
+    mode === 'look' &&
+    lookView === 'strip'
+  const activateCatalogs = props.lutBrowser.onlineLutSources?.activateCatalogs
+  useEffect(() => {
+    if (lookStripVisible) activateCatalogs?.()
+  }, [activateCatalogs, lookStripVisible])
+
   // Photo-first stage layout. The stage region is sized to the photo, so the
   // frame's centring anchors it under the topbar, and the deck takes what the
   // photo leaves. Inputs are chrome geometry and tool / deck state only: a

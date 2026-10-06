@@ -103,16 +103,22 @@ export function MobileLutOnlineSourcesSection({
         {onlineLutSources.state.resources.map((resource) => {
           const entries = entriesByResourceId.get(resource.id) ?? []
           const resourceIssues = issuesByResourceId.get(resource.id) ?? []
-          const isResourceLoading =
-            onlineLutSources.state.isLoading &&
-            onlineLutSources.state.activeResourceId === resource.id
+          // Without per-source activation (a surface fixture), a source
+          // reads as listed and loading only while it is being resolved.
+          const activation = onlineLutSources.resourceActivation
+            ? (onlineLutSources.resourceActivation[resource.id] ?? 'inactive')
+            : onlineLutSources.state.isLoading &&
+                onlineLutSources.state.activeResourceId === resource.id
+              ? 'loading'
+              : 'ready'
 
           return (
             <MobileLutSourceCard
               key={resource.id}
               resource={resource}
               entryCount={entries.length}
-              isLoading={isResourceLoading}
+              isLoading={activation === 'loading'}
+              notLoaded={activation === 'inactive' && entries.length === 0}
               issues={resourceIssues}
               onBrowse={() => onBrowseResource(resource.id)}
               onRefresh={() => void onlineLutSources.refreshSource(resource.id)}

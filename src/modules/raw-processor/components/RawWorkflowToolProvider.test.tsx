@@ -869,11 +869,15 @@ function renderReleasablePreview() {
   const transform = transformFeatureFixture({ hasImage: true, available: true })
   const loadEntry = vi.fn(async (): Promise<LutLoadOutcome> => 'loaded')
   const cancelEntryLoad = vi.fn()
+  const activateCatalogs = vi.fn()
   let onlineLutSources = {
     loadEntry,
     loadingEntryId: null,
     failedEntryId: null,
     cancelEntryLoad,
+    activateCatalogs,
+    resourceActivation: {},
+    catalogActivation: 'inactive',
   } as unknown as UseOnlineLutSourcesResult
   const hook = renderHook(useRawWorkflowContext, {
     wrapper: ({ children }) => (
@@ -921,6 +925,7 @@ function renderReleasablePreview() {
     edits,
     loadEntry,
     cancelEntryLoad,
+    activateCatalogs,
     setOnlineLutSources(
       patch: Partial<Pick<UseOnlineLutSourcesResult, 'loadingEntryId'>>,
     ) {
@@ -989,6 +994,17 @@ describe('rawWorkflowToolProvider released preview', () => {
     restore()
     await expect(editEverything(held)).resolves.toBe('loaded')
     for (const edit of edits) expect(edit).toHaveBeenCalledOnce()
+  })
+
+  it('still lists catalogs while the preview is released: listing is not an edit', () => {
+    const { result, release, activateCatalogs } = renderReleasablePreview()
+    release()
+
+    result.current.onlineLutSources!.activateCatalogs?.({
+      resourceIds: ['profiles'],
+    })
+    expect(activateCatalogs).toHaveBeenCalledWith({ resourceIds: ['profiles'] })
+    expect(result.current.onlineLutSources!.catalogActivation).toBe('inactive')
   })
 
   it('cancels a catalog load still in flight when the preview is released', () => {

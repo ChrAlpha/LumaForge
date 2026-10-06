@@ -11,11 +11,13 @@ import { createStore, Provider as JotaiProvider } from 'jotai'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
 import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
 import { COLOR_NEUTRAL } from '../color-fields'
 import { TONE_NEUTRAL } from '../tone-fields'
 import { transformFeatureFixture } from '../tools/transform-feature.fixture'
 import { MobileLabChrome } from './MobileLabChrome'
+import type { MobileLookControls } from './MobileLookDeck'
 
 const base = {
   hasImage: true,
@@ -1645,5 +1647,215 @@ describe('mobileLabChrome stage layout', () => {
       screen.getByRole('button', { name: 'Choose LUT contract' }),
     )
     expect(screen.getByRole('button', { name: 'Back to looks' })).toHaveFocus()
+  })
+})
+
+describe('mobileLabChrome catalog activation', () => {
+  let previewFrameEl: HTMLDivElement
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    )
+    previewFrameEl = mountPreviewFrame()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    previewFrameEl.remove()
+  })
+
+  function sources(): UseOnlineLutSourcesResult {
+    return {
+      state: {
+        resources: [
+          {
+            id: 'profiles',
+            url: 'https://profiles.example.com/catalog.json',
+            type: 'catalog',
+            label: 'LumaForge Profiles',
+            fromQuery: false,
+          },
+        ],
+        entries: [],
+        issues: [],
+        activeResourceId: null,
+        isLoading: false,
+      },
+      sourceUrlInput: '',
+      setSourceUrlInput: vi.fn(),
+      addSourceFromInput: vi.fn(),
+      refreshSource: vi.fn(),
+      removeSource: vi.fn(),
+      loadEntry: vi.fn(async () => 'loaded' as const),
+      loadingEntryId: null,
+      failedEntryId: null,
+      entryLoadProgress: null,
+      cancelEntryLoad: vi.fn(),
+      loadedEntry: null,
+      activateCatalogs: vi.fn(),
+      resourceActivation: {},
+      catalogActivation: 'inactive',
+      share: { enabled: false, url: '', copy: vi.fn() },
+    }
+  }
+
+  const confirmedProfile = {
+    ...getLUTColorProfile('sony-sgamut3cine-slog3')!,
+    role: 'combined-look-output' as const,
+    outputGamut: 'srgb-rec709' as const,
+    outputTransfer: 'srgb' as const,
+    outputRange: 'full' as const,
+  }
+
+  function renderChrome(
+    props: Partial<Parameters<typeof MobileLabChrome>[0]> = {},
+    lutBrowser: Partial<MobileLookControls> = {},
+  ) {
+    const onlineLutSources = sources()
+    const element = (
+      next: Partial<Parameters<typeof MobileLabChrome>[0]> = props,
+    ) => (
+      <MobileLabChrome
+        {...base}
+        {...next}
+        lutBrowser={{ ...base.lutBrowser, ...lutBrowser, onlineLutSources }}
+      />
+    )
+    const view = render(element())
+    return {
+      ...view,
+      activateCatalogs: onlineLutSources.activateCatalogs as ReturnType<
+        typeof vi.fn
+      >,
+      rerenderChrome: (
+        next: Partial<Parameters<typeof MobileLabChrome>[0]> = {},
+      ) => view.rerender(element(next)),
+    }
+  }
+
+  const tab = (name: RegExp) =>
+    within(screen.getByRole('tablist', { name: /lab modes/i })).getByRole(
+      'tab',
+      { name },
+    )
+
+  it('activates the catalogs the first time the Look strip is on screen', () => {
+    const { activateCatalogs } = renderChrome()
+    expect(screen.getByRole('group', { name: 'Looks' })).toBeInTheDocument()
+    expect(activateCatalogs).toHaveBeenCalledOnce()
+    expect(activateCatalogs).toHaveBeenCalledWith()
+  })
+
+  it('waits for a RAW that is ready before the strip counts as shown', () => {
+    const { activateCatalogs, rerenderChrome } = renderChrome({
+      hasImage: false,
+    })
+    expect(activateCatalogs).not.toHaveBeenCalled()
+
+    rerenderChrome({ isProcessing: true })
+    expect(activateCatalogs).not.toHaveBeenCalled()
+
+    rerenderChrome()
+    expect(activateCatalogs).toHaveBeenCalledOnce()
+  })
+
+  it('does not count a collapsed deck or another tool as the strip', async () => {
+    const { activateCatalogs } = renderChrome()
+    activateCatalogs.mockClear()
+
+    // Tapping the active tool collapses the deck.
+    await userEvent.click(tab(/look/i))
+    expect(screen.queryByRole('group', { name: 'Looks' })).toBeNull()
+    await userEvent.click(tab(/adjust/i))
+    expect(
+      screen.getByRole('group', { name: /tone sliders/i }),
+    ).toBeInTheDocument()
+    expect(activateCatalogs).not.toHaveBeenCalled()
+
+    await userEvent.click(tab(/look/i))
+    expect(activateCatalogs).toHaveBeenCalledOnce()
+  })
+
+  it('does not count the deck export borrows', async () => {
+    const { activateCatalogs, container } = renderChrome()
+    activateCatalogs.mockClear()
+
+    const exportAction = container.querySelector<HTMLButtonElement>(
+      '[data-mobile-export-action]',
+    )!
+    await userEvent.click(exportAction)
+    expect(screen.getByText('export panel')).toBeInTheDocument()
+    expect(activateCatalogs).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close export' }))
+    expect(activateCatalogs).toHaveBeenCalledOnce()
+  })
+
+  it('does not count the inline LUT contract', async () => {
+    const { activateCatalogs } = renderChrome(
+      {},
+      {
+        currentLutName: 'client-look.cube',
+        lutProfileSelection: {
+          status: 'confirmed',
+          fingerprint: 'lut-fingerprint',
+          profileId: confirmedProfile.id,
+          confidence: 'metadata',
+        },
+        lutProfileResolution: {
+          kind: 'confirmed',
+          profile: confirmedProfile,
+          confidence: 'metadata',
+        },
+      },
+    )
+    activateCatalogs.mockClear()
+
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: /edit color contract for sony s-gamut3\.cine \/ s-log3/i,
+      }),
+    )
+    expect(
+      screen.getByRole('region', { name: 'client-look.cube: input' }),
+    ).toBeInTheDocument()
+    expect(activateCatalogs).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Back to looks' }))
+    expect(activateCatalogs).toHaveBeenCalledOnce()
+  })
+
+  it('does not count a strip receded into immersive', () => {
+    vi.useFakeTimers()
+    const { activateCatalogs } = renderChrome({ previewFrameEl })
+    activateCatalogs.mockClear()
+
+    act(() => {
+      previewFrameEl.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      previewFrameEl.dispatchEvent(new Event('pointerup', { bubbles: true }))
+    })
+    act(() => {
+      vi.advanceTimersByTime(160)
+    })
+    expect(
+      screen.queryByRole('heading', { name: 'DSC09142.ARW' }),
+    ).not.toBeInTheDocument()
+    expect(activateCatalogs).not.toHaveBeenCalled()
+  })
+
+  it('activates from the LUT sources sheet only while it is open', async () => {
+    const { activateCatalogs } = renderChrome()
+    activateCatalogs.mockClear()
+
+    await userEvent.click(screen.getByRole('button', { name: /lut sources/i }))
+    expect(
+      screen.getByRole('dialog', { name: /lut sources/i }),
+    ).toBeInTheDocument()
+    expect(activateCatalogs).toHaveBeenCalledOnce()
   })
 })

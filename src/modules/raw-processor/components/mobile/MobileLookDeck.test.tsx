@@ -62,6 +62,9 @@ function sourcesFixture(
     entryLoadProgress: null,
     cancelEntryLoad: vi.fn(),
     loadedEntry: null,
+    activateCatalogs: vi.fn(),
+    resourceActivation: { profiles: 'ready' },
+    catalogActivation: 'ready',
     share: { enabled: false, url: '', copy: vi.fn() },
     ...overrides,
   }
@@ -154,6 +157,14 @@ describe('mobileLookDeck', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+  })
+
+  it('leaves catalog activation to the chrome that knows the strip is shown', () => {
+    const sources = sourcesFixture()
+    renderDeck(look({ onlineLutSources: sources }))
+    // Mounting the deck is not seeing it: it may be leaving, or collapsed.
+    expect(screen.getByRole('group', { name: 'Looks' })).toBeInTheDocument()
+    expect(sources.activateCatalogs).not.toHaveBeenCalled()
   })
 
   it('keeps the deck to one shrinkable column so the strip cannot widen it', () => {
