@@ -340,7 +340,9 @@ describe('browser specs', () => {
   it('keep size- and camera-specific expectations on private fixtures', () => {
     // Compare holds for any RAW above the quick-preview cap. The export specs
     // expect one file's plan, output size, aspect or resource load, so they
-    // name that file privately instead of inheriting the public default.
+    // name that file privately instead of inheriting the public default. An
+    // export spec may still read the locked public DNG for its own
+    // expectations, but only through an explicit env that no override reaches.
     const coverage = {
       'raw-dual-layer-compare.spec.ts': 'resolvePublicRawFixture',
       'raw-export-lifecycle-resources.spec.ts': 'resolveSonyArwFixture',
@@ -352,7 +354,10 @@ describe('browser specs', () => {
       const source = readSpec(file)
       assert.ok(source.includes(`${resolver}(`), `${file} uses ${resolver}`)
       if (resolver !== 'resolvePublicRawFixture') {
-        assert.ok(!source.includes('resolvePublicRawFixture'), file)
+        const calls = source.match(/resolvePublicRawFixture\(/g) ?? []
+        const pinned =
+          source.match(/resolvePublicRawFixture\(\{\s*env:\s*\{/g) ?? []
+        assert.equal(calls.length, pinned.length, file)
       }
     }
 
