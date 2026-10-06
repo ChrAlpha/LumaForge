@@ -606,6 +606,31 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(rawRuntimeAdapterMock.openSession).not.toHaveBeenCalled()
   })
 
+  it('publishes no camera-calibration stage and never applies calibration on load', async () => {
+    const applyCalibration = vi.fn()
+    const dispose = vi.fn()
+    rawRuntimeAdapterMock.openSession.mockResolvedValue({
+      sourceDimensions: defaultSourceDimensions,
+      extractEmbeddedPreview: rawRuntimeAdapterMock.extractEmbeddedPreview,
+      decodeQuickRaw: rawRuntimeAdapterMock.decodeQuickRaw,
+      decodeBoundedHqRaw: rawRuntimeAdapterMock.decodeBoundedHqRaw,
+      probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+      applyCalibration,
+      dispose,
+    })
+
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    expect(result.current).not.toHaveProperty('calibrationStage')
+
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+
+    expect(result.current.status).toBe('ready')
+    expect(result.current).not.toHaveProperty('calibrationStage')
+    expect(applyCalibration).not.toHaveBeenCalled()
+  })
+
   it('discovers interrupted safe-retry checkpoints on mount', async () => {
     const checkpointManifest = createCheckpointManifest()
     jotaiStore.set(currentSessionAtom, createTestSession())

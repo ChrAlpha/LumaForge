@@ -7,7 +7,6 @@ import type {
 } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ProcessingStatus } from '../model/workflow'
-import type { useRawCalibrationStage } from './stages/calibration/useRawCalibrationStage'
 import type { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
 import type { useRawCompareStage } from './stages/compare/useRawCompareStage'
 import type { useRawExportStage } from './stages/export/useRawExportStage'
@@ -47,7 +46,6 @@ type BuildRawWorkflowReturnInput = {
   ingestStage: Pick<ReturnType<typeof useRawIngestStage>, 'loadFile' | 'reset'>
   exportStage: ReturnType<typeof useRawExportStage>
   originalReferenceStage: ReturnType<typeof useOriginalReferenceStage>
-  calibrationStage: ReturnType<typeof useRawCalibrationStage>
 }
 
 export function buildRawWorkflowReturn({
@@ -64,7 +62,6 @@ export function buildRawWorkflowReturn({
   ingestStage,
   exportStage,
   originalReferenceStage,
-  calibrationStage,
 }: BuildRawWorkflowReturnInput): UseRawWorkflowReturn {
   return {
     previewTransform,
@@ -142,6 +139,5 @@ export function buildRawWorkflowReturn({
     dismissError: workflowState.dismissError,
     updateStats: workflowState.updateStats,
     pipelineRef: refs.pipelineRef,
-    calibrationStage,
   }
 }

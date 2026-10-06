@@ -7,7 +7,6 @@ import { rawRuntimeAdapter } from '~/lib/raw/runtime-adapter'
 import { hasActiveExport } from '../services/export/export-state'
 import { getLut } from '../state/workflow.atoms'
 import { buildRawWorkflowReturn } from './buildRawWorkflowReturn'
-import { useRawCalibrationStage } from './stages/calibration/useRawCalibrationStage'
 import { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
 import { useRawCompareStage } from './stages/compare/useRawCompareStage'
 import { useExportGraphInvalidation } from './stages/export/useExportGraphInvalidation'
@@ -364,17 +363,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     requestOriginalReferenceFallback,
   }
 
-  // Phase 1 calibration stage. The matching pipeline (body/lens → catalog) is
-  // not in scope for this PR; until it lands the stage exposes the trivial
-  // no-matches surface so the future UI can render an empty calibration tool
-  // without crashing. The white-neutral source is a known stopgap:
-  // a real WB-slider neutral lands behind the same getter signature.
-  const calibrationStage = useRawCalibrationStage({
-    sessionId: session?.id ?? null,
-    runtimeSessionRef,
-    getWhiteNeutral: () => null,
-  })
-
   return buildRawWorkflowReturn({
     previewTransform,
     workflowState: {
@@ -404,6 +392,5 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     ingestStage,
     exportStage,
     originalReferenceStage,
-    calibrationStage,
   })
 }

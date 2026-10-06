@@ -228,15 +228,6 @@ function rawProcessorViewState(
     dismissError: vi.fn(),
     updateStats: vi.fn(),
     pipelineRef: { current: null },
-    calibrationStage: {
-      availableProfiles: [],
-      selectedCameraProfileId: null,
-      isApplying: false,
-      selectCameraProfile: vi.fn().mockResolvedValue({
-        applied: false,
-        reason: 'skipped' as const,
-      }),
-    },
     ...overrides,
     previewViewport: overrides.previewViewport ?? {
       zoom: 1,
