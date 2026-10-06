@@ -32,7 +32,6 @@ function createInput(
     setSession: vi.fn(),
     setDecodedImageVersion: vi.fn(),
     setStats: vi.fn(),
-    setPendingRecoveryRetry: vi.fn(),
     scheduleToast: vi.fn(),
     replaceFile: vi.fn(),
     abortRuntimeWork: vi.fn(),
@@ -81,7 +80,6 @@ describe('useRawLoadAction', () => {
           getView: input.getView,
           getLut: input.getLut,
           setColorIntent: input.setColorIntent,
-          setPendingRecoveryRetry: input.setPendingRecoveryRetry,
         }),
         services: expect.objectContaining({
           replaceFile: input.replaceFile,
@@ -95,6 +93,31 @@ describe('useRawLoadAction', () => {
           pendingLoadSessionIdRef: input.pendingLoadSessionIdRef,
         }),
       }),
+    )
+  })
+
+  it('hands the load only normal source lifecycle ports', async () => {
+    const orchestrateLoad = vi.fn().mockResolvedValue(undefined)
+    const { result } = renderHook(() =>
+      useRawLoadAction(createInput(orchestrateLoad)),
+    )
+
+    await result.current.loadFile(new File(['raw'], 'frame.dng'))
+
+    const [, ctx] = orchestrateLoad.mock.calls[0]
+    expect(Object.keys(ctx.atoms).sort()).toEqual(
+      [
+        'getColorIntent',
+        'getLut',
+        'getView',
+        'setColorIntent',
+        'setDecodedImageVersion',
+        'setError',
+        'setProgress',
+        'setSession',
+        'setStats',
+        'setStatus',
+      ].sort(),
     )
   })
 })

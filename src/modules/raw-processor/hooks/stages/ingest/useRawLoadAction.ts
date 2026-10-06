@@ -20,7 +20,6 @@ export function useRawLoadAction({
   setSession,
   setDecodedImageVersion,
   setStats,
-  setPendingRecoveryRetry,
   scheduleToast,
   replaceFile,
   abortRuntimeWork,
@@ -60,7 +59,6 @@ export function useRawLoadAction({
         setSession,
         setDecodedImageVersion,
         setStats,
-        setPendingRecoveryRetry,
       },
       services: {
         scheduleToast,
@@ -121,7 +119,6 @@ export function useRawLoadAction({
       setDecodedImageRef,
       setDecodedImageVersion,
       setError,
-      setPendingRecoveryRetry,
       setProgress,
       setSession,
       setStats,

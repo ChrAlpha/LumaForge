@@ -250,7 +250,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setSession,
     setDecodedImageVersion,
     setStats,
-    setPendingRecoveryRetry,
     scheduleToast,
     replaceFile,
     abortRuntimeWork,

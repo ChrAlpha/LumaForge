@@ -74,7 +74,6 @@ export interface RawLoadContext {
     ) => void
     setDecodedImageVersion: (value: number | ((prev: number) => number)) => void
     setStats: (stats: PipelineStats | null) => void
-    setPendingRecoveryRetry: (retry: null) => void
   }
   services: {
     scheduleToast: (notify: () => void) => void
@@ -134,7 +133,6 @@ export async function orchestrateRawLoad(
 
     ctx.refs.runtimeWorkSessionIdRef.current = null
     ctx.refs.pendingLoadSessionIdRef.current = null
-    ctx.atoms.setPendingRecoveryRetry(null)
     ctx.services.abortExportWork()
     ctx.services.abortRuntimeWork()
     ctx.services.queueExportResultResourceDisposal()

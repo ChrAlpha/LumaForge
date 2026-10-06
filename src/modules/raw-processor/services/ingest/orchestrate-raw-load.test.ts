@@ -74,7 +74,6 @@ function buildContext(hooks: OrderingHooks): RawLoadContext {
       setSession: vi.fn(),
       setDecodedImageVersion: vi.fn(),
       setStats: vi.fn(),
-      setPendingRecoveryRetry: vi.fn(),
     },
     services: {
       scheduleToast: vi.fn(),

@@ -7,14 +7,12 @@ import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
-import type { PendingRecoveryRetry } from '../export/useExportRecoveryAction'
 
 type UseRawSessionResetInput = {
   runtimeWorkSessionIdRef: MutableRefObject<string | null>
   pendingLoadSessionIdRef: MutableRefObject<string | null>
   previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
   sessionRef: MutableRefObject<ImageSession | null>
-  setPendingRecoveryRetry: (retry: PendingRecoveryRetry | null) => void
   abortExportWork: () => void
   abortRuntimeWork: () => void
   queueExportResultResourceDisposal: (
@@ -37,7 +35,6 @@ export function useRawSessionReset({
   pendingLoadSessionIdRef,
   previewCopyCanvasRef,
   sessionRef,
-  setPendingRecoveryRetry,
   abortExportWork,
   abortRuntimeWork,
   queueExportResultResourceDisposal,
@@ -52,7 +49,6 @@ export function useRawSessionReset({
   const reset = useCallback(() => {
     runtimeWorkSessionIdRef.current = null
     pendingLoadSessionIdRef.current = null
-    setPendingRecoveryRetry(null)
     abortExportWork()
     abortRuntimeWork()
     queueExportResultResourceDisposal('reset-session')
@@ -77,7 +73,6 @@ export function useRawSessionReset({
     sessionRef,
     setDecodedImageRef,
     setError,
-    setPendingRecoveryRetry,
     setProgress,
     setStats,
     setStatus,

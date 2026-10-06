@@ -30,7 +30,6 @@ describe('useRawIngestStage', () => {
         setSession: vi.fn(),
         setDecodedImageVersion: vi.fn(),
         setStats: vi.fn(),
-        setPendingRecoveryRetry: vi.fn(),
         scheduleToast: vi.fn(),
         replaceFile: vi.fn(),
         abortRuntimeWork: vi.fn(),

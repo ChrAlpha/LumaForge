@@ -51,7 +51,6 @@ describe('useRawSessionReset', () => {
       current: document.createElement('canvas') as HTMLCanvasElement | null,
     }
     const sessionRef = { current: createSession() }
-    const setPendingRecoveryRetry = vi.fn()
     const abortExportWork = vi.fn()
     const abortRuntimeWork = vi.fn()
     const queueExportResultResourceDisposal = vi.fn()
@@ -69,7 +68,6 @@ describe('useRawSessionReset', () => {
         pendingLoadSessionIdRef,
         previewCopyCanvasRef,
         sessionRef,
-        setPendingRecoveryRetry,
         abortExportWork,
         abortRuntimeWork,
         queueExportResultResourceDisposal,
@@ -87,7 +85,6 @@ describe('useRawSessionReset', () => {
 
     expect(runtimeWorkSessionIdRef.current).toBeNull()
     expect(pendingLoadSessionIdRef.current).toBeNull()
-    expect(setPendingRecoveryRetry).toHaveBeenCalledWith(null)
     expect(abortExportWork).toHaveBeenCalledTimes(1)
     expect(abortRuntimeWork).toHaveBeenCalledTimes(1)
     expect(queueExportResultResourceDisposal).toHaveBeenCalledWith(
@@ -101,6 +98,58 @@ describe('useRawSessionReset', () => {
     expect(setProgress).toHaveBeenCalledWith(0)
     expect(setStats).toHaveBeenCalledWith(null)
     expect(resetSession).toHaveBeenCalledTimes(1)
+    expect(sessionRef.current).toBeNull()
+  })
+
+  it('fences stale work before releasing resources and dropping the session', () => {
+    const order: string[] = []
+    const runtimeWorkSessionIdRef = {
+      current: 'runtime-session' as string | null,
+    }
+    const pendingLoadSessionIdRef = {
+      current: 'pending-session' as string | null,
+    }
+    const record = (name: string) =>
+      vi.fn(() => {
+        order.push(name)
+      })
+    const sessionRef = { current: createSession() as ImageSession | null }
+
+    const { result } = renderHook(() =>
+      useRawSessionReset({
+        runtimeWorkSessionIdRef,
+        pendingLoadSessionIdRef,
+        previewCopyCanvasRef: { current: null },
+        sessionRef,
+        abortExportWork: vi.fn(() => {
+          order.push(
+            `abortExportWork:${String(runtimeWorkSessionIdRef.current)}:${String(pendingLoadSessionIdRef.current)}`,
+          )
+        }),
+        abortRuntimeWork: record('abortRuntimeWork'),
+        queueExportResultResourceDisposal: record('dispose'),
+        revokeCurrentEmbeddedPreviewUrl: record('revoke'),
+        setDecodedImageRef: record('setDecodedImageRef'),
+        setStatus: vi.fn(),
+        setError: vi.fn(),
+        setProgress: vi.fn(),
+        setStats: vi.fn(),
+        resetSession: vi.fn(() => {
+          order.push(`resetSession:${String(sessionRef.current?.id)}`)
+        }),
+      }),
+    )
+
+    result.current.reset()
+
+    expect(order).toEqual([
+      'abortExportWork:null:null',
+      'abortRuntimeWork',
+      'dispose',
+      'revoke',
+      'setDecodedImageRef',
+      'resetSession:session-1',
+    ])
     expect(sessionRef.current).toBeNull()
   })
 })

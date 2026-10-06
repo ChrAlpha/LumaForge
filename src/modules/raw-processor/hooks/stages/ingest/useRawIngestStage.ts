@@ -14,7 +14,6 @@ import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession, StyleAsset } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
-import type { PendingRecoveryRetry } from '../export/useExportRecoveryAction'
 import { useRawLoadAction } from './useRawLoadAction'
 import { useRawProcessorLifecycle } from './useRawProcessorLifecycle'
 import { useRawSessionReset } from './useRawSessionReset'
@@ -34,7 +33,6 @@ type UseRawIngestStageInput = {
   setSession: Dispatch<SetStateAction<ImageSession | null>>
   setDecodedImageVersion: Dispatch<SetStateAction<number>>
   setStats: (stats: PipelineStats | null) => void
-  setPendingRecoveryRetry: Dispatch<SetStateAction<PendingRecoveryRetry | null>>
   scheduleToast: (notify: () => void) => void
   replaceFile: (
     file: File,
