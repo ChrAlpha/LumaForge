@@ -288,6 +288,17 @@ async function readVerifiedCache(
   return (await sha256Hex(cachedBytes)) === expectedHash ? cachedBytes : null
 }
 
+export interface VerifiedCubeAsset {
+  bytes: Uint8Array
+  /**
+   * Lowercase SHA-256 of `bytes`, checked against the manifest on every
+   * return, cache hits included. Callers record it instead of hashing the
+   * bytes again; null only when the asset declares no hash, in which case
+   * the caller must hash the bytes itself.
+   */
+  sha256: string | null
+}
+
 export async function fetchVerifiedCubeAsset(
   asset: OnlineLUTAsset,
   options: {
@@ -296,18 +307,21 @@ export async function fetchVerifiedCubeAsset(
     cache?: OnlineProfileCache
     onProgress?: OnlineProfileFetchProgress
   },
-): Promise<Uint8Array> {
+): Promise<VerifiedCubeAsset> {
   const expectedHash = normalizeHash(asset.sha256)
 
   if (!expectedHash) {
-    return fetchBytesWithLimit(asset.url, options)
+    return {
+      bytes: await fetchBytesWithLimit(asset.url, options),
+      sha256: null,
+    }
   }
 
   const cacheKey = `sha256:${expectedHash}`
   const cachedBytes = options.cache
     ? await readVerifiedCache(options.cache, cacheKey, expectedHash)
     : null
-  if (cachedBytes) return cachedBytes
+  if (cachedBytes) return { bytes: cachedBytes, sha256: expectedHash }
 
   const bytes = await fetchBytesWithLimit(asset.url, options)
   const actualHash = await sha256Hex(bytes)
@@ -321,5 +335,5 @@ export async function fetchVerifiedCubeAsset(
 
   await options.cache?.set(cacheKey, bytes)
 
-  return bytes
+  return { bytes, sha256: actualHash }
 }

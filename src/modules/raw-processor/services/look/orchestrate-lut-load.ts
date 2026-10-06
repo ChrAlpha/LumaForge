@@ -260,7 +260,9 @@ export async function orchestrateOnlineLutLoad(
   try {
     if (options?.signal?.aborted) return 'aborted'
 
-    const bytes =
+    // A catalog asset comes back with the hash it was verified against;
+    // direct URLs declare none, so their bytes are hashed here.
+    const { bytes, sha256: verifiedSha256 } =
       entry.sourceType === 'catalog-entry'
         ? await fetchVerifiedCubeAsset(entry.cube, {
             signal: options?.signal,
@@ -268,12 +270,15 @@ export async function orchestrateOnlineLutLoad(
             cache: onlineProfileCache,
             onProgress: options?.onProgress,
           })
-        : await fetchCachedBytesWithLimit(entry.cube.url, {
-            signal: options?.signal,
-            maxBytes: MAX_ONLINE_CUBE_BYTES,
-            cache: onlineProfileCache,
-            onProgress: options?.onProgress,
-          })
+        : {
+            bytes: await fetchCachedBytesWithLimit(entry.cube.url, {
+              signal: options?.signal,
+              maxBytes: MAX_ONLINE_CUBE_BYTES,
+              cache: onlineProfileCache,
+              onProgress: options?.onProgress,
+            }),
+            sha256: null,
+          }
 
     if (options?.signal?.aborted) return 'aborted'
 
@@ -281,7 +286,8 @@ export async function orchestrateOnlineLutLoad(
       {
         source: bytes,
         sourceName: resolveOnlineLUTSourceName(entry),
-        sha256: (await sourceContentIdFromBytes(bytes)).sha256,
+        sha256:
+          verifiedSha256 ?? (await sourceContentIdFromBytes(bytes)).sha256,
         trustedContract:
           entry.sourceType === 'catalog-entry'
             ? entry.trustedContract

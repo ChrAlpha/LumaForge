@@ -284,6 +284,11 @@ function encodeCube(title: string) {
   return new TextEncoder().encode(createCube(title))
 }
 
+/** What the verified catalog fetch resolves: bytes plus their manifest hash. */
+function verifiedCube(title: string, sha256 = 'a'.repeat(64)) {
+  return { bytes: encodeCube(title), sha256 }
+}
+
 function createOnlineLUTEntry(
   overrides: Partial<OnlineLUTEntry> = {},
 ): OnlineLUTEntry {
@@ -1236,7 +1241,7 @@ describe('useRawWorkflow embedded preview state', () => {
   it('loads verified registry CUBE entries and applies trusted contracts', async () => {
     jotaiStore.set(currentSessionAtom, createTestSession())
     onlineProfileFetchMock.fetchVerifiedCubeAsset.mockResolvedValue(
-      encodeCube('Registry Online LUT'),
+      verifiedCube('Registry Online LUT'),
     )
     const entry = createOnlineLUTEntry({
       title: 'Registry Online LUT',
@@ -1261,6 +1266,11 @@ describe('useRawWorkflow embedded preview state', () => {
       }),
     )
     expect(fetchCachedBytesWithLimit).not.toHaveBeenCalled()
+    // The applied style carries the hash the catalog bytes were verified
+    // against, which is what every surface matches tiles by.
+    expect(
+      jotaiStore.get(currentSessionAtom)?.activeStyle?.lutAsset?.sha256,
+    ).toBe(entry.cube.sha256)
     expect(result.current.lut?.profileResolution).toMatchObject({
       kind: 'confirmed',
       confidence: 'metadata',
@@ -1299,7 +1309,7 @@ describe('useRawWorkflow embedded preview state', () => {
     const previousLut = result.current.lut
     const previousStyle = jotaiStore.get(currentSessionAtom)?.activeStyle
     onlineProfileFetchMock.fetchVerifiedCubeAsset.mockResolvedValue(
-      encodeCube('Rejected Online LUT'),
+      verifiedCube('Rejected Online LUT'),
     )
 
     await act(async () => {
@@ -1416,7 +1426,7 @@ describe('useRawWorkflow embedded preview state', () => {
     onlineProfileFetchMock.fetchVerifiedCubeAsset.mockImplementation(
       async () => {
         controller.abort()
-        return encodeCube('Late Aborted Online LUT')
+        return verifiedCube('Late Aborted Online LUT')
       },
     )
 

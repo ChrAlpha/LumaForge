@@ -1,4 +1,5 @@
 import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
+import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
@@ -21,6 +22,16 @@ vi.mock('~/lib/profiles/fetch', () => ({
   fetchVerifiedCubeAsset: vi.fn(),
   fetchCachedBytesWithLimit: vi.fn(),
 }))
+
+// Wrapped, not replaced: the spy shows which loads hash bytes themselves.
+vi.mock('@lumaforge/render-engine/manifest', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@lumaforge/render-engine/manifest')>()
+  return {
+    ...actual,
+    sourceContentIdFromBytes: vi.fn(actual.sourceContentIdFromBytes),
+  }
+})
 
 vi.mock('sonner', () => ({
   toast: {
@@ -106,6 +117,24 @@ function asTextFile(text: string, name: string): File {
   return file
 }
 
+function verifiedCube(text: string, sha256 = 'a'.repeat(64)) {
+  return { bytes: new TextEncoder().encode(text), sha256 }
+}
+
+function lastAppliedSha256(ctx: LutLoadContext): string | undefined {
+  return vi.mocked(ctx.atoms.setLut).mock.calls.at(-1)?.[0]?.sha256
+}
+
+async function realSha256(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(text),
+  )
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('')
+}
+
 const entry: OnlineLUTEntry = {
   id: 'entry-1',
   title: 'Entry One',
@@ -123,11 +152,69 @@ describe('orchestrateOnlineLutLoad outcome', () => {
   beforeEach(() => {
     vi.mocked(fetchVerifiedCubeAsset).mockReset()
     vi.mocked(fetchCachedBytesWithLimit).mockReset()
+    vi.mocked(sourceContentIdFromBytes).mockClear()
+  })
+
+  it('records the verified catalog hash without hashing the bytes again', async () => {
+    const verifiedSha256 = 'b'.repeat(64)
+    vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
+      verifiedCube(cubeText(17), verifiedSha256),
+    )
+    const { ctx } = buildCtx()
+
+    const outcome = await orchestrateOnlineLutLoad(entry, undefined, ctx)
+
+    expect(outcome).toBe('loaded')
+    expect(lastAppliedSha256(ctx)).toBe(verifiedSha256)
+    expect(sourceContentIdFromBytes).not.toHaveBeenCalled()
+  })
+
+  it('hashes the bytes of a direct .cube URL, which declares no hash', async () => {
+    const text = cubeText(17)
+    vi.mocked(fetchCachedBytesWithLimit).mockResolvedValue(
+      new TextEncoder().encode(text),
+    )
+    const { ctx } = buildCtx()
+
+    const outcome = await orchestrateOnlineLutLoad(
+      {
+        ...entry,
+        id: 'direct',
+        sourceType: 'direct-cube',
+        cube: { url: 'https://example.com/direct.cube', sha256: '' },
+      },
+      undefined,
+      ctx,
+    )
+
+    expect(outcome).toBe('loaded')
+    expect(fetchVerifiedCubeAsset).not.toHaveBeenCalled()
+    expect(sourceContentIdFromBytes).toHaveBeenCalledTimes(1)
+    expect(lastAppliedSha256(ctx)).toBe(await realSha256(text))
+  })
+
+  it("returns 'aborted' without applying when the signal aborts after the verified fetch", async () => {
+    const controller = new AbortController()
+    vi.mocked(fetchVerifiedCubeAsset).mockImplementation(async () => {
+      controller.abort()
+      return verifiedCube(cubeText(17))
+    })
+    const { ctx, scheduledToasts } = buildCtx()
+
+    const outcome = await orchestrateOnlineLutLoad(
+      entry,
+      { signal: controller.signal },
+      ctx,
+    )
+
+    expect(outcome).toBe('aborted')
+    expect(ctx.atoms.setLut).not.toHaveBeenCalled()
+    expect(scheduledToasts).toHaveLength(0)
   })
 
   it("returns 'loaded' and applies the LUT when download and parse succeed", async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
-      new TextEncoder().encode(cubeText(17)),
+      verifiedCube(cubeText(17)),
     )
     const { ctx, scheduledToasts } = buildCtx()
 
@@ -156,7 +243,7 @@ describe('orchestrateOnlineLutLoad outcome', () => {
       async (_asset, options) => {
         options.onProgress?.(8, 64)
         options.onProgress?.(64, 64)
-        return new TextEncoder().encode(cubeText(17))
+        return verifiedCube(cubeText(17))
       },
     )
     const { ctx } = buildCtx()
@@ -193,7 +280,7 @@ describe('orchestrateOnlineLutLoad outcome', () => {
 
   it("returns 'aborted' without applying when the workflow refuses the parsed LUT", async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
-      new TextEncoder().encode(cubeText(17)),
+      verifiedCube(cubeText(17)),
     )
     const { ctx, scheduledToasts } = buildCtx()
     vi.mocked(ctx.services.canApplyLoadedLut).mockReturnValue(false)
@@ -255,7 +342,7 @@ describe('lUT contract provenance', () => {
 
   it('applies catalog contracts as metadata without creating a user selection', async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
-      new TextEncoder().encode(cubeText(17)),
+      verifiedCube(cubeText(17)),
     )
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
     const { ctx } = buildCtx()
@@ -285,7 +372,7 @@ describe('lUT contract provenance', () => {
 
   it('fails closed on incomplete catalog contracts without writing storage', async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
-      new TextEncoder().encode(cubeText(17)),
+      verifiedCube(cubeText(17)),
     )
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
     const { ctx } = buildCtx()
@@ -353,6 +440,15 @@ describe('lUT contract provenance', () => {
 })
 
 describe('orchestrateLutLoadFromFile outcome', () => {
+  it('records the hash of the file bytes', async () => {
+    const text = cubeText(17)
+    const { ctx } = buildCtx()
+
+    await orchestrateLutLoadFromFile(asTextFile(text, 'local.cube'), ctx)
+
+    expect(lastAppliedSha256(ctx)).toBe(await realSha256(text))
+  })
+
   it("returns 'loaded' for a valid .cube file", async () => {
     const file = asTextFile(cubeText(17), 'fixture.cube')
     const { ctx } = buildCtx()

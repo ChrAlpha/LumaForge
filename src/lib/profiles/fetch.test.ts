@@ -304,16 +304,41 @@ describe('sha256Hex', () => {
 })
 
 describe('fetchVerifiedCubeAsset', () => {
-  it('compares response bytes against manifest sha256', async () => {
+  function digestMock() {
+    return vi.mocked(globalThis.crypto.subtle.digest)
+  }
+
+  it('returns the verified bytes with their hash, hashing them once', async () => {
     stubDigestForCubeBytes()
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => response(cubeBytes)),
     )
 
-    const bytes = await fetchVerifiedCubeAsset(cubeAsset(), { maxBytes: 1024 })
+    const verified = await fetchVerifiedCubeAsset(cubeAsset(), {
+      maxBytes: 1024,
+    })
 
-    expect([...bytes]).toEqual([...cubeBytes])
+    expect([...verified.bytes]).toEqual([...cubeBytes])
+    expect(verified.sha256).toBe(cubeHash)
+    expect(digestMock()).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns a lowercase hash and cache key for an uppercase manifest hash', async () => {
+    stubDigestForCubeBytes()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response(cubeBytes)),
+    )
+    const cache = createMemoryOnlineProfileCache()
+
+    const verified = await fetchVerifiedCubeAsset(
+      cubeAsset(cubeHash.toUpperCase()),
+      { maxBytes: 1024, cache },
+    )
+
+    expect(verified.sha256).toBe(cubeHash)
+    expect(await cache.get(`sha256:${cubeHash}`)).not.toBeNull()
   })
 
   it('rejects hash mismatches and does not cache bytes', async () => {
@@ -335,24 +360,29 @@ describe('fetchVerifiedCubeAsset', () => {
     expect(set).not.toHaveBeenCalled()
   })
 
-  it('uses verified cache hits without a second network call', async () => {
+  it('verifies cache hits without a second network call', async () => {
     stubDigestForCubeBytes()
     const fetch = vi.fn(async () => response(cubeBytes))
     vi.stubGlobal('fetch', fetch)
     const cache = createMemoryOnlineProfileCache()
 
-    const fetchedBytes = await fetchVerifiedCubeAsset(cubeAsset(), {
+    const fetched = await fetchVerifiedCubeAsset(cubeAsset(), {
       maxBytes: 1024,
       cache,
     })
-    const cachedBytes = await fetchVerifiedCubeAsset(cubeAsset(), {
+    digestMock().mockClear()
+    const cached = await fetchVerifiedCubeAsset(cubeAsset(), {
       maxBytes: 1024,
       cache,
     })
 
-    expect([...fetchedBytes]).toEqual([...cubeBytes])
-    expect([...cachedBytes]).toEqual([...cubeBytes])
+    expect([...fetched.bytes]).toEqual([...cubeBytes])
+    expect(fetched.sha256).toBe(cubeHash)
+    expect([...cached.bytes]).toEqual([...cubeBytes])
+    expect(cached.sha256).toBe(cubeHash)
     expect(fetch).toHaveBeenCalledTimes(1)
+    // A cache hit is still hashed: cached bytes are never trusted as-is.
+    expect(digestMock()).toHaveBeenCalledTimes(1)
     expect([...(await cache.get(`sha256:${cubeHash}`))!]).toEqual([
       ...cubeBytes,
     ])
@@ -365,16 +395,45 @@ describe('fetchVerifiedCubeAsset', () => {
     const cache = createMemoryOnlineProfileCache()
     await cache.set(`sha256:${cubeHash}`, new TextEncoder().encode('stale'))
 
-    const bytes = await fetchVerifiedCubeAsset(cubeAsset(), {
+    const verified = await fetchVerifiedCubeAsset(cubeAsset(), {
       maxBytes: 1024,
       cache,
     })
 
-    expect([...bytes]).toEqual([...cubeBytes])
+    expect([...verified.bytes]).toEqual([...cubeBytes])
+    expect(verified.sha256).toBe(cubeHash)
     expect(fetch).toHaveBeenCalledTimes(1)
     expect([...(await cache.get(`sha256:${cubeHash}`))!]).toEqual([
       ...cubeBytes,
     ])
+  })
+
+  it('forwards download progress and passes aborts through untouched', async () => {
+    stubDigestForCubeBytes()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response(cubeBytes)),
+    )
+    const events: number[] = []
+
+    await fetchVerifiedCubeAsset(cubeAsset(), {
+      maxBytes: 1024,
+      onProgress: (received) => events.push(received),
+    })
+
+    expect(events.at(-1)).toBe(cubeBytes.byteLength)
+
+    const abort = new DOMException('Aborted', 'AbortError')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw abort
+      }),
+    )
+
+    await expect(
+      fetchVerifiedCubeAsset(cubeAsset(), { maxBytes: 1024 }),
+    ).rejects.toBe(abort)
   })
 })
 
