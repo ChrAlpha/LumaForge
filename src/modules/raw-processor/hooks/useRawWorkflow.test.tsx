@@ -15,18 +15,18 @@ import {
   USER_VIBRANCE_MAX_FACTOR,
   VIBRANCE_CHROMA_REF,
 } from '@lumaforge/luma-color-runtime'
+import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
+import {
+  createBlobOutputResult,
+  materializeOutputBlob,
+} from '@lumaforge/render-engine/export'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { Provider } from 'jotai'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
-import type { FileBackedOutputResult } from '~/lib/export/output-sink'
-import {
-  createBlobOutputResult,
-  createMemoryFileBackedOutputResult,
-  materializeOutputBlob,
-} from '~/lib/export/output-sink'
+import { createMemoryFileBackedOutputResult } from '~/lib/export/output-sink'
 import { jotaiStore } from '~/lib/jotai'
 import {
   getStoredLUTContractSelection,

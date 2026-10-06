@@ -1,9 +1,9 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { describe, expect, it } from 'vitest'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
-import { createBlobOutputResult } from '~/lib/export/output-sink'
 
 import { createExportResult } from '../../model/export-result'
 import type { ImageSession } from '../../model/session'

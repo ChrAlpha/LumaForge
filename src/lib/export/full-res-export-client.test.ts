@@ -1,3 +1,5 @@
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
+
 import type {
   FullResExportWorkerRequest,
   FullResExportWorkerResponse,
@@ -6,7 +8,6 @@ import {
   FullResolutionExportWorkerClient,
   runFullResolutionJpegExportInWorker,
 } from './full-res-export-client'
-import { createBlobOutputResult } from './output-sink'
 
 class FakeWorker {
   onmessage:
@@ -315,6 +316,70 @@ describe('fullResolutionExportWorkerClient', () => {
       'tab-1',
       'export-1',
     ])
+  })
+
+  it('keeps the recorded hash and delivery metadata on rehydrated and blob outputs', async () => {
+    const worker = new FakeWorker()
+    const client = new FullResolutionExportWorkerClient(
+      () => worker as unknown as Worker,
+    )
+    const digest = 'c'.repeat(64)
+    const deliveryMetadata = { make: 'Sony', iso: 200 }
+
+    const fileBackedRun = client.run({
+      file: new File(['raw'], 'sample.ARW'),
+      graph: supportedGraph,
+    })
+    const fileBackedStart = worker.requests[0]
+    if (!fileBackedStart || fileBackedStart.kind !== 'start') {
+      throw new Error('Expected a start request.')
+    }
+    worker.emit({
+      kind: 'success',
+      requestId: fileBackedStart.requestId,
+      result: {
+        kind: 'file-backed',
+        storage: 'opfs',
+        tabDirectory: 'tab-1',
+        exportId: 'export-hash',
+        filename: 'sample.jpg',
+        byteLength: 42,
+        mimeType: 'image/jpeg',
+        sha256: digest,
+        deliveryMetadata,
+      },
+    })
+
+    const fileBacked = await fileBackedRun
+    expect(fileBacked).toMatchObject({
+      kind: 'file-backed',
+      exportId: 'export-hash',
+      sha256: digest,
+      deliveryMetadata,
+    })
+    expect('storage' in fileBacked).toBe(false)
+
+    const blobRun = client.run({
+      file: new File(['raw'], 'sample.ARW'),
+      graph: supportedGraph,
+    })
+    const blobStart = worker.requests[1]
+    if (!blobStart || blobStart.kind !== 'start') {
+      throw new Error('Expected a second start request.')
+    }
+    const blobResult = createBlobOutputResult({
+      filename: 'sample.jpg',
+      blob: new Blob([new Uint8Array([1])], { type: 'image/jpeg' }),
+      sha256: digest,
+    })
+    worker.emit({
+      kind: 'success',
+      requestId: blobStart.requestId,
+      result: blobResult,
+    })
+
+    await expect(blobRun).resolves.toBe(blobResult)
+    client.dispose()
   })
 
   it('rejects with the worker error message', async () => {

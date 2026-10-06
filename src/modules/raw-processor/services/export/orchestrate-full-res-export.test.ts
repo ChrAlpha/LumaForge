@@ -1,6 +1,7 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import {
+  createBlobOutputResult,
   INVALID_EXPORT_GEOMETRY,
   planExportGeometry,
 } from '@lumaforge/render-engine/export'
@@ -20,7 +21,6 @@ import {
   getExportModeCopy,
   selectExportExecutionPlan,
 } from '~/lib/export/execution-profile'
-import { createBlobOutputResult } from '~/lib/export/output-sink'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { SourceFingerprintFacts } from '~/lib/export/source-fingerprint'

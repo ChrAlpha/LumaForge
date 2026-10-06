@@ -1,10 +1,10 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { act, renderHook } from '@testing-library/react'
 import { atom, createStore } from 'jotai'
 import type { SetStateAction } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { createBlobOutputResult } from '~/lib/export/output-sink'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import { parseCubeLUT } from '~/lib/lut/cube-parser'
 

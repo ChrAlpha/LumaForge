@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
 import {
   createBlobOutputResult,
-  createMemoryFileBackedOutputResult,
   materializeOutputBlob,
-} from '~/lib/export/output-sink'
+} from '@lumaforge/render-engine/export'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { createMemoryFileBackedOutputResult } from '~/lib/export/output-sink'
 
 import type { ExportCopyCapability } from '../../model/export-result'
 import { createCompletedExportResult } from './export-result-materialization'
@@ -16,7 +16,8 @@ const jpegMetadataMock = vi.hoisted(() => ({
   ),
 }))
 
-vi.mock('@lumaforge/render-engine/export', () => ({
+vi.mock('@lumaforge/render-engine/export', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@lumaforge/render-engine/export')>()),
   preserveJpegMetadata: jpegMetadataMock.preserveJpegMetadata,
 }))
 
@@ -123,6 +124,95 @@ describe('export result materialization', () => {
     expect(materialized).toBeInstanceOf(Blob)
     expect(materialized.size).toBe(8)
     expect(materialized.type).toBe('image/jpeg')
+  })
+
+  it.each([
+    { deliveryMetadata: { make: 'Canon' }, injected: { make: 'Canon' } },
+    { deliveryMetadata: null, injected: null },
+  ])(
+    'injects the metadata the producer hashed with ($deliveryMetadata) and leaves cleanup to the owner',
+    async ({ deliveryMetadata, injected }) => {
+      const digest = 'd'.repeat(64)
+      const openBlob = vi.fn(
+        async () => new Blob(['jpeg'], { type: 'image/jpeg' }),
+      )
+      const cleanup = vi.fn(async () => undefined)
+
+      const result = createCompletedExportResult({
+        jobResult: {
+          filename: 'frame.jpg',
+          output: {
+            kind: 'file-backed',
+            exportId: 'export-hashed',
+            filename: 'frame.jpg',
+            byteLength: 4,
+            mimeType: 'image/jpeg',
+            sha256: digest,
+            deliveryMetadata,
+            openBlob,
+            cleanup,
+          },
+        },
+        metadata: { make: 'Sony' },
+        width: 6048,
+        height: 4024,
+        copyCapability: fullResolutionCopy,
+        now: () => 1,
+      })
+
+      expect(result.output).toMatchObject({
+        kind: 'file-backed',
+        sha256: digest,
+        deliveryMetadata,
+      })
+      if (result.output.kind !== 'file-backed') {
+        throw new Error('Expected file-backed output.')
+      }
+      expect(result.output.cleanup).toBe(cleanup)
+      expect(openBlob).not.toHaveBeenCalled()
+
+      await materializeOutputBlob(result.output)
+
+      expect(openBlob).toHaveBeenCalledTimes(1)
+      expect(jpegMetadataMock.preserveJpegMetadata).toHaveBeenCalledWith({
+        jpeg: expect.any(Blob),
+        metadata: injected,
+        width: 6048,
+        height: 4024,
+      })
+      expect(cleanup).not.toHaveBeenCalled()
+    },
+  )
+
+  it('surfaces a failed file-backed open without injecting metadata or cleaning up', async () => {
+    const cleanup = vi.fn(async () => undefined)
+    const result = createCompletedExportResult({
+      jobResult: {
+        filename: 'frame.jpg',
+        output: {
+          kind: 'file-backed',
+          exportId: 'export-missing',
+          filename: 'frame.jpg',
+          byteLength: 4,
+          mimeType: 'image/jpeg',
+          openBlob: vi.fn(async () => {
+            throw new Error('missing-file')
+          }),
+          cleanup,
+        },
+      },
+      metadata: { make: 'Sony' },
+      width: 6048,
+      height: 4024,
+      copyCapability: fullResolutionCopy,
+      now: () => 1,
+    })
+
+    await expect(materializeOutputBlob(result.output)).rejects.toThrow(
+      'missing-file',
+    )
+    expect(jpegMetadataMock.preserveJpegMetadata).not.toHaveBeenCalled()
+    expect(cleanup).not.toHaveBeenCalled()
   })
 
   it('throws the existing missing-output error when no output can be materialized', () => {

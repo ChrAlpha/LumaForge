@@ -1,8 +1,8 @@
 import type { ExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { selectExportExecutionPlan } from '~/lib/export/execution-profile'
-import { createBlobOutputResult } from '~/lib/export/output-sink'
 import { resetCapabilityVectorForTest } from '~/lib/runtime/capability-vector'
 
 import {

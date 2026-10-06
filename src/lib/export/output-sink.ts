@@ -1,50 +1,8 @@
-import type { JpegExportMetadata } from '@lumaforge/render-engine/export'
+import type {
+  FileBackedOutputResult,
+  JpegExportMetadata,
+} from '@lumaforge/render-engine/export'
 import { sha256Hex } from '@lumaforge/render-engine/manifest'
-
-export type BlobOutputResult = {
-  kind: 'blob'
-  filename: string
-  blob: Blob
-  byteLength: number
-  mimeType: string
-  /** SHA-256 hex of the delivered bytes when the producer hashed them. */
-  sha256?: string
-}
-
-export type FileBackedOutputResult = {
-  kind: 'file-backed'
-  exportId: string
-  filename: string
-  byteLength: number
-  mimeType: string
-  openBlob: () => Promise<Blob>
-  cleanup?: () => Promise<void>
-  /**
-   * SHA-256 hex of the bytes `openBlob()` delivers (metadata included),
-   * recorded by the producer at publish time so the file never has to be
-   * reopened to identify the output.
-   */
-  sha256?: string
-  /**
-   * Metadata the producer assumed when recording `sha256`; delivery must
-   * inject exactly this so the recorded hash stays truthful.
-   */
-  deliveryMetadata?: JpegExportMetadata | null
-}
-
-export type BytesOutputResult = {
-  kind: 'bytes'
-  filename: string
-  bytes: Uint8Array
-  byteLength: number
-  mimeType: string
-  sha256?: string
-}
-
-export type ExportOutputResult =
-  | BlobOutputResult
-  | FileBackedOutputResult
-  | BytesOutputResult
 
 type OpfsStorage = Pick<StorageManager, 'getDirectory'>
 
@@ -127,21 +85,6 @@ async function writeOpfsFile(
       // Preserve the primary write/close failure.
     }
     throw error
-  }
-}
-
-export function createBlobOutputResult(input: {
-  filename: string
-  blob: Blob
-  sha256?: string
-}): BlobOutputResult {
-  return {
-    kind: 'blob',
-    filename: input.filename,
-    blob: input.blob,
-    byteLength: input.blob.size,
-    mimeType: input.blob.type || 'image/jpeg',
-    ...(input.sha256 ? { sha256: input.sha256 } : {}),
   }
 }
 
@@ -325,14 +268,4 @@ export function createOpfsFileBackedOutputResult(
       await removeOpfsEntryIfExists(exportDirectory, outputFileName)
     },
   }
-}
-
-export async function materializeOutputBlob(
-  result: ExportOutputResult,
-): Promise<Blob> {
-  if (result.kind === 'blob') return result.blob
-  if (result.kind === 'bytes') {
-    return new Blob([result.bytes as BlobPart], { type: result.mimeType })
-  }
-  return result.openBlob()
 }

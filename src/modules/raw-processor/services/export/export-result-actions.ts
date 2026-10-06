@@ -1,4 +1,4 @@
-import { materializeOutputBlob } from '~/lib/export/output-sink'
+import { materializeOutputBlob } from '@lumaforge/render-engine/export'
 
 import type {
   ExportCopyCapability,

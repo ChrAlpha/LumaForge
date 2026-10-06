@@ -1,11 +1,9 @@
+import type { ExportOutputResult } from '@lumaforge/render-engine/export'
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ExportOutputResult } from '~/lib/export/output-sink'
-import {
-  createBlobOutputResult,
-  createMemoryFileBackedOutputResult,
-} from '~/lib/export/output-sink'
+import { createMemoryFileBackedOutputResult } from '~/lib/export/output-sink'
 
 import { createExportResult } from '../../model/export-result'
 import {

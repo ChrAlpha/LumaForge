@@ -3,15 +3,14 @@ import type {
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
+import type { ExportOutputResult } from '@lumaforge/render-engine/export'
+import { materializeOutputBlob } from '@lumaforge/render-engine/export'
 import type {
   GeometryParams,
   PolicyChoice,
   RenderEnvironment,
   RenderManifest,
 } from '@lumaforge/render-engine/manifest'
-
-import type { ExportOutputResult } from '~/lib/export/output-sink'
-import { materializeOutputBlob } from '~/lib/export/output-sink'
 
 import type {
   ExportManifestUnavailableReason,

@@ -5,6 +5,8 @@ import { createLumaJpegRuntime } from '@lumaforge/luma-jpeg-runtime'
 import type { LumaRawProcessedWindowRequest } from '@lumaforge/luma-raw-runtime'
 import { createLumaRawRuntime } from '@lumaforge/luma-raw-runtime'
 import {
+  createBlobOutputResult,
+  materializeOutputBlob,
   preserveJpegMetadata,
   runFullResolutionJpegExport,
 } from '@lumaforge/render-engine/export'
@@ -13,10 +15,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { runProcessedWindowExportLifecycle } from './full-res-export.worker'
 import type { FullResExportWorkerResponse } from './full-res-export-client'
 import {
-  createBlobOutputResult,
   createMemoryFileBackedOutputResult,
   createOpfsOutputWritable,
-  materializeOutputBlob,
 } from './output-sink'
 
 vi.mock('@lumaforge/luma-raw-runtime', () => ({

@@ -1,10 +1,10 @@
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
-import { createBlobOutputResult } from '~/lib/export/output-sink'
 
 import type { ExportResult } from '../../model/export-result'
 import { createInterruptedExportRecovery } from '../../services/export/export-recovery'

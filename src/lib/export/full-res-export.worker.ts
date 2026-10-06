@@ -1,11 +1,14 @@
 import { createLumaJpegRuntime } from '@lumaforge/luma-jpeg-runtime'
 import { createLumaRawRuntime } from '@lumaforge/luma-raw-runtime'
 import type {
+  ExportOutputResult,
   JpegExportMetadata,
   JpegRowSink,
 } from '@lumaforge/render-engine/export'
 import {
+  createBlobOutputResult,
   JPEG_HEADER_SCAN_BYTES,
+  materializeOutputBlob,
   planExportGeometry,
   planJpegMetadataInjection,
   preserveJpegMetadata,
@@ -22,12 +25,9 @@ import type {
   FullResWorkerOutputLocation,
   FullResWorkerOutputResult,
 } from './full-res-export-client'
-import type { ExportOutputResult } from './output-sink'
 import {
-  createBlobOutputResult,
   createOpfsFileBackedOutputResult,
   createOpfsOutputWritable,
-  materializeOutputBlob,
 } from './output-sink'
 
 type ProcessedWindowExportLifecycleInput<Result> = {

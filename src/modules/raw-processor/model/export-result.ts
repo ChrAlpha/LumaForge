@@ -1,6 +1,5 @@
+import type { ExportOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
-
-import type { ExportOutputResult } from '~/lib/export/output-sink'
 
 export type ExportCopyCapability =
   | { mode: 'full-resolution'; label: 'Copy full-resolution image' }

@@ -71,6 +71,7 @@ export {
   createBytesOutputResult,
   type ExportOutputResult,
   type FileBackedOutputResult,
+  materializeOutputBlob,
 } from './jpeg/output-result'
 export {
   createJpegRowWriter,

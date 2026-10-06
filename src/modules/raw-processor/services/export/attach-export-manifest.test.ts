@@ -2,11 +2,10 @@ import { createHash } from 'node:crypto'
 
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { verifyManifestSha256 } from '@lumaforge/render-engine/manifest'
 import { describe, expect, it, vi } from 'vitest'
-
-import type { FileBackedOutputResult } from '~/lib/export/output-sink'
-import { createBlobOutputResult } from '~/lib/export/output-sink'
 
 import { createExportResult } from '../../model/export-result'
 import type { StyleAsset } from '../../model/session'

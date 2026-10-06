@@ -1,6 +1,6 @@
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { describe, expect, it } from 'vitest'
 
-import { createBlobOutputResult } from '~/lib/export/output-sink'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
 
 import { createExportResult } from '../../model/export-result'

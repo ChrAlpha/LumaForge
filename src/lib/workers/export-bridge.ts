@@ -1,5 +1,6 @@
+import type { ExportOutputResult } from '@lumaforge/render-engine/export'
+
 import type { RunFullResolutionJpegExportInWorkerInput } from '~/lib/export/full-res-export-client'
-import type { ExportOutputResult } from '~/lib/export/output-sink'
 
 import { WorkerBridge } from './worker-bridge'
 

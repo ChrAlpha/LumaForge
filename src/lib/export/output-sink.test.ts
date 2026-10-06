@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto'
 
+import {
+  createBlobOutputResult,
+  materializeOutputBlob,
+} from '@lumaforge/render-engine/export'
 import { vi } from 'vitest'
 
 import {
-  createBlobOutputResult,
   createMemoryFileBackedOutputResult,
   createOpfsFileBackedOutputResult,
   createOpfsOutputWritable,
-  materializeOutputBlob,
 } from './output-sink'
 
 const TAB_DIRECTORY = 'tab-1'
@@ -315,6 +317,47 @@ describe('export output sink', () => {
       new Uint8Array([4, 5, 6]).buffer,
     )
   })
+  it('leaves a materialized OPFS output in place and records its delivery metadata', async () => {
+    const { storage, files } = createMemoryOpfsStorage()
+    const writable = await createOpfsOutputWritable({
+      tabDirectory: TAB_DIRECTORY,
+      exportId: 'export-opfs-kept',
+      storage,
+    })
+    await writable.write(new Uint8Array([1, 2, 3]))
+    await writable.close()
+
+    const result = createOpfsFileBackedOutputResult({
+      tabDirectory: TAB_DIRECTORY,
+      exportId: 'export-opfs-kept',
+      filename: 'frame.jpg',
+      byteLength: 3,
+      mimeType: 'image/jpeg',
+      storage,
+      deliveryMetadata: null,
+    })
+    expect(result.deliveryMetadata).toBeNull()
+    expect(
+      'deliveryMetadata' in
+        createOpfsFileBackedOutputResult({
+          tabDirectory: TAB_DIRECTORY,
+          exportId: 'export-opfs-kept',
+          filename: 'frame.jpg',
+          byteLength: 3,
+          mimeType: 'image/jpeg',
+          storage,
+        }),
+    ).toBe(false)
+
+    await materializeOutputBlob(result)
+    await materializeOutputBlob(result)
+
+    expect([...files.keys()].sort()).toEqual([
+      `${TAB_PATH}/export-opfs-kept/output.jpg`,
+      `${TAB_PATH}/export-opfs-kept/output.jpg.finalized.json`,
+    ])
+  })
+
   it('forwards a write-time sha256 on blob and OPFS results without reopening files', async () => {
     const digest = 'f'.repeat(64)
     const blobResult = createBlobOutputResult({

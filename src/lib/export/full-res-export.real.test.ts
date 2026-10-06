@@ -11,7 +11,9 @@ import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
 import { createLumaRawRuntime } from '@lumaforge/luma-raw-runtime'
 import { processedWindowToRgb16Rows } from '@lumaforge/render-engine'
 import {
+  createBlobOutputResult,
   createWasmJpegRowSink,
+  materializeOutputBlob,
   runFullResolutionJpegExport,
 } from '@lumaforge/render-engine/export'
 import type { TestContext } from 'vitest'
@@ -39,7 +41,6 @@ import type {
   LumaRawNativeFactory,
 } from '../../../packages/luma-raw-runtime/worker/native-types'
 import { createRuntimeCore } from '../../../packages/luma-raw-runtime/worker/runtime-core'
-import { createBlobOutputResult, materializeOutputBlob } from './output-sink'
 
 type NativeModuleFactory = (options?: {
   locateFile?: (path: string) => string

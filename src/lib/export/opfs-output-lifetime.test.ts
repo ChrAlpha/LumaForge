@@ -1,3 +1,4 @@
+import { materializeOutputBlob } from '@lumaforge/render-engine/export'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ExportCheckpointManifest } from './checkpoint-store'
@@ -19,7 +20,6 @@ import {
 import {
   createOpfsFileBackedOutputResult,
   createOpfsOutputWritable,
-  materializeOutputBlob,
 } from './output-sink'
 
 const NOW = Date.parse('2026-10-05T12:00:00.000Z')

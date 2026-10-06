@@ -4,7 +4,9 @@ import {
   normalizePreferredStripRows,
 } from '@lumaforge/render-engine'
 import type {
+  BlobOutputResult,
   ExportGeometry,
+  ExportOutputResult,
   ExportPerfMetric,
   FullResolutionExportProgress,
   JpegExportMetadata,
@@ -16,7 +18,6 @@ import type {
   ExportOutputSink,
   ExportRuntimeMemoryProfile,
 } from './execution-profile'
-import type { BlobOutputResult, ExportOutputResult } from './output-sink'
 import { createOpfsFileBackedOutputResult } from './output-sink'
 import type { SourceFingerprint } from './source-fingerprint'
 
