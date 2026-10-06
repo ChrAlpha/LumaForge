@@ -1,5 +1,6 @@
 import { useI18n } from '~/lib/i18n'
 
+import { supportLevelMessageKey } from '../../services/surface/raw-reason'
 import { useRawWorkflowContext } from '../RawWorkflowContext'
 import { buildMobileExportRecap } from './export-recap'
 import { buildMobileDetailsSheet, getCameraName } from './mobile-details-sheet'
@@ -20,12 +21,7 @@ export function MobileRawToolSurface() {
   // Support level is a safety fact, so it is named on both surfaces rather
   // than encoded in the topbar dot alone (PRODUCT.md: never state by colour).
   // The level leads because the camera name truncates first on a phone.
-  const fileMeta = [
-    props.supportLevel === 'unsupported'
-      ? t('raw.support.unsupported')
-      : t('raw.support.experimental'),
-    cameraName || undefined,
-  ]
+  const fileMeta = [t(supportLevelMessageKey(props.supportLevel)), cameraName]
     .filter(Boolean)
     .join(' · ')
   const moreSheet = buildMobileDetailsSheet(
@@ -39,6 +35,7 @@ export function MobileRawToolSurface() {
       currentLutName: props.currentLutName,
       lutProfileSelection: props.lutProfileSelection,
       lutProfileResolution: props.lutProfileResolution,
+      previewLookReason: props.previewLookReason,
       transformActive: props.transform?.active === true,
       canExport: props.canExport,
       canPreviewExport: props.canPreviewExport === true,
@@ -108,6 +105,7 @@ export function MobileRawToolSurface() {
         onLutClear: props.onLutClear,
         lutProfileSelection: props.lutProfileSelection,
         lutProfileResolution: props.lutProfileResolution,
+        previewLookReason: props.previewLookReason,
         onLutProfileSelect: props.onLutProfileSelect,
         onlineLutSources: props.onlineLutSources,
         activeIntensity: props.activeIntensity,

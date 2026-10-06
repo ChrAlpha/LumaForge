@@ -20,6 +20,7 @@ import type {
   SupportLevel,
 } from '../model/session'
 import type { DeliveredExportSize } from '../services/export/delivered-export-size'
+import type { PreviewLookReason } from '../services/surface/raw-reason'
 import type { ColorValue } from './color-fields'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { AppliedLut } from './mobile/mobile-lut-strip'
@@ -107,6 +108,12 @@ export interface RawToolSurfaceProps {
   appliedLut?: AppliedLut | null
   lutProfileSelection?: LUTContractSelectionState | null
   lutProfileResolution?: LUTContractResolution | null
+  /**
+   * Why the processed preview does not draw the selected look (a contract
+   * export refuses, or a built-in style on the CPU preview); null when it
+   * draws the look as selected. The selection and strength stay unchanged.
+   */
+  previewLookReason?: PreviewLookReason | null
   onlineLutSources?: UseOnlineLutSourcesResult
   supportLevel: SupportLevel
   metadata: ComponentProps<typeof FileFactsTool>['metadata']

@@ -86,6 +86,7 @@ export function DesktopRawToolSurface() {
             onLutClear={props.onLutClear}
             lutProfileSelection={props.lutProfileSelection}
             lutProfileResolution={props.lutProfileResolution}
+            previewLookReason={props.previewLookReason}
             onLutProfileSelect={props.onLutProfileSelect}
             onlineLutSources={props.onlineLutSources}
           />

@@ -625,6 +625,124 @@ describe('mobileLookDeck', () => {
     ).toBeInTheDocument()
   })
 
+  describe('the look the preview draws', () => {
+    const linearOutput = {
+      ...confirmedDisplayLook,
+      outputGamut: 'rec2020' as const,
+      outputTransfer: 'linear' as const,
+    }
+
+    it('does not confirm a contract the preview strips, and opens its output', async () => {
+      const controls = look({
+        currentLutName: 'Linear Look',
+        appliedLut: { name: 'Linear Look', sha256: 'e'.repeat(64) },
+        lutProfileResolution: {
+          kind: 'confirmed',
+          profile: linearOutput,
+          confidence: 'user',
+        },
+        previewLookReason: 'lut-output-transfer-linear',
+        activeIntensity: 0.37,
+        strengthDisabled: false,
+      })
+      const onViewChange = vi.fn()
+      const { container } = renderDeck(controls, { onViewChange })
+
+      expect(
+        container.querySelector('[data-look-footer="confirmed"]'),
+      ).toBeNull()
+      const status = container.querySelector(
+        '[data-look-footer="preview-reason"]',
+      )
+      expect(status).toHaveTextContent(
+        'Not in preview · linear LUT output not supported',
+      )
+      // The look stays selected at its strength; only the preview drops it.
+      expect(controls.onLutClear).not.toHaveBeenCalled()
+      const strength = screen.getByRole('slider', { name: 'Strength' })
+      expect(strength).not.toHaveAttribute('data-disabled')
+      expect(strength).toHaveAttribute('aria-valuenow', '37')
+
+      await userEvent.click(status as HTMLElement)
+      expect(onViewChange).toHaveBeenLastCalledWith('contract')
+      expect(
+        screen.getByRole('region', { name: 'Linear Look: output' }),
+      ).toBeInTheDocument()
+    })
+
+    it('names an unknown output range instead of confirming it', () => {
+      const { container } = renderDeck(
+        look({
+          currentLutName: 'Range Look',
+          appliedLut: { name: 'Range Look', sha256: 'f'.repeat(64) },
+          lutProfileResolution: {
+            kind: 'confirmed',
+            profile: { ...confirmedDisplayLook, outputRange: 'unknown' },
+            confidence: 'user',
+          },
+          previewLookReason: 'lut-output-range-unknown',
+        }),
+      )
+      expect(
+        container.querySelector('[data-look-footer="preview-reason"]'),
+      ).toHaveTextContent('Not in preview · LUT output range unknown')
+    })
+
+    it('says an unconfirmed contract keeps the look off the preview', () => {
+      const { container } = renderDeck(
+        look({
+          currentLutName: 'Client Look',
+          appliedLut: { name: 'Client Look', sha256: 'c'.repeat(64) },
+          lutProfileResolution: { kind: 'unknown' },
+          previewLookReason: 'lut-input-unconfirmed',
+        }),
+      )
+      expect(
+        container.querySelector('[data-look-footer="preview-reason"]'),
+      ).toHaveTextContent('Not in preview · confirm the LUT input')
+    })
+
+    it('keeps the one-tap recommendation and describes it as not yet drawn', () => {
+      renderDeck(
+        look({
+          currentLutName: 'SLog3 Look',
+          appliedLut: { name: 'SLog3 Look', sha256: 'd'.repeat(64) },
+          lutProfileResolution: {
+            kind: 'recommended',
+            recommendations: [confirmedDisplayLook],
+          } as never,
+          previewLookReason: 'lut-input-unconfirmed',
+        }),
+      )
+      expect(
+        screen.getByRole('button', {
+          name: `Recommended: ${confirmedDisplayLook.label}`,
+        }),
+      ).toHaveAccessibleDescription('Not in preview · confirm the LUT input')
+    })
+
+    it('reads a confirmed contract the preview draws as confirmed', () => {
+      const { container } = renderDeck(
+        look({
+          currentLutName: 'SLog3 Look',
+          appliedLut: { name: 'SLog3 Look', sha256: 'd'.repeat(64) },
+          lutProfileResolution: {
+            kind: 'confirmed',
+            profile: confirmedDisplayLook,
+            confidence: 'user',
+          },
+          previewLookReason: null,
+        }),
+      )
+      expect(
+        container.querySelector('[data-look-footer="confirmed"]'),
+      ).not.toBeNull()
+      expect(
+        container.querySelector('[data-look-footer="preview-reason"]'),
+      ).toBeNull()
+    })
+  })
+
   it('opens the LUT sources from the footer on a 44px target', async () => {
     const onOpenSources = vi.fn()
     renderDeck(look(), { onOpenSources })

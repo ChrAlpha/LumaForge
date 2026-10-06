@@ -11,6 +11,8 @@ import { surfaceFade } from '~/lib/spring'
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
 import type { LUTContractSelectionState } from '../../model/session'
 import { DEFAULT_LOOK_INTENSITY } from '../../services/look/style-system'
+import type { PreviewLookReason } from '../../services/surface/raw-reason'
+import { previewLookReasonContractSide } from '../../services/surface/raw-reason'
 import { useLutContractSummary } from '../tools/lut/useLutContractSummary'
 import { useOnlineLutEntryLoader } from '../tools/lut/useOnlineLutEntryLoader'
 import type { ScrubFieldId } from './AdjustListPanel'
@@ -40,6 +42,8 @@ export interface MobileLookControls {
   onLutClear: () => void
   lutProfileSelection?: LUTContractSelectionState | null
   lutProfileResolution?: LUTContractResolution | null
+  /** Why the preview does not draw the applied look; null when it does. */
+  previewLookReason?: PreviewLookReason | null
   onLutProfileSelect: (profile: LUTColorProfile) => void
   onlineLutSources?: UseOnlineLutSourcesResult
   /** How much of the look reaches the photo, 0..1. */
@@ -210,8 +214,12 @@ export function MobileLookDeck(props: {
     () => buildLutStripItems({ resources, entries, applied, loaded }),
     [resources, entries, applied, loaded],
   )
+  // A confirmed contract the preview still leaves out needs another choice
+  // as much as an open one does.
   const appliedNeedsContract =
-    lutApplied && summary.contractView.status !== 'confirmed'
+    lutApplied &&
+    (summary.contractView.status !== 'confirmed' ||
+      previewLookReasonContractSide(look.previewLookReason) !== null)
 
   const failedEntry =
     failedEntryId && failedEntryId !== dismissedFailureId
@@ -320,6 +328,7 @@ export function MobileLookDeck(props: {
         <MobileLookFooter
           lutApplied={lutApplied}
           contractView={summary.contractView}
+          previewLookReason={look.previewLookReason}
           failure={
             failedEntry
               ? {

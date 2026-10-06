@@ -7,6 +7,7 @@ import { useI18n } from '~/lib/i18n'
 
 import type { UseOnlineLutSourcesResult } from '../../../hooks/useOnlineLutSources'
 import type { LUTContractSelectionState } from '../../../model/session'
+import type { PreviewLookReason } from '../../../services/surface/raw-reason'
 import { LutDropzone } from '../../Dropzone'
 import { LUTProfileStatus } from './LUTProfileStatus'
 import { OnlineLutSourceControls } from './OnlineLutSourceControls'
@@ -18,6 +19,7 @@ export function LutContractTool({
   onLutClear,
   lutProfileSelection,
   lutProfileResolution,
+  previewLookReason,
   onLutProfileSelect,
   onlineLutSources,
 }: {
@@ -27,6 +29,8 @@ export function LutContractTool({
   onLutClear: () => void
   lutProfileSelection?: LUTContractSelectionState | null
   lutProfileResolution?: LUTContractResolution | null
+  /** Why the preview does not draw the applied look; null when it does. */
+  previewLookReason?: PreviewLookReason | null
   onLutProfileSelect: (profile: LUTColorProfile) => void
   onlineLutSources?: UseOnlineLutSourcesResult
 }) {
@@ -48,6 +52,7 @@ export function LutContractTool({
           key={lutProfileSelection?.fingerprint ?? currentLutName}
           selection={lutProfileSelection}
           resolution={lutProfileResolution}
+          previewLookReason={previewLookReason}
           onSelect={onLutProfileSelect}
         />
       ) : (

@@ -12,6 +12,7 @@ import type {
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import { deriveLutContractExportReason } from '../model/derive-session'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
+import { resolvePreviewLookReason } from '../services/surface/raw-reason'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { RawToolSurfaceProps } from './RawWorkflowContext'
@@ -191,6 +192,20 @@ export function RawWorkflowToolProvider({
     : undefined
   const previewAspect =
     getAspect(transformFrame) ?? getAspect(decodedPreviewSize)
+  // What the processed preview draws for the selected look, from the policy
+  // its executor follows. Without a photo there is no preview to describe.
+  const { params, lutData, hasImage } = workflow
+  const previewLookReason = useMemo(
+    () =>
+      hasImage
+        ? resolvePreviewLookReason({
+            intent: params,
+            lut: lutData,
+            executor: isCpuMode ? 'cpu' : 'webgpu',
+          })
+        : null,
+    [hasImage, isCpuMode, lutData, params],
+  )
   const toolStats = workflow.stats
     ? {
         processTime: workflow.stats.processTime,
@@ -257,6 +272,7 @@ export function RawWorkflowToolProvider({
           workflow.activeStyle?.kind === 'custom'
             ? workflow.activeStyle.lutAsset?.profileResolution
             : null,
+        previewLookReason,
         onlineLutSources: editableOnlineLutSources,
         // Full resolution reproduces a committed geometry, so it stays
         // available once the preview has rendered it.

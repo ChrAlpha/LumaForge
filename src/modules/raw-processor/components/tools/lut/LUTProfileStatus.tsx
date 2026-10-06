@@ -10,6 +10,8 @@ import { useI18n } from '~/lib/i18n'
 
 import type { LUTContractSelectionState } from '../../../model/session'
 import { deriveLUTContractView } from '../../../services/look/lut-contract'
+import type { PreviewLookReason } from '../../../services/surface/raw-reason'
+import { previewLookReasonMessageKey } from '../../../services/surface/raw-reason'
 import {
   formatLUTContractOutput,
   getProfileOutputLabel,
@@ -19,10 +21,13 @@ import { LUTContractBrowser } from './LUTContractBrowser'
 export function LUTProfileStatus({
   selection,
   resolution,
+  previewLookReason,
   onSelect,
 }: {
   selection?: LUTContractSelectionState | null
   resolution?: LUTContractResolution | null
+  /** Why the preview does not draw this LUT; null when it does. */
+  previewLookReason?: PreviewLookReason | null
   onSelect: (profile: LUTColorProfile) => void
 }) {
   const { t } = useI18n()
@@ -89,6 +94,16 @@ export function LUTProfileStatus({
               {formatLUTContractOutput(view.output)}
             </span>
           </p>
+          {/* A confirmed contract the preview still leaves out says why,
+              rather than reading as applied. */}
+          {previewLookReason && (
+            <p
+              className="m-0 inline-flex w-full items-start gap-2 rounded-md bg-[oklch(from_var(--color-lf-amber)_l_c_h_/_0.10)] px-2.5 py-2 text-lf-body leading-relaxed text-lf-on-surface/80"
+              data-raw-lut="preview-reason"
+            >
+              {t(previewLookReasonMessageKey(previewLookReason))}
+            </p>
+          )}
         </div>
       ) : view.status === 'incomplete-output' ? (
         <div className="grid min-w-0 gap-1.5 text-[0.78rem] leading-snug">
@@ -151,6 +166,14 @@ export function LUTProfileStatus({
               ? t('raw.lutContract.recommendedNote')
               : t('raw.lutContract.recommendedInputOnlyNote')}
           </p>
+          {previewLookReason && (
+            <p
+              className="m-0 text-[0.72rem] leading-relaxed text-lf-on-surface/72"
+              data-raw-lut="preview-reason"
+            >
+              {t(previewLookReasonMessageKey(previewLookReason))}
+            </p>
+          )}
           {view.completesContract ? (
             <Button
               type="button"

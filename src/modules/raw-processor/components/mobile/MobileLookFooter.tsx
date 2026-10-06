@@ -1,10 +1,16 @@
 import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 import { AlertTriangle, Check, ChevronRight, CircleAlert } from 'lucide-react'
+import { useId } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
 import type { LUTContractView } from '../../services/look/lut-contract'
+import type { PreviewLookReason } from '../../services/surface/raw-reason'
+import {
+  previewLookReasonContractSide,
+  previewLookReasonMessageKey,
+} from '../../services/surface/raw-reason'
 import { formatLUTContractOutput } from '../tools/lut-contract-labels'
 
 export type LookContractStep = 'input' | 'output'
@@ -14,12 +20,18 @@ const footerTextButton =
 
 /**
  * The Look deck's last row: on the left, what the applied LUT's colour
- * contract is (quiet once confirmed, amber while it needs a choice), or a
- * load failure with Retry; on the right, the way to the LUT sources.
+ * contract is (quiet once the preview draws it, amber while it needs a
+ * choice or the preview leaves it out), or a load failure with Retry; on the
+ * right, the way to the LUT sources.
  */
 export function MobileLookFooter(props: {
   lutApplied: boolean
   contractView: LUTContractView
+  /**
+   * Why the preview does not draw the applied look; null when it does. The
+   * look stays selected at its strength either way.
+   */
+  previewLookReason?: PreviewLookReason | null
   /** A tile failed to load: its title, and how to try again. */
   failure: { label: string; onRetry: () => void } | null
   /** The disabled Strength control was pressed: say why, for a moment. */
@@ -36,6 +48,9 @@ export function MobileLookFooter(props: {
 }) {
   const { t } = useI18n()
   const view = props.contractView
+  const reason = props.lutApplied ? (props.previewLookReason ?? null) : null
+  const reasonText = reason ? t(previewLookReasonMessageKey(reason)) : null
+  const reasonId = useId()
 
   const renderStatus = () => {
     if (props.failure) {
@@ -78,6 +93,47 @@ export function MobileLookFooter(props: {
       )
     }
 
+    // A contract the preview draws reads as confirmed. One it leaves out
+    // reads as that reason, and opens the side of the contract to change.
+    if (reasonText && view.status !== 'recommended') {
+      const side = previewLookReasonContractSide(reason)
+      const step: LookContractStep | null =
+        view.status === 'unknown' || view.status === 'unsupported-output'
+          ? 'input'
+          : view.status === 'incomplete-output'
+            ? 'output'
+            : side
+      if (!step) {
+        return (
+          <span
+            role="status"
+            data-look-footer="preview-reason"
+            className="flex min-w-0 items-center gap-1.5 text-lf-amber-soft"
+          >
+            <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate">{reasonText}</span>
+          </span>
+        )
+      }
+      return (
+        <button
+          type="button"
+          data-look-footer="preview-reason"
+          data-look-contract-button
+          disabled={props.disabled}
+          onClick={() => props.onOpenContract(step)}
+          className={clsxm(
+            footerTextButton,
+            'text-lf-amber-soft hover:text-lf-on-photo-ink',
+          )}
+        >
+          <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
+          <span className="min-w-0 truncate">{reasonText}</span>
+          <ChevronRight aria-hidden="true" className="size-3.5 shrink-0" />
+        </button>
+      )
+    }
+
     if (view.status === 'confirmed') {
       return (
         <button
@@ -114,6 +170,7 @@ export function MobileLookFooter(props: {
             type="button"
             data-look-contract-button
             disabled={props.disabled}
+            aria-describedby={reasonText ? reasonId : undefined}
             onClick={() =>
               completesContract
                 ? props.onOpenContract('input')
@@ -185,6 +242,11 @@ export function MobileLookFooter(props: {
       {!props.lutApplied && (
         <span id={props.strengthReasonId} className="sr-only">
           {t('raw.strength.reason')}
+        </span>
+      )}
+      {reasonText && view.status === 'recommended' && (
+        <span id={reasonId} className="sr-only">
+          {reasonText}
         </span>
       )}
       <button

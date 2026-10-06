@@ -204,6 +204,66 @@ describe('buildMobileDetailsSheet', () => {
     )
   })
 
+  it('names the look the preview leaves out instead of a confirmed contract', () => {
+    const linear = {
+      ...displayLook,
+      outputGamut: 'rec2020' as const,
+      outputTransfer: 'linear' as const,
+    }
+    const sheet = buildMobileDetailsSheet(
+      {
+        ...base,
+        currentLutName: 'Linear.cube',
+        lutProfileResolution: {
+          kind: 'confirmed',
+          profile: linear,
+          confidence: 'user',
+        },
+        previewLookReason: 'lut-output-transfer-linear',
+      },
+      t,
+    )
+    expect(sheet.pipelineSteps[2].detail).toBe(
+      'Linear.cube · Not in preview · linear LUT output not supported',
+    )
+
+    const unconfirmed = buildMobileDetailsSheet(
+      {
+        ...base,
+        currentLutName: 'Film.cube',
+        lutProfileResolution: { kind: 'unknown' },
+        previewLookReason: 'lut-input-unconfirmed',
+      },
+      t,
+    )
+    expect(unconfirmed.pipelineSteps[2].detail).toBe(
+      'Film.cube · Not in preview · confirm the LUT input',
+    )
+    expect(unconfirmed.lutRows[1]).toEqual({
+      label: 'Contract',
+      value: 'Needs contract',
+    })
+  })
+
+  it('keeps a built-in style a WebGPU preview fact the CPU preview leaves out', () => {
+    const sheet = buildMobileDetailsSheet(
+      { ...base, previewLookReason: 'builtin-no-ts-executor' },
+      t,
+    )
+    expect(sheet.pipelineSteps[2].detail).toBe(
+      'Not in the CPU preview · built-in styles draw on WebGPU only',
+    )
+  })
+
+  it('never reads an unsupported file as experimental', () => {
+    const { fileRows, pipelineSteps } = buildMobileDetailsSheet(
+      { ...base, supportLevel: 'unsupported' },
+      t,
+    )
+    expect(pipelineSteps[0].detail).toBe('Sony ILCE-7M4 · Not supported')
+    expect(fileRows[1]).toEqual({ label: 'Support', value: 'Not supported' })
+  })
+
   it('says a fact is not loaded rather than inventing it', () => {
     const { fileRows, pipelineSteps } = buildMobileDetailsSheet(
       { ...base, metadata: null, stats: null },

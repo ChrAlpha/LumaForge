@@ -18,6 +18,14 @@ describe('i18n locale catalogs', () => {
     expect(enMessages).not.toHaveProperty('raw.stage.uploadTitle')
     expect(zhMessages).not.toHaveProperty('raw.mobile.empty.title')
     expect(zhMessages).not.toHaveProperty('raw.stage.uploadTitle')
+    // Calibration catalogs are rejected as invalid catalogs; no copy names
+    // a calibration workflow the app no longer has.
+    expect(enMessages).not.toHaveProperty(
+      'raw.lutSource.issues.calibrationCatalog',
+    )
+    expect(zhMessages).not.toHaveProperty(
+      'raw.lutSource.issues.calibrationCatalog',
+    )
     // The Look tab must not reuse a tone or colour term (色调 is Tint).
     expect(zhMessages['raw.mobile.mode.look']).toBe('风格')
     expect(zhMessages['raw.mobile.mode.look']).not.toBe(

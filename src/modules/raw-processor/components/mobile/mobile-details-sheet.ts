@@ -10,6 +10,11 @@ import {
   describeLUTContractOutput,
   getResolvedProfile,
 } from '../../services/look/lut-contract'
+import type { PreviewLookReason } from '../../services/surface/raw-reason'
+import {
+  previewLookReasonMessageKey,
+  supportLevelMessageKey,
+} from '../../services/surface/raw-reason'
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
 import type { FileFactsTool } from '../tools/FileFactsTool'
@@ -71,6 +76,8 @@ export function buildMobileDetailsSheet(
     currentLutName?: string | null
     lutProfileSelection?: LUTContractSelectionState | null
     lutProfileResolution?: LUTContractResolution | null
+    /** Why the preview does not draw the selected look; null when it does. */
+    previewLookReason?: PreviewLookReason | null
     transformActive: boolean
     /** The full-resolution export can run. */
     canExport: boolean
@@ -81,10 +88,7 @@ export function buildMobileDetailsSheet(
 ): MobileDetailsSheet {
   const notLoaded = t('raw.fileFacts.notLoaded')
   const cameraName = getCameraName(input.metadata)
-  const support =
-    input.supportLevel === 'unsupported'
-      ? t('raw.support.unsupported')
-      : t('raw.support.experimental')
+  const support = t(supportLevelMessageKey(input.supportLevel))
 
   const adjusted = countAdjustments(input)
   const adjustDetail =
@@ -101,9 +105,16 @@ export function buildMobileDetailsSheet(
       : lutStatus === 'needs-contract'
         ? t('raw.mobile.more.lutNeedsContract')
         : t('raw.mobile.more.lutNotUsed')
-  const lutDetail = input.currentLutName
-    ? `${input.currentLutName} · ${lutStatusLabel}`
+  // The LUT step names what the preview draws: a look it leaves out reads
+  // as that reason, never as a confirmed contract. A built-in style has no
+  // LUT but is still a look the CPU preview can leave out.
+  const previewLookReason = input.previewLookReason ?? null
+  const lutStepStatus = previewLookReason
+    ? t(previewLookReasonMessageKey(previewLookReason))
     : lutStatusLabel
+  const lutDetail = input.currentLutName
+    ? `${input.currentLutName} · ${lutStepStatus}`
+    : lutStepStatus
   const resolvedProfile =
     lutStatus === 'confirmed'
       ? getResolvedProfile(

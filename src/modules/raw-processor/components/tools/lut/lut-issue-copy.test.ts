@@ -20,6 +20,15 @@ describe('lutIssueMessageKey', () => {
       'raw.lutSource.issues.generic',
     )
   })
+
+  it('names a calibration document only as an invalid catalog', () => {
+    expect(lutIssueMessageKey('invalid-catalog')).toBe(
+      'raw.lutSource.issues.invalidCatalog',
+    )
+    expect(lutIssueMessageKey('calibration-catalog')).toBe(
+      'raw.lutSource.issues.generic',
+    )
+  })
 })
 
 describe('summarizeLutIssues', () => {
