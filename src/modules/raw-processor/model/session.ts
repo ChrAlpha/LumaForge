@@ -16,7 +16,11 @@ import type { ImageMetadata } from '~/lib/raw/decoder'
 
 import type { ExportResult } from './export-result'
 
-export type SupportLevel = 'official' | 'experimental' | 'unsupported'
+/**
+ * The app certifies no camera, so a decodable source is experimental and only
+ * a real runtime refusal is unsupported.
+ */
+export type SupportLevel = 'experimental' | 'unsupported'
 export type PreviewStatus = 'idle' | 'loading' | 'ready' | 'failed' | 'skipped'
 export type DisplaySource = 'embedded' | 'quick' | 'bounded-hq' | 'none'
 export type ExportFidelity = 'safe' | 'balanced' | 'max'

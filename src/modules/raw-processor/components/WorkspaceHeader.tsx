@@ -11,6 +11,7 @@ import {
 } from '~/components/ui/dropdown-menu/DropdownMenu'
 import { useI18n } from '~/lib/i18n'
 
+import type { SupportLevel } from '../model/session'
 import { currentSessionAtom } from '../state/session.atoms'
 import { SupportBadge } from './SupportBadge'
 
@@ -25,7 +26,7 @@ export function WorkspaceHeader({
 }: {
   fileName?: string
   hasImage: boolean
-  supportLevel: 'official' | 'experimental'
+  supportLevel: SupportLevel
   onReplaceFile: () => void
   onResetSession: () => void
 }) {

@@ -9,7 +9,6 @@ import { sha256Hex } from '~/lib/profiles/fetch'
 import { Component as RawRoute } from '../../../pages/(main)/raw'
 import { FileFactsTool } from '../components/tools/FileFactsTool'
 import { RawProcessorView } from '../RawProcessorView'
-import { classifySupportLevel } from '../services/ingest/support-matrix'
 import {
   DEFAULT_LUMAFORGE_PROFILE_SOURCE,
   ONLINE_LUT_SOURCE_STORAGE_KEY,
@@ -651,17 +650,5 @@ describe('fileFactsTool empty state', () => {
     expect(supportRow).toHaveTextContent('Support')
     expect(supportRow).toHaveTextContent('Not loaded')
     expect(screen.queryByText('experimental')).not.toBeInTheDocument()
-  })
-})
-
-describe('support classification', () => {
-  it('marks unknown but decodable files as experimental', () => {
-    expect(
-      classifySupportLevel({
-        cameraBrand: 'Sony',
-        cameraModel: 'Unknown Model',
-        rawFormat: 'arw',
-      }),
-    ).toBe('experimental')
   })
 })

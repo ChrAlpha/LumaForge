@@ -2,7 +2,6 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 
 import { selectDisplaySource } from '../../model/derive-session'
 import type { DisplaySource, ImageSession } from '../../model/session'
-import { classifySupportLevel } from '../ingest/support-matrix'
 
 type PreviewReadyPayload = {
   width: number
@@ -97,11 +96,6 @@ export function applyPreviewReady(
           rawFormat: session.sourceFile.extension,
           width: decoded.width,
           height: decoded.height,
-          supportLevel: classifySupportLevel({
-            cameraBrand: decoded.metadata.make,
-            cameraModel: decoded.metadata.model,
-            rawFormat: session.sourceFile.extension,
-          }),
         }
       : session.sourceFile,
     previewBundle: {

@@ -26,7 +26,7 @@ describe('mobileTopbar', () => {
       hasImage: true,
       fileName: 'DSC09142.ARW',
       fileMeta: 'Sony α7 IV · 47.8 MB',
-      supportLevel: 'official',
+      supportLevel: 'experimental',
       moreMenuItems: [],
       exportAction: <button type="button">Export</button>,
     })
@@ -70,8 +70,8 @@ describe('mobileTopbar', () => {
     renderMobileTopbar({
       hasImage: true,
       fileName: 'DSC09142.ARW',
-      fileMeta: 'Official RAW support · Sony ILCE-7M4',
-      supportLevel: 'official',
+      fileMeta: 'Experimental support · Sony ILCE-7M4',
+      supportLevel: 'experimental',
       moreMenuItems: [],
     })
 
@@ -87,7 +87,7 @@ describe('mobileTopbar', () => {
       hasImage: true,
       fileName: 'DSC09142.ARW',
       fileMeta: 'Sony α7 IV',
-      supportLevel: 'official',
+      supportLevel: 'experimental',
       moreMenuItems: [
         {
           kind: 'item',
@@ -108,7 +108,7 @@ describe('mobileTopbar', () => {
       hasImage: true,
       fileName: 'DSC09142.ARW',
       fileMeta: 'Sony α7 IV',
-      supportLevel: 'official',
+      supportLevel: 'experimental',
       moreMenuItems: [],
     })
 
@@ -126,7 +126,7 @@ describe('mobileTopbar', () => {
           hasImage
           fileName="DSC09142.ARW"
           fileMeta="Sony α7 IV"
-          supportLevel="official"
+          supportLevel="experimental"
           moreMenuItems={[]}
           scrubbing
         />
@@ -154,7 +154,7 @@ describe('mobileTopbar', () => {
       hasImage: true,
       fileName: 'DSC09142.ARW',
       fileMeta: 'Sony α7 IV',
-      supportLevel: 'official',
+      supportLevel: 'experimental',
       moreMenuItems: [],
     })
     const header = container.querySelector('[data-mobile-topbar]')!

@@ -18,7 +18,7 @@ function createSession(): ImageSession {
       extension: 'dng',
       sizeBytes: 3,
       metadata: { width: 800, height: 600 },
-      supportLevel: 'official',
+      supportLevel: 'experimental',
     },
     previewBundle: {
       embeddedPreview: { status: 'idle' },

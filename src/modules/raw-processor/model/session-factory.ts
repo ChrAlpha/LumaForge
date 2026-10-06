@@ -1,12 +1,24 @@
+import type { LumaRawSupportLevel } from '@lumaforge/luma-raw-runtime'
+
 import type {
   ImageSession,
   LUTContractSelectionState,
   StyleAsset,
+  SupportLevel,
 } from './session'
 
 export type RetainedSessionState = {
   activeStyle?: StyleAsset | null
   lutProfileSelection?: LUTContractSelectionState
+}
+
+/**
+ * Reads a runtime support level at the app boundary. The published runtime
+ * union still carries 'official', which the app states as experimental;
+ * 'unsupported' stays exact.
+ */
+export function toAppSupportLevel(level: LumaRawSupportLevel): SupportLevel {
+  return level === 'unsupported' ? 'unsupported' : 'experimental'
 }
 
 export function createImageSession(

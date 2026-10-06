@@ -247,7 +247,7 @@ function createSession(
       name: SOURCE_FILE.name,
       extension: 'dng',
       sizeBytes: SOURCE_FILE.size,
-      supportLevel: 'official',
+      supportLevel: 'experimental',
     },
     previewBundle: {
       embeddedPreview: { status: 'ready', width: 1600, height: 1067 },

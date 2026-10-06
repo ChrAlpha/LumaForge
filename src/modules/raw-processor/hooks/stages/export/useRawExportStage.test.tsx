@@ -86,7 +86,7 @@ function createReadySession(): ImageSession {
       name: SOURCE_FILE.name,
       extension: 'dng',
       sizeBytes: SOURCE_FILE.size,
-      supportLevel: 'official',
+      supportLevel: 'experimental',
     },
     previewBundle: {
       embeddedPreview: { status: 'idle' },

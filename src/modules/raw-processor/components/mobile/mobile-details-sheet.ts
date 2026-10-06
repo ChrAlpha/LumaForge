@@ -2,7 +2,10 @@ import type { LUTContractResolution } from '@lumaforge/luma-color-runtime'
 
 import type { Translate } from '~/lib/i18n'
 
-import type { LUTContractSelectionState } from '../../model/session'
+import type {
+  LUTContractSelectionState,
+  SupportLevel,
+} from '../../model/session'
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
 import type { FileFactsTool } from '../tools/FileFactsTool'
@@ -60,7 +63,7 @@ export function getLutContractStatus(input: {
 
 export function buildMobileDetailsSheet(
   input: {
-    supportLevel: 'official' | 'experimental'
+    supportLevel: SupportLevel
     metadata: FileFactsProps['metadata']
     stats: FileFactsProps['stats']
     tone: ToneValue
@@ -80,8 +83,8 @@ export function buildMobileDetailsSheet(
   const notLoaded = t('raw.fileFacts.notLoaded')
   const cameraName = getCameraName(input.metadata)
   const support =
-    input.supportLevel === 'official'
-      ? t('raw.support.official')
+    input.supportLevel === 'unsupported'
+      ? t('raw.support.unsupported')
       : t('raw.support.experimental')
 
   const adjusted = countAdjustments(input)

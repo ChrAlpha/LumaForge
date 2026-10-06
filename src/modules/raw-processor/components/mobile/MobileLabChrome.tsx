@@ -12,6 +12,7 @@ import { clsxm } from '~/lib/cn'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ExportResultKind } from '../../model/export-result'
+import type { SupportLevel } from '../../model/session'
 import { DOCK_SPRING } from '../../motion'
 import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
 import type { ColorValue } from '../color-fields'
@@ -86,7 +87,7 @@ export function MobileLabChrome(props: {
   histogram: PreviewHistogramState
   fileName: string
   fileMeta: string
-  supportLevel: 'official' | 'experimental'
+  supportLevel: SupportLevel
   onReplaceFile: () => void
   onResetSession: () => void
   isProcessing: boolean

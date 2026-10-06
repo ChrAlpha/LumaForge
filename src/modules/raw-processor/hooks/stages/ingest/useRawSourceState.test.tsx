@@ -1,7 +1,12 @@
+import type { LumaRawSupportLevel } from '@lumaforge/luma-raw-runtime'
 import { renderHook } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
-import type { ImageSession } from '../../../model/session'
+import type { ImageSession, SupportLevel } from '../../../model/session'
+import {
+  createImageSession,
+  toAppSupportLevel,
+} from '../../../model/session-factory'
 import { useRawSourceState } from './useRawSourceState'
 
 function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
@@ -15,7 +20,7 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
       name: 'frame.dng',
       extension: 'dng',
       sizeBytes: sourceFile.size,
-      supportLevel: 'official',
+      supportLevel: 'experimental',
     },
     previewBundle: {
       embeddedPreview: { status: 'ready', objectUrl: 'blob:embedded' },
@@ -59,7 +64,7 @@ describe('useRawSourceState', () => {
     expect(result.current.loadedImage.file).toBe(session.sourceFile.file)
     expect(result.current.loadedImage.metadata).toBeNull()
     expect(result.current.sourceFileName).toBe('frame.dng')
-    expect(result.current.supportLevel).toBe('official')
+    expect(result.current.supportLevel).toBe('experimental')
     expect(result.current.embeddedPreviewUrl).toBe('blob:embedded')
     expect(result.current.displaySource).toBe('embedded')
     expect(result.current.progressRecoveryHint).toBeUndefined()
@@ -94,6 +99,55 @@ describe('useRawSourceState', () => {
     expect(result.current.embeddedPreviewUrl).toBeNull()
     expect(result.current.displaySource).toBe('none')
     expect(result.current.progressRecoveryHint).toBeDefined()
+  })
+
+  it('passes an unsupported source through instead of calling it experimental', () => {
+    const session = createSession()
+    session.sourceFile.supportLevel = 'unsupported'
+
+    const { result } = renderHook(() =>
+      useRawSourceState({ session, status: 'ready' }),
+    )
+
+    expect(result.current.supportLevel).toBe('unsupported')
+  })
+
+  it('states a legacy official level as experimental, never as certified', () => {
+    const session = createSession()
+    // Older runtimes can still report the published 'official' member.
+    session.sourceFile.supportLevel = 'official' as LumaRawSupportLevel as never
+
+    const { result } = renderHook(() =>
+      useRawSourceState({ session, status: 'ready' }),
+    )
+
+    expect(result.current.supportLevel).toBe('experimental')
+  })
+
+  it('starts a new or reset source as experimental', () => {
+    const session = createImageSession(new File(['raw'], 'next.ARW'))
+
+    const { result } = renderHook(() =>
+      useRawSourceState({ session, status: 'ready' }),
+    )
+
+    expect(result.current.supportLevel).toBe('experimental')
+  })
+
+  it('maps every published runtime support level onto the app levels', () => {
+    const levels = {
+      official: 'experimental',
+      experimental: 'experimental',
+      unsupported: 'unsupported',
+    } satisfies Record<LumaRawSupportLevel, SupportLevel>
+
+    for (const [runtimeLevel, appLevel] of Object.entries(levels)) {
+      expect(toAppSupportLevel(runtimeLevel as LumaRawSupportLevel)).toBe(
+        appLevel,
+      )
+    }
+    expectTypeOf<SupportLevel>().toEqualTypeOf<'experimental' | 'unsupported'>()
+    expectTypeOf<SupportLevel>().toExtend<LumaRawSupportLevel>()
   })
 
   it('uses neutral source defaults before a session exists', () => {

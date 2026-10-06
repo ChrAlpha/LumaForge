@@ -17,6 +17,7 @@ import type {
 import type {
   ExportRecoveryState,
   LUTContractSelectionState,
+  SupportLevel,
 } from '../model/session'
 import type { DeliveredExportSize } from '../services/export/delivered-export-size'
 import type { ColorValue } from './color-fields'
@@ -107,7 +108,7 @@ export interface RawToolSurfaceProps {
   lutProfileSelection?: LUTContractSelectionState | null
   lutProfileResolution?: LUTContractResolution | null
   onlineLutSources?: UseOnlineLutSourcesResult
-  supportLevel: 'official' | 'experimental'
+  supportLevel: SupportLevel
   metadata: ComponentProps<typeof FileFactsTool>['metadata']
   stats: ComponentProps<typeof FileFactsTool>['stats']
   previewFrameEl?: HTMLDivElement | null

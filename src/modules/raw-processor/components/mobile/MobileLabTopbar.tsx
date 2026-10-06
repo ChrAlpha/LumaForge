@@ -24,7 +24,7 @@ export function MobileLabTopbar({
   hasImage: boolean
   fileName: string
   fileMeta: string
-  supportLevel: Extract<SupportLevel, 'official' | 'experimental'>
+  supportLevel: SupportLevel
   histogramShown: boolean
   onToggleHistogram: () => void
   onReplaceFile: () => void

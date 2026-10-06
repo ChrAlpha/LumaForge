@@ -14,7 +14,7 @@ describe('mobileMoreSheet', () => {
           {
             index: 1,
             label: 'RAW decode',
-            detail: 'Sony α7 IV · Official support',
+            detail: 'Sony α7 IV · Experimental support',
           },
         ]}
         lutRows={[{ label: 'LUT', value: 'Not used' }]}
@@ -39,7 +39,7 @@ describe('mobileMoreSheet', () => {
         open
         onClose={vi.fn()}
         pipelineSteps={[
-          { index: 1, label: 'RAW decode', detail: 'Official support' },
+          { index: 1, label: 'RAW decode', detail: 'Experimental support' },
           { index: 2, label: 'Adjust', detail: '3 fields changed' },
         ]}
         lutRows={[]}

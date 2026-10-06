@@ -21,8 +21,8 @@ export function MobileRawToolSurface() {
   // than encoded in the topbar dot alone (PRODUCT.md: never state by colour).
   // The level leads because the camera name truncates first on a phone.
   const fileMeta = [
-    props.supportLevel === 'official'
-      ? t('raw.support.official')
+    props.supportLevel === 'unsupported'
+      ? t('raw.support.unsupported')
       : t('raw.support.experimental'),
     cameraName || undefined,
   ]

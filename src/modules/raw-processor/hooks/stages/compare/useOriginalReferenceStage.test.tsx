@@ -52,7 +52,7 @@ function createSession(viewMode: ProcessingParams['viewMode']): ImageSession {
       name: 'frame.dng',
       extension: 'dng',
       sizeBytes: 1,
-      supportLevel: 'official',
+      supportLevel: 'experimental',
     },
     previewBundle: {
       embeddedPreview: { status: 'idle' },

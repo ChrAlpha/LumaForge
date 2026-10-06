@@ -154,6 +154,26 @@ describe('preview session state transitions', () => {
     })
   })
 
+  it('keeps an unsupported source fact when decoded camera facts arrive', () => {
+    const unsupportedSession: ImageSession = {
+      ...baseSession,
+      sourceFile: { ...baseSession.sourceFile, supportLevel: 'unsupported' },
+    }
+
+    const session = applyPreviewReady(
+      unsupportedSession,
+      'quick',
+      { width: 800, height: 600 },
+      createDecodedImage('quick'),
+    )
+
+    expect(session.sourceFile).toMatchObject({
+      cameraBrand: 'Sony',
+      cameraModel: 'A7',
+      supportLevel: 'unsupported',
+    })
+  })
+
   it('makes bounded HQ the preferred display source when it becomes ready', () => {
     const quickSession = applyPreviewReady(
       baseSession,

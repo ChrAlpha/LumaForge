@@ -66,7 +66,7 @@ const base: RawToolSurfaceProps = {
   onDownloadExport: vi.fn(),
   onCopyExport: vi.fn(),
   hasImage: true,
-  supportLevel: 'official',
+  supportLevel: 'experimental',
   metadata: null,
   stats: null,
 }

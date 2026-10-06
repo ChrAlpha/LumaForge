@@ -26,6 +26,7 @@ import type {
   ExportRecoveryState,
   LUTContractSelectionState,
   StyleAsset,
+  SupportLevel,
 } from '../model/session'
 import type { ProcessingStatus } from '../model/workflow'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
@@ -77,7 +78,7 @@ export interface UseRawWorkflowReturn {
   previewViewport: PreviewViewport
   currentLutName: string | null
   sourceFileName: string
-  supportLevel: 'official' | 'experimental'
+  supportLevel: SupportLevel
   progressRecoveryHint?: string
   embeddedPreviewUrl: string | null
   displaySource: DisplaySource

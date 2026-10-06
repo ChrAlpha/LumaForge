@@ -2,12 +2,14 @@ import { Fragment } from 'react'
 
 import { useI18n } from '~/lib/i18n'
 
+import type { SupportLevel } from '../../model/session'
+
 export function FileFactsTool({
   supportLevel,
   metadata,
   stats,
 }: {
-  supportLevel: 'official' | 'experimental'
+  supportLevel: SupportLevel
   metadata: null | {
     make?: string
     model?: string
@@ -31,8 +33,8 @@ export function FileFactsTool({
     {
       label: t('raw.fileFacts.support'),
       value: hasSessionFacts
-        ? supportLevel === 'official'
-          ? t('raw.support.official')
+        ? supportLevel === 'unsupported'
+          ? t('raw.support.unsupported')
           : t('raw.support.experimental')
         : undefined,
     },

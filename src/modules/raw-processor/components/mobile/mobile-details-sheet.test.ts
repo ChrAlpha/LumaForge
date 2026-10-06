@@ -161,7 +161,7 @@ describe('buildMobileDetailsSheet', () => {
     const sheet = buildMobileDetailsSheet(
       {
         ...base,
-        supportLevel: 'official',
+        supportLevel: 'unsupported',
         tone: { ...TONE_NEUTRAL, userContrast: 10 },
         currentLutName: 'Film.cube',
         lutProfileResolution: {
@@ -175,7 +175,7 @@ describe('buildMobileDetailsSheet', () => {
     )
 
     expect(sheet.pipelineSteps.map((step) => step.detail)).toEqual([
-      'Sony ILCE-7M4 · Official support',
+      'Sony ILCE-7M4 · Not supported',
       '1 field changed',
       'Film.cube · Contract confirmed',
       'Applied',

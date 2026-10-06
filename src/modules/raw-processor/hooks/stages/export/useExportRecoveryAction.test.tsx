@@ -60,7 +60,7 @@ function createSession(
       name: file.name,
       extension: 'dng',
       sizeBytes: file.size,
-      supportLevel: 'official',
+      supportLevel: 'experimental',
     },
     previewBundle: {
       embeddedPreview: { status: 'idle' },

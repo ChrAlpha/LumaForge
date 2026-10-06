@@ -13,7 +13,7 @@ function createSession(id = 'session-compare'): ImageSession {
       name: 'frame.dng',
       extension: 'dng',
       sizeBytes: 3,
-      supportLevel: 'official',
+      supportLevel: 'experimental',
     },
     previewBundle: {
       embeddedPreview: { status: 'idle' },

@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from 'react'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
+import type { SupportLevel } from '../../model/session'
 import type { MobileMoreMenuItem } from './MobileMoreMenu'
 import { MobileMoreMenu } from './MobileMoreMenu'
 
@@ -13,7 +14,7 @@ export function MobileTopbar(props: {
   hasImage: boolean
   fileName: string
   fileMeta: string
-  supportLevel: 'official' | 'experimental'
+  supportLevel: SupportLevel
   moreMenuItems: MobileMoreMenuItem[]
   /** Terminal export action, rendered at the far right after More. */
   exportAction?: ReactNode
@@ -82,12 +83,7 @@ export function MobileTopbar(props: {
           {props.hasImage && (
             <span
               aria-hidden="true"
-              className={clsxm(
-                'mr-1.5 inline-block size-[7px] translate-y-px rounded-full',
-                props.supportLevel === 'official'
-                  ? 'bg-lf-green shadow-[0_0_0_2px_oklch(0.59_0.15_153/0.28)]'
-                  : 'bg-lf-amber',
-              )}
+              className="mr-1.5 inline-block size-[7px] translate-y-px rounded-full bg-lf-amber"
             />
           )}
           {meta}
