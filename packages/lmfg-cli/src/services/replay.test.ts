@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -31,7 +31,7 @@ import {
   requireSupportedGraph,
   toManifestRenderParams,
 } from './color-graph'
-import { buildRenderManifest } from './manifest'
+import { buildRenderManifest, requireVerifiedManifest } from './manifest'
 import { renderPreview } from './preview'
 import type { ReplayPlan } from './replay'
 import { prepareReplay, replayKey, runReplay } from './replay'
@@ -268,6 +268,200 @@ describe('prepareReplay', () => {
         cwd: dir,
       }),
     ).rejects.toMatchObject(geometryRefusal)
+  })
+})
+
+describe('replaying a manifest an earlier writer sealed', () => {
+  const neutralBand = { hue: 0, saturation: 0, lightness: 0 }
+  const explicitNeutral = Object.fromEntries(
+    [
+      'red',
+      'orange',
+      'yellow',
+      'green',
+      'aqua',
+      'blue',
+      'purple',
+      'magenta',
+    ].map((id) => [id, neutralBand]),
+  )
+
+  /** Sealed the way earlier CLI writers did: all eight neutral bands recorded. */
+  function explicitNeutralManifestFor(
+    options: { environment?: RenderEnvironment } = {},
+  ) {
+    const manifest = manifestFor(parseRenderParams({ contrast: 5 }), options)
+    const { manifest_sha256: _sha, ...unsealed } = manifest
+    return createRenderManifest({
+      kind: unsealed.kind,
+      source_raw: unsealed.source_raw,
+      lut: null,
+      graph: requireSupportedGraph(
+        buildColorGraph(parseRenderParams({ contrast: 5 }), null, exposure),
+      ),
+      render_params: {
+        ...unsealed.render_params,
+        selective_color: explicitNeutral,
+      },
+      policy: unsealed.policy,
+      environment: unsealed.environment,
+      output: {
+        ...unsealed.output.dimensions,
+        quality: unsealed.output.quality,
+        filename: unsealed.output.filename,
+        sha256: unsealed.output.sha256,
+      },
+      parent_manifest_sha256: null,
+      produced_at: unsealed.produced_at,
+    })
+  }
+
+  it('verifies it as written, then rebuilds the same color graph', async () => {
+    const legacy = explicitNeutralManifestFor()
+    const path = join(dir, 'legacy.json')
+    await writeFile(path, JSON.stringify(legacy))
+    const { manifest } = await requireVerifiedManifest(path, environment)
+    expect(manifest.render_params.selective_color).toEqual(explicitNeutral)
+
+    const plan = await prepareReplay({
+      manifest,
+      source: fakeSource('a'.repeat(64)),
+      workspaceRoot: dir,
+      cwd: dir,
+    })
+    expect(plan.fingerprintMatch).toBe(true)
+    expect(plan.params.selective_color).toBeNull()
+    expect(plan.params.contrast).toBe(5)
+    expect(plan.params.raw_render_exposure).toBe(-0.2)
+    expect(plan.exposure).toEqual(exposure)
+  })
+
+  it('reseals it without the neutral record, so only the manifest hash moves', () => {
+    const legacy = explicitNeutralManifestFor()
+    const current = manifestFor(parseRenderParams({ contrast: 5 }))
+    expect(current.render_params.selective_color).toBeUndefined()
+    expect(current.color_graph).toEqual(legacy.color_graph)
+    expect(current.manifest_sha256).not.toBe(legacy.manifest_sha256)
+    const { selective_color: _hsl, ...legacyRest } = legacy.render_params
+    expect(current.render_params).toEqual(legacyRest)
+  })
+
+  it('still refuses a different native build before decoding', async () => {
+    const recorded = resolveRenderEnvironment('desktop')
+    const legacy = explicitNeutralManifestFor({
+      environment: {
+        ...recorded,
+        native_artifacts: {
+          ...recorded.native_artifacts,
+          build_id: 'raw:111111111111+jpeg:222222222222',
+        },
+      },
+    })
+    const source = fakeSource('a'.repeat(64))
+    const plan = await prepareReplay({
+      manifest: legacy,
+      source,
+      workspaceRoot: dir,
+      cwd: dir,
+    })
+    const raw = vi.fn(async () => {
+      throw new Error('the RAW runtime must not be used')
+    })
+    await expect(
+      runReplay({
+        runtime: {
+          memoryProfile: 'desktop',
+          raw,
+          jpeg: raw,
+          dispose: vi.fn(),
+        } as unknown as LmfgRuntime,
+        plan,
+        source,
+        environment: recorded,
+        manifestPath: join(dir, 'm.json'),
+        sessionId: null,
+        outputPath: join(dir, 'replay', 'output.jpg'),
+        manifestOutputPath: join(dir, 'replay', 'manifest.json'),
+      }),
+    ).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      details: {
+        stage: 'environment',
+        mismatched_fields: ['native_artifacts.build_id'],
+      },
+    })
+    expect(raw).not.toHaveBeenCalled()
+  })
+
+  it('still refuses a recorded geometry', async () => {
+    const legacy = geometryManifestFor()
+    const resealed = createRenderManifest({
+      kind: 'export',
+      source_raw: legacy.source_raw,
+      lut: null,
+      graph: requireSupportedGraph(
+        buildColorGraph(parseRenderParams({ contrast: 5 }), null, exposure),
+      ),
+      render_params: {
+        ...legacy.render_params,
+        selective_color: explicitNeutral,
+      },
+      policy: legacy.policy,
+      environment: legacy.environment,
+      output: {
+        ...legacy.output.dimensions,
+        quality: legacy.output.quality,
+        filename: legacy.output.filename,
+        sha256: legacy.output.sha256,
+      },
+      parent_manifest_sha256: null,
+    })
+    expect(verifyManifestSha256(resealed)).toBe(true)
+    await expect(
+      prepareReplay({
+        manifest: resealed,
+        source: fakeSource('a'.repeat(64)),
+        workspaceRoot: dir,
+        cwd: dir,
+      }),
+    ).rejects.toMatchObject(geometryRefusal)
+  })
+})
+
+describe('replaying an explicit zero raw-render exposure', () => {
+  it('keeps the recorded zero instead of re-resolving auto', async () => {
+    const params = parseRenderParams({ raw_render_exposure: 0 })
+    const zero = { ev: 0, multiplier: 1, source: 'user' as const }
+    const manifest = createRenderManifest({
+      kind: 'preview',
+      source_raw: manifestFor().source_raw,
+      lut: null,
+      graph: requireSupportedGraph(buildColorGraph(params, null, zero)),
+      render_params: toManifestRenderParams(params, zero),
+      policy: manifestFor().policy,
+      environment,
+      output: {
+        width: 4,
+        height: 2,
+        quality: 85,
+        filename: 'p.jpg',
+        sha256: 'b'.repeat(64),
+      },
+      parent_manifest_sha256: null,
+    })
+    expect(manifest.render_params).toMatchObject({
+      raw_render_exposure_ev: 0,
+      raw_render_exposure_source: 'user',
+    })
+    const plan = await prepareReplay({
+      manifest,
+      source: fakeSource('a'.repeat(64)),
+      workspaceRoot: dir,
+      cwd: dir,
+    })
+    expect(plan.params.raw_render_exposure).toBe(0)
+    expect(plan.exposure).toEqual(zero)
+    expect(plan.fingerprintMatch).toBe(true)
   })
 })
 

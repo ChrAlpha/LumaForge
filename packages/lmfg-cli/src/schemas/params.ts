@@ -1,3 +1,13 @@
+import type {
+  ColorFieldBounds,
+  UserColorScalarKey,
+} from '@lumaforge/luma-color-runtime'
+import {
+  HSL_BAND_IDS,
+  HSL_SHIFT_BOUNDS,
+  LOOK_INTENSITY_BOUNDS,
+  USER_COLOR_FIELD_BOUNDS,
+} from '@lumaforge/luma-color-runtime'
 import { z } from 'zod'
 
 export const LUT_ROLES = [
@@ -25,23 +35,33 @@ export const LutReferenceSchema = z.strictObject({
 })
 
 const slider = (min: number, max: number) => z.number().min(min).max(max)
+const bounded = ({ min, max }: ColorFieldBounds) => slider(min, max)
 
-export const HSL_BAND_IDS = [
-  'red',
-  'orange',
-  'yellow',
-  'green',
-  'aqua',
-  'blue',
-  'purple',
-  'magenta',
-] as const
+/** The CLI name of each shared user color field. */
+export const USER_COLOR_PARAM_KEYS = Object.freeze({
+  exposure_ev: 'userExposureEv',
+  contrast: 'userContrast',
+  highlights: 'userHighlights',
+  shadows: 'userShadows',
+  whites: 'userWhites',
+  blacks: 'userBlacks',
+  temperature: 'userTemperature',
+  tint: 'userTint',
+  saturation: 'userSaturation',
+  vibrance: 'userVibrance',
+} as const satisfies Record<string, UserColorScalarKey>)
+export type UserColorParamKey = keyof typeof USER_COLOR_PARAM_KEYS
+
+const userColorField = (key: UserColorParamKey) =>
+  bounded(USER_COLOR_FIELD_BOUNDS[USER_COLOR_PARAM_KEYS[key]])
+
+export { HSL_BAND_IDS }
 export type HslBandId = (typeof HSL_BAND_IDS)[number]
 
 export const BandShiftSchema = z.strictObject({
-  hue: slider(-100, 100).optional(),
-  saturation: slider(-100, 100).optional(),
-  lightness: slider(-100, 100).optional(),
+  hue: bounded(HSL_SHIFT_BOUNDS).optional(),
+  saturation: bounded(HSL_SHIFT_BOUNDS).optional(),
+  lightness: bounded(HSL_SHIFT_BOUNDS).optional(),
 })
 
 export const SelectiveColorSchema = z.strictObject({
@@ -58,22 +78,26 @@ export type SelectiveColorInput = z.output<typeof SelectiveColorSchema>
 
 /** Field schemas without defaults — shared by the full and override shapes. */
 const PARAM_FIELDS = {
-  exposure_ev: slider(-5, 5),
-  contrast: slider(-100, 100),
-  highlights: slider(-100, 100),
-  shadows: slider(-100, 100),
-  whites: slider(-100, 100),
-  blacks: slider(-100, 100),
-  temperature: slider(-100, 100),
-  tint: slider(-100, 100),
-  saturation: slider(-100, 100),
-  vibrance: slider(-100, 100),
-  intensity: z.number().min(0).max(1),
+  exposure_ev: userColorField('exposure_ev'),
+  contrast: userColorField('contrast'),
+  highlights: userColorField('highlights'),
+  shadows: userColorField('shadows'),
+  whites: userColorField('whites'),
+  blacks: userColorField('blacks'),
+  temperature: userColorField('temperature'),
+  tint: userColorField('tint'),
+  saturation: userColorField('saturation'),
+  vibrance: userColorField('vibrance'),
+  intensity: bounded(LOOK_INTENSITY_BOUNDS),
   raw_render_exposure: z.union([z.literal('auto'), slider(-3, 3)]),
   selective_color: SelectiveColorSchema.nullable(),
   lut: LutReferenceSchema.nullable(),
 } as const
 
+/**
+ * The CLI's own defaults. A look applies at full strength unless a params
+ * file says otherwise, and the RAW render exposure resolves from the source.
+ */
 export const PARAM_DEFAULTS = {
   exposure_ev: 0,
   contrast: 0,

@@ -18,7 +18,6 @@ import {
   requireSupportedGraph,
   resolveExposure,
   toManifestRenderParams,
-  toSelectiveColorBands,
 } from './color-graph'
 
 const frame = { data: new Uint16Array(4 * 3).fill(30000), width: 2, height: 2 }
@@ -230,9 +229,9 @@ describe('toManifestRenderParams canonical bytes', () => {
     expect(canonicalizeJson(renderParams)).toBe(NEUTRAL_GOLDEN)
   })
 
-  it('records an explicit all-neutral selective color record', () => {
-    // The browser export writer omits this record, so the two manifests hash
-    // differently today.
+  it('omits an explicit all-neutral selective color record', () => {
+    // Earlier CLI writers recorded this record, so a manifest they sealed
+    // hashes differently from the one written now for the same params.
     const renderParams = toManifestRenderParams(
       parseRenderParams({
         selective_color: {
@@ -249,8 +248,74 @@ describe('toManifestRenderParams canonical bytes', () => {
       identityExposure,
     )
 
-    expect(canonicalizeJson(renderParams)).toBe(EXPLICIT_NEUTRAL_HSL_GOLDEN)
-    expect(canonicalizeJson(renderParams)).not.toBe(NEUTRAL_GOLDEN)
+    expect(canonicalizeJson(renderParams)).toBe(NEUTRAL_GOLDEN)
+    expect(canonicalizeJson(renderParams)).not.toBe(EXPLICIT_NEUTRAL_HSL_GOLDEN)
+  })
+
+  it('reads an explicit all-neutral record written earlier as no HSL', () => {
+    const legacy = JSON.parse(EXPLICIT_NEUTRAL_HSL_GOLDEN)
+    const restored = manifestToRenderParams(legacy)
+    expect(restored).toEqual(
+      parseRenderParams({ raw_render_exposure: 0, selective_color: null }),
+    )
+    expect(
+      canonicalizeJson(toManifestRenderParams(restored, identityExposure)),
+    ).toBe(NEUTRAL_GOLDEN)
+  })
+})
+
+describe('color graph fingerprints', () => {
+  // Reviewed literal fingerprints; the graph a set of params builds must not
+  // move when the CLI changes how it maps its params onto the shared fields.
+  const exposure = {
+    ev: -0.25,
+    multiplier: Math.pow(2, -0.25),
+    source: 'dng-baseline' as const,
+  }
+  const fingerprintOf = (input: unknown) =>
+    fingerprintColorGraph(
+      describeColorGraph(
+        requireSupportedGraph(
+          buildColorGraph(parseRenderParams(input), null, exposure),
+        ),
+      ),
+    )
+
+  it('freezes the neutral graph', () => {
+    expect(fingerprintOf({})).toBe(
+      '18f0ad5b305b075ff3e1036e15a8711c96d6e78e4a438d68d800e23f39420cd4',
+    )
+  })
+
+  it('freezes a graph with every user field and partial HSL', () => {
+    expect(
+      fingerprintOf({
+        exposure_ev: 0.5,
+        contrast: 12,
+        highlights: -20,
+        shadows: 15,
+        whites: -8,
+        blacks: 6,
+        temperature: 10,
+        tint: -4,
+        saturation: 7,
+        vibrance: 18,
+        intensity: 0.37,
+        selective_color: {
+          red: { hue: 10 },
+          blue: { saturation: -30, lightness: 5 },
+        },
+      }),
+    ).toBe('dbece1d1741dbb15b7e5b1d90b2305a0b4cbd8f55509be872aff6a84301cb2ea')
+  })
+
+  it('builds the same graph for absent, null and all-neutral HSL', () => {
+    const neutral = fingerprintOf({})
+    expect(fingerprintOf({ selective_color: null })).toBe(neutral)
+    expect(fingerprintOf({ selective_color: {} })).toBe(neutral)
+    expect(fingerprintOf({ selective_color: { red: { hue: 0 } } })).toBe(
+      neutral,
+    )
   })
 })
 
@@ -263,11 +328,18 @@ describe('selective color', () => {
   const neutralBand = { hue: 0, saturation: 0, lightness: 0 }
 
   it('fills missing bands with neutral shifts', () => {
-    expect(toSelectiveColorBands(null)).toBeUndefined()
-    const bands = toSelectiveColorBands({
-      red: { hue: 10 },
-      blue: { lightness: -5 },
-    })!
+    const graph = requireSupportedGraph(
+      buildColorGraph(
+        parseRenderParams({
+          selective_color: { red: { hue: 10 }, blue: { lightness: -5 } },
+        }),
+        null,
+        exposure,
+      ),
+    )
+    const { bands } = graph.steps.find(
+      (s) => s.kind === 'user-selective-color',
+    ) as { bands: Record<string, unknown> }
     expect(Object.keys(bands)).toEqual([
       'red',
       'orange',
@@ -391,14 +463,16 @@ describe('shared manifest projection', () => {
     }
   })
 
-  it('omits the explicit all-neutral record the CLI writer still records', () => {
+  it('omits an explicit all-neutral record like the shared writer', () => {
     const params = parseRenderParams({
       selective_color: { red: neutralBand, aqua: { hue: 0 } },
     })
     expect(
       toManifestRenderParams(params, exposure).selective_color,
-    ).toBeDefined()
-    expect(shared(params).selective_color).toBeUndefined()
+    ).toBeUndefined()
+    expect(canonicalizeJson(toManifestRenderParams(params, exposure))).toBe(
+      canonicalizeJson(shared(params)),
+    )
   })
 
   it('reads CLI-written params back to the same color graph', () => {

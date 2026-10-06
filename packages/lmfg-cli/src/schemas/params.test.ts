@@ -1,10 +1,19 @@
 // @vitest-environment node
+import {
+  HSL_BAND_IDS as SHARED_HSL_BAND_IDS,
+  HSL_SHIFT_BOUNDS,
+  LOOK_INTENSITY_BOUNDS,
+  USER_COLOR_FIELD_BOUNDS,
+  USER_COLOR_SCALAR_KEYS,
+} from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import {
+  HSL_BAND_IDS,
   mergeRenderParams,
   parseRenderParams,
   RenderParamsOverrideSchema,
+  USER_COLOR_PARAM_KEYS,
 } from './params'
 
 describe('parseRenderParams', () => {
@@ -31,6 +40,36 @@ describe('parseRenderParams', () => {
     expect(() => parseRenderParams({ exposure: 1 })).toThrow()
     expect(() => parseRenderParams({ exposure_ev: 9 })).toThrow()
     expect(() => parseRenderParams({ intensity: 2 })).toThrow()
+  })
+
+  it('rejects camelCase and nested unknown keys', () => {
+    expect(() => parseRenderParams({ userContrast: 1 })).toThrow()
+    expect(() => parseRenderParams({ selectiveColor: {} })).toThrow()
+    expect(() => parseRenderParams({ lut: { path: 'a.cube', x: 1 } })).toThrow()
+    expect(() =>
+      RenderParamsOverrideSchema.parse({ rawRenderExposure: 0 }),
+    ).toThrow()
+  })
+
+  it('keeps an explicit zero raw-render exposure apart from auto', () => {
+    expect(parseRenderParams({ raw_render_exposure: 0 })).toMatchObject({
+      raw_render_exposure: 0,
+      exposure_ev: 0,
+    })
+    expect(parseRenderParams({}).raw_render_exposure).toBe('auto')
+    expect(
+      mergeRenderParams(parseRenderParams({ raw_render_exposure: 0.5 }), {
+        raw_render_exposure: 0,
+      }).raw_render_exposure,
+    ).toBe(0)
+  })
+
+  it('keeps a continuous look strength and defaults it to 1', () => {
+    expect(parseRenderParams({ intensity: 0.37 }).intensity).toBe(0.37)
+    expect(
+      mergeRenderParams(parseRenderParams({}), { intensity: 0.37 }).intensity,
+    ).toBe(0.37)
+    expect(parseRenderParams(undefined).intensity).toBe(1)
   })
 
   it('accepts a LUT reference with a contract', () => {
@@ -195,5 +234,49 @@ describe('selective color params', () => {
     ).toEqual({ path: 'replacement.cube' })
     expect(mergeRenderParams(base, { lut: undefined }).lut).toEqual(base.lut)
     expect(mergeRenderParams(base, { lut: null }).lut).toBeNull()
+  })
+})
+
+describe('shared color field contract', () => {
+  it('names every shared user color field once', () => {
+    expect(Object.values(USER_COLOR_PARAM_KEYS).toSorted()).toEqual(
+      [...USER_COLOR_SCALAR_KEYS].toSorted(),
+    )
+    expect(HSL_BAND_IDS).toEqual(SHARED_HSL_BAND_IDS)
+  })
+
+  it.each(
+    Object.entries(USER_COLOR_PARAM_KEYS) as [
+      keyof typeof USER_COLOR_PARAM_KEYS,
+      keyof typeof USER_COLOR_FIELD_BOUNDS,
+    ][],
+  )('bounds %s to the shared %s range', (key, sharedKey) => {
+    const { min, max } = USER_COLOR_FIELD_BOUNDS[sharedKey]
+    expect(parseRenderParams({ [key]: min })[key]).toBe(min)
+    expect(parseRenderParams({ [key]: max })[key]).toBe(max)
+    expect(() => parseRenderParams({ [key]: min - 0.001 })).toThrow()
+    expect(() => parseRenderParams({ [key]: max + 0.001 })).toThrow()
+    expect(() =>
+      RenderParamsOverrideSchema.parse({ [key]: max + 0.001 }),
+    ).toThrow()
+  })
+
+  it('bounds the look strength and every HSL axis to the shared ranges', () => {
+    const { min, max } = LOOK_INTENSITY_BOUNDS
+    expect(parseRenderParams({ intensity: min }).intensity).toBe(min)
+    expect(parseRenderParams({ intensity: max }).intensity).toBe(max)
+    expect(() => parseRenderParams({ intensity: min - 0.001 })).toThrow()
+    for (const axis of ['hue', 'saturation', 'lightness'] as const) {
+      expect(
+        parseRenderParams({
+          selective_color: { aqua: { [axis]: HSL_SHIFT_BOUNDS.min } },
+        }).selective_color?.aqua?.[axis],
+      ).toBe(HSL_SHIFT_BOUNDS.min)
+      expect(() =>
+        parseRenderParams({
+          selective_color: { aqua: { [axis]: HSL_SHIFT_BOUNDS.max + 0.001 } },
+        }),
+      ).toThrow()
+    }
   })
 })

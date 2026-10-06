@@ -1,13 +1,16 @@
 import type {
   ExportColorGraphDescriptor,
-  HSLBandId,
-  HSLBandShift,
   LUTData,
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
+  UserColorIntent,
+  UserColorIntentInput,
+  UserColorScalarKey,
 } from '@lumaforge/luma-color-runtime'
 import {
   exposureMultiplierFromEv,
+  isSelectiveColorNeutral,
+  normalizeUserColorIntent,
   resolveExportColorGraph,
   resolveRawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
@@ -21,11 +24,17 @@ import {
   colorGraphIdentity,
   describeColorGraph,
   fingerprintColorGraph,
+  invertManifestRenderParams,
+  projectManifestRenderParams,
 } from '@lumaforge/render-engine'
 
 import { LmfgError } from '../protocol/errors'
-import type { RenderParams, SelectiveColorInput } from '../schemas/params'
-import { HSL_BAND_IDS, parseRenderParams } from '../schemas/params'
+import type { RenderParams, UserColorParamKey } from '../schemas/params'
+import {
+  PARAM_DEFAULTS,
+  parseRenderParams,
+  USER_COLOR_PARAM_KEYS,
+} from '../schemas/params'
 
 // The descriptor and fingerprint live in `@lumaforge/render-engine/manifest`
 // so the browser app and the CLI hash color graphs identically.
@@ -59,20 +68,37 @@ export function resolveExposure(
   })
 }
 
-export function toSelectiveColorBands(
-  input: SelectiveColorInput | null | undefined,
-): Record<HSLBandId, HSLBandShift> | undefined {
-  if (!input) return undefined
-  const bands = {} as Record<HSLBandId, HSLBandShift>
-  for (const id of HSL_BAND_IDS) {
-    const band = input[id]
-    bands[id] = {
-      hue: band?.hue ?? 0,
-      saturation: band?.saturation ?? 0,
-      lightness: band?.lightness ?? 0,
-    }
+const USER_COLOR_PARAM_ENTRIES = Object.entries(USER_COLOR_PARAM_KEYS) as [
+  UserColorParamKey,
+  UserColorScalarKey,
+][]
+
+/** The user color a CLI params record asks for, under the shared field names. */
+function toUserColorIntent(params: RenderParams): UserColorIntentInput {
+  const intent: Partial<Record<UserColorScalarKey, number>> = {}
+  for (const [key, shared] of USER_COLOR_PARAM_ENTRIES) {
+    intent[shared] = params[key]
   }
-  return bands
+  return { ...intent, selectiveColor: params.selective_color }
+}
+
+/**
+ * The CLI params fields for a user color. HSL that shifts nothing becomes
+ * `null`, the same as a params file that states none.
+ */
+function fromUserColorIntent(
+  color: UserColorIntent,
+): Pick<RenderParams, UserColorParamKey | 'selective_color'> {
+  const fields = {} as Record<UserColorParamKey, number>
+  for (const [key, shared] of USER_COLOR_PARAM_ENTRIES) {
+    fields[key] = color[shared]
+  }
+  return {
+    ...fields,
+    selective_color: isSelectiveColorNeutral(color.selectiveColor)
+      ? null
+      : color.selectiveColor,
+  }
 }
 
 export function buildColorGraph(
@@ -86,17 +112,7 @@ export function buildColorGraph(
     builtinPreset: null,
     lut,
     rawRenderExposure: exposure,
-    userExposureEv: params.exposure_ev,
-    userContrast: params.contrast,
-    userHighlights: params.highlights,
-    userShadows: params.shadows,
-    userWhites: params.whites,
-    userBlacks: params.blacks,
-    userTemperature: params.temperature,
-    userTint: params.tint,
-    userSaturation: params.saturation,
-    userVibrance: params.vibrance,
-    selectiveColor: toSelectiveColorBands(params.selective_color),
+    ...normalizeUserColorIntent(toUserColorIntent(params)),
   })
 }
 
@@ -130,68 +146,28 @@ export function toManifestRenderParams(
   params: RenderParams,
   exposure: RawRenderExposure,
 ): ManifestRenderParams {
-  return {
-    exposure_ev: params.exposure_ev,
-    tone_curve: {
-      contrast: params.contrast,
-      highlights: params.highlights,
-      shadows: params.shadows,
-      whites: params.whites,
-      blacks: params.blacks,
-    },
-    color_balance: { temperature: params.temperature, tint: params.tint },
-    saturation: { saturation: params.saturation, vibrance: params.vibrance },
-    ...(params.selective_color
-      ? { selective_color: toSelectiveColorBands(params.selective_color) }
-      : {}),
+  return projectManifestRenderParams({
+    userColor: toUserColorIntent(params),
     intensity: params.intensity,
-    raw_render_exposure_ev: exposure.ev,
-    raw_render_exposure_source: exposure.source,
-  }
+    rawRenderExposure: { ev: exposure.ev, source: exposure.source },
+  })
 }
 
 /**
  * Inverse of `toManifestRenderParams`: rebuild CLI params from a manifest so a
  * render can be replayed. The recorded raw-render exposure becomes an explicit
- * EV; the LUT reference is resolved separately by the caller.
+ * EV; a manifest that records no strength gets the CLI default. The LUT
+ * reference is resolved separately by the caller. Callers verify the
+ * manifest's own signature first: this reads, it does not verify.
  */
 export function manifestToRenderParams(
   params: ManifestRenderParams,
 ): RenderParams {
-  const recorded = params.selective_color
-  const selective = recorded
-    ? Object.fromEntries(
-        HSL_BAND_IDS.filter((id) => recorded[id]).map((id) => {
-          const band = recorded[id]
-          return [
-            id,
-            {
-              hue: band.hue,
-              saturation: band.saturation,
-              lightness: band.lightness,
-            },
-          ]
-        }),
-      )
-    : null
+  const intent = invertManifestRenderParams(params)
   return parseRenderParams({
-    exposure_ev: params.exposure_ev,
-    contrast: params.tone_curve?.contrast ?? 0,
-    highlights: params.tone_curve?.highlights ?? 0,
-    shadows: params.tone_curve?.shadows ?? 0,
-    whites: params.tone_curve?.whites ?? 0,
-    blacks: params.tone_curve?.blacks ?? 0,
-    temperature: params.color_balance?.temperature ?? 0,
-    tint: params.color_balance?.tint ?? 0,
-    saturation: params.saturation?.saturation ?? 0,
-    vibrance: params.saturation?.vibrance ?? 0,
-    intensity: params.intensity ?? 1,
-    raw_render_exposure:
-      typeof params.raw_render_exposure_ev === 'number'
-        ? params.raw_render_exposure_ev
-        : 'auto',
-    selective_color:
-      selective && Object.keys(selective).length > 0 ? selective : null,
+    ...fromUserColorIntent(intent.userColor),
+    intensity: intent.intensity ?? PARAM_DEFAULTS.intensity,
+    raw_render_exposure: intent.rawRenderExposure?.ev ?? 'auto',
     lut: null,
   })
 }
