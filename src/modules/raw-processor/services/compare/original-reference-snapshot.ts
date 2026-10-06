@@ -1,3 +1,5 @@
+import type { CapabilityVector } from '@lumaforge/render-engine/policy'
+
 import type { DisplaySource } from '../../model/session'
 
 export type OriginalReferenceSnapshot = {
@@ -23,11 +25,7 @@ export type OriginalReferenceSnapshotKeyInput = {
 
 export type SnapshotCapabilityPolicyInput = {
   displaySourcePixels: number
-  webKitClass:
-    | 'chromium'
-    | 'webkit-desktop-safari'
-    | 'webkit-mobile'
-    | 'unknown'
+  webKitClass: CapabilityVector['webKitClass']
   pthread: boolean
   previewGpuBudgetMaxPixels?: number
 }

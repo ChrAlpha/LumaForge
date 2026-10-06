@@ -1,11 +1,7 @@
-// CapabilityVector — INPUT type only.
-//
-// The engine accepts a CapabilityVector. It does NOT detect capabilities;
-// detection lives in `src/lib/runtime/capability-vector.ts` (browser) or
-// is supplied as a static default by the consumer (Node / CLI).
-//
-// This type intentionally mirrors `src/lib/runtime/capability-vector.ts`
-// shape so a browser-detected value passes straight through.
+// CapabilityVector — INPUT type only. The engine owns this shape and never
+// detects capabilities: the browser host detects a vector and Node / CLI
+// consumers supply a static default. Hosts import this type rather than
+// declaring their own copy.
 
 export interface CapabilityVector {
   readonly coi: boolean

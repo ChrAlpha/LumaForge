@@ -1,22 +1,15 @@
+import type {
+  CapabilityVector,
+  PreviewGpuBudget,
+  PreviewGpuCapabilitySnapshot,
+} from '@lumaforge/render-engine/policy'
+
 import { getPreviewBackendSnapshot } from '~/lib/preview/gpu-backend'
 import {
   BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
   QUICK_PREVIEW_MAX_PIXELS,
 } from '~/lib/raw/decoder'
-
-import type { CapabilityVector } from './capability-vector'
-
-export interface PreviewGpuCapabilitySnapshot {
-  readonly webgpu: boolean
-  readonly maxTextureSize: number
-}
-
-export interface PreviewGpuBudget {
-  readonly boundedHqMaxPixels: number
-  readonly dualGpuAllowed: boolean
-  readonly originalReferenceSnapshotMaxPixels: number
-}
 
 const DESKTOP_PERFORMANCE_PREVIEW_MAX_PIXELS = 16_000_000
 const DUAL_GPU_MIN_DIMENSION = 4096

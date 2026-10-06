@@ -1,16 +1,4 @@
-export interface CapabilityVector {
-  readonly coi: boolean
-  readonly pthread: boolean
-  readonly deviceMemoryGB: number | null
-  readonly hwConcurrency: number
-  readonly webKitClass:
-    | 'chromium'
-    | 'webkit-desktop-safari'
-    | 'webkit-mobile'
-    | 'unknown'
-  readonly deviceFormFactor: 'desktop' | 'mobile' | 'unknown'
-  readonly maybeOpfsSupported: boolean
-}
+import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 
 type CapabilityNavigator = Navigator & {
   deviceMemory?: number

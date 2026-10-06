@@ -1,7 +1,10 @@
+import type {
+  CapabilityVector,
+  PreviewGpuBudget,
+} from '@lumaforge/render-engine/policy'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type { PreviewGpuBudget } from '~/lib/runtime/preview-gpu-budget'
 
 import type { DisplaySource } from '../model/session'
 import { renderOriginalReferenceSnapshot } from '../services/compare/original-reference-renderer'
@@ -12,11 +15,7 @@ import {
 } from '../services/compare/original-reference-snapshot'
 
 export type OriginalReferenceSnapshotCapability = {
-  webKitClass:
-    | 'chromium'
-    | 'webkit-desktop-safari'
-    | 'webkit-mobile'
-    | 'unknown'
+  webKitClass: CapabilityVector['webKitClass']
   pthread: boolean
   previewGpuBudget?: Pick<
     PreviewGpuBudget,

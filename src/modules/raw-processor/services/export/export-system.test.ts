@@ -1,5 +1,9 @@
 import type { ExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
+import type {
+  CapabilityVector,
+  ExportRuntimeResources,
+} from '@lumaforge/render-engine/policy'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ExportExecutionPlan } from '~/lib/export/execution-profile'
@@ -11,8 +15,6 @@ import type {
   FullResWorkerCheckpointConfig,
   RunFullResolutionJpegExportInWorkerInput,
 } from '~/lib/export/full-res-export-client'
-import type { CapabilityVector } from '~/lib/runtime/capability-vector'
-import type { ExportRuntimeResources } from '~/lib/runtime/export-runtime-resources'
 
 import { runFullResolutionExportJob } from './export-system'
 

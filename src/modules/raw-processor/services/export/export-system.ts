@@ -1,6 +1,7 @@
 import type { ExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 import type { ExportFidelity } from '@lumaforge/render-engine'
 import type { FullResolutionExportProgress } from '@lumaforge/render-engine/export'
+import type { ExportRuntimeResources } from '@lumaforge/render-engine/policy'
 
 import type { ExportExecutionPlan } from '~/lib/export/execution-profile'
 import {
@@ -15,7 +16,6 @@ import type {
 } from '~/lib/export/full-res-export-client'
 import { FullResolutionExportWorkerClient } from '~/lib/export/full-res-export-client'
 import { detectCapabilityVector } from '~/lib/runtime/capability-vector'
-import type { ExportRuntimeResources } from '~/lib/runtime/export-runtime-resources'
 import { snapshotExportRuntimeResources } from '~/lib/runtime/export-runtime-resources'
 import { ExportBridge } from '~/lib/workers/export-bridge'
 

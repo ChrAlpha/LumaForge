@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { CapabilityVector } from './capability-vector'
 import {
   detectCapabilityVector,
   getCapabilityVectorSnapshot,
@@ -151,6 +154,90 @@ describe('detectCapabilityVector', () => {
     },
   )
 
+  it.each([
+    [7.9, 7],
+    [128, 64],
+    [1, 1],
+  ] as const)(
+    'floors and caps hardwareConcurrency %s to %s',
+    async (hardwareConcurrency, expected) => {
+      vi.stubGlobal('navigator', {
+        userAgent: '',
+        hardwareConcurrency,
+      } as never)
+      vi.stubGlobal('crossOriginIsolated', false)
+
+      const vector = await detectCapabilityVector()
+
+      expect(vector.hwConcurrency).toBe(expected)
+    },
+  )
+
+  it.each([
+    [8, 8],
+    [0.5, 0.5],
+    [0, null],
+    [-4, null],
+    [Number.NaN, null],
+    [Number.POSITIVE_INFINITY, null],
+  ] as const)(
+    'reports deviceMemory %s as %s GB',
+    async (deviceMemory, expected) => {
+      vi.stubGlobal('navigator', { userAgent: '', deviceMemory } as never)
+      vi.stubGlobal('crossOriginIsolated', false)
+
+      const vector = await detectCapabilityVector()
+
+      expect(vector.deviceMemoryGB).toBe(expected)
+    },
+  )
+
+  it.each([
+    ['both accessors', { getDirectory: vi.fn(), estimate: vi.fn() }, true],
+    ['no estimate', { getDirectory: vi.fn() }, false],
+    ['no directory accessor', { estimate: vi.fn() }, false],
+  ] as const)(
+    'reports maybe-OPFS support with %s',
+    async (_label, storage, expected) => {
+      vi.stubGlobal('navigator', { userAgent: '', storage } as never)
+      vi.stubGlobal('crossOriginIsolated', false)
+
+      const vector = await detectCapabilityVector()
+
+      expect(vector.maybeOpfsSupported).toBe(expected)
+    },
+  )
+
+  it('reports pthread under cross-origin isolation with SharedArrayBuffer', async () => {
+    vi.stubGlobal('navigator', { userAgent: '' } as never)
+    vi.stubGlobal('crossOriginIsolated', true)
+    vi.stubGlobal('SharedArrayBuffer', class SharedArrayBuffer {})
+
+    const vector = await detectCapabilityVector()
+
+    expect(vector.coi).toBe(true)
+    expect(vector.pthread).toBe(true)
+  })
+
+  it('caches the first detection until reset', async () => {
+    vi.stubGlobal('navigator', {
+      userAgent: '',
+      hardwareConcurrency: 4,
+    } as never)
+    vi.stubGlobal('crossOriginIsolated', false)
+    expect(getCapabilityVectorSnapshot()).toBeNull()
+
+    const first = await detectCapabilityVector()
+    vi.stubGlobal('navigator', {
+      userAgent: '',
+      hardwareConcurrency: 16,
+    } as never)
+
+    expect(await detectCapabilityVector()).toBe(first)
+    expect(getCapabilityVectorSnapshot()).toBe(first)
+    expect(first.hwConcurrency).toBe(4)
+  })
+
   it('uses a frozen test override as the current snapshot', async () => {
     const override: CapabilityVector = {
       coi: true,
@@ -168,5 +255,21 @@ describe('detectCapabilityVector', () => {
     expect(vector).toEqual(override)
     expect(vector).toBe(getCapabilityVectorSnapshot())
     expect(Object.isFrozen(vector)).toBe(true)
+  })
+})
+
+describe('capability vector type ownership', () => {
+  it('takes the CapabilityVector shape from the render engine', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/lib/runtime/capability-vector.ts'),
+      'utf8',
+    )
+
+    expect(source).not.toMatch(
+      /\b(?:interface|type) CapabilityVector\b|\bexport (?:type )?\{[^}]*\bCapabilityVector\b/,
+    )
+    expect(source).toMatch(
+      /import type \{[^}]*\bCapabilityVector\b[^}]*\} from '@lumaforge\/render-engine\/policy'/,
+    )
   })
 })

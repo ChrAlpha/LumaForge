@@ -1,7 +1,6 @@
-// ExportRuntimeResources — type-only mirror of
-// `src/lib/runtime/export-runtime-resources.ts`. The OPFS / navigator.storage
-// PROBING stays in `src/`; the engine's export-policy.ts takes the snapshot
-// shape as input.
+// ExportRuntimeResources — the export storage snapshot export-policy.ts takes
+// as input. The engine owns these shapes and never probes storage: the host
+// probes OPFS / navigator.storage and fills them.
 
 export interface ExportRuntimeResources {
   readonly opfsSinkAvailable: boolean

@@ -1,14 +1,9 @@
+import type {
+  ExportRuntimeResources,
+  ExportRuntimeResourcesInput,
+} from '@lumaforge/render-engine/policy'
+
 import { getCapabilityVectorSnapshot } from './capability-vector'
-
-export interface ExportRuntimeResources {
-  readonly opfsSinkAvailable: boolean
-  readonly opfsAvailableMB: number | null
-  readonly streamingSinkAvailable: boolean
-}
-
-export interface ExportRuntimeResourcesInput {
-  streamingSinkAvailable: boolean
-}
 
 type StorageEstimate = {
   quota?: number

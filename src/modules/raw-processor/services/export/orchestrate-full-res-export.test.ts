@@ -6,6 +6,10 @@ import {
   planExportGeometry,
 } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
+import type {
+  CapabilityVector,
+  ExportRuntimeResources,
+} from '@lumaforge/render-engine/policy'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type {
@@ -26,12 +30,10 @@ import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { SourceFingerprintFacts } from '~/lib/export/source-fingerprint'
 import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type { CapabilityVector } from '~/lib/runtime/capability-vector'
 import {
   resetCapabilityVectorForTest,
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
-import type { ExportRuntimeResources } from '~/lib/runtime/export-runtime-resources'
 import { composeManualTransform } from '~/modules/transform-demo/transform-render'
 
 import type { ExportResult } from '../../model/export-result'

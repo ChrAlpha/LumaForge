@@ -1,8 +1,8 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type { CapabilityVector } from '~/lib/runtime/capability-vector'
 
 import { createImageSession } from '../../model/session-factory'
 import type { RawLoadContext } from './orchestrate-raw-load'

@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getPreviewBackendSnapshot } from '~/lib/preview/gpu-backend'
@@ -6,7 +10,6 @@ import {
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
 } from '~/lib/raw/decoder'
 
-import type { CapabilityVector } from './capability-vector'
 import {
   derivePreviewGpuBudget,
   detectPreviewGpuCapabilitySnapshot,
@@ -119,5 +122,146 @@ describe('derivePreviewGpuBudget', () => {
     const createElement = vi.spyOn(document, 'createElement')
     expect(detectPreviewGpuCapabilitySnapshot()).toBeNull()
     expect(createElement).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [
+      'no WebGPU keeps the quick-preview ceiling',
+      baseCapability,
+      { webgpu: false, maxTextureSize: 8192 },
+      [6000, 4000],
+      [2_500_000, false, 2_500_000],
+    ],
+    [
+      'desktop Chromium with pthread takes the performance ceiling',
+      baseCapability,
+      strongGpu,
+      [6000, 4000],
+      [16_000_000, true, 16_000_000],
+    ],
+    [
+      'desktop Chromium with 8 GB stays on the performance ceiling',
+      { ...baseCapability, deviceMemoryGB: 8 },
+      strongGpu,
+      [6000, 4000],
+      [16_000_000, true, 16_000_000],
+    ],
+    [
+      'mobile Chromium stays on the bounded-HQ ceiling',
+      { ...baseCapability, deviceFormFactor: 'mobile' },
+      strongGpu,
+      [6000, 4000],
+      [12_000_000, true, 12_000_000],
+    ],
+    [
+      'mobile WebKit without pthread stays on the bounded-HQ ceiling',
+      {
+        ...baseCapability,
+        coi: false,
+        pthread: false,
+        webKitClass: 'webkit-mobile',
+        deviceFormFactor: 'mobile',
+      },
+      strongGpu,
+      [6000, 4000],
+      [12_000_000, true, 12_000_000],
+    ],
+    [
+      'a 2 GB device keeps the low-memory ceiling and no dual GPU',
+      { ...baseCapability, deviceMemoryGB: 2 },
+      strongGpu,
+      [6000, 4000],
+      [8_000_000, false, 8_000_000],
+    ],
+    [
+      'a 4096 texture caps the performance ceiling for 3:2',
+      baseCapability,
+      { webgpu: true, maxTextureSize: 4096 },
+      [6000, 4000],
+      [11_184_810, true, 11_184_810],
+    ],
+    [
+      'a 4096 texture caps a 3:1 panorama below dual GPU',
+      baseCapability,
+      { webgpu: true, maxTextureSize: 4096 },
+      [9000, 3000],
+      [5_592_405, false, 5_592_405],
+    ],
+    [
+      'a 2048 texture blocks dual GPU',
+      baseCapability,
+      { webgpu: true, maxTextureSize: 2048 },
+      [6000, 4000],
+      [2_796_202, false, 2_796_202],
+    ],
+    [
+      'an unusable texture limit falls back to the quick-preview floor',
+      baseCapability,
+      { webgpu: true, maxTextureSize: 0 },
+      [6000, 4000],
+      [2_500_000, false, 2_500_000],
+    ],
+    [
+      'unknown source dimensions are treated as square',
+      baseCapability,
+      { webgpu: true, maxTextureSize: 4096 },
+      [0, 0],
+      [16_000_000, true, 16_000_000],
+    ],
+  ] satisfies Array<
+    [
+      string,
+      CapabilityVector,
+      { webgpu: boolean; maxTextureSize: number },
+      [number, number],
+      [number, boolean, number],
+    ]
+  >)(
+    'keeps the budget table: %s',
+    (
+      _label,
+      capability,
+      gpu,
+      [sourceWidth, sourceHeight],
+      [boundedHqMaxPixels, dualGpuAllowed, originalReferenceSnapshotMaxPixels],
+    ) => {
+      const budget = derivePreviewGpuBudget({
+        capability,
+        gpu,
+        sourceWidth,
+        sourceHeight,
+      })
+
+      expect(budget).toEqual({
+        boundedHqMaxPixels,
+        dualGpuAllowed,
+        originalReferenceSnapshotMaxPixels,
+      })
+      expect(Object.isFrozen(budget)).toBe(true)
+    },
+  )
+})
+
+describe('preview GPU budget type ownership', () => {
+  it.each([
+    'CapabilityVector',
+    'PreviewGpuBudget',
+    'PreviewGpuCapabilitySnapshot',
+  ])('takes %s from the render engine', (name) => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/lib/runtime/preview-gpu-budget.ts'),
+      'utf8',
+    )
+
+    expect(source).not.toMatch(
+      new RegExp(
+        String.raw`\b(?:interface|type) ${name}\b|\bexport (?:type )?\{[^}]*\b${name}\b`,
+      ),
+    )
+    expect(source).toMatch(
+      new RegExp(
+        String.raw`import type \{[^}]*\b${name}\b[^}]*\} from '@lumaforge/render-engine/policy'`,
+      ),
+    )
   })
 })

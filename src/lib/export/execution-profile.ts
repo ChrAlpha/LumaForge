@@ -1,14 +1,13 @@
 import type { ExportFidelity } from '@lumaforge/render-engine'
 import type {
+  CapabilityVector,
   ExportIntent,
   ExportOrchestrationCopy,
   ExportPolicy,
+  ExportRuntimeResources,
   PerformancePreference,
 } from '@lumaforge/render-engine/policy'
 import { deriveExportPolicy } from '@lumaforge/render-engine/policy'
-
-import type { CapabilityVector } from '~/lib/runtime/capability-vector'
-import type { ExportRuntimeResources } from '~/lib/runtime/export-runtime-resources'
 
 import type {
   LargeResourceOwner,
