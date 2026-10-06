@@ -250,11 +250,11 @@ These are owner decisions. They override cleanup advice that says otherwise.
   geometry come from that module. Treat it as production code. Its useful
   code, tests, and fixtures move to a production home later; only then are the
   `/transform-demo` route and the demo module deleted.
-- DCP calibration: the app slice (stage hook, service, and atoms) is
-  removed, and the workflow applies no camera calibration. The remaining
-  `src/lib/profiles/calibration-catalog.ts` and
-  `src/lib/profiles/dcp-params.ts` are scheduled for deletion; do not extend
-  them. The runtime side stays:
+- DCP calibration: the app slice (stage hook, service, atoms, and the
+  calibration catalog and DCP params parsers) is removed, and the workflow
+  applies no camera calibration. The LUT catalog parser rejects calibration
+  documents through its generic `invalid-catalog` check. The runtime side
+  stays:
   `applyCalibration` in `@lumaforge/luma-raw-runtime`, `solveDcpInterpolation`
   in `@lumaforge/luma-color-runtime`, the manifest's null `calibration` slot,
   and the exported HDR analysis (`analyzeRawDynamicRange`).

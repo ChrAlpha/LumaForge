@@ -249,7 +249,7 @@ describe('online LUT release catalog parsing', () => {
     })
   })
 
-  it('collapses an all-calibration catalog into one calibration-catalog issue', () => {
+  it('rejects a catalog with no LUT-kind entry as one invalid-catalog issue', () => {
     const result = parseReleaseCatalog(
       {
         schemaVersion: 1,
@@ -271,16 +271,124 @@ describe('online LUT release catalog parsing', () => {
             entryUrl:
               'https://profiles.example.com/releases/v2026.05.01/entries/camera-profile.json',
           },
+          {
+            id: 'lens-profile',
+            kind: 'lens-correction-profile',
+            redistributionAllowed: true,
+          },
         ],
       },
       'https://profiles.example.com/releases/v2026.05.01/catalog.json',
     )
 
-    // Pointing a LUT source at the calibration catalog is a domain mix-up:
-    // one targeted issue, not one unsupported-entry per calibration profile.
+    // A document with entries but no LUT among them is not a LUT catalog:
+    // one catalog-level issue, never an empty LUT list or one issue per row.
     expect(result).toMatchObject({
       ok: false,
-      issues: [{ code: 'calibration-catalog' }],
+      issues: [{ code: 'invalid-catalog' }],
+    })
+    if (!result.ok) expect(result.issues).toHaveLength(1)
+  })
+
+  it('rejects a sharded root manifest without entries as invalid-catalog', () => {
+    for (const schemaVersion of [1, 2]) {
+      const result = parseReleaseCatalog(
+        {
+          schemaVersion,
+          catalogRevision: 1781011149818,
+          generatedAt: '2026-06-09T00:00:00.000Z',
+          mounts: {},
+          aliases: { makers: {} },
+          indexes: { camerasByMaker: {}, lensesByMount: {} },
+        },
+        'https://profiles.example.com/calibration/catalog.json',
+      )
+
+      expect(result).toEqual({
+        ok: false,
+        issues: [expect.objectContaining({ code: 'invalid-catalog' })],
+      })
+    }
+  })
+
+  it('collapses non-LUT rows mixed with malformed rows into invalid-catalog', () => {
+    const result = parseReleaseCatalog(
+      {
+        schemaVersion: 1,
+        entries: [
+          null,
+          42,
+          'entry',
+          ['nested'],
+          { id: 'camera-profile', kind: 'camera-profile' },
+          JSON.parse('{"__proto__":{"kind":"lut"},"id":"polluted"}'),
+        ],
+      },
+      'https://profiles.example.com/releases/v2026.05.01/catalog.json',
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      issues: [expect.objectContaining({ code: 'invalid-catalog' })],
+    })
+  })
+
+  it('keeps LUT entries when malformed rows sit beside them', () => {
+    const result = parseReleaseCatalog(
+      {
+        schemaVersion: 1,
+        entries: [
+          null,
+          { id: 'camera-profile', kind: 'camera-profile' },
+          {
+            id: entryManifest.id,
+            kind: 'lut',
+            version: entryManifest.version,
+            title: entryManifest.title,
+            license: entryManifest.license,
+            redistributionAllowed: true,
+            primaryAsset,
+            entryUrl: entryManifest.entryUrl,
+          },
+        ],
+      },
+      'https://profiles.example.com/releases/v2026.05.01/catalog.json',
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: [{ id: 'kodak-2383-rec709' }],
+    })
+  })
+
+  it('rejects an empty catalog without accepting an empty LUT list', () => {
+    const result = parseReleaseCatalog(
+      { schemaVersion: 1, entries: [] },
+      'https://profiles.example.com/releases/v2026.05.01/catalog.json',
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      issues: [expect.objectContaining({ code: 'unsupported-entry' })],
+    })
+  })
+
+  it.each([
+    ['null', null],
+    ['an array', [{ kind: 'lut' }]],
+    ['a string', 'catalog'],
+    ['a number', 1],
+    ['an unknown schema version', { schemaVersion: 2, entries: [] }],
+    ['entries that are not an array', { schemaVersion: 1, entries: {} }],
+  ])('rejects %s as invalid-catalog', (_label, document) => {
+    const result = parseReleaseCatalog(
+      document,
+      'https://profiles.example.com/releases/v2026.05.01/catalog.json',
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      issues: [expect.objectContaining({ code: 'invalid-catalog' })],
     })
   })
 

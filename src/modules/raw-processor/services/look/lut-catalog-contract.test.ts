@@ -137,10 +137,10 @@ describe('lut catalog cross-repo contract (lumaforge-profiles build-s3)', () => 
 })
 
 describe('lut catalog boundary guard (calibration documents)', () => {
-  it('rejects a calibration root manifest with a targeted issue', () => {
+  it('rejects a calibration root manifest as an invalid catalog', () => {
     // Shape from lumaforge-profiles calibration/catalog.json (the sharded
-    // calibration root the calibration stage consumes). Pasting it into LUT
-    // sources is a domain mix-up, not a malformed catalog.
+    // calibration root). It carries no entries array, so pasting it into LUT
+    // sources fails the generic catalog shape check.
     const root = {
       schemaVersion: 1,
       catalogRevision: 1781011149818,
@@ -156,13 +156,10 @@ describe('lut catalog boundary guard (calibration documents)', () => {
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.issues).toHaveLength(1)
-    expect(result.issues[0]?.code).toBe('calibration-catalog')
+    expect(result.issues[0]?.code).toBe('invalid-catalog')
   })
 
   it('keeps the generic invalid-catalog error for unrelated documents with indexes', () => {
-    // Only the real calibration root shape (with its root-only
-    // catalogRevision field) earns the targeted message; arbitrary JSON that
-    // happens to carry `indexes` stays a generic shape error.
     const result = parseReleaseCatalog(
       { schemaVersion: 2, indexes: { byTag: {} } },
       SOURCE_URL,
@@ -174,9 +171,8 @@ describe('lut catalog boundary guard (calibration documents)', () => {
   })
 
   it('lets an entries array win over indexes so hybrid documents parse as LUT catalogs', () => {
-    // Divergence-by-design from detectCalibrationDocumentKind: in the LUT
-    // domain a document that carries both `entries` and `indexes` is treated
-    // as a catalog, not as a calibration root.
+    // A document that carries both `entries` and `indexes` is read as a
+    // catalog; the extra root fields are ignored.
     const result = parseReleaseCatalog(
       {
         ...buildS3LutCatalog([LUT_ENTRY]),
@@ -192,9 +188,9 @@ describe('lut catalog boundary guard (calibration documents)', () => {
   })
 
   it('keeps real LUT validation issues when a mixed catalog has broken LUT entries', () => {
-    // The collapse must not mask genuine LUT problems: a catalog that DOES
-    // carry LUT entries (here with a broken asset) reports those issues even
-    // when calibration entries are also present.
+    // The no-LUT collapse must not mask genuine LUT problems: a catalog that
+    // DOES carry LUT entries (here with a broken asset) reports those issues
+    // even when calibration entries are also present.
     const result = parseReleaseCatalog(
       buildS3LutCatalog([
         CALIBRATION_ENTRY,
@@ -209,7 +205,7 @@ describe('lut catalog boundary guard (calibration documents)', () => {
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(
-      result.issues.some((issue) => issue.code === 'calibration-catalog'),
+      result.issues.some((issue) => issue.code === 'invalid-catalog'),
     ).toBe(false)
     expect(
       result.issues.some(
@@ -219,9 +215,9 @@ describe('lut catalog boundary guard (calibration documents)', () => {
     ).toBe(true)
   })
 
-  it('collapses a calibration-only catalog into one targeted issue', () => {
-    // A calibration catalog parses as a release catalog with zero LUTs; the
-    // user should see one "wrong catalog type" line, not one issue per entry.
+  it('collapses a calibration-only catalog into one invalid-catalog issue', () => {
+    // A calibration catalog has the release catalog shape but no LUT entry;
+    // the user should see one catalog-level line, not one issue per entry.
     const result = parseReleaseCatalog(
       buildS3LutCatalog([
         CALIBRATION_ENTRY,
@@ -237,6 +233,6 @@ describe('lut catalog boundary guard (calibration documents)', () => {
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.issues).toHaveLength(1)
-    expect(result.issues[0]?.code).toBe('calibration-catalog')
+    expect(result.issues[0]?.code).toBe('invalid-catalog')
   })
 })

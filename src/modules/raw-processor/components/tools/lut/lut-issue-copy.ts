@@ -22,7 +22,6 @@ const ISSUE_MESSAGE_KEYS: Record<string, MessageKey> = {
   'unsupported-resource': 'raw.lutSource.issues.unsupportedResource',
   // catalog/entry parser
   'invalid-catalog': 'raw.lutSource.issues.invalidCatalog',
-  'calibration-catalog': 'raw.lutSource.issues.calibrationCatalog',
   'invalid-entry': 'raw.lutSource.issues.invalidEntry',
   'unsupported-entry': 'raw.lutSource.issues.unsupportedEntry',
   'unsupported-asset': 'raw.lutSource.issues.unsupportedAsset',

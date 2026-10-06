@@ -78,7 +78,6 @@
     "exports src/lib/lut/cube-parser.ts: SUPPORTED_LUT_EXTENSIONS",
     "exports src/lib/lut/cube-parser.ts: generateIdentityLUT",
     "exports src/lib/lut/cube-parser.ts: parseCubeFile",
-    "exports src/lib/profiles/calibration-catalog.ts: fetchDcpParams",
     "exports src/lib/raw/luma-runtime-adapter.ts: toRawAdapterError",
     "exports src/lib/webgpu/export-plan.ts: isExportRenderError",
     "exports src/lib/webgpu/shaders.ts: EXPORT_FRAGMENT_SHADER",
