@@ -9,6 +9,8 @@ import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
 import { composeLUTContractProfile } from '../../../services/look/lut-contract'
+import type { LUTOutputOption } from '../../../services/look/lut-output-options'
+import { toOutputCarrierProfile } from '../../../services/look/lut-output-options'
 import {
   SEGMENTED_FOCUS_RING,
   SEGMENTED_ITEM_TEXT,
@@ -18,8 +20,6 @@ import {
 } from '../segmented-chrome'
 import type { OnlineLutBrowserLayout } from './lut-browser-layout'
 import { getViewportBoundedBrowserLayout } from './lut-browser-layout'
-import type { LUTOutputOption } from './lut-output-options'
-import { toOutputCarrierProfile } from './lut-output-options'
 import { LutBrowserDialog } from './LutBrowserDialog'
 import { LUTOutputOptionButton } from './LUTOutputOptionButton'
 import { LUTProfileButton } from './LUTProfileButton'

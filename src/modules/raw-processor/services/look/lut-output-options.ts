@@ -1,10 +1,10 @@
 import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 
-import { toSelectableContract } from '../../../services/look/lut-contract'
 import {
   getProfileAsOutputLabel,
   getProfileOutputLabel,
-} from '../lut-contract-labels'
+} from '../../components/tools/lut-contract-labels'
+import { toSelectableContract } from './lut-contract'
 
 export type LUTOutputOption = {
   id: string

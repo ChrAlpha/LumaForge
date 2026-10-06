@@ -9,8 +9,8 @@ import {
   composeLUTContractProfile,
   toSelectableContract,
 } from '../../services/look/lut-contract'
-import type { LUTOutputOption } from '../tools/lut/lut-output-options'
-import { toOutputCarrierProfile } from '../tools/lut/lut-output-options'
+import type { LUTOutputOption } from '../../services/look/lut-output-options'
+import { toOutputCarrierProfile } from '../../services/look/lut-output-options'
 import type { LookContractStep } from './MobileLookFooter'
 import { useMobileLutContractState } from './useMobileLutContractState'
 

@@ -6,8 +6,8 @@ import type {
   OnlineLutEntryLoadProgress,
   UseOnlineLutSourcesResult,
 } from '../../../hooks/useOnlineLutSources'
+import { groupEntriesByFamily } from '../../../services/look/lut-source-grouping'
 import type { OnlineLutBrowserLayout } from './lut-browser-layout'
-import { groupEntriesByFamily } from './lut-source-grouping'
 import { LutBrowserDialog } from './LutBrowserDialog'
 import { OnlineLutCatalogEntryButton } from './OnlineLutCatalogEntryButton'
 

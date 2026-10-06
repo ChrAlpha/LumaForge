@@ -38,4 +38,14 @@ describe('groupEntriesByFamily', () => {
       others: entries,
     })
   })
+
+  it('hands back the same entry objects so callers keep their identity', () => {
+    const kodak: Entry = { id: 'a', family: 'Kodak' }
+    const plain: Entry = { id: 'b' }
+
+    const result = groupEntriesByFamily([kodak, plain])
+
+    expect(result.families[0]?.items[0]).toBe(kodak)
+    expect(result.others[0]).toBe(plain)
+  })
 })

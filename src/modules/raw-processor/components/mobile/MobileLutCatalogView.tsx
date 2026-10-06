@@ -6,7 +6,7 @@ import { useI18n } from '~/lib/i18n'
 import { sheetSpring } from '~/lib/spring'
 
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
-import type { GroupedEntries } from '../tools/lut/lut-source-grouping'
+import type { GroupedEntries } from '../../services/look/lut-source-grouping'
 import { LutSourceWarning } from '../tools/lut/LutSourceWarning'
 import { useOnlineLutEntryLoader } from '../tools/lut/useOnlineLutEntryLoader'
 import { MobileLutCatalogEntryButton } from './MobileLutCatalogEntryButton'

@@ -3,7 +3,7 @@ import { Monitor } from 'lucide-react'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
-import type { LUTOutputOption } from './lut-output-options'
+import type { LUTOutputOption } from '../../../services/look/lut-output-options'
 
 export type LUTOutputOptionButtonSize = 'comfortable' | 'touch'
 export type LUTOutputOptionButtonSurface = 'paper' | 'on-photo'
