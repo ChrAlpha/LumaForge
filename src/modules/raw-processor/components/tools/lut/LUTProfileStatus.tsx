@@ -9,7 +9,11 @@ import { Button } from '~/components/ui/button'
 import { useI18n } from '~/lib/i18n'
 
 import type { LUTContractSelectionState } from '../../../model/session'
-import { deriveLUTContractView, getProfileOutputLabel } from '../lut-contract'
+import { deriveLUTContractView } from '../../../services/look/lut-contract'
+import {
+  formatLUTContractOutput,
+  getProfileOutputLabel,
+} from '../lut-contract-labels'
 import { LUTContractBrowser } from './LUTContractBrowser'
 
 export function LUTProfileStatus({
@@ -77,16 +81,14 @@ export function LUTProfileStatus({
               {view.profile.label}
             </span>
           </p>
-          {view.outputLabel && (
-            <p className="m-0 grid min-w-0 grid-cols-[4.2rem_minmax(0,1fr)] items-baseline gap-2">
-              <span className="text-[0.72rem] tracking-tight text-lf-on-surface/62">
-                {t('raw.lutContract.outputTerm')}
-              </span>
-              <span className="min-w-0 break-words font-medium text-lf-on-surface/85">
-                {view.outputLabel}
-              </span>
-            </p>
-          )}
+          <p className="m-0 grid min-w-0 grid-cols-[4.2rem_minmax(0,1fr)] items-baseline gap-2">
+            <span className="text-[0.72rem] tracking-tight text-lf-on-surface/62">
+              {t('raw.lutContract.outputTerm')}
+            </span>
+            <span className="min-w-0 break-words font-medium text-lf-on-surface/85">
+              {formatLUTContractOutput(view.output)}
+            </span>
+          </p>
         </div>
       ) : view.status === 'incomplete-output' ? (
         <div className="grid min-w-0 gap-1.5 text-[0.78rem] leading-snug">

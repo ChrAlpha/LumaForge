@@ -26,9 +26,11 @@ describe('useLutContractSummary', () => {
     )
 
     expect(result.current.resolvedProfile?.id).toBe(resolved.id)
-    expect(result.current.displayOutputLabel).toBe('Rec.709 display')
-    expect(result.current.outputRequired).toBe(false)
-    expect(result.current.contractView.status).toBe('confirmed')
+    expect(result.current.contractView).toEqual({
+      status: 'confirmed',
+      profile: resolved,
+      output: { kind: 'display-implied' },
+    })
     expect(result.current.needsUserSelection).toBe(true)
     expect(
       result.current.profileSuggestions.map((profile) => profile.id),

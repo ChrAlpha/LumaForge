@@ -5,12 +5,12 @@ import type {
 import { useState } from 'react'
 
 import type { LUTContractSelectionState } from '../../model/session'
-import type { LUTOutputOption } from '../tools/lut/lut-output-options'
-import { toOutputCarrierProfile } from '../tools/lut/lut-output-options'
 import {
   composeLUTContractProfile,
   toSelectableContract,
-} from '../tools/lut-contract'
+} from '../../services/look/lut-contract'
+import type { LUTOutputOption } from '../tools/lut/lut-output-options'
+import { toOutputCarrierProfile } from '../tools/lut/lut-output-options'
 import type { LookContractStep } from './MobileLookFooter'
 import { useMobileLutContractState } from './useMobileLutContractState'
 

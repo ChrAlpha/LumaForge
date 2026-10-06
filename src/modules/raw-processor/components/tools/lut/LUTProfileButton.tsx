@@ -3,7 +3,7 @@ import { Aperture } from 'lucide-react'
 
 import { clsxm } from '~/lib/cn'
 
-import { getProfileContractLabel } from '../lut-contract'
+import { getProfileContractLabel } from '../lut-contract-labels'
 
 export type LUTProfileButtonSize = 'comfortable' | 'touch'
 export type LUTProfileButtonSurface = 'paper' | 'on-photo'

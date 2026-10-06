@@ -6,15 +6,14 @@ import type {
   LUTContractSelectionState,
   SupportLevel,
 } from '../../model/session'
+import {
+  describeLUTContractOutput,
+  getResolvedProfile,
+} from '../../services/look/lut-contract'
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
 import type { FileFactsTool } from '../tools/FileFactsTool'
 import type { HSLToolValue } from '../tools/HSLTool'
-import { OUTPUT_REQUIRED_LABEL } from '../tools/lut/useLutContractSummary'
-import {
-  getProfileOutputLabel,
-  getResolvedProfile,
-} from '../tools/lut-contract'
 import { countAdjustments } from './adjustment-count'
 import { getAvailableExportOutput } from './export-recap'
 
@@ -55,7 +54,7 @@ export function getLutContractStatus(input: {
     input.lutProfileSelection,
     input.lutProfileResolution,
   )
-  if (!profile || getProfileOutputLabel(profile) === OUTPUT_REQUIRED_LABEL) {
+  if (!profile || describeLUTContractOutput(profile).kind === 'missing') {
     return 'needs-contract'
   }
   return 'confirmed'

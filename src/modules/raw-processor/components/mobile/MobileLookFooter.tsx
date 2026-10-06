@@ -4,7 +4,8 @@ import { AlertTriangle, Check, ChevronRight, CircleAlert } from 'lucide-react'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
-import type { LUTContractView } from '../tools/lut-contract'
+import type { LUTContractView } from '../../services/look/lut-contract'
+import { formatLUTContractOutput } from '../tools/lut-contract-labels'
 
 export type LookContractStep = 'input' | 'output'
 
@@ -19,8 +20,6 @@ const footerTextButton =
 export function MobileLookFooter(props: {
   lutApplied: boolean
   contractView: LUTContractView
-  /** Output label for a confirmed contract whose view omits one. */
-  displayOutputLabel?: string
   /** A tile failed to load: its title, and how to try again. */
   failure: { label: string; onRetry: () => void } | null
   /** The disabled Strength control was pressed: say why, for a moment. */
@@ -80,7 +79,6 @@ export function MobileLookFooter(props: {
     }
 
     if (view.status === 'confirmed') {
-      const output = view.outputLabel ?? props.displayOutputLabel
       return (
         <button
           type="button"
@@ -99,7 +97,7 @@ export function MobileLookFooter(props: {
           <Check aria-hidden="true" className="size-3.5 shrink-0" />
           <span className="min-w-0 truncate">
             {view.profile.label}
-            {output ? ` → ${output}` : ''}
+            {` → ${formatLUTContractOutput(view.output)}`}
           </span>
         </button>
       )

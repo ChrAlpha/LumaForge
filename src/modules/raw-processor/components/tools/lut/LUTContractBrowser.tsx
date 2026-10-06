@@ -8,7 +8,7 @@ import { useScrollEdgeFade } from '~/hooks/common'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
-import { composeLUTContractProfile } from '../lut-contract'
+import { composeLUTContractProfile } from '../../../services/look/lut-contract'
 import {
   SEGMENTED_FOCUS_RING,
   SEGMENTED_ITEM_TEXT,

@@ -4,11 +4,8 @@ import { useMemo } from 'react'
 import type { LUTContractSelectionState } from '../../../model/session'
 import {
   deriveLUTContractView,
-  getProfileOutputLabel,
   getResolvedProfile,
-} from '../lut-contract'
-
-export const OUTPUT_REQUIRED_LABEL = 'Output profile required'
+} from '../../../services/look/lut-contract'
 
 type UseLutContractSummaryInput = {
   lutProfileSelection?: LUTContractSelectionState | null
@@ -31,10 +28,6 @@ export function useLutContractSummary({
     lutProfileSelection,
     lutProfileResolution,
   )
-  const outputLabel = getProfileOutputLabel(resolvedProfile)
-  const outputRequired = outputLabel === OUTPUT_REQUIRED_LABEL
-  const displayOutputLabel =
-    outputLabel && !outputRequired ? outputLabel : undefined
   const contractView = deriveLUTContractView(
     lutProfileSelection,
     lutProfileResolution,
@@ -45,9 +38,6 @@ export function useLutContractSummary({
   return {
     profileSuggestions,
     resolvedProfile,
-    outputLabel,
-    outputRequired,
-    displayOutputLabel,
     contractView,
     needsUserSelection,
   }

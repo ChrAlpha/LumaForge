@@ -3,9 +3,9 @@ import { useEffect, useId, useRef } from 'react'
 
 import { useI18n } from '~/lib/i18n'
 
+import { toSelectableContract } from '../../services/look/lut-contract'
 import { LUTOutputOptionButton } from '../tools/lut/LUTOutputOptionButton'
 import { LUTProfileButton } from '../tools/lut/LUTProfileButton'
-import { toSelectableContract } from '../tools/lut-contract'
 import { handLostFocusTo } from './focus-handoff'
 import type { useMobileLutContractEditor } from './useMobileLutContractEditor'
 

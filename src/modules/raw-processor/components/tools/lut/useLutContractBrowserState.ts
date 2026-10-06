@@ -2,7 +2,7 @@ import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 import { searchLUTColorProfiles } from '@lumaforge/luma-color-runtime'
 import { useMemo } from 'react'
 
-import { groupProfiles } from '../lut-contract'
+import { groupProfiles } from '../lut-contract-labels'
 import type { LUTOutputOption } from './lut-output-options'
 import {
   dedupeOutputOptions,

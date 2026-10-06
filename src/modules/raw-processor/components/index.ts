@@ -20,15 +20,6 @@ export { ExportTool } from './tools/ExportTool'
 export { FileFactsTool } from './tools/FileFactsTool'
 export { HistogramTool } from './tools/HistogramTool'
 export { LutContractTool } from './tools/lut/LutContractTool'
-export {
-  getProfileContractLabel,
-  getProfileGroupLabel,
-  getProfileOutputLabel,
-  getResolvedProfile,
-  groupProfiles,
-  hasDisplayLikeInput,
-  toSelectableContract,
-} from './tools/lut-contract'
 export { ToolCard, ToolCardStack } from './tools/ToolCard'
 export { UnsupportedState } from './UnsupportedState'
 export { WorkspaceHeader } from './WorkspaceHeader'

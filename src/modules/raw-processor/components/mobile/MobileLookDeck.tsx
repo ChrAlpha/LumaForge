@@ -320,7 +320,6 @@ export function MobileLookDeck(props: {
         <MobileLookFooter
           lutApplied={lutApplied}
           contractView={summary.contractView}
-          displayOutputLabel={summary.displayOutputLabel}
           failure={
             failedEntry
               ? {

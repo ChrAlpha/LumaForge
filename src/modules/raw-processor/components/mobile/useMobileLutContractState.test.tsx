@@ -30,8 +30,11 @@ describe('useMobileLutContractState', () => {
     expect(
       result.current.visibleSuggestions.map((profile) => profile.id),
     ).toContain(recommendation.id)
-    expect(result.current.contractView.status).toBe('confirmed')
-    expect(result.current.displayOutputLabel).toBe('Rec.709 display')
+    expect(result.current.contractView).toEqual({
+      status: 'confirmed',
+      profile: resolved,
+      output: { kind: 'display-implied' },
+    })
     expect(result.current.activeOutputOptionId).toBeUndefined()
     expect(result.current.hasInputMatches).toBe(true)
     expect(result.current.hasOutputMatches).toBe(true)
@@ -60,7 +63,17 @@ describe('useMobileLutContractState', () => {
     )
 
     expect(result.current.resolvedProfile?.id).toBe(profile.id)
-    expect(result.current.displayOutputLabel).toBe('Rec.709 display')
+    expect(result.current.contractView).toEqual({
+      status: 'confirmed',
+      profile: confirmedProfile,
+      output: {
+        kind: 'declared',
+        gamut: 'srgb-rec709',
+        transfer: 'srgb',
+        range: 'full',
+        displayLike: true,
+      },
+    })
     expect(result.current.activeOutputOptionId).toBe(
       `${profile.id}:declared-output`,
     )

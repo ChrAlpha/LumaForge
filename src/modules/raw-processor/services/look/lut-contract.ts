@@ -1,16 +1,38 @@
 import type {
+  ColorGamutId,
   LUTColorProfile,
   LUTContractResolution,
+  SignalRange,
+  TransferFunctionId,
 } from '@lumaforge/luma-color-runtime'
 import {
-  getColorGamut,
   getLUTColorProfile,
-  getTransferFunction,
+  hasDisplayLikeInput,
 } from '@lumaforge/luma-color-runtime'
 
 import type { LUTContractSelectionState } from '../../model/session'
 
-const DISPLAY_LIKE_INPUT_TRANSFERS = new Set(['srgb', 'bt709', 'gamma24'])
+/**
+ * What a LUT contract delivers on its output side. A display look on
+ * display-like input implies its own display output; any other profile needs
+ * all three output fields declared before it can be applied.
+ */
+export type LUTContractOutput =
+  | { kind: 'missing' }
+  | { kind: 'display-implied' }
+  | {
+      kind: 'declared'
+      gamut: ColorGamutId
+      transfer: TransferFunctionId
+      range: SignalRange
+      /** The declared output is display-referred Rec.709. */
+      displayLike: boolean
+    }
+
+export type KnownLUTContractOutput = Exclude<
+  LUTContractOutput,
+  { kind: 'missing' }
+>
 
 export function getResolvedProfile(
   selection?: LUTContractSelectionState | null,
@@ -23,64 +45,32 @@ export function getResolvedProfile(
   return undefined
 }
 
-export function hasDisplayLikeInput(profile: LUTColorProfile) {
-  return (
-    profile.inputGamut === 'srgb-rec709' &&
-    DISPLAY_LIKE_INPUT_TRANSFERS.has(profile.inputTransfer)
-  )
-}
-
-export function getProfileOutputLabel(profile?: LUTColorProfile) {
-  if (!profile) return undefined
-
-  if (!profile.outputGamut || !profile.outputTransfer || !profile.outputRange) {
-    if (profile.role === 'display-look' && hasDisplayLikeInput(profile)) {
-      return 'Rec.709 display'
-    }
-    return 'Output profile required'
+export function describeLUTContractOutput(
+  profile: LUTColorProfile,
+): LUTContractOutput {
+  const { outputGamut, outputTransfer, outputRange } = profile
+  if (!outputGamut || !outputTransfer || !outputRange) {
+    return profile.role === 'display-look' && hasDisplayLikeInput(profile)
+      ? { kind: 'display-implied' }
+      : { kind: 'missing' }
   }
 
-  if (
-    profile.outputGamut === 'srgb-rec709' &&
-    ['srgb', 'bt709', 'gamma24'].includes(profile.outputTransfer)
-  ) {
-    return 'Rec.709 display'
+  return {
+    kind: 'declared',
+    gamut: outputGamut,
+    transfer: outputTransfer,
+    range: outputRange,
+    displayLike: hasDisplayLikeInput({
+      inputGamut: outputGamut,
+      inputTransfer: outputTransfer,
+    }),
   }
-
-  const gamut = profile.outputGamut
-    ? (getColorGamut(profile.outputGamut)?.label ?? profile.outputGamut)
-    : undefined
-  const transfer = profile.outputTransfer
-    ? (getTransferFunction(profile.outputTransfer)?.label ??
-      profile.outputTransfer)
-    : undefined
-
-  return [gamut, transfer].filter(Boolean).join(' / ')
 }
 
-function hasSelectableOutputContract(profile: LUTColorProfile) {
-  if (profile.role === 'display-look' && hasDisplayLikeInput(profile)) {
-    return true
-  }
-
-  return Boolean(
-    profile.outputGamut && profile.outputTransfer && profile.outputRange,
-  )
-}
-
+/** The profile, when its output side is known well enough to apply it. */
 export function toSelectableContract(profile: LUTColorProfile) {
-  if (hasSelectableOutputContract(profile)) return profile
-  return undefined
-}
-
-export function getProfileAsOutputLabel(profile: LUTColorProfile) {
-  if (hasDisplayLikeInput(profile)) return 'Rec.709 display'
-
-  const gamut = getColorGamut(profile.inputGamut)?.label ?? profile.inputGamut
-  const transfer =
-    getTransferFunction(profile.inputTransfer)?.label ?? profile.inputTransfer
-
-  return `${gamut} / ${transfer}`
+  if (describeLUTContractOutput(profile).kind === 'missing') return undefined
+  return profile
 }
 
 function getComposedContractRole(
@@ -104,6 +94,10 @@ function getComposedContractRole(
   return 'technical-output'
 }
 
+/**
+ * Completes a contract from two picks: the input profile keeps its input
+ * side, and the output profile's input side becomes the contract's output.
+ */
 export function composeLUTContractProfile(
   inputProfile: LUTColorProfile,
   outputProfile: LUTColorProfile,
@@ -117,39 +111,12 @@ export function composeLUTContractProfile(
   }
 }
 
-export function getProfileContractLabel(profile: LUTColorProfile) {
-  return profile.label
-}
-
-export function getProfileGroupLabel(profile: LUTColorProfile) {
-  if (profile.role === 'display-look') return 'Output'
-  if (profile.label.startsWith('ARRI')) return 'ARRI'
-  if (profile.label.startsWith('RED')) return 'RED'
-  if (profile.label.startsWith('Nikon')) return 'Nikon'
-  if (profile.label.startsWith('Sony')) return 'Sony'
-  if (profile.label.startsWith('Canon')) return 'Canon'
-  if (profile.label.startsWith('Fujifilm')) return 'Fujifilm'
-  if (profile.label.startsWith('Panasonic')) return 'Panasonic'
-  if (profile.label.startsWith('ACES')) return 'ACES'
-  return 'Other'
-}
-
-export function groupProfiles(profiles: LUTColorProfile[]) {
-  const groups = new Map<string, LUTColorProfile[]>()
-
-  for (const profile of profiles) {
-    const group = getProfileGroupLabel(profile)
-    groups.set(group, [...(groups.get(group) ?? []), profile])
-  }
-
-  return Array.from(groups.entries()).map(([label, items]) => ({
-    label,
-    items,
-  }))
-}
-
 export type LUTContractView =
-  | { status: 'confirmed'; profile: LUTColorProfile; outputLabel?: string }
+  | {
+      status: 'confirmed'
+      profile: LUTColorProfile
+      output: KnownLUTContractOutput
+    }
   | { status: 'incomplete-output'; profile: LUTColorProfile }
   | {
       status: 'recommended'
@@ -166,11 +133,11 @@ export function deriveLUTContractView(
 ): LUTContractView {
   const resolved = getResolvedProfile(selection, resolution)
   if (resolved) {
-    const outputLabel = getProfileOutputLabel(resolved)
-    if (outputLabel === 'Output profile required') {
+    const output = describeLUTContractOutput(resolved)
+    if (output.kind === 'missing') {
       return { status: 'incomplete-output', profile: resolved }
     }
-    return { status: 'confirmed', profile: resolved, outputLabel }
+    return { status: 'confirmed', profile: resolved, output }
   }
 
   const recommendations =
