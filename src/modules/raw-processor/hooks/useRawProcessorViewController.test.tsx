@@ -1,6 +1,8 @@
 import { act, renderHook } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { RAW_FILE_ACCEPT } from '../components/Dropzone'
+import type { UseHiddenFilePickerOptions } from './useHiddenFilePicker'
 import { useRawProcessorViewController } from './useRawProcessorViewController'
 import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
@@ -16,8 +18,12 @@ vi.mock('./stages/ingest/useRawRuntimeReadiness', () => ({
 vi.mock('./useCapabilityGate', () => ({
   useCapabilityGate: () => ({ ready: false }),
 }))
+const pickerCalls = vi.hoisted(() => [] as UseHiddenFilePickerOptions[])
 vi.mock('./useHiddenFilePicker', () => ({
-  useHiddenFilePicker: () => ({ open: vi.fn() }),
+  useHiddenFilePicker: (options: UseHiddenFilePickerOptions) => {
+    pickerCalls.push(options)
+    return { open: vi.fn(), inputProps: {} }
+  },
 }))
 
 function workflowFixture() {
@@ -41,6 +47,35 @@ function workflowFixture() {
 }
 
 describe('useRawProcessorViewController', () => {
+  beforeEach(() => {
+    pickerCalls.length = 0
+  })
+
+  it('mounts only the Replace RAW picker, and a picked file loads as a new photo', () => {
+    const workflow = workflowFixture()
+    const { result } = renderHook(() =>
+      useRawProcessorViewController({
+        rawRouteLocation: { search: '', pathname: '/raw' },
+        workflow,
+      }),
+    )
+
+    // One picker per render: no second, recovery-only file path exists.
+    expect(pickerCalls).toHaveLength(1)
+    expect(pickerCalls[0].accept).toBe(RAW_FILE_ACCEPT.join(','))
+    expect(result.current).not.toHaveProperty('recoveryPicker')
+    expect(result.current).not.toHaveProperty('handleRecoveryFileSelect')
+
+    act(() => result.current.handleReplaceFile())
+    expect(result.current.replacePicker.open).toHaveBeenCalledOnce()
+
+    const file = new File(['x'], 'photo.dng')
+    act(() => pickerCalls[0].onFile(file))
+    expect(workflow.loadFile).toHaveBeenCalledWith(file)
+    expect(workflow.recoverInterruptedExport).not.toHaveBeenCalled()
+    expect(workflow.exportImage).not.toHaveBeenCalled()
+  })
+
   it('resets the compare view through one guarded workflow transaction', () => {
     const workflow = workflowFixture()
     const { result } = renderHook(() =>

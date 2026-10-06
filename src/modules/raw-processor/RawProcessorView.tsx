@@ -202,7 +202,6 @@ function RawProcessorViewInner({
           onCompareReset={view.handleCompareReset}
           onLutDrop={view.handleLutDrop}
           onExport={view.handleExport}
-          onRecoverExportSource={view.handleRecoveryFileSelect}
           onPrepareRuntime={view.triggerRawRuntimePrewarm}
         >
           <RawToolSurface />
@@ -224,7 +223,6 @@ function RawProcessorViewInner({
       />
 
       <input {...view.replacePicker.inputProps} />
-      <input {...view.recoveryPicker.inputProps} />
     </div>
   )
 }

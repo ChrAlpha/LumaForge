@@ -410,8 +410,8 @@ describe('rawProcessorView', () => {
       container.querySelectorAll<HTMLInputElement>('input[type="file"]'),
     ).filter((input) => input.accept !== '.cube')
 
-    // Stage dropzone plus the replace and recovery pickers.
-    expect(rawInputs.length).toBeGreaterThanOrEqual(3)
+    // Stage dropzone plus the replace picker; there is no recovery-only one.
+    expect(rawInputs).toHaveLength(2)
     for (const input of rawInputs) {
       expect(new Set(input.accept.split(','))).toEqual(
         DOTTED_DECODER_EXTENSIONS,

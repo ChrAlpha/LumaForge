@@ -36,7 +36,6 @@ export function useRawProcessorViewController({
     loadOnlineLUT,
     resetCompareView,
     exportImage,
-    recoverInterruptedExport,
     reset,
     updateStats,
     pipelineRef,
@@ -86,20 +85,9 @@ export function useRawProcessorViewController({
     },
   })
 
-  const recoveryPicker = useHiddenFilePicker({
-    accept: RAW_FILE_ACCEPT.join(','),
-    onFile: (file) => {
-      void recoverInterruptedExport(file)
-    },
-  })
-
   const handleReplaceFile = useCallback(() => {
     replacePicker.open()
   }, [replacePicker])
-
-  const handleRecoveryFileSelect = useCallback(() => {
-    recoveryPicker.open()
-  }, [recoveryPicker])
 
   const handleStatsUpdate = useCallback(
     (newStats: PipelineStats) => {
@@ -169,14 +157,12 @@ export function useRawProcessorViewController({
     handleLutDrop,
     handleExport,
     handleReplaceFile,
-    handleRecoveryFileSelect,
     handleStatsUpdate,
     handlePipelineChange,
     handleCompareReset,
     requestSessionReset,
     confirmSessionReset,
     replacePicker,
-    recoveryPicker,
     isProcessing,
     capability,
     isCpuMode,
