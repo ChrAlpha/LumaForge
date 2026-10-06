@@ -3,7 +3,6 @@ import type {
   LUTColorProfile,
   LUTContractResolution,
   LUTData,
-  ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_SELECTIVE_COLOR,
@@ -13,6 +12,9 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
+import type { PreviewViewMode } from '~/lib/preview/preview-view'
+import { PREVIEW_VIEW_MODES } from '~/lib/preview/preview-view'
+
 import type { GpuPreviewInput } from './contract'
 import { webGPUTelemetry } from './pipeline-telemetry'
 import { getShaderSpecialization } from './specialization'
@@ -21,6 +23,7 @@ import {
   UNIFORM_FIELDS,
   writeUniformMat3x3f,
 } from './uniform-layout'
+import type { GpuPreviewParams } from './uniforms'
 import {
   DEFAULT_GPU_PREVIEW_INPUT,
   DEFAULT_PARAMS,
@@ -154,6 +157,55 @@ describe('webGPU uniform ABI', () => {
   })
 })
 
+describe('webGPU view selector', () => {
+  it('reads the view from the explicit app view mode, not from legacy params', () => {
+    expectTypeOf<
+      GpuPreviewParams['viewMode']
+    >().toEqualTypeOf<PreviewViewMode>()
+    expectTypeOf(packUniforms).parameter(1).toEqualTypeOf<GpuPreviewParams>()
+    expectTypeOf(
+      gpuPreviewInputParams,
+    ).returns.toEqualTypeOf<GpuPreviewParams>()
+  })
+
+  it('packs the original/processed selector from the view field alone', () => {
+    const selectors = PREVIEW_VIEW_MODES.map((viewMode) => {
+      const bytes = packedBytes((view) =>
+        packUniforms(
+          view,
+          { ...DEFAULT_PARAMS, ...LOOK, viewMode, compareSplit: 0.5 },
+          null,
+          2,
+          false,
+        ),
+      )
+      const view = new DataView(new Uint8Array(bytes).buffer)
+      return [viewMode, view.getInt32(UNIFORM_FIELDS.viewMode.offset, true)]
+    })
+    expect(selectors).toEqual([
+      ['processed', 0],
+      ['original', 1],
+      ['compare', 0],
+    ])
+
+    const withoutSelector = (viewMode: PreviewViewMode) => {
+      const bytes = packedBytes((view) =>
+        packUniforms(
+          view,
+          { ...DEFAULT_PARAMS, ...LOOK, viewMode, compareSplit: 0.5 },
+          null,
+          2,
+          false,
+        ),
+      )
+      const offset = UNIFORM_FIELDS.viewMode.offset
+      return [...bytes.slice(0, offset), ...bytes.slice(offset + 4)]
+    }
+    // Only the selector differs; the color the shader draws is the same.
+    expect(withoutSelector('original')).toEqual(withoutSelector('processed'))
+  })
+})
+
 describe('webGPU preview input', () => {
   it('starts the pipeline on the processed output', () => {
     expect(DEFAULT_PARAMS.viewMode).toBe('processed')
@@ -246,7 +298,7 @@ describe('webGPU preview input', () => {
   })
 })
 
-const ADJUSTED: ProcessingParams = {
+const ADJUSTED: GpuPreviewParams = {
   ...DEFAULT_PARAMS,
   ...NEUTRAL_USER_COLOR_INTENT,
   styleKind: 'custom',
@@ -338,11 +390,11 @@ const REFUSED_LUTS: Array<[string, LUTData]> = [
 ]
 
 /** The selection with the look removed: what the preview draws for it. */
-function stripped(params: ProcessingParams): ProcessingParams {
+function stripped(params: GpuPreviewParams): GpuPreviewParams {
   return { ...params, styleKind: 'none', builtinPreset: null, intensity: 0 }
 }
 
-function packed(params: ProcessingParams, lut: LUTData | null) {
+function packed(params: GpuPreviewParams, lut: LUTData | null) {
   return packedBytes((view) => packUniforms(view, params, lut, 1.7, true))
 }
 

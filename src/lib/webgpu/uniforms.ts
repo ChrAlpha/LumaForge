@@ -1,7 +1,8 @@
 import type {
   BuiltinStylePreset,
+  ColorGraphIntentSource,
+  LookStyleKind,
   LUTData,
-  ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
 import {
   CHROMA_CLAMP_HIGH,
@@ -10,6 +11,8 @@ import {
   resolveColorBalanceParams,
   resolveToneParams,
 } from '@lumaforge/luma-color-runtime'
+
+import type { PreviewViewMode } from '~/lib/preview/preview-view'
 
 import type { GpuPreviewInput } from './contract'
 import {
@@ -24,7 +27,18 @@ import {
   writeUniformVec3f,
 } from './uniform-layout'
 
-export const DEFAULT_PARAMS: ProcessingParams = {
+/**
+ * What the uniform packer reads: the color intent plus the app view mode that
+ * selects the shader output. The view mode is the app's own view contract,
+ * never a field read off legacy processing params. A compare split may ride
+ * along from older callers; it is never packed.
+ */
+export type GpuPreviewParams = ColorGraphIntentSource & {
+  readonly viewMode: PreviewViewMode
+  readonly compareSplit?: number
+}
+
+export const DEFAULT_PARAMS: GpuPreviewParams = {
   intensity: 0.7,
   viewMode: 'processed',
   compareSplit: 0.5,
@@ -49,7 +63,7 @@ export const DEFAULT_GPU_PREVIEW_INPUT: GpuPreviewInput = Object.freeze({
 
 const OUTPUT_VIEW_MODES: Record<
   GpuPreviewInput['output'],
-  Exclude<ProcessingParams['viewMode'], 'compare'>
+  Exclude<PreviewViewMode, 'compare'>
 > = {
   processed: 'processed',
   'technical-original': 'original',
@@ -61,7 +75,7 @@ const OUTPUT_VIEW_MODES: Record<
  */
 export function gpuPreviewInputParams(
   input: GpuPreviewInput,
-): ProcessingParams {
+): GpuPreviewParams {
   return {
     ...input.color,
     viewMode: OUTPUT_VIEW_MODES[input.output],
@@ -87,14 +101,15 @@ export function packGpuPreviewUniforms(
 
 // The shader renders one output per draw. Compare is composed from
 // frame-anchored layers above the canvas, so a compare view mode packs as the
-// processed output and the compare split never reaches the GPU.
-const VIEW_MODE_UNIFORMS: Record<ProcessingParams['viewMode'], 0 | 1> = {
+// processed output and the compare split never reaches the GPU. Original
+// selects the technical base (VIEW_MODE_ORIGINAL in the shader).
+const VIEW_MODE_UNIFORMS: Record<PreviewViewMode, 0 | 1> = {
   processed: 0,
   original: 1,
   compare: 0,
 }
 
-const STYLE_KIND_UNIFORMS: Record<ProcessingParams['styleKind'], number> = {
+const STYLE_KIND_UNIFORMS: Record<LookStyleKind, number> = {
   none: 0,
   builtin: 1,
   custom: 2,
@@ -113,7 +128,7 @@ const BUILTIN_PRESET_UNIFORMS: Record<BuiltinStylePreset, number> = {
 
 export function packUniforms(
   v: DataView,
-  p: ProcessingParams,
+  p: GpuPreviewParams,
   lut: LUTData | null,
   rawRenderExposureMultiplier: number,
   selectiveColorActive: boolean,

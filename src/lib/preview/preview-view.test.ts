@@ -24,8 +24,10 @@ describe('preview view', () => {
     expectTypeOf<PreviewViewMode>().toEqualTypeOf<
       ImageSession['viewState']['mode']
     >()
+    // Legacy params may still carry a view mode; when they do it is one of
+    // these, so a legacy record maps onto the app view without translation.
     expectTypeOf<PreviewViewMode>().toEqualTypeOf<
-      ProcessingParams['viewMode']
+      NonNullable<ProcessingParams['viewMode']>
     >()
   })
 

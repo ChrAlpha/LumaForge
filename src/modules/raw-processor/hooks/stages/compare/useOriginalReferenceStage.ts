@@ -1,7 +1,7 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
+import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { DisplaySource, ImageSession } from '../../../model/session'
@@ -12,7 +12,7 @@ import { useOriginalReferenceSnapshotResources } from './useOriginalReferenceSna
 type UseOriginalReferenceStageInput = {
   sessionId: string | null
   sessionRef: MutableRefObject<ImageSession | null>
-  viewMode: ProcessingParams['viewMode']
+  viewMode: PreviewViewMode
   previewSuspended: boolean
   decodedImageRef: MutableRefObject<DecodedImage | null>
   decodedImageVersion: number

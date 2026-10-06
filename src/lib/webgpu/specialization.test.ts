@@ -45,6 +45,7 @@ describe('shader specialization features', () => {
       userSaturation: -90,
       intensity: 0.2,
       viewMode: 'original',
+      compareSplit: 0.2,
     }
     const b = getShaderSpecialization(withView, lut())
     expect(getShaderSpecializationKey(a)).toBe(getShaderSpecializationKey(b))

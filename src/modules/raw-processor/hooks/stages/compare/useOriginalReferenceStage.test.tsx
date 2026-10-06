@@ -1,10 +1,10 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
+import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import {
   resetCapabilityVectorForTest,
@@ -32,7 +32,7 @@ type PendingRender = {
 
 type StageProps = {
   sessionId: string | null
-  viewMode: ProcessingParams['viewMode']
+  viewMode: PreviewViewMode
   image: DecodedImage | null
   imageVersion: number
   displaySource: DisplaySource
@@ -44,7 +44,7 @@ const renders: PendingRender[] = []
 // one snapshot.
 let objectUrlCount = 0
 
-function createSession(viewMode: ProcessingParams['viewMode']): ImageSession {
+function createSession(viewMode: PreviewViewMode): ImageSession {
   return {
     id: 'session-original-reference',
     createdAt: 1,

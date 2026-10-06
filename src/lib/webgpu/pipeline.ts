@@ -1,4 +1,4 @@
-import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { LUTData } from '@lumaforge/luma-color-runtime'
 import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 
 import { GPUReadbackJobs } from './async-resources'
@@ -22,6 +22,7 @@ import { planSnapshotRender, renderSnapshot } from './snapshot'
 import { getShaderSpecialization } from './specialization'
 import { readFloat16Texture } from './texture-data'
 import { UNIFORM_BUFFER_SIZE } from './uniform-layout'
+import type { GpuPreviewParams } from './uniforms'
 import { DEFAULT_PARAMS, packUniforms } from './uniforms'
 
 /** WebGPU preview executor. Full resolution authoritative export stays in its worker. */
@@ -39,7 +40,7 @@ export class WebGPUProcessingPipeline {
   private uniformGroup!: GPUBindGroup
   private readonly uniformData = new ArrayBuffer(UNIFORM_BUFFER_SIZE)
   private readonly uniformView = new DataView(this.uniformData)
-  private params: ProcessingParams = { ...DEFAULT_PARAMS }
+  private params: GpuPreviewParams = { ...DEFAULT_PARAMS }
   private dirty = true
   private disposed = false
   private lost = false
@@ -168,8 +169,8 @@ export class WebGPUProcessingPipeline {
     this.dirty = true
     this.prepareVariant()
   }
-  setParams(params: Partial<ProcessingParams>) {
-    for (const key of Object.keys(params) as (keyof ProcessingParams)[]) {
+  setParams(params: Partial<GpuPreviewParams>) {
+    for (const key of Object.keys(params) as (keyof GpuPreviewParams)[]) {
       if (params[key] !== this.params[key]) {
         this.dirty = true
         break
@@ -186,7 +187,7 @@ export class WebGPUProcessingPipeline {
       )
       .catch((error) => this.fail(error))
   }
-  getParams() {
+  getParams(): GpuPreviewParams {
     return { ...this.params }
   }
 
