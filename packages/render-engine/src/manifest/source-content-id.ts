@@ -97,6 +97,12 @@ const fileCache: WeakMap<Blob, SourceContentIdResult> =
  * Hashing strategy: whole-file `crypto.subtle.digest('SHA-256', bytes)`
  * when WebCrypto is available; pure-JS streaming SHA-256 fallback
  * otherwise. Memory budget during hashing peaks at the file's `byteSize`.
+ *
+ * @deprecated Reads the whole Blob into memory before hashing. Feed the
+ * Blob's chunks to `createStreamingSha256`, or call
+ * `sourceContentIdFromBytes` when the bytes are already in memory. Never
+ * derive source identity from `{name, size, lastModified}` instead: that
+ * tuple collides across files with different bytes.
  */
 export async function sourceContentIdFromFile(
   file: Blob,

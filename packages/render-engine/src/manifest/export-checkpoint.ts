@@ -1,19 +1,25 @@
 // ExportCheckpointManifest — the mid-render export journal.
 //
 // Composes the shared `RenderIdentity` without being a subtype of
-// `RenderManifest`. v1 supports safe-retry only: on interrupt, resume
-// restarts from a verified RenderIdentity rather than reusing partial
-// output bytes. row-resume is deferred.
+// `RenderManifest`. Every type here is deprecated: no engine function reads
+// or writes this journal, and an interrupted export reruns from the start
+// rather than resuming from partial output bytes. The types stay exported so
+// existing imports compile.
 
 import type { RenderIdentity } from './render-manifest'
 
-/** How the source RAW bytes can be reacquired after a reload/crash. */
+/**
+ * How the source RAW bytes can be reacquired after a reload/crash.
+ *
+ * @deprecated Part of the deprecated `ExportCheckpointManifest`.
+ */
 export type SourceReacquisitionMode =
   | 'current-session-file'
   | 'persisted-file-handle'
   | 'user-reselect-required'
   | 'opfs-source-copy'
 
+/** @deprecated Part of the deprecated `ExportCheckpointManifest`. */
 export interface OutputIntent {
   readonly format: 'jpeg'
   readonly dimensions: { readonly width: number; readonly height: number }
@@ -23,6 +29,7 @@ export interface OutputIntent {
   readonly filename: string
 }
 
+/** @deprecated Part of the deprecated `ExportCheckpointManifest`. */
 export interface ResumeFingerprint {
   readonly name: string
   readonly size: number
@@ -32,15 +39,29 @@ export interface ResumeFingerprint {
   readonly hash_prefix_hex: string
 }
 
-/** Native JPEG resume state surfaced by the JPEG row writer. */
+/**
+ * JPEG resume state recorded in the journal.
+ *
+ * @deprecated Part of the deprecated `ExportCheckpointManifest`.
+ */
 export type JpegResumeState = 'restart-required' | 'resumable'
 
+/** @deprecated Part of the deprecated `ExportCheckpointManifest`. */
 export interface ExportInProgress {
   /** Strip indices already written. Telemetry/observability only in v1. */
   readonly completed_strips: readonly number[]
   readonly jpeg_state: JpegResumeState
 }
 
+/**
+ * In-progress export journal.
+ *
+ * @deprecated No engine function reads or writes this journal; an
+ * interrupted export reruns from the start. It stays exported only so
+ * existing imports compile. A manifest's source identity is
+ * `source_raw.sha256`, the SHA-256 of the full file; `resume_fingerprint`
+ * never stands in for it.
+ */
 export interface ExportCheckpointManifest extends RenderIdentity {
   readonly checkpoint_version: 1
   readonly kind: 'export-in-progress'
@@ -50,7 +71,7 @@ export interface ExportCheckpointManifest extends RenderIdentity {
   /** ISO 8601 UTC. Refreshed on every put(). */
   readonly last_checkpointed_at: string
 
-  /** v1 supports safe-retry only. row-resume modernization is a future spec. */
+  /** safe-retry is the only recovery mode this journal defines. */
   readonly recovery_mode: 'safe-retry'
 
   /** How to reacquire source bytes after a reload/crash. */

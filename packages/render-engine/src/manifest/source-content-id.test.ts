@@ -3,9 +3,14 @@
 
 import { Buffer } from 'node:buffer'
 import { createHash, randomBytes } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 
-import { describe, expect, it } from 'vitest'
+import ts from 'typescript'
+import { beforeAll, describe, expect, expectTypeOf, it } from 'vitest'
 
+import * as rootEntry from '../index'
+import * as manifestEntry from './index'
+import type { SourceContentIdResult } from './source-content-id'
 import {
   __TEST_ONLY__,
   sourceContentIdFromBytes,
@@ -97,5 +102,166 @@ describe('sourceContentIdFromFile (cache by object identity)', () => {
     // But cache entries are separate (object identity)
     expect(__TEST_ONLY__.fileCache?.has(fileA)).toBe(true)
     expect(__TEST_ONLY__.fileCache?.has(fileB)).toBe(true)
+  })
+})
+
+describe('sourceContentIdFromFile (inputs and fallback)', () => {
+  it('accepts a plain Blob, not only a File, and caches it by identity', async () => {
+    const bytes = randomBytes(300)
+    const blob = new Blob([bytes])
+    const result = await sourceContentIdFromFile(blob)
+    expect(result).toEqual({
+      sha256: nodeSha256Hex(bytes),
+      byteSize: bytes.byteLength,
+    })
+    expect(__TEST_ONLY__.fileCache?.get(blob)).toBe(result)
+    expectTypeOf(sourceContentIdFromFile).parameter(0).toEqualTypeOf<Blob>()
+    expectTypeOf(
+      sourceContentIdFromFile,
+    ).returns.resolves.toEqualTypeOf<SourceContentIdResult>()
+  })
+
+  it('hashes with the pure-JS fallback when WebCrypto is unavailable', async () => {
+    const bytes = randomBytes(4099)
+    const file = new File([bytes], 'fallback.bin')
+    const ownSubtle = Object.getOwnPropertyDescriptor(
+      globalThis.crypto,
+      'subtle',
+    )
+    Object.defineProperty(globalThis.crypto, 'subtle', {
+      configurable: true,
+      value: undefined,
+    })
+    try {
+      expect(globalThis.crypto.subtle).toBeUndefined()
+      const result = await sourceContentIdFromFile(file)
+      expect(result).toEqual({
+        sha256: nodeSha256Hex(bytes),
+        byteSize: bytes.byteLength,
+      })
+    } finally {
+      if (ownSubtle) {
+        Object.defineProperty(globalThis.crypto, 'subtle', ownSubtle)
+      } else {
+        Reflect.deleteProperty(globalThis.crypto, 'subtle')
+      }
+    }
+    expect(globalThis.crypto.subtle).toBeDefined()
+  })
+})
+
+describe('deprecated manifest helpers on the public entries', () => {
+  const entries = {
+    root: fileURLToPath(new URL('../index.ts', import.meta.url)),
+    manifest: fileURLToPath(new URL('./index.ts', import.meta.url)),
+  }
+  const checkpointTypes = [
+    'ExportCheckpointManifest',
+    'ExportInProgress',
+    'JpegResumeState',
+    'OutputIntent',
+    'ResumeFingerprint',
+    'SourceReacquisitionMode',
+  ]
+
+  let program: ts.Program
+
+  beforeAll(() => {
+    program = ts.createProgram({
+      rootNames: Object.values(entries),
+      options: {
+        module: ts.ModuleKind.ESNext,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+        target: ts.ScriptTarget.ESNext,
+        noEmit: true,
+        types: [],
+      },
+    })
+  }, 30_000)
+
+  /** The `@deprecated` text a consumer of `entry` sees on `name`, if any. */
+  function deprecationOf(entry: string, name: string): string | null {
+    const checker = program.getTypeChecker()
+    const source = program.getSourceFile(entry)
+    const moduleSymbol = source && checker.getSymbolAtLocation(source)
+    const exported =
+      moduleSymbol && checker.tryGetMemberInModuleExports(name, moduleSymbol)
+    if (!exported) throw new Error(`${name} is not exported from ${entry}`)
+    const declared =
+      exported.flags & ts.SymbolFlags.Alias
+        ? checker.getAliasedSymbol(exported)
+        : exported
+    const tag = declared
+      .getJsDocTags(checker)
+      .find((candidate) => candidate.name === 'deprecated')
+    return tag ? ts.displayPartsToString(tag.text) : null
+  }
+
+  it('keeps the helpers exported, with the same values, from both entries', () => {
+    expect(rootEntry.sourceContentIdFromFile).toBe(sourceContentIdFromFile)
+    expect(manifestEntry.sourceContentIdFromFile).toBe(sourceContentIdFromFile)
+    expect(rootEntry.sourceContentIdFromBytes).toBe(sourceContentIdFromBytes)
+    expect(manifestEntry.sourceContentIdFromBytes).toBe(
+      sourceContentIdFromBytes,
+    )
+
+    expectTypeOf<rootEntry.ExportCheckpointManifest>().toEqualTypeOf<manifestEntry.ExportCheckpointManifest>()
+    expectTypeOf<manifestEntry.ExportCheckpointManifest>().toExtend<manifestEntry.RenderIdentity>()
+    expectTypeOf<keyof manifestEntry.ExportCheckpointManifest>().toEqualTypeOf<
+      | keyof manifestEntry.RenderIdentity
+      | 'checkpoint_version'
+      | 'kind'
+      | 'export_id'
+      | 'started_at'
+      | 'last_checkpointed_at'
+      | 'recovery_mode'
+      | 'source_reacquisition'
+      | 'output_intended'
+      | 'resume_fingerprint'
+      | 'in_progress'
+    >()
+    expectTypeOf<
+      manifestEntry.ExportCheckpointManifest['kind']
+    >().toEqualTypeOf<'export-in-progress'>()
+    expectTypeOf<
+      manifestEntry.ExportCheckpointManifest['recovery_mode']
+    >().toEqualTypeOf<'safe-retry'>()
+    expectTypeOf<rootEntry.SourceReacquisitionMode>().toEqualTypeOf<
+      | 'current-session-file'
+      | 'persisted-file-handle'
+      | 'user-reselect-required'
+      | 'opfs-source-copy'
+    >()
+    expectTypeOf<rootEntry.JpegResumeState>().toEqualTypeOf<
+      'restart-required' | 'resumable'
+    >()
+    expectTypeOf<keyof rootEntry.OutputIntent>().toEqualTypeOf<
+      'format' | 'dimensions' | 'color_space' | 'quality' | 'filename'
+    >()
+    expectTypeOf<keyof rootEntry.ResumeFingerprint>().toEqualTypeOf<
+      'name' | 'size' | 'last_modified' | 'hash_prefix_hex'
+    >()
+    expectTypeOf<keyof rootEntry.ExportInProgress>().toEqualTypeOf<
+      'completed_strips' | 'jpeg_state'
+    >()
+  })
+
+  it('marks the checkpoint types and the File helper deprecated on both entries', () => {
+    for (const entry of Object.values(entries)) {
+      for (const name of checkpointTypes) {
+        expect(deprecationOf(entry, name), `${name} in ${entry}`).not.toBeNull()
+      }
+      // The replacement is real content hashing, never file metadata.
+      expect(deprecationOf(entry, 'sourceContentIdFromFile')).toContain(
+        'sourceContentIdFromBytes',
+      )
+    }
+  })
+
+  it('leaves the bytes helper and its result type supported', () => {
+    for (const entry of Object.values(entries)) {
+      expect(deprecationOf(entry, 'sourceContentIdFromBytes')).toBeNull()
+      expect(deprecationOf(entry, 'SourceContentIdResult')).toBeNull()
+    }
   })
 })
