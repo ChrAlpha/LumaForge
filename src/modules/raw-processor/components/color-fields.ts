@@ -1,12 +1,18 @@
+import {
+  NEUTRAL_USER_COLOR_INTENT,
+  USER_COLOR_FIELD_BOUNDS,
+} from '@lumaforge/luma-color-runtime'
 import { z } from 'zod'
 
 import type { Translate } from '~/lib/i18n'
 
+import { boundedColorNumber } from './fields/bounded-color-number'
+
 export const ColorValueSchema = z.object({
-  userTemperature: z.number().min(-100).max(100),
-  userTint: z.number().min(-100).max(100),
-  userSaturation: z.number().min(-100).max(100),
-  userVibrance: z.number().min(-100).max(100),
+  userTemperature: boundedColorNumber('userTemperature'),
+  userTint: boundedColorNumber('userTint'),
+  userSaturation: boundedColorNumber('userSaturation'),
+  userVibrance: boundedColorNumber('userVibrance'),
 })
 
 export type ColorValue = z.infer<typeof ColorValueSchema>
@@ -26,8 +32,7 @@ export const COLOR_FIELDS: ColorField[] = [
     key: 'userTemperature',
     labelKey: 'raw.color.temperature',
     short: 'TEMP',
-    min: -100,
-    max: 100,
+    ...USER_COLOR_FIELD_BOUNDS.userTemperature,
     step: 1,
     unit: '',
   },
@@ -35,8 +40,7 @@ export const COLOR_FIELDS: ColorField[] = [
     key: 'userTint',
     labelKey: 'raw.color.tint',
     short: 'TINT',
-    min: -100,
-    max: 100,
+    ...USER_COLOR_FIELD_BOUNDS.userTint,
     step: 1,
     unit: '',
   },
@@ -44,8 +48,7 @@ export const COLOR_FIELDS: ColorField[] = [
     key: 'userSaturation',
     labelKey: 'raw.color.saturation',
     short: 'SAT',
-    min: -100,
-    max: 100,
+    ...USER_COLOR_FIELD_BOUNDS.userSaturation,
     step: 1,
     unit: '',
   },
@@ -53,18 +56,17 @@ export const COLOR_FIELDS: ColorField[] = [
     key: 'userVibrance',
     labelKey: 'raw.color.vibrance',
     short: 'VIB',
-    min: -100,
-    max: 100,
+    ...USER_COLOR_FIELD_BOUNDS.userVibrance,
     step: 1,
     unit: '',
   },
 ]
 
 export const COLOR_NEUTRAL: ColorValue = {
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
+  userTemperature: NEUTRAL_USER_COLOR_INTENT.userTemperature,
+  userTint: NEUTRAL_USER_COLOR_INTENT.userTint,
+  userSaturation: NEUTRAL_USER_COLOR_INTENT.userSaturation,
+  userVibrance: NEUTRAL_USER_COLOR_INTENT.userVibrance,
 }
 
 export function isColorNeutral(value: ColorValue): boolean {

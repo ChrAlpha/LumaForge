@@ -8,7 +8,14 @@ import { clsxm } from '~/lib/cn'
 import type { Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 
-import { HSL_BAND_SWATCH } from '../mobile/hsl-fields'
+import type { HSLField } from '../fields/hsl-fields'
+import {
+  HSL_BAND_LABEL_KEY,
+  HSL_BAND_ORDER,
+  HSL_BAND_SWATCH,
+  HSL_FIELDS,
+  isHSLNeutral,
+} from '../fields/hsl-fields'
 import { DesktopAdjustRow } from './DesktopAdjustRow'
 import {
   SEGMENTED_FOCUS_RING,
@@ -23,41 +30,6 @@ import {
 } from './slider-tracks'
 
 export type HSLToolValue = Readonly<Record<HSLBandId, Readonly<HSLBandShift>>>
-
-const HSL_BAND_ORDER: readonly HSLBandId[] = [
-  'red',
-  'orange',
-  'yellow',
-  'green',
-  'aqua',
-  'blue',
-  'purple',
-  'magenta',
-] as const
-
-const HSL_AXIS_ORDER: readonly (keyof HSLBandShift)[] = [
-  'hue',
-  'saturation',
-  'lightness',
-] as const
-
-const HSL_BAND_LABEL_KEY: Record<HSLBandId, Parameters<Translate>[0]> = {
-  red: 'raw.hsl.bands.red',
-  orange: 'raw.hsl.bands.orange',
-  yellow: 'raw.hsl.bands.yellow',
-  green: 'raw.hsl.bands.green',
-  aqua: 'raw.hsl.bands.aqua',
-  blue: 'raw.hsl.bands.blue',
-  purple: 'raw.hsl.bands.purple',
-  magenta: 'raw.hsl.bands.magenta',
-}
-
-const HSL_AXIS_LABEL_KEY: Record<keyof HSLBandShift, Parameters<Translate>[0]> =
-  {
-    hue: 'raw.hsl.fields.hue',
-    saturation: 'raw.hsl.fields.saturation',
-    lightness: 'raw.hsl.fields.lightness',
-  }
 
 const HSL_AXIS_RESET_KEY: Record<keyof HSLBandShift, Parameters<Translate>[0]> =
   {
@@ -90,16 +62,6 @@ function isBandAxisNeutral(
   return HSL_BAND_ORDER.every((band) => value[band][axis] === 0)
 }
 
-function isAllBandsNeutral(value: HSLToolValue | undefined): boolean {
-  if (!value) return true
-  return HSL_BAND_ORDER.every(
-    (band) =>
-      value[band].hue === 0 &&
-      value[band].saturation === 0 &&
-      value[band].lightness === 0,
-  )
-}
-
 function HSLAxisTabs({
   activeAxis,
   disabled,
@@ -123,7 +85,7 @@ function HSLAxisTabs({
       // rounded-rect Strength group one card away.
       className={clsxm('grid grid-cols-3 gap-0.5', SEGMENTED_TRACK)}
     >
-      {HSL_AXIS_ORDER.map((axis) => {
+      {HSL_FIELDS.map(({ key: axis }) => {
         const selected = activeAxis === axis
         return (
           <button
@@ -154,7 +116,7 @@ function HSLAxisTabs({
 function HSLAxisSliderRow({
   band,
   bandLabel,
-  axis,
+  field,
   axisLabel,
   value,
   disabled,
@@ -162,20 +124,21 @@ function HSLAxisSliderRow({
 }: {
   band: HSLBandId
   bandLabel: string
-  axis: keyof HSLBandShift
+  field: HSLField
   axisLabel: string
   value: number
   disabled: boolean
   onChange: (next: number) => void
 }) {
+  const axis = field.key
   return (
     <DesktopAdjustRow
       label={bandLabel}
       labelPrefix={axisLabel}
       value={value}
-      min={-100}
-      max={100}
-      step={1}
+      min={field.min}
+      max={field.max}
+      step={field.step}
       disabled={disabled}
       track={trackForAxis(band, axis)}
       formatValue={formatSignedInteger}
@@ -209,14 +172,14 @@ export function HSLTool({
   const { t } = useI18n()
   const [activeAxis, setActiveAxis] = useState<keyof HSLBandShift>('hue')
 
-  const axisLabels: Record<keyof HSLBandShift, string> = {
-    hue: t(HSL_AXIS_LABEL_KEY.hue),
-    saturation: t(HSL_AXIS_LABEL_KEY.saturation),
-    lightness: t(HSL_AXIS_LABEL_KEY.lightness),
-  }
+  const axisLabels = Object.fromEntries(
+    HSL_FIELDS.map((field) => [field.key, t(field.labelKey)]),
+  ) as Record<keyof HSLBandShift, string>
+  const activeField =
+    HSL_FIELDS.find((field) => field.key === activeAxis) ?? HSL_FIELDS[0]!
 
   const isAxisNeutral = isBandAxisNeutral(value, activeAxis)
-  const isAllNeutral = isAllBandsNeutral(value)
+  const isAllNeutral = isHSLNeutral(value)
 
   function resetActiveAxis() {
     // React batches setState in this event handler so all 8 calls collapse
@@ -248,7 +211,7 @@ export function HSLTool({
               key={band}
               band={band}
               bandLabel={t(HSL_BAND_LABEL_KEY[band])}
-              axis={activeAxis}
+              field={activeField}
               axisLabel={axisLabels[activeAxis]}
               value={bandValue[activeAxis]}
               disabled={disabled}

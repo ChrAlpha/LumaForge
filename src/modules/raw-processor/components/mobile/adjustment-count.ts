@@ -1,9 +1,9 @@
 import type { ColorValue } from '../color-fields'
 import { COLOR_FIELDS } from '../color-fields'
+import { HSL_BAND_ORDER, HSL_FIELDS } from '../fields/hsl-fields'
 import type { ToneValue } from '../tone-fields'
 import { TONE_FIELDS } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
-import { HSL_BAND_ORDER, MOBILE_HSL_FIELDS } from './hsl-fields'
 
 /**
  * Every Adjust field away from neutral counts once: the tone fields, the
@@ -22,7 +22,7 @@ export function countAdjustments(input: {
     for (const band of HSL_BAND_ORDER) {
       const shift = input.selectiveColor[band]
       if (!shift) continue
-      for (const field of MOBILE_HSL_FIELDS) {
+      for (const field of HSL_FIELDS) {
         if (shift[field.key] !== 0) count += 1
       }
     }

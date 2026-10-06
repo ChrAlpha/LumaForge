@@ -1,6 +1,6 @@
 import type { HSLBandId } from '@lumaforge/luma-color-runtime'
 
-import { HSL_BAND_SWATCH } from '../mobile/hsl-fields'
+import { HSL_BAND_ORDER, HSL_BAND_SWATCH } from '../fields/hsl-fields'
 
 /**
  * Track gradient builders for direction-indicating sliders on the /raw
@@ -22,21 +22,10 @@ const CENTER_ALPHA = 0.06
 
 const NEUTRAL_MID = `oklch(from var(--color-lf-on-surface) l c h / ${CENTER_ALPHA})`
 
-const BAND_ORDER: readonly HSLBandId[] = [
-  'red',
-  'orange',
-  'yellow',
-  'green',
-  'aqua',
-  'blue',
-  'purple',
-  'magenta',
-] as const
-
 function neighborBand(band: HSLBandId, direction: -1 | 1): HSLBandId {
-  const i = BAND_ORDER.indexOf(band)
-  const len = BAND_ORDER.length
-  return BAND_ORDER[(i + direction + len) % len]!
+  const i = HSL_BAND_ORDER.indexOf(band)
+  const len = HSL_BAND_ORDER.length
+  return HSL_BAND_ORDER[(i + direction + len) % len]!
 }
 
 function withAlpha(swatch: string, alpha: number): string {

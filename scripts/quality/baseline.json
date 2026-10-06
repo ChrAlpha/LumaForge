@@ -96,7 +96,6 @@
     "exports src/modules/raw-processor/components/index.ts: hasDisplayLikeInput",
     "exports src/modules/raw-processor/components/index.ts: syncRawUploadInput",
     "exports src/modules/raw-processor/components/index.ts: toSelectableContract",
-    "exports src/modules/raw-processor/components/mobile/hsl-fields.ts: HSL_NEUTRAL_BAND",
     "exports src/modules/raw-processor/components/tools/segmented-chrome.ts: SEGMENTED_THUMB_ACTIVE_VIA_PARENT",
     "exports src/modules/raw-processor/components/transform-fields.ts: TRANSFORM_GROUPS",
     "exports src/modules/raw-processor/hooks/index.ts: useCapabilityGate",
@@ -145,7 +144,6 @@
   "cycles": [
     "src/lib/profiles/catalog.ts > src/lib/profiles/lut-contract.ts",
     "src/lib/raw/luma-runtime-adapter.ts > src/lib/raw/runtime-adapter.ts",
-    "src/modules/raw-processor/components/mobile/MobileModeDock.tsx > src/modules/raw-processor/components/mobile/mobile-stage-layout.ts",
-    "src/modules/raw-processor/components/mobile/hsl-fields.ts > src/modules/raw-processor/components/tools/HSLTool.tsx"
+    "src/modules/raw-processor/components/mobile/MobileModeDock.tsx > src/modules/raw-processor/components/mobile/mobile-stage-layout.ts"
   ]
 }

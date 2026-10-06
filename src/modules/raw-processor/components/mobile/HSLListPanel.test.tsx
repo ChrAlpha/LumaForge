@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import enMessages from '~/locales/en.json'
 
+import { HSL_BAND_ORDER } from '../fields/hsl-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
-import { HSL_BAND_ORDER } from './hsl-fields'
 import { HSLListPanel } from './HSLListPanel'
 
 function neutralBands(): Record<HSLBandId, HSLBandShift> {

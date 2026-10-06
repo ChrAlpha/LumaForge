@@ -1,14 +1,20 @@
+import {
+  NEUTRAL_USER_COLOR_INTENT,
+  USER_COLOR_FIELD_BOUNDS,
+} from '@lumaforge/luma-color-runtime'
 import { z } from 'zod'
 
 import type { Translate } from '~/lib/i18n'
 
+import { boundedColorNumber } from './fields/bounded-color-number'
+
 export const ToneValueSchema = z.object({
-  userExposureEv: z.number().min(-5).max(5),
-  userContrast: z.number().min(-100).max(100),
-  userHighlights: z.number().min(-100).max(100),
-  userShadows: z.number().min(-100).max(100),
-  userWhites: z.number().min(-100).max(100),
-  userBlacks: z.number().min(-100).max(100),
+  userExposureEv: boundedColorNumber('userExposureEv'),
+  userContrast: boundedColorNumber('userContrast'),
+  userHighlights: boundedColorNumber('userHighlights'),
+  userShadows: boundedColorNumber('userShadows'),
+  userWhites: boundedColorNumber('userWhites'),
+  userBlacks: boundedColorNumber('userBlacks'),
 })
 
 export type ToneValue = z.infer<typeof ToneValueSchema>
@@ -29,8 +35,7 @@ export const TONE_FIELDS: ToneField[] = [
     key: 'userExposureEv',
     labelKey: 'raw.tone.exposure',
     short: 'EXP',
-    min: -5,
-    max: 5,
+    ...USER_COLOR_FIELD_BOUNDS.userExposureEv,
     step: 0.01,
     unit: 'EV',
     group: 'basic',
@@ -39,8 +44,7 @@ export const TONE_FIELDS: ToneField[] = [
     key: 'userContrast',
     labelKey: 'raw.tone.contrast',
     short: 'CON',
-    min: -100,
-    max: 100,
+    ...USER_COLOR_FIELD_BOUNDS.userContrast,
     step: 1,
     unit: '',
     group: 'basic',
@@ -49,8 +53,7 @@ export const TONE_FIELDS: ToneField[] = [
     key: 'userHighlights',
     labelKey: 'raw.tone.highlights',
     short: 'HIGH',
-    min: -100,
-    max: 100,
+    ...USER_COLOR_FIELD_BOUNDS.userHighlights,
     step: 1,
     unit: '',
     group: 'fine',
@@ -59,8 +62,7 @@ export const TONE_FIELDS: ToneField[] = [
     key: 'userShadows',
     labelKey: 'raw.tone.shadows',
     short: 'SHAD',
-    min: -100,
-    max: 100,
+    ...USER_COLOR_FIELD_BOUNDS.userShadows,
     step: 1,
     unit: '',
     group: 'fine',
@@ -69,8 +71,7 @@ export const TONE_FIELDS: ToneField[] = [
     key: 'userWhites',
     labelKey: 'raw.tone.whites',
     short: 'WHT',
-    min: -100,
-    max: 100,
+    ...USER_COLOR_FIELD_BOUNDS.userWhites,
     step: 1,
     unit: '',
     group: 'fine',
@@ -79,8 +80,7 @@ export const TONE_FIELDS: ToneField[] = [
     key: 'userBlacks',
     labelKey: 'raw.tone.blacks',
     short: 'BLK',
-    min: -100,
-    max: 100,
+    ...USER_COLOR_FIELD_BOUNDS.userBlacks,
     step: 1,
     unit: '',
     group: 'fine',
@@ -88,12 +88,12 @@ export const TONE_FIELDS: ToneField[] = [
 ]
 
 export const TONE_NEUTRAL: ToneValue = {
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
+  userExposureEv: NEUTRAL_USER_COLOR_INTENT.userExposureEv,
+  userContrast: NEUTRAL_USER_COLOR_INTENT.userContrast,
+  userHighlights: NEUTRAL_USER_COLOR_INTENT.userHighlights,
+  userShadows: NEUTRAL_USER_COLOR_INTENT.userShadows,
+  userWhites: NEUTRAL_USER_COLOR_INTENT.userWhites,
+  userBlacks: NEUTRAL_USER_COLOR_INTENT.userBlacks,
 }
 
 export function isToneNeutral(value: ToneValue): boolean {

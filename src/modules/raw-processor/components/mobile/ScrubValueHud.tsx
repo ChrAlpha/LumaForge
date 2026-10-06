@@ -9,6 +9,11 @@ import type { ManualTransform } from '~/modules/transform-demo/transform-types'
 import type { ColorValue } from '../color-fields'
 import { COLOR_FIELDS, formatColorValueShort } from '../color-fields'
 import {
+  formatHSLValueShort,
+  HSL_BAND_LABEL_KEY,
+  HSL_FIELDS,
+} from '../fields/hsl-fields'
+import {
   formatStrengthPercent,
   intensityToStrengthPercent,
 } from '../strength-field'
@@ -22,11 +27,6 @@ import {
   transformSliderValue,
 } from '../transform-fields'
 import type { ScrubFieldId } from './AdjustListPanel'
-import {
-  formatHSLValueShort,
-  HSL_BAND_LABEL_KEY,
-  MOBILE_HSL_FIELDS,
-} from './hsl-fields'
 
 type ScrubValueHudProps = {
   field: ScrubFieldId | null
@@ -176,7 +176,7 @@ function resolveReadout(
 
   // HSL — label couples the band name with the field name so the HUD reads
   // "Red · Hue" instead of just "Hue" while a band is being scrubbed.
-  const hslField = MOBILE_HSL_FIELDS.find((f) => f.key === field.key)
+  const hslField = HSL_FIELDS.find((f) => f.key === field.key)
   if (!hslField) return null
   const band = props.selectiveColor?.[field.band] ?? makeNeutralBand()
   const value = band[hslField.key]

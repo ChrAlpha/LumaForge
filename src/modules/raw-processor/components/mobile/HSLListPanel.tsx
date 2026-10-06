@@ -8,6 +8,14 @@ import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
 
+import {
+  formatHSLValueShort,
+  HSL_BAND_LABEL_KEY,
+  HSL_BAND_ORDER,
+  HSL_BAND_SWATCH,
+  HSL_FIELDS,
+  isHSLBandNeutral,
+} from '../fields/hsl-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
 import {
   hslHueTrack,
@@ -15,14 +23,6 @@ import {
   hslSaturationTrack,
 } from '../tools/slider-tracks'
 import { AdjustSliderRow } from './AdjustSliderRow'
-import {
-  formatHSLValueShort,
-  HSL_BAND_LABEL_KEY,
-  HSL_BAND_ORDER,
-  HSL_BAND_SWATCH,
-  isHSLBandNeutral,
-  MOBILE_HSL_FIELDS,
-} from './hsl-fields'
 
 type HSLScrubField = { band: HSLBandId; key: keyof HSLBandShift }
 
@@ -131,7 +131,7 @@ export function HSLListPanel(props: HSLListPanelProps) {
                   transition={surfaceFade}
                   className="grid gap-0.5 pb-1"
                 >
-                  {MOBILE_HSL_FIELDS.map((field) => {
+                  {HSL_FIELDS.map((field) => {
                     const fieldLabel = t(field.labelKey)
                     const isActive =
                       scrub !== null &&

@@ -1,7 +1,12 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  STRENGTH_DETENTS,
+  STRENGTH_FIELD,
+  STRENGTH_TICKS,
+} from '../strength-field'
 import { AdjustSliderRow } from './AdjustSliderRow'
 
 describe('adjustSliderRow', () => {
@@ -75,6 +80,44 @@ describe('adjustSliderRow', () => {
     expect(resetButton).toHaveClass('min-h-9')
     await userEvent.click(resetButton)
     expect(props.onChange).toHaveBeenCalledWith(0)
+  })
+
+  it('returns a Strength row to its 70% neutral and reads 0 as Off', async () => {
+    const format = (v: number) => (v === 0 ? 'Off' : `${v}%`)
+    const strength = {
+      label: 'Strength',
+      min: STRENGTH_FIELD.min,
+      max: STRENGTH_FIELD.max,
+      step: STRENGTH_FIELD.step,
+      neutral: STRENGTH_FIELD.neutral,
+      detents: STRENGTH_DETENTS,
+      ticks: STRENGTH_TICKS.map((tick) => ({
+        value: tick.value,
+        label: tick.labelKey,
+      })),
+      formatValue: format,
+      resetAriaLabel: 'Reset Strength',
+    }
+    const props = renderRow({ ...strength, value: 37 })
+    const thumb = screen.getByRole('slider', { name: 'Strength' })
+    expect(thumb).toHaveAttribute('aria-valuenow', '37')
+    const resetButton = screen.getByRole('button', { name: /reset strength/i })
+    expect(resetButton).toHaveTextContent('37%')
+    await userEvent.click(resetButton)
+    expect(props.onChange).toHaveBeenCalledWith(70)
+    cleanup()
+
+    renderRow({ ...strength, value: 0 })
+    expect(
+      screen.getByRole('button', { name: /reset strength/i }),
+    ).toHaveTextContent('Off')
+    cleanup()
+
+    // At its neutral the row is clean: nothing to reset.
+    renderRow({ ...strength, value: 70 })
+    expect(
+      screen.getByRole('button', { name: /reset strength/i, hidden: true }),
+    ).toBeDisabled()
   })
 
   it.each(['list', 'compact'] as const)(
