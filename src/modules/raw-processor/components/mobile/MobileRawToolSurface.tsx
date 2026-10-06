@@ -123,12 +123,11 @@ export function MobileRawToolSurface() {
           onPreviewExport={props.onPreviewExport}
           exportResult={props.exportResult}
           exportShareCapability={props.exportShareCapability}
-          recovery={props.recovery}
+          interruptionNote={props.interruptionNote}
           onShareExport={props.onShareExport}
           onDownloadExport={props.onDownloadExport}
           onDownloadExportManifest={props.onDownloadExportManifest}
           onCopyExport={props.onCopyExport}
-          onRecoverExportSource={props.onRecoverExportSource}
           isExporting={props.isExporting === true}
           progress={props.progress}
           onClose={onClose}

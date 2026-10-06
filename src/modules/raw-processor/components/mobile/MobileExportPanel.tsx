@@ -18,9 +18,10 @@ import type {
   ExportResult,
   ExportShareCapability,
 } from '../../model/export-result'
-import type { ExportRecoveryState } from '../../model/session'
 import { TAP_SPRING } from '../../motion'
 import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
+import type { ExportInterruptionNote } from '../RawWorkflowContext'
+import { EXPORT_INTERRUPTION_NOTE_COPY } from '../RawWorkflowContext'
 import type { MobileExportRecap } from './export-recap'
 
 // Mirrors the handoff spec tokens: --mrl-ease + base 220ms duration so the
@@ -169,23 +170,19 @@ export function MobileExportPanel(props: {
   canPreviewExport?: boolean
   previewExportDisabledReason?: string
   isProcessing: boolean
-  onExport: (options: {
-    quality: 'standard' | 'high'
-    fidelity: 'safe' | 'balanced' | 'max'
-  }) => void
+  onExport: () => void
   onPreviewExport?: () => void | Promise<void>
   exportResult: ExportResult | null
   exportShareCapability: ExportShareCapability
-  recovery?: ExportRecoveryState
+  /**
+   * A hint for the next export the user starts, never an action: the panel
+   * offers no file picker for it.
+   */
+  interruptionNote?: ExportInterruptionNote | null
   onShareExport: () => void | Promise<void>
   onDownloadExport: () => void
   onDownloadExportManifest?: () => void | Promise<void>
   onCopyExport: () => void | Promise<void>
-  /**
-   * Never rendered: an interrupted export is only a hint for the next export
-   * the user starts, so the panel offers no file picker for it.
-   */
-  onRecoverExportSource?: () => void
   /** A full-resolution or HQ export is running (not just any processing). */
   isExporting?: boolean
   /** Export progress, 0-100, shown beside the title while exporting. */
@@ -247,13 +244,9 @@ export function MobileExportPanel(props: {
     !props.canPreviewExport &&
     Boolean(previewUnavailableReason) &&
     !(showUnavailableReason && previewUnavailableReason === unavailableReason)
-  // Any interruption, legacy source-required included, reads as the same
-  // hint: the next export the user starts uses the current RAW and edits on a
-  // safer plan. The journal's own sentence is never shown.
-  const showInterruption =
-    !props.isProcessing &&
-    props.recovery !== undefined &&
-    props.recovery.status !== 'none'
+  // The next export the user starts uses the current RAW and edits on a
+  // safer plan; a running export already took it.
+  const interruptionNote = props.isProcessing ? null : props.interruptionNote
   const resultReadyLabel =
     resultKind === 'hq-preview'
       ? t('raw.export.previewReady')
@@ -385,12 +378,12 @@ export function MobileExportPanel(props: {
           <ChevronRight aria-hidden="true" className="size-3.5" />
         </m.button>
       )}
-      {showInterruption && (
+      {interruptionNote && (
         <p
           data-export-interruption
           className="m-0 px-0.5 text-[0.72rem] leading-snug text-lf-on-photo-ink/72"
         >
-          {t('raw.export.interrupted')}
+          {t(EXPORT_INTERRUPTION_NOTE_COPY[interruptionNote.kind])}
         </p>
       )}
       {props.recap && <ExportRecapLines recap={props.recap} />}
@@ -409,9 +402,7 @@ export function MobileExportPanel(props: {
             !props.canExport || props.isProcessing ? undefined : { y: 0.5 }
           }
           transition={PANEL_TRANSITION}
-          onClick={() =>
-            props.onExport({ quality: 'high', fidelity: 'balanced' })
-          }
+          onClick={() => props.onExport()}
           className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-md border border-lf-green-deep/40 bg-lf-green px-3 text-sm font-semibold text-lf-on-surface transition-colors hover:bg-lf-green-hover disabled:cursor-not-allowed disabled:border-lf-on-photo-bord-soft disabled:bg-lf-on-photo-bg disabled:text-lf-on-photo-ink/35"
         >
           {props.isProcessing ? (

@@ -8,12 +8,11 @@ import type {
   ExportResult,
   ExportShareCapability,
 } from '../../model/export-result'
-import type {
-  ActiveExportPlanState,
-  ExportRecoveryState,
-} from '../../model/session'
+import type { ActiveExportPlanState } from '../../model/session'
 import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
 import { currentSessionAtom } from '../../state/session.atoms'
+import type { ExportInterruptionNote } from '../RawWorkflowContext'
+import { EXPORT_INTERRUPTION_NOTE_COPY } from '../RawWorkflowContext'
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -36,7 +35,7 @@ export function ExportTool({
   onDownloadExportManifest,
   onCopyExport,
   activePlan,
-  recovery,
+  interruptionNote,
   checkpointDurable,
 }: {
   canExport: boolean
@@ -44,10 +43,7 @@ export function ExportTool({
   canPreviewExport?: boolean
   previewExportDisabledReason?: string
   isProcessing: boolean
-  onExport: (options: {
-    quality: 'standard' | 'high'
-    fidelity: 'safe' | 'balanced' | 'max'
-  }) => void
+  onExport: () => void
   onPreviewExport?: () => void | Promise<void>
   exportResult: ExportResult | null
   exportShareCapability: ExportShareCapability
@@ -55,13 +51,12 @@ export function ExportTool({
   onDownloadExport: () => void
   onDownloadExportManifest?: () => void | Promise<void>
   onCopyExport: () => void | Promise<void>
-  /**
-   * Never rendered: an interrupted export is only a hint for the next export
-   * the user starts, so the panel offers no file picker for it.
-   */
-  onRecoverExportSource?: () => void
   activePlan?: ActiveExportPlanState
-  recovery?: ExportRecoveryState
+  /**
+   * A hint for the next export the user starts, never an action: the panel
+   * offers no file picker for it.
+   */
+  interruptionNote?: ExportInterruptionNote | null
   checkpointDurable?: boolean
   embedded?: boolean
 }) {
@@ -69,18 +64,13 @@ export function ExportTool({
   const noteClassName = 'text-[0.78rem] leading-relaxed text-lf-on-surface/72'
   const session = useAtomValue(currentSessionAtom)
   const currentActivePlan = activePlan ?? session?.exportState.activePlan
-  const currentRecovery = recovery ?? session?.exportState.recovery
   const currentCheckpointDurable =
     checkpointDurable ?? session?.exportState.checkpointDurable
   const isLowMemoryPlan =
     currentActivePlan?.runtimeMemoryProfile === 'low-memory'
-  // Any interruption, legacy source-required included, reads as the same
-  // hint: the next export the user starts uses the current RAW and edits on a
-  // safer plan. The journal's own sentence is never shown.
-  const showInterruption =
-    !isProcessing &&
-    currentRecovery !== undefined &&
-    currentRecovery.status !== 'none'
+  // The next export the user starts uses the current RAW and edits on a
+  // safer plan; a running export already took it.
+  const showInterruption = !isProcessing && Boolean(interruptionNote)
   const unavailableReason =
     localizeRawReason(disabledReason, t) || t('raw.exportSourceLoading')
   // The HQ preview can be refused on its own terms while full resolution is
@@ -203,9 +193,9 @@ export function ExportTool({
           {currentCheckpointDurable === false && isLowMemoryPlan && (
             <p className={noteClassName}>{t('raw.export.nonDurable')}</p>
           )}
-          {showInterruption && (
+          {showInterruption && interruptionNote && (
             <p data-export-interruption className={noteClassName}>
-              {t('raw.export.interrupted')}
+              {t(EXPORT_INTERRUPTION_NOTE_COPY[interruptionNote.kind])}
             </p>
           )}
           {!canExport && !isProcessing && (
@@ -216,7 +206,7 @@ export function ExportTool({
             variant="primary"
             size="sm"
             disabled={!canExport || isProcessing}
-            onClick={() => onExport({ quality: 'high', fidelity: 'balanced' })}
+            onClick={() => onExport()}
             // A blocked export must not read as Lab Green. The shared
             // primitive only drops opacity, which on the near-black darkroom
             // keeps the hue and says "safe to ship" while the rail says the

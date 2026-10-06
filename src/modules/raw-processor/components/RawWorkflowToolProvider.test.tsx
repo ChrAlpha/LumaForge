@@ -1,10 +1,14 @@
 import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
-import { act, renderHook } from '@testing-library/react'
+import { act, render, renderHook, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { Provider as JotaiProvider } from 'jotai'
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { viewportAtom } from '~/atoms/viewport'
+import { jotaiStore } from '~/lib/jotai'
 import { identityMatrix } from '~/modules/transform-demo/geometry/matrix'
 import type { UprightAnalysis } from '~/modules/transform-demo/geometry/types'
 import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
@@ -20,6 +24,7 @@ import type { ExportResult } from '../model/export-result'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { captureTransformSource } from '../services/preview/capture-transform-source'
 import { COLOR_NEUTRAL } from './color-fields'
+import { RawToolSurface } from './RawToolSurface'
 import type { RawToolSurfaceProps } from './RawWorkflowContext'
 import { useRawWorkflowContext } from './RawWorkflowContext'
 import { RawWorkflowToolProvider } from './RawWorkflowToolProvider'
@@ -88,7 +93,6 @@ function ProviderWith({
       onCompareReset={vi.fn()}
       onLutDrop={vi.fn()}
       onExport={onExport}
-      onRecoverExportSource={vi.fn()}
       onPrepareRuntime={vi.fn()}
     >
       {children}
@@ -298,7 +302,6 @@ describe('rawWorkflowToolProvider Transform guards', () => {
           onCompareReset={onCompareReset}
           onLutDrop={vi.fn()}
           onExport={onExport}
-          onRecoverExportSource={vi.fn()}
           onPrepareRuntime={vi.fn()}
         >
           {children}
@@ -322,7 +325,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     })
     expect(result.current.previewFrameEl).toBeNull()
     expect(result.current.viewMode).toBe('processed')
-    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    result.current.onExport()
     void result.current.onPreviewExport?.()
     result.current.onCompareReset()
     result.current.onViewModeChange('original')
@@ -339,7 +342,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.canPreviewExport).toBe(true)
     expect(result.current.histogram).toBe(workflow.histogram)
     expect(result.current.previewFrameEl).toBe(frame)
-    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    result.current.onExport()
     void result.current.onPreviewExport?.()
     result.current.onCompareReset()
     result.current.onViewModeChange('original')
@@ -369,7 +372,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       ),
     })
     const attempt = () => {
-      result.current.onExport({ quality: 'high', fidelity: 'safe' })
+      result.current.onExport()
       void result.current.onPreviewExport?.()
     }
 
@@ -437,7 +440,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.canExport).toBe(false)
     expect(result.current.disabledReason).toBe(earlier)
     expect(result.current.exportBlockedByLutContract).toBe(false)
-    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    result.current.onExport()
     expect(onExport).not.toHaveBeenCalled()
   })
 
@@ -503,7 +506,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     state.observing = false
     rerender()
     expect(result.current.canExport).toBe(false)
-    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    result.current.onExport()
     expect(onExport).not.toHaveBeenCalled()
 
     worker.answer()
@@ -511,7 +514,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.transform?.active).toBe(true)
     expect(result.current.canExport).toBe(true)
     expect(result.current.canPreviewExport).toBe(false)
-    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    result.current.onExport()
     expect(onExport).toHaveBeenCalledOnce()
 
     // The export finishes and releases the preview: the geometry stays
@@ -543,7 +546,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     rerender()
     expect(result.current.canExport).toBe(false)
     expect(result.current.disabledReason).toBe('Preparing the current photo…')
-    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    result.current.onExport()
     await act(() => vi.advanceTimersByTimeAsync(60))
     expect(result.current.canExport).toBe(false)
     await act(() => vi.advanceTimersByTimeAsync(90))
@@ -563,7 +566,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       'The processed preview is unavailable. Wait for it or reset Transform.',
     )
     expect(result.current.canPreviewExport).toBe(false)
-    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    result.current.onExport()
     expect(onExport).not.toHaveBeenCalled()
     session.unmount()
   })
@@ -588,7 +591,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.disabledReason).toBe(
       'This transform leaves too little usable image. Reduce the adjustment or reset.',
     )
-    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    result.current.onExport()
     expect(onExport).not.toHaveBeenCalled()
 
     // Reset retires the refused edit and the committed geometry together.
@@ -622,7 +625,6 @@ describe('rawWorkflowToolProvider Transform guards', () => {
           onCompareReset={vi.fn()}
           onLutDrop={vi.fn()}
           onExport={vi.fn()}
-          onRecoverExportSource={vi.fn()}
           onPrepareRuntime={vi.fn()}
         >
           {children}
@@ -665,7 +667,6 @@ describe('rawWorkflowToolProvider Transform guards', () => {
           onCompareReset={onCompareReset}
           onLutDrop={vi.fn()}
           onExport={vi.fn()}
-          onRecoverExportSource={vi.fn()}
           onPrepareRuntime={vi.fn()}
         >
           {children}
@@ -719,7 +720,6 @@ describe('rawWorkflowToolProvider Transform guards', () => {
           onCompareReset={vi.fn()}
           onLutDrop={vi.fn()}
           onExport={vi.fn()}
-          onRecoverExportSource={vi.fn()}
           onPrepareRuntime={vi.fn()}
         >
           {children}
@@ -768,7 +768,6 @@ describe('rawWorkflowToolProvider Transform guards', () => {
           onCompareReset={vi.fn()}
           onLutDrop={vi.fn()}
           onExport={vi.fn()}
-          onRecoverExportSource={vi.fn()}
           onPrepareRuntime={vi.fn()}
         >
           {children}
@@ -806,7 +805,6 @@ describe('rawWorkflowToolProvider Transform guards', () => {
           onCompareReset={vi.fn()}
           onLutDrop={vi.fn()}
           onExport={vi.fn()}
-          onRecoverExportSource={vi.fn()}
           onPrepareRuntime={vi.fn()}
         >
           {children}
@@ -894,7 +892,6 @@ function renderReleasablePreview() {
         onCompareReset={vi.fn()}
         onLutDrop={onLutDrop}
         onExport={onExport}
-        onRecoverExportSource={vi.fn()}
         onPrepareRuntime={vi.fn()}
       >
         {children}
@@ -982,7 +979,7 @@ describe('rawWorkflowToolProvider released preview', () => {
     void result.current.onDownloadExportManifest?.()
     result.current.onShareExport()
     result.current.onCopyExport()
-    result.current.onExport({ quality: 'high', fidelity: 'safe' })
+    result.current.onExport()
     expect(workflow.downloadExportResult).toHaveBeenCalledOnce()
     expect(workflow.downloadExportManifest).toHaveBeenCalledOnce()
     expect(workflow.shareExportResult).toHaveBeenCalledOnce()
@@ -1054,7 +1051,6 @@ describe('rawWorkflowToolProvider released preview', () => {
             onCompareReset={vi.fn()}
             onLutDrop={vi.fn()}
             onExport={vi.fn()}
-            onRecoverExportSource={vi.fn()}
             onPrepareRuntime={vi.fn()}
           >
             {children}
@@ -1116,5 +1112,223 @@ describe('rawWorkflowToolProvider released preview', () => {
     act(() => result.current.transform!.reset())
     expect(commit).toHaveBeenLastCalledWith(null)
     session.unmount()
+  })
+})
+
+const INTERRUPTED_HINT =
+  'The previous export was interrupted. The next export you start uses the current RAW and adjustments with a safer setting.'
+
+function interruptedWorkflow(
+  exportRecovery: UseRawWorkflowReturn['exportRecovery'],
+) {
+  return {
+    ...workflowFixture(),
+    supportLevel: 'experimental',
+    exportResult: null,
+    exportShareCapability: { available: false, reason: 'Export first.' },
+    exportRecovery,
+  } as unknown as UseRawWorkflowReturn
+}
+
+const INTERRUPTED: UseRawWorkflowReturn['exportRecovery'] = {
+  status: 'ready-to-retry',
+  exportId: 'attempt-1',
+  message: 'The journal sentence the surfaces never show.',
+}
+
+function emptyOnlineLutSources() {
+  return {
+    state: {
+      resources: [],
+      entries: [],
+      issues: [],
+      activeResourceId: null,
+      isLoading: false,
+    },
+    sourceUrlInput: '',
+    setSourceUrlInput: vi.fn(),
+    addSourceFromInput: vi.fn(),
+    refreshSource: vi.fn(),
+    removeSource: vi.fn(),
+    loadEntry: vi.fn(),
+    loadingEntryId: null,
+    failedEntryId: null,
+    entryLoadProgress: null,
+    cancelEntryLoad: vi.fn(),
+    loadedEntry: null,
+    activateCatalogs: vi.fn(),
+    resourceActivation: {},
+    catalogActivation: 'inactive',
+    share: { enabled: false, url: null, copy: vi.fn() },
+  } as unknown as UseOnlineLutSourcesResult
+}
+
+function SurfaceWith({
+  workflow,
+  onExport,
+}: {
+  workflow: UseRawWorkflowReturn
+  onExport: () => void
+}) {
+  return (
+    <JotaiProvider store={jotaiStore}>
+      <RawWorkflowToolProvider
+        workflow={workflow}
+        onlineLutSources={emptyOnlineLutSources()}
+        isCpuMode={false}
+        isProcessing={false}
+        runtimeReadinessState="ready"
+        previewFrameEl={null}
+        onReplaceFile={vi.fn()}
+        onResetSession={vi.fn()}
+        onCompareReset={vi.fn()}
+        onLutDrop={vi.fn()}
+        onExport={onExport}
+        onPrepareRuntime={vi.fn()}
+      >
+        <RawToolSurface />
+      </RawWorkflowToolProvider>
+    </JotaiProvider>
+  )
+}
+
+describe('rawWorkflowToolProvider interruption note', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    )
+  })
+
+  it('hands the surfaces one typed note for the loaded source, and no recovery entry', () => {
+    let workflow = interruptedWorkflow(INTERRUPTED)
+    const onExport = vi.fn()
+    const { result, rerender } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <ProviderWith workflow={workflow} onExport={onExport}>
+          {children}
+        </ProviderWith>
+      ),
+    })
+
+    expect(result.current.interruptionNote).toEqual({ kind: 'interrupted' })
+    // The note names no source and carries no journal sentence; the
+    // surfaces get no recovery state and no file picker.
+    expect(JSON.stringify(result.current.interruptionNote)).not.toMatch(
+      /journal|attempt/,
+    )
+    expect(result.current).not.toHaveProperty('recovery')
+    expect(result.current).not.toHaveProperty('onRecoverExportSource')
+
+    // A legacy shape reads as the same note.
+    workflow = interruptedWorkflow({
+      status: 'source-required',
+      exportId: 'export-1',
+      message: 'Please reselect frame.RAF.',
+      expectedFileName: 'frame.RAF',
+      manifest: {} as never,
+    })
+    rerender()
+    expect(result.current.interruptionNote).toEqual({ kind: 'interrupted' })
+
+    // Another source has no hint of its own, so the note goes.
+    workflow = interruptedWorkflow({ status: 'none' })
+    rerender()
+    expect(result.current.interruptionNote).toBeNull()
+
+    // The note mounting, changing and clearing starts no export.
+    expect(onExport).not.toHaveBeenCalled()
+    result.current.onExport()
+    expect(onExport).toHaveBeenCalledExactlyOnceWith()
+  })
+
+  it('shows the note in the desktop export block, and only the explicit Export starts one', async () => {
+    const user = userEvent.setup()
+    const onExport = vi.fn()
+    const prev = jotaiStore.get(viewportAtom)
+    jotaiStore.set(viewportAtom, { ...prev, w: 1280, sm: true })
+    try {
+      const { container, rerender } = render(
+        <SurfaceWith
+          workflow={interruptedWorkflow(INTERRUPTED)}
+          onExport={onExport}
+        />,
+      )
+      const block = container.querySelector<HTMLElement>(
+        '[data-raw-export-block]',
+      )!
+      expect(within(block).getByText(INTERRUPTED_HINT)).toHaveAttribute(
+        'data-export-interruption',
+      )
+      expect(container).not.toHaveTextContent(/journal sentence/)
+
+      rerender(
+        <SurfaceWith
+          workflow={interruptedWorkflow({ status: 'none' })}
+          onExport={onExport}
+        />,
+      )
+      expect(within(block).queryByText(INTERRUPTED_HINT)).toBeNull()
+      expect(onExport).not.toHaveBeenCalled()
+
+      await user.click(
+        within(block).getByRole('button', {
+          name: 'Export full-resolution JPEG',
+        }),
+      )
+      expect(onExport).toHaveBeenCalledExactlyOnceWith()
+    } finally {
+      jotaiStore.set(viewportAtom, prev)
+    }
+  })
+
+  it('shows the same note in the mobile export deck the topbar opens, and only the explicit Export starts one', async () => {
+    const user = userEvent.setup()
+    const onExport = vi.fn()
+    const prev = jotaiStore.get(viewportAtom)
+    jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
+    try {
+      const { container } = render(
+        <SurfaceWith
+          workflow={interruptedWorkflow(INTERRUPTED)}
+          onExport={onExport}
+        />,
+      )
+      const openExport = () =>
+        user.click(
+          container.querySelector<HTMLButtonElement>(
+            '[data-mobile-export-action]',
+          )!,
+        )
+
+      await openExport()
+      const panel = container.querySelector<HTMLElement>(
+        '[data-mobile-export-panel]',
+      )!
+      expect(within(panel).getByText(INTERRUPTED_HINT)).toHaveAttribute(
+        'data-export-interruption',
+      )
+      expect(container).not.toHaveTextContent(/journal sentence/)
+
+      // Closing and reopening the deck starts nothing.
+      await user.click(
+        within(panel).getByRole('button', { name: 'Close export' }),
+      )
+      expect(container.querySelector('[data-mobile-export-panel]')).toBeNull()
+      await openExport()
+      expect(screen.getByText(INTERRUPTED_HINT)).toBeVisible()
+      expect(onExport).not.toHaveBeenCalled()
+
+      await user.click(
+        screen.getByRole('button', { name: 'Export full-resolution JPEG' }),
+      )
+      expect(onExport).toHaveBeenCalledExactlyOnceWith()
+    } finally {
+      jotaiStore.set(viewportAtom, prev)
+    }
   })
 })

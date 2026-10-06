@@ -11,11 +11,15 @@ import type {
 } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import { deriveLutContractExportReason } from '../model/derive-session'
+import type { ExportRecoveryState } from '../model/session'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { resolvePreviewLookReason } from '../services/surface/raw-reason'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
-import type { RawToolSurfaceProps } from './RawWorkflowContext'
+import type {
+  ExportInterruptionNote,
+  RawToolSurfaceProps,
+} from './RawWorkflowContext'
 import { RawWorkflowProvider } from './RawWorkflowContext'
 
 interface RawWorkflowToolProviderProps {
@@ -32,7 +36,8 @@ interface RawWorkflowToolProviderProps {
   onCompareReset: () => void
   onLutDrop: (files: File[]) => void
   onExport: RawToolSurfaceProps['onExport']
-  onRecoverExportSource: () => void
+  /** Unused: an interrupted export offers no file picker. */
+  onRecoverExportSource?: () => void
   onPrepareRuntime: () => void
   children: ReactNode
 }
@@ -48,6 +53,19 @@ function getAspect(size: { width: number; height: number } | null | undefined) {
   return size && size.width > 0 && size.height > 0
     ? size.width / size.height
     : null
+}
+
+const INTERRUPTED_NOTE: ExportInterruptionNote = { kind: 'interrupted' }
+
+/**
+ * The note for the loaded source's interruption hint. Any interruption,
+ * legacy shapes included, reads as the same note; its own sentence, source
+ * name and dimensions never reach a surface.
+ */
+function toInterruptionNote(
+  recovery: ExportRecoveryState | undefined,
+): ExportInterruptionNote | null {
+  return !recovery || recovery.status === 'none' ? null : INTERRUPTED_NOTE
 }
 
 /** `edit`, refused whenever `refused` reads true at the moment it is called. */
@@ -73,7 +91,6 @@ export function RawWorkflowToolProvider({
   onCompareReset,
   onLutDrop,
   onExport,
-  onRecoverExportSource,
   onPrepareRuntime,
   children,
 }: RawWorkflowToolProviderProps) {
@@ -302,12 +319,11 @@ export function RawWorkflowToolProvider({
         previewSuspended,
         exportResult: workflow.exportResult,
         exportShareCapability: workflow.exportShareCapability,
-        recovery: workflow.exportRecovery,
+        interruptionNote: toInterruptionNote(workflow.exportRecovery),
         onShareExport: workflow.shareExportResult,
         onDownloadExport: workflow.downloadExportResult,
         onDownloadExportManifest: workflow.downloadExportManifest,
         onCopyExport: workflow.copyExportResult,
-        onRecoverExportSource,
         hasImage: workflow.hasImage,
         supportLevel: workflow.supportLevel,
         metadata: workflow.loadedImage.metadata,

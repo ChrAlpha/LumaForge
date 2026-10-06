@@ -4,11 +4,11 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
-
 import type { ExportResult } from '../../model/export-result'
-import { createInterruptedExportRecovery } from '../../services/export/export-recovery'
+import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { ExportTool } from './ExportTool'
+
+const INTERRUPTED_NOTE: ExportInterruptionNote = { kind: 'interrupted' }
 
 const INTERRUPTED_HINT =
   'The previous export was interrupted. The next export you start uses the current RAW and adjustments with a safer setting.'
@@ -44,35 +44,6 @@ function createResult(overrides: Partial<ExportResult> = {}): ExportResult {
       reason: 'This browser cannot copy full-resolution JPEG files.',
     },
     ...overrides,
-  }
-}
-
-function createCheckpointManifest(): ExportCheckpointManifest {
-  return {
-    version: 1,
-    exportId: 'export-1',
-    sourceFingerprint: {
-      name: 'frame.RAF',
-      size: 3,
-      lastModified: 123,
-      hashPrefixHex: 'abc',
-    },
-    fileName: 'frame.RAF',
-    sourceSize: 3,
-    sourceLastModified: 123,
-    outputWidth: 11662,
-    outputHeight: 8746,
-    graphFingerprint: 'graph-1',
-    profile: 'ios-safe',
-    attempt: 1,
-    preferredRows: 64,
-    totalRows: 8746,
-    recoveryMode: 'safe-retry',
-    outputSink: 'opfs-file',
-    sourceReacquisition: 'user-reselect-required',
-    completedRowsForDiagnostics: 64,
-    jpegState: 'restart-required',
-    updatedAt: '2026-05-01T00:00:00.000Z',
   }
 }
 
@@ -155,10 +126,7 @@ describe('exportTool', () => {
       }),
     )
 
-    expect(onExport).toHaveBeenCalledWith({
-      quality: 'high',
-      fidelity: 'balanced',
-    })
+    expect(onExport).toHaveBeenCalledExactlyOnceWith()
     expect(
       screen.getByRole('button', { name: /export full-resolution jpeg/i }),
     ).toBeEnabled()
@@ -435,7 +403,6 @@ describe('exportTool', () => {
           checkpointMode: 'safe-retry',
         }}
         checkpointDurable={false}
-        recovery={{ status: 'none' }}
       />,
     )
 
@@ -465,7 +432,6 @@ describe('exportTool', () => {
           checkpointMode: 'safe-retry',
         }}
         checkpointDurable={false}
-        recovery={{ status: 'none' }}
       />,
     )
 
@@ -478,8 +444,6 @@ describe('exportTool', () => {
   it('presents an interrupted export as a hint for the next export the user starts', async () => {
     const user = userEvent.setup()
     const onExport = vi.fn()
-    const onRecoverExportSource = vi.fn()
-    const recovery = createInterruptedExportRecovery(createCheckpointManifest())
     const props: ExportToolProps = {
       canExport: false,
       isProcessing: false,
@@ -489,16 +453,13 @@ describe('exportTool', () => {
       onShareExport: vi.fn(),
       onDownloadExport: vi.fn(),
       onCopyExport: vi.fn(),
-      onRecoverExportSource,
-      recovery,
+      interruptionNote: INTERRUPTED_NOTE,
     }
 
     const { container, rerender } = render(<ExportTool {...props} />)
 
     expect(screen.getByText(INTERRUPTED_HINT)).toBeVisible()
-    // The journal's own sentence is not the panel's copy, and nothing here
-    // promises the old settings, bytes or strips come back.
-    expect(screen.queryByText(recovery.message)).toBeNull()
+    // Nothing here promises the old settings, bytes or strips come back.
     expect(container).not.toHaveTextContent(/reselect|resum|restor|continu/i)
     // The hint is not an action: the panel still offers only its two exports.
     expect(buttonNames()).toEqual([
@@ -510,56 +471,13 @@ describe('exportTool', () => {
     rerender(<ExportTool {...props} canExport />)
     expect(screen.getByText(INTERRUPTED_HINT)).toBeVisible()
     expect(onExport).not.toHaveBeenCalled()
-    expect(onRecoverExportSource).not.toHaveBeenCalled()
 
     await user.click(
       screen.getByRole('button', { name: /export full-resolution jpeg/i }),
     )
 
-    expect(onExport).toHaveBeenCalledExactlyOnceWith({
-      quality: 'high',
-      fidelity: 'balanced',
-    })
-    expect(onRecoverExportSource).not.toHaveBeenCalled()
-  })
-
-  it('reduces a legacy source-required recovery to the same hint, with no file picker', () => {
-    const onExport = vi.fn()
-    const onRecoverExportSource = vi.fn()
-
-    const { container } = render(
-      <ExportTool
-        canExport
-        isProcessing={false}
-        onExport={onExport}
-        exportResult={null}
-        exportShareCapability={{ available: false, reason: 'Export first.' }}
-        onShareExport={vi.fn()}
-        onDownloadExport={vi.fn()}
-        onCopyExport={vi.fn()}
-        onRecoverExportSource={onRecoverExportSource}
-        recovery={{
-          status: 'source-required',
-          exportId: 'export-1',
-          expectedFileName: 'frame.RAF',
-          manifest: createCheckpointManifest(),
-          message:
-            'The browser interrupted the previous export. Please reselect the same RAW file so LumaForge can retry with a safer setting.',
-        }}
-      />,
-    )
-
-    expect(screen.getByText(INTERRUPTED_HINT)).toBeVisible()
-    expect(
-      screen.queryByRole('button', { name: 'Reselect RAW and retry' }),
-    ).toBeNull()
-    expect(container).not.toHaveTextContent(/reselect|frame\.RAF/i)
-    expect(buttonNames()).toEqual([
-      'Export full-resolution JPEG',
-      'Export HQ preview JPEG',
-    ])
-    expect(onExport).not.toHaveBeenCalled()
-    expect(onRecoverExportSource).not.toHaveBeenCalled()
+    // The export command takes no choices.
+    expect(onExport).toHaveBeenCalledExactlyOnceWith()
   })
 
   it('shows no interruption hint without one, or while an export is running', () => {
@@ -572,7 +490,7 @@ describe('exportTool', () => {
       onShareExport: vi.fn(),
       onDownloadExport: vi.fn(),
       onCopyExport: vi.fn(),
-      recovery: { status: 'none' },
+      interruptionNote: null,
     }
     const { rerender } = render(<ExportTool {...props} />)
     expect(screen.queryByText(INTERRUPTED_HINT)).toBeNull()
@@ -581,7 +499,7 @@ describe('exportTool', () => {
       <ExportTool
         {...props}
         isProcessing
-        recovery={createInterruptedExportRecovery(createCheckpointManifest())}
+        interruptionNote={INTERRUPTED_NOTE}
       />,
     )
     expect(screen.queryByText(INTERRUPTED_HINT)).toBeNull()
@@ -594,7 +512,6 @@ describe('exportTool', () => {
     const onDownloadExport = vi.fn()
     const onDownloadExportManifest = vi.fn()
     const onCopyExport = vi.fn()
-    const onRecoverExportSource = vi.fn()
 
     render(
       <ExportTool
@@ -607,8 +524,7 @@ describe('exportTool', () => {
         onDownloadExport={onDownloadExport}
         onDownloadExportManifest={onDownloadExportManifest}
         onCopyExport={onCopyExport}
-        onRecoverExportSource={onRecoverExportSource}
-        recovery={createInterruptedExportRecovery(createCheckpointManifest())}
+        interruptionNote={INTERRUPTED_NOTE}
       />,
     )
 
@@ -625,6 +541,5 @@ describe('exportTool', () => {
     expect(onDownloadExportManifest).toHaveBeenCalledOnce()
     expect(onCopyExport).toHaveBeenCalledOnce()
     expect(onExport).not.toHaveBeenCalled()
-    expect(onRecoverExportSource).not.toHaveBeenCalled()
   })
 })

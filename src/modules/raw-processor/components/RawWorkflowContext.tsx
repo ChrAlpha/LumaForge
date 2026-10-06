@@ -8,17 +8,15 @@ import type {
 import type { ComponentProps, ReactNode } from 'react'
 import { createContext, useContext } from 'react'
 
+import type { MessageKey } from '~/lib/i18n'
+
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
 import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
 import type {
   ExportResult,
   ExportShareCapability,
 } from '../model/export-result'
-import type {
-  ExportRecoveryState,
-  LUTContractSelectionState,
-  SupportLevel,
-} from '../model/session'
+import type { LUTContractSelectionState, SupportLevel } from '../model/session'
 import type { DeliveredExportSize } from '../services/export/delivered-export-size'
 import type { PreviewLookReason } from '../services/surface/raw-reason'
 import type { ColorValue } from './color-fields'
@@ -28,6 +26,18 @@ import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { ToneValue } from './tone-fields'
 import type { FileFactsTool } from './tools/FileFactsTool'
 import type { HSLToolValue } from './tools/HSLTool'
+
+/**
+ * The loaded source's previous export was interrupted, so the next export the
+ * user starts takes a safer plan. A read-only note: it names no source or
+ * dimensions, and nothing about it starts an export or asks for a file.
+ */
+export type ExportInterruptionNote = { kind: 'interrupted' }
+
+/** The one copy every export surface shows for a note. */
+export const EXPORT_INTERRUPTION_NOTE_COPY = {
+  interrupted: 'raw.export.interrupted',
+} as const satisfies Record<ExportInterruptionNote['kind'], MessageKey>
 
 export interface RawToolSurfaceProps {
   transform?: RawTransformFeature
@@ -61,10 +71,8 @@ export interface RawToolSurfaceProps {
   onLutLoad: (files: File[]) => void | Promise<unknown>
   onLutClear: () => void
   onLutProfileSelect: (profile: LUTColorProfile) => void
-  onExport: (options: {
-    quality: 'standard' | 'high'
-    fidelity: 'safe' | 'balanced' | 'max'
-  }) => void
+  /** Starts the full-resolution export; it takes no choices. */
+  onExport: () => void
   canPreviewExport?: boolean
   previewExportDisabledReason?: string
   onPreviewExport?: () => void | Promise<void>
@@ -90,12 +98,12 @@ export interface RawToolSurfaceProps {
   exportResult: ExportResult | null
   exportShareCapability: ExportShareCapability
   histogram: PreviewHistogramState
-  recovery?: ExportRecoveryState
+  /** Set while the loaded source's previous export was interrupted. */
+  interruptionNote?: ExportInterruptionNote | null
   onShareExport: () => void
   onDownloadExport: () => void
   onDownloadExportManifest?: () => void
   onCopyExport: () => void
-  onRecoverExportSource?: () => void
   hasImage: boolean
   fileName: string
   onReplaceFile: () => void
