@@ -1,4 +1,8 @@
-import type { ExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  ExportColorGraphDescriptor,
+} from '@lumaforge/luma-color-runtime'
+import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 
 import type {
   ExportExecutionProfileName,
@@ -20,15 +24,19 @@ export type PreExportSnapshot = {
   graphFingerprint: string
   lutTitle?: string
   quickPreviewReady: boolean
-  tone: unknown
-  color?: unknown
+  /**
+   * The full color graph intent the export renders: look, its continuous
+   * strength as given and every user color field. View state is not part of
+   * it.
+   */
+  intent: ColorGraphIntent
   style: unknown
 }
 
 export function createPreExportSnapshot(
   input: PreExportSnapshot,
 ): PreExportSnapshot {
-  return { ...input }
+  return { ...input, intent: pickColorGraphIntent(input.intent) }
 }
 
 export class ExportEvacuationError extends Error {

@@ -2,7 +2,12 @@ import type {
   ProcessingParams,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
-import { normalizeSelectiveColorParams } from '@lumaforge/luma-color-runtime'
+import {
+  COLOR_GRAPH_INTENT_KEYS,
+  HSL_BAND_IDS,
+  HSL_SHIFT_AXES,
+  normalizeSelectiveColorParams,
+} from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
@@ -162,72 +167,40 @@ export function hasSameRawRenderExposure(
   )
 }
 
+/**
+ * Whether a params patch changes the color graph a ready export was rendered
+ * from. Only keys the patch carries are compared, each one of the canonical
+ * color graph intent keys; view keys never count. Scalars and the look are
+ * compared as written, so a non-detent strength or an explicit undefined is
+ * a change. Selective color is compared by its normalized bands, so missing,
+ * partial and all-neutral records are the same input.
+ */
 export function changesRenderGraphParams(
   current: ProcessingParams,
   next: Partial<ProcessingParams>,
 ) {
-  return (
-    (Object.hasOwn(next, 'styleKind') &&
-      next.styleKind !== current.styleKind) ||
-    (Object.hasOwn(next, 'builtinPreset') &&
-      next.builtinPreset !== current.builtinPreset) ||
-    (Object.hasOwn(next, 'intensity') &&
-      next.intensity !== current.intensity) ||
-    (Object.hasOwn(next, 'userExposureEv') &&
-      next.userExposureEv !== current.userExposureEv) ||
-    (Object.hasOwn(next, 'userContrast') &&
-      next.userContrast !== current.userContrast) ||
-    (Object.hasOwn(next, 'userHighlights') &&
-      next.userHighlights !== current.userHighlights) ||
-    (Object.hasOwn(next, 'userShadows') &&
-      next.userShadows !== current.userShadows) ||
-    (Object.hasOwn(next, 'userWhites') &&
-      next.userWhites !== current.userWhites) ||
-    (Object.hasOwn(next, 'userBlacks') &&
-      next.userBlacks !== current.userBlacks) ||
-    (Object.hasOwn(next, 'userTemperature') &&
-      next.userTemperature !== current.userTemperature) ||
-    (Object.hasOwn(next, 'userTint') && next.userTint !== current.userTint) ||
-    (Object.hasOwn(next, 'userSaturation') &&
-      next.userSaturation !== current.userSaturation) ||
-    (Object.hasOwn(next, 'userVibrance') &&
-      next.userVibrance !== current.userVibrance) ||
-    (Object.hasOwn(next, 'selectiveColor') &&
-      changesSelectiveColor(current.selectiveColor, next.selectiveColor))
-  )
+  return COLOR_GRAPH_INTENT_KEYS.some((key) => {
+    if (!Object.hasOwn(next, key)) return false
+    if (key === 'selectiveColor') {
+      return changesSelectiveColor(current.selectiveColor, next.selectiveColor)
+    }
+    return next[key] !== current[key]
+  })
 }
 
 function changesSelectiveColor(
   current: ProcessingParams['selectiveColor'],
   next: ProcessingParams['selectiveColor'],
 ) {
-  // Normalize both sides through the runtime so undefined/partial records and
-  // an explicit all-neutral record compare equal. The export color graph and
-  // the LUT bake see the normalized record, so this matches the contract that
-  // actually feeds the renderer.
+  // The export color graph and the LUT bake read the normalized record, so
+  // this compares the contract that actually feeds the renderer.
   const currentBands = normalizeSelectiveColorParams({
     selectiveColor: current,
   })
   const nextBands = normalizeSelectiveColorParams({ selectiveColor: next })
-  for (const id of [
-    'red',
-    'orange',
-    'yellow',
-    'green',
-    'aqua',
-    'blue',
-    'purple',
-    'magenta',
-  ] as const) {
-    const cur = currentBands[id]
-    const nxt = nextBands[id]
-    if (
-      cur.hue !== nxt.hue ||
-      cur.saturation !== nxt.saturation ||
-      cur.lightness !== nxt.lightness
-    ) {
-      return true
-    }
-  }
-  return false
+  return HSL_BAND_IDS.some((id) =>
+    HSL_SHIFT_AXES.some(
+      (axis) => currentBands[id][axis] !== nextBands[id][axis],
+    ),
+  )
 }

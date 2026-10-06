@@ -1,5 +1,8 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
-import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import {
+  pickColorGraphIntent,
+  resolveExportColorGraph,
+} from '@lumaforge/luma-color-runtime'
 import { toast } from 'sonner'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
@@ -202,23 +205,14 @@ export async function orchestrateFullResExport(
    */
   const deliveredSize = exportReadiness.deliveredSize
 
+  // One copy of the full intent feeds both the graph and the pre-export
+  // snapshot. The strength goes in as given: zero keeps the LUT and its
+  // contract checks, it does not clear the look.
+  const colorIntent = pickColorGraphIntent(ctx.atoms.params)
   const graph = resolveExportColorGraph({
-    styleKind: ctx.atoms.params.styleKind,
-    intensity: ctx.atoms.params.intensity,
-    builtinPreset: ctx.atoms.params.builtinPreset,
+    ...colorIntent,
     lut: ctx.atoms.lutDataRef.current,
     rawRenderExposure: activeRawRenderExposure,
-    userExposureEv: ctx.atoms.params.userExposureEv,
-    userContrast: ctx.atoms.params.userContrast,
-    userHighlights: ctx.atoms.params.userHighlights,
-    userShadows: ctx.atoms.params.userShadows,
-    userWhites: ctx.atoms.params.userWhites,
-    userBlacks: ctx.atoms.params.userBlacks,
-    userTemperature: ctx.atoms.params.userTemperature,
-    userTint: ctx.atoms.params.userTint,
-    userSaturation: ctx.atoms.params.userSaturation,
-    userVibrance: ctx.atoms.params.userVibrance,
-    selectiveColor: ctx.atoms.params.selectiveColor,
   })
 
   if (!graph.supported) {
@@ -432,20 +426,7 @@ export async function orchestrateFullResExport(
           : undefined,
       quickPreviewReady:
         activeSession.previewBundle.quickDecodePreview.status === 'ready',
-      tone: {
-        userExposureEv: ctx.atoms.params.userExposureEv,
-        userContrast: ctx.atoms.params.userContrast,
-        userHighlights: ctx.atoms.params.userHighlights,
-        userShadows: ctx.atoms.params.userShadows,
-        userWhites: ctx.atoms.params.userWhites,
-        userBlacks: ctx.atoms.params.userBlacks,
-      },
-      color: {
-        userTemperature: ctx.atoms.params.userTemperature,
-        userTint: ctx.atoms.params.userTint,
-        userSaturation: ctx.atoms.params.userSaturation,
-        userVibrance: ctx.atoms.params.userVibrance,
-      },
+      intent: colorIntent,
       style: activeSession.activeStyle,
     })
     const registry = ctx.refs.resourceRegistryRef.current

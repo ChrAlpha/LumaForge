@@ -1,9 +1,16 @@
 import { createHash } from 'node:crypto'
 
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
-import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import {
+  normalizeUserColorIntent,
+  resolveExportColorGraph,
+  USER_COLOR_SCALAR_KEYS,
+} from '@lumaforge/luma-color-runtime'
+import type { GeometryParams } from '@lumaforge/render-engine/manifest'
 import {
   canonicalizeJson,
+  invertManifestRenderParams,
+  projectManifestRenderParams,
   verifyManifestSha256,
 } from '@lumaforge/render-engine/manifest'
 import { describe, expect, it } from 'vitest'
@@ -109,6 +116,99 @@ describe('toManifestRenderParams', () => {
       lightness: 0,
     })
     expect(Object.keys(shifted.selective_color ?? {})).toHaveLength(8)
+  })
+})
+
+describe('toManifestRenderParams shared projection', () => {
+  const shiftedSelectiveColor = {
+    red: { hue: 10, saturation: 0, lightness: 0 },
+    blue: { saturation: -30, lightness: 5 },
+  } as ProcessingParams['selectiveColor']
+  const geometry: GeometryParams = {
+    matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+    constrain_crop: true,
+    output: { width: 4000, height: 3000 },
+  }
+
+  it.each([
+    ['edited scalars', params()],
+    ['a non-detent strength', params({ styleKind: 'custom', intensity: 0.37 })],
+    ['a zero strength', params({ styleKind: 'custom', intensity: 0 })],
+    [
+      'shifted selective color',
+      params({ selectiveColor: shiftedSelectiveColor }),
+    ],
+    [
+      'a built-in look',
+      params({ styleKind: 'builtin', builtinPreset: 'warm' }),
+    ],
+  ])('writes the shared projection for %s', (_label, input) => {
+    const expected = projectManifestRenderParams({
+      userColor: input,
+      intensity: input.intensity,
+      rawRenderExposure: exposure,
+    })
+
+    expect(canonicalizeJson(toManifestRenderParams(input, exposure))).toBe(
+      canonicalizeJson(expected),
+    )
+  })
+
+  it('keeps the applied geometry next to the projected intent', () => {
+    expect(toManifestRenderParams(params(), exposure, geometry)).toEqual(
+      projectManifestRenderParams({
+        userColor: params(),
+        intensity: 1,
+        rawRenderExposure: exposure,
+        geometry,
+      }),
+    )
+  })
+
+  it.each(USER_COLOR_SCALAR_KEYS)('records a change of %s alone', (key) => {
+    const base = toManifestRenderParams(params(), exposure)
+    const changed = toManifestRenderParams(
+      params({ [key]: params()[key] + 1 }),
+      exposure,
+    )
+
+    expect(canonicalizeJson(changed)).not.toBe(canonicalizeJson(base))
+  })
+
+  it('reads back as the user color, exact strength and recorded exposure', () => {
+    const input = params({
+      styleKind: 'custom',
+      intensity: 0.37,
+      selectiveColor: shiftedSelectiveColor,
+    })
+
+    expect(
+      invertManifestRenderParams(toManifestRenderParams(input, exposure)),
+    ).toEqual({
+      userColor: normalizeUserColorIntent(input),
+      intensity: 0.37,
+      rawRenderExposure: { ev: exposure.ev, source: exposure.source },
+      geometry: null,
+    })
+  })
+
+  it('records out-of-range user fields the way the color graph reads them', () => {
+    const input = params({ userContrast: 500, userTint: Number.NaN })
+    const graph = resolveExportColorGraph({ ...input, lut: null })
+    if (!graph.supported) throw new Error('Expected a supported graph.')
+    const contrast = graph.steps.find((step) => step.kind === 'user-contrast')
+    const balance = graph.steps.find(
+      (step) => step.kind === 'user-color-balance',
+    )
+
+    const renderParams = toManifestRenderParams(input, exposure)
+
+    expect(renderParams.tone_curve?.contrast).toBe(
+      contrast?.kind === 'user-contrast' ? contrast.amount : undefined,
+    )
+    expect(renderParams.color_balance?.tint).toBe(
+      balance?.kind === 'user-color-balance' ? balance.tint : undefined,
+    )
   })
 })
 

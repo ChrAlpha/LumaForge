@@ -1,4 +1,5 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import { COLOR_GRAPH_INTENT_KEYS } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { describe, expect, it } from 'vitest'
@@ -262,6 +263,50 @@ describe('render graph param classification', () => {
       ).toBe(false)
     },
   )
+
+  it('names every render and look key in the canonical color graph intent', () => {
+    expect([...COLOR_GRAPH_INTENT_KEYS].sort()).toEqual(
+      keysOfClass('render', 'look').sort(),
+    )
+  })
+
+  it.each(
+    keysOfClass('render', 'look').filter((key) => key !== 'selectiveColor'),
+  )('counts %s carried as undefined as a change', (key) => {
+    // A carried key is compared even when its value is undefined; only
+    // keys the patch does not own are skipped.
+    expect(
+      changesRenderGraphParams(
+        DEFAULT_PARAMS,
+        patchOf(key, undefined as never),
+      ),
+    ).toBe(true)
+  })
+
+  it('compares selective color carried as undefined by its normalized bands', () => {
+    const shifted = {
+      ...DEFAULT_PARAMS,
+      selectiveColor: NON_DEFAULT_VALUES.selectiveColor,
+    }
+
+    expect(
+      changesRenderGraphParams(DEFAULT_PARAMS, { selectiveColor: undefined }),
+    ).toBe(false)
+    expect(
+      changesRenderGraphParams(shifted, { selectiveColor: undefined }),
+    ).toBe(true)
+  })
+
+  it('keeps the render graph for a view-only patch over a fully edited intent', () => {
+    const allNonDefault = { ...DEFAULT_PARAMS, ...NON_DEFAULT_VALUES }
+
+    expect(
+      changesRenderGraphParams(allNonDefault, {
+        viewMode: 'processed',
+        compareSplit: 0.12,
+      }),
+    ).toBe(false)
+  })
 
   it('compares only the keys a patch carries', () => {
     const allNonDefault = { ...DEFAULT_PARAMS, ...NON_DEFAULT_VALUES }

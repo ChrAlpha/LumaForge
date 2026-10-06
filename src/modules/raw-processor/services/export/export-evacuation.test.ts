@@ -1,9 +1,17 @@
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_SELECTIVE_COLOR,
+  NEUTRAL_USER_COLOR_INTENT,
+} from '@lumaforge/luma-color-runtime'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { LargeResourceOwner } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 
-import type { ExportEvacuationError } from './export-evacuation'
+import type {
+  ExportEvacuationError,
+  PreExportSnapshot,
+} from './export-evacuation'
 import {
   createPreExportSnapshot,
   evacuateBeforeExport,
@@ -24,8 +32,17 @@ function fullEvacuationOwners() {
   return getPreExportEvacuationOwners('desktop-fast')
 }
 
-function snapshot() {
-  return createPreExportSnapshot({
+const NEUTRAL_INTENT: ColorGraphIntent = {
+  styleKind: 'custom',
+  builtinPreset: null,
+  intensity: 0.7,
+  ...NEUTRAL_USER_COLOR_INTENT,
+}
+
+function snapshotInput(
+  intent: ColorGraphIntent = NEUTRAL_INTENT,
+): PreExportSnapshot {
+  return {
     file: new File(['raw'], 'frame.RAF', { lastModified: 123 }),
     metadata: { make: 'Fujifilm', model: 'GFX100RF' },
     graph: {
@@ -38,17 +55,78 @@ function snapshot() {
     graphFingerprint: '[{"kind":"input-linear-prophoto"}]',
     lutTitle: 'V-Log',
     quickPreviewReady: true,
-    tone: {
-      userExposureEv: 0,
-      userContrast: 0,
-      userHighlights: 0,
-      userShadows: 0,
-      userWhites: 0,
-      userBlacks: 0,
-    },
+    intent,
     style: { kind: 'custom', name: 'V-Log' },
-  })
+  }
 }
+
+function snapshot() {
+  return createPreExportSnapshot(snapshotInput())
+}
+
+describe('pre-export snapshot', () => {
+  const editedIntent = (): ColorGraphIntent => ({
+    styleKind: 'custom',
+    builtinPreset: null,
+    // Between the Light (0.4) and Standard (0.7) detents.
+    intensity: 0.37,
+    userExposureEv: 0.5,
+    userContrast: 12,
+    userHighlights: -20,
+    userShadows: 15,
+    userWhites: -8,
+    userBlacks: 6,
+    userTemperature: 10,
+    userTint: -4,
+    userSaturation: 7,
+    userVibrance: 18,
+    selectiveColor: {
+      ...NEUTRAL_SELECTIVE_COLOR,
+      red: { hue: 10, saturation: 0, lightness: 0 },
+    },
+  })
+
+  it('records the full color graph intent, a non-detent strength included', () => {
+    const recorded = createPreExportSnapshot(snapshotInput(editedIntent()))
+
+    expect(recorded.intent).toEqual(editedIntent())
+    expect(recorded.intent.intensity).toBe(0.37)
+  })
+
+  it('keeps the intent it recorded when the source record changes later', () => {
+    const source = editedIntent() as {
+      -readonly [K in keyof ColorGraphIntent]: ColorGraphIntent[K]
+    }
+    const recorded = createPreExportSnapshot(snapshotInput(source))
+
+    source.intensity = 1
+    source.userContrast = 0
+    source.styleKind = 'none'
+
+    expect(recorded.intent).toEqual(editedIntent())
+  })
+
+  it('records a zero strength as a strength, not as a cleared look', () => {
+    const recorded = createPreExportSnapshot(
+      snapshotInput({ ...NEUTRAL_INTENT, intensity: 0 }),
+    )
+
+    expect(recorded.intent).toMatchObject({ styleKind: 'custom', intensity: 0 })
+  })
+
+  it('hands the recorded snapshot through evacuation unchanged', async () => {
+    const recorded = createPreExportSnapshot(snapshotInput(editedIntent()))
+
+    const result = await evacuateBeforeExport({
+      registry: createResourceRegistry(),
+      snapshot: recorded,
+      owners: fullEvacuationOwners(),
+    })
+
+    expect(result.snapshot).toBe(recorded)
+    expect(result.snapshot.intent).toEqual(editedIntent())
+  })
+})
 
 describe('export evacuation', () => {
   it('uses the full evacuation owner set for every legacy metadata label', () => {

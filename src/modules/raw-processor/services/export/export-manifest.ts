@@ -3,7 +3,6 @@ import type {
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
-import { normalizeSelectiveColorParams } from '@lumaforge/luma-color-runtime'
 import type {
   GeometryParams,
   LutIdentity,
@@ -17,6 +16,7 @@ import {
   createRenderManifest,
   createStreamingSha256,
   lutIdentityFromProfile,
+  projectManifestRenderParams,
 } from '@lumaforge/render-engine/manifest'
 
 import type { ExportManifestUnavailableReason } from '../../model/export-result'
@@ -31,48 +31,24 @@ export function resolveExportEnvironment(
   return APP_RENDER_ENVIRONMENTS[memoryProfile]
 }
 
-function hasSelectiveColorShift(params: ProcessingParams): boolean {
-  const bands = normalizeSelectiveColorParams(params)
-  return Object.values(bands).some(
-    (band) => band.hue !== 0 || band.saturation !== 0 || band.lightness !== 0,
-  )
-}
-
 /**
  * Project the app's `ProcessingParams` onto the manifest `RenderParams`
- * shape used by the CLI (`toManifestRenderParams` there), so both writers
- * describe user intent identically.
+ * through the shared render-engine projection, which records user color the
+ * way the color graph reads it and the look strength exactly as given. View
+ * state never reaches it; the look selection and LUT identity are recorded
+ * elsewhere in the manifest.
  */
 export function toManifestRenderParams(
   params: ProcessingParams,
   exposure: RawRenderExposure,
   geometry?: GeometryParams,
 ): RenderParams {
-  return {
-    ...(geometry ? { geometry } : {}),
-    exposure_ev: params.userExposureEv ?? 0,
-    tone_curve: {
-      contrast: params.userContrast ?? 0,
-      highlights: params.userHighlights ?? 0,
-      shadows: params.userShadows ?? 0,
-      whites: params.userWhites ?? 0,
-      blacks: params.userBlacks ?? 0,
-    },
-    color_balance: {
-      temperature: params.userTemperature ?? 0,
-      tint: params.userTint ?? 0,
-    },
-    saturation: {
-      saturation: params.userSaturation ?? 0,
-      vibrance: params.userVibrance ?? 0,
-    },
-    ...(hasSelectiveColorShift(params)
-      ? { selective_color: normalizeSelectiveColorParams(params) }
-      : {}),
+  return projectManifestRenderParams({
+    userColor: params,
     intensity: params.intensity,
-    raw_render_exposure_ev: exposure.ev,
-    raw_render_exposure_source: exposure.source,
-  }
+    rawRenderExposure: exposure,
+    ...(geometry ? { geometry } : {}),
+  })
 }
 
 /**

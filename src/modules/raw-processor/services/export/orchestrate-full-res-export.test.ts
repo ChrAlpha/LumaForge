@@ -1,4 +1,8 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_SELECTIVE_COLOR,
+  pickColorGraphIntent,
+} from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import {
   createBlobOutputResult,
@@ -41,6 +45,7 @@ import type { ExportRecoveryState, ImageSession } from '../../model/session'
 import type { ProcessingStatus } from '../../model/workflow'
 import type { BuildExportManifestInput } from './attach-export-manifest'
 import { ExportManifestUnavailableError } from './attach-export-manifest'
+import { createPreExportSnapshot } from './export-evacuation'
 import { resolveExportEnvironment } from './export-manifest'
 import { clearExportResultState } from './export-state'
 import type {
@@ -72,6 +77,14 @@ vi.mock('./export-system', async (importOriginal) => ({
   selectCurrentExportExecutionPlan: mocks.selectCurrentExportExecutionPlan,
   runFullResolutionExportJob: mocks.runFullResolutionExportJob,
 }))
+
+vi.mock('./export-evacuation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./export-evacuation')>()
+  return {
+    ...actual,
+    createPreExportSnapshot: vi.fn(actual.createPreExportSnapshot),
+  }
+})
 
 vi.mock('./attach-export-manifest', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./attach-export-manifest')>()),
@@ -2104,4 +2117,123 @@ describe('orchestrateFullResExport delayed manifest', () => {
       }
     },
   )
+})
+
+describe('orchestrateFullResExport color intent', () => {
+  const CONFIRMED_LUT: LUTData = {
+    size: 2,
+    data: new Float32Array(2 * 2 * 2 * 3),
+    domainMin: [0, 0, 0],
+    domainMax: [1, 1, 1],
+    title: 'Teal',
+    inputProfile: 'display-srgb',
+    profileResolution: {
+      kind: 'confirmed',
+      confidence: 'metadata',
+      profile: {
+        id: 'display-srgb',
+        label: 'Display sRGB',
+        role: 'display-look',
+        inputGamut: 'srgb-rec709',
+        inputTransfer: 'srgb',
+        inputRange: 'full',
+        aliases: [],
+      },
+    },
+  }
+  const TEAL_STYLE: ImageSession['activeStyle'] = {
+    kind: 'custom',
+    name: 'Teal',
+    defaultIntensity: 0.7,
+    currentIntensity: 0.37,
+    lutAsset: { format: 'cube', dimension: 17 },
+  }
+  const EDITED_PARAMS: ProcessingParams = {
+    ...DEFAULT_PARAMS,
+    styleKind: 'custom',
+    // Between the Light (0.4) and Standard (0.7) detents.
+    intensity: 0.37,
+    userContrast: 12,
+    userTemperature: -6,
+    userVibrance: 18,
+    selectiveColor: {
+      ...NEUTRAL_SELECTIVE_COLOR,
+      red: { hue: 10, saturation: 0, lightness: 0 },
+    },
+  }
+
+  function lutOutputStep(input: JobInput) {
+    return input.graph.steps.find((step) => step.kind === 'lut-output-to-srgb')
+  }
+
+  it('records the intent the export graph reads in the pre-export snapshot', async () => {
+    vi.mocked(createPreExportSnapshot).mockClear()
+    const h = createHarness({
+      params: EDITED_PARAMS,
+      lut: CONFIRMED_LUT,
+      session: createSession('session-1', { activeStyle: TEAL_STYLE }),
+    })
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+    job.resolve()
+    await run
+
+    expect(vi.mocked(createPreExportSnapshot)).toHaveBeenCalledTimes(1)
+    const [snapshotInput] = vi.mocked(createPreExportSnapshot).mock.calls[0]
+    expect(snapshotInput.intent).toEqual(pickColorGraphIntent(EDITED_PARAMS))
+    expect(snapshotInput.graph).toBe(input.graph)
+    expect(snapshotInput.graphFingerprint).toBe(
+      JSON.stringify(input.graph.steps),
+    )
+    expect(lutOutputStep(input)).toMatchObject({ intensity: 0.37 })
+    expect(
+      input.graph.steps.find((step) => step.kind === 'user-selective-color'),
+    ).toMatchObject({
+      bands: { red: { hue: 10, saturation: 0, lightness: 0 } },
+    })
+  })
+
+  it('keeps the LUT in the export graph at zero strength', async () => {
+    const h = createHarness({
+      params: { ...EDITED_PARAMS, intensity: 0 },
+      lut: CONFIRMED_LUT,
+      session: createSession('session-1', { activeStyle: TEAL_STYLE }),
+    })
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+    job.resolve()
+    await run
+
+    expect(input.graph).toMatchObject({
+      supported: true,
+      lutProfile: { id: 'display-srgb' },
+    })
+    expect(input.graph.steps.some((step) => step.kind === 'lut3d')).toBe(true)
+    expect(lutOutputStep(input)).toMatchObject({ intensity: 0 })
+  })
+
+  it('refuses an unconfirmed LUT contract at zero strength', async () => {
+    const h = createHarness({
+      params: { ...EDITED_PARAMS, intensity: 0 },
+      lut: { ...CONFIRMED_LUT, profileResolution: { kind: 'unknown' } },
+      session: createSession('session-1', { activeStyle: TEAL_STYLE }),
+    })
+
+    await orchestrateFullResExport(OPTIONS, h.ctx)
+
+    expect(h.trace).toEqual([
+      'state:error:Choose a LUT input profile before full-resolution export.',
+      'state:status:error',
+      'state:session:failed',
+    ])
+    expect(h.state.session?.exportState).toMatchObject({
+      status: 'failed',
+      lastErrorCode: 'EXPORT_UNSUPPORTED_PIPELINE',
+    })
+    expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+  })
 })
