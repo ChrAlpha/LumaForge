@@ -3507,10 +3507,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     let exportPromise!: Promise<void>
     await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = result.current.exportImage()
       await Promise.resolve()
     })
     await waitFor(() =>
@@ -3562,10 +3559,7 @@ describe('useRawWorkflow embedded preview state', () => {
       lutLoad = result.current.loadLUT(lateLook.file)
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
     expect(result.current.exportResult?.filename).toBe('frame.jpg')
     expect(result.current.previewSuspended).toBe(true)
