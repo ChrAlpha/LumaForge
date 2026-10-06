@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
+import * as exportEntry from '../index'
 import type { BytesJpegRuntime } from './node-row-sink'
 import { createNodeJpegRowSink } from './node-row-sink'
 
@@ -34,6 +35,17 @@ function createMockRuntime(): BytesJpegRuntime & {
 }
 
 describe('createNodeJpegRowSink', () => {
+  it('stays exported from the export entry with its runtime shape', () => {
+    expect(exportEntry.createNodeJpegRowSink).toBe(createNodeJpegRowSink)
+    expectTypeOf<exportEntry.BytesJpegRuntime>().toEqualTypeOf<BytesJpegRuntime>()
+    expectTypeOf(createNodeJpegRowSink)
+      .parameter(0)
+      .toEqualTypeOf<exportEntry.BytesJpegRuntime>()
+    expectTypeOf(
+      createNodeJpegRowSink,
+    ).returns.toEqualTypeOf<exportEntry.JpegRowSink>()
+  })
+
   it('writes rows and returns BytesOutputResult on close', async () => {
     const runtime = createMockRuntime()
     const sink = createNodeJpegRowSink(runtime)

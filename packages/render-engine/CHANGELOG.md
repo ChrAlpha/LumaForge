@@ -16,6 +16,29 @@ predates this file.
   user adjustments and RAW render exposure stay. WebGPU keeps a builtin
   preset, for which no TS graph or histogram stands in; the CPU draws the
   adjusted graph without it. Export is unchanged and still refuses both.
+- Manifest render parameter projection in `@lumaforge/render-engine` and
+  `@lumaforge/render-engine/manifest`. `projectManifestRenderParams` records
+  user color intent the way the color graph reads it (non-finite values
+  neutral, values clamped), the look strength, the RAW render exposure and an
+  applied geometry. It records selective color as all eight bands and omits
+  it when it shifts nothing; a writer that switches to it from sealing an
+  explicit all-neutral record gets a different `manifest_sha256` for the
+  same render. `invertManifestRenderParams` reads `render_params` back; missing
+  sections read as neutral. `readVerifiedManifestRenderParams` verifies
+  `manifest_sha256` over the form the manifest was written in before reading
+  it, so manifests sealed with an explicit neutral record still verify. New
+  types: `ManifestRenderParamsInput`, `ManifestRenderParamsIntent`,
+  `RecordedRawRenderExposure`, `VerifiedManifestRenderParamsFailure` and
+  `VerifiedManifestRenderParamsResult`.
+- Export output results in `@lumaforge/render-engine/export` can carry the
+  SHA-256 of the delivered bytes. `BlobOutputResult`, `BytesOutputResult`
+  and `FileBackedOutputResult` gain an optional `sha256`, and
+  `FileBackedOutputResult` gains an optional `deliveryMetadata`: the JPEG
+  metadata delivery must inject so the recorded hash stays true.
+  `createBlobOutputResult` accepts an optional `sha256`. New
+  `materializeOutputBlob` returns the delivered Blob for any output kind,
+  opening a file-backed output at handoff without cleaning it up. Existing
+  fields and constructors are unchanged.
 
 ### Deprecated
 
@@ -30,7 +53,36 @@ predates this file.
   or call `sourceContentIdFromBytes` when the bytes are already in memory. It
   still accepts any `Blob`, caches results per Blob object, and falls back to
   the pure-JS SHA-256 when WebCrypto is unavailable.
-- Neither deprecation changes source identity. A manifest's
-  `source_raw.sha256` is still the SHA-256 of the full source file; file
-  metadata (`{name, size, lastModified}`) and the journal's
+- The checkpoint and File helper deprecations do not change source
+  identity. A manifest's `source_raw.sha256` is still the SHA-256 of the full
+  source file; file metadata (`{name, size, lastModified}`) and the journal's
   `resume_fingerprint` never stand in for it.
+- `LumaRenderContext` and the types it is built from: `CheckpointStore`,
+  `ManifestStore`, `OutputSink`, `OutputSinkHandle`, `OutputSinkMeta`,
+  `OutputSinkResult`, `ProfileCache`, `ProfileFetcher`,
+  `ProfileFetchOptions` and `RenderEvent`. No engine function accepts the
+  context; engine calls take explicit parameters, such as the `jpegSink`,
+  `signal` and `onProgress` of `runFullResolutionJpegExport`. The types are
+  unchanged and still exported from `@lumaforge/render-engine`.
+- `RenderBudget`. No engine function accepts or enforces it; export
+  concurrency and row slicing come from `deriveExportPolicy`, and
+  `candidateRender` takes its own `maxConcurrent`. Still exported from
+  `@lumaforge/render-engine` and `@lumaforge/render-engine/policy`.
+- `NODE_DEFAULT_CAPABILITY`. No engine function falls back to it. Pass a
+  `CapabilityVector` that describes the actual host to the policy
+  functions. The value is unchanged and still exported from
+  `@lumaforge/render-engine` and `@lumaforge/render-engine/policy`;
+  `CapabilityVector` itself stays supported.
+- `ExportFidelity`. Use `PerformancePreference` from
+  `@lumaforge/render-engine/policy`, which accepts the same values (`'safe'`,
+  `'balanced'`, `'max'`). `normalizeExportConcurrency` now declares its
+  second parameter as `PerformancePreference`; it accepts the same values and
+  returns the same concurrency as before. `ExportFidelity` is unchanged and
+  still exported from `@lumaforge/render-engine` and
+  `@lumaforge/render-engine/policy`.
+- `createNodeJpegRowSink` and its `BytesJpegRuntime` and `BytesJpegEncoder`
+  input types. Nothing uses the sink, and it holds the whole encoded JPEG in
+  memory. Implement `JpegRowSink` over a streaming encoder, or omit
+  `jpegSink` so `runFullResolutionJpegExport` uses `createWasmJpegRowSink`.
+  The function keeps its behavior and is still exported from
+  `@lumaforge/render-engine/export`.

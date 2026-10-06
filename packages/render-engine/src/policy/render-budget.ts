@@ -1,8 +1,13 @@
-// RenderBudget — type sketch.
-//
-// Type only: no unified back-pressure logic across preview / candidate /
-// export consumes it yet.
+// RenderBudget — an unused type sketch of shared back-pressure across
+// preview, candidate and export. Nothing consumes it.
 
+/**
+ * @deprecated No engine function accepts or enforces a `RenderBudget`.
+ * Export concurrency and row slicing come from `deriveExportPolicy`, and
+ * `candidateRender` takes its own `maxConcurrent`. The type is unchanged and
+ * still exported from `@lumaforge/render-engine` and
+ * `@lumaforge/render-engine/policy`.
+ */
 export interface RenderBudget {
   /**
    * Maximum concurrent render units in flight across preview + candidate +

@@ -1,10 +1,11 @@
-import type { ExportFidelity } from '../policy/export-fidelity'
+import type { PerformancePreference } from '../policy/export-policy'
 
 export function normalizeExportConcurrency(
   requested: number | undefined,
-  fidelity: ExportFidelity,
+  preference: PerformancePreference,
 ) {
-  const defaultValue = fidelity === 'safe' ? 1 : fidelity === 'balanced' ? 2 : 3
+  const defaultValue =
+    preference === 'safe' ? 1 : preference === 'balanced' ? 2 : 3
   const raw = requested ?? defaultValue
 
   if (!Number.isFinite(raw) || raw <= 0) {

@@ -18,9 +18,14 @@ export interface CapabilityVector {
 }
 
 /**
- * A safe default capability vector for Node consumers. Conservative shape
- * (no COI, no pthread, modest concurrency) so policy decisions degrade
- * cleanly rather than over-promise on a CLI process.
+ * A conservative capability vector (no COI, no pthread, one thread) once
+ * meant as the Node default.
+ *
+ * @deprecated No engine function falls back to this vector. Pass a
+ * `CapabilityVector` that describes the actual host to `deriveExportPolicy`,
+ * `deriveInteractivePolicy` and `deriveRuntimeResourceBudget`. The value is
+ * unchanged and still exported from `@lumaforge/render-engine` and
+ * `@lumaforge/render-engine/policy`.
  */
 export const NODE_DEFAULT_CAPABILITY: CapabilityVector = {
   coi: false,
