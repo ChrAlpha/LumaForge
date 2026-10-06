@@ -46,3 +46,4 @@ export {
 export * from './selective-color'
 export * from './tone'
 export * from './types'
+export * from './user-color-intent'

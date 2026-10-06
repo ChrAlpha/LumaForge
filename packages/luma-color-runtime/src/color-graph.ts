@@ -171,7 +171,12 @@ export function resolveUnsupportedLUTOutputReason(
   return undefined
 }
 
-export function resolveExportColorGraph(input: {
+/**
+ * What the export color graph reads: the look and user color (see
+ * `ColorGraphIntent`), the LUT data, and the RAW render exposure. User fields
+ * and HSL are optional and read as neutral when missing.
+ */
+export interface ExportColorGraphInput {
   styleKind: ProcessingParams['styleKind']
   intensity: number
   builtinPreset: ProcessingParams['builtinPreset']
@@ -188,7 +193,11 @@ export function resolveExportColorGraph(input: {
   userSaturation?: LumaColorSaturationParams['userSaturation']
   userVibrance?: LumaColorSaturationParams['userVibrance']
   selectiveColor?: LumaColorSelectiveColorParams['selectiveColor']
-}): ExportColorGraphDescriptor {
+}
+
+export function resolveExportColorGraph(
+  input: ExportColorGraphInput,
+): ExportColorGraphDescriptor {
   const rawRenderExposure =
     input.rawRenderExposure ?? IDENTITY_RAW_RENDER_EXPOSURE
   const colorBalance = resolveColorBalanceParams({

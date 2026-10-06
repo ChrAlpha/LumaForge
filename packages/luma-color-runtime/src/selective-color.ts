@@ -15,11 +15,36 @@ export type HSLBandId =
   | 'purple'
   | 'magenta'
 
+/** The HSL bands in hue-wheel order, starting at red. */
+export const HSL_BAND_IDS = Object.freeze([
+  'red',
+  'orange',
+  'yellow',
+  'green',
+  'aqua',
+  'blue',
+  'purple',
+  'magenta',
+] as const satisfies readonly HSLBandId[])
+
 export interface HSLBandShift {
   readonly hue: number
   readonly saturation: number
   readonly lightness: number
 }
+
+export type HSLShiftAxis = keyof HSLBandShift
+
+/** The shift axes of one HSL band, in display order. */
+export const HSL_SHIFT_AXES = Object.freeze([
+  'hue',
+  'saturation',
+  'lightness',
+] as const satisfies readonly HSLShiftAxis[])
+
+/** Every axis of every band is clamped to this range. */
+export const HSL_SHIFT_MIN = -100
+export const HSL_SHIFT_MAX = 100
 
 export interface LumaColorSelectiveColorParams {
   readonly selectiveColor: Readonly<Record<HSLBandId, Readonly<HSLBandShift>>>
@@ -27,6 +52,14 @@ export interface LumaColorSelectiveColorParams {
 
 export type NormalizedSelectiveColorBands = Readonly<
   Record<HSLBandId, Readonly<HSLBandShift>>
+>
+
+/**
+ * Selective color as it may arrive from params or persisted state: any band
+ * or axis may be missing. Normalization fills the gaps with neutral.
+ */
+export type SelectiveColorBandsInput = Readonly<
+  Partial<Record<HSLBandId, Readonly<Partial<HSLBandShift>>>>
 >
 
 export const HUE_MAX_DELTA_RAD = Math.PI / 6
@@ -193,24 +226,13 @@ export interface PreparedSelectiveColorLut {
   readonly constantsVersion: number
 }
 
-const BAND_IDS_ORDERED: readonly HSLBandId[] = [
-  'red',
-  'orange',
-  'yellow',
-  'green',
-  'aqua',
-  'blue',
-  'purple',
-  'magenta',
-]
-
 function clamp(value: number, lo: number, hi: number): number {
   return value < lo ? lo : value > hi ? hi : value
 }
 
 function normalizeScalar(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 0
-  return clamp(value, -100, 100)
+  return clamp(value, HSL_SHIFT_MIN, HSL_SHIFT_MAX)
 }
 
 function normalizeBand(raw: unknown): HSLBandShift {
@@ -229,7 +251,7 @@ function normalizeBands(source: unknown): NormalizedSelectiveColorBands {
       ? (source as Partial<Record<HSLBandId, unknown>>)
       : {}
   const out = {} as Record<HSLBandId, HSLBandShift>
-  for (const id of BAND_IDS_ORDERED) {
+  for (const id of HSL_BAND_IDS) {
     out[id] = normalizeBand(sourceRecord[id])
   }
   return out
@@ -246,15 +268,42 @@ function normalizeBands(source: unknown): NormalizedSelectiveColorBands {
  */
 export function normalizeSelectiveColorParams(
   params:
-    | Partial<LumaColorSelectiveColorParams>
-    | LumaColorSelectiveColorParams
+    | { readonly selectiveColor?: SelectiveColorBandsInput | null }
     | undefined
     | null,
 ): NormalizedSelectiveColorBands {
-  return normalizeBands(
-    (params as Partial<LumaColorSelectiveColorParams> | null | undefined)
-      ?.selectiveColor,
+  return normalizeBands(params?.selectiveColor)
+}
+
+/** A band with no shift on any axis; deeply frozen. */
+export const NEUTRAL_HSL_BAND: Readonly<HSLBandShift> =
+  Object.freeze(makeNeutralBand())
+
+/** Selective color with every band neutral; deeply frozen. */
+export const NEUTRAL_SELECTIVE_COLOR: NormalizedSelectiveColorBands =
+  Object.freeze(
+    Object.fromEntries(
+      HSL_BAND_IDS.map((id) => [id, NEUTRAL_HSL_BAND]),
+    ) as Record<HSLBandId, Readonly<HSLBandShift>>,
   )
+
+/**
+ * Whether a band shifts nothing once normalized: missing and non-finite
+ * axes count as zero, the same way the color graph reads them.
+ */
+export function isHSLBandNeutral(
+  band: Readonly<Partial<HSLBandShift>> | null | undefined,
+): boolean {
+  const normalized = normalizeBand(band)
+  return HSL_SHIFT_AXES.every((axis) => normalized[axis] === 0)
+}
+
+/** Whether selective color shifts nothing once normalized. */
+export function isSelectiveColorNeutral(
+  bands: SelectiveColorBandsInput | null | undefined,
+): boolean {
+  const normalized = normalizeBands(bands)
+  return HSL_BAND_IDS.every((id) => isHSLBandNeutral(normalized[id]))
 }
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -288,8 +337,8 @@ export function resolveSelectiveColorParams(
     )
     const tPrime = smoothstep(0, 1, t)
     const mixed = mixBandShift(
-      bands[BAND_IDS_ORDERED[leftIdx]],
-      bands[BAND_IDS_ORDERED[rightIdx]],
+      bands[HSL_BAND_IDS[leftIdx]],
+      bands[HSL_BAND_IDS[rightIdx]],
       tPrime,
     )
 
