@@ -647,7 +647,7 @@ describe('usePreviewHistogram', () => {
     expect(result.current).not.toBe(previous)
   })
 
-  it('fails closed for built-in styles', () => {
+  it('measures nothing for a built-in style the preview draws', () => {
     const { result } = renderPreviewHistogram({
       image: createImage('quick'),
       params: {
@@ -659,8 +659,7 @@ describe('usePreviewHistogram', () => {
 
     expect(result.current).toEqual({
       state: 'unsupported',
-      reason:
-        'Built-in styles are not supported by full-resolution JPEG export.',
+      reason: 'The histogram does not measure built-in styles.',
     })
   })
 
@@ -798,5 +797,159 @@ describe('usePreviewHistogram', () => {
     await runAllWork()
     expect(result.current.state).toBe('ready')
     expect(result.current).not.toBe(previous)
+  })
+})
+
+describe('usePreviewHistogram over the look the preview draws', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  // Non-neutral user color, so a measure that drops it shows.
+  const adjusted: ProcessingParams = {
+    ...defaultParams,
+    styleKind: 'custom',
+    intensity: 0.7,
+    userExposureEv: 1,
+    userContrast: 30,
+    userSaturation: 20,
+  }
+
+  function refusedLut(kind: 'unconfirmed' | 'linear-output'): LUTData {
+    const lut = createLutData()
+    if (kind === 'unconfirmed') {
+      return { ...lut, profileResolution: { kind: 'unknown' } }
+    }
+    if (lut.profileResolution.kind !== 'confirmed') throw new Error('fixture')
+    return {
+      ...lut,
+      profileResolution: {
+        ...lut.profileResolution,
+        profile: {
+          ...lut.profileResolution.profile,
+          outputTransfer: 'linear',
+        },
+      },
+    }
+  }
+
+  function measure(state: PreviewHistogramState) {
+    if (state.state !== 'ready') throw new Error(`not ready: ${state.state}`)
+    return { bins: state.bins, clipping: state.clipping }
+  }
+
+  async function settled(
+    params: ProcessingParams,
+    lutData: LUTData | null = null,
+    lutDataVersion = 0,
+  ) {
+    const hook = renderPreviewHistogram({
+      image: createImage('quick'),
+      params,
+      lutData,
+      lutDataVersion,
+    })
+    await runAllWork()
+    return hook
+  }
+
+  function rerenderWith(
+    hook: Awaited<ReturnType<typeof settled>>,
+    params: ProcessingParams,
+    lutDataVersion: number,
+  ) {
+    hook.rerender({
+      imageRef: hook.imageRef,
+      imageVersion: 1,
+      params,
+      lutDataRef: hook.lutDataRef,
+      lutDataVersion,
+      displaySource: 'quick',
+    })
+  }
+
+  it.each(['unconfirmed', 'linear-output'] as const)(
+    'measures the adjusted preview without the look for a %s LUT',
+    async (kind) => {
+      const refused = await settled(adjusted, refusedLut(kind), 1)
+      const stripped = await settled({ ...adjusted, styleKind: 'none' })
+      const neutral = await settled(defaultParams)
+
+      expect(refused.result.current.state).toBe('ready')
+      expect(measure(refused.result.current)).toEqual(
+        measure(stripped.result.current),
+      )
+      expect(measure(refused.result.current)).not.toEqual(
+        measure(neutral.result.current),
+      )
+    },
+  )
+
+  it('keeps the measure while the strength of a refused LUT moves', async () => {
+    const hook = await settled(adjusted, refusedLut('linear-output'), 1)
+    const ready = hook.result.current
+    expect(ready.state).toBe('ready')
+
+    for (const intensity of [0, 0.37, 1]) {
+      rerenderWith(hook, { ...adjusted, intensity }, 1)
+      expect(hook.result.current).toBe(ready)
+      expect(vi.getTimerCount()).toBe(0)
+    }
+  })
+
+  it('measures the LUT once the same bytes take a contract export accepts, and drops it again', async () => {
+    const hook = await settled(adjusted, refusedLut('unconfirmed'), 1)
+    const strippedMeasure = measure(hook.result.current)
+
+    const accepted = createLutData()
+    hook.lutDataRef.current = accepted
+    rerenderWith(hook, adjusted, 2)
+    expect(hook.result.current.state).toBe('stale')
+    await runAllWork()
+    const withLook = measure(hook.result.current)
+    expect(withLook).not.toEqual(strippedMeasure)
+
+    hook.lutDataRef.current = {
+      ...accepted,
+      profileResolution: { kind: 'unknown' },
+    }
+    rerenderWith(hook, adjusted, 3)
+    await runAllWork()
+    expect(measure(hook.result.current)).toEqual(strippedMeasure)
+  })
+
+  it('measures no look for a custom style whose LUT is not loaded, at any strength', async () => {
+    const hook = await settled(adjusted)
+    const stripped = await settled({ ...adjusted, styleKind: 'none' })
+    const ready = hook.result.current
+    expect(measure(ready)).toEqual(measure(stripped.result.current))
+
+    rerenderWith(hook, { ...adjusted, intensity: 0.37 }, 0)
+    expect(hook.result.current).toBe(ready)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('reports no numbers for a builtin preset the preview draws, at any strength', async () => {
+    const builtin: ProcessingParams = {
+      ...adjusted,
+      styleKind: 'builtin',
+      builtinPreset: 'cinematic',
+    }
+    const hook = await settled(builtin)
+
+    // No TS executor draws a preset: the stripped graph would not measure
+    // what the preview shows, so the histogram measures nothing.
+    expect(hook.result.current.state).toBe('unsupported')
+    expect(vi.getTimerCount()).toBe(0)
+    for (const intensity of [0, 0.37, 1]) {
+      rerenderWith(hook, { ...builtin, intensity }, 0)
+      await runAllWork()
+      expect(hook.result.current.state).toBe('unsupported')
+    }
   })
 })

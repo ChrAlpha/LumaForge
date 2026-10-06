@@ -3,11 +3,15 @@ import type {
   LUTData,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
-import { exposureMultiplierFromEv } from '@lumaforge/luma-color-runtime'
+import {
+  exposureMultiplierFromEv,
+  resolveExportColorGraph,
+} from '@lumaforge/luma-color-runtime'
 import type {
   CpuPreviewRequest,
   CpuPreviewResponse,
 } from '@lumaforge/render-engine/preview'
+import { resolvePreviewColorPlan } from '@lumaforge/render-engine/preview'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -784,6 +788,161 @@ describe('useCpuPreview look degradation (LUT-before-RAW)', () => {
     const renders = worker.posted.filter((m) => m.type === 'render')
     expect(renders).toHaveLength(2)
     expect(renders.at(-1)?.graph.lutProfile?.id).toBe('test-scene-look')
+  })
+})
+
+describe('useCpuPreview shared preview color policy', () => {
+  type HookProps = Parameters<typeof useCpuPreview>[0]
+
+  const linearOutputLut: LUTData = {
+    size: 2,
+    data: new Float32Array(2 * 2 * 2 * 3),
+    domainMin: [0, 0, 0],
+    domainMax: [1, 1, 1],
+    inputProfile: 'v-log',
+    profileResolution: {
+      kind: 'confirmed',
+      confidence: 'user',
+      profile: {
+        id: 'test-linear-output',
+        label: 'Test linear output',
+        role: 'scene-creative',
+        inputGamut: 'prophoto-rgb',
+        inputTransfer: 'linear',
+        inputRange: 'full',
+        outputGamut: 'srgb-rec709',
+        outputTransfer: 'linear',
+        outputRange: 'full',
+        aliases: [],
+      },
+    },
+  }
+
+  const acceptedLut: LUTData = {
+    ...linearOutputLut,
+    profileResolution: {
+      kind: 'confirmed',
+      confidence: 'user',
+      profile: {
+        ...(linearOutputLut.profileResolution.kind === 'confirmed'
+          ? linearOutputLut.profileResolution.profile
+          : (undefined as never)),
+        id: 'test-srgb-output',
+        outputTransfer: 'srgb',
+      },
+    },
+  }
+
+  function mount(params: CpuPreviewParams, variant: 'processed' | 'neutral') {
+    vi.stubGlobal('Worker', FakeWorker)
+    const image = makeDecodedImage('quick')
+    const props = (
+      next: CpuPreviewParams,
+      nextVariant: 'processed' | 'neutral',
+    ): HookProps => ({
+      enabled: true,
+      image,
+      imageVersion: 1,
+      params: next,
+      variant: nextVariant,
+    })
+    const hook = renderHook((input: HookProps) => useCpuPreview(input), {
+      initialProps: props(params, variant),
+    })
+    const worker = FakeWorker.instances[0]!
+    const renders = () =>
+      worker.posted.filter(
+        (message): message is Extract<CpuPreviewRequest, { type: 'render' }> =>
+          message.type === 'render',
+      )
+    const answer = (fill: number) => {
+      const request = renders().at(-1)!
+      act(() => {
+        worker.respond({
+          type: 'rendered',
+          sourceId: request.sourceId,
+          requestId: request.requestId,
+          rgba: new Uint8ClampedArray(2 * 2 * 4).fill(fill),
+          width: 2,
+          height: 2,
+        })
+      })
+    }
+    const show = (
+      next: CpuPreviewParams,
+      nextVariant: 'processed' | 'neutral' = variant,
+    ) => hook.rerender(props(next, nextVariant))
+    return { result: hook.result, renders, answer, show }
+  }
+
+  it('draws the CPU plan graph for a refused LUT at any strength, rendering once', () => {
+    const params = { ...baseParams, lut: linearOutputLut }
+    const { renders, answer, show } = mount(params, 'processed')
+
+    const plan = resolvePreviewColorPlan({
+      intent: params,
+      lut: linearOutputLut,
+      rawRenderExposure: exposure,
+      executor: 'cpu',
+    })
+    expect(plan.reason).toBe('lut-output-transfer-linear')
+    expect(renders()).toHaveLength(1)
+    expect(renders()[0]!.graph).toEqual(plan.graph)
+    expect(renders()[0]!.graph.steps.some((s) => s.kind === 'lut3d')).toBe(
+      false,
+    )
+    expect(
+      renders()[0]!.graph.steps.find((s) => s.kind === 'user-color-balance'),
+    ).toMatchObject({ temperature: 40, tint: -20 })
+    answer(120)
+
+    for (const intensity of [0, 0.37, 1]) {
+      show({ ...params, intensity })
+    }
+    expect(renders()).toHaveLength(1)
+    // The preview drops the look; export keeps refusing it.
+    expect(resolveExportColorGraph(params).supported).toBe(false)
+  })
+
+  it('does not render again when the strength moves with no LUT loaded', () => {
+    const { renders, answer, show } = mount(baseParams, 'processed')
+    answer(120)
+
+    show({ ...baseParams, intensity: 0.37 })
+    show({ ...baseParams, intensity: 1 })
+    expect(renders()).toHaveLength(1)
+  })
+
+  it('renders the LUT once the same bytes take a contract export accepts, and drops it again', () => {
+    const params = { ...baseParams, lut: linearOutputLut }
+    const { renders, answer, show } = mount(params, 'processed')
+    answer(120)
+
+    show({ ...params, lut: acceptedLut })
+    expect(renders()).toHaveLength(2)
+    expect(renders().at(-1)!.graph.lutProfile?.id).toBe('test-srgb-output')
+    answer(160)
+
+    show({ ...params, lut: { ...linearOutputLut } })
+    expect(renders()).toHaveLength(3)
+    expect(renders().at(-1)!.graph).toEqual(renders()[0]!.graph)
+  })
+
+  it('keeps the cached original through LUT contract changes', () => {
+    const params = { ...baseParams, lut: linearOutputLut }
+    const { result, renders, answer, show } = mount(params, 'processed')
+    answer(200)
+    show(params, 'neutral')
+    answer(40)
+    show(params, 'processed')
+    answer(200)
+    show(params, 'neutral')
+    const rendersWithCachedOriginal = renders().length
+
+    show({ ...params, lut: acceptedLut }, 'neutral')
+    show({ ...params, lut: acceptedLut, intensity: 0.37 }, 'neutral')
+    expect(renders()).toHaveLength(rendersWithCachedOriginal)
+    expect(result.current.frame?.rgba[0]).toBe(40)
   })
 })
 

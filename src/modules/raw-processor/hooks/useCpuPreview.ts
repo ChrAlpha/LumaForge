@@ -1,21 +1,20 @@
 import type {
   ColorGraphIntentSource,
-  LookSelection,
   LUTData,
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
-import {
-  colorGraphIntentSignature,
-  NEUTRAL_USER_COLOR_INTENT,
-  resolveExportColorGraph,
-} from '@lumaforge/luma-color-runtime'
+import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type {
   CpuPreviewFailureReason,
   CpuPreviewFrame,
   CpuPreviewVariant,
+  PreviewColorPlan,
 } from '@lumaforge/render-engine/preview'
-import { CpuPreviewClient } from '@lumaforge/render-engine/preview'
+import {
+  CpuPreviewClient,
+  resolvePreviewColorPlan,
+} from '@lumaforge/render-engine/preview'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
@@ -47,51 +46,38 @@ export function neutralFrameCacheKey(
   return `${sourceId}:${renderExposureEv}`
 }
 
-const NO_LOOK: LookSelection = Object.freeze({
-  styleKind: 'none',
-  builtinPreset: null,
-  intensity: 0,
-})
-
 /**
- * The graph input a variant renders.
- *
- * - 'processed': all params as-is.
- * - 'neutral': no look and neutral user color (mirrors ORIGINAL_LAYER_PARAMS
- *   in OriginalGpuLayer.tsx), keeping rawRenderExposure so the intrinsic
- *   camera exposure is preserved.
+ * What the CPU preview draws for a variant, read from the shared preview
+ * color policy. A custom LUT draws only when export would run it; otherwise,
+ * and for built-in presets (no TS executor draws one), the look is dropped and
+ * the user's tone and color stay. The neutral variant draws no look and
+ * neutral user color. Both keep the RAW render exposure.
  */
-function cpuPreviewGraphInput(
+export function resolveCpuPreviewPlan(
   params: CpuPreviewParams,
   variant: CpuPreviewVariant,
-): CpuPreviewParams {
-  return variant === 'neutral'
-    ? {
-        ...NO_LOOK,
-        ...NEUTRAL_USER_COLOR_INTENT,
-        lut: null,
-        rawRenderExposure: params.rawRenderExposure,
-      }
-    : params
+): PreviewColorPlan {
+  return resolvePreviewColorPlan({
+    intent: params,
+    lut: params.lut,
+    rawRenderExposure: params.rawRenderExposure,
+    executor: 'cpu',
+    variant,
+  })
 }
 
-/** The params with the look stripped and the user color kept. */
-function withoutLook(params: CpuPreviewParams): CpuPreviewParams {
-  return { ...params, ...NO_LOOK, lut: null }
-}
-
-/** Build a colour graph for the CPU preview worker. */
+/** The colour graph the CPU preview worker draws for a variant. */
 export function buildCpuPreviewGraph(
   params: CpuPreviewParams,
   variant: CpuPreviewVariant,
 ): SupportedExportColorGraphDescriptor | { unsupportedReason: string } {
-  const graph = resolveExportColorGraph(cpuPreviewGraphInput(params, variant))
-
-  if (!graph.supported) {
-    return { unsupportedReason: graph.reason }
+  try {
+    const { graph } = resolveCpuPreviewPlan(params, variant)
+    if (graph) return graph
+  } catch (error) {
+    if (error instanceof Error) return { unsupportedReason: error.message }
   }
-
-  return graph
+  return { unsupportedReason: 'The CPU preview resolved no color graph.' }
 }
 
 // ---------------------------------------------------------------------------
@@ -277,20 +263,16 @@ export function useCpuPreview({
       }
     }
 
-    // Resolve the colour graph for the requested variant. When the look
-    // pipeline cannot run (unresolved LUT contract, builtin style), degrade to
-    // a look-stripped graph that keeps user tone/colour — parity with the GPU
-    // preview, which renders with the LUT disabled instead of blanking. The
-    // authoritative export path stays fail-closed in resolveExportColorGraph.
-    let input = params
-    let graph = buildCpuPreviewGraph(input, variant)
-    let lookDegraded = false
-    if ('unsupportedReason' in graph) {
-      lookDegraded = true
-      input = withoutLook(params)
-      graph = buildCpuPreviewGraph(input, variant)
+    // The shared preview color policy decides what the CPU draws: a look
+    // export would refuse is dropped, keeping user tone and colour, so the
+    // photo never blanks. The authoritative export path stays fail-closed.
+    let plan: PreviewColorPlan | null = null
+    try {
+      plan = resolveCpuPreviewPlan(params, variant)
+    } catch {
+      plan = null
     }
-    if ('unsupportedReason' in graph) {
+    if (!plan?.graph) {
       // Even the look-stripped graph is unsupported — surface a real failure
       // instead of leaving the in-flight spinner armed forever.
       lastRenderKeyRef.current = null
@@ -298,21 +280,21 @@ export function useCpuPreview({
       setInFlight(false)
       return
     }
+    const { graph } = plan
 
-    // Key the dedup signature on the EFFECTIVE graph input, so unconfirmed
-    // LUT identity churn does not re-request identical degraded renders and
-    // edits the original does not draw do not re-request it. The LUT is
-    // compared by identity: a new contract on the same bytes is a new LUT.
-    const effective = cpuPreviewGraphInput(input, variant)
-    const effectiveLut = effective.lut
+    // Key the dedup signature on what the plan draws, so a look the preview
+    // drops (a refused or unloaded LUT, its strength, a builtin preset) and
+    // edits the original does not draw do not re-request an identical
+    // render. The drawn LUT is compared by identity: a new contract on the
+    // same bytes is a new LUT.
     const renderSig = [
       sourceId,
       variant,
-      lookDegraded ? 'degraded' : 'full',
-      effective.rawRenderExposure.ev,
-      effective.rawRenderExposure.multiplier,
-      colorGraphIntentSignature(effective),
+      params.rawRenderExposure.ev,
+      params.rawRenderExposure.multiplier,
+      colorGraphIntentSignature(plan.effectiveIntent),
     ].join('|')
+    const effectiveLut = plan.lut
     const prevKey = lastRenderKeyRef.current
     if (prevKey && prevKey.sig === renderSig && prevKey.lut === effectiveLut) {
       return

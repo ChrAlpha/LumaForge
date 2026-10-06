@@ -9,8 +9,8 @@ import {
   colorGraphIntentSignature,
   createPreviewHistogramProcessor,
   pickColorGraphIntent,
-  resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
+import { resolvePreviewColorPlan } from '@lumaforge/render-engine/preview'
 import type { RefObject } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -45,6 +45,8 @@ export const SCRUB_HISTOGRAM_SAMPLED_PIXELS = 40_000
 const UNSUPPORTED_PREVIEW_REASON =
   'Preview histogram requires RGB16 Linear ProPhoto preview data.'
 const HISTOGRAM_OFF_REASON = 'No surface shows the preview histogram.'
+const UNREPRESENTED_LOOK_REASON =
+  'The histogram does not measure built-in styles.'
 
 type PreviewHistogramInput = {
   /**
@@ -149,15 +151,6 @@ function createHistogramJob({
     image.renderExposure.ev,
     image.renderExposure.multiplier,
   ].join(':')
-  const key = [
-    'compute',
-    imageIdentityKey,
-    imageKey,
-    displaySource,
-    toneKey,
-    lutDataVersion,
-  ].join('|')
-  const handoffKey = [imageIdentityKey, toneKey, lutDataVersion].join('|')
 
   if (
     image.layout !== 'rgb-u16' ||
@@ -167,7 +160,7 @@ function createHistogramJob({
   ) {
     return {
       kind: 'unsupported',
-      key,
+      key: ['unsupported', imageIdentityKey, imageKey, displaySource].join('|'),
       state: {
         state: 'unsupported',
         reason: UNSUPPORTED_PREVIEW_REASON,
@@ -175,29 +168,48 @@ function createHistogramJob({
     }
   }
 
-  const graph = resolveExportColorGraph({
-    ...intent,
+  // The histogram is shown only over the WebGPU preview, so it measures what
+  // that preview draws: a custom LUT export would refuse is dropped and the
+  // user's adjustments stay. A built-in preset WebGPU draws has no TS graph,
+  // and the look-stripped graph would not measure it, so nothing is measured.
+  const plan = resolvePreviewColorPlan({
+    intent,
     lut: lutDataRef.current,
     rawRenderExposure: image.renderExposure,
+    executor: 'webgpu',
   })
-
-  if (!graph.supported) {
+  if (plan.histogram.kind !== 'graph') {
     return {
       kind: 'unsupported',
-      key,
-      state: {
-        state: 'unsupported',
-        reason: graph.message,
-      },
+      key: ['unrepresented', imageIdentityKey, imageKey, displaySource].join(
+        '|',
+      ),
+      state: { state: 'unsupported', reason: UNREPRESENTED_LOOK_REASON },
     }
   }
+
+  // Keyed on what the preview draws: a look it drops, and that look's
+  // strength, start no run. The drawn LUT is keyed by its version, which
+  // moves with every LUT record, so a new contract on the same bytes counts.
+  const drawnKey = [
+    colorGraphIntentSignature(plan.effectiveIntent),
+    plan.lut ? lutDataVersion : 'no-lut',
+  ].join('|')
+  const key = [
+    'compute',
+    imageIdentityKey,
+    imageKey,
+    displaySource,
+    drawnKey,
+  ].join('|')
+  const handoffKey = [imageIdentityKey, drawnKey].join('|')
 
   return {
     kind: 'compute',
     key,
     handoffKey,
     image: image as ValidHistogramImage,
-    graph,
+    graph: plan.histogram.graph,
   }
 }
 
@@ -278,7 +290,7 @@ export function usePreviewHistogram(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [intentSignature],
   )
-  const job = useMemo(
+  const resolvedJob = useMemo(
     () =>
       createHistogramJob({
         enabled,
@@ -300,6 +312,13 @@ export function usePreviewHistogram(
       lutDataRef,
       lutDataVersion,
     ],
+  )
+  // An equal key is the same work: a change the preview does not draw keeps
+  // the job, so it neither restarts a run nor marks the bins stale.
+  const job = useMemo(
+    () => resolvedJob,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [resolvedJob.key],
   )
   const [state, setState] = useState<PreviewHistogramState>(() =>
     createInitialState(job),
