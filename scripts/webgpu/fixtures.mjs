@@ -10,11 +10,10 @@ export const LIMITS = Object.freeze({
   goldenMeanByteError: 0.25,
 })
 
-export function makeImage(integer = false, width = 97, height = 65) {
-  const channels = integer ? 3 : 4
-  const data = integer
-    ? new Uint16Array(width * height * channels)
-    : new Float32Array(width * height * channels)
+/** Linear ProPhoto rgb-u16, the only frame layout the app decodes RAW into. */
+export function makeImage(width = 97, height = 65) {
+  const channels = 3
+  const data = new Uint16Array(width * height * channels)
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const offset = (y * width + x) * channels
@@ -27,29 +26,18 @@ export function makeImage(integer = false, width = 97, height = 65) {
       if (x < 8 && y < 8) rgb.splice(0, 3, 0.9, 0.1, 0.05)
       if (x >= width - 8 && y >= height - 8) rgb.splice(0, 3, 0.05, 0.15, 0.8)
       for (let channel = 0; channel < 3; channel++)
-        data[offset + channel] = integer
-          ? Math.round(rgb[channel] * 65535)
-          : rgb[channel]
-      if (!integer) data[offset + 3] = 1
+        data[offset + channel] = Math.round(rgb[channel] * 65535)
     }
   }
-  return integer
-    ? {
-        data,
-        width,
-        height,
-        layout: 'rgb-u16',
-        colorSpace: 'linear-prophoto-rgb',
-        renderExposureEv: 0.4,
-        renderExposureMultiplier: 2 ** 0.4,
-      }
-    : {
-        data,
-        width,
-        height,
-        layout: 'rgba-float32',
-        colorSpace: 'display-srgb-preview',
-      }
+  return {
+    data,
+    width,
+    height,
+    layout: 'rgb-u16',
+    colorSpace: 'linear-prophoto-rgb',
+    renderExposureEv: 0.4,
+    renderExposureMultiplier: 2 ** 0.4,
+  }
 }
 
 export function makeLut(
@@ -346,20 +334,14 @@ export function distribution(values) {
   }
 }
 
-// Scenarios with no TS counterpart (the display-sRGB preview input, and
-// built-in styles, which no TS executor implements) are held to frozen WebGL
-// output from the last checkout that had both renderers. Partial-strength
-// display-domain LUT blends and wide-gamut display looks are excluded on
-// purpose: the WebGPU preview now matches export there, where WebGL did not.
-// LUTs export refuses are excluded too: WebGL drew them, while the WebGPU
-// preview drops the look like the TS preview does.
+// Built-in styles have no TS executor, so they are held to frozen WebGL
+// output from the last checkout that had both renderers. Every other scene is
+// compared to the TS export executor, or, for LUTs export refuses, to its
+// graph with the look stripped.
 export const GOLDEN_STRIDE = 3
 
 export function isGoldenScenario(name) {
-  if (name.startsWith('u16/')) return /^u16\/preset-/.test(name)
-  return !/^float\/(?:transfer-|lut-refused-|lut-(?:display-look|combined-look-output|technical-output)$|lut-display-look-.+-output$)/.test(
-    name,
-  )
+  return /^u16\/preset-/.test(name)
 }
 
 /** RGB bytes of every `stride`-th pixel in both axes of an RGBA frame. */

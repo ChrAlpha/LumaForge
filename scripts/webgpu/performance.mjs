@@ -13,7 +13,7 @@ export async function runPerformance({
   const surface = await createPipeline(1024, 768)
   const gpu = surface.pipeline
   try {
-    const fixture = makeImage(true, 1024, 768)
+    const fixture = makeImage(1024, 768)
     const base = { ...neutral, userTemperature: 25, userVibrance: 30 }
     gpu.uploadImage(fixture)
     gpu.setParams(base)
@@ -61,7 +61,7 @@ export async function runPerformance({
         resourcesBefore.uploadedBytes === resourcesAfter.uploadedBytes,
       { before: resourcesBefore, after: resourcesAfter },
     )
-    gpu.uploadImage(makeImage(true, 1024, 768))
+    gpu.uploadImage(makeImage(1024, 768))
     const reupload = gpu.getResourceStats()
     add(
       'same-size-upload-reuses-textures',

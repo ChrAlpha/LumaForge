@@ -33,22 +33,20 @@ export async function captureGoldens() {
   }
   const frames = {}
   try {
-    for (const integer of [false, true]) {
-      const fixture = makeImage(integer, width, height)
-      for (const scenario of scenarios(Object.keys(TRANSFER_FUNCTIONS))) {
-        const name = `${integer ? 'u16' : 'float'}/${scenario.name}`
-        if (!isGoldenScenario(name)) continue
-        pipeline.clearLUT()
-        pipeline.uploadImage(fixture)
-        pipeline.setParams({ ...neutral, ...scenario.params })
-        if (scenario.lut) pipeline.uploadLUT(scenario.lut)
-        pipeline.render({ waitForGpu: true })
-        const pixels = pipeline.readProcessedPixels()
-        if (!pixels) throw new Error(`GOLDEN_PIXELS_MISSING: ${name}`)
-        frames[name] = bytesToBase64(
-          subsampleRgb(toDisplayBytes(pixels), width, height),
-        )
-      }
+    const fixture = makeImage(width, height)
+    for (const scenario of scenarios(Object.keys(TRANSFER_FUNCTIONS))) {
+      const name = `u16/${scenario.name}`
+      if (!isGoldenScenario(name)) continue
+      pipeline.clearLUT()
+      pipeline.uploadImage(fixture)
+      pipeline.setParams({ ...neutral, ...scenario.params })
+      if (scenario.lut) pipeline.uploadLUT(scenario.lut)
+      pipeline.render({ waitForGpu: true })
+      const pixels = pipeline.readProcessedPixels()
+      if (!pixels) throw new Error(`GOLDEN_PIXELS_MISSING: ${name}`)
+      frames[name] = bytesToBase64(
+        subsampleRgb(toDisplayBytes(pixels), width, height),
+      )
     }
   } finally {
     pipeline.dispose({ releaseContext: true })

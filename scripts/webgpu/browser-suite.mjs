@@ -187,120 +187,109 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         float32FilteringEnabled: report.capabilities.float32Filterable,
       },
     )
-    for (const integer of [false, true]) {
-      const format = integer ? 'u16' : 'float'
-      const fixture = makeImage(integer)
-      for (const scenario of scenarios(Object.keys(TRANSFER_FUNCTIONS))) {
-        const name = `${format}/${scenario.name}`
-        try {
-          const params = reset(fixture, scenario.params)
-          if (scenario.lut) gpu.uploadLUT(scenario.lut)
-          await render()
-          const processed = await readProcessedBytes()
-          // Presentation must show exactly what the process pass produced.
-          check(
-            `${name}/presented`,
-            await readPresentedCanvas(surface.canvas),
-            processed,
-            PRESENTED,
-          )
-          const refusal = exportRefusal(params, scenario.lut)
-          if (scenario.exportRefused) {
-            // Export keeps refusing the custom LUT the preview leaves out.
-            add(`${name}/export-refused`, refusal !== null, { refusal })
-            // The preview drops only the look: it must equal the same scene
-            // drawn with no look, and on the RAW path the TS executor's
-            // graph with the look stripped.
-            reset(fixture, { ...params, ...NO_LOOK })
-            await render()
-            check(
-              `${name}/stripped-preview`,
-              processed,
-              await readProcessedBytes(),
-              PRESENTED,
-            )
-            if (integer)
-              check(
-                `${name}/stripped-reference`,
-                processed,
-                renderReference(fixture, params, null, 'stripped'),
-                REFERENCE,
-              )
-          } else if (integer && refusal === null)
-            // The linear ProPhoto RAW path must agree with the export executor.
-            check(
-              `${name}/reference`,
-              processed,
-              referenceFrame(fixture, params, scenario.lut),
-              REFERENCE,
-            )
-          // Built-in styles have no TS executor, and the display-sRGB float
-          // path feeds embedded/quick previews only; both hold to goldens.
-          else if (!checkGolden(name, processed, fixture.width, fixture.height))
-            report.uncovered.push({
-              name,
-              reason:
-                refusal ??
-                'display-sRGB preview input has no export counterpart',
-            })
-        } catch (error) {
-          add(name, false, { error: String(error), stack: error.stack })
-          if (
-            /PIPELINE_UNAVAILABLE|DEVICE_LOST|Instance reference/.test(
-              String(error),
-            )
-          )
-            throw error
-        }
-      }
-      const snapshotParams = {
-        userExposureEv: 0.35,
-        userTemperature: 30,
-        userSaturation: 20,
-        viewMode: 'original',
-      }
+    const fixture = makeImage()
+    for (const scenario of scenarios(Object.keys(TRANSFER_FUNCTIONS))) {
+      const name = `u16/${scenario.name}`
       try {
-        const params = reset(fixture, snapshotParams)
+        const params = reset(fixture, scenario.params)
+        if (scenario.lut) gpu.uploadLUT(scenario.lut)
         await render()
-        const presentedBefore = await readPresentedCanvas(surface.canvas)
-        const full = readCanvas(
-          await gpu.renderToHiddenCanvas({ width: 97, height: 65 }),
-        )
-        // Snapshots export the edited image whichever output is presented.
-        if (integer)
-          check(
-            `${format}/snapshot-full`,
-            full,
-            referenceFrame(fixture, { ...params, viewMode: 'processed' }),
-            REFERENCE,
-            { stats: gpu.getLastExportStats() },
-          )
-        const resized = await gpu.renderToHiddenCanvas({
-          width: 43,
-          height: 29,
-        })
-        add(
-          `${format}/snapshot-resized-dimensions`,
-          resized.width === 43 && resized.height === 29,
-          { width: resized.width, height: resized.height },
-        )
-        await render()
+        const processed = await readProcessedBytes()
+        // Presentation must show exactly what the process pass produced.
         check(
-          `${format}/presented-restored-after-snapshot`,
+          `${name}/presented`,
           await readPresentedCanvas(surface.canvas),
-          presentedBefore,
+          processed,
           PRESENTED,
         )
+        const refusal = exportRefusal(params, scenario.lut)
+        if (scenario.exportRefused) {
+          // Export keeps refusing the custom LUT the preview leaves out.
+          add(`${name}/export-refused`, refusal !== null, { refusal })
+          // The preview drops only the look: it must equal the same scene
+          // drawn with no look, and the TS executor's graph with the look
+          // stripped.
+          reset(fixture, { ...params, ...NO_LOOK })
+          await render()
+          check(
+            `${name}/stripped-preview`,
+            processed,
+            await readProcessedBytes(),
+            PRESENTED,
+          )
+          check(
+            `${name}/stripped-reference`,
+            processed,
+            renderReference(fixture, params, null, 'stripped'),
+            REFERENCE,
+          )
+        } else if (refusal === null)
+          // The linear ProPhoto RAW path must agree with the export executor.
+          check(
+            `${name}/reference`,
+            processed,
+            referenceFrame(fixture, params, scenario.lut),
+            REFERENCE,
+          )
+        // Built-in styles have no TS executor; they hold to goldens.
+        else if (!checkGolden(name, processed, fixture.width, fixture.height))
+          report.uncovered.push({ name, reason: refusal })
       } catch (error) {
-        add(`${format}/snapshot`, false, {
-          error: String(error),
-          stack: error.stack,
-        })
+        add(name, false, { error: String(error), stack: error.stack })
+        if (
+          /PIPELINE_UNAVAILABLE|DEVICE_LOST|Instance reference/.test(
+            String(error),
+          )
+        )
+          throw error
       }
+    }
+    const snapshotParams = {
+      userExposureEv: 0.35,
+      userTemperature: 30,
+      userSaturation: 20,
+      viewMode: 'original',
+    }
+    try {
+      const params = reset(fixture, snapshotParams)
+      await render()
+      const presentedBefore = await readPresentedCanvas(surface.canvas)
+      const full = readCanvas(
+        await gpu.renderToHiddenCanvas({ width: 97, height: 65 }),
+      )
+      // Snapshots export the edited image whichever output is presented.
+      check(
+        'u16/snapshot-full',
+        full,
+        referenceFrame(fixture, { ...params, viewMode: 'processed' }),
+        REFERENCE,
+        { stats: gpu.getLastExportStats() },
+      )
+      const resized = await gpu.renderToHiddenCanvas({
+        width: 43,
+        height: 29,
+      })
+      add(
+        'u16/snapshot-resized-dimensions',
+        resized.width === 43 && resized.height === 29,
+        { width: resized.width, height: resized.height },
+      )
+      await render()
+      check(
+        'u16/presented-restored-after-snapshot',
+        await readPresentedCanvas(surface.canvas),
+        presentedBefore,
+        PRESENTED,
+      )
+    } catch (error) {
+      add('u16/snapshot', false, {
+        error: String(error),
+        stack: error.stack,
+      })
     }
     // A failed LUT upload leaves the pipeline without a LUT: the custom
     // selection then draws no look over the adjusted image.
-    const failedLutFixture = makeImage(true)
+    const failedLutFixture = makeImage()
     const failedLutParams = reset(failedLutFixture, {
       ...ADJUSTED_USER_COLOR,
       styleKind: 'custom',
@@ -334,7 +323,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     )
     await gpu.waitForGpu()
 
-    const tiledFixture = makeImage(true, 513, 289)
+    const tiledFixture = makeImage(513, 289)
     const tiledParams = reset(tiledFixture, {
       userSaturation: 35,
       userShadows: 25,
@@ -379,7 +368,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
       clearedExportError?.includes('EXPORT_SOURCE_MISSING') === true,
       { error: clearedExportError },
     )
-    const reuploadFixture = makeImage(true)
+    const reuploadFixture = makeImage()
     const reuploadParams = reset(reuploadFixture, { userExposureEv: -0.2 })
     await render()
     check(
@@ -389,7 +378,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
       REFERENCE,
     )
 
-    const burstFixture = makeImage(true)
+    const burstFixture = makeImage()
     const burstBase = reset(burstFixture)
     await render()
     const beforeBurst = gpu.getResourceStats()
@@ -427,7 +416,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     )
 
     for (const action of ['clear', 'replace']) {
-      reset(makeImage(true))
+      reset(makeImage())
       await render()
       gpu.setParams({ userExposureEv: 0.6 })
       gpu.render()
@@ -436,7 +425,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         (error) => ({ resolved: false, error: String(error) }),
       )
       if (action === 'clear') gpu.clearImage()
-      else gpu.uploadImage(makeImage(true, 83, 57))
+      else gpu.uploadImage(makeImage(83, 57))
       const outcome = await pending
       add(
         `pending-readback-${action}-cancelled`,
@@ -445,7 +434,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
       )
     }
 
-    const survivorFixture = makeImage(true)
+    const survivorFixture = makeImage()
     const survivorParams = reset(survivorFixture, { userExposureEv: 0.25 })
     await render()
     const victimCanvas = document.createElement('canvas')
@@ -455,7 +444,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     try {
       // The surviving pipeline retains another device lease throughout this disposal.
       await victim.initialize()
-      victim.uploadImage(makeImage(true))
+      victim.uploadImage(makeImage())
       victim.setParams(neutral)
       victim.render()
       await victim.waitForGpu()
