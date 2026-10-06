@@ -88,19 +88,17 @@ export interface UseOnlineLutSourcesResult {
   cancelEntryLoad: () => void
   /** The last loaded entry and the hash it applied; null before one. */
   loadedEntry: OnlineLutLoadedEntry | null
-  // The activation members are optional on the type so surface fixtures may
-  // omit them; the hook always provides them.
   /**
    * Fetches catalog metadata for listed sources that have none yet. Repeated
    * or concurrent calls never start a second request for a source that is
    * loading or ready, and a failed source waits for `retryFailed` or Refresh.
    * Activation only lists entries; it never applies a look.
    */
-  activateCatalogs?: (options?: ActivateOnlineLutCatalogsOptions) => void
+  activateCatalogs: (options?: ActivateOnlineLutCatalogsOptions) => void
   /** Activation per listed source; a source missing here is inactive. */
-  resourceActivation?: Readonly<Record<string, OnlineLUTSourceActivation>>
+  resourceActivation: Readonly<Record<string, OnlineLUTSourceActivation>>
   /** Activation across every listed source. */
-  catalogActivation?: OnlineLUTSourceActivation
+  catalogActivation: OnlineLUTSourceActivation
   share: {
     enabled: boolean
     url: string
@@ -374,11 +372,10 @@ export function useOnlineLutSources({
     [activateResource],
   )
 
-  // Every listed source activates on mount.
-  useEffect(() => {
-    activateCatalogs()
-  }, [activateCatalogs])
-
+  // Mounting requests no catalog: listed sources stay inactive until a
+  // surface that shows their catalog asks for it, a ?luts= link names one, or
+  // the user adds or refreshes one.
+  //
   // A ?luts= resource is an explicit activation intent. One that names a
   // source already listed (the default or a saved source) activates that
   // source instead of listing and requesting the same catalog twice.
