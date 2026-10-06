@@ -74,7 +74,6 @@ export const SelectiveColorSchema = z.strictObject({
   purple: BandShiftSchema.optional(),
   magenta: BandShiftSchema.optional(),
 })
-export type SelectiveColorInput = z.output<typeof SelectiveColorSchema>
 
 /** Field schemas without defaults — shared by the full and override shapes. */
 const PARAM_FIELDS = {
