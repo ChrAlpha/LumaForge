@@ -1,23 +1,23 @@
 import type { ExportPolicy } from '@lumaforge/render-engine/policy'
 
-import type { ExportExecutionPlan } from './export-plan'
+import type {
+  ExportCheckpointMode,
+  ExportExecutionPlan,
+  ExportExecutionProfileName,
+  ExportOutputSink,
+  ExportRuntimeMemoryProfile,
+} from './export-plan'
 import type {
   LargeResourceOwner,
   ResourceRegistryCheck,
 } from './resource-registry'
 
-export type ExportExecutionProfileName =
-  | 'ios-safe'
-  | 'mobile-balanced'
-  | 'desktop-fast'
-
-/**
- * The only mode: a retry is a fresh worker from the first row. No export
- * state outlives an attempt, so nothing resumes.
- */
-export type ExportCheckpointMode = 'safe-retry'
-export type ExportOutputSink = 'opfs-file' | 'streaming' | 'blob-handoff'
-export type ExportRuntimeMemoryProfile = 'low-memory' | 'desktop'
+export type {
+  ExportCheckpointMode,
+  ExportExecutionProfileName,
+  ExportOutputSink,
+  ExportRuntimeMemoryProfile,
+} from './export-plan'
 
 export type ExportPlanSelectedDebugPayload = {
   profile: ExportExecutionProfileName

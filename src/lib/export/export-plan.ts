@@ -8,12 +8,18 @@ import type {
 } from '@lumaforge/render-engine/policy'
 import { deriveExportPolicy } from '@lumaforge/render-engine/policy'
 
-import type {
-  ExportCheckpointMode,
-  ExportExecutionProfileName,
-  ExportOutputSink,
-  ExportRuntimeMemoryProfile,
-} from './execution-profile'
+export type ExportExecutionProfileName =
+  | 'ios-safe'
+  | 'mobile-balanced'
+  | 'desktop-fast'
+
+/**
+ * The only mode: a retry is a fresh worker from the first row. No export
+ * state outlives an attempt, so nothing resumes.
+ */
+export type ExportCheckpointMode = 'safe-retry'
+export type ExportOutputSink = 'opfs-file' | 'streaming' | 'blob-handoff'
+export type ExportRuntimeMemoryProfile = 'low-memory' | 'desktop'
 
 /** The sensor frame the export decodes; its memory cost sizes the plan. */
 export type ExportPlanSource = { width: number; height: number }
