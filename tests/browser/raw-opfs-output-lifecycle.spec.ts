@@ -30,6 +30,7 @@ const TAB_LOCK_PREFIX = 'lumaforge-export-tab:'
 const OUTPUT_FILE = 'output.jpg'
 const TEMP_FILE = `${OUTPUT_FILE}.tmp`
 const FINALIZED_MARKER = `${OUTPUT_FILE}.finalized.json`
+/** The recovery journal earlier versions wrote; no export writes one now. */
 const RECOVERY_JOURNAL = 'manifest.json'
 /** The RAW runtime an export worker loads once its output is open. */
 const RAW_RUNTIME_WASM = '**/luma_raw.wasm'
@@ -397,8 +398,9 @@ async function heldTabLockNames(page: Page) {
 
 /**
  * A pre-tab output whose finalized marker cannot be parsed, and an old,
- * datable pre-tab output next to a recovery journal. The collector must
- * leave both: one cannot be dated, the other belongs to recovery.
+ * datable pre-tab output next to a recovery journal an earlier version
+ * wrote. The collector must leave both: one cannot be dated, and a
+ * directory that holds a journal is never collected.
  */
 async function seedRetentionSentinels(page: Page) {
   const oldFinalizedAt = new Date(Date.now() - OLD_OUTPUT_AGE_MS).toISOString()
@@ -507,6 +509,8 @@ async function startFullResolutionExport(page: Page) {
   // Collection only concerns OPFS outputs; a blob or streaming plan would
   // leave nothing to retain or collect and must not pass for coverage.
   expect(plan.outputSink, 'the export plan writes to OPFS').toBe('opfs-file')
+  // The OPFS output is the file itself: no recovery journal is planned.
+  expect(plan.checkpointDurableExpected).toBe(false)
   return plan
 }
 

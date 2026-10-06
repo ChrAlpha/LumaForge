@@ -1,11 +1,23 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import { basename } from 'node:path'
 
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
 import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
+import {
+  gateRawFixture,
+  REQUIRE_PUBLIC_FIXTURE_ENV,
+  resolvePublicRawFixture,
+} from '../../scripts/ci/raw-fixtures.mjs'
 import { resolveSonyArwFixture } from './raw-export-fixtures'
+
+// The mobile lifecycle runs on the public DNG, which it requires: a missing
+// copy fails instead of skipping.
+const PUBLIC_DNG = resolvePublicRawFixture({
+  env: { [REQUIRE_PUBLIC_FIXTURE_ENV]: '1' },
+})
 
 type ExportDebugEvent = {
   type: string
@@ -101,6 +113,27 @@ function expectDerivedPlanCoherence(
   expect(planPayload?.derivedLabel).toEqual(
     expect.stringContaining(`-${String(planPayload?.outputSink)}-`),
   )
+}
+
+/** Owners an export evacuates before its worker starts, in order. */
+const PRE_EXPORT_OWNERS = [
+  'preview',
+  'bounded-hq',
+  'gpu',
+  'export-result',
+  'lut-fetch',
+]
+
+function collectExportEventsInit() {
+  window.addEventListener('lumaforge-export-debug', (event) => {
+    const custom = event as CustomEvent
+    ;(
+      window as unknown as { __LUMAFORGE_EXPORT_EVENTS__: unknown[] }
+    ).__LUMAFORGE_EXPORT_EVENTS__ ??= []
+    ;(
+      window as unknown as { __LUMAFORGE_EXPORT_EVENTS__: unknown[] }
+    ).__LUMAFORGE_EXPORT_EVENTS__.push(custom.detail)
+  })
 }
 
 async function sampleResourceUsage(
@@ -252,17 +285,7 @@ test('monitors a full desktop RAW export lifecycle with resource diagnostics', a
   const samples: LifecycleResourceSample[] = []
 
   try {
-    await page.addInitScript(() => {
-      window.addEventListener('lumaforge-export-debug', (event) => {
-        const custom = event as CustomEvent
-        ;(
-          window as unknown as { __LUMAFORGE_EXPORT_EVENTS__: unknown[] }
-        ).__LUMAFORGE_EXPORT_EVENTS__ ??= []
-        ;(
-          window as unknown as { __LUMAFORGE_EXPORT_EVENTS__: unknown[] }
-        ).__LUMAFORGE_EXPORT_EVENTS__.push(custom.detail)
-      })
-    })
+    await page.addInitScript(collectExportEventsInit)
 
     await page.goto('/raw')
     samples.push(await sampleResourceUsage(page, 'initial'))
@@ -409,20 +432,8 @@ test('monitors a full desktop RAW export lifecycle with resource diagnostics', a
     expect(evacuationPayload).toMatchObject({
       registryCheck: { ok: true },
     })
-    expect(evacuationPayload?.requiredOwners).toEqual([
-      'preview',
-      'bounded-hq',
-      'gpu',
-      'export-result',
-      'lut-fetch',
-    ])
-    expect(evacuationPayload?.disposedOwners).toEqual([
-      'preview',
-      'bounded-hq',
-      'gpu',
-      'export-result',
-      'lut-fetch',
-    ])
+    expect(evacuationPayload?.requiredOwners).toEqual(PRE_EXPORT_OWNERS)
+    expect(evacuationPayload?.disposedOwners).toEqual(PRE_EXPORT_OWNERS)
     expect(evacuationPayload?.remainingLive).toEqual([])
 
     expect(eventPayload(events, 'export-worker-attempt')).toMatchObject({
@@ -480,6 +491,259 @@ test('monitors a full desktop RAW export lifecycle with resource diagnostics', a
     samples.forEach(expectFiniteHeapSample)
   } finally {
     await testInfo.attach('raw-export-lifecycle-resources.json', {
+      body: JSON.stringify(
+        { events: await collectExportEvents(page), samples },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+  }
+})
+
+test('monitors a mobile WebKit RAW export lifecycle on the CPU preview', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'webkit-ios-safe',
+    'The mobile lifecycle runs on the WebKit iOS project, whose CPU preview and low-memory export it reads',
+  )
+  const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
+  testInfo.setTimeout(420_000)
+
+  const samples: LifecycleResourceSample[] = []
+  const exportAction = page
+    .getByRole('banner')
+    .locator('[data-mobile-export-action]')
+  const exportPanel = page.locator(
+    '[data-mobile-dock-panel] [data-mobile-export-panel]',
+  )
+  const cpuCanvas = page
+    .getByRole('region', { name: 'RAW preview comparison' })
+    .locator('canvas[aria-label="Embedded RAW preview"]')
+
+  try {
+    await page.addInitScript(() => {
+      localStorage.setItem('lumaforge.locale', 'en')
+      localStorage.setItem('lumaforge.raw.mobile.lensHintSeen.v1', '1')
+    })
+    await page.addInitScript(collectExportEventsInit)
+
+    await page.goto('/raw')
+    await expect(page.locator('[data-cpu-preview-banner]')).toBeVisible()
+    samples.push(await sampleResourceUsage(page, 'initial'))
+
+    const choosing = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: 'Browse RAW files' }).click()
+    await (await choosing).setFiles(rawPath)
+    await expect(
+      page.getByText(`Loaded ${basename(rawPath)}`, { exact: true }),
+    ).toBeVisible({ timeout: 120_000 })
+    await expect(cpuCanvas).toBeVisible({ timeout: 60_000 })
+    await expect(exportAction).toHaveAttribute('data-state', 'ready', {
+      timeout: 60_000,
+    })
+    samples.push(await sampleResourceUsage(page, 'raw-ready'))
+
+    await page
+      .getByRole('tablist', { name: 'Lab modes' })
+      .getByRole('tab', { name: 'Adjust', exact: true })
+      .click()
+    const exposure = page
+      .locator('[data-mobile-dock-panel]')
+      .getByRole('slider', { name: 'Exposure', exact: true })
+    const exposureBefore = await exposure.getAttribute('aria-valuenow')
+    await exposure.focus()
+    for (let step = 0; step < 5; step += 1) await exposure.press('PageUp')
+    await expect(exposure).not.toHaveAttribute('aria-valuenow', exposureBefore!)
+    samples.push(await sampleResourceUsage(page, 'tone-adjusted'))
+
+    await exportAction.click()
+    const exportButton = exportPanel.getByRole('button', {
+      name: 'Export full-resolution JPEG',
+    })
+    await expect(exportButton).toBeEnabled()
+    samples.push(await sampleResourceUsage(page, 'before-export'))
+    await exportButton.click()
+    await expect
+      .poll(async () => {
+        const eventTypes = new Set(
+          (await collectExportEvents(page)).map((event) => event.type),
+        )
+        return (
+          eventTypes.has('export-plan-selected') &&
+          eventTypes.has('resource-evacuated') &&
+          eventTypes.has('export-worker-attempt')
+        )
+      })
+      .toBe(true)
+    samples.push(await sampleResourceUsage(page, 'after-evacuation'))
+
+    await expect(exportAction).toHaveAttribute('data-state', 'done', {
+      timeout: 300_000,
+    })
+    await expect(exportPanel).toContainText('Exported')
+    samples.push(await sampleResourceUsage(page, 'jpeg-ready'))
+
+    // The released preview comes back on the CPU, and the result stays.
+    await page
+      .getByRole('region', { name: 'RAW preview comparison' })
+      .getByRole('button', { name: 'Restore preview' })
+      .click()
+    await expect(cpuCanvas).toBeVisible({ timeout: 120_000 })
+    samples.push(await sampleResourceUsage(page, 'after-preview-restore'))
+
+    if ((await exportAction.getAttribute('aria-expanded')) !== 'true') {
+      await exportAction.click()
+    }
+    const downloadButton = exportPanel.getByRole('button', {
+      name: 'Download',
+      exact: true,
+    })
+    await expect(downloadButton).toBeEnabled()
+    const downloadPromise = page.waitForEvent('download')
+    await downloadButton.click()
+    const download = await downloadPromise
+    const jpegPath = await download.path()
+    expect(jpegPath).toBeTruthy()
+    await expect
+      .poll(async () =>
+        (await collectExportEvents(page)).some(
+          (event) => event.type === 'output-materialized',
+        ),
+      )
+      .toBe(true)
+    samples.push(await sampleResourceUsage(page, 'download-materialized'))
+
+    const manifestButton = exportPanel.getByRole('button', {
+      name: 'Download render manifest (JSON)',
+    })
+    await expect(manifestButton).toBeEnabled({ timeout: 180_000 })
+    const manifestDownloadPromise = page.waitForEvent('download')
+    await manifestButton.click()
+    const manifestDownload = await manifestDownloadPromise
+    expect(manifestDownload.suggestedFilename()).toMatch(/\.manifest\.json$/)
+    const manifest = JSON.parse(
+      await readFile((await manifestDownload.path())!, 'utf8'),
+    ) as {
+      kind: string
+      manifest_sha256: string
+      policy: { kind: string }
+      source_raw: { sha256: string; byte_size: number }
+      output: {
+        sha256: string
+        filename: string
+        dimensions: { width: number; height: number }
+      }
+      environment: { native_artifacts: { variant: string } }
+    }
+    expect(verifyManifestSha256(manifest)).toBe(true)
+    expect(manifest.kind).toBe('export')
+    expect(manifest.policy.kind).toBe('export-full')
+    const jpegBytes = await readFile(jpegPath!)
+    expect(manifest.output.sha256).toBe(
+      createHash('sha256').update(jpegBytes).digest('hex'),
+    )
+    expect(manifest.output.filename).toBe(download.suggestedFilename())
+    expect(manifest.output.dimensions).toEqual({ width: 4032, height: 3024 })
+    const sourceBytes = await readFile(rawPath)
+    expect(manifest.source_raw.byte_size).toBe(sourceBytes.byteLength)
+    expect(manifest.source_raw.sha256).toBe(
+      createHash('sha256').update(sourceBytes).digest('hex'),
+    )
+    samples.push(await sampleResourceUsage(page, 'manifest-downloaded'))
+
+    await page.getByRole('button', { name: 'More actions' }).click()
+    await page.getByRole('menuitem', { name: 'Reset session' }).click()
+    const resetDialog = page.getByRole('alertdialog', {
+      name: 'Reset session',
+    })
+    await expect(resetDialog).toBeVisible()
+    await resetDialog.getByRole('button', { name: 'Reset session' }).click()
+    await expect(
+      page.getByRole('button', { name: 'Browse RAW files' }),
+    ).toBeVisible({ timeout: 30_000 })
+    await expect
+      .poll(async () =>
+        (await collectExportEvents(page)).some(
+          (event) =>
+            event.type === 'resource-cleanup' &&
+            event.payload.reason === 'reset-session',
+        ),
+      )
+      .toBe(true)
+    samples.push(await sampleResourceUsage(page, 'after-reset'))
+
+    const events = await collectExportEvents(page)
+    const planPayload = eventPayload(events, 'export-plan-selected')
+    expectDerivedPlanCoherence(planPayload)
+    // A phone-class WebKit exports on the low-memory runtime; a 12MP JPEG
+    // is small enough to hand off as a blob.
+    expect(planPayload).toMatchObject({
+      runtimeMemoryProfile: 'low-memory',
+      outputSink: 'blob-handoff',
+    })
+    expect(manifest.environment.native_artifacts.variant).toBe('low-memory')
+    expect(eventPayload(events, 'export-manifest-ready')).toMatchObject({
+      manifestSha256: manifest.manifest_sha256,
+      outputSha256: manifest.output.sha256,
+    })
+    const evacuationPayload = eventPayload(events, 'resource-evacuated')
+    expect(evacuationPayload).toMatchObject({ registryCheck: { ok: true } })
+    expect(evacuationPayload?.requiredOwners).toEqual(PRE_EXPORT_OWNERS)
+    expect(evacuationPayload?.disposedOwners).toEqual(PRE_EXPORT_OWNERS)
+    expect(evacuationPayload?.remainingLive).toEqual([])
+    expect(eventPayload(events, 'export-worker-attempt')).toMatchObject({
+      attempt: 1,
+      phase: 'started',
+      freshWorker: true,
+    })
+    // No export writes a recovery journal, whatever its sink.
+    expect(planPayload?.checkpointDurableExpected).toBe(false)
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: 'checkpoint-written' }),
+    )
+    const outputMaterialized = eventPayload(events, 'output-materialized')
+    expect(outputMaterialized).toMatchObject({
+      action: 'download',
+      cleanup: 'scheduled',
+      outputKind: 'blob',
+    })
+    expect(Number(outputMaterialized?.byteLength)).toBe(jpegBytes.byteLength)
+    expect(eventPayload(events, 'resource-cleanup')).toMatchObject({
+      reason: 'reset-session',
+      disposedOwners: ['export-result'],
+      registryCheck: { ok: true },
+      remainingLive: [],
+    })
+    expect(eventIndex(events, 'resource-evacuated')).toBeGreaterThan(
+      eventIndex(events, 'export-plan-selected'),
+    )
+    expect(eventIndex(events, 'export-worker-attempt')).toBeGreaterThan(
+      eventIndex(events, 'resource-evacuated'),
+    )
+    expect(eventIndex(events, 'output-materialized')).toBeGreaterThan(
+      eventIndex(events, 'export-worker-attempt'),
+    )
+    expect(eventIndex(events, 'resource-cleanup')).toBeGreaterThan(
+      eventIndex(events, 'output-materialized'),
+    )
+
+    expect(samples.map((sample) => sample.label)).toEqual([
+      'initial',
+      'raw-ready',
+      'tone-adjusted',
+      'before-export',
+      'after-evacuation',
+      'jpeg-ready',
+      'after-preview-restore',
+      'download-materialized',
+      'manifest-downloaded',
+      'after-reset',
+    ])
+    samples.forEach(expectFiniteHeapSample)
+  } finally {
+    await testInfo.attach('raw-export-lifecycle-resources-mobile.json', {
       body: JSON.stringify(
         { events: await collectExportEvents(page), samples },
         null,
