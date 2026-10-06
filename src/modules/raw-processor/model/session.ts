@@ -4,6 +4,7 @@ import type {
   LUTInputProfile,
 } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
+import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 
 import type { ExportCheckpointManifest } from '~/lib/export/checkpoint-store'
 import type {
@@ -24,7 +25,6 @@ import type { ExportResult } from './export-result'
 export type SupportLevel = 'experimental' | 'unsupported'
 export type PreviewStatus = 'idle' | 'loading' | 'ready' | 'failed' | 'skipped'
 export type DisplaySource = 'embedded' | 'quick' | 'bounded-hq' | 'none'
-export type ExportFidelity = 'safe' | 'balanced' | 'max'
 export type FullResExportCapabilityState =
   | { status: 'unknown' }
   | { status: 'probing' }
@@ -178,8 +178,6 @@ export type ImageSession = {
   }
   exportState: {
     status: 'idle' | 'preparing' | 'exporting' | 'ready' | 'failed'
-    qualityPreset: 'standard' | 'high'
-    fidelityLevel: ExportFidelity
     fullResCapability: FullResExportCapabilityState
     activePlan?: ActiveExportPlanState
     /**
@@ -195,7 +193,7 @@ export type ImageSession = {
       completedStrips: number
       totalStrips: number
     }
-    recommendedRetryLevel?: Extract<ExportFidelity, 'safe' | 'balanced'>
+    recommendedRetryLevel?: Exclude<PerformancePreference, 'max'>
     lastSuccessfulSize?: { width: number; height: number }
     lastErrorCode?: string
     retryRecommended: boolean

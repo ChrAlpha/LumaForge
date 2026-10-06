@@ -34,8 +34,6 @@ function createSession(id = 'session-compare'): ImageSession {
     renderState: { status: 'ready', lastRenderSource: 'quick' },
     exportState: {
       status: 'idle',
-      qualityPreset: 'high',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'unknown' },
       recovery: { status: 'none' },
       checkpointDurable: false,

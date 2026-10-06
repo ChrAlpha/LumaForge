@@ -190,30 +190,14 @@ describe('source-scoped interruption hints', () => {
     ).resolves.toBeNull()
   })
 
-  it('leaves an explicit export untouched without interruption history', () => {
-    expect(
-      withInterruptionHistory({ quality: 'high', fidelity: 'balanced' }, null),
-    ).toEqual({ quality: 'high', fidelity: 'balanced' })
+  it('sends an explicit export with nothing without interruption history', () => {
+    expect(withInterruptionHistory(null)).toEqual({})
   })
 
-  it('sends the hint with the current choice and nothing from a journal', () => {
+  it('sends only the hint, with no quality choice and nothing from a journal', () => {
     const interruption = hintFor(SOURCE)
-    const request = withInterruptionHistory(
-      {
-        quality: 'standard',
-        fidelity: 'max',
-        previousInterrupted: true,
-        recoveredExportId: 'export-1',
-        recoveredManifest: manifest(),
-      } as Parameters<typeof withInterruptionHistory>[0],
-      interruption,
-    )
 
-    expect(request).toEqual({
-      quality: 'standard',
-      fidelity: 'max',
-      interruption,
-    })
+    expect(withInterruptionHistory(interruption)).toEqual({ interruption })
   })
 
   it.each([

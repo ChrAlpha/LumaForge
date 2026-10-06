@@ -56,6 +56,26 @@ describe('useRawProcessorViewController', () => {
     expect(workflow.resetPreviewViewport).toHaveBeenCalledOnce()
   })
 
+  it('starts the explicit export with no choices, whatever a surface hands over', () => {
+    const workflow = workflowFixture()
+    const { result } = renderHook(() =>
+      useRawProcessorViewController({
+        rawRouteLocation: { search: '', pathname: '/raw' },
+        workflow,
+      }),
+    )
+    // The tool surfaces still pass their old quality/fidelity pair.
+    const onExport: (options: {
+      quality: 'standard' | 'high'
+      fidelity: 'safe' | 'balanced' | 'max'
+    }) => void = result.current.handleExport
+
+    act(() => onExport({ quality: 'standard', fidelity: 'max' }))
+
+    expect(workflow.exportImage).toHaveBeenCalledOnce()
+    expect(workflow.exportImage).toHaveBeenCalledWith()
+  })
+
   it('hands a LUT load back to the caller so it can wait for it to settle', async () => {
     const workflow = workflowFixture()
     vi.mocked(workflow.loadLUT).mockResolvedValue('failed')

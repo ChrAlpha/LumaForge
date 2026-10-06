@@ -16,7 +16,10 @@ import type {
   RunFullResolutionJpegExportInWorkerInput,
 } from '~/lib/export/full-res-export-client'
 
-import { runFullResolutionExportJob } from './export-system'
+import {
+  EXPORT_JPEG_QUALITY,
+  runFullResolutionExportJob,
+} from './export-system'
 
 const FILE = new File(['raw'], 'frame.ARW')
 const FILENAME = 'frame_neutral_fullres.jpg'
@@ -366,6 +369,25 @@ describe('runFullResolutionExportJob plan safety', () => {
       preferredRows: script.runs[1]!.executionPlan!.preferredRows,
       concurrency: 1,
     })
+  })
+
+  it('encodes every attempt at the fixed JPEG quality, retries and sink fallbacks included', async () => {
+    expect(EXPORT_JPEG_QUALITY).toBe(0.92)
+    const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
+    const script = scriptClients(RESOURCE_FAILURE, OPFS_UNAVAILABLE, SUCCESS)
+
+    await runFullResolutionExportJob({
+      file: FILE,
+      filename: FILENAME,
+      graph: GRAPH,
+      quality: EXPORT_JPEG_QUALITY,
+      executionPlan,
+      outputLocation: OUTPUT_LOCATION,
+      clientFactory: script.clientFactory,
+    })
+
+    expect(script.runs).toHaveLength(3)
+    expect(script.runs.map((run) => run.quality)).toEqual([0.92, 0.92, 0.92])
   })
 
   it('keeps a sink fallback within the strip budget a resource retry already reduced', async () => {

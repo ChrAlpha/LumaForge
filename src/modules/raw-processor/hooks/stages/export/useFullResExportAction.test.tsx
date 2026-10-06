@@ -61,13 +61,11 @@ describe('useFullResExportAction', () => {
     const orchestrateExport = vi.fn().mockResolvedValue(undefined)
     const input = createInput(orchestrateExport)
     const { result } = renderHook(() => useFullResExportAction(input))
-    const options = { quality: 'high' as const, fidelity: 'balanced' as const }
-
-    await result.current.exportImage(options)
+    await result.current.exportImage()
 
     expect(orchestrateExport).toHaveBeenCalledTimes(1)
     expect(orchestrateExport).toHaveBeenCalledWith(
-      options,
+      {},
       expect.objectContaining({
         atoms: expect.objectContaining({
           loadedImage: input.loadedImage,
@@ -94,7 +92,7 @@ describe('useFullResExportAction', () => {
     const input = createInput(orchestrateExport)
     const { result } = renderHook(() => useFullResExportAction(input))
 
-    await result.current.exportImage({ quality: 'high', fidelity: 'balanced' })
+    await result.current.exportImage()
 
     const [, ctx] = orchestrateExport.mock.calls[0]!
     expect(ctx.services.interruptionMarkers).toBe(input.interruptionMarkers)

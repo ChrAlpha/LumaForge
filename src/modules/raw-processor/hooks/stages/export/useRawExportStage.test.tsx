@@ -114,8 +114,6 @@ function createReadySession(): ImageSession {
     renderState: { status: 'ready', lastRenderSource: 'quick' },
     exportState: {
       status: 'idle',
-      qualityPreset: 'high',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'supported', width: 800, height: 600 },
       recovery: { status: 'none' },
       checkpointDurable: false,
@@ -277,21 +275,14 @@ describe('useRawExportStage', () => {
     expect(orchestrateFullResExport).not.toHaveBeenCalled()
 
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(orchestrateFullResExport).toHaveBeenCalledTimes(1)
     const [options, ctx] = vi.mocked(orchestrateFullResExport).mock.calls[0]!
     // Only the source-scoped hint travels: no journal, so the plan sizes
     // from the current source and the graph renders the current look.
-    expect(options).toEqual({
-      quality: 'high',
-      fidelity: 'balanced',
-      interruption: INTERRUPTION,
-    })
+    expect(options).toEqual({ interruption: INTERRUPTION })
     expect(ctx.services.interruptionMarkers).toBe(input.interruptionMarkers)
     expect(ctx.atoms.params).toBe(currentParams)
     expect(ctx.atoms.loadedImage.file).toBe(SOURCE_FILE)
@@ -302,7 +293,7 @@ describe('useRawExportStage', () => {
     })
   })
 
-  it('sends only the chosen quality and fidelity without interruption history', async () => {
+  it('sends an explicit export with no quality or fidelity choice without interruption history', async () => {
     const session = createReadySession()
     const { result } = renderHook(() =>
       useRawExportStage(
@@ -319,12 +310,9 @@ describe('useRawExportStage', () => {
     )
 
     await act(async () => {
-      await result.current.exportImage({ quality: 'standard', fidelity: 'max' })
+      await result.current.exportImage()
     })
 
-    expect(vi.mocked(orchestrateFullResExport).mock.calls[0]?.[0]).toEqual({
-      quality: 'standard',
-      fidelity: 'max',
-    })
+    expect(vi.mocked(orchestrateFullResExport).mock.calls[0]?.[0]).toEqual({})
   })
 })

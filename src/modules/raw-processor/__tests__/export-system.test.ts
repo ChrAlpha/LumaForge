@@ -102,7 +102,7 @@ describe('export-system', () => {
 
   it('selects derived 100MP rows for current-session safe export', async () => {
     const plan = await selectCurrentExportExecutionPlan({
-      fidelity: 'safe',
+      performancePreference: 'safe',
       sourceWidth: 11662,
       sourceHeight: 8746,
     })
@@ -125,7 +125,7 @@ describe('export-system', () => {
     vi.stubGlobal('crossOriginIsolated', true)
 
     const plan = await selectCurrentExportExecutionPlan({
-      fidelity: 'max',
+      performancePreference: 'max',
       sourceWidth: 11662,
       sourceHeight: 8746,
     })
@@ -154,12 +154,12 @@ describe('export-system', () => {
     vi.stubGlobal('crossOriginIsolated', true)
 
     const first = await selectCurrentExportExecutionPlan({
-      fidelity: 'balanced',
+      performancePreference: 'balanced',
       sourceWidth: 6000,
       sourceHeight: 4000,
     })
     const second = await selectCurrentExportExecutionPlan({
-      fidelity: 'balanced',
+      performancePreference: 'balanced',
       sourceWidth: 6000,
       sourceHeight: 4000,
     })
@@ -287,7 +287,7 @@ describe('export-system', () => {
       steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
     }
     const executionPlan = await selectCurrentExportExecutionPlan({
-      fidelity: 'safe',
+      performancePreference: 'safe',
       sourceWidth: 11662,
       sourceHeight: 8746,
     })
@@ -351,7 +351,7 @@ describe('export-system', () => {
       steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
     }
     const executionPlan = await selectCurrentExportExecutionPlan({
-      fidelity: 'safe',
+      performancePreference: 'safe',
       sourceWidth: 11662,
       sourceHeight: 8746,
     })
@@ -405,7 +405,7 @@ describe('export-system', () => {
       steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
     }
     const executionPlan = await selectCurrentExportExecutionPlan({
-      fidelity: 'safe',
+      performancePreference: 'safe',
       sourceWidth: 11662,
       sourceHeight: 8746,
     })
@@ -465,7 +465,7 @@ describe('export-system', () => {
       steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
     }
     const executionPlan = await selectCurrentExportExecutionPlan({
-      fidelity: 'max',
+      performancePreference: 'max',
       sourceWidth: 11662,
       sourceHeight: 8746,
       previousResourceFailure: true,
@@ -518,7 +518,7 @@ describe('export-system', () => {
       steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
     }
     const executionPlan = await selectCurrentExportExecutionPlan({
-      fidelity: 'safe',
+      performancePreference: 'safe',
       sourceWidth: 11662,
       sourceHeight: 8746,
     })

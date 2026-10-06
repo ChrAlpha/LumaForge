@@ -14,7 +14,7 @@ import { createCompletedExportResult } from '../../../services/export/export-res
 import { clearExportResultForActiveExport } from '../../../services/export/export-state'
 import {
   buildPreviewExportFilename,
-  HQ_PREVIEW_EXPORT_QUALITY,
+  EXPORT_JPEG_QUALITY,
   resolveHqPreviewExportSize,
   runPreviewExportJob,
 } from '../../../services/export/export-system'
@@ -157,7 +157,7 @@ export function useHqPreviewExportAction({
       )
       const result = await runPreviewExportJob({
         filename,
-        quality: HQ_PREVIEW_EXPORT_QUALITY,
+        quality: EXPORT_JPEG_QUALITY,
         renderToCanvas: async () => {
           if (exportAbortController.signal.aborted) {
             throw new Error('HQ_PREVIEW_EXPORT_ABORTED')

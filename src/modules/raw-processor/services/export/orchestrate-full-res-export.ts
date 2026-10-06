@@ -6,6 +6,7 @@ import {
   pickColorGraphIntent,
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
+import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 import { toast } from 'sonner'
 
 import type { ExportExecutionPlan } from '~/lib/export/execution-profile'
@@ -64,6 +65,7 @@ import {
 import {
   buildExportFilename,
   createExportPolicyRefusal,
+  EXPORT_JPEG_QUALITY,
   recommendRetryLevel,
   runFullResolutionExportJob,
   selectCurrentExportExecutionPlan,
@@ -129,16 +131,18 @@ function toActivePlanState(plan: ExportExecutionPlan): ActiveExportPlanState {
   }
 }
 
+export type FullResExportRequest = {
+  /** How hard the plan may push this device; never the JPEG quality. */
+  performancePreference?: PerformancePreference
+  /** The hint read for the loaded source; it applies only to that file. */
+  interruption?: SourceInterruptionHint
+}
+
 export async function orchestrateFullResExport(
-  options: {
-    quality: 'standard' | 'high'
-    fidelity: 'safe' | 'balanced' | 'max'
-    /** The hint read for the loaded source; it applies only to that file. */
-    interruption?: SourceInterruptionHint
-  },
+  options: FullResExportRequest = {},
   ctx: ExportContext,
 ): Promise<void> {
-  const { quality, fidelity } = options
+  const performancePreference = options.performancePreference ?? 'balanced'
 
   const rawRenderExposure =
     ctx.atoms.decodedImageRef.current?.renderExposure ?? null
@@ -242,7 +246,7 @@ export async function orchestrateFullResExport(
     toast.dismiss()
     ctx.refs.previewCopyCanvasRef.current = null
     const executionPlan = await selectCurrentExportExecutionPlan({
-      fidelity,
+      performancePreference,
       sourceWidth: exportCapability.width,
       sourceHeight: exportCapability.height,
       previousCrashLikeInterruption:
@@ -304,8 +308,6 @@ export async function orchestrateFullResExport(
             exportState: {
               ...prev.exportState,
               status: 'exporting',
-              qualityPreset: quality,
-              fidelityLevel: fidelity,
               activePlan,
               checkpointDurable: false,
               recovery: { status: 'none' },
@@ -420,11 +422,10 @@ export async function orchestrateFullResExport(
       activeSession.activeStyle?.name ?? 'neutral',
     )
 
-    const jpegQuality = quality === 'high' ? 0.92 : 0.86
     const result = await runFullResolutionExportJob({
       file: activeSourceFile,
       filename,
-      quality: jpegQuality,
+      quality: EXPORT_JPEG_QUALITY,
       executionPlan: jobExecutionPlan,
       outputLocation,
       graph,
@@ -574,7 +575,7 @@ export async function orchestrateFullResExport(
           }
         : {}),
       style: activeSession.activeStyle,
-      quality: jpegQuality,
+      quality: EXPORT_JPEG_QUALITY,
       policy: {
         kind: 'export-full',
         row_slice: jobExecutionPlan.preferredRows,
@@ -683,7 +684,7 @@ export async function orchestrateFullResExport(
     }
 
     const retryLevel = isRetryableFullResExportFailure(errorCode)
-      ? recommendRetryLevel(fidelity)
+      ? recommendRetryLevel(performancePreference)
       : null
 
     ctx.atoms.setSession((prev) =>

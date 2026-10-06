@@ -24,7 +24,6 @@ import { useExportDerivedState } from './useExportDerivedState'
 import type { PendingRecoveryRetry } from './useExportRecoveryAction'
 import { useExportRecoveryAction } from './useExportRecoveryAction'
 import { useExportResultActions } from './useExportResultActions'
-import type { FullResExportOptions } from './useFullResExportAction'
 import { useFullResExportAction } from './useFullResExportAction'
 import { useHqPreviewExportAction } from './useHqPreviewExportAction'
 
@@ -166,13 +165,11 @@ export function useRawExportStage({
     rawRenderExposure,
     stats,
   })
-  // Full-resolution export starts only from an explicit user action. The
-  // loaded source's interruption hint asks it for the safer plan.
+  // Full-resolution export starts only from an explicit user action, which
+  // chooses nothing: the JPEG quality is fixed. The loaded source's
+  // interruption hint asks it for the safer plan.
   const exportWithInterruptionHistory = useCallback(
-    (options: FullResExportOptions) =>
-      exportImage(
-        withInterruptionHistory(options, exportInterruptionRef.current),
-      ),
+    () => exportImage(withInterruptionHistory(exportInterruptionRef.current)),
     [exportImage, exportInterruptionRef],
   )
   // The retired recovery action still takes a recovery ref; it reads the
@@ -190,7 +187,7 @@ export function useRawExportStage({
     canExport,
     status,
     loadFile,
-    exportImage,
+    exportImage: exportWithInterruptionHistory,
     scheduleToast,
     toast,
   })

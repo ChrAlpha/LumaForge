@@ -211,7 +211,8 @@ const SEALED_MANIFEST = {
   output: { sha256: 'c'.repeat(64), filename: FULL_RES_FILENAME },
 } as unknown as RenderManifest
 
-const OPTIONS = { quality: 'high', fidelity: 'balanced' } as const
+/** The explicit export command carries no quality or fidelity choice. */
+const OPTIONS = {} as const
 
 /** Its projective horizon crosses the unconstrained output frame. */
 const FOLDING_MATRIX = composeManualTransform(
@@ -282,8 +283,6 @@ function createSession(
     renderState: { status: 'ready', lastRenderSource: 'quick' },
     exportState: {
       status: 'idle',
-      qualityPreset: 'high',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'supported', width: 6000, height: 4000 },
       recovery: { status: 'none' },
       checkpointDurable: false,
@@ -595,7 +594,7 @@ function createHarness(options: HarnessOptions = {}) {
       planInputs.push(input)
       await options.planGate
       const plan = selectExportExecutionPlan({
-        performancePreference: input.fidelity,
+        performancePreference: input.performancePreference,
         sourceWidth: input.sourceWidth,
         sourceHeight: input.sourceHeight,
         previousCrashLikeInterruption:
@@ -879,8 +878,6 @@ describe('orchestrateFullResExport success', () => {
     const result = h.state.session?.exportState.result
     expect(h.state.session?.exportState).toEqual({
       status: 'ready',
-      qualityPreset: 'high',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'supported', width: 6000, height: 4000 },
       activePlan: DESKTOP_ACTIVE_PLAN,
       checkpointDurable: false,
@@ -925,7 +922,7 @@ describe('orchestrateFullResExport success', () => {
 
     expect(h.planInputs).toEqual([
       {
-        fidelity: 'balanced',
+        performancePreference: 'balanced',
         sourceWidth: 6000,
         sourceHeight: 4000,
         previousCrashLikeInterruption: false,
@@ -1063,16 +1060,13 @@ describe('orchestrateFullResExport success', () => {
     })
     const job = h.installJob()
 
-    const run = orchestrateFullResExport(
-      { quality: 'standard', fidelity: 'balanced' },
-      h.ctx,
-    )
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
     const input = await job.started
     job.resolve()
     await run
 
     expect(input.geometry).toBe(geometry)
-    expect(input.quality).toBe(0.86)
+    expect(input.quality).toBe(0.92)
     expect(h.state.session?.exportState.result).toMatchObject(delivered)
     expect(h.state.session?.exportState.lastSuccessfulSize).toEqual(delivered)
     expect(h.manifestInputs[0]).toMatchObject({
@@ -1082,7 +1076,7 @@ describe('orchestrateFullResExport success', () => {
         constrain_crop: true,
         output: delivered,
       },
-      quality: 0.86,
+      quality: 0.92,
     })
   })
 
@@ -1151,7 +1145,7 @@ describe('orchestrateFullResExport success', () => {
 
       expect(h.planInputs).toEqual([
         {
-          fidelity: 'balanced',
+          performancePreference: 'balanced',
           sourceWidth: 6000,
           sourceHeight: 4000,
           previousCrashLikeInterruption: true,
@@ -1163,6 +1157,8 @@ describe('orchestrateFullResExport success', () => {
         outputSink: sink,
         productCopy: 'interrupted-retry',
       })
+      // The safer plan changes rows and concurrency, never the JPEG quality.
+      expect(input.quality).toBe(0.92)
       // Sized from the current source and rendering the current look; no
       // journal, fingerprint or checkpoint travels with the job.
       expect(input.checkpoint).toBeUndefined()
@@ -1216,7 +1212,7 @@ describe('orchestrateFullResExport success', () => {
       { ...OPTIONS, interruption: interruption! },
       h.ctx,
     )
-    await job.started
+    const input = await job.started
     job.resolve()
     await run
 
@@ -1224,6 +1220,9 @@ describe('orchestrateFullResExport success', () => {
       previousCrashLikeInterruption: false,
       previousResourceFailure: true,
     })
+    // A retry after a resource failure is lighter, not lower quality.
+    expect(input.quality).toBe(0.92)
+    expect(h.manifestInputs[0]).toMatchObject({ quality: 0.92 })
     expect(h.markerStore.markers()).toEqual([])
   })
 
@@ -1629,7 +1628,7 @@ describe('orchestrateFullResExport failures', () => {
     {
       name: 'a retryable worker failure at balanced fidelity',
       error: new Error('FULL_RES_EXPORT_WORKER_FAILED'),
-      fidelity: 'balanced',
+      performancePreference: 'balanced',
       code: 'FULL_RES_EXPORT_WORKER_FAILED',
       retryLevel: 'safe',
       description: 'FULL_RES_EXPORT_WORKER_FAILED. Retry with safe fidelity.',
@@ -1638,7 +1637,7 @@ describe('orchestrateFullResExport failures', () => {
     {
       name: 'a resource failure at max fidelity',
       error: new Error('FULL_RES_EXPORT_RESOURCE_FAILURE'),
-      fidelity: 'max',
+      performancePreference: 'max',
       code: 'FULL_RES_EXPORT_RESOURCE_FAILURE',
       retryLevel: 'balanced',
       description:
@@ -1648,7 +1647,7 @@ describe('orchestrateFullResExport failures', () => {
     {
       name: 'a retryable failure with no safer fidelity left',
       error: new Error('FULL_RES_EXPORT_WORKER_FAILED'),
-      fidelity: 'safe',
+      performancePreference: 'safe',
       code: 'FULL_RES_EXPORT_WORKER_FAILED',
       retryLevel: undefined,
       description: 'FULL_RES_EXPORT_WORKER_FAILED',
@@ -1657,7 +1656,7 @@ describe('orchestrateFullResExport failures', () => {
     {
       name: 'an unclassified failure',
       error: new Error('decoder exploded'),
-      fidelity: 'balanced',
+      performancePreference: 'balanced',
       code: 'EXPORT_RENDER_FAILED',
       retryLevel: undefined,
       description: 'decoder exploded',
@@ -1668,7 +1667,7 @@ describe('orchestrateFullResExport failures', () => {
       error: Object.assign(new Error('Output sink closed'), {
         code: 'EXPORT_OUTPUT_SINK_FAILED',
       }),
-      fidelity: 'balanced',
+      performancePreference: 'balanced',
       code: 'EXPORT_OUTPUT_SINK_FAILED',
       retryLevel: undefined,
       description: 'Output sink closed',
@@ -1678,7 +1677,7 @@ describe('orchestrateFullResExport failures', () => {
     'records $name as a failed export without a result',
     async ({
       error,
-      fidelity,
+      performancePreference,
       code,
       retryLevel,
       description,
@@ -1687,7 +1686,7 @@ describe('orchestrateFullResExport failures', () => {
       const h = createHarness()
       const job = h.installJob()
 
-      const run = orchestrateFullResExport({ quality: 'high', fidelity }, h.ctx)
+      const run = orchestrateFullResExport({ performancePreference }, h.ctx)
       await job.started
       job.progress(1, 4)
       const failedAt = h.mark('worker-failed')

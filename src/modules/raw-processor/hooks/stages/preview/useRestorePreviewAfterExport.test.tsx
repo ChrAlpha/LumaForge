@@ -39,8 +39,6 @@ function createSession(): ImageSession {
     renderState: { status: 'idle' },
     exportState: {
       status: 'ready',
-      qualityPreset: 'high',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'supported', width: 400, height: 300 },
       recovery: { status: 'none' },
       checkpointDurable: false,

@@ -62,8 +62,6 @@ function createSession(): ImageSession {
     renderState: { status: 'ready', lastRenderSource: 'bounded-hq' },
     exportState: {
       status: 'idle',
-      qualityPreset: 'high',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'supported', width: 800, height: 600 },
       recovery: { status: 'none' },
       checkpointDurable: false,

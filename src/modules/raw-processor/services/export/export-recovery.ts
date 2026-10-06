@@ -30,12 +30,7 @@ export type SourceInterruptionHint = {
   hint: ExportInterruptionHint
 }
 
-type ExplicitExportChoice = {
-  quality: 'standard' | 'high'
-  fidelity: 'safe' | 'balanced' | 'max'
-}
-
-type ExplicitExportRequest = ExplicitExportChoice & {
+type ExplicitExportRequest = {
   interruption?: SourceInterruptionHint
 }
 
@@ -125,19 +120,14 @@ export function createInterruptedExportRecovery(
 }
 
 /**
- * Builds the request for an export the user started: the current quality
- * and fidelity, plus the hint read for the loaded source. The export applies
- * the hint only when it matches the file it actually renders.
+ * Builds the request for an export the user started: only the hint read for
+ * the loaded source. It carries no quality, which is fixed, and the export
+ * applies the hint only when it matches the file it actually renders.
  */
 export function withInterruptionHistory(
-  choice: ExplicitExportChoice,
   interruption: SourceInterruptionHint | null | undefined,
 ): ExplicitExportRequest {
-  const request: ExplicitExportRequest = {
-    quality: choice.quality,
-    fidelity: choice.fidelity,
-  }
-  return interruption ? { ...request, interruption } : request
+  return interruption ? { interruption } : {}
 }
 
 /**

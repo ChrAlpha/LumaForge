@@ -75,15 +75,11 @@ export function useRawProcessorViewController({
     [loadLUT],
   )
 
-  const handleExport = useCallback(
-    (options: {
-      quality: 'standard' | 'high'
-      fidelity: 'safe' | 'balanced' | 'max'
-    }) => {
-      exportImage(options)
-    },
-    [exportImage],
-  )
+  // The export command takes no choices. A surface that still hands over a
+  // quality/fidelity pair has it ignored: the JPEG quality is fixed.
+  const handleExport = useCallback(() => {
+    void exportImage()
+  }, [exportImage])
 
   const replacePicker = useHiddenFilePicker({
     accept: RAW_FILE_ACCEPT.join(','),

@@ -44,8 +44,6 @@ function createSession(): ImageSession {
     renderState: { status: 'ready', lastRenderSource: 'bounded-hq' },
     exportState: {
       status: 'idle',
-      qualityPreset: 'standard',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'unknown' },
       recovery: { status: 'none' },
       checkpointDurable: false,
@@ -184,6 +182,62 @@ describe('useHqPreviewExportAction', () => {
     })
   })
 
+  it('refuses an HQ export before the bounded HQ frame without clearing the delivered result', async () => {
+    const previousResult = {
+      kind: 'full-resolution',
+      filename: 'frame_cinema_fullres.jpg',
+    } as unknown as NonNullable<ImageSession['exportState']['result']>
+    const sessionRef: { current: ImageSession | null } = {
+      current: {
+        ...createSession(),
+        exportState: {
+          ...createSession().exportState,
+          status: 'ready',
+          result: previousResult,
+        },
+      },
+    }
+    const setSession = vi.fn()
+    const setStatus = vi.fn()
+    const queueExportResultResourceDisposal = vi.fn()
+    const abortExportWork = vi.fn()
+    const error = vi.fn()
+    const { result } = renderHook(() =>
+      useHqPreviewExportAction({
+        sessionRef,
+        decodedImageRef: {
+          current: { ...createDecodedImage(), source: 'quick' },
+        },
+        pipelineRef: { current: { renderToHiddenCanvas: vi.fn() } },
+        isMountedRef: { current: true },
+        exportGraphVersionRef: { current: 1 },
+        exportAbortControllerRef: { current: null },
+        previewCopyCanvasRef: { current: null },
+        previewSuspended: false,
+        abortExportWork,
+        queueExportResultResourceDisposal,
+        registerExportResultResource: vi.fn(),
+        scheduleToast: (notify) => notify(),
+        setProgress: vi.fn(),
+        setSession,
+        setStatus,
+        toast: { success: vi.fn(), error },
+      }),
+    )
+
+    await result.current.exportPreviewImage()
+
+    expect(error).toHaveBeenCalledWith(
+      'HQ preview export is not ready',
+      expect.anything(),
+    )
+    expect(abortExportWork).not.toHaveBeenCalled()
+    expect(queueExportResultResourceDisposal).not.toHaveBeenCalled()
+    expect(setSession).not.toHaveBeenCalled()
+    expect(setStatus).not.toHaveBeenCalled()
+    expect(sessionRef.current?.exportState.result).toBe(previousResult)
+  })
+
   it('exports the bounded HQ preview and stores the completed result on the active session', async () => {
     class FakeClipboardItem {
       static supports(type: string) {
@@ -253,7 +307,7 @@ describe('useHqPreviewExportAction', () => {
     expect(fakeCanvas.toBlob).toHaveBeenCalledWith(
       expect.any(Function),
       'image/jpeg',
-      0.9,
+      0.92,
     )
     expect(registerExportResultResource).toHaveBeenCalledTimes(1)
     expect(previewCopyCanvasRef.current).toBeNull()

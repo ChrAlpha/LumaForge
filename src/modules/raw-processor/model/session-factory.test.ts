@@ -47,8 +47,6 @@ describe('createImageSession', () => {
       renderState: { status: 'idle' },
       exportState: {
         status: 'idle',
-        qualityPreset: 'high',
-        fidelityLevel: 'balanced',
         fullResCapability: { status: 'unknown' },
         recovery: { status: 'none' },
         checkpointDurable: false,

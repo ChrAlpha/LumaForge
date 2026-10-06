@@ -45,8 +45,6 @@ function createSession(
     renderState: { status: 'idle' },
     exportState: {
       status: 'idle',
-      qualityPreset: 'high',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'probing' },
       recovery: { status: 'none' },
       checkpointDurable: false,

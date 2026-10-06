@@ -73,8 +73,6 @@ function createSession(viewMode: ProcessingParams['viewMode']): ImageSession {
     renderState: { status: 'ready' },
     exportState: {
       status: 'idle',
-      qualityPreset: 'high',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'supported', width: 800, height: 600 },
       recovery: { status: 'none' },
       checkpointDurable: false,

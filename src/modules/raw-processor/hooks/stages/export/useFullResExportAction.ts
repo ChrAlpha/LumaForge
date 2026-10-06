@@ -1,11 +1,10 @@
 import { useCallback, useMemo } from 'react'
 
-import type { ExportContext } from '../../../services/export/orchestrate-full-res-export'
+import type {
+  ExportContext,
+  FullResExportRequest,
+} from '../../../services/export/orchestrate-full-res-export'
 import { orchestrateFullResExport } from '../../../services/export/orchestrate-full-res-export'
-
-export type FullResExportOptions = Parameters<
-  typeof orchestrateFullResExport
->[0]
 
 export type UseFullResExportActionInput = ExportContext['atoms'] &
   ExportContext['refs'] &
@@ -108,8 +107,8 @@ export function useFullResExportAction({
   )
 
   const exportImage = useCallback(
-    async (options: FullResExportOptions) => {
-      await orchestrateExport(options, exportCtx)
+    async (request: FullResExportRequest = {}) => {
+      await orchestrateExport(request, exportCtx)
     },
     [exportCtx, orchestrateExport],
   )

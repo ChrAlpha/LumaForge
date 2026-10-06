@@ -81,8 +81,6 @@ function createSession(
     renderState: { status: 'idle' },
     exportState: {
       status: 'idle',
-      qualityPreset: 'standard',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'unknown' },
       recovery: { status: 'none' },
       checkpointDurable: false,

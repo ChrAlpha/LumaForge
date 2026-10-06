@@ -61,8 +61,6 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
     renderState: { status: 'ready' },
     exportState: {
       status: 'idle',
-      qualityPreset: 'high',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'supported', width: 1600, height: 1200 },
       recovery: { status: 'none' },
       checkpointDurable: false,
@@ -75,8 +73,6 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
 function readyExportState(): ImageSession['exportState'] {
   return {
     status: 'ready',
-    qualityPreset: 'high',
-    fidelityLevel: 'balanced',
     fullResCapability: { status: 'supported', width: 1600, height: 1200 },
     recovery: { status: 'none' },
     checkpointDurable: false,

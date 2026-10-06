@@ -356,8 +356,6 @@ function createTestSession() {
     renderState: { status: 'ready' as const },
     exportState: {
       status: 'idle' as const,
-      qualityPreset: 'high' as const,
-      fidelityLevel: 'balanced' as const,
       fullResCapability: {
         status: 'supported' as const,
         width: 4000,
@@ -820,10 +818,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
 
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(
@@ -869,10 +864,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushPostCommitTasks()
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     const [request] = exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
@@ -2332,7 +2324,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await act(async () => {
-      await result.current.exportImage({ quality: 'high', fidelity: 'max' })
+      await result.current.exportImage()
     })
 
     expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledWith(
@@ -2385,7 +2377,7 @@ describe('useRawWorkflow embedded preview state', () => {
     )
 
     await act(async () => {
-      await result.current.exportImage({ quality: 'high', fidelity: 'max' })
+      await result.current.exportImage()
     })
     await flushScheduledToasts()
 
@@ -2486,7 +2478,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(probeExportCapability).not.toHaveBeenCalled()
 
     await act(async () => {
-      await result.current.exportImage({ quality: 'high', fidelity: 'max' })
+      await result.current.exportImage()
     })
     await flushScheduledToasts()
 
@@ -2519,7 +2511,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     await act(async () => {
       previewTransform!.commit(SAMPLE_GEOMETRY)
-      await exportImage({ quality: 'high', fidelity: 'balanced' })
+      await exportImage()
       await exportPreviewImage()
     })
     await flushScheduledToasts()
@@ -2552,10 +2544,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     let exportPromise!: Promise<void>
     await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = result.current.exportImage()
       await Promise.resolve()
     })
     await waitFor(() =>
@@ -2606,10 +2595,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(result.current.exportResult?.filename).toBe(
@@ -2708,10 +2694,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'second.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
     await waitFor(() => {
       expect(
@@ -2762,7 +2745,7 @@ describe('useRawWorkflow embedded preview state', () => {
       })
 
       await act(async () => {
-        await result.current.exportImage({ quality: 'high', fidelity: 'max' })
+        await result.current.exportImage()
       })
       await flushScheduledToasts()
 
@@ -2801,7 +2784,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await act(async () => {
-      await result.current.exportImage({ quality: 'high', fidelity: 'max' })
+      await result.current.exportImage()
     })
     await flushScheduledToasts()
 
@@ -2842,7 +2825,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await act(async () => {
-      await result.current.exportImage({ quality: 'high', fidelity: 'max' })
+      await result.current.exportImage()
     })
     await flushScheduledToasts()
 
@@ -2930,7 +2913,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await act(async () => {
-      await result.current.exportImage({ quality: 'high', fidelity: 'max' })
+      await result.current.exportImage()
     })
 
     expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
@@ -3135,7 +3118,8 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(exportSystemMock.runPreviewExportJob).toHaveBeenCalledWith(
       expect.objectContaining({
         filename: 'frame_neutral_hq-preview.jpg',
-        quality: 0.9,
+        // The HQ preview encodes at the same fixed quality as full resolution.
+        quality: 0.92,
       }),
     )
     expect(renderToHiddenCanvas).toHaveBeenCalledTimes(1)
@@ -3267,10 +3251,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = result.current.exportImage()
       await Promise.resolve()
     })
 
@@ -3332,10 +3313,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     let exportPromise!: Promise<void>
     await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = result.current.exportImage()
       await Promise.resolve()
     })
 
@@ -3393,10 +3371,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     let exportPromise!: Promise<void>
     await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = result.current.exportImage()
       await Promise.resolve()
     })
 
@@ -3469,10 +3444,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.displaySource).toBe('bounded-hq')
 
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(result.current.previewSuspended).toBe(true)
@@ -3651,10 +3623,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     let exportPromise!: Promise<void>
     await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = result.current.exportImage()
       await Promise.resolve()
     })
 
@@ -3725,10 +3694,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.canExport).toBe(true)
 
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
     await flushScheduledToasts()
 
@@ -3782,10 +3748,7 @@ describe('useRawWorkflow embedded preview state', () => {
     )
 
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
     await flushScheduledToasts()
 
@@ -3839,10 +3802,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(file)
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
     await flushPostCommitTasks()
 
@@ -3904,10 +3864,7 @@ describe('useRawWorkflow embedded preview state', () => {
       expect(result.current.exportRecovery.status).toBe('ready-to-retry')
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
     await flushPostCommitTasks()
 
@@ -4001,10 +3958,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
@@ -4069,10 +4023,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
@@ -4133,10 +4084,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     let exportPromise!: Promise<void>
     await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = result.current.exportImage()
       await Promise.resolve()
     })
 
@@ -4201,10 +4149,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
@@ -4257,10 +4202,7 @@ describe('useRawWorkflow embedded preview state', () => {
         } as never
       })
       await act(async () => {
-        await result.current.exportImage({
-          quality: 'high',
-          fidelity: 'balanced',
-        })
+        await result.current.exportImage()
       })
 
       const evacuation = events.find(
@@ -4330,10 +4272,7 @@ describe('useRawWorkflow embedded preview state', () => {
       } as never
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
@@ -4374,10 +4313,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     let exportPromise!: Promise<void>
     await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = result.current.exportImage()
       await Promise.resolve()
     })
 
@@ -4424,10 +4360,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(click).not.toHaveBeenCalled()
@@ -4470,10 +4403,7 @@ describe('useRawWorkflow embedded preview state', () => {
         await result.current.loadFile(new File(['raw'], 'frame.ARW'))
       })
       await act(async () => {
-        await result.current.exportImage({
-          quality: 'high',
-          fidelity: 'balanced',
-        })
+        await result.current.exportImage()
       })
 
       expect(openBlob).not.toHaveBeenCalled()
@@ -4533,10 +4463,7 @@ describe('useRawWorkflow embedded preview state', () => {
         await result.current.loadFile(new File(['raw'], 'frame.ARW'))
       })
       await act(async () => {
-        await result.current.exportImage({
-          quality: 'high',
-          fidelity: 'balanced',
-        })
+        await result.current.exportImage()
       })
 
       expect(events).toContainEqual(
@@ -4593,10 +4520,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(result.current.exportResult?.output).toMatchObject({
@@ -4644,10 +4568,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     const exportResult = result.current.exportResult
@@ -4683,10 +4604,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
     await act(async () => {
       await result.current.shareExportResult()
@@ -4723,10 +4641,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(result.current.exportResult).toBeDefined()
@@ -4763,10 +4678,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()
@@ -4807,10 +4719,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()
@@ -4849,10 +4758,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()
@@ -4884,10 +4790,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()
@@ -5010,10 +4913,7 @@ describe('useRawWorkflow embedded preview state', () => {
       })
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     const [{ graph }] =
@@ -5070,10 +4970,7 @@ describe('useRawWorkflow embedded preview state', () => {
       })
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     const [{ graph }] =
@@ -5144,10 +5041,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()
@@ -5193,10 +5087,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = result.current.exportImage()
       await Promise.resolve()
     })
 
@@ -5253,10 +5144,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
     await waitFor(() => {
       expect(
@@ -5317,10 +5205,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     await act(async () => {
-      exportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = result.current.exportImage()
       await Promise.resolve()
     })
 
@@ -5401,10 +5286,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.params.intensity).toBe(0.37)
 
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     const [{ graph }] =
@@ -5585,10 +5467,7 @@ describe('useRawWorkflow embedded preview state', () => {
       } as never
     })
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
     expect(result.current.pipelineRef.current).toBeNull()
     expect(dispose).toHaveBeenCalledWith({ releaseContext: true })
@@ -5822,10 +5701,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await act(async () => {
-      staleExportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      staleExportPromise = result.current.exportImage()
       await Promise.resolve()
     })
 
@@ -5867,10 +5743,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     let staleExportPromise!: Promise<void>
     await act(async () => {
-      staleExportPromise = result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      staleExportPromise = result.current.exportImage()
       await Promise.resolve()
     })
     await waitFor(() => {
@@ -6043,10 +5916,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await act(async () => {
-      await result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      await result.current.exportImage()
     })
 
     expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
@@ -6073,10 +5943,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     let exportPromise!: Promise<void>
     await act(async () => {
-      exportPromise = mounted.result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = mounted.result.current.exportImage()
       await Promise.resolve()
     })
     await waitFor(() => {
@@ -6118,10 +5985,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     let exportPromise!: Promise<void>
     await act(async () => {
-      exportPromise = mounted.result.current.exportImage({
-        quality: 'high',
-        fidelity: 'balanced',
-      })
+      exportPromise = mounted.result.current.exportImage()
       await Promise.resolve()
     })
     await waitFor(() => {

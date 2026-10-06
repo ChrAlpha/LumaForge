@@ -34,7 +34,6 @@ import type { OriginalReferenceSnapshot } from '../services/compare/original-ref
 import type { DeliveredExportSize } from '../services/export/delivered-export-size'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import type { PreviewViewport } from '../services/preview/preview-viewport'
-import type { FullResExportOptions } from './stages/export/useFullResExportAction'
 import type { PreviewPipelineEvacuationHandle } from './stages/preview/usePreviewPipelineEvacuation'
 
 export interface UseRawWorkflowReturn {
@@ -133,7 +132,8 @@ export interface UseRawWorkflowReturn {
   resetColor: () => void
   setSelectiveColorBand: (band: HSLBandId, shift: Partial<HSLBandShift>) => void
   resetSelectiveColor: () => void
-  exportImage: (options: FullResExportOptions) => Promise<void>
+  /** Starts the explicit full-resolution export; it takes no choices. */
+  exportImage: () => Promise<void>
   exportPreviewImage: () => Promise<void>
   recoverInterruptedExport: (file: File) => Promise<void>
   downloadExportResult: () => Promise<void>

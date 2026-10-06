@@ -35,8 +35,6 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
     renderState: { status: 'ready' },
     exportState: {
       status: 'idle',
-      qualityPreset: 'high',
-      fidelityLevel: 'balanced',
       fullResCapability: { status: 'supported', width: 1600, height: 1200 },
       recovery: { status: 'none' },
       checkpointDurable: false,

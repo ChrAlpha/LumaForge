@@ -1,7 +1,9 @@
 import type { ExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
-import type { ExportFidelity } from '@lumaforge/render-engine'
 import type { FullResolutionExportProgress } from '@lumaforge/render-engine/export'
-import type { ExportRuntimeResources } from '@lumaforge/render-engine/policy'
+import type {
+  ExportRuntimeResources,
+  PerformancePreference,
+} from '@lumaforge/render-engine/policy'
 
 import type { ExportExecutionPlan } from '~/lib/export/execution-profile'
 import {
@@ -20,7 +22,11 @@ import { snapshotExportRuntimeResources } from '~/lib/runtime/export-runtime-res
 import { ExportBridge } from '~/lib/workers/export-bridge'
 
 export const HQ_PREVIEW_EXPORT_MAX_PIXELS = 12_000_000
-export const HQ_PREVIEW_EXPORT_QUALITY = 0.9
+/**
+ * The one JPEG quality the app encodes at, for full-resolution and HQ
+ * preview exports alike. No plan, retry or surface chooses another.
+ */
+export const EXPORT_JPEG_QUALITY = 0.92
 
 export function buildExportFilename(inputName: string, styleName: string) {
   const basename = inputName.replace(/\.[^.]+$/, '')
@@ -74,7 +80,7 @@ function isJpegStreamingOutputSinkAvailable() {
 }
 
 export async function selectCurrentExportExecutionPlan(input: {
-  fidelity: ExportFidelity
+  performancePreference: PerformancePreference
   sourceWidth?: number
   sourceHeight?: number
   previousInterrupted?: boolean
@@ -89,7 +95,7 @@ export async function selectCurrentExportExecutionPlan(input: {
   })
 
   return selectExportExecutionPlan({
-    performancePreference: input.fidelity,
+    performancePreference: input.performancePreference,
     previousResourceFailure: input.previousResourceFailure ?? false,
     previousCrashLikeInterruption:
       input.previousCrashLikeInterruption ?? input.previousInterrupted ?? false,
@@ -130,8 +136,8 @@ function emitFullResolutionExportAttempt(
 }
 
 export function recommendRetryLevel(
-  level: ExportFidelity,
-): Exclude<ExportFidelity, 'max'> | null {
+  level: PerformancePreference,
+): Exclude<PerformancePreference, 'max'> | null {
   if (level === 'max') return 'balanced'
   if (level === 'balanced') return 'safe'
   return null
