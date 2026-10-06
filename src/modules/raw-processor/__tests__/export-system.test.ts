@@ -2,17 +2,17 @@ import type { ExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { selectExportExecutionPlan } from '~/lib/export/execution-profile'
+import { selectExportPlan } from '~/lib/export/export-plan'
 import { resetCapabilityVectorForTest } from '~/lib/runtime/capability-vector'
 
 import {
   buildExportFilename,
   buildPreviewExportFilename,
   HQ_PREVIEW_EXPORT_MAX_PIXELS,
+  planExportWithSampledFacts,
   recommendRetryLevel,
   resolveHqPreviewExportSize,
   runFullResolutionExportJob,
-  selectCurrentExportExecutionPlan,
 } from '../services/export/export-system'
 
 describe('export-system', () => {
@@ -88,10 +88,9 @@ describe('export-system', () => {
     })
 
     for (const fidelity of ['safe', 'balanced', 'max'] as const) {
-      const plan = selectExportExecutionPlan({
-        performancePreference: fidelity,
-        sourceWidth: 6000,
-        sourceHeight: 4000,
+      const plan = selectExportPlan({
+        preference: fidelity,
+        source: { width: 6000, height: 4000 },
         capability: unknownCap,
         runtime: noopfsRuntime,
       })
@@ -100,11 +99,10 @@ describe('export-system', () => {
     }
   })
 
-  it('selects derived 100MP rows for current-session safe export', async () => {
-    const plan = await selectCurrentExportExecutionPlan({
-      performancePreference: 'safe',
-      sourceWidth: 11662,
-      sourceHeight: 8746,
+  it('plans derived 100MP rows for a safe export on sampled facts', async () => {
+    const plan = await planExportWithSampledFacts({
+      preference: 'safe',
+      source: { width: 11662, height: 8746 },
     })
 
     expect(plan.preferredRows).toBe(256)
@@ -124,10 +122,9 @@ describe('export-system', () => {
     vi.stubGlobal('ReadableStream', class ReadableStream {})
     vi.stubGlobal('crossOriginIsolated', true)
 
-    const plan = await selectCurrentExportExecutionPlan({
-      performancePreference: 'max',
-      sourceWidth: 11662,
-      sourceHeight: 8746,
+    const plan = await planExportWithSampledFacts({
+      preference: 'max',
+      source: { width: 11662, height: 8746 },
     })
 
     expect(plan.runtimeMemoryProfile).toBe('desktop')
@@ -135,7 +132,7 @@ describe('export-system', () => {
     expect(plan.outputSink).toBe('blob-handoff')
   })
 
-  it('snapshots ExportRuntimeResources at plan time, not boot time', async () => {
+  it('samples ExportRuntimeResources at plan time, not boot time', async () => {
     const estimate = vi
       .fn()
       .mockResolvedValueOnce({ quota: 1_000_000_000, usage: 0 })
@@ -153,20 +150,88 @@ describe('export-system', () => {
     vi.stubGlobal('SharedArrayBuffer', class SharedArrayBuffer {})
     vi.stubGlobal('crossOriginIsolated', true)
 
-    const first = await selectCurrentExportExecutionPlan({
-      performancePreference: 'balanced',
-      sourceWidth: 6000,
-      sourceHeight: 4000,
+    const first = await planExportWithSampledFacts({
+      preference: 'balanced',
+      source: { width: 6000, height: 4000 },
     })
-    const second = await selectCurrentExportExecutionPlan({
-      performancePreference: 'balanced',
-      sourceWidth: 6000,
-      sourceHeight: 4000,
+    const second = await planExportWithSampledFacts({
+      preference: 'balanced',
+      source: { width: 6000, height: 4000 },
     })
 
     expect(first.outputSink).toBe('opfs-file')
     expect(second.outputSink).toBe('blob-handoff')
     expect(estimate).toHaveBeenCalledTimes(2)
+  })
+
+  it('samples real storage again for a fresh-worker retry', async () => {
+    // Room for the output at plan time; almost none by the retry.
+    const estimate = vi
+      .fn()
+      .mockResolvedValueOnce({ quota: 1_000_000_000, usage: 0 })
+      .mockResolvedValueOnce({ quota: 100_000_000, usage: 0 })
+    vi.stubGlobal('navigator', {
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 Chrome/126 Safari/537.36',
+      maxTouchPoints: 0,
+      hardwareConcurrency: 8,
+      storage: {
+        getDirectory: vi.fn(),
+        estimate,
+      },
+    })
+    vi.stubGlobal('SharedArrayBuffer', class SharedArrayBuffer {})
+    const output = createBlobOutputResult({
+      filename: 'frame_neutral_fullres.jpg',
+      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+    })
+    const graph: ExportColorGraphDescriptor = {
+      supported: true,
+      outputGamut: 'srgb-rec709',
+      outputTransfer: 'srgb',
+      lutProfile: null,
+      steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
+    }
+    const executionPlan = await planExportWithSampledFacts({
+      preference: 'balanced',
+      source: { width: 6000, height: 4000 },
+    })
+    expect(executionPlan.outputSink).toBe('opfs-file')
+    const first = {
+      run: vi
+        .fn()
+        .mockRejectedValue(new Error('FULL_RES_EXPORT_RESOURCE_FAILURE')),
+      dispose: vi.fn(),
+    }
+    const second = {
+      run: vi.fn().mockResolvedValue(output),
+      dispose: vi.fn(),
+    }
+    const clientFactory = vi
+      .fn()
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second)
+
+    await runFullResolutionExportJob({
+      file: new File(['raw'], 'frame.ARW'),
+      filename: 'frame_neutral_fullres.jpg',
+      graph,
+      executionPlan,
+      outputLocation: {
+        sink: 'opfs-file',
+        tabDirectory: 'tab-1',
+        exportId: 'export-1',
+      },
+      clientFactory: clientFactory as never,
+    })
+
+    expect(estimate).toHaveBeenCalledTimes(2)
+    expect(second.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionPlan: expect.objectContaining({ outputSink: 'blob-handoff' }),
+        outputLocation: undefined,
+      }),
+    )
   })
 
   it('runs the full-resolution export client and disposes it', async () => {
@@ -286,10 +351,9 @@ describe('export-system', () => {
       lutProfile: null,
       steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
     }
-    const executionPlan = await selectCurrentExportExecutionPlan({
-      performancePreference: 'safe',
-      sourceWidth: 11662,
-      sourceHeight: 8746,
+    const executionPlan = await planExportWithSampledFacts({
+      preference: 'safe',
+      source: { width: 11662, height: 8746 },
     })
 
     const result = await runFullResolutionExportJob({
@@ -355,10 +419,9 @@ describe('export-system', () => {
       lutProfile: null,
       steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
     }
-    const executionPlan = await selectCurrentExportExecutionPlan({
-      performancePreference: 'safe',
-      sourceWidth: 11662,
-      sourceHeight: 8746,
+    const executionPlan = await planExportWithSampledFacts({
+      preference: 'safe',
+      source: { width: 11662, height: 8746 },
     })
 
     await runFullResolutionExportJob({
@@ -392,10 +455,9 @@ describe('export-system', () => {
       lutProfile: null,
       steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
     }
-    const executionPlan = await selectCurrentExportExecutionPlan({
-      performancePreference: 'safe',
-      sourceWidth: 11662,
-      sourceHeight: 8746,
+    const executionPlan = await planExportWithSampledFacts({
+      preference: 'safe',
+      source: { width: 11662, height: 8746 },
     })
     const first = {
       run: vi
@@ -452,11 +514,10 @@ describe('export-system', () => {
       lutProfile: null,
       steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
     }
-    const executionPlan = await selectCurrentExportExecutionPlan({
-      performancePreference: 'max',
-      sourceWidth: 11662,
-      sourceHeight: 8746,
-      previousResourceFailure: true,
+    const executionPlan = await planExportWithSampledFacts({
+      preference: 'max',
+      source: { width: 11662, height: 8746 },
+      history: { previousResourceFailure: true },
     })
     const first = {
       run: vi.fn().mockRejectedValue(
@@ -505,10 +566,9 @@ describe('export-system', () => {
       lutProfile: null,
       steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
     }
-    const executionPlan = await selectCurrentExportExecutionPlan({
-      performancePreference: 'safe',
-      sourceWidth: 11662,
-      sourceHeight: 8746,
+    const executionPlan = await planExportWithSampledFacts({
+      preference: 'safe',
+      source: { width: 11662, height: 8746 },
     })
     const first = {
       run: vi.fn().mockRejectedValue(
@@ -657,5 +717,149 @@ describe('export-system', () => {
 
     expect(run).toHaveBeenCalledTimes(1)
     expect(dispose).toHaveBeenCalledTimes(1)
+  })
+  describe('retry facts', () => {
+    const graph: ExportColorGraphDescriptor = {
+      supported: true,
+      outputGamut: 'srgb-rec709',
+      outputTransfer: 'srgb',
+      lutProfile: null,
+      steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
+    }
+    const capability = Object.freeze({
+      coi: true,
+      pthread: true,
+      deviceMemoryGB: 16,
+      hwConcurrency: 8,
+      webKitClass: 'chromium' as const,
+      deviceFormFactor: 'desktop' as const,
+      maybeOpfsSupported: true,
+    })
+    const noOpfsFacts = {
+      capability,
+      runtime: {
+        opfsSinkAvailable: false,
+        opfsAvailableMB: null,
+        streamingSinkAvailable: false,
+      },
+    }
+    const roomyOpfsFacts = {
+      capability,
+      runtime: {
+        opfsSinkAvailable: true,
+        opfsAvailableMB: 100_000,
+        streamingSinkAvailable: false,
+      },
+    }
+
+    it('keeps a retry on blob handoff when the job reserved no OPFS location', async () => {
+      const executionPlan = selectExportPlan({
+        preference: 'balanced',
+        source: { width: 6000, height: 4000 },
+        ...noOpfsFacts,
+      })
+      expect(executionPlan.outputSink).toBe('blob-handoff')
+      // The storage recovers by the retry; the job still has no OPFS address.
+      expect(
+        selectExportPlan({
+          preference: 'safe',
+          source: { width: 6000, height: 4000 },
+          history: { previousResourceFailure: true },
+          ...roomyOpfsFacts,
+        }).outputSink,
+      ).toBe('opfs-file')
+      const output = createBlobOutputResult({
+        filename: 'frame_neutral_fullres.jpg',
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      })
+      const first = {
+        run: vi
+          .fn()
+          .mockRejectedValue(new Error('FULL_RES_EXPORT_RESOURCE_FAILURE')),
+        dispose: vi.fn(),
+      }
+      const second = {
+        run: vi.fn().mockResolvedValue(output),
+        dispose: vi.fn(),
+      }
+      const clientFactory = vi
+        .fn()
+        .mockReturnValueOnce(first)
+        .mockReturnValueOnce(second)
+
+      const result = await runFullResolutionExportJob({
+        file: new File(['raw'], 'frame.ARW'),
+        filename: 'frame_neutral_fullres.jpg',
+        graph,
+        executionPlan,
+        sampleFacts: async () => roomyOpfsFacts,
+        clientFactory: clientFactory as never,
+      })
+
+      expect(result.attempts).toBe(2)
+      expect(second.run).toHaveBeenCalledWith(
+        expect.objectContaining({
+          executionPlan: expect.objectContaining({
+            outputSink: 'blob-handoff',
+          }),
+          outputLocation: undefined,
+        }),
+      )
+    })
+
+    it('starts no further attempt when the job is aborted while retry facts are sampled', async () => {
+      const executionPlan = selectExportPlan({
+        preference: 'balanced',
+        source: { width: 6000, height: 4000 },
+        ...noOpfsFacts,
+      })
+      const controller = new AbortController()
+      let resolveFacts!: (facts: typeof noOpfsFacts) => void
+      let samplingStarted!: () => void
+      const sampling = new Promise<void>((resolve) => {
+        samplingStarted = resolve
+      })
+      const sampleFacts = vi.fn(
+        () =>
+          new Promise<typeof noOpfsFacts>((resolve) => {
+            resolveFacts = resolve
+            samplingStarted()
+          }),
+      )
+      const first = {
+        run: vi
+          .fn()
+          .mockRejectedValue(new Error('FULL_RES_EXPORT_RESOURCE_FAILURE')),
+        dispose: vi.fn(),
+      }
+      const clientFactory = vi.fn().mockReturnValue(first)
+      const beforeStart = vi.fn()
+      const onPlan = vi.fn()
+      const onAttempt = vi.fn()
+
+      const job = runFullResolutionExportJob({
+        file: new File(['raw'], 'frame.ARW'),
+        filename: 'frame_neutral_fullres.jpg',
+        graph,
+        executionPlan,
+        signal: controller.signal,
+        beforeStart,
+        onPlan,
+        onAttempt,
+        sampleFacts,
+        clientFactory: clientFactory as never,
+      })
+      await sampling
+      controller.abort()
+      resolveFacts(noOpfsFacts)
+
+      await expect(job).rejects.toMatchObject({ name: 'AbortError' })
+      expect(beforeStart).toHaveBeenCalledTimes(1)
+      expect(clientFactory).toHaveBeenCalledTimes(1)
+      expect(onPlan).not.toHaveBeenCalled()
+      expect(onAttempt).not.toHaveBeenCalledWith(
+        expect.objectContaining({ phase: 'retry-scheduled' }),
+      )
+    })
   })
 })

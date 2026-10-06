@@ -814,8 +814,9 @@ describe('useRawWorkflow embedded preview state', () => {
         executionPlan: expect.objectContaining({
           productCopy: 'interrupted-retry',
           runtimeMemoryProfile: 'low-memory',
-          sourceWidth: 6048,
-          sourceHeight: 4024,
+          request: expect.objectContaining({
+            source: { width: 6048, height: 4024 },
+          }),
         }),
       }),
     )
@@ -853,8 +854,7 @@ describe('useRawWorkflow embedded preview state', () => {
     const [request] = exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
     expect(request.executionPlan).toMatchObject({
       productCopy: 'safe-export',
-      sourceWidth: 6048,
-      sourceHeight: 4024,
+      request: { source: { width: 6048, height: 4024 } },
     })
     // The interrupted file's hint waits for that file.
     expect(storedMarkers()).toEqual([

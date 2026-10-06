@@ -1,14 +1,6 @@
-import type { ExportFidelity } from '@lumaforge/render-engine'
-import type {
-  CapabilityVector,
-  ExportIntent,
-  ExportOrchestrationCopy,
-  ExportPolicy,
-  ExportRuntimeResources,
-  PerformancePreference,
-} from '@lumaforge/render-engine/policy'
-import { deriveExportPolicy } from '@lumaforge/render-engine/policy'
+import type { ExportPolicy } from '@lumaforge/render-engine/policy'
 
+import type { ExportExecutionPlan } from './export-plan'
 import type {
   LargeResourceOwner,
   ResourceRegistryCheck,
@@ -19,7 +11,11 @@ export type ExportExecutionProfileName =
   | 'mobile-balanced'
   | 'desktop-fast'
 
-export type ExportCheckpointMode = 'safe-retry' | 'row-resume'
+/**
+ * The only mode: a retry is a fresh worker from the first row. No export
+ * state outlives an attempt, so nothing resumes.
+ */
+export type ExportCheckpointMode = 'safe-retry'
 export type ExportOutputSink = 'opfs-file' | 'streaming' | 'blob-handoff'
 export type ExportRuntimeMemoryProfile = 'low-memory' | 'desktop'
 
@@ -32,7 +28,8 @@ export type ExportPlanSelectedDebugPayload = {
   runtimeMemoryProfile: ExportRuntimeMemoryProfile
   outputSink: ExportOutputSink
   checkpointMode: ExportCheckpointMode
-  checkpointDurableExpected: boolean
+  /** Always false: no export state outlives the tab, whatever the sink. */
+  checkpointDurableExpected: false
 }
 
 export type ExportResourceEvacuatedDebugPayload = {
@@ -197,41 +194,6 @@ const exportDebugEventStorageKey = 'lumaforge.exportDebugEvents.v1'
 const exportDebugEventHistoryLimit = 256
 const exportDebugCheckpointPersistRows = 1024
 
-export type ExportExecutionProfile = {
-  name: ExportExecutionProfileName
-  minRows: number
-  maxRows: number
-  preferredRowsFor100Mp: number
-  preferredRowsBelow100Mp: number
-  rowBandRows: number
-  initialConcurrency: number
-  maxConcurrency: number
-  releasePreviewPipelineBeforeExport: boolean
-  releaseBoundedHqBufferBeforeExport: boolean
-  releasePreviousExportResultBeforeExport: boolean
-  checkpointOutput: boolean
-  checkpointMode: ExportCheckpointMode
-}
-
-export type ExportExecutionPlan = {
-  profile: ExportExecutionProfile
-  preferredRows: number
-  concurrency: number
-  maxConcurrency: number
-  runtimeMemoryProfile: ExportRuntimeMemoryProfile
-  outputSink: ExportOutputSink
-  checkpointMode: ExportCheckpointMode
-  productCopy: ExportOrchestrationCopy
-  derivedLabel: string
-  policyVector: ExportPolicy
-  /** The intent the policy was derived from, so a replacement plan can re-derive it. */
-  policyIntent: ExportIntent
-  sourceWidth?: number
-  sourceHeight?: number
-  capabilitySnapshot?: CapabilityVector
-  runtimeSnapshot?: ExportRuntimeResources
-}
-
 function getExportDebugWindow() {
   return window as unknown as ExportDebugWindow
 }
@@ -304,7 +266,6 @@ export function emitExportDebugEvent(event: ExportDebugEvent) {
 
 export function toExportPlanSelectedDebugPayload(
   plan: ExportExecutionPlan,
-  checkpointDurableExpected: boolean,
 ): ExportPlanSelectedDebugPayload {
   return {
     profile: plan.profile.name,
@@ -315,107 +276,13 @@ export function toExportPlanSelectedDebugPayload(
     runtimeMemoryProfile: plan.runtimeMemoryProfile,
     outputSink: plan.outputSink,
     checkpointMode: plan.checkpointMode,
-    checkpointDurableExpected,
+    checkpointDurableExpected: false,
   }
 }
 
 export function getImageMegapixels(width?: number, height?: number) {
   if (!width || !height) return 0
   return (width * height) / 1_000_000
-}
-
-function chooseProfile(
-  derivedPolicy: ExportPolicy,
-  capability: CapabilityVector,
-): ExportExecutionProfileName {
-  if (
-    derivedPolicy.workerMemoryProfile === 'desktop' &&
-    derivedPolicy.concurrency >= 2 &&
-    derivedPolicy.rowSlice >= 512
-  ) {
-    return 'desktop-fast'
-  }
-  if (capability.webKitClass === 'webkit-mobile') return 'ios-safe'
-  return 'mobile-balanced'
-}
-
-type SelectExportExecutionPlanInput = {
-  performancePreference?: PerformancePreference
-  fidelity?: ExportFidelity
-  sourceWidth?: number
-  sourceHeight?: number
-  previousInterrupted?: boolean
-  previousCrashLikeInterruption?: boolean
-  previousUserInterrupted?: boolean
-  previousResourceFailure?: boolean
-  capability: CapabilityVector
-  runtime: ExportRuntimeResources
-}
-
-function synthesizeProfile(
-  profileName: ExportExecutionProfileName,
-  policy: ExportPolicy,
-): ExportExecutionProfile {
-  return {
-    name: profileName,
-    minRows: 64,
-    maxRows: Math.max(64, policy.rowSlice),
-    preferredRowsFor100Mp: policy.rowSlice,
-    preferredRowsBelow100Mp: policy.rowSlice,
-    rowBandRows: 64,
-    initialConcurrency: policy.concurrency,
-    maxConcurrency: policy.maxConcurrency,
-    releasePreviewPipelineBeforeExport: true,
-    releaseBoundedHqBufferBeforeExport: true,
-    releasePreviousExportResultBeforeExport: true,
-    checkpointOutput: true,
-    checkpointMode: 'safe-retry',
-  }
-}
-
-export function selectExportExecutionPlan(
-  input: SelectExportExecutionPlanInput,
-): ExportExecutionPlan {
-  const performancePreference =
-    input.performancePreference ?? input.fidelity ?? 'balanced'
-  const capability = input.capability
-  const runtime = input.runtime
-  const intent: ExportIntent = {
-    performancePreference,
-    previousResourceFailure: input.previousResourceFailure ?? false,
-    previousCrashLikeInterruption:
-      input.previousCrashLikeInterruption ?? input.previousInterrupted ?? false,
-    previousUserInterrupted: input.previousUserInterrupted ?? false,
-  }
-  const policy = deriveExportPolicy(
-    capability,
-    {
-      width: input.sourceWidth ?? 0,
-      height: input.sourceHeight ?? 0,
-    },
-    intent,
-    runtime,
-  )
-  const profileName = chooseProfile(policy, capability)
-  const profile = synthesizeProfile(profileName, policy)
-
-  return {
-    profile,
-    preferredRows: policy.rowSlice,
-    concurrency: policy.concurrency,
-    maxConcurrency: policy.maxConcurrency,
-    runtimeMemoryProfile: policy.workerMemoryProfile,
-    outputSink: policy.outputSink,
-    checkpointMode: profile.checkpointMode,
-    productCopy: policy.productCopy,
-    derivedLabel: policy.derivedLabel,
-    policyVector: policy,
-    policyIntent: intent,
-    sourceWidth: input.sourceWidth,
-    sourceHeight: input.sourceHeight,
-    capabilitySnapshot: capability,
-    runtimeSnapshot: runtime,
-  }
 }
 
 type ExportModeCopyTranslator = (key: 'raw.export.highPerformance') => string

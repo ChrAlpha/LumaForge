@@ -175,7 +175,10 @@ export type ImageSession = {
      * and reaches surfaces only as a note for the loaded source.
      */
     recovery: ExportRecoveryState
-    /** False: no export state outlives the tab, whatever the sink. */
+    /**
+     * Always false: no export state outlives the tab, whatever the sink. The
+     * engine's checkpoint hooks are compatibility surface, not an app promise.
+     */
     checkpointDurable: boolean
     result?: ExportResult
     lastProgress?: {

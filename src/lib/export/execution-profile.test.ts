@@ -3,9 +3,9 @@ import { afterEach, vi } from 'vitest'
 import {
   emitExportDebugEvent,
   getExportModeCopy,
-  selectExportExecutionPlan,
   toExportPlanSelectedDebugPayload,
 } from './execution-profile'
+import { selectExportPlan } from './export-plan'
 
 const exportDebugEventStorageKey = 'lumaforge.exportDebugEvents.v1'
 
@@ -24,11 +24,10 @@ describe('export execution profile selection', () => {
   })
 
   it('uses crash-retry policy after interrupted checkpoint regardless of platform', () => {
-    const plan = selectExportExecutionPlan({
-      fidelity: 'max',
-      sourceWidth: 11662,
-      sourceHeight: 8746,
-      previousInterrupted: true,
+    const plan = selectExportPlan({
+      preference: 'max',
+      source: { width: 11662, height: 8746 },
+      history: { previousCrashLikeInterruption: true },
       capability: {
         coi: true,
         pthread: true,
@@ -54,10 +53,9 @@ describe('export execution profile selection', () => {
   })
 
   it('uses low-memory OPFS policy for webkit-mobile environments', () => {
-    const plan = selectExportExecutionPlan({
-      fidelity: 'balanced',
-      sourceWidth: 11662,
-      sourceHeight: 8746,
+    const plan = selectExportPlan({
+      preference: 'balanced',
+      source: { width: 11662, height: 8746 },
       capability: {
         coi: true,
         pthread: true,
@@ -89,10 +87,9 @@ describe('export execution profile selection', () => {
   })
 
   it('marks webkit-mobile large blob handoff exports as unable to complete safely', () => {
-    const plan = selectExportExecutionPlan({
-      fidelity: 'balanced',
-      sourceWidth: 9566,
-      sourceHeight: 6374,
+    const plan = selectExportPlan({
+      preference: 'balanced',
+      source: { width: 9566, height: 6374 },
       capability: {
         coi: false,
         pthread: false,
@@ -119,10 +116,9 @@ describe('export execution profile selection', () => {
   })
 
   it('keeps smaller webkit-mobile blob handoff exports allowed', () => {
-    const plan = selectExportExecutionPlan({
-      fidelity: 'balanced',
-      sourceWidth: 6048,
-      sourceHeight: 4024,
+    const plan = selectExportPlan({
+      preference: 'balanced',
+      source: { width: 6048, height: 4024 },
       capability: {
         coi: false,
         pthread: false,
@@ -146,10 +142,9 @@ describe('export execution profile selection', () => {
   })
 
   it('uses low-memory policy for desktop Safari WebKit workers', () => {
-    const plan = selectExportExecutionPlan({
-      fidelity: 'balanced',
-      sourceWidth: 5520,
-      sourceHeight: 8288,
+    const plan = selectExportPlan({
+      preference: 'balanced',
+      source: { width: 5520, height: 8288 },
       capability: {
         coi: true,
         pthread: true,
@@ -178,10 +173,9 @@ describe('export execution profile selection', () => {
   ] as Array<['balanced' | 'max', number]>)(
     'derives non-WebKit chromium %s throughput policy',
     (performancePreference, expectedConcurrency) => {
-      const plan = selectExportExecutionPlan({
-        performancePreference,
-        sourceWidth: 10000,
-        sourceHeight: 9000,
+      const plan = selectExportPlan({
+        preference: performancePreference,
+        source: { width: 10000, height: 9000 },
         capability: {
           coi: true,
           pthread: true,
@@ -212,14 +206,15 @@ describe('export execution profile selection', () => {
     },
   )
 
-  it('accepts performancePreference, three previous-failure flags, capability, and runtime resources', () => {
-    const plan = selectExportExecutionPlan({
-      performancePreference: 'balanced',
-      previousResourceFailure: false,
-      previousCrashLikeInterruption: false,
-      previousUserInterrupted: false,
-      sourceWidth: 6000,
-      sourceHeight: 4000,
+  it('accepts a preference, the three history flags, capability, and runtime resources', () => {
+    const plan = selectExportPlan({
+      preference: 'balanced',
+      history: {
+        previousResourceFailure: false,
+        previousCrashLikeInterruption: false,
+        previousUserInterrupted: false,
+      },
+      source: { width: 6000, height: 4000 },
       capability: {
         coi: true,
         pthread: true,
@@ -236,7 +231,7 @@ describe('export execution profile selection', () => {
       },
     })
 
-    expect(plan.profile.checkpointOutput).toBe(true)
+    expect(plan.profile).not.toHaveProperty('checkpointOutput')
     expect(plan.runtimeMemoryProfile).toBe('desktop')
     expect(plan.derivedLabel).toMatch(/chromium/)
   })
@@ -356,10 +351,9 @@ describe('export execution profile selection', () => {
 
   it('persists recent export debug events for post-reload Safari diagnostics', () => {
     clearExportDebugDiagnostics()
-    const plan = selectExportExecutionPlan({
-      performancePreference: 'balanced',
-      sourceWidth: 6000,
-      sourceHeight: 4000,
+    const plan = selectExportPlan({
+      preference: 'balanced',
+      source: { width: 6000, height: 4000 },
       capability: {
         coi: false,
         pthread: false,
@@ -378,7 +372,7 @@ describe('export execution profile selection', () => {
 
     emitExportDebugEvent({
       type: 'export-plan-selected',
-      payload: toExportPlanSelectedDebugPayload(plan, true),
+      payload: toExportPlanSelectedDebugPayload(plan),
     })
 
     const stored = JSON.parse(
@@ -405,13 +399,14 @@ describe('export execution profile selection', () => {
     window.addEventListener('lumaforge-export-debug', handler)
 
     try {
-      const plan = selectExportExecutionPlan({
-        performancePreference: 'balanced',
-        previousResourceFailure: false,
-        previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
-        sourceWidth: 6000,
-        sourceHeight: 4000,
+      const plan = selectExportPlan({
+        preference: 'balanced',
+        history: {
+          previousResourceFailure: false,
+          previousCrashLikeInterruption: false,
+          previousUserInterrupted: false,
+        },
+        source: { width: 6000, height: 4000 },
         capability: {
           coi: true,
           pthread: true,
@@ -430,7 +425,7 @@ describe('export execution profile selection', () => {
 
       emitExportDebugEvent({
         type: 'export-plan-selected',
-        payload: toExportPlanSelectedDebugPayload(plan, true),
+        payload: toExportPlanSelectedDebugPayload(plan),
       })
 
       const selected = events.find(

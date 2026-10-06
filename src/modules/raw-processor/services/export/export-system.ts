@@ -1,15 +1,14 @@
 import type { ExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 import type { FullResolutionExportProgress } from '@lumaforge/render-engine/export'
-import type {
-  ExportRuntimeResources,
-  PerformancePreference,
-} from '@lumaforge/render-engine/policy'
+import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 
-import type { ExportExecutionPlan } from '~/lib/export/execution-profile'
-import {
-  getExportModeCopy,
-  selectExportExecutionPlan,
-} from '~/lib/export/execution-profile'
+import { getExportModeCopy } from '~/lib/export/execution-profile'
+import type {
+  ExportExecutionPlan,
+  ExportPlanFacts,
+  ExportPlanRequest,
+} from '~/lib/export/export-plan'
+import { selectExportPlan } from '~/lib/export/export-plan'
 import type {
   FullResWorkerExecutionPlan,
   FullResWorkerOutputLocation,
@@ -78,35 +77,26 @@ function isJpegStreamingOutputSinkAvailable() {
   return false
 }
 
-export async function selectCurrentExportExecutionPlan(input: {
-  performancePreference: PerformancePreference
-  sourceWidth?: number
-  sourceHeight?: number
-  previousInterrupted?: boolean
-  previousCrashLikeInterruption?: boolean
-  previousUserInterrupted?: boolean
-  previousResourceFailure?: boolean
-}) {
-  const streamingSinkAvailable = isJpegStreamingOutputSinkAvailable()
+/**
+ * Samples the device facts an export plan runs on: the capability vector and
+ * the storage the runtime can actually reach right now. The first attempt
+ * and every retry sample again; nothing optimistic reaches a worker.
+ */
+export async function sampleExportPlanFacts(): Promise<ExportPlanFacts> {
   const capability = await detectCapabilityVector()
   const runtime = await snapshotExportRuntimeResources({
-    streamingSinkAvailable,
+    streamingSinkAvailable: isJpegStreamingOutputSinkAvailable(),
   })
-
-  return selectExportExecutionPlan({
-    performancePreference: input.performancePreference,
-    previousResourceFailure: input.previousResourceFailure ?? false,
-    previousCrashLikeInterruption:
-      input.previousCrashLikeInterruption ?? input.previousInterrupted ?? false,
-    previousUserInterrupted: input.previousUserInterrupted ?? false,
-    sourceWidth: input.sourceWidth,
-    sourceHeight: input.sourceHeight,
-    capability,
-    runtime,
-  })
+  return { capability, runtime }
 }
 
-export type { ExportExecutionPlan }
+/** Plans an export that is about to run, on facts sampled for it now. */
+export async function planExportWithSampledFacts(
+  request: ExportPlanRequest,
+  sampleFacts: () => Promise<ExportPlanFacts> = sampleExportPlanFacts,
+): Promise<ExportExecutionPlan> {
+  return selectExportPlan({ ...request, ...(await sampleFacts()) })
+}
 
 export type FullResolutionExportAttemptEvent = {
   attempt: number
@@ -185,12 +175,6 @@ function createFullResolutionExportBridge(
 
 const MAX_EXPORT_ATTEMPTS = 3
 
-const NO_DURABLE_SINK_RUNTIME = {
-  opfsSinkAvailable: false,
-  opfsAvailableMB: null,
-  streamingSinkAvailable: false,
-} satisfies ExportRuntimeResources
-
 /** The refusal for a plan the policy says cannot safely complete. */
 export function createExportPolicyRefusal() {
   return Object.assign(new Error(getExportModeCopy('cannot-safely-complete')), {
@@ -220,6 +204,14 @@ function resolveAttemptOutputLocation(
   return outputLocation
 }
 
+/**
+ * Retry facts are sampled across an await, so a cancel or a new photo can land
+ * in between; an aborted job starts no further worker and stops no decode.
+ */
+function throwIfJobAborted(signal: AbortSignal | undefined) {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+}
+
 function errorIsOpfsOutputUnavailable(error: unknown): error is Error {
   return (
     error instanceof Error &&
@@ -228,25 +220,21 @@ function errorIsOpfsOutputUnavailable(error: unknown): error is Error {
 }
 
 /**
- * Re-derives the same intent with OPFS treated as unavailable. The policy
- * decides whether the remaining sink may run, and the replacement never
- * exceeds the current attempt's strip budget: losing the sink is not evidence
- * of memory pressure, but rows or concurrency an earlier retry reduced stay
- * reduced.
+ * Re-derives the same intent from freshly sampled facts once the OPFS output
+ * has failed to open; the sampler already reports OPFS as unavailable. The
+ * policy decides whether the remaining sink may run, and the replacement
+ * never exceeds the current attempt's strip budget: losing the sink is not
+ * evidence of memory pressure, but rows or concurrency an earlier retry
+ * reduced stay reduced.
  */
 async function selectPlanWithoutOpfsOutput(
   plan: ExportExecutionPlan,
+  sampleFacts: () => Promise<ExportPlanFacts>,
 ): Promise<ExportExecutionPlan> {
-  const fallbackPlan = selectExportExecutionPlan({
-    ...plan.policyIntent,
-    sourceWidth: plan.sourceWidth,
-    sourceHeight: plan.sourceHeight,
-    capability: plan.capabilitySnapshot ?? (await detectCapabilityVector()),
-    runtime: {
-      ...(plan.runtimeSnapshot ?? NO_DURABLE_SINK_RUNTIME),
-      opfsSinkAvailable: false,
-    },
-  })
+  const fallbackPlan = await planExportWithSampledFacts(
+    plan.request,
+    sampleFacts,
+  )
   const preferredRows = Math.min(fallbackPlan.preferredRows, plan.preferredRows)
   const concurrency = Math.min(fallbackPlan.concurrency, plan.concurrency)
 
@@ -254,6 +242,28 @@ async function selectPlanWithoutOpfsOutput(
     concurrency === fallbackPlan.concurrency
     ? fallbackPlan
     : { ...fallbackPlan, preferredRows, concurrency }
+}
+
+/**
+ * Re-derives the plan after a resource failure from freshly sampled facts:
+ * the safe preference with the failure on record, for the same source.
+ */
+function selectPlanAfterResourceFailure(
+  plan: ExportExecutionPlan,
+  sampleFacts: () => Promise<ExportPlanFacts>,
+): Promise<ExportExecutionPlan> {
+  return planExportWithSampledFacts(
+    {
+      preference: 'safe',
+      source: plan.request.source,
+      history: {
+        previousResourceFailure: true,
+        previousCrashLikeInterruption: false,
+        previousUserInterrupted: false,
+      },
+    },
+    sampleFacts,
+  )
 }
 
 function errorLooksLikeFreshWorkerRetry(error: unknown) {
@@ -304,6 +314,7 @@ export async function runFullResolutionExportJob({
   onPlan,
   beforeStart,
   signal,
+  sampleFacts = sampleExportPlanFacts,
   clientFactory = createFullResolutionExportClient,
 }: {
   file: File
@@ -323,12 +334,27 @@ export async function runFullResolutionExportJob({
   onPlan?: (plan: ExportExecutionPlan) => void
   beforeStart?: () => void | Promise<void>
   signal?: AbortSignal
+  /** Device facts for a replacement plan; sampled again for every retry. */
+  sampleFacts?: () => Promise<ExportPlanFacts>
   clientFactory?: () => FullResolutionExportWorkerClient
 }) {
   let plan = executionPlan
   let attempts = 0
+  // A retry plans OPFS only while this job holds a reserved OPFS address
+  // whose output has not failed to open, however the storage reports itself.
+  let opfsOutputFailed = false
+  const sampleRetryFacts = async (): Promise<ExportPlanFacts> => {
+    const facts = await sampleFacts()
+    return !outputLocation || opfsOutputFailed
+      ? {
+          capability: facts.capability,
+          runtime: { ...facts.runtime, opfsSinkAvailable: false },
+        }
+      : facts
+  }
 
   while (true) {
+    throwIfJobAborted(signal)
     attempts += 1
     const attemptPlan = plan
     // Every attempt, retries included, is held to the policy refusal and to
@@ -382,7 +408,12 @@ export async function runFullResolutionExportJob({
         attemptPlan.outputSink === 'opfs-file' &&
         errorIsOpfsOutputUnavailable(error)
       ) {
-        const fallbackPlan = await selectPlanWithoutOpfsOutput(attemptPlan)
+        opfsOutputFailed = true
+        const fallbackPlan = await selectPlanWithoutOpfsOutput(
+          attemptPlan,
+          sampleRetryFacts,
+        )
+        throwIfJobAborted(signal)
         assertPlanCanSafelyComplete(fallbackPlan)
 
         emitFullResolutionExportAttempt(onAttempt, {
@@ -408,17 +439,11 @@ export async function runFullResolutionExportJob({
         throw error
       }
 
-      const retryPlan = selectExportExecutionPlan({
-        performancePreference: 'safe',
-        sourceWidth: attemptPlan.sourceWidth,
-        sourceHeight: attemptPlan.sourceHeight,
-        previousResourceFailure: true,
-        previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
-        capability:
-          attemptPlan.capabilitySnapshot ?? (await detectCapabilityVector()),
-        runtime: attemptPlan.runtimeSnapshot ?? NO_DURABLE_SINK_RUNTIME,
-      })
+      const retryPlan = await selectPlanAfterResourceFailure(
+        attemptPlan,
+        sampleRetryFacts,
+      )
+      throwIfJobAborted(signal)
 
       const workerNextRows = getFreshWorkerRetryRows(error)
       const nextRows =

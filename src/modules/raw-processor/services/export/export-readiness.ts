@@ -2,10 +2,9 @@ import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import { planExportGeometry } from '@lumaforge/render-engine/export'
 
-import {
-  getExportModeCopy,
-  selectExportExecutionPlan,
-} from '~/lib/export/execution-profile'
+import { getExportModeCopy } from '~/lib/export/execution-profile'
+import type { ExportPlanFacts } from '~/lib/export/export-plan'
+import { selectExportPlan } from '~/lib/export/export-plan'
 import {
   classifyDeviceFormFactor,
   classifyUserAgent,
@@ -50,15 +49,19 @@ export type FullResExportReadiness =
       disabledReason: string
     }
 
-function getUnsafeFullResExportReason(input: {
-  session: ImageSession
-  fidelity?: 'safe' | 'balanced' | 'max'
-}) {
-  const capability = input.session.exportState.fullResCapability
-  if (capability.status !== 'supported') return undefined
+/**
+ * Optimistic facts for readiness only. Readiness runs synchronously on every
+ * render, so it cannot sample storage: it assumes any reachable OPFS has room
+ * and refuses only what no storage estimate could rescue. The export samples
+ * real facts before it plans, and nothing planned from these ever runs.
+ */
+function optimisticReadinessPlanFacts(): ExportPlanFacts {
   const opfsAvailable = isOpfsAvailableForReadiness()
-
-  const cap =
+  const touch =
+    typeof globalThis.navigator?.maxTouchPoints === 'number' &&
+    globalThis.navigator.maxTouchPoints > 0
+  const userAgent = globalThis.navigator?.userAgent ?? ''
+  const capability =
     getCapabilityVectorSnapshot() ??
     Object.freeze({
       coi: Boolean(globalThis.crossOriginIsolated),
@@ -68,29 +71,33 @@ function getUnsafeFullResExportReason(input: {
         1,
         Math.floor(globalThis.navigator?.hardwareConcurrency ?? 1),
       ),
-      webKitClass: classifyUserAgent(
-        globalThis.navigator?.userAgent ?? '',
-        typeof globalThis.navigator?.maxTouchPoints === 'number' &&
-          globalThis.navigator.maxTouchPoints > 0,
-      ),
-      deviceFormFactor: classifyDeviceFormFactor(
-        globalThis.navigator?.userAgent ?? '',
-        typeof globalThis.navigator?.maxTouchPoints === 'number' &&
-          globalThis.navigator.maxTouchPoints > 0,
-      ),
+      webKitClass: classifyUserAgent(userAgent, touch),
+      deviceFormFactor: classifyDeviceFormFactor(userAgent, touch),
       maybeOpfsSupported: opfsAvailable,
     })
 
-  const plan = selectExportExecutionPlan({
-    performancePreference: input.fidelity ?? 'balanced',
-    sourceWidth: capability.width,
-    sourceHeight: capability.height,
-    capability: cap,
+  return {
+    capability,
     runtime: {
       opfsSinkAvailable: opfsAvailable,
       opfsAvailableMB: opfsAvailable ? Number.POSITIVE_INFINITY : null,
       streamingSinkAvailable: false,
     },
+  }
+}
+
+function getUnsafeFullResExportReason(input: {
+  session: ImageSession
+  fidelity?: 'safe' | 'balanced' | 'max'
+}) {
+  const capability = input.session.exportState.fullResCapability
+  if (capability.status !== 'supported') return undefined
+
+  // Only the verdict leaves this function; the plan itself is discarded.
+  const plan = selectExportPlan({
+    preference: input.fidelity ?? 'balanced',
+    source: { width: capability.width, height: capability.height },
+    ...optimisticReadinessPlanFacts(),
   })
 
   return plan.productCopy === 'cannot-safely-complete'

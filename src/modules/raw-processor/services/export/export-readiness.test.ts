@@ -247,6 +247,35 @@ describe('export readiness helpers', () => {
     )
   })
 
+  it('assumes a reachable OPFS has room without sampling storage', () => {
+    const estimate = vi.fn(async () => ({ quota: 1, usage: 1 }))
+    vi.stubGlobal('navigator', {
+      userAgent:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
+      maxTouchPoints: 1,
+      storage: { getDirectory: vi.fn(), estimate },
+      hardwareConcurrency: 4,
+    })
+    vi.stubGlobal('crossOriginIsolated', false)
+
+    const readiness = deriveFullResExportReadiness({
+      sourceFile: new File(['raw'], 'frame.RAF'),
+      session: createSession({
+        fullResCapability: {
+          status: 'supported',
+          width: 11662,
+          height: 8746,
+        },
+      }),
+      rawRenderExposure: IDENTITY_EXPOSURE,
+    })
+
+    // Optimistic: the export samples real storage, and refuses then if the
+    // sink cannot hold the output.
+    expect(readiness.canExport).toBe(true)
+    expect(estimate).not.toHaveBeenCalled()
+  })
+
   it.each(INVALID_GEOMETRIES)(
     'refuses %s before any export work is planned',
     (_label, geometry) => {

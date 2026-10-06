@@ -9,11 +9,11 @@ import {
 import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 import { toast } from 'sonner'
 
-import type { ExportExecutionPlan } from '~/lib/export/execution-profile'
 import {
   emitExportDebugEvent,
   toExportPlanSelectedDebugPayload,
 } from '~/lib/export/execution-profile'
+import type { ExportExecutionPlan } from '~/lib/export/export-plan'
 import type { FullResWorkerOutputLocation } from '~/lib/export/full-res-export-client'
 import {
   reserveOpfsOutputDirectory,
@@ -66,9 +66,9 @@ import {
   buildExportFilename,
   createExportPolicyRefusal,
   EXPORT_JPEG_QUALITY,
+  planExportWithSampledFacts,
   recommendRetryLevel,
   runFullResolutionExportJob,
-  selectCurrentExportExecutionPlan,
 } from './export-system'
 
 export interface ExportContext {
@@ -245,14 +245,20 @@ export async function orchestrateFullResExport(
     ctx.atoms.setError(null)
     toast.dismiss()
     ctx.refs.previewCopyCanvasRef.current = null
-    const executionPlan = await selectCurrentExportExecutionPlan({
-      performancePreference,
-      sourceWidth: exportCapability.width,
-      sourceHeight: exportCapability.height,
-      previousCrashLikeInterruption:
-        interruption?.previousCrashLikeInterruption ?? false,
-      previousResourceFailure: interruption?.previousResourceFailure ?? false,
-      previousUserInterrupted: false,
+    // Sized from the sensor frame the worker decodes, whatever the geometry
+    // crops; the device facts are sampled now, for this export.
+    const executionPlan = await planExportWithSampledFacts({
+      preference: performancePreference,
+      source: {
+        width: exportCapability.width,
+        height: exportCapability.height,
+      },
+      history: {
+        previousCrashLikeInterruption:
+          interruption?.previousCrashLikeInterruption ?? false,
+        previousResourceFailure: interruption?.previousResourceFailure ?? false,
+        previousUserInterrupted: false,
+      },
     })
     // Outputs left by closed tabs are collected once per page at idle time;
     // this export never waits for it and cannot fail because of it.
@@ -298,7 +304,7 @@ export async function orchestrateFullResExport(
     // again from the first row, whatever the sink.
     emitExportDebugEvent({
       type: 'export-plan-selected',
-      payload: toExportPlanSelectedDebugPayload(jobExecutionPlan, false),
+      payload: toExportPlanSelectedDebugPayload(jobExecutionPlan),
     })
 
     ctx.atoms.setSession((prev) =>
@@ -446,7 +452,7 @@ export async function orchestrateFullResExport(
 
         emitExportDebugEvent({
           type: 'export-plan-selected',
-          payload: toExportPlanSelectedDebugPayload(plan, false),
+          payload: toExportPlanSelectedDebugPayload(plan),
         })
         ctx.atoms.setSession((prev) =>
           prev && prev.id === exportSessionId

@@ -16,14 +16,13 @@ import type {
 } from '@lumaforge/render-engine/policy'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { ExportDebugEvent } from '~/lib/export/execution-profile'
+import { getExportModeCopy } from '~/lib/export/execution-profile'
 import type {
-  ExportDebugEvent,
   ExportExecutionPlan,
-} from '~/lib/export/execution-profile'
-import {
-  getExportModeCopy,
-  selectExportExecutionPlan,
-} from '~/lib/export/execution-profile'
+  ExportPlanRequest,
+} from '~/lib/export/export-plan'
+import { selectExportPlan } from '~/lib/export/export-plan'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
@@ -49,15 +48,12 @@ import { resolveExportEnvironment } from './export-manifest'
 import type { SourceInterruptionHint } from './export-recovery'
 import { readSourceInterruption } from './export-recovery'
 import { clearExportResultState } from './export-state'
-import type {
-  runFullResolutionExportJob,
-  selectCurrentExportExecutionPlan,
-} from './export-system'
+import type { runFullResolutionExportJob } from './export-system'
 import type { ExportContext } from './orchestrate-full-res-export'
 import { orchestrateFullResExport } from './orchestrate-full-res-export'
 
 const mocks = vi.hoisted(() => ({
-  selectCurrentExportExecutionPlan: vi.fn(),
+  planExportWithSampledFacts: vi.fn(),
   runFullResolutionExportJob: vi.fn(),
   buildManifestForExportResult: vi.fn(),
   reserveOpfsOutputDirectory: vi.fn(),
@@ -72,7 +68,7 @@ vi.mock('sonner', () => ({
 
 vi.mock('./export-system', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./export-system')>()),
-  selectCurrentExportExecutionPlan: mocks.selectCurrentExportExecutionPlan,
+  planExportWithSampledFacts: mocks.planExportWithSampledFacts,
   runFullResolutionExportJob: mocks.runFullResolutionExportJob,
 }))
 
@@ -96,7 +92,7 @@ vi.mock('~/lib/export/opfs-output-lifetime', () => ({
 }))
 
 type JobInput = Parameters<typeof runFullResolutionExportJob>[0]
-type PlanInput = Parameters<typeof selectCurrentExportExecutionPlan>[0]
+type PlanInput = ExportPlanRequest
 type SetSessionValue = Parameters<ExportContext['atoms']['setSession']>[0]
 
 const FIXED_ISO = '2026-10-05T12:00:00.000Z'
@@ -572,22 +568,12 @@ function createHarness(options: HarnessOptions = {}) {
   })
 
   // Real plans from the real policy, for an explicitly chosen device.
-  mocks.selectCurrentExportExecutionPlan.mockImplementation(
+  mocks.planExportWithSampledFacts.mockImplementation(
     async (input: PlanInput) => {
-      trace.push('service:selectCurrentExportExecutionPlan')
+      trace.push('service:planExportWithSampledFacts')
       planInputs.push(input)
       await options.planGate
-      const plan = selectExportExecutionPlan({
-        performancePreference: input.performancePreference,
-        sourceWidth: input.sourceWidth,
-        sourceHeight: input.sourceHeight,
-        previousCrashLikeInterruption:
-          input.previousCrashLikeInterruption ?? false,
-        previousResourceFailure: input.previousResourceFailure ?? false,
-        previousUserInterrupted: input.previousUserInterrupted ?? false,
-        capability,
-        runtime,
-      })
+      const plan = selectExportPlan({ ...input, capability, runtime })
       plans.push(plan)
       return plan
     },
@@ -809,7 +795,7 @@ describe('orchestrateFullResExport success', () => {
       'state:progress:0',
       'state:error:null',
       'toast:dismiss',
-      'service:selectCurrentExportExecutionPlan',
+      'service:planExportWithSampledFacts',
       'service:registerCurrentPreviewPipelineForEvacuation',
       'debug:export-plan-selected',
       'state:session:exporting',
@@ -888,12 +874,13 @@ describe('orchestrateFullResExport success', () => {
 
     expect(h.planInputs).toEqual([
       {
-        performancePreference: 'balanced',
-        sourceWidth: 6000,
-        sourceHeight: 4000,
-        previousCrashLikeInterruption: false,
-        previousResourceFailure: false,
-        previousUserInterrupted: false,
+        preference: 'balanced',
+        source: { width: 6000, height: 4000 },
+        history: {
+          previousCrashLikeInterruption: false,
+          previousResourceFailure: false,
+          previousUserInterrupted: false,
+        },
       },
     ])
     // A completed attempt leaves no marker behind.
@@ -1080,6 +1067,11 @@ describe('orchestrateFullResExport success', () => {
     ])
     expect(input.geometry).toBe(geometry)
     expect(input).not.toHaveProperty('checkpoint')
+    // The plan is sized by the sensor frame the worker decodes; only the
+    // recorded result carries the cropped, delivered frame.
+    expect(h.planInputs.map((planInput) => planInput.source)).toEqual([
+      { width: 6000, height: 4000 },
+    ])
     job.resolve()
     await run
 
@@ -1108,12 +1100,13 @@ describe('orchestrateFullResExport success', () => {
 
       expect(h.planInputs).toEqual([
         {
-          performancePreference: 'balanced',
-          sourceWidth: 6000,
-          sourceHeight: 4000,
-          previousCrashLikeInterruption: true,
-          previousResourceFailure: false,
-          previousUserInterrupted: false,
+          preference: 'balanced',
+          source: { width: 6000, height: 4000 },
+          history: {
+            previousCrashLikeInterruption: true,
+            previousResourceFailure: false,
+            previousUserInterrupted: false,
+          },
         },
       ])
       expect(h.plans[0]).toMatchObject({
@@ -1177,7 +1170,7 @@ describe('orchestrateFullResExport success', () => {
     job.resolve()
     await run
 
-    expect(h.planInputs[0]).toMatchObject({
+    expect(h.planInputs[0]?.history).toMatchObject({
       previousCrashLikeInterruption: false,
       previousResourceFailure: true,
     })
@@ -1202,8 +1195,10 @@ describe('orchestrateFullResExport success', () => {
 
     expect(h.planInputs).toEqual([
       expect.objectContaining({
-        previousCrashLikeInterruption: false,
-        previousResourceFailure: false,
+        history: expect.objectContaining({
+          previousCrashLikeInterruption: false,
+          previousResourceFailure: false,
+        }),
       }),
     ])
     expect(h.plans[0]?.productCopy).not.toBe('interrupted-retry')
@@ -1231,7 +1226,7 @@ describe('orchestrateFullResExport success', () => {
     const [scheduledAt] =
       mocks.scheduleAbandonedOpfsOutputCollection.mock.invocationCallOrder
     expect(scheduledAt).toBeGreaterThan(
-      mocks.selectCurrentExportExecutionPlan.mock.invocationCallOrder[0]!,
+      mocks.planExportWithSampledFacts.mock.invocationCallOrder[0]!,
     )
     expect(scheduledAt).toBeLessThan(
       mocks.runFullResolutionExportJob.mock.invocationCallOrder[0]!,
@@ -1313,10 +1308,9 @@ describe('orchestrateFullResExport success', () => {
   it('reports a replacement plan from the job as the active plan before its worker runs', async () => {
     const h = createHarness({ runtime: OPFS_RUNTIME })
     const job = h.installJob()
-    const blobPlan = selectExportExecutionPlan({
-      performancePreference: 'balanced',
-      sourceWidth: 6000,
-      sourceHeight: 4000,
+    const blobPlan = selectExportPlan({
+      preference: 'balanced',
+      source: { width: 6000, height: 4000 },
       capability: DESKTOP_CAPABILITY,
       runtime: BLOB_RUNTIME,
     })
@@ -1403,7 +1397,7 @@ describe('orchestrateFullResExport refusals', () => {
     })
     expect(otherExport.signal.aborted).toBe(false)
     expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
-    expect(mocks.selectCurrentExportExecutionPlan).not.toHaveBeenCalled()
+    expect(mocks.planExportWithSampledFacts).not.toHaveBeenCalled()
   })
 
   it.each(INVALID_GEOMETRIES)(
@@ -1522,7 +1516,7 @@ describe('orchestrateFullResExport refusals', () => {
     )
     expect(otherExport.signal.aborted).toBe(false)
     expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
-    expect(mocks.selectCurrentExportExecutionPlan).not.toHaveBeenCalled()
+    expect(mocks.planExportWithSampledFacts).not.toHaveBeenCalled()
     expect(mocks.toastError).not.toHaveBeenCalled()
   })
 
@@ -1556,7 +1550,7 @@ describe('orchestrateFullResExport refusals', () => {
       'state:progress:0',
       'state:error:null',
       'toast:dismiss',
-      'service:selectCurrentExportExecutionPlan',
+      'service:planExportWithSampledFacts',
       'state:session:failed',
       'state:status:ready',
       'service:scheduleToast',
@@ -1706,7 +1700,7 @@ describe('orchestrateFullResExport failures', () => {
       'state:progress:0',
       'state:error:null',
       'toast:dismiss',
-      'service:selectCurrentExportExecutionPlan',
+      'service:planExportWithSampledFacts',
       'service:registerCurrentPreviewPipelineForEvacuation',
       'debug:export-plan-selected',
       'state:session:exporting',
@@ -1987,7 +1981,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       'state:progress:0',
       'state:error:null',
       'toast:dismiss',
-      'service:selectCurrentExportExecutionPlan',
+      'service:planExportWithSampledFacts',
       'test:superseded',
     ])
     expect(h.since(supersededAt)).toEqual(['test:superseded'])

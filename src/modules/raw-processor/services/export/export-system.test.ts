@@ -6,11 +6,9 @@ import type {
 } from '@lumaforge/render-engine/policy'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ExportExecutionPlan } from '~/lib/export/execution-profile'
-import {
-  getExportModeCopy,
-  selectExportExecutionPlan,
-} from '~/lib/export/execution-profile'
+import { getExportModeCopy } from '~/lib/export/execution-profile'
+import type { ExportExecutionPlan } from '~/lib/export/export-plan'
+import { selectExportPlan } from '~/lib/export/export-plan'
 import type { RunFullResolutionJpegExportInWorkerInput } from '~/lib/export/full-res-export-client'
 
 import {
@@ -66,20 +64,25 @@ const BLOB_RUNTIME: ExportRuntimeResources = {
   streamingSinkAvailable: false,
 }
 /** Above the large-export threshold, where a mobile blob handoff is refused. */
-const LARGE = { sourceWidth: 9000, sourceHeight: 6700 }
-const NORMAL = { sourceWidth: 6000, sourceHeight: 4000 }
+const LARGE = { width: 9000, height: 6700 }
+const NORMAL = { width: 6000, height: 4000 }
 
 function plan(
   capability: CapabilityVector,
   runtime: ExportRuntimeResources,
-  size: { sourceWidth: number; sourceHeight: number },
+  source: { width: number; height: number },
 ) {
-  return selectExportExecutionPlan({
-    performancePreference: 'balanced',
-    ...size,
+  return selectExportPlan({
+    preference: 'balanced',
+    source,
     capability,
     runtime,
   })
+}
+
+/** What a retry samples: the same device, unless a test says otherwise. */
+function facts(capability: CapabilityVector, runtime: ExportRuntimeResources) {
+  return vi.fn(async () => ({ capability, runtime }))
 }
 
 type Outcome = { error: unknown } | { output: typeof OUTPUT }
@@ -197,6 +200,7 @@ describe('runFullResolutionExportJob plan safety', () => {
         filename: FILENAME,
         graph: GRAPH,
         executionPlan,
+        sampleFacts: facts(MOBILE, BLOB_RUNTIME),
         clientFactory: script.clientFactory,
       }),
     ).rejects.toMatchObject({
@@ -207,11 +211,8 @@ describe('runFullResolutionExportJob plan safety', () => {
   })
 
   it('refuses a retry plan that cannot safely complete instead of starting another worker', async () => {
-    // Without a runtime snapshot the retry re-derives with no durable sink.
-    const executionPlan: ExportExecutionPlan = {
-      ...plan(MOBILE, OPFS_RUNTIME, LARGE),
-      runtimeSnapshot: undefined,
-    }
+    // OPFS is gone by the time the retry samples the device again.
+    const executionPlan = plan(MOBILE, OPFS_RUNTIME, LARGE)
     expect(executionPlan.outputSink).toBe('opfs-file')
     expect(executionPlan.productCopy).not.toBe('cannot-safely-complete')
     const script = scriptClients(RESOURCE_FAILURE, SUCCESS)
@@ -227,6 +228,7 @@ describe('runFullResolutionExportJob plan safety', () => {
         outputLocation: OUTPUT_LOCATION,
         onPlan,
         onAttempt,
+        sampleFacts: facts(MOBILE, BLOB_RUNTIME),
         clientFactory: script.clientFactory,
       }),
     ).rejects.toMatchObject({ code: 'EXPORT_POLICY_CANNOT_COMPLETE' })
@@ -256,6 +258,7 @@ describe('runFullResolutionExportJob plan safety', () => {
       outputLocation: OUTPUT_LOCATION,
       onPlan,
       onAttempt,
+      sampleFacts: facts(DESKTOP, OPFS_RUNTIME),
       clientFactory: script.clientFactory,
     })
 
@@ -312,6 +315,7 @@ describe('runFullResolutionExportJob plan safety', () => {
         outputLocation: OUTPUT_LOCATION,
         onPlan,
         onAttempt,
+        sampleFacts: facts(MOBILE, OPFS_RUNTIME),
         clientFactory: script.clientFactory,
       }),
     ).rejects.toMatchObject({
@@ -339,6 +343,7 @@ describe('runFullResolutionExportJob plan safety', () => {
       executionPlan,
       outputLocation: OUTPUT_LOCATION,
       onPlan,
+      sampleFacts: facts(DESKTOP, OPFS_RUNTIME),
       clientFactory: script.clientFactory,
     })
 
@@ -366,6 +371,7 @@ describe('runFullResolutionExportJob plan safety', () => {
       quality: EXPORT_JPEG_QUALITY,
       executionPlan,
       outputLocation: OUTPUT_LOCATION,
+      sampleFacts: facts(DESKTOP, OPFS_RUNTIME),
       clientFactory: script.clientFactory,
     })
 
@@ -395,6 +401,7 @@ describe('runFullResolutionExportJob plan safety', () => {
       outputLocation: OUTPUT_LOCATION,
       onPlan,
       onAttempt,
+      sampleFacts: facts(DESKTOP, OPFS_RUNTIME),
       clientFactory: script.clientFactory,
     })
 
@@ -450,6 +457,7 @@ describe('runFullResolutionExportJob plan safety', () => {
         executionPlan,
         outputLocation: OUTPUT_LOCATION,
         onPlan,
+        sampleFacts: facts(DESKTOP, OPFS_RUNTIME),
         clientFactory: script.clientFactory,
       }),
     ).rejects.toThrow('FULL_RES_EXPORT_RESOURCE_FAILURE')
@@ -469,5 +477,62 @@ describe('runFullResolutionExportJob plan safety', () => {
     expect(
       script.clients.map((client) => client.dispose.mock.calls.length),
     ).toEqual([1, 1, 1])
+  })
+})
+
+describe('runFullResolutionExportJob retry facts', () => {
+  it('samples the device again for a resource retry instead of reusing the first plan facts', async () => {
+    const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
+    expect(executionPlan.outputSink).toBe('opfs-file')
+    const script = scriptClients(RESOURCE_FAILURE, SUCCESS)
+    // OPFS went away between the first attempt and the retry.
+    const sampleFacts = vi.fn(async () => ({
+      capability: DESKTOP,
+      runtime: BLOB_RUNTIME,
+    }))
+
+    await runFullResolutionExportJob({
+      file: FILE,
+      filename: FILENAME,
+      graph: GRAPH,
+      executionPlan,
+      outputLocation: OUTPUT_LOCATION,
+      sampleFacts,
+      clientFactory: script.clientFactory,
+    })
+
+    expect(sampleFacts).toHaveBeenCalledTimes(1)
+    expect(script.order).toEqual(['run:opfs-file', 'run:blob-handoff'])
+    expect(script.runs[1]!.outputLocation).toBeUndefined()
+  })
+
+  it('samples the device again for a sink fallback and keeps OPFS off for it', async () => {
+    const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
+    const script = scriptClients(OPFS_UNAVAILABLE, SUCCESS)
+    // The fresh sample is a phone: the fallback is planned for it, not for
+    // the desktop the first attempt saw.
+    const sampleFacts = vi.fn(async () => ({
+      capability: MOBILE,
+      runtime: OPFS_RUNTIME,
+    }))
+    const onPlan = vi.fn()
+
+    await runFullResolutionExportJob({
+      file: FILE,
+      filename: FILENAME,
+      graph: GRAPH,
+      executionPlan,
+      outputLocation: OUTPUT_LOCATION,
+      onPlan,
+      sampleFacts,
+      clientFactory: script.clientFactory,
+    })
+
+    expect(sampleFacts).toHaveBeenCalledTimes(1)
+    expect(onPlan.mock.calls[0]![0]).toMatchObject({
+      outputSink: 'blob-handoff',
+      runtimeMemoryProfile: 'low-memory',
+      concurrency: 1,
+    })
   })
 })
