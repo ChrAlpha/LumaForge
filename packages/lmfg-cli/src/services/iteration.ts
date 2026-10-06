@@ -21,11 +21,7 @@ import { toFileUri } from '../workspace/paths'
 import type { SessionStore } from '../workspace/session-store'
 import type { CandidateTask, ConcurrencyRequest } from './candidate-pool'
 import { renderCandidates, resolveConcurrency } from './candidate-pool'
-import {
-  buildColorGraph,
-  requireSupportedGraph,
-  resolveExposure,
-} from './color-graph'
+import { buildColorGraph, requireSupportedGraph } from './color-graph'
 import type { SheetTile } from './contact-sheet'
 import { buildContactSheet, fitTileSize } from './contact-sheet'
 import type { ResolvedLut } from './lut'
@@ -35,7 +31,7 @@ import {
   percentToQuality,
   toSourceIdentity,
 } from './manifest'
-import { clampMaxPixels, decodeFrame } from './preview'
+import { clampMaxPixels, createExposureResolver, decodeFrame } from './preview'
 import { captureResourceUsage } from './resource'
 
 export type IterationRunInput = {
@@ -145,26 +141,27 @@ export async function runIteration(
       frame.sourceDimensions,
     )
 
+    const resolveExposure = createExposureResolver({
+      session,
+      frame,
+      maxPixels,
+      timings,
+      signal: input.signal,
+    })
     const exposures: RawRenderExposure[] = []
+    for (const candidate of plan.candidates)
+      exposures.push(await resolveExposure(candidate.params))
     const renderParams: CandidateTask[] = plan.candidates.map(
-      (candidate, index) => {
-        const exposure = resolveExposure(candidate.params, {
-          baselineExposure: session.probe.baselineExposure,
-          frame,
-        })
-        exposures.push(exposure)
-        const graph = requireSupportedGraph(
+      (candidate, index) => ({
+        graph: requireSupportedGraph(
           buildColorGraph(
             candidate.params,
             luts[index]?.lutData ?? null,
-            exposure,
+            exposures[index],
           ),
-        )
-        return {
-          graph,
-          quality: percentToQuality(input.options.quality),
-        }
-      },
+        ),
+        quality: percentToQuality(input.options.quality),
+      }),
     )
 
     const tileSize = fitTileSize(

@@ -75,6 +75,55 @@ export async function decodeFrame(
   }
 }
 
+/**
+ * Resolves the raw-render exposure for params rendered from one session.
+ *
+ * Automatic exposure is measured on the standard quick frame
+ * (`QUICK_PREVIEW_MAX_PIXELS`), the frame export measures on, so one source
+ * resolves one auto EV whatever the output size or candidate. The frame is
+ * decoded on the session at most once, and not at all when the rendered frame
+ * already is the standard quick frame, when the params pin an explicit EV
+ * (zero included), or when the source carries a DNG baseline exposure.
+ * The extra decode is timed as `exposure_ms`.
+ */
+export function createExposureResolver(input: {
+  session: LumaRawDecodeSession
+  frame: DecodedFrame
+  maxPixels: number
+  timings: Record<string, number>
+  signal?: AbortSignal
+}): (params: RenderParams) => Promise<RawRenderExposure> {
+  const baselineExposure = input.session.probe.baselineExposure
+  let auto: Promise<RawRenderExposure> | null = null
+  const measureAuto = async (params: RenderParams) => {
+    if (
+      input.frame.decode === 'quick' &&
+      input.maxPixels === QUICK_PREVIEW_MAX_PIXELS
+    ) {
+      return resolveExposure(params, { baselineExposure, frame: input.frame })
+    }
+    const start = performance.now()
+    const frame = await input.session.decodeQuick(
+      { maxOutputPixels: QUICK_PREVIEW_MAX_PIXELS },
+      input.signal,
+    )
+    input.timings.exposure_ms = performance.now() - start
+    return resolveExposure(params, { baselineExposure, frame })
+  }
+  return async (params) => {
+    // An explicit EV and a DNG baseline exposure both win over image
+    // statistics, so neither needs a frame.
+    if (
+      params.raw_render_exposure !== 'auto' ||
+      Number.isFinite(baselineExposure)
+    ) {
+      return resolveExposure(params, { baselineExposure, frame: null })
+    }
+    auto ??= measureAuto(params)
+    return auto
+  }
+}
+
 export type RenderedFrame = {
   rgba: Uint8ClampedArray
   width: number
@@ -125,7 +174,10 @@ export type PreviewRenderInput = {
   lut: ResolvedLut | null
   maxPixels: number
   quality: number
-  /** Pre-resolved exposure (replays); resolved from params + frame when omitted. */
+  /**
+   * Pre-resolved exposure (replays); resolved from params and the standard
+   * quick frame when omitted.
+   */
   exposure?: RawRenderExposure
   signal?: AbortSignal
 }
@@ -157,10 +209,13 @@ export async function renderPreview(
     timings.decode_ms = performance.now() - decodeStart
     const exposure =
       input.exposure ??
-      resolveExposure(input.params, {
-        baselineExposure: session.probe.baselineExposure,
+      (await createExposureResolver({
+        session,
         frame,
-      })
+        maxPixels,
+        timings,
+        signal: input.signal,
+      })(input.params))
     const graph = requireSupportedGraph(
       buildColorGraph(input.params, input.lut?.lutData ?? null, exposure),
     )

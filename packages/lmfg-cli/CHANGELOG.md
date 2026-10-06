@@ -52,6 +52,18 @@ Requires `@lumaforge/luma-raw-runtime` 0.1.2 and
   peak sat between 75% and 100% of the white level: those rendered brighter
   before, and export strips no longer brighten independently. Manifests now
   record the new runtime version and native build id.
+- Automatic raw-render exposure (`raw_render_exposure: "auto"`) is measured
+  on the standard 2.5 MP quick frame for `render preview`, `candidate`, and
+  `sweep`, the frame `render export` and `inspect` already used, so one
+  source gets one auto EV whatever `--max-pixels` or candidate. Before, it
+  was measured on the rendered frame: small quick and bounded-HQ previews of
+  non-DNG files could differ from the export EV (up to 0.16 EV observed on a
+  Sony ARW). Those renders now decode the standard quick frame once more on
+  the same RAW session (about 0.25 to 1 s on 24 to 45 MP files, reported as
+  `timings_ms.exposure_ms`); renders at the standard quick size reuse their
+  frame. An explicit EV (zero included), a DNG baseline exposure, and the
+  exposure recorded in a replayed or exported candidate manifest still win
+  without the extra decode, and manifests record the EV actually used.
 - Fixture-gated tests fail instead of skipping when `LMFG_REQUIRE_FIXTURE=1`
   is set; `LMFG_FIXTURE_PATH` overrides the RAW fixture location.
 - Manifest construction and the color-graph descriptor now come from
