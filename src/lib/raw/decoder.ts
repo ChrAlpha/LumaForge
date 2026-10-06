@@ -42,6 +42,16 @@ export interface DecodeProgress {
 
 export type ProgressCallback = (progress: DecodeProgress) => void
 
+/**
+ * A source-level RAW render exposure the caller already resolved for this
+ * file. When present (including an explicit 0 EV) the decoded frame carries a
+ * copy of it instead of re-estimating from its own pixels; when absent the
+ * frame is estimated on its own.
+ */
+export type DecodeExposureOptions = {
+  pinnedExposure?: RawRenderExposure
+}
+
 export const QUICK_PREVIEW_MAX_PIXELS = 2_500_000
 export const BOUNDED_HQ_PREVIEW_MAX_PIXELS = 12_000_000
 export const BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS = 8_000_000

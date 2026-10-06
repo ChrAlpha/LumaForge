@@ -6,7 +6,11 @@ import type {
 } from '@lumaforge/luma-raw-runtime'
 import { isWasmJpegRuntimeAvailable } from '@lumaforge/render-engine/export'
 
-import type { DecodedImage, ProgressCallback } from './decoder'
+import type {
+  DecodedImage,
+  DecodeExposureOptions,
+  ProgressCallback,
+} from './decoder'
 import {
   decodeBoundedHqRawWithLuma,
   decodeQuickRawWithLuma,
@@ -32,9 +36,10 @@ export type RawRuntimeSession = {
   decodeQuickRaw: (
     onProgress?: ProgressCallback,
     signal?: AbortSignal,
+    exposureOptions?: DecodeExposureOptions,
   ) => Promise<DecodedImage>
   decodeBoundedHqRaw: (
-    options: { maxOutputPixels: number },
+    options: { maxOutputPixels: number } & DecodeExposureOptions,
     onProgress?: ProgressCallback,
     signal?: AbortSignal,
   ) => Promise<DecodedImage>

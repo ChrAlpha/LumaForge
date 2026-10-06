@@ -17,7 +17,12 @@ import {
 } from '~/lib/runtime/capability-vector'
 import { RawDecodeBridge } from '~/lib/workers/raw-decode-bridge'
 
-import type { DecodedImage, ImageMetadata, ProgressCallback } from './decoder'
+import type {
+  DecodedImage,
+  DecodeExposureOptions,
+  ImageMetadata,
+  ProgressCallback,
+} from './decoder'
 import { QUICK_PREVIEW_MAX_PIXELS } from './decoder'
 import type {
   JpegRuntimeAvailabilityProbe,
@@ -219,7 +224,29 @@ export function metadataToImageMetadata(frame: LumaRawFrame): ImageMetadata {
   }
 }
 
-export function frameToDecodedImage(frame: LumaRawFrame): DecodedImage {
+function resolveFrameRenderExposure(
+  frame: LumaRawFrame,
+  metadata: ImageMetadata,
+  pinnedExposure: DecodeExposureOptions['pinnedExposure'],
+) {
+  if (pinnedExposure !== undefined) {
+    return { ...pinnedExposure }
+  }
+
+  return resolveRawRenderExposure({
+    metadata,
+    image: {
+      data: frame.data,
+      width: frame.width,
+      height: frame.height,
+    },
+  })
+}
+
+export function frameToDecodedImage(
+  frame: LumaRawFrame,
+  options: DecodeExposureOptions = {},
+): DecodedImage {
   const metadata = metadataToImageMetadata(frame)
 
   return {
@@ -233,14 +260,11 @@ export function frameToDecodedImage(frame: LumaRawFrame): DecodedImage {
     source: frame.source,
     timings: { ...frame.timings },
     metadata,
-    renderExposure: resolveRawRenderExposure({
+    renderExposure: resolveFrameRenderExposure(
+      frame,
       metadata,
-      image: {
-        data: frame.data,
-        width: frame.width,
-        height: frame.height,
-      },
-    }),
+      options.pinnedExposure,
+    ),
   }
 }
 
@@ -414,7 +438,11 @@ export async function openRawSessionWithLuma(
         jpegRuntimeAvailabilityProbe,
       )
     },
-    async decodeQuickRaw(onProgress?: ProgressCallback, signal?: AbortSignal) {
+    async decodeQuickRaw(
+      onProgress?: ProgressCallback,
+      signal?: AbortSignal,
+      exposureOptions?: DecodeExposureOptions,
+    ) {
       try {
         onProgress?.({ phase: 'decoding', progress: 50 })
         const frame = await session.decodeQuick(
@@ -424,21 +452,26 @@ export async function openRawSessionWithLuma(
           signal,
         )
         onProgress?.({ phase: 'complete', progress: 100 })
-        return frameToDecodedImage(frame)
+        return frameToDecodedImage(frame, exposureOptions)
       } catch (error) {
         throw normalizeRawAdapterError(error, 'RAW_QUICK_DECODE_FAILED')
       }
     },
     async decodeBoundedHqRaw(
-      options: { maxOutputPixels: number },
+      {
+        maxOutputPixels,
+        pinnedExposure,
+      }: { maxOutputPixels: number } & DecodeExposureOptions,
       onProgress?: ProgressCallback,
       signal?: AbortSignal,
     ) {
       try {
         onProgress?.({ phase: 'decoding', progress: 0 })
-        const frame = await session.decodeBoundedHq(options, signal)
+        // The pin is resolved on this side; the runtime request only carries
+        // the decode bound.
+        const frame = await session.decodeBoundedHq({ maxOutputPixels }, signal)
         onProgress?.({ phase: 'complete', progress: 100 })
-        return frameToDecodedImage(frame)
+        return frameToDecodedImage(frame, { pinnedExposure })
       } catch (error) {
         throw normalizeRawAdapterError(error, 'RAW_BOUNDED_HQ_DECODE_FAILED')
       }
