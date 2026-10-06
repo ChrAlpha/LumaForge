@@ -3,6 +3,7 @@ import type {
   PreviewHistogramState,
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_SELECTIVE_COLOR } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -60,7 +61,7 @@ function createImage(
   }
 }
 
-function createLutData(): LUTData {
+function createLutData(profileId = 'test-vlog'): LUTData {
   return {
     size: 2,
     data: new Float32Array([
@@ -73,7 +74,7 @@ function createLutData(): LUTData {
       kind: 'confirmed',
       confidence: 'metadata',
       profile: {
-        id: 'test-vlog',
+        id: profileId,
         label: 'Test V-Log',
         role: 'scene-creative',
         inputGamut: 'prophoto-rgb',
@@ -674,6 +675,117 @@ describe('usePreviewHistogram', () => {
       params: { ...defaultParams, styleKind: 'custom' },
       lutDataRef,
       lutDataVersion: 1,
+      displaySource: 'quick',
+    })
+
+    expect(result.current).toEqual({ state: 'stale', previous })
+    await runAllWork()
+    expect(result.current.state).toBe('ready')
+    expect(result.current).not.toBe(previous)
+  })
+
+  it('does not recompute when only the view mode changes', async () => {
+    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+      image: createImage('quick'),
+    })
+
+    await runAllWork()
+    const ready = result.current
+    expect(ready.state).toBe('ready')
+
+    rerender({
+      imageRef,
+      imageVersion: 1,
+      params: { ...defaultParams, viewMode: 'original' },
+      lutDataRef,
+      lutDataVersion: 0,
+      displaySource: 'quick',
+    })
+
+    expect(result.current).toBe(ready)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('does not recompute for an equal HSL record rebuilt upstream', async () => {
+    const hsl = () => ({
+      ...NEUTRAL_SELECTIVE_COLOR,
+      red: { hue: 12, saturation: -8, lightness: 4 },
+    })
+    const params = { ...defaultParams, selectiveColor: hsl() }
+    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+      image: createImage('quick'),
+      params,
+    })
+
+    await runAllWork()
+    const ready = result.current
+    expect(ready.state).toBe('ready')
+
+    rerender({
+      imageRef,
+      imageVersion: 1,
+      params: { ...params, selectiveColor: hsl() },
+      lutDataRef,
+      lutDataVersion: 0,
+      displaySource: 'quick',
+    })
+
+    expect(result.current).toBe(ready)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('recomputes for a look strength between the detents', async () => {
+    const lutData = createLutData()
+    const params = { ...defaultParams, styleKind: 'custom' as const }
+    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+      image: createImage('quick'),
+      params,
+      lutData,
+      lutDataVersion: 1,
+    })
+
+    await runAllWork()
+    const previous = result.current
+    expect(previous.state).toBe('ready')
+
+    rerender({
+      imageRef,
+      imageVersion: 1,
+      params: { ...params, intensity: 0.37 },
+      lutDataRef,
+      lutDataVersion: 1,
+      displaySource: 'quick',
+    })
+
+    expect(result.current).toEqual({ state: 'stale', previous })
+    await runAllWork()
+    expect(result.current.state).toBe('ready')
+    expect(result.current).not.toBe(previous)
+  })
+
+  it('recomputes when the same LUT bytes take another contract', async () => {
+    const lutData = createLutData()
+    const params = { ...defaultParams, styleKind: 'custom' as const }
+    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+      image: createImage('quick'),
+      params,
+      lutData,
+      lutDataVersion: 1,
+    })
+
+    await runAllWork()
+    const previous = result.current
+    expect(previous.state).toBe('ready')
+
+    const recontracted = createLutData('test-vlog-other')
+    expect(recontracted.data).toEqual(lutData.data)
+    lutDataRef.current = recontracted
+    rerender({
+      imageRef,
+      imageVersion: 1,
+      params,
+      lutDataRef,
+      lutDataVersion: 2,
       displaySource: 'quick',
     })
 

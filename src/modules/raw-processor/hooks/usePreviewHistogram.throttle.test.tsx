@@ -21,6 +21,8 @@ import {
 const tracker = vi.hoisted(() => ({
   created: [] as { id: number; finished: boolean }[],
   interleaved: false,
+  // Every color graph the hook resolved, by the user exposure it was for.
+  graphs: [] as (number | undefined)[],
 }))
 
 vi.mock('@lumaforge/luma-color-runtime', async (importOriginal) => {
@@ -28,6 +30,12 @@ vi.mock('@lumaforge/luma-color-runtime', async (importOriginal) => {
     await importOriginal<typeof import('@lumaforge/luma-color-runtime')>()
   return {
     ...actual,
+    resolveExportColorGraph: (
+      input: Parameters<typeof actual.resolveExportColorGraph>[0],
+    ) => {
+      tracker.graphs.push(input.userExposureEv)
+      return actual.resolveExportColorGraph(input)
+    },
     createPreviewHistogramProcessor: (
       input: Parameters<typeof actual.createPreviewHistogramProcessor>[0],
     ) => {
@@ -91,10 +99,13 @@ function largeImage(): DecodedImage {
   }
 }
 
-function setup(image: DecodedImage = largeImage()) {
+function setup(image: DecodedImage = largeImage(), shown = true) {
   const imageRef = { current: image as DecodedImage | null }
   const lutDataRef = { current: null }
-  const props = (exposure: number) => ({
+  let enabled = shown
+  let exposure = 0
+  const props = () => ({
+    enabled,
     imageRef,
     imageVersion: 1,
     params: { ...baseParams, userExposureEv: exposure },
@@ -104,11 +115,18 @@ function setup(image: DecodedImage = largeImage()) {
   })
   const hook = renderHook(
     (current: ReturnType<typeof props>) => usePreviewHistogram(current),
-    { initialProps: props(0) },
+    { initialProps: props() },
   )
   return {
     result: hook.result,
-    setExposure: (exposure: number) => hook.rerender(props(exposure)),
+    setExposure: (next: number) => {
+      exposure = next
+      hook.rerender(props())
+    },
+    setShown: (next: boolean) => {
+      enabled = next
+      hook.rerender(props())
+    },
     unmount: hook.unmount,
   }
 }
@@ -143,6 +161,7 @@ describe('usePreviewHistogram throttle', () => {
     vi.useFakeTimers()
     tracker.created.length = 0
     tracker.interleaved = false
+    tracker.graphs.length = 0
   })
 
   afterEach(() => {
@@ -302,5 +321,57 @@ describe('usePreviewHistogram throttle', () => {
     const created = tracker.created.length
     await advance(HISTOGRAM_THROTTLE_MS * 2)
     expect(tracker.created.length).toBe(created)
+  })
+
+  it('resolves no graph and schedules nothing while no surface shows it', async () => {
+    const { result, setExposure } = setup(largeImage(), false)
+    for (let frame = 1; frame <= 12; frame += 1) {
+      setExposure(frame / 10)
+      await advance(16)
+    }
+    await advance(HISTOGRAM_THROTTLE_MS + HISTOGRAM_SETTLE_MS)
+
+    expect(result.current.state).toBe('unsupported')
+    expect(tracker.graphs).toHaveLength(0)
+    expect(tracker.created).toHaveLength(0)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('clears every queued run and refinement once it is hidden mid-scrub', async () => {
+    const { result, setExposure, setShown } = setup()
+    await settleFirstRun(result)
+    // A scrub run lands and queues its refinement, then a change inside the
+    // interval queues a trailing run.
+    await advance(HISTOGRAM_THROTTLE_MS)
+    setExposure(0.5)
+    await advance(2)
+    setExposure(0.6)
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+    const created = tracker.created.length
+
+    setShown(false)
+    expect(vi.getTimerCount()).toBe(0)
+    await advance(HISTOGRAM_THROTTLE_MS + HISTOGRAM_SETTLE_MS)
+    expect(tracker.created).toHaveLength(created)
+    expect(result.current.state).toBe('unsupported')
+  })
+
+  it('computes the latest params once when it is shown again', async () => {
+    const { result, setExposure, setShown } = setup()
+    await settleFirstRun(result)
+    setShown(false)
+    setExposure(0.3)
+    setExposure(0.6)
+    await advance(HISTOGRAM_THROTTLE_MS)
+    const graphs = tracker.graphs.length
+    const created = tracker.created.length
+
+    setShown(true)
+    expect(tracker.graphs.slice(graphs)).toEqual([0.6])
+    expect(result.current).toEqual({ state: 'computing', previous: null })
+    const ready = await settleFirstRun(result)
+    // A full run: the bins it shows are at the full budget.
+    expect(ready.sampledPixels).toBeGreaterThan(SCRUB_HISTOGRAM_SAMPLED_PIXELS)
+    expect(tracker.created).toHaveLength(created + 1)
   })
 })

@@ -1,4 +1,5 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import type {
   CpuPreviewFrame,
   CpuPreviewVariant,
@@ -49,26 +50,13 @@ export function RawCpuPreviewStage({
     image,
     imageVersion,
     params: {
-      styleKind: params.styleKind,
-      intensity: params.intensity,
-      builtinPreset: params.builtinPreset,
+      ...pickColorGraphIntent(params),
       lut,
       rawRenderExposure: image?.renderExposure ?? {
         ev: 0,
         multiplier: 1,
         source: 'identity',
       },
-      userExposureEv: params.userExposureEv,
-      userContrast: params.userContrast,
-      userHighlights: params.userHighlights,
-      userShadows: params.userShadows,
-      userWhites: params.userWhites,
-      userBlacks: params.userBlacks,
-      userTemperature: params.userTemperature,
-      userTint: params.userTint,
-      userSaturation: params.userSaturation,
-      userVibrance: params.userVibrance,
-      selectiveColor: params.selectiveColor,
     },
     variant: transformActive ? 'processed' : variant,
   })

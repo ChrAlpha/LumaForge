@@ -398,8 +398,13 @@ describe('useCpuPreview original / processed toggle', () => {
     }
     const show = (variant: 'processed' | 'neutral') =>
       hook.rerender(props(variant))
+    const edit = (
+      variant: 'processed' | 'neutral',
+      params: Partial<CpuPreviewParams>,
+    ) =>
+      hook.rerender({ ...props(variant), params: { ...baseParams, ...params } })
 
-    return { result: hook.result, renders, answer, show }
+    return { result: hook.result, renders, answer, show, edit }
   }
 
   it('shows the processed frame again after a cached original', () => {
@@ -470,6 +475,41 @@ describe('useCpuPreview original / processed toggle', () => {
     show('neutral')
     expect(renders()).toHaveLength(rendersBeforeReturn + 1)
     expect(result.current.frame?.rgba[0]).toBe(40)
+  })
+
+  it('keeps the cached original through look and tone edits', () => {
+    const { result, renders, answer, show, edit } = mountToggle()
+
+    answer(200)
+    show('neutral')
+    answer(40)
+    show('processed')
+    answer(200)
+    show('neutral')
+    const rendersWithCachedOriginal = renders().length
+
+    edit('neutral', { userContrast: 60, intensity: 0.37 })
+    edit('neutral', { userTemperature: -50 })
+    expect(renders()).toHaveLength(rendersWithCachedOriginal)
+    expect(result.current.frame?.rgba[0]).toBe(40)
+  })
+
+  it('does not ask for a second original when the look moves while the first renders', () => {
+    const { result, renders, answer, show, edit } = mountToggle()
+
+    answer(200)
+    show('neutral')
+    const original = renders().at(-1)!
+    expect(original.variant).toBe('neutral')
+
+    // The original carries none of the look, so editing it changes nothing
+    // the pending render would draw.
+    edit('neutral', { userContrast: 60, intensity: 0.37 })
+    expect(renders()).toHaveLength(2)
+    answer(40, original)
+    expect(renders()).toHaveLength(2)
+    expect(result.current.frame?.rgba[0]).toBe(40)
+    expect(result.current.inFlight).toBe(false)
   })
 
   it('caches an original only from a render requested as the original', () => {
@@ -674,6 +714,76 @@ describe('useCpuPreview look degradation (LUT-before-RAW)', () => {
     )
     expect(result.current.inFlight).toBe(true)
     expect(result.current.failureReason).toBeNull()
+  })
+
+  function answerLatest(worker: FakeWorker) {
+    const render = worker.posted.filter((m) => m.type === 'render').at(-1)!
+    act(() => {
+      worker.respond({
+        type: 'rendered',
+        sourceId: render.sourceId,
+        requestId: render.requestId,
+        rgba: new Uint8ClampedArray(2 * 2 * 4),
+        width: 2,
+        height: 2,
+      })
+    })
+  }
+
+  it('renders again for a look strength between the detents', () => {
+    const { rerender } = renderLutFirstHook(confirmedLut)
+    const worker = FakeWorker.instances[0]!
+    answerLatest(worker)
+
+    rerender({
+      enabled: true,
+      image: makeDecodedImage('quick'),
+      imageVersion: 1,
+      params: { ...baseParams, lut: confirmedLut, intensity: 0.37 },
+      variant: 'processed' as const,
+    })
+
+    const renders = worker.posted.filter((m) => m.type === 'render')
+    expect(renders).toHaveLength(2)
+    expect(renders.at(-1)?.graph).toEqual(
+      buildCpuPreviewGraph(
+        { ...baseParams, lut: confirmedLut, intensity: 0.37 },
+        'processed',
+      ),
+    )
+    expect(renders.at(-1)?.graph).not.toEqual(renders[0]?.graph)
+  })
+
+  it('renders again when the same LUT bytes take another contract', () => {
+    const { rerender } = renderLutFirstHook(confirmedLut)
+    const worker = FakeWorker.instances[0]!
+    answerLatest(worker)
+
+    const recontracted: LUTData = {
+      ...confirmedLut,
+      profileResolution: {
+        kind: 'confirmed',
+        profile: {
+          ...confirmedProfile,
+          id: 'test-scene-look',
+          role: 'scene-creative',
+          inputGamut: 'prophoto-rgb',
+          inputTransfer: 'linear',
+        },
+        confidence: 'user',
+      },
+    }
+    rerender({
+      enabled: true,
+      image: makeDecodedImage('quick'),
+      imageVersion: 1,
+      params: { ...baseParams, lut: recontracted },
+      variant: 'processed' as const,
+    })
+
+    const renders = worker.posted.filter((m) => m.type === 'render')
+    expect(renders).toHaveLength(2)
+    expect(renders.at(-1)?.graph.lutProfile?.id).toBe('test-scene-look')
   })
 })
 

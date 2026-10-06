@@ -1,11 +1,15 @@
 import type {
-  LumaColorSelectiveColorParams,
+  ColorGraphIntentSource,
+  LookSelection,
   LUTData,
-  ProcessingParams,
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
-import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import {
+  colorGraphIntentSignature,
+  NEUTRAL_USER_COLOR_INTENT,
+  resolveExportColorGraph,
+} from '@lumaforge/luma-color-runtime'
 import type {
   CpuPreviewFailureReason,
   CpuPreviewFrame,
@@ -22,23 +26,10 @@ import { createCpuRecoverySource } from '../services/preview/cpu-recovery-source
 // Public param type
 // ---------------------------------------------------------------------------
 
-export type CpuPreviewParams = {
-  styleKind: ProcessingParams['styleKind']
-  intensity: number
-  builtinPreset: ProcessingParams['builtinPreset']
+/** The color intent plus what the CPU graph needs besides it. */
+export type CpuPreviewParams = ColorGraphIntentSource & {
   lut: LUTData | null
   rawRenderExposure: RawRenderExposure
-  userExposureEv: number
-  userContrast: number
-  userHighlights: number
-  userShadows: number
-  userWhites: number
-  userBlacks: number
-  userTemperature: number
-  userTint: number
-  userSaturation: number
-  userVibrance: number
-  selectiveColor?: LumaColorSelectiveColorParams['selectiveColor']
 }
 
 // ---------------------------------------------------------------------------
@@ -56,41 +47,45 @@ export function neutralFrameCacheKey(
   return `${sourceId}:${renderExposureEv}`
 }
 
+const NO_LOOK: LookSelection = Object.freeze({
+  styleKind: 'none',
+  builtinPreset: null,
+  intensity: 0,
+})
+
 /**
- * Build a colour graph for the CPU preview worker.
+ * The graph input a variant renders.
  *
- * - 'processed': uses all params as-is.
- * - 'neutral': zeros every look + tone field (mirrors ORIGINAL_LAYER_PARAMS
- *   in OriginalGpuLayer.tsx) but keeps rawRenderExposure so the intrinsic
+ * - 'processed': all params as-is.
+ * - 'neutral': no look and neutral user color (mirrors ORIGINAL_LAYER_PARAMS
+ *   in OriginalGpuLayer.tsx), keeping rawRenderExposure so the intrinsic
  *   camera exposure is preserved.
  */
+function cpuPreviewGraphInput(
+  params: CpuPreviewParams,
+  variant: CpuPreviewVariant,
+): CpuPreviewParams {
+  return variant === 'neutral'
+    ? {
+        ...NO_LOOK,
+        ...NEUTRAL_USER_COLOR_INTENT,
+        lut: null,
+        rawRenderExposure: params.rawRenderExposure,
+      }
+    : params
+}
+
+/** The params with the look stripped and the user color kept. */
+function withoutLook(params: CpuPreviewParams): CpuPreviewParams {
+  return { ...params, ...NO_LOOK, lut: null }
+}
+
+/** Build a colour graph for the CPU preview worker. */
 export function buildCpuPreviewGraph(
   params: CpuPreviewParams,
   variant: CpuPreviewVariant,
 ): SupportedExportColorGraphDescriptor | { unsupportedReason: string } {
-  const input =
-    variant === 'neutral'
-      ? {
-          styleKind: 'none' as const,
-          intensity: 0,
-          builtinPreset: null,
-          lut: null,
-          rawRenderExposure: params.rawRenderExposure,
-          userExposureEv: 0,
-          userContrast: 0,
-          userHighlights: 0,
-          userShadows: 0,
-          userWhites: 0,
-          userBlacks: 0,
-          userTemperature: 0,
-          userTint: 0,
-          userSaturation: 0,
-          userVibrance: 0,
-          selectiveColor: undefined,
-        }
-      : params
-
-  const graph = resolveExportColorGraph(input)
+  const graph = resolveExportColorGraph(cpuPreviewGraphInput(params, variant))
 
   if (!graph.supported) {
     return { unsupportedReason: graph.reason }
@@ -287,14 +282,13 @@ export function useCpuPreview({
     // a look-stripped graph that keeps user tone/colour — parity with the GPU
     // preview, which renders with the LUT disabled instead of blanking. The
     // authoritative export path stays fail-closed in resolveExportColorGraph.
-    let graph = buildCpuPreviewGraph(params, variant)
+    let input = params
+    let graph = buildCpuPreviewGraph(input, variant)
     let lookDegraded = false
     if ('unsupportedReason' in graph) {
       lookDegraded = true
-      graph = buildCpuPreviewGraph(
-        { ...params, styleKind: 'none', builtinPreset: null, lut: null },
-        variant,
-      )
+      input = withoutLook(params)
+      graph = buildCpuPreviewGraph(input, variant)
     }
     if ('unsupportedReason' in graph) {
       // Even the look-stripped graph is unsupported — surface a real failure
@@ -305,19 +299,20 @@ export function useCpuPreview({
       return
     }
 
-    // Key the dedup signature on the EFFECTIVE look inputs so unconfirmed LUT
-    // identity churn does not re-request identical degraded renders.
-    const effectiveStyleKind = lookDegraded ? 'none' : params.styleKind
-    const effectiveIntensity = lookDegraded ? 0 : params.intensity
-    const effectiveBuiltinPreset = lookDegraded
-      ? ''
-      : (params.builtinPreset ?? '')
-    const effectiveLut = lookDegraded ? null : params.lut
-    const selectiveColorSig =
-      variant === 'neutral' || !params.selectiveColor
-        ? ''
-        : JSON.stringify(params.selectiveColor)
-    const renderSig = `${sourceId}|${variant}|${lookDegraded ? 'degraded' : 'full'}|${effectiveStyleKind}|${effectiveIntensity}|${effectiveBuiltinPreset}|${params.rawRenderExposure.ev}|${params.rawRenderExposure.multiplier}|${params.userExposureEv}|${params.userContrast}|${params.userHighlights}|${params.userShadows}|${params.userWhites}|${params.userBlacks}|${params.userTemperature}|${params.userTint}|${params.userSaturation}|${params.userVibrance}|${selectiveColorSig}`
+    // Key the dedup signature on the EFFECTIVE graph input, so unconfirmed
+    // LUT identity churn does not re-request identical degraded renders and
+    // edits the original does not draw do not re-request it. The LUT is
+    // compared by identity: a new contract on the same bytes is a new LUT.
+    const effective = cpuPreviewGraphInput(input, variant)
+    const effectiveLut = effective.lut
+    const renderSig = [
+      sourceId,
+      variant,
+      lookDegraded ? 'degraded' : 'full',
+      effective.rawRenderExposure.ev,
+      effective.rawRenderExposure.multiplier,
+      colorGraphIntentSignature(effective),
+    ].join('|')
     const prevKey = lastRenderKeyRef.current
     if (prevKey && prevKey.sig === renderSig && prevKey.lut === effectiveLut) {
       return

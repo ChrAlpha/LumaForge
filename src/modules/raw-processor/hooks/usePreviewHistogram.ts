@@ -1,11 +1,14 @@
 import type {
+  ColorGraphIntent,
   LUTData,
   PreviewHistogramState,
   ProcessingParams,
   ReadyPreviewHistogram,
 } from '@lumaforge/luma-color-runtime'
 import {
+  colorGraphIntentSignature,
   createPreviewHistogramProcessor,
+  pickColorGraphIntent,
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 import type { RefObject } from 'react'
@@ -59,6 +62,11 @@ type PreviewHistogramInput = {
   displaySource: DisplaySource
 }
 
+/** What a job reads: the color intent, never the view. */
+type HistogramJobInput = Omit<PreviewHistogramInput, 'params'> & {
+  intent: ColorGraphIntent
+}
+
 type ValidHistogramImage = DecodedImage & {
   data: Uint16Array
   source: 'quick' | 'bounded-hq'
@@ -79,6 +87,12 @@ type HistogramJob =
     }
 
 type ComputeHistogramJob = Extract<HistogramJob, { kind: 'compute' }>
+
+const HISTOGRAM_OFF_JOB: HistogramJob = Object.freeze({
+  kind: 'unsupported',
+  key: 'off',
+  state: Object.freeze({ state: 'unsupported', reason: HISTOGRAM_OFF_REASON }),
+})
 
 function getPreviousReady(
   state: PreviewHistogramState,
@@ -106,36 +120,15 @@ function createHistogramJob({
   imageRef,
   imageVersion,
   imageIdentity = 'unscoped-preview',
-  params,
+  intent,
   lutDataRef,
   lutDataVersion,
   displaySource,
-}: PreviewHistogramInput): HistogramJob {
-  if (!enabled) {
-    return {
-      kind: 'unsupported',
-      key: 'off',
-      state: { state: 'unsupported', reason: HISTOGRAM_OFF_REASON },
-    }
-  }
+}: HistogramJobInput): HistogramJob {
+  if (!enabled) return HISTOGRAM_OFF_JOB
   const image = imageRef.current
   const imageIdentityKey = imageIdentity
-  const toneKey = [
-    params.styleKind,
-    params.intensity,
-    params.builtinPreset ?? '',
-    params.userExposureEv ?? 0,
-    params.userContrast ?? 0,
-    params.userHighlights ?? 0,
-    params.userShadows ?? 0,
-    params.userWhites ?? 0,
-    params.userBlacks ?? 0,
-    params.userTemperature ?? 0,
-    params.userTint ?? 0,
-    params.userSaturation ?? 0,
-    params.userVibrance ?? 0,
-    params.selectiveColor ? JSON.stringify(params.selectiveColor) : '',
-  ].join(':')
+  const toneKey = colorGraphIntentSignature(intent)
 
   if (!image) {
     const reason = displaySource === 'embedded' ? 'embedded-only' : 'no-image'
@@ -183,22 +176,9 @@ function createHistogramJob({
   }
 
   const graph = resolveExportColorGraph({
-    styleKind: params.styleKind,
-    intensity: params.intensity,
-    builtinPreset: params.builtinPreset,
+    ...intent,
     lut: lutDataRef.current,
     rawRenderExposure: image.renderExposure,
-    userExposureEv: params.userExposureEv,
-    userContrast: params.userContrast,
-    userHighlights: params.userHighlights,
-    userShadows: params.userShadows,
-    userWhites: params.userWhites,
-    userBlacks: params.userBlacks,
-    userTemperature: params.userTemperature,
-    userTint: params.userTint,
-    userSaturation: params.userSaturation,
-    userVibrance: params.userVibrance,
-    selectiveColor: params.selectiveColor,
   })
 
   if (!graph.supported) {
@@ -290,57 +270,13 @@ export function usePreviewHistogram(
     lutDataVersion,
     displaySource,
   } = input
-  const {
-    styleKind,
-    intensity,
-    builtinPreset,
-    userExposureEv,
-    userContrast,
-    userHighlights,
-    userShadows,
-    userWhites,
-    userBlacks,
-    userTemperature,
-    userTint,
-    userSaturation,
-    userVibrance,
-    selectiveColor,
-  } = params
-  const histogramParams = useMemo<ProcessingParams>(
-    () => ({
-      styleKind,
-      intensity,
-      builtinPreset,
-      userExposureEv,
-      userContrast,
-      userHighlights,
-      userShadows,
-      userWhites,
-      userBlacks,
-      userTemperature,
-      userTint,
-      userSaturation,
-      userVibrance,
-      selectiveColor,
-      viewMode: 'processed',
-      compareSplit: 0.5,
-    }),
-    [
-      builtinPreset,
-      intensity,
-      selectiveColor,
-      styleKind,
-      userBlacks,
-      userContrast,
-      userExposureEv,
-      userHighlights,
-      userShadows,
-      userTemperature,
-      userTint,
-      userSaturation,
-      userVibrance,
-      userWhites,
-    ],
+  // The histogram reads the color intent only: a view change (view mode,
+  // compare split) or an equal intent rebuilt upstream keeps the same job.
+  const intentSignature = colorGraphIntentSignature(params)
+  const intent = useMemo(
+    () => pickColorGraphIntent(params),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [intentSignature],
   )
   const job = useMemo(
     () =>
@@ -349,7 +285,7 @@ export function usePreviewHistogram(
         imageRef,
         imageIdentity,
         imageVersion,
-        params: histogramParams,
+        intent,
         lutDataRef,
         lutDataVersion,
         displaySource,
@@ -357,7 +293,7 @@ export function usePreviewHistogram(
     [
       displaySource,
       enabled,
-      histogramParams,
+      intent,
       imageRef,
       imageIdentity,
       imageVersion,
