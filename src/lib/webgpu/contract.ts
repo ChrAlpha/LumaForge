@@ -3,7 +3,11 @@
  * app. Nothing here touches a graphics API.
  */
 
-import type { LUTRole, TransferFunctionId } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  LUTRole,
+  TransferFunctionId,
+} from '@lumaforge/luma-color-runtime'
 
 export type {
   BuiltinStylePreset,
@@ -12,6 +16,19 @@ export type {
   LUTInputProfile,
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
+
+/**
+ * What the GPU executor draws. `technical-original` is the RAW render with
+ * its exposure and none of the user's color; selecting it never rewrites the
+ * color intent.
+ */
+export type GpuPreviewOutput = 'processed' | 'technical-original'
+
+/** GPU executor input: the strict color intent and the output to draw. */
+export interface GpuPreviewInput {
+  readonly color: ColorGraphIntent
+  readonly output: GpuPreviewOutput
+}
 
 export interface PreviewGpuCapabilities {
   maxTextureSize: number

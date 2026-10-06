@@ -1,4 +1,7 @@
-import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntentSource,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
 import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
 
 import type {
@@ -24,7 +27,7 @@ export function webGPUCapabilities(
 }
 
 export function webGPUTelemetry(
-  params: ProcessingParams,
+  params: ColorGraphIntentSource,
   lut: LUTData | null,
   input: RawUploadInput | null,
 ): PipelineTelemetrySnapshot {

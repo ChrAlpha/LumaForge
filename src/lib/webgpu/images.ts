@@ -1,4 +1,7 @@
-import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntentSource,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
 import {
   LUT_SIZE,
   normalizeSelectiveColorParams,
@@ -221,7 +224,7 @@ export class WebGPUImages {
     })
   }
 
-  updateSelectiveColor(bands: ProcessingParams['selectiveColor']) {
+  updateSelectiveColor(bands: ColorGraphIntentSource['selectiveColor']) {
     const normalized = normalizeSelectiveColorParams({ selectiveColor: bands })
     const signature = JSON.stringify(normalized)
     if (signature === this.selectiveSignature) return

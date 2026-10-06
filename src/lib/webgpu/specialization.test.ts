@@ -35,19 +35,18 @@ describe('shader specialization features', () => {
       },
       null,
     )
-    const b = getShaderSpecialization(
-      {
-        ...DEFAULT_PARAMS,
-        styleKind: 'builtin',
-        builtinPreset: 'warm',
-        userExposureEv: 2,
-        userContrast: 50,
-        userSaturation: -90,
-        intensity: 0.2,
-        viewMode: 'original',
-      },
-      lut(),
-    )
+    // Legacy params still carry view fields; they never reach the key.
+    const withView: ProcessingParams = {
+      ...DEFAULT_PARAMS,
+      styleKind: 'builtin',
+      builtinPreset: 'warm',
+      userExposureEv: 2,
+      userContrast: 50,
+      userSaturation: -90,
+      intensity: 0.2,
+      viewMode: 'original',
+    }
+    const b = getShaderSpecialization(withView, lut())
     expect(getShaderSpecializationKey(a)).toBe(getShaderSpecializationKey(b))
     expect(
       getShaderSpecializationKey(

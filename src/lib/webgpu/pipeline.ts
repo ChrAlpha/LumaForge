@@ -1,4 +1,5 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 
 import { GPUReadbackJobs } from './async-resources'
 import type {
@@ -366,7 +367,7 @@ export class WebGPUProcessingPipeline {
         device,
         programs: this.programs,
         images,
-        params: this.params,
+        color: pickColorGraphIntent(this.params),
         exposure: this.exposure(),
         width,
         height,

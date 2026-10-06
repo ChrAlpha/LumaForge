@@ -6,10 +6,12 @@ import type {
 import {
   CHROMA_CLAMP_HIGH,
   CHROMA_CLAMP_LOW,
+  pickColorGraphIntent,
   resolveColorBalanceParams,
   resolveToneParams,
 } from '@lumaforge/luma-color-runtime'
 
+import type { GpuPreviewInput } from './contract'
 import {
   isLUTProfileRenderable,
   resolveLUTPipelineProfileUniforms,
@@ -21,6 +23,7 @@ import {
   writeUniformVec2f,
   writeUniformVec3f,
 } from './uniform-layout'
+
 export const DEFAULT_PARAMS: ProcessingParams = {
   intensity: 0.7,
   viewMode: 'compare',
@@ -37,6 +40,50 @@ export const DEFAULT_PARAMS: ProcessingParams = {
   userTint: 0,
   userSaturation: 0,
   userVibrance: 0,
+}
+
+export const DEFAULT_GPU_PREVIEW_INPUT: GpuPreviewInput = Object.freeze({
+  color: Object.freeze(pickColorGraphIntent(DEFAULT_PARAMS)),
+  output: 'processed',
+})
+
+const OUTPUT_VIEW_MODES: Record<
+  GpuPreviewInput['output'],
+  Exclude<ProcessingParams['viewMode'], 'compare'>
+> = {
+  processed: 'processed',
+  'technical-original': 'original',
+}
+
+/**
+ * The uniform-level params for a preview input. The output selects the shader
+ * branch; the color intent passes through unchanged and never turns on the
+ * shader compare.
+ */
+export function gpuPreviewInputParams(
+  input: GpuPreviewInput,
+): ProcessingParams {
+  return {
+    ...input.color,
+    viewMode: OUTPUT_VIEW_MODES[input.output],
+    compareSplit: 0.5,
+  }
+}
+
+export function packGpuPreviewUniforms(
+  v: DataView,
+  input: GpuPreviewInput,
+  lut: LUTData | null,
+  rawRenderExposureMultiplier: number,
+  selectiveColorActive: boolean,
+): void {
+  packUniforms(
+    v,
+    gpuPreviewInputParams(input),
+    lut,
+    rawRenderExposureMultiplier,
+    selectiveColorActive,
+  )
 }
 
 const VIEW_MODE_UNIFORMS: Record<ProcessingParams['viewMode'], number> = {

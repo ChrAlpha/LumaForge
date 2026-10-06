@@ -1,4 +1,4 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { LUT_SIZE } from '@lumaforge/luma-color-runtime'
 
 import type { GPUReadbackScope } from './async-resources'
@@ -12,7 +12,7 @@ import {
 import { WebGPUImages } from './images'
 import type { WebGPUPrograms } from './programs'
 import { UNIFORM_BUFFER_SIZE } from './uniform-layout'
-import { packUniforms } from './uniforms'
+import { gpuPreviewInputParams, packUniforms } from './uniforms'
 
 export function planSnapshotRender({
   width,
@@ -82,7 +82,8 @@ interface SnapshotInput {
   device: GPUDevice
   programs: WebGPUPrograms
   images: WebGPUImages
-  params: ProcessingParams
+  /** The look the export reproduces; the snapshot always draws it processed. */
+  color: ColorGraphIntent
   exposure: number
   width: number
   height: number
@@ -119,11 +120,10 @@ export async function renderSnapshot(
   canvas.height = height
   const context = canvas.getContext('2d')
   if (!context) throw new Error('EXPORT_CANVAS_CONTEXT_MISSING')
-  const params = {
-    ...structuredClone(input.params),
-    viewMode: 'processed' as const,
-    compareSplit: 0.5,
-  }
+  const params = gpuPreviewInputParams({
+    color: structuredClone(input.color),
+    output: 'processed',
+  })
   const uniform = scope.track(
     device.createBuffer({
       label: 'raw-snapshot-uniforms',
