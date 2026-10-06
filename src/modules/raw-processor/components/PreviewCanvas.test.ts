@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ComponentProps, RefObject } from 'react'
 import { createElement } from 'react'
@@ -155,6 +156,8 @@ const defaultParams: ProcessingParams = {
   builtinPreset: null,
 }
 
+const defaultColor = pickColorGraphIntent(defaultParams)
+
 const previewCanvasCss = readFileSync(
   resolve(
     process.cwd(),
@@ -226,7 +229,8 @@ function renderInteractivePreview({
     createElement(PreviewCanvas, {
       imageRef: { current: decodedImage },
       imageVersion: 1,
-      params: defaultParams,
+      color: defaultColor,
+      viewMode: 'processed' as const,
       lutDataRef: { current: null },
       lutDataVersion: 0,
       previewViewport,
@@ -293,7 +297,8 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef,
       imageVersion: 1,
-      params: defaultParams,
+      color: defaultColor,
+      viewMode: 'processed' as const,
       lutDataRef: { current: null },
       lutDataVersion: 0,
       onStatsUpdate,
@@ -322,7 +327,8 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
-      params: defaultParams,
+      color: defaultColor,
+      viewMode: 'processed' as const,
       lutDataRef: { current: null },
       lutDataVersion: 0,
       onStatsUpdate,
@@ -333,7 +339,8 @@ describe('preview canvas upload descriptor', () => {
       rerender(
         createElement(PreviewCanvas, {
           ...props,
-          params: { ...defaultParams, userExposureEv },
+          color: { ...defaultColor, userExposureEv },
+          viewMode: 'processed' as const,
         }),
       )
     }
@@ -348,7 +355,8 @@ describe('preview canvas upload descriptor', () => {
     rerender(
       createElement(PreviewCanvas, {
         ...props,
-        params: { ...defaultParams, userExposureEv: 0.4 },
+        color: { ...defaultColor, userExposureEv: 0.4 },
+        viewMode: 'processed' as const,
       }),
     )
 
@@ -363,7 +371,8 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef,
       imageVersion: 1,
-      params: defaultParams,
+      color: defaultColor,
+      viewMode: 'processed' as const,
       lutDataRef: { current: null },
       lutDataVersion: 0,
       onStatsUpdate,
@@ -380,7 +389,8 @@ describe('preview canvas upload descriptor', () => {
     rerender(
       createElement(PreviewCanvas, {
         ...props,
-        params: { ...defaultParams, userExposureEv: 0.5 },
+        color: { ...defaultColor, userExposureEv: 0.5 },
+        viewMode: 'processed' as const,
       }),
     )
 
@@ -398,13 +408,92 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           ...props,
           imageVersion: 2,
-          params: { ...defaultParams, userExposureEv: 0.5 },
+          color: { ...defaultColor, userExposureEv: 0.5 },
+          viewMode: 'processed' as const,
         }),
       )
     })
 
     expect(pipeline.render).toHaveBeenCalledOnce()
     expect(onStatsUpdate).toHaveBeenCalledOnce()
+  })
+
+  it('draws the processed surface from the color intent and the explicit view alone', async () => {
+    const color = pickColorGraphIntent({
+      ...defaultParams,
+      userExposureEv: 0.5,
+    })
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      // A record that still carries view fields must not steer the surface.
+      color: { ...color, viewMode: 'compare', compareSplit: 0.8 } as never,
+      viewMode: 'original' as const,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+    }
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() =>
+      expect(pipelineMock.instances[0]?.render).toHaveBeenCalled(),
+    )
+    const pipeline = pipelineMock.instances[0]!
+    expect(pipeline.setParams).toHaveBeenLastCalledWith({
+      ...color,
+      viewMode: 'original',
+      compareSplit: 0.5,
+    })
+
+    rerender(createElement(PreviewCanvas, { ...props, viewMode: 'compare' }))
+    // Compare draws the processed photo; the stage layers the original over it.
+    expect(pipeline.setParams).toHaveBeenLastCalledWith({
+      ...color,
+      viewMode: 'processed',
+      compareSplit: 0.5,
+    })
+  })
+
+  it('keeps the processed surface still across view-only changes', async () => {
+    const color = pickColorGraphIntent(defaultParams)
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      color,
+      viewMode: 'compare' as const,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+    }
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() =>
+      expect(pipelineMock.instances[0]?.render).toHaveBeenCalled(),
+    )
+    const pipeline = pipelineMock.instances[0]!
+    pipeline.render.mockClear()
+    pipeline.setParams.mockClear()
+
+    // Compare and processed draw the same processed output.
+    rerender(createElement(PreviewCanvas, { ...props, viewMode: 'processed' }))
+    // An equal intent in a new record is the same color.
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        viewMode: 'processed',
+        color: { ...color },
+      }),
+    )
+    expect(pipeline.render).not.toHaveBeenCalled()
+    expect(pipeline.setParams).not.toHaveBeenCalled()
+
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        viewMode: 'processed',
+        color: { ...color, intensity: 0.37 },
+      }),
+    )
+    expect(pipeline.setParams).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ intensity: 0.37, viewMode: 'processed' }),
+    )
+    expect(pipeline.render).toHaveBeenCalledOnce()
   })
 
   it('redraws once after a LUT-only version change uploads the new LUT', async () => {
@@ -421,7 +510,8 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
-      params: { ...defaultParams, styleKind: 'custom' as const },
+      color: { ...defaultColor, styleKind: 'custom' as const },
+      viewMode: 'processed' as const,
       lutDataRef,
       lutDataVersion: 1,
       onStatsUpdate,
@@ -455,7 +545,8 @@ describe('preview canvas upload descriptor', () => {
       const props = {
         imageRef: { current: decodedImage },
         imageVersion: 1,
-        params: defaultParams,
+        color: defaultColor,
+        viewMode: 'processed' as const,
         lutDataRef: { current: null },
         lutDataVersion: 0,
         onStatsUpdate,
@@ -638,7 +729,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: null },
         imageVersion: 0,
-        params: defaultParams,
+        color: defaultColor,
+        viewMode: 'processed' as const,
         lutDataRef: { current: null },
         lutDataVersion: 0,
       }),
@@ -669,7 +761,8 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
-      params: { ...defaultParams, styleKind: 'custom' as const },
+      color: { ...defaultColor, styleKind: 'custom' as const },
+      viewMode: 'processed' as const,
       lutDataRef,
       lutDataVersion: 1,
       onStatsUpdate,
@@ -735,7 +828,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: image },
         imageVersion: 1,
-        params: defaultParams,
+        color: defaultColor,
+        viewMode: 'processed' as const,
         lutDataRef: { current: null },
         lutDataVersion: 0,
       }),
@@ -761,7 +855,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: null },
         imageVersion: 0,
-        params: defaultParams,
+        color: defaultColor,
+        viewMode: 'processed' as const,
         lutDataRef: { current: null },
         lutDataVersion: 0,
         onPipelineChange,
@@ -807,7 +902,8 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           imageRef: { current: decodedImage },
           imageVersion: 1,
-          params: defaultParams,
+          color: defaultColor,
+          viewMode: 'processed' as const,
           lutDataRef: { current: null },
           lutDataVersion: 0,
           onPipelineChange,
@@ -859,7 +955,8 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: { ...decodedImage, source: 'quick' as const } },
       imageVersion: 1,
-      params: defaultParams,
+      color: defaultColor,
+      viewMode: 'processed' as const,
       lutDataRef: { current: null },
       lutDataVersion: 0,
       embeddedPreviewUrl: 'blob:embedded-preview',
@@ -914,7 +1011,8 @@ describe('preview canvas upload descriptor', () => {
       rerender(
         createElement(PreviewCanvas, {
           ...props,
-          params: { ...defaultParams, userExposureEv: 0.5 },
+          color: { ...defaultColor, userExposureEv: 0.5 },
+          viewMode: 'processed' as const,
         }),
       )
     })
@@ -952,7 +1050,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
-        params: { ...defaultParams, selectiveColor },
+        color: { ...defaultColor, selectiveColor },
+        viewMode: 'processed' as const,
         lutDataRef: { current: null },
         lutDataVersion: 0,
       }),
@@ -971,7 +1070,8 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: null },
       imageVersion: 0,
-      params: defaultParams,
+      color: defaultColor,
+      viewMode: 'processed' as const,
       lutDataRef: { current: null },
       lutDataVersion: 0,
       onPipelineChange,
@@ -1039,10 +1139,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
-        params: {
-          ...defaultParams,
-          viewMode: 'compare',
-        },
+        color: defaultColor,
+        viewMode: 'compare',
         lutDataRef: { current: null },
         lutDataVersion: 0,
         dualGpuAllowed: true,
@@ -1090,10 +1188,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: { ...decodedImage, source: 'quick' } },
         imageVersion: 1,
-        params: {
-          ...defaultParams,
-          viewMode: 'compare',
-        },
+        color: defaultColor,
+        viewMode: 'compare',
         lutDataRef: { current: null },
         lutDataVersion: 0,
         embeddedPreviewUrl: 'blob:embedded-preview',
@@ -1138,7 +1234,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: { ...decodedImage, source: 'quick' } },
         imageVersion: 1,
-        params: defaultParams,
+        color: defaultColor,
+        viewMode: 'processed' as const,
         lutDataRef: { current: null },
         lutDataVersion: 0,
         embeddedPreviewUrl: 'blob:embedded-preview',
@@ -1191,7 +1288,8 @@ describe('preview canvas upload descriptor', () => {
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
       imageVersion: 0,
-      params: defaultParams,
+      color: defaultColor,
+      viewMode: 'processed' as const,
       lutDataRef: { current: null },
       lutDataVersion: 0,
       embeddedPreviewUrl: 'blob:embedded-preview',
@@ -1255,7 +1353,8 @@ describe('preview canvas upload descriptor', () => {
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
       imageVersion: 1,
-      params: defaultParams,
+      color: defaultColor,
+      viewMode: 'processed' as const,
       lutDataRef: { current: null },
       lutDataVersion: 0,
       displaySource: 'quick',
@@ -1314,10 +1413,8 @@ describe('preview canvas upload descriptor', () => {
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
       imageVersion: 1,
-      params: {
-        ...defaultParams,
-        viewMode: 'compare',
-      },
+      color: defaultColor,
+      viewMode: 'compare',
       lutDataRef: { current: null },
       lutDataVersion: 0,
       displaySource: 'quick',
@@ -1384,10 +1481,8 @@ describe('preview canvas upload descriptor', () => {
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
       imageVersion: 1,
-      params: {
-        ...defaultParams,
-        viewMode: 'compare',
-      },
+      color: defaultColor,
+      viewMode: 'compare',
       lutDataRef: { current: null },
       lutDataVersion: 0,
       displaySource: 'quick',
@@ -1432,10 +1527,8 @@ describe('preview canvas upload descriptor', () => {
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
       imageVersion: 1,
-      params: {
-        ...defaultParams,
-        viewMode: 'compare',
-      },
+      color: defaultColor,
+      viewMode: 'compare',
       lutDataRef: { current: null },
       lutDataVersion: 0,
       dualGpuAllowed: true,
@@ -1496,10 +1589,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
-        params: {
-          ...defaultParams,
-          viewMode: 'compare',
-        },
+        color: defaultColor,
+        viewMode: 'compare',
         lutDataRef: { current: null },
         lutDataVersion: 0,
         dualGpuAllowed: true,
@@ -1527,10 +1618,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
-        params: {
-          ...defaultParams,
-          viewMode: 'compare',
-        },
+        color: defaultColor,
+        viewMode: 'compare',
         lutDataRef: { current: null },
         lutDataVersion: 0,
         dualGpuAllowed: false,
@@ -1568,10 +1657,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
-        params: {
-          ...defaultParams,
-          viewMode: 'compare',
-        },
+        color: defaultColor,
+        viewMode: 'compare',
         lutDataRef: { current: null },
         lutDataVersion: 0,
         dualGpuAllowed: false,
@@ -1595,10 +1682,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 2,
-        params: {
-          ...defaultParams,
-          viewMode: 'compare',
-        },
+        color: defaultColor,
+        viewMode: 'compare',
         lutDataRef: { current: null },
         lutDataVersion: 0,
         dualGpuAllowed: true,
@@ -1701,10 +1786,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
-        params: {
-          ...defaultParams,
-          viewMode: 'compare',
-        },
+        color: defaultColor,
+        viewMode: 'compare',
         lutDataRef: { current: null },
         lutDataVersion: 0,
         dualGpuAllowed: false,
@@ -1757,7 +1840,8 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
-        params: defaultParams,
+        color: defaultColor,
+        viewMode: 'processed' as const,
         lutDataRef: { current: null },
         lutDataVersion: 0,
       }),
@@ -1819,11 +1903,8 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
-      params: {
-        ...defaultParams,
-        viewMode: 'compare' as const,
-        compareSplit: 0.5,
-      },
+      color: defaultColor,
+      viewMode: 'compare' as const,
       lutDataRef: { current: null },
       lutDataVersion: 0,
       dualGpuAllowed: false,
@@ -1843,19 +1924,15 @@ describe('preview canvas upload descriptor', () => {
     rerender(
       createElement(PreviewCanvas, {
         ...props,
-        params: {
-          ...props.params,
-          compareSplit: 0.8,
-        },
+        // The same color in a new record, with only the split moved.
+        color: { ...defaultColor },
       }),
     )
     rerender(
       createElement(PreviewCanvas, {
         ...props,
-        params: {
-          ...props.params,
-          compareSplit: 0.8,
-        },
+        // The same color in a new record, with only the split moved.
+        color: { ...defaultColor },
         previewViewport: {
           zoom: 2,
           panX: 80,

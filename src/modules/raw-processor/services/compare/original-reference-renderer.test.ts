@@ -1,3 +1,5 @@
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import { renderOriginalReferenceSnapshot } from './original-reference-renderer'
@@ -225,5 +227,58 @@ describe('renderOriginalReferenceSnapshot', () => {
       'ORIGINAL_REFERENCE_SNAPSHOT_ABORTED',
     )
     expect(createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('draws the technical original: neutral user color, the RAW render exposure kept', async () => {
+    const uploadImage = vi.fn()
+    const setParams = vi.fn()
+    const image = {
+      ...createImage(),
+      renderExposure: {
+        ev: 1.5,
+        multiplier: 2 ** 1.5,
+        source: 'image-statistics',
+      },
+    } as DecodedImage
+
+    await renderOriginalReferenceSnapshot({
+      image,
+      key: 'technical-original',
+      maxPixels: 1_000_000,
+      createPipeline: () =>
+        ({
+          initialize: vi.fn().mockResolvedValue(undefined),
+          uploadImage,
+          setParams,
+          render: vi.fn(),
+          waitForGpu: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+        }) as never,
+      createCanvas: () =>
+        ({
+          width: 0,
+          height: 0,
+          toBlob: (callback: BlobCallback) =>
+            callback(new Blob(['jpeg'], { type: 'image/jpeg' })),
+        }) as HTMLCanvasElement,
+      createObjectURL,
+      revokeObjectURL,
+    })
+
+    expect(uploadImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        renderExposureEv: 1.5,
+        renderExposureMultiplier: 2 ** 1.5,
+      }),
+    )
+    // Every user field is set neutral; none is left to the pipeline default.
+    expect(setParams).toHaveBeenCalledExactlyOnceWith({
+      viewMode: 'original',
+      compareSplit: 0.5,
+      styleKind: 'none',
+      builtinPreset: null,
+      intensity: 0,
+      ...NEUTRAL_USER_COLOR_INTENT,
+    })
   })
 })

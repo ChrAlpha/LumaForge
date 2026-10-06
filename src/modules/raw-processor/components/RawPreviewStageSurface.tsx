@@ -1,3 +1,4 @@
+import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import type {
   CpuPreviewFrame,
   CpuPreviewVariant,
@@ -9,7 +10,6 @@ import type {
 } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
-import { clampCompareSplit } from '../services/compare/compare-split'
 import { ComparePreviewStage } from './ComparePreviewStage'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import { RawCpuPreviewStage } from './RawCpuPreviewStage'
@@ -50,6 +50,9 @@ export function RawPreviewStageSurface({
    */
   cpuVariant?: CpuPreviewVariant
 }) {
+  // The stages draw the color intent; the view reaches them on its own.
+  const color = pickColorGraphIntent(workflow.params)
+
   // Export releases the decoded preview; the shared stage then shows the
   // export-ready handoff with Restore preview, which the CPU stage lacks.
   if (isCpuMode && workflow.hasImage && !workflow.previewSuspended) {
@@ -58,7 +61,7 @@ export function RawPreviewStageSurface({
         key={workflow.previewTransform?.sourceId}
         image={workflow.decodedImageRef.current}
         imageVersion={workflow.decodedImageVersion}
-        params={workflow.params}
+        color={color}
         lut={workflow.lutDataRef.current}
         fallbackThumbnailUrl={workflow.embeddedPreviewUrl}
         onProcessedFrame={onCpuProcessedFrame}
@@ -75,7 +78,8 @@ export function RawPreviewStageSurface({
       hasImage={workflow.hasImage}
       imageRef={workflow.decodedImageRef}
       imageVersion={workflow.decodedImageVersion}
-      params={workflow.params}
+      color={color}
+      viewMode={workflow.viewMode}
       lutDataRef={workflow.lutDataRef}
       lutDataVersion={workflow.lutDataVersion}
       embeddedPreviewUrl={workflow.embeddedPreviewUrl}
@@ -88,9 +92,7 @@ export function RawPreviewStageSurface({
       split={workflow.compareSplit}
       splitEnabled={workflow.viewMode === 'compare'}
       onSplitChange={workflow.setCompareSplit}
-      onSplitPreviewChange={(split) => {
-        workflow.setParams({ compareSplit: clampCompareSplit(split) })
-      }}
+      onSplitPreviewChange={workflow.setCompareSplit}
       onSplitReset={onCompareReset}
       onPreviewViewportChange={workflow.setPreviewViewport}
       isProcessing={isProcessing}

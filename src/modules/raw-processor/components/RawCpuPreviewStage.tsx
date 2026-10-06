@@ -1,4 +1,4 @@
-import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import type {
   CpuPreviewFrame,
@@ -16,7 +16,8 @@ import { CpuPreviewCanvas } from './CpuPreviewCanvas'
 export interface RawCpuPreviewStageProps {
   image: DecodedImage | null
   imageVersion: number
-  params: ProcessingParams
+  /** The processed frame's color; the neutral frame ignores it. */
+  color: ColorGraphIntent
   lut: LUTData | null
   fallbackThumbnailUrl: string | null
   onProcessedFrame?: (frame: CpuPreviewFrame | null) => void
@@ -33,7 +34,7 @@ export interface RawCpuPreviewStageProps {
 export function RawCpuPreviewStage({
   image,
   imageVersion,
-  params,
+  color,
   lut,
   fallbackThumbnailUrl,
   onProcessedFrame,
@@ -50,7 +51,7 @@ export function RawCpuPreviewStage({
     image,
     imageVersion,
     params: {
-      ...pickColorGraphIntent(params),
+      ...pickColorGraphIntent(color),
       lut,
       rawRenderExposure: image?.renderExposure ?? {
         ev: 0,

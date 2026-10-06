@@ -1,7 +1,8 @@
-import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
+import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type {
   PipelineStats,
@@ -23,7 +24,9 @@ export interface ComparePreviewStageProps {
   hasImage: boolean
   imageRef: React.RefObject<DecodedImage | null>
   imageVersion: number
-  params: ProcessingParams
+  color: ColorGraphIntent
+  /** How the photo is shown; compare layers the original at the split. */
+  viewMode: PreviewViewMode
   lutDataRef: React.RefObject<LUTData | null>
   lutDataVersion: number
   embeddedPreviewUrl?: string | null
@@ -203,7 +206,8 @@ export function ComparePreviewStage({
   hasImage,
   imageRef,
   imageVersion,
-  params,
+  color,
+  viewMode,
   lutDataRef,
   lutDataVersion,
   embeddedPreviewUrl,
@@ -282,7 +286,8 @@ export function ComparePreviewStage({
               <PreviewCanvas
                 imageRef={imageRef}
                 imageVersion={imageVersion}
-                params={params}
+                color={color}
+                viewMode={viewMode}
                 lutDataRef={lutDataRef}
                 lutDataVersion={lutDataVersion}
                 embeddedPreviewUrl={embeddedPreviewUrl}

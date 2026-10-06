@@ -1,3 +1,4 @@
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { act, render, waitFor } from '@testing-library/react'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
@@ -172,6 +173,56 @@ describe('originalGpuLayer', () => {
         intensity: 0,
       }),
     )
+  })
+
+  it('draws the technical original: neutral user color, the RAW render exposure kept', async () => {
+    const uploadImage = vi.fn()
+    const setParams = vi.fn()
+    const onReady = vi.fn()
+    const image = {
+      ...decodedImage,
+      renderExposure: {
+        ev: 1.25,
+        multiplier: 2 ** 1.25,
+        source: 'image-statistics',
+      },
+    } as DecodedImage
+
+    render(
+      <OriginalGpuLayer
+        imageRef={{ current: image }}
+        imageVersion={1}
+        onReady={onReady}
+        createPipeline={() =>
+          ({
+            initialize: vi.fn().mockResolvedValue(undefined),
+            uploadImage,
+            setParams,
+            render: vi.fn(),
+            waitForGpu: vi.fn().mockResolvedValue(undefined),
+            resize: vi.fn(),
+            dispose: vi.fn(),
+          }) as never
+        }
+      />,
+    )
+
+    await waitFor(() => expect(onReady).toHaveBeenCalledWith('1'))
+    expect(uploadImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        renderExposureEv: 1.25,
+        renderExposureMultiplier: 2 ** 1.25,
+      }),
+    )
+    // Every user field is set neutral; none is left to the pipeline default.
+    expect(setParams).toHaveBeenCalledExactlyOnceWith({
+      viewMode: 'original',
+      compareSplit: 0.5,
+      styleKind: 'none',
+      builtinPreset: null,
+      intensity: 0,
+      ...NEUTRAL_USER_COLOR_INTENT,
+    })
   })
 
   it('reports ready after rendering a replacement image version', async () => {

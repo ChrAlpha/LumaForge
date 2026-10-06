@@ -1,8 +1,10 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
+import type { GpuPreviewInput } from '~/lib/webgpu/contract'
 import type { RawUploadInput } from '~/lib/webgpu/raw-processing-pipeline'
 import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
+import { gpuPreviewInputParams } from '~/lib/webgpu/uniforms'
 
 import type { OriginalReferenceSnapshot } from './original-reference-snapshot'
 
@@ -27,23 +29,24 @@ export type RenderOriginalReferenceSnapshotInput = {
   revokeObjectURL?: (url: string) => void
 }
 
-const ORIGINAL_REFERENCE_PARAMS: ProcessingParams = {
-  viewMode: 'original',
-  compareSplit: 0.5,
-  intensity: 0,
-  styleKind: 'none',
-  builtinPreset: null,
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
-}
+/**
+ * The technical original every original surface draws: the RAW render with its
+ * exposure, no look and neutral user color. The upload carries the exposure;
+ * the input sets every color field so none falls back to a pipeline default.
+ */
+export const TECHNICAL_ORIGINAL_GPU_INPUT: GpuPreviewInput = Object.freeze({
+  color: Object.freeze({
+    styleKind: 'none',
+    builtinPreset: null,
+    intensity: 0,
+    ...NEUTRAL_USER_COLOR_INTENT,
+  }),
+  output: 'technical-original',
+})
+
+const ORIGINAL_REFERENCE_PARAMS = gpuPreviewInputParams(
+  TECHNICAL_ORIGINAL_GPU_INPUT,
+)
 
 function fitWithinPixelCap(width: number, height: number, maxPixels: number) {
   const sourcePixels = Math.max(1, width * height)

@@ -11,28 +11,16 @@ import {
 } from './fixtures.mjs'
 import { runPerformance } from './performance.mjs'
 
-// Params the authoritative color graph consumes. View mode and compare split
-// are presentation-only and are composed separately below.
-const GRAPH_PARAM_KEYS = [
-  'styleKind',
-  'intensity',
-  'builtinPreset',
-  'userExposureEv',
-  'userContrast',
-  'userHighlights',
-  'userShadows',
-  'userWhites',
-  'userBlacks',
-  'userTemperature',
-  'userTint',
-  'userSaturation',
-  'userVibrance',
-  'selectiveColor',
-]
-
 export async function runAcceptance({ iterations, unfilterable, goldens }) {
-  const { TRANSFER_FUNCTIONS, resolveExportColorGraph } =
-    await import('@lumaforge/luma-color-runtime')
+  const {
+    COLOR_GRAPH_INTENT_KEYS,
+    TRANSFER_FUNCTIONS,
+    resolveExportColorGraph,
+  } = await import('@lumaforge/luma-color-runtime')
+  // Params the authoritative color graph consumes. View mode and compare
+  // split are presentation-only and are composed separately below.
+  const graphParams = (params) =>
+    Object.fromEntries(COLOR_GRAPH_INTENT_KEYS.map((key) => [key, params[key]]))
   const { renderCpuPreviewFrame } =
     await import('/packages/render-engine/src/preview/preview-render.ts')
   const { WebGPUProcessingPipeline } =
@@ -108,9 +96,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
             rawRenderExposure,
           }
         : {
-            ...Object.fromEntries(
-              GRAPH_PARAM_KEYS.map((key) => [key, params[key]]),
-            ),
+            ...graphParams(params),
             lut: lut ?? null,
             rawRenderExposure,
           }
@@ -126,7 +112,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
   }
   const exportRefusal = (params, lut) => {
     const graph = resolveExportColorGraph({
-      ...Object.fromEntries(GRAPH_PARAM_KEYS.map((key) => [key, params[key]])),
+      ...graphParams(params),
       lut: lut ?? null,
     })
     return graph.supported ? null : graph.message

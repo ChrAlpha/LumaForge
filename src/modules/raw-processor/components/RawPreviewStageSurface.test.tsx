@@ -1,15 +1,50 @@
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
 import { RawPreviewStageSurface } from './RawPreviewStageSurface'
 
+const stageProps = vi.hoisted(() => ({
+  cpu: [] as Array<Record<string, unknown>>,
+  gpu: [] as Array<Record<string, unknown>>,
+  splitHandle: [] as Array<Record<string, unknown>>,
+}))
+
 vi.mock('./RawCpuPreviewStage', () => ({
-  RawCpuPreviewStage: () => <div data-testid="cpu-stage" />,
+  RawCpuPreviewStage: (props: Record<string, unknown>) => {
+    stageProps.cpu.push(props)
+    return <div data-testid="cpu-stage" />
+  },
 }))
 vi.mock('./PreviewCanvas', () => ({
-  PreviewCanvas: () => <div data-testid="gpu-preview-canvas" />,
+  PreviewCanvas: (props: Record<string, unknown>) => {
+    stageProps.gpu.push(props)
+    return <div data-testid="gpu-preview-canvas" />
+  },
 }))
+vi.mock('./CompareSplitHandle', () => ({
+  CompareSplitHandle: (props: Record<string, unknown>) => {
+    stageProps.splitHandle.push(props)
+    return <div data-testid="split-handle" />
+  },
+}))
+
+// Legacy params still carry view fields; the stages must not receive them.
+const mixedParams = {
+  styleKind: 'custom',
+  builtinPreset: null,
+  intensity: 0.37,
+  ...NEUTRAL_USER_COLOR_INTENT,
+  userExposureEv: 0.5,
+  viewMode: 'compare',
+  compareSplit: 0.8,
+}
+const {
+  viewMode: _viewMode,
+  compareSplit: _split,
+  ...expectedColor
+} = mixedParams
 
 function workflow(overrides: Partial<UseRawWorkflowReturn>) {
   return {
@@ -43,7 +78,15 @@ function workflow(overrides: Partial<UseRawWorkflowReturn>) {
 
 function renderSurface(
   current: UseRawWorkflowReturn,
-  { isCpuMode = true, isProcessing = false } = {},
+  {
+    isCpuMode = true,
+    isProcessing = false,
+    cpuVariant,
+  }: {
+    isCpuMode?: boolean
+    isProcessing?: boolean
+    cpuVariant?: 'processed' | 'neutral'
+  } = {},
 ) {
   return render(
     <RawPreviewStageSurface
@@ -56,12 +99,34 @@ function renderSurface(
       onStatsUpdate={vi.fn()}
       onPipelineChange={vi.fn()}
       onPreviewFrameChange={vi.fn()}
+      cpuVariant={cpuVariant}
     />,
   )
 }
 
 describe('rawPreviewStageSurface in CPU preview mode', () => {
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    stageProps.cpu.length = 0
+    stageProps.gpu.length = 0
+    stageProps.splitHandle.length = 0
+  })
+
+  it('hands the CPU stage the color intent and leaves its own toggle by default', () => {
+    renderSurface(workflow({ params: mixedParams as never }))
+
+    const props = stageProps.cpu.at(-1)!
+    expect(props.color).toEqual(expectedColor)
+    expect(props).not.toHaveProperty('params')
+    expect(props.variant).toBeUndefined()
+  })
+
+  it('passes a controlled CPU variant through unchanged', () => {
+    renderSurface(workflow({ params: mixedParams as never }), {
+      cpuVariant: 'neutral',
+    })
+    expect(stageProps.cpu.at(-1)!.variant).toBe('neutral')
+  })
 
   it('renders the CPU stage while the preview is live', () => {
     renderSurface(workflow({}))
@@ -90,5 +155,42 @@ describe('rawPreviewStageSurface in CPU preview mode', () => {
     expect(
       container.querySelector('[data-raw-export-processing-handoff]'),
     ).not.toBeNull()
+  })
+})
+
+describe('rawPreviewStageSurface in GPU preview mode', () => {
+  afterEach(() => {
+    cleanup()
+    stageProps.gpu.length = 0
+    stageProps.splitHandle.length = 0
+  })
+
+  it('hands the GPU stage the color intent apart from the explicit view', () => {
+    renderSurface(
+      workflow({ params: mixedParams as never, viewMode: 'original' }),
+      { isCpuMode: false },
+    )
+
+    const props = stageProps.gpu.at(-1)!
+    expect(props.color).toEqual(expectedColor)
+    expect(props.viewMode).toBe('original')
+    expect(props).not.toHaveProperty('params')
+    // Only compare shows the split handle.
+    expect(screen.queryByTestId('split-handle')).toBeNull()
+  })
+
+  it('writes split changes to the view owner, never through the color setter', () => {
+    const current = workflow({ viewMode: 'compare', compareSplit: 0.4 })
+    renderSurface(current, { isCpuMode: false })
+
+    expect(stageProps.gpu.at(-1)!.viewMode).toBe('compare')
+    const handle = stageProps.splitHandle.at(-1)!
+    expect(handle.value).toBe(0.4)
+    ;(handle.onPreviewChange as (split: number) => void)(0.62)
+    ;(handle.onChange as (split: number) => void)(0.64)
+
+    expect(current.setCompareSplit).toHaveBeenNthCalledWith(1, 0.62)
+    expect(current.setCompareSplit).toHaveBeenNthCalledWith(2, 0.64)
+    expect(current.setParams).not.toHaveBeenCalled()
   })
 })

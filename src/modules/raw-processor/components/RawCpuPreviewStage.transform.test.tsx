@@ -1,4 +1,5 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type {
   CpuPreviewRequest,
@@ -216,7 +217,7 @@ function CpuTransformHarness({ userTemperature }: { userTemperature: number }) {
     <RawCpuPreviewStage
       image={image}
       imageVersion={1}
-      params={params}
+      color={pickColorGraphIntent(params)}
       lut={null}
       fallbackThumbnailUrl={null}
       onProcessedFrame={feature.setCpuFrame}

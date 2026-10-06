@@ -4,7 +4,11 @@
 
 import './preview-canvas.css'
 
-import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
+import {
+  COLOR_GRAPH_INTENT_KEYS,
+  pickColorGraphIntent,
+} from '@lumaforge/luma-color-runtime'
 import { m } from 'motion/react'
 import {
   useCallback,
@@ -17,10 +21,13 @@ import {
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
+import type { PreviewViewMode } from '~/lib/preview/preview-view'
+import { previewSurfaceOutputForViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { Spring } from '~/lib/spring'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
+import { gpuPreviewInputParams } from '~/lib/webgpu/uniforms'
 
 import type { DisplaySource } from '../model/session'
 import type { CompareRenderMode } from '../services/compare/compare-render-mode'
@@ -65,7 +72,10 @@ import {
 export interface PreviewCanvasProps {
   imageRef: React.RefObject<DecodedImage | null>
   imageVersion: number
-  params: ProcessingParams
+  /** The color the processed surface draws; it carries no view state. */
+  color: ColorGraphIntent
+  /** How the stage shows the photo; compare layers the original over it. */
+  viewMode: PreviewViewMode
   lutDataRef: React.RefObject<LUTData | null>
   lutDataVersion: number
   embeddedPreviewUrl?: string | null
@@ -113,13 +123,34 @@ function EmbeddedOriginalLayer({ src }: { src: string }) {
   )
 }
 
+/**
+ * The color intent, kept by reference while no field changes, so a render
+ * that changes only the view never redraws the processed surface.
+ */
+function useStableColorIntent(color: ColorGraphIntent): ColorGraphIntent {
+  const stableRef = useRef<ColorGraphIntent | null>(null)
+  const picked = pickColorGraphIntent(color)
+  const previous = stableRef.current
+  if (
+    previous &&
+    COLOR_GRAPH_INTENT_KEYS.every((key) =>
+      Object.is(previous[key], picked[key]),
+    )
+  ) {
+    return previous
+  }
+  stableRef.current = picked
+  return picked
+}
+
 /** Trailing delay before the GPU canvas backing store follows a layout resize. */
 const PREVIEW_RESIZE_SETTLE_MS = 90
 
 export function PreviewCanvas({
   imageRef,
   imageVersion,
-  params,
+  color,
+  viewMode,
   lutDataRef,
   lutDataVersion,
   embeddedPreviewUrl,
@@ -198,7 +229,7 @@ export function PreviewCanvas({
     hasImageData,
     trackReady,
     embeddedPreviewUrl,
-    viewMode: params.viewMode,
+    viewMode,
     dualGpuAllowed,
     suspended,
     supportsCssClip,
@@ -254,7 +285,7 @@ export function PreviewCanvas({
     showEmbeddedHandoffPreview,
   ])
   const compareRenderMode: CompareRenderMode = selectCompareRenderMode({
-    requestedViewMode: showEmbeddedPreview ? 'processed' : params.viewMode,
+    requestedViewMode: showEmbeddedPreview ? 'processed' : viewMode,
     supportsCssClip,
     dualGpuAllowed,
     originalGpuReady: originalGpuReady && currentProcessedFrameReady,
@@ -267,46 +298,15 @@ export function PreviewCanvas({
     compareRenderMode.kind === 'dual-gpu' ||
     compareRenderMode.kind === 'embedded-fallback' ||
     compareRenderMode.kind === 'jpeg-fallback'
-  const pipelineCompareSplit =
-    params.viewMode === 'compare' ? 0.5 : params.compareSplit
+  const stableColor = useStableColorIntent(color)
+  const processedSurfaceOutput = previewSurfaceOutputForViewMode(viewMode)
   const processedCanvasParams = useMemo(
     () =>
-      ({
-        intensity: params.intensity,
-        viewMode: params.viewMode === 'compare' ? 'processed' : params.viewMode,
-        compareSplit: pipelineCompareSplit,
-        styleKind: params.styleKind,
-        builtinPreset: params.builtinPreset,
-        userExposureEv: params.userExposureEv,
-        userContrast: params.userContrast,
-        userHighlights: params.userHighlights,
-        userShadows: params.userShadows,
-        userWhites: params.userWhites,
-        userBlacks: params.userBlacks,
-        userTemperature: params.userTemperature,
-        userTint: params.userTint,
-        userSaturation: params.userSaturation,
-        userVibrance: params.userVibrance,
-        selectiveColor: params.selectiveColor,
-      }) satisfies ProcessingParams,
-    [
-      params.builtinPreset,
-      params.intensity,
-      params.selectiveColor,
-      params.styleKind,
-      params.userBlacks,
-      params.userContrast,
-      params.userExposureEv,
-      params.userHighlights,
-      params.userShadows,
-      params.userTemperature,
-      params.userTint,
-      params.userSaturation,
-      params.userVibrance,
-      params.userWhites,
-      params.viewMode,
-      pipelineCompareSplit,
-    ],
+      gpuPreviewInputParams({
+        color: stableColor,
+        output: processedSurfaceOutput,
+      }),
+    [processedSurfaceOutput, stableColor],
   )
   suspendedRef.current = suspended
 

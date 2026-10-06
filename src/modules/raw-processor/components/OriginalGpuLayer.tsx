@@ -3,7 +3,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 import { RawProcessingPipeline as DefaultRawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
+import { gpuPreviewInputParams } from '~/lib/webgpu/uniforms'
 
+import { TECHNICAL_ORIGINAL_GPU_INPUT } from '../services/compare/original-reference-renderer'
 import { createRawUploadInput } from './preview-canvas-helpers'
 
 type OriginalPipeline = Pick<
@@ -19,19 +21,9 @@ type OriginalPipeline = Pick<
 
 export type OriginalGpuPipelineHandle = Pick<OriginalPipeline, 'dispose'>
 
-const ORIGINAL_LAYER_PARAMS = {
-  viewMode: 'original',
-  styleKind: 'none',
-  intensity: 0,
-  compareSplit: 0.5,
-  builtinPreset: null,
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-} as const
+const ORIGINAL_LAYER_PARAMS = gpuPreviewInputParams(
+  TECHNICAL_ORIGINAL_GPU_INPUT,
+)
 
 function createDefaultOriginalPipeline(canvas: HTMLCanvasElement) {
   // A failed original layer demotes compare to the JPEG fallback; it must not

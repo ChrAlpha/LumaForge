@@ -1,4 +1,7 @@
-import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
+import {
+  getLUTColorProfile,
+  pickColorGraphIntent,
+} from '@lumaforge/luma-color-runtime'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Provider } from 'jotai'
@@ -101,6 +104,22 @@ function rawToolSurfaceProps(
   }
 }
 
+const stageColor = pickColorGraphIntent({
+  userExposureEv: 0,
+  userContrast: 0,
+  userHighlights: 0,
+  userShadows: 0,
+  userWhites: 0,
+  userBlacks: 0,
+  userTemperature: 0,
+  userTint: 0,
+  userSaturation: 0,
+  userVibrance: 0,
+  intensity: 0.7,
+  styleKind: 'none',
+  builtinPreset: null,
+})
+
 function compareStageProps(
   overrides: Partial<ComponentProps<typeof ComparePreviewStage>> = {},
 ): ComponentProps<typeof ComparePreviewStage> {
@@ -108,23 +127,8 @@ function compareStageProps(
     hasImage: false,
     imageRef: { current: null },
     imageVersion: 0,
-    params: {
-      userExposureEv: 0,
-      userContrast: 0,
-      userHighlights: 0,
-      userShadows: 0,
-      userWhites: 0,
-      userBlacks: 0,
-      userTemperature: 0,
-      userTint: 0,
-      userSaturation: 0,
-      userVibrance: 0,
-      intensity: 0.7,
-      viewMode: 'compare',
-      compareSplit: 0.5,
-      styleKind: 'none',
-      builtinPreset: null,
-    },
+    color: stageColor,
+    viewMode: 'compare',
     lutDataRef: { current: null },
     lutDataVersion: 0,
     embeddedPreviewUrl: null,
@@ -1177,23 +1181,8 @@ describe('rawToolSurface', () => {
         hasImage
         imageRef={{ current: null }}
         imageVersion={0}
-        params={{
-          userExposureEv: 0,
-          userContrast: 0,
-          userHighlights: 0,
-          userShadows: 0,
-          userWhites: 0,
-          userBlacks: 0,
-          userTemperature: 0,
-          userTint: 0,
-          userSaturation: 0,
-          userVibrance: 0,
-          intensity: 0.7,
-          viewMode: 'processed',
-          compareSplit: 0.5,
-          styleKind: 'none',
-          builtinPreset: null,
-        }}
+        color={stageColor}
+        viewMode="processed"
         lutDataRef={{ current: null }}
         lutDataVersion={0}
         split={0.5}
@@ -1272,23 +1261,8 @@ describe('rawToolSurface', () => {
         hasImage={false}
         imageRef={{ current: null }}
         imageVersion={0}
-        params={{
-          userExposureEv: 0,
-          userContrast: 0,
-          userHighlights: 0,
-          userShadows: 0,
-          userWhites: 0,
-          userBlacks: 0,
-          userTemperature: 0,
-          userTint: 0,
-          userSaturation: 0,
-          userVibrance: 0,
-          intensity: 0.7,
-          viewMode: 'processed',
-          compareSplit: 0.5,
-          styleKind: 'none',
-          builtinPreset: null,
-        }}
+        color={stageColor}
+        viewMode="processed"
         lutDataRef={{ current: null }}
         lutDataVersion={0}
         split={0.5}
@@ -1878,23 +1852,8 @@ describe('rawToolSurface', () => {
         <PreviewCanvas
           imageRef={{ current: null }}
           imageVersion={0}
-          params={{
-            userExposureEv: 0,
-            userContrast: 0,
-            userHighlights: 0,
-            userShadows: 0,
-            userWhites: 0,
-            userBlacks: 0,
-            userTemperature: 0,
-            userTint: 0,
-            userSaturation: 0,
-            userVibrance: 0,
-            intensity: 0.7,
-            viewMode: 'processed',
-            compareSplit: 0.5,
-            styleKind: 'none',
-            builtinPreset: null,
-          }}
+          color={stageColor}
+          viewMode="processed"
           lutDataRef={{ current: null }}
           lutDataVersion={0}
           embeddedPreviewUrl="blob:embedded-preview"
