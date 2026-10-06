@@ -17,6 +17,7 @@ import { ComparePreviewStage } from '../components/ComparePreviewStage'
 import { LutDropzone } from '../components/Dropzone'
 import { PreviewCanvas } from '../components/PreviewCanvas'
 import { RawToolSurface } from '../components/RawToolSurface'
+import { toolAvailabilityFixture } from '../components/tool-availability.fixture'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
 import { RawProcessorView } from '../RawProcessorView'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
@@ -47,7 +48,7 @@ const DOTTED_DECODER_EXTENSIONS = new Set(
 function rawToolSurfaceProps(
   overrides: Partial<ComponentProps<typeof RawToolSurface>> = {},
 ): ComponentProps<typeof RawToolSurface> {
-  return {
+  const props = {
     activeIntensity: 0.7,
     tone: {
       userExposureEv: 0,
@@ -102,7 +103,8 @@ function rawToolSurfaceProps(
     stats: null,
     histogram: { state: 'unavailable' as const, reason: 'no-image' as const },
     ...overrides,
-  }
+  } satisfies ComponentProps<typeof RawToolSurface>
+  return { toolAvailability: toolAvailabilityFixture(props), ...props }
 }
 
 const stageColor = pickColorGraphIntent({

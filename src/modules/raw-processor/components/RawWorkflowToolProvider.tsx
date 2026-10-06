@@ -13,6 +13,7 @@ import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import { deriveLutContractExportReason } from '../model/derive-session'
 import type { ExportRecoveryState } from '../model/session'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
+import { deriveToolAvailability } from '../services/surface/derive-tool-availability'
 import { resolvePreviewLookReason } from '../services/surface/raw-reason'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
@@ -177,7 +178,6 @@ export function RawWorkflowToolProvider({
     if (previewSuspended && loadingEntryId) cancelEntryLoad()
   }, [cancelEntryLoad, loadingEntryId, previewSuspended])
   const transformActive = transform?.active === true
-  const compareDisabled = isCpuMode || transformActive
   // Until the session holds the geometry the preview rendered, neither
   // export may run: full resolution would write another framing, and the HQ
   // preview never applies Transform. Every export surface reads these facts,
@@ -196,6 +196,53 @@ export function RawWorkflowToolProvider({
       ? t(TRANSFORM_EXPORT_BLOCK_COPY[transformExportBlock])
       : undefined
   const canExport = workflow.canExport && !transformExportBlock
+  // What each surface may offer, from the one action policy. A refused
+  // compare command is refused by the workflow itself when it runs, so the
+  // surfaces receive the real commands and read their availability here.
+  const {
+    hasImage,
+    status,
+    currentLutName,
+    canExport: workflowCanExport,
+    exportDisabledReason,
+    canPreviewExport: workflowCanPreviewExport,
+    exportResult,
+  } = workflow
+  const toolAvailability = useMemo(() => {
+    const facts = {
+      hasImage,
+      status,
+      executor: isCpuMode ? ('cpu' as const) : ('webgpu' as const),
+      previewSuspended,
+      transformActive,
+      transformExportBlock,
+      hasAppliedLut: Boolean(currentLutName),
+      canExport: workflowCanExport,
+      lutContractBlocksExport:
+        !workflowCanExport &&
+        lutContractExportReason !== undefined &&
+        exportDisabledReason === lutContractExportReason,
+      canPreviewExport: workflowCanPreviewExport,
+      hasExportResult: exportResult != null,
+    }
+    return {
+      desktop: deriveToolAvailability({ ...facts, surface: 'desktop' }),
+      mobile: deriveToolAvailability({ ...facts, surface: 'mobile' }),
+    }
+  }, [
+    currentLutName,
+    exportDisabledReason,
+    exportResult,
+    hasImage,
+    isCpuMode,
+    lutContractExportReason,
+    previewSuspended,
+    status,
+    transformActive,
+    transformExportBlock,
+    workflowCanExport,
+    workflowCanPreviewExport,
+  ])
   const disabledReason = transformExportReason ?? workflow.exportDisabledReason
   const previewExportBlocked = transformActive || Boolean(transformExportBlock)
   const decodedPreviewSize = workflow.decodedImageRef.current
@@ -211,7 +258,7 @@ export function RawWorkflowToolProvider({
     getAspect(transformFrame) ?? getAspect(decodedPreviewSize)
   // What the processed preview draws for the selected look, from the policy
   // its executor follows. Without a photo there is no preview to describe.
-  const { params, lutData, hasImage } = workflow
+  const { params, lutData } = workflow
   const previewLookReason = useMemo(
     () =>
       hasImage
@@ -255,26 +302,20 @@ export function RawWorkflowToolProvider({
         fileName: workflow.sourceFileName,
         onReplaceFile,
         onResetSession,
-        onCompareReset: compareDisabled ? () => {} : onCompareReset,
-        // The CPU preview has no split surface but can still show the
-        // original, so it keeps original / processed and drops only
-        // `compare`. A committed Transform shows the processed photo alone.
+        toolAvailability,
+        onCompareReset,
+        // What the stage shows: the CPU preview has no split surface but
+        // can still show the original, and a committed Transform shows the
+        // processed photo alone.
         viewMode: transformActive
           ? 'processed'
           : isCpuMode && workflow.viewMode === 'compare'
             ? 'processed'
             : workflow.viewMode,
-        onViewModeChange: transformActive
-          ? () => {}
-          : isCpuMode
-            ? (mode) =>
-                workflow.setViewMode(mode === 'compare' ? 'processed' : mode)
-            : workflow.setViewMode,
+        onViewModeChange: workflow.setViewMode,
         compareSplit: workflow.compareSplit,
         compareSupported: !isCpuMode,
-        onCompareSplitChange: compareDisabled
-          ? () => {}
-          : workflow.setCompareSplit,
+        onCompareSplitChange: workflow.setCompareSplit,
         currentLutName: workflow.currentLutName,
         appliedLut:
           workflow.activeStyle?.kind === 'custom'

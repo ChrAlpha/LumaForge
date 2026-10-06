@@ -17,9 +17,10 @@ import {
   toolCardOpenAtom,
 } from '../state/tool-card.atoms'
 import { COLOR_NEUTRAL } from './color-fields'
-import { RawToolSurface } from './RawToolSurface'
+import { RawToolSurface as Surface } from './RawToolSurface'
 import type { RawToolSurfaceProps } from './RawWorkflowContext'
 import { TONE_NEUTRAL } from './tone-fields'
+import { toolAvailabilityFixture } from './tool-availability.fixture'
 import { transformFeatureFixture } from './tools/transform-feature.fixture'
 
 function render(ui: ReactNode) {
@@ -30,7 +31,14 @@ function render(ui: ReactNode) {
   })
 }
 
-const base: RawToolSurfaceProps = {
+/** The surface with the availability its provider would hand it. */
+function RawToolSurface(props: Partial<RawToolSurfaceProps>) {
+  return (
+    <Surface toolAvailability={toolAvailabilityFixture(props)} {...props} />
+  )
+}
+
+const base: Omit<RawToolSurfaceProps, 'toolAvailability'> = {
   activeIntensity: 0.7,
   tone: TONE_NEUTRAL,
   color: COLOR_NEUTRAL,

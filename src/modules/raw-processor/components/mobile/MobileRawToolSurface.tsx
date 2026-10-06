@@ -12,11 +12,9 @@ export function MobileRawToolSurface() {
   const props = useRawWorkflowContext()
   const { t } = useI18n()
   const previewSuspended = props.previewSuspended === true
-  const lutDropDisabled = props.isExporting === true || previewSuspended
-  const mobileEditorDisabled =
-    !props.hasImage || props.isProcessing || previewSuspended
-  const hasAppliedLut = Boolean(props.currentLutName)
-  const mobileStrengthDisabled = mobileEditorDisabled || !hasAppliedLut
+  // The dock, the deck, the lens and the topbar Export read the shared
+  // action policy for this surface, which waits for any busy stage.
+  const availability = props.toolAvailability.mobile
   const cameraName = getCameraName(props.metadata)
   // Support level is a safety fact, so it is named on both surfaces rather
   // than encoded in the topbar dot alone (PRODUCT.md: never state by colour).
@@ -66,6 +64,7 @@ export function MobileRawToolSurface() {
   return (
     <MobileLabChrome
       transform={props.transform}
+      availability={availability}
       canExport={props.canExport}
       hasImage={props.hasImage}
       tone={props.tone}
@@ -100,7 +99,7 @@ export function MobileRawToolSurface() {
       lutBrowser={{
         currentLutName: props.currentLutName,
         appliedLut: props.appliedLut,
-        disabled: props.isProcessing || lutDropDisabled,
+        disabled: !availability.lutApplication.available,
         onLutLoad: props.onLutLoad,
         onLutClear: props.onLutClear,
         lutProfileSelection: props.lutProfileSelection,
@@ -110,7 +109,7 @@ export function MobileRawToolSurface() {
         onlineLutSources: props.onlineLutSources,
         activeIntensity: props.activeIntensity,
         onIntensityChange: props.onIntensityChange,
-        strengthDisabled: mobileStrengthDisabled,
+        strengthDisabled: !availability.strength.available,
       }}
       exportPanel={({ onClose, onChooseLutContract }) => (
         <MobileExportPanel

@@ -19,18 +19,15 @@ import { TransformTool } from './tools/TransformTool'
 export function DesktopRawToolSurface() {
   const props = useRawWorkflowContext()
   const { t } = useI18n()
-  const previewSuspended = props.previewSuspended === true
-  const editorDisabled =
-    !props.hasImage || props.isExporting === true || previewSuspended
-  const lutDropDisabled = props.isExporting === true || previewSuspended
+  // Each control is off exactly where the shared action policy refuses its
+  // action. Reset returns the stage to its split, so it is off where the
+  // stage has none: the CPU preview, or a committed Transform.
+  const availability = props.toolAvailability.desktop
+  const editorDisabled = !availability.edit.available
+  const lutDropDisabled = !availability.lutApplication.available
+  const strengthDisabled = !availability.strength.available
+  const compareResetDisabled = !availability.splitReset.available
   const hasAppliedLut = Boolean(props.currentLutName)
-  const strengthDisabled = editorDisabled || !hasAppliedLut
-  // Reset returns the stage to its split, so it is off where the stage has
-  // none: the CPU preview, or a committed Transform.
-  const compareResetDisabled =
-    editorDisabled ||
-    props.compareSupported === false ||
-    props.transform?.active === true
   const histogramClipping =
     props.histogram.state === 'ready'
       ? histogramClippingLabels(props.histogram, t)

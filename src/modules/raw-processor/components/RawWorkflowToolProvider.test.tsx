@@ -1,6 +1,13 @@
 import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
-import { act, render, renderHook, screen, within } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Provider as JotaiProvider } from 'jotai'
 import type { ReactNode } from 'react'
@@ -325,16 +332,24 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     })
     expect(result.current.previewFrameEl).toBeNull()
     expect(result.current.viewMode).toBe('processed')
+    // Compare is refused in the policy every surface reads; its commands
+    // are the workflow's own, which refuse a committed Transform as well.
+    for (const surface of ['desktop', 'mobile'] as const) {
+      const actions = result.current.toolAvailability[surface]
+      for (const action of ['originalView', 'split', 'splitReset'] as const) {
+        expect(actions[action]).toEqual({
+          available: false,
+          reason: 'transform-compare',
+        })
+      }
+    }
+    expect(result.current.onCompareReset).toBe(onCompareReset)
+    expect(result.current.onViewModeChange).toBe(workflow.setViewMode)
+    expect(result.current.onCompareSplitChange).toBe(workflow.setCompareSplit)
     result.current.onExport()
     void result.current.onPreviewExport?.()
-    result.current.onCompareReset()
-    result.current.onViewModeChange('original')
-    result.current.onCompareSplitChange(0.2)
     expect(onExport).toHaveBeenCalledOnce()
     expect(workflow.exportPreviewImage).not.toHaveBeenCalled()
-    expect(onCompareReset).not.toHaveBeenCalled()
-    expect(workflow.setViewMode).not.toHaveBeenCalled()
-    expect(workflow.setCompareSplit).not.toHaveBeenCalled()
 
     transform = { ...transform, active: false }
     rerender()
@@ -342,16 +357,16 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.canPreviewExport).toBe(true)
     expect(result.current.histogram).toBe(workflow.histogram)
     expect(result.current.previewFrameEl).toBe(frame)
+    for (const surface of ['desktop', 'mobile'] as const) {
+      const actions = result.current.toolAvailability[surface]
+      expect(actions.originalView.available).toBe(true)
+      expect(actions.split.available).toBe(true)
+      expect(actions.splitReset.available).toBe(true)
+    }
     result.current.onExport()
     void result.current.onPreviewExport?.()
-    result.current.onCompareReset()
-    result.current.onViewModeChange('original')
-    result.current.onCompareSplitChange(0.2)
     expect(onExport).toHaveBeenCalledTimes(2)
     expect(workflow.exportPreviewImage).toHaveBeenCalledOnce()
-    expect(onCompareReset).toHaveBeenCalledOnce()
-    expect(workflow.setViewMode).toHaveBeenCalledWith('original')
-    expect(workflow.setCompareSplit).toHaveBeenCalledWith(0.2)
   })
   it('refuses both exports, in facts and callbacks, while Transform is unanswered or refused', () => {
     const workflow = workflowFixture()
@@ -677,17 +692,21 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.appliedLut).toBeNull()
     // A split left over from the GPU path reads as the processed photo.
     expect(result.current.viewMode).toBe('processed')
-    result.current.onViewModeChange('original')
-    expect(workflow.setViewMode).toHaveBeenLastCalledWith('original')
-    result.current.onViewModeChange('compare')
-    expect(workflow.setViewMode).toHaveBeenLastCalledWith('processed')
-    result.current.onCompareSplitChange(0.2)
-    expect(workflow.setCompareSplit).not.toHaveBeenCalled()
-    // No split surface, so no split reset: the surfaces read the fact and the
-    // callback refuses too.
+    // No split surface, so no split or split reset: the surfaces read the
+    // policy, and the workflow's own commands refuse the split too.
     expect(result.current.compareSupported).toBe(false)
-    result.current.onCompareReset()
-    expect(onCompareReset).not.toHaveBeenCalled()
+    for (const surface of ['desktop', 'mobile'] as const) {
+      const actions = result.current.toolAvailability[surface]
+      expect(actions.originalView.available).toBe(true)
+      expect(actions.split).toEqual({ available: false, reason: 'cpu-preview' })
+      expect(actions.splitReset).toEqual({
+        available: false,
+        reason: 'cpu-preview',
+      })
+    }
+    expect(result.current.onViewModeChange).toBe(workflow.setViewMode)
+    expect(result.current.onCompareSplitChange).toBe(workflow.setCompareSplit)
+    expect(result.current.onCompareReset).toBe(onCompareReset)
   })
 
   it('tells the Look strip which LUT is applied by its cube hash', () => {
@@ -1330,5 +1349,420 @@ describe('rawWorkflowToolProvider interruption note', () => {
     } finally {
       jotaiStore.set(viewportAtom, prev)
     }
+  })
+})
+
+/**
+ * The provider and the real tool surfaces over a workflow whose view mode
+ * follows the commands it is sent, so a test sees what the stage would.
+ */
+function PolicySurface({
+  isCpuMode = false,
+  transform = transformFeatureFixture({ hasImage: true }),
+  workflowOverrides = {},
+  commands,
+}: {
+  isCpuMode?: boolean
+  transform?: ReturnType<typeof transformFeatureFixture>
+  workflowOverrides?: Partial<UseRawWorkflowReturn>
+  commands: {
+    setViewMode: (mode: 'processed' | 'original' | 'compare') => void
+    setToneParams: () => void
+    onCompareReset: () => void
+  }
+}) {
+  const [viewMode, setViewMode] = useState<
+    'processed' | 'original' | 'compare'
+  >('processed')
+  const workflow = {
+    ...interruptedWorkflow({ status: 'none' }),
+    viewMode,
+    setViewMode: (mode: 'processed' | 'original' | 'compare') => {
+      commands.setViewMode(mode)
+      setViewMode(mode)
+    },
+    setToneParams: commands.setToneParams,
+    ...workflowOverrides,
+  } as unknown as UseRawWorkflowReturn
+  return (
+    <JotaiProvider store={jotaiStore}>
+      <RawWorkflowToolProvider
+        workflow={workflow}
+        transform={transform}
+        onlineLutSources={emptyOnlineLutSources()}
+        isCpuMode={isCpuMode}
+        isProcessing={workflow.status !== 'ready'}
+        runtimeReadinessState="ready"
+        previewFrameEl={null}
+        onReplaceFile={vi.fn()}
+        onResetSession={vi.fn()}
+        onCompareReset={commands.onCompareReset}
+        onLutDrop={vi.fn()}
+        onExport={vi.fn()}
+        onPrepareRuntime={vi.fn()}
+      >
+        <RawToolSurface />
+      </RawWorkflowToolProvider>
+    </JotaiProvider>
+  )
+}
+
+const deliveredJpeg = {
+  output: {
+    kind: 'blob',
+    filename: 'current_fullres.jpg',
+    blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+    byteLength: 4,
+    mimeType: 'image/jpeg',
+  },
+  filename: 'current_fullres.jpg',
+  width: 6000,
+  height: 4000,
+  size: 4,
+  createdAt: 0,
+  copyCapability: {
+    mode: 'preview-size',
+    label: 'Copy preview-size image',
+    reason: 'Full-resolution copy is not available.',
+  },
+} as ExportResult
+
+function policyCommands() {
+  return {
+    setViewMode: vi.fn(),
+    setToneParams: vi.fn(),
+    onCompareReset: vi.fn(),
+  }
+}
+
+describe('rawWorkflowToolProvider surface policy', () => {
+  let previousViewport = jotaiStore.get(viewportAtom)
+  beforeEach(() => {
+    previousViewport = jotaiStore.get(viewportAtom)
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    )
+  })
+  afterEach(() => {
+    jotaiStore.set(viewportAtom, previousViewport)
+  })
+  const showDesktop = () =>
+    jotaiStore.set(viewportAtom, { ...previousViewport, w: 1280, sm: true })
+  const showMobile = () =>
+    jotaiStore.set(viewportAtom, { ...previousViewport, w: 390, sm: false })
+  const lens = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-mobile-compare-lens]')!
+  const dockTab = (name: RegExp) =>
+    within(screen.getByRole('tablist', { name: /lab modes/i })).getByRole(
+      'tab',
+      { name },
+    )
+
+  it('hands each surface the shared action policy, decode-time difference included', () => {
+    let workflow = { ...workflowFixture(), status: 'decoding' }
+    let isCpuMode = false
+    let transform = transformFeatureFixture({ hasImage: true })
+    const { result, rerender } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <RawWorkflowToolProvider
+          workflow={workflow as unknown as UseRawWorkflowReturn}
+          transform={transform}
+          onlineLutSources={{} as UseOnlineLutSourcesResult}
+          isCpuMode={isCpuMode}
+          isProcessing={workflow.status !== 'ready'}
+          runtimeReadinessState="ready"
+          previewFrameEl={null}
+          onReplaceFile={vi.fn()}
+          onResetSession={vi.fn()}
+          onCompareReset={vi.fn()}
+          onLutDrop={vi.fn()}
+          onExport={vi.fn()}
+          onPrepareRuntime={vi.fn()}
+        >
+          {children}
+        </RawWorkflowToolProvider>
+      ),
+    })
+    // Desktop keeps its controls while a stage decodes; mobile waits.
+    const decoding = result.current.toolAvailability
+    expect(decoding.desktop.edit.available).toBe(true)
+    expect(decoding.mobile.edit).toEqual({
+      available: false,
+      reason: 'preview-decoding',
+    })
+
+    // The CPU preview shows the original but has no split to open or reset.
+    workflow = { ...workflow, status: 'ready' }
+    isCpuMode = true
+    rerender()
+    for (const surface of ['desktop', 'mobile'] as const) {
+      const actions = result.current.toolAvailability[surface]
+      expect(actions.originalView.available).toBe(true)
+      expect(actions.split).toEqual({ available: false, reason: 'cpu-preview' })
+      expect(actions.splitReset.available).toBe(false)
+      expect(actions.edit.available).toBe(true)
+    }
+
+    // A committed Transform has nothing to compare against.
+    transform = transformFeatureFixture({ hasImage: true, active: true })
+    rerender()
+    expect(result.current.toolAvailability.mobile.originalView).toEqual({
+      available: false,
+      reason: 'transform-compare',
+    })
+
+    // A released preview locks the edits, not the way back or the result.
+    transform = transformFeatureFixture({ hasImage: true })
+    workflow = {
+      ...workflow,
+      previewSuspended: true,
+      exportResult: delivered,
+    } as typeof workflow
+    rerender()
+    for (const surface of ['desktop', 'mobile'] as const) {
+      const actions = result.current.toolAvailability[surface]
+      expect(actions.edit).toEqual({
+        available: false,
+        reason: 'preview-released',
+      })
+      expect(actions.lutApplication.available).toBe(false)
+      expect(actions.exportEntry.available).toBe(true)
+      expect(actions.delivery.available).toBe(true)
+      expect(actions.restorePreview.available).toBe(true)
+    }
+  })
+
+  it('sends compare commands to the workflow, whose own guard decides', () => {
+    const workflow = workflowFixture()
+    const onCompareReset = vi.fn()
+    let isCpuMode = true
+    let transform = transformFeatureFixture({ hasImage: true })
+    const { result, rerender } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <RawWorkflowToolProvider
+          workflow={workflow}
+          transform={transform}
+          onlineLutSources={{} as UseOnlineLutSourcesResult}
+          isCpuMode={isCpuMode}
+          isProcessing={false}
+          runtimeReadinessState="ready"
+          previewFrameEl={null}
+          onReplaceFile={vi.fn()}
+          onResetSession={vi.fn()}
+          onCompareReset={onCompareReset}
+          onLutDrop={vi.fn()}
+          onExport={vi.fn()}
+          onPrepareRuntime={vi.fn()}
+        >
+          {children}
+        </RawWorkflowToolProvider>
+      ),
+    })
+    // No surface command is swapped for another or dropped on the way: the
+    // workflow refuses a split the CPU preview or a Transform cannot show.
+    expect(result.current.onViewModeChange).toBe(workflow.setViewMode)
+    expect(result.current.onCompareSplitChange).toBe(workflow.setCompareSplit)
+    expect(result.current.onCompareReset).toBe(onCompareReset)
+    result.current.onViewModeChange('compare')
+    expect(workflow.setViewMode).toHaveBeenLastCalledWith('compare')
+
+    isCpuMode = false
+    transform = transformFeatureFixture({ hasImage: true, active: true })
+    rerender()
+    expect(result.current.onViewModeChange).toBe(workflow.setViewMode)
+    expect(result.current.onCompareReset).toBe(onCompareReset)
+  })
+
+  it('locks the desktop rail exactly where the policy refuses', async () => {
+    showDesktop()
+    const user = userEvent.setup()
+    const commands = policyCommands()
+    const { rerender } = render(<PolicySurface isCpuMode commands={commands} />)
+    const exposure = () => screen.getByRole('slider', { name: 'Exposure' })
+    const lutInput = () => screen.getByLabelText(/add \.cube lut/i)
+
+    // The CPU preview keeps every edit and drops only the split reset.
+    expect(exposure()).not.toHaveAttribute('data-disabled')
+    expect(lutInput()).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Compare' }))
+    const reset = () =>
+      screen.getByRole('button', { name: 'Reset compare view' })
+    expect(reset()).toBeDisabled()
+
+    rerender(<PolicySurface commands={commands} />)
+    expect(reset()).toBeEnabled()
+    await user.click(reset())
+    expect(commands.onCompareReset).toHaveBeenCalledOnce()
+
+    // A committed Transform has no split to reset either.
+    rerender(
+      <PolicySurface
+        commands={commands}
+        transform={transformFeatureFixture({ hasImage: true, active: true })}
+      />,
+    )
+    expect(reset()).toBeDisabled()
+
+    // A running export locks edits and LUTs.
+    rerender(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{ status: 'exporting' }}
+      />,
+    )
+    expect(exposure()).toHaveAttribute('data-disabled')
+    expect(lutInput()).toBeDisabled()
+    expect(reset()).toBeDisabled()
+
+    // A released preview keeps them locked, and Export reachable.
+    rerender(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{
+          previewSuspended: true,
+          exportResult: deliveredJpeg,
+        }}
+      />,
+    )
+    expect(exposure()).toHaveAttribute('data-disabled')
+    expect(lutInput()).toBeDisabled()
+    expect(reset()).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled()
+
+    // Restored, the rail edits again.
+    rerender(<PolicySurface commands={commands} />)
+    expect(exposure()).not.toHaveAttribute('data-disabled')
+    fireEvent.keyDown(exposure(), { key: 'ArrowRight' })
+    expect(commands.setToneParams).toHaveBeenCalled()
+  })
+
+  it('drives the mobile lens from the policy: split on the GPU, an original pin on the CPU', () => {
+    showMobile()
+    vi.useFakeTimers()
+    const commands = policyCommands()
+    const { container, rerender } = render(
+      <PolicySurface commands={commands} />,
+    )
+
+    // The GPU lens opens the split on a tap and peeks the original on a hold.
+    expect(lens(container)).toHaveAttribute('data-lens-mode', 'split')
+    expect(lens(container)).not.toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(lens(container))
+    expect(commands.setViewMode).toHaveBeenLastCalledWith('compare')
+    fireEvent.pointerDown(lens(container))
+    act(() => {
+      vi.advanceTimersByTime(260)
+    })
+    expect(commands.setViewMode).toHaveBeenLastCalledWith('original')
+    fireEvent.pointerUp(lens(container))
+    fireEvent.click(lens(container))
+    expect(commands.setViewMode).toHaveBeenLastCalledWith('compare')
+    expect(lens(container)).toHaveAttribute('data-state', 'on')
+
+    // Falling back to the CPU preview drops the split; the lens pins the
+    // original instead.
+    rerender(<PolicySurface isCpuMode commands={commands} />)
+    expect(lens(container)).toHaveAttribute('data-lens-mode', 'original')
+    expect(lens(container)).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(lens(container))
+    expect(commands.setViewMode).toHaveBeenLastCalledWith('original')
+    expect(lens(container)).toHaveAttribute('aria-pressed', 'true')
+
+    // An edit drops the pin so it shows: here, changing tool.
+    fireEvent.click(dockTab(/adjust/i))
+    expect(commands.setViewMode).toHaveBeenLastCalledWith('processed')
+    expect(lens(container)).toHaveAttribute('aria-pressed', 'false')
+
+    // A committed Transform blocks the lens, and a tap compares nothing.
+    commands.setViewMode.mockClear()
+    rerender(
+      <PolicySurface
+        isCpuMode
+        commands={commands}
+        transform={transformFeatureFixture({ hasImage: true, active: true })}
+      />,
+    )
+    expect(lens(container)).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(lens(container))
+    expect(commands.setViewMode).not.toHaveBeenCalledWith('original')
+    expect(commands.setViewMode).not.toHaveBeenCalledWith('compare')
+  })
+
+  it('locks the mobile dock while the preview is released, reopens the result, and unlocks on Restore', async () => {
+    showMobile()
+    const user = userEvent.setup()
+    const commands = policyCommands()
+    const released = {
+      previewSuspended: true,
+      exportResult: deliveredJpeg,
+      exportShareCapability: { available: true as const },
+    }
+    const { container, rerender } = render(
+      <PolicySurface commands={commands} workflowOverrides={released} />,
+    )
+    for (const name of [/look/i, /adjust/i, /transform/i]) {
+      expect(dockTab(name)).toBeDisabled()
+    }
+    const action = container.querySelector<HTMLButtonElement>(
+      '[data-mobile-export-action]',
+    )!
+    expect(action).toBeEnabled()
+    expect(
+      container.querySelector('[data-mobile-export-panel]'),
+    ).toBeInTheDocument()
+
+    // Closing the result hands the deck to no tool; Export reopens it.
+    await user.click(screen.getByRole('button', { name: 'Close export' }))
+    expect(container.querySelector('[data-mobile-export-panel]')).toBeNull()
+    fireEvent.click(dockTab(/adjust/i))
+    expect(screen.queryByRole('slider', { name: 'Exposure' })).toBeNull()
+    await user.click(action)
+    expect(
+      container.querySelector('[data-mobile-export-panel]'),
+    ).toBeInTheDocument()
+
+    // Restored, the tools edit again.
+    rerender(<PolicySurface commands={commands} />)
+    expect(dockTab(/adjust/i)).toBeEnabled()
+    await user.click(dockTab(/adjust/i))
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Exposure' }), {
+      key: 'ArrowRight',
+    })
+    expect(commands.setToneParams).toHaveBeenCalled()
+  })
+
+  it('waits on mobile for a busy stage that is not export, and keeps the export action through an export', () => {
+    showMobile()
+    const commands = policyCommands()
+    const { container, rerender } = render(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{ status: 'decoding' }}
+      />,
+    )
+    const action = () =>
+      container.querySelector<HTMLButtonElement>('[data-mobile-export-action]')!
+    for (const name of [/look/i, /adjust/i, /transform/i]) {
+      expect(dockTab(name)).toBeDisabled()
+    }
+    expect(action()).toBeDisabled()
+
+    rerender(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{ status: 'exporting' }}
+      />,
+    )
+    expect(dockTab(/adjust/i)).toBeDisabled()
+    expect(action()).toBeEnabled()
+
+    rerender(<PolicySurface commands={commands} />)
+    expect(dockTab(/adjust/i)).toBeEnabled()
+    expect(action()).toBeEnabled()
   })
 })

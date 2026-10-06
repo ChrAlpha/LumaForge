@@ -14,6 +14,7 @@ import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ExportResultKind } from '../../model/export-result'
 import type { SupportLevel } from '../../model/session'
 import { DOCK_SPRING } from '../../motion'
+import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
 import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
 import type { ColorValue } from '../color-fields'
 import type { CpuPreviewNotice } from '../CpuPreviewBanner'
@@ -63,6 +64,8 @@ type StageLayoutVar = (typeof STAGE_LAYOUT_VARS)[number]
 
 export function MobileLabChrome(props: {
   transform?: RawTransformFeature
+  /** The shared action policy for the mobile surface. */
+  availability: ToolAvailability
   canExport?: boolean
   hasImage: boolean
   tone: ToneValue
@@ -167,6 +170,10 @@ export function MobileLabChrome(props: {
   })
   const lensVisible =
     props.hasImage && !immersive && !focusActive && !handoffActive
+  // Every lens gesture shows the original, so the lens is off where the
+  // original view is refused. It is only on screen with a photo outside a
+  // handoff, where what refuses it is a committed Transform.
+  const lensDisabled = !props.availability.originalView.available
 
   // The export panel's close button leaves with the panel; focus goes back
   // to the action that opened it rather than dropping to the body.
@@ -192,11 +199,12 @@ export function MobileLabChrome(props: {
     resultKind: props.exportResultKind ?? null,
   })
   // The deck's own visibility rule, shared with the dock: tools are disabled
-  // while the pipeline is busy, and while export holds the preview released
-  // (an edit would discard the delivered JPEG). Only the export panel keeps
-  // the deck then, for a running export's progress or the delivered result;
-  // closing it leaves the deck empty rather than hand it to a tool.
-  const toolsDisabled = props.isProcessing || props.previewSuspended === true
+  // where the edit policy refuses them, while the pipeline is busy and while
+  // export holds the preview released (an edit would discard the delivered
+  // JPEG). Only the export panel keeps the deck then, for a running export's
+  // progress or the delivered result; closing it leaves the deck empty
+  // rather than hand it to a tool.
+  const toolsDisabled = !props.availability.edit.available
   const exportPanelHeld = exportOpen && (isExporting || previewReleasedReady)
   const deckVisible = isMobileDeckVisible({
     expanded: dockExpanded && props.hasImage,
@@ -342,7 +350,7 @@ export function MobileLabChrome(props: {
             splitOn={
               compareMode === 'original' ? originalShown : compareSplitOpen
             }
-            disabled={compareDisabled}
+            disabled={lensDisabled}
             onToggle={
               compareMode === 'original'
                 ? toggleOriginal
@@ -415,7 +423,7 @@ export function MobileLabChrome(props: {
                     state={exportActionState}
                     progress={props.exportProgress}
                     expanded={exportPanelVisible}
-                    disabled={props.isProcessing && !isExporting}
+                    disabled={!props.availability.exportEntry.available}
                     onClick={exportPanelVisible ? closeExport : openExport}
                   />
                 ) : null

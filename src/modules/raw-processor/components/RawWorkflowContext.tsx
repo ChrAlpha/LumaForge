@@ -18,6 +18,10 @@ import type {
 } from '../model/export-result'
 import type { LUTContractSelectionState, SupportLevel } from '../model/session'
 import type { DeliveredExportSize } from '../services/export/delivered-export-size'
+import type {
+  ToolAvailability,
+  ToolSurface,
+} from '../services/surface/derive-tool-availability'
 import type { PreviewLookReason } from '../services/surface/raw-reason'
 import type { ColorValue } from './color-fields'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
@@ -41,6 +45,12 @@ export const EXPORT_INTERRUPTION_NOTE_COPY = {
 
 export interface RawToolSurfaceProps {
   transform?: RawTransformFeature
+  /**
+   * What each action can do right now on each surface, from the shared
+   * action policy. A surface disables a control from its action here; the
+   * commands it calls are the real ones and refuse on their own.
+   */
+  toolAvailability: Record<ToolSurface, ToolAvailability>
   /** How much of the look reaches the photo, 0..1. */
   activeIntensity: number
   tone: ToneValue

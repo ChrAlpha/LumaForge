@@ -8,6 +8,7 @@ import {
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createStore, Provider as JotaiProvider } from 'jotai'
+import type { ComponentProps } from 'react'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -15,9 +16,20 @@ import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
 import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
 import { COLOR_NEUTRAL } from '../color-fields'
 import { TONE_NEUTRAL } from '../tone-fields'
+import { mobileAvailabilityFixture } from '../tool-availability.fixture'
 import { transformFeatureFixture } from '../tools/transform-feature.fixture'
-import { MobileLabChrome } from './MobileLabChrome'
+import { MobileLabChrome as Chrome } from './MobileLabChrome'
 import type { MobileLookControls } from './MobileLookDeck'
+
+type ChromeProps = ComponentProps<typeof Chrome>
+
+/** The chrome with the availability its surface would hand it. */
+function MobileLabChrome(
+  props: Omit<ChromeProps, 'availability'> &
+    Partial<Pick<ChromeProps, 'availability'>>,
+) {
+  return <Chrome availability={mobileAvailabilityFixture(props)} {...props} />
+}
 
 const base = {
   hasImage: true,
@@ -1224,6 +1236,37 @@ describe('mobileLabChrome', () => {
     fireEvent.pointerUp(lens)
     expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
     expect(lens).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('draws the dock, the lens and the topbar Export from the availability it is handed', () => {
+    // Facts that would leave everything open, and a policy that refuses
+    // them: the policy is what the chrome draws.
+    const open = mobileAvailabilityFixture({ hasImage: true })
+    const refused = {
+      available: false as const,
+      reason: 'export-running' as const,
+    }
+    const { container } = render(
+      <MobileLabChrome
+        {...base}
+        availability={{
+          ...open,
+          edit: refused,
+          originalView: refused,
+          exportEntry: refused,
+        }}
+      />,
+    )
+    const dock = screen.getByRole('tablist', { name: /lab modes/i })
+    for (const tab of within(dock).getAllByRole('tab')) {
+      expect(tab).toBeDisabled()
+    }
+    expect(
+      container.querySelector('[data-mobile-compare-lens]'),
+    ).toHaveAttribute('aria-disabled', 'true')
+    expect(
+      container.querySelector('[data-mobile-export-action]'),
+    ).toBeDisabled()
   })
 
   it('blocks the lens while a Transform is applied and says why', () => {

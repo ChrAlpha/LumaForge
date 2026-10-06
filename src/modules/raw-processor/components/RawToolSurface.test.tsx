@@ -20,7 +20,16 @@ import {
   toolCardOpenAtom,
 } from '../state/tool-card.atoms'
 import { LutDropzone } from './Dropzone'
-import { RawToolSurface } from './RawToolSurface'
+import { RawToolSurface as Surface } from './RawToolSurface'
+import type { RawToolSurfaceProps } from './RawWorkflowContext'
+import { toolAvailabilityFixture } from './tool-availability.fixture'
+
+/** The surface with the availability its provider would hand it. */
+function RawToolSurface(props: Partial<RawToolSurfaceProps>) {
+  return (
+    <Surface toolAvailability={toolAvailabilityFixture(props)} {...props} />
+  )
+}
 
 const baseProps = {
   activeIntensity: 0.7,
@@ -658,6 +667,49 @@ describe('rawToolSurface', () => {
     ).toBeEnabled()
     await user.click(screen.getByRole('button', { name: 'Reset compare view' }))
     expect(onCompareReset).toHaveBeenCalledOnce()
+  })
+
+  it('locks the desktop rail from the availability it is handed, not its own flags', async () => {
+    const user = userEvent.setup()
+    // Facts that would leave every control open, and a policy that refuses
+    // them: the policy is what the rail draws.
+    const open = toolAvailabilityFixture({
+      hasImage: true,
+      currentLutName: 'look.cube',
+    })
+    const refused = {
+      available: false as const,
+      reason: 'export-running' as const,
+    }
+    render(
+      <Surface
+        {...baseProps}
+        hasImage
+        currentLutName="look.cube"
+        toolAvailability={{
+          ...open,
+          desktop: {
+            ...open.desktop,
+            edit: refused,
+            strength: refused,
+            lutApplication: refused,
+            splitReset: refused,
+          },
+        }}
+      />,
+    )
+
+    expect(
+      within(getToneRegion()).getByRole('slider', { name: 'Exposure' }),
+    ).toHaveAttribute('data-disabled')
+    expect(screen.getByLabelText(/add \.cube lut/i)).toBeDisabled()
+    expect(screen.getByRole('slider', { name: 'Strength' })).toHaveAttribute(
+      'data-disabled',
+    )
+    await user.click(screen.getByRole('button', { name: 'Compare' }))
+    expect(
+      screen.getByRole('button', { name: 'Reset compare view' }),
+    ).toBeDisabled()
   })
 
   it('sets a continuous strength on the desktop rail, with presets as detents', () => {
