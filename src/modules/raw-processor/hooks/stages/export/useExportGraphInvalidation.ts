@@ -3,7 +3,10 @@ import { useCallback } from 'react'
 
 import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
-import { clearExportResultState } from '../../../services/export/export-state'
+import {
+  clearExportResultState,
+  hasActiveExport,
+} from '../../../services/export/export-state'
 
 export type SetImageSession = Dispatch<SetStateAction<ImageSession | null>>
 
@@ -33,17 +36,16 @@ export function useExportGraphInvalidation({
   const invalidateExportGraph = useCallback(() => {
     exportGraphVersionRef.current += 1
     previewCopyCanvasRef.current = null
-    const hasActiveExport =
-      Boolean(
-        exportAbortControllerRef.current &&
-        !exportAbortControllerRef.current.signal.aborted,
-      ) || sessionRef.current?.exportState.status === 'exporting'
+    const exportWasActive = hasActiveExport(
+      exportAbortControllerRef.current,
+      sessionRef.current,
+    )
 
     abortExportWork()
     queueExportResultResourceDisposal()
     setSession(clearExportResultState)
 
-    if (hasActiveExport) {
+    if (exportWasActive) {
       setStatus('ready')
       setProgress(0)
     }

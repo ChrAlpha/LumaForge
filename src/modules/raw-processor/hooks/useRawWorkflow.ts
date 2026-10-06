@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { yieldToPaint } from '~/lib/dom'
 import { rawRuntimeAdapter } from '~/lib/raw/runtime-adapter'
 
+import { hasActiveExport } from '../services/export/export-state'
 import { getLut } from '../state/workflow.atoms'
 import { buildRawWorkflowReturn } from './buildRawWorkflowReturn'
 import { useRawCalibrationStage } from './stages/calibration/useRawCalibrationStage'
@@ -135,6 +136,15 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setProgress,
   })
   const { lutDataRef, lutDataVersion, setLutDataRef } = useLutDataState(lut)
+  // A LUT landing while an export runs or holds the preview released would
+  // cancel that export or discard its JPEG, so it never applies then.
+  const previewSuspendedRef = useRef(false)
+  const canApplyLoadedLut = useCallback(
+    () =>
+      !previewSuspendedRef.current &&
+      !hasActiveExport(exportAbortControllerRef.current, sessionRef.current),
+    [exportAbortControllerRef, sessionRef],
+  )
   const previewTransform = useRawPreviewTransform({
     session,
     sessionRef,
@@ -155,6 +165,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setLutDataRef,
     scheduleToast,
     invalidateExportGraph,
+    canApplyLoadedLut,
     setViewMode,
     setCompareSplit,
   })
@@ -305,6 +316,13 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     queueExportResultResourceDisposal,
     toast,
   })
+  previewSuspendedRef.current = previewSuspended
+  // Export commits the look on screen, so a local LUT still reading or
+  // parsing when it starts is dropped rather than held for afterwards.
+  const { cancelLUTFileLoad } = lookStage
+  useEffect(() => {
+    if (status === 'exporting' || previewSuspended) cancelLUTFileLoad()
+  }, [cancelLUTFileLoad, previewSuspended, status])
   const exportStage = {
     canExport,
     exportDisabledReason,

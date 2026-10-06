@@ -4,7 +4,7 @@ import type {
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
@@ -52,6 +52,7 @@ type UseRawLookStageInput = {
   setLutDataRef: (nextLutData: LUTData | null) => void
   scheduleToast: (notify: () => void) => void
   invalidateExportGraph: () => void
+  canApplyLoadedLut: () => boolean
   setViewMode?: (mode: ProcessingParams['viewMode']) => void
   setCompareSplit?: (split: number) => void
 }
@@ -69,6 +70,7 @@ export function useRawLookStage({
   setLutDataRef,
   scheduleToast,
   invalidateExportGraph,
+  canApplyLoadedLut,
   setViewMode,
   setCompareSplit,
 }: UseRawLookStageInput) {
@@ -133,10 +135,12 @@ export function useRawLookStage({
         scheduleToast,
         invalidateExportGraph,
         setLutDataRef,
+        canApplyLoadedLut,
       },
     }),
     [
       activeStyle,
+      canApplyLoadedLut,
       getProcessingParams,
       invalidateExportGraph,
       lut,
@@ -150,8 +154,25 @@ export function useRawLookStage({
     ],
   )
 
+  const fileLoadRef = useRef<AbortController | null>(null)
+  const cancelLUTFileLoad = useCallback(() => {
+    fileLoadRef.current?.abort()
+    fileLoadRef.current = null
+  }, [])
+  // The newest local pick wins: a file still reading or parsing is dropped.
   const loadLUT = useCallback(
-    (file: File) => orchestrateLutLoadFromFile(file, lutCtx),
+    async (file: File) => {
+      fileLoadRef.current?.abort()
+      const controller = new AbortController()
+      fileLoadRef.current = controller
+      try {
+        return await orchestrateLutLoadFromFile(file, lutCtx, {
+          signal: controller.signal,
+        })
+      } finally {
+        if (fileLoadRef.current === controller) fileLoadRef.current = null
+      }
+    },
     [lutCtx],
   )
 
@@ -276,6 +297,7 @@ export function useRawLookStage({
     activeIntensity,
     currentLutName,
     loadLUT,
+    cancelLUTFileLoad,
     loadOnlineLUT,
     selectLUTProfile,
     setIntensity,

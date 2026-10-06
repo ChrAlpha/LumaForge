@@ -92,6 +92,17 @@ export function isCheckpointMetric(
   )
 }
 
+/** An export owns the session: its abort handle is live or it is exporting. */
+export function hasActiveExport(
+  exportAbortController: AbortController | null,
+  session: ImageSession | null,
+): boolean {
+  return (
+    Boolean(exportAbortController && !exportAbortController.signal.aborted) ||
+    session?.exportState.status === 'exporting'
+  )
+}
+
 export function clearExportResultState<T extends ImageSession | null>(
   session: T,
 ): T {

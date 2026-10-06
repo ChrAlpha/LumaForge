@@ -57,8 +57,8 @@ interface LoadLUTContentOptions {
   sha256?: string
   /** Catalog contract: applied as metadata, never stored as a user choice. */
   trustedContract?: LUTContractSelection
-  /** Checked after the off-thread parse so a cancelled load never applies. */
-  signal?: AbortSignal
+  /** Checked just before the LUT applies, so a stale load never lands. */
+  mayApply: () => boolean
 }
 
 export class LUTLoadError extends Error {
@@ -95,6 +95,11 @@ export interface LutLoadContext {
     scheduleToast: (notify: () => void) => void
     invalidateExportGraph: () => void
     setLutDataRef: (nextLutData: LUTData | null) => void
+    /**
+     * False while an export runs or holds the preview released: a LUT
+     * landing then would cancel that export or discard its JPEG.
+     */
+    canApplyLoadedLut: () => boolean
   }
 }
 
@@ -164,9 +169,6 @@ async function loadLUTContent(
   const parsed: ParsedLUT = options.sha256
     ? { ...parsedLut, sha256: options.sha256 }
     : parsedLut
-  if (options.signal?.aborted) {
-    throw new DOMException('LUT load aborted.', 'AbortError')
-  }
   const contracted = options.trustedContract
     ? applyTrustedLUTContract(parsed, options.trustedContract)
     : parsed
@@ -180,6 +182,9 @@ async function loadLUTContent(
     )
   }
 
+  if (!options.mayApply()) {
+    throw new DOMException('LUT load aborted.', 'AbortError')
+  }
   applyLoadedLUT(contracted, ctx, options.sha256)
 }
 
@@ -194,7 +199,18 @@ async function readFileBytes(file: File): Promise<Uint8Array> {
 export async function orchestrateLutLoadFromFile(
   file: File,
   ctx: LutLoadContext,
+  options?: { signal?: AbortSignal },
 ): Promise<LutLoadOutcome> {
+  const startSessionId = ctx.refs.sessionRef.current?.id ?? null
+  // A load begun on a photo belongs to that photo. One begun before any
+  // photo seeds whichever photo arrives, as a detached look does.
+  const mayApply = () =>
+    !options?.signal?.aborted &&
+    (startSessionId === null ||
+      ctx.refs.sessionRef.current?.id === startSessionId) &&
+    ctx.services.canApplyLoadedLut()
+
+  if (!mayApply()) return 'aborted'
   if (!isSupportedLUT(file)) {
     ctx.atoms.setSession((prev) =>
       prev
@@ -217,16 +233,18 @@ export async function orchestrateLutLoadFromFile(
 
   try {
     const bytes = await readFileBytes(file)
+    if (!mayApply()) return 'aborted'
+    const { sha256 } = await sourceContentIdFromBytes(bytes)
+    if (!mayApply()) return 'aborted'
     await loadLUTContent(
-      {
-        source: bytes,
-        sourceName: file.name,
-        sha256: (await sourceContentIdFromBytes(bytes)).sha256,
-      },
+      { source: bytes, sourceName: file.name, sha256, mayApply },
       ctx,
     )
     return 'loaded'
   } catch (err) {
+    // A load that went stale reports nothing, even if it also failed.
+    if (isAbortError(err) || !mayApply()) return 'aborted'
+
     reportLUTLoadFailure(err, ctx)
     return 'failed'
   }
@@ -268,7 +286,8 @@ export async function orchestrateOnlineLutLoad(
           entry.sourceType === 'catalog-entry'
             ? entry.trustedContract
             : undefined,
-        signal: options?.signal,
+        mayApply: () =>
+          !options?.signal?.aborted && ctx.services.canApplyLoadedLut(),
       },
       ctx,
     )

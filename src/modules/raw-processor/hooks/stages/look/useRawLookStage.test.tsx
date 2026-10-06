@@ -233,6 +233,7 @@ function renderLookStageHarness({
       setLutDataRef,
       scheduleToast,
       invalidateExportGraph,
+      canApplyLoadedLut: () => true,
     }),
   )
 
@@ -272,6 +273,7 @@ describe('useRawLookStage', () => {
         setLutDataRef: vi.fn(),
         scheduleToast: vi.fn(),
         invalidateExportGraph: vi.fn(),
+        canApplyLoadedLut: () => true,
       }),
     )
 
@@ -303,6 +305,7 @@ describe('useRawLookStage', () => {
         setLutDataRef: vi.fn(),
         scheduleToast: vi.fn(),
         invalidateExportGraph: vi.fn(),
+        canApplyLoadedLut: () => true,
       }),
     )
 
@@ -336,6 +339,7 @@ describe('useRawLookStage', () => {
         setLutDataRef: vi.fn(),
         scheduleToast: vi.fn(),
         invalidateExportGraph,
+        canApplyLoadedLut: () => true,
         setViewMode: vi.fn(),
         setCompareSplit: vi.fn(),
       }),
@@ -371,6 +375,7 @@ describe('useRawLookStage', () => {
         setLutDataRef: vi.fn(),
         scheduleToast: vi.fn(),
         invalidateExportGraph: vi.fn(),
+        canApplyLoadedLut: () => true,
       }),
     )
 
@@ -405,6 +410,7 @@ describe('useRawLookStage', () => {
         setLutDataRef: vi.fn(),
         scheduleToast: vi.fn(),
         invalidateExportGraph: vi.fn(),
+        canApplyLoadedLut: () => true,
       }),
     )
 

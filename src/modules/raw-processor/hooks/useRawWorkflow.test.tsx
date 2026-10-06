@@ -45,6 +45,7 @@ import {
 } from '~/lib/runtime/capability-vector'
 
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../model/derive-session'
+import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { currentSessionAtom } from '../state/session.atoms'
 import { getProcessingParams, resetToDefaults } from '../state/workflow.atoms'
 import { useRawWorkflow } from './useRawWorkflow'
@@ -237,6 +238,15 @@ function createCubeFile(title: string, name: string) {
   return Object.assign(new File([content], name), {
     text: () => Promise.resolve(content),
   })
+}
+
+/** A .cube whose bytes arrive only when the test finishes the read. */
+function createDeferredCubeFile(title: string, name: string) {
+  const bytes = new TextEncoder().encode(createCube(title))
+  const read = deferred<ArrayBuffer>()
+  const file = new File([bytes], name)
+  Object.defineProperty(file, 'arrayBuffer', { value: () => read.promise })
+  return { file, finishRead: () => read.resolve(bytes.buffer) }
 }
 
 function makeJfifOnlyJpegBytes() {
@@ -916,6 +926,32 @@ describe('useRawWorkflow embedded preview state', () => {
         title: 'Client Secret Sauce',
       },
     })
+  })
+
+  it('applies only the newest of two overlapping local LUT loads', async () => {
+    jotaiStore.set(currentSessionAtom, createTestSession())
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    const slowLook = createDeferredCubeFile('Slow Look', 'slow-look.cube')
+    let slowLoad!: Promise<LutLoadOutcome>
+    act(() => {
+      slowLoad = result.current.loadLUT(slowLook.file)
+    })
+
+    await act(async () => {
+      await expect(
+        result.current.loadLUT(createCubeFile('Quick Look', 'quick-look.cube')),
+      ).resolves.toBe('loaded')
+    })
+    expect(result.current.currentLutName).toBe('Quick Look')
+
+    let outcome: LutLoadOutcome | undefined
+    await act(async () => {
+      slowLook.finishRead()
+      outcome = await slowLoad
+    })
+
+    expect(outcome).toBe('aborted')
+    expect(result.current.currentLutName).toBe('Quick Look')
   })
 
   it('preserves a detached intensity choice across the first RAW load', async () => {
@@ -3051,6 +3087,98 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.exportResult?.filename).toBe(
       'frame_neutral_fullres.jpg',
     )
+  })
+
+  it('refuses a local LUT that finishes reading while export holds the preview', async () => {
+    const pendingExport = deferred<{ filename: string; blob: Blob }>()
+    exportSystemMock.runFullResolutionExportJob.mockReturnValue(
+      pendingExport.promise,
+    )
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    const lateLook = createDeferredCubeFile('Late Look', 'late-look.cube')
+    let lutLoad!: Promise<LutLoadOutcome>
+    act(() => {
+      lutLoad = result.current.loadLUT(lateLook.file)
+    })
+    let exportPromise!: Promise<void>
+    await act(async () => {
+      exportPromise = result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+      await Promise.resolve()
+    })
+    await waitFor(() =>
+      expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(
+        1,
+      ),
+    )
+    const request =
+      exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0]
+    expect(result.current.previewSuspended).toBe(true)
+
+    let outcome: LutLoadOutcome | undefined
+    await act(async () => {
+      lateLook.finishRead()
+      outcome = await lutLoad
+    })
+
+    expect(outcome).toBe('aborted')
+    expect(request.signal.aborted).toBe(false)
+    expect(result.current.status).toBe('exporting')
+    expect(result.current.previewSuspended).toBe(true)
+    expect(result.current.currentLutName).toBeNull()
+
+    await act(async () => {
+      pendingExport.resolve({
+        filename: 'frame.jpg',
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      })
+      await exportPromise
+    })
+
+    expect(result.current.exportResult?.filename).toBe('frame.jpg')
+    expect(result.current.previewSuspended).toBe(true)
+    expect(result.current.currentLutName).toBeNull()
+  })
+
+  it('refuses a local LUT that finishes reading after export delivers its JPEG', async () => {
+    exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
+      filename: 'frame.jpg',
+      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+    })
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    const lateLook = createDeferredCubeFile('Late Look', 'late-look.cube')
+    let lutLoad!: Promise<LutLoadOutcome>
+    act(() => {
+      lutLoad = result.current.loadLUT(lateLook.file)
+    })
+    await act(async () => {
+      await result.current.exportImage({
+        quality: 'high',
+        fidelity: 'balanced',
+      })
+    })
+    expect(result.current.exportResult?.filename).toBe('frame.jpg')
+    expect(result.current.previewSuspended).toBe(true)
+
+    let outcome: LutLoadOutcome | undefined
+    await act(async () => {
+      lateLook.finishRead()
+      outcome = await lutLoad
+    })
+
+    expect(outcome).toBe('aborted')
+    expect(result.current.exportResult?.filename).toBe('frame.jpg')
+    expect(result.current.previewSuspended).toBe(true)
+    expect(result.current.currentLutName).toBeNull()
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
   })
 
   it('keeps desktop-fast export running when bounded HQ settles after export starts', async () => {

@@ -66,9 +66,34 @@ function buildCtx() {
       },
       invalidateExportGraph: vi.fn(),
       setLutDataRef: vi.fn(),
+      canApplyLoadedLut: vi.fn(() => true),
     },
   }
   return { ctx, scheduledToasts }
+}
+
+/** A .cube whose bytes arrive only when the test finishes the read. */
+function deferredCubeFile(name: string) {
+  const bytes = new TextEncoder().encode(cubeText(17))
+  let finishRead!: () => void
+  const read = new Promise<ArrayBuffer>((resolve) => {
+    finishRead = () => resolve(bytes.buffer)
+  })
+  const file = new File([bytes], name)
+  Object.defineProperty(file, 'arrayBuffer', { value: () => read })
+  return { file, finishRead }
+}
+
+function expectUntouched(ctx: LutLoadContext, scheduledToasts: unknown[]) {
+  expect(ctx.atoms.setLut).not.toHaveBeenCalled()
+  expect(ctx.atoms.setSession).not.toHaveBeenCalled()
+  expect(ctx.atoms.setParams).not.toHaveBeenCalled()
+  expect(ctx.services.invalidateExportGraph).not.toHaveBeenCalled()
+  expect(scheduledToasts).toHaveLength(0)
+}
+
+function sessionWithId(id: string) {
+  return { id } as never
 }
 
 /** jsdom's File lacks Blob.text(); patch the instance to match browsers. */
@@ -165,6 +190,19 @@ describe('orchestrateOnlineLutLoad outcome', () => {
     expect(outcome).toBe('aborted')
     expect(fetchVerifiedCubeAsset).not.toHaveBeenCalled()
     expect(scheduledToasts).toHaveLength(0)
+  })
+
+  it("returns 'aborted' without applying when the workflow refuses the parsed LUT", async () => {
+    vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
+      new TextEncoder().encode(cubeText(17)),
+    )
+    const { ctx, scheduledToasts } = buildCtx()
+    vi.mocked(ctx.services.canApplyLoadedLut).mockReturnValue(false)
+
+    const outcome = await orchestrateOnlineLutLoad(entry, undefined, ctx)
+
+    expect(outcome).toBe('aborted')
+    expectUntouched(ctx, scheduledToasts)
   })
 
   it("returns 'aborted' without toasting when the fetch aborts mid-flight", async () => {
@@ -323,6 +361,71 @@ describe('orchestrateLutLoadFromFile outcome', () => {
     const outcome = await orchestrateLutLoadFromFile(file, ctx)
 
     expect(outcome).toBe('loaded')
+    expect(ctx.atoms.setLut).toHaveBeenCalledTimes(1)
+  })
+
+  it("returns 'aborted' untouched when the workflow refuses a load before it starts", async () => {
+    const { ctx, scheduledToasts } = buildCtx()
+    vi.mocked(ctx.services.canApplyLoadedLut).mockReturnValue(false)
+
+    const outcome = await orchestrateLutLoadFromFile(
+      asTextFile(cubeText(17), 'fixture.cube'),
+      ctx,
+    )
+
+    expect(outcome).toBe('aborted')
+    expectUntouched(ctx, scheduledToasts)
+  })
+
+  it("returns 'aborted' untouched when the workflow refuses edits while the file reads", async () => {
+    const { file, finishRead } = deferredCubeFile('fixture.cube')
+    const { ctx, scheduledToasts } = buildCtx()
+
+    const load = orchestrateLutLoadFromFile(file, ctx)
+    vi.mocked(ctx.services.canApplyLoadedLut).mockReturnValue(false)
+    finishRead()
+
+    await expect(load).resolves.toBe('aborted')
+    expectUntouched(ctx, scheduledToasts)
+  })
+
+  it("returns 'aborted' untouched when its signal aborts while the file reads", async () => {
+    const { file, finishRead } = deferredCubeFile('fixture.cube')
+    const { ctx, scheduledToasts } = buildCtx()
+    const controller = new AbortController()
+
+    const load = orchestrateLutLoadFromFile(file, ctx, {
+      signal: controller.signal,
+    })
+    controller.abort()
+    finishRead()
+
+    await expect(load).resolves.toBe('aborted')
+    expectUntouched(ctx, scheduledToasts)
+  })
+
+  it("returns 'aborted' untouched when the photo it was started on is replaced", async () => {
+    const { file, finishRead } = deferredCubeFile('fixture.cube')
+    const { ctx, scheduledToasts } = buildCtx()
+    ctx.refs.sessionRef.current = sessionWithId('photo-a')
+
+    const load = orchestrateLutLoadFromFile(file, ctx)
+    ctx.refs.sessionRef.current = sessionWithId('photo-b')
+    finishRead()
+
+    await expect(load).resolves.toBe('aborted')
+    expectUntouched(ctx, scheduledToasts)
+  })
+
+  it('seeds the photo that arrives when the load began before any photo', async () => {
+    const { file, finishRead } = deferredCubeFile('fixture.cube')
+    const { ctx } = buildCtx()
+
+    const load = orchestrateLutLoadFromFile(file, ctx)
+    ctx.refs.sessionRef.current = sessionWithId('photo-a')
+    finishRead()
+
+    await expect(load).resolves.toBe('loaded')
     expect(ctx.atoms.setLut).toHaveBeenCalledTimes(1)
   })
 
