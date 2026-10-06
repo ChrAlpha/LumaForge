@@ -1,8 +1,13 @@
 // @vitest-environment node
 import { generateIdentityLUT, toLUTData } from '@lumaforge/luma-color-runtime'
-import { canonicalizeJson } from '@lumaforge/render-engine'
+import {
+  canonicalizeJson,
+  invertManifestRenderParams,
+  projectManifestRenderParams,
+} from '@lumaforge/render-engine'
 import { describe, expect, it } from 'vitest'
 
+import type { RenderParams } from '../schemas/params'
 import { parseRenderParams } from '../schemas/params'
 import {
   buildColorGraph,
@@ -342,5 +347,99 @@ describe('selective color', () => {
         toManifestRenderParams(parseRenderParams({}), exposure),
       ).selective_color,
     ).toBeNull()
+  })
+})
+
+describe('shared manifest projection', () => {
+  const exposure = {
+    ev: -0.25,
+    multiplier: Math.pow(2, -0.25),
+    source: 'dng-baseline' as const,
+  }
+  const neutralBand = { hue: 0, saturation: 0, lightness: 0 }
+
+  function shared(params: RenderParams) {
+    return projectManifestRenderParams({
+      userColor: {
+        userExposureEv: params.exposure_ev,
+        userContrast: params.contrast,
+        userHighlights: params.highlights,
+        userShadows: params.shadows,
+        userWhites: params.whites,
+        userBlacks: params.blacks,
+        userTemperature: params.temperature,
+        userTint: params.tint,
+        userSaturation: params.saturation,
+        userVibrance: params.vibrance,
+        selectiveColor: params.selective_color,
+      },
+      intensity: params.intensity,
+      rawRenderExposure: exposure,
+    })
+  }
+
+  it('writes the CLI bytes for absent, partial and non-neutral input', () => {
+    for (const input of [
+      {},
+      { contrast: 12, temperature: -8, intensity: 0.37 },
+      { selective_color: { red: { hue: 10 }, blue: { lightness: 5 } } },
+    ]) {
+      const params = parseRenderParams(input)
+      expect(canonicalizeJson(shared(params))).toBe(
+        canonicalizeJson(toManifestRenderParams(params, exposure)),
+      )
+    }
+  })
+
+  it('omits the explicit all-neutral record the CLI writer still records', () => {
+    const params = parseRenderParams({
+      selective_color: { red: neutralBand, aqua: { hue: 0 } },
+    })
+    expect(
+      toManifestRenderParams(params, exposure).selective_color,
+    ).toBeDefined()
+    expect(shared(params).selective_color).toBeUndefined()
+  })
+
+  it('reads CLI-written params back to the same color graph', () => {
+    const params = parseRenderParams({
+      exposure_ev: 0.5,
+      contrast: 12,
+      saturation: 3,
+      intensity: 0.7,
+      selective_color: { aqua: { saturation: 15 } },
+    })
+    const written = toManifestRenderParams(params, exposure)
+    const intent = invertManifestRenderParams(written)
+    expect(intent.intensity).toBe(0.7)
+    expect(intent.rawRenderExposure).toEqual({
+      ev: -0.25,
+      source: 'dng-baseline',
+    })
+    const viaShared = parseRenderParams({
+      exposure_ev: intent.userColor.userExposureEv,
+      contrast: intent.userColor.userContrast,
+      highlights: intent.userColor.userHighlights,
+      shadows: intent.userColor.userShadows,
+      whites: intent.userColor.userWhites,
+      blacks: intent.userColor.userBlacks,
+      temperature: intent.userColor.userTemperature,
+      tint: intent.userColor.userTint,
+      saturation: intent.userColor.userSaturation,
+      vibrance: intent.userColor.userVibrance,
+      intensity: intent.intensity ?? 1,
+      raw_render_exposure: intent.rawRenderExposure?.ev ?? 'auto',
+      selective_color: intent.userColor.selectiveColor,
+    })
+    const fingerprintOf = (p: RenderParams) =>
+      fingerprintColorGraph(
+        describeColorGraph(
+          requireSupportedGraph(buildColorGraph(p, null, exposure)),
+        ),
+      )
+    expect(fingerprintOf(viaShared)).toBe(
+      fingerprintOf(manifestToRenderParams(written)),
+    )
+    expect(fingerprintOf(viaShared)).toBe(fingerprintOf(params))
   })
 })
