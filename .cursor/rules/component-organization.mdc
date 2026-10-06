@@ -17,7 +17,7 @@ Follow this component architecture for consistent project structure:
 **Common Components**: `src/components/common/`
 - App-specific shared components
 - Components used across multiple features but specific to this app
-- Examples: `ErrorElement`, `Footer`, `LoadRemixAsyncComponent`, `NotFound`
+- Examples: `ErrorElement`, `Footer`, `NotFound`, `SeoMetadata`
 
 **Module Components**: `src/modules/`
 - Feature-specific components organized by domain
