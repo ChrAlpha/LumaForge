@@ -262,11 +262,7 @@ export class WebGPUProcessingPipeline {
         },
       ],
     })
-    pass.setPipeline(
-      images.inputUpload?.layout === 'rgb-u16'
-        ? this.programs.processU16
-        : this.programs.processFloat,
-    )
+    pass.setPipeline(this.programs.processU16)
     pass.setBindGroup(0, uniforms)
     pass.setBindGroup(1, images.inputGroup!)
     pass.setBindGroup(2, images.lutGroup)
@@ -335,7 +331,6 @@ export class WebGPUProcessingPipeline {
       width,
       height,
       maxTextureSize: device.limits.maxTextureDimension2D,
-      source: images.inputUpload,
       lutSize: images.lutData?.size ?? 0,
       exportOptions,
     })
@@ -439,11 +434,7 @@ export class WebGPUProcessingPipeline {
     }
   }
   private telemetry() {
-    return webGPUTelemetry(
-      this.params,
-      this.images?.lutData ?? null,
-      this.images?.inputUpload ?? null,
-    )
+    return webGPUTelemetry(this.params, this.images?.lutData ?? null)
   }
   dispose(_options: { releaseContext?: boolean } = {}) {
     this.disposed = true

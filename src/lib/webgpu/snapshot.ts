@@ -2,7 +2,6 @@ import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { LUT_SIZE } from '@lumaforge/luma-color-runtime'
 
 import type { GPUReadbackScope } from './async-resources'
-import type { RawUploadInput } from './contract'
 import type { ExportRenderOptions, ExportRenderPlan } from './export-plan'
 import {
   createExportTiles,
@@ -18,14 +17,12 @@ export function planSnapshotRender({
   width,
   height,
   maxTextureSize,
-  source,
   lutSize,
   exportOptions = {},
 }: {
   width: number
   height: number
   maxTextureSize: number
-  source: RawUploadInput
   lutSize: number
   exportOptions?: ExportRenderOptions
 }): ExportRenderPlan {
@@ -44,7 +41,8 @@ export function planSnapshotRender({
   if (plan.strategy === 'full-frame' && fullReadbackBytes <= budget) return plan
   const fixedBytes =
     lutSize ** 3 * 16 + LUT_SIZE * 16 + 16 + UNIFORM_BUFFER_SIZE
-  const inputBytesPerPixel = source.layout === 'rgb-u16' ? 8 : 16
+  // RGBA16 uint source texel; WebGPU has no three-channel 16-bit format.
+  const inputBytesPerPixel = 8
   const renderBytesPerPixel = Math.max(
     inputBytesPerPixel + 16,
     exportOptions.renderBytesPerPixel ?? 32,
@@ -216,11 +214,7 @@ async function readOutputTile(
         },
       ],
     })
-    process.setPipeline(
-      images.inputUpload?.layout === 'rgb-u16'
-        ? programs.processU16
-        : programs.processFloat,
-    )
+    process.setPipeline(programs.processU16)
     process.setBindGroup(0, uniforms)
     process.setBindGroup(1, images.inputGroup!)
     process.setBindGroup(2, images.lutGroup)

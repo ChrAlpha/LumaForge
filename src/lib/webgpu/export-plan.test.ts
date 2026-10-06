@@ -2,6 +2,8 @@ import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import {
+  createExportTiles,
+  cropRawUploadInput,
   ExportRenderError,
   getExportRenderOptionsForPreference,
   planExportRenderTarget,
@@ -293,5 +295,53 @@ describe('export render target planner', () => {
         retryable: false,
       })
     }
+  })
+})
+
+describe('tiled RGB16 source crops', () => {
+  const source = {
+    data: Uint16Array.from({ length: 3 * 2 * 3 }, (_, index) => index),
+    width: 3,
+    height: 2,
+    layout: 'rgb-u16' as const,
+    colorSpace: 'linear-prophoto-rgb' as const,
+    renderExposureEv: 1,
+    renderExposureMultiplier: 2,
+  }
+
+  it('copies exact RGB16 rows and keeps the source exposure', () => {
+    const crop = cropRawUploadInput(source, { x: 1, y: 0, width: 2, height: 2 })
+    expect(crop).toEqual({
+      ...source,
+      width: 2,
+      height: 2,
+      data: new Uint16Array([3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16, 17]),
+    })
+    expect(crop.data.buffer).not.toBe(source.data.buffer)
+  })
+
+  it('reassembles the source from its tiles', () => {
+    const tiles = createExportTiles({
+      width: 3,
+      height: 2,
+      tileWidth: 2,
+      tileHeight: 1,
+    })
+    const restored = new Uint16Array(source.data.length)
+    for (const tile of tiles) {
+      const crop = cropRawUploadInput(source, tile)
+      for (let row = 0; row < tile.height; row++)
+        restored.set(
+          crop.data.subarray(row * tile.width * 3, (row + 1) * tile.width * 3),
+          ((tile.y + row) * source.width + tile.x) * 3,
+        )
+    }
+    expect(restored).toEqual(source.data)
+  })
+
+  it('refuses tiles outside the source', () => {
+    expect(() =>
+      cropRawUploadInput(source, { x: 2, y: 0, width: 2, height: 1 }),
+    ).toThrow('EXPORT_TILE_OUT_OF_BOUNDS')
   })
 })

@@ -151,6 +151,42 @@ describe('renderOriginalReferenceSnapshot', () => {
     })
   })
 
+  it('refuses a legacy float display frame before uploading or encoding', async () => {
+    const uploadImage = vi.fn()
+    const dispose = vi.fn()
+    const toBlob = vi.fn()
+
+    await expect(
+      renderOriginalReferenceSnapshot({
+        image: {
+          ...createImage(),
+          channels: 4,
+          bitsPerChannel: 32,
+          data: new Float32Array(1600 * 1000 * 4),
+          layout: 'rgba-float32',
+          colorSpace: 'display-srgb-preview',
+        },
+        key: 'float-frame',
+        maxPixels: 1_000_000,
+        createPipeline: () =>
+          ({
+            initialize: vi.fn().mockResolvedValue(undefined),
+            uploadImage,
+            setParams: vi.fn(),
+            render: vi.fn(),
+            waitForGpu: vi.fn().mockResolvedValue(undefined),
+            dispose,
+          }) as never,
+        createCanvas: () => ({ width: 0, height: 0, toBlob }) as never,
+        createObjectURL,
+      }),
+    ).rejects.toThrow('ORIGINAL_REFERENCE_SNAPSHOT_UNSUPPORTED_INPUT')
+    expect(uploadImage).not.toHaveBeenCalled()
+    expect(toBlob).not.toHaveBeenCalled()
+    expect(createObjectURL).not.toHaveBeenCalled()
+    expect(dispose).toHaveBeenCalledExactlyOnceWith({ releaseContext: true })
+  })
+
   it('disposes the pipeline and revokes partial output when encoding fails', async () => {
     const dispose = vi.fn()
 

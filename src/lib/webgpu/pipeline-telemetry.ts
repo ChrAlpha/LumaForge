@@ -8,7 +8,6 @@ import type {
   PipelineTelemetrySnapshot,
   PipelineTransformPath,
   PreviewGpuCapabilities,
-  RawUploadInput,
 } from './contract'
 
 export function webGPUCapabilities(
@@ -28,7 +27,6 @@ export function webGPUCapabilities(
 export function webGPUTelemetry(
   params: ColorGraphIntentSource,
   lut: LUTData | null,
-  input: RawUploadInput | null,
 ): PipelineTelemetrySnapshot {
   // Report what the preview draws, from the same policy as the shader.
   const plan = resolvePreviewColorPlan({
@@ -50,7 +48,7 @@ export function webGPUTelemetry(
   } else if (plan.selected.styleKind === 'custom' && lut)
     transformPath = 'disabled-lut'
   return {
-    inputFormat: input?.layout === 'rgb-u16' ? 'uint16-rgb' : 'float-rgba',
+    inputFormat: 'uint16-rgb',
     transformPath,
     lutRole: profile?.role ?? null,
     lutInputTransfer: profile?.inputTransfer ?? null,

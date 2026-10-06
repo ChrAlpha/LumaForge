@@ -268,41 +268,27 @@ export function cropRawUploadInput(
     throw new Error('EXPORT_TILE_OUT_OF_BOUNDS')
   }
 
-  if (input.layout === 'rgb-u16') {
-    return {
-      ...input,
-      width: tile.width,
-      height: tile.height,
-      data: cropTypedRows(input.data, input.width, tile, 3),
-    }
-  }
-
   return {
     ...input,
     width: tile.width,
     height: tile.height,
-    data: cropTypedRows(input.data, input.width, tile, 4),
+    data: cropRgb16Rows(input.data, input.width, tile),
   }
 }
 
-function cropTypedRows<T extends Float32Array | Uint16Array>(
-  source: T,
+function cropRgb16Rows(
+  source: Uint16Array,
   sourceWidth: number,
   tile: ExportTile,
-  channels: number,
-): T {
-  const Ctor = source.constructor as {
-    new (length: number): T
-  }
-  const result = new Ctor(tile.width * tile.height * channels)
-  const rowLength = tile.width * channels
+): Uint16Array {
+  const result = new Uint16Array(tile.width * tile.height * 3)
+  const rowLength = tile.width * 3
 
   for (let row = 0; row < tile.height; row++) {
-    const sourceOffset = ((tile.y + row) * sourceWidth + tile.x) * channels
-    const targetOffset = row * rowLength
+    const sourceOffset = ((tile.y + row) * sourceWidth + tile.x) * 3
     result.set(
-      source.subarray(sourceOffset, sourceOffset + rowLength) as T,
-      targetOffset,
+      source.subarray(sourceOffset, sourceOffset + rowLength),
+      row * rowLength,
     )
   }
 

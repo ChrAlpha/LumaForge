@@ -16,12 +16,10 @@ import {
 
 export interface WebGPUPrograms {
   uniformLayout: GPUBindGroupLayout
-  inputFloatLayout: GPUBindGroupLayout
   inputU16Layout: GPUBindGroupLayout
   lutLayout: GPUBindGroupLayout
   selectiveLayout: GPUBindGroupLayout
   outputLayout: GPUBindGroupLayout
-  processFloat: GPURenderPipeline
   processU16: GPURenderPipeline
   output: GPURenderPipeline
   snapshotOutput: GPURenderPipeline
@@ -30,7 +28,6 @@ export interface WebGPUPrograms {
 type Layouts = Pick<
   WebGPUPrograms,
   | 'uniformLayout'
-  | 'inputFloatLayout'
   | 'inputU16Layout'
   | 'lutLayout'
   | 'selectiveLayout'
@@ -40,7 +37,6 @@ type Outputs = Pick<WebGPUPrograms, 'output' | 'snapshotOutput'>
 interface SharedPrograms extends Layouts {
   vertex: GPUShaderModule
   outputFragment: GPUShaderModule
-  floatPipelineLayout: GPUPipelineLayout
   u16PipelineLayout: GPUPipelineLayout
   outputPipelineLayout: GPUPipelineLayout
   outputs?: Promise<Outputs>
@@ -137,12 +133,6 @@ async function createSharedPrograms(
       },
     ],
   })
-  const inputFloatLayout = textureLayout(
-    device,
-    'unfilterable-float',
-    '2d',
-    'non-filtering',
-  )
   const inputU16Layout = textureLayout(device, 'uint', '2d', 'non-filtering')
   const lutLayout = textureLayout(
     device,
@@ -153,21 +143,22 @@ async function createSharedPrograms(
   const selectiveLayout = textureLayout(device, 'unfilterable-float', '2d')
   const outputLayout = textureLayout(device, 'float', '2d', 'filtering')
 
-  const processingLayout = (input: GPUBindGroupLayout) =>
-    device.createPipelineLayout({
-      bindGroupLayouts: [uniformLayout, input, lutLayout, selectiveLayout],
-    })
   return {
     uniformLayout,
-    inputFloatLayout,
     inputU16Layout,
     lutLayout,
     selectiveLayout,
     outputLayout,
     vertex,
     outputFragment,
-    floatPipelineLayout: processingLayout(inputFloatLayout),
-    u16PipelineLayout: processingLayout(inputU16Layout),
+    u16PipelineLayout: device.createPipelineLayout({
+      bindGroupLayouts: [
+        uniformLayout,
+        inputU16Layout,
+        lutLayout,
+        selectiveLayout,
+      ],
+    }),
     outputPipelineLayout: device.createPipelineLayout({
       bindGroupLayouts: [outputLayout],
     }),
@@ -242,29 +233,16 @@ async function createPrograms(
   }
   // Validate all shader modules before creating any render pipeline. Common
   // layouts/output modules survive a failed process variant and are reusable.
-  const [shared, floatFragment, u16Fragment] = await Promise.all([
+  const [shared, u16Fragment] = await Promise.all([
     cache.shared,
     compileShader(
       device,
-      'RAW float process',
-      createProcessShader(false, filterable, specialization),
-    ),
-    compileShader(
-      device,
       'RAW uint16 process',
-      createProcessShader(true, filterable, specialization),
+      createProcessShader(filterable, specialization),
     ),
   ])
-  const [outputs, processFloat, processU16] = await Promise.all([
+  const [outputs, processU16] = await Promise.all([
     getOutputs(device, shared, canvasFormat),
-    makePipeline(
-      device,
-      shared.vertex,
-      'RAW float process',
-      floatFragment,
-      shared.floatPipelineLayout,
-      'rgba16float',
-    ),
     makePipeline(
       device,
       shared.vertex,
@@ -276,13 +254,11 @@ async function createPrograms(
   ])
   return {
     uniformLayout: shared.uniformLayout,
-    inputFloatLayout: shared.inputFloatLayout,
     inputU16Layout: shared.inputU16Layout,
     lutLayout: shared.lutLayout,
     selectiveLayout: shared.selectiveLayout,
     outputLayout: shared.outputLayout,
     ...outputs,
-    processFloat,
     processU16,
   }
 }

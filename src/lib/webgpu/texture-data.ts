@@ -1,20 +1,23 @@
 import { GPUReadbackScope } from './async-resources'
 import type { RawUploadInput } from './contract'
 
+/** The GPU accepts only RGB16 linear ProPhoto; any other layout is refused. */
 export function validateImageUpload(
   input: RawUploadInput,
   maxDimension: number,
 ) {
   const { width, height, data } = input
-  const channels = input.layout === 'rgb-u16' ? 3 : 4
   if (
+    input.layout !== 'rgb-u16' ||
+    input.colorSpace !== 'linear-prophoto-rgb' ||
+    !(data instanceof Uint16Array) ||
     !Number.isSafeInteger(width) ||
     !Number.isSafeInteger(height) ||
     width <= 0 ||
     height <= 0 ||
     width > maxDimension ||
     height > maxDimension ||
-    data.length !== width * height * channels
+    data.length !== width * height * 3
   )
     throw new Error('GPU_IMAGE_LAYOUT_INVALID')
 }
@@ -23,7 +26,7 @@ export function validateImageUpload(
 export function uploadRgb16(
   device: GPUDevice,
   texture: GPUTexture,
-  input: Extract<RawUploadInput, { layout: 'rgb-u16' }>,
+  input: RawUploadInput,
 ) {
   const rows = Math.min(
     input.height,

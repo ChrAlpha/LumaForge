@@ -359,7 +359,7 @@ describe('webGPU preview of a look export refuses', () => {
         expect(getShaderSpecialization(params, lut)).toEqual(
           getShaderSpecialization(stripped(params), null),
         )
-        expect(webGPUTelemetry(params, lut, null)).toMatchObject({
+        expect(webGPUTelemetry(params, lut)).toMatchObject({
           transformPath: 'disabled-lut',
           lutRole: null,
           lutInputTransfer: null,
@@ -383,7 +383,7 @@ describe('webGPU preview of a look export refuses', () => {
       styleKind: 2,
       useLut: true,
     })
-    expect(webGPUTelemetry(params, lut, null).transformPath).toBe('display-lut')
+    expect(webGPUTelemetry(params, lut).transformPath).toBe('display-lut')
   })
 
   it('draws the selected built-in preset, which only WebGPU implements', () => {
@@ -398,9 +398,7 @@ describe('webGPU preview of a look export refuses', () => {
     expect(view.getFloat32(UNIFORM_FIELDS.intensity.offset, true)).toBe(
       Math.fround(0.37),
     )
-    expect(webGPUTelemetry(params, null, null).transformPath).toBe(
-      'builtin-style',
-    )
+    expect(webGPUTelemetry(params, null).transformPath).toBe('builtin-style')
   })
 
   it('draws no style for a built-in selection without a preset, as export does', () => {
@@ -422,6 +420,6 @@ describe('webGPU preview of a look export refuses', () => {
     expect(getShaderSpecialization(params, null)).toEqual(
       getShaderSpecialization(stripped(params), null),
     )
-    expect(webGPUTelemetry(params, null, null).transformPath).toBe('no-lut')
+    expect(webGPUTelemetry(params, null).transformPath).toBe('no-lut')
   })
 })

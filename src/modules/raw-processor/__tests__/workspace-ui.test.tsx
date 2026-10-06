@@ -1399,13 +1399,13 @@ describe('rawToolSurface', () => {
               dualGpuAllowed: true,
               imageRef: {
                 current: {
-                  data: new Float32Array(4),
+                  data: new Uint16Array(3),
                   width: 1,
                   height: 1,
-                  channels: 4,
-                  bitsPerChannel: 32,
-                  layout: 'rgba-float32',
-                  colorSpace: 'display-srgb-preview',
+                  channels: 3,
+                  bitsPerChannel: 16,
+                  layout: 'rgb-u16',
+                  colorSpace: 'linear-prophoto-rgb',
                   metadata: { width: 1, height: 1 },
                   renderExposure: {
                     ev: 0,
@@ -1444,13 +1444,13 @@ describe('rawToolSurface', () => {
               originalReferenceSnapshot: null,
               imageRef: {
                 current: {
-                  data: new Float32Array(4),
+                  data: new Uint16Array(3),
                   width: 1,
                   height: 1,
-                  channels: 4,
-                  bitsPerChannel: 32,
-                  layout: 'rgba-float32',
-                  colorSpace: 'display-srgb-preview',
+                  channels: 3,
+                  bitsPerChannel: 16,
+                  layout: 'rgb-u16',
+                  colorSpace: 'linear-prophoto-rgb',
                   metadata: { width: 1, height: 1 },
                   renderExposure: {
                     ev: 0,
@@ -1496,13 +1496,13 @@ describe('rawToolSurface', () => {
             originalReferenceSnapshot: snapshot,
             imageRef: {
               current: {
-                data: new Float32Array(4),
+                data: new Uint16Array(3),
                 width: 1,
                 height: 1,
-                channels: 4,
-                bitsPerChannel: 32,
-                layout: 'rgba-float32',
-                colorSpace: 'display-srgb-preview',
+                channels: 3,
+                bitsPerChannel: 16,
+                layout: 'rgb-u16',
+                colorSpace: 'linear-prophoto-rgb',
                 metadata: { width: 1, height: 1 },
                 renderExposure: {
                   ev: 0,
@@ -1539,13 +1539,13 @@ describe('rawToolSurface', () => {
             dualGpuAllowed: true,
             imageRef: {
               current: {
-                data: new Float32Array(4),
+                data: new Uint16Array(3),
                 width: 1,
                 height: 1,
-                channels: 4,
-                bitsPerChannel: 32,
-                layout: 'rgba-float32',
-                colorSpace: 'display-srgb-preview',
+                channels: 3,
+                bitsPerChannel: 16,
+                layout: 'rgb-u16',
+                colorSpace: 'linear-prophoto-rgb',
                 metadata: { width: 1, height: 1 },
                 renderExposure: {
                   ev: 0,
@@ -1592,13 +1592,13 @@ describe('rawToolSurface', () => {
             originalReferenceSnapshot: snapshot,
             imageRef: {
               current: {
-                data: new Float32Array(4),
+                data: new Uint16Array(3),
                 width: 1,
                 height: 1,
-                channels: 4,
-                bitsPerChannel: 32,
-                layout: 'rgba-float32',
-                colorSpace: 'display-srgb-preview',
+                channels: 3,
+                bitsPerChannel: 16,
+                layout: 'rgb-u16',
+                colorSpace: 'linear-prophoto-rgb',
                 metadata: { width: 1, height: 1 },
                 renderExposure: {
                   ev: 0,
@@ -1642,13 +1642,13 @@ describe('rawToolSurface', () => {
           hasImage: true,
           decodedImageRef: {
             current: {
-              data: new Float32Array(4),
+              data: new Uint16Array(3),
               width: 1,
               height: 1,
-              channels: 4,
-              bitsPerChannel: 32,
-              layout: 'rgba-float32',
-              colorSpace: 'display-srgb-preview',
+              channels: 3,
+              bitsPerChannel: 16,
+              layout: 'rgb-u16',
+              colorSpace: 'linear-prophoto-rgb',
               metadata: { width: 1, height: 1 },
               renderExposure: {
                 ev: 0,
@@ -1686,13 +1686,13 @@ describe('rawToolSurface', () => {
               splitEnabled: false,
               imageRef: {
                 current: {
-                  data: new Float32Array(4),
+                  data: new Uint16Array(3),
                   width: 1,
                   height: 1,
-                  channels: 4,
-                  bitsPerChannel: 32,
-                  layout: 'rgba-float32',
-                  colorSpace: 'display-srgb-preview',
+                  channels: 3,
+                  bitsPerChannel: 16,
+                  layout: 'rgb-u16',
+                  colorSpace: 'linear-prophoto-rgb',
                   metadata: { width: 1, height: 1 },
                   renderExposure: {
                     ev: 0,
@@ -1726,13 +1726,13 @@ describe('rawToolSurface', () => {
               previewSuspended: true,
               imageRef: {
                 current: {
-                  data: new Float32Array(4),
+                  data: new Uint16Array(3),
                   width: 1,
                   height: 1,
-                  channels: 4,
-                  bitsPerChannel: 32,
-                  layout: 'rgba-float32',
-                  colorSpace: 'display-srgb-preview',
+                  channels: 3,
+                  bitsPerChannel: 16,
+                  layout: 'rgb-u16',
+                  colorSpace: 'linear-prophoto-rgb',
                   metadata: { width: 1, height: 1 },
                   renderExposure: {
                     ev: 0,

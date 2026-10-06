@@ -67,17 +67,6 @@ fn main(@builtin(vertex_index) index: u32) -> VertexOutput {
 }
 `
 
-const PROCESS_FRAGMENT_HEADER = /* wgsl */ `
-${UNIFORM_BUFFER_STRUCT}
-
-@group(0) @binding(0) var<uniform> params: ProcessUniforms;
-@group(1) @binding(0) var inputTexture: texture_2d<f32>;
-@group(1) @binding(1) var inputSampler: sampler;
-@group(2) @binding(0) var lutTexture: texture_3d<f32>;
-@group(2) @binding(1) var lutSampler: sampler;
-@group(3) @binding(0) var selectiveColorTexture: texture_2d<f32>;
-`
-
 const PROCESS_FRAGMENT_HEADER_U16 = /* wgsl */ `
 ${UNIFORM_BUFFER_STRUCT}
 
@@ -219,26 +208,6 @@ fn processColor(technicalBaseSceneLinearProPhoto: vec3f) -> vec4f {
 }
 `
 
-export const PROCESS_FRAGMENT_SHADER_FLOAT = /* wgsl */ `
-${PROCESS_FRAGMENT_HEADER}
-
-fn linearProPhotoToLinearSrgb(color: vec3f) -> vec3f {
-  return color;
-}
-
-fn readInputSceneLinearProPhoto(uv: vec2f) -> vec3f {
-  return srgbToLinear(textureSampleLevel(inputTexture, inputSampler, uv, 0.0).rgb);
-}
-
-${PROCESS_FRAGMENT_BODY}
-
-@fragment
-fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
-  let sceneLinear = readInputSceneLinearProPhoto(texCoord) * params.rawRenderExposureMultiplier;
-  return processColor(sceneLinear);
-}
-`
-
 export const PROCESS_FRAGMENT_SHADER_U16 = /* wgsl */ `
 ${PROCESS_FRAGMENT_HEADER_U16}
 
@@ -313,21 +282,13 @@ fn sampleUnfilterableLut(color: vec3f) -> vec3f {
 }
 `
 
+// Processing is exactly one fragment per RGB16 input texel. Filtering is
+// performed only by the output pass, after the complete color pipeline.
 export function createProcessShader(
-  integerInput: boolean,
   filterable: boolean,
   specialization?: ShaderSpecialization,
 ) {
-  let code = integerInput
-    ? PROCESS_FRAGMENT_SHADER_U16
-    : PROCESS_FRAGMENT_SHADER_FLOAT
-  // Processing is exactly one fragment per input texel. Filtering is performed
-  // only by the output pass, after the complete color pipeline.
-  if (!integerInput)
-    code = code.replace(
-      'textureSampleLevel(inputTexture, inputSampler, uv, 0.0)',
-      'textureLoad(inputTexture, clamp(vec2i(uv * vec2f(textureDimensions(inputTexture))), vec2i(0), vec2i(textureDimensions(inputTexture)) - vec2i(1)), 0)',
-    )
+  let code = PROCESS_FRAGMENT_SHADER_U16
   if (!filterable)
     code =
       UNFILTERABLE_LUT +

@@ -53,25 +53,18 @@ export interface PipelineStats {
   lutSize: number | null
 }
 
-export type RawUploadInput =
-  | {
-      data: Float32Array
-      width: number
-      height: number
-      layout: 'rgba-float32'
-      colorSpace: 'display-srgb-preview'
-    }
-  | {
-      data: Uint16Array
-      width: number
-      height: number
-      layout: 'rgb-u16'
-      colorSpace: 'linear-prophoto-rgb'
-      renderExposureEv: number
-      renderExposureMultiplier: number
-    }
+/** The only GPU source: the decoder's linear ProPhoto RGB16 render. */
+export interface RawUploadInput {
+  data: Uint16Array
+  width: number
+  height: number
+  layout: 'rgb-u16'
+  colorSpace: 'linear-prophoto-rgb'
+  renderExposureEv: number
+  renderExposureMultiplier: number
+}
 
-export type RawUploadInputFormat = 'float-rgba' | 'uint16-rgb'
+export type RawUploadInputFormat = 'uint16-rgb'
 
 export type PipelineTransformPath =
   | 'no-lut'

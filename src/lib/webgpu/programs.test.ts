@@ -12,11 +12,10 @@ vi.mock('~/lib/webgpu/shaders', () => ({
   VERTEX_SHADER: 'vertex',
   PREVIEW_OUTPUT_SHADER: 'output',
   createProcessShader: (
-    integerInput: boolean,
     filterable: boolean,
     specialization?: ShaderSpecialization,
   ) =>
-    `process:${integerInput}:${filterable}${specialization ? `:${specialization.styleKind}:${Number(specialization.saturationActive)}` : ''}`,
+    `process:${filterable}${specialization ? `:${specialization.styleKind}:${Number(specialization.saturationActive)}` : ''}`,
 }))
 
 function createDevice(filterable = false) {
@@ -139,14 +138,14 @@ describe('cached WebGPU programs', () => {
     expect(await getPrograms(device, 'rgba8unorm', profileVariant(0))).not.toBe(
       first,
     )
-    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(count + 2)
+    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(count + 1)
     expect(getCacheStats(device, 'rgba8unorm').settledPrograms).toBe(
       MAX_CACHED_SHADER_SPECIALIZATIONS,
     )
-    expect(mocks.createBindGroupLayout).toHaveBeenCalledTimes(6)
+    expect(mocks.createBindGroupLayout).toHaveBeenCalledTimes(5)
   })
 
-  it('shares common layouts/output and only compiles two process pipelines for each new feature key', async () => {
+  it('shares common layouts/output and only compiles one process pipeline for each new feature key', async () => {
     const { device, mocks } = createDevice()
     const neutral: ShaderSpecialization = {
       styleKind: 0,
@@ -162,12 +161,11 @@ describe('cached WebGPU programs', () => {
       styleKind: 1,
       saturationActive: true,
     })
-    expect(mocks.createShaderModule).toHaveBeenCalledTimes(6)
-    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(6)
+    expect(mocks.createShaderModule).toHaveBeenCalledTimes(4)
+    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(4)
     expect(mocks.createBindGroupLayout).toHaveBeenCalledTimes(layouts)
     for (const field of [
       'uniformLayout',
-      'inputFloatLayout',
       'inputU16Layout',
       'lutLayout',
       'selectiveLayout',
@@ -176,14 +174,14 @@ describe('cached WebGPU programs', () => {
       'snapshotOutput',
     ] as const)
       expect(active[field]).toBe(first[field])
-    expect(active.processFloat).not.toBe(first.processFloat)
+    expect(active.processU16).not.toBe(first.processU16)
     expect(
       await getPrograms(device, 'bgra8unorm', { ...neutral, useLut: true }),
     ).toBe(first)
     const generic = await getPrograms(device, 'bgra8unorm')
     expect(generic.output).toBe(first.output)
-    expect(mocks.createShaderModule).toHaveBeenCalledTimes(8)
-    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(8)
+    expect(mocks.createShaderModule).toHaveBeenCalledTimes(5)
+    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(5)
   })
 
   it('removes only a failed feature variant while preserving ready variants', async () => {
@@ -205,7 +203,7 @@ describe('cached WebGPU programs', () => {
     expect(await getPrograms(device, 'rgba8unorm')).toBe(generic)
     const retry = await getPrograms(device, 'rgba8unorm', neutral)
     expect(retry.output).toBe(generic.output)
-    expect(mocks.createBindGroupLayout).toHaveBeenCalledTimes(6)
+    expect(mocks.createBindGroupLayout).toHaveBeenCalledTimes(5)
   })
   it('deduplicates concurrent compilation for one device and canvas format', async () => {
     const { device, mocks } = createDevice()
@@ -215,8 +213,8 @@ describe('cached WebGPU programs', () => {
     const [programs, same] = await Promise.all([first, second])
     expect(programs).toBe(same)
     expect(await getPrograms(device, 'bgra8unorm')).toBe(programs)
-    expect(mocks.createShaderModule).toHaveBeenCalledTimes(4)
-    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(4)
+    expect(mocks.createShaderModule).toHaveBeenCalledTimes(3)
+    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(3)
     expect(mocks.pushErrorScope).not.toHaveBeenCalled()
     expect(mocks.popErrorScope).not.toHaveBeenCalled()
   })
@@ -229,8 +227,8 @@ describe('cached WebGPU programs', () => {
     const otherDevice = await getPrograms(second.device, 'bgra8unorm')
     expect(alternate).not.toBe(programs)
     expect(otherDevice).not.toBe(programs)
-    expect(first.mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(8)
-    expect(second.mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(4)
+    expect(first.mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(6)
+    expect(second.mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(3)
   })
 
   it.each([false, true])(
@@ -248,19 +246,14 @@ describe('cached WebGPU programs', () => {
           buffer: { type: 'uniform', minBindingSize: 240 },
         },
       ])
-      for (const [value, sampleType] of [
-        [programs.inputFloatLayout, 'unfilterable-float'],
-        [programs.inputU16Layout, 'uint'],
-      ] as const) {
-        expect(layout(value).entries).toEqual([
-          {
-            binding: 0,
-            visibility: 2,
-            texture: { sampleType, viewDimension: '2d' },
-          },
-          { binding: 1, visibility: 2, sampler: { type: 'non-filtering' } },
-        ])
-      }
+      expect(layout(programs.inputU16Layout).entries).toEqual([
+        {
+          binding: 0,
+          visibility: 2,
+          texture: { sampleType: 'uint', viewDimension: '2d' },
+        },
+        { binding: 1, visibility: 2, sampler: { type: 'non-filtering' } },
+      ])
       expect(layout(programs.lutLayout).entries).toEqual([
         {
           binding: 0,
@@ -292,41 +285,40 @@ describe('cached WebGPU programs', () => {
         { binding: 1, visibility: 2, sampler: { type: 'filtering' } },
       ])
       expect(
-        mocks.createShaderModule.mock.calls.map(
-          ([descriptor]) => descriptor.code,
-        ),
-      ).toEqual(
-        expect.arrayContaining([
-          `process:false:${filterable}`,
-          `process:true:${filterable}`,
-        ]),
-      )
+        mocks.createShaderModule.mock.calls
+          .map(([descriptor]) => descriptor.code)
+          .sort(),
+      ).toEqual(['output', `process:${filterable}`, 'vertex'])
+      expect(mocks.createBindGroupLayout).toHaveBeenCalledTimes(5)
     },
   )
 
-  it('keeps both source formats in RGBA16F and uses buffer-free fullscreen triangles', async () => {
+  it('processes only the RGB16 source into RGBA16F and uses buffer-free fullscreen triangles', async () => {
     const { device, mocks } = createDevice()
     const programs = await getPrograms(device, 'bgra8unorm')
     const descriptor = (value: GPURenderPipeline) =>
       value as unknown as GPURenderPipelineDescriptor
-    for (const value of [programs.processFloat, programs.processU16]) {
-      expect(descriptor(value).fragment?.targets).toEqual([
-        { format: 'rgba16float' },
-      ])
-    }
-    for (const [value, inputLayout] of [
-      [programs.processFloat, programs.inputFloatLayout],
-      [programs.processU16, programs.inputU16Layout],
-    ] as const) {
-      expect(descriptor(value).layout).toEqual({
-        bindGroupLayouts: [
-          programs.uniformLayout,
-          inputLayout,
-          programs.lutLayout,
-          programs.selectiveLayout,
-        ],
-      })
-    }
+    expect(Object.keys(programs).sort()).toEqual([
+      'inputU16Layout',
+      'lutLayout',
+      'output',
+      'outputLayout',
+      'processU16',
+      'selectiveLayout',
+      'snapshotOutput',
+      'uniformLayout',
+    ])
+    expect(descriptor(programs.processU16).fragment?.targets).toEqual([
+      { format: 'rgba16float' },
+    ])
+    expect(descriptor(programs.processU16).layout).toEqual({
+      bindGroupLayouts: [
+        programs.uniformLayout,
+        programs.inputU16Layout,
+        programs.lutLayout,
+        programs.selectiveLayout,
+      ],
+    })
     expect(descriptor(programs.output).fragment?.targets).toEqual([
       { format: 'bgra8unorm' },
     ])
@@ -345,19 +337,19 @@ describe('cached WebGPU programs', () => {
     const { device, mocks } = createDevice()
     const programs = await getPrograms(device, 'rgba8unorm')
     expect(programs.snapshotOutput).toBe(programs.output)
-    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(3)
+    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(2)
   })
 
   it('rejects shader compilation errors with their source location and permits retry', async () => {
     const { device, messages, mocks } = createDevice()
-    messages.set('process:false:false', [compilationMessage('error')])
+    messages.set('process:false', [compilationMessage('error')])
     await expect(getPrograms(device, 'bgra8unorm')).rejects.toThrow(
       '3:8 unexpected token',
     )
     expect(mocks.createRenderPipelineAsync).not.toHaveBeenCalled()
     messages.clear()
     await expect(getPrograms(device, 'bgra8unorm')).resolves.toBeDefined()
-    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(4)
+    expect(mocks.createRenderPipelineAsync).toHaveBeenCalledTimes(3)
   })
 
   it('allows compilation warnings', async () => {

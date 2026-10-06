@@ -114,40 +114,7 @@ function resampleUint16(
   return output
 }
 
-function resampleFloat32(
-  data: Float32Array,
-  sourceWidth: number,
-  sourceHeight: number,
-  targetWidth: number,
-  targetHeight: number,
-  channels: number,
-) {
-  if (sourceWidth === targetWidth && sourceHeight === targetHeight) {
-    return data
-  }
-
-  const output = new Float32Array(targetWidth * targetHeight * channels)
-  for (let y = 0; y < targetHeight; y += 1) {
-    const sourceY = Math.min(
-      sourceHeight - 1,
-      Math.floor(((y + 0.5) * sourceHeight) / targetHeight),
-    )
-    for (let x = 0; x < targetWidth; x += 1) {
-      const sourceX = Math.min(
-        sourceWidth - 1,
-        Math.floor(((x + 0.5) * sourceWidth) / targetWidth),
-      )
-      const sourceOffset = (sourceY * sourceWidth + sourceX) * channels
-      const outputOffset = (y * targetWidth + x) * channels
-      for (let channel = 0; channel < channels; channel += 1) {
-        output[outputOffset + channel] = data[sourceOffset + channel] ?? 0
-      }
-    }
-  }
-
-  return output
-}
-
+// Only the RGB16 linear ProPhoto render reaches the GPU; other layouts are refused.
 function createSnapshotUploadInput(
   image: DecodedImage,
   target: { width: number; height: number },
@@ -172,27 +139,6 @@ function createSnapshotUploadInput(
       colorSpace: 'linear-prophoto-rgb',
       renderExposureEv: image.renderExposure.ev,
       renderExposureMultiplier: image.renderExposure.multiplier,
-    }
-  }
-
-  if (
-    image.layout === 'rgba-float32' &&
-    image.colorSpace === 'display-srgb-preview' &&
-    image.data instanceof Float32Array
-  ) {
-    return {
-      data: resampleFloat32(
-        image.data,
-        image.width,
-        image.height,
-        target.width,
-        target.height,
-        4,
-      ),
-      width: target.width,
-      height: target.height,
-      layout: 'rgba-float32',
-      colorSpace: 'display-srgb-preview',
     }
   }
 

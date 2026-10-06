@@ -178,7 +178,6 @@ describe('useRawWorkflowActions', () => {
     ['inputSize.height', { inputSize: { width: 800, height: 601 } }],
     ['previewSize.width', { previewSize: { width: 641, height: 480 } }],
     ['previewSize.height', { previewSize: { width: 640, height: 481 } }],
-    ['inputFormat', { inputFormat: 'float-rgba' }],
     ['transformPath', { transformPath: 'display-lut' }],
     ['lutRole', { lutRole: 'display-look' }],
     ['lutInputTransfer', { lutInputTransfer: 's-log3' }],

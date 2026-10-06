@@ -1,3 +1,4 @@
+import type { DecodedImage } from '~/lib/raw/decoder'
 import type {
   RawProcessingPipeline,
   RawUploadInput,
@@ -13,6 +14,10 @@ export type TrackedPointer = {
   clientY: number
 }
 
+/**
+ * The GPU draws only the RGB16 linear ProPhoto render. Any other decoded layout
+ * yields null so the caller refuses it instead of uploading.
+ */
 export function createRawUploadInput({
   data,
   layout,
@@ -21,50 +26,35 @@ export function createRawUploadInput({
   height,
   renderExposureEv,
 }: {
-  data: Float32Array | Uint16Array | null
-  layout: RawUploadInput['layout'] | null
-  colorSpace: RawUploadInput['colorSpace'] | null
+  data: DecodedImage['data'] | null
+  layout: DecodedImage['layout'] | null
+  colorSpace: DecodedImage['colorSpace'] | null
   width: number
   height: number
   renderExposureEv?: number | null
 }): RawUploadInput | null {
-  if (!data || !layout || !colorSpace) {
+  if (
+    layout !== 'rgb-u16' ||
+    colorSpace !== 'linear-prophoto-rgb' ||
+    !(data instanceof Uint16Array)
+  ) {
     return null
   }
 
-  if (layout === 'rgb-u16') {
-    if (data instanceof Uint16Array && colorSpace === 'linear-prophoto-rgb') {
-      const ev =
-        typeof renderExposureEv === 'number' &&
-        Number.isFinite(renderExposureEv)
-          ? renderExposureEv
-          : 0
+  const ev =
+    typeof renderExposureEv === 'number' && Number.isFinite(renderExposureEv)
+      ? renderExposureEv
+      : 0
 
-      return {
-        data,
-        width,
-        height,
-        layout,
-        colorSpace,
-        renderExposureEv: ev,
-        renderExposureMultiplier: Math.pow(2, ev),
-      }
-    }
-
-    return null
+  return {
+    data,
+    width,
+    height,
+    layout,
+    colorSpace,
+    renderExposureEv: ev,
+    renderExposureMultiplier: Math.pow(2, ev),
   }
-
-  if (data instanceof Float32Array && colorSpace === 'display-srgb-preview') {
-    return {
-      data,
-      width,
-      height,
-      layout,
-      colorSpace,
-    }
-  }
-
-  return null
 }
 
 export function getPointerDistance(a: TrackedPointer, b: TrackedPointer) {

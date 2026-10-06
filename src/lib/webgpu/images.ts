@@ -90,20 +90,15 @@ export class WebGPUImages {
   uploadImage(input: RawUploadInput) {
     validateImageUpload(input, this.device.limits.maxTextureDimension2D)
     const start = performance.now()
-    const format = input.layout === 'rgb-u16' ? 'rgba16uint' : 'rgba32float'
     if (
       !this.input ||
       this.input.width !== input.width ||
-      this.input.height !== input.height ||
-      this.input.format !== format
+      this.input.height !== input.height
     ) {
       this.clearImage()
-      this.input = this.createTexture([input.width, input.height], format)
+      this.input = this.createTexture([input.width, input.height], 'rgba16uint')
       this.inputGroup = this.device.createBindGroup({
-        layout:
-          input.layout === 'rgb-u16'
-            ? this.programs.inputU16Layout
-            : this.programs.inputFloatLayout,
+        layout: this.programs.inputU16Layout,
         entries: [
           { binding: 0, resource: this.input.createView() },
           { binding: 1, resource: this.nearest },
@@ -122,17 +117,9 @@ export class WebGPUImages {
       this.processedView = this.processed.createView()
       this.outputGroup = this.outputGroupFor(this.processedView)
     }
-    if (input.layout === 'rgb-u16') uploadRgb16(this.device, this.input, input)
-    else
-      this.device.queue.writeTexture(
-        { texture: this.input },
-        input.data as Float32Array<ArrayBuffer>,
-        { bytesPerRow: input.width * 16 },
-        [input.width, input.height],
-      )
+    uploadRgb16(this.device, this.input, input)
     this.inputUpload = input
-    this.uploadedBytes +=
-      input.width * input.height * (input.layout === 'rgb-u16' ? 8 : 16)
+    this.uploadedBytes += input.width * input.height * 8
     this.uploadTime = performance.now() - start
   }
 
@@ -245,9 +232,7 @@ export class WebGPUImages {
   get estimatedBytes() {
     const input = this.inputUpload
     return (
-      (input
-        ? input.width * input.height * (input.layout === 'rgb-u16' ? 16 : 24)
-        : 0) +
+      (input ? input.width * input.height * 16 : 0) +
       (this.lutData?.size ?? 0) ** 3 * 16 +
       LUT_SIZE * 16 +
       16

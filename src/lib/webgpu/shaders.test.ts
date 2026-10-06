@@ -33,7 +33,7 @@ describe('webGPU linear ProPhoto input', () => {
 
 describe('webGPU display-domain LUT blending', () => {
   it('blends partial-strength display and output LUTs against the unclamped base like export', () => {
-    const shader = createProcessShader(true, true)
+    const shader = createProcessShader(true)
     // The CPU row-band processor encodes base and styled colors without an
     // upper clamp before the intensity mix; only the final output clamps.
     expect(shader).toContain(
@@ -66,7 +66,6 @@ describe('webGPU shader variants', () => {
       },
     }
     const custom = createProcessShader(
-      true,
       false,
       getShaderSpecialization({ ...DEFAULT_PARAMS, styleKind: 'custom' }, lut),
     )
@@ -86,7 +85,6 @@ describe('webGPU shader variants', () => {
     ])
       expect(custom).toContain(`params.${field}`)
     const builtin = createProcessShader(
-      false,
       true,
       getShaderSpecialization(
         { ...DEFAULT_PARAMS, styleKind: 'builtin', builtinPreset: 'warm' },
@@ -98,7 +96,7 @@ describe('webGPU shader variants', () => {
 
   it('eliminates neutral feature branches while preserving live numeric uniforms', () => {
     const neutral = getShaderSpecialization(DEFAULT_PARAMS, null)
-    const code = createProcessShader(true, false, neutral)
+    const code = createProcessShader(false, neutral)
     expect(code).not.toContain('params.styleKind')
     expect(code).not.toContain('params.useLut')
     expect(code).not.toContain('params.selectiveColorActive')
@@ -108,35 +106,35 @@ describe('webGPU shader variants', () => {
     expect(code).toContain('params.userContrastFactor')
     expect(code).toContain('params.viewMode')
     expect(code).toContain('sampleUnfilterableLut(normalizedColor)')
-    expect(createProcessShader(true, false)).toContain('params.userSaturation')
+    expect(createProcessShader(false)).toContain('params.userSaturation')
     const active = getShaderSpecialization(
       { ...DEFAULT_PARAMS, userSaturation: 20, userVibrance: -30 },
       null,
     )
-    expect(createProcessShader(false, true, active)).toContain(
-      'params.userSaturation',
-    )
-    expect(createProcessShader(false, true, active)).toContain(
-      'params.userVibrance',
-    )
+    expect(createProcessShader(true, active)).toContain('params.userSaturation')
+    expect(createProcessShader(true, active)).toContain('params.userVibrance')
   })
-  it('uses explicit float loads and full precision manual LUT interpolation on baseline devices', () => {
-    for (const integer of [true, false]) {
-      const code = createProcessShader(integer, false)
-      expect(code).not.toContain('textureSampleLevel(lutTexture')
+  it('reads only RGB16 texels and keeps full precision manual LUT interpolation on baseline devices', () => {
+    for (const filterable of [false, true]) {
+      const code = createProcessShader(filterable)
+      expect(code).toContain('var inputTexture: texture_2d<u32>;')
+      expect(code).not.toContain('var inputTexture: texture_2d<f32>;')
+      expect(code).toContain('textureLoad(inputTexture, coord, 0)')
       expect(code).not.toContain('textureSampleLevel(inputTexture')
-      expect(code).toContain('sampleUnfilterableLut(normalizedColor)')
-      expect(code).toContain(integer ? 'texture_2d<u32>' : 'texture_2d<f32>')
+      expect(code).toContain('/ 65535.0')
+      expect(code).toContain('var lutTexture: texture_3d<f32>;')
     }
-    expect(createProcessShader(false, true)).toContain(
-      'textureSampleLevel(lutTexture',
-    )
+    const baseline = createProcessShader(false)
+    expect(baseline).not.toContain('textureSampleLevel(lutTexture')
+    expect(baseline).toContain('sampleUnfilterableLut(normalizedColor)')
+    expect(createProcessShader(true)).toContain('textureSampleLevel(lutTexture')
+    expect(createProcessShader(true)).toBe(PROCESS_FRAGMENT_SHADER_U16)
     expect(VERTEX_SHADER).toContain('@builtin(vertex_index)')
   })
   it('keeps the technical original and built-in branches without a shader compare', () => {
     expect(UNIFORM_BUFFER_STRUCT).not.toContain('compareSplit')
-    for (const integer of [true, false]) {
-      const code = createProcessShader(integer, false)
+    for (const filterable of [false, true]) {
+      const code = createProcessShader(filterable)
       expect(code).not.toContain('compareSplit')
       expect(code).not.toContain('VIEW_MODE_COMPARE')
       expect(code).toContain(

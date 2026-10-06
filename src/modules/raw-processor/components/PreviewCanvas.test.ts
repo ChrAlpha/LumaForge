@@ -169,11 +169,11 @@ const previewCanvasCss = readFileSync(
 const decodedImage: DecodedImage = {
   width: 400,
   height: 300,
-  channels: 4,
-  bitsPerChannel: 32,
-  data: new Float32Array(400 * 300 * 4),
-  layout: 'rgba-float32',
-  colorSpace: 'display-srgb-preview',
+  channels: 3,
+  bitsPerChannel: 16,
+  data: new Uint16Array(400 * 300 * 3),
+  layout: 'rgb-u16',
+  colorSpace: 'linear-prophoto-rgb',
   metadata: {
     width: 400,
     height: 300,
@@ -560,24 +560,16 @@ describe('preview canvas upload descriptor', () => {
     },
   )
 
-  it('accepts legacy Float32 RGBA display-sRGB input', () => {
-    const data = new Float32Array(4)
-
+  it('refuses legacy Float32 RGBA display-sRGB input for the GPU upload', () => {
     expect(
       createRawUploadInput({
-        data,
+        data: new Float32Array(4),
         layout: 'rgba-float32',
         colorSpace: 'display-srgb-preview',
         width: 1,
         height: 1,
       }),
-    ).toEqual({
-      data,
-      layout: 'rgba-float32',
-      colorSpace: 'display-srgb-preview',
-      width: 1,
-      height: 1,
-    })
+    ).toBeNull()
   })
 
   it('accepts RGB16 Linear ProPhoto input', () => {
@@ -700,11 +692,13 @@ describe('preview canvas upload descriptor', () => {
     }
     const setError = vi.fn()
     const uploadInput = {
-      data: new Float32Array(4),
-      layout: 'rgba-float32',
-      colorSpace: 'display-srgb-preview',
+      data: new Uint16Array(3),
+      layout: 'rgb-u16',
+      colorSpace: 'linear-prophoto-rgb',
       width: 1,
       height: 1,
+      renderExposureEv: 0,
+      renderExposureMultiplier: 1,
     } as const
 
     expect(
@@ -1388,7 +1382,7 @@ describe('preview canvas upload descriptor', () => {
       source: 'bounded-hq',
       width: 1600,
       height: 1200,
-      data: new Float32Array(1600 * 1200 * 4),
+      data: new Uint16Array(1600 * 1200 * 3),
     }
     rerender(
       createElement(PreviewCanvas, {
@@ -1435,7 +1429,7 @@ describe('preview canvas upload descriptor', () => {
       source: 'bounded-hq',
       width: 420,
       height: 320,
-      data: new Float32Array(420 * 320 * 4),
+      data: new Uint16Array(420 * 320 * 3),
     }
     rerender(
       createElement(PreviewCanvas, {
@@ -1503,7 +1497,7 @@ describe('preview canvas upload descriptor', () => {
       source: 'bounded-hq',
       width: 420,
       height: 320,
-      data: new Float32Array(420 * 320 * 4),
+      data: new Uint16Array(420 * 320 * 3),
     }
     rerender(
       createElement(PreviewCanvas, {
@@ -1545,7 +1539,7 @@ describe('preview canvas upload descriptor', () => {
       ...decodedImage,
       width: 420,
       height: 320,
-      data: new Float32Array(420 * 320 * 4),
+      data: new Uint16Array(420 * 320 * 3),
     }
     rerender(
       createElement(PreviewCanvas, {
