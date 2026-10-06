@@ -1,17 +1,27 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntentSource } from '@lumaforge/luma-color-runtime'
+import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 import { previewDimensions } from '~/modules/transform-demo/image-input'
 import type { PreviewSource } from '~/modules/transform-demo/preview-types'
 
+/**
+ * What a processed Transform frame is drawn from: the decoded source, the LUT
+ * and the color intent with its continuous strength. The intent is keyed the
+ * way the color graph reads it, so view state, key order or a missing HSL
+ * record never ask for a new frame, and any color change does.
+ */
 export function transformInputKey(
   imageVersion: number,
   lutVersion: number,
-  params: ProcessingParams,
+  color: ColorGraphIntentSource,
 ) {
-  const { viewMode: _view, compareSplit: _split, ...color } = params
-  return JSON.stringify([imageVersion, lutVersion, color])
+  return JSON.stringify([
+    imageVersion,
+    lutVersion,
+    colorGraphIntentSignature(color),
+  ])
 }
 
 export async function captureTransformSource({

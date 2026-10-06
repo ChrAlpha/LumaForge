@@ -1,8 +1,4 @@
-import type {
-  ColorGraphIntent,
-  ProcessingParams,
-} from '@lumaforge/luma-color-runtime'
-import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback } from 'react'
 
@@ -61,7 +57,8 @@ function areSamePipelineStats(a: PipelineStats, b: PipelineStats) {
 }
 
 type UseRawWorkflowActionsInput = {
-  paramsRef: MutableRefObject<ProcessingParams>
+  paramsRef: MutableRefObject<ColorGraphIntent>
+  viewRef: MutableRefObject<PreviewView>
   isMountedRef: MutableRefObject<boolean>
   status: ProcessingStatus
   setError: (error: string | null) => void
@@ -72,6 +69,7 @@ type UseRawWorkflowActionsInput = {
 
 export function useRawWorkflowActions({
   paramsRef,
+  viewRef,
   isMountedRef,
   status,
   setError,
@@ -79,18 +77,18 @@ export function useRawWorkflowActions({
   setStats,
   postCommitTask = enqueuePostCommitTask,
 }: UseRawWorkflowActionsInput) {
-  // The published params still lay the view over the color intent; these
-  // ports read them apart, at call time, so a consumer gets the color or the
-  // view it asks for and never the other.
+  // The color and the view live in separate refs; these ports read them at
+  // call time, so a consumer gets the color or the view it asks for and
+  // never the other.
   const getCurrentColorIntent = useCallback(
-    (): ColorGraphIntent => pickColorGraphIntent(paramsRef.current),
+    (): ColorGraphIntent => paramsRef.current,
     [paramsRef],
   )
 
-  const getCurrentView = useCallback((): PreviewView => {
-    const { viewMode, compareSplit } = paramsRef.current
-    return { mode: viewMode, compareSplit }
-  }, [paramsRef])
+  const getCurrentView = useCallback(
+    (): PreviewView => viewRef.current,
+    [viewRef],
+  )
 
   const scheduleToast = useCallback(
     (notify: () => void) => {

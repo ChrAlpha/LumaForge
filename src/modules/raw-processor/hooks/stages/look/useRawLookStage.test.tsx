@@ -1,8 +1,6 @@
-import type {
-  ColorGraphIntent,
-  ProcessingParams,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import {
+  COLOR_GRAPH_INTENT_KEYS,
   NEUTRAL_USER_COLOR_INTENT,
   pickColorGraphIntent,
 } from '@lumaforge/luma-color-runtime'
@@ -24,31 +22,14 @@ import {
 } from '../../../services/look/style-system'
 import { useRawLookStage } from './useRawLookStage'
 
-const baseParams: ProcessingParams = {
-  intensity: 0.7,
-  viewMode: 'processed',
-  compareSplit: 0.5,
-  styleKind: 'none',
-  builtinPreset: null,
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
-}
-
-/** The stored color intent behind `baseParams`: the same color, no view. */
+/** The stored color intent the hook renders from; it carries no view. */
 const baseIntent: ColorGraphIntent = Object.freeze({
   ...NEUTRAL_USER_COLOR_INTENT,
   intensity: 0.7,
   styleKind: 'none',
   builtinPreset: null,
 })
+const baseParams: ColorGraphIntent = baseIntent
 
 function createSession(): ImageSession {
   return {
@@ -208,8 +189,8 @@ function renderLookStageHarness({
   session: ImageSession | null
   /** Detached color intent held by the store. */
   params?: ColorGraphIntent
-  /** Params the hook renders with (the intent with the view laid over it). */
-  renderedParams?: ProcessingParams
+  /** Color intent the hook renders with. */
+  renderedParams?: ColorGraphIntent
   lut?: ParsedLUT | null
 }) {
   const store = createStore()
@@ -294,13 +275,16 @@ describe('useRawLookStage', () => {
     expect(result.current.params.intensity).toBe(1)
     expect(result.current.params.styleKind).toBe('custom')
     expect(result.current.params.builtinPreset).toBeNull()
+    expect(Object.keys(result.current.params).sort()).toEqual(
+      [...COLOR_GRAPH_INTENT_KEYS].sort(),
+    )
     expect(result.current.activeIntensity).toBe(1)
     expect(result.current.currentLutName).toBe('Client Look')
   })
 
   it('projects a style-less session into neutral look params', () => {
     const session = createSessionWithoutLook()
-    const staleParams: ProcessingParams = {
+    const staleParams: ColorGraphIntent = {
       ...baseParams,
       intensity: 1,
       styleKind: 'custom',
@@ -696,11 +680,7 @@ describe('useRawLookStage', () => {
       const harness = renderLookStageHarness({
         session,
         params: baseIntent,
-        renderedParams: {
-          ...baseParams,
-          viewMode: 'original',
-          compareSplit: 0.3,
-        },
+        renderedParams: baseParams,
       })
 
       harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.strong)

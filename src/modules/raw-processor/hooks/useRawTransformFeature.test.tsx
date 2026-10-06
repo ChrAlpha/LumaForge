@@ -208,7 +208,9 @@ function workflow(): UseRawWorkflowReturn {
     lutDataVersion: 1,
     decodedImageRef: { current: { width: 80, height: 60 } },
     pipelineRef: { current: {} },
-    params: { viewMode: 'processed', compareSplit: 0.5, userExposureEv: 0 },
+    viewMode: 'processed',
+    compareSplit: 0.5,
+    params: { userExposureEv: 0 },
     previewTransform: {
       sourceId: 'one',
       active: false,
@@ -275,9 +277,8 @@ function useSessionHarness({
       decodedImageRef: { current: released ? null : image },
       pipelineRef,
       viewMode,
+      compareSplit: 0.5,
       params: {
-        viewMode,
-        compareSplit: 0.5,
         userExposureEv,
         userSaturation,
         intensity,
@@ -364,11 +365,9 @@ describe('rAW Transform feature', () => {
       sourceId: expect.any(Number),
       frame: frame.frame,
     })
+    // Moving the comparison is no new frame.
     rerender({
-      input: {
-        ...initial,
-        params: { ...initial.params, viewMode: 'compare', compareSplit: 0.2 },
-      },
+      input: { ...initial, viewMode: 'compare', compareSplit: 0.2 },
     })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(1)

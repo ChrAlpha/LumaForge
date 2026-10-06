@@ -1,5 +1,5 @@
 import type {
-  ProcessingParams,
+  ColorGraphIntentSource,
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
@@ -32,14 +32,14 @@ export function resolveExportEnvironment(
 }
 
 /**
- * Project the app's `ProcessingParams` onto the manifest `RenderParams`
+ * Project the app's color intent onto the manifest `RenderParams`
  * through the shared render-engine projection, which records user color the
  * way the color graph reads it and the look strength exactly as given. View
  * state never reaches it; the look selection and LUT identity are recorded
  * elsewhere in the manifest.
  */
 export function toManifestRenderParams(
-  params: ProcessingParams,
+  params: ColorGraphIntentSource,
   exposure: RawRenderExposure,
   geometry?: GeometryParams,
 ): RenderParams {
@@ -136,7 +136,7 @@ export async function sha256OfBlob(blob: Blob): Promise<string> {
 
 export type BuildFullResExportManifestInput = {
   graph: SupportedExportColorGraphDescriptor
-  params: ProcessingParams
+  params: ColorGraphIntentSource
   rawRenderExposure: RawRenderExposure
   /** Present only when a geometry was applied at full resolution. */
   geometry?: GeometryParams

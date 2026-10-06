@@ -1,5 +1,6 @@
 import {
   getLUTColorProfile,
+  NEUTRAL_SELECTIVE_COLOR,
   pickColorGraphIntent,
 } from '@lumaforge/luma-color-runtime'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
@@ -159,10 +160,9 @@ function rawProcessorViewState(
       userSaturation: 0,
       userVibrance: 0,
       intensity: 0.7,
-      viewMode: 'compare',
-      compareSplit: 0.5,
       styleKind: 'none',
       builtinPreset: null,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     },
     loadedImage: { file: null, metadata: null },
     decodedImageRef: { current: null },

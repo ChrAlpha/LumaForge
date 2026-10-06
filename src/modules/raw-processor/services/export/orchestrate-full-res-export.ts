@@ -1,4 +1,7 @@
-import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntentSource,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
 import {
   pickColorGraphIntent,
   resolveExportColorGraph,
@@ -85,7 +88,8 @@ export interface ExportContext {
     ) => void
     loadedImage: { file: File | null; metadata: ImageMetadata | null }
     session: ImageSession | null
-    params: ProcessingParams
+    /** The color intent to export; view state plays no part in it. */
+    params: ColorGraphIntentSource
     lutDataRef: { current: LUTData | null }
     decodedImageRef: { current: DecodedImage | null }
     stats: PipelineStats | null

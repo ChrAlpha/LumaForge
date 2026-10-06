@@ -1,15 +1,16 @@
 import type {
+  ColorGraphIntent,
   HSLBandId,
   HSLBandShift,
   LUTColorProfile,
   LUTData,
   PreviewHistogramState,
-  ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { RefObject } from 'react'
 
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
+import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
 import type {
@@ -44,7 +45,12 @@ export interface UseRawWorkflowReturn {
     geometry: ExportGeometry | null
     commit: (geometry: ExportGeometry | null) => void
   }
-  params: ProcessingParams
+  /**
+   * The color the photo renders with: the user's color and the look, with
+   * the session look projected over it. View state is never part of it; it
+   * is published as `viewMode` and `compareSplit`.
+   */
+  params: ColorGraphIntent
   loadedImage: { file: File | null; metadata: ImageMetadata | null }
   decodedImageRef: RefObject<DecodedImage | null>
   decodedImageVersion: number
@@ -73,7 +79,8 @@ export interface UseRawWorkflowReturn {
   lutProfileSelection: LUTContractSelectionState | null
   /** How much of the look reaches the photo, 0..1. */
   activeIntensity: number
-  viewMode: ProcessingParams['viewMode']
+  viewMode: PreviewViewMode
+  /** Frame-anchored compare split in 0..1. */
   compareSplit: number
   previewViewport: PreviewViewport
   currentLutName: string | null
@@ -99,16 +106,17 @@ export interface UseRawWorkflowReturn {
   selectLUTProfile: (profile: LUTColorProfile | string) => void
   /** Set how much of the look reaches the photo, 0..1. */
   setIntensity: (value: number) => void
-  setViewMode: (mode: ProcessingParams['viewMode']) => void
+  setViewMode: (mode: PreviewViewMode) => void
   setCompareSplit: (split: number) => void
   setPreviewViewport: (viewport: PreviewViewport) => void
   resetPreviewViewport: () => void
   clearLUT: () => void
-  setParams: (params: Partial<ProcessingParams>) => void
+  /** Write color fields; the view has its own setters. */
+  setParams: (params: Partial<ColorGraphIntent>) => void
   setToneParams: (
     params: Partial<
       Pick<
-        ProcessingParams,
+        ColorGraphIntent,
         | 'userExposureEv'
         | 'userContrast'
         | 'userHighlights'
@@ -120,7 +128,7 @@ export interface UseRawWorkflowReturn {
   ) => void
   resetTone: () => void
   setColorParams: (
-    params: Partial<Pick<ProcessingParams, 'userTemperature' | 'userTint'>>,
+    params: Partial<Pick<ColorGraphIntent, 'userTemperature' | 'userTint'>>,
   ) => void
   resetColor: () => void
   setSelectiveColorBand: (band: HSLBandId, shift: Partial<HSLBandShift>) => void

@@ -561,7 +561,12 @@ describe('usePreviewHistogram', () => {
     rerender({
       imageRef,
       imageVersion: 1,
-      params: { ...defaultParams, viewMode: 'compare', compareSplit: 0.82 },
+      // A legacy record carrying view fields keeps the same job.
+      params: {
+        ...defaultParams,
+        viewMode: 'compare',
+        compareSplit: 0.82,
+      } as ProcessingParams,
       lutDataRef,
       lutDataVersion: 0,
       displaySource: 'quick',
@@ -696,7 +701,7 @@ describe('usePreviewHistogram', () => {
     rerender({
       imageRef,
       imageVersion: 1,
-      params: { ...defaultParams, viewMode: 'original' },
+      params: { ...defaultParams, viewMode: 'original' } as ProcessingParams,
       lutDataRef,
       lutDataVersion: 0,
       displaySource: 'quick',

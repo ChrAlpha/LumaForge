@@ -12,8 +12,6 @@ function createInput(
     session: null,
     params: {
       intensity: 0.7,
-      viewMode: 'compare',
-      compareSplit: 0.5,
       styleKind: 'none',
       builtinPreset: null,
       userExposureEv: 0,

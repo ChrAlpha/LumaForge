@@ -1,4 +1,4 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { PreviewViewMode } from '~/lib/preview/preview-view'
 
 export type CompareRenderMode =
   | { kind: 'off' }
@@ -20,7 +20,7 @@ export type CompareRenderMode =
     }
 
 export type SelectCompareRenderModeInput = {
-  requestedViewMode: ProcessingParams['viewMode']
+  requestedViewMode: PreviewViewMode
   supportsCssClip: boolean
   dualGpuAllowed: boolean
   originalGpuReady: boolean

@@ -5,6 +5,7 @@ import type {
 import {
   CHROMA_CLAMP_HIGH,
   CHROMA_CLAMP_LOW,
+  COLOR_GRAPH_INTENT_KEYS,
   getLUTColorProfile,
   LUT_CONSTANTS_VERSION,
   makeNeutralBand,
@@ -590,9 +591,9 @@ describe('useRawWorkflow embedded preview state', () => {
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
 
     act(() => {
+      result.current.setViewMode('processed')
+      result.current.setCompareSplit(0.8)
       result.current.setParams({
-        viewMode: 'processed',
-        compareSplit: 0.8,
         userExposureEv: 1,
         userContrast: 50,
       })
@@ -608,6 +609,8 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.status).toBe('idle')
     expect(result.current.loadedImage.file).toBeNull()
     expect(result.current.params).toEqual(previousParams)
+    expect(result.current.viewMode).toBe('processed')
+    expect(result.current.compareSplit).toBe(0.8)
     expect(jotaiStore.get(currentSessionAtom)).toBe(previousSession)
     expect(rawRuntimeAdapterMock.openSession).not.toHaveBeenCalled()
   })
@@ -1753,7 +1756,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     expect(result.current.status).toBe('ready')
     expect(result.current.viewMode).toBe('original')
-    expect(result.current.params.viewMode).toBe('original')
+    expect(result.current.params).not.toHaveProperty('viewMode')
     expect(jotaiStore.get(currentSessionAtom)?.viewState.mode).toBe('original')
     expect(getDetachedPreviewView().mode).toBe('compare')
   })
@@ -1807,15 +1810,90 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(jotaiStore.get(currentSessionAtom)).toBeNull()
     expect(result.current.viewMode).toBe('original')
     expect(result.current.compareSplit).toBe(0.25)
-    expect(result.current.params).toMatchObject({
-      viewMode: 'original',
-      compareSplit: 0.25,
-    })
+    expect(result.current.params).not.toHaveProperty('viewMode')
+    expect(result.current.params).not.toHaveProperty('compareSplit')
     expect(getDetachedPreviewView()).toEqual({
       mode: 'original',
       compareSplit: 0.25,
     })
     expect(getProcessingParams()).toBe(storedIntentBefore)
+  })
+
+  it('publishes the color intent alone, with the view beside it', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    const colorKeys = [...COLOR_GRAPH_INTENT_KEYS].sort()
+
+    act(() => {
+      result.current.setViewMode('original')
+      result.current.setCompareSplit(0.25)
+    })
+    expect(Object.keys(result.current.params).sort()).toEqual(colorKeys)
+    expect(result.current.viewMode).toBe('original')
+    expect(result.current.compareSplit).toBe(0.25)
+
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    act(() => {
+      result.current.setViewMode('processed')
+      result.current.setCompareSplit(0.62)
+    })
+    expect(Object.keys(result.current.params).sort()).toEqual(colorKeys)
+    expect(result.current.viewMode).toBe('processed')
+    expect(result.current.compareSplit).toBe(0.62)
+  })
+
+  it('keeps the published color intent across view-only changes', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    act(() => {
+      result.current.setIntensity(0.37)
+    })
+    const sampleParams = result.current.params
+
+    act(() => {
+      result.current.setViewMode('processed')
+      result.current.setCompareSplit(0.2)
+    })
+    expect(result.current.params).toBe(sampleParams)
+
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    const sessionParams = result.current.params
+    act(() => {
+      result.current.setViewMode('original')
+      result.current.setCompareSplit(0.8)
+    })
+    expect(result.current.params).toBe(sessionParams)
+  })
+
+  it('writes color only through setParams, never the view', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    act(() => {
+      result.current.setViewMode('processed')
+      result.current.setCompareSplit(0.3)
+    })
+
+    // A legacy caller handing view fields over still reaches color alone.
+    act(() => {
+      result.current.setParams({
+        viewMode: 'original',
+        compareSplit: 0.9,
+        userContrast: 22,
+      } as Parameters<typeof result.current.setParams>[0])
+    })
+
+    expect(result.current.params.userContrast).toBe(22)
+    expect(result.current.params).not.toHaveProperty('viewMode')
+    expect(result.current.viewMode).toBe('processed')
+    expect(result.current.compareSplit).toBe(0.3)
+    expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
+      mode: 'processed',
+      compareSplit: 0.3,
+    })
   })
 
   it('keeps a continuous look strength independent of sample view writes', () => {
@@ -1833,21 +1911,17 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     expect(getProcessingParams()).toBe(storedIntentAfterStrength)
-    expect(result.current.params).toMatchObject({
-      intensity: 0.37,
-      viewMode: 'processed',
-      compareSplit: 0.2,
-    })
+    expect(result.current.params.intensity).toBe(0.37)
+    expect(result.current.viewMode).toBe('processed')
+    expect(result.current.compareSplit).toBe(0.2)
 
     act(() => {
       result.current.setIntensity(0.81)
     })
 
-    expect(result.current.params).toMatchObject({
-      intensity: 0.81,
-      viewMode: 'processed',
-      compareSplit: 0.2,
-    })
+    expect(result.current.params.intensity).toBe(0.81)
+    expect(result.current.viewMode).toBe('processed')
+    expect(result.current.compareSplit).toBe(0.2)
   })
 
   it('carries the replaced session split into the next source and reopens in compare', async () => {
@@ -1905,7 +1979,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(getProcessingParams()).not.toHaveProperty('compareSplit')
   })
 
-  it('keeps view mode params and session view state in sync', () => {
+  it('publishes a view mode change from the session view, outside the color params', () => {
     jotaiStore.set(currentSessionAtom, createTestSession())
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
@@ -1916,7 +1990,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     expect(result.current.viewMode).toBe('original')
-    expect(result.current.params.viewMode).toBe('original')
+    expect(result.current.params).not.toHaveProperty('viewMode')
     expect(getProcessingParams()).toBe(storedParamsBefore)
     expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
       mode: 'original',
@@ -1924,7 +1998,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
   })
 
-  it('keeps committed compare split params and session view state in sync', () => {
+  it('publishes a committed compare split from the session view, outside the color params', () => {
     jotaiStore.set(currentSessionAtom, createTestSession())
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
@@ -1935,7 +2009,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     expect(result.current.compareSplit).toBe(1)
-    expect(result.current.params.compareSplit).toBe(1)
+    expect(result.current.params).not.toHaveProperty('compareSplit')
     expect(getProcessingParams()).toBe(storedParamsBefore)
     expect(jotaiStore.get(currentSessionAtom)?.viewState).toMatchObject({
       mode: 'processed',
@@ -2480,7 +2554,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     expect(result.current.viewMode).toBe('original')
-    expect(result.current.params.viewMode).toBe('original')
+    expect(result.current.params).not.toHaveProperty('viewMode')
     expect(result.current.previewTransform?.active).toBe(true)
     expect(result.current.previewTransform?.geometry).toEqual(SAMPLE_GEOMETRY)
     expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
@@ -4756,7 +4830,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
   })
 
-  it('clears a ready export when generic params change render graph inputs but not view-only inputs', async () => {
+  it('clears a ready export when generic params change render graph inputs but not when the view moves', async () => {
     rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
     rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
       createDecodedImage('quick'),
@@ -4783,7 +4857,8 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()
 
     act(() => {
-      result.current.setParams({ viewMode: 'processed', compareSplit: 0.25 })
+      result.current.setViewMode('processed')
+      result.current.setCompareSplit(0.25)
     })
     expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
     expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()

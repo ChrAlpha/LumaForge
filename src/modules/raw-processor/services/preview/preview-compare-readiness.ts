@@ -1,5 +1,4 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
-
+import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImageSource } from '~/lib/raw/decoder'
 
 import type { DisplaySource } from '../../model/session'
@@ -56,7 +55,7 @@ type DerivePreviewCompareReadinessInput = {
   hasImageData: boolean
   trackReady: boolean
   embeddedPreviewUrl?: string | null
-  viewMode: ProcessingParams['viewMode']
+  viewMode: PreviewViewMode
   dualGpuAllowed: boolean
   suspended: boolean
   supportsCssClip: boolean

@@ -1,11 +1,12 @@
 import type {
-  ProcessingParams,
+  ColorGraphIntent,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
 import { useMemo, useRef } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
+import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
@@ -14,12 +15,14 @@ import type { ImageSession } from '../model/session'
 
 type UseRawWorkflowRefsInput = {
   session: ImageSession | null
-  initialParams: ProcessingParams
+  initialParams: ColorGraphIntent
+  initialView: PreviewView
 }
 
 export function useRawWorkflowRefs({
   session,
   initialParams,
+  initialView,
 }: UseRawWorkflowRefsInput) {
   const pipelineRef = useRef<RawProcessingPipeline | null>(null)
   const resourceRegistryRef = useRef<ResourceRegistry | null>(null)
@@ -37,7 +40,9 @@ export function useRawWorkflowRefs({
     new WeakSet(),
   )
   const decodedImageRef = useRef<DecodedImage | null>(null)
+  // The color and the view as last rendered, each in its own ref.
   const paramsRef = useRef(initialParams)
+  const viewRef = useRef(initialView)
   const rawRenderExposureRef = useRef<RawRenderExposure | null>(null)
 
   if (!resourceRegistryRef.current) {
@@ -62,6 +67,7 @@ export function useRawWorkflowRefs({
       disposedRuntimeSessionsRef,
       decodedImageRef,
       paramsRef,
+      viewRef,
       rawRenderExposureRef,
     }),
     [
@@ -81,6 +87,7 @@ export function useRawWorkflowRefs({
       runtimeSessionRef,
       runtimeWorkSessionIdRef,
       sessionRef,
+      viewRef,
     ],
   )
 }

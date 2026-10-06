@@ -1,5 +1,5 @@
 import type {
-  ProcessingParams,
+  ColorGraphIntentSource,
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
@@ -27,7 +27,7 @@ export type BuildExportManifestInput = {
   result: ExportResult
   sourceFile: Blob & { name: string }
   graph: SupportedExportColorGraphDescriptor
-  params: ProcessingParams
+  params: ColorGraphIntentSource
   rawRenderExposure: RawRenderExposure
   /** Decoded frame of the source RAW; differs from the output under geometry. */
   sourceDimensions?: { width: number; height: number }

@@ -1,7 +1,7 @@
 import type {
+  ColorGraphIntent,
   LUTColorProfile,
   LUTData,
-  ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useMemo, useRef } from 'react'
@@ -37,8 +37,8 @@ import type { SetColorIntent } from './useRawAdjustmentActions'
 import { useRawAdjustmentActions } from './useRawAdjustmentActions'
 
 type UseRawLookStageInput = {
-  /** The params the photo renders with, before the session look is projected. */
-  baseParams: ProcessingParams
+  /** The color intent the photo renders with, before the session look is projected. */
+  baseParams: ColorGraphIntent
   session: ImageSession | null
   sessionRef: MutableRefObject<ImageSession | null>
   setSession: Dispatch<SetStateAction<ImageSession | null>>
@@ -82,10 +82,10 @@ export function useRawLookStage({
   const currentLutName =
     activeStyle?.kind === 'custom' ? activeStyle.name : null
 
-  const params = useMemo<ProcessingParams>(() => {
+  const params = useMemo<ColorGraphIntent>(() => {
     if (!session) return baseParams
     if (!session.activeStyle) {
-      const nextParams: ProcessingParams = {
+      const nextParams: ColorGraphIntent = {
         ...baseParams,
         intensity: projectSessionLookIntensity(session),
         styleKind: 'none',

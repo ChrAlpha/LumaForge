@@ -1,4 +1,3 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -9,10 +8,7 @@ import { hasActiveExport } from '../services/export/export-state'
 import { getLut } from '../state/workflow.atoms'
 import { buildRawWorkflowReturn } from './buildRawWorkflowReturn'
 import { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
-import {
-  composeProcessingParams,
-  useRawCompareStage,
-} from './stages/compare/useRawCompareStage'
+import { useRawCompareStage } from './stages/compare/useRawCompareStage'
 import { useExportGraphInvalidation } from './stages/export/useExportGraphInvalidation'
 import { useExportRecoveryDiscovery } from './stages/export/useExportRecoveryDiscovery'
 import { useExportRecoveryState } from './stages/export/useExportRecoveryState'
@@ -71,13 +67,14 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     disposedRuntimeSessionsRef,
     decodedImageRef,
     paramsRef,
+    viewRef,
     rawRenderExposureRef,
   } = useRawWorkflowRefs({
     session,
-    initialParams: composeProcessingParams(colorIntent, detachedView),
+    initialParams: colorIntent,
+    initialView: detachedView,
   })
   const compareStage = useRawCompareStage({
-    colorIntent,
     detachedView,
     setDetachedView,
     session,
@@ -100,6 +97,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     updateStats,
   } = useRawWorkflowActions({
     paramsRef,
+    viewRef,
     isMountedRef,
     status,
     setError,
@@ -126,7 +124,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   }
   const rawRenderExposure =
     decodedImageRef.current?.renderExposure ?? rawRenderExposureRef.current
-  const { viewMode, setViewMode, setCompareSplit } = compareStage
+  const { viewMode } = compareStage
   const { disposeRuntimeSession, abortRuntimeWork, abortExportWork } =
     useRawRuntimeControls({
       runtimeSessionRef,
@@ -168,7 +166,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   })
 
   const lookStage = useRawLookStage({
-    baseParams: compareStage.params,
+    baseParams: colorIntent,
     session,
     sessionRef,
     setSession,
@@ -181,23 +179,11 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     invalidateExportGraph,
     canApplyLoadedLut,
   })
-  const { params, setParams: setColorPatch } = lookStage
+  // The color the photo renders with and the view it is shown in are
+  // published apart; neither is ever written through the other's setter.
+  const { params } = lookStage
   paramsRef.current = params
-  // The published setParams still takes view fields. It routes them to the
-  // view owner; the color patch it forwards never carries them.
-  const handleSetParams = useCallback(
-    (patch: Partial<ProcessingParams>) => {
-      const { viewMode, compareSplit, ...colorPatch } = patch
-      setColorPatch(colorPatch)
-      if (viewMode) {
-        setViewMode(viewMode)
-      }
-      if (compareSplit !== undefined) {
-        setCompareSplit(compareSplit)
-      }
-    },
-    [setColorPatch, setCompareSplit, setViewMode],
-  )
+  viewRef.current = compareStage.view
   const {
     histogram,
     clearSessionEmbeddedPreviewUrl,
@@ -412,11 +398,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     },
     sourceState,
     compareStage,
-    lookStage: {
-      ...lookStage,
-      params,
-      setParams: handleSetParams,
-    },
+    lookStage,
     previewStage,
     ingestStage,
     exportStage,

@@ -1,6 +1,6 @@
 import type {
+  ColorGraphIntentSource,
   LUTData,
-  ProcessingParams,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
@@ -40,7 +40,7 @@ type UseRawExportStageInput = {
   setSession: Dispatch<SetStateAction<ImageSession | null>>
   loadedImage: { file: File | null; metadata: ImageMetadata | null }
   session: ImageSession | null
-  params: ProcessingParams
+  params: ColorGraphIntentSource
   lutDataRef: MutableRefObject<LUTData | null>
   decodedImageRef: MutableRefObject<DecodedImage | null>
   stats: PipelineStats | null

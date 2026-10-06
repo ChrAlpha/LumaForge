@@ -13,10 +13,7 @@ import {
 
 import type { ImageSession } from '../../../model/session'
 import { createImageSession } from '../../../model/session-factory'
-import {
-  composeProcessingParams,
-  useRawCompareStage,
-} from './useRawCompareStage'
+import { useRawCompareStage } from './useRawCompareStage'
 
 const INTENT: ColorGraphIntent = {
   ...NEUTRAL_USER_COLOR_INTENT,
@@ -41,7 +38,6 @@ function useHarness(initial: {
   sessionRef.current = session
 
   const stage = useRawCompareStage({
-    colorIntent,
     detachedView,
     setDetachedView,
     session,
@@ -64,14 +60,6 @@ function createSession(): ImageSession {
   return createImageSession(new File(['raw'], 'frame.ARW'))
 }
 
-describe('composeProcessingParams', () => {
-  it('lays the view over the intent without changing a color field', () => {
-    expect(
-      composeProcessingParams(INTENT, { mode: 'original', compareSplit: 0.2 }),
-    ).toEqual({ ...INTENT, viewMode: 'original', compareSplit: 0.2 })
-  })
-})
-
 describe('useRawCompareStage', () => {
   it('reads the detached sample view while no session exists', () => {
     const detachedView: PreviewView = { mode: 'processed', compareSplit: 0.35 }
@@ -80,11 +68,7 @@ describe('useRawCompareStage', () => {
     expect(result.current.stage.view).toBe(result.current.detachedView)
     expect(result.current.stage.viewMode).toBe('processed')
     expect(result.current.stage.compareSplit).toBe(0.35)
-    expect(result.current.stage.params).toEqual({
-      ...INTENT,
-      viewMode: 'processed',
-      compareSplit: 0.35,
-    })
+    expect(result.current.stage).not.toHaveProperty('params')
   })
 
   it('routes sample view writes to the detached view and leaves the intent alone', () => {
@@ -101,10 +85,8 @@ describe('useRawCompareStage', () => {
       compareSplit: 1,
     })
     expect(result.current.colorIntent).toBe(intentBefore)
-    expect(result.current.stage.params).toMatchObject({
-      intensity: 0.43,
-      userContrast: 18,
-      viewMode: 'original',
+    expect(result.current.stage.view).toEqual({
+      mode: 'original',
       compareSplit: 1,
     })
   })
@@ -195,7 +177,7 @@ describe('useRawCompareStage', () => {
     expect(previewSurfaceOutputForViewMode(result.current.stage.viewMode)).toBe(
       'technical-original',
     )
-    expect(result.current.stage.params).toMatchObject({
+    expect(result.current.colorIntent).toMatchObject({
       intensity: 0.43,
       userContrast: 18,
     })
@@ -224,7 +206,7 @@ describe('useRawCompareStage', () => {
     })
 
     expect(result.current.stage.view).toBe(viewBefore)
-    expect(result.current.stage.params.intensity).toBe(0.61)
+    expect(result.current.colorIntent.intensity).toBe(0.61)
   })
 
   it('keeps the color intent reference across view-only changes', () => {
@@ -239,9 +221,8 @@ describe('useRawCompareStage', () => {
     })
 
     expect(result.current.colorIntent).toBe(intentBefore)
-    expect(result.current.stage.params).toMatchObject({
-      intensity: 0.43,
-      viewMode: 'processed',
+    expect(result.current.stage.view).toEqual({
+      mode: 'processed',
       compareSplit: 0.12,
     })
   })

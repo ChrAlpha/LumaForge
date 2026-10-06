@@ -1,27 +1,20 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+
+import type { PreviewView } from '~/lib/preview/preview-view'
 
 import type { ImageSession } from '../model/session'
 import { useRawWorkflowRefs } from './useRawWorkflowRefs'
 
-const params: ProcessingParams = {
+const params: ColorGraphIntent = {
+  ...NEUTRAL_USER_COLOR_INTENT,
   intensity: 0.7,
-  viewMode: 'compare',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
 }
+const view: PreviewView = { mode: 'compare', compareSplit: 0.5 }
 
 function createSession(id: string): ImageSession {
   return {
@@ -67,7 +60,12 @@ describe('useRawWorkflowRefs', () => {
     const firstSession = createSession('first')
     const secondSession = createSession('second')
     const { result, rerender } = renderHook(
-      ({ session }) => useRawWorkflowRefs({ session, initialParams: params }),
+      ({ session }) =>
+        useRawWorkflowRefs({
+          session,
+          initialParams: params,
+          initialView: view,
+        }),
       { initialProps: { session: firstSession as ImageSession | null } },
     )
     const refs = result.current
@@ -75,6 +73,7 @@ describe('useRawWorkflowRefs', () => {
     expect(refs.resourceRegistryRef.current).toBeTruthy()
     expect(refs.sessionRef.current).toBe(firstSession)
     expect(refs.paramsRef.current).toBe(params)
+    expect(refs.viewRef.current).toBe(view)
 
     rerender({ session: secondSession })
 

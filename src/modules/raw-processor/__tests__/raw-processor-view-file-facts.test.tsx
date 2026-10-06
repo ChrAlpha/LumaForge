@@ -1,3 +1,4 @@
+import { NEUTRAL_SELECTIVE_COLOR } from '@lumaforge/luma-color-runtime'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
@@ -82,10 +83,9 @@ function createLoadedProcessorState(
       userSaturation: 0,
       userVibrance: 0,
       intensity: 0.7,
-      viewMode: 'compare',
-      compareSplit: 0.5,
       styleKind: 'none',
       builtinPreset: null,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     },
     loadedImage: {
       file: new File(['raw'], 'frame.ARW'),

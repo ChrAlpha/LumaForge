@@ -1,8 +1,8 @@
 import type {
   ColorGraphIntent,
+  ColorGraphIntentSource,
   LUTData,
   PreviewHistogramState,
-  ProcessingParams,
   ReadyPreviewHistogram,
 } from '@lumaforge/luma-color-runtime'
 import {
@@ -56,7 +56,7 @@ type PreviewHistogramInput = {
   imageRef: RefObject<DecodedImage | null>
   imageVersion: number
   imageIdentity?: string
-  params: ProcessingParams
+  params: ColorGraphIntentSource
   lutDataRef: RefObject<LUTData | null>
   lutDataVersion: number
   displaySource: DisplaySource

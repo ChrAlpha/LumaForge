@@ -1,6 +1,6 @@
 import type {
+  ColorGraphIntent,
   LUTData,
-  ProcessingParams,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
 import { useAtomValue } from 'jotai'
@@ -35,7 +35,8 @@ type UseRawPreviewStageInput = {
   embeddedPreviewUrlRef: MutableRefObject<string | null>
   setSession: Dispatch<SetStateAction<ImageSession | null>>
   pipelineRef: MutableRefObject<RawProcessingPipeline | null>
-  params: ProcessingParams
+  /** The color intent the preview renders; the view never reaches here. */
+  params: ColorGraphIntent
   lutDataRef: MutableRefObject<LUTData | null>
   lutDataVersion: number
   displaySource: DisplaySource

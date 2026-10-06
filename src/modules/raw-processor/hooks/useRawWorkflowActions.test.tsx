@@ -1,29 +1,21 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
 import { atom, createStore } from 'jotai'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { PreviewView } from '~/lib/preview/preview-view'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import { useRawWorkflowActions } from './useRawWorkflowActions'
 
-const params: ProcessingParams = {
+const params: ColorGraphIntent = {
+  ...NEUTRAL_USER_COLOR_INTENT,
   intensity: 0.7,
-  viewMode: 'compare',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
 }
+const view: PreviewView = { mode: 'compare', compareSplit: 0.5 }
 
 function createStats(overrides: Partial<PipelineStats> = {}): PipelineStats {
   return {
@@ -53,6 +45,7 @@ function renderStatsHarness(status: 'ready' | 'error' = 'ready') {
   const { result } = renderHook(() =>
     useRawWorkflowActions({
       paramsRef: { current: params },
+      viewRef: { current: view },
       isMountedRef: { current: true },
       status,
       setError,
@@ -71,19 +64,17 @@ function renderStatsHarness(status: 'ready' | 'error' = 'ready') {
 }
 
 describe('useRawWorkflowActions', () => {
-  it('reads the current color intent and view from the imperative ref as separate ports', () => {
+  it('reads the current color intent and view from their own refs as separate ports', () => {
     const paramsRef = {
-      current: {
-        ...params,
-        viewMode: 'original',
-        compareSplit: 0.62,
-        intensity: 0.37,
-        userContrast: 12,
-      } as ProcessingParams,
+      current: { ...params, intensity: 0.37, userContrast: 12 },
+    }
+    const viewRef = {
+      current: { mode: 'original', compareSplit: 0.62 } as PreviewView,
     }
     const { result } = renderHook(() =>
       useRawWorkflowActions({
         paramsRef,
+        viewRef,
         isMountedRef: { current: true },
         status: 'ready',
         setError: vi.fn(),
@@ -101,13 +92,9 @@ describe('useRawWorkflowActions', () => {
       compareSplit: 0.62,
     })
 
-    // The ports read the ref when called, not the render that made them.
-    paramsRef.current = {
-      ...paramsRef.current,
-      viewMode: 'compare',
-      compareSplit: 0.2,
-      intensity: 0.62,
-    }
+    // The ports read the refs when called, not the render that made them.
+    paramsRef.current = { ...paramsRef.current, intensity: 0.62 }
+    viewRef.current = { mode: 'compare', compareSplit: 0.2 }
     expect(result.current.getCurrentColorIntent().intensity).toBe(0.62)
     expect(result.current.getCurrentView()).toEqual({
       mode: 'compare',
@@ -122,6 +109,7 @@ describe('useRawWorkflowActions', () => {
     const { result } = renderHook(() =>
       useRawWorkflowActions({
         paramsRef: { current: params },
+        viewRef: { current: view },
         isMountedRef,
         status: 'ready',
         setError: vi.fn(),
