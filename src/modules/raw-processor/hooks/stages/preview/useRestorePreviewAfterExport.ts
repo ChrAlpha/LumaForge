@@ -1,3 +1,4 @@
+import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
 import { useCallback } from 'react'
 
@@ -20,6 +21,8 @@ export type SetImageSession = (
 type UseRestorePreviewAfterExportInput = {
   loadedFile: File | null
   sessionRef: MutableRefObject<ImageSession | null>
+  /** The source exposure pin the restored frame must render with. */
+  rawRenderExposureRef: MutableRefObject<RawRenderExposure | null>
   isMountedRef: MutableRefObject<boolean>
   runtimeAbortControllerRef: MutableRefObject<AbortController | null>
   runtimeWorkSessionIdRef: MutableRefObject<string | null>
@@ -51,6 +54,7 @@ function mapPhaseToStatus(phase: RestorePreviewPhase): ProcessingStatus {
 export function useRestorePreviewAfterExport({
   loadedFile,
   sessionRef,
+  rawRenderExposureRef,
   isMountedRef,
   runtimeAbortControllerRef,
   runtimeWorkSessionIdRef,
@@ -73,6 +77,9 @@ export function useRestorePreviewAfterExport({
       return
     }
 
+    // The restored frame is the same source, so it reuses the pin instead of
+    // re-estimating; without a pin it decodes as the source's first quick.
+    const pinnedExposure = rawRenderExposureRef.current
     abortRuntimeWork()
     const restoreAbortController = new AbortController()
     runtimeAbortControllerRef.current = restoreAbortController
@@ -105,6 +112,7 @@ export function useRestorePreviewAfterExport({
           setProgress(progress)
         },
         restoreAbortController.signal,
+        pinnedExposure ? { pinnedExposure } : undefined,
       )
 
       if (!matchesActiveSession()) {
@@ -171,6 +179,7 @@ export function useRestorePreviewAfterExport({
     isMountedRef,
     loadedFile,
     openSession,
+    rawRenderExposureRef,
     runtimeAbortControllerRef,
     runtimeSessionRef,
     runtimeWorkSessionIdRef,

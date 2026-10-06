@@ -120,6 +120,7 @@ export function useRawPreviewStage({
   const { restorePreviewAfterExport } = useRestorePreviewAfterExport({
     loadedFile,
     sessionRef,
+    rawRenderExposureRef,
     isMountedRef,
     runtimeAbortControllerRef,
     runtimeWorkSessionIdRef,

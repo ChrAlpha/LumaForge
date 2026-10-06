@@ -1618,9 +1618,8 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     const file = new File(['raw'], 'frame.ARW')
     const extractEmbeddedPreview = vi.fn().mockResolvedValue(null)
-    const decodeQuickRaw = vi
-      .fn()
-      .mockResolvedValue(createDecodedImage('quick'))
+    const quick = createDecodedImage('quick')
+    const decodeQuickRaw = vi.fn().mockResolvedValue(quick)
     const decodeBoundedHqRaw = vi
       .fn()
       .mockResolvedValue(createDecodedImage('bounded-hq'))
@@ -1654,7 +1653,10 @@ describe('useRawWorkflow embedded preview state', () => {
       openSignal,
     )
     expect(decodeBoundedHqRaw).toHaveBeenCalledWith(
-      { maxOutputPixels: BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS },
+      {
+        maxOutputPixels: BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
+        pinnedExposure: quick.renderExposure,
+      },
       undefined,
       openSignal,
     )
@@ -2679,7 +2681,7 @@ describe('useRawWorkflow embedded preview state', () => {
     )
   })
 
-  it('runs the full-resolution export job with decoded render exposure and records strip progress', async () => {
+  it('runs the full-resolution export job with the pinned source exposure and records strip progress', async () => {
     const renderExposure: RawRenderExposure = {
       ev: 1.25,
       multiplier: Math.pow(2, 1.25),
@@ -2688,10 +2690,17 @@ describe('useRawWorkflow embedded preview state', () => {
 
     rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
     rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
+      createDecodedImage('quick', { renderExposure }),
     )
+    // A bounded HQ frame that estimated on its own does not move the export.
     rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
-      createDecodedImage('bounded-hq', { renderExposure }),
+      createDecodedImage('bounded-hq', {
+        renderExposure: {
+          ev: 1.3,
+          multiplier: Math.pow(2, 1.3),
+          source: 'image-statistics',
+        },
+      }),
     )
     rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue(
       createSupportedCapability(),
@@ -3257,6 +3266,23 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     vi.stubGlobal('crossOriginIsolated', true)
 
+    const quickExposure: RawRenderExposure = {
+      ev: 0.6,
+      multiplier: Math.pow(2, 0.6),
+      source: 'image-statistics',
+    }
+    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
+      createDecodedImage('quick', { renderExposure: quickExposure }),
+    )
+    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+      createDecodedImage('bounded-hq', {
+        renderExposure: {
+          ev: 0.7,
+          multiplier: Math.pow(2, 0.7),
+          source: 'image-statistics',
+        },
+      }),
+    )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
       filename: 'frame_neutral_fullres.jpg',
       blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
@@ -3268,6 +3294,7 @@ describe('useRawWorkflow embedded preview state', () => {
     await act(async () => {
       await result.current.loadFile(file)
     })
+    expect(result.current.displaySource).toBe('bounded-hq')
 
     await act(async () => {
       await result.current.exportImage({
@@ -3295,6 +3322,28 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.decodedImageRef.current?.source).toBe('quick')
     expect(result.current.exportResult?.filename).toBe(
       'frame_neutral_fullres.jpg',
+    )
+
+    // Quick, HQ, the export and the restored frame all render with the one
+    // exposure the first quick decode pinned for this source.
+    const exportGraph =
+      exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0].graph
+    expect(
+      exportGraph.steps.find(
+        (step: ExportColorGraphStep) => step.kind === 'raw-render-exposure',
+      ),
+    ).toEqual({
+      kind: 'raw-render-exposure',
+      ev: quickExposure.ev,
+      multiplier: quickExposure.multiplier,
+    })
+    expect(rawRuntimeAdapterMock.decodeQuickRaw).toHaveBeenLastCalledWith(
+      expect.any(Function),
+      expect.any(AbortSignal),
+      { pinnedExposure: quickExposure },
+    )
+    expect(result.current.decodedImageRef.current?.renderExposure).toEqual(
+      quickExposure,
     )
   })
 
@@ -5363,14 +5412,17 @@ describe('useRawWorkflow embedded preview state', () => {
     ).toBeUndefined()
   })
 
-  it('clears a ready export when active render exposure is refreshed', async () => {
+  it('keeps a ready export when the bounded HQ frame upgrades the preview', async () => {
     const boundedHqDecode = deferred<DecodedImage>()
+    const quickExposure: RawRenderExposure = {
+      ev: 0,
+      multiplier: 1,
+      source: 'image-statistics',
+    }
 
     rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
     rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick', {
-        renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-      }),
+      createDecodedImage('quick', { renderExposure: quickExposure }),
     )
     rawRuntimeAdapterMock.decodeBoundedHqRaw.mockReturnValue(
       boundedHqDecode.promise,
@@ -5424,11 +5476,19 @@ describe('useRawWorkflow embedded preview state', () => {
       await flushPromises()
     })
 
+    // The HQ frame renders with the source exposure the quick decode pinned,
+    // so a size upgrade is not a new render and the export stays valid.
+    expect(rawRuntimeAdapterMock.decodeBoundedHqRaw).toHaveBeenCalledWith(
+      { maxOutputPixels: expect.any(Number), pinnedExposure: quickExposure },
+      undefined,
+      expect.any(AbortSignal),
+    )
     expect(result.current.displaySource).toBe('bounded-hq')
-    expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('idle')
-    expect(
-      jotaiStore.get(currentSessionAtom)?.exportState.result,
-    ).toBeUndefined()
+    expect(result.current.decodedImageRef.current?.renderExposure).toEqual(
+      quickExposure,
+    )
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
+    expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()
   })
 
   it('defers preview-size copy canvas creation until after low-memory export releases preview context', async () => {
@@ -5619,6 +5679,14 @@ describe('useRawWorkflow embedded preview state', () => {
     rawRuntimeAdapterMock.openSession.mockImplementationOnce(() =>
       Promise.resolve(staleSession),
     )
+    const currentExposure: RawRenderExposure = {
+      ev: 0.5,
+      multiplier: Math.pow(2, 0.5),
+      source: 'image-statistics',
+    }
+    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
+      createDecodedImage('quick', { renderExposure: currentExposure }),
+    )
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
     let staleLoadPromise!: Promise<void>
@@ -5643,12 +5711,23 @@ describe('useRawWorkflow embedded preview state', () => {
 
     await act(async () => {
       staleQuickDecode.resolve(
-        createDecodedImage('quick', { width: 10, height: 10 }),
+        createDecodedImage('quick', {
+          width: 10,
+          height: 10,
+          renderExposure: {
+            ev: 2,
+            multiplier: 4,
+            source: 'image-statistics',
+          },
+        }),
       )
       await staleLoadPromise
     })
     await flushScheduledToasts()
 
+    expect(result.current.decodedImageRef.current?.renderExposure).toEqual(
+      currentExposure,
+    )
     expect(jotaiStore.get(currentSessionAtom)).toBe(replacementSession)
     expect(result.current.sourceFileName).toBe('current.ARW')
     expect(result.current.displaySource).toBe('bounded-hq')

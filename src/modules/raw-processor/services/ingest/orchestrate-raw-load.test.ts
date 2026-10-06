@@ -420,7 +420,7 @@ describe('orchestrateRawLoad ack-before-work contract', () => {
       sourceHeight: 4000,
     })
     expect(decodeBoundedHqRaw).toHaveBeenCalledWith(
-      { maxOutputPixels: 12_000_000 },
+      { maxOutputPixels: 12_000_000, pinnedExposure: quick.renderExposure },
       undefined,
       expect.any(AbortSignal),
     )

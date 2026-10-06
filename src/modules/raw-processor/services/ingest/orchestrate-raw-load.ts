@@ -369,8 +369,12 @@ export async function orchestrateRawLoad(
           return { width: quickPreview.width, height: quickPreview.height }
         },
         async decodeBoundedHqRaw(options) {
+          // The pipeline only runs bounded HQ after a quick frame, whose
+          // exposure is this source's pin: a size upgrade renders with it
+          // rather than with an estimate from the larger frame.
+          const pinnedExposure = quickPreview?.renderExposure
           boundedHqPreview = await activeRuntimeSession.decodeBoundedHqRaw(
-            options,
+            pinnedExposure ? { ...options, pinnedExposure } : options,
             undefined,
             runtimeSignal,
           )
