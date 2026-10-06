@@ -57,9 +57,11 @@ Requires `@lumaforge/luma-raw-runtime` 0.1.2 and
 - Manifest construction and the color-graph descriptor now come from
   `@lumaforge/render-engine/manifest`, shared with the browser app, which
   now seals the same `RenderManifest` for its full-resolution exports.
-- `render_params` is written and read back through the render-engine
-  projection the browser app uses, and `lmfg.params.v1` takes its field
-  ranges from `@lumaforge/luma-color-runtime`. The params schema, its
+- `render_params` is written through the render-engine projection the
+  browser app uses, and `lmfg.params.v1` takes its field ranges from
+  `@lumaforge/luma-color-runtime`. Replay still reads recorded values through
+  the strict params schema, so a value outside it is refused rather than
+  clamped. The params schema, its
   defaults (look `intensity` 1, `raw_render_exposure` `auto`), patch merging,
   and the recorded raw-render exposure are unchanged. One encoding changes:
   a `selective_color` that shifts nothing (for example every band at zero) is

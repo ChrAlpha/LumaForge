@@ -15,6 +15,7 @@ import {
 } from '@lumaforge/render-engine'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { toLmfgError } from '../protocol/errors'
 import type { LmfgRuntime } from '../runtime/node-runtime'
 import { createLmfgRuntime } from '../runtime/node-runtime'
 import { loadSourceFile } from '../runtime/source-loader'
@@ -426,6 +427,101 @@ describe('replaying a manifest an earlier writer sealed', () => {
       }),
     ).rejects.toMatchObject(geometryRefusal)
   })
+})
+
+describe('replaying a sealed manifest that records out-of-schema params', () => {
+  /**
+   * Sealed with a valid sha256 and the fingerprint of the graph the recorded
+   * values would build once clamped or neutralised, so neither the signature
+   * nor the fingerprint gate stands between the values and the params schema.
+   */
+  function sealedWith(
+    renderParams: Record<string, unknown>,
+    graphParams: Parameters<typeof parseRenderParams>[0],
+  ) {
+    const manifest = manifestFor()
+    const { manifest_sha256: _sha, ...unsealed } = manifest
+    return createRenderManifest({
+      kind: unsealed.kind,
+      source_raw: unsealed.source_raw,
+      lut: null,
+      graph: requireSupportedGraph(
+        buildColorGraph(parseRenderParams(graphParams), null, exposure),
+      ),
+      render_params: {
+        ...unsealed.render_params,
+        ...renderParams,
+      } as RenderManifest['render_params'],
+      policy: unsealed.policy,
+      environment: unsealed.environment,
+      output: {
+        ...unsealed.output.dimensions,
+        quality: unsealed.output.quality,
+        filename: unsealed.output.filename,
+        sha256: unsealed.output.sha256,
+      },
+      parent_manifest_sha256: null,
+      produced_at: unsealed.produced_at,
+    })
+  }
+
+  function schemaErrorOf(run: () => unknown): string | null {
+    try {
+      run()
+    } catch (error) {
+      return toLmfgError(error).code
+    }
+    return null
+  }
+
+  const cases: [string, Record<string, unknown>, Record<string, unknown>][] = [
+    ['a string exposure_ev', { exposure_ev: '2' }, { contrast: 5 }],
+    [
+      'an out-of-range exposure_ev',
+      { exposure_ev: 6 },
+      { contrast: 5, exposure_ev: 5 },
+    ],
+    ['a string intensity', { intensity: '0.37' }, { contrast: 5 }],
+    [
+      'an out-of-range HSL axis',
+      { selective_color: { red: { hue: 101, saturation: 0, lightness: 0 } } },
+      { contrast: 5, selective_color: { red: { hue: 100 } } },
+    ],
+    [
+      'a string tone field',
+      {
+        tone_curve: {
+          contrast: '10',
+          highlights: 0,
+          shadows: 0,
+          whites: 0,
+          blacks: 0,
+        },
+      },
+      {},
+    ],
+  ]
+
+  for (const [label, recorded, graphParams] of cases) {
+    it(`refuses ${label} instead of replaying a normalised value`, async () => {
+      const manifest = sealedWith(recorded, graphParams)
+      expect(verifyManifestSha256(manifest)).toBe(true)
+      expect(
+        schemaErrorOf(() => manifestToRenderParams(manifest.render_params)),
+      ).toBe('schema.invalid')
+      const caught = await prepareReplay({
+        manifest,
+        source: fakeSource('a'.repeat(64)),
+        workspaceRoot: dir,
+        cwd: dir,
+      }).then(
+        () => null,
+        (error: unknown) => error,
+      )
+      expect(caught).not.toBeNull()
+      expect(toLmfgError(caught).code).toBe('schema.invalid')
+    })
+  }
 })
 
 describe('replaying an explicit zero raw-render exposure', () => {

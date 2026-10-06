@@ -3,7 +3,6 @@ import type {
   LUTData,
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
-  UserColorIntent,
   UserColorIntentInput,
   UserColorScalarKey,
 } from '@lumaforge/luma-color-runtime'
@@ -24,13 +23,13 @@ import {
   colorGraphIdentity,
   describeColorGraph,
   fingerprintColorGraph,
-  invertManifestRenderParams,
   projectManifestRenderParams,
 } from '@lumaforge/render-engine'
 
 import { LmfgError } from '../protocol/errors'
 import type { RenderParams, UserColorParamKey } from '../schemas/params'
 import {
+  HSL_BAND_IDS,
   PARAM_DEFAULTS,
   parseRenderParams,
   USER_COLOR_PARAM_KEYS,
@@ -80,25 +79,6 @@ function toUserColorIntent(params: RenderParams): UserColorIntentInput {
     intent[shared] = params[key]
   }
   return { ...intent, selectiveColor: params.selective_color }
-}
-
-/**
- * The CLI params fields for a user color. HSL that shifts nothing becomes
- * `null`, the same as a params file that states none.
- */
-function fromUserColorIntent(
-  color: UserColorIntent,
-): Pick<RenderParams, UserColorParamKey | 'selective_color'> {
-  const fields = {} as Record<UserColorParamKey, number>
-  for (const [key, shared] of USER_COLOR_PARAM_ENTRIES) {
-    fields[key] = color[shared]
-  }
-  return {
-    ...fields,
-    selective_color: isSelectiveColorNeutral(color.selectiveColor)
-      ? null
-      : color.selectiveColor,
-  }
 }
 
 export function buildColorGraph(
@@ -153,21 +133,54 @@ export function toManifestRenderParams(
   })
 }
 
+/** The recorded HSL bands under their CLI shape; unknown bands are not read. */
+function recordedSelectiveColor(
+  recorded: ManifestRenderParams['selective_color'],
+): Record<string, unknown> | null {
+  if (!recorded) return null
+  const bands = HSL_BAND_IDS.filter((id) => recorded[id]).map((id) => {
+    const band = recorded[id]
+    return [
+      id,
+      { hue: band.hue, saturation: band.saturation, lightness: band.lightness },
+    ]
+  })
+  return bands.length > 0 ? Object.fromEntries(bands) : null
+}
+
 /**
  * Inverse of `toManifestRenderParams`: rebuild CLI params from a manifest so a
- * render can be replayed. The recorded raw-render exposure becomes an explicit
- * EV; a manifest that records no strength gets the CLI default. The LUT
- * reference is resolved separately by the caller. Callers verify the
- * manifest's own signature first: this reads, it does not verify.
+ * render can be replayed. The recorded values go through the params schema as
+ * written, so a value outside it is refused rather than clamped. Sections an
+ * older writer did not record read as neutral, a missing strength as the CLI
+ * default, and the recorded raw-render exposure becomes an explicit EV. HSL
+ * that shifts nothing reads as none. The LUT reference is resolved separately
+ * by the caller. Callers verify the manifest's own signature first: this
+ * reads, it does not verify.
  */
 export function manifestToRenderParams(
   params: ManifestRenderParams,
 ): RenderParams {
-  const intent = invertManifestRenderParams(params)
-  return parseRenderParams({
-    ...fromUserColorIntent(intent.userColor),
-    intensity: intent.intensity ?? PARAM_DEFAULTS.intensity,
-    raw_render_exposure: intent.rawRenderExposure?.ev ?? 'auto',
+  const parsed = parseRenderParams({
+    exposure_ev: params.exposure_ev,
+    contrast: params.tone_curve?.contrast ?? 0,
+    highlights: params.tone_curve?.highlights ?? 0,
+    shadows: params.tone_curve?.shadows ?? 0,
+    whites: params.tone_curve?.whites ?? 0,
+    blacks: params.tone_curve?.blacks ?? 0,
+    temperature: params.color_balance?.temperature ?? 0,
+    tint: params.color_balance?.tint ?? 0,
+    saturation: params.saturation?.saturation ?? 0,
+    vibrance: params.saturation?.vibrance ?? 0,
+    intensity: params.intensity ?? PARAM_DEFAULTS.intensity,
+    raw_render_exposure:
+      typeof params.raw_render_exposure_ev === 'number'
+        ? params.raw_render_exposure_ev
+        : 'auto',
+    selective_color: recordedSelectiveColor(params.selective_color),
     lut: null,
   })
+  return isSelectiveColorNeutral(parsed.selective_color)
+    ? { ...parsed, selective_color: null }
+    : parsed
 }
