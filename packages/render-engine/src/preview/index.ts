@@ -3,7 +3,18 @@
 // CPU preview path: preview-render.ts, preview-plan.ts, and the
 // worker-bridge module (CPU preview Worker abstraction), plus the
 // candidate-render and contact-sheet primitives built on top of them.
+// preview-color-plan.ts decides what each preview executor draws for the
+// selected look.
 
+export {
+  PREVIEW_COLOR_PLAN_REASONS,
+  type PreviewColorExecutor,
+  type PreviewColorPlan,
+  type PreviewColorPlanReason,
+  type PreviewHistogramPlan,
+  resolvePreviewColorPlan,
+  type ResolvePreviewColorPlanInput,
+} from './preview-color-plan'
 export {
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
   type BoundedHqPreviewTarget,

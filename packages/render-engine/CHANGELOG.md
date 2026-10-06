@@ -6,6 +6,17 @@ predates this file.
 
 ## Unreleased
 
+### Added
+
+- `resolvePreviewColorPlan` in `@lumaforge/render-engine/preview`: what a
+  preview executor (`'webgpu'` or `'cpu'`) draws for the selected look. It
+  reports the selection and the drawn look separately, with a typed reason
+  when they differ, and the TS graph that reproduces the draw. A custom LUT
+  draws only when export would run it; otherwise the look is dropped and the
+  user adjustments and RAW render exposure stay. WebGPU keeps a builtin
+  preset, for which no TS graph or histogram stands in; the CPU draws the
+  adjusted graph without it. Export is unchanged and still refuses both.
+
 ### Deprecated
 
 - `ExportCheckpointManifest` and the types it is built from:
