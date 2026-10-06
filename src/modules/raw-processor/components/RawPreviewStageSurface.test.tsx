@@ -82,10 +82,12 @@ function renderSurface(
     isCpuMode = true,
     isProcessing = false,
     cpuVariant,
+    onCompareReset,
   }: {
     isCpuMode?: boolean
     isProcessing?: boolean
     cpuVariant?: 'processed' | 'neutral'
+    onCompareReset?: () => void
   } = {},
 ) {
   return render(
@@ -100,6 +102,7 @@ function renderSurface(
       onPipelineChange={vi.fn()}
       onPreviewFrameChange={vi.fn()}
       cpuVariant={cpuVariant}
+      onCompareReset={onCompareReset}
     />,
   )
 }
@@ -179,18 +182,32 @@ describe('rawPreviewStageSurface in GPU preview mode', () => {
     expect(screen.queryByTestId('split-handle')).toBeNull()
   })
 
-  it('writes split changes to the view owner, never through the color setter', () => {
+  it('writes only committed split changes to the view owner, never through the color setter', () => {
     const current = workflow({ viewMode: 'compare', compareSplit: 0.4 })
     renderSurface(current, { isCpuMode: false })
 
     expect(stageProps.gpu.at(-1)!.viewMode).toBe('compare')
     const handle = stageProps.splitHandle.at(-1)!
     expect(handle.value).toBe(0.4)
-    ;(handle.onPreviewChange as (split: number) => void)(0.62)
+    // Dragging only paints the split; nothing persists until the gesture
+    // commits.
+    expect(handle.onPreviewChange).toBeUndefined()
     ;(handle.onChange as (split: number) => void)(0.64)
 
-    expect(current.setCompareSplit).toHaveBeenNthCalledWith(1, 0.62)
-    expect(current.setCompareSplit).toHaveBeenNthCalledWith(2, 0.64)
+    expect(current.setCompareSplit).toHaveBeenCalledOnce()
+    expect(current.setCompareSplit).toHaveBeenLastCalledWith(0.64)
     expect(current.setParams).not.toHaveBeenCalled()
+  })
+
+  it('hands the split handle the compare reset as its one reset transaction', () => {
+    const current = workflow({ viewMode: 'compare', compareSplit: 0.4 })
+    const onCompareReset = vi.fn()
+    renderSurface(current, { isCpuMode: false, onCompareReset })
+
+    const handle = stageProps.splitHandle.at(-1)!
+    ;(handle.onReset as () => void)()
+
+    expect(onCompareReset).toHaveBeenCalledOnce()
+    expect(current.setCompareSplit).not.toHaveBeenCalled()
   })
 })

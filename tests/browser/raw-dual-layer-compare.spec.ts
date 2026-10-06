@@ -294,6 +294,14 @@ async function dragSlider(page: Page, sliderName: string, targetRatio: number) {
   await page.mouse.move(startX, targetY)
   await page.mouse.down()
   await page.mouse.move(targetX, targetY, { steps: 12 })
+
+  // Mid-gesture the handle and clip follow the pointer on animation frames,
+  // but the split is committed only on release.
+  await waitForAnimationFrames(page, 3)
+  const handleCenterMidDrag = await readCompareHandleCenterX(page)
+  expect(Math.abs(handleCenterMidDrag - startX)).toBeGreaterThan(4)
+  expect(Number(await slider.getAttribute('aria-valuenow'))).toBe(before)
+
   await page.mouse.up()
 
   await expect

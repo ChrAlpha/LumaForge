@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
@@ -55,7 +55,10 @@ interface TrackGeometry {
 }
 
 function getCompareTrackGeometry(target: HTMLElement): TrackGeometry {
-  const frame = target.parentElement ?? target
+  return getFrameTrackGeometry(target.parentElement ?? target)
+}
+
+function getFrameTrackGeometry(frame: HTMLElement): TrackGeometry {
   const frameRect = frame.getBoundingClientRect()
   const imageTrack = frame.querySelector<HTMLElement>(IMAGE_TRACK_SELECTOR)
   const imageRect = imageTrack?.getBoundingClientRect()
@@ -143,15 +146,28 @@ export function getCompareSplitPositionGeometry(
 }
 
 function applyHandlePosition(target: HTMLElement, value: number) {
-  const { split, clipSplit, handleX, geometry } =
-    getCompareSplitPositionGeometry(target, value)
-  applyCompareSplitVariables(target, split, clipSplit, handleX, geometry)
+  const { clipSplit, handleX, geometry } = getCompareSplitPositionGeometry(
+    target,
+    value,
+  )
+  applyCompareSplitVariables(target, clipSplit, handleX, geometry)
+}
+
+// Paints a split on the frame alone, for when the handle is already gone.
+function applyFramePosition(frame: HTMLElement, value: number) {
+  const geometry = getFrameTrackGeometry(frame)
+  const handleX = getHandlePositionX(geometry.frameRect, value)
+  const clipSplit = clipFracFromScreenX(
+    geometry.frameRect.left + handleX,
+    geometry,
+  )
+  applyFrameSplitVariables(frame, clipSplit, handleX, geometry)
 }
 
 function applyPointerPosition(target: HTMLElement, clientX: number) {
   const { split, clipSplit, handleX, geometry } =
     getCompareSplitInteractionGeometry(target, clientX)
-  applyCompareSplitVariables(target, split, clipSplit, handleX, geometry)
+  applyCompareSplitVariables(target, clipSplit, handleX, geometry)
   return split
 }
 
@@ -161,20 +177,39 @@ function roundForCss(value: number) {
 
 function applyCompareSplitVariables(
   target: HTMLElement,
-  _split: number,
   clipSplit: number,
   handleX: number,
   geometry: TrackGeometry,
 ) {
-  const clipSplitPercent = `${roundForCss(clipSplit * 100)}%`
-  const handlePosition = `${roundForCss(handleX)}px`
   // The photo is letterboxed inside the frame. Publishing its vertical box
   // lets the split line stop at the photograph instead of running through
   // the empty mat above and below it.
   const top = Math.max(0, geometry.trackTop)
   const height = Math.max(0, geometry.trackHeight)
-  const trackTop = `${roundForCss(top)}px`
-  const trackHeight = `${roundForCss(height)}px`
+
+  target.style.setProperty(
+    '--raw-compare-split',
+    `${roundForCss(clipSplit * 100)}%`,
+  )
+  target.style.setProperty('--raw-compare-split-x', `${roundForCss(handleX)}px`)
+  target.style.setProperty('--raw-compare-track-top', `${roundForCss(top)}px`)
+  target.style.setProperty(
+    '--raw-compare-track-height',
+    `${roundForCss(height)}px`,
+  )
+
+  const frame = target.parentElement
+  if (frame) applyFrameSplitVariables(frame, clipSplit, handleX, geometry)
+}
+
+function applyFrameSplitVariables(
+  frame: HTMLElement,
+  clipSplit: number,
+  handleX: number,
+  geometry: TrackGeometry,
+) {
+  const top = Math.max(0, geometry.trackTop)
+  const height = Math.max(0, geometry.trackHeight)
   // Distance from the frame's bottom edge up to the photo. The RAW / JPEG
   // labels hang off this so they sit on the photograph instead of floating
   // in the mat below it.
@@ -182,15 +217,12 @@ function applyCompareSplitVariables(
     Math.max(0, geometry.frameRect.height - (top + height)),
   )}px`
 
-  target.style.setProperty('--raw-compare-split', clipSplitPercent)
-  target.style.setProperty('--raw-compare-split-x', handlePosition)
-  target.style.setProperty('--raw-compare-track-top', trackTop)
-  target.style.setProperty('--raw-compare-track-height', trackHeight)
-
-  const frame = target.parentElement
-  frame?.style.setProperty('--raw-compare-split', clipSplitPercent)
-  frame?.style.setProperty('--raw-compare-split-x', handlePosition)
-  frame?.style.setProperty('--raw-compare-track-bottom', trackBottom)
+  frame.style.setProperty(
+    '--raw-compare-split',
+    `${roundForCss(clipSplit * 100)}%`,
+  )
+  frame.style.setProperty('--raw-compare-split-x', `${roundForCss(handleX)}px`)
+  frame.style.setProperty('--raw-compare-track-bottom', trackBottom)
 }
 
 function trySetPointerCapture(target: HTMLElement, pointerId: number) {
@@ -212,17 +244,20 @@ function tryReleasePointerCapture(target: HTMLElement, pointerId: number) {
 export function CompareSplitHandle({
   value,
   onChange,
-  onPreviewChange,
   onReset,
   disabled = false,
   className,
 }: {
   value: number
-  onChange: (value: number) => void
-  onPreviewChange?: (value: number) => void
   /**
-   * Called after a double-click (mouse) or double-tap (touch / pen) has put
-   * the split back at 50%: the compare reset, shared by both viewports.
+   * Commits a split. Dragging only paints the handle and the clip; the split
+   * is committed once, when the gesture completes (release or a key press).
+   */
+  onChange: (value: number) => void
+  /**
+   * The compare reset, run by a double-click (mouse) or double-tap (touch /
+   * pen) and shared by both viewports. It owns the 50% write; without it the
+   * handle commits 50% itself.
    */
   onReset?: () => void
   disabled?: boolean
@@ -231,19 +266,22 @@ export function CompareSplitHandle({
   const { t } = useI18n()
   const handleRef = useRef<HTMLButtonElement>(null)
   const activePointerIdRef = useRef<number | null>(null)
+  const dragFrameRef = useRef<HTMLElement | null>(null)
   const pressStartRef = useRef<{ x: number; y: number } | null>(null)
   const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null)
   const lastPointerTypeRef = useRef<string | null>(null)
   const pendingClientXRef = useRef<number | null>(null)
   const pendingAnimationFrameRef = useRef<number | null>(null)
+  const committedSplitRef = useRef(clampCompareSplit(value))
   const latestPreviewSplitRef = useRef(clampCompareSplit(value))
 
   useLayoutEffect(() => {
     const handle = handleRef.current
+    committedSplitRef.current = clampCompareSplit(value)
     if (!handle) return
 
     if (activePointerIdRef.current === null) {
-      latestPreviewSplitRef.current = clampCompareSplit(value)
+      latestPreviewSplitRef.current = committedSplitRef.current
       applyHandlePosition(handle, value)
     }
 
@@ -264,6 +302,7 @@ export function CompareSplitHandle({
   })
 
   const cancelPendingPreview = useCallback(() => {
+    pendingClientXRef.current = null
     const frame = pendingAnimationFrameRef.current
     if (frame !== null) {
       window.cancelAnimationFrame(frame)
@@ -275,10 +314,9 @@ export function CompareSplitHandle({
     (target: HTMLElement, clientX: number) => {
       const split = applyPointerPosition(target, clientX)
       latestPreviewSplitRef.current = split
-      onPreviewChange?.(split)
       return split
     },
-    [onPreviewChange],
+    [],
   )
 
   const schedulePointerPreview = useCallback(
@@ -299,7 +337,6 @@ export function CompareSplitHandle({
 
   const flushPointerPreview = useCallback(
     (target: HTMLElement, clientX: number) => {
-      pendingClientXRef.current = null
       cancelPendingPreview()
       return previewFromPointer(target, clientX)
     },
@@ -308,7 +345,8 @@ export function CompareSplitHandle({
 
   const setFrameDragging = useCallback(
     (target: HTMLElement, active: boolean) => {
-      const frame = target.parentElement
+      const frame = active ? target.parentElement : dragFrameRef.current
+      dragFrameRef.current = active ? frame : null
       if (!frame) return
       if (active) {
         frame.setAttribute('data-raw-compare-dragging', '')
@@ -319,19 +357,66 @@ export function CompareSplitHandle({
     [],
   )
 
+  // Paints the last committed split again, dropping any transient drag
+  // position.
+  const restoreCommittedSplit = useCallback((target: HTMLElement) => {
+    latestPreviewSplitRef.current = committedSplitRef.current
+    applyHandlePosition(target, committedSplitRef.current)
+  }, [])
+
+  // Ends an unfinished drag without committing it: cancel, lost capture,
+  // disable and unmount all land back on the committed split.
+  const abandonDrag = useCallback(
+    (target: HTMLElement | null) => {
+      const pointerId = activePointerIdRef.current
+      cancelPendingPreview()
+      pressStartRef.current = null
+      lastTapRef.current = null
+      if (pointerId === null) return
+
+      activePointerIdRef.current = null
+      if (target) {
+        setFrameDragging(target, false)
+        tryReleasePointerCapture(target, pointerId)
+        restoreCommittedSplit(target)
+      } else {
+        // The handle is gone but the frame can outlive it: put the committed
+        // split back on the frame so nothing keeps showing the abandoned drag.
+        const frame = dragFrameRef.current
+        dragFrameRef.current = null
+        if (frame) {
+          frame.removeAttribute('data-raw-compare-dragging')
+          applyFramePosition(frame, committedSplitRef.current)
+        }
+      }
+    },
+    [cancelPendingPreview, restoreCommittedSplit, setFrameDragging],
+  )
+
+  useEffect(() => {
+    if (disabled) abandonDrag(handleRef.current)
+  }, [abandonDrag, disabled])
+
+  useEffect(() => {
+    return () => {
+      abandonDrag(null)
+    }
+  }, [abandonDrag])
+
+  // One reset transaction: the compare reset when wired, else a single 50%
+  // commit. The handle shows the committed split meanwhile; the reset's own
+  // re-render moves it, and a refused reset leaves it where the split is.
   const resetSplit = useCallback(
     (target: HTMLElement) => {
-      pendingClientXRef.current = null
       cancelPendingPreview()
-      latestPreviewSplitRef.current = RESET_SPLIT
-      // Paint now: when the committed value is already 50% no re-render
-      // would move the handle back from where the second tap left it.
-      applyHandlePosition(target, RESET_SPLIT)
-      onPreviewChange?.(RESET_SPLIT)
-      onChange(RESET_SPLIT)
-      onReset?.()
+      restoreCommittedSplit(target)
+      if (onReset) {
+        onReset()
+      } else {
+        onChange(RESET_SPLIT)
+      }
     },
-    [cancelPendingPreview, onChange, onPreviewChange, onReset],
+    [cancelPendingPreview, onChange, onReset, restoreCommittedSplit],
   )
 
   const handlePointerDown = useCallback(
@@ -366,36 +451,38 @@ export function CompareSplitHandle({
       event.stopPropagation()
       if (disabled || activePointerIdRef.current !== event.pointerId) return
 
-      const nextSplit = flushPointerPreview(event.currentTarget, event.clientX)
-      activePointerIdRef.current = null
-      setFrameDragging(event.currentTarget, false)
-      tryReleasePointerCapture(event.currentTarget, event.pointerId)
-      onChange(nextSplit)
-
-      if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return
+      const target = event.currentTarget
       const start = pressStartRef.current
       pressStartRef.current = null
-      const travelled = start
-        ? Math.hypot(event.clientX - start.x, event.clientY - start.y)
-        : 0
-      if (travelled > DOUBLE_TAP_SLOP_PX) {
-        // A drag, not a tap.
-        lastTapRef.current = null
-        return
+      activePointerIdRef.current = null
+      setFrameDragging(target, false)
+      tryReleasePointerCapture(target, event.pointerId)
+
+      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+        const travelled = start
+          ? Math.hypot(event.clientX - start.x, event.clientY - start.y)
+          : 0
+        const now = Date.now()
+        const last = lastTapRef.current
+        if (travelled > DOUBLE_TAP_SLOP_PX) {
+          // A drag, not a tap.
+          lastTapRef.current = null
+        } else if (
+          last &&
+          now - last.time <= DOUBLE_TAP_MS &&
+          Math.hypot(event.clientX - last.x, event.clientY - last.y) <=
+            DOUBLE_TAP_SLOP_PX
+        ) {
+          // The second tap is the reset, not a split commit of its own.
+          lastTapRef.current = null
+          resetSplit(target)
+          return
+        } else {
+          lastTapRef.current = { time: now, x: event.clientX, y: event.clientY }
+        }
       }
-      const now = Date.now()
-      const last = lastTapRef.current
-      if (
-        last &&
-        now - last.time <= DOUBLE_TAP_MS &&
-        Math.hypot(event.clientX - last.x, event.clientY - last.y) <=
-          DOUBLE_TAP_SLOP_PX
-      ) {
-        lastTapRef.current = null
-        resetSplit(event.currentTarget)
-        return
-      }
-      lastTapRef.current = { time: now, x: event.clientX, y: event.clientY }
+
+      onChange(flushPointerPreview(target, event.clientX))
     },
     [disabled, flushPointerPreview, onChange, resetSplit, setFrameDragging],
   )
@@ -404,17 +491,20 @@ export function CompareSplitHandle({
     (event: React.PointerEvent<HTMLButtonElement>) => {
       event.stopPropagation()
       if (activePointerIdRef.current !== event.pointerId) return
-
-      activePointerIdRef.current = null
-      pendingClientXRef.current = null
-      pressStartRef.current = null
-      lastTapRef.current = null
-      cancelPendingPreview()
-      setFrameDragging(event.currentTarget, false)
-      tryReleasePointerCapture(event.currentTarget, event.pointerId)
-      applyHandlePosition(event.currentTarget, value)
+      abandonDrag(event.currentTarget)
     },
-    [cancelPendingPreview, value, setFrameDragging],
+    [abandonDrag],
+  )
+
+  const handleLostPointerCapture = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      // Capture lost without a release (the element moved, the page hid):
+      // end the drag the same way a cancel does. A release clears the active
+      // pointer before it lets capture go, so it never lands here.
+      if (activePointerIdRef.current !== event.pointerId) return
+      abandonDrag(event.currentTarget)
+    },
+    [abandonDrag],
   )
 
   const handleKeyDown = useCallback(
@@ -483,6 +573,7 @@ export function CompareSplitHandle({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
+      onLostPointerCapture={handleLostPointerCapture}
       onClick={stopInteractionPropagation}
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}

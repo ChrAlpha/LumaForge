@@ -46,8 +46,8 @@ export interface ComparePreviewStageProps {
   recoveryHint?: string
   onRawDrop: (files: File[]) => void
   onPrepareRuntime?: () => void
+  /** Commits a split once a drag, tap or key press completes. */
   onSplitChange: (split: number) => void
-  onSplitPreviewChange?: (split: number) => void
   /** Double-click / double-tap on the split handle: the compare reset. */
   onSplitReset?: () => void
   onPreviewViewportChange?: (viewport: PreviewViewport) => void
@@ -228,7 +228,6 @@ export function ComparePreviewStage({
   onRawDrop,
   onPrepareRuntime,
   onSplitChange,
-  onSplitPreviewChange,
   onSplitReset,
   onPreviewViewportChange,
   onStatsUpdate,
@@ -329,7 +328,6 @@ export function ComparePreviewStage({
                 <CompareSplitHandle
                   value={split}
                   onChange={onSplitChange}
-                  onPreviewChange={onSplitPreviewChange}
                   onReset={onSplitReset}
                   disabled={blockStageInteraction}
                 />

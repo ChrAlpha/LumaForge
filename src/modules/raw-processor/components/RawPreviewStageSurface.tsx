@@ -92,7 +92,6 @@ export function RawPreviewStageSurface({
       split={workflow.compareSplit}
       splitEnabled={workflow.viewMode === 'compare'}
       onSplitChange={workflow.setCompareSplit}
-      onSplitPreviewChange={workflow.setCompareSplit}
       onSplitReset={onCompareReset}
       onPreviewViewportChange={workflow.setPreviewViewport}
       isProcessing={isProcessing}

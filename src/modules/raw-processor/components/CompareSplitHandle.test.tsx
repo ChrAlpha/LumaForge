@@ -59,7 +59,6 @@ describe('compareSplitHandle', () => {
 
   it('previews pointer movement on animation frames and commits on release', () => {
     const onChange = vi.fn()
-    const onPreviewChange = vi.fn()
     const animationFrames: FrameRequestCallback[] = []
     const requestAnimationFrame = vi
       .spyOn(window, 'requestAnimationFrame')
@@ -76,7 +75,6 @@ describe('compareSplitHandle', () => {
         {createElement(CompareSplitHandle, {
           value: 0.5,
           onChange,
-          onPreviewChange,
         })}
       </div>,
     )
@@ -94,14 +92,14 @@ describe('compareSplitHandle', () => {
     fireEvent.pointerMove(slider, { clientX: 380, pointerId: 1 })
 
     expect(onChange).not.toHaveBeenCalled()
-    expect(onPreviewChange).not.toHaveBeenCalled()
     expect(requestAnimationFrame).toHaveBeenCalledTimes(1)
 
     animationFrames[0]?.(performance.now())
-    expect(onPreviewChange).toHaveBeenLastCalledWith(0.7)
+    expect(track.style.getPropertyValue('--raw-compare-split')).toBe('70%')
     expect(onChange).not.toHaveBeenCalled()
 
     fireEvent.pointerUp(slider, { clientX: 380, pointerId: 1 })
+    expect(onChange).toHaveBeenCalledOnce()
     expect(onChange).toHaveBeenLastCalledWith(0.7)
 
     requestAnimationFrame.mockRestore()
@@ -426,21 +424,20 @@ function firePointer(
 }
 
 describe('compare split handle reset', () => {
-  function renderHandle(value = 0.3) {
+  function renderHandle(value = 0.3, { withReset = true } = {}) {
     const onChange = vi.fn()
-    const onPreviewChange = vi.fn()
     const onReset = vi.fn()
     const onParentDoubleClick = vi.fn()
-    render(
+    const element = (current: number) => (
       <div data-testid="track" onDoubleClick={onParentDoubleClick}>
         <CompareSplitHandle
-          value={value}
+          value={current}
           onChange={onChange}
-          onPreviewChange={onPreviewChange}
-          onReset={onReset}
+          onReset={withReset ? onReset : undefined}
         />
-      </div>,
+      </div>
     )
+    const view = render(element(value))
     const track = screen.getByTestId('track')
     Object.defineProperty(track, 'getBoundingClientRect', {
       value: () => ({ left: 0, top: 0, width: 400, height: 300 }),
@@ -448,24 +445,44 @@ describe('compare split handle reset', () => {
     return {
       slider: screen.getByRole('slider'),
       onChange,
-      onPreviewChange,
       onReset,
       onParentDoubleClick,
+      rerenderValue: (next: number) => view.rerender(element(next)),
     }
   }
 
-  it('resets the split to 50% on double-click and runs the compare reset', () => {
-    const { slider, onChange, onPreviewChange, onReset, onParentDoubleClick } =
+  it('resets the split to 50% on double-click as one compare reset', () => {
+    const { slider, onChange, onReset, onParentDoubleClick, rerenderValue } =
       renderHandle()
 
     fireEvent.doubleClick(slider)
 
-    expect(onChange).toHaveBeenLastCalledWith(0.5)
-    expect(onPreviewChange).toHaveBeenLastCalledWith(0.5)
+    // The compare reset owns the split write; the handle does not commit 50%
+    // on its own as well.
+    expect(onChange).not.toHaveBeenCalled()
     expect(onReset).toHaveBeenCalledOnce()
+    rerenderValue(0.5)
     expect(slider.style.getPropertyValue('--raw-compare-split-x')).toBe('200px')
     // The stage's own double-click (viewport reset) stays out of it.
     expect(onParentDoubleClick).not.toHaveBeenCalled()
+  })
+
+  it('commits 50% once on double-click when no compare reset is wired', () => {
+    const { slider, onChange } = renderHandle(0.3, { withReset: false })
+
+    fireEvent.doubleClick(slider)
+
+    expect(onChange).toHaveBeenCalledOnce()
+    expect(onChange).toHaveBeenLastCalledWith(0.5)
+  })
+
+  it('keeps the committed split painted when the compare reset is refused', () => {
+    const { slider, onReset } = renderHandle(0.3)
+
+    fireEvent.doubleClick(slider)
+
+    expect(onReset).toHaveBeenCalledOnce()
+    expect(slider.style.getPropertyValue('--raw-compare-split-x')).toBe('120px')
   })
 
   it('resets on a touch double-tap within 300ms and 24px, once', () => {
@@ -476,12 +493,16 @@ describe('compare split handle reset', () => {
     firePointer(slider, 'pointerdown', { clientX: 120, pointerType: 'touch' })
     firePointer(slider, 'pointerup', { clientX: 120, pointerType: 'touch' })
     expect(onReset).not.toHaveBeenCalled()
+    // The first tap cannot know a second one follows, so it commits the tap
+    // position like any release; the reset then supersedes it.
+    expect(onChange).toHaveBeenCalledOnce()
 
     now.mockReturnValue(1250)
     firePointer(slider, 'pointerdown', { clientX: 136, pointerType: 'touch' })
     firePointer(slider, 'pointerup', { clientX: 136, pointerType: 'touch' })
     expect(onReset).toHaveBeenCalledOnce()
-    expect(onChange).toHaveBeenLastCalledWith(0.5)
+    // The second tap is the reset, not a split commit of its own.
+    expect(onChange).toHaveBeenCalledOnce()
 
     // A browser-synthesized dblclick after the taps must not reset twice.
     fireEvent.doubleClick(slider)
@@ -539,5 +560,209 @@ describe('compare split handle photo box', () => {
     expect(geometry.geometry.trackHeight).toBe(200)
 
     frame.remove()
+  })
+})
+
+function installAnimationFrameQueue() {
+  const queue = new Map<number, FrameRequestCallback>()
+  let nextId = 0
+  const request = vi
+    .spyOn(window, 'requestAnimationFrame')
+    .mockImplementation((callback) => {
+      nextId += 1
+      queue.set(nextId, callback)
+      return nextId
+    })
+  const cancel = vi
+    .spyOn(window, 'cancelAnimationFrame')
+    .mockImplementation((id) => {
+      queue.delete(id)
+    })
+  return {
+    pending: () => queue.size,
+    flush() {
+      const callbacks = [...queue.values()]
+      queue.clear()
+      for (const callback of callbacks) callback(performance.now())
+    },
+    restore() {
+      request.mockRestore()
+      cancel.mockRestore()
+    },
+  }
+}
+
+describe('compare split handle commits', () => {
+  function renderDraggable(
+    props: Partial<React.ComponentProps<typeof CompareSplitHandle>> = {},
+  ) {
+    const onChange = vi.fn()
+    const element = (
+      extra: Partial<React.ComponentProps<typeof CompareSplitHandle>> = {},
+    ) => (
+      <div data-testid="track">
+        <CompareSplitHandle
+          value={0.5}
+          onChange={onChange}
+          {...props}
+          {...extra}
+        />
+      </div>
+    )
+    const view = render(element())
+    const track = screen.getByTestId('track')
+    const slider = screen.getByRole('slider')
+    Object.defineProperty(track, 'getBoundingClientRect', {
+      value: () => ({ left: 0, width: 100 }),
+    })
+    return {
+      ...view,
+      track,
+      slider,
+      onChange,
+      rerenderWith: (
+        extra: Partial<React.ComponentProps<typeof CompareSplitHandle>>,
+      ) => view.rerender(element(extra)),
+    }
+  }
+
+  it('paints every pointer move but commits once, on release', () => {
+    const frames = installAnimationFrameQueue()
+    try {
+      const { slider, track, onChange } = renderDraggable()
+
+      fireEvent.pointerDown(slider, { clientX: 50, pointerId: 1 })
+      for (const clientX of [55, 60, 70, 80]) {
+        fireEvent.pointerMove(slider, { clientX, pointerId: 1 })
+        frames.flush()
+        expect(track.style.getPropertyValue('--raw-compare-split')).toBe(
+          `${clientX}%`,
+        )
+      }
+      expect(onChange).not.toHaveBeenCalled()
+
+      fireEvent.pointerUp(slider, { clientX: 82, pointerId: 1 })
+      expect(onChange).toHaveBeenCalledOnce()
+      expect(onChange).toHaveBeenLastCalledWith(0.82)
+    } finally {
+      frames.restore()
+    }
+  })
+
+  it('returns to the committed split on cancel and drops the late frame', () => {
+    const frames = installAnimationFrameQueue()
+    const observers: ResizeObserverCallback[] = []
+    const OriginalResizeObserver = globalThis.ResizeObserver
+    globalThis.ResizeObserver = class {
+      constructor(callback: ResizeObserverCallback) {
+        observers.push(callback)
+      }
+
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    try {
+      const { slider, track, onChange } = renderDraggable()
+
+      fireEvent.pointerDown(slider, { clientX: 50, pointerId: 1 })
+      fireEvent.pointerMove(slider, { clientX: 80, pointerId: 1 })
+      frames.flush()
+      fireEvent.pointerMove(slider, { clientX: 90, pointerId: 1 })
+      expect(frames.pending()).toBe(1)
+
+      fireEvent.pointerCancel(slider, { pointerId: 1 })
+      expect(frames.pending()).toBe(0)
+      expect(track.style.getPropertyValue('--raw-compare-split')).toBe('50%')
+      expect(track).not.toHaveAttribute('data-raw-compare-dragging')
+
+      // A later layout pass repaints the committed split, not the abandoned
+      // drag position.
+      observers.at(-1)?.([], {} as ResizeObserver)
+      expect(track.style.getPropertyValue('--raw-compare-split')).toBe('50%')
+
+      fireEvent.pointerUp(slider, { clientX: 90, pointerId: 1 })
+      expect(onChange).not.toHaveBeenCalled()
+    } finally {
+      globalThis.ResizeObserver = OriginalResizeObserver
+      frames.restore()
+    }
+  })
+
+  it('abandons the drag when pointer capture is lost without a release', () => {
+    const frames = installAnimationFrameQueue()
+    try {
+      const { slider, track, onChange } = renderDraggable()
+
+      fireEvent.pointerDown(slider, { clientX: 50, pointerId: 1 })
+      fireEvent.pointerMove(slider, { clientX: 80, pointerId: 1 })
+      frames.flush()
+      fireEvent.pointerMove(slider, { clientX: 90, pointerId: 1 })
+
+      fireEvent.lostPointerCapture(slider, { pointerId: 1 })
+      expect(frames.pending()).toBe(0)
+      expect(track.style.getPropertyValue('--raw-compare-split')).toBe('50%')
+      expect(track).not.toHaveAttribute('data-raw-compare-dragging')
+
+      fireEvent.pointerUp(slider, { clientX: 90, pointerId: 1 })
+      expect(onChange).not.toHaveBeenCalled()
+    } finally {
+      frames.restore()
+    }
+  })
+
+  it('abandons the drag when the handle is disabled mid-gesture', () => {
+    const frames = installAnimationFrameQueue()
+    try {
+      const { slider, track, onChange, rerenderWith } = renderDraggable()
+
+      fireEvent.pointerDown(slider, { clientX: 50, pointerId: 1 })
+      fireEvent.pointerMove(slider, { clientX: 80, pointerId: 1 })
+      frames.flush()
+      fireEvent.pointerMove(slider, { clientX: 90, pointerId: 1 })
+
+      rerenderWith({ disabled: true })
+      expect(frames.pending()).toBe(0)
+      expect(track.style.getPropertyValue('--raw-compare-split')).toBe('50%')
+      expect(track).not.toHaveAttribute('data-raw-compare-dragging')
+
+      rerenderWith({ disabled: false })
+      fireEvent.pointerUp(slider, { clientX: 90, pointerId: 1 })
+      expect(onChange).not.toHaveBeenCalled()
+    } finally {
+      frames.restore()
+    }
+  })
+
+  it('drops a pending frame and the drag state when it unmounts mid-gesture', () => {
+    const frames = installAnimationFrameQueue()
+    try {
+      const { slider, track, onChange, rerender } = renderDraggable()
+
+      fireEvent.pointerDown(slider, { clientX: 50, pointerId: 1 })
+      fireEvent.pointerMove(slider, { clientX: 80, pointerId: 1 })
+      frames.flush()
+      fireEvent.pointerMove(slider, { clientX: 90, pointerId: 1 })
+      expect(track.style.getPropertyValue('--raw-compare-split')).toBe('80%')
+
+      // The frame outlives the handle when compare turns off.
+      rerender(<div data-testid="track" />)
+      expect(frames.pending()).toBe(0)
+      expect(track).not.toHaveAttribute('data-raw-compare-dragging')
+      // The frame shows the committed split again, not the abandoned drag.
+      expect(track.style.getPropertyValue('--raw-compare-split')).toBe('50%')
+      expect(track.style.getPropertyValue('--raw-compare-split-x')).toBe('50px')
+      expect(onChange).not.toHaveBeenCalled()
+    } finally {
+      frames.restore()
+    }
+  })
+
+  it('commits keyboard steps one at a time', () => {
+    const { slider, onChange } = renderDraggable()
+
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    expect(onChange).toHaveBeenCalledOnce()
+    expect(onChange).toHaveBeenLastCalledWith(0.51)
   })
 })
