@@ -1,7 +1,9 @@
 import {
+  ADJUSTED_USER_COLOR,
   base64ToBytes,
   LIMITS,
   makeImage,
+  makeLut,
   pixelDiff,
   readCanvas,
   readPresentedCanvas,
@@ -78,6 +80,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     return true
   }
 
+  const NO_LOOK = { styleKind: 'none', builtinPreset: null, intensity: 0 }
   const renderReference = (fixture, params, lut, variant) => {
     if (fixture.layout !== 'rgb-u16')
       throw new Error('REFERENCE_REQUIRES_LINEAR_PROPHOTO_INPUT')
@@ -88,18 +91,15 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     }
     const input =
       variant === 'technical-base'
-        ? {
-            styleKind: 'none',
-            intensity: 0,
-            builtinPreset: null,
-            lut: null,
-            rawRenderExposure,
-          }
-        : {
-            ...graphParams(params),
-            lut: lut ?? null,
-            rawRenderExposure,
-          }
+        ? { ...NO_LOOK, lut: null, rawRenderExposure }
+        : variant === 'stripped'
+          ? // The look removed; user color and RAW render exposure kept.
+            { ...graphParams(params), ...NO_LOOK, lut: null, rawRenderExposure }
+          : {
+              ...graphParams(params),
+              lut: lut ?? null,
+              rawRenderExposure,
+            }
     const graph = resolveExportColorGraph(input)
     if (!graph.supported)
       throw new Error(`REFERENCE_GRAPH_UNSUPPORTED: ${graph.reason}`)
@@ -204,24 +204,44 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
             processed,
             PRESENTED,
           )
-          // The linear ProPhoto RAW path must agree with the export executor.
-          // The display-sRGB float path feeds embedded/quick previews only, and
-          // built-in styles and some LUT output contracts are refused by export
-          // (it fails closed); those have no export counterpart to match.
-          const exportable = integer && exportRefusal(params, scenario.lut) === null
-          if (exportable)
+          const refusal = exportRefusal(params, scenario.lut)
+          if (scenario.exportRefused) {
+            // Export keeps refusing the custom LUT the preview leaves out.
+            add(`${name}/export-refused`, refusal !== null, { refusal })
+            // The preview drops only the look: it must equal the same scene
+            // drawn with no look, and on the RAW path the TS executor's
+            // graph with the look stripped.
+            reset(fixture, { ...params, ...NO_LOOK })
+            await render()
+            check(
+              `${name}/stripped-preview`,
+              processed,
+              await readProcessedBytes(),
+              PRESENTED,
+            )
+            if (integer)
+              check(
+                `${name}/stripped-reference`,
+                processed,
+                renderReference(fixture, params, null, 'stripped'),
+                REFERENCE,
+              )
+          } else if (integer && refusal === null)
+            // The linear ProPhoto RAW path must agree with the export executor.
             check(
               `${name}/reference`,
               processed,
               referenceFrame(fixture, params, scenario.lut),
               REFERENCE,
             )
+          // Built-in styles have no TS executor, and the display-sRGB float
+          // path feeds embedded/quick previews only; both hold to goldens.
           else if (!checkGolden(name, processed, fixture.width, fixture.height))
             report.uncovered.push({
               name,
-              reason: integer
-                ? exportRefusal(params, scenario.lut)
-                : 'display-sRGB preview input has no export counterpart',
+              reason:
+                refusal ??
+                'display-sRGB preview input has no export counterpart',
             })
         } catch (error) {
           add(name, false, { error: String(error), stack: error.stack })
@@ -278,6 +298,42 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         })
       }
     }
+    // A failed LUT upload leaves the pipeline without a LUT: the custom
+    // selection then draws no look over the adjusted image.
+    const failedLutFixture = makeImage(true)
+    const failedLutParams = reset(failedLutFixture, {
+      ...ADJUSTED_USER_COLOR,
+      styleKind: 'custom',
+      intensity: 0.66,
+    })
+    gpu.uploadLUT(makeLut())
+    const brokenLut = makeLut()
+    brokenLut.data = brokenLut.data.subarray(3)
+    let lutUploadError
+    try {
+      gpu.uploadLUT(brokenLut)
+    } catch (caught) {
+      lutUploadError = String(caught)
+    }
+    add(
+      'lut-upload-failure-refused',
+      lutUploadError?.includes('GPU_LUT_LAYOUT_INVALID') === true,
+      { error: lutUploadError },
+    )
+    await render()
+    check(
+      'lut-upload-failure-stripped-reference',
+      await readProcessedBytes(),
+      renderReference(failedLutFixture, failedLutParams, null, 'stripped'),
+      REFERENCE,
+    )
+    add(
+      'lut-upload-failure-telemetry',
+      gpu.render().transformPath === 'no-lut',
+      { transformPath: gpu.render().transformPath },
+    )
+    await gpu.waitForGpu()
+
     const tiledFixture = makeImage(true, 513, 289)
     const tiledParams = reset(tiledFixture, {
       userSaturation: 35,

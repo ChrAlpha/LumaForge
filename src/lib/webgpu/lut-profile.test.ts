@@ -1,8 +1,14 @@
-import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
+import type {
+  LUTColorProfile,
+  LUTContractResolution,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
 import {
   getLUTColorProfile,
   getLUTOutputToTargetMatrix,
   mat3ToColumnMajor,
+  NEUTRAL_USER_COLOR_INTENT,
+  resolveExportColorGraph,
   TIER1_LUT_COLOR_PROFILES,
 } from '@lumaforge/luma-color-runtime'
 import {
@@ -13,7 +19,7 @@ import {
 import { describe, expect, it } from 'vitest'
 
 import {
-  isLUTProfileRenderable,
+  resolveGpuPreviewLook,
   resolveLUTPipelineProfileUniforms,
 } from './lut-profile'
 
@@ -23,6 +29,34 @@ function resolved(profile: LUTColorProfile) {
     profile,
     confidence: 'metadata' as const,
   }
+}
+
+function lutData(profileResolution: LUTContractResolution): LUTData {
+  return {
+    size: 2,
+    data: new Float32Array(24),
+    domainMin: [0, 0, 0],
+    domainMax: [1, 1, 1],
+    inputProfile: 'display-srgb',
+    profileResolution,
+  }
+}
+
+const CUSTOM = {
+  styleKind: 'custom',
+  builtinPreset: null,
+  intensity: 0.37,
+  ...NEUTRAL_USER_COLOR_INTENT,
+  userExposureEv: 0.5,
+} as const
+
+/** Whether the WebGPU preview draws a custom LUT with this contract. */
+function isLUTProfileRenderable(profileResolution: LUTContractResolution) {
+  const lut = lutData(profileResolution)
+  const drawn = resolveGpuPreviewLook(CUSTOM, lut).lut !== null
+  // The preview draws a LUT exactly when export runs it.
+  expect(drawn).toBe(resolveExportColorGraph({ ...CUSTOM, lut }).supported)
+  return drawn
 }
 
 const IDENTITY_MATRIX = [1, 0, 0, 0, 1, 0, 0, 0, 1]
@@ -220,5 +254,62 @@ describe('lUT pipeline profile uniforms', () => {
         recommendations: [],
       }),
     ).toBe(false)
+  })
+
+  it.each([
+    [
+      'a linear output',
+      { outputTransfer: 'linear' },
+      'lut-output-transfer-linear',
+    ],
+    [
+      'an unknown output range',
+      { outputRange: 'unknown' },
+      'lut-output-range-unknown',
+    ],
+  ] as const)(
+    'does not render a display look with %s, which export refuses',
+    (_label, overrides, reason) => {
+      const profile = { ...getLUTColorProfile('display-srgb')!, ...overrides }
+      expect(isLUTProfileRenderable(resolved(profile))).toBe(false)
+      expect(resolveGpuPreviewLook(CUSTOM, lutData(resolved(profile)))).toEqual(
+        {
+          look: { styleKind: 'none', builtinPreset: null, intensity: 0 },
+          lut: null,
+          reason,
+        },
+      )
+    },
+  )
+
+  it('draws a contract export accepts as selected', () => {
+    const lut = lutData(resolved(getLUTColorProfile('display-srgb')!))
+    expect(isLUTProfileRenderable(lut.profileResolution)).toBe(true)
+    expect(resolveGpuPreviewLook(CUSTOM, lut)).toEqual({
+      look: { styleKind: 'custom', builtinPreset: null, intensity: 0.37 },
+      lut,
+      reason: null,
+    })
+  })
+
+  it('keeps a built-in preset, which only the WebGPU preview implements', () => {
+    expect(
+      resolveGpuPreviewLook(
+        { ...CUSTOM, styleKind: 'builtin', builtinPreset: 'fade' },
+        null,
+      ),
+    ).toEqual({
+      look: { styleKind: 'builtin', builtinPreset: 'fade', intensity: 0.37 },
+      lut: null,
+      reason: null,
+    })
+  })
+
+  it('draws no look while the selected LUT is not loaded', () => {
+    expect(resolveGpuPreviewLook(CUSTOM, null)).toMatchObject({
+      look: { styleKind: 'none' },
+      lut: null,
+      reason: 'lut-not-loaded',
+    })
   })
 })

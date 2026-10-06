@@ -139,6 +139,15 @@ try {
             'packages/luma-color-runtime/src/index.ts',
           ),
         },
+        // The WebGPU preview resolves its color plan through the shared
+        // preview policy; validate the source, never a stale package build.
+        {
+          find: '@lumaforge/render-engine/preview',
+          replacement: resolve(
+            root,
+            'packages/render-engine/src/preview/index.ts',
+          ),
+        },
         { find: '~/', replacement: `${root}/src/` },
       ],
     },

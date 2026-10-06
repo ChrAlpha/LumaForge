@@ -1,11 +1,21 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  LUTColorProfile,
+  LUTContractResolution,
+  LUTData,
+  ProcessingParams,
+} from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_SELECTIVE_COLOR,
+  NEUTRAL_USER_COLOR_INTENT,
   pickColorGraphIntent,
+  resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { GpuPreviewInput } from './contract'
+import { webGPUTelemetry } from './pipeline-telemetry'
+import { getShaderSpecialization } from './specialization'
 import {
   UNIFORM_BUFFER_SIZE,
   UNIFORM_FIELDS,
@@ -233,5 +243,185 @@ describe('webGPU preview input', () => {
         'compare',
       )
     }
+  })
+})
+
+const ADJUSTED: ProcessingParams = {
+  ...DEFAULT_PARAMS,
+  ...NEUTRAL_USER_COLOR_INTENT,
+  styleKind: 'custom',
+  userExposureEv: 0.6,
+  userContrast: 22,
+  userHighlights: -30,
+  userShadows: 18,
+  userTemperature: 14,
+  userTint: -9,
+  userSaturation: 12,
+  userVibrance: 17,
+  selectiveColor: {
+    ...NEUTRAL_SELECTIVE_COLOR,
+    orange: { hue: 10, saturation: -20, lightness: 5 },
+  },
+}
+
+function profile(overrides: Partial<LUTColorProfile> = {}): LUTColorProfile {
+  return {
+    id: 'test-display-look',
+    label: 'Test display look',
+    role: 'display-look',
+    inputGamut: 'srgb-rec709',
+    inputTransfer: 'srgb',
+    inputRange: 'full',
+    outputGamut: 'srgb-rec709',
+    outputTransfer: 'srgb',
+    outputRange: 'full',
+    aliases: [],
+    ...overrides,
+  }
+}
+
+function lutData(profileResolution: LUTContractResolution): LUTData {
+  return {
+    size: 2,
+    data: new Float32Array(24).fill(0.5),
+    domainMin: [0, 0, 0],
+    domainMax: [1, 1, 1],
+    inputProfile: 'display-srgb',
+    profileResolution,
+  }
+}
+
+const confirmed = (overrides: Partial<LUTColorProfile> = {}) =>
+  lutData({
+    kind: 'confirmed',
+    confidence: 'user',
+    profile: profile(overrides),
+  })
+
+const REFUSED_LUTS: Array<[string, LUTData]> = [
+  [
+    'a display look with a linear output',
+    confirmed({ outputTransfer: 'linear' }),
+  ],
+  [
+    'a technical output with a linear output',
+    confirmed({
+      role: 'technical-output',
+      inputGamut: 'rec2020',
+      inputTransfer: 'acescct',
+      outputGamut: 'rec2020',
+      outputTransfer: 'linear',
+    }),
+  ],
+  [
+    'a display look with an unknown output range',
+    confirmed({ outputRange: 'unknown' }),
+  ],
+  [
+    'a combined output without an output transfer',
+    confirmed({
+      role: 'combined-look-output',
+      inputGamut: 'rec2020',
+      inputTransfer: 's-log3',
+      outputTransfer: undefined,
+    }),
+  ],
+  [
+    'an unconfirmed contract',
+    lutData({ kind: 'recommended', recommendations: [profile()] }),
+  ],
+  ['an unknown contract', lutData({ kind: 'unknown' })],
+  [
+    'an unsupported output',
+    lutData({ kind: 'unsupported-output', recommendations: [] }),
+  ],
+]
+
+/** The selection with the look removed: what the preview draws for it. */
+function stripped(params: ProcessingParams): ProcessingParams {
+  return { ...params, styleKind: 'none', builtinPreset: null, intensity: 0 }
+}
+
+function packed(params: ProcessingParams, lut: LUTData | null) {
+  return packedBytes((view) => packUniforms(view, params, lut, 1.7, true))
+}
+
+describe('webGPU preview of a look export refuses', () => {
+  for (const [label, lut] of REFUSED_LUTS) {
+    for (const intensity of [0, 0.37, 1]) {
+      it(`drops ${label} at strength ${intensity} and keeps the user color`, () => {
+        const params = Object.freeze({ ...ADJUSTED, intensity })
+        // Export keeps refusing the selection the preview leaves out.
+        expect(resolveExportColorGraph({ ...params, lut }).supported).toBe(
+          false,
+        )
+        expect(packed(params, lut)).toEqual(packed(stripped(params), null))
+        expect(getShaderSpecialization(params, lut)).toEqual(
+          getShaderSpecialization(stripped(params), null),
+        )
+        expect(webGPUTelemetry(params, lut, null)).toMatchObject({
+          transformPath: 'disabled-lut',
+          lutRole: null,
+          lutInputTransfer: null,
+          lutOutputTransfer: null,
+        })
+      })
+    }
+  }
+
+  it('draws a contract export accepts at a continuous strength', () => {
+    const lut = confirmed()
+    const params = { ...ADJUSTED, intensity: 0.37 }
+    expect(resolveExportColorGraph({ ...params, lut }).supported).toBe(true)
+    const view = new DataView(new Uint8Array(packed(params, lut)).buffer)
+    const i = (name: string) => view.getInt32(UNIFORM_FIELDS[name].offset, true)
+    expect([i('styleKind'), i('useLut')]).toEqual([2, 1])
+    expect(view.getFloat32(UNIFORM_FIELDS.intensity.offset, true)).toBe(
+      Math.fround(0.37),
+    )
+    expect(getShaderSpecialization(params, lut)).toMatchObject({
+      styleKind: 2,
+      useLut: true,
+    })
+    expect(webGPUTelemetry(params, lut, null).transformPath).toBe('display-lut')
+  })
+
+  it('draws the selected built-in preset, which only WebGPU implements', () => {
+    const params = {
+      ...LOOK,
+      viewMode: 'processed',
+      compareSplit: 0.5,
+    } as const
+    const view = new DataView(new Uint8Array(packed(params, null)).buffer)
+    const i = (name: string) => view.getInt32(UNIFORM_FIELDS[name].offset, true)
+    expect([i('styleKind'), i('builtinPreset')]).toEqual([1, 3])
+    expect(view.getFloat32(UNIFORM_FIELDS.intensity.offset, true)).toBe(
+      Math.fround(0.37),
+    )
+    expect(webGPUTelemetry(params, null, null).transformPath).toBe(
+      'builtin-style',
+    )
+  })
+
+  it('draws no style for a built-in selection without a preset, as export does', () => {
+    const params = {
+      ...ADJUSTED,
+      styleKind: 'builtin',
+      intensity: 0.6,
+    } as const
+    expect(resolveExportColorGraph({ ...params, lut: null }).supported).toBe(
+      true,
+    )
+    expect(packed(params, null)).toEqual(packed(stripped(params), null))
+  })
+
+  it('degrades to the adjusted image without a look after a LUT upload failure', () => {
+    // A failed upload leaves the pipeline with no LUT for the custom selection.
+    const params = { ...ADJUSTED, intensity: 0.8 }
+    expect(packed(params, null)).toEqual(packed(stripped(params), null))
+    expect(getShaderSpecialization(params, null)).toEqual(
+      getShaderSpecialization(stripped(params), null),
+    )
+    expect(webGPUTelemetry(params, null, null).transformPath).toBe('no-lut')
   })
 })

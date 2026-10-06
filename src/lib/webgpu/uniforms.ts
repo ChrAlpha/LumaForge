@@ -13,7 +13,7 @@ import {
 
 import type { GpuPreviewInput } from './contract'
 import {
-  isLUTProfileRenderable,
+  resolveGpuPreviewLook,
   resolveLUTPipelineProfileUniforms,
 } from './lut-profile'
 import {
@@ -130,11 +130,12 @@ export function packUniforms(
     userTemperature: p.userTemperature,
     userTint: p.userTint,
   })
+  // The shader draws the look the shared preview policy resolves, not the
+  // raw selection: a LUT export refuses is left out, user color kept.
+  const drawn = resolveGpuPreviewLook(p, lut)
+  const drawnLut = drawn.lut
   const lutProfileUniforms = resolveLUTPipelineProfileUniforms(
-    lut?.profileResolution,
-  )
-  const useRenderableLut = Boolean(
-    lut && isLUTProfileRenderable(lut.profileResolution),
+    drawnLut?.profileResolution,
   )
 
   writeUniformMat3x3f(v, 'inputToLutGamut', lutProfileUniforms.inputToLutGamut)
@@ -146,17 +147,17 @@ export function packUniforms(
   writeUniformVec3f(
     v,
     'lutDomainMin',
-    useRenderableLut && lut ? lut.domainMin[0] : 0,
-    useRenderableLut && lut ? lut.domainMin[1] : 0,
-    useRenderableLut && lut ? lut.domainMin[2] : 0,
+    drawnLut ? drawnLut.domainMin[0] : 0,
+    drawnLut ? drawnLut.domainMin[1] : 0,
+    drawnLut ? drawnLut.domainMin[2] : 0,
   )
-  writeUniformF32(v, 'intensity', p.intensity)
+  writeUniformF32(v, 'intensity', drawn.look.intensity)
   writeUniformVec3f(
     v,
     'lutDomainMax',
-    useRenderableLut && lut ? lut.domainMax[0] : 1,
-    useRenderableLut && lut ? lut.domainMax[1] : 1,
-    useRenderableLut && lut ? lut.domainMax[2] : 1,
+    drawnLut ? drawnLut.domainMax[0] : 1,
+    drawnLut ? drawnLut.domainMax[1] : 1,
+    drawnLut ? drawnLut.domainMax[2] : 1,
   )
   writeUniformF32(v, 'rawRenderExposureMultiplier', rawRenderExposureMultiplier)
   writeUniformVec3f(
@@ -175,11 +176,7 @@ export function packUniforms(
   writeUniformF32(v, 'userBlacks', tone.userBlacks)
   writeUniformF32(v, 'userSaturation', p.userSaturation)
   writeUniformF32(v, 'userVibrance', p.userVibrance)
-  writeUniformF32(
-    v,
-    'lutSize',
-    useRenderableLut && lut ? Math.max(1, lut.size) : 1,
-  )
+  writeUniformF32(v, 'lutSize', drawnLut ? Math.max(1, drawnLut.size) : 1)
   writeUniformVec2f(
     v,
     'selectiveColorChromaClamp',
@@ -187,13 +184,15 @@ export function packUniforms(
     CHROMA_CLAMP_HIGH,
   )
   writeUniformI32(v, 'viewMode', VIEW_MODE_UNIFORMS[p.viewMode])
-  writeUniformI32(v, 'styleKind', STYLE_KIND_UNIFORMS[p.styleKind])
+  writeUniformI32(v, 'styleKind', STYLE_KIND_UNIFORMS[drawn.look.styleKind])
   writeUniformI32(
     v,
     'builtinPreset',
-    p.builtinPreset ? BUILTIN_PRESET_UNIFORMS[p.builtinPreset] : 0,
+    drawn.look.builtinPreset
+      ? BUILTIN_PRESET_UNIFORMS[drawn.look.builtinPreset]
+      : 0,
   )
-  writeUniformI32(v, 'useLut', useRenderableLut ? 1 : 0)
+  writeUniformI32(v, 'useLut', drawnLut ? 1 : 0)
   writeUniformI32(v, 'lutInputTransfer', lutProfileUniforms.lutInputTransfer)
   writeUniformI32(v, 'lutOutputTransfer', lutProfileUniforms.lutOutputTransfer)
   writeUniformI32(v, 'lutRole', lutProfileUniforms.lutRole)

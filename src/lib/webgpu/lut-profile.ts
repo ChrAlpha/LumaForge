@@ -1,11 +1,14 @@
 /**
- * LUT contract to preview shader-uniform resolution. A LUT only renders when
- * its contract is confirmed and fully describes the output side.
+ * What the WebGPU preview draws for the selected look, and the LUT contract to
+ * shader-uniform resolution for the LUT it draws.
  */
 
 import type {
+  ColorGraphIntentSource,
+  LookSelection,
   LUTColorProfile,
   LUTContractResolution,
+  LUTData,
   TransferFunctionId,
 } from '@lumaforge/luma-color-runtime'
 import {
@@ -19,6 +22,31 @@ import {
   LUT_ROLE_UNIFORMS,
   LUT_TRANSFER_UNIFORMS,
 } from '@lumaforge/luma-color-runtime/wgsl'
+import type { PreviewColorPlanReason } from '@lumaforge/render-engine/preview'
+import { resolvePreviewColorPlan } from '@lumaforge/render-engine/preview'
+
+export interface GpuPreviewLook {
+  /** The look the shader draws: the selection, or no look. */
+  look: LookSelection
+  /** The LUT the shader samples; null unless a custom look is drawn. */
+  lut: LUTData | null
+  /** Why the drawn look differs from the selection; null when it does not. */
+  reason: PreviewColorPlanReason | null
+}
+
+/**
+ * The look the WebGPU preview draws, read from the shared preview color
+ * policy. A custom LUT draws only when export would run it; otherwise the
+ * shader draws no look over the user's adjustments, at any strength. Built-in
+ * presets draw as selected. The selection itself is never rewritten.
+ */
+export function resolveGpuPreviewLook(
+  intent: ColorGraphIntentSource,
+  lut: LUTData | null,
+): GpuPreviewLook {
+  const plan = resolvePreviewColorPlan({ intent, lut, executor: 'webgpu' })
+  return { look: plan.effective, lut: plan.lut, reason: plan.reason }
+}
 
 export interface LUTPipelineProfileUniforms {
   inputToLutGamut: Float32Array
@@ -42,9 +70,10 @@ const DISPLAY_PROFILE_UNIFORMS: LUTPipelineProfileUniforms = {
   lutOutputRange: LUT_RANGE_UNIFORMS.full,
 }
 
-export function isLUTProfileRenderable(
+/** Whether a contract describes enough of the LUT output to map uniforms. */
+function describesLUTOutput(
   profileResolution?: LUTContractResolution | null,
-): boolean {
+): profileResolution is Extract<LUTContractResolution, { kind: 'confirmed' }> {
   if (!profileResolution || profileResolution.kind !== 'confirmed') {
     return false
   }
@@ -75,10 +104,7 @@ export function resolveLUTOutputTransfer(
 export function resolveLUTPipelineProfileUniforms(
   profileResolution?: LUTContractResolution | null,
 ): LUTPipelineProfileUniforms {
-  if (
-    !isLUTProfileRenderable(profileResolution) ||
-    profileResolution?.kind !== 'confirmed'
-  ) {
+  if (!describesLUTOutput(profileResolution)) {
     return DISPLAY_PROFILE_UNIFORMS
   }
 

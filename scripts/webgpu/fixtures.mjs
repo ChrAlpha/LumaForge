@@ -201,10 +201,65 @@ export function scenarios(transferIds = []) {
         name: `transfer-output-${transfer}`,
         lut: output,
         params: { styleKind: 'custom', intensity: 1 },
+        // Export refuses a linear LUT output.
+        ...(transfer === 'linear' ? { exportRefused: true } : {}),
       },
     )
   }
+  result.push(...refusedLutScenarios())
   return result
+}
+
+/** Non-neutral user color, so a preview that drops it with the look shows. */
+export const ADJUSTED_USER_COLOR = Object.freeze({
+  userExposureEv: 0.35,
+  userContrast: 18,
+  userHighlights: -22,
+  userShadows: 16,
+  userWhites: -8,
+  userBlacks: 6,
+  userTemperature: 21,
+  userTint: -9,
+  userSaturation: 14,
+  userVibrance: 11,
+  selectiveColor: {
+    orange: { hue: 12, saturation: -18, lightness: 6 },
+    blue: { hue: -9, saturation: 15, lightness: -4 },
+  },
+})
+
+/**
+ * Custom LUTs whose contract export refuses, at partial strength over adjusted
+ * user color. The preview drops only the look: it keeps the user color and the
+ * RAW render exposure, and export keeps refusing the selection.
+ */
+export function refusedLutScenarios() {
+  const linearDisplay = makeLut('display-look', 'srgb')
+  linearDisplay.profileResolution.profile.outputTransfer = 'linear'
+  const linearTechnical = makeLut('technical-output', 'acescct')
+  linearTechnical.profileResolution.profile.outputGamut = 'rec2020'
+  linearTechnical.profileResolution.profile.outputTransfer = 'linear'
+  const unknownRange = makeLut('display-look', 'srgb')
+  unknownRange.profileResolution.profile.outputRange = 'unknown'
+  const missingOutput = makeLut('combined-look-output', 's-log3', true)
+  missingOutput.profileResolution.profile.outputTransfer = undefined
+  const unconfirmed = makeLut('scene-creative', 'n-log')
+  unconfirmed.profileResolution = {
+    kind: 'recommended',
+    recommendations: [unconfirmed.profileResolution.profile],
+  }
+  return [
+    ['display-linear-output', linearDisplay, 0.63],
+    ['technical-linear-output', linearTechnical, 0.37],
+    ['output-range-unknown', unknownRange, 0.81],
+    ['output-profile-missing', missingOutput, 0.52],
+    ['input-unconfirmed', unconfirmed, 0.44],
+  ].map(([name, lut, intensity]) => ({
+    name: `lut-refused-${name}`,
+    lut,
+    params: { ...ADJUSTED_USER_COLOR, styleKind: 'custom', intensity },
+    exportRefused: true,
+  }))
 }
 
 export function pixelDiff(actual, expected, channels = 4) {
@@ -291,17 +346,18 @@ export function distribution(values) {
   }
 }
 
-// Scenarios with no TS export counterpart (the display-sRGB preview input and
-// built-in styles, which export refuses) are held to frozen WebGL output from
-// the last checkout that had both renderers. Partial-strength display-domain
-// LUT blends and wide-gamut display looks are excluded on purpose: the WebGPU
-// preview now matches export there, where WebGL did not.
+// Scenarios with no TS counterpart (the display-sRGB preview input, and
+// built-in styles, which no TS executor implements) are held to frozen WebGL
+// output from the last checkout that had both renderers. Partial-strength
+// display-domain LUT blends and wide-gamut display looks are excluded on
+// purpose: the WebGPU preview now matches export there, where WebGL did not.
+// LUTs export refuses are excluded too: WebGL drew them, while the WebGPU
+// preview drops the look like the TS preview does.
 export const GOLDEN_STRIDE = 3
 
 export function isGoldenScenario(name) {
-  if (name.startsWith('u16/'))
-    return /^u16\/(?:preset-|transfer-output-linear$)/.test(name)
-  return !/^float\/(?:transfer-|lut-(?:display-look|combined-look-output|technical-output)$|lut-display-look-.+-output$)/.test(
+  if (name.startsWith('u16/')) return /^u16\/preset-/.test(name)
+  return !/^float\/(?:transfer-|lut-refused-|lut-(?:display-look|combined-look-output|technical-output)$|lut-display-look-.+-output$)/.test(
     name,
   )
 }

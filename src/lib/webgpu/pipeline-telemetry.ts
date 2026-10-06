@@ -2,7 +2,7 @@ import type {
   ColorGraphIntentSource,
   LUTData,
 } from '@lumaforge/luma-color-runtime'
-import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import { resolvePreviewColorPlan } from '@lumaforge/render-engine/preview'
 
 import type {
   PipelineTelemetrySnapshot,
@@ -10,7 +10,6 @@ import type {
   PreviewGpuCapabilities,
   RawUploadInput,
 } from './contract'
-import { isLUTProfileRenderable } from './lut-profile'
 
 export function webGPUCapabilities(
   device: GPUDevice,
@@ -31,23 +30,25 @@ export function webGPUTelemetry(
   lut: LUTData | null,
   input: RawUploadInput | null,
 ): PipelineTelemetrySnapshot {
-  const graph = resolveExportColorGraph({ ...params, lut: lut ?? null })
-  const profile = graph.supported ? graph.lutProfile : null
+  // Report what the preview draws, from the same policy as the shader.
+  const plan = resolvePreviewColorPlan({
+    intent: params,
+    lut,
+    executor: 'webgpu',
+  })
+  const profile = plan.graph?.lutProfile ?? null
   let transformPath: PipelineTransformPath = 'no-lut'
-  if (params.styleKind === 'builtin') transformPath = 'builtin-style'
-  else if (params.styleKind === 'custom' && lut) {
-    if (!isLUTProfileRenderable(lut.profileResolution))
-      transformPath = 'disabled-lut'
-    else if (lut.profileResolution?.kind === 'confirmed') {
-      const roles = {
-        'display-look': 'display-lut',
-        'scene-creative': 'scene-creative-lut',
-        'combined-look-output': 'combined-output-lut',
-        'technical-output': 'technical-output-lut',
-      } as const
-      transformPath = roles[lut.profileResolution.profile.role]
-    }
-  }
+  if (plan.effective.styleKind === 'builtin') transformPath = 'builtin-style'
+  else if (profile) {
+    const roles = {
+      'display-look': 'display-lut',
+      'scene-creative': 'scene-creative-lut',
+      'combined-look-output': 'combined-output-lut',
+      'technical-output': 'technical-output-lut',
+    } as const
+    transformPath = roles[profile.role]
+  } else if (plan.selected.styleKind === 'custom' && lut)
+    transformPath = 'disabled-lut'
   return {
     inputFormat: input?.layout === 'rgb-u16' ? 'uint16-rgb' : 'float-rgba',
     transformPath,

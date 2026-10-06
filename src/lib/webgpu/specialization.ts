@@ -6,7 +6,7 @@ import type {
 import { normalizeSelectiveColorParams } from '@lumaforge/luma-color-runtime'
 
 import {
-  isLUTProfileRenderable,
+  resolveGpuPreviewLook,
   resolveLUTPipelineProfileUniforms,
 } from './lut-profile'
 
@@ -86,21 +86,21 @@ export function getShaderSpecialization(
   const bands = normalizeSelectiveColorParams({
     selectiveColor: params.selectiveColor,
   })
-  const resolved = resolveLUTPipelineProfileUniforms(lut?.profileResolution)
+  // Key the variant on the look the shader draws, as the uniforms do.
+  const { look, lut: drawnLut } = resolveGpuPreviewLook(params, lut)
+  const resolved = resolveLUTPipelineProfileUniforms(
+    drawnLut?.profileResolution,
+  )
   return normalizeShaderSpecialization({
     styleKind:
-      params.styleKind === 'builtin'
-        ? 1
-        : params.styleKind === 'custom'
-          ? 2
-          : 0,
-    useLut: Boolean(lut && isLUTProfileRenderable(lut.profileResolution)),
+      look.styleKind === 'builtin' ? 1 : look.styleKind === 'custom' ? 2 : 0,
+    useLut: drawnLut !== null,
     selectiveColorActive: Object.values(bands).some(
       (band) => band.hue !== 0 || band.saturation !== 0 || band.lightness !== 0,
     ),
     // Match the actual f32 upload. Signed zero and values rounded to zero take
     // the existing neutral bypass; nonfinite values stay dynamic, not hidden.
-    builtinPreset: PRESETS[params.builtinPreset ?? 'neutral'] ?? 0,
+    builtinPreset: PRESETS[look.builtinPreset ?? 'neutral'] ?? 0,
     lutRole: resolved.lutRole,
     lutInputTransfer: resolved.lutInputTransfer,
     lutOutputTransfer: resolved.lutOutputTransfer,
