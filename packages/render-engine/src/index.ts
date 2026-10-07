@@ -1,20 +1,5 @@
 // `@lumaforge/render-engine` top-level public surface.
 
-// Context (the injection surface)
-export type {
-  CheckpointStore,
-  LumaRenderContext,
-  ManifestStore,
-  OutputSink,
-  OutputSinkHandle,
-  OutputSinkMeta,
-  OutputSinkResult,
-  ProfileCache,
-  ProfileFetcher,
-  ProfileFetchOptions,
-  RenderEvent,
-} from './context/runtime-context'
-
 // Manifest (types + canonicalize + hashes)
 export {
   canonicalizeJson,
@@ -35,14 +20,6 @@ export {
   createRenderManifest,
   type CreateRenderManifestInput,
 } from './manifest/create-render-manifest'
-export type {
-  ExportCheckpointManifest,
-  ExportInProgress,
-  JpegResumeState,
-  OutputIntent,
-  ResumeFingerprint,
-  SourceReacquisitionMode,
-} from './manifest/export-checkpoint'
 export {
   type LutIdentityFailure,
   lutIdentityFromProfile,

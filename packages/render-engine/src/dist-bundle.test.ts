@@ -5,10 +5,11 @@
 // breaks a node:* import, or the subpath exports stop resolving), this test
 // catches it before consumers do.
 
-import { existsSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -20,6 +21,48 @@ const DIST_AVAILABLE =
   existsSync(DIST_INDEX) && existsSync(DIST_MANIFEST) && existsSync(DIST_POLICY)
 
 const describeWithDist = DIST_AVAILABLE ? describe : describe.skip
+
+// The context-object and checkpoint-journal types no engine function took.
+const RETIRED_SCAFFOLDING = [
+  'CheckpointStore',
+  'LumaRenderContext',
+  'ManifestStore',
+  'OutputSink',
+  'OutputSinkHandle',
+  'OutputSinkMeta',
+  'OutputSinkResult',
+  'ProfileCache',
+  'ProfileFetcher',
+  'ProfileFetchOptions',
+  'RenderEvent',
+  'ExportCheckpointManifest',
+  'ExportInProgress',
+  'JpegResumeState',
+  'OutputIntent',
+  'ResumeFingerprint',
+  'SourceReacquisitionMode',
+]
+
+/** The declaration entry of every published subpath, from package.json. */
+function publishedTypeEntries(): Record<string, string> {
+  const pkg = JSON.parse(
+    readFileSync(join(packageDir, 'package.json'), 'utf8'),
+  ) as { exports: Record<string, { types: string }> }
+  return Object.fromEntries(
+    Object.entries(pkg.exports).map(([subpath, target]) => [
+      subpath,
+      join(packageDir, target.types),
+    ]),
+  )
+}
+
+function declarationFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) return declarationFiles(path)
+    return entry.name.endsWith('.d.ts') ? [path] : []
+  })
+}
 
 describeWithDist(
   'dist bundle smoke — guards against vite externalization or subpath regressions',
@@ -43,6 +86,59 @@ describeWithDist(
         'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
       )
     })
+
+    it('publishes no context or checkpoint scaffolding on any subpath', () => {
+      const typeEntries = publishedTypeEntries()
+      const program = ts.createProgram({
+        rootNames: Object.values(typeEntries),
+        options: {
+          module: ts.ModuleKind.ESNext,
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+          target: ts.ScriptTarget.ESNext,
+          noEmit: true,
+          types: [],
+        },
+      })
+      const checker = program.getTypeChecker()
+      const exportsOf = (subpath: string): Set<string> => {
+        const source = program.getSourceFile(typeEntries[subpath])
+        const moduleSymbol = source && checker.getSymbolAtLocation(source)
+        if (!moduleSymbol) throw new Error(`${subpath} has no declarations`)
+        return new Set(
+          checker.getExportsOfModule(moduleSymbol).map((s) => s.getName()),
+        )
+      }
+
+      for (const subpath of Object.keys(typeEntries)) {
+        const exported = exportsOf(subpath)
+        for (const name of RETIRED_SCAFFOLDING) {
+          expect(exported.has(name), `${name} in ${subpath}`).toBe(false)
+        }
+      }
+      // The supported explicit inputs and the manifest identity stay published.
+      for (const name of [
+        'CapabilityVector',
+        'RenderIdentity',
+        'RenderManifest',
+      ]) {
+        expect(exportsOf('.').has(name), name).toBe(true)
+      }
+      for (const name of [
+        'runFullResolutionJpegExport',
+        'RunFullResolutionJpegExportInput',
+        'JpegRowSink',
+        'ExportOutputResult',
+        'createWasmJpegRowSink',
+      ]) {
+        expect(exportsOf('./export').has(name), name).toBe(true)
+      }
+      expect(exportsOf('./manifest').has('RenderIdentity')).toBe(true)
+
+      const declarations = declarationFiles(join(packageDir, 'dist'))
+        .map((file) => relative(packageDir, file).replaceAll('\\', '/'))
+        .filter((file) => /\/context\/|\/export-checkpoint\.d\.ts$/.test(file))
+      expect(declarations).toEqual([])
+    }, 30_000)
 
     it('@/policy subpath resolves and ships NODE_DEFAULT_CAPABILITY', async () => {
       const mod = (await import(DIST_POLICY)) as {

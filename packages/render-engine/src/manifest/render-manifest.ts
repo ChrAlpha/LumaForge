@@ -200,9 +200,9 @@ export interface RenderEnvironment {
 // ---------------------------------------------------------------------------
 
 /**
- * Identity block — what is known when a render STARTS. Shared between the
- * final `RenderManifest` and the mid-render `ExportCheckpointManifest` via
- * composition, not subtype.
+ * Identity block — what is known when a render STARTS: the source, look,
+ * color graph, params, policy, and environment. `RenderManifest` extends it
+ * with what exists only once the output bytes do.
  */
 export interface RenderIdentity {
   readonly source_raw: SourceRawIdentity
@@ -217,9 +217,9 @@ export interface RenderIdentity {
 export type RenderManifestKind = 'preview' | 'candidate' | 'export'
 
 /**
- * Final, post-render manifest — written ONCE after output bytes exist and
- * `OutputSink.close()` returns the output sha256. See `./canonicalize.ts`
- * for the canonicalization + self-hash contract.
+ * Final, post-render manifest — written ONCE after the output bytes exist and
+ * their sha256 is known. See `./canonicalize.ts` for the canonicalization +
+ * self-hash contract.
  */
 export interface RenderManifest extends RenderIdentity {
   readonly manifest_version: 1

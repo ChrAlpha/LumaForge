@@ -10,16 +10,21 @@ import { beforeAll, describe, expect, expectTypeOf, it } from 'vitest'
 
 import * as exportEntry from './export/index'
 import * as rootEntry from './index'
+import type * as manifestEntry from './manifest/index'
 import * as policyEntry from './policy/index'
 
 const srcDir = fileURLToPath(new URL('.', import.meta.url))
 const entries = {
   root: join(srcDir, 'index.ts'),
   export: join(srcDir, 'export/index.ts'),
+  geometry: join(srcDir, 'geometry/index.ts'),
+  manifest: join(srcDir, 'manifest/index.ts'),
   policy: join(srcDir, 'policy/index.ts'),
+  preview: join(srcDir, 'preview/index.ts'),
 }
 
-const contextTypes = [
+// The context-object and checkpoint-journal types no engine function took.
+const retiredScaffolding = [
   'CheckpointStore',
   'LumaRenderContext',
   'ManifestStore',
@@ -31,6 +36,12 @@ const contextTypes = [
   'ProfileFetcher',
   'ProfileFetchOptions',
   'RenderEvent',
+  'ExportCheckpointManifest',
+  'ExportInProgress',
+  'JpegResumeState',
+  'OutputIntent',
+  'ResumeFingerprint',
+  'SourceReacquisitionMode',
 ]
 
 let program: ts.Program
@@ -48,13 +59,19 @@ beforeAll(() => {
   })
 }, 30_000)
 
+function exportedSymbol(entry: string, name: string): ts.Symbol | undefined {
+  const checker = program.getTypeChecker()
+  const source = program.getSourceFile(entry)
+  if (!source) throw new Error(`${entry} is not in the program`)
+  const moduleSymbol = checker.getSymbolAtLocation(source)
+  if (!moduleSymbol) throw new Error(`${entry} is not a module`)
+  return checker.tryGetMemberInModuleExports(name, moduleSymbol)
+}
+
 /** The `@deprecated` text (whitespace collapsed) a consumer of `entry` sees on `name`. */
 function deprecationOf(entry: string, name: string): string | null {
   const checker = program.getTypeChecker()
-  const source = program.getSourceFile(entry)
-  const moduleSymbol = source && checker.getSymbolAtLocation(source)
-  const exported =
-    moduleSymbol && checker.tryGetMemberInModuleExports(name, moduleSymbol)
+  const exported = exportedSymbol(entry, name)
   if (!exported) throw new Error(`${name} is not exported from ${entry}`)
   const declared =
     exported.flags & ts.SymbolFlags.Alias
@@ -105,21 +122,6 @@ describe('deprecated engine scaffolding on the public entries', () => {
     expectTypeOf<keyof policyEntry.RenderBudget>().toEqualTypeOf<
       'maxConcurrent' | 'maxCandidatesPerSweep' | 'softMemoryBudgetMiB'
     >()
-    expectTypeOf<keyof rootEntry.LumaRenderContext>().toEqualTypeOf<
-      | 'rawRuntime'
-      | 'jpegRuntime'
-      | 'capability'
-      | 'observeRenderEvent'
-      | 'outputSink'
-      | 'manifestStore'
-      | 'checkpointStore'
-      | 'profileFetcher'
-      | 'profileCache'
-      | 'signal'
-    >()
-    expectTypeOf<
-      rootEntry.LumaRenderContext['capability']
-    >().toEqualTypeOf<policyEntry.CapabilityVector>()
     expectTypeOf(
       policyEntry.NODE_DEFAULT_CAPABILITY,
     ).toEqualTypeOf<policyEntry.CapabilityVector>()
@@ -140,12 +142,6 @@ describe('deprecated engine scaffolding on the public entries', () => {
   })
 
   it('marks the unused scaffolding deprecated on every entry that exports it', () => {
-    for (const name of contextTypes) {
-      expect(deprecationOf(entries.root, name), name).not.toBeNull()
-    }
-    expect(deprecationOf(entries.root, 'LumaRenderContext')).toContain(
-      'explicit parameters',
-    )
     for (const entry of [entries.root, entries.policy]) {
       expect(deprecationOf(entry, 'RenderBudget')).not.toBeNull()
       expect(deprecationOf(entry, 'NODE_DEFAULT_CAPABILITY')).toContain(
@@ -172,6 +168,56 @@ describe('deprecated engine scaffolding on the public entries', () => {
     }
     expect(deprecationOf(entries.export, 'JpegRowSink')).toBeNull()
     expect(deprecationOf(entries.export, 'createWasmJpegRowSink')).toBeNull()
+  })
+
+  it('exports no context or checkpoint scaffolding from any entry', () => {
+    for (const [entryName, entry] of Object.entries(entries)) {
+      for (const name of retiredScaffolding) {
+        expect(exportedSymbol(entry, name), `${name} in ${entryName}`).toBe(
+          undefined,
+        )
+      }
+    }
+  })
+
+  it('has no engine code declaring or importing the retired scaffolding', () => {
+    const offenders = sourceFiles(srcDir)
+      .filter((file) =>
+        /\/context\/runtime-context'|\/export-checkpoint'|\b(?:LumaRenderContext|ExportCheckpointManifest)\b/.test(
+          readFileSync(file, 'utf8'),
+        ),
+      )
+      .map((file) => relative(srcDir, file).replaceAll('\\', '/'))
+    expect(offenders).toEqual([])
+  })
+
+  it('takes explicit engine inputs instead of a context object', () => {
+    type ExportInput = exportEntry.RunFullResolutionJpegExportInput
+    expectTypeOf<ExportInput['jpegSink']>().toEqualTypeOf<
+      exportEntry.JpegRowSink | undefined
+    >()
+    expectTypeOf<ExportInput['signal']>().toEqualTypeOf<
+      AbortSignal | undefined
+    >()
+    expectTypeOf<ExportInput>().toHaveProperty('capability')
+    expectTypeOf<ExportInput>().toHaveProperty('onProgress')
+    expect(typeof exportEntry.runFullResolutionJpegExport).toBe('function')
+    expect(typeof exportEntry.createWasmJpegRowSink).toBe('function')
+  })
+
+  it('keeps RenderIdentity as the identity block of the final manifest', () => {
+    expectTypeOf<manifestEntry.RenderManifest>().toExtend<manifestEntry.RenderIdentity>()
+    expectTypeOf<rootEntry.RenderIdentity>().toEqualTypeOf<manifestEntry.RenderIdentity>()
+    expectTypeOf<keyof manifestEntry.RenderIdentity>().toEqualTypeOf<
+      | 'source_raw'
+      | 'calibration'
+      | 'lut'
+      | 'color_graph'
+      | 'render_params'
+      | 'policy'
+      | 'environment'
+    >()
+    expect(deprecationOf(entries.manifest, 'RenderIdentity')).toBeNull()
   })
 
   it('has no engine code depending on ExportFidelity beyond the entries', () => {

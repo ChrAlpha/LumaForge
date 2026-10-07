@@ -155,14 +155,6 @@ describe('deprecated manifest helpers on the public entries', () => {
     root: fileURLToPath(new URL('../index.ts', import.meta.url)),
     manifest: fileURLToPath(new URL('./index.ts', import.meta.url)),
   }
-  const checkpointTypes = [
-    'ExportCheckpointManifest',
-    'ExportInProgress',
-    'JpegResumeState',
-    'OutputIntent',
-    'ResumeFingerprint',
-    'SourceReacquisitionMode',
-  ]
 
   let program: ts.Program
 
@@ -204,53 +196,10 @@ describe('deprecated manifest helpers on the public entries', () => {
     expect(manifestEntry.sourceContentIdFromBytes).toBe(
       sourceContentIdFromBytes,
     )
-
-    expectTypeOf<rootEntry.ExportCheckpointManifest>().toEqualTypeOf<manifestEntry.ExportCheckpointManifest>()
-    expectTypeOf<manifestEntry.ExportCheckpointManifest>().toExtend<manifestEntry.RenderIdentity>()
-    expectTypeOf<keyof manifestEntry.ExportCheckpointManifest>().toEqualTypeOf<
-      | keyof manifestEntry.RenderIdentity
-      | 'checkpoint_version'
-      | 'kind'
-      | 'export_id'
-      | 'started_at'
-      | 'last_checkpointed_at'
-      | 'recovery_mode'
-      | 'source_reacquisition'
-      | 'output_intended'
-      | 'resume_fingerprint'
-      | 'in_progress'
-    >()
-    expectTypeOf<
-      manifestEntry.ExportCheckpointManifest['kind']
-    >().toEqualTypeOf<'export-in-progress'>()
-    expectTypeOf<
-      manifestEntry.ExportCheckpointManifest['recovery_mode']
-    >().toEqualTypeOf<'safe-retry'>()
-    expectTypeOf<rootEntry.SourceReacquisitionMode>().toEqualTypeOf<
-      | 'current-session-file'
-      | 'persisted-file-handle'
-      | 'user-reselect-required'
-      | 'opfs-source-copy'
-    >()
-    expectTypeOf<rootEntry.JpegResumeState>().toEqualTypeOf<
-      'restart-required' | 'resumable'
-    >()
-    expectTypeOf<keyof rootEntry.OutputIntent>().toEqualTypeOf<
-      'format' | 'dimensions' | 'color_space' | 'quality' | 'filename'
-    >()
-    expectTypeOf<keyof rootEntry.ResumeFingerprint>().toEqualTypeOf<
-      'name' | 'size' | 'last_modified' | 'hash_prefix_hex'
-    >()
-    expectTypeOf<keyof rootEntry.ExportInProgress>().toEqualTypeOf<
-      'completed_strips' | 'jpeg_state'
-    >()
   })
 
-  it('marks the checkpoint types and the File helper deprecated on both entries', () => {
+  it('marks the File helper deprecated on both entries', () => {
     for (const entry of Object.values(entries)) {
-      for (const name of checkpointTypes) {
-        expect(deprecationOf(entry, name), `${name} in ${entry}`).not.toBeNull()
-      }
       // The replacement is real content hashing, never file metadata.
       expect(deprecationOf(entry, 'sourceContentIdFromFile')).toContain(
         'sourceContentIdFromBytes',

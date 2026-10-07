@@ -2,9 +2,6 @@
 // file-backed output that is opened lazily on delivery. Engine sinks, the
 // browser export worker, and the CLI all produce this shape; storage-bound
 // file-backed implementations (OPFS) live with their environment.
-//
-// This is not the context's `OutputSinkResult`, which requires the hash and
-// addresses files by handle or path.
 
 import type { JpegExportMetadata } from './jpeg-metadata'
 

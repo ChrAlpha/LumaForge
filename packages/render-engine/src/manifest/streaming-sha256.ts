@@ -1,6 +1,6 @@
-// Incremental SHA-256 for chunked OutputSink writes.
+// Incremental SHA-256 for chunked output writes.
 //
-// Pure-JS FIPS 180-4 implementation. Used by browser OutputSink
+// Pure-JS FIPS 180-4 implementation. Used by browser output sink
 // implementations that need to digest chunked writes without buffering the
 // full output (the OPFS path's whole reason for existing). Node sinks MAY
 // use `node:crypto.createHash('sha256')` directly for native speed; this

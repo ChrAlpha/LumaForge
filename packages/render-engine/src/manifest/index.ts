@@ -19,14 +19,6 @@ export {
   createRenderManifest,
   type CreateRenderManifestInput,
 } from './create-render-manifest'
-export type {
-  ExportCheckpointManifest,
-  ExportInProgress,
-  JpegResumeState,
-  OutputIntent,
-  ResumeFingerprint,
-  SourceReacquisitionMode,
-} from './export-checkpoint'
 export { type LutIdentityFailure, lutIdentityFromProfile } from './lut-identity'
 export {
   parseRenderManifest,

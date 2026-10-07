@@ -37,7 +37,6 @@ It holds the render pipeline shared by the `/raw` app and the `lmfg` CLI:
 
 ## Deprecated exports
 
-`LumaRenderContext` and its parts, `ExportCheckpointManifest` and its parts,
 `RenderBudget`, `NODE_DEFAULT_CAPABILITY`, `ExportFidelity`,
 `sourceContentIdFromFile`, and `createNodeJpegRowSink` are still exported but
 deprecated: nothing in the engine, the app, or `lmfg` uses them, and they are
