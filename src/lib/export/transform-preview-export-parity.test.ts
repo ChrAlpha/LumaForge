@@ -11,10 +11,10 @@ import {
   planGeometryTiles,
   resampleGeometryTile,
 } from '@lumaforge/render-engine/export'
+import type { Matrix3 } from '@lumaforge/render-engine/geometry'
 import { applyMatrix, invertMatrix } from '@lumaforge/render-engine/geometry'
 import { describe, expect, it } from 'vitest'
 
-import type { Matrix3 } from '~/modules/transform-demo/geometry/types'
 import type { PreviewFrame } from '~/modules/transform-demo/preview-types'
 import {
   composeManualTransform,

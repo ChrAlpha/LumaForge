@@ -1,4 +1,5 @@
-import type { Matrix3 } from './geometry/types'
+import type { Matrix3 } from '@lumaforge/render-engine/geometry'
+
 import type { PreviewFrame } from './preview-types'
 
 export interface ManualTransform {

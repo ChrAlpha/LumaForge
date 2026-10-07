@@ -1,12 +1,10 @@
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import { planExportGeometry } from '@lumaforge/render-engine/export'
+import type { Matrix3 } from '@lumaforge/render-engine/geometry'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type {
-  Matrix3,
-  UprightMode,
-} from '~/modules/transform-demo/geometry/types'
+import type { UprightMode } from '~/modules/transform-demo/geometry/types'
 import type { PreviewSource } from '~/modules/transform-demo/preview-types'
 import type { ManualTransform } from '~/modules/transform-demo/transform-types'
 import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'

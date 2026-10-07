@@ -1,3 +1,4 @@
+import type { Matrix3, Point } from '@lumaforge/render-engine/geometry'
 import { applyMatrix } from '@lumaforge/render-engine/geometry'
 import { describe, expect, it } from 'vitest'
 
@@ -6,11 +7,7 @@ import {
   multiplyMatrices,
   rotationMatrix,
 } from '~/modules/transform-demo/geometry/matrix'
-import type {
-  AnalysisImage,
-  Matrix3,
-  Point,
-} from '~/modules/transform-demo/geometry/types'
+import type { AnalysisImage } from '~/modules/transform-demo/geometry/types'
 import { analyzeUpright } from '~/modules/transform-demo/geometry/upright'
 
 const width = 360

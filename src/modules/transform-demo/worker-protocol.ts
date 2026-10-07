@@ -1,4 +1,6 @@
-import type { Matrix3, UprightAnalysis } from './geometry/types'
+import type { Matrix3 } from '@lumaforge/render-engine/geometry'
+
+import type { UprightAnalysis } from './geometry/types'
 import type { PreviewFrame } from './preview-types'
 import type { RenderedPreview } from './transform-types'
 
