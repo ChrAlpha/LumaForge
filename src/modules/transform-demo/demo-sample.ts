@@ -1,4 +1,4 @@
-import type { PreviewSource } from './preview-types'
+import type { PreviewSource } from '~/lib/transform/preview-types'
 
 export function createDemoSample(): PreviewSource {
   const width = 1200

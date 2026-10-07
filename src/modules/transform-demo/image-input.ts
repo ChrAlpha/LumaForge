@@ -1,28 +1,11 @@
 import { isSupportedRaw } from '~/lib/raw/decoder'
+import { previewDimensions } from '~/lib/transform/preview-dimensions'
+import type { PreviewFrame, PreviewSource } from '~/lib/transform/preview-types'
 import { ImageInputError } from '~/lib/transform/preview-types'
 
-import type { PreviewFrame, PreviewSource } from './preview-types'
-import {
-  MAX_IMAGE_BYTES,
-  MAX_PREVIEW_EDGE,
-  MAX_RAW_BYTES,
-} from './preview-types'
-
-export function previewDimensions(width: number, height: number) {
-  if (
-    !Number.isFinite(width) ||
-    !Number.isFinite(height) ||
-    width < 1 ||
-    height < 1
-  ) {
-    throw new ImageInputError('decode')
-  }
-  const scale = Math.min(1, MAX_PREVIEW_EDGE / Math.max(width, height))
-  return {
-    width: Math.max(1, Math.round(width * scale)),
-    height: Math.max(1, Math.round(height * scale)),
-  }
-}
+/** Largest raster and RAW files the demo will try to decode. */
+export const MAX_IMAGE_BYTES = 64 * 1024 * 1024
+export const MAX_RAW_BYTES = 160 * 1024 * 1024
 
 export function validateImageInput(file: Pick<File, 'name' | 'size' | 'type'>) {
   const raw = isSupportedRaw(file.name)

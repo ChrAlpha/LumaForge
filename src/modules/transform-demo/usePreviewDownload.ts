@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { PreviewFrame } from './preview-types'
+import type { PreviewFrame } from '~/lib/transform/preview-types'
 
 export function usePreviewDownload(
   frame: PreviewFrame | undefined,
