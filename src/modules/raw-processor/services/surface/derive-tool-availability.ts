@@ -1,7 +1,7 @@
 import type { PreviewColorExecutor } from '@lumaforge/render-engine/preview'
 
-import type { TransformExportBlock } from '../../hooks/useRawTransformFeature'
 import type { ProcessingStatus } from '../../model/workflow'
+import type { TransformExportBlock } from '../transform/transform-state'
 import type { RawReasonCode } from './raw-reason'
 
 export type ToolSurface = 'desktop' | 'mobile'
@@ -13,7 +13,7 @@ export type ToolSurface = 'desktop' | 'mobile'
  * keeps Export, the delivered result and Restore.
  */
 export type ToolAction =
-  /** Tone, color, HSL and Transform edits. */
+  /** Tone, color and HSL edits. */
   | 'edit'
   /** How much of the applied LUT reaches the photo. */
   | 'strength'
@@ -33,6 +33,12 @@ export type ToolAction =
   | 'delivery'
   /** Bringing the preview back after export released it. */
   | 'restorePreview'
+  /** Transform's Upright modes, manual geometry and constrained crop. */
+  | 'transformGeometry'
+  /** Transform's guide lines and grid over the photo. */
+  | 'transformOverlay'
+  /** Putting Transform back to neutral. */
+  | 'transformReset'
 
 /**
  * Whether an action can run, and the surface reason when it cannot. A null
@@ -45,6 +51,26 @@ export type ActionAvailability =
   | { available: false; reason: RawReasonCode | null }
 
 export type ToolAvailability = Record<ToolAction, ActionAvailability>
+
+/**
+ * What the Transform preview observes of the frame it works on. When it
+ * captures is the preview's own business; these are only the facts its
+ * commands depend on.
+ */
+export interface TransformPreviewObservation {
+  /**
+   * A frame of this RAW can be captured now: the decoded photo is present,
+   * the preview is not released, and the executor holds a frame to read
+   * back (the CPU stage's current frame, or the WebGPU pipeline).
+   */
+  canCapture: boolean
+  /** The Transform worker holds an analysed frame to answer geometry on. */
+  workerReady: boolean
+  /** The last frame could not be captured, analysed or kept. */
+  captureFailed: boolean
+  /** The preview shows an answer on a frame of the photo as it now looks. */
+  current: boolean
+}
 
 export interface ToolAvailabilityInput {
   surface: ToolSurface
@@ -66,6 +92,8 @@ export interface ToolAvailabilityInput {
   /** The workflow's own HQ preview readiness, before Transform. */
   canPreviewExport: boolean
   hasExportResult: boolean
+  /** The Transform preview, where the surface has a Transform tool. */
+  transformPreview?: TransformPreviewObservation | null
 }
 
 const AVAILABLE: ActionAvailability = { available: true, reason: null }
@@ -101,6 +129,17 @@ function busyReason(status: ProcessingStatus): RawReasonCode | null {
   }
 }
 
+/**
+ * Transform waits out the stages that replace the photo its frame is read
+ * from, but keeps its controls while the runtime warms or the look
+ * reprocesses: the frame follows the colour on its own.
+ */
+function transformLockReason(status: ProcessingStatus): RawReasonCode | null {
+  return status === 'loading' || status === 'decoding' || status === 'exporting'
+    ? busyReason(status)
+    : null
+}
+
 const TRANSFORM_EXPORT_REASON: Record<TransformExportBlock, RawReasonCode> = {
   pending: 'transform-pending',
   invalid: 'transform-invalid',
@@ -116,7 +155,8 @@ const TRANSFORM_EXPORT_REASON: Record<TransformExportBlock, RawReasonCode> = {
  * keeps its controls and locks them only for an export; mobile hands the
  * stage over to the progress handoff and waits for any busy stage. Before a
  * source, desktop keeps the sample compare's split and stages a LUT, while
- * mobile has no dock or lens to act through.
+ * mobile has no dock or lens to act through. Transform follows its own
+ * frame on both surfaces alike.
  */
 export function deriveToolAvailability(
   input: ToolAvailabilityInput,
@@ -128,6 +168,7 @@ export function deriveToolAvailability(
     previewSuspended,
     transformActive,
     transformExportBlock,
+    transformPreview,
   } = input
   const busy = busyReason(status)
   const exporting = status === 'exporting'
@@ -220,6 +261,41 @@ export function deriveToolAvailability(
       ? refused('no-source')
       : fromReason(busy)
 
+  // Transform answers geometry on a frame of the photo, so its controls
+  // wait for one the worker holds. Reset only clears the intent, and stays
+  // open when the frame failed. The guides draw over the current answer.
+  const transformLock = previewSuspended
+    ? 'preview-released'
+    : transformLockReason(status)
+  const frameReason =
+    !transformPreview ||
+    !transformPreview.canCapture ||
+    transformPreview.captureFailed
+      ? 'transform-unavailable'
+      : null
+  const transformGeometry = !transformPreview
+    ? refused(null)
+    : fromReason(
+        !hasImage
+          ? 'no-source'
+          : (transformLock ??
+              frameReason ??
+              (transformPreview.workerReady ? null : 'transform-pending')),
+      )
+  const transformOverlay = !transformPreview
+    ? refused(null)
+    : fromReason(
+        !hasImage
+          ? 'no-source'
+          : (transformLock ??
+              (transformPreview.current
+                ? null
+                : (frameReason ?? 'transform-pending'))),
+      )
+  const transformReset = !transformPreview
+    ? refused(null)
+    : fromReason(transformLock)
+
   return {
     edit,
     strength,
@@ -232,5 +308,8 @@ export function deriveToolAvailability(
     hqExport,
     delivery,
     restorePreview,
+    transformGeometry,
+    transformOverlay,
+    transformReset,
   }
 }

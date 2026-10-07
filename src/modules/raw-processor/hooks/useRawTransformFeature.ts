@@ -12,7 +12,10 @@ import {
   captureTransformSource,
   transformInputKey,
 } from '../services/preview/capture-transform-source'
-import type { TransformEvent } from '../services/transform/transform-state'
+import type {
+  TransformEvent,
+  TransformExportBlock,
+} from '../services/transform/transform-state'
 import {
   deriveTransformStatus,
   heldTransformGeometry,
@@ -21,15 +24,6 @@ import {
 import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 import type { TransformPreviewObserver } from './useTransformPreview'
 import { useTransformPreview } from './useTransformPreview'
-
-/**
- * Why a full-resolution export cannot reproduce the Transform the controls
- * ask for: its newest render has not been answered on a frame captured for
- * this RAW and its current inputs yet (`pending`), the worker or the export
- * engine refused the geometry (`invalid`), or the frame could not be
- * captured or processed (`unavailable`).
- */
-export type TransformExportBlock = 'pending' | 'invalid' | 'unavailable'
 
 interface CapturedFrame {
   sourceId: string

@@ -1522,6 +1522,114 @@ describe('rawWorkflowToolProvider surface policy', () => {
     }
   })
 
+  it('hands each surface the Transform tool policy from what its preview observes', () => {
+    let workflow = workflowFixture()
+    let isCpuMode = true
+    let transform: ReturnType<typeof transformFeatureFixture> | undefined =
+      transformFeatureFixture({ hasImage: true })
+    const { result, rerender } = renderHook(useRawWorkflowContext, {
+      wrapper: ({ children }) => (
+        <RawWorkflowToolProvider
+          workflow={workflow}
+          transform={transform}
+          onlineLutSources={{} as UseOnlineLutSourcesResult}
+          isCpuMode={isCpuMode}
+          isProcessing={workflow.status !== 'ready'}
+          runtimeReadinessState="ready"
+          previewFrameEl={null}
+          onReplaceFile={vi.fn()}
+          onResetSession={vi.fn()}
+          onCompareReset={vi.fn()}
+          onLutDrop={vi.fn()}
+          onExport={vi.fn()}
+          onPrepareRuntime={vi.fn()}
+        >
+          {children}
+        </RawWorkflowToolProvider>
+      ),
+    })
+    const transformActions = () =>
+      (['desktop', 'mobile'] as const).map((surface) => {
+        const actions = result.current.toolAvailability[surface]
+        return {
+          geometry: actions.transformGeometry,
+          overlay: actions.transformOverlay,
+          reset: actions.transformReset,
+        }
+      })
+    const open = { available: true, reason: null }
+
+    // No current CPU frame yet: nothing to capture, so nothing to answer on.
+    for (const actions of transformActions()) {
+      expect(actions.geometry).toEqual({
+        available: false,
+        reason: 'transform-unavailable',
+      })
+      expect(actions.reset).toEqual(open)
+    }
+
+    // A frame to capture, but the worker does not hold it yet.
+    transform = transformFeatureFixture({ hasImage: true, available: true })
+    rerender()
+    for (const actions of transformActions()) {
+      expect(actions.geometry).toEqual({
+        available: false,
+        reason: 'transform-pending',
+      })
+      expect(actions.overlay).toEqual({
+        available: false,
+        reason: 'transform-pending',
+      })
+    }
+
+    // The worker holds the frame and answered on the photo as it now looks.
+    const ready = transformFeatureFixture({
+      hasImage: true,
+      available: true,
+      current: true,
+    })
+    transform = { ...ready, demo: { ...ready.demo, ready: true } }
+    rerender()
+    for (const actions of transformActions()) {
+      expect(actions).toEqual({ geometry: open, overlay: open, reset: open })
+    }
+
+    // A failed capture refuses the geometry but keeps the way back.
+    transform = { ...transform, captureError: true, current: false }
+    rerender()
+    for (const actions of transformActions()) {
+      expect(actions.geometry).toEqual({
+        available: false,
+        reason: 'transform-unavailable',
+      })
+      expect(actions.reset).toEqual(open)
+    }
+
+    // A decode replaces the frame on either surface, unlike the other edits
+    // desktop keeps.
+    transform = { ...ready, demo: { ...ready.demo, ready: true } }
+    isCpuMode = false
+    workflow = { ...workflow, status: 'decoding' } as UseRawWorkflowReturn
+    rerender()
+    expect(result.current.toolAvailability.desktop.edit.available).toBe(true)
+    for (const actions of transformActions()) {
+      for (const action of [actions.geometry, actions.overlay, actions.reset])
+        expect(action).toEqual({
+          available: false,
+          reason: 'preview-decoding',
+        })
+    }
+
+    // Without a Transform preview there is no Transform tool.
+    transform = undefined
+    workflow = { ...workflow, status: 'ready' } as UseRawWorkflowReturn
+    rerender()
+    for (const actions of transformActions()) {
+      for (const action of [actions.geometry, actions.overlay, actions.reset])
+        expect(action).toEqual({ available: false, reason: null })
+    }
+  })
+
   it('sends compare commands to the workflow, whose own guard decides', () => {
     const workflow = workflowFixture()
     const onCompareReset = vi.fn()

@@ -5,15 +5,13 @@ import type { MessageKey } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
-import type {
-  RawTransformFeature,
-  TransformExportBlock,
-} from '../hooks/useRawTransformFeature'
+import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import { deriveLutContractExportReason } from '../model/derive-session'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { deriveToolAvailability } from '../services/surface/derive-tool-availability'
 import { resolvePreviewLookReason } from '../services/surface/raw-reason'
+import type { TransformExportBlock } from '../services/transform/transform-state'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type {
@@ -205,6 +203,31 @@ export function RawWorkflowToolProvider({
     canPreviewExport: workflowCanPreviewExport,
     exportResult,
   } = workflow
+  // What the Transform preview observes of its frame. Its capture schedule
+  // stays with the preview; the tool's commands read only these facts.
+  const hasTransform = transform !== undefined
+  const transformCanCapture = transform?.available === true
+  const transformWorkerReady = transform?.demo.ready === true
+  const transformCaptureFailed = transform?.captureError === true
+  const transformCurrent = transform?.current === true
+  const transformPreview = useMemo(
+    () =>
+      hasTransform
+        ? {
+            canCapture: transformCanCapture,
+            workerReady: transformWorkerReady,
+            captureFailed: transformCaptureFailed,
+            current: transformCurrent,
+          }
+        : null,
+    [
+      hasTransform,
+      transformCanCapture,
+      transformCaptureFailed,
+      transformCurrent,
+      transformWorkerReady,
+    ],
+  )
   const toolAvailability = useMemo(() => {
     const facts = {
       hasImage,
@@ -221,6 +244,7 @@ export function RawWorkflowToolProvider({
         exportDisabledReason === lutContractExportReason,
       canPreviewExport: workflowCanPreviewExport,
       hasExportResult: exportResult != null,
+      transformPreview,
     }
     return {
       desktop: deriveToolAvailability({ ...facts, surface: 'desktop' }),
@@ -237,6 +261,7 @@ export function RawWorkflowToolProvider({
     status,
     transformActive,
     transformExportBlock,
+    transformPreview,
     workflowCanExport,
     workflowCanPreviewExport,
   ])

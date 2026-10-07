@@ -24,6 +24,15 @@ export type TransformStatus =
   | 'unavailable'
 
 /**
+ * Why a full-resolution export cannot reproduce the Transform the controls
+ * ask for: every status but a neutral or an accepted one.
+ */
+export type TransformExportBlock = Exclude<
+  TransformStatus,
+  'neutral' | 'accepted'
+>
+
+/**
  * Every event names the source it was raised for and is ignored by any
  * other. Capture and render events also name their capture and request, so
  * a late answer to something replaced cannot be accepted.

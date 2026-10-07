@@ -1388,6 +1388,8 @@ describe('rAW Transform feature', () => {
     })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).not.toHaveBeenCalled()
+    // Without the CPU stage's current frame there is nothing to capture.
+    expect(result.current.available).toBe(false)
     const cpuFrame = {
       requestId: 1,
       sourceId: 'v1:80x60:123',
@@ -1396,10 +1398,25 @@ describe('rAW Transform feature', () => {
       rgba: frame.frame.data,
     }
     act(() => result.current.setCpuFrame(cpuFrame))
+    expect(result.current.available).toBe(true)
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledWith(
       expect.objectContaining({ pipeline: null, cpuFrame }),
     )
+    unmount()
+  })
+
+  it('schedules its capture apart from the stage locks its commands', async () => {
+    const input = { ...workflow(), status: 'decoding' } as UseRawWorkflowReturn
+    const { result, unmount } = renderHook(() => useFeature(input, false))
+    // The decode locks the Transform commands, not the frame they wait for.
+    expect(result.current.isProcessing).toBe(true)
+    expect(result.current.available).toBe(true)
+    act(() => {
+      result.current.observe()
+    })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
     unmount()
   })
 

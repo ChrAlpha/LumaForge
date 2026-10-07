@@ -1,14 +1,18 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import enMessages from '~/locales/en.json'
 import zhMessages from '~/locales/zh-CN.json'
 
-import type { TransformExportBlock } from '../../hooks/useRawTransformFeature'
 import type { ProcessingStatus } from '../../model/workflow'
+import type { TransformExportBlock } from '../transform/transform-state'
 import type {
   ToolAction,
   ToolAvailability,
   ToolAvailabilityInput,
+  TransformPreviewObservation,
 } from './derive-tool-availability'
 import { deriveToolAvailability } from './derive-tool-availability'
 import type { RawReasonCode } from './raw-reason'
@@ -37,7 +41,10 @@ const EXPORT_BLOCKS: Array<TransformExportBlock | null> = [
   'invalid',
   'unavailable',
 ]
-const ACTIONS: ToolAction[] = [
+type TransformAction = Extract<ToolAction, `transform${string}`>
+type SurfaceAction = Exclude<ToolAction, TransformAction>
+
+const ACTIONS: SurfaceAction[] = [
   'edit',
   'strength',
   'lutApplication',
@@ -50,6 +57,17 @@ const ACTIONS: ToolAction[] = [
   'delivery',
   'restorePreview',
 ]
+const TRANSFORM_ACTIONS: TransformAction[] = [
+  'transformGeometry',
+  'transformOverlay',
+  'transformReset',
+]
+/** The stages Transform waits out: each one replaces the photo's frame. */
+const TRANSFORM_LOCKING = new Set<ProcessingStatus>([
+  'loading',
+  'decoding',
+  'exporting',
+])
 
 function input(
   overrides: Partial<ToolAvailabilityInput> = {},
@@ -78,7 +96,7 @@ function input(
  */
 function currentSurfaceRules(
   i: ToolAvailabilityInput,
-): Record<ToolAction, boolean> {
+): Record<SurfaceAction, boolean> {
   const busy = BUSY.has(i.status)
   const exporting = i.status === 'exporting'
   const released = i.previewSuspended
@@ -136,6 +154,78 @@ function currentSurfaceRules(
   }
 }
 
+/**
+ * The Transform tool's own rules, written out the way the desktop card and
+ * the mobile panel state them, behind the provider's live guard that
+ * refuses a geometry edit while the preview is released. Both surfaces
+ * apply the same ones; without a Transform preview there is no tool.
+ */
+function currentTransformToolRules(
+  i: ToolAvailabilityInput,
+): Record<TransformAction, boolean> {
+  const preview = i.transformPreview
+  const locked = TRANSFORM_LOCKING.has(i.status)
+  const guarded = !i.previewSuspended
+  return {
+    transformGeometry: Boolean(
+      preview &&
+      preview.canCapture &&
+      preview.workerReady &&
+      !preview.captureFailed &&
+      !locked &&
+      guarded,
+    ),
+    transformOverlay: Boolean(preview && preview.current && !locked),
+    // Reset is also off for an intent with nothing to reset, which is the
+    // panel's own fact.
+    transformReset: Boolean(preview && !locked && guarded),
+  }
+}
+
+/**
+ * Every observation the Transform preview can report: a frame to capture
+ * needs a loaded source and a preview that is not released, and a current
+ * answer needs a frame that did not fail.
+ */
+function* everyTransformPreview(
+  hasImage: boolean,
+  previewSuspended: boolean,
+): Generator<TransformPreviewObservation | undefined> {
+  yield undefined
+  for (const canCapture of hasImage && !previewSuspended
+    ? [false, true]
+    : [false])
+    for (const workerReady of [false, true])
+      for (const captureFailed of [false, true])
+        for (const current of canCapture && !captureFailed
+          ? [false, true]
+          : [false])
+          yield { canCapture, workerReady, captureFailed, current }
+}
+
+function* everyTransformInput(): Generator<ToolAvailabilityInput> {
+  for (const surface of ['desktop', 'mobile'] as const)
+    for (const hasImage of [false, true])
+      for (const status of STATUSES)
+        for (const executor of ['webgpu', 'cpu'] as const)
+          for (const previewSuspended of [false, true])
+            for (const transformActive of [false, true])
+              for (const transformPreview of everyTransformPreview(
+                hasImage,
+                previewSuspended,
+              ))
+                yield input({
+                  surface,
+                  hasImage,
+                  status,
+                  executor,
+                  previewSuspended,
+                  transformActive,
+                  transformExportBlock: transformActive ? null : 'pending',
+                  transformPreview,
+                })
+}
+
 function* everyInput(): Generator<ToolAvailabilityInput> {
   for (const surface of ['desktop', 'mobile'] as const)
     for (const hasImage of [false, true])
@@ -184,15 +274,48 @@ describe('deriveToolAvailability', () => {
           )
         }
       }
+      // Without a Transform preview there is no Transform tool to offer.
+      for (const action of TRANSFORM_ACTIONS) {
+        if (result[action].available) {
+          throw new Error(`${action} on ${JSON.stringify(i)}: no preview`)
+        }
+      }
       checked++
     }
     expect(checked).toBe(2 * 2 * 8 * 2 * 2 * 2 * 4 * 2 * 2 * 2 * 2 * 2)
   })
 
-  it('never names a reason for an available action', () => {
-    for (const i of everyInput()) {
+  it('agrees with the rules the Transform tool applies, on every observation', () => {
+    let checked = 0
+    for (const i of everyTransformInput()) {
       const result = deriveToolAvailability(i)
+      const expected = currentTransformToolRules(i)
+      for (const action of TRANSFORM_ACTIONS) {
+        if (result[action].available !== expected[action]) {
+          throw new Error(
+            `${action} on ${JSON.stringify(i)}: expected ${expected[action]}`,
+          )
+        }
+      }
+      // What the Transform preview observes moves no other action.
+      const unobserved = deriveToolAvailability({
+        ...i,
+        transformPreview: undefined,
+      })
       for (const action of ACTIONS) {
+        expect(result[action]).toEqual(unobserved[action])
+      }
+      checked++
+    }
+    // No preview, then 4 observations without a frame to capture or 10
+    // with one: only a loaded photo whose preview is held has one.
+    expect(checked).toBe(2 * 8 * 2 * 2 * (5 + 5 + 11 + 5))
+  })
+
+  it('never names a reason for an available action', () => {
+    for (const i of [...everyInput(), ...everyTransformInput()]) {
+      const result = deriveToolAvailability(i)
+      for (const action of [...ACTIONS, ...TRANSFORM_ACTIONS]) {
         const { available, reason } = result[action]
         if (available && reason !== null) {
           throw new Error(`${action} on ${JSON.stringify(i)}: ${reason}`)
@@ -475,11 +598,174 @@ describe('deriveToolAvailability', () => {
     }
   })
 
+  it('opens the Transform tool once its frame is captured and the worker holds it', () => {
+    const ready: TransformPreviewObservation = {
+      canCapture: true,
+      workerReady: true,
+      captureFailed: false,
+      current: true,
+    }
+    for (const surface of ['desktop', 'mobile'] as const) {
+      for (const executor of ['webgpu', 'cpu'] as const) {
+        const open = deriveToolAvailability(
+          input({ surface, executor, transformPreview: ready }),
+        )
+        for (const action of TRANSFORM_ACTIONS) {
+          expect(open[action]).toEqual({ available: true, reason: null })
+        }
+      }
+    }
+  })
+
+  it('waits for a frame to capture: the current CPU frame, or the WebGPU pipeline', () => {
+    for (const executor of ['webgpu', 'cpu'] as const) {
+      const noFrame = deriveToolAvailability(
+        input({
+          executor,
+          transformPreview: {
+            canCapture: false,
+            workerReady: false,
+            captureFailed: false,
+            current: false,
+          },
+        }),
+      )
+      expect(noFrame.transformGeometry).toEqual({
+        available: false,
+        reason: 'transform-unavailable',
+      })
+      expect(noFrame.transformOverlay).toEqual({
+        available: false,
+        reason: 'transform-unavailable',
+      })
+      // Reset needs no frame: it only clears the intent.
+      expect(noFrame.transformReset).toEqual({ available: true, reason: null })
+    }
+    const noSource = deriveToolAvailability(
+      input({
+        hasImage: false,
+        status: 'idle',
+        transformPreview: {
+          canCapture: false,
+          workerReady: false,
+          captureFailed: false,
+          current: false,
+        },
+      }),
+    )
+    expect(noSource.transformGeometry).toEqual({
+      available: false,
+      reason: 'no-source',
+    })
+  })
+
+  it('waits for the worker to hold the frame, and keeps Reset when the capture fails', () => {
+    const pending = deriveToolAvailability(
+      input({
+        transformPreview: {
+          canCapture: true,
+          workerReady: false,
+          captureFailed: false,
+          current: false,
+        },
+      }),
+    )
+    expect(pending.transformGeometry).toEqual({
+      available: false,
+      reason: 'transform-pending',
+    })
+    expect(pending.transformOverlay).toEqual({
+      available: false,
+      reason: 'transform-pending',
+    })
+    const failed = deriveToolAvailability(
+      input({
+        transformActive: true,
+        transformPreview: {
+          canCapture: true,
+          workerReady: true,
+          captureFailed: true,
+          current: false,
+        },
+      }),
+    )
+    expect(failed.transformGeometry).toEqual({
+      available: false,
+      reason: 'transform-unavailable',
+    })
+    expect(failed.transformOverlay).toEqual({
+      available: false,
+      reason: 'transform-unavailable',
+    })
+    expect(failed.transformReset).toEqual({ available: true, reason: null })
+  })
+
+  it('locks Transform for a stage that replaces its frame, on both surfaces alike', () => {
+    const ready: TransformPreviewObservation = {
+      canCapture: true,
+      workerReady: true,
+      captureFailed: false,
+      current: true,
+    }
+    const cases: Array<[ProcessingStatus, RawReasonCode | null]> = [
+      ['loading', 'source-loading'],
+      ['decoding', 'preview-decoding'],
+      ['exporting', 'export-running'],
+      ['warming', null],
+      ['processing', null],
+    ]
+    for (const surface of ['desktop', 'mobile'] as const) {
+      for (const [status, reason] of cases) {
+        const result = deriveToolAvailability(
+          input({ surface, status, transformPreview: ready }),
+        )
+        for (const action of TRANSFORM_ACTIONS) {
+          expect(result[action]).toEqual(
+            reason
+              ? { available: false, reason }
+              : { available: true, reason: null },
+          )
+        }
+      }
+    }
+  })
+
+  it('refuses Transform edits while the preview is released, view aids included', () => {
+    const released = deriveToolAvailability(
+      input({
+        previewSuspended: true,
+        transformPreview: {
+          canCapture: false,
+          workerReady: true,
+          captureFailed: false,
+          current: false,
+        },
+      }),
+    )
+    for (const action of TRANSFORM_ACTIONS) {
+      expect(released[action]).toEqual({
+        available: false,
+        reason: 'preview-released',
+      })
+    }
+  })
+
+  it('reads Transform facts from the domain, not from a hook', () => {
+    const source = readFileSync(
+      resolve(
+        process.cwd(),
+        'src/modules/raw-processor/services/surface/derive-tool-availability.ts',
+      ),
+      'utf8',
+    )
+    expect(source).not.toMatch(/from '[^']*\/hooks\//)
+  })
+
   it('names every reason it returns in both locales', () => {
     const reasons = new Set<RawReasonCode>()
-    for (const i of everyInput()) {
+    for (const i of [...everyInput(), ...everyTransformInput()]) {
       const result = deriveToolAvailability(i)
-      for (const action of ACTIONS) {
+      for (const action of [...ACTIONS, ...TRANSFORM_ACTIONS]) {
         const { reason } = result[action]
         if (reason) reasons.add(reason)
       }
