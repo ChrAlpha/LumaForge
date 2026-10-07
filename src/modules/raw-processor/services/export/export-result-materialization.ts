@@ -10,6 +10,7 @@ import {
 import type {
   ExportCopyCapability,
   ExportManifestState,
+  ExportResultIdentity,
   ExportResultKind,
 } from '../../model/export-result'
 import { createExportResult } from '../../model/export-result'
@@ -50,15 +51,21 @@ function withLazyJpegMetadata(input: {
   }
 }
 
+/**
+ * Materialize a finished job as its export result. The identity is the one
+ * the producer captured for the request before the job ran; it is carried as
+ * given and never rebuilt from state read at completion.
+ */
 export function createCompletedExportResult({
   jobResult,
-  kind,
+  kind = 'full-resolution',
   metadata,
   width,
   height,
   copyCapability,
   now,
   manifestState,
+  identity,
 }: {
   jobResult: CompletedExportJobResult
   kind?: ExportResultKind
@@ -68,7 +75,12 @@ export function createCompletedExportResult({
   copyCapability: ExportCopyCapability
   now?: () => number
   manifestState?: ExportManifestState
+  identity?: ExportResultIdentity
 }) {
+  if (identity && identity.resultKind !== kind) {
+    throw new Error('EXPORT_RESULT_IDENTITY_MISMATCH')
+  }
+
   const output =
     jobResult.output ??
     (jobResult.blob
@@ -96,5 +108,6 @@ export function createCompletedExportResult({
     height,
     now,
     copyCapability,
+    identity,
   })
 }
