@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { yieldToPaint } from '~/lib/dom'
-import { rawRuntimeAdapter } from '~/lib/raw/runtime-adapter'
 
 import { hasActiveExport } from '../services/export/export-state'
 import { getLut } from '../state/workflow.atoms'
@@ -51,6 +50,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const { session, replaceFile, resetSession, setSession } = useImageSession()
 
   const {
+    rawRuntimeHost,
     pipelineRef,
     resourceRegistryRef,
     previewCopyCanvasRef,
@@ -212,7 +212,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setError,
     abortRuntimeWork,
     disposeRuntimeSession,
-    openSession: rawRuntimeAdapter.openSession,
+    openSession: rawRuntimeHost.openSession,
     scheduleToast,
     toast,
   })
@@ -252,8 +252,9 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     registerCurrentPreviewPipelineForEvacuation,
     disposeRuntimeSession,
     yieldToPaint,
-    getPrewarmState: () => rawRuntimeAdapter.getPrewarmState(),
-    prewarm: () => rawRuntimeAdapter.prewarm(),
+    getPrewarmState: rawRuntimeHost.getPrewarmState,
+    prewarm: rawRuntimeHost.prewarm,
+    openSession: rawRuntimeHost.openSession,
     runtimeAbortControllerRef,
     runtimeSessionRef,
     disposedRuntimeSessionsRef,
@@ -267,6 +268,11 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     resetSession,
   })
   const ingestStage = { loadFile, reset }
+  // The host lives as long as the workflow: unmounting terminates its worker,
+  // including a warm-up still in flight. This cleanup runs after the ingest
+  // lifecycle has disposed the RAW session, and a remount (StrictMode) finds
+  // the host usable again with a fresh history.
+  useEffect(() => () => rawRuntimeHost.dispose(), [rawRuntimeHost])
 
   const {
     canExport,
@@ -308,7 +314,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     scheduleToast,
     abortExportWork,
     abortRuntimeWork,
-    terminateRawDecodeBridge: rawRuntimeAdapter.terminateDecodeBridge,
+    terminateRawDecodeBridge: rawRuntimeHost.terminateDecodeBridge,
     registerCurrentPreviewPipelineForEvacuation,
     registerExportResultResource,
     revokeCurrentEmbeddedPreviewUrl,
@@ -381,6 +387,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
       updateStats,
     },
     refs: { decodedImageRef, pipelineRef },
+    rawRuntimeHost,
     decodedImageVersion,
     lut,
     lutData: {

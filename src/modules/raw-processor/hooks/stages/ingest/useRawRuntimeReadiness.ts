@@ -1,37 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
-import type { PrewarmState } from '~/lib/raw/runtime-adapter'
-import { rawRuntimeAdapter } from '~/lib/raw/runtime-adapter'
+import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 
-export function useRawRuntimeReadiness() {
-  const [runtimeReadinessState, setRuntimeReadinessState] =
-    useState<PrewarmState>(() => rawRuntimeAdapter.getPrewarmState())
-  const runtimeReadinessMountedRef = useRef(false)
+import { deriveRawRuntimeReadiness } from '../../../components/raw-runtime-readiness'
 
-  useEffect(() => {
-    runtimeReadinessMountedRef.current = true
-    return () => {
-      runtimeReadinessMountedRef.current = false
-    }
-  }, [])
-
-  const syncRuntimeReadinessState = useCallback(() => {
-    if (!runtimeReadinessMountedRef.current) return
-    setRuntimeReadinessState(rawRuntimeAdapter.getPrewarmState())
-  }, [])
+/**
+ * Readiness of the workflow's own RAW host. It subscribes to the host, so an
+ * idle termination or a later rewarm shows without polling, and warming here
+ * starts the same runtime the workflow loads on.
+ */
+export function useRawRuntimeReadiness(host: RawRuntimeHost) {
+  const snapshot = useSyncExternalStore(
+    host.subscribe,
+    host.getSnapshot,
+    host.getSnapshot,
+  )
+  const runtimeReadinessState = deriveRawRuntimeReadiness(snapshot)
 
   const triggerRawRuntimePrewarm = useCallback(() => {
     if (typeof window === 'undefined') return
-
-    if (import.meta.env.MODE === 'test') {
-      syncRuntimeReadinessState()
-      return
-    }
-
-    const prewarm = rawRuntimeAdapter.prewarm()
-    syncRuntimeReadinessState()
-    void prewarm.then(syncRuntimeReadinessState, syncRuntimeReadinessState)
-  }, [syncRuntimeReadinessState])
+    if (import.meta.env.MODE === 'test') return
+    void host.prewarm()
+  }, [host])
 
   useEffect(() => {
     if (typeof window === 'undefined') return

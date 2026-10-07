@@ -1,6 +1,7 @@
 import type { MutableRefObject } from 'react'
 
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
+import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import type {
   PipelineStats,
   RawProcessingPipeline,
@@ -31,6 +32,7 @@ type BuildRawWorkflowReturnInput = {
     decodedImageRef: UseRawWorkflowReturn['decodedImageRef']
     pipelineRef: MutableRefObject<RawProcessingPipeline | null>
   }
+  rawRuntimeHost: RawRuntimeHost
   decodedImageVersion: number
   lut: ParsedLUT | null
   lutData: Pick<
@@ -54,6 +56,7 @@ export function buildRawWorkflowReturn({
   transform,
   workflowState,
   refs,
+  rawRuntimeHost,
   decodedImageVersion,
   lut,
   lutData,
@@ -142,5 +145,6 @@ export function buildRawWorkflowReturn({
     dismissError: workflowState.dismissError,
     updateStats: workflowState.updateStats,
     pipelineRef: refs.pipelineRef,
+    rawRuntimeHost,
   }
 }

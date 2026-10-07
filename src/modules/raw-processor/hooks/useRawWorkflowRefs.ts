@@ -2,12 +2,13 @@ import type {
   ColorGraphIntent,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
+import { createRawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
@@ -24,6 +25,9 @@ export function useRawWorkflowRefs({
   initialParams,
   initialView,
 }: UseRawWorkflowRefsInput) {
+  // The one RAW host of this workflow: readiness, load, restore, and the
+  // bridge release before export all drive this instance.
+  const [rawRuntimeHost] = useState(() => createRawRuntimeHost())
   const pipelineRef = useRef<RawProcessingPipeline | null>(null)
   const resourceRegistryRef = useRef<ResourceRegistry | null>(null)
   const previewCopyCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -52,6 +56,7 @@ export function useRawWorkflowRefs({
 
   return useMemo(
     () => ({
+      rawRuntimeHost,
       pipelineRef,
       resourceRegistryRef,
       previewCopyCanvasRef,
@@ -82,6 +87,7 @@ export function useRawWorkflowRefs({
       pipelineRef,
       previewCopyCanvasRef,
       rawRenderExposureRef,
+      rawRuntimeHost,
       resourceRegistryRef,
       runtimeAbortControllerRef,
       runtimeSessionRef,

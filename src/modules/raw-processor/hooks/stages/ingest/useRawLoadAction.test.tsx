@@ -46,6 +46,7 @@ function createInput(
     yieldToPaint: vi.fn(),
     getPrewarmState: vi.fn<() => PrewarmState>(() => 'idle'),
     prewarm: vi.fn(),
+    openSession: vi.fn(),
     runtimeAbortControllerRef: { current: null },
     runtimeSessionRef: { current: null },
     disposedRuntimeSessionsRef: { current: new WeakSet() },
@@ -86,6 +87,8 @@ describe('useRawLoadAction', () => {
           setDecodedImageRef: input.setDecodedImageRef,
           registerCurrentPreviewPipelineForEvacuation:
             input.registerCurrentPreviewPipelineForEvacuation,
+          prewarm: input.prewarm,
+          openSession: input.openSession,
         }),
         refs: expect.objectContaining({
           runtimeAbortControllerRef: input.runtimeAbortControllerRef,

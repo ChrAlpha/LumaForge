@@ -16,6 +16,10 @@ import {
   USER_VIBRANCE_MAX_FACTOR,
   VIBRANCE_CHROMA_REF,
 } from '@lumaforge/luma-color-runtime'
+import type {
+  LumaRawRuntime,
+  LumaRawRuntimeInfo,
+} from '@lumaforge/luma-raw-runtime'
 import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
 import {
   createBlobOutputResult,
@@ -39,6 +43,11 @@ import {
 } from '~/lib/profiles/fetch'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS } from '~/lib/raw/decoder'
+import type {
+  RawRuntimeHost,
+  RawRuntimeHostOptions,
+  RawRuntimeHostSnapshot,
+} from '~/lib/raw/raw-runtime-host'
 import {
   resetCapabilityVectorForTest,
   setCapabilityVectorForTest,
@@ -119,6 +128,61 @@ vi.mock('~/lib/preview/gpu-backend', () => {
 vi.mock('~/lib/raw/runtime-adapter', () => ({
   rawRuntimeAdapter: rawRuntimeAdapterMock,
 }))
+
+// Each workflow builds its own RAW host. The stand-in records every host it
+// builds and forwards its calls to the adapter mock the tests configure; a
+// test that sets `realRawRuntimeHostOptions` gets a real host instead.
+const rawRuntimeHosts = vi.hoisted(() => [] as RawRuntimeHost[])
+const realRawRuntimeHostOptions = vi.hoisted(() => ({
+  current: null as RawRuntimeHostOptions | null,
+}))
+vi.mock('~/lib/raw/raw-runtime-host', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('~/lib/raw/raw-runtime-host')>()
+  const createRawRuntimeHostStandIn = (): RawRuntimeHost => {
+    if (realRawRuntimeHostOptions.current) {
+      const realHost = actual.createRawRuntimeHost(
+        realRawRuntimeHostOptions.current,
+      )
+      rawRuntimeHosts.push(realHost)
+      return realHost
+    }
+    const snapshot: RawRuntimeHostSnapshot = Object.freeze({
+      initialization: 'idle',
+      outcome: null,
+      runtime: Object.freeze({
+        generation: 0,
+        workerAlive: false,
+        initialized: false,
+        lastTermination: null,
+      }),
+    })
+    const host: RawRuntimeHost = {
+      getSnapshot: () => snapshot,
+      subscribe: () => () => {},
+      prewarm: vi.fn(() => rawRuntimeAdapterMock.prewarm()),
+      getPrewarmState: vi.fn(() => rawRuntimeAdapterMock.getPrewarmState()),
+      openSession: vi.fn((file: File, signal?: AbortSignal) =>
+        rawRuntimeAdapterMock.openSession(file, signal),
+      ),
+      extractEmbeddedPreview: vi.fn((file: File) =>
+        rawRuntimeAdapterMock.extractEmbeddedPreview(file),
+      ),
+      decodeQuickRaw: vi.fn((file: File) =>
+        rawRuntimeAdapterMock.decodeQuickRaw(file),
+      ),
+      decodeBoundedHqRaw: vi.fn(
+        (file: File, options: { maxOutputPixels: number }) =>
+          rawRuntimeAdapterMock.decodeBoundedHqRaw(file, options),
+      ),
+      terminateDecodeBridge: vi.fn(async () => {}),
+      dispose: vi.fn(),
+    }
+    rawRuntimeHosts.push(host)
+    return host
+  }
+  return { createRawRuntimeHost: createRawRuntimeHostStandIn }
+})
 
 vi.mock('sonner', () => ({
   toast: toastMock,
@@ -595,6 +659,179 @@ describe('useRawWorkflow embedded preview state', () => {
     localStorage.clear()
     resetCapabilityVectorForTest()
     interruptionMarkersMock.current = null
+  })
+
+  it('warms, loads, and restores on the one RAW host it exposes', async () => {
+    rawRuntimeHosts.length = 0
+    rawRuntimeAdapterMock.getPrewarmState.mockReturnValue('idle')
+    const { result, rerender } = renderHook(() => useRawWorkflow(), {
+      wrapper,
+    })
+    rerender()
+
+    expect(rawRuntimeHosts).toHaveLength(1)
+    const [host] = rawRuntimeHosts
+    expect(result.current.rawRuntimeHost).toBe(host)
+
+    const file = new File(['raw'], 'frame.ARW')
+    await act(async () => {
+      await result.current.loadFile(file)
+    })
+
+    expect(result.current.status).toBe('ready')
+    expect(host.getPrewarmState).toHaveBeenCalled()
+    expect(host.prewarm).toHaveBeenCalledTimes(1)
+    expect(host.openSession).toHaveBeenCalledTimes(1)
+    expect(host.openSession).toHaveBeenCalledWith(file, expect.any(AbortSignal))
+
+    await act(async () => {
+      await result.current.restorePreviewAfterExport()
+    })
+    expect(host.openSession).toHaveBeenCalledTimes(2)
+    expect(rawRuntimeHosts).toHaveLength(1)
+  })
+
+  it('releases its RAW host after the RAW session when it unmounts', async () => {
+    rawRuntimeHosts.length = 0
+    const sessionDispose = vi.fn()
+    rawRuntimeAdapterMock.openSession.mockResolvedValue({
+      sourceDimensions: defaultSourceDimensions,
+      extractEmbeddedPreview: rawRuntimeAdapterMock.extractEmbeddedPreview,
+      decodeQuickRaw: rawRuntimeAdapterMock.decodeQuickRaw,
+      decodeBoundedHqRaw: rawRuntimeAdapterMock.decodeBoundedHqRaw,
+      probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+      dispose: sessionDispose,
+    })
+    const { result, unmount } = renderHook(() => useRawWorkflow(), {
+      wrapper,
+    })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    const [host] = rawRuntimeHosts
+    expect(host.dispose).not.toHaveBeenCalled()
+
+    unmount()
+
+    expect(sessionDispose).toHaveBeenCalledTimes(1)
+    expect(host.dispose).toHaveBeenCalledTimes(1)
+    expect(sessionDispose.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(host.dispose).mock.invocationCallOrder[0]!,
+    )
+  })
+
+  describe('on a real RAW host', () => {
+    function makeRuntime() {
+      const info: LumaRawRuntimeInfo = {
+        runtime: 'luma',
+        version: '0.1.0',
+        simd: true,
+        pthreads: true,
+        crossOriginIsolated: true,
+        memoryTier: 'normal',
+        memoryProfile: 'desktop',
+        workerPoolSize: 2,
+      }
+      return {
+        info,
+        init: vi.fn<LumaRawRuntime['init']>().mockResolvedValue(info),
+        probe: vi.fn<LumaRawRuntime['probe']>(),
+        extractEmbeddedPreview:
+          vi.fn<LumaRawRuntime['extractEmbeddedPreview']>(),
+        decodeQuick: vi.fn<LumaRawRuntime['decodeQuick']>(),
+        decodeBoundedHq: vi.fn<LumaRawRuntime['decodeBoundedHq']>(),
+        openSession: vi.fn<LumaRawRuntime['openSession']>(),
+        dispose: vi.fn<LumaRawRuntime['dispose']>(),
+      }
+    }
+
+    afterEach(() => {
+      realRawRuntimeHostOptions.current = null
+    })
+
+    function renderOnRealHost(runtime: ReturnType<typeof makeRuntime>) {
+      rawRuntimeHosts.length = 0
+      realRawRuntimeHostOptions.current = { runtimeFactory: () => runtime }
+      const rendered = renderHook(() => useRawWorkflow(), { wrapper })
+      const [host] = rawRuntimeHosts
+      expect(rendered.result.current.rawRuntimeHost).toBe(host)
+      return { ...rendered, host: host! }
+    }
+
+    it('terminates a warmed runtime when the workflow unmounts', async () => {
+      const runtime = makeRuntime()
+      const { host, unmount } = renderOnRealHost(runtime)
+      await act(async () => {
+        await expect(host.prewarm()).resolves.toEqual({ status: 'ready' })
+      })
+      expect(host.getSnapshot().runtime.initialized).toBe(true)
+
+      unmount()
+      await act(async () => {})
+
+      expect(runtime.dispose).toHaveBeenCalledTimes(1)
+      expect(host.getSnapshot()).toMatchObject({
+        initialization: 'idle',
+        runtime: {
+          workerAlive: false,
+          initialized: false,
+          lastTermination: { reason: 'explicit' },
+        },
+      })
+    })
+
+    it('keeps its host usable across a StrictMode effect replay', async () => {
+      const runtime = makeRuntime()
+      realRawRuntimeHostOptions.current = { runtimeFactory: () => runtime }
+      const { result } = renderHook(() => useRawWorkflow(), {
+        wrapper,
+        reactStrictMode: true,
+      })
+      const host = result.current.rawRuntimeHost
+
+      await act(async () => {
+        await expect(host.prewarm()).resolves.toEqual({ status: 'ready' })
+      })
+      expect(host.getSnapshot()).toMatchObject({
+        initialization: 'ready',
+        runtime: { workerAlive: true, initialized: true },
+      })
+      expect(runtime.dispose).not.toHaveBeenCalled()
+    })
+
+    it('leaves no initialized runtime when a warm-up settles after unmount', async () => {
+      const runtime = makeRuntime()
+      let resolveInit!: (info: LumaRawRuntimeInfo) => void
+      runtime.init.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveInit = resolve
+          }),
+      )
+      const { host, unmount } = renderOnRealHost(runtime)
+      let warmup!: ReturnType<RawRuntimeHost['prewarm']>
+      act(() => {
+        warmup = host.prewarm()
+      })
+      await waitFor(() => expect(runtime.init).toHaveBeenCalledTimes(1))
+
+      unmount()
+      await act(async () => {})
+      expect(runtime.dispose).toHaveBeenCalledTimes(1)
+      expect(host.getSnapshot().runtime.lastTermination).toMatchObject({
+        reason: 'explicit',
+      })
+
+      await act(async () => {
+        resolveInit(runtime.info)
+        await expect(warmup).resolves.toMatchObject({ status: 'failed' })
+      })
+      expect(host.getSnapshot()).toMatchObject({
+        initialization: 'idle',
+        outcome: null,
+        runtime: { workerAlive: false, initialized: false },
+      })
+    })
   })
 
   it('rejects unsupported files without replacing the active session or opening the runtime', async () => {

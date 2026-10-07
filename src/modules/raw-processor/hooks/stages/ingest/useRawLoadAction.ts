@@ -34,6 +34,7 @@ export function useRawLoadAction({
   yieldToPaint,
   getPrewarmState,
   prewarm,
+  openSession,
   runtimeAbortControllerRef,
   runtimeSessionRef,
   disposedRuntimeSessionsRef,
@@ -75,6 +76,7 @@ export function useRawLoadAction({
         yieldToPaint,
         getPrewarmState,
         prewarm,
+        openSession,
       },
       refs: {
         runtimeAbortControllerRef,
@@ -103,6 +105,7 @@ export function useRawLoadAction({
       getView,
       invalidateExportGraph,
       isMountedRef,
+      openSession,
       pendingLoadSessionIdRef,
       prewarm,
       previewCopyCanvasRef,

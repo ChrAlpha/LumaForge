@@ -44,6 +44,7 @@ describe('useRawIngestStage', () => {
         yieldToPaint: () => Promise.resolve(),
         getPrewarmState: vi.fn(),
         prewarm: vi.fn(),
+        openSession: vi.fn(),
         runtimeAbortControllerRef: { current: null },
         runtimeSessionRef: { current: null as RawRuntimeSession | null },
         disposedRuntimeSessionsRef: {

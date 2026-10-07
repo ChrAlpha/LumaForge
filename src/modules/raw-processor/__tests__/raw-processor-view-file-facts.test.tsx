@@ -3,6 +3,8 @@ import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 
+import { createRawRuntimeHost } from '~/lib/raw/raw-runtime-host'
+
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
 import { RawProcessorView } from '../RawProcessorView'
 
@@ -192,6 +194,7 @@ function createLoadedProcessorState(
     dismissError: vi.fn(),
     updateStats: vi.fn(),
     pipelineRef: { current: null },
+    rawRuntimeHost: createRawRuntimeHost(),
     ...overrides,
     previewViewport: overrides.previewViewport ?? {
       zoom: 1,

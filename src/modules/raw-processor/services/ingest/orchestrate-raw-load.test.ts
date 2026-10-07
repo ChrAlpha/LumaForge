@@ -24,15 +24,17 @@ const previewBackendMock = vi.hoisted(() => ({
   resolvePreviewBackend: vi.fn(),
 }))
 
+const rawRuntimeAdapterMock = vi.hoisted(() => ({
+  openSession: vi.fn(),
+  extractEmbeddedPreview: vi.fn(),
+  decodeQuickRaw: vi.fn(),
+  decodeBoundedHqRaw: vi.fn(),
+  prewarm: vi.fn(),
+  getPrewarmState: vi.fn(),
+}))
+
 vi.mock('~/lib/raw/runtime-adapter', () => ({
-  rawRuntimeAdapter: {
-    openSession: vi.fn(),
-    extractEmbeddedPreview: vi.fn(),
-    decodeQuickRaw: vi.fn(),
-    decodeBoundedHqRaw: vi.fn(),
-    prewarm: vi.fn(),
-    getPrewarmState: vi.fn(),
-  },
+  rawRuntimeAdapter: rawRuntimeAdapterMock,
 }))
 
 vi.mock('~/lib/runtime/capability-vector', () => capabilityVectorMock)
@@ -101,6 +103,7 @@ function buildContext(hooks: OrderingHooks): RawLoadContext {
           order.push('prewarm')
           return { status: 'ready' as const }
         }),
+      openSession: rawRuntimeAdapterMock.openSession,
     },
     refs: {
       runtimeAbortControllerRef: { current: null },

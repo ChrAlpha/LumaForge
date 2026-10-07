@@ -8,8 +8,10 @@ import { resolvePreviewBackend } from '~/lib/preview/gpu-backend'
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { isSupportedRaw } from '~/lib/raw/decoder'
-import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
-import { rawRuntimeAdapter } from '~/lib/raw/runtime-adapter'
+import type {
+  RawRuntimeAdapter,
+  RawRuntimeSession,
+} from '~/lib/raw/runtime-adapter'
 import {
   detectCapabilityVector,
   getCapabilityVectorSnapshot,
@@ -93,6 +95,8 @@ export interface RawLoadContext {
     yieldToPaint: () => Promise<void>
     getPrewarmState: () => import('~/lib/raw/runtime-adapter').PrewarmState
     prewarm: () => Promise<import('~/lib/raw/runtime-adapter').PrewarmOutcome>
+    /** Opens on the same host the load prewarmed. */
+    openSession: RawRuntimeAdapter['openSession']
   }
   refs: {
     runtimeAbortControllerRef: { current: AbortController | null }
@@ -240,7 +244,7 @@ export async function orchestrateRawLoad(
       return
     }
 
-    runtimeSession = await rawRuntimeAdapter.openSession(file, runtimeSignal)
+    runtimeSession = await ctx.services.openSession(file, runtimeSignal)
     if (!matchesActiveSession()) {
       runtimeAbortController.abort()
       return

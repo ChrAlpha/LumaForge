@@ -1,5 +1,12 @@
+import type {
+  LumaRawRuntime,
+  LumaRawRuntimeInfo,
+} from '@lumaforge/luma-raw-runtime'
 import { act, renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
+import { createRawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 
 import { RAW_FILE_ACCEPT } from '../components/Dropzone'
 import type { UseHiddenFilePickerOptions } from './useHiddenFilePicker'
@@ -8,12 +15,6 @@ import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
 vi.mock('./useOnlineLutSources', () => ({
   useOnlineLutSources: () => ({}),
-}))
-vi.mock('./stages/ingest/useRawRuntimeReadiness', () => ({
-  useRawRuntimeReadiness: () => ({
-    runtimeReadinessState: { status: 'idle' },
-    triggerRawRuntimePrewarm: vi.fn(),
-  }),
 }))
 vi.mock('./useCapabilityGate', () => ({
   useCapabilityGate: () => ({ ready: false }),
@@ -26,8 +27,41 @@ vi.mock('./useHiddenFilePicker', () => ({
   },
 }))
 
-function workflowFixture() {
+function makeRuntime() {
+  const info: LumaRawRuntimeInfo = {
+    runtime: 'luma',
+    version: '0.1.0',
+    simd: true,
+    pthreads: true,
+    crossOriginIsolated: true,
+    memoryTier: 'normal',
+    memoryProfile: 'desktop',
+    workerPoolSize: 2,
+  }
   return {
+    init: vi.fn<LumaRawRuntime['init']>().mockResolvedValue(info),
+    probe: vi.fn<LumaRawRuntime['probe']>(),
+    extractEmbeddedPreview: vi.fn<LumaRawRuntime['extractEmbeddedPreview']>(),
+    decodeQuick: vi.fn<LumaRawRuntime['decodeQuick']>(),
+    decodeBoundedHq: vi.fn<LumaRawRuntime['decodeBoundedHq']>(),
+    openSession: vi.fn<LumaRawRuntime['openSession']>(),
+    dispose: vi.fn<LumaRawRuntime['dispose']>(),
+  } satisfies LumaRawRuntime
+}
+
+function coiError() {
+  return Object.assign(new Error('Cross-origin isolation is required.'), {
+    code: 'RAW_CROSS_ORIGIN_ISOLATION_REQUIRED',
+  })
+}
+
+function workflowFixture(
+  rawRuntimeHost: RawRuntimeHost = createRawRuntimeHost({
+    runtimeFactory: () => makeRuntime(),
+  }),
+) {
+  return {
+    rawRuntimeHost,
     status: 'idle',
     hasImage: true,
     loadFile: vi.fn(),
@@ -48,6 +82,11 @@ function workflowFixture() {
 describe('useRawProcessorViewController', () => {
   beforeEach(() => {
     pickerCalls.length = 0
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
   })
 
   it('mounts only the Replace RAW picker, and a picked file loads as a new photo', () => {
@@ -144,5 +183,155 @@ describe('useRawProcessorViewController', () => {
     const file = new File(['x'], 'look.cube')
     await expect(result.current.handleLutDrop([file])).resolves.toBe('failed')
     expect(result.current.handleLutDrop([])).toBeUndefined()
+  })
+
+  describe('runtime readiness', () => {
+    // Outside tests the view warms the RAW engine once the page is idle.
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.stubEnv('MODE', 'production')
+    })
+
+    function renderController(workflow: UseRawWorkflowReturn) {
+      return renderHook(
+        ({ workflow: current }) =>
+          useRawProcessorViewController({
+            rawRouteLocation: { search: '', pathname: '/raw' },
+            workflow: current,
+          }),
+        { initialProps: { workflow } },
+      )
+    }
+
+    it('warms the workflow host once idle and follows its live runtime through idle termination and rewarm', async () => {
+      const runtime = makeRuntime()
+      const runtimeFactory = vi.fn(() => runtime)
+      const host = createRawRuntimeHost({ runtimeFactory, idleMs: 1_000 })
+      const { result } = renderController(workflowFixture(host))
+
+      expect(result.current.runtimeReadinessState).toBe('idle')
+      expect(runtimeFactory).not.toHaveBeenCalled()
+
+      await act(() => vi.advanceTimersByTimeAsync(200))
+      expect(runtime.init).toHaveBeenCalledTimes(1)
+      expect(result.current.runtimeReadinessState).toBe('ready')
+      expect(host.getSnapshot().runtime).toMatchObject({
+        generation: 1,
+        initialized: true,
+      })
+
+      // The worker idles out on its own; an earlier successful warmup does
+      // not keep reporting a ready engine.
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+      expect(runtime.dispose).toHaveBeenCalledTimes(1)
+      expect(host.getSnapshot()).toMatchObject({
+        initialization: 'ready',
+        runtime: { initialized: false, lastTermination: { reason: 'idle' } },
+      })
+      expect(result.current.runtimeReadinessState).toBe('idle')
+
+      await act(async () => {
+        result.current.triggerRawRuntimePrewarm()
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(runtime.init).toHaveBeenCalledTimes(2)
+      expect(host.getSnapshot().runtime).toMatchObject({
+        generation: 2,
+        initialized: true,
+      })
+      expect(result.current.runtimeReadinessState).toBe('ready')
+      // One host, one bridge: the rewarm never built a second runtime source.
+      expect(runtimeFactory).toHaveBeenCalledTimes(2)
+    })
+
+    it('observes the termination the workflow itself asks of its host', async () => {
+      const runtime = makeRuntime()
+      const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
+      const { result } = renderController(workflowFixture(host))
+
+      await act(() => vi.advanceTimersByTimeAsync(200))
+      expect(result.current.runtimeReadinessState).toBe('ready')
+
+      await act(() => host.terminateDecodeBridge())
+      expect(result.current.runtimeReadinessState).toBe('idle')
+    })
+
+    it('reports a pending warmup and retries a recoverable failure', async () => {
+      const runtime = makeRuntime()
+      let rejectInit!: (error: unknown) => void
+      runtime.init.mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectInit = reject
+          }),
+      )
+      const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
+      const { result } = renderController(workflowFixture(host))
+
+      await act(() => vi.advanceTimersByTimeAsync(200))
+      expect(result.current.runtimeReadinessState).toBe('pending')
+
+      await act(async () => {
+        rejectInit(new Error('network blip'))
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current.runtimeReadinessState).toBe('failed')
+
+      await act(async () => {
+        result.current.triggerRawRuntimePrewarm()
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(runtime.init).toHaveBeenCalledTimes(2)
+      expect(result.current.runtimeReadinessState).toBe('ready')
+    })
+
+    it('keeps a cross-origin isolation failure sticky across later triggers', async () => {
+      const runtime = makeRuntime()
+      runtime.init.mockRejectedValue(coiError())
+      const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
+      const { result } = renderController(workflowFixture(host))
+
+      await act(() => vi.advanceTimersByTimeAsync(200))
+      expect(result.current.runtimeReadinessState).toBe('failed')
+
+      await act(async () => {
+        result.current.triggerRawRuntimePrewarm()
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(runtime.init).toHaveBeenCalledTimes(1)
+      expect(result.current.runtimeReadinessState).toBe('failed')
+    })
+
+    it('reads and warms the host of the workflow it is handed now', async () => {
+      const firstRuntime = makeRuntime()
+      const secondRuntime = makeRuntime()
+      const first = workflowFixture(
+        createRawRuntimeHost({ runtimeFactory: () => firstRuntime }),
+      )
+      const second = workflowFixture(
+        createRawRuntimeHost({ runtimeFactory: () => secondRuntime }),
+      )
+      const { result, rerender } = renderController(first)
+
+      rerender({ workflow: second })
+      await act(() => vi.advanceTimersByTimeAsync(200))
+
+      expect(firstRuntime.init).not.toHaveBeenCalled()
+      expect(secondRuntime.init).toHaveBeenCalledTimes(1)
+      expect(result.current.runtimeReadinessState).toBe('ready')
+    })
+
+    it('never starts a runtime before the page is idle or after unmount', async () => {
+      const runtimeFactory = vi.fn(() => makeRuntime())
+      const host = createRawRuntimeHost({ runtimeFactory })
+      const { unmount } = renderController(workflowFixture(host))
+
+      await act(() => vi.advanceTimersByTimeAsync(199))
+      unmount()
+      await vi.advanceTimersByTimeAsync(1_000)
+
+      expect(runtimeFactory).not.toHaveBeenCalled()
+      expect(host.getSnapshot().initialization).toBe('idle')
+    })
   })
 })

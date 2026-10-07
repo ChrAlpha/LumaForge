@@ -8,6 +8,7 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 import type {
   PrewarmOutcome,
   PrewarmState,
+  RawRuntimeAdapter,
   RawRuntimeSession,
 } from '~/lib/raw/runtime-adapter'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
@@ -58,6 +59,7 @@ type UseRawIngestStageInput = {
   yieldToPaint: () => Promise<void>
   getPrewarmState: () => PrewarmState
   prewarm: () => Promise<PrewarmOutcome>
+  openSession: RawRuntimeAdapter['openSession']
   runtimeAbortControllerRef: MutableRefObject<AbortController | null>
   runtimeSessionRef: MutableRefObject<RawRuntimeSession | null>
   disposedRuntimeSessionsRef: MutableRefObject<WeakSet<RawRuntimeSession>>

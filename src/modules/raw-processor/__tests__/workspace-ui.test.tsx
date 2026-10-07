@@ -3,6 +3,7 @@ import {
   NEUTRAL_SELECTIVE_COLOR,
   pickColorGraphIntent,
 } from '@lumaforge/luma-color-runtime'
+import type { LumaRawRuntime } from '@lumaforge/luma-raw-runtime'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Provider } from 'jotai'
@@ -12,6 +13,7 @@ import { afterEach, beforeEach, vi } from 'vitest'
 import { viewportAtom } from '~/atoms/viewport'
 import { jotaiStore } from '~/lib/jotai'
 import { SUPPORTED_RAW_EXTENSIONS } from '~/lib/raw/decoder'
+import { createRawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 
 import { ComparePreviewStage } from '../components/ComparePreviewStage'
 import { LutDropzone } from '../components/Dropzone'
@@ -24,10 +26,6 @@ import type { OriginalReferenceSnapshot } from '../services/compare/original-ref
 
 const mockUseRawWorkflow = vi.hoisted(() => vi.fn())
 const mockUseCapabilityGate = vi.hoisted(() => vi.fn())
-const mockRawRuntimeAdapter = vi.hoisted(() => ({
-  getPrewarmState: vi.fn(),
-  prewarm: vi.fn(),
-}))
 
 vi.mock('../hooks', () => ({
   useRawWorkflow: mockUseRawWorkflow,
@@ -35,10 +33,6 @@ vi.mock('../hooks', () => ({
 
 vi.mock('../hooks/useCapabilityGate', () => ({
   useCapabilityGate: mockUseCapabilityGate,
-}))
-
-vi.mock('~/lib/raw/runtime-adapter', () => ({
-  rawRuntimeAdapter: mockRawRuntimeAdapter,
 }))
 
 const DOTTED_DECODER_EXTENSIONS = new Set(
@@ -234,6 +228,7 @@ function rawProcessorViewState(
     dismissError: vi.fn(),
     updateStats: vi.fn(),
     pipelineRef: { current: null },
+    rawRuntimeHost: createRawRuntimeHost(),
     ...overrides,
     previewViewport: overrides.previewViewport ?? {
       zoom: 1,
@@ -352,10 +347,6 @@ beforeEach(() => {
     supportStatus: 'supported',
     reason: null,
   })
-  mockRawRuntimeAdapter.getPrewarmState.mockReset().mockReturnValue('idle')
-  mockRawRuntimeAdapter.prewarm
-    .mockReset()
-    .mockResolvedValue({ status: 'ready' })
 
   vi.stubGlobal('CSS', {
     supports: vi.fn(() => true),
@@ -379,8 +370,23 @@ afterEach(() => {
 
 describe('rawProcessorView', () => {
   it('syncs RAW engine warmup state into the empty first screen', async () => {
-    mockUseRawWorkflow.mockReturnValue(rawProcessorViewState())
-    mockRawRuntimeAdapter.getPrewarmState.mockReturnValue('pending')
+    // A warmup that never settles keeps the workflow's host pending.
+    const rawRuntimeHost = createRawRuntimeHost({
+      runtimeFactory: () =>
+        ({
+          init: () => new Promise(() => {}),
+          probe: vi.fn(),
+          extractEmbeddedPreview: vi.fn(),
+          decodeQuick: vi.fn(),
+          decodeBoundedHq: vi.fn(),
+          openSession: vi.fn(),
+          dispose: vi.fn(),
+        }) satisfies LumaRawRuntime,
+    })
+    void rawRuntimeHost.prewarm()
+    mockUseRawWorkflow.mockReturnValue(
+      rawProcessorViewState({ rawRuntimeHost }),
+    )
 
     await act(async () => {
       render(<RawProcessorView />)

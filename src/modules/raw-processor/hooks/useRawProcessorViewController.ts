@@ -39,6 +39,7 @@ export function useRawProcessorViewController({
     reset,
     updateStats,
     pipelineRef,
+    rawRuntimeHost,
   } = workflow
   const onlineLutSources = useOnlineLutSources({
     search: rawRouteLocation.search,
@@ -50,7 +51,7 @@ export function useRawProcessorViewController({
         : null,
   })
   const { runtimeReadinessState, triggerRawRuntimePrewarm } =
-    useRawRuntimeReadiness()
+    useRawRuntimeReadiness(rawRuntimeHost)
   const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false)
   const [cpuPreviewBannerDismissed, setCpuPreviewBannerDismissed] =
     useState(false)

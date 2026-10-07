@@ -1,7 +1,22 @@
 import type { Translate } from '~/lib/i18n'
-import type { PrewarmState } from '~/lib/raw/runtime-adapter'
+import type { RawRuntimeHostSnapshot } from '~/lib/raw/raw-runtime-host'
 
-export type RawRuntimeReadinessState = PrewarmState
+export type RawRuntimeReadinessState = 'idle' | 'pending' | 'ready' | 'failed'
+
+/**
+ * Readiness is the host's runtime as it is now: `ready` needs an initialized
+ * worker on the live generation, so a warmup that succeeded before an idle or
+ * explicit termination reads as `idle` again. A failed warmup stays `failed`
+ * until a later attempt starts or a runtime comes up.
+ */
+export function deriveRawRuntimeReadiness(
+  snapshot: RawRuntimeHostSnapshot,
+): RawRuntimeReadinessState {
+  if (snapshot.runtime.initialized) return 'ready'
+  if (snapshot.initialization === 'pending') return 'pending'
+  if (snapshot.initialization === 'failed') return 'failed'
+  return 'idle'
+}
 
 export function getRawRuntimeReadinessCopy(
   t: Translate,

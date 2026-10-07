@@ -13,6 +13,7 @@ import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
+import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import type {
   PipelineStats,
   RawProcessingPipeline,
@@ -169,4 +170,6 @@ export interface UseRawWorkflowReturn {
   dismissError: () => void
   updateStats: (stats: PipelineStats) => void
   pipelineRef: RefObject<RawProcessingPipeline | null>
+  /** The workflow's RAW host; stable for the life of the workflow. */
+  rawRuntimeHost: RawRuntimeHost
 }
