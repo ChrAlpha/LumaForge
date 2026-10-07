@@ -27,12 +27,14 @@ import type {
   LUTContractSelectionState,
   StyleAsset,
   SupportLevel,
+  TransformState,
 } from '../model/session'
 import type { ProcessingStatus } from '../model/workflow'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
 import type { DeliveredExportSize } from '../services/export/delivered-export-size'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import type { PreviewViewport } from '../services/preview/preview-viewport'
+import type { TransformEvent } from '../services/transform/transform-state'
 import type { PreviewPipelineEvacuationHandle } from './stages/preview/usePreviewPipelineEvacuation'
 
 export interface UseRawWorkflowReturn {
@@ -42,6 +44,15 @@ export interface UseRawWorkflowReturn {
     /** Geometry the export reproduces at full resolution; null when neutral. */
     geometry: ExportGeometry | null
     commit: (geometry: ExportGeometry | null) => void
+  }
+  /**
+   * The loaded source's Transform intent and the answers accepted for it;
+   * null without a source. `dispatch` applies one event to that source's
+   * state, and an event raised for any other source changes nothing.
+   */
+  transform?: {
+    state: TransformState | null
+    dispatch: (event: TransformEvent) => void
   }
   /**
    * The color the photo renders with: the user's color and the look, with

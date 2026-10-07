@@ -50,6 +50,26 @@ describe('createImageSession', () => {
         fullResCapability: { status: 'unknown' },
         retryRecommended: false,
       },
+      transform: {
+        sourceId: '00000000-0000-4000-8000-000000000001',
+        intent: {
+          upright: 'off',
+          manual: {
+            vertical: 0,
+            horizontal: 0,
+            rotate: 0,
+            aspect: 0,
+            scale: 100,
+            offsetX: 0,
+            offsetY: 0,
+          },
+          constrainCrop: true,
+        },
+        capture: null,
+        issuedRequests: 0,
+        request: null,
+        accepted: null,
+      },
     })
   })
 
@@ -100,5 +120,22 @@ describe('createImageSession', () => {
 
     expect(session.activeStyle).toBe(activeStyle)
     expect(session.lutProfileSelection).toBe(lutProfileSelection)
+  })
+
+  it('starts every replacing source with a neutral Transform of its own', () => {
+    vi.spyOn(globalThis.crypto, 'randomUUID')
+      .mockReturnValueOnce('00000000-0000-4000-8000-000000000004')
+      .mockReturnValueOnce('00000000-0000-4000-8000-000000000005')
+
+    const first = createImageSession(new File(['raw'], 'a.NEF'))
+    const replacing = createImageSession(new File(['raw'], 'b.NEF'), {
+      activeStyle: null,
+    })
+
+    expect(first.transform?.sourceId).toBe(first.id)
+    expect(replacing.transform?.sourceId).toBe(replacing.id)
+    expect(replacing.transform?.intent).toEqual(first.transform?.intent)
+    expect(replacing.transform?.intent).not.toBe(first.transform?.intent)
+    expect(replacing.transform?.accepted).toBeNull()
   })
 })

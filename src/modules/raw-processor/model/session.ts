@@ -14,6 +14,8 @@ import type {
 } from '~/lib/export/export-plan'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { ImageMetadata } from '~/lib/raw/decoder'
+import type { UprightMode } from '~/lib/transform/geometry/types'
+import type { ManualTransform } from '~/lib/transform/transform-types'
 
 import type { ExportResult } from './export-result'
 
@@ -117,6 +119,54 @@ export type StyleAsset = {
   }
 }
 
+/** What the Transform controls ask for. */
+export type TransformIntent = {
+  upright: UprightMode
+  manual: ManualTransform
+  constrainCrop: boolean
+}
+
+/**
+ * The Transform of one source: the intent the controls set, and the answers
+ * the preview gave for it. A capture is one frame of the photo, named by the
+ * inputs it was read back with; a request is one render asked of that frame.
+ * Only a render answering the newest request on the current capture is ever
+ * accepted, so the accepted geometry always names the frame and request that
+ * produced it. Overlay visibility and the worker are not part of it.
+ */
+export type TransformState = {
+  sourceId: string
+  intent: TransformIntent
+  capture: { key: string; failed: boolean } | null
+  /**
+   * How many requests this state has taken. Request ids are numbered by the
+   * client that posts them and start again with a new client, so each taken
+   * request is also given the next of these as its `issued` number, which no
+   * other request of this source ever holds.
+   */
+  issuedRequests: number
+  /** The newest render asked of the current capture for this intent. */
+  request: {
+    captureKey: string
+    requestId: number
+    issued: number
+    geometry: ExportGeometry
+    failure: 'invalid' | 'unavailable' | null
+  } | null
+  /**
+   * The last geometry a render answered for a non-neutral intent. It stays
+   * held while a newer request is pending or failed; whether it still stands
+   * for the intent is the derived status, not its presence. It answers the
+   * newest request only while both hold the same `issued` number.
+   */
+  accepted: {
+    captureKey: string
+    requestId: number
+    issued: number
+    geometry: ExportGeometry
+  } | null
+}
+
 export type ImageSession = {
   id: string
   createdAt: number
@@ -142,6 +192,12 @@ export type ImageSession = {
    * flag paired with state living somewhere else.
    */
   exportGeometry?: ExportGeometry | null
+  /**
+   * The Transform intent of this source and what the preview answered for it.
+   * `exportGeometry` stays what the export reproduces until this state owns
+   * it.
+   */
+  transform?: TransformState
   lutProfileSelection?: LUTContractSelectionState
   /**
    * The view of this source. The session is the only view owner while it

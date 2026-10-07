@@ -1,12 +1,15 @@
 import type { LumaRawSupportLevel } from '@lumaforge/luma-raw-runtime'
 
 import { DEFAULT_PREVIEW_VIEW } from '~/lib/preview/preview-view'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 
 import type {
   ImageSession,
   LUTContractSelectionState,
   StyleAsset,
   SupportLevel,
+  TransformIntent,
+  TransformState,
 } from './session'
 
 export type RetainedSessionState = {
@@ -23,12 +26,37 @@ export function toAppSupportLevel(level: LumaRawSupportLevel): SupportLevel {
   return level === 'unsupported' ? 'unsupported' : 'experimental'
 }
 
+/** The Transform that leaves the photo as it is, as a fresh value. */
+export function createNeutralTransformIntent(): TransformIntent {
+  return {
+    upright: 'off',
+    manual: { ...NEUTRAL_TRANSFORM },
+    constrainCrop: true,
+  }
+}
+
+/**
+ * A source's Transform before anything was asked of it. Every source starts
+ * neutral; no intent carries over from the one it replaces.
+ */
+export function createTransformState(sourceId: string): TransformState {
+  return {
+    sourceId,
+    intent: createNeutralTransformIntent(),
+    capture: null,
+    issuedRequests: 0,
+    request: null,
+    accepted: null,
+  }
+}
+
 export function createImageSession(
   file: File,
   retained?: RetainedSessionState,
 ): ImageSession {
+  const id = globalThis.crypto.randomUUID()
   return {
-    id: globalThis.crypto.randomUUID(),
+    id,
     createdAt: Date.now(),
     sourceFile: {
       file,
@@ -60,5 +88,6 @@ export function createImageSession(
       fullResCapability: { status: 'unknown' },
       retryRecommended: false,
     },
+    transform: createTransformState(id),
   }
 }
