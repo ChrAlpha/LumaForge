@@ -149,9 +149,17 @@ describe('useRawLoadAction', () => {
     await result.current.loadFile(new File(['raw'], 'frame.dng'))
 
     const [, ctx] = orchestrateLoad.mock.calls[0] as [File, RawLoadContext]
-    expect(ctx.refs).not.toHaveProperty('runtimeSessionRef')
-    expect(ctx.refs).not.toHaveProperty('disposedRuntimeSessionsRef')
-    expect(ctx.refs).not.toHaveProperty('runtimeAbortControllerRef')
+    expect(Object.keys(ctx.refs).sort()).toEqual(
+      [
+        'decodedImageRef',
+        'embeddedPreviewUrlRef',
+        'isMountedRef',
+        'pendingLoadSessionIdRef',
+        'previewCopyCanvasRef',
+        'runtimeWorkSessionIdRef',
+        'sessionRef',
+      ].sort(),
+    )
     expect(ctx.services).not.toHaveProperty('disposeRuntimeSession')
     expect(ctx.services).not.toHaveProperty('openSession')
   })

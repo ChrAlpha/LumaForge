@@ -8,8 +8,8 @@ import type {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { QUICK_PREVIEW_MAX_PIXELS } from './decoder'
-import { disposeLumaRawRuntime } from './luma-runtime-adapter'
-import { createRawRuntimeAdapter } from './runtime-adapter'
+import type { RawRuntimeHostOptions } from './raw-runtime-host'
+import { createRawRuntimeHost } from './raw-runtime-host'
 
 vi.mock('@lumaforge/luma-color-runtime', async (importOriginal) => {
   const actual =
@@ -130,22 +130,30 @@ function makeCalibrationProfile(
   return profile
 }
 
+const hosts: ReturnType<typeof createRawRuntimeHost>[] = []
+
+function createHost(options: RawRuntimeHostOptions) {
+  const host = createRawRuntimeHost(options)
+  hosts.push(host)
+  return host
+}
+
 afterEach(() => {
-  disposeLumaRawRuntime()
+  for (const host of hosts.splice(0)) host.dispose()
   vi.clearAllMocks()
 })
 
-describe('luma-runtime-adapter applyCalibration', () => {
+describe('raw runtime host session applyCalibration', () => {
   it('forwards the calibration profile through the session, including the tone-curve LUT', async () => {
     const applyCalibration = vi
       .fn()
       .mockResolvedValue({ applied: true } as const)
     const { runtime } = makeLumaRuntime({ applyCalibration })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const session = await adapter.openSession(new File(['raw'], 'sample.ARW'))
+    const session = await host.openSession(new File(['raw'], 'sample.ARW'))
     const profile = makeCalibrationProfile(true)
     const controller = new AbortController()
 
@@ -166,11 +174,11 @@ describe('luma-runtime-adapter applyCalibration', () => {
       .fn()
       .mockResolvedValue({ applied: true } as const)
     const { runtime } = makeLumaRuntime({ applyCalibration })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const session = await adapter.openSession(new File(['raw'], 'sample.ARW'))
+    const session = await host.openSession(new File(['raw'], 'sample.ARW'))
     const profile = makeCalibrationProfile(false)
 
     await session.applyCalibration(profile)
@@ -188,11 +196,11 @@ describe('luma-runtime-adapter applyCalibration', () => {
       }),
     )
     const { runtime } = makeLumaRuntime({ applyCalibration })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const session = await adapter.openSession(new File(['raw'], 'sample.ARW'))
+    const session = await host.openSession(new File(['raw'], 'sample.ARW'))
 
     await expect(
       session.applyCalibration(makeCalibrationProfile()),
@@ -208,11 +216,11 @@ describe('luma-runtime-adapter applyCalibration', () => {
       .fn()
       .mockRejectedValue(new Error('matrix invalid'))
     const { runtime } = makeLumaRuntime({ applyCalibration })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const session = await adapter.openSession(new File(['raw'], 'sample.ARW'))
+    const session = await host.openSession(new File(['raw'], 'sample.ARW'))
 
     await expect(
       session.applyCalibration(makeCalibrationProfile()),
@@ -224,7 +232,7 @@ describe('luma-runtime-adapter applyCalibration', () => {
   })
 })
 
-describe('luma-runtime-adapter source exposure', () => {
+describe('raw runtime host source exposure', () => {
   const quickFrame = makeFrame('quick', 20_000)
   const hqFrame = makeFrame('bounded-hq', 40_000)
 
@@ -243,12 +251,12 @@ describe('luma-runtime-adapter source exposure', () => {
       sessionDecodeQuick,
       sessionDecodeBoundedHq,
     })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => fixture.runtime,
+    const host = createHost({
+      runtimeFactory: () => fixture.runtime,
     })
-    const session = await adapter.openSession(new File(['raw'], 'sample.ARW'))
+    const session = await host.openSession(new File(['raw'], 'sample.ARW'))
     vi.mocked(resolveRawRenderExposure).mockClear()
-    return { ...fixture, adapter, session }
+    return { ...fixture, host, session }
   }
 
   it('estimates quick and bounded HQ independently when nothing is pinned', async () => {
@@ -355,10 +363,10 @@ describe('luma-runtime-adapter source exposure', () => {
       .fn()
       .mockRejectedValue(new Error('window decode failed'))
     const { runtime } = makeLumaRuntime({ sessionDecodeBoundedHq })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
-    const session = await adapter.openSession(new File(['raw'], 'sample.ARW'))
+    const session = await host.openSession(new File(['raw'], 'sample.ARW'))
 
     await expect(
       session.decodeBoundedHqRaw({
@@ -389,10 +397,10 @@ describe('luma-runtime-adapter source exposure', () => {
     const runtime = second.runtime
     vi.mocked(runtime.decodeQuick).mockResolvedValue(quickFrame)
     vi.mocked(runtime.decodeBoundedHq).mockResolvedValue(hqFrame)
-    const standaloneQuick = await second.adapter.decodeQuickRaw(
+    const standaloneQuick = await second.host.decodeQuickRaw(
       new File(['raw'], 'sample.ARW'),
     )
-    const standaloneHq = await second.adapter.decodeBoundedHqRaw(
+    const standaloneHq = await second.host.decodeBoundedHqRaw(
       new File(['raw'], 'sample.ARW'),
       { maxOutputPixels: 12_000_000 },
     )

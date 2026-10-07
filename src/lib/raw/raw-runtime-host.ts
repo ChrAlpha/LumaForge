@@ -1,3 +1,4 @@
+import type { LumaEmbeddedPreview } from '@lumaforge/luma-raw-runtime'
 import { isWasmJpegRuntimeAvailable } from '@lumaforge/render-engine/export'
 
 import type {
@@ -8,6 +9,7 @@ import { RawDecodeBridge } from '~/lib/workers/raw-decode-bridge'
 import type { WorkerBridgeLifecycleListener } from '~/lib/workers/worker-bridge'
 import { notifyLifecycleListeners } from '~/lib/workers/worker-bridge'
 
+import type { DecodedImage, ProgressCallback } from './decoder'
 import type { RawDecodeBridgePort } from './luma-runtime-adapter'
 import {
   createDefaultLumaRawRuntime,
@@ -22,7 +24,6 @@ import type {
   JpegRuntimeAvailabilityProbe,
   PrewarmOutcome,
   PrewarmState,
-  RawRuntimeAdapter,
   RawRuntimeSession,
 } from './runtime-adapter'
 
@@ -72,26 +73,31 @@ export interface RawRuntimeSessionLease {
   cancel: () => void
 }
 
-export interface RawRuntimeHost extends RawRuntimeAdapter {
+export interface RawRuntimeHost {
   /** Stable identity until the next lifecycle change. */
   getSnapshot: () => RawRuntimeHostSnapshot
   /** Observing never retains the runtime or delays its idle termination. */
   subscribe: (listener: () => void) => () => void
+  prewarm: () => Promise<PrewarmOutcome>
+  getPrewarmState: () => PrewarmState
+  openSession: (file: File, signal?: AbortSignal) => Promise<RawRuntimeSession>
   extractEmbeddedPreview: (
     file: File,
     signal?: AbortSignal,
-  ) => ReturnType<RawRuntimeAdapter['extractEmbeddedPreview']>
+  ) => Promise<LumaEmbeddedPreview | null>
   decodeQuickRaw: (
     file: File,
-    onProgress?: Parameters<RawRuntimeAdapter['decodeQuickRaw']>[1],
+    onProgress?: ProgressCallback,
     signal?: AbortSignal,
-  ) => ReturnType<RawRuntimeAdapter['decodeQuickRaw']>
+  ) => Promise<DecodedImage>
   decodeBoundedHqRaw: (
     file: File,
     options: { maxOutputPixels: number },
-    onProgress?: Parameters<RawRuntimeAdapter['decodeBoundedHqRaw']>[2],
+    onProgress?: ProgressCallback,
     signal?: AbortSignal,
-  ) => ReturnType<RawRuntimeAdapter['decodeBoundedHqRaw']>
+  ) => Promise<DecodedImage>
+  /** Terminates the runtime's current worker generation. */
+  terminateDecodeBridge: () => Promise<void>
   /**
    * Cancels the active session lease, then hands out the next one: the host
    * owns at most one source session at a time.

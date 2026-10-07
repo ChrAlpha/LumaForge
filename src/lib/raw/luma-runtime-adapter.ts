@@ -6,14 +6,18 @@ import type {
   LumaRawExportUnsupportedReason,
   LumaRawRuntime,
 } from '@lumaforge/luma-raw-runtime'
-import { JPEG_RUNTIME_UNAVAILABLE_MESSAGE } from '@lumaforge/render-engine/export'
+import type { ProcessedExportRefusal } from '@lumaforge/render-engine/export'
+import {
+  assessProcessedExport,
+  JPEG_RUNTIME_UNAVAILABLE_MESSAGE,
+} from '@lumaforge/render-engine/export'
 import { deriveInteractivePolicy } from '@lumaforge/render-engine/policy'
 
 import {
   detectCapabilityVector,
   getCapabilityVectorSnapshot,
 } from '~/lib/runtime/capability-vector'
-import { RawDecodeBridge } from '~/lib/workers/raw-decode-bridge'
+import type { RawDecodeBridge } from '~/lib/workers/raw-decode-bridge'
 
 import { frameToDecodedImage } from './decoded-image'
 import type {
@@ -24,23 +28,9 @@ import type {
 import { QUICK_PREVIEW_MAX_PIXELS } from './decoder'
 import type {
   JpegRuntimeAvailabilityProbe,
+  PrewarmOutcome,
   RawRuntimeSession,
 } from './runtime-adapter'
-
-export type PrewarmState = 'idle' | 'pending' | 'ready' | 'failed'
-
-export interface PrewarmOutcome {
-  status: 'ready' | 'failed'
-  reason?: string
-  recoverable?: boolean
-}
-
-let prewarmState: PrewarmState = 'idle'
-let prewarmOutcome: PrewarmOutcome | null = null
-let prewarmInFlight: Promise<PrewarmOutcome> | null = null
-
-let singletonBridge = createDefaultRawDecodeBridge()
-const runtimeFactoryBridges = new Map<() => LumaRawRuntime, RawDecodeBridge>()
 
 /** The decode bridge operations a RAW stage runs on. */
 export type RawDecodeBridgePort = Pick<
@@ -82,32 +72,8 @@ export async function createDefaultLumaRawRuntime(): Promise<LumaRawRuntime> {
   })
 }
 
-function createDefaultRawDecodeBridge() {
-  return new RawDecodeBridge({ runtimeFactory: createDefaultLumaRawRuntime })
-}
-
-function getRawDecodeBridge(runtimeFactory?: () => LumaRawRuntime) {
-  if (runtimeFactory) {
-    const existing = runtimeFactoryBridges.get(runtimeFactory)
-    if (existing) return existing
-
-    const bridge = new RawDecodeBridge({ runtimeFactory })
-    runtimeFactoryBridges.set(runtimeFactory, bridge)
-    return bridge
-  }
-
-  return singletonBridge
-}
-
 export function createRuntimeSignal(signal?: AbortSignal) {
   return signal ?? new AbortController().signal
-}
-
-async function resetRawDecodeBridges() {
-  const bridges = [singletonBridge, ...runtimeFactoryBridges.values()]
-  singletonBridge = createDefaultRawDecodeBridge()
-  runtimeFactoryBridges.clear()
-  await Promise.all(bridges.map((bridge) => bridge.terminate()))
 }
 
 function getRawErrorCode(error: unknown): RawAdapterErrorCode | undefined {
@@ -134,32 +100,19 @@ function normalizeRawAdapterError(
   return new RawAdapterError(code, message, { cause: error })
 }
 
-function getUnsupportedExportFactReasons(capability: LumaRawExportCapability) {
-  const reasons: LumaRawExportUnsupportedReason[] = []
-
-  if (
-    capability.strategy !== 'libraw-processed-window' ||
-    capability.windows.librawProcessed !== true
-  ) {
-    reasons.push('processed-window-unavailable')
-  }
-
-  const color = capability.color
-  const hasRuntimeColorProcessingFacts =
-    color !== undefined &&
-    'cameraWhiteBalanceAppliedByRuntime' in color &&
-    'cameraMatrixAppliedByRuntime' in color
-
-  if (
-    !hasRuntimeColorProcessingFacts ||
-    color.workingSpace !== 'linear-prophoto-rgb' ||
-    color.cameraWhiteBalanceAppliedByRuntime !== true ||
-    color.cameraMatrixAppliedByRuntime !== true
-  ) {
-    reasons.push('missing-color-transform')
-  }
-
-  return reasons
+/** The runtime reason each engine refusal is reported under. */
+const EXPORT_REFUSAL_REASONS: Record<
+  ProcessedExportRefusal,
+  LumaRawExportUnsupportedReason
+> = {
+  'source-unsupported': 'unsupported-source',
+  'invalid-dimensions': 'missing-dimensions',
+  'strategy-not-processed-window': 'processed-window-unavailable',
+  'processed-windows-unavailable': 'processed-window-unavailable',
+  'color-facts-missing': 'missing-color-transform',
+  'working-space-not-linear-prophoto': 'missing-color-transform',
+  'white-balance-not-applied-by-runtime': 'missing-color-transform',
+  'camera-matrix-not-applied-by-runtime': 'missing-color-transform',
 }
 
 function createJpegRuntimeUnavailableProbeError(cause?: unknown) {
@@ -194,58 +147,25 @@ async function resolveExportCapability(
     return rawCapability
   }
 
-  const unsupportedFactReasons = getUnsupportedExportFactReasons(rawCapability)
-  if (unsupportedFactReasons.length > 0) {
+  // The engine assessment is the full-resolution export's own admission
+  // gate; a capability it refuses is reported unsupported before the JPEG
+  // runtime is probed.
+  const assessment = assessProcessedExport(rawCapability)
+  if (!assessment.exportable) {
     return {
       ...rawCapability,
       supported: false,
-      reasons: unsupportedFactReasons,
+      reasons: [
+        ...new Set(
+          assessment.reasons.map((refusal) => EXPORT_REFUSAL_REASONS[refusal]),
+        ),
+      ],
     }
   }
 
   await assertJpegRuntimeAvailable(jpegRuntimeAvailabilityProbe)
 
   return rawCapability
-}
-
-export function prewarmLumaRawRuntime(
-  runtimeFactory?: () => LumaRawRuntime,
-  signal?: AbortSignal,
-): Promise<PrewarmOutcome> {
-  if (prewarmState === 'ready' && prewarmOutcome) {
-    return Promise.resolve(prewarmOutcome)
-  }
-  // Only an irrecoverable failure stays cached until dispose; after a
-  // recoverable one the next explicit call starts a fresh attempt.
-  if (prewarmState === 'failed' && prewarmOutcome?.recoverable === false) {
-    return Promise.resolve(prewarmOutcome)
-  }
-  if (prewarmInFlight) {
-    return prewarmInFlight
-  }
-  prewarmState = 'pending'
-  prewarmInFlight = (async () => {
-    try {
-      const bridge = getRawDecodeBridge(runtimeFactory)
-      await bridge.prewarm(createRuntimeSignal(signal))
-      const outcome: PrewarmOutcome = { status: 'ready' }
-      prewarmOutcome = outcome
-      prewarmState = 'ready'
-      return outcome
-    } catch (error) {
-      const outcome = toPrewarmFailureOutcome(error)
-      prewarmOutcome = outcome
-      prewarmState = 'failed'
-      return outcome
-    } finally {
-      prewarmInFlight = null
-    }
-  })()
-  return prewarmInFlight
-}
-
-export function getPrewarmStateForLuma(): PrewarmState {
-  return prewarmState
 }
 
 /**
@@ -423,73 +343,6 @@ export async function openRawSessionOnBridge(
       session.dispose()
     },
   }
-}
-
-export function extractEmbeddedPreviewWithLuma(
-  file: File,
-  runtimeFactory?: () => LumaRawRuntime,
-  signal?: AbortSignal,
-): Promise<LumaEmbeddedPreview | null> {
-  return extractEmbeddedPreviewOnBridge(
-    getRawDecodeBridge(runtimeFactory),
-    file,
-    signal,
-  )
-}
-
-export function decodeQuickRawWithLuma(
-  file: File,
-  onProgress?: ProgressCallback,
-  runtimeFactory?: () => LumaRawRuntime,
-  signal?: AbortSignal,
-): Promise<DecodedImage> {
-  return decodeQuickRawOnBridge(
-    getRawDecodeBridge(runtimeFactory),
-    file,
-    onProgress,
-    signal,
-  )
-}
-
-export function decodeBoundedHqRawWithLuma(
-  file: File,
-  options: { maxOutputPixels: number },
-  onProgress?: ProgressCallback,
-  runtimeFactory?: () => LumaRawRuntime,
-  signal?: AbortSignal,
-): Promise<DecodedImage> {
-  return decodeBoundedHqRawOnBridge(
-    getRawDecodeBridge(runtimeFactory),
-    file,
-    options,
-    onProgress,
-    signal,
-  )
-}
-
-export function openRawSessionWithLuma(
-  file: File,
-  runtimeFactory?: () => LumaRawRuntime,
-  signal?: AbortSignal,
-  jpegRuntimeAvailabilityProbe?: JpegRuntimeAvailabilityProbe,
-): Promise<RawRuntimeSession> {
-  return openRawSessionOnBridge(
-    getRawDecodeBridge(runtimeFactory),
-    file,
-    signal,
-    jpegRuntimeAvailabilityProbe,
-  )
-}
-
-export function disposeLumaRawRuntime() {
-  void resetRawDecodeBridges()
-  prewarmState = 'idle'
-  prewarmOutcome = null
-  prewarmInFlight = null
-}
-
-export function terminateLumaRawDecodeBridge() {
-  return resetRawDecodeBridges()
 }
 
 export function toRawAdapterError(error: unknown) {

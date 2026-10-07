@@ -135,7 +135,6 @@
   ],
   "cycles": [
     "src/lib/profiles/catalog.ts > src/lib/profiles/lut-contract.ts",
-    "src/lib/raw/luma-runtime-adapter.ts > src/lib/raw/runtime-adapter.ts",
     "src/modules/raw-processor/components/mobile/MobileModeDock.tsx > src/modules/raw-processor/components/mobile/mobile-stage-layout.ts"
   ]
 }

@@ -66,7 +66,7 @@ import type { UseRawWorkflowReturn } from './useRawWorkflow'
 import { useRawWorkflow } from './useRawWorkflow'
 import { useRawWorkflowRefs } from './useRawWorkflowRefs'
 
-const rawRuntimeAdapterMock = vi.hoisted(() => ({
+const rawRuntimeMock = vi.hoisted(() => ({
   openSession: vi.fn(),
   extractEmbeddedPreview: vi.fn(),
   decodeQuickRaw: vi.fn(),
@@ -128,7 +128,7 @@ vi.mock('~/lib/preview/gpu-backend', () => {
 })
 
 // Each workflow builds its own RAW host. The stand-in records every host it
-// builds and forwards its calls to the adapter mock the tests configure; a
+// builds and forwards its calls to the runtime mock the tests configure; a
 // test that sets `realRawRuntimeHostOptions` gets a real host instead.
 const rawRuntimeHosts = vi.hoisted(() => [] as RawRuntimeHost[])
 const realRawRuntimeHostOptions = vi.hoisted(() => ({
@@ -156,27 +156,27 @@ vi.mock('~/lib/raw/raw-runtime-host', async (importOriginal) => {
       }),
     })
     // Session leases keep the host's ownership rules, opening through the
-    // adapter mock instead of a native bridge.
+    // runtime mock instead of a native bridge.
     const sessions = actual.createRawRuntimeSessionLeases((file, signal) =>
-      rawRuntimeAdapterMock.openSession(file, signal),
+      rawRuntimeMock.openSession(file, signal),
     )
     const host: RawRuntimeHost = {
       getSnapshot: () => snapshot,
       subscribe: () => () => {},
-      prewarm: vi.fn(() => rawRuntimeAdapterMock.prewarm()),
-      getPrewarmState: vi.fn(() => rawRuntimeAdapterMock.getPrewarmState()),
+      prewarm: vi.fn(() => rawRuntimeMock.prewarm()),
+      getPrewarmState: vi.fn(() => rawRuntimeMock.getPrewarmState()),
       openSession: vi.fn((file: File, signal?: AbortSignal) =>
-        rawRuntimeAdapterMock.openSession(file, signal),
+        rawRuntimeMock.openSession(file, signal),
       ),
       extractEmbeddedPreview: vi.fn((file: File) =>
-        rawRuntimeAdapterMock.extractEmbeddedPreview(file),
+        rawRuntimeMock.extractEmbeddedPreview(file),
       ),
       decodeQuickRaw: vi.fn((file: File) =>
-        rawRuntimeAdapterMock.decodeQuickRaw(file),
+        rawRuntimeMock.decodeQuickRaw(file),
       ),
       decodeBoundedHqRaw: vi.fn(
         (file: File, options: { maxOutputPixels: number }) =>
-          rawRuntimeAdapterMock.decodeBoundedHqRaw(file, options),
+          rawRuntimeMock.decodeBoundedHqRaw(file, options),
       ),
       terminateDecodeBridge: vi.fn(async () => {}),
       beginSession: vi.fn(sessions.begin),
@@ -599,15 +599,13 @@ describe('useRawWorkflow embedded preview state', () => {
   beforeEach(() => {
     resetToDefaults()
     jotaiStore.set(currentSessionAtom, null)
-    rawRuntimeAdapterMock.openSession.mockReset()
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockReset()
-    rawRuntimeAdapterMock.decodeQuickRaw.mockReset()
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockReset()
-    rawRuntimeAdapterMock.probeExportCapability.mockReset()
-    rawRuntimeAdapterMock.getPrewarmState.mockReset().mockReturnValue('ready')
-    rawRuntimeAdapterMock.prewarm
-      .mockReset()
-      .mockResolvedValue({ status: 'ready' })
+    rawRuntimeMock.openSession.mockReset()
+    rawRuntimeMock.extractEmbeddedPreview.mockReset()
+    rawRuntimeMock.decodeQuickRaw.mockReset()
+    rawRuntimeMock.decodeBoundedHqRaw.mockReset()
+    rawRuntimeMock.probeExportCapability.mockReset()
+    rawRuntimeMock.getPrewarmState.mockReset().mockReturnValue('ready')
+    rawRuntimeMock.prewarm.mockReset().mockResolvedValue({ status: 'ready' })
     exportSystemMock.runFullResolutionExportJob.mockReset()
     exportSystemMock.runPreviewExportJob.mockReset()
     onlineProfileFetchMock.fetchCachedBytesWithLimit.mockReset()
@@ -632,24 +630,22 @@ describe('useRawWorkflow embedded preview state', () => {
       createObjectURL: vi.fn(() => 'blob:embedded-preview'),
       revokeObjectURL: vi.fn(),
     })
-    rawRuntimeAdapterMock.openSession.mockImplementation(() =>
+    rawRuntimeMock.openSession.mockImplementation(() =>
       Promise.resolve({
         sourceDimensions: defaultSourceDimensions,
-        extractEmbeddedPreview: rawRuntimeAdapterMock.extractEmbeddedPreview,
-        decodeQuickRaw: rawRuntimeAdapterMock.decodeQuickRaw,
-        decodeBoundedHqRaw: rawRuntimeAdapterMock.decodeBoundedHqRaw,
-        probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+        extractEmbeddedPreview: rawRuntimeMock.extractEmbeddedPreview,
+        decodeQuickRaw: rawRuntimeMock.decodeQuickRaw,
+        decodeBoundedHqRaw: rawRuntimeMock.decodeBoundedHqRaw,
+        probeExportCapability: rawRuntimeMock.probeExportCapability,
         dispose: vi.fn(),
       }),
     )
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
-    rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue(
+    rawRuntimeMock.probeExportCapability.mockResolvedValue(
       createSupportedCapability(),
     )
   })
@@ -668,7 +664,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
   it('warms, loads, and restores on the one RAW host it exposes', async () => {
     rawRuntimeHosts.length = 0
-    rawRuntimeAdapterMock.getPrewarmState.mockReturnValue('idle')
+    rawRuntimeMock.getPrewarmState.mockReturnValue('idle')
     const { result, rerender } = renderHook(() => useRawWorkflow(), {
       wrapper,
     })
@@ -687,8 +683,8 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(host.getPrewarmState).toHaveBeenCalled()
     expect(host.prewarm).toHaveBeenCalledTimes(1)
     expect(host.beginSession).toHaveBeenCalledTimes(1)
-    expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(1)
-    expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledWith(
+    expect(rawRuntimeMock.openSession).toHaveBeenCalledTimes(1)
+    expect(rawRuntimeMock.openSession).toHaveBeenCalledWith(
       file,
       expect.any(AbortSignal),
     )
@@ -699,7 +695,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     // Restore takes its session from the same host slot as the load.
     expect(host.beginSession).toHaveBeenCalledTimes(2)
-    expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(2)
+    expect(rawRuntimeMock.openSession).toHaveBeenCalledTimes(2)
     expect(host.openSession).not.toHaveBeenCalled()
     expect(rawRuntimeHosts).toHaveLength(1)
   })
@@ -707,12 +703,12 @@ describe('useRawWorkflow embedded preview state', () => {
   it('releases its RAW host after the RAW session when it unmounts', async () => {
     rawRuntimeHosts.length = 0
     const sessionDispose = vi.fn()
-    rawRuntimeAdapterMock.openSession.mockResolvedValue({
+    rawRuntimeMock.openSession.mockResolvedValue({
       sourceDimensions: defaultSourceDimensions,
-      extractEmbeddedPreview: rawRuntimeAdapterMock.extractEmbeddedPreview,
-      decodeQuickRaw: rawRuntimeAdapterMock.decodeQuickRaw,
-      decodeBoundedHqRaw: rawRuntimeAdapterMock.decodeBoundedHqRaw,
-      probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+      extractEmbeddedPreview: rawRuntimeMock.extractEmbeddedPreview,
+      decodeQuickRaw: rawRuntimeMock.decodeQuickRaw,
+      decodeBoundedHqRaw: rawRuntimeMock.decodeBoundedHqRaw,
+      probeExportCapability: rawRuntimeMock.probeExportCapability,
       dispose: sessionDispose,
     })
     const { result, unmount } = renderHook(() => useRawWorkflow(), {
@@ -742,14 +738,14 @@ describe('useRawWorkflow embedded preview state', () => {
         extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
         decodeQuickRaw: vi.fn().mockResolvedValue(createDecodedImage('quick')),
         decodeBoundedHqRaw: vi.fn(() => boundedHq.promise),
-        probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+        probeExportCapability: rawRuntimeMock.probeExportCapability,
         dispose: vi.fn(),
       }
       return { session, boundedHq }
     }
 
     function openSignalOf(call: number) {
-      return rawRuntimeAdapterMock.openSession.mock.calls[call]?.[1] as
+      return rawRuntimeMock.openSession.mock.calls[call]?.[1] as
         | AbortSignal
         | undefined
     }
@@ -764,7 +760,7 @@ describe('useRawWorkflow embedded preview state', () => {
     it('cancels a replaced load through its host and disposes that session once', async () => {
       const first = createHeldSession()
       const second = createHeldSession()
-      rawRuntimeAdapterMock.openSession
+      rawRuntimeMock.openSession
         .mockResolvedValueOnce(first.session)
         .mockResolvedValueOnce(second.session)
       const { result, host } = renderWorkflowHost()
@@ -815,7 +811,7 @@ describe('useRawWorkflow embedded preview state', () => {
         deferred<ReturnType<typeof createHeldSession>['session']>()
       const late = createHeldSession()
       const current = createHeldSession()
-      rawRuntimeAdapterMock.openSession
+      rawRuntimeMock.openSession
         .mockReturnValueOnce(lateOpen.promise)
         .mockResolvedValueOnce(current.session)
       const { result } = renderWorkflowHost()
@@ -824,7 +820,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await act(async () => {
         firstLoad = result.current.loadFile(new File(['raw'], 'first.ARW'))
         await waitFor(() =>
-          expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(1),
+          expect(rawRuntimeMock.openSession).toHaveBeenCalledTimes(1),
         )
       })
       await act(async () => {
@@ -849,7 +845,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     it('fails an open without a session to dispose and loads the next file on the same host', async () => {
       const next = createHeldSession()
-      rawRuntimeAdapterMock.openSession
+      rawRuntimeMock.openSession
         .mockRejectedValueOnce(new Error('open failed'))
         .mockResolvedValueOnce(next.session)
       const { result, host } = renderWorkflowHost()
@@ -873,7 +869,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     it('cancels an in-flight load on its host once when the workflow unmounts', async () => {
       const held = createHeldSession()
-      rawRuntimeAdapterMock.openSession.mockResolvedValueOnce(held.session)
+      rawRuntimeMock.openSession.mockResolvedValueOnce(held.session)
       const { result, host, unmount } = renderWorkflowHost()
 
       await act(async () => {
@@ -899,7 +895,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     it('cancels an in-flight load on its host once when the session resets', async () => {
       const held = createHeldSession()
-      rawRuntimeAdapterMock.openSession.mockResolvedValueOnce(held.session)
+      rawRuntimeMock.openSession.mockResolvedValueOnce(held.session)
       const { result, host } = renderWorkflowHost()
 
       await act(async () => {
@@ -925,7 +921,7 @@ describe('useRawWorkflow embedded preview state', () => {
     it('routes a compare split written in a replacing loadFile tick into the replacement only', async () => {
       const first = createHeldSession()
       const second = createHeldSession()
-      rawRuntimeAdapterMock.openSession
+      rawRuntimeMock.openSession
         .mockResolvedValueOnce(first.session)
         .mockResolvedValueOnce(second.session)
       const { result } = renderWorkflowHost()
@@ -985,7 +981,7 @@ describe('useRawWorkflow embedded preview state', () => {
             },
           }),
         ),
-        probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+        probeExportCapability: rawRuntimeMock.probeExportCapability,
         dispose: vi.fn(),
       }
     }
@@ -998,14 +994,14 @@ describe('useRawWorkflow embedded preview state', () => {
         extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
         decodeQuickRaw: vi.fn(() => quick.promise),
         decodeBoundedHqRaw: vi.fn(),
-        probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+        probeExportCapability: rawRuntimeMock.probeExportCapability,
         dispose: vi.fn(),
       }
       return { session, quick }
     }
 
     function openSignalOf(call: number) {
-      return rawRuntimeAdapterMock.openSession.mock.calls[call]?.[1] as
+      return rawRuntimeMock.openSession.mock.calls[call]?.[1] as
         | AbortSignal
         | undefined
     }
@@ -1049,7 +1045,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     it('restores on a host lease that ends with the restore', async () => {
       const restore = createRestoreSession()
-      rawRuntimeAdapterMock.openSession
+      rawRuntimeMock.openSession
         .mockResolvedValueOnce(createLoadSession('first'))
         .mockResolvedValueOnce(restore.session)
       const { result, host } = await renderExported()
@@ -1089,7 +1085,7 @@ describe('useRawWorkflow embedded preview state', () => {
       const secondHq = deferred<DecodedImage>()
       const second = createLoadSession('second')
       second.decodeBoundedHqRaw.mockReturnValue(secondHq.promise)
-      rawRuntimeAdapterMock.openSession
+      rawRuntimeMock.openSession
         .mockResolvedValueOnce(createLoadSession('first'))
         .mockResolvedValueOnce(restore.session)
         .mockResolvedValueOnce(second)
@@ -1140,7 +1136,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     it('cancels a restore on its host when the session resets', async () => {
       const restore = createRestoreSession()
-      rawRuntimeAdapterMock.openSession
+      rawRuntimeMock.openSession
         .mockResolvedValueOnce(createLoadSession('first'))
         .mockResolvedValueOnce(restore.session)
       const { result, host } = await renderExported()
@@ -1168,7 +1164,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     it('cancels a restore on its host when the workflow unmounts', async () => {
       const restore = createRestoreSession()
-      rawRuntimeAdapterMock.openSession
+      rawRuntimeMock.openSession
         .mockResolvedValueOnce(createLoadSession('first'))
         .mockResolvedValueOnce(restore.session)
       const { result, host, unmount } = await renderExported()
@@ -1188,7 +1184,7 @@ describe('useRawWorkflow embedded preview state', () => {
     it('keeps the export after a failed restore and restores with the quick pin on the next try', async () => {
       const failed = createRestoreSession()
       const retried = createRestoreSession()
-      rawRuntimeAdapterMock.openSession
+      rawRuntimeMock.openSession
         .mockResolvedValueOnce(createLoadSession('first'))
         .mockResolvedValueOnce(failed.session)
         .mockResolvedValueOnce(retried.session)
@@ -1257,7 +1253,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     function openSignalOf(call: number) {
-      return rawRuntimeAdapterMock.openSession.mock.calls[call]?.[1] as
+      return rawRuntimeMock.openSession.mock.calls[call]?.[1] as
         | AbortSignal
         | undefined
     }
@@ -1277,12 +1273,12 @@ describe('useRawWorkflow embedded preview state', () => {
       // The bounded HQ decode is still in flight on the load's lease.
       const boundedHq = deferred<DecodedImage>()
       const sessionDispose = vi.fn()
-      rawRuntimeAdapterMock.openSession.mockResolvedValueOnce({
+      rawRuntimeMock.openSession.mockResolvedValueOnce({
         sourceDimensions: defaultSourceDimensions,
         extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
         decodeQuickRaw: vi.fn().mockResolvedValue(createDecodedImage('quick')),
         decodeBoundedHqRaw: vi.fn(() => boundedHq.promise),
-        probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+        probeExportCapability: rawRuntimeMock.probeExportCapability,
         dispose: sessionDispose,
       })
       const workerRuns = vi.fn()
@@ -1401,7 +1397,7 @@ describe('useRawWorkflow embedded preview state', () => {
       })
 
       expect(host.beginSession).toHaveBeenCalledTimes(2)
-      expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(2)
+      expect(rawRuntimeMock.openSession).toHaveBeenCalledTimes(2)
       expect(openSignalOf(1)?.aborted).toBe(false)
       expect(result.current.status).toBe('ready')
       expect(result.current.decodedImageRef.current?.source).toBe('quick')
@@ -1556,18 +1552,18 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.viewMode).toBe('processed')
     expect(result.current.compareSplit).toBe(0.8)
     expect(jotaiStore.get(currentSessionAtom)).toBe(previousSession)
-    expect(rawRuntimeAdapterMock.openSession).not.toHaveBeenCalled()
+    expect(rawRuntimeMock.openSession).not.toHaveBeenCalled()
   })
 
   it('publishes no camera-calibration stage and never applies calibration on load', async () => {
     const applyCalibration = vi.fn()
     const dispose = vi.fn()
-    rawRuntimeAdapterMock.openSession.mockResolvedValue({
+    rawRuntimeMock.openSession.mockResolvedValue({
       sourceDimensions: defaultSourceDimensions,
-      extractEmbeddedPreview: rawRuntimeAdapterMock.extractEmbeddedPreview,
-      decodeQuickRaw: rawRuntimeAdapterMock.decodeQuickRaw,
-      decodeBoundedHqRaw: rawRuntimeAdapterMock.decodeBoundedHqRaw,
-      probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+      extractEmbeddedPreview: rawRuntimeMock.extractEmbeddedPreview,
+      decodeQuickRaw: rawRuntimeMock.decodeQuickRaw,
+      decodeBoundedHqRaw: rawRuntimeMock.decodeBoundedHqRaw,
+      probeExportCapability: rawRuntimeMock.probeExportCapability,
       applyCalibration,
       dispose,
     })
@@ -1643,7 +1639,7 @@ describe('useRawWorkflow embedded preview state', () => {
     // Export starts only through exportImage; nothing reselects, reloads or
     // arms a retry for the interrupted file.
     expect(exportRecoveryKeys(result.current)).toEqual([])
-    expect(rawRuntimeAdapterMock.openSession).not.toHaveBeenCalled()
+    expect(rawRuntimeMock.openSession).not.toHaveBeenCalled()
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
 
@@ -2464,13 +2460,11 @@ describe('useRawWorkflow embedded preview state', () => {
     const quickDecode = deferred<DecodedImage>()
     const boundedHqDecode = deferred<DecodedImage>()
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockReturnValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockReturnValue(
       embeddedPreview.promise,
     )
-    rawRuntimeAdapterMock.decodeQuickRaw.mockReturnValue(quickDecode.promise)
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockReturnValue(
-      boundedHqDecode.promise,
-    )
+    rawRuntimeMock.decodeQuickRaw.mockReturnValue(quickDecode.promise)
+    rawRuntimeMock.decodeBoundedHqRaw.mockReturnValue(boundedHqDecode.promise)
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
     let loadPromise!: Promise<void>
@@ -2527,15 +2521,15 @@ describe('useRawWorkflow embedded preview state', () => {
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
       window.setTimeout(() => callback(performance.now()), 0),
     )
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(
       createDecodedImage('quick', {
         width: 2,
         height: 1,
         data: new Uint16Array([0, 0, 0, 65535, 65535, 65535]),
       }),
     )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq', {
         width: 2,
         height: 1,
@@ -2573,15 +2567,15 @@ describe('useRawWorkflow embedded preview state', () => {
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
       window.setTimeout(() => callback(performance.now()), 0),
     )
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(
       createDecodedImage('quick', {
         width: 2,
         height: 1,
         data: new Uint16Array([0, 0, 0, 65535, 65535, 65535]),
       }),
     )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq', {
         width: 2,
         height: 1,
@@ -2631,7 +2625,7 @@ describe('useRawWorkflow embedded preview state', () => {
       .mockResolvedValue(createDecodedImage('bounded-hq'))
     const dispose = vi.fn()
 
-    rawRuntimeAdapterMock.openSession.mockResolvedValue({
+    rawRuntimeMock.openSession.mockResolvedValue({
       sourceDimensions: defaultSourceDimensions,
       extractEmbeddedPreview,
       decodeQuickRaw,
@@ -2645,12 +2639,9 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(file)
     })
 
-    const openSignal = rawRuntimeAdapterMock.openSession.mock.calls[0]?.[1]
-    expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(1)
-    expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledWith(
-      file,
-      openSignal,
-    )
+    const openSignal = rawRuntimeMock.openSession.mock.calls[0]?.[1]
+    expect(rawRuntimeMock.openSession).toHaveBeenCalledTimes(1)
+    expect(rawRuntimeMock.openSession).toHaveBeenCalledWith(file, openSignal)
     expect(openSignal).toBeInstanceOf(AbortSignal)
     expect(openSignal.aborted).toBe(false)
     expect(extractEmbeddedPreview).toHaveBeenCalledWith(openSignal)
@@ -2667,9 +2658,9 @@ describe('useRawWorkflow embedded preview state', () => {
       openSignal,
     )
     expect(dispose).toHaveBeenCalledTimes(1)
-    expect(rawRuntimeAdapterMock.extractEmbeddedPreview).not.toHaveBeenCalled()
-    expect(rawRuntimeAdapterMock.decodeQuickRaw).not.toHaveBeenCalled()
-    expect(rawRuntimeAdapterMock.decodeBoundedHqRaw).not.toHaveBeenCalled()
+    expect(rawRuntimeMock.extractEmbeddedPreview).not.toHaveBeenCalled()
+    expect(rawRuntimeMock.decodeQuickRaw).not.toHaveBeenCalled()
+    expect(rawRuntimeMock.decodeBoundedHqRaw).not.toHaveBeenCalled()
   })
 
   it('preserves compare split in the new session when loading a file', async () => {
@@ -3147,10 +3138,8 @@ describe('useRawWorkflow embedded preview state', () => {
 
   it('enters ready state after quick preview before bounded HQ resolves', async () => {
     const boundedHq = deferred<DecodedImage>()
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockReturnValue(boundedHq.promise)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockReturnValue(boundedHq.promise)
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
 
@@ -3163,10 +3152,8 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('keeps quick preview and no global error when bounded HQ fails', async () => {
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockRejectedValue(
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockRejectedValue(
       Object.assign(new Error('bounded failed'), {
         code: 'RAW_BOUNDED_HQ_DECODE_FAILED',
       }),
@@ -3199,7 +3186,7 @@ describe('useRawWorkflow embedded preview state', () => {
       }),
     )
 
-    rawRuntimeAdapterMock.openSession.mockResolvedValue({
+    rawRuntimeMock.openSession.mockResolvedValue({
       sourceDimensions: defaultSourceDimensions,
       extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
       decodeQuickRaw,
@@ -3251,16 +3238,16 @@ describe('useRawWorkflow embedded preview state', () => {
     const boundedHqDecode = deferred<DecodedImage>()
     const runtimeCallOrder: string[] = []
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockImplementation(() => {
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockImplementation(() => {
       runtimeCallOrder.push('quick')
       return quickDecode.promise
     })
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockImplementation(() => {
+    rawRuntimeMock.decodeBoundedHqRaw.mockImplementation(() => {
       runtimeCallOrder.push('bounded-hq')
       return boundedHqDecode.promise
     })
-    rawRuntimeAdapterMock.probeExportCapability.mockImplementation(() => {
+    rawRuntimeMock.probeExportCapability.mockImplementation(() => {
       runtimeCallOrder.push('probe-export')
       return Promise.resolve(createSupportedCapability())
     })
@@ -3278,9 +3265,9 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await waitFor(() => {
-      expect(rawRuntimeAdapterMock.decodeQuickRaw).toHaveBeenCalled()
+      expect(rawRuntimeMock.decodeQuickRaw).toHaveBeenCalled()
     })
-    expect(rawRuntimeAdapterMock.probeExportCapability).not.toHaveBeenCalled()
+    expect(rawRuntimeMock.probeExportCapability).not.toHaveBeenCalled()
     expect(
       jotaiStore.get(currentSessionAtom)?.exportState.fullResCapability,
     ).toEqual({ status: 'probing' })
@@ -3305,10 +3292,10 @@ describe('useRawWorkflow embedded preview state', () => {
       await flushPromises()
     })
     await waitFor(() => {
-      expect(rawRuntimeAdapterMock.probeExportCapability).toHaveBeenCalled()
+      expect(rawRuntimeMock.probeExportCapability).toHaveBeenCalled()
     })
     await waitFor(() => {
-      expect(rawRuntimeAdapterMock.decodeBoundedHqRaw).toHaveBeenCalled()
+      expect(rawRuntimeMock.decodeBoundedHqRaw).toHaveBeenCalled()
     })
     expect(runtimeCallOrder.indexOf('probe-export')).toBeGreaterThan(
       runtimeCallOrder.indexOf('quick'),
@@ -3342,7 +3329,7 @@ describe('useRawWorkflow embedded preview state', () => {
       .fn()
       .mockResolvedValue(createSupportedCapability())
 
-    rawRuntimeAdapterMock.openSession.mockResolvedValue({
+    rawRuntimeMock.openSession.mockResolvedValue({
       sourceDimensions: defaultSourceDimensions,
       extractEmbeddedPreview: vi.fn().mockResolvedValue({
         width: 1600,
@@ -3719,14 +3706,14 @@ describe('useRawWorkflow embedded preview state', () => {
   it.each(['missing-color-transform', 'unsupported-orientation'])(
     'keeps full-resolution export disabled when capability reports %s',
     async (reason) => {
-      rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-      rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
+      rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+      rawRuntimeMock.decodeQuickRaw.mockResolvedValue(
         createDecodedImage('quick'),
       )
-      rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+      rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
         createDecodedImage('bounded-hq'),
       )
-      rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue(
+      rawRuntimeMock.probeExportCapability.mockResolvedValue(
         createUnsupportedCapability(reason),
       )
 
@@ -3758,14 +3745,12 @@ describe('useRawWorkflow embedded preview state', () => {
   )
 
   it('keeps full-resolution export disabled for raw-mosaic window capability', async () => {
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
-    rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue(
+    rawRuntimeMock.probeExportCapability.mockResolvedValue(
       createRawMosaicCapability(),
     )
 
@@ -3799,16 +3784,12 @@ describe('useRawWorkflow embedded preview state', () => {
     const reason =
       'Full-resolution JPEG export is not available in this browser build.'
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
-    rawRuntimeAdapterMock.probeExportCapability.mockRejectedValue(
-      new Error(reason),
-    )
+    rawRuntimeMock.probeExportCapability.mockRejectedValue(new Error(reason))
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
 
@@ -3843,12 +3824,12 @@ describe('useRawWorkflow embedded preview state', () => {
       source: 'image-statistics',
     }
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(
       createDecodedImage('quick', { renderExposure }),
     )
     // A bounded HQ frame that estimated on its own does not move the export.
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq', {
         renderExposure: {
           ev: 1.3,
@@ -3857,7 +3838,7 @@ describe('useRawWorkflow embedded preview state', () => {
         },
       }),
     )
-    rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue(
+    rawRuntimeMock.probeExportCapability.mockResolvedValue(
       createSupportedCapability(),
     )
     exportSystemMock.runFullResolutionExportJob.mockImplementation(
@@ -4039,11 +4020,9 @@ describe('useRawWorkflow embedded preview state', () => {
       clipboard: { write: vi.fn() },
     })
     vi.stubGlobal('ClipboardItem', FakeClipboardItem)
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq', {
         width: 6000,
         height: 4000,
@@ -4160,11 +4139,9 @@ describe('useRawWorkflow embedded preview state', () => {
       clipboard: { write: vi.fn() },
     })
     vi.stubGlobal('ClipboardItem', PngOnlyClipboardItem)
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq', {
         width: 4000,
         height: 3000,
@@ -4230,14 +4207,12 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     vi.stubGlobal('crossOriginIsolated', false)
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
-    rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue(
+    rawRuntimeMock.probeExportCapability.mockResolvedValue(
       createSupportedCapability(),
     )
     exportSystemMock.runFullResolutionExportJob.mockReturnValue(
@@ -4417,10 +4392,10 @@ describe('useRawWorkflow embedded preview state', () => {
       multiplier: Math.pow(2, 0.6),
       source: 'image-statistics',
     }
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(
       createDecodedImage('quick', { renderExposure: quickExposure }),
     )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq', {
         renderExposure: {
           ev: 0.7,
@@ -4460,7 +4435,7 @@ describe('useRawWorkflow embedded preview state', () => {
       ).restorePreviewAfterExport()
     })
 
-    expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(2)
+    expect(rawRuntimeMock.openSession).toHaveBeenCalledTimes(2)
     expect(result.current.previewSuspended).toBe(false)
     expect(result.current.decodedImageRef.current?.source).toBe('quick')
     expect(result.current.exportResult?.filename).toBe(
@@ -4480,7 +4455,7 @@ describe('useRawWorkflow embedded preview state', () => {
       ev: quickExposure.ev,
       multiplier: quickExposure.multiplier,
     })
-    expect(rawRuntimeAdapterMock.decodeQuickRaw).toHaveBeenLastCalledWith(
+    expect(rawRuntimeMock.decodeQuickRaw).toHaveBeenLastCalledWith(
       expect.any(Function),
       expect.any(AbortSignal),
       { pinnedExposure: quickExposure },
@@ -4591,7 +4566,7 @@ describe('useRawWorkflow embedded preview state', () => {
     const runtimeDispose = vi.fn()
     let boundedHqSignal: AbortSignal | undefined
 
-    rawRuntimeAdapterMock.openSession.mockResolvedValue({
+    rawRuntimeMock.openSession.mockResolvedValue({
       sourceDimensions: defaultSourceDimensions,
       extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
       decodeQuickRaw: vi.fn().mockResolvedValue(createDecodedImage('quick')),
@@ -4666,7 +4641,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     vi.stubGlobal('crossOriginIsolated', false)
 
-    rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue({
+    rawRuntimeMock.probeExportCapability.mockResolvedValue({
       ...createSupportedCapability(),
       width: 11662,
       height: 8746,
@@ -4717,7 +4692,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     vi.stubGlobal('crossOriginIsolated', false)
 
-    rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue({
+    rawRuntimeMock.probeExportCapability.mockResolvedValue({
       ...createSupportedCapability(),
       width: 11662,
       height: 8746,
@@ -4769,14 +4744,12 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     vi.stubGlobal('crossOriginIsolated', false)
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
-    rawRuntimeAdapterMock.probeExportCapability.mockResolvedValue(
+    rawRuntimeMock.probeExportCapability.mockResolvedValue(
       createSupportedCapability(),
     )
     let markersDuringJob: unknown[] = []
@@ -4877,7 +4850,7 @@ describe('useRawWorkflow embedded preview state', () => {
     const pipelineDispose = vi.fn()
     let boundedHqSignal: AbortSignal | undefined
 
-    rawRuntimeAdapterMock.openSession.mockResolvedValue({
+    rawRuntimeMock.openSession.mockResolvedValue({
       sourceDimensions: defaultSourceDimensions,
       extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
       decodeQuickRaw: vi.fn().mockResolvedValue(createDecodedImage('quick')),
@@ -5162,7 +5135,7 @@ describe('useRawWorkflow embedded preview state', () => {
     const pipelineDispose = vi.fn()
 
     try {
-      rawRuntimeAdapterMock.openSession.mockResolvedValue({
+      rawRuntimeMock.openSession.mockResolvedValue({
         sourceDimensions: defaultSourceDimensions,
         extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
         decodeQuickRaw: vi.fn().mockResolvedValue(createDecodedImage('quick')),
@@ -5277,11 +5250,9 @@ describe('useRawWorkflow embedded preview state', () => {
     const runExport = deferred<{ filename: string; blob: Blob }>()
     const disposePreviewPipeline = vi.fn(() => pipelineDispose.promise)
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockReturnValue(
@@ -5331,11 +5302,9 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('downloads a ready export only when downloadExportResult is called', async () => {
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -5492,11 +5461,9 @@ describe('useRawWorkflow embedded preview state', () => {
       cleanup,
     }
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -5540,11 +5507,9 @@ describe('useRawWorkflow embedded preview state', () => {
       bytes: makeJfifOnlyJpegBytes(),
     })
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -5572,11 +5537,9 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('keeps a ready export after share cancellation', async () => {
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -5613,11 +5576,9 @@ describe('useRawWorkflow embedded preview state', () => {
       canShare,
       share: vi.fn().mockResolvedValue(undefined),
     })
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -5650,11 +5611,9 @@ describe('useRawWorkflow embedded preview state', () => {
       cleanup,
     }
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -5691,11 +5650,9 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('clears a ready export when generic params change render graph inputs but not when the view moves', async () => {
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -5730,11 +5687,9 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('clears a ready export when generic params change intensity', async () => {
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -5762,11 +5717,9 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('clears a ready export when user tone changes', async () => {
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -5875,11 +5828,9 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('passes user tone into full-resolution export graph', async () => {
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -5936,11 +5887,9 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('passes user color into full-resolution export graph', async () => {
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -5976,11 +5925,9 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('preserves non-neutral tone when a new image loads', async () => {
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
@@ -6013,11 +5960,9 @@ describe('useRawWorkflow embedded preview state', () => {
   })
 
   it('preserves a ready export when controls repeat the active render graph', async () => {
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -6055,11 +6000,9 @@ describe('useRawWorkflow embedded preview state', () => {
     }>()
     let exportSignal: AbortSignal | undefined
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockImplementation(
@@ -6332,13 +6275,11 @@ describe('useRawWorkflow embedded preview state', () => {
       source: 'image-statistics',
     }
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(
       createDecodedImage('quick', { renderExposure: quickExposure }),
     )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockReturnValue(
-      boundedHqDecode.promise,
-    )
+    rawRuntimeMock.decodeBoundedHqRaw.mockReturnValue(boundedHqDecode.promise)
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
 
     await act(async () => {
@@ -6390,7 +6331,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     // The HQ frame renders with the source exposure the quick decode pinned,
     // so a size upgrade is not a new render and the export stays valid.
-    expect(rawRuntimeAdapterMock.decodeBoundedHqRaw).toHaveBeenCalledWith(
+    expect(rawRuntimeMock.decodeBoundedHqRaw).toHaveBeenCalledWith(
       { maxOutputPixels: expect.any(Number), pinnedExposure: quickExposure },
       undefined,
       expect.any(AbortSignal),
@@ -6425,11 +6366,9 @@ describe('useRawWorkflow embedded preview state', () => {
       clipboard: { write: clipboardWrite },
     })
     vi.stubGlobal('ClipboardItem', FakeClipboardItem)
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
     exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
@@ -6518,7 +6457,7 @@ describe('useRawWorkflow embedded preview state', () => {
     let staleSignal: AbortSignal | undefined
     let currentSignal: AbortSignal | undefined
 
-    rawRuntimeAdapterMock.openSession
+    rawRuntimeMock.openSession
       .mockImplementationOnce((_file: File, signal?: AbortSignal) => {
         staleSignal = signal
         return Promise.resolve(staleSession)
@@ -6585,7 +6524,7 @@ describe('useRawWorkflow embedded preview state', () => {
         .mockResolvedValue(createSupportedCapability()),
       dispose: vi.fn(),
     }
-    rawRuntimeAdapterMock.openSession.mockImplementationOnce(() =>
+    rawRuntimeMock.openSession.mockImplementationOnce(() =>
       Promise.resolve(staleSession),
     )
     const currentExposure: RawRenderExposure = {
@@ -6593,7 +6532,7 @@ describe('useRawWorkflow embedded preview state', () => {
       multiplier: Math.pow(2, 0.5),
       source: 'image-statistics',
     }
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(
       createDecodedImage('quick', { renderExposure: currentExposure }),
     )
 
@@ -6662,11 +6601,9 @@ describe('useRawWorkflow embedded preview state', () => {
         return staleExport.promise
       },
     )
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
 
@@ -6776,13 +6713,9 @@ describe('useRawWorkflow embedded preview state', () => {
   it('preserves ready session across unmount while bounded HQ is still pending', async () => {
     const boundedHqDecode = deferred<DecodedImage>()
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockReturnValue(
-      boundedHqDecode.promise,
-    )
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockReturnValue(boundedHqDecode.promise)
 
     const mounted = renderHook(() => useRawWorkflow(), { wrapper })
 
@@ -6905,7 +6838,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
 
-    expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(1)
+    expect(rawRuntimeMock.openSession).toHaveBeenCalledTimes(1)
     expect(result.current.status).toBe('ready')
     expect(result.current.displaySource).toBe('bounded-hq')
     expect(result.current.canExport).toBe(true)
@@ -7026,7 +6959,7 @@ describe('useRawWorkflow embedded preview state', () => {
     }
     let signal: AbortSignal | undefined
 
-    rawRuntimeAdapterMock.openSession.mockImplementation(
+    rawRuntimeMock.openSession.mockImplementation(
       (_file: File, nextSignal?: AbortSignal) => {
         signal = nextSignal
         return Promise.resolve(runtimeSession)
@@ -7087,7 +7020,7 @@ describe('useRawWorkflow embedded preview state', () => {
     let staleSignal: AbortSignal | undefined
     let currentSignal: AbortSignal | undefined
 
-    rawRuntimeAdapterMock.openSession
+    rawRuntimeMock.openSession
       .mockImplementationOnce((_file: File, signal?: AbortSignal) => {
         staleSignal = signal
         return Promise.resolve(staleSession)
@@ -7141,7 +7074,7 @@ describe('useRawWorkflow embedded preview state', () => {
     }
     let signal: AbortSignal | undefined
 
-    rawRuntimeAdapterMock.openSession.mockImplementation(
+    rawRuntimeMock.openSession.mockImplementation(
       (_file: File, nextSignal?: AbortSignal) => {
         signal = nextSignal
         return Promise.resolve(runtimeSession)
@@ -7185,13 +7118,11 @@ describe('useRawWorkflow embedded preview state', () => {
       timings: Record<string, number | undefined>
     } | null>()
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockReturnValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockReturnValue(
       embeddedPreview.promise,
     )
-    rawRuntimeAdapterMock.decodeQuickRaw.mockResolvedValue(
-      createDecodedImage('quick'),
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
 
@@ -7225,11 +7156,9 @@ describe('useRawWorkflow embedded preview state', () => {
     const currentQuickDecode = deferred<DecodedImage>()
     const currentBoundedHqDecode = deferred<DecodedImage>()
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockReturnValue(
-      currentQuickDecode.promise,
-    )
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockReturnValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockReturnValue(currentQuickDecode.promise)
+    rawRuntimeMock.decodeBoundedHqRaw.mockReturnValue(
       currentBoundedHqDecode.promise,
     )
 
@@ -7283,9 +7212,9 @@ describe('useRawWorkflow embedded preview state', () => {
     // spurious unhandled-rejection warning.
     quickDecode.promise.catch(() => undefined)
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockReturnValue(quickDecode.promise)
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockReturnValue(quickDecode.promise)
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
 
@@ -7331,9 +7260,9 @@ describe('useRawWorkflow embedded preview state', () => {
   it('does not recreate the discarded session when a quick decode resolves after unmount', async () => {
     const quickDecode = deferred<DecodedImage>()
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockReturnValue(quickDecode.promise)
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockReturnValue(quickDecode.promise)
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
 
@@ -7347,7 +7276,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await Promise.resolve()
     })
     await waitFor(() => {
-      expect(rawRuntimeAdapterMock.decodeQuickRaw).toHaveBeenCalled()
+      expect(rawRuntimeMock.decodeQuickRaw).toHaveBeenCalled()
     })
 
     act(() => {
@@ -7366,7 +7295,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(jotaiStore.get(currentSessionAtom)).toBeNull()
     expect(remounted.result.current.status).toBe('idle')
     expect(remounted.result.current.displaySource).toBe('none')
-    expect(rawRuntimeAdapterMock.probeExportCapability).not.toHaveBeenCalled()
+    expect(rawRuntimeMock.probeExportCapability).not.toHaveBeenCalled()
     expect(toastMock.success).not.toHaveBeenCalled()
     expect(toastMock.error).not.toHaveBeenCalled()
 
@@ -7380,9 +7309,9 @@ describe('useRawWorkflow embedded preview state', () => {
     // the rejection lands before the orchestrator resumes.
     quickDecode.promise.catch(() => undefined)
 
-    rawRuntimeAdapterMock.extractEmbeddedPreview.mockResolvedValue(null)
-    rawRuntimeAdapterMock.decodeQuickRaw.mockReturnValue(quickDecode.promise)
-    rawRuntimeAdapterMock.decodeBoundedHqRaw.mockResolvedValue(
+    rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
+    rawRuntimeMock.decodeQuickRaw.mockReturnValue(quickDecode.promise)
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
       createDecodedImage('bounded-hq'),
     )
 

@@ -413,6 +413,42 @@ describe('raw runtime host', () => {
     })
   })
 
+  it('lets a disposed attempt that fails late neither record its failure nor end the newer attempt', async () => {
+    const stale = deferred<LumaRawRuntimeInfo>()
+    const fresh = deferred<LumaRawRuntimeInfo>()
+    const runtime = makeRuntime({
+      init: vi
+        .fn<LumaRawRuntime['init']>()
+        .mockImplementationOnce(() => stale.promise)
+        .mockImplementationOnce(() => fresh.promise),
+    })
+    const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
+
+    const attemptA = host.prewarm()
+    await vi.waitFor(() => expect(runtime.init).toHaveBeenCalledTimes(1))
+    host.dispose()
+    const attemptB = host.prewarm()
+    expect(attemptB).not.toBe(attemptA)
+
+    // A sticky failure from the disposed attempt must not become history.
+    stale.reject(coiError())
+    await expect(attemptA).resolves.toMatchObject({ status: 'failed' })
+
+    expect(host.getSnapshot()).toMatchObject({
+      initialization: 'pending',
+      outcome: null,
+    })
+    expect(host.prewarm()).toBe(attemptB)
+    await vi.waitFor(() => expect(runtime.init).toHaveBeenCalledTimes(2))
+
+    fresh.resolve(makeRuntimeInfo())
+    await expect(attemptB).resolves.toEqual({ status: 'ready' })
+    expect(host.getSnapshot()).toMatchObject({
+      initialization: 'ready',
+      outcome: { status: 'ready' },
+    })
+  })
+
   it('isolates a throwing subscriber and stops notifying after unsubscribe', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {

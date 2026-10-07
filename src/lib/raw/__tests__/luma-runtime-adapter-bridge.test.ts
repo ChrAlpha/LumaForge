@@ -6,11 +6,8 @@ import {
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
 
-import {
-  decodeQuickRawWithLuma,
-  disposeLumaRawRuntime,
-  terminateLumaRawDecodeBridge,
-} from '../luma-runtime-adapter'
+import type { RawRuntimeHostOptions } from '../raw-runtime-host'
+import { createRawRuntimeHost } from '../raw-runtime-host'
 
 function makeFrame(): LumaRawFrame {
   return {
@@ -51,20 +48,26 @@ function fakeRuntime(
   } as unknown as LumaRawRuntime
 }
 
+const hosts: ReturnType<typeof createRawRuntimeHost>[] = []
+
+function createHost(options: RawRuntimeHostOptions = {}) {
+  const host = createRawRuntimeHost(options)
+  hosts.push(host)
+  return host
+}
+
 afterEach(() => {
-  disposeLumaRawRuntime()
+  for (const host of hosts.splice(0)) host.dispose()
   resetCapabilityVectorForTest()
   vi.doUnmock('@lumaforge/luma-raw-runtime')
 })
 
-describe('lumaRuntimeAdapter bridge migration', () => {
+describe('raw runtime host decode bridge', () => {
   it('produces a DecodedImage for a quick preview via RawDecodeBridge', async () => {
     const runtimeFactory = vi.fn(() => fakeRuntime())
 
-    const result = await decodeQuickRawWithLuma(
+    const result = await createHost({ runtimeFactory }).decodeQuickRaw(
       new File([], 'a.dng'),
-      undefined,
-      runtimeFactory,
     )
 
     expect(result.width).toBe(1)
@@ -77,10 +80,9 @@ describe('lumaRuntimeAdapter bridge migration', () => {
     const runtimeFactory = vi.fn(() => runtime)
     const controller = new AbortController()
 
-    await decodeQuickRawWithLuma(
+    await createHost({ runtimeFactory }).decodeQuickRaw(
       new File([], 'a.dng'),
       undefined,
-      runtimeFactory,
       controller.signal,
     )
 
@@ -91,12 +93,10 @@ describe('lumaRuntimeAdapter bridge migration', () => {
     const runtime = fakeRuntime()
     const runtimeFactory = vi.fn(() => runtime)
 
-    await decodeQuickRawWithLuma(
-      new File([], 'a.dng'),
-      undefined,
-      runtimeFactory,
-    )
-    await terminateLumaRawDecodeBridge()
+    const host = createHost({ runtimeFactory })
+
+    await host.decodeQuickRaw(new File([], 'a.dng'))
+    await host.terminateDecodeBridge()
 
     expect(runtime.dispose).toHaveBeenCalledTimes(1)
   })
@@ -117,7 +117,7 @@ describe('lumaRuntimeAdapter bridge migration', () => {
       createLumaRawRuntime,
     }))
 
-    await decodeQuickRawWithLuma(new File([], 'a.dng'))
+    await createHost().decodeQuickRaw(new File([], 'a.dng'))
 
     expect(createLumaRawRuntime).toHaveBeenCalledWith({
       memoryProfile: 'low-memory',

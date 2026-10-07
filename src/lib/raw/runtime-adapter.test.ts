@@ -11,8 +11,8 @@ import {
   BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
 } from './decoder'
-import { disposeLumaRawRuntime } from './luma-runtime-adapter'
-import { createRawRuntimeAdapter } from './runtime-adapter'
+import type { RawRuntimeHostOptions } from './raw-runtime-host'
+import { createRawRuntimeHost } from './raw-runtime-host'
 
 function makeRuntimeInfo(): LumaRawRuntimeInfo {
   return {
@@ -183,19 +183,27 @@ function makeLumaRuntime(
   }
 }
 
+const hosts: ReturnType<typeof createRawRuntimeHost>[] = []
+
+function createHost(options: RawRuntimeHostOptions) {
+  const host = createRawRuntimeHost(options)
+  hosts.push(host)
+  return host
+}
+
 afterEach(() => {
-  disposeLumaRawRuntime()
+  for (const host of hosts.splice(0)) host.dispose()
   vi.clearAllMocks()
 })
 
-describe('raw runtime adapter', () => {
+describe('raw runtime host conversion and export gate', () => {
   it('uses the luma runtime by default without an env flag', async () => {
     const { runtime } = makeLumaRuntime()
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    await adapter.decodeQuickRaw(new File(['raw'], 'sample.ARW'))
+    await host.decodeQuickRaw(new File(['raw'], 'sample.ARW'))
 
     expect(runtime.init).toHaveBeenCalledTimes(1)
     expect(runtime.decodeQuick).toHaveBeenCalledTimes(1)
@@ -203,11 +211,11 @@ describe('raw runtime adapter', () => {
 
   it('returns embedded preview bytes from the default luma runtime', async () => {
     const { runtime } = makeLumaRuntime()
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const preview = await adapter.extractEmbeddedPreview(
+    const preview = await host.extractEmbeddedPreview(
       new File(['raw'], 'sample.ARW'),
     )
 
@@ -224,11 +232,11 @@ describe('raw runtime adapter', () => {
   it('preserves RGB16 Linear ProPhoto quick decode data', async () => {
     const quickData = new Uint16Array([0, 32768, 65535])
     const { runtime } = makeLumaRuntime(quickData)
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const image = await adapter.decodeQuickRaw(new File(['raw'], 'sample.ARW'))
+    const image = await host.decodeQuickRaw(new File(['raw'], 'sample.ARW'))
 
     expect(image.data).toBe(quickData)
     expect(image.data).toBeInstanceOf(Uint16Array)
@@ -252,11 +260,11 @@ describe('raw runtime adapter', () => {
     const { runtime } = makeLumaRuntime({
       decodeQuick: vi.fn().mockResolvedValue(frame),
     })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const image = await adapter.decodeQuickRaw(new File(['raw'], 'sample.DNG'))
+    const image = await host.decodeQuickRaw(new File(['raw'], 'sample.DNG'))
 
     expect(image.renderExposure).toEqual({
       ev: 1,
@@ -276,11 +284,11 @@ describe('raw runtime adapter', () => {
     const { runtime } = makeLumaRuntime({
       decodeQuick: vi.fn().mockResolvedValue(frame),
     })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const image = await adapter.decodeQuickRaw(new File(['raw'], 'sample.RAF'))
+    const image = await host.decodeQuickRaw(new File(['raw'], 'sample.RAF'))
 
     expect(image.renderExposure.source).toBe('image-statistics')
     expect(image.renderExposure.ev).toBeGreaterThan(0)
@@ -295,12 +303,12 @@ describe('raw runtime adapter', () => {
       },
     )
     vi.mocked(runtime.init).mockRejectedValue(runtimeError)
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
     await expect(
-      adapter.decodeQuickRaw(new File(['raw'], 'sample.ARW')),
+      host.decodeQuickRaw(new File(['raw'], 'sample.ARW')),
     ).rejects.toMatchObject({
       code: 'RAW_CROSS_ORIGIN_ISOLATION_REQUIRED',
       message: 'Cross-origin isolation is required.',
@@ -339,13 +347,13 @@ describe('raw runtime adapter', () => {
       }),
     })
 
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
       jpegRuntimeAvailabilityProbe: vi.fn().mockReturnValue(true),
     })
 
     const file = new File(['raw'], 'sample.ARW')
-    const session = await adapter.openSession(file, openSignal)
+    const session = await host.openSession(file, openSignal)
     await session.extractEmbeddedPreview(stageSignal)
     await session.probeExportCapability?.(stageSignal)
     await session.decodeQuickRaw(undefined, stageSignal)
@@ -399,10 +407,10 @@ describe('raw runtime adapter', () => {
         dispose: vi.fn(),
       }),
     })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
-    const session = await adapter.openSession(new File(['raw'], 'sample.RAF'))
+    const session = await host.openSession(new File(['raw'], 'sample.RAF'))
 
     const image = await session.decodeBoundedHqRaw({
       maxOutputPixels: BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
@@ -438,10 +446,10 @@ describe('raw runtime adapter', () => {
         dispose: vi.fn(),
       }),
     })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
-    const session = await adapter.openSession(new File(['raw'], 'sample.RAF'))
+    const session = await host.openSession(new File(['raw'], 'sample.RAF'))
 
     await expect(
       session.decodeBoundedHqRaw({
@@ -476,12 +484,12 @@ describe('raw runtime adapter', () => {
         dispose: vi.fn(),
       }),
     })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
       jpegRuntimeAvailabilityProbe,
     })
 
-    const session = await adapter.openSession(new File(['raw'], 'sample.ARW'))
+    const session = await host.openSession(new File(['raw'], 'sample.ARW'))
 
     await expect(session.probeExportCapability?.()).resolves.toMatchObject({
       supported: true,
@@ -533,14 +541,12 @@ describe('raw runtime adapter', () => {
           dispose: sessionDispose,
         }),
       })
-      const adapter = createRawRuntimeAdapter({
-        lumaRuntimeFactory: () => runtime,
+      const host = createHost({
+        runtimeFactory: () => runtime,
         jpegRuntimeAvailabilityProbe: () => true,
       })
 
-      const session = await adapter.openSession(
-        new File(['raw'], 'GFX100RF.RAF'),
-      )
+      const session = await host.openSession(new File(['raw'], 'GFX100RF.RAF'))
       // A 100 MP quick decode can outlast the bridge idle window on its own;
       // the session's requests never pass through the bridge queue.
       await vi.advanceTimersByTimeAsync(30_000)
@@ -584,12 +590,12 @@ describe('raw runtime adapter', () => {
         dispose: vi.fn(),
       }),
     })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
       jpegRuntimeAvailabilityProbe,
     })
 
-    const session = await adapter.openSession(new File(['raw'], 'sample.ARW'))
+    const session = await host.openSession(new File(['raw'], 'sample.ARW'))
 
     await expect(session.probeExportCapability?.()).rejects.toMatchObject({
       message: JPEG_RUNTIME_UNAVAILABLE_MESSAGE,
@@ -613,6 +619,17 @@ describe('raw runtime adapter', () => {
       'missing processed window',
       { windows: { librawProcessed: false, rawMosaic: false } },
       ['processed-window-unavailable'],
+    ],
+    ['missing dimensions', { width: 0 }, ['missing-dimensions']],
+    [
+      'a working space other than linear ProPhoto',
+      {
+        color: {
+          ...makeCapability().color,
+          workingSpace: 'linear-srgb',
+        },
+      },
+      ['missing-color-transform'],
     ],
   ] as Array<
     [
@@ -649,12 +666,12 @@ describe('raw runtime adapter', () => {
           dispose: vi.fn(),
         }),
       })
-      const adapter = createRawRuntimeAdapter({
-        lumaRuntimeFactory: () => runtime,
+      const host = createHost({
+        runtimeFactory: () => runtime,
         jpegRuntimeAvailabilityProbe,
       })
 
-      const session = await adapter.openSession(new File(['raw'], 'sample.ARW'))
+      const session = await host.openSession(new File(['raw'], 'sample.ARW'))
 
       await expect(session.probeExportCapability?.()).resolves.toMatchObject({
         supported: false,
@@ -668,12 +685,12 @@ describe('raw runtime adapter', () => {
     const { runtime } = makeLumaRuntime({
       openSession: vi.fn().mockRejectedValue(new Error('open exploded')),
     })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
     await expect(
-      adapter.openSession(new File(['raw'], 'sample.ARW')),
+      host.openSession(new File(['raw'], 'sample.ARW')),
     ).rejects.toMatchObject({
       name: 'RawAdapterError',
       code: 'RAW_OPEN_FAILED',
@@ -709,10 +726,10 @@ describe('raw runtime adapter', () => {
         dispose: vi.fn(),
       }),
     })
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
-    const session = await adapter.openSession(new File(['raw'], 'sample.ARW'))
+    const session = await host.openSession(new File(['raw'], 'sample.ARW'))
 
     await expect(session.extractEmbeddedPreview()).rejects.toMatchObject({
       name: 'RawAdapterError',
@@ -735,7 +752,7 @@ describe('raw runtime adapter', () => {
     })
   })
 
-  it('shares one singleton runtime across concurrent first luma calls', async () => {
+  it('shares one default runtime across concurrent first calls on a host', async () => {
     vi.resetModules()
 
     const { runtime } = makeLumaRuntime()
@@ -745,18 +762,20 @@ describe('raw runtime adapter', () => {
     }))
 
     try {
-      const { decodeQuickRawWithLuma, disposeLumaRawRuntime } =
-        await import('./luma-runtime-adapter')
+      const { createRawRuntimeHost } = await import('./raw-runtime-host')
+      const host = createRawRuntimeHost({
+        jpegRuntimeAvailabilityProbe: () => true,
+      })
 
       await Promise.all([
-        decodeQuickRawWithLuma(new File(['raw-a'], 'a.ARW')),
-        decodeQuickRawWithLuma(new File(['raw-b'], 'b.ARW')),
+        host.decodeQuickRaw(new File(['raw-a'], 'a.ARW')),
+        host.decodeQuickRaw(new File(['raw-b'], 'b.ARW')),
       ])
 
       expect(createLumaRawRuntime).toHaveBeenCalledTimes(1)
       expect(runtime.decodeQuick).toHaveBeenCalledTimes(2)
 
-      disposeLumaRawRuntime()
+      host.dispose()
     } finally {
       vi.doUnmock('@lumaforge/luma-raw-runtime')
       vi.resetModules()
@@ -765,16 +784,16 @@ describe('raw runtime adapter', () => {
 
   it('returns ready outcome and ready state after a successful prewarm', async () => {
     const { runtime } = makeLumaRuntime()
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    expect(adapter.getPrewarmState()).toBe('idle')
+    expect(host.getPrewarmState()).toBe('idle')
 
-    const outcome = await adapter.prewarm()
+    const outcome = await host.prewarm()
 
     expect(outcome).toEqual({ status: 'ready' })
-    expect(adapter.getPrewarmState()).toBe('ready')
+    expect(host.getPrewarmState()).toBe('ready')
     expect(runtime.init).toHaveBeenCalledTimes(1)
   })
 
@@ -785,52 +804,52 @@ describe('raw runtime adapter', () => {
       { code: 'RAW_CROSS_ORIGIN_ISOLATION_REQUIRED' },
     )
     vi.mocked(runtime.init).mockRejectedValue(error)
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const outcome = await adapter.prewarm()
+    const outcome = await host.prewarm()
 
     expect(outcome).toMatchObject({
       status: 'failed',
       recoverable: false,
     })
     expect(outcome.reason).toContain('Cross-origin isolation')
-    expect(adapter.getPrewarmState()).toBe('failed')
+    expect(host.getPrewarmState()).toBe('failed')
   })
 
   it('classifies unknown errors as recoverable failures', async () => {
     const { runtime } = makeLumaRuntime()
     vi.mocked(runtime.init).mockRejectedValue(new Error('network blip'))
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const outcome = await adapter.prewarm()
+    const outcome = await host.prewarm()
 
     expect(outcome).toMatchObject({
       status: 'failed',
       recoverable: true,
       reason: 'network blip',
     })
-    expect(adapter.getPrewarmState()).toBe('failed')
+    expect(host.getPrewarmState()).toBe('failed')
   })
 
   it('retries a recoverable prewarm failure on the next explicit call', async () => {
     const { runtime } = makeLumaRuntime()
     vi.mocked(runtime.init).mockRejectedValueOnce(new Error('network blip'))
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const failed = await adapter.prewarm()
+    const failed = await host.prewarm()
     expect(failed).toMatchObject({ status: 'failed', recoverable: true })
-    expect(adapter.getPrewarmState()).toBe('failed')
+    expect(host.getPrewarmState()).toBe('failed')
 
-    const retried = await adapter.prewarm()
+    const retried = await host.prewarm()
 
     expect(retried).toEqual({ status: 'ready' })
-    expect(adapter.getPrewarmState()).toBe('ready')
+    expect(host.getPrewarmState()).toBe('ready')
     expect(runtime.init).toHaveBeenCalledTimes(2)
   })
 
@@ -845,18 +864,18 @@ describe('raw runtime adapter', () => {
             resolveInit = resolve
           }),
       )
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    await expect(adapter.prewarm()).resolves.toMatchObject({
+    await expect(host.prewarm()).resolves.toMatchObject({
       status: 'failed',
       recoverable: true,
     })
 
-    const first = adapter.prewarm()
-    const second = adapter.prewarm()
-    expect(adapter.getPrewarmState()).toBe('pending')
+    const first = host.prewarm()
+    const second = host.prewarm()
+    expect(host.getPrewarmState()).toBe('pending')
 
     await vi.waitFor(() => expect(resolveInit).toBeTypeOf('function'))
     resolveInit?.(makeRuntimeInfo())
@@ -874,22 +893,22 @@ describe('raw runtime adapter', () => {
       { code: 'RAW_CROSS_ORIGIN_ISOLATION_REQUIRED' },
     )
     vi.mocked(runtime.init).mockRejectedValue(error)
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const first = await adapter.prewarm()
-    const second = await adapter.prewarm()
+    const first = await host.prewarm()
+    const second = await host.prewarm()
 
     expect(first).toMatchObject({ status: 'failed', recoverable: false })
     expect(second).toBe(first)
-    expect(adapter.getPrewarmState()).toBe('failed')
+    expect(host.getPrewarmState()).toBe('failed')
     expect(runtime.init).toHaveBeenCalledTimes(1)
 
-    disposeLumaRawRuntime()
+    host.dispose()
     vi.mocked(runtime.init).mockResolvedValue(makeRuntimeInfo())
 
-    await expect(adapter.prewarm()).resolves.toEqual({ status: 'ready' })
+    await expect(host.prewarm()).resolves.toEqual({ status: 'ready' })
     expect(runtime.init).toHaveBeenCalledTimes(2)
   })
 
@@ -902,13 +921,13 @@ describe('raw runtime adapter', () => {
           resolveInit = resolve
         }),
     )
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const first = adapter.prewarm()
-    const second = adapter.prewarm()
-    expect(adapter.getPrewarmState()).toBe('pending')
+    const first = host.prewarm()
+    const second = host.prewarm()
+    expect(host.getPrewarmState()).toBe('pending')
 
     await vi.waitFor(() => expect(resolveInit).toBeTypeOf('function'))
     resolveInit?.(makeRuntimeInfo())
@@ -921,46 +940,46 @@ describe('raw runtime adapter', () => {
 
   it('memoizes outcome across calls (no re-init on repeat prewarm)', async () => {
     const { runtime } = makeLumaRuntime()
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    const first = await adapter.prewarm()
-    const second = await adapter.prewarm()
+    const first = await host.prewarm()
+    const second = await host.prewarm()
 
     expect(first).toEqual({ status: 'ready' })
     expect(second).toEqual({ status: 'ready' })
     expect(runtime.init).toHaveBeenCalledTimes(1)
   })
 
-  it('disposeLumaRawRuntime resets prewarm state to idle', async () => {
+  it('host dispose resets prewarm state to idle', async () => {
     const { runtime } = makeLumaRuntime()
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    await adapter.prewarm()
-    expect(adapter.getPrewarmState()).toBe('ready')
+    await host.prewarm()
+    expect(host.getPrewarmState()).toBe('ready')
 
-    disposeLumaRawRuntime()
+    host.dispose()
 
-    expect(adapter.getPrewarmState()).toBe('idle')
+    expect(host.getPrewarmState()).toBe('idle')
   })
 
   it('re-initializes after dispose drops a memoized ready outcome', async () => {
     const { runtime } = makeLumaRuntime()
-    const adapter = createRawRuntimeAdapter({
-      lumaRuntimeFactory: () => runtime,
+    const host = createHost({
+      runtimeFactory: () => runtime,
     })
 
-    await expect(adapter.prewarm()).resolves.toEqual({ status: 'ready' })
-    await expect(adapter.prewarm()).resolves.toEqual({ status: 'ready' })
+    await expect(host.prewarm()).resolves.toEqual({ status: 'ready' })
+    await expect(host.prewarm()).resolves.toEqual({ status: 'ready' })
     expect(runtime.init).toHaveBeenCalledTimes(1)
 
-    disposeLumaRawRuntime()
+    host.dispose()
 
-    await expect(adapter.prewarm()).resolves.toEqual({ status: 'ready' })
-    expect(adapter.getPrewarmState()).toBe('ready')
+    await expect(host.prewarm()).resolves.toEqual({ status: 'ready' })
+    expect(host.getPrewarmState()).toBe('ready')
     expect(runtime.init).toHaveBeenCalledTimes(2)
   })
 })
