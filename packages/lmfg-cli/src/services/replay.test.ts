@@ -24,6 +24,8 @@ import {
   verifyManifestSha256,
 } from '@lumaforge/render-engine'
 import { planExportGeometry } from '@lumaforge/render-engine/export'
+import type { ColorGraphDescriptor } from '@lumaforge/render-engine/manifest'
+import { COLOR_GRAPH_DESCRIPTOR_VERSION } from '@lumaforge/render-engine/manifest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { toLmfgError } from '../protocol/errors'
@@ -55,6 +57,7 @@ import {
   buildRenderManifest,
   percentToQuality,
   requireVerifiedManifest,
+  verifyManifestFile,
 } from './manifest'
 import { renderPreview } from './preview'
 import type { ReplayPlan } from './replay'
@@ -242,6 +245,40 @@ function prepare(manifest: RenderManifest) {
     cwd: dir,
   })
 }
+
+describe('replay fixtures', () => {
+  it.each<[string, () => RenderManifest]>([
+    ['preview', () => manifestFor()],
+    ['candidate', () => manifestFor(undefined, { kind: 'candidate' })],
+    ['export', () => manifestFor(undefined, { kind: 'export' })],
+    ['geometry export', () => geometryManifestFor()],
+  ])(
+    'reads the %s fixture back as a complete current record',
+    async (_label, make) => {
+      const manifest = make()
+      const path = join(dir, 'fixture.json')
+      await writeFile(path, JSON.stringify(manifest))
+      const { manifest: read } = await requireVerifiedManifest(
+        path,
+        environment,
+      )
+      expect(read).toEqual(manifest)
+      const descriptor = read.color_graph.descriptor as ColorGraphDescriptor
+      expect(descriptor.descriptor_version).toBe(COLOR_GRAPH_DESCRIPTOR_VERSION)
+      expect(read.render_params).toMatchObject({
+        exposure_ev: 0,
+        tone_curve: { contrast: 5, highlights: 0, shadows: 0 },
+        color_balance: { temperature: 0, tint: 0 },
+        saturation: { saturation: 0, vibrance: 0 },
+        intensity: 1,
+        raw_render_exposure_ev: -0.2,
+        raw_render_exposure_source: 'dng-baseline',
+      })
+      expect(read.render_params.selective_color).toBeUndefined()
+      expect(read.calibration).toBeNull()
+    },
+  )
+})
 
 describe('prepareReplay', () => {
   it('rebuilds params and exposure and confirms the fingerprint', async () => {
@@ -524,15 +561,17 @@ describe('replaying a manifest an earlier writer sealed', () => {
     })
   }
 
-  it('verifies it as written, then rebuilds the same color graph', async () => {
+  it('checks its seal as written, then rebuilds the same color graph', async () => {
     const legacy = explicitNeutralManifestFor()
+    expect(legacy.render_params.selective_color).toEqual(explicitNeutral)
     const path = join(dir, 'legacy.json')
     await writeFile(path, JSON.stringify(legacy))
-    const { manifest } = await requireVerifiedManifest(path, environment)
-    expect(manifest.render_params.selective_color).toEqual(explicitNeutral)
+    const verification = await verifyManifestFile(path, { environment })
+    expect(verification.raw).toEqual(legacy)
+    expect(verification.issues.join(' ')).not.toMatch(/manifest_sha256/)
 
     const plan = await prepareReplay({
-      manifest,
+      manifest: legacy,
       source: fakeSource('a'.repeat(64)),
       workspaceRoot: dir,
       cwd: dir,
@@ -743,23 +782,14 @@ describe('replaying a manifest read from disk', () => {
     return requireVerifiedManifest(path, environment)
   }
 
-  it('replays an older manifest without optional sections under the CLI defaults', async () => {
+  it('replays a current record that omits the optional decode budget', async () => {
     const recorded = manifestFor(parseRenderParams({}))
-    const legacy = resealed(recorded, (copy) => {
-      const {
-        exposure_ev,
-        raw_render_exposure_ev,
-        raw_render_exposure_source,
-      } = copy.render_params
-      copy.render_params = {
-        exposure_ev,
-        raw_render_exposure_ev,
-        raw_render_exposure_source,
-      }
+    const withoutBudget = resealed(recorded, (copy) => {
       delete copy.policy.max_pixels
     })
-    const { manifest } = await readBack(legacy)
-    expect(manifest.manifest_sha256).toBe(legacy.manifest_sha256)
+    const { manifest } = await readBack(withoutBudget)
+    expect(manifest.manifest_sha256).toBe(withoutBudget.manifest_sha256)
+    expect(manifest.policy.max_pixels).toBeUndefined()
     const plan = await prepareReplay({
       manifest,
       source: fakeSource('a'.repeat(64)),

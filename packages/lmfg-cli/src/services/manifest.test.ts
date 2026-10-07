@@ -4,6 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { computeManifestSha256 } from '@lumaforge/render-engine'
+import type { ColorGraphDescriptor } from '@lumaforge/render-engine/manifest'
+import {
+  COLOR_GRAPH_DESCRIPTOR_VERSION,
+  fingerprintColorGraph,
+} from '@lumaforge/render-engine/manifest'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { resolveRenderEnvironment } from '../runtime/versions'
@@ -107,19 +112,111 @@ describe('manifest service', () => {
     return verifyManifestFile(file, { environment })
   }
 
-  it('keeps accepting a manifest an older writer sealed without optional fields', async () => {
-    const legacy = resealed((manifest) => {
-      manifest.render_params = { exposure_ev: 0 }
-      manifest.color_graph = {
-        fingerprint: 'f'.repeat(64),
-        descriptor: { descriptor_version: 1 },
-      }
-    })
-    const result = await verify(legacy)
-    expect(result.issues).toEqual([])
-    expect(result.valid).toBe(true)
-    expect(result.manifest?.manifest_sha256).toBe(legacy.manifest_sha256)
-  })
+  /** Every `render_params` field a current writer records for a render without HSL or geometry. */
+  const CURRENT_RENDER_PARAMS_KEYS = [
+    'color_balance',
+    'exposure_ev',
+    'intensity',
+    'raw_render_exposure_ev',
+    'raw_render_exposure_source',
+    'saturation',
+    'tone_curve',
+  ]
+
+  it.each(['preview', 'candidate', 'export'] as const)(
+    'accepts the complete %s record the current writer seals',
+    async (kind) => {
+      const manifest = build(kind)
+      const result = await verify(manifest)
+      expect(result.issues).toEqual([])
+      expect(result.valid).toBe(true)
+      expect(result.manifest?.manifest_sha256).toBe(manifest.manifest_sha256)
+      const descriptor = manifest.color_graph.descriptor as ColorGraphDescriptor
+      expect(descriptor.descriptor_version).toBe(COLOR_GRAPH_DESCRIPTOR_VERSION)
+      expect(manifest.color_graph.fingerprint).toBe(
+        fingerprintColorGraph(descriptor),
+      )
+      expect(Object.keys(manifest.render_params).sort()).toEqual(
+        CURRENT_RENDER_PARAMS_KEYS,
+      )
+      expect(manifest.render_params).toMatchObject({
+        intensity: 1,
+        raw_render_exposure_ev: 0,
+        raw_render_exposure_source: 'identity',
+      })
+      expect(manifest.calibration).toBeNull()
+    },
+  )
+
+  // Records older writers sealed. Whether the v1 reader accepts each one is
+  // the engine reader's rule; what holds either way is that the seal is
+  // checked over the record exactly as written, never over a normalized copy,
+  // and that a change after sealing is reported as tampering first.
+  const neutralBand = { hue: 0, saturation: 0, lightness: 0 }
+  const historical: Array<[string, (manifest: Json) => void]> = [
+    [
+      'color sections, strength and RAW exposure omitted',
+      (m) => (m.render_params = { exposure_ev: 0 }),
+    ],
+    [
+      'no RAW exposure source',
+      (m) => delete m.render_params.raw_render_exposure_source,
+    ],
+    [
+      'all eight neutral HSL bands recorded',
+      (m) =>
+        (m.render_params.selective_color = Object.fromEntries(
+          [
+            'red',
+            'orange',
+            'yellow',
+            'green',
+            'aqua',
+            'blue',
+            'purple',
+            'magenta',
+          ].map((band) => [band, neutralBand]),
+        )),
+    ],
+    [
+      'an older descriptor version',
+      (m) =>
+        (m.color_graph = {
+          fingerprint: 'f'.repeat(64),
+          descriptor: { descriptor_version: 1 },
+        }),
+    ],
+    [
+      'an unversioned descriptor',
+      (m) => (m.color_graph = { fingerprint: 'd'.repeat(64), descriptor: {} }),
+    ],
+  ]
+
+  it.each(historical)(
+    'checks the seal of a historical record with %s as written',
+    async (_label, edit) => {
+      const record = resealed(edit)
+      const result = await verify(record)
+      expect(result.raw).toEqual(record)
+      expect(result.issues.join(' ')).not.toMatch(/manifest_sha256/)
+      expect(
+        result.manifest === null ||
+          result.manifest.manifest_sha256 === record.manifest_sha256,
+      ).toBe(true)
+    },
+  )
+
+  it.each(historical)(
+    'refuses a historical record with %s changed after sealing for its hash first',
+    async (_label, edit) => {
+      const record = resealed(edit)
+      record.render_params.exposure_ev = 9
+      const result = await verify(record)
+      expect(result.valid).toBe(false)
+      expect(result.manifest).toBeNull()
+      expect(result.issues[0]).toMatch(/^manifest_sha256: .*tampered/)
+    },
+  )
 
   it('keeps opaque extension fields the hash covers', async () => {
     const result = await verify(

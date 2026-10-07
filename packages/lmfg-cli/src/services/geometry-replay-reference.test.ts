@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -36,6 +36,7 @@ import {
   toManifestRenderParams,
 } from './color-graph'
 import { runFullResolutionExport } from './export'
+import { requireVerifiedManifest } from './manifest'
 import { prepareReplay, runReplay } from './replay'
 
 // Geometry replay is held to bytes the engine executor renders on its own
@@ -110,11 +111,19 @@ function sealGeometryManifest(input: {
   })
 }
 
+/**
+ * Replays a sealed manifest the way `lmfg replay` does: written to disk and
+ * read back through the manifest reader first, so the fixture is held to the
+ * record the reader accepts and not only to its in-memory form.
+ */
 async function replayManifest(
-  manifest: RenderManifest,
+  sealed: RenderManifest,
   runtime: LmfgRuntime,
   source: LoadedSource,
 ) {
+  const manifestPath = join(dir, 'm.json')
+  await writeFile(manifestPath, JSON.stringify(sealed))
+  const { manifest } = await requireVerifiedManifest(manifestPath, environment)
   const plan = await prepareReplay({
     manifest,
     source,
@@ -122,17 +131,18 @@ async function replayManifest(
     cwd: dir,
   })
   const outputPath = join(dir, 'replay', 'output.jpg')
+  const manifestOutputPath = join(dir, 'replay', 'manifest.json')
   const result = await runReplay({
     runtime,
     plan,
     source,
     environment,
-    manifestPath: join(dir, 'm.json'),
+    manifestPath,
     sessionId: null,
     outputPath,
-    manifestOutputPath: join(dir, 'replay', 'manifest.json'),
+    manifestOutputPath,
   })
-  return { result, outputPath }
+  return { result, outputPath, manifestOutputPath }
 }
 
 describe('geometry replay against a synthetic engine reference', () => {
@@ -271,7 +281,7 @@ describe('geometry replay against a synthetic engine reference', () => {
       delivered,
       sha256: expected.sha256,
     })
-    const { result, outputPath } = await replayManifest(
+    const { result, outputPath, manifestOutputPath } = await replayManifest(
       manifest,
       fakeRuntime(),
       source,
@@ -284,6 +294,16 @@ describe('geometry replay against a synthetic engine reference', () => {
       ...delivered,
       sha256: expected.sha256,
     })
+    // The replay's own record reads back as a current one that replays the
+    // same geometry to the same bytes.
+    const { manifest: written } = await requireVerifiedManifest(
+      manifestOutputPath,
+      environment,
+    )
+    expect(written.render_params).toEqual(manifest.render_params)
+    expect(written.color_graph).toEqual(manifest.color_graph)
+    expect(written.output.sha256).toBe(expected.sha256)
+    expect(written.parent_manifest_sha256).toBe(manifest.manifest_sha256)
   })
 
   it('refuses a recorded mirror that keeps the frame size but not the pixels', async () => {

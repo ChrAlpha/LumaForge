@@ -1,8 +1,15 @@
 // Workspace records in the shapes the lmfg CLI writes, for MCP readers
-// that consume them. Params predate selective_color, as lmfg 0.1.0 wrote
-// them; manifests omit every field the v1 shape marks optional.
+// that consume them. Iteration params predate selective_color, as lmfg 0.1.0
+// wrote them. Render manifests are complete current records: the color graph
+// descriptor and render params a current writer seals for a neutral render
+// without a LUT, and no optional section a neutral render omits.
 
-import { computeManifestSha256 } from '@lumaforge/render-engine'
+import type { ColorGraphDescriptor } from '@lumaforge/render-engine/manifest'
+import {
+  computeManifestSha256,
+  fingerprintColorGraph,
+  projectManifestRenderParams,
+} from '@lumaforge/render-engine/manifest'
 
 type Dimensions = { width: number; height: number }
 
@@ -87,6 +94,83 @@ export function contactSheetMap(
   }
 }
 
+const NEUTRAL_BAND = { hue: 0, saturation: 0, lightness: 0 }
+const LUMINANCE = [0.2880402, 0.7118741, 0.0000857]
+
+/** The descriptor lmfg records for a neutral render without a LUT at 0 EV. */
+const NEUTRAL_COLOR_GRAPH_DESCRIPTOR: ColorGraphDescriptor = {
+  descriptor_version: 2,
+  output_gamut: 'srgb-rec709',
+  output_transfer: 'srgb',
+  lut_profile: null,
+  steps: [
+    { kind: 'input-linear-prophoto' },
+    { kind: 'raw-render-exposure', ev: 0, multiplier: 1 },
+    {
+      kind: 'user-color-balance',
+      temperature: 0,
+      tint: 0,
+      gain: [1, 1, 1],
+      operator: 'linear-prophoto-relative-rgb-gain',
+      luminanceCoefficients: LUMINANCE,
+    },
+    { kind: 'user-exposure', ev: 0, multiplier: 1 },
+    {
+      kind: 'user-contrast',
+      amount: 0,
+      factor: 1,
+      pivot: 0.18,
+      operator: 'linear-prophoto-luminance-scale',
+      luminanceCoefficients: LUMINANCE,
+      zeroLuminanceMode: 'return-black',
+    },
+    {
+      kind: 'user-regional-tone',
+      highlights: 0,
+      shadows: 0,
+      whites: 0,
+      blacks: 0,
+      operator: 'linear-prophoto-log-luminance-regions',
+      pivot: 0.18,
+      luminanceCoefficients: LUMINANCE,
+      zeroLuminanceMode: 'return-black',
+    },
+    {
+      kind: 'user-saturation',
+      operator: 'oklab-chroma-with-skin-protection',
+      saturation: 0,
+      vibrance: 0,
+      satMaxFactor: 1,
+      vibMaxFactor: 0.5,
+      chromaRef: 0.25,
+      skinHueCenterDeg: 50,
+      skinHueSigmaDeg: 20,
+      skinProtectStrength: 0.5,
+    },
+    {
+      kind: 'user-selective-color',
+      bands: Object.fromEntries(
+        [
+          'red',
+          'orange',
+          'yellow',
+          'green',
+          'aqua',
+          'blue',
+          'purple',
+          'magenta',
+        ].map((band) => [band, NEUTRAL_BAND]),
+      ),
+      chromaClampLow: 0.005,
+      chromaClampHigh: 0.02,
+      workingSpace: 'oklab-via-prophoto-d65',
+      operator: 'oklch-per-band-shift',
+      constantsVersion: 1,
+    },
+    { kind: 'output-srgb' },
+  ],
+}
+
 export function seal<T extends object>(manifest: T) {
   return { ...manifest, manifest_sha256: computeManifestSha256(manifest) }
 }
@@ -111,8 +195,15 @@ export function renderManifest(input: {
     },
     calibration: null,
     lut: null,
-    color_graph: { fingerprint: 'd'.repeat(64), descriptor: {} },
-    render_params: { exposure_ev: 0 },
+    color_graph: {
+      fingerprint: fingerprintColorGraph(NEUTRAL_COLOR_GRAPH_DESCRIPTOR),
+      descriptor: NEUTRAL_COLOR_GRAPH_DESCRIPTOR,
+    },
+    render_params: projectManifestRenderParams({
+      userColor: {},
+      intensity: 1,
+      rawRenderExposure: { ev: 0, source: 'identity' },
+    }),
     policy: {
       kind:
         input.kind === 'export'

@@ -14,6 +14,12 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { resolveWorkspaceRoot, workspacePaths } from '@lumaforge/lmfg-cli'
+import type { ColorGraphDescriptor } from '@lumaforge/render-engine/manifest'
+import {
+  COLOR_GRAPH_DESCRIPTOR_VERSION,
+  fingerprintColorGraph,
+  parseRenderManifest,
+} from '@lumaforge/render-engine/manifest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -94,6 +100,32 @@ describe('session image delivery', () => {
     session: SESSION,
     artifact: { kind: 'preview' as const, preview_id: 'prev_0001' },
   }
+
+  it('serves manifests in the complete shape the current CLI writes', () => {
+    const record = imageManifest('preview', 'prev_0001.jpg', JPEG)
+    const parsed = parseRenderManifest(record)
+    expect(parsed).toMatchObject({ ok: true })
+    const descriptor = record.color_graph.descriptor as ColorGraphDescriptor
+    expect(descriptor.descriptor_version).toBe(COLOR_GRAPH_DESCRIPTOR_VERSION)
+    expect(record.color_graph.fingerprint).toBe(
+      fingerprintColorGraph(descriptor),
+    )
+    expect(record.render_params).toEqual({
+      exposure_ev: 0,
+      tone_curve: {
+        contrast: 0,
+        highlights: 0,
+        shadows: 0,
+        whites: 0,
+        blacks: 0,
+      },
+      color_balance: { temperature: 0, tint: 0 },
+      saturation: { saturation: 0, vibrance: 0 },
+      intensity: 1,
+      raw_render_exposure_ev: 0,
+      raw_render_exposure_source: 'identity',
+    })
+  })
 
   it('returns selected image bytes with identity and dimensions', async () => {
     const result = await readSessionImage(cwd, args)
