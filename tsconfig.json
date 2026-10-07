@@ -27,6 +27,9 @@
       "@lumaforge/render-engine/export": [
         "./packages/render-engine/src/export/index.ts"
       ],
+      "@lumaforge/render-engine/geometry": [
+        "./packages/render-engine/src/geometry/index.ts"
+      ],
       "@lumaforge/render-engine/manifest": [
         "./packages/render-engine/src/manifest/index.ts"
       ],

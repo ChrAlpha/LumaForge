@@ -54,6 +54,7 @@
       "entry": [
         "src/index.ts",
         "src/export/index.ts",
+        "src/geometry/index.ts",
         "src/manifest/index.ts",
         "src/policy/index.ts",
         "src/preview/index.ts",

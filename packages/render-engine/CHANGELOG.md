@@ -23,6 +23,12 @@ predates this file.
   after a successful begin and without the stage signal; an end failure
   rejects an otherwise successful export but never replaces the export's own
   failure. The `/raw` export worker and `lmfg` export both use it.
+- `@lumaforge/render-engine/geometry` subpath: the pure 3x3 projective
+  kernel the export geometry stage runs (`applyMatrix`, `invertMatrix`,
+  `isMatrix3`, `Matrix3`, `Point`). It re-exports the same functions as
+  `@lumaforge/render-engine/export` and imports no RAW, JPEG or color runtime
+  and no browser object, so loading it initializes no renderer. The export
+  subpath keeps its matrix exports.
 - `resolvePreviewColorPlan` in `@lumaforge/render-engine/preview`: what a
   preview executor (`'webgpu'` or `'cpu'`) draws for the selected look. It
   reports the selection and the drawn look separately, with a typed reason

@@ -66,6 +66,10 @@ const RENDER_ENGINE_EXPORT_SOURCE = resolve(
   ROOT,
   './packages/render-engine/src/export/index.ts',
 )
+const RENDER_ENGINE_GEOMETRY_SOURCE = resolve(
+  ROOT,
+  './packages/render-engine/src/geometry/index.ts',
+)
 const RENDER_ENGINE_MANIFEST_SOURCE = resolve(
   ROOT,
   './packages/render-engine/src/manifest/index.ts',
@@ -285,6 +289,7 @@ export default defineConfig(({ command }) => {
         '@lumaforge/luma-raw-runtime': LUMA_RAW_RUNTIME_SOURCE,
         '@lumaforge/luma-jpeg-runtime': LUMA_JPEG_RUNTIME_SOURCE,
         '@lumaforge/render-engine/export': RENDER_ENGINE_EXPORT_SOURCE,
+        '@lumaforge/render-engine/geometry': RENDER_ENGINE_GEOMETRY_SOURCE,
         '@lumaforge/render-engine/manifest': RENDER_ENGINE_MANIFEST_SOURCE,
         '@lumaforge/render-engine/policy': RENDER_ENGINE_POLICY_SOURCE,
         '@lumaforge/render-engine/preview': RENDER_ENGINE_PREVIEW_SOURCE,

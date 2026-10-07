@@ -13,6 +13,9 @@ export default defineConfig({
         export: fileURLToPath(
           new URL('./src/export/index.ts', import.meta.url),
         ),
+        geometry: fileURLToPath(
+          new URL('./src/geometry/index.ts', import.meta.url),
+        ),
         manifest: fileURLToPath(
           new URL('./src/manifest/index.ts', import.meta.url),
         ),

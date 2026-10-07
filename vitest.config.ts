@@ -59,6 +59,12 @@ export default defineConfig({
           import.meta.url,
         ),
       ),
+      '@lumaforge/render-engine/geometry': fileURLToPath(
+        new URL(
+          './packages/render-engine/src/geometry/index.ts',
+          import.meta.url,
+        ),
+      ),
       '@lumaforge/render-engine/manifest': fileURLToPath(
         new URL(
           './packages/render-engine/src/manifest/index.ts',
