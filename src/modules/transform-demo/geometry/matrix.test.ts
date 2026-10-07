@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+import type { Matrix3 } from '@lumaforge/render-engine/geometry'
 import * as engineGeometry from '@lumaforge/render-engine/geometry'
 import { applyMatrix, invertMatrix } from '@lumaforge/render-engine/geometry'
 import { describe, expect, it } from 'vitest'
@@ -8,7 +12,6 @@ import {
   multiplyMatrices,
   rotationMatrix,
 } from '~/modules/transform-demo/geometry/matrix'
-import type { Matrix3 } from '~/modules/transform-demo/geometry/types'
 
 describe('normalized projective transforms', () => {
   it('composes and inverts a projective transform', () => {
@@ -51,5 +54,18 @@ describe('projective kernel ownership', () => {
     expect(Object.keys(appMatrix)).not.toContain('applyMatrix')
     expect(typeof engineGeometry.invertMatrix).toBe('function')
     expect(typeof engineGeometry.applyMatrix).toBe('function')
+  })
+
+  it('leaves the Matrix3 and Point declarations to the engine kernel', () => {
+    for (const file of ['types.ts', 'matrix.ts', 'upright.ts']) {
+      const source = readFileSync(
+        resolve(process.cwd(), 'src/modules/transform-demo/geometry', file),
+        'utf8',
+      )
+      expect(source).not.toMatch(/\b(?:type|interface)\s+(?:Matrix3|Point)\b/)
+      expect(source).not.toMatch(
+        /export\s+(?:type\s+)?\{[^}]*\b(?:Matrix3|Point)\b/,
+      )
+    }
   })
 })

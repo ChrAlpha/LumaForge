@@ -1,19 +1,4 @@
-export type Matrix3 = readonly [
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-]
-
-export interface Point {
-  x: number
-  y: number
-}
+import type { Matrix3, Point } from '@lumaforge/render-engine/geometry'
 
 export type UprightMode = 'off' | 'auto' | 'level' | 'vertical' | 'full'
 

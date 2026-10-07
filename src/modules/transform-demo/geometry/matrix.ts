@@ -1,4 +1,4 @@
-import type { Matrix3 } from '~/modules/transform-demo/geometry/types'
+import type { Matrix3 } from '@lumaforge/render-engine/geometry'
 
 export function identityMatrix(): Matrix3 {
   return [1, 0, 0, 0, 1, 0, 0, 0, 1]

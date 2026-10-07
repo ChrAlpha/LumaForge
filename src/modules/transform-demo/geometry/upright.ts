@@ -1,3 +1,4 @@
+import type { Matrix3 } from '@lumaforge/render-engine/geometry'
 import { applyMatrix, invertMatrix } from '@lumaforge/render-engine/geometry'
 
 import { detectLines } from '~/modules/transform-demo/geometry/detect-lines'
@@ -10,7 +11,6 @@ import {
 import type {
   AnalysisImage,
   LineSegment,
-  Matrix3,
   UprightAnalysis,
   UprightSolution,
 } from '~/modules/transform-demo/geometry/types'
