@@ -45,6 +45,11 @@ const RETIRED_SCAFFOLDING = [
   'ExportFidelity',
   'NODE_DEFAULT_CAPABILITY',
   'RenderBudget',
+  // The whole-file hash helper and the in-memory JPEG sink.
+  'sourceContentIdFromFile',
+  'createNodeJpegRowSink',
+  'BytesJpegRuntime',
+  'BytesJpegEncoder',
 ]
 
 /** The declaration entry of every published subpath, from package.json. */
@@ -91,7 +96,7 @@ describeWithDist(
       )
     })
 
-    it('publishes no retired context, checkpoint or policy scaffolding on any subpath', () => {
+    it('publishes no retired context, checkpoint, policy or whole-buffer scaffolding on any subpath', () => {
       const typeEntries = publishedTypeEntries()
       const program = ts.createProgram({
         rootNames: Object.values(typeEntries),
@@ -140,7 +145,9 @@ describeWithDist(
 
       const declarations = declarationFiles(join(packageDir, 'dist'))
         .map((file) => relative(packageDir, file).replaceAll('\\', '/'))
-        .filter((file) => /\/context\/|\/export-checkpoint\.d\.ts$/.test(file))
+        .filter((file) =>
+          /\/context\/|\/(?:export-checkpoint|node-row-sink)\.d\.ts$/.test(file),
+        )
       expect(declarations).toEqual([])
     }, 30_000)
 

@@ -69,11 +69,6 @@ export {
   sha256OfJpegWithMetadata,
 } from './jpeg/jpeg-metadata'
 export {
-  type BytesJpegEncoder,
-  type BytesJpegRuntime,
-  createNodeJpegRowSink,
-} from './jpeg/node-row-sink'
-export {
   type BlobOutputResult,
   type BytesOutputResult,
   createBlobOutputResult,

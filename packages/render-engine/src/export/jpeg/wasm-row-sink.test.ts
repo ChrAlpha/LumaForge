@@ -181,6 +181,36 @@ describe('createWasmJpegRowSink', () => {
     expect(finishError).toHaveProperty('cause', finishCause)
   })
 
+  it('rejects rows after the session is aborted or closed', async () => {
+    const sink = createWasmJpegRowSink(() => ({
+      createEncoder() {
+        return {
+          async writeRows() {},
+          async finish() {
+            return new Blob([new Uint8Array([0xFF, 0xD8, 0xFF, 0xD9])])
+          },
+          abort: vi.fn(),
+        }
+      },
+      dispose: vi.fn(),
+    }))
+
+    const aborted = sink.createSession({ width: 1, height: 1, quality: 0.9 })
+    await aborted.abort()
+    await expect(
+      aborted.writeRows(new Uint8Array([0, 0, 0]), 1),
+    ).rejects.toThrow('JPEG_WRITER_ABORTED')
+    await expect(aborted.close()).rejects.toThrow('JPEG_WRITER_ABORTED')
+
+    const closed = sink.createSession({ width: 1, height: 1, quality: 0.9 })
+    await closed.writeRows(new Uint8Array([0, 0, 0]), 1)
+    await closed.close()
+    await expect(
+      closed.writeRows(new Uint8Array([0, 0, 0]), 1),
+    ).rejects.toThrow('JPEG_WRITER_CLOSED')
+    await expect(closed.close()).rejects.toThrow('JPEG_WRITER_CLOSED')
+  })
+
   it('awaits a minimal encode before reporting the WASM JPEG runtime available', async () => {
     const calls: string[] = []
 

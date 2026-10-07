@@ -58,7 +58,6 @@ export {
 } from './render-params'
 export {
   sourceContentIdFromBytes,
-  sourceContentIdFromFile,
   type SourceContentIdResult,
 } from './source-content-id'
 export {

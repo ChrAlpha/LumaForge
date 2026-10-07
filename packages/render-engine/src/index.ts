@@ -57,7 +57,6 @@ export {
 } from './manifest/render-params'
 export {
   sourceContentIdFromBytes,
-  sourceContentIdFromFile,
   type SourceContentIdResult,
 } from './manifest/source-content-id'
 export {

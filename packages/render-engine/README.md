@@ -35,12 +35,6 @@ It holds the render pipeline shared by the `/raw` app and the `lmfg` CLI:
 - `@lumaforge/render-engine/preview` — CPU preview, candidates, contact sheets
 - `@lumaforge/render-engine/policy` — capability input and policy decisions
 
-## Deprecated exports
-
-`sourceContentIdFromFile` and `createNodeJpegRowSink` are still exported but
-deprecated: nothing in the engine, the app, or `lmfg` uses them, and they are
-scheduled for removal. `CHANGELOG.md` says what to use instead of each.
-
 ## Test environment
 
 Tests run under Node (vitest `environment: 'node'`). The package is

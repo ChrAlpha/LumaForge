@@ -11,11 +11,15 @@
 //   - Fall back to the pure-JS streaming SHA-256 (`./streaming-sha256.ts`)
 //     when WebCrypto is missing.
 //
+// Inputs:
+//   - Bytes already in memory go through `sourceContentIdFromBytes`.
+//   - A source too large to hold whole (a browser `File` or `Blob`) is fed
+//     chunk by chunk to `createStreamingSha256`; nothing here reads a whole
+//     Blob into memory.
+//
 // Cache contract:
-//   - Browser: `WeakMap<File | Blob, result>` keyed by source object
-//     identity. Cache invalidates naturally when the source is GC'd.
-//   - Node: no cache here. The caller owns the lifetime of their
-//     Uint8Array; if they want a cache, they keep one keyed by their own
+//   - No cache here. The caller owns the lifetime of their bytes; if they
+//     want a cache, they keep one keyed by their own source object or
 //     open-handle identity.
 //   - Metadata-keyed caching (`{name, size, lastModified}`) is EXPLICITLY
 //     FORBIDDEN — metadata can collide across distinct content (file copies
@@ -76,47 +80,4 @@ export async function sourceContentIdFromBytes(
 ): Promise<SourceContentIdResult> {
   const sha256 = await sha256OfBytes(bytes)
   return { sha256, byteSize: bytes.byteLength }
-}
-
-// ---------------------------------------------------------------------------
-// File (browser)
-// ---------------------------------------------------------------------------
-
-const fileCache: WeakMap<Blob, SourceContentIdResult> =
-  typeof WeakMap === 'undefined'
-    ? (undefined as unknown as WeakMap<Blob, SourceContentIdResult>)
-    : new WeakMap<Blob, SourceContentIdResult>()
-
-/**
- * Compute the source content identity from a browser `File` or `Blob`.
- *
- * Cached by source object identity (`WeakMap<File | Blob, result>`).
- * A fresh user upload of the same-named file gets a new `File` reference,
- * which means the engine recomputes — no metadata-key collision risk.
- *
- * Hashing strategy: whole-file `crypto.subtle.digest('SHA-256', bytes)`
- * when WebCrypto is available; pure-JS streaming SHA-256 fallback
- * otherwise. Memory budget during hashing peaks at the file's `byteSize`.
- *
- * @deprecated Reads the whole Blob into memory before hashing. Feed the
- * Blob's chunks to `createStreamingSha256`, or call
- * `sourceContentIdFromBytes` when the bytes are already in memory. Never
- * derive source identity from `{name, size, lastModified}` instead: that
- * tuple collides across files with different bytes.
- */
-export async function sourceContentIdFromFile(
-  file: Blob,
-): Promise<SourceContentIdResult> {
-  if (fileCache) {
-    const cached = fileCache.get(file)
-    if (cached) return cached
-  }
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  const result = await sourceContentIdFromBytes(bytes)
-  if (fileCache) fileCache.set(file, result)
-  return result
-}
-
-export const __TEST_ONLY__ = {
-  fileCache,
 }

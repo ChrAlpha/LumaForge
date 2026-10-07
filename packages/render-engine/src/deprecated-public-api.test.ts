@@ -51,6 +51,15 @@ const retiredPolicy = [
   'RenderBudget',
 ]
 
+// The whole-file hash helper and the in-memory JPEG sink: both held a
+// full-size buffer that the streaming hash and the row sinks avoid.
+const retiredWholeBufferHelpers = [
+  'sourceContentIdFromFile',
+  'createNodeJpegRowSink',
+  'BytesJpegRuntime',
+  'BytesJpegEncoder',
+]
+
 let program: ts.Program
 
 beforeAll(() => {
@@ -100,9 +109,8 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
-describe('deprecated engine scaffolding on the public entries', () => {
-  it('keeps the remaining deprecated values exported with the same identity', () => {
-    expect(typeof exportEntry.createNodeJpegRowSink).toBe('function')
+describe('retired engine scaffolding on the public entries', () => {
+  it('keeps the export concurrency helper on both entries with the same identity', () => {
     expect(rootEntry.normalizeExportConcurrency).toBe(
       exportEntry.normalizeExportConcurrency,
     )
@@ -147,12 +155,23 @@ describe('deprecated engine scaffolding on the public entries', () => {
     }
   })
 
-  it('marks the remaining deprecated scaffolding on the entries that export it', () => {
-    expect(deprecationOf(entries.export, 'createNodeJpegRowSink')).toContain(
-      'JpegRowSink',
-    )
-    expect(deprecationOf(entries.export, 'BytesJpegRuntime')).not.toBeNull()
-    expect(deprecationOf(entries.export, 'BytesJpegEncoder')).not.toBeNull()
+  it('exports no whole-buffer hash helper or in-memory JPEG sink from any entry', () => {
+    for (const [entryName, entry] of Object.entries(entries)) {
+      for (const name of retiredWholeBufferHelpers) {
+        expect(exportedSymbol(entry, name), `${name} in ${entryName}`).toBe(
+          undefined,
+        )
+      }
+    }
+    expect(Object.keys(rootEntry)).not.toContain('sourceContentIdFromFile')
+    expect(Object.keys(exportEntry)).not.toContain('createNodeJpegRowSink')
+  })
+
+  it('declares nothing @deprecated in engine code', () => {
+    const offenders = sourceFiles(srcDir)
+      .filter((file) => /@deprecated\b/.test(readFileSync(file, 'utf8')))
+      .map((file) => relative(srcDir, file).replaceAll('\\', '/'))
+    expect(offenders).toEqual([])
   })
 
   it('leaves the replacements supported', () => {
@@ -165,6 +184,11 @@ describe('deprecated engine scaffolding on the public entries', () => {
     }
     expect(deprecationOf(entries.export, 'JpegRowSink')).toBeNull()
     expect(deprecationOf(entries.export, 'createWasmJpegRowSink')).toBeNull()
+    for (const entry of [entries.root, entries.manifest]) {
+      expect(deprecationOf(entry, 'sourceContentIdFromBytes')).toBeNull()
+      expect(deprecationOf(entry, 'SourceContentIdResult')).toBeNull()
+      expect(deprecationOf(entry, 'createStreamingSha256')).toBeNull()
+    }
   })
 
   it('exports no retired policy alias or default from any entry', () => {
