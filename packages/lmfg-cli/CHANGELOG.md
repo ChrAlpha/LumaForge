@@ -170,6 +170,16 @@ Requires `@lumaforge/luma-raw-runtime` 0.1.2 and
   envelope, exit, and retryability of every other runtime code are
   unchanged, and a code this CLI does not know still maps to `internal`
   (exit 10) with the code kept in `details.runtime_code`.
+- `inspect` reports `export_capability.supported` as the render-engine
+  processed-export assessment that `render export` applies, so it no longer
+  advertises a source the export refuses. Before, it echoed the runtime's
+  `supported` flag, which stayed `true` for a source with missing or
+  non-runtime-applied color facts, invalid dimensions, or no processed
+  windows. `reasons` keeps the runtime's reasons first and adds each
+  assessment refusal (for example `color-facts-missing`,
+  `invalid-dimensions`, `processed-windows-unavailable`) the runtime did not
+  already name. The result shape, `strategy`, and the measured `width` and
+  `height` are unchanged.
 
 ## 0.1.0 - 2026-09-05
 

@@ -2,6 +2,7 @@ import type {
   LumaEmbeddedPreview,
   LumaRawExportCapability,
 } from '@lumaforge/luma-raw-runtime'
+import { assessProcessedExport } from '@lumaforge/render-engine/export'
 import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 
 import type { LmfgRuntime } from '../runtime/node-runtime'
@@ -32,6 +33,30 @@ export function decodedDimensions(
     return { width: capability.width, height: capability.height }
   }
   return { width: probe.width ?? 0, height: probe.height ?? 0 }
+}
+
+/**
+ * Reports the probed export capability as the full-resolution export will
+ * judge it: `supported` is the engine's processed-export admission, and
+ * `reasons` lists the runtime's own reasons followed by every assessment
+ * refusal the runtime did not already name. Strategy and dimensions stay the
+ * measured facts.
+ */
+function describeExportCapability(
+  capability: LumaRawExportCapability,
+): InspectResult['export_capability'] {
+  const assessment = assessProcessedExport(capability)
+  const reasons: string[] = [...capability.reasons]
+  for (const refusal of assessment.reasons) {
+    if (!reasons.includes(refusal)) reasons.push(refusal)
+  }
+  return {
+    supported: assessment.exportable,
+    strategy: capability.strategy ?? null,
+    width: capability.width,
+    height: capability.height,
+    reasons,
+  }
 }
 
 export async function inspectSource(
@@ -115,13 +140,7 @@ export async function inspectSource(
             uri: embeddedUri,
           }
         : null,
-      export_capability: {
-        supported: capability.supported,
-        strategy: capability.strategy ?? null,
-        width: capability.width,
-        height: capability.height,
-        reasons: [...capability.reasons],
-      },
+      export_capability: describeExportCapability(capability),
       raw_render_exposure: exposure,
       timings_ms: timings,
     }
