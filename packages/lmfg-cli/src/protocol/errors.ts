@@ -1,3 +1,4 @@
+import type { LumaRawErrorCode } from '@lumaforge/luma-raw-runtime'
 import { LumaRawRuntimeError } from '@lumaforge/luma-raw-runtime'
 import { ZodError } from 'zod'
 
@@ -114,7 +115,9 @@ export class LmfgError extends Error {
   }
 }
 
-const RAW_CODE_MAP: Record<string, LmfgErrorCode> = {
+// Every runtime code maps explicitly; a code from a newer runtime build that is
+// not listed falls back to internal and keeps the code in details.runtime_code.
+const RAW_CODE_MAP: Readonly<Record<string, LmfgErrorCode | undefined>> = {
   RAW_RUNTIME_UNAVAILABLE: 'runtime.unavailable',
   RAW_CROSS_ORIGIN_ISOLATION_REQUIRED: 'runtime.unavailable',
   RAW_UNSUPPORTED_FORMAT: 'source.unsupported',
@@ -127,7 +130,7 @@ const RAW_CODE_MAP: Record<string, LmfgErrorCode> = {
   RAW_MEMORY_LIMIT: 'render.failed',
   RAW_JOB_CANCELLED: 'cancelled',
   RAW_WORKER_PROTOCOL_ERROR: 'internal',
-}
+} satisfies Record<LumaRawErrorCode, LmfgErrorCode>
 
 const MESSAGE_CODE_MAP: Array<[pattern: RegExp, code: LmfgErrorCode]> = [
   [/^FULL_RES_EXPORT_UNSUPPORTED_SOURCE$/, 'source.export_unsupported'],

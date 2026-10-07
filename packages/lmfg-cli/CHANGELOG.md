@@ -124,6 +124,15 @@ Requires `@lumaforge/luma-raw-runtime` 0.1.2 and
 - Native source and fixture downloads retry with mirrors and time limits, and
   the CLI CI job caches the RAW fixture instead of skipping when the upstream
   host is unreachable.
+- RAW failures report the operation that failed. An export window read, or
+  the begin or end of a processed-window export, that fails without a more
+  specific runtime code is now `render.failed` (exit 7, retryable) with
+  `details.runtime_code` `RAW_WINDOW_READ_FAILED`; quick and bounded-HQ
+  decode failures are `render.failed` too. Before, all of
+  these reported `RAW_OPEN_FAILED` as `source.unsupported` (exit 3). The
+  envelope, exit, and retryability of every other runtime code are
+  unchanged, and a code this CLI does not know still maps to `internal`
+  (exit 10) with the code kept in `details.runtime_code`.
 
 ## 0.1.0 - 2026-09-05
 
