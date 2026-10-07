@@ -304,11 +304,12 @@ jobs:
       - name: Typecheck render engine
         run: pnpm --filter @lumaforge/render-engine typecheck
 
-      - name: Test render engine
-        run: pnpm --filter @lumaforge/render-engine test
-
+      # The engine suite imports its own built subpath entries, so build first.
       - name: Build render engine
         run: pnpm --filter @lumaforge/render-engine build
+
+      - name: Test render engine
+        run: pnpm --filter @lumaforge/render-engine test
 
   native:
     needs: changes
