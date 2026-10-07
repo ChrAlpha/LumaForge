@@ -11,19 +11,13 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
-import {
-  canonicalizeJson,
-  sealRenderManifest,
-  verifyManifestSha256,
-} from './canonicalize'
+import { canonicalizeJson } from './canonicalize'
 import { colorGraphIdentity } from './color-graph-descriptor'
-import { createRenderManifest } from './create-render-manifest'
-import type { RenderManifest, RenderParams } from './render-manifest'
+import type { RenderParams } from './render-manifest'
 import type { ManifestRenderParamsInput } from './render-params'
 import {
   invertManifestRenderParams,
   projectManifestRenderParams,
-  readVerifiedManifestRenderParams,
 } from './render-params'
 
 // Reviewed literal canonical JSON. The browser export writer freezes the same
@@ -369,116 +363,5 @@ describe('projection round trip', () => {
       geometry: restored.geometry ?? undefined,
     })
     expect(canonicalizeJson(reprojected)).toBe(canonicalizeJson(written))
-  })
-})
-
-describe('readVerifiedManifestRenderParams', () => {
-  const resolved = resolveExportColorGraph({
-    styleKind: 'none',
-    intensity: 1,
-    builtinPreset: null,
-    lut: null,
-    rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-  })
-  if (!resolved.supported) throw new Error(resolved.message)
-  const graph = resolved
-
-  function manifestWith(renderParams: RenderParams): RenderManifest {
-    return createRenderManifest({
-      kind: 'export',
-      source_raw: {
-        sha256: 'a'.repeat(64),
-        byte_size: 10,
-        filename: 'x.dng',
-        decoded_dimensions: { width: 4, height: 2 },
-      },
-      lut: null,
-      graph,
-      render_params: renderParams,
-      policy: { kind: 'export-full', row_slice: 512, concurrency: 1 },
-      environment: {
-        render_engine: '0.1.0',
-        luma_color_runtime: '0.2.0',
-        luma_raw_runtime: '0.1.1',
-        luma_jpeg_runtime: '0.1.1',
-        native_artifacts: { build_id: 'test', variant: 'desktop' },
-      },
-      output: {
-        width: 4,
-        height: 2,
-        quality: 92,
-        filename: 'final.jpg',
-        sha256: 'b'.repeat(64),
-      },
-      parent_manifest_sha256: null,
-      produced_at: '2026-09-05T00:00:00.000Z',
-    })
-  }
-
-  // An older writer recorded explicit-neutral HSL as eight neutral bands.
-  const legacyRenderParams: RenderParams = {
-    ...project(),
-    selective_color: explicitNeutralSelectiveColor,
-  }
-
-  it('verifies an old manifest in the form it was written before converting it', () => {
-    const legacy = reread(
-      manifestWith(legacyRenderParams) as unknown as RenderParams,
-    ) as unknown as RenderManifest
-    const result = readVerifiedManifestRenderParams(legacy)
-    expect(result).toEqual({
-      ok: true,
-      intent: {
-        userColor: NEUTRAL_USER_COLOR_INTENT,
-        intensity: 1,
-        rawRenderExposure: identityExposure,
-        geometry: null,
-      },
-    })
-    // The schema and the calibration slot stay as written.
-    expect(legacy.manifest_version).toBe(1)
-    expect(legacy.calibration).toBeNull()
-    expect(legacy.render_params.selective_color).toEqual(
-      explicitNeutralSelectiveColor,
-    )
-
-    // Converting first would break the signature the old writer sealed.
-    const converted = {
-      ...legacy,
-      render_params: projectManifestRenderParams({
-        userColor: result.ok ? result.intent.userColor : {},
-        intensity: 1,
-        rawRenderExposure: identityExposure,
-      }),
-    }
-    expect(canonicalizeJson(converted.render_params)).toBe(NEUTRAL_GOLDEN)
-    expect(verifyManifestSha256(converted)).toBe(false)
-  })
-
-  it('refuses a manifest whose signature does not match', () => {
-    const tampered = {
-      ...manifestWith(project()),
-      render_params: { ...project(), exposure_ev: 1 },
-    }
-    expect(readVerifiedManifestRenderParams(tampered)).toEqual({
-      ok: false,
-      reason: 'manifest-sha256-mismatch',
-    })
-    expect(readVerifiedManifestRenderParams(null)).toEqual({
-      ok: false,
-      reason: 'manifest-sha256-mismatch',
-    })
-  })
-
-  it('refuses a signed manifest that records no render params', () => {
-    const { render_params: _omitted, ...rest } = manifestWith(project())
-    const sealed = sealRenderManifest(
-      rest as unknown as Omit<RenderManifest, 'manifest_sha256'>,
-    )
-    expect(verifyManifestSha256(sealed)).toBe(true)
-    expect(readVerifiedManifestRenderParams(sealed)).toEqual({
-      ok: false,
-      reason: 'render-params-missing',
-    })
   })
 })

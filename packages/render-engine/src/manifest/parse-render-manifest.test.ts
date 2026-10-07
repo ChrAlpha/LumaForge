@@ -1,11 +1,16 @@
 // @vitest-environment node
-import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_USER_COLOR_INTENT,
+  resolveExportColorGraph,
+} from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import { computeManifestSha256 } from './canonicalize'
 import { createRenderManifest } from './create-render-manifest'
 import { parseRenderManifest } from './parse-render-manifest'
 import type { RenderManifest } from './render-manifest'
+import type { ManifestRenderParamsIntent } from './render-params'
+import { invertManifestRenderParams } from './render-params'
 
 const resolved = resolveExportColorGraph({
   styleKind: 'none',
@@ -473,4 +478,110 @@ describe('parseRenderManifest', () => {
       expect(issuePaths(resealed(edit))).toEqual(paths)
     },
   )
+})
+
+describe('reading render params from an untrusted manifest', () => {
+  type Read =
+    | { ok: true; intent: ManifestRenderParamsIntent }
+    | { ok: false; paths: string[] }
+
+  // The only route from untrusted JSON to replayable params: the whole
+  // manifest passes the canonical parser before its params are inverted.
+  function readParams(value: unknown): Read {
+    const parsed = parseRenderManifest(value)
+    return parsed.ok
+      ? {
+          ok: true,
+          intent: invertManifestRenderParams(parsed.manifest.render_params),
+        }
+      : { ok: false, paths: parsed.issues.map((issue) => issue.path) }
+  }
+
+  it('reads the params of a valid current manifest', () => {
+    const read = readParams(JSON.parse(JSON.stringify(sealed())))
+    expect(read.ok).toBe(true)
+    if (!read.ok) return
+    expect(read.intent.userColor.userExposureEv).toBe(0.5)
+    expect(read.intent.userColor.userContrast).toBe(10)
+    expect(read.intent.intensity).toBe(1)
+    expect(read.intent.rawRenderExposure).toEqual({
+      ev: 0.2,
+      source: 'dng-baseline',
+    })
+    expect(read.intent.geometry).toEqual(sealed().render_params.geometry)
+  })
+
+  it('reads a sealed explicit all-neutral HSL record as written', () => {
+    const neutral = { hue: 0, saturation: 0, lightness: 0 }
+    const legacy = resealed((manifest) => {
+      manifest.render_params = {
+        exposure_ev: 0,
+        intensity: 1,
+        raw_render_exposure_ev: 0,
+        raw_render_exposure_source: 'identity',
+        selective_color: Object.fromEntries(
+          [
+            'red',
+            'orange',
+            'yellow',
+            'green',
+            'aqua',
+            'blue',
+            'purple',
+            'magenta',
+          ].map((band) => [band, neutral]),
+        ),
+      }
+    })
+    const hash = legacy.manifest_sha256
+    expect(readParams(legacy)).toEqual({
+      ok: true,
+      intent: {
+        userColor: NEUTRAL_USER_COLOR_INTENT,
+        intensity: 1,
+        rawRenderExposure: { ev: 0, source: 'identity' },
+        geometry: null,
+      },
+    })
+    expect(legacy.manifest_sha256).toBe(hash)
+  })
+
+  it('refuses sealed malformed params', () => {
+    expect(
+      readParams(
+        resealed((manifest) => {
+          manifest.render_params.exposure_ev = 'x'
+          manifest.render_params.selective_color = { red: { hue: 10 } }
+        }),
+      ),
+    ).toEqual({
+      ok: false,
+      paths: [
+        'render_params.exposure_ev',
+        'render_params.selective_color.red.saturation',
+        'render_params.selective_color.red.lightness',
+      ],
+    })
+  })
+
+  it('refuses well-formed params in a sealed manifest with a malformed section', () => {
+    expect(
+      readParams(
+        resealed((manifest) => {
+          manifest.policy.row_slice = '512'
+          manifest.output.quality = 0.92
+        }),
+      ),
+    ).toEqual({ ok: false, paths: ['policy.row_slice', 'output.quality'] })
+  })
+
+  it('refuses params edited after sealing', () => {
+    const manifest = JSON.parse(JSON.stringify(sealed())) as Json
+    manifest.render_params.exposure_ev = 1
+    expect(readParams(manifest)).toEqual({
+      ok: false,
+      paths: ['manifest_sha256'],
+    })
+    expect(readParams(null)).toEqual({ ok: false, paths: ['manifest'] })
+  })
 })

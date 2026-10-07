@@ -15,7 +15,6 @@ import {
   normalizeUserColorIntent,
 } from '@lumaforge/luma-color-runtime'
 
-import { verifyManifestSha256 } from './canonicalize'
 import type {
   GeometryParams,
   RawRenderExposureSource,
@@ -97,8 +96,9 @@ function finiteNumber(value: unknown): number | null {
  * bands read as neutral; recorded exposure, strength and geometry are kept as
  * written. The look selection and LUT are not part of the result.
  *
- * This reads the params of a manifest already verified as written; use
- * `readVerifiedManifestRenderParams` for a manifest that is not.
+ * This projects params already typed as `RenderParams`; it validates
+ * nothing. A manifest read from outside must pass `parseRenderManifest`
+ * first, which verifies its hash and holds every section to the v1 shape.
  */
 export function invertManifestRenderParams(
   params: RenderParams,
@@ -127,35 +127,5 @@ export function invertManifestRenderParams(
             source: params.raw_render_exposure_source ?? null,
           },
     geometry: params.geometry ?? null,
-  }
-}
-
-export type VerifiedManifestRenderParamsFailure =
-  | 'manifest-sha256-mismatch'
-  | 'render-params-missing'
-
-export type VerifiedManifestRenderParamsResult =
-  | { readonly ok: true; readonly intent: ManifestRenderParamsIntent }
-  | { readonly ok: false; readonly reason: VerifiedManifestRenderParamsFailure }
-
-/**
- * Verify a parsed manifest's `manifest_sha256` over the form it was written
- * in, then read its `render_params`. Normalizing first would break the
- * signature of manifests an older writer sealed (for example an explicit
- * all-neutral selective color record), so the check always comes first.
- */
-export function readVerifiedManifestRenderParams(
-  manifest: unknown,
-): VerifiedManifestRenderParamsResult {
-  if (!verifyManifestSha256(manifest)) {
-    return { ok: false, reason: 'manifest-sha256-mismatch' }
-  }
-  const params = (manifest as { render_params?: unknown }).render_params
-  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
-    return { ok: false, reason: 'render-params-missing' }
-  }
-  return {
-    ok: true,
-    intent: invertManifestRenderParams(params as RenderParams),
   }
 }

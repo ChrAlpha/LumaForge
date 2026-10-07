@@ -76,10 +76,7 @@ export {
   type ManifestRenderParamsInput,
   type ManifestRenderParamsIntent,
   projectManifestRenderParams,
-  readVerifiedManifestRenderParams,
   type RecordedRawRenderExposure,
-  type VerifiedManifestRenderParamsFailure,
-  type VerifiedManifestRenderParamsResult,
 } from './manifest/render-params'
 export {
   sourceContentIdFromBytes,
