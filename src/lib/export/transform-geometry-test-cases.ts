@@ -1,17 +1,20 @@
+import { TRANSFORM_FIELDS } from '~/modules/raw-processor/components/transform-fields'
 import type { ManualTransform } from '~/modules/transform-demo/transform-types'
 import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
 
-/** The full slider range of every Transform field. */
+/**
+ * The full slider range of every Transform field, in model units, read from
+ * the field model the desktop and mobile Transform controls render.
+ */
 export const TRANSFORM_EXTREMES: Readonly<
   Record<keyof ManualTransform, readonly number[]>
-> = {
-  vertical: [-60, 60],
-  horizontal: [-60, 60],
-  rotate: [-30, 30],
-  aspect: [-50, 50],
-  scale: [50, 150],
-  offsetX: [-30, 30],
-  offsetY: [-30, 30],
+> = fieldExtremes()
+
+function fieldExtremes(): Record<keyof ManualTransform, readonly number[]> {
+  const extremes: Partial<Record<keyof ManualTransform, readonly number[]>> = {}
+  for (const field of TRANSFORM_FIELDS)
+    extremes[field.key] = [field.base + field.min, field.base + field.max]
+  return extremes as Record<keyof ManualTransform, readonly number[]>
 }
 
 export const TRANSFORM_COMBINATIONS: ReadonlyArray<
@@ -56,6 +59,9 @@ export type TransformGeometryCase = readonly [
 /**
  * Every field alone at each end of its range, then every combination, each in
  * both crop modes.
+ *
+ * The render engine sweeps its export bounds over these cases as recorded
+ * matrices; the parity test holds this composition to that recording.
  */
 export function transformGeometryCases(): TransformGeometryCase[] {
   const out: TransformGeometryCase[] = []

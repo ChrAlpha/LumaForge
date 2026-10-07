@@ -278,8 +278,6 @@ only by finishing the move it belongs to:
   `src/lib/raw/decoder.ts`.
 - `packages/render-engine/src/export/geometry/matrix.ts` mirrors
   `src/modules/transform-demo/geometry/matrix.ts`.
-  `src/lib/export/full-res-export-geometry-bounds.test.ts` runs app-composed
-  Transform matrices through the engine's geometry planner.
 - `lmfg_image_read` and `lmfg_export_detail` read the CLI workspace layout by
   convention instead of through `packages/lmfg-cli/src/workspace/paths.ts`.
 

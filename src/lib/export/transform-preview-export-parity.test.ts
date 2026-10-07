@@ -23,6 +23,11 @@ import {
 import type { RenderedPreview } from '~/modules/transform-demo/transform-types'
 import { PREVIEW_MATTE } from '~/modules/transform-demo/transform-types'
 
+import {
+  FOLDING_MATRIX_GEOMETRY,
+  TRANSFORM_CASE_SOURCE,
+  transformMatrixCases,
+} from '../../../packages/render-engine/src/geometry/testing/transform-cases'
 import type { TransformGeometryCase } from './transform-geometry-test-cases'
 import {
   FOLDING_TRANSFORM,
@@ -93,10 +98,10 @@ const LANDMARKS = [0, 0.5, 1].flatMap((y) => [0, 0.5, 1].map((x) => ({ x, y })))
 
 /**
  * Every extreme and combination, plus a geometry that folds inside the frame,
- * in both crop modes at every aspect ratio.
+ * in both crop modes.
  */
-function sweep() {
-  const cases: TransformGeometryCase[] = [
+function geometryCases(): TransformGeometryCase[] {
+  return [
     ...transformGeometryCases(),
     ...[true, false].map(
       (crop): TransformGeometryCase => [
@@ -106,6 +111,11 @@ function sweep() {
       ],
     ),
   ]
+}
+
+/** Every geometry case at every aspect ratio. */
+function sweep() {
+  const cases = geometryCases()
   return FRAMES.flatMap((frame) =>
     cases.map(
       ([label, manual, constrainCrop]) =>
@@ -218,6 +228,38 @@ function exportSampling(planned: PlannedExportGeometry, size: Size) {
   })
   return { data, coverage, rgb8 }
 }
+
+describe('transform geometry corpus', () => {
+  it('records what the Transform controls compose at the corpus aspect', () => {
+    // The engine sweeps its export bounds over recorded matrices because it
+    // cannot compose the app's controls. Those recordings only cover the
+    // controls while the app still composes exactly them from its field
+    // ranges, case for case and label for label.
+    const aspect = TRANSFORM_CASE_SOURCE.width / TRANSFORM_CASE_SOURCE.height
+    const composed = geometryCases().map(
+      ([label, manual, constrainCrop]) =>
+        [
+          label,
+          composeManualTransform(IDENTITY, manual, aspect),
+          constrainCrop,
+        ] as const,
+    )
+    const recorded = [
+      ...transformMatrixCases(),
+      ...transformMatrixCases([FOLDING_MATRIX_GEOMETRY]),
+    ]
+
+    expect(composed.map(([label, , crop]) => [label, crop])).toEqual(
+      recorded.map(([label, , crop]) => [label, crop]),
+    )
+    composed.forEach(([label, matrix], index) => {
+      const expected = recorded[index]![1]
+      matrix.forEach((entry, at) => {
+        expect(entry, `${label} [${at}]`).toBeCloseTo(expected[at]!, 12)
+      })
+    })
+  })
+})
 
 describe('transform preview and export geometry parity', () => {
   it('paints the same matte in both paths', () => {
