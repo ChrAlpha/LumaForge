@@ -5,21 +5,31 @@ import { LmfgError } from '../protocol/errors'
 
 export const DEFAULT_WORKSPACE_DIRNAME = '.lmfg'
 
-function segment(value: string): string {
-  if (
-    typeof value !== 'string' ||
-    value.length === 0 ||
-    value === '.' ||
-    value === '..' ||
-    /[/\\<>:"|?*]/.test(value) ||
-    /[. ]$/.test(value) ||
-    Array.from(value).some(
+/**
+ * A workspace identifier or basename must be one path segment that every
+ * supported OS treats the same: no separators, dot segments, drive or
+ * stream syntax, control characters, Windows device names, or trailing
+ * dots/spaces.
+ */
+export function isPortablePathSegment(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value !== '.' &&
+    value !== '..' &&
+    !/[/\\<>:"|?*]/.test(value) &&
+    !/[. ]$/.test(value) &&
+    !Array.from(value).some(
       (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
-    ) ||
-    /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$/i.test(
+    ) &&
+    !/^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$/i.test(
       value.split('.')[0].trimEnd(),
     )
-  ) {
+  )
+}
+
+export function assertPortablePathSegment(value: string): string {
+  if (!isPortablePathSegment(value)) {
     throw new LmfgError('args.invalid', {
       message:
         'Artifact identifiers and basenames must be a single portable path segment without separators, dot segments, reserved names, or trailing dots/spaces.',
@@ -27,6 +37,8 @@ function segment(value: string): string {
   }
   return value
 }
+
+const segment = assertPortablePathSegment
 
 export function resolveWorkspaceRoot(cwd: string, option?: string): string {
   return resolve(cwd, option ?? DEFAULT_WORKSPACE_DIRNAME)

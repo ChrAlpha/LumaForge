@@ -1,12 +1,19 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { parseRenderParams } from '../schemas/params'
+import {
+  ContactSheetMapSchema,
+  IterationRecordSchema,
+  SessionRecordSchema,
+} from '../schemas/results'
 import { createIterationStore } from './iteration-store'
+import { workspacePaths } from './paths'
+import { createSessionStore } from './session-store'
 
 let root: string
 beforeEach(async () => {
@@ -68,5 +75,197 @@ describe('iteration store', () => {
     await expect(store.read('iter_9999')).rejects.toMatchObject({
       code: 'iteration.not_found',
     })
+  })
+})
+
+// Documents in the exact shape lmfg 0.1.0 wrote: params predate
+// selective_color, and a sweep records its resolved contact-sheet layout.
+const SID = 'sess_20260905T041219_a1b2c3'
+const params010 = {
+  exposure_ev: 0,
+  contrast: 0,
+  highlights: 0,
+  shadows: 0,
+  whites: 0,
+  blacks: 0,
+  temperature: 0,
+  tint: 0,
+  saturation: 0,
+  vibrance: 0,
+  intensity: 1,
+  raw_render_exposure: 'auto',
+  lut: {
+    path: 'looks/film.cube',
+    contract: { role: 'display-look', input_profile: 'slog3-sgamut3cine' },
+  },
+}
+const session010 = {
+  schema: 'lmfg.session.v1',
+  id: SID,
+  created_at: '2026-09-05T04:12:19.000Z',
+  updated_at: '2026-09-05T04:13:02.512Z',
+  workspace_root: '/work/.lmfg',
+  source: {
+    path: '/work/DSC00001.ARW',
+    filename: 'DSC00001.ARW',
+    byte_size: 25_165_824,
+    sha256: 'a'.repeat(64),
+  },
+  decoded_dimensions: { width: 6000, height: 4000 },
+  counters: { previews: 1, iterations: 1, exports: 0 },
+  status: 'inspected',
+}
+const iteration010 = {
+  schema: 'lmfg.iteration.v1',
+  id: 'iter_0001',
+  session_id: SID,
+  created_at: '2026-09-05T04:13:02.500Z',
+  kind: 'sweep',
+  base: params010,
+  candidates: [
+    {
+      id: 'cand_0001',
+      tag: 'contrast=-10',
+      params: { ...params010, contrast: -10 },
+    },
+    {
+      id: 'cand_0002',
+      tag: 'contrast=10',
+      params: { ...params010, contrast: 10 },
+    },
+  ],
+  options: {
+    max_pixels: 2_500_000,
+    quality: 85,
+    contact_sheet: { cols: 2, tile_width: 384, gap: 8 },
+  },
+}
+const map010 = {
+  schema: 'lmfg.contact-sheet-map.v1',
+  iteration_id: 'iter_0001',
+  cols: 2,
+  rows: 1,
+  tile_width: 384,
+  tile_height: 256,
+  gap: 8,
+  width: 792,
+  height: 272,
+  tiles: [
+    {
+      candidate_id: 'cand_0001',
+      index: 0,
+      x: 8,
+      y: 8,
+      width: 384,
+      height: 256,
+    },
+    {
+      candidate_id: 'cand_0002',
+      index: 1,
+      x: 400,
+      y: 8,
+      width: 384,
+      height: 256,
+    },
+  ],
+}
+
+async function writeDoc(path: string, doc: unknown): Promise<void> {
+  await mkdir(join(path, '..'), { recursive: true })
+  await writeFile(path, JSON.stringify(doc, null, 2))
+}
+
+describe('historical workspace records', () => {
+  it('reads a 0.1.0 session record through the session schema', async () => {
+    await writeDoc(workspacePaths.sessionFile(root, SID), session010)
+    expect(await createSessionStore(root).load(SID)).toEqual(session010)
+  })
+
+  it('reads a 0.1.0 iteration record, defaulting the missing selective_color', async () => {
+    await writeDoc(
+      workspacePaths.iterationPlanFile(root, SID, 'iter_0001'),
+      iteration010,
+    )
+    const record = await createIterationStore(root, SID).read('iter_0001')
+    expect(record).toEqual({
+      ...iteration010,
+      base: { ...params010, selective_color: null },
+      candidates: iteration010.candidates.map((candidate) => ({
+        ...candidate,
+        params: { ...candidate.params, selective_color: null },
+      })),
+    })
+    expect(record.candidates[1].params).toEqual(
+      parseRenderParams({ ...params010, contrast: 10 }),
+    )
+  })
+
+  it('accepts a 0.1.0 contact-sheet map unchanged', () => {
+    expect(ContactSheetMapSchema.parse(map010)).toEqual(map010)
+  })
+
+  it('round-trips the records the current writers produce', async () => {
+    const store = createIterationStore(root, SID)
+    const params = parseRenderParams({
+      selective_color: { red: { hue: 5 } },
+    })
+    const record = IterationRecordSchema.parse({
+      ...iteration010,
+      kind: 'candidate',
+      base: params,
+      candidates: [{ id: 'warm', tag: null, params }],
+      options: { ...iteration010.options, contact_sheet: null },
+    })
+    await store.create(record)
+    expect(await store.read('iter_0001')).toEqual(record)
+
+    const written = await store.writeContactSheet('iter_0001', {
+      jpeg: new Uint8Array([0xFF, 0xD8, 0xFF, 0xD9]),
+      map: ContactSheetMapSchema.parse(map010),
+    })
+    expect(JSON.parse(await readFile(written.map, 'utf8'))).toEqual(map010)
+    expect(SessionRecordSchema.parse(session010)).toEqual(session010)
+  })
+})
+
+describe('iteration record validation', () => {
+  const planFile = () =>
+    workspacePaths.iterationPlanFile(root, SID, 'iter_0001')
+
+  it.each([
+    ['a foreign schema id', { ...iteration010, schema: 'lmfg.iteration.v2' }],
+    ['a missing candidate list', { ...iteration010, candidates: undefined }],
+    ['an empty candidate list', { ...iteration010, candidates: [] }],
+    [
+      'a candidate id with path syntax',
+      {
+        ...iteration010,
+        candidates: [{ ...iteration010.candidates[0], id: '../outside' }],
+      },
+    ],
+    [
+      'out-of-range params',
+      { ...iteration010, base: { ...params010, contrast: 1000 } },
+    ],
+    ['an unknown kind', { ...iteration010, kind: 'batch' }],
+  ])('rejects a plan with %s', async (_name, doc) => {
+    await writeDoc(planFile(), doc)
+    await expect(
+      createIterationStore(root, SID).read('iter_0001'),
+    ).rejects.toMatchObject({ name: 'ZodError' })
+  })
+
+  it('rejects a contact-sheet map with path syntax in a tile id', async () => {
+    const bad = {
+      ...map010,
+      tiles: [{ ...map010.tiles[0], candidate_id: 'a/b' }],
+    }
+    expect(ContactSheetMapSchema.safeParse(bad).success).toBe(false)
+    await expect(
+      createIterationStore(root, SID).writeContactSheet('iter_0001', {
+        jpeg: new Uint8Array([0xFF, 0xD8, 0xFF, 0xD9]),
+        map: bad as never,
+      }),
+    ).rejects.toMatchObject({ name: 'ZodError' })
   })
 })

@@ -1,8 +1,15 @@
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { workspacePaths as paths } from './paths'
+import * as publicApi from '../index'
+import {
+  assertPortablePathSegment,
+  DEFAULT_WORKSPACE_DIRNAME,
+  isPortablePathSegment,
+  resolveWorkspaceRoot,
+  workspacePaths as paths,
+} from './paths'
 
 const root = '/workspace/.lmfg'
 const sid = 'sess_20260906T000000_abcdef'
@@ -89,5 +96,82 @@ describe('workspace artifact segments', () => {
         join(root, 'sessions', sid, 'iterations', iter, `${name}.jpg`),
       )
     }
+  })
+})
+
+describe('portable path segment rule', () => {
+  it('accepts ordinary identifiers and rejects path syntax', () => {
+    for (const value of ['sess_20260906T000000_abcdef', 'final.jpg', '照片'])
+      expect(isPortablePathSegment(value), value).toBe(true)
+    for (const value of ['', '..', 'a/b', 'a\\b', 'NUL', 'trailing.', 1, null])
+      expect(isPortablePathSegment(value), String(value)).toBe(false)
+  })
+
+  it('returns accepted segments and throws args.invalid otherwise', () => {
+    expect(assertPortablePathSegment('iter_0001')).toBe('iter_0001')
+    expect(() => assertPortablePathSegment('../outside')).toThrow(
+      expect.objectContaining({
+        code: 'args.invalid',
+        message: expect.stringMatching(/single portable path segment/),
+      }),
+    )
+  })
+})
+
+describe('workspace root and layout', () => {
+  it('resolves the default .lmfg root and explicit roots against cwd', () => {
+    expect(DEFAULT_WORKSPACE_DIRNAME).toBe('.lmfg')
+    expect(resolveWorkspaceRoot('/work')).toBe(resolve('/work', '.lmfg'))
+    expect(resolveWorkspaceRoot('/work', 'out/ws')).toBe(
+      resolve('/work', 'out/ws'),
+    )
+    expect(resolveWorkspaceRoot('/work', '/abs/ws')).toBe(resolve('/abs/ws'))
+  })
+
+  it('pins the session artifact layout', () => {
+    const session = join(root, 'sessions', sid)
+    expect(paths.sessionFile(root, sid)).toBe(join(session, 'session.json'))
+    expect(paths.iterationPlanFile(root, sid, iter)).toBe(
+      join(session, 'iterations', iter, 'plan.json'),
+    )
+    expect(paths.contactSheetFile(root, sid, iter)).toBe(
+      join(session, 'iterations', iter, 'contact-sheet.jpg'),
+    )
+    expect(paths.contactSheetMapFile(root, sid, iter)).toBe(
+      join(session, 'iterations', iter, 'contact-sheet.map.json'),
+    )
+    expect(paths.candidatePreviewFile(root, sid, iter, 'cand_0001')).toBe(
+      join(
+        session,
+        'iterations',
+        iter,
+        'candidates',
+        'cand_0001',
+        'preview.jpg',
+      ),
+    )
+    expect(paths.previewFile(root, sid, 'prev_0001')).toBe(
+      join(session, 'previews', 'prev_0001.jpg'),
+    )
+    expect(paths.exportManifestFile(root, sid, 'final')).toBe(
+      join(session, 'exports', 'final.manifest.json'),
+    )
+  })
+})
+
+describe('public workspace contracts', () => {
+  it('exports the resolver, layout, segment rule, and record schemas', () => {
+    expect(publicApi.resolveWorkspaceRoot).toBe(resolveWorkspaceRoot)
+    expect(publicApi.workspacePaths).toBe(paths)
+    expect(publicApi.DEFAULT_WORKSPACE_DIRNAME).toBe('.lmfg')
+    expect(publicApi.isPortablePathSegment).toBe(isPortablePathSegment)
+    expect(publicApi.assertPortablePathSegment).toBe(assertPortablePathSegment)
+    expect(typeof publicApi.toFileUri).toBe('function')
+    for (const schema of [
+      publicApi.SessionRecordSchema,
+      publicApi.IterationRecordSchema,
+      publicApi.ContactSheetMapSchema,
+    ])
+      expect(typeof schema?.parse).toBe('function')
   })
 })

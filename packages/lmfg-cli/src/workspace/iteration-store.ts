@@ -4,8 +4,15 @@ import type { RenderManifest } from '@lumaforge/render-engine'
 
 import { LmfgError } from '../protocol/errors'
 import type { RenderParams } from '../schemas/params'
-import type { ContactSheetOptions } from '../schemas/plan'
-import type { Metrics } from '../schemas/results'
+import type {
+  ContactSheetMap,
+  IterationRecord,
+  Metrics,
+} from '../schemas/results'
+import {
+  ContactSheetMapSchema,
+  IterationRecordSchema,
+} from '../schemas/results'
 import {
   appendLine,
   ensureDir,
@@ -18,26 +25,7 @@ import {
 } from './atomic-fs'
 import { workspacePaths } from './paths'
 
-export type IterationRecord = {
-  schema: 'lmfg.iteration.v1'
-  id: string
-  session_id: string
-  created_at: string
-  kind: 'candidate' | 'sweep'
-  base: RenderParams
-  candidates: Array<{ id: string; tag: string | null; params: RenderParams }>
-  options: {
-    max_pixels: number
-    quality: number
-    contact_sheet:
-      | (ContactSheetOptions & {
-          cols: number
-          tile_width: number
-          gap: number
-        })
-      | null
-  }
-}
+export type { ContactSheetMap, IterationRecord }
 
 export type CandidateTile = {
   rgba: Uint8ClampedArray
@@ -61,26 +49,6 @@ export type CandidatePaths = {
   params: string
   tile: string
   tileMeta: string
-}
-
-export type ContactSheetMap = {
-  schema: 'lmfg.contact-sheet-map.v1'
-  iteration_id: string
-  cols: number
-  rows: number
-  tile_width: number
-  tile_height: number
-  gap: number
-  width: number
-  height: number
-  tiles: Array<{
-    candidate_id: string
-    index: number
-    x: number
-    y: number
-    width: number
-    height: number
-  }>
 }
 
 export function createIterationStore(root: string, sessionId: string) {
@@ -128,7 +96,7 @@ export function createIterationStore(root: string, sessionId: string) {
         suggestedNextActions: [`lmfg session status --session ${sessionId}`],
       })
     }
-    return readJson<IterationRecord>(file)
+    return IterationRecordSchema.parse(await readJson(file))
   }
 
   return {
@@ -246,6 +214,7 @@ export function createIterationStore(root: string, sessionId: string) {
       iterationId: string,
       input: { jpeg: Uint8Array; map: ContactSheetMap; name?: string },
     ): Promise<{ sheet: string; map: string }> {
+      ContactSheetMapSchema.parse(input.map)
       const sheet = p.contactSheetFile(root, sessionId, iterationId, input.name)
       const map = p.contactSheetMapFile(
         root,

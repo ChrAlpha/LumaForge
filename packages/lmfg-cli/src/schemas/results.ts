@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
-import { LutContractInputSchema } from './params'
+import { isPortablePathSegment } from '../workspace/paths'
+import { LutContractInputSchema, RenderParamsSchema } from './params'
+import { MAX_CANDIDATES_PER_SWEEP } from './plan'
 
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/)
 const dims = z.object({ width: z.int().positive(), height: z.int().positive() })
@@ -84,6 +86,71 @@ export const SessionRecordSchema = z.object({
     exports: z.int(),
   }),
   status: z.enum(['initialized', 'inspected']),
+})
+
+const workspaceId = z.string().refine(isPortablePathSegment, {
+  message: 'Expected a single portable path segment.',
+})
+
+/**
+ * `iterations/<id>/plan.json`. Records from 0.1.0 carry params without
+ * `selective_color`; the params schema defaults it to null, so they read as
+ * current records.
+ */
+export const IterationRecordSchema = z.object({
+  schema: z.literal('lmfg.iteration.v1'),
+  id: workspaceId,
+  session_id: workspaceId,
+  created_at: z.string(),
+  kind: z.enum(['candidate', 'sweep']),
+  base: RenderParamsSchema,
+  candidates: z
+    .array(
+      z.object({
+        id: workspaceId,
+        tag: z.string().nullable(),
+        params: RenderParamsSchema,
+      }),
+    )
+    .min(1)
+    .max(MAX_CANDIDATES_PER_SWEEP),
+  options: z.object({
+    max_pixels: z.int().positive(),
+    quality: z.int().min(1).max(100),
+    contact_sheet: z
+      .object({
+        cols: z.int().positive(),
+        tile_width: z.int().positive(),
+        gap: z.int().nonnegative(),
+      })
+      .nullable(),
+  }),
+})
+
+/** `iterations/<id>/<name>.map.json`, written beside each contact sheet. */
+export const ContactSheetMapSchema = z.object({
+  schema: z.literal('lmfg.contact-sheet-map.v1'),
+  iteration_id: workspaceId,
+  cols: z.int().positive(),
+  rows: z.int().positive(),
+  tile_width: z.int().positive(),
+  tile_height: z.int().positive(),
+  gap: z.int().nonnegative(),
+  width: z.int().positive(),
+  height: z.int().positive(),
+  tiles: z
+    .array(
+      z.object({
+        candidate_id: workspaceId,
+        index: z.int().nonnegative(),
+        x: z.int().nonnegative(),
+        y: z.int().nonnegative(),
+        width: z.int().positive(),
+        height: z.int().positive(),
+      }),
+    )
+    .min(1)
+    .max(MAX_CANDIDATES_PER_SWEEP),
 })
 
 export const SessionStatusResultSchema = SessionRecordSchema.extend({
@@ -498,6 +565,8 @@ export type RuntimeVersions = z.output<typeof RuntimeVersionsSchema>
 export type VersionResult = z.output<typeof VersionResultSchema>
 export type CapabilitiesResult = z.output<typeof CapabilitiesResultSchema>
 export type SessionRecord = z.output<typeof SessionRecordSchema>
+export type IterationRecord = z.output<typeof IterationRecordSchema>
+export type ContactSheetMap = z.output<typeof ContactSheetMapSchema>
 export type SessionStatusResult = z.output<typeof SessionStatusResultSchema>
 export type InspectResult = z.output<typeof InspectResultSchema>
 export type Exposure = z.output<typeof ExposureSchema>

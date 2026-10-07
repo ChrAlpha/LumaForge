@@ -43,6 +43,12 @@ Requires `@lumaforge/luma-raw-runtime` 0.1.2 and
   lightness shifts) flows through the color graph and into manifests.
 - Preview and candidate manifests record `policy.max_pixels` so replays decode
   at the same budget.
+- The package entry exports the `.lmfg/` workspace contract:
+  `resolveWorkspaceRoot`, `DEFAULT_WORKSPACE_DIRNAME`, `workspacePaths`,
+  `toFileUri`, the portable path-segment rule (`isPortablePathSegment`,
+  `assertPortablePathSegment`), and the record schemas and types for
+  `session.json` (`SessionRecordSchema`), iteration `plan.json`
+  (`IterationRecordSchema`), and contact-sheet maps (`ContactSheetMapSchema`).
 
 ### Changed
 
@@ -95,6 +101,13 @@ Requires `@lumaforge/luma-raw-runtime` 0.1.2 and
   older writers that omit optional fields still verify and replay with the
   CLI defaults, and replay still holds recorded params to the strict params
   schema.
+- `session status`, `compare sheet`, and the `metrics` commands read
+  iteration `plan.json` through `IterationRecordSchema`, and contact-sheet
+  maps are checked against `ContactSheetMapSchema` before they are written. A
+  malformed plan (missing or empty candidates, an identifier that is not a
+  single portable path segment, params outside `lmfg.params.v1`) now fails
+  with `schema.invalid` instead of being used as read. Plans written by 0.1.0
+  still read: their params predate `selective_color`, which reads as `null`.
 - Native source and fixture downloads retry with mirrors and time limits, and
   the CLI CI job caches the RAW fixture instead of skipping when the upstream
   host is unreachable.

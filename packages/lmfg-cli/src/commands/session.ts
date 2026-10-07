@@ -2,13 +2,13 @@ import type { Command } from 'commander'
 
 import { loadSourceFile } from '../runtime/source-loader'
 import type { SessionStatusResult } from '../schemas/results'
+import { IterationRecordSchema } from '../schemas/results'
 import {
   fileExists,
   listDirs,
   listFiles,
   readJsonOrNull,
 } from '../workspace/atomic-fs'
-import type { IterationRecord } from '../workspace/iteration-store'
 import { toFileUri, workspacePaths } from '../workspace/paths'
 import { createSessionStore } from '../workspace/session-store'
 import type { CommandHost } from './context'
@@ -81,10 +81,11 @@ export function registerSessionCommands(
             for (const iterationId of await listDirs(
               workspacePaths.iterations(root, id),
             )) {
-              const plan = await readJsonOrNull<IterationRecord>(
+              const raw = await readJsonOrNull(
                 workspacePaths.iterationPlanFile(root, id, iterationId),
               )
-              if (!plan) continue
+              if (raw === null) continue
+              const plan = IterationRecordSchema.parse(raw)
               iterations.push({
                 id: iterationId,
                 created_at: plan.created_at,

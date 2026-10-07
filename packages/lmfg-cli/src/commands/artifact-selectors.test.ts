@@ -10,6 +10,7 @@ import {
   describeWithFixture,
   FIXTURE_PATH,
 } from '../e2e/fixture'
+import { parseRenderParams } from '../schemas/params'
 import { fileExists, writeJsonAtomic } from '../workspace/atomic-fs'
 import { workspacePaths } from '../workspace/paths'
 
@@ -18,6 +19,20 @@ let cli: ReturnType<typeof createCliHarness>
 let session: string
 let record: Record<string, unknown>
 let iterationDir: string
+
+function iterationPlan(id: string, candidateId: string) {
+  const params = parseRenderParams({})
+  return {
+    schema: 'lmfg.iteration.v1',
+    id,
+    session_id: session,
+    created_at: '2026-09-06T00:00:00.000Z',
+    kind: 'candidate',
+    base: params,
+    candidates: [{ id: candidateId, tag: null, params }],
+    options: { max_pixels: 2_500_000, quality: 85, contact_sheet: null },
+  }
+}
 
 beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'lmfg-selectors-'))
@@ -32,11 +47,10 @@ beforeEach(async () => {
     session,
     'iter_0001',
   )
-  await writeJsonAtomic(join(iterationDir, 'plan.json'), {
-    id: 'iter_0001',
-    session_id: session,
-    candidates: [{ id: 'cand_0001' }],
-  })
+  await writeJsonAtomic(
+    join(iterationDir, 'plan.json'),
+    iterationPlan('iter_0001', 'cand_0001'),
+  )
   const candidateDir = join(iterationDir, 'candidates', 'cand_0001')
   await mkdir(candidateDir, { recursive: true })
   await writeFile(
@@ -147,19 +161,34 @@ describe('artifact selectors at the CLI boundary', () => {
   })
 
   it('rejects selectors injected into stored iteration records', async () => {
-    for (const changed of [
-      { id: '../../../../outside', candidates: [{ id: 'cand_0001' }] },
-      { id: 'iter_0001', candidates: [{ id: '../../../../../../outside' }] },
-    ]) {
+    for (const [changed, field] of [
+      [iterationPlan('../../../../outside', 'cand_0001'), 'id'],
+      [
+        iterationPlan('iter_0001', '../../../../../../outside'),
+        'candidates.0.id',
+      ],
+    ] as const) {
       await writeJsonAtomic(join(iterationDir, 'plan.json'), changed)
-      await expectInvalid([
+      const result = await cli.run(
         'compare',
         'sheet',
         '--session',
         session,
         '--iteration',
         'iter_0001',
-      ])
+      )
+      expect(result.code, result.stdout).toBe(2)
+      expect(result.envelope.error).toMatchObject({
+        code: 'schema.invalid',
+        details: {
+          issues: [
+            {
+              path: field,
+              message: expect.stringMatching(/single portable path segment/),
+            },
+          ],
+        },
+      })
     }
   })
 
