@@ -33,8 +33,7 @@ export function useFullResExportAction({
   refreshExportInterruption,
   scheduleToast,
   abortExportWork,
-  abortRuntimeWork,
-  terminateRawDecodeBridge,
+  previewRuntime,
   registerCurrentPreviewPipelineForEvacuation,
   registerExportResultResource,
   revokeCurrentEmbeddedPreviewUrl,
@@ -68,8 +67,7 @@ export function useFullResExportAction({
       services: {
         scheduleToast,
         abortExportWork,
-        abortRuntimeWork,
-        terminateRawDecodeBridge,
+        previewRuntime,
         registerCurrentPreviewPipelineForEvacuation,
         registerExportResultResource,
         revokeCurrentEmbeddedPreviewUrl,
@@ -78,7 +76,6 @@ export function useFullResExportAction({
     }),
     [
       abortExportWork,
-      abortRuntimeWork,
       decodedImageRef,
       exportAbortControllerRef,
       exportGraphVersionRef,
@@ -89,6 +86,7 @@ export function useFullResExportAction({
       params,
       pipelineRef,
       previewCopyCanvasRef,
+      previewRuntime,
       refreshExportInterruption,
       registerCurrentPreviewPipelineForEvacuation,
       registerExportResultResource,
@@ -102,7 +100,6 @@ export function useFullResExportAction({
       setSession,
       setStatus,
       stats,
-      terminateRawDecodeBridge,
     ],
   )
 

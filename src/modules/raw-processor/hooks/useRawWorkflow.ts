@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { yieldToPaint } from '~/lib/dom'
@@ -59,11 +59,8 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     isMountedRef,
     runtimeWorkSessionIdRef,
     pendingLoadSessionIdRef,
-    runtimeSessionRef,
-    runtimeAbortControllerRef,
     exportAbortControllerRef,
     exportGraphVersionRef,
-    disposedRuntimeSessionsRef,
     decodedImageRef,
     paramsRef,
     viewRef,
@@ -120,12 +117,20 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const { viewMode } = compareStage
   const { abortRuntimeWork, abortExportWork } = useRawRuntimeControls({
     cancelHostSession: rawRuntimeHost.cancelSession,
-    runtimeSessionRef,
-    runtimeAbortControllerRef,
-    disposedRuntimeSessionsRef,
     runtimeWorkSessionIdRef,
     exportAbortControllerRef,
   })
+
+  // Export evacuates the preview through the host: its session lease ends,
+  // then its decode worker stops before the export worker starts. The export
+  // keeps its own controller, so neither step can cancel the export.
+  const previewRuntime = useMemo(
+    () => ({
+      cancel: abortRuntimeWork,
+      terminate: rawRuntimeHost.terminateDecodeBridge,
+    }),
+    [abortRuntimeWork, rawRuntimeHost],
+  )
 
   const { registerExportResultResource, queueExportResultResourceDisposal } =
     useExportResourceManagement({ resourceRegistryRef })
@@ -305,8 +310,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     previewCopyCanvasRef,
     scheduleToast,
     abortExportWork,
-    abortRuntimeWork,
-    terminateRawDecodeBridge: rawRuntimeHost.terminateDecodeBridge,
+    previewRuntime,
     registerCurrentPreviewPipelineForEvacuation,
     registerExportResultResource,
     revokeCurrentEmbeddedPreviewUrl,

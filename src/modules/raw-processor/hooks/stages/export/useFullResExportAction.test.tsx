@@ -42,8 +42,7 @@ function createInput(
     refreshExportInterruption: vi.fn(),
     scheduleToast: vi.fn(),
     abortExportWork: vi.fn(),
-    abortRuntimeWork: vi.fn(),
-    terminateRawDecodeBridge: vi.fn(),
+    previewRuntime: { cancel: vi.fn(), terminate: vi.fn() },
     registerCurrentPreviewPipelineForEvacuation: vi.fn(),
     registerExportResultResource: vi.fn(),
     revokeCurrentEmbeddedPreviewUrl: vi.fn(),
@@ -79,7 +78,7 @@ describe('useFullResExportAction', () => {
         }),
         services: expect.objectContaining({
           abortExportWork: input.abortExportWork,
-          abortRuntimeWork: input.abortRuntimeWork,
+          previewRuntime: input.previewRuntime,
           revokeCurrentEmbeddedPreviewUrl:
             input.revokeCurrentEmbeddedPreviewUrl,
         }),

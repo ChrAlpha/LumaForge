@@ -27,6 +27,8 @@ import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
 import type { DecodedImage } from '~/lib/raw/decoder'
+import { createRawRuntimeSessionLeases } from '~/lib/raw/raw-runtime-host'
+import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 import {
   resetCapabilityVectorForTest,
   setCapabilityVectorForTest,
@@ -543,8 +545,10 @@ function createHarness(options: HarnessOptions = {}) {
         if (controller && !controller.signal.aborted) controller.abort()
         refs.exportAbortControllerRef.current = null
       }),
-      abortRuntimeWork: recordService('abortRuntimeWork'),
-      terminateRawDecodeBridge: recordService('terminateRawDecodeBridge'),
+      previewRuntime: {
+        cancel: recordService('cancelPreviewRuntime'),
+        terminate: recordService('terminatePreviewRuntime'),
+      },
       registerCurrentPreviewPipelineForEvacuation: recordService(
         'registerCurrentPreviewPipelineForEvacuation',
       ),
@@ -797,15 +801,15 @@ describe('orchestrateFullResExport success', () => {
       'service:registerCurrentPreviewPipelineForEvacuation',
       'debug:export-plan-selected',
       'state:session:exporting',
-      'service:abortRuntimeWork',
+      'service:cancelPreviewRuntime',
       'service:revokeCurrentEmbeddedPreviewUrl',
-      'service:abortRuntimeWork',
+      'service:cancelPreviewRuntime',
       'state:session:exporting',
       'service:dispose:preview-gpu-pipeline',
       'debug:resource-evacuated',
       'service:runFullResolutionExportJob',
       'debug:export-worker-attempt',
-      'service:terminateRawDecodeBridge',
+      'service:terminatePreviewRuntime',
       'state:progress:50',
       'state:session:exporting',
       'debug:export-progress',
@@ -891,7 +895,7 @@ describe('orchestrateFullResExport success', () => {
     expect(input.outputLocation).toBeUndefined()
     expect(input).not.toHaveProperty('geometry')
     expect(input.executionPlan).toBe(h.plans[0])
-    expect(input.beforeStart).toBe(h.ctx.services.terminateRawDecodeBridge)
+    expect(input.beforeStart).toBe(h.ctx.services.previewRuntime.terminate)
     expect(input.signal).toBe(controller?.signal)
     expect(input.graph).toMatchObject({ supported: true, lutProfile: null })
     expect(input.graph.steps[1]).toEqual({
@@ -1443,7 +1447,7 @@ describe('orchestrateFullResExport refusals', () => {
       expect(
         h.ctx.services.registerCurrentPreviewPipelineForEvacuation,
       ).not.toHaveBeenCalled()
-      expect(h.ctx.services.abortRuntimeWork).not.toHaveBeenCalled()
+      expect(h.ctx.services.previewRuntime.cancel).not.toHaveBeenCalled()
       expect(registry.snapshot().live).toHaveLength(1)
       expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
       expect(h.state).toEqual({
@@ -1765,9 +1769,9 @@ describe('orchestrateFullResExport failures', () => {
       ).toEqual([
         'debug:export-plan-selected',
         'state:session:exporting',
-        'service:abortRuntimeWork',
+        'service:cancelPreviewRuntime',
         'service:revokeCurrentEmbeddedPreviewUrl',
-        'service:abortRuntimeWork',
+        'service:cancelPreviewRuntime',
         'state:session:exporting',
         ...evacuatedTrace,
         'state:session:failed',
@@ -2306,5 +2310,126 @@ describe('orchestrateFullResExport color intent', () => {
       lastErrorCode: 'EXPORT_UNSUPPORTED_PIPELINE',
     })
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+  })
+})
+
+describe('orchestrateFullResExport preview runtime on the host', () => {
+  /**
+   * Wires the preview runtime the way the workflow does: cancelling it ends
+   * the host's one session lease, and terminating it stops the host's
+   * decode worker. Neither knows about the export's own controller.
+   */
+  function wirePreviewRuntime(h: Harness) {
+    const runtimeSession: RawRuntimeSession = {
+      sourceDimensions: {},
+      extractEmbeddedPreview: vi.fn(),
+      decodeQuickRaw: vi.fn(),
+      decodeBoundedHqRaw: vi.fn(),
+      applyCalibration: vi.fn().mockResolvedValue({ applied: true } as const),
+      dispose: vi.fn(() => {
+        h.trace.push('service:dispose:preview-session')
+      }),
+    }
+    const leases = createRawRuntimeSessionLeases(async () => runtimeSession)
+    h.ctx.services.previewRuntime = {
+      cancel: vi.fn(() => {
+        h.trace.push('service:cancelPreviewRuntime')
+        leases.cancel()
+      }),
+      terminate: vi.fn(async () => {
+        h.trace.push('service:terminatePreviewRuntime')
+      }),
+    }
+    return { leases, runtimeSession }
+  }
+
+  it('ends the preview session on the host and terminates its worker before the export worker runs', async () => {
+    const h = createHarness()
+    const { leases, runtimeSession } = wirePreviewRuntime(h)
+    // A bounded HQ decode still runs on the preview's lease.
+    const preview = leases.begin()
+    await preview.open(SOURCE_FILE)
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+
+    expect(preview.signal.aborted).toBe(true)
+    expect(runtimeSession.dispose).toHaveBeenCalledTimes(1)
+    const cancelAt = h.trace.indexOf('service:cancelPreviewRuntime')
+    expect(cancelAt).toBeGreaterThan(-1)
+    expect(cancelAt).toBeLessThan(
+      h.trace.indexOf('service:dispose:preview-session'),
+    )
+    expect(h.trace.indexOf('service:dispose:preview-session')).toBeLessThan(
+      h.trace.indexOf('debug:resource-evacuated'),
+    )
+    // The job's worker runs only once the preview's worker is gone.
+    expect(
+      h.trace.slice(h.trace.indexOf('service:runFullResolutionExportJob')),
+    ).toEqual([
+      'service:runFullResolutionExportJob',
+      'debug:export-worker-attempt',
+      'service:terminatePreviewRuntime',
+    ])
+    expect(input.signal?.aborted).toBe(false)
+
+    job.resolve()
+    await run
+    expect(h.state.session?.exportState.status).toBe('ready')
+  })
+
+  it('never aborts the export when the preview runtime is cancelled again mid-job', async () => {
+    const h = createHarness()
+    const { leases } = wirePreviewRuntime(h)
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+    const controller = h.ctx.refs.exportAbortControllerRef.current
+    // A preview lease taken while the export runs is cancelled on its own.
+    const later = leases.begin()
+    h.ctx.services.previewRuntime.cancel()
+
+    expect(later.signal.aborted).toBe(true)
+    expect(input.signal?.aborted).toBe(false)
+    expect(h.ctx.refs.exportAbortControllerRef.current).toBe(controller)
+
+    job.progress(1, 1)
+    job.resolve()
+    await run
+
+    expect(controller?.signal.aborted).toBe(false)
+    expect(h.state.status).toBe('ready')
+    expect(h.state.session?.exportState).toMatchObject({
+      status: 'ready',
+      result: expect.objectContaining({ kind: 'full-resolution' }),
+    })
+  })
+
+  it('leaves the host slot free for a preview restore after the export fails', async () => {
+    const h = createHarness()
+    const { leases, runtimeSession } = wirePreviewRuntime(h)
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    await job.started
+    const cancels = vi.mocked(h.ctx.services.previewRuntime.cancel).mock.calls
+      .length
+    job.reject(new Error('decoder exploded'))
+    await run
+
+    expect(h.state.status).toBe('ready')
+    expect(h.state.session?.exportState.status).toBe('failed')
+    // A failure ends only the export: it cancels no preview work after it.
+    expect(
+      vi.mocked(h.ctx.services.previewRuntime.cancel).mock.calls,
+    ).toHaveLength(cancels)
+
+    const restore = leases.begin()
+    await expect(restore.open(SOURCE_FILE)).resolves.toBe(runtimeSession)
+    expect(restore.signal.aborted).toBe(false)
+    restore.release()
+    expect(runtimeSession.dispose).toHaveBeenCalledTimes(1)
   })
 })

@@ -9,7 +9,6 @@ import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { createRawRuntimeHost } from '~/lib/raw/raw-runtime-host'
-import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession } from '../model/session'
@@ -26,7 +25,8 @@ export function useRawWorkflowRefs({
   initialView,
 }: UseRawWorkflowRefsInput) {
   // The one RAW host of this workflow: readiness, load, restore, and the
-  // bridge release before export all drive this instance.
+  // bridge release before export all drive this instance. It owns every RAW
+  // session and its cancellation; the workflow keeps only source epochs.
   const [rawRuntimeHost] = useState(() => createRawRuntimeHost())
   const pipelineRef = useRef<RawProcessingPipeline | null>(null)
   const resourceRegistryRef = useRef<ResourceRegistry | null>(null)
@@ -36,13 +36,6 @@ export function useRawWorkflowRefs({
   const isMountedRef = useRef(false)
   const runtimeWorkSessionIdRef = useRef<string | null>(null)
   const pendingLoadSessionIdRef = useRef<string | null>(null)
-  // Preview restore's own session and cancellation. A load's session is
-  // never here: the host owns it.
-  const runtimeSessionRef = useRef<RawRuntimeSession | null>(null)
-  const runtimeAbortControllerRef = useRef<AbortController | null>(null)
-  const disposedRuntimeSessionsRef = useRef<WeakSet<RawRuntimeSession>>(
-    new WeakSet(),
-  )
   const exportAbortControllerRef = useRef<AbortController | null>(null)
   const exportGraphVersionRef = useRef(0)
   const decodedImageRef = useRef<DecodedImage | null>(null)
@@ -67,11 +60,8 @@ export function useRawWorkflowRefs({
       isMountedRef,
       runtimeWorkSessionIdRef,
       pendingLoadSessionIdRef,
-      runtimeSessionRef,
-      runtimeAbortControllerRef,
       exportAbortControllerRef,
       exportGraphVersionRef,
-      disposedRuntimeSessionsRef,
       decodedImageRef,
       paramsRef,
       viewRef,
@@ -79,7 +69,6 @@ export function useRawWorkflowRefs({
     }),
     [
       decodedImageRef,
-      disposedRuntimeSessionsRef,
       embeddedPreviewUrlRef,
       exportAbortControllerRef,
       exportGraphVersionRef,
@@ -91,8 +80,6 @@ export function useRawWorkflowRefs({
       rawRenderExposureRef,
       rawRuntimeHost,
       resourceRegistryRef,
-      runtimeAbortControllerRef,
-      runtimeSessionRef,
       runtimeWorkSessionIdRef,
       sessionRef,
       viewRef,

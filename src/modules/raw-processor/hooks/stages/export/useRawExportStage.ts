@@ -20,6 +20,7 @@ import type {
   SourceInterruptionHint,
 } from '../../../services/export/export-recovery'
 import { withInterruptionHistory } from '../../../services/export/export-recovery'
+import type { ExportContext } from '../../../services/export/orchestrate-full-res-export'
 import { useExportDerivedState } from './useExportDerivedState'
 import { useExportResultActions } from './useExportResultActions'
 import { useFullResExportAction } from './useFullResExportAction'
@@ -54,8 +55,8 @@ type UseRawExportStageInput = {
   previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
   scheduleToast: (notify: () => void) => void
   abortExportWork: () => void
-  abortRuntimeWork: () => void
-  terminateRawDecodeBridge: () => void | Promise<void>
+  /** The preview's RAW runtime on the workflow host, evacuated for export. */
+  previewRuntime: ExportContext['services']['previewRuntime']
   registerCurrentPreviewPipelineForEvacuation: () => void
   registerExportResultResource: NonNullable<
     Parameters<typeof useFullResExportAction>[0]['registerExportResultResource']
@@ -95,8 +96,7 @@ export function useRawExportStage({
   previewCopyCanvasRef,
   scheduleToast,
   abortExportWork,
-  abortRuntimeWork,
-  terminateRawDecodeBridge,
+  previewRuntime,
   registerCurrentPreviewPipelineForEvacuation,
   registerExportResultResource,
   revokeCurrentEmbeddedPreviewUrl,
@@ -131,8 +131,7 @@ export function useRawExportStage({
     previewCopyCanvasRef,
     scheduleToast,
     abortExportWork,
-    abortRuntimeWork,
-    terminateRawDecodeBridge,
+    previewRuntime,
     registerCurrentPreviewPipelineForEvacuation,
     registerExportResultResource,
     revokeCurrentEmbeddedPreviewUrl,

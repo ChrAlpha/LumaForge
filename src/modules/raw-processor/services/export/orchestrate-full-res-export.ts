@@ -104,8 +104,16 @@ export interface ExportContext {
   services: {
     scheduleToast: (fn: () => void) => void
     abortExportWork: () => void
-    abortRuntimeWork: () => void
-    terminateRawDecodeBridge: () => void | Promise<void>
+    /**
+     * The preview's RAW runtime on the workflow host. Evacuation cancels its
+     * session lease and preview work; the export worker starts only after
+     * `terminate` stopped the host's decode worker. Neither reaches the
+     * export's own cancellation: the export worker runs its own runtime.
+     */
+    previewRuntime: {
+      cancel: () => void
+      terminate: () => void | Promise<void>
+    }
     registerCurrentPreviewPipelineForEvacuation: () => void
     registerExportResultResource: (result: ExportResult) => void
     revokeCurrentEmbeddedPreviewUrl: () => void
@@ -386,10 +394,10 @@ export async function orchestrateFullResExport(
       snapshot,
       owners: evacuationOwners,
       abortPreview: () => {
-        ctx.services.abortRuntimeWork()
+        ctx.services.previewRuntime.cancel()
         ctx.services.revokeCurrentEmbeddedPreviewUrl()
       },
-      abortBoundedHq: ctx.services.abortRuntimeWork,
+      abortBoundedHq: ctx.services.previewRuntime.cancel,
       releasePreviousExportResult() {
         ctx.atoms.setSession((prev) =>
           prev && prev.id === exportSessionId
@@ -502,7 +510,7 @@ export async function orchestrateFullResExport(
             : prev,
         )
       },
-      beforeStart: ctx.services.terminateRawDecodeBridge,
+      beforeStart: ctx.services.previewRuntime.terminate,
       signal: exportAbortController.signal,
     })
     // The job finished, so the attempt is over even if its JPEG is dropped.

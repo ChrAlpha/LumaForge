@@ -64,6 +64,7 @@ import { getProcessingParams, resetToDefaults } from '../state/workflow.atoms'
 import { acceptTransformGeometry } from './transform-session.fixture'
 import type { UseRawWorkflowReturn } from './useRawWorkflow'
 import { useRawWorkflow } from './useRawWorkflow'
+import { useRawWorkflowRefs } from './useRawWorkflowRefs'
 
 const rawRuntimeAdapterMock = vi.hoisted(() => ({
   openSession: vi.fn(),
@@ -1233,6 +1234,187 @@ describe('useRawWorkflow embedded preview state', () => {
         quickPin,
       )
       expect(retried.session.dispose).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('keeps no RAW session, abort controller or disposal set beside its host', () => {
+    const { result } = renderHook(() =>
+      useRawWorkflowRefs({
+        session: null,
+        initialParams: getProcessingParams(),
+        initialView: getDetachedPreviewView(),
+      }),
+    )
+
+    expect(result.current.rawRuntimeHost).toBeDefined()
+    expect(
+      Object.keys(result.current).filter((key) =>
+        /runtimeSession|runtimeAbort|disposedRuntime/i.test(key),
+      ),
+    ).toEqual([])
+  })
+
+  describe('export evacuation on the workflow host', () => {
+    const exportedJpeg = () => ({
+      filename: 'frame_neutral_fullres.jpg',
+      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+    })
+
+    function openSignalOf(call: number) {
+      return rawRuntimeAdapterMock.openSession.mock.calls[call]?.[1] as
+        | AbortSignal
+        | undefined
+    }
+
+    async function renderLoaded() {
+      vi.stubGlobal('crossOriginIsolated', true)
+      rawRuntimeHosts.length = 0
+      const rendered = renderHook(() => useRawWorkflow(), { wrapper })
+      const [host] = rawRuntimeHosts
+      await act(async () => {
+        await rendered.result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      return { ...rendered, host: host! }
+    }
+
+    it('ends the preview session and terminates its worker on the host before the export worker runs', async () => {
+      // The bounded HQ decode is still in flight on the load's lease.
+      const boundedHq = deferred<DecodedImage>()
+      const sessionDispose = vi.fn()
+      rawRuntimeAdapterMock.openSession.mockResolvedValueOnce({
+        sourceDimensions: defaultSourceDimensions,
+        extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
+        decodeQuickRaw: vi.fn().mockResolvedValue(createDecodedImage('quick')),
+        decodeBoundedHqRaw: vi.fn(() => boundedHq.promise),
+        probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+        dispose: sessionDispose,
+      })
+      const workerRuns = vi.fn()
+      exportSystemMock.runFullResolutionExportJob.mockImplementation(
+        async (input: {
+          beforeStart?: () => void | Promise<void>
+          signal: AbortSignal
+        }) => {
+          await input.beforeStart?.()
+          workerRuns(input.signal.aborted)
+          return exportedJpeg()
+        },
+      )
+      const { result, host } = await renderLoaded()
+      expect(openSignalOf(0)?.aborted).toBe(false)
+      const cancelsBefore = vi.mocked(host.cancelSession).mock.calls.length
+
+      await act(async () => {
+        await result.current.exportImage()
+      })
+
+      expect(workerRuns).toHaveBeenCalledExactlyOnceWith(false)
+      expect(openSignalOf(0)?.aborted).toBe(true)
+      expect(sessionDispose).toHaveBeenCalledTimes(1)
+      const cancelOrder = vi
+        .mocked(host.cancelSession)
+        .mock.invocationCallOrder.slice(cancelsBefore)
+      const terminateOrder = vi.mocked(host.terminateDecodeBridge).mock
+        .invocationCallOrder
+      expect(cancelOrder.length).toBeGreaterThan(0)
+      expect(terminateOrder).toHaveLength(1)
+      expect(cancelOrder[0]).toBeLessThan(terminateOrder[0]!)
+      expect(terminateOrder[0]).toBeLessThan(
+        workerRuns.mock.invocationCallOrder[0]!,
+      )
+      expect(result.current.exportResult?.filename).toBe(
+        'frame_neutral_fullres.jpg',
+      )
+
+      // The evacuated source's HQ frame lands late and publishes nothing.
+      await act(async () => {
+        boundedHq.resolve(createDecodedImage('bounded-hq'))
+        await flushPromises()
+      })
+      expect(sessionDispose).toHaveBeenCalledTimes(1)
+      expect(result.current.decodedImageRef.current).toBeNull()
+      expect(result.current.previewSuspended).toBe(true)
+    })
+
+    it('keeps the export running when the preview runtime is cancelled on the host', async () => {
+      const pendingJpeg = deferred<ReturnType<typeof exportedJpeg>>()
+      let jobSignal: AbortSignal | undefined
+      exportSystemMock.runFullResolutionExportJob.mockImplementation(
+        async (input: {
+          beforeStart?: () => void | Promise<void>
+          signal: AbortSignal
+        }) => {
+          await input.beforeStart?.()
+          jobSignal = input.signal
+          return pendingJpeg.promise
+        },
+      )
+      const { result, host } = await renderLoaded()
+
+      let exporting!: Promise<void>
+      act(() => {
+        exporting = result.current.exportImage()
+      })
+      await waitFor(() => expect(jobSignal).toBeDefined())
+
+      act(() => {
+        host.cancelSession()
+      })
+      expect(jobSignal?.aborted).toBe(false)
+      expect(result.current.status).toBe('exporting')
+
+      await act(async () => {
+        pendingJpeg.resolve(exportedJpeg())
+        await exporting
+      })
+
+      expect(jobSignal?.aborted).toBe(false)
+      expect(result.current.status).toBe('ready')
+      expect(result.current.exportResult?.filename).toBe(
+        'frame_neutral_fullres.jpg',
+      )
+    })
+
+    it('restores the preview on the same host after a failed export', async () => {
+      exportSystemMock.runFullResolutionExportJob.mockImplementation(
+        async (input: { beforeStart?: () => void | Promise<void> }) => {
+          await input.beforeStart?.()
+          throw new Error('decoder exploded')
+        },
+      )
+      const { result, host } = await renderLoaded()
+
+      await act(async () => {
+        await result.current.exportImage()
+      })
+      await flushScheduledToasts()
+
+      expect(toastMock.error).toHaveBeenCalledWith(
+        'Export failed',
+        expect.anything(),
+      )
+      expect(result.current.status).toBe('ready')
+      expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe(
+        'failed',
+      )
+      expect(host.terminateDecodeBridge).toHaveBeenCalledTimes(1)
+      expect(result.current.decodedImageRef.current).toBeNull()
+
+      await act(async () => {
+        await result.current.restorePreviewAfterExport()
+      })
+
+      expect(host.beginSession).toHaveBeenCalledTimes(2)
+      expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(2)
+      expect(openSignalOf(1)?.aborted).toBe(false)
+      expect(result.current.status).toBe('ready')
+      expect(result.current.decodedImageRef.current?.source).toBe('quick')
+      expect(rawRuntimeHosts).toHaveLength(1)
+      await flushScheduledToasts()
+      expect(toastMock.error).not.toHaveBeenCalledWith(
+        'Preview restore failed',
+        expect.anything(),
+      )
     })
   })
 
