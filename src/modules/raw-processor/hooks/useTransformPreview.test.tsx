@@ -490,6 +490,19 @@ describe('transform preview request lifecycle', () => {
     unmount()
   })
 
+  it('publishes no late reply after unmount', () => {
+    const { result, unmount, worker } = setupLoaded()
+    const pending = lastRender(worker)
+    const before = result.current
+    unmount()
+    expect(worker.terminated).toBe(true)
+    act(() => worker.emit(answer(pending)))
+    act(() => worker.onerror?.())
+    expect(result.current).toBe(before)
+    expect(result.current.result).toBeNull()
+    expect(result.current.error).toBeNull()
+  })
+
   it('drops the acknowledgement when the frame is replaced or the geometry reset', () => {
     const { result, unmount, worker } = setupLoaded()
     act(() => worker.emit(answer(lastRender(worker))))
@@ -547,5 +560,18 @@ describe('production transform preview ownership', () => {
     )
     expect(source).not.toMatch(/transform-demo/)
     expect(source).not.toMatch(/image-input|demo-sample/)
+  })
+
+  it('leaves the worker transport to the typed client', () => {
+    const source = readFileSync(
+      resolve(
+        process.cwd(),
+        'src/modules/raw-processor/hooks/useTransformPreview.ts',
+      ),
+      'utf8',
+    )
+    expect(source).toMatch(/from '~\/lib\/transform\/transform-client'/)
+    expect(source).not.toMatch(/new Worker|postMessage|onmessage|onerror/)
+    expect(source).not.toMatch(/worker-protocol|transform\.worker/)
   })
 })

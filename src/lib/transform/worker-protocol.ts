@@ -29,3 +29,8 @@ export type TransformWorkerResponse =
       result: RenderedPreview
     }
   | { type: 'error'; sourceId: number; requestId?: number; message: string }
+
+export type TransformRenderRequest = Extract<
+  TransformWorkerRequest,
+  { type: 'render' }
+>
