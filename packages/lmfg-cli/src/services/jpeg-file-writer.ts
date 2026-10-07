@@ -14,7 +14,12 @@ import {
 } from '@lumaforge/render-engine/export'
 import { createStreamingSha256 } from '@lumaforge/render-engine/manifest'
 
-import { LmfgError } from '../protocol/errors'
+import type { CleanupFailure } from '../protocol/errors'
+import {
+  attemptCleanup,
+  LmfgError,
+  withCleanupFailures,
+} from '../protocol/errors'
 import { ensureDir, renameWithRetry } from '../workspace/atomic-fs'
 
 export type StreamedJpegFile = {
@@ -23,21 +28,33 @@ export type StreamedJpegFile = {
   tmpPath: string
   byteLength: number
   sha256: string
-  /** Rename the validated temp file into place (replaces an existing file). */
+  /**
+   * Rename the validated temp file into place (replaces an existing file). A
+   * failed rename drops the temp file and publishes nothing; once the file
+   * was dropped, commit rejects instead of reporting a publication.
+   */
   commit: () => Promise<void>
-  /** Remove the temp file without publishing. */
+  /**
+   * Remove the temp file without publishing. Rejects when it could not be
+   * removed; calling it again retries.
+   */
   discard: () => Promise<void>
 }
 
 export type StreamingJpegFileWriter = {
   write: (bytes: Uint8Array) => Promise<void>
   finish: () => Promise<StreamedJpegFile>
-  abort: () => Promise<void>
+  /** Drop the partial file; resolves the cleanup steps that failed. */
+  abort: () => Promise<CleanupFailure[]>
 }
 
-/** Refuse anything that is not a complete SOI…EOI stream without reading the whole file. */
+/**
+ * Refuse anything that is not a complete SOI…EOI stream without reading the
+ * whole file. A refusal keeps its code when closing the file fails too.
+ */
 export async function assertJpegFile(path: string): Promise<void> {
   let handle: FileHandle | null = null
+  let failure: { error: unknown } | null = null
   try {
     handle = await open(path, 'r')
     const { size } = await handle.stat()
@@ -60,9 +77,19 @@ export async function assertJpegFile(path: string): Promise<void> {
         retryable: true,
       })
     }
-  } finally {
-    await handle?.close()
+  } catch (error) {
+    failure = { error }
   }
+  const opened = handle
+  if (!failure) {
+    await opened?.close()
+    return
+  }
+  const failures: CleanupFailure[] = []
+  if (opened) {
+    await attemptCleanup(failures, 'close_temp_file', () => opened.close())
+  }
+  throw withCleanupFailures(failure.error, failures)
 }
 
 /**
@@ -87,12 +114,14 @@ export function createStreamingJpegFileWriter(input: {
   let headLength = 0
   let planned = false
   let byteLength = 0
+  let created = false
   let state: 'open' | 'finished' | 'aborted' = 'open'
 
   async function ensureHandle(): Promise<FileHandle> {
     if (!handle) {
       await ensureDir(dirname(input.path))
       handle = await open(tmp, 'w')
+      created = true
     }
     return handle
   }
@@ -142,11 +171,18 @@ export function createStreamingJpegFileWriter(input: {
     await writeHashed(header.subarray(plan.insertionOffset))
   }
 
-  async function discard(): Promise<void> {
-    const open = handle
+  /** Closes and removes the partial file, recording the steps that fail. */
+  async function dropTemp(failures: CleanupFailure[]): Promise<void> {
+    const opened = handle
     handle = null
-    await open?.close().catch(() => undefined)
-    await rm(tmp, { force: true })
+    if (opened) {
+      await attemptCleanup(failures, 'close_temp_file', () => opened.close())
+    }
+    if (created) {
+      await attemptCleanup(failures, 'remove_temp_file', () =>
+        rm(tmp, { force: true }),
+      )
+    }
   }
 
   return {
@@ -166,15 +202,17 @@ export function createStreamingJpegFileWriter(input: {
       try {
         await flushHead()
         const target = await ensureHandle()
-        await target.close()
+        // A failed close is not retried: the descriptor is gone either way.
         handle = null
+        await target.close()
         // Validate the temp file; the final path is untouched until commit().
         await assertJpegFile(tmp)
         state = 'finished'
       } catch (error) {
         state = 'aborted'
-        await discard()
-        throw error
+        const failures: CleanupFailure[] = []
+        await dropTemp(failures)
+        throw withCleanupFailures(error, failures)
       }
       let published = false
       let discarded = false
@@ -184,21 +222,37 @@ export function createStreamingJpegFileWriter(input: {
         byteLength,
         sha256: hasher.digestHex(),
         async commit() {
-          if (published || discarded) return
-          await renameWithRetry(tmp, input.path)
+          if (published) return
+          if (discarded) {
+            throw new LmfgError('export.refused', {
+              message: 'The export was discarded; nothing was published.',
+            })
+          }
+          try {
+            await renameWithRetry(tmp, input.path)
+          } catch (error) {
+            discarded = true
+            const failures: CleanupFailure[] = []
+            await attemptCleanup(failures, 'remove_temp_file', () =>
+              rm(tmp, { force: true }),
+            )
+            throw withCleanupFailures(error, failures)
+          }
           published = true
         },
         async discard() {
-          if (published || discarded) return
+          if (published) return
           discarded = true
           await rm(tmp, { force: true })
         },
       }
     },
     async abort() {
-      if (state !== 'open') return
+      if (state !== 'open') return []
       state = 'aborted'
-      await discard()
+      const failures: CleanupFailure[] = []
+      await dropTemp(failures)
+      return failures
     },
   }
 }

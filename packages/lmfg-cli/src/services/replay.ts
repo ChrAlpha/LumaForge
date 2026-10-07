@@ -14,7 +14,13 @@ import {
   planExportGeometry,
 } from '@lumaforge/render-engine/export'
 
-import { LmfgError } from '../protocol/errors'
+import type { CleanupFailure } from '../protocol/errors'
+import {
+  attemptCleanup,
+  cleanupFailureFields,
+  LmfgError,
+  withCleanupFailures,
+} from '../protocol/errors'
 import type { LmfgRuntime } from '../runtime/node-runtime'
 import type { LoadedSource } from '../runtime/source-loader'
 import type { RenderParams } from '../schemas/params'
@@ -435,25 +441,13 @@ export type ReplayRunInput = {
   }) => void
 }
 
-async function discardProvisional(
-  discard: (() => Promise<void>) | null,
-): Promise<string | null> {
-  if (!discard) return null
-  try {
-    await discard()
-    return null
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error)
-  }
-}
-
 /**
  * Replay publishes only what it reproduced: the delivered frame and the
  * output SHA-256 must match the manifest before the JPEG or the replay
  * manifest reaches its path. A mismatch discards the provisional export and
  * writes nothing, so an earlier replay at the same path (one `--yes` lets
- * this replay overwrite) keeps its bytes. A failed discard is reported beside
- * the mismatch rather than in place of it.
+ * this replay overwrite) keeps its bytes. A failed discard is listed in the
+ * mismatch's cleanup failures rather than reported in place of it.
  */
 export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
   const { plan, manifest } = { plan: input.plan, manifest: input.plan.manifest }
@@ -466,6 +460,8 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
   let jpeg: Uint8Array | null = null
   let publish: (() => Promise<void>) | null = null
   let discard: (() => Promise<void>) | null = null
+  // A retried export attempt's failed cleanup, reported however replay ends.
+  let earlierFailures: readonly CleanupFailure[] = []
   let byteLength: number
   let sha256: string
   let width: number
@@ -491,6 +487,7 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
     ;({ byteLength, sha256, width, height, graph } = result)
     publish = result.commit
     discard = result.discard
+    earlierFailures = result.cleanupFailures
     Object.assign(timings, result.timings)
   } else {
     const maxPixels =
@@ -519,15 +516,15 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
     message: string,
     details: Record<string, unknown>,
   ): Promise<never> => {
-    const discardError = await discardProvisional(discard)
-    throw new LmfgError('replay.mismatch', {
-      message,
-      details: {
-        ...details,
-        published: false,
-        ...(discardError ? { discard_error: discardError } : {}),
-      },
-    })
+    const failures: CleanupFailure[] = [...earlierFailures]
+    if (discard) await attemptCleanup(failures, 'remove_temp_file', discard)
+    throw withCleanupFailures(
+      new LmfgError('replay.mismatch', {
+        message,
+        details: { ...details, published: false },
+      }),
+      failures,
+    )
   }
 
   const expectedDims = dimensionsOf(manifest.output.dimensions)
@@ -578,10 +575,15 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
     if (publish) await publish()
     else if (jpeg) await writeFileAtomic(input.outputPath, jpeg)
   } catch (error) {
-    await discardProvisional(discard)
-    throw error
+    const failures: CleanupFailure[] = [...earlierFailures]
+    if (discard) await attemptCleanup(failures, 'remove_temp_file', discard)
+    throw withCleanupFailures(error, failures)
   }
-  await writeJsonAtomic(input.manifestOutputPath, replayManifest)
+  try {
+    await writeJsonAtomic(input.manifestOutputPath, replayManifest)
+  } catch (error) {
+    throw withCleanupFailures(error, earlierFailures)
+  }
   timings.total_ms = performance.now() - total
 
   return {
@@ -605,5 +607,6 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
     manifest_sha256: replayManifest.manifest_sha256,
     parent_manifest_sha256: manifest.manifest_sha256,
     timings_ms: timings,
+    ...cleanupFailureFields(earlierFailures),
   }
 }

@@ -109,7 +109,9 @@ describe('createStreamingJpegFileWriter', () => {
     await result.discard()
     expect(await readdir(dir)).toEqual(['kept.jpg'])
     expect((await readFile(path)).byteLength).toBe(64)
-    await result.commit()
+    await expect(result.commit()).rejects.toMatchObject({
+      code: 'export.refused',
+    })
     expect((await readFile(path)).byteLength).toBe(64)
   })
 

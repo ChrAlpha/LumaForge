@@ -8,12 +8,24 @@ import type {
 } from '@lumaforge/render-engine/export'
 import { createBytesOutputResult } from '@lumaforge/render-engine/export'
 
+import type { CleanupFailure } from '../protocol/errors'
+import {
+  attemptCleanup,
+  cleanupFailuresOf,
+  withCleanupFailures,
+} from '../protocol/errors'
 import type { StreamedJpegFile } from './jpeg-file-writer'
 import { createStreamingJpegFileWriter } from './jpeg-file-writer'
 
 export type FileJpegRowSink = JpegRowSink & {
   /** The streamed file once `close()` succeeded; `null` before that. */
   result: () => StreamedJpegFile | null
+  /**
+   * Every cleanup step that failed in this sink's sessions, in order. A
+   * failing `writeRows` or `close` also lists its own on the error it
+   * throws; an `abort()` resolves and records them here only.
+   */
+  cleanupFailures: () => readonly CleanupFailure[]
 }
 
 /**
@@ -28,10 +40,12 @@ export function createFileJpegRowSink(input: {
   createRuntime?: typeof createLumaJpegRuntimeForNode
 }): FileJpegRowSink {
   let finished: StreamedJpegFile | null = null
+  const recorded: CleanupFailure[] = []
   const createRuntime = input.createRuntime ?? createLumaJpegRuntimeForNode
 
   return {
     result: () => finished,
+    cleanupFailures: () => recorded,
     createSession({ width, height, quality }) {
       const writer = createStreamingJpegFileWriter({
         path: input.path,
@@ -53,16 +67,37 @@ export function createFileJpegRowSink(input: {
       })
       let state: 'open' | 'closed' | 'aborted' = 'open'
 
-      async function abortSession(): Promise<void> {
-        if (state !== 'open') return
+      function disposeRuntime(): void {
+        const created = runtime
+        runtime = null
+        created?.dispose()
+      }
+
+      /** Releases the encoder and the partial file; resolves what failed. */
+      async function abortSession(): Promise<CleanupFailure[]> {
+        if (state !== 'open') return []
         state = 'aborted'
-        try {
-          const encoder = await encoderPromise.catch(() => null)
-          encoder?.abort()
-        } finally {
-          runtime?.dispose()
-          await writer.abort()
+        const failures: CleanupFailure[] = []
+        // A runtime that never started is the operation's own failure.
+        const encoder = await encoderPromise.catch(() => null)
+        if (encoder) {
+          await attemptCleanup(failures, 'abort_jpeg_encoder', () =>
+            encoder.abort(),
+          )
         }
+        await attemptCleanup(failures, 'dispose_jpeg_runtime', disposeRuntime)
+        failures.push(...(await writer.abort()))
+        return failures
+      }
+
+      /** Rethrows `error` with the cleanup that followed it. */
+      async function fail(error: unknown): Promise<never> {
+        const failures = [
+          ...cleanupFailuresOf(error),
+          ...(await abortSession()),
+        ]
+        recorded.push(...failures)
+        throw withCleanupFailures(error, failures)
       }
 
       return {
@@ -72,8 +107,7 @@ export function createFileJpegRowSink(input: {
             const encoder = await encoderPromise
             await encoder.writeRows(rows, rowCount)
           } catch (error) {
-            await abortSession().catch(() => undefined)
-            throw error
+            await fail(error)
           }
         },
         async close() {
@@ -81,7 +115,7 @@ export function createFileJpegRowSink(input: {
           try {
             const encoder = await encoderPromise
             await encoder.finish()
-            runtime?.dispose()
+            disposeRuntime()
             finished = await writer.finish()
             state = 'closed'
             return createBytesOutputResult({
@@ -89,12 +123,11 @@ export function createFileJpegRowSink(input: {
               bytes: new Uint8Array(0),
             })
           } catch (error) {
-            await abortSession().catch(() => undefined)
-            throw error
+            return fail(error)
           }
         },
         async abort() {
-          await abortSession()
+          recorded.push(...(await abortSession()))
         },
       }
     },

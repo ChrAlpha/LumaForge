@@ -4,8 +4,17 @@ import { LumaRawRuntimeError } from '@lumaforge/luma-raw-runtime'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import type { LmfgErrorCode } from './errors'
-import { LmfgError, toLmfgError } from './errors'
+import type { CleanupFailure, LmfgErrorCode } from './errors'
+import {
+  attemptCleanup,
+  cleanupFailure,
+  cleanupFailureFields,
+  cleanupFailuresOf,
+  LmfgError,
+  MAX_CLEANUP_FAILURES,
+  toLmfgError,
+  withCleanupFailures,
+} from './errors'
 import type { ExitCode } from './exit-codes'
 import { EXIT_CODES } from './exit-codes'
 
@@ -225,5 +234,170 @@ describe('toLmfgError', () => {
     abort.name = 'AbortError'
     expect(toLmfgError(abort).code).toBe('cancelled')
     expect(toLmfgError('weird').code).toBe('internal')
+  })
+})
+
+function errnoError(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code, syscall: 'unlink' })
+}
+
+describe('cleanup failures', () => {
+  it('classifies a cleanup error by code and errno and leaves its message out', () => {
+    const private_ = '/home/someone/secret-shoot/IMG_0001.dng.123.tmp'
+    expect(
+      cleanupFailure(
+        'remove_temp_file',
+        errnoError('EACCES', `EACCES: permission denied, unlink '${private_}'`),
+      ),
+    ).toEqual({
+      step: 'remove_temp_file',
+      code: 'permission.denied',
+      errno: 'EACCES',
+    })
+    expect(
+      cleanupFailure('end_processed_window_export', new Error('END_FAILED')),
+    ).toEqual({ step: 'end_processed_window_export', code: 'internal' })
+    expect(
+      cleanupFailure(
+        'end_processed_window_export',
+        new LumaRawRuntimeError('RAW_JOB_CANCELLED', 'cancelled'),
+      ),
+    ).toEqual({ step: 'end_processed_window_export', code: 'cancelled' })
+    expect(cleanupFailure('abort_jpeg_encoder', 'boom')).toEqual({
+      step: 'abort_jpeg_encoder',
+      code: 'internal',
+    })
+    // Only errno-shaped codes are kept; anything else could be free text.
+    expect(
+      cleanupFailure('close_temp_file', errnoError(private_, 'odd')),
+    ).toEqual({ step: 'close_temp_file', code: 'internal' })
+  })
+
+  it('records a failed cleanup step instead of throwing it', async () => {
+    const failures: CleanupFailure[] = []
+    expect(await attemptCleanup(failures, 'close_temp_file', () => {})).toBe(
+      true,
+    )
+    expect(
+      await attemptCleanup(failures, 'remove_temp_file', async () => {
+        throw errnoError('EBUSY', 'busy')
+      }),
+    ).toBe(false)
+    expect(
+      await attemptCleanup(failures, 'dispose_jpeg_runtime', () => {
+        throw new Error('DISPOSE_FAILED')
+      }),
+    ).toBe(false)
+    expect(failures).toEqual([
+      { step: 'remove_temp_file', code: 'internal', errno: 'EBUSY' },
+      { step: 'dispose_jpeg_runtime', code: 'internal' },
+    ])
+  })
+
+  it('returns the primary failure unchanged when no cleanup failed', () => {
+    const primary = new Error('WINDOW_READ_FAILED')
+    expect(withCleanupFailures(primary, [])).toBe(primary)
+    expect(cleanupFailuresOf(primary)).toEqual([])
+  })
+
+  it('keeps the primary code, message and exit code beside the cleanup failures', () => {
+    const primary = new LmfgError('replay.mismatch', {
+      message: 'Replay output differs; nothing was published.',
+      retryable: false,
+      suggestedNextActions: ['lmfg inspect --session <id>'],
+      details: { stage: 'output', published: false },
+    })
+    const failures = [
+      cleanupFailure('remove_temp_file', errnoError('EACCES', 'denied')),
+    ]
+
+    const combined = withCleanupFailures(primary, failures)
+
+    expect(combined).toBeInstanceOf(LmfgError)
+    expect((combined as LmfgError).cause).toBe(primary)
+    expect((combined as LmfgError).exitCode).toBe(EXIT_CODES.exportRefused)
+    expect(toLmfgError(combined).toEnvelope()).toEqual({
+      schema: 'lmfg.error.v1',
+      ok: false,
+      error: {
+        code: 'replay.mismatch',
+        message: 'Replay output differs; nothing was published.',
+        retryable: false,
+        suggested_next_actions: ['lmfg inspect --session <id>'],
+        details: {
+          stage: 'output',
+          published: false,
+          cleanup_failures: [
+            {
+              step: 'remove_temp_file',
+              code: 'permission.denied',
+              errno: 'EACCES',
+            },
+          ],
+        },
+      },
+    })
+  })
+
+  it('classifies a plain primary failure the way the envelope would', () => {
+    const primary = new Error('LUMA_JPEG_WRITE_FAILED')
+    const combined = withCleanupFailures(primary, [
+      cleanupFailure('abort_jpeg_encoder', new Error('ABORT_FAILED')),
+    ])
+    expect(toLmfgError(combined)).toMatchObject({
+      code: 'render.failed',
+      retryable: true,
+      message: 'LUMA_JPEG_WRITE_FAILED',
+      cause: primary,
+    })
+  })
+
+  it('reports each failure once and bounds how many are listed', () => {
+    const first = cleanupFailure('close_temp_file', new Error('CLOSE_FAILED'))
+    const once = withCleanupFailures(new Error('PRIMARY'), [first])
+    const again = withCleanupFailures(once, [first])
+    expect(again).toBe(once)
+    expect(cleanupFailuresOf(again)).toEqual([first])
+
+    const many: CleanupFailure[] = []
+    for (let index = 0; index < MAX_CLEANUP_FAILURES + 3; index += 1) {
+      many.push(cleanupFailure('remove_temp_file', errnoError('EBUSY', 'busy')))
+    }
+    const bounded = toLmfgError(withCleanupFailures(once, many))
+    expect(bounded.details?.cleanup_failures).toHaveLength(MAX_CLEANUP_FAILURES)
+    expect(bounded.details?.cleanup_failures_omitted).toBe(4)
+    expect(bounded.message).toBe('PRIMARY')
+  })
+
+  it('counts failures past the bound once when the same list is attached again', () => {
+    const many: CleanupFailure[] = []
+    for (let index = 0; index < MAX_CLEANUP_FAILURES + 2; index += 1) {
+      many.push(cleanupFailure('close_temp_file', new Error('CLOSE_FAILED')))
+    }
+    const once = withCleanupFailures(new Error('PRIMARY'), many)
+    expect(withCleanupFailures(once, many)).toBe(once)
+    expect(cleanupFailuresOf(once)).toEqual(many)
+
+    const later = cleanupFailure('remove_temp_file', new Error('RM_FAILED'))
+    const more = toLmfgError(withCleanupFailures(once, [...many, later]))
+    expect(more.details?.cleanup_failures).toEqual(
+      many.slice(0, MAX_CLEANUP_FAILURES),
+    )
+    expect(more.details?.cleanup_failures_omitted).toBe(3)
+  })
+
+  it('lists the cleanup failures of a result the same bounded way', () => {
+    expect(cleanupFailureFields([])).toEqual({})
+    const failure = cleanupFailure('remove_temp_file', new Error('RM_FAILED'))
+    expect(cleanupFailureFields([failure])).toEqual({
+      cleanup_failures: [failure],
+    })
+    const many = Array.from<CleanupFailure>({
+      length: MAX_CLEANUP_FAILURES + 1,
+    }).fill(failure)
+    expect(cleanupFailureFields(many)).toEqual({
+      cleanup_failures: many.slice(0, MAX_CLEANUP_FAILURES),
+      cleanup_failures_omitted: 1,
+    })
   })
 })

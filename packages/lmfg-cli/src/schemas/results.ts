@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { CLEANUP_STEPS, MAX_CLEANUP_FAILURES } from '../protocol/errors'
 import { isPortablePathSegment } from '../workspace/paths'
 import { LutContractInputSchema, RenderParamsSchema } from './params'
 import { MAX_CANDIDATES_PER_SWEEP } from './plan'
@@ -347,6 +348,25 @@ export const ResourceUsageSchema = z.object({
   max_rss_bytes: z.int(),
 })
 
+/**
+ * A cleanup step that did not finish for an export attempt the engine
+ * retried: the step, the error code it maps to, and the errno for filesystem
+ * failures. A listed `remove_temp_file` means a `.tmp` file may remain.
+ */
+export const CleanupFailureSchema = z.object({
+  step: z.enum(CLEANUP_STEPS),
+  code: z.string(),
+  errno: z.string().optional(),
+})
+
+const cleanupFailureFields = {
+  cleanup_failures: z
+    .array(CleanupFailureSchema)
+    .max(MAX_CLEANUP_FAILURES)
+    .optional(),
+  cleanup_failures_omitted: z.int().positive().optional(),
+}
+
 export const IterationResultSchema = z.object({
   session_id: z.string(),
   iteration_id: z.string(),
@@ -374,6 +394,7 @@ export const ExportResultSchema = z.object({
   strips: z.int(),
   timings_ms: z.record(z.string(), z.number()),
   resource: ResourceUsageSchema.optional(),
+  ...cleanupFailureFields,
 })
 
 export const ReplayResultSchema = z.object({
@@ -389,6 +410,7 @@ export const ReplayResultSchema = z.object({
   manifest_sha256: sha256,
   parent_manifest_sha256: sha256,
   timings_ms: z.record(z.string(), z.number()),
+  ...cleanupFailureFields,
 })
 
 export const CompareSheetResultSchema = z.object({

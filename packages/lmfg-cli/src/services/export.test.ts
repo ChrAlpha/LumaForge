@@ -5,6 +5,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 
+import { createLumaJpegRuntimeForNode } from '@lumaforge/luma-jpeg-runtime/node'
 import type {
   LumaRawExportCapability,
   LumaRawProcessedWindow,
@@ -23,7 +24,7 @@ import {
   vi,
 } from 'vitest'
 
-import { LmfgError } from '../protocol/errors'
+import { LmfgError, toLmfgError } from '../protocol/errors'
 import type { LmfgRuntime } from '../runtime/node-runtime'
 import { createLmfgRuntime } from '../runtime/node-runtime'
 import type { LoadedSource } from '../runtime/source-loader'
@@ -35,6 +36,37 @@ import {
 } from '../test-support/describe-with-fixture'
 import type { ExportRunInput } from './export'
 import { runFullResolutionExport } from './export'
+
+vi.mock('@lumaforge/luma-jpeg-runtime/node', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@lumaforge/luma-jpeg-runtime/node')>()
+  return {
+    ...actual,
+    createLumaJpegRuntimeForNode: vi.fn(actual.createLumaJpegRuntimeForNode),
+  }
+})
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, rm: vi.fn(actual.rm) }
+})
+
+const actualRm = (
+  await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+).rm
+
+/** Makes every `rm` of a `.tmp` path fail like a locked file would. */
+function failTempRemoval(): Error {
+  const failure = Object.assign(
+    new Error(`EACCES: permission denied, unlink '${dir}/exports/x.tmp'`),
+    { code: 'EACCES', syscall: 'unlink' },
+  )
+  vi.mocked(rm).mockImplementation(async (path, options) => {
+    if (String(path).endsWith('.tmp')) throw failure
+    return actualRm(path, options)
+  })
+  return failure
+}
 
 const LOCKED_FIXTURE_SHA256 =
   '7a2a9747a0cb1537007233ce7e8b7233c5ee641d683b7b3da29e22387994a0d7'
@@ -159,9 +191,10 @@ beforeAll(() => {
 })
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'lmfg-export-'))
+  vi.mocked(rm).mockImplementation(actualRm)
 })
 afterEach(async () => {
-  await rm(dir, { recursive: true, force: true })
+  await actualRm(dir, { recursive: true, force: true })
 })
 afterAll(() => {
   vi.unstubAllEnvs()
@@ -351,7 +384,10 @@ async function listFiles(root: string): Promise<string[]> {
 function runWithSession(
   session: ReturnType<typeof makeFakeSession>,
   outputPath: string,
-  extra: Pick<ExportRunInput, 'geometry' | 'verifyFrame'> = {},
+  extra: Pick<
+    ExportRunInput,
+    'geometry' | 'verifyFrame' | 'preferredRows'
+  > = {},
 ) {
   const runtime = {
     memoryProfile: 'desktop',
@@ -435,16 +471,338 @@ describe('runFullResolutionExport processed-window lifecycle', () => {
     expect(await listFiles(dir)).toEqual([])
   })
 
-  it('keeps the render failure when the cleanup also fails', async () => {
+  it('keeps the render failure and reports the cleanup that also failed', async () => {
     const renderError = new Error('WINDOW_READ_FAILED')
     const session = makeFakeSession({
       read: () => Promise.reject(renderError),
       end: () => Promise.reject(new Error('END_FAILED')),
     })
 
-    await expect(
-      runWithSession(session, join(dir, 'exports', 'final.jpg')),
-    ).rejects.toBe(renderError)
+    const error = await runWithSession(
+      session,
+      join(dir, 'exports', 'final.jpg'),
+    ).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(LmfgError)
+    expect((error as LmfgError).cause).toBe(renderError)
+    expect(toLmfgError(error).toEnvelope().error).toMatchObject({
+      code: 'internal',
+      message: 'WINDOW_READ_FAILED',
+      details: {
+        cleanup_failures: [
+          { step: 'end_processed_window_export', code: 'internal' },
+        ],
+      },
+    })
+    expect(session.endProcessedWindowExport).toHaveBeenCalledTimes(1)
+    expect(session.dispose).toHaveBeenCalledTimes(1)
+    expect(await listFiles(dir)).toEqual([])
+  })
+
+  it('keeps the end failure and lists the encoded JPEG it could not discard', async () => {
+    const endError = new Error('END_FAILED')
+    const session = makeFakeSession({ end: () => Promise.reject(endError) })
+    failTempRemoval()
+
+    const error = await runWithSession(
+      session,
+      join(dir, 'exports', 'final.jpg'),
+    ).catch((caught: unknown) => caught)
+
+    expect((error as LmfgError).cause).toBe(endError)
+    const envelope = toLmfgError(error).toEnvelope().error
+    expect(envelope).toMatchObject({
+      code: 'internal',
+      message: 'END_FAILED',
+      details: {
+        cleanup_failures: [
+          {
+            step: 'remove_temp_file',
+            code: 'permission.denied',
+            errno: 'EACCES',
+          },
+        ],
+      },
+    })
+    expect(JSON.stringify(envelope.details)).not.toContain(dir)
+    expect(session.dispose).toHaveBeenCalledTimes(1)
+    const files = await listFiles(dir)
+    expect(files).toHaveLength(1)
+    expect(files[0]).toMatch(/^exports\/final\.jpg\.\d+\.[0-9a-f]{8}\.tmp$/)
+  })
+})
+
+const actualJpegNode = await vi.importActual<
+  typeof import('@lumaforge/luma-jpeg-runtime/node')
+>('@lumaforge/luma-jpeg-runtime/node')
+
+/** Runs every JPEG session of the export on `nativeModule`. */
+function runJpegOnNativeModule(nativeModule: unknown): void {
+  vi.mocked(createLumaJpegRuntimeForNode).mockImplementation((options) =>
+    actualJpegNode.createLumaJpegRuntimeForNode({
+      ...options,
+      nativeLoader: async () => nativeModule,
+    }),
+  )
+}
+
+afterEach(() => {
+  vi.mocked(createLumaJpegRuntimeForNode).mockImplementation(
+    actualJpegNode.createLumaJpegRuntimeForNode,
+  )
+})
+
+type NativeChunk = { bytes: Uint8Array; byteOffset: number; final: boolean }
+
+/**
+ * A native JPEG encoder stand-in that streams a chunk on every row write, so
+ * an attempt's temp file exists before it finishes. The first chunk opens a
+ * JPEG and passes the 64 KiB header scan; finish closes it.
+ */
+function streamingNativeModule() {
+  class LumaJpegEncoder {
+    private pending: NativeChunk[] = []
+    private offset = 0
+
+    private emit(bytes: Uint8Array) {
+      this.pending.push({ bytes, byteOffset: this.offset, final: false })
+      this.offset += bytes.byteLength
+    }
+
+    writeRows() {
+      if (this.offset > 0) {
+        this.emit(new Uint8Array(16))
+        return
+      }
+      const head = new Uint8Array(70_000)
+      head.set([0xFF, 0xD8, 0xFF, 0xDB, 0x00, 0x02])
+      this.emit(head)
+    }
+
+    finish() {
+      this.emit(new Uint8Array([0xFF, 0xD9]))
+      return new Uint8Array(0)
+    }
+
+    drainChunks() {
+      const chunks = this.pending
+      this.pending = []
+      return chunks
+    }
+
+    abort() {}
+
+    delete() {}
+  }
+  return { LumaJpegEncoder }
+}
+
+/** The packaged native JPEG encoder with an abort that fails after it ran. */
+async function failingAbortNativeModule(abortError: Error) {
+  const { loadNativeModuleForNode } =
+    await import('@lumaforge/luma-native-artifacts/load-for-node')
+  type Encoder = {
+    writeRows: (rows: Uint8Array, rowCount: number) => unknown
+    finish: () => Uint8Array
+    drainChunks?: () => NativeChunk[]
+    abort: () => void
+    delete: () => void
+  }
+  const native = (await loadNativeModuleForNode({ kind: 'jpeg' })) as {
+    LumaJpegEncoder: new (
+      width: number,
+      height: number,
+      quality: number,
+    ) => Encoder
+  }
+  const calls = { abort: 0 }
+  function LumaJpegEncoder(width: number, height: number, quality: number) {
+    const inner = new native.LumaJpegEncoder(width, height, quality)
+    return {
+      writeRows: (rows: Uint8Array, rowCount: number) =>
+        inner.writeRows(rows, rowCount),
+      finish: () => inner.finish(),
+      ...(inner.drainChunks ? { drainChunks: () => inner.drainChunks!() } : {}),
+      abort: () => {
+        calls.abort += 1
+        inner.abort()
+        throw abortError
+      },
+      delete: () => inner.delete(),
+    }
+  }
+  return { module: { ...native, LumaJpegEncoder }, calls }
+}
+
+/** Lets the strips already read reach the JPEG sink. */
+async function settleWrites(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 20))
+}
+
+/** Fails a window read after the strips already read were written. */
+async function failLater(message: string): Promise<never> {
+  await settleWrites()
+  throw new Error(message)
+}
+
+const TEMP_FILE = /^exports\/final\.jpg\.\d+\.[0-9a-f]{8}\.tmp$/
+
+describe('runFullResolutionExport cleanup across engine retries', () => {
+  const tall = { width: 8, height: 512 }
+  const capability = makeCapability({
+    ...tall,
+    rawWidth: tall.width,
+    rawHeight: tall.height,
+    visibleCrop: { x: 0, y: 0, ...tall },
+  })
+  const removeFailure = {
+    step: 'remove_temp_file',
+    code: 'permission.denied',
+    errno: 'EACCES',
+  }
+
+  it('reports the temp file a retried attempt left behind with the delivered export', async () => {
+    runJpegOnNativeModule(streamingNativeModule())
+    let reads = 0
+    const session = makeFakeSession({
+      capability,
+      read: async (request) => {
+        reads += 1
+        // The first attempt runs out of memory once two strips reached its
+        // temp file.
+        if (reads === 3) await failLater('RESOURCE_ALLOCATION_FAILED')
+        return makeProcessedWindow(request)
+      },
+    })
+    failTempRemoval()
+    const outputPath = join(dir, 'exports', 'final.jpg')
+
+    const result = await runWithSession(session, outputPath, {
+      preferredRows: 128,
+    })
+
+    // Three reads of the abandoned attempt, then 64-row strips.
+    expect(reads).toBe(3 + 8)
+    expect(result.cleanupFailures).toEqual([removeFailure])
+    expect(JSON.stringify(result.cleanupFailures)).not.toContain(dir)
+    const pending = await listFiles(dir)
+    expect(pending).toHaveLength(2)
+    for (const file of pending) expect(file).toMatch(TEMP_FILE)
+
+    await result.commit()
+    const published = await listFiles(dir)
+    const orphans = published.filter((file) => file.endsWith('.tmp'))
+    expect(published).toEqual(['exports/final.jpg', ...orphans])
+    expect(orphans).toHaveLength(1)
+    expect(pending).toContain(orphans[0])
+    const jpeg = await readFile(outputPath)
+    expect(createHash('sha256').update(jpeg).digest('hex')).toBe(result.sha256)
+  })
+
+  it('lists the retried attempt beside a later failure', async () => {
+    runJpegOnNativeModule(streamingNativeModule())
+    let reads = 0
+    const renderError = new Error('WINDOW_READ_FAILED')
+    const session = makeFakeSession({
+      capability,
+      read: async (request) => {
+        reads += 1
+        if (reads === 3) await failLater('RESOURCE_ALLOCATION_FAILED')
+        if (reads === 6) {
+          await settleWrites()
+          throw renderError
+        }
+        return makeProcessedWindow(request)
+      },
+    })
+    failTempRemoval()
+
+    const error = await runWithSession(
+      session,
+      join(dir, 'exports', 'final.jpg'),
+      { preferredRows: 128 },
+    ).catch((caught: unknown) => caught)
+
+    expect((error as LmfgError).cause).toBe(renderError)
+    expect(toLmfgError(error).toEnvelope().error).toMatchObject({
+      code: 'internal',
+      message: 'WINDOW_READ_FAILED',
+      details: { cleanup_failures: [removeFailure, removeFailure] },
+    })
+    const left = await listFiles(dir)
+    expect(left).toHaveLength(2)
+    for (const file of left) expect(file).toMatch(TEMP_FILE)
+  })
+
+  it('reports a native encoder abort that failed in the retried attempt', async () => {
+    const { module, calls } = await failingAbortNativeModule(
+      new Error('NATIVE_ABORT_FAILED'),
+    )
+    runJpegOnNativeModule(module)
+    let reads = 0
+    const session = makeFakeSession({
+      capability,
+      read: async (request) => {
+        reads += 1
+        if (reads === 3) throw new Error('RESOURCE_ALLOCATION_FAILED')
+        return makeProcessedWindow(request)
+      },
+    })
+    const outputPath = join(dir, 'exports', 'final.jpg')
+
+    const result = await runWithSession(session, outputPath, {
+      preferredRows: 128,
+    })
+
+    expect(calls.abort).toBe(1)
+    expect(result.cleanupFailures).toEqual([
+      { step: 'abort_jpeg_encoder', code: 'internal' },
+    ])
+    await result.commit()
+    expect(await listFiles(dir)).toEqual(['exports/final.jpg'])
+    const jpeg = await readFile(outputPath)
+    expect(sofDimensions(jpeg)).toEqual(tall)
+  })
+})
+
+describe('runFullResolutionExport with a failing native encoder abort', () => {
+  it('keeps the window read failure and lists the encoder abort that failed', async () => {
+    const { module, calls } = await failingAbortNativeModule(
+      new Error('NATIVE_ABORT_FAILED'),
+    )
+    runJpegOnNativeModule(module)
+    const renderError = new Error('WINDOW_READ_FAILED')
+    let reads = 0
+    const session = makeFakeSession({
+      capability: makeCapability({
+        width: 4,
+        height: 128,
+        rawWidth: 4,
+        rawHeight: 128,
+        visibleCrop: { x: 0, y: 0, width: 4, height: 128 },
+      }),
+      read: async (request) => {
+        reads += 1
+        if (reads === 2) throw renderError
+        return makeProcessedWindow(request)
+      },
+    })
+
+    const error = await runWithSession(
+      session,
+      join(dir, 'exports', 'final.jpg'),
+      { preferredRows: 64 },
+    ).catch((caught: unknown) => caught)
+
+    expect(calls.abort).toBe(1)
+    expect((error as LmfgError).cause).toBe(renderError)
+    expect(toLmfgError(error).toEnvelope().error).toMatchObject({
+      code: 'internal',
+      message: 'WINDOW_READ_FAILED',
+      details: {
+        cleanup_failures: [{ step: 'abort_jpeg_encoder', code: 'internal' }],
+      },
+    })
     expect(session.endProcessedWindowExport).toHaveBeenCalledTimes(1)
     expect(session.dispose).toHaveBeenCalledTimes(1)
     expect(await listFiles(dir)).toEqual([])

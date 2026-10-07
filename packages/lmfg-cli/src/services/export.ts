@@ -18,7 +18,13 @@ import {
 } from '@lumaforge/render-engine/export'
 import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 
-import { LmfgError } from '../protocol/errors'
+import type { CleanupFailure } from '../protocol/errors'
+import {
+  attemptCleanup,
+  cleanupFailure,
+  LmfgError,
+  withCleanupFailures,
+} from '../protocol/errors'
 import type { LmfgRuntime } from '../runtime/node-runtime'
 import type { LoadedSource } from '../runtime/source-loader'
 import type { RenderParams } from '../schemas/params'
@@ -141,8 +147,14 @@ export type ExportRunResult = {
   resource: ResourceUsage
   /** Publish the validated JPEG at `path`; call after the manifest is verified. */
   commit: () => Promise<void>
-  /** Drop the validated JPEG without publishing. */
+  /** Drop the validated JPEG without publishing; rejects if it stays on disk. */
   discard: () => Promise<void>
+  /**
+   * Cleanup steps that failed for an attempt the engine abandoned and
+   * retried; a listed `remove_temp_file` means that attempt's temp file may
+   * remain. Callers report these with the result or beside a later failure.
+   */
+  cleanupFailures: readonly CleanupFailure[]
 }
 
 export async function runFullResolutionExport(
@@ -189,10 +201,23 @@ export async function runFullResolutionExport(
       path: input.outputPath,
       metadata: session.probe,
     })
+    // The lifecycle rethrows a failed end only when the export itself
+    // succeeded; remember it so it is reported beside an earlier failure.
+    const endFailures: unknown[] = []
+    const endProcessedWindowExport = session.endProcessedWindowExport
     try {
       await runProcessedWindowExportLifecycle({
         beginProcessedWindowExport: session.beginProcessedWindowExport,
-        endProcessedWindowExport: session.endProcessedWindowExport,
+        endProcessedWindowExport: endProcessedWindowExport
+          ? async (signal) => {
+              try {
+                return await endProcessedWindowExport(signal)
+              } catch (error) {
+                endFailures.push(error)
+                throw error
+              }
+            }
+          : undefined,
         signal: input.signal,
         runExport: () =>
           runFullResolutionJpegExport({
@@ -225,6 +250,7 @@ export async function runFullResolutionExport(
         sha256: streamed.sha256,
         commit: streamed.commit,
         discard: streamed.discard,
+        cleanupFailures: [...sink.cleanupFailures()],
         width: frame.output.width,
         height: frame.output.height,
         source: frame.source,
@@ -235,12 +261,19 @@ export async function runFullResolutionExport(
         resource: captureResourceUsage(),
       }
     } catch (error) {
-      // A rejected export never leaves an encoded temp file behind.
-      await sink
-        .result()
-        ?.discard()
-        .catch(() => undefined)
-      throw error
+      // A rejected export drops its encoded temp file; the export's own
+      // failure stays primary and every cleanup that failed is listed with it.
+      const failures: CleanupFailure[] = [...sink.cleanupFailures()]
+      for (const endError of endFailures) {
+        if (endError !== error) {
+          failures.push(cleanupFailure('end_processed_window_export', endError))
+        }
+      }
+      const streamed = sink.result()
+      if (streamed) {
+        await attemptCleanup(failures, 'remove_temp_file', streamed.discard)
+      }
+      throw withCleanupFailures(error, failures)
     }
   } finally {
     session.dispose()

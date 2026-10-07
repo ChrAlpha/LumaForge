@@ -975,7 +975,7 @@ describe('runReplay with a geometry', () => {
     const details = (error as { details: Record<string, unknown> }).details
     expect(details).not.toHaveProperty('output')
     expect(details).not.toHaveProperty('manifest_uri')
-    expect(details).not.toHaveProperty('discard_error')
+    expect(details).not.toHaveProperty('cleanup_failures')
     expect(await fileExists(outputPath)).toBe(false)
     expect(await fileExists(manifestOutputPath)).toBe(false)
     expect(await entriesOf(join(dir, 'replay'))).toEqual([])
@@ -1091,7 +1091,7 @@ describe('runReplay with a geometry', () => {
         stage: 'output',
         published: false,
         expected_sha256: 'b'.repeat(64),
-        discard_error: 'disk detached',
+        cleanup_failures: [{ step: 'remove_temp_file', code: 'internal' }],
       },
     })
     expect(await fileExists(outputPath)).toBe(false)

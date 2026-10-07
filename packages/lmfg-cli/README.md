@@ -41,7 +41,13 @@ Every command prints exactly one JSON envelope on stdout:
 ```
 
 Failures use `lmfg.error.v1` with a stable `code`, `retryable`, and
-`suggested_next_actions`. `--emit ndjson` streams `lmfg.event.v1` lines
+`suggested_next_actions`. When cleanup after a failure fails too, the code and
+message stay the first failure's and `details.cleanup_failures` lists each
+step that did not finish (`step`, `code`, and `errno` for filesystem errors);
+a listed `remove_temp_file` means a `.tmp` file may remain next to the output.
+An export or replay that succeeds after the engine retried a failed attempt
+lists that attempt's failed cleanup the same way under its result's
+`cleanup_failures`. `--emit ndjson` streams `lmfg.event.v1` lines
 (`started`, `candidate.ready`, `artifact.ready`, `export.progress`, …) and ends
 with a `completed` event that carries the result or error. Diagnostics go to
 stderr; `--quiet` silences them.

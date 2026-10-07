@@ -40,7 +40,11 @@ export type LumaJpegNodeEncoder = {
   writeRows: (rows: Uint8Array, rowCount: number) => Promise<void>
   /** Resolves with the full JPEG byte stream (or empty in chunks mode). */
   finish: () => Promise<Uint8Array>
-  abort: () => void
+  /**
+   * Releases the encoder. Resolves once it is released (or was never
+   * created) and rejects when releasing it failed.
+   */
+  abort: () => Promise<void>
 }
 
 export type LumaJpegNodeRuntime = {
@@ -184,15 +188,20 @@ export async function createLumaJpegRuntimeForNode(
         return blobToUint8Array(response.payload.blob)
       },
 
-      abort() {
+      async abort() {
         if (state !== 'open') return
         state = 'aborted'
-        void createPromise
-          .then(() => dispatch('abort', {}))
-          .catch(() => undefined)
-          .finally(() => {
-            encoderActive = false
-          })
+        try {
+          // An encoder that was never created has nothing to release; its
+          // creation failure is reported by the call that awaited it.
+          const created = await createPromise.then(
+            () => true,
+            () => false,
+          )
+          if (created) await dispatch('abort', {})
+        } finally {
+          encoderActive = false
+        }
       },
     }
   }

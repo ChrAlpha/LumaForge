@@ -207,3 +207,127 @@ export function toLmfgError(error: unknown): LmfgError {
     cause: error,
   })
 }
+
+/** The cleanup steps that run after an operation failed or was refused. */
+export const CLEANUP_STEPS = [
+  'abort_jpeg_encoder',
+  'dispose_jpeg_runtime',
+  'close_temp_file',
+  'remove_temp_file',
+  'end_processed_window_export',
+] as const
+
+export type CleanupStep = (typeof CLEANUP_STEPS)[number]
+
+/**
+ * A cleanup step that did not finish: the step, the code its error maps to,
+ * and the filesystem errno when there is one. The error message stays out
+ * because it can carry local paths. A failed `remove_temp_file` means the
+ * temp file may still exist.
+ */
+export type CleanupFailure = {
+  step: CleanupStep
+  code: LmfgErrorCode
+  errno?: string
+}
+
+/** At most this many cleanup failures are listed in one error. */
+export const MAX_CLEANUP_FAILURES = 8
+
+const ERRNO_PATTERN = /^E[A-Z0-9]{1,15}$/
+
+export function cleanupFailure(
+  step: CleanupStep,
+  error: unknown,
+): CleanupFailure {
+  const errno =
+    error instanceof Error && !(error instanceof LmfgError)
+      ? (error as NodeJS.ErrnoException).code
+      : undefined
+  return {
+    step,
+    code: toLmfgError(error).code,
+    ...(typeof errno === 'string' && ERRNO_PATTERN.test(errno)
+      ? { errno }
+      : {}),
+  }
+}
+
+/**
+ * Runs one cleanup step and records its failure in `failures` instead of
+ * throwing it; resolves whether the step finished.
+ */
+export async function attemptCleanup(
+  failures: CleanupFailure[],
+  step: CleanupStep,
+  cleanup: () => unknown,
+): Promise<boolean> {
+  try {
+    await cleanup()
+    return true
+  } catch (error) {
+    failures.push(cleanupFailure(step, error))
+    return false
+  }
+}
+
+/**
+ * How a result or an error lists cleanup failures: at most
+ * `MAX_CLEANUP_FAILURES` under `cleanup_failures`, the rest counted in
+ * `cleanup_failures_omitted`, and neither field when nothing failed.
+ */
+export function cleanupFailureFields(failures: readonly CleanupFailure[]): {
+  cleanup_failures?: CleanupFailure[]
+  cleanup_failures_omitted?: number
+} {
+  if (failures.length === 0) return {}
+  const omitted = failures.length - MAX_CLEANUP_FAILURES
+  return {
+    cleanup_failures: failures.slice(0, MAX_CLEANUP_FAILURES),
+    ...(omitted > 0 ? { cleanup_failures_omitted: omitted } : {}),
+  }
+}
+
+/** Every cleanup failure an error carries, including those not listed. */
+const allCleanupFailures = new WeakMap<LmfgError, readonly CleanupFailure[]>()
+
+/** The cleanup failures an error already reports. */
+export function cleanupFailuresOf(error: unknown): readonly CleanupFailure[] {
+  if (!(error instanceof LmfgError)) return []
+  const known = allCleanupFailures.get(error)
+  if (known) return known
+  const reported = error.details?.cleanup_failures
+  return Array.isArray(reported) ? (reported as CleanupFailure[]) : []
+}
+
+/**
+ * Keeps `primary` as the failure an operation reports and lists the cleanup
+ * failures that followed it under `details.cleanup_failures`: the code,
+ * message, retryability and exit code stay the primary's. Each failure is
+ * listed once, bounded as `cleanupFailureFields` bounds them. Without a new
+ * failure `primary` comes back unchanged.
+ */
+export function withCleanupFailures(
+  primary: unknown,
+  failures: readonly CleanupFailure[],
+): unknown {
+  const reported = cleanupFailuresOf(primary)
+  const added = failures.filter((failure) => !reported.includes(failure))
+  if (added.length === 0) return primary
+  const base = toLmfgError(primary)
+  const all = [...reported, ...added]
+  const {
+    cleanup_failures: _listed,
+    cleanup_failures_omitted: _omitted,
+    ...details
+  } = base.details ?? {}
+  const combined = new LmfgError(base.code, {
+    message: base.message,
+    retryable: base.retryable,
+    suggestedNextActions: base.suggestedNextActions,
+    details: { ...details, ...cleanupFailureFields(all) },
+    cause: primary,
+  })
+  allCleanupFailures.set(combined, all)
+  return combined
+}

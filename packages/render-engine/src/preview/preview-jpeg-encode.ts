@@ -10,7 +10,8 @@ const PREVIEW_ENCODE_ROW_BAND = 32
 export type PreviewJpegEncoder = {
   writeRows: (rows: Uint8Array, rowCount: number) => Promise<void>
   finish: () => Promise<unknown>
-  abort: () => void
+  /** The Node encoder's abort settles once the encoder is released. */
+  abort: () => void | Promise<void>
 }
 
 export type PreviewJpegEncoderFactory = (input: {
@@ -67,7 +68,7 @@ export async function encodePreviewFrameToJpeg(
     return await encoder.finish()
   } catch (error) {
     try {
-      encoder.abort()
+      await encoder.abort()
     } catch {
       // Preserve the original failure.
     }

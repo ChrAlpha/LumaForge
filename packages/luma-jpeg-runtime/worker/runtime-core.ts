@@ -326,11 +326,25 @@ export function createJpegRuntimeCore(
         }
       }
 
+      // A backend that failed or finished already released its encoder, so
+      // there is nothing left to abort.
+      if (state === 'failed' || state === 'aborted' || state === 'finished') {
+        return {
+          id: request.id,
+          ok: true,
+          type: request.type,
+          payload: { aborted: true },
+        }
+      }
       const activeEncoder = getReadyEncoder()
-      activeEncoder.abort()
-      writtenRows = 0
-      state = 'aborted'
-      encoder = null
+      try {
+        // A failed native abort still leaves the encoder unusable.
+        activeEncoder.abort()
+      } finally {
+        writtenRows = 0
+        state = 'aborted'
+        encoder = null
+      }
 
       return {
         id: request.id,

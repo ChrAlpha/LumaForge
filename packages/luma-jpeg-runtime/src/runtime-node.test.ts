@@ -134,6 +134,93 @@ describeWithNative('createLumaJpegRuntimeForNode', () => {
   })
 })
 
+/** A native module stand-in whose encoder steps fail when told to. */
+function fakeNativeModule(faults: { writeRows?: Error; abort?: Error } = {}) {
+  const calls = { abort: 0, delete: 0 }
+  class LumaJpegEncoder {
+    writeRows() {
+      if (faults.writeRows) throw faults.writeRows
+    }
+
+    finish() {
+      return new Uint8Array([0xFF, 0xD8, 0xFF, 0xD9])
+    }
+
+    abort() {
+      calls.abort += 1
+      if (faults.abort) throw faults.abort
+    }
+
+    delete() {
+      calls.delete += 1
+    }
+  }
+  return { module: { LumaJpegEncoder }, calls }
+}
+
+describe('createLumaJpegRuntimeForNode abort', () => {
+  const options = { width: 4, height: 2, quality: 0.8 }
+
+  it('resolves once the native encoder is released', async () => {
+    const { module, calls } = fakeNativeModule()
+    const runtime = await createLumaJpegRuntimeForNode({
+      nativeLoader: async () => module,
+    })
+    const encoder = runtime.createEncoder(options)
+    await encoder.writeRows(new Uint8Array(4 * 3), 1)
+
+    await expect(encoder.abort()).resolves.toBeUndefined()
+    expect(calls).toEqual({ abort: 1, delete: 1 })
+    await expect(encoder.finish()).rejects.toThrow('LUMA_JPEG_RUNTIME_ABORTED')
+    await expect(encoder.abort()).resolves.toBeUndefined()
+    expect(calls.abort).toBe(1)
+  })
+
+  it('rejects with the native failure and frees the runtime for the next encoder', async () => {
+    const abortError = new Error('NATIVE_ABORT_FAILED')
+    const { module, calls } = fakeNativeModule({ abort: abortError })
+    const runtime = await createLumaJpegRuntimeForNode({
+      nativeLoader: async () => module,
+    })
+    const encoder = runtime.createEncoder(options)
+    await encoder.writeRows(new Uint8Array(4 * 3), 1)
+
+    await expect(encoder.abort()).rejects.toBe(abortError)
+    expect(calls).toEqual({ abort: 1, delete: 1 })
+    const next = runtime.createEncoder(options)
+    await next.writeRows(new Uint8Array(4 * 2 * 3), 2)
+    await expect(next.finish()).resolves.toBeInstanceOf(Uint8Array)
+  })
+
+  it('resolves without a native abort when a failed write already released the encoder', async () => {
+    const writeError = new Error('NATIVE_WRITE_FAILED')
+    const { module, calls } = fakeNativeModule({ writeRows: writeError })
+    const runtime = await createLumaJpegRuntimeForNode({
+      nativeLoader: async () => module,
+    })
+    const encoder = runtime.createEncoder(options)
+    await expect(encoder.writeRows(new Uint8Array(4 * 3), 1)).rejects.toBe(
+      writeError,
+    )
+
+    await expect(encoder.abort()).resolves.toBeUndefined()
+    expect(calls).toEqual({ abort: 0, delete: 1 })
+  })
+
+  it('resolves when the encoder was never created', async () => {
+    const runtime = await createLumaJpegRuntimeForNode({
+      nativeLoader: async () => {
+        throw new Error('missing artifact')
+      },
+    })
+    const encoder = runtime.createEncoder(options)
+    const abort = encoder.abort()
+
+    await expect(abort).resolves.toBeUndefined()
+    await expect(encoder.finish()).rejects.toThrow('LUMA_JPEG_RUNTIME_ABORTED')
+  })
+})
+
 if (!NATIVE_AVAILABLE) {
   describe('createLumaJpegRuntimeForNode — SKIPPED (native)', () => {
     it('native WASM missing; run native build or pnpm native:prepare', () => {

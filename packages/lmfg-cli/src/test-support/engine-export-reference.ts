@@ -150,8 +150,11 @@ function createInMemoryJpegSink(): JpegRowSink {
           }
         },
         async abort() {
-          ;(await encoder.catch(() => null))?.abort()
-          await dispose()
+          try {
+            await (await encoder.catch(() => null))?.abort()
+          } finally {
+            await dispose()
+          }
         },
       }
     },

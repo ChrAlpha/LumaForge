@@ -2,7 +2,13 @@ import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import { verifyManifestSha256 } from '@lumaforge/render-engine'
 import type { Command } from 'commander'
 
-import { LmfgError } from '../protocol/errors'
+import type { CleanupFailure } from '../protocol/errors'
+import {
+  attemptCleanup,
+  cleanupFailureFields,
+  LmfgError,
+  withCleanupFailures,
+} from '../protocol/errors'
 import { assertTierAvailable } from '../runtime/capability'
 import { loadSourceFile } from '../runtime/source-loader'
 import {
@@ -504,16 +510,30 @@ function registerExport(render: Command, host: CommandHost): void {
                 },
                 parentManifestSha256: parent,
               })
+              // A retried attempt's failed cleanup is reported with whatever
+              // this export ends in.
               if (!verifyManifestSha256(manifest)) {
-                await result.discard()
-                throw new LmfgError('export.refused', {
-                  message:
-                    'Export manifest failed self-verification; nothing was written.',
-                })
+                const failures: CleanupFailure[] = [...result.cleanupFailures]
+                await attemptCleanup(
+                  failures,
+                  'remove_temp_file',
+                  result.discard,
+                )
+                throw withCleanupFailures(
+                  new LmfgError('export.refused', {
+                    message:
+                      'Export manifest failed self-verification; nothing was published.',
+                  }),
+                  failures,
+                )
               }
-              await result.commit()
-              await writeJsonAtomic(manifestPath, manifest)
-              await store.allocate(record.id, 'exports')
+              try {
+                await result.commit()
+                await writeJsonAtomic(manifestPath, manifest)
+                await store.allocate(record.id, 'exports')
+              } catch (error) {
+                throw withCleanupFailures(error, result.cleanupFailures)
+              }
               ctx.output.event({
                 event: 'artifact.ready',
                 role: 'export',
@@ -539,6 +559,7 @@ function registerExport(render: Command, host: CommandHost): void {
                 strips: result.strips,
                 resource: result.resource,
                 timings_ms: result.timings,
+                ...cleanupFailureFields(result.cleanupFailures),
               }
             })
           },

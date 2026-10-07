@@ -1,12 +1,14 @@
 // @vitest-environment node
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { createLumaJpegRuntimeForNode } from '@lumaforge/luma-jpeg-runtime/node'
+import { createLumaRawRuntimeForNode } from '@lumaforge/luma-raw-runtime/node'
 import type { RenderManifest } from '@lumaforge/render-engine'
 import { sealRenderManifest } from '@lumaforge/render-engine/manifest'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createCliHarness,
@@ -17,6 +19,7 @@ import {
 import { loadSourceFile } from '../runtime/source-loader'
 import { resolveRenderEnvironment } from '../runtime/versions'
 import { parseRenderParams } from '../schemas/params'
+import { ExportResultSchema } from '../schemas/results'
 import {
   buildColorGraph,
   manifestToRenderParams,
@@ -29,6 +32,38 @@ import { buildRenderManifest, toSourceIdentity } from '../services/manifest'
 import { fileExists, readJson, writeJsonAtomic } from '../workspace/atomic-fs'
 import { createIterationStore } from '../workspace/iteration-store'
 import { createSessionStore } from '../workspace/session-store'
+
+vi.mock('@lumaforge/luma-raw-runtime/node', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@lumaforge/luma-raw-runtime/node')>()
+  return {
+    ...actual,
+    createLumaRawRuntimeForNode: vi.fn(actual.createLumaRawRuntimeForNode),
+  }
+})
+
+vi.mock('@lumaforge/luma-jpeg-runtime/node', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@lumaforge/luma-jpeg-runtime/node')>()
+  return {
+    ...actual,
+    createLumaJpegRuntimeForNode: vi.fn(actual.createLumaJpegRuntimeForNode),
+  }
+})
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, rm: vi.fn(actual.rm) }
+})
+
+const actualFs =
+  await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+const actualRaw = await vi.importActual<
+  typeof import('@lumaforge/luma-raw-runtime/node')
+>('@lumaforge/luma-raw-runtime/node')
+const actualJpeg = await vi.importActual<
+  typeof import('@lumaforge/luma-jpeg-runtime/node')
+>('@lumaforge/luma-jpeg-runtime/node')
 
 let cwd: string
 let cli: ReturnType<typeof createCliHarness>
@@ -101,7 +136,14 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await rm(cwd, { recursive: true, force: true })
+  vi.mocked(rm).mockImplementation(actualFs.rm)
+  vi.mocked(createLumaRawRuntimeForNode).mockImplementation(
+    actualRaw.createLumaRawRuntimeForNode,
+  )
+  vi.mocked(createLumaJpegRuntimeForNode).mockImplementation(
+    actualJpeg.createLumaJpegRuntimeForNode,
+  )
+  await actualFs.rm(cwd, { recursive: true, force: true })
 })
 
 async function exportCandidate() {
@@ -241,6 +283,181 @@ describe('candidate export input integrity', () => {
       sealRenderManifest({ ...manifest, render_params: params }),
     )
     await expectRefused(/does not record raw_render_exposure_ev/)
+  })
+})
+
+/** A RAW session that exports an 8x512 frame whose third window read runs out of memory. */
+function retryingRawSession() {
+  const frame = { width: 8, height: 512 }
+  let reads = 0
+  return {
+    probe: null,
+    probeExportCapability: async () => ({
+      supported: true,
+      strategy: 'libraw-processed-window',
+      ...frame,
+      rawWidth: frame.width,
+      rawHeight: frame.height,
+      visibleCrop: { x: 0, y: 0, ...frame },
+      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+      blackLevel: 0,
+      whiteLevel: 255,
+      orientation: { code: 1, supported: true },
+      color: {
+        workingSpace: 'linear-prophoto-rgb',
+        librawOutputColor: 'prophoto',
+        gamma: 'linear',
+        cameraWhiteBalanceAppliedByRuntime: true,
+        cameraMatrixAppliedByRuntime: true,
+      },
+      sensor: {
+        layout: 'bayer',
+        colorCount: 3,
+        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+        phaseIsWindowLocal: false,
+      },
+      windows: { librawProcessed: true, rawMosaic: false },
+      diagnostics: {
+        hasRawImage: true,
+        hasColor3Image: false,
+        hasColor4Image: false,
+        hasXTransTable: false,
+      },
+      reasons: [],
+    }),
+    beginProcessedWindowExport: async () => ({ active: true }),
+    endProcessedWindowExport: async () => ({ ended: true }),
+    readProcessedWindow: async (request: {
+      outputRect: { x: number; y: number; width: number; height: number }
+    }) => {
+      reads += 1
+      if (reads === 3) {
+        // Let the strips already read reach the first attempt's temp file.
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        throw new Error('RESOURCE_ALLOCATION_FAILED')
+      }
+      const { width, height } = request.outputRect
+      return {
+        rect: request.outputRect,
+        workingSpace: 'linear-prophoto-rgb',
+        data: new Uint16Array(width * height * 3).fill(32768),
+        width,
+        height,
+        stride: width * 3,
+        normalized: false,
+        orientationApplied: true,
+        colorApplied: true,
+        warnings: [],
+      }
+    },
+    dispose: () => undefined,
+  }
+}
+
+/** A native JPEG encoder stand-in that streams a chunk on every row write. */
+function streamingNativeJpeg() {
+  type Chunk = { bytes: Uint8Array; byteOffset: number; final: boolean }
+  class LumaJpegEncoder {
+    private pending: Chunk[] = []
+    private started = false
+
+    writeRows() {
+      if (this.started) {
+        this.pending.push({
+          bytes: new Uint8Array(16),
+          byteOffset: 0,
+          final: false,
+        })
+        return
+      }
+      this.started = true
+      // Opens a JPEG and passes the writer's 64 KiB header scan.
+      const head = new Uint8Array(70_000)
+      head.set([0xFF, 0xD8, 0xFF, 0xDB, 0x00, 0x02])
+      this.pending.push({ bytes: head, byteOffset: 0, final: false })
+    }
+
+    finish() {
+      this.pending.push({
+        bytes: new Uint8Array([0xFF, 0xD9]),
+        byteOffset: 0,
+        final: true,
+      })
+      return new Uint8Array(0)
+    }
+
+    drainChunks() {
+      const chunks = this.pending
+      this.pending = []
+      return chunks
+    }
+
+    abort() {}
+
+    delete() {}
+  }
+  return { LumaJpegEncoder }
+}
+
+describe('candidate export after an engine retry', () => {
+  it('publishes the export and reports the temp file the abandoned attempt left', async () => {
+    vi.mocked(createLumaRawRuntimeForNode).mockImplementation(
+      async () =>
+        ({
+          init: async () => undefined,
+          openSession: async () => retryingRawSession(),
+          dispose: () => undefined,
+        }) as never,
+    )
+    const nativeJpeg = streamingNativeJpeg()
+    vi.mocked(createLumaJpegRuntimeForNode).mockImplementation((options) =>
+      actualJpeg.createLumaJpegRuntimeForNode({
+        ...options,
+        nativeLoader: async () => nativeJpeg,
+      }),
+    )
+    vi.mocked(rm).mockImplementation(async (path, options) => {
+      if (String(path).endsWith('.tmp')) {
+        throw Object.assign(
+          new Error(`EACCES: permission denied, unlink '${String(path)}'`),
+          { code: 'EACCES', syscall: 'unlink' },
+        )
+      }
+      return actualFs.rm(path, options)
+    })
+
+    const result = await cli.run(
+      'render',
+      'export',
+      '--session',
+      sessionId,
+      '--iteration',
+      'iter_0001',
+      '--candidate',
+      'cand_0001',
+      '--preferred-rows',
+      '128',
+    )
+
+    expect(result.code, result.stdout).toBe(0)
+    expect(result.envelope).toMatchObject({
+      schema: 'lmfg.render.export.v1',
+      ok: true,
+    })
+    const exported = ExportResultSchema.parse(result.envelope.result)
+    expect(exported.cleanup_failures).toEqual([
+      { step: 'remove_temp_file', code: 'permission.denied', errno: 'EACCES' },
+    ])
+    expect(exported.cleanup_failures_omitted).toBeUndefined()
+    expect(result.stdout).not.toContain('.tmp')
+    const exportsDir = join(cwd, '.lmfg', 'sessions', sessionId, 'exports')
+    const files = (await readdir(exportsDir)).sort()
+    expect(files).toHaveLength(3)
+    expect(files).toContain('final.jpg')
+    expect(
+      files.filter((file) => /^final\.jpg\.\d+\.[0-9a-f]{8}\.tmp$/.test(file)),
+    ).toHaveLength(1)
+    expect(exported.output.path).toBe(join(exportsDir, 'final.jpg'))
   })
 })
 

@@ -7,7 +7,6 @@
   "knip": [
     "dependencies package.json: @pastel-palette/tailwindcss",
     "dependencies package.json: @visx/group",
-    "dependencies packages/lmfg-cli/package.json: @lumaforge/luma-native-artifacts",
     "devDependencies package.json: @egoist/tailwindcss-icons",
     "devDependencies package.json: @iconify-json/mingcute",
     "devDependencies package.json: @tailwindcss/container-queries",
