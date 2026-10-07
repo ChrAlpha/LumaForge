@@ -99,6 +99,7 @@ function createStageInput(
     loadedImage: { file: null, metadata: null },
     session: null,
     params,
+    paramsRef: { current: params },
     lutDataRef: { current: null },
     decodedImageRef: { current: null },
     stats: null,

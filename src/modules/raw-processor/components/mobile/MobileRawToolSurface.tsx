@@ -59,6 +59,7 @@ export function MobileRawToolSurface() {
     color: props.color,
     selectiveColor: props.selectiveColor,
     transformApplied: props.transform?.active === true,
+    previewLookReason: props.previewLookReason,
   })
 
   return (

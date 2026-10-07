@@ -1,0 +1,25 @@
+import type {
+  ColorGraphIntentSource,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
+
+import type { PreviewLookReason } from '../surface/raw-reason'
+import { resolvePreviewLookReason } from '../surface/raw-reason'
+
+/** The refusal `raw.export.previewLookUnavailable` localizes. */
+export const HQ_PREVIEW_LOOK_EXPORT_REASON =
+  'The preview leaves out the selected LUT. Fix its color contract or clear the LUT to export an HQ preview JPEG.'
+
+/**
+ * Why an HQ preview JPEG would not carry the selected look, or null when it
+ * would. The WebGPU preview renders that JPEG, so it draws exactly what the
+ * WebGPU preview policy resolves. A look the policy leaves out would leave
+ * the JPEG without the look its name and recap claim, so the HQ export
+ * refuses instead of writing it.
+ */
+export function resolveHqPreviewLookRefusal(input: {
+  intent: ColorGraphIntentSource
+  lut: LUTData | null
+}): PreviewLookReason | null {
+  return resolvePreviewLookReason({ ...input, executor: 'webgpu' })
+}

@@ -1,4 +1,5 @@
 import type { DeliveredExportSize } from '../../services/export/delivered-export-size'
+import type { PreviewLookReason } from '../../services/surface/raw-reason'
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
@@ -29,8 +30,10 @@ export interface MobileExportRecap {
    */
   size: DeliveredExportSize | null
   /**
-   * Null when no LUT is applied. `percent` is the strength the export
-   * writes, rounded to the whole percent the Strength row sets; 0 is Off.
+   * Null when no LUT is applied, or when the preview leaves the applied LUT
+   * out: neither export writes a look the preview drops. `percent` is the
+   * strength the export writes, rounded to the whole percent the Strength
+   * row sets; 0 is Off.
    */
   look: { name: string; percent: number } | null
   /** Tone, colour, and HSL fields away from neutral. */
@@ -49,17 +52,20 @@ export function buildMobileExportRecap(input: {
   color: ColorValue
   selectiveColor: HSLToolValue | undefined
   transformApplied: boolean
+  /** Why the preview does not draw the selected look; null when it does. */
+  previewLookReason: PreviewLookReason | null | undefined
 }): MobileExportRecap {
   const output = getAvailableExportOutput(input)
   return {
     output,
     size: output === 'full-resolution' ? (input.deliveredSize ?? null) : null,
-    look: input.lutName
-      ? {
-          name: input.lutName,
-          percent: Math.round(input.intensity * 100),
-        }
-      : null,
+    look:
+      input.lutName && !input.previewLookReason
+        ? {
+            name: input.lutName,
+            percent: Math.round(input.intensity * 100),
+          }
+        : null,
     adjustments: countAdjustments(input),
     transformApplied: input.transformApplied,
   }

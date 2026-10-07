@@ -38,6 +38,8 @@ type UseRawExportStageInput = {
   loadedImage: { file: File | null; metadata: ImageMetadata | null }
   session: ImageSession | null
   params: ColorGraphIntentSource
+  /** The latest params, for an action called from an older render. */
+  paramsRef: MutableRefObject<ColorGraphIntentSource>
   lutDataRef: MutableRefObject<LUTData | null>
   decodedImageRef: MutableRefObject<DecodedImage | null>
   stats: PipelineStats | null
@@ -78,6 +80,7 @@ export function useRawExportStage({
   loadedImage,
   session,
   params,
+  paramsRef,
   lutDataRef,
   decodedImageRef,
   stats,
@@ -155,6 +158,8 @@ export function useRawExportStage({
     displaySource,
     sourceFile: loadedImage.file,
     rawRenderExposure,
+    params,
+    lutData: lutDataRef.current,
     stats,
   })
   // Full-resolution export starts only from an explicit user action, which
@@ -179,6 +184,8 @@ export function useRawExportStage({
   })
   const { exportPreviewImage } = useHqPreviewExportAction({
     sessionRef,
+    paramsRef,
+    lutDataRef,
     decodedImageRef,
     pipelineRef,
     isMountedRef,

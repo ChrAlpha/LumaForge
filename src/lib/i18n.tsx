@@ -166,6 +166,10 @@ export function localizeRawReason(reason: string | undefined, t: Translate) {
     return t('raw.export.previewUnavailable')
   }
 
+  if (reason === enMessages['raw.export.previewLookUnavailable']) {
+    return t('raw.export.previewLookUnavailable')
+  }
+
   return reason
 }
 

@@ -1,3 +1,10 @@
+import type {
+  ColorGraphIntentSource,
+  LUTColorProfile,
+  LUTContractResolution,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
@@ -8,7 +15,65 @@ import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-sessio
 import type { ExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
+import { HQ_PREVIEW_LOOK_EXPORT_REASON } from '../../../services/export/hq-preview-look'
 import { useExportDerivedState } from './useExportDerivedState'
+
+const NO_LOOK: ColorGraphIntentSource = {
+  styleKind: 'none',
+  builtinPreset: null,
+  intensity: 0,
+  ...NEUTRAL_USER_COLOR_INTENT,
+}
+
+const CUSTOM_LOOK: ColorGraphIntentSource = {
+  ...NO_LOOK,
+  styleKind: 'custom',
+  intensity: 0.8,
+}
+
+function lutProfile(overrides: Partial<LUTColorProfile> = {}): LUTColorProfile {
+  return {
+    id: 'test-profile',
+    label: 'Test profile',
+    role: 'scene-creative',
+    inputGamut: 'v-gamut',
+    inputTransfer: 'v-log',
+    inputRange: 'full',
+    outputGamut: 'srgb-rec709',
+    outputTransfer: 'srgb',
+    outputRange: 'full',
+    aliases: [],
+    ...overrides,
+  }
+}
+
+function lutData(profileResolution: LUTContractResolution): LUTData {
+  return {
+    size: 2,
+    data: new Float32Array(2 ** 3 * 3),
+    domainMin: [0, 0, 0],
+    domainMax: [1, 1, 1],
+    inputProfile: 'v-log',
+    profileResolution,
+  }
+}
+
+/** Confirmed, but with a linear output export refuses. */
+const LINEAR_OUTPUT_LUT = lutData({
+  kind: 'confirmed',
+  confidence: 'user',
+  profile: lutProfile({ outputGamut: 'rec2020', outputTransfer: 'linear' }),
+})
+/** A recommended contract the user has not confirmed. */
+const UNCONFIRMED_LUT = lutData({
+  kind: 'recommended',
+  recommendations: [lutProfile()],
+})
+const ACCEPTED_LUT = lutData({
+  kind: 'confirmed',
+  confidence: 'user',
+  profile: lutProfile(),
+})
 
 function createExportResult(): ExportResult {
   return {
@@ -103,6 +168,8 @@ describe('useExportDerivedState', () => {
         displaySource: 'bounded-hq',
         sourceFile: session.sourceFile.file ?? null,
         rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+        params: NO_LOOK,
+        lutData: null,
         stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
       }),
     )
@@ -133,6 +200,8 @@ describe('useExportDerivedState', () => {
         displaySource: 'bounded-hq',
         sourceFile: session.sourceFile.file ?? null,
         rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+        params: NO_LOOK,
+        lutData: null,
         stats,
       }),
     )
@@ -140,6 +209,57 @@ describe('useExportDerivedState', () => {
     expect(result.current.canExport).toBe(true)
     expect(result.current.exportDisabledReason).toBeUndefined()
     expect(result.current.previewSuspended).toBe(false)
+    expect(result.current.canPreviewExport).toBe(true)
+    expect(result.current.previewExportDisabledReason).toBeUndefined()
+  })
+
+  it('refuses HQ preview export while the WebGPU preview leaves out the selected LUT', () => {
+    const session = createSession()
+    for (const selectedLut of [LINEAR_OUTPUT_LUT, UNCONFIRMED_LUT, null]) {
+      const { result } = renderHook(() =>
+        useExportDerivedState({
+          session,
+          exportInterruption: null,
+          decodedImageRef: { current: createBoundedHqImage() },
+          embeddedPreviewUrl: null,
+          status: 'ready',
+          hasImage: true,
+          displaySource: 'bounded-hq',
+          sourceFile: session.sourceFile.file ?? null,
+          rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+          params: CUSTOM_LOOK,
+          lutData: selectedLut,
+          stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+        }),
+      )
+
+      // The JPEG would carry no look while its name and recap claim one.
+      expect(result.current.canPreviewExport).toBe(false)
+      expect(result.current.previewExportDisabledReason).toBe(
+        HQ_PREVIEW_LOOK_EXPORT_REASON,
+      )
+    }
+  })
+
+  it('keeps HQ preview export for a LUT the preview draws', () => {
+    const session = createSession()
+    const { result } = renderHook(() =>
+      useExportDerivedState({
+        session,
+        exportInterruption: null,
+        decodedImageRef: { current: createBoundedHqImage() },
+        embeddedPreviewUrl: null,
+        status: 'ready',
+        hasImage: true,
+        displaySource: 'bounded-hq',
+        sourceFile: session.sourceFile.file ?? null,
+        rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+        params: CUSTOM_LOOK,
+        lutData: ACCEPTED_LUT,
+        stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+      }),
+    )
+
     expect(result.current.canPreviewExport).toBe(true)
     expect(result.current.previewExportDisabledReason).toBeUndefined()
   })
@@ -173,6 +293,8 @@ describe('useExportDerivedState', () => {
         displaySource: 'bounded-hq',
         sourceFile: session.sourceFile.file ?? null,
         rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+        params: NO_LOOK,
+        lutData: null,
         stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
       }),
     )
@@ -209,6 +331,8 @@ describe('useExportDerivedState', () => {
           displaySource: 'quick',
           sourceFile: file,
           rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+          params: NO_LOOK,
+          lutData: null,
           stats: null,
         }),
       ).result.current.exportInterrupted

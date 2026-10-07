@@ -292,6 +292,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     loadedImage,
     session,
     params,
+    paramsRef,
     lutDataRef,
     decodedImageRef,
     stats,

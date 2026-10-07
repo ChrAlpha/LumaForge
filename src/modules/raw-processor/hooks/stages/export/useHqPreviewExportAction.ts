@@ -1,3 +1,7 @@
+import type {
+  ColorGraphIntentSource,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback } from 'react'
 import { toast as sonnerToast } from 'sonner'
@@ -18,6 +22,10 @@ import {
   resolveHqPreviewExportSize,
   runPreviewExportJob,
 } from '../../../services/export/export-system'
+import {
+  HQ_PREVIEW_LOOK_EXPORT_REASON,
+  resolveHqPreviewLookRefusal,
+} from '../../../services/export/hq-preview-look'
 
 type HqPreviewExportToast = {
   success: (message: string) => void
@@ -26,6 +34,10 @@ type HqPreviewExportToast = {
 
 type UseHqPreviewExportActionInput = {
   sessionRef: MutableRefObject<ImageSession | null>
+  /** The look and user color the preview pipeline renders with. */
+  paramsRef: MutableRefObject<ColorGraphIntentSource>
+  /** The custom LUT data the preview pipeline renders with. */
+  lutDataRef: MutableRefObject<LUTData | null>
   decodedImageRef: MutableRefObject<DecodedImage | null>
   pipelineRef: MutableRefObject<Pick<
     RawProcessingPipeline,
@@ -66,6 +78,8 @@ function resolveHqPreviewExportCopyCapability() {
 
 export function useHqPreviewExportAction({
   sessionRef,
+  paramsRef,
+  lutDataRef,
   decodedImageRef,
   pipelineRef,
   isMountedRef,
@@ -116,6 +130,18 @@ export function useHqPreviewExportAction({
       return
     }
 
+    // Read when the action runs, so an action a surface captured before the
+    // look changed still refuses a look the preview has since left out.
+    const intent = paramsRef.current
+    if (resolveHqPreviewLookRefusal({ intent, lut: lutDataRef.current })) {
+      scheduleToast(() =>
+        toast.error('HQ preview export is not ready', {
+          description: HQ_PREVIEW_LOOK_EXPORT_REASON,
+        }),
+      )
+      return
+    }
+
     const exportSessionId = activeSession.id
     const exportGraphVersion = exportGraphVersionRef.current
     abortExportWork()
@@ -151,9 +177,13 @@ export function useHqPreviewExportAction({
         width: image.width,
         height: image.height,
       })
+      // The preview draws the selected look, so the file names it; with no
+      // look drawn it names none.
       const filename = buildPreviewExportFilename(
         activeSession.sourceFile.name,
-        activeSession.activeStyle?.name ?? 'neutral',
+        intent.styleKind === 'none'
+          ? 'neutral'
+          : (activeSession.activeStyle?.name ?? 'neutral'),
       )
       const result = await runPreviewExportJob({
         filename,
@@ -235,6 +265,8 @@ export function useHqPreviewExportAction({
     exportAbortControllerRef,
     exportGraphVersionRef,
     isMountedRef,
+    lutDataRef,
+    paramsRef,
     pipelineRef,
     previewCopyCanvasRef,
     previewExportDisabledReason,

@@ -1,0 +1,98 @@
+import type {
+  ColorGraphIntentSource,
+  LUTColorProfile,
+  LUTContractResolution,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import { describe, expect, it } from 'vitest'
+
+import enMessages from '~/locales/en.json'
+
+import {
+  HQ_PREVIEW_LOOK_EXPORT_REASON,
+  resolveHqPreviewLookRefusal,
+} from './hq-preview-look'
+
+function profile(overrides: Partial<LUTColorProfile> = {}): LUTColorProfile {
+  return {
+    id: 'test-profile',
+    label: 'Test profile',
+    role: 'scene-creative',
+    inputGamut: 'v-gamut',
+    inputTransfer: 'v-log',
+    inputRange: 'full',
+    outputGamut: 'srgb-rec709',
+    outputTransfer: 'srgb',
+    outputRange: 'full',
+    aliases: [],
+    ...overrides,
+  }
+}
+
+function lut(profileResolution: LUTContractResolution): LUTData {
+  return {
+    size: 2,
+    data: new Float32Array(2 ** 3 * 3),
+    domainMin: [0, 0, 0],
+    domainMax: [1, 1, 1],
+    inputProfile: 'v-log',
+    profileResolution,
+  }
+}
+
+function intent(
+  styleKind: ColorGraphIntentSource['styleKind'],
+): ColorGraphIntentSource {
+  return {
+    styleKind,
+    builtinPreset: null,
+    intensity: 1,
+    ...NEUTRAL_USER_COLOR_INTENT,
+  }
+}
+
+describe('resolveHqPreviewLookRefusal', () => {
+  it('refuses a LUT the WebGPU preview leaves out', () => {
+    expect(
+      resolveHqPreviewLookRefusal({
+        intent: intent('custom'),
+        lut: lut({
+          kind: 'confirmed',
+          confidence: 'user',
+          profile: profile({
+            outputGamut: 'rec2020',
+            outputTransfer: 'linear',
+          }),
+        }),
+      }),
+    ).toBe('lut-output-transfer-linear')
+    expect(
+      resolveHqPreviewLookRefusal({
+        intent: intent('custom'),
+        lut: lut({ kind: 'recommended', recommendations: [profile()] }),
+      }),
+    ).toBe('lut-input-unconfirmed')
+    expect(
+      resolveHqPreviewLookRefusal({ intent: intent('custom'), lut: null }),
+    ).toBe('lut-not-loaded')
+  })
+
+  it('accepts a LUT the preview draws, and no look at all', () => {
+    expect(
+      resolveHqPreviewLookRefusal({
+        intent: intent('custom'),
+        lut: lut({ kind: 'confirmed', confidence: 'user', profile: profile() }),
+      }),
+    ).toBeNull()
+    expect(
+      resolveHqPreviewLookRefusal({ intent: intent('none'), lut: null }),
+    ).toBeNull()
+  })
+
+  it('reads as the copy that localizes it', () => {
+    expect(HQ_PREVIEW_LOOK_EXPORT_REASON).toBe(
+      enMessages['raw.export.previewLookUnavailable'],
+    )
+  })
+})

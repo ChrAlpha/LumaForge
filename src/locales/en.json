@@ -403,6 +403,7 @@
   "raw.export.previewLoadRequired": "Load a RAW file before exporting an HQ preview JPEG.",
   "raw.export.previewRestoreRequired": "Restore the preview before exporting an HQ preview JPEG.",
   "raw.export.previewUnavailable": "HQ preview export is not ready.",
+  "raw.export.previewLookUnavailable": "The preview leaves out the selected LUT. Fix its color contract or clear the LUT to export an HQ preview JPEG.",
   "raw.export.noFallback": "No fallback path.",
   "raw.fileFacts.title": "File facts",
   "raw.fileFacts.eyebrow": "Source",

@@ -8,6 +8,7 @@ const neutral = {
   tone: TONE_NEUTRAL,
   color: COLOR_NEUTRAL,
   selectiveColor: undefined,
+  previewLookReason: null,
 }
 
 describe('buildMobileExportRecap', () => {
@@ -74,5 +75,34 @@ describe('buildMobileExportRecap', () => {
         canPreviewExport: false,
       }),
     ).toMatchObject({ output: null, size: null })
+  })
+
+  it('names no look the preview leaves out, whatever is selected', () => {
+    // A refused contract: the preview drops the look, so no export can
+    // write it and the recap does not claim it.
+    expect(
+      buildMobileExportRecap({
+        ...neutral,
+        canExport: false,
+        canPreviewExport: false,
+        deliveredSize: undefined,
+        lutName: 'Linear output LUT',
+        intensity: 1,
+        transformApplied: false,
+        previewLookReason: 'lut-output-transfer-linear',
+      }),
+    ).toMatchObject({ output: null, look: null })
+    expect(
+      buildMobileExportRecap({
+        ...neutral,
+        canExport: false,
+        canPreviewExport: true,
+        deliveredSize: undefined,
+        lutName: 'Unconfirmed LUT',
+        intensity: 1,
+        transformApplied: false,
+        previewLookReason: 'lut-input-unconfirmed',
+      }),
+    ).toMatchObject({ output: 'hq-preview', look: null })
   })
 })

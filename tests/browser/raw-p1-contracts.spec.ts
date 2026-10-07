@@ -1127,6 +1127,20 @@ test('mobile: a look export refuses draws as no look, says why, and cannot be ex
   const reason = panel.locator('[data-export-unavailable-reason]')
   await expect(reason).toBeVisible()
   await expect(reason).toHaveAttribute('data-tone', 'contract')
+  // The HQ preview JPEG is the preview's own render, which leaves the look
+  // out, so it refuses as well and says why. The recap does not claim the
+  // look either.
+  const hqExport = panel.getByRole('button', {
+    name: 'Export HQ preview JPEG',
+  })
+  await expect(hqExport).toBeDisabled()
+  await expect(hqExport).toHaveAccessibleDescription(
+    'The preview leaves out the selected LUT. Fix its color contract or clear the LUT to export an HQ preview JPEG.',
+  )
+  const recap = panel.locator('[data-export-recap]')
+  await expect(recap).toBeVisible()
+  await expect(recap).not.toContainText(REFUSED_TITLE)
+  await expect(recap).toContainText('No LUT')
   await expect(exportAction(page)).toHaveAccessibleName(
     'Export blocked: open details',
   )

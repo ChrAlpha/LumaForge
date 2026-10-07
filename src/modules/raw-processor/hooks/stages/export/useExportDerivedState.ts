@@ -1,4 +1,8 @@
-import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntentSource,
+  LUTData,
+  RawRenderExposure,
+} from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
 import { useMemo } from 'react'
 
@@ -14,6 +18,10 @@ import { deriveFullResExportReadiness } from '../../../services/export/export-re
 import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
 import { isInterruptedSource } from '../../../services/export/export-recovery'
 import { resolveExportShareButtonCapability } from '../../../services/export/export-result-actions'
+import {
+  HQ_PREVIEW_LOOK_EXPORT_REASON,
+  resolveHqPreviewLookRefusal,
+} from '../../../services/export/hq-preview-look'
 
 type UseExportDerivedStateInput = {
   session: ImageSession | null
@@ -25,6 +33,10 @@ type UseExportDerivedStateInput = {
   displaySource: DisplaySource
   sourceFile: File | null
   rawRenderExposure: RawRenderExposure | null
+  /** The selected look and user color the preview pipeline holds. */
+  params: ColorGraphIntentSource
+  /** The selected custom LUT's data the preview pipeline holds. */
+  lutData: LUTData | null
   stats: PipelineStats | null
 }
 
@@ -38,6 +50,8 @@ export function useExportDerivedState({
   displaySource,
   sourceFile,
   rawRenderExposure,
+  params,
+  lutData,
   stats,
 }: UseExportDerivedStateInput) {
   return useMemo(() => {
@@ -75,10 +89,17 @@ export function useExportDerivedState({
       exportPlanSuspendsPreview &&
       (status === 'exporting' || previewEvacuatedForReadyExport)
     const hqPreviewImage = decodedImageRef.current
+    // The HQ JPEG is the WebGPU preview's render, so it refuses while that
+    // preview leaves out the selected look its name would claim.
+    const hqPreviewLookRefusal = resolveHqPreviewLookRefusal({
+      intent: params,
+      lut: lutData,
+    })
     const canPreviewExport =
       !session?.exportGeometry &&
       status === 'ready' &&
       !previewSuspended &&
+      !hqPreviewLookRefusal &&
       displaySource === 'bounded-hq' &&
       hqPreviewImage?.source === 'bounded-hq' &&
       Boolean(stats?.inputSize)
@@ -88,12 +109,14 @@ export function useExportDerivedState({
         ? 'Load a RAW file before exporting an HQ preview JPEG.'
         : previewSuspended
           ? 'Restore the preview before exporting an HQ preview JPEG.'
-          : displaySource !== 'bounded-hq' ||
-              hqPreviewImage?.source !== 'bounded-hq'
-            ? 'HQ preview export is available after the bounded HQ preview finishes.'
-            : !stats?.inputSize
-              ? 'HQ preview export is not ready.'
-              : undefined
+          : hqPreviewLookRefusal
+            ? HQ_PREVIEW_LOOK_EXPORT_REASON
+            : displaySource !== 'bounded-hq' ||
+                hqPreviewImage?.source !== 'bounded-hq'
+              ? 'HQ preview export is available after the bounded HQ preview finishes.'
+              : !stats?.inputSize
+                ? 'HQ preview export is not ready.'
+                : undefined
 
     const deliveredExportSize = resolveDeliveredExportSize({
       fullResCapability: session?.exportState.fullResCapability,
@@ -117,6 +140,8 @@ export function useExportDerivedState({
     exportInterruption,
     embeddedPreviewUrl,
     hasImage,
+    lutData,
+    params,
     rawRenderExposure,
     session,
     sourceFile,
