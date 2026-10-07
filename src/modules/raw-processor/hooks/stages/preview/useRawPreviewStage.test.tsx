@@ -4,7 +4,6 @@ import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createResourceRegistry } from '~/lib/export/resource-registry'
-import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession } from '../../../model/session'
@@ -18,10 +17,10 @@ const params: ColorGraphIntent = {
 }
 
 describe('useRawPreviewStage', () => {
-  it('composes preview lifecycle actions for an empty preview state', () => {
+  it('composes preview lifecycle actions for an empty preview state', async () => {
+    const beginRuntimeSession = vi.fn()
     const { result } = renderHook(() =>
       useRawPreviewStage({
-        loadedFile: null,
         session: null,
         sessionRef: { current: null as ImageSession | null },
         pendingLoadSessionIdRef: { current: null },
@@ -39,15 +38,11 @@ describe('useRawPreviewStage', () => {
         lutDataVersion: 0,
         displaySource: 'none',
         isMountedRef: { current: true },
-        runtimeAbortControllerRef: { current: null },
         runtimeWorkSessionIdRef: { current: null },
-        runtimeSessionRef: { current: null as RawRuntimeSession | null },
+        beginRuntimeSession,
         setStatus: vi.fn(),
         setProgress: vi.fn(),
         setError: vi.fn(),
-        abortRuntimeWork: vi.fn(),
-        disposeRuntimeSession: vi.fn(),
-        openSession: vi.fn(),
         scheduleToast: vi.fn(),
         toast: { error: vi.fn() },
       }),
@@ -63,5 +58,9 @@ describe('useRawPreviewStage', () => {
       typeof result.current.registerCurrentPreviewPipelineForEvacuation,
     ).toBe('function')
     expect(typeof result.current.setOriginalPreviewPipeline).toBe('function')
+
+    // Without a source there is nothing to restore and no host lease to take.
+    await result.current.restorePreviewAfterExport()
+    expect(beginRuntimeSession).not.toHaveBeenCalled()
   })
 })

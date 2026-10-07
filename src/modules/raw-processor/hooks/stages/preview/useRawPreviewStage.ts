@@ -8,7 +8,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
+import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { DisplaySource, ImageSession } from '../../../model/session'
@@ -22,7 +22,6 @@ import { usePreviewPipelineEvacuation } from './usePreviewPipelineEvacuation'
 import { useRestorePreviewAfterExport } from './useRestorePreviewAfterExport'
 
 type UseRawPreviewStageInput = {
-  loadedFile: File | null
   session: ImageSession | null
   sessionRef: MutableRefObject<ImageSession | null>
   pendingLoadSessionIdRef: MutableRefObject<string | null>
@@ -41,15 +40,12 @@ type UseRawPreviewStageInput = {
   lutDataVersion: number
   displaySource: DisplaySource
   isMountedRef: MutableRefObject<boolean>
-  runtimeAbortControllerRef: MutableRefObject<AbortController | null>
   runtimeWorkSessionIdRef: MutableRefObject<string | null>
-  runtimeSessionRef: MutableRefObject<RawRuntimeSession | null>
+  /** Restore takes its RAW session from the workflow host's one slot. */
+  beginRuntimeSession: RawRuntimeHost['beginSession']
   setStatus: (status: ProcessingStatus) => void
   setProgress: (progress: number) => void
   setError: (error: string | null) => void
-  abortRuntimeWork: () => void
-  disposeRuntimeSession: (runtimeSession?: RawRuntimeSession | null) => void
-  openSession: typeof import('~/lib/raw/runtime-adapter').rawRuntimeAdapter.openSession
   scheduleToast: (notify: () => void) => void
   toast: {
     error: (message: string, options?: { description?: string }) => void
@@ -57,7 +53,6 @@ type UseRawPreviewStageInput = {
 }
 
 export function useRawPreviewStage({
-  loadedFile,
   session,
   sessionRef,
   pendingLoadSessionIdRef,
@@ -75,15 +70,11 @@ export function useRawPreviewStage({
   lutDataVersion,
   displaySource,
   isMountedRef,
-  runtimeAbortControllerRef,
   runtimeWorkSessionIdRef,
-  runtimeSessionRef,
+  beginRuntimeSession,
   setStatus,
   setProgress,
   setError,
-  abortRuntimeWork,
-  disposeRuntimeSession,
-  openSession,
   scheduleToast,
   toast,
 }: UseRawPreviewStageInput) {
@@ -119,21 +110,16 @@ export function useRawPreviewStage({
     invalidateExportGraph,
   })
   const { restorePreviewAfterExport } = useRestorePreviewAfterExport({
-    loadedFile,
     sessionRef,
     rawRenderExposureRef,
     isMountedRef,
-    runtimeAbortControllerRef,
     runtimeWorkSessionIdRef,
-    runtimeSessionRef,
+    beginRuntimeSession,
     setStatus,
     setProgress,
     setError,
     setSession,
     setDecodedImageRef,
-    abortRuntimeWork,
-    disposeRuntimeSession,
-    openSession,
     scheduleToast,
     toast,
   })

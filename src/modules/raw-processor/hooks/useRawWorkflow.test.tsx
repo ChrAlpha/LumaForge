@@ -62,6 +62,7 @@ import { getDetachedPreviewView } from '../state/preview-view.atoms'
 import { currentSessionAtom } from '../state/session.atoms'
 import { getProcessingParams, resetToDefaults } from '../state/workflow.atoms'
 import { acceptTransformGeometry } from './transform-session.fixture'
+import type { UseRawWorkflowReturn } from './useRawWorkflow'
 import { useRawWorkflow } from './useRawWorkflow'
 
 const rawRuntimeAdapterMock = vi.hoisted(() => ({
@@ -699,7 +700,10 @@ describe('useRawWorkflow embedded preview state', () => {
     await act(async () => {
       await result.current.restorePreviewAfterExport()
     })
-    expect(host.openSession).toHaveBeenCalledTimes(1)
+    // Restore takes its session from the same host slot as the load.
+    expect(host.beginSession).toHaveBeenCalledTimes(2)
+    expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(2)
+    expect(host.openSession).not.toHaveBeenCalled()
     expect(rawRuntimeHosts).toHaveLength(1)
   })
 
@@ -955,6 +959,280 @@ describe('useRawWorkflow embedded preview state', () => {
       expect(result.current.compareSplit).toBe(0.3)
       expect(first.session.dispose).toHaveBeenCalledTimes(1)
       expect(second.session.dispose).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('preview restore on the workflow host', () => {
+    const quickPin: RawRenderExposure = {
+      ev: 0.6,
+      multiplier: Math.pow(2, 0.6),
+      source: 'image-statistics',
+    }
+
+    function createLoadSession(name: string) {
+      return {
+        sourceDimensions: defaultSourceDimensions,
+        extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
+        decodeQuickRaw: vi.fn().mockResolvedValue(
+          createDecodedImage('quick', {
+            renderExposure: quickPin,
+            metadata: { make: name, model: 'A7', width: 800, height: 600 },
+          }),
+        ),
+        decodeBoundedHqRaw: vi.fn().mockResolvedValue(
+          createDecodedImage('bounded-hq', {
+            renderExposure: {
+              ev: 0.7,
+              multiplier: Math.pow(2, 0.7),
+              source: 'image-statistics',
+            },
+          }),
+        ),
+        probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+        dispose: vi.fn(),
+      }
+    }
+
+    /** A restore session whose quick decode settles only when told to. */
+    function createRestoreSession() {
+      const quick = deferred<DecodedImage>()
+      const session = {
+        sourceDimensions: defaultSourceDimensions,
+        extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
+        decodeQuickRaw: vi.fn(() => quick.promise),
+        decodeBoundedHqRaw: vi.fn(),
+        probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+        dispose: vi.fn(),
+      }
+      return { session, quick }
+    }
+
+    function openSignalOf(call: number) {
+      return rawRuntimeAdapterMock.openSession.mock.calls[call]?.[1] as
+        | AbortSignal
+        | undefined
+    }
+
+    /** Loads `frame.ARW`, exports it, and leaves the preview released. */
+    async function renderExported() {
+      vi.stubGlobal('crossOriginIsolated', true)
+      exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
+        filename: 'frame_neutral_fullres.jpg',
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      })
+      rawRuntimeHosts.length = 0
+      const rendered = renderHook(() => useRawWorkflow(), { wrapper })
+      const [host] = rawRuntimeHosts
+      await act(async () => {
+        await rendered.result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      await act(async () => {
+        await rendered.result.current.exportImage()
+      })
+      expect(rendered.result.current.previewSuspended).toBe(true)
+      expect(rendered.result.current.decodedImageRef.current).toBeNull()
+      return { ...rendered, host: host! }
+    }
+
+    /** Starts a restore and waits until its quick decode is in flight. */
+    async function startRestore(
+      result: { current: UseRawWorkflowReturn },
+      restore: ReturnType<typeof createRestoreSession>,
+    ) {
+      let restoring!: Promise<void>
+      act(() => {
+        restoring = result.current.restorePreviewAfterExport()
+      })
+      await waitFor(() =>
+        expect(restore.session.decodeQuickRaw).toHaveBeenCalled(),
+      )
+      // Wrapped so awaiting the start does not wait for the restore itself.
+      return { restoring }
+    }
+
+    it('restores on a host lease that ends with the restore', async () => {
+      const restore = createRestoreSession()
+      rawRuntimeAdapterMock.openSession
+        .mockResolvedValueOnce(createLoadSession('first'))
+        .mockResolvedValueOnce(restore.session)
+      const { result, host } = await renderExported()
+
+      const { restoring } = await startRestore(result, restore)
+      expect(host.beginSession).toHaveBeenCalledTimes(2)
+      expect(host.openSession).not.toHaveBeenCalled()
+      expect(restore.session.decodeQuickRaw).toHaveBeenCalledWith(
+        expect.any(Function),
+        openSignalOf(1),
+        { pinnedExposure: quickPin },
+      )
+
+      await act(async () => {
+        restore.quick.resolve(
+          createDecodedImage('quick', { renderExposure: quickPin }),
+        )
+        await restoring
+      })
+
+      expect(result.current.previewSuspended).toBe(false)
+      expect(result.current.decodedImageRef.current?.renderExposure).toEqual(
+        quickPin,
+      )
+      expect(result.current.exportResult?.filename).toBe(
+        'frame_neutral_fullres.jpg',
+      )
+      expect(openSignalOf(1)?.aborted).toBe(false)
+      expect(restore.session.dispose).toHaveBeenCalledTimes(1)
+      expect(rawRuntimeHosts).toHaveLength(1)
+    })
+
+    it('cancels a restore on its host when a replacing load starts and publishes nothing over the replacement', async () => {
+      const restore = createRestoreSession()
+      // The replacement's bounded HQ stays in flight, so its lease is still
+      // live when the old source's frame lands.
+      const secondHq = deferred<DecodedImage>()
+      const second = createLoadSession('second')
+      second.decodeBoundedHqRaw.mockReturnValue(secondHq.promise)
+      rawRuntimeAdapterMock.openSession
+        .mockResolvedValueOnce(createLoadSession('first'))
+        .mockResolvedValueOnce(restore.session)
+        .mockResolvedValueOnce(second)
+      const { result, host } = await renderExported()
+
+      const { restoring } = await startRestore(result, restore)
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'second.ARW'))
+      })
+
+      expect(openSignalOf(1)?.aborted).toBe(true)
+      expect(restore.session.dispose).toHaveBeenCalledTimes(1)
+      expect(host.beginSession).toHaveBeenCalledTimes(3)
+      const replacement = jotaiStore.get(currentSessionAtom)
+      expect(replacement?.sourceFile.name).toBe('second.ARW')
+
+      // The old source's frame lands after the replacement took the slot.
+      await act(async () => {
+        restore.quick.resolve(
+          createDecodedImage('quick', {
+            metadata: { make: 'stale', model: 'A7', width: 800, height: 600 },
+          }),
+        )
+        await restoring
+      })
+
+      expect(restore.session.dispose).toHaveBeenCalledTimes(1)
+      expect(second.dispose).not.toHaveBeenCalled()
+      expect(openSignalOf(2)?.aborted).toBe(false)
+      expect(jotaiStore.get(currentSessionAtom)?.id).toBe(replacement?.id)
+      expect(
+        jotaiStore.get(currentSessionAtom)?.sourceFile.metadata?.make,
+      ).toBe('second')
+      expect(result.current.decodedImageRef.current?.metadata?.make).toBe(
+        'second',
+      )
+      expect(result.current.status).toBe('ready')
+      await flushScheduledToasts()
+      expect(toastMock.error).not.toHaveBeenCalled()
+
+      await act(async () => {
+        secondHq.resolve(createDecodedImage('bounded-hq'))
+        await flushPromises()
+      })
+      expect(second.dispose).toHaveBeenCalledTimes(1)
+      expect(result.current.displaySource).toBe('bounded-hq')
+    })
+
+    it('cancels a restore on its host when the session resets', async () => {
+      const restore = createRestoreSession()
+      rawRuntimeAdapterMock.openSession
+        .mockResolvedValueOnce(createLoadSession('first'))
+        .mockResolvedValueOnce(restore.session)
+      const { result, host } = await renderExported()
+
+      const { restoring } = await startRestore(result, restore)
+      act(() => {
+        result.current.reset()
+      })
+
+      expect(host.cancelSession).toHaveBeenCalled()
+      expect(openSignalOf(1)?.aborted).toBe(true)
+      expect(restore.session.dispose).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        restore.quick.resolve(createDecodedImage('quick'))
+        await restoring
+      })
+
+      expect(restore.session.dispose).toHaveBeenCalledTimes(1)
+      expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+      expect(result.current.decodedImageRef.current).toBeNull()
+      await flushScheduledToasts()
+      expect(toastMock.error).not.toHaveBeenCalled()
+    })
+
+    it('cancels a restore on its host when the workflow unmounts', async () => {
+      const restore = createRestoreSession()
+      rawRuntimeAdapterMock.openSession
+        .mockResolvedValueOnce(createLoadSession('first'))
+        .mockResolvedValueOnce(restore.session)
+      const { result, host, unmount } = await renderExported()
+
+      const { restoring } = await startRestore(result, restore)
+      unmount()
+
+      expect(openSignalOf(1)?.aborted).toBe(true)
+      expect(restore.session.dispose).toHaveBeenCalledTimes(1)
+      expect(host.dispose).toHaveBeenCalledTimes(1)
+
+      restore.quick.resolve(createDecodedImage('quick'))
+      await restoring
+      expect(restore.session.dispose).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the export after a failed restore and restores with the quick pin on the next try', async () => {
+      const failed = createRestoreSession()
+      const retried = createRestoreSession()
+      rawRuntimeAdapterMock.openSession
+        .mockResolvedValueOnce(createLoadSession('first'))
+        .mockResolvedValueOnce(failed.session)
+        .mockResolvedValueOnce(retried.session)
+      const { result, host } = await renderExported()
+
+      const { restoring: failing } = await startRestore(result, failed)
+      await act(async () => {
+        failed.quick.reject(new Error('restore decode failed'))
+        await failing
+      })
+      await flushScheduledToasts()
+
+      expect(toastMock.error).toHaveBeenCalledWith('Preview restore failed', {
+        description: 'restore decode failed',
+      })
+      expect(result.current.status).toBe('ready')
+      expect(result.current.previewSuspended).toBe(true)
+      expect(result.current.exportResult?.filename).toBe(
+        'frame_neutral_fullres.jpg',
+      )
+      expect(failed.session.dispose).toHaveBeenCalledTimes(1)
+
+      const { restoring: retrying } = await startRestore(result, retried)
+      expect(retried.session.decodeQuickRaw).toHaveBeenCalledWith(
+        expect.any(Function),
+        openSignalOf(2),
+        { pinnedExposure: quickPin },
+      )
+      await act(async () => {
+        retried.quick.resolve(
+          createDecodedImage('quick', { renderExposure: quickPin }),
+        )
+        await retrying
+      })
+
+      expect(host.beginSession).toHaveBeenCalledTimes(3)
+      expect(result.current.previewSuspended).toBe(false)
+      expect(result.current.decodedImageRef.current?.renderExposure).toEqual(
+        quickPin,
+      )
+      expect(retried.session.dispose).toHaveBeenCalledTimes(1)
     })
   })
 

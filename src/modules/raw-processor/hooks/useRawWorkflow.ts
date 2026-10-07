@@ -118,15 +118,14 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const rawRenderExposure =
     decodedImageRef.current?.renderExposure ?? rawRenderExposureRef.current
   const { viewMode } = compareStage
-  const { disposeRuntimeSession, abortRuntimeWork, abortExportWork } =
-    useRawRuntimeControls({
-      cancelHostSession: rawRuntimeHost.cancelSession,
-      runtimeSessionRef,
-      runtimeAbortControllerRef,
-      disposedRuntimeSessionsRef,
-      runtimeWorkSessionIdRef,
-      exportAbortControllerRef,
-    })
+  const { abortRuntimeWork, abortExportWork } = useRawRuntimeControls({
+    cancelHostSession: rawRuntimeHost.cancelSession,
+    runtimeSessionRef,
+    runtimeAbortControllerRef,
+    disposedRuntimeSessionsRef,
+    runtimeWorkSessionIdRef,
+    exportAbortControllerRef,
+  })
 
   const { registerExportResultResource, queueExportResultResourceDisposal } =
     useExportResourceManagement({ resourceRegistryRef })
@@ -187,7 +186,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setDecodedImageRef,
     restorePreviewAfterExport,
   } = useRawPreviewStage({
-    loadedFile: loadedImage.file,
     session,
     sessionRef,
     pendingLoadSessionIdRef,
@@ -205,15 +203,11 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     lutDataVersion,
     displaySource,
     isMountedRef,
-    runtimeAbortControllerRef,
     runtimeWorkSessionIdRef,
-    runtimeSessionRef,
+    beginRuntimeSession: rawRuntimeHost.beginSession,
     setStatus,
     setProgress,
     setError,
-    abortRuntimeWork,
-    disposeRuntimeSession,
-    openSession: rawRuntimeHost.openSession,
     scheduleToast,
     toast,
   })
