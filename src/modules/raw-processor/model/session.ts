@@ -11,7 +11,7 @@ import type {
   ExportExecutionProfileName,
   ExportOutputSink,
   ExportRuntimeMemoryProfile,
-} from '~/lib/export/execution-profile'
+} from '~/lib/export/export-plan'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { ImageMetadata } from '~/lib/raw/decoder'
 

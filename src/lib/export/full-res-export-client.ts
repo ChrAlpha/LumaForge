@@ -17,7 +17,7 @@ import type {
   ExportExecutionProfileName,
   ExportOutputSink,
   ExportRuntimeMemoryProfile,
-} from './execution-profile'
+} from './export-plan'
 import { createOpfsFileBackedOutputResult } from './output-sink'
 
 export type FullResWorkerExecutionPlan = {

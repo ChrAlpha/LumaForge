@@ -12,13 +12,6 @@ import type {
   ResourceRegistryCheck,
 } from './resource-registry'
 
-export type {
-  ExportCheckpointMode,
-  ExportExecutionProfileName,
-  ExportOutputSink,
-  ExportRuntimeMemoryProfile,
-} from './export-plan'
-
 export type ExportPlanSelectedDebugPayload = {
   profile: ExportExecutionProfileName
   derivedLabel: string

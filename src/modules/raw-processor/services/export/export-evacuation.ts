@@ -5,11 +5,11 @@ import type {
 import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 
 import type {
-  ExportExecutionProfileName,
   ExportResourceCleanupDebugPayload,
   ExportResourceCleanupReason,
   ExportResourceEvacuatedDebugPayload,
 } from '~/lib/export/execution-profile'
+import type { ExportExecutionProfileName } from '~/lib/export/export-plan'
 import type {
   LargeResourceOwner,
   ResourceRegistry,
