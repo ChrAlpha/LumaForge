@@ -252,7 +252,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     registerCurrentPreviewPipelineForEvacuation,
     yieldToPaint,
     getPrewarmState: rawRuntimeHost.getPrewarmState,
-    prewarm: rawRuntimeHost.prewarm,
     beginRuntimeSession: rawRuntimeHost.beginSession,
     decodedImageRef,
     sessionRef,

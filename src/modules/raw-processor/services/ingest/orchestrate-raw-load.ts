@@ -9,7 +9,7 @@ import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { isSupportedRaw } from '~/lib/raw/decoder'
 import type { RawRuntimeSessionLease } from '~/lib/raw/raw-runtime-host'
-import type { PrewarmOutcome, PrewarmState } from '~/lib/raw/runtime-adapter'
+import type { PrewarmState } from '~/lib/raw/runtime-adapter'
 import {
   detectCapabilityVector,
   getCapabilityVectorSnapshot,
@@ -91,11 +91,10 @@ export interface RawLoadContext {
     registerCurrentPreviewPipelineForEvacuation: () => void
     yieldToPaint: () => Promise<void>
     getPrewarmState: () => PrewarmState
-    prewarm: () => Promise<PrewarmOutcome>
     /**
-     * Hands this load the host's session lease, on the host the load
-     * prewarmed. The host owns the native session and its cancellation; the
-     * load only decides when it is done with them.
+     * Hands this load the host's session lease, which also warms the runtime
+     * the load opens on. The host owns the native session and its
+     * cancellation; the load only decides when it is done with them.
      */
     beginRuntimeSession: () => RawRuntimeSessionLease
   }
@@ -189,7 +188,9 @@ export async function orchestrateRawLoad(
     }
 
     if (initialPhase === 'warming') {
-      const outcome = await ctx.services.prewarm()
+      // Warming through the lease lets a newer load or a reset end a warm-up
+      // that never answers instead of waiting behind it.
+      const outcome = await loadLease.prewarm()
       if (!ctx.refs.isMountedRef.current) {
         return
       }

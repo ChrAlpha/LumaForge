@@ -17,6 +17,9 @@ import {
   VIBRANCE_CHROMA_REF,
 } from '@lumaforge/luma-color-runtime'
 import type {
+  LumaRawDecodeSession,
+  LumaRawExportCapability,
+  LumaRawFrame,
   LumaRawRuntime,
   LumaRawRuntimeInfo,
 } from '@lumaforge/luma-raw-runtime'
@@ -155,10 +158,11 @@ vi.mock('~/lib/raw/raw-runtime-host', async (importOriginal) => {
         lastTermination: null,
       }),
     })
-    // Session leases keep the host's ownership rules, opening through the
-    // runtime mock instead of a native bridge.
-    const sessions = actual.createRawRuntimeSessionLeases((file, signal) =>
-      rawRuntimeMock.openSession(file, signal),
+    // Session leases keep the host's ownership rules, warming and opening
+    // through the runtime mock instead of a native bridge.
+    const sessions = actual.createRawRuntimeSessionLeases(
+      (file, signal) => rawRuntimeMock.openSession(file, signal),
+      { prewarm: () => host.prewarm() },
     )
     const host: RawRuntimeHost = {
       getSnapshot: () => snapshot,
@@ -1520,6 +1524,372 @@ describe('useRawWorkflow embedded preview state', () => {
         initialization: 'idle',
         outcome: null,
         runtime: { workerAlive: false, initialized: false },
+      })
+    })
+
+    describe('superseded native work', () => {
+      type WorkerOperation =
+        | 'init'
+        | 'openSession'
+        | 'extractEmbeddedPreview'
+        | 'probeExportCapability'
+        | 'decodeQuick'
+        | 'decodeBoundedHq'
+
+      function makeFrame(
+        source: LumaRawFrame['source'],
+        make: string,
+      ): LumaRawFrame {
+        return {
+          jobId: `${source}-${make}`,
+          source,
+          width: 1,
+          height: 1,
+          data: new Uint16Array([0, 32768, 65535]),
+          layout: 'rgb',
+          bitDepth: 16,
+          colorSpace: 'linear-prophoto-rgb',
+          orientation: 1,
+          metadata: {
+            width: 1,
+            height: 1,
+            make,
+            model: 'A7',
+            supportLevel: 'experimental',
+          },
+          timings: { total: 1 },
+        }
+      }
+
+      /**
+       * A runtime that behaves like the real decode worker: one request at
+       * a time, and native work in flight cannot be interrupted. `dispose`
+       * settles nothing, so a held request never answers and every later
+       * request on the same runtime waits behind it. Frames carry the
+       * source's file name as their camera make.
+       */
+      function makeWorkerLikeRuntime() {
+        const info = makeRuntime().info
+        let tail: Promise<unknown> = Promise.resolve()
+        const gates = new Map<
+          WorkerOperation,
+          ReturnType<typeof deferred<void>>
+        >()
+        const run = <T,>(operation: WorkerOperation, value: () => T) => {
+          const job = tail.then(async () => {
+            await gates.get(operation)?.promise
+            return value()
+          })
+          tail = job.catch(() => undefined)
+          return job
+        }
+        const sessions: LumaRawDecodeSession[] = []
+        const runtime = {
+          init: vi.fn<LumaRawRuntime['init']>(() => run('init', () => info)),
+          probe: vi.fn<LumaRawRuntime['probe']>(),
+          extractEmbeddedPreview:
+            vi.fn<LumaRawRuntime['extractEmbeddedPreview']>(),
+          decodeQuick: vi.fn<LumaRawRuntime['decodeQuick']>(),
+          decodeBoundedHq: vi.fn<LumaRawRuntime['decodeBoundedHq']>(),
+          openSession: vi.fn<LumaRawRuntime['openSession']>((file) =>
+            run('openSession', () => {
+              const session: LumaRawDecodeSession = {
+                sessionId: file.name,
+                probe: {
+                  jobId: 'probe',
+                  width: defaultSourceDimensions.width,
+                  height: defaultSourceDimensions.height,
+                  supportLevel: 'experimental',
+                  timings: { total: 1 },
+                },
+                timings: { total: 1 },
+                extractEmbeddedPreview: vi.fn(() =>
+                  run('extractEmbeddedPreview', () => null),
+                ),
+                probeExportCapability: vi.fn(() =>
+                  run(
+                    'probeExportCapability',
+                    () =>
+                      createSupportedCapability() as unknown as LumaRawExportCapability,
+                  ),
+                ),
+                readRawWindow: vi.fn(),
+                readProcessedWindow: vi.fn(),
+                decodeQuick: vi.fn(() =>
+                  run('decodeQuick', () => makeFrame('quick', file.name)),
+                ),
+                decodeBoundedHq: vi.fn(() =>
+                  run('decodeBoundedHq', () =>
+                    makeFrame('bounded-hq', file.name),
+                  ),
+                ),
+                applyCalibration: vi.fn(),
+                dispose: vi.fn(),
+              }
+              sessions.push(session)
+              return session
+            }),
+          ),
+          dispose: vi.fn<LumaRawRuntime['dispose']>(),
+        }
+        return {
+          runtime,
+          sessions,
+          /** Holds `operation` until the returned gate opens. */
+          hold(operation: WorkerOperation) {
+            const gate = deferred<void>()
+            gates.set(operation, gate)
+            return gate
+          },
+        }
+      }
+
+      /** One worker-like runtime per runtime generation the host starts. */
+      function renderOnWorkerLikeHost(
+        configure: (
+          worker: ReturnType<typeof makeWorkerLikeRuntime>,
+          index: number,
+        ) => void,
+      ) {
+        const workers: Array<ReturnType<typeof makeWorkerLikeRuntime>> = []
+        rawRuntimeHosts.length = 0
+        realRawRuntimeHostOptions.current = {
+          runtimeFactory: () => {
+            const worker = makeWorkerLikeRuntime()
+            configure(worker, workers.length)
+            workers.push(worker)
+            return worker.runtime
+          },
+          jpegRuntimeAvailabilityProbe: () => true,
+        }
+        const rendered = renderHook(() => useRawWorkflow(), { wrapper })
+        return { ...rendered, workers }
+      }
+
+      function shownSource(result: { current: UseRawWorkflowReturn }) {
+        return result.current.decodedImageRef.current?.metadata.make
+      }
+
+      /** Starts a load without waiting for it to finish. */
+      function startLoad(
+        result: { current: UseRawWorkflowReturn },
+        name: string,
+      ) {
+        let loading!: Promise<void>
+        act(() => {
+          loading = result.current.loadFile(new File(['raw'], name))
+        })
+        return loading
+      }
+
+      it.each(['replaced', 'reset'] as const)(
+        'loads the next file on a fresh runtime when the warming load is %s while its init never answers',
+        async (ending) => {
+          let gate!: ReturnType<typeof deferred<void>>
+          const { result, workers } = renderOnWorkerLikeHost(
+            (worker, index) => {
+              if (index === 0) gate = worker.hold('init')
+            },
+          )
+
+          const firstLoad = startLoad(result, 'first.ARW')
+          await waitFor(() =>
+            expect(workers[0]?.runtime.init).toHaveBeenCalled(),
+          )
+          expect(result.current.status).toBe('warming')
+
+          if (ending === 'reset') {
+            act(() => {
+              result.current.reset()
+            })
+            expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+          }
+          const loading = startLoad(result, 'second.ARW')
+          await waitFor(() => expect(shownSource(result)).toBe('second.ARW'))
+          await act(async () => {
+            await loading
+            await firstLoad
+          })
+          await waitFor(() =>
+            expect(result.current.displaySource).toBe('bounded-hq'),
+          )
+
+          // The replacement is ready on the second runtime before the
+          // obsolete init has answered.
+          expect(result.current.status).toBe('ready')
+          expect(workers).toHaveLength(2)
+          expect(workers[0]!.runtime.dispose).toHaveBeenCalledTimes(1)
+          expect(workers[0]!.runtime.openSession).not.toHaveBeenCalled()
+          const replacement = jotaiStore.get(currentSessionAtom)
+          expect(replacement?.sourceFile.name).toBe('second.ARW')
+          const replacementDisposals = vi.mocked(
+            workers[1]!.sessions[0]!.dispose,
+          ).mock.calls.length
+
+          await act(async () => {
+            gate.resolve()
+            await flushPromises()
+          })
+          await flushScheduledToasts()
+
+          expect(jotaiStore.get(currentSessionAtom)).toBe(replacement)
+          expect(replacement?.renderState.lastErrorCode).toBeUndefined()
+          expect(shownSource(result)).toBe('second.ARW')
+          expect(result.current.status).toBe('ready')
+          expect(result.current.error).toBeNull()
+          expect(result.current.rawRuntimeHost.getSnapshot()).toMatchObject({
+            initialization: 'ready',
+            runtime: { generation: 2, workerAlive: true, initialized: true },
+          })
+          expect(workers[0]!.runtime.openSession).not.toHaveBeenCalled()
+          expect(workers[1]!.runtime.dispose).not.toHaveBeenCalled()
+          expect(workers[1]!.sessions[0]!.dispose).toHaveBeenCalledTimes(
+            replacementDisposals,
+          )
+          expect(toastMock.error).not.toHaveBeenCalled()
+        },
+      )
+
+      it('loads a replacement while the replaced bounded HQ never answers, and its late frame changes nothing', async () => {
+        let gate!: ReturnType<typeof deferred<void>>
+        const { result, workers } = renderOnWorkerLikeHost((worker, index) => {
+          if (index === 0) gate = worker.hold('decodeBoundedHq')
+        })
+
+        await act(async () => {
+          await result.current.loadFile(new File(['raw'], 'first.ARW'))
+        })
+        expect(shownSource(result)).toBe('first.ARW')
+        await waitFor(() =>
+          expect(workers[0]!.sessions[0]!.decodeBoundedHq).toHaveBeenCalled(),
+        )
+
+        const loading = startLoad(result, 'second.ARW')
+        await waitFor(() => expect(shownSource(result)).toBe('second.ARW'))
+        await act(async () => {
+          await loading
+        })
+        await waitFor(() =>
+          expect(result.current.displaySource).toBe('bounded-hq'),
+        )
+        expect(workers).toHaveLength(2)
+        expect(workers[0]!.runtime.dispose).toHaveBeenCalledTimes(1)
+        expect(workers[0]!.sessions[0]!.dispose).toHaveBeenCalledTimes(1)
+        const replacement = jotaiStore.get(currentSessionAtom)
+        expect(replacement?.sourceFile.name).toBe('second.ARW')
+
+        await act(async () => {
+          gate.resolve()
+          await flushPromises()
+        })
+        await flushScheduledToasts()
+
+        expect(jotaiStore.get(currentSessionAtom)).toBe(replacement)
+        expect(shownSource(result)).toBe('second.ARW')
+        expect(result.current.status).toBe('ready')
+        expect(result.current.error).toBeNull()
+        expect(replacement?.previewBundle.boundedHqPreview.status).toBe('ready')
+        expect(workers[1]!.runtime.dispose).not.toHaveBeenCalled()
+        expect(toastMock.error).not.toHaveBeenCalled()
+      })
+
+      it('loads after a reset while the reset quick decode never answers, and reports no cancellation', async () => {
+        let gate!: ReturnType<typeof deferred<void>>
+        const { result, workers } = renderOnWorkerLikeHost((worker, index) => {
+          if (index === 0) gate = worker.hold('decodeQuick')
+        })
+
+        const firstLoad = startLoad(result, 'first.ARW')
+        await waitFor(() =>
+          expect(workers[0]?.sessions[0]?.decodeQuick).toHaveBeenCalled(),
+        )
+        act(() => {
+          result.current.reset()
+        })
+        expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+
+        const loading = startLoad(result, 'second.ARW')
+        await waitFor(() => expect(shownSource(result)).toBe('second.ARW'))
+        await act(async () => {
+          await loading
+        })
+
+        // The reset load settles only once its quick decode answers late.
+        await act(async () => {
+          gate.resolve()
+          await firstLoad
+        })
+        await flushScheduledToasts()
+
+        const session = jotaiStore.get(currentSessionAtom)
+        expect(session?.sourceFile.name).toBe('second.ARW')
+        expect(session?.renderState.lastErrorCode).toBeUndefined()
+        expect(shownSource(result)).toBe('second.ARW')
+        expect(result.current.error).toBeNull()
+        expect(workers[0]!.runtime.dispose).toHaveBeenCalledTimes(1)
+        expect(workers.at(-1)!.runtime.dispose).not.toHaveBeenCalled()
+        expect(toastMock.error).not.toHaveBeenCalled()
+      })
+
+      it('loads a replacement while a restore after export never answers', async () => {
+        vi.stubGlobal('crossOriginIsolated', true)
+        exportSystemMock.runFullResolutionExportJob.mockImplementation(
+          async (input: { beforeStart?: () => void | Promise<void> }) => {
+            await input.beforeStart?.()
+            return {
+              filename: 'first_neutral_fullres.jpg',
+              blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+            }
+          },
+        )
+        let gate!: ReturnType<typeof deferred<void>>
+        // The export ends the first generation; the restore runs on the
+        // second, whose quick decode never answers.
+        const { result, workers } = renderOnWorkerLikeHost((worker, index) => {
+          if (index === 1) gate = worker.hold('decodeQuick')
+        })
+
+        await act(async () => {
+          await result.current.loadFile(new File(['raw'], 'first.ARW'))
+        })
+        await waitFor(() =>
+          expect(result.current.displaySource).toBe('bounded-hq'),
+        )
+        await act(async () => {
+          await result.current.exportImage()
+        })
+        expect(result.current.previewSuspended).toBe(true)
+        expect(workers[0]!.runtime.dispose).toHaveBeenCalledTimes(1)
+
+        let restoring!: Promise<void>
+        act(() => {
+          restoring = result.current.restorePreviewAfterExport()
+        })
+        await waitFor(() =>
+          expect(workers[1]?.sessions[0]?.decodeQuick).toHaveBeenCalled(),
+        )
+
+        const loading = startLoad(result, 'second.ARW')
+        await waitFor(() => expect(shownSource(result)).toBe('second.ARW'))
+        await act(async () => {
+          await loading
+        })
+        expect(workers[1]!.runtime.dispose).toHaveBeenCalledTimes(1)
+        const replacement = jotaiStore.get(currentSessionAtom)
+        expect(replacement?.sourceFile.name).toBe('second.ARW')
+
+        // The replaced restore settles only once its decode answers late.
+        await act(async () => {
+          gate.resolve()
+          await restoring
+        })
+        await flushScheduledToasts()
+
+        expect(jotaiStore.get(currentSessionAtom)?.id).toBe(replacement?.id)
+        expect(shownSource(result)).toBe('second.ARW')
+        expect(result.current.status).toBe('ready')
+        expect(workers.at(-1)!.runtime.dispose).not.toHaveBeenCalled()
+        expect(toastMock.error).not.toHaveBeenCalled()
       })
     })
   })
@@ -3155,7 +3525,7 @@ describe('useRawWorkflow embedded preview state', () => {
     rawRuntimeMock.decodeQuickRaw.mockResolvedValue(createDecodedImage('quick'))
     rawRuntimeMock.decodeBoundedHqRaw.mockRejectedValue(
       Object.assign(new Error('bounded failed'), {
-        code: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+        code: 'RAW_HQ_DECODE_FAILED',
       }),
     )
 
@@ -3182,7 +3552,7 @@ describe('useRawWorkflow embedded preview state', () => {
       .mockResolvedValue(createDecodedImage('quick'))
     const decodeBoundedHqRaw = vi.fn().mockRejectedValue(
       Object.assign(new Error('bounded unavailable'), {
-        code: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+        code: 'RAW_HQ_DECODE_FAILED',
       }),
     )
 
@@ -3215,7 +3585,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.canExport).toBe(true)
     expect(session?.previewBundle.boundedHqPreview).toEqual({
       status: 'failed',
-      errorCode: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+      errorCode: 'RAW_HQ_DECODE_FAILED',
     })
     expect(session?.exportState.fullResCapability).toEqual({
       status: 'supported',

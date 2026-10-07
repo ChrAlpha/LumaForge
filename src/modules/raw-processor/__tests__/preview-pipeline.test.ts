@@ -109,7 +109,7 @@ describe('runPreviewPipeline', () => {
     )
     expect(onEvent).toHaveBeenCalledWith({
       type: 'bounded-hq-failed',
-      errorCode: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+      errorCode: 'RAW_HQ_DECODE_FAILED',
     })
   })
 
@@ -343,7 +343,7 @@ describe('runPreviewPipeline', () => {
   it('keeps quick preview when bounded HQ fails', async () => {
     const events: PreviewEvent[] = []
     const error = Object.assign(new Error('bounded failed'), {
-      code: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+      code: 'RAW_HQ_DECODE_FAILED',
     })
 
     const result = await runPreviewPipeline({
@@ -362,7 +362,7 @@ describe('runPreviewPipeline', () => {
 
     expect(events).toContainEqual({
       type: 'bounded-hq-failed',
-      errorCode: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+      errorCode: 'RAW_HQ_DECODE_FAILED',
     })
     expect(events).toContainEqual(
       expect.objectContaining({ type: 'quick-ready' }),

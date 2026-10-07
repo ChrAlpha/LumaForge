@@ -424,7 +424,7 @@ describe('raw runtime host conversion and export gate', () => {
     expect(session.sourceDimensions).toEqual({ width: 11662, height: 8746 })
   })
 
-  it('normalizes bounded HQ failures to RAW_BOUNDED_HQ_DECODE_FAILED', async () => {
+  it('normalizes bounded HQ failures to RAW_HQ_DECODE_FAILED', async () => {
     const { runtime } = makeLumaRuntime({
       openSession: vi.fn().mockResolvedValue({
         sessionId: 'raw-session-1',
@@ -456,7 +456,7 @@ describe('raw runtime host conversion and export gate', () => {
         maxOutputPixels: BOUNDED_HQ_PREVIEW_MAX_PIXELS,
       }),
     ).rejects.toMatchObject({
-      code: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+      code: 'RAW_HQ_DECODE_FAILED',
     })
   })
 
@@ -747,7 +747,7 @@ describe('raw runtime host conversion and export gate', () => {
       }),
     ).rejects.toMatchObject({
       name: 'RawAdapterError',
-      code: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+      code: 'RAW_HQ_DECODE_FAILED',
       message: 'bounded hq exploded',
     })
   })

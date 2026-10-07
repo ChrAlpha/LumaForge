@@ -30,6 +30,7 @@ function createHostLeases() {
     const controller = new AbortController()
     const lease = {
       signal: controller.signal,
+      prewarm: vi.fn(),
       open: vi.fn(),
       release: vi.fn(),
       cancel: vi.fn(() => controller.abort()),
@@ -66,7 +67,6 @@ function createInput(
     registerCurrentPreviewPipelineForEvacuation: vi.fn(),
     yieldToPaint: vi.fn(),
     getPrewarmState: vi.fn<() => PrewarmState>(() => 'idle'),
-    prewarm: vi.fn(),
     beginRuntimeSession: createHostLeases().beginRuntimeSession,
     decodedImageRef: { current: null },
     sessionRef: { current: null },
@@ -105,7 +105,6 @@ describe('useRawLoadAction', () => {
           setDecodedImageRef: input.setDecodedImageRef,
           registerCurrentPreviewPipelineForEvacuation:
             input.registerCurrentPreviewPipelineForEvacuation,
-          prewarm: input.prewarm,
         }),
         refs: expect.objectContaining({
           sessionRef: input.sessionRef,

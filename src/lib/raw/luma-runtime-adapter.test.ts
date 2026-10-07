@@ -375,7 +375,7 @@ describe('raw runtime host source exposure', () => {
       }),
     ).rejects.toMatchObject({
       name: 'RawAdapterError',
-      code: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+      code: 'RAW_HQ_DECODE_FAILED',
       message: 'window decode failed',
     })
   })

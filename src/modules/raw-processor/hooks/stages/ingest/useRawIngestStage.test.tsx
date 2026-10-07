@@ -41,7 +41,6 @@ describe('useRawIngestStage', () => {
         registerCurrentPreviewPipelineForEvacuation: vi.fn(),
         yieldToPaint: () => Promise.resolve(),
         getPrewarmState: vi.fn(),
-        prewarm: vi.fn(),
         beginRuntimeSession: vi.fn(),
         decodedImageRef: { current: null as DecodedImage | null },
         sessionRef: { current: null as ImageSession | null },

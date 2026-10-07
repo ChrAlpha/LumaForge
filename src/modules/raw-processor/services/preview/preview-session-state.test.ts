@@ -245,14 +245,14 @@ describe('preview session state transitions', () => {
 
     const session = applyBoundedHqPreviewFailure(
       quickSession,
-      'RAW_BOUNDED_HQ_DECODE_FAILED',
+      'RAW_HQ_DECODE_FAILED',
     )
 
     expect(session.previewBundle).toMatchObject({
       quickDecodePreview: { status: 'ready' },
       boundedHqPreview: {
         status: 'failed',
-        errorCode: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+        errorCode: 'RAW_HQ_DECODE_FAILED',
       },
       displaySource: 'quick',
     })

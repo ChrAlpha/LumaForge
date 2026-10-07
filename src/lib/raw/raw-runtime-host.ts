@@ -13,11 +13,12 @@ import type { DecodedImage, ProgressCallback } from './decoder'
 import type { RawDecodeBridgePort } from './luma-runtime-adapter'
 import {
   createDefaultLumaRawRuntime,
-  createRuntimeSignal,
   decodeBoundedHqRawOnBridge,
   decodeQuickRawOnBridge,
   extractEmbeddedPreviewOnBridge,
+  isAbortError,
   openRawSessionOnBridge,
+  rawJobCancelledError,
   toPrewarmFailureOutcome,
 } from './luma-runtime-adapter'
 import type {
@@ -37,7 +38,10 @@ export type RawRuntimeHostBridge = RawDecodeBridgePort &
 export interface RawRuntimeHostOptions {
   /** Builds the RAW runtime for each worker generation. */
   runtimeFactory?: RawDecodeBridgeOptions['runtimeFactory']
-  /** Builds the one decode bridge this host owns. */
+  /**
+   * Builds a decode bridge. The host owns one at a time and builds the next
+   * when it hard-cancels work on the current one.
+   */
   createBridge?: (options: RawDecodeBridgeOptions) => RawRuntimeHostBridge
   idleMs?: number
   jpegRuntimeAvailabilityProbe?: JpegRuntimeAvailabilityProbe
@@ -51,7 +55,10 @@ export interface RawRuntimeHostSnapshot {
   readonly initialization: PrewarmState
   /** Outcome of the latest settled prewarm that still described a live runtime. */
   readonly outcome: PrewarmOutcome | null
-  /** Liveness of the bridge's current worker generation right now. */
+  /**
+   * Liveness of the host's current runtime generation right now. Generations
+   * count on across every bridge the host has owned.
+   */
   readonly runtime: RawDecodeBridgeLifecycleSnapshot
 }
 
@@ -63,13 +70,23 @@ export interface RawRuntimeSessionLease {
   /** Aborts when the lease is cancelled. */
   readonly signal: AbortSignal
   /**
+   * Warms the runtime the lease's source will open on. A lease cancelled
+   * while it waits ends that runtime generation, so its successor warms a
+   * fresh one instead of waiting on an init that may never answer; the wait
+   * then rejects with `RAW_JOB_CANCELLED`.
+   */
+  prewarm: () => Promise<PrewarmOutcome>
+  /**
    * Opens the lease's one source. A session that arrives after the lease
-   * ended is disposed here, and the open rejects with an `AbortError`.
+   * ended is disposed here, and the open rejects with `RAW_JOB_CANCELLED`.
    */
   open: (file: File) => Promise<RawRuntimeSession>
   /** Ends the lease once its work settled: disposes the session, no abort. */
   release: () => void
-  /** Ends the lease early: aborts work still in flight, then disposes. */
+  /**
+   * Ends the lease early: aborts work still in flight, disposes the session,
+   * and ends the runtime generation the lease's native work runs on.
+   */
   cancel: () => void
 }
 
@@ -96,7 +113,10 @@ export interface RawRuntimeHost {
     onProgress?: ProgressCallback,
     signal?: AbortSignal,
   ) => Promise<DecodedImage>
-  /** Terminates the runtime's current worker generation. */
+  /**
+   * Cancels the active session lease and ends the current runtime
+   * generation; the next call starts a fresh one.
+   */
   terminateDecodeBridge: () => Promise<void>
   /**
    * Cancels the active session lease, then hands out the next one: the host
@@ -106,9 +126,9 @@ export interface RawRuntimeHost {
   /** Cancels the active session lease, if any. */
   cancelSession: () => void
   /**
-   * Cancels the active session lease, terminates the runtime, and forgets
-   * the prewarm history, including a sticky failure; the host stays usable
-   * and starts afresh on the next call.
+   * Cancels the active session lease, ends the runtime generation, and
+   * forgets the prewarm history, including a sticky failure; the host stays
+   * usable and starts afresh on the next call.
    */
   dispose: () => void
 }
@@ -121,27 +141,65 @@ const SUPERSEDED_OUTCOME: PrewarmOutcome = Object.freeze({
   recoverable: true,
 })
 
-function sessionReleasedError() {
-  return new DOMException(
+function sessionEndedError() {
+  return rawJobCancelledError(
     'The RAW session lease ended before its source opened.',
-    'AbortError',
   )
 }
 
-function isAbortError(error: unknown) {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { name?: unknown }).name === 'AbortError'
+function generationEndedError() {
+  return rawJobCancelledError(
+    'The RAW runtime generation ended before the request settled.',
   )
+}
+
+/**
+ * Settles with `work`, or rejects with `cancelled()` as soon as `signal`
+ * aborts, so a caller never waits on work that will not answer. Whatever
+ * the work produces after that is dropped.
+ */
+function untilAborted<T>(
+  signal: AbortSignal,
+  work: Promise<T>,
+  cancelled: () => Error,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(cancelled())
+    if (signal.aborted) onAbort()
+    else signal.addEventListener('abort', onAbort, { once: true })
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error)
+      },
+    )
+  })
 }
 
 /**
  * The single-session slot a host owns: beginning a lease cancels the one
  * before it, and every lease disposes its session exactly once.
+ *
+ * `claimGeneration` runs as a lease starts native work (its prewarm or its
+ * open) and returns what ends the runtime generation that work runs on.
+ * Cancelling a lease that is warming, opening, or holds a source calls it:
+ * native work in flight cannot be interrupted, so ending its generation is
+ * what keeps that work from running ahead of the next lease. A lease
+ * released once its work settled leaves the warm runtime to its successor.
  */
 export function createRawRuntimeSessionLeases(
   openSession: (file: File, signal: AbortSignal) => Promise<RawRuntimeSession>,
+  {
+    prewarm = () => Promise.resolve(READY_OUTCOME),
+    claimGeneration = () => () => {},
+  }: {
+    prewarm?: () => Promise<PrewarmOutcome>
+    claimGeneration?: () => () => void
+  } = {},
 ) {
   let activeLease: RawRuntimeSessionLease | null = null
 
@@ -149,30 +207,59 @@ export function createRawRuntimeSessionLeases(
     activeLease?.cancel()
     const controller = new AbortController()
     let opened = false
+    let warming = 0
+    let opening = false
     let ended = false
     let session: RawRuntimeSession | null = null
+    let endGeneration: (() => void) | null = null
     const end = (abort: boolean) => {
       if (ended) return
       ended = true
       if (activeLease === lease) activeLease = null
-      if (abort) controller.abort()
+      const nativeWork = abort && (warming > 0 || opening || session !== null)
       const owned = session
       session = null
       owned?.dispose()
+      // End the generation before aborting, so its bridge records an explicit
+      // termination rather than the lease's aborted call.
+      if (nativeWork) endGeneration?.()
+      if (abort) controller.abort()
     }
     const lease: RawRuntimeSessionLease = {
       signal: controller.signal,
+      prewarm() {
+        if (ended) return Promise.reject(sessionEndedError())
+        warming += 1
+        endGeneration = claimGeneration()
+        const warmed = prewarm().finally(() => {
+          warming -= 1
+        })
+        // A cancelled wait rejects at once, even if the init never answers.
+        return untilAborted(controller.signal, warmed, sessionEndedError)
+      },
       async open(file) {
-        if (ended) throw sessionReleasedError()
+        if (ended) throw sessionEndedError()
         if (opened) throw new Error('A RAW session lease opens one source.')
         opened = true
-        const next = await openSession(file, controller.signal)
-        if (ended) {
-          next.dispose()
-          throw sessionReleasedError()
-        }
-        session = next
-        return next
+        opening = true
+        endGeneration = claimGeneration()
+        const adopted = openSession(file, controller.signal).then(
+          (next) => {
+            opening = false
+            if (ended) {
+              next.dispose()
+              throw sessionEndedError()
+            }
+            session = next
+            return next
+          },
+          (error: unknown) => {
+            opening = false
+            throw error
+          },
+        )
+        // A cancelled open rejects at once, even if its source never answers.
+        return untilAborted(controller.signal, adopted, sessionEndedError)
       },
       release: () => end(false),
       cancel: () => end(true),
@@ -189,9 +276,28 @@ export function createRawRuntimeSessionLeases(
   }
 }
 
+/** A decode bridge the host owns until it ends that bridge's generation. */
+interface OwnedBridge {
+  readonly bridge: RawRuntimeHostBridge
+  /** Aborts once the host ended this bridge's generation. */
+  readonly retirement: AbortController
+  readonly unsubscribe: () => void
+  terminated: Promise<void> | null
+}
+
+interface PrewarmAttempt {
+  readonly owner: OwnedBridge
+  readonly previous: {
+    readonly initialization: PrewarmState
+    readonly outcome: PrewarmOutcome | null
+  }
+  readonly promise: Promise<PrewarmOutcome>
+}
+
 /**
- * One RAW decode bridge plus its prewarm history. Hosts share nothing: each
- * owns its bridge, its runtime generations, and its subscribers.
+ * One RAW decode bridge at a time plus its prewarm history. Hosts share
+ * nothing: each owns its bridges, its runtime generations, and its
+ * subscribers.
  */
 export function createRawRuntimeHost({
   runtimeFactory = createDefaultLumaRawRuntime,
@@ -199,21 +305,51 @@ export function createRawRuntimeHost({
   idleMs,
   jpegRuntimeAvailabilityProbe = isWasmJpegRuntimeAvailable,
 }: RawRuntimeHostOptions = {}): RawRuntimeHost {
-  const bridge = createBridge({ runtimeFactory, idleMs })
   const listeners = new Set<
     WorkerBridgeLifecycleListener<RawRuntimeHostSnapshot>
   >()
 
   let initialization: PrewarmState = 'idle'
   let outcome: PrewarmOutcome | null = null
-  let inFlight: { readonly promise: Promise<PrewarmOutcome> } | null = null
+  let inFlight: PrewarmAttempt | null = null
+  // Generations published by the bridges this host already ended, so the
+  // numbering it reports keeps counting across them.
+  let endedGenerations = 0
+  let endedTermination: RawDecodeBridgeLifecycleSnapshot['lastTermination'] =
+    null
+  let owned = ownBridge()
   let snapshot = deriveSnapshot()
+
+  function ownBridge(): OwnedBridge {
+    const bridge = createBridge({ runtimeFactory, idleMs })
+    return {
+      bridge,
+      retirement: new AbortController(),
+      unsubscribe: bridge.subscribeLifecycle(publish),
+      terminated: null,
+    }
+  }
+
+  function deriveRuntime(): RawDecodeBridgeLifecycleSnapshot {
+    const live = owned.bridge.getLifecycleSnapshot()
+    return Object.freeze({
+      generation: endedGenerations + live.generation,
+      workerAlive: live.workerAlive,
+      initialized: live.initialized,
+      lastTermination: live.lastTermination
+        ? Object.freeze({
+            generation: endedGenerations + live.lastTermination.generation,
+            reason: live.lastTermination.reason,
+          })
+        : endedTermination,
+    })
+  }
 
   function deriveSnapshot(): RawRuntimeHostSnapshot {
     return Object.freeze({
       initialization,
       outcome,
-      runtime: bridge.getLifecycleSnapshot(),
+      runtime: deriveRuntime(),
     })
   }
 
@@ -222,10 +358,81 @@ export function createRawRuntimeHost({
     notifyLifecycleListeners(listeners, () => snapshot)
   }
 
-  bridge.subscribeLifecycle(publish)
+  /**
+   * Ends `owner`'s runtime generation: terminates its worker, drops the
+   * bridge with whatever it still has queued behind work that never
+   * answers, and moves on to a fresh bridge. Nothing that bridge started can
+   * publish afterwards, and ending a generation the host already replaced
+   * leaves the replacement alone.
+   */
+  function endGeneration(owner: OwnedBridge): Promise<void> {
+    if (owner.terminated) return owner.terminated
+    owner.unsubscribe()
+    // Terminate before aborting the generation's requests, so the bridge
+    // records an explicit termination rather than an aborted call.
+    owner.terminated = owner.bridge.terminate()
+    owner.retirement.abort()
+    const last = owner.bridge.getLifecycleSnapshot()
+    if (last.lastTermination) {
+      endedTermination = Object.freeze({
+        generation: endedGenerations + last.lastTermination.generation,
+        reason: last.lastTermination.reason,
+      })
+    }
+    endedGenerations += last.generation
+    owned = ownBridge()
+    if (inFlight?.owner === owner) {
+      initialization = inFlight.previous.initialization
+      outcome = inFlight.previous.outcome
+      inFlight = null
+    }
+    publish()
+    return owner.terminated
+  }
 
-  const sessions = createRawRuntimeSessionLeases((file, signal) =>
-    openRawSessionOnBridge(bridge, file, signal, jpegRuntimeAvailabilityProbe),
+  /**
+   * Runs a request on the current generation. It aborts with the caller's
+   * signal or with the generation, and settles at once when the generation
+   * ends.
+   */
+  function onCurrentGeneration<T>(
+    signal: AbortSignal | undefined,
+    run: (bridge: RawRuntimeHostBridge, signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const owner = owned
+    const retirement = owner.retirement.signal
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    signal?.addEventListener('abort', abort, { once: true })
+    retirement.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted || retirement.aborted) abort()
+    return untilAborted(
+      retirement,
+      run(owner.bridge, controller.signal),
+      generationEndedError,
+    ).finally(() => {
+      signal?.removeEventListener('abort', abort)
+      retirement.removeEventListener('abort', abort)
+    })
+  }
+
+  const sessions = createRawRuntimeSessionLeases(
+    (file, signal) =>
+      openRawSessionOnBridge(
+        owned.bridge,
+        file,
+        signal,
+        jpegRuntimeAvailabilityProbe,
+      ),
+    {
+      prewarm: () => prewarm(),
+      claimGeneration() {
+        const owner = owned
+        return () => {
+          void endGeneration(owner)
+        }
+      },
+    },
   )
 
   function prewarm(): Promise<PrewarmOutcome> {
@@ -233,6 +440,8 @@ export function createRawRuntimeHost({
       return Promise.resolve(outcome)
     }
     if (inFlight) return inFlight.promise
+    const owner = owned
+    const { bridge } = owner
     if (
       outcome?.status === 'ready' &&
       bridge.getLifecycleSnapshot().initialized
@@ -255,18 +464,27 @@ export function createRawRuntimeHost({
       }
       return next.status === 'ready' ? SUPERSEDED_OUTCOME : next
     }
-    const attempt = {
-      promise: bridge.prewarm(createRuntimeSignal()).then(
+    const retirement = owner.retirement.signal
+    const attempt: PrewarmAttempt = {
+      owner,
+      previous,
+      promise: untilAborted(
+        retirement,
+        bridge.prewarm(retirement),
+        generationEndedError,
+      ).then(
         () => settle(READY_OUTCOME, bridge.getLifecycleSnapshot().initialized),
         (error: unknown) =>
-          settle(
-            toPrewarmFailureOutcome(error),
-            // A runtime terminated under the attempt says nothing about
-            // whether the next one can start.
-            !isAbortError(error) &&
-              bridge.getLifecycleSnapshot().lastTermination ===
-                terminationAtStart,
-          ),
+          retirement.aborted
+            ? settle(SUPERSEDED_OUTCOME, false)
+            : settle(
+                toPrewarmFailureOutcome(error),
+                // A runtime terminated under the attempt says nothing about
+                // whether the next one can start.
+                !isAbortError(error) &&
+                  bridge.getLifecycleSnapshot().lastTermination ===
+                    terminationAtStart,
+              ),
       ),
     }
     inFlight = attempt
@@ -286,40 +504,51 @@ export function createRawRuntimeHost({
     prewarm,
     getPrewarmState: () => snapshot.initialization,
     openSession(file, signal) {
-      return openRawSessionOnBridge(
-        bridge,
-        file,
-        signal,
-        jpegRuntimeAvailabilityProbe,
+      return onCurrentGeneration(signal, (bridge, runtimeSignal) =>
+        openRawSessionOnBridge(
+          bridge,
+          file,
+          runtimeSignal,
+          jpegRuntimeAvailabilityProbe,
+        ),
       )
     },
     extractEmbeddedPreview(file, signal) {
-      return extractEmbeddedPreviewOnBridge(bridge, file, signal)
+      return onCurrentGeneration(signal, (bridge, runtimeSignal) =>
+        extractEmbeddedPreviewOnBridge(bridge, file, runtimeSignal),
+      )
     },
     decodeQuickRaw(file, onProgress, signal) {
-      return decodeQuickRawOnBridge(bridge, file, onProgress, signal)
+      return onCurrentGeneration(signal, (bridge, runtimeSignal) =>
+        decodeQuickRawOnBridge(bridge, file, onProgress, runtimeSignal),
+      )
     },
     decodeBoundedHqRaw(file, options, onProgress, signal) {
-      return decodeBoundedHqRawOnBridge(
-        bridge,
-        file,
-        options,
-        onProgress,
-        signal,
+      return onCurrentGeneration(signal, (bridge, runtimeSignal) =>
+        decodeBoundedHqRawOnBridge(
+          bridge,
+          file,
+          options,
+          onProgress,
+          runtimeSignal,
+        ),
       )
     },
     terminateDecodeBridge() {
-      return bridge.terminate()
+      const owner = owned
+      sessions.cancel()
+      return endGeneration(owner)
     },
     beginSession: sessions.begin,
     cancelSession: sessions.cancel,
     dispose() {
+      const owner = owned
       sessions.cancel()
+      void endGeneration(owner)
       inFlight = null
       initialization = 'idle'
       outcome = null
       publish()
-      void bridge.terminate()
     },
   }
 }

@@ -31,18 +31,27 @@ const openSessionMock =
   vi.fn<(file: File, signal: AbortSignal) => Promise<RawRuntimeSession>>()
 
 type TestLease = RawRuntimeSessionLease & {
+  prewarm: ReturnType<typeof vi.fn<RawRuntimeSessionLease['prewarm']>>
   open: ReturnType<typeof vi.fn<RawRuntimeSessionLease['open']>>
   release: ReturnType<typeof vi.fn<RawRuntimeSessionLease['release']>>
   cancel: ReturnType<typeof vi.fn<RawRuntimeSessionLease['cancel']>>
 }
 
-/** A host stand-in: every lease opens through `openSessionMock`. */
-function createLeaseHost() {
+/**
+ * A host stand-in: every lease warms through `prewarm` and opens through
+ * `openSessionMock`.
+ */
+function createLeaseHost(
+  prewarm: RawRuntimeSessionLease['prewarm'] = async () => ({
+    status: 'ready',
+  }),
+) {
   const leases: TestLease[] = []
   const beginRuntimeSession = vi.fn((): RawRuntimeSessionLease => {
     const controller = new AbortController()
     const lease: TestLease = {
       signal: controller.signal,
+      prewarm: vi.fn(prewarm),
       open: vi.fn((file: File) => openSessionMock(file, controller.signal)),
       release: vi.fn(),
       cancel: vi.fn(() => controller.abort()),
@@ -80,7 +89,13 @@ interface OrderingHooks {
 
 function buildContext(
   hooks: OrderingHooks,
-  host = createLeaseHost(),
+  host = createLeaseHost(
+    hooks.prewarm ??
+      (async () => {
+        hooks.order.push('prewarm')
+        return { status: 'ready' as const }
+      }),
+  ),
 ): RawLoadContext {
   const { order } = hooks
   return {
@@ -115,12 +130,6 @@ function buildContext(
         await hooks.yieldToPaint()
       }),
       getPrewarmState: hooks.getPrewarmState,
-      prewarm:
-        hooks.prewarm ??
-        (async () => {
-          order.push('prewarm')
-          return { status: 'ready' as const }
-        }),
       beginRuntimeSession: host.beginRuntimeSession,
     },
     refs: {
@@ -624,13 +633,15 @@ describe('orchestrateRawLoad host session lease', () => {
   })
 
   it('cancels the lease without opening when prewarm fails', async () => {
-    const host = createLeaseHost()
+    const host = createLeaseHost(async () => ({
+      status: 'failed',
+      reason: 'no runtime',
+    }))
     const ctx = buildContext(
       {
         order: [],
         yieldToPaint: () => Promise.resolve(),
         getPrewarmState: () => 'idle',
-        prewarm: async () => ({ status: 'failed', reason: 'no runtime' }),
       },
       host,
     )
@@ -638,9 +649,41 @@ describe('orchestrateRawLoad host session lease', () => {
     await orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
 
     const [lease] = host.leases
+    expect(lease!.prewarm).toHaveBeenCalledTimes(1)
     expect(lease!.open).not.toHaveBeenCalled()
     expect(lease!.cancel).toHaveBeenCalled()
     expect(ctx.atoms.setError).toHaveBeenLastCalledWith('no runtime')
+  })
+
+  it('reports nothing when a newer load ends its warm-up', async () => {
+    const warmup = deferred<never>()
+    const host = createLeaseHost(() => warmup.promise)
+    const ctx = buildContext(
+      {
+        order: [],
+        yieldToPaint: () => Promise.resolve(),
+        getPrewarmState: () => 'pending',
+      },
+      host,
+    )
+
+    const load = orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
+    await vi.waitFor(() => expect(host.leases[0]!.prewarm).toHaveBeenCalled())
+    ctx.refs.runtimeWorkSessionIdRef.current = 'newer-session'
+    warmup.reject(
+      Object.assign(new Error('The RAW session lease ended.'), {
+        code: 'RAW_JOB_CANCELLED',
+      }),
+    )
+    await load
+
+    expect(host.leases[0]!.open).not.toHaveBeenCalled()
+    expect(host.leases[0]!.cancel).toHaveBeenCalled()
+    expect(ctx.atoms.setError).not.toHaveBeenCalledWith(
+      'The RAW session lease ended.',
+    )
+    expect(ctx.atoms.setStatus).not.toHaveBeenCalledWith('error')
+    expect(ctx.services.scheduleToast).not.toHaveBeenCalled()
   })
 
   it('publishes nothing from an open that settles after unmount and cancels the lease', async () => {

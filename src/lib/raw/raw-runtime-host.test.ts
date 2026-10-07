@@ -10,7 +10,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RawDecodeBridge } from '~/lib/workers/raw-decode-bridge'
 
 import { QUICK_PREVIEW_MAX_PIXELS } from './decoder'
-import type { RawRuntimeHostSnapshot } from './raw-runtime-host'
+import type {
+  RawRuntimeHostOptions,
+  RawRuntimeHostSnapshot,
+} from './raw-runtime-host'
 import { createRawRuntimeHost } from './raw-runtime-host'
 
 function makeRuntimeInfo(): LumaRawRuntimeInfo {
@@ -150,6 +153,88 @@ function coiError() {
   return Object.assign(new Error('Cross-origin isolation is required.'), {
     code: 'RAW_CROSS_ORIGIN_ISOLATION_REQUIRED',
   })
+}
+
+type WorkerOperation =
+  | 'init'
+  | 'openSession'
+  | 'extractEmbeddedPreview'
+  | 'decodeQuick'
+  | 'decodeBoundedHq'
+
+/**
+ * A runtime that behaves like the real decode worker: it runs one request
+ * at a time and cannot interrupt native work in flight. `dispose` settles
+ * nothing, so a held request stays unresolved and every later request on
+ * the same runtime waits behind it.
+ */
+function makeWorkerLikeRuntime() {
+  let tail: Promise<unknown> = Promise.resolve()
+  const gates = new Map<WorkerOperation, ReturnType<typeof deferred<void>>>()
+  function run<T>(operation: WorkerOperation, value: () => T): Promise<T> {
+    const job = tail.then(async () => {
+      await gates.get(operation)?.promise
+      return value()
+    })
+    tail = job.catch(() => undefined)
+    return job
+  }
+  const session = makeSession({
+    extractEmbeddedPreview: vi.fn(() =>
+      run('extractEmbeddedPreview', () => null),
+    ),
+    decodeQuick: vi.fn(() => run('decodeQuick', () => makeFrame('quick'))),
+    decodeBoundedHq: vi.fn(() =>
+      run('decodeBoundedHq', () => makeFrame('bounded-hq')),
+    ),
+  })
+  const runtime = makeRuntime({
+    init: vi.fn<LumaRawRuntime['init']>(() => run('init', makeRuntimeInfo)),
+    openSession: vi.fn<LumaRawRuntime['openSession']>(() =>
+      run('openSession', () => session),
+    ),
+  })
+  return {
+    runtime,
+    session,
+    /** Holds `operation` until the returned gate opens. */
+    hold(operation: WorkerOperation) {
+      const gate = deferred<void>()
+      gates.set(operation, gate)
+      return gate
+    },
+  }
+}
+
+/** One worker-like runtime per runtime generation the host starts. */
+function createWorkerLikeRuntimes(
+  configure: (
+    worker: ReturnType<typeof makeWorkerLikeRuntime>,
+    index: number,
+  ) => void = () => {},
+) {
+  const workers: Array<ReturnType<typeof makeWorkerLikeRuntime>> = []
+  const runtimeFactory = vi.fn(() => {
+    const worker = makeWorkerLikeRuntime()
+    configure(worker, workers.length)
+    workers.push(worker)
+    return worker.runtime
+  })
+  return { workers, runtimeFactory }
+}
+
+async function flushMicrotasks(rounds = 8) {
+  for (let i = 0; i < rounds; i += 1) await Promise.resolve()
+}
+
+/** Resolves once `promise` fulfils; fails the test if it stays pending. */
+async function settled<T>(promise: Promise<T>) {
+  let outcome: { value: T } | null = null
+  void promise.then((value) => {
+    outcome = { value }
+  })
+  await vi.waitFor(() => expect(outcome).not.toBeNull())
+  return outcome!.value
 }
 
 afterEach(() => {
@@ -595,7 +680,7 @@ describe('raw runtime host', () => {
 
       await expect(
         lease.open(new File(['raw'], 'a.ARW')),
-      ).rejects.toMatchObject({ name: 'AbortError' })
+      ).rejects.toMatchObject({ code: 'RAW_JOB_CANCELLED' })
       expect(runtime.openSession).not.toHaveBeenCalled()
     })
 
@@ -638,10 +723,13 @@ describe('raw runtime host', () => {
       const opening = lease.open(new File(['raw'], 'a.ARW'))
       await vi.waitFor(() => expect(runtime.openSession).toHaveBeenCalled())
       lease.cancel()
+      // The cancelled open rejects at once, before the source arrives.
+      await expect(opening).rejects.toMatchObject({
+        code: 'RAW_JOB_CANCELLED',
+      })
       lateOpen.resolve(late)
 
-      await expect(opening).rejects.toMatchObject({ name: 'AbortError' })
-      expect(late.dispose).toHaveBeenCalledTimes(1)
+      await vi.waitFor(() => expect(late.dispose).toHaveBeenCalledTimes(1))
     })
 
     it('cancels the active lease when the host is disposed', async () => {
@@ -654,6 +742,481 @@ describe('raw runtime host', () => {
 
       expect(lease.signal.aborted).toBe(true)
       expect(session.dispose).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('superseded native work', () => {
+    const fileA = new File(['raw'], 'a.ARW')
+    const fileB = new File(['raw'], 'b.ARW')
+
+    function makeHost(runtimeFactory: RawRuntimeHostOptions['runtimeFactory']) {
+      return createRawRuntimeHost({
+        runtimeFactory,
+        jpegRuntimeAvailabilityProbe: () => true,
+      })
+    }
+
+    it.each(['init', 'openSession'] as const)(
+      'opens a replacement lease while an obsolete %s on the old generation never settles',
+      async (operation) => {
+        let gate!: ReturnType<typeof deferred<void>>
+        const { workers, runtimeFactory } = createWorkerLikeRuntimes(
+          (worker, index) => {
+            if (index === 0) gate = worker.hold(operation)
+          },
+        )
+        const host = makeHost(runtimeFactory)
+
+        const leaseA = host.beginSession()
+        const openingA = leaseA.open(fileA)
+        await vi.waitFor(() =>
+          expect(workers[0]?.runtime[operation]).toHaveBeenCalled(),
+        )
+
+        const leaseB = host.beginSession()
+        await expect(openingA).rejects.toMatchObject({
+          code: 'RAW_JOB_CANCELLED',
+        })
+        const openedB = await settled(leaseB.open(fileB))
+
+        expect(openedB.sourceDimensions).toEqual({ width: 6240, height: 4168 })
+        expect(runtimeFactory).toHaveBeenCalledTimes(2)
+        expect(workers[0]!.runtime.dispose).toHaveBeenCalledTimes(1)
+        expect(workers[1]!.runtime.openSession).toHaveBeenCalledWith(
+          fileB,
+          { maxOutputPixels: QUICK_PREVIEW_MAX_PIXELS },
+          leaseB.signal,
+        )
+
+        // The obsolete work completing late opens nothing more, and disposes
+        // only the session it had already opened.
+        gate.resolve()
+        await flushMicrotasks()
+        if (operation === 'openSession') {
+          await vi.waitFor(() =>
+            expect(workers[0]!.session.dispose).toHaveBeenCalledTimes(1),
+          )
+        } else {
+          expect(workers[0]!.runtime.openSession).not.toHaveBeenCalled()
+        }
+        expect(workers[1]!.session.dispose).not.toHaveBeenCalled()
+        expect(workers[1]!.runtime.dispose).not.toHaveBeenCalled()
+        expect(host.getSnapshot().runtime).toMatchObject({
+          workerAlive: true,
+          initialized: true,
+        })
+
+        leaseB.release()
+        expect(workers[1]!.session.dispose).toHaveBeenCalledTimes(1)
+      },
+    )
+
+    it('opens a replacement lease while an obsolete worker start never settles', async () => {
+      const stalledStart = deferred<LumaRawRuntime>()
+      const replacement = makeWorkerLikeRuntime()
+      const runtimeFactory = vi
+        .fn<() => LumaRawRuntime | Promise<LumaRawRuntime>>()
+        .mockReturnValueOnce(stalledStart.promise)
+        .mockReturnValueOnce(replacement.runtime)
+      const host = makeHost(runtimeFactory)
+
+      const leaseA = host.beginSession()
+      const openingA = leaseA.open(fileA)
+      await vi.waitFor(() => expect(runtimeFactory).toHaveBeenCalledTimes(1))
+
+      host.cancelSession()
+      await expect(openingA).rejects.toMatchObject({
+        code: 'RAW_JOB_CANCELLED',
+      })
+      const leaseB = host.beginSession()
+      await settled(leaseB.open(fileB))
+      expect(replacement.runtime.openSession).toHaveBeenCalledTimes(1)
+
+      // The obsolete start lands late and is disposed without publishing.
+      const late = makeRuntime()
+      stalledStart.resolve(late)
+      await vi.waitFor(() => expect(late.dispose).toHaveBeenCalledTimes(1))
+      expect(late.init).not.toHaveBeenCalled()
+      expect(replacement.runtime.dispose).not.toHaveBeenCalled()
+      expect(host.getSnapshot().runtime.workerAlive).toBe(true)
+    })
+
+    it.each([
+      ['quick', 'decodeQuick', 'superseded'],
+      ['bounded HQ', 'decodeBoundedHq', 'reset'],
+      ['embedded preview', 'extractEmbeddedPreview', 'superseded'],
+    ] as const)(
+      'starts the replacement while an obsolete %s decode never settles (%s)',
+      async (_label, operation, ending) => {
+        let gate!: ReturnType<typeof deferred<void>>
+        const { workers, runtimeFactory } = createWorkerLikeRuntimes(
+          (worker, index) => {
+            if (index === 0) gate = worker.hold(operation)
+          },
+        )
+        const host = makeHost(runtimeFactory)
+
+        const leaseA = host.beginSession()
+        const sessionA = await leaseA.open(fileA)
+        const stage =
+          operation === 'decodeQuick'
+            ? sessionA.decodeQuickRaw(undefined, leaseA.signal)
+            : operation === 'decodeBoundedHq'
+              ? sessionA.decodeBoundedHqRaw(
+                  { maxOutputPixels: 4_000_000 },
+                  undefined,
+                  leaseA.signal,
+                )
+              : sessionA.extractEmbeddedPreview(leaseA.signal)
+        await vi.waitFor(() =>
+          expect(workers[0]!.session[operation]).toHaveBeenCalled(),
+        )
+
+        void stage.catch(() => undefined)
+
+        if (ending === 'reset') host.cancelSession()
+        const leaseB = host.beginSession()
+        const sessionB = await settled(leaseB.open(fileB))
+        await expect(
+          settled(sessionB.decodeQuickRaw(undefined, leaseB.signal)),
+        ).resolves.toMatchObject({ source: 'quick' })
+
+        expect(runtimeFactory).toHaveBeenCalledTimes(2)
+        expect(workers[0]!.runtime.dispose).toHaveBeenCalledTimes(1)
+        expect(workers[0]!.session.dispose).toHaveBeenCalledTimes(1)
+
+        gate.resolve()
+        await flushMicrotasks()
+        expect(workers[1]!.session.dispose).not.toHaveBeenCalled()
+        expect(workers[1]!.runtime.dispose).not.toHaveBeenCalled()
+        expect(host.getSnapshot().runtime.workerAlive).toBe(true)
+      },
+    )
+
+    it('keeps the warm runtime for the next lease once a lease was released or its open failed', async () => {
+      const { workers, runtimeFactory } = createWorkerLikeRuntimes()
+      const host = makeHost(runtimeFactory)
+
+      const leaseA = host.beginSession()
+      const sessionA = await leaseA.open(fileA)
+      await sessionA.decodeQuickRaw(undefined, leaseA.signal)
+      leaseA.release()
+
+      vi.mocked(workers[0]!.runtime.openSession).mockRejectedValueOnce(
+        new Error('open exploded'),
+      )
+      const failed = host.beginSession()
+      await expect(failed.open(fileB)).rejects.toMatchObject({
+        code: 'RAW_OPEN_FAILED',
+      })
+      failed.cancel()
+
+      const leaseB = host.beginSession()
+      await settled(leaseB.open(fileB))
+
+      expect(leaseA.signal.aborted).toBe(false)
+      expect(runtimeFactory).toHaveBeenCalledTimes(1)
+      expect(workers[0]!.runtime.dispose).not.toHaveBeenCalled()
+      expect(workers[0]!.runtime.openSession).toHaveBeenCalledTimes(3)
+    })
+
+    it('restores on a fresh generation after evacuation while an obsolete open never settles', async () => {
+      let gate!: ReturnType<typeof deferred<void>>
+      const { workers, runtimeFactory } = createWorkerLikeRuntimes(
+        (worker, index) => {
+          if (index === 0) gate = worker.hold('openSession')
+        },
+      )
+      const host = makeHost(runtimeFactory)
+
+      const leaseA = host.beginSession()
+      void leaseA.open(fileA).catch(() => undefined)
+      await vi.waitFor(() =>
+        expect(workers[0]?.runtime.openSession).toHaveBeenCalled(),
+      )
+
+      host.cancelSession()
+      await host.terminateDecodeBridge()
+      const restore = host.beginSession()
+      const restored = await settled(restore.open(fileA))
+      await expect(
+        settled(restored.decodeQuickRaw(undefined, restore.signal)),
+      ).resolves.toMatchObject({ source: 'quick' })
+
+      gate.resolve()
+      await vi.waitFor(() =>
+        expect(workers[0]!.session.dispose).toHaveBeenCalledTimes(1),
+      )
+      expect(workers.at(-1)!.session.dispose).not.toHaveBeenCalled()
+      expect(workers.at(-1)!.runtime.dispose).not.toHaveBeenCalled()
+    })
+
+    it('lets a late end of an obsolete lease never terminate its replacement', async () => {
+      let gate!: ReturnType<typeof deferred<void>>
+      const { workers, runtimeFactory } = createWorkerLikeRuntimes(
+        (worker, index) => {
+          if (index === 0) gate = worker.hold('decodeQuick')
+        },
+      )
+      const host = makeHost(runtimeFactory)
+
+      const leaseA = host.beginSession()
+      const sessionA = await leaseA.open(fileA)
+      void sessionA
+        .decodeQuickRaw(undefined, leaseA.signal)
+        .catch(() => undefined)
+      await vi.waitFor(() =>
+        expect(workers[0]!.session.decodeQuick).toHaveBeenCalled(),
+      )
+      const leaseB = host.beginSession()
+      const sessionB = await settled(leaseB.open(fileB))
+      const quickB = sessionB.decodeQuickRaw(undefined, leaseB.signal)
+
+      leaseA.cancel()
+      leaseA.release()
+      gate.resolve()
+
+      await expect(settled(quickB)).resolves.toMatchObject({ source: 'quick' })
+      expect(leaseB.signal.aborted).toBe(false)
+      expect(runtimeFactory).toHaveBeenCalledTimes(2)
+      expect(workers[1]!.runtime.dispose).not.toHaveBeenCalled()
+      expect(workers[1]!.session.dispose).not.toHaveBeenCalled()
+    })
+
+    it.each(['superseded', 'reset'] as const)(
+      'warms a fresh generation for the next lease once a lease waiting on a startup init that never answers is %s',
+      async (ending) => {
+        let gate!: ReturnType<typeof deferred<void>>
+        const { workers, runtimeFactory } = createWorkerLikeRuntimes(
+          (worker, index) => {
+            if (index === 0) gate = worker.hold('init')
+          },
+        )
+        const host = makeHost(runtimeFactory)
+
+        const startup = host.prewarm()
+        const leaseA = host.beginSession()
+        const warmingA = leaseA.prewarm()
+        await vi.waitFor(() =>
+          expect(workers[0]?.runtime.init).toHaveBeenCalled(),
+        )
+        expect(host.getSnapshot().initialization).toBe('pending')
+
+        if (ending === 'reset') host.cancelSession()
+        const leaseB = host.beginSession()
+        await expect(warmingA).rejects.toMatchObject({
+          code: 'RAW_JOB_CANCELLED',
+        })
+        await expect(settled(startup)).resolves.toMatchObject({
+          status: 'failed',
+          recoverable: true,
+        })
+
+        const warmingB = leaseB.prewarm()
+        expect(warmingB).not.toBe(warmingA)
+        await expect(settled(warmingB)).resolves.toEqual({ status: 'ready' })
+        const openedB = await settled(leaseB.open(fileB))
+        expect(openedB.sourceDimensions).toEqual({ width: 6240, height: 4168 })
+        expect(runtimeFactory).toHaveBeenCalledTimes(2)
+        expect(workers[0]!.runtime.dispose).toHaveBeenCalledTimes(1)
+        expect(host.getSnapshot()).toMatchObject({
+          initialization: 'ready',
+          runtime: {
+            generation: 2,
+            workerAlive: true,
+            initialized: true,
+            lastTermination: { generation: 1, reason: 'explicit' },
+          },
+        })
+
+        // The obsolete init answering late publishes and disposes nothing.
+        gate.resolve()
+        await flushMicrotasks()
+        expect(workers[0]!.runtime.openSession).not.toHaveBeenCalled()
+        expect(workers[1]!.runtime.dispose).not.toHaveBeenCalled()
+        expect(workers[1]!.session.dispose).not.toHaveBeenCalled()
+        expect(host.getSnapshot()).toMatchObject({
+          initialization: 'ready',
+          outcome: { status: 'ready' },
+          runtime: { generation: 2, workerAlive: true, initialized: true },
+        })
+        expect(leaseB.signal.aborted).toBe(false)
+      },
+    )
+
+    it('keeps the warm runtime for the next lease when a lease ends after its prewarm settled', async () => {
+      const { workers, runtimeFactory } = createWorkerLikeRuntimes()
+      const host = makeHost(runtimeFactory)
+
+      const leaseA = host.beginSession()
+      await expect(leaseA.prewarm()).resolves.toEqual({ status: 'ready' })
+      const leaseB = host.beginSession()
+      await expect(leaseB.prewarm()).resolves.toEqual({ status: 'ready' })
+      await settled(leaseB.open(fileB))
+
+      expect(leaseA.signal.aborted).toBe(true)
+      expect(runtimeFactory).toHaveBeenCalledTimes(1)
+      expect(workers[0]!.runtime.dispose).not.toHaveBeenCalled()
+      expect(host.getSnapshot().runtime.lastTermination).toBeNull()
+    })
+
+    it('records an explicit termination when it ends the generation of a lease still opening', async () => {
+      const { workers, runtimeFactory } = createWorkerLikeRuntimes(
+        (worker, index) => {
+          if (index === 0) worker.hold('openSession')
+        },
+      )
+      const host = makeHost(runtimeFactory)
+
+      const leaseA = host.beginSession()
+      void leaseA.open(fileA).catch(() => undefined)
+      await vi.waitFor(() =>
+        expect(workers[0]?.runtime.openSession).toHaveBeenCalled(),
+      )
+      leaseA.cancel()
+
+      expect(host.getSnapshot().runtime.lastTermination).toEqual({
+        generation: 1,
+        reason: 'explicit',
+      })
+    })
+
+    it('settles a prewarm superseded by a termination and warms afresh while the old init never settles', async () => {
+      let gate!: ReturnType<typeof deferred<void>>
+      const { workers, runtimeFactory } = createWorkerLikeRuntimes(
+        (worker, index) => {
+          if (index === 0) gate = worker.hold('init')
+        },
+      )
+      const host = makeHost(runtimeFactory)
+
+      const obsolete = host.prewarm()
+      await vi.waitFor(() =>
+        expect(workers[0]?.runtime.init).toHaveBeenCalled(),
+      )
+      await host.terminateDecodeBridge()
+
+      await expect(settled(obsolete)).resolves.toMatchObject({
+        status: 'failed',
+        recoverable: true,
+      })
+      expect(host.getSnapshot()).toMatchObject({
+        initialization: 'idle',
+        outcome: null,
+      })
+
+      const current = host.prewarm()
+      expect(current).not.toBe(obsolete)
+      await expect(settled(current)).resolves.toEqual({ status: 'ready' })
+      expect(host.getSnapshot()).toMatchObject({
+        initialization: 'ready',
+        runtime: { generation: 2, workerAlive: true, initialized: true },
+      })
+
+      gate.resolve()
+      await flushMicrotasks()
+      expect(host.getSnapshot()).toMatchObject({
+        initialization: 'ready',
+        runtime: { generation: 2, workerAlive: true, initialized: true },
+      })
+      expect(workers[1]!.runtime.dispose).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('failure normalization', () => {
+    it('normalizes an asynchronous embedded-preview rejection to RAW_THUMBNAIL_UNAVAILABLE', async () => {
+      const runtime = makeRuntime({
+        extractEmbeddedPreview: vi
+          .fn<LumaRawRuntime['extractEmbeddedPreview']>()
+          .mockImplementationOnce(async () => {
+            await Promise.resolve()
+            throw new Error('thumbnail exploded')
+          })
+          .mockImplementationOnce(async () => {
+            await Promise.resolve()
+            throw Object.assign(new Error('out of memory'), {
+              code: 'RAW_MEMORY_LIMIT',
+            })
+          }),
+      })
+      const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
+      const file = new File(['raw'], 'a.ARW')
+
+      await expect(host.extractEmbeddedPreview(file)).rejects.toMatchObject({
+        name: 'RawAdapterError',
+        code: 'RAW_THUMBNAIL_UNAVAILABLE',
+        message: 'thumbnail exploded',
+      })
+      await expect(host.extractEmbeddedPreview(file)).rejects.toMatchObject({
+        name: 'RawAdapterError',
+        code: 'RAW_MEMORY_LIMIT',
+      })
+    })
+
+    it('reports an aborted decode as RAW_JOB_CANCELLED, not a decode failure', async () => {
+      const decode = deferred<LumaRawFrame>()
+      const runtime = makeRuntime({
+        decodeQuick: vi.fn<LumaRawRuntime['decodeQuick']>(() => decode.promise),
+        // Terminating the worker rejects its pending request.
+        dispose: vi.fn(() => {
+          decode.reject(
+            Object.assign(new Error('RAW runtime worker was disposed.'), {
+              code: 'RAW_RUNTIME_UNAVAILABLE',
+            }),
+          )
+        }),
+      })
+      const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
+      const controller = new AbortController()
+
+      const quick = host.decodeQuickRaw(
+        new File(['raw'], 'a.ARW'),
+        undefined,
+        controller.signal,
+      )
+      await vi.waitFor(() => expect(runtime.decodeQuick).toHaveBeenCalled())
+      controller.abort()
+
+      await expect(quick).rejects.toMatchObject({
+        name: 'RawAdapterError',
+        code: 'RAW_JOB_CANCELLED',
+      })
+    })
+
+    it('reports a decode its runtime termination cut short as RAW_JOB_CANCELLED', async () => {
+      const stalledStart = deferred<LumaRawRuntime>()
+      const host = createRawRuntimeHost({
+        runtimeFactory: () => stalledStart.promise,
+      })
+
+      const boundedHq = host.decodeBoundedHqRaw(new File(['raw'], 'a.ARW'), {
+        maxOutputPixels: 4_000_000,
+      })
+      await host.terminateDecodeBridge()
+
+      await expect(boundedHq).rejects.toMatchObject({
+        name: 'RawAdapterError',
+        code: 'RAW_JOB_CANCELLED',
+      })
+    })
+
+    it('reports a bounded HQ failure under the published RAW_HQ_DECODE_FAILED code', async () => {
+      const runtime = makeRuntime({
+        decodeBoundedHq: vi
+          .fn<LumaRawRuntime['decodeBoundedHq']>()
+          .mockRejectedValue(new Error('hq exploded')),
+      })
+      const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
+
+      await expect(
+        host.decodeBoundedHqRaw(new File(['raw'], 'a.ARW'), {
+          maxOutputPixels: 4_000_000,
+        }),
+      ).rejects.toMatchObject({
+        name: 'RawAdapterError',
+        code: 'RAW_HQ_DECODE_FAILED',
+        message: 'hq exploded',
+      })
     })
   })
 

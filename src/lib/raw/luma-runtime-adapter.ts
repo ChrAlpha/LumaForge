@@ -42,16 +42,10 @@ export type RawDecodeBridgePort = Pick<
   | 'decodeBoundedHq'
 >
 
-type RawAdapterErrorCode = LumaRawErrorCode | 'RAW_BOUNDED_HQ_DECODE_FAILED'
-
 export class RawAdapterError extends Error {
-  readonly code: RawAdapterErrorCode
+  readonly code: LumaRawErrorCode
 
-  constructor(
-    code: RawAdapterErrorCode,
-    message: string,
-    options?: ErrorOptions,
-  ) {
+  constructor(code: LumaRawErrorCode, message: string, options?: ErrorOptions) {
     super(message, options)
     this.name = 'RawAdapterError'
     this.code = code
@@ -76,28 +70,52 @@ export function createRuntimeSignal(signal?: AbortSignal) {
   return signal ?? new AbortController().signal
 }
 
-function getRawErrorCode(error: unknown): RawAdapterErrorCode | undefined {
+function getRawErrorCode(error: unknown): LumaRawErrorCode | undefined {
   if (typeof error !== 'object' || !error || !('code' in error)) {
     return undefined
   }
 
   const code = (error as { code?: unknown }).code
   if (typeof code === 'string' && code.startsWith('RAW_')) {
-    return code as RawAdapterErrorCode
+    return code as LumaRawErrorCode
   }
 
   return undefined
 }
 
+export function isAbortError(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: unknown }).name === 'AbortError'
+  )
+}
+
+/**
+ * The code a failed RAW request reports. Work its owner cancelled is
+ * `RAW_JOB_CANCELLED` whatever the aborted or terminated worker answered, so
+ * a cancellation never reads as a corrupt source or a failed stage. Otherwise
+ * a published RAW code wins, an abort or termination without one is a
+ * cancellation, and only the rest take the operation's fallback.
+ */
 function normalizeRawAdapterError(
   error: unknown,
-  fallbackCode: RawAdapterErrorCode,
+  fallbackCode: LumaRawErrorCode,
+  signal?: AbortSignal,
 ) {
-  const code = getRawErrorCode(error) ?? fallbackCode
+  const code = signal?.aborted
+    ? 'RAW_JOB_CANCELLED'
+    : (getRawErrorCode(error) ??
+      (isAbortError(error) ? 'RAW_JOB_CANCELLED' : fallbackCode))
   const message =
     error instanceof Error ? error.message : 'RAW runtime request failed.'
 
   return new RawAdapterError(code, message, { cause: error })
+}
+
+/** The error a RAW request ended by its owner rejects with. */
+export function rawJobCancelledError(message: string) {
+  return new RawAdapterError('RAW_JOB_CANCELLED', message)
 }
 
 /** The runtime reason each engine refusal is reported under. */
@@ -194,9 +212,13 @@ export async function extractEmbeddedPreviewOnBridge(
   const runtimeSignal = createRuntimeSignal(signal)
   try {
     await bridge.prewarm(runtimeSignal)
-    return bridge.decodeEmbedded(runtimeSignal, file, runtimeSignal)
+    return await bridge.decodeEmbedded(runtimeSignal, file, runtimeSignal)
   } catch (error) {
-    throw normalizeRawAdapterError(error, 'RAW_THUMBNAIL_UNAVAILABLE')
+    throw normalizeRawAdapterError(
+      error,
+      'RAW_THUMBNAIL_UNAVAILABLE',
+      runtimeSignal,
+    )
   }
 }
 
@@ -220,7 +242,11 @@ export async function decodeQuickRawOnBridge(
 
     return frameToDecodedImage(frame)
   } catch (error) {
-    throw normalizeRawAdapterError(error, 'RAW_QUICK_DECODE_FAILED')
+    throw normalizeRawAdapterError(
+      error,
+      'RAW_QUICK_DECODE_FAILED',
+      runtimeSignal,
+    )
   }
 }
 
@@ -244,7 +270,7 @@ export async function decodeBoundedHqRawOnBridge(
     onProgress?.({ phase: 'complete', progress: 100 })
     return frameToDecodedImage(frame)
   } catch (error) {
-    throw normalizeRawAdapterError(error, 'RAW_BOUNDED_HQ_DECODE_FAILED')
+    throw normalizeRawAdapterError(error, 'RAW_HQ_DECODE_FAILED', runtimeSignal)
   }
 }
 
@@ -267,7 +293,7 @@ export async function openRawSessionOnBridge(
       runtimeSignal,
     )
   } catch (error) {
-    throw normalizeRawAdapterError(error, 'RAW_OPEN_FAILED')
+    throw normalizeRawAdapterError(error, 'RAW_OPEN_FAILED', runtimeSignal)
   }
 
   return {
@@ -279,7 +305,11 @@ export async function openRawSessionOnBridge(
       try {
         return await session.extractEmbeddedPreview(signal)
       } catch (error) {
-        throw normalizeRawAdapterError(error, 'RAW_THUMBNAIL_UNAVAILABLE')
+        throw normalizeRawAdapterError(
+          error,
+          'RAW_THUMBNAIL_UNAVAILABLE',
+          signal,
+        )
       }
     },
     async probeExportCapability(
@@ -307,7 +337,7 @@ export async function openRawSessionOnBridge(
         onProgress?.({ phase: 'complete', progress: 100 })
         return frameToDecodedImage(frame, exposureOptions)
       } catch (error) {
-        throw normalizeRawAdapterError(error, 'RAW_QUICK_DECODE_FAILED')
+        throw normalizeRawAdapterError(error, 'RAW_QUICK_DECODE_FAILED', signal)
       }
     },
     async decodeBoundedHqRaw(
@@ -326,7 +356,7 @@ export async function openRawSessionOnBridge(
         onProgress?.({ phase: 'complete', progress: 100 })
         return frameToDecodedImage(frame, { pinnedExposure })
       } catch (error) {
-        throw normalizeRawAdapterError(error, 'RAW_BOUNDED_HQ_DECODE_FAILED')
+        throw normalizeRawAdapterError(error, 'RAW_HQ_DECODE_FAILED', signal)
       }
     },
     async applyCalibration(
@@ -336,7 +366,7 @@ export async function openRawSessionOnBridge(
       try {
         return await session.applyCalibration(profile, signal)
       } catch (error) {
-        throw normalizeRawAdapterError(error, 'RAW_RUNTIME_UNAVAILABLE')
+        throw normalizeRawAdapterError(error, 'RAW_RUNTIME_UNAVAILABLE', signal)
       }
     },
     dispose() {

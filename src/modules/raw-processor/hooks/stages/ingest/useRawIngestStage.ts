@@ -6,7 +6,7 @@ import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
-import type { PrewarmOutcome, PrewarmState } from '~/lib/raw/runtime-adapter'
+import type { PrewarmState } from '~/lib/raw/runtime-adapter'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession, StyleAsset } from '../../../model/session'
@@ -53,7 +53,6 @@ type UseRawIngestStageInput = {
   registerCurrentPreviewPipelineForEvacuation: () => void
   yieldToPaint: () => Promise<void>
   getPrewarmState: () => PrewarmState
-  prewarm: () => Promise<PrewarmOutcome>
   /** The workflow host owns each load's native session and cancellation. */
   beginRuntimeSession: RawRuntimeHost['beginSession']
   decodedImageRef: MutableRefObject<DecodedImage | null>

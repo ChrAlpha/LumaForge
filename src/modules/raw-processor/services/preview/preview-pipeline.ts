@@ -91,7 +91,7 @@ export async function runPreviewPipeline({
     } catch (error) {
       onEvent({
         type: 'bounded-hq-failed',
-        errorCode: toPreviewErrorCode(error, 'RAW_BOUNDED_HQ_DECODE_FAILED'),
+        errorCode: toPreviewErrorCode(error, 'RAW_HQ_DECODE_FAILED'),
       })
     }
   })()

@@ -66,7 +66,7 @@ describe('session derivation', () => {
         quickDecodePreview: { status: 'ready', width: 2000, height: 1500 },
         boundedHqPreview: {
           status: 'failed',
-          errorCode: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+          errorCode: 'RAW_HQ_DECODE_FAILED',
         },
       },
       renderState: { status: 'idle' as const },
@@ -107,7 +107,7 @@ describe('session derivation', () => {
         quickDecodePreview: { status: 'ready', width: 2000, height: 1250 },
         boundedHqPreview: {
           status: 'failed',
-          errorCode: 'RAW_BOUNDED_HQ_DECODE_FAILED',
+          errorCode: 'RAW_HQ_DECODE_FAILED',
         },
       },
       exportState: {

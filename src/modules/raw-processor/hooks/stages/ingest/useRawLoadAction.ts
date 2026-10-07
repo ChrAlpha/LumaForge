@@ -32,7 +32,6 @@ export function useRawLoadAction({
   registerCurrentPreviewPipelineForEvacuation,
   yieldToPaint,
   getPrewarmState,
-  prewarm,
   beginRuntimeSession,
   decodedImageRef,
   sessionRef,
@@ -70,7 +69,6 @@ export function useRawLoadAction({
         registerCurrentPreviewPipelineForEvacuation,
         yieldToPaint,
         getPrewarmState,
-        prewarm,
         beginRuntimeSession,
       },
       refs: {
@@ -97,7 +95,6 @@ export function useRawLoadAction({
       invalidateExportGraph,
       isMountedRef,
       pendingLoadSessionIdRef,
-      prewarm,
       previewCopyCanvasRef,
       queueExportResultResourceDisposal,
       registerCurrentPreviewPipelineForEvacuation,
