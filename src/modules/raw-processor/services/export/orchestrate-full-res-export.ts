@@ -54,6 +54,8 @@ import { resolveExportEnvironment } from './export-manifest'
 import {
   deriveFullResExportReadiness,
   deriveTransformExportRefusal,
+  planFullResExport,
+  planFullResExportRequest,
 } from './export-readiness'
 import type {
   ExportInterruptionMarkers,
@@ -77,9 +79,9 @@ import {
   buildExportFilename,
   createExportPolicyRefusal,
   EXPORT_JPEG_QUALITY,
-  planExportWithSampledFacts,
   recommendRetryLevel,
   runFullResolutionExportJob,
+  sampleExportPlanFacts,
 } from './export-system'
 
 export interface ExportContext {
@@ -272,6 +274,14 @@ export async function orchestrateFullResExport(
     options.interruption,
     activeSourceFile,
   )
+  // Sized from the sensor frame the worker decodes, whatever the geometry
+  // crops. The request holds no device facts; those are sampled for this
+  // export once it owns the export slot.
+  const planRequest = planFullResExportRequest({
+    source: { width: exportCapability.width, height: exportCapability.height },
+    performancePreference,
+    interruption,
+  })
 
   // One copy of the full intent feeds both the graph and the pre-export
   // snapshot. The strength goes in as given: zero keeps the LUT and its
@@ -358,31 +368,20 @@ export async function orchestrateFullResExport(
     ctx.atoms.setError(null)
     toast.dismiss()
     ctx.refs.previewCopyCanvasRef.current = null
-    // Sized from the sensor frame the worker decodes, whatever the geometry
-    // crops; the device facts are sampled now, for this export.
-    const executionPlan = await planExportWithSampledFacts({
-      preference: performancePreference,
-      source: {
-        width: exportCapability.width,
-        height: exportCapability.height,
-      },
-      history: {
-        previousCrashLikeInterruption:
-          interruption?.previousCrashLikeInterruption ?? false,
-        previousResourceFailure: interruption?.previousResourceFailure ?? false,
-        previousUserInterrupted: false,
-      },
-    })
+    // The device facts are sampled now, for this export. Facts sampled for
+    // an attempt that is no longer current plan nothing.
+    const sampledFacts = await sampleExportPlanFacts()
     if (!isCurrentExport()) {
       return
     }
     // Outputs left by closed tabs are collected once per page at idle time;
     // this export never waits for it and cannot fail because of it.
     scheduleAbandonedOpfsOutputCollection()
-    if (executionPlan.productCopy === 'cannot-safely-complete') {
+    const planned = planFullResExport(planRequest, sampledFacts)
+    if (planned.kind === 'refuse') {
       throw createExportPolicyRefusal()
     }
-    const jobExecutionPlan = executionPlan
+    const jobExecutionPlan = planned.plan
     // An OPFS plan always gets its output address, inside the directory this
     // page reserved. No recovery journal is written next to it.
     const outputLocation: FullResWorkerOutputLocation | undefined =

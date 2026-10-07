@@ -20,6 +20,7 @@ import type { ExportDebugEvent } from '~/lib/export/execution-profile'
 import { getExportModeCopy } from '~/lib/export/execution-profile'
 import type {
   ExportExecutionPlan,
+  ExportPlanFacts,
   ExportPlanRequest,
 } from '~/lib/export/export-plan'
 import { selectExportPlan } from '~/lib/export/export-plan'
@@ -65,7 +66,8 @@ import type { ExportContext } from './orchestrate-full-res-export'
 import { orchestrateFullResExport } from './orchestrate-full-res-export'
 
 const mocks = vi.hoisted(() => ({
-  planExportWithSampledFacts: vi.fn(),
+  sampleExportPlanFacts: vi.fn(),
+  planFullResExport: vi.fn(),
   runFullResolutionExportJob: vi.fn(),
   buildManifestForExportResult: vi.fn(),
   reserveOpfsOutputDirectory: vi.fn(),
@@ -80,8 +82,15 @@ vi.mock('sonner', () => ({
 
 vi.mock('./export-system', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./export-system')>()),
-  planExportWithSampledFacts: mocks.planExportWithSampledFacts,
+  sampleExportPlanFacts: mocks.sampleExportPlanFacts,
   runFullResolutionExportJob: mocks.runFullResolutionExportJob,
+}))
+
+// The orchestrator's plans, watched on their way through the real planner;
+// readiness plans inside its own module and never shows up here.
+vi.mock('./export-readiness', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./export-readiness')>()),
+  planFullResExport: mocks.planFullResExport,
 }))
 
 vi.mock('./export-evacuation', async (importOriginal) => {
@@ -102,6 +111,11 @@ vi.mock('~/lib/export/opfs-output-lifetime', () => ({
   scheduleAbandonedOpfsOutputCollection:
     mocks.scheduleAbandonedOpfsOutputCollection,
 }))
+
+const { planFullResExport: actualPlanFullResExport } =
+  await vi.importActual<typeof import('./export-readiness')>(
+    './export-readiness',
+  )
 
 type JobInput = Parameters<typeof runFullResolutionExportJob>[0]
 type PlanInput = ExportPlanRequest
@@ -709,15 +723,23 @@ function createHarness(options: HarnessOptions = {}) {
     trace.push('toast:dismiss')
   })
 
-  // Real plans from the real policy, for an explicitly chosen device.
-  mocks.planExportWithSampledFacts.mockImplementation(
-    async (input: PlanInput) => {
-      trace.push('service:planExportWithSampledFacts')
-      planInputs.push(input)
-      await options.planGate
-      const plan = selectExportPlan({ ...input, capability, runtime })
-      plans.push(plan)
-      return plan
+  // Facts sampled for an explicitly chosen device, then real plans from the
+  // real planner and policy.
+  mocks.sampleExportPlanFacts.mockImplementation(async () => {
+    trace.push('service:sampleExportPlanFacts')
+    await options.planGate
+    return { capability, runtime }
+  })
+  mocks.planFullResExport.mockImplementation(
+    (request: PlanInput, facts: ExportPlanFacts) => {
+      planInputs.push(request)
+      const decision = actualPlanFullResExport(request, facts)
+      plans.push(
+        decision.kind === 'run'
+          ? decision.plan
+          : selectExportPlan({ ...request, ...facts }),
+      )
+      return decision
     },
   )
   mocks.reserveOpfsOutputDirectory.mockResolvedValue(TAB_DIRECTORY)
@@ -937,7 +959,7 @@ describe('orchestrateFullResExport success', () => {
       'state:progress:0',
       'state:error:null',
       'toast:dismiss',
-      'service:planExportWithSampledFacts',
+      'service:sampleExportPlanFacts',
       'service:registerCurrentPreviewPipelineForEvacuation',
       'debug:export-plan-selected',
       'state:session:exporting',
@@ -1377,7 +1399,7 @@ describe('orchestrateFullResExport success', () => {
     const [scheduledAt] =
       mocks.scheduleAbandonedOpfsOutputCollection.mock.invocationCallOrder
     expect(scheduledAt).toBeGreaterThan(
-      mocks.planExportWithSampledFacts.mock.invocationCallOrder[0]!,
+      mocks.sampleExportPlanFacts.mock.invocationCallOrder[0]!,
     )
     expect(scheduledAt).toBeLessThan(
       mocks.runFullResolutionExportJob.mock.invocationCallOrder[0]!,
@@ -1546,7 +1568,7 @@ describe('orchestrateFullResExport refusals', () => {
     })
     expect(otherExport.signal.aborted).toBe(false)
     expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
-    expect(mocks.planExportWithSampledFacts).not.toHaveBeenCalled()
+    expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
   })
 
   it.each(INVALID_GEOMETRIES)(
@@ -1665,7 +1687,7 @@ describe('orchestrateFullResExport refusals', () => {
         'Full-resolution export is not ready',
         { description },
       )
-      expect(mocks.planExportWithSampledFacts).not.toHaveBeenCalled()
+      expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
       expect(h.markerStore.markers()).toEqual([])
       expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
       expect(registry.snapshot().live).toHaveLength(1)
@@ -1691,7 +1713,7 @@ describe('orchestrateFullResExport refusals', () => {
 
     await orchestrateFullResExport(OPTIONS, h.ctx)
 
-    expect(mocks.planExportWithSampledFacts).not.toHaveBeenCalled()
+    expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
     expect(mocks.toastError).toHaveBeenCalledWith(
       'Full-resolution export is not ready',
       {
@@ -1751,7 +1773,7 @@ describe('orchestrateFullResExport refusals', () => {
     )
     expect(otherExport.signal.aborted).toBe(false)
     expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
-    expect(mocks.planExportWithSampledFacts).not.toHaveBeenCalled()
+    expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
     expect(mocks.toastError).not.toHaveBeenCalled()
   })
 
@@ -1785,7 +1807,7 @@ describe('orchestrateFullResExport refusals', () => {
       'state:progress:0',
       'state:error:null',
       'toast:dismiss',
-      'service:planExportWithSampledFacts',
+      'service:sampleExportPlanFacts',
       'state:session:failed',
       'state:status:ready',
       'service:scheduleToast',
@@ -1809,6 +1831,279 @@ describe('orchestrateFullResExport refusals', () => {
     expect(h.markerStore.markers()).toEqual([])
     expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
   })
+})
+
+describe('orchestrateFullResExport refusal order', () => {
+  /** A LUT whose input contract is unknown: the color graph refuses it. */
+  function unsupportedGraph() {
+    const lut: LUTData = {
+      size: 2,
+      data: new Float32Array(2 * 2 * 2 * 3),
+      domainMin: [0, 0, 0],
+      domainMax: [1, 1, 1],
+      title: 'Teal',
+      inputProfile: 'display-srgb',
+      profileResolution: { kind: 'unknown' },
+    }
+    return {
+      params: { ...DEFAULT_PARAMS, styleKind: 'custom' } as ProcessingParams,
+      lut,
+      activeStyle: {
+        kind: 'custom',
+        name: 'Teal',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
+        lutAsset: { format: 'cube', dimension: 17 },
+      } as const,
+    }
+  }
+
+  /** What a refusal before the attempt leaves: one toast, nothing else. */
+  function expectRefusedBeforeAttempt(
+    h: Harness,
+    liveSession: ImageSession | null,
+    otherExport: AbortController,
+    description: string,
+  ) {
+    expect(h.trace).toEqual([
+      'service:scheduleToast',
+      'toast:error:Full-resolution export is not ready',
+    ])
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      'Full-resolution export is not ready',
+      { description },
+    )
+    expect(h.planInputs).toEqual([])
+    expect(h.markerStore.markers()).toEqual([])
+    expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
+    expect(mocks.scheduleAbandonedOpfsOutputCollection).not.toHaveBeenCalled()
+    expect(h.ctx.services.previewRuntime.cancel).not.toHaveBeenCalled()
+    expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+    expect(h.state).toEqual({
+      status: null,
+      error: undefined,
+      progress: null,
+      session: liveSession,
+    })
+    expect(otherExport.signal.aborted).toBe(false)
+    expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
+  }
+
+  it('refuses an unplannable geometry before the Transform and the color graph', async () => {
+    const graph = unsupportedGraph()
+    const h = createHarness({
+      params: graph.params,
+      lut: graph.lut,
+      runtime: OPFS_RUNTIME,
+      session: createSession('session-1', {
+        activeStyle: graph.activeStyle,
+        exportGeometry: INVALID_GEOMETRIES[0][1],
+        transform: transformAt('pending'),
+      }),
+    })
+    const otherExport = new AbortController()
+    h.ctx.refs.exportAbortControllerRef.current = otherExport
+
+    await orchestrateFullResExport(OPTIONS, h.ctx)
+
+    expectRefusedBeforeAttempt(
+      h,
+      h.state.session,
+      otherExport,
+      'This Transform cannot be reproduced at full resolution. Adjust or reset Transform to export.',
+    )
+  })
+
+  it('refuses a pending Transform before the color graph', async () => {
+    const graph = unsupportedGraph()
+    const h = createHarness({
+      params: graph.params,
+      lut: graph.lut,
+      runtime: OPFS_RUNTIME,
+      session: createSession('session-1', {
+        activeStyle: graph.activeStyle,
+        transform: transformAt('pending'),
+      }),
+    })
+    const otherExport = new AbortController()
+    h.ctx.refs.exportAbortControllerRef.current = otherExport
+
+    await orchestrateFullResExport(OPTIONS, h.ctx)
+
+    expectRefusedBeforeAttempt(
+      h,
+      h.state.session,
+      otherExport,
+      TRANSFORM_REFUSALS.pending,
+    )
+  })
+
+  it('refuses a plan no storage could rescue before sampling device facts', async () => {
+    // No reachable OPFS: readiness already knows the large mobile export can
+    // only hand its output over in memory, which it refuses.
+    setCapabilityVectorForTest(MOBILE_CAPABILITY)
+    const h = createHarness({
+      capability: MOBILE_CAPABILITY,
+      session: createSession('session-1', {
+        exportState: {
+          fullResCapability: { status: 'supported', width: 9000, height: 6000 },
+        },
+      }),
+    })
+    const otherExport = new AbortController()
+    h.ctx.refs.exportAbortControllerRef.current = otherExport
+
+    await orchestrateFullResExport(OPTIONS, h.ctx)
+
+    expectRefusedBeforeAttempt(
+      h,
+      h.state.session,
+      otherExport,
+      getExportModeCopy('cannot-safely-complete'),
+    )
+  })
+
+  it.each([
+    {
+      name: 'OPFS is gone when the export samples storage',
+      runtime: BLOB_RUNTIME,
+    },
+    {
+      name: 'OPFS has too little room for the output',
+      runtime: {
+        opfsSinkAvailable: true,
+        opfsAvailableMB: 100,
+        streamingSinkAvailable: false,
+      },
+    },
+  ] as const)(
+    'fails closed after sampling when $name, before any output, marker or evacuation',
+    async ({ runtime }) => {
+      setCapabilityVectorForTest(MOBILE_CAPABILITY)
+      stubOpfsDirectory()
+      const registry = createResourceRegistry()
+      const h = createHarness({
+        registry,
+        capability: MOBILE_CAPABILITY,
+        runtime,
+        session: createSession('session-1', {
+          exportState: {
+            fullResCapability: {
+              status: 'supported',
+              width: 9000,
+              height: 6000,
+            },
+          },
+        }),
+      })
+      registry.register({
+        id: 'preview-gpu-pipeline',
+        owner: 'gpu',
+        kind: 'gpu-pipeline',
+        estimatedBytes: 4096,
+        dispose: () => {
+          h.trace.push('service:dispose:preview-gpu-pipeline')
+        },
+      })
+
+      await orchestrateFullResExport(OPTIONS, h.ctx)
+
+      expect(h.planInputs).toEqual([
+        {
+          preference: 'balanced',
+          source: { width: 9000, height: 6000 },
+          history: {
+            previousCrashLikeInterruption: false,
+            previousResourceFailure: false,
+            previousUserInterrupted: false,
+          },
+        },
+      ])
+      expect(h.plans).toEqual([
+        expect.objectContaining({
+          outputSink: 'blob-handoff',
+          runtimeMemoryProfile: 'low-memory',
+          productCopy: 'cannot-safely-complete',
+        }),
+      ])
+      expect(h.channel('state')).toEqual([
+        'state:status:exporting',
+        'state:progress:0',
+        'state:error:null',
+        'state:session:failed',
+        'state:status:ready',
+      ])
+      expect(h.state.session?.exportState).toMatchObject({
+        status: 'failed',
+        lastErrorCode: 'EXPORT_POLICY_CANNOT_COMPLETE',
+      })
+      expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
+      expect(h.markerStore.markers()).toEqual([])
+      expect(h.ctx.services.previewRuntime.cancel).not.toHaveBeenCalled()
+      expect(registry.snapshot().live).toHaveLength(1)
+      expect(h.channel('debug')).toEqual([])
+      expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    {
+      name: 'a desktop in-memory plan',
+      capability: DESKTOP_CAPABILITY,
+      runtime: BLOB_RUNTIME,
+      plan: {
+        outputSink: 'blob-handoff',
+        runtimeMemoryProfile: 'desktop',
+        profile: expect.objectContaining({ name: 'desktop-fast' }),
+      },
+    },
+    {
+      name: 'a mobile low-memory OPFS plan',
+      capability: MOBILE_CAPABILITY,
+      runtime: OPFS_RUNTIME,
+      plan: {
+        outputSink: 'opfs-file',
+        runtimeMemoryProfile: 'low-memory',
+        profile: expect.objectContaining({ name: 'ios-safe' }),
+      },
+    },
+  ] as const)(
+    'runs $name from the sampled facts at the fixed quality',
+    async ({ capability, runtime, plan }) => {
+      setCapabilityVectorForTest(capability)
+      stubOpfsDirectory()
+      const h = createHarness({
+        capability,
+        runtime,
+        session: createSession('session-1', {
+          exportState: {
+            fullResCapability: {
+              status: 'supported',
+              width: 9000,
+              height: 6000,
+            },
+          },
+        }),
+      })
+      const job = h.installJob()
+
+      const run = orchestrateFullResExport(OPTIONS, h.ctx)
+      const input = await job.started
+      job.resolve()
+      await run
+
+      expect(input.executionPlan).toMatchObject(plan)
+      expect(input.executionPlan).toBe(h.plans[0])
+      expect(input.quality).toBe(0.92)
+      expect(h.state.session?.exportState).toMatchObject({
+        status: 'ready',
+        activePlan: {
+          outputSink: plan.outputSink,
+          runtimeMemoryProfile: plan.runtimeMemoryProfile,
+        },
+      })
+    },
+  )
 })
 
 describe('orchestrateFullResExport failures', () => {
@@ -1935,7 +2230,7 @@ describe('orchestrateFullResExport failures', () => {
       'state:progress:0',
       'state:error:null',
       'toast:dismiss',
-      'service:planExportWithSampledFacts',
+      'service:sampleExportPlanFacts',
       'service:registerCurrentPreviewPipelineForEvacuation',
       'debug:export-plan-selected',
       'state:session:exporting',
@@ -2264,7 +2559,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       'state:progress:0',
       'state:error:null',
       'toast:dismiss',
-      'service:planExportWithSampledFacts',
+      'service:sampleExportPlanFacts',
       'test:superseded',
     ])
     expect(h.since(supersededAt)).toEqual(['test:superseded'])
@@ -2288,7 +2583,12 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     planGate.resolve()
     await run
 
-    expect(h.plans[0]?.outputSink).toBe('opfs-file')
+    // The facts were sampled for an attempt that is no longer current, so
+    // nothing is planned from them, let alone allocated.
+    expect(mocks.sampleExportPlanFacts).toHaveBeenCalledTimes(1)
+    expect(h.planInputs).toEqual([])
+    expect(h.plans).toEqual([])
+    expect(mocks.scheduleAbandonedOpfsOutputCollection).not.toHaveBeenCalled()
     expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
     expect(h.markerStore.markers()).toEqual([])
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()

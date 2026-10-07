@@ -3,8 +3,15 @@ import {
   INVALID_EXPORT_GEOMETRY,
   planExportGeometry,
 } from '@lumaforge/render-engine/export'
+import type {
+  CapabilityVector,
+  ExportRuntimeResources,
+} from '@lumaforge/render-engine/policy'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { getExportModeCopy } from '~/lib/export/execution-profile'
+import type { ExportPlanFacts } from '~/lib/export/export-plan'
+import { selectExportPlan } from '~/lib/export/export-plan'
 import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
 import { composeManualTransform } from '~/lib/transform/transform-render'
 
@@ -23,6 +30,8 @@ import {
 import {
   deriveFullResExportReadiness,
   deriveTransformExportRefusal,
+  planFullResExport,
+  planFullResExportRequest,
 } from './export-readiness'
 
 function createSession(
@@ -499,6 +508,173 @@ describe('deriveTransformExportRefusal', () => {
           'hq-preview',
         ),
       ).toBe(PREVIEW_TRANSFORM_HQ_EXPORT_REASON)
+    }
+  })
+})
+
+describe('full-resolution export request planning', () => {
+  const DESKTOP: CapabilityVector = {
+    coi: true,
+    pthread: true,
+    deviceMemoryGB: 16,
+    hwConcurrency: 8,
+    webKitClass: 'chromium',
+    deviceFormFactor: 'desktop',
+    maybeOpfsSupported: true,
+  }
+  const MOBILE: CapabilityVector = {
+    coi: false,
+    pthread: false,
+    deviceMemoryGB: null,
+    hwConcurrency: 4,
+    webKitClass: 'webkit-mobile',
+    deviceFormFactor: 'mobile',
+    maybeOpfsSupported: true,
+  }
+  const BLOB: ExportRuntimeResources = {
+    opfsSinkAvailable: false,
+    opfsAvailableMB: null,
+    streamingSinkAvailable: false,
+  }
+  const OPFS: ExportRuntimeResources = {
+    opfsSinkAvailable: true,
+    opfsAvailableMB: 10_000,
+    streamingSinkAvailable: false,
+  }
+  const LARGE = { width: 9000, height: 6000 }
+
+  it('asks for the sensor frame, the preference and the source hint only', () => {
+    expect(
+      planFullResExportRequest({
+        source: { width: 6000, height: 4000 },
+        performancePreference: 'max',
+        interruption: {
+          previousCrashLikeInterruption: true,
+          previousResourceFailure: false,
+          attempts: ['closed-page-attempt-1'],
+        },
+      }),
+    ).toEqual({
+      preference: 'max',
+      source: { width: 6000, height: 4000 },
+      history: {
+        previousCrashLikeInterruption: true,
+        previousResourceFailure: false,
+        previousUserInterrupted: false,
+      },
+    })
+    // No preference asks for the balanced plan; no hint asks for nothing.
+    for (const interruption of [null, undefined]) {
+      expect(planFullResExportRequest({ source: LARGE, interruption })).toEqual(
+        {
+          preference: 'balanced',
+          source: LARGE,
+          history: {
+            previousCrashLikeInterruption: false,
+            previousResourceFailure: false,
+            previousUserInterrupted: false,
+          },
+        },
+      )
+    }
+  })
+
+  it('copies the source frame instead of keeping the caller object', () => {
+    const source = { width: 6000, height: 4000 }
+    const request = planFullResExportRequest({ source })
+    source.width = 1
+    expect(request.source).toEqual({ width: 6000, height: 4000 })
+  })
+
+  it('plans the request over the facts it is handed through the one plan entry', () => {
+    const request = planFullResExportRequest({
+      source: LARGE,
+      performancePreference: 'safe',
+      interruption: {
+        previousCrashLikeInterruption: false,
+        previousResourceFailure: true,
+        attempts: ['a'],
+      },
+    })
+    for (const facts of [
+      { capability: DESKTOP, runtime: BLOB },
+      { capability: MOBILE, runtime: OPFS },
+    ] satisfies ExportPlanFacts[]) {
+      const frozen = structuredClone(facts)
+      const decision = planFullResExport(request, facts)
+      expect(decision).toEqual({
+        kind: 'run',
+        plan: selectExportPlan({ ...request, ...facts }),
+      })
+      // Pure: the same request and facts plan the same way, untouched.
+      expect(planFullResExport(request, facts)).toEqual(decision)
+      expect(facts).toEqual(frozen)
+    }
+  })
+
+  it.each([
+    { name: 'no OPFS', runtime: BLOB },
+    {
+      name: 'too little OPFS room',
+      runtime: { ...OPFS, opfsAvailableMB: 100 },
+    },
+  ])(
+    'refuses a large mobile export with $name with the policy copy',
+    ({ runtime }) => {
+      expect(
+        planFullResExport(planFullResExportRequest({ source: LARGE }), {
+          capability: MOBILE,
+          runtime,
+        }),
+      ).toEqual({
+        kind: 'refuse',
+        reason: getExportModeCopy('cannot-safely-complete'),
+      })
+    },
+  )
+
+  it('runs the same large mobile export once OPFS can hold it', () => {
+    const decision = planFullResExport(
+      planFullResExportRequest({ source: LARGE }),
+      { capability: MOBILE, runtime: OPFS },
+    )
+    expect(decision).toMatchObject({
+      kind: 'run',
+      plan: { outputSink: 'opfs-file', runtimeMemoryProfile: 'low-memory' },
+    })
+  })
+
+  it('hands out no plan from the optimistic readiness facts', () => {
+    vi.stubGlobal('navigator', {
+      userAgent:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
+      maxTouchPoints: 1,
+      storage: { getDirectory: vi.fn() },
+      hardwareConcurrency: 4,
+    })
+    vi.stubGlobal('crossOriginIsolated', false)
+    try {
+      const readiness = deriveFullResExportReadiness({
+        sourceFile: new File(['raw'], 'frame.RAF'),
+        session: createSession({
+          fullResCapability: { status: 'supported', ...LARGE },
+        }),
+        rawRenderExposure: IDENTITY_EXPOSURE,
+      })
+      // Readiness assumed OPFS has room, so nothing it planned may run: it
+      // answers only whether the export may start.
+      expect(readiness.canExport).toBe(true)
+      expect(Object.keys(readiness).sort()).toEqual([
+        'canExport',
+        'deliveredSize',
+        'disabledReason',
+        'fullResCapability',
+        'rawRenderExposure',
+        'session',
+        'sourceFile',
+      ])
+    } finally {
+      vi.unstubAllGlobals()
     }
   })
 })

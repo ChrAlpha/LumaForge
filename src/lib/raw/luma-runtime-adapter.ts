@@ -133,6 +133,18 @@ const EXPORT_REFUSAL_REASONS: Record<
   'camera-matrix-not-applied-by-runtime': 'missing-color-transform',
 }
 
+/**
+ * The runtime reasons engine refusals are reported under, each once, in the
+ * order the assessment found them.
+ */
+export function toExportRefusalReasons(
+  refusals: readonly ProcessedExportRefusal[],
+): LumaRawExportUnsupportedReason[] {
+  return [
+    ...new Set(refusals.map((refusal) => EXPORT_REFUSAL_REASONS[refusal])),
+  ]
+}
+
 function createJpegRuntimeUnavailableProbeError(cause?: unknown) {
   return new Error(JPEG_RUNTIME_UNAVAILABLE_MESSAGE, { cause })
 }
@@ -173,11 +185,7 @@ async function resolveExportCapability(
     return {
       ...rawCapability,
       supported: false,
-      reasons: [
-        ...new Set(
-          assessment.reasons.map((refusal) => EXPORT_REFUSAL_REASONS[refusal]),
-        ),
-      ],
+      reasons: toExportRefusalReasons(assessment.reasons),
     }
   }
 

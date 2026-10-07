@@ -1,9 +1,15 @@
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import { planExportGeometry } from '@lumaforge/render-engine/export'
+import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 
 import { getExportModeCopy } from '~/lib/export/execution-profile'
-import type { ExportPlanFacts } from '~/lib/export/export-plan'
+import type {
+  ExportExecutionPlan,
+  ExportPlanFacts,
+  ExportPlanRequest,
+  ExportPlanSource,
+} from '~/lib/export/export-plan'
 import { selectExportPlan } from '~/lib/export/export-plan'
 import {
   classifyDeviceFormFactor,
@@ -18,6 +24,7 @@ import {
 import type { ImageSession } from '../../model/session'
 import type { TransformExportBlock } from '../transform/transform-state'
 import { deriveTransformStatus } from '../transform/transform-state'
+import type { ExportInterruptionHint } from './export-interruption'
 
 const MISSING_RAW_RENDER_EXPOSURE_EXPORT_REASON =
   'RAW preview exposure is still being prepared.'
@@ -64,6 +71,53 @@ export type FullResExportReadiness =
     }
 
 /**
+ * The plan request a full-resolution export of a ready source makes: the
+ * sensor frame the worker decodes (Transform crops only the delivered frame),
+ * how hard it may push the device, and what the last attempt on this source
+ * left behind. The hint must already be the one read for this source; no
+ * hint asks for nothing. Device facts are not part of a request, and the
+ * JPEG quality is fixed elsewhere.
+ */
+export function planFullResExportRequest(input: {
+  source: ExportPlanSource
+  performancePreference?: PerformancePreference
+  interruption?: ExportInterruptionHint | null
+}): ExportPlanRequest {
+  return {
+    preference: input.performancePreference ?? 'balanced',
+    source: { width: input.source.width, height: input.source.height },
+    history: {
+      previousCrashLikeInterruption:
+        input.interruption?.previousCrashLikeInterruption ?? false,
+      previousResourceFailure:
+        input.interruption?.previousResourceFailure ?? false,
+      previousUserInterrupted: false,
+    },
+  }
+}
+
+export type FullResExportPlanDecision =
+  | { kind: 'run'; plan: ExportExecutionPlan }
+  | { kind: 'refuse'; reason: string }
+
+/**
+ * Plans a request over the device facts handed in, through the one browser
+ * plan entry, and refuses a plan the policy says cannot safely complete.
+ * Pure: it samples nothing, so whether the plan may run depends on where
+ * its facts came from. Only facts sampled for the export that is about to
+ * start may feed a plan that runs.
+ */
+export function planFullResExport(
+  request: ExportPlanRequest,
+  facts: ExportPlanFacts,
+): FullResExportPlanDecision {
+  const plan = selectExportPlan({ ...request, ...facts })
+  return plan.productCopy === 'cannot-safely-complete'
+    ? { kind: 'refuse', reason: getExportModeCopy(plan.productCopy) }
+    : { kind: 'run', plan }
+}
+
+/**
  * Optimistic facts for readiness only. Readiness runs synchronously on every
  * render, so it cannot sample storage: it assumes any reachable OPFS has room
  * and refuses only what no storage estimate could rescue. The export samples
@@ -100,23 +154,17 @@ function optimisticReadinessPlanFacts(): ExportPlanFacts {
   }
 }
 
-function getUnsafeFullResExportReason(input: {
-  session: ImageSession
-  fidelity?: 'safe' | 'balanced' | 'max'
-}) {
-  const capability = input.session.exportState.fullResCapability
-  if (capability.status !== 'supported') return undefined
-
-  // Only the verdict leaves this function; the plan itself is discarded.
-  const plan = selectExportPlan({
-    preference: input.fidelity ?? 'balanced',
-    source: { width: capability.width, height: capability.height },
-    ...optimisticReadinessPlanFacts(),
-  })
-
-  return plan.productCopy === 'cannot-safely-complete'
-    ? getExportModeCopy(plan.productCopy)
-    : undefined
+/**
+ * Why no storage could let this source export here, or undefined. The plan
+ * is made from optimistic facts, so only its refusal leaves this function:
+ * it is never handed to a worker.
+ */
+function getUnsafeFullResExportReason(source: ExportPlanSource) {
+  const decision = planFullResExport(
+    planFullResExportRequest({ source }),
+    optimisticReadinessPlanFacts(),
+  )
+  return decision.kind === 'refuse' ? decision.reason : undefined
 }
 
 /**
@@ -143,7 +191,6 @@ export function deriveFullResExportReadiness(input: {
   sourceFile: File | null
   session: ImageSession | null
   rawRenderExposure: RawRenderExposure | null | undefined
-  fidelity?: 'safe' | 'balanced' | 'max'
 }): FullResExportReadiness {
   if (!input.sourceFile || !input.session) {
     return {
@@ -182,8 +229,8 @@ export function deriveFullResExportReadiness(input: {
   }
 
   const unsafeReason = getUnsafeFullResExportReason({
-    session: input.session,
-    fidelity: input.fidelity,
+    width: fullResCapability.width,
+    height: fullResCapability.height,
   })
   if (unsafeReason) {
     return { canExport: false, disabledReason: unsafeReason }

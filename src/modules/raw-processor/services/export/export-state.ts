@@ -10,28 +10,56 @@ import {
   normalizeSelectiveColorParams,
 } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
+import { assessProcessedExport } from '@lumaforge/render-engine/export'
 
-import type { ImageSession } from '../../model/session'
+import { toExportRefusalReasons } from '~/lib/raw/luma-runtime-adapter'
 
-export function toFullResCapabilityState(capability: LumaRawExportCapability) {
-  if (
-    capability.supported &&
-    capability.strategy === 'libraw-processed-window' &&
-    capability.windows.librawProcessed
-  ) {
+import type {
+  FullResExportCapabilityState,
+  ImageSession,
+} from '../../model/session'
+
+const UNSUPPORTED_SOURCE_REASON =
+  'This RAW source does not support full-resolution export in the current browser build.'
+
+/**
+ * The session's view of a probed export capability. It is supported only
+ * when the export's own assessment admits it, with the dimensions that
+ * assessment checked, so a capability the executor would refuse never reads
+ * as supported. An unsupported capability keeps the runtime's own reasons
+ * as it reported them, then the runtime reason of every other refusal the
+ * assessment finds. The bare source refusal only restates the runtime's
+ * verdict, so it adds nothing.
+ */
+export function toFullResCapabilityState(
+  capability: LumaRawExportCapability,
+): FullResExportCapabilityState {
+  const assessment = assessProcessedExport(capability)
+  if (assessment.exportable) {
     return {
-      status: 'supported' as const,
-      width: capability.width,
-      height: capability.height,
+      status: 'supported',
+      width: assessment.width,
+      height: assessment.height,
     }
   }
 
+  const runtimeReasons: unknown = capability.reasons
+  const reasons = new Set<string>(
+    Array.isArray(runtimeReasons)
+      ? runtimeReasons.filter(
+          (reason): reason is string => typeof reason === 'string',
+        )
+      : [],
+  )
+  for (const reason of toExportRefusalReasons(
+    assessment.reasons.filter((refusal) => refusal !== 'source-unsupported'),
+  )) {
+    reasons.add(reason)
+  }
+
   return {
-    status: 'unsupported' as const,
-    reason: capability.supported
-      ? 'processed-window-unavailable'
-      : capability.reasons.join(', ') ||
-        'This RAW source does not support full-resolution export in the current browser build.',
+    status: 'unsupported',
+    reason: [...reasons].join(', ') || UNSUPPORTED_SOURCE_REASON,
   }
 }
 

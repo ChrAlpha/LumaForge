@@ -82,6 +82,13 @@ function createCapability(
     cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
     blackLevel: 512,
     whiteLevel: 16383,
+    color: {
+      workingSpace: 'linear-prophoto-rgb',
+      librawOutputColor: 'prophoto',
+      gamma: 'linear',
+      cameraWhiteBalanceAppliedByRuntime: true,
+      cameraMatrixAppliedByRuntime: true,
+    },
     sensor: {
       layout: 'bayer',
       colorCount: 3,
@@ -669,6 +676,7 @@ describe('export state helpers', () => {
       reason: 'processed-window-unavailable',
     })
 
+    // The runtime's own reasons stay as it reported them.
     expect(
       toFullResCapabilityState(
         createCapability({
@@ -680,6 +688,150 @@ describe('export state helpers', () => {
       status: 'unsupported',
       reason: 'missing-export-facts, processed-window-unavailable',
     })
+
+    expect(
+      toFullResCapabilityState(createCapability({ supported: false })),
+    ).toEqual({
+      status: 'unsupported',
+      reason:
+        'This RAW source does not support full-resolution export in the current browser build.',
+    })
+  })
+
+  /**
+   * Capabilities the runtime calls supported that the export's own
+   * assessment refuses. Written as literals, the way a malformed worker
+   * answer would arrive, so no type narrows them first.
+   */
+  const MALFORMED_CAPABILITIES: ReadonlyArray<
+    readonly [label: string, capability: unknown, reason: string]
+  > = [
+    [
+      'no color facts',
+      { ...createCapability(), color: undefined },
+      'missing-color-transform',
+    ],
+    [
+      'null color facts',
+      { ...createCapability(), color: null },
+      'missing-color-transform',
+    ],
+    [
+      'white balance left to the caller',
+      {
+        ...createCapability(),
+        color: {
+          ...createCapability().color,
+          cameraWhiteBalanceAppliedByRuntime: false,
+        },
+      },
+      'missing-color-transform',
+    ],
+    [
+      'the camera matrix left to the caller',
+      {
+        ...createCapability(),
+        color: {
+          ...createCapability().color,
+          cameraMatrixAppliedByRuntime: false,
+        },
+      },
+      'missing-color-transform',
+    ],
+    [
+      'a white-balance flag that is truthy but not true',
+      {
+        ...createCapability(),
+        color: {
+          ...createCapability().color,
+          cameraWhiteBalanceAppliedByRuntime: 1,
+        },
+      },
+      'missing-color-transform',
+    ],
+    [
+      'another working space',
+      {
+        ...createCapability(),
+        color: { ...createCapability().color, workingSpace: 'linear-srgb' },
+      },
+      'missing-color-transform',
+    ],
+    ['a zero width', { ...createCapability(), width: 0 }, 'missing-dimensions'],
+    [
+      'a fractional height',
+      { ...createCapability(), height: 3000.5 },
+      'missing-dimensions',
+    ],
+    [
+      'a NaN width',
+      { ...createCapability(), width: Number.NaN },
+      'missing-dimensions',
+    ],
+    [
+      'a missing height',
+      { ...createCapability(), height: undefined },
+      'missing-dimensions',
+    ],
+    [
+      'a raw-mosaic strategy',
+      { ...createCapability(), strategy: 'raw-mosaic-window' },
+      'processed-window-unavailable',
+    ],
+    [
+      'no window facts',
+      { ...createCapability(), windows: undefined },
+      'processed-window-unavailable',
+    ],
+  ]
+
+  it.each(MALFORMED_CAPABILITIES)(
+    'never projects a supported capability with %s',
+    (_label, capability, reason) => {
+      expect(
+        toFullResCapabilityState(capability as LumaRawExportCapability),
+      ).toEqual({ status: 'unsupported', reason })
+    },
+  )
+
+  it('lists the runtime reasons, then the reason of every other refusal once', () => {
+    expect(
+      toFullResCapabilityState({
+        ...createCapability(),
+        supported: false,
+        reasons: ['libraw-unpack-failed'],
+        width: 0,
+        color: undefined,
+        windows: { librawProcessed: false, rawMosaic: true },
+      } as unknown as LumaRawExportCapability),
+    ).toEqual({
+      status: 'unsupported',
+      reason:
+        'libraw-unpack-failed, missing-dimensions, processed-window-unavailable, missing-color-transform',
+    })
+    // The adapter already reports a refused capability under these reasons;
+    // the assessment finding the same facts again repeats none of them.
+    expect(
+      toFullResCapabilityState({
+        ...createCapability(),
+        supported: false,
+        reasons: ['processed-window-unavailable'],
+        strategy: 'raw-mosaic-window',
+        windows: { librawProcessed: false, rawMosaic: true },
+      }),
+    ).toEqual({
+      status: 'unsupported',
+      reason: 'processed-window-unavailable',
+    })
+    // A runtime answer with no reasons list still reports what the
+    // assessment found.
+    expect(
+      toFullResCapabilityState({
+        ...createCapability(),
+        reasons: undefined,
+        color: undefined,
+      } as unknown as LumaRawExportCapability),
+    ).toEqual({ status: 'unsupported', reason: 'missing-color-transform' })
   })
 
   it('adds retry guidance only when a retry level exists', () => {
