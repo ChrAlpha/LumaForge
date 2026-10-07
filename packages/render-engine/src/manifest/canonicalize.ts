@@ -93,7 +93,9 @@ function sha256HexOfString(input: string): string {
  * including unknown fields before projecting onto a typed interface.
  */
 export function computeManifestSha256(manifest: object): string {
-  const stripped: Record<string, unknown> = {}
+  // A null-prototype copy keeps an own `__proto__` key (JSON.parse creates
+  // one) as a field instead of turning the assignment into a prototype swap.
+  const stripped: Record<string, unknown> = Object.create(null)
   for (const [key, value] of Object.entries(manifest)) {
     if (key === MANIFEST_SHA256_KEY) continue
     stripped[key] = value

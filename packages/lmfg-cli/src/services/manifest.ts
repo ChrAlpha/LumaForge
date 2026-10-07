@@ -12,10 +12,8 @@ import type {
   RenderManifestKind,
   SourceRawIdentity,
 } from '@lumaforge/render-engine'
-import {
-  createRenderManifest,
-  verifyManifestSha256,
-} from '@lumaforge/render-engine'
+import { createRenderManifest } from '@lumaforge/render-engine'
+import { parseRenderManifest } from '@lumaforge/render-engine/manifest'
 
 import { LmfgError } from '../protocol/errors'
 import type { LoadedSource } from '../runtime/source-loader'
@@ -86,23 +84,6 @@ export type ManifestVerification = {
   raw: Record<string, unknown> | null
 }
 
-const REQUIRED_KEYS = [
-  'manifest_version',
-  'kind',
-  'produced_at',
-  'parent_manifest_sha256',
-  'source_raw',
-  'calibration',
-  'lut',
-  'color_graph',
-  'render_params',
-  'policy',
-  'environment',
-  'output',
-  'manifest_sha256',
-] as const
-const KINDS = new Set(['preview', 'candidate', 'export'])
-
 export async function verifyManifestFile(
   path: string,
   options: { environment: RenderEnvironment },
@@ -137,21 +118,15 @@ export async function verifyManifestFile(
       raw: null,
     }
   }
-  for (const key of REQUIRED_KEYS) {
-    if (!(key in raw)) issues.push(`Missing required field "${key}".`)
+  // The hash is checked over the whole object as read, then every section is
+  // held to the v1 shape: a manifest can be correctly sealed and still not
+  // be safe to execute.
+  const parsed = parseRenderManifest(raw)
+  if (!parsed.ok) {
+    for (const issue of parsed.issues) {
+      issues.push(`${issue.path}: ${issue.message}`)
+    }
   }
-  if (!verifyManifestSha256(raw)) {
-    issues.push(
-      'manifest_sha256 does not match the canonical content (tampered or corrupted).',
-    )
-  }
-  if (raw.manifest_version !== 1) {
-    issues.push(
-      `Unsupported manifest_version ${String(raw.manifest_version)}; this lmfg reads version 1.`,
-    )
-  }
-  if (!KINDS.has(String(raw.kind)))
-    issues.push(`Unknown manifest kind "${String(raw.kind)}".`)
 
   let environmentMatch: boolean | null = null
   const environment = raw.environment as Partial<RenderEnvironment> | undefined
@@ -181,13 +156,12 @@ export async function verifyManifestFile(
     }
   }
 
-  const valid = issues.length === 0
   return {
-    valid,
+    valid: parsed.ok,
     issues,
     warnings,
     environment_match: environmentMatch,
-    manifest: valid ? (raw as unknown as RenderManifest) : null,
+    manifest: parsed.ok ? parsed.manifest : null,
     raw,
   }
 }

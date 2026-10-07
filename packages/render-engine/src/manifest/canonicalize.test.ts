@@ -85,6 +85,24 @@ describe('computeManifestSha256', () => {
     )
   })
 
+  it('hashes the canonical text of the object without manifest_sha256', () => {
+    expect(
+      computeManifestSha256({ b: { d: 2, c: 1 }, a: 1, manifest_sha256: 'x' }),
+    ).toBe(nodeSha256OfText('{"a":1,"b":{"c":1,"d":2}}'))
+  })
+
+  it('hashes an own top-level __proto__ field like any other field', () => {
+    const parsed = JSON.parse(
+      '{"a":1,"__proto__":{"evil":1},"manifest_sha256":"x"}',
+    ) as object
+    expect(computeManifestSha256(parsed)).toBe(
+      nodeSha256OfText('{"__proto__":{"evil":1},"a":1}'),
+    )
+    expect(computeManifestSha256(parsed)).not.toBe(
+      computeManifestSha256({ a: 1 }),
+    )
+  })
+
   it('is stable under different field insertion orders', () => {
     const a = { b: 2, a: 1, c: { y: 1, x: 2 } }
     const b = { a: 1, c: { x: 2, y: 1 }, b: 2 }

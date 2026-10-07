@@ -45,6 +45,20 @@ predates this file.
   types: `ManifestRenderParamsInput`, `ManifestRenderParamsIntent`,
   `RecordedRawRenderExposure`, `VerifiedManifestRenderParamsFailure` and
   `VerifiedManifestRenderParamsResult`.
+- `parseRenderManifest` in `@lumaforge/render-engine/manifest`: verifies
+  `manifest_sha256` over the complete parsed object, unknown fields
+  included, then checks the `RenderManifest` v1 structure without coercing
+  anything: discriminants, lowercase hex SHA-256 fields, finite numbers
+  (strings and `null` are refused), positive integer dimensions, policy row
+  slice, concurrency and decode budget, JPEG quality as an integer
+  percentage, the environment and native variant, LUT and calibration
+  identities, an invertible geometry matrix, and, for a version 2
+  color-graph descriptor, that it hashes to the recorded fingerprint. Fields
+  the v1 shape marks optional may be absent and unknown fields are kept, so
+  manifests written by older writers keep their identity. It returns the
+  input object typed, or every issue with its field path. User color value
+  ranges are left to the reader's own params schema. New types:
+  `ParseRenderManifestResult` and `RenderManifestIssue`.
 - Export output results in `@lumaforge/render-engine/export` can carry the
   SHA-256 of the delivered bytes. `BlobOutputResult`, `BytesOutputResult`
   and `FileBackedOutputResult` gain an optional `sha256`, and
@@ -101,3 +115,12 @@ predates this file.
   `jpegSink` so `runFullResolutionJpegExport` uses `createWasmJpegRowSink`.
   The function keeps its behavior and is still exported from
   `@lumaforge/render-engine/export`.
+
+### Fixed
+
+- `computeManifestSha256` and `verifyManifestSha256` hash an own top-level
+  `__proto__` field, as `JSON.parse` creates for a `"__proto__"` key, like
+  any other field. Before, the copy that drops `manifest_sha256` turned it
+  into a prototype, so the hash skipped it and a `__proto__` added after
+  sealing still verified. Hashes of manifests without that key are
+  unchanged.

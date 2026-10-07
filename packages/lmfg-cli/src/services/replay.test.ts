@@ -10,6 +10,7 @@ import type {
   RenderManifestKind,
 } from '@lumaforge/render-engine'
 import {
+  computeManifestSha256,
   createRenderManifest,
   verifyManifestSha256,
 } from '@lumaforge/render-engine'
@@ -522,6 +523,74 @@ describe('replaying a sealed manifest that records out-of-schema params', () => 
       expect(toLmfgError(caught).code).toBe('schema.invalid')
     })
   }
+})
+
+describe('replaying a manifest read from disk', () => {
+  type Json = Record<string, any>
+
+  /** A JSON copy of a sealed manifest, edited and sealed again. */
+  function resealed(manifest: RenderManifest, edit: (copy: Json) => void) {
+    const copy = JSON.parse(JSON.stringify(manifest)) as Json
+    edit(copy)
+    copy.manifest_sha256 = computeManifestSha256(copy)
+    return copy
+  }
+
+  async function readBack(manifest: unknown) {
+    const path = join(dir, 'm.json')
+    await writeFile(path, JSON.stringify(manifest))
+    return requireVerifiedManifest(path, environment)
+  }
+
+  it('replays an older manifest without optional sections under the CLI defaults', async () => {
+    const recorded = manifestFor(parseRenderParams({}))
+    const legacy = resealed(recorded, (copy) => {
+      const {
+        exposure_ev,
+        raw_render_exposure_ev,
+        raw_render_exposure_source,
+      } = copy.render_params
+      copy.render_params = {
+        exposure_ev,
+        raw_render_exposure_ev,
+        raw_render_exposure_source,
+      }
+      delete copy.policy.max_pixels
+    })
+    const { manifest } = await readBack(legacy)
+    expect(manifest.manifest_sha256).toBe(legacy.manifest_sha256)
+    const plan = await prepareReplay({
+      manifest,
+      source: fakeSource('a'.repeat(64)),
+      workspaceRoot: dir,
+      cwd: dir,
+    })
+    expect(plan.fingerprintMatch).toBe(true)
+    expect(plan.params).toEqual({
+      ...parseRenderParams({}),
+      raw_render_exposure: -0.2,
+    })
+    expect(plan.exposure).toEqual(exposure)
+  })
+
+  it.each<[string, (copy: Json) => void]>([
+    ['a string decode budget', (copy) => (copy.policy.max_pixels = '8')],
+    ['a string output quality', (copy) => (copy.output.quality = '85')],
+    ['a string row slice', (copy) => (copy.policy.row_slice = '32')],
+    [
+      'string output dimensions',
+      (copy) => (copy.output.dimensions = { width: '4', height: '2' }),
+    ],
+  ])(
+    'refuses a resealed manifest with %s before a replay plan exists',
+    async (_label, edit) => {
+      const manifest = resealed(manifestFor(), edit)
+      expect(verifyManifestSha256(manifest)).toBe(true)
+      await expect(readBack(manifest)).rejects.toMatchObject({
+        code: 'manifest.invalid',
+      })
+    },
+  )
 })
 
 describe('replaying an explicit zero raw-render exposure', () => {

@@ -82,6 +82,19 @@ Requires `@lumaforge/luma-raw-runtime` 0.1.2 and
   by earlier development builds of this release, while the color-graph
   fingerprint and the rendered output do not. Manifests that record the
   neutral bands still verify as written and replay with no HSL.
+- `manifest verify`, `manifest show`, `render replay`, and candidate export
+  hold a manifest to the full `RenderManifest` v1 structure through the
+  render-engine `parseRenderManifest`, after checking `manifest_sha256` over
+  the whole file. A correctly sealed manifest whose content is malformed (a
+  string or `null` where a number belongs, a fractional or zero dimension, a
+  string row slice, decode budget or quality, an unknown policy kind or
+  native variant, an incomplete LUT identity, a singular geometry matrix, a
+  descriptor that does not hash to its fingerprint) now fails with
+  `manifest.invalid` instead of reaching a render. Issues name the field path
+  (`render_params.exposure_ev: must be a finite number, ...`). Manifests from
+  older writers that omit optional fields still verify and replay with the
+  CLI defaults, and replay still holds recorded params to the strict params
+  schema.
 - Native source and fixture downloads retry with mirrors and time limits, and
   the CLI CI job caches the RAW fixture instead of skipping when the upstream
   host is unreachable.

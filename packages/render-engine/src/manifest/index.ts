@@ -28,6 +28,11 @@ export type {
   SourceReacquisitionMode,
 } from './export-checkpoint'
 export { type LutIdentityFailure, lutIdentityFromProfile } from './lut-identity'
+export {
+  parseRenderManifest,
+  type ParseRenderManifestResult,
+  type RenderManifestIssue,
+} from './parse-render-manifest'
 export type {
   CalibrationIdentity,
   ColorBalanceParams,
