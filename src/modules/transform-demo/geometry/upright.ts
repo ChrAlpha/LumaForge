@@ -1,9 +1,9 @@
+import { applyMatrix, invertMatrix } from '@lumaforge/render-engine/geometry'
+
 import { detectLines } from '~/modules/transform-demo/geometry/detect-lines'
 import { fitFamily } from '~/modules/transform-demo/geometry/fit-family'
 import {
-  applyMatrix,
   identityMatrix,
-  invertMatrix,
   multiplyMatrices,
   rotationMatrix,
 } from '~/modules/transform-demo/geometry/matrix'

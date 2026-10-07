@@ -1,7 +1,7 @@
+import { applyMatrix } from '@lumaforge/render-engine/geometry'
 import { describe, expect, it } from 'vitest'
 
 import {
-  applyMatrix,
   identityMatrix,
   multiplyMatrices,
   rotationMatrix,

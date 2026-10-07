@@ -1,8 +1,9 @@
+import { applyMatrix } from '@lumaforge/render-engine/geometry'
 import { useEffect, useRef } from 'react'
 
 import { useI18n } from '~/lib/i18n'
 
-import { applyMatrix, identityMatrix } from './geometry/matrix'
+import { identityMatrix } from './geometry/matrix'
 import type { LineSegment } from './geometry/types'
 import type { PreviewFrame } from './preview-types'
 import type { RenderedPreview } from './transform-types'

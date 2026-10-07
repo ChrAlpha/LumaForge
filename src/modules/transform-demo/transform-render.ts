@@ -1,9 +1,6 @@
-import {
-  applyMatrix,
-  invertMatrix,
-  multiplyMatrices,
-  rotationMatrix,
-} from './geometry/matrix'
+import { applyMatrix, invertMatrix } from '@lumaforge/render-engine/geometry'
+
+import { multiplyMatrices, rotationMatrix } from './geometry/matrix'
 import type { Matrix3, Point } from './geometry/types'
 import type { PreviewFrame } from './preview-types'
 import type { ManualTransform, RenderedPreview } from './transform-types'

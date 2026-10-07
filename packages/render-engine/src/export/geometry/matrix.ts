@@ -1,11 +1,12 @@
 /**
  * Minimal 3x3 projective helpers for the export geometry stage.
  *
- * These mirror `src/modules/transform-demo/geometry/matrix.ts` deliberately:
- * the engine cannot import from the app, and the export must reproduce the
- * framing the preview showed. Keep the two in step. The engine's own tests
- * cannot see the preview, so the sweep that holds them together lives app-side
- * in `src/lib/export/transform-preview-export-parity.test.ts`.
+ * This is the only inverse and projection implementation: the app's transform
+ * preview imports them through `@lumaforge/render-engine/geometry`, so the
+ * export reproduces the framing the preview showed with the same arithmetic.
+ * The engine's own tests cannot see the preview, so the sweep that holds the
+ * two framings together lives app-side in
+ * `src/lib/export/transform-preview-export-parity.test.ts`.
  */
 export type Matrix3 = readonly [
   number,

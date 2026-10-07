@@ -5,19 +5,15 @@ import type {
 } from '@lumaforge/render-engine/export'
 import {
   applyGeometryMatte,
-  applyMatrix as applyExportMatrix,
   EXPORT_GEOMETRY_MATTE,
   INVALID_EXPORT_GEOMETRY,
   planExportGeometry,
   planGeometryTiles,
   resampleGeometryTile,
 } from '@lumaforge/render-engine/export'
+import { applyMatrix, invertMatrix } from '@lumaforge/render-engine/geometry'
 import { describe, expect, it } from 'vitest'
 
-import {
-  applyMatrix,
-  invertMatrix,
-} from '~/modules/transform-demo/geometry/matrix'
 import type { Matrix3 } from '~/modules/transform-demo/geometry/types'
 import type { PreviewFrame } from '~/modules/transform-demo/preview-types'
 import {
@@ -293,7 +289,7 @@ describe('transform preview and export geometry parity', () => {
       const start = (1 - planned.scale) / 2
       for (const landmark of LANDMARKS) {
         const shown = applyMatrix(shownToSource!, landmark)
-        const delivered = applyExportMatrix(planned.inverse, {
+        const delivered = applyMatrix(planned.inverse, {
           x: start + landmark.x * planned.scale,
           y: start + landmark.y * planned.scale,
         })

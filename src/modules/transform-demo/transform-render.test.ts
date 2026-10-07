@@ -1,6 +1,7 @@
+import { applyMatrix } from '@lumaforge/render-engine/geometry'
 import { describe, expect, it } from 'vitest'
 
-import { applyMatrix, identityMatrix, rotationMatrix } from './geometry/matrix'
+import { identityMatrix, rotationMatrix } from './geometry/matrix'
 import {
   composeManualTransform,
   renderTransformedPreview,
