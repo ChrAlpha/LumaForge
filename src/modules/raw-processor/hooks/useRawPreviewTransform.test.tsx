@@ -6,8 +6,10 @@ import type { ExportResult } from '../model/export-result'
 import type { ImageSession } from '../model/session'
 import { createImageSession } from '../model/session-factory'
 import { deriveFullResExportReadiness } from '../services/export/export-readiness'
+import { deriveTransformStatus } from '../services/transform/transform-state'
 import { useExportGraphInvalidation } from './stages/export/useExportGraphInvalidation'
 import { useExportResultActions } from './stages/export/useExportResultActions'
+import { acceptTransformGeometry } from './transform-session.fixture'
 import { useRawPreviewTransform } from './useRawPreviewTransform'
 
 function createReadySession(): ImageSession {
@@ -73,7 +75,7 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
       setStatus,
       setProgress,
     })
-    const transform = useRawPreviewTransform({
+    const { previewTransform, transform } = useRawPreviewTransform({
       session,
       sessionRef,
       setSession,
@@ -86,7 +88,7 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
       scheduleToast: (notify) => notify(),
       toast,
     })
-    return { transform, session, setSession, actions }
+    return { previewTransform, transform, session, setSession, actions }
   })
   return {
     ...hook,
@@ -107,6 +109,12 @@ const SAMPLE_GEOMETRY = {
   constrainCrop: true,
 }
 
+/** A second geometry, rotated the other way. */
+const OTHER_GEOMETRY = {
+  matrix: [0.999, 0.035, -0.018, -0.035, 0.999, 0.017, 0, 0, 1],
+  constrainCrop: true,
+}
+
 describe('useRawPreviewTransform', () => {
   it('invalidates cached exports and imperative result actions synchronously', async () => {
     const session = createReadySession()
@@ -116,7 +124,7 @@ describe('useRawPreviewTransform', () => {
     const actions = harness.result.current.actions
 
     await act(async () => {
-      harness.result.current.transform.commit(SAMPLE_GEOMETRY)
+      acceptTransformGeometry(harness.result.current.transform, SAMPLE_GEOMETRY)
       expect(harness.sessionRef.current?.exportGeometry).toEqual(
         SAMPLE_GEOMETRY,
       )
@@ -127,39 +135,137 @@ describe('useRawPreviewTransform', () => {
       await actions.copyExportResult()
     })
 
-    expect(harness.result.current.transform.active).toBe(true)
+    expect(harness.result.current.previewTransform.active).toBe(true)
     expect(harness.result.current.session?.exportState.result).toBeUndefined()
     expect(harness.queueExportResultResourceDisposal).toHaveBeenCalledTimes(1)
     expect(harness.toast.error).not.toHaveBeenCalled()
     expect(harness.toast.success).not.toHaveBeenCalled()
   })
 
-  it('aborts in-flight exports and invalidates each edit while already active', () => {
+  it('aborts in-flight exports and invalidates each geometry move while already active', () => {
     const session = createReadySession()
     session.exportState.status = 'exporting'
     const harness = setup(session)
 
     act(() => {
-      harness.result.current.transform.commit(SAMPLE_GEOMETRY)
+      acceptTransformGeometry(harness.result.current.transform, SAMPLE_GEOMETRY)
       expect(harness.controller.signal.aborted).toBe(true)
       expect(harness.exportGraphVersionRef.current).toBe(1)
       expect(harness.sessionRef.current?.exportState.status).toBe('idle')
     })
-    act(() => harness.result.current.transform.commit(SAMPLE_GEOMETRY))
+    act(() =>
+      acceptTransformGeometry(harness.result.current.transform, OTHER_GEOMETRY),
+    )
 
     expect(harness.exportGraphVersionRef.current).toBe(2)
     expect(harness.queueExportResultResourceDisposal).toHaveBeenCalledTimes(2)
     expect(harness.setStatus).toHaveBeenCalledWith('ready')
     expect(harness.setProgress).toHaveBeenCalledWith(0)
+    expect(harness.result.current.previewTransform.geometry).toEqual(
+      OTHER_GEOMETRY,
+    )
+  })
+
+  it('keeps a delivered export when a new frame answers the same geometry', () => {
+    const harness = setup()
+    act(() =>
+      acceptTransformGeometry(
+        harness.result.current.transform,
+        SAMPLE_GEOMETRY,
+      ),
+    )
+    const result = createExportResult()
+    act(() =>
+      harness.result.current.setSession((previous) =>
+        previous
+          ? {
+              ...previous,
+              exportState: { ...previous.exportState, status: 'ready', result },
+            }
+          : previous,
+      ),
+    )
+    act(() =>
+      acceptTransformGeometry(
+        harness.result.current.transform,
+        SAMPLE_GEOMETRY,
+      ),
+    )
+
+    expect(harness.exportGraphVersionRef.current).toBe(1)
+    expect(harness.result.current.session?.exportState.result).toBe(result)
+    expect(harness.result.current.transform.state?.accepted?.geometry).toEqual(
+      SAMPLE_GEOMETRY,
+    )
+  })
+
+  it('holds the accepted geometry as pending, not current, while a newer edit waits', () => {
+    const harness = setup()
+    act(() =>
+      acceptTransformGeometry(
+        harness.result.current.transform,
+        SAMPLE_GEOMETRY,
+      ),
+    )
+    const { state, dispatch } = harness.result.current.transform
+    const sourceId = state!.sourceId
+    const captureKey = state!.capture!.key
+    act(() => {
+      dispatch({
+        type: 'edit',
+        sourceId,
+        intent: { manual: { ...state!.intent.manual, rotate: 9 } },
+      })
+      dispatch({
+        type: 'request',
+        sourceId,
+        captureKey,
+        requestId: state!.request!.requestId + 1,
+        geometry: OTHER_GEOMETRY,
+      })
+    })
+
+    // The export still names the last accepted geometry, so the status is
+    // what keeps it from running as the Transform asked for now.
+    const pending = harness.result.current.transform.state!
+    expect(deriveTransformStatus(pending)).toBe('pending')
+    expect(harness.result.current.previewTransform.geometry).toEqual(
+      SAMPLE_GEOMETRY,
+    )
+    expect(harness.exportGraphVersionRef.current).toBe(1)
+
+    // The answer to a request it replaced is not taken for it.
+    act(() =>
+      dispatch({
+        type: 'rendered',
+        sourceId,
+        captureKey,
+        requestId: state!.request!.requestId,
+        geometry: SAMPLE_GEOMETRY,
+        frame: { width: 800, height: 600 },
+      }),
+    )
+    expect(deriveTransformStatus(harness.result.current.transform.state!)).toBe(
+      'pending',
+    )
   })
 
   it('restores original export readiness after neutral reset', () => {
     const harness = setup()
-    act(() => harness.result.current.transform.commit(SAMPLE_GEOMETRY))
-    act(() => harness.result.current.transform.commit(null))
+    act(() =>
+      acceptTransformGeometry(
+        harness.result.current.transform,
+        SAMPLE_GEOMETRY,
+      ),
+    )
+    const sourceId = harness.result.current.transform.state!.sourceId
+    act(() =>
+      harness.result.current.transform.dispatch({ type: 'reset', sourceId }),
+    )
     const session = harness.result.current.session!
 
-    expect(harness.result.current.transform.active).toBe(false)
+    expect(harness.result.current.previewTransform.active).toBe(false)
+    expect(session.exportGeometry).toBeNull()
     expect(
       deriveFullResExportReadiness({
         sourceFile: session.sourceFile.file ?? null,
@@ -169,26 +275,55 @@ describe('useRawPreviewTransform', () => {
     ).toBe(true)
   })
 
-  it('starts a replacement source neutral and rejects callbacks for the old source', () => {
+  it('starts a replacement source neutral and rejects events for the old source', () => {
     const harness = setup()
     const previous = harness.result.current.transform
-    act(() => previous.commit(SAMPLE_GEOMETRY))
+    act(() => acceptTransformGeometry(previous, SAMPLE_GEOMETRY))
     const replacement = createReadySession()
     act(() => harness.result.current.setSession(replacement))
-    act(() => previous.commit(SAMPLE_GEOMETRY))
+    act(() => acceptTransformGeometry(previous, SAMPLE_GEOMETRY))
 
-    expect(harness.result.current.transform.sourceId).toBe(replacement.id)
-    expect(harness.result.current.transform.active).toBe(false)
+    expect(harness.result.current.previewTransform.sourceId).toBe(
+      replacement.id,
+    )
+    expect(harness.result.current.transform.state).toBe(replacement.transform)
+    expect(harness.result.current.previewTransform.active).toBe(false)
     expect(harness.result.current.session?.exportGeometry).toBeUndefined()
     expect(harness.exportGraphVersionRef.current).toBe(1)
   })
 
+  it('starts a session without a Transform of its own neutral', () => {
+    const { transform: _omitted, ...bare } = createReadySession()
+    const harness = setup(bare)
+
+    expect(harness.result.current.transform.state).toMatchObject({
+      sourceId: bare.id,
+      accepted: null,
+    })
+    act(() =>
+      acceptTransformGeometry(
+        harness.result.current.transform,
+        SAMPLE_GEOMETRY,
+      ),
+    )
+    expect(harness.result.current.session?.transform?.sourceId).toBe(bare.id)
+    expect(harness.result.current.previewTransform.geometry).toEqual(
+      SAMPLE_GEOMETRY,
+    )
+  })
+
   it('does not create a session or invalidate exports without a source', () => {
     const harness = setup(null)
-    act(() => harness.result.current.transform.commit(SAMPLE_GEOMETRY))
+    act(() =>
+      harness.result.current.transform.dispatch({
+        type: 'reset',
+        sourceId: 'none',
+      }),
+    )
 
-    expect(harness.result.current.transform.sourceId).toBeNull()
-    expect(harness.result.current.transform.active).toBe(false)
+    expect(harness.result.current.transform.state).toBeNull()
+    expect(harness.result.current.previewTransform.sourceId).toBeNull()
+    expect(harness.result.current.previewTransform.active).toBe(false)
     expect(harness.result.current.session).toBeNull()
     expect(harness.exportGraphVersionRef.current).toBe(0)
   })

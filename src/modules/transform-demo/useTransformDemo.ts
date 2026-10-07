@@ -1,8 +1,16 @@
+import type { SetStateAction } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { ImageInputErrorCode } from '~/lib/transform/preview-types'
+import type { UprightMode } from '~/lib/transform/geometry/types'
+import type {
+  ImageInputErrorCode,
+  PreviewSource,
+} from '~/lib/transform/preview-types'
 import { ImageInputError } from '~/lib/transform/preview-types'
+import type { ManualTransform } from '~/lib/transform/transform-types'
 import { useTransformPreview } from '~/modules/raw-processor/hooks/useTransformPreview'
+import type { TransformIntent } from '~/modules/raw-processor/model/session'
+import { createNeutralTransformIntent } from '~/modules/raw-processor/model/session-factory'
 
 import { createDemoSample } from './demo-sample'
 import { loadImageInput } from './image-input'
@@ -11,10 +19,31 @@ import { loadImageInput } from './image-input'
  * The demo's file and sample loading around the production Transform
  * preview. It decodes what the user opens and hands the frame over; the
  * analysis, rendering and acknowledgement all belong to `useTransformPreview`.
+ * With no RAW session behind it, the demo holds the intent itself, and every
+ * photo it opens starts neutral.
  */
 export function useTransformDemo({ autoLoadSample = true } = {}) {
-  const preview = useTransformPreview()
-  const { loadSource: loadFrame, clearSource: clearFrame } = preview
+  const [intent, setIntent] = useState<TransformIntent>(
+    createNeutralTransformIntent,
+  )
+  const preview = useTransformPreview(intent)
+  const {
+    loadSource: loadPreviewFrame,
+    clearSource: clearPreviewFrame,
+    solveUpright,
+    retireFailure,
+  } = preview
+  const loadFrame = useCallback(
+    (next: PreviewSource) => {
+      setIntent(createNeutralTransformIntent())
+      loadPreviewFrame(next)
+    },
+    [loadPreviewFrame],
+  )
+  const clearFrame = useCallback(() => {
+    setIntent(createNeutralTransformIntent())
+    clearPreviewFrame()
+  }, [clearPreviewFrame])
   const [decoding, setDecoding] = useState(false)
   const [inputError, setInputError] = useState<ImageInputErrorCode | null>(null)
   const loadId = useRef(0)
@@ -73,13 +102,32 @@ export function useTransformDemo({ autoLoadSample = true } = {}) {
     return dispose
   }, [autoLoadSample, dispose, loadSource])
 
+  const setMode = (upright: UprightMode) => {
+    setIntent((previous) => ({ ...previous, upright }))
+    solveUpright()
+  }
+  const setManual = (manual: SetStateAction<ManualTransform>) =>
+    setIntent((previous) => ({
+      ...previous,
+      manual: typeof manual === 'function' ? manual(previous.manual) : manual,
+    }))
+  const setConstrainCrop = (constrainCrop: boolean) =>
+    setIntent((previous) => ({ ...previous, constrainCrop }))
+
   const reset = () => {
     setInputError(null)
-    preview.reset()
+    setIntent(createNeutralTransformIntent())
+    retireFailure()
   }
 
   return {
     ...preview,
+    mode: intent.upright,
+    setMode,
+    manual: intent.manual,
+    setManual,
+    constrainCrop: intent.constrainCrop,
+    setConstrainCrop,
     loading: decoding || preview.loading,
     error: inputError ?? preview.error,
     loadSource,

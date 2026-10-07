@@ -18,6 +18,7 @@ import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
 type BuildRawWorkflowReturnInput = {
   previewTransform?: UseRawWorkflowReturn['previewTransform']
+  transform?: UseRawWorkflowReturn['transform']
   workflowState: {
     status: ProcessingStatus
     error: string | null
@@ -50,6 +51,7 @@ type BuildRawWorkflowReturnInput = {
 
 export function buildRawWorkflowReturn({
   previewTransform,
+  transform,
   workflowState,
   refs,
   decodedImageVersion,
@@ -65,6 +67,7 @@ export function buildRawWorkflowReturn({
 }: BuildRawWorkflowReturnInput): UseRawWorkflowReturn {
   return {
     previewTransform,
+    transform,
     params: lookStage.params,
     loadedImage: {
       file: sourceState.loadedImage.file,

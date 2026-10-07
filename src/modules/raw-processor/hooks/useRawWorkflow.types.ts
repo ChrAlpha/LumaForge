@@ -41,9 +41,11 @@ export interface UseRawWorkflowReturn {
   previewTransform?: {
     sourceId: string | null
     active: boolean
-    /** Geometry the export reproduces at full resolution; null when neutral. */
+    /**
+     * Geometry the export reproduces at full resolution; null when neutral.
+     * It is the geometry `transform` holds, and moves only through it.
+     */
     geometry: ExportGeometry | null
-    commit: (geometry: ExportGeometry | null) => void
   }
   /**
    * The loaded source's Transform intent and the answers accepted for it;

@@ -32,6 +32,7 @@ import type {
   TransformWorkerResponse,
 } from '~/lib/transform/worker-protocol'
 
+import { useTransformSessionFixture } from '../hooks/transform-session.fixture'
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
 import { useRawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
@@ -198,8 +199,9 @@ const delivered = {
 } as ExportResult
 
 /**
- * The real Transform feature over a workflow whose session keeps one
- * committed geometry, changed only through `commit`. `observing` stands for
+ * The real Transform feature over a workflow whose session moves its
+ * geometry only through Transform events; `commit` hears each move.
+ * `observing` stands for
  * the Transform panel being mounted; `released` for a finished export that
  * released the preview and holds a delivered JPEG; `exposure` for a colour
  * edit that the Transform frame has to be re-captured for.
@@ -221,13 +223,13 @@ function TransformSession({
   onExport: () => void
   children: ReactNode
 }) {
-  const [geometry, setGeometry] = useState<ExportGeometry | null>(null)
-  const commitGeometry = useCallback(
-    (next: ExportGeometry | null) => {
-      commit(next)
-      setGeometry(next)
-    },
+  const onCommit = useCallback(
+    (_source: string, next: ExportGeometry | null) => commit(next),
     [commit],
+  )
+  const { previewTransform, transform: port } = useTransformSessionFixture(
+    'one',
+    onCommit,
   )
   const base = workflowFixture()
   const workflow = {
@@ -240,12 +242,8 @@ function TransformSession({
     pipelineRef: capturePipelineRef,
     previewSuspended: released,
     exportResult: released ? delivered : null,
-    previewTransform: {
-      sourceId: 'one',
-      active: Boolean(geometry),
-      geometry,
-      commit: commitGeometry,
-    },
+    previewTransform,
+    transform: port,
     ...workflowOverrides,
   } as unknown as UseRawWorkflowReturn
   const transform = useRawTransformFeature(workflow, false)

@@ -151,7 +151,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
       !hasActiveExport(exportAbortControllerRef.current, sessionRef.current),
     [exportAbortControllerRef, sessionRef],
   )
-  const previewTransform = useRawPreviewTransform({
+  const { previewTransform, transform } = useRawPreviewTransform({
     session,
     sessionRef,
     setSession,
@@ -371,6 +371,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
 
   return buildRawWorkflowReturn({
     previewTransform,
+    transform,
     workflowState: {
       status,
       error,

@@ -6,7 +6,6 @@ import type {
   CpuPreviewResponse,
 } from '@lumaforge/render-engine/preview'
 import { act, render } from '@testing-library/react'
-import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
@@ -19,6 +18,7 @@ import type {
   TransformWorkerResponse,
 } from '~/lib/transform/worker-protocol'
 
+import { useTransformSessionFixture } from '../hooks/transform-session.fixture'
 import { useRawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import { captureTransformSource } from '../services/preview/capture-transform-source'
@@ -187,7 +187,8 @@ const latest: { feature: Feature | null; geometry: ExportGeometry | null } = {
 
 /** The CPU stage handing its processed frames to Transform, as /raw wires it. */
 function CpuTransformHarness({ userTemperature }: { userTemperature: number }) {
-  const [geometry, setGeometry] = useState<ExportGeometry | null>(null)
+  const { previewTransform, transform, geometry } =
+    useTransformSessionFixture('one')
   const params = { ...baseParams, userTemperature }
   const feature = useRawTransformFeature(
     {
@@ -201,12 +202,8 @@ function CpuTransformHarness({ userTemperature }: { userTemperature: number }) {
       viewMode: 'processed',
       params,
       previewSuspended: false,
-      previewTransform: {
-        sourceId: 'one',
-        active: Boolean(geometry),
-        geometry,
-        commit: setGeometry,
-      },
+      previewTransform,
+      transform,
       setViewMode: () => {},
     } as unknown as UseRawWorkflowReturn,
     true,

@@ -52,6 +52,7 @@ import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { getDetachedPreviewView } from '../state/preview-view.atoms'
 import { currentSessionAtom } from '../state/session.atoms'
 import { getProcessingParams, resetToDefaults } from '../state/workflow.atoms'
+import { acceptTransformGeometry } from './transform-session.fixture'
 import { useRawWorkflow } from './useRawWorkflow'
 
 const rawRuntimeAdapterMock = vi.hoisted(() => ({
@@ -2488,10 +2489,10 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     expect(result.current.canExport).toBe(true)
-    const { exportImage, exportPreviewImage, previewTransform } = result.current
+    const { exportImage, exportPreviewImage, transform } = result.current
 
     await act(async () => {
-      previewTransform!.commit(SAMPLE_GEOMETRY)
+      acceptTransformGeometry(transform, SAMPLE_GEOMETRY)
       await exportImage()
       await exportPreviewImage()
     })
@@ -2536,7 +2537,9 @@ describe('useRawWorkflow embedded preview state', () => {
     const request =
       exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0]
 
-    act(() => result.current.previewTransform!.commit(SAMPLE_GEOMETRY))
+    act(() =>
+      acceptTransformGeometry(result.current.transform, SAMPLE_GEOMETRY),
+    )
     expect(request.signal.aborted).toBe(true)
     const committedSession = jotaiStore.get(currentSessionAtom)
     expect(committedSession?.exportGeometry).toEqual(SAMPLE_GEOMETRY)
@@ -2584,7 +2587,9 @@ describe('useRawWorkflow embedded preview state', () => {
     )
     expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
 
-    act(() => result.current.previewTransform!.commit(SAMPLE_GEOMETRY))
+    act(() =>
+      acceptTransformGeometry(result.current.transform, SAMPLE_GEOMETRY),
+    )
 
     expect(result.current.exportResult).toBeNull()
     expect(result.current.status).toBe('ready')
@@ -2605,10 +2610,10 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
     const storedParamsBefore = getProcessingParams()
-    const { previewTransform, setViewMode } = result.current
+    const { transform, setViewMode } = result.current
 
     act(() => {
-      previewTransform!.commit(SAMPLE_GEOMETRY)
+      acceptTransformGeometry(transform, SAMPLE_GEOMETRY)
       setViewMode('processed')
       // The committed Transform shows the processed photo alone, so the
       // original is refused even through a callback from before the commit.
@@ -2718,12 +2723,13 @@ describe('useRawWorkflow embedded preview state', () => {
       await result.current.loadFile(new File(['raw'], 'first.ARW'))
     })
     const first = result.current.previewTransform!
-    act(() => first.commit(SAMPLE_GEOMETRY))
+    const firstTransform = result.current.transform
+    act(() => acceptTransformGeometry(firstTransform, SAMPLE_GEOMETRY))
     await act(async () => {
       await result.current.loadFile(new File(['raw'], 'second.ARW'))
     })
     const replacementSession = jotaiStore.get(currentSessionAtom)
-    act(() => first.commit(SAMPLE_GEOMETRY))
+    act(() => acceptTransformGeometry(firstTransform, SAMPLE_GEOMETRY))
 
     expect(jotaiStore.get(currentSessionAtom)).toBe(replacementSession)
     expect(replacementSession?.exportGeometry).toBeUndefined()
@@ -2752,7 +2758,7 @@ describe('useRawWorkflow embedded preview state', () => {
     await act(async () => {
       await result.current.loadFile(new File(['raw'], 'first.ARW'))
     })
-    const first = result.current.previewTransform!
+    const first = result.current.transform
     await act(async () => {
       await result.current.loadFile(new File(['raw'], 'second.ARW'))
     })
@@ -2768,7 +2774,7 @@ describe('useRawWorkflow embedded preview state', () => {
     const readySession = jotaiStore.get(currentSessionAtom)
     expect(readySession?.exportState.status).toBe('ready')
 
-    act(() => first.commit(SAMPLE_GEOMETRY))
+    act(() => acceptTransformGeometry(first, SAMPLE_GEOMETRY))
     await flushPostCommitTasks()
 
     expect(jotaiStore.get(currentSessionAtom)).toBe(readySession)
@@ -5927,7 +5933,10 @@ describe('useRawWorkflow embedded preview state', () => {
     const storedParamsBefore = getProcessingParams()
     act(() => {
       remounted.result.current.setCompareSplit(0.3)
-      remounted.result.current.previewTransform!.commit(SAMPLE_GEOMETRY)
+      acceptTransformGeometry(
+        remounted.result.current.transform,
+        SAMPLE_GEOMETRY,
+      )
     })
 
     expect(jotaiStore.get(currentSessionAtom)).toMatchObject({

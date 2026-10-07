@@ -1,19 +1,25 @@
-import type { ExportGeometry } from '@lumaforge/render-engine/export'
-import { planExportGeometry } from '@lumaforge/render-engine/export'
-import type { Matrix3 } from '@lumaforge/render-engine/geometry'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { UprightMode } from '~/lib/transform/geometry/types'
 import type { PreviewSource } from '~/lib/transform/preview-types'
+import type { TransformRenderRequest } from '~/lib/transform/transform-client'
 import type { ManualTransform } from '~/lib/transform/transform-types'
-import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 
+import type { TransformIntent } from '../model/session'
+import { createNeutralTransformIntent } from '../model/session-factory'
 import {
   captureTransformSource,
   transformInputKey,
 } from '../services/preview/capture-transform-source'
+import type { TransformEvent } from '../services/transform/transform-state'
+import {
+  deriveTransformStatus,
+  heldTransformGeometry,
+  isNeutralTransformIntent,
+} from '../services/transform/transform-state'
 import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
+import type { TransformPreviewObserver } from './useTransformPreview'
 import { useTransformPreview } from './useTransformPreview'
 
 /**
@@ -33,42 +39,13 @@ interface CapturedFrame {
   key: string
 }
 
-function hasTransform(mode: UprightMode, manual: ManualTransform) {
-  return (
-    mode !== 'off' ||
-    (Object.keys(NEUTRAL_TRANSFORM) as Array<keyof ManualTransform>).some(
-      (key) => manual[key] !== NEUTRAL_TRANSFORM[key],
-    )
-  )
-}
+/** The intent shown while no RAW is loaded; nothing can edit it. */
+const NO_SOURCE_INTENT = createNeutralTransformIntent()
 
-function geometryKey(geometry: ExportGeometry | null) {
-  return geometry
-    ? JSON.stringify({
-        matrix: Array.from(geometry.matrix),
-        constrainCrop: geometry.constrainCrop,
-      })
-    : null
-}
-
-/**
- * The answered geometry as the session stores it, or null when the export
- * engine would refuse to plan it. Planning is resolution independent, so the
- * preview frame stands in for the sensor.
- */
-function plannedGeometry(
-  answered: { matrix: Matrix3; constrainCrop: boolean },
-  frame: { width: number; height: number },
-): ExportGeometry | null {
-  const geometry = {
-    matrix: Array.from(answered.matrix),
-    constrainCrop: answered.constrainCrop,
-  }
-  try {
-    planExportGeometry(geometry, frame)
-    return geometry
-  } catch {
-    return null
+function geometryOf(request: TransformRenderRequest) {
+  return {
+    matrix: Array.from(request.matrix),
+    constrainCrop: request.constrainCrop,
   }
 }
 
@@ -76,38 +53,102 @@ export function useRawTransformFeature(
   workflow: UseRawWorkflowReturn,
   isCpuMode: boolean,
 ) {
-  const demo = useTransformPreview()
+  // The session owns the intent and what was accepted for it; this hook
+  // owns only the frame, the worker and what is drawn over the photo.
+  const transformState = workflow.transform?.state ?? null
+  const sourceId = transformState?.sourceId ?? null
+  const intent = transformState?.intent ?? NO_SOURCE_INTENT
+  const dispatchRef = useRef(workflow.transform?.dispatch)
+  dispatchRef.current = workflow.transform?.dispatch
+  const dispatch = useCallback(
+    (event: TransformEvent) => dispatchRef.current?.(event),
+    [],
+  )
   const [observing, setObserving] = useState(false)
   const [cpuFrame, setCpuFrame] = useState<CpuPreviewFrame | null>(null)
   const [capturing, setCapturing] = useState(false)
   const [captureError, setCaptureError] = useState(false)
   const [showLines, setShowLines] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
-  // The decoded source and the processed frame the demo's frame was captured
-  // from, for this RAW session.
+  // The decoded source and the processed frame the preview's frame was
+  // captured from, for this RAW session.
   const [captured, setCaptured] = useState<CapturedFrame | null>(null)
-  const sourceId = workflow.previewTransform?.sourceId ?? null
   const lastSource = useRef<string | null>(null)
-  // The capture the demo holds; null asks the next pass to capture again.
+  // The capture the preview holds; null asks the next pass to capture again.
   const lastCapture = useRef<Omit<CapturedFrame, 'sourceId'> | null>(null)
+  // The source and inputs of the frame handed to the preview. Every request
+  // posted on that frame, and every answer to one, is named after it.
+  const loadedFrame = useRef<{ sourceId: string; key: string } | null>(null)
   // The frame a capture loaded, until its analysis lands. Matching the frame
   // tells that analysis apart from the one it replaces.
   const analysing = useRef<PreviewSource | null>(null)
   const generation = useRef(0)
+  const observer = useMemo<TransformPreviewObserver>(
+    () => ({
+      requested(request) {
+        const frame = loadedFrame.current
+        if (!frame) return
+        dispatch({
+          type: 'request',
+          sourceId: frame.sourceId,
+          captureKey: frame.key,
+          requestId: request.requestId,
+          geometry: geometryOf(request),
+        })
+      },
+      rendered(request, size) {
+        const frame = loadedFrame.current
+        if (!frame) return
+        dispatch({
+          type: 'rendered',
+          sourceId: frame.sourceId,
+          captureKey: frame.key,
+          requestId: request.requestId,
+          geometry: geometryOf(request),
+          frame: size,
+        })
+      },
+      renderFailed(request, failure) {
+        const frame = loadedFrame.current
+        if (!frame) return
+        dispatch({
+          type: 'render-failed',
+          sourceId: frame.sourceId,
+          captureKey: frame.key,
+          requestId: request.requestId,
+          failure,
+        })
+      },
+      frameFailed() {
+        const frame = loadedFrame.current
+        if (!frame) return
+        dispatch({
+          type: 'capture-failed',
+          sourceId: frame.sourceId,
+          captureKey: frame.key,
+        })
+      },
+    }),
+    [dispatch],
+  )
+  const preview = useTransformPreview(intent, observer)
   const {
     loadSource,
     clearSource,
     source: loaded,
     analysis: analysed,
-    error: demoError,
-    mode: uprightMode,
-    setMode: selectUpright,
-  } = demo
+    error: previewError,
+    solveUpright,
+    retireFailure,
+    requestRender,
+  } = preview
   const image = workflow.decodedImageRef?.current
-  const active = workflow.previewTransform?.active === true
+  const active = transformState
+    ? heldTransformGeometry(transformState) !== null
+    : false
   const activeRef = useRef(active)
   activeRef.current = active
-  const intended = hasTransform(demo.mode, demo.manual)
+  const intended = !isNeutralTransformIntent(intent)
   // A Transform the session does not hold yet still owns the export gate, so
   // its frame has to keep up with the photo after the panel closes.
   const needed = observing || active || intended
@@ -130,10 +171,11 @@ export function useRawTransformFeature(
       )
     : ''
   const key = `${decodedKey}|${colorKey}|${isCpuMode ? (cpuFrame?.requestId ?? 'none') : 'gpu'}`
+  const previewSuspended = workflow.previewSuspended === true
   const available = Boolean(
     sourceId &&
     image &&
-    !workflow.previewSuspended &&
+    !previewSuspended &&
     // The CPU stage is keyed by RAW session and retains its quick frame
     // when an HQ decode replaces the workflow's image reference.
     (isCpuMode ? cpuFrame : workflow.pipelineRef.current),
@@ -143,6 +185,7 @@ export function useRawTransformFeature(
     if (lastSource.current === sourceId) return
     lastSource.current = sourceId
     lastCapture.current = null
+    loadedFrame.current = null
     generation.current++
     clearSource()
     setCaptured(null)
@@ -161,8 +204,31 @@ export function useRawTransformFeature(
   // the next change of input captures again. A refused geometry is the
   // geometry's failure, not the frame's.
   useEffect(() => {
-    if (demoError && demoError !== 'transform') lastCapture.current = null
-  }, [demoError])
+    if (previewError && previewError !== 'transform') lastCapture.current = null
+  }, [previewError])
+
+  // An answer counts only on a frame read with the inputs the photo has now,
+  // so a Transform the controls ask for is pending from the moment they move
+  // on. An export releases the preview, so its inputs move on with no
+  // capture to follow them; the answers given before the export still stand.
+  const sessionCaptureKey = transformState?.capture?.key ?? null
+  useEffect(() => {
+    if (!sourceId || !intended || previewSuspended) return
+    if (sessionCaptureKey === key) return
+    dispatch({ type: 'capture', sourceId, captureKey: key })
+    // The loaded frame already shows these inputs, so no capture follows it:
+    // that frame is asked again.
+    const frame = loadedFrame.current
+    if (frame?.sourceId === sourceId && frame.key === key) requestRender()
+  }, [
+    dispatch,
+    intended,
+    key,
+    previewSuspended,
+    requestRender,
+    sessionCaptureKey,
+    sourceId,
+  ])
 
   useEffect(() => {
     const last = lastCapture.current
@@ -177,6 +243,9 @@ export function useRawTransformFeature(
     const token = ++generation.current
     setCapturing(true)
     setCaptureError(false)
+    // The frame this reads back replaces the one earlier answers were given
+    // on, from now on.
+    dispatch({ type: 'capture', sourceId, captureKey: key })
     const timer = setTimeout(() => {
       void captureTransformSource({
         width: image.width,
@@ -189,16 +258,18 @@ export function useRawTransformFeature(
           if (generation.current !== token || lastSource.current !== sourceId)
             return
           lastCapture.current = { decodedKey, key }
+          loadedFrame.current = { sourceId, key }
           setCaptured({ sourceId, decodedKey, key })
           analysing.current = source
           loadSource(source, { preserveTransform: true })
         })
         .catch(() => {
           if (generation.current !== token) return
-          // The demo still holds the earlier frame, but the next change of
+          // The preview still holds the earlier frame, but the next change of
           // input has to try again rather than trust it.
           lastCapture.current = null
           setCaptureError(true)
+          dispatch({ type: 'capture-failed', sourceId, captureKey: key })
         })
         .finally(() => {
           if (generation.current === token) setCapturing(false)
@@ -213,6 +284,7 @@ export function useRawTransformFeature(
     colorNeeded,
     cpuFrame,
     decodedKey,
+    dispatch,
     image,
     invalidateCapture,
     isCpuMode,
@@ -225,121 +297,104 @@ export function useRawTransformFeature(
     workflow.stats,
   ])
 
-  // A new frame keeps the Upright solutions the demo holds, so a committed
-  // geometry stays where it is when only the colour moves on. With nothing
-  // committed, the Upright the controls ask for is solved again on the
+  // A new frame keeps the Upright solutions the preview holds, so an
+  // accepted geometry stays where it is when only the colour moves on. With
+  // nothing accepted, the Upright the controls ask for is solved again on the
   // frame captured for it, which is the photo as it now looks.
+  const uprightMode = intent.upright
   useEffect(() => {
     if (!analysed || loaded !== analysing.current) return
     analysing.current = null
-    if (!activeRef.current && uprightMode !== 'off') selectUpright(uprightMode)
-  }, [analysed, loaded, selectUpright, uprightMode])
+    if (!activeRef.current && uprightMode !== 'off') solveUpright()
+  }, [analysed, loaded, solveUpright, uprightMode])
 
-  const commitRef = useRef(workflow.previewTransform?.commit)
-  commitRef.current = workflow.previewTransform?.commit
+  // Leaving the workspace ends the Transform: nothing keeps its frame up with
+  // the photo any more, so the session must not keep asking for it.
+  const sourceIdRef = useRef(sourceId)
+  sourceIdRef.current = sourceId
   const disposeIntent = useCallback(() => {
-    if (activeRef.current) commitRef.current?.(null)
+    const id = sourceIdRef.current
+    if (id) dispatchRef.current?.({ type: 'reset', sourceId: id })
   }, [])
   useEffect(() => disposeIntent, [disposeIntent])
 
   /**
-   * Commit only the geometry the preview has rendered, so a full-resolution
-   * export reproduces the framing on screen. The answer has to come from the
-   * frame captured for this RAW and its current inputs, answer the newest
-   * request, and plan in the export engine; until then the session keeps
-   * what it holds, which is the last valid geometry, and export is blocked.
-   * A neutral Transform needs no render: it clears the geometry at once.
+   * Export may reproduce the Transform only once the session accepted the
+   * preview's answer to the newest request on a frame of the photo as it now
+   * looks; until then the session keeps the last accepted geometry, and
+   * export is blocked. A neutral Transform needs no render. Releasing the
+   * preview after an export changes none of this, so a finished export never
+   * reads as a blocked one.
    */
-  // An export releases the preview, so its inputs move on with no capture to
-  // follow them; the frame that answered before the export still stands.
-  const frameCurrent =
-    captured !== null &&
-    captured.sourceId === sourceId &&
-    (captured.key === key || workflow.previewSuspended === true)
-  const answered = frameCurrent ? demo.acknowledged : null
-  const frame = demo.source?.frame
-  const planned = useMemo(
-    () => (answered && frame ? plannedGeometry(answered, frame) : null),
-    [answered, frame],
-  )
-  const targetKey = !intended
-    ? null
-    : planned
-      ? geometryKey(planned)
-      : undefined
-  const sessionKey = geometryKey(workflow.previewTransform?.geometry ?? null)
-  useEffect(() => {
-    if (targetKey === undefined || targetKey === sessionKey) return
-    commitRef.current?.(targetKey === null ? null : JSON.parse(targetKey))
-  }, [sessionKey, targetKey])
-  // Export is blocked whenever the session does not hold what the controls
-  // ask for on the current frame. Until a new frame is captured, what the old
-  // one said no longer counts. Releasing the preview after an export changes
-  // none of this, so a finished export never reads as a blocked one.
+  const status = transformState
+    ? deriveTransformStatus(transformState)
+    : 'neutral'
   const exportBlock: TransformExportBlock | null =
-    targetKey === sessionKey
-      ? null
-      : !frameCurrent
-        ? captureError
-          ? 'unavailable'
-          : 'pending'
-        : demo.error === 'transform' || (answered && !planned)
-          ? 'invalid'
-          : demo.error || captureError
-            ? 'unavailable'
-            : 'pending'
+    status === 'neutral' || status === 'accepted' ? null : status
 
   const observe = useCallback(() => {
     setObserving(true)
     return () => setObserving(false)
   }, [])
 
+  const edit = (next: Partial<TransformIntent>) => {
+    if (sourceId) dispatch({ type: 'edit', sourceId, intent: next })
+  }
   const request = () => {
     workflow.setViewMode('processed')
   }
   const setMode = (mode: UprightMode) => {
     request()
-    demo.setMode(mode)
+    edit({ upright: mode })
+    solveUpright()
   }
   const setManual = (manual: ManualTransform) => {
     request()
-    demo.setManual(manual)
+    edit({ manual })
   }
   const setConstrainCrop = (crop: boolean) => {
     request()
-    demo.setConstrainCrop(crop)
+    edit({ constrainCrop: crop })
   }
   const reset = () => {
-    demo.reset()
+    if (sourceId) dispatch({ type: 'reset', sourceId })
+    retireFailure()
     setShowLines(false)
     setShowGrid(false)
   }
-  // The demo's frame is the photo the tool works on: the same decoded source,
-  // and the same colour wherever the colour counts.
+  // The preview's frame is the photo the tool works on: the same decoded
+  // source, and the same colour wherever the colour counts.
   const frameMatches =
     captured !== null &&
     captured.sourceId === sourceId &&
     (colorNeeded ? captured.key === key : captured.decodedKey === decodedKey)
   const current =
-    Boolean(demo.result) &&
+    Boolean(preview.result) &&
     available &&
     frameMatches &&
     !capturing &&
-    !demo.loading &&
-    !demo.rendering &&
-    !demo.error &&
+    !preview.loading &&
+    !preview.rendering &&
+    !preview.error &&
     !captureError
 
   return {
-    demo,
+    // What the preview shows, with the intent the session holds.
+    demo: {
+      ...preview,
+      mode: intent.upright,
+      manual: intent.manual,
+      constrainCrop: intent.constrainCrop,
+    },
     active,
     available,
     // Export releases the preview to keep the delivered file stable. That is a
     // different state from "not ready yet", and it has its own way out.
-    previewSuspended: workflow.previewSuspended === true,
+    previewSuspended,
     hasImage: workflow.hasImage,
     observe,
-    busy: capturing || demo.loading || demo.rendering || (active && !current),
+    busy:
+      capturing || preview.loading || preview.rendering || (active && !current),
     captureError,
     current,
     exportBlock,

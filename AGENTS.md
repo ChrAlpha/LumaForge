@@ -70,11 +70,13 @@ image-editor assumptions.
 - `src/modules/raw-processor/hooks/useRawWorkflow.ts` and
   `src/modules/raw-processor/hooks/stages/` are the workflow state machine
   boundary. Stage hooks are grouped by `ingest`, `preview`, `look`, `compare`,
-  and `export`. Transform is not a stage folder:
-  `src/modules/raw-processor/hooks/useRawTransformFeature.ts` owns Transform
-  tool state and the preview overlay, and
-  `src/modules/raw-processor/hooks/useRawPreviewTransform.ts` commits the
-  geometry that export reproduces.
+  and `export`. Transform is not a stage folder: the session owns its intent
+  and accepted answers through the pure transitions in
+  `src/modules/raw-processor/services/transform/transform-state.ts`;
+  `src/modules/raw-processor/hooks/useRawPreviewTransform.ts` applies them
+  and moves the geometry that export reproduces only with them, and
+  `src/modules/raw-processor/hooks/useRawTransformFeature.ts` keeps the
+  preview frame, the worker, and the overlay.
 - `src/modules/raw-processor/services/` contains scriptable domain behavior:
   `ingest`, `preview`, `look`, `compare`, `export`, and `surface` (which
   actions a tool surface may run, and why not). Prefer adding tested logic

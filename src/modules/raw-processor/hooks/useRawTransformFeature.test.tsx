@@ -4,7 +4,6 @@ import { resolve } from 'node:path'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 import { act, renderHook } from '@testing-library/react'
-import { useCallback, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { identityMatrix, rotationMatrix } from '~/lib/transform/geometry/matrix'
@@ -18,6 +17,7 @@ import type {
 } from '~/lib/transform/worker-protocol'
 
 import { captureTransformSource } from '../services/preview/capture-transform-source'
+import { useTransformSessionFixture } from './transform-session.fixture'
 import { useRawTransformFeature } from './useRawTransformFeature'
 import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
@@ -211,14 +211,21 @@ function workflow(): UseRawWorkflowReturn {
     viewMode: 'processed',
     compareSplit: 0.5,
     params: { userExposureEv: 0 },
-    previewTransform: {
-      sourceId: 'one',
-      active: false,
-      geometry: null,
-      commit: vi.fn(),
-    },
     setViewMode: vi.fn(),
   } as unknown as UseRawWorkflowReturn
+}
+
+/** The feature over `input`, with the session ports of RAW `sourceId`. */
+function useFeature(
+  input: UseRawWorkflowReturn,
+  cpu: boolean,
+  sourceId = 'one',
+) {
+  const { previewTransform, transform } = useTransformSessionFixture(
+    sourceId,
+    commits,
+  )
+  return useRawTransformFeature({ ...input, previewTransform, transform }, cpu)
 }
 
 const image = { width: 80, height: 60 }
@@ -242,8 +249,8 @@ interface SessionInput {
 }
 
 /**
- * The workflow side of the contract: one committed geometry per RAW
- * session, changed only through `commit`, as the session reducer does.
+ * The workflow side of the contract: one session per RAW, whose Transform
+ * moves only through the events the feature dispatches.
  */
 function useSessionHarness({
   session = 'one',
@@ -256,16 +263,9 @@ function useSessionHarness({
   cpu = false,
   released = false,
 }: SessionInput) {
-  const [geometries, setGeometries] = useState<
-    Record<string, ExportGeometry | null>
-  >({})
-  const geometry = geometries[session] ?? null
-  const commit = useCallback(
-    (next: ExportGeometry | null) => {
-      commits(session, next)
-      setGeometries((previous) => ({ ...previous, [session]: next }))
-    },
-    [session],
+  const { previewTransform, transform, geometry } = useTransformSessionFixture(
+    session,
+    commits,
   )
   const feature = useRawTransformFeature(
     {
@@ -284,12 +284,8 @@ function useSessionHarness({
         intensity,
       },
       previewSuspended: released,
-      previewTransform: {
-        sourceId: session,
-        active: Boolean(geometry),
-        geometry,
-        commit,
-      },
+      previewTransform,
+      transform,
       setViewMode,
     } as unknown as UseRawWorkflowReturn,
     cpu,
@@ -336,22 +332,31 @@ afterEach(() => {
 })
 
 describe('rAW Transform feature', () => {
-  it('clears transient geometry on leaving the workspace without invalidating neutral exports', () => {
-    const active = workflow()
-    active.previewTransform!.active = true
-    const first = renderHook(() => useRawTransformFeature(active, false))
-    first.unmount()
-    expect(active.previewTransform!.commit).toHaveBeenCalledWith(null)
-    const neutral = workflow()
-    const second = renderHook(() => useRawTransformFeature(neutral, false))
-    second.unmount()
-    expect(neutral.previewTransform!.commit).not.toHaveBeenCalled()
+  it('clears transient geometry on leaving the workspace without invalidating neutral exports', async () => {
+    const active = renderSession()
+    await captureNeutral(active)
+    act(() =>
+      active.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    answer(lastRender())
+    expect(commits).toHaveBeenCalledOnce()
+    active.unmount()
+    expect(commits).toHaveBeenLastCalledWith('one', null)
+
+    commits.mockClear()
+    const neutral = renderSession()
+    await captureNeutral(neutral)
+    neutral.unmount()
+    expect(commits).not.toHaveBeenCalled()
   })
 
   it('captures on demand and refreshes color without reopening the photo or resetting geometry', async () => {
     const initial = workflow()
     const { result, rerender, unmount } = renderHook(
-      ({ input }) => useRawTransformFeature(input, false),
+      ({ input }) => useFeature(input, false),
       { initialProps: { input: initial } },
     )
     await act(() => vi.advanceTimersByTimeAsync(150))
@@ -1155,6 +1160,199 @@ describe('rAW Transform feature', () => {
     hook.unmount()
   })
 
+  it('keeps the Transform and its geometry when the panel closes and opens again', async () => {
+    const hook = renderSession()
+    const stop = await captureNeutral(hook)
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    const answered = lastRender()
+    answer(answered)
+    expect(commits).toHaveBeenCalledOnce()
+
+    act(() => stop())
+    let reopened!: () => void
+    act(() => {
+      reopened = hook.result.current.feature.observe()
+    })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    // Nothing about the photo changed, so nothing is read back again.
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    expect(hook.result.current.feature.demo.manual.rotate).toBe(3)
+    expect(hook.result.current.feature.active).toBe(true)
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+
+    // A colour edit with the panel open again asks the new frame for the
+    // same geometry, and holds export until it answers.
+    hook.rerender({ userExposureEv: 1 })
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    analyzeCapture()
+    const again = answerLatest()
+    expect(again.matrix).toEqual(answered.matrix)
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    expect(commits).toHaveBeenCalledOnce()
+    expect(hook.result.current.geometry).toEqual(geometryOf(answered))
+    act(() => reopened())
+    hook.unmount()
+  })
+
+  it('follows the preview between WebGPU and the CPU without committing again', async () => {
+    const hook = renderSession()
+    await captureNeutral(hook)
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    const onGpu = lastRender()
+    answer(onGpu)
+    expect(commits).toHaveBeenCalledOnce()
+
+    // The CPU stage has not finished a frame yet: nothing to answer on.
+    hook.rerender({ cpu: true })
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+    const onCpu = cpuFrameOf(1)
+    act(() => hook.result.current.feature.setCpuFrame(onCpu))
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    expect(lastCapturedCpuFrame()).toBe(onCpu)
+    analyzeCapture()
+    expect(answerLatest().matrix).toEqual(onGpu.matrix)
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+
+    // And back on WebGPU.
+    hook.rerender({})
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(3)
+    expect(lastCapturedCpuFrame()).toBeNull()
+    analyzeCapture()
+    expect(answerLatest().matrix).toEqual(onGpu.matrix)
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    expect(commits).toHaveBeenCalledOnce()
+    expect(hook.result.current.geometry).toEqual(geometryOf(onGpu))
+    hook.unmount()
+  })
+
+  it('answers on the loaded frame again once the colour returns before it is read back', async () => {
+    const hook = renderSession()
+    await captureNeutral(hook)
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    const a = lastRender()
+    answer(a)
+    expect(commits).toHaveBeenCalledOnce()
+
+    hook.rerender({ userExposureEv: 1 })
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+    await act(() => vi.advanceTimersByTimeAsync(60))
+    // Back to the colour the loaded frame was read with.
+    hook.rerender({ userExposureEv: 0 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    expect(answerLatest().matrix).toEqual(a.matrix)
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    expect(hook.result.current.feature.busy).toBe(false)
+    expect(commits).toHaveBeenCalledOnce()
+    hook.unmount()
+  })
+
+  it('commits only the last of a run of rapid edits', async () => {
+    const hook = renderSession()
+    await captureNeutral(hook)
+    const inFlight: RenderRequest[] = []
+    for (const rotate of [1, 2, 3, 4]) {
+      act(() =>
+        hook.result.current.feature.setManual({ ...NEUTRAL_TRANSFORM, rotate }),
+      )
+      inFlight.push(lastRender())
+    }
+    // Only the first edit reached the worker; the rest wait as one.
+    expect(new Set(inFlight).size).toBe(1)
+    answer(inFlight[0])
+    expect(commits).not.toHaveBeenCalled()
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+    const last = lastRender()
+    expect(last.requestId).toBeGreaterThan(inFlight[0].requestId)
+    expect(last.matrix).toEqual(
+      composeManualTransform(
+        identityMatrix(),
+        { ...NEUTRAL_TRANSFORM, rotate: 4 },
+        80 / 60,
+      ),
+    )
+    answer(last)
+    expect(commits).toHaveBeenCalledOnce()
+    expect(commits).toHaveBeenLastCalledWith('one', geometryOf(last))
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    hook.unmount()
+  })
+
+  it('holds the last geometry when the newest render fails, and never takes an older answer for it', async () => {
+    const hook = renderSession()
+    await captureNeutral(hook)
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    const a = lastRender()
+    answer(a)
+    expect(commits).toHaveBeenCalledOnce()
+
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 6,
+      }),
+    )
+    const b = lastRender()
+    act(() =>
+      worker().emit({
+        type: 'error',
+        sourceId: b.sourceId,
+        requestId: b.requestId,
+        message: 'processing',
+      }),
+    )
+    expect(hook.result.current.feature.exportBlock).toBe('unavailable')
+    expect(hook.result.current.feature.active).toBe(true)
+    expect(hook.result.current.geometry).toEqual(geometryOf(a))
+
+    // A late copy of A's answer does not stand in for B.
+    answer(a)
+    expect(hook.result.current.feature.exportBlock).toBe('unavailable')
+    expect(commits).toHaveBeenCalledOnce()
+
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 4,
+      }),
+    )
+    expect(hook.result.current.feature.exportBlock).not.toBeNull()
+    const c = lastRender()
+    answer(c)
+    expect(commits).toHaveBeenCalledTimes(2)
+    expect(commits).toHaveBeenLastCalledWith('one', geometryOf(c))
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    hook.unmount()
+  })
+
   it('discards a capture completed after the RAW session was replaced', async () => {
     let complete!: (source: PreviewSource) => void
     vi.mocked(captureTransformSource).mockReturnValueOnce(
@@ -1164,19 +1362,14 @@ describe('rAW Transform feature', () => {
     )
     const initial = workflow()
     const { result, rerender, unmount } = renderHook(
-      ({ input }) => useRawTransformFeature(input, false),
-      { initialProps: { input: initial } },
+      ({ input, sourceId }) => useFeature(input, false, sourceId),
+      { initialProps: { input: initial, sourceId: 'one' } },
     )
     act(() => {
       result.current.observe()
     })
     await act(() => vi.advanceTimersByTimeAsync(150))
-    rerender({
-      input: {
-        ...initial,
-        previewTransform: { ...initial.previewTransform!, sourceId: 'two' },
-      },
-    })
+    rerender({ input: initial, sourceId: 'two' })
     await act(async () => {
       complete(frame)
       await Promise.resolve()
@@ -1189,9 +1382,7 @@ describe('rAW Transform feature', () => {
 
   it('waits for the current processed CPU frame', async () => {
     const input = workflow()
-    const { result, unmount } = renderHook(() =>
-      useRawTransformFeature(input, true),
-    )
+    const { result, unmount } = renderHook(() => useFeature(input, true))
     act(() => {
       result.current.observe()
     })
@@ -1215,8 +1406,8 @@ describe('rAW Transform feature', () => {
   it('retains the current RAW CPU frame across HQ upgrades, then clears it for a new session', async () => {
     const input = workflow()
     const { result, rerender, unmount } = renderHook(
-      ({ value }) => useRawTransformFeature(value, true),
-      { initialProps: { value: input } },
+      ({ value, sourceId }) => useFeature(value, true, sourceId),
+      { initialProps: { value: input, sourceId: 'one' } },
     )
     act(() => {
       result.current.observe()
@@ -1230,20 +1421,14 @@ describe('rAW Transform feature', () => {
     })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(result.current.available).toBe(true)
-    rerender({ value: { ...input, decodedImageVersion: 2 } })
+    rerender({ value: { ...input, decodedImageVersion: 2 }, sourceId: 'one' })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(result.current.available).toBe(true)
     // The retained quick frame is the photo already analysed.
     expect(captureTransformSource).toHaveBeenCalledOnce()
     rerender({
-      value: {
-        ...input,
-        decodedImageVersion: 3,
-        previewTransform: {
-          ...input.previewTransform!,
-          sourceId: 'replacement',
-        },
-      },
+      value: { ...input, decodedImageVersion: 3 },
+      sourceId: 'replacement',
     })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(result.current.available).toBe(false)
