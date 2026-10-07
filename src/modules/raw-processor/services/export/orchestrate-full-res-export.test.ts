@@ -265,8 +265,6 @@ function createSession(
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 6000, height: 4000 },
-      recovery: { status: 'none' },
-      checkpointDurable: false,
       retryRecommended: false,
       ...overrides.exportState,
     },
@@ -832,8 +830,6 @@ describe('orchestrateFullResExport success', () => {
       status: 'ready',
       fullResCapability: { status: 'supported', width: 6000, height: 4000 },
       activePlan: DESKTOP_ACTIVE_PLAN,
-      checkpointDurable: false,
-      recovery: { status: 'none' },
       result: {
         kind: 'full-resolution',
         output: {
@@ -1129,8 +1125,6 @@ describe('orchestrateFullResExport success', () => {
 
       expect(h.state.session?.exportState).toMatchObject({
         status: 'ready',
-        checkpointDurable: false,
-        recovery: { status: 'none' },
         activePlan: { outputSink: sink },
       })
       // The used hint is retired whatever the sink, and the page re-reads.
@@ -1297,7 +1291,6 @@ describe('orchestrateFullResExport success', () => {
       expect(input).not.toHaveProperty('checkpoint')
       expect(h.state.session?.exportState).toMatchObject({
         status: 'ready',
-        checkpointDurable: false,
         activePlan: { outputSink: 'opfs-file' },
       })
       expect(h.markerStore.markers()).toEqual([])
@@ -1331,7 +1324,6 @@ describe('orchestrateFullResExport success', () => {
     expect(h.state.session?.exportState).toMatchObject({
       status: 'exporting',
       activePlan: DESKTOP_ACTIVE_PLAN,
-      checkpointDurable: false,
     })
     expect(h.debugPayloads('export-plan-selected')).toEqual([
       expect.objectContaining({

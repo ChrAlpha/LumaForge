@@ -338,8 +338,6 @@ function createTestSession() {
         width: 4000,
         height: 3000,
       },
-      recovery: { status: 'none' as const },
-      checkpointDurable: false,
       retryRecommended: false,
     },
   }
@@ -676,9 +674,9 @@ describe('useRawWorkflow embedded preview state', () => {
     // no attempt id, sentence or legacy recovery state.
     expect(exportRecoveryKeys(result.current)).toEqual([])
     // The session keeps no second copy of the hint.
-    expect(jotaiStore.get(currentSessionAtom)?.exportState.recovery).toEqual({
-      status: 'none',
-    })
+    expect(jotaiStore.get(currentSessionAtom)?.exportState).not.toHaveProperty(
+      'recovery',
+    )
   })
 
   it('shows no hint for a loaded source other than the interrupted one', async () => {
@@ -3330,7 +3328,6 @@ describe('useRawWorkflow embedded preview state', () => {
         outputSink: 'blob-handoff',
         checkpointMode: 'safe-retry',
       },
-      checkpointDurable: false,
       retryRecommended: false,
     })
     expect(exportState?.result).toBeUndefined()
@@ -3889,7 +3886,6 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(storedMarkers()).toEqual([])
     expect(jotaiStore.get(currentSessionAtom)?.exportState).toMatchObject({
       status: 'ready',
-      checkpointDurable: false,
     })
   })
 

@@ -37,8 +37,6 @@ function createSession(id = 'pending-session'): ImageSession {
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'unknown' },
-      recovery: { status: 'none' },
-      checkpointDurable: false,
       retryRecommended: false,
     },
   }

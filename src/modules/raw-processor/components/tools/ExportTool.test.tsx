@@ -383,7 +383,7 @@ describe('exportTool', () => {
     expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled()
   })
 
-  it('shows low-memory and non-durable checkpoint copy for ios-safe export', () => {
+  it('asks to keep the tab open for an ios-safe low-memory export without blaming the browser', () => {
     render(
       <ExportTool
         canExport
@@ -402,17 +402,18 @@ describe('exportTool', () => {
           outputSink: 'blob-handoff',
           checkpointMode: 'safe-retry',
         }}
-        checkpointDurable={false}
       />,
     )
 
-    expect(screen.getByText(/low-memory export mode/i)).toBeInTheDocument()
+    expect(screen.getByText(/low-memory export mode/i)).toHaveTextContent(
+      /keep the tab open while the jpeg is being written/i,
+    )
     expect(
-      screen.getByText(/cannot store export progress/i),
-    ).toBeInTheDocument()
+      screen.queryByText(/cannot store export progress/i),
+    ).not.toBeInTheDocument()
   })
 
-  it('shows low-memory and non-durable checkpoint copy for mobile-balanced export', () => {
+  it('asks to keep the tab open for a mobile-balanced low-memory export without blaming the browser', () => {
     render(
       <ExportTool
         canExport
@@ -431,14 +432,15 @@ describe('exportTool', () => {
           outputSink: 'streaming',
           checkpointMode: 'safe-retry',
         }}
-        checkpointDurable={false}
       />,
     )
 
-    expect(screen.getByText(/low-memory export mode/i)).toBeInTheDocument()
+    expect(screen.getByText(/low-memory export mode/i)).toHaveTextContent(
+      /keep the tab open while the jpeg is being written/i,
+    )
     expect(
-      screen.getByText(/cannot store export progress/i),
-    ).toBeInTheDocument()
+      screen.queryByText(/cannot store export progress/i),
+    ).not.toBeInTheDocument()
   })
 
   it('presents an interrupted export as a hint for the next export the user starts', async () => {

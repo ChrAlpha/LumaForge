@@ -315,8 +315,6 @@ export async function orchestrateFullResExport(
               ...prev.exportState,
               status: 'exporting',
               activePlan,
-              checkpointDurable: false,
-              recovery: { status: 'none' },
               result: undefined,
               lastProgress: undefined,
               retryRecommended: false,

@@ -443,66 +443,22 @@ describe('export execution profile selection', () => {
     }
   })
 
-  it('does not reread persisted diagnostics for every checkpoint event', () => {
+  it('does not reread persisted diagnostics for every event', () => {
     clearExportDebugDiagnostics()
     const getItem = vi.spyOn(Storage.prototype, 'getItem')
 
-    for (
-      let completedRowsForDiagnostics = 0;
-      completedRowsForDiagnostics < 3;
-      completedRowsForDiagnostics += 1
-    ) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
       emitExportDebugEvent({
-        type: 'checkpoint-written',
+        type: 'export-worker-attempt',
         payload: {
-          exportId: 'export-1',
-          completedRowsForDiagnostics,
-          totalRows: 6374,
-          updatedAt: `2026-05-20T08:30:0${completedRowsForDiagnostics}.000Z`,
+          attempt,
+          phase: 'started',
+          freshWorker: true,
         },
       })
     }
 
     expect(getItem).toHaveBeenCalledTimes(1)
-  })
-
-  it('throttles persisted checkpoint writes while keeping live checkpoint history', () => {
-    clearExportDebugDiagnostics()
-    const setItem = vi.spyOn(Storage.prototype, 'setItem')
-
-    for (const completedRowsForDiagnostics of [0, 128, 256, 1024, 2048, 6374]) {
-      emitExportDebugEvent({
-        type: 'checkpoint-written',
-        payload: {
-          exportId: 'export-1',
-          completedRowsForDiagnostics,
-          totalRows: 6374,
-          updatedAt: `2026-05-20T08:30:${completedRowsForDiagnostics}.000Z`,
-        },
-      })
-    }
-
-    const liveHistory = (
-      window as unknown as {
-        __LUMAFORGE_EXPORT_DEBUG_HISTORY__?: unknown[]
-      }
-    ).__LUMAFORGE_EXPORT_DEBUG_HISTORY__
-    const stored = JSON.parse(
-      localStorage.getItem(exportDebugEventStorageKey) ?? '[]',
-    )
-
-    expect(setItem).toHaveBeenCalledTimes(4)
-    expect(liveHistory).toHaveLength(6)
-    expect(stored).toHaveLength(6)
-    expect(stored.at(-1)).toMatchObject({
-      event: {
-        type: 'checkpoint-written',
-        payload: {
-          completedRowsForDiagnostics: 6374,
-          totalRows: 6374,
-        },
-      },
-    })
   })
 
   it('keeps export progress diagnostics live-only to avoid completion-path storage writes', () => {

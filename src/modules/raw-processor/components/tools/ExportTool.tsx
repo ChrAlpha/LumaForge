@@ -36,7 +36,6 @@ export function ExportTool({
   onCopyExport,
   activePlan,
   interruptionNote,
-  checkpointDurable,
 }: {
   canExport: boolean
   disabledReason?: string
@@ -57,15 +56,12 @@ export function ExportTool({
    * offers no file picker for it.
    */
   interruptionNote?: ExportInterruptionNote | null
-  checkpointDurable?: boolean
   embedded?: boolean
 }) {
   const { t } = useI18n()
   const noteClassName = 'text-[0.78rem] leading-relaxed text-lf-on-surface/72'
   const session = useAtomValue(currentSessionAtom)
   const currentActivePlan = activePlan ?? session?.exportState.activePlan
-  const currentCheckpointDurable =
-    checkpointDurable ?? session?.exportState.checkpointDurable
   const isLowMemoryPlan =
     currentActivePlan?.runtimeMemoryProfile === 'low-memory'
   // The next export the user starts uses the current RAW and edits on a
@@ -189,9 +185,6 @@ export function ExportTool({
         <>
           {isLowMemoryPlan && (
             <p className={noteClassName}>{t('raw.export.lowMemory')}</p>
-          )}
-          {currentCheckpointDurable === false && isLowMemoryPlan && (
-            <p className={noteClassName}>{t('raw.export.nonDurable')}</p>
           )}
           {showInterruption && interruptionNote && (
             <p data-export-interruption className={noteClassName}>

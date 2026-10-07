@@ -83,8 +83,6 @@ function createReadySession(): ImageSession {
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 800, height: 600 },
-      recovery: { status: 'none' },
-      checkpointDurable: false,
       retryRecommended: false,
     },
   }

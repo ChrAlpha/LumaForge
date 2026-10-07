@@ -58,13 +58,6 @@ export type ExportResourceCleanupDebugPayload = {
   cleanedAt: string
 }
 
-export type ExportCheckpointWrittenDebugPayload = {
-  exportId: string
-  completedRowsForDiagnostics: number
-  totalRows: number
-  updatedAt: string
-}
-
 export type ExportWorkerAttemptDebugPayload = {
   attempt: number
   profile?: ExportExecutionProfileName
@@ -142,10 +135,6 @@ export type ExportDebugEvent =
       payload: ExportResourceCleanupDebugPayload
     }
   | {
-      type: 'checkpoint-written'
-      payload: ExportCheckpointWrittenDebugPayload
-    }
-  | {
       type: 'export-worker-attempt'
       payload: ExportWorkerAttemptDebugPayload
     }
@@ -185,7 +174,6 @@ type ExportDebugWindow = Window & {
 
 const exportDebugEventStorageKey = 'lumaforge.exportDebugEvents.v1'
 const exportDebugEventHistoryLimit = 256
-const exportDebugCheckpointPersistRows = 1024
 
 function getExportDebugWindow() {
   return window as unknown as ExportDebugWindow
@@ -239,13 +227,7 @@ function persistExportDebugEvent(event: ExportDebugEvent) {
 }
 
 function shouldPersistExportDebugEvent(event: ExportDebugEvent) {
-  if (event.type === 'export-progress') return false
-  if (event.type !== 'checkpoint-written') return true
-
-  const { completedRowsForDiagnostics, totalRows } = event.payload
-  if (completedRowsForDiagnostics <= 0) return true
-  if (completedRowsForDiagnostics >= totalRows) return true
-  return completedRowsForDiagnostics % exportDebugCheckpointPersistRows === 0
+  return event.type !== 'export-progress'
 }
 
 export function emitExportDebugEvent(event: ExportDebugEvent) {
@@ -297,7 +279,7 @@ export function getExportModeCopy(
     'interrupted-source-needed':
       'The browser interrupted the previous export. Please reselect the same RAW file so LumaForge can retry with a safer setting.',
     'non-durable-checkpoint':
-      'This browser cannot store export progress. Keep the tab open while the JPEG is being written.',
+      'Keep the tab open while the JPEG is being written.',
     'cannot-safely-complete':
       'This browser cannot safely complete this large local full-resolution export without durable file storage. Use a secure browser URL with OPFS enabled, try a desktop browser, or export a smaller version.',
   }

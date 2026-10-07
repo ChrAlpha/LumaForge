@@ -45,6 +45,14 @@ describe('i18n locale catalogs', () => {
       expect(zhMessages[key]).toContain('契约')
       expect(zhMessages[key]).not.toContain('合同')
     }
+    // No export progress outlives the tab, so no copy blames the browser
+    // for failing to store it.
+    expect(enMessages).not.toHaveProperty('raw.export.nonDurable')
+    expect(zhMessages).not.toHaveProperty('raw.export.nonDurable')
+    expect(Object.values(enMessages).join('\n')).not.toMatch(
+      /cannot store export progress/i,
+    )
+    expect(enMessages['raw.export.lowMemory']).toContain('Keep the tab open')
     expect(enMessages['raw.export.derivedLabelHint']).toContain('{{label}}')
     expect(zhMessages['raw.export.derivedLabelHint']).toContain('{{label}}')
   })

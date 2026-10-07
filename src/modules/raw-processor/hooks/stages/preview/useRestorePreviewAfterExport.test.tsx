@@ -40,8 +40,6 @@ function createSession(): ImageSession {
     exportState: {
       status: 'ready',
       fullResCapability: { status: 'supported', width: 400, height: 300 },
-      recovery: { status: 'none' },
-      checkpointDurable: false,
       retryRecommended: false,
     },
   }

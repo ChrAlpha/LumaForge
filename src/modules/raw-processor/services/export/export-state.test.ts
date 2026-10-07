@@ -47,8 +47,6 @@ function createSession(
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 4000, height: 3000 },
-      recovery: { status: 'none' },
-      checkpointDurable: false,
       retryRecommended: false,
       ...exportState,
     },

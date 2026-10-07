@@ -46,8 +46,6 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
     exportState: {
       status: 'ready',
       fullResCapability: { status: 'supported', width: 1600, height: 1200 },
-      recovery: { status: 'none' },
-      checkpointDurable: false,
       retryRecommended: false,
     },
     ...overrides,

@@ -38,8 +38,6 @@ const baseSession: ImageSession = {
   exportState: {
     status: 'idle',
     fullResCapability: { status: 'unknown' },
-    recovery: { status: 'none' },
-    checkpointDurable: false,
     retryRecommended: false,
   },
 }

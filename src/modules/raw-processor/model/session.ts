@@ -30,12 +30,6 @@ export type FullResExportCapabilityState =
   | { status: 'supported'; width: number; height: number }
   | { status: 'unsupported'; reason: string }
 
-/**
- * A session holds no export recovery: an interrupted export is only a hint in
- * the page's markers for the next explicit export of the same source.
- */
-export type ExportRecoveryState = { status: 'none' }
-
 export type ActiveExportPlanState = {
   profileName: ExportExecutionProfileName
   preferredRows: number
@@ -170,16 +164,6 @@ export type ImageSession = {
     status: 'idle' | 'preparing' | 'exporting' | 'ready' | 'failed'
     fullResCapability: FullResExportCapabilityState
     activePlan?: ActiveExportPlanState
-    /**
-     * Always `none`. The interruption hint lives in the page's marker state
-     * and reaches surfaces only as a note for the loaded source.
-     */
-    recovery: ExportRecoveryState
-    /**
-     * Always false: no export state outlives the tab, whatever the sink. The
-     * engine's checkpoint hooks are compatibility surface, not an app promise.
-     */
-    checkpointDurable: boolean
     result?: ExportResult
     lastProgress?: {
       completedStrips: number

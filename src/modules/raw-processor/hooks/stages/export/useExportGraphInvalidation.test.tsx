@@ -35,8 +35,6 @@ function createSession(status: ImageSession['exportState']['status']) {
     exportState: {
       status,
       fullResCapability: { status: 'unknown' },
-      recovery: { status: 'none' },
-      checkpointDurable: false,
       retryRecommended: false,
     },
   } satisfies ImageSession
