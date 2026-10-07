@@ -127,10 +127,6 @@ vi.mock('~/lib/preview/gpu-backend', () => {
   }
 })
 
-vi.mock('~/lib/raw/runtime-adapter', () => ({
-  rawRuntimeAdapter: rawRuntimeAdapterMock,
-}))
-
 // Each workflow builds its own RAW host. The stand-in records every host it
 // builds and forwards its calls to the adapter mock the tests configure; a
 // test that sets `realRawRuntimeHostOptions` gets a real host instead.

@@ -110,5 +110,3 @@ export function createRawRuntimeAdapter({
     },
   }
 }
-
-export const rawRuntimeAdapter = createRawRuntimeAdapter()
