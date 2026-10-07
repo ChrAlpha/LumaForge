@@ -363,6 +363,83 @@ describe('rawDecodeBridge', () => {
       })
     })
 
+    it('never initializes or publishes a runtime whose startup was aborted', async () => {
+      const runtimes: LumaRawRuntime[] = []
+      const pendingFactories: Array<() => void> = []
+      const factory = vi.fn(
+        () =>
+          new Promise<LumaRawRuntime>((resolve) => {
+            const runtime = fakeRuntime()
+            runtimes.push(runtime)
+            pendingFactories.push(() => resolve(runtime))
+          }),
+      )
+      const bridge = new RawDecodeBridge({ runtimeFactory: factory })
+      const listener = vi.fn()
+      bridge.subscribeLifecycle(listener)
+      const controller = new AbortController()
+
+      const stale = bridge.prewarm(controller.signal)
+      await vi.waitFor(() => expect(pendingFactories).toHaveLength(1))
+      controller.abort()
+      await expect(stale).rejects.toThrow(/aborted/i)
+
+      const next = bridge.prewarm(new AbortController().signal)
+      await vi.waitFor(() => expect(pendingFactories).toHaveLength(2))
+      pendingFactories[1]!()
+      await next
+      pendingFactories[0]!()
+      await vi.waitFor(() =>
+        expect(runtimes[0]!.dispose).toHaveBeenCalledTimes(1),
+      )
+
+      expect(runtimes[0]!.init).not.toHaveBeenCalled()
+      expect(runtimes[1]!.init).toHaveBeenCalledTimes(1)
+      expect(runtimes[1]!.dispose).not.toHaveBeenCalled()
+      expect(bridge.getLifecycleSnapshot()).toEqual({
+        generation: 2,
+        workerAlive: true,
+        initialized: true,
+        lastTermination: null,
+      })
+      expect(
+        listener.mock.calls.every(([snapshot]) => snapshot.generation === 2),
+      ).toBe(true)
+      await bridge.terminate()
+      expect(runtimes[1]!.dispose).toHaveBeenCalledTimes(1)
+      expect(runtimes[0]!.dispose).toHaveBeenCalledTimes(1)
+    })
+
+    it('disposes a runtime that finishes starting after an explicit terminate', async () => {
+      const runtime = fakeRuntime()
+      const pendingFactory: { resolve: (() => void) | null } = {
+        resolve: null,
+      }
+      const bridge = new RawDecodeBridge({
+        runtimeFactory: () =>
+          new Promise<LumaRawRuntime>((resolve) => {
+            pendingFactory.resolve = () => resolve(runtime)
+          }),
+      })
+
+      const prewarm = bridge.prewarm(new AbortController().signal)
+      await vi.waitFor(() =>
+        expect(pendingFactory.resolve).toBeTypeOf('function'),
+      )
+      await bridge.terminate()
+      await expect(prewarm).rejects.toThrow(/terminated/i)
+      pendingFactory.resolve?.()
+      await vi.waitFor(() => expect(runtime.dispose).toHaveBeenCalledTimes(1))
+
+      expect(runtime.init).not.toHaveBeenCalled()
+      expect(bridge.getLifecycleSnapshot()).toEqual({
+        generation: 0,
+        workerAlive: false,
+        initialized: false,
+        lastTermination: null,
+      })
+    })
+
     it('never delivers a superseded snapshot after a subscriber terminates during notification', async () => {
       const runtime = fakeRuntime()
       const bridge = new RawDecodeBridge({ runtimeFactory: () => runtime })

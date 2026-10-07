@@ -6,6 +6,40 @@ interface FakeApi {
   echo: (value: number) => Promise<number>
 }
 
+interface DeferredStart {
+  generation: number
+  echo: ReturnType<typeof vi.fn>
+  terminate: ReturnType<typeof vi.fn>
+  resolve: () => void
+  reject: (error: unknown) => void
+}
+
+/**
+ * Every start is held until the test resolves or rejects it, so cancellation
+ * can be exercised while startup is still in flight.
+ */
+function createDeferredStartBridge() {
+  const starts: DeferredStart[] = []
+  const startWorker = vi.fn(
+    ({ generation }: { generation: number }) =>
+      new Promise<{ api: FakeApi; terminate: () => void }>(
+        (resolve, reject) => {
+          const echo = vi.fn(async (value: number) => value)
+          const terminate = vi.fn()
+          starts.push({
+            generation,
+            echo,
+            terminate,
+            resolve: () => resolve({ api: { echo }, terminate }),
+            reject,
+          })
+        },
+      ),
+  )
+  const bridge = new WorkerBridge<FakeApi>({ startWorker, idleMs: 10_000 })
+  return { bridge, startWorker, starts }
+}
+
 function createFakeBridge() {
   const calls: number[] = []
   const startWorker = vi.fn(() => {
@@ -301,6 +335,160 @@ describe('workerBridge', () => {
     expect(terminate).toHaveBeenCalledTimes(1)
   })
 
+  describe('asynchronous startup', () => {
+    it('rejects an aborted call before startup resolves and disposes the late worker unused', async () => {
+      const { bridge, starts } = createDeferredStartBridge()
+      const listener = vi.fn()
+      bridge.subscribeLifecycle(listener)
+      const c = new AbortController()
+      const p = bridge.call('echo', c.signal, 1)
+      await vi.waitFor(() => expect(starts).toHaveLength(1))
+
+      c.abort()
+      await expect(p).rejects.toThrow(/aborted/i)
+
+      starts[0]!.resolve()
+      await vi.waitFor(() =>
+        expect(starts[0]!.terminate).toHaveBeenCalledTimes(1),
+      )
+      expect(starts[0]!.echo).not.toHaveBeenCalled()
+      expect(listener).not.toHaveBeenCalled()
+      expect(bridge.getLifecycleSnapshot()).toEqual({
+        generation: 0,
+        alive: false,
+        lastTermination: null,
+      })
+    })
+
+    it('cancels an in-flight startup on explicit terminate', async () => {
+      const { bridge, starts } = createDeferredStartBridge()
+      const p = bridge.call('echo', new AbortController().signal, 1)
+      await vi.waitFor(() => expect(starts).toHaveLength(1))
+
+      await bridge.terminate()
+      await expect(p).rejects.toThrow(/terminated/i)
+
+      starts[0]!.resolve()
+      await vi.waitFor(() =>
+        expect(starts[0]!.terminate).toHaveBeenCalledTimes(1),
+      )
+      expect(starts[0]!.echo).not.toHaveBeenCalled()
+      expect(bridge.getLifecycleSnapshot().alive).toBe(false)
+    })
+
+    it('keeps a replacement worker when the obsolete startup resolves late', async () => {
+      const { bridge, startWorker, starts } = createDeferredStartBridge()
+      const cA = new AbortController()
+      const a = bridge.call('echo', cA.signal, 1)
+      await vi.waitFor(() => expect(starts).toHaveLength(1))
+      await bridge.terminate()
+      await expect(a).rejects.toThrow(/terminated/i)
+
+      const b = bridge.call('echo', new AbortController().signal, 2)
+      await vi.waitFor(() => expect(starts).toHaveLength(2))
+      expect(starts.map((start) => start.generation)).toEqual([1, 2])
+      starts[1]!.resolve()
+      await expect(b).resolves.toBe(2)
+
+      starts[0]!.resolve()
+      await vi.waitFor(() =>
+        expect(starts[0]!.terminate).toHaveBeenCalledTimes(1),
+      )
+      // The old call's signal is no longer wired to the bridge.
+      cA.abort()
+      await expect(
+        bridge.call('echo', new AbortController().signal, 3),
+      ).resolves.toBe(3)
+
+      expect(startWorker).toHaveBeenCalledTimes(2)
+      expect(starts[0]!.echo).not.toHaveBeenCalled()
+      expect(starts[1]!.terminate).not.toHaveBeenCalled()
+      expect(starts[1]!.echo).toHaveBeenCalledTimes(2)
+      expect(bridge.getLifecycleSnapshot()).toEqual({
+        generation: 2,
+        alive: true,
+        lastTermination: null,
+      })
+      await bridge.terminate()
+      expect(starts[1]!.terminate).toHaveBeenCalledTimes(1)
+      expect(starts[0]!.terminate).toHaveBeenCalledTimes(1)
+    })
+
+    it('lets the next queued call start a replacement while an aborted startup is still pending', async () => {
+      const { bridge, starts } = createDeferredStartBridge()
+      const cA = new AbortController()
+      const a = bridge.call('echo', cA.signal, 1)
+      const b = bridge.call('echo', new AbortController().signal, 2)
+      await vi.waitFor(() => expect(starts).toHaveLength(1))
+
+      cA.abort()
+      await expect(a).rejects.toThrow(/aborted/i)
+      await vi.waitFor(() => expect(starts).toHaveLength(2))
+      starts[1]!.resolve()
+      await expect(b).resolves.toBe(2)
+
+      starts[0]!.resolve()
+      await vi.waitFor(() =>
+        expect(starts[0]!.terminate).toHaveBeenCalledTimes(1),
+      )
+      expect(starts[1]!.terminate).not.toHaveBeenCalled()
+      expect(bridge.getLifecycleSnapshot()).toMatchObject({
+        generation: 2,
+        alive: true,
+      })
+      await bridge.terminate()
+    })
+
+    it('swallows a late startup failure after cancellation', async () => {
+      const { bridge, starts } = createDeferredStartBridge()
+      const c = new AbortController()
+      const p = bridge.call('echo', c.signal, 1)
+      await vi.waitFor(() => expect(starts).toHaveLength(1))
+      c.abort()
+      await expect(p).rejects.toThrow(/aborted/i)
+
+      starts[0]!.reject(new Error('late boom'))
+      await Promise.resolve()
+      expect(bridge.getLifecycleSnapshot().alive).toBe(false)
+
+      const next = bridge.call('echo', new AbortController().signal, 2)
+      await vi.waitFor(() => expect(starts).toHaveLength(2))
+      starts[1]!.resolve()
+      await expect(next).resolves.toBe(2)
+      await bridge.terminate()
+    })
+
+    it('retries startup on the next call after a startup failure', async () => {
+      const { bridge, starts } = createDeferredStartBridge()
+      const a = bridge.call('echo', new AbortController().signal, 1)
+      const b = bridge.call('echo', new AbortController().signal, 2)
+      await vi.waitFor(() => expect(starts).toHaveLength(1))
+      starts[0]!.reject(new Error('start failed'))
+      await expect(a).rejects.toThrow('start failed')
+
+      await vi.waitFor(() => expect(starts).toHaveLength(2))
+      starts[1]!.resolve()
+      await expect(b).resolves.toBe(2)
+      // A failed start still used up its generation.
+      expect(starts[1]!.generation).toBe(2)
+      await bridge.terminate()
+    })
+
+    it('does not invoke the operation when an observer terminates the worker it just published', async () => {
+      const { bridge, starts } = createDeferredStartBridge()
+      bridge.subscribeLifecycle((snapshot) => {
+        if (snapshot.alive) void bridge.terminate()
+      })
+      const p = bridge.call('echo', new AbortController().signal, 1)
+      await vi.waitFor(() => expect(starts).toHaveLength(1))
+      starts[0]!.resolve()
+
+      await expect(p).rejects.toThrow(/terminated/i)
+      expect(starts[0]!.echo).not.toHaveBeenCalled()
+      expect(starts[0]!.terminate).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('lifecycle observations', () => {
     it('starts with no live generation and a stable snapshot', () => {
       const { bridge } = createFakeBridge()
@@ -448,7 +636,9 @@ describe('workerBridge', () => {
       const received: unknown[] = []
       bridge.subscribeLifecycle((snapshot) => received.push(snapshot))
 
-      await bridge.call('echo', new AbortController().signal, 1)
+      await expect(
+        bridge.call('echo', new AbortController().signal, 1),
+      ).rejects.toThrow(/terminated/i)
 
       expect(bridge.getLifecycleSnapshot()).toEqual({
         generation: 1,

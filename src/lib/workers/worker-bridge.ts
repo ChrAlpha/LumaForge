@@ -4,7 +4,10 @@ export interface WorkerBridgeHandle<TApi> {
 }
 
 export interface WorkerBridgeStartContext {
-  /** Generation the started handle is published under. */
+  /**
+   * Generation the started handle is published under. Every start gets a fresh
+   * one, including starts that are cancelled before they publish.
+   */
   generation: number
 }
 
@@ -61,6 +64,14 @@ const INITIAL_LIFECYCLE_SNAPSHOT: WorkerBridgeLifecycleSnapshot = Object.freeze(
 
 const DEFAULT_IDLE_MS = 10_000
 
+function abortError() {
+  return new DOMException('Aborted', 'AbortError')
+}
+
+function terminatedError() {
+  return new DOMException('Worker bridge terminated', 'AbortError')
+}
+
 type WorkerBridgeMethod = (...args: any[]) => Promise<any>
 type WorkerBridgeArgs<
   TApi,
@@ -75,6 +86,9 @@ export class WorkerBridge<TApi extends object> {
   private _queue: Promise<unknown> = Promise.resolve()
   private _handle: WorkerBridgeHandle<TApi> | null = null
   private _lifecycle = INITIAL_LIFECYCLE_SNAPSHOT
+  private _lastStartedGeneration = 0
+  // The start a queued call is waiting on; terminating cancels it.
+  private _pendingStart: { cancel: () => void } | null = null
   private readonly _lifecycleListeners = new Set<
     WorkerBridgeLifecycleListener<WorkerBridgeLifecycleSnapshot>
   >()
@@ -147,6 +161,9 @@ export class WorkerBridge<TApi extends object> {
   private async _terminate(reason: WorkerBridgeTerminationReason) {
     this._cancelIdleTimer()
     this._leases.clear()
+    const pendingStart = this._pendingStart
+    this._pendingStart = null
+    pendingStart?.cancel()
     const handle = this._handle
     this._handle = null
     if (!handle) return
@@ -159,16 +176,70 @@ export class WorkerBridge<TApi extends object> {
     await handle.terminate()
   }
 
-  private async _startWorkerGeneration() {
-    const generation = this._lifecycle.generation + 1
-    const handle = await this._startWorker({ generation })
-    this._handle = handle
-    this._publishLifecycle({
-      generation,
-      alive: true,
-      lastTermination: this._lifecycle.lastTermination,
+  /**
+   * Starts and publishes a new generation. An abort of the calling signal or a
+   * termination while the start is in flight rejects the caller at once, so
+   * the queue moves on; the handle that arrives later belongs to an obsolete
+   * generation and is disposed exactly once without being published.
+   */
+  private _startWorkerGeneration(
+    signal: AbortSignal,
+  ): Promise<WorkerBridgeHandle<TApi>> {
+    this._lastStartedGeneration += 1
+    const generation = this._lastStartedGeneration
+    return new Promise((resolve, reject) => {
+      let settled = false
+      const settle = () => {
+        if (settled) return false
+        settled = true
+        signal.removeEventListener('abort', onAbort)
+        if (this._pendingStart === pendingStart) this._pendingStart = null
+        return true
+      }
+      const cancelWith = (error: DOMException) => {
+        if (settle()) reject(error)
+      }
+      const pendingStart = { cancel: () => cancelWith(terminatedError()) }
+      const onAbort = () => cancelWith(abortError())
+      this._pendingStart = pendingStart
+      signal.addEventListener('abort', onAbort, { once: true })
+
+      let started: Promise<WorkerBridgeHandle<TApi>>
+      try {
+        started = Promise.resolve(this._startWorker({ generation }))
+      } catch (error) {
+        started = Promise.reject(error)
+      }
+      started.then(
+        (handle) => {
+          if (!settle()) {
+            void this._disposeObsolete(handle)
+            return
+          }
+          this._handle = handle
+          this._publishLifecycle({
+            generation,
+            alive: true,
+            lastTermination: this._lifecycle.lastTermination,
+          })
+          resolve(handle)
+        },
+        (error: unknown) => {
+          if (settle()) reject(error)
+        },
+      )
     })
-    return handle
+  }
+
+  private async _disposeObsolete(handle: WorkerBridgeHandle<TApi>) {
+    try {
+      await handle.terminate()
+    } catch (error) {
+      console.error(
+        'Worker bridge failed to dispose an obsolete worker.',
+        error,
+      )
+    }
   }
 
   private _publishLifecycle(snapshot: WorkerBridgeLifecycleSnapshot) {
@@ -181,13 +252,19 @@ export class WorkerBridge<TApi extends object> {
     invoke: (handle: WorkerBridgeHandle<TApi>) => Promise<T>,
   ): Promise<T> {
     const run = async (): Promise<T> => {
-      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      if (signal.aborted) throw abortError()
       this._cancelIdleTimer()
       this._activeCalls += 1
       try {
-        const handle = this._handle ?? (await this._startWorkerGeneration())
+        const handle =
+          this._handle ?? (await this._startWorkerGeneration(signal))
+        // Publishing a start notifies observers, which may abort the call or
+        // terminate the worker before the operation runs.
+        if (signal.aborted) throw abortError()
+        if (this._handle !== handle) throw terminatedError()
+        // An abort only stops the worker this call is running on.
         const onAbort = () => {
-          void this._terminate('abort')
+          if (this._handle === handle) void this._terminate('abort')
         }
         signal.addEventListener('abort', onAbort, { once: true })
         try {
