@@ -541,7 +541,11 @@ describe('runFullResolutionExport with a geometry', () => {
 
   it('delivers the frame the engine planner plans and reads inside the source', async () => {
     const planned = planExportGeometry(rotated, source)
-    expect(planned.outputWidth).toBeLessThan(source.width)
+    // The rotation's constrained crop of the 64x48 frame, as a literal.
+    expect({
+      width: planned.outputWidth,
+      height: planned.outputHeight,
+    }).toEqual({ width: 60, height: 45 })
     const session = makeFakeSession({ capability })
     const frames: unknown[] = []
     const outputPath = join(dir, 'exports', 'final.jpg')
@@ -569,21 +573,27 @@ describe('runFullResolutionExport with a geometry', () => {
       expect(rect.y + rect.height).toBeLessThanOrEqual(source.height)
     }
     await result.commit()
-    expect(sofDimensions(await readFile(outputPath))).toEqual(delivered)
+    expect(sofDimensions(await readFile(outputPath))).toEqual({
+      width: 60,
+      height: 45,
+    })
   })
 
   it('reports the decoded frame as delivered without a geometry', async () => {
     const session = makeFakeSession({ capability })
     const frames: unknown[] = []
-    const result = await runWithSession(
-      session,
-      join(dir, 'exports', 'final.jpg'),
-      { verifyFrame: (frame) => void frames.push(frame) },
-    )
+    const outputPath = join(dir, 'exports', 'final.jpg')
+    const result = await runWithSession(session, outputPath, {
+      verifyFrame: (frame) => void frames.push(frame),
+    })
     expect(frames).toEqual([{ source, output: source }])
     expect(result.source).toEqual(source)
     expect({ width: result.width, height: result.height }).toEqual(source)
-    await result.discard()
+    await result.commit()
+    expect(sofDimensions(await readFile(outputPath))).toEqual({
+      width: 64,
+      height: 48,
+    })
   })
 
   it('refuses a folding geometry before the processed-window export begins', async () => {
