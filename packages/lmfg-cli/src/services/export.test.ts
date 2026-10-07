@@ -3,19 +3,27 @@ import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 
+import type {
+  LumaRawExportCapability,
+  LumaRawProcessedWindow,
+  LumaRawProcessedWindowRequest,
+} from '@lumaforge/luma-raw-runtime'
 import {
   afterAll,
   afterEach,
   beforeAll,
   beforeEach,
+  describe,
   expect,
   it,
   vi,
 } from 'vitest'
 
+import type { LmfgRuntime } from '../runtime/node-runtime'
 import { createLmfgRuntime } from '../runtime/node-runtime'
+import type { LoadedSource } from '../runtime/source-loader'
 import { loadSourceFile } from '../runtime/source-loader'
 import { parseRenderParams } from '../schemas/params'
 import {
@@ -240,4 +248,193 @@ describeWithFixture('runFullResolutionExport', () => {
       runtime.dispose()
     }
   }, 120_000)
+})
+
+function makeCapability(): LumaRawExportCapability {
+  return {
+    supported: true,
+    strategy: 'libraw-processed-window',
+    width: 4,
+    height: 4,
+    rawWidth: 4,
+    rawHeight: 4,
+    visibleCrop: { x: 0, y: 0, width: 4, height: 4 },
+    cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+    blackLevel: 0,
+    whiteLevel: 255,
+    orientation: { code: 1, supported: true },
+    color: {
+      workingSpace: 'linear-prophoto-rgb',
+      librawOutputColor: 'prophoto',
+      gamma: 'linear',
+      cameraWhiteBalanceAppliedByRuntime: true,
+      cameraMatrixAppliedByRuntime: true,
+    },
+    sensor: {
+      layout: 'bayer',
+      colorCount: 3,
+      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+      phaseIsWindowLocal: false,
+    },
+    windows: { librawProcessed: true, rawMosaic: false },
+    diagnostics: {
+      hasRawImage: true,
+      hasColor3Image: false,
+      hasColor4Image: false,
+      hasXTransTable: false,
+    },
+    reasons: [],
+  }
+}
+
+function makeProcessedWindow(
+  request: LumaRawProcessedWindowRequest,
+): LumaRawProcessedWindow {
+  const { width, height } = request.outputRect
+  return {
+    rect: request.outputRect,
+    workingSpace: 'linear-prophoto-rgb',
+    data: new Uint16Array(width * height * 3).fill(32768),
+    width,
+    height,
+    stride: width * 3,
+    normalized: false,
+    orientationApplied: true,
+    colorApplied: true,
+    warnings: [],
+  }
+}
+
+type FakeSessionOptions = {
+  begin?: () => Promise<unknown>
+  read?: (
+    request: LumaRawProcessedWindowRequest,
+  ) => Promise<LumaRawProcessedWindow>
+  end?: () => Promise<{ ended: true }>
+}
+
+function makeFakeSession(options: FakeSessionOptions = {}) {
+  return {
+    probe: null,
+    probeExportCapability: vi.fn(async () => makeCapability()),
+    beginProcessedWindowExport: vi.fn(
+      options.begin ?? (async () => ({ active: true })),
+    ),
+    readProcessedWindow: vi.fn(
+      options.read ?? (async (request) => makeProcessedWindow(request)),
+    ),
+    endProcessedWindowExport: vi.fn(
+      options.end ?? (async () => ({ ended: true as const })),
+    ),
+    dispose: vi.fn(),
+  }
+}
+
+async function listFiles(root: string): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true, recursive: true })
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(root, join(entry.parentPath, entry.name)))
+    .sort()
+}
+
+function runWithSession(
+  session: ReturnType<typeof makeFakeSession>,
+  outputPath: string,
+) {
+  const runtime = {
+    memoryProfile: 'desktop',
+    raw: async () => ({ openSession: async () => session }),
+    jpeg: async () => {
+      throw new Error('unused')
+    },
+    dispose: () => undefined,
+  } as unknown as LmfgRuntime
+  const source = {
+    input: { kind: 'bytes', bytes: new Uint8Array(0) },
+  } as unknown as LoadedSource
+  return runFullResolutionExport({
+    runtime,
+    source,
+    params: parseRenderParams({}),
+    lut: null,
+    exposure: { ev: 0, multiplier: 1, source: 'identity' },
+    quality: 90,
+    outputPath,
+  })
+}
+
+describe('runFullResolutionExport processed-window lifecycle', () => {
+  it('returns an unpublished JPEG and ends the processed-window export once', async () => {
+    const session = makeFakeSession()
+    const outputPath = join(dir, 'exports', 'final.jpg')
+    const result = await runWithSession(session, outputPath)
+
+    expect(session.beginProcessedWindowExport).toHaveBeenCalledTimes(1)
+    expect(session.endProcessedWindowExport).toHaveBeenCalledTimes(1)
+    expect(session.dispose).toHaveBeenCalledTimes(1)
+    expect(result.width).toBe(4)
+    expect(result.height).toBe(4)
+    const files = await listFiles(dir)
+    expect(files).toHaveLength(1)
+    expect(files[0]).toMatch(/^exports\/final\.jpg\.\d+\.[0-9a-f]{8}\.tmp$/)
+
+    await result.commit()
+    expect(await listFiles(dir)).toEqual(['exports/final.jpg'])
+    const jpeg = await readFile(outputPath)
+    expect(createHash('sha256').update(jpeg).digest('hex')).toBe(result.sha256)
+  })
+
+  it('rejects with the begin failure without ending or writing anything', async () => {
+    const beginError = new Error('BEGIN_FAILED')
+    const session = makeFakeSession({ begin: () => Promise.reject(beginError) })
+
+    await expect(
+      runWithSession(session, join(dir, 'exports', 'final.jpg')),
+    ).rejects.toBe(beginError)
+    expect(session.readProcessedWindow).not.toHaveBeenCalled()
+    expect(session.endProcessedWindowExport).not.toHaveBeenCalled()
+    expect(session.dispose).toHaveBeenCalledTimes(1)
+    expect(await listFiles(dir)).toEqual([])
+  })
+
+  it('rejects with the render failure and still ends the processed-window export', async () => {
+    const renderError = new Error('WINDOW_READ_FAILED')
+    const session = makeFakeSession({ read: () => Promise.reject(renderError) })
+
+    await expect(
+      runWithSession(session, join(dir, 'exports', 'final.jpg')),
+    ).rejects.toBe(renderError)
+    expect(session.endProcessedWindowExport).toHaveBeenCalledTimes(1)
+    expect(session.dispose).toHaveBeenCalledTimes(1)
+    expect(await listFiles(dir)).toEqual([])
+  })
+
+  it('rejects with the cleanup failure and discards the encoded JPEG', async () => {
+    const cleanupError = new Error('END_FAILED')
+    const session = makeFakeSession({ end: () => Promise.reject(cleanupError) })
+
+    await expect(
+      runWithSession(session, join(dir, 'exports', 'final.jpg')),
+    ).rejects.toBe(cleanupError)
+    expect(session.readProcessedWindow).toHaveBeenCalled()
+    expect(session.endProcessedWindowExport).toHaveBeenCalledTimes(1)
+    expect(session.dispose).toHaveBeenCalledTimes(1)
+    expect(await listFiles(dir)).toEqual([])
+  })
+
+  it('keeps the render failure when the cleanup also fails', async () => {
+    const renderError = new Error('WINDOW_READ_FAILED')
+    const session = makeFakeSession({
+      read: () => Promise.reject(renderError),
+      end: () => Promise.reject(new Error('END_FAILED')),
+    })
+
+    await expect(
+      runWithSession(session, join(dir, 'exports', 'final.jpg')),
+    ).rejects.toBe(renderError)
+    expect(session.endProcessedWindowExport).toHaveBeenCalledTimes(1)
+    expect(session.dispose).toHaveBeenCalledTimes(1)
+    expect(await listFiles(dir)).toEqual([])
+  })
 })

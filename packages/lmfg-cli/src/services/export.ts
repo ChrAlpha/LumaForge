@@ -126,44 +126,62 @@ export async function runFullResolutionExport(
       metadata: session.probe,
     })
     try {
-      await runFullResolutionJpegExport({
-        capability,
+      // The processed-window export must end cleanly for the JPEG to count:
+      // a failed end refuses the export, but never replaces a render failure.
+      let failure: { error: unknown } | null = null
+      try {
+        await runFullResolutionJpegExport({
+          capability,
+          graph,
+          readProcessedWindow: session.readProcessedWindow,
+          quality: percentToQuality(input.quality),
+          preferredRows: input.preferredRows ?? DEFAULT_EXPORT_STRIP_ROWS,
+          concurrency: 1,
+          jpegSink: sink,
+          signal: input.signal,
+          onProgress: (progress) => {
+            strips = progress.totalStrips
+            input.onProgress?.(progress)
+          },
+        })
+      } catch (error) {
+        failure = { error }
+      }
+      try {
+        await session.endProcessedWindowExport?.()
+      } catch (error) {
+        failure ??= { error }
+      }
+      if (failure) throw failure.error
+      timings.export_ms = performance.now() - exportStart
+      const streamed = sink.result()
+      if (!streamed) {
+        throw new LmfgError('export.refused', {
+          message: 'The export finished without publishing a JPEG file.',
+        })
+      }
+      timings.total_ms = performance.now() - total
+      return {
+        path: streamed.path,
+        byteLength: streamed.byteLength,
+        sha256: streamed.sha256,
+        commit: streamed.commit,
+        discard: streamed.discard,
+        width: capability.width,
+        height: capability.height,
         graph,
-        readProcessedWindow: session.readProcessedWindow,
-        quality: percentToQuality(input.quality),
-        preferredRows: input.preferredRows ?? DEFAULT_EXPORT_STRIP_ROWS,
-        concurrency: 1,
-        jpegSink: sink,
-        signal: input.signal,
-        onProgress: (progress) => {
-          strips = progress.totalStrips
-          input.onProgress?.(progress)
-        },
-      })
-    } finally {
-      await session.endProcessedWindowExport?.().catch(() => undefined)
-    }
-    timings.export_ms = performance.now() - exportStart
-    const streamed = sink.result()
-    if (!streamed) {
-      throw new LmfgError('export.refused', {
-        message: 'The export finished without publishing a JPEG file.',
-      })
-    }
-    timings.total_ms = performance.now() - total
-    return {
-      path: streamed.path,
-      byteLength: streamed.byteLength,
-      sha256: streamed.sha256,
-      commit: streamed.commit,
-      discard: streamed.discard,
-      width: capability.width,
-      height: capability.height,
-      graph,
-      exposure,
-      strips,
-      timings,
-      resource: captureResourceUsage(),
+        exposure,
+        strips,
+        timings,
+        resource: captureResourceUsage(),
+      }
+    } catch (error) {
+      // A rejected export never leaves an encoded temp file behind.
+      await sink
+        .result()
+        ?.discard()
+        .catch(() => undefined)
+      throw error
     }
   } finally {
     session.dispose()
