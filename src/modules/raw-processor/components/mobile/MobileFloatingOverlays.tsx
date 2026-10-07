@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
-import type { ManualTransform } from '~/modules/transform-demo/transform-types'
+import type { ManualTransform } from '~/lib/transform/transform-types'
 
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'

@@ -4,7 +4,7 @@ import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 
 import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
-import type { ManualTransform } from '~/modules/transform-demo/transform-types'
+import type { ManualTransform } from '~/lib/transform/transform-types'
 
 import type { ColorValue } from '../color-fields'
 import { COLOR_FIELDS, formatColorValueShort } from '../color-fields'

@@ -2,7 +2,7 @@ import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 
 import { COLOR_NEUTRAL } from '../color-fields'
 import { TONE_NEUTRAL } from '../tone-fields'

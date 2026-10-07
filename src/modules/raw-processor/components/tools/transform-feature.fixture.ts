@@ -1,7 +1,7 @@
 import { vi } from 'vitest'
 
-import { identityMatrix } from '~/modules/transform-demo/geometry/matrix'
-import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
+import { identityMatrix } from '~/lib/transform/geometry/matrix'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 

@@ -6,7 +6,7 @@ import { useId, useState } from 'react'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
-import type { ManualTransform } from '~/modules/transform-demo/transform-types'
+import type { ManualTransform } from '~/lib/transform/transform-types'
 
 import { DOCK_SPRING } from '../../motion'
 import type { ColorValue } from '../color-fields'

@@ -5,7 +5,7 @@ import { useEffect } from 'react'
 import { Checkbox } from '~/components/ui/checkbox'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
-import type { UprightMode } from '~/modules/transform-demo/geometry/types'
+import type { UprightMode } from '~/lib/transform/geometry/types'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { TransformGroup } from '../transform-fields'

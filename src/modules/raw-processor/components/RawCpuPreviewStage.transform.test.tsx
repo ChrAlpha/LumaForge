@@ -10,14 +10,14 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
-import { identityMatrix } from '~/modules/transform-demo/geometry/matrix'
-import type { UprightAnalysis } from '~/modules/transform-demo/geometry/types'
-import type { PreviewSource } from '~/modules/transform-demo/preview-types'
-import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
+import { identityMatrix } from '~/lib/transform/geometry/matrix'
+import type { UprightAnalysis } from '~/lib/transform/geometry/types'
+import type { PreviewSource } from '~/lib/transform/preview-types'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 import type {
   TransformWorkerRequest,
   TransformWorkerResponse,
-} from '~/modules/transform-demo/worker-protocol'
+} from '~/lib/transform/worker-protocol'
 
 import { useRawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
