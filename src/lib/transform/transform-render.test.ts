@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { applyMatrix } from '@lumaforge/render-engine/geometry'
@@ -256,6 +256,23 @@ describe('production transform renderer ownership', () => {
     for (const file of sources.filter((path) => path.endsWith('.ts'))) {
       const source = readFileSync(resolve(process.cwd(), file), 'utf8')
       expect(source, file).not.toMatch(/from\s+['"](?:react|react-dom)[/'"]/)
+    }
+  })
+
+  it('keeps the only renderer, worker, and canvas outside the demo module', () => {
+    for (const file of [
+      'transform-render.ts',
+      'transform-render.test.ts',
+      'transform-types.ts',
+      'preview-types.ts',
+      'worker-protocol.ts',
+      'transform.worker.ts',
+      'TransformCanvas.tsx',
+    ]) {
+      expect(
+        existsSync(resolve(process.cwd(), 'src/modules/transform-demo', file)),
+        file,
+      ).toBe(false)
     }
   })
 })

@@ -57,8 +57,8 @@ image-editor assumptions.
   `src/modules/landing/content.ts` (typed key lists and the real
   supported-format count), module CSS, and colocated tests.
 - `src/pages/(main)/transform-demo.tsx` still ships the noindex
-  `/transform-demo` route on top of `src/modules/transform-demo`, which `/raw`
-  Transform also depends on (see Retained And Scheduled Slices).
+  `/transform-demo` route on top of `src/modules/transform-demo`. `/raw`
+  imports nothing from that module (see Retained And Scheduled Slices).
 - `src/providers/root-providers.tsx` owns `LazyMotion`, React Query, Jotai,
   i18n, error boundary, router stability, settings sync, context menu, and
   toasts. Preserve provider order unless a concrete bug requires changing it.
@@ -310,14 +310,17 @@ Close the extraction:
 
 These are owner decisions. They override cleanup advice that says otherwise.
 
-- Transform: `/raw` Transform is built on `src/modules/transform-demo`.
-  `src/modules/raw-processor/hooks/useRawTransformFeature.ts` wraps
-  `src/modules/transform-demo/useTransformDemo.ts`, the preview overlay renders
-  through its `TransformCanvas` and worker, and the Transform types and upright
-  geometry come from that module. Treat it as production code. Its useful
-  code, tests, and fixtures move to a production home later; only then are the
-  `/transform-demo` route and the demo module deleted. `lmfg` params carry no
-  geometry, and `lmfg` replay refuses a manifest that records one.
+- Transform: `/raw` Transform lives in production code. Types, upright
+  geometry, the preview renderer, and its worker are in `src/lib/transform`;
+  `src/modules/raw-processor/hooks/useRawTransformFeature.ts` drives
+  `src/modules/raw-processor/hooks/useTransformPreview.ts`, and the preview
+  overlay renders through
+  `src/modules/raw-processor/components/TransformCanvas.tsx`.
+  `src/modules/transform-demo` keeps only
+  the temporary `/transform-demo` page (controls, sample, image input,
+  download) on top of those production assets; the route and the demo module
+  are deleted later. `lmfg` params carry no geometry, and `lmfg` replay
+  refuses a manifest that records one.
 - DCP calibration: the app slice (stage hook, service, atoms, and the
   calibration catalog and DCP params parsers) is removed, and the workflow
   applies no camera calibration. The LUT catalog parser rejects calibration
