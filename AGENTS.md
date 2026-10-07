@@ -281,8 +281,8 @@ only by finishing the move it belongs to:
 - `lmfg_image_read` and `lmfg_export_detail` read the CLI workspace layout by
   convention instead of through `packages/lmfg-cli/src/workspace/paths.ts`.
 
-Deprecated public API. These stay exported and compiling under the deprecation
-window; no app or CLI code may start using them again:
+Deprecated public API. These are still exported until they are retired; no app
+or CLI code may start using them again:
 
 - `@lumaforge/render-engine`: `ExportCheckpointManifest` and its parts
   (`packages/render-engine/src/manifest/export-checkpoint.ts`; the app writes
@@ -301,12 +301,12 @@ Close the extraction:
   change: switch every consumer to the owner's export and delete the old copy.
   Do not leave type-only mirrors, "keep these in step" comments, or app-side
   forwarding shims behind.
-- The one exception is the exported API of the published packages
-  (`@lumaforge/render-engine`, `@lumaforge/luma-raw-runtime`,
-  `@lumaforge/luma-color-runtime`, `@lumaforge/luma-jpeg-runtime`). Never
-  remove or rename an exported symbol: mark it `@deprecated`, keep it compiling
-  (a forwarding export is fine), move internal consumers off it, and record the
-  deprecation in that package's CHANGELOG.
+- This holds for the published packages (`@lumaforge/render-engine`,
+  `@lumaforge/luma-raw-runtime`, `@lumaforge/luma-color-runtime`,
+  `@lumaforge/luma-jpeg-runtime`) too: breaking changes are allowed. When a
+  move replaces an exported symbol, delete the old one in the same change, check
+  every consumer in the repository, and record it under `### Breaking` in that
+  package's CHANGELOG. Do not add `@deprecated` forwarding exports.
 
 ## Retained And Scheduled Slices
 
