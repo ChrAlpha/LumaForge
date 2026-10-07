@@ -21,7 +21,6 @@ import {
   resolveColorGamutId,
   resolveTransferFunctionId,
   resolveUnsupportedLUTOutputReason,
-  toCompatInputProfile,
   toLUTData,
   validateLUT,
 } from '@lumaforge/luma-color-runtime'
@@ -279,11 +278,7 @@ export function applyContractSelection(
   return {
     ok: true,
     profile,
-    parsed: {
-      ...parsed,
-      profileResolution,
-      inputProfile: toCompatInputProfile(profileResolution),
-    },
+    parsed: { ...parsed, profileResolution },
   }
 }
 

@@ -131,6 +131,135 @@ describe('lut service', () => {
       code: 'file.not_found',
     })
   })
+  it('carries the confirmed metadata contract into the LUT data it renders', async () => {
+    await writeFile(
+      join(dir, 'vlog.cube'),
+      cube([
+        'TITLE "VLog to 709"',
+        '# LUMAFORGE_ROLE=combined-look-output',
+        '# LUMAFORGE_INPUT_PROFILE=panasonic-vgamut-vlog',
+        '# LUMAFORGE_OUTPUT_GAMUT=srgb-rec709',
+        '# LUMAFORGE_OUTPUT_TRANSFER=bt709',
+        '# LUMAFORGE_OUTPUT_RANGE=full',
+      ]),
+    )
+    const loaded = await loadLutFile('vlog.cube', dir)
+    const resolved = resolveLutContract(loaded)
+    expect(resolved.profile).toMatchObject({
+      id: 'panasonic-vgamut-vlog',
+      inputGamut: 'v-gamut',
+      inputTransfer: 'v-log',
+    })
+    expect(resolved.lutData.profileResolution).toEqual({
+      kind: 'confirmed',
+      confidence: 'metadata',
+      profile: resolved.profile,
+    })
+  })
+
+  it('renders an explicit contract over the metadata contract', async () => {
+    await writeFile(
+      join(dir, 'display.cube'),
+      cube([
+        'TITLE "Display look"',
+        '# LUMAFORGE_INPUT_PROFILE=display-srgb',
+        '# LUMAFORGE_ROLE=display-look',
+      ]),
+    )
+    const loaded = await loadLutFile('display.cube', dir)
+    expect(resolveLutContract(loaded).lutData.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'metadata',
+    })
+
+    const resolved = resolveLutContract(loaded, {
+      role: 'combined-look-output',
+      input_profile: 'panasonic-vgamut-vlog',
+      output_gamut: 'srgb-rec709',
+      output_transfer: 'bt709',
+      output_range: 'full',
+    })
+    expect(resolved.source).toBe('params')
+    expect(resolved.profile).toMatchObject({
+      id: 'panasonic-vgamut-vlog',
+      role: 'combined-look-output',
+      inputGamut: 'v-gamut',
+      inputTransfer: 'v-log',
+      outputGamut: 'srgb-rec709',
+      outputTransfer: 'bt709',
+      outputRange: 'full',
+    })
+    expect(resolved.parsed.profileResolution).toEqual({
+      kind: 'confirmed',
+      confidence: 'user',
+      profile: resolved.profile,
+    })
+    expect(resolved.lutData.profileResolution).toEqual(
+      resolved.parsed.profileResolution,
+    )
+    expect(resolved.identity.input_contract).toEqual({
+      gamut: 'v-gamut',
+      transfer: 'v-log',
+      range: 'full',
+    })
+  })
+
+  it('names explicit contracts by canonical registry profile IDs', async () => {
+    await writeFile(join(dir, 'x.cube'), cube(['TITLE "x"']))
+    const loaded = await loadLutFile('x.cube', dir)
+    const output = {
+      output_gamut: 'srgb-rec709',
+      output_transfer: 'bt709',
+      output_range: 'full',
+    } as const
+    const registered = resolveLutContract(loaded, {
+      role: 'combined-look-output',
+      input_gamut: 's-gamut3-cine',
+      input_transfer: 's-log3',
+      input_range: 'full',
+      ...output,
+    })
+    expect(registered.profile.id).toBe('sony-sgamut3cine-slog3')
+    expect(registered.lutData.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'user',
+      profile: { id: 'sony-sgamut3cine-slog3', inputTransfer: 's-log3' },
+    })
+
+    const unregistered = resolveLutContract(loaded, {
+      role: 'combined-look-output',
+      input_gamut: 'v-gamut',
+      input_transfer: 's-log3',
+      input_range: 'full',
+      ...output,
+    })
+    expect(unregistered.profile).toMatchObject({
+      id: 'v-gamut-s-log3',
+      inputGamut: 'v-gamut',
+      inputTransfer: 's-log3',
+    })
+    expect(unregistered.lutData.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      profile: { id: 'v-gamut-s-log3' },
+    })
+  })
+
+  it('refuses a LUT whose metadata targets an unsupported output space', async () => {
+    await writeFile(
+      join(dir, 'cineon.cube'),
+      cube(['TITLE "Sony S-Log3 to Cineon"']),
+    )
+    const loaded = await loadLutFile('cineon.cube', dir)
+    expect(loaded.parsed.profileResolution.kind).toBe('unsupported-output')
+    expect(() => resolveLutContract(loaded)).toThrow(
+      expect.objectContaining({ code: 'lut.contract.unsupported_output' }),
+    )
+    expect(inferContract(loaded)).toMatchObject({
+      complete: false,
+      contract: null,
+    })
+  })
+
   it('never records an unspecified range and replays unknown ranges from the descriptor', async () => {
     await writeFile(join(dir, 'vlog.cube'), cube(['TITLE "V-Log to Rec709"']))
     const loaded = await loadLutFile('vlog.cube', dir)
