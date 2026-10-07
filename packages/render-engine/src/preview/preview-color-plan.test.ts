@@ -8,9 +8,11 @@ import type {
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
 import {
+  generateIdentityLUT,
   NEUTRAL_USER_COLOR_INTENT,
   pickLookSelection,
   resolveExportColorGraph,
+  toLUTData,
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
@@ -75,27 +77,9 @@ function confirmed(p: LUTColorProfile): LUTContractResolution {
   return { kind: 'confirmed', profile: p, confidence: 'user' }
 }
 
+/** A 2-point identity LUT whose contract is `profileResolution`. */
 function lut(profileResolution: LUTContractResolution): LUTData {
-  const size = 2
-  const data = new Float32Array(size ** 3 * 3)
-  for (let b = 0; b < size; b += 1) {
-    for (let g = 0; g < size; g += 1) {
-      for (let r = 0; r < size; r += 1) {
-        const i = ((b * size + g) * size + r) * 3
-        data[i] = r
-        data[i + 1] = g
-        data[i + 2] = b
-      }
-    }
-  }
-  return {
-    size,
-    data,
-    domainMin: [0, 0, 0],
-    domainMax: [1, 1, 1],
-    inputProfile: 'v-log',
-    profileResolution,
-  }
+  return { ...toLUTData(generateIdentityLUT(2)), profileResolution }
 }
 
 function deepFreeze<T>(value: T): T {
@@ -511,4 +495,179 @@ describe('resolvePreviewColorPlan: builtin presets', () => {
       )
     }
   })
+})
+
+describe('resolvePreviewColorPlan: selections and reasons per executor', () => {
+  const LEGAL = lut(confirmed(profile()))
+  const CINEMATIC: ColorGraphIntent = {
+    ...ADJUSTED,
+    styleKind: 'builtin',
+    builtinPreset: 'cinematic',
+  }
+  const CASES: Array<{
+    label: string
+    intent: ColorGraphIntent
+    lut: LUTData | null
+    variant?: 'neutral'
+    expected: Record<
+      PreviewColorExecutor,
+      {
+        effective: PreviewColorPlan['effective']['styleKind']
+        reason: PreviewColorPlanReason | null
+        drawsLut: boolean
+        histogram: PreviewColorPlan['histogram']['kind']
+      }
+    >
+  }> = [
+    {
+      label: 'a legal custom LUT',
+      intent: ADJUSTED,
+      lut: LEGAL,
+      expected: {
+        webgpu: {
+          effective: 'custom',
+          reason: null,
+          drawsLut: true,
+          histogram: 'graph',
+        },
+        cpu: {
+          effective: 'custom',
+          reason: null,
+          drawsLut: true,
+          histogram: 'graph',
+        },
+      },
+    },
+    {
+      label: 'an unsupported LUT output',
+      intent: ADJUSTED,
+      lut: lut({ kind: 'unsupported-output', recommendations: [] }),
+      expected: {
+        webgpu: {
+          effective: 'none',
+          reason: 'lut-output-unsupported',
+          drawsLut: false,
+          histogram: 'graph',
+        },
+        cpu: {
+          effective: 'none',
+          reason: 'lut-output-unsupported',
+          drawsLut: false,
+          histogram: 'graph',
+        },
+      },
+    },
+    {
+      label: 'an unloaded custom LUT',
+      intent: ADJUSTED,
+      lut: null,
+      expected: {
+        webgpu: {
+          effective: 'none',
+          reason: 'lut-not-loaded',
+          drawsLut: false,
+          histogram: 'graph',
+        },
+        cpu: {
+          effective: 'none',
+          reason: 'lut-not-loaded',
+          drawsLut: false,
+          histogram: 'graph',
+        },
+      },
+    },
+    {
+      label: 'a builtin preset',
+      intent: CINEMATIC,
+      lut: null,
+      expected: {
+        webgpu: {
+          effective: 'builtin',
+          reason: null,
+          drawsLut: false,
+          histogram: 'unrepresented',
+        },
+        cpu: {
+          effective: 'none',
+          reason: 'builtin-no-ts-executor',
+          drawsLut: false,
+          histogram: 'graph',
+        },
+      },
+    },
+    {
+      label: 'a builtin style without a preset',
+      intent: { ...CINEMATIC, builtinPreset: null },
+      lut: null,
+      expected: {
+        webgpu: {
+          effective: 'none',
+          reason: 'builtin-preset-missing',
+          drawsLut: false,
+          histogram: 'graph',
+        },
+        cpu: {
+          effective: 'none',
+          reason: 'builtin-preset-missing',
+          drawsLut: false,
+          histogram: 'graph',
+        },
+      },
+    },
+    {
+      label: 'no look',
+      intent: { ...ADJUSTED, styleKind: 'none' },
+      lut: LEGAL,
+      expected: {
+        webgpu: {
+          effective: 'none',
+          reason: null,
+          drawsLut: false,
+          histogram: 'graph',
+        },
+        cpu: {
+          effective: 'none',
+          reason: null,
+          drawsLut: false,
+          histogram: 'graph',
+        },
+      },
+    },
+    {
+      label: 'the neutral variant over a builtin preset',
+      intent: CINEMATIC,
+      lut: null,
+      variant: 'neutral',
+      expected: {
+        webgpu: {
+          effective: 'none',
+          reason: 'neutral-variant',
+          drawsLut: false,
+          histogram: 'graph',
+        },
+        cpu: {
+          effective: 'none',
+          reason: 'neutral-variant',
+          drawsLut: false,
+          histogram: 'graph',
+        },
+      },
+    },
+  ]
+
+  for (const { label, intent, lut: lutData, variant, expected } of CASES) {
+    for (const executor of EXECUTORS) {
+      it(`plans ${label} on ${executor}`, () => {
+        const result = plan(intent, lutData, executor, variant)
+
+        expect(result.selected).toEqual(pickLookSelection(intent))
+        expect({
+          effective: result.effective.styleKind,
+          reason: result.reason,
+          drawsLut: result.lut !== null,
+          histogram: result.histogram.kind,
+        }).toEqual(expected[executor])
+      })
+    }
+  }
 })
