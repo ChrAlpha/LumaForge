@@ -1,12 +1,7 @@
-import type {
-  ColorGraphIntentSource,
-  RawRenderExposure,
-  SupportedExportColorGraphDescriptor,
-} from '@lumaforge/luma-color-runtime'
+import type { SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 import type { ExportOutputResult } from '@lumaforge/render-engine/export'
 import { materializeOutputBlob } from '@lumaforge/render-engine/export'
 import type {
-  GeometryParams,
   PolicyChoice,
   RenderEnvironment,
   RenderManifest,
@@ -24,15 +19,17 @@ import {
 } from './export-manifest'
 
 export type BuildExportManifestInput = {
+  /**
+   * The result to seal. Its identity is the request it answers: the color
+   * intent, RAW render exposure and geometry the manifest records come from
+   * there, never from state read while sealing.
+   */
   result: ExportResult
-  sourceFile: Blob & { name: string }
+  /** The source file the identity names, read again only to hash it. */
+  sourceFile: File
   graph: SupportedExportColorGraphDescriptor
-  params: ColorGraphIntentSource
-  rawRenderExposure: RawRenderExposure
   /** Decoded frame of the source RAW; differs from the output under geometry. */
   sourceDimensions?: { width: number; height: number }
-  /** Present only when a geometry was applied at full resolution. */
-  geometry?: GeometryParams
   style: StyleAsset | null | undefined
   /** JPEG quality on the 0..1 scale used by the export job. */
   quality: number
@@ -76,6 +73,24 @@ async function resolveOutputSha256(
 export async function buildManifestForExportResult(
   input: BuildExportManifestInput,
 ): Promise<RenderManifest> {
+  const { identity } = input.result
+  if (!identity?.rawRenderExposure) {
+    throw new ExportManifestUnavailableError(
+      'internal',
+      'The export result does not record the request it answers.',
+    )
+  }
+  const { source } = identity
+  if (
+    input.sourceFile.name !== source.name ||
+    input.sourceFile.size !== source.size ||
+    input.sourceFile.lastModified !== source.lastModified
+  ) {
+    throw new ExportManifestUnavailableError(
+      'internal',
+      'The source file is not the one the export result was rendered from.',
+    )
+  }
   const lut = lutIdentityForStyle(input.style)
   if (input.style?.kind === 'custom' && !lut.identity) {
     throw new ExportManifestUnavailableError(
@@ -89,9 +104,17 @@ export async function buildManifestForExportResult(
   ])
   return buildFullResExportManifest({
     graph: input.graph,
-    params: input.params,
-    rawRenderExposure: input.rawRenderExposure,
-    ...(input.geometry ? { geometry: input.geometry } : {}),
+    params: identity.colorIntent,
+    rawRenderExposure: identity.rawRenderExposure,
+    ...(identity.geometry
+      ? {
+          geometry: {
+            matrix: identity.geometry.matrix,
+            constrain_crop: identity.geometry.constrainCrop,
+            output: { width: input.result.width, height: input.result.height },
+          },
+        }
+      : {}),
     source: {
       sha256: sourceSha256,
       byte_size: input.sourceFile.size,
@@ -116,4 +139,32 @@ export async function buildManifestForExportResult(
     environment: input.environment,
     producedAt: input.now?.(),
   })
+}
+
+/** How sealing a result's manifest ended. */
+export type ExportManifestSeal =
+  | { status: 'ready'; manifest: RenderManifest }
+  | { status: 'unavailable'; reason: ExportManifestUnavailableReason }
+
+/**
+ * The result with its sealing outcome attached. Everything else, the output
+ * and the identity included, is the result's own: sealing a manifest late
+ * never renames the request the result answers.
+ */
+export function sealExportResultManifest(
+  result: ExportResult,
+  seal: ExportManifestSeal,
+): ExportResult {
+  if (seal.status === 'ready') {
+    return {
+      ...result,
+      manifest: seal.manifest,
+      manifestState: { status: 'ready' },
+    }
+  }
+  const { manifest: _unsealed, ...unsealed } = result
+  return {
+    ...unsealed,
+    manifestState: { status: 'unavailable', reason: seal.reason },
+  }
 }

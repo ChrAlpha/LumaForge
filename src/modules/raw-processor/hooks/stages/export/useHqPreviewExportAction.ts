@@ -14,6 +14,7 @@ import type { ImageSession, TransformIntent } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
 import { deriveTransformExportRefusal } from '../../../services/export/export-readiness'
 import { resolveExportCopyCapability } from '../../../services/export/export-result-actions'
+import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import { createCompletedExportResult } from '../../../services/export/export-result-materialization'
 import {
   claimExportSlot,
@@ -74,6 +75,16 @@ type HqPreviewExportAttempt = Readonly<{
   transformIntent: TransformIntent | undefined
   controller: AbortController
 }>
+
+let lastHqPreviewAttempt = 0
+
+function createHqPreviewAttemptId() {
+  lastHqPreviewAttempt += 1
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `hq-preview-${Date.now()}-${lastHqPreviewAttempt}`
+  )
+}
 
 function resolveHqPreviewExportCopyCapability() {
   const capability = resolveExportCopyCapability()
@@ -162,6 +173,20 @@ export function useHqPreviewExportAction({
       )
       return
     }
+
+    // The request this attempt answers, fixed before anything renders, so
+    // the result names what was asked for rather than what the refs hold
+    // when the JPEG arrives.
+    const identity = captureExportResultIdentity({
+      resultKind: 'hq-preview',
+      attemptId: createHqPreviewAttemptId(),
+      sessionId: activeSession.id,
+      sourceFile,
+      intent,
+      lut: lutDataRef.current,
+      rawRenderExposure: image.renderExposure,
+      geometry: activeSession.exportGeometry ?? null,
+    })
 
     const exportSessionId = activeSession.id
     const exportGraphVersion = exportGraphVersionRef.current
@@ -274,6 +299,7 @@ export function useHqPreviewExportAction({
         width: outputSize.width,
         height: outputSize.height,
         copyCapability: resolveHqPreviewExportCopyCapability(),
+        identity,
       })
       registerExportResultResource(exportResult)
 

@@ -14,6 +14,10 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type { ImageSession, TransformState } from '../../../model/session'
 import { createTransformState } from '../../../model/session-factory'
+import {
+  captureExportResultIdentity,
+  isSameExportResult,
+} from '../../../services/export/export-result-identity'
 import { HQ_PREVIEW_LOOK_EXPORT_REASON } from '../../../services/export/hq-preview-look'
 import type {
   TransformEvent,
@@ -226,8 +230,16 @@ function transformAt(status: TransformStatus): TransformState {
 }
 
 /** A live HQ export harness whose session writes land in `sessionRef`. */
-function setupHq(initial: ImageSession = createSession()) {
+function setupHq(
+  initial: ImageSession = createSession(),
+  look: { params?: ColorGraphIntentSource; lut?: LUTData | null } = {},
+) {
   const sessionRef: { current: ImageSession | null } = { current: initial }
+  const paramsRef = { current: look.params ?? SESSION_LOOK }
+  const lutDataRef = { current: look.lut ?? null }
+  const decodedImageRef: { current: DecodedImage | null } = {
+    current: createDecodedImage(),
+  }
   const exportGraphVersionRef = { current: 1 }
   const exportAbortControllerRef: { current: AbortController | null } = {
     current: null,
@@ -261,9 +273,9 @@ function setupHq(initial: ImageSession = createSession()) {
   const { result } = renderHook(() =>
     useHqPreviewExportAction({
       sessionRef,
-      paramsRef: { current: SESSION_LOOK },
-      lutDataRef: { current: null },
-      decodedImageRef: { current: createDecodedImage() },
+      paramsRef,
+      lutDataRef,
+      decodedImageRef,
       pipelineRef: { current: { renderToHiddenCanvas } },
       isMountedRef,
       exportGraphVersionRef,
@@ -292,6 +304,9 @@ function setupHq(initial: ImageSession = createSession()) {
   return {
     result,
     sessionRef,
+    paramsRef,
+    lutDataRef,
+    decodedImageRef,
     exportGraphVersionRef,
     exportAbortControllerRef,
     isMountedRef,
@@ -492,6 +507,87 @@ describe('useHqPreviewExportAction attempt currency', () => {
       'toast:error:HQ preview export failed',
     ])
     expect(failed.exportAbortControllerRef.current).toBeNull()
+  })
+})
+
+describe('useHqPreviewExportAction result identity', () => {
+  it.each([
+    { name: 'the session look', params: SESSION_LOOK, lut: null },
+    { name: 'a custom LUT', params: CUSTOM_LOOK, lut: ACCEPTED_LUT },
+  ])(
+    'records the request it captured before rendering $name',
+    async ({ params, lut }) => {
+      const look = { ...params }
+      const session = lut === null ? createSession() : createCustomLutSession()
+      const expected = captureExportResultIdentity({
+        resultKind: 'hq-preview',
+        attemptId: 'not-compared',
+        sessionId: 'session-1',
+        sourceFile: session.sourceFile.file!,
+        intent: params,
+        lut,
+        rawRenderExposure: createDecodedImage().renderExposure,
+        geometry: null,
+      })
+      const h = setupHq(session, { params: look, lut })
+      const pending = h.result.current.exportPreviewImage()
+      expect(h.renderToHiddenCanvas).toHaveBeenCalledTimes(1)
+
+      // While it renders, what the request was read from moves on without
+      // ending the attempt: the intent record in place, the refs, the view.
+      Object.assign(look, { intensity: 0.1, userExposureEv: 1.5 })
+      h.paramsRef.current = { ...params, intensity: 0.2 }
+      h.lutDataRef.current = lut && {
+        ...lut,
+        data: new Float32Array(lut.data.length).fill(1),
+      }
+      h.decodedImageRef.current = {
+        ...createDecodedImage(),
+        renderExposure: { ev: 1, multiplier: 2, source: 'user' },
+      }
+      h.sessionRef.current = {
+        ...h.sessionRef.current!,
+        viewState: {
+          ...h.sessionRef.current!.viewState,
+          mode: 'original',
+          zoom: 2,
+        },
+      }
+      h.complete()
+      await pending
+
+      const result = h.sessionRef.current?.exportState.result
+      expect(result?.kind).toBe('hq-preview')
+      expect(result?.identity).toEqual({
+        ...expected,
+        attemptId: expect.any(String),
+      })
+      expect(result?.identity?.attemptId).not.toBe('')
+      expect(
+        isSameExportResult(result!.identity!, {
+          ...expected,
+          attemptId: result!.identity!.attemptId,
+        }),
+      ).toBe(true)
+      expect(Object.isFrozen(result!.identity)).toBe(true)
+      expect(h.registerExportResultResource).toHaveBeenCalledWith(result)
+    },
+  )
+
+  it('names every attempt apart', async () => {
+    const h = setupHq()
+    const first = h.result.current.exportPreviewImage()
+    h.complete()
+    await first
+    const firstIdentity = h.sessionRef.current?.exportState.result?.identity
+    const second = h.result.current.exportPreviewImage()
+    h.complete()
+    await second
+    const secondIdentity = h.sessionRef.current?.exportState.result?.identity
+
+    expect(firstIdentity && secondIdentity).toBeTruthy()
+    expect(secondIdentity!.attemptId).not.toBe(firstIdentity!.attemptId)
+    expect(secondIdentity!.inputSignature).toBe(firstIdentity!.inputSignature)
   })
 })
 

@@ -60,6 +60,10 @@ import {
 import { resolveExportEnvironment } from './export-manifest'
 import type { SourceInterruptionHint } from './export-recovery'
 import { readSourceInterruption } from './export-recovery'
+import {
+  captureExportResultIdentity,
+  isSameExportResult,
+} from './export-result-identity'
 import { claimExportSlot, clearExportResultState } from './export-state'
 import type { runFullResolutionExportJob } from './export-system'
 import type { ExportContext } from './orchestrate-full-res-export'
@@ -1012,6 +1016,16 @@ describe('orchestrateFullResExport success', () => {
         createdAt: FIXED_NOW,
         copyCapability: CLIPBOARD_UNAVAILABLE,
         manifestState: { status: 'sealing' },
+        identity: captureExportResultIdentity({
+          resultKind: 'full-resolution',
+          attemptId: EXPORT_ID,
+          sessionId: 'session-1',
+          sourceFile: SOURCE_FILE,
+          intent: DEFAULT_PARAMS,
+          lut: null,
+          rawRenderExposure: RAW_RENDER_EXPOSURE,
+          geometry: null,
+        }),
       },
       lastProgress: { completedStrips: 2, totalStrips: 2 },
       retryRecommended: false,
@@ -1121,17 +1135,14 @@ describe('orchestrateFullResExport success', () => {
     const manifestInput = h.manifestInputs[0]
     expect(manifestInput.result).toBe(result)
     expect(manifestInput.graph).toBe(input.graph)
-    expect(manifestInput.params).toBe(h.ctx.atoms.params)
     expect(manifestInput).toMatchObject({
       sourceFile: SOURCE_FILE,
-      rawRenderExposure: RAW_RENDER_EXPOSURE,
       sourceDimensions: { width: 6000, height: 4000 },
       style: null,
       quality: 0.92,
       policy: { kind: 'export-full', row_slice: 512, concurrency: 2 },
       environment: resolveExportEnvironment('desktop'),
     })
-    expect(manifestInput).not.toHaveProperty('geometry')
 
     const sealedAt = h.mark('manifest-sealed')
     h.manifest.resolve(SEALED_MANIFEST)
@@ -1184,12 +1195,15 @@ describe('orchestrateFullResExport success', () => {
     expect(input.quality).toBe(0.92)
     expect(h.state.session?.exportState.result).toMatchObject(delivered)
     expect(h.state.session?.exportState.lastSuccessfulSize).toEqual(delivered)
+    // The manifest records the geometry the result's identity names, over
+    // the frame the result delivers.
     expect(h.manifestInputs[0]).toMatchObject({
       sourceDimensions: { width: 6000, height: 4000 },
-      geometry: {
-        matrix: geometry.matrix,
-        constrain_crop: true,
-        output: delivered,
+      result: {
+        ...delivered,
+        identity: {
+          geometry: { matrix: geometry.matrix, constrainCrop: true },
+        },
       },
       quality: 0.92,
     })
@@ -3182,6 +3196,107 @@ describe('orchestrateFullResExport color intent', () => {
     ).toMatchObject({
       bands: { red: { hue: 10, saturation: 0, lightness: 0 } },
     })
+  })
+
+  it('records the request it was asked for through rendering and late sealing', async () => {
+    const params: ProcessingParams = { ...EDITED_PARAMS }
+    const geometry: ExportGeometry = {
+      matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
+      constrainCrop: true,
+    }
+    const expected = captureExportResultIdentity({
+      resultKind: 'full-resolution',
+      attemptId: EXPORT_ID,
+      sessionId: 'session-1',
+      sourceFile: SOURCE_FILE,
+      intent: EDITED_PARAMS,
+      lut: CONFIRMED_LUT,
+      rawRenderExposure: RAW_RENDER_EXPOSURE,
+      geometry,
+    })
+    const h = createHarness({
+      params,
+      lut: CONFIRMED_LUT,
+      session: createSession('session-1', {
+        activeStyle: TEAL_STYLE,
+        exportGeometry: geometry,
+      }),
+    })
+    const changeView = (mode: ImageSession['viewState']['mode']) => {
+      const live = h.state.session!
+      h.replaceSession({
+        ...live,
+        viewState: { ...live.viewState, mode, compareSplit: 0.2, zoom: 3 },
+      })
+    }
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    await job.started
+    // While the worker renders, what the request was read from moves on
+    // without ending the attempt: the intent record in place, the LUT and
+    // decoded image the refs hold, and the view.
+    Object.assign(params, { intensity: 1, userContrast: -40 })
+    h.ctx.atoms.lutDataRef.current = {
+      ...CONFIRMED_LUT,
+      data: new Float32Array(2 * 2 * 2 * 3).fill(1),
+    }
+    h.ctx.atoms.decodedImageRef.current = {
+      ...createDecodedImage(),
+      renderExposure: { ev: 2, multiplier: 4, source: 'user' },
+    }
+    changeView('original')
+    job.resolve()
+    await run
+
+    const published = h.state.session?.exportState.result
+    expect(published?.manifestState).toEqual({ status: 'sealing' })
+    expect(published?.identity).toEqual(expected)
+    expect(isSameExportResult(published!.identity!, expected)).toBe(true)
+    expect(Object.isFrozen(published!.identity)).toBe(true)
+    expect(
+      vi.mocked(h.ctx.services.registerExportResultResource).mock.calls[0][0],
+    ).toBe(published)
+    // The manifest seals the result's own request, whatever the record says.
+    expect(h.manifestInputs[0].result).toBe(published)
+    expect(h.manifestInputs[0]).not.toHaveProperty('params')
+    expect(h.manifestInputs[0]).not.toHaveProperty('rawRenderExposure')
+
+    // Sealing lands after another view change.
+    changeView('processed')
+    h.manifest.resolve(SEALED_MANIFEST)
+    await settle()
+
+    const sealed = h.state.session?.exportState.result
+    expect(sealed).toEqual({
+      ...published,
+      manifest: SEALED_MANIFEST,
+      manifestState: { status: 'ready' },
+    })
+    expect(sealed?.identity).toBe(published?.identity)
+  })
+
+  it('names two identical attempts in the same millisecond apart without randomUUID', async () => {
+    vi.stubGlobal('crypto', {})
+    const h = createHarness()
+
+    const first = await runToReady(h)
+    h.manifest.resolve(SEALED_MANIFEST)
+    await settle()
+    const firstSealed = h.state.session?.exportState.result
+    const second = await runToReady(h)
+    await settle()
+    const secondSealed = h.state.session?.exportState.result
+
+    expect(Date.now()).toBe(FIXED_NOW)
+    expect(first.identity!.attemptId).not.toBe(second.identity!.attemptId)
+    expect(first.identity!.inputSignature).toBe(second.identity!.inputSignature)
+    expect(isSameExportResult(first.identity!, second.identity!)).toBe(false)
+    // Sealing keeps each attempt's own identity.
+    expect(firstSealed?.manifestState).toEqual({ status: 'ready' })
+    expect(firstSealed?.identity).toBe(first.identity)
+    expect(secondSealed?.manifestState).toEqual({ status: 'ready' })
+    expect(secondSealed?.identity).toBe(second.identity)
   })
 
   it('keeps the LUT in the export graph at zero strength', async () => {

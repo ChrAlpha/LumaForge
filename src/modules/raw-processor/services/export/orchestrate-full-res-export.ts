@@ -42,6 +42,7 @@ import {
 import {
   buildManifestForExportResult,
   ExportManifestUnavailableError,
+  sealExportResultManifest,
 } from './attach-export-manifest'
 import {
   createPreExportSnapshot,
@@ -67,6 +68,7 @@ import {
   toExportSourceTuple,
 } from './export-recovery'
 import { resolveExportCopyCapability } from './export-result-actions'
+import { captureExportResultIdentity } from './export-result-identity'
 import { createCompletedExportResult } from './export-result-materialization'
 import {
   buildExportFailureDescription,
@@ -137,8 +139,18 @@ export interface ExportContext {
   }
 }
 
+let lastExportAttempt = 0
+
+/**
+ * Unique per call: without `randomUUID` the counter keeps two exports
+ * started in the same millisecond apart.
+ */
 function createExportId() {
-  return globalThis.crypto?.randomUUID?.() ?? `export-${Date.now()}`
+  lastExportAttempt += 1
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `export-${Date.now()}-${lastExportAttempt}`
+  )
 }
 
 function toActivePlanState(plan: ExportExecutionPlan): ActiveExportPlanState {
@@ -287,9 +299,10 @@ export async function orchestrateFullResExport(
   // snapshot. The strength goes in as given: zero keeps the LUT and its
   // contract checks, it does not clear the look.
   const colorIntent = pickColorGraphIntent(ctx.atoms.params)
+  const lut = ctx.atoms.lutDataRef.current
   const graph = resolveExportColorGraph({
     ...colorIntent,
-    lut: ctx.atoms.lutDataRef.current,
+    lut,
     rawRenderExposure: activeRawRenderExposure,
   })
 
@@ -314,6 +327,18 @@ export async function orchestrateFullResExport(
     return
   }
   const graphFingerprint = JSON.stringify(graph.steps)
+  // The request the result will answer, fixed from the same reads the graph
+  // took; the result and its manifest carry it whatever moves meanwhile.
+  const identity = captureExportResultIdentity({
+    resultKind: 'full-resolution',
+    attemptId: createExportId(),
+    sessionId: activeSession.id,
+    sourceFile: activeSourceFile,
+    intent: colorIntent,
+    lut,
+    rawRenderExposure: activeRawRenderExposure,
+    geometry: exportGeometry,
+  })
 
   const exportSessionId = activeSession.id
   const exportGraphVersion = ctx.refs.exportGraphVersionRef.current
@@ -633,6 +658,7 @@ export async function orchestrateFullResExport(
       height: deliveredSize.height,
       copyCapability,
       manifestState: { status: 'sealing' },
+      identity,
     })
     ctx.refs.previewCopyCanvasRef.current = previewCopyCanvas
     ctx.services.registerExportResultResource(exportResult)
@@ -664,26 +690,16 @@ export async function orchestrateFullResExport(
 
     // The manifest is attached after "ready" so hashing the source and the
     // delivered JPEG never delays the download; a failure only logs. Either
-    // outcome lands only while no later attempt or edit has replaced it.
+    // outcome lands only while no later attempt or edit has replaced it, and
+    // records the request the result's identity names.
     void buildManifestForExportResult({
       result: exportResult,
       sourceFile: activeSourceFile,
       graph,
-      params: ctx.atoms.params,
-      rawRenderExposure: activeRawRenderExposure,
       sourceDimensions: {
         width: completedCapability.width,
         height: completedCapability.height,
       },
-      ...(exportGeometry
-        ? {
-            geometry: {
-              matrix: exportGeometry.matrix,
-              constrain_crop: exportGeometry.constrainCrop,
-              output: deliveredSize,
-            },
-          }
-        : {}),
       style: activeSession.activeStyle,
       quality: EXPORT_JPEG_QUALITY,
       policy: {
@@ -705,11 +721,10 @@ export async function orchestrateFullResExport(
                 ...prev,
                 exportState: {
                   ...prev.exportState,
-                  result: {
-                    ...exportResult,
+                  result: sealExportResultManifest(exportResult, {
+                    status: 'ready',
                     manifest,
-                    manifestState: { status: 'ready' },
-                  },
+                  }),
                 },
               }
             : prev,
@@ -739,10 +754,10 @@ export async function orchestrateFullResExport(
                 ...prev,
                 exportState: {
                   ...prev.exportState,
-                  result: {
-                    ...exportResult,
-                    manifestState: { status: 'unavailable', reason },
-                  },
+                  result: sealExportResultManifest(exportResult, {
+                    status: 'unavailable',
+                    reason,
+                  }),
                 },
               }
             : prev,
