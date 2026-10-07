@@ -10,20 +10,31 @@ import { createRenderManifest } from './create-render-manifest'
 import { parseRenderManifest } from './parse-render-manifest'
 import type { RenderManifest } from './render-manifest'
 import type { ManifestRenderParamsIntent } from './render-params'
-import { invertManifestRenderParams } from './render-params'
+import {
+  invertManifestRenderParams,
+  projectManifestRenderParams,
+} from './render-params'
+
+const userColor = { userExposureEv: 0.5, userContrast: 10 }
+const rawRenderExposure = { ev: 0.2, source: 'dng-baseline' as const }
 
 const resolved = resolveExportColorGraph({
   styleKind: 'none',
   intensity: 1,
   builtinPreset: null,
   lut: null,
-  rawRenderExposure: { ev: 0.2, multiplier: 2 ** 0.2, source: 'dng-baseline' },
+  ...userColor,
+  rawRenderExposure: {
+    ...rawRenderExposure,
+    multiplier: 2 ** rawRenderExposure.ev,
+  },
 })
 if (!resolved.supported) throw new Error(resolved.message)
 const graph = resolved
 
 const lutContract = { gamut: 'srgb-rec709', transfer: 'srgb', range: 'full' }
 
+/** An export as the current writers seal it: Transform applied, HSL neutral. */
 function sealed(): RenderManifest {
   return createRenderManifest({
     kind: 'export',
@@ -35,18 +46,16 @@ function sealed(): RenderManifest {
     },
     lut: null,
     graph,
-    render_params: {
-      exposure_ev: 0.5,
-      tone_curve: { contrast: 10 },
+    render_params: projectManifestRenderParams({
+      userColor,
       intensity: 1,
-      raw_render_exposure_ev: 0.2,
-      raw_render_exposure_source: 'dng-baseline',
+      rawRenderExposure,
       geometry: {
         matrix: [0.99, -0.04, 0.02, 0.04, 0.99, -0.01, 0, 0, 1],
         constrain_crop: true,
         output: { width: 3900, height: 2900 },
       },
-    },
+    }),
     policy: { kind: 'export-full', row_slice: 512, concurrency: 1 },
     environment: {
       render_engine: '0.1.0',
@@ -90,17 +99,24 @@ describe('parseRenderManifest', () => {
     expect(result.ok && result.manifest).toBe(manifest)
   })
 
-  it('accepts a manifest an older writer sealed without optional fields', () => {
-    const legacy = resealed((manifest) => {
-      manifest.render_params = { exposure_ev: 0 }
-      delete manifest.policy.max_pixels
-      manifest.color_graph.descriptor = { descriptor_version: 1 }
-      manifest.color_graph.fingerprint = 'f'.repeat(64)
+  it('accepts a current export without the fields its writer omits', () => {
+    // No geometry applied and neutral HSL: both are omitted, and an export
+    // records no decode budget.
+    const plain = resealed((manifest) => {
+      delete manifest.render_params.geometry
+      manifest.output.dimensions = { width: 4032, height: 3024 }
     })
-    const hash = legacy.manifest_sha256
-    const result = parseRenderManifest(legacy)
-    expect(result.ok).toBe(true)
-    expect(result.ok && result.manifest.manifest_sha256).toBe(hash)
+    expect(Object.keys(plain.render_params).sort()).toEqual([
+      'color_balance',
+      'exposure_ev',
+      'intensity',
+      'raw_render_exposure_ev',
+      'raw_render_exposure_source',
+      'saturation',
+      'tone_curve',
+    ])
+    expect('max_pixels' in plain.policy).toBe(false)
+    expect(parseRenderManifest(plain)).toEqual({ ok: true, manifest: plain })
   })
 
   it('accepts a sealed explicit all-neutral selective color record', () => {
@@ -212,7 +228,7 @@ describe('parseRenderManifest', () => {
 
   it('keeps the hash of an ordinary sealed manifest', () => {
     expect(sealed().manifest_sha256).toBe(
-      '8b52ddc368364c3c8f3ddb3419b8a933c8e1698e7fd2b59a36d70b8a5d7d3dc3',
+      '10f2a0d4423be4b2699368618c6f3a78e9da5d15be459d206d0432bbebb487dd',
     )
   })
 
@@ -480,6 +496,56 @@ describe('parseRenderManifest', () => {
   )
 })
 
+// Shapes no current writer seals: the writers always record a current
+// descriptor, every color section in full, the look strength and the RAW
+// exposure with its source. The v1 reader still accepts these when sealed;
+// they are listed so that refusing them is a visible change, not a broken
+// compatibility promise.
+describe('historical shapes the v1 reader still accepts', () => {
+  const historical: [string, (manifest: Json) => void][] = [
+    [
+      'a descriptor without a version',
+      (m) => delete m.color_graph.descriptor.descriptor_version,
+    ],
+    [
+      'an older descriptor version',
+      (m) => {
+        m.color_graph.descriptor = { descriptor_version: 1 }
+        m.color_graph.fingerprint = 'f'.repeat(64)
+      },
+    ],
+    ['no look strength', (m) => delete m.render_params.intensity],
+    [
+      'no RAW exposure',
+      (m) => {
+        delete m.render_params.raw_render_exposure_ev
+        delete m.render_params.raw_render_exposure_source
+      },
+    ],
+    [
+      'a RAW exposure without its source',
+      (m) => delete m.render_params.raw_render_exposure_source,
+    ],
+    ['no tone section', (m) => delete m.render_params.tone_curve],
+    ['no color balance section', (m) => delete m.render_params.color_balance],
+    ['no saturation section', (m) => delete m.render_params.saturation],
+    [
+      'a partial tone section',
+      (m) => (m.render_params.tone_curve = { contrast: 10 }),
+    ],
+    [
+      'a Kelvin color balance',
+      (m) => (m.render_params.color_balance = { temp_k: 5600, tint: -2 }),
+    ],
+    ['only an exposure', (m) => (m.render_params = { exposure_ev: 0 })],
+  ]
+
+  it.each(historical)('accepts a resealed manifest with %s', (_label, edit) => {
+    const legacy = resealed(edit)
+    expect(parseRenderManifest(legacy)).toEqual({ ok: true, manifest: legacy })
+  })
+})
+
 describe('reading render params from an untrusted manifest', () => {
   type Read =
     | { ok: true; intent: ManifestRenderParamsIntent }
@@ -511,39 +577,31 @@ describe('reading render params from an untrusted manifest', () => {
     expect(read.intent.geometry).toEqual(sealed().render_params.geometry)
   })
 
-  it('reads a sealed explicit all-neutral HSL record as written', () => {
+  it('reads omitted HSL and an explicit all-neutral record alike', () => {
     const neutral = { hue: 0, saturation: 0, lightness: 0 }
-    const legacy = resealed((manifest) => {
-      manifest.render_params = {
-        exposure_ev: 0,
-        intensity: 1,
-        raw_render_exposure_ev: 0,
-        raw_render_exposure_source: 'identity',
-        selective_color: Object.fromEntries(
-          [
-            'red',
-            'orange',
-            'yellow',
-            'green',
-            'aqua',
-            'blue',
-            'purple',
-            'magenta',
-          ].map((band) => [band, neutral]),
-        ),
-      }
+    const current = JSON.parse(JSON.stringify(sealed())) as Json
+    const explicit = resealed((manifest) => {
+      manifest.render_params.selective_color = Object.fromEntries(
+        [
+          'red',
+          'orange',
+          'yellow',
+          'green',
+          'aqua',
+          'blue',
+          'purple',
+          'magenta',
+        ].map((band) => [band, neutral]),
+      )
     })
-    const hash = legacy.manifest_sha256
-    expect(readParams(legacy)).toEqual({
-      ok: true,
-      intent: {
-        userColor: NEUTRAL_USER_COLOR_INTENT,
-        intensity: 1,
-        rawRenderExposure: { ev: 0, source: 'identity' },
-        geometry: null,
-      },
-    })
-    expect(legacy.manifest_sha256).toBe(hash)
+    const hash = explicit.manifest_sha256
+    const read = readParams(current)
+    expect('selective_color' in current.render_params).toBe(false)
+    expect(read.ok && read.intent.userColor.selectiveColor).toEqual(
+      NEUTRAL_USER_COLOR_INTENT.selectiveColor,
+    )
+    expect(readParams(explicit)).toEqual(read)
+    expect(explicit.manifest_sha256).toBe(hash)
   })
 
   it('refuses sealed malformed params', () => {

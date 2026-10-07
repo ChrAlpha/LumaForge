@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -6,7 +7,37 @@ import {
   sealRenderManifest,
   verifyManifestSha256,
 } from './canonicalize'
+import { colorGraphIdentity } from './color-graph-descriptor'
+import { parseRenderManifest } from './parse-render-manifest'
 import type { RenderManifest } from './render-manifest'
+import { projectManifestRenderParams } from './render-params'
+
+const userColor = {
+  userExposureEv: 0.5,
+  userContrast: 10,
+  userHighlights: -5,
+  userShadows: 5,
+  userTemperature: 20,
+  userTint: -3,
+  userSaturation: 15,
+  userVibrance: 30,
+}
+
+// The candidate graph for the user color the params below record.
+const resolved = resolveExportColorGraph({
+  styleKind: 'none',
+  intensity: 1,
+  builtinPreset: null,
+  lut: null,
+  ...userColor,
+  rawRenderExposure: {
+    ev: -0.2177,
+    multiplier: 2 ** -0.2177,
+    source: 'dng-baseline',
+  },
+})
+if (!resolved.supported) throw new Error(resolved.message)
+const graph = resolved
 
 function buildManifest(): Omit<RenderManifest, 'manifest_sha256'> {
   return {
@@ -22,7 +53,7 @@ function buildManifest(): Omit<RenderManifest, 'manifest_sha256'> {
     },
     calibration: null,
     lut: null,
-    color_graph: { fingerprint: '0'.repeat(64), descriptor: {} },
+    color_graph: colorGraphIdentity(graph),
     render_params: {
       exposure_ev: 0.5,
       tone_curve: {
@@ -62,15 +93,36 @@ function buildManifest(): Omit<RenderManifest, 'manifest_sha256'> {
   }
 }
 
-describe('renderParams additive fields (lmfg)', () => {
+describe('current render params in a candidate manifest', () => {
   it('seals and verifies manifests carrying temperature, saturation, and raw exposure', () => {
     const manifest = sealRenderManifest(buildManifest())
     expect(verifyManifestSha256(manifest)).toBe(true)
-    expect(canonicalizeJson(manifest.render_params)).toContain(
-      '"raw_render_exposure_source":"dng-baseline"',
+    expect(manifest.render_params).toEqual(
+      projectManifestRenderParams({
+        userColor,
+        intensity: 1,
+        rawRenderExposure: { ev: -0.2177, source: 'dng-baseline' },
+      }),
     )
-    expect(canonicalizeJson(manifest.render_params)).toContain(
-      '"saturation":{"saturation":15',
+    expect(canonicalizeJson(manifest.render_params)).toBe(
+      '{"color_balance":{"temperature":20,"tint":-3},"exposure_ev":0.5,' +
+        '"intensity":1,"raw_render_exposure_ev":-0.2177,' +
+        '"raw_render_exposure_source":"dng-baseline",' +
+        '"saturation":{"saturation":15,"vibrance":30},' +
+        '"tone_curve":{"blacks":0,"contrast":10,"highlights":-5,"shadows":5,"whites":0}}',
+    )
+  })
+
+  it('passes the canonical reader with its decode budget recorded', () => {
+    const manifest = JSON.parse(
+      JSON.stringify(sealRenderManifest(buildManifest())),
+    ) as unknown
+    expect(parseRenderManifest(manifest)).toEqual({ ok: true, manifest })
+  })
+
+  it('keeps the hash of the current candidate shape', () => {
+    expect(sealRenderManifest(buildManifest()).manifest_sha256).toBe(
+      '79017a168c2e76f356a70eb5b9207946120fec1d02f03aedc3eeb636e6a023e0',
     )
   })
 })

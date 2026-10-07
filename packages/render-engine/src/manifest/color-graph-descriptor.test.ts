@@ -29,6 +29,39 @@ function graphFor(input: { contrast?: number; lut?: boolean }) {
 }
 
 describe('color-graph descriptor', () => {
+  it('writes the current version with every executable step', () => {
+    const descriptor = describeColorGraph(graphFor({ contrast: 10 }))
+    expect(COLOR_GRAPH_DESCRIPTOR_VERSION).toBe(2)
+    expect(Object.keys(descriptor).sort()).toEqual([
+      'descriptor_version',
+      'lut_profile',
+      'output_gamut',
+      'output_transfer',
+      'steps',
+    ])
+    expect(descriptor.descriptor_version).toBe(2)
+    expect(descriptor.lut_profile).toBeNull()
+    expect(
+      descriptor.steps.map((step) => (step as { kind: string }).kind),
+    ).toEqual([
+      'input-linear-prophoto',
+      'raw-render-exposure',
+      'user-color-balance',
+      'user-exposure',
+      'user-contrast',
+      'user-regional-tone',
+      'user-saturation',
+      'user-selective-color',
+      'output-srgb',
+    ])
+  })
+
+  it('keeps the fingerprint of a current descriptor', () => {
+    expect(
+      fingerprintColorGraph(describeColorGraph(graphFor({ contrast: 10 }))),
+    ).toBe('35515639a8dfee6d4e234e1298b7bc643d57be17eef54850f8ef6562e4357077')
+  })
+
   it('is stable for equal graphs and differs when a step changes', () => {
     const a = fingerprintColorGraph(
       describeColorGraph(graphFor({ contrast: 10 })),

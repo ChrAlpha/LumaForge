@@ -3,6 +3,11 @@
 
 import { createHash } from 'node:crypto'
 
+import {
+  generateIdentityLUT,
+  resolveExportColorGraph,
+  toLUTData,
+} from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -11,7 +16,10 @@ import {
   sealRenderManifest,
   verifyManifestSha256,
 } from './canonicalize'
+import { colorGraphIdentity } from './color-graph-descriptor'
+import { parseRenderManifest } from './parse-render-manifest'
 import type { RenderManifest } from './render-manifest'
+import { projectManifestRenderParams } from './render-params'
 
 function nodeSha256OfText(input: string): string {
   return createHash('sha256').update(input, 'utf8').digest('hex')
@@ -111,7 +119,29 @@ describe('computeManifestSha256', () => {
 })
 
 describe('sealRenderManifest / verifyManifestSha256 roundtrip', () => {
+  const userColor = { userExposureEv: 0.3, userTemperature: 12, userTint: -2 }
+  const rawRenderExposure = { ev: -0.5, source: 'dng-baseline' as const }
+  const displayContract = {
+    gamut: 'srgb-rec709',
+    transfer: 'srgb',
+    range: 'full',
+  } as const
+
+  // A quick preview through a display-look LUT, as the current writers
+  // record it: no calibration, a versioned descriptor, complete params.
   function buildExampleManifest(): Omit<RenderManifest, 'manifest_sha256'> {
+    const graph = resolveExportColorGraph({
+      styleKind: 'custom',
+      intensity: 0.8,
+      builtinPreset: null,
+      lut: toLUTData(generateIdentityLUT(17)),
+      ...userColor,
+      rawRenderExposure: {
+        ...rawRenderExposure,
+        multiplier: 2 ** rawRenderExposure.ev,
+      },
+    })
+    if (!graph.supported) throw new Error(graph.message)
     return {
       manifest_version: 1,
       kind: 'preview',
@@ -126,44 +156,26 @@ describe('sealRenderManifest / verifyManifestSha256 roundtrip', () => {
         decoded_dimensions: { width: 6000, height: 4000 },
       },
 
-      calibration: {
-        kind: 'catalog',
-        catalog_id: 'lumaforge-profiles@v2026.06.10',
-        profile_id: 'sony/ilce-7m4/adobe-standard',
-        schema_version: '1.0.0',
-        dcp_params_sha256:
-          'bb22aa0000000000000000000000000000000000000000000000000000000000',
-        white_neutral: [0.471, 1.0, 0.734],
-        alpha: 0.62,
-        converged: true,
-      },
+      calibration: null,
 
       lut: {
         kind: 'catalog',
         catalog_id: 'lumaforge-profiles@v2026.06.10',
-        entry: 'panasonic/v-log-to-rec709',
+        entry: 'display/identity',
         version: '1.2.0',
         sha256:
           'a1b2c30000000000000000000000000000000000000000000000000000000000',
-        input_contract: { gamut: 'v-gamut', transfer: 'v-log', range: 'full' },
-        output_contract: {
-          gamut: 'rec709',
-          transfer: 'bt1886',
-          range: 'full',
-          role: 'combined-look-output',
-        },
+        input_contract: displayContract,
+        output_contract: { ...displayContract, role: 'display-look' },
       },
 
-      color_graph: {
-        fingerprint:
-          'deadbe0000000000000000000000000000000000000000000000000000000000',
-        descriptor: { steps: ['exposure', 'lut'] },
-      },
+      color_graph: colorGraphIdentity(graph),
 
-      render_params: {
-        exposure_ev: 0.3,
-        color_balance: { temp_k: 5600, tint: -2 },
-      },
+      render_params: projectManifestRenderParams({
+        userColor,
+        intensity: 0.8,
+        rawRenderExposure,
+      }),
 
       output: {
         format: 'jpeg',
@@ -177,8 +189,9 @@ describe('sealRenderManifest / verifyManifestSha256 roundtrip', () => {
 
       policy: {
         kind: 'preview-quick',
-        row_slice: 512,
+        row_slice: 32,
         concurrency: 1,
+        max_pixels: 2_000_000,
       },
 
       environment: {
@@ -198,6 +211,24 @@ describe('sealRenderManifest / verifyManifestSha256 roundtrip', () => {
     const sealed = sealRenderManifest(buildExampleManifest())
     expect(sealed.manifest_sha256).toMatch(/^[0-9a-f]{64}$/)
     expect(verifyManifestSha256(sealed)).toBe(true)
+    expect(parseRenderManifest(sealed).ok).toBe(true)
+  })
+
+  it('keeps the canonical params bytes and the hash of the example', () => {
+    const sealed = sealRenderManifest(buildExampleManifest())
+    expect(canonicalizeJson(sealed.render_params)).toBe(
+      '{"color_balance":{"temperature":12,"tint":-2},"exposure_ev":0.3,' +
+        '"intensity":0.8,"raw_render_exposure_ev":-0.5,' +
+        '"raw_render_exposure_source":"dng-baseline",' +
+        '"saturation":{"saturation":0,"vibrance":0},' +
+        '"tone_curve":{"blacks":0,"contrast":0,"highlights":0,"shadows":0,"whites":0}}',
+    )
+    expect(sealed.manifest_sha256).toBe(
+      '4162868665c50d3bb2292a16583cb16950e1c47c0727de0986e4ba7eb37eb1d0',
+    )
+    expect(sealed.manifest_sha256).toBe(
+      nodeSha256OfText(canonicalizeJson(buildExampleManifest())),
+    )
   })
 
   it('survives a JSON roundtrip', () => {

@@ -20,9 +20,9 @@ import {
   projectManifestRenderParams,
 } from './render-params'
 
-// Reviewed literal canonical JSON. The browser export writer freezes the same
-// bytes for the same inputs; the CLI writer differs only by recording an
-// explicit all-neutral selective color record.
+// Reviewed literal canonical JSON. The browser export writer and the CLI
+// writer both record render params through this projection, so they write
+// these bytes for the same inputs.
 const NON_NEUTRAL_SCALARS_GOLDEN =
   '{"color_balance":{"temperature":10,"tint":-4},"exposure_ev":0.5,' +
   '"intensity":0.75,"raw_render_exposure_ev":-0.25,' +
@@ -230,12 +230,13 @@ describe('projectManifestRenderParams canonical bytes', () => {
 })
 
 describe('invertManifestRenderParams', () => {
-  it('reads absent sections as neutral user color', () => {
-    const intent = invertManifestRenderParams({ exposure_ev: 0 })
-    expect(intent).toEqual({
+  it('reads omitted neutral HSL in a current record as neutral user color', () => {
+    const written = reread(project())
+    expect('selective_color' in written).toBe(false)
+    expect(invertManifestRenderParams(written)).toEqual({
       userColor: NEUTRAL_USER_COLOR_INTENT,
-      intensity: null,
-      rawRenderExposure: null,
+      intensity: 1,
+      rawRenderExposure: { ev: 0, source: 'identity' },
       geometry: null,
     })
   })
@@ -258,18 +259,9 @@ describe('invertManifestRenderParams', () => {
     expect(intent.geometry).toEqual(geometry)
   })
 
-  it('keeps a recorded EV whose source is missing', () => {
-    expect(
-      invertManifestRenderParams({
-        exposure_ev: 0,
-        raw_render_exposure_ev: 0.2,
-      }).rawRenderExposure,
-    ).toEqual({ ev: 0.2, source: null })
-  })
-
   it('fills a partial recorded selective color with neutral bands', () => {
     const intent = invertManifestRenderParams({
-      exposure_ev: 0,
+      ...reread(project()),
       selective_color: { aqua: { hue: 0, saturation: 15, lightness: 0 } },
     })
     expect(intent.userColor.selectiveColor).toEqual({
@@ -280,7 +272,7 @@ describe('invertManifestRenderParams', () => {
 
   it('reads an explicit all-neutral record as neutral user color', () => {
     const intent = invertManifestRenderParams({
-      exposure_ev: 0,
+      ...reread(project()),
       selective_color: explicitNeutralSelectiveColor,
     })
     expect(intent.userColor).toEqual(NEUTRAL_USER_COLOR_INTENT)
@@ -299,6 +291,32 @@ describe('invertManifestRenderParams', () => {
     expect(intent.userColor).not.toHaveProperty('styleKind')
     expect(intent.userColor).not.toHaveProperty('builtinPreset')
     expect(intent.userColor).not.toHaveProperty('lut')
+  })
+})
+
+// No current writer omits these executable fields; the projection always
+// records the color sections, the strength and the exposure with its source.
+// These pin how inversion treats such records today, so that refusing them
+// is a visible change rather than a broken promise.
+describe('invertManifestRenderParams on historical omissions', () => {
+  it('reads absent color sections as neutral and absent strength and exposure as null', () => {
+    const intent = invertManifestRenderParams({ exposure_ev: 0 })
+    expect(intent).toEqual({
+      userColor: NEUTRAL_USER_COLOR_INTENT,
+      intensity: null,
+      rawRenderExposure: null,
+      geometry: null,
+    })
+  })
+
+  it('keeps a recorded EV whose source is missing', () => {
+    const { raw_render_exposure_source: _source, ...written } = reread(
+      project({ rawRenderExposure: { ev: 0.2, source: 'dng-baseline' } }),
+    )
+    expect(invertManifestRenderParams(written).rawRenderExposure).toEqual({
+      ev: 0.2,
+      source: null,
+    })
   })
 })
 
