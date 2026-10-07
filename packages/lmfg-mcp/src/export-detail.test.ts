@@ -227,6 +227,191 @@ describe('verified export JPEG detail', () => {
     await expect(createExportDetail(cwd, input)).rejects.toThrow(/session/i)
   })
 
+  describe('under a recorded geometry', () => {
+    // A 0.8 zoom-out with a constrained crop: the 160x120 source frame
+    // delivers the 128x96 JPEG written in beforeEach.
+    const decoded = { width: 160, height: 120 }
+    const crop = {
+      matrix: [0.8, 0, 0.1, 0, 0.8, 0.1, 0, 0, 1],
+      constrain_crop: true,
+      output: full,
+    }
+    type Manifest = Record<string, any>
+    const cropped = (change: (manifest: Manifest) => Manifest = (m) => m) => {
+      const original: Manifest = JSON.parse(JSON.stringify(manifest))
+      return seal(
+        change({
+          ...original,
+          source_raw: { ...original.source_raw, decoded_dimensions: decoded },
+          render_params: { ...original.render_params, geometry: crop },
+        }),
+      )
+    }
+
+    it('verifies 1:1 regions of a transformed export whose size differs from the source', async () => {
+      const sealed = cropped()
+      await writeFile(manifestPath, JSON.stringify(sealed))
+      const region = { x: 111, y: 81, width: 17, height: 15 }
+      const { png, result } = await createExportDetail(cwd, {
+        ...input,
+        region,
+      })
+      const expected = await sharp(jpeg).extract({
+        left: region.x,
+        top: region.y,
+        width: region.width,
+        height: region.height,
+      })
+      expect(await sharp(png).removeAlpha().raw().toBuffer()).toEqual(
+        await expected.removeAlpha().raw().toBuffer(),
+      )
+      expect(result).toMatchObject({
+        export_manifest_sha256: sealed.manifest_sha256,
+        full_dimensions: full,
+        region,
+        width: region.width,
+        height: region.height,
+      })
+    })
+
+    it('refuses regions inside the source frame but outside the delivered JPEG', async () => {
+      await writeFile(manifestPath, JSON.stringify(cropped()))
+      for (const region of [
+        { x: 120, y: 0, width: 9, height: 1 },
+        { x: 0, y: 90, width: 1, height: 10 },
+        { x: 0, y: 0, ...decoded },
+      ])
+        await expect(
+          createExportDetail(cwd, { ...input, region }),
+        ).rejects.toThrow(/bounds/i)
+    })
+
+    it.each([
+      [
+        'recorded geometry output',
+        (m: Manifest) => ({
+          ...m,
+          render_params: {
+            ...m.render_params,
+            geometry: { ...crop, output: { width: 127, height: 96 } },
+          },
+        }),
+      ],
+      [
+        'crop mode',
+        (m: Manifest) => ({
+          ...m,
+          render_params: {
+            ...m.render_params,
+            geometry: { ...crop, constrain_crop: false },
+          },
+        }),
+      ],
+      [
+        'matrix',
+        (m: Manifest) => ({
+          ...m,
+          render_params: {
+            ...m.render_params,
+            geometry: {
+              ...crop,
+              matrix: [0.9, 0, 0.05, 0, 0.9, 0.05, 0, 0, 1],
+            },
+          },
+        }),
+      ],
+      [
+        'source frame',
+        (m: Manifest) => ({
+          ...m,
+          source_raw: {
+            ...m.source_raw,
+            decoded_dimensions: { width: 150, height: 120 },
+          },
+        }),
+      ],
+      [
+        'delivered output',
+        (m: Manifest) => ({
+          ...m,
+          output: { ...m.output, dimensions: decoded },
+          render_params: {
+            ...m.render_params,
+            geometry: { ...crop, output: decoded },
+          },
+        }),
+      ],
+      [
+        'missing geometry',
+        (m: Manifest) => {
+          const { geometry: _geometry, ...params } = m.render_params
+          return { ...m, render_params: params }
+        },
+      ],
+    ])(
+      'refuses a manifest whose %s disagrees with the delivered geometry',
+      async (_label, change) => {
+        await writeFile(manifestPath, JSON.stringify(cropped(change)))
+        await expect(createExportDetail(cwd, input)).rejects.toThrow(
+          /geometry|dimensions/i,
+        )
+      },
+    )
+
+    it('refuses a geometry the export could never have planned', async () => {
+      await writeFile(
+        manifestPath,
+        JSON.stringify(
+          cropped((m) => ({
+            ...m,
+            render_params: {
+              ...m.render_params,
+              geometry: { ...crop, matrix: [1, 0, 0, 0, 1, 0, 2, 0, -1] },
+            },
+          })),
+        ),
+      )
+      await expect(createExportDetail(cwd, input)).rejects.toThrow(/geometry/i)
+    })
+
+    it('refuses a sealed JPEG whose decoded size is the source frame, not the delivered one', async () => {
+      const uncropped = await sharp(jpeg).resize(decoded).jpeg().toBuffer()
+      await writeFile(jpegPath, uncropped)
+      await writeFile(
+        manifestPath,
+        JSON.stringify(
+          cropped((m) => ({
+            ...m,
+            output: { ...m.output, sha256: hash(uncropped) },
+          })),
+        ),
+      )
+      await expect(createExportDetail(cwd, input)).rejects.toThrow(
+        /JPEG dimensions/i,
+      )
+    })
+
+    it('still refuses a source identity that does not match the session', async () => {
+      for (const sourceChange of [
+        { sha256: 'c'.repeat(64) },
+        { byte_size: 124 },
+      ]) {
+        await writeFile(
+          manifestPath,
+          JSON.stringify(
+            cropped((m) => ({
+              ...m,
+              source_raw: { ...m.source_raw, ...sourceChange },
+            })),
+          ),
+        )
+        await expect(createExportDetail(cwd, input)).rejects.toThrow(
+          /source identity/i,
+        )
+      }
+    })
+  })
+
   it('refuses a sealed export manifest that is not a structurally valid render manifest', async () => {
     const { environment: _environment, ...withoutEnvironment } = JSON.parse(
       JSON.stringify(manifest),

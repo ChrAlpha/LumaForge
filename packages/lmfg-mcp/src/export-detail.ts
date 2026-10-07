@@ -12,6 +12,7 @@ import {
 } from '@lumaforge/lmfg-cli'
 import type { RenderManifest } from '@lumaforge/render-engine'
 import { canonicalizeJson } from '@lumaforge/render-engine'
+import { planExportGeometry } from '@lumaforge/render-engine/export'
 import { parseRenderManifest } from '@lumaforge/render-engine/manifest'
 import { z } from 'zod'
 
@@ -163,6 +164,42 @@ async function publish(path: string, bytes: Buffer): Promise<void> {
   }
 }
 
+const sameDimensions = (
+  a: { width: number; height: number },
+  b: { width: number; height: number },
+) => a.width === b.width && a.height === b.height
+
+/**
+ * The full-resolution size the export must have delivered: the decoded source
+ * frame, or under a recorded geometry the frame the export itself plans from
+ * that source, which the geometry's recorded output must also state.
+ */
+function deliveredDimensions(manifest: RenderManifest): {
+  width: number
+  height: number
+} {
+  const source = manifest.source_raw.decoded_dimensions
+  const geometry = manifest.render_params.geometry
+  if (!geometry) return source
+  let planned: { width: number; height: number }
+  try {
+    const plan = planExportGeometry(
+      { matrix: geometry.matrix, constrainCrop: geometry.constrain_crop },
+      source,
+    )
+    planned = { width: plan.outputWidth, height: plan.outputHeight }
+  } catch {
+    throw new Error(
+      'Export geometry cannot be planned against its source frame.',
+    )
+  }
+  if (!sameDimensions(geometry.output, planned))
+    throw new Error(
+      'Export geometry output does not match the size the geometry plans from its source frame.',
+    )
+  return planned
+}
+
 export async function createExportDetail(
   cwd: string,
   args: ExportDetailInput,
@@ -180,16 +217,19 @@ export async function createExportDetail(
   const manifest = await readExportManifest(
     workspacePaths.exportManifestFile(root, input.session, input.export_name),
   )
-  const full = manifest.output.dimensions
   if (
     manifest.source_raw.sha256 !== session.source.sha256 ||
     manifest.source_raw.byte_size !== session.source.byte_size ||
-    manifest.output.filename !== `${input.export_name}.jpg` ||
-    full.width !== manifest.source_raw.decoded_dimensions.width ||
-    full.height !== manifest.source_raw.decoded_dimensions.height
+    manifest.output.filename !== `${input.export_name}.jpg`
   )
     throw new Error(
-      'Export source identity, filename, or full-resolution dimensions do not match the session and manifest.',
+      'Export source identity or filename does not match the session and manifest.',
+    )
+  const full = manifest.output.dimensions
+  const delivered = deliveredDimensions(manifest)
+  if (!sameDimensions(full, delivered))
+    throw new Error(
+      'Export output dimensions do not match the size its source frame and geometry deliver.',
     )
   if (full.width * full.height > EXPORT_DETAIL_LIMITS.max_source_pixels)
     throw new Error(
