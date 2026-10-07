@@ -56,9 +56,9 @@ image-editor assumptions.
   the `PhotoCompare` slider and its sweep hook,
   `src/modules/landing/content.ts` (typed key lists and the real
   supported-format count), module CSS, and colocated tests.
-- `src/pages/(main)/transform-demo.tsx` still ships the noindex
-  `/transform-demo` route on top of `src/modules/transform-demo`. `/raw`
-  imports nothing from that module (see Retained And Scheduled Slices).
+- There is no `/transform-demo` route. `src/modules/transform-demo` holds only
+  orphaned demo adapters and their tests; `/raw` imports nothing from it (see
+  Retained And Scheduled Slices).
 - `src/providers/root-providers.tsx` owns `LazyMotion`, React Query, Jotai,
   i18n, error boundary, router stability, settings sync, context menu, and
   toasts. Preserve provider order unless a concrete bug requires changing it.
@@ -318,11 +318,10 @@ These are owner decisions. They override cleanup advice that says otherwise.
   `src/modules/raw-processor/hooks/useTransformPreview.ts`, and the preview
   overlay renders through
   `src/modules/raw-processor/components/TransformCanvas.tsx`.
-  `src/modules/transform-demo` keeps only
-  the temporary `/transform-demo` page (controls, sample, image input,
-  download) on top of those production assets; the route and the demo module
-  are deleted later. `lmfg` params carry no geometry, and `lmfg` replay
-  refuses a manifest that records one.
+  The `/transform-demo` route, page, and controls are deleted;
+  `src/modules/transform-demo` keeps only the orphaned demo loading and
+  sample adapters, which are deleted next. `lmfg` params carry no
+  geometry, and `lmfg` replay refuses a manifest that records one.
 - DCP calibration: the app slice (stage hook, service, atoms, and the
   calibration catalog and DCP params parsers) is removed, and the workflow
   applies no camera calibration. The LUT catalog parser rejects calibration

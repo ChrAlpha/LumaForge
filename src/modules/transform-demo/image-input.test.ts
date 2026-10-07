@@ -65,11 +65,8 @@ describe('transform demo presentation ownership', () => {
 
   it('consumes production frame types and canvas, not demo copies', () => {
     for (const file of [
-      'TransformDemoPage.tsx',
-      'TransformControls.tsx',
       'demo-sample.ts',
       'image-input.ts',
-      'usePreviewDownload.ts',
       'useTransformDemo.ts',
     ]) {
       const source = readFileSync(

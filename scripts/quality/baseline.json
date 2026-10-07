@@ -27,7 +27,6 @@
     "duplicates src/modules/raw-processor/RawProcessorView.tsx: RawProcessorView, default",
     "duplicates src/pages/(main)/index.sync.tsx: Component, default",
     "duplicates src/pages/(main)/raw.tsx: Component, default",
-    "duplicates src/pages/(main)/transform-demo.tsx: Component, default",
     "exports packages/lmfg-cli/src/e2e/fixture.ts: fixtureReady",
     "exports packages/lmfg-cli/src/protocol/envelope.ts: errorEnvelope",
     "exports packages/render-engine/src/manifest/canonicalize.ts: __TEST_ONLY__",
