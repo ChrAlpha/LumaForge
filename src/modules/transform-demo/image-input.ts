@@ -1,8 +1,8 @@
 import { isSupportedRaw } from '~/lib/raw/decoder'
+import { ImageInputError } from '~/lib/transform/preview-types'
 
 import type { PreviewFrame, PreviewSource } from './preview-types'
 import {
-  ImageInputError,
   MAX_IMAGE_BYTES,
   MAX_PREVIEW_EDGE,
   MAX_RAW_BYTES,

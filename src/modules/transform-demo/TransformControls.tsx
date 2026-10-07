@@ -7,15 +7,14 @@ import { Slider } from '~/components/ui/slider'
 import { clsxm } from '~/lib/cn'
 import type { MessageKey } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
+import type { UprightMode } from '~/lib/transform/geometry/types'
+import type { ManualTransform } from '~/lib/transform/transform-types'
 import {
   SEGMENTED_FOCUS_RING,
   SEGMENTED_ITEM_TEXT,
   SEGMENTED_THUMB_BG,
   SEGMENTED_TRACK,
 } from '~/modules/raw-processor/components/tools/segmented-chrome'
-
-import type { UprightMode } from './geometry/types'
-import type { ManualTransform } from './transform-types'
 
 const MODES: UprightMode[] = ['off', 'auto', 'level', 'vertical', 'full']
 const SLIDERS: Array<{

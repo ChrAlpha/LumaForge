@@ -6,7 +6,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
-import { composeManualTransform } from '~/modules/transform-demo/transform-render'
+import { composeManualTransform } from '~/lib/transform/transform-render'
 
 import type { ImageSession } from '../../model/session'
 import { deriveFullResExportReadiness } from './export-readiness'

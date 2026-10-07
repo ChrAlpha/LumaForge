@@ -1,17 +1,22 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { identityMatrix, rotationMatrix } from './geometry/matrix'
-import type { UprightAnalysis } from './geometry/types'
-import { loadImageInput } from './image-input'
-import type { PreviewSource } from './preview-types'
-import { NEUTRAL_TRANSFORM } from './transform-types'
-import { useTransformDemo } from './useTransformDemo'
+import { identityMatrix } from '~/lib/transform/geometry/matrix'
+import type { UprightAnalysis } from '~/lib/transform/geometry/types'
+import type { PreviewSource } from '~/lib/transform/preview-types'
+import { ImageInputError } from '~/lib/transform/preview-types'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 import type {
   TransformWorkerRequest,
   TransformWorkerResponse,
-} from './worker-protocol'
+} from '~/lib/transform/worker-protocol'
+
+import { loadImageInput } from './image-input'
+import { useTransformDemo } from './useTransformDemo'
 
 vi.mock('./demo-sample', () => ({
   createDemoSample: () => ({
@@ -63,607 +68,136 @@ class DemoWorker {
   }
 }
 
-function setup() {
-  DemoWorker.instances = []
-  vi.stubGlobal('Worker', DemoWorker)
-  return renderHook(() => useTransformDemo())
-}
-
-type RenderRequest = Extract<TransformWorkerRequest, { type: 'render' }>
-
-function lastRender(worker: DemoWorker): RenderRequest {
+function lastAnalyze(worker: DemoWorker) {
   const request = worker.messages.findLast(
-    (message) => message.type === 'render',
+    (message) => message.type === 'analyze',
   )
-  if (request?.type !== 'render') throw new Error('expected render')
+  if (request?.type !== 'analyze') throw new Error('expected analyze')
   return request
 }
 
-function renderedFrame() {
+function analyze(worker: DemoWorker) {
+  act(() =>
+    worker.emit({
+      type: 'analyzed',
+      sourceId: lastAnalyze(worker).sourceId,
+      analysis,
+      elapsedMs: 10,
+    }),
+  )
+}
+
+function image(name: string): PreviewSource {
   return {
-    frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
-    displayMatrix: identityMatrix(),
-    retainedArea: 1,
+    name,
+    kind: 'image',
+    originalWidth: 1,
+    originalHeight: 1,
+    frame: { width: 1, height: 1, data: new Uint8ClampedArray(4) },
   }
 }
 
-function answer(
-  request: RenderRequest,
-  result = renderedFrame(),
-): TransformWorkerResponse {
+/** A loader whose decode finishes only when the test says so. */
+function deferredDecode() {
+  let finish!: (source: PreviewSource) => void
+  let fail!: (cause: unknown) => void
+  let signal!: AbortSignal
+  vi.mocked(loadImageInput).mockImplementationOnce(
+    (_file, abort) =>
+      new Promise((resolve, reject) => {
+        signal = abort!
+        finish = resolve
+        fail = reject
+      }),
+  )
   return {
-    type: 'rendered',
-    sourceId: request.sourceId,
-    requestId: request.requestId,
-    result,
+    finish: (source: PreviewSource) => finish(source),
+    fail: (cause: unknown) => fail(cause),
+    signal: () => signal,
   }
 }
 
+beforeEach(() => {
+  DemoWorker.instances = []
+  vi.stubGlobal('Worker', DemoWorker)
+})
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
 })
 
-describe('transform demo request lifecycle', () => {
-  it('keeps the selected geometry during color refresh until the mode is selected again', async () => {
-    const { result, unmount } = setup()
-    const worker = DemoWorker.instances[0]
-    const selectedMatrix = rotationMatrix(5)
-    const updatedMatrix = rotationMatrix(-3)
-    const first = {
-      ...analysis,
-      solutions: {
-        ...analysis.solutions,
-        auto: { ...solution, matrix: selectedMatrix },
-      },
-    }
-    act(() =>
-      worker.emit({
-        type: 'analyzed',
-        sourceId: worker.messages[0].sourceId,
-        analysis: first,
-        elapsedMs: 10,
-      }),
-    )
-    act(() => result.current.setMode('auto'))
-    const current: PreviewSource = {
-      name: 'same-photo.nef',
-      kind: 'raw',
-      originalWidth: 2,
-      originalHeight: 2,
-      frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
-    }
-    await act(() =>
-      result.current.loadSource(current, { preserveTransform: true }),
-    )
-    const request = worker.messages.at(-1)!
-    const fresh = {
-      ...analysis,
-      solutions: {
-        ...analysis.solutions,
-        auto: { ...solution, matrix: updatedMatrix },
-      },
-    }
-    act(() =>
-      worker.emit({
-        type: 'analyzed',
-        sourceId: request.sourceId,
-        analysis: fresh,
-        elapsedMs: 10,
-      }),
-    )
-    expect(result.current.solution.matrix).toEqual(selectedMatrix)
-    const render = worker.messages.at(-1)!
-    expect(render.type === 'render' && render.matrix).toEqual(selectedMatrix)
-    act(() => result.current.setMode('auto'))
-    expect(result.current.solution.matrix).toEqual(updatedMatrix)
-    unmount()
-  })
-
-  it('accepts current-photo frames without reopening files and preserves edits on refresh', async () => {
-    DemoWorker.instances = []
-    vi.stubGlobal('Worker', DemoWorker)
-    const { result, unmount } = renderHook(() =>
-      useTransformDemo({ autoLoadSample: false }),
-    )
-    expect(DemoWorker.instances).toHaveLength(0)
-    const current: PreviewSource = {
-      name: 'current.nef',
-      kind: 'raw',
-      originalWidth: 6000,
-      originalHeight: 4000,
-      frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
-    }
-    await act(() => result.current.loadSource(current))
-    expect(loadImageInput).not.toHaveBeenCalled()
-    act(() => {
-      result.current.setMode('vertical')
-      result.current.setManual((prev) => ({ ...prev, rotate: 2 }))
-    })
-    await act(() =>
-      result.current.loadSource(
-        {
-          ...current,
-          frame: {
-            ...current.frame,
-            data: new Uint8ClampedArray(16).fill(100),
-          },
-        },
-        { preserveTransform: true },
-      ),
-    )
-    expect(result.current.mode).toBe('vertical')
-    expect(result.current.manual.rotate).toBe(2)
-    const worker = DemoWorker.instances[0]
-    act(() =>
-      worker.emit({
-        type: 'analyzed',
-        sourceId: worker.messages[0].sourceId,
-        analysis,
-        elapsedMs: 10,
-      }),
-    )
-    expect(result.current.analysis).toBeNull()
-    act(() => result.current.clearSource())
-    expect(worker.terminated).toBe(false)
-    expect(worker.messages.at(-1)).toMatchObject({ type: 'clear' })
-    expect(result.current.source).toBeNull()
-    expect(result.current.mode).toBe('off')
-    expect(result.current.manual.rotate).toBe(0)
-    unmount()
-    expect(worker.terminated).toBe(true)
-  })
-
-  it('reuses its live worker after clearing the source and ignores old queued responses', async () => {
-    const { result, unmount } = setup()
-    const worker = DemoWorker.instances[0]
-    const firstId = worker.messages[0].sourceId
-    act(() =>
-      worker.emit({
-        type: 'analyzed',
-        sourceId: firstId,
-        analysis,
-        elapsedMs: 10,
-      }),
-    )
-    const oldRender = worker.messages.at(-1)!
-    if (oldRender.type !== 'render') throw new Error('expected render')
-    act(() => result.current.setMode('auto'))
-    act(() => result.current.clearSource())
-    const clearedCount = worker.messages.length
-    act(() =>
-      worker.emit({
-        type: 'rendered',
-        sourceId: firstId,
-        requestId: oldRender.requestId,
-        result: {
-          frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
-          displayMatrix: identityMatrix(),
-          retainedArea: 1,
-        },
-      }),
-    )
-    expect(worker.messages).toHaveLength(clearedCount)
-    expect(result.current.result).toBeNull()
-    expect(result.current.ready).toBe(false)
-
-    await act(() => result.current.loadSource())
+describe('transform demo loading', () => {
+  it('opens the synthetic sample on mount unless asked not to', () => {
+    const { result, unmount } = renderHook(() => useTransformDemo())
     expect(DemoWorker.instances).toHaveLength(1)
-    expect(worker.terminated).toBe(false)
-    const next = worker.messages.at(-1)!
-    expect(next.type).toBe('analyze')
-    expect(next.sourceId).toBeGreaterThan(firstId)
-    act(() =>
-      worker.emit({
-        type: 'analyzed',
-        sourceId: next.sourceId,
-        analysis,
-        elapsedMs: 10,
-      }),
-    )
+    const worker = DemoWorker.instances[0]
+    expect(result.current.source?.kind).toBe('sample')
+    expect(result.current.loading).toBe(true)
+    expect(lastAnalyze(worker).frame).toBe(result.current.source?.frame)
+    analyze(worker)
     expect(result.current.ready).toBe(true)
     expect(worker.messages.at(-1)?.type).toBe('render')
     unmount()
     expect(worker.terminated).toBe(true)
+
+    const idle = renderHook(() => useTransformDemo({ autoLoadSample: false }))
+    expect(DemoWorker.instances).toHaveLength(1)
+    expect(idle.result.current.source).toBeNull()
+    expect(idle.result.current.loading).toBe(false)
+    idle.unmount()
   })
 
-  it('clears the worker pixel source until a replacement frame is analyzed', async () => {
-    const postMessage = vi.fn()
-    const workerScope: {
-      postMessage: typeof postMessage
-      onmessage?: (event: MessageEvent<TransformWorkerRequest>) => void
-    } = { postMessage }
-    vi.stubGlobal('self', workerScope)
-    await import('./transform.worker')
-    const send = (data: TransformWorkerRequest) =>
-      workerScope.onmessage!({ data } as MessageEvent<TransformWorkerRequest>)
-    const frame = { width: 2, height: 2, data: new Uint8ClampedArray(16) }
-    send({ type: 'analyze', sourceId: 1, frame })
-    expect(postMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: 'analyzed', sourceId: 1 }),
-    )
-    postMessage.mockClear()
-    send({ type: 'clear', sourceId: 2 })
-    send({
-      type: 'render',
-      sourceId: 1,
-      requestId: 1,
-      matrix: identityMatrix(),
-      constrainCrop: true,
-    })
-    send({
-      type: 'render',
-      sourceId: 2,
-      requestId: 2,
-      matrix: identityMatrix(),
-      constrainCrop: true,
-    })
-    expect(postMessage).not.toHaveBeenCalled()
-    send({ type: 'analyze', sourceId: 3, frame })
-    send({
-      type: 'render',
-      sourceId: 3,
-      requestId: 3,
-      matrix: identityMatrix(),
-      constrainCrop: true,
-    })
-    expect(postMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: 'rendered', sourceId: 3, requestId: 3 }),
-      expect.objectContaining({ transfer: expect.any(Array) }),
-    )
-  })
-
-  it('disposes a failed worker without reporting its stale error after clearing', async () => {
-    const { result, unmount } = setup()
+  it('retires the previous frame and edits while a file decodes', async () => {
+    const { result, unmount } = renderHook(() => useTransformDemo())
     const worker = DemoWorker.instances[0]
-    act(() => result.current.clearSource())
-    act(() => worker.onerror?.())
-
-    expect(worker.terminated).toBe(true)
-    expect(result.current.error).toBeNull()
+    analyze(worker)
+    act(() => {
+      result.current.setMode('auto')
+      result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 4 })
+      result.current.setConstrainCrop(false)
+    })
+    const decode = deferredDecode()
+    let pending!: Promise<void>
+    act(() => {
+      pending = result.current.loadSource(new File(['a'], 'photo.jpg'))
+    })
     expect(result.current.source).toBeNull()
-    await act(() => result.current.loadSource())
-    expect(DemoWorker.instances).toHaveLength(2)
-    expect(DemoWorker.instances[1].terminated).toBe(false)
-    unmount()
-  })
-
-  it('retires a rejected geometry and its failure together on reset', async () => {
-    const { result, unmount } = setup()
-    await waitFor(() => expect(DemoWorker.instances).toHaveLength(1))
-    const worker = DemoWorker.instances[0]
-    const sourceId = worker.messages[0].sourceId
-    act(() =>
-      worker.emit({ type: 'analyzed', sourceId, analysis, elapsedMs: 4 }),
-    )
-    await waitFor(() => expect(result.current.ready).toBe(true))
-    // Settle the neutral render first; otherwise the next one only queues.
-    const first = worker.messages.findLast((m) => m.type === 'render')!
-    act(() =>
-      worker.emit({
-        type: 'rendered',
-        sourceId,
-        requestId: first.requestId,
-        result: {
-          frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
-          displayMatrix: identityMatrix(),
-          retainedArea: 1,
-        },
-      }),
-    )
-    act(() => result.current.setManual({ ...result.current.manual, scale: 51 }))
-    const rejected = worker.messages.findLast((m) => m.type === 'render')!
-    expect(rejected.requestId).not.toBe(first.requestId)
-    act(() =>
-      worker.emit({
-        type: 'error',
-        sourceId,
-        requestId: rejected.requestId,
-        message: 'invalid-transform',
-      }),
-    )
-    await waitFor(() => expect(result.current.error).toBe('transform'))
-
-    act(() => result.current.reset())
-
-    // The alert named the geometry reset just discarded; it must not outlive
-    // it and keep the tool reading as broken.
-    expect(result.current.error).toBeNull()
-    expect(result.current.manual.scale).toBe(100)
-    unmount()
-  })
-
-  it('does not strand the render queue when the worker is already gone', async () => {
-    const { result, unmount } = setup()
-    await waitFor(() => expect(DemoWorker.instances).toHaveLength(1))
-    const worker = DemoWorker.instances[0]
-    const sourceId = worker.messages[0].sourceId
-    act(() =>
-      worker.emit({ type: 'analyzed', sourceId, analysis, elapsedMs: 4 }),
-    )
-    await waitFor(() => expect(result.current.ready).toBe(true))
-    act(() => worker.onerror?.())
-
-    // A crashed worker cannot refresh the frame it produced, so nothing may
-    // still read as a current render.
+    expect(result.current.analysis).toBeNull()
     expect(result.current.result).toBeNull()
-    expect(result.current.rendering).toBe(false)
+    expect(result.current.ready).toBe(false)
+    expect(result.current.loading).toBe(true)
+    expect(result.current.mode).toBe('off')
+    expect(result.current.manual).toEqual(NEUTRAL_TRANSFORM)
+    expect(result.current.constrainCrop).toBe(true)
 
-    act(() => result.current.setManual({ ...result.current.manual, rotate: 3 }))
-    // Without a worker the request cannot be answered, and claiming it is in
-    // flight would leave the tool busy forever.
-    expect(result.current.rendering).toBe(false)
-    unmount()
-  })
-
-  it('creates a live worker after StrictMode replays the mount effect', async () => {
-    DemoWorker.instances = []
-    vi.stubGlobal('Worker', DemoWorker)
-    const { result, unmount } = renderHook(() => useTransformDemo(), {
-      wrapper: StrictMode,
+    await act(async () => {
+      decode.finish(image('photo.jpg'))
+      await pending
     })
-    await waitFor(() => expect(DemoWorker.instances).toHaveLength(2))
-    const [disposed, live] = DemoWorker.instances
-    expect(disposed.terminated).toBe(true)
-    expect(live.terminated).toBe(false)
-    act(() =>
-      live.emit({
-        type: 'analyzed',
-        sourceId: live.messages[0].sourceId,
-        analysis,
-        elapsedMs: 10,
-      }),
-    )
-    await waitFor(() => expect(result.current.ready).toBe(true))
-    expect(live.messages.some((message) => message.type === 'render')).toBe(
-      true,
-    )
-    unmount()
-    expect(live.terminated).toBe(true)
-  })
-
-  it('coalesces slider work and only displays the newest render', async () => {
-    const { result, unmount } = setup()
-    await waitFor(() => expect(DemoWorker.instances).toHaveLength(1))
-    const worker = DemoWorker.instances[0]
-    const id = worker.messages[0].sourceId
-    act(() =>
-      worker.emit({ type: 'analyzed', sourceId: id, analysis, elapsedMs: 10 }),
-    )
-    await waitFor(() => expect(worker.messages).toHaveLength(2))
-    const first = worker.messages[1]
-    if (first.type !== 'render') throw new Error('expected render')
-    act(() => result.current.setMode('level'))
-    act(() => result.current.setMode('full'))
-    expect(worker.messages).toHaveLength(2)
-    const rendered = {
-      frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
-      displayMatrix: identityMatrix(),
-      retainedArea: 1,
-    }
-    act(() =>
-      worker.emit({
-        type: 'rendered',
-        sourceId: id,
-        requestId: first.requestId,
-        result: rendered,
-      }),
-    )
-    expect(result.current.result).toBeNull()
-    expect(worker.messages).toHaveLength(3)
-    const latest = worker.messages[2]
-    if (latest.type !== 'render') throw new Error('expected render')
-    act(() =>
-      worker.emit({
-        type: 'rendered',
-        sourceId: id,
-        requestId: latest.requestId,
-        result: rendered,
-      }),
-    )
-    expect(result.current.result).toEqual(rendered)
-    expect(result.current.rendering).toBe(false)
-    unmount()
-    expect(worker.terminated).toBe(true)
-  })
-
-  it('acknowledges only the geometry the worker rendered for the newest request', () => {
-    const { result, unmount } = setup()
-    const worker = DemoWorker.instances[0]
-    const sourceId = worker.messages[0].sourceId
-    act(() =>
-      worker.emit({ type: 'analyzed', sourceId, analysis, elapsedMs: 1 }),
-    )
-    const neutral = lastRender(worker)
-    // A request nobody has answered acknowledges nothing.
-    expect(result.current.acknowledged).toBeNull()
-    act(() => worker.emit(answer(neutral)))
-    expect(result.current.acknowledged).toEqual({
-      sourceId,
-      requestId: neutral.requestId,
-      matrix: neutral.matrix,
-      constrainCrop: true,
-    })
-
-    const frameA = renderedFrame()
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }))
-    const a = lastRender(worker)
-    expect(a.requestId).toBeGreaterThan(neutral.requestId)
-    expect(result.current.acknowledged).toBeNull()
-    act(() => worker.emit(answer(a, frameA)))
-    expect(result.current.acknowledged).toEqual({
-      sourceId,
-      requestId: a.requestId,
-      matrix: a.matrix,
-      constrainCrop: true,
-    })
-
-    // B is pending: A's frame stays on screen but no longer answers.
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 6 }))
-    const b = lastRender(worker)
-    expect(b.requestId).toBeGreaterThan(a.requestId)
-    expect(result.current.acknowledged).toBeNull()
-    expect(result.current.result).toBe(frameA)
-
-    // B is refused: the last valid frame survives, still unacknowledged.
-    act(() =>
-      worker.emit({
-        type: 'error',
-        sourceId,
-        requestId: b.requestId,
-        message: 'invalid-transform',
-      }),
-    )
-    expect(result.current.error).toBe('transform')
-    expect(result.current.result).toBe(frameA)
-    expect(result.current.acknowledged).toBeNull()
-
-    // A late copy of A's answer cannot stand in for B.
-    act(() => worker.emit(answer(a)))
-    expect(result.current.result).toBe(frameA)
-    expect(result.current.acknowledged).toBeNull()
-    unmount()
-  })
-
-  it('ignores answers to superseded requests, whatever the controls ask when they land', () => {
-    const { result, unmount } = setup()
-    const worker = DemoWorker.instances[0]
-    const sourceId = worker.messages[0].sourceId
-    act(() =>
-      worker.emit({ type: 'analyzed', sourceId, analysis, elapsedMs: 1 }),
-    )
-    const neutral = lastRender(worker)
-    // Two edits queue behind the neutral render; only the newest is posted.
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }))
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 4 }))
-    act(() => worker.emit(answer(neutral)))
-    expect(result.current.result).toBeNull()
-    expect(result.current.acknowledged).toBeNull()
-    const b = lastRender(worker)
-    expect(b.requestId).toBeGreaterThan(neutral.requestId)
-
-    // The controls move on while B is in flight, so B's answer is stale.
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 5 }))
-    act(() => worker.emit(answer(b)))
-    expect(result.current.result).toBeNull()
-    expect(result.current.acknowledged).toBeNull()
-    const c = lastRender(worker)
-    expect(c.requestId).toBeGreaterThan(b.requestId)
-
-    const frameC = renderedFrame()
-    act(() => worker.emit(answer(c, frameC)))
-    expect(result.current.result).toBe(frameC)
-    // The acknowledgement carries the geometry C asked for.
-    expect(result.current.acknowledged).toEqual({
-      sourceId,
-      requestId: c.requestId,
-      matrix: c.matrix,
-      constrainCrop: true,
-    })
-
-    // Out-of-order answers to older requests change nothing.
-    act(() => worker.emit(answer(b)))
-    act(() => worker.emit(answer(neutral)))
-    expect(result.current.result).toBe(frameC)
-    expect(result.current.acknowledged?.requestId).toBe(c.requestId)
-    unmount()
-  })
-
-  it('drops the acknowledgement when the frame is replaced or the geometry reset', async () => {
-    const { result, unmount } = setup()
-    const worker = DemoWorker.instances[0]
-    const firstId = worker.messages[0].sourceId
-    act(() =>
-      worker.emit({
-        type: 'analyzed',
-        sourceId: firstId,
-        analysis,
-        elapsedMs: 1,
-      }),
-    )
-    act(() => worker.emit(answer(lastRender(worker))))
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }))
-    const a = lastRender(worker)
-    act(() => worker.emit(answer(a)))
-    expect(result.current.acknowledged?.requestId).toBe(a.requestId)
-
-    // A colour refresh replaces the frame; A answered the old one.
-    await act(() =>
-      result.current.loadSource(
-        {
-          name: 'refresh.nef',
-          kind: 'raw',
-          originalWidth: 2,
-          originalHeight: 2,
-          frame: { width: 2, height: 2, data: new Uint8ClampedArray(16) },
-        },
-        { preserveTransform: true },
-      ),
-    )
-    expect(result.current.manual.rotate).toBe(3)
-    expect(result.current.acknowledged).toBeNull()
-    act(() => worker.emit(answer(a)))
-    expect(result.current.acknowledged).toBeNull()
-
-    const refresh = worker.messages.at(-1)!
-    expect(refresh.type).toBe('analyze')
-    act(() =>
-      worker.emit({
-        type: 'analyzed',
-        sourceId: refresh.sourceId,
-        analysis,
-        elapsedMs: 1,
-      }),
-    )
-    const again = lastRender(worker)
-    // Same geometry, asked again of the new frame.
-    expect(again.sourceId).toBe(refresh.sourceId)
-    expect(again.matrix).toEqual(a.matrix)
-    expect(result.current.acknowledged).toBeNull()
-    act(() => worker.emit(answer(again)))
-    expect(result.current.acknowledged).toEqual({
-      sourceId: refresh.sourceId,
-      requestId: again.requestId,
-      matrix: a.matrix,
-      constrainCrop: true,
-    })
-
-    act(() => result.current.reset())
-    expect(result.current.acknowledged).toBeNull()
-    act(() => worker.emit(answer(lastRender(worker))))
-    expect(result.current.acknowledged?.matrix).toEqual(identityMatrix())
-
-    act(() => result.current.clearSource())
-    expect(result.current.acknowledged).toBeNull()
+    expect(result.current.source?.name).toBe('photo.jpg')
+    expect(result.current.loading).toBe(true)
+    expect(lastAnalyze(worker).frame).toBe(result.current.source?.frame)
+    analyze(worker)
+    expect(result.current.loading).toBe(false)
+    expect(result.current.ready).toBe(true)
+    expect(DemoWorker.instances).toHaveLength(1)
     unmount()
   })
 
   it('ignores a previous image that finishes decoding after its replacement', async () => {
-    const { result, unmount } = setup()
+    const { result, unmount } = renderHook(() => useTransformDemo())
     const oldWorker = DemoWorker.instances[0]
-    let finishFirst!: (source: PreviewSource) => void
-    vi.mocked(loadImageInput).mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishFirst = resolve
-        }),
-    )
-    const next: PreviewSource = {
-      name: 'new.jpg',
-      kind: 'image',
-      originalWidth: 1,
-      originalHeight: 1,
-      frame: { width: 1, height: 1, data: new Uint8ClampedArray(4) },
-    }
-    vi.mocked(loadImageInput).mockResolvedValueOnce(next)
-    let first!: Promise<void>
+    const first = deferredDecode()
+    vi.mocked(loadImageInput).mockResolvedValueOnce(image('new.jpg'))
+    let pending!: Promise<void>
     act(() => {
-      first = result.current.loadSource(new File(['a'], 'old.jpg'))
+      pending = result.current.loadSource(new File(['a'], 'old.jpg'))
     })
     await act(() => result.current.loadSource(new File(['b'], 'new.jpg')))
+    expect(first.signal().aborted).toBe(true)
     await act(async () => {
-      finishFirst({ ...next, name: 'old.jpg' })
-      await first
+      first.finish(image('old.jpg'))
+      await pending
     })
     act(() =>
       oldWorker.emit({
@@ -678,5 +212,126 @@ describe('transform demo request lifecycle', () => {
     expect(oldWorker.terminated).toBe(false)
     expect(DemoWorker.instances).toHaveLength(1)
     unmount()
+  })
+
+  it('lets the sample, a clear, or unmounting supersede a pending decode', async () => {
+    const { result, unmount } = renderHook(() =>
+      useTransformDemo({ autoLoadSample: false }),
+    )
+    const toSample = deferredDecode()
+    let pending!: Promise<void>
+    act(() => {
+      pending = result.current.loadSource(new File(['a'], 'slow.jpg'))
+    })
+    await act(() => result.current.loadSource())
+    expect(toSample.signal().aborted).toBe(true)
+    await act(async () => {
+      toSample.finish(image('slow.jpg'))
+      await pending
+    })
+    expect(result.current.source?.kind).toBe('sample')
+
+    const toClear = deferredDecode()
+    act(() => {
+      pending = result.current.loadSource(new File(['a'], 'slow.jpg'))
+    })
+    act(() => result.current.clearSource())
+    expect(toClear.signal().aborted).toBe(true)
+    expect(result.current.loading).toBe(false)
+    await act(async () => {
+      toClear.fail(new ImageInputError('decode'))
+      await pending
+    })
+    expect(result.current.source).toBeNull()
+    expect(result.current.error).toBeNull()
+
+    const toUnmount = deferredDecode()
+    act(() => {
+      void result.current.loadSource(new File(['a'], 'slow.jpg'))
+    })
+    unmount()
+    expect(toUnmount.signal().aborted).toBe(true)
+  })
+
+  it('reports input failures until another source, a clear, or reset retires them', async () => {
+    const { result, unmount } = renderHook(() =>
+      useTransformDemo({ autoLoadSample: false }),
+    )
+    vi.mocked(loadImageInput).mockRejectedValueOnce(
+      new ImageInputError('too-large'),
+    )
+    await act(() => result.current.loadSource(new File(['a'], 'huge.jpg')))
+    expect(result.current.error).toBe('too-large')
+    expect(result.current.loading).toBe(false)
+    expect(result.current.source).toBeNull()
+
+    await act(() => result.current.loadSource())
+    expect(result.current.error).toBeNull()
+
+    vi.mocked(loadImageInput).mockRejectedValueOnce(new Error('boom'))
+    await act(() => result.current.loadSource(new File(['a'], 'broken.jpg')))
+    expect(result.current.error).toBe('decode')
+    act(() => result.current.reset())
+    expect(result.current.error).toBeNull()
+
+    vi.mocked(loadImageInput).mockRejectedValueOnce(
+      new ImageInputError('unsupported'),
+    )
+    await act(() => result.current.loadSource(new File(['a'], 'a.svg')))
+    expect(result.current.error).toBe('unsupported')
+    act(() => result.current.clearSource())
+    expect(result.current.error).toBeNull()
+    unmount()
+  })
+
+  it('reuses its live worker when the sample reopens after a clear', async () => {
+    const { result, unmount } = renderHook(() => useTransformDemo())
+    const worker = DemoWorker.instances[0]
+    const firstId = worker.messages[0].sourceId
+    analyze(worker)
+    act(() => result.current.clearSource())
+    expect(worker.messages.at(-1)?.type).toBe('clear')
+    expect(result.current.ready).toBe(false)
+
+    await act(() => result.current.loadSource())
+    expect(DemoWorker.instances).toHaveLength(1)
+    expect(worker.terminated).toBe(false)
+    const next = lastAnalyze(worker)
+    expect(next.sourceId).toBeGreaterThan(firstId)
+    analyze(worker)
+    expect(result.current.ready).toBe(true)
+    expect(worker.messages.at(-1)?.type).toBe('render')
+    unmount()
+    expect(worker.terminated).toBe(true)
+  })
+
+  it('creates a live worker after StrictMode replays the mount effect', async () => {
+    const { result, unmount } = renderHook(() => useTransformDemo(), {
+      wrapper: StrictMode,
+    })
+    await waitFor(() => expect(DemoWorker.instances).toHaveLength(2))
+    const [disposed, live] = DemoWorker.instances
+    expect(disposed.terminated).toBe(true)
+    expect(live.terminated).toBe(false)
+    analyze(live)
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    expect(live.messages.some((message) => message.type === 'render')).toBe(
+      true,
+    )
+    unmount()
+    expect(live.terminated).toBe(true)
+  })
+})
+
+describe('transform demo ownership', () => {
+  it('drives the production preview instead of its own worker loop', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/modules/transform-demo/useTransformDemo.ts'),
+      'utf8',
+    )
+    expect(source).toMatch(
+      /from '~\/modules\/raw-processor\/hooks\/useTransformPreview'/,
+    )
+    expect(source).not.toMatch(/new Worker|worker-protocol|transform-render/)
   })
 })

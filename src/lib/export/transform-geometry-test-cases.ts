@@ -1,6 +1,6 @@
+import type { ManualTransform } from '~/lib/transform/transform-types'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 import { TRANSFORM_FIELDS } from '~/modules/raw-processor/components/transform-fields'
-import type { ManualTransform } from '~/modules/transform-demo/transform-types'
-import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
 
 /**
  * The full slider range of every Transform field, in model units, read from

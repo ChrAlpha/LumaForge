@@ -15,13 +15,13 @@ import type { Matrix3 } from '@lumaforge/render-engine/geometry'
 import { applyMatrix, invertMatrix } from '@lumaforge/render-engine/geometry'
 import { describe, expect, it } from 'vitest'
 
-import type { PreviewFrame } from '~/modules/transform-demo/preview-types'
+import type { PreviewFrame } from '~/lib/transform/preview-types'
 import {
   composeManualTransform,
   renderTransformedPreview,
-} from '~/modules/transform-demo/transform-render'
-import type { RenderedPreview } from '~/modules/transform-demo/transform-types'
-import { PREVIEW_MATTE } from '~/modules/transform-demo/transform-types'
+} from '~/lib/transform/transform-render'
+import type { RenderedPreview } from '~/lib/transform/transform-types'
+import { PREVIEW_MATTE } from '~/lib/transform/transform-types'
 
 import {
   FOLDING_MATRIX_GEOMETRY,

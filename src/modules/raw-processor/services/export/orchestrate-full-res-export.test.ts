@@ -31,7 +31,7 @@ import {
   resetCapabilityVectorForTest,
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
-import { composeManualTransform } from '~/modules/transform-demo/transform-render'
+import { composeManualTransform } from '~/lib/transform/transform-render'
 
 import type { ExportResult } from '../../model/export-result'
 import type { ImageSession } from '../../model/session'

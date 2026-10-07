@@ -24,13 +24,13 @@ import {
 
 import { viewportAtom } from '~/atoms/viewport'
 import { jotaiStore } from '~/lib/jotai'
-import { identityMatrix } from '~/modules/transform-demo/geometry/matrix'
-import type { UprightAnalysis } from '~/modules/transform-demo/geometry/types'
-import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
+import { identityMatrix } from '~/lib/transform/geometry/matrix'
+import type { UprightAnalysis } from '~/lib/transform/geometry/types'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 import type {
   TransformWorkerRequest,
   TransformWorkerResponse,
-} from '~/modules/transform-demo/worker-protocol'
+} from '~/lib/transform/worker-protocol'
 
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
 import { useRawTransformFeature } from '../hooks/useRawTransformFeature'
