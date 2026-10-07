@@ -1,21 +1,21 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 import { act, renderHook } from '@testing-library/react'
 import { useCallback, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  identityMatrix,
-  rotationMatrix,
-} from '~/modules/transform-demo/geometry/matrix'
-import type { UprightAnalysis } from '~/modules/transform-demo/geometry/types'
-import type { PreviewSource } from '~/modules/transform-demo/preview-types'
-import { composeManualTransform } from '~/modules/transform-demo/transform-render'
-import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
+import { identityMatrix, rotationMatrix } from '~/lib/transform/geometry/matrix'
+import type { UprightAnalysis } from '~/lib/transform/geometry/types'
+import type { PreviewSource } from '~/lib/transform/preview-types'
+import { composeManualTransform } from '~/lib/transform/transform-render'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 import type {
   TransformWorkerRequest,
   TransformWorkerResponse,
-} from '~/modules/transform-demo/worker-protocol'
+} from '~/lib/transform/worker-protocol'
 
 import { captureTransformSource } from '../services/preview/capture-transform-source'
 import { useRawTransformFeature } from './useRawTransformFeature'
@@ -1249,5 +1249,18 @@ describe('rAW Transform feature', () => {
     expect(result.current.available).toBe(false)
     expect(captureTransformSource).toHaveBeenCalledOnce()
     unmount()
+  })
+})
+
+describe('rAW Transform production ownership', () => {
+  it('drives the preview, overlay and fields from production homes only', () => {
+    for (const file of [
+      'src/modules/raw-processor/hooks/useRawTransformFeature.ts',
+      'src/modules/raw-processor/components/RawTransformOverlay.tsx',
+      'src/modules/raw-processor/components/transform-fields.ts',
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
+      expect(source, file).not.toMatch(/transform-demo/)
+    }
   })
 })

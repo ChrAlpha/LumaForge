@@ -1,9 +1,9 @@
 import { createPortal } from 'react-dom'
 
 import { useI18n } from '~/lib/i18n'
-import { TransformCanvas } from '~/modules/transform-demo/TransformCanvas'
 
 import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
+import { TransformCanvas } from './TransformCanvas'
 
 const NO_LINES: [] = []
 

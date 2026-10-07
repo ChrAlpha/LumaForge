@@ -4,17 +4,17 @@ import type { Matrix3 } from '@lumaforge/render-engine/geometry'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { UprightMode } from '~/modules/transform-demo/geometry/types'
-import type { PreviewSource } from '~/modules/transform-demo/preview-types'
-import type { ManualTransform } from '~/modules/transform-demo/transform-types'
-import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
-import { useTransformDemo } from '~/modules/transform-demo/useTransformDemo'
+import type { UprightMode } from '~/lib/transform/geometry/types'
+import type { PreviewSource } from '~/lib/transform/preview-types'
+import type { ManualTransform } from '~/lib/transform/transform-types'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 
 import {
   captureTransformSource,
   transformInputKey,
 } from '../services/preview/capture-transform-source'
 import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
+import { useTransformPreview } from './useTransformPreview'
 
 /**
  * Why a full-resolution export cannot reproduce the Transform the controls
@@ -76,7 +76,7 @@ export function useRawTransformFeature(
   workflow: UseRawWorkflowReturn,
   isCpuMode: boolean,
 ) {
-  const demo = useTransformDemo({ autoLoadSample: false })
+  const demo = useTransformPreview()
   const [observing, setObserving] = useState(false)
   const [cpuFrame, setCpuFrame] = useState<CpuPreviewFrame | null>(null)
   const [capturing, setCapturing] = useState(false)
@@ -185,13 +185,13 @@ export function useRawTransformFeature(
         pipeline: isCpuMode ? null : workflow.pipelineRef.current,
         cpuFrame: isCpuMode ? cpuFrame : null,
       })
-        .then(async (source) => {
+        .then((source) => {
           if (generation.current !== token || lastSource.current !== sourceId)
             return
           lastCapture.current = { decodedKey, key }
           setCaptured({ sourceId, decodedKey, key })
           analysing.current = source
-          await loadSource(source, { preserveTransform: true })
+          loadSource(source, { preserveTransform: true })
         })
         .catch(() => {
           if (generation.current !== token) return

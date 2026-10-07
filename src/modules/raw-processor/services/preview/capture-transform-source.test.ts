@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_SELECTIVE_COLOR,
@@ -110,5 +113,18 @@ describe('current-photo transform source', () => {
       Object.entries(INTENT).reverse(),
     ) as unknown as ColorGraphIntent
     expect(transformInputKey(1, 1, reordered)).toBe(key)
+  })
+})
+
+describe('current-photo transform source ownership', () => {
+  it('bounds and types the frame with production helpers only', () => {
+    const source = readFileSync(
+      resolve(
+        process.cwd(),
+        'src/modules/raw-processor/services/preview/capture-transform-source.ts',
+      ),
+      'utf8',
+    )
+    expect(source).not.toMatch(/transform-demo/)
   })
 })

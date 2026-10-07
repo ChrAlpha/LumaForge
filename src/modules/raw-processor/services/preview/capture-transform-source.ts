@@ -2,9 +2,9 @@ import type { ColorGraphIntentSource } from '@lumaforge/luma-color-runtime'
 import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 
+import { previewDimensions } from '~/lib/transform/preview-dimensions'
+import type { PreviewSource } from '~/lib/transform/preview-types'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
-import { previewDimensions } from '~/modules/transform-demo/image-input'
-import type { PreviewSource } from '~/modules/transform-demo/preview-types'
 
 /**
  * What a processed Transform frame is drawn from: the decoded source, the LUT

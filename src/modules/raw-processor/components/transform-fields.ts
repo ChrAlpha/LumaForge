@@ -1,7 +1,7 @@
 import type { MessageKey } from '~/lib/i18n'
-import type { UprightMode } from '~/modules/transform-demo/geometry/types'
-import type { ManualTransform } from '~/modules/transform-demo/transform-types'
-import { NEUTRAL_TRANSFORM } from '~/modules/transform-demo/transform-types'
+import type { UprightMode } from '~/lib/transform/geometry/types'
+import type { ManualTransform } from '~/lib/transform/transform-types'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 
 import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
 
