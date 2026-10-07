@@ -10,6 +10,8 @@ import type {
   LumaRawProcessedWindow,
   LumaRawProcessedWindowRequest,
 } from '@lumaforge/luma-raw-runtime'
+import type { ExportGeometry } from '@lumaforge/render-engine/export'
+import { planExportGeometry } from '@lumaforge/render-engine/export'
 import {
   afterAll,
   afterEach,
@@ -31,6 +33,7 @@ import {
   describeWithFixture,
   FIXTURE_PATH,
 } from '../test-support/describe-with-fixture'
+import type { ExportRunInput } from './export'
 import { runFullResolutionExport } from './export'
 
 const LOCKED_FIXTURE_SHA256 =
@@ -348,6 +351,7 @@ async function listFiles(root: string): Promise<string[]> {
 function runWithSession(
   session: ReturnType<typeof makeFakeSession>,
   outputPath: string,
+  extra: Pick<ExportRunInput, 'geometry' | 'verifyFrame'> = {},
 ) {
   const runtime = {
     memoryProfile: 'desktop',
@@ -368,6 +372,7 @@ function runWithSession(
     exposure: { ev: 0, multiplier: 1, source: 'identity' },
     quality: 90,
     outputPath,
+    ...extra,
   })
 }
 
@@ -503,4 +508,119 @@ describe('runFullResolutionExport source assessment', () => {
       expect(await listFiles(dir)).toEqual([])
     },
   )
+})
+
+/** Frame size the JPEG's SOF0 header declares. */
+function sofDimensions(jpeg: Uint8Array): { width: number; height: number } {
+  const sof = headerSegments(jpeg).find((segment) => segment.marker === 0xC0)
+  if (!sof) throw new Error('no SOF0 segment')
+  return {
+    height: (jpeg[sof.offset + 5] << 8) | jpeg[sof.offset + 6],
+    width: (jpeg[sof.offset + 7] << 8) | jpeg[sof.offset + 8],
+  }
+}
+
+describe('runFullResolutionExport with a geometry', () => {
+  const source = { width: 64, height: 48 }
+  const capability = makeCapability({
+    ...source,
+    rawWidth: source.width,
+    rawHeight: source.height,
+    visibleCrop: { x: 0, y: 0, ...source },
+  })
+  // A small rotation with a constrained crop, as the app's Transform commits it.
+  const rotated: ExportGeometry = {
+    matrix: [0.99, -0.04, 0.02, 0.04, 0.99, -0.01, 0, 0, 1],
+    constrainCrop: true,
+  }
+  // The projective horizon crosses the frame, so the mapping folds.
+  const folding: ExportGeometry = {
+    matrix: [1, 0, 0, 0, 1, 0, -2, 0, 1],
+    constrainCrop: false,
+  }
+
+  it('delivers the frame the engine planner plans and reads inside the source', async () => {
+    const planned = planExportGeometry(rotated, source)
+    expect(planned.outputWidth).toBeLessThan(source.width)
+    const session = makeFakeSession({ capability })
+    const frames: unknown[] = []
+    const outputPath = join(dir, 'exports', 'final.jpg')
+
+    const result = await runWithSession(session, outputPath, {
+      geometry: rotated,
+      verifyFrame: (frame) => {
+        frames.push(frame)
+        expect(session.beginProcessedWindowExport).not.toHaveBeenCalled()
+      },
+    })
+
+    const delivered = {
+      width: planned.outputWidth,
+      height: planned.outputHeight,
+    }
+    expect(frames).toEqual([{ source, output: delivered }])
+    expect({ width: result.width, height: result.height }).toEqual(delivered)
+    expect(result.source).toEqual(source)
+    for (const [request] of session.readProcessedWindow.mock.calls) {
+      const rect = request.outputRect
+      expect(rect.x).toBeGreaterThanOrEqual(0)
+      expect(rect.y).toBeGreaterThanOrEqual(0)
+      expect(rect.x + rect.width).toBeLessThanOrEqual(source.width)
+      expect(rect.y + rect.height).toBeLessThanOrEqual(source.height)
+    }
+    await result.commit()
+    expect(sofDimensions(await readFile(outputPath))).toEqual(delivered)
+  })
+
+  it('reports the decoded frame as delivered without a geometry', async () => {
+    const session = makeFakeSession({ capability })
+    const frames: unknown[] = []
+    const result = await runWithSession(
+      session,
+      join(dir, 'exports', 'final.jpg'),
+      { verifyFrame: (frame) => void frames.push(frame) },
+    )
+    expect(frames).toEqual([{ source, output: source }])
+    expect(result.source).toEqual(source)
+    expect({ width: result.width, height: result.height }).toEqual(source)
+    await result.discard()
+  })
+
+  it('refuses a folding geometry before the processed-window export begins', async () => {
+    const session = makeFakeSession({ capability })
+    const verifyFrame = vi.fn()
+
+    await expect(
+      runWithSession(session, join(dir, 'exports', 'final.jpg'), {
+        geometry: folding,
+        verifyFrame,
+      }),
+    ).rejects.toMatchObject({
+      code: 'export.refused',
+      details: { stage: 'geometry', source },
+    })
+    expect(verifyFrame).not.toHaveBeenCalled()
+    expect(session.beginProcessedWindowExport).not.toHaveBeenCalled()
+    expect(session.readProcessedWindow).not.toHaveBeenCalled()
+    expect(session.dispose).toHaveBeenCalledTimes(1)
+    expect(await listFiles(dir)).toEqual([])
+  })
+
+  it('refuses when the frame check throws, before any window is read', async () => {
+    const session = makeFakeSession({ capability })
+    const refusal = new Error('FRAME_REFUSED')
+
+    await expect(
+      runWithSession(session, join(dir, 'exports', 'final.jpg'), {
+        geometry: rotated,
+        verifyFrame: () => {
+          throw refusal
+        },
+      }),
+    ).rejects.toBe(refusal)
+    expect(session.beginProcessedWindowExport).not.toHaveBeenCalled()
+    expect(session.readProcessedWindow).not.toHaveBeenCalled()
+    expect(session.dispose).toHaveBeenCalledTimes(1)
+    expect(await listFiles(dir)).toEqual([])
+  })
 })

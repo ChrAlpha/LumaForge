@@ -5,6 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type {
+  LumaRawExportCapability,
+  LumaRawProcessedWindow,
+  LumaRawProcessedWindowRequest,
+} from '@lumaforge/luma-raw-runtime'
+import type {
   RenderEnvironment,
   RenderManifest,
   RenderManifestKind,
@@ -14,6 +19,7 @@ import {
   createRenderManifest,
   verifyManifestSha256,
 } from '@lumaforge/render-engine'
+import { planExportGeometry } from '@lumaforge/render-engine/export'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { toLmfgError } from '../protocol/errors'
@@ -33,6 +39,7 @@ import {
   requireSupportedGraph,
   toManifestRenderParams,
 } from './color-graph'
+import { runFullResolutionExport } from './export'
 import { buildRenderManifest, requireVerifiedManifest } from './manifest'
 import { renderPreview } from './preview'
 import type { ReplayPlan } from './replay'
@@ -98,48 +105,95 @@ function manifestFor(
   })
 }
 
+/** The decoded frame of the 4032x3024 sensor the browser-shaped manifests record. */
+const SENSOR = { width: 4032, height: 3024 }
+
+/** A small rotation with a constrained crop, as the app's Transform commits it. */
+const ROTATED_MATRIX = [0.99, -0.04, 0.02, 0.04, 0.99, -0.01, 0, 0, 1]
+/** The projective horizon crosses the frame, so the mapping folds. */
+const FOLDING_MATRIX = [1, 0, 0, 0, 1, 0, -2, 0, 1]
+
+function plannedOutput(
+  geometry: { matrix: readonly number[]; constrain_crop: boolean },
+  source: { width: number; height: number },
+) {
+  const planned = planExportGeometry(
+    { matrix: geometry.matrix, constrainCrop: geometry.constrain_crop },
+    source,
+  )
+  return { width: planned.outputWidth, height: planned.outputHeight }
+}
+
+type GeometryManifestOptions = {
+  params?: ReturnType<typeof parseRenderParams>
+  kind?: RenderManifestKind
+  source?: { width: number; height: number }
+  matrix?: readonly number[]
+  constrainCrop?: boolean
+  /** Recorded `render_params.geometry.output`; defaults to the planned frame. */
+  geometryOutput?: { width: number; height: number }
+  /** Recorded `output.dimensions`; defaults to the geometry output. */
+  output?: { width: number; height: number }
+  outputSha256?: string
+  environment?: RenderEnvironment
+  rowSlice?: number
+}
+
 /**
  * A sealed export manifest shaped like the one the browser writes for a
  * committed geometry: the matrix and cropped output frame sit beside the color
- * params, outside the color graph.
+ * params, outside the color graph, and the source records its decoded frame.
  */
-function geometryManifestFor(params = parseRenderParams({ contrast: 5 })) {
-  const output = { width: 3900, height: 2900 }
+function geometryManifestFor(options: GeometryManifestOptions = {}) {
+  const params = options.params ?? parseRenderParams({ contrast: 5 })
+  const source = options.source ?? SENSOR
+  const matrix = options.matrix ?? ROTATED_MATRIX
+  const constrainCrop = options.constrainCrop ?? true
+  const geometryOutput =
+    options.geometryOutput ??
+    plannedOutput({ matrix, constrain_crop: constrainCrop }, source)
+  const output = options.output ?? geometryOutput
   return createRenderManifest({
-    kind: 'export',
+    kind: options.kind ?? 'export',
     source_raw: {
       sha256: 'a'.repeat(64),
       byte_size: 1,
       filename: 'a.dng',
-      decoded_dimensions: { width: 4032, height: 3024 },
+      decoded_dimensions: source,
     },
     lut: null,
     graph: requireSupportedGraph(buildColorGraph(params, null, exposure)),
     render_params: {
       ...toManifestRenderParams(params, exposure),
       geometry: {
-        matrix: [0.99, -0.04, 0.02, 0.04, 0.99, -0.01, 0, 0, 1],
-        constrain_crop: true,
-        output,
+        matrix,
+        constrain_crop: constrainCrop,
+        output: geometryOutput,
       },
     },
-    policy: { kind: 'export-full', row_slice: 256, concurrency: 1 },
-    environment,
+    policy: {
+      kind: 'export-full',
+      row_slice: options.rowSlice ?? 256,
+      concurrency: 1,
+    },
+    environment: options.environment ?? environment,
     output: {
       ...output,
       quality: 92,
       filename: 'a_fullres.jpg',
-      sha256: 'b'.repeat(64),
+      sha256: options.outputSha256 ?? 'b'.repeat(64),
     },
     parent_manifest_sha256: null,
   })
 }
 
-const geometryRefusal = {
-  code: 'args.invalid',
-  exitCode: 2,
-  message: expect.stringContaining('geometry'),
-  details: { unsupported: 'render_params.geometry' },
+function prepare(manifest: RenderManifest) {
+  return prepareReplay({
+    manifest,
+    source: fakeSource('a'.repeat(64)),
+    workspaceRoot: dir,
+    cwd: dir,
+  })
 }
 
 describe('prepareReplay', () => {
@@ -237,24 +291,131 @@ describe('prepareReplay', () => {
       }),
     ).rejects.toMatchObject({ code: 'file.not_found' })
   })
+})
 
-  it('refuses a sealed manifest that records a geometry', async () => {
+describe('prepareReplay with a recorded geometry', () => {
+  it('accepts a browser-shaped crop and rotation', async () => {
     const manifest = geometryManifestFor()
-    // The manifest is otherwise replayable: sealed, and its color graph
-    // rebuilds to the recorded fingerprint.
     expect(verifyManifestSha256(manifest)).toBe(true)
-    await expect(
-      prepareReplay({
-        manifest,
-        source: fakeSource('a'.repeat(64)),
-        workspaceRoot: dir,
-        cwd: dir,
-      }),
-    ).rejects.toMatchObject(geometryRefusal)
+    expect(manifest.output.dimensions.width).toBeLessThan(SENSOR.width)
+    const plan = await prepare(manifest)
+    expect(plan.fingerprintMatch).toBe(true)
+    expect(plan.params.contrast).toBe(5)
   })
 
-  it('refuses a geometry even when the descriptor version skips the fingerprint gate', async () => {
-    const manifest = geometryManifestFor()
+  it('accepts an unconstrained geometry that keeps the sensor frame', async () => {
+    const manifest = geometryManifestFor({ constrainCrop: false })
+    expect(manifest.output.dimensions).toEqual(SENSOR)
+    await expect(prepare(manifest)).resolves.toMatchObject({
+      fingerprintMatch: true,
+    })
+  })
+
+  it('refuses a folding geometry', async () => {
+    const manifest = geometryManifestFor({
+      matrix: FOLDING_MATRIX,
+      constrainCrop: false,
+      geometryOutput: SENSOR,
+    })
+    expect(verifyManifestSha256(manifest)).toBe(true)
+    await expect(prepare(manifest)).rejects.toMatchObject({
+      code: 'args.invalid',
+      exitCode: 2,
+      details: { stage: 'geometry', source: SENSOR },
+    })
+  })
+
+  it('refuses a geometry output the planner does not produce from the recorded source', async () => {
+    const planned = plannedOutput(
+      { matrix: ROTATED_MATRIX, constrain_crop: true },
+      SENSOR,
+    )
+    const recorded = { width: planned.width - 1, height: planned.height }
+    await expect(
+      prepare(geometryManifestFor({ geometryOutput: recorded })),
+    ).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      exitCode: 8,
+      details: { stage: 'geometry', expected: recorded, actual: planned },
+    })
+  })
+
+  it('refuses a recorded source frame the geometry output was not planned from', async () => {
+    const planned = plannedOutput(
+      { matrix: ROTATED_MATRIX, constrain_crop: true },
+      SENSOR,
+    )
+    await expect(
+      prepare(
+        geometryManifestFor({
+          source: { width: 6000, height: 4000 },
+          geometryOutput: planned,
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      details: { stage: 'geometry', expected: planned },
+    })
+  })
+
+  it('refuses output dimensions that differ from the geometry output', async () => {
+    const planned = plannedOutput(
+      { matrix: ROTATED_MATRIX, constrain_crop: true },
+      SENSOR,
+    )
+    await expect(
+      prepare(geometryManifestFor({ output: SENSOR })),
+    ).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      details: { stage: 'dimensions', expected: SENSOR, actual: planned },
+    })
+  })
+
+  it('refuses an export without a geometry whose output is not the decoded frame', async () => {
+    const manifest = manifestFor(undefined, { kind: 'export' })
+    const doctored = createRenderManifest({
+      kind: 'export',
+      source_raw: { ...manifest.source_raw, decoded_dimensions: SENSOR },
+      lut: null,
+      graph: requireSupportedGraph(
+        buildColorGraph(parseRenderParams({ contrast: 5 }), null, exposure),
+      ),
+      render_params: manifest.render_params,
+      policy: manifest.policy,
+      environment: manifest.environment,
+      output: {
+        ...manifest.output.dimensions,
+        quality: manifest.output.quality,
+        filename: manifest.output.filename,
+        sha256: manifest.output.sha256,
+      },
+      parent_manifest_sha256: null,
+    })
+    await expect(prepare(doctored)).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      details: {
+        stage: 'dimensions',
+        expected: { width: 4, height: 2 },
+        actual: SENSOR,
+      },
+    })
+  })
+
+  it('refuses a geometry on a preview manifest, which renders without one', async () => {
+    await expect(
+      prepare(geometryManifestFor({ kind: 'preview' })),
+    ).rejects.toMatchObject({
+      code: 'args.invalid',
+      details: { stage: 'geometry', unsupported: 'render_params.geometry' },
+    })
+  })
+
+  it('validates a geometry even when the descriptor version skips the fingerprint gate', async () => {
+    const manifest = geometryManifestFor({
+      matrix: FOLDING_MATRIX,
+      constrainCrop: false,
+      geometryOutput: SENSOR,
+    })
     const legacy = {
       ...manifest,
       color_graph: {
@@ -262,14 +423,10 @@ describe('prepareReplay', () => {
         descriptor: { descriptor_version: 1 },
       },
     }
-    await expect(
-      prepareReplay({
-        manifest: legacy,
-        source: fakeSource('a'.repeat(64)),
-        workspaceRoot: dir,
-        cwd: dir,
-      }),
-    ).rejects.toMatchObject(geometryRefusal)
+    await expect(prepare(legacy)).rejects.toMatchObject({
+      code: 'args.invalid',
+      details: { stage: 'geometry' },
+    })
   })
 })
 
@@ -395,7 +552,7 @@ describe('replaying a manifest an earlier writer sealed', () => {
     expect(raw).not.toHaveBeenCalled()
   })
 
-  it('still refuses a recorded geometry', async () => {
+  it('replays a recorded geometry beside the neutral record', async () => {
     const legacy = geometryManifestFor()
     const resealed = createRenderManifest({
       kind: 'export',
@@ -419,14 +576,9 @@ describe('replaying a manifest an earlier writer sealed', () => {
       parent_manifest_sha256: null,
     })
     expect(verifyManifestSha256(resealed)).toBe(true)
-    await expect(
-      prepareReplay({
-        manifest: resealed,
-        source: fakeSource('a'.repeat(64)),
-        workspaceRoot: dir,
-        cwd: dir,
-      }),
-    ).rejects.toMatchObject(geometryRefusal)
+    const plan = await prepare(resealed)
+    expect(plan.fingerprintMatch).toBe(true)
+    expect(plan.params.selective_color).toBeNull()
   })
 })
 
@@ -631,8 +783,241 @@ describe('replaying an explicit zero raw-render exposure', () => {
 })
 
 describe('runReplay with a geometry', () => {
-  it('refuses before the RAW runtime runs or any output is written', async () => {
-    const manifest = geometryManifestFor()
+  const decoded = { width: 64, height: 48 }
+
+  function fakeCapability(frame: {
+    width: number
+    height: number
+  }): LumaRawExportCapability {
+    return {
+      supported: true,
+      strategy: 'libraw-processed-window',
+      ...frame,
+      rawWidth: frame.width,
+      rawHeight: frame.height,
+      visibleCrop: { x: 0, y: 0, ...frame },
+      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+      blackLevel: 0,
+      whiteLevel: 255,
+      orientation: { code: 1, supported: true },
+      color: {
+        workingSpace: 'linear-prophoto-rgb',
+        librawOutputColor: 'prophoto',
+        gamma: 'linear',
+        cameraWhiteBalanceAppliedByRuntime: true,
+        cameraMatrixAppliedByRuntime: true,
+      },
+      sensor: {
+        layout: 'bayer',
+        colorCount: 3,
+        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+        phaseIsWindowLocal: false,
+      },
+      windows: { librawProcessed: true, rawMosaic: false },
+      diagnostics: {
+        hasRawImage: true,
+        hasColor3Image: false,
+        hasColor4Image: false,
+        hasXTransTable: false,
+      },
+      reasons: [],
+    }
+  }
+
+  /** A processed window with a horizontal ramp, so framing changes the bytes. */
+  function rampWindow(
+    request: LumaRawProcessedWindowRequest,
+  ): LumaRawProcessedWindow {
+    const { x, width, height } = request.outputRect
+    const data = new Uint16Array(width * height * 3)
+    for (let row = 0; row < height; row += 1) {
+      for (let column = 0; column < width; column += 1) {
+        const value = Math.round(((x + column) / decoded.width) * 60000)
+        data.fill(
+          value,
+          (row * width + column) * 3,
+          (row * width + column + 1) * 3,
+        )
+      }
+    }
+    return {
+      rect: request.outputRect,
+      workingSpace: 'linear-prophoto-rgb',
+      data,
+      width,
+      height,
+      stride: width * 3,
+      normalized: false,
+      orientationApplied: true,
+      colorApplied: true,
+      warnings: [],
+    }
+  }
+
+  /** A RAW runtime whose one session decodes `frame`; it never quick-decodes. */
+  function fakeRuntime(frame = decoded) {
+    const session = {
+      probe: null,
+      probeExportCapability: vi.fn(async () => fakeCapability(frame)),
+      beginProcessedWindowExport: vi.fn(async () => ({ active: true })),
+      readProcessedWindow: vi.fn(
+        async (request: LumaRawProcessedWindowRequest) => rampWindow(request),
+      ),
+      endProcessedWindowExport: vi.fn(async () => ({ ended: true as const })),
+      dispose: vi.fn(),
+    }
+    const runtime = {
+      memoryProfile: 'desktop',
+      raw: async () => ({ openSession: async () => session }),
+      jpeg: async () => {
+        throw new Error('the export streams through its own JPEG runtime')
+      },
+      dispose: () => undefined,
+    } as unknown as LmfgRuntime
+    return { runtime, session }
+  }
+
+  /** The SHA-256 a first export with this geometry delivers. */
+  async function exportedSha256(matrix = ROTATED_MATRIX) {
+    const { runtime } = fakeRuntime()
+    const exported = await runFullResolutionExport({
+      runtime,
+      source: fakeSource('a'.repeat(64)),
+      params: parseRenderParams({ contrast: 5 }),
+      lut: null,
+      exposure,
+      quality: 92,
+      outputPath: join(dir, 'first', 'output.jpg'),
+      preferredRows: 256,
+      geometry: { matrix, constrainCrop: true },
+    })
+    await exported.discard()
+    return exported.sha256
+  }
+
+  async function replay(manifest: RenderManifest, runtime: LmfgRuntime) {
+    const plan = await prepare(manifest)
+    const outputPath = join(dir, 'replay', 'output.jpg')
+    const manifestOutputPath = join(dir, 'replay', 'manifest.json')
+    const outcome = runReplay({
+      runtime,
+      plan,
+      source: fakeSource('a'.repeat(64)),
+      environment,
+      manifestPath: join(dir, 'm.json'),
+      sessionId: null,
+      outputPath,
+      manifestOutputPath,
+    })
+    return { outcome, outputPath, manifestOutputPath }
+  }
+
+  it('reproduces the recorded frame and hash and records the same geometry', async () => {
+    const manifest = geometryManifestFor({
+      source: decoded,
+      outputSha256: await exportedSha256(),
+    })
+    const expected = manifest.output.dimensions
+    expect(expected.width).toBeLessThan(decoded.width)
+    const { runtime } = fakeRuntime()
+    const { outcome, outputPath, manifestOutputPath } = await replay(
+      manifest,
+      runtime,
+    )
+    const result = await outcome
+    expect(result.reproduced).toBe(true)
+    expect(result.actual_sha256).toBe(manifest.output.sha256)
+    expect(result.output).toMatchObject(expected)
+    expect(await fileExists(outputPath)).toBe(true)
+    const { manifest: written } = await requireVerifiedManifest(
+      manifestOutputPath,
+      environment,
+    )
+    expect(written.render_params.geometry).toEqual(
+      manifest.render_params.geometry,
+    )
+    expect(written.output.dimensions).toEqual(expected)
+    expect(written.source_raw).toEqual(manifest.source_raw)
+    expect(written.color_graph).toEqual(manifest.color_graph)
+    expect(written.parent_manifest_sha256).toBe(manifest.manifest_sha256)
+  })
+
+  it('reports an output hash it did not reproduce and keeps the artifacts', async () => {
+    const manifest = geometryManifestFor({ source: decoded })
+    const { runtime } = fakeRuntime()
+    const { outcome, outputPath, manifestOutputPath } = await replay(
+      manifest,
+      runtime,
+    )
+    await expect(outcome).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      exitCode: 8,
+      details: {
+        stage: 'output',
+        reproduced: false,
+        expected_sha256: 'b'.repeat(64),
+        output: manifest.output.dimensions,
+      },
+    })
+    expect(await fileExists(outputPath)).toBe(true)
+    const { manifest: written } = await requireVerifiedManifest(
+      manifestOutputPath,
+      environment,
+    )
+    expect(written.render_params.geometry).toEqual(
+      manifest.render_params.geometry,
+    )
+  })
+
+  it('refuses a decoded frame that differs from the recorded source before reading a window', async () => {
+    const manifest = geometryManifestFor({ source: { width: 80, height: 60 } })
+    const { runtime, session } = fakeRuntime(decoded)
+    const { outcome } = await replay(manifest, runtime)
+    await expect(outcome).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      details: {
+        stage: 'source-dimensions',
+        expected: { width: 80, height: 60 },
+        actual: decoded,
+      },
+    })
+    expect(session.beginProcessedWindowExport).not.toHaveBeenCalled()
+    expect(session.readProcessedWindow).not.toHaveBeenCalled()
+    expect(session.dispose).toHaveBeenCalledTimes(1)
+    expect(existsSync(join(dir, 'replay'))).toBe(false)
+  })
+
+  it('refuses a different native build before decoding', async () => {
+    const recorded = resolveRenderEnvironment('desktop')
+    const manifest = geometryManifestFor({
+      source: decoded,
+      environment: {
+        ...recorded,
+        native_artifacts: {
+          ...recorded.native_artifacts,
+          build_id: 'raw:111111111111+jpeg:222222222222',
+        },
+      },
+    })
+    const { runtime, session } = fakeRuntime()
+    const { outcome } = await replay(manifest, runtime)
+    await expect(outcome).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      details: {
+        stage: 'environment',
+        mismatched_fields: ['native_artifacts.build_id'],
+      },
+    })
+    expect(session.probeExportCapability).not.toHaveBeenCalled()
+    expect(existsSync(join(dir, 'replay'))).toBe(false)
+  })
+
+  it('refuses a folding geometry in a hand-built plan before the RAW runtime runs', async () => {
+    const manifest = geometryManifestFor({
+      matrix: FOLDING_MATRIX,
+      constrainCrop: false,
+      geometryOutput: SENSOR,
+    })
     const params = manifestToRenderParams(manifest.render_params)
     const plan: ReplayPlan = {
       manifest,
@@ -665,7 +1050,10 @@ describe('runReplay with a geometry', () => {
         outputPath,
         manifestOutputPath,
       }),
-    ).rejects.toMatchObject(geometryRefusal)
+    ).rejects.toMatchObject({
+      code: 'args.invalid',
+      details: { stage: 'geometry' },
+    })
     expect(runtime.raw).not.toHaveBeenCalled()
     expect(runtime.jpeg).not.toHaveBeenCalled()
     expect(await fileExists(outputPath)).toBe(false)
@@ -955,4 +1343,80 @@ describeWithFixture('runReplay', () => {
       runtime.dispose()
     }
   }, 60_000)
+
+  it('reproduces a browser-shaped geometry export at its recorded size and hash', async () => {
+    const runtime = createLmfgRuntime({ memoryProfile: 'desktop' })
+    try {
+      const source = await loadSourceFile(FIXTURE_PATH, '/')
+      const params = parseRenderParams({ contrast: 10 })
+      const geometry = { matrix: ROTATED_MATRIX, constrainCrop: true }
+      const exported = await runFullResolutionExport({
+        runtime,
+        source,
+        params,
+        lut: null,
+        exposure: null,
+        quality: 92,
+        outputPath: join(dir, 'exports', 'a_fullres.jpg'),
+        preferredRows: 256,
+        geometry,
+      })
+      await exported.discard()
+      const delivered = { width: exported.width, height: exported.height }
+      expect(exported.source).toEqual(SENSOR)
+      expect(delivered).toEqual(
+        plannedOutput({ matrix: ROTATED_MATRIX, constrain_crop: true }, SENSOR),
+      )
+      // Sealed the way the browser seals a committed Transform export.
+      const manifest = createRenderManifest({
+        kind: 'export',
+        source_raw: {
+          sha256: source.sha256,
+          byte_size: source.byteSize,
+          filename: source.filename,
+          decoded_dimensions: exported.source,
+        },
+        lut: null,
+        graph: exported.graph,
+        render_params: {
+          ...toManifestRenderParams(params, exported.exposure),
+          geometry: {
+            matrix: geometry.matrix,
+            constrain_crop: geometry.constrainCrop,
+            output: delivered,
+          },
+        },
+        policy: { kind: 'export-full', row_slice: 256, concurrency: 1 },
+        environment,
+        output: {
+          ...delivered,
+          quality: 92,
+          filename: 'a_fullres.jpg',
+          sha256: exported.sha256,
+        },
+        parent_manifest_sha256: null,
+      })
+      const plan = await prepareReplay({
+        manifest,
+        source,
+        workspaceRoot: dir,
+        cwd: dir,
+      })
+      const result = await runReplay({
+        runtime,
+        plan,
+        source,
+        environment,
+        manifestPath: join(dir, 'm.json'),
+        sessionId: null,
+        outputPath: join(dir, 'replay', 'output.jpg'),
+        manifestOutputPath: join(dir, 'replay', 'manifest.json'),
+      })
+      expect(result.reproduced).toBe(true)
+      expect(result.actual_sha256).toBe(exported.sha256)
+      expect(result.output).toMatchObject(delivered)
+    } finally {
+      runtime.dispose()
+    }
+  }, 120_000)
 })

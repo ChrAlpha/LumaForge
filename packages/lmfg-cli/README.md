@@ -112,8 +112,9 @@ candidates):
 lightness each -100..100, matching the app sliders); omitted bands stay
 neutral.
 
-`lmfg.params.v1` has no geometry field, so the CLI cannot apply the app's
-Transform (upright, perspective, rotation, aspect, scale, offset, or crop).
+`lmfg.params.v1` has no geometry field, so the CLI cannot author the app's
+Transform (upright, perspective, rotation, aspect, scale, offset, or crop);
+`render replay` reapplies a geometry an app export manifest recorded.
 
 LUTs whose contract cannot be confirmed from `LUMAFORGE_*` comments must carry
 an explicit `contract`; `lut contract infer` returns ready-to-use
@@ -225,8 +226,14 @@ The browser app seals the same `RenderManifest` for every completed
 full-resolution export ("Manifest" next to Download on desktop and mobile).
 `lmfg manifest verify` accepts those files; `render replay` re-renders them
 when the source RAW and LUT file are available and reports whether the bytes
-were reproduced. Replay rebuilds the color graph only, so it cannot reproduce
-an export that records a Transform geometry (`render_params.geometry`).
+were reproduced. An export that records a Transform geometry
+(`render_params.geometry`) replays with that geometry: before decoding, the
+recorded matrix must plan, from the recorded source frame, to the recorded
+geometry output and output dimensions (exit 2 for a geometry that folds the
+frame or retains too little of it, exit 8 for a size disagreement), and the
+decoded frame must match the recorded source frame before any pixels are read.
+The replay manifest records the same geometry. A preview or candidate manifest
+that records a geometry is refused (exit 2).
 
 ## Exit codes
 

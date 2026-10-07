@@ -5,9 +5,14 @@ import type {
 import { exposureMultiplierFromEv } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import type { RenderManifest } from '@lumaforge/render-engine'
-import type { FullResolutionExportProgress } from '@lumaforge/render-engine/export'
+import type {
+  ExportGeometry,
+  FullResolutionExportProgress,
+} from '@lumaforge/render-engine/export'
 import {
   assessProcessedExport,
+  INVALID_EXPORT_GEOMETRY,
+  planExportGeometry,
   runFullResolutionJpegExport,
   runProcessedWindowExportLifecycle,
 } from '@lumaforge/render-engine/export'
@@ -63,6 +68,44 @@ function requireExportCapability(
   })
 }
 
+type Dimensions = { width: number; height: number }
+
+/** The frames one full-resolution export reads and writes. */
+export type ExportFrame = {
+  /** The decoded source frame the processed windows are read from. */
+  source: Dimensions
+  /** The frame the JPEG delivers: the source, or the geometry's planned output. */
+  output: Dimensions
+}
+
+/**
+ * Plans the delivered frame with the engine's own geometry planner, which the
+ * executor runs again before its first window, so a geometry refused here is
+ * one the executor would refuse and a frame admitted here is the frame it
+ * writes.
+ */
+function planExportFrame(
+  capability: LumaRawExportCapability,
+  geometry: ExportGeometry | undefined,
+): ExportFrame {
+  const source = { width: capability.width, height: capability.height }
+  if (!geometry) return { source, output: source }
+  try {
+    const planned = planExportGeometry(geometry, source)
+    return {
+      source,
+      output: { width: planned.outputWidth, height: planned.outputHeight },
+    }
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== INVALID_EXPORT_GEOMETRY)
+      throw error
+    throw new LmfgError('export.refused', {
+      message: `The geometry cannot be exported from this ${source.width}x${source.height} source: it folds the frame or retains too little of it.`,
+      details: { stage: 'geometry', source },
+    })
+  }
+}
+
 export type ExportRunInput = {
   runtime: LmfgRuntime
   source: LoadedSource
@@ -74,6 +117,10 @@ export type ExportRunInput = {
   /** Final JPEG path; chunks stream into `<path>.tmp` and rename on success. */
   outputPath: string
   preferredRows?: number
+  /** Geometry applied at full resolution before the color graph; absent exports the decoded frame. */
+  geometry?: ExportGeometry
+  /** Checks the probed frames before any window is read; throwing refuses the export. */
+  verifyFrame?: (frame: ExportFrame) => void
   signal?: AbortSignal
   onProgress?: (progress: FullResolutionExportProgress) => void
 }
@@ -82,8 +129,11 @@ export type ExportRunResult = {
   path: string
   byteLength: number
   sha256: string
+  /** Delivered frame; under a geometry this is its planned output, not the source. */
   width: number
   height: number
+  /** Decoded source frame the export read from. */
+  source: Dimensions
   graph: SupportedExportColorGraphDescriptor
   exposure: RawRenderExposure
   strips: number
@@ -127,6 +177,8 @@ export async function runFullResolutionExport(
     const capability = requireExportCapability(
       await session.probeExportCapability(input.signal),
     )
+    const frame = planExportFrame(capability, input.geometry)
+    input.verifyFrame?.(frame)
     const graph = requireSupportedGraph(
       buildColorGraph(input.params, input.lut?.lutData ?? null, exposure),
     )
@@ -150,6 +202,7 @@ export async function runFullResolutionExport(
             quality: percentToQuality(input.quality),
             preferredRows: input.preferredRows ?? DEFAULT_EXPORT_STRIP_ROWS,
             concurrency: 1,
+            ...(input.geometry ? { geometry: input.geometry } : {}),
             jpegSink: sink,
             signal: input.signal,
             onProgress: (progress) => {
@@ -172,8 +225,9 @@ export async function runFullResolutionExport(
         sha256: streamed.sha256,
         commit: streamed.commit,
         discard: streamed.discard,
-        width: capability.width,
-        height: capability.height,
+        width: frame.output.width,
+        height: frame.output.height,
+        source: frame.source,
         graph,
         exposure,
         strips,

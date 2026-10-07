@@ -3,9 +3,16 @@ import type {
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
 import type {
+  GeometryParams,
   RenderEnvironment,
   RenderManifest,
 } from '@lumaforge/render-engine'
+import { createRenderManifest } from '@lumaforge/render-engine'
+import type { ExportGeometry } from '@lumaforge/render-engine/export'
+import {
+  INVALID_EXPORT_GEOMETRY,
+  planExportGeometry,
+} from '@lumaforge/render-engine/export'
 
 import { LmfgError } from '../protocol/errors'
 import type { LmfgRuntime } from '../runtime/node-runtime'
@@ -25,7 +32,9 @@ import {
   fingerprintColorGraph,
   manifestToRenderParams,
   requireSupportedGraph,
+  toManifestRenderParams,
 } from './color-graph'
+import type { ExportFrame } from './export'
 import { exposureFromManifest, runFullResolutionExport } from './export'
 import type { EffectiveLutRanges, ResolvedLut } from './lut'
 import {
@@ -33,7 +42,7 @@ import {
   loadLutFile,
   resolveLutContract,
 } from './lut'
-import { buildRenderManifest, percentToQuality } from './manifest'
+import { percentToQuality } from './manifest'
 import { renderPreview } from './preview'
 
 export type ReplayPlan = {
@@ -94,19 +103,129 @@ function descriptorVersionOf(manifest: RenderManifest): number | null {
   return null
 }
 
+type Dimensions = { width: number; height: number }
+
+/** What an export manifest says the replay must read, apply, and deliver. */
+type ReplayExportFrame = ExportFrame & { geometry: ExportGeometry | null }
+
+function sameDimensions(a: Dimensions, b: Dimensions): boolean {
+  return a.width === b.width && a.height === b.height
+}
+
+function dimensionsOf(value: Dimensions): Dimensions {
+  return { width: value.width, height: value.height }
+}
+
 /**
- * Replay rebuilds the color graph only. A recorded geometry (crop, rotation,
- * perspective) would be dropped from the output, so a manifest that carries
- * one is refused before anything is decoded or written.
+ * Only full-resolution exports apply a geometry; preview and candidate
+ * replays render the decoded frame, so a manifest of those kinds that records
+ * one is refused rather than replayed without it.
  */
 function refuseUnsupportedGeometry(manifest: RenderManifest): void {
+  if (manifest.kind === 'export') return
   if (manifest.render_params.geometry === undefined) return
   throw new LmfgError('args.invalid', {
-    message:
-      'Replaying a manifest with a geometry (render_params.geometry) is not supported; lmfg replays the color graph only and would drop the recorded crop, rotation, and perspective. Only manifests without a geometry can be replayed; `lmfg manifest verify` still checks this one.',
-    details: { unsupported: 'render_params.geometry' },
+    message: `A ${manifest.kind} manifest that records a geometry (render_params.geometry) cannot be replayed; only full-resolution exports apply a geometry, and this replay would drop the recorded crop, rotation, and perspective.`,
+    details: { stage: 'geometry', unsupported: 'render_params.geometry' },
     suggestedNextActions: ['lmfg manifest verify <manifest.json>'],
   })
+}
+
+/**
+ * The frame an export replay must deliver, checked from the manifest alone
+ * before anything is decoded: the engine's geometry planner, run on the
+ * recorded source frame, must produce the recorded geometry output, and the
+ * recorded output must be that frame (the decoded frame when there is no
+ * geometry). A geometry the planner refuses (one that folds the frame or
+ * retains too little of it) is refused here.
+ */
+function requireExportFrame(manifest: RenderManifest): ReplayExportFrame {
+  const source = dimensionsOf(manifest.source_raw.decoded_dimensions)
+  const recorded = manifest.render_params.geometry
+  let geometry: ExportGeometry | null = null
+  let delivered = source
+  if (recorded) {
+    geometry = {
+      matrix: [...recorded.matrix],
+      constrainCrop: recorded.constrain_crop,
+    }
+    try {
+      const planned = planExportGeometry(geometry, source)
+      delivered = { width: planned.outputWidth, height: planned.outputHeight }
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.message !== INVALID_EXPORT_GEOMETRY
+      )
+        throw error
+      throw new LmfgError('args.invalid', {
+        message: `The recorded geometry cannot be exported from the recorded ${source.width}x${source.height} source frame: it folds the frame or retains too little of it.`,
+        details: { stage: 'geometry', source },
+        suggestedNextActions: ['lmfg manifest verify <manifest.json>'],
+      })
+    }
+    if (!sameDimensions(recorded.output, delivered)) {
+      throw new LmfgError('replay.mismatch', {
+        message: `The recorded geometry output ${recorded.output.width}x${recorded.output.height} is not the ${delivered.width}x${delivered.height} frame the geometry plans from the recorded ${source.width}x${source.height} source.`,
+        details: {
+          stage: 'geometry',
+          source,
+          expected: dimensionsOf(recorded.output),
+          actual: delivered,
+        },
+      })
+    }
+  }
+  const output = dimensionsOf(manifest.output.dimensions)
+  if (!sameDimensions(output, delivered)) {
+    throw new LmfgError('replay.mismatch', {
+      message: `The manifest records a ${output.width}x${output.height} output, but its ${recorded ? 'geometry' : 'source'} delivers ${delivered.width}x${delivered.height}.`,
+      details: { stage: 'dimensions', expected: output, actual: delivered },
+    })
+  }
+  return { source, output, geometry }
+}
+
+/**
+ * Holds the probed decode to the recorded frame before any window is read:
+ * a different decoded size would frame different pixels under the same
+ * geometry.
+ */
+function requireDecodedFrame(
+  expected: ReplayExportFrame,
+  actual: ExportFrame,
+): void {
+  if (!sameDimensions(actual.source, expected.source)) {
+    throw new LmfgError('replay.mismatch', {
+      message: `This install decodes the source at ${actual.source.width}x${actual.source.height}, but the manifest recorded ${expected.source.width}x${expected.source.height}; replay refused before reading any pixels.`,
+      details: {
+        stage: 'source-dimensions',
+        expected: expected.source,
+        actual: actual.source,
+      },
+    })
+  }
+  if (!sameDimensions(actual.output, expected.output)) {
+    throw new LmfgError('replay.mismatch', {
+      message: `This export would deliver ${actual.output.width}x${actual.output.height}, but the manifest recorded ${expected.output.width}x${expected.output.height}; replay refused before reading any pixels.`,
+      details: {
+        stage: 'dimensions',
+        expected: expected.output,
+        actual: actual.output,
+      },
+    })
+  }
+}
+
+function recordedGeometry(
+  frame: ReplayExportFrame | null,
+): GeometryParams | null {
+  if (!frame?.geometry) return null
+  return {
+    matrix: frame.geometry.matrix,
+    constrain_crop: frame.geometry.constrainCrop,
+    output: frame.output,
+  }
 }
 
 export async function prepareReplay(input: {
@@ -118,6 +237,7 @@ export async function prepareReplay(input: {
 }): Promise<ReplayPlan> {
   const { manifest, source } = input
   refuseUnsupportedGeometry(manifest)
+  if (manifest.kind === 'export') requireExportFrame(manifest)
   if (source.sha256 !== manifest.source_raw.sha256) {
     throw new LmfgError('hash.mismatch', {
       message: `Source ${source.filename} does not match the manifest (expected sha256 ${manifest.source_raw.sha256.slice(0, 12)}…, got ${source.sha256.slice(0, 12)}…).`,
@@ -318,6 +438,8 @@ export type ReplayRunInput = {
 export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
   const { plan, manifest } = { plan: input.plan, manifest: input.plan.manifest }
   refuseUnsupportedGeometry(manifest)
+  const exportFrame =
+    manifest.kind === 'export' ? requireExportFrame(manifest) : null
   requireReplayEnvironment(manifest, input.environment)
   const timings: Record<string, number> = {}
   const total = performance.now()
@@ -331,7 +453,7 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
   let graph: SupportedExportColorGraphDescriptor
   const quality = manifest.output.quality
 
-  if (manifest.kind === 'export') {
+  if (exportFrame) {
     const result = await runFullResolutionExport({
       runtime: input.runtime,
       source: input.source,
@@ -341,6 +463,8 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
       quality,
       outputPath: input.outputPath,
       preferredRows: manifest.policy.row_slice,
+      ...(exportFrame.geometry ? { geometry: exportFrame.geometry } : {}),
+      verifyFrame: (frame) => requireDecodedFrame(exportFrame, frame),
       signal: input.signal,
       onProgress: input.onProgress,
     })
@@ -384,17 +508,19 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
     })
   }
 
-  const replayManifest = buildRenderManifest({
+  // The replay records the geometry it applied, so its manifest replays too.
+  const renderParams = toManifestRenderParams(plan.params, plan.exposure)
+  const geometry = recordedGeometry(exportFrame)
+  const replayManifest = createRenderManifest({
     kind: manifest.kind,
-    source: manifest.source_raw,
+    source_raw: manifest.source_raw,
     lut: plan.lut?.identity ?? null,
     graph,
-    params: plan.params,
-    exposure: plan.exposure,
+    render_params: geometry ? { ...renderParams, geometry } : renderParams,
     policy: manifest.policy,
     environment: input.environment,
     output: { width, height, quality, filename: 'output.jpg', sha256 },
-    parentManifestSha256: manifest.manifest_sha256,
+    parent_manifest_sha256: manifest.manifest_sha256,
   })
   if (publish) await publish()
   else if (jpeg) await writeFileAtomic(input.outputPath, jpeg)

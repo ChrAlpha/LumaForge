@@ -108,6 +108,19 @@ Requires `@lumaforge/luma-raw-runtime` 0.1.2 and
   single portable path segment, params outside `lmfg.params.v1`) now fails
   with `schema.invalid` instead of being used as read. Plans written by 0.1.0
   still read: their params predate `selective_color`, which reads as `null`.
+- `render replay` reproduces browser export manifests that record a Transform
+  geometry (`render_params.geometry`) instead of refusing them. The geometry
+  runs through the render-engine export planner and executor the app uses.
+  Before decoding, replay refuses a geometry that folds the frame or retains
+  too little of it (`args.invalid`, exit 2), and refuses (`replay.mismatch`,
+  exit 8) when the recorded source frame does not plan to the recorded
+  geometry output, or the recorded output dimensions are not that frame (for
+  an export without a geometry, the decoded source frame). The probed decode
+  must match the recorded source frame before any window is read. The replay
+  manifest records the geometry it applied; the source, LUT, runtime build,
+  fingerprint, and output SHA-256 checks are unchanged. Preview and candidate
+  manifests that record a geometry are still refused. The CLI still has no
+  geometry authoring.
 - Native source and fixture downloads retry with mirrors and time limits, and
   the CLI CI job caches the RAW fixture instead of skipping when the upstream
   host is unreachable.
