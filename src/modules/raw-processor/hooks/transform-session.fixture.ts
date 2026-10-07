@@ -76,18 +76,19 @@ export function useTransformSessionFixture(
   sessionRef.current = session
   const onCommitRef = useRef(onCommit)
   onCommitRef.current = onCommit
-  const moved = useRef(false)
-  const invalidateExportGraph = useCallback(() => {
-    moved.current = true
-  }, [])
+  // The geometry each source last published. The producer replaces it only
+  // when it moves; an edit invalidates the export without moving it.
+  const published = useRef<Record<string, ExportGeometry | null>>({})
+  const invalidateExportGraph = useCallback(() => {}, [])
   // The producer writes the session ref before it publishes, so the ref
   // already holds what the update produces.
   const setSession = useCallback(() => {
     const next = sessionRef.current
     if (!next) return
-    if (moved.current) {
-      moved.current = false
-      onCommitRef.current?.(next.id, next.exportGeometry ?? null)
+    const geometry = next.exportGeometry ?? null
+    if ((published.current[next.id] ?? null) !== geometry) {
+      published.current[next.id] = geometry
+      onCommitRef.current?.(next.id, geometry)
     }
     setSessions((previous) => ({ ...previous, [next.id]: next }))
   }, [])

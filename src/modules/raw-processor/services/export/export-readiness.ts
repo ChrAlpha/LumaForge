@@ -11,13 +11,27 @@ import {
   getCapabilityVectorSnapshot,
 } from '~/lib/runtime/capability-vector'
 
-import { deriveExportDisabledReason } from '../../model/derive-session'
+import {
+  deriveExportDisabledReason,
+  PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+} from '../../model/derive-session'
 import type { ImageSession } from '../../model/session'
+import type { TransformExportBlock } from '../transform/transform-state'
+import { deriveTransformStatus } from '../transform/transform-state'
 
 const MISSING_RAW_RENDER_EXPOSURE_EXPORT_REASON =
   'RAW preview exposure is still being prepared.'
 const INVALID_EXPORT_GEOMETRY_REASON =
   'This Transform cannot be reproduced at full resolution. Adjust or reset Transform to export.'
+
+const TRANSFORM_EXPORT_REFUSAL: Record<TransformExportBlock, string> = {
+  pending:
+    'Transform is still preparing the current photo. Export once the preview shows it.',
+  invalid:
+    'This Transform leaves too little usable image. Reduce the adjustment or reset Transform to export.',
+  unavailable:
+    'The processed preview is unavailable. Wait for it or reset Transform to export.',
+}
 
 function isOpfsAvailableForReadiness() {
   if (typeof navigator === 'undefined') return false
@@ -184,4 +198,30 @@ export function deriveFullResExportReadiness(input: {
     deliveredSize,
     disabledReason: undefined,
   }
+}
+
+/**
+ * Why the Transform the session asks for right now keeps an export from
+ * starting, or undefined when it does not. Exports read it from the live
+ * session when they run, so an action captured before an edit still refuses.
+ * Full resolution reproduces only a neutral Transform or the accepted answer
+ * to the newest request. The HQ preview JPEG never applies Transform, so it
+ * starts only while nothing is asked and no geometry is held.
+ */
+export function deriveTransformExportRefusal(
+  session: ImageSession,
+  kind: 'full-resolution' | 'hq-preview',
+): string | undefined {
+  // A session built before it carried a Transform asks for none.
+  const status = session.transform
+    ? deriveTransformStatus(session.transform)
+    : 'neutral'
+  if (kind === 'hq-preview') {
+    return status !== 'neutral' || session.exportGeometry
+      ? PREVIEW_TRANSFORM_HQ_EXPORT_REASON
+      : undefined
+  }
+  return status === 'neutral' || status === 'accepted'
+    ? undefined
+    : TRANSFORM_EXPORT_REFUSAL[status]
 }

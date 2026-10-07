@@ -6,6 +6,7 @@ import {
   pickColorGraphIntent,
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
+import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 import { toast } from 'sonner'
 
@@ -27,7 +28,11 @@ import type {
 } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ExportResult } from '../../model/export-result'
-import type { ActiveExportPlanState, ImageSession } from '../../model/session'
+import type {
+  ActiveExportPlanState,
+  ImageSession,
+  TransformIntent,
+} from '../../model/session'
 import type { ProcessingStatus } from '../../model/workflow'
 import {
   getStableErrorCode,
@@ -46,7 +51,10 @@ import {
 } from './export-evacuation'
 import type { ExportAttemptOutcome } from './export-interruption'
 import { resolveExportEnvironment } from './export-manifest'
-import { deriveFullResExportReadiness } from './export-readiness'
+import {
+  deriveFullResExportReadiness,
+  deriveTransformExportRefusal,
+} from './export-readiness'
 import type {
   ExportInterruptionMarkers,
   SourceInterruptionHint,
@@ -60,7 +68,10 @@ import { resolveExportCopyCapability } from './export-result-actions'
 import { createCompletedExportResult } from './export-result-materialization'
 import {
   buildExportFailureDescription,
+  claimExportSlot,
   clearExportResultForActiveExport,
+  clearExportResultState,
+  isLatestExportClaim,
 } from './export-state'
 import {
   buildExportFilename,
@@ -139,6 +150,64 @@ function toActivePlanState(plan: ExportExecutionPlan): ActiveExportPlanState {
   }
 }
 
+/**
+ * One full-resolution export attempt, fixed when it starts: the source it
+ * reads, the export graph generation, the Transform intent and geometry it
+ * was admitted with, and its own abort controller.
+ */
+type FullResExportAttempt = Readonly<{
+  sessionId: string
+  graphVersion: number
+  transformIntent: TransformIntent | undefined
+  exportGeometry: ExportGeometry | null
+  controller: AbortController
+}>
+
+/**
+ * Where an attempt stands. It is `obsolete` once the view unmounts, its
+ * signal aborts, a later attempt has claimed the export slot (even one that
+ * has since ended), the export graph moves, another source loads, or the
+ * source asks for another Transform or holds another geometry. Every edit
+ * makes a new intent, so asking again for an earlier Transform does not make
+ * an attempt current again; an event that asks for the same Transform keeps
+ * the intent, so it leaves the attempt current. Whoever made it obsolete
+ * settles the workflow.
+ *
+ * While it still works towards its JPEG, an attempt also needs the live
+ * Transform to stay one export may reproduce. A new frame or a failure that
+ * leaves it pending, invalid or unavailable makes no edit, so nothing else
+ * ends the attempt: it stands `refused`, with the reason, and ends itself.
+ * Once the JPEG is delivered the session keeps it through such events, so
+ * sealing its manifest reads only whether the attempt is obsolete.
+ */
+type AttemptStanding =
+  | { kind: 'current' }
+  | { kind: 'obsolete' }
+  | { kind: 'refused'; reason: string }
+
+function readAttemptStanding(
+  refs: ExportContext['refs'],
+  attempt: FullResExportAttempt,
+  stage: 'work' | 'sealing',
+): AttemptStanding {
+  const live = refs.sessionRef.current
+  if (
+    !refs.isMountedRef.current ||
+    attempt.controller.signal.aborted ||
+    !isLatestExportClaim(refs.exportAbortControllerRef, attempt.controller) ||
+    refs.exportGraphVersionRef.current !== attempt.graphVersion ||
+    !live ||
+    live.id !== attempt.sessionId ||
+    live.transform?.intent !== attempt.transformIntent ||
+    (live.exportGeometry ?? null) !== attempt.exportGeometry
+  ) {
+    return { kind: 'obsolete' }
+  }
+  if (stage === 'sealing') return { kind: 'current' }
+  const reason = deriveTransformExportRefusal(live, 'full-resolution')
+  return reason ? { kind: 'refused', reason } : { kind: 'current' }
+}
+
 export type FullResExportRequest = {
   /** How hard the plan may push this device; never the JPEG quality. */
   performancePreference?: PerformancePreference
@@ -162,18 +231,30 @@ export async function orchestrateFullResExport(
       currentSession?.id === ctx.atoms.session?.id ? currentSession : null,
     rawRenderExposure,
   })
-  if (!exportReadiness.canExport) {
-    const description = exportReadiness.disabledReason
+  const refuse = (description: string | undefined) =>
     ctx.services.scheduleToast(() =>
       toast.error(
         'Full-resolution export is not ready',
         description ? { description } : undefined,
       ),
     )
+  if (!exportReadiness.canExport) {
+    refuse(exportReadiness.disabledReason)
     return
   }
 
   const activeSession = exportReadiness.session
+  // Read from the live session as the action runs, so an action a surface
+  // captured before the Transform was edited still refuses.
+  const transformRefusal = deriveTransformExportRefusal(
+    activeSession,
+    'full-resolution',
+  )
+  if (transformRefusal) {
+    refuse(transformRefusal)
+    return
+  }
+
   const activeSourceFile = exportReadiness.sourceFile
   const activeRawRenderExposure = exportReadiness.rawRenderExposure
   const exportCapability = exportReadiness.fullResCapability
@@ -227,14 +308,38 @@ export async function orchestrateFullResExport(
   const exportSessionId = activeSession.id
   const exportGraphVersion = ctx.refs.exportGraphVersionRef.current
   ctx.services.abortExportWork()
-  const exportAbortController = new AbortController()
-  ctx.refs.exportAbortControllerRef.current = exportAbortController
+  const attempt: FullResExportAttempt = Object.freeze({
+    sessionId: exportSessionId,
+    graphVersion: exportGraphVersion,
+    transformIntent: activeSession.transform?.intent,
+    exportGeometry,
+    controller: new AbortController(),
+  })
+  const exportAbortController = attempt.controller
+  claimExportSlot(ctx.refs.exportAbortControllerRef, exportAbortController)
 
-  const isCurrentExport = () =>
-    ctx.refs.isMountedRef.current &&
-    !exportAbortController.signal.aborted &&
-    ctx.refs.exportGraphVersionRef.current === exportGraphVersion &&
-    ctx.refs.sessionRef.current?.id === exportSessionId
+  // Checked before every write that follows an asynchronous step. A refused
+  // attempt stops its own work and hands the workflow back as it found it,
+  // with the reason, the way a refusal at the start would have.
+  const isCurrentExport = () => {
+    const standing = readAttemptStanding(ctx.refs, attempt, 'work')
+    if (standing.kind === 'refused') {
+      exportAbortController.abort()
+      ctx.atoms.setSession((prev) =>
+        prev &&
+        prev.id === exportSessionId &&
+        prev.exportState.status === 'exporting'
+          ? clearExportResultState(prev)
+          : prev,
+      )
+      ctx.atoms.setStatus('ready')
+      ctx.atoms.setProgress(0)
+      refuse(standing.reason)
+    }
+    return standing.kind === 'current'
+  }
+  const isCurrentSeal = () =>
+    readAttemptStanding(ctx.refs, attempt, 'sealing').kind === 'current'
 
   // This attempt's marker, from just before the worker work until the
   // attempt ends; each attempt ends only its own marker.
@@ -268,6 +373,9 @@ export async function orchestrateFullResExport(
         previousUserInterrupted: false,
       },
     })
+    if (!isCurrentExport()) {
+      return
+    }
     // Outputs left by closed tabs are collected once per page at idle time;
     // this export never waits for it and cannot fail because of it.
     scheduleAbandonedOpfsOutputCollection()
@@ -473,14 +581,7 @@ export async function orchestrateFullResExport(
         )
       },
       onProgress: (entry) => {
-        if (
-          !ctx.refs.isMountedRef.current ||
-          exportAbortController.signal.aborted ||
-          ctx.refs.exportGraphVersionRef.current !== exportGraphVersion ||
-          ctx.refs.sessionRef.current?.id !== exportSessionId
-        ) {
-          return
-        }
+        if (!isCurrentExport()) return
 
         if (entry.progress >= 99) {
           emitExportDebugEvent({
@@ -518,11 +619,8 @@ export async function orchestrateFullResExport(
 
     const completedSession = ctx.refs.sessionRef.current
     if (
-      !ctx.refs.isMountedRef.current ||
-      exportAbortController.signal.aborted ||
-      ctx.refs.exportGraphVersionRef.current !== exportGraphVersion ||
+      !isCurrentExport() ||
       !completedSession ||
-      completedSession.id !== exportSessionId ||
       completedSession.exportState.fullResCapability.status !== 'supported'
     ) {
       return
@@ -566,7 +664,8 @@ export async function orchestrateFullResExport(
     }
 
     // The manifest is attached after "ready" so hashing the source and the
-    // delivered JPEG never delays the download; a failure only logs.
+    // delivered JPEG never delays the download; a failure only logs. Either
+    // outcome lands only while no later attempt or edit has replaced it.
     void buildManifestForExportResult({
       result: exportResult,
       sourceFile: activeSourceFile,
@@ -598,12 +697,7 @@ export async function orchestrateFullResExport(
       ),
     })
       .then((manifest) => {
-        if (
-          !ctx.refs.isMountedRef.current ||
-          ctx.refs.sessionRef.current?.id !== exportSessionId
-        ) {
-          return
-        }
+        if (!isCurrentSeal()) return
         ctx.atoms.setSession((prev) =>
           prev &&
           prev.id === exportSessionId &&
@@ -633,31 +727,27 @@ export async function orchestrateFullResExport(
         })
       })
       .catch((error: unknown) => {
+        if (!isCurrentSeal()) return
         const reason =
           error instanceof ExportManifestUnavailableError
             ? error.reason
             : 'internal'
-        if (
-          ctx.refs.isMountedRef.current &&
-          ctx.refs.sessionRef.current?.id === exportSessionId
-        ) {
-          ctx.atoms.setSession((prev) =>
-            prev &&
-            prev.id === exportSessionId &&
-            prev.exportState.result === exportResult
-              ? {
-                  ...prev,
-                  exportState: {
-                    ...prev.exportState,
-                    result: {
-                      ...exportResult,
-                      manifestState: { status: 'unavailable', reason },
-                    },
+        ctx.atoms.setSession((prev) =>
+          prev &&
+          prev.id === exportSessionId &&
+          prev.exportState.result === exportResult
+            ? {
+                ...prev,
+                exportState: {
+                  ...prev.exportState,
+                  result: {
+                    ...exportResult,
+                    manifestState: { status: 'unavailable', reason },
                   },
-                }
-              : prev,
-          )
-        }
+                },
+              }
+            : prev,
+        )
         emitExportDebugEvent({
           type: 'export-manifest-failed',
           payload: {
@@ -681,12 +771,7 @@ export async function orchestrateFullResExport(
     })
     endAttempt(outcome)
 
-    if (
-      exportAbortController.signal.aborted ||
-      !ctx.refs.isMountedRef.current ||
-      ctx.refs.exportGraphVersionRef.current !== exportGraphVersion ||
-      ctx.refs.sessionRef.current?.id !== exportSessionId
-    ) {
+    if (!isCurrentExport()) {
       return
     }
 

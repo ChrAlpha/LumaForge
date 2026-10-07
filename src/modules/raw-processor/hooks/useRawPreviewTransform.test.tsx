@@ -137,7 +137,8 @@ describe('useRawPreviewTransform', () => {
 
     expect(harness.result.current.previewTransform.active).toBe(true)
     expect(harness.result.current.session?.exportState.result).toBeUndefined()
-    expect(harness.queueExportResultResourceDisposal).toHaveBeenCalledTimes(1)
+    // The edit invalidates, and so does the geometry its answer moves.
+    expect(harness.queueExportResultResourceDisposal).toHaveBeenCalledTimes(2)
     expect(harness.toast.error).not.toHaveBeenCalled()
     expect(harness.toast.success).not.toHaveBeenCalled()
   })
@@ -150,15 +151,16 @@ describe('useRawPreviewTransform', () => {
     act(() => {
       acceptTransformGeometry(harness.result.current.transform, SAMPLE_GEOMETRY)
       expect(harness.controller.signal.aborted).toBe(true)
-      expect(harness.exportGraphVersionRef.current).toBe(1)
+      expect(harness.exportGraphVersionRef.current).toBe(2)
       expect(harness.sessionRef.current?.exportState.status).toBe('idle')
     })
     act(() =>
       acceptTransformGeometry(harness.result.current.transform, OTHER_GEOMETRY),
     )
 
-    expect(harness.exportGraphVersionRef.current).toBe(2)
-    expect(harness.queueExportResultResourceDisposal).toHaveBeenCalledTimes(2)
+    // Each accept is an edit and then a geometry move.
+    expect(harness.exportGraphVersionRef.current).toBe(4)
+    expect(harness.queueExportResultResourceDisposal).toHaveBeenCalledTimes(4)
     expect(harness.setStatus).toHaveBeenCalledWith('ready')
     expect(harness.setProgress).toHaveBeenCalledWith(0)
     expect(harness.result.current.previewTransform.geometry).toEqual(
@@ -185,18 +187,113 @@ describe('useRawPreviewTransform', () => {
           : previous,
       ),
     )
+    const { state, dispatch } = harness.result.current.transform
+    const sourceId = state!.sourceId
+    const issued = state!.accepted!.issued
+    // A new frame, its request and the worker's answer, each on its own.
+    act(() => dispatch({ type: 'capture', sourceId, captureKey: 'frame-2' }))
+    act(() =>
+      dispatch({
+        type: 'request',
+        sourceId,
+        captureKey: 'frame-2',
+        requestId: 500,
+        geometry: SAMPLE_GEOMETRY,
+      }),
+    )
+    act(() =>
+      dispatch({
+        type: 'rendered',
+        sourceId,
+        captureKey: 'frame-2',
+        requestId: 500,
+        geometry: SAMPLE_GEOMETRY,
+        frame: { width: 800, height: 600 },
+      }),
+    )
+
+    expect(harness.exportGraphVersionRef.current).toBe(2)
+    expect(harness.result.current.session?.exportState.result).toBe(result)
+    const reanswered = harness.result.current.transform.state!
+    expect(deriveTransformStatus(reanswered)).toBe('accepted')
+    expect(reanswered.accepted?.issued).toBeGreaterThan(issued)
+    expect(reanswered.accepted?.geometry).toEqual(SAMPLE_GEOMETRY)
+  })
+
+  it('invalidates on every real edit or reset while the held geometry stays, and on nothing else', () => {
+    const harness = setup()
     act(() =>
       acceptTransformGeometry(
         harness.result.current.transform,
         SAMPLE_GEOMETRY,
       ),
     )
+    const result = createExportResult()
+    act(() =>
+      harness.result.current.setSession((previous) =>
+        previous
+          ? {
+              ...previous,
+              exportState: { ...previous.exportState, status: 'ready', result },
+            }
+          : previous,
+      ),
+    )
+    const { state, dispatch } = harness.result.current.transform
+    const sourceId = state!.sourceId
+    const original = state!.intent.manual
+    const versionAfterAccept = harness.exportGraphVersionRef.current
 
-    expect(harness.exportGraphVersionRef.current).toBe(1)
+    // Repeating the current intent asks for nothing new.
+    act(() =>
+      dispatch({ type: 'edit', sourceId, intent: { manual: original } }),
+    )
+    expect(harness.exportGraphVersionRef.current).toBe(versionAfterAccept)
     expect(harness.result.current.session?.exportState.result).toBe(result)
-    expect(harness.result.current.transform.state?.accepted?.geometry).toEqual(
+
+    // Away and back again: each is a new ask, and the geometry never moves.
+    act(() =>
+      dispatch({
+        type: 'edit',
+        sourceId,
+        intent: { manual: { ...original, rotate: 30 } },
+      }),
+    )
+    expect(harness.exportGraphVersionRef.current).toBe(versionAfterAccept + 1)
+    expect(harness.sessionRef.current?.exportState.result).toBeUndefined()
+    expect(harness.sessionRef.current?.exportGeometry).toEqual(SAMPLE_GEOMETRY)
+    act(() =>
+      dispatch({ type: 'edit', sourceId, intent: { manual: original } }),
+    )
+    expect(harness.exportGraphVersionRef.current).toBe(versionAfterAccept + 2)
+    expect(harness.result.current.previewTransform.geometry).toEqual(
       SAMPLE_GEOMETRY,
     )
+
+    // A reset moves the geometry as well, and invalidates once.
+    act(() => dispatch({ type: 'reset', sourceId }))
+    expect(harness.exportGraphVersionRef.current).toBe(versionAfterAccept + 3)
+    expect(harness.result.current.previewTransform.geometry).toBeNull()
+
+    // A request on a neutral intent asks for nothing, and resetting a neutral
+    // Transform that a request is still out for changes no intent.
+    act(() => dispatch({ type: 'capture', sourceId, captureKey: 'frame-n' }))
+    act(() =>
+      dispatch({
+        type: 'request',
+        sourceId,
+        captureKey: 'frame-n',
+        requestId: 700,
+        geometry: SAMPLE_GEOMETRY,
+      }),
+    )
+    const neutralIntent = harness.sessionRef.current?.transform?.intent
+    act(() => dispatch({ type: 'reset', sourceId }))
+    expect(harness.result.current.transform.state?.request).toBeNull()
+    expect(harness.exportGraphVersionRef.current).toBe(versionAfterAccept + 3)
+    // The same Transform keeps its intent object, so an export admitted for
+    // it stays current.
+    expect(harness.sessionRef.current?.transform?.intent).toBe(neutralIntent)
   })
 
   it('holds the accepted geometry as pending, not current, while a newer edit waits', () => {
@@ -232,7 +329,8 @@ describe('useRawPreviewTransform', () => {
     expect(harness.result.current.previewTransform.geometry).toEqual(
       SAMPLE_GEOMETRY,
     )
-    expect(harness.exportGraphVersionRef.current).toBe(1)
+    // The edit alone invalidated what was made for the accepted geometry.
+    expect(harness.exportGraphVersionRef.current).toBe(3)
 
     // The answer to a request it replaced is not taken for it.
     act(() =>
@@ -289,7 +387,8 @@ describe('useRawPreviewTransform', () => {
     expect(harness.result.current.transform.state).toBe(replacement.transform)
     expect(harness.result.current.previewTransform.active).toBe(false)
     expect(harness.result.current.session?.exportGeometry).toBeUndefined()
-    expect(harness.exportGraphVersionRef.current).toBe(1)
+    // Only the first source's edit and geometry move invalidated anything.
+    expect(harness.exportGraphVersionRef.current).toBe(2)
   })
 
   it('starts a session without a Transform of its own neutral', () => {

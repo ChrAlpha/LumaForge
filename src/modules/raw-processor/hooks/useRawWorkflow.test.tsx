@@ -55,12 +55,14 @@ import {
   resetCapabilityVectorForTest,
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../model/derive-session'
 import { createExportInterruptionMarkers } from '../services/export/export-interruption'
 import type { ExportInterruptionMarkers } from '../services/export/export-recovery'
 import { readSourceInterruption } from '../services/export/export-recovery'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
+import { deriveTransformStatus } from '../services/transform/transform-state'
 import { getDetachedPreviewView } from '../state/preview-view.atoms'
 import { currentSessionAtom } from '../state/session.atoms'
 import { getProcessingParams, resetToDefaults } from '../state/workflow.atoms'
@@ -3889,6 +3891,682 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await waitFor(() => {
       expect(cleanup).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('export attempts and the session Transform', () => {
+    /** A second geometry, rotated the other way. */
+    const OTHER_GEOMETRY = {
+      matrix: [0.999, 0.035, -0.018, -0.035, 0.999, 0.017, 0, 0, 1],
+      constrainCrop: true,
+    }
+    const FRAME = { width: 800, height: 600 }
+
+    function transformPort(result: {
+      current: UseRawWorkflowReturn
+    }): NonNullable<UseRawWorkflowReturn['transform']> {
+      const port = result.current.transform
+      if (!port?.state) throw new Error('expected a Transform source')
+      return port
+    }
+
+    function liveTransform() {
+      const transform = jotaiStore.get(currentSessionAtom)?.transform
+      if (!transform) throw new Error('expected a session Transform')
+      return transform
+    }
+
+    async function loadForHqExport() {
+      exportSystemMock.runPreviewExportJob.mockImplementation(
+        async ({
+          renderToCanvas,
+          filename,
+        }: {
+          renderToCanvas: () => Promise<HTMLCanvasElement>
+          filename: string
+        }) => {
+          await renderToCanvas()
+          return {
+            filename,
+            blob: new Blob(['preview-jpeg'], { type: 'image/jpeg' }),
+          }
+        },
+      )
+      const renderToHiddenCanvas = vi
+        .fn()
+        .mockResolvedValue(document.createElement('canvas'))
+      const hook = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await hook.result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      await waitFor(() => {
+        expect(hook.result.current.displaySource).toBe('bounded-hq')
+      })
+      act(() => {
+        hook.result.current.pipelineRef.current = {
+          renderToHiddenCanvas,
+        } as never
+        hook.result.current.updateStats({
+          uploadTime: 1,
+          lutUploadTime: 0,
+          processTime: 2,
+          totalTime: 3,
+          inputSize: { width: 6000, height: 4000 },
+          previewSize: { width: 1200, height: 800 },
+          inputFormat: 'uint16-rgb',
+          transformPath: 'no-lut',
+          lutRole: null,
+          lutInputTransfer: null,
+          lutOutputTransfer: null,
+          lutSize: null,
+        })
+      })
+      return { ...hook, renderToHiddenCanvas }
+    }
+
+    it('refuses full and HQ export from actions captured before the first edit while the Transform is pending, invalid or unavailable', async () => {
+      exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
+        filename: 'frame_neutral_fullres.jpg',
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      })
+      const { result, renderToHiddenCanvas } = await loadForHqExport()
+      expect(result.current.canExport).toBe(true)
+      expect(result.current.canPreviewExport).toBe(true)
+      // The surface captured both actions while the Transform was neutral.
+      const { exportImage, exportPreviewImage } = result.current
+      const { dispatch, state } = transformPort(result)
+      const sourceId = state!.sourceId
+
+      async function expectBothRefused(fullResDescription: string) {
+        toastMock.error.mockClear()
+        await act(async () => {
+          await exportImage()
+          await exportPreviewImage()
+        })
+        await flushScheduledToasts()
+        expect(
+          exportSystemMock.runFullResolutionExportJob,
+        ).not.toHaveBeenCalled()
+        expect(exportSystemMock.runPreviewExportJob).not.toHaveBeenCalled()
+        expect(renderToHiddenCanvas).not.toHaveBeenCalled()
+        expect(result.current.status).toBe('ready')
+        expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe(
+          'idle',
+        )
+        expect(toastMock.error).toHaveBeenCalledWith(
+          'Full-resolution export is not ready',
+          { description: fullResDescription },
+        )
+        expect(toastMock.error).toHaveBeenCalledWith(
+          'HQ preview export is not ready',
+          { description: PREVIEW_TRANSFORM_HQ_EXPORT_REASON },
+        )
+      }
+
+      // The edit, its request and the worker's answer arrive separately.
+      act(() =>
+        dispatch({
+          type: 'edit',
+          sourceId,
+          intent: { manual: { ...NEUTRAL_TRANSFORM, rotate: 3 } },
+        }),
+      )
+      expect(deriveTransformStatus(liveTransform())).toBe('pending')
+      await expectBothRefused(
+        'Transform is still preparing the current photo. Export once the preview shows it.',
+      )
+
+      act(() => {
+        dispatch({ type: 'capture', sourceId, captureKey: 'frame-a' })
+      })
+      act(() => {
+        dispatch({
+          type: 'request',
+          sourceId,
+          captureKey: 'frame-a',
+          requestId: 1,
+          geometry: SAMPLE_GEOMETRY,
+        })
+      })
+      expect(deriveTransformStatus(liveTransform())).toBe('pending')
+      await expectBothRefused(
+        'Transform is still preparing the current photo. Export once the preview shows it.',
+      )
+
+      act(() => {
+        dispatch({
+          type: 'render-failed',
+          sourceId,
+          captureKey: 'frame-a',
+          requestId: 1,
+          failure: 'transform',
+        })
+      })
+      expect(deriveTransformStatus(liveTransform())).toBe('invalid')
+      await expectBothRefused(
+        'This Transform leaves too little usable image. Reduce the adjustment or reset Transform to export.',
+      )
+
+      act(() => {
+        dispatch({ type: 'capture', sourceId, captureKey: 'frame-b' })
+      })
+      act(() => {
+        dispatch({ type: 'capture-failed', sourceId, captureKey: 'frame-b' })
+      })
+      expect(deriveTransformStatus(liveTransform())).toBe('unavailable')
+      await expectBothRefused(
+        'The processed preview is unavailable. Wait for it or reset Transform to export.',
+      )
+      // No answer was ever accepted, so the session holds no geometry.
+      expect(
+        jotaiStore.get(currentSessionAtom)?.exportGeometry ?? null,
+      ).toBeNull()
+    })
+
+    it('ends an in-flight export of an accepted geometry on the next edit, while the held geometry stays', async () => {
+      const pending = deferred<{ filename: string; blob: Blob }>()
+      exportSystemMock.runFullResolutionExportJob.mockReturnValue(
+        pending.promise,
+      )
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      act(() =>
+        acceptTransformGeometry(result.current.transform, SAMPLE_GEOMETRY),
+      )
+      let exportPromise!: Promise<void>
+      await act(async () => {
+        exportPromise = result.current.exportImage()
+        await Promise.resolve()
+      })
+      await waitFor(() =>
+        expect(
+          exportSystemMock.runFullResolutionExportJob,
+        ).toHaveBeenCalledTimes(1),
+      )
+      const job = exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0]
+      expect(job.geometry).toEqual(SAMPLE_GEOMETRY)
+      const { dispatch, state } = transformPort(result)
+      const sourceId = state!.sourceId
+      const captureKey = state!.capture!.key
+
+      act(() =>
+        dispatch({
+          type: 'edit',
+          sourceId,
+          intent: { manual: { ...state!.intent.manual, rotate: 40 } },
+        }),
+      )
+      const edited = jotaiStore.get(currentSessionAtom)
+      expect(job.signal.aborted).toBe(true)
+      expect(edited?.exportGeometry).toEqual(SAMPLE_GEOMETRY)
+      expect(deriveTransformStatus(edited!.transform!)).toBe('pending')
+      expect(edited?.exportState.status).toBe('idle')
+      expect(result.current.status).toBe('ready')
+
+      act(() =>
+        dispatch({
+          type: 'request',
+          sourceId,
+          captureKey,
+          requestId: 900,
+          geometry: OTHER_GEOMETRY,
+        }),
+      )
+      expect(jotaiStore.get(currentSessionAtom)?.exportGeometry).toEqual(
+        SAMPLE_GEOMETRY,
+      )
+      act(() =>
+        dispatch({
+          type: 'rendered',
+          sourceId,
+          captureKey,
+          requestId: 900,
+          geometry: OTHER_GEOMETRY,
+          frame: FRAME,
+        }),
+      )
+      const answered = jotaiStore.get(currentSessionAtom)
+      expect(answered?.exportGeometry).toEqual(OTHER_GEOMETRY)
+      await act(async () => {
+        pending.resolve({
+          filename: 'stale.jpg',
+          blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+        })
+        await exportPromise
+      })
+
+      expect(result.current.exportResult).toBeNull()
+      expect(jotaiStore.get(currentSessionAtom)).toBe(answered)
+      expect(result.current.status).toBe('ready')
+    })
+
+    it('does not revive an export when the Transform is edited away and back to the geometry it ran with', async () => {
+      const pending = deferred<{ filename: string; blob: Blob }>()
+      exportSystemMock.runFullResolutionExportJob.mockReturnValue(
+        pending.promise,
+      )
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      act(() =>
+        acceptTransformGeometry(result.current.transform, SAMPLE_GEOMETRY),
+      )
+      const heldGeometry = jotaiStore.get(currentSessionAtom)?.exportGeometry
+      let exportPromise!: Promise<void>
+      await act(async () => {
+        exportPromise = result.current.exportImage()
+        await Promise.resolve()
+      })
+      await waitFor(() =>
+        expect(
+          exportSystemMock.runFullResolutionExportJob,
+        ).toHaveBeenCalledTimes(1),
+      )
+      const job = exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0]
+      const { dispatch, state } = transformPort(result)
+      const sourceId = state!.sourceId
+      const captureKey = state!.capture!.key
+      const original = state!.intent.manual
+
+      act(() =>
+        dispatch({
+          type: 'edit',
+          sourceId,
+          intent: { manual: { ...original, rotate: 40 } },
+        }),
+      )
+      act(() =>
+        dispatch({ type: 'edit', sourceId, intent: { manual: original } }),
+      )
+      act(() =>
+        dispatch({
+          type: 'request',
+          sourceId,
+          captureKey,
+          requestId: 901,
+          geometry: SAMPLE_GEOMETRY,
+        }),
+      )
+      act(() =>
+        dispatch({
+          type: 'rendered',
+          sourceId,
+          captureKey,
+          requestId: 901,
+          geometry: SAMPLE_GEOMETRY,
+          frame: FRAME,
+        }),
+      )
+      const reaccepted = jotaiStore.get(currentSessionAtom)
+      expect(deriveTransformStatus(reaccepted!.transform!)).toBe('accepted')
+      // The geometry never moved: the session holds the very same object.
+      expect(reaccepted?.exportGeometry).toBe(heldGeometry)
+      expect(job.signal.aborted).toBe(true)
+
+      await act(async () => {
+        pending.resolve({
+          filename: 'stale.jpg',
+          blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+        })
+        await exportPromise
+      })
+
+      expect(result.current.exportResult).toBeNull()
+      expect(jotaiStore.get(currentSessionAtom)).toBe(reaccepted)
+      expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe(
+        'idle',
+      )
+      expect(result.current.status).toBe('ready')
+    })
+
+    function deliverFileBackedExports() {
+      const cleanup = vi.fn(async () => undefined)
+      exportSystemMock.runFullResolutionExportJob.mockImplementation(
+        async ({ filename }: { filename: string }) => ({
+          filename,
+          output: {
+            kind: 'file-backed',
+            exportId: `export-${filename}`,
+            filename,
+            byteLength: 4,
+            mimeType: 'image/jpeg',
+            openBlob: vi.fn(
+              async () => new Blob(['jpeg'], { type: 'image/jpeg' }),
+            ),
+            cleanup,
+          } satisfies FileBackedOutputResult,
+        }),
+      )
+      return cleanup
+    }
+
+    it('keeps a delivered export through neutral Transform events', async () => {
+      const cleanup = deliverFileBackedExports()
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      const { dispatch, state } = transformPort(result)
+      const sourceId = state!.sourceId
+      await act(async () => {
+        await result.current.exportImage()
+      })
+      const neutralResult = result.current.exportResult
+      expect(neutralResult).not.toBeNull()
+
+      // A neutral Transform asks for nothing: a reset, a new frame and a
+      // request on it leave the delivered export where it is.
+      act(() => dispatch({ type: 'reset', sourceId }))
+      act(() => dispatch({ type: 'capture', sourceId, captureKey: 'frame-n' }))
+      act(() =>
+        dispatch({
+          type: 'request',
+          sourceId,
+          captureKey: 'frame-n',
+          requestId: 950,
+          geometry: SAMPLE_GEOMETRY,
+        }),
+      )
+      await flushPostCommitTasks()
+      expect(deriveTransformStatus(liveTransform())).toBe('neutral')
+      expect(result.current.exportResult).toBe(neutralResult)
+      expect(cleanup).not.toHaveBeenCalled()
+    })
+
+    it('keeps a delivered export when a new frame answers the same geometry again', async () => {
+      const cleanup = deliverFileBackedExports()
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      act(() =>
+        acceptTransformGeometry(result.current.transform, SAMPLE_GEOMETRY),
+      )
+      const { dispatch, state } = transformPort(result)
+      const sourceId = state!.sourceId
+      await act(async () => {
+        await result.current.exportImage()
+      })
+      const transformedResult = result.current.exportResult
+      expect(transformedResult).not.toBeNull()
+
+      // A new frame answers the same geometry again: the request and the
+      // worker's answer arrive separately and neither discards the export.
+      act(() => dispatch({ type: 'capture', sourceId, captureKey: 'frame-r' }))
+      act(() =>
+        dispatch({
+          type: 'request',
+          sourceId,
+          captureKey: 'frame-r',
+          requestId: 951,
+          geometry: SAMPLE_GEOMETRY,
+        }),
+      )
+      act(() =>
+        dispatch({
+          type: 'rendered',
+          sourceId,
+          captureKey: 'frame-r',
+          requestId: 951,
+          geometry: SAMPLE_GEOMETRY,
+          frame: FRAME,
+        }),
+      )
+      await flushPostCommitTasks()
+
+      expect(deriveTransformStatus(liveTransform())).toBe('accepted')
+      expect(result.current.exportResult).toBe(transformedResult)
+      expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe(
+        'ready',
+      )
+      expect(cleanup).not.toHaveBeenCalled()
+    })
+
+    const PENDING_REFUSAL =
+      'Transform is still preparing the current photo. Export once the preview shows it.'
+    const UNAVAILABLE_REFUSAL =
+      'The processed preview is unavailable. Wait for it or reset Transform to export.'
+
+    /**
+     * Delivers file-backed exports, each once `finishJob` is called, from a
+     * source whose manifest stays sealing until `seal` is called: hashing the
+     * source RAW waits for its bytes.
+     */
+    function deliverSealGatedExports() {
+      const gate = deferred<void>()
+      const job = deferred<void>()
+      exportSystemMock.runFullResolutionExportJob.mockImplementation(
+        async ({ filename }: { filename: string }) => {
+          await job.promise
+          return {
+            filename,
+            output: {
+              kind: 'file-backed',
+              exportId: `export-${filename}`,
+              filename,
+              byteLength: 4,
+              mimeType: 'image/jpeg',
+              sha256: 'c'.repeat(64),
+              openBlob: vi.fn(
+                async () => new Blob(['jpeg'], { type: 'image/jpeg' }),
+              ),
+              cleanup: vi.fn(async () => undefined),
+            } satisfies FileBackedOutputResult,
+          }
+        },
+      )
+      const source = new File(['raw'], 'frame.ARW')
+      Object.defineProperty(source, 'stream', {
+        value: () =>
+          new ReadableStream<Uint8Array>({
+            async start(controller) {
+              await gate.promise
+              controller.enqueue(new TextEncoder().encode('raw'))
+              controller.close()
+            },
+          }),
+      })
+      return {
+        source,
+        finishJob: () => job.resolve(),
+        seal: () => gate.resolve(),
+      }
+    }
+
+    function manifestStatus() {
+      return jotaiStore.get(currentSessionAtom)?.exportState.result
+        ?.manifestState?.status
+    }
+
+    it('ends an export of an accepted geometry when a new frame leaves it pending while the plan is sampled', async () => {
+      exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
+        filename: 'frame_neutral_fullres.jpg',
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+      })
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      act(() =>
+        acceptTransformGeometry(result.current.transform, SAMPLE_GEOMETRY),
+      )
+      const { dispatch, state } = transformPort(result)
+      const sourceId = state!.sourceId
+      const intent = state!.intent
+      toastMock.error.mockClear()
+      toastMock.dismiss.mockClear()
+
+      await act(async () => {
+        const exporting = result.current.exportImage()
+        // The attempt started and samples the device; the preview reads a
+        // new frame meanwhile, with no edit.
+        expect(toastMock.dismiss).toHaveBeenCalled()
+        dispatch({ type: 'capture', sourceId, captureKey: 'frame-planning' })
+        await exporting
+      })
+      await flushScheduledToasts()
+
+      expect(liveTransform().intent).toBe(intent)
+      expect(deriveTransformStatus(liveTransform())).toBe('pending')
+      expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
+      expect(result.current.status).toBe('ready')
+      expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe(
+        'idle',
+      )
+      expect(toastMock.error).toHaveBeenCalledWith(
+        'Full-resolution export is not ready',
+        { description: PENDING_REFUSAL },
+      )
+    })
+
+    it('does not deliver a JPEG that completes after its frame fails with no edit', async () => {
+      const job = deliverSealGatedExports()
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(job.source)
+      })
+      act(() =>
+        acceptTransformGeometry(result.current.transform, SAMPLE_GEOMETRY),
+      )
+      const { dispatch, state } = transformPort(result)
+      const sourceId = state!.sourceId
+      const intent = state!.intent
+      let exportPromise!: Promise<void>
+      await act(async () => {
+        exportPromise = result.current.exportImage()
+        await Promise.resolve()
+      })
+      await waitFor(() =>
+        expect(
+          exportSystemMock.runFullResolutionExportJob,
+        ).toHaveBeenCalledTimes(1),
+      )
+      toastMock.error.mockClear()
+
+      act(() =>
+        dispatch({
+          type: 'capture-failed',
+          sourceId,
+          captureKey: liveTransform().capture!.key,
+        }),
+      )
+      expect(liveTransform().intent).toBe(intent)
+      expect(deriveTransformStatus(liveTransform())).toBe('unavailable')
+      await act(async () => {
+        job.finishJob()
+        await exportPromise
+      })
+      await flushScheduledToasts()
+
+      expect(result.current.exportResult).toBeNull()
+      expect(result.current.status).toBe('ready')
+      expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe(
+        'idle',
+      )
+      expect(toastMock.error).toHaveBeenCalledWith(
+        'Full-resolution export is not ready',
+        { description: UNAVAILABLE_REFUSAL },
+      )
+    })
+
+    it('seals the manifest of a delivered export when a new frame leaves the same Transform pending', async () => {
+      const job = deliverSealGatedExports()
+      job.finishJob()
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(job.source)
+      })
+      act(() =>
+        acceptTransformGeometry(result.current.transform, SAMPLE_GEOMETRY),
+      )
+      const { dispatch, state } = transformPort(result)
+      const sourceId = state!.sourceId
+      await act(async () => {
+        await result.current.exportImage()
+      })
+      const delivered = result.current.exportResult
+      expect(delivered).not.toBeNull()
+      expect(manifestStatus()).toBe('sealing')
+
+      // The session keeps the delivered JPEG through a new frame, so its
+      // manifest still lands on it.
+      act(() =>
+        dispatch({ type: 'capture', sourceId, captureKey: 'frame-sealing' }),
+      )
+      expect(deriveTransformStatus(liveTransform())).toBe('pending')
+      act(() => job.seal())
+
+      await waitFor(() => expect(manifestStatus()).toBe('ready'))
+      expect(result.current.exportResult?.output).toBe(delivered?.output)
+      expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe(
+        'ready',
+      )
+    })
+
+    it('keeps an export current when a neutral Transform with a request out is reset, mid-job and while sealing', async () => {
+      const job = deliverSealGatedExports()
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(job.source)
+      })
+      const { dispatch, state } = transformPort(result)
+      const sourceId = state!.sourceId
+      function requestOnNeutral(captureKey: string, requestId: number) {
+        act(() => dispatch({ type: 'capture', sourceId, captureKey }))
+        act(() =>
+          dispatch({
+            type: 'request',
+            sourceId,
+            captureKey,
+            requestId,
+            geometry: SAMPLE_GEOMETRY,
+          }),
+        )
+        expect(liveTransform().request).not.toBeNull()
+      }
+      requestOnNeutral('frame-n1', 960)
+      const intent = liveTransform().intent
+
+      let exportPromise!: Promise<void>
+      await act(async () => {
+        exportPromise = result.current.exportImage()
+        await Promise.resolve()
+      })
+      await waitFor(() =>
+        expect(
+          exportSystemMock.runFullResolutionExportJob,
+        ).toHaveBeenCalledTimes(1),
+      )
+      const jobInput =
+        exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0]
+
+      // Resetting a neutral Transform withdraws the request and asks for
+      // nothing new: the export goes on.
+      act(() => dispatch({ type: 'reset', sourceId }))
+      expect(liveTransform().request).toBeNull()
+      expect(liveTransform().intent).toBe(intent)
+      expect(jobInput.signal.aborted).toBe(false)
+      await act(async () => {
+        job.finishJob()
+        await exportPromise
+      })
+
+      const delivered = result.current.exportResult
+      expect(delivered).not.toBeNull()
+      expect(result.current.status).toBe('ready')
+      expect(manifestStatus()).toBe('sealing')
+
+      // The same reset while the manifest seals leaves it to land.
+      requestOnNeutral('frame-n2', 961)
+      act(() => dispatch({ type: 'reset', sourceId }))
+      expect(liveTransform().intent).toBe(intent)
+      act(() => job.seal())
+
+      await waitFor(() => expect(manifestStatus()).toBe('ready'))
+      expect(result.current.exportResult?.output).toBe(delivered?.output)
     })
   })
 

@@ -8,8 +8,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
 import { composeManualTransform } from '~/lib/transform/transform-render'
 
-import type { ImageSession } from '../../model/session'
-import { deriveFullResExportReadiness } from './export-readiness'
+import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../model/derive-session'
+import type { ImageSession, TransformState } from '../../model/session'
+import { createTransformState } from '../../model/session-factory'
+import type {
+  TransformEvent,
+  TransformStatus,
+} from '../transform/transform-state'
+import {
+  deriveTransformStatus,
+  heldTransformGeometry,
+  reduceTransformState,
+} from '../transform/transform-state'
+import {
+  deriveFullResExportReadiness,
+  deriveTransformExportRefusal,
+} from './export-readiness'
 
 function createSession(
   exportState: Partial<ImageSession['exportState']> = {},
@@ -53,6 +67,60 @@ function createSession(
 const SAMPLE_GEOMETRY = {
   matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
   constrainCrop: true,
+}
+
+/**
+ * The session's Transform after the events that reach each status: a first
+ * edit whose request is unanswered, an answered one, and the two failures.
+ */
+function transformAt(
+  status: TransformStatus,
+  sourceId = 'session-export-readiness',
+): TransformState {
+  const events: TransformEvent[] = []
+  const edit: TransformEvent = {
+    type: 'edit',
+    sourceId,
+    intent: {
+      manual: { ...createTransformState(sourceId).intent.manual, rotate: 2 },
+    },
+  }
+  const capture: TransformEvent = { type: 'capture', sourceId, captureKey: 'k' }
+  const request: TransformEvent = {
+    type: 'request',
+    sourceId,
+    captureKey: 'k',
+    requestId: 1,
+    geometry: SAMPLE_GEOMETRY,
+  }
+  if (status !== 'neutral') events.push(edit, capture)
+  if (status === 'pending' || status === 'accepted' || status === 'invalid')
+    events.push(request)
+  if (status === 'accepted')
+    events.push({
+      type: 'rendered',
+      sourceId,
+      captureKey: 'k',
+      requestId: 1,
+      geometry: SAMPLE_GEOMETRY,
+      frame: { width: 800, height: 600 },
+    })
+  if (status === 'invalid')
+    events.push({
+      type: 'render-failed',
+      sourceId,
+      captureKey: 'k',
+      requestId: 1,
+      failure: 'transform',
+    })
+  if (status === 'unavailable')
+    events.push({ type: 'capture-failed', sourceId, captureKey: 'k' })
+  const state = events.reduce(
+    reduceTransformState,
+    createTransformState(sourceId),
+  )
+  expect(deriveTransformStatus(state)).toBe(status)
+  return state
 }
 
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1] as const
@@ -347,5 +415,90 @@ describe('export readiness helpers', () => {
       width: 4000,
       height: 3000,
     })
+  })
+})
+
+describe('deriveTransformExportRefusal', () => {
+  const FULL_RES_REFUSALS = [
+    [
+      'pending',
+      'Transform is still preparing the current photo. Export once the preview shows it.',
+    ],
+    [
+      'invalid',
+      'This Transform leaves too little usable image. Reduce the adjustment or reset Transform to export.',
+    ],
+    [
+      'unavailable',
+      'The processed preview is unavailable. Wait for it or reset Transform to export.',
+    ],
+  ] as const
+
+  it('admits a full-resolution export only for a neutral or accepted Transform', () => {
+    const bare = createSession()
+    expect(
+      deriveTransformExportRefusal(bare, 'full-resolution'),
+    ).toBeUndefined()
+    for (const status of ['neutral', 'accepted'] as const) {
+      const transform = transformAt(status)
+      const session: ImageSession = {
+        ...createSession(),
+        transform,
+        exportGeometry: heldTransformGeometry(transform),
+      }
+      expect(
+        deriveTransformExportRefusal(session, 'full-resolution'),
+      ).toBeUndefined()
+    }
+  })
+
+  it.each(FULL_RES_REFUSALS)(
+    'refuses a full-resolution export while the Transform is %s',
+    (status, reason) => {
+      const transform = transformAt(status)
+      const session: ImageSession = { ...createSession(), transform }
+      expect(deriveTransformExportRefusal(session, 'full-resolution')).toBe(
+        reason,
+      )
+      // An accepted answer the session still holds does not stand for a
+      // newer intent.
+      expect(
+        deriveTransformExportRefusal(
+          { ...session, exportGeometry: SAMPLE_GEOMETRY },
+          'full-resolution',
+        ),
+      ).toBe(reason)
+    },
+  )
+
+  it('admits an HQ preview export only for a neutral Transform with no geometry', () => {
+    expect(
+      deriveTransformExportRefusal(createSession(), 'hq-preview'),
+    ).toBeUndefined()
+    expect(
+      deriveTransformExportRefusal(
+        { ...createSession(), transform: transformAt('neutral') },
+        'hq-preview',
+      ),
+    ).toBeUndefined()
+    expect(
+      deriveTransformExportRefusal(
+        { ...createSession(), exportGeometry: SAMPLE_GEOMETRY },
+        'hq-preview',
+      ),
+    ).toBe(PREVIEW_TRANSFORM_HQ_EXPORT_REASON)
+    for (const status of [
+      'accepted',
+      'pending',
+      'invalid',
+      'unavailable',
+    ] as const) {
+      expect(
+        deriveTransformExportRefusal(
+          { ...createSession(), transform: transformAt(status) },
+          'hq-preview',
+        ),
+      ).toBe(PREVIEW_TRANSFORM_HQ_EXPORT_REASON)
+    }
   })
 })

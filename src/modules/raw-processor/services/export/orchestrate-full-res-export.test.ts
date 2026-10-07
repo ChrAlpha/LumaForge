@@ -36,8 +36,18 @@ import {
 import { composeManualTransform } from '~/lib/transform/transform-render'
 
 import type { ExportResult } from '../../model/export-result'
-import type { ImageSession } from '../../model/session'
+import type { ImageSession, TransformState } from '../../model/session'
+import { createTransformState } from '../../model/session-factory'
 import type { ProcessingStatus } from '../../model/workflow'
+import type {
+  TransformEvent,
+  TransformStatus,
+} from '../transform/transform-state'
+import {
+  deriveTransformStatus,
+  heldTransformGeometry,
+  reduceTransformState,
+} from '../transform/transform-state'
 import type { BuildExportManifestInput } from './attach-export-manifest'
 import { ExportManifestUnavailableError } from './attach-export-manifest'
 import { createPreExportSnapshot } from './export-evacuation'
@@ -49,7 +59,7 @@ import {
 import { resolveExportEnvironment } from './export-manifest'
 import type { SourceInterruptionHint } from './export-recovery'
 import { readSourceInterruption } from './export-recovery'
-import { clearExportResultState } from './export-state'
+import { claimExportSlot, clearExportResultState } from './export-state'
 import type { runFullResolutionExportJob } from './export-system'
 import type { ExportContext } from './orchestrate-full-res-export'
 import { orchestrateFullResExport } from './orchestrate-full-res-export'
@@ -232,6 +242,7 @@ function createSession(
     exportState?: Partial<ImageSession['exportState']>
     activeStyle?: ImageSession['activeStyle']
     exportGeometry?: ExportGeometry
+    transform?: TransformState
   } = {},
 ): ImageSession {
   return {
@@ -255,6 +266,7 @@ function createSession(
     ...(overrides.exportGeometry
       ? { exportGeometry: overrides.exportGeometry }
       : {}),
+    ...(overrides.transform ? { transform: overrides.transform } : {}),
     viewState: {
       mode: 'compare',
       compareSplit: 0.5,
@@ -272,6 +284,134 @@ function createSession(
     },
   }
 }
+
+/** The geometry the preview answers the test Transform with. */
+const TRANSFORM_GEOMETRY: ExportGeometry = {
+  matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
+  constrainCrop: true,
+}
+
+let transformRequests = 0
+
+/** Asks the session's Transform for a manual rotation; a new intent. */
+function editTransform(state: TransformState, rotate: number) {
+  return reduceTransformState(state, {
+    type: 'edit',
+    sourceId: state.sourceId,
+    intent: { manual: { ...state.intent.manual, rotate } },
+  })
+}
+
+/** Captures a frame, requests the geometry and has the preview answer it. */
+function answerTransform(
+  state: TransformState,
+  geometry: ExportGeometry = TRANSFORM_GEOMETRY,
+) {
+  const requestId = ++transformRequests
+  const captureKey = `frame-${requestId}`
+  const { sourceId } = state
+  const events: TransformEvent[] = [
+    { type: 'capture', sourceId, captureKey },
+    { type: 'request', sourceId, captureKey, requestId, geometry },
+    {
+      type: 'rendered',
+      sourceId,
+      captureKey,
+      requestId,
+      geometry,
+      frame: { width: 1500, height: 1000 },
+    },
+  ]
+  return events.reduce(reduceTransformState, state)
+}
+
+/** A first edit and the events that bring its Transform to `status`. */
+function transformAt(status: TransformStatus, sourceId = 'session-1') {
+  const neutral = createTransformState(sourceId)
+  if (status === 'neutral') return neutral
+  if (status === 'accepted') return answerTransform(editTransform(neutral, 2))
+  const requestId = ++transformRequests
+  const captureKey = `frame-${requestId}`
+  const events: TransformEvent[] = [{ type: 'capture', sourceId, captureKey }]
+  if (status === 'unavailable') {
+    events.push({ type: 'capture-failed', sourceId, captureKey })
+  } else {
+    events.push({
+      type: 'request',
+      sourceId,
+      captureKey,
+      requestId,
+      geometry: TRANSFORM_GEOMETRY,
+    })
+    if (status === 'invalid')
+      events.push({
+        type: 'render-failed',
+        sourceId,
+        captureKey,
+        requestId,
+        failure: 'transform',
+      })
+  }
+  const state = events.reduce(reduceTransformState, editTransform(neutral, 2))
+  expect(deriveTransformStatus(state)).toBe(status)
+  return state
+}
+
+/** A session holding an accepted Transform and the geometry it answered. */
+function createAcceptedTransformSession(id = 'session-1') {
+  const transform = transformAt('accepted', id)
+  return createSession(id, {
+    transform,
+    exportGeometry: heldTransformGeometry(transform)!,
+  })
+}
+
+/**
+ * The same Transform on a new frame that has not been answered yet, or that
+ * failed: no edit, so the intent stays the very same object.
+ */
+function recaptureTransform(
+  state: TransformState,
+  status: 'pending' | 'invalid' | 'unavailable',
+) {
+  const requestId = ++transformRequests
+  const captureKey = `frame-${requestId}`
+  const { sourceId } = state
+  const events: TransformEvent[] = [{ type: 'capture', sourceId, captureKey }]
+  if (status === 'unavailable') {
+    events.push({ type: 'capture-failed', sourceId, captureKey })
+  } else if (status === 'invalid') {
+    events.push(
+      {
+        type: 'request',
+        sourceId,
+        captureKey,
+        requestId,
+        geometry: TRANSFORM_GEOMETRY,
+      },
+      {
+        type: 'render-failed',
+        sourceId,
+        captureKey,
+        requestId,
+        failure: 'transform',
+      },
+    )
+  }
+  const next = events.reduce(reduceTransformState, state)
+  expect(next.intent).toBe(state.intent)
+  expect(deriveTransformStatus(next)).toBe(status)
+  return next
+}
+
+const TRANSFORM_REFUSALS = {
+  pending:
+    'Transform is still preparing the current photo. Export once the preview shows it.',
+  invalid:
+    'This Transform leaves too little usable image. Reduce the adjustment or reset Transform to export.',
+  unavailable:
+    'The processed preview is unavailable. Wait for it or reset Transform to export.',
+} as const
 
 function createPreviousResult(): ExportResult {
   return {
@@ -1033,6 +1173,19 @@ describe('orchestrateFullResExport success', () => {
     })
   })
 
+  it('exports the geometry an accepted Transform holds', async () => {
+    const session = createAcceptedTransformSession()
+    const h = createHarness({ session })
+
+    const result = await runToReady(h)
+
+    expect(mocks.runFullResolutionExportJob.mock.calls[0]![0].geometry).toBe(
+      session.exportGeometry,
+    )
+    expect(h.state.session?.exportState.status).toBe('ready')
+    expect(result.manifestState).toEqual({ status: 'sealing' })
+  })
+
   it('marks a geometry export by its source tuple and sends no checkpoint', async () => {
     // Constraining the crop pulls the fold back inside its horizon.
     const geometry: ExportGeometry = {
@@ -1462,6 +1615,92 @@ describe('orchestrateFullResExport refusals', () => {
     },
   )
 
+  it.each([
+    [
+      'pending',
+      'Transform is still preparing the current photo. Export once the preview shows it.',
+    ],
+    [
+      'invalid',
+      'This Transform leaves too little usable image. Reduce the adjustment or reset Transform to export.',
+    ],
+    [
+      'unavailable',
+      'The processed preview is unavailable. Wait for it or reset Transform to export.',
+    ],
+  ] as const)(
+    'refuses a %s Transform before sampling, a marker, evacuation, the worker or an output',
+    async (status, description) => {
+      const registry = createResourceRegistry()
+      const previousResult = createPreviousResult()
+      const transform = transformAt(status)
+      const h = createHarness({
+        registry,
+        runtime: OPFS_RUNTIME,
+        session: createSession('session-1', {
+          transform,
+          exportState: { status: 'ready', result: previousResult },
+        }),
+      })
+      registry.register({
+        id: 'preview-gpu-pipeline',
+        owner: 'gpu',
+        kind: 'gpu-pipeline',
+        estimatedBytes: 4096,
+        dispose: () => {
+          h.trace.push('service:dispose:preview-gpu-pipeline')
+        },
+      })
+      const liveSession = h.state.session
+      const otherExport = new AbortController()
+      h.ctx.refs.exportAbortControllerRef.current = otherExport
+
+      await orchestrateFullResExport(OPTIONS, h.ctx)
+
+      expect(h.trace).toEqual([
+        'service:scheduleToast',
+        'toast:error:Full-resolution export is not ready',
+      ])
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        'Full-resolution export is not ready',
+        { description },
+      )
+      expect(mocks.planExportWithSampledFacts).not.toHaveBeenCalled()
+      expect(h.markerStore.markers()).toEqual([])
+      expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
+      expect(registry.snapshot().live).toHaveLength(1)
+      expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+      expect(h.state).toEqual({
+        status: null,
+        error: undefined,
+        progress: null,
+        session: liveSession,
+      })
+      expect(otherExport.signal.aborted).toBe(false)
+      expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
+    },
+  )
+
+  it('reads the live Transform rather than the session the caller rendered with', async () => {
+    const h = createHarness({ atomsSession: createSession() })
+    // The Transform was edited after the caller rendered; the export reads
+    // the session as it is now.
+    h.replaceSession(
+      createSession('session-1', { transform: transformAt('pending') }),
+    )
+
+    await orchestrateFullResExport(OPTIONS, h.ctx)
+
+    expect(mocks.planExportWithSampledFacts).not.toHaveBeenCalled()
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      'Full-resolution export is not ready',
+      {
+        description:
+          'Transform is still preparing the current photo. Export once the preview shows it.',
+      },
+    )
+  })
+
   it('refuses an unsupported color graph without touching other export work', async () => {
     const lut: LUTData = {
       size: 2,
@@ -1874,12 +2113,52 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     expect(h.state.session?.exportState.status).toBe('ready')
   })
 
-  const supersessions = [
+  const supersessions: Array<{
+    name: string
+    aborts?: boolean
+    session?: () => ImageSession
+    /** Leaves another attempt in the export slot. */
+    takesSlot?: boolean
+    supersede: (h: Harness) => void
+  }> = [
     {
       name: 'export signal is aborted',
       aborts: true,
       supersede(h: Harness) {
         h.ctx.refs.exportAbortControllerRef.current?.abort()
+      },
+    },
+    {
+      name: 'another attempt takes the export slot',
+      takesSlot: true,
+      supersede(h: Harness) {
+        h.ctx.refs.exportAbortControllerRef.current = new AbortController()
+      },
+    },
+    {
+      name: 'Transform is edited while the held geometry stays',
+      session: createAcceptedTransformSession,
+      supersede(h: Harness) {
+        const live = h.state.session!
+        h.replaceSession({
+          ...live,
+          transform: editTransform(live.transform!, 7),
+        })
+      },
+    },
+    {
+      name: 'Transform is edited away and back to the same accepted geometry',
+      session: createAcceptedTransformSession,
+      supersede(h: Harness) {
+        const live = h.state.session!
+        const original = live.transform!.intent.manual.rotate
+        const back = answerTransform(
+          editTransform(editTransform(live.transform!, 7), original),
+        )
+        expect(deriveTransformStatus(back)).toBe('accepted')
+        expect(heldTransformGeometry(back)).toEqual(live.exportGeometry)
+        // The held geometry never moved, so it is the same object.
+        h.replaceSession({ ...live, transform: back })
       },
     },
     {
@@ -1904,8 +2183,8 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
 
   it.each(supersessions)(
     'does not publish a JPEG that completes after the $name',
-    async ({ supersede }) => {
-      const h = createHarness()
+    async ({ supersede, session, takesSlot }) => {
+      const h = createHarness({ session: session?.() })
       const job = h.installJob()
 
       const run = orchestrateFullResExport(OPTIONS, h.ctx)
@@ -1925,7 +2204,11 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
       expect(mocks.buildManifestForExportResult).not.toHaveBeenCalled()
       expect(h.ctx.refs.previewCopyCanvasRef.current).toBeNull()
-      expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+      if (takesSlot) {
+        expect(h.ctx.refs.exportAbortControllerRef.current).not.toBeNull()
+      } else {
+        expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+      }
       // The job completed, so its attempt is over even though it is dropped.
       expect(h.markerStore.markers()).toEqual([])
     },
@@ -1933,8 +2216,8 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
 
   it.each(supersessions)(
     'does not record a failure that arrives after the $name',
-    async ({ supersede, aborts }) => {
-      const h = createHarness()
+    async ({ supersede, aborts, session, takesSlot }) => {
+      const h = createHarness({ session: session?.() })
       const job = h.installJob()
 
       const run = orchestrateFullResExport(OPTIONS, h.ctx)
@@ -1949,7 +2232,11 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       expect(h.since(supersededAt)).toEqual(['test:superseded'])
       expect(h.state.session).toBe(sessionAfterSupersession)
       expect(mocks.toastError).not.toHaveBeenCalled()
-      expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+      if (takesSlot) {
+        expect(h.ctx.refs.exportAbortControllerRef.current).not.toBeNull()
+      } else {
+        expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+      }
       // The attempt still ends by what happened to it: a cancellation leaves
       // nothing, a resource failure stays as a hint for the source.
       expect(h.markerStore.markers()).toEqual(
@@ -1987,6 +2274,45 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
     expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
     expect(h.markerStore.markers()).toEqual([])
+  })
+
+  it('reserves no OPFS output for an export superseded while its plan is sampled', async () => {
+    const planGate = deferred()
+    const h = createHarness({
+      planGate: planGate.promise,
+      runtime: OPFS_RUNTIME,
+    })
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    h.ctx.refs.exportGraphVersionRef.current += 1
+    planGate.resolve()
+    await run
+
+    expect(h.plans[0]?.outputSink).toBe('opfs-file')
+    expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
+    expect(h.markerStore.markers()).toEqual([])
+    expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+  })
+
+  it('drops an export whose Transform is edited while its OPFS output is reserved', async () => {
+    const reserve = deferred<string>()
+    const h = createHarness({
+      runtime: OPFS_RUNTIME,
+      session: createAcceptedTransformSession(),
+    })
+    mocks.reserveOpfsOutputDirectory.mockReturnValue(reserve.promise)
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    await vi.waitFor(() =>
+      expect(mocks.reserveOpfsOutputDirectory).toHaveBeenCalledTimes(1),
+    )
+    const live = h.state.session!
+    h.replaceSession({ ...live, transform: editTransform(live.transform!, 9) })
+    reserve.resolve(TAB_DIRECTORY)
+    await run
+
+    expect(h.markerStore.markers()).toEqual([])
+    expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
 
   it('drops an export superseded while its marker is recorded, ending that attempt', async () => {
@@ -2041,6 +2367,198 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       activePlan: DESKTOP_ACTIVE_PLAN,
     })
   })
+})
+
+describe('orchestrateFullResExport live Transform eligibility', () => {
+  /** Leaves the accepted Transform `status` on a new frame, with no edit. */
+  function recapture(h: Harness, status: keyof typeof TRANSFORM_REFUSALS) {
+    const live = h.state.session!
+    h.replaceSession({
+      ...live,
+      transform: recaptureTransform(live.transform!, status),
+    })
+  }
+
+  function expectRefusedAndSettled(
+    h: Harness,
+    status: keyof typeof TRANSFORM_REFUSALS,
+  ) {
+    expect(mocks.toastError).toHaveBeenCalledTimes(1)
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      'Full-resolution export is not ready',
+      { description: TRANSFORM_REFUSALS[status] },
+    )
+    expect(h.state.status).toBe('ready')
+    expect(h.state.progress).toBe(0)
+    expect(h.state.session?.exportState.status).toBe('idle')
+    expect(h.state.session?.exportState.result).toBeUndefined()
+    expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
+    expect(mocks.buildManifestForExportResult).not.toHaveBeenCalled()
+    expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+  }
+
+  it('ends an export whose Transform goes pending on a new frame while its plan is sampled', async () => {
+    const planGate = deferred()
+    const h = createHarness({
+      planGate: planGate.promise,
+      runtime: OPFS_RUNTIME,
+      session: createAcceptedTransformSession(),
+    })
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const recapturedAt = h.mark('recaptured')
+    recapture(h, 'pending')
+    planGate.resolve()
+    await run
+
+    expect(h.since(recapturedAt)).toEqual([
+      'test:recaptured',
+      'state:session:unchanged',
+      'state:status:ready',
+      'state:progress:0',
+      'service:scheduleToast',
+      'toast:error:Full-resolution export is not ready',
+    ])
+    expectRefusedAndSettled(h, 'pending')
+    expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
+    expect(h.markerStore.markers()).toEqual([])
+    expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+  })
+
+  it('ends an export whose frame fails while its OPFS output is reserved', async () => {
+    const reserve = deferred<string>()
+    const h = createHarness({
+      runtime: OPFS_RUNTIME,
+      session: createAcceptedTransformSession(),
+    })
+    mocks.reserveOpfsOutputDirectory.mockReturnValue(reserve.promise)
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    await vi.waitFor(() =>
+      expect(mocks.reserveOpfsOutputDirectory).toHaveBeenCalledTimes(1),
+    )
+    recapture(h, 'unavailable')
+    reserve.resolve(TAB_DIRECTORY)
+    await run
+
+    expectRefusedAndSettled(h, 'unavailable')
+    expect(h.markerStore.markers()).toEqual([])
+    expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+  })
+
+  it('ends an export whose new frame refuses the geometry while its marker is recorded', async () => {
+    const beginGate = deferred()
+    const h = createHarness({
+      beginGate: beginGate.promise,
+      session: createAcceptedTransformSession(),
+    })
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    await h.beginStarted
+    recapture(h, 'invalid')
+    beginGate.resolve()
+    await run
+
+    expectRefusedAndSettled(h, 'invalid')
+    // The marker it had begun ends with the attempt, as a cancellation.
+    expect(h.markerStore.markers()).toEqual([])
+    expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+  })
+
+  it('stops the worker of an export whose Transform goes pending while it runs', async () => {
+    const h = createHarness({ session: createAcceptedTransformSession() })
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+    const recapturedAt = h.mark('recaptured')
+    recapture(h, 'pending')
+    job.progress(1, 2)
+    expect(input.signal?.aborted).toBe(true)
+    job.reject(new DOMException('Aborted', 'AbortError'))
+    await run
+    await settle()
+
+    expect(h.since(recapturedAt)).toEqual([
+      'test:recaptured',
+      'state:session:idle',
+      'state:status:ready',
+      'state:progress:0',
+      'service:scheduleToast',
+      'toast:error:Full-resolution export is not ready',
+    ])
+    expectRefusedAndSettled(h, 'pending')
+    expect(h.markerStore.markers()).toEqual([])
+  })
+
+  it.each(['pending', 'invalid', 'unavailable'] as const)(
+    'does not deliver a JPEG that completes after the Transform goes %s with no edit',
+    async (status) => {
+      const h = createHarness({ session: createAcceptedTransformSession() })
+      const job = h.installJob()
+
+      const run = orchestrateFullResExport(OPTIONS, h.ctx)
+      await job.started
+      recapture(h, status)
+      job.resolve()
+      await run
+      await settle()
+
+      expectRefusedAndSettled(h, status)
+      expect(h.markerStore.markers()).toEqual([])
+    },
+  )
+
+  it('reports the refusal rather than a failure that arrives after the Transform goes pending', async () => {
+    const h = createHarness({ session: createAcceptedTransformSession() })
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    await job.started
+    recapture(h, 'pending')
+    job.reject(new Error('FULL_RES_EXPORT_WORKER_FAILED'))
+    await run
+    await settle()
+
+    expectRefusedAndSettled(h, 'pending')
+    expect(h.state.session?.exportState.lastErrorCode).toBeUndefined()
+  })
+})
+
+describe('orchestrateFullResExport a later attempt', () => {
+  it.each([
+    { later: 'fails', first: 'resolves' },
+    { later: 'fails', first: 'rejects' },
+    { later: 'delivers', first: 'resolves' },
+    { later: 'delivers', first: 'rejects' },
+  ] as const)(
+    'publishes nothing when the first manifest $first after a later export $later',
+    async ({ later, first }) => {
+      const h = createHarness()
+      await runToReady(h)
+      // Only the first export's manifest is in the test's hands.
+      mocks.buildManifestForExportResult.mockImplementationOnce(
+        () => new Promise(() => {}),
+      )
+      const job = h.installJob()
+      const run = orchestrateFullResExport(OPTIONS, h.ctx)
+      await job.started
+      if (later === 'delivers') job.resolve()
+      else job.reject(new Error('FULL_RES_EXPORT_WORKER_FAILED'))
+      await run
+      // The later export ended and released the slot.
+      expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+      const sessionAfterLater = h.state.session
+
+      const settledAt = h.mark('first-manifest-settles')
+      if (first === 'resolves') h.manifest.resolve(SEALED_MANIFEST)
+      else h.manifest.reject(new Error('digest failed'))
+      await settle()
+
+      expect(h.since(settledAt)).toEqual(['test:first-manifest-settles'])
+      expect(h.state.session).toBe(sessionAfterLater)
+    },
+  )
 })
 
 describe('orchestrateFullResExport delayed manifest', () => {
@@ -2099,16 +2617,24 @@ describe('orchestrateFullResExport delayed manifest', () => {
     },
   )
 
-  // The manifest continuation is guarded by mount, session id and result
-  // identity only; its failure diagnostic is emitted unconditionally.
-  const manifestSupersessions = [
+  // A manifest that settles for an attempt that is no longer current writes
+  // nothing, its diagnostic included. While the attempt is current, the
+  // result it seals must still be the one the session shows.
+  const manifestSupersessions: Array<{
+    name: string
+    session?: () => ImageSession
+    supersede: (h: Harness) => void
+    resolvedTrace: string[]
+    rejectedTrace: string[]
+    attached: boolean
+  }> = [
     {
       name: 'the session is replaced',
       supersede(h: Harness) {
         h.replaceSession(createSession('session-2'))
       },
       resolvedTrace: [],
-      rejectedTrace: ['debug:export-manifest-failed'],
+      rejectedTrace: [],
       attached: false,
     },
     {
@@ -2117,7 +2643,7 @@ describe('orchestrateFullResExport delayed manifest', () => {
         h.ctx.refs.isMountedRef.current = false
       },
       resolvedTrace: [],
-      rejectedTrace: ['debug:export-manifest-failed'],
+      rejectedTrace: [],
       attached: false,
     },
     {
@@ -2125,6 +2651,68 @@ describe('orchestrateFullResExport delayed manifest', () => {
       supersede(h: Harness) {
         h.ctx.refs.exportGraphVersionRef.current += 1
         h.ctx.atoms.setSession(clearExportResultState)
+      },
+      resolvedTrace: [],
+      rejectedTrace: [],
+      attached: false,
+    },
+    {
+      name: 'the export graph version advances',
+      supersede(h: Harness) {
+        h.ctx.refs.exportGraphVersionRef.current += 1
+      },
+      resolvedTrace: [],
+      rejectedTrace: [],
+      attached: false,
+    },
+    {
+      name: 'another attempt takes the export slot',
+      supersede(h: Harness) {
+        h.ctx.refs.exportAbortControllerRef.current = new AbortController()
+      },
+      resolvedTrace: [],
+      rejectedTrace: [],
+      attached: false,
+    },
+    {
+      name: 'a later attempt claims the export slot and ends',
+      supersede(h: Harness) {
+        const slot = h.ctx.refs.exportAbortControllerRef
+        claimExportSlot(slot, new AbortController())
+        slot.current = null
+      },
+      resolvedTrace: [],
+      rejectedTrace: [],
+      attached: false,
+    },
+    {
+      name: 'the Transform is edited',
+      session: createAcceptedTransformSession,
+      supersede(h: Harness) {
+        const live = h.state.session!
+        h.replaceSession({
+          ...live,
+          transform: editTransform(live.transform!, 11),
+        })
+      },
+      resolvedTrace: [],
+      rejectedTrace: [],
+      attached: false,
+    },
+    {
+      name: 'the result is replaced on the current attempt',
+      supersede(h: Harness) {
+        h.ctx.atoms.setSession((prev) =>
+          prev
+            ? {
+                ...prev,
+                exportState: {
+                  ...prev.exportState,
+                  result: createPreviousResult(),
+                },
+              }
+            : prev,
+        )
       },
       resolvedTrace: ['state:session:unchanged', 'debug:export-manifest-ready'],
       rejectedTrace: [
@@ -2134,9 +2722,28 @@ describe('orchestrateFullResExport delayed manifest', () => {
       attached: false,
     },
     {
-      name: 'the export graph version advances but the result stays',
+      name: 'a new frame leaves the same Transform pending',
+      session: createAcceptedTransformSession,
       supersede(h: Harness) {
-        h.ctx.refs.exportGraphVersionRef.current += 1
+        const live = h.state.session!
+        h.replaceSession({
+          ...live,
+          transform: recaptureTransform(live.transform!, 'pending'),
+        })
+      },
+      resolvedTrace: ['state:session:ready', 'debug:export-manifest-ready'],
+      rejectedTrace: ['state:session:ready', 'debug:export-manifest-failed'],
+      attached: true,
+    },
+    {
+      name: 'a new frame answers the same Transform',
+      session: createAcceptedTransformSession,
+      supersede(h: Harness) {
+        const live = h.state.session!
+        h.replaceSession({
+          ...live,
+          transform: answerTransform(live.transform!, live.exportGeometry!),
+        })
       },
       resolvedTrace: ['state:session:ready', 'debug:export-manifest-ready'],
       rejectedTrace: ['state:session:ready', 'debug:export-manifest-failed'],
@@ -2167,8 +2774,15 @@ describe('orchestrateFullResExport delayed manifest', () => {
 
   it.each(manifestOutcomes)(
     'settles a manifest that $outcome after $name',
-    async ({ supersede, outcome, expectedTrace, attached, attachedResult }) => {
-      const h = createHarness()
+    async ({
+      supersede,
+      session,
+      outcome,
+      expectedTrace,
+      attached,
+      attachedResult,
+    }) => {
+      const h = createHarness({ session: session?.() })
       const result = await runToReady(h)
       supersede(h)
       const sessionBeforeManifest = h.state.session

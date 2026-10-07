@@ -9,13 +9,17 @@ import { toast as sonnerToast } from 'sonner'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
-import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type { ExportResult } from '../../../model/export-result'
-import type { ImageSession } from '../../../model/session'
+import type { ImageSession, TransformIntent } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
+import { deriveTransformExportRefusal } from '../../../services/export/export-readiness'
 import { resolveExportCopyCapability } from '../../../services/export/export-result-actions'
 import { createCompletedExportResult } from '../../../services/export/export-result-materialization'
-import { clearExportResultForActiveExport } from '../../../services/export/export-state'
+import {
+  claimExportSlot,
+  clearExportResultForActiveExport,
+  clearExportResultState,
+} from '../../../services/export/export-state'
 import {
   buildPreviewExportFilename,
   EXPORT_JPEG_QUALITY,
@@ -58,6 +62,18 @@ type UseHqPreviewExportActionInput = {
   setStatus: (status: ProcessingStatus) => void
   toast?: HqPreviewExportToast
 }
+
+/**
+ * One HQ preview export attempt, fixed when it starts: the source, the
+ * export graph generation, the neutral Transform intent it was admitted
+ * with, and its own abort controller.
+ */
+type HqPreviewExportAttempt = Readonly<{
+  sessionId: string
+  graphVersion: number
+  transformIntent: TransformIntent | undefined
+  controller: AbortController
+}>
 
 function resolveHqPreviewExportCopyCapability() {
   const capability = resolveExportCopyCapability()
@@ -103,10 +119,15 @@ export function useHqPreviewExportAction({
     const image = decodedImageRef.current
     const pipeline = pipelineRef.current
 
-    if (activeSession?.exportGeometry) {
+    // Read from the live session as the action runs: the HQ JPEG never
+    // applies Transform, so it starts only while the source asks for none.
+    const transformRefusal = activeSession
+      ? deriveTransformExportRefusal(activeSession, 'hq-preview')
+      : undefined
+    if (transformRefusal) {
       scheduleToast(() =>
         toast.error('HQ preview export is not ready', {
-          description: PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+          description: transformRefusal,
         }),
       )
       return
@@ -145,8 +166,14 @@ export function useHqPreviewExportAction({
     const exportSessionId = activeSession.id
     const exportGraphVersion = exportGraphVersionRef.current
     abortExportWork()
-    const exportAbortController = new AbortController()
-    exportAbortControllerRef.current = exportAbortController
+    const attempt: HqPreviewExportAttempt = Object.freeze({
+      sessionId: exportSessionId,
+      graphVersion: exportGraphVersion,
+      transformIntent: activeSession.transform?.intent,
+      controller: new AbortController(),
+    })
+    const exportAbortController = attempt.controller
+    claimExportSlot(exportAbortControllerRef, exportAbortController)
     previewCopyCanvasRef.current = null
     queueExportResultResourceDisposal()
     setStatus('exporting')
@@ -166,11 +193,47 @@ export function useHqPreviewExportAction({
         : prev,
     )
 
-    const isCurrentExport = () =>
-      isMountedRef.current &&
-      !exportAbortController.signal.aborted &&
-      exportGraphVersionRef.current === exportGraphVersion &&
-      sessionRef.current?.id === exportSessionId
+    /**
+     * Whether this attempt may still write anything: the view is mounted,
+     * its signal is live, it still holds the export slot, the export graph
+     * has not moved, and the same source still asks for the same neutral
+     * Transform. Every edit makes a new intent, so the first edit ends it,
+     * and whoever ended it settles the workflow. A live Transform the HQ JPEG
+     * cannot leave out refuses the attempt, which then ends itself and hands
+     * the workflow back with the reason.
+     */
+    const isCurrentExport = () => {
+      const live = sessionRef.current
+      if (
+        !isMountedRef.current ||
+        attempt.controller.signal.aborted ||
+        exportAbortControllerRef.current !== attempt.controller ||
+        exportGraphVersionRef.current !== attempt.graphVersion ||
+        !live ||
+        live.id !== attempt.sessionId ||
+        live.transform?.intent !== attempt.transformIntent
+      ) {
+        return false
+      }
+      const refusal = deriveTransformExportRefusal(live, 'hq-preview')
+      if (!refusal) return true
+      attempt.controller.abort()
+      setSession((prev) =>
+        prev &&
+        prev.id === exportSessionId &&
+        prev.exportState.status === 'exporting'
+          ? clearExportResultState(prev)
+          : prev,
+      )
+      setStatus('ready')
+      setProgress(0)
+      scheduleToast(() =>
+        toast.error('HQ preview export is not ready', {
+          description: refusal,
+        }),
+      )
+      return false
+    }
 
     try {
       const outputSize = resolveHqPreviewExportSize({
@@ -189,11 +252,16 @@ export function useHqPreviewExportAction({
         filename,
         quality: EXPORT_JPEG_QUALITY,
         renderToCanvas: async () => {
-          if (exportAbortController.signal.aborted) {
+          if (!isCurrentExport()) {
             throw new Error('HQ_PREVIEW_EXPORT_ABORTED')
           }
 
-          return await pipeline.renderToHiddenCanvas(outputSize)
+          const canvas = await pipeline.renderToHiddenCanvas(outputSize)
+          // A canvas rendered for an attempt that has ended is never encoded.
+          if (!isCurrentExport()) {
+            throw new Error('HQ_PREVIEW_EXPORT_ABORTED')
+          }
+          return canvas
         },
       })
 
@@ -227,13 +295,7 @@ export function useHqPreviewExportAction({
       setStatus('ready')
       scheduleToast(() => toast.success('HQ preview JPEG ready'))
     } catch (err) {
-      if (
-        exportAbortController.signal.aborted ||
-        !isMountedRef.current ||
-        sessionRef.current?.id !== exportSessionId
-      ) {
-        return
-      }
+      if (!isCurrentExport()) return
 
       const description =
         err instanceof Error ? err.message : 'HQ preview export failed.'

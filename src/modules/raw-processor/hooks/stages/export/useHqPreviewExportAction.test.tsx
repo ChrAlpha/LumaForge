@@ -12,8 +12,17 @@ import { describe, expect, it, vi } from 'vitest'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
-import type { ImageSession } from '../../../model/session'
+import type { ImageSession, TransformState } from '../../../model/session'
+import { createTransformState } from '../../../model/session-factory'
 import { HQ_PREVIEW_LOOK_EXPORT_REASON } from '../../../services/export/hq-preview-look'
+import type {
+  TransformEvent,
+  TransformStatus,
+} from '../../../services/transform/transform-state'
+import {
+  deriveTransformStatus,
+  reduceTransformState,
+} from '../../../services/transform/transform-state'
 import { useHqPreviewExportAction } from './useHqPreviewExportAction'
 
 /** The look the test session names: a built-in style WebGPU draws. */
@@ -152,6 +161,339 @@ const SAMPLE_GEOMETRY = {
   matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
   constrainCrop: true,
 }
+
+/** Asks the session's Transform for a manual rotation; a new intent. */
+function editTransform(state: TransformState, rotate: number) {
+  return reduceTransformState(state, {
+    type: 'edit',
+    sourceId: state.sourceId,
+    intent: { manual: { ...state.intent.manual, rotate } },
+  })
+}
+
+/**
+ * A first Transform edit and the events that bring it to `status`, with no
+ * geometry held unless the preview's answer was accepted.
+ */
+function transformAt(status: TransformStatus): TransformState {
+  const sourceId = 'session-1'
+  const captureKey = 'frame-1'
+  const request: TransformEvent = {
+    type: 'request',
+    sourceId,
+    captureKey,
+    requestId: 1,
+    geometry: SAMPLE_GEOMETRY,
+  }
+  const events: Record<TransformStatus, TransformEvent[]> = {
+    neutral: [],
+    pending: [{ type: 'capture', sourceId, captureKey }, request],
+    accepted: [
+      { type: 'capture', sourceId, captureKey },
+      request,
+      {
+        type: 'rendered',
+        sourceId,
+        captureKey,
+        requestId: 1,
+        geometry: SAMPLE_GEOMETRY,
+        frame: { width: 800, height: 600 },
+      },
+    ],
+    invalid: [
+      { type: 'capture', sourceId, captureKey },
+      request,
+      {
+        type: 'render-failed',
+        sourceId,
+        captureKey,
+        requestId: 1,
+        failure: 'transform',
+      },
+    ],
+    unavailable: [
+      { type: 'capture', sourceId, captureKey },
+      { type: 'capture-failed', sourceId, captureKey },
+    ],
+  }
+  const neutral = createTransformState(sourceId)
+  const state = events[status].reduce(
+    reduceTransformState,
+    status === 'neutral' ? neutral : editTransform(neutral, 2),
+  )
+  expect(deriveTransformStatus(state)).toBe(status)
+  return state
+}
+
+/** A live HQ export harness whose session writes land in `sessionRef`. */
+function setupHq(initial: ImageSession = createSession()) {
+  const sessionRef: { current: ImageSession | null } = { current: initial }
+  const exportGraphVersionRef = { current: 1 }
+  const exportAbortControllerRef: { current: AbortController | null } = {
+    current: null,
+  }
+  const isMountedRef = { current: true }
+  const trace: string[] = []
+  let completeRender!: (canvas: HTMLCanvasElement) => void
+  let failRender!: (error: unknown) => void
+  const renderToHiddenCanvas = vi.fn(
+    () =>
+      new Promise<HTMLCanvasElement>((resolve, reject) => {
+        trace.push('service:render')
+        completeRender = resolve
+        failRender = reject
+      }),
+  )
+  const registerExportResultResource = vi.fn(() => {
+    trace.push('service:registerExportResultResource')
+  })
+  // The JPEG encode of the rendered canvas.
+  const toBlob = vi.fn((callback: BlobCallback) => {
+    trace.push('service:encode')
+    callback(new Blob(['jpeg'], { type: 'image/jpeg' }))
+  })
+  const success = vi.fn((message: string) => {
+    trace.push(`toast:success:${message}`)
+  })
+  const error = vi.fn((message: string) => {
+    trace.push(`toast:error:${message}`)
+  })
+  const { result } = renderHook(() =>
+    useHqPreviewExportAction({
+      sessionRef,
+      paramsRef: { current: SESSION_LOOK },
+      lutDataRef: { current: null },
+      decodedImageRef: { current: createDecodedImage() },
+      pipelineRef: { current: { renderToHiddenCanvas } },
+      isMountedRef,
+      exportGraphVersionRef,
+      exportAbortControllerRef,
+      previewCopyCanvasRef: { current: null },
+      previewSuspended: false,
+      abortExportWork: () => {
+        trace.push('service:abortExportWork')
+        exportAbortControllerRef.current?.abort()
+        exportAbortControllerRef.current = null
+      },
+      queueExportResultResourceDisposal: vi.fn(),
+      registerExportResultResource,
+      scheduleToast: (notify) => notify(),
+      setProgress: (progress) => trace.push(`state:progress:${progress}`),
+      setSession: (updater) => {
+        const next =
+          typeof updater === 'function' ? updater(sessionRef.current) : updater
+        trace.push(`state:session:${next?.exportState.status ?? 'null'}`)
+        sessionRef.current = next
+      },
+      setStatus: (status) => trace.push(`state:status:${status}`),
+      toast: { success, error },
+    }),
+  )
+  return {
+    result,
+    sessionRef,
+    exportGraphVersionRef,
+    exportAbortControllerRef,
+    isMountedRef,
+    trace,
+    renderToHiddenCanvas,
+    registerExportResultResource,
+    success,
+    error,
+    toBlob,
+    complete() {
+      completeRender({ toBlob } as unknown as HTMLCanvasElement)
+    },
+    fail(reason: unknown) {
+      failRender(reason)
+    },
+  }
+}
+
+describe('useHqPreviewExportAction attempt currency', () => {
+  it.each(['pending', 'accepted', 'invalid', 'unavailable'] as const)(
+    'refuses a captured HQ action once the Transform is %s, before any render',
+    async (status) => {
+      const h = setupHq()
+      const exportPreviewImage = h.result.current.exportPreviewImage
+      // The first non-neutral edit lands after the surface captured the
+      // action; a pending Transform holds no geometry yet.
+      h.sessionRef.current = {
+        ...h.sessionRef.current!,
+        transform: transformAt(status),
+      }
+      await exportPreviewImage()
+
+      expect(h.trace).toEqual(['toast:error:HQ preview export is not ready'])
+      expect(h.error).toHaveBeenCalledWith('HQ preview export is not ready', {
+        description: PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+      })
+      expect(h.renderToHiddenCanvas).not.toHaveBeenCalled()
+    },
+  )
+
+  it('exports with a neutral Transform', async () => {
+    const h = setupHq({
+      ...createSession(),
+      transform: transformAt('neutral'),
+    })
+    const pending = h.result.current.exportPreviewImage()
+    h.complete()
+    await pending
+
+    expect(h.sessionRef.current?.exportState.status).toBe('ready')
+    expect(h.success).toHaveBeenCalledWith('HQ preview JPEG ready')
+  })
+
+  const supersessions: Array<{
+    name: string
+    supersede: (h: ReturnType<typeof setupHq>) => void
+  }> = [
+    {
+      name: 'the export graph version advances',
+      supersede(h) {
+        h.exportGraphVersionRef.current += 1
+      },
+    },
+    {
+      name: 'the first Transform edit lands',
+      supersede(h) {
+        const live = h.sessionRef.current!
+        h.sessionRef.current = {
+          ...live,
+          transform: editTransform(
+            live.transform ?? createTransformState(live.id),
+            4,
+          ),
+        }
+      },
+    },
+    {
+      name: 'another attempt takes the export slot',
+      supersede(h) {
+        h.exportAbortControllerRef.current = new AbortController()
+      },
+    },
+    {
+      name: 'the view unmounts',
+      supersede(h) {
+        h.isMountedRef.current = false
+      },
+    },
+    {
+      name: 'the session is replaced',
+      supersede(h) {
+        h.sessionRef.current = { ...h.sessionRef.current!, id: 'session-2' }
+      },
+    },
+  ]
+
+  it.each(supersessions)(
+    'does not publish an HQ JPEG that completes after $name',
+    async ({ supersede }) => {
+      const h = setupHq()
+      const pending = h.result.current.exportPreviewImage()
+      expect(h.renderToHiddenCanvas).toHaveBeenCalledTimes(1)
+      const supersededAt = h.trace.push('test:superseded') - 1
+      supersede(h)
+      const sessionAfterSupersession = h.sessionRef.current
+      h.complete()
+      await pending
+
+      expect(h.trace.slice(supersededAt)).toEqual(['test:superseded'])
+      expect(h.sessionRef.current).toBe(sessionAfterSupersession)
+      expect(h.registerExportResultResource).not.toHaveBeenCalled()
+      // The canvas rendered for the ended attempt is never encoded.
+      expect(h.toBlob).not.toHaveBeenCalled()
+    },
+  )
+
+  it('ends an attempt whose session comes to hold a geometry while it renders, before encoding', async () => {
+    const h = setupHq({
+      ...createSession(),
+      transform: transformAt('neutral'),
+    })
+    const pending = h.result.current.exportPreviewImage()
+    const supersededAt = h.trace.push('test:geometry') - 1
+    // The same neutral intent, but a geometry the HQ JPEG would leave out.
+    h.sessionRef.current = {
+      ...h.sessionRef.current!,
+      exportGeometry: SAMPLE_GEOMETRY,
+    }
+    h.complete()
+    await pending
+
+    expect(h.trace.slice(supersededAt)).toEqual([
+      'test:geometry',
+      'state:session:idle',
+      'state:status:ready',
+      'state:progress:0',
+      'toast:error:HQ preview export is not ready',
+    ])
+    expect(h.error).toHaveBeenCalledWith('HQ preview export is not ready', {
+      description: PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+    })
+    expect(h.toBlob).not.toHaveBeenCalled()
+    expect(h.registerExportResultResource).not.toHaveBeenCalled()
+    expect(h.sessionRef.current?.exportState.result).toBeUndefined()
+    expect(h.exportAbortControllerRef.current).toBeNull()
+  })
+
+  it.each(supersessions)(
+    'does not record an HQ failure that arrives after $name',
+    async ({ supersede }) => {
+      const h = setupHq()
+      const pending = h.result.current.exportPreviewImage()
+      const supersededAt = h.trace.push('test:superseded') - 1
+      supersede(h)
+      const sessionAfterSupersession = h.sessionRef.current
+      h.fail(new Error('GPU device lost'))
+      await pending
+
+      expect(h.trace.slice(supersededAt)).toEqual(['test:superseded'])
+      expect(h.sessionRef.current).toBe(sessionAfterSupersession)
+      expect(h.error).not.toHaveBeenCalled()
+    },
+  )
+
+  it('pins the write order of a current HQ attempt that succeeds or fails', async () => {
+    const delivered = setupHq()
+    const success = delivered.result.current.exportPreviewImage()
+    delivered.complete()
+    await success
+    expect(delivered.trace).toEqual([
+      'service:abortExportWork',
+      'state:status:exporting',
+      'state:progress:0',
+      'state:session:exporting',
+      'service:render',
+      'service:encode',
+      'service:registerExportResultResource',
+      'state:session:ready',
+      'state:progress:100',
+      'state:status:ready',
+      'toast:success:HQ preview JPEG ready',
+    ])
+    expect(delivered.exportAbortControllerRef.current).toBeNull()
+
+    const failed = setupHq()
+    const failure = failed.result.current.exportPreviewImage()
+    failed.fail(new Error('GPU device lost'))
+    await failure
+    expect(failed.trace).toEqual([
+      'service:abortExportWork',
+      'state:status:exporting',
+      'state:progress:0',
+      'state:session:exporting',
+      'service:render',
+      'state:session:idle',
+      'state:status:ready',
+      'state:progress:0',
+      'toast:error:HQ preview export failed',
+    ])
+    expect(failed.exportAbortControllerRef.current).toBeNull()
+  })
+})
 
 describe('useHqPreviewExportAction', () => {
   it('discards an HQ render completed after preview geometry invalidates its export', async () => {
