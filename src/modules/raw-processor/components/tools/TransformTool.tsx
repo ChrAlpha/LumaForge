@@ -8,6 +8,7 @@ import { useI18n } from '~/lib/i18n'
 import type { UprightMode } from '~/lib/transform/geometry/types'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
+import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
 import type { TransformGroup } from '../transform-fields'
 import {
   applyTransformSlider,
@@ -35,19 +36,27 @@ import {
  * reports the state of that decision, and the manual geometry sits below in
  * the same Adjust rows the Tone and Color cards use (grab anywhere, Shift for
  * fine, click the amber value to reset the field).
+ *
+ * Each control is off exactly where the shared action policy refuses its
+ * Transform action; Reset is also off for an intent with nothing to reset.
  */
-export function TransformTool({ feature }: { feature: RawTransformFeature }) {
+export function TransformTool({
+  feature,
+  availability,
+}: {
+  feature: RawTransformFeature
+  availability: Pick<
+    ToolAvailability,
+    'transformGeometry' | 'transformOverlay' | 'transformReset'
+  >
+}) {
   const { t } = useI18n()
   const { demo, observe } = feature
   useEffect(() => observe(), [observe])
 
   const message = resolveTransformMessage(feature)
-  const controlsDisabled =
-    !feature.available ||
-    !demo.ready ||
-    feature.captureError ||
-    feature.isProcessing
-  const viewDisabled = !feature.current || feature.isProcessing
+  const controlsDisabled = !availability.transformGeometry.available
+  const viewDisabled = !availability.transformOverlay.available
   const dirty = isTransformDirty(demo.mode, demo.manual) || !demo.constrainCrop
 
   return (
@@ -110,7 +119,7 @@ export function TransformTool({ feature }: { feature: RawTransformFeature }) {
         <button
           type="button"
           onClick={feature.reset}
-          disabled={feature.isProcessing || !dirty}
+          disabled={!availability.transformReset.available || !dirty}
           className={clsxm(
             'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[0.72rem] font-medium transition-colors duration-150',
             'text-lf-on-surface/72 hover:bg-[oklch(0.96_0.006_255/0.06)] hover:text-lf-amber-soft',

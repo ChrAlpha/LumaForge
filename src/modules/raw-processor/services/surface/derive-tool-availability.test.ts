@@ -62,13 +62,6 @@ const TRANSFORM_ACTIONS: TransformAction[] = [
   'transformOverlay',
   'transformReset',
 ]
-/** The stages Transform waits out: each one replaces the photo's frame. */
-const TRANSFORM_LOCKING = new Set<ProcessingStatus>([
-  'loading',
-  'decoding',
-  'exporting',
-])
-
 function input(
   overrides: Partial<ToolAvailabilityInput> = {},
 ): ToolAvailabilityInput {
@@ -151,34 +144,6 @@ function currentSurfaceRules(
     hqExport: exportEntry && hqExport,
     delivery: exportEntry && delivery,
     restorePreview,
-  }
-}
-
-/**
- * The Transform tool's own rules, written out the way the desktop card and
- * the mobile panel state them, behind the provider's live guard that
- * refuses a geometry edit while the preview is released. Both surfaces
- * apply the same ones; without a Transform preview there is no tool.
- */
-function currentTransformToolRules(
-  i: ToolAvailabilityInput,
-): Record<TransformAction, boolean> {
-  const preview = i.transformPreview
-  const locked = TRANSFORM_LOCKING.has(i.status)
-  const guarded = !i.previewSuspended
-  return {
-    transformGeometry: Boolean(
-      preview &&
-      preview.canCapture &&
-      preview.workerReady &&
-      !preview.captureFailed &&
-      !locked &&
-      guarded,
-    ),
-    transformOverlay: Boolean(preview && preview.current && !locked),
-    // Reset is also off for an intent with nothing to reset, which is the
-    // panel's own fact.
-    transformReset: Boolean(preview && !locked && guarded),
   }
 }
 
@@ -285,19 +250,10 @@ describe('deriveToolAvailability', () => {
     expect(checked).toBe(2 * 2 * 8 * 2 * 2 * 2 * 4 * 2 * 2 * 2 * 2 * 2)
   })
 
-  it('agrees with the rules the Transform tool applies, on every observation', () => {
+  it('moves no other action with what the Transform preview observes', () => {
     let checked = 0
     for (const i of everyTransformInput()) {
       const result = deriveToolAvailability(i)
-      const expected = currentTransformToolRules(i)
-      for (const action of TRANSFORM_ACTIONS) {
-        if (result[action].available !== expected[action]) {
-          throw new Error(
-            `${action} on ${JSON.stringify(i)}: expected ${expected[action]}`,
-          )
-        }
-      }
-      // What the Transform preview observes moves no other action.
       const unobserved = deriveToolAvailability({
         ...i,
         transformPreview: undefined,
@@ -305,11 +261,159 @@ describe('deriveToolAvailability', () => {
       for (const action of ACTIONS) {
         expect(result[action]).toEqual(unobserved[action])
       }
+      // Without a Transform preview there is no Transform tool to offer.
+      for (const action of TRANSFORM_ACTIONS) {
+        expect(unobserved[action]).toEqual({ available: false, reason: null })
+      }
       checked++
     }
     // No preview, then 4 observations without a frame to capture or 10
     // with one: only a loaded photo whose preview is held has one.
     expect(checked).toBe(2 * 8 * 2 * 2 * (5 + 5 + 11 + 5))
+  })
+
+  it('answers each Transform state the panels render, on both surfaces alike', () => {
+    const noFrame: TransformPreviewObservation = {
+      canCapture: false,
+      workerReady: false,
+      captureFailed: false,
+      current: false,
+    }
+    const ready: TransformPreviewObservation = {
+      canCapture: true,
+      workerReady: true,
+      captureFailed: false,
+      current: true,
+    }
+    const open = null
+    // [state, facts, geometry, overlay, reset]; null is available.
+    const cases: Array<
+      [
+        string,
+        Partial<ToolAvailabilityInput>,
+        RawReasonCode | null,
+        RawReasonCode | null,
+        RawReasonCode | null,
+      ]
+    > = [
+      ['ready', { transformPreview: ready }, open, open, open],
+      [
+        'no source',
+        { hasImage: false, status: 'idle', transformPreview: noFrame },
+        'no-source',
+        'no-source',
+        open,
+      ],
+      [
+        'no frame to capture',
+        { transformPreview: noFrame },
+        'transform-unavailable',
+        'transform-unavailable',
+        open,
+      ],
+      [
+        'worker not ready',
+        { transformPreview: { ...noFrame, canCapture: true } },
+        'transform-pending',
+        'transform-pending',
+        open,
+      ],
+      [
+        'capture failed',
+        {
+          transformPreview: { ...ready, captureFailed: true, current: false },
+        },
+        'transform-unavailable',
+        'transform-unavailable',
+        open,
+      ],
+      [
+        'loading',
+        { status: 'loading', transformPreview: ready },
+        'source-loading',
+        'source-loading',
+        'source-loading',
+      ],
+      [
+        'decoding',
+        { status: 'decoding', transformPreview: ready },
+        'preview-decoding',
+        'preview-decoding',
+        'preview-decoding',
+      ],
+      [
+        'exporting',
+        { status: 'exporting', transformPreview: ready },
+        'export-running',
+        'export-running',
+        'export-running',
+      ],
+      [
+        'released',
+        {
+          previewSuspended: true,
+          transformPreview: { ...noFrame, workerReady: true },
+        },
+        'preview-released',
+        'preview-released',
+        'preview-released',
+      ],
+      [
+        'warming',
+        { status: 'warming', transformPreview: ready },
+        open,
+        open,
+        open,
+      ],
+      [
+        'processing',
+        { status: 'processing', transformPreview: ready },
+        open,
+        open,
+        open,
+      ],
+    ]
+    const answer = (reason: RawReasonCode | null) =>
+      reason ? { available: false, reason } : { available: true, reason: null }
+    for (const surface of ['desktop', 'mobile'] as const) {
+      for (const [state, facts, geometry, overlay, reset] of cases) {
+        const result = deriveToolAvailability(input({ surface, ...facts }))
+        expect(
+          {
+            state,
+            geometry: result.transformGeometry,
+            overlay: result.transformOverlay,
+            reset: result.transformReset,
+          },
+          `${surface} ${state}`,
+        ).toEqual({
+          state,
+          geometry: answer(geometry),
+          overlay: answer(overlay),
+          reset: answer(reset),
+        })
+      }
+    }
+  })
+
+  it('keeps Transform open on mobile while the deck that holds it waits for edit', () => {
+    const ready: TransformPreviewObservation = {
+      canCapture: true,
+      workerReady: true,
+      captureFailed: false,
+      current: true,
+    }
+    for (const status of ['warming', 'processing'] as const) {
+      const result = deriveToolAvailability(
+        input({ surface: 'mobile', status, transformPreview: ready }),
+      )
+      // The mobile deck opens only where edit is available, so the panel is
+      // out of reach here even though its own actions are not refused.
+      expect(result.edit.available).toBe(false)
+      for (const action of TRANSFORM_ACTIONS) {
+        expect(result[action]).toEqual({ available: true, reason: null })
+      }
+    }
   })
 
   it('never names a reason for an available action', () => {

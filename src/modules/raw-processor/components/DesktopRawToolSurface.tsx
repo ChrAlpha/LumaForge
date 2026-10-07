@@ -111,7 +111,10 @@ export function DesktopRawToolSurface() {
         </ToolCard>
         {props.transform && (
           <ToolCard id="transform" title={t('raw.transform.title')}>
-            <TransformTool feature={props.transform} />
+            <TransformTool
+              feature={props.transform}
+              availability={availability}
+            />
           </ToolCard>
         )}
         <ToolCard id="compare" title={t('raw.compare.title')}>

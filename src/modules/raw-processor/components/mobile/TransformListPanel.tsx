@@ -12,6 +12,7 @@ import type { ManualTransform } from '~/lib/transform/transform-types'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import { DOCK_SPRING } from '../../motion'
+import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
 import {
   SEGMENTED_FOCUS_RING,
   SEGMENTED_ITEM_TEXT,
@@ -52,13 +53,23 @@ function sectionLabelKey(section: Section) {
  * scrolling body, so the photograph above the dock stays the thing you read.
  * Upright is one tap away at all times; the manual geometry is disclosed by
  * section instead of stacking seven sliders into a 264px box.
+ *
+ * Each control is off exactly where the shared action policy refuses its
+ * Transform action; a section's reset is also off while that section has
+ * nothing to reset. The deck that holds the panel is reached separately,
+ * under the mobile edit rule.
  */
 export function TransformListPanel({
   feature,
+  availability,
   scrubbing = false,
   onScrubChange,
 }: {
   feature: RawTransformFeature
+  availability: Pick<
+    ToolAvailability,
+    'transformGeometry' | 'transformOverlay' | 'transformReset'
+  >
   scrubbing?: boolean
   onScrubChange: (field: ScrubFieldId | null) => void
 }) {
@@ -71,16 +82,14 @@ export function TransformListPanel({
   const indicatorLayoutId = useId()
 
   const message = resolveTransformMessage(feature)
-  const controlsDisabled =
-    !feature.available ||
-    !demo.ready ||
-    feature.captureError ||
-    feature.isProcessing
-  const viewDisabled = !feature.current || feature.isProcessing
+  const controlsDisabled = !availability.transformGeometry.available
+  const viewDisabled = !availability.transformOverlay.available
 
   const sectionLabel = t(sectionLabelKey(section))
+  // A section reset only clears part of the intent, so it answers to Reset
+  // and stays open when the frame failed.
   const resetDisabled =
-    feature.isProcessing ||
+    !availability.transformReset.available ||
     (section === 'upright'
       ? !isTransformDirty(demo.mode, demo.manual) && demo.constrainCrop
       : isTransformGroupNeutral(section, demo.manual) &&

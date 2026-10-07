@@ -1,7 +1,10 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { transformFeatureFixture } from './transform-feature.fixture'
+import {
+  TRANSFORM_TOOL_STATES,
+  transformToolStateFixture,
+} from './transform-feature.fixture'
 import { TransformTool } from './TransformTool'
 
 beforeEach(() => {
@@ -17,21 +20,21 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 it('keeps the RAW Transform tool free of the removed comparison and preview-save UI', () => {
-  const feature = transformFeatureFixture({
-    hasImage: true,
-    available: true,
-    current: true,
-  })
+  const { feature, availability } = transformToolStateFixture(
+    'desktop',
+    TRANSFORM_TOOL_STATES.ready,
+  )
   feature.demo = {
     ...feature.demo,
-    ready: true,
     result: {
       frame: { width: 1280, height: 960, data: new Uint8ClampedArray(0) },
       displayMatrix: feature.demo.solution.matrix,
       retainedArea: 0.64,
     },
   }
-  const { container } = render(<TransformTool feature={feature} />)
+  const { container } = render(
+    <TransformTool feature={feature} availability={availability} />,
+  )
   expect(
     screen.queryByRole('button', { name: /before transform|after transform/i }),
   ).toBeNull()

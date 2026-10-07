@@ -454,6 +454,7 @@ export function MobileLabChrome(props: {
             {props.hasImage && (
               <MobileLabModeDock
                 transform={props.transform}
+                availability={props.availability}
                 mode={mode}
                 exportOpen={exportOpen}
                 panelVisibleWhileDisabled={exportPanelHeld}

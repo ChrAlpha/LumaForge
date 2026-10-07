@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { surfaceFade } from '~/lib/spring'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
+import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
 import type { HSLToolValue } from '../tools/HSLTool'
@@ -20,6 +21,7 @@ import { TransformListPanel } from './TransformListPanel'
 
 export function MobileLabModeDock({
   transform,
+  availability,
   mode,
   exportOpen,
   panelVisibleWhileDisabled,
@@ -50,6 +52,11 @@ export function MobileLabModeDock({
   onDeckNaturalHeightChange,
 }: {
   transform?: RawTransformFeature
+  /**
+   * The mobile action policy the panels read. Reaching the deck at all is
+   * gated separately, by `disabled`.
+   */
+  availability: ToolAvailability
   mode: MobileMode
   /** The export panel holds the deck instead of the active tool's panel. */
   exportOpen: boolean
@@ -121,6 +128,7 @@ export function MobileLabModeDock({
           ) : (
             <MobileLabModePanel
               transform={transform}
+              availability={availability}
               mode={mode}
               tone={tone}
               color={color}
@@ -147,6 +155,7 @@ export function MobileLabModeDock({
 
 function MobileLabModePanel({
   transform,
+  availability,
   mode,
   tone,
   color,
@@ -165,6 +174,7 @@ function MobileLabModePanel({
   onLookViewChange,
 }: {
   transform?: RawTransformFeature
+  availability: ToolAvailability
   mode: MobileMode
   tone: ToneValue
   color: ColorValue
@@ -189,6 +199,7 @@ function MobileLabModePanel({
     return transform ? (
       <TransformListPanel
         feature={transform}
+        availability={availability}
         scrubbing={scrubbing}
         onScrubChange={onScrubChange}
       />

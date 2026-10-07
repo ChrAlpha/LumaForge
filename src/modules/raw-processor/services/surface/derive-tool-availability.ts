@@ -13,7 +13,10 @@ export type ToolSurface = 'desktop' | 'mobile'
  * keeps Export, the delivered result and Restore.
  */
 export type ToolAction =
-  /** Tone, color and HSL edits. */
+  /**
+   * Tone, color and HSL edits. On mobile it also gates the deck every tool
+   * panel sits in, Transform's included.
+   */
   | 'edit'
   /** How much of the applied LUT reaches the photo. */
   | 'strength'
@@ -155,8 +158,10 @@ const TRANSFORM_EXPORT_REASON: Record<TransformExportBlock, RawReasonCode> = {
  * keeps its controls and locks them only for an export; mobile hands the
  * stage over to the progress handoff and waits for any busy stage. Before a
  * source, desktop keeps the sample compare's split and stages a LUT, while
- * mobile has no dock or lens to act through. Transform follows its own
- * frame on both surfaces alike.
+ * mobile has no dock or lens to act through. Transform's actions follow
+ * its own frame on both surfaces alike; on mobile the deck that holds the
+ * Transform panel is still reached only where `edit` is available, so it
+ * stays out of reach while the runtime warms or the look reprocesses.
  */
 export function deriveToolAvailability(
   input: ToolAvailabilityInput,
