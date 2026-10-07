@@ -40,9 +40,21 @@ RAW artifacts; publish that package before this one.
   applied) was normalized to its own peak, so neighboring strips could
   differ in brightness by up to log2(1/0.75), about 0.42 EV, and show bands.
 - Runtime info reports the package version; it reported `0.1.0` before.
+- Worker request failures without a runtime error code are classified by the
+  request that failed instead of always reporting `RAW_OPEN_FAILED`. Thumbnail
+  extraction reports `RAW_THUMBNAIL_UNAVAILABLE`, quick decodes
+  `RAW_QUICK_DECODE_FAILED`, bounded HQ decodes `RAW_HQ_DECODE_FAILED`, export
+  capability probes `RAW_METADATA_FAILED`, processed-window export begin/end
+  and raw or processed window reads `RAW_WINDOW_READ_FAILED`, calibration
+  `RAW_WORKER_PROTOCOL_ERROR`, and `init`, `cancel`, and `closeSession`
+  `RAW_RUNTIME_UNAVAILABLE`. Source opens and file probes still report
+  `RAW_OPEN_FAILED`. Errors that already carry a code (cancellation, memory
+  limit, protocol, unsupported format) keep it.
 
 ### Added
 
+- `RAW_WINDOW_READ_FAILED` joins `LumaRawErrorCode`. Code that switches
+  exhaustively over the union needs a case for it.
 - `native:check-window-normalization` reads the public DNG fixture as 256-row,
   512-row, and full-height processed windows with the exporter's 2px halo, top
   down and then bottom up in a fresh session, for each memory profile, and

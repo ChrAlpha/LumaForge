@@ -123,6 +123,7 @@ const RAW_CODE_MAP: Record<string, LmfgErrorCode> = {
   RAW_THUMBNAIL_UNAVAILABLE: 'render.failed',
   RAW_QUICK_DECODE_FAILED: 'render.failed',
   RAW_HQ_DECODE_FAILED: 'render.failed',
+  RAW_WINDOW_READ_FAILED: 'render.failed',
   RAW_MEMORY_LIMIT: 'render.failed',
   RAW_JOB_CANCELLED: 'cancelled',
   RAW_WORKER_PROTOCOL_ERROR: 'internal',

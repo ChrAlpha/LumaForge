@@ -1,4 +1,5 @@
 import { version as runtimeVersion } from '../package.json'
+import type { LumaRawErrorCode } from '../src/errors'
 import { LumaRawRuntimeError, normalizeRawRuntimeError } from '../src/errors'
 import type {
   LumaEmbeddedPreview,
@@ -14,6 +15,7 @@ import type {
 } from '../src/types'
 import type {
   LumaRawWorkerRequest,
+  LumaRawWorkerRequestType,
   LumaRawWorkerResponse,
 } from '../src/worker-protocol'
 import { normalizeExportCapability } from './native-adapter'
@@ -237,11 +239,36 @@ function openProcessorWithSettings(
   })
 }
 
+// Unclassified throws take the code of the operation that failed. Errors that
+// already carry a runtime code (cancellation, memory, protocol, format) keep it.
+export const rawRequestFailureFallbackCodes = {
+  init: 'RAW_RUNTIME_UNAVAILABLE',
+  cancel: 'RAW_RUNTIME_UNAVAILABLE',
+  openSession: 'RAW_OPEN_FAILED',
+  closeSession: 'RAW_RUNTIME_UNAVAILABLE',
+  probe: 'RAW_OPEN_FAILED',
+  extractEmbeddedPreview: 'RAW_THUMBNAIL_UNAVAILABLE',
+  extractEmbeddedPreviewFromSession: 'RAW_THUMBNAIL_UNAVAILABLE',
+  decodeQuick: 'RAW_QUICK_DECODE_FAILED',
+  decodeQuickFromSession: 'RAW_QUICK_DECODE_FAILED',
+  decodeBoundedHq: 'RAW_HQ_DECODE_FAILED',
+  decodeBoundedHqFromSession: 'RAW_HQ_DECODE_FAILED',
+  probeExportCapabilityFromSession: 'RAW_METADATA_FAILED',
+  beginProcessedWindowExportFromSession: 'RAW_WINDOW_READ_FAILED',
+  readRawWindowFromSession: 'RAW_WINDOW_READ_FAILED',
+  readProcessedWindowFromSession: 'RAW_WINDOW_READ_FAILED',
+  endProcessedWindowExportFromSession: 'RAW_WINDOW_READ_FAILED',
+  applyCalibrationToSession: 'RAW_WORKER_PROTOCOL_ERROR',
+} as const satisfies Record<LumaRawWorkerRequestType, LumaRawErrorCode>
+
 function failureResponse(
   request: LumaRawWorkerRequest,
   error: unknown,
 ): LumaRawWorkerResponse {
-  const runtimeError = normalizeRawRuntimeError(error, 'RAW_OPEN_FAILED')
+  const runtimeError = normalizeRawRuntimeError(
+    error,
+    rawRequestFailureFallbackCodes[request.type],
+  )
 
   return {
     id: request.id,

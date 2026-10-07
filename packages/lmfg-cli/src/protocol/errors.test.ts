@@ -76,6 +76,10 @@ describe('toLmfgError', () => {
       toLmfgError(new LumaRawRuntimeError('RAW_MEMORY_LIMIT', 'nope')).code,
     ).toBe('render.failed')
     expect(
+      toLmfgError(new LumaRawRuntimeError('RAW_WINDOW_READ_FAILED', 'nope'))
+        .code,
+    ).toBe('render.failed')
+    expect(
       toLmfgError(new LumaRawRuntimeError('RAW_RUNTIME_UNAVAILABLE', 'nope'))
         .code,
     ).toBe('runtime.unavailable')

@@ -3,8 +3,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { version as packageVersion } from '../package.json'
 import { LumaRawRuntimeError } from '../src/errors'
 import type { LumaRawExportCapability } from '../src/types'
+import type {
+  LumaRawWorkerRequest,
+  LumaRawWorkerRequestType,
+} from '../src/worker-protocol'
 import type { LumaRawNativeFactory } from './native-types'
-import { createRuntimeCore } from './runtime-core'
+import {
+  createRuntimeCore,
+  rawRequestFailureFallbackCodes,
+} from './runtime-core'
 
 const makeNativeFactory = (): LumaRawNativeFactory => ({
   createProcessor() {
@@ -2329,6 +2336,396 @@ describe('runtime-core', () => {
       error: {
         code: 'RAW_JOB_CANCELLED',
       },
+    })
+  })
+})
+
+describe('runtime-core request failure classification', () => {
+  type FailingMethod =
+    | 'openBuffer'
+    | 'loadBuffer'
+    | 'extractThumbnail'
+    | 'decodePreview'
+    | 'decodeHq'
+    | 'probeExportCapability'
+    | 'beginProcessedWindowExport'
+    | 'readRawWindow'
+    | 'readProcessedWindow'
+    | 'endProcessedWindowExport'
+    | 'applyCalibration'
+    | 'dispose'
+
+  const unsupportedNativeCapability: LumaRawExportCapability = {
+    supported: false,
+    width: 0,
+    height: 0,
+    rawWidth: 0,
+    rawHeight: 0,
+    cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
+    blackLevel: 0,
+    whiteLevel: 0,
+    orientation: { code: 1, supported: true },
+    sensor: {
+      layout: 'unknown',
+      colorCount: 0,
+      cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
+      phaseIsWindowLocal: false,
+    },
+    windows: { librawProcessed: false, rawMosaic: false },
+    diagnostics: {
+      hasRawImage: false,
+      hasColor3Image: false,
+      hasColor4Image: false,
+      hasXTransTable: false,
+    },
+    reasons: ['raw-window-unavailable'],
+  }
+
+  const makeFailingFactory = (
+    method: FailingMethod,
+    failure: unknown,
+  ): LumaRawNativeFactory => ({
+    createProcessor() {
+      const processor = makeNativeFactory().createProcessor()
+      const fail = () => {
+        throw failure
+      }
+      return {
+        ...processor,
+        probeExportCapability: () => unsupportedNativeCapability,
+        beginProcessedWindowExport: () => ({ active: true as const }),
+        readRawWindow: () => {
+          throw new Error('unexpected raw-window read')
+        },
+        readProcessedWindow: () => {
+          throw new Error('unexpected processed-window read')
+        },
+        endProcessedWindowExport: () => {},
+        applyCalibration: () => {},
+        [method]: fail,
+      }
+    },
+  })
+
+  const filePayload = {
+    fileBuffer: new ArrayBuffer(4),
+    fileName: 'sample.ARW',
+    fileSize: 4,
+  }
+
+  async function openSession(
+    core: ReturnType<typeof createRuntimeCore>,
+    id = 'classify-open',
+  ) {
+    const opened = await core.handleRequest({
+      id,
+      type: 'openSession',
+      payload: filePayload,
+    })
+    if (!opened.ok || opened.type !== 'openSession') {
+      throw new Error('session open failed in fixture')
+    }
+    return opened.payload.sessionId
+  }
+
+  type SessionRequestType =
+    | 'extractEmbeddedPreviewFromSession'
+    | 'decodeQuickFromSession'
+    | 'decodeBoundedHqFromSession'
+    | 'probeExportCapabilityFromSession'
+    | 'beginProcessedWindowExportFromSession'
+    | 'readRawWindowFromSession'
+    | 'readProcessedWindowFromSession'
+    | 'endProcessedWindowExportFromSession'
+    | 'applyCalibrationToSession'
+    | 'closeSession'
+
+  function sessionRequest(
+    type: SessionRequestType,
+    sessionId: string,
+    id = `classify-${type}`,
+  ): LumaRawWorkerRequest {
+    switch (type) {
+      case 'decodeBoundedHqFromSession':
+        return { id, type, payload: { sessionId, maxOutputPixels: 1_000_000 } }
+      case 'readRawWindowFromSession':
+        return {
+          id,
+          type,
+          payload: { sessionId, rect: { x: 0, y: 0, width: 2, height: 2 } },
+        }
+      case 'readProcessedWindowFromSession':
+        return {
+          id,
+          type,
+          payload: {
+            sessionId,
+            request: {
+              outputRect: { x: 0, y: 0, width: 2, height: 2 },
+              halo: { left: 0, top: 0, right: 0, bottom: 0 },
+            },
+          },
+        }
+      case 'applyCalibrationToSession':
+        return {
+          id,
+          type,
+          payload: {
+            sessionId,
+            cameraCalibration: {
+              profileId: 'p1',
+              profileName: 'Adobe Standard',
+              xyzToCamera: new Float32Array(9),
+            },
+          },
+        }
+      default:
+        return { id, type, payload: { sessionId } }
+    }
+  }
+
+  it.each([
+    ['probe', 'openBuffer', 'RAW_OPEN_FAILED'],
+    ['extractEmbeddedPreview', 'extractThumbnail', 'RAW_THUMBNAIL_UNAVAILABLE'],
+    ['decodeQuick', 'decodePreview', 'RAW_QUICK_DECODE_FAILED'],
+    ['decodeBoundedHq', 'decodeHq', 'RAW_HQ_DECODE_FAILED'],
+  ] as const)(
+    'classifies unexpected %s file failures by operation',
+    async (type, method, code) => {
+      const core = createRuntimeCore(
+        makeFailingFactory(method, new Error(`${method} exploded`)),
+      )
+      const request = (
+        type === 'decodeBoundedHq'
+          ? {
+              id: `classify-${type}`,
+              type,
+              payload: { ...filePayload, maxOutputPixels: 1_000_000 },
+            }
+          : { id: `classify-${type}`, type, payload: filePayload }
+      ) as LumaRawWorkerRequest
+
+      await expect(core.handleRequest(request)).resolves.toEqual({
+        id: `classify-${type}`,
+        ok: false,
+        type,
+        error: { code, message: `${method} exploded` },
+      })
+    },
+  )
+
+  it('classifies unexpected session open failures as source-open failures', async () => {
+    const core = createRuntimeCore(
+      makeFailingFactory('loadBuffer', new Error('load exploded')),
+    )
+
+    await expect(
+      core.handleRequest({
+        id: 'classify-openSession',
+        type: 'openSession',
+        payload: filePayload,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      type: 'openSession',
+      error: { code: 'RAW_OPEN_FAILED', message: 'load exploded' },
+    })
+  })
+
+  it.each([
+    [
+      'extractEmbeddedPreviewFromSession',
+      'extractThumbnail',
+      'RAW_THUMBNAIL_UNAVAILABLE',
+    ],
+    ['decodeQuickFromSession', 'decodePreview', 'RAW_QUICK_DECODE_FAILED'],
+    ['decodeBoundedHqFromSession', 'decodeHq', 'RAW_HQ_DECODE_FAILED'],
+    [
+      'probeExportCapabilityFromSession',
+      'probeExportCapability',
+      'RAW_METADATA_FAILED',
+    ],
+    [
+      'beginProcessedWindowExportFromSession',
+      'beginProcessedWindowExport',
+      'RAW_WINDOW_READ_FAILED',
+    ],
+    ['readRawWindowFromSession', 'readRawWindow', 'RAW_WINDOW_READ_FAILED'],
+    [
+      'readProcessedWindowFromSession',
+      'readProcessedWindow',
+      'RAW_WINDOW_READ_FAILED',
+    ],
+    [
+      'endProcessedWindowExportFromSession',
+      'endProcessedWindowExport',
+      'RAW_WINDOW_READ_FAILED',
+    ],
+    [
+      'applyCalibrationToSession',
+      'applyCalibration',
+      'RAW_WORKER_PROTOCOL_ERROR',
+    ],
+    ['closeSession', 'dispose', 'RAW_RUNTIME_UNAVAILABLE'],
+  ] as const)(
+    'classifies unexpected %s failures by operation',
+    async (type, method, code) => {
+      const core = createRuntimeCore(
+        makeFailingFactory(method, new TypeError(`${method} exploded`)),
+      )
+      const sessionId = await openSession(core)
+
+      await expect(
+        core.handleRequest(sessionRequest(type, sessionId)),
+      ).resolves.toEqual({
+        id: `classify-${type}`,
+        ok: false,
+        type,
+        error: { code, message: `${method} exploded` },
+      })
+    },
+  )
+
+  it.each([
+    ['a string', 'native abort'],
+    ['undefined', undefined],
+    ['a plain object', { status: 12 }],
+  ])(
+    'classifies non-Error window throws (%s) without losing the operation',
+    async (_label, failure) => {
+      const core = createRuntimeCore(
+        makeFailingFactory('readProcessedWindow', failure),
+      )
+      const sessionId = await openSession(core)
+
+      await expect(
+        core.handleRequest(
+          sessionRequest('readProcessedWindowFromSession', sessionId),
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        type: 'readProcessedWindowFromSession',
+        error: {
+          code: 'RAW_WINDOW_READ_FAILED',
+          message: 'RAW runtime request failed.',
+        },
+      })
+    },
+  )
+
+  it('classifies non-Error decode throws by operation', async () => {
+    const core = createRuntimeCore(makeFailingFactory('decodeHq', 'oom'))
+    const sessionId = await openSession(core)
+
+    await expect(
+      core.handleRequest(
+        sessionRequest('decodeBoundedHqFromSession', sessionId),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'RAW_HQ_DECODE_FAILED',
+        message: 'RAW runtime request failed.',
+      },
+    })
+  })
+
+  it.each([
+    ['RAW_MEMORY_LIMIT', 'decodeHq', 'decodeBoundedHqFromSession'],
+    [
+      'RAW_MEMORY_LIMIT',
+      'readProcessedWindow',
+      'readProcessedWindowFromSession',
+    ],
+    ['RAW_JOB_CANCELLED', 'readRawWindow', 'readRawWindowFromSession'],
+    [
+      'RAW_WORKER_PROTOCOL_ERROR',
+      'beginProcessedWindowExport',
+      'beginProcessedWindowExportFromSession',
+    ],
+    ['RAW_UNSUPPORTED_FORMAT', 'decodePreview', 'decodeQuickFromSession'],
+  ] as const)(
+    'keeps specific %s failures thrown during %s',
+    async (code, method, type) => {
+      const core = createRuntimeCore(
+        makeFailingFactory(
+          method,
+          new LumaRawRuntimeError(code, `${code} from native`),
+        ),
+      )
+      const sessionId = await openSession(core)
+
+      await expect(
+        core.handleRequest(sessionRequest(type, sessionId)),
+      ).resolves.toMatchObject({
+        ok: false,
+        type,
+        error: { code, message: `${code} from native` },
+      })
+    },
+  )
+
+  it('keeps cancellation and protocol failures ahead of operation fallbacks', async () => {
+    const core = createRuntimeCore(
+      makeFailingFactory('readRawWindow', new Error('should not run')),
+    )
+    const sessionId = await openSession(core)
+
+    await core.handleRequest({
+      id: 'classify-cancel',
+      type: 'cancel',
+      payload: { targetJobId: 'classify-cancelled-read' },
+    })
+    const cancelled = await core.handleRequest(
+      sessionRequest(
+        'readRawWindowFromSession',
+        sessionId,
+        'classify-cancelled-read',
+      ),
+    )
+    const unknownSession = await core.handleRequest(
+      sessionRequest('readProcessedWindowFromSession', 'raw-session-missing'),
+    )
+
+    expect(cancelled).toMatchObject({
+      ok: false,
+      error: { code: 'RAW_JOB_CANCELLED' },
+    })
+    expect(unknownSession).toMatchObject({
+      ok: false,
+      error: { code: 'RAW_WORKER_PROTOCOL_ERROR' },
+    })
+  })
+
+  it('assigns a fallback code to every worker request operation', () => {
+    const requestTypes = [
+      'init',
+      'openSession',
+      'extractEmbeddedPreviewFromSession',
+      'decodeQuickFromSession',
+      'decodeBoundedHqFromSession',
+      'probeExportCapabilityFromSession',
+      'beginProcessedWindowExportFromSession',
+      'readRawWindowFromSession',
+      'readProcessedWindowFromSession',
+      'endProcessedWindowExportFromSession',
+      'applyCalibrationToSession',
+      'closeSession',
+      'probe',
+      'extractEmbeddedPreview',
+      'decodeQuick',
+      'decodeBoundedHq',
+      'cancel',
+    ] satisfies LumaRawWorkerRequestType[]
+
+    expect(Object.keys(rawRequestFailureFallbackCodes).sort()).toEqual(
+      [...requestTypes].sort(),
+    )
+    expect(rawRequestFailureFallbackCodes).toMatchObject({
+      openSession: 'RAW_OPEN_FAILED',
+      probe: 'RAW_OPEN_FAILED',
+      readRawWindowFromSession: 'RAW_WINDOW_READ_FAILED',
+      readProcessedWindowFromSession: 'RAW_WINDOW_READ_FAILED',
     })
   })
 })
