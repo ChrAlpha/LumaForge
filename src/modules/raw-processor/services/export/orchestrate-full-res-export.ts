@@ -351,7 +351,11 @@ export async function orchestrateFullResExport(
     controller: new AbortController(),
   })
   const exportAbortController = attempt.controller
-  claimExportSlot(ctx.refs.exportAbortControllerRef, exportAbortController)
+  claimExportSlot(
+    ctx.refs.exportAbortControllerRef,
+    exportAbortController,
+    identity.attemptId,
+  )
 
   // Checked before every write that follows an asynchronous step. A refused
   // attempt stops its own work and hands the workflow back as it found it,

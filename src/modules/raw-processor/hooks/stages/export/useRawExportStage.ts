@@ -175,6 +175,11 @@ export function useRawExportStage({
     copyExportResult,
   } = useExportResultActions({
     sessionRef,
+    paramsRef,
+    lutDataRef,
+    exportGraphVersionRef,
+    exportAbortControllerRef,
+    isMountedRef,
     pipelineRef,
     previewCopyCanvasRef,
     previewSize: stats?.previewSize,

@@ -1,21 +1,42 @@
-import type { ExportOutputResult } from '@lumaforge/render-engine/export'
+import type {
+  ColorGraphIntentSource,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import type {
+  ExportOutputResult,
+  FileBackedOutputResult,
+} from '@lumaforge/render-engine/export'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createMemoryFileBackedOutputResult } from '~/lib/export/output-sink'
 
+import type { ExportResult, ExportResultKind } from '../../model/export-result'
 import { createExportResult } from '../../model/export-result'
+import type { ImageSession } from '../../model/session'
+import { createImageSession } from '../../model/session-factory'
+import type {
+  ExportDeliveryGuard,
+  ExportDeliveryLiveState,
+  ExportDeliveryRefusal,
+} from './export-result-actions'
 import {
+  checkExportDelivery,
   copyCanvasToClipboard,
   copyExportResultToClipboard,
   downloadExportManifest,
   downloadExportResult,
+  ExportDeliveryStaleError,
+  openExportDelivery,
   resolveExportCopyCapability,
   resolveExportShareButtonCapability,
   resolveExportShareCapability,
   shareExportResult,
 } from './export-result-actions'
+import { captureExportResultIdentity } from './export-result-identity'
+import { claimExportSlot, readExportSlotAttempt } from './export-state'
 
 function createResult({
   output = createBlobOutputResult({
@@ -583,5 +604,547 @@ describe('export result actions', () => {
     )
     expect(ClipboardItemMock).not.toHaveBeenCalled()
     expect(write).not.toHaveBeenCalled()
+  })
+
+  describe('delivery currency', () => {
+    const sourceFile = new File(['raw'], 'frame.dng', { lastModified: 1_000 })
+    const lutTable = new Float32Array(2 * 2 * 2 * 3).fill(0.5)
+    const lut: LUTData = {
+      size: 2,
+      data: lutTable,
+      domainMin: [0, 0, 0],
+      domainMax: [1, 1, 1],
+      title: 'Film',
+      inputProfile: 'display-srgb',
+      profileResolution: {
+        kind: 'confirmed',
+        profile: {
+          id: 'display-srgb',
+          label: 'Display sRGB',
+          role: 'display-look',
+          inputGamut: 'srgb-rec709',
+          inputTransfer: 'srgb',
+          inputRange: 'full',
+          aliases: [],
+        },
+        confidence: 'user',
+      },
+    }
+    const intent: ColorGraphIntentSource = {
+      styleKind: 'custom',
+      builtinPreset: null,
+      intensity: 0.37,
+      ...NEUTRAL_USER_COLOR_INTENT,
+    }
+    const geometry = {
+      matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
+      constrainCrop: true,
+    }
+
+    function acceptedTransform(session: ImageSession) {
+      const request = {
+        captureKey: 'capture-1',
+        requestId: 1,
+        issued: 1,
+        geometry,
+      }
+      return {
+        ...session.transform!,
+        intent: { ...session.transform!.intent, upright: 'auto' as const },
+        capture: { key: 'capture-1', failed: false },
+        issuedRequests: 1,
+        request: { ...request, failure: null },
+        accepted: request,
+      }
+    }
+
+    function identified(
+      session: ImageSession,
+      kind: ExportResultKind,
+      attemptId = 'attempt-1',
+    ): ExportResult {
+      return {
+        ...createExportResult({
+          output: createBlobOutputResult({
+            blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+            filename: 'frame.jpg',
+          }),
+          kind,
+          width: 800,
+          height: 600,
+          copyCapability: {
+            mode: 'full-resolution',
+            label: 'Copy full-resolution image',
+          },
+          identity: captureExportResultIdentity({
+            resultKind: kind,
+            attemptId,
+            sessionId: session.id,
+            sourceFile,
+            intent,
+            lut,
+            rawRenderExposure: {
+              ev: 0.5,
+              multiplier: 2 ** 0.5,
+              source: 'image-statistics',
+            },
+            geometry: session.exportGeometry ?? null,
+          }),
+        }),
+      }
+    }
+
+    function live({
+      kind = 'full-resolution',
+      withGeometry = false,
+    }: { kind?: ExportResultKind; withGeometry?: boolean } = {}) {
+      const base = createImageSession(sourceFile)
+      const session: ImageSession = withGeometry
+        ? {
+            ...base,
+            exportGeometry: geometry,
+            transform: acceptedTransform(base),
+          }
+        : base
+      const result = identified(session, kind)
+      const state: ExportDeliveryLiveState = {
+        mounted: true,
+        session: {
+          ...session,
+          exportState: { ...session.exportState, status: 'ready', result },
+        },
+        graphVersion: 7,
+        exportAttempt: 'attempt-1',
+        intent,
+        lut,
+      }
+      return { state, result, session }
+    }
+
+    function withSession(
+      state: ExportDeliveryLiveState,
+      update: Partial<ImageSession>,
+    ): ExportDeliveryLiveState {
+      return {
+        ...state,
+        session: { ...state.session!, ...update } as ImageSession,
+      }
+    }
+
+    it('opens a delivery of a current result, a Transform-applied one included', () => {
+      for (const setup of [live(), live({ withGeometry: true })]) {
+        const opened = openExportDelivery(setup.result, setup.state)
+        expect(opened.kind).toBe('open')
+        if (opened.kind !== 'open') continue
+        expect(opened.ticket.identity).toBe(setup.result.identity)
+        expect(checkExportDelivery(opened.ticket, setup.state)).toBeNull()
+      }
+    })
+
+    it('refuses at the start what it cannot vouch for', () => {
+      const { state, result, session } = live()
+      const { identity: _identity, ...unidentified } = result
+      const cases: Array<
+        [ExportDeliveryRefusal, ExportResult, ExportDeliveryLiveState]
+      > = [
+        ['unidentified', unidentified, state],
+        ['unidentified', { ...result, kind: 'hq-preview' }, state],
+        ['unmounted', result, { ...state, mounted: false }],
+        ['attempt-replaced', result, { ...state, exportAttempt: 'attempt-2' }],
+        ['attempt-replaced', result, { ...state, exportAttempt: null }],
+        [
+          'result-replaced',
+          result,
+          withSession(state, {
+            exportState: {
+              ...state.session!.exportState,
+              result: identified(session, 'full-resolution', 'attempt-2'),
+            },
+          }),
+        ],
+        [
+          'transform-pending',
+          result,
+          withSession(state, {
+            transform: {
+              ...session.transform!,
+              intent: { ...session.transform!.intent, upright: 'auto' },
+            },
+          }),
+        ],
+        [
+          'input-changed',
+          result,
+          { ...state, intent: { ...intent, userTint: 4 } },
+        ],
+      ]
+      for (const [refusal, candidate, candidateState] of cases) {
+        expect(openExportDelivery(candidate, candidateState)).toEqual({
+          kind: 'refused',
+          refusal,
+        })
+      }
+    })
+
+    it('refuses an HQ preview result under any Transform, held geometry included', () => {
+      const hq = live({ kind: 'hq-preview' })
+      expect(openExportDelivery(hq.result, hq.state).kind).toBe('open')
+      expect(
+        openExportDelivery(
+          hq.result,
+          withSession(hq.state, { exportGeometry: geometry }),
+        ),
+      ).toEqual({ kind: 'refused', refusal: 'transform-pending' })
+    })
+
+    it('names what moved since the delivery opened', () => {
+      const { state, result, session } = live({ withGeometry: true })
+      const opened = openExportDelivery(result, state)
+      if (opened.kind !== 'open') throw new Error('expected an open delivery')
+      const { ticket } = opened
+      const cases: Array<[ExportDeliveryRefusal, ExportDeliveryLiveState]> = [
+        ['unmounted', { ...state, mounted: false }],
+        ['graph-changed', { ...state, graphVersion: 8 }],
+        ['attempt-replaced', { ...state, exportAttempt: 'attempt-2' }],
+        ['attempt-replaced', { ...state, exportAttempt: null }],
+        ['session-changed', { ...state, session: null }],
+        ['session-changed', withSession(state, { id: 'session-2' })],
+        [
+          'session-changed',
+          withSession(state, {
+            sourceFile: { ...session.sourceFile, file: undefined },
+          }),
+        ],
+        [
+          'result-replaced',
+          withSession(state, {
+            exportState: { ...state.session!.exportState, result: undefined },
+          }),
+        ],
+        [
+          'transform-pending',
+          withSession(state, {
+            transform: { ...acceptedTransform(session), accepted: null },
+          }),
+        ],
+        [
+          'input-changed',
+          withSession(state, {
+            exportGeometry: { ...geometry, constrainCrop: false },
+          }),
+        ],
+        ['input-changed', { ...state, intent: { ...intent, intensity: 0.4 } }],
+        [
+          'input-changed',
+          { ...state, lut: { ...lut, data: lutTable.slice() } },
+        ],
+        ['input-changed', { ...state, lut: null }],
+      ]
+      for (const [refusal, moved] of cases) {
+        expect(checkExportDelivery(ticket, moved)).toBe(refusal)
+      }
+    })
+
+    it('stays current across view-only changes and a late seal', () => {
+      const { state, result } = live()
+      const opened = openExportDelivery(result, state)
+      if (opened.kind !== 'open') throw new Error('expected an open delivery')
+
+      const moved = withSession(state, {
+        viewState: {
+          ...state.session!.viewState,
+          compareSplit: 0.1,
+          zoom: 4,
+          panX: 3,
+          panY: -2,
+          fitMode: 'custom',
+        },
+        exportState: {
+          ...state.session!.exportState,
+          result: { ...result, manifestState: { status: 'ready' } },
+        },
+      })
+      expect(checkExportDelivery(opened.ticket, moved)).toBeNull()
+    })
+
+    describe('export slot attempts', () => {
+      function deliverable(slot: { current: AbortController | null }) {
+        const base = createImageSession(sourceFile)
+        const result = createExportResult({
+          output: createBlobOutputResult({
+            blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+            filename: 'frame.jpg',
+          }),
+          kind: 'full-resolution',
+          width: 800,
+          height: 600,
+          copyCapability: {
+            mode: 'full-resolution',
+            label: 'Copy full-resolution image',
+          },
+          identity: captureExportResultIdentity({
+            resultKind: 'full-resolution',
+            attemptId: 'attempt-a',
+            sessionId: base.id,
+            sourceFile,
+            intent,
+            lut,
+            rawRenderExposure: null,
+            geometry: null,
+          }),
+        })
+        const readLive = (): ExportDeliveryLiveState => ({
+          mounted: true,
+          session: {
+            ...base,
+            exportState: { ...base.exportState, status: 'ready', result },
+          },
+          graphVersion: 1,
+          exportAttempt: readExportSlotAttempt(slot),
+          intent,
+          lut,
+        })
+        return { result, readLive }
+      }
+
+      it('answers to the holder, and to the last claim once released', () => {
+        const slot = { current: null as AbortController | null }
+        expect(readExportSlotAttempt(slot)).toBeNull()
+        const a = new AbortController()
+        claimExportSlot(slot, a, 'attempt-a')
+        expect(readExportSlotAttempt(slot)).toBe('attempt-a')
+        slot.current = null
+        expect(readExportSlotAttempt(slot)).toBe('attempt-a')
+        claimExportSlot(slot, new AbortController(), 'attempt-b')
+        slot.current = null
+        expect(readExportSlotAttempt(slot)).toBe('attempt-b')
+        slot.current = new AbortController()
+        expect(readExportSlotAttempt(slot)).toBeNull()
+      })
+
+      it('delivers a result whose attempt released the slot as it ended', () => {
+        const slot = { current: null as AbortController | null }
+        claimExportSlot(slot, new AbortController(), 'attempt-a')
+        slot.current = null
+        const { result, readLive } = deliverable(slot)
+
+        const opened = openExportDelivery(result, readLive())
+        if (opened.kind !== 'open') throw new Error('expected an open delivery')
+        expect(checkExportDelivery(opened.ticket, readLive())).toBeNull()
+      })
+
+      it('refuses a result once a later attempt holds the slot', () => {
+        const slot = { current: null as AbortController | null }
+        claimExportSlot(slot, new AbortController(), 'attempt-a')
+        slot.current = null
+        const { result, readLive } = deliverable(slot)
+        // The later attempt has claimed the slot and is still sampling the
+        // device, so the session still holds the earlier result.
+        claimExportSlot(slot, new AbortController(), 'attempt-b')
+
+        expect(openExportDelivery(result, readLive())).toEqual({
+          kind: 'refused',
+          refusal: 'attempt-replaced',
+        })
+      })
+
+      it('refuses a result once a later attempt claimed and released the slot during delivery', () => {
+        const slot = { current: null as AbortController | null }
+        claimExportSlot(slot, new AbortController(), 'attempt-a')
+        slot.current = null
+        const { result, readLive } = deliverable(slot)
+        const opened = openExportDelivery(result, readLive())
+        if (opened.kind !== 'open') throw new Error('expected an open delivery')
+
+        claimExportSlot(slot, new AbortController(), 'attempt-b')
+        slot.current = null
+
+        expect(checkExportDelivery(opened.ticket, readLive())).toBe(
+          'attempt-replaced',
+        )
+      })
+    })
+  })
+
+  describe('guarded delivery', () => {
+    function pausedOutput() {
+      let release!: () => void
+      const opened = new Promise<Blob>((resolve) => {
+        release = () => resolve(new Blob(['jpeg'], { type: 'image/jpeg' }))
+      })
+      const cleanup = vi.fn(async () => {})
+      const output: FileBackedOutputResult = {
+        kind: 'file-backed',
+        exportId: 'export-1',
+        filename: 'frame.jpg',
+        byteLength: 4,
+        mimeType: 'image/jpeg',
+        openBlob: vi.fn(() => opened),
+        cleanup,
+      }
+      return { output, cleanup, release: () => release() }
+    }
+
+    function flippableGuard() {
+      let stale = false
+      const guard: ExportDeliveryGuard = {
+        assertCurrent() {
+          if (stale) throw new ExportDeliveryStaleError('graph-changed')
+        },
+      }
+      return { guard, goStale: () => (stale = true) }
+    }
+
+    it('downloads nothing when the result goes stale during materialization', async () => {
+      const paused = pausedOutput()
+      const { guard, goStale } = flippableGuard()
+      const createObjectURL = vi.fn(() => 'blob:x')
+      const revokeObjectURL = vi.fn()
+      const click = vi.fn()
+      const documentLike = {
+        createElement: vi.fn(() => ({ click, remove: vi.fn() })),
+        body: { append: vi.fn() },
+      } as unknown as Document
+
+      const pending = downloadExportResult(
+        createResult({ output: paused.output }),
+        {
+          document: documentLike,
+          URL: { createObjectURL, revokeObjectURL } as unknown as typeof URL,
+          guard,
+        },
+      )
+      goStale()
+      paused.release()
+
+      await expect(pending).rejects.toBeInstanceOf(ExportDeliveryStaleError)
+      expect(createObjectURL).not.toHaveBeenCalled()
+      expect(click).not.toHaveBeenCalled()
+      // The stored output still belongs to its result; it is not deleted.
+      expect(paused.cleanup).not.toHaveBeenCalled()
+    })
+
+    it('downloads nothing when the materialization diagnostics make the result stale', async () => {
+      const paused = pausedOutput()
+      const { guard, goStale } = flippableGuard()
+      const createObjectURL = vi.fn(() => 'blob:x')
+      const click = vi.fn()
+      const documentLike = {
+        createElement: vi.fn(() => ({ click, remove: vi.fn() })),
+        body: { append: vi.fn() },
+      } as unknown as Document
+      const onMaterialize = vi.fn(() => {
+        goStale()
+      })
+
+      const pending = downloadExportResult(
+        createResult({ output: paused.output }),
+        {
+          document: documentLike,
+          URL: {
+            createObjectURL,
+            revokeObjectURL: vi.fn(),
+          } as unknown as typeof URL,
+          guard,
+          onMaterialize,
+        },
+      )
+      paused.release()
+
+      await expect(pending).rejects.toBeInstanceOf(ExportDeliveryStaleError)
+      expect(onMaterialize).toHaveBeenCalledTimes(1)
+      expect(createObjectURL).not.toHaveBeenCalled()
+      expect(click).not.toHaveBeenCalled()
+      expect(paused.cleanup).not.toHaveBeenCalled()
+    })
+
+    it('shares nothing when the result goes stale during materialization', async () => {
+      const paused = pausedOutput()
+      const { guard, goStale } = flippableGuard()
+      const share = vi.fn().mockResolvedValue(undefined)
+      const navigatorLike = {
+        canShare: vi.fn(() => true),
+        share,
+      } as unknown as Navigator
+
+      const pending = shareExportResult(
+        createResult({ output: paused.output }),
+        navigatorLike,
+        undefined,
+        guard,
+      )
+      goStale()
+      paused.release()
+
+      await expect(pending).rejects.toBeInstanceOf(ExportDeliveryStaleError)
+      expect(share).not.toHaveBeenCalled()
+      expect(paused.cleanup).not.toHaveBeenCalled()
+    })
+
+    it('copies nothing when the result goes stale during materialization', async () => {
+      const paused = pausedOutput()
+      const { guard, goStale } = flippableGuard()
+      const write = vi.fn().mockResolvedValue(undefined)
+      const ClipboardItem = createClipboardItemMock(() => true)
+
+      const pending = copyExportResultToClipboard(
+        createResult({ output: paused.output }),
+        { navigator: { clipboard: { write } }, ClipboardItem },
+        undefined,
+        guard,
+      )
+      goStale()
+      paused.release()
+
+      await expect(pending).rejects.toBeInstanceOf(ExportDeliveryStaleError)
+      expect(write).not.toHaveBeenCalled()
+      expect(paused.cleanup).not.toHaveBeenCalled()
+    })
+
+    it('copies no canvas that went stale while it encoded', async () => {
+      const { guard, goStale } = flippableGuard()
+      const write = vi.fn().mockResolvedValue(undefined)
+      const ClipboardItem = createClipboardItemMock(() => true)
+      let encode!: () => void
+      const canvas = {
+        toBlob: vi.fn((callback: BlobCallback) => {
+          encode = () => callback(new Blob(['png'], { type: 'image/png' }))
+        }),
+      } as unknown as HTMLCanvasElement
+
+      const pending = copyCanvasToClipboard(
+        canvas,
+        { navigator: { clipboard: { write } }, ClipboardItem },
+        guard,
+      )
+      goStale()
+      encode()
+
+      await expect(pending).rejects.toBeInstanceOf(ExportDeliveryStaleError)
+      expect(write).not.toHaveBeenCalled()
+    })
+
+    it('downloads no manifest of a stale result', async () => {
+      const { guard, goStale } = flippableGuard()
+      const createObjectURL = vi.fn(() => 'blob:x')
+      goStale()
+
+      await expect(
+        downloadExportManifest(
+          {
+            ...createResult(),
+            manifest: { manifest_version: 1 } as unknown as RenderManifest,
+          },
+          {
+            URL: {
+              createObjectURL,
+              revokeObjectURL: vi.fn(),
+            } as unknown as typeof URL,
+            guard,
+          },
+        ),
+      ).rejects.toBeInstanceOf(ExportDeliveryStaleError)
+      expect(createObjectURL).not.toHaveBeenCalled()
+    })
   })
 })

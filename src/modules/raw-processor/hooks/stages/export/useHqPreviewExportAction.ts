@@ -198,7 +198,11 @@ export function useHqPreviewExportAction({
       controller: new AbortController(),
     })
     const exportAbortController = attempt.controller
-    claimExportSlot(exportAbortControllerRef, exportAbortController)
+    claimExportSlot(
+      exportAbortControllerRef,
+      exportAbortController,
+      identity.attemptId,
+    )
     previewCopyCanvasRef.current = null
     queueExportResultResourceDisposal()
     setStatus('exporting')

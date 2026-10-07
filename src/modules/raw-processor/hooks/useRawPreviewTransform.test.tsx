@@ -1,3 +1,5 @@
+import type { ColorGraphIntentSource } from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -57,6 +59,16 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
   const previewCopyCanvasRef = {
     current: document.createElement('canvas') as HTMLCanvasElement | null,
   }
+  const paramsRef = {
+    current: {
+      styleKind: 'none',
+      builtinPreset: null,
+      intensity: 1,
+      ...NEUTRAL_USER_COLOR_INTENT,
+    } as ColorGraphIntentSource,
+  }
+  const lutDataRef = { current: null }
+  const isMountedRef = { current: true }
   const queueExportResultResourceDisposal = vi.fn()
   const setStatus = vi.fn()
   const setProgress = vi.fn()
@@ -83,6 +95,11 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
     })
     const actions = useExportResultActions({
       sessionRef,
+      paramsRef,
+      lutDataRef,
+      exportGraphVersionRef,
+      exportAbortControllerRef,
+      isMountedRef,
       pipelineRef: { current: null },
       previewCopyCanvasRef,
       scheduleToast: (notify) => notify(),

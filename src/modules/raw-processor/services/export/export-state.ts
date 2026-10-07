@@ -87,17 +87,24 @@ export function hasActiveExport(
 
 type ExportSlot = { current: AbortController | null }
 
+/** One attempt's claim: its controller and the id its result carries. */
+type ExportSlotClaim = { controller: AbortController; attemptId: string }
+
 /** The last attempt each export slot was given, kept after it is released. */
-const latestExportClaims = new WeakMap<ExportSlot, AbortController>()
+const latestExportClaims = new WeakMap<ExportSlot, ExportSlotClaim>()
 
 /**
  * Gives the export slot to a new attempt. The slot empties when an attempt
  * ends, but the claim stays recorded, so an attempt that has ended is still
  * known to be superseded once a later one has started.
  */
-export function claimExportSlot(slot: ExportSlot, controller: AbortController) {
+export function claimExportSlot(
+  slot: ExportSlot,
+  controller: AbortController,
+  attemptId: string,
+) {
   slot.current = controller
-  latestExportClaims.set(slot, controller)
+  latestExportClaims.set(slot, { controller, attemptId })
 }
 
 /**
@@ -110,8 +117,20 @@ export function isLatestExportClaim(
 ) {
   return (
     (slot.current === controller || slot.current === null) &&
-    latestExportClaims.get(slot) === controller
+    latestExportClaims.get(slot)?.controller === controller
   )
+}
+
+/**
+ * The attempt the export slot answers to: the one holding it, or, once it is
+ * empty, the last one it was given. Null when it was never claimed or is held
+ * by a controller no claim gave it to, so no result can be vouched for.
+ */
+export function readExportSlotAttempt(slot: ExportSlot): string | null {
+  const latest = latestExportClaims.get(slot)
+  if (!latest) return null
+  if (slot.current !== null && slot.current !== latest.controller) return null
+  return latest.attemptId
 }
 
 export function clearExportResultState<T extends ImageSession | null>(

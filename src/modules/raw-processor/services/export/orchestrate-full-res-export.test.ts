@@ -2992,7 +2992,7 @@ describe('orchestrateFullResExport delayed manifest', () => {
       name: 'a later attempt claims the export slot and ends',
       supersede(h: Harness) {
         const slot = h.ctx.refs.exportAbortControllerRef
-        claimExportSlot(slot, new AbortController())
+        claimExportSlot(slot, new AbortController(), 'later-attempt')
         slot.current = null
       },
       resolvedTrace: [],

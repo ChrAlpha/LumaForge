@@ -1,10 +1,22 @@
+import type {
+  ColorGraphIntentSource,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
 import { materializeOutputBlob } from '@lumaforge/render-engine/export'
 
 import type {
   ExportCopyCapability,
   ExportResult,
+  ExportResultIdentity,
   ExportShareCapability,
 } from '../../model/export-result'
+import type { ImageSession } from '../../model/session'
+import { deriveTransformExportRefusal } from './export-readiness'
+import {
+  captureExportResultIdentity,
+  isSameExportResult,
+  isSameExportResultInput,
+} from './export-result-identity'
 
 type ClipboardEnvironment = {
   navigator?: {
@@ -38,6 +50,180 @@ type MaterializationDiagnostics = {
   now?: () => string
 }
 
+/** Why a completed result may not be delivered now. */
+export type ExportDeliveryRefusal =
+  | 'unmounted'
+  | 'unidentified'
+  | 'session-changed'
+  | 'result-replaced'
+  | 'attempt-replaced'
+  | 'graph-changed'
+  | 'transform-pending'
+  | 'input-changed'
+
+/** The workflow as it stands, read afresh at every check. */
+export type ExportDeliveryLiveState = {
+  mounted: boolean
+  session: ImageSession | null
+  /** The export graph generation; every edit of a render input moves it. */
+  graphVersion: number
+  /**
+   * The attempt the export slot answers to: the one holding it, or the last
+   * one it was given once it is empty. Null when no claim vouches for it.
+   */
+  exportAttempt: string | null
+  /** The color intent the workflow holds; view fields are not read. */
+  intent: ColorGraphIntentSource
+  /** The LUT the workflow holds. */
+  lut: LUTData | null
+}
+
+/**
+ * One delivery of one result, fixed when the user asks for it: the result's
+ * identity, which names the attempt that produced it, and the graph
+ * generation it was asked under.
+ */
+export type ExportDeliveryTicket = Readonly<{
+  identity: ExportResultIdentity
+  graphVersion: number
+}>
+
+/**
+ * Thrown by a delivery step that finds its result no longer current. The
+ * delivery has had no side effect, and nothing the result owns is released.
+ */
+export class ExportDeliveryStaleError extends Error {
+  readonly refusal: ExportDeliveryRefusal
+
+  constructor(refusal: ExportDeliveryRefusal) {
+    super('EXPORT_RESULT_STALE')
+    this.name = 'ExportDeliveryStaleError'
+    this.refusal = refusal
+  }
+}
+
+/** Asked after every await of a delivery and right before its side effect. */
+export type ExportDeliveryGuard = {
+  assertCurrent: () => void
+}
+
+function sameGeometry(
+  live: ImageSession['exportGeometry'],
+  recorded: ExportResultIdentity['geometry'],
+) {
+  if (!live || !recorded) return !live && !recorded
+  return (
+    live.constrainCrop === recorded.constrainCrop &&
+    live.matrix.length === recorded.matrix.length &&
+    live.matrix.every((value, index) =>
+      Object.is(value, recorded.matrix[index]),
+    )
+  )
+}
+
+/**
+ * Whether the workflow still asks for exactly what this identity answers:
+ * the same session and source, the same color intent and LUT, the same
+ * committed geometry, and a Transform status the result's kind accepts. The
+ * RAW render exposure is pinned per source, so the source covers it. View,
+ * split, zoom and pan are never read.
+ */
+function resolveLiveInputRefusal(
+  identity: ExportResultIdentity,
+  live: ExportDeliveryLiveState,
+): ExportDeliveryRefusal | null {
+  const session = live.session
+  if (!session || session.id !== identity.sessionId) return 'session-changed'
+  const sourceFile = session.sourceFile.file
+  if (!sourceFile) return 'session-changed'
+  if (deriveTransformExportRefusal(session, identity.resultKind)) {
+    return 'transform-pending'
+  }
+  if (!sameGeometry(session.exportGeometry, identity.geometry)) {
+    return 'input-changed'
+  }
+  const current = captureExportResultIdentity({
+    resultKind: identity.resultKind,
+    attemptId: identity.attemptId,
+    sessionId: session.id,
+    sourceFile,
+    intent: live.intent,
+    lut: live.lut,
+    rawRenderExposure: identity.rawRenderExposure,
+    geometry: session.exportGeometry ?? null,
+  })
+  return isSameExportResultInput(current, identity) ? null : 'input-changed'
+}
+
+/**
+ * Open a delivery of the result the session holds now. A result without an
+ * identity, or one the workflow has moved on from, is never delivered.
+ */
+export function openExportDelivery(
+  result: ExportResult | undefined,
+  live: ExportDeliveryLiveState,
+):
+  | { kind: 'open'; ticket: ExportDeliveryTicket }
+  | { kind: 'refused'; refusal: ExportDeliveryRefusal } {
+  if (!live.mounted) return { kind: 'refused', refusal: 'unmounted' }
+  const identity = result?.identity
+  if (!result || !identity || identity.resultKind !== result.kind) {
+    return { kind: 'refused', refusal: 'unidentified' }
+  }
+  const held = live.session?.exportState.result?.identity
+  if (!held || !isSameExportResult(held, identity)) {
+    return { kind: 'refused', refusal: 'result-replaced' }
+  }
+  if (live.exportAttempt !== identity.attemptId) {
+    return { kind: 'refused', refusal: 'attempt-replaced' }
+  }
+  const refusal = resolveLiveInputRefusal(identity, live)
+  if (refusal) return { kind: 'refused', refusal }
+  return {
+    kind: 'open',
+    ticket: Object.freeze({ identity, graphVersion: live.graphVersion }),
+  }
+}
+
+/**
+ * Whether the delivery is still current: nothing has invalidated the graph,
+ * the export slot still answers to the attempt that produced the result, the
+ * session still holds this very result, and the live inputs still name its
+ * request. A slot that attempt released still answers to it; one a later
+ * attempt claimed never does again, even after that attempt ends.
+ */
+export function checkExportDelivery(
+  ticket: ExportDeliveryTicket,
+  live: ExportDeliveryLiveState,
+): ExportDeliveryRefusal | null {
+  if (!live.mounted) return 'unmounted'
+  if (live.graphVersion !== ticket.graphVersion) return 'graph-changed'
+  if (live.exportAttempt !== ticket.identity.attemptId) {
+    return 'attempt-replaced'
+  }
+  const held = live.session?.exportState.result?.identity
+  if (!live.session || live.session.id !== ticket.identity.sessionId) {
+    return 'session-changed'
+  }
+  if (!held || !isSameExportResult(held, ticket.identity)) {
+    return 'result-replaced'
+  }
+  return resolveLiveInputRefusal(ticket.identity, live)
+}
+
+/** A guard that reads the live state afresh each time it is asked. */
+export function createExportDeliveryGuard(
+  ticket: ExportDeliveryTicket,
+  readLive: () => ExportDeliveryLiveState,
+): ExportDeliveryGuard {
+  return {
+    assertCurrent() {
+      const refusal = checkExportDelivery(ticket, readLive())
+      if (refusal) throw new ExportDeliveryStaleError(refusal)
+    },
+  }
+}
+
 function reportMaterialized(
   result: ExportResult,
   action: ExportOutputMaterializationAction,
@@ -66,8 +252,12 @@ function createShareProbeFile(result: ExportResult) {
   })
 }
 
-async function createShareFile(result: ExportResult) {
+async function createShareFile(
+  result: ExportResult,
+  guard: ExportDeliveryGuard | undefined,
+) {
   const blob = await materializeOutputBlob(result.output)
+  guard?.assertCurrent()
   return new File([blob], result.filename, {
     type: blob.type || result.output.mimeType || 'image/jpeg',
     lastModified: result.createdAt,
@@ -112,31 +302,42 @@ export async function shareExportResult(
   result: ExportResult,
   navigatorLike: Navigator = navigator,
   diagnostics?: MaterializationDiagnostics,
+  guard?: ExportDeliveryGuard,
 ) {
+  guard?.assertCurrent()
   const capability = resolveExportShareCapability(result, navigatorLike)
   if (!capability.available) {
     throw new Error(capability.reason)
   }
 
-  const file = await createShareFile(result)
+  const file = await createShareFile(result, guard)
   reportMaterialized(result, 'share', file.size, diagnostics, 'not-needed')
+  guard?.assertCurrent()
   await navigatorLike.share({
     files: [file],
     title: result.filename,
   })
 }
 
+type DeliveryEnvironment = {
+  document?: Document
+  URL?: typeof URL
+  /** Asked before each side effect; the workflow always passes one. */
+  guard?: ExportDeliveryGuard
+} & MaterializationDiagnostics
+
 export async function downloadExportResult(
   result: ExportResult,
-  environment: {
-    document?: Document
-    URL?: typeof URL
-  } & MaterializationDiagnostics = {},
+  environment: DeliveryEnvironment = {},
 ) {
   const documentLike = environment.document ?? document
   const urlLike = environment.URL ?? URL
+  environment.guard?.assertCurrent()
   const blob = await materializeOutputBlob(result.output)
+  environment.guard?.assertCurrent()
   reportMaterialized(result, 'download', blob.size, environment, 'scheduled')
+  // The diagnostics run caller code, which may move the workflow on.
+  environment.guard?.assertCurrent()
   const url = urlLike.createObjectURL(blob)
   const link = documentLike.createElement('a')
 
@@ -187,6 +388,7 @@ export function resolveExportCopyCapability(
 export async function copyBlobToClipboard(
   blob: Blob,
   environment: ClipboardEnvironment = globalThis,
+  guard?: ExportDeliveryGuard,
 ) {
   const clipboard = environment.navigator?.clipboard
   const ClipboardItemCtor = environment.ClipboardItem
@@ -196,6 +398,7 @@ export async function copyBlobToClipboard(
   }
 
   const type = blob.type || 'image/jpeg'
+  guard?.assertCurrent()
   await clipboard.write([new ClipboardItemCtor({ [type]: blob })])
 }
 
@@ -203,10 +406,13 @@ export async function copyExportResultToClipboard(
   result: ExportResult,
   environment: ClipboardEnvironment = globalThis,
   diagnostics?: MaterializationDiagnostics,
+  guard?: ExportDeliveryGuard,
 ) {
+  guard?.assertCurrent()
   const blob = await materializeOutputBlob(result.output)
+  guard?.assertCurrent()
   reportMaterialized(result, 'copy', blob.size, diagnostics, 'not-needed')
-  await copyBlobToClipboard(blob, environment)
+  await copyBlobToClipboard(blob, environment, guard)
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement, type: string) {
@@ -225,12 +431,15 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string) {
 export async function copyCanvasToClipboard(
   canvas: HTMLCanvasElement,
   environment: ClipboardEnvironment = globalThis,
+  guard?: ExportDeliveryGuard,
 ) {
+  guard?.assertCurrent()
   const blob = await canvasToBlob(canvas, 'image/png')
+  guard?.assertCurrent()
   const pngBlob =
     blob.type === 'image/png' ? blob : new Blob([blob], { type: 'image/png' })
 
-  await copyBlobToClipboard(pngBlob, environment)
+  await copyBlobToClipboard(pngBlob, environment, guard)
 }
 
 export function exportManifestFilename(result: Pick<ExportResult, 'filename'>) {
@@ -243,20 +452,19 @@ export function exportManifestFilename(result: Pick<ExportResult, 'filename'>) {
  */
 export async function downloadExportManifest(
   result: ExportResult,
-  environment: {
-    document?: Document
-    URL?: typeof URL
-  } & MaterializationDiagnostics = {},
+  environment: DeliveryEnvironment = {},
 ) {
   if (!result.manifest) {
     throw new Error('EXPORT_MANIFEST_UNAVAILABLE')
   }
+  environment.guard?.assertCurrent()
   const documentLike = environment.document ?? document
   const urlLike = environment.URL ?? URL
   const blob = new Blob([JSON.stringify(result.manifest, null, 2)], {
     type: 'application/json',
   })
   reportMaterialized(result, 'manifest', blob.size, environment, 'scheduled')
+  environment.guard?.assertCurrent()
   const url = urlLike.createObjectURL(blob)
   const link = documentLike.createElement('a')
 

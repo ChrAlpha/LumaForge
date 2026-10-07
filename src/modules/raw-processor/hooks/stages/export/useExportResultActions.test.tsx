@@ -1,31 +1,405 @@
+import type {
+  ColorGraphIntentSource,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ExportResult } from '../../../model/export-result'
+import type {
+  ExportCopyCapability,
+  ExportResult,
+  ExportResultKind,
+} from '../../../model/export-result'
+import type { ImageSession } from '../../../model/session'
+import { createImageSession } from '../../../model/session-factory'
+import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
+import { claimExportSlot } from '../../../services/export/export-state'
 import { useExportResultActions } from './useExportResultActions'
 
-function createPreviewSizeResult(): ExportResult {
+type Deferred<T> = {
+  promise: Promise<T>
+  resolve: (value: T) => void
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+const sourceFile = new File(['raw'], 'frame.dng', { lastModified: 1_000 })
+const lutTable = new Float32Array(2 * 2 * 2 * 3).fill(0.5)
+
+function makeLut(overrides: Partial<LUTData> = {}): LUTData {
   return {
-    kind: 'full-resolution',
-    output: {
-      kind: 'blob',
-      filename: 'frame.jpg',
-      byteLength: 4,
-      mimeType: 'image/jpeg',
-      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+    size: 2,
+    data: lutTable,
+    domainMin: [0, 0, 0],
+    domainMax: [1, 1, 1],
+    title: 'Film',
+    inputProfile: 'display-srgb',
+    profileResolution: {
+      kind: 'confirmed',
+      profile: {
+        id: 'display-srgb',
+        label: 'Display sRGB',
+        role: 'display-look',
+        inputGamut: 'srgb-rec709',
+        inputTransfer: 'srgb',
+        inputRange: 'full',
+        aliases: [],
+      },
+      confidence: 'user',
     },
+    ...overrides,
+  }
+}
+
+const intent: ColorGraphIntentSource = {
+  styleKind: 'custom',
+  builtinPreset: null,
+  intensity: 0.37,
+  ...NEUTRAL_USER_COLOR_INTENT,
+}
+
+const exposure = {
+  ev: 0.5,
+  multiplier: 2 ** 0.5,
+  source: 'image-statistics' as const,
+}
+
+function createResult({
+  kind = 'full-resolution',
+  attemptId = 'attempt-1',
+  session,
+  lut = makeLut(),
+  output,
+  copyCapability = {
+    mode: 'full-resolution',
+    label: 'Copy full-resolution image',
+  },
+  identified = true,
+}: {
+  kind?: ExportResultKind
+  attemptId?: string
+  session: ImageSession
+  lut?: LUTData | null
+  output: ExportResult['output']
+  copyCapability?: ExportCopyCapability
+  identified?: boolean
+}): ExportResult {
+  return {
+    kind,
+    output,
     filename: 'frame.jpg',
     width: 800,
     height: 600,
-    size: 4,
+    size: output.byteLength,
     createdAt: 1,
-    copyCapability: {
-      mode: 'preview-size',
-      label: 'Copy preview-size image',
-      reason: 'JPEG clipboard unavailable.',
-    },
+    copyCapability,
+    ...(identified
+      ? {
+          identity: captureExportResultIdentity({
+            resultKind: kind,
+            attemptId,
+            sessionId: session.id,
+            sourceFile,
+            intent,
+            lut,
+            rawRenderExposure: exposure,
+            geometry: session.exportGeometry ?? null,
+          }),
+        }
+      : {}),
   }
+}
+
+/** A stored output whose materialization waits until the test releases it. */
+function createPausedOutput() {
+  const opened = deferred<Blob>()
+  const openBlob = vi.fn(() => opened.promise)
+  const output: FileBackedOutputResult = {
+    kind: 'file-backed',
+    exportId: 'export-1',
+    filename: 'frame.jpg',
+    byteLength: 4,
+    mimeType: 'image/jpeg',
+    openBlob,
+  }
+  return {
+    output,
+    openBlob,
+    release: () => opened.resolve(new Blob(['jpeg'], { type: 'image/jpeg' })),
+  }
+}
+
+function blobOutput(): ExportResult['output'] {
+  return {
+    kind: 'blob',
+    filename: 'frame.jpg',
+    byteLength: 4,
+    mimeType: 'image/jpeg',
+    blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+  }
+}
+
+function stubDelivery() {
+  const createObjectURL = vi.fn(() => 'blob:delivery')
+  const revokeObjectURL = vi.fn()
+  vi.stubGlobal(
+    'URL',
+    Object.assign(class extends URL {}, { createObjectURL, revokeObjectURL }),
+  )
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, 'click')
+    .mockImplementation(() => {})
+  const share = vi.fn().mockResolvedValue(undefined)
+  const clipboardWrite = vi.fn().mockResolvedValue(undefined)
+  class FakeClipboardItem {
+    static supports(type: string) {
+      return type === 'image/jpeg' || type === 'image/png'
+    }
+
+    constructor(public readonly items: Record<string, Blob>) {}
+  }
+  vi.stubGlobal('navigator', {
+    canShare: () => true,
+    share,
+    clipboard: { write: clipboardWrite },
+  })
+  vi.stubGlobal('ClipboardItem', FakeClipboardItem)
+  return { createObjectURL, click, share, clipboardWrite }
+}
+
+function createReadySession(
+  overrides: Partial<ImageSession> = {},
+): ImageSession {
+  const session = createImageSession(sourceFile)
+  return {
+    ...session,
+    exportState: { ...session.exportState, status: 'ready' },
+    ...overrides,
+  }
+}
+
+function setup({
+  session = createReadySession(),
+  result,
+  previewCopyCanvas = null,
+  pipeline = null,
+}: {
+  session?: ImageSession
+  result: (session: ImageSession) => ExportResult
+  previewCopyCanvas?: HTMLCanvasElement | null
+  pipeline?: { renderToHiddenCanvas: () => Promise<HTMLCanvasElement> } | null
+}) {
+  const stored = result(session)
+  const sessionRef = {
+    current: {
+      ...session,
+      exportState: { ...session.exportState, result: stored },
+    } as ImageSession | null,
+  }
+  const refs = {
+    sessionRef,
+    paramsRef: { current: intent },
+    lutDataRef: { current: makeLut() as LUTData | null },
+    exportGraphVersionRef: { current: 3 },
+    exportAbortControllerRef: { current: null as AbortController | null },
+    isMountedRef: { current: true },
+    pipelineRef: { current: pipeline },
+    previewCopyCanvasRef: { current: previewCopyCanvas },
+  }
+  // The attempt that produced the result claimed the slot and released it
+  // when it ended, as every completed export does.
+  claimExportSlot(
+    refs.exportAbortControllerRef,
+    new AbortController(),
+    stored.identity?.attemptId ?? 'attempt-1',
+  )
+  refs.exportAbortControllerRef.current = null
+  const toast = { success: vi.fn(), error: vi.fn() }
+  const { result: hook } = renderHook(() =>
+    useExportResultActions({
+      ...refs,
+      previewSize: { width: 640, height: 480 },
+      scheduleToast: (notify) => notify(),
+      toast,
+    }),
+  )
+  return { ...refs, stored, toast, actions: () => hook.current }
+}
+
+type Harness = ReturnType<typeof setup>
+
+function withSession(
+  harness: Harness,
+  update: (session: ImageSession) => ImageSession,
+) {
+  const current = harness.sessionRef.current
+  if (current) harness.sessionRef.current = update(current)
+}
+
+function withResult(harness: Harness, result: ExportResult | undefined) {
+  withSession(harness, (session) => ({
+    ...session,
+    exportState: { ...session.exportState, result },
+  }))
+}
+
+/** Every way the request a result answers can stop being the current one. */
+const STALE_CHANGES: Array<[string, (harness: Harness) => void]> = [
+  [
+    'an edit moves the export graph',
+    (harness) => {
+      harness.exportGraphVersionRef.current += 1
+    },
+  ],
+  [
+    'the session is replaced',
+    (harness) => {
+      harness.sessionRef.current = {
+        ...createReadySession(),
+        exportState: harness.sessionRef.current!.exportState,
+      }
+    },
+  ],
+  [
+    'the session is reset',
+    (harness) => {
+      harness.sessionRef.current = null
+    },
+  ],
+  [
+    'the source file is replaced',
+    (harness) =>
+      withSession(harness, (session) => ({
+        ...session,
+        sourceFile: {
+          ...session.sourceFile,
+          file: new File(['other'], 'frame.dng', { lastModified: 2_000 }),
+        },
+      })),
+  ],
+  ['the result is cleared', (harness) => withResult(harness, undefined)],
+  [
+    'a later attempt replaces the result',
+    (harness) =>
+      withResult(harness, {
+        ...harness.stored,
+        identity: captureExportResultIdentity({
+          resultKind: harness.stored.kind ?? 'full-resolution',
+          attemptId: 'attempt-2',
+          sessionId: harness.sessionRef.current!.id,
+          sourceFile,
+          intent,
+          lut: makeLut(),
+          rawRenderExposure: exposure,
+          geometry: null,
+        }),
+      }),
+  ],
+  [
+    'a later attempt claims the export slot',
+    (harness) => {
+      claimExportSlot(
+        harness.exportAbortControllerRef,
+        new AbortController(),
+        'attempt-2',
+      )
+    },
+  ],
+  [
+    'a later attempt claims the export slot and ends',
+    (harness) => {
+      claimExportSlot(
+        harness.exportAbortControllerRef,
+        new AbortController(),
+        'attempt-2',
+      )
+      harness.exportAbortControllerRef.current = null
+    },
+  ],
+  [
+    'a controller no claim recorded holds the export slot',
+    (harness) => {
+      harness.exportAbortControllerRef.current = new AbortController()
+    },
+  ],
+  [
+    'the user color changes',
+    (harness) => {
+      harness.paramsRef.current = { ...intent, userExposureEv: 0.4 }
+    },
+  ],
+  [
+    'the look strength changes',
+    (harness) => {
+      harness.paramsRef.current = { ...intent, intensity: 0.38 }
+    },
+  ],
+  [
+    'the LUT table is replaced',
+    (harness) => {
+      harness.lutDataRef.current = makeLut({ data: lutTable.slice() })
+    },
+  ],
+  [
+    'the LUT contract changes',
+    (harness) => {
+      harness.lutDataRef.current = makeLut({
+        profileResolution: {
+          kind: 'unresolved',
+          recommendations: [],
+          reason: 'missing',
+        } as unknown as LUTData['profileResolution'],
+      })
+    },
+  ],
+  [
+    'the Transform intent is pending',
+    (harness) =>
+      withSession(harness, (session) => ({
+        ...session,
+        transform: {
+          ...session.transform!,
+          intent: { ...session.transform!.intent, upright: 'auto' },
+        },
+      })),
+  ],
+  [
+    'the committed geometry changes',
+    (harness) =>
+      withSession(harness, (session) => ({
+        ...session,
+        exportGeometry: {
+          matrix: [1, 0, 0.01, 0, 1, 0, 0, 0, 1],
+          constrainCrop: true,
+        },
+      })),
+  ],
+  [
+    'the workflow unmounts',
+    (harness) => {
+      harness.isMountedRef.current = false
+    },
+  ],
+]
+
+const ACTIONS = ['download', 'share', 'copy'] as const
+
+function run(harness: Harness, action: (typeof ACTIONS)[number]) {
+  const actions = harness.actions()
+  return action === 'download'
+    ? actions.downloadExportResult()
+    : action === 'share'
+      ? actions.shareExportResult()
+      : actions.copyExportResult()
 }
 
 describe('useExportResultActions', () => {
@@ -35,50 +409,28 @@ describe('useExportResultActions', () => {
   })
 
   it('copies preview-size exports from a rendered hidden canvas', async () => {
-    const clipboardWrite = vi.fn().mockResolvedValue(undefined)
-    class FakeClipboardItem {
-      static supports(type: string) {
-        return type === 'image/png'
-      }
-
-      constructor(public readonly items: Record<string, Blob>) {}
-    }
-    vi.stubGlobal('navigator', { clipboard: { write: clipboardWrite } })
-    vi.stubGlobal('ClipboardItem', FakeClipboardItem)
-
+    const { clipboardWrite } = stubDelivery()
     const fakeCanvas = {
       toBlob: vi.fn((callback: BlobCallback, type?: string) => {
         callback(new Blob(['png'], { type: type ?? 'image/png' }))
       }),
     } as unknown as HTMLCanvasElement
     const renderToHiddenCanvas = vi.fn().mockResolvedValue(fakeCanvas)
-    const toastMessages: string[] = []
-
-    const { result } = renderHook(() =>
-      useExportResultActions({
-        sessionRef: {
-          current: {
-            exportState: { result: createPreviewSizeResult() },
+    const harness = setup({
+      pipeline: { renderToHiddenCanvas },
+      result: (session) =>
+        createResult({
+          session,
+          output: blobOutput(),
+          copyCapability: {
+            mode: 'preview-size',
+            label: 'Copy preview-size image',
+            reason: 'JPEG clipboard unavailable.',
           },
-        },
-        pipelineRef: {
-          current: { renderToHiddenCanvas },
-        },
-        previewCopyCanvasRef: { current: null },
-        previewSize: { width: 640, height: 480 },
-        scheduleToast: (notify) => {
-          notify()
-        },
-        toast: {
-          success: (message) => {
-            toastMessages.push(message)
-          },
-          error: vi.fn(),
-        },
-      }),
-    )
+        }),
+    })
 
-    await result.current.copyExportResult()
+    await harness.actions().copyExportResult()
 
     expect(renderToHiddenCanvas).toHaveBeenCalledWith({
       width: 640,
@@ -89,52 +441,303 @@ describe('useExportResultActions', () => {
       'image/png',
     )
     expect(clipboardWrite).toHaveBeenCalledTimes(1)
-    expect(toastMessages).toEqual(['Preview-size image copied'])
-  })
-  it('downloads the attached manifest and stays silent when none exists', async () => {
-    const createObjectURL = vi.fn(() => 'blob:manifest')
-    const revokeObjectURL = vi.fn()
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    vi.stubGlobal(
-      'URL',
-      Object.assign(class extends URL {}, { createObjectURL, revokeObjectURL }),
+    expect(harness.toast.success).toHaveBeenCalledWith(
+      'Preview-size image copied',
     )
+  })
+
+  it('downloads the attached manifest and stays silent when none exists', async () => {
+    const { createObjectURL } = stubDelivery()
     const manifest = {
       manifest_version: 1,
       kind: 'export',
       manifest_sha256: 'b'.repeat(64),
     } as unknown as RenderManifest
-    const sessionRef = {
-      current: {
-        exportState: { result: createPreviewSizeResult() },
-      },
-    }
-    const toastError = vi.fn()
+    const harness = setup({
+      result: (session) => createResult({ session, output: blobOutput() }),
+    })
 
-    const { result } = renderHook(() =>
-      useExportResultActions({
-        sessionRef,
-        pipelineRef: { current: null },
-        previewCopyCanvasRef: { current: null },
-        previewSize: { width: 640, height: 480 },
-        scheduleToast: (notify) => {
-          notify()
-        },
-        toast: { success: vi.fn(), error: toastError },
-      }),
-    )
-
-    await result.current.downloadExportManifest()
+    await harness.actions().downloadExportManifest()
     expect(createObjectURL).not.toHaveBeenCalled()
 
-    sessionRef.current = {
-      exportState: {
-        result: { ...createPreviewSizeResult(), manifest },
-      },
-    }
-    await result.current.downloadExportManifest()
+    withResult(harness, { ...harness.stored, manifest })
+    await harness.actions().downloadExportManifest()
 
     expect(createObjectURL).toHaveBeenCalledTimes(1)
-    expect(toastError).not.toHaveBeenCalled()
+    expect(harness.toast.error).not.toHaveBeenCalled()
+  })
+
+  describe.each(ACTIONS)('%s of a completed result', (action) => {
+    it.each(STALE_CHANGES)(
+      'delivers nothing when %s while the output materializes',
+      async (_change, change) => {
+        const delivery = stubDelivery()
+        const paused = createPausedOutput()
+        const harness = setup({
+          result: (session) => createResult({ session, output: paused.output }),
+        })
+
+        const pending = run(harness, action)
+        expect(paused.openBlob).toHaveBeenCalledTimes(1)
+        change(harness)
+        paused.release()
+        await pending
+
+        expect(delivery.createObjectURL).not.toHaveBeenCalled()
+        expect(delivery.click).not.toHaveBeenCalled()
+        expect(delivery.share).not.toHaveBeenCalled()
+        expect(delivery.clipboardWrite).not.toHaveBeenCalled()
+        expect(harness.toast.success).not.toHaveBeenCalled()
+      },
+    )
+
+    it('still delivers across view-only changes and a late manifest seal', async () => {
+      const delivery = stubDelivery()
+      const paused = createPausedOutput()
+      const harness = setup({
+        result: (session) => createResult({ session, output: paused.output }),
+      })
+
+      const pending = run(harness, action)
+      withSession(harness, (session) => ({
+        ...session,
+        viewState: { ...session.viewState, compareSplit: 0.2, zoom: 3 },
+        exportState: {
+          ...session.exportState,
+          result: { ...harness.stored, manifestState: { status: 'ready' } },
+        },
+      }))
+      // Fields the color graph never reads, such as a view left on an old
+      // record, are not part of the request.
+      harness.paramsRef.current = {
+        ...intent,
+        viewMode: 'split',
+        compareSplit: 0.2,
+      } as unknown as ColorGraphIntentSource
+      harness.lutDataRef.current = makeLut()
+      paused.release()
+      await pending
+
+      expect(
+        delivery.click.mock.calls.length +
+          delivery.share.mock.calls.length +
+          delivery.clipboardWrite.mock.calls.length,
+      ).toBe(1)
+      expect(harness.toast.error).not.toHaveBeenCalled()
+    })
+
+    it('refuses a result while a later attempt already holds the slot', async () => {
+      const delivery = stubDelivery()
+      const paused = createPausedOutput()
+      const harness = setup({
+        result: (session) => createResult({ session, output: paused.output }),
+      })
+      // The later attempt has claimed the slot but not yet cleared the
+      // result, as while it samples the device before it plans.
+      claimExportSlot(
+        harness.exportAbortControllerRef,
+        new AbortController(),
+        'attempt-2',
+      )
+
+      await run(harness, action)
+
+      expect(paused.openBlob).not.toHaveBeenCalled()
+      expect(delivery.createObjectURL).not.toHaveBeenCalled()
+      expect(delivery.click).not.toHaveBeenCalled()
+      expect(delivery.share).not.toHaveBeenCalled()
+      expect(delivery.clipboardWrite).not.toHaveBeenCalled()
+      expect(harness.toast.error).toHaveBeenCalledTimes(1)
+    })
+
+    it('delivers while the attempt that produced it still holds the slot', async () => {
+      const delivery = stubDelivery()
+      const harness = setup({
+        result: (session) => createResult({ session, output: blobOutput() }),
+      })
+      claimExportSlot(
+        harness.exportAbortControllerRef,
+        new AbortController(),
+        'attempt-1',
+      )
+
+      await run(harness, action)
+
+      expect(
+        delivery.click.mock.calls.length +
+          delivery.share.mock.calls.length +
+          delivery.clipboardWrite.mock.calls.length,
+      ).toBe(1)
+      expect(harness.toast.error).not.toHaveBeenCalled()
+    })
+
+    it('refuses a result that does not record its request', async () => {
+      const delivery = stubDelivery()
+      const paused = createPausedOutput()
+      const harness = setup({
+        result: (session) =>
+          createResult({ session, output: paused.output, identified: false }),
+      })
+
+      await run(harness, action)
+
+      expect(paused.openBlob).not.toHaveBeenCalled()
+      expect(delivery.click).not.toHaveBeenCalled()
+      expect(delivery.share).not.toHaveBeenCalled()
+      expect(delivery.clipboardWrite).not.toHaveBeenCalled()
+      expect(harness.toast.error).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('downloads nothing when a debug listener moves the graph as the output materializes', async () => {
+    const delivery = stubDelivery()
+    const harness = setup({
+      result: (session) => createResult({ session, output: blobOutput() }),
+    })
+    const onDebug = (event: Event) => {
+      const detail = (event as CustomEvent<{ type: string }>).detail
+      if (detail.type === 'output-materialized') {
+        harness.exportGraphVersionRef.current += 1
+      }
+    }
+    window.addEventListener('lumaforge-export-debug', onDebug)
+    try {
+      await harness.actions().downloadExportResult()
+    } finally {
+      window.removeEventListener('lumaforge-export-debug', onDebug)
+    }
+
+    expect(delivery.createObjectURL).not.toHaveBeenCalled()
+    expect(delivery.click).not.toHaveBeenCalled()
+    expect(harness.toast.error).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses an HQ preview result once the session holds a geometry', async () => {
+    const delivery = stubDelivery()
+    const harness = setup({
+      result: (session) =>
+        createResult({ session, kind: 'hq-preview', output: blobOutput() }),
+    })
+    withSession(harness, (session) => ({
+      ...session,
+      exportGeometry: {
+        matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        constrainCrop: true,
+      },
+    }))
+
+    await harness.actions().downloadExportResult()
+
+    expect(delivery.click).not.toHaveBeenCalled()
+  })
+
+  it('refuses the manifest of a result the workflow moved on from', async () => {
+    const { createObjectURL } = stubDelivery()
+    const manifest = { manifest_version: 1 } as unknown as RenderManifest
+    const harness = setup({
+      result: (session) => ({
+        ...createResult({ session, output: blobOutput() }),
+        manifest,
+      }),
+    })
+    harness.paramsRef.current = { ...intent, userContrast: 10 }
+
+    await harness.actions().downloadExportManifest()
+
+    expect(createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('does not copy a preview snapshot replaced while it encodes', async () => {
+    const { clipboardWrite } = stubDelivery()
+    const encoded = deferred<Blob | null>()
+    const snapshot = {
+      toBlob: vi.fn((callback: BlobCallback) => {
+        void encoded.promise.then(callback)
+      }),
+    } as unknown as HTMLCanvasElement
+    const harness = setup({
+      previewCopyCanvas: snapshot,
+      result: (session) =>
+        createResult({
+          session,
+          output: blobOutput(),
+          copyCapability: {
+            mode: 'preview-size',
+            label: 'Copy preview-size image',
+            reason: 'JPEG clipboard unavailable.',
+          },
+        }),
+    })
+
+    const pending = harness.actions().copyExportResult()
+    harness.previewCopyCanvasRef.current = null
+    encoded.resolve(new Blob(['png'], { type: 'image/png' }))
+    await pending
+
+    expect(clipboardWrite).not.toHaveBeenCalled()
+    expect(harness.toast.success).not.toHaveBeenCalled()
+  })
+
+  it('does not copy a hidden-canvas render that became stale', async () => {
+    const { clipboardWrite } = stubDelivery()
+    const rendered = deferred<HTMLCanvasElement>()
+    const canvas = {
+      toBlob: vi.fn((callback: BlobCallback) => {
+        callback(new Blob(['png'], { type: 'image/png' }))
+      }),
+    } as unknown as HTMLCanvasElement
+    const harness = setup({
+      pipeline: { renderToHiddenCanvas: () => rendered.promise },
+      result: (session) =>
+        createResult({
+          session,
+          output: blobOutput(),
+          copyCapability: {
+            mode: 'preview-size',
+            label: 'Copy preview-size image',
+            reason: 'JPEG clipboard unavailable.',
+          },
+        }),
+    })
+
+    const pending = harness.actions().copyExportResult()
+    harness.exportGraphVersionRef.current += 1
+    rendered.resolve(canvas)
+    await pending
+
+    expect(canvas.toBlob).not.toHaveBeenCalled()
+    expect(clipboardWrite).not.toHaveBeenCalled()
+  })
+
+  it('delivers a current result after export released the preview', async () => {
+    const delivery = stubDelivery()
+    const snapshot = {
+      toBlob: vi.fn((callback: BlobCallback) => {
+        callback(new Blob(['png'], { type: 'image/png' }))
+      }),
+    } as unknown as HTMLCanvasElement
+    const harness = setup({
+      previewCopyCanvas: snapshot,
+      pipeline: null,
+      result: (session) =>
+        createResult({
+          session,
+          output: blobOutput(),
+          copyCapability: {
+            mode: 'preview-size',
+            label: 'Copy preview-size image',
+            reason: 'JPEG clipboard unavailable.',
+          },
+        }),
+    })
+
+    await harness.actions().downloadExportResult()
+    await harness.actions().shareExportResult()
+    await harness.actions().copyExportResult()
+
+    expect(delivery.click).toHaveBeenCalledTimes(1)
+    expect(delivery.share).toHaveBeenCalledTimes(1)
+    expect(delivery.clipboardWrite).toHaveBeenCalledTimes(1)
+    expect(harness.toast.error).not.toHaveBeenCalled()
   })
 })
