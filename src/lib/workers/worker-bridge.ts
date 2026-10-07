@@ -3,12 +3,61 @@ export interface WorkerBridgeHandle<TApi> {
   terminate: () => void | Promise<void>
 }
 
+export interface WorkerBridgeStartContext {
+  /** Generation the started handle is published under. */
+  generation: number
+}
+
 export interface WorkerBridgeOptions<TApi> {
-  startWorker: () =>
-    | WorkerBridgeHandle<TApi>
-    | Promise<WorkerBridgeHandle<TApi>>
+  startWorker: (
+    context: WorkerBridgeStartContext,
+  ) => WorkerBridgeHandle<TApi> | Promise<WorkerBridgeHandle<TApi>>
   idleMs?: number
 }
+
+export type WorkerBridgeTerminationReason = 'idle' | 'explicit' | 'abort'
+
+export interface WorkerBridgeLifecycleSnapshot {
+  /** Most recently published worker generation; 0 before the first start. */
+  readonly generation: number
+  /** Whether that generation's handle is still the bridge's live handle. */
+  readonly alive: boolean
+  readonly lastTermination: {
+    readonly generation: number
+    readonly reason: WorkerBridgeTerminationReason
+  } | null
+}
+
+export type WorkerBridgeLifecycleListener<TSnapshot> = (
+  snapshot: TSnapshot,
+) => void
+
+/**
+ * Observers only read lifecycle snapshots; a throwing observer is reported and
+ * skipped so it can neither break the bridge operation that published the
+ * change nor starve the observers after it. An observer that changes the
+ * lifecycle while being notified (for example by terminating) publishes the
+ * newer snapshot to every observer itself, so the older one stops here and is
+ * never delivered after it.
+ */
+export function notifyLifecycleListeners<TSnapshot>(
+  listeners: ReadonlySet<WorkerBridgeLifecycleListener<TSnapshot>>,
+  getSnapshot: () => TSnapshot,
+) {
+  const snapshot = getSnapshot()
+  for (const listener of [...listeners]) {
+    if (getSnapshot() !== snapshot) return
+    try {
+      listener(snapshot)
+    } catch (error) {
+      console.error('Worker bridge lifecycle listener failed.', error)
+    }
+  }
+}
+
+const INITIAL_LIFECYCLE_SNAPSHOT: WorkerBridgeLifecycleSnapshot = Object.freeze(
+  { generation: 0, alive: false, lastTermination: null },
+)
 
 const DEFAULT_IDLE_MS = 10_000
 
@@ -25,6 +74,10 @@ type WorkerBridgeResult<
 export class WorkerBridge<TApi extends object> {
   private _queue: Promise<unknown> = Promise.resolve()
   private _handle: WorkerBridgeHandle<TApi> | null = null
+  private _lifecycle = INITIAL_LIFECYCLE_SNAPSHOT
+  private readonly _lifecycleListeners = new Set<
+    WorkerBridgeLifecycleListener<WorkerBridgeLifecycleSnapshot>
+  >()
   private _idleTimer: ReturnType<typeof setTimeout> | null = null
   private _activeCalls = 0
   // Results that keep talking to the worker outside this queue (an open RAW
@@ -66,12 +119,61 @@ export class WorkerBridge<TApi extends object> {
     })
   }
 
-  async terminate(): Promise<void> {
+  /**
+   * Snapshot of the worker this bridge currently owns. The object identity is
+   * stable until the next lifecycle change, so it can back an external store.
+   */
+  getLifecycleSnapshot(): WorkerBridgeLifecycleSnapshot {
+    return this._lifecycle
+  }
+
+  /**
+   * Observe worker starts and idle, explicit, or abort terminations. Observing
+   * never retains the worker or delays its idle termination.
+   */
+  subscribeLifecycle(
+    listener: WorkerBridgeLifecycleListener<WorkerBridgeLifecycleSnapshot>,
+  ): () => void {
+    this._lifecycleListeners.add(listener)
+    return () => {
+      this._lifecycleListeners.delete(listener)
+    }
+  }
+
+  terminate(): Promise<void> {
+    return this._terminate('explicit')
+  }
+
+  private async _terminate(reason: WorkerBridgeTerminationReason) {
     this._cancelIdleTimer()
     this._leases.clear()
     const handle = this._handle
     this._handle = null
-    if (handle) await handle.terminate()
+    if (!handle) return
+    const generation = this._lifecycle.generation
+    this._publishLifecycle({
+      generation,
+      alive: false,
+      lastTermination: { generation, reason },
+    })
+    await handle.terminate()
+  }
+
+  private async _startWorkerGeneration() {
+    const generation = this._lifecycle.generation + 1
+    const handle = await this._startWorker({ generation })
+    this._handle = handle
+    this._publishLifecycle({
+      generation,
+      alive: true,
+      lastTermination: this._lifecycle.lastTermination,
+    })
+    return handle
+  }
+
+  private _publishLifecycle(snapshot: WorkerBridgeLifecycleSnapshot) {
+    this._lifecycle = Object.freeze(snapshot)
+    notifyLifecycleListeners(this._lifecycleListeners, () => this._lifecycle)
   }
 
   private _enqueue<T>(
@@ -83,9 +185,9 @@ export class WorkerBridge<TApi extends object> {
       this._cancelIdleTimer()
       this._activeCalls += 1
       try {
-        const handle = (this._handle ??= await this._startWorker())
+        const handle = this._handle ?? (await this._startWorkerGeneration())
         const onAbort = () => {
-          void this.terminate()
+          void this._terminate('abort')
         }
         signal.addEventListener('abort', onAbort, { once: true })
         try {
@@ -118,7 +220,7 @@ export class WorkerBridge<TApi extends object> {
     this._cancelIdleTimer()
     if (this._activeCalls > 0 || this._leases.size > 0) return
     this._idleTimer = setTimeout(() => {
-      void this.terminate()
+      void this._terminate('idle')
     }, this._idleMs)
   }
 

@@ -1,6 +1,10 @@
 import type { LumaRawRuntime } from '@lumaforge/luma-raw-runtime'
 
-import { WorkerBridge } from './worker-bridge'
+import type {
+  WorkerBridgeLifecycleListener,
+  WorkerBridgeLifecycleSnapshot,
+} from './worker-bridge'
+import { notifyLifecycleListeners, WorkerBridge } from './worker-bridge'
 
 type RuntimeApi = Pick<
   LumaRawRuntime,
@@ -17,16 +21,35 @@ export interface RawDecodeBridgeOptions {
   idleMs?: number
 }
 
+export interface RawDecodeBridgeLifecycleSnapshot {
+  /** Most recently started runtime worker generation; 0 before the first. */
+  readonly generation: number
+  /** A runtime handle exists for `generation`. */
+  readonly workerAlive: boolean
+  /** Runtime `init` succeeded on the live `generation`. */
+  readonly initialized: boolean
+  readonly lastTermination: WorkerBridgeLifecycleSnapshot['lastTermination']
+}
+
 export class RawDecodeBridge {
   private readonly bridge: WorkerBridge<RuntimeApi>
+  private initializedGeneration = 0
+  private lifecycle: RawDecodeBridgeLifecycleSnapshot
+  private readonly lifecycleListeners = new Set<
+    WorkerBridgeLifecycleListener<RawDecodeBridgeLifecycleSnapshot>
+  >()
 
   constructor(options: RawDecodeBridgeOptions) {
     this.bridge = new WorkerBridge<RuntimeApi>({
       idleMs: options.idleMs,
-      startWorker: async () => {
+      startWorker: async ({ generation }) => {
         const runtime = await options.runtimeFactory()
         const api: RuntimeApi = {
-          init: runtime.init.bind(runtime),
+          init: async (...args) => {
+            const result = await runtime.init(...args)
+            this.markInitialized(generation)
+            return result
+          },
           openSession: runtime.openSession.bind(runtime),
           probe: runtime.probe.bind(runtime),
           extractEmbeddedPreview: runtime.extractEmbeddedPreview.bind(runtime),
@@ -40,6 +63,26 @@ export class RawDecodeBridge {
         }
       },
     })
+    this.lifecycle = this.deriveLifecycle()
+    this.bridge.subscribeLifecycle(() => this.publishLifecycle())
+  }
+
+  /**
+   * Liveness of the runtime worker as the bridge sees it now: an idle, abort,
+   * or explicit termination clears `workerAlive` and `initialized` even when
+   * an earlier prewarm succeeded. Stable identity between changes.
+   */
+  getLifecycleSnapshot(): RawDecodeBridgeLifecycleSnapshot {
+    return this.lifecycle
+  }
+
+  subscribeLifecycle(
+    listener: WorkerBridgeLifecycleListener<RawDecodeBridgeLifecycleSnapshot>,
+  ): () => void {
+    this.lifecycleListeners.add(listener)
+    return () => {
+      this.lifecycleListeners.delete(listener)
+    }
   }
 
   prewarm(signal: AbortSignal): ReturnType<LumaRawRuntime['init']> {
@@ -102,5 +145,31 @@ export class RawDecodeBridge {
 
   terminate(): Promise<void> {
     return this.bridge.terminate()
+  }
+
+  private markInitialized(generation: number) {
+    // An init that settles after its worker was terminated belongs to an
+    // obsolete generation and must not mark the current one initialized.
+    const worker = this.bridge.getLifecycleSnapshot()
+    if (!worker.alive || worker.generation !== generation) return
+    if (this.initializedGeneration === generation) return
+    this.initializedGeneration = generation
+    this.publishLifecycle()
+  }
+
+  private deriveLifecycle(): RawDecodeBridgeLifecycleSnapshot {
+    const worker = this.bridge.getLifecycleSnapshot()
+    return Object.freeze({
+      generation: worker.generation,
+      workerAlive: worker.alive,
+      initialized:
+        worker.alive && this.initializedGeneration === worker.generation,
+      lastTermination: worker.lastTermination,
+    })
+  }
+
+  private publishLifecycle() {
+    this.lifecycle = this.deriveLifecycle()
+    notifyLifecycleListeners(this.lifecycleListeners, () => this.lifecycle)
   }
 }

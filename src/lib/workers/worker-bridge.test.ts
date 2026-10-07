@@ -272,4 +272,220 @@ describe('workerBridge', () => {
       vi.useRealTimers()
     }
   })
+
+  it('disposes a worker exactly once when abort and explicit terminate race', async () => {
+    const terminate = vi.fn()
+    const pending: { resolve: ((value: number) => void) | null } = {
+      resolve: null,
+    }
+    const startWorker = vi.fn(() => ({
+      api: {
+        echo: (v: number) =>
+          new Promise<number>((resolve) => {
+            pending.resolve = () => resolve(v)
+          }),
+      } as FakeApi,
+      terminate,
+    }))
+    const bridge = new WorkerBridge<FakeApi>({ startWorker })
+    const c = new AbortController()
+    const p = bridge.call('echo', c.signal, 1)
+    await vi.waitFor(() => expect(pending.resolve).toBeTypeOf('function'))
+
+    c.abort()
+    await bridge.terminate()
+    await bridge.terminate()
+    pending.resolve?.(1)
+    await p.catch(() => undefined)
+
+    expect(terminate).toHaveBeenCalledTimes(1)
+  })
+
+  describe('lifecycle observations', () => {
+    it('starts with no live generation and a stable snapshot', () => {
+      const { bridge } = createFakeBridge()
+      const snapshot = bridge.getLifecycleSnapshot()
+      expect(snapshot).toEqual({
+        generation: 0,
+        alive: false,
+        lastTermination: null,
+      })
+      expect(bridge.getLifecycleSnapshot()).toBe(snapshot)
+    })
+
+    it('publishes a new generation when a worker starts and hands it to startWorker', async () => {
+      const startWorker = vi.fn((_context: { generation: number }) => ({
+        api: { echo: async (v: number) => v } as FakeApi,
+        terminate: vi.fn(),
+      }))
+      const bridge = new WorkerBridge<FakeApi>({ startWorker, idleMs: 10_000 })
+      const snapshots: unknown[] = []
+      bridge.subscribeLifecycle((snapshot) => snapshots.push(snapshot))
+
+      await bridge.call('echo', new AbortController().signal, 1)
+      await bridge.call('echo', new AbortController().signal, 2)
+
+      expect(startWorker).toHaveBeenCalledTimes(1)
+      expect(startWorker).toHaveBeenCalledWith({ generation: 1 })
+      expect(snapshots).toEqual([
+        { generation: 1, alive: true, lastTermination: null },
+      ])
+      expect(bridge.getLifecycleSnapshot()).toBe(snapshots[0])
+    })
+
+    it('reports idle termination of the live generation', async () => {
+      vi.useFakeTimers()
+      try {
+        const { bridge } = createFakeBridge()
+        const listener = vi.fn()
+        bridge.subscribeLifecycle(listener)
+        await bridge.call('echo', new AbortController().signal, 1)
+        listener.mockClear()
+
+        await vi.advanceTimersByTimeAsync(10_000)
+
+        expect(listener).toHaveBeenCalledTimes(1)
+        expect(bridge.getLifecycleSnapshot()).toEqual({
+          generation: 1,
+          alive: false,
+          lastTermination: { generation: 1, reason: 'idle' },
+        })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('reports explicit termination once and ignores a terminate with no worker', async () => {
+      const { bridge } = createFakeBridge()
+      const listener = vi.fn()
+      await bridge.call('echo', new AbortController().signal, 1)
+      bridge.subscribeLifecycle(listener)
+
+      await bridge.terminate()
+      await bridge.terminate()
+
+      expect(listener).toHaveBeenCalledTimes(1)
+      expect(listener).toHaveBeenCalledWith({
+        generation: 1,
+        alive: false,
+        lastTermination: { generation: 1, reason: 'explicit' },
+      })
+    })
+
+    it('reports abort termination and a fresh generation for the next worker', async () => {
+      const pending: { resolve: ((value: number) => void) | null } = {
+        resolve: null,
+      }
+      let calls = 0
+      const startWorker = vi.fn(() => ({
+        api: {
+          echo: (v: number) => {
+            calls += 1
+            if (calls > 1) return Promise.resolve(v)
+            return new Promise<number>((resolve) => {
+              pending.resolve = () => resolve(v)
+            })
+          },
+        } as FakeApi,
+        terminate: vi.fn(),
+      }))
+      const bridge = new WorkerBridge<FakeApi>({ startWorker, idleMs: 10_000 })
+      const c = new AbortController()
+      const p = bridge.call('echo', c.signal, 1)
+      await vi.waitFor(() => expect(pending.resolve).toBeTypeOf('function'))
+
+      c.abort()
+      expect(bridge.getLifecycleSnapshot()).toEqual({
+        generation: 1,
+        alive: false,
+        lastTermination: { generation: 1, reason: 'abort' },
+      })
+      pending.resolve?.(1)
+      await p.catch(() => undefined)
+
+      await bridge.call('echo', new AbortController().signal, 2)
+      expect(bridge.getLifecycleSnapshot()).toEqual({
+        generation: 2,
+        alive: true,
+        lastTermination: { generation: 1, reason: 'abort' },
+      })
+      await bridge.terminate()
+    })
+
+    it('isolates a throwing subscriber from other subscribers and the bridge', async () => {
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {})
+      try {
+        const { bridge, startWorker } = createFakeBridge()
+        const after = vi.fn()
+        bridge.subscribeLifecycle(() => {
+          throw new Error('observer failed')
+        })
+        bridge.subscribeLifecycle(after)
+
+        await expect(
+          bridge.call('echo', new AbortController().signal, 1),
+        ).resolves.toBe(1)
+        await expect(bridge.terminate()).resolves.toBeUndefined()
+
+        expect(after).toHaveBeenCalledTimes(2)
+        const handle = startWorker.mock.results[0]?.value as {
+          terminate: ReturnType<typeof vi.fn>
+        }
+        expect(handle.terminate).toHaveBeenCalledTimes(1)
+        expect(consoleError).toHaveBeenCalledTimes(2)
+      } finally {
+        consoleError.mockRestore()
+      }
+    })
+
+    it('never delivers a superseded snapshot after a subscriber terminates during notification', async () => {
+      const { bridge } = createFakeBridge()
+      bridge.subscribeLifecycle((snapshot) => {
+        if (snapshot.alive) void bridge.terminate()
+      })
+      const received: unknown[] = []
+      bridge.subscribeLifecycle((snapshot) => received.push(snapshot))
+
+      await bridge.call('echo', new AbortController().signal, 1)
+
+      expect(bridge.getLifecycleSnapshot()).toEqual({
+        generation: 1,
+        alive: false,
+        lastTermination: { generation: 1, reason: 'explicit' },
+      })
+      expect(received.at(-1)).toBe(bridge.getLifecycleSnapshot())
+    })
+
+    it('stops notifying after unsubscribe', async () => {
+      const { bridge } = createFakeBridge()
+      const listener = vi.fn()
+      const unsubscribe = bridge.subscribeLifecycle(listener)
+      unsubscribe()
+
+      await bridge.call('echo', new AbortController().signal, 1)
+      await bridge.terminate()
+
+      expect(listener).not.toHaveBeenCalled()
+    })
+
+    it('does not let a subscriber hold the worker past the idle window', async () => {
+      vi.useFakeTimers()
+      try {
+        const { bridge, startWorker } = createFakeBridge()
+        bridge.subscribeLifecycle(() => {})
+        await bridge.call('echo', new AbortController().signal, 1)
+
+        await vi.advanceTimersByTimeAsync(10_000)
+
+        const handle = startWorker.mock.results[0]?.value as {
+          terminate: ReturnType<typeof vi.fn>
+        }
+        expect(handle.terminate).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
 })
