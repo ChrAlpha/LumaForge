@@ -1,24 +1,238 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ExportColorGraphStep } from './color-graph'
+import type { ExportColorGraphInput, ExportColorGraphStep } from './color-graph'
 import { resolveExportColorGraph } from './color-graph'
+import { generateIdentityLUT, toLUTData } from './cube-parser'
+import type { LUTColorProfile } from './registry'
 import { getLUTColorProfile } from './registry'
+import type { HSLBandId, HSLBandShift } from './selective-color'
 import {
   CHROMA_CLAMP_HIGH,
   CHROMA_CLAMP_LOW,
+  HSL_BAND_IDS,
   LUT_CONSTANTS_VERSION,
   LUT_SIZE,
+  NEUTRAL_SELECTIVE_COLOR,
   resolveSelectiveColorParams,
 } from './selective-color'
+import type { LUTContractResolution, LUTData } from './types'
+import type { ColorGraphIntent } from './user-color-intent'
+import {
+  BUILTIN_STYLE_PRESETS,
+  NEUTRAL_USER_COLOR_INTENT,
+  normalizeColorGraphIntent,
+} from './user-color-intent'
+
+/** The complete intent of an untouched photo with no look. */
+const NO_LOOK: ColorGraphIntent = {
+  styleKind: 'none',
+  builtinPreset: null,
+  intensity: 0.7,
+  ...NEUTRAL_USER_COLOR_INTENT,
+}
+
+/** Graph input from the complete no-look intent and the given changes. */
+function graphInput(
+  overrides: Partial<ExportColorGraphInput> = {},
+): ExportColorGraphInput {
+  return { ...NO_LOOK, lut: null, ...overrides }
+}
+
+function registryProfile(id: string): LUTColorProfile {
+  const profile = getLUTColorProfile(id)
+  if (!profile) throw new Error(`Missing registry profile ${id}`)
+  return profile
+}
+
+/** A 2-point identity LUT whose contract is `profileResolution`. */
+function lutWith(profileResolution: LUTContractResolution): LUTData {
+  return { ...toLUTData(generateIdentityLUT(2)), profileResolution }
+}
+
+function confirmed(profile: LUTColorProfile): LUTContractResolution {
+  return { kind: 'confirmed', confidence: 'user', profile }
+}
+
+function hslBands(
+  overrides: Partial<Record<HSLBandId, HSLBandShift>> = {},
+): Record<HSLBandId, HSLBandShift> {
+  return Object.fromEntries(
+    HSL_BAND_IDS.map((id) => [
+      id,
+      overrides[id] ?? { hue: 0, saturation: 0, lightness: 0 },
+    ]),
+  ) as Record<HSLBandId, HSLBandShift>
+}
+
+describe('resolveExportColorGraph with a complete intent', () => {
+  const edited: ColorGraphIntent = {
+    styleKind: 'custom',
+    builtinPreset: null,
+    intensity: 0.37,
+    userExposureEv: 1,
+    userContrast: 50,
+    userHighlights: -40,
+    userShadows: 35,
+    userWhites: -25,
+    userBlacks: 20,
+    userTemperature: 40,
+    userTint: -25,
+    userSaturation: 42,
+    userVibrance: -17,
+    selectiveColor: hslBands({
+      red: { hue: 50, saturation: -20, lightness: 10 },
+      aqua: { hue: -30, saturation: 15, lightness: -5 },
+    }),
+  }
+  const sceneLook = lutWith(
+    confirmed({
+      ...registryProfile('sony-sgamut3cine-slog3'),
+      outputGamut: 's-gamut3-cine',
+      outputTransfer: 's-log3',
+      outputRange: 'full',
+    }),
+  )
+
+  it('carries every user field and the look strength into its step as given', () => {
+    const graph = resolveExportColorGraph({ ...edited, lut: sceneLook })
+
+    expect(graph).toMatchObject({
+      supported: true,
+      outputGamut: 'srgb-rec709',
+      outputTransfer: 'srgb',
+      steps: [
+        { kind: 'input-linear-prophoto' },
+        { kind: 'raw-render-exposure', ev: 0, multiplier: 1 },
+        { kind: 'user-color-balance', temperature: 40, tint: -25 },
+        { kind: 'user-exposure', ev: 1, multiplier: 2 },
+        { kind: 'user-contrast', amount: 50, factor: 2 ** 0.25, pivot: 0.18 },
+        {
+          kind: 'user-regional-tone',
+          highlights: -40,
+          shadows: 35,
+          whites: -25,
+          blacks: 20,
+        },
+        { kind: 'user-saturation', saturation: 42, vibrance: -17 },
+        {
+          kind: 'user-selective-color',
+          bands: hslBands({
+            red: { hue: 50, saturation: -20, lightness: 10 },
+            aqua: { hue: -30, saturation: 15, lightness: -5 },
+          }),
+        },
+        { kind: 'gamut-to-lut-input', gamut: 's-gamut3-cine' },
+        { kind: 'encode-lut-transfer', transfer: 's-log3', range: 'full' },
+        { kind: 'lut3d', size: 2 },
+        {
+          kind: 'lut-output-to-srgb',
+          transfer: 's-log3',
+          range: 'full',
+          role: 'scene-creative',
+          intensity: 0.37,
+        },
+        { kind: 'output-srgb' },
+      ],
+    })
+  })
+
+  it('reads neutral HSL as all-zero bands, however it is spelled', () => {
+    const graphs = [
+      resolveExportColorGraph(graphInput()),
+      resolveExportColorGraph(
+        graphInput({ selectiveColor: NEUTRAL_SELECTIVE_COLOR }),
+      ),
+      resolveExportColorGraph(graphInput({ selectiveColor: hslBands() })),
+    ]
+
+    for (const graph of graphs) {
+      expect(graph).toEqual(graphs[0])
+      expect(graph.steps).toContainEqual(
+        expect.objectContaining({
+          kind: 'user-selective-color',
+          bands: hslBands(),
+        }),
+      )
+    }
+  })
+
+  it('routes the same LUT bytes by their contract resolution', () => {
+    const vlogLook = confirmed({
+      ...registryProfile('panasonic-vgamut-vlog'),
+      role: 'combined-look-output',
+      outputGamut: 'srgb-rec709',
+      outputTransfer: 'bt709',
+      outputRange: 'full',
+    })
+    expect(
+      resolveExportColorGraph({ ...edited, lut: lutWith(vlogLook) }),
+    ).toMatchObject({
+      supported: true,
+      steps: expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'gamut-to-lut-input',
+          gamut: 'v-gamut',
+        }),
+        expect.objectContaining({
+          kind: 'encode-lut-transfer',
+          transfer: 'v-log',
+          range: 'full',
+        }),
+        expect.objectContaining({
+          kind: 'lut-output-to-srgb',
+          transfer: 'bt709',
+          role: 'combined-look-output',
+          intensity: 0.37,
+        }),
+      ]),
+    })
+    for (const unresolved of [
+      { kind: 'unknown' },
+      {
+        kind: 'recommended',
+        recommendations: [registryProfile('panasonic-vgamut-vlog')],
+      },
+      {
+        kind: 'unsupported-output',
+        recommendations: [registryProfile('sony-sgamut3cine-slog3')],
+      },
+    ] satisfies LUTContractResolution[]) {
+      expect(
+        resolveExportColorGraph({ ...edited, lut: lutWith(unresolved) }),
+      ).toEqual({
+        supported: false,
+        reason: 'unsupported-pipeline',
+        message: 'Choose a LUT input profile before full-resolution export.',
+        steps: [],
+      })
+    }
+  })
+
+  it('keeps every retained built-in preset a refused export look', () => {
+    for (const builtinPreset of BUILTIN_STYLE_PRESETS) {
+      for (const lut of [null, sceneLook]) {
+        expect(
+          resolveExportColorGraph({
+            ...edited,
+            styleKind: 'builtin',
+            builtinPreset,
+            lut,
+          }),
+        ).toEqual({
+          supported: false,
+          reason: 'unsupported-pipeline',
+          message:
+            'Built-in styles are not supported by full-resolution JPEG export.',
+          steps: [],
+        })
+      }
+    }
+  })
+})
 
 describe('resolveExportColorGraph', () => {
   it('resolves no-lut export to linear ProPhoto then sRGB output', () => {
-    const graph = resolveExportColorGraph({
-      styleKind: 'none',
-      intensity: 0.7,
-      builtinPreset: null,
-      lut: null,
-    })
+    const graph = resolveExportColorGraph(graphInput())
 
     expect(graph.supported).toBe(true)
     if (!graph.supported) {
@@ -44,14 +258,60 @@ describe('resolveExportColorGraph', () => {
     })
   })
 
-  it('inserts raw render exposure before output conversion', () => {
-    const graph = resolveExportColorGraph({
-      styleKind: 'none',
-      intensity: 0.7,
-      builtinPreset: null,
-      lut: null,
-      rawRenderExposure: { ev: 1, multiplier: 2, source: 'image-statistics' },
+  it('reads partial input once normalization has completed it', () => {
+    const noLook = normalizeColorGraphIntent(
+      { styleKind: 'none' },
+      { defaultIntensity: 0.7 },
+    )
+    const warmRed = normalizeColorGraphIntent(
+      {
+        styleKind: 'none',
+        userTemperature: 40,
+        selectiveColor: { red: { hue: 50 } },
+      },
+      { defaultIntensity: 0.7 },
+    )
+
+    expect({ ...noLook, lut: null }).toEqual(graphInput())
+    expect({ ...warmRed, lut: null }).toEqual(
+      graphInput({
+        userTemperature: 40,
+        selectiveColor: hslBands({
+          red: { hue: 50, saturation: 0, lightness: 0 },
+        }),
+      }),
+    )
+    expect(resolveExportColorGraph({ ...warmRed, lut: null })).toMatchObject({
+      supported: true,
+      steps: [
+        { kind: 'input-linear-prophoto' },
+        { kind: 'raw-render-exposure', ev: 0, multiplier: 1 },
+        { kind: 'user-color-balance', temperature: 40, tint: 0 },
+        { kind: 'user-exposure', ev: 0, multiplier: 1 },
+        { kind: 'user-contrast', amount: 0, factor: 1 },
+        {
+          kind: 'user-regional-tone',
+          highlights: 0,
+          shadows: 0,
+          whites: 0,
+          blacks: 0,
+        },
+        { kind: 'user-saturation', saturation: 0, vibrance: 0 },
+        {
+          kind: 'user-selective-color',
+          bands: hslBands({ red: { hue: 50, saturation: 0, lightness: 0 } }),
+        },
+        { kind: 'output-srgb' },
+      ],
     })
+  })
+
+  it('inserts raw render exposure before output conversion', () => {
+    const graph = resolveExportColorGraph(
+      graphInput({
+        rawRenderExposure: { ev: 1, multiplier: 2, source: 'image-statistics' },
+      }),
+    )
 
     expect(graph).toMatchObject({
       supported: true,
@@ -81,12 +341,7 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('inserts neutral user tone steps in no-lut export graphs', () => {
-    const graph = resolveExportColorGraph({
-      styleKind: 'none',
-      intensity: 0.7,
-      builtinPreset: null,
-      lut: null,
-    })
+    const graph = resolveExportColorGraph(graphInput())
 
     expect(graph.supported).toBe(true)
     if (!graph.supported) throw new Error('Expected supported graph')
@@ -136,14 +391,9 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('places user color balance after raw render exposure and before tone', () => {
-    const graph = resolveExportColorGraph({
-      styleKind: 'none',
-      intensity: 0.7,
-      builtinPreset: null,
-      lut: null,
-      userTemperature: 40,
-      userTint: -25,
-    })
+    const graph = resolveExportColorGraph(
+      graphInput({ userTemperature: 40, userTint: -25 }),
+    )
 
     expect(graph.supported).toBe(true)
     if (!graph.supported) throw new Error('Expected supported graph')
@@ -162,37 +412,25 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('places user tone and regional tone before LUT input conversion', () => {
-    const profile = getLUTColorProfile('sony-sgamut3cine-slog3')
-    if (!profile) throw new Error('Missing profile')
-
-    const graph = resolveExportColorGraph({
-      styleKind: 'custom',
-      intensity: 0.7,
-      builtinPreset: null,
-      userExposureEv: 1,
-      userContrast: 50,
-      userHighlights: -40,
-      userShadows: 35,
-      userWhites: -25,
-      userBlacks: 20,
-      lut: {
-        size: 2,
-        data: new Float32Array(24),
-        domainMin: [0, 0, 0],
-        domainMax: [1, 1, 1],
-        inputProfile: 'v-log',
-        profileResolution: {
-          kind: 'confirmed',
-          confidence: 'user',
-          profile: {
-            ...profile,
+    const graph = resolveExportColorGraph(
+      graphInput({
+        styleKind: 'custom',
+        userExposureEv: 1,
+        userContrast: 50,
+        userHighlights: -40,
+        userShadows: 35,
+        userWhites: -25,
+        userBlacks: 20,
+        lut: lutWith(
+          confirmed({
+            ...registryProfile('sony-sgamut3cine-slog3'),
             outputGamut: 's-gamut3-cine',
             outputTransfer: 's-log3',
             outputRange: 'full',
-          },
-        },
-      },
-    })
+          }),
+        ),
+      }),
+    )
 
     expect(graph.supported).toBe(true)
     if (!graph.supported) throw new Error('Expected supported graph')
@@ -231,18 +469,18 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('keeps built-in style export failure pointed at built-in style support', () => {
-    const graph = resolveExportColorGraph({
-      styleKind: 'builtin',
-      intensity: 0.7,
-      builtinPreset: 'warm',
-      userExposureEv: 1,
-      userContrast: 50,
-      userHighlights: -40,
-      userShadows: 40,
-      userWhites: -20,
-      userBlacks: 20,
-      lut: null,
-    })
+    const graph = resolveExportColorGraph(
+      graphInput({
+        styleKind: 'builtin',
+        builtinPreset: 'warm',
+        userExposureEv: 1,
+        userContrast: 50,
+        userHighlights: -40,
+        userShadows: 40,
+        userWhites: -20,
+        userBlacks: 20,
+      }),
+    )
 
     expect(graph.supported).toBe(false)
     if (graph.supported) throw new Error('Expected unsupported graph')
@@ -252,12 +490,9 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('fails closed for built-in styles', () => {
-    const graph = resolveExportColorGraph({
-      styleKind: 'builtin',
-      intensity: 0.7,
-      builtinPreset: 'warm',
-      lut: null,
-    })
+    const graph = resolveExportColorGraph(
+      graphInput({ styleKind: 'builtin', builtinPreset: 'warm' }),
+    )
 
     expect(graph.supported).toBe(false)
     if (graph.supported) {
@@ -271,31 +506,19 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('resolves scene creative LUTs with explicit input and output contracts', () => {
-    const profile = getLUTColorProfile('sony-sgamut3cine-slog3')
-    expect(profile).toBeDefined()
-
-    const graph = resolveExportColorGraph({
-      styleKind: 'custom',
-      intensity: 0.7,
-      builtinPreset: null,
-      lut: {
-        size: 2,
-        data: new Float32Array(24),
-        domainMin: [0, 0, 0],
-        domainMax: [1, 1, 1],
-        inputProfile: 'v-log',
-        profileResolution: {
-          kind: 'confirmed',
-          confidence: 'user',
-          profile: {
-            ...profile!,
+    const graph = resolveExportColorGraph(
+      graphInput({
+        styleKind: 'custom',
+        lut: lutWith(
+          confirmed({
+            ...registryProfile('sony-sgamut3cine-slog3'),
             outputGamut: 's-gamut3-cine',
             outputTransfer: 's-log3',
             outputRange: 'full',
-          },
-        },
-      },
-    })
+          }),
+        ),
+      }),
+    )
 
     expect(graph.supported).toBe(true)
     if (!graph.supported) {
@@ -333,32 +556,23 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('routes V-Log input and BT.709 Rec.709 output as a combined output LUT', () => {
-    const base = getLUTColorProfile('panasonic-vgamut-vlog')
-    expect(base).toBeDefined()
-
-    const graph = resolveExportColorGraph({
-      styleKind: 'custom',
-      intensity: 1,
-      builtinPreset: null,
-      lut: {
-        size: 2,
-        data: new Float32Array(24),
-        domainMin: [0, 0, 0],
-        domainMax: [1, 1, 1],
-        inputProfile: 'v-log',
-        profileResolution: {
+    const graph = resolveExportColorGraph(
+      graphInput({
+        styleKind: 'custom',
+        intensity: 1,
+        lut: lutWith({
           kind: 'confirmed',
           confidence: 'metadata',
           profile: {
-            ...base!,
+            ...registryProfile('panasonic-vgamut-vlog'),
             role: 'combined-look-output',
             outputGamut: 'srgb-rec709',
             outputTransfer: 'bt709',
             outputRange: 'full',
           },
-        },
-      },
-    })
+        }),
+      }),
+    )
 
     expect(graph.supported).toBe(true)
     if (!graph.supported) throw new Error('Expected supported graph')
@@ -373,29 +587,18 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('resolves omitted display-look output transfer from the LUT input transfer', () => {
-    const profile = getLUTColorProfile('rec709-gamma24')
-    expect(profile).toBeDefined()
-    expect(profile?.role).toBe('display-look')
-    expect(profile?.inputTransfer).toBe('gamma24')
-    expect(profile?.outputTransfer).toBeUndefined()
+    const profile = registryProfile('rec709-gamma24')
+    expect(profile.role).toBe('display-look')
+    expect(profile.inputTransfer).toBe('gamma24')
+    expect(profile.outputTransfer).toBeUndefined()
 
-    const graph = resolveExportColorGraph({
-      styleKind: 'custom',
-      intensity: 1,
-      builtinPreset: null,
-      lut: {
-        size: 2,
-        data: new Float32Array(24),
-        domainMin: [0, 0, 0],
-        domainMax: [1, 1, 1],
-        inputProfile: 'display-srgb',
-        profileResolution: {
-          kind: 'confirmed',
-          confidence: 'user',
-          profile: profile!,
-        },
-      },
-    })
+    const graph = resolveExportColorGraph(
+      graphInput({
+        styleKind: 'custom',
+        intensity: 1,
+        lut: lutWith(confirmed(profile)),
+      }),
+    )
 
     expect(graph.supported).toBe(true)
     if (!graph.supported) {
@@ -411,21 +614,9 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('fails closed for unresolved LUT profiles', () => {
-    const graph = resolveExportColorGraph({
-      styleKind: 'custom',
-      intensity: 0.7,
-      builtinPreset: null,
-      lut: {
-        size: 2,
-        data: new Float32Array(24),
-        domainMin: [0, 0, 0],
-        domainMax: [1, 1, 1],
-        inputProfile: 'display-srgb',
-        profileResolution: {
-          kind: 'unknown',
-        },
-      },
-    })
+    const graph = resolveExportColorGraph(
+      graphInput({ styleKind: 'custom', lut: lutWith({ kind: 'unknown' }) }),
+    )
 
     expect(graph.supported).toBe(false)
     if (graph.supported) {
@@ -439,26 +630,13 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('fails closed when a non-display LUT has no declared output contract', () => {
-    const profile = getLUTColorProfile('panasonic-vgamut-vlog')
-    expect(profile).toBeDefined()
-
-    const graph = resolveExportColorGraph({
-      styleKind: 'custom',
-      intensity: 1,
-      builtinPreset: null,
-      lut: {
-        size: 2,
-        data: new Float32Array(24),
-        domainMin: [0, 0, 0],
-        domainMax: [1, 1, 1],
-        inputProfile: 'v-log',
-        profileResolution: {
-          kind: 'confirmed',
-          confidence: 'user',
-          profile: profile!,
-        },
-      },
-    })
+    const graph = resolveExportColorGraph(
+      graphInput({
+        styleKind: 'custom',
+        intensity: 1,
+        lut: lutWith(confirmed(registryProfile('panasonic-vgamut-vlog'))),
+      }),
+    )
 
     expect(graph).toMatchObject({
       supported: false,
@@ -468,32 +646,22 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('fails closed for resolved technical output LUTs with explicit linear output transfer', () => {
-    const profile = getLUTColorProfile('panasonic-vgamut-vlog')
-    expect(profile).toBeDefined()
-
-    const graph = resolveExportColorGraph({
-      styleKind: 'custom',
-      intensity: 0.7,
-      builtinPreset: null,
-      lut: {
-        size: 2,
-        data: new Float32Array(24),
-        domainMin: [0, 0, 0],
-        domainMax: [1, 1, 1],
-        inputProfile: 'v-log',
-        profileResolution: {
+    const graph = resolveExportColorGraph(
+      graphInput({
+        styleKind: 'custom',
+        lut: lutWith({
           kind: 'confirmed',
           confidence: 'metadata',
           profile: {
-            ...profile!,
+            ...registryProfile('panasonic-vgamut-vlog'),
             role: 'technical-output',
             outputGamut: 'v-gamut',
             outputTransfer: 'linear',
             outputRange: 'full',
           },
-        },
-      },
-    })
+        }),
+      }),
+    )
 
     expect(graph.supported).toBe(false)
     if (graph.supported) {
@@ -506,32 +674,22 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('fails closed for resolved technical output LUTs with unknown output range', () => {
-    const profile = getLUTColorProfile('panasonic-vgamut-vlog')
-    expect(profile).toBeDefined()
-
-    const graph = resolveExportColorGraph({
-      styleKind: 'custom',
-      intensity: 0.7,
-      builtinPreset: null,
-      lut: {
-        size: 2,
-        data: new Float32Array(24),
-        domainMin: [0, 0, 0],
-        domainMax: [1, 1, 1],
-        inputProfile: 'v-log',
-        profileResolution: {
+    const graph = resolveExportColorGraph(
+      graphInput({
+        styleKind: 'custom',
+        lut: lutWith({
           kind: 'confirmed',
           confidence: 'metadata',
           profile: {
-            ...profile!,
+            ...registryProfile('panasonic-vgamut-vlog'),
             role: 'technical-output',
             outputGamut: 'v-gamut',
             outputTransfer: 'v-log',
             outputRange: 'unknown',
           },
-        },
-      },
-    })
+        }),
+      }),
+    )
 
     expect(graph.supported).toBe(false)
     if (graph.supported) {
@@ -544,31 +702,21 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('fails closed for combined output LUTs with incomplete output contracts', () => {
-    const profile = getLUTColorProfile('sony-sgamut3cine-slog3')
-    expect(profile).toBeDefined()
-
-    const graph = resolveExportColorGraph({
-      styleKind: 'custom',
-      intensity: 0.7,
-      builtinPreset: null,
-      lut: {
-        size: 2,
-        data: new Float32Array(24),
-        domainMin: [0, 0, 0],
-        domainMax: [1, 1, 1],
-        inputProfile: 'display-srgb',
-        profileResolution: {
+    const graph = resolveExportColorGraph(
+      graphInput({
+        styleKind: 'custom',
+        lut: lutWith({
           kind: 'confirmed',
           confidence: 'metadata',
           profile: {
-            ...profile!,
+            ...registryProfile('sony-sgamut3cine-slog3'),
             role: 'combined-look-output',
             outputGamut: undefined,
             outputTransfer: undefined,
           },
-        },
-      },
-    })
+        }),
+      }),
+    )
 
     expect(graph.supported).toBe(false)
     if (graph.supported) {
@@ -581,14 +729,9 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('emits user-saturation step at index 6 in simple graph', () => {
-    const graph = resolveExportColorGraph({
-      styleKind: 'none',
-      intensity: 0.7,
-      builtinPreset: null,
-      lut: null,
-      userSaturation: 42,
-      userVibrance: -17,
-    })
+    const graph = resolveExportColorGraph(
+      graphInput({ userSaturation: 42, userVibrance: -17 }),
+    )
     expect(graph.supported).toBe(true)
     if (!graph.supported) return
     expect(graph.steps).toHaveLength(9)
@@ -602,14 +745,9 @@ describe('resolveExportColorGraph', () => {
   })
 
   it('always emits user-saturation even when both are zero', () => {
-    const graph = resolveExportColorGraph({
-      styleKind: 'none',
-      intensity: 0.7,
-      builtinPreset: null,
-      lut: null,
-      userSaturation: 0,
-      userVibrance: 0,
-    })
+    const graph = resolveExportColorGraph(
+      graphInput({ userSaturation: 0, userVibrance: 0 }),
+    )
     expect(graph.supported).toBe(true)
     if (!graph.supported) return
     expect(graph.steps[6].kind).toBe('user-saturation')
@@ -617,12 +755,7 @@ describe('resolveExportColorGraph', () => {
 
   describe('user-selective-color graph step', () => {
     it('graph_step_composition: inserts selective-color after regional tone and before LUT/output', () => {
-      const noLutGraph = resolveExportColorGraph({
-        styleKind: 'none',
-        intensity: 0.7,
-        builtinPreset: null,
-        lut: null,
-      })
+      const noLutGraph = resolveExportColorGraph(graphInput())
 
       expect(noLutGraph.supported).toBe(true)
       if (!noLutGraph.supported) throw new Error('Expected supported graph')
@@ -633,31 +766,19 @@ describe('resolveExportColorGraph', () => {
       expect(selectiveColorIdx).toBeGreaterThan(regionalToneIdx)
       expect(selectiveColorIdx).toBeLessThan(outputSrgbIdx)
 
-      const profile = getLUTColorProfile('sony-sgamut3cine-slog3')
-      if (!profile) throw new Error('Missing profile')
-
-      const customLutGraph = resolveExportColorGraph({
-        styleKind: 'custom',
-        intensity: 0.7,
-        builtinPreset: null,
-        lut: {
-          size: 2,
-          data: new Float32Array(24),
-          domainMin: [0, 0, 0],
-          domainMax: [1, 1, 1],
-          inputProfile: 'v-log',
-          profileResolution: {
-            kind: 'confirmed',
-            confidence: 'user',
-            profile: {
-              ...profile,
+      const customLutGraph = resolveExportColorGraph(
+        graphInput({
+          styleKind: 'custom',
+          lut: lutWith(
+            confirmed({
+              ...registryProfile('sony-sgamut3cine-slog3'),
               outputGamut: 's-gamut3-cine',
               outputTransfer: 's-log3',
               outputRange: 'full',
-            },
-          },
-        },
-      })
+            }),
+          ),
+        }),
+      )
 
       expect(customLutGraph.supported).toBe(true)
       if (!customLutGraph.supported) {
@@ -674,22 +795,13 @@ describe('resolveExportColorGraph', () => {
     })
 
     it('graph_step_no_buffer: graph step carries durable params only, never a Float32Array', () => {
-      const graph = resolveExportColorGraph({
-        styleKind: 'none',
-        intensity: 0.7,
-        builtinPreset: null,
-        lut: null,
-        selectiveColor: {
-          red: { hue: 50, saturation: 0, lightness: 0 },
-          orange: { hue: 0, saturation: 0, lightness: 0 },
-          yellow: { hue: 0, saturation: 0, lightness: 0 },
-          green: { hue: 0, saturation: 0, lightness: 0 },
-          aqua: { hue: 0, saturation: 0, lightness: 0 },
-          blue: { hue: 0, saturation: 0, lightness: 0 },
-          purple: { hue: 0, saturation: 0, lightness: 0 },
-          magenta: { hue: 0, saturation: 0, lightness: 0 },
-        },
-      })
+      const graph = resolveExportColorGraph(
+        graphInput({
+          selectiveColor: hslBands({
+            red: { hue: 50, saturation: 0, lightness: 0 },
+          }),
+        }),
+      )
 
       expect(graph.supported).toBe(true)
       if (!graph.supported) throw new Error('Expected supported graph')
@@ -725,22 +837,11 @@ describe('resolveExportColorGraph', () => {
     })
 
     it('lut_ownership: graph step is decoupled from any baked LUT buffer', () => {
-      const input = {
-        styleKind: 'none' as const,
-        intensity: 0.7,
-        builtinPreset: null,
-        lut: null,
-        selectiveColor: {
+      const input = graphInput({
+        selectiveColor: hslBands({
           red: { hue: 50, saturation: 0, lightness: 0 },
-          orange: { hue: 0, saturation: 0, lightness: 0 },
-          yellow: { hue: 0, saturation: 0, lightness: 0 },
-          green: { hue: 0, saturation: 0, lightness: 0 },
-          aqua: { hue: 0, saturation: 0, lightness: 0 },
-          blue: { hue: 0, saturation: 0, lightness: 0 },
-          purple: { hue: 0, saturation: 0, lightness: 0 },
-          magenta: { hue: 0, saturation: 0, lightness: 0 },
-        },
-      }
+        }),
+      })
 
       const graph = resolveExportColorGraph(input)
       expect(graph.supported).toBe(true)

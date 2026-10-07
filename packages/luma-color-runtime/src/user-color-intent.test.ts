@@ -3,6 +3,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import { normalizeColorBalanceParams } from './color-balance'
 import type { ExportColorGraphInput } from './color-graph'
 import { resolveExportColorGraph } from './color-graph'
+import { generateIdentityLUT, toLUTData } from './cube-parser'
 import type { LUTColorProfile } from './registry'
 import { getLUTColorProfile } from './registry'
 import { normalizeSaturationParams } from './saturation'
@@ -64,13 +65,11 @@ import {
 const APP_ENTRY = { defaultIntensity: 0.7 } as const
 const CLI_ENTRY = { defaultIntensity: 1 } as const
 
-/** A legacy params record: view fields present, `selectiveColor` absent. */
-const LEGACY_PARAMS: ProcessingParams = {
-  intensity: 0.37,
-  viewMode: 'compare',
-  compareSplit: 0.25,
+/** A complete intent: a custom look over edited user color and HSL. */
+const EDITED: ColorGraphIntent = Object.freeze({
   styleKind: 'custom',
   builtinPreset: null,
+  intensity: 0.37,
   userExposureEv: 0.5,
   userContrast: 12,
   userHighlights: -20,
@@ -81,7 +80,11 @@ const LEGACY_PARAMS: ProcessingParams = {
   userTint: -7,
   userSaturation: 9,
   userVibrance: 15,
-}
+  selectiveColor: Object.freeze({
+    ...NEUTRAL_SELECTIVE_COLOR,
+    orange: Object.freeze({ hue: 6, saturation: -12, lightness: 4 }),
+  }),
+})
 
 function bands(
   overrides: Partial<Record<HSLBandId, HSLBandShift>> = {},
@@ -106,11 +109,7 @@ function shift(axis: HSLShiftAxis, value: number): Partial<HSLBandShift> {
 function displayLookLut(): LUTData {
   const profile = getLUTColorProfile('rec709-gamma24') as LUTColorProfile
   return {
-    size: 2,
-    data: new Float32Array(24),
-    domainMin: [0, 0, 0],
-    domainMax: [1, 1, 1],
-    inputProfile: 'display-srgb',
+    ...toLUTData(generateIdentityLUT(2)),
     profileResolution: { kind: 'confirmed', confidence: 'user', profile },
   }
 }
@@ -227,22 +226,12 @@ describe('field sets', () => {
     }
   })
 
-  it('covers every legacy params field except the view', () => {
-    const everyLegacyField = {
-      ...LEGACY_PARAMS,
-      viewMode: 'compare',
-      compareSplit: 0.25,
-      selectiveColor: bands(),
-    } satisfies Required<ProcessingParams>
-    const legacyColorFields = Object.keys(everyLegacyField).filter(
-      (key) => key !== 'viewMode' && key !== 'compareSplit',
-    )
-
+  it('names exactly the fields of each intent type', () => {
     expect([...COLOR_GRAPH_INTENT_KEYS].sort()).toEqual(
-      legacyColorFields.sort(),
+      Object.keys(EDITED).sort(),
     )
     expectTypeOf<keyof ColorGraphIntent>().toEqualTypeOf<
-      Exclude<keyof ProcessingParams, 'viewMode' | 'compareSplit'>
+      (typeof COLOR_GRAPH_INTENT_KEYS)[number]
     >()
     expectTypeOf<keyof LookSelection>().toEqualTypeOf<
       (typeof LOOK_SELECTION_KEYS)[number]
@@ -428,8 +417,9 @@ describe('normalize', () => {
 
   it('drops every field outside the intent', () => {
     const noisy = {
-      ...LEGACY_PARAMS,
-      selectiveColor: bands({ red: { hue: 10, saturation: 0, lightness: 0 } }),
+      ...EDITED,
+      viewMode: 'compare',
+      compareSplit: 0.25,
       rawRenderExposure: { ev: 1, multiplier: 2, source: 'user' },
       lut: displayLookLut(),
       geometry: { rotateDeg: 3 },
@@ -447,6 +437,7 @@ describe('normalize', () => {
     expect(Object.keys(pickColorGraphIntent(noisy))).toEqual([
       ...COLOR_GRAPH_INTENT_KEYS,
     ])
+    expect(graphIntent).toEqual(EDITED)
     expect(graphIntent).not.toHaveProperty('viewMode')
     expect(graphIntent).not.toHaveProperty('extra')
   })
@@ -456,9 +447,10 @@ describe('normalize', () => {
       undefined,
       {},
       messy,
-      LEGACY_PARAMS,
-      { ...LEGACY_PARAMS, intensity: Number.NaN },
-      { ...LEGACY_PARAMS, intensity: 1.6, userContrast: -900 },
+      EDITED,
+      { ...EDITED, selectiveColor: undefined },
+      { ...EDITED, intensity: Number.NaN },
+      { ...EDITED, intensity: 1.6, userContrast: -900 },
       { styleKind: 'builtin', builtinPreset: 'mono', intensity: 0.37 },
       loose<ColorGraphIntentInput>({ styleKind: 'sepia', builtinPreset: 'x' }),
     ]
@@ -596,8 +588,13 @@ describe('normalize', () => {
 })
 
 describe('pick', () => {
-  it('copies the intent out of legacy params without changing a value', () => {
-    const picked = pickColorGraphIntent(LEGACY_PARAMS)
+  it('copies the intent out of a larger record without changing a value', () => {
+    const record = {
+      ...EDITED,
+      rawRenderExposure: { ev: 1, multiplier: 2, source: 'user' },
+      lut: displayLookLut(),
+    }
+    const picked = pickColorGraphIntent(record)
 
     expect(picked).toEqual({
       styleKind: 'custom',
@@ -613,25 +610,23 @@ describe('pick', () => {
       userTint: -7,
       userSaturation: 9,
       userVibrance: 15,
-      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
+      selectiveColor: bands({
+        orange: { hue: 6, saturation: -12, lightness: 4 },
+      }),
     })
-    expect(picked.selectiveColor).toBe(NEUTRAL_SELECTIVE_COLOR)
-    expect(picked).not.toHaveProperty('viewMode')
-    expect(picked).not.toHaveProperty('compareSplit')
+    expect(Object.keys(picked)).toEqual([...COLOR_GRAPH_INTENT_KEYS])
+    expect(picked.selectiveColor).toBe(EDITED.selectiveColor)
+    expect(picked).not.toHaveProperty('rawRenderExposure')
+    expect(picked).not.toHaveProperty('lut')
 
-    const hsl = bands({ red: { hue: 20, saturation: -5, lightness: 3 } })
-    expect(
-      pickColorGraphIntent({ ...LEGACY_PARAMS, selectiveColor: hsl })
-        .selectiveColor,
-    ).toBe(hsl)
     // Picking copies; clamping is normalization's job.
     expect(
-      pickUserColorIntent({ ...LEGACY_PARAMS, userContrast: 400 }).userContrast,
+      pickUserColorIntent({ ...EDITED, userContrast: 400 }).userContrast,
     ).toBe(400)
-    expect(Object.keys(pickUserColorIntent(LEGACY_PARAMS))).toEqual([
+    expect(Object.keys(pickUserColorIntent(record))).toEqual([
       ...USER_COLOR_INTENT_KEYS,
     ])
-    expect(pickLookSelection(LEGACY_PARAMS)).toEqual({
+    expect(pickLookSelection(record)).toEqual({
       styleKind: 'custom',
       builtinPreset: null,
       intensity: 0.37,
@@ -640,12 +635,12 @@ describe('pick', () => {
 })
 
 describe('identity', () => {
-  const base = pickColorGraphIntent({
-    ...LEGACY_PARAMS,
+  const base: ColorGraphIntent = {
+    ...EDITED,
     selectiveColor: bands({
       green: { hue: -25, saturation: 10, lightness: 5 },
     }),
-  })
+  }
 
   it('ignores field order', () => {
     const reversed = Object.fromEntries(
@@ -688,47 +683,39 @@ describe('identity', () => {
       colorGraphIntentSignature(base),
     )
     expect(colorGraphIntentEquals(decorated, base)).toBe(true)
-    const processedView: ProcessingParams = {
-      ...LEGACY_PARAMS,
-      viewMode: 'processed',
-      compareSplit: 0,
-    }
-    const originalView: ProcessingParams = {
-      ...LEGACY_PARAMS,
-      viewMode: 'original',
-      compareSplit: 1,
-    }
-    expect(colorGraphIntentSignature(processedView)).toBe(
-      colorGraphIntentSignature(originalView),
-    )
+    const otherView = { ...decorated, viewMode: 'processed', compareSplit: 0 }
+    expect(colorGraphIntentEquals(otherView, decorated)).toBe(true)
   })
 
-  it('treats missing, partial-neutral and explicit-neutral HSL alike', () => {
-    const variants: ColorGraphIntentSource[] = [
-      LEGACY_PARAMS,
-      { ...LEGACY_PARAMS, selectiveColor: undefined },
-      {
-        ...LEGACY_PARAMS,
-        selectiveColor: loose<Record<HSLBandId, HSLBandShift>>({
-          red: { hue: 0 },
-        }),
-      },
-      {
-        ...LEGACY_PARAMS,
-        selectiveColor: loose<Record<HSLBandId, HSLBandShift>>({
-          blue: { saturation: Number.NaN },
-        }),
-      },
-      { ...LEGACY_PARAMS, selectiveColor: bands() },
-      { ...LEGACY_PARAMS, selectiveColor: NEUTRAL_SELECTIVE_COLOR },
-    ]
-    const expected = colorGraphIntentSignature(variants[0])
-
-    for (const variant of variants) {
-      expect(colorGraphIntentSignature(variant)).toBe(expected)
-      expect(colorGraphIntentEquals(variant, LEGACY_PARAMS)).toBe(true)
-      expect(userColorIntentEquals(variant, LEGACY_PARAMS)).toBe(true)
+  it('shares one identity for every spelling of neutral HSL', () => {
+    const neutral: ColorGraphIntent = {
+      ...EDITED,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     }
+    const explicit: ColorGraphIntent = { ...EDITED, selectiveColor: bands() }
+    // HSL as it may arrive, before normalization fills it in.
+    const inputs: ColorGraphIntentInput[] = [
+      { ...EDITED, selectiveColor: undefined },
+      { ...EDITED, selectiveColor: null },
+      { ...EDITED, selectiveColor: {} },
+      { ...EDITED, selectiveColor: { red: { hue: 0 } } },
+      { ...EDITED, selectiveColor: { blue: { saturation: Number.NaN } } },
+      { ...EDITED, selectiveColor: { green: { lightness: -0 } } },
+    ]
+    const expected = colorGraphIntentSignature(neutral)
+
+    expect(colorGraphIntentSignature(explicit)).toBe(expected)
+    expect(colorGraphIntentEquals(explicit, neutral)).toBe(true)
+    expect(userColorIntentEquals(explicit, neutral)).toBe(true)
+    for (const input of inputs) {
+      const normalized = normalizeColorGraphIntent(input, APP_ENTRY)
+      expect(isSelectiveColorNeutral(normalized.selectiveColor)).toBe(true)
+      expect(colorGraphIntentSignature(normalized)).toBe(expected)
+      expect(
+        userColorIntentEquals(normalizeUserColorIntent(input), neutral),
+      ).toBe(true)
+    }
+    expect(colorGraphIntentEquals(EDITED, neutral)).toBe(false)
   })
 
   it('changes with any continuous look strength', () => {
@@ -833,12 +820,12 @@ describe('identity', () => {
   })
 
   it('agrees with normalization for any intent inside the bounds', () => {
-    const inputs: ColorGraphIntentSource[] = [
-      LEGACY_PARAMS,
+    const inputs: ColorGraphIntent[] = [
+      EDITED,
       base,
       { ...base, intensity: 0 },
       { ...base, styleKind: 'builtin', builtinPreset: 'cinematic' },
-      { ...LEGACY_PARAMS, userSaturation: 250, userWhites: Number.NaN },
+      { ...EDITED, userSaturation: 250, userWhites: Number.NaN },
     ]
     for (const input of inputs) {
       expect(
@@ -851,7 +838,69 @@ describe('identity', () => {
   })
 })
 
+describe('retained built-in presets', () => {
+  it('keep a built-in look a valid selection that export still refuses', () => {
+    for (const builtinPreset of BUILTIN_STYLE_PRESETS) {
+      const builtin = normalizeColorGraphIntent(
+        { ...EDITED, styleKind: 'builtin', builtinPreset },
+        APP_ENTRY,
+      )
+
+      expect(builtin).toEqual({
+        ...EDITED,
+        styleKind: 'builtin',
+        builtinPreset,
+      })
+      expect(resolveExportColorGraph({ ...builtin, lut: null })).toEqual({
+        supported: false,
+        reason: 'unsupported-pipeline',
+        message:
+          'Built-in styles are not supported by full-resolution JPEG export.',
+        steps: [],
+      })
+    }
+  })
+})
+
 describe('compatibility', () => {
+  /** A legacy params record: view fields present, `selectiveColor` absent. */
+  const LEGACY_PARAMS: ProcessingParams = {
+    intensity: 0.37,
+    viewMode: 'compare',
+    compareSplit: 0.25,
+    styleKind: 'custom',
+    builtinPreset: null,
+    userExposureEv: 0.5,
+    userContrast: 12,
+    userHighlights: -20,
+    userShadows: 30,
+    userWhites: 4,
+    userBlacks: -6,
+    userTemperature: 18,
+    userTint: -7,
+    userSaturation: 9,
+    userVibrance: 15,
+  }
+
+  it('covers every legacy params field except the view', () => {
+    const everyLegacyField = {
+      ...LEGACY_PARAMS,
+      viewMode: 'compare',
+      compareSplit: 0.25,
+      selectiveColor: bands(),
+    } satisfies Required<ProcessingParams>
+    const legacyColorFields = Object.keys(everyLegacyField).filter(
+      (key) => key !== 'viewMode' && key !== 'compareSplit',
+    )
+
+    expect([...COLOR_GRAPH_INTENT_KEYS].sort()).toEqual(
+      legacyColorFields.sort(),
+    )
+    expectTypeOf<keyof ColorGraphIntent>().toEqualTypeOf<
+      Exclude<keyof ProcessingParams, 'viewMode' | 'compareSplit'>
+    >()
+  })
+
   it('requires every field on the strict intents', () => {
     const { selectiveColor: _omitted, ...withoutHsl } =
       NEUTRAL_USER_COLOR_INTENT
@@ -868,6 +917,38 @@ describe('compatibility', () => {
     expectTypeOf<LookSelection['builtinPreset']>().toEqualTypeOf<
       ProcessingParams['builtinPreset']
     >()
+  })
+
+  it('picks and identifies legacy params with missing HSL as neutral', () => {
+    const picked = pickColorGraphIntent(LEGACY_PARAMS)
+
+    expect(picked).toEqual({
+      ...EDITED,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
+    })
+    expect(picked.selectiveColor).toBe(NEUTRAL_SELECTIVE_COLOR)
+    expect(picked).not.toHaveProperty('viewMode')
+    expect(picked).not.toHaveProperty('compareSplit')
+    expect(pickUserColorIntent(LEGACY_PARAMS).selectiveColor).toBe(
+      NEUTRAL_SELECTIVE_COLOR,
+    )
+
+    const variants: ColorGraphIntentSource[] = [
+      LEGACY_PARAMS,
+      { ...LEGACY_PARAMS, selectiveColor: undefined },
+      {
+        ...LEGACY_PARAMS,
+        selectiveColor: loose<Record<HSLBandId, HSLBandShift>>({
+          red: { hue: 0 },
+        }),
+      },
+      { ...LEGACY_PARAMS, selectiveColor: bands() },
+    ]
+    const neutral = colorGraphIntentSignature(picked)
+    for (const variant of variants) {
+      expect(colorGraphIntentSignature(variant)).toBe(neutral)
+      expect(userColorIntentEquals(variant, picked)).toBe(true)
+    }
   })
 
   it('keeps legacy params without selectiveColor valid graph input', () => {
@@ -927,6 +1008,19 @@ describe('compatibility', () => {
     )
     expect(colorGraphIntentEquals(noViewNoHsl, LEGACY_PARAMS)).toBe(true)
     expect(colorGraphIntentEquals(fullLegacy, LEGACY_PARAMS)).toBe(false)
+    const processedView: ProcessingParams = {
+      ...LEGACY_PARAMS,
+      viewMode: 'processed',
+      compareSplit: 0,
+    }
+    const originalView: ProcessingParams = {
+      ...LEGACY_PARAMS,
+      viewMode: 'original',
+      compareSplit: 1,
+    }
+    expect(colorGraphIntentSignature(processedView)).toBe(
+      colorGraphIntentSignature(originalView),
+    )
     expect(resolveExportColorGraph({ ...noView, lut })).toEqual(
       resolveExportColorGraph({ ...LEGACY_PARAMS, lut }),
     )
@@ -942,25 +1036,5 @@ describe('compatibility', () => {
     expectTypeOf<ProcessingParams['selectiveColor']>().toEqualTypeOf<
       UserColorIntent['selectiveColor'] | undefined
     >()
-  })
-
-  it('keeps built-in looks a valid selection that export still refuses', () => {
-    const builtin = normalizeColorGraphIntent(
-      { ...LEGACY_PARAMS, styleKind: 'builtin', builtinPreset: 'film-soft' },
-      APP_ENTRY,
-    )
-
-    expect(builtin).toMatchObject({
-      styleKind: 'builtin',
-      builtinPreset: 'film-soft',
-      intensity: 0.37,
-    })
-    expect(resolveExportColorGraph({ ...builtin, lut: null })).toEqual({
-      supported: false,
-      reason: 'unsupported-pipeline',
-      message:
-        'Built-in styles are not supported by full-resolution JPEG export.',
-      steps: [],
-    })
   })
 })

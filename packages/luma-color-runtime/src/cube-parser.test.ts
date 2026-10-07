@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { resolveExportColorGraph } from './color-graph'
 import { parseCubeLUT, toLUTData, validateLUT } from './cube-parser'
 import type { LUTColorProfile } from './registry'
 import { getLUTColorProfile } from './registry'
+import { NEUTRAL_USER_COLOR_INTENT } from './user-color-intent'
 
 const V_LOG_TO_REC709_METADATA = [
   'LUMAFORGE_INPUT_PROFILE=panasonic-vgamut-vlog',
@@ -368,7 +370,6 @@ describe('parseCubeLUT profile metadata', () => {
         outputRange: 'full',
       },
     })
-    expect(lut.inputProfile).toBe('v-log')
     expect(lookupStoredProfile).not.toHaveBeenCalled()
   })
 
@@ -385,16 +386,14 @@ describe('parseCubeLUT profile metadata', () => {
 
     expect(lut.data.length).toBe(24)
     expect(lut.profileResolution.kind).not.toBe('confirmed')
-    expect(lut.inputProfile).toBe('display-srgb')
   })
 
-  it('resolves an unmarked cube as unknown with the display-sRGB compat profile', () => {
+  it('resolves an unmarked cube as unknown', () => {
     const lut = parseCubeLUT(cubeText({ title: 'Client Look' }), {
       sourceName: 'client-look.cube',
     })
 
     expect(lut.profileResolution).toEqual({ kind: 'unknown' })
-    expect(lut.inputProfile).toBe('display-srgb')
   })
 
   it('looks up a stored contract by the content fingerprint', () => {
@@ -424,7 +423,6 @@ describe('parseCubeLUT profile metadata', () => {
         expect.objectContaining({ id: 'sony-sgamut3cine-slog3' }),
       ]),
     })
-    expect(lut.inputProfile).toBe('display-srgb')
   })
 })
 
@@ -440,17 +438,69 @@ describe('toLUTData', () => {
     )
     const data = toLUTData(lut)
 
-    expect(data).toEqual({
+    expect(data).toMatchObject({
       size: 2,
       data: lut.data,
       domainMin: [0, 0, 0],
       domainMax: [2, 2, 2],
       title: 'Projected',
-      inputProfile: 'v-log',
       profileResolution: lut.profileResolution,
     })
     expect(data.data).toBe(lut.data)
     expect(data).not.toHaveProperty('comments')
     expect(data).not.toHaveProperty('fingerprint')
+  })
+})
+
+describe('binary input projection', () => {
+  it('derives v-log only from a confirmed V-Log contract', () => {
+    const projections = [
+      parseCubeLUT(cubeText({ comments: V_LOG_TO_REC709_METADATA })),
+      parseCubeLUT(
+        cubeText({
+          comments: [
+            'LUMAFORGE_INPUT_PROFILE=panasonic-vgamut-vlog',
+            'LUMAFORGE_ROLE=display-look',
+          ],
+        }),
+      ),
+      parseCubeLUT(cubeText({ title: 'Client Look' })),
+      parseCubeLUT(cubeText({ title: 'Generated' }), {
+        sourceName: 'SLog3_SGamut3Cine_to_Rec709.cube',
+      }),
+    ].map((lut) => [lut.inputProfile, toLUTData(lut).inputProfile])
+
+    expect(projections).toEqual([
+      ['v-log', 'v-log'],
+      ['display-srgb', 'display-srgb'],
+      ['display-srgb', 'display-srgb'],
+      ['display-srgb', 'display-srgb'],
+    ])
+  })
+
+  it('carries nothing the export graph reads', () => {
+    const lut = toLUTData(
+      parseCubeLUT(cubeText({ comments: V_LOG_TO_REC709_METADATA })),
+    )
+    const intent = {
+      ...NEUTRAL_USER_COLOR_INTENT,
+      styleKind: 'custom',
+      builtinPreset: null,
+      intensity: 1,
+    } as const
+    const graph = resolveExportColorGraph({ ...intent, lut })
+
+    expect(graph.supported).toBe(true)
+    for (const inputProfile of ['display-srgb', 'v-log'] as const) {
+      expect(
+        resolveExportColorGraph({ ...intent, lut: { ...lut, inputProfile } }),
+      ).toEqual(graph)
+      expect(
+        resolveExportColorGraph({
+          ...intent,
+          lut: { ...lut, inputProfile, profileResolution: { kind: 'unknown' } },
+        }),
+      ).toMatchObject({ supported: false, reason: 'unsupported-pipeline' })
+    }
   })
 })

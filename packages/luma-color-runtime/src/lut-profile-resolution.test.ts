@@ -281,7 +281,7 @@ describe('lUT explicit profile labels', () => {
   })
 })
 
-describe('lUT compat input profile', () => {
+describe('binary input projection', () => {
   it('maps only confirmed V-Log contracts to the v-log compat profile', () => {
     expect(
       toCompatInputProfile(
