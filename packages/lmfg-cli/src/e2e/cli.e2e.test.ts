@@ -683,7 +683,7 @@ describeWithFixture('lmfg agent loop', () => {
     expect(again.envelope.error).toMatchObject({ code: 'args.invalid' })
   }, 120_000)
 
-  it('render replay reports reproduced: false when a valid manifest records different output bytes', async () => {
+  it('render replay publishes nothing when a valid manifest records different output bytes', async () => {
     const exportManifest = join(
       cwd,
       '.lmfg',
@@ -713,7 +713,25 @@ describeWithFixture('lmfg agent loop', () => {
       'foreign',
     )
     expect(replayed.code).toBe(8)
-    expect(replayed.envelope.error).toMatchObject({ code: 'replay.mismatch' })
+    expect(replayed.envelope.error).toMatchObject({
+      code: 'replay.mismatch',
+      details: {
+        stage: 'output',
+        published: false,
+        expected_sha256: 'f'.repeat(64),
+        actual_sha256: original.output.sha256,
+      },
+    })
+    const foreignReplay = join(
+      cwd,
+      '.lmfg',
+      'sessions',
+      sessionId,
+      'replays',
+      'foreign',
+    )
+    expect(existsSync(join(foreignReplay, 'output.jpg'))).toBe(false)
+    expect(existsSync(join(foreignReplay, 'manifest.json'))).toBe(false)
 
     const traversal = await cli.run(
       'render',

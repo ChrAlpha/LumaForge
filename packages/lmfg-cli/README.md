@@ -217,7 +217,9 @@ decode the same file to different pixels, so old manifests replay only on the
 build that rendered them (pass `--memory-profile` to match the recorded
 variant). It exits 6 when the source or LUT bytes differ from the recorded
 hashes, and reports `reproduced: true` only when the new output SHA-256 equals
-the recorded one. Output lands in `replays/<first 12 hex of the manifest
+the recorded one. A replay that does not reproduce the recorded dimensions and
+SHA-256 publishes nothing (exit 8, `replay.mismatch`, with both hashes in the
+error details), and an existing replay at its path keeps its bytes. Output lands in `replays/<first 12 hex of the manifest
 sha256>/` (or `--name <basename>`); an existing replay is not overwritten
 without `--yes`. The replay writes its own manifest with
 `parent_manifest_sha256` pointing at the replayed manifest.

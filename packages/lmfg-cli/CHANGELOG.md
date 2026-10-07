@@ -8,6 +8,24 @@ follows Keep a Changelog; versions follow semver.
 Requires `@lumaforge/luma-raw-runtime` 0.1.2 and
 `@lumaforge/luma-native-artifacts` 0.0.4; publish those packages first.
 
+### Breaking
+
+- `render replay` publishes nothing when the replay does not reproduce the
+  manifest. Before, a replay whose output SHA-256 differed from the recorded
+  one still wrote `output.jpg` and a replay manifest and then failed with
+  `replay.mismatch`, so a refused replay left behind artifacts the recorded
+  manifest never proved (and, with `--yes`, replaced an earlier replay with
+  them). Now the delivered frame and the SHA-256 are checked before anything
+  is written, for preview, candidate, and export replays alike: a mismatch
+  discards the provisional export, leaves any existing JPEG and manifest at
+  the replay path byte for byte, and still fails with `replay.mismatch`
+  (exit 8). The error details keep `stage`, `expected_sha256`,
+  `actual_sha256`, and the expected and actual dimensions, add
+  `published: false` (and `discard_error` when the provisional file could not
+  be removed), and no longer carry the `output` or `manifest_uri` of
+  artifacts that were not delivered. A successful replay is unchanged and
+  always reports `reproduced: true`.
+
 ### Added
 
 - `render candidate|sweep --concurrency <n|auto>` renders candidates on

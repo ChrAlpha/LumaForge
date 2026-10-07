@@ -1,6 +1,14 @@
 // @vitest-environment node
+import { Buffer } from 'node:buffer'
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -40,10 +48,22 @@ import {
   toManifestRenderParams,
 } from './color-graph'
 import { runFullResolutionExport } from './export'
-import { buildRenderManifest, requireVerifiedManifest } from './manifest'
+import {
+  buildRenderManifest,
+  percentToQuality,
+  requireVerifiedManifest,
+} from './manifest'
 import { renderPreview } from './preview'
 import type { ReplayPlan } from './replay'
 import { prepareReplay, replayKey, runReplay } from './replay'
+
+vi.mock('./export', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./export')>()
+  return {
+    ...actual,
+    runFullResolutionExport: vi.fn(actual.runFullResolutionExport),
+  }
+})
 
 let dir: string
 beforeEach(async () => {
@@ -73,7 +93,11 @@ function fakeSource(sha256: string) {
 
 function manifestFor(
   params = parseRenderParams({ contrast: 5 }),
-  options: { kind?: RenderManifestKind; environment?: RenderEnvironment } = {},
+  options: {
+    kind?: RenderManifestKind
+    environment?: RenderEnvironment
+    outputSha256?: string
+  } = {},
 ) {
   return buildRenderManifest({
     kind: options.kind ?? 'preview',
@@ -99,7 +123,7 @@ function manifestFor(
       height: 2,
       quality: 85,
       filename: 'p.jpg',
-      sha256: 'b'.repeat(64),
+      sha256: options.outputSha256 ?? 'b'.repeat(64),
     },
     parentManifestSha256: null,
   })
@@ -185,6 +209,26 @@ function geometryManifestFor(options: GeometryManifestOptions = {}) {
     },
     parent_manifest_sha256: null,
   })
+}
+
+/** Entries a replay directory holds; a refused replay leaves no temp file behind. */
+async function entriesOf(path: string): Promise<string[]> {
+  try {
+    return (await readdir(path)).sort()
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  }
+}
+
+/** Writes an earlier replay at the destination, as `--yes` lets a replay overwrite. */
+async function seedEarlierReplay(outputPath: string, manifestPath: string) {
+  const jpeg = Buffer.from('earlier replay jpeg bytes')
+  const manifest = '{"earlier":"replay manifest"}\n'
+  await mkdir(join(outputPath, '..'), { recursive: true })
+  await writeFile(outputPath, jpeg)
+  await writeFile(manifestPath, manifest)
+  return { jpeg, manifest }
 }
 
 function prepare(manifest: RenderManifest) {
@@ -942,7 +986,150 @@ describe('runReplay with a geometry', () => {
     expect(written.parent_manifest_sha256).toBe(manifest.manifest_sha256)
   })
 
-  it('reports an output hash it did not reproduce and keeps the artifacts', async () => {
+  // A replay that does not reproduce the recorded bytes is refused before
+  // anything is published: its output is not the manifest's output, so
+  // writing it (or a manifest describing it) under the replay name would
+  // hand out an artifact the recorded manifest never proved.
+  it('refuses an output hash it did not reproduce and publishes nothing', async () => {
+    const manifest = geometryManifestFor({ source: decoded })
+    const actualSha256 = await exportedSha256()
+    expect(actualSha256).not.toBe(manifest.output.sha256)
+    const { runtime } = fakeRuntime()
+    const { outcome, outputPath, manifestOutputPath } = await replay(
+      manifest,
+      runtime,
+    )
+    const error = await outcome.catch((caught: unknown) => caught)
+    expect(error).toMatchObject({
+      code: 'replay.mismatch',
+      exitCode: 8,
+      details: {
+        stage: 'output',
+        kind: 'export',
+        reproduced: false,
+        published: false,
+        expected_sha256: 'b'.repeat(64),
+        actual_sha256: actualSha256,
+        expected: manifest.output.dimensions,
+        actual: manifest.output.dimensions,
+        parent_manifest_sha256: manifest.manifest_sha256,
+      },
+    })
+    const details = (error as { details: Record<string, unknown> }).details
+    expect(details).not.toHaveProperty('output')
+    expect(details).not.toHaveProperty('manifest_uri')
+    expect(details).not.toHaveProperty('discard_error')
+    expect(await fileExists(outputPath)).toBe(false)
+    expect(await fileExists(manifestOutputPath)).toBe(false)
+    expect(await entriesOf(join(dir, 'replay'))).toEqual([])
+  })
+
+  it('refuses an export without a geometry whose hash differs and publishes nothing', async () => {
+    const { runtime: firstRuntime } = fakeRuntime()
+    const first = await runFullResolutionExport({
+      runtime: firstRuntime,
+      source: fakeSource('a'.repeat(64)),
+      params: parseRenderParams({ contrast: 5 }),
+      lut: null,
+      exposure,
+      quality: 92,
+      outputPath: join(dir, 'first', 'output.jpg'),
+      preferredRows: 256,
+    })
+    await first.discard()
+    const manifest = geometryManifestFor({ source: decoded })
+    const { geometry: _geometry, ...renderParams } = manifest.render_params
+    const plain = createRenderManifest({
+      kind: 'export',
+      source_raw: manifest.source_raw,
+      lut: null,
+      graph: requireSupportedGraph(
+        buildColorGraph(parseRenderParams({ contrast: 5 }), null, exposure),
+      ),
+      render_params: renderParams,
+      policy: manifest.policy,
+      environment,
+      output: {
+        ...decoded,
+        quality: 92,
+        filename: 'a_fullres.jpg',
+        sha256: 'c'.repeat(64),
+      },
+      parent_manifest_sha256: null,
+    })
+    const { runtime } = fakeRuntime()
+    const { outcome, outputPath, manifestOutputPath } = await replay(
+      plain,
+      runtime,
+    )
+    await expect(outcome).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      exitCode: 8,
+      details: {
+        stage: 'output',
+        published: false,
+        expected_sha256: 'c'.repeat(64),
+        actual_sha256: first.sha256,
+        actual: decoded,
+      },
+    })
+    expect(await fileExists(outputPath)).toBe(false)
+    expect(await fileExists(manifestOutputPath)).toBe(false)
+    expect(await entriesOf(join(dir, 'replay'))).toEqual([])
+  })
+
+  it('leaves an earlier replay byte for byte when an overwrite does not reproduce', async () => {
+    const manifest = geometryManifestFor({ source: decoded })
+    const outputPath = join(dir, 'replay', 'output.jpg')
+    const manifestOutputPath = join(dir, 'replay', 'manifest.json')
+    const earlier = await seedEarlierReplay(outputPath, manifestOutputPath)
+    const { runtime } = fakeRuntime()
+    const { outcome } = await replay(manifest, runtime)
+    await expect(outcome).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      details: { stage: 'output', published: false },
+    })
+    expect(await readFile(outputPath)).toEqual(earlier.jpeg)
+    expect(await readFile(manifestOutputPath, 'utf8')).toBe(earlier.manifest)
+    expect(await entriesOf(join(dir, 'replay'))).toEqual([
+      'manifest.json',
+      'output.jpg',
+    ])
+  })
+
+  it('replaces an earlier replay when the overwrite reproduces the output', async () => {
+    const manifest = geometryManifestFor({
+      source: decoded,
+      outputSha256: await exportedSha256(),
+    })
+    const outputPath = join(dir, 'replay', 'output.jpg')
+    const manifestOutputPath = join(dir, 'replay', 'manifest.json')
+    const earlier = await seedEarlierReplay(outputPath, manifestOutputPath)
+    const { runtime } = fakeRuntime()
+    const { outcome } = await replay(manifest, runtime)
+    const result = await outcome
+    expect(result.reproduced).toBe(true)
+    expect(await readFile(outputPath)).not.toEqual(earlier.jpeg)
+    const { manifest: written } = await requireVerifiedManifest(
+      manifestOutputPath,
+      environment,
+    )
+    expect(written.output.sha256).toBe(manifest.output.sha256)
+    expect(written.parent_manifest_sha256).toBe(manifest.manifest_sha256)
+  })
+
+  it('keeps the output mismatch when the provisional export cannot be discarded', async () => {
+    const actual = await vi.importActual<typeof import('./export')>('./export')
+    vi.mocked(runFullResolutionExport).mockImplementationOnce(async (input) => {
+      const exported = await actual.runFullResolutionExport(input)
+      return {
+        ...exported,
+        discard: async () => {
+          await exported.discard()
+          throw new Error('disk detached')
+        },
+      }
+    })
     const manifest = geometryManifestFor({ source: decoded })
     const { runtime } = fakeRuntime()
     const { outcome, outputPath, manifestOutputPath } = await replay(
@@ -954,19 +1141,13 @@ describe('runReplay with a geometry', () => {
       exitCode: 8,
       details: {
         stage: 'output',
-        reproduced: false,
+        published: false,
         expected_sha256: 'b'.repeat(64),
-        output: manifest.output.dimensions,
+        discard_error: 'disk detached',
       },
     })
-    expect(await fileExists(outputPath)).toBe(true)
-    const { manifest: written } = await requireVerifiedManifest(
-      manifestOutputPath,
-      environment,
-    )
-    expect(written.render_params.geometry).toEqual(
-      manifest.render_params.geometry,
-    )
+    expect(await fileExists(outputPath)).toBe(false)
+    expect(await fileExists(manifestOutputPath)).toBe(false)
   })
 
   it('refuses a decoded frame that differs from the recorded source before reading a window', async () => {
@@ -1059,6 +1240,147 @@ describe('runReplay with a geometry', () => {
     expect(await fileExists(outputPath)).toBe(false)
     expect(await fileExists(manifestOutputPath)).toBe(false)
   })
+})
+
+describe('runReplay of a preview or candidate', () => {
+  let jpegRuntime: LmfgRuntime
+  beforeEach(() => {
+    jpegRuntime = createLmfgRuntime({ memoryProfile: 'desktop' })
+  })
+  afterEach(() => {
+    jpegRuntime.dispose()
+  })
+
+  /** A RAW runtime that quick-decodes a 4x2 ramp; the JPEG encoder is real. */
+  function previewRuntime(): LmfgRuntime {
+    const frame = { width: 4, height: 2 }
+    const data = new Uint16Array(frame.width * frame.height * 3)
+    for (let index = 0; index < data.length; index += 1) {
+      data[index] = (index * 2531) % 60000
+    }
+    const session = {
+      probe: { width: frame.width, height: frame.height },
+      probeExportCapability: async () => frame,
+      decodeQuick: async () => ({ data, ...frame }),
+      dispose: () => undefined,
+    }
+    return {
+      memoryProfile: 'desktop',
+      raw: async () =>
+        ({ openSession: async () => session }) as unknown as Awaited<
+          ReturnType<LmfgRuntime['raw']>
+        >,
+      jpeg: () => jpegRuntime.jpeg(),
+      dispose: () => undefined,
+    }
+  }
+
+  /** The SHA-256 a first render of the recorded params delivers. */
+  async function renderedSha256() {
+    const rendered = await renderPreview({
+      runtime: previewRuntime(),
+      source: fakeSource('a'.repeat(64)),
+      params: parseRenderParams({ contrast: 5 }),
+      lut: null,
+      maxPixels: 8,
+      quality: percentToQuality(85),
+      exposure,
+    })
+    return rendered.rendered.sha256
+  }
+
+  async function replay(manifest: RenderManifest) {
+    const source = fakeSource('a'.repeat(64))
+    const plan = await prepareReplay({
+      manifest,
+      source,
+      workspaceRoot: dir,
+      cwd: dir,
+    })
+    const outputPath = join(dir, 'replay', 'output.jpg')
+    const manifestOutputPath = join(dir, 'replay', 'manifest.json')
+    const outcome = runReplay({
+      runtime: previewRuntime(),
+      plan,
+      source,
+      environment,
+      manifestPath: join(dir, 'm.json'),
+      sessionId: null,
+      outputPath,
+      manifestOutputPath,
+    })
+    return { outcome, outputPath, manifestOutputPath }
+  }
+
+  it.each(['preview', 'candidate'] as const)(
+    'refuses a %s whose hash differs and leaves an earlier replay as it was',
+    async (kind) => {
+      const actualSha256 = await renderedSha256()
+      const manifest = manifestFor(undefined, { kind })
+      expect(actualSha256).not.toBe(manifest.output.sha256)
+      const outputPath = join(dir, 'replay', 'output.jpg')
+      const manifestOutputPath = join(dir, 'replay', 'manifest.json')
+      const earlier = await seedEarlierReplay(outputPath, manifestOutputPath)
+      const { outcome } = await replay(manifest)
+      await expect(outcome).rejects.toMatchObject({
+        code: 'replay.mismatch',
+        exitCode: 8,
+        details: {
+          stage: 'output',
+          kind,
+          reproduced: false,
+          published: false,
+          expected_sha256: 'b'.repeat(64),
+          actual_sha256: actualSha256,
+          expected: { width: 4, height: 2 },
+          actual: { width: 4, height: 2 },
+        },
+      })
+      expect(await readFile(outputPath)).toEqual(earlier.jpeg)
+      expect(await readFile(manifestOutputPath, 'utf8')).toBe(earlier.manifest)
+      expect(await entriesOf(join(dir, 'replay'))).toEqual([
+        'manifest.json',
+        'output.jpg',
+      ])
+    },
+  )
+
+  it.each(['preview', 'candidate'] as const)(
+    'refuses a %s whose hash differs without creating a replay',
+    async (kind) => {
+      const { outcome, outputPath, manifestOutputPath } = await replay(
+        manifestFor(undefined, { kind }),
+      )
+      await expect(outcome).rejects.toMatchObject({
+        code: 'replay.mismatch',
+        details: { stage: 'output', published: false },
+      })
+      expect(await fileExists(outputPath)).toBe(false)
+      expect(await fileExists(manifestOutputPath)).toBe(false)
+      expect(await entriesOf(join(dir, 'replay'))).toEqual([])
+    },
+  )
+
+  it.each(['preview', 'candidate'] as const)(
+    'publishes a %s it reproduced',
+    async (kind) => {
+      const manifest = manifestFor(undefined, {
+        kind,
+        outputSha256: await renderedSha256(),
+      })
+      const { outcome, outputPath, manifestOutputPath } = await replay(manifest)
+      const result = await outcome
+      expect(result.reproduced).toBe(true)
+      expect(result.actual_sha256).toBe(manifest.output.sha256)
+      expect(await fileExists(outputPath)).toBe(true)
+      const { manifest: written } = await requireVerifiedManifest(
+        manifestOutputPath,
+        environment,
+      )
+      expect(written.kind).toBe(kind)
+      expect(written.output.sha256).toBe(manifest.output.sha256)
+    },
+  )
 })
 
 describe('runReplay environment gate', () => {

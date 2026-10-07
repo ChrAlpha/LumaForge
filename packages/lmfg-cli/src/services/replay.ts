@@ -435,6 +435,26 @@ export type ReplayRunInput = {
   }) => void
 }
 
+async function discardProvisional(
+  discard: (() => Promise<void>) | null,
+): Promise<string | null> {
+  if (!discard) return null
+  try {
+    await discard()
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
+}
+
+/**
+ * Replay publishes only what it reproduced: the delivered frame and the
+ * output SHA-256 must match the manifest before the JPEG or the replay
+ * manifest reaches its path. A mismatch discards the provisional export and
+ * writes nothing, so an earlier replay at the same path (one `--yes` lets
+ * this replay overwrite) keeps its bytes. A failed discard is reported beside
+ * the mismatch rather than in place of it.
+ */
 export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
   const { plan, manifest } = { plan: input.plan, manifest: input.plan.manifest }
   refuseUnsupportedGeometry(manifest)
@@ -495,43 +515,80 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
     Object.assign(timings, result.timings)
   }
 
-  const expectedDims = manifest.output.dimensions
-  if (width !== expectedDims.width || height !== expectedDims.height) {
-    await discard?.()
+  const refuse = async (
+    message: string,
+    details: Record<string, unknown>,
+  ): Promise<never> => {
+    const discardError = await discardProvisional(discard)
     throw new LmfgError('replay.mismatch', {
-      message: `Replay produced ${width}x${height} but the manifest recorded ${expectedDims.width}x${expectedDims.height}.`,
+      message,
       details: {
-        stage: 'dimensions',
-        expected: expectedDims,
-        actual: { width, height },
+        ...details,
+        published: false,
+        ...(discardError ? { discard_error: discardError } : {}),
       },
     })
   }
 
+  const expectedDims = dimensionsOf(manifest.output.dimensions)
+  const actualDims = { width, height }
+  if (!sameDimensions(actualDims, expectedDims)) {
+    await refuse(
+      `Replay produced ${width}x${height} but the manifest recorded ${expectedDims.width}x${expectedDims.height}; nothing was published.`,
+      { stage: 'dimensions', expected: expectedDims, actual: actualDims },
+    )
+  }
+  if (sha256 !== manifest.output.sha256) {
+    timings.total_ms = performance.now() - total
+    await refuse(
+      `Replay output sha256 ${sha256.slice(0, 12)}… differs from the manifest (${manifest.output.sha256.slice(0, 12)}…); nothing was published.`,
+      {
+        stage: 'output',
+        kind: manifest.kind,
+        reproduced: false,
+        expected_sha256: manifest.output.sha256,
+        actual_sha256: sha256,
+        fingerprint_match: plan.fingerprintMatch,
+        expected: expectedDims,
+        actual: { ...actualDims, byte_size: byteLength },
+        session_id: input.sessionId,
+        manifest_path: input.manifestPath,
+        parent_manifest_sha256: manifest.manifest_sha256,
+        timings_ms: timings,
+      },
+    )
+  }
+
   // The replay records the geometry it applied, so its manifest replays too.
-  const renderParams = toManifestRenderParams(plan.params, plan.exposure)
-  const geometry = recordedGeometry(exportFrame)
-  const replayManifest = createRenderManifest({
-    kind: manifest.kind,
-    source_raw: manifest.source_raw,
-    lut: plan.lut?.identity ?? null,
-    graph,
-    render_params: geometry ? { ...renderParams, geometry } : renderParams,
-    policy: manifest.policy,
-    environment: input.environment,
-    output: { width, height, quality, filename: 'output.jpg', sha256 },
-    parent_manifest_sha256: manifest.manifest_sha256,
-  })
-  if (publish) await publish()
-  else if (jpeg) await writeFileAtomic(input.outputPath, jpeg)
+  let replayManifest: RenderManifest
+  try {
+    const renderParams = toManifestRenderParams(plan.params, plan.exposure)
+    const geometry = recordedGeometry(exportFrame)
+    replayManifest = createRenderManifest({
+      kind: manifest.kind,
+      source_raw: manifest.source_raw,
+      lut: plan.lut?.identity ?? null,
+      graph,
+      render_params: geometry ? { ...renderParams, geometry } : renderParams,
+      policy: manifest.policy,
+      environment: input.environment,
+      output: { width, height, quality, filename: 'output.jpg', sha256 },
+      parent_manifest_sha256: manifest.manifest_sha256,
+    })
+    if (publish) await publish()
+    else if (jpeg) await writeFileAtomic(input.outputPath, jpeg)
+  } catch (error) {
+    await discardProvisional(discard)
+    throw error
+  }
   await writeJsonAtomic(input.manifestOutputPath, replayManifest)
   timings.total_ms = performance.now() - total
 
-  const result: ReplayResult = {
+  return {
     session_id: input.sessionId,
     manifest_path: input.manifestPath,
     kind: manifest.kind,
-    reproduced: sha256 === manifest.output.sha256,
+    reproduced: true,
     expected_sha256: manifest.output.sha256,
     actual_sha256: sha256,
     fingerprint_match: plan.fingerprintMatch,
@@ -549,11 +606,4 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
     parent_manifest_sha256: manifest.manifest_sha256,
     timings_ms: timings,
   }
-  if (!result.reproduced) {
-    throw new LmfgError('replay.mismatch', {
-      message: `Replay output sha256 ${sha256.slice(0, 12)}… differs from the manifest (${manifest.output.sha256.slice(0, 12)}…); the artifacts were kept for inspection.`,
-      details: { stage: 'output', ...result },
-    })
-  }
-  return result
 }
