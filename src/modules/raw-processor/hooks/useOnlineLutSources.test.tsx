@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 import { fetchJsonWithLimit } from '~/lib/profiles/fetch'
 
+import { getInitialOnlineLUTSourceResources } from '../services/look/online-lut-sources'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { useOnlineLutSources } from './useOnlineLutSources'
 
@@ -12,6 +13,17 @@ vi.mock('~/lib/profiles/fetch', async (importOriginal) => ({
   ...(await importOriginal<typeof import('~/lib/profiles/fetch')>()),
   fetchJsonWithLimit: vi.fn(),
 }))
+
+vi.mock('../services/look/online-lut-sources', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../services/look/online-lut-sources')>()
+  return {
+    ...actual,
+    getInitialOnlineLUTSourceResources: vi.fn(
+      actual.getInitialOnlineLUTSourceResources,
+    ),
+  }
+})
 
 const mockedFetchJson = vi.mocked(fetchJsonWithLimit)
 
@@ -1319,6 +1331,138 @@ describe('useOnlineLutSources', () => {
       expect(result.current.share.url).toBe(
         `/raw?luts=${encodeURIComponent(catalogUrl)}`,
       )
+    })
+
+    it('refreshes the listed default when its URL is added, without saving a copy', async () => {
+      const { requests } = setupDeferredFetchJson()
+      const { result } = renderHook(() =>
+        useOnlineLutSources({
+          search: '',
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        }),
+      )
+
+      act(() => {
+        result.current.setSourceUrlInput(defaultCatalogUrl)
+      })
+      await act(async () => {
+        const added = result.current.addSourceFromInput()
+        requests[0]?.resolve(catalogDocument())
+        await added
+      })
+
+      expect(requests).toHaveLength(1)
+      expect(result.current.state.resources).toEqual([
+        expect.objectContaining({
+          id: 'lumaforge-default-profiles',
+          isDefault: true,
+        }),
+      ])
+      expect(
+        JSON.parse(localStorage.getItem(sourcesStorageKey) ?? '{}').resources ??
+          [],
+      ).toEqual([])
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'ready',
+      })
+    })
+
+    it('requests one catalog for a default URL that is also saved and named by ?luts=', async () => {
+      // Storage written before the default URL was kept out of saved
+      // sources still lists a copy of it.
+      storeSource(defaultCatalogUrl)
+      const { requests } = setupDeferredFetchJson()
+      const { result } = renderHook(() =>
+        useOnlineLutSources({
+          search: `?luts=${encodeURIComponent(defaultCatalogUrl)}`,
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        }),
+      )
+
+      await waitFor(() => expect(requests.length).toBeGreaterThan(0))
+      act(() => {
+        result.current.activateCatalogs()
+      })
+      expect(requestsFor(requests, defaultCatalogUrl)).toHaveLength(1)
+
+      // Every response lands in the same act, before any effect runs.
+      await act(async () => {
+        for (const request of requests) request.resolve(catalogDocument())
+      })
+
+      expect(result.current.state.resources).toEqual([
+        expect.objectContaining({
+          id: 'lumaforge-default-profiles',
+          isDefault: true,
+        }),
+      ])
+      expect(result.current.state.entries).toEqual([
+        expect.objectContaining({ resourceId: 'lumaforge-default-profiles' }),
+      ])
+      expect(result.current.resourceActivation).toEqual({
+        'lumaforge-default-profiles': 'ready',
+      })
+      expect(result.current.catalogActivation).toBe('ready')
+
+      act(() => {
+        result.current.activateCatalogs()
+      })
+      expect(requests).toHaveLength(1)
+    })
+
+    it('keeps one request and a ready activation for two listed sources that share a URL', async () => {
+      vi.mocked(getInitialOnlineLUTSourceResources).mockReturnValueOnce([
+        {
+          id: 'lumaforge-default-profiles',
+          url: defaultCatalogUrl,
+          type: 'catalog',
+          label: 'LumaForge Profiles',
+          fromQuery: false,
+          isDefault: true,
+        },
+        {
+          id: 'stored-lut-source-1',
+          url: defaultCatalogUrl,
+          type: 'catalog',
+          label: 'Saved copy',
+          fromQuery: false,
+        },
+      ])
+      const { requests } = setupDeferredFetchJson()
+      const { result } = renderHook(() =>
+        useOnlineLutSources({
+          search: '',
+          pathname: '/raw',
+          loadOnlineLUT: createLoadOnlineLUT(),
+        }),
+      )
+
+      act(() => {
+        result.current.activateCatalogs()
+      })
+      expect(requests).toHaveLength(1)
+
+      // Every response lands in the same act, before any effect runs.
+      await act(async () => {
+        for (const request of requests) request.resolve(catalogDocument())
+      })
+
+      expect(result.current.state.resources).toHaveLength(1)
+      const [listed] = result.current.state.resources
+      expect(result.current.state.entries).toEqual([
+        expect.objectContaining({ resourceId: listed?.id }),
+      ])
+      expect(result.current.resourceActivation).toEqual({
+        [listed!.id]: 'ready',
+      })
+      expect(result.current.catalogActivation).toBe('ready')
+
+      act(() => {
+        result.current.activateCatalogs()
+      })
+      expect(requests).toHaveLength(1)
     })
 
     it('restarts activation after StrictMode cleanup aborts the first pass and ignores its late completion', async () => {

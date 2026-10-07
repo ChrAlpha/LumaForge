@@ -190,6 +190,22 @@ function writeStoredOnlineLUTSourceRegistry(
   }
 }
 
+function isDefaultSourceRemoved(
+  registry: StoredOnlineLUTSourceRegistry,
+  defaultUrl: string,
+): boolean {
+  return (
+    registry.removedDefaultUrls.includes(defaultUrl) ||
+    LEGACY_DEFAULT_LUT_SOURCE_URLS.some((legacyUrl) =>
+      registry.removedDefaultUrls.includes(legacyUrl),
+    )
+  )
+}
+
+function getDefaultSourceUrl(defaultSource: ProfileSourceResource): string {
+  return normalizeStoredUrl(defaultSource.url) ?? defaultSource.url
+}
+
 function toStoredResource(
   resource: ProfileSourceResource,
 ): StoredOnlineLUTSourceResource | null {
@@ -214,20 +230,20 @@ export function getInitialOnlineLUTSourceResources(
   const defaultSource =
     options.defaultSource ?? DEFAULT_LUMAFORGE_PROFILE_SOURCE
   const registry = readStoredOnlineLUTSourceRegistry(options.storage)
-  const defaultUrl = normalizeStoredUrl(defaultSource.url) ?? defaultSource.url
+  const defaultUrl = getDefaultSourceUrl(defaultSource)
   const resources: ProfileSourceResource[] = []
 
-  const removedDefault =
-    registry.removedDefaultUrls.includes(defaultUrl) ||
-    LEGACY_DEFAULT_LUT_SOURCE_URLS.some((legacyUrl) =>
-      registry.removedDefaultUrls.includes(legacyUrl),
-    )
+  const removedDefault = isDefaultSourceRemoved(registry, defaultUrl)
 
   if (!removedDefault) {
     resources.push({ ...defaultSource, url: defaultUrl })
   }
 
   for (const [index, resource] of registry.resources.entries()) {
+    // A URL is one source. While the default is listed, a saved copy of its
+    // URL is the default itself, not a second source.
+    if (!removedDefault && resource.url === defaultUrl) continue
+
     resources.push({
       id: `stored-lut-source-${index + 1}`,
       url: resource.url,
@@ -248,6 +264,14 @@ export function persistOnlineLUTSourceResource(
   if (!storedResource) return
 
   const registry = readStoredOnlineLUTSourceRegistry(options.storage)
+  const defaultUrl = getDefaultSourceUrl(DEFAULT_LUMAFORGE_PROFILE_SOURCE)
+  if (
+    storedResource.url === defaultUrl &&
+    !isDefaultSourceRemoved(registry, defaultUrl)
+  ) {
+    return
+  }
+
   const resources = registry.resources.filter(
     (item) => item.url !== storedResource.url,
   )

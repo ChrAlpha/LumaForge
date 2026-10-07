@@ -9,10 +9,13 @@ import type {
   OnlineLUTSourceState,
 } from './online-lut-sources'
 import {
+  DEFAULT_LUMAFORGE_PROFILE_SOURCE,
   findOnlineLUTSourceResourceByUrl,
+  getInitialOnlineLUTSourceResources,
   getOnlineLUTSourceResolutionActivation,
   getShareableOnlineLUTSourceResources,
   mergeOnlineLUTSourceResolution,
+  persistOnlineLUTSourceResource,
   removeOnlineLUTSourceResource,
   resolveOnlineLUTSourceEntry,
   resolveProfileSourceResource,
@@ -698,5 +701,102 @@ describe('online LUT catalog activation', () => {
     expect(
       findOnlineLUTSourceResourceByUrl([known], 'not a url'),
     ).toBeUndefined()
+  })
+})
+
+describe('online LUT source registry', () => {
+  function memoryStorage(initial?: unknown): Storage {
+    const items = new Map<string, string>()
+    if (initial !== undefined) {
+      items.set('lumaforge.raw.onlineLutSources.v1', JSON.stringify(initial))
+    }
+    return {
+      get length() {
+        return items.size
+      },
+      clear: () => items.clear(),
+      getItem: (key) => items.get(key) ?? null,
+      key: (index) => Array.from(items.keys())[index] ?? null,
+      removeItem: (key) => {
+        items.delete(key)
+      },
+      setItem: (key, value) => {
+        items.set(key, value)
+      },
+    }
+  }
+
+  function storedResources(storage: Storage) {
+    return (
+      JSON.parse(
+        storage.getItem('lumaforge.raw.onlineLutSources.v1') ?? '{}',
+      ) as { resources?: unknown[] }
+    ).resources
+  }
+
+  it('lists a saved copy of the default URL once, as the default', () => {
+    const storage = memoryStorage({
+      resources: [
+        {
+          url: 'https://LUMA-PROF.ichr.me/channels/stable/luts/catalog.json',
+          type: 'catalog',
+          label: 'Saved copy',
+        },
+        { url: catalogUrl, type: 'catalog', label: 'Saved catalog' },
+      ],
+      removedDefaultUrls: [],
+    })
+
+    expect(
+      getInitialOnlineLUTSourceResources({ storage }).map((item) => ({
+        id: item.id,
+        isDefault: item.isDefault ?? false,
+      })),
+    ).toEqual([
+      { id: 'lumaforge-default-profiles', isDefault: true },
+      { id: 'stored-lut-source-2', isDefault: false },
+    ])
+  })
+
+  it('keeps a saved source at the default URL while the default is removed', () => {
+    const storage = memoryStorage({
+      resources: [
+        {
+          url: DEFAULT_LUMAFORGE_PROFILE_SOURCE.url,
+          type: 'catalog',
+          label: 'Saved copy',
+        },
+      ],
+      removedDefaultUrls: [DEFAULT_LUMAFORGE_PROFILE_SOURCE.url],
+    })
+
+    expect(getInitialOnlineLUTSourceResources({ storage })).toEqual([
+      expect.objectContaining({
+        id: 'stored-lut-source-1',
+        url: DEFAULT_LUMAFORGE_PROFILE_SOURCE.url,
+        label: 'Saved copy',
+      }),
+    ])
+  })
+
+  it('saves a source at the default URL only while the default is removed', () => {
+    const copy = {
+      ...DEFAULT_LUMAFORGE_PROFILE_SOURCE,
+      id: 'lut-source-1',
+      isDefault: undefined,
+    }
+    const listed = memoryStorage()
+    const removed = memoryStorage({
+      resources: [],
+      removedDefaultUrls: [DEFAULT_LUMAFORGE_PROFILE_SOURCE.url],
+    })
+
+    persistOnlineLUTSourceResource(copy, { storage: listed })
+    persistOnlineLUTSourceResource(copy, { storage: removed })
+
+    expect(storedResources(listed) ?? []).toEqual([])
+    expect(storedResources(removed)).toEqual([
+      expect.objectContaining({ url: DEFAULT_LUMAFORGE_PROFILE_SOURCE.url }),
+    ])
   })
 })
