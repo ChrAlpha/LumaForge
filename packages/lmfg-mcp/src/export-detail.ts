@@ -2,13 +2,17 @@ import { Buffer } from 'node:buffer'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { link, lstat, mkdir, open, realpath, unlink } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { dirname, join } from 'node:path'
 
 import {
-  canonicalizeJson,
-  verifyManifestSha256,
-} from '@lumaforge/render-engine'
+  resolveWorkspaceRoot,
+  SessionRecordSchema,
+  toFileUri,
+  workspacePaths,
+} from '@lumaforge/lmfg-cli'
+import type { RenderManifest } from '@lumaforge/render-engine'
+import { canonicalizeJson } from '@lumaforge/render-engine'
+import { parseRenderManifest } from '@lumaforge/render-engine/manifest'
 import { z } from 'zod'
 
 export const EXPORT_DETAIL_LIMITS = {
@@ -18,11 +22,6 @@ export const EXPORT_DETAIL_LIMITS = {
   max_output_bytes: 8 * 1024 * 1024,
 }
 const identifier = z.string().regex(/^[a-z0-9][\w.-]{0,95}$/i)
-const sha256 = z.string().regex(/^[a-f0-9]{64}$/)
-const dimensions = z.object({
-  width: z.int().positive(),
-  height: z.int().positive(),
-})
 const regionSchema = z
   .strictObject({
     x: z.int().nonnegative(),
@@ -54,30 +53,6 @@ export const ExportDetailInputSchema = z.strictObject({
 export type ExportDetailInput = z.infer<typeof ExportDetailInputSchema>
 type DecoderLoader = () => Promise<{ default: typeof import('sharp') }>
 
-const SessionSchema = z.object({
-  schema: z.literal('lmfg.session.v1'),
-  id: identifier,
-  source: z.object({ sha256, byte_size: z.int().positive() }),
-})
-const ManifestSchema = z.object({
-  manifest_version: z.literal(1),
-  kind: z.literal('export'),
-  manifest_sha256: sha256,
-  parent_manifest_sha256: sha256.nullable(),
-  source_raw: z.object({
-    sha256,
-    byte_size: z.int().positive(),
-    decoded_dimensions: dimensions,
-  }),
-  policy: z.object({ kind: z.literal('export-full') }),
-  output: z.object({
-    format: z.literal('jpeg'),
-    color_space: z.literal('srgb'),
-    filename: z.string(),
-    sha256,
-    dimensions,
-  }),
-})
 const digest = (bytes: Buffer) =>
   createHash('sha256').update(bytes).digest('hex')
 
@@ -130,6 +105,27 @@ async function readMetadata(path: string): Promise<unknown> {
   return JSON.parse((await readCaptured(path, 1024 * 1024)).toString('utf8'))
 }
 
+async function readExportManifest(path: string): Promise<RenderManifest> {
+  const parsed = parseRenderManifest(await readMetadata(path))
+  if (!parsed.ok) {
+    if (parsed.issues.some((issue) => issue.path === 'manifest_sha256'))
+      throw new Error(
+        'Export manifest canonical hash does not match its full content.',
+      )
+    throw new Error(
+      `Export manifest is not a valid render manifest: ${parsed.issues
+        .map((issue) => `${issue.path} ${issue.message}`)
+        .join(' ')}`,
+    )
+  }
+  const { manifest } = parsed
+  if (manifest.kind !== 'export' || manifest.policy.kind !== 'export-full')
+    throw new Error(
+      'Export detail requires a full-resolution export manifest (kind export, policy export-full).',
+    )
+  return manifest
+}
+
 async function publish(path: string, bytes: Buffer): Promise<void> {
   await assertCanonical(dirname(path))
   const temporary = `${path}.${randomUUID()}.tmp`
@@ -173,22 +169,17 @@ export async function createExportDetail(
   loadDecoder: DecoderLoader = () => import('sharp'),
 ) {
   const input = ExportDetailInputSchema.parse(args)
-  const root = resolve(cwd, input.workspace ?? '.lmfg')
+  const root = resolveWorkspaceRoot(cwd, input.workspace)
   await assertCanonical(root)
-  const sessionDir = join(root, 'sessions', input.session)
-  const session = SessionSchema.parse(
-    await readMetadata(join(sessionDir, 'session.json')),
+  const session = SessionRecordSchema.parse(
+    await readMetadata(workspacePaths.sessionFile(root, input.session)),
   )
   if (session.id !== input.session)
     throw new Error('Export detail session identity does not match.')
-  const exportsDir = join(sessionDir, 'exports')
-  const manifestPath = join(exportsDir, `${input.export_name}.manifest.json`)
-  const raw = await readMetadata(manifestPath)
-  if (!verifyManifestSha256(raw))
-    throw new Error(
-      'Export manifest canonical hash does not match its full content.',
-    )
-  const manifest = ManifestSchema.parse(raw)
+  const exportsDir = workspacePaths.exports(root, input.session)
+  const manifest = await readExportManifest(
+    workspacePaths.exportManifestFile(root, input.session, input.export_name),
+  )
   const full = manifest.output.dimensions
   if (
     manifest.source_raw.sha256 !== session.source.sha256 ||
@@ -210,7 +201,11 @@ export async function createExportDetail(
     region.y > full.height - region.height
   )
     throw new Error('Detail region is outside the full export JPEG bounds.')
-  const jpegPath = join(exportsDir, manifest.output.filename)
+  const jpegPath = workspacePaths.exportFile(
+    root,
+    input.session,
+    input.export_name,
+  )
   const jpeg = await readCaptured(
     jpegPath,
     EXPORT_DETAIL_LIMITS.max_source_bytes,
@@ -283,7 +278,7 @@ export async function createExportDetail(
     export_manifest_sha256: manifest.manifest_sha256,
     parent_candidate_manifest_sha256: manifest.parent_manifest_sha256,
     input_jpeg_sha256: manifest.output.sha256,
-    input_jpeg_uri: pathToFileURL(jpegPath).href,
+    input_jpeg_uri: toFileUri(jpegPath),
     full_dimensions: full,
     coordinate_space: 'oriented-export-pixels',
     region,
@@ -292,7 +287,7 @@ export async function createExportDetail(
     mime_type: 'image/png',
     sha256: pngSha,
     byte_size: png.length,
-    uri: pathToFileURL(pngPath).href,
+    uri: toFileUri(pngPath),
     decoder: {
       name: 'sharp',
       version: sharp.versions.sharp,
@@ -311,7 +306,7 @@ export async function createExportDetail(
     result: {
       ...receipt,
       receipt_sha256: receiptSha,
-      receipt_uri: pathToFileURL(receiptPath).href,
+      receipt_uri: toFileUri(receiptPath),
     },
   }
 }

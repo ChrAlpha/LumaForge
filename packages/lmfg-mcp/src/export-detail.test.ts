@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { computeManifestSha256 } from '@lumaforge/render-engine'
+import { resolveWorkspaceRoot, workspacePaths } from '@lumaforge/lmfg-cli'
 import sharp from 'sharp'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -26,6 +26,11 @@ import {
   EXPORT_DETAIL_LIMITS,
   ExportDetailInputSchema,
 } from './export-detail'
+import {
+  renderManifest,
+  seal,
+  sessionRecord,
+} from './test-support/workspace-records'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -37,10 +42,7 @@ const hash = (bytes: Buffer | string) =>
 const sourceSha = 'a'.repeat(64)
 const parentSha = 'b'.repeat(64)
 const full = { width: 128, height: 96 }
-const seal = (manifest: Record<string, unknown>) => ({
-  ...manifest,
-  manifest_sha256: computeManifestSha256(manifest),
-})
+const source = { sha256: sourceSha, byte_size: 123 }
 
 describe('verified export JPEG detail', () => {
   let cwd: string
@@ -48,7 +50,7 @@ describe('verified export JPEG detail', () => {
   let jpegPath: string
   let manifestPath: string
   let jpeg: Buffer
-  let manifest: ReturnType<typeof seal>
+  let manifest: ReturnType<typeof seal<ReturnType<typeof renderManifest>>>
   const input = {
     session: 'sess_test',
     export_name: 'final',
@@ -57,15 +59,14 @@ describe('verified export JPEG detail', () => {
 
   beforeEach(async () => {
     cwd = await realpath(await mkdtemp(join(tmpdir(), 'lmfg-export-detail-')))
-    sessionDir = join(cwd, '.lmfg', 'sessions', input.session)
-    await mkdir(join(sessionDir, 'exports'), { recursive: true })
+    const root = resolveWorkspaceRoot(cwd)
+    sessionDir = workspacePaths.session(root, input.session)
+    await mkdir(workspacePaths.exports(root, input.session), {
+      recursive: true,
+    })
     await writeFile(
-      join(sessionDir, 'session.json'),
-      JSON.stringify({
-        schema: 'lmfg.session.v1',
-        id: input.session,
-        source: { sha256: sourceSha, byte_size: 123 },
-      }),
+      workspacePaths.sessionFile(root, input.session),
+      JSON.stringify(sessionRecord(input.session, source)),
     )
     const pixels = Buffer.alloc(full.width * full.height * 3)
     for (let y = 0; y < full.height; y += 1) {
@@ -80,26 +81,21 @@ describe('verified export JPEG detail', () => {
       .withMetadata({ orientation: 1 })
       .jpeg({ quality: 87, chromaSubsampling: '4:2:0' })
       .toBuffer()
-    jpegPath = join(sessionDir, 'exports', 'final.jpg')
-    manifestPath = join(sessionDir, 'exports', 'final.manifest.json')
-    manifest = seal({
-      manifest_version: 1,
-      kind: 'export',
-      parent_manifest_sha256: parentSha,
-      source_raw: {
-        sha256: sourceSha,
-        byte_size: 123,
-        decoded_dimensions: full,
-      },
-      policy: { kind: 'export-full' },
-      output: {
-        format: 'jpeg',
-        color_space: 'srgb',
-        filename: 'final.jpg',
-        sha256: hash(jpeg),
-        dimensions: full,
-      },
-    })
+    jpegPath = workspacePaths.exportFile(root, input.session, 'final')
+    manifestPath = workspacePaths.exportManifestFile(
+      root,
+      input.session,
+      'final',
+    )
+    manifest = seal(
+      renderManifest({
+        kind: 'export',
+        source,
+        decoded: full,
+        output: { filename: 'final.jpg', sha256: hash(jpeg), ...full },
+        parent: parentSha,
+      }),
+    )
     await writeFile(jpegPath, jpeg)
     await writeFile(manifestPath, JSON.stringify(manifest))
   })
@@ -218,7 +214,7 @@ describe('verified export JPEG detail', () => {
         ...original,
         output: { ...original.output, dimensions: { width: 127, height: 96 } },
       },
-      { ...original, policy: { kind: 'preview-quick' } },
+      { ...original, policy: { ...original.policy, kind: 'preview-quick' } },
     ]) {
       await writeFile(manifestPath, JSON.stringify(seal(changed)))
       await expect(createExportDetail(cwd, input)).rejects.toThrow()
@@ -226,13 +222,28 @@ describe('verified export JPEG detail', () => {
     await writeFile(manifestPath, JSON.stringify(manifest))
     await writeFile(
       join(sessionDir, 'session.json'),
-      JSON.stringify({
-        schema: 'lmfg.session.v1',
-        id: 'another',
-        source: { sha256: sourceSha, byte_size: 123 },
-      }),
+      JSON.stringify(sessionRecord('another', source)),
     )
     await expect(createExportDetail(cwd, input)).rejects.toThrow(/session/i)
+  })
+
+  it('refuses a sealed export manifest that is not a structurally valid render manifest', async () => {
+    const { environment: _environment, ...withoutEnvironment } = JSON.parse(
+      JSON.stringify(manifest),
+    )
+    await writeFile(manifestPath, JSON.stringify(seal(withoutEnvironment)))
+    await expect(createExportDetail(cwd, input)).rejects.toThrow(
+      /manifest.*environment/i,
+    )
+  })
+
+  it('refuses a session record outside the CLI session schema', async () => {
+    const { created_at: _created, ...partial } = sessionRecord(
+      input.session,
+      source,
+    )
+    await writeFile(join(sessionDir, 'session.json'), JSON.stringify(partial))
+    await expect(createExportDetail(cwd, input)).rejects.toThrow(/created_at/)
   })
 
   it('checks actual JPEG dimensions and refuses unapplied orientation', async () => {

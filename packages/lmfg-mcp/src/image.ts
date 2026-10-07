@@ -2,10 +2,19 @@ import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { open, realpath } from 'node:fs/promises'
-import { basename, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { basename } from 'node:path'
 
-import { verifyManifestSha256 } from '@lumaforge/render-engine'
+import type { ContactSheetMap } from '@lumaforge/lmfg-cli'
+import {
+  ContactSheetMapSchema,
+  IterationRecordSchema,
+  resolveWorkspaceRoot,
+  SessionRecordSchema,
+  toFileUri,
+  workspacePaths,
+} from '@lumaforge/lmfg-cli'
+import type { RenderManifest } from '@lumaforge/render-engine'
+import { parseRenderManifest } from '@lumaforge/render-engine/manifest'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
@@ -15,8 +24,6 @@ export const IMAGE_LIMITS = {
   max_pixels: 16_000_000,
 }
 const identifier = z.string().regex(/^[a-z0-9][\w-]{0,95}$/i)
-const sha256 = z.string().regex(/^[a-f0-9]{64}$/)
-const dimensions = { width: z.int().positive(), height: z.int().positive() }
 
 export const ImageReadInputSchema = z.strictObject({
   session: identifier.describe('Session id from lmfg_session_init.'),
@@ -48,50 +55,6 @@ export const ImageReadInputSchema = z.strictObject({
 })
 
 type ImageReadInput = z.infer<typeof ImageReadInputSchema>
-
-const SessionSchema = z.object({
-  schema: z.literal('lmfg.session.v1'),
-  id: identifier,
-  source: z.object({ sha256 }),
-})
-const ManifestSchema = z.object({
-  kind: z.enum(['preview', 'candidate']),
-  manifest_sha256: sha256,
-  source_raw: z.object({ sha256 }),
-  output: z.object({
-    sha256,
-    filename: z.string(),
-    dimensions: z.object(dimensions),
-  }),
-})
-const PlanSchema = z.object({
-  schema: z.literal('lmfg.iteration.v1'),
-  id: identifier,
-  session_id: identifier,
-  candidates: z
-    .array(z.object({ id: identifier, tag: z.string().nullable().optional() }))
-    .min(1)
-    .max(64),
-})
-const MapSchema = z.object({
-  schema: z.literal('lmfg.contact-sheet-map.v1'),
-  iteration_id: identifier,
-  ...dimensions,
-  cols: z.int().positive(),
-  rows: z.int().positive(),
-  tiles: z
-    .array(
-      z.object({
-        candidate_id: identifier,
-        index: z.int().nonnegative(),
-        x: z.int().nonnegative(),
-        y: z.int().nonnegative(),
-        ...dimensions,
-      }),
-    )
-    .min(1)
-    .max(64),
-})
 
 async function readBounded(path: string, limit: number): Promise<Buffer> {
   if ((await realpath(path)) !== path)
@@ -129,12 +92,16 @@ async function readMetadata(path: string): Promise<unknown> {
   return JSON.parse((await readBounded(path, 1024 * 1024)).toString('utf8'))
 }
 
-async function readManifest(path: string) {
-  const raw = await readMetadata(path)
-  if (!verifyManifestSha256(raw)) {
+async function readManifest(path: string): Promise<RenderManifest> {
+  const parsed = parseRenderManifest(await readMetadata(path))
+  if (parsed.ok) return parsed.manifest
+  if (parsed.issues.some((issue) => issue.path === 'manifest_sha256'))
     throw new Error('Manifest canonical hash does not match its full content.')
-  }
-  return ManifestSchema.parse(raw)
+  throw new Error(
+    `Manifest is not a valid render manifest: ${parsed.issues
+      .map((issue) => `${issue.path} ${issue.message}`)
+      .join(' ')}`,
+  )
 }
 
 function skipJpegScan(bytes: Buffer, start: number): number {
@@ -215,10 +182,10 @@ function jpegDimensions(bytes: Buffer): { width: number; height: number } {
 }
 
 async function loadImage(cwd: string, input: ImageReadInput) {
-  const root = await realpath(resolve(cwd, input.workspace ?? '.lmfg'))
-  const dir = join(root, 'sessions', input.session)
-  const session = SessionSchema.parse(
-    await readMetadata(join(dir, 'session.json')),
+  const root = await realpath(resolveWorkspaceRoot(cwd, input.workspace))
+  const paths = workspacePaths
+  const session = SessionRecordSchema.parse(
+    await readMetadata(paths.sessionFile(root, input.session)),
   )
   if (session.id !== input.session)
     throw new Error(
@@ -226,48 +193,60 @@ async function loadImage(cwd: string, input: ImageReadInput) {
     )
   const { artifact } = input
   let path: string
-  let manifest: z.infer<typeof ManifestSchema> | null = null
-  let map: z.infer<typeof MapSchema> | null = null
+  let manifest: RenderManifest | null = null
+  let map: ContactSheetMap | null = null
   let tags = new Map<string, string | null>()
   if (artifact.kind === 'preview') {
-    path = join(dir, 'previews', `${artifact.preview_id}.jpg`)
+    path = paths.previewFile(root, input.session, artifact.preview_id)
     manifest = await readManifest(
-      join(dir, 'previews', `${artifact.preview_id}.manifest.json`),
+      paths.previewManifestFile(root, input.session, artifact.preview_id),
     )
   } else {
-    const iterationDir = join(dir, 'iterations', artifact.iteration_id)
-    const plan = PlanSchema.parse(
-      await readMetadata(join(iterationDir, 'plan.json')),
+    const plan = IterationRecordSchema.parse(
+      await readMetadata(
+        paths.iterationPlanFile(root, input.session, artifact.iteration_id),
+      ),
     )
     if (plan.id !== artifact.iteration_id || plan.session_id !== input.session)
       throw new Error(
         'Iteration record identity does not match the requested session and iteration.',
       )
     tags = new Map(
-      plan.candidates.map((candidate) => [candidate.id, candidate.tag ?? null]),
+      plan.candidates.map((candidate) => [candidate.id, candidate.tag]),
     )
     if (artifact.kind === 'candidate') {
       if (!tags.has(artifact.candidate_id))
         throw new Error('Candidate is not registered in the iteration.')
-      path = join(
-        iterationDir,
-        'candidates',
+      path = paths.candidatePreviewFile(
+        root,
+        input.session,
+        artifact.iteration_id,
         artifact.candidate_id,
-        'preview.jpg',
       )
       manifest = await readManifest(
-        join(
-          iterationDir,
-          'candidates',
+        paths.candidateManifestFile(
+          root,
+          input.session,
+          artifact.iteration_id,
           artifact.candidate_id,
-          'manifest.json',
         ),
       )
     } else {
-      const name = artifact.name ?? 'contact-sheet'
-      path = join(iterationDir, `${name}.jpg`)
-      map = MapSchema.parse(
-        await readMetadata(join(iterationDir, `${name}.map.json`)),
+      path = paths.contactSheetFile(
+        root,
+        input.session,
+        artifact.iteration_id,
+        artifact.name,
+      )
+      map = ContactSheetMapSchema.parse(
+        await readMetadata(
+          paths.contactSheetMapFile(
+            root,
+            input.session,
+            artifact.iteration_id,
+            artifact.name,
+          ),
+        ),
       )
       if (
         map.iteration_id !== artifact.iteration_id ||
@@ -318,7 +297,7 @@ async function loadImage(cwd: string, input: ImageReadInput) {
           : artifact.kind === 'preview'
             ? artifact.preview_id
             : (artifact.name ?? 'contact-sheet'),
-      uri: pathToFileURL(path).href,
+      uri: toFileUri(path),
       mime_type: 'image/jpeg',
       ...size,
       byte_size: bytes.length,

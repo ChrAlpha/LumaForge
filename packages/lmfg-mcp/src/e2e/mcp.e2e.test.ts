@@ -16,11 +16,16 @@ import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-import { computeManifestSha256 } from '@lumaforge/render-engine'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+
+import {
+  renderManifest,
+  seal,
+  sessionRecord,
+} from '../test-support/workspace-records'
 
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const BIN = join(PACKAGE_DIR, 'bin', 'lmfg-mcp.mjs')
@@ -143,40 +148,25 @@ describeWithDist('lmfg-mcp over stdio', () => {
       .toBuffer()
     const digest = (bytes: Buffer) =>
       createHash('sha256').update(bytes).digest('hex')
-    const unsealed = {
-      manifest_version: 1,
-      kind: 'export',
-      parent_manifest_sha256: 'b'.repeat(64),
-      source_raw: {
-        sha256: 'a'.repeat(64),
-        byte_size: 123,
-        decoded_dimensions: full,
-      },
-      policy: { kind: 'export-full' },
-      output: {
-        format: 'jpeg',
-        color_space: 'srgb',
-        dimensions: full,
-        filename: 'final.jpg',
-        sha256: digest(jpeg),
-      },
-    }
-    const manifestSha = computeManifestSha256(unsealed)
+    const source = { sha256: 'a'.repeat(64), byte_size: 123 }
+    const manifest = seal(
+      renderManifest({
+        kind: 'export',
+        source,
+        decoded: full,
+        output: { filename: 'final.jpg', sha256: digest(jpeg), ...full },
+        parent: 'b'.repeat(64),
+      }),
+    )
+    const manifestSha = manifest.manifest_sha256
     await writeFile(
       join(dir, 'session.json'),
-      JSON.stringify({
-        schema: 'lmfg.session.v1',
-        id: 'sess_detail',
-        source: { sha256: 'a'.repeat(64), byte_size: 123 },
-      }),
+      JSON.stringify(sessionRecord('sess_detail', source)),
     )
     await writeFile(join(dir, 'exports', 'final.jpg'), jpeg)
     await writeFile(
       join(dir, 'exports', 'final.manifest.json'),
-      JSON.stringify({
-        ...unsealed,
-        manifest_sha256: manifestSha,
-      }),
+      JSON.stringify(manifest),
     )
     const region = { x: 3, y: 5, width: 17, height: 11 }
     const result = await client.callTool({
