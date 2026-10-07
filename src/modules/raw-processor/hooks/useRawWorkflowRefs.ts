@@ -36,13 +36,15 @@ export function useRawWorkflowRefs({
   const isMountedRef = useRef(false)
   const runtimeWorkSessionIdRef = useRef<string | null>(null)
   const pendingLoadSessionIdRef = useRef<string | null>(null)
+  // Preview restore's own session and cancellation. A load's session is
+  // never here: the host owns it.
   const runtimeSessionRef = useRef<RawRuntimeSession | null>(null)
   const runtimeAbortControllerRef = useRef<AbortController | null>(null)
-  const exportAbortControllerRef = useRef<AbortController | null>(null)
-  const exportGraphVersionRef = useRef(0)
   const disposedRuntimeSessionsRef = useRef<WeakSet<RawRuntimeSession>>(
     new WeakSet(),
   )
+  const exportAbortControllerRef = useRef<AbortController | null>(null)
+  const exportGraphVersionRef = useRef(0)
   const decodedImageRef = useRef<DecodedImage | null>(null)
   // The color and the view as last rendered, each in its own ref.
   const paramsRef = useRef(initialParams)

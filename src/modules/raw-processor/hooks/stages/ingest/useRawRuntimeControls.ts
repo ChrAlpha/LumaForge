@@ -1,22 +1,30 @@
 import type { MutableRefObject } from 'react'
 import { useCallback } from 'react'
 
+import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 
 type UseRawRuntimeControlsInput = {
+  /**
+   * Cancels the load's session lease on the workflow host, which aborts its
+   * native work and disposes its session exactly once.
+   */
+  cancelHostSession: RawRuntimeHost['cancelSession']
+  // Preview restore still opens and disposes its own session through these.
   runtimeSessionRef: MutableRefObject<RawRuntimeSession | null>
   runtimeAbortControllerRef: MutableRefObject<AbortController | null>
+  disposedRuntimeSessionsRef: MutableRefObject<WeakSet<RawRuntimeSession>>
   runtimeWorkSessionIdRef: MutableRefObject<string | null>
   exportAbortControllerRef: MutableRefObject<AbortController | null>
-  disposedRuntimeSessionsRef: MutableRefObject<WeakSet<RawRuntimeSession>>
 }
 
 export function useRawRuntimeControls({
+  cancelHostSession,
   runtimeSessionRef,
   runtimeAbortControllerRef,
+  disposedRuntimeSessionsRef,
   runtimeWorkSessionIdRef,
   exportAbortControllerRef,
-  disposedRuntimeSessionsRef,
 }: UseRawRuntimeControlsInput) {
   const disposeRuntimeSession = useCallback(
     (runtimeSession = runtimeSessionRef.current) => {
@@ -38,6 +46,7 @@ export function useRawRuntimeControls({
 
   const abortRuntimeWork = useCallback(() => {
     runtimeWorkSessionIdRef.current = null
+    cancelHostSession()
     const controller = runtimeAbortControllerRef.current
     if (controller && !controller.signal.aborted) {
       controller.abort()
@@ -45,6 +54,7 @@ export function useRawRuntimeControls({
     runtimeAbortControllerRef.current = null
     disposeRuntimeSession()
   }, [
+    cancelHostSession,
     disposeRuntimeSession,
     runtimeAbortControllerRef,
     runtimeWorkSessionIdRef,

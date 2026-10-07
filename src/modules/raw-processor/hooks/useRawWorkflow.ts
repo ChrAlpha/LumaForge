@@ -120,11 +120,12 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const { viewMode } = compareStage
   const { disposeRuntimeSession, abortRuntimeWork, abortExportWork } =
     useRawRuntimeControls({
+      cancelHostSession: rawRuntimeHost.cancelSession,
       runtimeSessionRef,
       runtimeAbortControllerRef,
+      disposedRuntimeSessionsRef,
       runtimeWorkSessionIdRef,
       exportAbortControllerRef,
-      disposedRuntimeSessionsRef,
     })
 
   const { registerExportResultResource, queueExportResultResourceDisposal } =
@@ -250,14 +251,10 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setDecodedImageRef,
     invalidateExportGraph,
     registerCurrentPreviewPipelineForEvacuation,
-    disposeRuntimeSession,
     yieldToPaint,
     getPrewarmState: rawRuntimeHost.getPrewarmState,
     prewarm: rawRuntimeHost.prewarm,
     beginRuntimeSession: rawRuntimeHost.beginSession,
-    runtimeAbortControllerRef,
-    runtimeSessionRef,
-    disposedRuntimeSessionsRef,
     decodedImageRef,
     sessionRef,
     embeddedPreviewUrlRef,
@@ -270,8 +267,9 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const ingestStage = { loadFile, reset }
   // The host lives as long as the workflow: unmounting terminates its worker,
   // including a warm-up still in flight. This cleanup runs after the ingest
-  // lifecycle has disposed the RAW session, and a remount (StrictMode) finds
-  // the host usable again with a fresh history.
+  // lifecycle has cancelled the RAW session on the host, so it finds no
+  // session left to dispose, and a remount (StrictMode) finds the host usable
+  // again with a fresh history.
   useEffect(() => () => rawRuntimeHost.dispose(), [rawRuntimeHost])
 
   const {

@@ -732,6 +732,232 @@ describe('useRawWorkflow embedded preview state', () => {
     )
   })
 
+  describe('ingest sessions on the workflow host', () => {
+    /** A RAW session whose bounded HQ decode settles only when told to. */
+    function createHeldSession() {
+      const boundedHq = deferred<DecodedImage>()
+      const session = {
+        sourceDimensions: defaultSourceDimensions,
+        extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
+        decodeQuickRaw: vi.fn().mockResolvedValue(createDecodedImage('quick')),
+        decodeBoundedHqRaw: vi.fn(() => boundedHq.promise),
+        probeExportCapability: rawRuntimeAdapterMock.probeExportCapability,
+        dispose: vi.fn(),
+      }
+      return { session, boundedHq }
+    }
+
+    function openSignalOf(call: number) {
+      return rawRuntimeAdapterMock.openSession.mock.calls[call]?.[1] as
+        | AbortSignal
+        | undefined
+    }
+
+    function renderWorkflowHost() {
+      rawRuntimeHosts.length = 0
+      const rendered = renderHook(() => useRawWorkflow(), { wrapper })
+      const [host] = rawRuntimeHosts
+      return { ...rendered, host: host! }
+    }
+
+    it('cancels a replaced load through its host and disposes that session once', async () => {
+      const first = createHeldSession()
+      const second = createHeldSession()
+      rawRuntimeAdapterMock.openSession
+        .mockResolvedValueOnce(first.session)
+        .mockResolvedValueOnce(second.session)
+      const { result, host } = renderWorkflowHost()
+
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'first.ARW'))
+      })
+      expect(result.current.status).toBe('ready')
+      const cancelsBefore = vi.mocked(host.cancelSession).mock.calls.length
+
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'second.ARW'))
+      })
+
+      // The replacing load cancels the first session on the host before it
+      // takes the next lease.
+      const cancelOrder = vi.mocked(host.cancelSession).mock.invocationCallOrder
+      expect(cancelOrder.length).toBeGreaterThan(cancelsBefore)
+      expect(cancelOrder[cancelsBefore]).toBeLessThan(
+        vi.mocked(host.beginSession).mock.invocationCallOrder[1]!,
+      )
+      expect(openSignalOf(0)?.aborted).toBe(true)
+      expect(first.session.dispose).toHaveBeenCalledTimes(1)
+      expect(second.session.dispose).not.toHaveBeenCalled()
+
+      // The first load's bounded HQ settling late releases nothing twice and
+      // publishes nothing over the replacement.
+      await act(async () => {
+        first.boundedHq.resolve(createDecodedImage('bounded-hq'))
+        await flushPromises()
+      })
+      expect(first.session.dispose).toHaveBeenCalledTimes(1)
+      expect(jotaiStore.get(currentSessionAtom)?.sourceFile.name).toBe(
+        'second.ARW',
+      )
+      expect(result.current.displaySource).toBe('quick')
+
+      await act(async () => {
+        second.boundedHq.resolve(createDecodedImage('bounded-hq'))
+        await flushPromises()
+      })
+      expect(second.session.dispose).toHaveBeenCalledTimes(1)
+      expect(result.current.displaySource).toBe('bounded-hq')
+    })
+
+    it('disposes a session that opens after its load was replaced and never decodes it', async () => {
+      const lateOpen =
+        deferred<ReturnType<typeof createHeldSession>['session']>()
+      const late = createHeldSession()
+      const current = createHeldSession()
+      rawRuntimeAdapterMock.openSession
+        .mockReturnValueOnce(lateOpen.promise)
+        .mockResolvedValueOnce(current.session)
+      const { result } = renderWorkflowHost()
+
+      let firstLoad!: Promise<void>
+      await act(async () => {
+        firstLoad = result.current.loadFile(new File(['raw'], 'first.ARW'))
+        await waitFor(() =>
+          expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(1),
+        )
+      })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'second.ARW'))
+      })
+      expect(openSignalOf(0)?.aborted).toBe(true)
+
+      await act(async () => {
+        lateOpen.resolve(late.session)
+        await firstLoad
+      })
+
+      expect(late.session.dispose).toHaveBeenCalledTimes(1)
+      expect(late.session.decodeQuickRaw).not.toHaveBeenCalled()
+      expect(current.session.dispose).not.toHaveBeenCalled()
+      expect(result.current.status).toBe('ready')
+      expect(result.current.error).toBeNull()
+      expect(jotaiStore.get(currentSessionAtom)?.sourceFile.name).toBe(
+        'second.ARW',
+      )
+    })
+
+    it('fails an open without a session to dispose and loads the next file on the same host', async () => {
+      const next = createHeldSession()
+      rawRuntimeAdapterMock.openSession
+        .mockRejectedValueOnce(new Error('open failed'))
+        .mockResolvedValueOnce(next.session)
+      const { result, host } = renderWorkflowHost()
+
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'broken.ARW'))
+      })
+      expect(result.current.status).toBe('error')
+      expect(result.current.error).toBe('open failed')
+      expect(openSignalOf(0)?.aborted).toBe(true)
+
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'next.ARW'))
+      })
+      expect(result.current.status).toBe('ready')
+      expect(result.current.error).toBeNull()
+      expect(host.beginSession).toHaveBeenCalledTimes(2)
+      expect(openSignalOf(1)?.aborted).toBe(false)
+      expect(rawRuntimeHosts).toHaveLength(1)
+    })
+
+    it('cancels an in-flight load on its host once when the workflow unmounts', async () => {
+      const held = createHeldSession()
+      rawRuntimeAdapterMock.openSession.mockResolvedValueOnce(held.session)
+      const { result, host, unmount } = renderWorkflowHost()
+
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      expect(held.session.dispose).not.toHaveBeenCalled()
+
+      unmount()
+
+      expect(host.cancelSession).toHaveBeenCalled()
+      expect(
+        vi.mocked(host.cancelSession).mock.invocationCallOrder[0],
+      ).toBeLessThan(vi.mocked(host.dispose).mock.invocationCallOrder[0]!)
+      expect(openSignalOf(0)?.aborted).toBe(true)
+      expect(held.session.dispose).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        held.boundedHq.resolve(createDecodedImage('bounded-hq'))
+        await flushPromises()
+      })
+      expect(held.session.dispose).toHaveBeenCalledTimes(1)
+    })
+
+    it('cancels an in-flight load on its host once when the session resets', async () => {
+      const held = createHeldSession()
+      rawRuntimeAdapterMock.openSession.mockResolvedValueOnce(held.session)
+      const { result, host } = renderWorkflowHost()
+
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      act(() => {
+        result.current.reset()
+      })
+
+      expect(host.cancelSession).toHaveBeenCalled()
+      expect(openSignalOf(0)?.aborted).toBe(true)
+      expect(held.session.dispose).toHaveBeenCalledTimes(1)
+      expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+
+      await act(async () => {
+        held.boundedHq.resolve(createDecodedImage('bounded-hq'))
+        await flushPromises()
+      })
+      expect(held.session.dispose).toHaveBeenCalledTimes(1)
+      expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    })
+
+    it('routes a compare split written in a replacing loadFile tick into the replacement only', async () => {
+      const first = createHeldSession()
+      const second = createHeldSession()
+      rawRuntimeAdapterMock.openSession
+        .mockResolvedValueOnce(first.session)
+        .mockResolvedValueOnce(second.session)
+      const { result } = renderWorkflowHost()
+
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'first.ARW'))
+      })
+      act(() => {
+        result.current.setCompareSplit(0.8)
+      })
+      const firstSessionId = jotaiStore.get(currentSessionAtom)?.id
+
+      // Both callbacks come from the first source's render.
+      const { loadFile, setCompareSplit } = result.current
+      await act(async () => {
+        const loadPromise = loadFile(new File(['raw'], 'second.ARW'))
+        setCompareSplit(0.3)
+
+        const replacement = jotaiStore.get(currentSessionAtom)
+        expect(replacement?.id).not.toBe(firstSessionId)
+        expect(replacement?.sourceFile.name).toBe('second.ARW')
+        expect(replacement?.viewState.compareSplit).toBe(0.3)
+
+        await loadPromise
+      })
+
+      expect(result.current.status).toBe('ready')
+      expect(result.current.compareSplit).toBe(0.3)
+      expect(first.session.dispose).toHaveBeenCalledTimes(1)
+      expect(second.session.dispose).not.toHaveBeenCalled()
+    })
+  })
+
   describe('on a real RAW host', () => {
     function makeRuntime() {
       const info: LumaRawRuntimeInfo = {

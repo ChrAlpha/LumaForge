@@ -40,15 +40,6 @@ function createHostLeases() {
   return { leases, beginRuntimeSession }
 }
 
-/** Loads that only take their lease, keeping what the seam handed them. */
-function createLeaseTakingLoad() {
-  const taken: RawRuntimeSessionLease[] = []
-  const orchestrateLoad = vi.fn(async (_file: File, ctx: RawLoadContext) => {
-    taken.push(ctx.services.beginRuntimeSession())
-  })
-  return { taken, orchestrateLoad }
-}
-
 function createInput(
   orchestrateLoad = vi.fn().mockResolvedValue(undefined),
 ): UseRawLoadActionInput {
@@ -77,7 +68,6 @@ function createInput(
     getPrewarmState: vi.fn<() => PrewarmState>(() => 'idle'),
     prewarm: vi.fn(),
     beginRuntimeSession: createHostLeases().beginRuntimeSession,
-    runtimeAbortControllerRef: { current: null },
     decodedImageRef: { current: null },
     sessionRef: { current: null },
     embeddedPreviewUrlRef: { current: null },
@@ -166,9 +156,11 @@ describe('useRawLoadAction', () => {
     expect(ctx.services).not.toHaveProperty('openSession')
   })
 
-  it('lets the shared runtime abort ref cancel the load lease on the host', async () => {
+  it('hands the load the workflow host lease unwrapped', async () => {
     const host = createHostLeases()
-    const { orchestrateLoad } = createLeaseTakingLoad()
+    const orchestrateLoad = vi.fn(async (_file: File, ctx: RawLoadContext) => {
+      ctx.services.beginRuntimeSession()
+    })
     const input = {
       ...createInput(orchestrateLoad),
       beginRuntimeSession: host.beginRuntimeSession,
@@ -177,43 +169,8 @@ describe('useRawLoadAction', () => {
 
     await result.current.loadFile(new File(['raw'], 'frame.dng'))
 
-    const [first] = host.leases
-    const cancellation = input.runtimeAbortControllerRef.current
-    expect(cancellation?.signal).toBe(first!.signal)
-
-    // The runtime controls abort preview work through this ref.
-    cancellation!.abort()
-    expect(first!.cancel).toHaveBeenCalledTimes(1)
-    expect(first!.release).not.toHaveBeenCalled()
-    expect(input.runtimeAbortControllerRef.current).toBeNull()
-  })
-
-  it('clears the shared abort ref when the lease ends, but never a newer one', async () => {
-    const host = createHostLeases()
-    const { taken, orchestrateLoad } = createLeaseTakingLoad()
-    const input = {
-      ...createInput(orchestrateLoad),
-      beginRuntimeSession: host.beginRuntimeSession,
-    }
-    const { result } = renderHook(() => useRawLoadAction(input))
-
-    await result.current.loadFile(new File(['raw'], 'a.dng'))
-    const first = input.runtimeAbortControllerRef.current
-    taken[0]!.release()
-    expect(host.leases[0]!.release).toHaveBeenCalledTimes(1)
-    expect(first?.signal.aborted).toBe(false)
-    expect(input.runtimeAbortControllerRef.current).toBeNull()
-
-    await result.current.loadFile(new File(['raw'], 'b.dng'))
-    await result.current.loadFile(new File(['raw'], 'c.dng'))
-    const newer = input.runtimeAbortControllerRef.current
-    expect(newer?.signal).toBe(host.leases[2]!.signal)
-
-    taken[1]!.cancel()
-    taken[1]!.release()
-    expect(input.runtimeAbortControllerRef.current).toBe(newer)
-
-    taken[2]!.cancel()
-    expect(input.runtimeAbortControllerRef.current).toBeNull()
+    const [, ctx] = orchestrateLoad.mock.calls[0] as [File, RawLoadContext]
+    expect(ctx.services.beginRuntimeSession).toBe(host.beginRuntimeSession)
+    expect(host.leases).toHaveLength(1)
   })
 })

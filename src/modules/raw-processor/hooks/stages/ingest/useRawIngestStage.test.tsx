@@ -4,7 +4,6 @@ import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 
 import type { ImageSession } from '../../../model/session'
 import { useRawIngestStage } from './useRawIngestStage'
@@ -40,16 +39,10 @@ describe('useRawIngestStage', () => {
         setDecodedImageRef: vi.fn(),
         invalidateExportGraph: vi.fn(),
         registerCurrentPreviewPipelineForEvacuation: vi.fn(),
-        disposeRuntimeSession: vi.fn(),
         yieldToPaint: () => Promise.resolve(),
         getPrewarmState: vi.fn(),
         prewarm: vi.fn(),
         beginRuntimeSession: vi.fn(),
-        runtimeAbortControllerRef: { current: null },
-        runtimeSessionRef: { current: null as RawRuntimeSession | null },
-        disposedRuntimeSessionsRef: {
-          current: new WeakSet<RawRuntimeSession>(),
-        },
         decodedImageRef: { current: null as DecodedImage | null },
         sessionRef: { current: null as ImageSession | null },
         embeddedPreviewUrlRef: { current: null },
