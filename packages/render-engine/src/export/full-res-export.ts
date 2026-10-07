@@ -9,6 +9,7 @@ import type {
   LumaRawProcessedWindowRequest,
 } from '@lumaforge/luma-raw-runtime'
 
+import { assessProcessedExport } from './exportability'
 import type {
   ExportGeometry,
   PlannedExportGeometry,
@@ -168,23 +169,6 @@ function createAttemptAbortScope(
       parentSignal?.removeEventListener('abort', abort)
     },
   }
-}
-
-function isLibRawProcessedExportCapability(
-  capability: LumaRawExportCapability,
-) {
-  const color = capability.color
-  return (
-    capability.supported === true &&
-    capability.strategy === 'libraw-processed-window' &&
-    capability.windows.librawProcessed === true &&
-    color !== undefined &&
-    'cameraWhiteBalanceAppliedByRuntime' in color &&
-    'cameraMatrixAppliedByRuntime' in color &&
-    color?.workingSpace === 'linear-prophoto-rgb' &&
-    color.cameraWhiteBalanceAppliedByRuntime === true &&
-    color.cameraMatrixAppliedByRuntime === true
-  )
 }
 
 function currentErrorLooksLikeResourceExhaustion(error: unknown) {
@@ -450,7 +434,9 @@ function createStripPreparer(
 export async function runFullResolutionJpegExport(
   input: RunFullResolutionJpegExportInput,
 ) {
-  if (!isLibRawProcessedExportCapability(input.capability)) {
+  // The source gate runs before any window read or sink session, so a
+  // capability the assessment refuses never starts an export.
+  if (!assessProcessedExport(input.capability).exportable) {
     throw new Error('FULL_RES_EXPORT_UNSUPPORTED_SOURCE')
   }
 

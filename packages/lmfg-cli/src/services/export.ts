@@ -7,6 +7,7 @@ import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import type { RenderManifest } from '@lumaforge/render-engine'
 import type { FullResolutionExportProgress } from '@lumaforge/render-engine/export'
 import {
+  assessProcessedExport,
   runFullResolutionJpegExport,
   runProcessedWindowExportLifecycle,
 } from '@lumaforge/render-engine/export'
@@ -38,15 +39,24 @@ export function exposureFromManifest(
   return { ev, multiplier: exposureMultiplierFromEv(ev), source }
 }
 
+/**
+ * Refuses a source before the processed-window export begins, using the same
+ * assessment the executor applies as its own final gate, so this early check
+ * can never admit a capability the executor would refuse.
+ */
 function requireExportCapability(
   capability: LumaRawExportCapability,
 ): LumaRawExportCapability {
-  if (capability.supported && capability.width > 0 && capability.height > 0)
-    return capability
+  const assessment = assessProcessedExport(capability)
+  if (assessment.exportable) return capability
+  const why = capability.reasons.length
+    ? capability.reasons
+    : assessment.reasons
   throw new LmfgError('source.export_unsupported', {
-    message: `This RAW cannot be exported at full resolution (${capability.reasons.join(', ') || 'unsupported source'}).`,
+    message: `This RAW cannot be exported at full resolution (${why.join(', ')}).`,
     details: {
       reasons: capability.reasons,
+      refusals: assessment.reasons,
       strategy: capability.strategy ?? null,
     },
     suggestedNextActions: ['lmfg inspect --session <id>'],

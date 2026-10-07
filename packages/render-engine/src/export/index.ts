@@ -2,6 +2,11 @@
 
 export { TypedBufferPool } from './buffer-pool'
 export {
+  assessProcessedExport,
+  type ProcessedExportAssessment,
+  type ProcessedExportRefusal,
+} from './exportability'
+export {
   applyGeometryMatte,
   EXPORT_GEOMETRY_MATTE,
   type ExportGeometry,

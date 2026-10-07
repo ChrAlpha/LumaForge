@@ -21,6 +21,7 @@ import {
   vi,
 } from 'vitest'
 
+import { LmfgError } from '../protocol/errors'
 import type { LmfgRuntime } from '../runtime/node-runtime'
 import { createLmfgRuntime } from '../runtime/node-runtime'
 import type { LoadedSource } from '../runtime/source-loader'
@@ -250,7 +251,9 @@ describeWithFixture('runFullResolutionExport', () => {
   }, 120_000)
 })
 
-function makeCapability(): LumaRawExportCapability {
+function makeCapability(
+  overrides: Partial<LumaRawExportCapability> = {},
+): LumaRawExportCapability {
   return {
     supported: true,
     strategy: 'libraw-processed-window',
@@ -284,6 +287,7 @@ function makeCapability(): LumaRawExportCapability {
       hasXTransTable: false,
     },
     reasons: [],
+    ...overrides,
   }
 }
 
@@ -306,6 +310,7 @@ function makeProcessedWindow(
 }
 
 type FakeSessionOptions = {
+  capability?: LumaRawExportCapability
   begin?: () => Promise<unknown>
   read?: (
     request: LumaRawProcessedWindowRequest,
@@ -316,7 +321,9 @@ type FakeSessionOptions = {
 function makeFakeSession(options: FakeSessionOptions = {}) {
   return {
     probe: null,
-    probeExportCapability: vi.fn(async () => makeCapability()),
+    probeExportCapability: vi.fn(
+      async () => options.capability ?? makeCapability(),
+    ),
     beginProcessedWindowExport: vi.fn(
       options.begin ?? (async () => ({ active: true })),
     ),
@@ -437,4 +444,63 @@ describe('runFullResolutionExport processed-window lifecycle', () => {
     expect(session.dispose).toHaveBeenCalledTimes(1)
     expect(await listFiles(dir)).toEqual([])
   })
+})
+
+describe('runFullResolutionExport source assessment', () => {
+  it.each([
+    [
+      'an unsupported source',
+      { supported: false, reasons: ['unsupported-cfa-pattern'] },
+      ['source-unsupported'],
+    ],
+    ['zero dimensions', { width: 0, height: 0 }, ['invalid-dimensions']],
+    [
+      'the raw-mosaic strategy',
+      {
+        strategy: 'raw-mosaic-window',
+        windows: { librawProcessed: false, rawMosaic: true },
+      },
+      ['strategy-not-processed-window', 'processed-windows-unavailable'],
+    ],
+    ['missing color facts', { color: undefined }, ['color-facts-missing']],
+    [
+      'runtime white balance not applied',
+      {
+        color: {
+          workingSpace: 'linear-prophoto-rgb',
+          librawOutputColor: 'prophoto',
+          gamma: 'linear',
+          cameraWhiteBalanceAppliedByRuntime: false,
+          cameraMatrixAppliedByRuntime: true,
+        },
+      },
+      ['white-balance-not-applied-by-runtime'],
+    ],
+  ] as Array<[string, Partial<LumaRawExportCapability>, string[]]>)(
+    'refuses %s before the processed-window export begins',
+    async (_name, overrides, refusals) => {
+      const capability = makeCapability(overrides)
+      const session = makeFakeSession({ capability })
+
+      const error = await runWithSession(
+        session,
+        join(dir, 'exports', 'final.jpg'),
+      ).catch((caught: unknown) => caught)
+
+      expect(error).toBeInstanceOf(LmfgError)
+      expect(error).toMatchObject({
+        code: 'source.export_unsupported',
+        details: {
+          reasons: capability.reasons,
+          refusals,
+          strategy: capability.strategy ?? null,
+        },
+      })
+      expect(session.beginProcessedWindowExport).not.toHaveBeenCalled()
+      expect(session.readProcessedWindow).not.toHaveBeenCalled()
+      expect(session.endProcessedWindowExport).not.toHaveBeenCalled()
+      expect(session.dispose).toHaveBeenCalledTimes(1)
+      expect(await listFiles(dir)).toEqual([])
+    },
+  )
 })

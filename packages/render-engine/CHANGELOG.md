@@ -8,6 +8,15 @@ predates this file.
 
 ### Added
 
+- `assessProcessedExport` in `@lumaforge/render-engine/export`: a pure check
+  of whether a probed `LumaRawExportCapability` can feed the processed-window
+  export, returning every typed `ProcessedExportRefusal` (unsupported source,
+  invalid dimensions, wrong strategy, no processed windows, missing color
+  facts, non-linear-ProPhoto working space, white balance or camera matrix
+  not applied by the runtime). `runFullResolutionJpegExport` uses it as its
+  source gate, which now also refuses non-positive or non-integer dimensions
+  and missing window or color facts with `FULL_RES_EXPORT_UNSUPPORTED_SOURCE`
+  before any window read. `lmfg` export applies it before the export begins.
 - `runProcessedWindowExportLifecycle` in `@lumaforge/render-engine/export`:
   brackets one processed-window export with the session's optional
   `beginProcessedWindowExport`/`endProcessedWindowExport` hooks. End runs only
