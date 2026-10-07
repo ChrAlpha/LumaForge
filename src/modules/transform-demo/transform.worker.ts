@@ -1,4 +1,5 @@
-import { analyzeUpright } from './geometry/upright'
+import { analyzeUpright } from '~/lib/transform/geometry/upright'
+
 import type { PreviewFrame } from './preview-types'
 import { renderTransformedPreview } from './transform-render'
 import type {

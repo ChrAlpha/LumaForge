@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import type { Matrix3 } from '@lumaforge/render-engine/geometry'
@@ -6,12 +6,12 @@ import * as engineGeometry from '@lumaforge/render-engine/geometry'
 import { applyMatrix, invertMatrix } from '@lumaforge/render-engine/geometry'
 import { describe, expect, it } from 'vitest'
 
-import * as appMatrix from '~/modules/transform-demo/geometry/matrix'
+import * as appMatrix from '~/lib/transform/geometry/matrix'
 import {
   identityMatrix,
   multiplyMatrices,
   rotationMatrix,
-} from '~/modules/transform-demo/geometry/matrix'
+} from '~/lib/transform/geometry/matrix'
 
 describe('normalized projective transforms', () => {
   it('composes and inverts a projective transform', () => {
@@ -56,16 +56,20 @@ describe('projective kernel ownership', () => {
     expect(typeof engineGeometry.applyMatrix).toBe('function')
   })
 
-  it('leaves the Matrix3 and Point declarations to the engine kernel', () => {
-    for (const file of ['types.ts', 'matrix.ts', 'upright.ts']) {
-      const source = readFileSync(
-        resolve(process.cwd(), 'src/modules/transform-demo/geometry', file),
-        'utf8',
-      )
-      expect(source).not.toMatch(/\b(?:type|interface)\s+(?:Matrix3|Point)\b/)
-      expect(source).not.toMatch(
-        /export\s+(?:type\s+)?\{[^}]*\b(?:Matrix3|Point)\b/,
-      )
+  it('keeps the only app geometry implementation in src/lib/transform', () => {
+    for (const file of [
+      'types.ts',
+      'matrix.ts',
+      'fit-family.ts',
+      'detect-lines.ts',
+      'upright.ts',
+    ]) {
+      expect(
+        existsSync(
+          resolve(process.cwd(), 'src/modules/transform-demo/geometry', file),
+        ),
+        file,
+      ).toBe(false)
     }
   })
 })

@@ -1,7 +1,11 @@
 import type { Matrix3, Point } from '@lumaforge/render-engine/geometry'
 import { applyMatrix, invertMatrix } from '@lumaforge/render-engine/geometry'
 
-import { multiplyMatrices, rotationMatrix } from './geometry/matrix'
+import {
+  multiplyMatrices,
+  rotationMatrix,
+} from '~/lib/transform/geometry/matrix'
+
 import type { PreviewFrame } from './preview-types'
 import type { ManualTransform, RenderedPreview } from './transform-types'
 import { PREVIEW_MATTE } from './transform-types'

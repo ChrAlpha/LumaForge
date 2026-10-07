@@ -276,8 +276,6 @@ only by finishing the move it belongs to:
 - The quick and bounded-HQ preview pixel caps are defined in both
   `packages/render-engine/src/preview/preview-plan.ts` and
   `src/lib/raw/decoder.ts`.
-- `packages/render-engine/src/export/geometry/matrix.ts` mirrors
-  `src/modules/transform-demo/geometry/matrix.ts`.
 - `lmfg_image_read` and `lmfg_export_detail` read the CLI workspace layout by
   convention instead of through `packages/lmfg-cli/src/workspace/paths.ts`.
 
