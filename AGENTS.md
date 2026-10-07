@@ -242,7 +242,7 @@ image-editor assumptions.
     manifests through.
 - `packages/luma-raw-runtime` is the browser RAW metadata/decode/runtime
   boundary, including worker protocol, native artifacts, processed-window facts,
-  the deprecated HDR analysis, fixtures, benchmarks, and native verification.
+  fixtures, benchmarks, and native verification.
 - `packages/luma-jpeg-runtime` is the bounded row-oriented JPEG encoder runtime.
 - `packages/luma-native-artifacts` packages prebuilt WASM/worker assets for RAW
   and JPEG runtimes.
@@ -385,8 +385,6 @@ them again, and an unrelated change does not remove them on the side:
   (`packages/render-engine/src/export/jpeg/node-row-sink.ts`).
 - `@lumaforge/luma-color-runtime`: `ProcessingParams.viewMode` and
   `ProcessingParams.compareSplit`.
-- `@lumaforge/luma-raw-runtime`: `analyzeRawDynamicRange` and
-  `RawDynamicRangeInfo`.
 
 Close the extraction:
 
@@ -433,9 +431,7 @@ These are owner decisions. They override cleanup advice that says otherwise.
   stays:
   `applyCalibration` in `@lumaforge/luma-raw-runtime`, `solveDcpInterpolation`
   in `@lumaforge/luma-color-runtime`, and the manifest's null `calibration`
-  slot. The HDR analysis (`analyzeRawDynamicRange`) still exports with
-  unchanged results, but it is deprecated and scheduled for removal with the
-  deprecated public API listed under Canonical Owners.
+  slot.
 - Built-in style presets are retained: keep `styleKind: 'builtin'`,
   `builtinPreset`, their WGSL branches and uniforms in `src/lib/webgpu`, and
   their goldens in `scripts/webgpu/goldens.json`. No UI entry point selects a
