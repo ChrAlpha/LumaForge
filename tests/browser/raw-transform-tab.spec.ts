@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -22,6 +23,7 @@ const rawName = 'raw-pixls-iphone-se.dng'
 const replacementName = 'replacement-iphone-se.dng'
 const hqExportReason =
   'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.'
+const IDENTITY_MATRIX = '1,0,0,0,1,0,0,0,1'
 const refusedTransformReason =
   'This transform leaves too little usable image. Reduce the adjustment or reset.'
 
@@ -232,6 +234,67 @@ async function readTransformFrame(page: Page) {
 }
 
 /**
+ * Tilt, in degrees, of the near-vertical edges on the Transform overlay,
+ * measured from its pixels with a Sobel filter rather than the app's line
+ * detector: the magnitude-weighted median angle of every strong edge within
+ * about 26 degrees of vertical. Bands around the quarter Grid lines are left
+ * out, so the reading is the same with the Grid on or off.
+ */
+async function verticalEdgeTilt(page: Page) {
+  await expect(page.locator('[data-raw-transform-preview]')).toHaveAttribute(
+    'aria-busy',
+    'false',
+    { timeout: 30_000 },
+  )
+  return transformCanvas(page).evaluate((element) => {
+    const canvas = element as HTMLCanvasElement
+    const { width, height } = canvas
+    const pixels = canvas
+      .getContext('2d')!
+      .getImageData(0, 0, width, height).data
+    const light = (x: number, y: number) => {
+      const offset = (y * width + x) * 4
+      return (pixels[offset] + pixels[offset + 1] + pixels[offset + 2]) / 3
+    }
+    const nearGrid = (value: number, size: number) =>
+      [1, 2, 3].some((i) => Math.abs(value - (size * i) / 4) < 5)
+    const edges: [angle: number, magnitude: number][] = []
+    let total = 0
+    for (let y = 2; y < height - 2; y++) {
+      if (nearGrid(y, height)) continue
+      for (let x = 2; x < width - 2; x++) {
+        if (nearGrid(x, width)) continue
+        const gx =
+          light(x + 1, y - 1) +
+          2 * light(x + 1, y) +
+          light(x + 1, y + 1) -
+          light(x - 1, y - 1) -
+          2 * light(x - 1, y) -
+          light(x - 1, y + 1)
+        const gy =
+          light(x - 1, y + 1) +
+          2 * light(x, y + 1) +
+          light(x + 1, y + 1) -
+          light(x - 1, y - 1) -
+          2 * light(x, y - 1) -
+          light(x + 1, y - 1)
+        const magnitude = Math.hypot(gx, gy)
+        if (magnitude < 80 || Math.abs(gx) <= 2 * Math.abs(gy)) continue
+        edges.push([(Math.atan(gy / gx) * 180) / Math.PI, magnitude])
+        total += magnitude
+      }
+    }
+    edges.sort((a, b) => a[0] - b[0])
+    let weight = 0
+    for (const [angle, magnitude] of edges) {
+      weight += magnitude
+      if (weight >= total / 2) return { edges: edges.length, tilt: angle }
+    }
+    return { edges: edges.length, tilt: Number.NaN }
+  })
+}
+
+/**
  * Full-resolution export reproduces the geometry, so it stays enabled whether
  * or not a Transform is committed. Only the bounded HQ preview refuses, and it
  * has to say why rather than going quietly dark.
@@ -328,7 +391,89 @@ async function expectTransformExportBlocked(page: Page) {
   ).toBeVisible()
 }
 
-async function replaceRaw(page: Page) {
+function transformMatrix(page: Page) {
+  return page
+    .locator('[data-raw-transform-preview]')
+    .getAttribute('data-transform-matrix')
+}
+
+async function resetUpright(page: Page) {
+  await selectTransformSection(page, 'Upright')
+  await transformTool(page)
+    .getByRole('button', {
+      name: isMobile(page) ? 'Reset Upright' : 'Reset',
+      exact: true,
+    })
+    .click()
+}
+
+/** Picks an Upright mode and waits for the preview to answer it. */
+async function selectUpright(page: Page, mode: 'auto' | 'full') {
+  await selectTransformSection(page, 'Upright')
+  const button = transformTool(page).getByTestId(`mode-${mode}`)
+  await expect(button).toBeEnabled({ timeout: 30_000 })
+  await button.click()
+  await expect(button).toHaveAttribute('aria-pressed', 'true')
+  await waitForTransform(page)
+}
+
+/** Turns an overlay toggle (Detected lines, Grid) on or off and waits. */
+async function setOverlayToggle(
+  page: Page,
+  name: 'Detected lines' | 'Grid',
+  pressed: boolean,
+) {
+  await selectTransformSection(page, 'Upright')
+  const toggle = transformTool(page).getByRole('button', { name, exact: true })
+  await expect(toggle).toBeEnabled({ timeout: 30_000 })
+  if ((await toggle.getAttribute('aria-pressed')) !== String(pressed)) {
+    await toggle.click()
+  }
+  await expect(toggle).toHaveAttribute('aria-pressed', String(pressed))
+  await waitForTransform(page)
+}
+
+/**
+ * At the phone viewport the Transform panel and the photo it corrects share
+ * the screen: nothing scrolls sideways, every control is a full touch target
+ * on screen, and the photo keeps a usable size.
+ */
+async function expectNarrowTransformLayout(page: Page) {
+  if (!isMobile(page)) return
+  const viewport = page.viewportSize()!
+  const overflow = await page.evaluate(() => ({
+    document: document.documentElement.scrollWidth - innerWidth,
+    body: document.body.scrollWidth - innerWidth,
+  }))
+  expect(overflow.document).toBeLessThanOrEqual(1)
+  expect(overflow.body).toBeLessThanOrEqual(1)
+  const tool = transformTool(page)
+  const controls = [
+    ...(await tool.getByRole('tab').all()),
+    ...(await tool.locator('[data-testid^="mode-"]').all()),
+    tool.getByRole('button', { name: 'Reset Upright', exact: true }),
+    tool.getByRole('button', { name: 'Detected lines', exact: true }),
+    tool.getByRole('button', { name: 'Grid', exact: true }),
+  ]
+  expect(controls.length).toBeGreaterThanOrEqual(10)
+  for (const control of controls) {
+    await expect(control).toBeInViewport()
+    const box = (await control.boundingBox())!
+    expect(box.width).toBeGreaterThanOrEqual(44)
+    expect(box.height).toBeGreaterThanOrEqual(44)
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1)
+  }
+  await expect(transformCanvas(page)).toBeInViewport()
+  const photo = (await transformCanvas(page).boundingBox())!
+  expect(photo.width).toBeGreaterThanOrEqual(300)
+  expect(photo.height).toBeGreaterThanOrEqual(200)
+}
+
+async function chooseReplacement(
+  page: Page,
+  file: { name: string; mimeType: string; buffer: Buffer },
+) {
   const choosing = page.waitForEvent('filechooser')
   if (isMobile(page)) {
     await page.getByRole('button', { name: 'More actions' }).click()
@@ -336,9 +481,11 @@ async function replaceRaw(page: Page) {
   } else {
     await page.locator('[data-raw-header-action="replace"]').click()
   }
-  await (
-    await choosing
-  ).setFiles({
+  await (await choosing).setFiles(file)
+}
+
+async function replaceRaw(page: Page) {
+  await chooseReplacement(page, {
     name: replacementName,
     mimeType: 'image/x-adobe-dng',
     buffer: await readFile(rawPath),
@@ -901,4 +1048,306 @@ test('full-resolution export delivers the committed geometry, not a crop of the 
   expect(correlate(measured.values, signatures.transformed)).toBeGreaterThan(
     correlate(measured.values, signatures.original) + 0.3,
   )
+})
+
+for (const preview of ['gpu', 'cpu'] as const) {
+  test(`${preview}: Upright settles on the newest mode, manual steps and overlays return exactly, and an unconstrained crop keeps the whole frame`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      preview === 'gpu' && !projectHasWebGPU(testInfo),
+      NO_WEBGPU_SKIP_REASON,
+    )
+    testInfo.setTimeout(360_000)
+    expect(
+      existsSync(rawPath),
+      'Required public DNG is missing. Run pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public before browser validation.',
+    ).toBe(true)
+    await page.addInitScript(() => {
+      localStorage.setItem('lumaforge.locale', 'en')
+    })
+    await page.goto(
+      rawPreviewUrl(
+        testInfo,
+        preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
+      ),
+    )
+    await loadRaw(page)
+    if (preview === 'gpu') {
+      await expectWebGPUPreview(page, testInfo)
+    } else {
+      await expect(page.locator('.raw-preview-canvas')).toHaveCount(0)
+    }
+    await openTool(page, 'Transform')
+    await waitForTransform(page)
+    await showGrid(page)
+    const original = await snapshot(page)
+    expect(await transformMatrix(page)).toBe(IDENTITY_MATRIX)
+    await expectNarrowTransformLayout(page)
+
+    // Full, picked on its own: a constrained crop of the photo. The Grid
+    // goes off for the frames compared below: they then hold only the
+    // rendered photo, which is exact, while canvas strokes may anti-alias
+    // differently from one repaint to the next.
+    await selectUpright(page, 'full')
+    const fullWithGrid = await snapshot(page)
+    expect(fullWithGrid.hash).not.toBe(original.hash)
+    expect(fullWithGrid.width).toBeLessThan(original.width)
+    expect(fullWithGrid.height).toBeLessThan(original.height)
+    expect(fullWithGrid.width).toBeGreaterThan(original.width / 2)
+    await setOverlayToggle(page, 'Grid', false)
+    const full = await snapshot(page)
+    const fullMatrix = await transformMatrix(page)
+    expect(fullMatrix).toBeTruthy()
+    expect(fullMatrix).not.toBe(IDENTITY_MATRIX)
+    expect([full.width, full.height]).toEqual([
+      fullWithGrid.width,
+      fullWithGrid.height,
+    ])
+    expect(full.colors).toBeGreaterThan(1000)
+
+    // Reset returns the exact untransformed frame.
+    await resetUpright(page)
+    await expect(page.locator('[data-raw-transform-preview]')).toHaveCount(0)
+    await showGrid(page)
+    expect(await snapshot(page)).toEqual(original)
+
+    // Modes picked faster than the preview answers them: only the newest one
+    // is drawn, with the pixels Full alone gives.
+    await page.evaluate(async () => {
+      for (const mode of ['auto', 'level', 'vertical', 'full']) {
+        document
+          .querySelector<HTMLButtonElement>(
+            `[data-raw-transform-tool] [data-testid="mode-${mode}"]`,
+          )!
+          .click()
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        )
+      }
+    })
+    await expect(transformTool(page).getByTestId('mode-full')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await waitForTransform(page)
+    await expect.poll(() => transformMatrix(page)).toBe(fullMatrix)
+    await setOverlayToggle(page, 'Grid', false)
+    await expect.poll(async () => (await snapshot(page)).hash).toBe(full.hash)
+
+    // Detected lines draw over the photo only; turning them off restores the
+    // frame exactly, with the geometry untouched. The canvas repaints after
+    // the toggle commits, so its pixels are polled.
+    await setOverlayToggle(page, 'Detected lines', true)
+    await expect
+      .poll(async () => (await snapshot(page)).hash)
+      .not.toBe(full.hash)
+    expect(await transformMatrix(page)).toBe(fullMatrix)
+    await setOverlayToggle(page, 'Detected lines', false)
+    await expect.poll(async () => (await snapshot(page)).hash).toBe(full.hash)
+
+    // One fine Rotate step renders a new geometry; stepping back renders
+    // Full's pixels again.
+    await selectTransformSection(page, 'Perspective')
+    const rotate = transformTool(page).getByRole('slider', {
+      name: 'Rotate',
+      exact: true,
+    })
+    await rotate.focus()
+    await rotate.press('ArrowRight')
+    await expect(rotate).toHaveAttribute('aria-valuenow', '0.1')
+    await expect.poll(() => transformMatrix(page)).not.toBe(fullMatrix)
+    await waitForTransform(page)
+    expect((await snapshot(page)).hash).not.toBe(full.hash)
+    await rotate.press('ArrowLeft')
+    await expect(rotate).toHaveAttribute('aria-valuenow', '0')
+    await expect.poll(() => transformMatrix(page)).toBe(fullMatrix)
+    await waitForTransform(page)
+    await expect.poll(async () => (await snapshot(page)).hash).toBe(full.hash)
+
+    // Without the crop constraint the corrected photo keeps the whole frame,
+    // still under a geometry; constraining it again gives Full's crop back
+    // exactly.
+    await selectTransformSection(page, 'Frame')
+    await constrainCrop(page).click()
+    await expect(constrainCrop(page)).not.toBeChecked()
+    await expect
+      .poll(async () => {
+        const frame = await snapshot(page)
+        return [frame.width, frame.height]
+      })
+      .toEqual([original.width, original.height])
+    await expect(transformTool(page).getByRole('alert')).toHaveCount(0)
+    expect(await transformMatrix(page)).not.toBe(IDENTITY_MATRIX)
+    await constrainCrop(page).click()
+    await expect(constrainCrop(page)).toBeChecked()
+    await expect.poll(() => transformMatrix(page)).toBe(fullMatrix)
+    await expect.poll(async () => (await snapshot(page)).hash).toBe(full.hash)
+  })
+}
+
+for (const preview of ['gpu', 'cpu'] as const) {
+  test(`${preview}: Auto, picked on its own with the manual controls neutral, straightens the tilted verticals`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      preview === 'gpu' && !projectHasWebGPU(testInfo),
+      NO_WEBGPU_SKIP_REASON,
+    )
+    testInfo.setTimeout(240_000)
+    expect(
+      existsSync(rawPath),
+      'Required public DNG is missing. Run pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public before browser validation.',
+    ).toBe(true)
+    await page.addInitScript(() => {
+      localStorage.setItem('lumaforge.locale', 'en')
+    })
+    await page.goto(
+      rawPreviewUrl(
+        testInfo,
+        preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
+      ),
+    )
+    await loadRaw(page)
+    if (preview === 'gpu') {
+      await expectWebGPUPreview(page, testInfo)
+    } else {
+      await expect(page.locator('.raw-preview-canvas')).toHaveCount(0)
+    }
+    await openTool(page, 'Transform')
+    await waitForTransform(page)
+    await showGrid(page)
+    const original = await snapshot(page)
+    const originalTilt = await verticalEdgeTilt(page)
+    // The fixture's walls and screen edges lean several degrees.
+    expect(originalTilt.edges).toBeGreaterThan(1000)
+    expect(Math.abs(originalTilt.tilt)).toBeGreaterThan(5)
+
+    await selectUpright(page, 'auto')
+    await selectTransformSection(page, 'Perspective')
+    for (const name of ['Vertical', 'Horizontal', 'Rotate', 'Aspect']) {
+      await expect(
+        transformTool(page).getByRole('slider', { name, exact: true }),
+      ).toHaveAttribute('aria-valuenow', '0')
+    }
+    await selectTransformSection(page, 'Frame')
+    for (const name of ['Scale', 'X offset', 'Y offset']) {
+      await expect(
+        transformTool(page).getByRole('slider', { name, exact: true }),
+      ).toHaveAttribute('aria-valuenow', '0')
+    }
+    await expect(constrainCrop(page)).toBeChecked()
+
+    const matrix = await transformMatrix(page)
+    expect(matrix).toBeTruthy()
+    expect(matrix).not.toBe(IDENTITY_MATRIX)
+    const corrected = await snapshot(page)
+    expect(corrected.hash).not.toBe(original.hash)
+    expect(corrected.width).toBeLessThan(original.width)
+    expect(corrected.height).toBeLessThan(original.height)
+    expect(corrected.width).toBeGreaterThan(original.width / 2)
+    expect(corrected.colors).toBeGreaterThan(1000)
+    const correctedTilt = await verticalEdgeTilt(page)
+    expect(correctedTilt.edges).toBeGreaterThan(1000)
+    // Auto levels or keystones the photo depending on the lines each preview
+    // source yields; either way the lean drops well below the original's.
+    expect(Math.abs(correctedTilt.tilt)).toBeLessThan(
+      Math.abs(originalTilt.tilt) * 0.6,
+    )
+  })
+}
+
+test('a RAW that fails to load clears the Transform, and the next RAW starts neutral and solves again', async ({
+  page,
+}, testInfo) => {
+  testInfo.setTimeout(360_000)
+  expect(
+    existsSync(rawPath),
+    'Required public DNG is missing. Run pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public before browser validation.',
+  ).toBe(true)
+  await page.addInitScript(() => {
+    localStorage.setItem('lumaforge.locale', 'en')
+  })
+  // Each project runs its own preview: WebGPU in Chromium, the CPU preview
+  // in WebKit.
+  await page.goto(rawPreviewUrl(testInfo))
+  await loadRaw(page)
+  await expectWebGPUPreview(page, testInfo)
+  await openTool(page, 'Transform')
+  await waitForTransform(page)
+  await selectUpright(page, 'full')
+  const fullMatrix = await transformMatrix(page)
+  expect(fullMatrix).toBeTruthy()
+  await expect(transformCanvas(page)).toBeVisible()
+
+  await chooseReplacement(page, {
+    name: 'broken.dng',
+    mimeType: 'image/x-adobe-dng',
+    buffer: Buffer.from('This is not RAW image data.'),
+  })
+  const error = page.getByRole('heading', { name: 'Error', exact: true })
+  await expect(error).toBeVisible({ timeout: 60_000 })
+  // Nothing of the earlier photo or its geometry is left on the stage.
+  await expect(page.locator('[data-raw-transform-preview]')).toHaveCount(0)
+  await expect(
+    page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
+  ).toHaveCount(0)
+  await expect(
+    page.getByRole('heading', { name: rawName, exact: true }),
+  ).toHaveCount(0)
+  if (!isMobile(page)) {
+    // The rail keeps the Transform card, neutral and closed to edits, and
+    // there is nothing to export.
+    await expect(transformTool(page).getByTestId('mode-off')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await expect(transformTool(page).getByTestId('mode-full')).toBeDisabled()
+    await expect(
+      page.getByRole('button', {
+        name: 'Export full-resolution JPEG',
+        exact: true,
+      }),
+    ).toBeDisabled()
+  }
+  // The innermost block holding both the heading and its Dismiss action is
+  // the error card; the CPU notice has a Dismiss of its own.
+  await page
+    .locator('div')
+    .filter({ has: error })
+    .filter({
+      has: page.getByRole('button', { name: 'Dismiss', exact: true }),
+    })
+    .last()
+    .getByRole('button', { name: 'Dismiss', exact: true })
+    .click()
+  await expect(error).toHaveCount(0)
+
+  await loadRaw(page)
+  await openTool(page, 'Transform')
+  await waitForTransform(page)
+  await selectTransformSection(page, 'Upright')
+  await expect(transformTool(page).getByTestId('mode-off')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await selectTransformSection(page, 'Perspective')
+  await expect(
+    transformTool(page).getByRole('slider', { name: 'Rotate', exact: true }),
+  ).toHaveAttribute('aria-valuenow', '0')
+  await expect(page.locator('[data-raw-transform-preview]')).toHaveCount(0)
+  await openTool(page, 'Export')
+  await expect(
+    page.getByRole('button', {
+      name: 'Export full-resolution JPEG',
+      exact: true,
+    }),
+  ).toBeEnabled({ timeout: 30_000 })
+
+  // The same photo answers Full with the same geometry it had before.
+  await openTool(page, 'Transform')
+  await waitForTransform(page)
+  await selectUpright(page, 'full')
+  expect(await transformMatrix(page)).toBe(fullMatrix)
+  await expect(transformCanvas(page)).toBeVisible()
 })
