@@ -3,8 +3,8 @@
 // Signature returns an AsyncIterable<CandidateResult> with a maxConcurrent
 // cap, so callers can `for await (...)` and process / discard candidates
 // as they complete instead of buffering N output blobs in memory. This is
-// the floor of safety until a shared preview/candidate/export back-pressure
-// budget (`render-budget`) exists.
+// the floor of safety: no shared preview/candidate/export back-pressure
+// budget exists.
 
 import type { SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 

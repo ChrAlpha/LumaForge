@@ -41,6 +41,10 @@ const RETIRED_SCAFFOLDING = [
   'OutputIntent',
   'ResumeFingerprint',
   'SourceReacquisitionMode',
+  // The policy aliases and defaults no engine function took.
+  'ExportFidelity',
+  'NODE_DEFAULT_CAPABILITY',
+  'RenderBudget',
 ]
 
 /** The declaration entry of every published subpath, from package.json. */
@@ -87,7 +91,7 @@ describeWithDist(
       )
     })
 
-    it('publishes no context or checkpoint scaffolding on any subpath', () => {
+    it('publishes no retired context, checkpoint or policy scaffolding on any subpath', () => {
       const typeEntries = publishedTypeEntries()
       const program = ts.createProgram({
         rootNames: Object.values(typeEntries),
@@ -140,15 +144,12 @@ describeWithDist(
       expect(declarations).toEqual([])
     }, 30_000)
 
-    it('@/policy subpath resolves and ships NODE_DEFAULT_CAPABILITY', async () => {
-      const mod = (await import(DIST_POLICY)) as {
-        NODE_DEFAULT_CAPABILITY: {
-          coi: boolean
-          hwConcurrency: number
-        }
-      }
-      expect(mod.NODE_DEFAULT_CAPABILITY.coi).toBe(false)
-      expect(mod.NODE_DEFAULT_CAPABILITY.hwConcurrency).toBe(1)
+    it('@/policy subpath resolves and ships the policy decisions without a Node default', async () => {
+      const mod = (await import(DIST_POLICY)) as Record<string, unknown>
+      expect(typeof mod.deriveExportPolicy).toBe('function')
+      expect(typeof mod.deriveInteractivePolicy).toBe('function')
+      expect(typeof mod.deriveRuntimeResourceBudget).toBe('function')
+      expect(mod).not.toHaveProperty('NODE_DEFAULT_CAPABILITY')
     })
   },
 )

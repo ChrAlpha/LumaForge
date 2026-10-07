@@ -68,9 +68,6 @@ export {
 
 // Policy (input types)
 export type { CapabilityVector } from './policy/capability-input'
-export { NODE_DEFAULT_CAPABILITY } from './policy/capability-input'
-export type { ExportFidelity } from './policy/export-fidelity'
-export type { RenderBudget } from './policy/render-budget'
 
 // Export (pure-logic primitives)
 export { TypedBufferPool } from './export/buffer-pool'

@@ -44,6 +44,13 @@ const retiredScaffolding = [
   'SourceReacquisitionMode',
 ]
 
+// The policy aliases and defaults no engine function took.
+const retiredPolicy = [
+  'ExportFidelity',
+  'NODE_DEFAULT_CAPABILITY',
+  'RenderBudget',
+]
+
 let program: ts.Program
 
 beforeAll(() => {
@@ -94,63 +101,53 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('deprecated engine scaffolding on the public entries', () => {
-  it('keeps every deprecated value exported with the same identity', () => {
-    expect(rootEntry.NODE_DEFAULT_CAPABILITY).toBe(
-      policyEntry.NODE_DEFAULT_CAPABILITY,
-    )
-    expect(policyEntry.NODE_DEFAULT_CAPABILITY).toEqual({
-      coi: false,
-      pthread: false,
-      deviceMemoryGB: null,
-      hwConcurrency: 1,
-      webKitClass: 'unknown',
-      deviceFormFactor: 'desktop',
-      maybeOpfsSupported: false,
-    })
+  it('keeps the remaining deprecated values exported with the same identity', () => {
     expect(typeof exportEntry.createNodeJpegRowSink).toBe('function')
     expect(rootEntry.normalizeExportConcurrency).toBe(
       exportEntry.normalizeExportConcurrency,
     )
   })
 
-  it('keeps the deprecated type shapes on both entries', () => {
-    expectTypeOf<rootEntry.ExportFidelity>().toEqualTypeOf<policyEntry.ExportFidelity>()
-    expectTypeOf<policyEntry.ExportFidelity>().toEqualTypeOf<
+  it('accepts exactly the three preference values for export concurrency', () => {
+    expectTypeOf<policyEntry.PerformancePreference>().toEqualTypeOf<
       'safe' | 'balanced' | 'max'
     >()
-    expectTypeOf<rootEntry.RenderBudget>().toEqualTypeOf<policyEntry.RenderBudget>()
-    expectTypeOf<keyof policyEntry.RenderBudget>().toEqualTypeOf<
-      'maxConcurrent' | 'maxCandidatesPerSweep' | 'softMemoryBudgetMiB'
-    >()
-    expectTypeOf(
-      policyEntry.NODE_DEFAULT_CAPABILITY,
-    ).toEqualTypeOf<policyEntry.CapabilityVector>()
-  })
-
-  it('accepts the same preference values for export concurrency', () => {
     expectTypeOf(exportEntry.normalizeExportConcurrency)
       .parameter(1)
       .toEqualTypeOf<policyEntry.PerformancePreference>()
-    expectTypeOf(exportEntry.normalizeExportConcurrency)
-      .parameter(1)
-      .toEqualTypeOf<policyEntry.ExportFidelity>()
     expect(exportEntry.normalizeExportConcurrency(undefined, 'safe')).toBe(1)
     expect(exportEntry.normalizeExportConcurrency(undefined, 'balanced')).toBe(
       2,
     )
     expect(exportEntry.normalizeExportConcurrency(undefined, 'max')).toBe(3)
+    expect(exportEntry.normalizeExportConcurrency(8, 'safe')).toBe(3)
+    expect(exportEntry.normalizeExportConcurrency(2.7, 'max')).toBe(2)
+    expect(() => exportEntry.normalizeExportConcurrency(0, 'balanced')).toThrow(
+      'FULL_RES_EXPORT_INVALID_CONCURRENCY',
+    )
   })
 
-  it('marks the unused scaffolding deprecated on every entry that exports it', () => {
-    for (const entry of [entries.root, entries.policy]) {
-      expect(deprecationOf(entry, 'RenderBudget')).not.toBeNull()
-      expect(deprecationOf(entry, 'NODE_DEFAULT_CAPABILITY')).toContain(
-        'CapabilityVector',
-      )
-      expect(deprecationOf(entry, 'ExportFidelity')).toContain(
-        'PerformancePreference',
-      )
+  it('admits capability only as an explicit caller-supplied vector', () => {
+    expectTypeOf(policyEntry.deriveExportPolicy)
+      .parameter(0)
+      .toEqualTypeOf<policyEntry.CapabilityVector>()
+    expectTypeOf(policyEntry.deriveInteractivePolicy)
+      .parameter(0)
+      .toEqualTypeOf<policyEntry.CapabilityVector>()
+    expectTypeOf(policyEntry.deriveRuntimeResourceBudget)
+      .parameter(0)
+      .toEqualTypeOf<policyEntry.CapabilityVector>()
+    expectTypeOf<rootEntry.CapabilityVector>().toEqualTypeOf<policyEntry.CapabilityVector>()
+    for (const derive of [
+      policyEntry.deriveInteractivePolicy,
+      policyEntry.deriveRuntimeResourceBudget,
+    ]) {
+      // @ts-expect-error a capability vector is required
+      expect(() => derive()).toThrow(TypeError)
     }
+  })
+
+  it('marks the remaining deprecated scaffolding on the entries that export it', () => {
     expect(deprecationOf(entries.export, 'createNodeJpegRowSink')).toContain(
       'JpegRowSink',
     )
@@ -168,6 +165,18 @@ describe('deprecated engine scaffolding on the public entries', () => {
     }
     expect(deprecationOf(entries.export, 'JpegRowSink')).toBeNull()
     expect(deprecationOf(entries.export, 'createWasmJpegRowSink')).toBeNull()
+  })
+
+  it('exports no retired policy alias or default from any entry', () => {
+    for (const [entryName, entry] of Object.entries(entries)) {
+      for (const name of retiredPolicy) {
+        expect(exportedSymbol(entry, name), `${name} in ${entryName}`).toBe(
+          undefined,
+        )
+      }
+    }
+    expect(Object.keys(rootEntry)).not.toContain('NODE_DEFAULT_CAPABILITY')
+    expect(Object.keys(policyEntry)).not.toContain('NODE_DEFAULT_CAPABILITY')
   })
 
   it('exports no context or checkpoint scaffolding from any entry', () => {
@@ -220,11 +229,14 @@ describe('deprecated engine scaffolding on the public entries', () => {
     expect(deprecationOf(entries.manifest, 'RenderIdentity')).toBeNull()
   })
 
-  it('has no engine code depending on ExportFidelity beyond the entries', () => {
-    const importers = sourceFiles(srcDir)
-      .filter((file) => /\bexport-fidelity'/.test(readFileSync(file, 'utf8')))
+  it('has no engine code declaring or importing the retired policy APIs', () => {
+    const offenders = sourceFiles(srcDir)
+      .filter((file) =>
+        /\/(?:render-budget|export-fidelity)'|\b(?:RenderBudget|ExportFidelity|NODE_DEFAULT_CAPABILITY)\b/.test(
+          readFileSync(file, 'utf8'),
+        ),
+      )
       .map((file) => relative(srcDir, file).replaceAll('\\', '/'))
-      .sort()
-    expect(importers).toEqual(['index.ts', 'policy/index.ts'])
+    expect(offenders).toEqual([])
   })
 })

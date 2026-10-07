@@ -377,11 +377,9 @@ removal, not protected: dedicated retirement changes delete them with a
 `### Breaking` CHANGELOG entry. Until then no app or CLI code may start using
 them again, and an unrelated change does not remove them on the side:
 
-- `@lumaforge/render-engine`: `RenderBudget`, `NODE_DEFAULT_CAPABILITY`,
-  `ExportFidelity` (use `PerformancePreference`), `sourceContentIdFromFile`,
-  and `createNodeJpegRowSink` with its `BytesJpegRuntime` and
-  `BytesJpegEncoder` input types
-  (`packages/render-engine/src/export/jpeg/node-row-sink.ts`).
+- `@lumaforge/render-engine`: `sourceContentIdFromFile`, and
+  `createNodeJpegRowSink` with its `BytesJpegRuntime` and `BytesJpegEncoder`
+  input types (`packages/render-engine/src/export/jpeg/node-row-sink.ts`).
 - `@lumaforge/luma-color-runtime`: `ProcessingParams.viewMode` and
   `ProcessingParams.compareSplit`.
 
