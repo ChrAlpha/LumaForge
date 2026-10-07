@@ -11,6 +11,7 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { resolveWorkspaceRoot, workspacePaths } from '@lumaforge/lmfg-cli'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -153,11 +154,26 @@ describe('session image delivery', () => {
       },
     ]) {
       await writeFile(manifest, JSON.stringify(seal(changed)))
-      expect((await readSessionImage(cwd, args)).isError).toBe(true)
+      expect((await readSessionImage(cwd, args)).structuredContent).toEqual({
+        schema: 'lmfg.error.v1',
+        ok: false,
+        error: {
+          code: 'image.refused',
+          message:
+            'Image content or provenance does not match its recorded manifest.',
+        },
+      })
     }
     await writeFile(manifest, JSON.stringify(original))
     await writeRecord(sessionFile, sessionRecord('other', SOURCE))
-    expect((await readSessionImage(cwd, args)).isError).toBe(true)
+    expect((await readSessionImage(cwd, args)).structuredContent).toMatchObject(
+      {
+        error: {
+          message:
+            'Session record identity does not match the requested session.',
+        },
+      },
+    )
   })
 
   it('rejects oversized and malformed JPEG payloads', async () => {
@@ -410,5 +426,144 @@ describe('session image delivery', () => {
       await client.close()
       await server.close()
     }
+  })
+})
+
+describe('session image delivery from the documented CLI layout', () => {
+  let cwd: string
+
+  beforeEach(async () => {
+    cwd = await mkdtemp(join(tmpdir(), 'lmfg-image-layout-'))
+  })
+
+  afterEach(async () => {
+    await rm(cwd, { recursive: true, force: true })
+  })
+
+  // Spelled out segment by segment as the CLI documents its workspace, so the
+  // reader is held to the on-disk layout and not to the path helpers.
+  async function put(segments: string[], content: Buffer | string) {
+    const path = join(cwd, '.lmfg', 'sessions', 'sess_layout', ...segments)
+    await mkdir(join(path, '..'), { recursive: true })
+    await writeFile(path, content)
+  }
+
+  it('reads a preview, a candidate, and a contact sheet at their literal paths', async () => {
+    const source = { sha256: 'e'.repeat(64), byte_size: 4096 }
+    await put(
+      ['session.json'],
+      JSON.stringify(sessionRecord('sess_layout', source)),
+    )
+    await put(['previews', 'prev_0003.jpg'], JPEG)
+    const previewManifest = seal(
+      renderManifest({
+        kind: 'preview',
+        source,
+        decoded: { width: 3000, height: 2000 },
+        output: {
+          filename: 'prev_0003.jpg',
+          sha256: sha256(JPEG),
+          width: 1,
+          height: 1,
+        },
+      }),
+    )
+    await put(
+      ['previews', 'prev_0003.manifest.json'],
+      JSON.stringify(previewManifest),
+    )
+    await put(
+      ['iterations', 'iter_0002', 'plan.json'],
+      JSON.stringify(
+        iterationRecord('iter_0002', 'sess_layout', [
+          { id: 'cand_0001', tag: 'Soft' },
+        ]),
+      ),
+    )
+    await put(
+      ['iterations', 'iter_0002', 'candidates', 'cand_0001', 'preview.jpg'],
+      JPEG,
+    )
+    const candidateManifest = seal(
+      renderManifest({
+        kind: 'candidate',
+        source,
+        decoded: { width: 3000, height: 2000 },
+        output: {
+          filename: 'preview.jpg',
+          sha256: sha256(JPEG),
+          width: 1,
+          height: 1,
+        },
+      }),
+    )
+    await put(
+      ['iterations', 'iter_0002', 'candidates', 'cand_0001', 'manifest.json'],
+      JSON.stringify(candidateManifest),
+    )
+    await put(['iterations', 'iter_0002', 'contact-sheet.jpg'], JPEG)
+    await put(
+      ['iterations', 'iter_0002', 'contact-sheet.map.json'],
+      JSON.stringify(
+        contactSheetMap('iter_0002', { width: 1, height: 1 }, [
+          { candidate_id: 'cand_0001', x: 0, y: 0, width: 1, height: 1 },
+        ]),
+      ),
+    )
+    const sessionDir = join(cwd, '.lmfg', 'sessions', 'sess_layout')
+
+    const preview = await readSessionImage(cwd, {
+      session: 'sess_layout',
+      artifact: { kind: 'preview', preview_id: 'prev_0003' },
+    })
+    expect(preview.structuredContent).toMatchObject({
+      ok: true,
+      result: {
+        label: 'prev_0003',
+        uri: pathToFileURL(join(sessionDir, 'previews', 'prev_0003.jpg')).href,
+        manifest_sha256: previewManifest.manifest_sha256,
+      },
+    })
+
+    const candidate = await readSessionImage(cwd, {
+      session: 'sess_layout',
+      artifact: {
+        kind: 'candidate',
+        iteration_id: 'iter_0002',
+        candidate_id: 'cand_0001',
+      },
+    })
+    expect(candidate.structuredContent).toMatchObject({
+      ok: true,
+      result: {
+        label: 'Soft',
+        uri: pathToFileURL(
+          join(
+            sessionDir,
+            'iterations',
+            'iter_0002',
+            'candidates',
+            'cand_0001',
+            'preview.jpg',
+          ),
+        ).href,
+        manifest_sha256: candidateManifest.manifest_sha256,
+      },
+    })
+
+    const sheet = await readSessionImage(cwd, {
+      session: 'sess_layout',
+      artifact: { kind: 'contact-sheet', iteration_id: 'iter_0002' },
+    })
+    expect(sheet.structuredContent).toMatchObject({
+      ok: true,
+      result: {
+        label: 'contact-sheet',
+        uri: pathToFileURL(
+          join(sessionDir, 'iterations', 'iter_0002', 'contact-sheet.jpg'),
+        ).href,
+        tiles: [{ candidate_id: 'cand_0001', tag: 'Soft', index: 0 }],
+      },
+    })
   })
 })

@@ -43,6 +43,25 @@ const sourceSha = 'a'.repeat(64)
 const parentSha = 'b'.repeat(64)
 const full = { width: 128, height: 96 }
 const source = { sha256: sourceSha, byte_size: 123 }
+// The refusal each semantic check reports, written out here so a check that
+// starts failing for another reason cannot pass as this one.
+const refusal = {
+  sourceIdentity:
+    'Export source identity or filename does not match the session and manifest.',
+  exportKind:
+    'Export detail requires a full-resolution export manifest (kind export, policy export-full).',
+  unplannable: 'Export geometry cannot be planned against its source frame.',
+  geometryOutput:
+    'Export geometry output does not match the size the geometry plans from its source frame.',
+  outputDimensions:
+    'Export output dimensions do not match the size its source frame and geometry deliver.',
+  actualJpeg:
+    'Actual JPEG dimensions or format do not match the export manifest.',
+  orientation:
+    'Export JPEG orientation must already be applied (EXIF Orientation 1).',
+  incompleteJpeg: 'Export is not a complete JPEG.',
+}
+const refusedWith = (message: string) => new Error(message)
 
 describe('verified export JPEG detail', () => {
   let cwd: string
@@ -202,22 +221,42 @@ describe('verified export JPEG detail', () => {
 
   it('refuses inconsistent export kind, source, dimensions, filename, and policy', async () => {
     const original = JSON.parse(JSON.stringify(manifest))
-    for (const changed of [
-      { ...original, kind: 'preview' },
-      {
-        ...original,
-        source_raw: { ...original.source_raw, sha256: 'c'.repeat(64) },
-      },
-      { ...original, source_raw: { ...original.source_raw, byte_size: 124 } },
-      { ...original, output: { ...original.output, filename: 'other.jpg' } },
-      {
-        ...original,
-        output: { ...original.output, dimensions: { width: 127, height: 96 } },
-      },
-      { ...original, policy: { ...original.policy, kind: 'preview-quick' } },
-    ]) {
+    for (const [changed, message] of [
+      [{ ...original, kind: 'preview' }, refusal.exportKind],
+      [
+        {
+          ...original,
+          source_raw: { ...original.source_raw, sha256: 'c'.repeat(64) },
+        },
+        refusal.sourceIdentity,
+      ],
+      [
+        { ...original, source_raw: { ...original.source_raw, byte_size: 124 } },
+        refusal.sourceIdentity,
+      ],
+      [
+        { ...original, output: { ...original.output, filename: 'other.jpg' } },
+        refusal.sourceIdentity,
+      ],
+      [
+        {
+          ...original,
+          output: {
+            ...original.output,
+            dimensions: { width: 127, height: 96 },
+          },
+        },
+        refusal.outputDimensions,
+      ],
+      [
+        { ...original, policy: { ...original.policy, kind: 'preview-quick' } },
+        refusal.exportKind,
+      ],
+    ] as const) {
       await writeFile(manifestPath, JSON.stringify(seal(changed)))
-      await expect(createExportDetail(cwd, input)).rejects.toThrow()
+      await expect(createExportDetail(cwd, input)).rejects.toThrow(
+        refusedWith(message),
+      )
     }
     await writeFile(manifestPath, JSON.stringify(manifest))
     await writeFile(
@@ -289,6 +328,7 @@ describe('verified export JPEG detail', () => {
     it.each([
       [
         'recorded geometry output',
+        refusal.geometryOutput,
         (m: Manifest) => ({
           ...m,
           render_params: {
@@ -299,6 +339,7 @@ describe('verified export JPEG detail', () => {
       ],
       [
         'crop mode',
+        refusal.geometryOutput,
         (m: Manifest) => ({
           ...m,
           render_params: {
@@ -309,6 +350,7 @@ describe('verified export JPEG detail', () => {
       ],
       [
         'matrix',
+        refusal.geometryOutput,
         (m: Manifest) => ({
           ...m,
           render_params: {
@@ -322,6 +364,7 @@ describe('verified export JPEG detail', () => {
       ],
       [
         'source frame',
+        refusal.geometryOutput,
         (m: Manifest) => ({
           ...m,
           source_raw: {
@@ -332,6 +375,7 @@ describe('verified export JPEG detail', () => {
       ],
       [
         'delivered output',
+        refusal.geometryOutput,
         (m: Manifest) => ({
           ...m,
           output: { ...m.output, dimensions: decoded },
@@ -343,6 +387,7 @@ describe('verified export JPEG detail', () => {
       ],
       [
         'missing geometry',
+        refusal.outputDimensions,
         (m: Manifest) => {
           const { geometry: _geometry, ...params } = m.render_params
           return { ...m, render_params: params }
@@ -350,13 +395,40 @@ describe('verified export JPEG detail', () => {
       ],
     ])(
       'refuses a manifest whose %s disagrees with the delivered geometry',
-      async (_label, change) => {
+      async (_label, message, change) => {
         await writeFile(manifestPath, JSON.stringify(cropped(change)))
         await expect(createExportDetail(cwd, input)).rejects.toThrow(
-          /geometry|dimensions/i,
+          refusedWith(message),
         )
       },
     )
+
+    it('refuses a corrupted output size under a valid geometry before decoding or publishing', async () => {
+      // Source frame and recorded geometry output still agree with the plan
+      // (160x120 at 0.8 delivers 128x96); only the sealed output size lies.
+      await writeFile(
+        manifestPath,
+        JSON.stringify(
+          cropped((m) => ({
+            ...m,
+            output: { ...m.output, dimensions: { width: 128, height: 95 } },
+          })),
+        ),
+      )
+      const loadDecoder = vi.fn(() => import('sharp'))
+      await expect(
+        createExportDetail(
+          cwd,
+          { ...input, region: { x: 0, y: 0, width: 1, height: 1 } },
+          loadDecoder,
+        ),
+      ).rejects.toThrow(refusedWith(refusal.outputDimensions))
+      expect(loadDecoder).not.toHaveBeenCalled()
+      expect(await readdir(join(sessionDir, 'exports'))).toEqual([
+        'final.jpg',
+        'final.manifest.json',
+      ])
+    })
 
     it('refuses a geometry the export could never have planned', async () => {
       await writeFile(
@@ -371,7 +443,9 @@ describe('verified export JPEG detail', () => {
           })),
         ),
       )
-      await expect(createExportDetail(cwd, input)).rejects.toThrow(/geometry/i)
+      await expect(createExportDetail(cwd, input)).rejects.toThrow(
+        refusedWith(refusal.unplannable),
+      )
     })
 
     it('refuses a sealed JPEG whose decoded size is the source frame, not the delivered one', async () => {
@@ -387,7 +461,7 @@ describe('verified export JPEG detail', () => {
         ),
       )
       await expect(createExportDetail(cwd, input)).rejects.toThrow(
-        /JPEG dimensions/i,
+        refusedWith(refusal.actualJpeg),
       )
     })
 
@@ -406,7 +480,7 @@ describe('verified export JPEG detail', () => {
           ),
         )
         await expect(createExportDetail(cwd, input)).rejects.toThrow(
-          /source identity/i,
+          refusedWith(refusal.sourceIdentity),
         )
       }
     })
@@ -432,11 +506,14 @@ describe('verified export JPEG detail', () => {
   })
 
   it('checks actual JPEG dimensions and refuses unapplied orientation', async () => {
-    for (const replacement of [
-      await sharp(jpeg).resize(64, 48).jpeg().toBuffer(),
-      await sharp(jpeg).withMetadata({ orientation: 6 }).jpeg().toBuffer(),
-      jpeg.subarray(0, -100),
-    ]) {
+    for (const [replacement, message] of [
+      [await sharp(jpeg).resize(64, 48).jpeg().toBuffer(), refusal.actualJpeg],
+      [
+        await sharp(jpeg).withMetadata({ orientation: 6 }).jpeg().toBuffer(),
+        refusal.orientation,
+      ],
+      [jpeg.subarray(0, -100), refusal.incompleteJpeg],
+    ] as const) {
       await writeFile(jpegPath, replacement)
       const original = JSON.parse(JSON.stringify(manifest))
       await writeFile(
@@ -449,7 +526,7 @@ describe('verified export JPEG detail', () => {
         ),
       )
       await expect(createExportDetail(cwd, input)).rejects.toThrow(
-        /dimensions|orientation|JPEG/i,
+        refusedWith(message),
       )
     }
   })
@@ -548,4 +625,77 @@ describe('verified export JPEG detail', () => {
       expect(await readdir(join(sessionDir, 'exports', 'details'))).toEqual([])
     },
   )
+})
+
+describe('verified export JPEG detail from the documented CLI layout', () => {
+  let cwd: string
+
+  beforeEach(async () => {
+    cwd = await realpath(await mkdtemp(join(tmpdir(), 'lmfg-detail-layout-')))
+  })
+
+  afterEach(async () => {
+    await rm(cwd, { recursive: true, force: true })
+  })
+
+  it('reads the export and publishes the detail at their literal paths', async () => {
+    // Spelled out segment by segment as the CLI documents its workspace, so
+    // the reader is held to the on-disk layout and not to the path helpers.
+    const sessionDir = join(cwd, '.lmfg', 'sessions', 'sess_layout')
+    const exportsDir = join(sessionDir, 'exports')
+    await mkdir(exportsDir, { recursive: true })
+    const layoutSource = { sha256: 'f'.repeat(64), byte_size: 2048 }
+    await writeFile(
+      join(sessionDir, 'session.json'),
+      JSON.stringify(sessionRecord('sess_layout', layoutSource)),
+    )
+    const size = { width: 40, height: 30 }
+    const exported = await sharp({
+      create: { ...size, channels: 3, background: { r: 200, g: 40, b: 90 } },
+    })
+      .jpeg({ quality: 90 })
+      .toBuffer()
+    await writeFile(join(exportsDir, 'print.jpg'), exported)
+    const sealed = seal(
+      renderManifest({
+        kind: 'export',
+        source: layoutSource,
+        decoded: size,
+        output: { filename: 'print.jpg', sha256: hash(exported), ...size },
+      }),
+    )
+    await writeFile(
+      join(exportsDir, 'print.manifest.json'),
+      JSON.stringify(sealed),
+    )
+
+    const region = { x: 5, y: 7, width: 9, height: 4 }
+    const { png, result } = await createExportDetail(cwd, {
+      session: 'sess_layout',
+      export_name: 'print',
+      region,
+    })
+    expect(result).toMatchObject({
+      session_id: 'sess_layout',
+      export_name: 'print',
+      export_manifest_sha256: sealed.manifest_sha256,
+      input_jpeg_sha256: hash(exported),
+      full_dimensions: { width: 40, height: 30 },
+      region,
+      width: 9,
+      height: 4,
+    })
+    expect(fileURLToPath(result.input_jpeg_uri)).toBe(
+      join(exportsDir, 'print.jpg'),
+    )
+    expect(fileURLToPath(result.uri)).toBe(
+      join(exportsDir, 'details', `${hash(png)}.png`),
+    )
+    expect(fileURLToPath(result.receipt_uri)).toBe(
+      join(exportsDir, 'details', `${result.receipt_sha256}.json`),
+    )
+    expect((await readdir(join(exportsDir, 'details'))).sort()).toEqual(
+      [`${hash(png)}.png`, `${result.receipt_sha256}.json`].sort(),
+    )
+  })
 })
