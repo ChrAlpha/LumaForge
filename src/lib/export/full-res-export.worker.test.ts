@@ -1,3 +1,6 @@
+// Loading the worker module installs its `self.onmessage` handler.
+import './full-res-export.worker'
+
 import { createHash } from 'node:crypto'
 
 import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
@@ -9,10 +12,10 @@ import {
   materializeOutputBlob,
   preserveJpegMetadata,
   runFullResolutionJpegExport,
+  runProcessedWindowExportLifecycle,
 } from '@lumaforge/render-engine/export'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runProcessedWindowExportLifecycle } from './full-res-export.worker'
 import type { FullResExportWorkerResponse } from './full-res-export-client'
 import {
   createMemoryFileBackedOutputResult,
@@ -732,6 +735,69 @@ describe('full-resolution export worker lifecycle responses', () => {
     expect(bytesIncludeAscii(bytes, 'Sony')).toBe(true)
     expect(bytesIncludeAscii(bytes, 'ILCE-7RM5')).toBe(true)
     expect(bytesIncludeAscii(bytes, 'FE 50mm F1.4 GM')).toBe(true)
+  })
+
+  it('posts the begin failure without exporting or ending the session', async () => {
+    const terminalResponse = new Promise<FullResExportWorkerResponse>(
+      (resolve) => {
+        vi.spyOn(self, 'postMessage').mockImplementation((message) => {
+          const response = message as FullResExportWorkerResponse
+          if (response.kind === 'success' || response.kind === 'error') {
+            resolve(response)
+          }
+        })
+      },
+    )
+    const session = {
+      probeExportCapability: vi.fn(async () => ({
+        supported: true,
+        width: 1,
+        height: 1,
+      })),
+      readRawWindow: vi.fn(),
+      readProcessedWindow: vi.fn(),
+      beginProcessedWindowExport: vi.fn(async () => {
+        throw new Error('BEGIN_FAILED')
+      }),
+      endProcessedWindowExport: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+    }
+    const runtime = {
+      init: vi.fn(async () => undefined),
+      openSession: vi.fn(async () => session),
+      dispose: vi.fn(),
+    }
+    vi.mocked(createLumaRawRuntime).mockReturnValue(runtime as never)
+    vi.mocked(runFullResolutionJpegExport).mockClear()
+
+    self.onmessage?.({
+      data: {
+        kind: 'start',
+        requestId: 'request-begin-failure',
+        file: new File(['raw'], 'sample.RAF'),
+        graph: {
+          supported: true,
+          outputGamut: 'srgb-rec709',
+          outputTransfer: 'srgb',
+          lutProfile: null,
+          steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
+        },
+        collectMetrics: false,
+      },
+    } as MessageEvent)
+
+    await expect(terminalResponse).resolves.toEqual({
+      kind: 'error',
+      requestId: 'request-begin-failure',
+      message: 'BEGIN_FAILED',
+    })
+    expect(session.beginProcessedWindowExport).toHaveBeenCalledWith(
+      expect.any(AbortSignal),
+    )
+    expect(runFullResolutionJpegExport).not.toHaveBeenCalled()
+    expect(session.endProcessedWindowExport).not.toHaveBeenCalled()
+    expect(session.dispose).toHaveBeenCalledTimes(1)
+    expect(runtime.dispose).toHaveBeenCalledTimes(1)
   })
 
   it('posts one error and no success when end fails after a successful export', async () => {

@@ -6,7 +6,10 @@ import { exposureMultiplierFromEv } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import type { RenderManifest } from '@lumaforge/render-engine'
 import type { FullResolutionExportProgress } from '@lumaforge/render-engine/export'
-import { runFullResolutionJpegExport } from '@lumaforge/render-engine/export'
+import {
+  runFullResolutionJpegExport,
+  runProcessedWindowExportLifecycle,
+} from '@lumaforge/render-engine/export'
 import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 
 import { LmfgError } from '../protocol/errors'
@@ -120,39 +123,31 @@ export async function runFullResolutionExport(
 
     let strips = 0
     const exportStart = performance.now()
-    await session.beginProcessedWindowExport?.(input.signal)
     const sink = createFileJpegRowSink({
       path: input.outputPath,
       metadata: session.probe,
     })
     try {
-      // The processed-window export must end cleanly for the JPEG to count:
-      // a failed end refuses the export, but never replaces a render failure.
-      let failure: { error: unknown } | null = null
-      try {
-        await runFullResolutionJpegExport({
-          capability,
-          graph,
-          readProcessedWindow: session.readProcessedWindow,
-          quality: percentToQuality(input.quality),
-          preferredRows: input.preferredRows ?? DEFAULT_EXPORT_STRIP_ROWS,
-          concurrency: 1,
-          jpegSink: sink,
-          signal: input.signal,
-          onProgress: (progress) => {
-            strips = progress.totalStrips
-            input.onProgress?.(progress)
-          },
-        })
-      } catch (error) {
-        failure = { error }
-      }
-      try {
-        await session.endProcessedWindowExport?.()
-      } catch (error) {
-        failure ??= { error }
-      }
-      if (failure) throw failure.error
+      await runProcessedWindowExportLifecycle({
+        beginProcessedWindowExport: session.beginProcessedWindowExport,
+        endProcessedWindowExport: session.endProcessedWindowExport,
+        signal: input.signal,
+        runExport: () =>
+          runFullResolutionJpegExport({
+            capability,
+            graph,
+            readProcessedWindow: session.readProcessedWindow,
+            quality: percentToQuality(input.quality),
+            preferredRows: input.preferredRows ?? DEFAULT_EXPORT_STRIP_ROWS,
+            concurrency: 1,
+            jpegSink: sink,
+            signal: input.signal,
+            onProgress: (progress) => {
+              strips = progress.totalStrips
+              input.onProgress?.(progress)
+            },
+          }),
+      })
       timings.export_ms = performance.now() - exportStart
       const streamed = sink.result()
       if (!streamed) {

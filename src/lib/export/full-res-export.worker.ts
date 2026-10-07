@@ -13,6 +13,7 @@ import {
   planJpegMetadataInjection,
   preserveJpegMetadata,
   runFullResolutionJpegExport,
+  runProcessedWindowExportLifecycle,
   sha256OfJpegWithMetadata,
 } from '@lumaforge/render-engine/export'
 import { createStreamingSha256 } from '@lumaforge/render-engine/manifest'
@@ -29,13 +30,6 @@ import {
   createOpfsFileBackedOutputResult,
   createOpfsOutputWritable,
 } from './output-sink'
-
-type ProcessedWindowExportLifecycleInput<Result> = {
-  beginProcessedWindowExport?: (signal?: AbortSignal) => Promise<unknown>
-  endProcessedWindowExport?: (signal?: AbortSignal) => Promise<unknown>
-  runExport: () => Promise<Result>
-  signal?: AbortSignal
-}
 
 function toErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) {
@@ -362,50 +356,6 @@ async function sha256OfBlobBytes(blob: Blob): Promise<string> {
 }
 
 const activeRequests = new Map<string, AbortController>()
-
-export async function runProcessedWindowExportLifecycle<Result>({
-  beginProcessedWindowExport,
-  endProcessedWindowExport,
-  runExport,
-  signal,
-}: ProcessedWindowExportLifecycleInput<Result>): Promise<Result> {
-  let processedWindowExportActive = false
-
-  if (beginProcessedWindowExport) {
-    await beginProcessedWindowExport(signal)
-    processedWindowExportActive = true
-  }
-
-  let primaryError: unknown
-  let cleanupError: unknown
-  let hasPrimaryError = false
-  let result: Result
-
-  try {
-    result = await runExport()
-  } catch (error) {
-    primaryError = error
-    hasPrimaryError = true
-  }
-
-  if (processedWindowExportActive && endProcessedWindowExport) {
-    try {
-      await endProcessedWindowExport()
-    } catch (error) {
-      cleanupError = error
-    }
-  }
-
-  if (hasPrimaryError) {
-    throw primaryError
-  }
-
-  if (cleanupError !== undefined) {
-    throw cleanupError
-  }
-
-  return result!
-}
 
 async function handleStart(
   message: Extract<FullResExportWorkerRequest, { kind: 'start' }>,

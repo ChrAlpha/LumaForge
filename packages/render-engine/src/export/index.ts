@@ -26,6 +26,10 @@ export {
   runOrderedConcurrent,
 } from './pipeline-concurrency'
 export {
+  type ProcessedWindowExportLifecycleInput,
+  runProcessedWindowExportLifecycle,
+} from './processed-window-export'
+export {
   type LinearProPhotoTile,
   type ProcessedRgb16Rows,
   processedWindowToLinearProPhotoTile,

@@ -8,6 +8,12 @@ predates this file.
 
 ### Added
 
+- `runProcessedWindowExportLifecycle` in `@lumaforge/render-engine/export`:
+  brackets one processed-window export with the session's optional
+  `beginProcessedWindowExport`/`endProcessedWindowExport` hooks. End runs only
+  after a successful begin and without the stage signal; an end failure
+  rejects an otherwise successful export but never replaces the export's own
+  failure. The `/raw` export worker and `lmfg` export both use it.
 - `resolvePreviewColorPlan` in `@lumaforge/render-engine/preview`: what a
   preview executor (`'webgpu'` or `'cpu'`) draws for the selected look. It
   reports the selection and the drawn look separately, with a typed reason
