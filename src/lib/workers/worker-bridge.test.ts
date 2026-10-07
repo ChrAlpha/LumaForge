@@ -440,22 +440,31 @@ describe('workerBridge', () => {
     })
 
     it('swallows a late startup failure after cancellation', async () => {
-      const { bridge, starts } = createDeferredStartBridge()
-      const c = new AbortController()
-      const p = bridge.call('echo', c.signal, 1)
-      await vi.waitFor(() => expect(starts).toHaveLength(1))
-      c.abort()
-      await expect(p).rejects.toThrow(/aborted/i)
+      const unhandled = vi.fn()
+      process.on('unhandledRejection', unhandled)
+      try {
+        const { bridge, starts } = createDeferredStartBridge()
+        const c = new AbortController()
+        const p = bridge.call('echo', c.signal, 1)
+        await vi.waitFor(() => expect(starts).toHaveLength(1))
+        c.abort()
+        await expect(p).rejects.toThrow(/aborted/i)
 
-      starts[0]!.reject(new Error('late boom'))
-      await Promise.resolve()
-      expect(bridge.getLifecycleSnapshot().alive).toBe(false)
+        starts[0]!.reject(new Error('late boom'))
+        // Unhandled rejections are reported once the microtask queue drains,
+        // so wait a whole event-loop turn rather than a single tick.
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(unhandled).not.toHaveBeenCalled()
+        expect(bridge.getLifecycleSnapshot().alive).toBe(false)
 
-      const next = bridge.call('echo', new AbortController().signal, 2)
-      await vi.waitFor(() => expect(starts).toHaveLength(2))
-      starts[1]!.resolve()
-      await expect(next).resolves.toBe(2)
-      await bridge.terminate()
+        const next = bridge.call('echo', new AbortController().signal, 2)
+        await vi.waitFor(() => expect(starts).toHaveLength(2))
+        starts[1]!.resolve()
+        await expect(next).resolves.toBe(2)
+        await bridge.terminate()
+      } finally {
+        process.off('unhandledRejection', unhandled)
+      }
     })
 
     it('retries startup on the next call after a startup failure', async () => {
@@ -486,6 +495,160 @@ describe('workerBridge', () => {
       await expect(p).rejects.toThrow(/terminated/i)
       expect(starts[0]!.echo).not.toHaveBeenCalled()
       expect(starts[0]!.terminate).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('cancellation between publication and invocation', () => {
+    const handoffAborts = [
+      ['synchronously by an observer', (c: AbortController) => c.abort()],
+      [
+        'in a microtask an observer queues',
+        (c: AbortController) => queueMicrotask(() => c.abort()),
+      ],
+    ] as const
+
+    function createPublicationBridge() {
+      const handles: Array<{
+        echo: ReturnType<typeof vi.fn>
+        terminate: ReturnType<typeof vi.fn>
+      }> = []
+      const startWorker = vi.fn(() => {
+        const echo = vi.fn(async (value: number) => value)
+        const terminate = vi.fn()
+        handles.push({ echo, terminate })
+        return { api: { echo } as FakeApi, terminate }
+      })
+      const bridge = new WorkerBridge<FakeApi>({ startWorker, idleMs: 100 })
+      return { bridge, startWorker, handles }
+    }
+
+    function abortOnFirstPublication(
+      bridge: WorkerBridge<FakeApi>,
+      controller: AbortController,
+      abort: (controller: AbortController) => void,
+    ) {
+      const unsubscribe = bridge.subscribeLifecycle((snapshot) => {
+        if (!snapshot.alive) return
+        unsubscribe()
+        abort(controller)
+      })
+    }
+
+    it.each(handoffAborts)(
+      'skips the operation aborted %s and lets the next call reuse the published worker',
+      async (_label, abort) => {
+        vi.useFakeTimers()
+        try {
+          const { bridge, startWorker, handles } = createPublicationBridge()
+          const c = new AbortController()
+          abortOnFirstPublication(bridge, c, abort)
+
+          await expect(bridge.call('echo', c.signal, 1)).rejects.toMatchObject({
+            name: 'AbortError',
+            message: 'Aborted',
+          })
+          expect(handles[0]!.echo).not.toHaveBeenCalled()
+          expect(handles[0]!.terminate).not.toHaveBeenCalled()
+          expect(bridge.getLifecycleSnapshot()).toEqual({
+            generation: 1,
+            alive: true,
+            lastTermination: null,
+          })
+
+          await expect(
+            bridge.call('echo', new AbortController().signal, 2),
+          ).resolves.toBe(2)
+          expect(startWorker).toHaveBeenCalledTimes(1)
+          expect(handles[0]!.echo).toHaveBeenCalledTimes(1)
+          expect(handles[0]!.echo).toHaveBeenCalledWith(2)
+          expect(bridge.getLifecycleSnapshot()).toMatchObject({
+            generation: 1,
+            alive: true,
+          })
+
+          await vi.advanceTimersByTimeAsync(100)
+          expect(handles[0]!.terminate).toHaveBeenCalledTimes(1)
+          expect(bridge.getLifecycleSnapshot()).toEqual({
+            generation: 1,
+            alive: false,
+            lastTermination: { generation: 1, reason: 'idle' },
+          })
+        } finally {
+          vi.useRealTimers()
+        }
+      },
+    )
+
+    it.each(handoffAborts)(
+      'idle-disposes the unused published worker exactly once after an abort %s',
+      async (_label, abort) => {
+        vi.useFakeTimers()
+        try {
+          const { bridge, startWorker, handles } = createPublicationBridge()
+          const c = new AbortController()
+          abortOnFirstPublication(bridge, c, abort)
+          await expect(bridge.call('echo', c.signal, 1)).rejects.toMatchObject({
+            name: 'AbortError',
+          })
+
+          await vi.advanceTimersByTimeAsync(99)
+          expect(handles[0]!.terminate).not.toHaveBeenCalled()
+          await vi.advanceTimersByTimeAsync(1)
+          expect(handles[0]!.terminate).toHaveBeenCalledTimes(1)
+          await vi.advanceTimersByTimeAsync(1_000)
+          expect(handles[0]!.terminate).toHaveBeenCalledTimes(1)
+
+          expect(startWorker).toHaveBeenCalledTimes(1)
+          expect(handles[0]!.echo).not.toHaveBeenCalled()
+          expect(bridge.getLifecycleSnapshot()).toEqual({
+            generation: 1,
+            alive: false,
+            lastTermination: { generation: 1, reason: 'idle' },
+          })
+        } finally {
+          vi.useRealTimers()
+        }
+      },
+    )
+
+    it('does not let the signal of an earlier generation terminate its replacement', async () => {
+      const pending: { resolve: (() => void) | null } = { resolve: null }
+      const terminates: Array<ReturnType<typeof vi.fn>> = []
+      const startWorker = vi.fn(({ generation }: { generation: number }) => {
+        const terminate = vi.fn()
+        terminates.push(terminate)
+        return {
+          api: {
+            echo: (value: number) =>
+              generation === 1
+                ? Promise.resolve(value)
+                : new Promise<number>((resolve) => {
+                    pending.resolve = () => resolve(value)
+                  }),
+          } as FakeApi,
+          terminate,
+        }
+      })
+      const bridge = new WorkerBridge<FakeApi>({ startWorker, idleMs: 10_000 })
+      const cA = new AbortController()
+      await expect(bridge.call('echo', cA.signal, 1)).resolves.toBe(1)
+      await bridge.terminate()
+
+      const b = bridge.call('echo', new AbortController().signal, 2)
+      await vi.waitFor(() => expect(pending.resolve).toBeTypeOf('function'))
+      cA.abort()
+      expect(bridge.getLifecycleSnapshot()).toEqual({
+        generation: 2,
+        alive: true,
+        lastTermination: { generation: 1, reason: 'explicit' },
+      })
+
+      pending.resolve?.()
+      await expect(b).resolves.toBe(2)
+      expect(terminates[0]).toHaveBeenCalledTimes(1)
+      expect(terminates[1]).not.toHaveBeenCalled()
+      await bridge.terminate()
+      expect(terminates[1]).toHaveBeenCalledTimes(1)
     })
   })
 

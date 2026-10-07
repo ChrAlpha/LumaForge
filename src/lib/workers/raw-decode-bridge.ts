@@ -22,7 +22,11 @@ export interface RawDecodeBridgeOptions {
 }
 
 export interface RawDecodeBridgeLifecycleSnapshot {
-  /** Most recently started runtime worker generation; 0 before the first. */
+  /**
+   * Most recently published runtime worker generation; 0 before the first. A
+   * start cancelled before it publishes uses up a generation but never shows
+   * here.
+   */
   readonly generation: number
   /** A runtime handle exists for `generation`. */
   readonly workerAlive: boolean

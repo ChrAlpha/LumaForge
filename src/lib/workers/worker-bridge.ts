@@ -258,11 +258,17 @@ export class WorkerBridge<TApi extends object> {
       try {
         const handle =
           this._handle ?? (await this._startWorkerGeneration(signal))
-        // Publishing a start notifies observers, which may abort the call or
-        // terminate the worker before the operation runs.
+        // Publishing a start notifies observers, which may abort the call
+        // (while notified, or in a microtask queued then) or terminate the
+        // worker before the operation runs. Either way the operation is
+        // skipped. An abort here leaves the published worker live: it is
+        // healthy and unused, so the next call reuses it and the idle timer
+        // disposes it if none comes.
         if (signal.aborted) throw abortError()
         if (this._handle !== handle) throw terminatedError()
-        // An abort only stops the worker this call is running on.
+        // From here on an abort terminates the worker, but only while this
+        // call's worker is still the live one; the listener is removed once
+        // the operation settles, so an old signal never stops a replacement.
         const onAbort = () => {
           if (this._handle === handle) void this._terminate('abort')
         }
