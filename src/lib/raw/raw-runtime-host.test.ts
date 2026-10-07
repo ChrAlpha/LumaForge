@@ -498,6 +498,129 @@ describe('raw runtime host', () => {
     expect(session.dispose).toHaveBeenCalledTimes(1)
   })
 
+  describe('session leases', () => {
+    function makeLeaseHost(openSession: LumaRawRuntime['openSession']) {
+      const runtime = makeRuntime({ openSession: vi.fn(openSession) })
+      return {
+        runtime,
+        host: createRawRuntimeHost({ runtimeFactory: () => runtime }),
+      }
+    }
+
+    it('opens one source per lease and disposes it once however the lease ends', async () => {
+      const session = makeSession()
+      const { runtime, host } = makeLeaseHost(async () => session)
+      const file = new File(['raw'], 'a.ARW')
+
+      const lease = host.beginSession()
+      const opened = await lease.open(file)
+
+      expect(runtime.openSession).toHaveBeenCalledTimes(1)
+      expect(runtime.openSession).toHaveBeenCalledWith(
+        file,
+        { maxOutputPixels: QUICK_PREVIEW_MAX_PIXELS },
+        lease.signal,
+      )
+      expect(opened.sourceDimensions).toEqual({ width: 6240, height: 4168 })
+      await expect(lease.open(file)).rejects.toThrow()
+      expect(runtime.openSession).toHaveBeenCalledTimes(1)
+      expect(lease.signal.aborted).toBe(false)
+      expect(session.dispose).not.toHaveBeenCalled()
+
+      // A settled load gives its session back without aborting anything.
+      lease.release()
+      lease.release()
+      lease.cancel()
+      host.cancelSession()
+
+      expect(lease.signal.aborted).toBe(false)
+      expect(session.dispose).toHaveBeenCalledTimes(1)
+    })
+
+    it('aborts work still in flight when a lease is cancelled', async () => {
+      const session = makeSession()
+      const { host } = makeLeaseHost(async () => session)
+      const lease = host.beginSession()
+      await lease.open(new File(['raw'], 'a.ARW'))
+
+      host.cancelSession()
+      lease.cancel()
+      lease.release()
+
+      expect(lease.signal.aborted).toBe(true)
+      expect(session.dispose).toHaveBeenCalledTimes(1)
+    })
+
+    it('never opens a source on a lease that was already released', async () => {
+      const { runtime, host } = makeLeaseHost(async () => makeSession())
+
+      const lease = host.beginSession()
+      lease.release()
+
+      await expect(
+        lease.open(new File(['raw'], 'a.ARW')),
+      ).rejects.toMatchObject({ name: 'AbortError' })
+      expect(runtime.openSession).not.toHaveBeenCalled()
+    })
+
+    it('cancels the previous lease when the next one begins', async () => {
+      const first = makeSession({ sessionId: 'first' })
+      const second = makeSession({ sessionId: 'second' })
+      const { host } = makeLeaseHost(
+        vi
+          .fn<LumaRawRuntime['openSession']>()
+          .mockResolvedValueOnce(first)
+          .mockResolvedValueOnce(second),
+      )
+      const leaseA = host.beginSession()
+      await leaseA.open(new File(['raw'], 'a.ARW'))
+
+      const leaseB = host.beginSession()
+
+      expect(leaseA.signal.aborted).toBe(true)
+      expect(first.dispose).toHaveBeenCalledTimes(1)
+      await leaseB.open(new File(['raw'], 'b.ARW'))
+      expect(leaseB.signal.aborted).toBe(false)
+
+      // A late end of the superseded lease leaves the active one alone.
+      leaseA.release()
+      leaseA.cancel()
+      expect(second.dispose).not.toHaveBeenCalled()
+      expect(leaseB.signal.aborted).toBe(false)
+
+      host.cancelSession()
+      expect(leaseB.signal.aborted).toBe(true)
+      expect(second.dispose).toHaveBeenCalledTimes(1)
+    })
+
+    it('disposes a session that opens after its lease was cancelled', async () => {
+      const lateOpen = deferred<LumaRawDecodeSession>()
+      const late = makeSession({ sessionId: 'late' })
+      const { runtime, host } = makeLeaseHost(() => lateOpen.promise)
+
+      const lease = host.beginSession()
+      const opening = lease.open(new File(['raw'], 'a.ARW'))
+      await vi.waitFor(() => expect(runtime.openSession).toHaveBeenCalled())
+      lease.cancel()
+      lateOpen.resolve(late)
+
+      await expect(opening).rejects.toMatchObject({ name: 'AbortError' })
+      expect(late.dispose).toHaveBeenCalledTimes(1)
+    })
+
+    it('cancels the active lease when the host is disposed', async () => {
+      const session = makeSession()
+      const { host } = makeLeaseHost(async () => session)
+      const lease = host.beginSession()
+      await lease.open(new File(['raw'], 'a.ARW'))
+
+      host.dispose()
+
+      expect(lease.signal.aborted).toBe(true)
+      expect(session.dispose).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it('normalizes stage failures to RAW adapter error codes', async () => {
     const runtime = makeRuntime({
       decodeQuick: vi

@@ -8,10 +8,8 @@ import { resolvePreviewBackend } from '~/lib/preview/gpu-backend'
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { isSupportedRaw } from '~/lib/raw/decoder'
-import type {
-  RawRuntimeAdapter,
-  RawRuntimeSession,
-} from '~/lib/raw/runtime-adapter'
+import type { RawRuntimeSessionLease } from '~/lib/raw/raw-runtime-host'
+import type { PrewarmOutcome, PrewarmState } from '~/lib/raw/runtime-adapter'
 import {
   detectCapabilityVector,
   getCapabilityVectorSnapshot,
@@ -91,17 +89,17 @@ export interface RawLoadContext {
     setDecodedImageRef: (next: DecodedImage | null) => void
     invalidateExportGraph: () => void
     registerCurrentPreviewPipelineForEvacuation: () => void
-    disposeRuntimeSession: (session?: RawRuntimeSession | null) => void
     yieldToPaint: () => Promise<void>
-    getPrewarmState: () => import('~/lib/raw/runtime-adapter').PrewarmState
-    prewarm: () => Promise<import('~/lib/raw/runtime-adapter').PrewarmOutcome>
-    /** Opens on the same host the load prewarmed. */
-    openSession: RawRuntimeAdapter['openSession']
+    getPrewarmState: () => PrewarmState
+    prewarm: () => Promise<PrewarmOutcome>
+    /**
+     * Hands this load the host's session lease, on the host the load
+     * prewarmed. The host owns the native session and its cancellation; the
+     * load only decides when it is done with them.
+     */
+    beginRuntimeSession: () => RawRuntimeSessionLease
   }
   refs: {
-    runtimeAbortControllerRef: { current: AbortController | null }
-    runtimeSessionRef: { current: RawRuntimeSession | null }
-    disposedRuntimeSessionsRef: { current: WeakSet<RawRuntimeSession> }
     decodedImageRef: { current: DecodedImage | null }
     sessionRef: { current: ImageSession | null }
     embeddedPreviewUrlRef: { current: string | null }
@@ -122,10 +120,9 @@ export async function orchestrateRawLoad(
   }
 
   let loadSessionId: string | null = null
-  let runtimeSession: RawRuntimeSession | null = null
-  let runtimeAbortController: AbortController | null = null
+  let lease: RawRuntimeSessionLease | null = null
   let previewCompleted = false
-  let disposeRuntimeSessionInFinally = true
+  let releaseLeaseInFinally = true
 
   try {
     const initialPhase: 'warming' | 'loading' =
@@ -142,9 +139,9 @@ export async function orchestrateRawLoad(
     ctx.services.queueExportResultResourceDisposal()
     ctx.services.revokeCurrentEmbeddedPreviewUrl()
     ctx.refs.previewCopyCanvasRef.current = null
-    runtimeAbortController = new AbortController()
-    ctx.refs.runtimeAbortControllerRef.current = runtimeAbortController
-    const runtimeSignal = runtimeAbortController.signal
+    const loadLease = ctx.services.beginRuntimeSession()
+    lease = loadLease
+    const runtimeSignal = loadLease.signal
     // Read the current look from the store at load time (not from caller
     // closures) so a LUT loaded before any RAW — or replaced while the picker
     // was open — is always the one retained into the new session.
@@ -240,19 +237,14 @@ export async function orchestrateRawLoad(
       getCapabilityVectorSnapshot() ?? (await detectCapabilityVector())
     await resolvePreviewBackend()
     if (!matchesActiveSession()) {
-      runtimeAbortController.abort()
       return
     }
 
-    runtimeSession = await ctx.services.openSession(file, runtimeSignal)
+    const activeRuntimeSession = await loadLease.open(file)
     if (!matchesActiveSession()) {
-      runtimeAbortController.abort()
       return
     }
 
-    ctx.services.disposeRuntimeSession()
-    const activeRuntimeSession = runtimeSession
-    ctx.refs.runtimeSessionRef.current = activeRuntimeSession
     const gpuCapability = detectPreviewGpuCapabilitySnapshot()
     const previewGpuBudget = gpuCapability
       ? derivePreviewGpuBudget({
@@ -486,7 +478,8 @@ export async function orchestrateRawLoad(
     }
 
     if (previewResult.boundedHqPromise) {
-      disposeRuntimeSessionInFinally = false
+      // Bounded HQ still decodes on this lease; it is released once HQ settles.
+      releaseLeaseInFinally = false
       void previewResult.boundedHqPromise
         .finally(() => {
           if (
@@ -495,15 +488,7 @@ export async function orchestrateRawLoad(
           ) {
             ctx.refs.runtimeWorkSessionIdRef.current = null
           }
-          if (
-            ctx.refs.runtimeAbortControllerRef.current ===
-            runtimeAbortController
-          ) {
-            ctx.refs.runtimeAbortControllerRef.current = null
-          }
-          if (ctx.refs.runtimeSessionRef.current === activeRuntimeSession) {
-            ctx.services.disposeRuntimeSession(activeRuntimeSession)
-          }
+          loadLease.release()
         })
         .catch(() => undefined)
     } else if (ctx.refs.runtimeWorkSessionIdRef.current === nextSession.id) {
@@ -558,18 +543,12 @@ export async function orchestrateRawLoad(
       toast.error('Failed to load RAW file', { description: message }),
     )
   } finally {
-    if (
-      disposeRuntimeSessionInFinally &&
-      runtimeAbortController &&
-      ctx.refs.runtimeAbortControllerRef.current === runtimeAbortController
-    ) {
-      if (!previewCompleted && !runtimeAbortController.signal.aborted) {
-        runtimeAbortController.abort()
-      }
-      ctx.refs.runtimeAbortControllerRef.current = null
-    }
-    if (disposeRuntimeSessionInFinally && runtimeSession) {
-      ctx.services.disposeRuntimeSession(runtimeSession)
+    // A load that stopped early aborts what it left in flight; a completed
+    // one only gives its session back. Either is a no-op on a lease a newer
+    // load or a reset already cancelled.
+    if (releaseLeaseInFinally) {
+      if (previewCompleted) lease?.release()
+      else lease?.cancel()
     }
   }
 }

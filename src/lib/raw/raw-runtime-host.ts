@@ -23,6 +23,7 @@ import type {
   PrewarmOutcome,
   PrewarmState,
   RawRuntimeAdapter,
+  RawRuntimeSession,
 } from './runtime-adapter'
 
 /** The bridge surface a host drives and observes. */
@@ -53,6 +54,24 @@ export interface RawRuntimeHostSnapshot {
   readonly runtime: RawDecodeBridgeLifecycleSnapshot
 }
 
+/**
+ * The RAW source session a host owns for one load, together with the
+ * cancellation scope that load's native work runs under.
+ */
+export interface RawRuntimeSessionLease {
+  /** Aborts when the lease is cancelled. */
+  readonly signal: AbortSignal
+  /**
+   * Opens the lease's one source. A session that arrives after the lease
+   * ended is disposed here, and the open rejects with an `AbortError`.
+   */
+  open: (file: File) => Promise<RawRuntimeSession>
+  /** Ends the lease once its work settled: disposes the session, no abort. */
+  release: () => void
+  /** Ends the lease early: aborts work still in flight, then disposes. */
+  cancel: () => void
+}
+
 export interface RawRuntimeHost extends RawRuntimeAdapter {
   /** Stable identity until the next lifecycle change. */
   getSnapshot: () => RawRuntimeHostSnapshot
@@ -74,8 +93,16 @@ export interface RawRuntimeHost extends RawRuntimeAdapter {
     signal?: AbortSignal,
   ) => ReturnType<RawRuntimeAdapter['decodeBoundedHqRaw']>
   /**
-   * Terminates the runtime and forgets the prewarm history, including a
-   * sticky failure; the host stays usable and starts afresh on the next call.
+   * Cancels the active session lease, then hands out the next one: the host
+   * owns at most one source session at a time.
+   */
+  beginSession: () => RawRuntimeSessionLease
+  /** Cancels the active session lease, if any. */
+  cancelSession: () => void
+  /**
+   * Cancels the active session lease, terminates the runtime, and forgets
+   * the prewarm history, including a sticky failure; the host stays usable
+   * and starts afresh on the next call.
    */
   dispose: () => void
 }
@@ -88,12 +115,72 @@ const SUPERSEDED_OUTCOME: PrewarmOutcome = Object.freeze({
   recoverable: true,
 })
 
+function sessionReleasedError() {
+  return new DOMException(
+    'The RAW session lease ended before its source opened.',
+    'AbortError',
+  )
+}
+
 function isAbortError(error: unknown) {
   return (
     typeof error === 'object' &&
     error !== null &&
     (error as { name?: unknown }).name === 'AbortError'
   )
+}
+
+/**
+ * The single-session slot a host owns: beginning a lease cancels the one
+ * before it, and every lease disposes its session exactly once.
+ */
+export function createRawRuntimeSessionLeases(
+  openSession: (file: File, signal: AbortSignal) => Promise<RawRuntimeSession>,
+) {
+  let activeLease: RawRuntimeSessionLease | null = null
+
+  function begin(): RawRuntimeSessionLease {
+    activeLease?.cancel()
+    const controller = new AbortController()
+    let opened = false
+    let ended = false
+    let session: RawRuntimeSession | null = null
+    const end = (abort: boolean) => {
+      if (ended) return
+      ended = true
+      if (activeLease === lease) activeLease = null
+      if (abort) controller.abort()
+      const owned = session
+      session = null
+      owned?.dispose()
+    }
+    const lease: RawRuntimeSessionLease = {
+      signal: controller.signal,
+      async open(file) {
+        if (ended) throw sessionReleasedError()
+        if (opened) throw new Error('A RAW session lease opens one source.')
+        opened = true
+        const next = await openSession(file, controller.signal)
+        if (ended) {
+          next.dispose()
+          throw sessionReleasedError()
+        }
+        session = next
+        return next
+      },
+      release: () => end(false),
+      cancel: () => end(true),
+    }
+    activeLease = lease
+    return lease
+  }
+
+  return {
+    begin,
+    cancel() {
+      activeLease?.cancel()
+    },
+  }
 }
 
 /**
@@ -130,6 +217,10 @@ export function createRawRuntimeHost({
   }
 
   bridge.subscribeLifecycle(publish)
+
+  const sessions = createRawRuntimeSessionLeases((file, signal) =>
+    openRawSessionOnBridge(bridge, file, signal, jpegRuntimeAvailabilityProbe),
+  )
 
   function prewarm(): Promise<PrewarmOutcome> {
     if (outcome?.status === 'failed' && outcome.recoverable === false) {
@@ -214,7 +305,10 @@ export function createRawRuntimeHost({
     terminateDecodeBridge() {
       return bridge.terminate()
     },
+    beginSession: sessions.begin,
+    cancelSession: sessions.cancel,
     dispose() {
+      sessions.cancel()
       inFlight = null
       initialization = 'idle'
       outcome = null

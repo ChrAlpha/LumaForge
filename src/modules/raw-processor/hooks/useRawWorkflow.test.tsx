@@ -157,6 +157,11 @@ vi.mock('~/lib/raw/raw-runtime-host', async (importOriginal) => {
         lastTermination: null,
       }),
     })
+    // Session leases keep the host's ownership rules, opening through the
+    // adapter mock instead of a native bridge.
+    const sessions = actual.createRawRuntimeSessionLeases((file, signal) =>
+      rawRuntimeAdapterMock.openSession(file, signal),
+    )
     const host: RawRuntimeHost = {
       getSnapshot: () => snapshot,
       subscribe: () => () => {},
@@ -176,7 +181,9 @@ vi.mock('~/lib/raw/raw-runtime-host', async (importOriginal) => {
           rawRuntimeAdapterMock.decodeBoundedHqRaw(file, options),
       ),
       terminateDecodeBridge: vi.fn(async () => {}),
-      dispose: vi.fn(),
+      beginSession: vi.fn(sessions.begin),
+      cancelSession: vi.fn(sessions.cancel),
+      dispose: vi.fn(sessions.cancel),
     }
     rawRuntimeHosts.push(host)
     return host
@@ -681,13 +688,18 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.status).toBe('ready')
     expect(host.getPrewarmState).toHaveBeenCalled()
     expect(host.prewarm).toHaveBeenCalledTimes(1)
-    expect(host.openSession).toHaveBeenCalledTimes(1)
-    expect(host.openSession).toHaveBeenCalledWith(file, expect.any(AbortSignal))
+    expect(host.beginSession).toHaveBeenCalledTimes(1)
+    expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledTimes(1)
+    expect(rawRuntimeAdapterMock.openSession).toHaveBeenCalledWith(
+      file,
+      expect.any(AbortSignal),
+    )
+    expect(host.openSession).not.toHaveBeenCalled()
 
     await act(async () => {
       await result.current.restorePreviewAfterExport()
     })
-    expect(host.openSession).toHaveBeenCalledTimes(2)
+    expect(host.openSession).toHaveBeenCalledTimes(1)
     expect(rawRuntimeHosts).toHaveLength(1)
   })
 

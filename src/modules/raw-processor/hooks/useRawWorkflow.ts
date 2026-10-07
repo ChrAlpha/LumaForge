@@ -254,7 +254,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     yieldToPaint,
     getPrewarmState: rawRuntimeHost.getPrewarmState,
     prewarm: rawRuntimeHost.prewarm,
-    openSession: rawRuntimeHost.openSession,
+    beginRuntimeSession: rawRuntimeHost.beginSession,
     runtimeAbortControllerRef,
     runtimeSessionRef,
     disposedRuntimeSessionsRef,

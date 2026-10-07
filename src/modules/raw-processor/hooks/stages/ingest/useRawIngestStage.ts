@@ -5,10 +5,10 @@ import type { ExportResourceCleanupReason } from '~/lib/export/execution-profile
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
+import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import type {
   PrewarmOutcome,
   PrewarmState,
-  RawRuntimeAdapter,
   RawRuntimeSession,
 } from '~/lib/raw/runtime-adapter'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
@@ -59,7 +59,7 @@ type UseRawIngestStageInput = {
   yieldToPaint: () => Promise<void>
   getPrewarmState: () => PrewarmState
   prewarm: () => Promise<PrewarmOutcome>
-  openSession: RawRuntimeAdapter['openSession']
+  beginRuntimeSession: RawRuntimeHost['beginSession']
   runtimeAbortControllerRef: MutableRefObject<AbortController | null>
   runtimeSessionRef: MutableRefObject<RawRuntimeSession | null>
   disposedRuntimeSessionsRef: MutableRefObject<WeakSet<RawRuntimeSession>>

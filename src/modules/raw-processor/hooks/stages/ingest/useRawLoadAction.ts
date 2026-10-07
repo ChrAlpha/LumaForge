@@ -1,11 +1,23 @@
 import { useCallback, useMemo } from 'react'
 
+import type {
+  RawRuntimeHost,
+  RawRuntimeSessionLease,
+} from '~/lib/raw/raw-runtime-host'
+
 import type { RawLoadContext } from '../../../services/ingest/orchestrate-raw-load'
 import { orchestrateRawLoad } from '../../../services/ingest/orchestrate-raw-load'
 
 export type UseRawLoadActionInput = RawLoadContext['atoms'] &
-  RawLoadContext['services'] &
+  Omit<RawLoadContext['services'], 'beginRuntimeSession'> &
   RawLoadContext['refs'] & {
+    /** The workflow host's lease for the next load's source session. */
+    beginRuntimeSession: RawRuntimeHost['beginSession']
+    /**
+     * Restore and the runtime controls still cancel preview work through
+     * this ref, so each load's lease is reachable from it while it lasts.
+     */
+    runtimeAbortControllerRef: { current: AbortController | null }
     orchestrateLoad?: typeof orchestrateRawLoad
   }
 
@@ -30,14 +42,11 @@ export function useRawLoadAction({
   setDecodedImageRef,
   invalidateExportGraph,
   registerCurrentPreviewPipelineForEvacuation,
-  disposeRuntimeSession,
   yieldToPaint,
   getPrewarmState,
   prewarm,
-  openSession,
+  beginRuntimeSession,
   runtimeAbortControllerRef,
-  runtimeSessionRef,
-  disposedRuntimeSessionsRef,
   decodedImageRef,
   sessionRef,
   embeddedPreviewUrlRef,
@@ -47,6 +56,32 @@ export function useRawLoadAction({
   previewCopyCanvasRef,
   orchestrateLoad = orchestrateRawLoad,
 }: UseRawLoadActionInput) {
+  const beginLoadSession = useCallback((): RawRuntimeSessionLease => {
+    const lease = beginRuntimeSession()
+    // Aborting the shared ref cancels this lease on the host, which aborts
+    // its native work and disposes its session.
+    const cancellation: AbortController = {
+      signal: lease.signal,
+      abort: () => lease.cancel(),
+    }
+    const forget = () => {
+      if (runtimeAbortControllerRef.current === cancellation) {
+        runtimeAbortControllerRef.current = null
+      }
+    }
+    runtimeAbortControllerRef.current = cancellation
+    lease.signal.addEventListener('abort', forget, { once: true })
+    return {
+      signal: lease.signal,
+      open: lease.open,
+      release() {
+        lease.release()
+        forget()
+      },
+      cancel: lease.cancel,
+    }
+  }, [beginRuntimeSession, runtimeAbortControllerRef])
+
   const rawLoadCtx = useMemo<RawLoadContext>(
     () => ({
       atoms: {
@@ -72,16 +107,12 @@ export function useRawLoadAction({
         setDecodedImageRef,
         invalidateExportGraph,
         registerCurrentPreviewPipelineForEvacuation,
-        disposeRuntimeSession,
         yieldToPaint,
         getPrewarmState,
         prewarm,
-        openSession,
+        beginRuntimeSession: beginLoadSession,
       },
       refs: {
-        runtimeAbortControllerRef,
-        runtimeSessionRef,
-        disposedRuntimeSessionsRef,
         decodedImageRef,
         sessionRef,
         embeddedPreviewUrlRef,
@@ -94,10 +125,9 @@ export function useRawLoadAction({
     [
       abortExportWork,
       abortRuntimeWork,
+      beginLoadSession,
       clearSessionEmbeddedPreviewUrl,
       decodedImageRef,
-      disposeRuntimeSession,
-      disposedRuntimeSessionsRef,
       embeddedPreviewUrlRef,
       getColorIntent,
       getLut,
@@ -105,7 +135,6 @@ export function useRawLoadAction({
       getView,
       invalidateExportGraph,
       isMountedRef,
-      openSession,
       pendingLoadSessionIdRef,
       prewarm,
       previewCopyCanvasRef,
@@ -113,8 +142,6 @@ export function useRawLoadAction({
       registerCurrentPreviewPipelineForEvacuation,
       replaceFile,
       revokeCurrentEmbeddedPreviewUrl,
-      runtimeAbortControllerRef,
-      runtimeSessionRef,
       runtimeWorkSessionIdRef,
       scheduleToast,
       sessionRef,
