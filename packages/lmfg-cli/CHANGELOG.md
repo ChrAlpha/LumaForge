@@ -126,6 +126,25 @@ Requires `@lumaforge/luma-raw-runtime` 0.1.2 and
   single portable path segment, params outside `lmfg.params.v1`) now fails
   with `schema.invalid` instead of being used as read. Plans written by 0.1.0
   still read: their params predate `selective_color`, which reads as `null`.
+- Stored candidate records are validated when they are read. `tile.json`
+  must be `lmfg.tile.v1` in `rgba8` with positive integer dimensions and a
+  `byte_length` of width x height x 4 that `tile.rgba` actually holds;
+  `metrics.json` must match `lmfg.metrics.v1`; `params.json` must match
+  `lmfg.params.v1` (a wrongly typed, `null`, out-of-range, or unknown field
+  is refused, not defaulted or clamped); and the candidate `manifest.json`
+  that `metrics rank` reads is held to the `RenderManifest` v1 structure and
+  its `manifest_sha256` (`manifest.invalid`). A malformed tile, metrics, or
+  params record now fails with `schema.invalid` (exit 2) before it is used:
+  `metrics compute`, `compare`, and `rank` no longer return or compare a
+  malformed `metrics.json` and no longer read a truncated or oversized tile.
+  A missing `metrics.json` is still recomputed from the tile, and a missing
+  tile or manifest is still `candidate.not_found`.
+- A stored workspace record that fails validation (an iteration plan,
+  including the plans `session status` reads, or a candidate record) is
+  reported as that file rather than as invalid input: the message names the
+  file and each offending field, and `details` adds `record_path` beside
+  `issues`. `session status` still fails on a corrupt plan instead of
+  listing the other iterations.
 - `render replay` reproduces browser export manifests that record a Transform
   geometry (`render_params.geometry`) instead of refusing them. The geometry
   runs through the render-engine export planner and executor the app uses.

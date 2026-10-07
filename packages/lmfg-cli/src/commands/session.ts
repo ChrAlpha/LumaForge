@@ -10,6 +10,7 @@ import {
   readJsonOrNull,
 } from '../workspace/atomic-fs'
 import { toFileUri, workspacePaths } from '../workspace/paths'
+import { parseStoredRecord } from '../workspace/record-validation'
 import { createSessionStore } from '../workspace/session-store'
 import type { CommandHost } from './context'
 import { runCommand } from './context'
@@ -81,11 +82,18 @@ export function registerSessionCommands(
             for (const iterationId of await listDirs(
               workspacePaths.iterations(root, id),
             )) {
-              const raw = await readJsonOrNull(
-                workspacePaths.iterationPlanFile(root, id, iterationId),
+              const planFile = workspacePaths.iterationPlanFile(
+                root,
+                id,
+                iterationId,
               )
+              const raw = await readJsonOrNull(planFile)
               if (raw === null) continue
-              const plan = IterationRecordSchema.parse(raw)
+              const plan = parseStoredRecord(
+                planFile,
+                IterationRecordSchema,
+                raw,
+              )
               iterations.push({
                 id: iterationId,
                 created_at: plan.created_at,

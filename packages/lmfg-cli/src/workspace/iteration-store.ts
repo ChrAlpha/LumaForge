@@ -1,9 +1,12 @@
 import { readFile } from 'node:fs/promises'
 
 import type { RenderManifest } from '@lumaforge/render-engine'
+import { parseRenderManifest } from '@lumaforge/render-engine/manifest'
+import { z } from 'zod'
 
 import { LmfgError } from '../protocol/errors'
 import type { RenderParams } from '../schemas/params'
+import { RenderParamsSchema } from '../schemas/params'
 import type {
   ContactSheetMap,
   IterationRecord,
@@ -12,6 +15,7 @@ import type {
 import {
   ContactSheetMapSchema,
   IterationRecordSchema,
+  MetricsSchema,
 } from '../schemas/results'
 import {
   appendLine,
@@ -24,6 +28,12 @@ import {
   writeJsonAtomic,
 } from './atomic-fs'
 import { workspacePaths } from './paths'
+import {
+  parseStoredRecord,
+  readStoredRecord,
+  readStoredRecordOrNull,
+  storedRecordError,
+} from './record-validation'
 
 export type { ContactSheetMap, IterationRecord }
 
@@ -40,6 +50,27 @@ export type CandidateArtifacts = {
   tile: CandidateTile
   params: RenderParams
 }
+
+const RGBA8_BYTES_PER_PIXEL = 4
+
+/** `candidates/<id>/tile.json`, written beside the raw `tile.rgba` bytes. */
+const CandidateTileMetaSchema = z
+  .object({
+    schema: z.literal('lmfg.tile.v1'),
+    format: z.literal('rgba8'),
+    width: z.int().positive(),
+    height: z.int().positive(),
+    byte_length: z.int().positive(),
+  })
+  .refine(
+    (meta) =>
+      meta.byte_length === meta.width * meta.height * RGBA8_BYTES_PER_PIXEL,
+    {
+      path: ['byte_length'],
+      message: 'Expected width * height * 4 bytes for rgba8.',
+    },
+  )
+type CandidateTileMeta = z.output<typeof CandidateTileMetaSchema>
 
 export type CandidatePaths = {
   dir: string
@@ -96,7 +127,7 @@ export function createIterationStore(root: string, sessionId: string) {
         suggestedNextActions: [`lmfg session status --session ${sessionId}`],
       })
     }
-    return IterationRecordSchema.parse(await readJson(file))
+    return readStoredRecord(file, IterationRecordSchema)
   }
 
   return {
@@ -148,7 +179,7 @@ export function createIterationStore(root: string, sessionId: string) {
         width: artifacts.tile.width,
         height: artifacts.tile.height,
         byte_length: artifacts.tile.rgba.byteLength,
-      })
+      } satisfies CandidateTileMeta)
       return paths
     },
     async listCandidates(iterationId: string): Promise<string[]> {
@@ -159,17 +190,26 @@ export function createIterationStore(root: string, sessionId: string) {
       candidateId: string,
     ): Promise<CandidateTile> {
       const paths = candidatePaths(iterationId, candidateId)
-      const meta = await readJsonOrNull<{
-        width: number
-        height: number
-        byte_length: number
-      }>(paths.tileMeta)
-      if (!meta || !(await fileExists(paths.tile))) {
+      const rawMeta = await readJsonOrNull(paths.tileMeta)
+      if (rawMeta === null || !(await fileExists(paths.tile))) {
         throw new LmfgError('candidate.not_found', {
           message: `Candidate "${candidateId}" has no tile in ${iterationId}.`,
         })
       }
+      const meta = parseStoredRecord(
+        paths.tileMeta,
+        CandidateTileMetaSchema,
+        rawMeta,
+      )
       const bytes = await readFile(paths.tile)
+      if (bytes.byteLength !== meta.byte_length) {
+        throw storedRecordError(paths.tile, [
+          {
+            path: 'byte_length',
+            message: `Expected ${meta.byte_length} bytes as declared in ${paths.tileMeta}, found ${bytes.byteLength}.`,
+          },
+        ])
+      }
       return {
         rgba: new Uint8ClampedArray(
           bytes.buffer,
@@ -184,8 +224,9 @@ export function createIterationStore(root: string, sessionId: string) {
       iterationId: string,
       candidateId: string,
     ): Promise<Metrics | null> {
-      return readJsonOrNull<Metrics>(
+      return readStoredRecordOrNull(
         candidatePaths(iterationId, candidateId).metrics,
+        MetricsSchema,
       )
     },
     async readCandidateManifest(
@@ -199,16 +240,24 @@ export function createIterationStore(root: string, sessionId: string) {
           suggestedNextActions: [`lmfg session status --session ${sessionId}`],
         })
       }
-      return readJson<RenderManifest>(paths.manifest)
+      const parsed = parseRenderManifest(await readJson(paths.manifest))
+      if (!parsed.ok) {
+        throw storedRecordError(
+          paths.manifest,
+          parsed.issues,
+          'manifest.invalid',
+        )
+      }
+      return parsed.manifest
     },
     async readCandidateParams(
       iterationId: string,
       candidateId: string,
     ): Promise<RenderParams> {
-      const { schema: _schema, ...params } = await readJson<
-        RenderParams & { schema?: string }
-      >(candidatePaths(iterationId, candidateId).params)
-      return params
+      return readStoredRecord(
+        candidatePaths(iterationId, candidateId).params,
+        RenderParamsSchema,
+      )
     },
     async writeContactSheet(
       iterationId: string,

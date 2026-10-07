@@ -5,12 +5,16 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { resolveRenderEnvironment } from '../runtime/versions'
 import { parseRenderParams } from '../schemas/params'
 import {
   ContactSheetMapSchema,
   IterationRecordSchema,
   SessionRecordSchema,
 } from '../schemas/results'
+import { buildColorGraph, requireSupportedGraph } from '../services/color-graph'
+import { buildRenderManifest } from '../services/manifest'
+import { computeImageMetrics } from '../services/metrics'
 import { createIterationStore } from './iteration-store'
 import { workspacePaths } from './paths'
 import { createSessionStore } from './session-store'
@@ -233,27 +237,53 @@ describe('iteration record validation', () => {
     workspacePaths.iterationPlanFile(root, SID, 'iter_0001')
 
   it.each([
-    ['a foreign schema id', { ...iteration010, schema: 'lmfg.iteration.v2' }],
-    ['a missing candidate list', { ...iteration010, candidates: undefined }],
-    ['an empty candidate list', { ...iteration010, candidates: [] }],
+    [
+      'a foreign schema id',
+      { ...iteration010, schema: 'lmfg.iteration.v2' },
+      'schema',
+    ],
+    [
+      'a missing candidate list',
+      { ...iteration010, candidates: undefined },
+      'candidates',
+    ],
+    [
+      'an empty candidate list',
+      { ...iteration010, candidates: [] },
+      'candidates',
+    ],
     [
       'a candidate id with path syntax',
       {
         ...iteration010,
         candidates: [{ ...iteration010.candidates[0], id: '../outside' }],
       },
+      'candidates.0.id',
     ],
     [
       'out-of-range params',
       { ...iteration010, base: { ...params010, contrast: 1000 } },
+      'base.contrast',
     ],
-    ['an unknown kind', { ...iteration010, kind: 'batch' }],
-  ])('rejects a plan with %s', async (_name, doc) => {
-    await writeDoc(planFile(), doc)
-    await expect(
-      createIterationStore(root, SID).read('iter_0001'),
-    ).rejects.toMatchObject({ name: 'ZodError' })
-  })
+    ['an unknown kind', { ...iteration010, kind: 'batch' }, 'kind'],
+  ])(
+    'rejects a plan with %s, naming the file and field',
+    async (_name, doc, field) => {
+      await writeDoc(planFile(), doc)
+      await expect(
+        createIterationStore(root, SID).read('iter_0001'),
+      ).rejects.toMatchObject({
+        code: 'schema.invalid',
+        message: expect.stringContaining(planFile()),
+        details: {
+          record_path: planFile(),
+          issues: expect.arrayContaining([
+            expect.objectContaining({ path: field }),
+          ]),
+        },
+      })
+    },
+  )
 
   it('rejects a contact-sheet map with path syntax in a tile id', async () => {
     const bad = {
@@ -267,5 +297,226 @@ describe('iteration record validation', () => {
         map: bad as never,
       }),
     ).rejects.toMatchObject({ name: 'ZodError' })
+  })
+})
+
+describe('stored candidate records', () => {
+  const tile = {
+    rgba: new Uint8ClampedArray([200, 40, 10, 255, 10, 120, 220, 255]),
+    width: 2,
+    height: 1,
+  }
+
+  async function writeCandidate() {
+    const store = createIterationStore(root, SID)
+    const params = parseRenderParams({
+      contrast: 5,
+      selective_color: { red: { hue: 5 } },
+    })
+    const exposure = { ev: 0, multiplier: 1, source: 'identity' as const }
+    const manifest = buildRenderManifest({
+      kind: 'candidate',
+      source: {
+        sha256: 'a'.repeat(64),
+        byte_size: 10,
+        filename: 'x.dng',
+        decoded_dimensions: { width: 2, height: 1 },
+      },
+      lut: null,
+      graph: requireSupportedGraph(buildColorGraph(params, null, exposure)),
+      params,
+      exposure,
+      policy: { kind: 'candidate', row_slice: 32, concurrency: 1 },
+      environment: resolveRenderEnvironment('desktop'),
+      output: {
+        width: 2,
+        height: 1,
+        quality: 85,
+        filename: 'preview.jpg',
+        sha256: 'b'.repeat(64),
+      },
+      parentManifestSha256: null,
+      producedAt: new Date('2026-09-05T00:00:00Z'),
+    })
+    const metrics = computeImageMetrics(tile.rgba, tile.width, tile.height)
+    const paths = await store.writeCandidate('iter_0001', 'cand_0001', {
+      previewJpeg: new Uint8Array([0xFF, 0xD8, 0xFF, 0xD9]),
+      manifest,
+      metrics,
+      tile,
+      params,
+    })
+    return { store, paths, params, manifest, metrics }
+  }
+
+  async function rewriteJson(
+    path: string,
+    edit: (doc: Record<string, unknown>) => unknown,
+  ): Promise<void> {
+    await writeFile(
+      path,
+      JSON.stringify(edit(JSON.parse(await readFile(path, 'utf8')))),
+    )
+  }
+
+  function storedRecordFailure(
+    code: string,
+    recordPath: string,
+    field: string,
+  ) {
+    return {
+      code,
+      message: expect.stringContaining(recordPath),
+      details: {
+        record_path: recordPath,
+        issues: expect.arrayContaining([
+          expect.objectContaining({ path: field }),
+        ]),
+      },
+    }
+  }
+
+  it('round-trips the records the current writer produces unchanged', async () => {
+    const { store, params, manifest, metrics } = await writeCandidate()
+    expect(await store.readCandidateTile('iter_0001', 'cand_0001')).toEqual(
+      tile,
+    )
+    expect(await store.readCandidateMetrics('iter_0001', 'cand_0001')).toEqual(
+      metrics,
+    )
+    expect(await store.readCandidateParams('iter_0001', 'cand_0001')).toEqual(
+      params,
+    )
+    expect(await store.readCandidateManifest('iter_0001', 'cand_0001')).toEqual(
+      manifest,
+    )
+  })
+
+  it('keeps missing-file semantics', async () => {
+    const { store, paths } = await writeCandidate()
+    await rm(paths.metrics)
+    expect(
+      await store.readCandidateMetrics('iter_0001', 'cand_0001'),
+    ).toBeNull()
+    await rm(paths.tile)
+    await expect(
+      store.readCandidateTile('iter_0001', 'cand_0001'),
+    ).rejects.toMatchObject({ code: 'candidate.not_found' })
+    await rm(paths.manifest)
+    await expect(
+      store.readCandidateManifest('iter_0001', 'cand_0001'),
+    ).rejects.toMatchObject({ code: 'candidate.not_found' })
+    await rm(paths.params)
+    await expect(
+      store.readCandidateParams('iter_0001', 'cand_0001'),
+    ).rejects.toMatchObject({ code: 'file.not_found' })
+  })
+
+  it.each([
+    ['a foreign schema id', { schema: 'lmfg.tile.v2' }, 'schema'],
+    ['a missing schema id', { schema: undefined }, 'schema'],
+    ['an unknown format', { format: 'rgb8' }, 'format'],
+    ['a fractional width', { width: 1.5 }, 'width'],
+    ['a zero height', { height: 0 }, 'height'],
+    ['a string byte length', { byte_length: '8' }, 'byte_length'],
+    [
+      'a byte length that is not width * height * 4',
+      { byte_length: 6 },
+      'byte_length',
+    ],
+  ])('rejects tile metadata with %s', async (_name, patch, field) => {
+    const { store, paths } = await writeCandidate()
+    await rewriteJson(paths.tileMeta, (doc) => ({ ...doc, ...patch }))
+    await expect(
+      store.readCandidateTile('iter_0001', 'cand_0001'),
+    ).rejects.toMatchObject(
+      storedRecordFailure('schema.invalid', paths.tileMeta, field),
+    )
+  })
+
+  it.each([
+    ['truncated', 4],
+    ['extra', 12],
+  ])('rejects %s tile bytes', async (_name, length) => {
+    const { store, paths } = await writeCandidate()
+    await writeFile(paths.tile, new Uint8Array(length))
+    await expect(
+      store.readCandidateTile('iter_0001', 'cand_0001'),
+    ).rejects.toMatchObject(
+      storedRecordFailure('schema.invalid', paths.tile, 'byte_length'),
+    )
+  })
+
+  it.each([
+    [
+      'a foreign schema id',
+      (doc: Record<string, unknown>) => ({ ...doc, schema: 'lmfg.metrics.v2' }),
+      'schema',
+    ],
+    [
+      'a string luma mean',
+      (doc: Record<string, unknown>) => ({
+        ...doc,
+        luma: { ...(doc.luma as object), mean: '0.5' },
+      }),
+      'luma.mean',
+    ],
+    [
+      'a fractional histogram count',
+      (doc: Record<string, unknown>) => ({
+        ...doc,
+        histogram: { bins: 2, luma: [0.5, 1] },
+      }),
+      'histogram.luma.0',
+    ],
+    [
+      'no chroma section',
+      (doc: Record<string, unknown>) => ({ ...doc, chroma: undefined }),
+      'chroma',
+    ],
+  ])('rejects stored metrics with %s', async (_name, edit, field) => {
+    const { store, paths } = await writeCandidate()
+    await rewriteJson(paths.metrics, edit)
+    await expect(
+      store.readCandidateMetrics('iter_0001', 'cand_0001'),
+    ).rejects.toMatchObject(
+      storedRecordFailure('schema.invalid', paths.metrics, field),
+    )
+  })
+
+  it.each([
+    ['a string contrast', { contrast: '5' }, 'contrast'],
+    ['a null intensity', { intensity: null }, 'intensity'],
+    ['an out-of-range exposure', { exposure_ev: 99 }, 'exposure_ev'],
+    ['a foreign schema id', { schema: 'lmfg.params.v2' }, 'schema'],
+    ['an unknown field', { grain: 3 }, ''],
+  ])('rejects stored params with %s', async (_name, patch, field) => {
+    const { store, paths } = await writeCandidate()
+    await rewriteJson(paths.params, (doc) => ({ ...doc, ...patch }))
+    await expect(
+      store.readCandidateParams('iter_0001', 'cand_0001'),
+    ).rejects.toMatchObject(
+      storedRecordFailure('schema.invalid', paths.params, field),
+    )
+  })
+
+  it('rejects a tampered candidate manifest', async () => {
+    const { store, paths } = await writeCandidate()
+    await rewriteJson(paths.manifest, (doc) => ({
+      ...doc,
+      render_params: {
+        ...(doc.render_params as object),
+        exposure_ev: 2,
+      },
+    }))
+    await expect(
+      store.readCandidateManifest('iter_0001', 'cand_0001'),
+    ).rejects.toMatchObject(
+      storedRecordFailure(
+        'manifest.invalid',
+        paths.manifest,
+        'manifest_sha256',
+      ),
+    )
   })
 })

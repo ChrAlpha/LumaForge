@@ -58,6 +58,8 @@ beforeEach(async () => {
     new Uint8Array([255, 0, 0, 255]),
   )
   await writeJsonAtomic(join(candidateDir, 'tile.json'), {
+    schema: 'lmfg.tile.v1',
+    format: 'rgba8',
     width: 1,
     height: 1,
     byte_length: 4,
@@ -180,7 +182,9 @@ describe('artifact selectors at the CLI boundary', () => {
       expect(result.code, result.stdout).toBe(2)
       expect(result.envelope.error).toMatchObject({
         code: 'schema.invalid',
+        message: expect.stringContaining(join(iterationDir, 'plan.json')),
         details: {
+          record_path: join(iterationDir, 'plan.json'),
           issues: [
             {
               path: field,
@@ -190,6 +194,70 @@ describe('artifact selectors at the CLI boundary', () => {
         },
       })
     }
+  })
+
+  it('fails session status on a corrupt plan, naming the plan file and field', async () => {
+    const plan = join(iterationDir, 'plan.json')
+    await writeJsonAtomic(plan, {
+      ...iterationPlan('iter_0001', 'cand_0001'),
+      kind: 'batch',
+    })
+    const result = await cli.run('session', 'status', '--session', session)
+    expect(result.code, result.stdout).toBe(2)
+    expect(result.envelope.result).toBeUndefined()
+    expect(result.envelope.error).toMatchObject({
+      code: 'schema.invalid',
+      message: expect.stringContaining(plan),
+      details: {
+        record_path: plan,
+        issues: [expect.objectContaining({ path: 'kind' })],
+      },
+    })
+  })
+
+  it('refuses malformed stored metrics and tiles before computing from them', async () => {
+    const candidateDir = join(iterationDir, 'candidates', 'cand_0001')
+    const compute = () =>
+      cli.run(
+        'metrics',
+        'compute',
+        '--session',
+        session,
+        '--iteration',
+        'iter_0001',
+        '--candidate',
+        'cand_0001',
+      )
+
+    await writeJsonAtomic(join(candidateDir, 'metrics.json'), {
+      schema: 'lmfg.metrics.v1',
+      width: 1,
+      height: 1,
+    })
+    const metrics = await compute()
+    expect(metrics.code, metrics.stdout).toBe(2)
+    expect(metrics.envelope.error).toMatchObject({
+      code: 'schema.invalid',
+      details: {
+        record_path: join(candidateDir, 'metrics.json'),
+        issues: expect.arrayContaining([
+          expect.objectContaining({ path: 'luma' }),
+        ]),
+      },
+    })
+
+    await rm(join(candidateDir, 'metrics.json'))
+    await writeFile(join(candidateDir, 'tile.rgba'), new Uint8Array(3))
+    const tile = await compute()
+    expect(tile.code, tile.stdout).toBe(2)
+    expect(tile.envelope.error).toMatchObject({
+      code: 'schema.invalid',
+      details: {
+        record_path: join(candidateDir, 'tile.rgba'),
+        issues: [expect.objectContaining({ path: 'byte_length' })],
+      },
+    })
+    expect(await fileExists(join(candidateDir, 'metrics.json'))).toBe(false)
   })
 
   it('keeps a dotted export basename and writes a valid named sheet inside the session', async () => {
