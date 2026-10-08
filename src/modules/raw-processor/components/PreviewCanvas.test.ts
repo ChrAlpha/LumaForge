@@ -268,6 +268,49 @@ function setElementRect(
   vi.spyOn(element, 'getBoundingClientRect').mockReturnValue(elementRect(rect))
 }
 
+/** jsdom's MouseEvent stand-in for PointerEvent, carrying the pointer id. */
+class TestPointerEvent extends MouseEvent {
+  readonly pointerId: number
+
+  constructor(type: string, init: PointerEventInit = {}) {
+    super(type, init)
+    this.pointerId = init.pointerId ?? 0
+  }
+}
+
+/** Holds animation frames until the test runs them. */
+function captureAnimationFrames() {
+  const callbacks = new Map<number, FrameRequestCallback>()
+  let nextId = 0
+  const request = vi
+    .spyOn(window, 'requestAnimationFrame')
+    .mockImplementation((callback) => {
+      nextId += 1
+      callbacks.set(nextId, callback)
+      return nextId
+    })
+  const cancel = vi
+    .spyOn(window, 'cancelAnimationFrame')
+    .mockImplementation((id) => {
+      callbacks.delete(id)
+    })
+
+  return {
+    request,
+    cancel,
+    lastId: () => nextId,
+    run: () => {
+      const pending = [...callbacks.values()]
+      callbacks.clear()
+      for (const callback of pending) callback(performance.now())
+    },
+    restore: () => {
+      request.mockRestore()
+      cancel.mockRestore()
+    },
+  }
+}
+
 function renderInteractivePreview({
   previewViewport = DEFAULT_PREVIEW_VIEWPORT,
   onPreviewViewportChange = vi.fn(),
@@ -319,7 +362,7 @@ describe('preview canvas upload descriptor', () => {
     pipelineMock.initialize.mockResolvedValue(undefined)
     pipelineMock.waitForGpu.mockReset()
     pipelineMock.waitForGpu.mockResolvedValue(undefined)
-    window.PointerEvent = MouseEvent as typeof PointerEvent
+    window.PointerEvent = TestPointerEvent as unknown as typeof PointerEvent
     HTMLElement.prototype.setPointerCapture = vi.fn()
     HTMLElement.prototype.releasePointerCapture = vi.fn()
     vi.stubGlobal(
@@ -2069,6 +2112,292 @@ describe('preview canvas upload descriptor', () => {
       DEFAULT_PREVIEW_VIEWPORT,
     )
   })
+
+  it('pinches around the first midpoint, then pans with the pointer left behind', async () => {
+    const { frame, onPreviewViewportChange } = renderInteractivePreview()
+    await waitFor(() => {
+      expect(pipelineMock.instances).toHaveLength(1)
+    })
+    const frames = captureAnimationFrames()
+
+    try {
+      fireEvent.pointerDown(frame!, {
+        pointerId: 1,
+        button: 0,
+        clientX: 200,
+        clientY: 150,
+      })
+      fireEvent.pointerDown(frame!, {
+        pointerId: 2,
+        button: 0,
+        clientX: 300,
+        clientY: 150,
+      })
+      expect(frame).toHaveClass('raw-preview-frame-panning')
+      expect(frame).toHaveClass('raw-preview-frame-transforming')
+      expect(HTMLElement.prototype.setPointerCapture).toHaveBeenCalledWith(1)
+      expect(HTMLElement.prototype.setPointerCapture).toHaveBeenCalledWith(2)
+
+      // Distance 100 -> 150 around the frame-relative midpoint (+50, 0).
+      fireEvent.pointerMove(frame!, {
+        pointerId: 2,
+        clientX: 350,
+        clientY: 150,
+      })
+      // A later move keeps the first midpoint as the zoom origin.
+      fireEvent.pointerMove(frame!, {
+        pointerId: 1,
+        clientX: 150,
+        clientY: 150,
+      })
+      expect(frames.request).toHaveBeenCalledTimes(1)
+      expect(onPreviewViewportChange).not.toHaveBeenCalled()
+      frames.run()
+      expect(onPreviewViewportChange).toHaveBeenCalledTimes(1)
+      const pinched = onPreviewViewportChange.mock.calls[0]?.[0]
+      expect(pinched?.zoom).toBeCloseTo(2)
+      expect(pinched?.panX).toBeCloseTo(-50)
+      expect(pinched?.panY).toBeCloseTo(0)
+
+      // Lifting one finger ends the pinch without committing.
+      fireEvent.pointerUp(frame!, { pointerId: 2 })
+      expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledWith(
+        2,
+      )
+      expect(onPreviewViewportChange).toHaveBeenCalledTimes(1)
+      expect(frame).toHaveClass('raw-preview-frame-panning')
+
+      fireEvent.pointerMove(frame!, {
+        pointerId: 1,
+        clientX: 170,
+        clientY: 160,
+      })
+      // Lifting the last finger flushes the pending frame synchronously.
+      fireEvent.pointerUp(frame!, { pointerId: 1 })
+      expect(frames.cancel).toHaveBeenCalledWith(frames.lastId())
+      expect(onPreviewViewportChange).toHaveBeenCalledTimes(2)
+      const panned = onPreviewViewportChange.mock.calls[1]?.[0]
+      expect(panned?.zoom).toBeCloseTo(2)
+      expect(panned?.panX).toBeCloseTo(-30)
+      expect(panned?.panY).toBeCloseTo(10)
+      expect(frame).not.toHaveClass('raw-preview-frame-panning')
+      expect(frame).not.toHaveClass('raw-preview-frame-transforming')
+    } finally {
+      frames.restore()
+    }
+  })
+
+  it('ends a cancelled pointer like a release and ignores its later moves', async () => {
+    const { frame, onPreviewViewportChange } = renderInteractivePreview({
+      previewViewport: { zoom: 2, panX: 0, panY: 0, fitMode: 'custom' },
+    })
+    await waitFor(() => {
+      expect(pipelineMock.instances).toHaveLength(1)
+    })
+    const frames = captureAnimationFrames()
+
+    try {
+      // Only the primary button starts a gesture.
+      fireEvent.pointerDown(frame!, {
+        pointerId: 4,
+        button: 2,
+        clientX: 200,
+        clientY: 150,
+      })
+      expect(frame).not.toHaveClass('raw-preview-frame-panning')
+
+      fireEvent.pointerDown(frame!, {
+        pointerId: 1,
+        button: 0,
+        clientX: 200,
+        clientY: 150,
+      })
+      fireEvent.pointerMove(frame!, {
+        pointerId: 1,
+        clientX: 230,
+        clientY: 140,
+      })
+      fireEvent.pointerCancel(frame!, { pointerId: 1 })
+
+      expect(frames.cancel).toHaveBeenCalledWith(frames.lastId())
+      expect(onPreviewViewportChange).toHaveBeenCalledTimes(1)
+      expect(onPreviewViewportChange).toHaveBeenLastCalledWith({
+        zoom: 2,
+        panX: 30,
+        panY: -10,
+        fitMode: 'custom',
+      })
+      expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledWith(
+        1,
+      )
+      expect(frame).toHaveClass('raw-preview-frame-interactive')
+
+      fireEvent.pointerMove(frame!, {
+        pointerId: 1,
+        clientX: 260,
+        clientY: 140,
+      })
+      expect(frames.request).toHaveBeenCalledTimes(1)
+      expect(onPreviewViewportChange).toHaveBeenCalledTimes(1)
+    } finally {
+      frames.restore()
+    }
+  })
+
+  it('batches wheel zoom into one frame and ends the wheel transform after it idles', async () => {
+    const addEventListener = vi.spyOn(HTMLElement.prototype, 'addEventListener')
+    const { frame, onPreviewViewportChange } = renderInteractivePreview()
+    await waitFor(() => {
+      expect(pipelineMock.instances).toHaveLength(1)
+    })
+    expect(
+      addEventListener.mock.calls.filter(
+        ([type, , options]) =>
+          type === 'wheel' &&
+          (options as AddEventListenerOptions | undefined)?.passive === false,
+      ),
+    ).toHaveLength(1)
+    addEventListener.mockRestore()
+    const frames = captureAnimationFrames()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+    try {
+      const first = fireEvent.wheel(frame!, {
+        clientX: 300,
+        clientY: 150,
+        deltaY: -150,
+        deltaMode: 0,
+        ctrlKey: false,
+      })
+      fireEvent.wheel(frame!, {
+        clientX: 300,
+        clientY: 150,
+        deltaY: -150,
+        deltaMode: 0,
+        ctrlKey: false,
+      })
+
+      expect(first).toBe(false)
+      expect(frames.request).toHaveBeenCalledTimes(1)
+      expect(frame).toHaveClass('raw-preview-frame-transforming')
+      frames.run()
+      expect(onPreviewViewportChange).toHaveBeenCalledTimes(1)
+      const next = onPreviewViewportChange.mock.calls[0]?.[0]
+      expect(next?.zoom).toBeCloseTo(2.25)
+      expect(next?.panX).toBeCloseTo(-125)
+      expect(next?.panY).toBeCloseTo(0)
+
+      act(() => vi.advanceTimersByTime(179))
+      expect(frame).toHaveClass('raw-preview-frame-transforming')
+      act(() => vi.advanceTimersByTime(1))
+      expect(frame).not.toHaveClass('raw-preview-frame-transforming')
+    } finally {
+      vi.useRealTimers()
+      frames.restore()
+    }
+  })
+
+  it('leaves no gesture frame, timer, listener, or capture behind on unmount', async () => {
+    const { frame, unmount, onPreviewViewportChange } =
+      renderInteractivePreview({
+        previewViewport: { zoom: 2, panX: 0, panY: 0, fitMode: 'custom' },
+      })
+    await waitFor(() => {
+      expect(pipelineMock.instances).toHaveLength(1)
+    })
+    const frames = captureAnimationFrames()
+    const removeEventListener = vi.spyOn(frame!, 'removeEventListener')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+    try {
+      fireEvent.pointerDown(frame!, {
+        pointerId: 7,
+        button: 0,
+        clientX: 200,
+        clientY: 150,
+      })
+      fireEvent.pointerMove(frame!, {
+        pointerId: 7,
+        clientX: 210,
+        clientY: 150,
+      })
+      fireEvent.wheel(frame!, {
+        clientX: 200,
+        clientY: 150,
+        deltaY: -30,
+        deltaMode: 0,
+        ctrlKey: false,
+      })
+      expect(frames.request).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(1)
+
+      unmount()
+
+      expect(frames.cancel).toHaveBeenCalledWith(frames.lastId())
+      expect(vi.getTimerCount()).toBe(0)
+      expect(removeEventListener).toHaveBeenCalledWith(
+        'wheel',
+        expect.any(Function),
+      )
+      expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledWith(
+        7,
+      )
+      expect(onPreviewViewportChange).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+      frames.restore()
+    }
+  })
+
+  it('ignores gestures while preview interaction is disabled', async () => {
+    const onPreviewViewportChange = vi.fn()
+    const { container } = render(
+      createElement(PreviewCanvas, {
+        imageRef: { current: decodedImage },
+        imageVersion: 1,
+        color: defaultColor,
+        viewMode: 'processed' as const,
+        lutDataRef: { current: null },
+        lutDataVersion: 0,
+        interactionDisabled: true,
+        previewViewport: { zoom: 2, panX: 0, panY: 0, fitMode: 'custom' },
+        onPreviewViewportChange,
+      }),
+    )
+    await waitFor(() => {
+      expect(pipelineMock.instances).toHaveLength(1)
+    })
+    const frame = container.querySelector<HTMLElement>(
+      '[data-raw-preview-frame]',
+    )!
+    setElementRect(frame, { width: 400, height: 300 })
+    setElementRect(
+      container.querySelector<HTMLElement>('[data-raw-compare-track="image"]')!,
+      { width: 400, height: 300 },
+    )
+
+    const wheel = fireEvent.wheel(frame, {
+      clientX: 200,
+      clientY: 150,
+      deltaY: -150,
+    })
+    fireEvent.pointerDown(frame, {
+      pointerId: 1,
+      button: 0,
+      clientX: 200,
+      clientY: 150,
+    })
+    fireEvent.pointerMove(frame, { pointerId: 1, clientX: 240, clientY: 150 })
+    fireEvent.pointerUp(frame, { pointerId: 1 })
+    fireEvent.doubleClick(frame)
+
+    expect(wheel).toBe(true)
+    expect(HTMLElement.prototype.setPointerCapture).not.toHaveBeenCalled()
+    expect(frame).not.toHaveClass('raw-preview-frame-interactive')
+    expect(frame).not.toHaveClass('raw-preview-frame-panning')
+    expect(onPreviewViewportChange).not.toHaveBeenCalled()
+  })
+
   it('redraws the processed surface only when the view changes its output selection', async () => {
     const onStatsUpdate = vi.fn()
     const props = {
