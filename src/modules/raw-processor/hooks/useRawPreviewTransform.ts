@@ -1,5 +1,4 @@
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useMemo } from 'react'
 
 import type { ImageSession, TransformIntent } from '../model/session'
@@ -14,8 +13,15 @@ import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
 type UseRawPreviewTransformInput = {
   session: ImageSession | null
-  sessionRef: MutableRefObject<ImageSession | null>
-  setSession: Dispatch<SetStateAction<ImageSession | null>>
+  /** The session the store holds now, including writes not yet rendered. */
+  getSession: () => ImageSession | null
+  /**
+   * Writes the session through `update`, which receives the latest session
+   * and runs before this returns, as the workflow's session store does.
+   */
+  setSession: (
+    update: (session: ImageSession | null) => ImageSession | null,
+  ) => void
   invalidateExportGraph: () => void
 }
 
@@ -39,6 +45,36 @@ function sameIntent(a: TransformIntent, b: TransformIntent) {
 }
 
 /**
+ * `session` after a Transform event, and whether the event discards what was
+ * exported for the Transform before it. Null when the event changes nothing.
+ */
+function transitionTransform(
+  session: ImageSession,
+  event: TransformEvent,
+): { session: ImageSession; invalidated: boolean } | null {
+  const previous = session.transform ?? createTransformState(session.id)
+  const reduced = reduceTransformState(previous, event)
+  if (reduced === previous) return null
+
+  const asked = !sameIntent(reduced.intent, previous.intent)
+  // An event that asks for the same Transform keeps the intent object, so an
+  // export admitted for that intent stays current; only a real edit or reset
+  // makes a new one.
+  const transform = asked ? reduced : { ...reduced, intent: previous.intent }
+  const geometry = heldTransformGeometry(transform)
+  const moved = !sameGeometry(geometry, session.exportGeometry ?? null)
+  const invalidated = moved || asked
+  return {
+    invalidated,
+    session: {
+      ...(invalidated ? clearExportResultState(session) : session),
+      transform,
+      ...(moved ? { exportGeometry: geometry } : {}),
+    },
+  }
+}
+
+/**
  * The session's Transform: its intent and accepted answers, and the geometry
  * the export reproduces, which is only ever the geometry that state holds.
  * Moving that geometry, or asking for another Transform, discards any export
@@ -49,7 +85,7 @@ function sameIntent(a: TransformIntent, b: TransformIntent) {
  */
 export function useRawPreviewTransform({
   session,
-  sessionRef,
+  getSession,
   setSession,
   invalidateExportGraph,
 }: UseRawPreviewTransformInput): {
@@ -62,37 +98,24 @@ export function useRawPreviewTransform({
     () => (sourceId ? createTransformState(sourceId) : null),
     [sourceId],
   )
+  // Each event reduces the session the store holds when it lands, so it never
+  // acts on a source or Transform a newer write replaced. Invalidation runs
+  // before the write; it touches only export state, which the transition
+  // does not read, so the write reduces to the same Transform.
   const dispatch = useCallback(
     (event: TransformEvent) => {
-      const current = sessionRef.current
-      if (!current || current.id !== event.sourceId) return
-      const previous = current.transform ?? createTransformState(current.id)
-      const reduced = reduceTransformState(previous, event)
-      if (reduced === previous) return
-
-      const asked = !sameIntent(reduced.intent, previous.intent)
-      // An event that asks for the same Transform keeps the intent object,
-      // so an export admitted for that intent stays current; only a real
-      // edit or reset makes a new one.
-      const transform = asked
-        ? reduced
-        : { ...reduced, intent: previous.intent }
-      const geometry = heldTransformGeometry(transform)
-      const moved = !sameGeometry(geometry, current.exportGeometry ?? null)
-      const invalidated = moved || asked
-      if (invalidated) invalidateExportGraph()
-      const update = (value: ImageSession | null) =>
-        value?.id === current.id
-          ? {
-              ...(invalidated ? clearExportResultState(value) : value),
-              transform,
-              ...(moved ? { exportGeometry: geometry } : {}),
-            }
-          : value
-      sessionRef.current = update(sessionRef.current)
-      setSession(update)
+      const live = getSession()
+      if (!live || live.id !== event.sourceId) return
+      const planned = transitionTransform(live, event)
+      if (!planned) return
+      if (planned.invalidated) invalidateExportGraph()
+      setSession((current) =>
+        current?.id === event.sourceId
+          ? (transitionTransform(current, event)?.session ?? current)
+          : current,
+      )
     },
-    [invalidateExportGraph, sessionRef, setSession],
+    [getSession, invalidateExportGraph, setSession],
   )
 
   return {

@@ -4823,6 +4823,54 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(getDetachedPreviewView().mode).toBe('compare')
   })
 
+  it('keeps a view mode written before a geometry commit in the same tick', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    const { transform, setViewMode } = result.current
+
+    act(() => {
+      setViewMode('processed')
+      acceptTransformGeometry(transform, SAMPLE_GEOMETRY)
+
+      expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
+        exportGeometry: SAMPLE_GEOMETRY,
+        viewState: { mode: 'processed' },
+      })
+    })
+
+    expect(result.current.viewMode).toBe('processed')
+    expect(result.current.previewTransform?.geometry).toEqual(SAMPLE_GEOMETRY)
+  })
+
+  it('lands a Transform edit from a replacing loadFile tick on neither source', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'first.ARW'))
+    })
+    const first = result.current.transform!
+    const firstSourceId = first.state!.sourceId
+
+    await act(async () => {
+      const loading = result.current.loadFile(new File(['raw'], 'second.ARW'))
+      // The edit still addresses the first source, which the load replaced.
+      first.dispatch({
+        type: 'edit',
+        sourceId: firstSourceId,
+        intent: { manual: { ...NEUTRAL_TRANSFORM, rotate: 5 } },
+      })
+      await loading
+    })
+
+    const replacement = jotaiStore.get(currentSessionAtom)
+    expect(replacement?.sourceFile.name).toBe('second.ARW')
+    expect(replacement?.id).not.toBe(firstSourceId)
+    expect(replacement?.transform?.intent.manual).toEqual(NEUTRAL_TRANSFORM)
+    expect(replacement?.exportGeometry).toBeUndefined()
+    expect(result.current.canExport).toBe(true)
+  })
+
   it('refuses the split once the GPU preview falls back to the CPU, and keeps the original', async () => {
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
     await act(async () => {

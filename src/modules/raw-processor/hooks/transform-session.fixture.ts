@@ -1,4 +1,5 @@
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
+import { atom, createStore, useAtomValue } from 'jotai'
 import { useCallback, useMemo, useRef, useState } from 'react'
 
 import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
@@ -61,40 +62,53 @@ function fixtureSession(id: string): ImageSession {
 
 /**
  * The workflow's Transform ports over one session per source id, as
- * `useRawWorkflow` publishes them. `onCommit` hears every move of the
- * geometry the export reproduces, synchronously, with the source it moved
- * for; events that leave it where it is are not commits.
+ * `useRawWorkflow` publishes them. The sessions live in a store whose writes
+ * the next event reads in the same tick, before any rerender, as the
+ * workflow's session store does. `onCommit` hears every move of the geometry
+ * the export reproduces, synchronously, with the source it moved for; events
+ * that leave it where it is are not commits.
  */
 export function useTransformSessionFixture(
   sourceId: string,
   onCommit?: (sourceId: string, geometry: ExportGeometry | null) => void,
 ) {
-  const [sessions, setSessions] = useState<Record<string, ImageSession>>({})
+  const [{ store, sessionsAtom }] = useState(() => ({
+    store: createStore(),
+    sessionsAtom: atom<Record<string, ImageSession>>({}),
+  }))
+  const sessions = useAtomValue(sessionsAtom, { store })
   const fresh = useMemo(() => fixtureSession(sourceId), [sourceId])
   const session = sessions[sourceId] ?? fresh
-  const sessionRef = useRef<ImageSession | null>(session)
-  sessionRef.current = session
+  // The source the ports address: the one this render shows.
+  const currentRef = useRef({ sourceId, fresh })
+  currentRef.current = { sourceId, fresh }
   const onCommitRef = useRef(onCommit)
   onCommitRef.current = onCommit
   // The geometry each source last published. The producer replaces it only
   // when it moves; an edit invalidates the export without moving it.
   const published = useRef<Record<string, ExportGeometry | null>>({})
   const invalidateExportGraph = useCallback(() => {}, [])
-  // The producer writes the session ref before it publishes, so the ref
-  // already holds what the update produces.
-  const setSession = useCallback(() => {
-    const next = sessionRef.current
-    if (!next) return
-    const geometry = next.exportGeometry ?? null
-    if ((published.current[next.id] ?? null) !== geometry) {
-      published.current[next.id] = geometry
-      onCommitRef.current?.(next.id, geometry)
-    }
-    setSessions((previous) => ({ ...previous, [next.id]: next }))
-  }, [])
+  const getSession = useCallback(() => {
+    const current = currentRef.current
+    return store.get(sessionsAtom)[current.sourceId] ?? current.fresh
+  }, [sessionsAtom, store])
+  const setSession = useCallback(
+    (update: (session: ImageSession | null) => ImageSession | null) => {
+      const previous = getSession()
+      const next = update(previous)
+      if (!next || next === previous) return
+      store.set(sessionsAtom, (all) => ({ ...all, [next.id]: next }))
+      const geometry = next.exportGeometry ?? null
+      if ((published.current[next.id] ?? null) !== geometry) {
+        published.current[next.id] = geometry
+        onCommitRef.current?.(next.id, geometry)
+      }
+    },
+    [getSession, sessionsAtom, store],
+  )
   const ports = useRawPreviewTransform({
     session,
-    sessionRef,
+    getSession,
     setSession,
     invalidateExportGraph,
   })

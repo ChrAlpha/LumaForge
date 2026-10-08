@@ -3,8 +3,9 @@ import { toast } from 'sonner'
 
 import { yieldToPaint } from '~/lib/dom'
 
+import type { ImageSession } from '../model/session'
 import { hasActiveExport } from '../services/export/export-state'
-import { getCurrentSession } from '../state/session.atoms'
+import { getCurrentSession, setCurrentSession } from '../state/session.atoms'
 import { getLut } from '../state/workflow.atoms'
 import { buildRawWorkflowReturn } from './buildRawWorkflowReturn'
 import { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
@@ -156,10 +157,21 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
       !hasActiveExport(exportAbortControllerRef.current, getCurrentSession()),
     [exportAbortControllerRef],
   )
+  // Transform events reduce the session in the store when they land. Export
+  // still reads the session through `sessionRef`, so each Transform write
+  // leaves it holding what the store holds, before any rerender: an export
+  // started in that gap runs with the geometry the store holds.
+  const setTransformSession = useCallback(
+    (update: (current: ImageSession | null) => ImageSession | null) => {
+      setCurrentSession(update)
+      sessionRef.current = getCurrentSession()
+    },
+    [sessionRef],
+  )
   const { previewTransform, transform } = useRawPreviewTransform({
     session,
-    sessionRef,
-    setSession,
+    getSession: getCurrentSession,
+    setSession: setTransformSession,
     invalidateExportGraph,
   })
 
