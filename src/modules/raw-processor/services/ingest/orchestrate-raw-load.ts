@@ -66,6 +66,11 @@ export interface RawLoadContext {
     setColorIntent: (
       value: ColorGraphIntent | ((prev: ColorGraphIntent) => ColorGraphIntent),
     ) => void
+    /**
+     * The session the store holds now. A write through `setSession` or
+     * `replaceFile` is visible here in the same tick, before any rerender.
+     */
+    getSession: () => ImageSession | null
     setSession: (
       value:
         | ImageSession
@@ -77,6 +82,7 @@ export interface RawLoadContext {
   }
   services: {
     scheduleToast: (notify: () => void) => void
+    /** Publishes the new source's session to the store before it returns. */
     replaceFile: (
       file: File,
       retainedSessionState: RetainedSessionState,
@@ -100,7 +106,6 @@ export interface RawLoadContext {
   }
   refs: {
     decodedImageRef: { current: DecodedImage | null }
-    sessionRef: { current: ImageSession | null }
     embeddedPreviewUrlRef: { current: string | null }
     isMountedRef: { current: boolean }
     runtimeWorkSessionIdRef: { current: string | null }
@@ -141,13 +146,14 @@ export async function orchestrateRawLoad(
     const loadLease = ctx.services.beginRuntimeSession()
     lease = loadLease
     const runtimeSignal = loadLease.signal
-    // Read the current look from the store at load time (not from caller
-    // closures) so a LUT loaded before any RAW — or replaced while the picker
-    // was open — is always the one retained into the new session.
+    // Read the current look and session from the store at load time (not
+    // from caller closures or the last render) so a LUT loaded before any
+    // RAW, replaced while the picker was open, or a strength set in this
+    // tick is always the one retained into the new session.
     const colorIntent = ctx.atoms.getColorIntent()
     const lut = ctx.atoms.getLut()
     const activeStyle = resolveActiveLook({
-      session: ctx.refs.sessionRef.current,
+      session: ctx.atoms.getSession(),
       lut,
       intensity: colorIntent.intensity,
     })
@@ -162,10 +168,11 @@ export async function orchestrateRawLoad(
       loadState.retainedSessionState,
     )
     loadSessionId = nextSession.id
+    // `replaceFile` has published the session, so every check below and any
+    // command later in this tick reads it from the store.
     let quickPreview: DecodedImage | null = null
     let boundedHqPreview: DecodedImage | null = null
 
-    ctx.refs.sessionRef.current = nextSession
     ctx.refs.runtimeWorkSessionIdRef.current = nextSession.id
     ctx.refs.pendingLoadSessionIdRef.current = nextSession.id
     ctx.services.setDecodedImageRef(null)
@@ -203,7 +210,7 @@ export async function orchestrateRawLoad(
     const matchesActiveSession = () =>
       ctx.refs.isMountedRef.current &&
       ctx.refs.runtimeWorkSessionIdRef.current === nextSession.id &&
-      ctx.refs.sessionRef.current?.id === nextSession.id
+      ctx.atoms.getSession()?.id === nextSession.id
 
     const updatePreviewState = (
       source: Exclude<DisplaySource, 'none'>,
@@ -485,7 +492,7 @@ export async function orchestrateRawLoad(
         .finally(() => {
           if (
             ctx.refs.runtimeWorkSessionIdRef.current === nextSession.id &&
-            ctx.refs.sessionRef.current?.id === nextSession.id
+            ctx.atoms.getSession()?.id === nextSession.id
           ) {
             ctx.refs.runtimeWorkSessionIdRef.current = null
           }
@@ -516,7 +523,7 @@ export async function orchestrateRawLoad(
 
     if (
       ctx.refs.runtimeWorkSessionIdRef.current !== loadSessionId ||
-      ctx.refs.sessionRef.current?.id !== loadSessionId
+      ctx.atoms.getSession()?.id !== loadSessionId
     ) {
       return
     }

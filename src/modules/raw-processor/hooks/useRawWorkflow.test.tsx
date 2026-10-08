@@ -2409,6 +2409,40 @@ describe('useRawWorkflow embedded preview state', () => {
       expect(first?.activeStyle ?? null).toBeNull()
     })
 
+    it('carries a look strength set in a replacing loadFile tick into the replacement', async () => {
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadLUT(
+          createCubeFile('Strength Look', 'strength.cube'),
+        )
+      })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'first.ARW'))
+      })
+      const first = jotaiStore.get(currentSessionAtom)
+      expect(first?.activeStyle).toMatchObject({ kind: 'custom' })
+      expect(first?.activeStyle?.currentIntensity).not.toBe(0.41)
+
+      // Both commands come from the first source's render: the strength lands
+      // in the store before the load reads the look it carries over, and no
+      // render runs between them.
+      const { setIntensity, loadFile } = result.current
+      await act(async () => {
+        setIntensity(0.41)
+        await loadFile(new File(['raw'], 'second.ARW'))
+      })
+
+      expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
+        sourceFile: { name: 'second.ARW' },
+        activeStyle: {
+          kind: 'custom',
+          name: 'Strength Look',
+          currentIntensity: 0.41,
+        },
+      })
+      expect(result.current.activeIntensity).toBe(0.41)
+    })
+
     it('seeds the next source with a LUT picked in the reset tick', async () => {
       const { result } = renderHook(() => useRawWorkflow(), { wrapper })
       await act(async () => {

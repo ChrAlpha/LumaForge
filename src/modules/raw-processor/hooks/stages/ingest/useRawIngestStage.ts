@@ -27,10 +27,13 @@ type UseRawIngestStageInput = {
   getView: () => PreviewView
   getLut: () => ParsedLUT | null
   setColorIntent: SetColorIntent
+  /** Reads the session store; the load publishes and checks through it. */
+  getSession: () => ImageSession | null
   setSession: Dispatch<SetStateAction<ImageSession | null>>
   setDecodedImageVersion: Dispatch<SetStateAction<number>>
   setStats: (stats: PipelineStats | null) => void
   scheduleToast: (notify: () => void) => void
+  /** Publishes the new source's session to the store before it returns. */
   replaceFile: (
     file: File,
     retained?: {
@@ -56,6 +59,7 @@ type UseRawIngestStageInput = {
   /** The workflow host owns each load's native session and cancellation. */
   beginRuntimeSession: RawRuntimeHost['beginSession']
   decodedImageRef: MutableRefObject<DecodedImage | null>
+  /** Cleared by reset and unmount only; the load reads the store instead. */
   sessionRef: MutableRefObject<ImageSession | null>
   embeddedPreviewUrlRef: MutableRefObject<string | null>
   isMountedRef: MutableRefObject<boolean>

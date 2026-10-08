@@ -52,6 +52,7 @@ function createInput(
     getView: vi.fn(() => ({ mode: 'compare' as const, compareSplit: 0.5 })),
     getLut: vi.fn(() => null),
     setColorIntent: vi.fn(),
+    getSession: vi.fn(() => null),
     setSession: vi.fn(),
     setDecodedImageVersion: vi.fn(),
     setStats: vi.fn(),
@@ -69,7 +70,6 @@ function createInput(
     getPrewarmState: vi.fn<() => PrewarmState>(() => 'idle'),
     beginRuntimeSession: createHostLeases().beginRuntimeSession,
     decodedImageRef: { current: null },
-    sessionRef: { current: null },
     embeddedPreviewUrlRef: { current: null },
     isMountedRef: { current: true },
     runtimeWorkSessionIdRef: { current: null },
@@ -99,6 +99,8 @@ describe('useRawLoadAction', () => {
           getView: input.getView,
           getLut: input.getLut,
           setColorIntent: input.setColorIntent,
+          getSession: input.getSession,
+          setSession: input.setSession,
         }),
         services: expect.objectContaining({
           replaceFile: input.replaceFile,
@@ -107,7 +109,6 @@ describe('useRawLoadAction', () => {
             input.registerCurrentPreviewPipelineForEvacuation,
         }),
         refs: expect.objectContaining({
-          sessionRef: input.sessionRef,
           pendingLoadSessionIdRef: input.pendingLoadSessionIdRef,
         }),
       }),
@@ -127,6 +128,7 @@ describe('useRawLoadAction', () => {
       [
         'getColorIntent',
         'getLut',
+        'getSession',
         'getView',
         'setColorIntent',
         'setDecodedImageVersion',
@@ -139,7 +141,7 @@ describe('useRawLoadAction', () => {
     )
   })
 
-  it('hands the load no native session ref, disposal set, or abort controller of its own', async () => {
+  it('hands the load no session, native session ref, disposal set, or abort controller of its own', async () => {
     const orchestrateLoad = vi.fn().mockResolvedValue(undefined)
     const { result } = renderHook(() =>
       useRawLoadAction(createInput(orchestrateLoad)),
@@ -156,7 +158,6 @@ describe('useRawLoadAction', () => {
         'pendingLoadSessionIdRef',
         'previewCopyCanvasRef',
         'runtimeWorkSessionIdRef',
-        'sessionRef',
       ].sort(),
     )
     expect(ctx.services).not.toHaveProperty('disposeRuntimeSession')

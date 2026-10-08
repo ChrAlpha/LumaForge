@@ -249,6 +249,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     getView: getCurrentView,
     getLut,
     setColorIntent,
+    getSession: getCurrentSession,
     setSession,
     setDecodedImageVersion,
     setStats,
