@@ -7,6 +7,81 @@ import type {
 import type { ExportOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 
+/**
+ * Why a full-resolution export cannot start. The code is the decision; the
+ * presentation picks its copy. Two codes carry diagnostic text as data, to
+ * show and never to decide on: the runtime's reasons for a source it cannot
+ * export, and the color runtime's reason for a confirmed LUT output it
+ * refuses.
+ */
+export const FULL_RES_EXPORT_REASON_CODES = [
+  'source-loading',
+  'export-running',
+  'quick-preview-pending',
+  'capability-unchecked',
+  'capability-probing',
+  'runtime-unsupported',
+  'builtin-style',
+  'lut-input-unconfirmed',
+  'lut-output-unsupported',
+  'lut-output-refused',
+  'geometry-unplannable',
+  'exposure-pending',
+  'cannot-safely-complete',
+  'transform-pending',
+  'transform-invalid',
+  'transform-unavailable',
+] as const
+
+export type FullResExportReasonCode =
+  (typeof FULL_RES_EXPORT_REASON_CODES)[number]
+
+/** The full-resolution refusals whose only copy is their diagnostic text. */
+export type FullResExportDetailReasonCode = Extract<
+  FullResExportReasonCode,
+  'runtime-unsupported' | 'lut-output-refused'
+>
+
+export type FullResExportReason =
+  | { code: Exclude<FullResExportReasonCode, FullResExportDetailReasonCode> }
+  | { code: FullResExportDetailReasonCode; detail: string }
+
+/** Why an HQ preview JPEG export cannot start. */
+export const HQ_PREVIEW_EXPORT_REASON_CODES = [
+  'transform-held',
+  'no-source',
+  'preview-released',
+  'look-dropped',
+  'hq-preview-pending',
+  'not-ready',
+] as const
+
+export type HqPreviewExportReasonCode =
+  (typeof HQ_PREVIEW_EXPORT_REASON_CODES)[number]
+
+/** Why the clipboard cannot take a result's image at its own size. */
+export const EXPORT_COPY_REASON_CODES = [
+  'clipboard-unsupported',
+  'full-resolution-copy-unsupported',
+  'hq-preview-copy-unsupported',
+  'preview-copy-not-ready',
+] as const
+
+export type ExportCopyReasonCode = (typeof EXPORT_COPY_REASON_CODES)[number]
+
+/** Why a result cannot be shared. */
+export const EXPORT_SHARE_REASON_CODES = [
+  'no-result',
+  'share-unsupported',
+] as const
+
+export type ExportShareReasonCode = (typeof EXPORT_SHARE_REASON_CODES)[number]
+
+/**
+ * How a result reaches the clipboard. The mode names the copy label.
+ * Producers still write only the English `reason`; `reasonCode` is staged for
+ * them to set, and replaces the sentence once every producer sets it.
+ */
 export type ExportCopyCapability =
   | { mode: 'full-resolution'; label: 'Copy full-resolution image' }
   | { mode: 'hq-preview'; label: 'Copy HQ preview image' }
@@ -14,8 +89,9 @@ export type ExportCopyCapability =
       mode: 'preview-size'
       label: 'Copy preview-size image'
       reason: string
+      reasonCode?: ExportCopyReasonCode
     }
-  | { mode: 'unavailable'; reason: string }
+  | { mode: 'unavailable'; reason: string; reasonCode?: ExportCopyReasonCode }
 
 export type ExportResultKind = 'full-resolution' | 'hq-preview'
 
@@ -92,9 +168,10 @@ export type ExportResultIdentity = Readonly<{
   inputSignature: string
 }>
 
+/** Whether a result can be shared; `reasonCode` is staged like the copy one. */
 export type ExportShareCapability =
   | { available: true }
-  | { available: false; reason: string }
+  | { available: false; reason: string; reasonCode?: ExportShareReasonCode }
 
 export type ExportResult = {
   kind?: ExportResultKind

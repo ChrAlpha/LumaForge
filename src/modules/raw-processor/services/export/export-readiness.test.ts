@@ -1,3 +1,11 @@
+import type {
+  LUTColorProfile,
+  LUTContractResolution,
+} from '@lumaforge/luma-color-runtime'
+import {
+  getLUTColorProfile,
+  resolveUnsupportedLUTOutputReason,
+} from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import {
   INVALID_EXPORT_GEOMETRY,
@@ -15,7 +23,14 @@ import { selectExportPlan } from '~/lib/export/export-plan'
 import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
 import { composeManualTransform } from '~/lib/transform/transform-render'
 
-import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../model/derive-session'
+import {
+  deriveExportRefusal,
+  deriveLutContractExportReason,
+  deriveLutContractExportRefusal,
+  fullResExportReasonSentence,
+  PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+} from '../../model/derive-session'
+import type { FullResExportReason } from '../../model/export-result'
 import type { ImageSession, TransformState } from '../../model/session'
 import { createTransformState } from '../../model/session-factory'
 import type {
@@ -30,6 +45,7 @@ import {
 import {
   deriveFullResExportReadiness,
   deriveTransformExportRefusal,
+  deriveTransformExportRefusalReason,
   planFullResExport,
   planFullResExportRequest,
 } from './export-readiness'
@@ -230,6 +246,7 @@ describe('export readiness helpers', () => {
     ).toEqual({
       canExport: false,
       disabledReason: 'Full-resolution export source is still loading.',
+      refusal: { code: 'source-loading' },
     })
     expect(
       deriveFullResExportReadiness({
@@ -240,6 +257,7 @@ describe('export readiness helpers', () => {
     ).toEqual({
       canExport: false,
       disabledReason: 'Full-resolution export source is still loading.',
+      refusal: { code: 'source-loading' },
     })
   })
 
@@ -263,6 +281,7 @@ describe('export readiness helpers', () => {
       canExport: false,
       disabledReason:
         'Checking full-resolution export support for this RAW file.',
+      refusal: { code: 'capability-probing' },
     })
     expect(
       deriveFullResExportReadiness({
@@ -278,6 +297,10 @@ describe('export readiness helpers', () => {
     ).toEqual({
       canExport: false,
       disabledReason: 'processed-window-unavailable',
+      refusal: {
+        code: 'runtime-unsupported',
+        detail: 'processed-window-unavailable',
+      },
     })
   })
 
@@ -291,6 +314,7 @@ describe('export readiness helpers', () => {
     ).toEqual({
       canExport: false,
       disabledReason: 'RAW preview exposure is still being prepared.',
+      refusal: { code: 'exposure-pending' },
     })
   })
 
@@ -320,6 +344,11 @@ describe('export readiness helpers', () => {
     expect(readiness.disabledReason).toMatch(
       /cannot safely complete this large local full-resolution export/i,
     )
+    expect(readiness).toEqual({
+      canExport: false,
+      disabledReason: getExportModeCopy('cannot-safely-complete'),
+      refusal: { code: 'cannot-safely-complete' },
+    })
   })
 
   it('assumes a reachable OPFS has room without sampling storage', () => {
@@ -365,7 +394,11 @@ describe('export readiness helpers', () => {
           session: { ...createSession(), exportGeometry: geometry },
           rawRenderExposure: IDENTITY_EXPOSURE,
         }),
-      ).toEqual({ canExport: false, disabledReason: INVALID_GEOMETRY_REASON })
+      ).toEqual({
+        canExport: false,
+        disabledReason: INVALID_GEOMETRY_REASON,
+        refusal: { code: 'geometry-unplannable' },
+      })
     },
   )
 
@@ -395,6 +428,191 @@ describe('export readiness helpers', () => {
       })
       if (!neutral.canExport) throw new Error('expected export readiness')
       expect(neutral.deliveredSize).toEqual(SOURCE)
+    }
+  })
+
+  it('refuses with the first unmet requirement, in order', () => {
+    const sourceFile = new File(['raw'], 'frame.ARW')
+    const builtin: ImageSession['activeStyle'] = {
+      kind: 'builtin',
+      name: 'Neutral',
+      defaultIntensity: 0.7,
+      currentIntensity: 0.7,
+    }
+    const quickPending: ImageSession['previewBundle'] = {
+      ...createSession().previewBundle,
+      quickDecodePreview: { status: 'idle' },
+    }
+    const folding = { matrix: FOLDING_MATRIX, constrainCrop: false }
+    const cases: Array<
+      readonly [
+        code: string,
+        input: Parameters<typeof deriveFullResExportReadiness>[0],
+      ]
+    > = [
+      [
+        'source-loading',
+        {
+          sourceFile: null,
+          session: createSession({ status: 'exporting' }),
+          rawRenderExposure: null,
+        },
+      ],
+      [
+        'export-running',
+        {
+          sourceFile,
+          session: {
+            ...createSession({
+              status: 'exporting',
+              fullResCapability: { status: 'probing' },
+            }),
+            previewBundle: quickPending,
+          },
+          rawRenderExposure: null,
+        },
+      ],
+      [
+        'quick-preview-pending',
+        {
+          sourceFile,
+          session: {
+            ...createSession({ fullResCapability: { status: 'unknown' } }),
+            previewBundle: quickPending,
+          },
+          rawRenderExposure: null,
+        },
+      ],
+      [
+        'capability-unchecked',
+        {
+          sourceFile,
+          session: {
+            ...createSession({ fullResCapability: { status: 'unknown' } }),
+            activeStyle: builtin,
+          },
+          rawRenderExposure: null,
+        },
+      ],
+      [
+        'builtin-style',
+        {
+          sourceFile,
+          session: {
+            ...createSession(),
+            activeStyle: builtin,
+            exportGeometry: folding,
+          },
+          rawRenderExposure: null,
+        },
+      ],
+      [
+        'geometry-unplannable',
+        {
+          sourceFile,
+          session: { ...createSession(), exportGeometry: folding },
+          rawRenderExposure: null,
+        },
+      ],
+      [
+        'exposure-pending',
+        { sourceFile, session: createSession(), rawRenderExposure: null },
+      ],
+    ]
+    for (const [code, input] of cases) {
+      const readiness = deriveFullResExportReadiness(input)
+      expect(readiness.canExport).toBe(false)
+      if (readiness.canExport) throw new Error('expected a refusal')
+      expect(readiness.refusal).toEqual({ code })
+      // The sentence each refusal still carries reads as its code.
+      expect(readiness.disabledReason).toBe(
+        fullResExportReasonSentence(readiness.refusal),
+      )
+    }
+  })
+
+  it('names each LUT contract refusal by code, keeping the color runtime text as data', () => {
+    const lutStyle = (
+      profileResolution: LUTContractResolution,
+    ): ImageSession['activeStyle'] => ({
+      kind: 'custom',
+      name: 'LUT',
+      defaultIntensity: 0.7,
+      currentIntensity: 0.7,
+      lutAsset: { format: 'cube', dimension: 33, profileResolution },
+    })
+    const vlog = getLUTColorProfile('panasonic-vgamut-vlog')!
+    const linear: LUTColorProfile = {
+      ...vlog,
+      role: 'technical-output',
+      outputGamut: 'v-gamut',
+      outputTransfer: 'linear',
+      outputRange: 'full',
+    }
+    const cases = [
+      [{ kind: 'unknown' }, { code: 'lut-input-unconfirmed' }],
+      [
+        { kind: 'recommended', recommendations: [vlog] },
+        { code: 'lut-input-unconfirmed' },
+      ],
+      [
+        { kind: 'unsupported-output', recommendations: [] },
+        { code: 'lut-output-unsupported' },
+      ],
+      [
+        { kind: 'confirmed', confidence: 'metadata', profile: linear },
+        {
+          code: 'lut-output-refused',
+          detail: resolveUnsupportedLUTOutputReason(linear)!,
+        },
+      ],
+    ] as const satisfies ReadonlyArray<
+      readonly [LUTContractResolution, FullResExportReason]
+    >
+    for (const [resolution, refusal] of cases) {
+      const style = lutStyle(resolution)
+      expect(deriveLutContractExportRefusal(style)).toEqual(refusal)
+      expect(deriveLutContractExportReason(style)).toBe(
+        fullResExportReasonSentence(refusal),
+      )
+      const readiness = deriveFullResExportReadiness({
+        sourceFile: new File(['raw'], 'frame.ARW'),
+        session: { ...createSession(), activeStyle: style },
+        rawRenderExposure: IDENTITY_EXPOSURE,
+      })
+      expect(readiness).toEqual({
+        canExport: false,
+        disabledReason: fullResExportReasonSentence(refusal),
+        refusal,
+      })
+    }
+    expect(deriveLutContractExportRefusal(null)).toBeUndefined()
+    expect(
+      deriveLutContractExportRefusal(
+        lutStyle({
+          kind: 'confirmed',
+          confidence: 'metadata',
+          profile: {
+            ...getLUTColorProfile('sony-sgamut3cine-slog3')!,
+            role: 'combined-look-output',
+            outputGamut: 'srgb-rec709',
+            outputTransfer: 'srgb',
+            outputRange: 'full',
+          },
+        }),
+      ),
+    ).toBeUndefined()
+  })
+
+  it('decides on the runtime verdict, never on its diagnostic text', () => {
+    for (const reason of ['', 'Quick preview is still being prepared.']) {
+      const session = createSession({
+        fullResCapability: { status: 'unsupported', reason },
+      })
+      expect(deriveExportRefusal(session)).toEqual({
+        code: 'runtime-unsupported',
+        detail: reason,
+      })
     }
   })
 
@@ -469,6 +687,9 @@ describe('deriveTransformExportRefusal', () => {
       expect(deriveTransformExportRefusal(session, 'full-resolution')).toBe(
         reason,
       )
+      expect(
+        deriveTransformExportRefusalReason(session, 'full-resolution'),
+      ).toEqual({ code: `transform-${status}` })
       // An accepted answer the session still holds does not stand for a
       // newer intent.
       expect(
@@ -509,6 +730,34 @@ describe('deriveTransformExportRefusal', () => {
         ),
       ).toBe(PREVIEW_TRANSFORM_HQ_EXPORT_REASON)
     }
+  })
+
+  it('names each Transform refusal by code for the export kind asked', () => {
+    const neutral = { ...createSession(), transform: transformAt('neutral') }
+    expect(
+      deriveTransformExportRefusalReason(neutral, 'full-resolution'),
+    ).toBeUndefined()
+    expect(
+      deriveTransformExportRefusalReason(neutral, 'hq-preview'),
+    ).toBeUndefined()
+    const accepted = transformAt('accepted')
+    const held: ImageSession = {
+      ...createSession(),
+      transform: accepted,
+      exportGeometry: heldTransformGeometry(accepted),
+    }
+    expect(
+      deriveTransformExportRefusalReason(held, 'full-resolution'),
+    ).toBeUndefined()
+    expect(deriveTransformExportRefusalReason(held, 'hq-preview')).toBe(
+      'transform-held',
+    )
+    expect(
+      deriveTransformExportRefusalReason(
+        { ...createSession(), transform: transformAt('pending') },
+        'hq-preview',
+      ),
+    ).toBe('transform-held')
   })
 })
 
@@ -629,6 +878,7 @@ describe('full-resolution export request planning', () => {
       ).toEqual({
         kind: 'refuse',
         reason: getExportModeCopy('cannot-safely-complete'),
+        refusal: { code: 'cannot-safely-complete' },
       })
     },
   )

@@ -18,26 +18,27 @@ import {
 } from '~/lib/runtime/capability-vector'
 
 import {
-  deriveExportDisabledReason,
+  deriveExportRefusal,
+  fullResExportReasonSentence,
   PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
 } from '../../model/derive-session'
+import type {
+  ExportResultKind,
+  FullResExportReason,
+  HqPreviewExportReasonCode,
+} from '../../model/export-result'
 import type { ImageSession } from '../../model/session'
 import type { TransformExportBlock } from '../transform/transform-state'
 import { deriveTransformStatus } from '../transform/transform-state'
 import type { ExportInterruptionHint } from './export-interruption'
 
-const MISSING_RAW_RENDER_EXPOSURE_EXPORT_REASON =
-  'RAW preview exposure is still being prepared.'
-const INVALID_EXPORT_GEOMETRY_REASON =
-  'This Transform cannot be reproduced at full resolution. Adjust or reset Transform to export.'
-
-const TRANSFORM_EXPORT_REFUSAL: Record<TransformExportBlock, string> = {
-  pending:
-    'Transform is still preparing the current photo. Export once the preview shows it.',
-  invalid:
-    'This Transform leaves too little usable image. Reduce the adjustment or reset Transform to export.',
-  unavailable:
-    'The processed preview is unavailable. Wait for it or reset Transform to export.',
+const TRANSFORM_EXPORT_REFUSAL: Record<
+  TransformExportBlock,
+  FullResExportReason
+> = {
+  pending: { code: 'transform-pending' },
+  invalid: { code: 'transform-invalid' },
+  unavailable: { code: 'transform-unavailable' },
 }
 
 function isOpfsAvailableForReadiness() {
@@ -67,7 +68,9 @@ export type FullResExportReadiness =
     }
   | {
       canExport: false
+      /** The sentence `refusal` stands for, until every reader takes the code. */
       disabledReason: string
+      refusal: FullResExportReason
     }
 
 /**
@@ -98,7 +101,11 @@ export function planFullResExportRequest(input: {
 
 export type FullResExportPlanDecision =
   | { kind: 'run'; plan: ExportExecutionPlan }
-  | { kind: 'refuse'; reason: string }
+  | {
+      kind: 'refuse'
+      reason: string
+      refusal: { code: 'cannot-safely-complete' }
+    }
 
 /**
  * Plans a request over the device facts handed in, through the one browser
@@ -113,7 +120,11 @@ export function planFullResExport(
 ): FullResExportPlanDecision {
   const plan = selectExportPlan({ ...request, ...facts })
   return plan.productCopy === 'cannot-safely-complete'
-    ? { kind: 'refuse', reason: getExportModeCopy(plan.productCopy) }
+    ? {
+        kind: 'refuse',
+        reason: getExportModeCopy(plan.productCopy),
+        refusal: { code: plan.productCopy },
+      }
     : { kind: 'run', plan }
 }
 
@@ -159,12 +170,22 @@ function optimisticReadinessPlanFacts(): ExportPlanFacts {
  * is made from optimistic facts, so only its refusal leaves this function:
  * it is never handed to a worker.
  */
-function getUnsafeFullResExportReason(source: ExportPlanSource) {
+function getUnsafeFullResExportRefusal(source: ExportPlanSource) {
   const decision = planFullResExport(
     planFullResExportRequest({ source }),
     optimisticReadinessPlanFacts(),
   )
-  return decision.kind === 'refuse' ? decision.reason : undefined
+  return decision.kind === 'refuse' ? decision.refusal : undefined
+}
+
+function refuseFullResExport(
+  refusal: FullResExportReason,
+): FullResExportReadiness {
+  return {
+    canExport: false,
+    disabledReason: fullResExportReasonSentence(refusal),
+    refusal,
+  }
 }
 
 /**
@@ -193,24 +214,17 @@ export function deriveFullResExportReadiness(input: {
   rawRenderExposure: RawRenderExposure | null | undefined
 }): FullResExportReadiness {
   if (!input.sourceFile || !input.session) {
-    return {
-      canExport: false,
-      disabledReason: 'Full-resolution export source is still loading.',
-    }
+    return refuseFullResExport({ code: 'source-loading' })
   }
 
-  const sessionReason = deriveExportDisabledReason(input.session)
-  if (sessionReason) {
-    return { canExport: false, disabledReason: sessionReason }
+  const sessionRefusal = deriveExportRefusal(input.session)
+  if (sessionRefusal) {
+    return refuseFullResExport(sessionRefusal)
   }
 
   const fullResCapability = input.session.exportState.fullResCapability
   if (fullResCapability.status !== 'supported') {
-    return {
-      canExport: false,
-      disabledReason:
-        'Full-resolution export support has not been checked yet.',
-    }
+    return refuseFullResExport({ code: 'capability-unchecked' })
   }
 
   const deliveredSize = planDeliveredSize(input.session.exportGeometry, {
@@ -218,22 +232,19 @@ export function deriveFullResExportReadiness(input: {
     height: fullResCapability.height,
   })
   if (!deliveredSize) {
-    return { canExport: false, disabledReason: INVALID_EXPORT_GEOMETRY_REASON }
+    return refuseFullResExport({ code: 'geometry-unplannable' })
   }
 
   if (!input.rawRenderExposure) {
-    return {
-      canExport: false,
-      disabledReason: MISSING_RAW_RENDER_EXPOSURE_EXPORT_REASON,
-    }
+    return refuseFullResExport({ code: 'exposure-pending' })
   }
 
-  const unsafeReason = getUnsafeFullResExportReason({
+  const unsafeRefusal = getUnsafeFullResExportRefusal({
     width: fullResCapability.width,
     height: fullResCapability.height,
   })
-  if (unsafeReason) {
-    return { canExport: false, disabledReason: unsafeReason }
+  if (unsafeRefusal) {
+    return refuseFullResExport(unsafeRefusal)
   }
 
   return {
@@ -255,20 +266,44 @@ export function deriveFullResExportReadiness(input: {
  * to the newest request. The HQ preview JPEG never applies Transform, so it
  * starts only while nothing is asked and no geometry is held.
  */
-export function deriveTransformExportRefusal(
+export function deriveTransformExportRefusalReason(
   session: ImageSession,
-  kind: 'full-resolution' | 'hq-preview',
-): string | undefined {
+  kind: 'full-resolution',
+): FullResExportReason | undefined
+export function deriveTransformExportRefusalReason(
+  session: ImageSession,
+  kind: 'hq-preview',
+): HqPreviewExportReasonCode | undefined
+export function deriveTransformExportRefusalReason(
+  session: ImageSession,
+  kind: ExportResultKind,
+): FullResExportReason | HqPreviewExportReasonCode | undefined
+export function deriveTransformExportRefusalReason(
+  session: ImageSession,
+  kind: ExportResultKind,
+): FullResExportReason | HqPreviewExportReasonCode | undefined {
   // A session built before it carried a Transform asks for none.
   const status = session.transform
     ? deriveTransformStatus(session.transform)
     : 'neutral'
   if (kind === 'hq-preview') {
     return status !== 'neutral' || session.exportGeometry
-      ? PREVIEW_TRANSFORM_HQ_EXPORT_REASON
+      ? 'transform-held'
       : undefined
   }
   return status === 'neutral' || status === 'accepted'
     ? undefined
     : TRANSFORM_EXPORT_REFUSAL[status]
+}
+
+/** The sentence `deriveTransformExportRefusalReason` stands for. */
+export function deriveTransformExportRefusal(
+  session: ImageSession,
+  kind: ExportResultKind,
+): string | undefined {
+  const refusal = deriveTransformExportRefusalReason(session, kind)
+  if (!refusal) return undefined
+  return typeof refusal === 'string'
+    ? PREVIEW_TRANSFORM_HQ_EXPORT_REASON
+    : fullResExportReasonSentence(refusal)
 }
