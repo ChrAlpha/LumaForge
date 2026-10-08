@@ -6,6 +6,7 @@ import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { renderHook } from '@testing-library/react'
+import { atom, createStore } from 'jotai'
 import type { ComponentType, PropsWithChildren } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -203,16 +204,20 @@ function setup({
   wrapper?: ComponentType<PropsWithChildren>
 }) {
   const stored = result(session)
-  const sessionRef = {
-    current: {
-      ...session,
-      exportState: { ...session.exportState, result: stored },
-    } as ImageSession | null,
-  }
+  // The session, color and LUT live in a store whose writes the next read
+  // sees in the same tick; nothing rerenders the hook after it mounts.
+  const store = createStore()
+  const sessionAtom = atom<ImageSession | null>({
+    ...session,
+    exportState: { ...session.exportState, result: stored },
+  })
+  const intentAtom = atom<ColorGraphIntentSource>(intent)
+  const lutAtom = atom<LUTData | null>(makeLut())
+  const getSession = () => store.get(sessionAtom)
   const refs = {
-    sessionRef,
-    paramsRef: { current: intent },
-    lutDataRef: { current: makeLut() as LUTData | null },
+    getSession,
+    getColorIntent: () => store.get(intentAtom),
+    getLutData: () => store.get(lutAtom),
     exportGraphVersionRef: { current: 3 },
     exportAbortControllerRef: { current: null as AbortController | null },
     isMountedRef: { current: true },
@@ -238,7 +243,16 @@ function setup({
       }),
     { wrapper },
   )
-  return { ...refs, stored, toast, actions: () => hook.current }
+  return {
+    ...refs,
+    stored,
+    toast,
+    actions: () => hook.current,
+    setSession: (session: ImageSession | null) =>
+      store.set(sessionAtom, session),
+    setIntent: (next: ColorGraphIntentSource) => store.set(intentAtom, next),
+    setLut: (next: LUTData | null) => store.set(lutAtom, next),
+  }
 }
 
 type Harness = ReturnType<typeof setup>
@@ -247,8 +261,8 @@ function withSession(
   harness: Harness,
   update: (session: ImageSession) => ImageSession,
 ) {
-  const current = harness.sessionRef.current
-  if (current) harness.sessionRef.current = update(current)
+  const current = harness.getSession()
+  if (current) harness.setSession(update(current))
 }
 
 function withResult(harness: Harness, result: ExportResult | undefined) {
@@ -269,16 +283,16 @@ const STALE_CHANGES: Array<[string, (harness: Harness) => void]> = [
   [
     'the session is replaced',
     (harness) => {
-      harness.sessionRef.current = {
+      harness.setSession({
         ...createReadySession(),
-        exportState: harness.sessionRef.current!.exportState,
-      }
+        exportState: harness.getSession()!.exportState,
+      })
     },
   ],
   [
     'the session is reset',
     (harness) => {
-      harness.sessionRef.current = null
+      harness.setSession(null)
     },
   ],
   [
@@ -301,7 +315,7 @@ const STALE_CHANGES: Array<[string, (harness: Harness) => void]> = [
         identity: captureExportResultIdentity({
           resultKind: harness.stored.kind ?? 'full-resolution',
           attemptId: 'attempt-2',
-          sessionId: harness.sessionRef.current!.id,
+          sessionId: harness.getSession()!.id,
           sourceFile,
           intent,
           lut: makeLut(),
@@ -340,31 +354,33 @@ const STALE_CHANGES: Array<[string, (harness: Harness) => void]> = [
   [
     'the user color changes',
     (harness) => {
-      harness.paramsRef.current = { ...intent, userExposureEv: 0.4 }
+      harness.setIntent({ ...intent, userExposureEv: 0.4 })
     },
   ],
   [
     'the look strength changes',
     (harness) => {
-      harness.paramsRef.current = { ...intent, intensity: 0.38 }
+      harness.setIntent({ ...intent, intensity: 0.38 })
     },
   ],
   [
     'the LUT table is replaced',
     (harness) => {
-      harness.lutDataRef.current = makeLut({ data: lutTable.slice() })
+      harness.setLut(makeLut({ data: lutTable.slice() }))
     },
   ],
   [
     'the LUT contract changes',
     (harness) => {
-      harness.lutDataRef.current = makeLut({
-        profileResolution: {
-          kind: 'unresolved',
-          recommendations: [],
-          reason: 'missing',
-        } as unknown as LUTData['profileResolution'],
-      })
+      harness.setLut(
+        makeLut({
+          profileResolution: {
+            kind: 'unresolved',
+            recommendations: [],
+            reason: 'missing',
+          } as unknown as LUTData['profileResolution'],
+        }),
+      )
     },
   ],
   [
@@ -514,12 +530,12 @@ describe('useExportResultActions', () => {
       }))
       // Fields the color graph never reads, such as a view left on an old
       // record, are not part of the request.
-      harness.paramsRef.current = {
+      harness.setIntent({
         ...intent,
         viewMode: 'split',
         compareSplit: 0.2,
-      } as unknown as ColorGraphIntentSource
-      harness.lutDataRef.current = makeLut()
+      } as unknown as ColorGraphIntentSource)
+      harness.setLut(makeLut())
       paused.release()
       await pending
 
@@ -594,6 +610,33 @@ describe('useExportResultActions', () => {
     })
   })
 
+  it('delivers the result the store holds before any rerender shows it', async () => {
+    const delivery = stubDelivery()
+    const harness = setup({
+      result: (session) => createResult({ session, output: blobOutput() }),
+    })
+    const { downloadExportResult } = harness.actions()
+    // A later attempt publishes its result and releases the slot; the hook
+    // has not rerendered since.
+    claimExportSlot(
+      harness.exportAbortControllerRef,
+      new AbortController(),
+      'attempt-2',
+    )
+    harness.exportAbortControllerRef.current = null
+    const later = createResult({
+      session: harness.getSession()!,
+      attemptId: 'attempt-2',
+      output: blobOutput(),
+    })
+    withResult(harness, later)
+
+    await downloadExportResult()
+
+    expect(delivery.click).toHaveBeenCalledTimes(1)
+    expect(harness.toast.error).not.toHaveBeenCalled()
+  })
+
   it('downloads nothing when a debug listener moves the graph as the output materializes', async () => {
     const delivery = stubDelivery()
     const harness = setup({
@@ -645,7 +688,7 @@ describe('useExportResultActions', () => {
         manifest,
       }),
     })
-    harness.paramsRef.current = { ...intent, userContrast: 10 }
+    harness.setIntent({ ...intent, userContrast: 10 })
 
     await harness.actions().downloadExportManifest()
 

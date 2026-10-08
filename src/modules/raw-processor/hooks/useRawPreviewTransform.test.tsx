@@ -54,9 +54,7 @@ function createExportResult(): ExportResult {
 /**
  * The workflow around the Transform port: the session lives in a store whose
  * writes the next read sees in the same tick, before any rerender. Graph
- * invalidation reads that store; the export result actions read
- * `sessionRef`, which follows the store when the hook renders and after each
- * Transform write.
+ * invalidation and the export result actions both read that store.
  */
 function setup(initialSession: ImageSession | null = createReadySession()) {
   const store = createStore()
@@ -64,30 +62,18 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
   const getSession = () => store.get(sessionAtom)
   const setSession = (update: SetStateAction<ImageSession | null>) =>
     store.set(sessionAtom, update)
-  const sessionRef = { current: initialSession }
-  // As the workflow wires it: a Transform write leaves `sessionRef` holding
-  // what the store holds, for the export result actions.
-  const setTransformSession = (
-    update: (session: ImageSession | null) => ImageSession | null,
-  ) => {
-    setSession(update)
-    sessionRef.current = getSession()
-  }
   const exportGraphVersionRef = { current: 0 }
   const controller = new AbortController()
   const exportAbortControllerRef = { current: controller }
   const previewCopyCanvasRef = {
     current: document.createElement('canvas') as HTMLCanvasElement | null,
   }
-  const paramsRef = {
-    current: {
-      styleKind: 'none',
-      builtinPreset: null,
-      intensity: 1,
-      ...NEUTRAL_USER_COLOR_INTENT,
-    } as ColorGraphIntentSource,
+  const colorIntent: ColorGraphIntentSource = {
+    styleKind: 'none',
+    builtinPreset: null,
+    intensity: 1,
+    ...NEUTRAL_USER_COLOR_INTENT,
   }
-  const lutDataRef = { current: null }
   const isMountedRef = { current: true }
   const queueExportResultResourceDisposal = vi.fn()
   const setStatus = vi.fn()
@@ -95,7 +81,6 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
   const toast = { success: vi.fn(), error: vi.fn() }
   const hook = renderHook(() => {
     const session = useAtomValue(sessionAtom, { store })
-    sessionRef.current = session
     const { invalidateExportGraph } = useExportGraphInvalidation({
       exportGraphVersionRef,
       previewCopyCanvasRef,
@@ -110,13 +95,13 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
     const { previewTransform, transform } = useRawPreviewTransform({
       session,
       getSession,
-      setSession: setTransformSession,
+      setSession,
       invalidateExportGraph,
     })
     const actions = useExportResultActions({
-      sessionRef,
-      paramsRef,
-      lutDataRef,
+      getSession,
+      getColorIntent: () => colorIntent,
+      getLutData: () => null,
       exportGraphVersionRef,
       exportAbortControllerRef,
       isMountedRef,
@@ -130,7 +115,6 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
   return {
     ...hook,
     getSession,
-    sessionRef,
     exportGraphVersionRef,
     controller,
     previewCopyCanvasRef,

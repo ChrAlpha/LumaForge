@@ -39,8 +39,6 @@ type UseRawExportStageInput = {
   loadedImage: { file: File | null; metadata: ImageMetadata | null }
   session: ImageSession | null
   params: ColorGraphIntentSource
-  /** The latest params, for an action called from an older render. */
-  paramsRef: MutableRefObject<ColorGraphIntentSource>
   /** Reads the session from the store when called. */
   getSession: () => ImageSession | null
   /** Reads the color intent the photo renders with from the store when called. */
@@ -55,7 +53,6 @@ type UseRawExportStageInput = {
   exportAbortControllerRef: MutableRefObject<AbortController | null>
   exportGraphVersionRef: MutableRefObject<number>
   isMountedRef: MutableRefObject<boolean>
-  sessionRef: MutableRefObject<ImageSession | null>
   pipelineRef: MutableRefObject<RawProcessingPipeline | null>
   resourceRegistryRef: MutableRefObject<ResourceRegistry | null>
   previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
@@ -87,7 +84,6 @@ export function useRawExportStage({
   loadedImage,
   session,
   params,
-  paramsRef,
   getSession,
   getColorIntent,
   getLutData,
@@ -99,7 +95,6 @@ export function useRawExportStage({
   exportAbortControllerRef,
   exportGraphVersionRef,
   isMountedRef,
-  sessionRef,
   pipelineRef,
   resourceRegistryRef,
   previewCopyCanvasRef,
@@ -183,9 +178,9 @@ export function useRawExportStage({
     shareExportResult,
     copyExportResult,
   } = useExportResultActions({
-    sessionRef,
-    paramsRef,
-    lutDataRef,
+    getSession,
+    getColorIntent,
+    getLutData,
     exportGraphVersionRef,
     exportAbortControllerRef,
     isMountedRef,

@@ -5,19 +5,31 @@ import type {
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
 import { toLUTData } from '@lumaforge/luma-color-runtime'
+import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { act, renderHook } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from 'vitest'
 
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
+import type { ExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
 import { createTransformState } from '../../../model/session-factory'
 import type { ProcessingStatus } from '../../../model/workflow'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
 import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
 import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
+import { claimExportSlot } from '../../../services/export/export-state'
 import { orchestrateFullResExport } from '../../../services/export/orchestrate-full-res-export'
 import { reduceTransformState } from '../../../services/transform/transform-state'
 import {
@@ -120,7 +132,6 @@ function createStageInput(
     loadedImage: { file: null, metadata: null },
     session: null,
     params,
-    paramsRef: { current: params },
     getSession: () => null,
     getColorIntent: () => params,
     getLutData: () => null,
@@ -137,7 +148,6 @@ function createStageInput(
     exportAbortControllerRef: { current: null },
     exportGraphVersionRef: { current: 0 },
     isMountedRef: { current: true },
-    sessionRef: { current: null as ImageSession | null },
     pipelineRef: { current: null as RawProcessingPipeline | null },
     resourceRegistryRef: { current: createResourceRegistry() },
     previewCopyCanvasRef: { current: null },
@@ -170,7 +180,6 @@ function createInterruptedReadyInput(
   return createStageInput({
     loadedImage: { file: SOURCE_FILE, metadata: null },
     session,
-    sessionRef: { current: session },
     exportInterruption: INTERRUPTION,
     exportInterruptionRef: { current: INTERRUPTION },
     status,
@@ -217,8 +226,7 @@ function createBoundedHqImage(): DecodedImage {
 
 /**
  * The HQ export over the workflow's stores: the stage reads the session,
- * the color and the LUT from them, while the render-written refs it is also
- * handed keep what the last render held. The pipeline renders with the color
+ * the color and the LUT from them. The pipeline renders with the color
  * and the LUT it holds, which follow the stores only on `drawStoredLook`, as
  * the preview's effects would after a rerender.
  */
@@ -245,8 +253,6 @@ function renderHqStage(getLutData: () => LUTData | null) {
       createStageInput({
         loadedImage: { file: SOURCE_FILE, metadata: null },
         session: rendered,
-        sessionRef: { current: rendered },
-        paramsRef: { current: params },
         getSession: getCurrentSession,
         getColorIntent: getEffectiveColorIntent,
         getLutData,
@@ -298,6 +304,10 @@ describe('useRawExportStage', () => {
     expect(typeof result.current.exportImage).toBe('function')
     expect(typeof result.current.exportPreviewImage).toBe('function')
     expect(typeof result.current.downloadExportResult).toBe('function')
+    // Every export action reads the session and the color from the store,
+    // so the stage takes no render-written copy of either.
+    expectTypeOf<ExportStageInput>().not.toHaveProperty('sessionRef')
+    expectTypeOf<ExportStageInput>().not.toHaveProperty('paramsRef')
     // The explicit export is the only way in: no recovery or retry action.
     expect(
       Object.keys(result.current).filter((key) => /recover|retry/i.test(key)),
@@ -377,7 +387,6 @@ describe('useRawExportStage', () => {
         createStageInput({
           loadedImage: { file: SOURCE_FILE, metadata: null },
           session,
-          sessionRef: { current: session },
           status: 'ready',
           hasImage: true,
           displaySource: 'quick',
@@ -419,7 +428,6 @@ describe('useRawExportStage', () => {
         createStageInput({
           loadedImage: { file: SOURCE_FILE, metadata: null },
           session: rendered,
-          sessionRef: { current: rendered },
           getSession: getCurrentSession,
           getColorIntent: getEffectiveColorIntent,
           getLutData: () => storedLut,
@@ -684,4 +692,319 @@ describe('useRawExportStage', () => {
       expect(getCurrentSession()?.exportState.result).toBeUndefined()
     },
   )
+
+  describe('delivery', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+    })
+
+    function stubDelivery() {
+      const createObjectURL = vi.fn(() => 'blob:delivery')
+      vi.stubGlobal(
+        'URL',
+        Object.assign(class extends URL {}, {
+          createObjectURL,
+          revokeObjectURL: vi.fn(),
+        }),
+      )
+      const click = vi
+        .spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => {})
+      const share = vi.fn().mockResolvedValue(undefined)
+      const clipboardWrite = vi.fn().mockResolvedValue(undefined)
+      class FakeClipboardItem {
+        static supports(type: string) {
+          return type === 'image/jpeg' || type === 'image/png'
+        }
+
+        constructor(public readonly items: Record<string, Blob>) {}
+      }
+      vi.stubGlobal('navigator', {
+        canShare: () => true,
+        share,
+        clipboard: { write: clipboardWrite },
+      })
+      vi.stubGlobal('ClipboardItem', FakeClipboardItem)
+      return {
+        delivered: () =>
+          createObjectURL.mock.calls.length +
+          click.mock.calls.length +
+          share.mock.calls.length +
+          clipboardWrite.mock.calls.length,
+      }
+    }
+
+    /**
+     * A completed full-resolution result over the workflow's stores, under
+     * a custom look, with an output whose blob waits until the test releases
+     * it. The stage renders once, with the preview released as export left
+     * it; every later write lands in the stores and nothing rerenders.
+     */
+    function renderDeliveryStage() {
+      setLut(parsedLut('Teal'))
+      const base = createReadySession()
+      setCurrentSession(
+        customLook({ ...base, transform: createTransformState(base.id) }),
+      )
+      const exportAbortControllerRef = {
+        current: null as AbortController | null,
+      }
+      // The attempt that produced the result claimed the slot and released
+      // it when it ended, as every completed export does.
+      claimExportSlot(
+        exportAbortControllerRef,
+        new AbortController(),
+        'attempt-1',
+      )
+      exportAbortControllerRef.current = null
+      let releaseBlob!: () => void
+      const opened = new Promise<Blob>((resolve) => {
+        releaseBlob = () => resolve(new Blob(['jpeg'], { type: 'image/jpeg' }))
+      })
+      const openBlob = vi.fn(() => opened)
+      const output: FileBackedOutputResult = {
+        kind: 'file-backed',
+        exportId: 'export-1',
+        filename: 'frame.jpg',
+        byteLength: 4,
+        mimeType: 'image/jpeg',
+        openBlob,
+      }
+      const result: ExportResult = {
+        kind: 'full-resolution',
+        output,
+        filename: 'frame.jpg',
+        width: 800,
+        height: 600,
+        size: 4,
+        createdAt: 1,
+        copyCapability: { mode: 'full-resolution' },
+        manifest: { manifest_version: 1 } as unknown as RenderManifest,
+        manifestState: { status: 'ready' },
+        identity: captureExportResultIdentity({
+          resultKind: 'full-resolution',
+          attemptId: 'attempt-1',
+          sessionId: base.id,
+          sourceFile: SOURCE_FILE,
+          intent: getEffectiveColorIntent(),
+          lut: getStoredLutData(),
+          rawRenderExposure: RAW_RENDER_EXPOSURE,
+          geometry: null,
+        }),
+      }
+      setCurrentSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              exportState: { ...prev.exportState, status: 'ready', result },
+            }
+          : prev,
+      )
+      const rendered = getCurrentSession()
+      const toast = { error: vi.fn(), success: vi.fn() }
+      const view = renderHook(() =>
+        useRawExportStage(
+          createStageInput({
+            loadedImage: { file: SOURCE_FILE, metadata: null },
+            session: rendered,
+            params: getEffectiveColorIntent(),
+            getSession: getCurrentSession,
+            getColorIntent: getEffectiveColorIntent,
+            getLutData: getStoredLutData,
+            lutDataRef: { current: getStoredLutData() },
+            setSession: setCurrentSession,
+            exportAbortControllerRef,
+            scheduleToast: (notify) => notify(),
+            status: 'ready',
+            hasImage: true,
+            displaySource: 'quick',
+            rawRenderExposure: RAW_RENDER_EXPOSURE,
+            toast,
+          }),
+        ),
+      )
+      return {
+        ...view,
+        heldResult: result,
+        openBlob,
+        releaseBlob,
+        toast,
+        exportAbortControllerRef,
+      }
+    }
+
+    type DeliveryStage = ReturnType<typeof renderDeliveryStage>
+
+    const withSession = (update: (session: ImageSession) => ImageSession) =>
+      setCurrentSession((prev) => (prev ? update(prev) : prev))
+
+    /** Store writes after which the held result no longer answers. */
+    const STALE_WRITES: Array<[string, (stage: DeliveryStage) => void]> = [
+      [
+        'a color edit lands',
+        () =>
+          setProcessingParams({ ...getProcessingParams(), userContrast: 25 }),
+      ],
+      [
+        'the look strength changes',
+        () =>
+          withSession((session) => ({
+            ...session,
+            activeStyle: session.activeStyle
+              ? { ...session.activeStyle, currentIntensity: 0.4 }
+              : null,
+          })),
+      ],
+      [
+        'the LUT contract changes',
+        () => setLut({ ...getLut()!, profileResolution: { kind: 'unknown' } }),
+      ],
+      ['the LUT is replaced', () => setLut(parsedLut('Amber'))],
+      [
+        'a Transform edit is pending',
+        () =>
+          withSession((session) => ({
+            ...session,
+            transform: reduceTransformState(session.transform!, {
+              type: 'edit',
+              sourceId: session.id,
+              intent: {
+                manual: { ...session.transform!.intent.manual, rotate: 2 },
+              },
+            }),
+          })),
+      ],
+      [
+        'a later result replaces it',
+        (stage) =>
+          withSession((session) => ({
+            ...session,
+            exportState: {
+              ...session.exportState,
+              result: {
+                ...stage.heldResult,
+                identity: {
+                  ...stage.heldResult.identity!,
+                  attemptId: 'attempt-2',
+                },
+              },
+            },
+          })),
+      ],
+      ['the session is reset', () => setCurrentSession(null)],
+      [
+        'a later attempt claims the export slot',
+        (stage) =>
+          claimExportSlot(
+            stage.exportAbortControllerRef,
+            new AbortController(),
+            'attempt-2',
+          ),
+      ],
+    ]
+
+    const MATERIALIZING = [
+      ['download', 'downloadExportResult'],
+      ['share', 'shareExportResult'],
+      ['copy', 'copyExportResult'],
+    ] as const
+
+    describe.each(MATERIALIZING)('%s', (_name, action) => {
+      it.each(STALE_WRITES)(
+        'delivers nothing when %s in the store while the output materializes',
+        async (_write, write) => {
+          const delivery = stubDelivery()
+          const stage = renderDeliveryStage()
+          const deliver = stage.result.current[action]
+
+          let pending!: Promise<void>
+          await act(async () => {
+            pending = deliver()
+            await Promise.resolve()
+          })
+          expect(stage.openBlob).toHaveBeenCalledTimes(1)
+          write(stage)
+          stage.releaseBlob()
+          await act(async () => {
+            await pending
+          })
+
+          expect(delivery.delivered()).toBe(0)
+          expect(stage.toast.success).not.toHaveBeenCalled()
+        },
+      )
+    })
+
+    it.each(STALE_WRITES)(
+      'downloads no manifest when %s in the store as it materializes',
+      async (_write, write) => {
+        const delivery = stubDelivery()
+        const stage = renderDeliveryStage()
+        const onDebug = (event: Event) => {
+          const detail = (event as CustomEvent<{ type: string }>).detail
+          if (detail.type === 'output-materialized') write(stage)
+        }
+        window.addEventListener('lumaforge-export-debug', onDebug)
+        try {
+          await act(async () => {
+            await stage.result.current.downloadExportManifest()
+          })
+        } finally {
+          window.removeEventListener('lumaforge-export-debug', onDebug)
+        }
+
+        expect(delivery.delivered()).toBe(0)
+      },
+    )
+
+    it('refuses a delivery an older render captured once the store moved on', async () => {
+      const delivery = stubDelivery()
+      const stage = renderDeliveryStage()
+      stage.releaseBlob()
+      const { downloadExportResult, downloadExportManifest } =
+        stage.result.current
+
+      setLut({ ...getLut()!, profileResolution: { kind: 'unknown' } })
+      await act(async () => {
+        await downloadExportResult()
+        await downloadExportManifest()
+      })
+
+      expect(stage.openBlob).not.toHaveBeenCalled()
+      expect(delivery.delivered()).toBe(0)
+      expect(stage.toast.error).toHaveBeenCalledTimes(2)
+    })
+
+    it('delivers a current result while the preview stays released and the view moves', async () => {
+      const delivery = stubDelivery()
+      const stage = renderDeliveryStage()
+      stage.releaseBlob()
+      // The preview stays released and the view moves; neither is part of
+      // the request the result answers.
+      withSession((session) => ({
+        ...session,
+        previewBundle: {
+          ...session.previewBundle,
+          quickDecodePreview: { status: 'idle' },
+          displaySource: 'none',
+        },
+        viewState: { ...session.viewState, compareSplit: 0.2, zoom: 3 },
+      }))
+
+      await act(async () => {
+        await stage.result.current.downloadExportResult()
+        await stage.result.current.downloadExportManifest()
+        await stage.result.current.shareExportResult()
+        await stage.result.current.copyExportResult()
+      })
+
+      // Two downloads each create a URL and click; then a share and a copy.
+      expect(delivery.delivered()).toBe(6)
+      expect(stage.toast.error).not.toHaveBeenCalled()
+      expect(stage.toast.success).toHaveBeenCalledWith(
+        'Full-resolution image copied',
+      )
+    })
+  })
 })

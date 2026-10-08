@@ -5,7 +5,6 @@ import { toast } from 'sonner'
 import { yieldToPaint } from '~/lib/dom'
 import { toLUTData } from '~/lib/lut/cube-parser'
 
-import type { ImageSession } from '../model/session'
 import { hasActiveExport } from '../services/export/export-state'
 import { getCurrentSession, setCurrentSession } from '../state/session.atoms'
 import { getEffectiveColorIntent, getLut } from '../state/workflow.atoms'
@@ -170,22 +169,12 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
       !hasActiveExport(exportAbortControllerRef.current, getCurrentSession()),
     [exportAbortControllerRef],
   )
-  // Transform events reduce the session in the store when they land. The
-  // export result actions still read the session through `sessionRef`, so
-  // each Transform write leaves it holding what the store holds, before any
-  // rerender: a delivery started in that gap checks the geometry the store
-  // holds.
-  const setTransformSession = useCallback(
-    (update: (current: ImageSession | null) => ImageSession | null) => {
-      setCurrentSession(update)
-      sessionRef.current = getCurrentSession()
-    },
-    [sessionRef],
-  )
+  // Transform events reduce the session in the store when they land; every
+  // export reader reads the store, so none needs a copy kept in step.
   const { previewTransform, transform } = useRawPreviewTransform({
     session,
     getSession: getCurrentSession,
-    setSession: setTransformSession,
+    setSession: setCurrentSession,
     invalidateExportGraph,
   })
 
@@ -317,7 +306,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     loadedImage,
     session,
     params,
-    paramsRef,
     getSession: getCurrentSession,
     getColorIntent: getEffectiveColorIntent,
     getLutData: getStoredLutData,
@@ -329,7 +317,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     exportAbortControllerRef,
     exportGraphVersionRef,
     isMountedRef,
-    sessionRef,
     pipelineRef,
     resourceRegistryRef,
     previewCopyCanvasRef,

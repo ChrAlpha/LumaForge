@@ -46,10 +46,12 @@ type ExportResultActionToast = {
 }
 
 type UseExportResultActionsInput = {
-  sessionRef: MutableRefObject<ImageSession | null>
-  /** The latest color intent; read at every delivery check. */
-  paramsRef: MutableRefObject<ColorGraphIntentSource>
-  lutDataRef: MutableRefObject<LUTData | null>
+  /** Reads the session from the store when called. */
+  getSession: () => ImageSession | null
+  /** Reads the color intent the photo renders with from the store when called. */
+  getColorIntent: () => ColorGraphIntentSource
+  /** Reads the LUT the store holds when called. */
+  getLutData: () => LUTData | null
   exportGraphVersionRef: MutableRefObject<number>
   exportAbortControllerRef: MutableRefObject<AbortController | null>
   isMountedRef: MutableRefObject<boolean>
@@ -74,9 +76,9 @@ const STALE_DELIVERY_DESCRIPTION =
 type OpenedDelivery = { result: ExportResult; guard: ExportDeliveryGuard }
 
 export function useExportResultActions({
-  sessionRef,
-  paramsRef,
-  lutDataRef,
+  getSession,
+  getColorIntent,
+  getLutData,
   exportGraphVersionRef,
   exportAbortControllerRef,
   isMountedRef,
@@ -101,24 +103,26 @@ export function useExportResultActions({
     [],
   )
 
-  // Everything a delivery check reads, read from the refs every time: a
-  // result valid when the user asked can stop being current during an await.
+  // Everything a delivery check reads, read afresh every time: a result
+  // valid when the user asked can stop being current during an await. The
+  // session, color and LUT come from the store, so a write in the same tick
+  // is seen before any rerender or effect catches up with it.
   const readLive = useCallback(
     (): ExportDeliveryLiveState => ({
       mounted: isMountedRef.current,
-      session: sessionRef.current,
+      session: getSession(),
       graphVersion: exportGraphVersionRef.current,
       exportAttempt: readExportSlotAttempt(exportAbortControllerRef),
-      intent: paramsRef.current,
-      lut: lutDataRef.current,
+      intent: getColorIntent(),
+      lut: getLutData(),
     }),
     [
       exportAbortControllerRef,
       exportGraphVersionRef,
+      getColorIntent,
+      getLutData,
+      getSession,
       isMountedRef,
-      lutDataRef,
-      paramsRef,
-      sessionRef,
     ],
   )
 
@@ -128,9 +132,9 @@ export function useExportResultActions({
    * result the workflow cannot vouch for is refused with an error.
    */
   const openDelivery = useCallback((): OpenedDelivery | null => {
-    const result = sessionRef.current?.exportState.result
-    if (!result) return null
     const live = readLive()
+    const result = live.session?.exportState.result
+    if (!result) return null
     const opened = openExportDelivery(result, live)
     if (opened.kind === 'refused') {
       if (opened.refusal === 'unmounted') return null
@@ -140,7 +144,7 @@ export function useExportResultActions({
       result,
       guard: createExportDeliveryGuard(opened.ticket, readLive),
     }
-  }, [readLive, sessionRef])
+  }, [readLive])
 
   const { t } = useI18n()
   // A failure stays structured up to the toast, which is the only place a
@@ -182,7 +186,7 @@ export function useExportResultActions({
   ])
 
   const downloadExportManifest = useCallback(async () => {
-    if (!sessionRef.current?.exportState.result?.manifest) return
+    if (!getSession()?.exportState.result?.manifest) return
 
     try {
       const delivery = openDelivery()
@@ -202,9 +206,9 @@ export function useExportResultActions({
   }, [
     createMaterializationDiagnostics,
     describeFailure,
+    getSession,
     openDelivery,
     scheduleToast,
-    sessionRef,
     toast,
   ])
 
