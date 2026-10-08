@@ -149,7 +149,7 @@ export function useExportResultActions({
     (err: unknown, fallback: string) =>
       err instanceof ExportDeliveryStaleError
         ? STALE_DELIVERY_DESCRIPTION
-        : err instanceof ExportActionUnavailableError && err.reasonCode
+        : err instanceof ExportActionUnavailableError
           ? t(EXPORT_ACTION_REASON_COPY[err.reasonCode])
           : err instanceof Error
             ? err.message

@@ -75,7 +75,10 @@ function buildInput(
     width: 4,
     height: 2,
     now: () => 123,
-    copyCapability: { mode: 'unavailable', reason: 'n/a' },
+    copyCapability: {
+      mode: 'unavailable',
+      reasonCode: 'clipboard-unsupported',
+    },
     identity: captureExportResultIdentity({
       resultKind: 'full-resolution',
       attemptId: 'attempt-1',

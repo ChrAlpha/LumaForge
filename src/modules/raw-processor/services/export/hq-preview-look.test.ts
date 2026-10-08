@@ -7,12 +7,7 @@ import type {
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
-import enMessages from '~/locales/en.json'
-
-import {
-  HQ_PREVIEW_LOOK_EXPORT_REASON,
-  resolveHqPreviewLookRefusal,
-} from './hq-preview-look'
+import { resolveHqPreviewLookRefusal } from './hq-preview-look'
 
 function profile(overrides: Partial<LUTColorProfile> = {}): LUTColorProfile {
   return {
@@ -88,11 +83,5 @@ describe('resolveHqPreviewLookRefusal', () => {
     expect(
       resolveHqPreviewLookRefusal({ intent: intent('none'), lut: null }),
     ).toBeNull()
-  })
-
-  it('reads as the copy that localizes it', () => {
-    expect(HQ_PREVIEW_LOOK_EXPORT_REASON).toBe(
-      enMessages['raw.export.previewLookUnavailable'],
-    )
   })
 })

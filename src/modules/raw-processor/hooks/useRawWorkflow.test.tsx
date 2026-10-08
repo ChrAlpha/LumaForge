@@ -56,8 +56,8 @@ import {
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
 import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
+import enMessages from '~/locales/en.json'
 
-import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../model/derive-session'
 import { createExportInterruptionMarkers } from '../services/export/export-interruption'
 import type { ExportInterruptionMarkers } from '../services/export/export-recovery'
 import { readSourceInterruption } from '../services/export/export-recovery'
@@ -3802,7 +3802,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(toastMock.error).toHaveBeenCalledWith(
       'HQ preview export is not ready',
       {
-        description: PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+        description: enMessages['raw.transform.hqExportReason'],
       },
     )
   })
@@ -3999,7 +3999,7 @@ describe('useRawWorkflow embedded preview state', () => {
         )
         expect(toastMock.error).toHaveBeenCalledWith(
           'HQ preview export is not ready',
-          { description: PREVIEW_TRANSFORM_HQ_EXPORT_REASON },
+          { description: enMessages['raw.transform.hqExportReason'] },
         )
       }
 
@@ -5168,7 +5168,6 @@ describe('useRawWorkflow embedded preview state', () => {
       size: 12,
       copyCapability: {
         mode: 'hq-preview',
-        label: 'Copy HQ preview image',
       },
     })
     expect(toastMock.success).toHaveBeenCalledWith('HQ preview JPEG ready')
@@ -5239,7 +5238,6 @@ describe('useRawWorkflow embedded preview state', () => {
 
     expect(result.current.exportResult?.copyCapability).toEqual({
       mode: 'unavailable',
-      reason: 'This browser cannot copy HQ preview JPEG files.',
       reasonCode: 'hq-preview-copy-unsupported',
     })
   })
@@ -5957,7 +5955,7 @@ describe('useRawWorkflow embedded preview state', () => {
             createdAt: 1,
             copyCapability: {
               mode: 'unavailable',
-              reason: 'test stale result',
+              reasonCode: 'clipboard-unsupported',
             },
           },
         },
@@ -7354,7 +7352,7 @@ describe('useRawWorkflow embedded preview state', () => {
             createdAt: 1,
             copyCapability: {
               mode: 'unavailable',
-              reason: 'test result',
+              reasonCode: 'clipboard-unsupported',
             },
           },
         },

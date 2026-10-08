@@ -6,10 +6,6 @@ import type {
 import type { PreviewLookReason } from '../surface/raw-reason'
 import { resolvePreviewLookReason } from '../surface/raw-reason'
 
-/** The refusal `raw.export.previewLookUnavailable` localizes. */
-export const HQ_PREVIEW_LOOK_EXPORT_REASON =
-  'The preview leaves out the selected LUT. Fix its color contract or clear the LUT to export an HQ preview JPEG.'
-
 /**
  * Why an HQ preview JPEG would not carry the selected look, or null when it
  * would. The WebGPU preview renders that JPEG, so it draws exactly what the

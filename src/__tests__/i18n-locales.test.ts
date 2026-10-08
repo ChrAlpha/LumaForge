@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
+import * as i18nModule from '~/lib/i18n'
 import enMessages from '~/locales/en.json'
 import zhMessages from '~/locales/zh-CN.json'
+import {
+  EXPORT_COPY_LABEL_COPY,
+  EXPORT_COPY_REASON_COPY,
+  EXPORT_SHARE_REASON_COPY,
+  FULL_RES_EXPORT_REASON_COPY,
+  HQ_PREVIEW_EXPORT_REASON_COPY,
+  RAW_REASON_COPY,
+} from '~/modules/raw-processor/services/surface/raw-reason'
 
 describe('i18n locale catalogs', () => {
   it('keeps English and Chinese translation keys in JSON locale files', () => {
@@ -55,5 +64,33 @@ describe('i18n locale catalogs', () => {
     expect(enMessages['raw.export.lowMemory']).toContain('Keep the tab open')
     expect(enMessages['raw.export.derivedLabelHint']).toContain('{{label}}')
     expect(zhMessages['raw.export.derivedLabelHint']).toContain('{{label}}')
+  })
+
+  it('gives every typed reason and the unsupported state copy in both locales', () => {
+    const keys = [
+      ...Object.values(RAW_REASON_COPY),
+      ...Object.values(FULL_RES_EXPORT_REASON_COPY),
+      ...Object.values(HQ_PREVIEW_EXPORT_REASON_COPY),
+      ...Object.values(EXPORT_COPY_LABEL_COPY),
+      ...Object.values(EXPORT_COPY_REASON_COPY),
+      ...Object.values(EXPORT_SHARE_REASON_COPY),
+      'raw.export.copy',
+      'raw.unsupported.title',
+      'raw.unsupported.copy',
+      'raw.unsupported.coi',
+      'raw.unsupported.gpu',
+    ] as const
+    for (const key of keys) {
+      expect(enMessages[key], key).toBeTruthy()
+      expect(zhMessages[key], key).toBeTruthy()
+    }
+  })
+
+  it('translates by key only: no helper matches English text back to copy', () => {
+    expect(Object.keys(i18nModule).sort()).toEqual([
+      'I18nProvider',
+      'supportedLocales',
+      'useI18n',
+    ])
   })
 })

@@ -78,20 +78,21 @@ export const EXPORT_SHARE_REASON_CODES = [
 export type ExportShareReasonCode = (typeof EXPORT_SHARE_REASON_CODES)[number]
 
 /**
- * How a result reaches the clipboard. The mode names the copy label.
- * Producers still write only the English `reason`; `reasonCode` is staged for
- * them to set, and replaces the sentence once every producer sets it.
+ * How a result reaches the clipboard. The mode names the copy label; a
+ * preview-size or refused copy names why by code, and the presentation picks
+ * its copy.
  */
 export type ExportCopyCapability =
-  | { mode: 'full-resolution'; label: 'Copy full-resolution image' }
-  | { mode: 'hq-preview'; label: 'Copy HQ preview image' }
+  | { mode: 'full-resolution' }
+  | { mode: 'hq-preview' }
   | {
       mode: 'preview-size'
-      label: 'Copy preview-size image'
-      reason: string
-      reasonCode?: ExportCopyReasonCode
+      reasonCode: Extract<
+        ExportCopyReasonCode,
+        'full-resolution-copy-unsupported'
+      >
     }
-  | { mode: 'unavailable'; reason: string; reasonCode?: ExportCopyReasonCode }
+  | { mode: 'unavailable'; reasonCode: ExportCopyReasonCode }
 
 export type ExportResultKind = 'full-resolution' | 'hq-preview'
 
@@ -168,10 +169,10 @@ export type ExportResultIdentity = Readonly<{
   inputSignature: string
 }>
 
-/** Whether a result can be shared; `reasonCode` is staged like the copy one. */
+/** Whether a result can be shared, and why not by code. */
 export type ExportShareCapability =
   | { available: true }
-  | { available: false; reason: string; reasonCode?: ExportShareReasonCode }
+  | { available: false; reasonCode: ExportShareReasonCode }
 
 export type ExportResult = {
   kind?: ExportResultKind

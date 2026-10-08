@@ -96,7 +96,7 @@ function createHqPreviewAttemptId() {
 function resolveHqPreviewExportCopyCapability(): ExportCopyCapability {
   const capability = resolveExportCopyCapability()
   if (capability.mode === 'full-resolution') {
-    return { mode: 'hq-preview', label: 'Copy HQ preview image' }
+    return { mode: 'hq-preview' }
   }
 
   if (capability.mode === 'unavailable') return capability

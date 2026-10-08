@@ -25,7 +25,6 @@ function createFileBackedResult(cleanup: () => Promise<void>): ExportResult {
     createdAt: 1,
     copyCapability: {
       mode: 'full-resolution',
-      label: 'Copy full-resolution image',
     },
   }
 }

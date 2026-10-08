@@ -9,7 +9,6 @@ import { useMemo } from 'react'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
-import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type {
   ExportShareCapability,
   FullResExportReason,
@@ -25,29 +24,7 @@ import {
   resolveExportShareButtonCapability,
   unavailableExportShare,
 } from '../../../services/export/export-result-actions'
-import {
-  HQ_PREVIEW_LOOK_EXPORT_REASON,
-  resolveHqPreviewLookRefusal,
-} from '../../../services/export/hq-preview-look'
-
-/**
- * The English sentence each HQ preview refusal is still carried as, beside
- * its code, until every reader takes the code. Toasts take the code and its
- * locale copy instead.
- */
-const HQ_PREVIEW_EXPORT_REASON_SENTENCE: Record<
-  HqPreviewExportReasonCode,
-  string
-> = {
-  'transform-held': PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
-  'no-source': 'Load a RAW file before exporting an HQ preview JPEG.',
-  'preview-released':
-    'Restore the preview before exporting an HQ preview JPEG.',
-  'look-dropped': HQ_PREVIEW_LOOK_EXPORT_REASON,
-  'hq-preview-pending':
-    'HQ preview export is available after the bounded HQ preview finishes.',
-  'not-ready': 'HQ preview export is not ready.',
-}
+import { resolveHqPreviewLookRefusal } from '../../../services/export/hq-preview-look'
 
 type UseExportDerivedStateInput = {
   session: ImageSession | null
@@ -91,9 +68,6 @@ export function useExportDerivedState({
       fullResExportReadiness.canExport
         ? undefined
         : fullResExportReadiness.refusal
-    const exportDisabledReason = fullResExportReadiness.canExport
-      ? undefined
-      : fullResExportReadiness.disabledReason
     const exportResult = session?.exportState.result ?? null
     const exportShareCapability: ExportShareCapability = exportResult
       ? resolveExportShareButtonCapability()
@@ -148,9 +122,6 @@ export function useExportDerivedState({
                 : !stats?.inputSize
                   ? 'not-ready'
                   : undefined
-    const previewExportDisabledReason =
-      previewExportRefusal &&
-      HQ_PREVIEW_EXPORT_REASON_SENTENCE[previewExportRefusal]
 
     const deliveredExportSize = resolveDeliveredExportSize({
       fullResCapability: session?.exportState.fullResCapability,
@@ -160,7 +131,6 @@ export function useExportDerivedState({
     return {
       canExport,
       exportRefusal,
-      exportDisabledReason,
       deliveredExportSize,
       exportResult,
       exportShareCapability,
@@ -168,7 +138,6 @@ export function useExportDerivedState({
       previewSuspended,
       canPreviewExport,
       previewExportRefusal,
-      previewExportDisabledReason,
     }
   }, [
     decodedImageRef,

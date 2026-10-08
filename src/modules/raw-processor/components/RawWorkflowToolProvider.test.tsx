@@ -1168,7 +1168,7 @@ function interruptedWorkflow(exportInterrupted: boolean) {
     ...workflowFixture(),
     supportLevel: 'experimental',
     exportResult: null,
-    exportShareCapability: { available: false, reason: 'Export first.' },
+    exportShareCapability: { available: false, reasonCode: 'no-result' },
     exportInterrupted,
   } as unknown as UseRawWorkflowReturn
 }
@@ -1429,8 +1429,7 @@ const deliveredJpeg = {
   createdAt: 0,
   copyCapability: {
     mode: 'preview-size',
-    label: 'Copy preview-size image',
-    reason: 'Full-resolution copy is not available.',
+    reasonCode: 'full-resolution-copy-unsupported',
   },
 } as ExportResult
 

@@ -57,23 +57,6 @@ export type ExportActionReasonCode =
   | ExportCopyReasonCode
   | ExportShareReasonCode
 
-/**
- * The English sentence each copy or share refusal is still carried as,
- * beside its code, until every reader takes the code. Toasts take the code
- * and its locale copy instead.
- */
-const EXPORT_ACTION_REASON_SENTENCE: Record<ExportActionReasonCode, string> = {
-  'clipboard-unsupported':
-    'Clipboard image copy is not supported in this browser.',
-  'full-resolution-copy-unsupported':
-    'This browser cannot copy full-resolution JPEG files.',
-  'hq-preview-copy-unsupported':
-    'This browser cannot copy HQ preview JPEG files.',
-  'preview-copy-not-ready': 'Preview image is not ready to copy.',
-  'no-result': 'Export a JPEG before sharing.',
-  'share-unsupported': 'This browser cannot share JPEG files.',
-}
-
 type ExportCopyUnavailable = Extract<
   ExportCopyCapability,
   { mode: 'unavailable' }
@@ -87,34 +70,26 @@ type ExportShareUnavailable = Extract<
 export function unavailableExportCopy(
   reasonCode: ExportCopyReasonCode,
 ): ExportCopyUnavailable {
-  return {
-    mode: 'unavailable',
-    reason: EXPORT_ACTION_REASON_SENTENCE[reasonCode],
-    reasonCode,
-  }
+  return { mode: 'unavailable', reasonCode }
 }
 
 /** A share that cannot run, named by its code. */
 export function unavailableExportShare(
   reasonCode: ExportShareReasonCode,
 ): ExportShareUnavailable {
-  return {
-    available: false,
-    reason: EXPORT_ACTION_REASON_SENTENCE[reasonCode],
-    reasonCode,
-  }
+  return { available: false, reasonCode }
 }
 
 /**
  * Thrown by a copy or share the browser or the result cannot carry out. The
- * code is the failure; the message is only the sentence it stands for. A
- * capability recorded without a code keeps its sentence as the message.
+ * code is the failure, and the message is the code: its copy is chosen where
+ * the failure is shown.
  */
 export class ExportActionUnavailableError extends Error {
-  readonly reasonCode: ExportActionReasonCode | undefined
+  readonly reasonCode: ExportActionReasonCode
 
   constructor(refusal: ExportCopyUnavailable | ExportShareUnavailable) {
-    super(refusal.reason)
+    super(refusal.reasonCode)
     this.name = 'ExportActionUnavailableError'
     this.reasonCode = refusal.reasonCode
   }
@@ -426,17 +401,12 @@ export function resolveExportCopyCapability(
   }
 
   if (ClipboardItemCtor.supports?.('image/jpeg')) {
-    return {
-      mode: 'full-resolution',
-      label: 'Copy full-resolution image',
-    }
+    return { mode: 'full-resolution' }
   }
 
   if (ClipboardItemCtor.supports?.('image/png')) {
     return {
       mode: 'preview-size',
-      label: 'Copy preview-size image',
-      reason: EXPORT_ACTION_REASON_SENTENCE['full-resolution-copy-unsupported'],
       reasonCode: 'full-resolution-copy-unsupported',
     }
   }

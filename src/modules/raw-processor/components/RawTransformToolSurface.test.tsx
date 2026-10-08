@@ -67,7 +67,7 @@ const base: Omit<RawToolSurfaceProps, 'toolAvailability'> = {
   exportResult: null,
   exportShareCapability: {
     available: false,
-    reason: 'Export a JPEG before sharing.',
+    reasonCode: 'no-result',
   },
   histogram: { state: 'unavailable', reason: 'no-image' },
   onShareExport: vi.fn(),

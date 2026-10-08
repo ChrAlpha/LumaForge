@@ -215,7 +215,6 @@ const PRE_EXPORT_OWNERS = [
 
 const CLIPBOARD_UNAVAILABLE = {
   mode: 'unavailable',
-  reason: 'Clipboard image copy is not supported in this browser.',
   reasonCode: 'clipboard-unsupported',
 } as const
 

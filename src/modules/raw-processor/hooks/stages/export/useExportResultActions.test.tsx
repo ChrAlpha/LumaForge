@@ -84,7 +84,6 @@ function createResult({
   output,
   copyCapability = {
     mode: 'full-resolution',
-    label: 'Copy full-resolution image',
   },
   identified = true,
 }: {
@@ -431,8 +430,7 @@ describe('useExportResultActions', () => {
           output: blobOutput(),
           copyCapability: {
             mode: 'preview-size',
-            label: 'Copy preview-size image',
-            reason: 'JPEG clipboard unavailable.',
+            reasonCode: 'full-resolution-copy-unsupported',
           },
         }),
     })
@@ -670,8 +668,7 @@ describe('useExportResultActions', () => {
           output: blobOutput(),
           copyCapability: {
             mode: 'preview-size',
-            label: 'Copy preview-size image',
-            reason: 'JPEG clipboard unavailable.',
+            reasonCode: 'full-resolution-copy-unsupported',
           },
         }),
     })
@@ -701,8 +698,7 @@ describe('useExportResultActions', () => {
           output: blobOutput(),
           copyCapability: {
             mode: 'preview-size',
-            label: 'Copy preview-size image',
-            reason: 'JPEG clipboard unavailable.',
+            reasonCode: 'full-resolution-copy-unsupported',
           },
         }),
     })
@@ -732,8 +728,7 @@ describe('useExportResultActions', () => {
           output: blobOutput(),
           copyCapability: {
             mode: 'preview-size',
-            label: 'Copy preview-size image',
-            reason: 'JPEG clipboard unavailable.',
+            reasonCode: 'full-resolution-copy-unsupported',
           },
         }),
     })
@@ -769,7 +764,6 @@ describe('useExportResultActions refusal copy', () => {
           output: blobOutput(),
           copyCapability: {
             mode: 'unavailable',
-            reason: 'Clipboard image copy is not supported in this browser.',
             reasonCode: 'clipboard-unsupported',
           },
         }),
@@ -822,8 +816,6 @@ describe('useExportResultActions refusal copy', () => {
           output: blobOutput(),
           copyCapability: {
             mode: 'preview-size',
-            label: 'Copy preview-size image',
-            reason: 'This browser cannot copy full-resolution JPEG files.',
             reasonCode: 'full-resolution-copy-unsupported',
           },
         }),
@@ -833,29 +825,6 @@ describe('useExportResultActions refusal copy', () => {
 
     expect(harness.toast.error).toHaveBeenCalledWith('复制失败', {
       description: '预览图像尚未就绪，无法复制。',
-    })
-  })
-
-  it('keeps a refusal recorded without a code as its text', async () => {
-    localStorage.setItem('lumaforge.locale', 'zh-CN')
-    stubDelivery()
-    const harness = setup({
-      wrapper: I18nProvider,
-      result: (session) =>
-        createResult({
-          session,
-          output: blobOutput(),
-          copyCapability: {
-            mode: 'unavailable',
-            reason: 'Clipboard image copy is not supported in this browser.',
-          },
-        }),
-    })
-
-    await harness.actions().copyExportResult()
-
-    expect(harness.toast.error).toHaveBeenCalledWith('复制失败', {
-      description: 'Clipboard image copy is not supported in this browser.',
     })
   })
 })

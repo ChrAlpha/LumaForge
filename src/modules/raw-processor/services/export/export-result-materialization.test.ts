@@ -27,7 +27,6 @@ vi.mock('@lumaforge/render-engine/export', async (importOriginal) => ({
 
 const fullResolutionCopy: ExportCopyCapability = {
   mode: 'full-resolution',
-  label: 'Copy full-resolution image',
 }
 
 describe('export result materialization', () => {

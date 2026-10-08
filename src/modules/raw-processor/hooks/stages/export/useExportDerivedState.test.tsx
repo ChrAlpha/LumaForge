@@ -11,14 +11,12 @@ import { describe, expect, it } from 'vitest'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
-import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type {
   ExportResult,
   HqPreviewExportReasonCode,
 } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
-import { HQ_PREVIEW_LOOK_EXPORT_REASON } from '../../../services/export/hq-preview-look'
 import { useExportDerivedState } from './useExportDerivedState'
 
 const NO_LOOK: ColorGraphIntentSource = {
@@ -95,7 +93,6 @@ function createExportResult(): ExportResult {
     createdAt: 1,
     copyCapability: {
       mode: 'full-resolution',
-      label: 'Copy full-resolution image',
     },
   }
 }
@@ -178,13 +175,11 @@ describe('useExportDerivedState', () => {
     )
 
     expect(result.current.canExport).toBe(true)
-    expect(result.current.exportDisabledReason).toBeUndefined()
+    expect(result.current.exportRefusal).toBeUndefined()
     // The bounded HQ preview cannot reproduce the geometry, so it says so
     // instead of quietly delivering an ungeometried frame.
     expect(result.current.canPreviewExport).toBe(false)
-    expect(result.current.previewExportDisabledReason).toBe(
-      PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
-    )
+    expect(result.current.previewExportRefusal).toBe('transform-held')
   })
 
   it('enables HQ preview export for a ready bounded-HQ decoded preview', () => {
@@ -210,10 +205,10 @@ describe('useExportDerivedState', () => {
     )
 
     expect(result.current.canExport).toBe(true)
-    expect(result.current.exportDisabledReason).toBeUndefined()
+    expect(result.current.exportRefusal).toBeUndefined()
     expect(result.current.previewSuspended).toBe(false)
     expect(result.current.canPreviewExport).toBe(true)
-    expect(result.current.previewExportDisabledReason).toBeUndefined()
+    expect(result.current.previewExportRefusal).toBeUndefined()
   })
 
   it('refuses HQ preview export while the WebGPU preview leaves out the selected LUT', () => {
@@ -238,9 +233,7 @@ describe('useExportDerivedState', () => {
 
       // The JPEG would carry no look while its name and recap claim one.
       expect(result.current.canPreviewExport).toBe(false)
-      expect(result.current.previewExportDisabledReason).toBe(
-        HQ_PREVIEW_LOOK_EXPORT_REASON,
-      )
+      expect(result.current.previewExportRefusal).toBe('look-dropped')
     }
   })
 
@@ -264,7 +257,7 @@ describe('useExportDerivedState', () => {
     )
 
     expect(result.current.canPreviewExport).toBe(true)
-    expect(result.current.previewExportDisabledReason).toBeUndefined()
+    expect(result.current.previewExportRefusal).toBeUndefined()
   })
 
   it('suspends HQ preview export while a ready full-res export owns the preview budget', () => {
@@ -305,12 +298,10 @@ describe('useExportDerivedState', () => {
     expect(result.current.exportResult).toBe(session.exportState.result)
     expect(result.current.previewSuspended).toBe(true)
     expect(result.current.canPreviewExport).toBe(false)
-    expect(result.current.previewExportDisabledReason).toBe(
-      'Restore the preview before exporting an HQ preview JPEG.',
-    )
+    expect(result.current.previewExportRefusal).toBe('preview-released')
   })
 
-  it('names each HQ preview refusal by code, in order, with the copy it has today', () => {
+  it('names each HQ preview refusal by code, in order', () => {
     const session = createSession()
     const ready = {
       session,
@@ -346,7 +337,6 @@ describe('useExportDerivedState', () => {
       readonly [
         Parameters<typeof useExportDerivedState>[0],
         HqPreviewExportReasonCode | undefined,
-        string | undefined,
       ]
     > = [
       [
@@ -357,13 +347,8 @@ describe('useExportDerivedState', () => {
           hasImage: false,
         },
         'transform-held',
-        PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
       ],
-      [
-        { ...ready, hasImage: false, params: CUSTOM_LOOK },
-        'no-source',
-        'Load a RAW file before exporting an HQ preview JPEG.',
-      ],
+      [{ ...ready, hasImage: false, params: CUSTOM_LOOK }, 'no-source'],
       [
         {
           ...ready,
@@ -372,34 +357,23 @@ describe('useExportDerivedState', () => {
           params: CUSTOM_LOOK,
         },
         'preview-released',
-        'Restore the preview before exporting an HQ preview JPEG.',
       ],
       [
         { ...ready, params: CUSTOM_LOOK, displaySource: 'quick' },
         'look-dropped',
-        HQ_PREVIEW_LOOK_EXPORT_REASON,
       ],
-      [
-        { ...ready, displaySource: 'quick', stats: null },
-        'hq-preview-pending',
-        'HQ preview export is available after the bounded HQ preview finishes.',
-      ],
-      [
-        { ...ready, stats: null },
-        'not-ready',
-        'HQ preview export is not ready.',
-      ],
-      [ready, undefined, undefined],
+      [{ ...ready, displaySource: 'quick', stats: null }, 'hq-preview-pending'],
+      [{ ...ready, stats: null }, 'not-ready'],
+      [ready, undefined],
     ]
-    for (const [input, code, sentence] of cases) {
+    for (const [input, code] of cases) {
       const { result } = renderHook(() => useExportDerivedState(input))
       expect(result.current.previewExportRefusal).toBe(code)
-      expect(result.current.previewExportDisabledReason).toBe(sentence)
       expect(result.current.canPreviewExport).toBe(code === undefined)
     }
   })
 
-  it('carries the full-resolution refusal as its code beside the sentence', () => {
+  it('carries the full-resolution refusal as its code alone', () => {
     const session = createSession()
     const base = {
       session,
@@ -420,9 +394,7 @@ describe('useExportDerivedState', () => {
       useExportDerivedState({ ...base, sourceFile: null }),
     ).result.current
     expect(loading.exportRefusal).toEqual({ code: 'source-loading' })
-    expect(loading.exportDisabledReason).toBe(
-      'Full-resolution export source is still loading.',
-    )
+    expect(loading).not.toHaveProperty('exportDisabledReason')
 
     // The runtime's reasons are shown as given and never decide anything.
     const unsupported = renderHook(() =>
@@ -444,13 +416,11 @@ describe('useExportDerivedState', () => {
       code: 'runtime-unsupported',
       detail: 'Quick preview is still being prepared.',
     })
-    expect(unsupported.exportDisabledReason).toBe(
-      'Quick preview is still being prepared.',
-    )
 
     const ready = renderHook(() => useExportDerivedState(base)).result.current
     expect(ready.canExport).toBe(true)
     expect(ready.exportRefusal).toBeUndefined()
+    expect(ready).not.toHaveProperty('previewExportDisabledReason')
   })
 
   it('refuses share by code until a JPEG exists', () => {
@@ -474,7 +444,6 @@ describe('useExportDerivedState', () => {
 
     expect(result.current.exportShareCapability).toEqual({
       available: false,
-      reason: 'Export a JPEG before sharing.',
       reasonCode: 'no-result',
     })
   })

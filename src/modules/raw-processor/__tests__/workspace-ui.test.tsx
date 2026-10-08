@@ -83,7 +83,7 @@ function rawToolSurfaceProps(
     exportResult: null,
     exportShareCapability: {
       available: false,
-      reason: 'Export a JPEG before sharing.',
+      reasonCode: 'no-result',
     },
     onShareExport: () => {},
     onDownloadExport: () => {},
@@ -179,7 +179,7 @@ function rawProcessorViewState(
     exportResult: null,
     exportShareCapability: {
       available: false,
-      reason: 'Export a JPEG before sharing.',
+      reasonCode: 'no-result',
     },
     exportInterrupted: false,
     activeStyle: null,

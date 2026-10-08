@@ -3,7 +3,6 @@ import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import { planExportGeometry } from '@lumaforge/render-engine/export'
 import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 
-import { getExportModeCopy } from '~/lib/export/execution-profile'
 import type {
   ExportExecutionPlan,
   ExportPlanFacts,
@@ -17,11 +16,7 @@ import {
   getCapabilityVectorSnapshot,
 } from '~/lib/runtime/capability-vector'
 
-import {
-  deriveExportRefusal,
-  fullResExportReasonSentence,
-  PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
-} from '../../model/derive-session'
+import { deriveExportRefusal } from '../../model/derive-session'
 import type {
   ExportResultKind,
   FullResExportReason,
@@ -64,12 +59,9 @@ export type FullResExportReadiness =
       fullResCapability: SupportedFullResCapability
       /** The frame the export delivers: the sensor, or the geometry's crop. */
       deliveredSize: { width: number; height: number }
-      disabledReason?: undefined
     }
   | {
       canExport: false
-      /** The sentence `refusal` stands for, until every reader takes the code. */
-      disabledReason: string
       refusal: FullResExportReason
     }
 
@@ -103,7 +95,6 @@ export type FullResExportPlanDecision =
   | { kind: 'run'; plan: ExportExecutionPlan }
   | {
       kind: 'refuse'
-      reason: string
       refusal: { code: 'cannot-safely-complete' }
     }
 
@@ -120,11 +111,7 @@ export function planFullResExport(
 ): FullResExportPlanDecision {
   const plan = selectExportPlan({ ...request, ...facts })
   return plan.productCopy === 'cannot-safely-complete'
-    ? {
-        kind: 'refuse',
-        reason: getExportModeCopy(plan.productCopy),
-        refusal: { code: plan.productCopy },
-      }
+    ? { kind: 'refuse', refusal: { code: plan.productCopy } }
     : { kind: 'run', plan }
 }
 
@@ -181,11 +168,7 @@ function getUnsafeFullResExportRefusal(source: ExportPlanSource) {
 function refuseFullResExport(
   refusal: FullResExportReason,
 ): FullResExportReadiness {
-  return {
-    canExport: false,
-    disabledReason: fullResExportReasonSentence(refusal),
-    refusal,
-  }
+  return { canExport: false, refusal }
 }
 
 /**
@@ -254,7 +237,6 @@ export function deriveFullResExportReadiness(input: {
     rawRenderExposure: input.rawRenderExposure,
     fullResCapability,
     deliveredSize,
-    disabledReason: undefined,
   }
 }
 
@@ -294,16 +276,4 @@ export function deriveTransformExportRefusalReason(
   return status === 'neutral' || status === 'accepted'
     ? undefined
     : TRANSFORM_EXPORT_REFUSAL[status]
-}
-
-/** The sentence `deriveTransformExportRefusalReason` stands for. */
-export function deriveTransformExportRefusal(
-  session: ImageSession,
-  kind: ExportResultKind,
-): string | undefined {
-  const refusal = deriveTransformExportRefusalReason(session, kind)
-  if (!refusal) return undefined
-  return typeof refusal === 'string'
-    ? PREVIEW_TRANSFORM_HQ_EXPORT_REASON
-    : fullResExportReasonSentence(refusal)
 }

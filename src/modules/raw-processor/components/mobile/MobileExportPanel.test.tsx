@@ -33,7 +33,7 @@ function renderPanel(overrides: Partial<MobileExportPanelProps> = {}) {
       exportResult={null}
       exportShareCapability={{
         available: false,
-        reason: 'Export a JPEG before sharing.',
+        reasonCode: 'no-result',
       }}
       onShareExport={vi.fn()}
       onDownloadExport={vi.fn()}
@@ -59,8 +59,7 @@ function createResult(overrides: Partial<ExportResult> = {}): ExportResult {
     createdAt: 123,
     copyCapability: {
       mode: 'preview-size',
-      label: 'Copy preview-size image',
-      reason: 'This browser cannot copy full-resolution JPEG files.',
+      reasonCode: 'full-resolution-copy-unsupported',
     },
     ...overrides,
   }
@@ -327,7 +326,7 @@ describe('mobileExportPanel', () => {
         isProcessing={false}
         onExport={vi.fn()}
         exportResult={null}
-        exportShareCapability={{ available: false, reason: '' }}
+        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
         onShareExport={vi.fn()}
         onDownloadExport={vi.fn()}
         onCopyExport={vi.fn()}
@@ -368,7 +367,7 @@ describe('mobileExportPanel', () => {
       exportResult: createResult(),
       exportShareCapability: {
         available: false,
-        reason: 'Export a JPEG before sharing.',
+        reasonCode: 'no-result',
       },
     })
 
@@ -455,7 +454,7 @@ describe('mobileExportPanel', () => {
         isProcessing={false}
         onExport={vi.fn()}
         exportResult={null}
-        exportShareCapability={{ available: false, reason: '' }}
+        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
         onShareExport={vi.fn()}
         onDownloadExport={vi.fn()}
         onCopyExport={vi.fn()}
@@ -532,7 +531,7 @@ describe('mobileExportPanel', () => {
       isProcessing: false,
       onExport,
       exportResult: null,
-      exportShareCapability: { available: false, reason: '' },
+      exportShareCapability: { available: false, reasonCode: 'no-result' },
       interruptionNote: INTERRUPTED_NOTE,
       onShareExport: vi.fn(),
       onDownloadExport: vi.fn(),
@@ -700,7 +699,7 @@ describe('mobileExportPanel reason copy', () => {
         isProcessing={false}
         onExport={vi.fn()}
         exportResult={null}
-        exportShareCapability={{ available: false, reason: '' }}
+        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
         onShareExport={vi.fn()}
         onDownloadExport={vi.fn()}
         onCopyExport={vi.fn()}
@@ -765,7 +764,7 @@ describe('mobileExportPanel reason copy', () => {
     renderIn('zh-CN', {
       canExport: true,
       exportResult: createResult({
-        copyCapability: { mode: 'hq-preview', label: 'Copy HQ preview image' },
+        copyCapability: { mode: 'hq-preview' },
       }),
       exportShareCapability: { available: true },
     })

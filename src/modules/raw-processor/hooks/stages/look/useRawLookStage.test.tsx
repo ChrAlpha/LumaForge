@@ -129,7 +129,6 @@ function withReadyExport(session: ImageSession): ImageSession {
         now: () => 1,
         copyCapability: {
           mode: 'full-resolution',
-          label: 'Copy full-resolution image',
         },
       }),
     },

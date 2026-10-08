@@ -10,14 +10,9 @@ import { describe, expect, it } from 'vitest'
 
 import { getExportModeCopy } from '~/lib/export/execution-profile'
 import type { Translate } from '~/lib/i18n'
-import { localizeCopyLabel, localizeRawReason } from '~/lib/i18n'
 import enMessages from '~/locales/en.json'
 import zhMessages from '~/locales/zh-CN.json'
 
-import {
-  fullResExportReasonSentence,
-  PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
-} from '../../model/derive-session'
 import {
   EXPORT_COPY_REASON_CODES,
   EXPORT_SHARE_REASON_CODES,
@@ -300,43 +295,6 @@ describe('rawReasonMessageKey', () => {
   })
 })
 
-describe('export copy the sentence matcher localizes today', () => {
-  const zhT: Translate = (key) => zhMessages[key]
-
-  it('reads each English export sentence as its Chinese copy', () => {
-    for (const key of [
-      'raw.exportSourceLoading',
-      'raw.export.copyUnsupported',
-      'raw.export.copyPreviewReason',
-      'raw.export.copyHqPreviewReason',
-      'raw.export.shareUnsupported',
-      'raw.export.previewSourceLoading',
-      'raw.export.previewLoadRequired',
-      'raw.export.previewRestoreRequired',
-      'raw.export.previewUnavailable',
-      'raw.export.previewLookUnavailable',
-    ] as const) {
-      expect(localizeRawReason(enMessages[key], zhT)).toBe(zhMessages[key])
-    }
-  })
-
-  it('reads each English copy label as its Chinese label', () => {
-    for (const key of [
-      'raw.export.copyFull',
-      'raw.export.copyHqPreview',
-      'raw.export.copyPreview',
-    ] as const) {
-      expect(localizeCopyLabel(enMessages[key], zhT)).toBe(zhMessages[key])
-    }
-  })
-
-  it('passes runtime diagnostic text through unchanged', () => {
-    expect(localizeRawReason('processed-window-unavailable', zhT)).toBe(
-      'processed-window-unavailable',
-    )
-  })
-})
-
 describe('export reason copy', () => {
   const zhT: Translate = (key) => zhMessages[key]
   const enT: Translate = (key) => enMessages[key]
@@ -360,7 +318,7 @@ describe('export reason copy', () => {
     )
   })
 
-  it('says in English exactly what the sentence fields say today', () => {
+  it('keeps the English copy each full-resolution refusal had as a sentence', () => {
     const sentences: Record<(typeof copied)[number], string> = {
       'source-loading': 'Full-resolution export source is still loading.',
       'export-running': 'Full-resolution export is already running.',
@@ -387,7 +345,6 @@ describe('export reason copy', () => {
         'The processed preview is unavailable. Wait for it or reset Transform to export.',
     }
     for (const code of copied) {
-      expect(fullResExportReasonSentence({ code })).toBe(sentences[code])
       expect(fullResExportReasonText({ code }, enT)).toBe(sentences[code])
     }
   })
@@ -398,13 +355,10 @@ describe('export reason copy', () => {
       expect(fullResExportReasonText(reason, zhT)).toBe(
         'processed-window-unavailable',
       )
-      expect(fullResExportReasonSentence(reason)).toBe(
-        'processed-window-unavailable',
-      )
     }
   })
 
-  it('keeps the meaning the sentence matcher gives each export sentence', () => {
+  it('keeps the copy each export refusal named as a sentence', () => {
     expect(FULL_RES_EXPORT_REASON_COPY['source-loading']).toBe(
       'raw.exportSourceLoading',
     )
@@ -420,7 +374,7 @@ describe('export reason copy', () => {
       [...HQ_PREVIEW_EXPORT_REASON_CODES].sort(),
     )
     expect(enMessages['raw.transform.hqExportReason']).toBe(
-      PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+      'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.',
     )
     expect(EXPORT_COPY_REASON_COPY).toEqual({
       'clipboard-unsupported': 'raw.export.copyUnsupported',
@@ -447,7 +401,7 @@ describe('export reason copy', () => {
     expect(zhMessages['raw.export.shareNoResult']).toBeTruthy()
   })
 
-  it('labels each copy mode with the label its capability carries', () => {
+  it('labels each copy mode with the English label it always had', () => {
     const labels: Record<keyof typeof EXPORT_COPY_LABEL_COPY, string> = {
       'full-resolution': 'Copy full-resolution image',
       'hq-preview': 'Copy HQ preview image',

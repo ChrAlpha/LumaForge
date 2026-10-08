@@ -77,7 +77,7 @@ const baseProps = {
   exportResult: null,
   exportShareCapability: {
     available: false as const,
-    reason: 'Export a JPEG before sharing.',
+    reasonCode: 'no-result',
   },
   histogram: { state: 'unavailable' as const, reason: 'no-image' as const },
   onShareExport: vi.fn(),
@@ -1388,8 +1388,7 @@ describe('rawToolSurface', () => {
               createdAt: 0,
               copyCapability: {
                 mode: 'preview-size',
-                label: 'Copy preview-size image',
-                reason: 'Full-resolution copy is not available.',
+                reasonCode: 'full-resolution-copy-unsupported',
               },
             }}
             exportShareCapability={{ available: true }}
@@ -1451,8 +1450,7 @@ describe('rawToolSurface', () => {
         createdAt: 0,
         copyCapability: {
           mode: 'preview-size' as const,
-          label: 'Copy preview-size image' as const,
-          reason: 'Full-resolution copy is not available.',
+          reasonCode: 'full-resolution-copy-unsupported' as const,
         },
         manifestState: { status: 'ready' as const },
       },

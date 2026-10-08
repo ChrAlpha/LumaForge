@@ -64,7 +64,6 @@ function createReadyExportResult() {
     now: () => 123,
     copyCapability: {
       mode: 'full-resolution',
-      label: 'Copy full-resolution image',
     },
   })
 }

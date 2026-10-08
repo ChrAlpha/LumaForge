@@ -83,7 +83,6 @@ function readyExportState(): ImageSession['exportState'] {
       height: 1200,
       copyCapability: {
         mode: 'full-resolution',
-        label: 'Copy full-resolution image',
       },
     }),
     lastProgress: { completedStrips: 4, totalStrips: 4 },

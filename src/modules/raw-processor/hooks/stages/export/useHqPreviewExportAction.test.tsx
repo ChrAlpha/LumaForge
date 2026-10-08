@@ -16,15 +16,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
+import enMessages from '~/locales/en.json'
 
-import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
 import type { ImageSession, TransformState } from '../../../model/session'
 import { createTransformState } from '../../../model/session-factory'
 import {
   captureExportResultIdentity,
   isSameExportResult,
 } from '../../../services/export/export-result-identity'
-import { HQ_PREVIEW_LOOK_EXPORT_REASON } from '../../../services/export/hq-preview-look'
 import type {
   TransformEvent,
   TransformStatus,
@@ -352,7 +351,7 @@ describe('useHqPreviewExportAction attempt currency', () => {
 
       expect(h.trace).toEqual(['toast:error:HQ preview export is not ready'])
       expect(h.error).toHaveBeenCalledWith('HQ preview export is not ready', {
-        description: PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+        description: enMessages['raw.transform.hqExportReason'],
       })
       expect(h.renderToHiddenCanvas).not.toHaveBeenCalled()
     },
@@ -457,7 +456,7 @@ describe('useHqPreviewExportAction attempt currency', () => {
       'toast:error:HQ preview export is not ready',
     ])
     expect(h.error).toHaveBeenCalledWith('HQ preview export is not ready', {
-      description: PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+      description: enMessages['raw.transform.hqExportReason'],
     })
     expect(h.toBlob).not.toHaveBeenCalled()
     expect(h.registerExportResultResource).not.toHaveBeenCalled()
@@ -765,7 +764,7 @@ describe('useHqPreviewExportAction', () => {
     expect(renderToHiddenCanvas).not.toHaveBeenCalled()
     expect(setStatus).not.toHaveBeenCalled()
     expect(error).toHaveBeenCalledWith('HQ preview export is not ready', {
-      description: PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+      description: enMessages['raw.transform.hqExportReason'],
     })
   })
 
@@ -967,7 +966,7 @@ describe('useHqPreviewExportAction', () => {
       expect(setStatus).not.toHaveBeenCalled()
       expect(sessionRef.current.exportState.result).toBe(previousResult)
       expect(error).toHaveBeenCalledWith('HQ preview export is not ready', {
-        description: HQ_PREVIEW_LOOK_EXPORT_REASON,
+        description: enMessages['raw.export.previewLookUnavailable'],
       })
     }
   })

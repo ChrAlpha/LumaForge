@@ -3,8 +3,8 @@ import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
 import {
   deriveCanEdit,
   deriveCanExport,
-  deriveExportDisabledReason,
-  deriveLutContractExportReason,
+  deriveExportRefusal,
+  deriveLutContractExportRefusal,
   selectDisplaySource,
 } from '../model/derive-session'
 import type { ImageSession } from '../model/session'
@@ -137,7 +137,7 @@ describe('session derivation', () => {
     }
 
     expect(deriveCanExport(session)).toBe(true)
-    expect(deriveExportDisabledReason(session)).toBeUndefined()
+    expect(deriveExportRefusal(session)).toBeUndefined()
   })
 
   it('requires quick preview before full-resolution export can be enabled', () => {
@@ -155,9 +155,9 @@ describe('session derivation', () => {
     }
 
     expect(deriveCanExport(session)).toBe(false)
-    expect(deriveExportDisabledReason(session)).toBe(
-      'Quick preview is still being prepared.',
-    )
+    expect(deriveExportRefusal(session)).toEqual({
+      code: 'quick-preview-pending',
+    })
   })
 
   it('disables export for builtin styles before the export button becomes available', () => {
@@ -181,9 +181,7 @@ describe('session derivation', () => {
     }
 
     expect(deriveCanExport(session)).toBe(false)
-    expect(deriveExportDisabledReason(session)).toBe(
-      'Built-in styles are not supported by full-resolution JPEG export.',
-    )
+    expect(deriveExportRefusal(session)).toEqual({ code: 'builtin-style' })
   })
 
   it('surfaces unsupported LUT output before export is triggered', () => {
@@ -215,9 +213,9 @@ describe('session derivation', () => {
     }
 
     expect(deriveCanExport(session)).toBe(false)
-    expect(deriveExportDisabledReason(session)).toBe(
-      'This LUT output transfer is not supported by full-resolution JPEG export.',
-    )
+    expect(deriveExportRefusal(session)).toEqual({
+      code: 'lut-output-unsupported',
+    })
   })
 
   it('blocks export with the choose-input reason for a recommended LUT contract', () => {
@@ -249,9 +247,9 @@ describe('session derivation', () => {
     }
 
     expect(deriveCanExport(session)).toBe(false)
-    expect(deriveExportDisabledReason(session)).toBe(
-      'Choose a LUT input profile before full-resolution export.',
-    )
+    expect(deriveExportRefusal(session)).toEqual({
+      code: 'lut-input-unconfirmed',
+    })
   })
 
   it('blocks export with the choose-input reason for an unknown LUT contract', () => {
@@ -282,9 +280,9 @@ describe('session derivation', () => {
     }
 
     expect(deriveCanExport(session)).toBe(false)
-    expect(deriveExportDisabledReason(session)).toBe(
-      'Choose a LUT input profile before full-resolution export.',
-    )
+    expect(deriveExportRefusal(session)).toEqual({
+      code: 'lut-input-unconfirmed',
+    })
   })
 
   it('disables export for resolved technical-output LUTs with linear output transfer', () => {
@@ -326,9 +324,11 @@ describe('session derivation', () => {
     }
 
     expect(deriveCanExport(session)).toBe(false)
-    expect(deriveExportDisabledReason(session)).toBe(
-      'This LUT output transfer is not supported by full-resolution JPEG export.',
-    )
+    expect(deriveExportRefusal(session)).toEqual({
+      code: 'lut-output-refused',
+      detail:
+        'This LUT output transfer is not supported by full-resolution JPEG export.',
+    })
   })
 
   it('disables export for resolved technical-output LUTs with unknown output range', () => {
@@ -370,15 +370,17 @@ describe('session derivation', () => {
     }
 
     expect(deriveCanExport(session)).toBe(false)
-    expect(deriveExportDisabledReason(session)).toBe(
-      'This LUT output range must be explicit before full-resolution JPEG export.',
-    )
+    expect(deriveExportRefusal(session)).toEqual({
+      code: 'lut-output-refused',
+      detail:
+        'This LUT output range must be explicit before full-resolution JPEG export.',
+    })
   })
 
-  it('names a LUT contract export block only for a custom LUT', () => {
-    expect(deriveLutContractExportReason(null)).toBeUndefined()
+  it('names a LUT contract export refusal only for a custom LUT', () => {
+    expect(deriveLutContractExportRefusal(null)).toBeUndefined()
     expect(
-      deriveLutContractExportReason({
+      deriveLutContractExportRefusal({
         kind: 'builtin',
         name: 'Builtin',
         defaultIntensity: 0.7,
@@ -386,7 +388,7 @@ describe('session derivation', () => {
       }),
     ).toBeUndefined()
     expect(
-      deriveLutContractExportReason({
+      deriveLutContractExportRefusal({
         kind: 'custom',
         name: 'Unknown',
         defaultIntensity: 0.7,
@@ -397,7 +399,7 @@ describe('session derivation', () => {
           profileResolution: { kind: 'unknown' },
         },
       }),
-    ).toBe('Choose a LUT input profile before full-resolution export.')
+    ).toEqual({ code: 'lut-input-unconfirmed' })
     const display = {
       ...getLUTColorProfile('sony-sgamut3cine-slog3')!,
       role: 'combined-look-output' as const,
@@ -406,7 +408,7 @@ describe('session derivation', () => {
       outputRange: 'full' as const,
     }
     expect(
-      deriveLutContractExportReason({
+      deriveLutContractExportRefusal({
         kind: 'custom',
         name: 'Display',
         defaultIntensity: 0.7,

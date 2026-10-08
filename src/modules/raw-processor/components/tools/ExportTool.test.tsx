@@ -39,8 +39,7 @@ function createResult(overrides: Partial<ExportResult> = {}): ExportResult {
     createdAt: 123,
     copyCapability: {
       mode: 'preview-size',
-      label: 'Copy preview-size image',
-      reason: 'This browser cannot copy full-resolution JPEG files.',
+      reasonCode: 'full-resolution-copy-unsupported',
     },
     ...overrides,
   }
@@ -60,7 +59,7 @@ describe('exportTool', () => {
         isProcessing={false}
         onExport={vi.fn()}
         exportResult={null}
-        exportShareCapability={{ available: false, reason: 'Export first.' }}
+        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
         onShareExport={vi.fn()}
         onDownloadExport={vi.fn()}
         onCopyExport={vi.fn()}
@@ -93,7 +92,7 @@ describe('exportTool', () => {
         isProcessing={false}
         onExport={vi.fn()}
         exportResult={null}
-        exportShareCapability={{ available: false, reason: 'Export first.' }}
+        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
         onShareExport={vi.fn()}
         onDownloadExport={vi.fn()}
         onCopyExport={vi.fn()}
@@ -113,7 +112,7 @@ describe('exportTool', () => {
         isProcessing={false}
         onExport={onExport}
         exportResult={null}
-        exportShareCapability={{ available: false, reason: 'Export first.' }}
+        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
         onShareExport={vi.fn()}
         onDownloadExport={vi.fn()}
         onCopyExport={vi.fn()}
@@ -152,7 +151,7 @@ describe('exportTool', () => {
       onExport,
       onPreviewExport,
       exportResult: null,
-      exportShareCapability: { available: false, reason: 'Export first.' },
+      exportShareCapability: { available: false, reasonCode: 'no-result' },
       onShareExport: vi.fn(),
       onDownloadExport: vi.fn(),
       onCopyExport: vi.fn(),
@@ -195,7 +194,6 @@ describe('exportTool', () => {
           height: 3000,
           copyCapability: {
             mode: 'hq-preview',
-            label: 'Copy HQ preview image',
           },
         })}
         exportShareCapability={{ available: true }}
@@ -370,7 +368,7 @@ describe('exportTool', () => {
         exportResult={createResult()}
         exportShareCapability={{
           available: false,
-          reason: 'This browser cannot share JPEG files.',
+          reasonCode: 'share-unsupported',
         }}
         onShareExport={vi.fn()}
         onDownloadExport={vi.fn()}
@@ -392,7 +390,7 @@ describe('exportTool', () => {
         isProcessing={false}
         onExport={vi.fn()}
         exportResult={null}
-        exportShareCapability={{ available: false, reason: 'Export first.' }}
+        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
         onShareExport={vi.fn()}
         onDownloadExport={vi.fn()}
         onCopyExport={vi.fn()}
@@ -422,7 +420,7 @@ describe('exportTool', () => {
         isProcessing={false}
         onExport={vi.fn()}
         exportResult={null}
-        exportShareCapability={{ available: false, reason: 'Export first.' }}
+        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
         onShareExport={vi.fn()}
         onDownloadExport={vi.fn()}
         onCopyExport={vi.fn()}
@@ -453,7 +451,7 @@ describe('exportTool', () => {
       isProcessing: false,
       onExport,
       exportResult: null,
-      exportShareCapability: { available: false, reason: 'Export first.' },
+      exportShareCapability: { available: false, reasonCode: 'no-result' },
       onShareExport: vi.fn(),
       onDownloadExport: vi.fn(),
       onCopyExport: vi.fn(),
@@ -490,7 +488,7 @@ describe('exportTool', () => {
       isProcessing: false,
       onExport: vi.fn(),
       exportResult: null,
-      exportShareCapability: { available: false, reason: 'Export first.' },
+      exportShareCapability: { available: false, reasonCode: 'no-result' },
       onShareExport: vi.fn(),
       onDownloadExport: vi.fn(),
       onCopyExport: vi.fn(),
@@ -561,7 +559,7 @@ describe('exportTool reason copy', () => {
     isProcessing: false,
     onExport: vi.fn(),
     exportResult: null,
-    exportShareCapability: { available: false, reason: 'Export first.' },
+    exportShareCapability: { available: false, reasonCode: 'no-result' },
     onShareExport: vi.fn(),
     onDownloadExport: vi.fn(),
     onCopyExport: vi.fn(),
@@ -652,7 +650,6 @@ describe('exportTool reason copy', () => {
       exportResult: createResult({
         copyCapability: {
           mode: 'full-resolution',
-          label: 'Copy full-resolution image',
         },
       }),
       exportShareCapability: { available: true },

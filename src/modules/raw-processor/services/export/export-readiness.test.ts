@@ -17,7 +17,6 @@ import type {
 } from '@lumaforge/render-engine/policy'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { getExportModeCopy } from '~/lib/export/execution-profile'
 import type { ExportPlanFacts } from '~/lib/export/export-plan'
 import { selectExportPlan } from '~/lib/export/export-plan'
 import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
@@ -25,10 +24,7 @@ import { composeManualTransform } from '~/lib/transform/transform-render'
 
 import {
   deriveExportRefusal,
-  deriveLutContractExportReason,
   deriveLutContractExportRefusal,
-  fullResExportReasonSentence,
-  PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
 } from '../../model/derive-session'
 import type { FullResExportReason } from '../../model/export-result'
 import type { ImageSession, TransformState } from '../../model/session'
@@ -44,7 +40,6 @@ import {
 } from '../transform/transform-state'
 import {
   deriveFullResExportReadiness,
-  deriveTransformExportRefusal,
   deriveTransformExportRefusalReason,
   planFullResExport,
   planFullResExportRequest,
@@ -151,8 +146,6 @@ function transformAt(
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1] as const
 const SOURCE = { width: 4000, height: 3000 }
 const IDENTITY_EXPOSURE = { ev: 0, multiplier: 1, source: 'identity' } as const
-const INVALID_GEOMETRY_REASON =
-  'This Transform cannot be reproduced at full resolution. Adjust or reset Transform to export.'
 
 /** Its projective horizon crosses the unconstrained output frame. */
 const FOLDING_MATRIX = composeManualTransform(
@@ -220,7 +213,6 @@ describe('export readiness helpers', () => {
     // Full resolution reproduces the geometry, so it is no longer a blocker.
     const readiness = deriveFullResExportReadiness(input)
     expect(readiness.canExport).toBe(true)
-    expect(readiness.disabledReason).toBeUndefined()
     expect(
       deriveFullResExportReadiness({
         ...input,
@@ -245,7 +237,6 @@ describe('export readiness helpers', () => {
       }),
     ).toEqual({
       canExport: false,
-      disabledReason: 'Full-resolution export source is still loading.',
       refusal: { code: 'source-loading' },
     })
     expect(
@@ -256,7 +247,6 @@ describe('export readiness helpers', () => {
       }),
     ).toEqual({
       canExport: false,
-      disabledReason: 'Full-resolution export source is still loading.',
       refusal: { code: 'source-loading' },
     })
   })
@@ -279,8 +269,6 @@ describe('export readiness helpers', () => {
       }),
     ).toEqual({
       canExport: false,
-      disabledReason:
-        'Checking full-resolution export support for this RAW file.',
       refusal: { code: 'capability-probing' },
     })
     expect(
@@ -296,7 +284,6 @@ describe('export readiness helpers', () => {
       }),
     ).toEqual({
       canExport: false,
-      disabledReason: 'processed-window-unavailable',
       refusal: {
         code: 'runtime-unsupported',
         detail: 'processed-window-unavailable',
@@ -313,7 +300,6 @@ describe('export readiness helpers', () => {
       }),
     ).toEqual({
       canExport: false,
-      disabledReason: 'RAW preview exposure is still being prepared.',
       refusal: { code: 'exposure-pending' },
     })
   })
@@ -340,13 +326,8 @@ describe('export readiness helpers', () => {
       rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
     })
 
-    expect(readiness.canExport).toBe(false)
-    expect(readiness.disabledReason).toMatch(
-      /cannot safely complete this large local full-resolution export/i,
-    )
     expect(readiness).toEqual({
       canExport: false,
-      disabledReason: getExportModeCopy('cannot-safely-complete'),
       refusal: { code: 'cannot-safely-complete' },
     })
   })
@@ -396,7 +377,6 @@ describe('export readiness helpers', () => {
         }),
       ).toEqual({
         canExport: false,
-        disabledReason: INVALID_GEOMETRY_REASON,
         refusal: { code: 'geometry-unplannable' },
       })
     },
@@ -523,11 +503,7 @@ describe('export readiness helpers', () => {
       const readiness = deriveFullResExportReadiness(input)
       expect(readiness.canExport).toBe(false)
       if (readiness.canExport) throw new Error('expected a refusal')
-      expect(readiness.refusal).toEqual({ code })
-      // The sentence each refusal still carries reads as its code.
-      expect(readiness.disabledReason).toBe(
-        fullResExportReasonSentence(readiness.refusal),
-      )
+      expect(readiness).toEqual({ canExport: false, refusal: { code } })
     }
   })
 
@@ -572,19 +548,12 @@ describe('export readiness helpers', () => {
     for (const [resolution, refusal] of cases) {
       const style = lutStyle(resolution)
       expect(deriveLutContractExportRefusal(style)).toEqual(refusal)
-      expect(deriveLutContractExportReason(style)).toBe(
-        fullResExportReasonSentence(refusal),
-      )
       const readiness = deriveFullResExportReadiness({
         sourceFile: new File(['raw'], 'frame.ARW'),
         session: { ...createSession(), activeStyle: style },
         rawRenderExposure: IDENTITY_EXPOSURE,
       })
-      expect(readiness).toEqual({
-        canExport: false,
-        disabledReason: fullResExportReasonSentence(refusal),
-        refusal,
-      })
+      expect(readiness).toEqual({ canExport: false, refusal })
     }
     expect(deriveLutContractExportRefusal(null)).toBeUndefined()
     expect(
@@ -633,7 +602,6 @@ describe('export readiness helpers', () => {
 
     expect(readiness.canExport).toBe(true)
     if (!readiness.canExport) throw new Error('expected export readiness')
-    expect(readiness.disabledReason).toBeUndefined()
     expect(readiness.sourceFile).toBe(sourceFile)
     expect(readiness.session).toBe(session)
     expect(readiness.rawRenderExposure).toBe(rawRenderExposure)
@@ -645,26 +613,13 @@ describe('export readiness helpers', () => {
   })
 })
 
-describe('deriveTransformExportRefusal', () => {
-  const FULL_RES_REFUSALS = [
-    [
-      'pending',
-      'Transform is still preparing the current photo. Export once the preview shows it.',
-    ],
-    [
-      'invalid',
-      'This Transform leaves too little usable image. Reduce the adjustment or reset Transform to export.',
-    ],
-    [
-      'unavailable',
-      'The processed preview is unavailable. Wait for it or reset Transform to export.',
-    ],
-  ] as const
+describe('deriveTransformExportRefusalReason', () => {
+  const FULL_RES_REFUSALS = ['pending', 'invalid', 'unavailable'] as const
 
   it('admits a full-resolution export only for a neutral or accepted Transform', () => {
     const bare = createSession()
     expect(
-      deriveTransformExportRefusal(bare, 'full-resolution'),
+      deriveTransformExportRefusalReason(bare, 'full-resolution'),
     ).toBeUndefined()
     for (const status of ['neutral', 'accepted'] as const) {
       const transform = transformAt(status)
@@ -674,49 +629,46 @@ describe('deriveTransformExportRefusal', () => {
         exportGeometry: heldTransformGeometry(transform),
       }
       expect(
-        deriveTransformExportRefusal(session, 'full-resolution'),
+        deriveTransformExportRefusalReason(session, 'full-resolution'),
       ).toBeUndefined()
     }
   })
 
   it.each(FULL_RES_REFUSALS)(
     'refuses a full-resolution export while the Transform is %s',
-    (status, reason) => {
+    (status) => {
       const transform = transformAt(status)
       const session: ImageSession = { ...createSession(), transform }
-      expect(deriveTransformExportRefusal(session, 'full-resolution')).toBe(
-        reason,
-      )
       expect(
         deriveTransformExportRefusalReason(session, 'full-resolution'),
       ).toEqual({ code: `transform-${status}` })
       // An accepted answer the session still holds does not stand for a
       // newer intent.
       expect(
-        deriveTransformExportRefusal(
+        deriveTransformExportRefusalReason(
           { ...session, exportGeometry: SAMPLE_GEOMETRY },
           'full-resolution',
         ),
-      ).toBe(reason)
+      ).toEqual({ code: `transform-${status}` })
     },
   )
 
   it('admits an HQ preview export only for a neutral Transform with no geometry', () => {
     expect(
-      deriveTransformExportRefusal(createSession(), 'hq-preview'),
+      deriveTransformExportRefusalReason(createSession(), 'hq-preview'),
     ).toBeUndefined()
     expect(
-      deriveTransformExportRefusal(
+      deriveTransformExportRefusalReason(
         { ...createSession(), transform: transformAt('neutral') },
         'hq-preview',
       ),
     ).toBeUndefined()
     expect(
-      deriveTransformExportRefusal(
+      deriveTransformExportRefusalReason(
         { ...createSession(), exportGeometry: SAMPLE_GEOMETRY },
         'hq-preview',
       ),
-    ).toBe(PREVIEW_TRANSFORM_HQ_EXPORT_REASON)
+    ).toBe('transform-held')
     for (const status of [
       'accepted',
       'pending',
@@ -724,11 +676,11 @@ describe('deriveTransformExportRefusal', () => {
       'unavailable',
     ] as const) {
       expect(
-        deriveTransformExportRefusal(
+        deriveTransformExportRefusalReason(
           { ...createSession(), transform: transformAt(status) },
           'hq-preview',
         ),
-      ).toBe(PREVIEW_TRANSFORM_HQ_EXPORT_REASON)
+      ).toBe('transform-held')
     }
   })
 
@@ -877,7 +829,6 @@ describe('full-resolution export request planning', () => {
         }),
       ).toEqual({
         kind: 'refuse',
-        reason: getExportModeCopy('cannot-safely-complete'),
         refusal: { code: 'cannot-safely-complete' },
       })
     },
@@ -917,7 +868,6 @@ describe('full-resolution export request planning', () => {
       expect(Object.keys(readiness).sort()).toEqual([
         'canExport',
         'deliveredSize',
-        'disabledReason',
         'fullResCapability',
         'rawRenderExposure',
         'session',

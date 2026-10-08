@@ -57,7 +57,6 @@ function createResult({
     now: () => 123,
     copyCapability: {
       mode: 'full-resolution',
-      label: 'Copy full-resolution image',
     },
   })
 }
@@ -441,7 +440,6 @@ describe('export result actions', () => {
 
     expect(resolveExportShareCapability(result, navigatorLike)).toEqual({
       available: false,
-      reason: 'This browser cannot share JPEG files.',
       reasonCode: 'share-unsupported',
     })
     expect(navigatorLike.canShare).not.toHaveBeenCalled()
@@ -453,7 +451,6 @@ describe('export result actions', () => {
 
     expect(resolveExportShareCapability(result, navigatorLike)).toEqual({
       available: false,
-      reason: 'This browser cannot share JPEG files.',
       reasonCode: 'share-unsupported',
     })
   })
@@ -507,7 +504,6 @@ describe('export result actions', () => {
 
     expect(resolveExportCopyCapability(environment)).toEqual({
       mode: 'full-resolution',
-      label: 'Copy full-resolution image',
     })
   })
 
@@ -523,8 +519,6 @@ describe('export result actions', () => {
 
     expect(resolveExportCopyCapability(environment)).toEqual({
       mode: 'preview-size',
-      label: 'Copy preview-size image',
-      reason: 'This browser cannot copy full-resolution JPEG files.',
       reasonCode: 'full-resolution-copy-unsupported',
     })
   })
@@ -532,7 +526,6 @@ describe('export result actions', () => {
   it('marks copy unavailable without async clipboard write support', () => {
     expect(resolveExportCopyCapability({ navigator: {} })).toEqual({
       mode: 'unavailable',
-      reason: 'Clipboard image copy is not supported in this browser.',
       reasonCode: 'clipboard-unsupported',
     })
   })
@@ -613,30 +606,25 @@ describe('export result actions', () => {
     expect(write).not.toHaveBeenCalled()
   })
 
-  it('names each copy and share refusal by code beside its sentence', () => {
+  it('names each copy and share refusal by its code alone', () => {
     expect(unavailableExportCopy('preview-copy-not-ready')).toEqual({
       mode: 'unavailable',
-      reason: 'Preview image is not ready to copy.',
       reasonCode: 'preview-copy-not-ready',
     })
     expect(unavailableExportCopy('hq-preview-copy-unsupported')).toEqual({
       mode: 'unavailable',
-      reason: 'This browser cannot copy HQ preview JPEG files.',
       reasonCode: 'hq-preview-copy-unsupported',
     })
     expect(unavailableExportShare('no-result')).toEqual({
       available: false,
-      reason: 'Export a JPEG before sharing.',
       reasonCode: 'no-result',
     })
     expect(resolveExportShareButtonCapability({} as Navigator)).toEqual({
       available: false,
-      reason: 'This browser cannot share JPEG files.',
       reasonCode: 'share-unsupported',
     })
     expect(unavailableExportCopy('clipboard-unsupported')).toEqual({
       mode: 'unavailable',
-      reason: 'Clipboard image copy is not supported in this browser.',
       reasonCode: 'clipboard-unsupported',
     })
   })
@@ -646,13 +634,13 @@ describe('export result actions', () => {
     await expect(share).rejects.toBeInstanceOf(ExportActionUnavailableError)
     await expect(share).rejects.toMatchObject({
       reasonCode: 'share-unsupported',
-      message: 'This browser cannot share JPEG files.',
+      message: 'share-unsupported',
     })
 
     const copy = copyExportResultToClipboard(createResult(), { navigator: {} })
     await expect(copy).rejects.toMatchObject({
       reasonCode: 'clipboard-unsupported',
-      message: 'Clipboard image copy is not supported in this browser.',
+      message: 'clipboard-unsupported',
     })
   })
 
@@ -724,7 +712,6 @@ describe('export result actions', () => {
           height: 600,
           copyCapability: {
             mode: 'full-resolution',
-            label: 'Copy full-resolution image',
           },
           identity: captureExportResultIdentity({
             resultKind: kind,
@@ -930,7 +917,6 @@ describe('export result actions', () => {
           height: 600,
           copyCapability: {
             mode: 'full-resolution',
-            label: 'Copy full-resolution image',
           },
           identity: captureExportResultIdentity({
             resultKind: 'full-resolution',
