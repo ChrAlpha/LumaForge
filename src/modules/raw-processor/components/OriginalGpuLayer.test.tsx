@@ -46,6 +46,47 @@ function createPipelineMock(
   }
 }
 
+function captureResizeObservers() {
+  const callbacks: ResizeObserverCallback[] = []
+  vi.stubGlobal(
+    'ResizeObserver',
+    vi.fn().mockImplementation((callback: ResizeObserverCallback) => ({
+      observe: vi.fn(() => {
+        callbacks.push(callback)
+      }),
+      disconnect: vi.fn(),
+    })),
+  )
+  return callbacks
+}
+
+function fireResize(
+  callback: ResizeObserverCallback | undefined,
+  width: number,
+  height: number,
+) {
+  callback?.(
+    [{ contentRect: { width, height } } as ResizeObserverEntry],
+    {} as ResizeObserver,
+  )
+}
+
+/** Sets the device pixel ratio the backing store reads until restored. */
+function stubDevicePixelRatio(value: number) {
+  const original = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio')
+  Object.defineProperty(window, 'devicePixelRatio', {
+    configurable: true,
+    value,
+  })
+  return () => {
+    if (original) {
+      Object.defineProperty(window, 'devicePixelRatio', original)
+    } else {
+      Reflect.deleteProperty(window, 'devicePixelRatio')
+    }
+  }
+}
+
 describe('originalGpuLayer', () => {
   it('reports only the latest generation after its GPU work completes', async () => {
     const firstFrame = deferred()
@@ -637,5 +678,169 @@ describe('originalGpuLayer', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+
+  describe('backing store resize', () => {
+    async function renderReadyLayer() {
+      const resizeCallbacks = captureResizeObservers()
+      const pipeline = createPipelineMock()
+      const onReady = vi.fn()
+      const result = render(
+        <OriginalGpuLayer
+          imageRef={{ current: decodedImage }}
+          imageVersion={1}
+          createPipeline={() => pipeline as never}
+          onReady={onReady}
+        />,
+      )
+      await waitFor(() => expect(onReady).toHaveBeenCalledOnce())
+      const canvas = result.container.querySelector('canvas')!
+      pipeline.resize.mockClear()
+      pipeline.render.mockClear()
+      return { ...result, resizeCallbacks, pipeline, canvas }
+    }
+
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    it('sizes the layer box at the capped pixel ratio without fitting it to the photo again', async () => {
+      const restoreDpr = stubDevicePixelRatio(3)
+      try {
+        const { resizeCallbacks, pipeline, canvas } = await renderReadyLayer()
+
+        act(() => fireResize(resizeCallbacks.at(-1), 300, 600))
+
+        expect([canvas.width, canvas.height]).toEqual([600, 1200])
+        expect(pipeline.resize).toHaveBeenCalledExactlyOnceWith(600, 1200)
+        expect(pipeline.render).toHaveBeenCalledOnce()
+      } finally {
+        restoreDpr()
+      }
+    })
+
+    it('rounds a fractional box and keeps a zero-size box at one pixel', async () => {
+      const restoreDpr = stubDevicePixelRatio(1.5)
+      try {
+        const { resizeCallbacks, pipeline, canvas } = await renderReadyLayer()
+        vi.useFakeTimers()
+
+        act(() => fireResize(resizeCallbacks.at(-1), 333, 249.75))
+        expect([canvas.width, canvas.height]).toEqual([500, 375])
+
+        act(() => fireResize(resizeCallbacks.at(-1), 0, 0))
+        act(() => vi.advanceTimersByTime(90))
+
+        expect([canvas.width, canvas.height]).toEqual([1, 1])
+        expect(pipeline.resize).toHaveBeenLastCalledWith(1, 1)
+      } finally {
+        restoreDpr()
+      }
+    })
+
+    it('reads a missing pixel ratio as one', async () => {
+      const restoreDpr = stubDevicePixelRatio(0)
+      try {
+        const { resizeCallbacks, canvas } = await renderReadyLayer()
+
+        act(() => fireResize(resizeCallbacks.at(-1), 200, 150))
+
+        expect([canvas.width, canvas.height]).toEqual([200, 150])
+      } finally {
+        restoreDpr()
+      }
+    })
+
+    it('fits the first size at once, then settles rapid resizes into one resize and draw', async () => {
+      const { resizeCallbacks, pipeline, canvas } = await renderReadyLayer()
+      const callback = resizeCallbacks.at(-1)
+      vi.useFakeTimers()
+
+      act(() => fireResize(callback, 400, 300))
+      expect(pipeline.resize).toHaveBeenCalledExactlyOnceWith(400, 300)
+      expect(pipeline.render).toHaveBeenCalledOnce()
+
+      act(() => fireResize(callback, 800, 300))
+      act(() => vi.advanceTimersByTime(50))
+      act(() => fireResize(callback, 600, 600))
+      act(() => vi.advanceTimersByTime(50))
+      act(() => fireResize(callback, 1000, 450))
+      act(() => vi.advanceTimersByTime(89))
+
+      expect([canvas.width, canvas.height]).toEqual([400, 300])
+      expect(pipeline.resize).toHaveBeenCalledOnce()
+
+      act(() => vi.advanceTimersByTime(1))
+
+      expect([canvas.width, canvas.height]).toEqual([1000, 450])
+      expect(pipeline.resize).toHaveBeenCalledTimes(2)
+      expect(pipeline.resize).toHaveBeenLastCalledWith(1000, 450)
+      expect(pipeline.render).toHaveBeenCalledTimes(2)
+      expect(pipeline.uploadImage).toHaveBeenCalledOnce()
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('flushes a pending settled resize on unmount and leaves no timer', async () => {
+      const { resizeCallbacks, pipeline, canvas, unmount } =
+        await renderReadyLayer()
+      const callback = resizeCallbacks.at(-1)
+      vi.useFakeTimers()
+
+      act(() => fireResize(callback, 400, 300))
+      act(() => fireResize(callback, 200, 150))
+      expect(vi.getTimerCount()).toBe(1)
+      pipeline.resize.mockClear()
+      pipeline.render.mockClear()
+
+      unmount()
+
+      expect([canvas.width, canvas.height]).toEqual([200, 150])
+      expect(pipeline.resize).not.toHaveBeenCalled()
+      expect(pipeline.render).not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('flushes a size pending at initialization and refits at once afterwards', async () => {
+      const resizeCallbacks = captureResizeObservers()
+      const initialization = deferred()
+      const pipeline = createPipelineMock({
+        initialize: vi.fn(() => initialization.promise),
+      })
+      const onReady = vi.fn()
+      const { container } = render(
+        <OriginalGpuLayer
+          imageRef={{ current: decodedImage }}
+          imageVersion={1}
+          createPipeline={() => pipeline as never}
+          onReady={onReady}
+        />,
+      )
+      const canvas = container.querySelector('canvas')!
+      const firstCallback = resizeCallbacks.at(-1)
+
+      act(() => fireResize(firstCallback, 400, 300))
+      act(() => fireResize(firstCallback, 200, 150))
+      expect([canvas.width, canvas.height]).toEqual([400, 300])
+      expect(pipeline.resize).not.toHaveBeenCalled()
+
+      await act(async () => {
+        initialization.resolve()
+        await initialization.promise
+      })
+      await waitFor(() => expect(onReady).toHaveBeenCalledOnce())
+
+      expect([canvas.width, canvas.height]).toEqual([200, 150])
+      expect(pipeline.resize).toHaveBeenCalledExactlyOnceWith(200, 150)
+      expect(pipeline.render).toHaveBeenCalledOnce()
+      const nextCallback = resizeCallbacks.at(-1)
+      expect(nextCallback).not.toBe(firstCallback)
+
+      act(() => fireResize(nextCallback, 300, 300))
+
+      expect([canvas.width, canvas.height]).toEqual([300, 300])
+      expect(pipeline.resize).toHaveBeenLastCalledWith(300, 300)
+      expect(pipeline.render).toHaveBeenCalledTimes(2)
+    })
   })
 })

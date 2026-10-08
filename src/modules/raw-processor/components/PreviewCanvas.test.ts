@@ -353,6 +353,22 @@ function renderInteractivePreview({
   }
 }
 
+/** Sets the device pixel ratio the backing store reads until restored. */
+function stubDevicePixelRatio(value: number) {
+  const original = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio')
+  Object.defineProperty(window, 'devicePixelRatio', {
+    configurable: true,
+    value,
+  })
+  return () => {
+    if (original) {
+      Object.defineProperty(window, 'devicePixelRatio', original)
+    } else {
+      Reflect.deleteProperty(window, 'devicePixelRatio')
+    }
+  }
+}
+
 describe('preview canvas upload descriptor', () => {
   beforeEach(() => {
     pipelineMock.instances.length = 0
@@ -2831,5 +2847,218 @@ describe('preview canvas upload descriptor', () => {
     expect(pipeline.setParams).not.toHaveBeenCalled()
     expect(pipeline.render).not.toHaveBeenCalled()
     expect(onStatsUpdate).not.toHaveBeenCalled()
+  })
+
+  describe('backing store resize', () => {
+    async function renderSizedPreview(
+      image: DecodedImage = decodedImage,
+      onStatsUpdate = vi.fn(),
+    ) {
+      const resizeCallbacks = captureResizeObservers()
+      const imageRef = { current: image }
+      const props = {
+        imageRef,
+        imageVersion: 1,
+        color: defaultColor,
+        viewMode: 'processed' as const,
+        lutDataRef: { current: null },
+        lutDataVersion: 0,
+        onStatsUpdate,
+      } satisfies ComponentProps<typeof PreviewCanvas>
+      const result = render(createElement(PreviewCanvas, props))
+      await waitFor(() => expect(onStatsUpdate).toHaveBeenCalledOnce())
+      const track = result.container.querySelector<HTMLElement>(
+        '[data-raw-compare-track="image"]',
+      )!
+      const canvas = track.querySelector('canvas')!
+      const pipeline = processedPipelines()[0]!
+      return { ...result, props, resizeCallbacks, track, canvas, pipeline }
+    }
+
+    it('aspect-fits a landscape source into a portrait frame at the capped pixel ratio', async () => {
+      const restoreDpr = stubDevicePixelRatio(3)
+      try {
+        const { resizeCallbacks, track, canvas, pipeline } =
+          await renderSizedPreview()
+
+        act(() => fireResize(resizeCallbacks.at(-1), 300, 600))
+
+        expect(track.style.width).toBe('300px')
+        expect(track.style.height).toBe('225px')
+        expect(canvas.style.width).toBe('100%')
+        expect(canvas.style.height).toBe('100%')
+        expect([canvas.width, canvas.height]).toEqual([600, 450])
+        expect(pipeline.resize).toHaveBeenLastCalledWith(600, 450)
+        expect(track).toHaveAttribute('data-preview-track-ready', 'true')
+      } finally {
+        restoreDpr()
+      }
+    })
+
+    it('aspect-fits a portrait source and rounds the scaled backing store', async () => {
+      const restoreDpr = stubDevicePixelRatio(1.5)
+      try {
+        const { resizeCallbacks, track, canvas, pipeline } =
+          await renderSizedPreview({
+            ...decodedImage,
+            width: 300,
+            height: 400,
+            data: new Uint16Array(300 * 400 * 3),
+            metadata: { width: 300, height: 400 },
+          })
+
+        act(() => fireResize(resizeCallbacks.at(-1), 333, 500))
+
+        expect(track.style.width).toBe('333px')
+        expect(track.style.height).toBe('444px')
+        expect([canvas.width, canvas.height]).toEqual([500, 666])
+        expect(pipeline.resize).toHaveBeenLastCalledWith(500, 666)
+      } finally {
+        restoreDpr()
+      }
+    })
+
+    it('follows a zero-size frame without a minimum backing store', async () => {
+      const { resizeCallbacks, track, canvas, pipeline } =
+        await renderSizedPreview()
+
+      act(() => fireResize(resizeCallbacks.at(-1), 0, 0))
+
+      expect(track.style.width).toBe('0px')
+      expect(track.style.height).toBe('0px')
+      expect([canvas.width, canvas.height]).toEqual([0, 0])
+      expect(pipeline.resize).toHaveBeenLastCalledWith(0, 0)
+    })
+
+    it('fits the first size at once, then settles rapid resizes into one resize and draw', async () => {
+      const { resizeCallbacks, track, canvas, pipeline } =
+        await renderSizedPreview()
+      const callback = resizeCallbacks.at(-1)
+      pipeline.resize.mockClear()
+      pipeline.render.mockClear()
+
+      vi.useFakeTimers()
+      try {
+        act(() => fireResize(callback, 400, 300))
+        expect(pipeline.resize).toHaveBeenCalledExactlyOnceWith(400, 300)
+        expect(pipeline.render).toHaveBeenCalledOnce()
+
+        act(() => fireResize(callback, 800, 300))
+        act(() => vi.advanceTimersByTime(50))
+        act(() => fireResize(callback, 600, 600))
+        act(() => vi.advanceTimersByTime(50))
+        act(() => fireResize(callback, 1000, 450))
+
+        expect(track.style.width).toBe('600px')
+        expect(track.style.height).toBe('450px')
+        expect([canvas.width, canvas.height]).toEqual([400, 300])
+        expect(pipeline.resize).toHaveBeenCalledOnce()
+
+        act(() => vi.advanceTimersByTime(89))
+        expect(pipeline.resize).toHaveBeenCalledOnce()
+        act(() => vi.advanceTimersByTime(1))
+
+        expect([canvas.width, canvas.height]).toEqual([600, 450])
+        expect(pipeline.resize).toHaveBeenCalledTimes(2)
+        expect(pipeline.resize).toHaveBeenLastCalledWith(600, 450)
+        expect(pipeline.render).toHaveBeenCalledTimes(2)
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('applies every resize at once while no pipeline exists', () => {
+      pipelineMock.initialize.mockReturnValue(new Promise(() => {}))
+      const resizeCallbacks = captureResizeObservers()
+      const { container } = render(
+        createElement(PreviewCanvas, {
+          imageRef: { current: decodedImage },
+          imageVersion: 1,
+          color: defaultColor,
+          viewMode: 'processed' as const,
+          lutDataRef: { current: null },
+          lutDataVersion: 0,
+        }),
+      )
+      const canvas = container.querySelector<HTMLCanvasElement>(
+        '[data-raw-compare-track="image"] canvas',
+      )!
+
+      vi.useFakeTimers()
+      try {
+        act(() => fireResize(resizeCallbacks.at(-1), 400, 300))
+        expect([canvas.width, canvas.height]).toEqual([400, 300])
+        act(() => fireResize(resizeCallbacks.at(-1), 200, 300))
+        expect([canvas.width, canvas.height]).toEqual([200, 150])
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('flushes a pending settled resize on unmount and leaves no timer', async () => {
+      const { resizeCallbacks, canvas, pipeline, unmount } =
+        await renderSizedPreview()
+      const callback = resizeCallbacks.at(-1)
+
+      vi.useFakeTimers()
+      try {
+        act(() => fireResize(callback, 400, 300))
+        act(() => fireResize(callback, 200, 150))
+        expect(vi.getTimerCount()).toBe(1)
+        pipeline.resize.mockClear()
+
+        unmount()
+
+        expect([canvas.width, canvas.height]).toEqual([200, 150])
+        expect(pipeline.resize).not.toHaveBeenCalled()
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('refits a replacement source at once and flushes the previous pending size', async () => {
+      const { resizeCallbacks, canvas, track, pipeline, props, rerender } =
+        await renderSizedPreview()
+      const firstCallback = resizeCallbacks.at(-1)
+
+      vi.useFakeTimers()
+      try {
+        act(() => fireResize(firstCallback, 400, 300))
+        act(() => fireResize(firstCallback, 200, 150))
+        expect(vi.getTimerCount()).toBe(1)
+        pipeline.resize.mockClear()
+
+        const portrait: DecodedImage = {
+          ...decodedImage,
+          width: 300,
+          height: 400,
+          data: new Uint16Array(300 * 400 * 3),
+          metadata: { width: 300, height: 400 },
+        }
+        props.imageRef.current = portrait
+        rerender(createElement(PreviewCanvas, { ...props, imageVersion: 2 }))
+
+        expect(pipeline.resize).toHaveBeenCalledExactlyOnceWith(200, 150)
+        expect(vi.getTimerCount()).toBe(0)
+        const nextCallback = resizeCallbacks.at(-1)
+        expect(nextCallback).not.toBe(firstCallback)
+
+        act(() => fireResize(nextCallback, 400, 300))
+
+        expect(track.style.width).toBe('225px')
+        expect(track.style.height).toBe('300px')
+        expect([canvas.width, canvas.height]).toEqual([225, 300])
+        expect(pipeline.resize).toHaveBeenLastCalledWith(225, 300)
+        expect(vi.getTimerCount()).toBe(0)
+        await act(async () => {
+          await Promise.resolve()
+        })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 })

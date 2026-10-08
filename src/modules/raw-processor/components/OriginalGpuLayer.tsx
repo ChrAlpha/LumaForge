@@ -5,6 +5,10 @@ import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline
 import { RawProcessingPipeline as DefaultRawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 import { gpuPreviewInputParams } from '~/lib/webgpu/uniforms'
 
+import {
+  backingStoreSize,
+  observeSettledBackingStore,
+} from '../hooks/preview/backing-store-resize'
 import { TECHNICAL_ORIGINAL_GPU_INPUT } from '../services/compare/original-reference-renderer'
 import { createRawUploadInput } from './preview-canvas-helpers'
 
@@ -30,9 +34,6 @@ function createDefaultOriginalPipeline(canvas: HTMLCanvasElement) {
   // move the primary preview to the CPU executor.
   return new DefaultRawProcessingPipeline(canvas, { reportFailures: false })
 }
-
-/** Trailing delay before the backing store follows a layout resize. */
-const ORIGINAL_RESIZE_SETTLE_MS = 90
 
 export function OriginalGpuLayer({
   imageRef,
@@ -155,64 +156,22 @@ export function OriginalGpuLayer({
     const canvas = canvasRef.current
     if (!layer || !canvas || typeof ResizeObserver === 'undefined') return
 
-    // Mirrors PreviewCanvas: CSS handles intermediate sizes while the stage
-    // insets animate; the backing store and re-render follow once settled.
-    let settleTimer: number | null = null
-    let pending: { width: number; height: number } | null = null
-    let hasFitOnce = false
-
-    const applyBackingStore = () => {
-      const next = pending
-      pending = null
-      if (!next) return
-      try {
-        if (canvas.width !== next.width || canvas.height !== next.height) {
-          canvas.width = next.width
-          canvas.height = next.height
+    // The layer fills the aspect-fitted track the processed canvas sizes, so
+    // its box already is the photo box; fitting it to the photo again would
+    // misalign the two layers.
+    return observeSettledBackingStore(layer, canvas, {
+      measure: (contentRect) => backingStoreSize(contentRect, 1),
+      onApply: () => {
+        try {
+          pipelineRef.current?.resize(canvas.width, canvas.height)
+          if (isInitialized && imageRef.current) {
+            pipelineRef.current?.render()
+          }
+        } catch (error) {
+          reportPipelineError(error)
         }
-        pipelineRef.current?.resize(canvas.width, canvas.height)
-        if (isInitialized && imageRef.current) {
-          pipelineRef.current?.render()
-        }
-      } catch (error) {
-        reportPipelineError(error)
-      }
-    }
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect
-        const dpr = Math.min(window.devicePixelRatio || 1, 2)
-        pending = {
-          width: Math.max(1, Math.round(width * dpr)),
-          height: Math.max(1, Math.round(height * dpr)),
-        }
-        if (settleTimer !== null) {
-          window.clearTimeout(settleTimer)
-          settleTimer = null
-        }
-        if (!hasFitOnce) {
-          hasFitOnce = true
-          applyBackingStore()
-          continue
-        }
-        settleTimer = window.setTimeout(() => {
-          settleTimer = null
-          applyBackingStore()
-        }, ORIGINAL_RESIZE_SETTLE_MS)
-      }
+      },
     })
-
-    resizeObserver.observe(layer)
-
-    return () => {
-      resizeObserver.disconnect()
-      if (settleTimer !== null) {
-        window.clearTimeout(settleTimer)
-        settleTimer = null
-        applyBackingStore()
-      }
-    }
   }, [imageRef, isInitialized, reportPipelineError])
 
   useEffect(() => {
