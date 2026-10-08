@@ -3147,4 +3147,474 @@ describe('preview canvas upload descriptor', () => {
       }
     })
   })
+
+  describe('stage frame markup', () => {
+    interface MarkupNode {
+      tag: string
+      attrs: Record<string, string>
+      children: MarkupNode[]
+    }
+
+    const OUTLINED_ATTRIBUTES = new Set([
+      'class',
+      'alt',
+      'src',
+      'width',
+      'height',
+      'draggable',
+      'decoding',
+      'aria-hidden',
+    ])
+
+    /** The stage DOM as tags, classes, data attributes and accessibility. */
+    function outline(element: Element): MarkupNode {
+      const attrs: Record<string, string> = {}
+      for (const { name, value } of element.attributes) {
+        if (OUTLINED_ATTRIBUTES.has(name) || name.startsWith('data-')) {
+          attrs[name] = value
+        }
+      }
+      return {
+        tag: element.tagName.toLowerCase(),
+        attrs,
+        children: Array.from(element.children, outline),
+      }
+    }
+
+    function node(
+      tag: string,
+      attrs: Record<string, string>,
+      children: MarkupNode[] = [],
+    ): MarkupNode {
+      return { tag, attrs, children }
+    }
+
+    const FRAME_CLASS =
+      'relative w-full h-full flex items-center justify-center bg-[var(--color-preview-mat)]'
+
+    function frameOutline(container: HTMLElement) {
+      const frame = container.querySelector('[data-raw-preview-frame]')
+      expect(frame).not.toBeNull()
+      expect(container.children).toHaveLength(1)
+      expect(container.firstElementChild).toBe(frame)
+      return outline(frame!)
+    }
+
+    const snapshot: OriginalReferenceSnapshot = {
+      key: 'original-reference|session:test',
+      objectUrl: 'blob:original-reference',
+      width: 400,
+      height: 300,
+      source: 'quick',
+      mimeType: 'image/jpeg',
+      estimatedBytes: 1024,
+    }
+
+    it('lays out the empty stage with its frame, track, surface, canvas and empty state', async () => {
+      const { container } = render(
+        createElement(PreviewCanvas, {
+          imageRef: { current: null },
+          imageVersion: 0,
+          color: defaultColor,
+          viewMode: 'processed' as const,
+          lutDataRef: { current: null },
+          lutDataVersion: 0,
+          className: 'stage-extra',
+        }),
+      )
+      await waitFor(() => expect(pipelineMock.instances).toHaveLength(1))
+
+      expect(frameOutline(container)).toEqual(
+        node(
+          'div',
+          {
+            class: `${FRAME_CLASS} stage-extra`,
+            'data-raw-preview-frame': 'true',
+            'data-display-source': 'none',
+          },
+          [
+            node(
+              'div',
+              {
+                class: 'raw-preview-track',
+                'data-raw-compare-track': 'image',
+                'data-preview-track-ready': 'false',
+              },
+              [
+                node(
+                  'div',
+                  {
+                    class: 'raw-preview-surface',
+                    'data-raw-preview-surface': 'true',
+                  },
+                  [
+                    node(
+                      'div',
+                      {
+                        class: 'raw-preview-processed-layer',
+                        'data-compare-mode': 'off',
+                      },
+                      [node('canvas', { class: 'raw-preview-canvas' })],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            node(
+              'div',
+              { class: 'absolute inset-0 flex items-center justify-center' },
+              [node('span', { class: 'text-text-tertiary text-sm' })],
+            ),
+          ],
+        ),
+      )
+      expect(screen.getByText('No image loaded')).toBeTruthy()
+    })
+
+    it('shows the embedded preview over a hidden canvas and marks the frame interactive', async () => {
+      const frameRef = vi.fn()
+      const { container, unmount } = render(
+        createElement(PreviewCanvas, {
+          imageRef: { current: null },
+          imageVersion: 0,
+          color: defaultColor,
+          viewMode: 'processed' as const,
+          lutDataRef: { current: null },
+          lutDataVersion: 0,
+          embeddedPreviewUrl: 'blob:embedded-preview',
+          displaySource: 'embedded',
+          onPreviewViewportChange: vi.fn(),
+          frameRef,
+        }),
+      )
+      await waitFor(() => expect(pipelineMock.instances).toHaveLength(1))
+
+      const frame = container.querySelector('[data-raw-preview-frame]')
+      expect(frameRef).toHaveBeenCalledWith(frame)
+      expect(frameOutline(container)).toEqual(
+        node(
+          'div',
+          {
+            class: `${FRAME_CLASS} raw-preview-frame-interactive`,
+            'data-raw-preview-frame': 'true',
+            'data-display-source': 'embedded',
+          },
+          [
+            node(
+              'div',
+              {
+                class: 'raw-preview-track',
+                'data-raw-compare-track': 'image',
+                'data-preview-track-ready': 'false',
+              },
+              [
+                node(
+                  'div',
+                  {
+                    class: 'raw-preview-surface',
+                    'data-raw-preview-surface': 'true',
+                  },
+                  [
+                    node(
+                      'div',
+                      {
+                        class: 'raw-preview-processed-layer',
+                        'data-compare-mode': 'off',
+                      },
+                      [
+                        node('canvas', {
+                          class: 'raw-preview-canvas opacity-0',
+                        }),
+                      ],
+                    ),
+                    node('img', {
+                      src: 'blob:embedded-preview',
+                      alt: 'Embedded RAW preview',
+                      class: 'raw-preview-embedded',
+                    }),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      )
+      expect(screen.getByAltText('Embedded RAW preview')).toBe(
+        container.querySelector('.raw-preview-embedded'),
+      )
+
+      unmount()
+      expect(frameRef).toHaveBeenLastCalledWith(null)
+    })
+
+    it('layers the dual-gpu original under the clipped processed layer', async () => {
+      const { container } = render(
+        createElement(PreviewCanvas, {
+          imageRef: { current: decodedImage },
+          imageVersion: 1,
+          color: defaultColor,
+          viewMode: 'compare',
+          lutDataRef: { current: null },
+          lutDataVersion: 0,
+          dualGpuAllowed: true,
+        }),
+      )
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-compare-mode="dual-gpu"]'),
+        ).toBeTruthy()
+      })
+
+      const surface = frameOutline(container).children[0]!.children[0]!
+      expect(surface.children).toEqual([
+        node(
+          'div',
+          { class: 'raw-preview-original-gpu-shell raw-preview-layer-clipped' },
+          [
+            node(
+              'div',
+              {
+                class: 'raw-preview-original-gpu-layer',
+                'aria-hidden': 'true',
+              },
+              [node('canvas', { class: 'raw-preview-original-gpu-canvas' })],
+            ),
+          ],
+        ),
+        node(
+          'div',
+          {
+            class: 'raw-preview-processed-layer raw-preview-layer-clipped',
+            'data-compare-mode': 'dual-gpu',
+          },
+          [node('canvas', { class: 'raw-preview-canvas' })],
+        ),
+      ])
+    })
+
+    it('hides a warming original GPU layer and shows the embedded original under the processed layer', async () => {
+      const originalInitialize = deferred<void>()
+      pipelineMock.initialize.mockImplementation((canvas: HTMLCanvasElement) =>
+        canvas.className.includes('raw-preview-original-gpu-canvas')
+          ? originalInitialize.promise
+          : Promise.resolve(),
+      )
+      const { container } = render(
+        createElement(PreviewCanvas, {
+          imageRef: { current: { ...decodedImage, source: 'quick' } },
+          imageVersion: 1,
+          color: defaultColor,
+          viewMode: 'compare',
+          lutDataRef: { current: null },
+          lutDataVersion: 0,
+          embeddedPreviewUrl: 'blob:embedded-preview',
+          displaySource: 'quick',
+          dualGpuAllowed: true,
+        }),
+      )
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-compare-mode="embedded-fallback"]'),
+        ).toBeTruthy()
+      })
+
+      const surface = frameOutline(container).children[0]!.children[0]!
+      expect(surface.children).toEqual([
+        node(
+          'div',
+          {
+            class:
+              'raw-preview-original-gpu-shell opacity-0 pointer-events-none',
+          },
+          [
+            node(
+              'div',
+              {
+                class: 'raw-preview-original-gpu-layer',
+                'aria-hidden': 'true',
+              },
+              [node('canvas', { class: 'raw-preview-original-gpu-canvas' })],
+            ),
+          ],
+        ),
+        node(
+          'div',
+          {
+            class: 'raw-preview-original-layer',
+            'aria-hidden': 'true',
+            'data-original-reference-source': 'embedded',
+          },
+          [
+            node('img', {
+              src: 'blob:embedded-preview',
+              alt: '',
+              'aria-hidden': 'true',
+              draggable: 'false',
+              class: 'raw-preview-original-image',
+              decoding: 'async',
+            }),
+          ],
+        ),
+        node(
+          'div',
+          {
+            class: 'raw-preview-processed-layer raw-preview-layer-clipped',
+            'data-compare-mode': 'embedded-fallback',
+          },
+          [node('canvas', { class: 'raw-preview-canvas' })],
+        ),
+      ])
+
+      await act(async () => {
+        originalInitialize.resolve()
+        await originalInitialize.promise
+        await Promise.resolve()
+      })
+    })
+
+    it('places the JPEG original under the clipped processed layer', async () => {
+      const { container } = render(
+        createElement(PreviewCanvas, {
+          imageRef: { current: decodedImage },
+          imageVersion: 1,
+          color: defaultColor,
+          viewMode: 'compare',
+          lutDataRef: { current: null },
+          lutDataVersion: 0,
+          dualGpuAllowed: false,
+          originalReferenceSnapshot: snapshot,
+        }),
+      )
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-compare-mode="jpeg-fallback"]'),
+        ).toBeTruthy()
+      })
+
+      const surface = frameOutline(container).children[0]!.children[0]!
+      expect(surface.children).toEqual([
+        node(
+          'div',
+          {
+            class: 'raw-preview-original-layer',
+            'aria-hidden': 'true',
+            'data-original-reference-source': 'quick',
+          },
+          [
+            node('img', {
+              src: 'blob:original-reference',
+              width: '400',
+              height: '300',
+              alt: '',
+              'aria-hidden': 'true',
+              draggable: 'false',
+              class: 'raw-preview-original-image',
+              decoding: 'async',
+            }),
+          ],
+        ),
+        node(
+          'div',
+          {
+            class: 'raw-preview-processed-layer raw-preview-layer-clipped',
+            'data-compare-mode': 'jpeg-fallback',
+          },
+          [node('canvas', { class: 'raw-preview-canvas' })],
+        ),
+      ])
+    })
+
+    it('prefers the supplied original reference fallback reason on a processed-only layer', async () => {
+      const { container } = render(
+        createElement(PreviewCanvas, {
+          imageRef: { current: decodedImage },
+          imageVersion: 1,
+          color: defaultColor,
+          viewMode: 'compare',
+          lutDataRef: { current: null },
+          lutDataVersion: 0,
+          dualGpuAllowed: false,
+          originalReferenceFallbackReason: 'snapshot-budget-exceeded',
+        }),
+      )
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-compare-mode="processed-only"]'),
+        ).toBeTruthy()
+      })
+
+      const surface = frameOutline(container).children[0]!.children[0]!
+      expect(surface.children).toEqual([
+        node(
+          'div',
+          {
+            class: 'raw-preview-processed-layer',
+            'data-compare-mode': 'processed-only',
+            'data-compare-fallback-reason': 'snapshot-budget-exceeded',
+          },
+          [node('canvas', { class: 'raw-preview-canvas' })],
+        ),
+      ])
+    })
+
+    it('places the embedded handoff preview beside the track, outside the zoomed surface', () => {
+      const { container } = render(
+        createElement(PreviewCanvas, {
+          imageRef: { current: { ...decodedImage, source: 'quick' } },
+          imageVersion: 1,
+          color: defaultColor,
+          viewMode: 'processed' as const,
+          lutDataRef: { current: null },
+          lutDataVersion: 0,
+          embeddedPreviewUrl: 'blob:embedded-preview',
+          displaySource: 'quick',
+        }),
+      )
+
+      const frame = frameOutline(container)
+      expect(frame.children.map((child) => child.attrs.class)).toEqual([
+        'raw-preview-track',
+        'raw-preview-handoff-preview',
+      ])
+      expect(frame.children[1]).toEqual(
+        node('img', {
+          src: 'blob:embedded-preview',
+          alt: '',
+          'aria-hidden': 'true',
+          draggable: 'false',
+          class: 'raw-preview-handoff-preview',
+          'data-raw-preview-handoff-preview': 'true',
+        }),
+      )
+    })
+
+    it('covers the stage with the error overlay instead of the empty state', async () => {
+      pipelineMock.initialize.mockRejectedValue(new Error('adapter lost'))
+      const { container } = render(
+        createElement(PreviewCanvas, {
+          imageRef: { current: null },
+          imageVersion: 0,
+          color: defaultColor,
+          viewMode: 'processed' as const,
+          lutDataRef: { current: null },
+          lutDataVersion: 0,
+        }),
+      )
+      await waitFor(() => {
+        expect(screen.getByText('Preview unavailable')).toBeTruthy()
+      })
+
+      const frame = frameOutline(container)
+      expect(frame.children).toHaveLength(2)
+      expect(frame.children[0]!.attrs.class).toBe('raw-preview-track')
+      const overlay = frame.children[1]!
+      expect(overlay.attrs.class).toBe(
+        'absolute inset-0 z-[4] flex items-center justify-center bg-background/80',
+      )
+      expect(screen.queryByText('No image loaded')).toBeNull()
+      expect(
+        screen.getByRole('heading', { name: 'Preview unavailable' }),
+      ).toBeTruthy()
+    })
+  })
 })
