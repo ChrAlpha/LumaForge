@@ -8,7 +8,10 @@ import {
   derivePreviewCompareReadiness,
   derivePreviewFrameStatusTransition,
   derivePreviewTrackReadinessTransition,
+  EMPTY_ORIGINAL_GPU_FRAME_STATUS,
   EMPTY_PREVIEW_FRAME_STATUS,
+  getOriginalGpuGenerationKey,
+  getProcessedImageGenerationKey,
 } from './preview-compare-readiness'
 
 const quickProcessedFrame: PreviewFrameStatus = {
@@ -133,6 +136,190 @@ describe('derivePreviewCompareReadiness', () => {
       }),
     ).toMatchObject({
       originalGpuLayerEligible: true,
+      embeddedPreviewFallbackReady: false,
+    })
+  })
+})
+
+describe('preview generation keys', () => {
+  const image = {
+    imageVersion: 2,
+    displaySource: 'bounded-hq' as const,
+    imageSource: 'bounded-hq' as const,
+    imageWidth: 1600,
+    imageHeight: 1200,
+    hasImageData: true,
+  }
+
+  it('keys the processed frame by its image alone, never by the view', () => {
+    // The processed surface redraws for the original view, but the image on
+    // the GPU and its first-frame proof stay valid across view changes.
+    const processedKey = getProcessedImageGenerationKey(image)
+    for (const viewMode of ['processed', 'original', 'compare'] as const) {
+      expect(derive({ ...image, viewMode }).processedImageGenerationKey).toBe(
+        processedKey,
+      )
+    }
+    expect(processedKey).toBe('2:bounded-hq:bounded-hq:1600:1200:data')
+    expect(
+      getProcessedImageGenerationKey({ ...image, imageVersion: 3 }),
+    ).not.toBe(processedKey)
+    expect(
+      getProcessedImageGenerationKey({ ...image, hasImageData: false }),
+    ).not.toBe(processedKey)
+  })
+
+  it('keys the original layer by view mode, compare policy, and suspension', () => {
+    const base = {
+      imageVersion: 2,
+      displaySource: 'bounded-hq' as const,
+      dualGpuAllowed: true,
+      viewMode: 'compare' as const,
+      suspended: false,
+    }
+    const key = getOriginalGpuGenerationKey(base)
+    expect(key).toBe('2:bounded-hq:dual:compare:active')
+    expect(
+      getOriginalGpuGenerationKey({ ...base, viewMode: 'processed' }),
+    ).not.toBe(key)
+    expect(
+      getOriginalGpuGenerationKey({ ...base, dualGpuAllowed: false }),
+    ).not.toBe(key)
+    expect(getOriginalGpuGenerationKey({ ...base, suspended: true })).not.toBe(
+      key,
+    )
+  })
+})
+
+describe('derivePreviewCompareReadiness output selection', () => {
+  const currentProcessedFrame: PreviewFrameStatus = {
+    generationKey: '2:bounded-hq:bounded-hq:1600:1200:data',
+    displaySource: 'bounded-hq',
+    source: 'bounded-hq',
+    state: 'ready',
+  }
+
+  it('keeps the processed frame ready across view modes while only compare mounts the original layer', () => {
+    for (const viewMode of ['processed', 'original'] as const) {
+      expect(
+        derive({ viewMode, processedFrameStatus: currentProcessedFrame }),
+      ).toMatchObject({
+        currentProcessedFrameReady: true,
+        processedPreviewVisible: true,
+        originalGpuLayerEligible: false,
+        shouldMountOriginalGpuLayer: false,
+        retainedCompareFrameReady: false,
+        compareFrameBridgeReady: false,
+        embeddedPreviewFallbackReady: false,
+        shouldDelayProcessedCompareRender: false,
+      })
+    }
+  })
+
+  it('never treats a ready original frame from another view as current', () => {
+    expect(
+      derive({
+        viewMode: 'compare',
+        processedFrameStatus: currentProcessedFrame,
+        originalGpuStatus: {
+          generationKey: '2:bounded-hq:dual:processed:active',
+          displaySource: 'bounded-hq',
+          state: 'ready',
+        },
+      }),
+    ).toMatchObject({
+      originalGpuReady: false,
+      originalGpuFailed: false,
+      retainedOriginalGpuFrameReady: false,
+      embeddedPreviewFallbackReady: true,
+    })
+  })
+
+  it('keeps processed visibility behind the aspect-fit track', () => {
+    expect(
+      derive({
+        trackReady: false,
+        processedFrameStatus: currentProcessedFrame,
+      }),
+    ).toMatchObject({
+      currentProcessedFrameReady: true,
+      processedPreviewVisible: false,
+    })
+  })
+})
+
+describe('derivePreviewCompareReadiness obsolete work', () => {
+  it('never marks a frame ready from an obsolete processed generation', () => {
+    expect(
+      derive({
+        imageVersion: 3,
+        processedFrameStatus: {
+          generationKey: '2:bounded-hq:bounded-hq:1600:1200:data',
+          displaySource: 'bounded-hq',
+          source: 'bounded-hq',
+          state: 'ready',
+        },
+        originalGpuStatus: EMPTY_ORIGINAL_GPU_FRAME_STATUS,
+      }),
+    ).toMatchObject({
+      currentProcessedFrameReady: false,
+      processedPreviewVisible: false,
+      // Retention bridges only a quick frame into its bounded-HQ successor.
+      retainedProcessedFrameReady: false,
+      compareFrameBridgeReady: false,
+    })
+  })
+
+  it('isolates an obsolete original failure from the current compare', () => {
+    expect(
+      derive({
+        originalGpuStatus: {
+          generationKey: '1:quick:dual:compare:active',
+          displaySource: 'quick',
+          state: 'failed',
+        },
+      }),
+    ).toMatchObject({
+      originalGpuFailed: false,
+      shouldMountOriginalGpuLayer: true,
+      retainedOriginalGpuFrameReady: false,
+      retainedCompareFrameReady: false,
+      shouldDelayProcessedCompareRender: false,
+    })
+  })
+
+  it('unmounts only the original layer after its current generation fails', () => {
+    const failed = derive({
+      processedFrameStatus: {
+        generationKey: '2:bounded-hq:bounded-hq:1600:1200:data',
+        displaySource: 'bounded-hq',
+        source: 'bounded-hq',
+        state: 'ready',
+      },
+      originalGpuStatus: {
+        generationKey: '2:bounded-hq:dual:compare:active',
+        displaySource: 'bounded-hq',
+        state: 'failed',
+      },
+    })
+    expect(failed).toMatchObject({
+      originalGpuFailed: true,
+      originalGpuReady: false,
+      originalGpuLayerEligible: true,
+      shouldMountOriginalGpuLayer: false,
+      currentProcessedFrameReady: true,
+      processedPreviewVisible: true,
+    })
+  })
+
+  it('withholds the original layer and retention while suspended', () => {
+    expect(derive({ suspended: true })).toMatchObject({
+      originalGpuGenerationKey: '2:bounded-hq:dual:compare:suspended',
+      originalGpuLayerEligible: false,
+      shouldMountOriginalGpuLayer: false,
+      retainedOriginalGpuFrameReady: false,
+      retainedCompareFrameReady: false,
+      shouldDelayProcessedCompareRender: false,
       embeddedPreviewFallbackReady: false,
     })
   })

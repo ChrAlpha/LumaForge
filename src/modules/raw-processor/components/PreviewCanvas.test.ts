@@ -9,6 +9,7 @@ import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
+import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
 import { DEFAULT_PREVIEW_VIEWPORT } from '../services/preview/preview-viewport'
@@ -184,6 +185,55 @@ const decodedImage: DecodedImage = {
 function getPipelineParamCalls() {
   return pipelineMock.instances.flatMap((instance) =>
     instance.setParams.mock.calls.map(([params]) => params),
+  )
+}
+
+function processedPipelines() {
+  return pipelineMock.instances.filter(
+    (instance) =>
+      !instance.canvas.className.includes('raw-preview-original-gpu-canvas'),
+  )
+}
+
+function originalPipelines() {
+  return pipelineMock.instances.filter((instance) =>
+    instance.canvas.className.includes('raw-preview-original-gpu-canvas'),
+  )
+}
+
+function createTestLut() {
+  return {
+    size: 2,
+    data: new Float32Array(2 * 2 * 2 * 3),
+    domainMin: [0, 0, 0] as [number, number, number],
+    domainMax: [1, 1, 1] as [number, number, number],
+    inputProfile: 'display-srgb' as const,
+    profileResolution: { kind: 'unknown' as const },
+  }
+}
+
+function captureResizeObservers() {
+  const callbacks: ResizeObserverCallback[] = []
+  vi.stubGlobal(
+    'ResizeObserver',
+    vi.fn().mockImplementation((callback: ResizeObserverCallback) => ({
+      observe: vi.fn(() => {
+        callbacks.push(callback)
+      }),
+      disconnect: vi.fn(),
+    })),
+  )
+  return callbacks
+}
+
+function fireResize(
+  callback: ResizeObserverCallback | undefined,
+  width: number,
+  height: number,
+) {
+  callback?.(
+    [{ contentRect: elementRect({ width, height }) } as ResizeObserverEntry],
+    {} as ResizeObserver,
   )
 }
 
@@ -1465,6 +1515,20 @@ describe('preview canvas upload descriptor', () => {
     expect(
       container.querySelector('[data-compare-mode="dual-gpu"]'),
     ).toBeTruthy()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    // Each layer uploads the new generation once. The processed layer draws
+    // it twice: once from the original layer's ready handoff and once when
+    // the retained-compare delay lifts. Both draw the same input.
+    const counts = (kind: 'original' | 'processed', op: 'upload' | 'render') =>
+      pipelineMock.pipelineEvents.filter(
+        (event) => event.kind === kind && event.op === op,
+      ).length
+    expect(counts('original', 'upload')).toBe(1)
+    expect(counts('original', 'render')).toBe(1)
+    expect(counts('processed', 'upload')).toBe(1)
+    expect(counts('processed', 'render')).toBe(2)
   })
 
   it('keeps retained dual-gpu compare visible while bounded-HQ layers catch up', async () => {
@@ -2004,5 +2068,439 @@ describe('preview canvas upload descriptor', () => {
     expect(onPreviewViewportChange).toHaveBeenCalledWith(
       DEFAULT_PREVIEW_VIEWPORT,
     )
+  })
+  it('redraws the processed surface only when the view changes its output selection', async () => {
+    const onStatsUpdate = vi.fn()
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      color: defaultColor,
+      viewMode: 'processed' as const,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      previewViewport: DEFAULT_PREVIEW_VIEWPORT,
+      onPreviewViewportChange: vi.fn(),
+      onStatsUpdate,
+    } satisfies ComponentProps<typeof PreviewCanvas>
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() => expect(onStatsUpdate).toHaveBeenCalledOnce())
+    const pipeline = pipelineMock.instances[0]!
+    pipeline.setParams.mockClear()
+    pipeline.render.mockClear()
+    pipeline.uploadImage.mockClear()
+    pipeline.waitForGpu.mockClear()
+
+    // Compare draws the same processed output; zoom and pan are CSS only.
+    rerender(createElement(PreviewCanvas, { ...props, viewMode: 'compare' }))
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        viewMode: 'compare',
+        previewViewport: { zoom: 2, panX: 40, panY: 0, fitMode: 'custom' },
+      }),
+    )
+    expect(pipeline.setParams).not.toHaveBeenCalled()
+    expect(pipeline.render).not.toHaveBeenCalled()
+
+    // The original view selects a different executor output: one redraw of
+    // the technical original, reusing the image already on the GPU.
+    await act(async () => {
+      rerender(createElement(PreviewCanvas, { ...props, viewMode: 'original' }))
+    })
+    expect(pipeline.setParams).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ viewMode: 'original' }),
+    )
+    expect(pipeline.render).toHaveBeenCalledOnce()
+
+    await act(async () => {
+      rerender(createElement(PreviewCanvas, { ...props, viewMode: 'compare' }))
+    })
+    expect(pipeline.setParams).toHaveBeenCalledTimes(2)
+    expect(pipeline.setParams).toHaveBeenLastCalledWith(
+      expect.objectContaining({ viewMode: 'processed' }),
+    )
+    expect(pipeline.render).toHaveBeenCalledTimes(2)
+    expect(pipeline.uploadImage).not.toHaveBeenCalled()
+    expect(pipeline.waitForGpu).not.toHaveBeenCalled()
+    expect(onStatsUpdate).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps both dual-gpu layers still across viewport changes and drops only the original layer outside compare', async () => {
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      color: defaultColor,
+      viewMode: 'compare' as const,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      dualGpuAllowed: true,
+      previewViewport: DEFAULT_PREVIEW_VIEWPORT,
+      onPreviewViewportChange: vi.fn(),
+    } satisfies ComponentProps<typeof PreviewCanvas>
+    const { container, rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-compare-mode="dual-gpu"]'),
+      ).toBeTruthy(),
+    )
+    const [processed] = processedPipelines()
+    const [original] = originalPipelines()
+    expect(processed!.render).toHaveBeenCalledOnce()
+    expect(original!.render).toHaveBeenCalledOnce()
+    processed!.render.mockClear()
+    processed!.setParams.mockClear()
+    original!.render.mockClear()
+
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        previewViewport: { zoom: 2, panX: 80, panY: 0, fitMode: 'custom' },
+      }),
+    )
+    expect(processed!.render).not.toHaveBeenCalled()
+    expect(original!.render).not.toHaveBeenCalled()
+
+    await act(async () => {
+      rerender(
+        createElement(PreviewCanvas, { ...props, viewMode: 'processed' }),
+      )
+    })
+    expect(
+      container.querySelector('.raw-preview-original-gpu-layer'),
+    ).toBeNull()
+    expect(original!.disposeMock).toHaveBeenCalledOnce()
+    expect(processed!.setParams).not.toHaveBeenCalled()
+    expect(processed!.render).not.toHaveBeenCalled()
+
+    // Returning to compare builds and draws a new original layer; the
+    // processed surface already shows the processed output.
+    await act(async () => {
+      rerender(createElement(PreviewCanvas, { ...props, viewMode: 'compare' }))
+    })
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-compare-mode="dual-gpu"]'),
+      ).toBeTruthy(),
+    )
+    expect(originalPipelines()).toHaveLength(2)
+    expect(originalPipelines()[1]!.render).toHaveBeenCalledOnce()
+    expect(processed!.render).not.toHaveBeenCalled()
+    expect(processed!.disposeMock).not.toHaveBeenCalled()
+  })
+
+  it('uploads, draws, and fences a bounded-HQ frame once outside compare', async () => {
+    const onStatsUpdate = vi.fn()
+    const imageRef: RefObject<DecodedImage | null> = {
+      current: { ...decodedImage, source: 'quick' as const },
+    }
+    const props: ComponentProps<typeof PreviewCanvas> = {
+      imageRef,
+      imageVersion: 1,
+      color: defaultColor,
+      viewMode: 'processed',
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      displaySource: 'quick',
+      onStatsUpdate,
+    }
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() => expect(onStatsUpdate).toHaveBeenCalledOnce())
+    const pipeline = pipelineMock.instances[0]!
+    pipeline.uploadImage.mockClear()
+    pipeline.render.mockClear()
+    pipeline.waitForGpu.mockClear()
+
+    imageRef.current = {
+      ...decodedImage,
+      source: 'bounded-hq',
+      width: 1600,
+      height: 1200,
+      data: new Uint16Array(1600 * 1200 * 3),
+    }
+    await act(async () => {
+      rerender(
+        createElement(PreviewCanvas, {
+          ...props,
+          imageVersion: 2,
+          displaySource: 'bounded-hq',
+        }),
+      )
+    })
+
+    expect(pipeline.uploadImage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ width: 1600, height: 1200 }),
+    )
+    expect(pipeline.render).toHaveBeenCalledOnce()
+    expect(pipeline.waitForGpu).toHaveBeenCalledOnce()
+    expect(onStatsUpdate).toHaveBeenCalledTimes(2)
+    expect(pipelineMock.instances).toHaveLength(1)
+  })
+
+  it('draws the latest image and color once a late initialization completes', async () => {
+    const initialize = deferred<void>()
+    pipelineMock.initialize.mockReturnValueOnce(initialize.promise)
+    const onStatsUpdate = vi.fn()
+    const imageRef = { current: decodedImage }
+    const props = {
+      imageRef,
+      imageVersion: 1,
+      color: defaultColor,
+      viewMode: 'processed' as const,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      onStatsUpdate,
+    }
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    imageRef.current = { ...decodedImage, width: 420, height: 320 }
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        imageVersion: 2,
+        color: { ...defaultColor, userExposureEv: 0.5 },
+      }),
+    )
+    const pipeline = pipelineMock.instances[0]!
+    expect(pipeline.uploadImage).not.toHaveBeenCalled()
+    expect(pipeline.render).not.toHaveBeenCalled()
+
+    await act(async () => initialize.resolve())
+
+    await waitFor(() => expect(onStatsUpdate).toHaveBeenCalledOnce())
+    expect(pipeline.uploadImage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ width: 420, height: 320 }),
+    )
+    expect(pipeline.setParams).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ userExposureEv: 0.5 }),
+    )
+    expect(pipeline.render).toHaveBeenCalledOnce()
+    expect(pipeline.waitForGpu).toHaveBeenCalledOnce()
+  })
+
+  it('reuploads and redraws once on resume while the suspended pipeline stays still', async () => {
+    const onStatsUpdate = vi.fn()
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      color: defaultColor,
+      viewMode: 'processed' as const,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      onStatsUpdate,
+    }
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() => expect(onStatsUpdate).toHaveBeenCalledOnce())
+    const suspendedPipeline = pipelineMock.instances[0]!
+
+    rerender(createElement(PreviewCanvas, { ...props, suspended: true }))
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        suspended: true,
+        color: { ...defaultColor, userExposureEv: 0.5 },
+      }),
+    )
+    expect(suspendedPipeline.render).toHaveBeenCalledOnce()
+    expect(pipelineMock.instances).toHaveLength(1)
+
+    await act(async () => {
+      rerender(
+        createElement(PreviewCanvas, {
+          ...props,
+          color: { ...defaultColor, userExposureEv: 0.5 },
+        }),
+      )
+    })
+    await waitFor(() => expect(onStatsUpdate).toHaveBeenCalledTimes(2))
+    const resumedPipeline = pipelineMock.instances[1]!
+    expect(resumedPipeline.uploadImage).toHaveBeenCalledOnce()
+    expect(resumedPipeline.setParams).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ userExposureEv: 0.5 }),
+    )
+    expect(resumedPipeline.render).toHaveBeenCalledOnce()
+    // A new pipeline proves its first frame on the GPU again.
+    expect(resumedPipeline.waitForGpu).toHaveBeenCalledOnce()
+    expect(suspendedPipeline.render).toHaveBeenCalledOnce()
+  })
+
+  it('never marks a frame ready from GPU work that outlives an external disposal', async () => {
+    const completed = deferred<void>()
+    pipelineMock.waitForGpu.mockReturnValue(completed.promise)
+    const resizeCallbacks = captureResizeObservers()
+    const onStatsUpdate = vi.fn()
+    const { container } = render(
+      createElement(PreviewCanvas, {
+        imageRef: { current: { ...decodedImage, source: 'quick' as const } },
+        imageVersion: 1,
+        color: defaultColor,
+        viewMode: 'processed' as const,
+        lutDataRef: { current: null },
+        lutDataVersion: 0,
+        embeddedPreviewUrl: 'blob:embedded-preview',
+        displaySource: 'quick',
+        onStatsUpdate,
+      }),
+    )
+    await waitFor(() => expect(pipelineMock.waitForGpu).toHaveBeenCalled())
+    act(() => fireResize(resizeCallbacks[0], 400, 300))
+
+    const pipeline = pipelineMock.instances[0]!
+    act(() => {
+      pipeline.dispose({ releaseContext: true })
+    })
+    await act(async () => completed.resolve())
+
+    expect(onStatsUpdate).not.toHaveBeenCalled()
+    expect(
+      container.querySelector('[data-raw-preview-handoff-preview]'),
+    ).toHaveAttribute('src', 'blob:embedded-preview')
+    expect(screen.queryByText('Preview unavailable')).toBeNull()
+  })
+
+  it('isolates an original layer failure from the processed surface', async () => {
+    vi.mocked(RawProcessingPipeline).mockClear()
+    pipelineMock.initialize.mockImplementation((canvas: HTMLCanvasElement) =>
+      canvas.className.includes('raw-preview-original-gpu-canvas')
+        ? Promise.reject(new Error('Original layer failed'))
+        : Promise.resolve(),
+    )
+    const onPipelineChange = vi.fn()
+    const onStatsUpdate = vi.fn()
+    const onRequestOriginalReferenceFallback = vi.fn()
+    const { container } = render(
+      createElement(PreviewCanvas, {
+        imageRef: { current: decodedImage },
+        imageVersion: 1,
+        color: defaultColor,
+        viewMode: 'compare',
+        lutDataRef: { current: null },
+        lutDataVersion: 0,
+        dualGpuAllowed: true,
+        onPipelineChange,
+        onStatsUpdate,
+        onRequestOriginalReferenceFallback,
+      }),
+    )
+
+    await waitFor(() =>
+      expect(onRequestOriginalReferenceFallback).toHaveBeenCalledOnce(),
+    )
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-compare-mode="processed-only"]'),
+      ).toHaveAttribute(
+        'data-compare-fallback-reason',
+        'jpeg-fallback-unavailable',
+      ),
+    )
+    // The original layer never reports to the primary preview's failure
+    // channel, so its failure cannot move the preview to the CPU executor.
+    const constructorCalls = vi.mocked(RawProcessingPipeline).mock.calls
+    expect(constructorCalls).toContainEqual([
+      expect.objectContaining({ className: 'raw-preview-original-gpu-canvas' }),
+      { reportFailures: false },
+    ])
+    expect(constructorCalls).toContainEqual([
+      expect.objectContaining({ className: 'raw-preview-canvas' }),
+    ])
+    expect(
+      container.querySelector('.raw-preview-original-gpu-layer'),
+    ).toBeNull()
+    const [processed] = processedPipelines()
+    expect(processed!.render).toHaveBeenCalledOnce()
+    expect(processed!.disposeMock).not.toHaveBeenCalled()
+    expect(onStatsUpdate).toHaveBeenCalledOnce()
+    expect(onPipelineChange).not.toHaveBeenCalledWith(null)
+    expect(screen.queryByText('Preview unavailable')).toBeNull()
+  })
+
+  it('withholds readiness from in-flight frames once the selected LUT fails to upload', async () => {
+    const firstFrame = deferred<void>()
+    pipelineMock.waitForGpu.mockReturnValue(firstFrame.promise)
+    const resizeCallbacks = captureResizeObservers()
+    const onStatsUpdate = vi.fn()
+    const lutDataRef = { current: createTestLut() }
+    const props = {
+      imageRef: { current: { ...decodedImage, source: 'quick' as const } },
+      imageVersion: 1,
+      color: { ...defaultColor, styleKind: 'custom' as const },
+      viewMode: 'processed' as const,
+      lutDataRef,
+      lutDataVersion: 1,
+      embeddedPreviewUrl: 'blob:embedded-preview',
+      displaySource: 'quick',
+      onStatsUpdate,
+    } satisfies ComponentProps<typeof PreviewCanvas>
+    const { container, rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() => expect(pipelineMock.waitForGpu).toHaveBeenCalled())
+    act(() => fireResize(resizeCallbacks[0], 400, 300))
+    const pipeline = pipelineMock.instances[0]!
+    pipeline.uploadLUT.mockImplementationOnce(() => {
+      throw new Error('Failed to create LUT texture')
+    })
+    pipeline.render.mockClear()
+
+    lutDataRef.current = createTestLut()
+    rerender(createElement(PreviewCanvas, { ...props, lutDataVersion: 2 }))
+    await act(async () => firstFrame.resolve())
+
+    // The frame fenced before the failure would have published the old look
+    // or a LUT-less one; it is superseded, and the handoff image stays up
+    // until the CPU executor takes over.
+    expect(pipeline.render).not.toHaveBeenCalled()
+    expect(onStatsUpdate).not.toHaveBeenCalled()
+    expect(
+      container.querySelector('[data-raw-preview-handoff-preview]'),
+    ).toHaveAttribute('src', 'blob:embedded-preview')
+    expect(screen.queryByText('Preview unavailable')).toBeNull()
+  })
+
+  it('draws no LUT-less frame for edits or resizes after the selected LUT fails to upload', async () => {
+    const resizeCallbacks = captureResizeObservers()
+    const onStatsUpdate = vi.fn()
+    const lutDataRef = { current: createTestLut() }
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      color: { ...defaultColor, styleKind: 'custom' as const },
+      viewMode: 'processed' as const,
+      lutDataRef,
+      lutDataVersion: 1,
+      onStatsUpdate,
+    } satisfies ComponentProps<typeof PreviewCanvas>
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() => expect(onStatsUpdate).toHaveBeenCalledOnce())
+    act(() => fireResize(resizeCallbacks[0], 400, 300))
+    const pipeline = pipelineMock.instances[0]!
+    pipeline.uploadLUT.mockImplementationOnce(() => {
+      throw new Error('Failed to create LUT texture')
+    })
+    lutDataRef.current = createTestLut()
+    rerender(createElement(PreviewCanvas, { ...props, lutDataVersion: 2 }))
+    pipeline.render.mockClear()
+    pipeline.setParams.mockClear()
+    onStatsUpdate.mockClear()
+
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        lutDataVersion: 2,
+        color: { ...props.color, intensity: 0.4 },
+      }),
+    )
+    vi.useFakeTimers()
+    try {
+      act(() => fireResize(resizeCallbacks[0], 360, 270))
+      act(() => vi.runAllTimers())
+    } finally {
+      vi.useRealTimers()
+    }
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(pipeline.resize).toHaveBeenCalled()
+    expect(pipeline.setParams).not.toHaveBeenCalled()
+    expect(pipeline.render).not.toHaveBeenCalled()
+    expect(onStatsUpdate).not.toHaveBeenCalled()
   })
 })
