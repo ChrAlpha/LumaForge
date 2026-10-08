@@ -4,14 +4,13 @@ import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
-import type { DisplaySource, ImageSession } from '../../../model/session'
+import type { DisplaySource } from '../../../model/session'
 import { useOriginalReferenceSnapshot } from '../../useOriginalReferenceSnapshot'
 import { useOriginalReferencePolicy } from './useOriginalReferencePolicy'
 import { useOriginalReferenceSnapshotResources } from './useOriginalReferenceSnapshotResources'
 
 type UseOriginalReferenceStageInput = {
   sessionId: string | null
-  sessionRef: MutableRefObject<ImageSession | null>
   viewMode: PreviewViewMode
   previewSuspended: boolean
   decodedImageRef: MutableRefObject<DecodedImage | null>
@@ -22,7 +21,6 @@ type UseOriginalReferenceStageInput = {
 
 export function useOriginalReferenceStage({
   sessionId,
-  sessionRef,
   viewMode,
   previewSuspended,
   decodedImageRef,
@@ -43,7 +41,6 @@ export function useOriginalReferenceStage({
     requestOriginalReferenceFallback,
   } = useOriginalReferencePolicy({
     sessionId,
-    sessionRef,
     viewMode,
     previewSuspended,
     previewSourceWidth: decodedImage?.width ?? null,

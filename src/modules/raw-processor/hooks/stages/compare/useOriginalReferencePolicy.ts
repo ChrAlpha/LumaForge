@@ -1,4 +1,3 @@
-import type { MutableRefObject } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 
 import {
@@ -10,13 +9,12 @@ import {
   detectPreviewGpuCapabilitySnapshot,
 } from '~/lib/runtime/preview-gpu-budget'
 
-import type { ImageSession } from '../../../model/session'
 import { supportsLayeredCompareCss } from '../../../services/compare/compare-render-mode'
+import { getCurrentSession } from '../../../state/session.atoms'
 import type { OriginalReferenceSnapshotCapability } from '../../useOriginalReferenceSnapshot'
 
 type UseOriginalReferencePolicyInput = {
   sessionId: string | null
-  sessionRef: MutableRefObject<ImageSession | null>
   viewMode: 'processed' | 'original' | 'compare'
   previewSuspended: boolean
   previewSourceWidth?: number | null
@@ -80,7 +78,6 @@ function allowDualGpuCompare(capability: OriginalReferenceSnapshotCapability) {
 
 export function useOriginalReferencePolicy({
   sessionId,
-  sessionRef,
   viewMode,
   previewSuspended,
   previewSourceWidth = null,
@@ -106,9 +103,12 @@ export function useOriginalReferencePolicy({
     }
   }, [previewSuspended, viewMode])
 
+  // The request names the session in the store when it runs, so a request in
+  // the same tick as a load or reset belongs to the source that exists after
+  // it, and a request never carries over to a replacement source.
   const requestOriginalReferenceFallback = useCallback(() => {
-    setFallbackRequestSessionId(sessionRef.current?.id ?? null)
-  }, [sessionRef])
+    setFallbackRequestSessionId(getCurrentSession()?.id ?? null)
+  }, [])
 
   const shouldPrepareOriginalReferenceSnapshot =
     viewMode === 'compare' &&

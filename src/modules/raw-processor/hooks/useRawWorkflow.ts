@@ -353,7 +353,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     requestOriginalReferenceFallback,
   } = useOriginalReferenceStage({
     sessionId: session?.id ?? null,
-    sessionRef,
     viewMode,
     previewSuspended,
     decodedImageRef,

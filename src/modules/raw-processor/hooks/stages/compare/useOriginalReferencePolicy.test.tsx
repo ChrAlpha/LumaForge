@@ -1,7 +1,8 @@
 import { act, renderHook } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { ImageSession } from '../../../model/session'
+import { setCurrentSession } from '../../../state/session.atoms'
 import type { OriginalReferenceSnapshotCapability } from '../../useOriginalReferenceSnapshot'
 import { useOriginalReferencePolicy } from './useOriginalReferencePolicy'
 
@@ -61,14 +62,21 @@ const webkitGpuBudgetNoPthread: OriginalReferenceSnapshotCapability = {
 }
 
 describe('useOriginalReferencePolicy', () => {
+  beforeEach(() => {
+    setCurrentSession(null)
+  })
+
+  afterEach(() => {
+    setCurrentSession(null)
+  })
+
   it('requests a CSS original-reference fallback for the active compare session', () => {
     const session = createSession()
-    const sessionRef = { current: session }
+    setCurrentSession(session)
     const { result, rerender } = renderHook(
       ({ previewSuspended }) =>
         useOriginalReferencePolicy({
           sessionId: session.id,
-          sessionRef,
           viewMode: 'compare',
           previewSuspended,
           getCapability: () => chromiumPthread,
@@ -99,7 +107,6 @@ describe('useOriginalReferencePolicy', () => {
     const { result } = renderHook(() =>
       useOriginalReferencePolicy({
         sessionId: session.id,
-        sessionRef: { current: session },
         viewMode: 'compare',
         previewSuspended: false,
         getCapability: () => webkitNoPthread,
@@ -117,7 +124,6 @@ describe('useOriginalReferencePolicy', () => {
     const { result } = renderHook(() =>
       useOriginalReferencePolicy({
         sessionId: session.id,
-        sessionRef: { current: session },
         viewMode: 'compare',
         previewSuspended: false,
         getCapability: () => webkitGpuBudgetNoPthread,
@@ -126,6 +132,96 @@ describe('useOriginalReferencePolicy', () => {
     )
 
     expect(result.current.dualGpuAllowed).toBe(true)
+    expect(result.current.shouldPrepareOriginalReferenceSnapshot).toBe(false)
+  })
+
+  it('requests the fallback for a source that replaced the rendered one in the same tick', () => {
+    const first = createSession('session-first')
+    const replacement = createSession('session-replacement')
+    setCurrentSession(first)
+    const { result, rerender } = renderHook(
+      ({ sessionId }) =>
+        useOriginalReferencePolicy({
+          sessionId,
+          viewMode: 'compare',
+          previewSuspended: false,
+          getCapability: () => chromiumPthread,
+          supportsCssCompare: () => true,
+        }),
+      { initialProps: { sessionId: first.id } },
+    )
+    const request = result.current.requestOriginalReferenceFallback
+
+    // The load writes the store before the hook rerenders, so a callback
+    // held from the first render requests for the replacement.
+    act(() => {
+      setCurrentSession(replacement)
+      request()
+    })
+
+    expect(result.current.shouldPrepareOriginalReferenceSnapshot).toBe(false)
+
+    rerender({ sessionId: replacement.id })
+    expect(result.current.shouldPrepareOriginalReferenceSnapshot).toBe(true)
+  })
+
+  it('does not carry a fallback request over to a replacement source', () => {
+    const first = createSession('session-first')
+    const replacement = createSession('session-replacement')
+    setCurrentSession(first)
+    const { result, rerender } = renderHook(
+      ({ sessionId }) =>
+        useOriginalReferencePolicy({
+          sessionId,
+          viewMode: 'compare',
+          previewSuspended: false,
+          getCapability: () => chromiumPthread,
+          supportsCssCompare: () => true,
+        }),
+      { initialProps: { sessionId: first.id } },
+    )
+
+    act(() => {
+      result.current.requestOriginalReferenceFallback()
+    })
+    expect(result.current.shouldPrepareOriginalReferenceSnapshot).toBe(true)
+
+    act(() => {
+      setCurrentSession(replacement)
+    })
+    rerender({ sessionId: replacement.id })
+
+    expect(result.current.shouldPrepareOriginalReferenceSnapshot).toBe(false)
+  })
+
+  it('requests nothing when a reset cleared the session in the same tick', () => {
+    const session = createSession()
+    setCurrentSession(session)
+    const { result, rerender } = renderHook(
+      ({ sessionId }) =>
+        useOriginalReferencePolicy({
+          sessionId,
+          viewMode: 'compare',
+          previewSuspended: false,
+          getCapability: () => chromiumPthread,
+          supportsCssCompare: () => true,
+        }),
+      { initialProps: { sessionId: session.id as string | null } },
+    )
+    const request = result.current.requestOriginalReferenceFallback
+
+    act(() => {
+      setCurrentSession(null)
+      request()
+    })
+    expect(result.current.shouldPrepareOriginalReferenceSnapshot).toBe(false)
+
+    // The same source loaded again does not inherit a request made while
+    // no session existed.
+    act(() => {
+      setCurrentSession(session)
+    })
+    rerender({ sessionId: session.id })
     expect(result.current.shouldPrepareOriginalReferenceSnapshot).toBe(false)
   })
 })

@@ -13,6 +13,7 @@ import {
 
 import type { DisplaySource, ImageSession } from '../../../model/session'
 import type { OriginalReferenceSnapshot } from '../../../services/compare/original-reference-snapshot'
+import { setCurrentSession } from '../../../state/session.atoms'
 import { useOriginalReferenceStage } from './useOriginalReferenceStage'
 
 const rendererMock = vi.hoisted(() => ({
@@ -44,9 +45,12 @@ const renders: PendingRender[] = []
 // one snapshot.
 let objectUrlCount = 0
 
-function createSession(viewMode: PreviewViewMode): ImageSession {
+function createSession(
+  viewMode: PreviewViewMode,
+  id = 'session-original-reference',
+): ImageSession {
   return {
-    id: 'session-original-reference',
+    id,
     createdAt: 1,
     sourceFile: {
       name: 'frame.dng',
@@ -136,7 +140,6 @@ function renderStageHook({
   registry: ResourceRegistry | null
   strict?: boolean
 }) {
-  const sessionRef = { current: createSession('compare') }
   const decodedImageRef: { current: DecodedImage | null } = { current: null }
   const resourceRegistryRef = { current: registry }
   return renderHook(
@@ -144,7 +147,6 @@ function renderStageHook({
       decodedImageRef.current = props.image
       return useOriginalReferenceStage({
         sessionId: props.sessionId,
-        sessionRef,
         viewMode: props.viewMode,
         previewSuspended: false,
         decodedImageRef,
@@ -208,6 +210,7 @@ describe('useOriginalReferenceStage', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     resetCapabilityVectorForTest()
+    setCurrentSession(null)
   })
 
   it('exposes compare fallback controls and no snapshot before an image is available', () => {
@@ -216,7 +219,6 @@ describe('useOriginalReferenceStage', () => {
     const { result } = renderHook(() =>
       useOriginalReferenceStage({
         sessionId: session.id,
-        sessionRef: { current: session },
         viewMode: 'compare',
         previewSuspended: false,
         decodedImageRef: { current: null },
@@ -476,5 +478,90 @@ describe('useOriginalReferenceStage', () => {
 
     expect(revokedUrls()).toEqual([replayed.objectUrl, live.objectUrl])
     expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
+  })
+
+  describe('with dual-GPU compare available', () => {
+    beforeEach(() => {
+      setCapabilityVectorForTest({
+        coi: true,
+        pthread: true,
+        deviceMemoryGB: 8,
+        hwConcurrency: 8,
+        webKitClass: 'chromium',
+        deviceFormFactor: 'desktop',
+        maybeOpfsSupported: true,
+      })
+    })
+
+    it('prepares a fallback snapshot only for the session the request named', async () => {
+      const first = createSession('compare', 'session-first')
+      const replacement = createSession('compare', 'session-replacement')
+      setCurrentSession(first)
+      const { result, rerender, unmount, registry } = renderStage()
+      await act(async () => {})
+      expect(result.current.dualGpuAllowed).toBe(true)
+      expect(renders).toHaveLength(0)
+
+      // A load writes the store before the stage rerenders, so a request
+      // made in that tick belongs to the replacement, not the rendered one.
+      const request = result.current.requestOriginalReferenceFallback
+      act(() => {
+        setCurrentSession(replacement)
+        request()
+      })
+      await act(async () => {})
+      expect(renders).toHaveLength(0)
+
+      rerender({
+        sessionId: replacement.id,
+        viewMode: 'compare',
+        image: createImage('quick', 1800),
+        imageVersion: 2,
+        displaySource: 'quick',
+      })
+      await waitFor(() => expect(renders).toHaveLength(1))
+      const snapshot = await resolveRender(0)
+      expect(result.current.originalReferenceSnapshot).toBe(snapshot)
+
+      unmount()
+      await act(async () => {})
+      expect(revokedUrls()).toEqual([snapshot.objectUrl])
+      expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
+    })
+
+    it('drops a fallback request once a replacement source loads', async () => {
+      const first = createSession('compare', 'session-original-reference')
+      const replacement = createSession('compare', 'session-replacement')
+      setCurrentSession(first)
+      const { result, rerender, unmount } = renderStage()
+      await act(async () => {})
+
+      act(() => {
+        result.current.requestOriginalReferenceFallback()
+      })
+      await waitFor(() => expect(renders).toHaveLength(1))
+      const snapshot = await resolveRender(0)
+      expect(result.current.originalReferenceSnapshot).toBe(snapshot)
+
+      act(() => {
+        setCurrentSession(replacement)
+      })
+      rerender({
+        sessionId: replacement.id,
+        viewMode: 'compare',
+        image: createImage('quick', 1800),
+        imageVersion: 2,
+        displaySource: 'quick',
+      })
+      await act(async () => {})
+
+      expect(renders).toHaveLength(1)
+      expect(result.current.originalReferenceSnapshot).toBeNull()
+      expect(revokedUrls()).toEqual([snapshot.objectUrl])
+
+      unmount()
+      await act(async () => {})
+      expect(revokedUrls()).toEqual([snapshot.objectUrl])
+    })
   })
 })
