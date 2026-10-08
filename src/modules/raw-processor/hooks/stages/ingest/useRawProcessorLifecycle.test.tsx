@@ -66,6 +66,74 @@ function applySessionUpdate(sessionRef: {
   }
 }
 
+function renderLifecycle(
+  refs: {
+    pendingLoadSessionId?: string | null
+    session?: ImageSession | null
+  },
+  options: { reactStrictMode?: boolean } = {},
+) {
+  const isMountedRef = { current: false }
+  const runtimeWorkSessionIdRef = {
+    current: 'runtime-work' as string | null,
+  }
+  const pendingLoadSessionIdRef = {
+    current: refs.pendingLoadSessionId ?? null,
+  }
+  const decodedImageRef = {
+    current: createDecodedImage() as DecodedImage | null,
+  }
+  const previewCopyCanvasRef = { current: null as HTMLCanvasElement | null }
+  const sessionRef = { current: refs.session ?? null }
+  const store = { session: refs.session ?? null }
+  const calls = {
+    abortExportWork: vi.fn(),
+    abortRuntimeWork: vi.fn(),
+    queueExportResultResourceDisposal: vi.fn(),
+    revokeCurrentEmbeddedPreviewUrl: vi.fn(),
+    setStatus: vi.fn(),
+    setError: vi.fn(),
+    setProgress: vi.fn(),
+    setStats: vi.fn(),
+    setSession: vi.fn<SetImageSession>((update) => {
+      store.session =
+        typeof update === 'function' ? update(store.session) : update
+    }),
+  }
+  const rendered = renderHook(
+    () =>
+      useRawProcessorLifecycle({
+        isMountedRef,
+        runtimeWorkSessionIdRef,
+        pendingLoadSessionIdRef,
+        decodedImageRef,
+        previewCopyCanvasRef,
+        sessionRef,
+        ...calls,
+      }),
+    options,
+  )
+  return {
+    ...rendered,
+    isMountedRef,
+    runtimeWorkSessionIdRef,
+    pendingLoadSessionIdRef,
+    decodedImageRef,
+    sessionRef,
+    store,
+    calls,
+  }
+}
+
+function releaseCounts(calls: ReturnType<typeof renderLifecycle>['calls']) {
+  return {
+    abortExportWork: calls.abortExportWork.mock.calls.length,
+    abortRuntimeWork: calls.abortRuntimeWork.mock.calls.length,
+    dispose: calls.queueExportResultResourceDisposal.mock.calls.length,
+    revoke: calls.revokeCurrentEmbeddedPreviewUrl.mock.calls.length,
+  }
+}
+
 describe('useRawProcessorLifecycle', () => {
   it('marks the processor mounted and cleans up pending load state on unmount', () => {
     const isMountedRef = { current: false }
@@ -123,5 +191,82 @@ describe('useRawProcessorLifecycle', () => {
     expect(setProgress).toHaveBeenCalledWith(0)
     expect(setStats).toHaveBeenCalledWith(null)
     expect(sessionRef.current).toBeNull()
+  })
+
+  it('clears only its own pending load, leaving a session a newer load put in the store', () => {
+    const newer = createSession('newer-session')
+    const lifecycle = renderLifecycle({
+      pendingLoadSessionId: 'pending-session',
+      session: createSession(),
+    })
+    // A newer load took the store's slot before this mount departs.
+    lifecycle.store.session = newer
+
+    lifecycle.unmount()
+
+    expect(lifecycle.calls.setSession).toHaveBeenCalledTimes(1)
+    expect(lifecycle.store.session).toBe(newer)
+    expect(lifecycle.decodedImageRef.current).toBeNull()
+    expect(lifecycle.calls.setStatus).toHaveBeenCalledWith('idle')
+  })
+
+  it("releases a loaded session's resources once on unmount", () => {
+    const lifecycle = renderLifecycle({
+      session: createSession('loaded-session'),
+    })
+
+    lifecycle.unmount()
+
+    expect(releaseCounts(lifecycle.calls)).toEqual({
+      abortExportWork: 1,
+      abortRuntimeWork: 1,
+      dispose: 1,
+      revoke: 1,
+    })
+    expect(lifecycle.isMountedRef.current).toBe(false)
+    expect(lifecycle.runtimeWorkSessionIdRef.current).toBeNull()
+    expect(lifecycle.sessionRef.current).toBeNull()
+  })
+
+  describe('under StrictMode replay', () => {
+    it('runs its cleanup once on mount and ends mounted with the loaded session untouched', () => {
+      const loaded = createSession('loaded-session')
+      const lifecycle = renderLifecycle(
+        { session: loaded },
+        { reactStrictMode: true },
+      )
+
+      expect(lifecycle.isMountedRef.current).toBe(true)
+      expect(releaseCounts(lifecycle.calls)).toEqual({
+        abortExportWork: 1,
+        abortRuntimeWork: 1,
+        dispose: 1,
+        revoke: 1,
+      })
+      expect(lifecycle.calls.setSession).not.toHaveBeenCalled()
+      expect(lifecycle.store.session).toBe(loaded)
+
+      // A rerender with the same inputs replays nothing.
+      lifecycle.rerender()
+      expect(releaseCounts(lifecycle.calls).dispose).toBe(1)
+      expect(lifecycle.isMountedRef.current).toBe(true)
+    })
+
+    it('runs its cleanup again on the real unmount after the replay', () => {
+      const lifecycle = renderLifecycle(
+        { session: createSession('loaded-session') },
+        { reactStrictMode: true },
+      )
+
+      lifecycle.unmount()
+
+      expect(lifecycle.isMountedRef.current).toBe(false)
+      expect(releaseCounts(lifecycle.calls)).toEqual({
+        abortExportWork: 2,
+        abortRuntimeWork: 2,
+        dispose: 2,
+        revoke: 2,
+      })
+    })
   })
 })

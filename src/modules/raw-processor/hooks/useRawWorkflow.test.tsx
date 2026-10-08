@@ -8482,4 +8482,461 @@ describe('useRawWorkflow embedded preview state', () => {
 
     remounted.unmount()
   })
+
+  describe('integrated ownership boundaries', () => {
+    type Counted = {
+      runtimeSessions: Array<{ dispose: ReturnType<typeof vi.fn> }>
+      outputs: Array<ReturnType<typeof vi.fn>>
+    }
+
+    /**
+     * Every load opens its own RAW session with an embedded preview, and
+     * every export delivers its own file-backed output, so each resource's
+     * release can be counted on its own.
+     */
+    function countResources(): Counted {
+      const counted: Counted = { runtimeSessions: [], outputs: [] }
+      let urls = 0
+      vi.mocked(URL.createObjectURL).mockImplementation(
+        () => `blob:embedded-${++urls}`,
+      )
+      rawRuntimeMock.openSession.mockImplementation(() => {
+        const session = {
+          sourceDimensions: defaultSourceDimensions,
+          extractEmbeddedPreview: vi.fn().mockResolvedValue({
+            width: 1600,
+            height: 1067,
+            data: new Uint8Array([1, 2, 3]),
+            mimeType: 'image/jpeg',
+            timings: { total: 8 },
+          }),
+          decodeQuickRaw: vi
+            .fn()
+            .mockResolvedValue(createDecodedImage('quick')),
+          decodeBoundedHqRaw: vi
+            .fn()
+            .mockResolvedValue(createDecodedImage('bounded-hq')),
+          probeExportCapability: rawRuntimeMock.probeExportCapability,
+          dispose: vi.fn(),
+        }
+        counted.runtimeSessions.push(session)
+        return Promise.resolve(session)
+      })
+      exportSystemMock.runFullResolutionExportJob.mockImplementation(
+        async ({ filename }: { filename: string }) => {
+          const cleanup = vi.fn(async () => undefined)
+          counted.outputs.push(cleanup)
+          return {
+            filename,
+            output: {
+              kind: 'file-backed',
+              exportId: `export-${counted.outputs.length}`,
+              filename,
+              byteLength: 4,
+              mimeType: 'image/jpeg',
+              sha256: 'c'.repeat(64),
+              openBlob: vi.fn(
+                async () => new Blob(['jpeg'], { type: 'image/jpeg' }),
+              ),
+              cleanup,
+            } satisfies FileBackedOutputResult,
+          }
+        },
+      )
+      return counted
+    }
+
+    function releases(counted: Counted) {
+      return {
+        runtimeSessions: counted.runtimeSessions.map(
+          (session) => session.dispose.mock.calls.length,
+        ),
+        outputs: counted.outputs.map((cleanup) => cleanup.mock.calls.length),
+        revokedUrls: vi
+          .mocked(URL.revokeObjectURL)
+          .mock.calls.map(([url]) => url),
+      }
+    }
+
+    function renderCounted(options: { reactStrictMode?: boolean } = {}) {
+      vi.stubGlobal('crossOriginIsolated', true)
+      const counted = countResources()
+      rawRuntimeHosts.length = 0
+      const rendered = renderHook(() => useRawWorkflow(), {
+        wrapper,
+        ...options,
+      })
+      return {
+        ...rendered,
+        counted,
+        host: rendered.result.current.rawRuntimeHost,
+      }
+    }
+
+    it('routes a split and a look strength written in a replacing loadFile tick into the replacement only', async () => {
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadLUT(createCubeFile('Client Look', 'look.cube'))
+      })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'first.ARW'))
+      })
+      act(() => {
+        result.current.setCompareSplit(0.8)
+        result.current.setIntensity(0.62)
+      })
+      const first = jotaiStore.get(currentSessionAtom)
+      const detachedIntent = getProcessingParams()
+      const detachedView = getDetachedPreviewView()
+
+      // Every command comes from the first source's render, and all of them
+      // run before React renders the replacement.
+      const { loadFile, setCompareSplit, setIntensity } = result.current
+      await act(async () => {
+        const loading = loadFile(new File(['raw'], 'second.ARW'))
+        setCompareSplit(0.3)
+        setIntensity(0.4)
+
+        const replacement = jotaiStore.get(currentSessionAtom)
+        expect(replacement?.id).not.toBe(first?.id)
+        expect(replacement).toMatchObject({
+          sourceFile: { name: 'second.ARW' },
+          viewState: { mode: 'compare', compareSplit: 0.3 },
+          activeStyle: { name: 'Client Look', currentIntensity: 0.4 },
+        })
+        await loading
+      })
+
+      expect(result.current.status).toBe('ready')
+      expect(result.current.compareSplit).toBe(0.3)
+      expect(result.current.activeIntensity).toBe(0.4)
+      expect(result.current.params.intensity).toBe(0.4)
+      // The replaced session and the detached state took none of the writes.
+      expect(first).toMatchObject({
+        viewState: { compareSplit: 0.8 },
+        activeStyle: { currentIntensity: 0.62 },
+      })
+      expect(getProcessingParams()).toEqual(detachedIntent)
+      expect(getDetachedPreviewView()).toBe(detachedView)
+    })
+
+    it('routes look and tone writes made in the reset tick to the detached intent the next source keeps', async () => {
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadLUT(createCubeFile('Client Look', 'look.cube'))
+      })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'first.ARW'))
+      })
+
+      const { reset, setIntensity, setToneParams } = result.current
+      act(() => {
+        reset()
+        setIntensity(0.33)
+        setToneParams({ userContrast: 12 })
+
+        expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+        expect(getProcessingParams()).toMatchObject({
+          intensity: 0.33,
+          userContrast: 12,
+        })
+      })
+
+      expect(result.current.activeIntensity).toBe(0.33)
+      expect(result.current.params.userContrast).toBe(12)
+
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'second.ARW'))
+      })
+
+      expect(result.current.currentLutName).toBe('Client Look')
+      expect(result.current.params.userContrast).toBe(12)
+      expect(jotaiStore.get(currentSessionAtom)?.activeStyle).toMatchObject({
+        name: 'Client Look',
+        currentIntensity: 0.33,
+      })
+    })
+
+    it('resets the replacement from a reset held over the replaced source and releases each source once', async () => {
+      const { result, counted } = renderCounted()
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'first.ARW'))
+      })
+      const { reset } = result.current
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'second.ARW'))
+      })
+      expect(jotaiStore.get(currentSessionAtom)?.sourceFile.name).toBe(
+        'second.ARW',
+      )
+
+      act(() => {
+        reset()
+        expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+      })
+
+      expect(result.current.hasImage).toBe(false)
+      expect(result.current.status).toBe('idle')
+      expect(releases(counted)).toEqual({
+        runtimeSessions: [1, 1],
+        outputs: [],
+        revokedUrls: ['blob:embedded-1', 'blob:embedded-2'],
+      })
+    })
+
+    it.each(['reset', 'replacement'] as const)(
+      'releases a sealing export once on %s and lets its late manifest land on nothing',
+      async (owner) => {
+        const gate = deferred<void>()
+        const { result, counted } = renderCounted()
+        const source = new File(['raw'], 'frame.ARW')
+        Object.defineProperty(source, 'stream', {
+          value: () =>
+            new ReadableStream<Uint8Array>({
+              async start(controller) {
+                await gate.promise
+                controller.enqueue(new TextEncoder().encode('raw'))
+                controller.close()
+              },
+            }),
+        })
+        await act(async () => {
+          await result.current.loadFile(source)
+        })
+        await act(async () => {
+          await result.current.exportImage()
+        })
+        const delivered = result.current.exportResult
+        expect(delivered?.manifestState?.status).toBe('sealing')
+
+        await act(async () => {
+          if (owner === 'reset') result.current.reset()
+          else await result.current.loadFile(new File(['raw'], 'second.ARW'))
+        })
+        const successor = jotaiStore.get(currentSessionAtom)
+        await waitFor(() => expect(counted.outputs[0]).toHaveBeenCalled())
+
+        await act(async () => {
+          gate.resolve()
+          await new Promise((resolve) => setTimeout(resolve, 0))
+        })
+        await flushPostCommitTasks()
+
+        // Disposal: the delivered output is released exactly once.
+        expect(releases(counted).outputs).toEqual([1])
+        // Stale completion: the seal finds no current attempt and writes
+        // nothing over whatever owns the slot now.
+        expect(jotaiStore.get(currentSessionAtom)).toBe(successor)
+        expect(result.current.exportResult).toBeNull()
+        // Identity: sealing never rewrote the delivered result in place.
+        expect(delivered?.manifestState?.status).toBe('sealing')
+        if (owner === 'reset') expect(successor).toBeNull()
+        else expect(successor?.sourceFile.name).toBe('second.ARW')
+      },
+    )
+
+    it('keeps a released preview a valid mounted session whose refused view commands write nothing anywhere', async () => {
+      const { result, counted } = renderCounted()
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      await act(async () => {
+        await result.current.exportImage()
+      })
+      await waitFor(() =>
+        expect(result.current.exportResult?.manifestState?.status).toBe(
+          'ready',
+        ),
+      )
+      expect(result.current.previewSuspended).toBe(true)
+      const released = jotaiStore.get(currentSessionAtom)
+      const delivered = released?.exportState.result
+      const detachedView = getDetachedPreviewView()
+
+      // Commands held from the released render run before any rerender.
+      const { setCompareSplit, setViewMode, resetCompareView } = result.current
+      act(() => {
+        setCompareSplit(0.2)
+        setViewMode('original')
+        resetCompareView()
+      })
+
+      // Refusal: neither the session nor the detached sample view moved.
+      expect(jotaiStore.get(currentSessionAtom)).toBe(released)
+      expect(getDetachedPreviewView()).toBe(detachedView)
+      // Validity: the session stays loaded, exportable and delivered.
+      expect(result.current).toMatchObject({
+        hasImage: true,
+        sourceFileName: 'frame.ARW',
+        status: 'ready',
+        canExport: true,
+        previewSuspended: true,
+      })
+      expect(result.current.exportResult).toBe(delivered)
+      // Disposal: holding the release frees nothing the result still owns.
+      expect(releases(counted)).toEqual({
+        runtimeSessions: [1],
+        outputs: [0],
+        revokedUrls: ['blob:embedded-1'],
+      })
+
+      await act(async () => {
+        await result.current.restorePreviewAfterExport()
+      })
+      act(() => {
+        result.current.setCompareSplit(0.2)
+      })
+
+      expect(result.current.previewSuspended).toBe(false)
+      expect(result.current.exportResult).toBe(delivered)
+      expect(jotaiStore.get(currentSessionAtom)?.viewState.compareSplit).toBe(
+        0.2,
+      )
+      expect(releases(counted)).toEqual({
+        runtimeSessions: [1, 1],
+        outputs: [0],
+        revokedUrls: ['blob:embedded-1'],
+      })
+    })
+
+    it('releases every session, output and preview URL exactly once across load, export, replacement and reset', async () => {
+      const { result, counted, host } = renderCounted()
+
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'first.ARW'))
+      })
+      await act(async () => {
+        await result.current.exportImage()
+      })
+      await flushPostCommitTasks()
+      // Export evacuates the embedded preview; the result keeps its output.
+      expect(releases(counted)).toEqual({
+        runtimeSessions: [1],
+        outputs: [0],
+        revokedUrls: ['blob:embedded-1'],
+      })
+
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'second.ARW'))
+      })
+      await flushPostCommitTasks()
+      expect(releases(counted)).toEqual({
+        runtimeSessions: [1, 1],
+        outputs: [1],
+        revokedUrls: ['blob:embedded-1'],
+      })
+
+      await act(async () => {
+        await result.current.exportImage()
+      })
+      act(() => result.current.reset())
+      act(() => result.current.reset())
+      await flushPostCommitTasks()
+      expect(releases(counted)).toEqual({
+        runtimeSessions: [1, 1],
+        outputs: [1, 1],
+        revokedUrls: ['blob:embedded-1', 'blob:embedded-2'],
+      })
+      expect(host.dispose).not.toHaveBeenCalled()
+    })
+
+    describe('under StrictMode replay', () => {
+      it('replays its mount effects without cancelling or releasing what a later load opens', async () => {
+        const { result, counted, host } = renderCounted({
+          reactStrictMode: true,
+        })
+        // The replayed cleanup already ended the host once; it stays usable.
+        const replayDisposals = vi.mocked(host.dispose).mock.calls.length
+
+        await act(async () => {
+          await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+        })
+        await act(async () => {
+          await result.current.exportImage()
+        })
+        await flushPostCommitTasks()
+
+        // Cancellation: nothing cancels the load's lease after the replay.
+        const openSignal = rawRuntimeMock.openSession.mock.calls[0]?.[1] as
+          | AbortSignal
+          | undefined
+        expect(openSignal?.aborted).toBe(false)
+        expect(result.current.status).toBe('ready')
+        expect(result.current.exportResult?.filename).toBe(
+          'frame_neutral_fullres.jpg',
+        )
+        // Disposal: the session is released once, by its own completion and
+        // export, and the delivered output is still held.
+        expect(releases(counted)).toEqual({
+          runtimeSessions: [1],
+          outputs: [0],
+          revokedUrls: ['blob:embedded-1'],
+        })
+        expect(rawRuntimeMock.openSession).toHaveBeenCalledTimes(1)
+        expect(host.dispose).toHaveBeenCalledTimes(replayDisposals)
+      })
+    })
+
+    describe('real departure', () => {
+      // A departure is pinned by what it releases, once each; which session
+      // the store keeps for a later mount is not part of these cases.
+      it('releases a loaded source preview once and a remounted workflow releases nothing again', async () => {
+        const { result, counted, host, unmount } = renderCounted()
+        await act(async () => {
+          await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+        })
+        expect(releases(counted)).toEqual({
+          runtimeSessions: [1],
+          outputs: [],
+          revokedUrls: [],
+        })
+
+        act(() => unmount())
+        await flushPostCommitTasks()
+
+        expect(releases(counted)).toEqual({
+          runtimeSessions: [1],
+          outputs: [],
+          revokedUrls: ['blob:embedded-1'],
+        })
+        expect(host.dispose).toHaveBeenCalledTimes(1)
+
+        const remounted = renderHook(() => useRawWorkflow(), { wrapper })
+        act(() => remounted.unmount())
+        await flushPostCommitTasks()
+
+        expect(releases(counted)).toEqual({
+          runtimeSessions: [1],
+          outputs: [],
+          revokedUrls: ['blob:embedded-1'],
+        })
+        expect(host.dispose).toHaveBeenCalledTimes(1)
+      })
+
+      it('releases a delivered export output once on unmount and never again from a later mount', async () => {
+        const { result, counted, host, unmount } = renderCounted()
+        await act(async () => {
+          await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+        })
+        await act(async () => {
+          await result.current.exportImage()
+        })
+        expect(releases(counted).outputs).toEqual([0])
+
+        act(() => unmount())
+        await waitFor(() => expect(counted.outputs[0]).toHaveBeenCalled())
+        expect(host.dispose).toHaveBeenCalledTimes(1)
+
+        const remounted = renderHook(() => useRawWorkflow(), { wrapper })
+        act(() => remounted.unmount())
+        await flushPostCommitTasks()
+
+        expect(releases(counted)).toEqual({
+          runtimeSessions: [1],
+          outputs: [1],
+          revokedUrls: ['blob:embedded-1'],
+        })
+      })
+    })
+  })
 })

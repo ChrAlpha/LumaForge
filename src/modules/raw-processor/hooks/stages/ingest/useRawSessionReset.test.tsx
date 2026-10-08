@@ -148,4 +148,87 @@ describe('useRawSessionReset', () => {
     ])
     expect(sessionRef.current).toBeNull()
   })
+
+  it('fences the refs a later load wrote when a reset from an earlier render runs', () => {
+    const runtimeWorkSessionIdRef = { current: null as string | null }
+    const pendingLoadSessionIdRef = { current: null as string | null }
+    const previewCopyCanvasRef = {
+      current: null as HTMLCanvasElement | null,
+    }
+    const sessionRef = { current: null as ImageSession | null }
+    const resetSession = vi.fn()
+    const { result } = renderHook(() =>
+      useRawSessionReset({
+        runtimeWorkSessionIdRef,
+        pendingLoadSessionIdRef,
+        previewCopyCanvasRef,
+        sessionRef,
+        abortExportWork: vi.fn(),
+        abortRuntimeWork: vi.fn(),
+        queueExportResultResourceDisposal: vi.fn(),
+        revokeCurrentEmbeddedPreviewUrl: vi.fn(),
+        setDecodedImageRef: vi.fn(),
+        setStatus: vi.fn(),
+        setError: vi.fn(),
+        setProgress: vi.fn(),
+        setStats: vi.fn(),
+        resetSession,
+      }),
+    )
+    const { reset } = result.current
+
+    // A load wrote its refs synchronously, before any rerender.
+    sessionRef.current = createSession()
+    runtimeWorkSessionIdRef.current = 'session-1'
+    pendingLoadSessionIdRef.current = 'session-1'
+    previewCopyCanvasRef.current = document.createElement('canvas')
+
+    reset()
+
+    expect(runtimeWorkSessionIdRef.current).toBeNull()
+    expect(pendingLoadSessionIdRef.current).toBeNull()
+    expect(previewCopyCanvasRef.current).toBeNull()
+    expect(sessionRef.current).toBeNull()
+    expect(resetSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs nothing on mount or StrictMode replay, only when called', () => {
+    const effects = {
+      abortExportWork: vi.fn(),
+      abortRuntimeWork: vi.fn(),
+      queueExportResultResourceDisposal: vi.fn(),
+      revokeCurrentEmbeddedPreviewUrl: vi.fn(),
+      setDecodedImageRef: vi.fn(),
+      resetSession: vi.fn(),
+    }
+    const sessionRef = { current: createSession() as ImageSession | null }
+    const { result, rerender, unmount } = renderHook(
+      () =>
+        useRawSessionReset({
+          runtimeWorkSessionIdRef: { current: 'session-1' },
+          pendingLoadSessionIdRef: { current: null },
+          previewCopyCanvasRef: { current: null },
+          sessionRef,
+          setStatus: vi.fn(),
+          setError: vi.fn(),
+          setProgress: vi.fn(),
+          setStats: vi.fn(),
+          ...effects,
+        }),
+      { reactStrictMode: true },
+    )
+    rerender()
+
+    for (const effect of Object.values(effects)) {
+      expect(effect).not.toHaveBeenCalled()
+    }
+    expect(sessionRef.current?.id).toBe('session-1')
+
+    result.current.reset()
+    unmount()
+
+    for (const effect of Object.values(effects)) {
+      expect(effect).toHaveBeenCalledTimes(1)
+    }
+  })
 })
