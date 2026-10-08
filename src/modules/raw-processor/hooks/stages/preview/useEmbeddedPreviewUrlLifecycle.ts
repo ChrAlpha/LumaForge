@@ -16,14 +16,15 @@ export type SetImageSession = (
 
 type UseEmbeddedPreviewUrlLifecycleInput = {
   embeddedPreviewUrlRef: MutableRefObject<string | null>
-  sessionRef: MutableRefObject<ImageSession | null>
+  /** Reads the current session from the store, not from the last render. */
+  getSession: () => ImageSession | null
   setSession: SetImageSession
   revokeObjectUrls?: typeof revokeEmbeddedPreviewObjectUrls
 }
 
 export function useEmbeddedPreviewUrlLifecycle({
   embeddedPreviewUrlRef,
-  sessionRef,
+  getSession,
   setSession,
   revokeObjectUrls = revokeEmbeddedPreviewObjectUrls,
 }: UseEmbeddedPreviewUrlLifecycleInput) {
@@ -44,24 +45,30 @@ export function useEmbeddedPreviewUrlLifecycle({
     [setSession],
   )
 
+  // One read of the store names both the session URL revoked and the session
+  // cleared, so they are the same source's: never a URL of an older render's
+  // source, never a cleanup keyed to it. Without a source no session is
+  // touched.
   const revokeCurrentEmbeddedPreviewUrl = useCallback(() => {
-    const sessionId = sessionRef.current?.id
+    const session = getSession()
     const urls = new Set(
       [
         embeddedPreviewUrlRef.current,
-        sessionRef.current?.previewBundle.embeddedPreview.objectUrl,
+        session?.previewBundle.embeddedPreview.objectUrl,
       ].filter((url): url is string => Boolean(url)),
     )
 
     revokeObjectUrls(urls)
 
     embeddedPreviewUrlRef.current = null
-    clearSessionEmbeddedPreviewUrl(sessionId)
+    if (session) {
+      clearSessionEmbeddedPreviewUrl(session.id)
+    }
   }, [
     clearSessionEmbeddedPreviewUrl,
     embeddedPreviewUrlRef,
+    getSession,
     revokeObjectUrls,
-    sessionRef,
   ])
 
   return {

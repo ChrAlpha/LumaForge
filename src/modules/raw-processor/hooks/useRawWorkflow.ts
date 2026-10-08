@@ -190,7 +190,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     restorePreviewAfterExport,
   } = useRawPreviewStage({
     session,
-    sessionRef,
     pendingLoadSessionIdRef,
     decodedImageRef,
     decodedImageVersion,

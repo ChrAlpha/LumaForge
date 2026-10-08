@@ -18,7 +18,8 @@ export type SetImageSession = (
 ) => void
 
 type UseRestorePreviewAfterExportInput = {
-  sessionRef: MutableRefObject<ImageSession | null>
+  /** Reads the current session from the store, not from the last render. */
+  getSession: () => ImageSession | null
   /** The source exposure pin the restored frame must render with. */
   rawRenderExposureRef: MutableRefObject<RawRenderExposure | null>
   isMountedRef: MutableRefObject<boolean>
@@ -51,7 +52,7 @@ function mapPhaseToStatus(phase: RestorePreviewPhase): ProcessingStatus {
 }
 
 export function useRestorePreviewAfterExport({
-  sessionRef,
+  getSession,
   rawRenderExposureRef,
   isMountedRef,
   runtimeWorkSessionIdRef,
@@ -65,9 +66,10 @@ export function useRestorePreviewAfterExport({
   toast,
 }: UseRestorePreviewAfterExportInput) {
   const restorePreviewAfterExport = useCallback(async () => {
-    const activeSession = sessionRef.current
-    // The file comes from the session the restore fences on, never from an
-    // older render, so a restore can only decode the source it publishes to.
+    const activeSession = getSession()
+    // The file comes from the session the restore fences on, read from the
+    // store when it runs, never from an older render, so a restore can only
+    // decode the source it publishes to.
     const sourceFile = activeSession?.sourceFile.file
 
     if (!activeSession || !sourceFile) {
@@ -86,7 +88,7 @@ export function useRestorePreviewAfterExport({
     const matchesActiveSession = () =>
       isMountedRef.current &&
       !lease.signal.aborted &&
-      sessionRef.current?.id === activeSession.id &&
+      getSession()?.id === activeSession.id &&
       runtimeWorkSessionIdRef.current === activeSession.id
 
     try {
@@ -162,11 +164,11 @@ export function useRestorePreviewAfterExport({
     }
   }, [
     beginRuntimeSession,
+    getSession,
     isMountedRef,
     rawRenderExposureRef,
     runtimeWorkSessionIdRef,
     scheduleToast,
-    sessionRef,
     setDecodedImageRef,
     setError,
     setProgress,

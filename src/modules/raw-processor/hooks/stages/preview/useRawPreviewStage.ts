@@ -14,6 +14,7 @@ import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline
 import type { DisplaySource, ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
 import { previewHistogramEnabledAtom } from '../../../state/histogram.atoms'
+import { getCurrentSession } from '../../../state/session.atoms'
 import { usePreviewHistogram } from '../../usePreviewHistogram'
 import { useDecodedPreviewResource } from './useDecodedPreviewResource'
 import { useEmbeddedPreviewUrlLifecycle } from './useEmbeddedPreviewUrlLifecycle'
@@ -23,7 +24,6 @@ import { useRestorePreviewAfterExport } from './useRestorePreviewAfterExport'
 
 type UseRawPreviewStageInput = {
   session: ImageSession | null
-  sessionRef: MutableRefObject<ImageSession | null>
   pendingLoadSessionIdRef: MutableRefObject<string | null>
   decodedImageRef: MutableRefObject<DecodedImage | null>
   decodedImageVersion: number
@@ -54,7 +54,6 @@ type UseRawPreviewStageInput = {
 
 export function useRawPreviewStage({
   session,
-  sessionRef,
   pendingLoadSessionIdRef,
   decodedImageRef,
   decodedImageVersion,
@@ -78,10 +77,13 @@ export function useRawPreviewStage({
   scheduleToast,
   toast,
 }: UseRawPreviewStageInput) {
+  // Embedded URL cleanup and restore read the session in the store when they
+  // run, so a load or reset landing before this stage rerenders is the source
+  // they act on.
   const { clearSessionEmbeddedPreviewUrl, revokeCurrentEmbeddedPreviewUrl } =
     useEmbeddedPreviewUrlLifecycle({
       embeddedPreviewUrlRef,
-      sessionRef,
+      getSession: getCurrentSession,
       setSession,
     })
   const {
@@ -110,7 +112,7 @@ export function useRawPreviewStage({
     invalidateExportGraph,
   })
   const { restorePreviewAfterExport } = useRestorePreviewAfterExport({
-    sessionRef,
+    getSession: getCurrentSession,
     rawRenderExposureRef,
     isMountedRef,
     runtimeWorkSessionIdRef,

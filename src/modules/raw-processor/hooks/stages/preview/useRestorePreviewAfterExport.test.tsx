@@ -133,7 +133,7 @@ function renderRestore(input: {
   const scheduleToast = vi.fn((notify: () => void) => notify())
   const rendered = renderHook(() =>
     useRestorePreviewAfterExport({
-      sessionRef: input.sessionRef,
+      getSession: () => input.sessionRef.current,
       rawRenderExposureRef: input.rawRenderExposureRef ?? { current: null },
       isMountedRef: input.isMountedRef ?? { current: true },
       runtimeWorkSessionIdRef: input.runtimeWorkSessionIdRef ?? {

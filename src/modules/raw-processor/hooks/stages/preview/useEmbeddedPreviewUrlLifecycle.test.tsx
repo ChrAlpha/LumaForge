@@ -67,7 +67,7 @@ describe('useEmbeddedPreviewUrlLifecycle', () => {
     const { result } = renderHook(() =>
       useEmbeddedPreviewUrlLifecycle({
         embeddedPreviewUrlRef,
-        sessionRef,
+        getSession: () => sessionRef.current,
         setSession,
       }),
     )
@@ -98,7 +98,7 @@ describe('useEmbeddedPreviewUrlLifecycle', () => {
     const { result } = renderHook(() =>
       useEmbeddedPreviewUrlLifecycle({
         embeddedPreviewUrlRef,
-        sessionRef,
+        getSession: () => sessionRef.current,
         setSession,
         revokeObjectUrls,
       }),
@@ -115,5 +115,72 @@ describe('useEmbeddedPreviewUrlLifecycle', () => {
     expect(sessionRef.current?.previewBundle.embeddedPreview).toEqual({
       status: 'idle',
     })
+  })
+
+  it('revokes and clears the source current when it runs, not one from an older render', () => {
+    const sessionRef = {
+      current: createSession(
+        'rendered-session',
+        'blob:rendered-preview',
+      ) as ImageSession | null,
+    }
+    const embeddedPreviewUrlRef = { current: null as string | null }
+    const setSession = applySessionUpdate(sessionRef)
+    const revokeObjectUrls = vi.fn()
+
+    const { result } = renderHook(() =>
+      useEmbeddedPreviewUrlLifecycle({
+        embeddedPreviewUrlRef,
+        getSession: () => sessionRef.current,
+        setSession,
+        revokeObjectUrls,
+      }),
+    )
+    const revokeFromEarlierRender =
+      result.current.revokeCurrentEmbeddedPreviewUrl
+
+    sessionRef.current = createSession(
+      'replacement-session',
+      'blob:replacement-preview',
+    )
+    act(() => {
+      revokeFromEarlierRender()
+    })
+
+    expect(revokeObjectUrls).toHaveBeenCalledTimes(1)
+    expect(revokeObjectUrls).toHaveBeenCalledWith(
+      new Set(['blob:replacement-preview']),
+    )
+    expect(sessionRef.current?.id).toBe('replacement-session')
+    expect(sessionRef.current?.previewBundle.embeddedPreview).toEqual({
+      status: 'idle',
+    })
+  })
+
+  it('revokes a pending load URL without touching any session when no source is current', () => {
+    const embeddedPreviewUrlRef = {
+      current: 'blob:pending-preview' as string | null,
+    }
+    const setSession = vi.fn()
+    const revokeObjectUrls = vi.fn()
+
+    const { result } = renderHook(() =>
+      useEmbeddedPreviewUrlLifecycle({
+        embeddedPreviewUrlRef,
+        getSession: () => null,
+        setSession,
+        revokeObjectUrls,
+      }),
+    )
+
+    act(() => {
+      result.current.revokeCurrentEmbeddedPreviewUrl()
+    })
+
+    expect(revokeObjectUrls).toHaveBeenCalledWith(
+      new Set(['blob:pending-preview']),
+    )
+    expect(embeddedPreviewUrlRef.current).toBeNull()
+    expect(setSession).not.toHaveBeenCalled()
   })
 })
