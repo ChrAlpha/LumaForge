@@ -1,8 +1,23 @@
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_USER_COLOR_INTENT,
+  pickColorGraphIntent,
+} from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { ImageSession } from '../../../model/session'
+import { createImageSession } from '../../../model/session-factory'
+import type { orchestrateFullResExport } from '../../../services/export/orchestrate-full-res-export'
 import type { UseFullResExportActionInput } from './useFullResExportAction'
 import { useFullResExportAction } from './useFullResExportAction'
+
+const NEUTRAL_INTENT: ColorGraphIntent = {
+  ...NEUTRAL_USER_COLOR_INTENT,
+  intensity: 0.7,
+  styleKind: 'none',
+  builtinPreset: null,
+}
 
 function createInput(
   orchestrateExport = vi.fn().mockResolvedValue(undefined),
@@ -10,28 +25,14 @@ function createInput(
   return {
     loadedImage: { file: null, metadata: null },
     session: null,
-    params: {
-      intensity: 0.7,
-      styleKind: 'none',
-      builtinPreset: null,
-      userExposureEv: 0,
-      userContrast: 0,
-      userHighlights: 0,
-      userShadows: 0,
-      userWhites: 0,
-      userBlacks: 0,
-      userTemperature: 0,
-      userTint: 0,
-      userSaturation: 0,
-      userVibrance: 0,
-    },
+    getSession: vi.fn(() => null),
+    getColorIntent: vi.fn(() => NEUTRAL_INTENT),
+    getLutData: vi.fn(() => null),
     stats: null,
-    lutDataRef: { current: null },
     decodedImageRef: { current: null },
     exportAbortControllerRef: { current: null },
     exportGraphVersionRef: { current: 0 },
     isMountedRef: { current: true },
-    sessionRef: { current: null },
     pipelineRef: { current: null },
     resourceRegistryRef: { current: null },
     previewCopyCanvasRef: { current: null },
@@ -68,7 +69,9 @@ describe('useFullResExportAction', () => {
       expect.objectContaining({
         atoms: expect.objectContaining({
           loadedImage: input.loadedImage,
-          params: input.params,
+          getSession: input.getSession,
+          getColorIntent: input.getColorIntent,
+          getLutData: input.getLutData,
           stats: input.stats,
         }),
         refs: expect.objectContaining({
@@ -99,6 +102,45 @@ describe('useFullResExportAction', () => {
       input.refreshExportInterruption,
     )
     expect(ctx.atoms).not.toHaveProperty('setDiscoveredRecoveryState')
+  })
+
+  it('reads session and color when an action from an older render runs', async () => {
+    const rendered = createImageSession(new File(['raw'], 'frame.dng'))
+    const store: { session: ImageSession | null; intent: ColorGraphIntent } = {
+      session: rendered,
+      intent: NEUTRAL_INTENT,
+    }
+    const admitted: Array<{
+      session: ImageSession | null
+      intent: ColorGraphIntent
+    }> = []
+    const orchestrateExport = vi.fn<typeof orchestrateFullResExport>(
+      async (_request, ctx) => {
+        admitted.push({
+          session: ctx.atoms.getSession(),
+          intent: pickColorGraphIntent(ctx.atoms.getColorIntent()),
+        })
+      },
+    )
+    const input: UseFullResExportActionInput = {
+      ...createInput(orchestrateExport),
+      session: rendered,
+      getSession: () => store.session,
+      getColorIntent: () => store.intent,
+    }
+    const { result } = renderHook(() => useFullResExportAction(input))
+    const exportFromRender = result.current.exportImage
+
+    // Both land in the store in the same tick, before any rerender.
+    const written = { ...rendered, activeStyle: null, createdAt: 2 }
+    store.session = written
+    store.intent = { ...NEUTRAL_INTENT, userContrast: 25 }
+    await exportFromRender()
+
+    expect(admitted).toEqual([
+      { session: written, intent: { ...NEUTRAL_INTENT, userContrast: 25 } },
+    ])
+    expect(admitted[0]!.session).toBe(written)
   })
 
   it('starts nothing on render or rerender', () => {

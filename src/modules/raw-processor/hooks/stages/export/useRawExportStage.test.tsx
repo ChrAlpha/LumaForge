@@ -1,6 +1,10 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  LUTData,
+  ProcessingParams,
+} from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
@@ -10,6 +14,15 @@ import type { ProcessingStatus } from '../../../model/workflow'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
 import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
 import { orchestrateFullResExport } from '../../../services/export/orchestrate-full-res-export'
+import {
+  getCurrentSession,
+  setCurrentSession,
+} from '../../../state/session.atoms'
+import {
+  getEffectiveColorIntent,
+  getProcessingParams,
+  setProcessingParams,
+} from '../../../state/workflow.atoms'
 import { useRawExportStage } from './useRawExportStage'
 
 vi.mock('../../../services/export/orchestrate-full-res-export', () => ({
@@ -100,6 +113,9 @@ function createStageInput(
     session: null,
     params,
     paramsRef: { current: params },
+    getSession: () => null,
+    getColorIntent: () => params,
+    getLutData: () => null,
     lutDataRef: { current: null },
     decodedImageRef: { current: null },
     stats: null,
@@ -158,8 +174,15 @@ function createInterruptedReadyInput(
 }
 
 describe('useRawExportStage', () => {
+  const storedIntent = getProcessingParams()
+
   beforeEach(() => {
     vi.mocked(orchestrateFullResExport).mockClear()
+  })
+
+  afterEach(() => {
+    setCurrentSession(null)
+    setProcessingParams(storedIntent)
   })
 
   it('composes export state and actions for an empty workflow', () => {
@@ -218,6 +241,7 @@ describe('useRawExportStage', () => {
     }
     const input = createInterruptedReadyInput('ready', {
       params: currentParams,
+      getColorIntent: () => currentParams,
     })
     const { result } = renderHook(() => useRawExportStage(input))
 
@@ -233,7 +257,7 @@ describe('useRawExportStage', () => {
     // from the current source and the graph renders the current look.
     expect(options).toEqual({ interruption: INTERRUPTION })
     expect(ctx.services.interruptionMarkers).toBe(input.interruptionMarkers)
-    expect(ctx.atoms.params).toBe(currentParams)
+    expect(ctx.atoms.getColorIntent()).toBe(currentParams)
     expect(ctx.atoms.loadedImage.file).toBe(SOURCE_FILE)
     expect(ctx.atoms.session?.exportState.fullResCapability).toEqual({
       status: 'supported',
@@ -263,5 +287,87 @@ describe('useRawExportStage', () => {
     })
 
     expect(vi.mocked(orchestrateFullResExport).mock.calls[0]?.[0]).toEqual({})
+  })
+
+  it('admits an export from an older render with the session, color and LUT the store holds', async () => {
+    const rendered = createReadySession()
+    setCurrentSession(rendered)
+    let storedLut: LUTData | null = null
+    const admitted: Array<{
+      session: ImageSession | null
+      intent: ColorGraphIntent
+      lut: LUTData | null
+    }> = []
+    vi.mocked(orchestrateFullResExport).mockImplementationOnce(
+      async (_request, ctx) => {
+        admitted.push({
+          session: ctx.atoms.getSession(),
+          intent: ctx.atoms.getColorIntent() as ColorGraphIntent,
+          lut: ctx.atoms.getLutData(),
+        })
+        // The ref follows the LUT only once its effect runs; the full
+        // export never reads it.
+        expect(ctx.atoms).not.toHaveProperty('lutDataRef')
+      },
+    )
+    const { result } = renderHook(() =>
+      useRawExportStage(
+        createStageInput({
+          loadedImage: { file: SOURCE_FILE, metadata: null },
+          session: rendered,
+          sessionRef: { current: rendered },
+          getSession: getCurrentSession,
+          getColorIntent: getEffectiveColorIntent,
+          getLutData: () => storedLut,
+          status: 'ready',
+          hasImage: true,
+          displaySource: 'quick',
+          rawRenderExposure: RAW_RENDER_EXPOSURE,
+        }),
+      ),
+    )
+    const exportFromRender = result.current.exportImage
+
+    // A LUT apply writes the LUT and the look, and a color edit lands, all
+    // in the same tick, before any rerender or LUT effect.
+    const appliedLut: LUTData = {
+      size: 2,
+      data: new Float32Array(2 * 2 * 2 * 3),
+      domainMin: [0, 0, 0],
+      domainMax: [1, 1, 1],
+      title: 'Teal',
+      inputProfile: 'display-srgb',
+      profileResolution: { kind: 'unknown' },
+    }
+    storedLut = appliedLut
+    setCurrentSession((prev) =>
+      prev
+        ? {
+            ...prev,
+            activeStyle: {
+              kind: 'custom',
+              name: 'Teal',
+              defaultIntensity: 0.7,
+              currentIntensity: 0.37,
+              lutAsset: { format: 'cube', dimension: 17 },
+            },
+          }
+        : prev,
+    )
+    setProcessingParams({ ...getProcessingParams(), userContrast: 25 })
+    const written = getCurrentSession()
+    await act(async () => {
+      await exportFromRender()
+    })
+
+    expect(admitted).toHaveLength(1)
+    expect(admitted[0]!.session).toBe(written)
+    expect(admitted[0]!.lut).toBe(appliedLut)
+    // The color projects the look of the very session the export reads.
+    expect(admitted[0]!.intent).toMatchObject({
+      styleKind: 'custom',
+      intensity: 0.37,
+      userContrast: 25,
+    })
   })
 })

@@ -1,12 +1,14 @@
+import type { LUTData } from '@lumaforge/luma-color-runtime'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { yieldToPaint } from '~/lib/dom'
+import { toLUTData } from '~/lib/lut/cube-parser'
 
 import type { ImageSession } from '../model/session'
 import { hasActiveExport } from '../services/export/export-state'
 import { getCurrentSession, setCurrentSession } from '../state/session.atoms'
-import { getLut } from '../state/workflow.atoms'
+import { getEffectiveColorIntent, getLut } from '../state/workflow.atoms'
 import { buildRawWorkflowReturn } from './buildRawWorkflowReturn'
 import { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
 import { useRawCompareStage } from './stages/compare/useRawCompareStage'
@@ -27,6 +29,17 @@ import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 import { useRawWorkflowActions } from './useRawWorkflowActions'
 import { useRawWorkflowRefs } from './useRawWorkflowRefs'
 import { useRawWorkflowState } from './useRawWorkflowState'
+
+/**
+ * The LUT the store holds, in the shape the pipeline reads, read when
+ * called. `lutDataRef` follows the store only once its effect runs; this
+ * shares the parsed table with what it then holds, so a request that names
+ * the table here names the one `lutDataRef` catches up to.
+ */
+function getStoredLutData(): LUTData | null {
+  const lut = getLut()
+  return lut ? toLUTData(lut) : null
+}
 
 export type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
@@ -157,10 +170,11 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
       !hasActiveExport(exportAbortControllerRef.current, getCurrentSession()),
     [exportAbortControllerRef],
   )
-  // Transform events reduce the session in the store when they land. Export
-  // still reads the session through `sessionRef`, so each Transform write
-  // leaves it holding what the store holds, before any rerender: an export
-  // started in that gap runs with the geometry the store holds.
+  // Transform events reduce the session in the store when they land. The HQ
+  // export, the export result actions and graph invalidation still read the
+  // session through `sessionRef`, so each Transform write leaves it holding
+  // what the store holds, before any rerender: an export started in that gap
+  // runs with the geometry the store holds.
   const setTransformSession = useCallback(
     (update: (current: ImageSession | null) => ImageSession | null) => {
       setCurrentSession(update)
@@ -304,6 +318,9 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     session,
     params,
     paramsRef,
+    getSession: getCurrentSession,
+    getColorIntent: getEffectiveColorIntent,
+    getLutData: getStoredLutData,
     lutDataRef,
     decodedImageRef,
     stats,

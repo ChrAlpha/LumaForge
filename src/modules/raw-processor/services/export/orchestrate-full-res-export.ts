@@ -109,10 +109,30 @@ export interface ExportContext {
         | ((prev: ImageSession | null) => ImageSession | null),
     ) => void
     loadedImage: { file: File | null; metadata: ImageMetadata | null }
+    /**
+     * The session the caller rendered with. Admission refuses when the live
+     * session is another source; nothing else reads it.
+     */
     session: ImageSession | null
-    /** The color intent to export; view state plays no part in it. */
-    params: ColorGraphIntentSource
-    lutDataRef: { current: LUTData | null }
+    /**
+     * Reads the session from the store when called, so a write in the same
+     * tick is seen before any rerender. Admission and every later currency
+     * check read it here.
+     */
+    getSession: () => ImageSession | null
+    /**
+     * Reads the color intent the photo renders with from the store when
+     * called; view state plays no part in it. The export samples it once,
+     * when the command is admitted.
+     */
+    getColorIntent: () => ColorGraphIntentSource
+    /**
+     * Reads the LUT the store holds when called. A LUT apply or a contract
+     * change writes it in the same tick as the session's look and the
+     * color, so the export samples all three together, when the command is
+     * admitted.
+     */
+    getLutData: () => LUTData | null
     decodedImageRef: { current: DecodedImage | null }
     stats: PipelineStats | null
     /** Asks the page to read the loaded source's interruption hint again. */
@@ -122,7 +142,6 @@ export interface ExportContext {
     exportAbortControllerRef: { current: AbortController | null }
     exportGraphVersionRef: { current: number }
     isMountedRef: { current: boolean }
-    sessionRef: { current: ImageSession | null }
     pipelineRef: { current: RawProcessingPipeline | null }
     resourceRegistryRef: { current: ResourceRegistry | null }
     previewCopyCanvasRef: { current: HTMLCanvasElement | null }
@@ -213,11 +232,12 @@ type AttemptStanding =
   | { kind: 'refused'; refusal: FullResExportReason }
 
 function readAttemptStanding(
-  refs: ExportContext['refs'],
+  ctx: ExportContext,
   attempt: FullResExportAttempt,
   stage: 'work' | 'sealing',
 ): AttemptStanding {
-  const live = refs.sessionRef.current
+  const { refs } = ctx
+  const live = ctx.atoms.getSession()
   if (
     !refs.isMountedRef.current ||
     attempt.controller.signal.aborted ||
@@ -267,7 +287,9 @@ export async function orchestrateFullResExport(
   const rawRenderExposure =
     ctx.atoms.decodedImageRef.current?.renderExposure ?? null
   const sourceFile = ctx.atoms.loadedImage.file
-  const currentSession = ctx.refs.sessionRef.current
+  // The live session answers only for the source the caller rendered: a
+  // source loaded since then is still loading as far as this command knows.
+  const currentSession = ctx.atoms.getSession()
   const exportReadiness = deriveFullResExportReadiness({
     sourceFile,
     session:
@@ -327,11 +349,14 @@ export async function orchestrateFullResExport(
     interruption,
   })
 
-  // One copy of the full intent feeds both the graph and the pre-export
-  // snapshot. The strength goes in as given: zero keeps the LUT and its
-  // contract checks, it does not clear the look.
-  const colorIntent = pickColorGraphIntent(ctx.atoms.params)
-  const lut = ctx.atoms.lutDataRef.current
+  // Sampled once, from the store, as the command is admitted: one copy of
+  // the full intent and the LUT read in the same instant as the session
+  // feeds the graph, the pre-export snapshot, the result's identity and the
+  // manifest's look, whatever the store holds afterwards. The strength goes
+  // in as given: zero keeps the LUT and its contract checks, it does not
+  // clear the look.
+  const colorIntent = pickColorGraphIntent(ctx.atoms.getColorIntent())
+  const lut = ctx.atoms.getLutData()
   const graph = resolveExportColorGraph({
     ...colorIntent,
     lut,
@@ -395,12 +420,10 @@ export async function orchestrateFullResExport(
   // undeliverable, so it drops that result and its resources too rather
   // than leave the session offering a JPEG it cannot hand over.
   const isCurrentExport = () => {
-    const standing = readAttemptStanding(ctx.refs, attempt, 'work')
+    const standing = readAttemptStanding(ctx, attempt, 'work')
     if (standing.kind === 'refused') {
       exportAbortController.abort()
-      const replacedResult = Boolean(
-        ctx.refs.sessionRef.current?.exportState.result,
-      )
+      const replacedResult = Boolean(ctx.atoms.getSession()?.exportState.result)
       ctx.atoms.setSession((prev) =>
         prev && prev.id === exportSessionId
           ? clearExportResultState(prev)
@@ -420,7 +443,7 @@ export async function orchestrateFullResExport(
     return standing.kind === 'current'
   }
   const isCurrentSeal = () =>
-    readAttemptStanding(ctx.refs, attempt, 'sealing').kind === 'current'
+    readAttemptStanding(ctx, attempt, 'sealing').kind === 'current'
 
   // This attempt's marker, from just before the worker work until the
   // attempt ends; each attempt ends only its own marker.
@@ -688,7 +711,7 @@ export async function orchestrateFullResExport(
     // The job finished, so the attempt is over even if its JPEG is dropped.
     endAttempt('completed')
 
-    const completedSession = ctx.refs.sessionRef.current
+    const completedSession = ctx.atoms.getSession()
     if (
       !isCurrentExport() ||
       !completedSession ||

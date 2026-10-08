@@ -1,7 +1,9 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
 import {
+  getLUTColorProfile,
   NEUTRAL_SELECTIVE_COLOR,
   pickColorGraphIntent,
+  resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 import type {
   ExportGeometry,
@@ -577,6 +579,7 @@ type HarnessOptions = {
   t?: Translate
   /** The session the React closure rendered with; defaults to the live one. */
   atomsSession?: ImageSession | null
+  /** The color intent the store holds when the test starts. */
   params?: ProcessingParams
   lut?: LUTData | null
   registry?: ResourceRegistry | null
@@ -622,6 +625,8 @@ function createHarness(options: HarnessOptions = {}) {
     progress: null,
     session: initialSession,
   }
+  let colorIntent: ProcessingParams = options.params ?? DEFAULT_PARAMS
+  let storedLut: LUTData | null = options.lut ?? null
 
   function createMarkerPage(page: string) {
     let attempts = 0
@@ -672,7 +677,6 @@ function createHarness(options: HarnessOptions = {}) {
     exportAbortControllerRef: { current: null },
     exportGraphVersionRef: { current: 3 },
     isMountedRef: { current: true },
-    sessionRef: { current: initialSession },
     pipelineRef: { current: null },
     resourceRegistryRef: { current: registry },
     previewCopyCanvasRef: { current: null },
@@ -696,8 +700,6 @@ function createHarness(options: HarnessOptions = {}) {
         const prev = state.session
         const next = typeof value === 'function' ? value(prev) : value
         state.session = next
-        // The workflow re-syncs sessionRef from session state on commit.
-        refs.sessionRef.current = next
         trace.push(
           `state:session:${next === prev ? 'unchanged' : (next?.exportState.status ?? 'null')}`,
         )
@@ -710,8 +712,11 @@ function createHarness(options: HarnessOptions = {}) {
         options.atomsSession === undefined
           ? initialSession
           : options.atomsSession,
-      params: options.params ?? DEFAULT_PARAMS,
-      lutDataRef: { current: options.lut ?? null },
+      // The store: a write is read back in the same tick, before the caller
+      // renders again.
+      getSession: () => state.session,
+      getColorIntent: () => colorIntent,
+      getLutData: () => storedLut,
       decodedImageRef: { current: createDecodedImage() },
       stats: null,
       refreshExportInterruption: vi.fn(() => {
@@ -891,9 +896,20 @@ function createHarness(options: HarnessOptions = {}) {
         )
         .map((event) => event.payload)
     },
+    /** Writes the session to the store, as a workflow write does. */
     replaceSession(next: ImageSession | null) {
       state.session = next
-      refs.sessionRef.current = next
+    },
+    /** Writes the color intent to the store, as a color edit does. */
+    writeColorIntent(next: ProcessingParams) {
+      colorIntent = next
+    },
+    /**
+     * Writes the LUT to the store, as a LUT apply or a contract change does,
+     * before the workflow's LUT effect runs.
+     */
+    writeLut(next: LUTData | null) {
+      storedLut = next
     },
   }
 }
@@ -3673,13 +3689,13 @@ describe('orchestrateFullResExport color intent', () => {
     const run = orchestrateFullResExport(OPTIONS, h.ctx)
     await job.started
     // While the worker renders, what the request was read from moves on
-    // without ending the attempt: the intent record in place, the LUT and
-    // decoded image the refs hold, and the view.
+    // without ending the attempt: the intent record in place, the LUT the
+    // store holds, the decoded image the ref holds, and the view.
     Object.assign(params, { intensity: 1, userContrast: -40 })
-    h.ctx.atoms.lutDataRef.current = {
+    h.writeLut({
       ...CONFIRMED_LUT,
       data: new Float32Array(2 * 2 * 2 * 3).fill(1),
-    }
+    })
     h.ctx.atoms.decodedImageRef.current = {
       ...createDecodedImage(),
       renderExposure: { ev: 2, multiplier: 4, source: 'user' },
@@ -3778,6 +3794,331 @@ describe('orchestrateFullResExport color intent', () => {
       lastErrorCode: 'EXPORT_UNSUPPORTED_PIPELINE',
     })
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+  })
+
+  it('exports the color written after the caller rendered, and only that request', async () => {
+    vi.mocked(createPreExportSnapshot).mockClear()
+    const h = createHarness({
+      params: { ...EDITED_PARAMS, intensity: 0.7, userContrast: 0 },
+      lut: CONFIRMED_LUT,
+      session: createSession('session-1', { activeStyle: TEAL_STYLE }),
+    })
+    // The color moved in the store after the caller rendered and before
+    // the action ran.
+    h.writeColorIntent(EDITED_PARAMS)
+    const expected = captureExportResultIdentity({
+      resultKind: 'full-resolution',
+      attemptId: EXPORT_ID,
+      sessionId: 'session-1',
+      sourceFile: SOURCE_FILE,
+      intent: EDITED_PARAMS,
+      lut: CONFIRMED_LUT,
+      rawRenderExposure: RAW_RENDER_EXPOSURE,
+      geometry: null,
+    })
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+    // A write after admission belongs to no request this attempt answers.
+    h.writeColorIntent({ ...EDITED_PARAMS, intensity: 1, userContrast: -40 })
+    job.resolve()
+    await run
+
+    expect(input.graph).toEqual(
+      resolveExportColorGraph({
+        ...pickColorGraphIntent(EDITED_PARAMS),
+        lut: CONFIRMED_LUT,
+        rawRenderExposure: RAW_RENDER_EXPOSURE,
+      }),
+    )
+    expect(lutOutputStep(input)).toMatchObject({ intensity: 0.37 })
+    const [snapshotInput] = vi.mocked(createPreExportSnapshot).mock.calls[0]
+    expect(snapshotInput.intent).toEqual(pickColorGraphIntent(EDITED_PARAMS))
+    const published = h.state.session?.exportState.result
+    expect(published?.identity).toEqual(expected)
+    expect(h.manifestInputs[0].graph).toBe(input.graph)
+    expect(h.manifestInputs[0].result).toBe(published)
+  })
+
+  it('reads the look strength and the color from the same instant', async () => {
+    vi.mocked(createPreExportSnapshot).mockClear()
+    const renderedStyle = { ...TEAL_STYLE!, currentIntensity: 0.7 }
+    const h = createHarness({
+      params: { ...EDITED_PARAMS, intensity: 0.7 },
+      lut: CONFIRMED_LUT,
+      session: createSession('session-1', { activeStyle: renderedStyle }),
+    })
+    // One strength change writes the session's look and the color it
+    // projects; both land before the action an older render built runs.
+    const liveSession = createSession('session-1', { activeStyle: TEAL_STYLE })
+    h.replaceSession(liveSession)
+    h.writeColorIntent(EDITED_PARAMS)
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+    job.resolve()
+    await run
+
+    const [snapshotInput] = vi.mocked(createPreExportSnapshot).mock.calls[0]
+    expect(snapshotInput.style).toBe(liveSession.activeStyle)
+    expect(snapshotInput.intent.intensity).toBe(
+      liveSession.activeStyle?.currentIntensity,
+    )
+    expect(lutOutputStep(input)).toMatchObject({ intensity: 0.37 })
+    expect(h.manifestInputs[0].style).toBe(liveSession.activeStyle)
+    expect(h.state.session?.exportState.result?.identity).toEqual(
+      captureExportResultIdentity({
+        resultKind: 'full-resolution',
+        attemptId: EXPORT_ID,
+        sessionId: 'session-1',
+        sourceFile: SOURCE_FILE,
+        intent: EDITED_PARAMS,
+        lut: CONFIRMED_LUT,
+        rawRenderExposure: RAW_RENDER_EXPOSURE,
+        geometry: null,
+      }),
+    )
+  })
+
+  // A LUT apply or a contract change writes the LUT, the session's look and
+  // the color in one tick, after it bumps the export graph version. An
+  // action an older render built that runs in that tick, or before the
+  // workflow's LUT effect catches up, must still export one LUT: the graph,
+  // the result's identity and the manifest's look all name the store's.
+  describe('when the LUT changes in the same tick as an older action runs', () => {
+    // A scene LUT names its output, so it exports once it is confirmed.
+    const SLOG3_PROFILE = {
+      ...getLUTColorProfile('sony-sgamut3cine-slog3')!,
+      outputGamut: 'srgb-rec709',
+      outputTransfer: 'srgb',
+      outputRange: 'full',
+    } as const
+    const SLATE_LUT: LUTData = {
+      ...CONFIRMED_LUT,
+      data: new Float32Array(2 * 2 * 2 * 3).fill(0.5),
+      title: 'Slate',
+      profileResolution: {
+        kind: 'confirmed',
+        confidence: 'metadata',
+        profile: SLOG3_PROFILE,
+      },
+    }
+
+    function styleFor(
+      lut: LUTData,
+      sha256: string,
+    ): NonNullable<ImageSession['activeStyle']> {
+      return {
+        kind: 'custom',
+        name: lut.title ?? 'Custom LUT',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.37,
+        lutAsset: {
+          format: 'cube',
+          dimension: 17,
+          title: lut.title,
+          profileResolution: lut.profileResolution,
+          sha256,
+        },
+      }
+    }
+
+    async function exportAfterSameTickLutChange(setup: {
+      rendered: { lut: LUTData | null; style: ImageSession['activeStyle'] }
+      renderedParams: ProcessingParams
+      written: { lut: LUTData; style: NonNullable<ImageSession['activeStyle']> }
+    }) {
+      const h = createHarness({
+        params: setup.renderedParams,
+        lut: setup.rendered.lut,
+        session: createSession('session-1', {
+          activeStyle: setup.rendered.style,
+        }),
+      })
+      // The change invalidates the export graph first, then writes the LUT,
+      // the look and the color, all before the older action runs.
+      h.ctx.refs.exportGraphVersionRef.current += 1
+      h.writeLut(setup.written.lut)
+      h.replaceSession(
+        createSession('session-1', { activeStyle: setup.written.style }),
+      )
+      h.writeColorIntent(EDITED_PARAMS)
+      const job = h.installJob()
+
+      const run = orchestrateFullResExport(OPTIONS, h.ctx)
+      const input = await job.started
+      job.resolve()
+      await run
+
+      const lut = setup.written.lut
+      expect(input.graph).toEqual(
+        resolveExportColorGraph({
+          ...pickColorGraphIntent(EDITED_PARAMS),
+          lut,
+          rawRenderExposure: RAW_RENDER_EXPOSURE,
+        }),
+      )
+      const published = h.state.session?.exportState.result
+      expect(published?.identity).toEqual(
+        captureExportResultIdentity({
+          resultKind: 'full-resolution',
+          attemptId: EXPORT_ID,
+          sessionId: 'session-1',
+          sourceFile: SOURCE_FILE,
+          intent: EDITED_PARAMS,
+          lut,
+          rawRenderExposure: RAW_RENDER_EXPOSURE,
+          geometry: null,
+        }),
+      )
+      expect(published?.identity?.lut?.contract).toMatchObject({
+        status: 'confirmed',
+        inputGamut: SLOG3_PROFILE.inputGamut,
+      })
+      const [manifestInput] = h.manifestInputs
+      expect(manifestInput.result).toBe(published)
+      expect(manifestInput.graph).toBe(input.graph)
+      expect(manifestInput.style).toBe(setup.written.style)
+      expect(manifestInput.style?.lutAsset?.profileResolution).toBe(
+        lut.profileResolution,
+      )
+      return input
+    }
+
+    it('exports the LUT applied over another one', async () => {
+      vi.mocked(createPreExportSnapshot).mockClear()
+      const input = await exportAfterSameTickLutChange({
+        rendered: { lut: CONFIRMED_LUT, style: TEAL_STYLE },
+        renderedParams: EDITED_PARAMS,
+        written: { lut: SLATE_LUT, style: styleFor(SLATE_LUT, 'slate-sha') },
+      })
+
+      expect(input.graph).not.toEqual(
+        resolveExportColorGraph({
+          ...pickColorGraphIntent(EDITED_PARAMS),
+          lut: CONFIRMED_LUT,
+          rawRenderExposure: RAW_RENDER_EXPOSURE,
+        }),
+      )
+      const [snapshotInput] = vi.mocked(createPreExportSnapshot).mock.calls[0]
+      expect(snapshotInput.graph).toBe(input.graph)
+      expect(snapshotInput.lutTitle).toBe('Slate')
+    })
+
+    it('exports the LUT applied over no look', async () => {
+      const input = await exportAfterSameTickLutChange({
+        rendered: { lut: null, style: null },
+        renderedParams: DEFAULT_PARAMS,
+        written: { lut: SLATE_LUT, style: styleFor(SLATE_LUT, 'slate-sha') },
+      })
+
+      expect(input.graph.steps.some((step) => step.kind === 'lut3d')).toBe(true)
+    })
+
+    it('exports the contract chosen for the LUT already applied', async () => {
+      const rechosen: LUTData = {
+        ...CONFIRMED_LUT,
+        profileResolution: SLATE_LUT.profileResolution,
+      }
+      const input = await exportAfterSameTickLutChange({
+        rendered: { lut: CONFIRMED_LUT, style: TEAL_STYLE },
+        renderedParams: EDITED_PARAMS,
+        written: { lut: rechosen, style: styleFor(rechosen, 'teal-sha') },
+      })
+
+      expect(input.graph).toMatchObject({
+        supported: true,
+        lutProfile: { id: SLOG3_PROFILE.id },
+      })
+    })
+  })
+})
+
+describe('orchestrateFullResExport live session reads', () => {
+  it('exports the geometry the store committed after the caller rendered', async () => {
+    const geometry: ExportGeometry = {
+      matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
+      constrainCrop: true,
+    }
+    const planned = planExportGeometry(geometry, { width: 6000, height: 4000 })
+    const delivered = {
+      width: planned.outputWidth,
+      height: planned.outputHeight,
+    }
+    const h = createHarness({ atomsSession: createSession() })
+    // The store holds the geometry before the caller rerenders.
+    h.replaceSession(createSession('session-1', { exportGeometry: geometry }))
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+    job.resolve()
+    await run
+
+    expect(input.geometry).toBe(geometry)
+    const published = h.state.session?.exportState.result
+    expect(published).toMatchObject(delivered)
+    expect(published?.identity?.geometry).toEqual({
+      matrix: geometry.matrix,
+      constrainCrop: true,
+    })
+    expect(h.manifestInputs[0].result).toBe(published)
+  })
+
+  it('drops the JPEG of a source the store replaced while the worker ran', async () => {
+    const h = createHarness()
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    await job.started
+    const replacedAt = h.mark('replaced')
+    const nextSession = createSession('session-2')
+    h.replaceSession(nextSession)
+    job.resolve()
+    await run
+
+    // The attempt is obsolete: it writes and reports nothing more.
+    expect(h.since(replacedAt)).toEqual(['test:replaced'])
+    expect(h.state.session).toBe(nextSession)
+    expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
+    expect(mocks.buildManifestForExportResult).not.toHaveBeenCalled()
+  })
+
+  it('stops an attempt whose Transform the store left pending while the worker ran', async () => {
+    const h = createHarness({ session: createAcceptedTransformSession() })
+    const job = h.installJob()
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    const input = await job.started
+    const live = h.state.session!
+    h.replaceSession({
+      ...live,
+      transform: recaptureTransform(live.transform!, 'pending'),
+    })
+    job.progress(1, 2)
+    expect(input.signal?.aborted).toBe(true)
+    job.reject(new DOMException('Aborted', 'AbortError'))
+    await run
+
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      'Full-resolution export is not ready',
+      { description: TRANSFORM_REFUSALS.pending },
+    )
+    expect(h.state.status).toBe('ready')
+    expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
+  })
+
+  it('seals no manifest for a source the store replaced after delivery', async () => {
+    const h = createHarness()
+    await runToReady(h)
+    h.replaceSession(createSession('session-2'))
+    h.manifest.resolve(SEALED_MANIFEST)
+    await settle()
+
+    expect(h.debugPayloads('export-manifest-ready')).toEqual([])
+    expect(h.state.session?.exportState.result).toBeUndefined()
   })
 })
 

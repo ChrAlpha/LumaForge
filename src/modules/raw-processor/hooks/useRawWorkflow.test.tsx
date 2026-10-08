@@ -313,6 +313,22 @@ function createCubeFile(title: string, name: string) {
   })
 }
 
+/** A .cube whose contract its own metadata comments declare. */
+function createContractCubeFile(
+  title: string,
+  name: string,
+  metadata: string[],
+  size = 17,
+) {
+  const content = [
+    ...metadata.map((entry) => `# ${entry}`),
+    createCube(title, size),
+  ].join('\n')
+  return Object.assign(new File([content], name), {
+    text: () => Promise.resolve(content),
+  })
+}
+
 /** A .cube whose bytes arrive only when the test finishes the read. */
 function createDeferredCubeFile(title: string, name: string) {
   const bytes = new TextEncoder().encode(createCube(title))
@@ -7579,6 +7595,167 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(
       jotaiStore.get(currentSessionAtom)?.exportState.result,
     ).toBeUndefined()
+  })
+
+  describe('a LUT change and an older export action in the same tick', () => {
+    const slog3Contract = {
+      ...getLUTColorProfile('sony-sgamut3cine-slog3')!,
+      role: 'combined-look-output' as const,
+      outputGamut: 'srgb-rec709' as const,
+      outputTransfer: 'bt709' as const,
+      outputRange: 'full' as const,
+    }
+    const vlogContract = {
+      ...getLUTColorProfile('panasonic-vgamut-vlog')!,
+      role: 'combined-look-output' as const,
+      outputGamut: 'srgb-rec709' as const,
+      outputTransfer: 'bt709' as const,
+      outputRange: 'full' as const,
+    }
+
+    beforeEach(() => {
+      exportSystemMock.runFullResolutionExportJob.mockImplementation(
+        async ({ filename }: { filename: string }) => ({
+          filename,
+          blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+        }),
+      )
+    })
+
+    async function readSealedResult() {
+      await waitFor(() => {
+        expect(
+          jotaiStore.get(currentSessionAtom)?.exportState.result?.manifestState
+            ?.status,
+        ).toBe('ready')
+      })
+      return jotaiStore.get(currentSessionAtom)!.exportState.result!
+    }
+
+    function executedGraphSteps(): ExportColorGraphStep[] {
+      expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(
+        1,
+      )
+      const [{ graph }] =
+        exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
+      return graph.steps
+    }
+
+    it('exports the contract chosen in that tick through graph, identity and manifest', async () => {
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      await act(async () => {
+        await result.current.loadLUT(
+          createCubeFile('Client Secret Sauce', 'client-look.cube'),
+        )
+      })
+      act(() => {
+        result.current.selectLUTProfile(slog3Contract)
+      })
+      await waitFor(() => {
+        expect(result.current.lutData?.profileResolution).toMatchObject({
+          kind: 'confirmed',
+          profile: { inputGamut: 's-gamut3-cine' },
+        })
+      })
+
+      // Both actions come from one render. The contract change lands in the
+      // store; the pipeline's LUT copy follows only once its effect runs.
+      const { selectLUTProfile, exportImage, lutDataRef } = result.current
+      await act(async () => {
+        selectLUTProfile(vlogContract)
+        expect(lutDataRef.current?.profileResolution).toMatchObject({
+          profile: { inputGamut: 's-gamut3-cine' },
+        })
+        await exportImage()
+      })
+
+      expect(
+        executedGraphSteps().find((step) => step.kind === 'gamut-to-lut-input'),
+      ).toMatchObject({ gamut: 'v-gamut' })
+      const sealed = await readSealedResult()
+      expect(sealed.identity?.lut?.contract).toMatchObject({
+        status: 'confirmed',
+        inputGamut: 'v-gamut',
+        inputTransfer: 'v-log',
+      })
+      expect(sealed.manifest?.lut).toMatchObject({
+        kind: 'local-file',
+        filename: 'client-look.cube',
+        sha256:
+          jotaiStore.get(currentSessionAtom)?.activeStyle?.lutAsset?.sha256,
+        input_contract: { gamut: 'v-gamut', transfer: 'v-log' },
+      })
+    })
+
+    it('exports the LUT a load landed in that tick through graph, identity and manifest', async () => {
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      await act(async () => {
+        await result.current.loadLUT(
+          createContractCubeFile('Look A', 'look-a.cube', [
+            'LUMAFORGE_INPUT_PROFILE=display-srgb',
+            'LUMAFORGE_ROLE=display-look',
+          ]),
+        )
+      })
+      await waitFor(() => {
+        expect(result.current.lutData?.title).toBe('Look A')
+      })
+      const lutA = result.current.lutDataRef.current!
+
+      const { loadLUT, exportImage, lutDataRef } = result.current
+      await act(async () => {
+        await expect(
+          loadLUT(
+            createContractCubeFile(
+              'Look B',
+              'look-b.cube',
+              [
+                'LUMAFORGE_INPUT_PROFILE=panasonic-vgamut-vlog',
+                'LUMAFORGE_ROLE=combined-look-output',
+                'LUMAFORGE_OUTPUT_GAMUT=srgb-rec709',
+                'LUMAFORGE_OUTPUT_TRANSFER=bt709',
+                'LUMAFORGE_OUTPUT_RANGE=full',
+              ],
+              33,
+            ),
+          ),
+        ).resolves.toBe('loaded')
+        expect(lutDataRef.current).toBe(lutA)
+        await exportImage()
+      })
+
+      const lutB = result.current.lutDataRef.current!
+      expect(lutB.title).toBe('Look B')
+      const steps = executedGraphSteps()
+      expect(
+        steps.find((step) => step.kind === 'gamut-to-lut-input'),
+      ).toMatchObject({ gamut: 'v-gamut' })
+      const lut3d = steps.find((step) => step.kind === 'lut3d')
+      expect(lut3d).toMatchObject({ size: 33 })
+      expect(lut3d && lut3d.kind === 'lut3d' ? lut3d.data : null).toBe(
+        lutB.data,
+      )
+      const sealed = await readSealedResult()
+      expect(sealed.identity?.lut).toMatchObject({
+        size: 33,
+        contract: { status: 'confirmed', inputGamut: 'v-gamut' },
+      })
+      const lutBSha256 =
+        jotaiStore.get(currentSessionAtom)?.activeStyle?.lutAsset?.sha256
+      expect(lutBSha256).toMatch(/^[0-9a-f]{64}$/)
+      expect(sealed.manifest?.lut).toMatchObject({
+        kind: 'local-file',
+        filename: 'look-b.cube',
+        sha256: lutBSha256,
+        input_contract: { gamut: 'v-gamut', transfer: 'v-log' },
+      })
+    })
   })
 
   it('keeps a ready export when the bounded HQ frame upgrades the preview', async () => {

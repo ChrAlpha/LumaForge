@@ -41,6 +41,12 @@ type UseRawExportStageInput = {
   params: ColorGraphIntentSource
   /** The latest params, for an action called from an older render. */
   paramsRef: MutableRefObject<ColorGraphIntentSource>
+  /** Reads the session from the store when called. */
+  getSession: () => ImageSession | null
+  /** Reads the color intent the photo renders with from the store when called. */
+  getColorIntent: () => ColorGraphIntentSource
+  /** Reads the LUT the store holds when called. */
+  getLutData: () => LUTData | null
   lutDataRef: MutableRefObject<LUTData | null>
   decodedImageRef: MutableRefObject<DecodedImage | null>
   stats: PipelineStats | null
@@ -82,6 +88,9 @@ export function useRawExportStage({
   session,
   params,
   paramsRef,
+  getSession,
+  getColorIntent,
+  getLutData,
   lutDataRef,
   decodedImageRef,
   stats,
@@ -117,15 +126,15 @@ export function useRawExportStage({
     setSession,
     loadedImage,
     session,
-    params,
-    lutDataRef,
+    getSession,
+    getColorIntent,
+    getLutData,
     decodedImageRef,
     stats,
     refreshExportInterruption,
     exportAbortControllerRef,
     exportGraphVersionRef,
     isMountedRef,
-    sessionRef,
     pipelineRef,
     resourceRegistryRef,
     previewCopyCanvasRef,
