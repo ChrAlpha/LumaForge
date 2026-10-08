@@ -38,7 +38,7 @@ import type { DeliveredExportSize } from '../services/export/delivered-export-si
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import type { PreviewViewport } from '../services/preview/preview-viewport'
 import type { TransformEvent } from '../services/transform/transform-state'
-import type { PreviewPipelineEvacuationHandle } from './stages/preview/usePreviewPipelineEvacuation'
+import type { PreviewPipelineHandle } from './preview/usePreviewPipelineLifecycle'
 
 export interface UseRawWorkflowReturn {
   previewTransform?: {
@@ -167,9 +167,8 @@ export interface UseRawWorkflowReturn {
   copyExportResult: () => Promise<void>
   restorePreviewAfterExport: () => Promise<void>
   requestOriginalReferenceFallback: () => void
-  setOriginalPreviewPipeline: (
-    pipeline: PreviewPipelineEvacuationHandle | null,
-  ) => void
+  /** Receives the handle the original GPU layer's owner publishes. */
+  setOriginalPreviewPipeline: (handle: PreviewPipelineHandle | null) => void
   reset: () => void
   dismissError: () => void
   updateStats: (stats: PipelineStats) => void

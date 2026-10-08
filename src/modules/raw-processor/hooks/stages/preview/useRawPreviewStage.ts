@@ -18,7 +18,6 @@ import { getCurrentSession } from '../../../state/session.atoms'
 import { usePreviewHistogram } from '../../usePreviewHistogram'
 import { useDecodedPreviewResource } from './useDecodedPreviewResource'
 import { useEmbeddedPreviewUrlLifecycle } from './useEmbeddedPreviewUrlLifecycle'
-import type { PreviewPipelineEvacuationHandle } from './usePreviewPipelineEvacuation'
 import { usePreviewPipelineEvacuation } from './usePreviewPipelineEvacuation'
 import { useRestorePreviewAfterExport } from './useRestorePreviewAfterExport'
 
@@ -131,9 +130,7 @@ export function useRawPreviewStage({
     clearSessionEmbeddedPreviewUrl,
     revokeCurrentEmbeddedPreviewUrl,
     registerCurrentPreviewPipelineForEvacuation,
-    setOriginalPreviewPipeline: setOriginalPreviewPipeline as (
-      pipeline: PreviewPipelineEvacuationHandle | null,
-    ) => void,
+    setOriginalPreviewPipeline,
     setDecodedImageRef,
     restorePreviewAfterExport,
   }

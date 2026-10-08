@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   releaseSourceForReplacement,
   releaseSourceForReset,
+  releaseSourceForUnmount,
 } from './raw-workflow-resources'
 
 type Ports = Parameters<typeof releaseSourceForReset>[0]
@@ -46,6 +47,11 @@ describe.each([
   {
     name: 'replacement',
     release: releaseSourceForReplacement,
+    disposal: 'disposeExportResults()',
+  },
+  {
+    name: 'unmount',
+    release: releaseSourceForUnmount,
     disposal: 'disposeExportResults()',
   },
 ])('releasing the outgoing source on $name', ({ release, disposal }) => {
@@ -113,5 +119,16 @@ describe.each([
     obsoleteCallback()
 
     expect(write).not.toHaveBeenCalled()
+  })
+})
+
+describe('releasing the outgoing source on unmount', () => {
+  it('returns the load it fenced while pending, read before the fence drops', () => {
+    const { ports } = createPorts()
+
+    expect(releaseSourceForUnmount(ports)).toBe('session-1')
+    expect(ports.pendingLoadSessionIdRef.current).toBeNull()
+    // A repeated release finds no pending load left to drop.
+    expect(releaseSourceForUnmount(ports)).toBeNull()
   })
 })

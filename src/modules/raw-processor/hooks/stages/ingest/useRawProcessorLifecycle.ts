@@ -6,6 +6,7 @@ import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
+import { releaseSourceForUnmount } from '../../../services/workflow/raw-workflow-resources'
 
 export type SetImageSession = (
   update:
@@ -51,15 +52,16 @@ export function useRawProcessorLifecycle({
     isMountedRef.current = true
 
     return () => {
-      const pendingLoadSessionId = pendingLoadSessionIdRef.current
       isMountedRef.current = false
-      runtimeWorkSessionIdRef.current = null
-      pendingLoadSessionIdRef.current = null
-      abortExportWork()
-      abortRuntimeWork()
-      queueExportResultResourceDisposal()
-      revokeCurrentEmbeddedPreviewUrl()
-      previewCopyCanvasRef.current = null
+      const pendingLoadSessionId = releaseSourceForUnmount({
+        runtimeWorkSessionIdRef,
+        pendingLoadSessionIdRef,
+        previewCopyCanvasRef,
+        abortExportWork,
+        abortRuntimeWork,
+        queueExportResultResourceDisposal,
+        revokeCurrentEmbeddedPreviewUrl,
+      })
       // Only a load still pending is dropped, and only while the store still
       // holds it; a loaded session stays in the store past this mount.
       if (pendingLoadSessionId) {

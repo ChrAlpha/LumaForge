@@ -221,6 +221,29 @@ describe('useRawProcessorLifecycle', () => {
     })
     expect(lifecycle.isMountedRef.current).toBe(false)
     expect(lifecycle.runtimeWorkSessionIdRef.current).toBeNull()
+    // Unmounting is not a reset, so the result owner gets no cleanup reason.
+    expect(
+      lifecycle.calls.queueExportResultResourceDisposal,
+    ).toHaveBeenCalledExactlyOnceWith()
+  })
+
+  it('drops its fences before it cancels, so work settling meanwhile writes nothing', () => {
+    const lifecycle = renderLifecycle({
+      session: createSession('loaded-session'),
+    })
+    const settled = vi.fn()
+    // Outgoing runtime work settles while its owner is being cancelled; it
+    // checks the fence the shared release has already dropped.
+    lifecycle.calls.abortRuntimeWork.mockImplementation(() => {
+      if (lifecycle.runtimeWorkSessionIdRef.current === 'runtime-work') {
+        settled()
+      }
+    })
+
+    lifecycle.unmount()
+
+    expect(settled).not.toHaveBeenCalled()
+    expect(lifecycle.pendingLoadSessionIdRef.current).toBeNull()
   })
 
   it('fences stale work and releases resources before it drops its pending load', () => {

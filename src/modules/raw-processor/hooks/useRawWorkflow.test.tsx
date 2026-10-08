@@ -572,6 +572,28 @@ function createFileWithSize(name: string, size: number) {
 
 // Workflow atom hooks are bound to the shared jotaiStore, so a fresh Provider
 // would not isolate them: each test resets that store in beforeEach/afterEach.
+/**
+ * Publishes a fake processed pipeline the way its GPU owner does: disposing
+ * it releases it, and the owner then unpublishes it from the workflow.
+ */
+function publishOwnedPipeline(
+  pipelineRef: { current: unknown },
+  pipeline: { dispose: (...args: never[]) => unknown } & Record<
+    string,
+    unknown
+  >,
+) {
+  const release = pipeline.dispose as (...args: unknown[]) => unknown
+  const owned = {
+    ...pipeline,
+    dispose: (...args: unknown[]) => {
+      release(...args)
+      if (pipelineRef.current === owned) pipelineRef.current = null
+    },
+  }
+  pipelineRef.current = owned
+}
+
 function wrapper({ children }: { children: ReactNode }) {
   return <Provider store={jotaiStore}>{children}</Provider>
 }
@@ -5717,12 +5739,12 @@ describe('useRawWorkflow embedded preview state', () => {
 
     const pipelineDispose = vi.fn()
     const originalPipelineDispose = vi.fn()
-    const pipeline = {
-      dispose: pipelineDispose,
-    } as never
+    // The original layer's owner publishes a handle that releases the
+    // pipeline with its GPU context.
     const originalPipeline = {
       dispose: originalPipelineDispose,
-    } as never
+      snapshot: () => ({ live: true, estimatedBytes: 0 }),
+    }
 
     const pendingExport = deferred<{ filename: string; blob: Blob }>()
     exportSystemMock.runFullResolutionExportJob.mockReturnValue(
@@ -5736,7 +5758,9 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     act(() => {
-      result.current.pipelineRef.current = pipeline
+      publishOwnedPipeline(result.current.pipelineRef, {
+        dispose: pipelineDispose,
+      })
       result.current.setOriginalPreviewPipeline(originalPipeline)
     })
 
@@ -5760,9 +5784,7 @@ describe('useRawWorkflow embedded preview state', () => {
     )
     expect(result.current.previewSuspended).toBe(true)
     expect(pipelineDispose).toHaveBeenCalledWith({ releaseContext: true })
-    expect(originalPipelineDispose).toHaveBeenCalledWith({
-      releaseContext: true,
-    })
+    expect(originalPipelineDispose).toHaveBeenCalledOnce()
     expect(result.current.pipelineRef.current).toBeNull()
 
     await act(async () => {
@@ -6284,9 +6306,9 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     act(() => {
-      result.current.pipelineRef.current = {
+      publishOwnedPipeline(result.current.pipelineRef, {
         dispose: pipelineDispose,
-      } as never
+      })
       const activeSession = jotaiStore.get(currentSessionAtom)!
       jotaiStore.set(currentSessionAtom, {
         ...activeSession,
@@ -7954,10 +7976,10 @@ describe('useRawWorkflow embedded preview state', () => {
         lutOutputTransfer: null,
         lutSize: null,
       })
-      result.current.pipelineRef.current = {
+      publishOwnedPipeline(result.current.pipelineRef, {
         renderToHiddenCanvas,
         dispose,
-      } as never
+      })
     })
     await act(async () => {
       await result.current.exportImage()

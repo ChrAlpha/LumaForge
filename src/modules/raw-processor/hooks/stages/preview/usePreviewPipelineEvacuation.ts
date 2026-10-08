@@ -1,31 +1,46 @@
 import type { MutableRefObject } from 'react'
 import { useCallback, useRef } from 'react'
 
-import type { ResourceRegistry } from '~/lib/export/resource-registry'
+import type {
+  ResourceRegistry,
+  TrackedLargeResource,
+} from '~/lib/export/resource-registry'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
-export type PreviewPipelineEvacuationHandle = Pick<
-  RawProcessingPipeline,
-  'dispose'
-> &
+import type { PreviewPipelineHandle } from '../../preview/usePreviewPipelineLifecycle'
+
+/**
+ * The processed pipeline its owner published. Disposing it releases it once
+ * and tells that owner, which forgets and unpublishes it.
+ */
+type PublishedProcessedPipeline = Pick<RawProcessingPipeline, 'dispose'> &
   Partial<Pick<RawProcessingPipeline, 'getResourceStats'>>
 
 type UsePreviewPipelineEvacuationInput = {
   resourceRegistryRef: MutableRefObject<ResourceRegistry | null>
-  pipelineRef: MutableRefObject<PreviewPipelineEvacuationHandle | null>
+  pipelineRef: MutableRefObject<PublishedProcessedPipeline | null>
 }
 
+type PipelineLabel = 'processed' | 'original'
+
+/**
+ * Lets export evacuation release the preview GPU pipelines through their
+ * owners. A registration only names what an owner published and calls that
+ * owner's own idempotent release: it never clears a published reference
+ * itself, so a registration outliving its pipeline cannot touch a successor.
+ */
 export function usePreviewPipelineEvacuation({
   resourceRegistryRef,
   pipelineRef,
 }: UsePreviewPipelineEvacuationInput) {
   const previewPipelineResourceIdRef = useRef(0)
-  const originalPreviewPipelineRef =
-    useRef<PreviewPipelineEvacuationHandle | null>(null)
+  const originalPreviewPipelineRef = useRef<PreviewPipelineHandle | null>(null)
+  // Keyed weakly, so remembering a registration never keeps a pipeline alive.
+  const registrationsRef = useRef(new WeakMap<object, TrackedLargeResource>())
 
   const setOriginalPreviewPipeline = useCallback(
-    (pipeline: PreviewPipelineEvacuationHandle | null) => {
-      originalPreviewPipelineRef.current = pipeline
+    (handle: PreviewPipelineHandle | null) => {
+      originalPreviewPipelineRef.current = handle
     },
     [],
   )
@@ -37,42 +52,51 @@ export function usePreviewPipelineEvacuation({
     }
 
     const registerPipeline = (
-      label: 'processed' | 'original',
-      pipeline: PreviewPipelineEvacuationHandle | null,
-      clearCurrent: () => void,
+      label: PipelineLabel,
+      resource: object,
+      estimatedBytes: number | undefined,
+      dispose: () => void,
     ) => {
-      if (!pipeline || typeof pipeline.dispose !== 'function') {
+      // A published pipeline is registered once until its registration is
+      // disposed, however often an export asks.
+      const registered = registrationsRef.current.get(resource)
+      if (registered && !registered.disposed) {
         return
       }
 
-      const id = `gpu-pipeline-${++previewPipelineResourceIdRef.current}-${label}`
-      registry.register({
-        id,
-        // Disposal and byte estimates come from the live WebGPU executor.
-        owner: 'gpu',
-        kind: 'gpu-pipeline',
-        estimatedBytes: pipeline.getResourceStats?.().estimatedBytes,
-        dispose: () => {
-          clearCurrent()
-          return pipeline.dispose({ releaseContext: true })
-        },
-      })
+      registrationsRef.current.set(
+        resource,
+        registry.register({
+          id: `gpu-pipeline-${++previewPipelineResourceIdRef.current}-${label}`,
+          owner: 'gpu',
+          kind: 'gpu-pipeline',
+          estimatedBytes,
+          dispose,
+        }),
+      )
     }
 
-    const processedPipeline = pipelineRef.current
-    registerPipeline('processed', processedPipeline, () => {
-      if (pipelineRef.current === processedPipeline) {
-        pipelineRef.current = null
-      }
-    })
+    const processed = pipelineRef.current
+    if (processed && typeof processed.dispose === 'function') {
+      registerPipeline(
+        'processed',
+        processed,
+        processed.getResourceStats?.().estimatedBytes,
+        () => processed.dispose({ releaseContext: true }),
+      )
+    }
 
-    const originalPipeline = originalPreviewPipelineRef.current
-    registerPipeline('original', originalPipeline, () => {
-      if (originalPreviewPipelineRef.current === originalPipeline) {
-        originalPreviewPipelineRef.current = null
-      }
-    })
-  }, [originalPreviewPipelineRef, pipelineRef, resourceRegistryRef])
+    const original = originalPreviewPipelineRef.current
+    const originalSnapshot = original?.snapshot()
+    if (original && originalSnapshot?.live) {
+      registerPipeline(
+        'original',
+        original,
+        originalSnapshot.estimatedBytes,
+        original.dispose,
+      )
+    }
+  }, [pipelineRef, resourceRegistryRef])
 
   return {
     registerCurrentPreviewPipelineForEvacuation,

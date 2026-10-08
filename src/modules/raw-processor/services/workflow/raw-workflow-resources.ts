@@ -5,7 +5,9 @@ import type { ExportResourceCleanupReason } from '~/lib/export/execution-profile
  * state and makes its own release idempotent: the RAW host its session lease
  * and native generation, the export stage its controller, the resource
  * registry the delivered results, the preview stage the embedded URL. A
- * release only fences the outgoing work and calls them, in order.
+ * release only fences the outgoing work and calls them, in order. The GPU
+ * pipelines are not among them: their own owners release them when the
+ * preview unmounts or suspends.
  */
 type SourceResourceOwners = {
   runtimeWorkSessionIdRef: { current: string | null }
@@ -53,4 +55,18 @@ export function releaseSourceForReplacement(
   owners: SourceResourceOwners,
 ): void {
   releaseSource(owners, () => owners.queueExportResultResourceDisposal())
+}
+
+/**
+ * Releases what the shown source holds when the workflow unmounts, and
+ * returns the load it fenced while that load was still pending. The caller
+ * marks the workflow unmounted first and afterwards drops only that pending
+ * session; a loaded one stays in the store.
+ */
+export function releaseSourceForUnmount(
+  owners: SourceResourceOwners,
+): string | null {
+  const pendingLoadSessionId = owners.pendingLoadSessionIdRef.current
+  releaseSource(owners, () => owners.queueExportResultResourceDisposal())
+  return pendingLoadSessionId
 }
