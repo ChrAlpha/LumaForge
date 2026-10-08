@@ -7,7 +7,7 @@ import {
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
 import { act, renderHook } from '@testing-library/react'
-import { atom, createStore } from 'jotai'
+import { atom, createStore, useAtomValue } from 'jotai'
 import type { SetStateAction } from 'react'
 import {
   afterEach,
@@ -38,6 +38,12 @@ import {
   getCurrentSession,
   setCurrentSession,
 } from '../../../state/session.atoms'
+import {
+  getEffectiveColorIntent,
+  getProcessingParams,
+  setProcessingParams,
+  useProcessingParamsValue,
+} from '../../../state/workflow.atoms'
 import { useRawLookStage } from './useRawLookStage'
 
 vi.mock('~/lib/profiles/fetch', () => ({
@@ -1465,5 +1471,200 @@ describe('useRawLookStage LUT loads against the current session', () => {
 
     expect(getCurrentSession()).toBe(session)
     expect(harness.setLut).not.toHaveBeenCalled()
+  })
+})
+
+describe('useRawLookStage effective intent against the store', () => {
+  afterEach(() => {
+    setProcessingParams({ ...baseIntent })
+  })
+
+  /**
+   * Renders the stage from the production stores, as the workflow does, so
+   * the rendered params and `getEffectiveColorIntent` read the same stored
+   * intent and session.
+   */
+  function renderFromStore({
+    session,
+    params = baseIntent,
+  }: {
+    session: ImageSession | null
+    params?: ColorGraphIntent
+  }) {
+    setCurrentSession(session)
+    setProcessingParams(params)
+    const lut = createLut()
+
+    return renderHook(() =>
+      useRawLookStage({
+        baseParams: useProcessingParamsValue(),
+        session: useAtomValue(currentSessionAtom, { store: jotaiStore }),
+        lut,
+        setLut: vi.fn(),
+        setColorIntent: vi.fn(),
+        lutDataRef: { current: lut },
+        setLutDataRef: vi.fn(),
+        scheduleToast: vi.fn(),
+        invalidateExportGraph: vi.fn(),
+        canApplyLoadedLut: () => true,
+      }),
+    )
+  }
+
+  function withLookIntensity(intensity: number) {
+    return (prev: ImageSession | null): ImageSession | null =>
+      prev?.activeStyle
+        ? {
+            ...prev,
+            activeStyle: { ...prev.activeStyle, currentIntensity: intensity },
+          }
+        : prev
+  }
+
+  it('reads the stored intent and session without any render', () => {
+    setCurrentSession(null)
+    setProcessingParams({ ...baseIntent, userContrast: 0.2 })
+
+    expect(getEffectiveColorIntent()).toBe(getProcessingParams())
+
+    setCurrentSession({
+      ...createSession(),
+      activeStyle: {
+        kind: 'custom',
+        name: 'Client Look',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.37,
+      },
+    })
+
+    expect(getEffectiveColorIntent()).toEqual({
+      ...baseIntent,
+      userContrast: 0.2,
+      styleKind: 'custom',
+      intensity: 0.37,
+    })
+  })
+
+  it('agrees with the rendered params after a detached tone change in the same tick', () => {
+    const { result } = renderFromStore({ session: null })
+    const toned = { ...baseIntent, userExposureEv: 1.25 }
+
+    act(() => {
+      setProcessingParams(toned)
+      expect(getEffectiveColorIntent()).toBe(toned)
+      expect(result.current.params).toBe(baseIntent)
+    })
+
+    expect(result.current.params).toBe(toned)
+    expect(getEffectiveColorIntent()).toBe(result.current.params)
+  })
+
+  it('agrees with the rendered params after a tone and a Strength change in the same tick', () => {
+    const { result } = renderFromStore({ session: createSession() })
+    expect(getEffectiveColorIntent()).toEqual(result.current.params)
+
+    act(() => {
+      setProcessingParams({ ...baseIntent, userShadows: 0.3 })
+      setCurrentSession(withLookIntensity(0.25))
+      expect(getEffectiveColorIntent()).toEqual({
+        ...baseIntent,
+        userShadows: 0.3,
+        styleKind: 'custom',
+        intensity: 0.25,
+      })
+    })
+
+    expect(result.current.params).toEqual(getEffectiveColorIntent())
+  })
+
+  it('projects a zero Strength as the custom look, not as no look', () => {
+    const { result } = renderFromStore({ session: createSession() })
+
+    act(() => {
+      setCurrentSession(withLookIntensity(0))
+      expect(getEffectiveColorIntent()).toMatchObject({
+        styleKind: 'custom',
+        intensity: 0,
+      })
+    })
+
+    expect(result.current.params).toEqual(getEffectiveColorIntent())
+  })
+
+  it('agrees with the rendered params after the session look is cleared in the same tick', () => {
+    const detachedLook: ColorGraphIntent = {
+      ...baseIntent,
+      styleKind: 'custom',
+      intensity: 1,
+    }
+    const { result } = renderFromStore({
+      session: createSession(),
+      params: detachedLook,
+    })
+    expect(result.current.params).toBe(detachedLook)
+    expect(getEffectiveColorIntent()).toBe(detachedLook)
+
+    act(() => {
+      setCurrentSession((prev) =>
+        prev ? { ...prev, activeStyle: null } : prev,
+      )
+      expect(getEffectiveColorIntent()).toEqual({
+        ...detachedLook,
+        styleKind: 'none',
+        builtinPreset: null,
+        intensity: 0.7,
+      })
+    })
+
+    expect(result.current.params).toEqual(getEffectiveColorIntent())
+  })
+
+  it('reuses the stored intent for a look-less session that projects nothing new', () => {
+    const { result } = renderFromStore({ session: createSessionWithoutLook() })
+
+    expect(result.current.params).toBe(baseIntent)
+    expect(getEffectiveColorIntent()).toBe(baseIntent)
+  })
+
+  it('leaves the effective intent alone when only the LUT contract changes', () => {
+    const carried: ColorGraphIntent = {
+      ...baseIntent,
+      styleKind: 'custom',
+      intensity: 1,
+    }
+    const { result } = renderFromStore({
+      session: createSession(),
+      params: carried,
+    })
+
+    act(() => {
+      setCurrentSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              lutProfileSelection: buildLUTContractSelectionState(createLut()),
+            }
+          : prev,
+      )
+      expect(getEffectiveColorIntent()).toBe(carried)
+    })
+
+    expect(result.current.params).toBe(carried)
+  })
+
+  it('keeps view state, LUT bytes and RAW exposure out of the effective intent', () => {
+    renderFromStore({
+      session: {
+        ...createSession(),
+        viewState: { ...createSession().viewState, mode: 'compare' },
+      },
+    })
+
+    expect(Object.keys(getEffectiveColorIntent()).sort()).toEqual(
+      [...COLOR_GRAPH_INTENT_KEYS].sort(),
+    )
+    expect(Object.keys(getProcessingParams()).sort()).toEqual(
+      [...COLOR_GRAPH_INTENT_KEYS].sort(),
+    )
   })
 })

@@ -7,8 +7,10 @@ import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ProcessingStatus } from '../model/workflow'
+import { projectEffectiveColorIntent } from '../services/look/effective-color-intent'
 import { DEFAULT_LOOK_INTENSITY } from '../services/look/style-system'
 import { resetDetachedPreviewView } from './preview-view.atoms'
+import { getCurrentSession } from './session.atoms'
 
 /**
  * The stored color intent: the user's color, plus the look selection while no
@@ -34,6 +36,16 @@ export const [
   getProcessingParams,
   setProcessingParams,
 ] = createAtomHooks(baseProcessingParamsAtom)
+
+/**
+ * The color intent the photo renders and exports with, read from the store
+ * when called: the stored intent with the current session's look projected
+ * over it, through the same projection the rendered params use. A write to
+ * either atom is visible here in the same tick, before any rerender.
+ */
+export function getEffectiveColorIntent(): ColorGraphIntent {
+  return projectEffectiveColorIntent(getProcessingParams(), getCurrentSession())
+}
 
 const baseLutAtom = atom<ParsedLUT | null>(null)
 

@@ -16,11 +16,12 @@ import {
 } from '../compare/view-session-state'
 import { changesRenderGraphParams } from '../export/export-state'
 import type { PreviewViewport } from '../preview/preview-viewport'
+import { projectSessionLookIntensity } from './effective-color-intent'
 import {
   applyLookIntensityToSession,
   clearActiveLookFromSession,
 } from './look-session-state'
-import { clampLookIntensity, DEFAULT_LOOK_INTENSITY } from './style-system'
+import { clampLookIntensity } from './style-system'
 
 export function computeCompareSplitChange(
   session: ImageSession | null,
@@ -43,17 +44,6 @@ export function computeViewportChange(
   }
 
   return applyPreviewViewportToSession(session, viewport)
-}
-
-/**
- * Look intensity an existing session projects into the color intent. A
- * session that owns no look projects the default intensity, whatever the
- * detached intent still holds.
- */
-export function projectSessionLookIntensity(session: ImageSession): number {
-  return session.activeStyle
-    ? session.activeStyle.currentIntensity
-    : DEFAULT_LOOK_INTENSITY
 }
 
 /**

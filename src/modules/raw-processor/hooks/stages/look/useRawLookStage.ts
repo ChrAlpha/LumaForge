@@ -15,6 +15,7 @@ import type {
   LUTContractSelectionState,
   StyleAsset,
 } from '../../../model/session'
+import { projectEffectiveColorIntent } from '../../../services/look/effective-color-intent'
 import { resolveActiveLook } from '../../../services/look/look-session-state'
 import type { LutLoadContext } from '../../../services/look/orchestrate-lut-load'
 import {
@@ -27,7 +28,6 @@ import {
   computeDetachedIntensityChange,
   computeSessionClearLUT,
   computeSessionIntensityChange,
-  projectSessionLookIntensity,
 } from '../../../services/look/orchestrate-params-update'
 import {
   buildLUTContractSelectionState,
@@ -82,36 +82,10 @@ export function useRawLookStage({
   const currentLutName =
     activeStyle?.kind === 'custom' ? activeStyle.name : null
 
-  const params = useMemo<ColorGraphIntent>(() => {
-    if (!session) return baseParams
-    if (!session.activeStyle) {
-      const nextParams: ColorGraphIntent = {
-        ...baseParams,
-        intensity: projectSessionLookIntensity(session),
-        styleKind: 'none',
-        builtinPreset: null,
-      }
-
-      return baseParams.intensity === nextParams.intensity &&
-        baseParams.styleKind === nextParams.styleKind &&
-        baseParams.builtinPreset === nextParams.builtinPreset
-        ? baseParams
-        : nextParams
-    }
-
-    const intensity = projectSessionLookIntensity(session)
-    const stylePatch =
-      session.activeStyle.kind === 'custom'
-        ? { styleKind: 'custom' as const, builtinPreset: null }
-        : {}
-    const nextParams = { ...baseParams, ...stylePatch, intensity }
-
-    return baseParams.intensity === intensity &&
-      baseParams.styleKind === nextParams.styleKind &&
-      baseParams.builtinPreset === nextParams.builtinPreset
-      ? baseParams
-      : nextParams
-  }, [baseParams, session])
+  const params = useMemo(
+    () => projectEffectiveColorIntent(baseParams, session),
+    [baseParams, session],
+  )
 
   // LUT loads read and write the session in the store, so a load, reset or
   // look write landing before this hook rerenders is what they see.

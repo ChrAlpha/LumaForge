@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { ImageSession } from '../../model/session'
 import { createImageSession } from '../../model/session-factory'
+import { projectSessionLookIntensity } from './effective-color-intent'
 import {
   computeColorParams,
   computeDetachedClearLUT,
@@ -11,7 +12,6 @@ import {
   computeSessionClearLUT,
   computeSessionIntensityChange,
   computeToneParams,
-  projectSessionLookIntensity,
 } from './orchestrate-params-update'
 import { DEFAULT_LOOK_INTENSITY, LOOK_INTENSITY_PRESETS } from './style-system'
 
