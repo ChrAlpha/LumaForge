@@ -141,9 +141,9 @@ function createLoadedProcessorState(
     },
     hasImage: true,
     canExport: true,
-    exportDisabledReason: undefined,
+    exportRefusal: undefined,
     canPreviewExport: true,
-    previewExportDisabledReason: undefined,
+    previewExportRefusal: undefined,
     exportResult: null,
     exportShareCapability: {
       available: false,

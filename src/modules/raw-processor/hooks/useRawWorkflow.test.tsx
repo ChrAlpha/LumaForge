@@ -3644,9 +3644,9 @@ describe('useRawWorkflow embedded preview state', () => {
       jotaiStore.get(currentSessionAtom)?.exportState.fullResCapability,
     ).toEqual({ status: 'probing' })
     expect(result.current.canExport).toBe(false)
-    expect(result.current.exportDisabledReason).toBe(
-      'Quick preview is still being prepared.',
-    )
+    expect(result.current.exportRefusal).toEqual({
+      code: 'quick-preview-pending',
+    })
 
     await act(async () => {
       await result.current.exportImage()
@@ -3732,9 +3732,9 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.displaySource).toBe('embedded')
     expect(result.current.status).toBe('error')
     expect(result.current.canExport).toBe(false)
-    expect(result.current.exportDisabledReason).toBe(
-      'Quick preview is still being prepared.',
-    )
+    expect(result.current.exportRefusal).toEqual({
+      code: 'quick-preview-pending',
+    })
     expect(session?.previewBundle.quickDecodePreview).toEqual({
       status: 'failed',
       errorCode: 'RAW_QUICK_DECODE_FAILED',
@@ -5760,9 +5760,9 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     expect(result.current.canExport).toBe(false)
-    expect(result.current.exportDisabledReason).toMatch(
-      /cannot safely complete this large local full-resolution export/i,
-    )
+    expect(result.current.exportRefusal).toEqual({
+      code: 'cannot-safely-complete',
+    })
 
     await act(async () => {
       await result.current.exportImage()

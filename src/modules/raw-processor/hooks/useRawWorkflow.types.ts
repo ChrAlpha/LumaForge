@@ -22,6 +22,8 @@ import type {
 import type {
   ExportResult,
   ExportShareCapability,
+  FullResExportReason,
+  HqPreviewExportReasonCode,
 } from '../model/export-result'
 import type {
   DisplaySource,
@@ -76,14 +78,16 @@ export interface UseRawWorkflowReturn {
   stats: PipelineStats | null
   hasImage: boolean
   canExport: boolean
-  exportDisabledReason?: string
+  /** Why a full-resolution export cannot start; unset while it can. */
+  exportRefusal?: FullResExportReason
   /**
    * The frame a full-resolution export will write (Transform included);
    * null while unknown.
    */
   deliveredExportSize?: DeliveredExportSize | null
   canPreviewExport: boolean
-  previewExportDisabledReason?: string
+  /** Why an HQ preview export cannot start, when the workflow names it. */
+  previewExportRefusal?: HqPreviewExportReasonCode
   exportResult: ExportResult | null
   exportShareCapability: ExportShareCapability
   /**

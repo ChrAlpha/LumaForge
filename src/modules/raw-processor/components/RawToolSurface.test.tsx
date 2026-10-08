@@ -69,7 +69,10 @@ const baseProps = {
   onLutProfileSelect: vi.fn(),
   onExport: vi.fn(),
   canExport: false,
-  disabledReason: 'Full-resolution export source is still loading.',
+  disabledReason: {
+    source: 'workflow' as const,
+    reason: { code: 'source-loading' as const },
+  },
   isProcessing: false,
   exportResult: null,
   exportShareCapability: {

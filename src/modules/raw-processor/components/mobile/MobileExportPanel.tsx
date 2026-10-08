@@ -11,7 +11,7 @@ import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import { useId } from 'react'
 
 import { clsxm } from '~/lib/cn'
-import { localizeCopyLabel, localizeRawReason, useI18n } from '~/lib/i18n'
+import { useI18n } from '~/lib/i18n'
 
 import { formatBytes } from '../../format-bytes'
 import type {
@@ -20,6 +20,15 @@ import type {
 } from '../../model/export-result'
 import { TAP_SPRING } from '../../motion'
 import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
+import type {
+  FullExportActionReason,
+  HqExportActionReason,
+} from '../../services/surface/raw-reason'
+import {
+  exportCopyActionLabel,
+  fullExportActionReasonText,
+  hqExportActionReasonText,
+} from '../../services/surface/raw-reason'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { EXPORT_INTERRUPTION_NOTE_COPY } from '../RawWorkflowContext'
 import type { MobileExportRecap } from './export-recap'
@@ -166,9 +175,9 @@ function ExportRecapLines({ recap }: { recap: MobileExportRecap }) {
 
 export function MobileExportPanel(props: {
   canExport: boolean
-  disabledReason?: string
+  disabledReason?: FullExportActionReason
   canPreviewExport?: boolean
-  previewExportDisabledReason?: string
+  previewExportDisabledReason?: HqExportActionReason
   isProcessing: boolean
   onExport: () => void
   onPreviewExport?: () => void | Promise<void>
@@ -215,14 +224,13 @@ export function MobileExportPanel(props: {
         ? t('raw.mobile.export.previewDone')
         : t('raw.mobile.export.done')
       : t('raw.export.title')
-  const unavailableReason =
-    localizeRawReason(props.disabledReason, t) || t('raw.exportSourceLoading')
-  const copyCapability = props.exportResult?.copyCapability
-  const copyButtonLabel = copyCapability
-    ? copyCapability.mode === 'unavailable'
-      ? t('raw.export.copy')
-      : localizeCopyLabel(copyCapability.label, t)
-    : t('raw.export.copy')
+  const unavailableReason = props.disabledReason
+    ? fullExportActionReasonText(props.disabledReason, t)
+    : t('raw.exportSourceLoading')
+  const copyButtonLabel = exportCopyActionLabel(
+    props.exportResult?.copyCapability,
+    t,
+  )
   const showUnavailableReason = !props.isProcessing && !props.canExport
   // A block caused by the LUT's colour contract reads in amber, the
   // contract colour, and offers the route into the contract. Every other
@@ -233,10 +241,9 @@ export function MobileExportPanel(props: {
   // fine (a committed Transform does exactly that), so a disabled HQ button
   // names its reason instead of going quietly dark. A reason the full-res
   // box above already states is not repeated.
-  const previewUnavailableReason = localizeRawReason(
-    props.previewExportDisabledReason,
-    t,
-  )
+  const previewUnavailableReason =
+    props.previewExportDisabledReason &&
+    hqExportActionReasonText(props.previewExportDisabledReason, t)
   const previewExportDisabled =
     !props.canPreviewExport || props.isProcessing || !props.onPreviewExport
   const showPreviewUnavailableReason =

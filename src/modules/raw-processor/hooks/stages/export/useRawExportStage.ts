@@ -139,7 +139,7 @@ export function useRawExportStage({
   })
   const {
     canExport,
-    exportDisabledReason,
+    exportRefusal,
     deliveredExportSize,
     exportResult,
     exportShareCapability,
@@ -147,7 +147,6 @@ export function useRawExportStage({
     previewSuspended,
     canPreviewExport,
     previewExportRefusal,
-    previewExportDisabledReason,
   } = useExportDerivedState({
     session,
     exportInterruption,
@@ -211,14 +210,14 @@ export function useRawExportStage({
 
   return {
     canExport,
-    exportDisabledReason,
+    exportRefusal,
     deliveredExportSize,
     exportResult,
     exportShareCapability,
     exportInterrupted,
     previewSuspended,
     canPreviewExport,
-    previewExportDisabledReason,
+    previewExportRefusal,
     exportImage: exportWithInterruptionHistory,
     downloadExportResult,
     downloadExportManifest,

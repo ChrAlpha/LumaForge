@@ -272,14 +272,14 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
 
   const {
     canExport,
-    exportDisabledReason,
+    exportRefusal,
     deliveredExportSize,
     exportResult,
     exportShareCapability,
     exportInterrupted,
     previewSuspended,
     canPreviewExport,
-    previewExportDisabledReason,
+    previewExportRefusal,
     exportImage,
     downloadExportResult,
     downloadExportManifest,
@@ -332,14 +332,14 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   }, [cancelLUTFileLoad, previewSuspended, status])
   const exportStage = {
     canExport,
-    exportDisabledReason,
+    exportRefusal,
     deliveredExportSize,
     exportResult,
     exportShareCapability,
     exportInterrupted,
     previewSuspended,
     canPreviewExport,
-    previewExportDisabledReason,
+    previewExportRefusal,
     exportImage,
     downloadExportResult,
     downloadExportManifest,

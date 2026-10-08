@@ -78,7 +78,7 @@ function rawToolSurfaceProps(
     onLutProfileSelect: () => {},
     onExport: () => {},
     canExport: false,
-    disabledReason: 'Full-resolution export source is still loading.',
+    disabledReason: { source: 'workflow', reason: { code: 'source-loading' } },
     isProcessing: false,
     exportResult: null,
     exportShareCapability: {
@@ -173,10 +173,9 @@ function rawProcessorViewState(
     stats: null,
     hasImage: false,
     canExport: false,
-    exportDisabledReason: 'Full-resolution export source is still loading.',
+    exportRefusal: { code: 'source-loading' },
     canPreviewExport: false,
-    previewExportDisabledReason:
-      'HQ preview export is available after the bounded HQ preview finishes.',
+    previewExportRefusal: 'hq-preview-pending',
     exportResult: null,
     exportShareCapability: {
       available: false,
@@ -673,7 +672,10 @@ describe('rawToolSurface', () => {
     render(
       <RawToolSurface
         {...rawToolSurfaceProps({
-          disabledReason: 'RAW preview exposure is still being prepared.',
+          disabledReason: {
+            source: 'workflow',
+            reason: { code: 'exposure-pending' },
+          },
         })}
       />,
     )

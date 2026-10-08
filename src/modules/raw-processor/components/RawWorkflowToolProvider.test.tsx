@@ -23,6 +23,7 @@ import {
 } from 'vitest'
 
 import { viewportAtom } from '~/atoms/viewport'
+import { I18nProvider } from '~/lib/i18n'
 import { jotaiStore } from '~/lib/jotai'
 import { identityMatrix } from '~/lib/transform/geometry/matrix'
 import type { UprightAnalysis } from '~/lib/transform/geometry/types'
@@ -329,9 +330,10 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.disabledReason).toBeUndefined()
     // The bounded HQ preview cannot, and names the alternative.
     expect(result.current.canPreviewExport).toBe(false)
-    expect(result.current.previewExportDisabledReason).toBe(
-      'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.',
-    )
+    expect(result.current.previewExportDisabledReason).toEqual({
+      source: 'surface',
+      code: 'transform-hq-export',
+    })
     expect(result.current.histogram).toEqual({
       state: 'unsupported',
       reason: 'Histogram is unavailable for the transformed preview.',
@@ -400,27 +402,33 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     // A first Transform that has not rendered yet: nothing is committed, so
     // either export would write a photo without it.
     expect(result.current.canExport).toBe(false)
-    expect(result.current.disabledReason).toBe('Preparing the current photo…')
+    expect(result.current.disabledReason).toEqual({
+      source: 'surface',
+      code: 'transform-pending',
+    })
     expect(result.current.canPreviewExport).toBe(false)
-    expect(result.current.previewExportDisabledReason).toBe(
-      'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.',
-    )
+    expect(result.current.previewExportDisabledReason).toEqual({
+      source: 'surface',
+      code: 'transform-hq-export',
+    })
     attempt()
 
     transform = { ...transform, active: true, exportBlock: 'invalid' }
     rerender()
     expect(result.current.canExport).toBe(false)
-    expect(result.current.disabledReason).toBe(
-      'This transform leaves too little usable image. Reduce the adjustment or reset.',
-    )
+    expect(result.current.disabledReason).toEqual({
+      source: 'surface',
+      code: 'transform-invalid',
+    })
     expect(result.current.canPreviewExport).toBe(false)
     attempt()
 
     transform = { ...transform, exportBlock: 'unavailable' }
     rerender()
-    expect(result.current.disabledReason).toBe(
-      'The processed preview is unavailable. Wait for it or reset Transform.',
-    )
+    expect(result.current.disabledReason).toEqual({
+      source: 'surface',
+      code: 'transform-unavailable',
+    })
     attempt()
     expect(onExport).not.toHaveBeenCalled()
     expect(workflow.exportPreviewImage).not.toHaveBeenCalled()
@@ -437,11 +445,10 @@ describe('rawWorkflowToolProvider Transform guards', () => {
   })
 
   it('leaves an earlier workflow reason in place while Transform also blocks export', () => {
-    const earlier = 'Export is already running.'
     const workflow = {
       ...workflowFixture(),
       canExport: false,
-      exportDisabledReason: earlier,
+      exportRefusal: { code: 'capability-probing' },
     } as unknown as UseRawWorkflowReturn
     const onExport = vi.fn()
     const { result } = renderHook(useRawWorkflowContext, {
@@ -459,19 +466,20 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       ),
     })
     expect(result.current.canExport).toBe(false)
-    expect(result.current.disabledReason).toBe(earlier)
+    expect(result.current.disabledReason).toEqual({
+      source: 'workflow',
+      reason: { code: 'capability-probing' },
+    })
     expect(result.current.exportBlockedByLutContract).toBe(false)
     result.current.onExport()
     expect(onExport).not.toHaveBeenCalled()
   })
 
   it('does not route to the LUT contract while Transform is what blocks export', () => {
-    const contractReason =
-      'Choose a LUT input profile before full-resolution export.'
     const workflow = {
       ...workflowFixture(),
       canExport: false,
-      exportDisabledReason: contractReason,
+      exportRefusal: { code: 'lut-input-unconfirmed' },
       activeStyle: {
         kind: 'custom',
         name: 'Unknown',
@@ -496,12 +504,18 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       ),
     })
     expect(result.current.canExport).toBe(false)
-    expect(result.current.disabledReason).toBe('Preparing the current photo…')
+    expect(result.current.disabledReason).toEqual({
+      source: 'surface',
+      code: 'transform-pending',
+    })
     expect(result.current.exportBlockedByLutContract).toBe(false)
 
     transform = { ...transform, exportBlock: null }
     rerender()
-    expect(result.current.disabledReason).toBe(contractReason)
+    expect(result.current.disabledReason).toEqual({
+      source: 'workflow',
+      reason: { code: 'lut-input-unconfirmed' },
+    })
     expect(result.current.exportBlockedByLutContract).toBe(true)
   })
 
@@ -519,7 +533,10 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       result.current.transform!.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }),
     )
     expect(result.current.canExport).toBe(false)
-    expect(result.current.disabledReason).toBe('Preparing the current photo…')
+    expect(result.current.disabledReason).toEqual({
+      source: 'surface',
+      code: 'transform-pending',
+    })
     expect(result.current.canPreviewExport).toBe(false)
 
     // The topbar Export opens the export panel and unmounts Transform; the
@@ -566,7 +583,10 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     state.exposure = 1
     rerender()
     expect(result.current.canExport).toBe(false)
-    expect(result.current.disabledReason).toBe('Preparing the current photo…')
+    expect(result.current.disabledReason).toEqual({
+      source: 'surface',
+      code: 'transform-pending',
+    })
     result.current.onExport()
     await act(() => vi.advanceTimersByTimeAsync(60))
     expect(result.current.canExport).toBe(false)
@@ -583,9 +603,10 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(result.current.transform?.active).toBe(true)
     expect(result.current.canExport).toBe(false)
-    expect(result.current.disabledReason).toBe(
-      'The processed preview is unavailable. Wait for it or reset Transform.',
-    )
+    expect(result.current.disabledReason).toEqual({
+      source: 'surface',
+      code: 'transform-unavailable',
+    })
     expect(result.current.canPreviewExport).toBe(false)
     result.current.onExport()
     expect(onExport).not.toHaveBeenCalled()
@@ -609,9 +630,10 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.transform?.active).toBe(true)
     expect(commit).toHaveBeenCalledOnce()
     expect(result.current.canExport).toBe(false)
-    expect(result.current.disabledReason).toBe(
-      'This transform leaves too little usable image. Reduce the adjustment or reset.',
-    )
+    expect(result.current.disabledReason).toEqual({
+      source: 'surface',
+      code: 'transform-invalid',
+    })
     result.current.onExport()
     expect(onExport).not.toHaveBeenCalled()
 
@@ -761,12 +783,10 @@ describe('rawWorkflowToolProvider Transform guards', () => {
   })
 
   it('flags an export blocked by the LUT contract, and only that block', () => {
-    const contractReason =
-      'Choose a LUT input profile before full-resolution export.'
     const workflow = {
       ...workflowFixture(),
       canExport: false,
-      exportDisabledReason: contractReason,
+      exportRefusal: { code: 'lut-input-unconfirmed' },
       activeStyle: {
         kind: 'custom',
         name: 'Unknown',
@@ -803,7 +823,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
 
     // An earlier gate is what export states: choosing a contract would not
     // unblock it, so no route is offered.
-    workflow.exportDisabledReason = 'Quick preview is still being prepared.'
+    workflow.exportRefusal = { code: 'quick-preview-pending' }
     rerender()
     expect(result.current.exportBlockedByLutContract).toBe(false)
   })
@@ -1345,11 +1365,13 @@ function PolicySurface({
   isCpuMode = false,
   transform = transformFeatureFixture({ hasImage: true }),
   workflowOverrides = {},
+  onExport = vi.fn(),
   commands,
 }: {
   isCpuMode?: boolean
   transform?: ReturnType<typeof transformFeatureFixture>
   workflowOverrides?: Partial<UseRawWorkflowReturn>
+  onExport?: () => void
   commands: {
     setViewMode: (mode: 'processed' | 'original' | 'compare') => void
     setToneParams: () => void
@@ -1383,7 +1405,7 @@ function PolicySurface({
         onResetSession={vi.fn()}
         onCompareReset={commands.onCompareReset}
         onLutDrop={vi.fn()}
-        onExport={vi.fn()}
+        onExport={onExport}
         onPrepareRuntime={vi.fn()}
       >
         <RawToolSurface />
@@ -1857,6 +1879,296 @@ describe('rawWorkflowToolProvider surface policy', () => {
     rerender(<PolicySurface commands={commands} />)
     expect(dockTab(/adjust/i)).toBeEnabled()
     expect(action()).toBeEnabled()
+  })
+})
+
+describe('rawWorkflowToolProvider export reasons on the surfaces', () => {
+  let previousViewport = jotaiStore.get(viewportAtom)
+  beforeEach(() => {
+    previousViewport = jotaiStore.get(viewportAtom)
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    )
+  })
+  afterEach(() => {
+    jotaiStore.set(viewportAtom, previousViewport)
+    localStorage.clear()
+    document.documentElement.lang = 'en'
+  })
+  const showDesktop = () =>
+    jotaiStore.set(viewportAtom, { ...previousViewport, w: 1280, sm: true })
+  const showMobile = () =>
+    jotaiStore.set(viewportAtom, { ...previousViewport, w: 390, sm: false })
+  const HQ_TRANSFORM =
+    'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.'
+  const TRANSFORM_BLOCKS = [
+    ['pending', 'Preparing the current photo…'],
+    [
+      'invalid',
+      'This transform leaves too little usable image. Reduce the adjustment or reset.',
+    ],
+    [
+      'unavailable',
+      'The processed preview is unavailable. Wait for it or reset Transform.',
+    ],
+  ] as const
+  const unconfirmedLut = {
+    canExport: false,
+    exportRefusal: { code: 'lut-input-unconfirmed' },
+    currentLutName: 'Unknown',
+    activeStyle: {
+      kind: 'custom',
+      name: 'Unknown',
+      defaultIntensity: 0.7,
+      currentIntensity: 0.7,
+      lutAsset: {
+        format: 'cube',
+        dimension: 33,
+        profileResolution: { kind: 'unknown' },
+      },
+    },
+  } as unknown as Partial<UseRawWorkflowReturn>
+  const runButton = (scope: HTMLElement) =>
+    within(scope).getByRole('button', { name: 'Export full-resolution JPEG' })
+  const previewButton = (scope: HTMLElement) =>
+    within(scope).getByRole('button', { name: 'Export HQ preview JPEG' })
+
+  it('states each Transform block in the desktop export block and refuses both exports', async () => {
+    showDesktop()
+    const user = userEvent.setup()
+    const onExport = vi.fn()
+    const exportPreviewImage = vi.fn()
+    const commands = policyCommands()
+    const surface = (
+      transform: ReturnType<typeof transformFeatureFixture>,
+      workflowOverrides: Partial<UseRawWorkflowReturn> = {},
+    ) => (
+      <PolicySurface
+        commands={commands}
+        transform={transform}
+        onExport={onExport}
+        workflowOverrides={{ exportPreviewImage, ...workflowOverrides }}
+      />
+    )
+    const { container, rerender } = render(
+      surface(transformFeatureFixture({ hasImage: true })),
+    )
+    const block = container.querySelector<HTMLElement>(
+      '[data-raw-export-block]',
+    )!
+    // Neutral: both exports run, and nothing is explained away.
+    expect(block).toHaveAttribute('data-raw-export-ready', 'true')
+    expect(runButton(block)).toBeEnabled()
+    expect(previewButton(block)).toBeEnabled()
+    expect(block.querySelectorAll('p')).toHaveLength(0)
+    await user.click(runButton(block))
+    await user.click(previewButton(block))
+    expect(onExport).toHaveBeenCalledOnce()
+    expect(exportPreviewImage).toHaveBeenCalledOnce()
+
+    for (const [exportBlock, reason] of TRANSFORM_BLOCKS) {
+      rerender(
+        surface(
+          transformFeatureFixture({
+            hasImage: true,
+            active: exportBlock !== 'pending',
+            exportBlock,
+          }),
+        ),
+      )
+      expect(block).toHaveAttribute('data-raw-export-ready', 'false')
+      expect(runButton(block)).toBeDisabled()
+      expect(previewButton(block)).toBeDisabled()
+      expect(within(block).getByText(reason)).toBeVisible()
+      expect(within(block).getByText(HQ_TRANSFORM)).toBeVisible()
+    }
+
+    // A committed geometry: full resolution reproduces it, the HQ preview
+    // never applies it.
+    rerender(surface(transformFeatureFixture({ hasImage: true, active: true })))
+    expect(runButton(block)).toBeEnabled()
+    expect(previewButton(block)).toBeDisabled()
+    expect(within(block).getByText(HQ_TRANSFORM)).toBeVisible()
+    await user.click(runButton(block))
+    expect(onExport).toHaveBeenCalledTimes(2)
+    expect(exportPreviewImage).toHaveBeenCalledOnce()
+
+    // An earlier workflow reason stays in place while Transform also blocks.
+    rerender(
+      surface(
+        transformFeatureFixture({ hasImage: true, exportBlock: 'pending' }),
+        {
+          canExport: false,
+          exportRefusal: { code: 'capability-probing' },
+        },
+      ),
+    )
+    expect(
+      within(block).getByText(
+        'Checking full-resolution export support for this RAW file.',
+      ),
+    ).toBeVisible()
+    expect(within(block).queryByText('Preparing the current photo…')).toBeNull()
+  })
+
+  it('states the workflow refusals in the current locale on desktop, and keeps a released result deliverable', () => {
+    showDesktop()
+    localStorage.setItem('lumaforge.locale', 'zh-CN')
+    const commands = policyCommands()
+    const { container, rerender } = render(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{
+          canExport: false,
+          exportRefusal: { code: 'quick-preview-pending' },
+          canPreviewExport: false,
+          previewExportRefusal: 'hq-preview-pending',
+        }}
+      />,
+      { wrapper: I18nProvider },
+    )
+    const block = container.querySelector<HTMLElement>(
+      '[data-raw-export-block]',
+    )!
+    expect(within(block).getByText('快速预览还在准备中。')).toBeVisible()
+    expect(
+      within(block).getByText('bounded HQ 预览完成后才能导出 HQ 预览 JPEG。'),
+    ).toBeVisible()
+
+    // Released after an export: the result stays deliverable, and no export
+    // reason is stated over it.
+    rerender(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{
+          previewSuspended: true,
+          exportResult: deliveredJpeg,
+          exportShareCapability: { available: true },
+          canPreviewExport: false,
+          previewExportRefusal: 'preview-released',
+        }}
+      />,
+    )
+    expect(within(block).getByRole('button', { name: '分享' })).toBeEnabled()
+    expect(within(block).getByRole('button', { name: '下载' })).toBeEnabled()
+    expect(
+      within(block).queryByText('请先恢复预览，再导出 HQ 预览 JPEG。'),
+    ).toBeNull()
+  })
+
+  it('states the same reasons in the mobile export deck the topbar opens', async () => {
+    showMobile()
+    const user = userEvent.setup()
+    const commands = policyCommands()
+    const onExport = vi.fn()
+    const surface = (
+      transform: ReturnType<typeof transformFeatureFixture>,
+      workflowOverrides: Partial<UseRawWorkflowReturn> = {},
+    ) => (
+      <PolicySurface
+        commands={commands}
+        transform={transform}
+        onExport={onExport}
+        workflowOverrides={workflowOverrides}
+      />
+    )
+    const { container, rerender } = render(
+      surface(
+        transformFeatureFixture({ hasImage: true, exportBlock: 'pending' }),
+      ),
+    )
+    await user.click(
+      container.querySelector<HTMLButtonElement>(
+        '[data-mobile-export-action]',
+      )!,
+    )
+    const panel = () =>
+      container.querySelector<HTMLElement>('[data-mobile-export-panel]')!
+    const reasonBox = () =>
+      panel().querySelector<HTMLElement>('[data-export-unavailable-reason]')
+
+    for (const [exportBlock, reason] of TRANSFORM_BLOCKS) {
+      rerender(
+        surface(
+          transformFeatureFixture({
+            hasImage: true,
+            active: exportBlock !== 'pending',
+            exportBlock,
+          }),
+        ),
+      )
+      expect(runButton(panel())).toBeDisabled()
+      expect(previewButton(panel())).toBeDisabled()
+      expect(reasonBox()).toHaveTextContent(reason)
+      expect(reasonBox()).toHaveAttribute('data-tone', 'neutral')
+      expect(within(panel()).getByText(HQ_TRANSFORM)).toBeVisible()
+    }
+
+    // Transform names the block over a LUT contract, and offers no detour.
+    rerender(
+      surface(
+        transformFeatureFixture({ hasImage: true, exportBlock: 'pending' }),
+        unconfirmedLut,
+      ),
+    )
+    expect(reasonBox()).toHaveTextContent('Preparing the current photo…')
+    expect(
+      within(panel()).queryByRole('button', { name: /choose lut contract/i }),
+    ).toBeNull()
+
+    // Once only the contract blocks, the deck says so and offers the route.
+    rerender(
+      surface(transformFeatureFixture({ hasImage: true }), unconfirmedLut),
+    )
+    expect(reasonBox()).toHaveTextContent(
+      'Choose a LUT input profile before full-resolution export.',
+    )
+    expect(reasonBox()).toHaveAttribute('data-tone', 'contract')
+    expect(
+      within(panel()).getByRole('button', { name: /choose lut contract/i }),
+    ).toBeEnabled()
+
+    // Answered and committed: full resolution runs, the HQ preview says why
+    // it does not.
+    rerender(surface(transformFeatureFixture({ hasImage: true, active: true })))
+    expect(reasonBox()).toBeNull()
+    expect(runButton(panel())).toBeEnabled()
+    expect(previewButton(panel())).toBeDisabled()
+    expect(within(panel()).getByText(HQ_TRANSFORM)).toBeVisible()
+    await user.click(runButton(panel()))
+    expect(onExport).toHaveBeenCalledExactlyOnceWith()
+  })
+
+  it('keeps a released result deliverable in the mobile deck, in the current locale', async () => {
+    showMobile()
+    localStorage.setItem('lumaforge.locale', 'zh-CN')
+    const commands = policyCommands()
+    const { container } = render(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{
+          previewSuspended: true,
+          exportResult: deliveredJpeg,
+          exportShareCapability: { available: true },
+          canPreviewExport: false,
+          previewExportRefusal: 'preview-released',
+        }}
+      />,
+      { wrapper: I18nProvider },
+    )
+    const panel = container.querySelector<HTMLElement>(
+      '[data-mobile-export-panel]',
+    )!
+    expect(within(panel).getByRole('button', { name: '分享' })).toBeEnabled()
+    expect(within(panel).getByRole('button', { name: '下载' })).toBeEnabled()
+    expect(
+      within(panel).getByRole('button', { name: '复制预览尺寸图像' }),
+    ).toBeEnabled()
   })
 })
 

@@ -2,7 +2,10 @@ import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import type { ComponentProps } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { I18nProvider } from '~/lib/i18n'
 
 import type { ExportResult } from '../../model/export-result'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
@@ -19,11 +22,7 @@ function buttonNames() {
     .map((button) => button.getAttribute('aria-label') ?? button.textContent)
 }
 
-type MobileExportPanelProps = Parameters<typeof MobileExportPanel>[0] & {
-  canPreviewExport?: boolean
-  previewExportDisabledReason?: string
-  onPreviewExport?: () => void | Promise<void>
-}
+type MobileExportPanelProps = ComponentProps<typeof MobileExportPanel>
 
 function renderPanel(overrides: Partial<MobileExportPanelProps> = {}) {
   render(
@@ -112,10 +111,17 @@ describe('mobileExportPanel', () => {
     const onChooseLutContract = vi.fn()
     renderPanel({
       canExport: false,
-      disabledReason:
-        'Choose a LUT input profile before full-resolution export.',
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'lut-input-unconfirmed' },
+      },
       onChooseLutContract,
     })
+    expect(
+      screen.getByText(
+        'Choose a LUT input profile before full-resolution export.',
+      ),
+    ).toBeVisible()
     const action = screen.getByRole('button', { name: /choose lut contract/i })
     expect(action).toHaveClass('min-h-[44px]')
     // A contract block is the colour contract's to explain: amber, the
@@ -131,7 +137,13 @@ describe('mobileExportPanel', () => {
   })
 
   it('offers no contract route for any other block', () => {
-    renderPanel({ canExport: false, disabledReason: 'Something else.' })
+    renderPanel({
+      canExport: false,
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'capability-unchecked' },
+      },
+    })
     expect(
       screen.queryByRole('button', { name: /choose lut contract/i }),
     ).toBeNull()
@@ -156,7 +168,13 @@ describe('mobileExportPanel', () => {
   it('recaps the HQ preview alone when full resolution cannot run', () => {
     renderPanel({
       canExport: false,
-      disabledReason: 'Full-resolution export is not available for this file.',
+      disabledReason: {
+        source: 'workflow',
+        reason: {
+          code: 'runtime-unsupported',
+          detail: 'Full-resolution export is not available for this file.',
+        },
+      },
       canPreviewExport: true,
       onPreviewExport: vi.fn(),
       recap: {
@@ -243,10 +261,12 @@ describe('mobileExportPanel', () => {
   it('holds the export actions at the bottom of a deck too short for the panel', () => {
     renderPanel({
       canExport: false,
-      disabledReason:
-        'Checking full-resolution export support for this RAW file.',
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'capability-probing' },
+      },
       canPreviewExport: false,
-      previewExportDisabledReason: 'HQ preview export is not ready.',
+      previewExportDisabledReason: { source: 'workflow', reason: 'not-ready' },
       onPreviewExport: vi.fn(),
     })
     const actions = document.querySelector<HTMLElement>(
@@ -265,7 +285,10 @@ describe('mobileExportPanel', () => {
       'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.'
     renderPanel({
       canPreviewExport: false,
-      previewExportDisabledReason: reason,
+      previewExportDisabledReason: {
+        source: 'surface',
+        code: 'transform-hq-export',
+      },
       onPreviewExport: vi.fn(),
     })
 
@@ -279,16 +302,15 @@ describe('mobileExportPanel', () => {
   })
 
   it('does not repeat an HQ reason the full-resolution box already states', () => {
-    const reason = 'Loading export source'
     renderPanel({
       canExport: false,
-      disabledReason: reason,
+      disabledReason: { source: 'surface', code: 'no-source' },
       canPreviewExport: false,
-      previewExportDisabledReason: reason,
+      previewExportDisabledReason: { source: 'surface', code: 'no-source' },
       onPreviewExport: vi.fn(),
     })
 
-    expect(screen.getAllByText(reason)).toHaveLength(1)
+    expect(screen.getAllByText('No image loaded')).toHaveLength(1)
     expect(
       screen.getByRole('button', { name: /export hq preview jpeg/i }),
     ).not.toHaveAttribute('aria-describedby')
@@ -298,7 +320,10 @@ describe('mobileExportPanel', () => {
     const { container } = render(
       <MobileExportPanel
         canExport={false}
-        disabledReason="The LUT contract is not confirmed."
+        disabledReason={{
+          source: 'workflow',
+          reason: { code: 'lut-input-unconfirmed' },
+        }}
         isProcessing={false}
         onExport={vi.fn()}
         exportResult={null}
@@ -310,7 +335,9 @@ describe('mobileExportPanel', () => {
     )
 
     const box = container.querySelector('[data-export-unavailable-reason]')!
-    expect(box).toHaveTextContent('The LUT contract is not confirmed.')
+    expect(box).toHaveTextContent(
+      'Choose a LUT input profile before full-resolution export.',
+    )
     // Without the contract route, the block is not the contract's to paint.
     expect(box).toHaveAttribute('data-tone', 'neutral')
     expect(box).toHaveClass('bg-[oklch(0.96_0.006_255/0.05)]')
@@ -322,7 +349,10 @@ describe('mobileExportPanel', () => {
   it('does not show a blocked export error while export progress is already visible', () => {
     renderPanel({
       canExport: false,
-      disabledReason: 'Full-resolution export is already running.',
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'export-running' },
+      },
       isProcessing: true,
     })
 
@@ -493,7 +523,10 @@ describe('mobileExportPanel', () => {
     const onClose = vi.fn()
     const props: MobileExportPanelProps = {
       canExport: false,
-      disabledReason: 'Loading export source',
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'source-loading' },
+      },
       canPreviewExport: false,
       onPreviewExport: vi.fn(),
       isProcessing: false,
@@ -578,8 +611,10 @@ describe('mobileExportPanel', () => {
     const onChooseLutContract = vi.fn()
     renderPanel({
       canExport: false,
-      disabledReason:
-        'Choose a LUT input profile before full-resolution export.',
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'lut-input-unconfirmed' },
+      },
       onChooseLutContract,
       interruptionNote: INTERRUPTED_NOTE,
     })
@@ -643,5 +678,99 @@ describe('mobileExportPanel', () => {
     expect(onCopyExport).toHaveBeenCalledOnce()
     expect(onDownloadExportManifest).toHaveBeenCalledOnce()
     expect(onExport).not.toHaveBeenCalled()
+  })
+})
+
+describe('mobileExportPanel reason copy', () => {
+  afterEach(() => {
+    localStorage.clear()
+    document.documentElement.lang = 'en'
+  })
+
+  function renderIn(
+    locale: 'en' | 'zh-CN',
+    overrides: Partial<MobileExportPanelProps>,
+  ) {
+    localStorage.setItem('lumaforge.locale', locale)
+    return render(
+      <MobileExportPanel
+        canExport={false}
+        canPreviewExport={false}
+        onPreviewExport={vi.fn()}
+        isProcessing={false}
+        onExport={vi.fn()}
+        exportResult={null}
+        exportShareCapability={{ available: false, reason: '' }}
+        onShareExport={vi.fn()}
+        onDownloadExport={vi.fn()}
+        onCopyExport={vi.fn()}
+        {...overrides}
+      />,
+      { wrapper: I18nProvider },
+    )
+  }
+
+  it('states each refusal from its code in the current locale', () => {
+    renderIn('zh-CN', {
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'quick-preview-pending' },
+      },
+      previewExportDisabledReason: {
+        source: 'workflow',
+        reason: 'preview-released',
+      },
+    })
+    expect(
+      document.querySelector('[data-export-unavailable-reason]'),
+    ).toHaveTextContent('快速预览还在准备中。')
+    const note = screen.getByText('请先恢复预览，再导出 HQ 预览 JPEG。')
+    expect(
+      screen.getByRole('button', { name: '导出 HQ 预览 JPEG' }),
+    ).toHaveAttribute('aria-describedby', note.id)
+  })
+
+  it('names a Transform block in the words the surface policy gives it', () => {
+    renderIn('zh-CN', {
+      disabledReason: { source: 'surface', code: 'transform-invalid' },
+      previewExportDisabledReason: {
+        source: 'surface',
+        code: 'transform-hq-export',
+      },
+    })
+    expect(
+      screen.getByText('变换后可用画面过少，请减小调整幅度或重置。'),
+    ).toBeVisible()
+    expect(
+      screen.getByText(
+        '按全分辨率导出可保留变换；若要导出 HQ 预览 JPEG，请先重置变换。',
+      ),
+    ).toBeVisible()
+  })
+
+  it('shows diagnostic text as it came, in every locale', () => {
+    const detail = 'This LUT output range cannot be encoded.'
+    renderIn('zh-CN', {
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'lut-output-refused', detail },
+      },
+    })
+    expect(
+      document.querySelector('[data-export-unavailable-reason]'),
+    ).toHaveTextContent(detail)
+  })
+
+  it('names the Copy action from the copy mode in the current locale', () => {
+    renderIn('zh-CN', {
+      canExport: true,
+      exportResult: createResult({
+        copyCapability: { mode: 'hq-preview', label: 'Copy HQ preview image' },
+      }),
+      exportShareCapability: { available: true },
+    })
+    const copy = screen.getByRole('button', { name: '复制 HQ 预览图像' })
+    expect(copy).toHaveTextContent('复制')
+    expect(copy).toBeEnabled()
   })
 })

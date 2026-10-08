@@ -2,7 +2,7 @@ import { useAtomValue } from 'jotai'
 import { Copy, Download, FileJson, Share2 } from 'lucide-react'
 
 import { Button } from '~/components/ui/button'
-import { localizeCopyLabel, localizeRawReason, useI18n } from '~/lib/i18n'
+import { useI18n } from '~/lib/i18n'
 
 import type {
   ExportResult,
@@ -10,6 +10,15 @@ import type {
 } from '../../model/export-result'
 import type { ActiveExportPlanState } from '../../model/session'
 import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
+import type {
+  FullExportActionReason,
+  HqExportActionReason,
+} from '../../services/surface/raw-reason'
+import {
+  exportCopyActionLabel,
+  fullExportActionReasonText,
+  hqExportActionReasonText,
+} from '../../services/surface/raw-reason'
 import { currentSessionAtom } from '../../state/session.atoms'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { EXPORT_INTERRUPTION_NOTE_COPY } from '../RawWorkflowContext'
@@ -38,9 +47,9 @@ export function ExportTool({
   interruptionNote,
 }: {
   canExport: boolean
-  disabledReason?: string
+  disabledReason?: FullExportActionReason
   canPreviewExport?: boolean
-  previewExportDisabledReason?: string
+  previewExportDisabledReason?: HqExportActionReason
   isProcessing: boolean
   onExport: () => void
   onPreviewExport?: () => void | Promise<void>
@@ -67,21 +76,16 @@ export function ExportTool({
   // The next export the user starts uses the current RAW and edits on a
   // safer plan; a running export already took it.
   const showInterruption = !isProcessing && Boolean(interruptionNote)
-  const unavailableReason =
-    localizeRawReason(disabledReason, t) || t('raw.exportSourceLoading')
+  const unavailableReason = disabledReason
+    ? fullExportActionReasonText(disabledReason, t)
+    : t('raw.exportSourceLoading')
   // The HQ preview can be refused on its own terms while full resolution is
   // fine (a committed Transform does exactly that). Without this the button
   // just goes dark and the reason prop is never read.
-  const previewUnavailableReason = localizeRawReason(
-    previewExportDisabledReason,
-    t,
-  )
-  const copyCapability = exportResult?.copyCapability
-  const copyButtonLabel = copyCapability
-    ? copyCapability.mode === 'unavailable'
-      ? t('raw.export.copy')
-      : localizeCopyLabel(copyCapability.label, t)
-    : t('raw.export.copy')
+  const previewUnavailableReason =
+    previewExportDisabledReason &&
+    hqExportActionReasonText(previewExportDisabledReason, t)
+  const copyButtonLabel = exportCopyActionLabel(exportResult?.copyCapability, t)
   const resultKind = exportResult?.kind ?? 'full-resolution'
   const readyLabel =
     resultKind === 'hq-preview'

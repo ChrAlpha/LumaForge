@@ -202,6 +202,47 @@ export const EXPORT_SHARE_REASON_COPY = {
   'share-unsupported': 'raw.export.shareUnsupported',
 } as const satisfies Record<ExportShareReasonCode, MessageKey>
 
+/**
+ * Why an export panel's action is refused: the surface policy's reason when
+ * it names one (a Transform block, a busy stage), otherwise the workflow's
+ * own refusal. Every export panel states it through the same copy.
+ */
+export type ExportActionReason<WorkflowReason> =
+  | { source: 'surface'; code: RawReasonCode }
+  | { source: 'workflow'; reason: WorkflowReason }
+
+export type FullExportActionReason = ExportActionReason<FullResExportReason>
+
+export type HqExportActionReason = ExportActionReason<HqPreviewExportReasonCode>
+
+export function fullExportActionReasonText(
+  reason: FullExportActionReason,
+  t: Translate,
+): string {
+  return reason.source === 'surface'
+    ? t(RAW_REASON_COPY[reason.code])
+    : fullResExportReasonText(reason.reason, t)
+}
+
+export function hqExportActionReasonText(
+  reason: HqExportActionReason,
+  t: Translate,
+): string {
+  return reason.source === 'surface'
+    ? t(RAW_REASON_COPY[reason.code])
+    : t(HQ_PREVIEW_EXPORT_REASON_COPY[reason.reason])
+}
+
+/** The Copy action's label: its mode's, or the bare verb when none copies. */
+export function exportCopyActionLabel(
+  capability: ExportCopyCapability | undefined,
+  t: Translate,
+): string {
+  return !capability || capability.mode === 'unavailable'
+    ? t('raw.export.copy')
+    : t(EXPORT_COPY_LABEL_COPY[capability.mode])
+}
+
 /** An unsupported file stays unsupported; nothing in the app certifies one. */
 export function supportLevelMessageKey(level: SupportLevel): MessageKey {
   return level === 'unsupported'

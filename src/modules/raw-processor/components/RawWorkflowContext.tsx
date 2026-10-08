@@ -22,7 +22,11 @@ import type {
   ToolAvailability,
   ToolSurface,
 } from '../services/surface/derive-tool-availability'
-import type { PreviewLookReason } from '../services/surface/raw-reason'
+import type {
+  FullExportActionReason,
+  HqExportActionReason,
+  PreviewLookReason,
+} from '../services/surface/raw-reason'
 import type { ColorValue } from './color-fields'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { AppliedLut } from './mobile/mobile-lut-strip'
@@ -83,11 +87,15 @@ export interface RawToolSurfaceProps {
   onLutProfileSelect: (profile: LUTColorProfile) => void
   /** Starts the full-resolution export; it takes no choices. */
   onExport: () => void
+  /** The HQ preview export can start now, as the action policy decides. */
   canPreviewExport?: boolean
-  previewExportDisabledReason?: string
+  /** Why the HQ preview export is refused; unset while it can start. */
+  previewExportDisabledReason?: HqExportActionReason
   onPreviewExport?: () => void | Promise<void>
+  /** The full-resolution export can start now, as the action policy decides. */
   canExport: boolean
-  disabledReason?: string
+  /** Why the full-resolution export is refused; unset while it can start. */
+  disabledReason?: FullExportActionReason
   /**
    * Full-resolution export is blocked by the applied LUT's colour contract,
    * so choosing a contract is the way forward.

@@ -1,17 +1,17 @@
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef } from 'react'
 
-import type { MessageKey } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
 import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
-import { deriveLutContractExportReason } from '../model/derive-session'
+import { deriveLutContractExportRefusal } from '../model/derive-session'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
+import type { ActionAvailability } from '../services/surface/derive-tool-availability'
 import { deriveToolAvailability } from '../services/surface/derive-tool-availability'
+import type { ExportActionReason } from '../services/surface/raw-reason'
 import { resolvePreviewLookReason } from '../services/surface/raw-reason'
-import type { TransformExportBlock } from '../services/transform/transform-state'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type {
@@ -38,13 +38,6 @@ interface RawWorkflowToolProviderProps {
   children: ReactNode
 }
 
-/** The Transform tool's own wording for each reason it blocks export. */
-const TRANSFORM_EXPORT_BLOCK_COPY: Record<TransformExportBlock, MessageKey> = {
-  pending: 'raw.transform.preparing',
-  invalid: 'transform.error.transform',
-  unavailable: 'raw.transform.unavailable',
-}
-
 function getAspect(size: { width: number; height: number } | null | undefined) {
   return size && size.width > 0 && size.height > 0
     ? size.width / size.height
@@ -63,6 +56,23 @@ function toInterruptionNote(
 ): ExportInterruptionNote | null {
   return exportInterrupted ? INTERRUPTED_NOTE : null
 }
+
+/**
+ * Why an export action the policy refuses is refused: the policy's own
+ * reason when it names one, otherwise the workflow's.
+ */
+function exportActionReason<WorkflowReason>(
+  action: ActionAvailability,
+  workflowReason: WorkflowReason | undefined,
+): ExportActionReason<WorkflowReason> | undefined {
+  if (action.available) return undefined
+  if (action.reason) return { source: 'surface', code: action.reason }
+  return workflowReason === undefined
+    ? undefined
+    : { source: 'workflow', reason: workflowReason }
+}
+
+function refusedExport() {}
 
 /** `edit`, refused whenever `refused` reads true at the moment it is called. */
 function unlessRefused<Args extends unknown[], Result>(
@@ -175,22 +185,10 @@ export function RawWorkflowToolProvider({
   const transformActive = transform?.active === true
   // Until the session holds the geometry the preview rendered, neither
   // export may run: full resolution would write another framing, and the HQ
-  // preview never applies Transform. Every export surface reads these facts,
-  // and the callbacks refuse too, so no surface can route around them.
+  // preview never applies Transform. The action policy decides both exports
+  // from this fact, every export surface reads its decision, and the
+  // callbacks refuse too, so no surface can route around it.
   const transformExportBlock = transform?.exportBlock ?? null
-  const lutContractExportReason = deriveLutContractExportReason(
-    workflow.activeStyle,
-  )
-  // Transform names the block only where the workflow has nothing earlier to
-  // say: an export that could otherwise run, or one held by the LUT contract.
-  const transformExportReason =
-    transformExportBlock &&
-    (workflow.canExport ||
-      workflow.exportDisabledReason === undefined ||
-      workflow.exportDisabledReason === lutContractExportReason)
-      ? t(TRANSFORM_EXPORT_BLOCK_COPY[transformExportBlock])
-      : undefined
-  const canExport = workflow.canExport && !transformExportBlock
   // What each surface may offer, from the one action policy. A refused
   // compare command is refused by the workflow itself when it runs, so the
   // surfaces receive the real commands and read their availability here.
@@ -199,10 +197,20 @@ export function RawWorkflowToolProvider({
     status,
     currentLutName,
     canExport: workflowCanExport,
-    exportDisabledReason,
+    exportRefusal,
     canPreviewExport: workflowCanPreviewExport,
+    previewExportRefusal,
     exportResult,
   } = workflow
+  // The workflow's refusal is the applied LUT's colour contract, and only
+  // that: choosing a contract is then the way forward.
+  const lutContractRefusal = deriveLutContractExportRefusal(
+    workflow.activeStyle,
+  )
+  const lutContractBlocksExport =
+    !workflowCanExport &&
+    lutContractRefusal !== undefined &&
+    exportRefusal?.code === lutContractRefusal.code
   // What the Transform preview observes of its frame. Its capture schedule
   // stays with the preview; the tool's commands read only these facts.
   const hasTransform = transform !== undefined
@@ -238,10 +246,7 @@ export function RawWorkflowToolProvider({
       transformExportBlock,
       hasAppliedLut: Boolean(currentLutName),
       canExport: workflowCanExport,
-      lutContractBlocksExport:
-        !workflowCanExport &&
-        lutContractExportReason !== undefined &&
-        exportDisabledReason === lutContractExportReason,
+      lutContractBlocksExport,
       canPreviewExport: workflowCanPreviewExport,
       hasExportResult: exportResult != null,
       transformPreview,
@@ -252,11 +257,10 @@ export function RawWorkflowToolProvider({
     }
   }, [
     currentLutName,
-    exportDisabledReason,
     exportResult,
     hasImage,
     isCpuMode,
-    lutContractExportReason,
+    lutContractBlocksExport,
     previewSuspended,
     status,
     transformActive,
@@ -265,8 +269,16 @@ export function RawWorkflowToolProvider({
     workflowCanExport,
     workflowCanPreviewExport,
   ])
-  const disabledReason = transformExportReason ?? workflow.exportDisabledReason
-  const previewExportBlocked = transformActive || Boolean(transformExportBlock)
+  // Both surfaces refuse full and HQ export alike once they reach their
+  // export controls, and desktop always reaches them, so its decisions are
+  // the ones every export panel states. Transform names a block only where
+  // the workflow has nothing earlier to say.
+  const { fullExport, hqExport } = toolAvailability.desktop
+  const disabledReason = exportActionReason(fullExport, exportRefusal)
+  const previewExportDisabledReason = exportActionReason(
+    hqExport,
+    previewExportRefusal,
+  )
   const decodedPreviewSize = workflow.decodedImageRef.current
     ? {
         width: workflow.decodedImageRef.current.width,
@@ -356,24 +368,20 @@ export function RawWorkflowToolProvider({
         onlineLutSources: editableOnlineLutSources,
         // Full resolution reproduces a committed geometry, so it stays
         // available once the preview has rendered it.
-        onExport: transformExportBlock ? () => {} : onExport,
-        onPreviewExport: previewExportBlocked
-          ? () => {}
-          : workflow.exportPreviewImage,
-        canExport,
+        onExport: fullExport.available ? onExport : refusedExport,
+        onPreviewExport: hqExport.available
+          ? workflow.exportPreviewImage
+          : refusedExport,
+        canExport: fullExport.available,
         disabledReason,
         // Only when the contract is the reason export states; an earlier
         // gate (the source still loading, or Transform) would make the
         // action a detour.
         exportBlockedByLutContract:
-          !canExport &&
-          lutContractExportReason !== undefined &&
-          disabledReason === lutContractExportReason,
+          lutContractBlocksExport && disabledReason?.source === 'workflow',
         deliveredExportSize: workflow.deliveredExportSize ?? null,
-        canPreviewExport: !previewExportBlocked && workflow.canPreviewExport,
-        previewExportDisabledReason: previewExportBlocked
-          ? t('raw.transform.hqExportReason')
-          : workflow.previewExportDisabledReason,
+        canPreviewExport: hqExport.available,
+        previewExportDisabledReason,
         isProcessing,
         isExporting: workflow.status === 'exporting',
         progress: workflow.progress,

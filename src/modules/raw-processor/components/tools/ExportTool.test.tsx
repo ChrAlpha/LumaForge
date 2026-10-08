@@ -2,7 +2,10 @@ import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import type { ComponentProps } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { I18nProvider } from '~/lib/i18n'
 
 import type { ExportResult } from '../../model/export-result'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
@@ -19,11 +22,7 @@ function buttonNames() {
     .map((button) => button.getAttribute('aria-label') ?? button.textContent)
 }
 
-type ExportToolProps = Parameters<typeof ExportTool>[0] & {
-  canPreviewExport?: boolean
-  previewExportDisabledReason?: string
-  onPreviewExport?: () => void | Promise<void>
-}
+type ExportToolProps = ComponentProps<typeof ExportTool>
 
 function createResult(overrides: Partial<ExportResult> = {}): ExportResult {
   const blob = new Blob(['jpeg'], { type: 'image/jpeg' })
@@ -53,7 +52,10 @@ describe('exportTool', () => {
       <ExportTool
         canExport
         canPreviewExport={false}
-        previewExportDisabledReason="Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG."
+        previewExportDisabledReason={{
+          source: 'surface',
+          code: 'transform-hq-export',
+        }}
         onPreviewExport={vi.fn()}
         isProcessing={false}
         onExport={vi.fn()}
@@ -84,9 +86,9 @@ describe('exportTool', () => {
     render(
       <ExportTool
         canExport={false}
-        disabledReason="Load a RAW file before exporting."
+        disabledReason={{ source: 'surface', code: 'no-source' }}
         canPreviewExport={false}
-        previewExportDisabledReason="Load a RAW file before exporting."
+        previewExportDisabledReason={{ source: 'surface', code: 'no-source' }}
         onPreviewExport={vi.fn()}
         isProcessing={false}
         onExport={vi.fn()}
@@ -98,9 +100,7 @@ describe('exportTool', () => {
       />,
     )
 
-    expect(
-      screen.getAllByText('Load a RAW file before exporting.'),
-    ).toHaveLength(1)
+    expect(screen.getAllByText('No image loaded')).toHaveLength(1)
   })
 
   it('starts export from the ready-to-process state', async () => {
@@ -143,8 +143,10 @@ describe('exportTool', () => {
 
     const props: ExportToolProps = {
       canExport: false,
-      disabledReason:
-        'This browser cannot safely complete this large local full-resolution export without durable file storage.',
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'cannot-safely-complete' },
+      },
       canPreviewExport: true,
       isProcessing: false,
       onExport,
@@ -543,5 +545,120 @@ describe('exportTool', () => {
     expect(onDownloadExportManifest).toHaveBeenCalledOnce()
     expect(onCopyExport).toHaveBeenCalledOnce()
     expect(onExport).not.toHaveBeenCalled()
+  })
+})
+
+describe('exportTool reason copy', () => {
+  afterEach(() => {
+    localStorage.clear()
+    document.documentElement.lang = 'en'
+  })
+
+  const idle: ExportToolProps = {
+    canExport: false,
+    canPreviewExport: false,
+    onPreviewExport: vi.fn(),
+    isProcessing: false,
+    onExport: vi.fn(),
+    exportResult: null,
+    exportShareCapability: { available: false, reason: 'Export first.' },
+    onShareExport: vi.fn(),
+    onDownloadExport: vi.fn(),
+    onCopyExport: vi.fn(),
+  }
+
+  function renderIn(locale: 'en' | 'zh-CN', props: Partial<ExportToolProps>) {
+    localStorage.setItem('lumaforge.locale', locale)
+    return render(<ExportTool {...idle} {...props} />, {
+      wrapper: I18nProvider,
+    })
+  }
+
+  it('states each refusal from its code in the current locale', () => {
+    const { rerender } = renderIn('zh-CN', {
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'quick-preview-pending' },
+      },
+      previewExportDisabledReason: {
+        source: 'workflow',
+        reason: 'preview-released',
+      },
+    })
+    expect(screen.getByText('快速预览还在准备中。')).toBeVisible()
+    expect(
+      screen.getByText('请先恢复预览，再导出 HQ 预览 JPEG。'),
+    ).toBeVisible()
+
+    // A Transform block is the surface policy's to name, in its own words.
+    rerender(
+      <ExportTool
+        {...idle}
+        disabledReason={{ source: 'surface', code: 'transform-pending' }}
+        previewExportDisabledReason={{
+          source: 'surface',
+          code: 'transform-hq-export',
+        }}
+      />,
+    )
+    expect(screen.getByText('正在准备当前照片…')).toBeVisible()
+    expect(
+      screen.getByText(
+        '按全分辨率导出可保留变换；若要导出 HQ 预览 JPEG，请先重置变换。',
+      ),
+    ).toBeVisible()
+  })
+
+  it('shows diagnostic text as it came, in every locale', () => {
+    const detail = 'LibRaw cannot open processed windows for this file.'
+    renderIn('zh-CN', {
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'runtime-unsupported', detail },
+      },
+    })
+    expect(screen.getByText(detail)).toBeVisible()
+  })
+
+  it('says in English what the panel said before', () => {
+    renderIn('en', {
+      disabledReason: {
+        source: 'workflow',
+        reason: { code: 'exposure-pending' },
+      },
+      previewExportDisabledReason: {
+        source: 'workflow',
+        reason: 'hq-preview-pending',
+      },
+    })
+    expect(
+      screen.getByText('RAW preview exposure is still being prepared.'),
+    ).toBeVisible()
+    expect(
+      screen.getByText(
+        'HQ preview export is available after the bounded HQ preview finishes.',
+      ),
+    ).toBeVisible()
+  })
+
+  it('falls back to the loading copy for a refusal that names no reason', () => {
+    renderIn('zh-CN', {})
+    expect(screen.getByText('全分辨率导出源还在加载。')).toBeVisible()
+  })
+
+  it('labels the Copy action from the copy mode in the current locale', () => {
+    renderIn('zh-CN', {
+      canExport: true,
+      exportResult: createResult({
+        copyCapability: {
+          mode: 'full-resolution',
+          label: 'Copy full-resolution image',
+        },
+      }),
+      exportShareCapability: { available: true },
+    })
+    expect(
+      screen.getByRole('button', { name: '复制全分辨率图像' }),
+    ).toBeEnabled()
   })
 })
