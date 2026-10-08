@@ -1,20 +1,12 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
-import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
 import { atom, createStore } from 'jotai'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import { useRawWorkflowActions } from './useRawWorkflowActions'
 
-const params: ColorGraphIntent = {
-  ...NEUTRAL_USER_COLOR_INTENT,
-  intensity: 0.7,
-  styleKind: 'none',
-  builtinPreset: null,
-}
 const view: PreviewView = { mode: 'compare', compareSplit: 0.5 }
 
 function createStats(overrides: Partial<PipelineStats> = {}): PipelineStats {
@@ -44,7 +36,6 @@ function renderStatsHarness(status: 'ready' | 'error' = 'ready') {
   const setStatus = vi.fn()
   const { result } = renderHook(() =>
     useRawWorkflowActions({
-      paramsRef: { current: params },
       viewRef: { current: view },
       isMountedRef: { current: true },
       status,
@@ -64,16 +55,12 @@ function renderStatsHarness(status: 'ready' | 'error' = 'ready') {
 }
 
 describe('useRawWorkflowActions', () => {
-  it('reads the current color intent and view from their own refs as separate ports', () => {
-    const paramsRef = {
-      current: { ...params, intensity: 0.37, userContrast: 12 },
-    }
+  it('reads the current view from its ref and offers no color port', () => {
     const viewRef = {
       current: { mode: 'original', compareSplit: 0.62 } as PreviewView,
     }
     const { result } = renderHook(() =>
       useRawWorkflowActions({
-        paramsRef,
         viewRef,
         isMountedRef: { current: true },
         status: 'ready',
@@ -83,23 +70,27 @@ describe('useRawWorkflowActions', () => {
       }),
     )
 
-    const colorIntent = result.current.getCurrentColorIntent()
-    expect(colorIntent).toMatchObject({ intensity: 0.37, userContrast: 12 })
-    expect(colorIntent).not.toHaveProperty('viewMode')
-    expect(colorIntent).not.toHaveProperty('compareSplit')
     expect(result.current.getCurrentView()).toEqual({
       mode: 'original',
       compareSplit: 0.62,
     })
-
-    // The ports read the refs when called, not the render that made them.
-    paramsRef.current = { ...paramsRef.current, intensity: 0.62 }
+    // The port reads the ref when called, not the render that made it.
     viewRef.current = { mode: 'compare', compareSplit: 0.2 }
-    expect(result.current.getCurrentColorIntent().intensity).toBe(0.62)
     expect(result.current.getCurrentView()).toEqual({
       mode: 'compare',
       compareSplit: 0.2,
     })
+
+    // Color is read from the store by its readers; the view port neither
+    // takes nor hands out a color intent.
+    expect(Object.keys(result.current)).not.toContain('getCurrentColorIntent')
+    expect(
+      Object.keys(result.current).filter((key) =>
+        /params|color|intent/i.test(key),
+      ),
+    ).toEqual([])
+    type ActionsInput = Parameters<typeof useRawWorkflowActions>[0]
+    expectTypeOf<ActionsInput>().not.toHaveProperty('paramsRef')
   })
 
   it('runs scheduled toasts only while mounted', () => {
@@ -108,7 +99,6 @@ describe('useRawWorkflowActions', () => {
     const isMountedRef = { current: false }
     const { result } = renderHook(() =>
       useRawWorkflowActions({
-        paramsRef: { current: params },
         viewRef: { current: view },
         isMountedRef,
         status: 'ready',

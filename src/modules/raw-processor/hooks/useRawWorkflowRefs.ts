@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntent,
-  RawRenderExposure,
-} from '@lumaforge/luma-color-runtime'
+import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import { useMemo, useRef, useState } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
@@ -12,14 +9,10 @@ import { createRawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 type UseRawWorkflowRefsInput = {
-  initialParams: ColorGraphIntent
   initialView: PreviewView
 }
 
-export function useRawWorkflowRefs({
-  initialParams,
-  initialView,
-}: UseRawWorkflowRefsInput) {
+export function useRawWorkflowRefs({ initialView }: UseRawWorkflowRefsInput) {
   // The one RAW host of this workflow: readiness, load, restore, and the
   // bridge release before export all drive this instance. It owns every RAW
   // session and its cancellation; the workflow keeps only source epochs.
@@ -34,8 +27,8 @@ export function useRawWorkflowRefs({
   const exportAbortControllerRef = useRef<AbortController | null>(null)
   const exportGraphVersionRef = useRef(0)
   const decodedImageRef = useRef<DecodedImage | null>(null)
-  // The color and the view as last rendered, each in its own ref.
-  const paramsRef = useRef(initialParams)
+  // The view as last rendered. The color intent is read from the store and
+  // has no ref here.
   const viewRef = useRef(initialView)
   const rawRenderExposureRef = useRef<RawRenderExposure | null>(null)
 
@@ -56,7 +49,6 @@ export function useRawWorkflowRefs({
       exportAbortControllerRef,
       exportGraphVersionRef,
       decodedImageRef,
-      paramsRef,
       viewRef,
       rawRenderExposureRef,
     }),
@@ -66,7 +58,6 @@ export function useRawWorkflowRefs({
       exportAbortControllerRef,
       exportGraphVersionRef,
       isMountedRef,
-      paramsRef,
       pendingLoadSessionIdRef,
       pipelineRef,
       previewCopyCanvasRef,

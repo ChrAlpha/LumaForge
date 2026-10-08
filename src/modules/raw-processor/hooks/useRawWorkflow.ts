@@ -75,13 +75,9 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     exportAbortControllerRef,
     exportGraphVersionRef,
     decodedImageRef,
-    paramsRef,
     viewRef,
     rawRenderExposureRef,
-  } = useRawWorkflowRefs({
-    initialParams: colorIntent,
-    initialView: detachedView,
-  })
+  } = useRawWorkflowRefs({ initialView: detachedView })
   const compareStage = useRawCompareStage({
     detachedView,
     setDetachedView,
@@ -89,21 +85,15 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     decodedImageRef,
   })
   const [decodedImageVersion, setDecodedImageVersion] = useState(0)
-  const {
-    getCurrentColorIntent,
-    getCurrentView,
-    scheduleToast,
-    dismissError,
-    updateStats,
-  } = useRawWorkflowActions({
-    paramsRef,
-    viewRef,
-    isMountedRef,
-    status,
-    setError,
-    setStatus,
-    setStats,
-  })
+  const { getCurrentView, scheduleToast, dismissError, updateStats } =
+    useRawWorkflowActions({
+      viewRef,
+      isMountedRef,
+      status,
+      setError,
+      setStatus,
+      setStats,
+    })
   const {
     hasImage,
     loadedImage,
@@ -188,10 +178,10 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     invalidateExportGraph,
     canApplyLoadedLut,
   })
-  // The color the photo renders with and the view it is shown in are
-  // published apart; neither is ever written through the other's setter.
+  // The color the photo renders with is read from the store wherever a
+  // command needs it; only the view it is shown in is published here, and
+  // never through a color setter.
   const { params } = lookStage
-  paramsRef.current = params
   viewRef.current = compareStage.view
   const {
     histogram,
@@ -243,7 +233,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setStatus,
     setError,
     setProgress,
-    getColorIntent: getCurrentColorIntent,
+    getColorIntent: getEffectiveColorIntent,
     getView: getCurrentView,
     getLut,
     setColorIntent,

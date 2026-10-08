@@ -1253,10 +1253,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
   it('keeps no RAW session, abort controller or disposal set beside its host', () => {
     const { result } = renderHook(() =>
-      useRawWorkflowRefs({
-        initialParams: getProcessingParams(),
-        initialView: getDetachedPreviewView(),
-      }),
+      useRawWorkflowRefs({ initialView: getDetachedPreviewView() }),
     )
 
     expect(result.current.rawRuntimeHost).toBeDefined()
@@ -2565,6 +2562,34 @@ describe('useRawWorkflow embedded preview state', () => {
       kind: 'custom',
       currentIntensity: 0.62,
     })
+  })
+
+  it('carries a detached strength set in the first loadFile tick into the session', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+
+    await act(async () => {
+      await result.current.loadLUT(
+        createCubeFile('Client Secret Sauce', 'unknown-look.cube'),
+      )
+    })
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    expect(result.current.params.intensity).not.toBe(0.37)
+
+    // Both commands come from the render before any RAW: the strength lands
+    // in the stored intent and the load reads it before any rerender.
+    const { setIntensity, loadFile } = result.current
+    await act(async () => {
+      setIntensity(0.37)
+      await loadFile(new File(['raw-one'], 'frame-1.ARW'))
+    })
+
+    expect(jotaiStore.get(currentSessionAtom)?.activeStyle).toMatchObject({
+      kind: 'custom',
+      name: 'Client Secret Sauce',
+      currentIntensity: 0.37,
+    })
+    expect(result.current.activeIntensity).toBe(0.37)
+    expect(result.current.params.intensity).toBe(0.37)
   })
 
   it('rejects raw registry scene-creative LUT profile selections without output metadata', async () => {

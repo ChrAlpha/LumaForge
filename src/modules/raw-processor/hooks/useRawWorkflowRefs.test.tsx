@@ -1,5 +1,3 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
-import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
@@ -7,18 +5,12 @@ import type { PreviewView } from '~/lib/preview/preview-view'
 
 import { useRawWorkflowRefs } from './useRawWorkflowRefs'
 
-const params: ColorGraphIntent = {
-  ...NEUTRAL_USER_COLOR_INTENT,
-  intensity: 0.7,
-  styleKind: 'none',
-  builtinPreset: null,
-}
 const view: PreviewView = { mode: 'compare', compareSplit: 0.5 }
 
 describe('useRawWorkflowRefs', () => {
   it('keeps one RAW host and one resource registry across renders', () => {
     const { result, rerender } = renderHook(() =>
-      useRawWorkflowRefs({ initialParams: params, initialView: view }),
+      useRawWorkflowRefs({ initialView: view }),
     )
     const refs = result.current
     const host = refs.rawRuntimeHost
@@ -26,7 +18,6 @@ describe('useRawWorkflowRefs', () => {
 
     expect(host).toBeDefined()
     expect(registry).toBeTruthy()
-    expect(refs.paramsRef.current).toBe(params)
     expect(refs.viewRef.current).toBe(view)
 
     rerender()
@@ -38,7 +29,7 @@ describe('useRawWorkflowRefs', () => {
 
   it('keeps export cancellation apart from the RAW host', () => {
     const { result } = renderHook(() =>
-      useRawWorkflowRefs({ initialParams: params, initialView: view }),
+      useRawWorkflowRefs({ initialView: view }),
     )
 
     expect(result.current.exportAbortControllerRef.current).toBeNull()
@@ -48,12 +39,26 @@ describe('useRawWorkflowRefs', () => {
 
   it('holds no copy of the image session', () => {
     const { result } = renderHook(() =>
-      useRawWorkflowRefs({ initialParams: params, initialView: view }),
+      useRawWorkflowRefs({ initialView: view }),
     )
 
     expect(Object.keys(result.current)).not.toContain('sessionRef')
     expect(
       Object.keys(result.current).filter((key) => /^session/i.test(key)),
     ).toEqual([])
+  })
+
+  it('holds no copy of the color intent beside the view', () => {
+    const { result } = renderHook(() =>
+      useRawWorkflowRefs({ initialView: view }),
+    )
+
+    expect(Object.keys(result.current)).not.toContain('paramsRef')
+    expect(
+      Object.keys(result.current).filter((key) =>
+        /params|color|intent|look/i.test(key),
+      ),
+    ).toEqual([])
+    expect(result.current.viewRef.current).toBe(view)
   })
 })

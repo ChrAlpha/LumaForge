@@ -1,4 +1,3 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback } from 'react'
 
@@ -57,7 +56,6 @@ function areSamePipelineStats(a: PipelineStats, b: PipelineStats) {
 }
 
 type UseRawWorkflowActionsInput = {
-  paramsRef: MutableRefObject<ColorGraphIntent>
   viewRef: MutableRefObject<PreviewView>
   isMountedRef: MutableRefObject<boolean>
   status: ProcessingStatus
@@ -68,7 +66,6 @@ type UseRawWorkflowActionsInput = {
 }
 
 export function useRawWorkflowActions({
-  paramsRef,
   viewRef,
   isMountedRef,
   status,
@@ -77,14 +74,9 @@ export function useRawWorkflowActions({
   setStats,
   postCommitTask = enqueuePostCommitTask,
 }: UseRawWorkflowActionsInput) {
-  // The color and the view live in separate refs; these ports read them at
-  // call time, so a consumer gets the color or the view it asks for and
-  // never the other.
-  const getCurrentColorIntent = useCallback(
-    (): ColorGraphIntent => paramsRef.current,
-    [paramsRef],
-  )
-
+  // The view as last rendered, read at call time. The color intent has no
+  // port here: readers take it from the store, so a view port can never hand
+  // out or carry color.
   const getCurrentView = useCallback(
     (): PreviewView => viewRef.current,
     [viewRef],
@@ -124,7 +116,6 @@ export function useRawWorkflowActions({
   )
 
   return {
-    getCurrentColorIntent,
     getCurrentView,
     scheduleToast,
     dismissError,
