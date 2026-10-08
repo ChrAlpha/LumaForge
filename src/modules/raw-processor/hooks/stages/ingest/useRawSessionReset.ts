@@ -5,14 +5,12 @@ import type { ExportResourceCleanupReason } from '~/lib/export/execution-profile
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
-import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
 
 type UseRawSessionResetInput = {
   runtimeWorkSessionIdRef: MutableRefObject<string | null>
   pendingLoadSessionIdRef: MutableRefObject<string | null>
   previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
-  sessionRef: MutableRefObject<ImageSession | null>
   abortExportWork: () => void
   abortRuntimeWork: () => void
   queueExportResultResourceDisposal: (
@@ -34,7 +32,6 @@ export function useRawSessionReset({
   runtimeWorkSessionIdRef,
   pendingLoadSessionIdRef,
   previewCopyCanvasRef,
-  sessionRef,
   abortExportWork,
   abortRuntimeWork,
   queueExportResultResourceDisposal,
@@ -60,7 +57,6 @@ export function useRawSessionReset({
     setProgress(0)
     setStats(null)
     resetSession()
-    sessionRef.current = null
   }, [
     abortExportWork,
     abortRuntimeWork,
@@ -70,7 +66,6 @@ export function useRawSessionReset({
     resetSession,
     revokeCurrentEmbeddedPreviewUrl,
     runtimeWorkSessionIdRef,
-    sessionRef,
     setDecodedImageRef,
     setError,
     setProgress,

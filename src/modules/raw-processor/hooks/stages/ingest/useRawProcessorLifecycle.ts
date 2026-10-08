@@ -20,7 +20,6 @@ type UseRawProcessorLifecycleInput = {
   pendingLoadSessionIdRef: MutableRefObject<string | null>
   decodedImageRef: MutableRefObject<DecodedImage | null>
   previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
-  sessionRef: MutableRefObject<ImageSession | null>
   abortExportWork: () => void
   abortRuntimeWork: () => void
   queueExportResultResourceDisposal: () => void
@@ -38,7 +37,6 @@ export function useRawProcessorLifecycle({
   pendingLoadSessionIdRef,
   decodedImageRef,
   previewCopyCanvasRef,
-  sessionRef,
   abortExportWork,
   abortRuntimeWork,
   queueExportResultResourceDisposal,
@@ -62,6 +60,8 @@ export function useRawProcessorLifecycle({
       queueExportResultResourceDisposal()
       revokeCurrentEmbeddedPreviewUrl()
       previewCopyCanvasRef.current = null
+      // Only a load still pending is dropped, and only while the store still
+      // holds it; a loaded session stays in the store past this mount.
       if (pendingLoadSessionId) {
         decodedImageRef.current = null
         setStatus('idle')
@@ -70,7 +70,6 @@ export function useRawProcessorLifecycle({
         setStats(null)
         setSession((prev) => (prev?.id === pendingLoadSessionId ? null : prev))
       }
-      sessionRef.current = null
     }
   }, [
     abortExportWork,
@@ -82,7 +81,6 @@ export function useRawProcessorLifecycle({
     queueExportResultResourceDisposal,
     revokeCurrentEmbeddedPreviewUrl,
     runtimeWorkSessionIdRef,
-    sessionRef,
     setError,
     setProgress,
     setSession,

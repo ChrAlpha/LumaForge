@@ -67,7 +67,6 @@ function createInput(
     getPrewarmState: vi.fn(),
     beginRuntimeSession: vi.fn(),
     decodedImageRef: { current: null as DecodedImage | null },
-    sessionRef: { current: null as ImageSession | null },
     embeddedPreviewUrlRef: { current: null },
     isMountedRef: { current: false },
     runtimeWorkSessionIdRef: { current: null },
@@ -90,14 +89,12 @@ function createLease(): RawRuntimeSessionLease {
 }
 
 describe('useRawIngestStage', () => {
-  it('loads through the session store and leaves the session ref to reset', () => {
+  it('loads and resets through the session store alone', () => {
     const before = createImageSession(new File(['raw'], 'before.ARW'))
     const ports = createStorePorts(before)
-    const sessionRef = { current: before as ImageSession | null }
     const leases: RawRuntimeSessionLease[] = []
     const input = createInput({
       ...ports,
-      sessionRef,
       getPrewarmState: vi.fn(() => 'ready' as const),
       beginRuntimeSession: vi.fn(() => {
         const lease = createLease()
@@ -119,15 +116,14 @@ describe('useRawIngestStage', () => {
     expect(input.runtimeWorkSessionIdRef.current).toBe(current?.id)
     expect(input.pendingLoadSessionIdRef.current).toBe(current?.id)
     expect(ports.replaceFile).toHaveBeenCalledTimes(2)
-    expect(sessionRef.current).toBe(before)
     expect(leases).toHaveLength(2)
 
     act(() => {
       result.current.reset()
     })
 
+    expect(ports.resetSession).toHaveBeenCalledTimes(1)
     expect(ports.getSession()).toBeNull()
-    expect(sessionRef.current).toBeNull()
     expect(input.runtimeWorkSessionIdRef.current).toBeNull()
     expect(input.pendingLoadSessionIdRef.current).toBeNull()
   })

@@ -57,12 +57,12 @@ function createDecodedImage(): DecodedImage {
   }
 }
 
-function applySessionUpdate(sessionRef: {
-  current: ImageSession | null
+function applySessionUpdate(store: {
+  session: ImageSession | null
 }): SetImageSession {
   return (update) => {
-    sessionRef.current =
-      typeof update === 'function' ? update(sessionRef.current) : update
+    store.session =
+      typeof update === 'function' ? update(store.session) : update
   }
 }
 
@@ -84,7 +84,6 @@ function renderLifecycle(
     current: createDecodedImage() as DecodedImage | null,
   }
   const previewCopyCanvasRef = { current: null as HTMLCanvasElement | null }
-  const sessionRef = { current: refs.session ?? null }
   const store = { session: refs.session ?? null }
   const calls = {
     abortExportWork: vi.fn(),
@@ -108,7 +107,6 @@ function renderLifecycle(
         pendingLoadSessionIdRef,
         decodedImageRef,
         previewCopyCanvasRef,
-        sessionRef,
         ...calls,
       }),
     options,
@@ -119,7 +117,6 @@ function renderLifecycle(
     runtimeWorkSessionIdRef,
     pendingLoadSessionIdRef,
     decodedImageRef,
-    sessionRef,
     store,
     calls,
   }
@@ -143,7 +140,7 @@ describe('useRawProcessorLifecycle', () => {
     const previewCopyCanvasRef = {
       current: document.createElement('canvas') as HTMLCanvasElement | null,
     }
-    const sessionRef = { current: createSession() }
+    const store = { session: createSession() as ImageSession | null }
     const abortExportWork = vi.fn()
     const abortRuntimeWork = vi.fn()
     const queueExportResultResourceDisposal = vi.fn()
@@ -160,7 +157,6 @@ describe('useRawProcessorLifecycle', () => {
         pendingLoadSessionIdRef,
         decodedImageRef,
         previewCopyCanvasRef,
-        sessionRef,
         abortExportWork,
         abortRuntimeWork,
         queueExportResultResourceDisposal,
@@ -169,7 +165,7 @@ describe('useRawProcessorLifecycle', () => {
         setError,
         setProgress,
         setStats,
-        setSession: applySessionUpdate(sessionRef),
+        setSession: applySessionUpdate(store),
       }),
     )
 
@@ -190,7 +186,7 @@ describe('useRawProcessorLifecycle', () => {
     expect(setError).toHaveBeenCalledWith(null)
     expect(setProgress).toHaveBeenCalledWith(0)
     expect(setStats).toHaveBeenCalledWith(null)
-    expect(sessionRef.current).toBeNull()
+    expect(store.session).toBeNull()
   })
 
   it('clears only its own pending load, leaving a session a newer load put in the store', () => {
@@ -225,7 +221,62 @@ describe('useRawProcessorLifecycle', () => {
     })
     expect(lifecycle.isMountedRef.current).toBe(false)
     expect(lifecycle.runtimeWorkSessionIdRef.current).toBeNull()
-    expect(lifecycle.sessionRef.current).toBeNull()
+  })
+
+  it('fences stale work and releases resources before it drops its pending load', () => {
+    const order: string[] = []
+    const lifecycle = renderLifecycle({
+      pendingLoadSessionId: 'pending-session',
+      session: createSession(),
+    })
+    const fenced = () =>
+      `mounted=${String(lifecycle.isMountedRef.current)}:runtime=${String(lifecycle.runtimeWorkSessionIdRef.current)}:pending=${String(lifecycle.pendingLoadSessionIdRef.current)}`
+    lifecycle.calls.abortExportWork.mockImplementation(() => {
+      order.push(`abortExportWork:${fenced()}`)
+    })
+    lifecycle.calls.abortRuntimeWork.mockImplementation(() => {
+      order.push('abortRuntimeWork')
+    })
+    lifecycle.calls.queueExportResultResourceDisposal.mockImplementation(() => {
+      order.push('dispose')
+    })
+    lifecycle.calls.revokeCurrentEmbeddedPreviewUrl.mockImplementation(() => {
+      order.push('revoke')
+    })
+    lifecycle.calls.setStatus.mockImplementation(() => {
+      order.push(
+        `setStatus:decoded=${lifecycle.decodedImageRef.current ? 'set' : 'null'}`,
+      )
+    })
+    const applyUpdate = lifecycle.calls.setSession.getMockImplementation()!
+    lifecycle.calls.setSession.mockImplementation((update) => {
+      order.push('setSession')
+      applyUpdate(update)
+    })
+
+    lifecycle.unmount()
+
+    expect(order).toEqual([
+      'abortExportWork:mounted=false:runtime=null:pending=null',
+      'abortRuntimeWork',
+      'dispose',
+      'revoke',
+      'setStatus:decoded=null',
+      'setSession',
+    ])
+    expect(lifecycle.store.session).toBeNull()
+  })
+
+  it('leaves a loaded session in the store when the mount departs', () => {
+    const loaded = createSession('loaded-session')
+    const lifecycle = renderLifecycle({ session: loaded })
+
+    lifecycle.unmount()
+
+    expect(lifecycle.calls.setSession).not.toHaveBeenCalled()
+    expect(lifecycle.calls.setStatus).not.toHaveBeenCalled()
+    expect(lifecycle.store.session).toBe(loaded)
+    expect(lifecycle.decodedImageRef.current).not.toBeNull()
   })
 
   describe('under StrictMode replay', () => {
@@ -250,6 +301,33 @@ describe('useRawProcessorLifecycle', () => {
       lifecycle.rerender()
       expect(releaseCounts(lifecycle.calls).dispose).toBe(1)
       expect(lifecycle.isMountedRef.current).toBe(true)
+    })
+
+    it('drops a pending load once, and the repeated cleanup leaves a replacement source', () => {
+      const lifecycle = renderLifecycle(
+        {
+          pendingLoadSessionId: 'pending-session',
+          session: createSession(),
+        },
+        { reactStrictMode: true },
+      )
+
+      // The replay's cleanup dropped the pending load it found.
+      expect(lifecycle.calls.setSession).toHaveBeenCalledTimes(1)
+      expect(lifecycle.store.session).toBeNull()
+      expect(lifecycle.pendingLoadSessionIdRef.current).toBeNull()
+
+      // A replacement source loads and settles before the real unmount.
+      const replacement = createSession('replacement-session')
+      lifecycle.store.session = replacement
+      lifecycle.decodedImageRef.current = createDecodedImage()
+
+      lifecycle.unmount()
+
+      expect(releaseCounts(lifecycle.calls).dispose).toBe(2)
+      expect(lifecycle.calls.setSession).toHaveBeenCalledTimes(1)
+      expect(lifecycle.store.session).toBe(replacement)
+      expect(lifecycle.decodedImageRef.current).not.toBeNull()
     })
 
     it('runs its cleanup again on the real unmount after the replay', () => {

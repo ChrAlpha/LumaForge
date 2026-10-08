@@ -59,8 +59,6 @@ type UseRawIngestStageInput = {
   /** The workflow host owns each load's native session and cancellation. */
   beginRuntimeSession: RawRuntimeHost['beginSession']
   decodedImageRef: MutableRefObject<DecodedImage | null>
-  /** Cleared by reset and unmount only; the load reads the store instead. */
-  sessionRef: MutableRefObject<ImageSession | null>
   embeddedPreviewUrlRef: MutableRefObject<string | null>
   isMountedRef: MutableRefObject<boolean>
   runtimeWorkSessionIdRef: MutableRefObject<string | null>
@@ -76,7 +74,6 @@ export function useRawIngestStage(input: UseRawIngestStageInput) {
     pendingLoadSessionIdRef: input.pendingLoadSessionIdRef,
     decodedImageRef: input.decodedImageRef,
     previewCopyCanvasRef: input.previewCopyCanvasRef,
-    sessionRef: input.sessionRef,
     abortExportWork: input.abortExportWork,
     abortRuntimeWork: input.abortRuntimeWork,
     queueExportResultResourceDisposal: input.queueExportResultResourceDisposal,

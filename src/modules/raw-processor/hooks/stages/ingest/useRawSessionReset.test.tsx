@@ -1,43 +1,7 @@
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ImageSession } from '../../../model/session'
 import { useRawSessionReset } from './useRawSessionReset'
-
-function createSession(): ImageSession {
-  return {
-    id: 'session-1',
-    createdAt: 1,
-    sourceFile: {
-      name: 'frame.dng',
-      extension: 'dng',
-      sizeBytes: 3,
-      supportLevel: 'experimental',
-    },
-    previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'idle' },
-      boundedHqPreview: { status: 'idle' },
-      displaySource: 'none',
-      boundedHqRequiredForExport: false,
-    },
-    activeStyle: null,
-    viewState: {
-      mode: 'processed',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
-    renderState: { status: 'idle' },
-    exportState: {
-      status: 'idle',
-      fullResCapability: { status: 'unknown' },
-      retryRecommended: false,
-    },
-  }
-}
 
 describe('useRawSessionReset', () => {
   it('clears RAW workflow refs and resets session state', () => {
@@ -46,7 +10,6 @@ describe('useRawSessionReset', () => {
     const previewCopyCanvasRef = {
       current: document.createElement('canvas') as HTMLCanvasElement | null,
     }
-    const sessionRef = { current: createSession() }
     const abortExportWork = vi.fn()
     const abortRuntimeWork = vi.fn()
     const queueExportResultResourceDisposal = vi.fn()
@@ -63,7 +26,6 @@ describe('useRawSessionReset', () => {
         runtimeWorkSessionIdRef,
         pendingLoadSessionIdRef,
         previewCopyCanvasRef,
-        sessionRef,
         abortExportWork,
         abortRuntimeWork,
         queueExportResultResourceDisposal,
@@ -94,7 +56,6 @@ describe('useRawSessionReset', () => {
     expect(setProgress).toHaveBeenCalledWith(0)
     expect(setStats).toHaveBeenCalledWith(null)
     expect(resetSession).toHaveBeenCalledTimes(1)
-    expect(sessionRef.current).toBeNull()
   })
 
   it('fences stale work before releasing resources and dropping the session', () => {
@@ -109,14 +70,12 @@ describe('useRawSessionReset', () => {
       vi.fn(() => {
         order.push(name)
       })
-    const sessionRef = { current: createSession() as ImageSession | null }
 
     const { result } = renderHook(() =>
       useRawSessionReset({
         runtimeWorkSessionIdRef,
         pendingLoadSessionIdRef,
         previewCopyCanvasRef: { current: null },
-        sessionRef,
         abortExportWork: vi.fn(() => {
           order.push(
             `abortExportWork:${String(runtimeWorkSessionIdRef.current)}:${String(pendingLoadSessionIdRef.current)}`,
@@ -131,7 +90,7 @@ describe('useRawSessionReset', () => {
         setProgress: vi.fn(),
         setStats: vi.fn(),
         resetSession: vi.fn(() => {
-          order.push(`resetSession:${String(sessionRef.current?.id)}`)
+          order.push('resetSession')
         }),
       }),
     )
@@ -144,9 +103,65 @@ describe('useRawSessionReset', () => {
       'dispose',
       'revoke',
       'setDecodedImageRef',
-      'resetSession:session-1',
+      'resetSession',
     ])
-    expect(sessionRef.current).toBeNull()
+  })
+
+  it('clears workflow state before it drops the session, with the store reset last', () => {
+    const order: string[] = []
+    const record = (name: string) =>
+      vi.fn((...args: unknown[]) => {
+        order.push(args.length ? `${name}:${String(args[0])}` : name)
+      })
+    const runtimeWorkSessionIdRef = {
+      current: 'runtime-session' as string | null,
+    }
+    const pendingLoadSessionIdRef = {
+      current: 'pending-session' as string | null,
+    }
+    const previewCopyCanvasRef = {
+      current: document.createElement('canvas') as HTMLCanvasElement | null,
+    }
+    const { result } = renderHook(() =>
+      useRawSessionReset({
+        runtimeWorkSessionIdRef,
+        pendingLoadSessionIdRef,
+        previewCopyCanvasRef,
+        abortExportWork: record('abortExportWork'),
+        abortRuntimeWork: record('abortRuntimeWork'),
+        queueExportResultResourceDisposal: record('dispose'),
+        revokeCurrentEmbeddedPreviewUrl: vi.fn(() => {
+          order.push(
+            `revoke:canvas=${previewCopyCanvasRef.current ? 'set' : 'null'}`,
+          )
+        }),
+        setDecodedImageRef: vi.fn((decoded: unknown) => {
+          order.push(
+            `setDecodedImageRef:${String(decoded)}:canvas=${previewCopyCanvasRef.current ? 'set' : 'null'}`,
+          )
+        }),
+        setStatus: record('setStatus'),
+        setError: record('setError'),
+        setProgress: record('setProgress'),
+        setStats: record('setStats'),
+        resetSession: record('resetSession'),
+      }),
+    )
+
+    result.current.reset()
+
+    expect(order).toEqual([
+      'abortExportWork',
+      'abortRuntimeWork',
+      'dispose:reset-session',
+      'revoke:canvas=set',
+      'setDecodedImageRef:null:canvas=null',
+      'setStatus:idle',
+      'setError:null',
+      'setProgress:0',
+      'setStats:null',
+      'resetSession',
+    ])
   })
 
   it('fences the refs a later load wrote when a reset from an earlier render runs', () => {
@@ -155,14 +170,12 @@ describe('useRawSessionReset', () => {
     const previewCopyCanvasRef = {
       current: null as HTMLCanvasElement | null,
     }
-    const sessionRef = { current: null as ImageSession | null }
     const resetSession = vi.fn()
     const { result } = renderHook(() =>
       useRawSessionReset({
         runtimeWorkSessionIdRef,
         pendingLoadSessionIdRef,
         previewCopyCanvasRef,
-        sessionRef,
         abortExportWork: vi.fn(),
         abortRuntimeWork: vi.fn(),
         queueExportResultResourceDisposal: vi.fn(),
@@ -178,7 +191,6 @@ describe('useRawSessionReset', () => {
     const { reset } = result.current
 
     // A load wrote its refs synchronously, before any rerender.
-    sessionRef.current = createSession()
     runtimeWorkSessionIdRef.current = 'session-1'
     pendingLoadSessionIdRef.current = 'session-1'
     previewCopyCanvasRef.current = document.createElement('canvas')
@@ -188,7 +200,6 @@ describe('useRawSessionReset', () => {
     expect(runtimeWorkSessionIdRef.current).toBeNull()
     expect(pendingLoadSessionIdRef.current).toBeNull()
     expect(previewCopyCanvasRef.current).toBeNull()
-    expect(sessionRef.current).toBeNull()
     expect(resetSession).toHaveBeenCalledTimes(1)
   })
 
@@ -201,14 +212,12 @@ describe('useRawSessionReset', () => {
       setDecodedImageRef: vi.fn(),
       resetSession: vi.fn(),
     }
-    const sessionRef = { current: createSession() as ImageSession | null }
     const { result, rerender, unmount } = renderHook(
       () =>
         useRawSessionReset({
           runtimeWorkSessionIdRef: { current: 'session-1' },
           pendingLoadSessionIdRef: { current: null },
           previewCopyCanvasRef: { current: null },
-          sessionRef,
           setStatus: vi.fn(),
           setError: vi.fn(),
           setProgress: vi.fn(),
@@ -222,7 +231,6 @@ describe('useRawSessionReset', () => {
     for (const effect of Object.values(effects)) {
       expect(effect).not.toHaveBeenCalled()
     }
-    expect(sessionRef.current?.id).toBe('session-1')
 
     result.current.reset()
     unmount()
