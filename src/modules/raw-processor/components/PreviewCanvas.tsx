@@ -34,6 +34,8 @@ import {
   backingStoreSize,
   observeSettledBackingStore,
 } from '../hooks/preview/backing-store-resize'
+import type { PreviewPipelineHandle } from '../hooks/preview/usePreviewPipelineLifecycle'
+import { usePreviewPipelineLifecycle } from '../hooks/preview/usePreviewPipelineLifecycle'
 import { usePreviewViewportGestures } from '../hooks/preview/usePreviewViewportGestures'
 import type { DisplaySource } from '../model/session'
 import type { CompareRenderMode } from '../services/compare/compare-render-mode'
@@ -55,7 +57,6 @@ import {
   DEFAULT_PREVIEW_VIEWPORT,
   normalizePreviewViewport,
 } from '../services/preview/preview-viewport'
-import type { OriginalGpuPipelineHandle } from './OriginalGpuLayer'
 import { OriginalGpuLayer } from './OriginalGpuLayer'
 import { OriginalReferenceLayer } from './OriginalReferenceLayer'
 import {
@@ -84,7 +85,7 @@ export interface PreviewCanvasProps {
   onStatsUpdate?: (stats: PipelineStats) => void
   onPipelineChange?: (pipeline: RawProcessingPipeline | null) => void
   onOriginalPreviewPipelineChange?: (
-    pipeline: OriginalGpuPipelineHandle | null,
+    pipeline: PreviewPipelineHandle | null,
   ) => void
   onCompareRenderModeChange?: (mode: CompareRenderMode['kind']) => void
   onRequestOriginalReferenceFallback?: () => void
@@ -96,6 +97,10 @@ export interface PreviewCanvasProps {
    */
   frameRef?: (element: HTMLDivElement | null) => void
   className?: string
+}
+
+function createProcessedPipeline(canvas: HTMLCanvasElement) {
+  return new RawProcessingPipeline(canvas)
 }
 
 function EmbeddedOriginalLayer({ src }: { src: string }) {
@@ -166,7 +171,6 @@ export function PreviewCanvas({
   const containerRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const surfaceRef = useRef<HTMLDivElement>(null)
-  const pipelineRef = useRef<RawProcessingPipeline | null>(null)
   const suspendedRef = useRef(suspended)
   const processedUploadGenerationKeyRef = useRef('')
   const processedGenerationKeyRef = useRef('')
@@ -183,7 +187,6 @@ export function PreviewCanvas({
   const renderProcessedPreviewRef = useRef<(() => Promise<boolean>) | null>(
     null,
   )
-  const [isInitialized, setIsInitialized] = useState(false)
   const [trackReady, setTrackReady] = useState(false)
   const [originalGpuStatus, setOriginalGpuStatus] = useState(
     EMPTY_ORIGINAL_GPU_FRAME_STATUS,
@@ -330,6 +333,31 @@ export function PreviewCanvas({
     onCompareRenderModeChange?.(compareRenderMode.kind)
   }, [compareRenderMode.kind, onCompareRenderModeChange])
 
+  // A published or forgotten pipeline starts with no image and no frame.
+  const publishPipeline = useCallback(
+    (pipeline: RawProcessingPipeline | null) => {
+      processedUploadGenerationKeyRef.current = ''
+      resetProcessedFrameStatus()
+      if (pipeline) setError(null)
+      onPipelineChange?.(pipeline)
+    },
+    [onPipelineChange, resetProcessedFrameStatus],
+  )
+  const reportInitializationError = useCallback((err: unknown) => {
+    setError(
+      err instanceof Error ? err.message : 'GPU preview initialization failed',
+    )
+  }, [])
+  // The primary pipeline keeps a failed initialization until it is torn
+  // down; its own failure report moves the preview to the CPU executor.
+  const { pipelineRef, isInitialized } = usePreviewPipelineLifecycle({
+    canvasRef,
+    createPipeline: createProcessedPipeline,
+    publish: publishPipeline,
+    onInitializationError: reportInitializationError,
+    suspended,
+  })
+
   const syncProcessedImageUpload = useCallback(() => {
     const pipeline = pipelineRef.current
     if (!pipeline || !isInitialized) return false
@@ -359,7 +387,7 @@ export function PreviewCanvas({
       : ''
 
     return uploaded
-  }, [imageRef, isInitialized, processedImageGenerationKey])
+  }, [imageRef, isInitialized, pipelineRef, processedImageGenerationKey])
 
   const renderProcessedPreview = useCallback(async () => {
     const pipeline = pipelineRef.current
@@ -422,6 +450,7 @@ export function PreviewCanvas({
     imageRef,
     isInitialized,
     onStatsUpdate,
+    pipelineRef,
     processedCanvasParams,
     processedImageGenerationKey,
     syncProcessedImageUpload,
@@ -430,89 +459,6 @@ export function PreviewCanvas({
   useEffect(() => {
     renderProcessedPreviewRef.current = renderProcessedPreview
   }, [renderProcessedPreview])
-
-  // Initialize pipeline
-  useEffect(() => {
-    if (suspended) {
-      pipelineRef.current = null
-      processedUploadGenerationKeyRef.current = ''
-      resetProcessedFrameStatus()
-      onPipelineChange?.(null)
-      setIsInitialized(false)
-      return
-    }
-
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    let pipeline: RawProcessingPipeline | null = null
-    let unsubscribeDisposed: (() => void) | null = null
-    let cancelled = false
-    let disposed = false
-
-    // The canvas forgets its pipeline once, whoever disposes it: this effect
-    // on unmount or suspension, or an owner of the published pipeline such as
-    // export memory evacuation.
-    const forgetPipeline = () => {
-      if (!pipeline || disposed) {
-        return
-      }
-
-      const disposedPipeline = pipeline
-      pipeline = null
-      disposed = true
-      unsubscribeDisposed?.()
-      unsubscribeDisposed = null
-      if (pipelineRef.current === disposedPipeline) {
-        pipelineRef.current = null
-        processedUploadGenerationKeyRef.current = ''
-        resetProcessedFrameStatus()
-        onPipelineChange?.(null)
-      }
-      setIsInitialized(false)
-    }
-
-    const init = async () => {
-      try {
-        const createdPipeline = new RawProcessingPipeline(canvas)
-        pipeline = createdPipeline
-        unsubscribeDisposed = createdPipeline.onDisposed(forgetPipeline)
-        await createdPipeline.initialize()
-        // A pipeline disposed while it initialized stays unpublished.
-        if (cancelled || disposed) {
-          return
-        }
-
-        pipelineRef.current = createdPipeline
-        processedUploadGenerationKeyRef.current = ''
-        resetProcessedFrameStatus()
-        onPipelineChange?.(createdPipeline)
-        setIsInitialized(true)
-        setError(null)
-      } catch (err) {
-        if (cancelled || disposed) {
-          return
-        }
-
-        setError(
-          err instanceof Error
-            ? err.message
-            : 'GPU preview initialization failed',
-        )
-      }
-    }
-
-    init()
-
-    return () => {
-      cancelled = true
-      const ownedPipeline = pipeline
-      forgetPipeline()
-      ownedPipeline?.dispose({ releaseContext: suspendedRef.current })
-      pipelineRef.current = null
-      onPipelineChange?.(null)
-    }
-  }, [onPipelineChange, resetProcessedFrameStatus, suspended])
 
   // Handle canvas resize
   useEffect(() => {
@@ -558,6 +504,7 @@ export function PreviewCanvas({
     imageVersion,
     imageWidth,
     imageHeight,
+    pipelineRef,
     shouldDelayProcessedCompareRender,
   ])
 
@@ -586,7 +533,7 @@ export function PreviewCanvas({
       // escape this passive effect and tear down the whole /raw surface.
       lutUploadFailedRef.current = true
     }
-  }, [lutDataRef, lutDataVersion, isInitialized])
+  }, [lutDataRef, lutDataVersion, isInitialized, pipelineRef])
 
   // Draw once per processed input change: image, params, or LUT. It runs
   // after the LUT upload effect above, so a LUT-only version change renders

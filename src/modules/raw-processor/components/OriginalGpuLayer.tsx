@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
@@ -9,6 +9,8 @@ import {
   backingStoreSize,
   observeSettledBackingStore,
 } from '../hooks/preview/backing-store-resize'
+import type { PreviewPipelineHandle } from '../hooks/preview/usePreviewPipelineLifecycle'
+import { usePreviewPipelineLifecycle } from '../hooks/preview/usePreviewPipelineLifecycle'
 import { TECHNICAL_ORIGINAL_GPU_INPUT } from '../services/compare/original-reference-renderer'
 import { createRawUploadInput } from './preview-canvas-helpers'
 
@@ -21,9 +23,8 @@ type OriginalPipeline = Pick<
   | 'waitForGpu'
   | 'resize'
   | 'dispose'
->
-
-export type OriginalGpuPipelineHandle = Pick<OriginalPipeline, 'dispose'>
+> &
+  Partial<Pick<RawProcessingPipeline, 'onDisposed' | 'getResourceStats'>>
 
 const ORIGINAL_LAYER_PARAMS = gpuPreviewInputParams(
   TECHNICAL_ORIGINAL_GPU_INPUT,
@@ -50,17 +51,14 @@ export function OriginalGpuLayer({
   createPipeline?: (canvas: HTMLCanvasElement) => OriginalPipeline
   onReady?: (generationKey: string) => void
   onError?: (error: unknown, generationKey: string) => void
-  onPipelineChange?: (pipeline: OriginalGpuPipelineHandle | null) => void
+  onPipelineChange?: (pipeline: PreviewPipelineHandle | null) => void
 }) {
   const layerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const pipelineRef = useRef<OriginalPipeline | null>(null)
-  const pipelineHandleRef = useRef<OriginalGpuPipelineHandle | null>(null)
   const generationKeyRef = useRef(generationKey)
   const onReadyRef = useRef(onReady)
   const onErrorRef = useRef(onError)
   const onPipelineChangeRef = useRef(onPipelineChange)
-  const [isInitialized, setIsInitialized] = useState(false)
 
   useEffect(() => {
     generationKeyRef.current = generationKey
@@ -69,87 +67,39 @@ export function OriginalGpuLayer({
     onPipelineChangeRef.current = onPipelineChange
   }, [generationKey, onReady, onError, onPipelineChange])
 
-  const disposeCurrentPipeline = useRef<
-    (options?: Parameters<OriginalPipeline['dispose']>[0]) => void
-  >(() => {})
+  // The parent passes fresh callbacks on every render; only a new pipeline
+  // factory rebuilds the layer's pipeline.
+  const publishPipeline = useCallback(
+    (
+      _pipeline: OriginalPipeline | null,
+      handle: PreviewPipelineHandle | null,
+    ) => onPipelineChangeRef.current?.(handle),
+    [],
+  )
+  const reportInitializationError = useCallback((error: unknown) => {
+    onErrorRef.current?.(error, generationKeyRef.current)
+  }, [])
+  // A failed original layer releases its pipeline before it reports, so
+  // compare can fall back without holding a dead GPU context.
+  const {
+    pipelineRef,
+    isInitialized,
+    release: releasePipeline,
+  } = usePreviewPipelineLifecycle({
+    canvasRef,
+    createPipeline,
+    publish: publishPipeline,
+    onInitializationError: reportInitializationError,
+    releaseOnInitializationFailure: true,
+  })
 
   const reportPipelineError = useCallback(
     (error: unknown) => {
-      disposeCurrentPipeline.current({ releaseContext: true })
+      releasePipeline({ releaseContext: true })
       onErrorRef.current?.(error, generationKey)
     },
-    [generationKey],
+    [generationKey, releasePipeline],
   )
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const activeCanvas = canvas
-
-    let pipeline: OriginalPipeline | null = null
-    let handle: OriginalGpuPipelineHandle | null = null
-    let cancelled = false
-    let disposed = false
-
-    const disposePipeline = (
-      options?: Parameters<OriginalPipeline['dispose']>[0],
-    ) => {
-      if (!pipeline || disposed) return
-      disposed = true
-      const disposedPipeline = pipeline
-      pipeline = null
-      if (pipelineHandleRef.current === handle) {
-        pipelineHandleRef.current = null
-      }
-      if (pipelineRef.current === disposedPipeline) {
-        pipelineRef.current = null
-      }
-      onPipelineChangeRef.current?.(null)
-      if (options) {
-        disposedPipeline.dispose(options)
-      } else {
-        disposedPipeline.dispose()
-      }
-      setIsInitialized(false)
-    }
-    handle = {
-      dispose: () => disposePipeline({ releaseContext: true }),
-    }
-    disposeCurrentPipeline.current = disposePipeline
-
-    async function initializePipeline() {
-      setIsInitialized(false)
-      try {
-        pipeline = createPipeline(activeCanvas)
-        await pipeline.initialize()
-        if (cancelled) {
-          disposePipeline()
-          return
-        }
-        pipelineRef.current = pipeline
-        pipelineHandleRef.current = handle
-        setIsInitialized(true)
-        onPipelineChangeRef.current?.(handle)
-      } catch (error) {
-        disposePipeline()
-        if (!cancelled) {
-          pipelineRef.current = null
-          setIsInitialized(false)
-          onErrorRef.current?.(error, generationKeyRef.current)
-        }
-      }
-    }
-
-    void initializePipeline()
-
-    return () => {
-      cancelled = true
-      disposePipeline()
-      if (disposeCurrentPipeline.current === disposePipeline) {
-        disposeCurrentPipeline.current = () => {}
-      }
-    }
-  }, [createPipeline])
 
   useEffect(() => {
     const layer = layerRef.current
@@ -172,7 +122,7 @@ export function OriginalGpuLayer({
         }
       },
     })
-  }, [imageRef, isInitialized, reportPipelineError])
+  }, [imageRef, isInitialized, pipelineRef, reportPipelineError])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -221,6 +171,7 @@ export function OriginalGpuLayer({
     imageRef,
     imageVersion,
     isInitialized,
+    pipelineRef,
     reportPipelineError,
   ])
 

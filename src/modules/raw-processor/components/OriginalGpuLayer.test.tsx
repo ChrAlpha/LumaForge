@@ -395,6 +395,81 @@ describe('originalGpuLayer', () => {
     expect(onPipelineChange).toHaveBeenLastCalledWith(null)
   })
 
+  it('never publishes a pipeline whose layer unmounted while it initialized', async () => {
+    const initialized = deferred()
+    const pipeline = createPipelineMock({
+      initialize: vi.fn(() => initialized.promise),
+    })
+    const onPipelineChange = vi.fn()
+    const onReady = vi.fn()
+    const onError = vi.fn()
+    const { unmount } = render(
+      <OriginalGpuLayer
+        imageRef={{ current: decodedImage }}
+        imageVersion={1}
+        createPipeline={() => pipeline as never}
+        onPipelineChange={onPipelineChange}
+        onReady={onReady}
+        onError={onError}
+      />,
+    )
+
+    unmount()
+    expect(pipeline.dispose).toHaveBeenCalledExactlyOnceWith()
+    await act(async () => initialized.resolve())
+
+    expect(onPipelineChange).not.toHaveBeenCalledWith(
+      expect.objectContaining({ dispose: expect.any(Function) }),
+    )
+    expect(pipeline.uploadImage).not.toHaveBeenCalled()
+    expect(pipeline.dispose).toHaveBeenCalledOnce()
+    expect(onReady).not.toHaveBeenCalled()
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('releases once however often its evacuation handle runs, and a stale handle spares the next layer', async () => {
+    const first = createPipelineMock()
+    const second = createPipelineMock()
+    const onPipelineChange = vi.fn()
+    const handles = () =>
+      onPipelineChange.mock.calls
+        .map(([value]) => value as { dispose: () => void } | null)
+        .filter((value) => value !== null)
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      onPipelineChange,
+    }
+    const { rerender, unmount } = render(
+      <OriginalGpuLayer {...props} createPipeline={() => first as never} />,
+    )
+    await waitFor(() => expect(handles()).toHaveLength(1))
+    const [firstHandle] = handles()
+
+    act(() => firstHandle!.dispose())
+    act(() => firstHandle!.dispose())
+    expect(first.dispose).toHaveBeenCalledExactlyOnceWith({
+      releaseContext: true,
+    })
+    const nulls = () =>
+      onPipelineChange.mock.calls.filter(([value]) => value === null).length
+    expect(nulls()).toBe(1)
+
+    rerender(
+      <OriginalGpuLayer {...props} createPipeline={() => second as never} />,
+    )
+    await waitFor(() => expect(handles()).toHaveLength(2))
+    const nullsBefore = nulls()
+    act(() => firstHandle!.dispose())
+    expect(second.dispose).not.toHaveBeenCalled()
+    expect(first.dispose).toHaveBeenCalledOnce()
+    expect(nulls()).toBe(nullsBefore)
+
+    unmount()
+    expect(second.dispose).toHaveBeenCalledExactlyOnceWith()
+    expect(first.dispose).toHaveBeenCalledOnce()
+  })
+
   it('reports pipeline creation failures without leaking an async rejection', async () => {
     const onError = vi.fn()
 

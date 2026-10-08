@@ -1043,6 +1043,50 @@ describe('preview canvas upload descriptor', () => {
     },
   )
 
+  it('never publishes or draws a pipeline suspended while it initializes, and builds anew on resume', async () => {
+    const initialize = deferred<void>()
+    pipelineMock.initialize.mockReturnValueOnce(initialize.promise)
+    const onPipelineChange = vi.fn()
+    const onStatsUpdate = vi.fn()
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      color: defaultColor,
+      viewMode: 'processed' as const,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      onPipelineChange,
+      onStatsUpdate,
+    } satisfies ComponentProps<typeof PreviewCanvas>
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    const [pending] = pipelineMock.instances
+
+    rerender(createElement(PreviewCanvas, { ...props, suspended: true }))
+    expect(pending!.disposeMock).toHaveBeenCalledExactlyOnceWith({
+      releaseContext: true,
+    })
+    expect(pending!.unsubscribeDisposed).toHaveBeenCalledOnce()
+    expect(onPipelineChange).toHaveBeenLastCalledWith(null)
+
+    await act(async () => {
+      initialize.resolve()
+      await initialize.promise
+    })
+    expect(onPipelineChange).not.toHaveBeenCalledWith(pending)
+    expect(pending!.uploadImage).not.toHaveBeenCalled()
+    expect(pending!.render).not.toHaveBeenCalled()
+    expect(pipelineMock.instances).toHaveLength(1)
+
+    await act(async () => {
+      rerender(createElement(PreviewCanvas, { ...props, suspended: false }))
+    })
+    await waitFor(() => expect(onStatsUpdate).toHaveBeenCalledOnce())
+    const resumed = pipelineMock.instances[1]!
+    expect(onPipelineChange).toHaveBeenLastCalledWith(resumed)
+    expect(resumed.render).toHaveBeenCalledOnce()
+    expect(pending!.dispose).toHaveBeenCalledOnce()
+  })
+
   it('forgets an externally disposed pipeline once without replacing its dispose', async () => {
     const resizeCallbacks: ResizeObserverCallback[] = []
     vi.stubGlobal(

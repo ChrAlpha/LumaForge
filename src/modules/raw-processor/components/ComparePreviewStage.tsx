@@ -9,12 +9,12 @@ import type {
   RawProcessingPipeline,
 } from '~/lib/webgpu/raw-processing-pipeline'
 
+import type { PreviewPipelineHandle } from '../hooks/preview/usePreviewPipelineLifecycle'
 import type { DisplaySource } from '../model/session'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
 import type { PreviewViewport } from '../services/preview/preview-viewport'
 import { CompareSplitHandle } from './CompareSplitHandle'
 import { Dropzone, RAW_FILE_ACCEPT } from './Dropzone'
-import type { OriginalGpuPipelineHandle } from './OriginalGpuLayer'
 import { PreviewCanvas } from './PreviewCanvas'
 import { ProgressOverlay } from './ProgressOverlay'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
@@ -54,7 +54,7 @@ export interface ComparePreviewStageProps {
   onStatsUpdate?: (stats: PipelineStats) => void
   onPipelineChange?: (pipeline: RawProcessingPipeline | null) => void
   onOriginalPreviewPipelineChange?: (
-    pipeline: OriginalGpuPipelineHandle | null,
+    pipeline: PreviewPipelineHandle | null,
   ) => void
   onRequestOriginalReferenceFallback?: () => void
   onRestorePreview?: () => void | Promise<void>
