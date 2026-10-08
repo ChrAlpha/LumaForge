@@ -5240,6 +5240,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.exportResult?.copyCapability).toEqual({
       mode: 'unavailable',
       reason: 'This browser cannot copy HQ preview JPEG files.',
+      reasonCode: 'hq-preview-copy-unsupported',
     })
   })
 

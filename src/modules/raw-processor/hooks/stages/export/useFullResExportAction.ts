@@ -1,5 +1,7 @@
 import { useCallback, useMemo } from 'react'
 
+import { useI18n } from '~/lib/i18n'
+
 import type {
   ExportContext,
   FullResExportRequest,
@@ -8,7 +10,7 @@ import { orchestrateFullResExport } from '../../../services/export/orchestrate-f
 
 export type UseFullResExportActionInput = ExportContext['atoms'] &
   ExportContext['refs'] &
-  ExportContext['services'] & {
+  Omit<ExportContext['services'], 't'> & {
     orchestrateExport?: typeof orchestrateFullResExport
   }
 
@@ -40,6 +42,7 @@ export function useFullResExportAction({
   interruptionMarkers,
   orchestrateExport = orchestrateFullResExport,
 }: UseFullResExportActionInput) {
+  const { t } = useI18n()
   const exportCtx = useMemo<ExportContext>(
     () => ({
       atoms: {
@@ -66,6 +69,7 @@ export function useFullResExportAction({
       },
       services: {
         scheduleToast,
+        t,
         abortExportWork,
         previewRuntime,
         registerCurrentPreviewPipelineForEvacuation,
@@ -100,6 +104,7 @@ export function useFullResExportAction({
       setSession,
       setStatus,
       stats,
+      t,
     ],
   )
 

@@ -27,6 +27,7 @@ import { selectExportPlan } from '~/lib/export/export-plan'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
+import type { MessageKey, Translate } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { createRawRuntimeSessionLeases } from '~/lib/raw/raw-runtime-host'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
@@ -35,6 +36,8 @@ import {
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
 import { composeManualTransform } from '~/lib/transform/transform-render'
+import enMessages from '~/locales/en.json'
+import zhMessages from '~/locales/zh-CN.json'
 
 import type { ExportResult } from '../../model/export-result'
 import type { ImageSession, TransformState } from '../../model/session'
@@ -213,6 +216,7 @@ const PRE_EXPORT_OWNERS = [
 const CLIPBOARD_UNAVAILABLE = {
   mode: 'unavailable',
   reason: 'Clipboard image copy is not supported in this browser.',
+  reasonCode: 'clipboard-unsupported',
 } as const
 
 const SEALED_MANIFEST = {
@@ -545,8 +549,15 @@ function toSourceTuple(file: File): ExportSourceTuple {
   return { name: file.name, size: file.size, lastModified: file.lastModified }
 }
 
+/** A locale's copy as the workflow's translator reads it. */
+function translator(messages: Record<MessageKey, string>): Translate {
+  return (key) => messages[key]
+}
+
 type HarnessOptions = {
   session?: ImageSession
+  /** The locale copy refusals read; English by default. */
+  t?: Translate
   /** The session the React closure rendered with; defaults to the live one. */
   atomsSession?: ImageSession | null
   params?: ProcessingParams
@@ -696,6 +707,7 @@ function createHarness(options: HarnessOptions = {}) {
         trace.push('service:scheduleToast')
         notify()
       }),
+      t: options.t ?? translator(enMessages),
       // Mirrors the workflow's abortExportWork: abort, then release the ref.
       abortExportWork: vi.fn(() => {
         trace.push('service:abortExportWork')
@@ -1737,6 +1749,86 @@ describe('orchestrateFullResExport refusals', () => {
     )
   })
 
+  it('shows the runtime diagnostic as given, never deciding on its text', async () => {
+    // The diagnostic reads like another refusal; the verdict alone decides.
+    const h = createHarness({
+      session: createSession('session-1', {
+        exportState: {
+          fullResCapability: {
+            status: 'unsupported',
+            reason: 'Quick preview is still being prepared.',
+          },
+        },
+      }),
+    })
+    const liveSession = h.state.session
+
+    await orchestrateFullResExport(OPTIONS, h.ctx)
+
+    expect(h.trace).toEqual([
+      'service:scheduleToast',
+      'toast:error:Full-resolution export is not ready',
+    ])
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      'Full-resolution export is not ready',
+      { description: 'Quick preview is still being prepared.' },
+    )
+    expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
+    expect(h.state.session).toBe(liveSession)
+  })
+
+  it('shows a readiness refusal in the current locale', async () => {
+    const h = createHarness({
+      atomsSession: createSession('session-rendered-earlier'),
+      t: translator(zhMessages),
+    })
+
+    await orchestrateFullResExport(OPTIONS, h.ctx)
+
+    expect(mocks.toastError).toHaveBeenCalledWith('全分辨率导出尚未就绪', {
+      description: '全分辨率导出源还在加载。',
+    })
+    expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
+  })
+
+  it('shows a Transform refusal in the current locale', async () => {
+    const h = createHarness({
+      atomsSession: createSession(),
+      t: translator(zhMessages),
+    })
+    h.replaceSession(
+      createSession('session-1', { transform: transformAt('pending') }),
+    )
+
+    await orchestrateFullResExport(OPTIONS, h.ctx)
+
+    expect(mocks.toastError).toHaveBeenCalledWith('全分辨率导出尚未就绪', {
+      description: '变换仍在准备当前照片。预览显示后再导出。',
+    })
+    expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
+  })
+
+  it('keeps the runtime diagnostic as given in any locale', async () => {
+    const h = createHarness({
+      session: createSession('session-1', {
+        exportState: {
+          fullResCapability: {
+            status: 'unsupported',
+            reason: 'Quick preview is still being prepared.',
+          },
+        },
+      }),
+      t: translator(zhMessages),
+    })
+
+    await orchestrateFullResExport(OPTIONS, h.ctx)
+
+    expect(mocks.toastError).toHaveBeenCalledWith('全分辨率导出尚未就绪', {
+      description: 'Quick preview is still being prepared.',
+    })
+    expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
+  })
+
   it('refuses an unsupported color graph without touching other export work', async () => {
     const lut: LUTData = {
       size: 2,
@@ -2736,6 +2828,26 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     expectRefusedAndSettled(h, 'pending')
     expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
     expect(h.markerStore.markers()).toEqual([])
+    expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
+  })
+
+  it('shows a refusal that ends a running attempt in the current locale', async () => {
+    const planGate = deferred()
+    const h = createHarness({
+      planGate: planGate.promise,
+      runtime: OPFS_RUNTIME,
+      session: createAcceptedTransformSession(),
+      t: translator(zhMessages),
+    })
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    recapture(h, 'unavailable')
+    planGate.resolve()
+    await run
+
+    expect(mocks.toastError).toHaveBeenCalledWith('全分辨率导出尚未就绪', {
+      description: '处理后的预览暂不可用。请等待预览就绪或重置变换后再导出。',
+    })
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
 

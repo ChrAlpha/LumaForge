@@ -6,7 +6,10 @@ import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { renderHook } from '@testing-library/react'
+import type { ComponentType, PropsWithChildren } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { I18nProvider } from '~/lib/i18n'
 
 import type {
   ExportCopyCapability,
@@ -192,11 +195,13 @@ function setup({
   result,
   previewCopyCanvas = null,
   pipeline = null,
+  wrapper,
 }: {
   session?: ImageSession
   result: (session: ImageSession) => ExportResult
   previewCopyCanvas?: HTMLCanvasElement | null
   pipeline?: { renderToHiddenCanvas: () => Promise<HTMLCanvasElement> } | null
+  wrapper?: ComponentType<PropsWithChildren>
 }) {
   const stored = result(session)
   const sessionRef = {
@@ -224,13 +229,15 @@ function setup({
   )
   refs.exportAbortControllerRef.current = null
   const toast = { success: vi.fn(), error: vi.fn() }
-  const { result: hook } = renderHook(() =>
-    useExportResultActions({
-      ...refs,
-      previewSize: { width: 640, height: 480 },
-      scheduleToast: (notify) => notify(),
-      toast,
-    }),
+  const { result: hook } = renderHook(
+    () =>
+      useExportResultActions({
+        ...refs,
+        previewSize: { width: 640, height: 480 },
+        scheduleToast: (notify) => notify(),
+        toast,
+      }),
+    { wrapper },
   )
   return { ...refs, stored, toast, actions: () => hook.current }
 }
@@ -739,5 +746,116 @@ describe('useExportResultActions', () => {
     expect(delivery.share).toHaveBeenCalledTimes(1)
     expect(delivery.clipboardWrite).toHaveBeenCalledTimes(1)
     expect(harness.toast.error).not.toHaveBeenCalled()
+  })
+})
+
+describe('useExportResultActions refusal copy', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    localStorage.clear()
+    document.documentElement.lang = 'en'
+  })
+
+  function refuseCopyAndShare(wrapper?: ComponentType<PropsWithChildren>) {
+    stubDelivery()
+    // A browser that can neither share files nor copy the result.
+    vi.stubGlobal('navigator', {})
+    const harness = setup({
+      wrapper,
+      result: (session) =>
+        createResult({
+          session,
+          output: blobOutput(),
+          copyCapability: {
+            mode: 'unavailable',
+            reason: 'Clipboard image copy is not supported in this browser.',
+            reasonCode: 'clipboard-unsupported',
+          },
+        }),
+    })
+    return harness
+  }
+
+  it('describes a copy or share refusal by its code', async () => {
+    const harness = refuseCopyAndShare()
+
+    await harness.actions().copyExportResult()
+    await harness.actions().shareExportResult()
+
+    expect(harness.toast.error.mock.calls).toEqual([
+      [
+        'Copy failed',
+        {
+          description: 'Clipboard image copy is not supported in this browser.',
+        },
+      ],
+      [
+        'Share failed',
+        { description: 'This browser cannot share JPEG files.' },
+      ],
+    ])
+  })
+
+  it('shows a copy or share refusal in the current locale', async () => {
+    localStorage.setItem('lumaforge.locale', 'zh-CN')
+    const harness = refuseCopyAndShare(I18nProvider)
+
+    await harness.actions().copyExportResult()
+    await harness.actions().shareExportResult()
+
+    expect(harness.toast.error.mock.calls).toEqual([
+      ['复制失败', { description: '此浏览器不支持复制图像到剪贴板。' }],
+      ['分享失败', { description: '此浏览器无法分享 JPEG 文件。' }],
+    ])
+  })
+
+  it('shows a preview copy that is not ready in the current locale', async () => {
+    localStorage.setItem('lumaforge.locale', 'zh-CN')
+    stubDelivery()
+    const harness = setup({
+      wrapper: I18nProvider,
+      pipeline: null,
+      result: (session) =>
+        createResult({
+          session,
+          output: blobOutput(),
+          copyCapability: {
+            mode: 'preview-size',
+            label: 'Copy preview-size image',
+            reason: 'This browser cannot copy full-resolution JPEG files.',
+            reasonCode: 'full-resolution-copy-unsupported',
+          },
+        }),
+    })
+
+    await harness.actions().copyExportResult()
+
+    expect(harness.toast.error).toHaveBeenCalledWith('复制失败', {
+      description: '预览图像尚未就绪，无法复制。',
+    })
+  })
+
+  it('keeps a refusal recorded without a code as its text', async () => {
+    localStorage.setItem('lumaforge.locale', 'zh-CN')
+    stubDelivery()
+    const harness = setup({
+      wrapper: I18nProvider,
+      result: (session) =>
+        createResult({
+          session,
+          output: blobOutput(),
+          copyCapability: {
+            mode: 'unavailable',
+            reason: 'Clipboard image copy is not supported in this browser.',
+          },
+        }),
+    })
+
+    await harness.actions().copyExportResult()
+
+    expect(harness.toast.error).toHaveBeenCalledWith('复制失败', {
+      description: 'Clipboard image copy is not supported in this browser.',
+    })
   })
 })

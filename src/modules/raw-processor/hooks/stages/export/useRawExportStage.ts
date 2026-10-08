@@ -146,6 +146,7 @@ export function useRawExportStage({
     exportInterrupted,
     previewSuspended,
     canPreviewExport,
+    previewExportRefusal,
     previewExportDisabledReason,
   } = useExportDerivedState({
     session,
@@ -197,7 +198,7 @@ export function useRawExportStage({
     exportAbortControllerRef,
     previewCopyCanvasRef,
     previewSuspended,
-    previewExportDisabledReason,
+    previewExportRefusal,
     abortExportWork,
     queueExportResultResourceDisposal,
     registerExportResultResource,

@@ -6,9 +6,15 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
-import type { Dispatch, SetStateAction } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import type {
+  ComponentType,
+  Dispatch,
+  PropsWithChildren,
+  SetStateAction,
+} from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { I18nProvider } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
@@ -233,6 +239,7 @@ function transformAt(status: TransformStatus): TransformState {
 function setupHq(
   initial: ImageSession = createSession(),
   look: { params?: ColorGraphIntentSource; lut?: LUTData | null } = {},
+  wrapper?: ComponentType<PropsWithChildren>,
 ) {
   const sessionRef: { current: ImageSession | null } = { current: initial }
   const paramsRef = { current: look.params ?? SESSION_LOOK }
@@ -270,36 +277,40 @@ function setupHq(
   const error = vi.fn((message: string) => {
     trace.push(`toast:error:${message}`)
   })
-  const { result } = renderHook(() =>
-    useHqPreviewExportAction({
-      sessionRef,
-      paramsRef,
-      lutDataRef,
-      decodedImageRef,
-      pipelineRef: { current: { renderToHiddenCanvas } },
-      isMountedRef,
-      exportGraphVersionRef,
-      exportAbortControllerRef,
-      previewCopyCanvasRef: { current: null },
-      previewSuspended: false,
-      abortExportWork: () => {
-        trace.push('service:abortExportWork')
-        exportAbortControllerRef.current?.abort()
-        exportAbortControllerRef.current = null
-      },
-      queueExportResultResourceDisposal: vi.fn(),
-      registerExportResultResource,
-      scheduleToast: (notify) => notify(),
-      setProgress: (progress) => trace.push(`state:progress:${progress}`),
-      setSession: (updater) => {
-        const next =
-          typeof updater === 'function' ? updater(sessionRef.current) : updater
-        trace.push(`state:session:${next?.exportState.status ?? 'null'}`)
-        sessionRef.current = next
-      },
-      setStatus: (status) => trace.push(`state:status:${status}`),
-      toast: { success, error },
-    }),
+  const { result } = renderHook(
+    () =>
+      useHqPreviewExportAction({
+        sessionRef,
+        paramsRef,
+        lutDataRef,
+        decodedImageRef,
+        pipelineRef: { current: { renderToHiddenCanvas } },
+        isMountedRef,
+        exportGraphVersionRef,
+        exportAbortControllerRef,
+        previewCopyCanvasRef: { current: null },
+        previewSuspended: false,
+        abortExportWork: () => {
+          trace.push('service:abortExportWork')
+          exportAbortControllerRef.current?.abort()
+          exportAbortControllerRef.current = null
+        },
+        queueExportResultResourceDisposal: vi.fn(),
+        registerExportResultResource,
+        scheduleToast: (notify) => notify(),
+        setProgress: (progress) => trace.push(`state:progress:${progress}`),
+        setSession: (updater) => {
+          const next =
+            typeof updater === 'function'
+              ? updater(sessionRef.current)
+              : updater
+          trace.push(`state:session:${next?.exportState.status ?? 'null'}`)
+          sessionRef.current = next
+        },
+        setStatus: (status) => trace.push(`state:status:${status}`),
+        toast: { success, error },
+      }),
+    { wrapper },
   )
   return {
     result,
@@ -507,6 +518,64 @@ describe('useHqPreviewExportAction attempt currency', () => {
       'toast:error:HQ preview export failed',
     ])
     expect(failed.exportAbortControllerRef.current).toBeNull()
+  })
+})
+
+describe('useHqPreviewExportAction refusal copy', () => {
+  beforeEach(() => {
+    localStorage.setItem('lumaforge.locale', 'zh-CN')
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    document.documentElement.lang = 'en'
+  })
+
+  it('shows a Transform refusal in the current locale', async () => {
+    const h = setupHq(
+      { ...createSession(), transform: transformAt('pending') },
+      {},
+      I18nProvider,
+    )
+    await h.result.current.exportPreviewImage()
+
+    expect(h.error).toHaveBeenCalledWith('HQ 预览导出尚未就绪', {
+      description:
+        '按全分辨率导出可保留变换；若要导出 HQ 预览 JPEG，请先重置变换。',
+    })
+    expect(h.renderToHiddenCanvas).not.toHaveBeenCalled()
+  })
+
+  it('shows a refusal before the bounded HQ frame in the current locale', async () => {
+    const h = setupHq(createSession(), {}, I18nProvider)
+    h.decodedImageRef.current = { ...createDecodedImage(), source: 'quick' }
+    await h.result.current.exportPreviewImage()
+
+    expect(h.error).toHaveBeenCalledWith('HQ 预览导出尚未就绪', {
+      description: 'bounded HQ 预览完成后才能导出 HQ 预览 JPEG。',
+    })
+    expect(h.renderToHiddenCanvas).not.toHaveBeenCalled()
+  })
+
+  it('shows a refusal that ends a running attempt in the current locale', async () => {
+    const h = setupHq(
+      { ...createSession(), transform: transformAt('neutral') },
+      {},
+      I18nProvider,
+    )
+    const pending = h.result.current.exportPreviewImage()
+    h.sessionRef.current = {
+      ...h.sessionRef.current!,
+      exportGeometry: SAMPLE_GEOMETRY,
+    }
+    h.complete()
+    await pending
+
+    expect(h.error).toHaveBeenCalledWith('HQ 预览导出尚未就绪', {
+      description:
+        '按全分辨率导出可保留变换；若要导出 HQ 预览 JPEG，请先重置变换。',
+    })
+    expect(h.toBlob).not.toHaveBeenCalled()
   })
 })
 
@@ -803,7 +872,7 @@ describe('useHqPreviewExportAction', () => {
         exportAbortControllerRef: { current: null },
         previewCopyCanvasRef,
         previewSuspended: false,
-        previewExportDisabledReason: undefined,
+        previewExportRefusal: undefined,
         abortExportWork: vi.fn(),
         queueExportResultResourceDisposal: vi.fn(),
         registerExportResultResource,

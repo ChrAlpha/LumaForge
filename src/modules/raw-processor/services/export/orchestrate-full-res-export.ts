@@ -21,13 +21,17 @@ import {
   scheduleAbandonedOpfsOutputCollection,
 } from '~/lib/export/opfs-output-lifetime'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
+import type { Translate } from '~/lib/i18n'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
 import type {
   PipelineStats,
   RawProcessingPipeline,
 } from '~/lib/webgpu/raw-processing-pipeline'
 
-import type { ExportResult } from '../../model/export-result'
+import type {
+  ExportResult,
+  FullResExportReason,
+} from '../../model/export-result'
 import type {
   ActiveExportPlanState,
   ImageSession,
@@ -39,6 +43,7 @@ import {
   isRetryableFullResExportFailure,
   toUserFacingErrorCode,
 } from '../ingest/workflow-status'
+import { fullResExportReasonText } from '../surface/raw-reason'
 import {
   buildManifestForExportResult,
   ExportManifestUnavailableError,
@@ -54,7 +59,7 @@ import type { ExportAttemptOutcome } from './export-interruption'
 import { resolveExportEnvironment } from './export-manifest'
 import {
   deriveFullResExportReadiness,
-  deriveTransformExportRefusal,
+  deriveTransformExportRefusalReason,
   planFullResExport,
   planFullResExportRequest,
 } from './export-readiness'
@@ -67,7 +72,10 @@ import {
   interruptionForSource,
   toExportSourceTuple,
 } from './export-recovery'
-import { resolveExportCopyCapability } from './export-result-actions'
+import {
+  resolveExportCopyCapability,
+  unavailableExportCopy,
+} from './export-result-actions'
 import { captureExportResultIdentity } from './export-result-identity'
 import { createCompletedExportResult } from './export-result-materialization'
 import {
@@ -118,6 +126,8 @@ export interface ExportContext {
   }
   services: {
     scheduleToast: (fn: () => void) => void
+    /** The current locale's copy, for the refusals this action shows. */
+    t: Translate
     abortExportWork: () => void
     /**
      * The preview's RAW runtime on the workflow host. Evacuation cancels its
@@ -190,14 +200,14 @@ type FullResExportAttempt = Readonly<{
  * While it still works towards its JPEG, an attempt also needs the live
  * Transform to stay one export may reproduce. A new frame or a failure that
  * leaves it pending, invalid or unavailable makes no edit, so nothing else
- * ends the attempt: it stands `refused`, with the reason, and ends itself.
+ * ends the attempt: it stands `refused`, with the refusal, and ends itself.
  * Once the JPEG is delivered the session keeps it through such events, so
  * sealing its manifest reads only whether the attempt is obsolete.
  */
 type AttemptStanding =
   | { kind: 'current' }
   | { kind: 'obsolete' }
-  | { kind: 'refused'; reason: string }
+  | { kind: 'refused'; refusal: FullResExportReason }
 
 function readAttemptStanding(
   refs: ExportContext['refs'],
@@ -218,8 +228,8 @@ function readAttemptStanding(
     return { kind: 'obsolete' }
   }
   if (stage === 'sealing') return { kind: 'current' }
-  const reason = deriveTransformExportRefusal(live, 'full-resolution')
-  return reason ? { kind: 'refused', reason } : { kind: 'current' }
+  const refusal = deriveTransformExportRefusalReason(live, 'full-resolution')
+  return refusal ? { kind: 'refused', refusal } : { kind: 'current' }
 }
 
 export type FullResExportRequest = {
@@ -245,22 +255,25 @@ export async function orchestrateFullResExport(
       currentSession?.id === ctx.atoms.session?.id ? currentSession : null,
     rawRenderExposure,
   })
-  const refuse = (description: string | undefined) =>
+  // The refusal stays structured up to the toast, which is the only place it
+  // becomes copy, in the current locale. Runtime diagnostics read as given.
+  const refuse = (refusal: FullResExportReason) => {
+    const { t } = ctx.services
+    const title = t('raw.export.toast.fullResNotReady')
+    const description = fullResExportReasonText(refusal, t)
     ctx.services.scheduleToast(() =>
-      toast.error(
-        'Full-resolution export is not ready',
-        description ? { description } : undefined,
-      ),
+      toast.error(title, description ? { description } : undefined),
     )
+  }
   if (!exportReadiness.canExport) {
-    refuse(exportReadiness.disabledReason)
+    refuse(exportReadiness.refusal)
     return
   }
 
   const activeSession = exportReadiness.session
   // Read from the live session as the action runs, so an action a surface
   // captured before the Transform was edited still refuses.
-  const transformRefusal = deriveTransformExportRefusal(
+  const transformRefusal = deriveTransformExportRefusalReason(
     activeSession,
     'full-resolution',
   )
@@ -373,7 +386,7 @@ export async function orchestrateFullResExport(
       )
       ctx.atoms.setStatus('ready')
       ctx.atoms.setProgress(0)
-      refuse(standing.reason)
+      refuse(standing.refusal)
     }
     return standing.kind === 'current'
   }
@@ -494,10 +507,7 @@ export async function orchestrateFullResExport(
       }
 
       if (!previewCopyCanvas) {
-        copyCapability = {
-          mode: 'unavailable',
-          reason: 'Preview image is not ready to copy.',
-        }
+        copyCapability = unavailableExportCopy('preview-copy-not-ready')
       }
     }
 

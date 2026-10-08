@@ -6,12 +6,14 @@ import { materializeOutputBlob } from '@lumaforge/render-engine/export'
 
 import type {
   ExportCopyCapability,
+  ExportCopyReasonCode,
   ExportResult,
   ExportResultIdentity,
   ExportShareCapability,
+  ExportShareReasonCode,
 } from '../../model/export-result'
 import type { ImageSession } from '../../model/session'
-import { deriveTransformExportRefusal } from './export-readiness'
+import { deriveTransformExportRefusalReason } from './export-readiness'
 import {
   captureExportResultIdentity,
   isSameExportResult,
@@ -48,6 +50,74 @@ export type ExportOutputMaterializationEvent = {
 type MaterializationDiagnostics = {
   onMaterialize?: (event: ExportOutputMaterializationEvent) => void
   now?: () => string
+}
+
+/** Why a copy or share cannot run. */
+export type ExportActionReasonCode =
+  | ExportCopyReasonCode
+  | ExportShareReasonCode
+
+/**
+ * The English sentence each copy or share refusal is still carried as,
+ * beside its code, until every reader takes the code. Toasts take the code
+ * and its locale copy instead.
+ */
+const EXPORT_ACTION_REASON_SENTENCE: Record<ExportActionReasonCode, string> = {
+  'clipboard-unsupported':
+    'Clipboard image copy is not supported in this browser.',
+  'full-resolution-copy-unsupported':
+    'This browser cannot copy full-resolution JPEG files.',
+  'hq-preview-copy-unsupported':
+    'This browser cannot copy HQ preview JPEG files.',
+  'preview-copy-not-ready': 'Preview image is not ready to copy.',
+  'no-result': 'Export a JPEG before sharing.',
+  'share-unsupported': 'This browser cannot share JPEG files.',
+}
+
+type ExportCopyUnavailable = Extract<
+  ExportCopyCapability,
+  { mode: 'unavailable' }
+>
+type ExportShareUnavailable = Extract<
+  ExportShareCapability,
+  { available: false }
+>
+
+/** A copy that cannot run, named by its code. */
+export function unavailableExportCopy(
+  reasonCode: ExportCopyReasonCode,
+): ExportCopyUnavailable {
+  return {
+    mode: 'unavailable',
+    reason: EXPORT_ACTION_REASON_SENTENCE[reasonCode],
+    reasonCode,
+  }
+}
+
+/** A share that cannot run, named by its code. */
+export function unavailableExportShare(
+  reasonCode: ExportShareReasonCode,
+): ExportShareUnavailable {
+  return {
+    available: false,
+    reason: EXPORT_ACTION_REASON_SENTENCE[reasonCode],
+    reasonCode,
+  }
+}
+
+/**
+ * Thrown by a copy or share the browser or the result cannot carry out. The
+ * code is the failure; the message is only the sentence it stands for. A
+ * capability recorded without a code keeps its sentence as the message.
+ */
+export class ExportActionUnavailableError extends Error {
+  readonly reasonCode: ExportActionReasonCode | undefined
+
+  constructor(refusal: ExportCopyUnavailable | ExportShareUnavailable) {
+    super(refusal.reason)
+    this.name = 'ExportActionUnavailableError'
+    this.reasonCode = refusal.reasonCode
+  }
 }
 
 /** Why a completed result may not be delivered now. */
@@ -136,7 +206,7 @@ function resolveLiveInputRefusal(
   if (!session || session.id !== identity.sessionId) return 'session-changed'
   const sourceFile = session.sourceFile.file
   if (!sourceFile) return 'session-changed'
-  if (deriveTransformExportRefusal(session, identity.resultKind)) {
+  if (deriveTransformExportRefusalReason(session, identity.resultKind)) {
     return 'transform-pending'
   }
   if (!sameGeometry(session.exportGeometry, identity.geometry)) {
@@ -276,10 +346,7 @@ export function resolveExportShareCapability(
     return { available: true }
   }
 
-  return {
-    available: false,
-    reason: 'This browser cannot share JPEG files.',
-  }
+  return unavailableExportShare('share-unsupported')
 }
 
 export function resolveExportShareButtonCapability(
@@ -292,10 +359,7 @@ export function resolveExportShareButtonCapability(
     return { available: true }
   }
 
-  return {
-    available: false,
-    reason: 'This browser cannot share JPEG files.',
-  }
+  return unavailableExportShare('share-unsupported')
 }
 
 export async function shareExportResult(
@@ -307,7 +371,7 @@ export async function shareExportResult(
   guard?.assertCurrent()
   const capability = resolveExportShareCapability(result, navigatorLike)
   if (!capability.available) {
-    throw new Error(capability.reason)
+    throw new ExportActionUnavailableError(capability)
   }
 
   const file = await createShareFile(result, guard)
@@ -358,10 +422,7 @@ export function resolveExportCopyCapability(
   const ClipboardItemCtor = environment.ClipboardItem
 
   if (typeof write !== 'function' || !ClipboardItemCtor) {
-    return {
-      mode: 'unavailable',
-      reason: 'Clipboard image copy is not supported in this browser.',
-    }
+    return unavailableExportCopy('clipboard-unsupported')
   }
 
   if (ClipboardItemCtor.supports?.('image/jpeg')) {
@@ -375,14 +436,12 @@ export function resolveExportCopyCapability(
     return {
       mode: 'preview-size',
       label: 'Copy preview-size image',
-      reason: 'This browser cannot copy full-resolution JPEG files.',
+      reason: EXPORT_ACTION_REASON_SENTENCE['full-resolution-copy-unsupported'],
+      reasonCode: 'full-resolution-copy-unsupported',
     }
   }
 
-  return {
-    mode: 'unavailable',
-    reason: 'Clipboard image copy is not supported in this browser.',
-  }
+  return unavailableExportCopy('clipboard-unsupported')
 }
 
 export async function copyBlobToClipboard(
@@ -394,7 +453,9 @@ export async function copyBlobToClipboard(
   const ClipboardItemCtor = environment.ClipboardItem
 
   if (typeof clipboard?.write !== 'function' || !ClipboardItemCtor) {
-    throw new Error('Clipboard image copy is not supported in this browser.')
+    throw new ExportActionUnavailableError(
+      unavailableExportCopy('clipboard-unsupported'),
+    )
   }
 
   const type = blob.type || 'image/jpeg'

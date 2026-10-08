@@ -28,12 +28,15 @@ import {
   copyExportResultToClipboard,
   downloadExportManifest,
   downloadExportResult,
+  ExportActionUnavailableError,
   ExportDeliveryStaleError,
   openExportDelivery,
   resolveExportCopyCapability,
   resolveExportShareButtonCapability,
   resolveExportShareCapability,
   shareExportResult,
+  unavailableExportCopy,
+  unavailableExportShare,
 } from './export-result-actions'
 import { captureExportResultIdentity } from './export-result-identity'
 import { claimExportSlot, readExportSlotAttempt } from './export-state'
@@ -439,6 +442,7 @@ describe('export result actions', () => {
     expect(resolveExportShareCapability(result, navigatorLike)).toEqual({
       available: false,
       reason: 'This browser cannot share JPEG files.',
+      reasonCode: 'share-unsupported',
     })
     expect(navigatorLike.canShare).not.toHaveBeenCalled()
   })
@@ -450,6 +454,7 @@ describe('export result actions', () => {
     expect(resolveExportShareCapability(result, navigatorLike)).toEqual({
       available: false,
       reason: 'This browser cannot share JPEG files.',
+      reasonCode: 'share-unsupported',
     })
   })
 
@@ -520,6 +525,7 @@ describe('export result actions', () => {
       mode: 'preview-size',
       label: 'Copy preview-size image',
       reason: 'This browser cannot copy full-resolution JPEG files.',
+      reasonCode: 'full-resolution-copy-unsupported',
     })
   })
 
@@ -527,6 +533,7 @@ describe('export result actions', () => {
     expect(resolveExportCopyCapability({ navigator: {} })).toEqual({
       mode: 'unavailable',
       reason: 'Clipboard image copy is not supported in this browser.',
+      reasonCode: 'clipboard-unsupported',
     })
   })
 
@@ -604,6 +611,49 @@ describe('export result actions', () => {
     )
     expect(ClipboardItemMock).not.toHaveBeenCalled()
     expect(write).not.toHaveBeenCalled()
+  })
+
+  it('names each copy and share refusal by code beside its sentence', () => {
+    expect(unavailableExportCopy('preview-copy-not-ready')).toEqual({
+      mode: 'unavailable',
+      reason: 'Preview image is not ready to copy.',
+      reasonCode: 'preview-copy-not-ready',
+    })
+    expect(unavailableExportCopy('hq-preview-copy-unsupported')).toEqual({
+      mode: 'unavailable',
+      reason: 'This browser cannot copy HQ preview JPEG files.',
+      reasonCode: 'hq-preview-copy-unsupported',
+    })
+    expect(unavailableExportShare('no-result')).toEqual({
+      available: false,
+      reason: 'Export a JPEG before sharing.',
+      reasonCode: 'no-result',
+    })
+    expect(resolveExportShareButtonCapability({} as Navigator)).toEqual({
+      available: false,
+      reason: 'This browser cannot share JPEG files.',
+      reasonCode: 'share-unsupported',
+    })
+    expect(unavailableExportCopy('clipboard-unsupported')).toEqual({
+      mode: 'unavailable',
+      reason: 'Clipboard image copy is not supported in this browser.',
+      reasonCode: 'clipboard-unsupported',
+    })
+  })
+
+  it('fails an action the browser cannot carry out with its code', async () => {
+    const share = shareExportResult(createResult(), {} as Navigator)
+    await expect(share).rejects.toBeInstanceOf(ExportActionUnavailableError)
+    await expect(share).rejects.toMatchObject({
+      reasonCode: 'share-unsupported',
+      message: 'This browser cannot share JPEG files.',
+    })
+
+    const copy = copyExportResultToClipboard(createResult(), { navigator: {} })
+    await expect(copy).rejects.toMatchObject({
+      reasonCode: 'clipboard-unsupported',
+      message: 'Clipboard image copy is not supported in this browser.',
+    })
   })
 
   describe('delivery currency', () => {

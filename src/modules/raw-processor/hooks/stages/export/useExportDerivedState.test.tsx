@@ -12,7 +12,10 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
-import type { ExportResult } from '../../../model/export-result'
+import type {
+  ExportResult,
+  HqPreviewExportReasonCode,
+} from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
 import { HQ_PREVIEW_LOOK_EXPORT_REASON } from '../../../services/export/hq-preview-look'
@@ -305,6 +308,175 @@ describe('useExportDerivedState', () => {
     expect(result.current.previewExportDisabledReason).toBe(
       'Restore the preview before exporting an HQ preview JPEG.',
     )
+  })
+
+  it('names each HQ preview refusal by code, in order, with the copy it has today', () => {
+    const session = createSession()
+    const ready = {
+      session,
+      exportInterruption: null,
+      decodedImageRef: { current: createBoundedHqImage() },
+      embeddedPreviewUrl: null,
+      status: 'ready' as const,
+      hasImage: true,
+      displaySource: 'bounded-hq' as const,
+      sourceFile: session.sourceFile.file ?? null,
+      rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' as const },
+      params: NO_LOOK,
+      lutData: null,
+      stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+    }
+    const released: ImageSession = {
+      ...session,
+      exportState: {
+        ...session.exportState,
+        status: 'ready',
+        result: createExportResult(),
+        activePlan: {
+          profileName: 'desktop-fast',
+          preferredRows: 128,
+          concurrency: 1,
+          runtimeMemoryProfile: 'desktop',
+          outputSink: 'blob-handoff',
+          checkpointMode: 'safe-retry',
+        },
+      },
+    }
+    const cases: Array<
+      readonly [
+        Parameters<typeof useExportDerivedState>[0],
+        HqPreviewExportReasonCode | undefined,
+        string | undefined,
+      ]
+    > = [
+      [
+        // Geometry comes first, even before a source is loaded.
+        {
+          ...ready,
+          session: { ...session, exportGeometry: SAMPLE_GEOMETRY },
+          hasImage: false,
+        },
+        'transform-held',
+        PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+      ],
+      [
+        { ...ready, hasImage: false, params: CUSTOM_LOOK },
+        'no-source',
+        'Load a RAW file before exporting an HQ preview JPEG.',
+      ],
+      [
+        {
+          ...ready,
+          session: released,
+          decodedImageRef: { current: null },
+          params: CUSTOM_LOOK,
+        },
+        'preview-released',
+        'Restore the preview before exporting an HQ preview JPEG.',
+      ],
+      [
+        { ...ready, params: CUSTOM_LOOK, displaySource: 'quick' },
+        'look-dropped',
+        HQ_PREVIEW_LOOK_EXPORT_REASON,
+      ],
+      [
+        { ...ready, displaySource: 'quick', stats: null },
+        'hq-preview-pending',
+        'HQ preview export is available after the bounded HQ preview finishes.',
+      ],
+      [
+        { ...ready, stats: null },
+        'not-ready',
+        'HQ preview export is not ready.',
+      ],
+      [ready, undefined, undefined],
+    ]
+    for (const [input, code, sentence] of cases) {
+      const { result } = renderHook(() => useExportDerivedState(input))
+      expect(result.current.previewExportRefusal).toBe(code)
+      expect(result.current.previewExportDisabledReason).toBe(sentence)
+      expect(result.current.canPreviewExport).toBe(code === undefined)
+    }
+  })
+
+  it('carries the full-resolution refusal as its code beside the sentence', () => {
+    const session = createSession()
+    const base = {
+      session,
+      exportInterruption: null,
+      decodedImageRef: { current: createBoundedHqImage() },
+      embeddedPreviewUrl: null,
+      status: 'ready' as const,
+      hasImage: true,
+      displaySource: 'bounded-hq' as const,
+      sourceFile: session.sourceFile.file ?? null,
+      rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' as const },
+      params: NO_LOOK,
+      lutData: null,
+      stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+    }
+
+    const loading = renderHook(() =>
+      useExportDerivedState({ ...base, sourceFile: null }),
+    ).result.current
+    expect(loading.exportRefusal).toEqual({ code: 'source-loading' })
+    expect(loading.exportDisabledReason).toBe(
+      'Full-resolution export source is still loading.',
+    )
+
+    // The runtime's reasons are shown as given and never decide anything.
+    const unsupported = renderHook(() =>
+      useExportDerivedState({
+        ...base,
+        session: {
+          ...session,
+          exportState: {
+            ...session.exportState,
+            fullResCapability: {
+              status: 'unsupported',
+              reason: 'Quick preview is still being prepared.',
+            },
+          },
+        },
+      }),
+    ).result.current
+    expect(unsupported.exportRefusal).toEqual({
+      code: 'runtime-unsupported',
+      detail: 'Quick preview is still being prepared.',
+    })
+    expect(unsupported.exportDisabledReason).toBe(
+      'Quick preview is still being prepared.',
+    )
+
+    const ready = renderHook(() => useExportDerivedState(base)).result.current
+    expect(ready.canExport).toBe(true)
+    expect(ready.exportRefusal).toBeUndefined()
+  })
+
+  it('refuses share by code until a JPEG exists', () => {
+    const session = createSession()
+    const { result } = renderHook(() =>
+      useExportDerivedState({
+        session,
+        exportInterruption: null,
+        decodedImageRef: { current: null },
+        embeddedPreviewUrl: null,
+        status: 'ready',
+        hasImage: true,
+        displaySource: 'quick',
+        sourceFile: session.sourceFile.file ?? null,
+        rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+        params: NO_LOOK,
+        lutData: null,
+        stats: null,
+      }),
+    )
+
+    expect(result.current.exportShareCapability).toEqual({
+      available: false,
+      reason: 'Export a JPEG before sharing.',
+      reasonCode: 'no-result',
+    })
   })
 
   it('notes an interruption only from the hint read for the loaded source', () => {

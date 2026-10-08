@@ -6,14 +6,22 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback } from 'react'
 import { toast as sonnerToast } from 'sonner'
 
+import { useI18n } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
-import type { ExportResult } from '../../../model/export-result'
+import type {
+  ExportCopyCapability,
+  ExportResult,
+  HqPreviewExportReasonCode,
+} from '../../../model/export-result'
 import type { ImageSession, TransformIntent } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
-import { deriveTransformExportRefusal } from '../../../services/export/export-readiness'
-import { resolveExportCopyCapability } from '../../../services/export/export-result-actions'
+import { deriveTransformExportRefusalReason } from '../../../services/export/export-readiness'
+import {
+  resolveExportCopyCapability,
+  unavailableExportCopy,
+} from '../../../services/export/export-result-actions'
 import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import { createCompletedExportResult } from '../../../services/export/export-result-materialization'
 import {
@@ -27,10 +35,8 @@ import {
   resolveHqPreviewExportSize,
   runPreviewExportJob,
 } from '../../../services/export/export-system'
-import {
-  HQ_PREVIEW_LOOK_EXPORT_REASON,
-  resolveHqPreviewLookRefusal,
-} from '../../../services/export/hq-preview-look'
+import { resolveHqPreviewLookRefusal } from '../../../services/export/hq-preview-look'
+import { HQ_PREVIEW_EXPORT_REASON_COPY } from '../../../services/surface/raw-reason'
 
 type HqPreviewExportToast = {
   success: (message: string) => void
@@ -53,7 +59,8 @@ type UseHqPreviewExportActionInput = {
   exportAbortControllerRef: MutableRefObject<AbortController | null>
   previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
   previewSuspended: boolean
-  previewExportDisabledReason?: string
+  /** Why the surfaces refuse the HQ preview export as last rendered. */
+  previewExportRefusal?: HqPreviewExportReasonCode
   abortExportWork: () => void
   queueExportResultResourceDisposal: () => void
   registerExportResultResource: (result: ExportResult) => void
@@ -86,21 +93,15 @@ function createHqPreviewAttemptId() {
   )
 }
 
-function resolveHqPreviewExportCopyCapability() {
+function resolveHqPreviewExportCopyCapability(): ExportCopyCapability {
   const capability = resolveExportCopyCapability()
   if (capability.mode === 'full-resolution') {
-    return {
-      mode: 'hq-preview' as const,
-      label: 'Copy HQ preview image' as const,
-    }
+    return { mode: 'hq-preview', label: 'Copy HQ preview image' }
   }
 
   if (capability.mode === 'unavailable') return capability
 
-  return {
-    mode: 'unavailable' as const,
-    reason: 'This browser cannot copy HQ preview JPEG files.',
-  }
+  return unavailableExportCopy('hq-preview-copy-unsupported')
 }
 
 export function useHqPreviewExportAction({
@@ -114,7 +115,7 @@ export function useHqPreviewExportAction({
   exportAbortControllerRef,
   previewCopyCanvasRef,
   previewSuspended,
-  previewExportDisabledReason,
+  previewExportRefusal,
   abortExportWork,
   queueExportResultResourceDisposal,
   registerExportResultResource,
@@ -124,6 +125,18 @@ export function useHqPreviewExportAction({
   setStatus,
   toast = sonnerToast,
 }: UseHqPreviewExportActionInput) {
+  const { t } = useI18n()
+  // A refusal stays a code up to the toast, which is the only place it
+  // becomes copy, in the current locale.
+  const refuse = useCallback(
+    (refusal: HqPreviewExportReasonCode) => {
+      const title = t('raw.export.toast.hqPreviewNotReady')
+      const description = t(HQ_PREVIEW_EXPORT_REASON_COPY[refusal])
+      scheduleToast(() => toast.error(title, { description }))
+    },
+    [scheduleToast, t, toast],
+  )
+
   const exportPreviewImage = useCallback(async () => {
     const activeSession = sessionRef.current
     const sourceFile = activeSession?.sourceFile.file
@@ -133,14 +146,10 @@ export function useHqPreviewExportAction({
     // Read from the live session as the action runs: the HQ JPEG never
     // applies Transform, so it starts only while the source asks for none.
     const transformRefusal = activeSession
-      ? deriveTransformExportRefusal(activeSession, 'hq-preview')
+      ? deriveTransformExportRefusalReason(activeSession, 'hq-preview')
       : undefined
     if (transformRefusal) {
-      scheduleToast(() =>
-        toast.error('HQ preview export is not ready', {
-          description: transformRefusal,
-        }),
-      )
+      refuse(transformRefusal)
       return
     }
 
@@ -152,13 +161,7 @@ export function useHqPreviewExportAction({
       !pipeline ||
       previewSuspended
     ) {
-      scheduleToast(() =>
-        toast.error('HQ preview export is not ready', {
-          description:
-            previewExportDisabledReason ??
-            'HQ preview export is available after the bounded HQ preview finishes.',
-        }),
-      )
+      refuse(previewExportRefusal ?? 'hq-preview-pending')
       return
     }
 
@@ -166,11 +169,7 @@ export function useHqPreviewExportAction({
     // look changed still refuses a look the preview has since left out.
     const intent = paramsRef.current
     if (resolveHqPreviewLookRefusal({ intent, lut: lutDataRef.current })) {
-      scheduleToast(() =>
-        toast.error('HQ preview export is not ready', {
-          description: HQ_PREVIEW_LOOK_EXPORT_REASON,
-        }),
-      )
+      refuse('look-dropped')
       return
     }
 
@@ -244,7 +243,7 @@ export function useHqPreviewExportAction({
       ) {
         return false
       }
-      const refusal = deriveTransformExportRefusal(live, 'hq-preview')
+      const refusal = deriveTransformExportRefusalReason(live, 'hq-preview')
       if (!refusal) return true
       attempt.controller.abort()
       setSession((prev) =>
@@ -256,11 +255,7 @@ export function useHqPreviewExportAction({
       )
       setStatus('ready')
       setProgress(0)
-      scheduleToast(() =>
-        toast.error('HQ preview export is not ready', {
-          description: refusal,
-        }),
-      )
+      refuse(refusal)
       return false
     }
 
@@ -361,9 +356,10 @@ export function useHqPreviewExportAction({
     paramsRef,
     pipelineRef,
     previewCopyCanvasRef,
-    previewExportDisabledReason,
+    previewExportRefusal,
     previewSuspended,
     queueExportResultResourceDisposal,
+    refuse,
     registerExportResultResource,
     scheduleToast,
     sessionRef,

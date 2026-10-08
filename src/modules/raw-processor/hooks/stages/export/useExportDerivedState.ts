@@ -10,18 +10,44 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import { PREVIEW_TRANSFORM_HQ_EXPORT_REASON } from '../../../model/derive-session'
-import type { ExportShareCapability } from '../../../model/export-result'
+import type {
+  ExportShareCapability,
+  FullResExportReason,
+  HqPreviewExportReasonCode,
+} from '../../../model/export-result'
 import type { DisplaySource, ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
 import { resolveDeliveredExportSize } from '../../../services/export/delivered-export-size'
 import { deriveFullResExportReadiness } from '../../../services/export/export-readiness'
 import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
 import { isInterruptedSource } from '../../../services/export/export-recovery'
-import { resolveExportShareButtonCapability } from '../../../services/export/export-result-actions'
+import {
+  resolveExportShareButtonCapability,
+  unavailableExportShare,
+} from '../../../services/export/export-result-actions'
 import {
   HQ_PREVIEW_LOOK_EXPORT_REASON,
   resolveHqPreviewLookRefusal,
 } from '../../../services/export/hq-preview-look'
+
+/**
+ * The English sentence each HQ preview refusal is still carried as, beside
+ * its code, until every reader takes the code. Toasts take the code and its
+ * locale copy instead.
+ */
+const HQ_PREVIEW_EXPORT_REASON_SENTENCE: Record<
+  HqPreviewExportReasonCode,
+  string
+> = {
+  'transform-held': PREVIEW_TRANSFORM_HQ_EXPORT_REASON,
+  'no-source': 'Load a RAW file before exporting an HQ preview JPEG.',
+  'preview-released':
+    'Restore the preview before exporting an HQ preview JPEG.',
+  'look-dropped': HQ_PREVIEW_LOOK_EXPORT_REASON,
+  'hq-preview-pending':
+    'HQ preview export is available after the bounded HQ preview finishes.',
+  'not-ready': 'HQ preview export is not ready.',
+}
 
 type UseExportDerivedStateInput = {
   session: ImageSession | null
@@ -61,13 +87,17 @@ export function useExportDerivedState({
       rawRenderExposure,
     })
     const canExport = fullResExportReadiness.canExport
-    const exportDisabledReason = !canExport
-      ? fullResExportReadiness.disabledReason
-      : undefined
+    const exportRefusal: FullResExportReason | undefined =
+      fullResExportReadiness.canExport
+        ? undefined
+        : fullResExportReadiness.refusal
+    const exportDisabledReason = fullResExportReadiness.canExport
+      ? undefined
+      : fullResExportReadiness.disabledReason
     const exportResult = session?.exportState.result ?? null
     const exportShareCapability: ExportShareCapability = exportResult
       ? resolveExportShareButtonCapability()
-      : { available: false, reason: 'Export a JPEG before sharing.' }
+      : unavailableExportShare('no-result')
     // Read-only, and only for the loaded source the hint was read for.
     const exportInterrupted = isInterruptedSource(
       exportInterruption,
@@ -103,20 +133,24 @@ export function useExportDerivedState({
       displaySource === 'bounded-hq' &&
       hqPreviewImage?.source === 'bounded-hq' &&
       Boolean(stats?.inputSize)
-    const previewExportDisabledReason = session?.exportGeometry
-      ? PREVIEW_TRANSFORM_HQ_EXPORT_REASON
-      : !hasImage
-        ? 'Load a RAW file before exporting an HQ preview JPEG.'
-        : previewSuspended
-          ? 'Restore the preview before exporting an HQ preview JPEG.'
-          : hqPreviewLookRefusal
-            ? HQ_PREVIEW_LOOK_EXPORT_REASON
-            : displaySource !== 'bounded-hq' ||
-                hqPreviewImage?.source !== 'bounded-hq'
-              ? 'HQ preview export is available after the bounded HQ preview finishes.'
-              : !stats?.inputSize
-                ? 'HQ preview export is not ready.'
-                : undefined
+    const previewExportRefusal: HqPreviewExportReasonCode | undefined =
+      session?.exportGeometry
+        ? 'transform-held'
+        : !hasImage
+          ? 'no-source'
+          : previewSuspended
+            ? 'preview-released'
+            : hqPreviewLookRefusal
+              ? 'look-dropped'
+              : displaySource !== 'bounded-hq' ||
+                  hqPreviewImage?.source !== 'bounded-hq'
+                ? 'hq-preview-pending'
+                : !stats?.inputSize
+                  ? 'not-ready'
+                  : undefined
+    const previewExportDisabledReason =
+      previewExportRefusal &&
+      HQ_PREVIEW_EXPORT_REASON_SENTENCE[previewExportRefusal]
 
     const deliveredExportSize = resolveDeliveredExportSize({
       fullResCapability: session?.exportState.fullResCapability,
@@ -125,6 +159,7 @@ export function useExportDerivedState({
 
     return {
       canExport,
+      exportRefusal,
       exportDisabledReason,
       deliveredExportSize,
       exportResult,
@@ -132,6 +167,7 @@ export function useExportDerivedState({
       exportInterrupted,
       previewSuspended,
       canPreviewExport,
+      previewExportRefusal,
       previewExportDisabledReason,
     }
   }, [

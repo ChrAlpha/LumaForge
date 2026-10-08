@@ -6,6 +6,8 @@ import type { MutableRefObject } from 'react'
 import { useCallback } from 'react'
 
 import { emitExportDebugEvent } from '~/lib/export/execution-profile'
+import type { MessageKey } from '~/lib/i18n'
+import { useI18n } from '~/lib/i18n'
 import type {
   PipelineStats,
   RawProcessingPipeline,
@@ -14,6 +16,7 @@ import type {
 import type { ExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
 import type {
+  ExportActionReasonCode,
   ExportDeliveryGuard,
   ExportDeliveryLiveState,
   ExportOutputMaterializationAction,
@@ -25,11 +28,17 @@ import {
   createExportDeliveryGuard,
   downloadExportManifest as downloadStoredExportManifest,
   downloadExportResult as downloadStoredExportResult,
+  ExportActionUnavailableError,
   ExportDeliveryStaleError,
   openExportDelivery,
   shareExportResult as shareStoredExportResult,
+  unavailableExportCopy,
 } from '../../../services/export/export-result-actions'
 import { readExportSlotAttempt } from '../../../services/export/export-state'
+import {
+  EXPORT_COPY_REASON_COPY,
+  EXPORT_SHARE_REASON_COPY,
+} from '../../../services/surface/raw-reason'
 
 type ExportResultActionToast = {
   success: (message: string) => void
@@ -53,6 +62,11 @@ type UseExportResultActionsInput = {
   scheduleToast: (notify: () => void) => void
   toast: ExportResultActionToast
 }
+
+const EXPORT_ACTION_REASON_COPY = {
+  ...EXPORT_COPY_REASON_COPY,
+  ...EXPORT_SHARE_REASON_COPY,
+} as const satisfies Record<ExportActionReasonCode, MessageKey>
 
 const STALE_DELIVERY_DESCRIPTION =
   'This export no longer matches the photo. Export again to deliver it.'
@@ -128,14 +142,19 @@ export function useExportResultActions({
     }
   }, [readLive, sessionRef])
 
+  const { t } = useI18n()
+  // A failure stays structured up to the toast, which is the only place a
+  // refusal's code becomes copy, in the current locale.
   const describeFailure = useCallback(
     (err: unknown, fallback: string) =>
       err instanceof ExportDeliveryStaleError
         ? STALE_DELIVERY_DESCRIPTION
-        : err instanceof Error
-          ? err.message
-          : fallback,
-    [],
+        : err instanceof ExportActionUnavailableError && err.reasonCode
+          ? t(EXPORT_ACTION_REASON_COPY[err.reasonCode])
+          : err instanceof Error
+            ? err.message
+            : fallback,
+    [t],
   )
 
   const downloadExportResult = useCallback(async () => {
@@ -204,9 +223,10 @@ export function useExportResultActions({
         return
       }
 
+      const title = t('raw.export.toast.shareFailed')
       const description = describeFailure(err, 'Share action failed.')
       scheduleToast(() =>
-        toast.error('Share failed', {
+        toast.error(title, {
           description,
         }),
       )
@@ -216,6 +236,7 @@ export function useExportResultActions({
     describeFailure,
     openDelivery,
     scheduleToast,
+    t,
     toast,
   ])
 
@@ -266,7 +287,9 @@ export function useExportResultActions({
 
         const pipeline = pipelineRef.current
         if (!pipeline || !previewSize) {
-          throw new Error('Preview image is not ready to copy.')
+          throw new ExportActionUnavailableError(
+            unavailableExportCopy('preview-copy-not-ready'),
+          )
         }
 
         const canvas = await pipeline.renderToHiddenCanvas({
@@ -278,11 +301,12 @@ export function useExportResultActions({
         return
       }
 
-      throw new Error(result.copyCapability.reason)
+      throw new ExportActionUnavailableError(result.copyCapability)
     } catch (err) {
+      const title = t('raw.export.toast.copyFailed')
       const description = describeFailure(err, 'Copy action failed.')
       scheduleToast(() =>
-        toast.error('Copy failed', {
+        toast.error(title, {
           description,
         }),
       )
@@ -295,6 +319,7 @@ export function useExportResultActions({
     previewCopyCanvasRef,
     previewSize,
     scheduleToast,
+    t,
     toast,
   ])
 
