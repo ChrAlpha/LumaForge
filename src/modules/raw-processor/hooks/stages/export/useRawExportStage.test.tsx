@@ -1,26 +1,34 @@
 import type {
   ColorGraphIntent,
   LUTData,
+  ParsedLUT,
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
+import { toLUTData } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createResourceRegistry } from '~/lib/export/resource-registry'
+import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession } from '../../../model/session'
+import { createTransformState } from '../../../model/session-factory'
 import type { ProcessingStatus } from '../../../model/workflow'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
 import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
+import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import { orchestrateFullResExport } from '../../../services/export/orchestrate-full-res-export'
+import { reduceTransformState } from '../../../services/transform/transform-state'
 import {
   getCurrentSession,
   setCurrentSession,
 } from '../../../state/session.atoms'
 import {
   getEffectiveColorIntent,
+  getLut,
   getProcessingParams,
+  setLut,
   setProcessingParams,
 } from '../../../state/workflow.atoms'
 import { useRawExportStage } from './useRawExportStage'
@@ -173,6 +181,101 @@ function createInterruptedReadyInput(
   })
 }
 
+/** A session whose bounded HQ frame is on screen, for the HQ export. */
+function createBoundedHqSession(): ImageSession {
+  const session = createReadySession()
+  return {
+    ...session,
+    sourceFile: {
+      ...session.sourceFile,
+      metadata: { width: 800, height: 600 },
+    },
+    previewBundle: {
+      ...session.previewBundle,
+      boundedHqPreview: { status: 'ready', width: 800, height: 600 },
+      displaySource: 'bounded-hq',
+    },
+    renderState: { status: 'ready', lastRenderSource: 'bounded-hq' },
+    transform: createTransformState(session.id),
+  }
+}
+
+function createBoundedHqImage(): DecodedImage {
+  return {
+    width: 800,
+    height: 600,
+    channels: 4,
+    bitsPerChannel: 32,
+    data: new Float32Array(4),
+    layout: 'rgba-float32',
+    colorSpace: 'linear-prophoto-rgb',
+    source: 'bounded-hq',
+    metadata: { width: 800, height: 600 },
+    renderExposure: RAW_RENDER_EXPOSURE,
+  }
+}
+
+/**
+ * The HQ export over the workflow's stores: the stage reads the session,
+ * the color and the LUT from them, while the render-written refs it is also
+ * handed keep what the last render held. The pipeline renders with the color
+ * and the LUT it holds, which follow the stores only on `drawStoredLook`, as
+ * the preview's effects would after a rerender.
+ */
+function renderHqStage(getLutData: () => LUTData | null) {
+  const rendered = createBoundedHqSession()
+  setCurrentSession(rendered)
+  const held = { params: getEffectiveColorIntent(), lut: getLutData() }
+  const drawn: Array<{ params: ColorGraphIntent; lut: LUTData | null }> = []
+  const renderToHiddenCanvas = vi.fn(async () => {
+    drawn.push({ ...held })
+    return {
+      toBlob: (callback: BlobCallback) =>
+        callback(new Blob(['jpeg'], { type: 'image/jpeg' })),
+    } as unknown as HTMLCanvasElement
+  })
+  const pipeline = {
+    renderToHiddenCanvas,
+    getParams: () => ({ ...held.params, viewMode: 'processed' as const }),
+    getLutData: () => held.lut,
+  }
+  const toast = { error: vi.fn(), success: vi.fn() }
+  const view = renderHook(() =>
+    useRawExportStage(
+      createStageInput({
+        loadedImage: { file: SOURCE_FILE, metadata: null },
+        session: rendered,
+        sessionRef: { current: rendered },
+        paramsRef: { current: params },
+        getSession: getCurrentSession,
+        getColorIntent: getEffectiveColorIntent,
+        getLutData,
+        setSession: setCurrentSession,
+        decodedImageRef: { current: createBoundedHqImage() },
+        pipelineRef: {
+          current: pipeline as unknown as RawProcessingPipeline,
+        },
+        scheduleToast: (notify) => notify(),
+        status: 'ready',
+        hasImage: true,
+        displaySource: 'bounded-hq',
+        rawRenderExposure: RAW_RENDER_EXPOSURE,
+        toast,
+      }),
+    ),
+  )
+  return {
+    ...view,
+    renderToHiddenCanvas,
+    toast,
+    drawn,
+    drawStoredLook() {
+      held.params = getEffectiveColorIntent()
+      held.lut = getLutData()
+    },
+  }
+}
+
 describe('useRawExportStage', () => {
   const storedIntent = getProcessingParams()
 
@@ -183,6 +286,7 @@ describe('useRawExportStage', () => {
   afterEach(() => {
     setCurrentSession(null)
     setProcessingParams(storedIntent)
+    setLut(null)
   })
 
   it('composes export state and actions for an empty workflow', () => {
@@ -370,4 +474,214 @@ describe('useRawExportStage', () => {
       userContrast: 25,
     })
   })
+  it('refuses an HQ export from an older render once the store holds a pending Transform', async () => {
+    const { result, renderToHiddenCanvas, toast } = renderHqStage(() => null)
+    const exportPreviewFromRender = result.current.exportPreviewImage
+
+    // The first Transform edit lands in the store; nothing rerenders before
+    // the captured action runs.
+    setCurrentSession((prev) =>
+      prev?.transform
+        ? {
+            ...prev,
+            transform: reduceTransformState(prev.transform, {
+              type: 'edit',
+              sourceId: prev.id,
+              intent: {
+                manual: { ...prev.transform.intent.manual, rotate: 2 },
+              },
+            }),
+          }
+        : prev,
+    )
+    await act(async () => {
+      await exportPreviewFromRender()
+    })
+
+    expect(renderToHiddenCanvas).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('HQ preview export is not ready', {
+      description: expect.any(String),
+    })
+    expect(getCurrentSession()?.exportState.status).toBe('idle')
+  })
+
+  it('admits an HQ export from an older render with the session, color and LUT the store holds', async () => {
+    let storedLut: LUTData | null = null
+    const { result, renderToHiddenCanvas, drawn, drawStoredLook } =
+      renderHqStage(() => storedLut)
+    const exportPreviewFromRender = result.current.exportPreviewImage
+
+    // A LUT apply writes the LUT and the look, and a color edit lands, all
+    // in the same tick, before any rerender or LUT effect.
+    const appliedLut: LUTData = {
+      size: 2,
+      data: new Float32Array(2 * 2 * 2 * 3),
+      domainMin: [0, 0, 0],
+      domainMax: [1, 1, 1],
+      title: 'Teal',
+      inputProfile: 'v-log',
+      // A confirmed scene contract the WebGPU preview draws.
+      profileResolution: {
+        kind: 'confirmed',
+        confidence: 'user',
+        profile: {
+          id: 'teal-profile',
+          label: 'Teal profile',
+          role: 'scene-creative',
+          inputGamut: 'v-gamut',
+          inputTransfer: 'v-log',
+          inputRange: 'full',
+          outputGamut: 'srgb-rec709',
+          outputTransfer: 'srgb',
+          outputRange: 'full',
+          aliases: [],
+        },
+      },
+    }
+    storedLut = appliedLut
+    setCurrentSession((prev) =>
+      prev
+        ? {
+            ...prev,
+            activeStyle: {
+              kind: 'custom',
+              name: 'Teal',
+              defaultIntensity: 0.7,
+              currentIntensity: 0.37,
+              lutAsset: { format: 'cube', dimension: 17 },
+            },
+          }
+        : prev,
+    )
+    setProcessingParams({ ...getProcessingParams(), userContrast: 25 })
+    const written = getCurrentSession()!
+    const admittedIntent = getEffectiveColorIntent()
+    // The color projects the look of the very session the export reads.
+    expect(admittedIntent).toMatchObject({
+      styleKind: 'custom',
+      intensity: 0.37,
+      userContrast: 25,
+    })
+    const expected = captureExportResultIdentity({
+      resultKind: 'hq-preview',
+      attemptId: 'not-compared',
+      sessionId: written.id,
+      sourceFile: SOURCE_FILE,
+      intent: admittedIntent,
+      lut: appliedLut,
+      rawRenderExposure: RAW_RENDER_EXPOSURE,
+      geometry: null,
+    })
+    // The preview's effects draw the written look; the surface still holds
+    // the action from the older render.
+    drawStoredLook()
+    await act(async () => {
+      await exportPreviewFromRender()
+    })
+
+    expect(renderToHiddenCanvas).toHaveBeenCalledTimes(1)
+    // The pipeline drew the very look the result names.
+    expect(drawn).toEqual([{ params: admittedIntent, lut: appliedLut }])
+    const delivered = getCurrentSession()?.exportState.result
+    expect(delivered?.kind).toBe('hq-preview')
+    expect(delivered?.filename).toBe('frame_Teal_hq-preview.jpg')
+    expect(delivered?.identity).toEqual({
+      ...expected,
+      attemptId: expect.any(String),
+    })
+  })
+  /** A parsed LUT whose confirmed scene contract the WebGPU preview draws. */
+  function parsedLut(title: string): ParsedLUT {
+    return {
+      title,
+      comments: [],
+      size: 2,
+      domainMin: [0, 0, 0],
+      domainMax: [1, 1, 1],
+      data: new Float32Array(2 * 2 * 2 * 3).fill(title.length / 10),
+      fingerprint: title,
+      inputProfile: 'v-log',
+      profileResolution: {
+        kind: 'confirmed',
+        confidence: 'user',
+        profile: {
+          id: `${title}-profile`,
+          label: `${title} profile`,
+          role: 'scene-creative',
+          inputGamut: 'v-gamut',
+          inputTransfer: 'v-log',
+          inputRange: 'full',
+          outputGamut: 'srgb-rec709',
+          outputTransfer: 'srgb',
+          outputRange: 'full',
+          aliases: [],
+        },
+      },
+    }
+  }
+
+  /** The stored LUT in the shape the pipeline reads, as the workflow reads it. */
+  const getStoredLutData = () => {
+    const lut = getLut()
+    return lut ? toLUTData(lut) : null
+  }
+
+  const customLook = (session: ImageSession | null): ImageSession | null =>
+    session
+      ? {
+          ...session,
+          activeStyle: {
+            kind: 'custom',
+            name: 'Teal',
+            defaultIntensity: 0.7,
+            currentIntensity: 0.7,
+            lutAsset: { format: 'cube', dimension: 17 },
+          },
+        }
+      : session
+
+  it.each([
+    {
+      name: 'a color edit',
+      setup() {},
+      write() {
+        setProcessingParams({ ...getProcessingParams(), userContrast: 25 })
+      },
+    },
+    {
+      name: 'a LUT replacement',
+      setup() {
+        setLut(parsedLut('Teal'))
+        setCurrentSession(customLook)
+      },
+      write() {
+        setLut(parsedLut('Amber'))
+      },
+    },
+  ])(
+    'refuses an HQ export from an older render after $name the pipeline has not drawn',
+    async ({ setup, write }) => {
+      const { result, renderToHiddenCanvas, toast, drawStoredLook } =
+        renderHqStage(getStoredLutData)
+      setup()
+      drawStoredLook()
+      const exportPreviewFromRender = result.current.exportPreviewImage
+
+      // The store takes the write; nothing rerenders and no preview effect
+      // runs before the captured action, so the pipeline still holds the
+      // look it drew before.
+      write()
+      await act(async () => {
+        await exportPreviewFromRender()
+      })
+
+      expect(renderToHiddenCanvas).not.toHaveBeenCalled()
+      expect(toast.error).toHaveBeenCalledWith(
+        'HQ preview export is not ready',
+        { description: 'HQ preview export is not ready.' },
+      )
+      expect(getCurrentSession()?.exportState.status).toBe('idle')
+      expect(getCurrentSession()?.exportState.result).toBeUndefined()
+    },
+  )
 })

@@ -128,6 +128,10 @@ export class RawProcessingPipeline {
     return this.renderer.getParams()
   }
 
+  getLutData() {
+    return this.activeRenderer?.getLutData() ?? null
+  }
+
   render() {
     return this.renderer.render()
   }

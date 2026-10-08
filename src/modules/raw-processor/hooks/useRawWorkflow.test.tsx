@@ -4089,6 +4089,9 @@ describe('useRawWorkflow embedded preview state', () => {
       act(() => {
         hook.result.current.pipelineRef.current = {
           renderToHiddenCanvas,
+          // The preview has drawn the look the workflow holds.
+          getParams: () => hook.result.current.params,
+          getLutData: () => null,
         } as never
         hook.result.current.updateStats({
           uploadTime: 1,
@@ -5396,6 +5399,9 @@ describe('useRawWorkflow embedded preview state', () => {
     act(() => {
       result.current.pipelineRef.current = {
         renderToHiddenCanvas,
+        // The preview has drawn the look the workflow holds.
+        getParams: () => result.current.params,
+        getLutData: () => null,
       } as never
       result.current.updateStats({
         uploadTime: 1,
@@ -5498,6 +5504,9 @@ describe('useRawWorkflow embedded preview state', () => {
         renderToHiddenCanvas: vi
           .fn()
           .mockResolvedValue(document.createElement('canvas')),
+        // The preview has drawn the look the workflow holds.
+        getParams: () => result.current.params,
+        getLutData: () => null,
       } as never
       result.current.updateStats({
         uploadTime: 1,

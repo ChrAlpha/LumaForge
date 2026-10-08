@@ -6,6 +6,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { renderHook } from '@testing-library/react'
+import { atom, createStore } from 'jotai'
 import type {
   ComponentType,
   Dispatch,
@@ -234,15 +235,49 @@ function transformAt(status: TransformStatus): TransformState {
   return state
 }
 
-/** A live HQ export harness whose session writes land in `sessionRef`. */
+/**
+ * A stand-in for the preview pipeline: it renders with the color and the LUT
+ * it holds, which follow the store only when the test says the preview's
+ * effects have run.
+ */
+function createPipeline(
+  params: ColorGraphIntentSource,
+  lut: LUTData | null,
+  renderToHiddenCanvas: (size: {
+    width: number
+    height: number
+  }) => Promise<HTMLCanvasElement>,
+) {
+  const held = { params, lut }
+  return {
+    held,
+    pipeline: {
+      renderToHiddenCanvas,
+      getParams: () => ({ ...held.params, viewMode: 'processed' as const }),
+      getLutData: () => held.lut,
+    },
+  }
+}
+
+/**
+ * A live HQ export harness over a store: the session, the stored color and
+ * the LUT live in atoms whose writes the next read sees in the same tick,
+ * before any rerender, and the action reads them through getters. The refs
+ * stand for the render-written copies, which follow nothing here, and the
+ * pipeline holds the look it was created with until `drawStoredLook`.
+ */
 function setupHq(
   initial: ImageSession = createSession(),
   look: { params?: ColorGraphIntentSource; lut?: LUTData | null } = {},
   wrapper?: ComponentType<PropsWithChildren>,
 ) {
-  const sessionRef: { current: ImageSession | null } = { current: initial }
-  const paramsRef = { current: look.params ?? SESSION_LOOK }
-  const lutDataRef = { current: look.lut ?? null }
+  const store = createStore()
+  const sessionAtom = atom<ImageSession | null>(initial)
+  const intentAtom = atom<ColorGraphIntentSource>(look.params ?? SESSION_LOOK)
+  const lutAtom = atom<LUTData | null>(look.lut ?? null)
+  const getSession = () => store.get(sessionAtom)
+  const writeSession = (update: SetStateAction<ImageSession | null>) =>
+    store.set(sessionAtom, update)
   const decodedImageRef: { current: DecodedImage | null } = {
     current: createDecodedImage(),
   }
@@ -252,14 +287,15 @@ function setupHq(
   }
   const isMountedRef = { current: true }
   const trace: string[] = []
-  let completeRender!: (canvas: HTMLCanvasElement) => void
-  let failRender!: (error: unknown) => void
+  const renders: Array<{
+    complete: (canvas: HTMLCanvasElement) => void
+    fail: (error: unknown) => void
+  }> = []
   const renderToHiddenCanvas = vi.fn(
     () =>
       new Promise<HTMLCanvasElement>((resolve, reject) => {
         trace.push('service:render')
-        completeRender = resolve
-        failRender = reject
+        renders.push({ complete: resolve, fail: reject })
       }),
   )
   const registerExportResultResource = vi.fn(() => {
@@ -276,14 +312,19 @@ function setupHq(
   const error = vi.fn((message: string) => {
     trace.push(`toast:error:${message}`)
   })
+  const { held, pipeline } = createPipeline(
+    store.get(intentAtom),
+    store.get(lutAtom),
+    renderToHiddenCanvas,
+  )
   const { result } = renderHook(
     () =>
       useHqPreviewExportAction({
-        sessionRef,
-        paramsRef,
-        lutDataRef,
+        getSession,
+        getColorIntent: () => store.get(intentAtom),
+        getLutData: () => store.get(lutAtom),
         decodedImageRef,
-        pipelineRef: { current: { renderToHiddenCanvas } },
+        pipelineRef: { current: pipeline },
         isMountedRef,
         exportGraphVersionRef,
         exportAbortControllerRef,
@@ -299,12 +340,10 @@ function setupHq(
         scheduleToast: (notify) => notify(),
         setProgress: (progress) => trace.push(`state:progress:${progress}`),
         setSession: (updater) => {
-          const next =
-            typeof updater === 'function'
-              ? updater(sessionRef.current)
-              : updater
-          trace.push(`state:session:${next?.exportState.status ?? 'null'}`)
-          sessionRef.current = next
+          writeSession(updater)
+          trace.push(
+            `state:session:${getSession()?.exportState.status ?? 'null'}`,
+          )
         },
         setStatus: (status) => trace.push(`state:status:${status}`),
         toast: { success, error },
@@ -313,9 +352,17 @@ function setupHq(
   )
   return {
     result,
-    sessionRef,
-    paramsRef,
-    lutDataRef,
+    session: getSession,
+    writeSession,
+    writeIntent: (intent: ColorGraphIntentSource) =>
+      store.set(intentAtom, intent),
+    writeLut: (lut: LUTData | null) => store.set(lutAtom, lut),
+    /** The preview's effects run: the pipeline takes the stored look. */
+    drawStoredLook() {
+      held.params = store.get(intentAtom)
+      held.lut = store.get(lutAtom)
+    },
+    held,
     decodedImageRef,
     exportGraphVersionRef,
     exportAbortControllerRef,
@@ -326,11 +373,12 @@ function setupHq(
     success,
     error,
     toBlob,
-    complete() {
-      completeRender({ toBlob } as unknown as HTMLCanvasElement)
+    /** Completes the latest render, or the one at `index`. */
+    complete(index = renders.length - 1) {
+      renders[index]!.complete({ toBlob } as unknown as HTMLCanvasElement)
     },
-    fail(reason: unknown) {
-      failRender(reason)
+    fail(reason: unknown, index = renders.length - 1) {
+      renders[index]!.fail(reason)
     },
   }
 }
@@ -343,10 +391,7 @@ describe('useHqPreviewExportAction attempt currency', () => {
       const exportPreviewImage = h.result.current.exportPreviewImage
       // The first non-neutral edit lands after the surface captured the
       // action; a pending Transform holds no geometry yet.
-      h.sessionRef.current = {
-        ...h.sessionRef.current!,
-        transform: transformAt(status),
-      }
+      h.writeSession((live) => ({ ...live!, transform: transformAt(status) }))
       await exportPreviewImage()
 
       expect(h.trace).toEqual(['toast:error:HQ preview export is not ready'])
@@ -366,7 +411,7 @@ describe('useHqPreviewExportAction attempt currency', () => {
     h.complete()
     await pending
 
-    expect(h.sessionRef.current?.exportState.status).toBe('ready')
+    expect(h.session()?.exportState.status).toBe('ready')
     expect(h.success).toHaveBeenCalledWith('HQ preview JPEG ready')
   })
 
@@ -383,14 +428,13 @@ describe('useHqPreviewExportAction attempt currency', () => {
     {
       name: 'the first Transform edit lands',
       supersede(h) {
-        const live = h.sessionRef.current!
-        h.sessionRef.current = {
-          ...live,
+        h.writeSession((live) => ({
+          ...live!,
           transform: editTransform(
-            live.transform ?? createTransformState(live.id),
+            live!.transform ?? createTransformState(live!.id),
             4,
           ),
-        }
+        }))
       },
     },
     {
@@ -408,7 +452,7 @@ describe('useHqPreviewExportAction attempt currency', () => {
     {
       name: 'the session is replaced',
       supersede(h) {
-        h.sessionRef.current = { ...h.sessionRef.current!, id: 'session-2' }
+        h.writeSession((live) => ({ ...live!, id: 'session-2' }))
       },
     },
   ]
@@ -421,12 +465,12 @@ describe('useHqPreviewExportAction attempt currency', () => {
       expect(h.renderToHiddenCanvas).toHaveBeenCalledTimes(1)
       const supersededAt = h.trace.push('test:superseded') - 1
       supersede(h)
-      const sessionAfterSupersession = h.sessionRef.current
+      const sessionAfterSupersession = h.session()
       h.complete()
       await pending
 
       expect(h.trace.slice(supersededAt)).toEqual(['test:superseded'])
-      expect(h.sessionRef.current).toBe(sessionAfterSupersession)
+      expect(h.session()).toBe(sessionAfterSupersession)
       expect(h.registerExportResultResource).not.toHaveBeenCalled()
       // The canvas rendered for the ended attempt is never encoded.
       expect(h.toBlob).not.toHaveBeenCalled()
@@ -441,10 +485,7 @@ describe('useHqPreviewExportAction attempt currency', () => {
     const pending = h.result.current.exportPreviewImage()
     const supersededAt = h.trace.push('test:geometry') - 1
     // The same neutral intent, but a geometry the HQ JPEG would leave out.
-    h.sessionRef.current = {
-      ...h.sessionRef.current!,
-      exportGeometry: SAMPLE_GEOMETRY,
-    }
+    h.writeSession((live) => ({ ...live!, exportGeometry: SAMPLE_GEOMETRY }))
     h.complete()
     await pending
 
@@ -460,7 +501,7 @@ describe('useHqPreviewExportAction attempt currency', () => {
     })
     expect(h.toBlob).not.toHaveBeenCalled()
     expect(h.registerExportResultResource).not.toHaveBeenCalled()
-    expect(h.sessionRef.current?.exportState.result).toBeUndefined()
+    expect(h.session()?.exportState.result).toBeUndefined()
     expect(h.exportAbortControllerRef.current).toBeNull()
   })
 
@@ -471,12 +512,12 @@ describe('useHqPreviewExportAction attempt currency', () => {
       const pending = h.result.current.exportPreviewImage()
       const supersededAt = h.trace.push('test:superseded') - 1
       supersede(h)
-      const sessionAfterSupersession = h.sessionRef.current
+      const sessionAfterSupersession = h.session()
       h.fail(new Error('GPU device lost'))
       await pending
 
       expect(h.trace.slice(supersededAt)).toEqual(['test:superseded'])
-      expect(h.sessionRef.current).toBe(sessionAfterSupersession)
+      expect(h.session()).toBe(sessionAfterSupersession)
       expect(h.error).not.toHaveBeenCalled()
     },
   )
@@ -517,6 +558,246 @@ describe('useHqPreviewExportAction attempt currency', () => {
       'toast:error:HQ preview export failed',
     ])
     expect(failed.exportAbortControllerRef.current).toBeNull()
+  })
+})
+
+describe('useHqPreviewExportAction live store reads', () => {
+  it('refuses a captured action once a pending Transform edit lands in the store, in the same tick', async () => {
+    const h = setupHq({ ...createSession(), transform: transformAt('neutral') })
+    const exportPreviewImage = h.result.current.exportPreviewImage
+    // The first edit asks for a geometry the preview has not answered yet;
+    // nothing rerenders before the action runs.
+    h.writeSession((live) => ({
+      ...live!,
+      transform: editTransform(live!.transform!, 3),
+    }))
+    await exportPreviewImage()
+
+    expect(h.trace).toEqual(['toast:error:HQ preview export is not ready'])
+    expect(h.error).toHaveBeenCalledWith('HQ preview export is not ready', {
+      description: enMessages['raw.transform.hqExportReason'],
+    })
+    expect(h.renderToHiddenCanvas).not.toHaveBeenCalled()
+    expect(h.exportAbortControllerRef.current).toBeNull()
+  })
+
+  it.each([
+    { name: 'a linear output', lut: LINEAR_OUTPUT_LUT },
+    { name: 'an unconfirmed contract', lut: UNCONFIRMED_LUT },
+  ])(
+    'refuses a captured action once the store selects a LUT with $name the preview leaves out',
+    async ({ lut }) => {
+      const h = setupHq()
+      const exportPreviewImage = h.result.current.exportPreviewImage
+      // A LUT apply writes the session look, the color and the LUT in the
+      // same tick, before any rerender or LUT effect.
+      h.writeSession((live) => ({
+        ...live!,
+        activeStyle: createCustomLutSession().activeStyle,
+      }))
+      h.writeIntent(CUSTOM_LOOK)
+      h.writeLut(lut)
+      await exportPreviewImage()
+
+      expect(h.trace).toEqual(['toast:error:HQ preview export is not ready'])
+      expect(h.error).toHaveBeenCalledWith('HQ preview export is not ready', {
+        description: enMessages['raw.export.previewLookUnavailable'],
+      })
+      expect(h.renderToHiddenCanvas).not.toHaveBeenCalled()
+    },
+  )
+
+  it('names the session, color and LUT the store holds when a captured action runs', async () => {
+    const h = setupHq()
+    const exportPreviewImage = h.result.current.exportPreviewImage
+    h.writeSession((live) => ({
+      ...live!,
+      activeStyle: createCustomLutSession().activeStyle,
+    }))
+    h.writeIntent({ ...CUSTOM_LOOK, userContrast: 25 })
+    h.writeLut(ACCEPTED_LUT)
+    // The preview's effects have drawn the written look; still no rerender
+    // hands the surface a new action.
+    h.drawStoredLook()
+    const admitted = h.session()!
+    const expected = captureExportResultIdentity({
+      resultKind: 'hq-preview',
+      attemptId: 'not-compared',
+      sessionId: admitted.id,
+      sourceFile: admitted.sourceFile.file!,
+      intent: { ...CUSTOM_LOOK, userContrast: 25 },
+      lut: ACCEPTED_LUT,
+      rawRenderExposure: createDecodedImage().renderExposure,
+      geometry: null,
+    })
+    const pending = exportPreviewImage()
+    h.complete()
+    await pending
+
+    const result = h.session()?.exportState.result
+    expect(result?.kind).toBe('hq-preview')
+    expect(result?.filename).toBe('frame_kodak-2383_hq-preview.jpg')
+    expect(result?.identity).toEqual({
+      ...expected,
+      attemptId: expect.any(String),
+    })
+  })
+
+  /** The LUT the session holds, under a table of its own. */
+  const ANOTHER_ACCEPTED_LUT: LUTData = {
+    ...ACCEPTED_LUT,
+    data: new Float32Array(ACCEPTED_LUT.data.length).fill(0.5),
+  }
+
+  const undrawnWrites: Array<{
+    name: string
+    initial: [
+      ImageSession,
+      { params: ColorGraphIntentSource; lut: LUTData | null },
+    ]
+    write: (h: ReturnType<typeof setupHq>) => void
+  }> = [
+    {
+      name: 'a color edit',
+      initial: [createSession(), { params: SESSION_LOOK, lut: null }],
+      write: (h) => h.writeIntent({ ...SESSION_LOOK, userContrast: 25 }),
+    },
+    {
+      name: 'a LUT replacement',
+      initial: [
+        createCustomLutSession(),
+        { params: CUSTOM_LOOK, lut: ACCEPTED_LUT },
+      ],
+      write: (h) => h.writeLut(ANOTHER_ACCEPTED_LUT),
+    },
+    {
+      name: 'a LUT contract change',
+      initial: [
+        createCustomLutSession(),
+        { params: CUSTOM_LOOK, lut: ACCEPTED_LUT },
+      ],
+      write: (h) =>
+        h.writeLut({
+          ...ACCEPTED_LUT,
+          profileResolution: {
+            kind: 'confirmed',
+            confidence: 'user',
+            profile: lutProfile({ id: 'other-profile' }),
+          },
+        }),
+    },
+  ]
+
+  it.each(undrawnWrites)(
+    'refuses a captured action after $name the preview pipeline has not drawn yet',
+    async ({ initial, write }) => {
+      const h = setupHq(...initial)
+      const exportPreviewImage = h.result.current.exportPreviewImage
+      // The store takes the write in the same tick; the pipeline still holds
+      // the look it drew before, and would render that under the new name.
+      write(h)
+      await exportPreviewImage()
+
+      expect(h.trace).toEqual(['toast:error:HQ preview export is not ready'])
+      expect(h.error).toHaveBeenCalledWith('HQ preview export is not ready', {
+        description: enMessages['raw.export.previewUnavailable'],
+      })
+      expect(h.renderToHiddenCanvas).not.toHaveBeenCalled()
+      expect(h.exportAbortControllerRef.current).toBeNull()
+      expect(h.session()?.exportState.status).toBe('idle')
+
+      // Once the preview draws it, the same captured action exports it.
+      h.drawStoredLook()
+      const pending = exportPreviewImage()
+      h.complete()
+      await pending
+      expect(h.session()?.exportState.result?.kind).toBe('hq-preview')
+    },
+  )
+
+  it('never encodes a render the pipeline drew with another LUT than the attempt admitted', async () => {
+    const h = setupHq(createCustomLutSession(), {
+      params: CUSTOM_LOOK,
+      lut: ACCEPTED_LUT,
+    })
+    const pending = h.result.current.exportPreviewImage()
+    expect(h.renderToHiddenCanvas).toHaveBeenCalledTimes(1)
+    const changedAt = h.trace.push('test:pipeline-lut') - 1
+    // The pipeline takes another table while it renders.
+    h.held.lut = ANOTHER_ACCEPTED_LUT
+    h.complete()
+    await pending
+
+    expect(h.trace.slice(changedAt)).toEqual([
+      'test:pipeline-lut',
+      'state:session:idle',
+      'state:status:ready',
+      'state:progress:0',
+      'toast:error:HQ preview export is not ready',
+    ])
+    expect(h.error).toHaveBeenCalledWith('HQ preview export is not ready', {
+      description: enMessages['raw.export.previewUnavailable'],
+    })
+    expect(h.toBlob).not.toHaveBeenCalled()
+    expect(h.registerExportResultResource).not.toHaveBeenCalled()
+    expect(h.session()?.exportState.result).toBeUndefined()
+    expect(h.exportAbortControllerRef.current).toBeNull()
+  })
+
+  it.each(['completes', 'fails'] as const)(
+    'leaves a successor attempt its state when a superseded render %s',
+    async (ending) => {
+      const h = setupHq()
+      const first = h.result.current.exportPreviewImage()
+      const second = h.result.current.exportPreviewImage()
+      expect(h.renderToHiddenCanvas).toHaveBeenCalledTimes(2)
+      const successorState = h.session()
+      expect(successorState?.exportState.status).toBe('exporting')
+      const supersededAt = h.trace.push('test:superseded') - 1
+
+      if (ending === 'completes') h.complete(0)
+      else h.fail(new Error('GPU device lost'), 0)
+      await first
+
+      expect(h.trace.slice(supersededAt)).toEqual(['test:superseded'])
+      expect(h.session()).toBe(successorState)
+      expect(h.exportAbortControllerRef.current).not.toBeNull()
+
+      h.complete(1)
+      await second
+      expect(h.session()?.exportState.status).toBe('ready')
+      expect(h.session()?.exportState.result?.kind).toBe('hq-preview')
+      expect(h.registerExportResultResource).toHaveBeenCalledTimes(1)
+      expect(h.exportAbortControllerRef.current).toBeNull()
+    },
+  )
+
+  it('never replaces a full-resolution result that lands while a superseded HQ render runs', async () => {
+    const h = setupHq()
+    const pending = h.result.current.exportPreviewImage()
+    // A full-resolution export takes the slot and delivers its result.
+    const fullResolution = {
+      kind: 'full-resolution',
+      filename: 'frame_cinema_fullres.jpg',
+    } as unknown as NonNullable<ImageSession['exportState']['result']>
+    h.exportAbortControllerRef.current = new AbortController()
+    h.writeSession((live) => ({
+      ...live!,
+      exportState: {
+        ...live!.exportState,
+        status: 'ready',
+        result: fullResolution,
+      },
+    }))
+    const delivered = h.session()
+    h.complete()
+    await pending
+
+    expect(h.session()).toBe(delivered)
+    expect(h.session()?.exportState.result).toBe(fullResolution)
+    expect(h.toBlob).not.toHaveBeenCalled()
+    expect(h.registerExportResultResource).not.toHaveBeenCalled()
+    expect(h.success).not.toHaveBeenCalled()
   })
 })
 
@@ -563,10 +844,7 @@ describe('useHqPreviewExportAction refusal copy', () => {
       I18nProvider,
     )
     const pending = h.result.current.exportPreviewImage()
-    h.sessionRef.current = {
-      ...h.sessionRef.current!,
-      exportGeometry: SAMPLE_GEOMETRY,
-    }
+    h.writeSession((live) => ({ ...live!, exportGeometry: SAMPLE_GEOMETRY }))
     h.complete()
     await pending
 
@@ -602,29 +880,25 @@ describe('useHqPreviewExportAction result identity', () => {
       expect(h.renderToHiddenCanvas).toHaveBeenCalledTimes(1)
 
       // While it renders, what the request was read from moves on without
-      // ending the attempt: the intent record in place, the refs, the view.
+      // ending the attempt: the intent record in place, the stored color and
+      // LUT, the decoded image, the view.
       Object.assign(look, { intensity: 0.1, userExposureEv: 1.5 })
-      h.paramsRef.current = { ...params, intensity: 0.2 }
-      h.lutDataRef.current = lut && {
-        ...lut,
-        data: new Float32Array(lut.data.length).fill(1),
-      }
+      h.writeIntent({ ...params, intensity: 0.2 })
+      h.writeLut(
+        lut && { ...lut, data: new Float32Array(lut.data.length).fill(1) },
+      )
       h.decodedImageRef.current = {
         ...createDecodedImage(),
         renderExposure: { ev: 1, multiplier: 2, source: 'user' },
       }
-      h.sessionRef.current = {
-        ...h.sessionRef.current!,
-        viewState: {
-          ...h.sessionRef.current!.viewState,
-          mode: 'original',
-          zoom: 2,
-        },
-      }
+      h.writeSession((live) => ({
+        ...live!,
+        viewState: { ...live!.viewState, mode: 'original', zoom: 2 },
+      }))
       h.complete()
       await pending
 
-      const result = h.sessionRef.current?.exportState.result
+      const result = h.session()?.exportState.result
       expect(result?.kind).toBe('hq-preview')
       expect(result?.identity).toEqual({
         ...expected,
@@ -647,11 +921,11 @@ describe('useHqPreviewExportAction result identity', () => {
     const first = h.result.current.exportPreviewImage()
     h.complete()
     await first
-    const firstIdentity = h.sessionRef.current?.exportState.result?.identity
+    const firstIdentity = h.session()?.exportState.result?.identity
     const second = h.result.current.exportPreviewImage()
     h.complete()
     await second
-    const secondIdentity = h.sessionRef.current?.exportState.result?.identity
+    const secondIdentity = h.session()?.exportState.result?.identity
 
     expect(firstIdentity && secondIdentity).toBeTruthy()
     expect(secondIdentity!.attemptId).not.toBe(firstIdentity!.attemptId)
@@ -680,11 +954,14 @@ describe('useHqPreviewExportAction', () => {
     const error = vi.fn()
     const { result } = renderHook(() =>
       useHqPreviewExportAction({
-        sessionRef,
-        paramsRef: { current: SESSION_LOOK },
-        lutDataRef: { current: null },
+        getSession: () => sessionRef.current,
+        getColorIntent: () => SESSION_LOOK,
+        getLutData: () => null,
         decodedImageRef: { current: createDecodedImage() },
-        pipelineRef: { current: { renderToHiddenCanvas } },
+        pipelineRef: {
+          current: createPipeline(SESSION_LOOK, null, renderToHiddenCanvas)
+            .pipeline,
+        },
         isMountedRef: { current: true },
         exportGraphVersionRef,
         exportAbortControllerRef,
@@ -734,11 +1011,14 @@ describe('useHqPreviewExportAction', () => {
     const error = vi.fn()
     const { result } = renderHook(() =>
       useHqPreviewExportAction({
-        sessionRef,
-        paramsRef: { current: SESSION_LOOK },
-        lutDataRef: { current: null },
+        getSession: () => sessionRef.current,
+        getColorIntent: () => SESSION_LOOK,
+        getLutData: () => null,
         decodedImageRef: { current: createDecodedImage() },
-        pipelineRef: { current: { renderToHiddenCanvas } },
+        pipelineRef: {
+          current: createPipeline(SESSION_LOOK, null, renderToHiddenCanvas)
+            .pipeline,
+        },
         isMountedRef: { current: true },
         exportGraphVersionRef: { current: 1 },
         exportAbortControllerRef: { current: null },
@@ -790,13 +1070,15 @@ describe('useHqPreviewExportAction', () => {
     const error = vi.fn()
     const { result } = renderHook(() =>
       useHqPreviewExportAction({
-        sessionRef,
-        paramsRef: { current: SESSION_LOOK },
-        lutDataRef: { current: null },
+        getSession: () => sessionRef.current,
+        getColorIntent: () => SESSION_LOOK,
+        getLutData: () => null,
         decodedImageRef: {
           current: { ...createDecodedImage(), source: 'quick' },
         },
-        pipelineRef: { current: { renderToHiddenCanvas: vi.fn() } },
+        pipelineRef: {
+          current: createPipeline(SESSION_LOOK, null, vi.fn()).pipeline,
+        },
         isMountedRef: { current: true },
         exportGraphVersionRef: { current: 1 },
         exportAbortControllerRef: { current: null },
@@ -861,11 +1143,14 @@ describe('useHqPreviewExportAction', () => {
 
     const { result } = renderHook(() =>
       useHqPreviewExportAction({
-        sessionRef,
-        paramsRef: { current: SESSION_LOOK },
-        lutDataRef: { current: null },
+        getSession: () => sessionRef.current,
+        getColorIntent: () => SESSION_LOOK,
+        getLutData: () => null,
         decodedImageRef: { current: createDecodedImage() },
-        pipelineRef: { current: { renderToHiddenCanvas } },
+        pipelineRef: {
+          current: createPipeline(SESSION_LOOK, null, renderToHiddenCanvas)
+            .pipeline,
+        },
         isMountedRef: { current: true },
         exportGraphVersionRef: { current: 1 },
         exportAbortControllerRef: { current: null },
@@ -935,11 +1220,17 @@ describe('useHqPreviewExportAction', () => {
       const error = vi.fn()
       const { result } = renderHook(() =>
         useHqPreviewExportAction({
-          sessionRef,
-          paramsRef: { current: CUSTOM_LOOK },
-          lutDataRef,
+          getSession: () => sessionRef.current,
+          getColorIntent: () => CUSTOM_LOOK,
+          getLutData: () => lutDataRef.current,
           decodedImageRef: { current: createDecodedImage() },
-          pipelineRef: { current: { renderToHiddenCanvas } },
+          pipelineRef: {
+            current: createPipeline(
+              CUSTOM_LOOK,
+              ACCEPTED_LUT,
+              renderToHiddenCanvas,
+            ).pipeline,
+          },
           isMountedRef: { current: true },
           exportGraphVersionRef: { current: 1 },
           exportAbortControllerRef: { current: null },
@@ -986,11 +1277,17 @@ describe('useHqPreviewExportAction', () => {
     } as HTMLCanvasElement)
     const { result } = renderHook(() =>
       useHqPreviewExportAction({
-        sessionRef,
-        paramsRef: { current: CUSTOM_LOOK },
-        lutDataRef: { current: ACCEPTED_LUT },
+        getSession: () => sessionRef.current,
+        getColorIntent: () => CUSTOM_LOOK,
+        getLutData: () => ACCEPTED_LUT,
         decodedImageRef: { current: createDecodedImage() },
-        pipelineRef: { current: { renderToHiddenCanvas } },
+        pipelineRef: {
+          current: createPipeline(
+            CUSTOM_LOOK,
+            ACCEPTED_LUT,
+            renderToHiddenCanvas,
+          ).pipeline,
+        },
         isMountedRef: { current: true },
         exportGraphVersionRef: { current: 1 },
         exportAbortControllerRef: { current: null },

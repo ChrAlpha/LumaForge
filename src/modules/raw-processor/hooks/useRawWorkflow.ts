@@ -152,7 +152,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     exportGraphVersionRef,
     previewCopyCanvasRef,
     exportAbortControllerRef,
-    sessionRef,
+    getSession: getCurrentSession,
     abortExportWork,
     queueExportResultResourceDisposal,
     setSession,
@@ -170,11 +170,11 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
       !hasActiveExport(exportAbortControllerRef.current, getCurrentSession()),
     [exportAbortControllerRef],
   )
-  // Transform events reduce the session in the store when they land. The HQ
-  // export, the export result actions and graph invalidation still read the
-  // session through `sessionRef`, so each Transform write leaves it holding
-  // what the store holds, before any rerender: an export started in that gap
-  // runs with the geometry the store holds.
+  // Transform events reduce the session in the store when they land. The
+  // export result actions still read the session through `sessionRef`, so
+  // each Transform write leaves it holding what the store holds, before any
+  // rerender: a delivery started in that gap checks the geometry the store
+  // holds.
   const setTransformSession = useCallback(
     (update: (current: ImageSession | null) => ImageSession | null) => {
       setCurrentSession(update)

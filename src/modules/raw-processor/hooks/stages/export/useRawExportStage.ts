@@ -196,9 +196,9 @@ export function useRawExportStage({
     toast,
   })
   const { exportPreviewImage } = useHqPreviewExportAction({
-    sessionRef,
-    paramsRef,
-    lutDataRef,
+    getSession,
+    getColorIntent,
+    getLutData,
     decodedImageRef,
     pipelineRef,
     isMountedRef,

@@ -14,7 +14,8 @@ type UseExportGraphInvalidationInput = {
   exportGraphVersionRef: MutableRefObject<number>
   previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
   exportAbortControllerRef: MutableRefObject<AbortController | null>
-  sessionRef: MutableRefObject<ImageSession | null>
+  /** Reads the session from the store when called. */
+  getSession: () => ImageSession | null
   abortExportWork: () => void
   queueExportResultResourceDisposal: () => void
   setSession: SetImageSession
@@ -26,7 +27,7 @@ export function useExportGraphInvalidation({
   exportGraphVersionRef,
   previewCopyCanvasRef,
   exportAbortControllerRef,
-  sessionRef,
+  getSession,
   abortExportWork,
   queueExportResultResourceDisposal,
   setSession,
@@ -36,9 +37,11 @@ export function useExportGraphInvalidation({
   const invalidateExportGraph = useCallback(() => {
     exportGraphVersionRef.current += 1
     previewCopyCanvasRef.current = null
+    // The session the store holds now, so an export a write in the same tick
+    // started or settled, before any rerender, decides whether to settle.
     const exportWasActive = hasActiveExport(
       exportAbortControllerRef.current,
-      sessionRef.current,
+      getSession(),
     )
 
     abortExportWork()
@@ -53,9 +56,9 @@ export function useExportGraphInvalidation({
     abortExportWork,
     exportAbortControllerRef,
     exportGraphVersionRef,
+    getSession,
     previewCopyCanvasRef,
     queueExportResultResourceDisposal,
-    sessionRef,
     setProgress,
     setSession,
     setStatus,

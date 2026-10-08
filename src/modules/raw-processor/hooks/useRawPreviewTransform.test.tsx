@@ -53,9 +53,10 @@ function createExportResult(): ExportResult {
 
 /**
  * The workflow around the Transform port: the session lives in a store whose
- * writes the next read sees in the same tick, before any rerender, and the
- * export side reads `sessionRef`, which follows the store when the hook
- * renders and after each Transform write.
+ * writes the next read sees in the same tick, before any rerender. Graph
+ * invalidation reads that store; the export result actions read
+ * `sessionRef`, which follows the store when the hook renders and after each
+ * Transform write.
  */
 function setup(initialSession: ImageSession | null = createReadySession()) {
   const store = createStore()
@@ -65,7 +66,7 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
     store.set(sessionAtom, update)
   const sessionRef = { current: initialSession }
   // As the workflow wires it: a Transform write leaves `sessionRef` holding
-  // what the store holds, for the export readers.
+  // what the store holds, for the export result actions.
   const setTransformSession = (
     update: (session: ImageSession | null) => ImageSession | null,
   ) => {
@@ -99,7 +100,7 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
       exportGraphVersionRef,
       previewCopyCanvasRef,
       exportAbortControllerRef,
-      sessionRef,
+      getSession,
       abortExportWork: () => controller.abort(),
       queueExportResultResourceDisposal,
       setSession,
@@ -457,6 +458,37 @@ describe('useRawPreviewTransform', () => {
         },
       }
     }
+
+    it('settles an export the store started before the first edit lands', () => {
+      const harness = setup()
+      // The slot is free; only the session says an export runs.
+      harness.controller.abort()
+      const sourceId = harness.result.current.transform.state!.sourceId
+      const manual = harness.result.current.transform.state!.intent.manual
+
+      act(() => {
+        harness.result.current.setSession((previous) =>
+          previous
+            ? {
+                ...previous,
+                exportState: { ...previous.exportState, status: 'exporting' },
+              }
+            : previous,
+        )
+        harness.result.current.transform.dispatch({
+          type: 'edit',
+          sourceId,
+          intent: { manual: { ...manual, rotate: 5 } },
+        })
+        const live = harness.getSession()!
+        expect(deriveTransformStatus(live.transform!)).toBe('pending')
+        expect(live.exportState.status).toBe('idle')
+      })
+
+      expect(harness.exportGraphVersionRef.current).toBe(1)
+      expect(harness.setStatus).toHaveBeenCalledWith('ready')
+      expect(harness.setProgress).toHaveBeenCalledWith(0)
+    })
 
     it('lets an edit drop the answer to a request issued before it', () => {
       const harness = setup()

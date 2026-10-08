@@ -190,6 +190,10 @@ export class WebGPUProcessingPipeline {
   getParams(): GpuPreviewParams {
     return { ...this.params }
   }
+  /** The LUT the pipeline holds, as its last successful upload left it. */
+  getLutData(): LUTData | null {
+    return this.images?.lutData ?? null
+  }
 
   private exposure() {
     const source = this.images?.inputUpload

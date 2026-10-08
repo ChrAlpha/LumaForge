@@ -2,6 +2,7 @@ import type {
   ColorGraphIntentSource,
   LUTData,
 } from '@lumaforge/luma-color-runtime'
+import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback } from 'react'
 import { toast as sonnerToast } from 'sonner'
@@ -38,22 +39,25 @@ import {
 import { resolveHqPreviewLookRefusal } from '../../../services/export/hq-preview-look'
 import { HQ_PREVIEW_EXPORT_REASON_COPY } from '../../../services/surface/raw-reason'
 
+type HqPreviewPipeline = Pick<
+  RawProcessingPipeline,
+  'renderToHiddenCanvas' | 'getParams' | 'getLutData'
+>
+
 type HqPreviewExportToast = {
   success: (message: string) => void
   error: (message: string, options?: { description?: string }) => void
 }
 
 type UseHqPreviewExportActionInput = {
-  sessionRef: MutableRefObject<ImageSession | null>
-  /** The look and user color the preview pipeline renders with. */
-  paramsRef: MutableRefObject<ColorGraphIntentSource>
-  /** The custom LUT data the preview pipeline renders with. */
-  lutDataRef: MutableRefObject<LUTData | null>
+  /** Reads the session from the store when called. */
+  getSession: () => ImageSession | null
+  /** Reads the color intent the photo renders with from the store when called. */
+  getColorIntent: () => ColorGraphIntentSource
+  /** Reads the LUT the store holds when called. */
+  getLutData: () => LUTData | null
   decodedImageRef: MutableRefObject<DecodedImage | null>
-  pipelineRef: MutableRefObject<Pick<
-    RawProcessingPipeline,
-    'renderToHiddenCanvas'
-  > | null>
+  pipelineRef: MutableRefObject<HqPreviewPipeline | null>
   isMountedRef: MutableRefObject<boolean>
   exportGraphVersionRef: MutableRefObject<number>
   exportAbortControllerRef: MutableRefObject<AbortController | null>
@@ -83,6 +87,40 @@ type HqPreviewExportAttempt = Readonly<{
   controller: AbortController
 }>
 
+/**
+ * Whether the pipeline holds the color and the LUT an attempt admitted. The
+ * HQ JPEG is drawn from what the pipeline holds, which follows the store
+ * only once the preview's effects run, so a write that has not reached it
+ * yet would put other pixels under the admitted identity. The LUT counts
+ * only when the look draws one, as in the identity; a table counts as held
+ * only when the pipeline holds the same table, domain and contract.
+ */
+function pipelineHoldsLook(
+  pipeline: HqPreviewPipeline,
+  intent: ColorGraphIntentSource,
+  lut: LUTData | null,
+): boolean {
+  let held: ColorGraphIntentSource
+  try {
+    held = pipeline.getParams()
+  } catch {
+    return false
+  }
+  if (colorGraphIntentSignature(held) !== colorGraphIntentSignature(intent)) {
+    return false
+  }
+  if (intent.styleKind !== 'custom') return true
+  const heldLut = pipeline.getLutData()
+  if (!heldLut || !lut) return heldLut === lut
+  return (
+    heldLut.data === lut.data &&
+    heldLut.size === lut.size &&
+    heldLut.domainMin === lut.domainMin &&
+    heldLut.domainMax === lut.domainMax &&
+    heldLut.profileResolution === lut.profileResolution
+  )
+}
+
 let lastHqPreviewAttempt = 0
 
 function createHqPreviewAttemptId() {
@@ -105,9 +143,9 @@ function resolveHqPreviewExportCopyCapability(): ExportCopyCapability {
 }
 
 export function useHqPreviewExportAction({
-  sessionRef,
-  paramsRef,
-  lutDataRef,
+  getSession,
+  getColorIntent,
+  getLutData,
   decodedImageRef,
   pipelineRef,
   isMountedRef,
@@ -138,7 +176,10 @@ export function useHqPreviewExportAction({
   )
 
   const exportPreviewImage = useCallback(async () => {
-    const activeSession = sessionRef.current
+    // Every read below goes to the store when the action runs, so an action
+    // a surface captured from an older render admits the session, color and
+    // LUT a write in the same tick left there, before any rerender.
+    const activeSession = getSession()
     const sourceFile = activeSession?.sourceFile.file
     const image = decodedImageRef.current
     const pipeline = pipelineRef.current
@@ -167,14 +208,21 @@ export function useHqPreviewExportAction({
 
     // Read when the action runs, so an action a surface captured before the
     // look changed still refuses a look the preview has since left out.
-    const intent = paramsRef.current
-    if (resolveHqPreviewLookRefusal({ intent, lut: lutDataRef.current })) {
+    const intent = getColorIntent()
+    const lut = getLutData()
+    if (resolveHqPreviewLookRefusal({ intent, lut })) {
       refuse('look-dropped')
+      return
+    }
+    // The pipeline draws the JPEG, so it starts only once the pipeline holds
+    // the look admitted here.
+    if (!pipelineHoldsLook(pipeline, intent, lut)) {
+      refuse('not-ready')
       return
     }
 
     // The request this attempt answers, fixed before anything renders, so
-    // the result names what was asked for rather than what the refs hold
+    // the result names what was asked for rather than what the store holds
     // when the JPEG arrives.
     const identity = captureExportResultIdentity({
       resultKind: 'hq-preview',
@@ -182,7 +230,7 @@ export function useHqPreviewExportAction({
       sessionId: activeSession.id,
       sourceFile,
       intent,
-      lut: lutDataRef.current,
+      lut,
       rawRenderExposure: image.renderExposure,
       geometry: activeSession.exportGeometry ?? null,
     })
@@ -221,6 +269,21 @@ export function useHqPreviewExportAction({
         : prev,
     )
 
+    /** Ends this attempt with a refusal and hands the workflow back. */
+    const endRefused = (refusal: HqPreviewExportReasonCode) => {
+      attempt.controller.abort()
+      setSession((prev) =>
+        prev &&
+        prev.id === exportSessionId &&
+        prev.exportState.status === 'exporting'
+          ? clearExportResultState(prev)
+          : prev,
+      )
+      setStatus('ready')
+      setProgress(0)
+      refuse(refusal)
+    }
+
     /**
      * Whether this attempt may still write anything: the view is mounted,
      * its signal is live, it still holds the export slot, the export graph
@@ -231,7 +294,7 @@ export function useHqPreviewExportAction({
      * the workflow back with the reason.
      */
     const isCurrentExport = () => {
-      const live = sessionRef.current
+      const live = getSession()
       if (
         !isMountedRef.current ||
         attempt.controller.signal.aborted ||
@@ -245,17 +308,18 @@ export function useHqPreviewExportAction({
       }
       const refusal = deriveTransformExportRefusalReason(live, 'hq-preview')
       if (!refusal) return true
-      attempt.controller.abort()
-      setSession((prev) =>
-        prev &&
-        prev.id === exportSessionId &&
-        prev.exportState.status === 'exporting'
-          ? clearExportResultState(prev)
-          : prev,
-      )
-      setStatus('ready')
-      setProgress(0)
-      refuse(refusal)
+      endRefused(refusal)
+      return false
+    }
+
+    /**
+     * Whether this attempt is current and the pipeline still holds the look
+     * it admitted; a pipeline that has moved on ends the attempt.
+     */
+    const drawsAdmittedLook = () => {
+      if (!isCurrentExport()) return false
+      if (pipelineHoldsLook(pipeline, intent, lut)) return true
+      endRefused('not-ready')
       return false
     }
 
@@ -276,13 +340,14 @@ export function useHqPreviewExportAction({
         filename,
         quality: EXPORT_JPEG_QUALITY,
         renderToCanvas: async () => {
-          if (!isCurrentExport()) {
+          if (!drawsAdmittedLook()) {
             throw new Error('HQ_PREVIEW_EXPORT_ABORTED')
           }
 
           const canvas = await pipeline.renderToHiddenCanvas(outputSize)
-          // A canvas rendered for an attempt that has ended is never encoded.
-          if (!isCurrentExport()) {
+          // A canvas rendered for an attempt that has ended, or by a
+          // pipeline that took another look while it drew, is never encoded.
+          if (!drawsAdmittedLook()) {
             throw new Error('HQ_PREVIEW_EXPORT_ABORTED')
           }
           return canvas
@@ -351,9 +416,10 @@ export function useHqPreviewExportAction({
     decodedImageRef,
     exportAbortControllerRef,
     exportGraphVersionRef,
+    getColorIntent,
+    getLutData,
+    getSession,
     isMountedRef,
-    lutDataRef,
-    paramsRef,
     pipelineRef,
     previewCopyCanvasRef,
     previewExportRefusal,
@@ -362,7 +428,6 @@ export function useHqPreviewExportAction({
     refuse,
     registerExportResultResource,
     scheduleToast,
-    sessionRef,
     setProgress,
     setSession,
     setStatus,
