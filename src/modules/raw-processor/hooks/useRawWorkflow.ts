@@ -79,7 +79,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     viewRef,
     rawRenderExposureRef,
   } = useRawWorkflowRefs({
-    session,
     initialParams: colorIntent,
     initialView: detachedView,
   })

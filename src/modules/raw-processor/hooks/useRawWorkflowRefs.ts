@@ -11,16 +11,12 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 import { createRawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
-import type { ImageSession } from '../model/session'
-
 type UseRawWorkflowRefsInput = {
-  session: ImageSession | null
   initialParams: ColorGraphIntent
   initialView: PreviewView
 }
 
 export function useRawWorkflowRefs({
-  session,
   initialParams,
   initialView,
 }: UseRawWorkflowRefsInput) {
@@ -31,7 +27,6 @@ export function useRawWorkflowRefs({
   const pipelineRef = useRef<RawProcessingPipeline | null>(null)
   const resourceRegistryRef = useRef<ResourceRegistry | null>(null)
   const previewCopyCanvasRef = useRef<HTMLCanvasElement | null>(null)
-  const sessionRef = useRef<ImageSession | null>(session)
   const embeddedPreviewUrlRef = useRef<string | null>(null)
   const isMountedRef = useRef(false)
   const runtimeWorkSessionIdRef = useRef<string | null>(null)
@@ -47,7 +42,6 @@ export function useRawWorkflowRefs({
   if (!resourceRegistryRef.current) {
     resourceRegistryRef.current = createResourceRegistry()
   }
-  sessionRef.current = session
 
   return useMemo(
     () => ({
@@ -55,7 +49,6 @@ export function useRawWorkflowRefs({
       pipelineRef,
       resourceRegistryRef,
       previewCopyCanvasRef,
-      sessionRef,
       embeddedPreviewUrlRef,
       isMountedRef,
       runtimeWorkSessionIdRef,
@@ -81,7 +74,6 @@ export function useRawWorkflowRefs({
       rawRuntimeHost,
       resourceRegistryRef,
       runtimeWorkSessionIdRef,
-      sessionRef,
       viewRef,
     ],
   )

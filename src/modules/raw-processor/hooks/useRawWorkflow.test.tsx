@@ -1254,7 +1254,6 @@ describe('useRawWorkflow embedded preview state', () => {
   it('keeps no RAW session, abort controller or disposal set beside its host', () => {
     const { result } = renderHook(() =>
       useRawWorkflowRefs({
-        session: null,
         initialParams: getProcessingParams(),
         initialView: getDetachedPreviewView(),
       }),

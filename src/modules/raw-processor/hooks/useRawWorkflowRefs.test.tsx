@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { PreviewView } from '~/lib/preview/preview-view'
 
-import type { ImageSession } from '../model/session'
 import { useRawWorkflowRefs } from './useRawWorkflowRefs'
 
 const params: ColorGraphIntent = {
@@ -16,64 +15,45 @@ const params: ColorGraphIntent = {
 }
 const view: PreviewView = { mode: 'compare', compareSplit: 0.5 }
 
-function createSession(id: string): ImageSession {
-  return {
-    id,
-    createdAt: 1,
-    sourceFile: {
-      name: 'frame.dng',
-      extension: 'dng',
-      sizeBytes: 1,
-      supportLevel: 'experimental',
-    },
-    previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'idle' },
-      boundedHqPreview: { status: 'idle' },
-      displaySource: 'none',
-      boundedHqRequiredForExport: false,
-    },
-    activeStyle: null,
-    viewState: {
-      mode: 'processed',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
-    renderState: { status: 'idle' },
-    exportState: {
-      status: 'idle',
-      fullResCapability: { status: 'unknown' },
-      retryRecommended: false,
-    },
-  }
-}
-
 describe('useRawWorkflowRefs', () => {
-  it('creates stable workflow refs and mirrors the latest session', () => {
-    const firstSession = createSession('first')
-    const secondSession = createSession('second')
-    const { result, rerender } = renderHook(
-      ({ session }) =>
-        useRawWorkflowRefs({
-          session,
-          initialParams: params,
-          initialView: view,
-        }),
-      { initialProps: { session: firstSession as ImageSession | null } },
+  it('keeps one RAW host and one resource registry across renders', () => {
+    const { result, rerender } = renderHook(() =>
+      useRawWorkflowRefs({ initialParams: params, initialView: view }),
     )
     const refs = result.current
+    const host = refs.rawRuntimeHost
+    const registry = refs.resourceRegistryRef.current
 
-    expect(refs.resourceRegistryRef.current).toBeTruthy()
-    expect(refs.sessionRef.current).toBe(firstSession)
+    expect(host).toBeDefined()
+    expect(registry).toBeTruthy()
     expect(refs.paramsRef.current).toBe(params)
     expect(refs.viewRef.current).toBe(view)
 
-    rerender({ session: secondSession })
+    rerender()
 
     expect(result.current).toBe(refs)
-    expect(result.current.sessionRef.current).toBe(secondSession)
+    expect(result.current.rawRuntimeHost).toBe(host)
+    expect(result.current.resourceRegistryRef.current).toBe(registry)
+  })
+
+  it('keeps export cancellation apart from the RAW host', () => {
+    const { result } = renderHook(() =>
+      useRawWorkflowRefs({ initialParams: params, initialView: view }),
+    )
+
+    expect(result.current.exportAbortControllerRef.current).toBeNull()
+    expect(result.current.exportGraphVersionRef.current).toBe(0)
+    expect(result.current.runtimeWorkSessionIdRef.current).toBeNull()
+  })
+
+  it('holds no copy of the image session', () => {
+    const { result } = renderHook(() =>
+      useRawWorkflowRefs({ initialParams: params, initialView: view }),
+    )
+
+    expect(Object.keys(result.current)).not.toContain('sessionRef')
+    expect(
+      Object.keys(result.current).filter((key) => /^session/i.test(key)),
+    ).toEqual([])
   })
 })
