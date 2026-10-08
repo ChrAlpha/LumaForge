@@ -4511,6 +4511,92 @@ describe('useRawWorkflow embedded preview state', () => {
       )
     })
 
+    it('stops offering a delivered JPEG once a later export of it is refused by a new frame', async () => {
+      const job = deliverSealGatedExports()
+      job.finishJob()
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(job.source)
+      })
+      act(() =>
+        acceptTransformGeometry(result.current.transform, SAMPLE_GEOMETRY),
+      )
+      const { dispatch, state } = transformPort(result)
+      const sourceId = state!.sourceId
+      const intent = state!.intent
+      await act(async () => {
+        await result.current.exportImage()
+      })
+      const delivered = result.current.exportResult
+      expect(delivered).not.toBeNull()
+      expect(manifestStatus()).toBe('sealing')
+      const { output: deliveredOutput } =
+        await exportSystemMock.runFullResolutionExportJob.mock.results[0]!.value
+
+      // The export released the preview; the user restores it and exports
+      // again, and the restored preview reads a new frame while the second
+      // export samples the device, with no edit.
+      await act(async () => {
+        await result.current.restorePreviewAfterExport()
+      })
+      expect(result.current.exportResult).toBe(delivered)
+      toastMock.error.mockClear()
+      await act(async () => {
+        const exporting = result.current.exportImage()
+        dispatch({ type: 'capture', sourceId, captureKey: 'frame-again' })
+        await exporting
+      })
+      await flushScheduledToasts()
+      await flushPostCommitTasks()
+
+      expect(liveTransform().intent).toBe(intent)
+      expect(toastMock.error).toHaveBeenCalledWith(
+        'Full-resolution export is not ready',
+        { description: PENDING_REFUSAL },
+      )
+      expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(
+        1,
+      )
+      // The second export had claimed the export slot, so the first JPEG
+      // could no longer be delivered: it is no longer offered, and its file
+      // is removed.
+      expect(result.current.exportResult).toBeNull()
+      expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe(
+        'idle',
+      )
+      expect(deliveredOutput.cleanup).toHaveBeenCalledTimes(1)
+
+      // The same geometry is answered on that frame, and the first manifest
+      // finishes hashing: neither brings the first JPEG back.
+      act(() =>
+        dispatch({
+          type: 'request',
+          sourceId,
+          captureKey: 'frame-again',
+          requestId: 991,
+          geometry: SAMPLE_GEOMETRY,
+        }),
+      )
+      act(() =>
+        dispatch({
+          type: 'rendered',
+          sourceId,
+          captureKey: 'frame-again',
+          requestId: 991,
+          geometry: SAMPLE_GEOMETRY,
+          frame: FRAME,
+        }),
+      )
+      act(() => job.seal())
+      await flushPostCommitTasks()
+
+      expect(deriveTransformStatus(liveTransform())).toBe('accepted')
+      expect(result.current.exportResult).toBeNull()
+      expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe(
+        'idle',
+      )
+    })
+
     it('keeps an export current when a neutral Transform with a request out is reset, mid-job and while sealing', async () => {
       const job = deliverSealGatedExports()
       const { result } = renderHook(() => useRawWorkflow(), { wrapper })

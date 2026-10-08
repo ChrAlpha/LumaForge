@@ -390,19 +390,29 @@ export async function orchestrateFullResExport(
   )
 
   // Checked before every write that follows an asynchronous step. A refused
-  // attempt stops its own work and hands the workflow back as it found it,
-  // with the reason, the way a refusal at the start would have.
+  // attempt stops its own work and settles the workflow with the reason.
+  // Having claimed the export slot, it already left any earlier result
+  // undeliverable, so it drops that result and its resources too rather
+  // than leave the session offering a JPEG it cannot hand over.
   const isCurrentExport = () => {
     const standing = readAttemptStanding(ctx.refs, attempt, 'work')
     if (standing.kind === 'refused') {
       exportAbortController.abort()
+      const replacedResult = Boolean(
+        ctx.refs.sessionRef.current?.exportState.result,
+      )
       ctx.atoms.setSession((prev) =>
-        prev &&
-        prev.id === exportSessionId &&
-        prev.exportState.status === 'exporting'
+        prev && prev.id === exportSessionId
           ? clearExportResultState(prev)
           : prev,
       )
+      if (replacedResult) {
+        void ctx.refs.resourceRegistryRef.current
+          ?.disposeOwners(['export-result'])
+          .catch((error: unknown) => {
+            console.warn('Failed to release the replaced export result:', error)
+          })
+      }
       ctx.atoms.setStatus('ready')
       ctx.atoms.setProgress(0)
       refuse(standing.refusal)

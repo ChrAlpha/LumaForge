@@ -3004,6 +3004,140 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     },
   )
 
+  // The windows between claiming the export slot and taking the session over
+  // for the run, in which the earlier result is still shown.
+  const replacedResultWindows: Array<{
+    name: string
+    hold: (h: Harness) => { reached: Promise<void>; release: () => void }
+  }> = [
+    {
+      name: 'its plan is sampled',
+      hold() {
+        const reached = deferred()
+        const gate = deferred()
+        mocks.sampleExportPlanFacts.mockImplementation(async () => {
+          reached.resolve()
+          await gate.promise
+          return { capability: DESKTOP_CAPABILITY, runtime: OPFS_RUNTIME }
+        })
+        return { reached: reached.promise, release: () => gate.resolve() }
+      },
+    },
+    {
+      name: 'its OPFS output is reserved',
+      hold() {
+        const reached = deferred()
+        const reserve = deferred<string>()
+        mocks.reserveOpfsOutputDirectory.mockImplementation(() => {
+          reached.resolve()
+          return reserve.promise
+        })
+        return {
+          reached: reached.promise,
+          release: () => reserve.resolve(TAB_DIRECTORY),
+        }
+      },
+    },
+    {
+      name: 'its marker is recorded',
+      hold(h: Harness) {
+        const reached = deferred()
+        const gate = deferred()
+        const markers = h.ctx.services.interruptionMarkers
+        h.ctx.services.interruptionMarkers = {
+          ...markers,
+          async begin(source) {
+            reached.resolve()
+            await gate.promise
+            return markers.begin(source)
+          },
+        }
+        return { reached: reached.promise, release: () => gate.resolve() }
+      },
+    },
+  ]
+
+  it.each(replacedResultWindows)(
+    'drops the result a later export was started to replace when its Transform goes pending while $name',
+    async ({ hold }) => {
+      const h = createHarness({
+        runtime: OPFS_RUNTIME,
+        session: createAcceptedTransformSession(),
+      })
+      await runToReady(h)
+      const disposeEarlier = vi.fn(async () => undefined)
+      h.ctx.refs.resourceRegistryRef.current!.register({
+        id: 'export-result-earlier',
+        owner: 'export-result',
+        kind: 'blob',
+        dispose: disposeEarlier,
+      })
+      const held = hold(h)
+
+      const run = orchestrateFullResExport(OPTIONS, h.ctx)
+      await held.reached
+      recapture(h, 'pending')
+      held.release()
+      await run
+      await settle()
+
+      // The later attempt claimed the export slot, so the earlier result can
+      // no longer be delivered; the session stops offering it.
+      expect(mocks.toastError).toHaveBeenCalledTimes(1)
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        'Full-resolution export is not ready',
+        { description: TRANSFORM_REFUSALS.pending },
+      )
+      expect(h.state.status).toBe('ready')
+      expect(h.state.progress).toBe(0)
+      expect(h.state.session?.exportState.status).toBe('idle')
+      expect(h.state.session?.exportState.result).toBeUndefined()
+      expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+      expect(disposeEarlier).toHaveBeenCalledTimes(1)
+      // Only the earlier export ever registered a result.
+      expect(h.ctx.services.registerExportResultResource).toHaveBeenCalledTimes(
+        1,
+      )
+      expect(mocks.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
+      expect(h.markerStore.markers()).toEqual([])
+
+      // The earlier manifest, still hashing, lands on nothing.
+      h.manifest.resolve(SEALED_MANIFEST)
+      await settle()
+      expect(h.state.session?.exportState.result).toBeUndefined()
+      expect(h.debugPayloads('export-manifest-ready')).toEqual([])
+    },
+  )
+
+  it('keeps the earlier result when the Transform is refused before a later export starts', async () => {
+    const h = createHarness({ session: createAcceptedTransformSession() })
+    const earlier = await runToReady(h)
+    const disposeEarlier = vi.fn(async () => undefined)
+    h.ctx.refs.resourceRegistryRef.current!.register({
+      id: 'export-result-earlier',
+      owner: 'export-result',
+      kind: 'blob',
+      dispose: disposeEarlier,
+    })
+
+    recapture(h, 'pending')
+    await orchestrateFullResExport(OPTIONS, h.ctx)
+    h.manifest.resolve(SEALED_MANIFEST)
+    await settle()
+
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      'Full-resolution export is not ready',
+      { description: TRANSFORM_REFUSALS.pending },
+    )
+    expect(h.state.session?.exportState.status).toBe('ready')
+    expect(h.state.session?.exportState.result).toEqual({
+      ...earlier,
+      manifest: SEALED_MANIFEST,
+      manifestState: { status: 'ready' },
+    })
+    expect(disposeEarlier).not.toHaveBeenCalled()
+  })
+
   it('reports the refusal rather than a failure that arrives after the Transform goes pending', async () => {
     const h = createHarness({ session: createAcceptedTransformSession() })
     const job = h.installJob()
