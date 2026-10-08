@@ -185,8 +185,17 @@ export function derivePreviewCompareReadiness({
     originalGpuLayerEligible &&
     !originalGpuReady &&
     !retainedCompareFrameReady
+  // Until the quick frame is on screen, the embedded JPEG covers the stage.
+  const embeddedHandoffPreviewVisible =
+    displaySource === 'quick' &&
+    Boolean(embeddedPreviewUrl) &&
+    hasImageData &&
+    !showEmbeddedPreview &&
+    !processedPreviewVisible
 
   return {
+    showEmbeddedPreview,
+    embeddedHandoffPreviewVisible,
     processedImageGenerationKey,
     currentProcessedFrameReady,
     processedPreviewVisible,
@@ -203,6 +212,10 @@ export function derivePreviewCompareReadiness({
     shouldDelayProcessedCompareRender: retainedCompareFrameReady,
   }
 }
+
+export type PreviewCompareReadiness = ReturnType<
+  typeof derivePreviewCompareReadiness
+>
 
 export function derivePreviewTrackReadinessTransition({
   retainedTrackIdentity,

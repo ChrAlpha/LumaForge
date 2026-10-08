@@ -5,29 +5,16 @@
 import './preview-canvas.css'
 
 import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
-import {
-  COLOR_GRAPH_INTENT_KEYS,
-  pickColorGraphIntent,
-} from '@lumaforge/luma-color-runtime'
 import { m } from 'motion/react'
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
-import { previewSurfaceOutputForViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { Spring } from '~/lib/spring'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
-import { gpuPreviewInputParams } from '~/lib/webgpu/uniforms'
 
 import {
   aspectFitBox,
@@ -37,21 +24,11 @@ import {
 import type { PreviewPipelineHandle } from '../hooks/preview/usePreviewPipelineLifecycle'
 import { usePreviewPipelineLifecycle } from '../hooks/preview/usePreviewPipelineLifecycle'
 import { usePreviewViewportGestures } from '../hooks/preview/usePreviewViewportGestures'
+import { useProcessedPreview } from '../hooks/preview/useProcessedPreview'
 import type { DisplaySource } from '../model/session'
 import type { CompareRenderMode } from '../services/compare/compare-render-mode'
-import {
-  selectCompareRenderMode,
-  supportsLayeredCompareCss,
-} from '../services/compare/compare-render-mode'
+import { supportsLayeredCompareCss } from '../services/compare/compare-render-mode'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
-import type { PreviewFrameStatus } from '../services/preview/preview-compare-readiness'
-import {
-  derivePreviewCompareReadiness,
-  derivePreviewFrameStatusTransition,
-  derivePreviewTrackReadinessTransition,
-  EMPTY_ORIGINAL_GPU_FRAME_STATUS,
-  EMPTY_PREVIEW_FRAME_STATUS,
-} from '../services/preview/preview-compare-readiness'
 import type { PreviewViewport } from '../services/preview/preview-viewport'
 import {
   DEFAULT_PREVIEW_VIEWPORT,
@@ -59,10 +36,6 @@ import {
 } from '../services/preview/preview-viewport'
 import { OriginalGpuLayer } from './OriginalGpuLayer'
 import { OriginalReferenceLayer } from './OriginalReferenceLayer'
-import {
-  createRawUploadInput,
-  syncRawUploadInput,
-} from './preview-canvas-helpers'
 
 export interface PreviewCanvasProps {
   imageRef: React.RefObject<DecodedImage | null>
@@ -122,26 +95,6 @@ function EmbeddedOriginalLayer({ src }: { src: string }) {
   )
 }
 
-/**
- * The color intent, kept by reference while no field changes, so a render
- * that changes only the view never redraws the processed surface.
- */
-function useStableColorIntent(color: ColorGraphIntent): ColorGraphIntent {
-  const stableRef = useRef<ColorGraphIntent | null>(null)
-  const picked = pickColorGraphIntent(color)
-  const previous = stableRef.current
-  if (
-    previous &&
-    COLOR_GRAPH_INTENT_KEYS.every((key) =>
-      Object.is(previous[key], picked[key]),
-    )
-  ) {
-    return previous
-  }
-  stableRef.current = picked
-  return picked
-}
-
 export function PreviewCanvas({
   imageRef,
   imageVersion,
@@ -171,73 +124,40 @@ export function PreviewCanvas({
   const containerRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const surfaceRef = useRef<HTMLDivElement>(null)
-  const suspendedRef = useRef(suspended)
-  const processedUploadGenerationKeyRef = useRef('')
-  const processedGenerationKeyRef = useRef('')
-  const processedRenderRequestRef = useRef(0)
-  const lutUploadFailedRef = useRef(false)
-  const firstFrameWaitRef = useRef<{
-    pipeline: RawProcessingPipeline
-    generationKey: string
-    completion: Promise<void>
-  } | null>(null)
-  const processedFrameStatusRef = useRef<PreviewFrameStatus>(
-    EMPTY_PREVIEW_FRAME_STATUS,
-  )
-  const renderProcessedPreviewRef = useRef<(() => Promise<boolean>) | null>(
-    null,
-  )
-  const [trackReady, setTrackReady] = useState(false)
-  const [originalGpuStatus, setOriginalGpuStatus] = useState(
-    EMPTY_ORIGINAL_GPU_FRAME_STATUS,
-  )
-  const [processedFrameStatus, setProcessedFrameStatus] =
-    useState<PreviewFrameStatus>(EMPTY_PREVIEW_FRAME_STATUS)
-  const [error, setError] = useState<string | null>(null)
-  const showEmbeddedPreview =
-    displaySource === 'embedded' && Boolean(embeddedPreviewUrl)
   const image = imageRef.current
   const imageWidth = image?.width ?? 0
   const imageHeight = image?.height ?? 0
   const hasImageData = Boolean(image?.data)
   const supportsCssClip = supportsLayeredCompareCss()
 
-  const previewCompareReadiness = derivePreviewCompareReadiness({
+  const processed = useProcessedPreview<RawProcessingPipeline>({
+    imageRef,
     imageVersion,
     displaySource,
-    imageSource: image?.source,
-    imageWidth,
-    imageHeight,
-    hasImageData,
-    trackReady,
-    embeddedPreviewUrl,
+    color,
     viewMode,
+    lutDataRef,
+    lutDataVersion,
+    embeddedPreviewUrl,
     dualGpuAllowed,
     suspended,
     supportsCssClip,
-    originalGpuStatus,
-    processedFrameStatus,
+    jpegSnapshotReady: Boolean(originalReferenceSnapshot),
+    onStatsUpdate,
+    onPipelineChange,
+    onRequestOriginalReferenceFallback,
   })
   const {
-    processedImageGenerationKey,
-    currentProcessedFrameReady,
-    processedPreviewVisible,
-    originalGpuGenerationKey,
-    originalGpuReady,
-    originalGpuFailed,
-    retainedProcessedFrameReady,
-    compareFrameBridgeReady,
-    embeddedPreviewFallbackReady,
+    showEmbeddedPreview,
+    embeddedHandoffPreviewVisible: showEmbeddedHandoffPreview,
     shouldMountOriginalGpuLayer,
     shouldDelayProcessedCompareRender,
-  } = previewCompareReadiness
-  processedGenerationKeyRef.current = processedImageGenerationKey
-  const showEmbeddedHandoffPreview =
-    displaySource === 'quick' &&
-    Boolean(embeddedPreviewUrl) &&
-    hasImageData &&
-    !showEmbeddedPreview &&
-    !processedPreviewVisible
+    compareRenderMode,
+    trackReady,
+    markTrackReady,
+    redraw,
+    error,
+  } = processed
   const canInteractWithPreview =
     !suspended &&
     !interactionDisabled &&
@@ -252,53 +172,10 @@ export function PreviewCanvas({
       enabled: canInteractWithPreview,
       onViewportChange: onPreviewViewportChange,
     })
-  const processedTrackIdentity = [imageVersion, imageWidth, imageHeight].join(
-    ':',
-  )
-  const retainedTrackIdentityRef = useRef('')
-
-  useLayoutEffect(() => {
-    const transition = derivePreviewTrackReadinessTransition({
-      retainedTrackIdentity: retainedTrackIdentityRef.current,
-      processedTrackIdentity,
-      retainedProcessedFrameReady,
-      handoffPreviewVisible: showEmbeddedHandoffPreview,
-    })
-
-    retainedTrackIdentityRef.current = transition.nextRetainedTrackIdentity
-    if (transition.resetTrackReady) {
-      setTrackReady(false)
-    }
-  }, [
-    processedTrackIdentity,
-    retainedProcessedFrameReady,
-    showEmbeddedHandoffPreview,
-  ])
-  const compareRenderMode: CompareRenderMode = selectCompareRenderMode({
-    requestedViewMode: showEmbeddedPreview ? 'processed' : viewMode,
-    supportsCssClip,
-    dualGpuAllowed,
-    originalGpuReady: originalGpuReady && currentProcessedFrameReady,
-    retainedCompareFrameReady: compareFrameBridgeReady,
-    originalGpuFailed,
-    embeddedPreviewReady: embeddedPreviewFallbackReady,
-    jpegSnapshotReady: Boolean(originalReferenceSnapshot),
-  })
   const isLayeredCompareActive =
     compareRenderMode.kind === 'dual-gpu' ||
     compareRenderMode.kind === 'embedded-fallback' ||
     compareRenderMode.kind === 'jpeg-fallback'
-  const stableColor = useStableColorIntent(color)
-  const processedSurfaceOutput = previewSurfaceOutputForViewMode(viewMode)
-  const processedCanvasParams = useMemo(
-    () =>
-      gpuPreviewInputParams({
-        color: stableColor,
-        output: processedSurfaceOutput,
-      }),
-    [processedSurfaceOutput, stableColor],
-  )
-  suspendedRef.current = suspended
 
   const setFrameElement = useCallback(
     (element: HTMLDivElement | null) => {
@@ -308,157 +185,19 @@ export function PreviewCanvas({
     [frameRef],
   )
 
-  const commitProcessedFrameStatus = useCallback(
-    (nextStatus: PreviewFrameStatus) => {
-      const transition = derivePreviewFrameStatusTransition({
-        currentStatus: processedFrameStatusRef.current,
-        nextStatus,
-      })
-      if (!transition.shouldCommit) {
-        return
-      }
-
-      processedFrameStatusRef.current = transition.nextStatus
-      setProcessedFrameStatus(transition.nextStatus)
-    },
-    [],
-  )
-
-  const resetProcessedFrameStatus = useCallback(() => {
-    firstFrameWaitRef.current = null
-    commitProcessedFrameStatus(EMPTY_PREVIEW_FRAME_STATUS)
-  }, [commitProcessedFrameStatus])
-
   useEffect(() => {
     onCompareRenderModeChange?.(compareRenderMode.kind)
   }, [compareRenderMode.kind, onCompareRenderModeChange])
 
-  // A published or forgotten pipeline starts with no image and no frame.
-  const publishPipeline = useCallback(
-    (pipeline: RawProcessingPipeline | null) => {
-      processedUploadGenerationKeyRef.current = ''
-      resetProcessedFrameStatus()
-      if (pipeline) setError(null)
-      onPipelineChange?.(pipeline)
-    },
-    [onPipelineChange, resetProcessedFrameStatus],
-  )
-  const reportInitializationError = useCallback((err: unknown) => {
-    setError(
-      err instanceof Error ? err.message : 'GPU preview initialization failed',
-    )
-  }, [])
   // The primary pipeline keeps a failed initialization until it is torn
   // down; its own failure report moves the preview to the CPU executor.
-  const { pipelineRef, isInitialized } = usePreviewPipelineLifecycle({
+  const { pipelineRef } = usePreviewPipelineLifecycle({
     canvasRef,
     createPipeline: createProcessedPipeline,
-    publish: publishPipeline,
-    onInitializationError: reportInitializationError,
+    publish: processed.publishPipeline,
+    onInitializationError: processed.reportInitializationError,
     suspended,
   })
-
-  const syncProcessedImageUpload = useCallback(() => {
-    const pipeline = pipelineRef.current
-    if (!pipeline || !isInitialized) return false
-    if (
-      processedUploadGenerationKeyRef.current === processedImageGenerationKey
-    ) {
-      return true
-    }
-
-    const image = imageRef.current
-    const uploadInput = createRawUploadInput({
-      data: image?.data ?? null,
-      layout: image?.layout ?? null,
-      colorSpace: image?.colorSpace ?? null,
-      width: image?.width ?? 0,
-      height: image?.height ?? 0,
-      renderExposureEv: image?.renderExposure.ev ?? 0,
-    })
-    const uploaded = syncRawUploadInput({
-      pipeline,
-      imageData: image?.data ?? null,
-      uploadInput,
-      setError,
-    })
-    processedUploadGenerationKeyRef.current = uploaded
-      ? processedImageGenerationKey
-      : ''
-
-    return uploaded
-  }, [imageRef, isInitialized, pipelineRef, processedImageGenerationKey])
-
-  const renderProcessedPreview = useCallback(async () => {
-    const pipeline = pipelineRef.current
-    if (!pipeline || !isInitialized) return false
-    const request = ++processedRenderRequestRef.current
-    // Withhold frames (and supersede in-flight ones) while the selected LUT
-    // is missing from the GPU.
-    if (lutUploadFailedRef.current) return false
-    const isCurrent = () =>
-      pipelineRef.current === pipeline &&
-      !suspendedRef.current &&
-      processedRenderRequestRef.current === request &&
-      processedGenerationKeyRef.current === processedImageGenerationKey
-    try {
-      if (!syncProcessedImageUpload()) return false
-      pipeline.setParams(processedCanvasParams)
-      const stats = pipeline.render()
-      const renderedImage = imageRef.current
-      const readyFrame = processedFrameStatusRef.current
-      if (
-        readyFrame.state !== 'ready' ||
-        readyFrame.generationKey !== processedImageGenerationKey
-      ) {
-        // One completion proves the new image has rendered. Parameter edits
-        // reuse that proof; already-ready generations never stall for the GPU.
-        if (
-          firstFrameWaitRef.current?.pipeline !== pipeline ||
-          firstFrameWaitRef.current.generationKey !==
-            processedImageGenerationKey
-        ) {
-          firstFrameWaitRef.current = {
-            pipeline,
-            generationKey: processedImageGenerationKey,
-            completion: pipeline.waitForGpu(),
-          }
-        }
-        await firstFrameWaitRef.current.completion
-      }
-      if (!isCurrent()) return false
-      commitProcessedFrameStatus({
-        generationKey: processedImageGenerationKey,
-        displaySource,
-        source: renderedImage?.source ?? 'preview',
-        state: 'ready',
-      })
-      onStatsUpdate?.(stats)
-      return true
-    } catch (error) {
-      if (isCurrent()) {
-        firstFrameWaitRef.current = null
-        setError(
-          error instanceof Error ? error.message : 'Preview rendering failed',
-        )
-      }
-      return false
-    }
-  }, [
-    commitProcessedFrameStatus,
-    displaySource,
-    imageRef,
-    isInitialized,
-    onStatsUpdate,
-    pipelineRef,
-    processedCanvasParams,
-    processedImageGenerationKey,
-    syncProcessedImageUpload,
-  ])
-
-  useEffect(() => {
-    renderProcessedPreviewRef.current = renderProcessedPreview
-  }, [renderProcessedPreview])
 
   // Handle canvas resize
   useEffect(() => {
@@ -469,7 +208,7 @@ export function PreviewCanvas({
 
     if (!container || !track || !canvas || !surface) return
     if (typeof ResizeObserver === 'undefined') {
-      setTrackReady(true)
+      markTrackReady()
       return
     }
 
@@ -486,7 +225,7 @@ export function PreviewCanvas({
         track.style.height = `${fit.height}px`
         canvas.style.width = '100%'
         canvas.style.height = '100%'
-        setTrackReady(true)
+        markTrackReady()
         return backingStoreSize(fit)
       },
       onApply: () => {
@@ -494,7 +233,7 @@ export function PreviewCanvas({
         if (!pipeline) return
         pipeline.resize(canvas.width, canvas.height)
         if (imageRef.current && !shouldDelayProcessedCompareRender) {
-          renderProcessedPreviewRef.current?.()
+          redraw()
         }
       },
       applyImmediately: () => !pipelineRef.current,
@@ -504,49 +243,9 @@ export function PreviewCanvas({
     imageVersion,
     imageWidth,
     imageHeight,
+    markTrackReady,
     pipelineRef,
-    shouldDelayProcessedCompareRender,
-  ])
-
-  // Upload image data when it changes
-  useEffect(() => {
-    syncProcessedImageUpload()
-  }, [syncProcessedImageUpload])
-
-  // Upload LUT when it changes
-  useEffect(() => {
-    const pipeline = pipelineRef.current
-    if (!pipeline || !isInitialized) return
-    const lutData = lutDataRef.current
-
-    try {
-      if (lutData) {
-        pipeline.uploadLUT(lutData)
-      } else {
-        pipeline.clearLUT()
-      }
-      lutUploadFailedRef.current = false
-    } catch {
-      // The pipeline has dropped its LUT and reported the failure, which
-      // moves the preview to the CPU executor. Until then the canvas must not
-      // draw a LUT-less frame as the selected look, and the failure must not
-      // escape this passive effect and tear down the whole /raw surface.
-      lutUploadFailedRef.current = true
-    }
-  }, [lutDataRef, lutDataVersion, isInitialized, pipelineRef])
-
-  // Draw once per processed input change: image, params, or LUT. It runs
-  // after the LUT upload effect above, so a LUT-only version change renders
-  // with the new LUT. Compare mode stays in CSS/DOM space, so the processed
-  // canvas never enters the legacy single-canvas shader split path.
-  useEffect(() => {
-    if (shouldDelayProcessedCompareRender) return
-    renderProcessedPreview()
-  }, [
-    imageVersion,
-    lutDataRef,
-    lutDataVersion,
-    renderProcessedPreview,
+    redraw,
     shouldDelayProcessedCompareRender,
   ])
 
@@ -597,31 +296,10 @@ export function PreviewCanvas({
               <OriginalGpuLayer
                 imageRef={imageRef}
                 imageVersion={imageVersion}
-                generationKey={originalGpuGenerationKey}
+                generationKey={processed.originalGpuLayer.generationKey}
                 onPipelineChange={onOriginalPreviewPipelineChange}
-                onReady={(readyGenerationKey) => {
-                  if (
-                    readyGenerationKey === originalGpuGenerationKey &&
-                    shouldDelayProcessedCompareRender
-                  ) {
-                    renderProcessedPreview()
-                  }
-                  setOriginalGpuStatus({
-                    generationKey: readyGenerationKey,
-                    displaySource,
-                    state: 'ready',
-                  })
-                }}
-                onError={(_, failedGenerationKey) => {
-                  setOriginalGpuStatus({
-                    generationKey: failedGenerationKey,
-                    displaySource,
-                    state: 'failed',
-                  })
-                  if (failedGenerationKey === originalGpuGenerationKey) {
-                    onRequestOriginalReferenceFallback?.()
-                  }
-                }}
+                onReady={processed.originalGpuLayer.onReady}
+                onError={processed.originalGpuLayer.onError}
               />
             </div>
           )}

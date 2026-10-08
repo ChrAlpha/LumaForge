@@ -141,6 +141,68 @@ describe('derivePreviewCompareReadiness', () => {
   })
 })
 
+describe('derivePreviewCompareReadiness embedded camera reference', () => {
+  const quickImage = {
+    imageVersion: 1,
+    displaySource: 'quick' as const,
+    imageSource: 'quick' as const,
+    imageWidth: 800,
+    imageHeight: 600,
+    viewMode: 'processed' as const,
+    originalGpuStatus: EMPTY_ORIGINAL_GPU_FRAME_STATUS,
+  }
+
+  it('covers the stage with the embedded JPEG until the quick frame is visible', () => {
+    expect(
+      derive({
+        ...quickImage,
+        processedFrameStatus: EMPTY_PREVIEW_FRAME_STATUS,
+      }),
+    ).toMatchObject({
+      showEmbeddedPreview: false,
+      embeddedHandoffPreviewVisible: true,
+    })
+    expect(
+      derive({ ...quickImage, processedFrameStatus: quickProcessedFrame }),
+    ).toMatchObject({
+      processedPreviewVisible: true,
+      embeddedHandoffPreviewVisible: false,
+    })
+    // A frame behind a track that has not fit yet is not on screen.
+    expect(
+      derive({
+        ...quickImage,
+        trackReady: false,
+        processedFrameStatus: quickProcessedFrame,
+      }),
+    ).toMatchObject({ embeddedHandoffPreviewVisible: true })
+  })
+
+  it('shows the embedded JPEG itself before any decoded image, without a handoff', () => {
+    expect(
+      derive({
+        ...quickImage,
+        displaySource: 'embedded',
+        hasImageData: false,
+        processedFrameStatus: EMPTY_PREVIEW_FRAME_STATUS,
+      }),
+    ).toMatchObject({
+      showEmbeddedPreview: true,
+      embeddedHandoffPreviewVisible: false,
+    })
+    expect(
+      derive({
+        ...quickImage,
+        embeddedPreviewUrl: null,
+        processedFrameStatus: EMPTY_PREVIEW_FRAME_STATUS,
+      }),
+    ).toMatchObject({
+      showEmbeddedPreview: false,
+      embeddedHandoffPreviewVisible: false,
+    })
+  })
+})
+
 describe('preview generation keys', () => {
   const image = {
     imageVersion: 2,

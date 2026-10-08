@@ -2802,6 +2802,48 @@ describe('preview canvas upload descriptor', () => {
     expect(screen.queryByText('Preview unavailable')).toBeNull()
   })
 
+  it('reports a failed current draw without announcing its frame', async () => {
+    const resizeCallbacks = captureResizeObservers()
+    const onStatsUpdate = vi.fn()
+    pipelineMock.initialize.mockImplementationOnce(
+      (canvas: HTMLCanvasElement) => {
+        const instance = pipelineMock.instances.find(
+          (candidate) => candidate.canvas === canvas,
+        )
+        instance?.render.mockImplementationOnce(() => {
+          throw new Error('Device lost while drawing')
+        })
+        return Promise.resolve()
+      },
+    )
+    const { container } = render(
+      createElement(PreviewCanvas, {
+        imageRef: { current: { ...decodedImage, source: 'quick' as const } },
+        imageVersion: 1,
+        color: defaultColor,
+        viewMode: 'processed' as const,
+        lutDataRef: { current: null },
+        lutDataVersion: 0,
+        embeddedPreviewUrl: 'blob:embedded-preview',
+        displaySource: 'quick',
+        onStatsUpdate,
+      }),
+    )
+    act(() => fireResize(resizeCallbacks[0], 400, 300))
+
+    await waitFor(() =>
+      expect(screen.getByText('Device lost while drawing')).toBeTruthy(),
+    )
+    const pipeline = pipelineMock.instances[0]!
+    expect(pipeline.render).toHaveBeenCalled()
+    expect(pipeline.waitForGpu).not.toHaveBeenCalled()
+    expect(onStatsUpdate).not.toHaveBeenCalled()
+    expect(
+      container.querySelector('[data-raw-preview-handoff-preview]'),
+    ).toHaveAttribute('src', 'blob:embedded-preview')
+    expect(pipeline.disposeMock).not.toHaveBeenCalled()
+  })
+
   it('withholds readiness from in-flight frames once the selected LUT fails to upload', async () => {
     const firstFrame = deferred<void>()
     pipelineMock.waitForGpu.mockReturnValue(firstFrame.promise)
