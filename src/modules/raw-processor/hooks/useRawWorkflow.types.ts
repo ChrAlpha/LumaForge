@@ -10,6 +10,7 @@ import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { RefObject } from 'react'
 
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
@@ -68,6 +69,12 @@ export interface UseRawWorkflowReturn {
   loadedImage: { file: File | null; metadata: ImageMetadata | null }
   decodedImageRef: RefObject<DecodedImage | null>
   decodedImageVersion: number
+  /**
+   * The accepted descriptor of the frame `decodedImageRef` holds, minted once
+   * when the frame was accepted; null while no decoded frame is live
+   * (before a decode, after release, and while the preview is evacuated).
+   */
+  decodedFrame: DecodedPreviewFrame | null
   status: ProcessingStatus
   error: string | null
   progress: number

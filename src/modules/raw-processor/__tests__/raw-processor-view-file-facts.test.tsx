@@ -118,6 +118,18 @@ function createLoadedProcessorState(
       },
     },
     decodedImageVersion: 1,
+    decodedFrame: {
+      sessionId: 'session-file-facts',
+      frameId: 'decoded-frame-1',
+      stage: 'bounded-hq',
+      width: 4000,
+      height: 2666,
+      exposure: {
+        kind: 'unpinned',
+        value: { ev: 0, multiplier: 1, source: 'identity' },
+      },
+      quickPredecessorFrameId: null,
+    },
     status: 'ready',
     error: null,
     progress: 100,

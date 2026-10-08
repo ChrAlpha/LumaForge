@@ -184,6 +184,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const { params } = lookStage
   viewRef.current = compareStage.view
   const {
+    decodedFrame,
     histogram,
     clearSessionEmbeddedPreviewUrl,
     revokeCurrentEmbeddedPreviewUrl,
@@ -217,6 +218,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     toast,
   })
   const previewStage = {
+    decodedFrame,
     histogram,
     restorePreviewAfterExport,
     setOriginalPreviewPipeline,

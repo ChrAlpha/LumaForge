@@ -51,6 +51,11 @@ type UseRawPreviewStageInput = {
   }
 }
 
+/** A frame belongs to the session the store holds when it is accepted. */
+function getCurrentSessionId(): string | null {
+  return getCurrentSession()?.id ?? null
+}
+
 export function useRawPreviewStage({
   session,
   pendingLoadSessionIdRef,
@@ -92,23 +97,25 @@ export function useRawPreviewStage({
     resourceRegistryRef,
     pipelineRef,
   })
+  const { setDecodedImageRef, decodedFrame } = useDecodedPreviewResource({
+    decodedImageRef,
+    rawRenderExposureRef,
+    resourceRegistryRef,
+    setDecodedImageVersion,
+    invalidateExportGraph,
+    getSessionId: getCurrentSessionId,
+  })
   const histogramEnabled = useAtomValue(previewHistogramEnabledAtom)
   const histogram = usePreviewHistogram({
     enabled: histogramEnabled,
     imageRef: decodedImageRef,
     imageVersion: decodedImageVersion,
     imageIdentity: session?.id ?? pendingLoadSessionIdRef.current ?? undefined,
+    frame: decodedFrame,
     params,
     lutDataRef,
     lutDataVersion,
     displaySource,
-  })
-  const { setDecodedImageRef } = useDecodedPreviewResource({
-    decodedImageRef,
-    rawRenderExposureRef,
-    resourceRegistryRef,
-    setDecodedImageVersion,
-    invalidateExportGraph,
   })
   const { restorePreviewAfterExport } = useRestorePreviewAfterExport({
     getSession: getCurrentSession,
@@ -126,6 +133,11 @@ export function useRawPreviewStage({
   })
 
   return {
+    /**
+     * The accepted descriptor of the live decoded frame, the object the
+     * histogram receives; null while no decoded frame is live.
+     */
+    decodedFrame,
     histogram,
     clearSessionEmbeddedPreviewUrl,
     revokeCurrentEmbeddedPreviewUrl,

@@ -2,6 +2,10 @@ import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createResourceRegistry } from '~/lib/export/resource-registry'
+import {
+  isEligibleQuickPredecessor,
+  isSameDecodedPreviewFrame,
+} from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import { useDecodedPreviewResource } from './useDecodedPreviewResource'
@@ -10,10 +14,11 @@ function createDecodedImage(
   ev: number,
   data = new Float32Array(4),
   source: DecodedImage['source'] = 'bounded-hq',
+  size = { width: 1, height: 1 },
 ): DecodedImage {
   return {
-    width: 1,
-    height: 1,
+    width: size.width,
+    height: size.height,
     channels: 4,
     bitsPerChannel: 32,
     data,
@@ -47,6 +52,7 @@ describe('useDecodedPreviewResource', () => {
           version = typeof updater === 'function' ? updater(version) : updater
         },
         invalidateExportGraph: vi.fn(),
+        getSessionId: () => 'session-a',
       }),
     )
 
@@ -77,13 +83,15 @@ describe('useDecodedPreviewResource', () => {
       current: null as DecodedImage['renderExposure'] | null,
     }
     const invalidateExportGraph = vi.fn()
-    const { result } = renderHook(() =>
+    const sessionIdRef = { current: 'session-a' as string | null }
+    const { result, rerender } = renderHook(() =>
       useDecodedPreviewResource({
         decodedImageRef,
         rawRenderExposureRef,
         resourceRegistryRef: { current: registry },
         setDecodedImageVersion: vi.fn(),
         invalidateExportGraph,
+        getSessionId: () => sessionIdRef.current,
       }),
     )
 
@@ -92,7 +100,13 @@ describe('useDecodedPreviewResource', () => {
       decodedImageRef,
       rawRenderExposureRef,
       invalidateExportGraph,
+      sessionIdRef,
       setDecodedImageRef: result.current.setDecodedImageRef,
+      /** The descriptor the hook publishes on its next render. */
+      readFrame: () => {
+        rerender()
+        return result.current.decodedFrame
+      },
     }
   }
 
@@ -179,5 +193,217 @@ describe('useDecodedPreviewResource', () => {
     setDecodedImageRef(null)
     expect(rawRenderExposureRef.current).toBeNull()
     expect(invalidateExportGraph).toHaveBeenCalledTimes(2)
+  })
+
+  describe('accepted frame descriptors', () => {
+    it('mints one frozen descriptor per accepted frame after the exposure pin', () => {
+      const { setDecodedImageRef, readFrame } = renderResource()
+      expect(readFrame()).toBeNull()
+
+      const quick = createDecodedImage(0.5, undefined, 'quick', {
+        width: 160,
+        height: 100,
+      })
+      setDecodedImageRef(quick)
+      const frame = readFrame()
+
+      expect(frame).toEqual({
+        sessionId: 'session-a',
+        frameId: expect.any(String),
+        stage: 'quick',
+        width: 160,
+        height: 100,
+        exposure: { kind: 'source-pin', value: quick.renderExposure },
+        quickPredecessorFrameId: null,
+      })
+      expect(Object.isFrozen(frame)).toBe(true)
+      expect(Object.isFrozen(frame?.exposure)).toBe(true)
+      expect(Object.isFrozen(frame?.exposure.value)).toBe(true)
+      // Renders without a new acceptance publish the same object.
+      expect(readFrame()).toBe(frame)
+    })
+
+    it('records the pin, not the frame estimate, on a bounded HQ frame', () => {
+      const { setDecodedImageRef, readFrame } = renderResource()
+      const quick = createDecodedImage(0.5, undefined, 'quick')
+      setDecodedImageRef(quick)
+      setDecodedImageRef(createDecodedImage(1.5))
+
+      expect(readFrame()?.exposure).toEqual({
+        kind: 'source-pin',
+        value: quick.renderExposure,
+      })
+    })
+
+    it('keeps an unpinned frame on its own estimate', () => {
+      const { setDecodedImageRef, readFrame } = renderResource()
+      const boundedHq = createDecodedImage(1.5)
+      setDecodedImageRef(boundedHq)
+
+      expect(readFrame()?.exposure).toEqual({
+        kind: 'unpinned',
+        value: boundedHq.renderExposure,
+      })
+    })
+
+    it('tells same-sized frames of two sources apart', () => {
+      const { setDecodedImageRef, readFrame, sessionIdRef } = renderResource()
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      const first = readFrame()
+
+      setDecodedImageRef(null)
+      sessionIdRef.current = 'session-b'
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      const second = readFrame()
+
+      expect(second?.sessionId).toBe('session-b')
+      expect(second?.width).toBe(first?.width)
+      expect(second?.frameId).not.toBe(first?.frameId)
+      expect(isSameDecodedPreviewFrame(first, second)).toBe(false)
+    })
+
+    it('gives a repeated decode of one source a new identity', () => {
+      const { setDecodedImageRef, readFrame } = renderResource()
+      // Each decode returns its own frame, however alike the pixels are.
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      const first = readFrame()
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      const second = readFrame()
+
+      expect(second?.sessionId).toBe(first?.sessionId)
+      expect(isSameDecodedPreviewFrame(first, second)).toBe(false)
+    })
+
+    it('names the live quick frame as the bounded HQ predecessor only', () => {
+      const { setDecodedImageRef, readFrame } = renderResource()
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      const quick = readFrame()
+      setDecodedImageRef(createDecodedImage(0))
+      const boundedHq = readFrame()
+
+      expect(boundedHq?.stage).toBe('bounded-hq')
+      expect(boundedHq?.quickPredecessorFrameId).toBe(quick?.frameId)
+      expect(isEligibleQuickPredecessor(quick, boundedHq)).toBe(true)
+
+      // A second bounded HQ frame replaces a bounded HQ frame, not a quick.
+      setDecodedImageRef(createDecodedImage(0))
+      expect(readFrame()?.quickPredecessorFrameId).toBeNull()
+
+      // A quick frame never names a predecessor.
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      const nextQuick = readFrame()
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      expect(readFrame()?.quickPredecessorFrameId).toBeNull()
+      expect(nextQuick?.quickPredecessorFrameId).toBeNull()
+    })
+
+    it('does not guess a stage the decoder did not name', () => {
+      const { setDecodedImageRef, readFrame, rawRenderExposureRef } =
+        renderResource()
+      const unnamed = createDecodedImage(0.5, undefined, undefined)
+      delete unnamed.source
+      setDecodedImageRef(unnamed)
+      const unknown = readFrame()
+
+      expect(unknown?.stage).toBe('unknown')
+      expect(unknown?.exposure.kind).toBe('unpinned')
+      expect(rawRenderExposureRef.current).toBeNull()
+
+      setDecodedImageRef(createDecodedImage(0))
+      expect(readFrame()?.quickPredecessorFrameId).toBeNull()
+
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      setDecodedImageRef(unnamed)
+      expect(readFrame()?.quickPredecessorFrameId).toBeNull()
+    })
+
+    it('ends source lineage when the source is released', () => {
+      const { setDecodedImageRef, readFrame } = renderResource()
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      setDecodedImageRef(null)
+      expect(readFrame()).toBeNull()
+
+      setDecodedImageRef(createDecodedImage(0))
+      expect(readFrame()?.quickPredecessorFrameId).toBeNull()
+    })
+
+    it('never links frames of different sessions', () => {
+      const { setDecodedImageRef, readFrame, sessionIdRef } = renderResource()
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      sessionIdRef.current = 'session-b'
+      setDecodedImageRef(createDecodedImage(0))
+
+      expect(readFrame()?.quickPredecessorFrameId).toBeNull()
+    })
+
+    it('mints nothing for a frame accepted without a source session', () => {
+      const { setDecodedImageRef, readFrame, sessionIdRef, decodedImageRef } =
+        renderResource()
+      sessionIdRef.current = null
+      const decoded = createDecodedImage(0, undefined, 'quick')
+      setDecodedImageRef(decoded)
+
+      expect(decodedImageRef.current).toBe(decoded)
+      expect(readFrame()).toBeNull()
+    })
+
+    it('keeps the live descriptor when a replaced frame is disposed late', async () => {
+      const { registry, setDecodedImageRef, readFrame } = renderResource()
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      setDecodedImageRef(createDecodedImage(0))
+      const live = readFrame()
+      // The replaced frame's resource is already released; draining the
+      // registry again reaches only the live frame's.
+      await Promise.resolve()
+
+      expect(readFrame()).toBe(live)
+      await registry.disposeOwners(['preview'])
+      expect(readFrame()).toBeNull()
+    })
+
+    it('clears the descriptor with evacuated pixels and keeps the pin', async () => {
+      const {
+        registry,
+        setDecodedImageRef,
+        readFrame,
+        rawRenderExposureRef,
+        invalidateExportGraph,
+      } = renderResource()
+      const quick = createDecodedImage(0.25, undefined, 'quick')
+      setDecodedImageRef(quick)
+      const accepted = readFrame()
+
+      await registry.disposeOwners(['preview'])
+
+      expect(readFrame()).toBeNull()
+      expect(rawRenderExposureRef.current).toEqual(quick.renderExposure)
+
+      // Restore decodes the source again: a fresh identity on the same pin,
+      // with no predecessor because the evacuated frame is gone.
+      setDecodedImageRef(createDecodedImage(0.25, undefined, 'quick'), {
+        preserveExportResult: true,
+      })
+      const restored = readFrame()
+
+      expect(restored?.sessionId).toBe(accepted?.sessionId)
+      expect(restored?.frameId).not.toBe(accepted?.frameId)
+      expect(restored?.exposure).toEqual({
+        kind: 'source-pin',
+        value: quick.renderExposure,
+      })
+      expect(restored?.quickPredecessorFrameId).toBeNull()
+      expect(invalidateExportGraph).toHaveBeenCalledTimes(1)
+    })
+
+    it('publishes nothing for a frame released outside the resource', () => {
+      const { setDecodedImageRef, readFrame, decodedImageRef } =
+        renderResource()
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      decodedImageRef.current = null
+
+      expect(readFrame()).toBeNull()
+      setDecodedImageRef(createDecodedImage(0))
+      expect(readFrame()?.quickPredecessorFrameId).toBeNull()
+    })
   })
 })

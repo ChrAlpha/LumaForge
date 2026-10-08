@@ -17,7 +17,15 @@ import {
   getCurrentSession,
   setCurrentSession,
 } from '../../../state/session.atoms'
+import { usePreviewHistogram } from '../../usePreviewHistogram'
 import { useRawPreviewStage } from './useRawPreviewStage'
+
+// The real histogram hook runs; the wrapper only records what it receives.
+vi.mock('../../usePreviewHistogram', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../usePreviewHistogram')>()
+  return { ...actual, usePreviewHistogram: vi.fn(actual.usePreviewHistogram) }
+})
 
 const params: ColorGraphIntent = {
   ...NEUTRAL_USER_COLOR_INTENT,
@@ -149,6 +157,40 @@ describe('useRawPreviewStage', () => {
     expect(beginRuntimeSession).not.toHaveBeenCalled()
   })
 
+  it('publishes the accepted descriptor to the workflow and the histogram as one object', () => {
+    setCurrentSession(createSession('session-accepted'))
+    const decodedImageRef = { current: null as DecodedImage | null }
+    const { result, rerender } = renderStage({ decodedImageRef })
+    expect(result.current.decodedFrame).toBeNull()
+
+    act(() => {
+      result.current.setDecodedImageRef(
+        createDecodedImage({
+          ev: 0.5,
+          multiplier: 2 ** 0.5,
+          source: 'identity',
+        }),
+      )
+    })
+    rerender()
+
+    const frame = result.current.decodedFrame
+    expect(frame).toMatchObject({
+      sessionId: 'session-accepted',
+      stage: 'quick',
+      width: 64,
+      height: 48,
+    })
+    expect(vi.mocked(usePreviewHistogram).mock.lastCall?.[0].frame).toBe(frame)
+
+    act(() => {
+      result.current.setDecodedImageRef(null)
+    })
+    rerender()
+    expect(result.current.decodedFrame).toBeNull()
+    expect(vi.mocked(usePreviewHistogram).mock.lastCall?.[0].frame).toBeNull()
+  })
+
   it('restores the source in the store, with its 0 EV pin, and keeps the delivered result', async () => {
     const rendered = createSession('session-rendered')
     const replacementFile = new File(['raw'], 'replacement.dng')
@@ -175,7 +217,7 @@ describe('useRawPreviewStage', () => {
     )
     const slot = createRawRuntimeSessionLeases(open)
     const invalidateExportGraph = vi.fn()
-    const { result } = renderStage({
+    const { result, rerender } = renderStage({
       session: rendered,
       rawRenderExposureRef: { current: pinnedExposure },
       beginRuntimeSession: slot.begin,
@@ -200,6 +242,14 @@ describe('useRawPreviewStage', () => {
     expect(getCurrentSession()?.previewBundle.displaySource).toBe('quick')
     expect(getCurrentSession()?.exportState.status).toBe('ready')
     expect(invalidateExportGraph).not.toHaveBeenCalled()
+    // The restored frame is a fresh acceptance of the source in the store.
+    rerender()
+    expect(result.current.decodedFrame).toMatchObject({
+      sessionId: 'session-replacement',
+      stage: 'quick',
+      exposure: { kind: 'source-pin', value: pinnedExposure },
+      quickPredecessorFrameId: null,
+    })
   })
 
   it('revokes and clears the embedded URL of the source in the store only', () => {

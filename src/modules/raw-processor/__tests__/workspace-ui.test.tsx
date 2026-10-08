@@ -163,6 +163,7 @@ function rawProcessorViewState(
     loadedImage: { file: null, metadata: null },
     decodedImageRef: { current: null },
     decodedImageVersion: 0,
+    decodedFrame: null,
     status: 'idle',
     error: null,
     progress: 0,

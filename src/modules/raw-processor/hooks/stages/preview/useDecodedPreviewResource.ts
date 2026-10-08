@@ -6,6 +6,10 @@ import type {
   ResourceRegistry,
   TrackedLargeResource,
 } from '~/lib/export/resource-registry'
+import type {
+  DecodedPreviewFrame,
+  DecodedPreviewFrameExposure,
+} from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import { hasSameRawRenderExposure } from '../../../services/export/export-state'
@@ -16,6 +20,17 @@ type UseDecodedPreviewResourceInput = {
   resourceRegistryRef: MutableRefObject<ResourceRegistry | null>
   setDecodedImageVersion: Dispatch<SetStateAction<number>>
   invalidateExportGraph: () => void
+  /**
+   * The source session a frame belongs to, read when the frame is accepted.
+   * A frame accepted without one gets no descriptor.
+   */
+  getSessionId: () => string | null
+}
+
+/** A descriptor together with the pixels it names. */
+type AcceptedDecodedFrame = {
+  readonly image: DecodedImage
+  readonly descriptor: DecodedPreviewFrame
 }
 
 /**
@@ -51,15 +66,83 @@ function withSourceExposure(
   return { ...decoded, renderExposure: { ...sourceExposure } }
 }
 
+function describeExposure(
+  stored: DecodedImage,
+  sourceExposure: RawRenderExposure | null,
+): DecodedPreviewFrameExposure {
+  return Object.freeze(
+    sourceExposure
+      ? {
+          kind: 'source-pin' as const,
+          value: Object.freeze({ ...sourceExposure }),
+        }
+      : {
+          kind: 'unpinned' as const,
+          value: Object.freeze({ ...stored.renderExposure }),
+        },
+  )
+}
+
+/**
+ * Describes a frame as it is accepted, after it carries the source pin. A
+ * frame whose decoder named no stage is `unknown`, never taken for a quick
+ * frame. Only a bounded-HQ frame replacing the live quick frame of the same
+ * session names a predecessor.
+ */
+function describeAcceptedFrame({
+  stored,
+  sessionId,
+  frameId,
+  sourceExposure,
+  live,
+}: {
+  stored: DecodedImage
+  sessionId: string
+  frameId: string
+  sourceExposure: RawRenderExposure | null
+  live: DecodedPreviewFrame | null
+}): DecodedPreviewFrame {
+  const stage = stored.source ?? 'unknown'
+  const quickPredecessorFrameId =
+    stage === 'bounded-hq' &&
+    live?.stage === 'quick' &&
+    live.sessionId === sessionId
+      ? live.frameId
+      : null
+
+  return Object.freeze({
+    sessionId,
+    frameId,
+    stage,
+    width: stored.width,
+    height: stored.height,
+    exposure: describeExposure(stored, sourceExposure),
+    quickPredecessorFrameId,
+  })
+}
+
 export function useDecodedPreviewResource({
   decodedImageRef,
   rawRenderExposureRef,
   resourceRegistryRef,
   setDecodedImageVersion,
   invalidateExportGraph,
+  getSessionId,
 }: UseDecodedPreviewResourceInput) {
   const decodedPreviewResourceIdRef = useRef(0)
   const decodedPreviewResourceRef = useRef<TrackedLargeResource | null>(null)
+  const decodedFrameSequenceRef = useRef(0)
+  const acceptedFrameRef = useRef<AcceptedDecodedFrame | null>(null)
+
+  // A descriptor names pixels only while they are the live frame: released
+  // or evacuated pixels take their descriptor with them, whoever released
+  // them.
+  const readLiveDecodedFrame = useCallback((): DecodedPreviewFrame | null => {
+    const accepted = acceptedFrameRef.current
+    return accepted && accepted.image === decodedImageRef.current
+      ? accepted.descriptor
+      : null
+  }, [decodedImageRef])
 
   const registerDecodedPreviewForEvacuation = useCallback(
     (decoded: DecodedImage | null) => {
@@ -84,8 +167,12 @@ export function useDecodedPreviewResource({
           if (decodedPreviewResourceRef.current === tracked) {
             decodedPreviewResourceRef.current = null
           }
-          // Evacuation frees the pixels only; the source exposure pin stays
-          // so a restored frame and the export keep rendering with it.
+          // Evacuation frees the pixels and their descriptor only; the
+          // source exposure pin stays so a restored frame and the export keep
+          // rendering with it.
+          if (acceptedFrameRef.current?.image === decoded) {
+            acceptedFrameRef.current = null
+          }
           if (decodedImageRef.current === decoded) {
             decodedImageRef.current = null
             setDecodedImageVersion((version) => version + 1)
@@ -105,6 +192,22 @@ export function useDecodedPreviewResource({
       const currentExposure = rawRenderExposureRef.current
       const nextExposure = resolveSourceExposure(currentExposure, nextDecoded)
       const stored = withSourceExposure(nextDecoded, nextExposure)
+      const sessionId = stored ? getSessionId() : null
+      // Accepting a frame is the one place a frame identity is minted; a
+      // released source (a null frame) ends its lineage.
+      acceptedFrameRef.current =
+        stored && sessionId
+          ? {
+              image: stored,
+              descriptor: describeAcceptedFrame({
+                stored,
+                sessionId,
+                frameId: `decoded-frame-${++decodedFrameSequenceRef.current}`,
+                sourceExposure: nextExposure,
+                live: readLiveDecodedFrame(),
+              }),
+            }
+          : null
       decodedImageRef.current = stored
       rawRenderExposureRef.current = nextExposure
       registerDecodedPreviewForEvacuation(stored)
@@ -119,12 +222,17 @@ export function useDecodedPreviewResource({
     },
     [
       decodedImageRef,
+      getSessionId,
       invalidateExportGraph,
       rawRenderExposureRef,
+      readLiveDecodedFrame,
       registerDecodedPreviewForEvacuation,
       setDecodedImageVersion,
     ],
   )
 
-  return { setDecodedImageRef }
+  // Every accepted or released frame bumps the decoded image version, which
+  // rerenders this hook's owner, so the descriptor read here is the one the
+  // live pixels carry.
+  return { setDecodedImageRef, decodedFrame: readLiveDecodedFrame() }
 }

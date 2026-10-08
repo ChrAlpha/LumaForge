@@ -44,7 +44,10 @@ type BuildRawWorkflowReturnInput = {
   lookStage: ReturnType<typeof useRawLookStage>
   previewStage: Pick<
     ReturnType<typeof useRawPreviewStage>,
-    'histogram' | 'restorePreviewAfterExport' | 'setOriginalPreviewPipeline'
+    | 'decodedFrame'
+    | 'histogram'
+    | 'restorePreviewAfterExport'
+    | 'setOriginalPreviewPipeline'
   >
   ingestStage: Pick<ReturnType<typeof useRawIngestStage>, 'loadFile' | 'reset'>
   exportStage: ReturnType<typeof useRawExportStage>
@@ -78,6 +81,7 @@ export function buildRawWorkflowReturn({
     },
     decodedImageRef: refs.decodedImageRef,
     decodedImageVersion,
+    decodedFrame: previewStage.decodedFrame,
     status: workflowState.status,
     error: workflowState.error,
     progress: workflowState.progress,
