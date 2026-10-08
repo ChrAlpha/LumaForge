@@ -190,6 +190,15 @@ wrote (`lmfg_image_read` for previews, candidates, and contact sheets;
 
 All writes are atomic (temp file + rename).
 
+The package entry exports this layout as a contract for hosts that read the
+workspace (the MCP server does): `resolveWorkspaceRoot`,
+`DEFAULT_WORKSPACE_DIRNAME`, `workspacePaths`, `toFileUri`, the portable
+path-segment rule (`isPortablePathSegment`, `assertPortablePathSegment`) that
+every session, iteration, candidate, preview, and export identifier must
+pass, and the record schemas for `session.json` (`SessionRecordSchema`),
+iteration `plan.json` (`IterationRecordSchema`), and contact-sheet maps
+(`ContactSheetMapSchema`).
+
 ## Manifests and reproducibility
 
 Every preview, candidate, and export writes a `RenderManifest` v1 sealed with
@@ -264,4 +273,7 @@ that records a geometry is refused (exit 2).
    then `@lumaforge/lmfg-cli`, then `@lumaforge/lmfg-mcp` (it depends on
    both). The `Publish` workflow (`.github/workflows/publish.yml`) publishes in
    that order and defaults to a dry run. The runtime packages and
-   `@lumaforge/luma-native-artifacts` are already published.
+   `@lumaforge/luma-native-artifacts` are published separately, and the
+   versions this CLI depends on must be on the registry first: publish any
+   version a dependency's `CHANGELOG.md` still lists as unreleased, with
+   `@lumaforge/luma-native-artifacts` before `@lumaforge/luma-raw-runtime`.

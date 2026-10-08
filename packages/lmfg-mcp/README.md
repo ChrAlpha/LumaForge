@@ -68,6 +68,34 @@ workspace that earlier tools wrote, verify them, and return
 They view pixels that already exist: neither renders new RAW pixels nor
 enlarges a preview.
 
+### What they verify
+
+Both tools read the workspace through the layout and record schemas
+`@lumaforge/lmfg-cli` exports, so they accept the records the CLI itself
+accepts and nothing looser:
+
+- `session.json`, an iteration `plan.json`, and a contact-sheet map must pass
+  the CLI's `SessionRecordSchema`, `IterationRecordSchema`, and
+  `ContactSheetMapSchema` in full, plan params included (`lmfg.params.v1`),
+  and every identifier they name, like every identifier in a request, must be
+  a single portable path segment.
+- Every manifest must pass the render-engine `parseRenderManifest`:
+  `manifest_sha256` over the whole file, then the complete `RenderManifest`
+  v1 structure.
+- `lmfg_export_detail` opens `exports/<export_name>.jpg` and its manifest,
+  requires a full-resolution export (kind `export`, policy `export-full`),
+  and accepts the recorded output dimensions only when they are the size the
+  export delivers: the decoded source frame, or, for a manifest that records
+  a Transform geometry, the frame the render-engine export planner derives
+  from that source, which the recorded geometry output must also state.
+
+Compatibility: earlier development builds of this server checked only the
+fields each tool read, and `lmfg_export_detail` refused any export whose
+output size differed from the decoded source frame. A record or manifest the
+CLI would refuse is now refused here too (`image.refused`,
+`export_detail.refused`), and an export whose recorded geometry changes the
+frame size opens once its dimensions agree with that plan.
+
 ## Development
 
 ```bash

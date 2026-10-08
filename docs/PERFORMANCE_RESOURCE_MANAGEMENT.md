@@ -11,7 +11,9 @@ verification time. The source and test paths below were refreshed on
 2026-10-05, after the policy and preview-plan modules moved into
 `@lumaforge/render-engine`, and again on 2026-10-06, after browser plan
 selection moved into `src/lib/export/export-plan.ts` and export interruption
-history moved to source-scoped markers.
+history moved to source-scoped markers, and on 2026-10-08, after RAW decode
+work moved behind one runtime host per workflow and the processed-window
+export lifecycle moved into `@lumaforge/render-engine`.
 
 Primary implementation sources:
 
@@ -26,6 +28,8 @@ Primary implementation sources:
 - `src/modules/raw-processor/services/export/export-evacuation.ts`
 - `src/modules/raw-processor/services/export/export-interruption.ts`
 - `src/lib/raw/luma-runtime-adapter.ts`
+- `src/lib/raw/raw-runtime-host.ts`
+- `packages/render-engine/src/export/processed-window-export.ts`
 
 External API facts checked during the 2026-06-01 refresh:
 
@@ -447,8 +451,9 @@ The evacuation sequence is:
 ```text
 user starts full-resolution export
 -> freeze export graph, source facts, current params, LUT contract, and policy
--> abort in-flight preview and bounded-HQ work
--> dispose active preview RAW runtime session
+-> cancel the preview's RAW session lease on the runtime host, which aborts
+   in-flight preview and bounded-HQ work and disposes the RAW session once
+-> end the preview's RAW decode worker generation
 -> dispose WebGPU preview pipeline and textures
 -> release bounded-HQ decoded buffer
 -> release previous export Blob/object URLs
@@ -457,15 +462,48 @@ user starts full-resolution export
 -> start full-resolution export worker with the selected plan
 ```
 
-Export completion may restore preview best-effort from the current session file.
-The restored preview keeps the source's RAW render exposure, which the first
-quick frame pinned and the export also used. Failure to restore bounded HQ
-preview must not invalidate a completed export.
+The export keeps its own abort controller, so neither the lease cancel nor the
+decode worker shutdown can cancel the export itself.
+
+Inside the export worker (and in `lmfg` export), the engine's
+`runProcessedWindowExportLifecycle` brackets the processed-window export with
+the RAW session's begin and end hooks. End runs only after a successful begin;
+an end failure rejects an otherwise successful export, and never replaces the
+export's own failure.
+
+Export completion may restore preview best-effort from the current session file,
+through a new session lease on the same runtime host. The restored preview keeps
+the source's RAW render exposure, which the first quick frame pinned and the
+export also used. Failure to restore bounded HQ preview must not invalidate a
+completed export.
 
 On resource-looking export failure, retry uses a fresh worker/runtime context and
 a lower policy. WebAssembly memory is effectively grow-only for this product, so
 retrying in the same grown worker after memory pressure is not accepted as a
 compatibility strategy.
+
+## RAW Runtime Generations
+
+The `/raw` workflow owns one RAW runtime host
+(`src/lib/raw/raw-runtime-host.ts`). The host owns the decode bridge and at
+most one source session lease at a time; beginning a lease cancels the one
+before it, and every lease disposes its session exactly once.
+
+```text
+lease released after its work settled:
+  dispose the session; keep the warm runtime for the next lease
+lease cancelled while warming, opening, or holding a source:
+  abort its work, dispose the session, and end the runtime generation
+  (terminate the decode worker, settle its pending requests as cancelled,
+  start the next request on a fresh bridge)
+host disposed:
+  cancel the lease, end the generation, and forget the prewarm history
+```
+
+Native decode work in flight cannot be interrupted, so ending its generation is
+what keeps a superseded load from running ahead of the next one and holding
+its memory. Readiness observers subscribe to the host's lifecycle snapshot;
+observing never retains the runtime or delays its idle termination.
 
 ## What Must Not Change Accidentally
 
@@ -511,6 +549,8 @@ Export lifecycle and resource tests:
 - `src/modules/raw-processor/hooks/stages/export/useExportResourceManagement.test.tsx`
 - `src/modules/raw-processor/services/export/export-interruption.test.ts`
 - `src/modules/raw-processor/services/export/export-recovery.test.ts`
+- `src/lib/raw/raw-runtime-host.test.ts`
+- `packages/render-engine/src/export/processed-window-export.test.ts`
 - `tests/browser/raw-export-lifecycle-resources.spec.ts`
 - `tests/browser/raw-ios-safe-export.spec.ts`
 - `tests/browser/raw-hq-preview-export.spec.ts`

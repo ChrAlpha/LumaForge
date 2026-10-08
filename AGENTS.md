@@ -142,8 +142,15 @@ image-editor assumptions.
   checkpoint store or export journal. The export algorithm and its
   fail-closed gates live in `packages/render-engine/src/export`.
 - `src/lib/workers` holds the idle-terminating worker bridges for RAW decode
-  and export.
+  and export; each bridge reports generation-scoped lifecycle snapshots.
 - `src/lib/raw` adapts the app to `@lumaforge/luma-raw-runtime`.
+  `src/lib/raw/raw-runtime-host.ts` is the workflow's one RAW runtime host,
+  created in `src/modules/raw-processor/hooks/useRawWorkflowRefs.ts`. It owns
+  the decode bridge, the prewarm history that runtime readiness subscribes
+  to, and at most one source session lease at a time. Ingest, preview restore
+  after export, and export evacuation go through it; cancelling or
+  superseding a lease ends the runtime generation its native work runs on, so
+  that work cannot run ahead of the next load.
 - `src/lib/runtime` detects browser facts: the capability vector, export
   storage (OPFS) resources, and preview GPU facts, plus the per-source preview
   GPU budget derived from them (`src/lib/runtime/preview-gpu-budget.ts`).
@@ -168,7 +175,15 @@ image-editor assumptions.
   - `packages/render-engine/src/export`: the authoritative full-resolution
     JPEG export (`runFullResolutionJpegExport` and its fail-closed gates),
     strip scheduling, JPEG row writers, sinks and metadata, and export
-    geometry.
+    geometry. `assessProcessedExport` decides whether a probed source can
+    feed the processed-window export (the app, `lmfg` export, and
+    `lmfg inspect` apply it), and `runProcessedWindowExportLifecycle` is the
+    begin/end bracket the app's export worker and `lmfg` export share.
+  - `packages/render-engine/src/geometry`: the
+    `@lumaforge/render-engine/geometry` subpath, the pure 3x3 projective
+    kernel export geometry runs (`applyMatrix`, `invertMatrix`, `isMatrix3`,
+    `Matrix3`, `Point`). It imports no RAW, JPEG, or color runtime; the app's
+    Transform imports its matrix math from here.
   - `packages/render-engine/src/preview`: the CPU preview renderer, the
     quick/bounded-HQ preview plan, the preview color plan
     (`resolvePreviewColorPlan`: what each preview executor draws for the
@@ -177,8 +192,10 @@ image-editor assumptions.
   - `packages/render-engine/src/policy`: export and interactive policy
     decisions and resource budgets.
   - `packages/render-engine/src/manifest`: `RenderManifest` types,
-    canonical-JSON `manifest_sha256`, source and LUT identity, and the color
-    graph descriptor.
+    canonical-JSON `manifest_sha256`, source and LUT identity, the color
+    graph descriptor, and `parseRenderManifest` (the hash over the whole
+    file, then the full v1 structure), which `lmfg` and `lmfg-mcp` read
+    manifests through.
 - `packages/luma-raw-runtime` is the browser RAW metadata/decode/runtime
   boundary, including worker protocol, native artifacts, processed-window facts,
   the deprecated HDR analysis, fixtures, benchmarks, and native verification.
@@ -192,7 +209,12 @@ image-editor assumptions.
   manifests), `packages/lmfg-cli/src/commands/` are thin protocol adapters, and
   `packages/lmfg-cli/src/protocol/` owns the JSON/NDJSON envelope and spec exit
   codes. The browser bridge tier is not shipped; keep `capabilities` honest
-  about it. The CLI params have no geometry, so it cannot apply Transform.
+  about it. The CLI params have no geometry, so `lmfg` cannot author a
+  Transform; `render replay` reapplies the validated geometry a
+  full-resolution export manifest records (see Retained And Scheduled
+  Slices). The package entry exports the workspace layout
+  (`packages/lmfg-cli/src/workspace/paths.ts`) and the stored record schemas
+  (`packages/lmfg-cli/src/schemas/results.ts`).
 - `packages/lmfg-mcp` is the `lmfg-mcp` stdio MCP server. The tools declared in
   `packages/lmfg-mcp/src/tools.ts` map one-to-one to `lmfg` commands: each runs
   the CLI in-process and returns its envelope unchanged. Two tools are
@@ -200,8 +222,10 @@ image-editor assumptions.
   command: `lmfg_image_read` (`packages/lmfg-mcp/src/image.ts`: view a session
   preview, candidate, or contact sheet) and `lmfg_export_detail`
   (`packages/lmfg-mcp/src/export-detail-tool.ts`: a verified 1:1 PNG region of
-  a full-resolution `lmfg` export). `pnpm cli:build` builds it and
-  `pnpm test:cli` runs its tests.
+  a full-resolution `lmfg` export). Both read the workspace through the CLI's
+  exported layout and record schemas, and manifests through
+  `parseRenderManifest`. `pnpm cli:build` builds it and `pnpm test:cli` runs
+  its tests.
 
 ## Canonical Owners
 
@@ -263,6 +287,22 @@ variant:
 - Browser export plan: `selectExportPlan` in `src/lib/export/export-plan.ts`
   is the one entry from the export request, device facts, and interruption
   history to the engine's `deriveExportPolicy`.
+- Export result currency: `src/modules/raw-processor/model/export-result.ts`
+  defines the immutable identity a completed result carries, and
+  `src/modules/raw-processor/services/export/export-result-identity.ts`
+  captures it from the request before any work. Delivery (download, copy,
+  share, manifest) goes through
+  `src/modules/raw-processor/services/export/export-result-actions.ts`, which
+  checks after every await and right before each side effect that the
+  workflow still asks for that result: the same session, source, color
+  intent, LUT, committed geometry, and a Transform status the result's kind
+  accepts. A stale delivery has no side effect.
+- Transform geometry: the matrix kernel is `@lumaforge/render-engine/geometry`
+  and export planning is `packages/render-engine/src/export/geometry`. The
+  manual-control composition (`composeManualTransform` in
+  `src/lib/transform/transform-render.ts`, over
+  `src/lib/transform/geometry/matrix.ts`) and upright detection are app-only:
+  no package or CLI authors a geometry, so they stay in `src/lib/transform`.
 - LUT contract composition:
   `src/modules/raw-processor/services/look/lut-contract.ts`,
   `src/modules/raw-processor/services/look/lut-output-options.ts`, and
@@ -277,18 +317,20 @@ only by finishing the move it belongs to:
 - The quick and bounded-HQ preview pixel caps are defined in both
   `packages/render-engine/src/preview/preview-plan.ts` and
   `src/lib/raw/decoder.ts`.
-- `lmfg_image_read` and `lmfg_export_detail` read the CLI workspace layout by
-  convention instead of through `packages/lmfg-cli/src/workspace/paths.ts`.
 
-Deprecated public API. These are still exported until they are retired; no app
-or CLI code may start using them again:
+Deprecated public API. These are still exported, but they are scheduled for
+removal, not protected: dedicated retirement changes delete them with a
+`### Breaking` CHANGELOG entry. Until then no app or CLI code may start using
+them again, and an unrelated change does not remove them on the side:
 
 - `@lumaforge/render-engine`: `ExportCheckpointManifest` and its parts
   (`packages/render-engine/src/manifest/export-checkpoint.ts`; the app writes
   no export journal), `LumaRenderContext` and its parts
   (`packages/render-engine/src/context/runtime-context.ts`), `RenderBudget`,
   `NODE_DEFAULT_CAPABILITY`, `ExportFidelity` (use `PerformancePreference`),
-  and `sourceContentIdFromFile`.
+  `sourceContentIdFromFile`, and `createNodeJpegRowSink` with its
+  `BytesJpegRuntime` and `BytesJpegEncoder` input types
+  (`packages/render-engine/src/export/jpeg/node-row-sink.ts`).
 - `@lumaforge/luma-color-runtime`: `ProcessingParams.viewMode` and
   `ProcessingParams.compareSplit`.
 - `@lumaforge/luma-raw-runtime`: `analyzeRawDynamicRange` and
@@ -317,18 +359,31 @@ These are owner decisions. They override cleanup advice that says otherwise.
   `src/modules/raw-processor/hooks/useTransformPreview.ts`, and the preview
   overlay renders through
   `src/modules/raw-processor/components/TransformCanvas.tsx`.
-  The `/transform-demo` route and its demo module are deleted. `lmfg`
-  params carry no geometry, and `lmfg` replay refuses a manifest that
-  records one.
+  The `/transform-demo` route and its demo module are deleted. Four paths
+  touch a geometry and stay distinct:
+  - preview: the app's Transform worker resamples the processed preview
+    frame for the overlay; it shows the framing but is not the export
+    reference;
+  - export: the committed geometry is planned and resampled at full
+    resolution in `packages/render-engine` before the color graph, and a
+    geometry the engine cannot plan fails closed;
+  - authoring: `lmfg` params carry no geometry, so neither `lmfg` nor
+    `lmfg-mcp` can author a Transform;
+  - replay: `lmfg render replay` reapplies the geometry a full-resolution
+    export manifest records, through the same engine planner and executor,
+    after checking before any decode that it plans from the recorded source
+    frame to the recorded output, and refuses preview and candidate
+    manifests that record one.
 - DCP calibration: the app slice (stage hook, service, atoms, and the
   calibration catalog and DCP params parsers) is removed, and the workflow
   applies no camera calibration. The LUT catalog parser rejects calibration
   documents through its generic `invalid-catalog` check. The runtime side
   stays:
   `applyCalibration` in `@lumaforge/luma-raw-runtime`, `solveDcpInterpolation`
-  in `@lumaforge/luma-color-runtime`, the manifest's null `calibration` slot,
-  and the exported HDR analysis (`analyzeRawDynamicRange`, deprecated but
-  still exported with unchanged results).
+  in `@lumaforge/luma-color-runtime`, and the manifest's null `calibration`
+  slot. The HDR analysis (`analyzeRawDynamicRange`) still exports with
+  unchanged results, but it is deprecated and scheduled for removal with the
+  deprecated public API listed under Canonical Owners.
 - Built-in style presets are retained: keep `styleKind: 'builtin'`,
   `builtinPreset`, their WGSL branches and uniforms in `src/lib/webgpu`, and
   their goldens in `scripts/webgpu/goldens.json`. No UI entry point selects a
