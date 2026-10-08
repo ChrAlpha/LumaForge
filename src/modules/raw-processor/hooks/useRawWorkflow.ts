@@ -74,8 +74,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     detachedView,
     setDetachedView,
     session,
-    sessionRef,
-    setSession,
     decodedImageRef,
   })
   const [decodedImageVersion, setDecodedImageVersion] = useState(0)

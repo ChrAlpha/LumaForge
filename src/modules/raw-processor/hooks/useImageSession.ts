@@ -1,12 +1,11 @@
-import { useAtom } from 'jotai'
 import { useCallback } from 'react'
 
 import type { LUTContractSelectionState, StyleAsset } from '../model/session'
 import { createImageSession } from '../model/session-factory'
-import { currentSessionAtom } from '../state/session.atoms'
+import { useCurrentSession } from '../state/session.atoms'
 
 export function useImageSession() {
-  const [session, setSession] = useAtom(currentSessionAtom)
+  const [session, setSession] = useCurrentSession()
 
   const replaceFile = useCallback(
     (

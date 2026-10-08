@@ -1,4 +1,4 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import { useCallback, useMemo } from 'react'
 
 import { getPreviewBackendState } from '~/lib/preview/gpu-backend'
@@ -24,14 +24,16 @@ import {
   DEFAULT_PREVIEW_VIEWPORT,
   normalizePreviewViewport,
 } from '../../../services/preview/preview-viewport'
+import {
+  getCurrentSession,
+  setCurrentSession,
+} from '../../../state/session.atoms'
 
 type UseRawCompareStageInput = {
   /** The sample's view while no session exists. */
   detachedView: PreviewView
   setDetachedView: Dispatch<SetStateAction<PreviewView>>
   session: ImageSession | null
-  sessionRef: MutableRefObject<ImageSession | null>
-  setSession: Dispatch<SetStateAction<ImageSession | null>>
   decodedImageRef: { readonly current: DecodedImage | null }
 }
 
@@ -39,8 +41,6 @@ export function useRawCompareStage({
   detachedView,
   setDetachedView,
   session,
-  sessionRef,
-  setSession,
   decodedImageRef,
 }: UseRawCompareStageInput) {
   const sessionViewMode = session?.viewState.mode
@@ -77,20 +77,21 @@ export function useRawCompareStage({
     [sessionFitMode, sessionPanX, sessionPanY, sessionZoom],
   )
 
-  // Writes route through the session ref, which load and reset update
-  // synchronously, so a write in the same tick as a load or reset reaches the
-  // owner that exists after it rather than the one this render saw. The
-  // guard reads that owner, its decoded preview and the preview backend when
-  // the command runs, so a callback held from an earlier render cannot split
-  // a CPU preview or compare a committed Transform. A refused command writes
-  // nothing, and a write lands only on the source it was guarded for. The
-  // result says whether a session owned the write, applied or refused.
+  // Writes read the session from the store when the command runs, and load
+  // and reset write that store synchronously, so a write in the same tick as
+  // a load or reset reaches the owner that exists after it rather than the
+  // one this render saw. The guard reads that owner, its decoded preview and
+  // the preview backend when the command runs, so a callback held from an
+  // earlier render cannot split a CPU preview or compare a committed
+  // Transform. A refused command writes nothing, and a write lands only on
+  // the source it was guarded for. The result says whether a session owned
+  // the write, applied or refused.
   const writeSessionView = useCallback(
     (
       command: SessionViewCommand | null,
       update: (session: ImageSession) => ImageSession,
     ) => {
-      const target = sessionRef.current
+      const target = getCurrentSession()
       if (!target) return false
 
       if (
@@ -104,10 +105,12 @@ export function useRawCompareStage({
         return true
       }
 
-      setSession((prev) => (prev?.id === target.id ? update(prev) : prev))
+      setCurrentSession((prev) =>
+        prev?.id === target.id ? update(prev) : prev,
+      )
       return true
     },
-    [decodedImageRef, sessionRef, setSession],
+    [decodedImageRef],
   )
 
   // Before a source the detached sample compare owns the view, so its
@@ -161,12 +164,9 @@ export function useRawCompareStage({
     )
   }, [setDetachedView, writeSessionView])
 
-  const setPreviewViewport = useCallback(
-    (viewport: PreviewViewport) => {
-      setSession((prev) => computeViewportChange(prev, viewport))
-    },
-    [setSession],
-  )
+  const setPreviewViewport = useCallback((viewport: PreviewViewport) => {
+    setCurrentSession((prev) => computeViewportChange(prev, viewport))
+  }, [])
 
   const resetPreviewViewport = useCallback(() => {
     setPreviewViewport(DEFAULT_PREVIEW_VIEWPORT)

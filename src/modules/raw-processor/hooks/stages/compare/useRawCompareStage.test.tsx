@@ -2,7 +2,7 @@ import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { useRef, useState } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PreviewBackendState } from '~/lib/preview/gpu-backend'
 import type { PreviewView } from '~/lib/preview/preview-view'
@@ -15,6 +15,11 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { ImageSession } from '../../../model/session'
 import { createImageSession } from '../../../model/session-factory'
+import {
+  getCurrentSession,
+  setCurrentSession,
+  useCurrentSession,
+} from '../../../state/session.atoms'
 import { useRawCompareStage } from './useRawCompareStage'
 
 const GPU_BACKEND: PreviewBackendState = {
@@ -53,11 +58,7 @@ function useHarness(initial: {
   const [detachedView, setDetachedView] = useState<PreviewView>(
     initial.detachedView ?? DEFAULT_PREVIEW_VIEW,
   )
-  const [session, setSession] = useState<ImageSession | null>(
-    initial.session ?? null,
-  )
-  const sessionRef = useRef<ImageSession | null>(session)
-  sessionRef.current = session
+  const [session] = useCurrentSession()
   const decodedImageRef = useRef<DecodedImage | null>(
     initial.decoded === false ? null : ({} as DecodedImage),
   )
@@ -66,8 +67,6 @@ function useHarness(initial: {
     detachedView,
     setDetachedView,
     session,
-    sessionRef,
-    setSession,
     decodedImageRef,
   })
 
@@ -77,11 +76,24 @@ function useHarness(initial: {
     setColorIntent,
     detachedView,
     session,
-    setSession,
-    sessionRef,
     decodedImageRef,
   }
 }
+
+// The stage reads and writes the production store, so the harness seeds it
+// before the first render and every test leaves it empty.
+function renderHarness(initial: Parameters<typeof useHarness>[0]) {
+  setCurrentSession(initial.session ?? null)
+  return renderHook(() => useHarness(initial))
+}
+
+beforeEach(() => {
+  setCurrentSession(null)
+})
+
+afterEach(() => {
+  setCurrentSession(null)
+})
 
 function createSession(): ImageSession {
   return createImageSession(new File(['raw'], 'frame.ARW'))
@@ -90,7 +102,7 @@ function createSession(): ImageSession {
 describe('useRawCompareStage', () => {
   it('reads the detached sample view while no session exists', () => {
     const detachedView: PreviewView = { mode: 'processed', compareSplit: 0.35 }
-    const { result } = renderHook(() => useHarness({ detachedView }))
+    const { result } = renderHarness({ detachedView })
 
     expect(result.current.stage.view).toBe(result.current.detachedView)
     expect(result.current.stage.viewMode).toBe('processed')
@@ -99,7 +111,7 @@ describe('useRawCompareStage', () => {
   })
 
   it('routes sample view writes to the detached view and leaves the intent alone', () => {
-    const { result } = renderHook(() => useHarness({}))
+    const { result } = renderHarness({})
     const intentBefore = result.current.colorIntent
 
     act(() => {
@@ -119,7 +131,7 @@ describe('useRawCompareStage', () => {
   })
 
   it('keeps the detached view reference when a write changes nothing', () => {
-    const { result } = renderHook(() => useHarness({}))
+    const { result } = renderHarness({})
     const viewBefore = result.current.detachedView
 
     act(() => {
@@ -133,7 +145,7 @@ describe('useRawCompareStage', () => {
   it('reads and writes the session view once a session exists', () => {
     const session = createSession()
     const detachedView: PreviewView = { mode: 'processed', compareSplit: 0.9 }
-    const { result } = renderHook(() => useHarness({ session, detachedView }))
+    const { result } = renderHarness({ session, detachedView })
 
     expect(result.current.stage.view).toEqual({
       mode: 'compare',
@@ -150,14 +162,12 @@ describe('useRawCompareStage', () => {
   })
 
   it('routes a write made in the tick a session appears to that session', () => {
-    const { result } = renderHook(() => useHarness({}))
+    const { result } = renderHarness({})
     const detachedBefore = result.current.detachedView
     const { setCompareSplit, setViewMode } = result.current.stage
 
     act(() => {
-      const nextSession = createSession()
-      result.current.sessionRef.current = nextSession
-      result.current.setSession(nextSession)
+      setCurrentSession(createSession())
       setCompareSplit(0.27)
       setViewMode('original')
     })
@@ -175,25 +185,20 @@ describe('useRawCompareStage', () => {
 
   it('falls back to the detached view when the session is dropped', () => {
     const detachedView: PreviewView = { mode: 'compare', compareSplit: 0.8 }
-    const { result } = renderHook(() =>
-      useHarness({ session: createSession(), detachedView }),
-    )
+    const { result } = renderHarness({ session: createSession(), detachedView })
 
     act(() => {
       result.current.stage.setViewMode('processed')
     })
     act(() => {
-      result.current.sessionRef.current = null
-      result.current.setSession(null)
+      setCurrentSession(null)
     })
 
     expect(result.current.stage.view).toBe(detachedView)
   })
 
   it('expresses the CPU original and the GPU compare split through one view', () => {
-    const { result } = renderHook(() =>
-      useHarness({ session: createSession() }),
-    )
+    const { result } = renderHarness({ session: createSession() })
 
     act(() => {
       result.current.stage.setViewMode('original')
@@ -223,9 +228,7 @@ describe('useRawCompareStage', () => {
   })
 
   it('keeps the view reference across color-only changes', () => {
-    const { result } = renderHook(() =>
-      useHarness({ session: createSession() }),
-    )
+    const { result } = renderHarness({ session: createSession() })
     const viewBefore = result.current.stage.view
 
     act(() => {
@@ -237,9 +240,7 @@ describe('useRawCompareStage', () => {
   })
 
   it('keeps the color intent reference across view-only changes', () => {
-    const { result } = renderHook(() =>
-      useHarness({ session: createSession() }),
-    )
+    const { result } = renderHarness({ session: createSession() })
     const intentBefore = result.current.colorIntent
 
     act(() => {
@@ -300,9 +301,7 @@ describe('useRawCompareStage command guards', () => {
 
   it('lets the CPU preview show the original and the processed photo', () => {
     previewBackend.state = CPU_BACKEND
-    const { result } = renderHook(() =>
-      useHarness({ session: zoomedSession() }),
-    )
+    const { result } = renderHarness({ session: zoomedSession() })
     const intentBefore = result.current.colorIntent
 
     act(() => result.current.stage.setViewMode('original'))
@@ -315,9 +314,7 @@ describe('useRawCompareStage command guards', () => {
 
   it('refuses the split, its handle and its reset on the CPU preview', () => {
     previewBackend.state = CPU_BACKEND
-    const { result } = renderHook(() =>
-      useHarness({ session: zoomedSession() }),
-    )
+    const { result } = renderHarness({ session: zoomedSession() })
     const sessionBefore = result.current.session
 
     act(() => {
@@ -335,9 +332,7 @@ describe('useRawCompareStage command guards', () => {
 
   it('refuses a split while the preview backend is still being resolved', () => {
     previewBackend.state = { status: 'pending' }
-    const { result } = renderHook(() =>
-      useHarness({ session: zoomedSession() }),
-    )
+    const { result } = renderHarness({ session: zoomedSession() })
     const sessionBefore = result.current.session
 
     act(() => {
@@ -351,9 +346,7 @@ describe('useRawCompareStage command guards', () => {
   })
 
   it('reads the backend when a command runs, not when its callback was made', () => {
-    const { result } = renderHook(() =>
-      useHarness({ session: zoomedSession() }),
-    )
+    const { result } = renderHarness({ session: zoomedSession() })
     const { setCompareSplit, setViewMode, resetCompareView } =
       result.current.stage
 
@@ -375,14 +368,11 @@ describe('useRawCompareStage command guards', () => {
   })
 
   it('keeps a committed Transform on the processed photo alone', () => {
-    const { result } = renderHook(() =>
-      useHarness({
-        session: withView(
-          zoomedSession({ exportGeometry: TRANSFORM_GEOMETRY }),
-          { mode: 'original' },
-        ),
+    const { result } = renderHarness({
+      session: withView(zoomedSession({ exportGeometry: TRANSFORM_GEOMETRY }), {
+        mode: 'original',
       }),
-    )
+    })
     const sessionBefore = result.current.session
 
     act(() => {
@@ -399,18 +389,13 @@ describe('useRawCompareStage command guards', () => {
   })
 
   it('refuses a callback from before a Transform commit in the same tick', () => {
-    const { result } = renderHook(() =>
-      useHarness({ session: zoomedSession() }),
-    )
+    const { result } = renderHarness({ session: zoomedSession() })
     const { setViewMode, setCompareSplit } = result.current.stage
 
     act(() => {
-      const committed: ImageSession = {
-        ...result.current.sessionRef.current!,
-        exportGeometry: TRANSFORM_GEOMETRY,
-      }
-      result.current.sessionRef.current = committed
-      result.current.setSession(committed)
+      setCurrentSession((prev) =>
+        prev ? { ...prev, exportGeometry: TRANSFORM_GEOMETRY } : prev,
+      )
       setViewMode('original')
       setCompareSplit(0.9)
     })
@@ -423,9 +408,10 @@ describe('useRawCompareStage command guards', () => {
   })
 
   it('refuses the original and the split while export holds the preview released', () => {
-    const { result } = renderHook(() =>
-      useHarness({ session: releasedSession(), decoded: false }),
-    )
+    const { result } = renderHarness({
+      session: releasedSession(),
+      decoded: false,
+    })
     const sessionBefore = result.current.session
 
     act(() => {
@@ -448,18 +434,16 @@ describe('useRawCompareStage command guards', () => {
 
   it('refuses the original and the split while a full-resolution export runs', () => {
     const exporting = releasedSession()
-    const { result } = renderHook(() =>
-      useHarness({
-        session: {
-          ...exporting,
-          exportState: {
-            ...exporting.exportState,
-            status: 'exporting',
-            result: undefined,
-          },
+    const { result } = renderHarness({
+      session: {
+        ...exporting,
+        exportState: {
+          ...exporting.exportState,
+          status: 'exporting',
+          result: undefined,
         },
-      }),
-    )
+      },
+    })
     const sessionBefore = result.current.session
 
     act(() => {
@@ -473,17 +457,13 @@ describe('useRawCompareStage command guards', () => {
   })
 
   it('guards a write against the source that replaced the one it was made for', () => {
-    const { result } = renderHook(() =>
-      useHarness({
-        session: zoomedSession({ exportGeometry: TRANSFORM_GEOMETRY }),
-      }),
-    )
+    const { result } = renderHarness({
+      session: zoomedSession({ exportGeometry: TRANSFORM_GEOMETRY }),
+    })
     const { setCompareSplit, setViewMode } = result.current.stage
 
     act(() => {
-      const replacement = createSession()
-      result.current.sessionRef.current = replacement
-      result.current.setSession(replacement)
+      setCurrentSession(createSession())
       setViewMode('original')
       setCompareSplit(0.3)
     })
@@ -495,25 +475,54 @@ describe('useRawCompareStage command guards', () => {
     })
   })
 
-  it('never lands a write guarded for one source on another', () => {
+  it('guards and lands a write on the replacement, never on the source it replaced', () => {
     const first = zoomedSession()
-    const { result } = renderHook(() => useHarness({ session: first }))
+    const { result } = renderHarness({ session: first })
     const replacement = createSession()
+    const { setCompareSplit } = result.current.stage
 
     act(() => {
-      // The replacement is queued before its ref catches up.
-      result.current.setSession(replacement)
-      result.current.stage.setCompareSplit(0.9)
-      result.current.stage.resetCompareView()
+      setCurrentSession(replacement)
+      setCompareSplit(0.9)
     })
 
-    expect(result.current.session).toBe(replacement)
+    expect(first.viewState.compareSplit).toBe(0.2)
+    expect(result.current.session).toMatchObject({
+      id: replacement.id,
+      viewState: { compareSplit: 0.9 },
+    })
+  })
+
+  it('publishes a write to the store before the next render', () => {
+    const { result } = renderHarness({ session: zoomedSession() })
+    const { setCompareSplit, setViewMode, setPreviewViewport } =
+      result.current.stage
+
+    act(() => {
+      setViewMode('compare')
+      setCompareSplit(0.4)
+      // Each command read what the previous one wrote, not this render.
+      expect(getCurrentSession()?.viewState).toMatchObject({
+        mode: 'compare',
+        compareSplit: 0.4,
+      })
+      setPreviewViewport({ zoom: 2, panX: 0, panY: 0, fitMode: 'custom' })
+      expect(getCurrentSession()?.viewState).toMatchObject({
+        mode: 'compare',
+        compareSplit: 0.4,
+        zoom: 2,
+      })
+    })
+
+    expect(result.current.session).toBe(getCurrentSession())
+    expect(result.current.stage.view).toEqual({
+      mode: 'compare',
+      compareSplit: 0.4,
+    })
   })
 
   it('resets mode, split and viewport in one guarded transaction', () => {
-    const { result } = renderHook(() =>
-      useHarness({ session: zoomedSession() }),
-    )
+    const { result } = renderHarness({ session: zoomedSession() })
     const intentBefore = result.current.colorIntent
     const sessionBefore = result.current.session!
 
@@ -536,7 +545,7 @@ describe('useRawCompareStage command guards', () => {
 
   it('keeps the sample compare open before a source on any backend', () => {
     previewBackend.state = CPU_BACKEND
-    const { result } = renderHook(() => useHarness({}))
+    const { result } = renderHarness({})
 
     act(() => {
       result.current.stage.setViewMode('processed')
