@@ -2359,6 +2359,134 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.currentLutName).toBe('Quick Look')
   })
 
+  describe('local LUT loads against the current session', () => {
+    it('lands a LUT picked in a replacing loadFile tick on the replacement', async () => {
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'first.ARW'))
+      })
+      const first = jotaiStore.get(currentSessionAtom)
+      const pick = createDeferredCubeFile('Second Look', 'second-look.cube')
+
+      // Both commands come from the first source's render and run before
+      // React renders the replacement, so the pick belongs to the source
+      // that exists after the load.
+      const { loadFile, loadLUT } = result.current
+      let lutLoad!: Promise<LutLoadOutcome>
+      await act(async () => {
+        const loading = loadFile(new File(['raw'], 'second.ARW'))
+        lutLoad = loadLUT(pick.file)
+        await loading
+      })
+      let outcome: LutLoadOutcome | undefined
+      await act(async () => {
+        pick.finishRead()
+        outcome = await lutLoad
+      })
+
+      expect(outcome).toBe('loaded')
+      expect(result.current.currentLutName).toBe('Second Look')
+      expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
+        sourceFile: { name: 'second.ARW' },
+        activeStyle: { kind: 'custom', name: 'Second Look' },
+      })
+      expect(first?.activeStyle ?? null).toBeNull()
+    })
+
+    it('seeds the next source with a LUT picked in the reset tick', async () => {
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'first.ARW'))
+      })
+      const pick = createDeferredCubeFile('Reset Look', 'reset-look.cube')
+
+      const { reset, loadLUT } = result.current
+      let lutLoad!: Promise<LutLoadOutcome>
+      act(() => {
+        reset()
+        lutLoad = loadLUT(pick.file)
+      })
+      let outcome: LutLoadOutcome | undefined
+      await act(async () => {
+        pick.finishRead()
+        outcome = await lutLoad
+      })
+
+      expect(outcome).toBe('loaded')
+      expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+      expect(result.current.currentLutName).toBe('Reset Look')
+      expect(getProcessingParams()).toMatchObject({
+        styleKind: 'custom',
+        builtinPreset: null,
+      })
+
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'second.ARW'))
+      })
+      expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
+        sourceFile: { name: 'second.ARW' },
+        activeStyle: { kind: 'custom', name: 'Reset Look' },
+      })
+    })
+
+    it('drops a LUT that finishes after its source was replaced and leaves the replacement look alone', async () => {
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      await act(async () => {
+        await result.current.loadLUT(createCubeFile('Kept Look', 'kept.cube'))
+      })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'first.ARW'))
+      })
+      const late = createDeferredCubeFile('Late Look', 'late-look.cube')
+      let lutLoad!: Promise<LutLoadOutcome>
+      act(() => {
+        lutLoad = result.current.loadLUT(late.file)
+      })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'second.ARW'))
+      })
+      const replacement = jotaiStore.get(currentSessionAtom)
+
+      let outcome: LutLoadOutcome | undefined
+      await act(async () => {
+        late.finishRead()
+        outcome = await lutLoad
+      })
+
+      expect(outcome).toBe('aborted')
+      expect(result.current.currentLutName).toBe('Kept Look')
+      expect(jotaiStore.get(currentSessionAtom)?.id).toBe(replacement?.id)
+      expect(jotaiStore.get(currentSessionAtom)?.activeStyle).toMatchObject({
+        name: 'Kept Look',
+      })
+    })
+
+    it('seeds the source that arrives with a LUT picked before any RAW', async () => {
+      const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      const early = createDeferredCubeFile('Early Look', 'early-look.cube')
+      let lutLoad!: Promise<LutLoadOutcome>
+      act(() => {
+        lutLoad = result.current.loadLUT(early.file)
+      })
+      await act(async () => {
+        await result.current.loadFile(new File(['raw'], 'first.ARW'))
+      })
+
+      let outcome: LutLoadOutcome | undefined
+      await act(async () => {
+        early.finishRead()
+        outcome = await lutLoad
+      })
+
+      expect(outcome).toBe('loaded')
+      expect(result.current.currentLutName).toBe('Early Look')
+      expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
+        sourceFile: { name: 'first.ARW' },
+        activeStyle: { kind: 'custom', name: 'Early Look' },
+      })
+    })
+  })
+
   it('preserves a detached intensity choice across the first RAW load', async () => {
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
 

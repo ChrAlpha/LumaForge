@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { yieldToPaint } from '~/lib/dom'
 
 import { hasActiveExport } from '../services/export/export-state'
+import { getCurrentSession } from '../state/session.atoms'
 import { getLut } from '../state/workflow.atoms'
 import { buildRawWorkflowReturn } from './buildRawWorkflowReturn'
 import { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
@@ -146,13 +147,14 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   })
   const { lutDataRef, lutDataVersion, setLutDataRef } = useLutDataState(lut)
   // A LUT landing while an export runs or holds the preview released would
-  // cancel that export or discard its JPEG, so it never applies then.
+  // cancel that export or discard its JPEG, so it never applies then. The
+  // export state is read from the store when the LUT is about to land.
   const previewSuspendedRef = useRef(false)
   const canApplyLoadedLut = useCallback(
     () =>
       !previewSuspendedRef.current &&
-      !hasActiveExport(exportAbortControllerRef.current, sessionRef.current),
-    [exportAbortControllerRef, sessionRef],
+      !hasActiveExport(exportAbortControllerRef.current, getCurrentSession()),
+    [exportAbortControllerRef],
   )
   const { previewTransform, transform } = useRawPreviewTransform({
     session,
@@ -164,8 +166,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const lookStage = useRawLookStage({
     baseParams: colorIntent,
     session,
-    sessionRef,
-    setSession,
     lut,
     setLut,
     setColorIntent,

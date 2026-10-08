@@ -10,6 +10,7 @@ import {
   fetchVerifiedCubeAsset,
 } from '~/lib/profiles/fetch'
 
+import type { ImageSession } from '../../model/session'
 import type { LutLoadContext } from './orchestrate-lut-load'
 import {
   orchestrateLutLoadFromFile,
@@ -58,17 +59,19 @@ function cubeText(size: number): string {
 
 function buildCtx() {
   const scheduledToasts: Array<() => void> = []
+  // Stands in for the session store: the orchestrator reads it through the
+  // getter each time, never through a copy taken when the load began.
+  const store: { session: ImageSession | null } = { session: null }
   const ctx: LutLoadContext = {
     atoms: {
+      getSession: vi.fn(() => store.session),
       setLut: vi.fn(),
       setSession: vi.fn(),
       setColorIntent: vi.fn(),
       lut: null,
-      activeStyle: null,
     },
     refs: {
       lutDataRef: { current: null },
-      sessionRef: { current: null },
     },
     services: {
       scheduleToast: (notify) => {
@@ -79,7 +82,7 @@ function buildCtx() {
       canApplyLoadedLut: vi.fn(() => true),
     },
   }
-  return { ctx, scheduledToasts }
+  return { ctx, scheduledToasts, store }
 }
 
 /** A .cube whose bytes arrive only when the test finishes the read. */
@@ -102,8 +105,8 @@ function expectUntouched(ctx: LutLoadContext, scheduledToasts: unknown[]) {
   expect(scheduledToasts).toHaveLength(0)
 }
 
-function sessionWithId(id: string) {
-  return { id } as never
+function sessionWithId(id: string): ImageSession {
+  return { id } as ImageSession
 }
 
 /** jsdom's File lacks Blob.text(); patch the instance to match browsers. */
@@ -223,6 +226,21 @@ describe('orchestrateOnlineLutLoad outcome', () => {
     expect(outcome).toBe('loaded')
     expect(ctx.atoms.setLut).toHaveBeenCalledTimes(1)
     expect(scheduledToasts).toHaveLength(1)
+  })
+
+  it('lands on the photo in the store when the online LUT arrives', async () => {
+    const download = Promise.withResolvers<ReturnType<typeof verifiedCube>>()
+    vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
+    const { ctx, store } = buildCtx()
+
+    // The request began before any photo; a photo loaded while it ran.
+    const load = orchestrateOnlineLutLoad(entry, undefined, ctx)
+    store.session = sessionWithId('photo-a')
+    download.resolve(verifiedCube(cubeText(17)))
+
+    await expect(load).resolves.toBe('loaded')
+    expect(ctx.atoms.setSession).toHaveBeenCalledTimes(1)
+    expect(ctx.atoms.setColorIntent).not.toHaveBeenCalled()
   })
 
   it("returns 'failed' and schedules a failure toast when the download fails", async () => {
@@ -394,6 +412,26 @@ describe('lUT contract provenance', () => {
     expect(selectionWrites(setItem)).toHaveLength(0)
   })
 
+  it('writes a contract choice to the photo in the store, or else to the detached intent', async () => {
+    const { ctx, store } = buildCtx()
+    await orchestrateLutLoadFromFile(
+      asTextFile(cubeText(17), 'user-look.cube'),
+      ctx,
+    )
+    ctx.atoms.lut = lastLoadedLut(ctx)
+    vi.mocked(ctx.atoms.setSession).mockClear()
+    vi.mocked(ctx.atoms.setColorIntent).mockClear()
+
+    store.session = sessionWithId('photo-a')
+    orchestrateProfileSelection('display-srgb', ctx)
+    expect(ctx.atoms.setSession).toHaveBeenCalledTimes(1)
+    expect(ctx.atoms.setColorIntent).not.toHaveBeenCalled()
+
+    store.session = null
+    orchestrateProfileSelection('display-srgb', ctx)
+    expect(ctx.atoms.setColorIntent).toHaveBeenCalledTimes(1)
+  })
+
   it('persists explicit user selections and restores them on reload', async () => {
     const { ctx } = buildCtx()
     await orchestrateLutLoadFromFile(
@@ -501,27 +539,72 @@ describe('orchestrateLutLoadFromFile outcome', () => {
 
   it("returns 'aborted' untouched when the photo it was started on is replaced", async () => {
     const { file, finishRead } = deferredCubeFile('fixture.cube')
-    const { ctx, scheduledToasts } = buildCtx()
-    ctx.refs.sessionRef.current = sessionWithId('photo-a')
+    const { ctx, scheduledToasts, store } = buildCtx()
+    store.session = sessionWithId('photo-a')
 
     const load = orchestrateLutLoadFromFile(file, ctx)
-    ctx.refs.sessionRef.current = sessionWithId('photo-b')
+    store.session = sessionWithId('photo-b')
     finishRead()
 
     await expect(load).resolves.toBe('aborted')
     expectUntouched(ctx, scheduledToasts)
   })
 
-  it('seeds the photo that arrives when the load began before any photo', async () => {
+  it("returns 'aborted' untouched when the photo it was started on is reset", async () => {
     const { file, finishRead } = deferredCubeFile('fixture.cube')
-    const { ctx } = buildCtx()
+    const { ctx, scheduledToasts, store } = buildCtx()
+    store.session = sessionWithId('photo-a')
 
     const load = orchestrateLutLoadFromFile(file, ctx)
-    ctx.refs.sessionRef.current = sessionWithId('photo-a')
+    store.session = null
+    finishRead()
+
+    await expect(load).resolves.toBe('aborted')
+    expectUntouched(ctx, scheduledToasts)
+  })
+
+  it('belongs to the photo in the store when it starts, not one read earlier', async () => {
+    const { file, finishRead } = deferredCubeFile('fixture.cube')
+    const { ctx, store } = buildCtx()
+    // A load replaced the photo in the same tick, before any rerender.
+    store.session = sessionWithId('photo-b')
+
+    const load = orchestrateLutLoadFromFile(file, ctx)
     finishRead()
 
     await expect(load).resolves.toBe('loaded')
     expect(ctx.atoms.setLut).toHaveBeenCalledTimes(1)
+    expect(ctx.atoms.setSession).toHaveBeenCalledTimes(1)
+    expect(ctx.atoms.setColorIntent).not.toHaveBeenCalled()
+  })
+
+  it('seeds the photo that arrives when the load began before any photo', async () => {
+    const { file, finishRead } = deferredCubeFile('fixture.cube')
+    const { ctx, store } = buildCtx()
+
+    const load = orchestrateLutLoadFromFile(file, ctx)
+    store.session = sessionWithId('photo-a')
+    finishRead()
+
+    await expect(load).resolves.toBe('loaded')
+    expect(ctx.atoms.setLut).toHaveBeenCalledTimes(1)
+    // The photo now owns the look, so the detached intent is left alone.
+    expect(ctx.atoms.setSession).toHaveBeenCalledTimes(1)
+    expect(ctx.atoms.setColorIntent).not.toHaveBeenCalled()
+  })
+
+  it('writes the detached intent when no photo exists as the LUT lands', async () => {
+    const { file, finishRead } = deferredCubeFile('fixture.cube')
+    const { ctx, store } = buildCtx()
+    store.session = null
+
+    const load = orchestrateLutLoadFromFile(file, ctx)
+    finishRead()
+
+    await expect(load).resolves.toBe('loaded')
+    expect(ctx.atoms.setColorIntent).toHaveBeenCalledTimes(1)
+    const update = vi.mocked(ctx.atoms.setColorIntent).mock.calls[0]![0]
+    expect(typeof update).toBe('function')
   })
 
   it("returns 'failed' for an unsupported format", async () => {

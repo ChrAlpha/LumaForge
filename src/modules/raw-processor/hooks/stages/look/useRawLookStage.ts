@@ -3,8 +3,8 @@ import type {
   LUTColorProfile,
   LUTData,
 } from '@lumaforge/luma-color-runtime'
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
-import { useCallback, useMemo, useRef } from 'react'
+import type { MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
@@ -33,6 +33,10 @@ import {
   buildLUTContractSelectionState,
   DEFAULT_LOOK_INTENSITY,
 } from '../../../services/look/style-system'
+import {
+  getCurrentSession,
+  setCurrentSession,
+} from '../../../state/session.atoms'
 import type { SetColorIntent } from './useRawAdjustmentActions'
 import { useRawAdjustmentActions } from './useRawAdjustmentActions'
 
@@ -40,8 +44,6 @@ type UseRawLookStageInput = {
   /** The color intent the photo renders with, before the session look is projected. */
   baseParams: ColorGraphIntent
   session: ImageSession | null
-  sessionRef: MutableRefObject<ImageSession | null>
-  setSession: Dispatch<SetStateAction<ImageSession | null>>
   lut: ParsedLUT | null
   setLut: (lut: ParsedLUT | null) => void
   /**
@@ -59,8 +61,6 @@ type UseRawLookStageInput = {
 export function useRawLookStage({
   baseParams,
   session,
-  sessionRef,
-  setSession,
   lut,
   setLut,
   setColorIntent,
@@ -113,18 +113,19 @@ export function useRawLookStage({
       : nextParams
   }, [baseParams, session])
 
+  // LUT loads read and write the session in the store, so a load, reset or
+  // look write landing before this hook rerenders is what they see.
   const lutCtx = useMemo<LutLoadContext>(
     () => ({
       atoms: {
+        getSession: getCurrentSession,
         setLut,
-        setSession,
+        setSession: setCurrentSession,
         setColorIntent,
         lut,
-        activeStyle,
       },
       refs: {
         lutDataRef,
-        sessionRef,
       },
       services: {
         scheduleToast,
@@ -134,17 +135,14 @@ export function useRawLookStage({
       },
     }),
     [
-      activeStyle,
       canApplyLoadedLut,
       invalidateExportGraph,
       lut,
       lutDataRef,
       scheduleToast,
-      sessionRef,
       setColorIntent,
       setLut,
       setLutDataRef,
-      setSession,
     ],
   )
 
@@ -153,6 +151,10 @@ export function useRawLookStage({
     fileLoadRef.current?.abort()
     fileLoadRef.current = null
   }, [])
+  // A local pick belongs to the workflow that started it: one still reading
+  // or parsing when the workflow unmounts never lands on the session the
+  // store keeps for a return to /raw.
+  useEffect(() => cancelLUTFileLoad, [cancelLUTFileLoad])
   // The newest local pick wins: a file still reading or parsing is dropped.
   const loadLUT = useCallback(
     async (file: File) => {
@@ -199,7 +201,7 @@ export function useRawLookStage({
       let sessionOwnsLook = false
       let shouldInvalidateExportGraph = false
 
-      setSession((prev) => {
+      setCurrentSession((prev) => {
         if (!prev) return prev
 
         const change = computeSessionIntensityChange(prev, value)
@@ -225,7 +227,7 @@ export function useRawLookStage({
         invalidateExportGraph()
       }
     },
-    [invalidateExportGraph, setColorIntent, setSession],
+    [invalidateExportGraph, setColorIntent],
   )
 
   const clearLUT = useCallback(() => {
@@ -233,7 +235,7 @@ export function useRawLookStage({
     let hasSession = false
     let shouldInvalidateExportGraph = false
 
-    setSession((prev) => {
+    setCurrentSession((prev) => {
       if (!prev) return prev
 
       const change = computeSessionClearLUT(prev, hasLoadedLut)
@@ -265,7 +267,6 @@ export function useRawLookStage({
     setColorIntent,
     setLut,
     setLutDataRef,
-    setSession,
   ])
 
   const {

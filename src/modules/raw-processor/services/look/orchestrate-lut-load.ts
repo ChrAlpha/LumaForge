@@ -23,7 +23,7 @@ import {
   fetchVerifiedCubeAsset,
 } from '~/lib/profiles/fetch'
 
-import type { ImageSession, StyleAsset } from '../../model/session'
+import type { ImageSession } from '../../model/session'
 import {
   getStableErrorCode,
   isAbortError,
@@ -37,7 +37,11 @@ import {
   resolveLUTContractProfile,
   resolveOnlineLUTSourceName,
 } from './lut-workflow'
-import { buildLUTContractSelectionState, toCustomStyle } from './style-system'
+import {
+  buildLUTContractSelectionState,
+  clampLookIntensity,
+  toCustomStyle,
+} from './style-system'
 
 const MAX_ONLINE_CUBE_BYTES = 64 * 1024 * 1024
 const onlineProfileCache = createBrowserOnlineProfileCache()
@@ -73,6 +77,11 @@ export class LUTLoadError extends Error {
 
 export interface LutLoadContext {
   atoms: {
+    /**
+     * Reads the session from the store when called, so a load or reset
+     * written in the same tick is seen before any rerender.
+     */
+    getSession: () => ImageSession | null
     setLut: (lut: ParsedLUT | null) => void
     setSession: (
       value:
@@ -85,11 +94,9 @@ export interface LutLoadContext {
       value: ColorGraphIntent | ((prev: ColorGraphIntent) => ColorGraphIntent),
     ) => void
     lut: ParsedLUT | null
-    activeStyle: StyleAsset | null
   }
   refs: {
     lutDataRef: { current: LUTData | null }
-    sessionRef: { current: ImageSession | null }
   }
   services: {
     scheduleToast: (notify: () => void) => void
@@ -144,7 +151,7 @@ function applyLoadedLUT(
         })
       : prev,
   )
-  if (!ctx.refs.sessionRef.current) {
+  if (!ctx.atoms.getSession()) {
     ctx.atoms.setColorIntent((prev) => ({
       ...prev,
       styleKind: 'custom',
@@ -196,18 +203,27 @@ async function readFileBytes(file: File): Promise<Uint8Array> {
   return new TextEncoder().encode(await file.text())
 }
 
+/**
+ * A load begun on a photo belongs to that photo. One begun before any photo
+ * seeds whichever photo arrives, as a detached look does. Both reads go to
+ * the store, so a load started in the tick a load or reset wrote belongs to
+ * the session that exists after it.
+ */
+function captureLoadSession(ctx: LutLoadContext): () => boolean {
+  const startSessionId = ctx.atoms.getSession()?.id ?? null
+  return () =>
+    startSessionId === null || ctx.atoms.getSession()?.id === startSessionId
+}
+
 export async function orchestrateLutLoadFromFile(
   file: File,
   ctx: LutLoadContext,
   options?: { signal?: AbortSignal },
 ): Promise<LutLoadOutcome> {
-  const startSessionId = ctx.refs.sessionRef.current?.id ?? null
-  // A load begun on a photo belongs to that photo. One begun before any
-  // photo seeds whichever photo arrives, as a detached look does.
+  const ownsSession = captureLoadSession(ctx)
   const mayApply = () =>
     !options?.signal?.aborted &&
-    (startSessionId === null ||
-      ctx.refs.sessionRef.current?.id === startSessionId) &&
+    ownsSession() &&
     ctx.services.canApplyLoadedLut()
 
   if (!mayApply()) return 'aborted'
@@ -257,6 +273,7 @@ export async function orchestrateOnlineLutLoad(
     | undefined,
   ctx: LutLoadContext,
 ): Promise<LutLoadOutcome> {
+  const ownsSession = captureLoadSession(ctx)
   try {
     if (options?.signal?.aborted) return 'aborted'
 
@@ -293,17 +310,32 @@ export async function orchestrateOnlineLutLoad(
             ? entry.trustedContract
             : undefined,
         mayApply: () =>
-          !options?.signal?.aborted && ctx.services.canApplyLoadedLut(),
+          !options?.signal?.aborted &&
+          ownsSession() &&
+          ctx.services.canApplyLoadedLut(),
       },
       ctx,
     )
     return 'loaded'
   } catch (err) {
-    if (isAbortError(err) || options?.signal?.aborted) return 'aborted'
+    // A download whose photo was replaced or reset reports nothing on the
+    // session that took its place.
+    if (isAbortError(err) || options?.signal?.aborted || !ownsSession()) {
+      return 'aborted'
+    }
 
     reportLUTLoadFailure(err, ctx)
     return 'failed'
   }
+}
+
+function resolveSelectedLUTSha256(
+  lut: ParsedLUT,
+  session: ImageSession,
+): string | undefined {
+  if (lut.sha256) return lut.sha256
+  const asset = session.activeStyle?.lutAsset
+  return asset?.fingerprint === lut.fingerprint ? asset.sha256 : undefined
 }
 
 export function orchestrateProfileSelection(
@@ -332,30 +364,32 @@ export function orchestrateProfileSelection(
     return
   }
 
-  const style = preserveCustomLookIntensity(
-    toCustomStyle(updatedLut, {
-      sha256: ctx.atoms.activeStyle?.lutAsset?.sha256,
-    }),
-    ctx.atoms.activeStyle,
-  )
-
   ctx.atoms.setLut(updatedLut)
   ctx.services.invalidateExportGraph()
+  // The look keeps the strength it holds when the choice lands, so a Strength
+  // write in the same tick survives a contract change. The hash belongs to the
+  // LUT the choice applies to: the session look's hash is inherited only when
+  // that look is the same LUT.
   ctx.atoms.setSession((prev) =>
     prev
       ? applyActiveLookToSession(prev, {
-          style,
+          style: preserveCustomLookIntensity(
+            toCustomStyle(updatedLut, {
+              sha256: resolveSelectedLUTSha256(updatedLut, prev),
+            }),
+            prev.activeStyle,
+          ),
           lutProfileSelection: buildLUTContractSelectionState(updatedLut),
           clearExportResult: true,
         })
       : prev,
   )
-  if (!ctx.refs.sessionRef.current) {
+  if (!ctx.atoms.getSession()) {
     ctx.atoms.setColorIntent((prev) => ({
       ...prev,
       styleKind: 'custom',
       builtinPreset: null,
-      intensity: style.currentIntensity,
+      intensity: clampLookIntensity(prev.intensity),
     }))
   }
 }
