@@ -6,7 +6,10 @@ import {
   pickColorGraphIntent,
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
-import type { ExportGeometry } from '@lumaforge/render-engine/export'
+import type {
+  ExportGeometry,
+  ExportOutputResult,
+} from '@lumaforge/render-engine/export'
 import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 import { toast } from 'sonner'
 
@@ -232,6 +235,22 @@ function readAttemptStanding(
   return refusal ? { kind: 'refused', refusal } : { kind: 'current' }
 }
 
+/**
+ * Removes a finished output no export result took. Only a file-backed output
+ * holds storage of its own; failing to remove it is logged, never thrown.
+ */
+function discardUnadoptedOutput(output: ExportOutputResult | undefined) {
+  if (output?.kind !== 'file-backed' || !output.cleanup) return
+  const warn = (error: unknown) => {
+    console.warn('Failed to remove an export output no result took:', error)
+  }
+  try {
+    void output.cleanup().catch(warn)
+  } catch (error) {
+    warn(error)
+  }
+}
+
 export type FullResExportRequest = {
   /** How hard the plan may push this device; never the JPEG quality. */
   performancePreference?: PerformancePreference
@@ -397,6 +416,9 @@ export async function orchestrateFullResExport(
   // attempt ends; each attempt ends only its own marker.
   const markers = ctx.services.interruptionMarkers
   let markedAttempt: string | null = null
+  // The job's finished output belongs to this attempt until a registered
+  // result holds it. Whatever ends the attempt before then removes it.
+  let unadoptedOutput: ExportOutputResult | undefined
   const endAttempt = (outcome: ExportAttemptOutcome) => {
     if (markedAttempt === null) return
     const ended = markedAttempt
@@ -652,6 +674,7 @@ export async function orchestrateFullResExport(
       beforeStart: ctx.services.previewRuntime.terminate,
       signal: exportAbortController.signal,
     })
+    unadoptedOutput = result.output
     // The job finished, so the attempt is over even if its JPEG is dropped.
     endAttempt('completed')
 
@@ -676,6 +699,7 @@ export async function orchestrateFullResExport(
     })
     ctx.refs.previewCopyCanvasRef.current = previewCopyCanvas
     ctx.services.registerExportResultResource(exportResult)
+    unadoptedOutput = undefined
 
     ctx.atoms.setSession((prev) =>
       prev && prev.id === exportSessionId
@@ -834,6 +858,7 @@ export async function orchestrateFullResExport(
       }),
     )
   } finally {
+    discardUnadoptedOutput(unadoptedOutput)
     // An export dropped before its job ran ended without an interruption.
     endAttempt('cancelled')
     if (ctx.refs.exportAbortControllerRef.current === exportAbortController) {

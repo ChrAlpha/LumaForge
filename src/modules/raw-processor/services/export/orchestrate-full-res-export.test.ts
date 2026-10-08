@@ -3,7 +3,11 @@ import {
   NEUTRAL_SELECTIVE_COLOR,
   pickColorGraphIntent,
 } from '@lumaforge/luma-color-runtime'
-import type { ExportGeometry } from '@lumaforge/render-engine/export'
+import type {
+  ExportGeometry,
+  ExportOutputResult,
+  FileBackedOutputResult,
+} from '@lumaforge/render-engine/export'
 import {
   createBlobOutputResult,
   INVALID_EXPORT_GEOMETRY,
@@ -451,6 +455,20 @@ function createPreviousResult(): ExportResult {
   }
 }
 
+/** A finished OPFS output, as the worker client hands it over. */
+function createFileBackedOutput(filename: string) {
+  return {
+    kind: 'file-backed',
+    exportId: 'opfs-export-1',
+    filename,
+    byteLength: JPEG_BLOB.size,
+    mimeType: 'image/jpeg',
+    sha256: 'c'.repeat(64),
+    openBlob: vi.fn(async () => JPEG_BLOB),
+    cleanup: vi.fn(async () => undefined),
+  } satisfies FileBackedOutputResult
+}
+
 function createDecodedImage(): DecodedImage {
   return {
     width: 1500,
@@ -771,7 +789,10 @@ function createHarness(options: HarnessOptions = {}) {
    * Stands in for the worker job with the real job's attempt order:
    * `started` -> beforeStart -> run -> `disposed` (in finally).
    */
-  function installJob() {
+  function installJob(
+    createOutput: (filename: string) => ExportOutputResult = (filename) =>
+      createBlobOutputResult({ filename, blob: JPEG_BLOB }),
+  ) {
     const started = deferred<JobInput>()
     const outcome = deferred<{ error?: unknown }>()
     let jobInput: JobInput | null = null
@@ -794,10 +815,7 @@ function createHarness(options: HarnessOptions = {}) {
           if ('error' in settled) throw settled.error
           return {
             filename: input.filename,
-            output: createBlobOutputResult({
-              filename: input.filename,
-              blob: JPEG_BLOB,
-            }),
+            output: createOutput(input.filename),
             attempts: 1,
           }
         } finally {
@@ -2647,6 +2665,31 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     },
   )
 
+  it.each(supersessions)(
+    'removes the finished OPFS output of a JPEG that completes after the $name',
+    async ({ supersede, session }) => {
+      const h = createHarness({ runtime: OPFS_RUNTIME, session: session?.() })
+      const outputs: Array<ReturnType<typeof createFileBackedOutput>> = []
+      const job = h.installJob((filename) => {
+        const output = createFileBackedOutput(filename)
+        outputs.push(output)
+        return output
+      })
+
+      const run = orchestrateFullResExport(OPTIONS, h.ctx)
+      const input = await job.started
+      supersede(h)
+      job.resolve()
+      await run
+
+      expect(input.outputLocation?.sink).toBe('opfs-file')
+      expect(outputs).toHaveLength(1)
+      expect(outputs[0]!.cleanup).toHaveBeenCalledTimes(1)
+      expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
+      expect(h.state.session?.exportState.result).toBeUndefined()
+    },
+  )
+
   it('drops an export superseded while its plan is being selected', async () => {
     const planGate = deferred()
     const h = createHarness({ planGate: planGate.promise })
@@ -2934,6 +2977,33 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     },
   )
 
+  it.each(['pending', 'invalid', 'unavailable'] as const)(
+    'removes the finished OPFS output of a JPEG that completes after the Transform goes %s with no edit',
+    async (status) => {
+      const h = createHarness({
+        runtime: OPFS_RUNTIME,
+        session: createAcceptedTransformSession(),
+      })
+      const outputs: Array<ReturnType<typeof createFileBackedOutput>> = []
+      const job = h.installJob((filename) => {
+        const output = createFileBackedOutput(filename)
+        outputs.push(output)
+        return output
+      })
+
+      const run = orchestrateFullResExport(OPTIONS, h.ctx)
+      const input = await job.started
+      recapture(h, status)
+      job.resolve()
+      await run
+
+      expect(input.outputLocation?.sink).toBe('opfs-file')
+      expect(outputs).toHaveLength(1)
+      expect(outputs[0]!.cleanup).toHaveBeenCalledTimes(1)
+      expectRefusedAndSettled(h, status)
+    },
+  )
+
   it('reports the refusal rather than a failure that arrives after the Transform goes pending', async () => {
     const h = createHarness({ session: createAcceptedTransformSession() })
     const job = h.installJob()
@@ -2948,6 +3018,130 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     expectRefusedAndSettled(h, 'pending')
     expect(h.state.session?.exportState.lastErrorCode).toBeUndefined()
   })
+})
+
+describe('orchestrateFullResExport completed output ownership', () => {
+  function installFileBackedJob(
+    h: Harness,
+    outputs: Array<ReturnType<typeof createFileBackedOutput>>,
+  ) {
+    return h.installJob((filename) => {
+      const output = createFileBackedOutput(filename)
+      outputs.push(output)
+      return output
+    })
+  }
+
+  it('hands the finished output to the registered result and never removes it itself', async () => {
+    const h = createHarness({
+      runtime: OPFS_RUNTIME,
+      session: createAcceptedTransformSession(),
+    })
+    const outputs: Array<ReturnType<typeof createFileBackedOutput>> = []
+    const job = installFileBackedJob(h, outputs)
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    await job.started
+    job.resolve()
+    await run
+    h.manifest.resolve(SEALED_MANIFEST)
+    await settle()
+
+    expect(h.ctx.services.registerExportResultResource).toHaveBeenCalledTimes(1)
+    const [registered] = vi.mocked(h.ctx.services.registerExportResultResource)
+      .mock.calls[0]!
+    // The result wraps the output to inject metadata on delivery; removing
+    // it is still the output's own cleanup.
+    expect(registered.output).toMatchObject({
+      kind: 'file-backed',
+      exportId: outputs[0]!.exportId,
+      cleanup: outputs[0]!.cleanup,
+    })
+    expect(h.state.session?.exportState.result?.output).toBe(registered.output)
+    expect(h.state.session?.exportState.result?.manifestState).toEqual({
+      status: 'ready',
+    })
+    expect(outputs[0]!.cleanup).not.toHaveBeenCalled()
+  })
+
+  it('removes the finished output when the source can no longer export at completion', async () => {
+    const h = createHarness({ runtime: OPFS_RUNTIME })
+    const outputs: Array<ReturnType<typeof createFileBackedOutput>> = []
+    const job = installFileBackedJob(h, outputs)
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    await job.started
+    const live = h.state.session!
+    h.replaceSession({
+      ...live,
+      exportState: {
+        ...live.exportState,
+        fullResCapability: { status: 'unsupported', reason: 'probe failed' },
+      },
+    })
+    job.resolve()
+    await run
+
+    expect(outputs[0]!.cleanup).toHaveBeenCalledTimes(1)
+    expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
+  })
+
+  it('removes the finished output when the result cannot be registered', async () => {
+    const h = createHarness({ runtime: OPFS_RUNTIME })
+    vi.mocked(h.ctx.services.registerExportResultResource).mockImplementation(
+      () => {
+        throw new Error('RESOURCE_REGISTRY_DUPLICATE_ID:export-result-1')
+      },
+    )
+    const outputs: Array<ReturnType<typeof createFileBackedOutput>> = []
+    const job = installFileBackedJob(h, outputs)
+
+    const run = orchestrateFullResExport(OPTIONS, h.ctx)
+    await job.started
+    job.resolve()
+    await run
+
+    expect(outputs[0]!.cleanup).toHaveBeenCalledTimes(1)
+    expect(h.state.session?.exportState.status).toBe('failed')
+    expect(h.state.session?.exportState.result).toBeUndefined()
+  })
+
+  it.each([
+    {
+      name: 'rejects',
+      cleanup: () => Promise.reject(new Error('NotFoundError')),
+    },
+    {
+      name: 'throws',
+      cleanup: () => {
+        throw new Error('InvalidStateError')
+      },
+    },
+  ])(
+    'settles a dropped export quietly when removing its output $name',
+    async ({ cleanup }) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const h = createHarness({ runtime: OPFS_RUNTIME })
+      const outputs: Array<ReturnType<typeof createFileBackedOutput>> = []
+      const job = h.installJob((filename) => {
+        const output = createFileBackedOutput(filename)
+        output.cleanup.mockImplementation(cleanup)
+        outputs.push(output)
+        return output
+      })
+
+      const run = orchestrateFullResExport(OPTIONS, h.ctx)
+      await job.started
+      h.ctx.refs.exportGraphVersionRef.current += 1
+      job.resolve()
+      await expect(run).resolves.toBeUndefined()
+      await settle()
+
+      expect(outputs[0]!.cleanup).toHaveBeenCalledTimes(1)
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(mocks.toastError).not.toHaveBeenCalled()
+    },
+  )
 })
 
 describe('orchestrateFullResExport a later attempt', () => {

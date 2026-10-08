@@ -4470,6 +4470,11 @@ describe('useRawWorkflow embedded preview state', () => {
         'Full-resolution export is not ready',
         { description: UNAVAILABLE_REFUSAL },
       )
+      // No result took the finished file, so the refused attempt removed it.
+      const { output } =
+        await exportSystemMock.runFullResolutionExportJob.mock.results[0]!.value
+      expect(output.kind).toBe('file-backed')
+      expect(output.cleanup).toHaveBeenCalledTimes(1)
     })
 
     it('seals the manifest of a delivered export when a new frame leaves the same Transform pending', async () => {
