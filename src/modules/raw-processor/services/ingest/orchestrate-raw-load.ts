@@ -37,6 +37,7 @@ import {
   applyPreviewReady,
   applyQuickPreviewFailure,
 } from '../preview/preview-session-state'
+import { releaseSourceForReplacement } from '../workflow/raw-workflow-resources'
 import { prepareRawLoadState } from './raw-load-preparation'
 import {
   getStableErrorCode,
@@ -136,13 +137,17 @@ export async function orchestrateRawLoad(
     ctx.atoms.setProgress(0)
     ctx.atoms.setError(null)
 
-    ctx.refs.runtimeWorkSessionIdRef.current = null
-    ctx.refs.pendingLoadSessionIdRef.current = null
-    ctx.services.abortExportWork()
-    ctx.services.abortRuntimeWork()
-    ctx.services.queueExportResultResourceDisposal()
-    ctx.services.revokeCurrentEmbeddedPreviewUrl()
-    ctx.refs.previewCopyCanvasRef.current = null
+    releaseSourceForReplacement({
+      runtimeWorkSessionIdRef: ctx.refs.runtimeWorkSessionIdRef,
+      pendingLoadSessionIdRef: ctx.refs.pendingLoadSessionIdRef,
+      previewCopyCanvasRef: ctx.refs.previewCopyCanvasRef,
+      abortExportWork: ctx.services.abortExportWork,
+      abortRuntimeWork: ctx.services.abortRuntimeWork,
+      queueExportResultResourceDisposal:
+        ctx.services.queueExportResultResourceDisposal,
+      revokeCurrentEmbeddedPreviewUrl:
+        ctx.services.revokeCurrentEmbeddedPreviewUrl,
+    })
     const loadLease = ctx.services.beginRuntimeSession()
     lease = loadLease
     const runtimeSignal = loadLease.signal

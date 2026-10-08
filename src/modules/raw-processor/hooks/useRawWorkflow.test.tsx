@@ -9105,6 +9105,66 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     it.each(['reset', 'replacement'] as const)(
+      'releases the outgoing source once on %s, writes nothing from its late HQ frame, and releases nothing again on a repeat',
+      async (owner) => {
+        const { result, counted } = renderCounted()
+        const outgoingHq = deferred<DecodedImage>()
+        const openCounted = rawRuntimeMock.openSession.getMockImplementation()!
+        rawRuntimeMock.openSession.mockImplementationOnce(
+          async (...args: unknown[]) => {
+            const session = await openCounted(...args)
+            session.decodeBoundedHqRaw = vi
+              .fn()
+              .mockReturnValue(outgoingHq.promise)
+            return session
+          },
+        )
+        await act(async () => {
+          await result.current.loadFile(new File(['raw'], 'first.ARW'))
+        })
+        expect(result.current.displaySource).toBe('quick')
+        expect(releases(counted)).toEqual({
+          runtimeSessions: [0],
+          outputs: [],
+          revokedUrls: [],
+        })
+
+        await act(async () => {
+          if (owner === 'reset') result.current.reset()
+          else await result.current.loadFile(new File(['raw'], 'second.ARW'))
+        })
+        const successor = jotaiStore.get(currentSessionAtom)
+        const afterTeardown = releases(counted)
+        // The outgoing lease and its captured preview URL go exactly once.
+        expect(afterTeardown.runtimeSessions[0]).toBe(1)
+        expect(afterTeardown.revokedUrls).toEqual(['blob:embedded-1'])
+
+        // The outgoing source's HQ frame settles after its teardown.
+        await act(async () => {
+          outgoingHq.resolve(createDecodedImage('bounded-hq'))
+          await flushPromises()
+        })
+        expect(jotaiStore.get(currentSessionAtom)).toBe(successor)
+        expect(releases(counted)).toEqual(afterTeardown)
+
+        act(() => result.current.reset())
+        act(() => result.current.reset())
+        await flushPostCommitTasks()
+        expect(releases(counted)).toEqual(
+          owner === 'reset'
+            ? afterTeardown
+            : {
+                runtimeSessions: [1, 1],
+                outputs: [],
+                revokedUrls: ['blob:embedded-1', 'blob:embedded-2'],
+              },
+        )
+        expect(result.current.status).toBe('idle')
+        expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+      },
+    )
+
+    it.each(['reset', 'replacement'] as const)(
       'releases a sealing export once on %s and lets its late manifest land on nothing',
       async (owner) => {
         const gate = deferred<void>()

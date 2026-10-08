@@ -6,6 +6,7 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ProcessingStatus } from '../../../model/workflow'
+import { releaseSourceForReset } from '../../../services/workflow/raw-workflow-resources'
 
 type UseRawSessionResetInput = {
   runtimeWorkSessionIdRef: MutableRefObject<string | null>
@@ -44,13 +45,15 @@ export function useRawSessionReset({
   resetSession,
 }: UseRawSessionResetInput) {
   const reset = useCallback(() => {
-    runtimeWorkSessionIdRef.current = null
-    pendingLoadSessionIdRef.current = null
-    abortExportWork()
-    abortRuntimeWork()
-    queueExportResultResourceDisposal('reset-session')
-    revokeCurrentEmbeddedPreviewUrl()
-    previewCopyCanvasRef.current = null
+    releaseSourceForReset({
+      runtimeWorkSessionIdRef,
+      pendingLoadSessionIdRef,
+      previewCopyCanvasRef,
+      abortExportWork,
+      abortRuntimeWork,
+      queueExportResultResourceDisposal,
+      revokeCurrentEmbeddedPreviewUrl,
+    })
     setDecodedImageRef(null)
     setStatus('idle')
     setError(null)

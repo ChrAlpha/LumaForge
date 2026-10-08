@@ -535,6 +535,63 @@ describe('orchestrateRawLoad ack-before-work contract', () => {
     expect(order).toContain('status:error')
     expect(ctx.services.scheduleToast).toHaveBeenCalled()
   })
+
+  it('releases the outgoing source after its status tail and before the new lease, fences first', () => {
+    openSessionMock.mockImplementation(() => new Promise(() => {}))
+    const order: string[] = []
+    const ctx = buildContext({
+      order,
+      yieldToPaint: () => new Promise(() => {}),
+      getPrewarmState: () => 'ready',
+    })
+    const { atoms, services, refs } = ctx
+    refs.runtimeWorkSessionIdRef.current = 'outgoing'
+    refs.pendingLoadSessionIdRef.current = 'outgoing'
+    refs.previewCopyCanvasRef.current = document.createElement('canvas')
+    const fences = () =>
+      `${String(refs.runtimeWorkSessionIdRef.current)}/${String(refs.pendingLoadSessionIdRef.current)}/canvas=${refs.previewCopyCanvasRef.current ? 'set' : 'null'}`
+    vi.mocked(atoms.setProgress).mockImplementation((value) => {
+      order.push(`progress:${value}`)
+    })
+    vi.mocked(atoms.setError).mockImplementation((value) => {
+      order.push(`error:${String(value)}`)
+    })
+    vi.mocked(services.abortExportWork).mockImplementation(() => {
+      order.push(`abortExportWork:${fences()}`)
+    })
+    vi.mocked(services.abortRuntimeWork).mockImplementation(() => {
+      order.push(`abortRuntimeWork:${fences()}`)
+    })
+    vi.mocked(services.queueExportResultResourceDisposal).mockImplementation(
+      (...args: unknown[]) => {
+        order.push(`disposeExportResults(${args.map(String).join()})`)
+      },
+    )
+    vi.mocked(services.revokeCurrentEmbeddedPreviewUrl).mockImplementation(
+      () => {
+        order.push(`revokeEmbeddedPreviewUrl:${fences()}`)
+      },
+    )
+    const beginRuntimeSession = services.beginRuntimeSession
+    services.beginRuntimeSession = () => {
+      order.push(`beginRuntimeSession:${fences()}`)
+      return beginRuntimeSession()
+    }
+
+    void orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
+
+    expect(order.slice(0, order.indexOf('replaceFile'))).toEqual([
+      'status:loading',
+      'progress:0',
+      'error:null',
+      'abortExportWork:null/null/canvas=set',
+      'abortRuntimeWork:null/null/canvas=set',
+      'disposeExportResults()',
+      'revokeEmbeddedPreviewUrl:null/null/canvas=set',
+      'beginRuntimeSession:null/null/canvas=null',
+    ])
+    expect(refs.runtimeWorkSessionIdRef.current).toBe(atoms.getSession()?.id)
+  })
 })
 
 describe('orchestrateRawLoad host session lease', () => {

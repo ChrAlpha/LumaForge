@@ -203,6 +203,43 @@ describe('useRawSessionReset', () => {
     expect(resetSession).toHaveBeenCalledTimes(1)
   })
 
+  it('repeats the release on every reset and leaves what is left to free to the owners', () => {
+    const order: string[] = []
+    const record = (name: string) =>
+      vi.fn((...args: unknown[]) => {
+        order.push(args.length ? `${name}:${String(args[0])}` : name)
+      })
+    const { result } = renderHook(() =>
+      useRawSessionReset({
+        runtimeWorkSessionIdRef: { current: 'session-1' },
+        pendingLoadSessionIdRef: { current: null },
+        previewCopyCanvasRef: { current: null },
+        abortExportWork: record('abortExportWork'),
+        abortRuntimeWork: record('abortRuntimeWork'),
+        queueExportResultResourceDisposal: record('dispose'),
+        revokeCurrentEmbeddedPreviewUrl: record('revoke'),
+        setDecodedImageRef: vi.fn(),
+        setStatus: vi.fn(),
+        setError: vi.fn(),
+        setProgress: vi.fn(),
+        setStats: vi.fn(),
+        resetSession: record('resetSession'),
+      }),
+    )
+
+    result.current.reset()
+    result.current.reset()
+
+    const once = [
+      'abortExportWork',
+      'abortRuntimeWork',
+      'dispose:reset-session',
+      'revoke',
+      'resetSession',
+    ]
+    expect(order).toEqual([...once, ...once])
+  })
+
   it('runs nothing on mount or StrictMode replay, only when called', () => {
     const effects = {
       abortExportWork: vi.fn(),
