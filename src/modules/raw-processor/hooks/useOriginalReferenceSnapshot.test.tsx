@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { DisplaySource } from '../model/session'
@@ -73,6 +74,61 @@ describe('useOriginalReferenceSnapshot', () => {
     rerender({ styleVersion: 2 })
 
     expect(renderSnapshot).toHaveBeenCalledTimes(1)
+    expect(trackedUrls(owner)).toEqual(['blob:a'])
+  })
+
+  it('accepts a frame descriptor without changing the snapshot key', async () => {
+    const renderSnapshot = vi.fn().mockResolvedValue({
+      key: 'key-a',
+      objectUrl: 'blob:a',
+      width: 100,
+      height: 50,
+      source: 'quick',
+      mimeType: 'image/jpeg',
+      estimatedBytes: 10,
+    })
+    const frame = (frameId: string): DecodedPreviewFrame => ({
+      sessionId: 'session-a',
+      frameId,
+      stage: 'quick',
+      width: 1600,
+      height: 1000,
+      exposure: {
+        kind: 'source-pin',
+        value: { ev: 0, multiplier: 1, source: 'identity' },
+      },
+      quickPredecessorFrameId: null,
+    })
+
+    const image = createImage('quick')
+    const owner = createOwner()
+    const { result, rerender } = renderHook(
+      ({ currentFrame }: { currentFrame: DecodedPreviewFrame | null }) =>
+        useOriginalReferenceSnapshot({
+          sessionId: 'session-a',
+          image,
+          imageVersion: 1,
+          frame: currentFrame,
+          displaySource: 'quick',
+          capability: { webKitClass: 'chromium', pthread: true },
+          renderSnapshot,
+          ...owner,
+        }),
+      {
+        initialProps: {
+          currentFrame: frame('frame-a-1') as DecodedPreviewFrame | null,
+        },
+      },
+    )
+
+    await waitFor(() =>
+      expect(result.current.snapshot?.objectUrl).toBe('blob:a'),
+    )
+    rerender({ currentFrame: frame('frame-a-2') })
+    rerender({ currentFrame: null })
+
+    expect(renderSnapshot).toHaveBeenCalledTimes(1)
+    expect(result.current.snapshot?.objectUrl).toBe('blob:a')
     expect(trackedUrls(owner)).toEqual(['blob:a'])
   })
 

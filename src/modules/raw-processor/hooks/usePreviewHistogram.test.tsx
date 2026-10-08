@@ -577,6 +577,53 @@ describe('usePreviewHistogram', () => {
     expect(result.current).toBe(ready)
   })
 
+  it('accepts a frame descriptor without changing the job it keys', async () => {
+    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+      image: createImage('quick'),
+    })
+
+    await runAllWork()
+    expect(result.current.state).toBe('ready')
+    const ready = result.current
+
+    for (const frameId of ['frame-a-1', 'frame-a-2']) {
+      rerender({
+        imageRef,
+        imageVersion: 1,
+        frame: {
+          sessionId: 'session-a',
+          frameId,
+          stage: 'quick',
+          width: 2,
+          height: 2,
+          exposure: {
+            kind: 'source-pin',
+            value: { ev: 0, multiplier: 1, source: 'identity' },
+          },
+          quickPredecessorFrameId: null,
+        },
+        params: defaultParams,
+        lutDataRef,
+        lutDataVersion: 0,
+        displaySource: 'quick',
+      })
+      expect(result.current).toBe(ready)
+    }
+    rerender({
+      imageRef,
+      imageVersion: 1,
+      frame: null,
+      params: defaultParams,
+      lutDataRef,
+      lutDataVersion: 0,
+      displaySource: 'quick',
+    })
+
+    expect(result.current).toBe(ready)
+    await runAllWork()
+    expect(result.current).toBe(ready)
+  })
+
   it.each<[string, Partial<ProcessingParams>]>([
     ['temperature', { userTemperature: 25 }],
     ['saturation', { userSaturation: 25 }],

@@ -4,6 +4,7 @@ import type {
 } from '@lumaforge/render-engine/policy'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { DisplaySource } from '../model/session'
@@ -29,6 +30,12 @@ export type UseOriginalReferenceSnapshotInput = {
   sessionId: string | null
   image: DecodedImage | null
   imageVersion: number
+  /**
+   * The workflow's accepted descriptor for `image`; null while no decoded
+   * frame is accepted. The snapshot key is built from `imageVersion`, not
+   * from it.
+   */
+  frame?: DecodedPreviewFrame | null
   displaySource: DisplaySource
   capability: OriginalReferenceSnapshotCapability
   styleVersion?: number

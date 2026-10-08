@@ -14,6 +14,7 @@ import { resolvePreviewColorPlan } from '@lumaforge/render-engine/preview'
 import type { RefObject } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { DisplaySource } from '../model/session'
@@ -58,6 +59,12 @@ type PreviewHistogramInput = {
   imageRef: RefObject<DecodedImage | null>
   imageVersion: number
   imageIdentity?: string
+  /**
+   * The workflow's accepted descriptor for the frame `imageRef` holds; null
+   * while no decoded frame is accepted. Jobs are keyed by `imageVersion` and
+   * `imageIdentity`, not by it.
+   */
+  frame?: DecodedPreviewFrame | null
   params: ColorGraphIntentSource
   lutDataRef: RefObject<LUTData | null>
   lutDataVersion: number
@@ -65,7 +72,7 @@ type PreviewHistogramInput = {
 }
 
 /** What a job reads: the color intent, never the view. */
-type HistogramJobInput = Omit<PreviewHistogramInput, 'params'> & {
+type HistogramJobInput = Omit<PreviewHistogramInput, 'params' | 'frame'> & {
   intent: ColorGraphIntent
 }
 
