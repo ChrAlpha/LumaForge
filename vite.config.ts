@@ -28,6 +28,7 @@ import {
   copyNativeRuntimeAssets,
   resolveNativeRuntimeAssets,
 } from './scripts/native-runtime/assets.mjs'
+import { resolveAppAliases } from './scripts/quality/app-aliases.mjs'
 import {
   createRobotsTxt,
   createSitemapXml,
@@ -42,46 +43,6 @@ import {
 import { renderLumaForgeOgImage } from './src/pages/(main)/og-image'
 
 const ROOT = fileURLToPath(new URL('./', import.meta.url))
-const LUMA_COLOR_RUNTIME_TESTING_SOURCE = resolve(
-  ROOT,
-  './packages/luma-color-runtime/src/testing.ts',
-)
-const LUMA_COLOR_RUNTIME_SOURCE = resolve(
-  ROOT,
-  './packages/luma-color-runtime/src/index.ts',
-)
-const LUMA_RAW_RUNTIME_SOURCE = resolve(
-  ROOT,
-  './packages/luma-raw-runtime/src/index.ts',
-)
-const LUMA_JPEG_RUNTIME_SOURCE = resolve(
-  ROOT,
-  './packages/luma-jpeg-runtime/src/index.ts',
-)
-const RENDER_ENGINE_SOURCE = resolve(
-  ROOT,
-  './packages/render-engine/src/index.ts',
-)
-const RENDER_ENGINE_EXPORT_SOURCE = resolve(
-  ROOT,
-  './packages/render-engine/src/export/index.ts',
-)
-const RENDER_ENGINE_GEOMETRY_SOURCE = resolve(
-  ROOT,
-  './packages/render-engine/src/geometry/index.ts',
-)
-const RENDER_ENGINE_MANIFEST_SOURCE = resolve(
-  ROOT,
-  './packages/render-engine/src/manifest/index.ts',
-)
-const RENDER_ENGINE_POLICY_SOURCE = resolve(
-  ROOT,
-  './packages/render-engine/src/policy/index.ts',
-)
-const RENDER_ENGINE_PREVIEW_SOURCE = resolve(
-  ROOT,
-  './packages/render-engine/src/preview/index.ts',
-)
 const LUMAFORGE_OG_IMAGE_OUTPUT = 'og-image.png'
 const LUMAFORGE_OG_IMAGE_FONT_SOURCE = resolve(
   ROOT,
@@ -278,24 +239,7 @@ export default defineConfig(({ command }) => {
       },
     },
     resolve: {
-      alias: {
-        '@lumaforge/luma-color-runtime/wgsl': resolve(
-          ROOT,
-          './packages/luma-color-runtime/src/wgsl.ts',
-        ),
-        '@lumaforge/luma-color-runtime/testing':
-          LUMA_COLOR_RUNTIME_TESTING_SOURCE,
-        '@lumaforge/luma-color-runtime': LUMA_COLOR_RUNTIME_SOURCE,
-        '@lumaforge/luma-raw-runtime': LUMA_RAW_RUNTIME_SOURCE,
-        '@lumaforge/luma-jpeg-runtime': LUMA_JPEG_RUNTIME_SOURCE,
-        '@lumaforge/render-engine/export': RENDER_ENGINE_EXPORT_SOURCE,
-        '@lumaforge/render-engine/geometry': RENDER_ENGINE_GEOMETRY_SOURCE,
-        '@lumaforge/render-engine/manifest': RENDER_ENGINE_MANIFEST_SOURCE,
-        '@lumaforge/render-engine/policy': RENDER_ENGINE_POLICY_SOURCE,
-        '@lumaforge/render-engine/preview': RENDER_ENGINE_PREVIEW_SOURCE,
-        '@lumaforge/render-engine': RENDER_ENGINE_SOURCE,
-      },
-      tsconfigPaths: true,
+      alias: resolveAppAliases(ROOT),
     },
     define: {
       APP_DEV_CWD: JSON.stringify(process.cwd()),

@@ -14,9 +14,6 @@
       "@lumaforge/luma-color-runtime/wgsl": [
         "./packages/luma-color-runtime/src/wgsl.ts"
       ],
-      "@lumaforge/luma-color-runtime/testing": [
-        "./packages/luma-color-runtime/src/testing.ts"
-      ],
       "@lumaforge/luma-jpeg-runtime": [
         "./packages/luma-jpeg-runtime/src/index.ts"
       ],
