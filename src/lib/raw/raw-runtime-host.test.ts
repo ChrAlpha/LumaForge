@@ -55,6 +55,7 @@ function makeFrame(
   }
 }
 
+/** A supported capability carrying every fact the native runtime declares. */
 function makeCapability(): LumaRawExportCapability {
   return {
     supported: true,
@@ -67,8 +68,18 @@ function makeCapability(): LumaRawExportCapability {
     blackLevel: 0,
     whiteLevel: 65535,
     strategy: 'libraw-processed-window',
-    orientation: { code: 1, supported: true },
+    orientation: {
+      code: 1,
+      supported: true,
+      outputWidth: 6240,
+      outputHeight: 4168,
+    },
     color: {
+      whiteBalance: [2.0546875, 1, 1.5234375, 1],
+      cameraToWorkingRgb: [
+        1.6205, -0.4859, -0.1346, -0.1238, 1.3117, -0.1879, 0.0215, -0.2521,
+        1.2306,
+      ],
       workingSpace: 'linear-prophoto-rgb',
       librawOutputColor: 'prophoto',
       gamma: 'linear',

@@ -19,6 +19,7 @@ import {
 import type {
   LumaRawDecodeSession,
   LumaRawExportCapability,
+  LumaRawExportUnsupportedReason,
   LumaRawFrame,
   LumaRawRuntime,
   LumaRawRuntimeInfo,
@@ -532,7 +533,8 @@ function pageMarkers() {
   return markers
 }
 
-function createSupportedCapability() {
+/** A supported capability carrying every fact the native runtime declares. */
+function createSupportedCapability(): LumaRawExportCapability {
   return {
     supported: true,
     strategy: 'libraw-processed-window',
@@ -540,10 +542,16 @@ function createSupportedCapability() {
     height: 4024,
     rawWidth: 6048,
     rawHeight: 4024,
+    visibleCrop: { x: 0, y: 0, width: 6048, height: 4024 },
     cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
     blackLevel: 0,
     whiteLevel: 65535,
-    orientation: 1,
+    orientation: {
+      code: 1,
+      supported: true,
+      outputWidth: 6048,
+      outputHeight: 4024,
+    },
     sensor: {
       layout: 'bayer',
       colorCount: 3,
@@ -552,6 +560,11 @@ function createSupportedCapability() {
     },
     levels: { black: 0, white: 65535 },
     color: {
+      whiteBalance: [2.0546875, 1, 1.5234375, 1],
+      cameraToWorkingRgb: [
+        1.6205, -0.4859, -0.1346, -0.1238, 1.3117, -0.1879, 0.0215, -0.2521,
+        1.2306,
+      ],
       workingSpace: 'linear-prophoto-rgb',
       librawOutputColor: 'prophoto',
       gamma: 'linear',
@@ -569,7 +582,7 @@ function createSupportedCapability() {
   }
 }
 
-function createRawMosaicCapability() {
+function createRawMosaicCapability(): LumaRawExportCapability {
   return {
     ...createSupportedCapability(),
     strategy: 'raw-mosaic-window',
@@ -577,7 +590,9 @@ function createRawMosaicCapability() {
   }
 }
 
-function createUnsupportedCapability(reason: string) {
+function createUnsupportedCapability(
+  reason: LumaRawExportUnsupportedReason,
+): LumaRawExportCapability {
   return {
     ...createSupportedCapability(),
     supported: false,
@@ -1673,11 +1688,7 @@ describe('useRawWorkflow embedded preview state', () => {
                   run('extractEmbeddedPreview', () => null),
                 ),
                 probeExportCapability: vi.fn(() =>
-                  run(
-                    'probeExportCapability',
-                    () =>
-                      createSupportedCapability() as unknown as LumaRawExportCapability,
-                  ),
+                  run('probeExportCapability', createSupportedCapability),
                 ),
                 readRawWindow: vi.fn(),
                 readProcessedWindow: vi.fn(),
@@ -5204,7 +5215,10 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(cleanup).not.toHaveBeenCalled()
   })
 
-  it.each(['missing-color-transform', 'unsupported-orientation'])(
+  it.each<LumaRawExportUnsupportedReason>([
+    'missing-color-transform',
+    'unsupported-orientation',
+  ])(
     'keeps full-resolution export disabled when capability reports %s',
     async (reason) => {
       rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)

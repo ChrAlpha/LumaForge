@@ -1,5 +1,6 @@
 import type {
   LumaRawExportCapability,
+  LumaRawExportColorFacts,
   LumaRawFrame,
   LumaRawRuntime,
   LumaRawRuntimeInfo,
@@ -69,6 +70,27 @@ function makeLumaFrame(source: 'quick' | 'bounded-hq'): LumaRawFrame {
   }
 }
 
+/**
+ * The color facts the native processed-window capability declares: the
+ * green-normalized camera white balance, the camera-to-working matrix, linear
+ * ProPhoto output, and both runtime-applied flags, every one explicit.
+ */
+function makeNativeColorFacts(): LumaRawExportColorFacts {
+  return {
+    whiteBalance: [2.0546875, 1, 1.5234375, 1],
+    cameraToWorkingRgb: [
+      1.6205, -0.4859, -0.1346, -0.1238, 1.3117, -0.1879, 0.0215, -0.2521,
+      1.2306,
+    ],
+    workingSpace: 'linear-prophoto-rgb',
+    librawOutputColor: 'prophoto',
+    gamma: 'linear',
+    cameraWhiteBalanceAppliedByRuntime: true,
+    cameraMatrixAppliedByRuntime: true,
+  }
+}
+
+/** A supported capability carrying every fact the native runtime declares. */
 function makeCapability(): LumaRawExportCapability {
   return {
     supported: true,
@@ -81,14 +103,13 @@ function makeCapability(): LumaRawExportCapability {
     blackLevel: 0,
     whiteLevel: 65535,
     strategy: 'libraw-processed-window',
-    orientation: { code: 1, supported: true },
-    color: {
-      workingSpace: 'linear-prophoto-rgb',
-      librawOutputColor: 'prophoto',
-      gamma: 'linear',
-      cameraWhiteBalanceAppliedByRuntime: true,
-      cameraMatrixAppliedByRuntime: true,
+    orientation: {
+      code: 1,
+      supported: true,
+      outputWidth: 6240,
+      outputHeight: 4168,
     },
+    color: makeNativeColorFacts(),
     sensor: {
       layout: 'bayer',
       colorCount: 3,
@@ -105,6 +126,16 @@ function makeCapability(): LumaRawExportCapability {
     },
     reasons: [],
   }
+}
+
+/**
+ * Native color facts with one fact left out, as an incomplete payload would
+ * arrive. The omission must refuse export, never default to the native value.
+ */
+function colorFactsWithout(fact: keyof LumaRawExportColorFacts) {
+  const facts: Partial<LumaRawExportColorFacts> = makeNativeColorFacts()
+  delete facts[fact]
+  return facts
 }
 
 function makeRawMosaicCapability(): LumaRawExportCapability {
@@ -491,11 +522,9 @@ describe('raw runtime host conversion and export gate', () => {
 
     const session = await host.openSession(new File(['raw'], 'sample.ARW'))
 
-    await expect(session.probeExportCapability?.()).resolves.toMatchObject({
-      supported: true,
-      strategy: 'libraw-processed-window',
-      windows: { librawProcessed: true, rawMosaic: false },
-    })
+    await expect(session.probeExportCapability?.()).resolves.toEqual(
+      makeCapability(),
+    )
     expect(probeExportCapability).toHaveBeenCalledTimes(1)
     expect(jpegRuntimeAvailabilityProbe).toHaveBeenCalledTimes(1)
   })
@@ -623,13 +652,48 @@ describe('raw runtime host conversion and export gate', () => {
     ['missing dimensions', { width: 0 }, ['missing-dimensions']],
     [
       'a working space other than linear ProPhoto',
+      { color: { ...makeNativeColorFacts(), workingSpace: 'linear-srgb' } },
+      ['missing-color-transform'],
+    ],
+    [
+      'an omitted working space',
+      { color: colorFactsWithout('workingSpace') },
+      ['missing-color-transform'],
+    ],
+    [
+      'an omitted runtime white balance flag',
+      { color: colorFactsWithout('cameraWhiteBalanceAppliedByRuntime') },
+      ['missing-color-transform'],
+    ],
+    [
+      'an omitted runtime camera matrix flag',
+      { color: colorFactsWithout('cameraMatrixAppliedByRuntime') },
+      ['missing-color-transform'],
+    ],
+    [
+      'a runtime white balance flag set false',
       {
         color: {
-          ...makeCapability().color,
-          workingSpace: 'linear-srgb',
+          ...makeNativeColorFacts(),
+          cameraWhiteBalanceAppliedByRuntime: false,
         },
       },
       ['missing-color-transform'],
+    ],
+    [
+      'a runtime camera matrix flag set false',
+      {
+        color: {
+          ...makeNativeColorFacts(),
+          cameraMatrixAppliedByRuntime: false,
+        },
+      },
+      ['missing-color-transform'],
+    ],
+    [
+      'an omitted strategy',
+      { strategy: undefined },
+      ['processed-window-unavailable'],
     ],
   ] as Array<
     [
