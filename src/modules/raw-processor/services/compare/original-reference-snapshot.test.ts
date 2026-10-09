@@ -5,72 +5,62 @@ import {
 } from './original-reference-snapshot'
 
 describe('original reference snapshot policy', () => {
-  it('keys the snapshot by source facts and technical-base facts only', () => {
+  it('keys the snapshot by the accepted frame and the technical-base policy only', () => {
+    const frame = { sessionId: 'session-a', frameId: 'decoded-frame-3' }
     const base = createOriginalReferenceSnapshotKey({
-      sessionId: 'session-a',
+      frame,
       displaySource: 'quick',
-      imageVersion: 3,
-      width: 2000,
-      height: 1250,
-      renderExposureEv: 0.5,
       policyVersion: 1,
     })
 
-    const styleChange = createOriginalReferenceSnapshotKey({
-      sessionId: 'session-a',
-      displaySource: 'quick',
-      imageVersion: 3,
-      width: 2000,
-      height: 1250,
-      renderExposureEv: 0.5,
-      policyVersion: 1,
-      ignored: {
-        split: 0.82,
-        zoom: 4,
-        panX: 120,
-        panY: -30,
-        styleFingerprint: 'classic-709',
-        lutFingerprint: 'lut-a',
-        intensity: 0.25,
-        userExposureEv: 1,
-      },
-    })
-
-    expect(styleChange).toBe(base)
-  })
-
-  it('changes the key for bounded HQ upgrade and render exposure change', () => {
-    const quick = createOriginalReferenceSnapshotKey({
-      sessionId: 'session-a',
-      displaySource: 'quick',
-      imageVersion: 3,
-      width: 2000,
-      height: 1250,
-      renderExposureEv: 0.5,
-      policyVersion: 1,
-    })
-
+    // The same accepted frame keys the same snapshot, whatever object
+    // carries its identity.
     expect(
       createOriginalReferenceSnapshotKey({
-        sessionId: 'session-a',
-        displaySource: 'bounded-hq',
-        imageVersion: 4,
-        width: 4000,
-        height: 3000,
-        renderExposureEv: 0.5,
+        frame: { ...frame },
+        displaySource: 'quick',
+        policyVersion: 1,
+      }),
+    ).toBe(base)
+    expect(base).toContain('session:session-a')
+    expect(base).toContain('frame:decoded-frame-3')
+  })
+
+  it('changes the key for another accepted frame, however alike its pixels', () => {
+    const quick = createOriginalReferenceSnapshotKey({
+      frame: { sessionId: 'session-a', frameId: 'decoded-frame-3' },
+      displaySource: 'quick',
+      policyVersion: 1,
+    })
+
+    // A frame decoded again for the same source, a restored frame included.
+    expect(
+      createOriginalReferenceSnapshotKey({
+        frame: { sessionId: 'session-a', frameId: 'decoded-frame-4' },
+        displaySource: 'quick',
         policyVersion: 1,
       }),
     ).not.toBe(quick)
-
+    // A replaced source never shares a key, even with an equal frame id.
     expect(
       createOriginalReferenceSnapshotKey({
-        sessionId: 'session-a',
+        frame: { sessionId: 'session-b', frameId: 'decoded-frame-3' },
         displaySource: 'quick',
-        imageVersion: 3,
-        width: 2000,
-        height: 1250,
-        renderExposureEv: 0.75,
         policyVersion: 1,
+      }),
+    ).not.toBe(quick)
+    expect(
+      createOriginalReferenceSnapshotKey({
+        frame: { sessionId: 'session-a', frameId: 'decoded-frame-4' },
+        displaySource: 'bounded-hq',
+        policyVersion: 1,
+      }),
+    ).toContain('source:bounded-hq')
+    expect(
+      createOriginalReferenceSnapshotKey({
+        frame: { sessionId: 'session-a', frameId: 'decoded-frame-3' },
+        displaySource: 'quick',
+        policyVersion: 2,
       }),
     ).not.toBe(quick)
   })

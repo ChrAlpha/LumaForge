@@ -7,6 +7,7 @@ import { NEUTRAL_SELECTIVE_COLOR } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { DisplaySource } from '../model/session'
@@ -89,10 +90,65 @@ function createLutData(profileId = 'test-vlog'): LUTData {
   }
 }
 
+let frameSequence = 0
+
+function describeFrame(
+  image: DecodedImage,
+  overrides: Partial<DecodedPreviewFrame> = {},
+): DecodedPreviewFrame {
+  frameSequence += 1
+  return {
+    sessionId: 'session-a',
+    frameId: `decoded-frame-${frameSequence}`,
+    stage: image.source ?? 'unknown',
+    width: image.width,
+    height: image.height,
+    exposure: { kind: 'source-pin', value: image.renderExposure },
+    quickPredecessorFrameId: null,
+    ...overrides,
+  }
+}
+
+/**
+ * Plays the frame producer: one descriptor per image it is handed, read
+ * from the ref at render time, a bounded-HQ frame naming the quick frame it
+ * replaces.
+ */
+function createFrameProducer() {
+  const frames = new WeakMap<DecodedImage, DecodedPreviewFrame>()
+  let live: DecodedPreviewFrame | null = null
+  return (image: DecodedImage | null): DecodedPreviewFrame | null => {
+    if (!image) {
+      live = null
+      return null
+    }
+    let frame = frames.get(image)
+    if (!frame) {
+      frame = describeFrame(image, {
+        quickPredecessorFrameId:
+          image.source === 'bounded-hq' && live?.stage === 'quick'
+            ? live.frameId
+            : null,
+      })
+      frames.set(image, frame)
+    }
+    live = frame
+    return frame
+  }
+}
+
+type HistogramHarnessProps = Omit<
+  Parameters<typeof usePreviewHistogram>[0],
+  'frame'
+> & {
+  /** The accepted descriptor; the harness producer's when left out. */
+  frame?: DecodedPreviewFrame | null
+}
+
 function renderPreviewHistogram(options: {
   enabled?: boolean
   image: DecodedImage | null
-  imageVersion?: number
+  frame?: DecodedPreviewFrame | null
   params?: ProcessingParams
   lutData?: LUTData | null
   lutDataVersion?: number
@@ -100,30 +156,37 @@ function renderPreviewHistogram(options: {
 }) {
   const imageRef = mutableRef<DecodedImage | null>(options.image)
   const lutDataRef = mutableRef<LUTData | null>(options.lutData ?? null)
-  const props: Parameters<typeof usePreviewHistogram>[0] & {
+  const props: HistogramHarnessProps & {
     imageRef: typeof imageRef
     lutDataRef: typeof lutDataRef
   } = {
     enabled: options.enabled ?? true,
     imageRef,
-    imageVersion: options.imageVersion ?? 1,
+    ...('frame' in options ? { frame: options.frame } : {}),
     params: options.params ?? defaultParams,
     lutDataRef,
     lutDataVersion: options.lutDataVersion ?? 0,
     displaySource: options.displaySource ?? 'quick',
   }
 
+  const produceFrame = createFrameProducer()
   const renders: PreviewHistogramState[] = []
   const hook = renderHook(
-    (currentProps: typeof props) => {
-      const state = usePreviewHistogram(currentProps)
+    ({ frame, ...currentProps }: HistogramHarnessProps) => {
+      const state = usePreviewHistogram({
+        ...currentProps,
+        frame:
+          frame === undefined
+            ? produceFrame(currentProps.imageRef.current)
+            : frame,
+      })
       renders.push(state)
       return state
     },
     { initialProps: props },
   )
 
-  return { ...hook, imageRef, lutDataRef, renders }
+  return { ...hook, imageRef, lutDataRef, renders, produceFrame }
 }
 
 async function runDebouncedWork(ms = 150) {
@@ -338,7 +401,6 @@ describe('usePreviewHistogram', () => {
       imageRef.current = boundedHq
       rerender({
         imageRef,
-        imageVersion: 2,
         params: hqParams,
         lutDataRef,
         lutDataVersion: 0,
@@ -411,7 +473,6 @@ describe('usePreviewHistogram', () => {
       imageRef.current = boundedHq
       rerender({
         imageRef,
-        imageVersion: 2,
         params: { ...defaultParams, ...lookChange },
         lutDataRef,
         lutDataVersion: 0,
@@ -445,6 +506,62 @@ describe('usePreviewHistogram', () => {
     },
   )
 
+  it('lets only the bounded-HQ frame that names it take over from the first quick run', async () => {
+    const quickData = new Uint16Array(1000 * 501 * 3)
+    const hqData = new Uint16Array(1000 * 1001 * 3)
+    quickData.fill(32768)
+    hqData.fill(49152)
+    const quick = createImage('quick', {
+      width: 1000,
+      height: 501,
+      data: quickData,
+    })
+    const boundedHq = createImage('bounded-hq', {
+      width: 1000,
+      height: 1001,
+      data: hqData,
+    })
+    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+      image: quick,
+    })
+
+    // Same source and look, but the producer named no quick predecessor,
+    // so the quick run is not this frame's stand-in.
+    imageRef.current = boundedHq
+    rerender({
+      imageRef,
+      frame: describeFrame(boundedHq, { quickPredecessorFrameId: null }),
+      params: defaultParams,
+      lutDataRef,
+      lutDataVersion: 0,
+      displaySource: 'bounded-hq',
+    })
+
+    let observedQuick = false
+    for (
+      let attempt = 0;
+      attempt < 128 &&
+      !(
+        result.current.state === 'ready' &&
+        result.current.source === 'bounded-hq'
+      );
+      attempt += 1
+    ) {
+      await act(async () => {
+        await vi.advanceTimersToNextTimerAsync()
+      })
+      observedQuick =
+        observedQuick ||
+        (result.current.state === 'ready' && result.current.source === 'quick')
+    }
+
+    expect(observedQuick).toBe(false)
+    expect(result.current).toMatchObject({
+      state: 'ready',
+      source: 'bounded-hq',
+    })
+  })
+
   it('runs nothing while no surface shows it, and computes once one does', async () => {
     const image = createImage('quick')
     const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
@@ -457,7 +574,6 @@ describe('usePreviewHistogram', () => {
     rerender({
       enabled: true,
       imageRef,
-      imageVersion: 1,
       params: defaultParams,
       lutDataRef,
       lutDataVersion: 0,
@@ -470,7 +586,6 @@ describe('usePreviewHistogram', () => {
     rerender({
       enabled: false,
       imageRef,
-      imageVersion: 1,
       params: { ...defaultParams, userExposureEv: 1 },
       lutDataRef,
       lutDataVersion: 0,
@@ -527,7 +642,6 @@ describe('usePreviewHistogram', () => {
     imageRef.current = boundedHq
     rerender({
       imageRef,
-      imageVersion: 2,
       params: defaultParams,
       lutDataRef,
       lutDataVersion: 0,
@@ -560,7 +674,6 @@ describe('usePreviewHistogram', () => {
 
     rerender({
       imageRef,
-      imageVersion: 1,
       // A legacy record carrying view fields keeps the same job.
       params: {
         ...defaultParams,
@@ -577,51 +690,74 @@ describe('usePreviewHistogram', () => {
     expect(result.current).toBe(ready)
   })
 
-  it('accepts a frame descriptor without changing the job it keys', async () => {
+  it('keeps the job while the owner rerenders the same accepted frame', async () => {
+    const image = createImage('quick')
+    const frame = describeFrame(image)
     const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
-      image: createImage('quick'),
+      image,
+      frame,
     })
 
     await runAllWork()
     expect(result.current.state).toBe('ready')
     const ready = result.current
 
-    for (const frameId of ['frame-a-1', 'frame-a-2']) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       rerender({
         imageRef,
-        imageVersion: 1,
-        frame: {
-          sessionId: 'session-a',
-          frameId,
-          stage: 'quick',
-          width: 2,
-          height: 2,
-          exposure: {
-            kind: 'source-pin',
-            value: { ev: 0, multiplier: 1, source: 'identity' },
-          },
-          quickPredecessorFrameId: null,
-        },
-        params: defaultParams,
+        frame,
+        params: { ...defaultParams },
         lutDataRef,
         lutDataVersion: 0,
         displaySource: 'quick',
       })
       expect(result.current).toBe(ready)
     }
+    await runAllWork()
+    expect(result.current).toBe(ready)
+  })
+
+  it('measures a newly accepted frame, however alike its size and stage', async () => {
+    const first = createImage('quick')
+    const again = createImage('quick', {
+      data: new Uint16Array([
+        65535, 0, 0, 0, 65535, 0, 0, 0, 65535, 65535, 65535, 65535,
+      ]),
+    })
+    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+      image: first,
+    })
+
+    await runAllWork()
+    expect(result.current.state).toBe('ready')
+    const previous = result.current
+
+    // A frame decoded again for the same source, with the same size and
+    // stage: only its descriptor says the pixels are new.
+    imageRef.current = again
     rerender({
       imageRef,
-      imageVersion: 1,
-      frame: null,
       params: defaultParams,
       lutDataRef,
       lutDataVersion: 0,
       displaySource: 'quick',
     })
+    expect(result.current).toEqual({ state: 'stale', previous })
 
-    expect(result.current).toBe(ready)
     await runAllWork()
-    expect(result.current).toBe(ready)
+    expect(result.current.state).toBe('ready')
+    expect(result.current).not.toEqual(previous)
+  })
+
+  it('measures no pixels the workflow has not accepted', async () => {
+    const { result } = renderPreviewHistogram({
+      image: createImage('quick'),
+      frame: null,
+    })
+
+    expect(result.current).toEqual({ state: 'unavailable', reason: 'no-image' })
+    await runAllWork()
+    expect(result.current).toEqual({ state: 'unavailable', reason: 'no-image' })
   })
 
   it.each<[string, Partial<ProcessingParams>]>([
@@ -643,7 +779,6 @@ describe('usePreviewHistogram', () => {
 
       rerender({
         imageRef,
-        imageVersion: 1,
         params: {
           ...defaultParams,
           viewMode: 'compare',
@@ -677,7 +812,6 @@ describe('usePreviewHistogram', () => {
 
     rerender({
       imageRef,
-      imageVersion: 1,
       params: { ...defaultParams, userExposureEv: 1 },
       lutDataRef,
       lutDataVersion: 0,
@@ -722,7 +856,6 @@ describe('usePreviewHistogram', () => {
     lutDataRef.current = createLutData()
     rerender({
       imageRef,
-      imageVersion: 1,
       params: { ...defaultParams, styleKind: 'custom' },
       lutDataRef,
       lutDataVersion: 1,
@@ -746,7 +879,6 @@ describe('usePreviewHistogram', () => {
 
     rerender({
       imageRef,
-      imageVersion: 1,
       params: { ...defaultParams, viewMode: 'original' } as ProcessingParams,
       lutDataRef,
       lutDataVersion: 0,
@@ -774,7 +906,6 @@ describe('usePreviewHistogram', () => {
 
     rerender({
       imageRef,
-      imageVersion: 1,
       params: { ...params, selectiveColor: hsl() },
       lutDataRef,
       lutDataVersion: 0,
@@ -801,7 +932,6 @@ describe('usePreviewHistogram', () => {
 
     rerender({
       imageRef,
-      imageVersion: 1,
       params: { ...params, intensity: 0.37 },
       lutDataRef,
       lutDataVersion: 1,
@@ -833,7 +963,6 @@ describe('usePreviewHistogram', () => {
     lutDataRef.current = recontracted
     rerender({
       imageRef,
-      imageVersion: 1,
       params,
       lutDataRef,
       lutDataVersion: 2,
@@ -912,7 +1041,6 @@ describe('usePreviewHistogram over the look the preview draws', () => {
   ) {
     hook.rerender({
       imageRef: hook.imageRef,
-      imageVersion: 1,
       params,
       lutDataRef: hook.lutDataRef,
       lutDataVersion,

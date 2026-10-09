@@ -48,8 +48,15 @@ type StageProps = {
   sessionId: string | null
   viewMode: PreviewViewMode
   image: DecodedImage | null
+  /**
+   * Bumped with every frame the producer accepts. The harness keys its
+   * frames by it, as the workflow mints one per accepted frame.
+   */
   imageVersion: number
-  /** The workflow's accepted descriptor of `image`. */
+  /**
+   * The workflow's accepted descriptor of `image`; the harness producer's
+   * when left out.
+   */
   frame?: DecodedPreviewFrame | null
   displaySource: DisplaySource
 }
@@ -116,6 +123,31 @@ function createImage(
   }
 }
 
+const acceptedFrames = new Map<string, DecodedPreviewFrame>()
+
+/**
+ * Plays the frame producer: one descriptor per accepted frame of a session,
+ * which the harness counts with `imageVersion`.
+ */
+function frameOf(
+  props: Pick<StageProps, 'sessionId' | 'image' | 'imageVersion'>,
+): DecodedPreviewFrame | null {
+  const { sessionId, image, imageVersion } = props
+  if (!sessionId || !image) return null
+  const id = `${sessionId}/decoded-frame-${imageVersion}`
+  const frame = acceptedFrames.get(id) ?? {
+    sessionId,
+    frameId: `decoded-frame-${imageVersion}`,
+    stage: image.source ?? 'unknown',
+    width: image.width,
+    height: image.height,
+    exposure: { kind: 'unpinned', value: image.renderExposure },
+    quickPredecessorFrameId: null,
+  }
+  acceptedFrames.set(id, frame)
+  return frame
+}
+
 function createSnapshot(key: string): OriginalReferenceSnapshot {
   objectUrlCount += 1
   return {
@@ -165,8 +197,7 @@ function renderStageHook({
         viewMode: props.viewMode,
         previewSuspended: false,
         decodedImageRef,
-        decodedImageVersion: props.imageVersion,
-        decodedFrame: props.frame ?? null,
+        decodedFrame: props.frame === undefined ? frameOf(props) : props.frame,
         displaySource: props.displaySource,
         resourceRegistryRef,
       })
@@ -192,6 +223,7 @@ function renderStage({ strict = false }: { strict?: boolean } = {}) {
 describe('useOriginalReferenceStage', () => {
   beforeEach(() => {
     renders.length = 0
+    acceptedFrames.clear()
     revokeObjectURL.mockReset()
     rendererMock.renderOriginalReferenceSnapshot.mockReset()
     rendererMock.renderOriginalReferenceSnapshot.mockImplementation(
@@ -280,7 +312,6 @@ describe('useOriginalReferenceStage', () => {
         viewMode: 'compare',
         previewSuspended: false,
         decodedImageRef: { current: null },
-        decodedImageVersion: 0,
         decodedFrame: null,
         displaySource: 'bounded-hq',
         resourceRegistryRef: { current: createResourceRegistry() },

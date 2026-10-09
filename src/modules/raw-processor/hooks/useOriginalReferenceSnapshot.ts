@@ -29,13 +29,12 @@ export type OriginalReferenceSnapshotCapability = {
 export type UseOriginalReferenceSnapshotInput = {
   sessionId: string | null
   image: DecodedImage | null
-  imageVersion: number
   /**
-   * The workflow's accepted descriptor for `image`; null while no decoded
-   * frame is accepted. The snapshot key is built from `imageVersion`, not
-   * from it.
+   * The workflow's accepted descriptor for `image`, which keys the snapshot.
+   * Null prepares none: pixels without an accepted frame, or a frame of
+   * another session, are never drawn.
    */
-  frame?: DecodedPreviewFrame | null
+  frame: DecodedPreviewFrame | null
   displaySource: DisplaySource
   capability: OriginalReferenceSnapshotCapability
   styleVersion?: number
@@ -73,7 +72,7 @@ function getOriginalReferenceSnapshotFallbackReason(error: unknown): string {
 export function useOriginalReferenceSnapshot({
   sessionId,
   image,
-  imageVersion,
+  frame,
   displaySource,
   capability,
   renderSnapshot = renderOriginalReferenceSnapshot,
@@ -91,19 +90,17 @@ export function useOriginalReferenceSnapshot({
     capability.previewGpuBudget?.originalReferenceSnapshotMaxPixels
 
   const key = useMemo(() => {
-    if (!sessionId || !image) return null
+    if (!sessionId || !image || !frame || frame.sessionId !== sessionId) {
+      return null
+    }
     if (displaySource !== 'quick' && displaySource !== 'bounded-hq') return null
 
     return createOriginalReferenceSnapshotKey({
-      sessionId,
+      frame,
       displaySource,
-      imageVersion,
-      width: image.width,
-      height: image.height,
-      renderExposureEv: image.renderExposure.ev,
       policyVersion: 1,
     })
-  }, [displaySource, image, imageVersion, sessionId])
+  }, [displaySource, frame, image, sessionId])
 
   useEffect(() => {
     if (

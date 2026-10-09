@@ -1,5 +1,7 @@
 import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
+
 import type { DisplaySource } from '../../model/session'
 
 export type OriginalReferenceSnapshot = {
@@ -13,14 +15,14 @@ export type OriginalReferenceSnapshot = {
 }
 
 export type OriginalReferenceSnapshotKeyInput = {
-  sessionId: string
+  /**
+   * The accepted frame the snapshot is drawn from, its only decoded
+   * identity: the frame's size and exposure travel with it, so a frame
+   * decoded again gets a new key however alike its pixels are.
+   */
+  frame: Pick<DecodedPreviewFrame, 'sessionId' | 'frameId'>
   displaySource: Extract<DisplaySource, 'quick' | 'bounded-hq'>
-  imageVersion: number
-  width: number
-  height: number
-  renderExposureEv: number
   policyVersion: number
-  ignored?: Record<string, unknown>
 }
 
 export type SnapshotCapabilityPolicyInput = {
@@ -30,23 +32,19 @@ export type SnapshotCapabilityPolicyInput = {
   previewGpuBudgetMaxPixels?: number
 }
 
+// The snapshot is the technical original of one accepted frame, so the look,
+// the view, and the user's color never reach its key.
 export function createOriginalReferenceSnapshotKey({
-  sessionId,
+  frame,
   displaySource,
-  imageVersion,
-  width,
-  height,
-  renderExposureEv,
   policyVersion,
 }: OriginalReferenceSnapshotKeyInput): string {
   return [
     'original-reference',
     `policy:${policyVersion}`,
-    `session:${sessionId}`,
+    `session:${frame.sessionId}`,
+    `frame:${frame.frameId}`,
     `source:${displaySource}`,
-    `version:${imageVersion}`,
-    `size:${width}x${height}`,
-    `renderExposure:${Number.isFinite(renderExposureEv) ? renderExposureEv : 0}`,
   ].join('|')
 }
 

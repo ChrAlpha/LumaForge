@@ -22,10 +22,7 @@ import { usePreviewPipelineEvacuation } from './usePreviewPipelineEvacuation'
 import { useRestorePreviewAfterExport } from './useRestorePreviewAfterExport'
 
 type UseRawPreviewStageInput = {
-  session: ImageSession | null
-  pendingLoadSessionIdRef: MutableRefObject<string | null>
   decodedImageRef: MutableRefObject<DecodedImage | null>
-  decodedImageVersion: number
   rawRenderExposureRef: MutableRefObject<RawRenderExposure | null>
   resourceRegistryRef: MutableRefObject<ResourceRegistry | null>
   setDecodedImageVersion: Dispatch<SetStateAction<number>>
@@ -57,10 +54,7 @@ function getCurrentSessionId(): string | null {
 }
 
 export function useRawPreviewStage({
-  session,
-  pendingLoadSessionIdRef,
   decodedImageRef,
-  decodedImageVersion,
   rawRenderExposureRef,
   resourceRegistryRef,
   setDecodedImageVersion,
@@ -109,8 +103,6 @@ export function useRawPreviewStage({
   const histogram = usePreviewHistogram({
     enabled: histogramEnabled,
     imageRef: decodedImageRef,
-    imageVersion: decodedImageVersion,
-    imageIdentity: session?.id ?? pendingLoadSessionIdRef.current ?? undefined,
     frame: decodedFrame,
     params,
     lutDataRef,

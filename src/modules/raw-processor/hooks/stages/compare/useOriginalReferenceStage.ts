@@ -15,7 +15,6 @@ type UseOriginalReferenceStageInput = {
   viewMode: PreviewViewMode
   previewSuspended: boolean
   decodedImageRef: MutableRefObject<DecodedImage | null>
-  decodedImageVersion: number
   /**
    * The accepted descriptor of the frame `decodedImageRef` holds; null while
    * no decoded frame is live.
@@ -30,7 +29,6 @@ export function useOriginalReferenceStage({
   viewMode,
   previewSuspended,
   decodedImageRef,
-  decodedImageVersion,
   decodedFrame,
   displaySource,
   resourceRegistryRef,
@@ -58,7 +56,6 @@ export function useOriginalReferenceStage({
   const originalReference = useOriginalReferenceSnapshot({
     sessionId,
     image: shouldPrepareOriginalReferenceSnapshot ? decodedImage : null,
-    imageVersion: decodedImageVersion,
     frame: shouldPrepareOriginalReferenceSnapshot ? decodedFrame : null,
     displaySource,
     capability: originalReferenceCapability,

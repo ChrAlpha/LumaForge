@@ -15,6 +15,10 @@ import type { RefObject } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
+import {
+  isEligibleQuickPredecessor,
+  isSameDecodedPreviewFrame,
+} from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { DisplaySource } from '../model/session'
@@ -57,14 +61,13 @@ type PreviewHistogramInput = {
    */
   enabled?: boolean
   imageRef: RefObject<DecodedImage | null>
-  imageVersion: number
-  imageIdentity?: string
   /**
-   * The workflow's accepted descriptor for the frame `imageRef` holds; null
-   * while no decoded frame is accepted. Jobs are keyed by `imageVersion` and
-   * `imageIdentity`, not by it.
+   * The workflow's accepted descriptor for the frame `imageRef` holds, which
+   * keys every job; the owner reads it at every render, so a new or released
+   * frame is a new descriptor. Null measures nothing: pixels without an
+   * accepted frame are never read.
    */
-  frame?: DecodedPreviewFrame | null
+  frame: DecodedPreviewFrame | null
   params: ColorGraphIntentSource
   lutDataRef: RefObject<LUTData | null>
   lutDataVersion: number
@@ -72,7 +75,7 @@ type PreviewHistogramInput = {
 }
 
 /** What a job reads: the color intent, never the view. */
-type HistogramJobInput = Omit<PreviewHistogramInput, 'params' | 'frame'> & {
+type HistogramJobInput = Omit<PreviewHistogramInput, 'params'> & {
   intent: ColorGraphIntent
 }
 
@@ -90,7 +93,9 @@ type HistogramJob =
   | {
       kind: 'compute'
       key: string
-      handoffKey: string
+      frame: DecodedPreviewFrame
+      /** What the preview draws over the frame. */
+      drawnKey: string
       image: ValidHistogramImage
       graph: Parameters<typeof createPreviewHistogramProcessor>[0]['graph']
     }
@@ -127,37 +132,27 @@ function hasExpectedRgb16DataLength(image: DecodedImage) {
 function createHistogramJob({
   enabled = true,
   imageRef,
-  imageVersion,
-  imageIdentity = 'unscoped-preview',
+  frame,
   intent,
   lutDataRef,
   lutDataVersion,
   displaySource,
 }: HistogramJobInput): HistogramJob {
   if (!enabled) return HISTOGRAM_OFF_JOB
-  const image = imageRef.current
-  const imageIdentityKey = imageIdentity
+  // Only pixels the workflow accepted are measured, under the frame's name.
+  const image = frame ? imageRef.current : null
   const toneKey = colorGraphIntentSignature(intent)
 
-  if (!image) {
+  if (!frame || !image) {
     const reason = displaySource === 'embedded' ? 'embedded-only' : 'no-image'
     return {
       kind: 'unavailable',
-      key: ['unavailable', displaySource, imageVersion, toneKey].join('|'),
+      key: ['unavailable', displaySource, toneKey].join('|'),
       state: { state: 'unavailable', reason },
     }
   }
 
-  const imageKey = [
-    imageVersion,
-    image.width,
-    image.height,
-    image.layout,
-    image.colorSpace,
-    image.source ?? '',
-    image.renderExposure.ev,
-    image.renderExposure.multiplier,
-  ].join(':')
+  const frameKey = ['frame', frame.sessionId, frame.frameId].join(':')
 
   if (
     image.layout !== 'rgb-u16' ||
@@ -167,7 +162,7 @@ function createHistogramJob({
   ) {
     return {
       kind: 'unsupported',
-      key: ['unsupported', imageIdentityKey, imageKey, displaySource].join('|'),
+      key: ['unsupported', frameKey, displaySource].join('|'),
       state: {
         state: 'unsupported',
         reason: UNSUPPORTED_PREVIEW_REASON,
@@ -188,9 +183,7 @@ function createHistogramJob({
   if (plan.histogram.kind !== 'graph') {
     return {
       kind: 'unsupported',
-      key: ['unrepresented', imageIdentityKey, imageKey, displaySource].join(
-        '|',
-      ),
+      key: ['unrepresented', frameKey, displaySource].join('|'),
       state: { state: 'unsupported', reason: UNREPRESENTED_LOOK_REASON },
     }
   }
@@ -202,22 +195,29 @@ function createHistogramJob({
     colorGraphIntentSignature(plan.effectiveIntent),
     plan.lut ? lutDataVersion : 'no-lut',
   ].join('|')
-  const key = [
-    'compute',
-    imageIdentityKey,
-    imageKey,
-    displaySource,
-    drawnKey,
-  ].join('|')
-  const handoffKey = [imageIdentityKey, drawnKey].join('|')
+  const key = ['compute', frameKey, displaySource, drawnKey].join('|')
 
   return {
     kind: 'compute',
     key,
-    handoffKey,
+    frame,
+    drawnKey,
     image: image as ValidHistogramImage,
     graph: plan.histogram.graph,
   }
+}
+
+/**
+ * The first quick histogram may stand in for the bounded-HQ frame that
+ * takes over from it, as its producer named it, while the preview draws the
+ * same look over both.
+ */
+function isQuickHandoff(quick: ComputeHistogramJob, next: HistogramJob) {
+  return (
+    next.kind === 'compute' &&
+    isEligibleQuickPredecessor(quick.frame, next.frame) &&
+    quick.drawnKey === next.drawnKey
+  )
 }
 
 function createInitialState(job: HistogramJob): PreviewHistogramState {
@@ -242,12 +242,8 @@ function getPreviewHistogramRowStep(
   return Math.max(1, Math.ceil(totalPixels / budget))
 }
 
-function sameHistogramImage(a: ComputeHistogramJob, b: HistogramJob) {
-  return (
-    b.kind === 'compute' &&
-    a.image === b.image &&
-    a.image.source === b.image.source
-  )
+function sameHistogramFrame(a: ComputeHistogramJob, b: HistogramJob) {
+  return b.kind === 'compute' && isSameDecodedPreviewFrame(a.frame, b.frame)
 }
 
 /**
@@ -282,8 +278,7 @@ export function usePreviewHistogram(
   const {
     enabled = true,
     imageRef,
-    imageVersion,
-    imageIdentity,
+    frame,
     params,
     lutDataRef,
     lutDataVersion,
@@ -302,8 +297,7 @@ export function usePreviewHistogram(
       createHistogramJob({
         enabled,
         imageRef,
-        imageIdentity,
-        imageVersion,
+        frame,
         intent,
         lutDataRef,
         lutDataVersion,
@@ -312,10 +306,9 @@ export function usePreviewHistogram(
     [
       displaySource,
       enabled,
+      frame,
       intent,
       imageRef,
-      imageIdentity,
-      imageVersion,
       lutDataRef,
       lutDataVersion,
     ],
@@ -389,11 +382,9 @@ export function usePreviewHistogram(
     next: HistogramJob,
   ): candidate is ComputeHistogramJob =>
     candidate !== null &&
-    next.kind === 'compute' &&
     candidate !== next &&
-    candidate.image.source === 'quick' &&
     getPreviousReady(stateRef.current) === null &&
-    candidate.handoffKey === next.handoffKey
+    isQuickHandoff(candidate, next)
 
   startRunRef.current = (kind, job) => {
     const scheduler = schedulerRef.current
@@ -487,7 +478,7 @@ export function usePreviewHistogram(
       // over the same look; any other result that lags the latest params
       // shows, marked stale, until the run for them lands.
       commitState(
-        isFirstQuickRun && latest.handoffKey === job.handoffKey
+        isFirstQuickRun && isQuickHandoff(job, latest)
           ? ready
           : { state: 'stale', previous: ready },
       )
@@ -575,11 +566,11 @@ export function usePreviewHistogram(
     const running = scheduler.running
     if (running) {
       // Let a run finish when its answer is still worth showing: any run
-      // on the same image but a settled-input refinement (the next run
+      // on the same frame but a settled-input refinement (the next run
       // starts after it, on the latest params), or the first quick
       // histogram bounded-HQ is taking over.
       const worthFinishing =
-        (running.kind !== 'refine' && sameHistogramImage(running.job, job)) ||
+        (running.kind !== 'refine' && sameHistogramFrame(running.job, job)) ||
         isSupersededFirstQuick(running.job, job)
       if (worthFinishing) {
         scheduler.pending = true

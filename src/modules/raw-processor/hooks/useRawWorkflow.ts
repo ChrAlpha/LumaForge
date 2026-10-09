@@ -193,10 +193,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setDecodedImageRef,
     restorePreviewAfterExport,
   } = useRawPreviewStage({
-    session,
-    pendingLoadSessionIdRef,
     decodedImageRef,
-    decodedImageVersion,
     rawRenderExposureRef,
     resourceRegistryRef,
     setDecodedImageVersion,
@@ -361,7 +358,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     viewMode,
     previewSuspended,
     decodedImageRef,
-    decodedImageVersion,
     decodedFrame,
     displaySource,
     resourceRegistryRef,

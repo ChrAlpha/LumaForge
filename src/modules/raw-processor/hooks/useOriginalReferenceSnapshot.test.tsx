@@ -25,6 +25,43 @@ function createImage(
   }
 }
 
+let frameSequence = 0
+
+/** Plays the frame producer: every accepted frame gets a new identity. */
+function acceptFrame(
+  image: DecodedImage,
+  sessionId = 'session-a',
+): DecodedPreviewFrame {
+  frameSequence += 1
+  return {
+    sessionId,
+    frameId: `decoded-frame-${frameSequence}`,
+    stage: image.source ?? 'unknown',
+    width: image.width,
+    height: image.height,
+    exposure: { kind: 'source-pin', value: image.renderExposure },
+    quickPredecessorFrameId: null,
+  }
+}
+
+const acceptedFrames = new WeakMap<
+  DecodedImage,
+  Map<string, DecodedPreviewFrame>
+>()
+
+/** The one descriptor the producer accepted for `image` in `sessionId`. */
+function frameOf(
+  image: DecodedImage | null,
+  sessionId: string | null = 'session-a',
+): DecodedPreviewFrame | null {
+  if (!image || !sessionId) return null
+  const bySession = acceptedFrames.get(image) ?? new Map()
+  acceptedFrames.set(image, bySession)
+  const frame = bySession.get(sessionId) ?? acceptFrame(image, sessionId)
+  bySession.set(sessionId, frame)
+  return frame
+}
+
 function createOwner() {
   return {
     trackSnapshot:
@@ -52,13 +89,14 @@ describe('useOriginalReferenceSnapshot', () => {
     })
 
     const image = createImage('quick')
+    const frame = acceptFrame(image)
     const owner = createOwner()
     const { result, rerender } = renderHook(
       ({ styleVersion }) =>
         useOriginalReferenceSnapshot({
           sessionId: 'session-a',
           image,
-          imageVersion: 1,
+          frame,
           displaySource: 'quick',
           capability: { webKitClass: 'chromium', pthread: true },
           styleVersion,
@@ -77,59 +115,158 @@ describe('useOriginalReferenceSnapshot', () => {
     expect(trackedUrls(owner)).toEqual(['blob:a'])
   })
 
-  it('accepts a frame descriptor without changing the snapshot key', async () => {
-    const renderSnapshot = vi.fn().mockResolvedValue({
-      key: 'key-a',
-      objectUrl: 'blob:a',
-      width: 100,
-      height: 50,
-      source: 'quick',
-      mimeType: 'image/jpeg',
-      estimatedBytes: 10,
-    })
-    const frame = (frameId: string): DecodedPreviewFrame => ({
-      sessionId: 'session-a',
-      frameId,
-      stage: 'quick',
-      width: 1600,
-      height: 1000,
-      exposure: {
-        kind: 'source-pin',
-        value: { ev: 0, multiplier: 1, source: 'identity' },
-      },
-      quickPredecessorFrameId: null,
-    })
-
-    const image = createImage('quick')
+  it('renders a new snapshot for each accepted frame, however alike its pixels', async () => {
     const owner = createOwner()
+    const renderSnapshot = vi.fn(
+      async ({ key }: { key: string }): Promise<OriginalReferenceSnapshot> => ({
+        key,
+        objectUrl: `blob:${renderSnapshot.mock.calls.length}`,
+        width: 100,
+        height: 50,
+        source: 'quick',
+        mimeType: 'image/jpeg',
+        estimatedBytes: 10,
+      }),
+    )
+    // A frame decoded again for the same source (a restored frame) has the
+    // same stage, size and exposure as the one it replaces.
+    const first = createImage('quick')
+    const again = createImage('quick')
     const { result, rerender } = renderHook(
-      ({ currentFrame }: { currentFrame: DecodedPreviewFrame | null }) =>
+      ({ image }) =>
         useOriginalReferenceSnapshot({
           sessionId: 'session-a',
           image,
-          imageVersion: 1,
-          frame: currentFrame,
+          frame: frameOf(image),
           displaySource: 'quick',
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
           ...owner,
         }),
-      {
-        initialProps: {
-          currentFrame: frame('frame-a-1') as DecodedPreviewFrame | null,
-        },
-      },
+      { initialProps: { image: first } },
     )
-
     await waitFor(() =>
-      expect(result.current.snapshot?.objectUrl).toBe('blob:a'),
+      expect(result.current.snapshot?.objectUrl).toBe('blob:1'),
     )
-    rerender({ currentFrame: frame('frame-a-2') })
-    rerender({ currentFrame: null })
 
-    expect(renderSnapshot).toHaveBeenCalledTimes(1)
-    expect(result.current.snapshot?.objectUrl).toBe('blob:a')
-    expect(trackedUrls(owner)).toEqual(['blob:a'])
+    rerender({ image: again })
+    await waitFor(() =>
+      expect(result.current.snapshot?.objectUrl).toBe('blob:2'),
+    )
+
+    const [firstKey, againKey] = renderSnapshot.mock.calls.map(
+      ([input]) => input.key,
+    )
+    expect(firstKey).toContain(`frame:${frameOf(first)?.frameId}`)
+    expect(againKey).toContain(`frame:${frameOf(again)?.frameId}`)
+    expect(trackedUrls(owner)).toEqual(['blob:1', 'blob:2'])
+
+    // The same frame rerendered keys the same snapshot.
+    rerender({ image: again })
+    await act(async () => {})
+    expect(renderSnapshot).toHaveBeenCalledTimes(2)
+  })
+
+  it('prepares no snapshot for pixels the workflow has not accepted', async () => {
+    const owner = createOwner()
+    const renderSnapshot = vi.fn()
+    const image = createImage('quick')
+    const { result } = renderHook(() =>
+      useOriginalReferenceSnapshot({
+        sessionId: 'session-a',
+        image,
+        frame: null,
+        displaySource: 'quick',
+        capability: { webKitClass: 'chromium', pthread: true },
+        renderSnapshot,
+        ...owner,
+      }),
+    )
+    await act(async () => {})
+
+    expect(renderSnapshot).not.toHaveBeenCalled()
+    expect(result.current.snapshot).toBeNull()
+    expect(owner.trackSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('prepares no snapshot from a frame accepted for another session', async () => {
+    const owner = createOwner()
+    const renderSnapshot = vi.fn()
+    const image = createImage('quick')
+    const { result } = renderHook(() =>
+      useOriginalReferenceSnapshot({
+        sessionId: 'session-b',
+        image,
+        frame: frameOf(image, 'session-a'),
+        displaySource: 'quick',
+        capability: { webKitClass: 'chromium', pthread: true },
+        renderSnapshot,
+        ...owner,
+      }),
+    )
+    await act(async () => {})
+
+    expect(renderSnapshot).not.toHaveBeenCalled()
+    expect(result.current.snapshot).toBeNull()
+  })
+
+  it('discards a stale render once a newer frame with the same facts replaces it', async () => {
+    const owner = createOwner()
+    const pending: Array<{
+      key: string
+      signal?: AbortSignal
+      resolve: (snapshot: OriginalReferenceSnapshot) => void
+    }> = []
+    const renderSnapshot = vi.fn(
+      ({ key, signal }: { key: string; signal?: AbortSignal }) =>
+        new Promise<OriginalReferenceSnapshot>((resolve) => {
+          pending.push({ key, signal, resolve })
+        }),
+    )
+    const snapshotFor = (key: string, objectUrl: string) => ({
+      key,
+      objectUrl,
+      width: 100,
+      height: 50,
+      source: 'quick' as const,
+      mimeType: 'image/jpeg' as const,
+      estimatedBytes: 10,
+    })
+    const first = createImage('quick')
+    const again = createImage('quick')
+    const { result, rerender } = renderHook(
+      ({ image }) =>
+        useOriginalReferenceSnapshot({
+          sessionId: 'session-a',
+          image,
+          frame: frameOf(image),
+          displaySource: 'quick',
+          capability: { webKitClass: 'chromium', pthread: true },
+          renderSnapshot,
+          ...owner,
+        }),
+      { initialProps: { image: first } },
+    )
+    await waitFor(() => expect(pending).toHaveLength(1))
+
+    rerender({ image: again })
+    await waitFor(() => expect(pending).toHaveLength(2))
+    expect(pending[0]?.signal?.aborted).toBe(true)
+
+    await act(async () => {
+      pending[0]?.resolve(snapshotFor(pending[0].key, 'blob:stale'))
+    })
+    expect(owner.discardSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ objectUrl: 'blob:stale' }),
+    )
+    expect(result.current.snapshot).toBeNull()
+
+    await act(async () => {
+      pending[1]?.resolve(snapshotFor(pending[1].key, 'blob:current'))
+    })
+    expect(result.current.snapshot?.objectUrl).toBe('blob:current')
+    expect(trackedUrls(owner)).toEqual(['blob:current'])
+    expect(owner.discardSnapshot).toHaveBeenCalledTimes(1)
   })
 
   it('hands a resolved snapshot to its owner before publishing it', async () => {
@@ -150,11 +287,12 @@ describe('useOriginalReferenceSnapshot', () => {
     })
 
     const image = createImage('quick')
+    const frame = acceptFrame(image)
     const { result } = renderHook(() => {
       const value = useOriginalReferenceSnapshot({
         sessionId: 'session-a',
         image,
-        imageVersion: 1,
+        frame,
         displaySource: 'quick',
         capability: { webKitClass: 'chromium', pthread: true },
         renderSnapshot,
@@ -193,11 +331,11 @@ describe('useOriginalReferenceSnapshot', () => {
     const owner = createOwner()
 
     const { result, rerender } = renderHook(
-      ({ image, displaySource, imageVersion }) =>
+      ({ image, displaySource }) =>
         useOriginalReferenceSnapshot({
           sessionId: 'session-a',
           image,
-          imageVersion,
+          frame: frameOf(image),
           displaySource,
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
@@ -207,7 +345,6 @@ describe('useOriginalReferenceSnapshot', () => {
         initialProps: {
           image: createImage('quick'),
           displaySource: 'quick' as DisplaySource,
-          imageVersion: 1,
         },
       },
     )
@@ -219,7 +356,6 @@ describe('useOriginalReferenceSnapshot', () => {
     rerender({
       image: createImage('bounded-hq', 2400),
       displaySource: 'bounded-hq' as DisplaySource,
-      imageVersion: 2,
     })
 
     expect(result.current.snapshot?.objectUrl).toBe('blob:quick')
@@ -266,11 +402,11 @@ describe('useOriginalReferenceSnapshot', () => {
       })
 
     const { result, rerender } = renderHook(
-      ({ image, imageVersion }) =>
+      ({ image }) =>
         useOriginalReferenceSnapshot({
           sessionId: 'session-a',
           image,
-          imageVersion,
+          frame: frameOf(image),
           displaySource: 'quick',
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
@@ -279,7 +415,6 @@ describe('useOriginalReferenceSnapshot', () => {
       {
         initialProps: {
           image: createImage('quick'),
-          imageVersion: 1,
         },
       },
     )
@@ -290,7 +425,6 @@ describe('useOriginalReferenceSnapshot', () => {
 
     rerender({
       image: createImage('quick', 1800),
-      imageVersion: 2,
     })
 
     await waitFor(() =>
@@ -316,7 +450,7 @@ describe('useOriginalReferenceSnapshot', () => {
         useOriginalReferenceSnapshot({
           sessionId: 'session-a',
           image,
-          imageVersion: 1,
+          frame: frameOf(image),
           displaySource,
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
@@ -362,7 +496,7 @@ describe('useOriginalReferenceSnapshot', () => {
         useOriginalReferenceSnapshot({
           sessionId,
           image,
-          imageVersion: 1,
+          frame: frameOf(image, sessionId),
           displaySource: 'quick',
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
@@ -417,7 +551,7 @@ describe('useOriginalReferenceSnapshot', () => {
         useOriginalReferenceSnapshot({
           sessionId,
           image,
-          imageVersion: 1,
+          frame: frameOf(image, sessionId),
           displaySource: 'quick',
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
@@ -476,11 +610,11 @@ describe('useOriginalReferenceSnapshot', () => {
       )
 
     const { result, rerender } = renderHook(
-      ({ image, displaySource, imageVersion }) =>
+      ({ image, displaySource }) =>
         useOriginalReferenceSnapshot({
           sessionId: 'session-a',
           image,
-          imageVersion,
+          frame: frameOf(image),
           displaySource,
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
@@ -490,7 +624,6 @@ describe('useOriginalReferenceSnapshot', () => {
         initialProps: {
           image: createImage('quick') as DecodedImage | null,
           displaySource: 'quick' as DisplaySource,
-          imageVersion: 1,
         },
       },
     )
@@ -502,12 +635,10 @@ describe('useOriginalReferenceSnapshot', () => {
     rerender({
       image: createImage('bounded-hq', 2400),
       displaySource: 'bounded-hq' as DisplaySource,
-      imageVersion: 2,
     })
     rerender({
       image: null,
       displaySource: 'none' as DisplaySource,
-      imageVersion: 2,
     })
 
     await waitFor(() => expect(result.current.snapshot).toBeNull())
@@ -541,11 +672,12 @@ describe('useOriginalReferenceSnapshot', () => {
       }),
     )
 
+    const image = createImage('quick')
     const { unmount } = renderHook(() =>
       useOriginalReferenceSnapshot({
         sessionId: 'session-a',
-        image: createImage('quick'),
-        imageVersion: 1,
+        image,
+        frame: frameOf(image),
         displaySource: 'quick',
         capability: { webKitClass: 'chromium', pthread: true },
         renderSnapshot,
@@ -599,11 +731,11 @@ describe('useOriginalReferenceSnapshot', () => {
     const owner = createOwner()
 
     const { rerender } = renderHook(
-      ({ image, displaySource, imageVersion }) =>
+      ({ image, displaySource }) =>
         useOriginalReferenceSnapshot({
           sessionId: 'session-a',
           image,
-          imageVersion,
+          frame: frameOf(image),
           displaySource,
           capability: { webKitClass: 'chromium', pthread: true },
           renderSnapshot,
@@ -620,7 +752,6 @@ describe('useOriginalReferenceSnapshot', () => {
         initialProps: {
           image: createImage('quick'),
           displaySource: 'quick' as DisplaySource,
-          imageVersion: 1,
         },
       },
     )
@@ -632,7 +763,6 @@ describe('useOriginalReferenceSnapshot', () => {
     rerender({
       image: createImage('bounded-hq', 2400),
       displaySource: 'bounded-hq' as DisplaySource,
-      imageVersion: 2,
     })
 
     await waitFor(() =>
@@ -685,11 +815,12 @@ describe('useOriginalReferenceSnapshot', () => {
 
   it('reports fallback when generation fails', async () => {
     const owner = createOwner()
+    const image = createImage('quick')
     const { result } = renderHook(() =>
       useOriginalReferenceSnapshot({
         sessionId: 'session-a',
-        image: createImage('quick'),
-        imageVersion: 1,
+        image,
+        frame: frameOf(image),
         displaySource: 'quick',
         capability: { webKitClass: 'chromium', pthread: true },
         renderSnapshot: vi
@@ -713,11 +844,12 @@ describe('useOriginalReferenceSnapshot', () => {
     emptyMessageError.message = ''
     const owner = createOwner()
 
+    const image = createImage('quick')
     const { result } = renderHook(() =>
       useOriginalReferenceSnapshot({
         sessionId: 'session-a',
-        image: createImage('quick'),
-        imageVersion: 1,
+        image,
+        frame: frameOf(image),
         displaySource: 'quick',
         capability: { webKitClass: 'chromium', pthread: true },
         renderSnapshot: vi.fn().mockRejectedValue(emptyMessageError),
@@ -734,11 +866,12 @@ describe('useOriginalReferenceSnapshot', () => {
 
   it('uses an Error-like rejection message as the fallback reason', async () => {
     const owner = createOwner()
+    const image = createImage('quick')
     const { result } = renderHook(() =>
       useOriginalReferenceSnapshot({
         sessionId: 'session-a',
-        image: createImage('quick'),
-        imageVersion: 1,
+        image,
+        frame: frameOf(image),
         displaySource: 'quick',
         capability: { webKitClass: 'chromium', pthread: true },
         renderSnapshot: vi.fn().mockRejectedValue({
@@ -773,7 +906,7 @@ describe('useOriginalReferenceSnapshot', () => {
       useOriginalReferenceSnapshot({
         sessionId: 'session-a',
         image,
-        imageVersion: 1,
+        frame: frameOf(image),
         displaySource: 'quick',
         capability: { webKitClass: 'chromium', pthread: true },
         renderSnapshot,

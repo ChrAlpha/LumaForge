@@ -103,10 +103,7 @@ function renderStage(
   overrides: Partial<Parameters<typeof useRawPreviewStage>[0]> = {},
 ) {
   const input: Parameters<typeof useRawPreviewStage>[0] = {
-    session: getCurrentSession(),
-    pendingLoadSessionIdRef: { current: null },
     decodedImageRef: { current: null },
-    decodedImageVersion: 0,
     rawRenderExposureRef: { current: null },
     resourceRegistryRef: { current: createResourceRegistry() },
     setDecodedImageVersion: vi.fn(),
@@ -218,7 +215,6 @@ describe('useRawPreviewStage', () => {
     const slot = createRawRuntimeSessionLeases(open)
     const invalidateExportGraph = vi.fn()
     const { result, rerender } = renderStage({
-      session: rendered,
       rawRenderExposureRef: { current: pinnedExposure },
       beginRuntimeSession: slot.begin,
       invalidateExportGraph,
@@ -269,7 +265,6 @@ describe('useRawPreviewStage', () => {
       current: 'blob:replacement-embedded' as string | null,
     }
     const { result } = renderStage({
-      session: rendered,
       embeddedPreviewUrlRef,
     })
 

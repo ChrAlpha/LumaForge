@@ -5,6 +5,7 @@ import type {
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import {
@@ -99,15 +100,32 @@ function largeImage(): DecodedImage {
   }
 }
 
+let frameSequence = 0
+
+/** Plays the frame producer: every accepted frame gets a new identity. */
+function acceptFrame(image: DecodedImage): DecodedPreviewFrame {
+  frameSequence += 1
+  return {
+    sessionId: 'session-a',
+    frameId: `decoded-frame-${frameSequence}`,
+    stage: image.source ?? 'unknown',
+    width: image.width,
+    height: image.height,
+    exposure: { kind: 'source-pin', value: image.renderExposure },
+    quickPredecessorFrameId: null,
+  }
+}
+
 function setup(image: DecodedImage = largeImage(), shown = true) {
   const imageRef = { current: image as DecodedImage | null }
   const lutDataRef = { current: null }
   let enabled = shown
   let exposure = 0
+  let frame = acceptFrame(image)
   const props = () => ({
     enabled,
     imageRef,
-    imageVersion: 1,
+    frame,
     params: { ...baseParams, userExposureEv: exposure },
     lutDataRef,
     lutDataVersion: 0,
@@ -125,6 +143,16 @@ function setup(image: DecodedImage = largeImage(), shown = true) {
     },
     setShown: (next: boolean) => {
       enabled = next
+      hook.rerender(props())
+    },
+    /** The owner rerenders with nothing changed. */
+    rerenderOwner: () => {
+      hook.rerender(props())
+    },
+    /** A newly accepted frame: only its descriptor says the pixels are new. */
+    acceptImage: (next: DecodedImage) => {
+      imageRef.current = next
+      frame = acceptFrame(next)
       hook.rerender(props())
     },
     unmount: hook.unmount,
@@ -313,6 +341,40 @@ describe('usePreviewHistogram throttle', () => {
     expect(tracker.created.length).toBe(created + 1)
   })
 
+  it('restarts and resolves nothing while the owner rerenders the same frame', async () => {
+    const { result, rerenderOwner } = setup()
+    const first = await settleFirstRun(result)
+    const created = tracker.created.length
+    const graphs = tracker.graphs.length
+
+    rerenderOwner()
+    rerenderOwner()
+    expect(result.current).toBe(first)
+    await advance(HISTOGRAM_THROTTLE_MS + HISTOGRAM_SETTLE_MS)
+
+    expect(result.current).toBe(first)
+    expect(tracker.created).toHaveLength(created)
+    expect(tracker.graphs).toHaveLength(graphs)
+  })
+
+  it('runs once for a newly accepted frame with the same size and stage', async () => {
+    const { result, acceptImage } = setup()
+    const first = await settleFirstRun(result)
+    await advance(HISTOGRAM_THROTTLE_MS)
+    const created = tracker.created.length
+
+    acceptImage(largeImage())
+    expect(result.current).toEqual({ state: 'stale', previous: first })
+    await advance(HISTOGRAM_THROTTLE_MS + HISTOGRAM_SETTLE_MS)
+
+    expect(result.current.state).toBe('ready')
+    expect(result.current).not.toBe(first)
+    // A scrub run on the new frame, then its refinement at the full budget.
+    expect(tracker.created.length).toBeGreaterThan(created)
+    expect(tracker.created.length).toBeLessThanOrEqual(created + 2)
+    expect(tracker.interleaved).toBe(false)
+  })
+
   it('drops a pending run when the hook unmounts', async () => {
     const { result, setExposure, unmount } = setup()
     await settleFirstRun(result)
@@ -329,6 +391,19 @@ describe('usePreviewHistogram throttle', () => {
       setExposure(frame / 10)
       await advance(16)
     }
+    await advance(HISTOGRAM_THROTTLE_MS + HISTOGRAM_SETTLE_MS)
+
+    expect(result.current.state).toBe('unsupported')
+    expect(tracker.graphs).toHaveLength(0)
+    expect(tracker.created).toHaveLength(0)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('resolves no graph while hidden as new frames are accepted', async () => {
+    const { result, acceptImage, rerenderOwner } = setup(largeImage(), false)
+    acceptImage(largeImage())
+    rerenderOwner()
+    acceptImage(largeImage())
     await advance(HISTOGRAM_THROTTLE_MS + HISTOGRAM_SETTLE_MS)
 
     expect(result.current.state).toBe('unsupported')
