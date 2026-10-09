@@ -1,7 +1,15 @@
 import { useI18n } from '~/lib/i18n'
 
+import {
+  useRawToolAdjustments,
+  useRawToolProgress,
+  useRawToolStatus,
+} from '../../hooks/useRawToolState'
 import { supportLevelMessageKey } from '../../services/surface/raw-reason'
-import { useRawWorkflowContext } from '../RawWorkflowContext'
+import {
+  useRawToolCommands,
+  useRawWorkflowContext,
+} from '../RawWorkflowContext'
 import { buildMobileExportRecap } from './export-recap'
 import { buildMobileDetailsSheet, getCameraName } from './mobile-details-sheet'
 import { resolveAppliedLookTitle } from './mobile-lut-strip'
@@ -10,6 +18,10 @@ import { MobileLabChrome } from './MobileLabChrome'
 
 export function MobileRawToolSurface() {
   const props = useRawWorkflowContext()
+  const commands = useRawToolCommands()
+  const adjustments = useRawToolAdjustments()
+  const { isExporting } = useRawToolStatus()
+  const progress = useRawToolProgress()
   const { t } = useI18n()
   const previewSuspended = props.previewSuspended === true
   // The dock, the deck, the lens and the topbar Export read the shared
@@ -27,9 +39,9 @@ export function MobileRawToolSurface() {
       supportLevel: props.supportLevel,
       metadata: props.metadata,
       stats: props.stats,
-      tone: props.tone,
-      color: props.color,
-      selectiveColor: props.selectiveColor,
+      tone: adjustments.tone,
+      color: adjustments.color,
+      selectiveColor: adjustments.selectiveColor,
       currentLutName: props.currentLutName,
       lutProfileSelection: props.lutProfileSelection,
       lutProfileResolution: props.lutProfileResolution,
@@ -54,10 +66,10 @@ export function MobileRawToolSurface() {
     canPreviewExport: props.canPreviewExport === true,
     deliveredSize: props.deliveredExportSize,
     lutName: lookTitle,
-    intensity: props.activeIntensity,
-    tone: props.tone,
-    color: props.color,
-    selectiveColor: props.selectiveColor,
+    intensity: adjustments.activeIntensity,
+    tone: adjustments.tone,
+    color: adjustments.color,
+    selectiveColor: adjustments.selectiveColor,
     transformApplied: props.transform?.active === true,
     previewLookReason: props.previewLookReason,
   })
@@ -68,48 +80,48 @@ export function MobileRawToolSurface() {
       availability={availability}
       canExport={props.canExport}
       hasImage={props.hasImage}
-      tone={props.tone}
-      color={props.color}
-      selectiveColor={props.selectiveColor}
-      onToneChange={props.onToneChange}
-      onToneReset={props.onToneReset}
-      onColorChange={props.onColorChange}
-      onColorReset={props.onColorReset}
-      onSelectiveColorChange={props.onSelectiveColorChange}
-      onSelectiveColorReset={props.onSelectiveColorReset}
+      tone={adjustments.tone}
+      color={adjustments.color}
+      selectiveColor={adjustments.selectiveColor}
+      onToneChange={commands.onToneChange}
+      onToneReset={commands.onToneReset}
+      onColorChange={commands.onColorChange}
+      onColorReset={commands.onColorReset}
+      onSelectiveColorChange={commands.onSelectiveColorChange}
+      onSelectiveColorReset={commands.onSelectiveColorReset}
       viewMode={props.viewMode}
-      onViewModeChange={props.onViewModeChange}
+      onViewModeChange={commands.onViewModeChange}
       compareSupported={props.compareSupported !== false}
       histogram={props.histogram}
       fileName={props.fileName}
       fileMeta={fileMeta || props.fileName}
       supportLevel={props.supportLevel}
-      onReplaceFile={props.onReplaceFile}
-      onResetSession={props.onResetSession}
+      onReplaceFile={commands.onReplaceFile}
+      onResetSession={commands.onResetSession}
       isProcessing={props.isProcessing}
-      isExporting={props.isExporting === true}
-      exportProgress={props.progress}
+      isExporting={isExporting}
+      exportProgress={progress}
       exportResultKind={
         props.exportResult
           ? (props.exportResult.kind ?? 'full-resolution')
           : null
       }
       runtimeReadinessState={props.runtimeReadinessState}
-      onPrepareRuntime={props.onPrepareRuntime}
+      onPrepareRuntime={commands.onPrepareRuntime}
       cpuPreviewNotice={props.cpuPreviewNotice}
       lutBrowser={{
         currentLutName: props.currentLutName,
         appliedLut: props.appliedLut,
         disabled: !availability.lutApplication.available,
-        onLutLoad: props.onLutLoad,
-        onLutClear: props.onLutClear,
+        onLutLoad: commands.onLutLoad,
+        onLutClear: commands.onLutClear,
         lutProfileSelection: props.lutProfileSelection,
         lutProfileResolution: props.lutProfileResolution,
         previewLookReason: props.previewLookReason,
-        onLutProfileSelect: props.onLutProfileSelect,
+        onLutProfileSelect: commands.onLutProfileSelect,
         onlineLutSources: props.onlineLutSources,
-        activeIntensity: props.activeIntensity,
-        onIntensityChange: props.onIntensityChange,
+        activeIntensity: adjustments.activeIntensity,
+        onIntensityChange: commands.onIntensityChange,
         strengthDisabled: !availability.strength.available,
       }}
       exportPanel={({ onClose, onChooseLutContract }) => (
@@ -119,17 +131,17 @@ export function MobileRawToolSurface() {
           canPreviewExport={props.canPreviewExport}
           previewExportDisabledReason={props.previewExportDisabledReason}
           isProcessing={props.isProcessing}
-          onExport={props.onExport}
-          onPreviewExport={props.onPreviewExport}
+          onExport={commands.onExport}
+          onPreviewExport={commands.onPreviewExport}
           exportResult={props.exportResult}
           exportShareCapability={props.exportShareCapability}
           interruptionNote={props.interruptionNote}
-          onShareExport={props.onShareExport}
-          onDownloadExport={props.onDownloadExport}
-          onDownloadExportManifest={props.onDownloadExportManifest}
-          onCopyExport={props.onCopyExport}
-          isExporting={props.isExporting === true}
-          progress={props.progress}
+          onShareExport={commands.onShareExport}
+          onDownloadExport={commands.onDownloadExport}
+          onDownloadExportManifest={commands.onDownloadExportManifest}
+          onCopyExport={commands.onCopyExport}
+          isExporting={isExporting}
+          progress={progress}
           onClose={onClose}
           onChooseLutContract={
             props.exportBlockedByLutContract ? onChooseLutContract : undefined

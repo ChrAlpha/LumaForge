@@ -17,7 +17,6 @@ import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type {
   ExportInterruptionNote,
   RawToolCommands,
-  RawToolSurfaceProps,
 } from './RawWorkflowContext'
 import {
   RawToolCommandsProvider,
@@ -37,7 +36,7 @@ interface RawWorkflowToolProviderProps {
   onResetSession: () => void
   onCompareReset: () => void
   onLutDrop: (files: File[]) => void
-  onExport: RawToolSurfaceProps['onExport']
+  onExport: RawToolCommands['onExport']
   onPrepareRuntime: () => void
   children: ReactNode
 }
@@ -75,8 +74,6 @@ function exportActionReason<WorkflowReason>(
     ? undefined
     : { source: 'workflow', reason: workflowReason }
 }
-
-function refusedExport() {}
 
 /** `edit`, refused whenever `refused` reads true at the moment it is called. */
 function unlessRefused<Args extends unknown[], Result>(
@@ -367,37 +364,8 @@ export function RawWorkflowToolProvider({
     <RawWorkflowProvider
       value={{
         transform: editableTransform,
-        activeIntensity: workflow.activeIntensity,
-        tone: {
-          userExposureEv: workflow.params.userExposureEv,
-          userContrast: workflow.params.userContrast,
-          userHighlights: workflow.params.userHighlights,
-          userShadows: workflow.params.userShadows,
-          userWhites: workflow.params.userWhites,
-          userBlacks: workflow.params.userBlacks,
-        },
-        color: {
-          userTemperature: workflow.params.userTemperature,
-          userTint: workflow.params.userTint,
-          userSaturation: workflow.params.userSaturation,
-          userVibrance: workflow.params.userVibrance,
-        },
-        selectiveColor: workflow.params.selectiveColor,
-        onIntensityChange: commands.onIntensityChange,
-        onToneChange: commands.onToneChange,
-        onToneReset: commands.onToneReset,
-        onColorChange: commands.onColorChange,
-        onColorReset: commands.onColorReset,
-        onSelectiveColorChange: commands.onSelectiveColorChange,
-        onSelectiveColorReset: commands.onSelectiveColorReset,
-        onLutLoad: commands.onLutLoad,
-        onLutClear: commands.onLutClear,
-        onLutProfileSelect: commands.onLutProfileSelect,
         fileName: workflow.sourceFileName,
-        onReplaceFile,
-        onResetSession,
         toolAvailability,
-        onCompareReset,
         // What the stage shows: the CPU preview has no split surface but
         // can still show the original, and a committed Transform shows the
         // processed photo alone.
@@ -406,10 +374,8 @@ export function RawWorkflowToolProvider({
           : isCpuMode && workflow.viewMode === 'compare'
             ? 'processed'
             : workflow.viewMode,
-        onViewModeChange: workflow.setViewMode,
         compareSplit: workflow.compareSplit,
         compareSupported: !isCpuMode,
-        onCompareSplitChange: workflow.setCompareSplit,
         currentLutName: workflow.currentLutName,
         appliedLut:
           workflow.activeStyle?.kind === 'custom'
@@ -428,10 +394,6 @@ export function RawWorkflowToolProvider({
         onlineLutSources: editableOnlineLutSources,
         // Full resolution reproduces a committed geometry, so it stays
         // available once the preview has rendered it.
-        onExport: fullExport.available ? onExport : refusedExport,
-        onPreviewExport: hqExport.available
-          ? workflow.exportPreviewImage
-          : refusedExport,
         canExport: fullExport.available,
         disabledReason,
         // Only when the contract is the reason export states; an earlier
@@ -443,18 +405,11 @@ export function RawWorkflowToolProvider({
         canPreviewExport: hqExport.available,
         previewExportDisabledReason,
         isProcessing,
-        isExporting: workflow.status === 'exporting',
-        progress: workflow.progress,
         runtimeReadinessState,
-        onPrepareRuntime,
         previewSuspended,
         exportResult: workflow.exportResult,
         exportShareCapability: workflow.exportShareCapability,
         interruptionNote: toInterruptionNote(workflow.exportInterrupted),
-        onShareExport: workflow.shareExportResult,
-        onDownloadExport: workflow.downloadExportResult,
-        onDownloadExportManifest: workflow.downloadExportManifest,
-        onCopyExport: workflow.copyExportResult,
         hasImage: workflow.hasImage,
         supportLevel: workflow.supportLevel,
         metadata: workflow.loadedImage.metadata,

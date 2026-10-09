@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { useScrollEdgeFade } from '~/hooks/common'
 import { useI18n } from '~/lib/i18n'
 
-import { useRawWorkflowContext } from './RawWorkflowContext'
+import { useRawToolAdjustments } from '../hooks/useRawToolState'
+import { useRawToolCommands, useRawWorkflowContext } from './RawWorkflowContext'
 import { AdjustTool } from './tools/AdjustTool'
 import { CompareTool } from './tools/CompareTool'
 import { DesktopStrengthRow } from './tools/DesktopStrengthRow'
@@ -18,6 +19,8 @@ import { TransformTool } from './tools/TransformTool'
 
 export function DesktopRawToolSurface() {
   const props = useRawWorkflowContext()
+  const commands = useRawToolCommands()
+  const adjustments = useRawToolAdjustments()
   const { t } = useI18n()
   // Each control is off exactly where the shared action policy refuses its
   // action. Reset returns the stage to its split, so it is off where the
@@ -52,15 +55,15 @@ export function DesktopRawToolSurface() {
             canPreviewExport={props.canPreviewExport}
             previewExportDisabledReason={props.previewExportDisabledReason}
             isProcessing={props.isProcessing}
-            onExport={props.onExport}
-            onPreviewExport={props.onPreviewExport}
+            onExport={commands.onExport}
+            onPreviewExport={commands.onPreviewExport}
             exportResult={props.exportResult}
             exportShareCapability={props.exportShareCapability}
             interruptionNote={props.interruptionNote}
-            onShareExport={props.onShareExport}
-            onDownloadExport={props.onDownloadExport}
-            onDownloadExportManifest={props.onDownloadExportManifest}
-            onCopyExport={props.onCopyExport}
+            onShareExport={commands.onShareExport}
+            onDownloadExport={commands.onDownloadExport}
+            onDownloadExportManifest={commands.onDownloadExportManifest}
+            onCopyExport={commands.onCopyExport}
             embedded
           />
         </section>
@@ -78,18 +81,18 @@ export function DesktopRawToolSurface() {
           <LutContractTool
             currentLutName={props.currentLutName}
             disabled={lutDropDisabled}
-            onLutLoad={props.onLutLoad}
-            onLutClear={props.onLutClear}
+            onLutLoad={commands.onLutLoad}
+            onLutClear={commands.onLutClear}
             lutProfileSelection={props.lutProfileSelection}
             lutProfileResolution={props.lutProfileResolution}
             previewLookReason={props.previewLookReason}
-            onLutProfileSelect={props.onLutProfileSelect}
+            onLutProfileSelect={commands.onLutProfileSelect}
             onlineLutSources={props.onlineLutSources}
           />
           <div className="mt-3">
             <DesktopStrengthRow
-              intensity={props.activeIntensity}
-              onIntensityChange={props.onIntensityChange}
+              intensity={adjustments.activeIntensity}
+              onIntensityChange={commands.onIntensityChange}
               disabled={strengthDisabled}
               noLut={props.hasImage && !hasAppliedLut}
             />
@@ -97,16 +100,16 @@ export function DesktopRawToolSurface() {
         </ToolCard>
         <ToolCard id="adjust" title={t('raw.adjust.title')}>
           <AdjustTool
-            tone={props.tone}
-            color={props.color}
-            selectiveColor={props.selectiveColor}
+            tone={adjustments.tone}
+            color={adjustments.color}
+            selectiveColor={adjustments.selectiveColor}
             disabled={editorDisabled}
-            onToneChange={props.onToneChange}
-            onToneReset={props.onToneReset}
-            onColorChange={props.onColorChange}
-            onColorReset={props.onColorReset}
-            onSelectiveColorChange={props.onSelectiveColorChange}
-            onSelectiveColorReset={props.onSelectiveColorReset}
+            onToneChange={commands.onToneChange}
+            onToneReset={commands.onToneReset}
+            onColorChange={commands.onColorChange}
+            onColorReset={commands.onColorReset}
+            onSelectiveColorChange={commands.onSelectiveColorChange}
+            onSelectiveColorReset={commands.onSelectiveColorReset}
           />
         </ToolCard>
         {props.transform && (
@@ -120,7 +123,7 @@ export function DesktopRawToolSurface() {
         <ToolCard id="compare" title={t('raw.compare.title')}>
           <CompareTool
             disabled={compareResetDisabled}
-            onCompareReset={props.onCompareReset}
+            onCompareReset={commands.onCompareReset}
           />
         </ToolCard>
         <ToolCard id="fileFacts" title={t('raw.fileFacts.title')}>

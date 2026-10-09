@@ -19,6 +19,7 @@ import {
   expect,
   expectTypeOf,
   it,
+  onTestFinished,
   vi,
 } from 'vitest'
 
@@ -41,6 +42,14 @@ import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import type { ExportResult } from '../model/export-result'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { captureTransformSource } from '../services/preview/capture-transform-source'
+import { setCurrentSession } from '../state/session.atoms'
+import {
+  getProcessingParams,
+  resetToDefaults,
+  setProcessingParams,
+  setProcessingStatus,
+  setProgress,
+} from '../state/workflow.atoms'
 import { COLOR_NEUTRAL } from './color-fields'
 import { RawToolSurface } from './RawToolSurface'
 import type { RawToolCommands, RawToolSurfaceProps } from './RawWorkflowContext'
@@ -277,9 +286,15 @@ function useToolBoundary() {
   return { surface: useRawWorkflowContext(), commands: useRawToolCommands() }
 }
 
-async function renderTransformSession<Result = RawToolSurfaceProps>(
+/** What a shell reads from its provider: the context and the commands. */
+function useSurfaceView() {
+  return { ...useRawWorkflowContext(), ...useRawToolCommands() }
+}
+type SurfaceView = ReturnType<typeof useSurfaceView>
+
+async function renderTransformSession<Result = SurfaceView>(
   workflowOverrides: Partial<UseRawWorkflowReturn> = {},
-  useValue: () => Result = useRawWorkflowContext as () => Result,
+  useValue: () => Result = useSurfaceView as () => Result,
 ) {
   vi.useFakeTimers()
   FakeWorker.instances = []
@@ -322,7 +337,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     const onCompareReset = vi.fn()
     const frame = document.createElement('div')
     let transform = transformFeatureFixture({ active: true, hasImage: true })
-    const { result, rerender } = renderHook(useRawWorkflowContext, {
+    const { result, rerender } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <RawWorkflowToolProvider
           workflow={workflow}
@@ -362,7 +377,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.previewFrameEl).toBeNull()
     expect(result.current.viewMode).toBe('processed')
     // Compare is refused in the policy every surface reads; its commands
-    // are the workflow's own, which refuse a committed Transform as well.
+    // reach the workflow's own, which refuse a committed Transform as well.
     for (const surface of ['desktop', 'mobile'] as const) {
       const actions = result.current.toolAvailability[surface]
       for (const action of ['originalView', 'split', 'splitReset'] as const) {
@@ -372,9 +387,12 @@ describe('rawWorkflowToolProvider Transform guards', () => {
         })
       }
     }
-    expect(result.current.onCompareReset).toBe(onCompareReset)
-    expect(result.current.onViewModeChange).toBe(workflow.setViewMode)
-    expect(result.current.onCompareSplitChange).toBe(workflow.setCompareSplit)
+    result.current.onCompareReset()
+    result.current.onViewModeChange('compare')
+    result.current.onCompareSplitChange(0.4)
+    expect(onCompareReset).toHaveBeenCalledOnce()
+    expect(workflow.setViewMode).toHaveBeenLastCalledWith('compare')
+    expect(workflow.setCompareSplit).toHaveBeenLastCalledWith(0.4)
     result.current.onExport()
     void result.current.onPreviewExport?.()
     expect(onExport).toHaveBeenCalledOnce()
@@ -404,7 +422,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       hasImage: true,
       exportBlock: 'pending',
     })
-    const { result, rerender } = renderHook(useRawWorkflowContext, {
+    const { result, rerender } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <ProviderWith
           workflow={workflow}
@@ -472,7 +490,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       exportRefusal: { code: 'capability-probing' },
     } as unknown as UseRawWorkflowReturn
     const onExport = vi.fn()
-    const { result } = renderHook(useRawWorkflowContext, {
+    const { result } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <ProviderWith
           workflow={workflow}
@@ -517,7 +535,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       hasImage: true,
       exportBlock: 'pending',
     })
-    const { result, rerender } = renderHook(useRawWorkflowContext, {
+    const { result, rerender } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <ProviderWith workflow={workflow} transform={transform}>
           {children}
@@ -668,14 +686,10 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     session.unmount()
   })
 
-  it('reports compare support and export progress to the tool surfaces', () => {
-    const workflow = {
-      ...workflowFixture(),
-      status: 'exporting',
-      progress: 42,
-    } as unknown as UseRawWorkflowReturn
+  it('reports compare support and the delivered size to the tool surfaces', () => {
+    const workflow = workflowFixture()
     let isCpuMode = false
-    const { result, rerender } = renderHook(useRawWorkflowContext, {
+    const { result, rerender } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <RawWorkflowToolProvider
           workflow={workflow}
@@ -696,8 +710,6 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       ),
     })
     expect(result.current.compareSupported).toBe(true)
-    expect(result.current.isExporting).toBe(true)
-    expect(result.current.progress).toBe(42)
     // The export recap's size is unknown until the workflow reports it.
     expect(result.current.deliveredExportSize).toBeNull()
     workflow.deliveredExportSize = { width: 9728, height: 6656 }
@@ -716,7 +728,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
   it('lets the CPU preview show the original but never the split', () => {
     const workflow = workflowFixture()
     const onCompareReset = vi.fn()
-    const { result } = renderHook(useRawWorkflowContext, {
+    const { result } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <RawWorkflowToolProvider
           workflow={workflow}
@@ -753,9 +765,12 @@ describe('rawWorkflowToolProvider Transform guards', () => {
         reason: 'cpu-preview',
       })
     }
-    expect(result.current.onViewModeChange).toBe(workflow.setViewMode)
-    expect(result.current.onCompareSplitChange).toBe(workflow.setCompareSplit)
-    expect(result.current.onCompareReset).toBe(onCompareReset)
+    result.current.onViewModeChange('original')
+    result.current.onCompareSplitChange(0.4)
+    result.current.onCompareReset()
+    expect(workflow.setViewMode).toHaveBeenLastCalledWith('original')
+    expect(workflow.setCompareSplit).toHaveBeenLastCalledWith(0.4)
+    expect(onCompareReset).toHaveBeenCalledOnce()
   })
 
   it('tells the Look strip which LUT is applied by its cube hash', () => {
@@ -774,7 +789,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
         },
       },
     } as unknown as UseRawWorkflowReturn
-    const { result } = renderHook(useRawWorkflowContext, {
+    const { result } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <RawWorkflowToolProvider
           workflow={workflow}
@@ -820,7 +835,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
         },
       },
     } as unknown as UseRawWorkflowReturn
-    const { result, rerender } = renderHook(useRawWorkflowContext, {
+    const { result, rerender } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <RawWorkflowToolProvider
           workflow={workflow}
@@ -856,7 +871,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       decodedImageRef: { current: decoded },
     } as unknown as UseRawWorkflowReturn
     let transform = transformFeatureFixture({ hasImage: true })
-    const { result, rerender } = renderHook(useRawWorkflowContext, {
+    const { result, rerender } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <RawWorkflowToolProvider
           workflow={workflow}
@@ -909,8 +924,8 @@ describe('rawWorkflowToolProvider Transform guards', () => {
  * export that released the preview and holds the delivered JPEG; `restore`
  * for the photographer bringing the preview back.
  */
-function renderReleasablePreview<Result = RawToolSurfaceProps>(
-  useValue: () => Result = useRawWorkflowContext as () => Result,
+function renderReleasablePreview<Result = SurfaceView>(
+  useValue: () => Result = useSurfaceView as () => Result,
 ) {
   const workflow = {
     ...workflowFixture(),
@@ -1010,7 +1025,7 @@ function renderReleasablePreview<Result = RawToolSurfaceProps>(
 }
 
 /** Every edit a tool surface can make: Adjust, Look, its contract, Transform. */
-function editEverything(surface: RawToolSurfaceProps) {
+function editEverything(surface: SurfaceView) {
   surface.onToneChange({ userExposureEv: 1 })
   surface.onToneReset()
   surface.onColorChange({ userSaturation: 20 })
@@ -1267,7 +1282,7 @@ describe('rawWorkflowToolProvider interruption note', () => {
   it('hands the surfaces one typed note for the loaded source, and no recovery entry', () => {
     let workflow = interruptedWorkflow(true)
     const onExport = vi.fn()
-    const { result, rerender } = renderHook(useRawWorkflowContext, {
+    const { result, rerender } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <ProviderWith workflow={workflow} onExport={onExport}>
           {children}
@@ -1496,7 +1511,7 @@ describe('rawWorkflowToolProvider surface policy', () => {
     let workflow = { ...workflowFixture(), status: 'decoding' }
     let isCpuMode = false
     let transform = transformFeatureFixture({ hasImage: true })
-    const { result, rerender } = renderHook(useRawWorkflowContext, {
+    const { result, rerender } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <RawWorkflowToolProvider
           workflow={workflow as unknown as UseRawWorkflowReturn}
@@ -1571,7 +1586,7 @@ describe('rawWorkflowToolProvider surface policy', () => {
     let isCpuMode = true
     let transform: ReturnType<typeof transformFeatureFixture> | undefined =
       transformFeatureFixture({ hasImage: true })
-    const { result, rerender } = renderHook(useRawWorkflowContext, {
+    const { result, rerender } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <RawWorkflowToolProvider
           workflow={workflow}
@@ -1679,7 +1694,7 @@ describe('rawWorkflowToolProvider surface policy', () => {
     const onCompareReset = vi.fn()
     let isCpuMode = true
     let transform = transformFeatureFixture({ hasImage: true })
-    const { result, rerender } = renderHook(useRawWorkflowContext, {
+    const { result, rerender } = renderHook(useSurfaceView, {
       wrapper: ({ children }) => (
         <RawWorkflowToolProvider
           workflow={workflow}
@@ -1702,17 +1717,55 @@ describe('rawWorkflowToolProvider surface policy', () => {
     })
     // No surface command is swapped for another or dropped on the way: the
     // workflow refuses a split the CPU preview or a Transform cannot show.
-    expect(result.current.onViewModeChange).toBe(workflow.setViewMode)
-    expect(result.current.onCompareSplitChange).toBe(workflow.setCompareSplit)
-    expect(result.current.onCompareReset).toBe(onCompareReset)
     result.current.onViewModeChange('compare')
+    result.current.onCompareSplitChange(0.3)
+    result.current.onCompareReset()
     expect(workflow.setViewMode).toHaveBeenLastCalledWith('compare')
+    expect(workflow.setCompareSplit).toHaveBeenLastCalledWith(0.3)
+    expect(onCompareReset).toHaveBeenCalledOnce()
 
     isCpuMode = false
     transform = transformFeatureFixture({ hasImage: true, active: true })
     rerender()
-    expect(result.current.onViewModeChange).toBe(workflow.setViewMode)
-    expect(result.current.onCompareReset).toBe(onCompareReset)
+    result.current.onViewModeChange('original')
+    result.current.onCompareReset()
+    expect(workflow.setViewMode).toHaveBeenLastCalledWith('original')
+    expect(onCompareReset).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows the adjustments the store renders with on desktop, not a copy the workflow hands on', () => {
+    showDesktop()
+    onTestFinished(() => {
+      setCurrentSession(null)
+      resetToDefaults()
+    })
+    setProcessingParams({ ...getProcessingParams(), userContrast: 12 })
+    render(<PolicySurface commands={policyCommands()} />)
+    expect(screen.getByRole('slider', { name: 'Contrast' })).toHaveAttribute(
+      'aria-valuenow',
+      '12',
+    )
+  })
+
+  it('shows the export progress the store holds on the mobile topbar', () => {
+    showMobile()
+    onTestFinished(() => {
+      setCurrentSession(null)
+      resetToDefaults()
+    })
+    act(() => {
+      setProcessingStatus('exporting')
+      setProgress(42)
+    })
+    const { container } = render(
+      <PolicySurface
+        commands={policyCommands()}
+        workflowOverrides={{ status: 'exporting', progress: 0 }}
+      />,
+    )
+    expect(
+      container.querySelector('[data-mobile-export-action]'),
+    ).toHaveTextContent('42%')
   })
 
   it('locks the desktop rail exactly where the policy refuses', async () => {
@@ -2302,19 +2355,9 @@ describe('rawWorkflowToolProvider tool commands', () => {
     onLutDrop = vi.fn()
     rerender()
     expect(result.current.commands).toBe(held.commands)
-    for (const name of [
-      'onIntensityChange',
-      'onToneChange',
-      'onToneReset',
-      'onColorChange',
-      'onColorReset',
-      'onSelectiveColorChange',
-      'onSelectiveColorReset',
-      'onLutLoad',
-      'onLutClear',
-      'onLutProfileSelect',
-    ] as const) {
-      expect(result.current.surface[name], name).toBe(held.commands[name])
+    // The context hands on no command of its own beside them.
+    for (const name of Object.keys(held.commands)) {
+      expect(result.current.surface, name).not.toHaveProperty(name)
     }
 
     editThroughCommands(held.commands)
@@ -2437,9 +2480,7 @@ describe('rawWorkflowToolProvider surface contract', () => {
     expectTypeOf<RawToolSurfaceProps>().not.toHaveProperty(
       'onRecoverExportSource',
     )
-    expectTypeOf<RawToolSurfaceProps['onExport']>().parameters.toEqualTypeOf<
-      []
-    >()
+    expectTypeOf<RawToolCommands['onExport']>().parameters.toEqualTypeOf<[]>()
 
     const { result } = renderHook(useRawWorkflowContext, {
       wrapper: ({ children }) => (
@@ -2449,16 +2490,15 @@ describe('rawWorkflowToolProvider surface contract', () => {
       ),
     })
 
-    // What the surfaces get: action-specific availability, one typed note,
-    // a continuous strength, the size export will really deliver, guarded
-    // commands and the delivered result's actions. Nothing else.
+    // What the context hands the surfaces: action-specific availability,
+    // the export decisions and their reasons, one typed note and the size
+    // export will really deliver. Adjustments, the stage and its progress
+    // are the store's, and the commands are the commands provider's.
     expect(Object.keys(result.current).sort()).toEqual(
       [
-        'activeIntensity',
         'appliedLut',
         'canExport',
         'canPreviewExport',
-        'color',
         'compareSplit',
         'compareSupported',
         'cpuPreviewNotice',
@@ -2472,45 +2512,19 @@ describe('rawWorkflowToolProvider surface contract', () => {
         'hasImage',
         'histogram',
         'interruptionNote',
-        'isExporting',
         'isProcessing',
         'lutProfileResolution',
         'lutProfileSelection',
         'metadata',
-        'onColorChange',
-        'onColorReset',
-        'onCompareReset',
-        'onCompareSplitChange',
-        'onCopyExport',
-        'onDownloadExport',
-        'onDownloadExportManifest',
-        'onExport',
-        'onIntensityChange',
-        'onLutClear',
-        'onLutLoad',
-        'onLutProfileSelect',
-        'onPrepareRuntime',
-        'onPreviewExport',
-        'onReplaceFile',
-        'onResetSession',
-        'onSelectiveColorChange',
-        'onSelectiveColorReset',
-        'onShareExport',
-        'onToneChange',
-        'onToneReset',
-        'onViewModeChange',
         'onlineLutSources',
         'previewAspect',
         'previewExportDisabledReason',
         'previewFrameEl',
         'previewLookReason',
         'previewSuspended',
-        'progress',
         'runtimeReadinessState',
-        'selectiveColor',
         'stats',
         'supportLevel',
-        'tone',
         'toolAvailability',
         'transform',
         'viewMode',

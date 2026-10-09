@@ -33,7 +33,6 @@ import type { AppliedLut } from './mobile/mobile-lut-strip'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { ToneValue } from './tone-fields'
 import type { FileFactsTool } from './tools/FileFactsTool'
-import type { HSLToolValue } from './tools/HSLTool'
 
 /**
  * The loaded source's previous export was interrupted, so the next export the
@@ -47,6 +46,14 @@ export const EXPORT_INTERRUPTION_NOTE_COPY = {
   interrupted: 'raw.export.interrupted',
 } as const satisfies Record<ExportInterruptionNote['kind'], MessageKey>
 
+/**
+ * What the workflow hands a tool surface beside the store slices and the
+ * tool commands: what each action can do, the export decisions with their
+ * reasons, and the facts the surfaces show. Adjustments, the workflow stage
+ * and its progress are read from the store (`useRawToolAdjustments`,
+ * `useRawToolStatus`, `useRawToolProgress`), and every command from
+ * `useRawToolCommands`.
+ */
 export interface RawToolSurfaceProps {
   transform?: RawTransformFeature
   /**
@@ -55,43 +62,17 @@ export interface RawToolSurfaceProps {
    * commands it calls are the real ones and refuse on their own.
    */
   toolAvailability: Record<ToolSurface, ToolAvailability>
-  /** How much of the look reaches the photo, 0..1. */
-  activeIntensity: number
-  tone: ToneValue
-  color: ColorValue
-  selectiveColor: HSLToolValue | undefined
-  /** Set how much of the look reaches the photo, 0..1. */
-  onIntensityChange: (value: number) => void
-  onToneChange: (value: Partial<ToneValue>) => void
-  onToneReset: () => void
-  onColorChange: (value: Partial<ColorValue>) => void
-  onColorReset: () => void
-  onSelectiveColorChange: (
-    band: HSLBandId,
-    shift: Partial<HSLBandShift>,
-  ) => void
-  onSelectiveColorReset: () => void
-  onCompareReset: () => void
   viewMode: 'processed' | 'original' | 'compare'
-  onViewModeChange: (mode: 'processed' | 'original' | 'compare') => void
   compareSplit: number
-  onCompareSplitChange: (split: number) => void
   /**
    * The stage can render a RAW / final comparison. False in the CPU preview,
    * which has no split surface; a committed Transform is reported separately.
    */
   compareSupported?: boolean
-  /** Resolves once the load settles, applied or not. */
-  onLutLoad: (files: File[]) => void | Promise<unknown>
-  onLutClear: () => void
-  onLutProfileSelect: (profile: LUTColorProfile) => void
-  /** Starts the full-resolution export; it takes no choices. */
-  onExport: () => void
   /** The HQ preview export can start now, as the action policy decides. */
   canPreviewExport?: boolean
   /** Why the HQ preview export is refused; unset while it can start. */
   previewExportDisabledReason?: HqExportActionReason
-  onPreviewExport?: () => void | Promise<void>
   /** The full-resolution export can start now, as the action policy decides. */
   canExport: boolean
   /** Why the full-resolution export is refused; unset while it can start. */
@@ -107,25 +88,15 @@ export interface RawToolSurfaceProps {
    */
   deliveredExportSize?: DeliveredExportSize | null
   isProcessing: boolean
-  isExporting?: boolean
-  /** Workflow progress, 0-100; the export action reads it while exporting. */
-  progress?: number
   runtimeReadinessState?: RawRuntimeReadinessState
-  onPrepareRuntime?: () => void
   previewSuspended?: boolean
   exportResult: ExportResult | null
   exportShareCapability: ExportShareCapability
   histogram: PreviewHistogramState
   /** Set while the loaded source's previous export was interrupted. */
   interruptionNote?: ExportInterruptionNote | null
-  onShareExport: () => void
-  onDownloadExport: () => void
-  onDownloadExportManifest?: () => void
-  onCopyExport: () => void
   hasImage: boolean
   fileName: string
-  onReplaceFile: () => void
-  onResetSession: () => void
   currentLutName?: string | null
   /**
    * The applied LUT's identity (name, .cube SHA-256, source name), so a
@@ -155,31 +126,6 @@ export interface RawToolSurfaceProps {
   cpuPreviewNotice?: CpuPreviewNotice
 }
 
-/** The commands a tool surface calls, by the props they are handed as. */
-type RawToolCommandName =
-  | 'onIntensityChange'
-  | 'onToneChange'
-  | 'onToneReset'
-  | 'onColorChange'
-  | 'onColorReset'
-  | 'onSelectiveColorChange'
-  | 'onSelectiveColorReset'
-  | 'onLutLoad'
-  | 'onLutClear'
-  | 'onLutProfileSelect'
-  | 'onViewModeChange'
-  | 'onCompareSplitChange'
-  | 'onCompareReset'
-  | 'onExport'
-  | 'onPreviewExport'
-  | 'onShareExport'
-  | 'onDownloadExport'
-  | 'onDownloadExportManifest'
-  | 'onCopyExport'
-  | 'onReplaceFile'
-  | 'onResetSession'
-  | 'onPrepareRuntime'
-
 /**
  * The tool commands, the same object for as long as their provider is
  * mounted. Each one decides when it is called, from what the provider last
@@ -187,9 +133,36 @@ type RawToolCommandName =
  * runs only where the action policy allows it. A surface reads availability
  * to disable a control, never to choose which command to hold.
  */
-export type RawToolCommands = Required<
-  Pick<RawToolSurfaceProps, RawToolCommandName>
->
+export interface RawToolCommands {
+  /** Set how much of the look reaches the photo, 0..1. */
+  onIntensityChange: (value: number) => void
+  onToneChange: (value: Partial<ToneValue>) => void
+  onToneReset: () => void
+  onColorChange: (value: Partial<ColorValue>) => void
+  onColorReset: () => void
+  onSelectiveColorChange: (
+    band: HSLBandId,
+    shift: Partial<HSLBandShift>,
+  ) => void
+  onSelectiveColorReset: () => void
+  /** Resolves once the load settles, applied or not. */
+  onLutLoad: (files: File[]) => void | Promise<unknown>
+  onLutClear: () => void
+  onLutProfileSelect: (profile: LUTColorProfile) => void
+  onViewModeChange: (mode: 'processed' | 'original' | 'compare') => void
+  onCompareSplitChange: (split: number) => void
+  onCompareReset: () => void
+  /** Starts the full-resolution export; it takes no choices. */
+  onExport: () => void
+  onPreviewExport: () => void | Promise<void>
+  onShareExport: () => void
+  onDownloadExport: () => void
+  onDownloadExportManifest: () => void
+  onCopyExport: () => void
+  onReplaceFile: () => void
+  onResetSession: () => void
+  onPrepareRuntime: () => void
+}
 
 const RawWorkflowContext = createContext<RawToolSurfaceProps | null>(null)
 const RawToolCommandsContext = createContext<RawToolCommands | null>(null)
@@ -230,18 +203,10 @@ export function RawWorkflowProvider({
   )
 }
 
-export function useRawWorkflowContext(
-  override?: RawToolSurfaceProps,
-): RawToolSurfaceProps {
+export function useRawWorkflowContext(): RawToolSurfaceProps {
   const value = useContext(RawWorkflowContext)
-
-  if (override && Object.keys(override).length > 0) {
-    return override
-  }
-
   if (!value) {
     throw new Error('RawWorkflowProvider is missing')
   }
-
   return value
 }

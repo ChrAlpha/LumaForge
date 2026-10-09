@@ -11,11 +11,6 @@ import { onTestFinished } from 'vitest'
 
 import { jotaiStore } from '~/lib/jotai'
 
-import {
-  useRawToolAdjustments,
-  useRawToolProgress,
-  useRawToolStatus,
-} from '../hooks/useRawToolState'
 import type { ProcessingStatus } from '../model/workflow'
 import { DEFAULT_LOOK_INTENSITY } from '../services/look/style-system'
 import { setCurrentSession } from '../state/session.atoms'
@@ -56,14 +51,6 @@ interface RawToolStoreFacts {
   progress?: number
 }
 
-type RawToolStoreFactName = keyof RawToolStoreFacts
-
-/** What the workflow context still carries beside the store and commands. */
-type RawToolContextFacts = Omit<
-  RawToolSurfaceProps,
-  RawToolStoreFactName | keyof RawToolCommands
->
-
 /**
  * What a surface test states, as flat facts. The fixture splits them the
  * way production does: store facts into the production store, commands into
@@ -72,9 +59,9 @@ type RawToolContextFacts = Omit<
  */
 export type RawToolSurfaceFixtureProps = RawToolStoreFacts &
   Partial<RawToolCommands> &
-  Partial<RawToolContextFacts>
+  Partial<RawToolSurfaceProps>
 
-const CONTEXT_DEFAULTS: Omit<RawToolContextFacts, 'toolAvailability'> = {
+const CONTEXT_DEFAULTS: Omit<RawToolSurfaceProps, 'toolAvailability'> = {
   viewMode: 'processed',
   compareSplit: 0.5,
   canExport: false,
@@ -165,10 +152,32 @@ function createFixtureCommands(latest: {
 }
 
 /**
- * The provider boundary the surfaces read. The workflow context carries the
- * store facts as the tool slices read them back, over whatever the test
- * stated, so a fact the store cannot hold never reaches a surface; its
- * commands are the commands provider's.
+ * The context facts the test stated: neither a store fact, which the
+ * surfaces read back from the store, nor a command, which they call through
+ * the commands provider.
+ */
+function contextFacts(
+  props: RawToolSurfaceFixtureProps,
+  commands: RawToolCommands,
+): Partial<RawToolSurfaceProps> {
+  const {
+    activeIntensity: _activeIntensity,
+    tone: _tone,
+    color: _color,
+    selectiveColor: _selectiveColor,
+    isExporting: _isExporting,
+    progress: _progress,
+    ...rest
+  } = props
+  return Object.fromEntries(
+    Object.entries(rest).filter(([name]) => !(name in commands)),
+  )
+}
+
+/**
+ * The provider boundary the surfaces read: the workflow context with the
+ * context facts, and the commands provider. The store facts are in the
+ * production store, where the surfaces' slices read them.
  */
 function FixtureToolProviders({
   props,
@@ -180,20 +189,13 @@ function FixtureToolProviders({
   const latest = useRef(props)
   latest.current = props
   const [commands] = useState(() => createFixtureCommands(latest))
-  const adjustments = useRawToolAdjustments()
-  const { isExporting } = useRawToolStatus()
-  const progress = useRawToolProgress()
   return (
     <RawWorkflowProvider
       value={{
         ...CONTEXT_DEFAULTS,
-        ...props,
+        ...contextFacts(props, commands),
         toolAvailability:
           props.toolAvailability ?? toolAvailabilityFixture(props),
-        ...commands,
-        ...adjustments,
-        isExporting,
-        progress,
       }}
     >
       <RawToolCommandsProvider commands={commands}>
