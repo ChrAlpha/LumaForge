@@ -3,7 +3,10 @@ import { fileURLToPath } from 'node:url'
 
 import { defineConfig } from 'vite'
 
+const root = fileURLToPath(new URL('.', import.meta.url))
+
 export default defineConfig({
+  root,
   build: {
     outDir: 'dist',
     emptyOutDir: !process.env.VITEST,
@@ -27,6 +30,7 @@ export default defineConfig({
     target: 'es2022',
   },
   test: {
+    name: '@lumaforge/lmfg-cli',
     environment: 'node',
     globals: false,
     include: ['src/**/*.test.ts'],

@@ -1,6 +1,5 @@
 import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 import { defineConfig } from 'vite'
@@ -29,10 +28,10 @@ export default defineConfig({
   plugins: [
     {
       name: 'luma-jpeg-preserve-native-assets',
+      // Build only: the test server must never clear dist, since the bundle
+      // tests load `dist/node.js` and the native assets beside it.
+      apply: 'build',
       buildStart() {
-        // Skip during vitest — clearing dist mid-test invalidates the
-        // bundle smoke tests that load from `dist/node.js`.
-        if (process.env.VITEST) return
         cleanDistExceptNative()
       },
     },
@@ -64,6 +63,7 @@ export default defineConfig({
     format: 'es',
   },
   test: {
+    name: '@lumaforge/luma-jpeg-runtime',
     environment: 'jsdom',
     globals: true,
   },

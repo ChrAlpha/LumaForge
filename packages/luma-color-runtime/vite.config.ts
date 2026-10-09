@@ -28,6 +28,7 @@ export default defineConfig({
     target: 'es2022',
   },
   test: {
+    name: '@lumaforge/luma-color-runtime',
     environment: 'node',
     globals: true,
   },
