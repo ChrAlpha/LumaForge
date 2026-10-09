@@ -13,6 +13,7 @@ import {
 } from '~/lib/runtime/capability-vector'
 
 import type { DisplaySource, ImageSession } from '../../../model/session'
+import { createTransformState } from '../../../model/session-factory'
 import type { OriginalReferenceSnapshot } from '../../../services/compare/original-reference-snapshot'
 import { setCurrentSession } from '../../../state/session.atoms'
 import { useOriginalReferenceSnapshot } from '../../useOriginalReferenceSnapshot'
@@ -102,6 +103,8 @@ function createSession(
       fullResCapability: { status: 'supported', width: 800, height: 600 },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState(id),
   }
 }
 
@@ -584,7 +587,7 @@ describe('useOriginalReferenceStage', () => {
     })
 
     it('prepares a fallback snapshot only for the session the request named', async () => {
-      const first = createSession('compare', 'session-first')
+      const first = createSession('compare')
       const replacement = createSession('compare', 'session-replacement')
       setCurrentSession(first)
       const { result, rerender, unmount, registry } = renderStage()

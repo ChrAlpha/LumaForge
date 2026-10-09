@@ -5,6 +5,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import type { ImageSession, SupportLevel } from '../../../model/session'
 import {
   createImageSession,
+  createTransformState,
   toAppSupportLevel,
 } from '../../../model/session-factory'
 import { useRawSourceState } from './useRawSourceState'
@@ -44,6 +45,8 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
       fullResCapability: { status: 'unknown' },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-source'),
     ...overrides,
   }
 }

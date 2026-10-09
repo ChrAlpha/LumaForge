@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ImageSession } from '../../../model/session'
+import { createTransformState } from '../../../model/session-factory'
 import type { SetImageSession } from './useEmbeddedPreviewUrlLifecycle'
 import { useEmbeddedPreviewUrlLifecycle } from './useEmbeddedPreviewUrlLifecycle'
 
@@ -46,6 +47,8 @@ function createSession(
       fullResCapability: { status: 'probing' },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState(id),
   }
 }
 

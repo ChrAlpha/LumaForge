@@ -8,6 +8,7 @@ import {
   selectDisplaySource,
 } from '../model/derive-session'
 import type { ImageSession } from '../model/session'
+import { createTransformState } from '../model/session-factory'
 
 const baseSession: ImageSession = {
   id: 's1',
@@ -40,6 +41,8 @@ const baseSession: ImageSession = {
     fullResCapability: { status: 'unknown' },
     retryRecommended: false,
   },
+  exportGeometry: null,
+  transform: createTransformState('s1'),
 }
 
 describe('session derivation', () => {

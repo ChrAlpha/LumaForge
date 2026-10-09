@@ -6,6 +6,7 @@ import { createRawRuntimeSessionLeases } from '~/lib/raw/raw-runtime-host'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 
 import type { ImageSession } from '../../../model/session'
+import { createTransformState } from '../../../model/session-factory'
 import type { SetImageSession } from './useRestorePreviewAfterExport'
 import { useRestorePreviewAfterExport } from './useRestorePreviewAfterExport'
 
@@ -46,6 +47,8 @@ function createSession(
       fullResCapability: { status: 'supported', width: 400, height: 300 },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState(id),
   }
 }
 

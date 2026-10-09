@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { ImageSession } from '../../../model/session'
+import { createTransformState } from '../../../model/session-factory'
 import { useEmbeddedPreviewUrlLifecycle } from '../preview/useEmbeddedPreviewUrlLifecycle'
 import type { SetImageSession } from './useRawProcessorLifecycle'
 import { useRawProcessorLifecycle } from './useRawProcessorLifecycle'
@@ -40,6 +41,8 @@ function createSession(id = 'pending-session'): ImageSession {
       fullResCapability: { status: 'unknown' },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState(id),
   }
 }
 

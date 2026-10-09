@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { ImageSession } from '../../../model/session'
+import { createTransformState } from '../../../model/session-factory'
 import { setCurrentSession } from '../../../state/session.atoms'
 import type { OriginalReferenceSnapshotCapability } from '../../useOriginalReferenceSnapshot'
 import { useOriginalReferencePolicy } from './useOriginalReferencePolicy'
@@ -38,6 +39,8 @@ function createSession(id = 'session-compare'): ImageSession {
       fullResCapability: { status: 'unknown' },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState(id),
   }
 }
 
