@@ -1,5 +1,6 @@
 import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
+import { useCallback, useRef } from 'react'
 
 import type { ExportResourceCleanupReason } from '~/lib/export/execution-profile'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
@@ -46,7 +47,7 @@ type UseRawIngestStageInput = {
   queueExportResultResourceDisposal: (
     reason?: ExportResourceCleanupReason,
   ) => void
-  revokeCurrentEmbeddedPreviewUrl: () => void
+  revokeCurrentEmbeddedPreviewUrl: (ownerSessionId?: string | null) => void
   clearSessionEmbeddedPreviewUrl: (sessionId?: string) => void
   setDecodedImageRef: (
     decoded: DecodedImage | null,
@@ -68,12 +69,27 @@ type UseRawIngestStageInput = {
 }
 
 export function useRawIngestStage(input: UseRawIngestStageInput) {
+  // The session this mount last published. Only that one ends when the mount
+  // departs; a session another mount publishes is never this mount's.
+  const ownedSessionIdRef = useRef<string | null>(null)
+  const { replaceFile: publishSession } = input
+  const replaceFile = useCallback<UseRawIngestStageInput['replaceFile']>(
+    (file, retained) => {
+      const next = publishSession(file, retained)
+      ownedSessionIdRef.current = next.id
+      return next
+    },
+    [publishSession],
+  )
+
   useRawProcessorLifecycle({
     isMountedRef: input.isMountedRef,
     runtimeWorkSessionIdRef: input.runtimeWorkSessionIdRef,
     pendingLoadSessionIdRef: input.pendingLoadSessionIdRef,
+    ownedSessionIdRef,
     decodedImageRef: input.decodedImageRef,
     previewCopyCanvasRef: input.previewCopyCanvasRef,
+    getSession: input.getSession,
     abortExportWork: input.abortExportWork,
     abortRuntimeWork: input.abortRuntimeWork,
     queueExportResultResourceDisposal: input.queueExportResultResourceDisposal,
@@ -85,7 +101,7 @@ export function useRawIngestStage(input: UseRawIngestStageInput) {
     setSession: input.setSession,
   })
 
-  const { loadFile } = useRawLoadAction(input)
+  const { loadFile } = useRawLoadAction({ ...input, replaceFile })
   const { reset } = useRawSessionReset(input)
 
   return { loadFile, reset }

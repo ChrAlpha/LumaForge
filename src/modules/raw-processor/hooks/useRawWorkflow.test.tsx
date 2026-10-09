@@ -28,9 +28,12 @@ import {
   createBlobOutputResult,
   materializeOutputBlob,
 } from '@lumaforge/render-engine/export'
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, render, renderHook, waitFor } from '@testing-library/react'
 import { Provider } from 'jotai'
 import type { ReactNode } from 'react'
+import { StrictMode } from 'react'
+import type { NavigateFunction } from 'react-router'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createMemoryFileBackedOutputResult } from '~/lib/export/output-sink'
@@ -8333,7 +8336,7 @@ describe('useRawWorkflow embedded preview state', () => {
     )
   })
 
-  it('preserves ready session across unmount while bounded HQ is still pending', async () => {
+  it('ends a ready session with its mount while bounded HQ is still pending', async () => {
     const boundedHqDecode = deferred<DecodedImage>()
 
     rawRuntimeMock.extractEmbeddedPreview.mockResolvedValue(null)
@@ -8353,17 +8356,20 @@ describe('useRawWorkflow embedded preview state', () => {
     act(() => {
       mounted.unmount()
     })
+    await flushPostCommitTasks()
 
-    const preservedSession = jotaiStore.get(currentSessionAtom)
+    // The departed mount took its decoded frame and RAW session with it, so
+    // returning to the route shows no source rather than one with nothing
+    // left to draw or export.
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
     const remounted = renderHook(() => useRawWorkflow(), { wrapper })
-    expect(remounted.result.current.status).toBe('ready')
-    expect(remounted.result.current.displaySource).toBe('quick')
-    expect(remounted.result.current.sourceFileName).toBe('frame.ARW')
-    expect(remounted.result.current.loadedImage.file?.name).toBe('frame.ARW')
-    expect(jotaiStore.get(currentSessionAtom)?.sourceFile.name).toBe(
-      'frame.ARW',
-    )
-    expect(jotaiStore.get(currentSessionAtom)).toBe(preservedSession)
+    expect(remounted.result.current).toMatchObject({
+      status: 'idle',
+      hasImage: false,
+      displaySource: 'none',
+      canExport: false,
+      exportResult: null,
+    })
     await flushScheduledToasts()
     toastMock.success.mockClear()
 
@@ -8375,67 +8381,172 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushScheduledToasts()
 
-    expect(jotaiStore.get(currentSessionAtom)).toBe(preservedSession)
-    expect(remounted.result.current.displaySource).toBe('quick')
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    expect(remounted.result.current.displaySource).toBe('none')
     expect(toastMock.success).not.toHaveBeenCalled()
 
-    // The remounted workflow still routes view writes into the kept session.
-    const storedParamsBefore = getProcessingParams()
-    act(() => {
-      remounted.result.current.setCompareSplit(0.3)
+    // The new mount loads and exports a source of its own.
+    exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
+      filename: 'next_neutral_fullres.jpg',
+      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
     })
-    expect(jotaiStore.get(currentSessionAtom)?.viewState.compareSplit).toBe(0.3)
-    expect(remounted.result.current.compareSplit).toBe(0.3)
-    expect(getProcessingParams()).toBe(storedParamsBefore)
+    rawRuntimeMock.decodeBoundedHqRaw.mockResolvedValue(
+      createDecodedImage('bounded-hq'),
+    )
+    await act(async () => {
+      await remounted.result.current.loadFile(new File(['raw'], 'next.ARW'))
+    })
+    expect(remounted.result.current).toMatchObject({
+      status: 'ready',
+      sourceFileName: 'next.ARW',
+      canExport: true,
+    })
+    await act(async () => {
+      await remounted.result.current.exportImage()
+    })
+    expect(remounted.result.current.exportResult?.filename).toBe(
+      'next_neutral_fullres.jpg',
+    )
 
     remounted.unmount()
   })
 
-  it('keeps a preserved session and its write routing across a StrictMode remount', async () => {
+  it('keeps an immediate new mount whatever it loads before the old mount has departed', async () => {
     const mounted = renderHook(() => useRawWorkflow(), { wrapper })
     await act(async () => {
-      await mounted.result.current.loadFile(new File(['raw'], 'frame.ARW'))
+      await mounted.result.current.loadFile(new File(['raw'], 'old.ARW'))
     })
-    act(() => {
-      mounted.unmount()
-    })
-    const preservedSession = jotaiStore.get(currentSessionAtom)
-    expect(preservedSession?.sourceFile.name).toBe('frame.ARW')
-    vi.mocked(pageMarkers().inspect).mockClear()
 
-    const remounted = renderHook(() => useRawWorkflow(), {
+    // The new mount is up and loading in the tick the old one leaves: no
+    // task or microtask runs between these synchronous steps.
+    act(() => mounted.unmount())
+    const remounted = renderHook(() => useRawWorkflow(), { wrapper })
+    let loading!: Promise<void>
+    act(() => {
+      loading = remounted.result.current.loadFile(new File(['raw'], 'new.ARW'))
+    })
+    const acquired = jotaiStore.get(currentSessionAtom)
+    expect(acquired?.sourceFile.name).toBe('new.ARW')
+
+    await act(async () => {
+      await loading
+    })
+    await flushPostCommitTasks()
+
+    // The old mount's departure clears only its own session, never this one
+    // or the status of the load that published it.
+    expect(jotaiStore.get(currentSessionAtom)?.id).toBe(acquired?.id)
+    expect(remounted.result.current).toMatchObject({
+      status: 'ready',
+      sourceFileName: 'new.ARW',
+      canExport: true,
+    })
+
+    remounted.unmount()
+  })
+
+  it.each([false, true])(
+    'ends the session when the router leaves /raw and starts the route empty on return (StrictMode: %s)',
+    async (strictMode) => {
+      const mounted = { current: null as UseRawWorkflowReturn | null }
+      const navigation = { navigate: null as NavigateFunction | null }
+      function RawRouteProbe() {
+        mounted.current = useRawWorkflow()
+        return null
+      }
+      function NavigationProbe() {
+        navigation.navigate = useNavigate()
+        return null
+      }
+      const tree = (
+        <Provider store={jotaiStore}>
+          <MemoryRouter initialEntries={['/raw']}>
+            <NavigationProbe />
+            <Routes>
+              <Route path="/raw" element={<RawRouteProbe />} />
+              <Route path="/" element={null} />
+            </Routes>
+          </MemoryRouter>
+        </Provider>
+      )
+      const view = render(strictMode ? <StrictMode>{tree}</StrictMode> : tree)
+      await flushPostCommitTasks()
+
+      await act(async () => {
+        await mounted.current!.loadFile(new File(['raw'], 'frame.ARW'))
+      })
+      await flushPostCommitTasks()
+      // Mounted, the session stays usable, StrictMode replay or not.
+      expect(mounted.current).toMatchObject({
+        status: 'ready',
+        sourceFileName: 'frame.ARW',
+        canExport: true,
+      })
+
+      // A new search on the route keeps the mount, and with it the session.
+      const loaded = jotaiStore.get(currentSessionAtom)
+      act(() => {
+        void navigation.navigate!('/raw?luts=https%3A%2F%2Fexample.com')
+      })
+      await flushPostCommitTasks()
+      expect(jotaiStore.get(currentSessionAtom)).toBe(loaded)
+      expect(mounted.current?.status).toBe('ready')
+
+      act(() => {
+        void navigation.navigate!('/')
+      })
+      await flushPostCommitTasks()
+      expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+
+      mounted.current = null
+      act(() => {
+        void navigation.navigate!('/raw')
+      })
+      await flushPostCommitTasks()
+      expect(mounted.current).toMatchObject({
+        status: 'idle',
+        hasImage: false,
+        displaySource: 'none',
+        canExport: false,
+        exportResult: null,
+      })
+
+      view.unmount()
+    },
+  )
+
+  it('keeps a session through a StrictMode remount and ends it on the real departure', async () => {
+    const { result, unmount } = renderHook(() => useRawWorkflow(), {
       wrapper,
       reactStrictMode: true,
     })
+    // StrictMode replays the mount effects, including the departure cleanup.
+    await flushPostCommitTasks()
 
-    // StrictMode replays mount effects, including the unmount cleanup.
-    expect(pageMarkers().inspect).toHaveBeenCalledTimes(2)
-    expect(jotaiStore.get(currentSessionAtom)).toBe(preservedSession)
-    expect(remounted.result.current.status).toBe('ready')
-    expect(remounted.result.current.sourceFileName).toBe('frame.ARW')
-    expect(remounted.result.current.previewTransform?.sourceId).toBe(
-      preservedSession?.id,
-    )
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    const loaded = jotaiStore.get(currentSessionAtom)
+    expect(result.current.status).toBe('ready')
 
     const storedParamsBefore = getProcessingParams()
     act(() => {
-      remounted.result.current.setCompareSplit(0.3)
-      acceptTransformGeometry(
-        remounted.result.current.transform,
-        SAMPLE_GEOMETRY,
-      )
+      result.current.setCompareSplit(0.3)
+      acceptTransformGeometry(result.current.transform, SAMPLE_GEOMETRY)
     })
+    await flushPostCommitTasks()
 
     expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
-      id: preservedSession?.id,
+      id: loaded?.id,
       exportGeometry: SAMPLE_GEOMETRY,
       viewState: { compareSplit: 0.3 },
     })
     expect(getProcessingParams()).toBe(storedParamsBefore)
-    expect(remounted.result.current.previewTransform?.active).toBe(true)
+    expect(result.current.previewTransform?.active).toBe(true)
 
-    remounted.unmount()
-    expect(jotaiStore.get(currentSessionAtom)?.id).toBe(preservedSession?.id)
+    act(() => unmount())
+    await flushPostCommitTasks()
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
   })
 
   it('loads, routes compare writes and exports under StrictMode effect replay', async () => {
@@ -8481,13 +8592,17 @@ describe('useRawWorkflow embedded preview state', () => {
     const exportedSession = jotaiStore.get(currentSessionAtom)
     expect(exportedSession?.exportState.status).toBe('ready')
 
-    unmount()
-
+    // The replay at mount left the exported session in place.
+    await flushPostCommitTasks()
     expect(jotaiStore.get(currentSessionAtom)?.id).toBe(exportedSession?.id)
-    expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
+
+    act(() => unmount())
+    await flushPostCommitTasks()
+
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
   })
 
-  it('does not mutate the kept session when an export resolves after unmount', async () => {
+  it('ends an exporting session with its mount and lets the late export land on nothing', async () => {
     const pendingExport = deferred<{ filename: string; blob: Blob }>()
     exportSystemMock.runFullResolutionExportJob.mockReturnValue(
       pendingExport.promise,
@@ -8509,12 +8624,16 @@ describe('useRawWorkflow embedded preview state', () => {
     const request =
       exportSystemMock.runFullResolutionExportJob.mock.calls[0]![0]
 
+    await flushScheduledToasts()
+    toastMock.success.mockClear()
     act(() => {
       mounted.unmount()
     })
     expect(request.signal.aborted).toBe(true)
-    const keptSession = jotaiStore.get(currentSessionAtom)
-    expect(keptSession?.sourceFile.name).toBe('frame.ARW')
+    await flushPostCommitTasks()
+    // The exporting session ended with the mount that ran its export.
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    const remounted = renderHook(() => useRawWorkflow(), { wrapper })
 
     await act(async () => {
       pendingExport.resolve({
@@ -8525,11 +8644,17 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushScheduledToasts()
 
-    expect(jotaiStore.get(currentSessionAtom)).toBe(keptSession)
-    expect(keptSession?.exportState.result).toBeUndefined()
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    expect(remounted.result.current).toMatchObject({
+      status: 'idle',
+      hasImage: false,
+      exportResult: null,
+    })
+    expect(toastMock.success).not.toHaveBeenCalled()
+    remounted.unmount()
   })
 
-  it('does not mutate the kept session when an export rejects after unmount', async () => {
+  it('ends an exporting session with its mount and lets a late export failure land on nothing', async () => {
     const pendingExport = deferred<{ filename: string; blob: Blob }>()
     exportSystemMock.runFullResolutionExportJob.mockReturnValue(
       pendingExport.promise,
@@ -8552,8 +8677,9 @@ describe('useRawWorkflow embedded preview state', () => {
     act(() => {
       mounted.unmount()
     })
-    const keptSession = jotaiStore.get(currentSessionAtom)
-    expect(keptSession?.sourceFile.name).toBe('frame.ARW')
+    await flushPostCommitTasks()
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    const remounted = renderHook(() => useRawWorkflow(), { wrapper })
 
     await act(async () => {
       pendingExport.reject(new Error('late export worker failed'))
@@ -8561,11 +8687,14 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushScheduledToasts()
 
-    expect(jotaiStore.get(currentSessionAtom)).toBe(keptSession)
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    expect(remounted.result.current.status).toBe('idle')
+    expect(remounted.result.current.error).toBeNull()
     expect(toastMock.error).not.toHaveBeenCalledWith(
       'Export failed',
       expect.anything(),
     )
+    remounted.unmount()
   })
 
   it('aborts and disposes pending bounded HQ runtime session on reset', async () => {
@@ -8925,7 +9054,7 @@ describe('useRawWorkflow embedded preview state', () => {
     remounted.unmount()
   })
 
-  it('preserves completed failure state across unmount after active load failure', async () => {
+  it('ends a failed load with its mount, so a remount starts idle', async () => {
     const quickDecode = deferred<DecodedImage>()
     // Rejection is racy with the paint-boundary yield; ensure a handler
     // is attached up-front to avoid an unhandled-rejection warning when
@@ -8959,11 +9088,13 @@ describe('useRawWorkflow embedded preview state', () => {
     act(() => {
       mounted.unmount()
     })
+    await flushPostCommitTasks()
 
     const remounted = renderHook(() => useRawWorkflow(), { wrapper })
-    expect(remounted.result.current.status).toBe('error')
-    expect(remounted.result.current.error).toBe('quick decode failed')
-    expect(remounted.result.current.sourceFileName).toBe('failed.ARW')
+    expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+    expect(remounted.result.current.status).toBe('idle')
+    expect(remounted.result.current.error).toBeNull()
+    expect(remounted.result.current.hasImage).toBe(false)
 
     remounted.unmount()
   })
@@ -9423,8 +9554,8 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     describe('real departure', () => {
-      // A departure is pinned by what it releases, once each; which session
-      // the store keeps for a later mount is not part of these cases.
+      // A departure releases what the mount held, once each, and ends the
+      // session it published, so a later mount starts without it.
       it('releases a loaded source preview once and a remounted workflow releases nothing again', async () => {
         const { result, counted, host, unmount } = renderCounted()
         await act(async () => {
@@ -9445,8 +9576,10 @@ describe('useRawWorkflow embedded preview state', () => {
           revokedUrls: ['blob:embedded-1'],
         })
         expect(host.dispose).toHaveBeenCalledTimes(1)
+        expect(jotaiStore.get(currentSessionAtom)).toBeNull()
 
         const remounted = renderHook(() => useRawWorkflow(), { wrapper })
+        expect(remounted.result.current.hasImage).toBe(false)
         act(() => remounted.unmount())
         await flushPostCommitTasks()
 
@@ -9471,8 +9604,13 @@ describe('useRawWorkflow embedded preview state', () => {
         act(() => unmount())
         await waitFor(() => expect(counted.outputs[0]).toHaveBeenCalled())
         expect(host.dispose).toHaveBeenCalledTimes(1)
+        // The result's output is gone, so neither its session nor the result
+        // reaches the next mount.
+        expect(jotaiStore.get(currentSessionAtom)).toBeNull()
 
         const remounted = renderHook(() => useRawWorkflow(), { wrapper })
+        expect(remounted.result.current.exportResult).toBeNull()
+        expect(remounted.result.current.hasImage).toBe(false)
         act(() => remounted.unmount())
         await flushPostCommitTasks()
 
@@ -9481,6 +9619,79 @@ describe('useRawWorkflow embedded preview state', () => {
           outputs: [1],
           revokedUrls: ['blob:embedded-1'],
         })
+      })
+
+      it("leaves another live mount's session, preview URL and status whole when it departs", async () => {
+        const { counted, unmount } = renderCounted()
+        // A second workflow is mounted while the first is still alive, and
+        // loads a source with an embedded preview of its own.
+        const other = renderHook(() => useRawWorkflow(), { wrapper })
+        await act(async () => {
+          await other.result.current.loadFile(new File(['raw'], 'other.ARW'))
+        })
+        const acquired = jotaiStore.get(currentSessionAtom)
+        expect(acquired?.previewBundle.embeddedPreview).toMatchObject({
+          objectUrl: 'blob:embedded-1',
+        })
+
+        act(() => unmount())
+        await flushPostCommitTasks()
+
+        expect(releases(counted).revokedUrls).toEqual([])
+        expect(jotaiStore.get(currentSessionAtom)).toBe(acquired)
+        expect(other.result.current).toMatchObject({
+          status: 'ready',
+          sourceFileName: 'other.ARW',
+          embeddedPreviewUrl: 'blob:embedded-1',
+          hasImage: true,
+        })
+
+        act(() => other.unmount())
+        await flushPostCommitTasks()
+        expect(releases(counted).revokedUrls).toEqual(['blob:embedded-1'])
+        expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+      })
+
+      it('ends a released-preview session once on departure, leaving a StrictMode mount after it alone', async () => {
+        const { result, counted, unmount } = renderCounted()
+        await act(async () => {
+          await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+        })
+        await act(async () => {
+          await result.current.exportImage()
+        })
+        expect(result.current.previewSuspended).toBe(true)
+        expect(jotaiStore.get(currentSessionAtom)?.sourceFile.name).toBe(
+          'frame.ARW',
+        )
+
+        act(() => unmount())
+        await flushPostCommitTasks()
+        expect(jotaiStore.get(currentSessionAtom)).toBeNull()
+
+        // A later mount under StrictMode replays its own cleanup and loads;
+        // nothing of the departed mount touches what it opens.
+        const remounted = renderHook(() => useRawWorkflow(), {
+          wrapper,
+          reactStrictMode: true,
+        })
+        await flushPostCommitTasks()
+        await act(async () => {
+          await remounted.result.current.loadFile(new File(['raw'], 'next.ARW'))
+        })
+        await flushPostCommitTasks()
+
+        expect(remounted.result.current).toMatchObject({
+          status: 'ready',
+          sourceFileName: 'next.ARW',
+          hasImage: true,
+        })
+        expect(releases(counted)).toEqual({
+          runtimeSessions: [1, 1],
+          outputs: [1],
+          revokedUrls: ['blob:embedded-1'],
+        })
+        remounted.unmount()
       })
     })
   })

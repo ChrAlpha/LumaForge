@@ -60,8 +60,9 @@ export function releaseSourceForReplacement(
 /**
  * Releases what the shown source holds when the workflow unmounts, and
  * returns the load it fenced while that load was still pending. The caller
- * marks the workflow unmounted first and afterwards drops only that pending
- * session; a loaded one stays in the store.
+ * marks the workflow unmounted first and afterwards ends the session it
+ * published: a pending one at once, a loaded one once the mount has really
+ * departed rather than replayed its effects.
  */
 export function releaseSourceForUnmount(
   owners: SourceResourceOwners,
