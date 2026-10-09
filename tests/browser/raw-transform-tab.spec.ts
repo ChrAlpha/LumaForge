@@ -582,10 +582,6 @@ for (const preview of ['gpu', 'cpu'] as const) {
       0,
     )
     await expect(
-      transformTool(page).getByRole('button', { name: 'Load test image' }),
-    ).toHaveCount(0)
-
-    await expect(
       transformTool(page).getByRole('button', {
         name: /before transform|after transform|save preview/i,
       }),

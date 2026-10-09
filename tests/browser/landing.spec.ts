@@ -106,11 +106,19 @@ test('presents the complete RAW workflow without browser errors', async ({
     .poll(() =>
       localWebp
         .first()
-        .evaluate((image) => image.complete && image.naturalWidth > 0),
+        .evaluate(
+          (image) =>
+            image instanceof HTMLImageElement &&
+            image.complete &&
+            image.naturalWidth > 0,
+        ),
     )
     .toBe(true)
 
   const imageSource = await localWebp.first().evaluate((image) => {
+    if (!(image instanceof HTMLImageElement)) {
+      throw new TypeError(`Expected an <img>, found <${image.localName}>`)
+    }
     const source = new URL(image.currentSrc)
     return {
       origin: source.origin,
@@ -131,16 +139,22 @@ test('presents the complete RAW workflow without browser errors', async ({
       : { height: 900, loaded: true, width: 1440 }
   await expect
     .poll(() =>
-      workspaceEvidence.evaluate((image) => ({
-        height: image.naturalHeight,
-        loaded: image.complete && image.naturalWidth > 0,
-        width: image.naturalWidth,
-      })),
+      workspaceEvidence.evaluate((image) =>
+        image instanceof HTMLImageElement
+          ? {
+              height: image.naturalHeight,
+              loaded: image.complete && image.naturalWidth > 0,
+              width: image.naturalWidth,
+            }
+          : { element: image.localName },
+      ),
     )
     .toEqual(expectedEvidence)
   expect(
-    await workspaceEvidence.evaluate((image) =>
-      new URL(image.currentSrc).pathname.endsWith('.webp'),
+    await workspaceEvidence.evaluate(
+      (image) =>
+        image instanceof HTMLImageElement &&
+        new URL(image.currentSrc).pathname.endsWith('.webp'),
     ),
   ).toBe(true)
 
