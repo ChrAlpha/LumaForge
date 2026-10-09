@@ -1,105 +1,28 @@
-import process from 'node:process'
-import { fileURLToPath } from 'node:url'
-
-import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
-import { resolveRenderEnvironments } from './scripts/build/runtime-environment.mjs'
+// Each package keeps its own config (environment, globals, includes and the
+// dist entries its Node tests consume); the aggregate only names it.
+function packageProject(dir: string, config = 'vite.config.ts') {
+  return {
+    extends: `./packages/${dir}/${config}`,
+    root: `./packages/${dir}`,
+    test: { name: dir },
+  }
+}
 
 export default defineConfig({
-  esbuild: {
-    jsx: 'automatic',
-  },
-  define: {
-    APP_NAME: JSON.stringify('LumaForge'),
-    APP_SITE_URL: JSON.stringify('https://luma.ichr.me'),
-    APP_DEPLOY_ENV: JSON.stringify('production'),
-    APP_RENDER_ENVIRONMENTS: JSON.stringify(
-      resolveRenderEnvironments({ rootDir: process.cwd() }),
-    ),
-  },
-  plugins: [react()],
-  resolve: {
-    alias: {
-      '@lumaforge/luma-color-runtime/wgsl': fileURLToPath(
-        new URL('./packages/luma-color-runtime/src/wgsl.ts', import.meta.url),
-      ),
-      '~': fileURLToPath(new URL('./src', import.meta.url)),
-      '@pkg': fileURLToPath(new URL('./package.json', import.meta.url)),
-      '@lumaforge/luma-color-runtime/testing': fileURLToPath(
-        new URL(
-          './packages/luma-color-runtime/src/testing.ts',
-          import.meta.url,
-        ),
-      ),
-      '@lumaforge/luma-color-runtime': fileURLToPath(
-        new URL('./packages/luma-color-runtime/src/index.ts', import.meta.url),
-      ),
-      '@lumaforge/luma-raw-runtime/node': fileURLToPath(
-        new URL(
-          './packages/luma-raw-runtime/src/runtime-node.ts',
-          import.meta.url,
-        ),
-      ),
-      '@lumaforge/luma-jpeg-runtime/node': fileURLToPath(
-        new URL(
-          './packages/luma-jpeg-runtime/src/runtime-node.ts',
-          import.meta.url,
-        ),
-      ),
-      '@lumaforge/luma-raw-runtime': fileURLToPath(
-        new URL('./packages/luma-raw-runtime/src/index.ts', import.meta.url),
-      ),
-      '@lumaforge/luma-jpeg-runtime': fileURLToPath(
-        new URL('./packages/luma-jpeg-runtime/src/index.ts', import.meta.url),
-      ),
-      '@lumaforge/render-engine/export': fileURLToPath(
-        new URL(
-          './packages/render-engine/src/export/index.ts',
-          import.meta.url,
-        ),
-      ),
-      '@lumaforge/render-engine/geometry': fileURLToPath(
-        new URL(
-          './packages/render-engine/src/geometry/index.ts',
-          import.meta.url,
-        ),
-      ),
-      '@lumaforge/render-engine/manifest': fileURLToPath(
-        new URL(
-          './packages/render-engine/src/manifest/index.ts',
-          import.meta.url,
-        ),
-      ),
-      '@lumaforge/render-engine/policy': fileURLToPath(
-        new URL(
-          './packages/render-engine/src/policy/index.ts',
-          import.meta.url,
-        ),
-      ),
-      '@lumaforge/render-engine/preview': fileURLToPath(
-        new URL(
-          './packages/render-engine/src/preview/index.ts',
-          import.meta.url,
-        ),
-      ),
-      '@lumaforge/render-engine': fileURLToPath(
-        new URL('./packages/render-engine/src/index.ts', import.meta.url),
-      ),
-    },
-  },
   test: {
-    environment: 'jsdom',
-    exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/.claude/**',
-      '**/.worktrees/**',
-      'tests/browser/**',
+    projects: [
+      './vitest.app.config.ts',
+      './vitest.tooling.config.ts',
+      packageProject('luma-color-runtime'),
+      packageProject('luma-raw-runtime'),
+      packageProject('luma-jpeg-runtime'),
+      packageProject('render-engine'),
+      packageProject('lmfg-cli'),
+      packageProject('lmfg-mcp'),
+      packageProject('luma-native-artifacts', 'vitest.config.mjs'),
     ],
-    globals: true,
-    setupFiles: ['./src/test/setup.ts'],
-    css: true,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
