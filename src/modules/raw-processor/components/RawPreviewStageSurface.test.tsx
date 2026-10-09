@@ -147,6 +147,20 @@ describe('rawPreviewStageSurface in CPU preview mode', () => {
     expect(stageProps.cpu.at(-1)!.variant).toBe('neutral')
   })
 
+  it('hands the CPU stage the accepted frame descriptor the workflow published', () => {
+    renderSurface(workflow({ decodedFrame: acceptedFrame }))
+
+    const props = stageProps.cpu.at(-1)!
+    expect(props.decodedFrame).toBe(acceptedFrame)
+    // The CPU source is named by the descriptor, not a version counter.
+    expect(props).not.toHaveProperty('imageVersion')
+  })
+
+  it('hands the CPU stage no descriptor while no accepted frame is live', () => {
+    renderSurface(workflow({ decodedFrame: null }))
+    expect(stageProps.cpu.at(-1)!.decodedFrame).toBeNull()
+  })
+
   it('renders the CPU stage while the preview is live', () => {
     renderSurface(workflow({}))
     expect(screen.getByTestId('cpu-stage')).toBeInTheDocument()

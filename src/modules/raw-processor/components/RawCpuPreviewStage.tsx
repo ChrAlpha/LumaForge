@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import { useCpuPreview } from '../hooks/useCpuPreview'
@@ -15,7 +16,8 @@ import { CpuPreviewCanvas } from './CpuPreviewCanvas'
 
 export interface RawCpuPreviewStageProps {
   image: DecodedImage | null
-  imageVersion: number
+  /** The descriptor the workflow accepted `image` under. */
+  decodedFrame: DecodedPreviewFrame | null
   /** The processed frame's color; the neutral frame ignores it. */
   color: ColorGraphIntent
   lut: LUTData | null
@@ -33,7 +35,7 @@ export interface RawCpuPreviewStageProps {
 
 export function RawCpuPreviewStage({
   image,
-  imageVersion,
+  decodedFrame,
   color,
   lut,
   fallbackThumbnailUrl,
@@ -49,7 +51,7 @@ export function RawCpuPreviewStage({
   const cpuPreview = useCpuPreview({
     enabled: Boolean(image),
     image,
-    imageVersion,
+    decodedFrame,
     params: {
       ...pickColorGraphIntent(color),
       lut,

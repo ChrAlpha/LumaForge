@@ -15,6 +15,7 @@ import { resolvePreviewColorPlan } from '@lumaforge/render-engine/preview'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { CpuPreviewParams } from './useCpuPreview'
@@ -89,6 +90,27 @@ function makeDecodedImage(
   }
 }
 
+function makeFrame(
+  over: Partial<DecodedPreviewFrame> &
+    Pick<DecodedPreviewFrame, 'frameId' | 'stage'>,
+): DecodedPreviewFrame {
+  return {
+    sessionId: 'session-1',
+    width: 2,
+    height: 2,
+    exposure: { kind: 'source-pin', value: exposure },
+    quickPredecessorFrameId: null,
+    ...over,
+  }
+}
+
+const quickFrame = makeFrame({ frameId: 'decoded-frame-1', stage: 'quick' })
+// A bounded-HQ frame the GPU preview accepted before CPU mode mounted.
+const recoveryFrame = makeFrame({
+  frameId: 'decoded-frame-3',
+  stage: 'bounded-hq',
+})
+
 afterEach(() => {
   vi.unstubAllGlobals()
   FakeWorker.instances = []
@@ -102,20 +124,23 @@ describe('useCpuPreview helpers', () => {
       useCpuPreview({
         enabled: true,
         image,
-        imageVersion: 3,
+        decodedFrame: recoveryFrame,
         params: baseParams,
         variant: 'processed',
       }),
     )
     const worker = FakeWorker.instances[0]
     expect(worker).toBeDefined()
+    // The accepted frame names the worker source.
     expect(worker.posted[0]).toMatchObject({
       type: 'loadSource',
+      sourceId: recoveryFrame.frameId,
       width: 2,
       height: 2,
     })
     const render = worker.posted.find((message) => message.type === 'render')!
     if (render.type !== 'render') throw new Error('expected CPU render request')
+    expect(render.sourceId).toBe(recoveryFrame.frameId)
     act(() =>
       worker.respond({
         type: 'rendered',
@@ -127,6 +152,7 @@ describe('useCpuPreview helpers', () => {
       }),
     )
     expect(result.current.frame?.width).toBe(2)
+    expect(result.current.frame?.sourceId).toBe(recoveryFrame.frameId)
     expect(result.current.inFlight).toBe(false)
   })
   it('neutral cache key changes only with source + render exposure', () => {
@@ -219,12 +245,19 @@ describe('useCpuPreview hook', () => {
       data: new Uint16Array(4 * 4 * 3),
       renderExposure: boundedHqExposure,
     })
+    const hqFrame = makeFrame({
+      frameId: 'decoded-frame-2',
+      stage: 'bounded-hq',
+      width: 4,
+      height: 4,
+      quickPredecessorFrameId: quickFrame.frameId,
+    })
 
     const { result, rerender } = renderHook((props) => useCpuPreview(props), {
       initialProps: {
         enabled: true,
         image: quickImage,
-        imageVersion: 1,
+        decodedFrame: quickFrame,
         params: baseParams,
         variant: 'processed' as const,
       },
@@ -256,12 +289,15 @@ describe('useCpuPreview hook', () => {
     rerender({
       enabled: true,
       image: boundedHqImage,
-      imageVersion: 2,
+      decodedFrame: hqFrame,
       params: { ...baseParams, rawRenderExposure: boundedHqExposure },
       variant: 'processed' as const,
     })
 
     expect(result.current.frame?.sourceId).toBe(firstRender!.sourceId)
+    // The retained quick source keeps its own frame ID, not the HQ frame's.
+    expect(worker.posted.filter((m) => m.type === 'loadSource')).toHaveLength(1)
+    expect(firstRender!.sourceId).toBe(quickFrame.frameId)
 
     const rendersAfterHqReplace = worker.posted.filter(
       (m) => m.type === 'render',
@@ -293,7 +329,7 @@ describe('useCpuPreview hook', () => {
     rerender({
       enabled: true,
       image: boundedHqImage,
-      imageVersion: 2,
+      decodedFrame: hqFrame,
       params: {
         ...baseParams,
         rawRenderExposure: boundedHqExposure,
@@ -322,7 +358,7 @@ describe('useCpuPreview hook', () => {
       rerender({
         enabled: true,
         image: boundedHqImage,
-        imageVersion: 2,
+        decodedFrame: hqFrame,
         params: {
           ...baseParams,
           rawRenderExposure: boundedHqExposure,
@@ -372,7 +408,7 @@ describe('useCpuPreview original / processed toggle', () => {
     const props = (variant: 'processed' | 'neutral') => ({
       enabled: true,
       image,
-      imageVersion: 1,
+      decodedFrame: quickFrame,
       params: baseParams,
       variant,
     })
@@ -588,7 +624,7 @@ describe('useCpuPreview look degradation (LUT-before-RAW)', () => {
       initialProps: {
         enabled: true,
         image,
-        imageVersion: 1,
+        decodedFrame: quickFrame,
         params: { ...baseParams, lut },
         variant: 'processed' as const,
       },
@@ -641,7 +677,7 @@ describe('useCpuPreview look degradation (LUT-before-RAW)', () => {
     rerender({
       enabled: true,
       image: makeDecodedImage('quick'),
-      imageVersion: 1,
+      decodedFrame: quickFrame,
       params: {
         ...baseParams,
         lut: { ...unconfirmedLut, title: 'Renamed Detached Look' },
@@ -675,7 +711,7 @@ describe('useCpuPreview look degradation (LUT-before-RAW)', () => {
     rerender({
       enabled: true,
       image: makeDecodedImage('quick'),
-      imageVersion: 1,
+      decodedFrame: quickFrame,
       params: { ...baseParams, lut: confirmedLut },
       variant: 'processed' as const,
     })
@@ -696,7 +732,7 @@ describe('useCpuPreview look degradation (LUT-before-RAW)', () => {
       useCpuPreview({
         enabled: true,
         image,
-        imageVersion: 1,
+        decodedFrame: quickFrame,
         params: {
           ...baseParams,
           styleKind: 'builtin',
@@ -742,7 +778,7 @@ describe('useCpuPreview look degradation (LUT-before-RAW)', () => {
     rerender({
       enabled: true,
       image: makeDecodedImage('quick'),
-      imageVersion: 1,
+      decodedFrame: quickFrame,
       params: { ...baseParams, lut: confirmedLut, intensity: 0.37 },
       variant: 'processed' as const,
     })
@@ -780,7 +816,7 @@ describe('useCpuPreview look degradation (LUT-before-RAW)', () => {
     rerender({
       enabled: true,
       image: makeDecodedImage('quick'),
-      imageVersion: 1,
+      decodedFrame: quickFrame,
       params: { ...baseParams, lut: recontracted },
       variant: 'processed' as const,
     })
@@ -842,7 +878,7 @@ describe('useCpuPreview shared preview color policy', () => {
     ): HookProps => ({
       enabled: true,
       image,
-      imageVersion: 1,
+      decodedFrame: quickFrame,
       params: next,
       variant: nextVariant,
     })
@@ -955,7 +991,7 @@ describe('useCpuPreview queued renders', () => {
     const props = (userTemperature: number) => ({
       enabled: true,
       image,
-      imageVersion: 1,
+      decodedFrame: quickFrame,
       params: { ...baseParams, userTemperature },
       variant: 'processed' as const,
     })
@@ -998,5 +1034,235 @@ describe('useCpuPreview queued renders', () => {
     answer(newer, 200)
     expect(result.current.frame?.requestId).toBe(newer.requestId)
     expect(result.current.inFlight).toBe(false)
+  })
+})
+
+describe('useCpuPreview source identity', () => {
+  type RenderRequest = Extract<CpuPreviewRequest, { type: 'render' }>
+  type HookProps = Parameters<typeof useCpuPreview>[0]
+
+  function mount(image: DecodedImage, decodedFrame: DecodedPreviewFrame) {
+    vi.stubGlobal('Worker', FakeWorker)
+    const props = (
+      next: Partial<HookProps> = {},
+      variant: 'processed' | 'neutral' = 'processed',
+    ): HookProps => ({
+      enabled: true,
+      image,
+      decodedFrame,
+      // Upstream rebuilds the params on every render.
+      params: { ...baseParams },
+      variant,
+      ...next,
+    })
+    const hook = renderHook((input: HookProps) => useCpuPreview(input), {
+      initialProps: props(),
+    })
+    const worker = () => FakeWorker.instances[0]!
+    const loads = () =>
+      worker().posted.filter((message) => message.type === 'loadSource')
+    const renders = () =>
+      worker().posted.filter(
+        (message): message is RenderRequest => message.type === 'render',
+      )
+    const answer = (
+      fill: number,
+      request: RenderRequest = renders().at(-1)!,
+    ) => {
+      act(() => {
+        worker().respond({
+          type: 'rendered',
+          sourceId: request.sourceId,
+          requestId: request.requestId,
+          rgba: new Uint8ClampedArray(2 * 2 * 4).fill(fill),
+          width: 2,
+          height: 2,
+        })
+      })
+    }
+    return {
+      result: hook.result,
+      rerender: (
+        next: Partial<HookProps> = {},
+        variant: 'processed' | 'neutral' = 'processed',
+      ) => hook.rerender(props(next, variant)),
+      worker,
+      loads,
+      renders,
+      answer,
+    }
+  }
+
+  it('loads a replacing source of the same size and bytes as a new source', () => {
+    const view = mount(makeDecodedImage('quick'), quickFrame)
+    view.answer(200)
+    view.rerender({}, 'neutral')
+    view.answer(40)
+    expect(view.result.current.frame?.rgba[0]).toBe(40)
+
+    // Another RAW decodes to identical dimensions and bytes.
+    const replacement = makeFrame({
+      sessionId: 'session-2',
+      frameId: 'decoded-frame-4',
+      stage: 'quick',
+    })
+    view.rerender(
+      { image: makeDecodedImage('quick'), decodedFrame: replacement },
+      'neutral',
+    )
+
+    expect(view.loads()).toHaveLength(2)
+    expect(view.loads().at(-1)).toMatchObject({
+      sourceId: replacement.frameId,
+    })
+    expect(view.worker().posted).toContainEqual({
+      type: 'disposeSource',
+      sourceId: quickFrame.frameId,
+    })
+    // The first source's cached original is not this source's original.
+    expect(view.result.current.frame).toBeNull()
+    expect(view.renders().at(-1)).toMatchObject({
+      sourceId: replacement.frameId,
+      variant: 'neutral',
+    })
+    expect(view.result.current.inFlight).toBe(true)
+    view.answer(90)
+    expect(view.result.current.frame?.sourceId).toBe(replacement.frameId)
+    expect(view.result.current.frame?.rgba[0]).toBe(90)
+  })
+
+  it('does not load the same accepted frame again for a fresh image object', () => {
+    const view = mount(makeDecodedImage('quick'), quickFrame)
+    view.answer(200)
+    view.rerender({ image: makeDecodedImage('quick') })
+    expect(view.loads()).toHaveLength(1)
+    expect(view.renders()).toHaveLength(1)
+    expect(view.result.current.inFlight).toBe(false)
+  })
+
+  it('keeps the quick source and its cached original across its HQ continuation', () => {
+    const view = mount(makeDecodedImage('quick'), quickFrame)
+    view.answer(200)
+    view.rerender({}, 'neutral')
+    view.answer(40)
+    view.rerender()
+    view.answer(200)
+    const rendersBeforeHq = view.renders().length
+
+    const hqFrame = makeFrame({
+      frameId: 'decoded-frame-2',
+      stage: 'bounded-hq',
+      width: 4,
+      height: 4,
+      quickPredecessorFrameId: quickFrame.frameId,
+    })
+    const hqImage = makeDecodedImage('bounded-hq', {
+      width: 4,
+      height: 4,
+      data: new Uint16Array(4 * 4 * 3),
+    })
+    view.rerender({ image: hqImage, decodedFrame: hqFrame }, 'neutral')
+
+    expect(view.loads()).toHaveLength(1)
+    expect(view.renders()).toHaveLength(rendersBeforeHq)
+    expect(view.result.current.frame?.rgba[0]).toBe(40)
+    expect(view.result.current.frame?.sourceId).toBe(quickFrame.frameId)
+  })
+
+  it('does not settle a stale render of the retained source after the HQ continuation', () => {
+    const view = mount(makeDecodedImage('quick'), quickFrame)
+    view.answer(10)
+    view.rerender({ params: { ...baseParams, userContrast: 40 } })
+    const older = view.renders().at(-1)!
+
+    const hqExposure: RawRenderExposure = {
+      ev: 1.5,
+      multiplier: exposureMultiplierFromEv(1.5),
+      source: 'image-statistics',
+    }
+    view.rerender({
+      image: makeDecodedImage('bounded-hq', { renderExposure: hqExposure }),
+      decodedFrame: makeFrame({
+        frameId: 'decoded-frame-2',
+        stage: 'bounded-hq',
+        quickPredecessorFrameId: quickFrame.frameId,
+      }),
+      params: {
+        ...baseParams,
+        userContrast: 40,
+        rawRenderExposure: hqExposure,
+      },
+    })
+    expect(view.loads()).toHaveLength(1)
+
+    // The older render shares the decoded source, yet the params moved on.
+    view.answer(100, older)
+    const newer = view.renders().at(-1)!
+    expect(newer.requestId).toBeGreaterThan(older.requestId)
+    expect(newer.sourceId).toBe(quickFrame.frameId)
+    expect(view.result.current.frame?.requestId).toBe(older.requestId)
+    expect(view.result.current.inFlight).toBe(true)
+
+    view.answer(200, newer)
+    expect(view.result.current.frame?.requestId).toBe(newer.requestId)
+    expect(view.result.current.inFlight).toBe(false)
+  })
+
+  it('loads a bounded-HQ frame that does not continue the loaded quick frame', () => {
+    const view = mount(makeDecodedImage('quick'), quickFrame)
+    view.answer(200)
+
+    // A bounded-HQ frame of the same session that names no quick predecessor.
+    const unrelated = makeFrame({
+      frameId: 'decoded-frame-5',
+      stage: 'bounded-hq',
+    })
+    view.rerender({
+      image: makeDecodedImage('bounded-hq'),
+      decodedFrame: unrelated,
+    })
+    expect(view.loads()).toHaveLength(2)
+    expect(view.loads().at(-1)).toMatchObject({ sourceId: unrelated.frameId })
+    expect(view.result.current.frame).toBeNull()
+    expect(view.renders().at(-1)?.sourceId).toBe(unrelated.frameId)
+  })
+
+  it('loads a bounded-HQ frame of another session that names the same predecessor ID', () => {
+    const view = mount(makeDecodedImage('quick'), quickFrame)
+    view.answer(200)
+
+    const otherSession = makeFrame({
+      sessionId: 'session-2',
+      frameId: 'decoded-frame-6',
+      stage: 'bounded-hq',
+      quickPredecessorFrameId: quickFrame.frameId,
+    })
+    view.rerender({
+      image: makeDecodedImage('bounded-hq'),
+      decodedFrame: otherSession,
+    })
+    expect(view.loads()).toHaveLength(2)
+    expect(view.loads().at(-1)).toMatchObject({
+      sourceId: otherSession.frameId,
+    })
+  })
+
+  it('loads nothing for decoded pixels the workflow published no descriptor for', () => {
+    vi.stubGlobal('Worker', FakeWorker)
+    const { result } = renderHook(() =>
+      useCpuPreview({
+        enabled: true,
+        image: makeDecodedImage('quick'),
+        decodedFrame: null,
+        params: baseParams,
+        variant: 'processed',
+      }),
+    )
+    expect(FakeWorker.instances).toHaveLength(0)
+    expect(result.current).toEqual({
+      frame: null,
+      inFlight: false,
+      failureReason: null,
+    })
   })
 })

@@ -17,6 +17,11 @@ import {
 } from '@lumaforge/render-engine/preview'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
+import {
+  isEligibleQuickPredecessor,
+  isSameDecodedPreviewFrame,
+} from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import { createCpuRecoverySource } from '../services/preview/cpu-recovery-source'
@@ -84,12 +89,6 @@ export function buildCpuPreviewGraph(
 // Hook
 // ---------------------------------------------------------------------------
 
-function deriveSourceId(image: DecodedImage, imageVersion: number): string {
-  // Include imageVersion so two distinct decodes of identical dimensions get
-  // distinct ids (prevents neutral-cache collisions across images).
-  return `v${imageVersion}:${image.width}x${image.height}:${image.data.byteLength}`
-}
-
 function isQuickU16(image: DecodedImage): boolean {
   return (
     image.source === 'quick' &&
@@ -101,10 +100,13 @@ function isQuickU16(image: DecodedImage): boolean {
 export type UseCpuPreviewOptions = {
   /** Whether the hook should actively drive the client. */
   enabled: boolean
-  /** The decoded quick-preview image (or null when none is loaded). */
+  /** The decoded preview pixels (or null when none is loaded). */
   image: DecodedImage | null
-  /** Incremented whenever `image` is replaced with a new decode. */
-  imageVersion: number
+  /**
+   * The descriptor the workflow accepted `image` under. Pixels without one
+   * are not drawn.
+   */
+  decodedFrame: DecodedPreviewFrame | null
   /** Current processing params driving the colour graph. */
   params: CpuPreviewParams
   /** Which variant to render. */
@@ -120,7 +122,7 @@ export type UseCpuPreviewReturn = {
 export function useCpuPreview({
   enabled,
   image,
-  imageVersion,
+  decodedFrame,
   params,
   variant,
 }: UseCpuPreviewOptions): UseCpuPreviewReturn {
@@ -133,8 +135,10 @@ export function useCpuPreview({
   // Cache neutral frames so toggling look doesn't recompute.
   const neutralCacheRef = useRef<Map<string, CpuPreviewFrame>>(new Map())
 
-  // Track the last source id to detect image identity changes.
-  const lastSourceIdRef = useRef<string | null>(null)
+  // The accepted frame whose pixels the worker holds. Its frame ID is the
+  // worker source ID, so every frame rendered from those pixels names it,
+  // including while a bounded-HQ continuation stands on them.
+  const loadedFrameRef = useRef<DecodedPreviewFrame | null>(null)
 
   // Ref so the once-created onFrame handler reads the current variant rather
   // than the stale closure captured when the client was first constructed.
@@ -190,11 +194,36 @@ export function useCpuPreview({
     return clientRef.current
   }
 
-  // Load source when the image identity changes.
+  // Load a source when the accepted frame changes.
 
   useEffect(() => {
-    if (!enabled || !image) {
-      lastSourceIdRef.current = null
+    const loaded = loadedFrameRef.current
+    // The worker already holds these pixels, or the quick pixels a bounded-HQ
+    // continuation of the same source stands on. The retained source keeps
+    // its own ID; it never has to be the newest frame.
+    if (
+      enabled &&
+      image &&
+      (isSameDecodedPreviewFrame(loaded, decodedFrame) ||
+        isEligibleQuickPredecessor(loaded, decodedFrame))
+    ) {
+      return
+    }
+
+    // A quick frame loads as decoded. Any other frame, the bounded HQ a GPU
+    // preview held before it was lost included, loads as a bounded copy.
+    const source =
+      enabled && image && decodedFrame
+        ? isQuickU16(image)
+          ? {
+              width: image.width,
+              height: image.height,
+              data: image.data as Uint16Array,
+            }
+          : createCpuRecoverySource(image)
+        : null
+    if (!decodedFrame || !source) {
+      loadedFrameRef.current = null
       lastRenderKeyRef.current = null
       latestRequestRef.current = null
       setFrame(null)
@@ -205,25 +234,7 @@ export function useCpuPreview({
       return
     }
 
-    // Keep an existing quick worker source across HQ upgrades. When CPU mode
-    // mounts after GPU loss there is no quick source, so seed from bounded HQ.
-    const source = isQuickU16(image)
-      ? {
-          width: image.width,
-          height: image.height,
-          data: image.data as Uint16Array,
-        }
-      : !lastSourceIdRef.current
-        ? createCpuRecoverySource(image)
-        : null
-    if (!source) return
-
-    const sourceId = deriveSourceId(image, imageVersion)
-    if (sourceId === lastSourceIdRef.current) {
-      return
-    }
-
-    lastSourceIdRef.current = sourceId
+    loadedFrameRef.current = decodedFrame
     lastRenderKeyRef.current = null
     setFrame(null)
     setInFlight(true)
@@ -231,17 +242,18 @@ export function useCpuPreview({
 
     const client = getClient()
     client.loadSource({
-      sourceId,
+      sourceId: decodedFrame.frameId,
       ...source,
     })
-    // imageVersion drives the dep so a new decode is detected even when
-    // width/height/byteLength happen to match.
+    // The accepted descriptor names the pixels: a new frame is a new
+    // descriptor, and the same frame keeps its descriptor whatever object
+    // carries its pixels.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, imageVersion])
+  }, [enabled, decodedFrame])
 
   // Request a render whenever params or variant change (and a source is loaded).
   useEffect(() => {
-    const sourceId = lastSourceIdRef.current
+    const sourceId = loadedFrameRef.current?.frameId ?? null
     if (!enabled || !sourceId) {
       return
     }
@@ -327,8 +339,14 @@ export function useCpuPreview({
     }
   }, [])
 
-  if (!enabled || !lastSourceIdRef.current) {
-    if (enabled && image && isQuickU16(image) && !failureReason) {
+  if (!enabled || !loadedFrameRef.current) {
+    if (
+      enabled &&
+      image &&
+      decodedFrame &&
+      isQuickU16(image) &&
+      !failureReason
+    ) {
       return { frame: null, inFlight: true, failureReason: null }
     }
 

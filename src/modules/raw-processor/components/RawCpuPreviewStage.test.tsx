@@ -3,6 +3,7 @@ import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import { RawCpuPreviewStage } from './RawCpuPreviewStage'
@@ -10,6 +11,7 @@ import { RawCpuPreviewStage } from './RawCpuPreviewStage'
 interface CpuPreviewOptions {
   variant: string
   params: Record<string, unknown>
+  decodedFrame: DecodedPreviewFrame | null
 }
 
 const cpuFrame = { width: 6, height: 4 }
@@ -36,6 +38,19 @@ const image = {
   renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
 } as unknown as DecodedImage
 
+const decodedFrame: DecodedPreviewFrame = {
+  sessionId: 'session-1',
+  frameId: 'decoded-frame-1',
+  stage: 'quick',
+  width: 6,
+  height: 4,
+  exposure: {
+    kind: 'source-pin',
+    value: { ev: 0, multiplier: 1, source: 'identity' },
+  },
+  quickPredecessorFrameId: null,
+}
+
 const color: ColorGraphIntent = {
   styleKind: 'none',
   builtinPreset: null,
@@ -50,7 +65,7 @@ function renderStage(
   return render(
     <RawCpuPreviewStage
       image={image}
-      imageVersion={1}
+      decodedFrame={decodedFrame}
       color={color}
       lut={null}
       fallbackThumbnailUrl={null}
@@ -73,6 +88,11 @@ describe('rawCpuPreviewStage', () => {
     })
   })
 
+  it('hands the CPU preview the accepted frame descriptor', () => {
+    renderStage()
+    expect(useCpuPreview.mock.calls.at(-1)?.[0].decodedFrame).toBe(decodedFrame)
+  })
+
   it('keeps its own original / processed toggle row by default', () => {
     renderStage()
     expect(screen.getByRole('button', { name: 'Original' })).toBeVisible()
@@ -91,7 +111,7 @@ describe('rawCpuPreviewStage', () => {
     rerender(
       <RawCpuPreviewStage
         image={image}
-        imageVersion={1}
+        decodedFrame={decodedFrame}
         color={color}
         lut={null}
         fallbackThumbnailUrl={null}
@@ -152,7 +172,7 @@ describe('rawCpuPreviewStage', () => {
     ) => (
       <RawCpuPreviewStage
         image={image}
-        imageVersion={1}
+        decodedFrame={decodedFrame}
         color={color}
         lut={null}
         fallbackThumbnailUrl={null}
@@ -178,7 +198,7 @@ describe('rawCpuPreviewStage', () => {
       inFlight: true,
       failureReason: null,
     })
-    rerender(stage({ variant: 'processed', imageVersion: 2 }))
+    rerender(stage({ variant: 'processed', decodedFrame: null }))
     expect(onProcessedFrame).toHaveBeenLastCalledWith(null)
   })
 })

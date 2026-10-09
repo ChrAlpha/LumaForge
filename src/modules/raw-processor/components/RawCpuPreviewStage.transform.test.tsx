@@ -8,6 +8,7 @@ import type {
 import { act, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { identityMatrix } from '~/lib/transform/geometry/matrix'
 import type { UprightAnalysis } from '~/lib/transform/geometry/types'
@@ -153,6 +154,26 @@ const image = {
   renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
 } as DecodedImage
 
+function acceptedFrame(
+  over: Partial<DecodedPreviewFrame> &
+    Pick<DecodedPreviewFrame, 'frameId' | 'stage'>,
+): DecodedPreviewFrame {
+  return {
+    sessionId: 'session-1',
+    width: 80,
+    height: 60,
+    exposure: {
+      kind: 'source-pin',
+      value: { ev: 0, multiplier: 1, source: 'identity' },
+    },
+    quickPredecessorFrameId: null,
+    ...over,
+  }
+}
+
+const quickFrame = acceptedFrame({ frameId: 'decoded-frame-1', stage: 'quick' })
+const hqImage = { ...image, source: 'bounded-hq' } as DecodedImage
+
 const baseParams: ProcessingParams = {
   intensity: 1,
   viewMode: 'processed',
@@ -186,7 +207,15 @@ const latest: { feature: Feature | null; geometry: ExportGeometry | null } = {
 }
 
 /** The CPU stage handing its processed frames to Transform, as /raw wires it. */
-function CpuTransformHarness({ userTemperature }: { userTemperature: number }) {
+function CpuTransformHarness({
+  userTemperature,
+  decodedImage = image,
+  decodedFrame = quickFrame,
+}: {
+  userTemperature: number
+  decodedImage?: DecodedImage
+  decodedFrame?: DecodedPreviewFrame
+}) {
   const { previewTransform, transform, geometry } =
     useTransformSessionFixture('one')
   const params = { ...baseParams, userTemperature }
@@ -197,7 +226,8 @@ function CpuTransformHarness({ userTemperature }: { userTemperature: number }) {
       status: 'ready',
       decodedImageVersion: 1,
       lutDataVersion: 1,
-      decodedImageRef: { current: image },
+      decodedImageRef: { current: decodedImage },
+      decodedFrame,
       pipelineRef: { current: null },
       viewMode: 'processed',
       params,
@@ -212,8 +242,8 @@ function CpuTransformHarness({ userTemperature }: { userTemperature: number }) {
   latest.geometry = geometry
   return (
     <RawCpuPreviewStage
-      image={image}
-      imageVersion={1}
+      image={decodedImage}
+      decodedFrame={decodedFrame}
       color={pickColorGraphIntent(params)}
       lut={null}
       fallbackThumbnailUrl={null}
@@ -272,6 +302,74 @@ describe('cPU preview frames handed to Transform', () => {
     answerTransform()
     expect(latest.geometry).not.toBeNull()
     expect(latest.feature!.exportBlock).toBeNull()
+    view.unmount()
+  })
+
+  it('hands Transform frames named by the CPU source the accepted frame loaded', async () => {
+    const view = render(<CpuTransformHarness userTemperature={0} />)
+    const loads = () =>
+      cpuWorker().posted.filter((message) => message.type === 'loadSource')
+    expect(loads()).toEqual([
+      expect.objectContaining({ sourceId: quickFrame.frameId }),
+    ])
+    finishCpuRender(cpuRenders().at(-1)!)
+
+    act(() => {
+      latest.feature!.observe()
+      latest.feature!.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 })
+    })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(
+      vi.mocked(captureTransformSource).mock.lastCall?.[0].cpuFrame?.sourceId,
+    ).toBe(quickFrame.frameId)
+    answerTransform()
+    expect(latest.feature!.exportBlock).toBeNull()
+
+    // The HQ continuation of the quick frame keeps the quick source, and the
+    // frames Transform reads keep naming it.
+    view.rerender(
+      <CpuTransformHarness
+        userTemperature={0}
+        decodedImage={hqImage}
+        decodedFrame={acceptedFrame({
+          frameId: 'decoded-frame-2',
+          stage: 'bounded-hq',
+          quickPredecessorFrameId: quickFrame.frameId,
+        })}
+      />,
+    )
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(loads()).toHaveLength(1)
+    for (const [input] of vi.mocked(captureTransformSource).mock.calls) {
+      expect(input.cpuFrame?.sourceId).toBe(quickFrame.frameId)
+    }
+
+    // A bounded-HQ frame that continues no loaded quick frame is loaded as
+    // its own source: Transform waits for a frame rendered from it.
+    const replacement = acceptedFrame({
+      frameId: 'decoded-frame-3',
+      stage: 'bounded-hq',
+    })
+    const capturesBeforeReplacement = vi.mocked(captureTransformSource).mock
+      .calls.length
+    view.rerender(
+      <CpuTransformHarness
+        userTemperature={0}
+        decodedImage={{ ...hqImage }}
+        decodedFrame={replacement}
+      />,
+    )
+    expect(loads().at(-1)).toMatchObject({ sourceId: replacement.frameId })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(vi.mocked(captureTransformSource).mock.calls).toHaveLength(
+      capturesBeforeReplacement,
+    )
+
+    finishCpuRender(cpuRenders().at(-1)!)
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(
+      vi.mocked(captureTransformSource).mock.lastCall?.[0].cpuFrame?.sourceId,
+    ).toBe(replacement.frameId)
     view.unmount()
   })
 })

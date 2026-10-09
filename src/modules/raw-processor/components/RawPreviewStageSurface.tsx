@@ -60,7 +60,7 @@ export function RawPreviewStageSurface({
       <RawCpuPreviewStage
         key={workflow.previewTransform?.sourceId}
         image={workflow.decodedImageRef.current}
-        imageVersion={workflow.decodedImageVersion}
+        decodedFrame={workflow.decodedFrame}
         color={color}
         lut={workflow.lutDataRef.current}
         fallbackThumbnailUrl={workflow.embeddedPreviewUrl}
