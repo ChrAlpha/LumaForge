@@ -1,8 +1,4 @@
-import type {
-  ColorGraphIntent,
-  ColorGraphIntentSource,
-  LUTData,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback } from 'react'
@@ -98,10 +94,10 @@ type HqPreviewExportAttempt = Readonly<{
  */
 function pipelineHoldsLook(
   pipeline: HqPreviewPipeline,
-  intent: ColorGraphIntentSource,
+  intent: ColorGraphIntent,
   lut: LUTData | null,
 ): boolean {
-  let held: ColorGraphIntentSource
+  let held: ColorGraphIntent
   try {
     held = pipeline.getParams()
   } catch {

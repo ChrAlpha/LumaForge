@@ -1,5 +1,5 @@
 import type {
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   LUTData,
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
@@ -31,7 +31,7 @@ import { createCpuRecoverySource } from '../services/preview/cpu-recovery-source
 // ---------------------------------------------------------------------------
 
 /** The color intent plus what the CPU graph needs besides it. */
-export type CpuPreviewParams = ColorGraphIntentSource & {
+export type CpuPreviewParams = ColorGraphIntent & {
   lut: LUTData | null
   rawRenderExposure: RawRenderExposure
 }

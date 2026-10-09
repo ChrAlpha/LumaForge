@@ -2,7 +2,6 @@ import type {
   ColorGraphIntent,
   HSLBandId,
   HSLBandShift,
-  ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
 import {
   COLOR_GRAPH_INTENT_KEYS,
@@ -86,7 +85,7 @@ export function useRawAdjustmentActions({
     (
       toneParams: Partial<
         Pick<
-          ProcessingParams,
+          ColorGraphIntent,
           | 'userExposureEv'
           | 'userContrast'
           | 'userHighlights'
@@ -126,7 +125,7 @@ export function useRawAdjustmentActions({
     (
       colorParams: Partial<
         Pick<
-          ProcessingParams,
+          ColorGraphIntent,
           'userTemperature' | 'userTint' | 'userSaturation' | 'userVibrance'
         >
       >,
@@ -159,24 +158,16 @@ export function useRawAdjustmentActions({
     (band: HSLBandId, shift: Partial<HSLBandShift>) => {
       let shouldClearExportResult = false
       setColorIntent((prev) => {
-        const baseRecord = prev.selectiveColor
-        const previousBand = baseRecord[band] ?? makeNeutralBand()
+        const previousBand = prev.selectiveColor[band]
         const nextBand: HSLBandShift = {
           hue: shift.hue ?? previousBand.hue,
           saturation: shift.saturation ?? previousBand.saturation,
           lightness: shift.lightness ?? previousBand.lightness,
         }
         const nextSelectiveColor: Record<HSLBandId, HSLBandShift> = {
-          red: baseRecord.red ?? makeNeutralBand(),
-          orange: baseRecord.orange ?? makeNeutralBand(),
-          yellow: baseRecord.yellow ?? makeNeutralBand(),
-          green: baseRecord.green ?? makeNeutralBand(),
-          aqua: baseRecord.aqua ?? makeNeutralBand(),
-          blue: baseRecord.blue ?? makeNeutralBand(),
-          purple: baseRecord.purple ?? makeNeutralBand(),
-          magenta: baseRecord.magenta ?? makeNeutralBand(),
+          ...prev.selectiveColor,
+          [band]: nextBand,
         }
-        nextSelectiveColor[band] = nextBand
         shouldClearExportResult = changesRenderGraphParams(prev, {
           selectiveColor: nextSelectiveColor,
         })

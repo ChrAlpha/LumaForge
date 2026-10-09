@@ -9,7 +9,7 @@ import {
   NEUTRAL_USER_COLOR_INTENT,
 } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import { useRawAdjustmentActions } from './useRawAdjustmentActions'
 
@@ -60,7 +60,40 @@ function createParamsHarness(initial: ColorGraphIntent) {
   return { ref, setColorIntent }
 }
 
+type AdjustmentActions = ReturnType<typeof useRawAdjustmentActions>
+
 describe('useRawAdjustmentActions', () => {
+  it('patches the complete color intent', () => {
+    expectTypeOf<
+      Parameters<typeof useRawAdjustmentActions>[0]['params']
+    >().toEqualTypeOf<ColorGraphIntent>()
+    expectTypeOf<AdjustmentActions['setToneParams']>()
+      .parameter(0)
+      .toEqualTypeOf<
+        Partial<
+          Pick<
+            ColorGraphIntent,
+            | 'userExposureEv'
+            | 'userContrast'
+            | 'userHighlights'
+            | 'userShadows'
+            | 'userWhites'
+            | 'userBlacks'
+          >
+        >
+      >()
+    expectTypeOf<AdjustmentActions['setColorParams']>()
+      .parameter(0)
+      .toEqualTypeOf<
+        Partial<
+          Pick<
+            ColorGraphIntent,
+            'userTemperature' | 'userTint' | 'userSaturation' | 'userVibrance'
+          >
+        >
+      >()
+  })
+
   it('writes a color patch to the color intent and invalidates a changed graph', () => {
     const { ref, setColorIntent } = createParamsHarness(baseParams)
     const invalidateExportGraph = vi.fn()

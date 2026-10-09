@@ -1,7 +1,8 @@
 import type {
+  ColorGraphIntent,
   PreviewHistogramState,
-  ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -60,20 +61,9 @@ vi.mock('@lumaforge/luma-color-runtime', async (importOriginal) => {
   }
 })
 
-const baseParams: ProcessingParams = {
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
+const baseParams: ColorGraphIntent = {
+  ...NEUTRAL_USER_COLOR_INTENT,
   intensity: 0.7,
-  viewMode: 'processed',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
 }

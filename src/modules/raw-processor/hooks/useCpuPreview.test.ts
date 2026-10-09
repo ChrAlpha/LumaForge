@@ -1,4 +1,5 @@
 import type {
+  ColorGraphIntent,
   LUTColorProfile,
   LUTData,
   RawRenderExposure,
@@ -14,7 +15,7 @@ import type {
 } from '@lumaforge/render-engine/preview'
 import { resolvePreviewColorPlan } from '@lumaforge/render-engine/preview'
 import { act, renderHook } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
@@ -119,6 +120,13 @@ afterEach(() => {
 })
 
 describe('useCpuPreview helpers', () => {
+  it('requires the complete color intent', () => {
+    expectTypeOf<CpuPreviewParams>().toMatchTypeOf<ColorGraphIntent>()
+    expectTypeOf<CpuPreviewParams['selectiveColor']>().toEqualTypeOf<
+      ColorGraphIntent['selectiveColor']
+    >()
+  })
+
   it('starts an editable CPU frame when mounted after a GPU bounded-HQ upgrade', () => {
     vi.stubGlobal('Worker', FakeWorker)
     const image = makeDecodedImage('bounded-hq')

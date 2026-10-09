@@ -9,7 +9,15 @@ import {
   NEUTRAL_USER_COLOR_INTENT,
 } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from 'vitest'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
@@ -236,6 +244,12 @@ async function runImmediateChunkedWorkUntilReady(
 describe('usePreviewHistogram', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+  })
+
+  it('requires the complete color intent', () => {
+    expectTypeOf<
+      Parameters<typeof usePreviewHistogram>[0]['params']
+    >().toEqualTypeOf<ColorGraphIntent>()
   })
 
   afterEach(() => {

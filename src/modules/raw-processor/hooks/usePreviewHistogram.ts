@@ -1,6 +1,5 @@
 import type {
   ColorGraphIntent,
-  ColorGraphIntentSource,
   LUTData,
   PreviewHistogramState,
   ReadyPreviewHistogram,
@@ -68,7 +67,7 @@ type PreviewHistogramInput = {
    * accepted frame are never read.
    */
   frame: DecodedPreviewFrame | null
-  params: ColorGraphIntentSource
+  params: ColorGraphIntent
   lutDataRef: RefObject<LUTData | null>
   lutDataVersion: number
   displaySource: DisplaySource
