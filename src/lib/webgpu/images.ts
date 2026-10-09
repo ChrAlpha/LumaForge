@@ -1,9 +1,7 @@
-import type {
-  ColorGraphIntentSource,
-  LUTData,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import {
   LUT_SIZE,
+  NEUTRAL_SELECTIVE_COLOR,
   normalizeSelectiveColorParams,
   resolveSelectiveColorParams,
 } from '@lumaforge/luma-color-runtime'
@@ -64,7 +62,7 @@ export class WebGPUImages {
         entries: [{ binding: 0, resource: this.selective.createView() }],
       })
       this.rebindLut()
-      this.updateSelectiveColor(undefined)
+      this.updateSelectiveColor(NEUTRAL_SELECTIVE_COLOR)
     } catch (error) {
       for (const texture of allocated) texture.destroy()
       throw error
@@ -211,7 +209,7 @@ export class WebGPUImages {
     })
   }
 
-  updateSelectiveColor(bands: ColorGraphIntentSource['selectiveColor']) {
+  updateSelectiveColor(bands: ColorGraphIntent['selectiveColor']) {
     const normalized = normalizeSelectiveColorParams({ selectiveColor: bands })
     const signature = JSON.stringify(normalized)
     if (signature === this.selectiveSignature) return

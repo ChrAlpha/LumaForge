@@ -1,6 +1,6 @@
 import type {
   BuiltinStylePreset,
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   LUTData,
 } from '@lumaforge/luma-color-runtime'
 import { normalizeSelectiveColorParams } from '@lumaforge/luma-color-runtime'
@@ -80,7 +80,7 @@ export function normalizeShaderSpecialization(
 }
 
 export function getShaderSpecialization(
-  params: ColorGraphIntentSource,
+  params: ColorGraphIntent,
   lut: LUTData | null,
 ): ShaderSpecialization {
   const bands = normalizeSelectiveColorParams({

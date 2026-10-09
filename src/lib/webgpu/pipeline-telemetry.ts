@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntentSource,
-  LUTData,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import { resolvePreviewColorPlan } from '@lumaforge/render-engine/preview'
 
 import type {
@@ -25,7 +22,7 @@ export function webGPUCapabilities(
 }
 
 export function webGPUTelemetry(
-  params: ColorGraphIntentSource,
+  params: ColorGraphIntent,
   lut: LUTData | null,
 ): PipelineTelemetrySnapshot {
   // Report what the preview draws, from the same policy as the shader.

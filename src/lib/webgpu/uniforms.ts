@@ -1,12 +1,13 @@
 import type {
   BuiltinStylePreset,
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   LookStyleKind,
   LUTData,
 } from '@lumaforge/luma-color-runtime'
 import {
   CHROMA_CLAMP_HIGH,
   CHROMA_CLAMP_LOW,
+  NEUTRAL_SELECTIVE_COLOR,
   pickColorGraphIntent,
   resolveColorBalanceParams,
   resolveToneParams,
@@ -28,12 +29,12 @@ import {
 } from './uniform-layout'
 
 /**
- * What the uniform packer reads: the color intent plus the app view mode that
- * selects the shader output. The view mode is the app's own view contract,
- * never a field read off legacy processing params. A compare split may ride
- * along from older callers; it is never packed.
+ * What the uniform packer reads: the complete color intent, HSL included,
+ * plus the app view mode that selects the shader output. The view mode is the
+ * app's own view contract, never a field read off legacy processing params. A
+ * compare split may ride along from older callers; it is never packed.
  */
-export type GpuPreviewParams = ColorGraphIntentSource & {
+export type GpuPreviewParams = ColorGraphIntent & {
   readonly viewMode: PreviewViewMode
   readonly compareSplit?: number
 }
@@ -54,6 +55,7 @@ export const DEFAULT_PARAMS: GpuPreviewParams = {
   userTint: 0,
   userSaturation: 0,
   userVibrance: 0,
+  selectiveColor: NEUTRAL_SELECTIVE_COLOR,
 }
 
 export const DEFAULT_GPU_PREVIEW_INPUT: GpuPreviewInput = Object.freeze({

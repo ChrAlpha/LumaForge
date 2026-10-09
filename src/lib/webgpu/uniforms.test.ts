@@ -16,6 +16,8 @@ import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import { PREVIEW_VIEW_MODES } from '~/lib/preview/preview-view'
 
 import type { GpuPreviewInput } from './contract'
+import type { WebGPUImages } from './images'
+import { resolveGpuPreviewLook } from './lut-profile'
 import { webGPUTelemetry } from './pipeline-telemetry'
 import { getShaderSpecialization } from './specialization'
 import {
@@ -203,6 +205,29 @@ describe('webGPU view selector', () => {
     }
     // Only the selector differs; the color the shader draws is the same.
     expect(withoutSelector('original')).toEqual(withoutSelector('processed'))
+  })
+})
+
+describe('webGPU color intent', () => {
+  it('requires the complete color intent at every executor boundary', () => {
+    expectTypeOf<GpuPreviewParams>().toMatchTypeOf<ColorGraphIntent>()
+    expectTypeOf<GpuPreviewParams['selectiveColor']>().toEqualTypeOf<
+      ColorGraphIntent['selectiveColor']
+    >()
+    expectTypeOf(getShaderSpecialization)
+      .parameter(0)
+      .toEqualTypeOf<ColorGraphIntent>()
+    expectTypeOf(webGPUTelemetry).parameter(0).toEqualTypeOf<ColorGraphIntent>()
+    expectTypeOf(resolveGpuPreviewLook)
+      .parameter(0)
+      .toEqualTypeOf<ColorGraphIntent>()
+    expectTypeOf<WebGPUImages['updateSelectiveColor']>()
+      .parameter(0)
+      .toEqualTypeOf<ColorGraphIntent['selectiveColor']>()
+  })
+
+  it('starts the pipeline on neutral HSL bands', () => {
+    expect(DEFAULT_PARAMS.selectiveColor).toBe(NEUTRAL_SELECTIVE_COLOR)
   })
 })
 

@@ -7,6 +7,7 @@ import {
   getShaderSpecializationKey,
   normalizeShaderSpecialization,
 } from './specialization'
+import type { GpuPreviewParams } from './uniforms'
 import { DEFAULT_PARAMS } from './uniforms'
 
 function lut(): LUTData {
@@ -35,8 +36,8 @@ describe('shader specialization features', () => {
       },
       null,
     )
-    // Legacy params still carry view fields; they never reach the key.
-    const withView: ProcessingParams = {
+    // View fields ride along with the intent; they never reach the key.
+    const withView: GpuPreviewParams = {
       ...DEFAULT_PARAMS,
       styleKind: 'builtin',
       builtinPreset: 'warm',

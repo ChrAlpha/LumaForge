@@ -1,5 +1,8 @@
 import type { LUTData } from '@lumaforge/luma-color-runtime'
-import { LUT_SIZE } from '@lumaforge/luma-color-runtime'
+import {
+  LUT_SIZE,
+  NEUTRAL_SELECTIVE_COLOR,
+} from '@lumaforge/luma-color-runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { WebGPUImages } from './images'
@@ -279,7 +282,7 @@ describe('webGPU image lifecycle and memory', () => {
     const count = writeTexture.mock.calls.length
     const allocationCount = images.textureAllocations
     images.uploadLUT({ ...lut })
-    images.updateSelectiveColor(undefined)
+    images.updateSelectiveColor(NEUTRAL_SELECTIVE_COLOR)
     expect(writeTexture).toHaveBeenCalledTimes(count)
     expect(images.textureAllocations).toBe(allocationCount)
     images.clearLUT()

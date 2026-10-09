@@ -9,14 +9,6 @@ import type {
   TransferFunctionId,
 } from '@lumaforge/luma-color-runtime'
 
-export type {
-  BuiltinStylePreset,
-  LUTContractResolution,
-  LUTData,
-  LUTInputProfile,
-  ProcessingParams,
-} from '@lumaforge/luma-color-runtime'
-
 /**
  * What the GPU executor draws. `technical-original` is the RAW render with
  * its exposure and none of the user's color; selecting it never rewrites the

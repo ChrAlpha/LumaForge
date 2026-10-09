@@ -4,7 +4,7 @@
  */
 
 import type {
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   LookSelection,
   LUTColorProfile,
   LUTContractResolution,
@@ -41,7 +41,7 @@ export interface GpuPreviewLook {
  * presets draw as selected. The selection itself is never rewritten.
  */
 export function resolveGpuPreviewLook(
-  intent: ColorGraphIntentSource,
+  intent: ColorGraphIntent,
   lut: LUTData | null,
 ): GpuPreviewLook {
   const plan = resolvePreviewColorPlan({ intent, lut, executor: 'webgpu' })
