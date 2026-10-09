@@ -8,7 +8,6 @@ import {
   within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Provider } from 'jotai'
 import { describe, expect, it, vi } from 'vitest'
 
 import { viewportAtom } from '~/atoms/viewport'
@@ -20,16 +19,9 @@ import {
   toolCardOpenAtom,
 } from '../state/tool-card.atoms'
 import { LutDropzone } from './Dropzone'
-import { RawToolSurface as Surface } from './RawToolSurface'
-import type { RawToolSurfaceProps } from './RawWorkflowContext'
+import type { RawToolSurfaceFixtureProps } from './raw-tool-surface.fixture'
+import { renderRawToolSurface } from './raw-tool-surface.fixture'
 import { toolAvailabilityFixture } from './tool-availability.fixture'
-
-/** The surface with the availability its provider would hand it. */
-function RawToolSurface(props: Partial<RawToolSurfaceProps>) {
-  return (
-    <Surface toolAvailability={toolAvailabilityFixture(props)} {...props} />
-  )
-}
 
 // Held to the surface contract, so a fixture cannot carry a field the
 // surfaces no longer take.
@@ -90,7 +82,7 @@ const baseProps = {
   supportLevel: 'experimental' as const,
   metadata: null,
   stats: null,
-} satisfies Partial<RawToolSurfaceProps>
+} satisfies RawToolSurfaceFixtureProps
 
 function onlineLutSourcesFixture(
   overrides: Partial<UseOnlineLutSourcesResult> = {},
@@ -258,7 +250,7 @@ describe('rawToolSurface', () => {
   })
 
   it('renders the finishing surface with a card stack and a persistent export block', () => {
-    const { container } = render(<RawToolSurface {...baseProps} />)
+    const { container } = renderRawToolSurface(baseProps)
     const desktopSurface = container.querySelector(
       '[data-raw-tool-surface="raw-finishing"]',
     )
@@ -321,12 +313,10 @@ describe('rawToolSurface', () => {
   })
 
   it('keeps the catalog URL input focus ring clear of the LUT card header', () => {
-    const { container } = render(
-      <RawToolSurface
-        {...baseProps}
-        onlineLutSources={onlineLutSourcesFixture()}
-      />,
-    )
+    const { container } = renderRawToolSurface({
+      ...baseProps,
+      onlineLutSources: onlineLutSourcesFixture(),
+    })
 
     expect(
       container.querySelector('[data-raw-lut="source-controls"]'),
@@ -336,7 +326,7 @@ describe('rawToolSurface', () => {
   it('surfaces first profile LUT entries inline before opening the full catalog', async () => {
     const user = userEvent.setup()
     const fixture = withManyOnlineEntries(onlineLutSourcesFixture())
-    render(<RawToolSurface {...baseProps} onlineLutSources={fixture} />)
+    renderRawToolSurface({ ...baseProps, onlineLutSources: fixture })
 
     await user.click(
       screen.getByRole('button', { name: /load kodak 2383 rec.709/i }),
@@ -363,7 +353,7 @@ describe('rawToolSurface', () => {
       activeResourceId: null,
     }
 
-    render(<RawToolSurface {...baseProps} onlineLutSources={fixture} />)
+    renderRawToolSurface({ ...baseProps, onlineLutSources: fixture })
 
     const catalogHint = screen.getByText(
       'Paste a catalog.json or lumaforge-profiles.json URL to load shared LUTs.',
@@ -390,39 +380,37 @@ describe('rawToolSurface', () => {
     red[0] = 1
     red[255] = 1
 
-    render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        histogram={{
-          state: 'ready',
-          source: 'quick',
-          width: 2,
-          height: 1,
-          sampledPixels: 2,
-          totalPixels: 2,
-          bins: {
-            luma,
-            red,
-            green: new Uint32Array(256),
-            blue: new Uint32Array(256),
-          },
-          clipping: {
-            shadowAnyChannel: 1,
-            highlightAnyChannel: 1,
-            shadowLuma: 1,
-            highlightLuma: 1,
-          },
-          diagnostics: {
-            ownership: 'main-thread-chunked-no-copy',
-            copiedInputBytes: 0,
-            transferredInput: false,
-            inputByteLength: 12,
-            rowBandRows: 32,
-          },
-        }}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      histogram: {
+        state: 'ready',
+        source: 'quick',
+        width: 2,
+        height: 1,
+        sampledPixels: 2,
+        totalPixels: 2,
+        bins: {
+          luma,
+          red,
+          green: new Uint32Array(256),
+          blue: new Uint32Array(256),
+        },
+        clipping: {
+          shadowAnyChannel: 1,
+          highlightAnyChannel: 1,
+          shadowLuma: 1,
+          highlightLuma: 1,
+        },
+        diagnostics: {
+          ownership: 'main-thread-chunked-no-copy',
+          copiedInputBytes: 0,
+          transferredInput: false,
+          inputByteLength: 12,
+          rowBandRows: 32,
+        },
+      },
+    })
 
     // The trigger meta speaks in shares of the frame, like the card body.
     expect(screen.getByText('Shadows 50% · Highlights 50%')).toHaveClass(
@@ -437,17 +425,15 @@ describe('rawToolSurface', () => {
   })
 
   it('shows unsupported histogram state without stale bins', async () => {
-    render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        histogram={{
-          state: 'unsupported',
-          reason:
-            'Built-in styles are not supported by full-resolution JPEG export.',
-        }}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      histogram: {
+        state: 'unsupported',
+        reason:
+          'Built-in styles are not supported by full-resolution JPEG export.',
+      },
+    })
 
     fireEvent.click(screen.getByRole('button', { name: 'Histogram' }))
     const regions = await screen.findAllByRole('region', { name: 'Histogram' })
@@ -464,22 +450,20 @@ describe('rawToolSurface', () => {
     const user = userEvent.setup()
     const onToneChange = vi.fn()
     const onToneReset = vi.fn()
-    render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        tone={{
-          userExposureEv: 0,
-          userContrast: 12,
-          userHighlights: 0,
-          userShadows: 0,
-          userWhites: 0,
-          userBlacks: 0,
-        }}
-        onToneChange={onToneChange}
-        onToneReset={onToneReset}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      tone: {
+        userExposureEv: 0,
+        userContrast: 12,
+        userHighlights: 0,
+        userShadows: 0,
+        userWhites: 0,
+        userBlacks: 0,
+      },
+      onToneChange,
+      onToneReset,
+    })
 
     const tone = getToneRegion()
 
@@ -517,22 +501,20 @@ describe('rawToolSurface', () => {
     const onToneReset = vi.fn()
     const onColorReset = vi.fn()
 
-    render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        tone={{ ...baseProps.tone, userContrast: 12 }}
-        color={{
-          userTemperature: 18,
-          userTint: 0,
-          userSaturation: 0,
-          userVibrance: 0,
-        }}
-        onColorChange={vi.fn()}
-        onColorReset={onColorReset}
-        onToneReset={onToneReset}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      tone: { ...baseProps.tone, userContrast: 12 },
+      color: {
+        userTemperature: 18,
+        userTint: 0,
+        userSaturation: 0,
+        userVibrance: 0,
+      },
+      onColorChange: vi.fn(),
+      onColorReset,
+      onToneReset,
+    })
 
     const adjust = screen.getByRole('region', { name: 'Adjust' })
     expect(
@@ -556,7 +538,7 @@ describe('rawToolSurface', () => {
   })
 
   it('disables reset color when color controls are neutral', () => {
-    render(<RawToolSurface {...baseProps} hasImage />)
+    renderRawToolSurface({ ...baseProps, hasImage: true })
 
     const adjust = screen.getByRole('region', { name: 'Adjust' })
 
@@ -566,7 +548,7 @@ describe('rawToolSurface', () => {
   })
 
   it('disables reset tone when tone controls are neutral', () => {
-    render(<RawToolSurface {...baseProps} hasImage />)
+    renderRawToolSurface({ ...baseProps, hasImage: true })
 
     const adjust = screen.getByRole('region', { name: 'Adjust' })
 
@@ -576,7 +558,7 @@ describe('rawToolSurface', () => {
   })
 
   it('disables tone controls before upload', async () => {
-    render(<RawToolSurface {...baseProps} />)
+    renderRawToolSurface(baseProps)
 
     const tone = getToneRegion()
     expect(
@@ -608,7 +590,11 @@ describe('rawToolSurface', () => {
   })
 
   it('disables preview-dependent editing while the preview is released after export', () => {
-    render(<RawToolSurface {...baseProps} hasImage previewSuspended />)
+    renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      previewSuspended: true,
+    })
 
     const tone = getToneRegion()
     expect(
@@ -621,13 +607,11 @@ describe('rawToolSurface', () => {
   it('uses Raw Lab-specific reset controls for tone and compare', async () => {
     const user = userEvent.setup()
     const onCompareReset = vi.fn()
-    render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        onCompareReset={onCompareReset}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      onCompareReset,
+    })
 
     expect(
       screen.getByRole('button', { name: 'Reset tone' }),
@@ -641,14 +625,12 @@ describe('rawToolSurface', () => {
   it('disables desktop Compare reset where the stage has no split to reset', async () => {
     const user = userEvent.setup()
     const onCompareReset = vi.fn()
-    const { rerender } = render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        compareSupported={false}
-        onCompareReset={onCompareReset}
-      />,
-    )
+    const { rerender } = renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      compareSupported: false,
+      onCompareReset,
+    })
 
     await user.click(screen.getByRole('button', { name: 'Compare' }))
     const resetButton = screen.getByRole('button', {
@@ -659,14 +641,12 @@ describe('rawToolSurface', () => {
     expect(onCompareReset).not.toHaveBeenCalled()
 
     // Back on a stage that can split, the reset is live again.
-    rerender(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        compareSupported
-        onCompareReset={onCompareReset}
-      />,
-    )
+    rerender({
+      ...baseProps,
+      hasImage: true,
+      compareSupported: true,
+      onCompareReset,
+    })
     expect(
       screen.getByRole('button', { name: 'Reset compare view' }),
     ).toBeEnabled()
@@ -686,23 +666,21 @@ describe('rawToolSurface', () => {
       available: false as const,
       reason: 'export-running' as const,
     }
-    render(
-      <Surface
-        {...baseProps}
-        hasImage
-        currentLutName="look.cube"
-        toolAvailability={{
-          ...open,
-          desktop: {
-            ...open.desktop,
-            edit: refused,
-            strength: refused,
-            lutApplication: refused,
-            splitReset: refused,
-          },
-        }}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      currentLutName: 'look.cube',
+      toolAvailability: {
+        ...open,
+        desktop: {
+          ...open.desktop,
+          edit: refused,
+          strength: refused,
+          lutApplication: refused,
+          splitReset: refused,
+        },
+      },
+    })
 
     expect(
       within(getToneRegion()).getByRole('slider', { name: 'Exposure' }),
@@ -719,15 +697,13 @@ describe('rawToolSurface', () => {
 
   it('sets a continuous strength on the desktop rail, with presets as detents', () => {
     const onChange = vi.fn()
-    const { container } = render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        currentLutName="Sony Look.cube"
-        activeIntensity={0.62}
-        onIntensityChange={onChange}
-      />,
-    )
+    const { container } = renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      currentLutName: 'Sony Look.cube',
+      activeIntensity: 0.62,
+      onIntensityChange: onChange,
+    })
 
     const row = container.querySelector<HTMLElement>(
       '[data-raw-desktop-strength="row"]',
@@ -755,25 +731,21 @@ describe('rawToolSurface', () => {
   })
 
   it('updates the strength from props without remounting the slider', () => {
-    const { rerender } = render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        currentLutName="Sony Look.cube"
-      />,
-    )
+    const { rerender } = renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      currentLutName: 'Sony Look.cube',
+    })
 
     const strength = screen.getByRole('slider', { name: 'Strength' })
     expect(strength).toHaveAttribute('aria-valuetext', '70%')
 
-    rerender(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        currentLutName="Sony Look.cube"
-        activeIntensity={0}
-      />,
-    )
+    rerender({
+      ...baseProps,
+      hasImage: true,
+      currentLutName: 'Sony Look.cube',
+      activeIntensity: 0,
+    })
 
     expect(screen.getByRole('slider', { name: 'Strength' })).toBe(strength)
     expect(strength).toHaveAttribute('aria-valuetext', 'Off')
@@ -781,14 +753,12 @@ describe('rawToolSurface', () => {
 
   it('keeps strength disabled for catalog-only online LUT sources and says why', () => {
     const onChange = vi.fn()
-    render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        onlineLutSources={onlineLutSourcesFixture()}
-        onIntensityChange={onChange}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      onlineLutSources: onlineLutSourcesFixture(),
+      onIntensityChange: onChange,
+    })
 
     const strength = screen.getByRole('slider', { name: 'Strength' })
     expect(strength).toHaveAttribute('data-disabled')
@@ -801,7 +771,7 @@ describe('rawToolSurface', () => {
 
   it('disables strength before upload', () => {
     const onChange = vi.fn()
-    render(<RawToolSurface {...baseProps} onIntensityChange={onChange} />)
+    renderRawToolSurface({ ...baseProps, onIntensityChange: onChange })
 
     const strength = screen.getByRole('slider', { name: 'Strength' })
     expect(strength).toHaveAttribute('data-disabled')
@@ -811,20 +781,18 @@ describe('rawToolSurface', () => {
   })
 
   it('shows preserved tone state for non-neutral tone', () => {
-    render(
-      <RawToolSurface
-        {...baseProps}
-        hasImage
-        tone={{
-          userExposureEv: 0,
-          userContrast: 0,
-          userHighlights: -40,
-          userShadows: 40,
-          userWhites: -20,
-          userBlacks: 20,
-        }}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      hasImage: true,
+      tone: {
+        userExposureEv: 0,
+        userContrast: 0,
+        userHighlights: -40,
+        userShadows: 40,
+        userWhites: -20,
+        userBlacks: 20,
+      },
+    })
 
     expect(screen.getByText('Tone settings preserved')).toBeInTheDocument()
   })
@@ -846,9 +814,10 @@ describe('rawToolSurface', () => {
   it('renders online LUT sources as collapsed summary rows by default', async () => {
     const user = userEvent.setup()
     const fixture = withManyOnlineEntries(onlineLutSourcesFixture())
-    const { container } = render(
-      <RawToolSurface {...baseProps} onlineLutSources={fixture} />,
-    )
+    const { container } = renderRawToolSurface({
+      ...baseProps,
+      onlineLutSources: fixture,
+    })
 
     expect(
       screen.getByText('Catalog from profiles.example.com'),
@@ -894,12 +863,10 @@ describe('rawToolSurface', () => {
 
   it('closes the online LUT browser with Escape or outside click and restores focus', async () => {
     const user = userEvent.setup()
-    render(
-      <RawToolSurface
-        {...baseProps}
-        onlineLutSources={onlineLutSourcesFixture()}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      onlineLutSources: onlineLutSourcesFixture(),
+    })
 
     const open = screen.getByRole('button', {
       name: 'Open Catalog from profiles.example.com',
@@ -941,12 +908,10 @@ describe('rawToolSurface', () => {
     )
 
     try {
-      render(
-        <RawToolSurface
-          {...baseProps}
-          onlineLutSources={onlineLutSourcesFixture({ loadEntry })}
-        />,
-      )
+      renderRawToolSurface({
+        ...baseProps,
+        onlineLutSources: onlineLutSourcesFixture({ loadEntry }),
+      })
 
       await user.click(
         screen.getByRole('button', {
@@ -996,12 +961,10 @@ describe('rawToolSurface', () => {
 
   it('does not add search, filtering, sorting, favorites, or catalog-management controls to source UI', async () => {
     const user = userEvent.setup()
-    render(
-      <RawToolSurface
-        {...baseProps}
-        onlineLutSources={onlineLutSourcesFixture()}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      onlineLutSources: onlineLutSourcesFixture(),
+    })
 
     await user.click(
       screen.getByRole('button', {
@@ -1021,40 +984,31 @@ describe('rawToolSurface', () => {
   })
 
   it('keeps manual upload visible beside online source controls', () => {
-    render(
-      <RawToolSurface
-        {...baseProps}
-        onlineLutSources={onlineLutSourcesFixture()}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      onlineLutSources: onlineLutSourcesFixture(),
+    })
 
     expect(screen.getByLabelText(/add \.cube lut/i)).toBeInTheDocument()
   })
 
   it('reflects online LUT share availability on the share button', () => {
-    const { rerender } = render(
-      <RawToolSurface
-        {...baseProps}
-        onlineLutSources={onlineLutSourcesFixture({
-          share: {
-            enabled: false,
-            url: '/raw',
-            copy: vi.fn().mockResolvedValue(undefined),
-          },
-        })}
-      />,
-    )
+    const { rerender } = renderRawToolSurface({
+      ...baseProps,
+      onlineLutSources: onlineLutSourcesFixture({
+        share: {
+          enabled: false,
+          url: '/raw',
+          copy: vi.fn().mockResolvedValue(undefined),
+        },
+      }),
+    })
 
     expect(
       screen.getByRole('button', { name: 'Copy LUT source link' }),
     ).toBeDisabled()
 
-    rerender(
-      <RawToolSurface
-        {...baseProps}
-        onlineLutSources={onlineLutSourcesFixture()}
-      />,
-    )
+    rerender({ ...baseProps, onlineLutSources: onlineLutSourcesFixture() })
 
     expect(
       screen.getByRole('button', { name: 'Copy LUT source link' }),
@@ -1062,20 +1016,18 @@ describe('rawToolSurface', () => {
   })
 
   it('uses Raw Lab-specific materials for LUT contract controls', () => {
-    render(
-      <RawToolSurface
-        {...baseProps}
-        currentLutName="Unknown Look.cube"
-        lutProfileSelection={{
-          status: 'unknown',
-          fingerprint: 'lut-contract-materials',
-          title: 'Unknown Look',
-        }}
-        lutProfileResolution={{
-          kind: 'unknown',
-        }}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      currentLutName: 'Unknown Look.cube',
+      lutProfileSelection: {
+        status: 'unknown',
+        fingerprint: 'lut-contract-materials',
+        title: 'Unknown Look',
+      },
+      lutProfileResolution: {
+        kind: 'unknown',
+      },
+    })
 
     expect(
       screen.getByText(
@@ -1098,23 +1050,21 @@ describe('rawToolSurface', () => {
       outputRange: 'full' as const,
     }
 
-    render(
-      <RawToolSurface
-        {...baseProps}
-        currentLutName="SLog3SGamut3.CineToLC_709.cube"
-        lutProfileSelection={{
-          status: 'confirmed',
-          fingerprint: 'stable-catalog-lut',
-          profileId: resolvedProfile.id,
-          confidence: 'metadata',
-        }}
-        lutProfileResolution={{
-          kind: 'confirmed',
-          profile: resolvedProfile,
-          confidence: 'metadata',
-        }}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      currentLutName: 'SLog3SGamut3.CineToLC_709.cube',
+      lutProfileSelection: {
+        status: 'confirmed',
+        fingerprint: 'stable-catalog-lut',
+        profileId: resolvedProfile.id,
+        confidence: 'metadata',
+      },
+      lutProfileResolution: {
+        kind: 'confirmed',
+        profile: resolvedProfile,
+        confidence: 'metadata',
+      },
+    })
 
     await user.click(
       screen.getByRole('button', { name: 'Change LUT contract' }),
@@ -1147,22 +1097,20 @@ describe('rawToolSurface', () => {
       outputRange: 'full' as const,
     }
 
-    render(
-      <RawToolSurface
-        {...baseProps}
-        currentLutName="stable-catalog-look.cube"
-        lutProfileSelection={{
-          status: 'recommended',
-          fingerprint: 'stable-catalog-look',
-          title: 'Stable catalog look',
-          recommendations: [sonyProfile, panasonicProfile],
-        }}
-        lutProfileResolution={{
-          kind: 'recommended',
-          recommendations: [sonyProfile, panasonicProfile],
-        }}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      currentLutName: 'stable-catalog-look.cube',
+      lutProfileSelection: {
+        status: 'recommended',
+        fingerprint: 'stable-catalog-look',
+        title: 'Stable catalog look',
+        recommendations: [sonyProfile, panasonicProfile],
+      },
+      lutProfileResolution: {
+        kind: 'recommended',
+        recommendations: [sonyProfile, panasonicProfile],
+      },
+    })
 
     await user.click(
       screen.getByRole('button', { name: 'Change LUT contract' }),
@@ -1179,21 +1127,19 @@ describe('rawToolSurface', () => {
   })
 
   it('shows a busy refresh affordance while an online LUT source is loading', () => {
-    render(
-      <RawToolSurface
-        {...baseProps}
-        onlineLutSources={onlineLutSourcesFixture({
-          state: {
-            ...onlineLutSourcesFixture().state,
-            entries: [],
-            activeResourceId: 'source-1',
-            isLoading: true,
-          },
-          resourceActivation: { 'source-1': 'loading' },
-          catalogActivation: 'loading',
-        })}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      onlineLutSources: onlineLutSourcesFixture({
+        state: {
+          ...onlineLutSourcesFixture().state,
+          entries: [],
+          activeResourceId: 'source-1',
+          isLoading: true,
+        },
+        resourceActivation: { 'source-1': 'loading' },
+        catalogActivation: 'loading',
+      }),
+    })
 
     const refresh = screen.getByRole('button', {
       name: 'Refresh Catalog from profiles.example.com',
@@ -1205,24 +1151,22 @@ describe('rawToolSurface', () => {
   })
 
   it('announces a translated online LUT source issue summary as a status update', () => {
-    render(
-      <RawToolSurface
-        {...baseProps}
-        onlineLutSources={onlineLutSourcesFixture({
-          state: {
-            ...onlineLutSourcesFixture().state,
-            issues: [
-              {
-                code: 'network',
-                message:
-                  'Failed to fetch online profile resource: https://profiles.example.com/catalog.json',
-                resourceId: 'source-1',
-              },
-            ],
-          },
-        })}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      onlineLutSources: onlineLutSourcesFixture({
+        state: {
+          ...onlineLutSourcesFixture().state,
+          issues: [
+            {
+              code: 'network',
+              message:
+                'Failed to fetch online profile resource: https://profiles.example.com/catalog.json',
+              resourceId: 'source-1',
+            },
+          ],
+        },
+      }),
+    })
 
     const resource = screen
       .getByRole('button', {
@@ -1243,11 +1187,10 @@ describe('rawToolSurface', () => {
     const prev = jotaiStore.get(viewportAtom)
     jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
     try {
-      const { container } = render(
-        <Provider store={jotaiStore}>
-          <RawToolSurface {...baseProps} hasImage={false} />
-        </Provider>,
-      )
+      const { container } = renderRawToolSurface({
+        ...baseProps,
+        hasImage: false,
+      })
       expect(container.querySelector('[data-raw-mobile-lab]')).toHaveClass(
         'pointer-events-none',
       )
@@ -1284,11 +1227,10 @@ describe('rawToolSurface', () => {
     const prev = jotaiStore.get(viewportAtom)
     jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
     try {
-      const { container } = render(
-        <Provider store={jotaiStore}>
-          <RawToolSurface {...baseProps} hasImage />
-        </Provider>,
-      )
+      const { container } = renderRawToolSurface({
+        ...baseProps,
+        hasImage: true,
+      })
       expect(container.querySelector('[data-raw-mobile-lab]')).toHaveClass(
         'pointer-events-none',
       )
@@ -1306,16 +1248,12 @@ describe('rawToolSurface', () => {
     const prev = jotaiStore.get(viewportAtom)
     jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
     try {
-      render(
-        <Provider store={jotaiStore}>
-          <RawToolSurface
-            {...baseProps}
-            hasImage
-            onlineLutSources={onlineLutSourcesFixture()}
-            onIntensityChange={onChange}
-          />
-        </Provider>,
-      )
+      renderRawToolSurface({
+        ...baseProps,
+        hasImage: true,
+        onlineLutSources: onlineLutSourcesFixture(),
+        onIntensityChange: onChange,
+      })
 
       const dock = screen.getByRole('tablist', { name: /lab modes/i })
       expect(within(dock).getAllByRole('tab')).toHaveLength(2)
@@ -1343,11 +1281,11 @@ describe('rawToolSurface', () => {
     const prev = jotaiStore.get(viewportAtom)
     jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
     try {
-      const { container } = render(
-        <Provider store={jotaiStore}>
-          <RawToolSurface {...baseProps} hasImage isProcessing />
-        </Provider>,
-      )
+      const { container } = renderRawToolSurface({
+        ...baseProps,
+        hasImage: true,
+        isProcessing: true,
+      })
 
       expect(container.querySelector('[data-raw-mobile-lab]')).toHaveClass(
         'pointer-events-none',
@@ -1367,34 +1305,30 @@ describe('rawToolSurface', () => {
     const prev = jotaiStore.get(viewportAtom)
     jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
     try {
-      const { container } = render(
-        <Provider store={jotaiStore}>
-          <RawToolSurface
-            {...baseProps}
-            hasImage
-            previewSuspended
-            exportResult={{
-              output: {
-                kind: 'blob',
-                filename: 'DSC09142_fullres.jpg',
-                blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
-                byteLength: 4,
-                mimeType: 'image/jpeg',
-              },
-              filename: 'DSC09142_fullres.jpg',
-              width: 6000,
-              height: 4000,
-              size: 4,
-              createdAt: 0,
-              copyCapability: {
-                mode: 'preview-size',
-                reasonCode: 'full-resolution-copy-unsupported',
-              },
-            }}
-            exportShareCapability={{ available: true }}
-          />
-        </Provider>,
-      )
+      const { container } = renderRawToolSurface({
+        ...baseProps,
+        hasImage: true,
+        previewSuspended: true,
+        exportResult: {
+          output: {
+            kind: 'blob',
+            filename: 'DSC09142_fullres.jpg',
+            blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+            byteLength: 4,
+            mimeType: 'image/jpeg',
+          },
+          filename: 'DSC09142_fullres.jpg',
+          width: 6000,
+          height: 4000,
+          size: 4,
+          createdAt: 0,
+          copyCapability: {
+            mode: 'preview-size',
+            reasonCode: 'full-resolution-copy-unsupported',
+          },
+        },
+        exportShareCapability: { available: true },
+      })
 
       expect(container.querySelector('[data-raw-mobile-lab]')).toHaveClass(
         'pointer-events-none',
@@ -1457,11 +1391,10 @@ describe('rawToolSurface', () => {
       exportShareCapability: { available: true as const },
     }
     try {
-      const { container, rerender } = render(
-        <Provider store={jotaiStore}>
-          <RawToolSurface {...delivered} previewSuspended />
-        </Provider>,
-      )
+      const { container, rerender } = renderRawToolSurface({
+        ...delivered,
+        previewSuspended: true,
+      })
       const dock = screen.getByRole('tablist', { name: /lab modes/i })
       for (const tab of within(dock).getAllByRole('tab')) {
         expect(tab).toBeDisabled()
@@ -1495,11 +1428,7 @@ describe('rawToolSurface', () => {
       ).toBeInTheDocument()
 
       // Restored, the tools edit again.
-      rerender(
-        <Provider store={jotaiStore}>
-          <RawToolSurface {...delivered} />
-        </Provider>,
-      )
+      rerender(delivered)
       await user.click(within(dock).getByRole('tab', { name: /adjust/i }))
       fireEvent.keyDown(screen.getByRole('slider', { name: 'Exposure' }), {
         key: 'ArrowRight',
@@ -1520,22 +1449,20 @@ describe('rawToolSurface', () => {
       outputRange: 'full' as const,
     }
 
-    render(
-      <RawToolSurface
-        {...baseProps}
-        currentLutName="VLog-to-Rec709.cube"
-        lutProfileSelection={{
-          status: 'recommended',
-          fingerprint: 'vlog-rec709',
-          title: 'VLog to Rec.709',
-          recommendations: [completeProfile],
-        }}
-        lutProfileResolution={{
-          kind: 'recommended',
-          recommendations: [completeProfile],
-        }}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      currentLutName: 'VLog-to-Rec709.cube',
+      lutProfileSelection: {
+        status: 'recommended',
+        fingerprint: 'vlog-rec709',
+        title: 'VLog to Rec.709',
+        recommendations: [completeProfile],
+      },
+      lutProfileResolution: {
+        kind: 'recommended',
+        recommendations: [completeProfile],
+      },
+    })
 
     const contractRegions = screen.getAllByRole('region', {
       name: 'LUT contract',
@@ -1562,23 +1489,21 @@ describe('rawToolSurface', () => {
       outputRange: 'full' as const,
     }
 
-    render(
-      <RawToolSurface
-        {...baseProps}
-        currentLutName="VLog-to-Rec709.cube"
-        onLutProfileSelect={onLutProfileSelect}
-        lutProfileSelection={{
-          status: 'recommended',
-          fingerprint: 'vlog-rec709',
-          title: 'VLog to Rec.709',
-          recommendations: [completeProfile],
-        }}
-        lutProfileResolution={{
-          kind: 'recommended',
-          recommendations: [completeProfile],
-        }}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      currentLutName: 'VLog-to-Rec709.cube',
+      onLutProfileSelect,
+      lutProfileSelection: {
+        status: 'recommended',
+        fingerprint: 'vlog-rec709',
+        title: 'VLog to Rec.709',
+        recommendations: [completeProfile],
+      },
+      lutProfileResolution: {
+        kind: 'recommended',
+        recommendations: [completeProfile],
+      },
+    })
 
     await user.click(screen.getByRole('button', { name: 'Use this contract' }))
 
@@ -1589,22 +1514,20 @@ describe('rawToolSurface', () => {
     const user = userEvent.setup()
     const vlog709 = getLUTColorProfile('panasonic-vgamut-vlog')!
 
-    render(
-      <RawToolSurface
-        {...baseProps}
-        currentLutName="VLog-Look.cube"
-        lutProfileSelection={{
-          status: 'recommended',
-          fingerprint: 'vlog-look',
-          title: 'VLog Look',
-          recommendations: [vlog709],
-        }}
-        lutProfileResolution={{
-          kind: 'recommended',
-          recommendations: [vlog709],
-        }}
-      />,
-    )
+    renderRawToolSurface({
+      ...baseProps,
+      currentLutName: 'VLog-Look.cube',
+      lutProfileSelection: {
+        status: 'recommended',
+        fingerprint: 'vlog-look',
+        title: 'VLog Look',
+        recommendations: [vlog709],
+      },
+      lutProfileResolution: {
+        kind: 'recommended',
+        recommendations: [vlog709],
+      },
+    })
 
     const contractRegions = screen.getAllByRole('region', {
       name: 'LUT contract',

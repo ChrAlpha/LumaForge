@@ -18,8 +18,8 @@ import { createRawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import { ComparePreviewStage } from '../components/ComparePreviewStage'
 import { LutDropzone } from '../components/Dropzone'
 import { PreviewCanvas } from '../components/PreviewCanvas'
-import { RawToolSurface } from '../components/RawToolSurface'
-import { toolAvailabilityFixture } from '../components/tool-availability.fixture'
+import type { RawToolSurfaceFixtureProps } from '../components/raw-tool-surface.fixture'
+import { renderRawToolSurface } from '../components/raw-tool-surface.fixture'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
 import { RawProcessorView } from '../RawProcessorView'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
@@ -40,9 +40,9 @@ const DOTTED_DECODER_EXTENSIONS = new Set(
 )
 
 function rawToolSurfaceProps(
-  overrides: Partial<ComponentProps<typeof RawToolSurface>> = {},
-): ComponentProps<typeof RawToolSurface> {
-  const props = {
+  overrides: RawToolSurfaceFixtureProps = {},
+): RawToolSurfaceFixtureProps {
+  return {
     activeIntensity: 0.7,
     tone: {
       userExposureEv: 0,
@@ -97,8 +97,7 @@ function rawToolSurfaceProps(
     stats: null,
     histogram: { state: 'unavailable' as const, reason: 'no-image' as const },
     ...overrides,
-  } satisfies ComponentProps<typeof RawToolSurface>
-  return { toolAvailability: toolAvailabilityFixture(props), ...props }
+  }
 }
 
 const stageColor = pickColorGraphIntent({
@@ -612,7 +611,7 @@ describe('rawProcessorView', () => {
 
 describe('rawToolSurface', () => {
   it('presents task-grouped RAW tools with Histogram', () => {
-    render(<RawToolSurface {...rawToolSurfaceProps()} />)
+    renderRawToolSurface(rawToolSurfaceProps())
 
     expect(
       screen.getAllByRole('region', { name: 'LUT contract' }).length,
@@ -633,7 +632,7 @@ describe('rawToolSurface', () => {
   })
 
   it('keeps LUT loading available before upload without JPEG presets', () => {
-    render(<RawToolSurface {...rawToolSurfaceProps({ hasImage: false })} />)
+    renderRawToolSurface(rawToolSurfaceProps({ hasImage: false }))
 
     expect(
       screen.queryByRole('region', { name: 'JPEG presets' }),
@@ -670,15 +669,13 @@ describe('rawToolSurface', () => {
   })
 
   it('shows hook-provided export disabled reason in the export controls', () => {
-    render(
-      <RawToolSurface
-        {...rawToolSurfaceProps({
-          disabledReason: {
-            source: 'workflow',
-            reason: { code: 'exposure-pending' },
-          },
-        })}
-      />,
+    renderRawToolSurface(
+      rawToolSurfaceProps({
+        disabledReason: {
+          source: 'workflow',
+          reason: { code: 'exposure-pending' },
+        },
+      }),
     )
 
     expect(
@@ -688,7 +685,7 @@ describe('rawToolSurface', () => {
 
   it('keeps compare copy tied to the new split interaction', async () => {
     const user = userEvent.setup()
-    render(<RawToolSurface {...rawToolSurfaceProps()} />)
+    renderRawToolSurface(rawToolSurfaceProps())
 
     await user.click(screen.getByRole('button', { name: 'Compare' }))
     expect(
@@ -709,12 +706,10 @@ describe('rawToolSurface', () => {
     const user = userEvent.setup()
     const onCompareReset = vi.fn()
 
-    render(
-      <RawToolSurface
-        {...rawToolSurfaceProps({
-          onCompareReset,
-        })}
-      />,
+    renderRawToolSurface(
+      rawToolSurfaceProps({
+        onCompareReset,
+      }),
     )
 
     await user.click(screen.getByRole('button', { name: 'Compare' }))
@@ -739,23 +734,21 @@ describe('rawToolSurface', () => {
       outputRange: 'full' as const,
     }
 
-    render(
-      <RawToolSurface
-        {...rawToolSurfaceProps({
-          currentLutName: 'Sony Look.cube',
-          lutProfileSelection: {
-            status: 'recommended',
-            fingerprint: 'abc123',
-            title: 'Sony Look',
-            recommendations: [profile],
-          },
-          lutProfileResolution: {
-            kind: 'recommended',
-            recommendations: [profile],
-          },
-          onLutProfileSelect,
-        })}
-      />,
+    renderRawToolSurface(
+      rawToolSurfaceProps({
+        currentLutName: 'Sony Look.cube',
+        lutProfileSelection: {
+          status: 'recommended',
+          fingerprint: 'abc123',
+          title: 'Sony Look',
+          recommendations: [profile],
+        },
+        lutProfileResolution: {
+          kind: 'recommended',
+          recommendations: [profile],
+        },
+        onLutProfileSelect,
+      }),
     )
 
     // With a complete recommendation the component surfaces inline rows + recommended note
@@ -801,23 +794,21 @@ describe('rawToolSurface', () => {
     const user = userEvent.setup()
     const profile = getLUTColorProfile('sony-sgamut3cine-slog3')!
 
-    render(
-      <RawToolSurface
-        {...rawToolSurfaceProps({
-          currentLutName: 'Sony Look.cube',
-          lutProfileSelection: {
-            status: 'confirmed',
-            fingerprint: 'toggle-contract',
-            profileId: profile.id,
-            confidence: 'metadata',
-          },
-          lutProfileResolution: {
-            kind: 'confirmed',
-            profile,
-            confidence: 'metadata',
-          },
-        })}
-      />,
+    renderRawToolSurface(
+      rawToolSurfaceProps({
+        currentLutName: 'Sony Look.cube',
+        lutProfileSelection: {
+          status: 'confirmed',
+          fingerprint: 'toggle-contract',
+          profileId: profile.id,
+          confidence: 'metadata',
+        },
+        lutProfileResolution: {
+          kind: 'confirmed',
+          profile,
+          confidence: 'metadata',
+        },
+      }),
     )
 
     const trigger = screen.getByRole('button', {
@@ -844,23 +835,21 @@ describe('rawToolSurface', () => {
     const user = userEvent.setup()
     const profile = getLUTColorProfile('sony-sgamut3cine-slog3')!
 
-    render(
-      <RawToolSurface
-        {...rawToolSurfaceProps({
-          currentLutName: 'Sony Look.cube',
-          lutProfileSelection: {
-            status: 'confirmed',
-            fingerprint: 'toggle-contract',
-            profileId: profile.id,
-            confidence: 'metadata',
-          },
-          lutProfileResolution: {
-            kind: 'confirmed',
-            profile,
-            confidence: 'metadata',
-          },
-        })}
-      />,
+    renderRawToolSurface(
+      rawToolSurfaceProps({
+        currentLutName: 'Sony Look.cube',
+        lutProfileSelection: {
+          status: 'confirmed',
+          fingerprint: 'toggle-contract',
+          profileId: profile.id,
+          confidence: 'metadata',
+        },
+        lutProfileResolution: {
+          kind: 'confirmed',
+          profile,
+          confidence: 'metadata',
+        },
+      }),
     )
 
     const trigger = screen.getByRole('button', {
@@ -898,23 +887,21 @@ describe('rawToolSurface', () => {
       outputRange: 'full' as const,
     }
 
-    render(
-      <RawToolSurface
-        {...rawToolSurfaceProps({
-          currentLutName: 'Panasonic Look.cube',
-          lutProfileSelection: {
-            status: 'confirmed',
-            fingerprint: 'abc123',
-            profileId: profile.id,
-            confidence: 'metadata',
-          },
-          lutProfileResolution: {
-            kind: 'confirmed',
-            profile,
-            confidence: 'metadata',
-          },
-        })}
-      />,
+    renderRawToolSurface(
+      rawToolSurfaceProps({
+        currentLutName: 'Panasonic Look.cube',
+        lutProfileSelection: {
+          status: 'confirmed',
+          fingerprint: 'abc123',
+          profileId: profile.id,
+          confidence: 'metadata',
+        },
+        lutProfileResolution: {
+          kind: 'confirmed',
+          profile,
+          confidence: 'metadata',
+        },
+      }),
     )
 
     expect(screen.getByText('LUT input:')).toBeInTheDocument()
@@ -929,23 +916,21 @@ describe('rawToolSurface', () => {
   it('makes missing LUT output contracts explicit', () => {
     const profile = getLUTColorProfile('panasonic-vgamut-vlog')!
 
-    render(
-      <RawToolSurface
-        {...rawToolSurfaceProps({
-          currentLutName: 'Panasonic Look.cube',
-          lutProfileSelection: {
-            status: 'confirmed',
-            fingerprint: 'abc123',
-            profileId: profile.id,
-            confidence: 'metadata',
-          },
-          lutProfileResolution: {
-            kind: 'confirmed',
-            profile,
-            confidence: 'metadata',
-          },
-        })}
-      />,
+    renderRawToolSurface(
+      rawToolSurfaceProps({
+        currentLutName: 'Panasonic Look.cube',
+        lutProfileSelection: {
+          status: 'confirmed',
+          fingerprint: 'abc123',
+          profileId: profile.id,
+          confidence: 'metadata',
+        },
+        lutProfileResolution: {
+          kind: 'confirmed',
+          profile,
+          confidence: 'metadata',
+        },
+      }),
     )
 
     expect(screen.getByText(/choose the LUT output/i)).toBeInTheDocument()
@@ -973,7 +958,7 @@ describe('rawToolSurface', () => {
         confidence: 'metadata',
       },
     })
-    const { rerender } = render(<RawToolSurface {...firstLutProps} />)
+    const { rerender } = renderRawToolSurface(firstLutProps)
 
     await user.click(
       screen.getByRole('button', { name: 'Change LUT contract' }),
@@ -988,22 +973,20 @@ describe('rawToolSurface', () => {
     ).not.toBeInTheDocument()
 
     rerender(
-      <RawToolSurface
-        {...rawToolSurfaceProps({
-          currentLutName: 'Canon Look.cube',
-          lutProfileSelection: {
-            status: 'confirmed',
-            fingerprint: 'second-lut',
-            profileId: canonProfile.id,
-            confidence: 'metadata',
-          },
-          lutProfileResolution: {
-            kind: 'confirmed',
-            profile: canonProfile,
-            confidence: 'metadata',
-          },
-        })}
-      />,
+      rawToolSurfaceProps({
+        currentLutName: 'Canon Look.cube',
+        lutProfileSelection: {
+          status: 'confirmed',
+          fingerprint: 'second-lut',
+          profileId: canonProfile.id,
+          confidence: 'metadata',
+        },
+        lutProfileResolution: {
+          kind: 'confirmed',
+          profile: canonProfile,
+          confidence: 'metadata',
+        },
+      }),
     )
 
     expect(
@@ -1022,22 +1005,20 @@ describe('rawToolSurface', () => {
     const user = userEvent.setup()
     const onLutProfileSelect = vi.fn()
 
-    render(
-      <RawToolSurface
-        {...rawToolSurfaceProps({
-          currentLutName: 'Unknown Look.cube',
-          lutProfileSelection: {
-            status: 'unknown',
-            fingerprint: 'def456',
-            title: 'Unknown Look',
-            sourceName: 'Unknown Look.cube',
-          },
-          lutProfileResolution: {
-            kind: 'unknown',
-          },
-          onLutProfileSelect,
-        })}
-      />,
+    renderRawToolSurface(
+      rawToolSurfaceProps({
+        currentLutName: 'Unknown Look.cube',
+        lutProfileSelection: {
+          status: 'unknown',
+          fingerprint: 'def456',
+          title: 'Unknown Look',
+          sourceName: 'Unknown Look.cube',
+        },
+        lutProfileResolution: {
+          kind: 'unknown',
+        },
+        onLutProfileSelect,
+      }),
     )
 
     expect(
@@ -1113,23 +1094,21 @@ describe('rawToolSurface', () => {
       outputRange: 'full' as const,
     }
 
-    render(
-      <RawToolSurface
-        {...rawToolSurfaceProps({
-          currentLutName: 'Unknown Look.cube',
-          lutProfileSelection: {
-            status: 'recommended',
-            fingerprint: 'ghi789',
-            title: 'Unknown Look',
-            recommendations: [suggestion],
-          },
-          lutProfileResolution: {
-            kind: 'recommended',
-            recommendations: [suggestion],
-          },
-          onLutProfileSelect,
-        })}
-      />,
+    renderRawToolSurface(
+      rawToolSurfaceProps({
+        currentLutName: 'Unknown Look.cube',
+        lutProfileSelection: {
+          status: 'recommended',
+          fingerprint: 'ghi789',
+          title: 'Unknown Look',
+          recommendations: [suggestion],
+        },
+        lutProfileResolution: {
+          kind: 'recommended',
+          recommendations: [suggestion],
+        },
+        onLutProfileSelect,
+      }),
     )
 
     await user.click(
@@ -1154,22 +1133,20 @@ describe('rawToolSurface', () => {
   it('warns unsupported output LUTs without showing the input selector', () => {
     const suggestion = getLUTColorProfile('sony-sgamut3cine-slog3')!
 
-    render(
-      <RawToolSurface
-        {...rawToolSurfaceProps({
-          currentLutName: 'Cineon Output.cube',
-          lutProfileSelection: {
-            status: 'unsupported-output',
-            fingerprint: 'jkl012',
-            title: 'Cineon Output',
-            recommendations: [suggestion],
-          },
-          lutProfileResolution: {
-            kind: 'unsupported-output',
-            recommendations: [suggestion],
-          },
-        })}
-      />,
+    renderRawToolSurface(
+      rawToolSurfaceProps({
+        currentLutName: 'Cineon Output.cube',
+        lutProfileSelection: {
+          status: 'unsupported-output',
+          fingerprint: 'jkl012',
+          title: 'Cineon Output',
+          recommendations: [suggestion],
+        },
+        lutProfileResolution: {
+          kind: 'unsupported-output',
+          recommendations: [suggestion],
+        },
+      }),
     )
 
     expect(

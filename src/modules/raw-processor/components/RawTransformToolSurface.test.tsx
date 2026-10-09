@@ -1,12 +1,5 @@
-import {
-  cleanup,
-  render as renderWithRoot,
-  screen,
-  within,
-} from '@testing-library/react'
+import { cleanup, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Provider } from 'jotai'
-import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { viewportAtom } from '~/atoms/viewport'
@@ -17,28 +10,12 @@ import {
   toolCardOpenAtom,
 } from '../state/tool-card.atoms'
 import { COLOR_NEUTRAL } from './color-fields'
-import { RawToolSurface as Surface } from './RawToolSurface'
-import type { RawToolSurfaceProps } from './RawWorkflowContext'
+import type { RawToolSurfaceFixtureProps } from './raw-tool-surface.fixture'
+import { renderRawToolSurface } from './raw-tool-surface.fixture'
 import { TONE_NEUTRAL } from './tone-fields'
-import { toolAvailabilityFixture } from './tool-availability.fixture'
 import { transformFeatureFixture } from './tools/transform-feature.fixture'
 
-function render(ui: ReactNode) {
-  return renderWithRoot(ui, {
-    wrapper: ({ children }) => (
-      <Provider store={jotaiStore}>{children}</Provider>
-    ),
-  })
-}
-
-/** The surface with the availability its provider would hand it. */
-function RawToolSurface(props: Partial<RawToolSurfaceProps>) {
-  return (
-    <Surface toolAvailability={toolAvailabilityFixture(props)} {...props} />
-  )
-}
-
-const base: Omit<RawToolSurfaceProps, 'toolAvailability'> = {
+const base: RawToolSurfaceFixtureProps = {
   activeIntensity: 0.7,
   tone: TONE_NEUTRAL,
   color: COLOR_NEUTRAL,
@@ -104,7 +81,7 @@ describe('raw Transform tool surfaces', () => {
 
   it('shows the desktop entry before a photo is loaded and captures only when it opens', async () => {
     const transform = transformFeatureFixture()
-    render(<RawToolSurface {...base} hasImage={false} transform={transform} />)
+    renderRawToolSurface({ ...base, hasImage: false, transform })
     expect(transform.observe).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Transform' }))
     expect(
@@ -115,12 +92,10 @@ describe('raw Transform tool surfaces', () => {
   })
 
   it('disables desktop Compare reset when Transform is active', async () => {
-    render(
-      <RawToolSurface
-        {...base}
-        transform={transformFeatureFixture({ active: true, hasImage: true })}
-      />,
-    )
+    renderRawToolSurface({
+      ...base,
+      transform: transformFeatureFixture({ active: true, hasImage: true }),
+    })
     await userEvent.click(screen.getByRole('button', { name: 'Compare' }))
     expect(
       screen.getByRole('button', { name: 'Reset compare view' }),
@@ -128,7 +103,7 @@ describe('raw Transform tool surfaces', () => {
   })
 
   it('keeps prior surfaces valid without an optional Transform feature', () => {
-    render(<RawToolSurface {...base} />)
+    renderRawToolSurface(base)
     expect(screen.queryByRole('button', { name: 'Transform' })).toBeNull()
   })
 
@@ -138,22 +113,18 @@ describe('raw Transform tool surfaces', () => {
       w: 390,
       sm: false,
     })
-    const { rerender } = render(
-      <RawToolSurface
-        {...base}
-        hasImage={false}
-        transform={transformFeatureFixture()}
-      />,
-    )
+    const { rerender } = renderRawToolSurface({
+      ...base,
+      hasImage: false,
+      transform: transformFeatureFixture(),
+    })
     // Nothing for a tool to act on yet: no dock, not a row of disabled tabs.
     expect(screen.queryByRole('tablist', { name: /lab modes/i })).toBeNull()
 
-    rerender(
-      <RawToolSurface
-        {...base}
-        transform={transformFeatureFixture({ hasImage: true })}
-      />,
-    )
+    rerender({
+      ...base,
+      transform: transformFeatureFixture({ hasImage: true }),
+    })
     const dock = screen.getByRole('tablist', { name: /lab modes/i })
     expect(
       within(dock)
@@ -173,9 +144,10 @@ describe('raw Transform tool surfaces', () => {
       hasImage: true,
       observe: vi.fn(() => stop),
     })
-    const { container } = render(
-      <RawToolSurface {...base} transform={transform} />,
-    )
+    const { container } = renderRawToolSurface({
+      ...base,
+      transform,
+    })
     expect(transform.observe).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('tab', { name: 'Transform' }))
     expect(
@@ -205,21 +177,17 @@ describe('raw Transform tool surfaces', () => {
       sm: false,
     })
     const transform = transformFeatureFixture({ hasImage: true })
-    const { rerender } = render(
-      <RawToolSurface {...base} transform={transform} />,
-    )
+    const { rerender } = renderRawToolSurface({ ...base, transform })
     await userEvent.click(screen.getByRole('tab', { name: 'Adjust' }))
     // Compare is a stage lens now, so Transform no longer has a Compare tab
     // to evict: the open tool stays put either way.
     expect(screen.queryByRole('tab', { name: 'Compare' })).toBeNull()
-    rerender(
-      <RawToolSurface {...base} transform={{ ...transform, active: true }} />,
-    )
+    rerender({ ...base, transform: { ...transform, active: true } })
     expect(screen.getByRole('tab', { name: 'Adjust' })).toHaveAttribute(
       'aria-selected',
       'true',
     )
-    rerender(<RawToolSurface {...base} transform={transform} />)
+    rerender({ ...base, transform })
     expect(screen.getByRole('tab', { name: 'Adjust' })).toHaveAttribute(
       'aria-selected',
       'true',
