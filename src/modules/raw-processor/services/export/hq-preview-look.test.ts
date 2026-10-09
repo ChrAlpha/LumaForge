@@ -1,5 +1,5 @@
 import type {
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   LUTColorProfile,
   LUTContractResolution,
   LUTData,
@@ -36,9 +36,7 @@ function lut(profileResolution: LUTContractResolution): LUTData {
   }
 }
 
-function intent(
-  styleKind: ColorGraphIntentSource['styleKind'],
-): ColorGraphIntentSource {
+function intent(styleKind: ColorGraphIntent['styleKind']): ColorGraphIntent {
   return {
     styleKind,
     builtinPreset: null,

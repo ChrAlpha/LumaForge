@@ -1,9 +1,13 @@
 import type {
+  ColorGraphIntent,
   LUTData,
   PreviewHistogramState,
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
-import { NEUTRAL_SELECTIVE_COLOR } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_SELECTIVE_COLOR,
+  NEUTRAL_USER_COLOR_INTENT,
+} from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,22 +17,20 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 import type { DisplaySource } from '../model/session'
 import { usePreviewHistogram } from './usePreviewHistogram'
 
-const defaultParams: ProcessingParams = {
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
+const defaultParams: ColorGraphIntent = {
+  ...NEUTRAL_USER_COLOR_INTENT,
   intensity: 0.7,
-  viewMode: 'processed',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
+}
+
+/** The intent as a legacy record that still carries the view fields. */
+function withLegacyView(
+  params: ColorGraphIntent,
+  view: Pick<ProcessingParams, 'viewMode' | 'compareSplit'>,
+): ColorGraphIntent {
+  const legacy: ColorGraphIntent & typeof view = { ...params, ...view }
+  return legacy
 }
 
 function mutableRef<T>(current: T) {
@@ -149,7 +151,7 @@ function renderPreviewHistogram(options: {
   enabled?: boolean
   image: DecodedImage | null
   frame?: DecodedPreviewFrame | null
-  params?: ProcessingParams
+  params?: ColorGraphIntent
   lutData?: LUTData | null
   lutDataVersion?: number
   displaySource?: DisplaySource
@@ -361,7 +363,7 @@ describe('usePreviewHistogram', () => {
     })
   })
 
-  it.each<[string, ProcessingParams]>([
+  it.each<[string, ColorGraphIntent]>([
     ['look inputs are unchanged', defaultParams],
     [
       'saturation and vibrance are omitted',
@@ -369,7 +371,7 @@ describe('usePreviewHistogram', () => {
         ...defaultParams,
         userSaturation: undefined,
         userVibrance: undefined,
-      } as unknown as ProcessingParams,
+      } as unknown as ColorGraphIntent,
     ],
   ])(
     'keeps a superseded first quick histogram observable before bounded-HQ is ready when %s',
@@ -439,7 +441,7 @@ describe('usePreviewHistogram', () => {
     },
   )
 
-  it.each<[string, Partial<ProcessingParams>]>([
+  it.each<[string, Partial<ColorGraphIntent>]>([
     ['highlights', { userHighlights: -40 }],
     ['saturation', { userSaturation: 40 }],
     ['vibrance', { userVibrance: 40 }],
@@ -675,11 +677,10 @@ describe('usePreviewHistogram', () => {
     rerender({
       imageRef,
       // A legacy record carrying view fields keeps the same job.
-      params: {
-        ...defaultParams,
+      params: withLegacyView(defaultParams, {
         viewMode: 'compare',
         compareSplit: 0.82,
-      } as ProcessingParams,
+      }),
       lutDataRef,
       lutDataVersion: 0,
       displaySource: 'quick',
@@ -760,7 +761,7 @@ describe('usePreviewHistogram', () => {
     expect(result.current).toEqual({ state: 'unavailable', reason: 'no-image' })
   })
 
-  it.each<[string, Partial<ProcessingParams>]>([
+  it.each<[string, Partial<ColorGraphIntent>]>([
     ['temperature', { userTemperature: 25 }],
     ['saturation', { userSaturation: 25 }],
     ['vibrance', { userVibrance: 25 }],
@@ -779,12 +780,10 @@ describe('usePreviewHistogram', () => {
 
       rerender({
         imageRef,
-        params: {
-          ...defaultParams,
-          viewMode: 'compare',
-          compareSplit: 0.82,
-          ...colorChange,
-        },
+        params: withLegacyView(
+          { ...defaultParams, ...colorChange },
+          { viewMode: 'compare', compareSplit: 0.82 },
+        ),
         lutDataRef,
         lutDataVersion: 0,
         displaySource: 'quick',
@@ -879,7 +878,7 @@ describe('usePreviewHistogram', () => {
 
     rerender({
       imageRef,
-      params: { ...defaultParams, viewMode: 'original' } as ProcessingParams,
+      params: withLegacyView(defaultParams, { viewMode: 'original' }),
       lutDataRef,
       lutDataVersion: 0,
       displaySource: 'quick',
@@ -987,7 +986,7 @@ describe('usePreviewHistogram over the look the preview draws', () => {
   })
 
   // Non-neutral user color, so a measure that drops it shows.
-  const adjusted: ProcessingParams = {
+  const adjusted: ColorGraphIntent = {
     ...defaultParams,
     styleKind: 'custom',
     intensity: 0.7,
@@ -1020,7 +1019,7 @@ describe('usePreviewHistogram over the look the preview draws', () => {
   }
 
   async function settled(
-    params: ProcessingParams,
+    params: ColorGraphIntent,
     lutData: LUTData | null = null,
     lutDataVersion = 0,
   ) {
@@ -1036,7 +1035,7 @@ describe('usePreviewHistogram over the look the preview draws', () => {
 
   function rerenderWith(
     hook: Awaited<ReturnType<typeof settled>>,
-    params: ProcessingParams,
+    params: ColorGraphIntent,
     lutDataVersion: number,
   ) {
     hook.rerender({
@@ -1110,7 +1109,7 @@ describe('usePreviewHistogram over the look the preview draws', () => {
   })
 
   it('reports no numbers for a builtin preset the preview draws, at any strength', async () => {
-    const builtin: ProcessingParams = {
+    const builtin: ColorGraphIntent = {
       ...adjusted,
       styleKind: 'builtin',
       builtinPreset: 'cinematic',

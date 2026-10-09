@@ -1,5 +1,5 @@
 import type {
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   LUTColorProfile,
   LUTContractResolution,
   LUTData,
@@ -67,7 +67,7 @@ function lut(profileResolution: LUTContractResolution): LUTData {
   }
 }
 
-function custom(intensity = 0.7): ColorGraphIntentSource {
+function custom(intensity = 0.7): ColorGraphIntent {
   return {
     styleKind: 'custom',
     builtinPreset: null,
@@ -172,7 +172,7 @@ describe('resolvePreviewLookReason', () => {
   })
 
   it('keeps a built-in preset a WebGPU preview fact the CPU preview cannot draw', () => {
-    const builtin: ColorGraphIntentSource = {
+    const builtin: ColorGraphIntent = {
       ...custom(),
       styleKind: 'builtin',
       builtinPreset: 'warm',

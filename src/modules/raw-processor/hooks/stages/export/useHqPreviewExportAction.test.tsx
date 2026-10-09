@@ -1,5 +1,5 @@
 import type {
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   LUTColorProfile,
   LUTContractResolution,
   LUTData,
@@ -36,14 +36,14 @@ import {
 import { useHqPreviewExportAction } from './useHqPreviewExportAction'
 
 /** The look the test session names: a built-in style WebGPU draws. */
-const SESSION_LOOK: ColorGraphIntentSource = {
+const SESSION_LOOK: ColorGraphIntent = {
   styleKind: 'builtin',
   builtinPreset: 'cinematic',
   intensity: 0.7,
   ...NEUTRAL_USER_COLOR_INTENT,
 }
 
-const CUSTOM_LOOK: ColorGraphIntentSource = {
+const CUSTOM_LOOK: ColorGraphIntent = {
   ...SESSION_LOOK,
   styleKind: 'custom',
   builtinPreset: null,
@@ -241,7 +241,7 @@ function transformAt(status: TransformStatus): TransformState {
  * effects have run.
  */
 function createPipeline(
-  params: ColorGraphIntentSource,
+  params: ColorGraphIntent,
   lut: LUTData | null,
   renderToHiddenCanvas: (size: {
     width: number
@@ -268,12 +268,12 @@ function createPipeline(
  */
 function setupHq(
   initial: ImageSession = createSession(),
-  look: { params?: ColorGraphIntentSource; lut?: LUTData | null } = {},
+  look: { params?: ColorGraphIntent; lut?: LUTData | null } = {},
   wrapper?: ComponentType<PropsWithChildren>,
 ) {
   const store = createStore()
   const sessionAtom = atom<ImageSession | null>(initial)
-  const intentAtom = atom<ColorGraphIntentSource>(look.params ?? SESSION_LOOK)
+  const intentAtom = atom<ColorGraphIntent>(look.params ?? SESSION_LOOK)
   const lutAtom = atom<LUTData | null>(look.lut ?? null)
   const getSession = () => store.get(sessionAtom)
   const writeSession = (update: SetStateAction<ImageSession | null>) =>
@@ -354,8 +354,7 @@ function setupHq(
     result,
     session: getSession,
     writeSession,
-    writeIntent: (intent: ColorGraphIntentSource) =>
-      store.set(intentAtom, intent),
+    writeIntent: (intent: ColorGraphIntent) => store.set(intentAtom, intent),
     writeLut: (lut: LUTData | null) => store.set(lutAtom, lut),
     /** The preview's effects run: the pipeline takes the stored look. */
     drawStoredLook() {
@@ -651,10 +650,7 @@ describe('useHqPreviewExportAction live store reads', () => {
 
   const undrawnWrites: Array<{
     name: string
-    initial: [
-      ImageSession,
-      { params: ColorGraphIntentSource; lut: LUTData | null },
-    ]
+    initial: [ImageSession, { params: ColorGraphIntent; lut: LUTData | null }]
     write: (h: ReturnType<typeof setupHq>) => void
   }> = [
     {

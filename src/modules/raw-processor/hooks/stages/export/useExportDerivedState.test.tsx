@@ -1,5 +1,5 @@
 import type {
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   LUTColorProfile,
   LUTContractResolution,
   LUTData,
@@ -19,14 +19,14 @@ import type { ImageSession } from '../../../model/session'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
 import { useExportDerivedState } from './useExportDerivedState'
 
-const NO_LOOK: ColorGraphIntentSource = {
+const NO_LOOK: ColorGraphIntent = {
   styleKind: 'none',
   builtinPreset: null,
   intensity: 0,
   ...NEUTRAL_USER_COLOR_INTENT,
 }
 
-const CUSTOM_LOOK: ColorGraphIntentSource = {
+const CUSTOM_LOOK: ColorGraphIntent = {
   ...NO_LOOK,
   styleKind: 'custom',
   intensity: 0.8,

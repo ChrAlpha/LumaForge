@@ -5,6 +5,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import {
   exposureMultiplierFromEv,
+  NEUTRAL_SELECTIVE_COLOR,
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 import type {
@@ -48,6 +49,7 @@ const baseParams: CpuPreviewParams = {
   userTint: -20,
   userSaturation: 0,
   userVibrance: 0,
+  selectiveColor: NEUTRAL_SELECTIVE_COLOR,
 }
 
 class FakeWorker {
@@ -188,6 +190,7 @@ describe('useCpuPreview helpers', () => {
         userTint: 0,
         userSaturation: 0,
         userVibrance: 0,
+        selectiveColor: NEUTRAL_SELECTIVE_COLOR,
       },
       'processed',
     )
