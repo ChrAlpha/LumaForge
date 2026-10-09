@@ -29,6 +29,7 @@ import {
   createBlobOutputResult,
   materializeOutputBlob,
 } from '@lumaforge/render-engine/export'
+import { BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 import { act, render, renderHook, waitFor } from '@testing-library/react'
 import { Provider } from 'jotai'
 import type { ReactNode } from 'react'
@@ -49,7 +50,6 @@ import {
   fetchVerifiedCubeAsset,
 } from '~/lib/profiles/fetch'
 import type { DecodedImage } from '~/lib/raw/decoder'
-import { BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS } from '~/lib/raw/decoder'
 import type {
   RawRuntimeHost,
   RawRuntimeHostOptions,

@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  getFileExtension,
-  isSupportedRaw,
-  QUICK_PREVIEW_MAX_PIXELS,
-} from './decoder'
+import * as decoder from './decoder'
+import { getFileExtension, isSupportedRaw } from './decoder'
 
 describe('raw shared helpers', () => {
   it('accepts common camera RAW extensions case-insensitively', () => {
@@ -18,7 +15,9 @@ describe('raw shared helpers', () => {
     expect(getFileExtension('no-extension')).toBe('')
   })
 
-  it('keeps the app quick preview cap aligned with the runtime session cap', () => {
-    expect(QUICK_PREVIEW_MAX_PIXELS).toBe(2_500_000)
+  it('leaves the preview pixel caps to the engine', () => {
+    expect(Object.keys(decoder).filter((name) => /PIXELS/.test(name))).toEqual(
+      [],
+    )
   })
 })

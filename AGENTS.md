@@ -372,15 +372,6 @@ variant:
   scheduled to move into `src/modules/raw-processor/services/look/`, and that
   move deletes the old module. Do not add consumers of the old location.
 
-Known duplication. These copies exist today. Do not extend them; remove one
-only by finishing the move it belongs to:
-
-- The quick and bounded-HQ preview pixel caps are owned by
-  `packages/render-engine/src/preview/preview-plan.ts`.
-  `src/lib/raw/decoder.ts` still defines and exports a copy for the app's RAW
-  adapter; the change that switches the app to the engine's caps deletes that
-  copy and this entry.
-
 Deprecated public API. These are still exported, but they are scheduled for
 removal, not protected: dedicated retirement changes delete them with a
 `### Breaking` CHANGELOG entry. Until then no app or CLI code may start using

@@ -2,13 +2,14 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import type { CapabilityVector } from '@lumaforge/render-engine/policy'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-
-import { getPreviewBackendSnapshot } from '~/lib/preview/gpu-backend'
 import {
   BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
-} from '~/lib/raw/decoder'
+  QUICK_PREVIEW_MAX_PIXELS,
+} from '@lumaforge/render-engine/preview'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { getPreviewBackendSnapshot } from '~/lib/preview/gpu-backend'
 
 import {
   derivePreviewGpuBudget,
@@ -35,6 +36,12 @@ const strongGpu = {
 }
 
 describe('derivePreviewGpuBudget', () => {
+  it('derives from the engine-owned preview pixel caps', () => {
+    expect(QUICK_PREVIEW_MAX_PIXELS).toBe(2_500_000)
+    expect(BOUNDED_HQ_PREVIEW_MAX_PIXELS).toBe(12_000_000)
+    expect(BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS).toBe(8_000_000)
+  })
+
   afterEach(() => {
     vi.mocked(getPreviewBackendSnapshot).mockReturnValue(null)
     vi.restoreAllMocks()

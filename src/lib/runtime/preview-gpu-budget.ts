@@ -3,13 +3,13 @@ import type {
   PreviewGpuBudget,
   PreviewGpuCapabilitySnapshot,
 } from '@lumaforge/render-engine/policy'
-
-import { getPreviewBackendSnapshot } from '~/lib/preview/gpu-backend'
 import {
   BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
   QUICK_PREVIEW_MAX_PIXELS,
-} from '~/lib/raw/decoder'
+} from '@lumaforge/render-engine/preview'
+
+import { getPreviewBackendSnapshot } from '~/lib/preview/gpu-backend'
 
 const DESKTOP_PERFORMANCE_PREVIEW_MAX_PIXELS = 16_000_000
 const DUAL_GPU_MIN_DIMENSION = 4096

@@ -6,12 +6,12 @@ import type {
   LumaRawRuntimeInfo,
 } from '@lumaforge/luma-raw-runtime'
 import { JPEG_RUNTIME_UNAVAILABLE_MESSAGE } from '@lumaforge/render-engine/export'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-
 import {
   BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
-} from './decoder'
+} from '@lumaforge/render-engine/preview'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
 import type { RawRuntimeHostOptions } from './raw-runtime-host'
 import { createRawRuntimeHost } from './raw-runtime-host'
 

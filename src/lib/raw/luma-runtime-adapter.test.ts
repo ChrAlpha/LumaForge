@@ -5,9 +5,9 @@ import type {
   LumaRawFrame,
   LumaRawRuntime,
 } from '@lumaforge/luma-raw-runtime'
+import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { QUICK_PREVIEW_MAX_PIXELS } from './decoder'
 import type { RawRuntimeHostOptions } from './raw-runtime-host'
 import { createRawRuntimeHost } from './raw-runtime-host'
 

@@ -16,6 +16,7 @@ export {
   type ResolvePreviewColorPlanInput,
 } from './preview-color-plan'
 export {
+  BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
   type BoundedHqPreviewTarget,
   createProgressivePreviewPlan,

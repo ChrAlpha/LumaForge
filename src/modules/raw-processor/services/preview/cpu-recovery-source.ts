@@ -1,5 +1,6 @@
+import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
+
 import type { DecodedImage } from '~/lib/raw/decoder'
-import { QUICK_PREVIEW_MAX_PIXELS } from '~/lib/raw/decoder'
 
 /** Recover a bounded CPU input when a GPU device is lost after the HQ upgrade.
  * Keep the authoritative decoded source intact; the client owns its own copy. */

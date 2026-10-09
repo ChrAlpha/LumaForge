@@ -12,6 +12,7 @@ import {
   JPEG_RUNTIME_UNAVAILABLE_MESSAGE,
 } from '@lumaforge/render-engine/export'
 import { deriveInteractivePolicy } from '@lumaforge/render-engine/policy'
+import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 
 import {
   detectCapabilityVector,
@@ -25,7 +26,6 @@ import type {
   DecodeExposureOptions,
   ProgressCallback,
 } from './decoder'
-import { QUICK_PREVIEW_MAX_PIXELS } from './decoder'
 import type {
   JpegRuntimeAvailabilityProbe,
   PrewarmOutcome,

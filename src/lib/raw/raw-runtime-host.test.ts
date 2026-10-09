@@ -5,11 +5,11 @@ import type {
   LumaRawRuntime,
   LumaRawRuntimeInfo,
 } from '@lumaforge/luma-raw-runtime'
+import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { RawDecodeBridge } from '~/lib/workers/raw-decode-bridge'
 
-import { QUICK_PREVIEW_MAX_PIXELS } from './decoder'
 import type {
   RawRuntimeHostOptions,
   RawRuntimeHostSnapshot,
