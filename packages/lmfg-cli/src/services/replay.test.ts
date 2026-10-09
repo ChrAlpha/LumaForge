@@ -327,22 +327,23 @@ describe('prepareReplay', () => {
     })
   })
 
-  it('skips the fingerprint gate for older descriptor versions', async () => {
+  it('refuses a current descriptor whose fingerprint the rebuilt graph does not produce', async () => {
     const manifest = manifestFor()
-    const legacy = {
+    const descriptor = manifest.color_graph.descriptor as ColorGraphDescriptor
+    expect(descriptor.descriptor_version).toBe(COLOR_GRAPH_DESCRIPTOR_VERSION)
+    const mismatched = {
       ...manifest,
-      color_graph: {
-        fingerprint: 'f'.repeat(64),
-        descriptor: { descriptor_version: 1 },
-      },
+      color_graph: { ...manifest.color_graph, fingerprint: 'f'.repeat(64) },
     }
-    const plan = await prepareReplay({
-      manifest: legacy,
-      source: fakeSource('a'.repeat(64)),
-      workspaceRoot: dir,
-      cwd: dir,
+    await expect(prepare(mismatched)).rejects.toMatchObject({
+      code: 'replay.mismatch',
+      exitCode: 8,
+      details: {
+        stage: 'color-graph',
+        expected_fingerprint: 'f'.repeat(64),
+        actual_fingerprint: manifest.color_graph.fingerprint,
+      },
     })
-    expect(plan.fingerprintMatch).toBeNull()
   })
 
   it('requires the LUT file recorded in the manifest', async () => {
@@ -496,20 +497,17 @@ describe('prepareReplay with a recorded geometry', () => {
     })
   })
 
-  it('validates a geometry even when the descriptor version skips the fingerprint gate', async () => {
+  it('refuses a folding geometry before comparing a mismatched current fingerprint', async () => {
     const manifest = geometryManifestFor({
       matrix: FOLDING_MATRIX,
       constrainCrop: false,
       geometryOutput: SENSOR,
     })
-    const legacy = {
+    const mismatched = {
       ...manifest,
-      color_graph: {
-        fingerprint: 'f'.repeat(64),
-        descriptor: { descriptor_version: 1 },
-      },
+      color_graph: { ...manifest.color_graph, fingerprint: 'f'.repeat(64) },
     }
-    await expect(prepare(legacy)).rejects.toMatchObject({
+    await expect(prepare(mismatched)).rejects.toMatchObject({
       code: 'args.invalid',
       details: { stage: 'geometry' },
     })

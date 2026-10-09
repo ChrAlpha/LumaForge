@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { createHash } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -148,19 +149,68 @@ describe('manifest service', () => {
     },
   )
 
-  // Records older writers sealed. Whether the v1 reader accepts each one is
-  // the engine reader's rule; what holds either way is that the seal is
-  // checked over the record exactly as written, never over a normalized copy,
-  // and that a change after sealing is reported as tampering first.
+  /**
+   * Canonical JSON written here rather than taken from the engine: object keys
+   * sorted at every level, no whitespace, JSON number and string escapes. The
+   * seal covers the whole object except `manifest_sha256` itself.
+   */
+  function canonicalJson(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+    if (value !== null && typeof value === 'object') {
+      const object = value as Json
+      return `{${Object.keys(object)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`)
+        .join(',')}}`
+    }
+    return JSON.stringify(value)
+  }
+
+  function originalSeal(record: Json): string {
+    const { manifest_sha256: _seal, ...body } = record
+    return createHash('sha256').update(canonicalJson(body)).digest('hex')
+  }
+
+  /** A JSON copy of a built manifest, edited and sealed by the independent sealer. */
+  function sealedAsWritten(edit: (manifest: Json) => void): Json {
+    const copy = JSON.parse(JSON.stringify(build('export'))) as Json
+    edit(copy)
+    copy.manifest_sha256 = originalSeal(copy)
+    return copy
+  }
+
+  it('seals the current record the way the independent sealer does', () => {
+    for (const kind of ['preview', 'candidate', 'export'] as const) {
+      const manifest = JSON.parse(JSON.stringify(build(kind))) as Json
+      expect(originalSeal(manifest)).toBe(manifest.manifest_sha256)
+    }
+  })
+
+  // Records of shapes earlier writers sealed. Nothing here promises that the
+  // reader admits them for rendering or replay; each vector holds only the
+  // seal: it is checked over the record exactly as written, before any rule
+  // about its structure, and completing or normalizing the record after it
+  // was sealed is reported as tampering first.
   const neutralBand = { hue: 0, saturation: 0, lightness: 0 }
-  const historical: Array<[string, (manifest: Json) => void]> = [
+  const current = COLOR_GRAPH_DESCRIPTOR_VERSION
+  const historical: Array<
+    [string, (manifest: Json) => void, (manifest: Json) => void]
+  > = [
     [
       'color sections, strength and RAW exposure omitted',
       (m) => (m.render_params = { exposure_ev: 0 }),
+      (m) =>
+        (m.render_params = {
+          ...m.render_params,
+          intensity: 1,
+          raw_render_exposure_ev: 0,
+          raw_render_exposure_source: 'identity',
+        }),
     ],
     [
       'no RAW exposure source',
       (m) => delete m.render_params.raw_render_exposure_source,
+      (m) => (m.render_params.raw_render_exposure_source = 'identity'),
     ],
     [
       'all eight neutral HSL bands recorded',
@@ -177,6 +227,7 @@ describe('manifest service', () => {
             'magenta',
           ].map((band) => [band, neutralBand]),
         )),
+      (m) => delete m.render_params.selective_color,
     ],
     [
       'an older descriptor version',
@@ -185,31 +236,43 @@ describe('manifest service', () => {
           fingerprint: 'f'.repeat(64),
           descriptor: { descriptor_version: 1 },
         }),
+      (m) => (m.color_graph.descriptor.descriptor_version = current),
     ],
     [
       'an unversioned descriptor',
       (m) => (m.color_graph = { fingerprint: 'd'.repeat(64), descriptor: {} }),
+      (m) => (m.color_graph.descriptor.descriptor_version = current),
     ],
   ]
 
   it.each(historical)(
-    'checks the seal of a historical record with %s as written',
+    'checks the original seal of a record with %s as written',
     async (_label, edit) => {
-      const record = resealed(edit)
+      const record = sealedAsWritten(edit)
       const result = await verify(record)
       expect(result.raw).toEqual(record)
       expect(result.issues.join(' ')).not.toMatch(/manifest_sha256/)
-      expect(
-        result.manifest === null ||
-          result.manifest.manifest_sha256 === record.manifest_sha256,
-      ).toBe(true)
+      // Admitted or not, a record is never read back as a normalized copy.
+      if (result.manifest !== null) expect(result.manifest).toEqual(record)
     },
   )
 
   it.each(historical)(
-    'refuses a historical record with %s changed after sealing for its hash first',
+    'refuses a record with %s completed after its original seal for its hash first',
+    async (_label, edit, complete) => {
+      const record = sealedAsWritten(edit)
+      complete(record)
+      const result = await verify(record)
+      expect(result.valid).toBe(false)
+      expect(result.manifest).toBeNull()
+      expect(result.issues[0]).toMatch(/^manifest_sha256: .*tampered/)
+    },
+  )
+
+  it.each(historical)(
+    'refuses a record with %s edited after its original seal for its hash first',
     async (_label, edit) => {
-      const record = resealed(edit)
+      const record = sealedAsWritten(edit)
       record.render_params.exposure_ev = 9
       const result = await verify(record)
       expect(result.valid).toBe(false)

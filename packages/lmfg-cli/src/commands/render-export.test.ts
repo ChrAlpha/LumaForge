@@ -1,5 +1,13 @@
 // @vitest-environment node
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { Buffer } from 'node:buffer'
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,6 +24,7 @@ import {
   FIXTURE_PATH,
   identityCube,
 } from '../e2e/fixture'
+import { EXIT_CODES } from '../protocol/exit-codes'
 import { loadSourceFile } from '../runtime/source-loader'
 import { resolveRenderEnvironment } from '../runtime/versions'
 import { parseRenderParams } from '../schemas/params'
@@ -31,6 +40,7 @@ import { resolveLutForParams } from '../services/lut'
 import { buildRenderManifest, toSourceIdentity } from '../services/manifest'
 import { fileExists, readJson, writeJsonAtomic } from '../workspace/atomic-fs'
 import { createIterationStore } from '../workspace/iteration-store'
+import { workspacePaths } from '../workspace/paths'
 import { createSessionStore } from '../workspace/session-store'
 
 vi.mock('@lumaforge/luma-raw-runtime/node', async (importOriginal) => {
@@ -174,6 +184,77 @@ async function expectRefused(message: RegExp) {
   ).toBe(false)
 }
 
+/**
+ * The structured refusals a sealed candidate of a retired manifest shape may
+ * end in, with the exit code each one carries: the manifest reader refuses it
+ * as invalid, or candidate admission refuses the export. Which of the two
+ * stops it is not part of this contract.
+ */
+const ADMISSION_REFUSAL_EXIT_CODES: Record<string, number> = {
+  'manifest.invalid': EXIT_CODES.failure,
+  'export.refused': EXIT_CODES.exportRefused,
+}
+
+/**
+ * Runs a real `--yes --emit ndjson` export over an earlier `final.jpg` and
+ * requires the candidate to be refused before anything runs: a structured
+ * error completion with a nonzero exit, no `started` or `artifact.ready`
+ * event on either stream, no RAW or JPEG runtime created (so nothing is
+ * decoded or encoded), no export manifest or temporary file, no allocation in
+ * the session record, and the earlier export left byte for byte.
+ */
+async function expectRefusedBeforeExport() {
+  const root = join(cwd, '.lmfg')
+  const exportsDir = workspacePaths.exports(root, sessionId)
+  const destination = workspacePaths.exportFile(root, sessionId, 'final')
+  const earlier = Buffer.from('earlier export jpeg bytes')
+  await mkdir(exportsDir, { recursive: true })
+  await writeFile(destination, earlier)
+  const sessionFile = workspacePaths.sessionFile(root, sessionId)
+  const sessionBefore = await readFile(sessionFile, 'utf8')
+  vi.mocked(createLumaRawRuntimeForNode).mockClear()
+  vi.mocked(createLumaJpegRuntimeForNode).mockClear()
+
+  const result = await cli.run(
+    '--yes',
+    '--emit',
+    'ndjson',
+    'render',
+    'export',
+    '--session',
+    sessionId,
+    '--iteration',
+    'iter_0001',
+    '--candidate',
+    'cand_0001',
+  )
+
+  expect(result.envelope).toMatchObject({
+    event: 'completed',
+    ok: false,
+    error: { code: expect.any(String), message: expect.any(String) },
+  })
+  const code = String(result.envelope.error!.code)
+  expect(Object.keys(ADMISSION_REFUSAL_EXIT_CODES)).toContain(code)
+  expect(result.code, result.stdout).toBe(ADMISSION_REFUSAL_EXIT_CODES[code])
+  expect(
+    result.lines.filter(
+      (line) => line.event === 'started' || line.event === 'artifact.ready',
+    ),
+  ).toEqual([])
+  expect(result.stderr).not.toMatch(/^\[(?:started|artifact\.ready)\]/m)
+  expect(createLumaRawRuntimeForNode).not.toHaveBeenCalled()
+  expect(createLumaJpegRuntimeForNode).not.toHaveBeenCalled()
+  expect(await readdir(exportsDir)).toEqual(['final.jpg'])
+  expect(await readFile(destination)).toEqual(earlier)
+  expect(
+    await fileExists(
+      workspacePaths.exportManifestFile(root, sessionId, 'final'),
+    ),
+  ).toBe(false)
+  expect(await readFile(sessionFile, 'utf8')).toBe(sessionBefore)
+}
+
 describe('candidate export input integrity', () => {
   it('reconstructs the selected look despite edited sidecar params and LUT contract', async () => {
     await writeJsonAtomic(
@@ -262,7 +343,10 @@ describe('candidate export input integrity', () => {
     await expectRefused(/rebuilt color graph does not match/)
   })
 
-  it('refuses a descriptor version whose graph cannot be verified', async () => {
+  // A correctly sealed candidate of a retired shape is refused before any
+  // decode, encode, or publication; the refusal is structured, but the stage
+  // that refuses it and its wording are not pinned here.
+  it('refuses a sealed candidate with a non-current descriptor version before exporting', async () => {
     await writeJsonAtomic(
       paths.manifest,
       sealRenderManifest({
@@ -273,16 +357,16 @@ describe('candidate export input integrity', () => {
         },
       }),
     )
-    await expectRefused(/descriptor this runtime cannot verify/)
+    await expectRefusedBeforeExport()
   })
 
-  it('refuses a candidate without recorded RAW exposure instead of resolving it again', async () => {
+  it('refuses a sealed candidate without recorded RAW exposure before exporting, instead of resolving it again', async () => {
     const { raw_render_exposure_ev: _ev, ...params } = manifest.render_params
     await writeJsonAtomic(
       paths.manifest,
       sealRenderManifest({ ...manifest, render_params: params }),
     )
-    await expectRefused(/does not record raw_render_exposure_ev/)
+    await expectRefusedBeforeExport()
   })
 })
 
