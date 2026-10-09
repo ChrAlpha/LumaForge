@@ -25,6 +25,9 @@ type RawMapping = {
 }
 
 // Every runtime code needs a row: a new code fails typecheck until it is mapped.
+// RAW_CALIBRATION_FAILED is mapped ahead of the runtime union that adds it.
+type MappedRawCode = LumaRawErrorCode | 'RAW_CALIBRATION_FAILED'
+
 const RAW_MAPPINGS = {
   RAW_RUNTIME_UNAVAILABLE: {
     code: 'runtime.unavailable',
@@ -86,7 +89,12 @@ const RAW_MAPPINGS = {
     exitCode: EXIT_CODES.internal,
     retryable: false,
   },
-} as const satisfies Record<LumaRawErrorCode, RawMapping>
+  RAW_CALIBRATION_FAILED: {
+    code: 'render.failed',
+    exitCode: EXIT_CODES.render,
+    retryable: true,
+  },
+} as const satisfies Record<MappedRawCode, RawMapping>
 
 describe('lmfgError', () => {
   it('maps codes to spec exit codes', () => {
@@ -146,10 +154,13 @@ describe('toLmfgError', () => {
     expect(error.details?.issues).toBeInstanceOf(Array)
   })
 
-  it.each(Object.entries(RAW_MAPPINGS) as [LumaRawErrorCode, RawMapping][])(
+  it.each(Object.entries(RAW_MAPPINGS) as [MappedRawCode, RawMapping][])(
     'maps RAW runtime code %s',
     (runtimeCode, expected) => {
-      const cause = new LumaRawRuntimeError(runtimeCode, 'runtime said no')
+      const cause = new LumaRawRuntimeError(
+        runtimeCode as LumaRawErrorCode,
+        'runtime said no',
+      )
       const error = toLmfgError(cause)
       expect({
         code: error.code,
@@ -194,6 +205,50 @@ describe('toLmfgError', () => {
     expect(error.exitCode).toBe(EXIT_CODES.internal)
     expect(error.retryable).toBe(false)
     expect(error.details).toEqual({ runtime_code: 'RAW_FUTURE_FAILURE' })
+  })
+
+  it.each([
+    'constructor',
+    'toString',
+    '__proto__',
+    'hasOwnProperty',
+    'valueOf',
+    'RAW_NOT_A_CODE',
+    '',
+  ])(
+    'maps the RAW code %j, which is not a mapped code, to internal',
+    (runtimeCode) => {
+      const cause = new LumaRawRuntimeError(
+        runtimeCode as LumaRawErrorCode,
+        'unknown runtime failure',
+      )
+      const error = toLmfgError(cause)
+      expect(error.code).toBe('internal')
+      expect(error.exitCode).toBe(EXIT_CODES.internal)
+      expect(error.retryable).toBe(false)
+      expect(error.details).toEqual({ runtime_code: runtimeCode })
+      expect(error.toEnvelope().error.code).toBe('internal')
+    },
+  )
+
+  it('keeps a prototype-named RAW primary when cleanup failures follow', () => {
+    const primary = new LumaRawRuntimeError(
+      'constructor' as LumaRawErrorCode,
+      'unknown runtime failure',
+    )
+    const failure = cleanupFailure(
+      'remove_temp_file',
+      new LumaRawRuntimeError('toString' as LumaRawErrorCode, 'cleanup'),
+    )
+    expect(failure).toEqual({ step: 'remove_temp_file', code: 'internal' })
+    const combined = toLmfgError(withCleanupFailures(primary, [failure]))
+    expect(combined.code).toBe('internal')
+    expect(combined.exitCode).toBe(EXIT_CODES.internal)
+    expect(combined.message).toBe('unknown runtime failure')
+    expect(combined.details).toEqual({
+      runtime_code: 'constructor',
+      cleanup_failures: [failure],
+    })
   })
 
   it('maps RAW runtime errors', () => {

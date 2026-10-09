@@ -115,9 +115,16 @@ export class LmfgError extends Error {
   }
 }
 
+/**
+ * The RAW runtime codes the CLI maps: every runtime code, plus
+ * RAW_CALIBRATION_FAILED, which a runtime build that classifies calibration
+ * failures reports.
+ */
+type MappedRawErrorCode = LumaRawErrorCode | 'RAW_CALIBRATION_FAILED'
+
 // Every runtime code maps explicitly; a code from a newer runtime build that is
 // not listed falls back to internal and keeps the code in details.runtime_code.
-const RAW_CODE_MAP: Readonly<Record<string, LmfgErrorCode | undefined>> = {
+const RAW_CODE_MAP = {
   RAW_RUNTIME_UNAVAILABLE: 'runtime.unavailable',
   RAW_CROSS_ORIGIN_ISOLATION_REQUIRED: 'runtime.unavailable',
   RAW_UNSUPPORTED_FORMAT: 'source.unsupported',
@@ -128,9 +135,20 @@ const RAW_CODE_MAP: Readonly<Record<string, LmfgErrorCode | undefined>> = {
   RAW_HQ_DECODE_FAILED: 'render.failed',
   RAW_WINDOW_READ_FAILED: 'render.failed',
   RAW_MEMORY_LIMIT: 'render.failed',
+  RAW_CALIBRATION_FAILED: 'render.failed',
   RAW_JOB_CANCELLED: 'cancelled',
   RAW_WORKER_PROTOCOL_ERROR: 'internal',
-} satisfies Record<LumaRawErrorCode, LmfgErrorCode>
+} as const satisfies Record<MappedRawErrorCode, LmfgErrorCode>
+
+/**
+ * Looks a runtime code up among the map's own keys only, so a name the object
+ * prototype carries (constructor, toString, __proto__) maps to internal.
+ */
+function lmfgCodeForRawCode(runtimeCode: string): LmfgErrorCode {
+  return Object.hasOwn(RAW_CODE_MAP, runtimeCode)
+    ? RAW_CODE_MAP[runtimeCode as MappedRawErrorCode]
+    : 'internal'
+}
 
 const MESSAGE_CODE_MAP: Array<[pattern: RegExp, code: LmfgErrorCode]> = [
   [/^FULL_RES_EXPORT_UNSUPPORTED_SOURCE$/, 'source.export_unsupported'],
@@ -160,7 +178,7 @@ export function toLmfgError(error: unknown): LmfgError {
     })
   }
   if (error instanceof LumaRawRuntimeError) {
-    const code = RAW_CODE_MAP[error.code] ?? 'internal'
+    const code = lmfgCodeForRawCode(error.code)
     return new LmfgError(code, {
       message: error.message,
       retryable: code === 'render.failed',
