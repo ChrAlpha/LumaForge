@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntentSource,
-  LUTData,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
 import { useCallback } from 'react'
 
@@ -49,7 +46,7 @@ type UseExportResultActionsInput = {
   /** Reads the session from the store when called. */
   getSession: () => ImageSession | null
   /** Reads the color intent the photo renders with from the store when called. */
-  getColorIntent: () => ColorGraphIntentSource
+  getColorIntent: () => ColorGraphIntent
   /** Reads the LUT the store holds when called. */
   getLutData: () => LUTData | null
   exportGraphVersionRef: MutableRefObject<number>

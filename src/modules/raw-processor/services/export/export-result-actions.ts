@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntentSource,
-  LUTData,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import { materializeOutputBlob } from '@lumaforge/render-engine/export'
 
 import type {
@@ -118,7 +115,7 @@ export type ExportDeliveryLiveState = {
    */
   exportAttempt: string | null
   /** The color intent the workflow holds; view fields are not read. */
-  intent: ColorGraphIntentSource
+  intent: ColorGraphIntent
   /** The LUT the workflow holds. */
   lut: LUTData | null
 }

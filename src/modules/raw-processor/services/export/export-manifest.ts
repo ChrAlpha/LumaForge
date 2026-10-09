@@ -1,5 +1,5 @@
 import type {
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
@@ -39,7 +39,7 @@ export function resolveExportEnvironment(
  * elsewhere in the manifest.
  */
 export function toManifestRenderParams(
-  params: ColorGraphIntentSource,
+  params: ColorGraphIntent,
   exposure: RawRenderExposure,
   geometry?: GeometryParams,
 ): RenderParams {
@@ -136,7 +136,7 @@ export async function sha256OfBlob(blob: Blob): Promise<string> {
 
 export type BuildFullResExportManifestInput = {
   graph: SupportedExportColorGraphDescriptor
-  params: ColorGraphIntentSource
+  params: ColorGraphIntent
   rawRenderExposure: RawRenderExposure
   /** Present only when a geometry was applied at full resolution. */
   geometry?: GeometryParams

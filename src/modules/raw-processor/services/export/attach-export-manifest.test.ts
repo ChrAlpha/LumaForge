@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto'
 
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
-import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  ProcessingParams,
+} from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_SELECTIVE_COLOR,
+  resolveExportColorGraph,
+} from '@lumaforge/luma-color-runtime'
 import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { verifyManifestSha256 } from '@lumaforge/render-engine/manifest'
@@ -21,7 +27,8 @@ import { captureExportResultIdentity } from './export-result-identity'
 
 const exposure = { ev: 0, multiplier: 1, source: 'identity' as const }
 
-const params: ProcessingParams = {
+const params: ColorGraphIntent &
+  Pick<ProcessingParams, 'viewMode' | 'compareSplit'> = {
   intensity: 1,
   viewMode: 'processed',
   compareSplit: 0.5,
@@ -37,6 +44,7 @@ const params: ProcessingParams = {
   userTint: 0,
   userSaturation: 0,
   userVibrance: 0,
+  selectiveColor: NEUTRAL_SELECTIVE_COLOR,
 }
 
 function sha256(bytes: Uint8Array): string {

@@ -6,7 +6,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { PREVIEW_COLOR_PLAN_REASONS } from '@lumaforge/render-engine/preview'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import { getExportModeCopy } from '~/lib/export/execution-profile'
 import type { Translate } from '~/lib/i18n'
@@ -83,6 +83,12 @@ const recommended: LUTContractResolution = {
 }
 
 describe('resolvePreviewLookReason', () => {
+  it('reads the complete color intent', () => {
+    expectTypeOf<
+      Parameters<typeof resolvePreviewLookReason>[0]['intent']
+    >().toEqualTypeOf<ColorGraphIntent>()
+  })
+
   it('reports an unconfirmed contract as a look the preview does not draw', () => {
     expect(
       resolvePreviewLookReason({

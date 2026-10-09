@@ -6,7 +6,7 @@ import {
   NEUTRAL_SELECTIVE_COLOR,
   NEUTRAL_USER_COLOR_INTENT,
 } from '@lumaforge/luma-color-runtime'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 
@@ -37,6 +37,12 @@ const FRAME: DecodedPreviewFrame = {
 }
 
 describe('current-photo transform source', () => {
+  it('keys a Transform frame by the complete color intent', () => {
+    expectTypeOf(transformInputKey)
+      .parameter(2)
+      .toEqualTypeOf<ColorGraphIntent>()
+  })
+
   it('requests bounded processed pixels from the existing pipeline', async () => {
     const data = new Uint8ClampedArray(1600 * 1067 * 4).fill(120)
     const renderToHiddenCanvas = vi.fn().mockResolvedValue({
@@ -148,8 +154,11 @@ describe('current-photo transform source', () => {
 
   it('keys the color as the graph reads it, not how the record is spelled', () => {
     const key = transformInputKey(FRAME, 1, INTENT)
-    const { selectiveColor: _hsl, ...withoutHsl } = INTENT
-    expect(transformInputKey(FRAME, 1, withoutHsl)).toBe(key)
+    const spelledNeutral: ColorGraphIntent = {
+      ...INTENT,
+      selectiveColor: structuredClone(NEUTRAL_SELECTIVE_COLOR),
+    }
+    expect(transformInputKey(FRAME, 1, spelledNeutral)).toBe(key)
     const reordered = Object.fromEntries(
       Object.entries(INTENT).reverse(),
     ) as unknown as ColorGraphIntent

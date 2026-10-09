@@ -5,7 +5,7 @@ import type {
   LUTData,
 } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import { resolveHqPreviewLookRefusal } from './hq-preview-look'
 
@@ -46,6 +46,12 @@ function intent(styleKind: ColorGraphIntent['styleKind']): ColorGraphIntent {
 }
 
 describe('resolveHqPreviewLookRefusal', () => {
+  it('reads the complete color intent', () => {
+    expectTypeOf<
+      Parameters<typeof resolveHqPreviewLookRefusal>[0]['intent']
+    >().toEqualTypeOf<ColorGraphIntent>()
+  })
+
   it('refuses a LUT the WebGPU preview leaves out', () => {
     expect(
       resolveHqPreviewLookRefusal({

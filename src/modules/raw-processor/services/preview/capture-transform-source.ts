@@ -1,4 +1,4 @@
-import type { ColorGraphIntentSource } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 
@@ -21,12 +21,13 @@ export function decodedFrameIdentity(frame: DecodedPreviewFrame | null) {
  * What a processed Transform frame is drawn from: the accepted decoded frame,
  * the LUT and the color intent with its continuous strength. The intent is
  * keyed the way the color graph reads it, so view state, key order or a
- * missing HSL record never ask for a new frame, and any color change does.
+ * neutral HSL record spelled out afresh never ask for a new frame, and any
+ * color change does.
  */
 export function transformInputKey(
   frame: DecodedPreviewFrame | null,
   lutVersion: number,
-  color: ColorGraphIntentSource,
+  color: ColorGraphIntent,
 ) {
   return JSON.stringify([
     decodedFrameIdentity(frame),

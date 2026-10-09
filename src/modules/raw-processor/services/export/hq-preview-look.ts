@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntentSource,
-  LUTData,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 
 import type { PreviewLookReason } from '../surface/raw-reason'
 import { resolvePreviewLookReason } from '../surface/raw-reason'
@@ -14,7 +11,7 @@ import { resolvePreviewLookReason } from '../surface/raw-reason'
  * refuses instead of writing it.
  */
 export function resolveHqPreviewLookRefusal(input: {
-  intent: ColorGraphIntentSource
+  intent: ColorGraphIntent
   lut: LUTData | null
 }): PreviewLookReason | null {
   return resolvePreviewLookReason({ ...input, executor: 'webgpu' })

@@ -1,4 +1,8 @@
-import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  LUTData,
+  ProcessingParams,
+} from '@lumaforge/luma-color-runtime'
 import {
   getLUTColorProfile,
   NEUTRAL_SELECTIVE_COLOR,
@@ -20,7 +24,15 @@ import type {
   CapabilityVector,
   ExportRuntimeResources,
 } from '@lumaforge/render-engine/policy'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from 'vitest'
 
 import type { ExportDebugEvent } from '~/lib/export/execution-profile'
 import { getExportModeCopy } from '~/lib/export/execution-profile'
@@ -152,7 +164,11 @@ const RAW_RENDER_EXPOSURE = {
   source: 'dng-baseline',
 } as const
 
-const DEFAULT_PARAMS: ProcessingParams = {
+/** The complete color intent with the view fields an app record carries. */
+type IntentWithView = ColorGraphIntent &
+  Pick<ProcessingParams, 'viewMode' | 'compareSplit'>
+
+const DEFAULT_PARAMS: IntentWithView = {
   intensity: 0.7,
   viewMode: 'compare',
   compareSplit: 0.5,
@@ -168,6 +184,7 @@ const DEFAULT_PARAMS: ProcessingParams = {
   userTint: 0,
   userSaturation: 0,
   userVibrance: 0,
+  selectiveColor: NEUTRAL_SELECTIVE_COLOR,
 }
 
 const DESKTOP_CAPABILITY: CapabilityVector = {
@@ -580,7 +597,7 @@ type HarnessOptions = {
   /** The session the React closure rendered with; defaults to the live one. */
   atomsSession?: ImageSession | null
   /** The color intent the store holds when the test starts. */
-  params?: ProcessingParams
+  params?: IntentWithView
   lut?: LUTData | null
   registry?: ResourceRegistry | null
   capability?: CapabilityVector
@@ -625,7 +642,7 @@ function createHarness(options: HarnessOptions = {}) {
     progress: null,
     session: initialSession,
   }
-  let colorIntent: ProcessingParams = options.params ?? DEFAULT_PARAMS
+  let colorIntent: IntentWithView = options.params ?? DEFAULT_PARAMS
   let storedLut: LUTData | null = options.lut ?? null
 
   function createMarkerPage(page: string) {
@@ -901,7 +918,7 @@ function createHarness(options: HarnessOptions = {}) {
       state.session = next
     },
     /** Writes the color intent to the store, as a color edit does. */
-    writeColorIntent(next: ProcessingParams) {
+    writeColorIntent(next: IntentWithView) {
       colorIntent = next
     },
     /**
@@ -1985,7 +2002,7 @@ describe('orchestrateFullResExport refusal order', () => {
       profileResolution: { kind: 'unknown' },
     }
     return {
-      params: { ...DEFAULT_PARAMS, styleKind: 'custom' } as ProcessingParams,
+      params: { ...DEFAULT_PARAMS, styleKind: 'custom' } as IntentWithView,
       lut,
       activeStyle: {
         kind: 'custom',
@@ -3578,6 +3595,12 @@ describe('orchestrateFullResExport delayed manifest', () => {
 })
 
 describe('orchestrateFullResExport color intent', () => {
+  it('samples the complete color intent from the store', () => {
+    expectTypeOf<
+      ReturnType<ExportContext['atoms']['getColorIntent']>
+    >().toEqualTypeOf<ColorGraphIntent>()
+  })
+
   const CONFIRMED_LUT: LUTData = {
     size: 2,
     data: new Float32Array(2 * 2 * 2 * 3),
@@ -3606,7 +3629,7 @@ describe('orchestrateFullResExport color intent', () => {
     currentIntensity: 0.37,
     lutAsset: { format: 'cube', dimension: 17 },
   }
-  const EDITED_PARAMS: ProcessingParams = {
+  const EDITED_PARAMS: IntentWithView = {
     ...DEFAULT_PARAMS,
     styleKind: 'custom',
     // Between the Light (0.4) and Standard (0.7) detents.
@@ -3654,7 +3677,7 @@ describe('orchestrateFullResExport color intent', () => {
   })
 
   it('records the request it was asked for through rendering and late sealing', async () => {
-    const params: ProcessingParams = { ...EDITED_PARAMS }
+    const params: IntentWithView = { ...EDITED_PARAMS }
     const geometry: ExportGeometry = {
       matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
       constrainCrop: true,
@@ -3927,7 +3950,7 @@ describe('orchestrateFullResExport color intent', () => {
 
     async function exportAfterSameTickLutChange(setup: {
       rendered: { lut: LUTData | null; style: ImageSession['activeStyle'] }
-      renderedParams: ProcessingParams
+      renderedParams: IntentWithView
       written: { lut: LUTData; style: NonNullable<ImageSession['activeStyle']> }
     }) {
       const h = createHarness({

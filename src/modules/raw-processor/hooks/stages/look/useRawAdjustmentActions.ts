@@ -1,6 +1,5 @@
 import type {
   ColorGraphIntent,
-  ColorGraphIntentSource,
   HSLBandId,
   HSLBandShift,
   ProcessingParams,
@@ -52,7 +51,7 @@ function pickColorIntentPatch(
 
 type UseRawAdjustmentActionsInput = {
   /** The color the photo renders with now; decides whether a patch changes the graph. */
-  params: ColorGraphIntentSource
+  params: ColorGraphIntent
   setColorIntent: SetColorIntent
   invalidateExportGraph: () => void
 }

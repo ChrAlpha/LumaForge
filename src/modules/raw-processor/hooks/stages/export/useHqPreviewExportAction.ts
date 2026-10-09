@@ -1,4 +1,5 @@
 import type {
+  ColorGraphIntent,
   ColorGraphIntentSource,
   LUTData,
 } from '@lumaforge/luma-color-runtime'
@@ -53,7 +54,7 @@ type UseHqPreviewExportActionInput = {
   /** Reads the session from the store when called. */
   getSession: () => ImageSession | null
   /** Reads the color intent the photo renders with from the store when called. */
-  getColorIntent: () => ColorGraphIntentSource
+  getColorIntent: () => ColorGraphIntent
   /** Reads the LUT the store holds when called. */
   getLutData: () => LUTData | null
   decodedImageRef: MutableRefObject<DecodedImage | null>

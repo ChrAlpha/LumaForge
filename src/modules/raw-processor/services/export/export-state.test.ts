@@ -1,8 +1,14 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
-import { COLOR_GRAPH_INTENT_KEYS } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  ProcessingParams,
+} from '@lumaforge/luma-color-runtime'
+import {
+  COLOR_GRAPH_INTENT_KEYS,
+  NEUTRAL_SELECTIVE_COLOR,
+} from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import { createExportResult } from '../../model/export-result'
 import type { ImageSession } from '../../model/session'
@@ -138,9 +144,13 @@ type ProcessingParamKey = keyof typeof PROCESSING_PARAM_CLASSES
 
 const NEUTRAL_HSL_BAND = { hue: 0, saturation: 0, lightness: 0 } as const
 
-// Matches the app's default processing params: no look, neutral user intent,
-// and no selective color record yet.
-const DEFAULT_PARAMS: ProcessingParams = {
+/** The complete color intent with the view fields an app record carries. */
+type IntentWithView = ColorGraphIntent &
+  Pick<ProcessingParams, 'viewMode' | 'compareSplit'>
+
+// Matches the app's default color intent: no look, neutral user intent and
+// neutral HSL bands.
+const DEFAULT_PARAMS: IntentWithView = {
   intensity: 0.7,
   viewMode: 'compare',
   compareSplit: 0.5,
@@ -156,6 +166,7 @@ const DEFAULT_PARAMS: ProcessingParams = {
   userTint: 0,
   userSaturation: 0,
   userVibrance: 0,
+  selectiveColor: NEUTRAL_SELECTIVE_COLOR,
 }
 
 // A meaningful value for every key that differs from DEFAULT_PARAMS.
@@ -207,6 +218,12 @@ function patchOf<K extends ProcessingParamKey>(
 }
 
 describe('render graph param classification', () => {
+  it('compares a patch against the complete color intent', () => {
+    expectTypeOf(changesRenderGraphParams)
+      .parameter(0)
+      .toEqualTypeOf<ColorGraphIntent>()
+  })
+
   it('has a non-default value for every classified key', () => {
     expect(Object.keys(NON_DEFAULT_VALUES).sort()).toEqual(
       [...PROCESSING_PARAM_KEYS].sort(),
@@ -219,7 +236,7 @@ describe('render graph param classification', () => {
   it.each(keysOfClass('render', 'look'))(
     'invalidates the render graph when %s changes',
     (key) => {
-      const changed: ProcessingParams = {
+      const changed: IntentWithView = {
         ...DEFAULT_PARAMS,
         ...patchOf(key, NON_DEFAULT_VALUES[key]),
       }
@@ -245,7 +262,7 @@ describe('render graph param classification', () => {
   it.each(keysOfClass('view'))(
     'keeps the render graph when %s changes',
     (key) => {
-      const changed: ProcessingParams = {
+      const changed: IntentWithView = {
         ...DEFAULT_PARAMS,
         ...patchOf(key, NON_DEFAULT_VALUES[key]),
       }
@@ -328,7 +345,7 @@ describe('render graph param classification', () => {
 describe('continuous look strength', () => {
   // Light 0.4, Standard 0.7 and Strong 1 are only detents on the Strength
   // row; any amount in between is a distinct render graph input.
-  function withIntensity(intensity: number): ProcessingParams {
+  function withIntensity(intensity: number): IntentWithView {
     return { ...DEFAULT_PARAMS, styleKind: 'custom', intensity }
   }
 
@@ -437,6 +454,7 @@ describe('export state helpers', () => {
       userTint: 0,
       userSaturation: 0,
       userVibrance: 0,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     } as const
 
     expect(
@@ -476,6 +494,7 @@ describe('export state helpers', () => {
       userTint: 0,
       userSaturation: 0,
       userVibrance: 0,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     } as const
 
     expect(changesRenderGraphParams(current, { userTemperature: 12 })).toBe(
@@ -549,9 +568,9 @@ describe('export state helpers', () => {
     ).toBe(true)
   })
 
-  it('treats setting selective color from undefined to a non-neutral record as a render graph change', () => {
+  it('treats setting selective color from neutral to a non-neutral record as a render graph change', () => {
     const neutralBand = { hue: 0, saturation: 0, lightness: 0 } as const
-    const current: ProcessingParams = {
+    const current: IntentWithView = {
       styleKind: 'none',
       builtinPreset: null,
       intensity: 0.7,
@@ -567,6 +586,7 @@ describe('export state helpers', () => {
       userTint: 0,
       userSaturation: 0,
       userVibrance: 0,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     }
 
     expect(
@@ -584,7 +604,8 @@ describe('export state helpers', () => {
       }),
     ).toBe(true)
 
-    // From undefined to an explicit but neutral record should not invalidate.
+    // From the shared neutral record to an explicit neutral copy should not
+    // invalidate.
     expect(
       changesRenderGraphParams(current, {
         selectiveColor: {
@@ -615,10 +636,10 @@ describe('export state helpers', () => {
     }
     const partialShifted = {
       red: { hue: 25, saturation: 0, lightness: 0 },
-    } as ProcessingParams['selectiveColor']
+    } as ColorGraphIntent['selectiveColor']
     const partialNeutral = {
       blue: neutralBand,
-    } as ProcessingParams['selectiveColor']
+    } as ColorGraphIntent['selectiveColor']
 
     expect(
       changesRenderGraphParams(

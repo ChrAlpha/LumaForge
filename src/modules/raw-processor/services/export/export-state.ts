@@ -1,5 +1,5 @@
 import type {
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   ProcessingParams,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
@@ -201,7 +201,7 @@ export function hasSameRawRenderExposure(
  * partial and all-neutral records are the same input.
  */
 export function changesRenderGraphParams(
-  current: ColorGraphIntentSource,
+  current: ColorGraphIntent,
   next: Partial<ProcessingParams>,
 ) {
   return COLOR_GRAPH_INTENT_KEYS.some((key) => {
@@ -214,7 +214,7 @@ export function changesRenderGraphParams(
 }
 
 function changesSelectiveColor(
-  current: ColorGraphIntentSource['selectiveColor'],
+  current: ColorGraphIntent['selectiveColor'],
   next: ProcessingParams['selectiveColor'],
 ) {
   // The export color graph and the LUT bake read the normalized record, so

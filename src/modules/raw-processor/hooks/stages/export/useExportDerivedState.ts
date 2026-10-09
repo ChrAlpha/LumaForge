@@ -1,5 +1,5 @@
 import type {
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   LUTData,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
@@ -37,7 +37,7 @@ type UseExportDerivedStateInput = {
   sourceFile: File | null
   rawRenderExposure: RawRenderExposure | null
   /** The selected look and user color the preview pipeline holds. */
-  params: ColorGraphIntentSource
+  params: ColorGraphIntent
   /** The selected custom LUT's data the preview pipeline holds. */
   lutData: LUTData | null
   stats: PipelineStats | null

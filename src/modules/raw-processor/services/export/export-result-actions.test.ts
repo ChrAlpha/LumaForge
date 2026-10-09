@@ -6,7 +6,7 @@ import type {
 } from '@lumaforge/render-engine/export'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import { createMemoryFileBackedOutputResult } from '~/lib/export/output-sink'
 
@@ -87,6 +87,12 @@ function createClipboardItemMock(supports: (type: string) => boolean) {
 }
 
 describe('export result actions', () => {
+  it('checks delivery against the complete live color intent', () => {
+    expectTypeOf<
+      ExportDeliveryLiveState['intent']
+    >().toEqualTypeOf<ColorGraphIntent>()
+  })
+
   it('creates a blob-backed export result without eagerly constructing a share file', () => {
     const OriginalFile = File
     const fileConstructions: Array<{

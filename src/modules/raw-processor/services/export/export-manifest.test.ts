@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
 
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  ProcessingParams,
+} from '@lumaforge/luma-color-runtime'
 import {
+  NEUTRAL_SELECTIVE_COLOR,
   normalizeUserColorIntent,
   resolveExportColorGraph,
   USER_COLOR_SCALAR_KEYS,
@@ -13,9 +17,10 @@ import {
   projectManifestRenderParams,
   verifyManifestSha256,
 } from '@lumaforge/render-engine/manifest'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { StyleAsset } from '../../model/session'
+import type { BuildFullResExportManifestInput } from './export-manifest'
 import {
   buildFullResExportManifest,
   lutIdentityForStyle,
@@ -30,7 +35,11 @@ const exposure = {
   source: 'dng-baseline' as const,
 }
 
-function params(overrides: Partial<ProcessingParams> = {}): ProcessingParams {
+/** The complete color intent with the view fields an app record carries. */
+type IntentWithView = ColorGraphIntent &
+  Pick<ProcessingParams, 'viewMode' | 'compareSplit'>
+
+function params(overrides: Partial<IntentWithView> = {}): IntentWithView {
   return {
     intensity: 1,
     viewMode: 'processed',
@@ -47,11 +56,21 @@ function params(overrides: Partial<ProcessingParams> = {}): ProcessingParams {
     userTint: -2,
     userSaturation: 3,
     userVibrance: 6,
+    selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     ...overrides,
   }
 }
 
 describe('toManifestRenderParams', () => {
+  it('projects the complete color intent', () => {
+    expectTypeOf(toManifestRenderParams)
+      .parameter(0)
+      .toEqualTypeOf<ColorGraphIntent>()
+    expectTypeOf<
+      BuildFullResExportManifestInput['params']
+    >().toEqualTypeOf<ColorGraphIntent>()
+  })
+
   it('projects processing params onto the manifest shape', () => {
     expect(toManifestRenderParams(params(), exposure)).toEqual({
       exposure_ev: 0.3,
@@ -106,7 +125,7 @@ describe('toManifestRenderParams', () => {
       params({
         selectiveColor: {
           red: { hue: 10, saturation: 0, lightness: 0 },
-        } as ProcessingParams['selectiveColor'],
+        } as ColorGraphIntent['selectiveColor'],
       }),
       exposure,
     )
@@ -123,7 +142,7 @@ describe('toManifestRenderParams shared projection', () => {
   const shiftedSelectiveColor = {
     red: { hue: 10, saturation: 0, lightness: 0 },
     blue: { saturation: -30, lightness: 5 },
-  } as ProcessingParams['selectiveColor']
+  } as ColorGraphIntent['selectiveColor']
   const geometry: GeometryParams = {
     matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1],
     constrain_crop: true,
@@ -268,8 +287,8 @@ describe('toManifestRenderParams canonical bytes', () => {
   }
 
   function neutralParams(
-    overrides: Partial<ProcessingParams> = {},
-  ): ProcessingParams {
+    overrides: Partial<IntentWithView> = {},
+  ): IntentWithView {
     return {
       intensity: 1,
       viewMode: 'processed',
@@ -286,6 +305,7 @@ describe('toManifestRenderParams canonical bytes', () => {
       userTint: 0,
       userSaturation: 0,
       userVibrance: 0,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
       ...overrides,
     }
   }
@@ -326,7 +346,7 @@ describe('toManifestRenderParams canonical bytes', () => {
     expect(canonicalizeJson(renderParams)).toBe(SHIFTED_HSL_GOLDEN)
   })
 
-  it('freezes absent selective color as an omitted key', () => {
+  it('freezes the neutral selective color as an omitted key', () => {
     const renderParams = toManifestRenderParams(
       neutralParams(),
       identityExposure,
@@ -360,7 +380,7 @@ describe('toManifestRenderParams canonical bytes', () => {
   ])('omits selective color written as %s', (_label, selectiveColor) => {
     const renderParams = toManifestRenderParams(
       neutralParams({
-        selectiveColor: selectiveColor as ProcessingParams['selectiveColor'],
+        selectiveColor: selectiveColor as ColorGraphIntent['selectiveColor'],
       }),
       identityExposure,
     )
@@ -374,7 +394,7 @@ describe('toManifestRenderParams canonical bytes', () => {
         selectiveColor: {
           red: { hue: 10 },
           blue: { saturation: -30, lightness: 5 },
-        } as ProcessingParams['selectiveColor'],
+        } as ColorGraphIntent['selectiveColor'],
       }),
       identityExposure,
     )

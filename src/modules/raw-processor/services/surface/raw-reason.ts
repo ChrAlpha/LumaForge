@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntentSource,
-  LUTData,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import type {
   PreviewColorExecutor,
   PreviewColorPlanReason,
@@ -84,7 +81,7 @@ export type PreviewLookReason = Exclude<
  * LUT stay as chosen, and only the drawn look differs.
  */
 export function resolvePreviewLookReason(input: {
-  intent: ColorGraphIntentSource
+  intent: ColorGraphIntent
   lut: LUTData | null
   executor: PreviewColorExecutor
 }): PreviewLookReason | null {

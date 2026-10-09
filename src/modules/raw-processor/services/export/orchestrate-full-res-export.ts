@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntentSource,
-  LUTData,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import {
   pickColorGraphIntent,
   resolveExportColorGraph,
@@ -125,7 +122,7 @@ export interface ExportContext {
      * called; view state plays no part in it. The export samples it once,
      * when the command is admitted.
      */
-    getColorIntent: () => ColorGraphIntentSource
+    getColorIntent: () => ColorGraphIntent
     /**
      * Reads the LUT the store holds when called. A LUT apply or a contract
      * change writes it in the same tick as the session's look and the

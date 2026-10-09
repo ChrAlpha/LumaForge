@@ -1,5 +1,5 @@
 import type {
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   LUTData,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
@@ -38,11 +38,11 @@ type UseRawExportStageInput = {
   setSession: Dispatch<SetStateAction<ImageSession | null>>
   loadedImage: { file: File | null; metadata: ImageMetadata | null }
   session: ImageSession | null
-  params: ColorGraphIntentSource
+  params: ColorGraphIntent
   /** Reads the session from the store when called. */
   getSession: () => ImageSession | null
   /** Reads the color intent the photo renders with from the store when called. */
-  getColorIntent: () => ColorGraphIntentSource
+  getColorIntent: () => ColorGraphIntent
   /** Reads the LUT the store holds when called. */
   getLutData: () => LUTData | null
   lutDataRef: MutableRefObject<LUTData | null>

@@ -6,7 +6,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { ExportResultIdentity } from '../../model/export-result'
 import type { ExportResultIdentityInput } from './export-result-identity'
@@ -91,6 +91,12 @@ function makeInput(
 const baseline = captureExportResultIdentity(makeInput())
 
 describe('captureExportResultIdentity', () => {
+  it('captures from the complete color intent', () => {
+    expectTypeOf<
+      ExportResultIdentityInput['intent']
+    >().toEqualTypeOf<ColorGraphIntent>()
+  })
+
   it.each<[string, Partial<ExportResultIdentityInput>]>([
     ['session', { sessionId: 'session-2' }],
     [

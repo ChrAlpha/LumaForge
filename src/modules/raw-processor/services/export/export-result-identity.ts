@@ -1,6 +1,5 @@
 import type {
   ColorGraphIntent,
-  ColorGraphIntentSource,
   LUTData,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
@@ -27,7 +26,7 @@ export type ExportResultIdentityInput = {
   sessionId: string
   sourceFile: File
   /** The color intent as given; view fields on the record are not read. */
-  intent: ColorGraphIntentSource
+  intent: ColorGraphIntent
   /** The LUT the pipeline holds; read only when the look draws a LUT. */
   lut: LUTData | null
   /** The RAW render exposure pinned for the source. */
@@ -84,7 +83,7 @@ function freezeTriple(
 
 /** The LUT reaches the result only when the look draws one, as in the graph. */
 function captureLut(
-  intent: ColorGraphIntentSource,
+  intent: ColorGraphIntent,
   lut: LUTData | null,
 ): ExportResultLutIdentity | null {
   if (intent.styleKind !== 'custom' || !lut) return null
@@ -102,7 +101,7 @@ function captureLut(
  * the user color as the color graph reads it.
  */
 function captureColorIntent(
-  intent: ColorGraphIntentSource,
+  intent: ColorGraphIntent,
 ): Readonly<ColorGraphIntent> {
   const user = normalizeUserColorIntent(intent)
   for (const band of Object.values(user.selectiveColor)) Object.freeze(band)
