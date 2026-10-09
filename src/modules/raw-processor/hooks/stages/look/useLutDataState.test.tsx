@@ -1,4 +1,8 @@
-import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
+import {
+  getLUTColorProfile,
+  parseCubeLUT,
+  toLUTData,
+} from '@lumaforge/luma-color-runtime'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
@@ -10,15 +14,10 @@ function createParsedLut(title: string): ParsedLUT {
   const profile = getLUTColorProfile('display-srgb')
   if (!profile) throw new Error('Missing display-srgb profile')
 
+  const cube = `TITLE "${title}"\nLUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
   return {
-    title,
-    comments: [],
-    size: 2,
-    domainMin: [0, 0, 0],
-    domainMax: [1, 1, 1],
-    data: new Float32Array(24),
+    ...parseCubeLUT(cube),
     fingerprint: `${title}-fingerprint`,
-    inputProfile: 'display-srgb',
     profileResolution: {
       kind: 'confirmed',
       confidence: 'metadata',
@@ -53,15 +52,7 @@ describe('useLutDataState', () => {
     const versionBeforeManualUpdate = result.current.lutDataVersion
 
     act(() => {
-      result.current.setLutDataRef({
-        size: parsedLut.size,
-        data: parsedLut.data,
-        domainMin: parsedLut.domainMin,
-        domainMax: parsedLut.domainMax,
-        title: parsedLut.title,
-        inputProfile: parsedLut.inputProfile,
-        profileResolution: parsedLut.profileResolution,
-      })
+      result.current.setLutDataRef(toLUTData(parsedLut))
     })
 
     expect(result.current.lutDataRef.current?.title).toBe('Manual')

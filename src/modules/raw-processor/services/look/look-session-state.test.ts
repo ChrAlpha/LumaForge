@@ -1,3 +1,4 @@
+import { parseCubeLUT } from '@lumaforge/luma-color-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { describe, expect, it } from 'vitest'
 
@@ -232,17 +233,11 @@ describe('look session state transitions', () => {
 })
 
 function createParsedLut(overrides: Partial<ParsedLUT> = {}): ParsedLUT {
+  const cube = `TITLE "Detached Look"\nLUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
   return {
-    title: 'Detached Look',
-    sourceName: 'detached-look.cube',
-    comments: [],
-    size: 2,
-    domainMin: [0, 0, 0],
-    domainMax: [1, 1, 1],
-    data: new Float32Array(2 * 2 * 2 * 3),
+    ...parseCubeLUT(cube, { sourceName: 'detached-look.cube' }),
     fingerprint: 'detached-fingerprint',
     profileResolution: { kind: 'unknown' },
-    inputProfile: 'display-srgb',
     ...overrides,
   }
 }

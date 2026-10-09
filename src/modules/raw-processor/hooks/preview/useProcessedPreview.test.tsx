@@ -1,5 +1,9 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
-import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import {
+  parseCubeLUT,
+  pickColorGraphIntent,
+  toLUTData,
+} from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -91,14 +95,10 @@ function acceptedFrame(
   }
 }
 
-function createTestLut() {
+function createTestLut(): LUTData {
   return {
-    size: 2,
-    data: new Float32Array(2 * 2 * 2 * 3),
-    domainMin: [0, 0, 0] as [number, number, number],
-    domainMax: [1, 1, 1] as [number, number, number],
-    inputProfile: 'display-srgb' as const,
-    profileResolution: { kind: 'unknown' as const },
+    ...toLUTData(parseCubeLUT(`LUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`)),
+    profileResolution: { kind: 'unknown' },
   }
 }
 

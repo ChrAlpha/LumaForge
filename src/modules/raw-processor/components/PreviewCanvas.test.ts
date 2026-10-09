@@ -1,8 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
-import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import {
+  parseCubeLUT,
+  pickColorGraphIntent,
+  toLUTData,
+} from '@lumaforge/luma-color-runtime'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ComponentProps, RefObject } from 'react'
 import { createElement } from 'react'
@@ -244,14 +248,12 @@ function originalPipelines() {
   )
 }
 
-function createTestLut() {
+const TEST_LUT_CUBE = `LUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
+
+function createTestLut(): LUTData {
   return {
-    size: 2,
-    data: new Float32Array(2 * 2 * 2 * 3),
-    domainMin: [0, 0, 0] as [number, number, number],
-    domainMax: [1, 1, 1] as [number, number, number],
-    inputProfile: 'display-srgb' as const,
-    profileResolution: { kind: 'unknown' as const },
+    ...toLUTData(parseCubeLUT(TEST_LUT_CUBE)),
+    profileResolution: { kind: 'unknown' },
   }
 }
 
@@ -663,15 +665,7 @@ describe('preview canvas upload descriptor', () => {
 
   it('redraws once after a LUT-only version change uploads the new LUT', async () => {
     const onStatsUpdate = vi.fn()
-    const createLut = () => ({
-      size: 2,
-      data: new Float32Array(2 * 2 * 2 * 3),
-      domainMin: [0, 0, 0] as [number, number, number],
-      domainMax: [1, 1, 1] as [number, number, number],
-      inputProfile: 'display-srgb' as const,
-      profileResolution: { kind: 'unknown' as const },
-    })
-    const lutDataRef = { current: createLut() }
+    const lutDataRef = { current: createTestLut() }
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
@@ -690,7 +684,7 @@ describe('preview canvas upload descriptor', () => {
     pipeline.setParams.mockClear()
     pipeline.render.mockClear()
     onStatsUpdate.mockClear()
-    const nextLut = createLut()
+    const nextLut = createTestLut()
     lutDataRef.current = nextLut
     rerender(createElement(PreviewCanvas, { ...props, lutDataVersion: 2 }))
 
@@ -910,15 +904,7 @@ describe('preview canvas upload descriptor', () => {
     pipelineMock.initialize.mockReturnValueOnce(initialize.promise)
     const onStatsUpdate = vi.fn()
     const onPipelineChange = vi.fn()
-    const createLut = () => ({
-      size: 2,
-      data: new Float32Array(2 * 2 * 2 * 3),
-      domainMin: [0, 0, 0] as [number, number, number],
-      domainMax: [1, 1, 1] as [number, number, number],
-      inputProfile: 'display-srgb' as const,
-      profileResolution: { kind: 'unknown' as const },
-    })
-    const failedLut = createLut()
+    const failedLut = createTestLut()
     const lutDataRef = { current: failedLut }
     const props = {
       imageRef: { current: decodedImage },
@@ -954,7 +940,7 @@ describe('preview canvas upload descriptor', () => {
     expect(pipeline!.render).not.toHaveBeenCalled()
     expect(onStatsUpdate).not.toHaveBeenCalled()
 
-    const replacementLut = createLut()
+    const replacementLut = createTestLut()
     lutDataRef.current = replacementLut
     await act(async () => {
       rerender(createElement(PreviewCanvas, { ...props, lutDataVersion: 2 }))

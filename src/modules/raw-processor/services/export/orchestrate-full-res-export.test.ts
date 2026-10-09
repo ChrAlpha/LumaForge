@@ -6,8 +6,10 @@ import type {
 import {
   getLUTColorProfile,
   NEUTRAL_SELECTIVE_COLOR,
+  parseCubeLUT,
   pickColorGraphIntent,
   resolveExportColorGraph,
+  toLUTData,
 } from '@lumaforge/luma-color-runtime'
 import type {
   ExportGeometry,
@@ -250,6 +252,12 @@ const SEALED_MANIFEST = {
 
 /** The explicit export command carries no quality or fidelity choice. */
 const OPTIONS = {} as const
+
+/** A parsed two-point "Teal" cube carrying the given contract resolution. */
+function tealLut(profileResolution: LUTData['profileResolution']): LUTData {
+  const cube = `TITLE "Teal"\nLUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
+  return { ...toLUTData(parseCubeLUT(cube)), profileResolution }
+}
 
 /** Its projective horizon crosses the unconstrained output frame. */
 const FOLDING_MATRIX = composeManualTransform(
@@ -1880,15 +1888,7 @@ describe('orchestrateFullResExport refusals', () => {
   })
 
   it('refuses an unsupported color graph without touching other export work', async () => {
-    const lut: LUTData = {
-      size: 2,
-      data: new Float32Array(2 * 2 * 2 * 3),
-      domainMin: [0, 0, 0],
-      domainMax: [1, 1, 1],
-      title: 'Teal',
-      inputProfile: 'display-srgb',
-      profileResolution: { kind: 'unknown' },
-    }
+    const lut = tealLut({ kind: 'unknown' })
     const h = createHarness({
       params: { ...DEFAULT_PARAMS, styleKind: 'custom' },
       lut,
@@ -1992,15 +1992,7 @@ describe('orchestrateFullResExport refusals', () => {
 describe('orchestrateFullResExport refusal order', () => {
   /** A LUT whose input contract is unknown: the color graph refuses it. */
   function unsupportedGraph() {
-    const lut: LUTData = {
-      size: 2,
-      data: new Float32Array(2 * 2 * 2 * 3),
-      domainMin: [0, 0, 0],
-      domainMax: [1, 1, 1],
-      title: 'Teal',
-      inputProfile: 'display-srgb',
-      profileResolution: { kind: 'unknown' },
-    }
+    const lut = tealLut({ kind: 'unknown' })
     return {
       params: { ...DEFAULT_PARAMS, styleKind: 'custom' } as IntentWithView,
       lut,
@@ -3601,27 +3593,19 @@ describe('orchestrateFullResExport color intent', () => {
     >().toEqualTypeOf<ColorGraphIntent>()
   })
 
-  const CONFIRMED_LUT: LUTData = {
-    size: 2,
-    data: new Float32Array(2 * 2 * 2 * 3),
-    domainMin: [0, 0, 0],
-    domainMax: [1, 1, 1],
-    title: 'Teal',
-    inputProfile: 'display-srgb',
-    profileResolution: {
-      kind: 'confirmed',
-      confidence: 'metadata',
-      profile: {
-        id: 'display-srgb',
-        label: 'Display sRGB',
-        role: 'display-look',
-        inputGamut: 'srgb-rec709',
-        inputTransfer: 'srgb',
-        inputRange: 'full',
-        aliases: [],
-      },
+  const CONFIRMED_LUT = tealLut({
+    kind: 'confirmed',
+    confidence: 'metadata',
+    profile: {
+      id: 'display-srgb',
+      label: 'Display sRGB',
+      role: 'display-look',
+      inputGamut: 'srgb-rec709',
+      inputTransfer: 'srgb',
+      inputRange: 'full',
+      aliases: [],
     },
-  }
+  })
   const TEAL_STYLE: ImageSession['activeStyle'] = {
     kind: 'custom',
     name: 'Teal',

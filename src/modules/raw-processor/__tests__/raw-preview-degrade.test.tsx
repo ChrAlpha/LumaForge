@@ -10,6 +10,7 @@
  */
 
 import type { LUTData } from '@lumaforge/luma-color-runtime'
+import { parseCubeLUT, toLUTData } from '@lumaforge/luma-color-runtime'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -376,11 +377,7 @@ describe('rawProcessorView GPU LUT upload failure', () => {
       throw new Error('Failed to create LUT texture')
     })
     const lut: LUTData = {
-      size: 2,
-      data: new Float32Array(2 * 2 * 2 * 3),
-      domainMin: [0, 0, 0],
-      domainMax: [1, 1, 1],
-      inputProfile: 'display-srgb',
+      ...toLUTData(parseCubeLUT(`LUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`)),
       profileResolution: { kind: 'unknown' },
     }
 
