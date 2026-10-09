@@ -1558,15 +1558,19 @@ describe('rAW Transform feature', () => {
     unmount()
   })
 
-  it('schedules its capture apart from the stage locks its commands', async () => {
+  it('schedules its capture apart from the stage, and holds no command lock of its own', async () => {
     const input = { ...workflow(), status: 'decoding' } as UseRawWorkflowReturn
     const { result, unmount } = renderHook(() => useFeature(input, false))
-    // The decode locks the Transform commands, not the frame they wait for.
-    expect(result.current.isProcessing).toBe(true)
+    // The decode locks the Transform commands through the shared action
+    // policy, not through the feature; the frame they wait for still comes.
+    expect(result.current).not.toHaveProperty('isProcessing')
     expect(result.current.available).toBe(true)
+    expect(result.current.busy).toBe(false)
     act(() => {
       result.current.observe()
     })
+    // What the feature reports busy is its own capture, not the stage.
+    expect(result.current.busy).toBe(true)
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledOnce()
     unmount()

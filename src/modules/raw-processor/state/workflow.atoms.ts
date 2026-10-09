@@ -49,7 +49,7 @@ export function getEffectiveColorIntent(): ColorGraphIntent {
 
 const baseLutAtom = atom<ParsedLUT | null>(null)
 
-export const [, , useLutValue, useSetLut, getLut, setLut] =
+export const [lutAtom, , useLutValue, useSetLut, getLut, setLut] =
   createAtomHooks(baseLutAtom)
 
 const baseProcessingStatusAtom = atom<ProcessingStatus>('idle')

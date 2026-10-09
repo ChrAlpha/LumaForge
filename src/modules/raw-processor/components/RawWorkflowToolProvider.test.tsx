@@ -43,8 +43,8 @@ import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { captureTransformSource } from '../services/preview/capture-transform-source'
 import { COLOR_NEUTRAL } from './color-fields'
 import { RawToolSurface } from './RawToolSurface'
-import type { RawToolSurfaceProps } from './RawWorkflowContext'
-import { useRawWorkflowContext } from './RawWorkflowContext'
+import type { RawToolCommands, RawToolSurfaceProps } from './RawWorkflowContext'
+import { useRawToolCommands, useRawWorkflowContext } from './RawWorkflowContext'
 import { RawWorkflowToolProvider } from './RawWorkflowToolProvider'
 import { TONE_NEUTRAL } from './tone-fields'
 import { useOnlineLutEntryLoader } from './tools/lut/useOnlineLutEntryLoader'
@@ -272,8 +272,14 @@ function TransformSession({
   )
 }
 
-async function renderTransformSession(
+/** What a surface is handed, and the commands it calls. */
+function useToolBoundary() {
+  return { surface: useRawWorkflowContext(), commands: useRawToolCommands() }
+}
+
+async function renderTransformSession<Result = RawToolSurfaceProps>(
   workflowOverrides: Partial<UseRawWorkflowReturn> = {},
+  useValue: () => Result = useRawWorkflowContext as () => Result,
 ) {
   vi.useFakeTimers()
   FakeWorker.instances = []
@@ -288,7 +294,7 @@ async function renderTransformSession(
   const state = { observing: true, released: false, exposure: 0 }
   const commit = vi.fn()
   const onExport = vi.fn()
-  const hook = renderHook(useRawWorkflowContext, {
+  const hook = renderHook(useValue, {
     wrapper: ({ children }) => (
       <TransformSession
         observing={state.observing}
@@ -903,7 +909,9 @@ describe('rawWorkflowToolProvider Transform guards', () => {
  * export that released the preview and holds the delivered JPEG; `restore`
  * for the photographer bringing the preview back.
  */
-function renderReleasablePreview() {
+function renderReleasablePreview<Result = RawToolSurfaceProps>(
+  useValue: () => Result = useRawWorkflowContext as () => Result,
+) {
   const workflow = {
     ...workflowFixture(),
     previewSuspended: false,
@@ -937,7 +945,7 @@ function renderReleasablePreview() {
     resourceActivation: {},
     catalogActivation: 'inactive',
   } as unknown as UseOnlineLutSourcesResult
-  const hook = renderHook(useRawWorkflowContext, {
+  const hook = renderHook(useValue, {
     wrapper: ({ children }) => (
       <RawWorkflowToolProvider
         workflow={workflow}
@@ -2183,6 +2191,240 @@ describe('rawWorkflowToolProvider export reasons on the surfaces', () => {
     expect(
       within(panel).getByRole('button', { name: '复制预览尺寸图像' }),
     ).toBeEnabled()
+  })
+})
+
+/** Every edit a tool command makes: Adjust, Look and its contract. */
+function editThroughCommands(commands: RawToolCommands) {
+  commands.onToneChange({ userExposureEv: 1 })
+  commands.onToneReset()
+  commands.onColorChange({ userSaturation: 20 })
+  commands.onColorReset()
+  commands.onSelectiveColorChange('red', { hue: 10 })
+  commands.onSelectiveColorReset()
+  commands.onIntensityChange(0.4)
+  void commands.onLutLoad([new File(['LUT_3D_SIZE 2'], 'look.cube')])
+  commands.onLutClear()
+  commands.onLutProfileSelect({ id: 'slog3' } as unknown as LUTColorProfile)
+}
+
+/** A workflow whose every command is a fresh spy. */
+function commandWorkflow() {
+  return {
+    ...workflowFixture(),
+    previewSuspended: false,
+    exportResult: null,
+    setIntensity: vi.fn(),
+    setToneParams: vi.fn(),
+    resetTone: vi.fn(),
+    setColorParams: vi.fn(),
+    resetColor: vi.fn(),
+    setSelectiveColorBand: vi.fn(),
+    resetSelectiveColor: vi.fn(),
+    clearLUT: vi.fn(),
+    selectLUTProfile: vi.fn(),
+    setViewMode: vi.fn(),
+    setCompareSplit: vi.fn(),
+    exportPreviewImage: vi.fn(),
+    shareExportResult: vi.fn(),
+    downloadExportResult: vi.fn(),
+    downloadExportManifest: vi.fn(),
+    copyExportResult: vi.fn(),
+  } as unknown as UseRawWorkflowReturn
+}
+
+describe('rawWorkflowToolProvider tool commands', () => {
+  it('names every command a surface calls, and nothing else', () => {
+    const { result } = renderHook(useRawToolCommands, {
+      wrapper: ({ children }) => (
+        <ProviderWith workflow={commandWorkflow()}>{children}</ProviderWith>
+      ),
+    })
+    expect(Object.keys(result.current).sort()).toEqual(
+      [
+        'onColorChange',
+        'onColorReset',
+        'onCompareReset',
+        'onCompareSplitChange',
+        'onCopyExport',
+        'onDownloadExport',
+        'onDownloadExportManifest',
+        'onExport',
+        'onIntensityChange',
+        'onLutClear',
+        'onLutLoad',
+        'onLutProfileSelect',
+        'onPrepareRuntime',
+        'onPreviewExport',
+        'onReplaceFile',
+        'onResetSession',
+        'onSelectiveColorChange',
+        'onSelectiveColorReset',
+        'onShareExport',
+        'onToneChange',
+        'onToneReset',
+        'onViewModeChange',
+      ].sort(),
+    )
+  })
+
+  it('keeps one set of commands across renders, each reaching the workflow as it now is', () => {
+    let workflow = commandWorkflow()
+    let onLutDrop = vi.fn()
+    const onExport = vi.fn()
+    const onCompareReset = vi.fn()
+    const { result, rerender } = renderHook(useToolBoundary, {
+      wrapper: ({ children }) => (
+        <RawWorkflowToolProvider
+          workflow={workflow}
+          onlineLutSources={{} as UseOnlineLutSourcesResult}
+          isCpuMode={false}
+          isProcessing={false}
+          runtimeReadinessState="ready"
+          previewFrameEl={null}
+          onReplaceFile={vi.fn()}
+          onResetSession={vi.fn()}
+          onCompareReset={onCompareReset}
+          onLutDrop={onLutDrop}
+          onExport={onExport}
+          onPrepareRuntime={vi.fn()}
+        >
+          {children}
+        </RawWorkflowToolProvider>
+      ),
+    })
+    const held = result.current
+    const first = workflow
+    const firstLutDrop = onLutDrop
+
+    // The workflow hands new commands; the surfaces keep the ones they hold.
+    workflow = commandWorkflow()
+    onLutDrop = vi.fn()
+    rerender()
+    expect(result.current.commands).toBe(held.commands)
+    for (const name of [
+      'onIntensityChange',
+      'onToneChange',
+      'onToneReset',
+      'onColorChange',
+      'onColorReset',
+      'onSelectiveColorChange',
+      'onSelectiveColorReset',
+      'onLutLoad',
+      'onLutClear',
+      'onLutProfileSelect',
+    ] as const) {
+      expect(result.current.surface[name], name).toBe(held.commands[name])
+    }
+
+    editThroughCommands(held.commands)
+    held.commands.onViewModeChange('original')
+    held.commands.onCompareSplitChange(0.3)
+    held.commands.onCompareReset()
+    held.commands.onExport()
+    void held.commands.onPreviewExport()
+    void held.commands.onDownloadExport()
+    void held.commands.onDownloadExportManifest()
+    void held.commands.onShareExport()
+    void held.commands.onCopyExport()
+    for (const command of [
+      workflow.setToneParams,
+      workflow.resetTone,
+      workflow.setColorParams,
+      workflow.resetColor,
+      workflow.setSelectiveColorBand,
+      workflow.resetSelectiveColor,
+      workflow.setIntensity,
+      onLutDrop,
+      workflow.clearLUT,
+      workflow.selectLUTProfile,
+      workflow.exportPreviewImage,
+      workflow.downloadExportResult,
+      workflow.downloadExportManifest,
+      workflow.shareExportResult,
+      workflow.copyExportResult,
+      onCompareReset,
+      onExport,
+    ]) {
+      expect(command).toHaveBeenCalledOnce()
+    }
+    expect(workflow.setViewMode).toHaveBeenCalledWith('original')
+    expect(workflow.setCompareSplit).toHaveBeenCalledWith(0.3)
+    expect(first.setToneParams).not.toHaveBeenCalled()
+    expect(firstLutDrop).not.toHaveBeenCalled()
+  })
+
+  it('decides each export when it is called: pending, then answered, then a failed capture', async () => {
+    const session = await renderTransformSession({}, useToolBoundary)
+    const { result, rerender, state, commit, onExport, worker } = session
+    const held = result.current.commands
+    act(() =>
+      result.current.surface.transform!.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    // The edit has not rendered yet: the policy refuses both exports, and
+    // so do the commands held from before the edit.
+    expect(result.current.surface.toolAvailability.desktop.fullExport).toEqual({
+      available: false,
+      reason: 'transform-pending',
+    })
+    held.onExport()
+    void held.onPreviewExport()
+    expect(onExport).not.toHaveBeenCalled()
+
+    // Answered, the same command exports at full resolution; HQ preview
+    // never applies Transform.
+    worker.answer()
+    expect(commit).toHaveBeenCalledOnce()
+    expect(result.current.commands).toBe(held)
+    held.onExport()
+    void held.onPreviewExport()
+    expect(onExport).toHaveBeenCalledOnce()
+    expect(result.current.surface.canPreviewExport).toBe(false)
+
+    // A capture that fails leaves nothing showing the geometry on the photo.
+    vi.mocked(captureTransformSource).mockRejectedValueOnce(new Error('lost'))
+    state.exposure = 2
+    rerender()
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(result.current.surface.toolAvailability.desktop.fullExport).toEqual({
+      available: false,
+      reason: 'transform-unavailable',
+    })
+    held.onExport()
+    expect(onExport).toHaveBeenCalledOnce()
+    expect(result.current.commands).toBe(held)
+    session.unmount()
+  })
+
+  it('refuses every edit command while the preview is released, and keeps delivery and Export', async () => {
+    const session = renderReleasablePreview(useToolBoundary)
+    const { result, workflow, onExport, edits, release, restore } = session
+    const held = result.current.commands
+    const commandEdits = edits.slice(0, 10)
+
+    release()
+    expect(result.current.commands).toBe(held)
+    expect(result.current.surface.previewSuspended).toBe(true)
+    editThroughCommands(held)
+    for (const edit of commandEdits) expect(edit).not.toHaveBeenCalled()
+
+    held.onDownloadExport()
+    void held.onDownloadExportManifest()
+    held.onShareExport()
+    held.onCopyExport()
+    held.onExport()
+    expect(workflow.downloadExportResult).toHaveBeenCalledOnce()
+    expect(workflow.downloadExportManifest).toHaveBeenCalledOnce()
+    expect(workflow.shareExportResult).toHaveBeenCalledOnce()
+    expect(workflow.copyExportResult).toHaveBeenCalledOnce()
+    expect(onExport).toHaveBeenCalledOnce()
+
+    restore()
+    editThroughCommands(held)
+    for (const edit of commandEdits) expect(edit).toHaveBeenCalledOnce()
   })
 })
 

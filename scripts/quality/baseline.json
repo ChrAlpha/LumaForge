@@ -94,7 +94,6 @@
     "exports src/modules/raw-processor/hooks/index.ts: useImageSession",
     "exports src/modules/raw-processor/index.ts: default",
     "exports src/modules/raw-processor/motion.ts: BACKDROP_SPRING",
-    "exports src/modules/raw-processor/state/workflow.atoms.ts: processingParamsAtom",
     "exports src/modules/raw-processor/state/workflow.atoms.ts: useProcessingParams",
     "files src/components/ui/segment/ctx.tsx",
     "files src/components/ui/segment/index.tsx",

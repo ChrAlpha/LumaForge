@@ -63,7 +63,6 @@ export function transformFeatureFixture(
     setConstrainCrop: vi.fn(),
     reset: vi.fn(),
     setCpuFrame: vi.fn(),
-    isProcessing: false,
     showOverlay: false,
     ...overrides,
   }
@@ -182,8 +181,6 @@ export function transformToolStateFixture(
     available: preview.canCapture,
     captureError: preview.captureFailed,
     current: preview.current,
-    isProcessing:
-      status === 'loading' || status === 'decoding' || status === 'exporting',
     ...overrides,
   })
   feature.demo = { ...feature.demo, ready: preview.workerReady }

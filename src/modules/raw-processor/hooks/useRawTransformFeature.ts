@@ -408,10 +408,6 @@ export function useRawTransformFeature(
     setConstrainCrop,
     reset,
     setCpuFrame,
-    isProcessing:
-      workflow.status === 'exporting' ||
-      workflow.status === 'loading' ||
-      workflow.status === 'decoding',
     showOverlay,
   }
 }

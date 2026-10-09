@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useI18n } from '~/lib/i18n'
 
@@ -16,9 +16,13 @@ import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type {
   ExportInterruptionNote,
+  RawToolCommands,
   RawToolSurfaceProps,
 } from './RawWorkflowContext'
-import { RawWorkflowProvider } from './RawWorkflowContext'
+import {
+  RawToolCommandsProvider,
+  RawWorkflowProvider,
+} from './RawWorkflowContext'
 
 interface RawWorkflowToolProviderProps {
   transform?: RawTransformFeature
@@ -83,6 +87,79 @@ function unlessRefused<Args extends unknown[], Result>(
     refused.current ? undefined : edit(...args)
 }
 
+/** What the tool commands call, as the provider last rendered it. */
+interface ToolCommandTargets {
+  workflow: UseRawWorkflowReturn
+  onLutDrop: (files: File[]) => void
+  onExport: () => void
+  onCompareReset: () => void
+  onReplaceFile: () => void
+  onResetSession: () => void
+  onPrepareRuntime: () => void
+  /** The action policy's full-resolution and HQ preview export decisions. */
+  fullExportAvailable: boolean
+  hqExportAvailable: boolean
+}
+
+/**
+ * Commands that keep their identity for the provider's lifetime. Each reads
+ * its target when it is called, so a callback held from an earlier render
+ * reaches the current workflow and the current decisions: edits refuse while
+ * `editsRefused` reads true, and each export runs only where the action
+ * policy allows it.
+ */
+function createToolCommands(
+  latest: { readonly current: ToolCommandTargets },
+  editsRefused: { readonly current: boolean },
+): RawToolCommands {
+  const edit = <Args extends unknown[], Result>(
+    target: (targets: ToolCommandTargets) => (...args: Args) => Result,
+  ) =>
+    unlessRefused(editsRefused, (...args: Args) =>
+      target(latest.current)(...args),
+    )
+  const forward =
+    <Args extends unknown[], Result>(
+      target: (targets: ToolCommandTargets) => (...args: Args) => Result,
+    ) =>
+    (...args: Args): Result =>
+      target(latest.current)(...args)
+  return {
+    onIntensityChange: edit((to) => to.workflow.setIntensity),
+    onToneChange: edit((to) => to.workflow.setToneParams),
+    onToneReset: edit((to) => to.workflow.resetTone),
+    onColorChange: edit((to) => to.workflow.setColorParams),
+    onColorReset: edit((to) => to.workflow.resetColor),
+    onSelectiveColorChange: edit((to) => to.workflow.setSelectiveColorBand),
+    onSelectiveColorReset: edit((to) => to.workflow.resetSelectiveColor),
+    onLutLoad: edit((to) => to.onLutDrop),
+    onLutClear: edit((to) => to.workflow.clearLUT),
+    onLutProfileSelect: edit((to) => to.workflow.selectLUTProfile),
+    onViewModeChange: forward((to) => to.workflow.setViewMode),
+    onCompareSplitChange: forward((to) => to.workflow.setCompareSplit),
+    onCompareReset: forward((to) => to.onCompareReset),
+    onExport: () => {
+      const targets = latest.current
+      if (targets.fullExportAvailable) targets.onExport()
+    },
+    onPreviewExport: () => {
+      const targets = latest.current
+      return targets.hqExportAvailable
+        ? targets.workflow.exportPreviewImage()
+        : undefined
+    },
+    onShareExport: forward((to) => to.workflow.shareExportResult),
+    onDownloadExport: forward((to) => to.workflow.downloadExportResult),
+    onDownloadExportManifest: forward(
+      (to) => to.workflow.downloadExportManifest,
+    ),
+    onCopyExport: forward((to) => to.workflow.copyExportResult),
+    onReplaceFile: forward((to) => to.onReplaceFile),
+    onResetSession: forward((to) => to.onResetSession),
+    onPrepareRuntime: forward((to) => to.onPrepareRuntime),
+  }
+}
+
 export function RawWorkflowToolProvider({
   transform,
   workflow,
@@ -109,48 +186,11 @@ export function RawWorkflowToolProvider({
   // from an earlier render. Delivery, Export and Restore stay open.
   const editsRefusedRef = useRef(previewSuspended)
   editsRefusedRef.current = previewSuspended
-  const {
-    setIntensity,
-    setToneParams,
-    resetTone,
-    setColorParams,
-    resetColor,
-    setSelectiveColorBand,
-    resetSelectiveColor,
-    clearLUT,
-    selectLUTProfile,
-  } = workflow
-  const edits = useMemo(
-    () => ({
-      onIntensityChange: unlessRefused(editsRefusedRef, setIntensity),
-      onToneChange: unlessRefused(editsRefusedRef, setToneParams),
-      onToneReset: unlessRefused(editsRefusedRef, resetTone),
-      onColorChange: unlessRefused(editsRefusedRef, setColorParams),
-      onColorReset: unlessRefused(editsRefusedRef, resetColor),
-      onSelectiveColorChange: unlessRefused(
-        editsRefusedRef,
-        setSelectiveColorBand,
-      ),
-      onSelectiveColorReset: unlessRefused(
-        editsRefusedRef,
-        resetSelectiveColor,
-      ),
-      onLutLoad: unlessRefused(editsRefusedRef, onLutDrop),
-      onLutClear: unlessRefused(editsRefusedRef, clearLUT),
-      onLutProfileSelect: unlessRefused(editsRefusedRef, selectLUTProfile),
-    }),
-    [
-      clearLUT,
-      onLutDrop,
-      resetColor,
-      resetSelectiveColor,
-      resetTone,
-      selectLUTProfile,
-      setColorParams,
-      setIntensity,
-      setSelectiveColorBand,
-      setToneParams,
-    ],
+  // Filled in below, once the action policy has decided this render; the
+  // commands read it only when they are called.
+  const commandTargetsRef = useRef<ToolCommandTargets>(null!)
+  const [commands] = useState(() =>
+    createToolCommands(commandTargetsRef, editsRefusedRef),
   )
   const editableTransform = useMemo(
     () =>
@@ -274,6 +314,17 @@ export function RawWorkflowToolProvider({
   // the ones every export panel states. Transform names a block only where
   // the workflow has nothing earlier to say.
   const { fullExport, hqExport } = toolAvailability.desktop
+  commandTargetsRef.current = {
+    workflow,
+    onLutDrop,
+    onExport,
+    onCompareReset,
+    onReplaceFile,
+    onResetSession,
+    onPrepareRuntime,
+    fullExportAvailable: fullExport.available,
+    hqExportAvailable: hqExport.available,
+  }
   const disabledReason = exportActionReason(fullExport, exportRefusal)
   const previewExportDisabledReason = exportActionReason(
     hqExport,
@@ -332,7 +383,16 @@ export function RawWorkflowToolProvider({
           userVibrance: workflow.params.userVibrance,
         },
         selectiveColor: workflow.params.selectiveColor,
-        ...edits,
+        onIntensityChange: commands.onIntensityChange,
+        onToneChange: commands.onToneChange,
+        onToneReset: commands.onToneReset,
+        onColorChange: commands.onColorChange,
+        onColorReset: commands.onColorReset,
+        onSelectiveColorChange: commands.onSelectiveColorChange,
+        onSelectiveColorReset: commands.onSelectiveColorReset,
+        onLutLoad: commands.onLutLoad,
+        onLutClear: commands.onLutClear,
+        onLutProfileSelect: commands.onLutProfileSelect,
         fileName: workflow.sourceFileName,
         onReplaceFile,
         onResetSession,
@@ -418,7 +478,9 @@ export function RawWorkflowToolProvider({
         cpuPreviewNotice,
       }}
     >
-      {children}
+      <RawToolCommandsProvider commands={commands}>
+        {children}
+      </RawToolCommandsProvider>
     </RawWorkflowProvider>
   )
 }

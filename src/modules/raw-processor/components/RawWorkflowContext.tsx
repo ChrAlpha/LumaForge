@@ -155,7 +155,66 @@ export interface RawToolSurfaceProps {
   cpuPreviewNotice?: CpuPreviewNotice
 }
 
+/** The commands a tool surface calls, by the props they are handed as. */
+type RawToolCommandName =
+  | 'onIntensityChange'
+  | 'onToneChange'
+  | 'onToneReset'
+  | 'onColorChange'
+  | 'onColorReset'
+  | 'onSelectiveColorChange'
+  | 'onSelectiveColorReset'
+  | 'onLutLoad'
+  | 'onLutClear'
+  | 'onLutProfileSelect'
+  | 'onViewModeChange'
+  | 'onCompareSplitChange'
+  | 'onCompareReset'
+  | 'onExport'
+  | 'onPreviewExport'
+  | 'onShareExport'
+  | 'onDownloadExport'
+  | 'onDownloadExportManifest'
+  | 'onCopyExport'
+  | 'onReplaceFile'
+  | 'onResetSession'
+  | 'onPrepareRuntime'
+
+/**
+ * The tool commands, the same object for as long as their provider is
+ * mounted. Each one decides when it is called, from what the provider last
+ * rendered: an edit refuses while the preview is released, and each export
+ * runs only where the action policy allows it. A surface reads availability
+ * to disable a control, never to choose which command to hold.
+ */
+export type RawToolCommands = Required<
+  Pick<RawToolSurfaceProps, RawToolCommandName>
+>
+
 const RawWorkflowContext = createContext<RawToolSurfaceProps | null>(null)
+const RawToolCommandsContext = createContext<RawToolCommands | null>(null)
+
+export function RawToolCommandsProvider({
+  commands,
+  children,
+}: {
+  commands: RawToolCommands
+  children: ReactNode
+}) {
+  return (
+    <RawToolCommandsContext.Provider value={commands}>
+      {children}
+    </RawToolCommandsContext.Provider>
+  )
+}
+
+export function useRawToolCommands(): RawToolCommands {
+  const commands = useContext(RawToolCommandsContext)
+  if (!commands) {
+    throw new Error('RawToolCommandsProvider is missing')
+  }
+  return commands
+}
 
 export function RawWorkflowProvider({
   value,
