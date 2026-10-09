@@ -2,9 +2,11 @@ import type {
   ColorGraphIntent,
   LUTData,
   ParsedLUT,
-  ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
-import { toLUTData } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_SELECTIVE_COLOR,
+  toLUTData,
+} from '@lumaforge/luma-color-runtime'
 import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { act, renderHook } from '@testing-library/react'
@@ -51,10 +53,8 @@ vi.mock('../../../services/export/orchestrate-full-res-export', () => ({
 
 type ExportStageInput = Parameters<typeof useRawExportStage>[0]
 
-const params: ProcessingParams = {
+const params: ColorGraphIntent = {
   intensity: 0.7,
-  viewMode: 'processed',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
   userExposureEv: 0,
@@ -67,6 +67,7 @@ const params: ProcessingParams = {
   userTint: 0,
   userSaturation: 0,
   userVibrance: 0,
+  selectiveColor: NEUTRAL_SELECTIVE_COLOR,
 }
 
 const SOURCE_FILE = new File(['raw'], 'frame.dng', { lastModified: 123 })
@@ -348,7 +349,7 @@ describe('useRawExportStage', () => {
   })
 
   it('sends interruption history with one explicit export of the current look', async () => {
-    const currentParams: ProcessingParams = {
+    const currentParams: ColorGraphIntent = {
       ...params,
       userExposureEv: 0.5,
       userSaturation: 0.2,

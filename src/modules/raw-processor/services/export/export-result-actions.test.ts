@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntentSource,
-  LUTData,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import type {
   ExportOutputResult,
@@ -668,7 +665,7 @@ describe('export result actions', () => {
         confidence: 'user',
       },
     }
-    const intent: ColorGraphIntentSource = {
+    const intent: ColorGraphIntent = {
       styleKind: 'custom',
       builtinPreset: null,
       intensity: 0.37,

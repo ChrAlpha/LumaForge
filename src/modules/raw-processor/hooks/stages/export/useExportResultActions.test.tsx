@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntentSource,
-  LUTData,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
@@ -64,7 +61,7 @@ function makeLut(overrides: Partial<LUTData> = {}): LUTData {
   }
 }
 
-const intent: ColorGraphIntentSource = {
+const intent: ColorGraphIntent = {
   styleKind: 'custom',
   builtinPreset: null,
   intensity: 0.37,
@@ -211,7 +208,7 @@ function setup({
     ...session,
     exportState: { ...session.exportState, result: stored },
   })
-  const intentAtom = atom<ColorGraphIntentSource>(intent)
+  const intentAtom = atom<ColorGraphIntent>(intent)
   const lutAtom = atom<LUTData | null>(makeLut())
   const getSession = () => store.get(sessionAtom)
   const refs = {
@@ -250,7 +247,7 @@ function setup({
     actions: () => hook.current,
     setSession: (session: ImageSession | null) =>
       store.set(sessionAtom, session),
-    setIntent: (next: ColorGraphIntentSource) => store.set(intentAtom, next),
+    setIntent: (next: ColorGraphIntent) => store.set(intentAtom, next),
     setLut: (next: LUTData | null) => store.set(lutAtom, next),
   }
 }
@@ -534,7 +531,7 @@ describe('useExportResultActions', () => {
         ...intent,
         viewMode: 'split',
         compareSplit: 0.2,
-      } as unknown as ColorGraphIntentSource)
+      } as unknown as ColorGraphIntent)
       harness.setLut(makeLut())
       paused.release()
       await pending

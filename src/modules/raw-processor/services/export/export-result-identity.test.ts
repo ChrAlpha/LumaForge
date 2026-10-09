@@ -1,5 +1,5 @@
 import type {
-  ColorGraphIntentSource,
+  ColorGraphIntent,
   LUTColorProfile,
   LUTData,
   RawRenderExposure,
@@ -50,8 +50,8 @@ function makeLut(overrides: Partial<LUTData> = {}): LUTData {
 }
 
 function makeIntent(
-  overrides: Partial<ColorGraphIntentSource> = {},
-): ColorGraphIntentSource {
+  overrides: Partial<ColorGraphIntent> = {},
+): ColorGraphIntent {
   return {
     styleKind: 'custom',
     builtinPreset: null,
@@ -289,9 +289,13 @@ describe('captureExportResultIdentity', () => {
     const clamped = captureExportResultIdentity(
       makeInput({ intent: makeIntent({ userContrast: 100 }) }),
     )
+    // A record that arrives without HSL at run time reads as neutral HSL.
     const withoutHsl = captureExportResultIdentity(
       makeInput({
-        intent: { ...makeIntent(), selectiveColor: undefined },
+        intent: {
+          ...makeIntent(),
+          selectiveColor: undefined,
+        } as unknown as ColorGraphIntent,
       }),
     )
 
@@ -307,7 +311,7 @@ describe('captureExportResultIdentity', () => {
       zoom: 4,
       panX: 120,
       panY: -40,
-    } as ColorGraphIntentSource
+    } as ColorGraphIntent
     const changed = captureExportResultIdentity(makeInput({ intent: viewOnly }))
 
     expect(isSameExportResult(changed, baseline)).toBe(true)
@@ -317,7 +321,7 @@ describe('captureExportResultIdentity', () => {
   })
 
   it('is deeply frozen and detached from the inputs it was captured from', () => {
-    const intent: Mutable<ColorGraphIntentSource> = makeIntent({
+    const intent: Mutable<ColorGraphIntent> = makeIntent({
       selectiveColor: {
         ...NEUTRAL_USER_COLOR_INTENT.selectiveColor,
         red: { hue: 5, saturation: 0, lightness: 0 },
@@ -341,7 +345,7 @@ describe('captureExportResultIdentity', () => {
 
     // Completion-time state moves on; the captured identity does not.
     intent.userExposureEv = 2
-    ;(intent.selectiveColor!.red as { hue: number }).hue = 40
+    ;(intent.selectiveColor.red as { hue: number }).hue = 40
     matrix[2] = 0.5
     pinned.ev = 3
     profile.inputTransfer = 'v-log'

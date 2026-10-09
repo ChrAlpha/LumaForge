@@ -1,4 +1,4 @@
-import type { ColorGraphIntentSource } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import type { SetStateAction } from 'jotai'
@@ -68,7 +68,7 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
   const previewCopyCanvasRef = {
     current: document.createElement('canvas') as HTMLCanvasElement | null,
   }
-  const colorIntent: ColorGraphIntentSource = {
+  const colorIntent: ColorGraphIntent = {
     styleKind: 'none',
     builtinPreset: null,
     intensity: 1,

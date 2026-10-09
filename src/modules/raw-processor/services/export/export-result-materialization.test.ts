@@ -1,4 +1,4 @@
-import type { ColorGraphIntentSource } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import {
@@ -234,7 +234,7 @@ describe('export result materialization', () => {
   describe('request identity', () => {
     function captureRequest() {
       const intent: {
-        -readonly [K in keyof ColorGraphIntentSource]: ColorGraphIntentSource[K]
+        -readonly [K in keyof ColorGraphIntent]: ColorGraphIntent[K]
       } = {
         styleKind: 'none',
         builtinPreset: null,
