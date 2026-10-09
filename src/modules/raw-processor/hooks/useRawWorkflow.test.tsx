@@ -65,12 +65,18 @@ import { createExportInterruptionMarkers } from '../services/export/export-inter
 import type { ExportInterruptionMarkers } from '../services/export/export-recovery'
 import { readSourceInterruption } from '../services/export/export-recovery'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
+import { DEFAULT_PREVIEW_VIEWPORT } from '../services/preview/preview-viewport'
 import { deriveTransformStatus } from '../services/transform/transform-state'
 import { getDetachedPreviewView } from '../state/preview-view.atoms'
 import { currentSessionAtom } from '../state/session.atoms'
-import { getProcessingParams, resetToDefaults } from '../state/workflow.atoms'
+import {
+  getLut,
+  getProcessingParams,
+  resetToDefaults,
+} from '../state/workflow.atoms'
 import { acceptTransformGeometry } from './transform-session.fixture'
 import { useOriginalReferenceSnapshot } from './useOriginalReferenceSnapshot'
+import { useRawToolAdjustments } from './useRawToolState'
 import type { UseRawWorkflowReturn } from './useRawWorkflow'
 import { useRawWorkflow } from './useRawWorkflow'
 import { useRawWorkflowRefs } from './useRawWorkflowRefs'
@@ -611,6 +617,15 @@ function publishOwnedPipeline(
 
 function wrapper({ children }: { children: ReactNode }) {
   return <Provider store={jotaiStore}>{children}</Provider>
+}
+
+/**
+ * The look strength as the tool surfaces read it: from the store the
+ * workflow writes, not from the workflow's return.
+ */
+function renderLookStrength() {
+  const { result } = renderHook(() => useRawToolAdjustments(), { wrapper })
+  return () => result.current.activeIntensity
 }
 
 async function flushPromises() {
@@ -2221,13 +2236,13 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.lut?.profileResolution).toEqual({
+      expect(getLut()?.profileResolution).toEqual({
         kind: 'unknown',
       })
     })
     const unknownSelection = {
       status: 'unknown',
-      fingerprint: result.current.lut?.fingerprint,
+      fingerprint: getLut()?.fingerprint,
       title: 'Client Secret Sauce',
       sourceName: 'unknown-look.cube',
     }
@@ -2249,7 +2264,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.lut?.profileResolution).toMatchObject({
+      expect(getLut()?.profileResolution).toMatchObject({
         kind: 'confirmed',
         confidence: 'user',
         profile: {
@@ -2267,9 +2282,7 @@ describe('useRawWorkflow embedded preview state', () => {
         profile: { id: 'sony-sgamut3cine-slog3' },
       })
     })
-    expect(
-      getStoredLUTContractSelection(result.current.lut!.fingerprint),
-    ).toEqual(
+    expect(getStoredLUTContractSelection(getLut()!.fingerprint)).toEqual(
       expect.objectContaining({
         inputProfile: 'sony-sgamut3cine-slog3',
         role: 'combined-look-output',
@@ -2278,16 +2291,14 @@ describe('useRawWorkflow embedded preview state', () => {
         outputRange: 'full',
       }),
     )
-    expect(
-      getStoredLUTProfileSelection(result.current.lut!.fingerprint),
-    ).toMatchObject({
+    expect(getStoredLUTProfileSelection(getLut()!.fingerprint)).toMatchObject({
       id: 'sony-sgamut3cine-slog3',
       role: 'combined-look-output',
       outputTransfer: 'bt709',
     })
     expect(result.current.lutProfileSelection).toMatchObject({
       status: 'confirmed',
-      fingerprint: result.current.lut?.fingerprint,
+      fingerprint: getLut()?.fingerprint,
       profileId: 'sony-sgamut3cine-slog3',
       confidence: 'user',
     })
@@ -2303,7 +2314,7 @@ describe('useRawWorkflow embedded preview state', () => {
       },
       lutProfileSelection: {
         status: 'confirmed',
-        fingerprint: result.current.lut?.fingerprint,
+        fingerprint: getLut()?.fingerprint,
         profileId: 'sony-sgamut3cine-slog3',
         confidence: 'user',
       },
@@ -2319,7 +2330,7 @@ describe('useRawWorkflow embedded preview state', () => {
       )
     })
 
-    const detachedFingerprint = result.current.lut?.fingerprint
+    const detachedFingerprint = getLut()?.fingerprint
 
     expect(result.current.currentLutName).toBe('Client Secret Sauce')
     expect(result.current.lutProfileSelection).toMatchObject({
@@ -2337,7 +2348,7 @@ describe('useRawWorkflow embedded preview state', () => {
     await waitFor(() => {
       expect(result.current.currentLutName).toBe('Client Secret Sauce')
     })
-    expect(result.current.lut?.fingerprint).toBe(detachedFingerprint)
+    expect(getLut()?.fingerprint).toBe(detachedFingerprint)
     // LUT-before-RAW must still reach a previewable state: the retained look
     // can never block the preview from becoming visible.
     await waitFor(() => {
@@ -2365,7 +2376,7 @@ describe('useRawWorkflow embedded preview state', () => {
     await waitFor(() => {
       expect(result.current.currentLutName).toBe('Client Secret Sauce')
     })
-    expect(result.current.lut?.fingerprint).toBe(detachedFingerprint)
+    expect(getLut()?.fingerprint).toBe(detachedFingerprint)
     expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
       sourceFile: {
         name: 'frame-2.ARW',
@@ -2444,6 +2455,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     it('carries a look strength set in a replacing loadFile tick into the replacement', async () => {
       const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      const lookStrength = renderLookStrength()
       await act(async () => {
         await result.current.loadLUT(
           createCubeFile('Strength Look', 'strength.cube'),
@@ -2473,7 +2485,7 @@ describe('useRawWorkflow embedded preview state', () => {
           currentIntensity: 0.41,
         },
       })
-      expect(result.current.activeIntensity).toBe(0.41)
+      expect(lookStrength()).toBe(0.41)
     })
 
     it('seeds the next source with a LUT picked in the reset tick', async () => {
@@ -2572,6 +2584,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
   it('preserves a detached intensity choice across the first RAW load', async () => {
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    const lookStrength = renderLookStrength()
 
     await act(async () => {
       await result.current.loadLUT(
@@ -2583,7 +2596,7 @@ describe('useRawWorkflow embedded preview state', () => {
       result.current.setIntensity(0.62)
     })
 
-    expect(result.current.activeIntensity).toBe(0.62)
+    expect(lookStrength()).toBe(0.62)
     expect(result.current.params.intensity).toBe(0.62)
 
     await act(async () => {
@@ -2593,7 +2606,7 @@ describe('useRawWorkflow embedded preview state', () => {
     await waitFor(() => {
       expect(result.current.currentLutName).toBe('Client Secret Sauce')
     })
-    expect(result.current.activeIntensity).toBe(0.62)
+    expect(lookStrength()).toBe(0.62)
     expect(result.current.params.intensity).toBe(0.62)
     expect(jotaiStore.get(currentSessionAtom)?.activeStyle).toMatchObject({
       kind: 'custom',
@@ -2603,6 +2616,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
   it('carries a detached strength set in the first loadFile tick into the session', async () => {
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    const lookStrength = renderLookStrength()
 
     await act(async () => {
       await result.current.loadLUT(
@@ -2625,7 +2639,7 @@ describe('useRawWorkflow embedded preview state', () => {
       name: 'Client Secret Sauce',
       currentIntensity: 0.37,
     })
-    expect(result.current.activeIntensity).toBe(0.37)
+    expect(lookStrength()).toBe(0.37)
     expect(result.current.params.intensity).toBe(0.37)
   })
 
@@ -2644,7 +2658,7 @@ describe('useRawWorkflow embedded preview state', () => {
       expect(result.current.lutProfileSelection?.status).toBe('unknown')
     })
 
-    const fingerprint = result.current.lut!.fingerprint
+    const fingerprint = getLut()!.fingerprint
 
     act(() => {
       result.current.selectLUTProfile(
@@ -2652,7 +2666,7 @@ describe('useRawWorkflow embedded preview state', () => {
       )
     })
 
-    expect(result.current.lut?.profileResolution).toEqual({
+    expect(getLut()?.profileResolution).toEqual({
       kind: 'unknown',
     })
     expect(result.current.lutProfileSelection?.status).toBe('unknown')
@@ -2695,7 +2709,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.lut?.profileResolution).toMatchObject({
+      expect(getLut()?.profileResolution).toMatchObject({
         kind: 'confirmed',
         confidence: 'user',
         profile: {
@@ -2707,9 +2721,7 @@ describe('useRawWorkflow embedded preview state', () => {
         },
       })
     })
-    expect(
-      getStoredLUTContractSelection(result.current.lut!.fingerprint),
-    ).toEqual(
+    expect(getStoredLUTContractSelection(getLut()!.fingerprint)).toEqual(
       expect.objectContaining({
         inputProfile: 'panasonic-vgamut-vlog',
         role: 'combined-look-output',
@@ -2749,7 +2761,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.lut?.profileResolution).toMatchObject({
+      expect(getLut()?.profileResolution).toMatchObject({
         kind: 'confirmed',
         profile: {
           id: 'panasonic-vgamut-vlog',
@@ -2764,9 +2776,7 @@ describe('useRawWorkflow embedded preview state', () => {
       kind: 'custom',
       warning: 'This LUT uses Panasonic V-Gamut / V-Log -> Rec.709 display.',
     })
-    expect(
-      getStoredLUTContractSelection(result.current.lut!.fingerprint),
-    ).toEqual(
+    expect(getStoredLUTContractSelection(getLut()!.fingerprint)).toEqual(
       expect.objectContaining({
         inputProfile: 'panasonic-vgamut-vlog',
         role: 'combined-look-output',
@@ -2837,7 +2847,7 @@ describe('useRawWorkflow embedded preview state', () => {
       }),
     )
     expect(fetchVerifiedCubeAsset).not.toHaveBeenCalled()
-    expect(result.current.lut).toMatchObject({
+    expect(getLut()).toMatchObject({
       title: 'Direct Online LUT',
       sourceName: 'Direct Online LUT',
       profileResolution: {
@@ -2884,7 +2894,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(
       jotaiStore.get(currentSessionAtom)?.activeStyle?.lutAsset?.sha256,
     ).toBe(entry.cube.sha256)
-    expect(result.current.lut?.profileResolution).toMatchObject({
+    expect(getLut()?.profileResolution).toMatchObject({
       kind: 'confirmed',
       confidence: 'metadata',
       profile: {
@@ -2904,9 +2914,7 @@ describe('useRawWorkflow embedded preview state', () => {
       profileId: 'display-srgb',
       confidence: 'metadata',
     })
-    expect(
-      getStoredLUTContractSelection(result.current.lut!.fingerprint),
-    ).toBeUndefined()
+    expect(getStoredLUTContractSelection(getLut()!.fingerprint)).toBeUndefined()
   })
 
   it('rejects unsupported trusted contracts and leaves the active LUT unchanged', async () => {
@@ -2919,7 +2927,7 @@ describe('useRawWorkflow embedded preview state', () => {
       )
     })
 
-    const previousLut = result.current.lut
+    const previousLut = getLut()
     const previousStyle = jotaiStore.get(currentSessionAtom)?.activeStyle
     onlineProfileFetchMock.fetchVerifiedCubeAsset.mockResolvedValue(
       verifiedCube('Rejected Online LUT'),
@@ -2940,7 +2948,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushScheduledToasts()
 
-    expect(result.current.lut).toBe(previousLut)
+    expect(getLut()).toBe(previousLut)
     expect(jotaiStore.get(currentSessionAtom)?.activeStyle).toBe(previousStyle)
     expect(jotaiStore.get(currentSessionAtom)?.renderState).toMatchObject({
       lastErrorCode: 'LUT_PARSE_FAILED',
@@ -2960,7 +2968,7 @@ describe('useRawWorkflow embedded preview state', () => {
       )
     })
 
-    const previousLut = result.current.lut
+    const previousLut = getLut()
     const previousSession = jotaiStore.get(currentSessionAtom)
     onlineProfileFetchMock.fetchVerifiedCubeAsset.mockRejectedValue(
       new Error('Hash mismatch'),
@@ -2972,7 +2980,7 @@ describe('useRawWorkflow embedded preview state', () => {
     await flushScheduledToasts()
 
     const nextSession = jotaiStore.get(currentSessionAtom)
-    expect(result.current.lut).toBe(previousLut)
+    expect(getLut()).toBe(previousLut)
     expect(nextSession).toMatchObject({
       id: previousSession?.id,
       sourceFile: previousSession?.sourceFile,
@@ -2997,7 +3005,7 @@ describe('useRawWorkflow embedded preview state', () => {
       )
     })
 
-    const previousLut = result.current.lut
+    const previousLut = getLut()
     const previousLastErrorCode =
       jotaiStore.get(currentSessionAtom)?.renderState.lastErrorCode
     const controller = new AbortController()
@@ -3012,7 +3020,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushScheduledToasts()
 
-    expect(result.current.lut).toBe(previousLut)
+    expect(getLut()).toBe(previousLut)
     expect(jotaiStore.get(currentSessionAtom)?.renderState.lastErrorCode).toBe(
       previousLastErrorCode,
     )
@@ -3032,7 +3040,7 @@ describe('useRawWorkflow embedded preview state', () => {
       )
     })
 
-    const previousLut = result.current.lut
+    const previousLut = getLut()
     const previousLastErrorCode =
       jotaiStore.get(currentSessionAtom)?.renderState.lastErrorCode
     const controller = new AbortController()
@@ -3050,7 +3058,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await flushScheduledToasts()
 
-    expect(result.current.lut).toBe(previousLut)
+    expect(getLut()).toBe(previousLut)
     expect(jotaiStore.get(currentSessionAtom)?.renderState.lastErrorCode).toBe(
       previousLastErrorCode,
     )
@@ -3622,6 +3630,38 @@ describe('useRawWorkflow embedded preview state', () => {
     })
   })
 
+  it('leaves the LUT, the look strength and the viewport reset to their owners', async () => {
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    const lookStrength = renderLookStrength()
+
+    // The tool surfaces read the strength from its slice and the LUT from
+    // the store; the workflow return carries neither, and the viewport has
+    // one write command.
+    expect(result.current).not.toHaveProperty('lut')
+    expect(result.current).not.toHaveProperty('activeIntensity')
+    expect(result.current).not.toHaveProperty('resetPreviewViewport')
+
+    await act(async () => {
+      await result.current.loadLUT(
+        createCubeFile('Owner Look', 'owner-look.cube'),
+      )
+    })
+    act(() => {
+      result.current.setIntensity(0.44)
+    })
+    expect(getLut()).toMatchObject({ title: 'Owner Look' })
+    expect(lookStrength()).toBe(0.44)
+
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    act(() => {
+      result.current.setIntensity(0.58)
+    })
+    expect(lookStrength()).toBe(0.58)
+    expect(result.current.activeStyle?.currentIntensity).toBe(0.58)
+  })
+
   it('keeps active style intensity session canonical while projecting numeric params', () => {
     jotaiStore.set(currentSessionAtom, {
       ...createTestSession(),
@@ -3634,13 +3674,14 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    const lookStrength = renderLookStrength()
     const storedParamsBefore = getProcessingParams()
 
     act(() => {
       result.current.setIntensity(0.62)
     })
 
-    expect(result.current.activeIntensity).toBe(0.62)
+    expect(lookStrength()).toBe(0.62)
     expect(result.current.params.intensity).toBe(0.62)
     expect(getProcessingParams()).toBe(storedParamsBefore)
     expect(
@@ -7436,6 +7477,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    const lookStrength = renderLookStrength()
     await act(async () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
@@ -7452,7 +7494,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()
 
     act(() => {
-      result.current.setIntensity(result.current.activeIntensity)
+      result.current.setIntensity(lookStrength())
     })
     expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
     expect(jotaiStore.get(currentSessionAtom)?.exportState.result).toBeDefined()
@@ -7569,7 +7611,7 @@ describe('useRawWorkflow embedded preview state', () => {
         fitMode: 'custom',
       }),
     )
-    act(() => result.current.resetPreviewViewport())
+    act(() => result.current.setPreviewViewport(DEFAULT_PREVIEW_VIEWPORT))
     await flushPostCommitTasks()
 
     expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('ready')
@@ -7661,6 +7703,7 @@ describe('useRawWorkflow embedded preview state', () => {
       }),
     )
     const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    const lookStrength = renderLookStrength()
     await act(async () => {
       await result.current.loadFile(new File(['raw'], 'frame.ARW'))
     })
@@ -7686,7 +7729,7 @@ describe('useRawWorkflow embedded preview state', () => {
     act(() => {
       result.current.setIntensity(0.37)
     })
-    expect(result.current.activeIntensity).toBe(0.37)
+    expect(lookStrength()).toBe(0.37)
     expect(result.current.params.intensity).toBe(0.37)
 
     await act(async () => {
@@ -7725,7 +7768,7 @@ describe('useRawWorkflow embedded preview state', () => {
     act(() => {
       result.current.setIntensity(0.62)
     })
-    expect(result.current.activeIntensity).toBe(0.62)
+    expect(lookStrength()).toBe(0.62)
     expect(jotaiStore.get(currentSessionAtom)?.exportState.status).toBe('idle')
     expect(
       jotaiStore.get(currentSessionAtom)?.exportState.result,
@@ -9191,6 +9234,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     it('routes a split and a look strength written in a replacing loadFile tick into the replacement only', async () => {
       const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      const lookStrength = renderLookStrength()
       await act(async () => {
         await result.current.loadLUT(createCubeFile('Client Look', 'look.cube'))
       })
@@ -9225,7 +9269,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
       expect(result.current.status).toBe('ready')
       expect(result.current.compareSplit).toBe(0.3)
-      expect(result.current.activeIntensity).toBe(0.4)
+      expect(lookStrength()).toBe(0.4)
       expect(result.current.params.intensity).toBe(0.4)
       // The replaced session and the detached state took none of the writes.
       expect(first).toMatchObject({
@@ -9238,6 +9282,7 @@ describe('useRawWorkflow embedded preview state', () => {
 
     it('routes look and tone writes made in the reset tick to the detached intent the next source keeps', async () => {
       const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+      const lookStrength = renderLookStrength()
       await act(async () => {
         await result.current.loadLUT(createCubeFile('Client Look', 'look.cube'))
       })
@@ -9258,7 +9303,7 @@ describe('useRawWorkflow embedded preview state', () => {
         })
       })
 
-      expect(result.current.activeIntensity).toBe(0.33)
+      expect(lookStrength()).toBe(0.33)
       expect(result.current.params.userContrast).toBe(12)
 
       await act(async () => {

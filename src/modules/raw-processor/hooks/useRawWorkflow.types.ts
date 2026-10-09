@@ -9,7 +9,6 @@ import type {
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { RefObject } from 'react'
 
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
@@ -78,7 +77,6 @@ export interface UseRawWorkflowReturn {
   status: ProcessingStatus
   error: string | null
   progress: number
-  lut: ParsedLUT | null
   lutData: LUTData | null
   lutDataRef: RefObject<LUTData | null>
   lutDataVersion: number
@@ -104,8 +102,6 @@ export interface UseRawWorkflowReturn {
   exportInterrupted: boolean
   activeStyle: StyleAsset | null
   lutProfileSelection: LUTContractSelectionState | null
-  /** How much of the look reaches the photo, 0..1. */
-  activeIntensity: number
   viewMode: PreviewViewMode
   /** Frame-anchored compare split in 0..1. */
   compareSplit: number
@@ -141,7 +137,6 @@ export interface UseRawWorkflowReturn {
    */
   resetCompareView: () => void
   setPreviewViewport: (viewport: PreviewViewport) => void
-  resetPreviewViewport: () => void
   clearLUT: () => void
   /** Write color fields; the view has its own setters. */
   setParams: (params: Partial<ColorGraphIntent>) => void

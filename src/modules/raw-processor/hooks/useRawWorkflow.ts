@@ -387,7 +387,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     refs: { decodedImageRef, pipelineRef },
     rawRuntimeHost,
     decodedImageVersion,
-    lut,
     lutData: {
       lutData: lutDataRef.current,
       lutDataRef,

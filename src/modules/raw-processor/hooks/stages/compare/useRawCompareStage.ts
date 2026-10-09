@@ -168,10 +168,6 @@ export function useRawCompareStage({
     setCurrentSession((prev) => computeViewportChange(prev, viewport))
   }, [])
 
-  const resetPreviewViewport = useCallback(() => {
-    setPreviewViewport(DEFAULT_PREVIEW_VIEWPORT)
-  }, [setPreviewViewport])
-
   return {
     view,
     viewMode: view.mode,
@@ -181,6 +177,5 @@ export function useRawCompareStage({
     setCompareSplit,
     resetCompareView,
     setPreviewViewport,
-    resetPreviewViewport,
   }
 }

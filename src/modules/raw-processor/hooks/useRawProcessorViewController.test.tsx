@@ -70,7 +70,7 @@ function workflowFixture(
     setViewMode: vi.fn(),
     setCompareSplit: vi.fn(),
     resetCompareView: vi.fn(),
-    resetPreviewViewport: vi.fn(),
+    setPreviewViewport: vi.fn(),
     exportImage: vi.fn(),
     reset: vi.fn(),
     updateStats: vi.fn(),
@@ -129,7 +129,7 @@ describe('useRawProcessorViewController', () => {
     // refused reset cannot still move the viewport.
     expect(workflow.setViewMode).not.toHaveBeenCalled()
     expect(workflow.setCompareSplit).not.toHaveBeenCalled()
-    expect(workflow.resetPreviewViewport).not.toHaveBeenCalled()
+    expect(workflow.setPreviewViewport).not.toHaveBeenCalled()
   })
 
   it('reads the reset command of the workflow it is handed now', () => {

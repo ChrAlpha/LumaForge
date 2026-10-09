@@ -166,7 +166,6 @@ function rawProcessorViewState(
     status: 'idle',
     error: null,
     progress: 0,
-    lut: null,
     lutData: null,
     lutDataRef: { current: null },
     lutDataVersion: 0,
@@ -184,7 +183,6 @@ function rawProcessorViewState(
     exportInterrupted: false,
     activeStyle: null,
     lutProfileSelection: null,
-    activeIntensity: 0.7,
     viewMode: 'compare',
     compareSplit: 0.5,
     currentLutName: null,
@@ -236,7 +234,6 @@ function rawProcessorViewState(
       fitMode: 'screen',
     },
     setPreviewViewport: overrides.setPreviewViewport ?? vi.fn(),
-    resetPreviewViewport: overrides.resetPreviewViewport ?? vi.fn(),
   }
 }
 

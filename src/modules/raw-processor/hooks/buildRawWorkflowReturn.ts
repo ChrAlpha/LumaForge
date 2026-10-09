@@ -1,6 +1,5 @@
 import type { MutableRefObject } from 'react'
 
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import type {
   PipelineStats,
@@ -34,7 +33,6 @@ type BuildRawWorkflowReturnInput = {
   }
   rawRuntimeHost: RawRuntimeHost
   decodedImageVersion: number
-  lut: ParsedLUT | null
   lutData: Pick<
     UseRawWorkflowReturn,
     'lutData' | 'lutDataRef' | 'lutDataVersion'
@@ -61,7 +59,6 @@ export function buildRawWorkflowReturn({
   refs,
   rawRuntimeHost,
   decodedImageVersion,
-  lut,
   lutData,
   sourceState,
   compareStage,
@@ -85,7 +82,6 @@ export function buildRawWorkflowReturn({
     status: workflowState.status,
     error: workflowState.error,
     progress: workflowState.progress,
-    lut,
     lutData: lutData.lutData,
     lutDataRef: lutData.lutDataRef,
     lutDataVersion: lutData.lutDataVersion,
@@ -101,7 +97,6 @@ export function buildRawWorkflowReturn({
     exportInterrupted: exportStage.exportInterrupted,
     activeStyle: lookStage.activeStyle,
     lutProfileSelection: lookStage.lutProfileSelection,
-    activeIntensity: lookStage.activeIntensity,
     viewMode: compareStage.viewMode,
     compareSplit: compareStage.compareSplit,
     previewViewport: compareStage.previewViewport,
@@ -126,7 +121,6 @@ export function buildRawWorkflowReturn({
     setCompareSplit: compareStage.setCompareSplit,
     resetCompareView: compareStage.resetCompareView,
     setPreviewViewport: compareStage.setPreviewViewport,
-    resetPreviewViewport: compareStage.resetPreviewViewport,
     clearLUT: lookStage.clearLUT,
     setParams: lookStage.setParams,
     setToneParams: lookStage.setToneParams,

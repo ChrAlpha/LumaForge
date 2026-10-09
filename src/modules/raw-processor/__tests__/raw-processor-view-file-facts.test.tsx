@@ -133,7 +133,6 @@ function createLoadedProcessorState(
     status: 'ready',
     error: null,
     progress: 100,
-    lut: null,
     lutData: null,
     lutDataRef: { current: null },
     lutDataVersion: 0,
@@ -164,7 +163,6 @@ function createLoadedProcessorState(
     exportInterrupted: false,
     activeStyle: null,
     lutProfileSelection: null,
-    activeIntensity: 0.7,
     viewMode: 'compare',
     compareSplit: 0.5,
     currentLutName: null,
@@ -215,7 +213,6 @@ function createLoadedProcessorState(
       fitMode: 'screen',
     },
     setPreviewViewport: overrides.setPreviewViewport ?? vi.fn(),
-    resetPreviewViewport: overrides.resetPreviewViewport ?? vi.fn(),
     restorePreviewAfterExport: overrides.restorePreviewAfterExport ?? vi.fn(),
   }
 }
