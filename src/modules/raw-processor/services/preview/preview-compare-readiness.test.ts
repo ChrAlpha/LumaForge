@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
+
 import type {
   OriginalGpuFrameStatus,
   PreviewFrameStatus,
@@ -14,28 +16,88 @@ import {
   getProcessedImageGenerationKey,
 } from './preview-compare-readiness'
 
+function frameDescriptor({
+  sessionId = 'session-1',
+  frameId,
+  stage,
+  width = 1600,
+  height = 1200,
+  quickPredecessorFrameId = null,
+}: Pick<DecodedPreviewFrame, 'frameId' | 'stage'> &
+  Partial<DecodedPreviewFrame>): DecodedPreviewFrame {
+  return {
+    sessionId,
+    frameId,
+    stage,
+    width,
+    height,
+    exposure: {
+      kind: 'source-pin',
+      value: { ev: 0, multiplier: 1, source: 'identity' },
+    },
+    quickPredecessorFrameId,
+  }
+}
+
+const quickFrame = frameDescriptor({
+  frameId: 'decoded-frame-1',
+  stage: 'quick',
+  width: 800,
+  height: 600,
+})
+const boundedHqFrame = frameDescriptor({
+  frameId: 'decoded-frame-2',
+  stage: 'bounded-hq',
+  quickPredecessorFrameId: quickFrame.frameId,
+})
+
 const quickProcessedFrame: PreviewFrameStatus = {
-  generationKey: '1:quick:quick:800:600:data',
-  displaySource: 'quick',
-  source: 'quick',
+  generationKey: getProcessedImageGenerationKey({ frame: quickFrame }),
+  frame: quickFrame,
   state: 'ready',
 }
 
 const quickOriginalFrame: OriginalGpuFrameStatus = {
-  generationKey: '1:quick:dual:compare:active',
-  displaySource: 'quick',
+  generationKey: getOriginalGpuGenerationKey({
+    frame: quickFrame,
+    dualGpuAllowed: true,
+    viewMode: 'compare',
+    suspended: false,
+  }),
+  frame: quickFrame,
   state: 'ready',
+}
+
+const currentProcessedFrame: PreviewFrameStatus = {
+  generationKey: getProcessedImageGenerationKey({ frame: boundedHqFrame }),
+  frame: boundedHqFrame,
+  state: 'ready',
+}
+
+function originalStatus(
+  state: OriginalGpuFrameStatus['state'],
+  overrides: Partial<Parameters<typeof getOriginalGpuGenerationKey>[0]> = {},
+): OriginalGpuFrameStatus {
+  const frame = overrides.frame === undefined ? boundedHqFrame : overrides.frame
+  return {
+    generationKey: getOriginalGpuGenerationKey({
+      frame,
+      dualGpuAllowed: true,
+      viewMode: 'compare',
+      suspended: false,
+      ...overrides,
+    }),
+    frame,
+    state,
+  }
 }
 
 function derive(
   overrides: Partial<Parameters<typeof derivePreviewCompareReadiness>[0]> = {},
 ) {
   return derivePreviewCompareReadiness({
-    imageVersion: 2,
+    frame: boundedHqFrame,
     displaySource: 'bounded-hq',
-    imageSource: 'bounded-hq',
-    imageWidth: 1600,
-    imageHeight: 1200,
     hasImageData: true,
     trackReady: true,
     embeddedPreviewUrl: 'blob:embedded',
@@ -69,11 +131,7 @@ describe('derivePreviewCompareReadiness', () => {
     // frame commits only after its own GPU completion.
     expect(
       derive({
-        originalGpuStatus: {
-          generationKey: '2:bounded-hq:dual:compare:active',
-          displaySource: 'bounded-hq',
-          state: 'ready',
-        },
+        originalGpuStatus: originalStatus('ready'),
       }),
     ).toMatchObject({
       originalGpuReady: true,
@@ -100,22 +158,10 @@ describe('derivePreviewCompareReadiness', () => {
   })
 
   it('treats same-generation bounded-HQ processed and original frames as current', () => {
-    const currentProcessedFrame: PreviewFrameStatus = {
-      generationKey: '2:bounded-hq:bounded-hq:1600:1200:data',
-      displaySource: 'bounded-hq',
-      source: 'bounded-hq',
-      state: 'ready',
-    }
-    const currentOriginalFrame: OriginalGpuFrameStatus = {
-      generationKey: '2:bounded-hq:dual:compare:active',
-      displaySource: 'bounded-hq',
-      state: 'ready',
-    }
-
     expect(
       derive({
         processedFrameStatus: currentProcessedFrame,
-        originalGpuStatus: currentOriginalFrame,
+        originalGpuStatus: originalStatus('ready'),
       }),
     ).toMatchObject({
       currentProcessedFrameReady: true,
@@ -131,7 +177,7 @@ describe('derivePreviewCompareReadiness', () => {
     expect(
       derive({
         displaySource: 'embedded',
-        imageSource: 'quick',
+        frame: quickFrame,
         embeddedPreviewUrl: null,
       }),
     ).toMatchObject({
@@ -141,13 +187,89 @@ describe('derivePreviewCompareReadiness', () => {
   })
 })
 
+describe('derivePreviewCompareReadiness retained quick frame', () => {
+  const retainedFlags = {
+    retainedOriginalGpuFrameReady: false,
+    retainedProcessedFrameReady: false,
+    retainedCompareFrameReady: false,
+    compareFrameBridgeReady: false,
+    shouldDelayProcessedCompareRender: false,
+  }
+
+  it.each([
+    [
+      'another source of equal size and stage',
+      frameDescriptor({
+        sessionId: 'session-2',
+        frameId: 'decoded-frame-2',
+        stage: 'bounded-hq',
+        width: 800,
+        height: 600,
+        quickPredecessorFrameId: quickFrame.frameId,
+      }),
+    ],
+    [
+      'a restored frame that names no predecessor',
+      frameDescriptor({ frameId: 'decoded-frame-3', stage: 'bounded-hq' }),
+    ],
+    [
+      'a frame that names another quick frame',
+      frameDescriptor({
+        frameId: 'decoded-frame-3',
+        stage: 'bounded-hq',
+        quickPredecessorFrameId: 'decoded-frame-0',
+      }),
+    ],
+    [
+      'a frame of unknown stage',
+      frameDescriptor({
+        frameId: 'decoded-frame-3',
+        stage: 'unknown',
+        quickPredecessorFrameId: quickFrame.frameId,
+      }),
+    ],
+    [
+      'another quick frame',
+      frameDescriptor({
+        frameId: 'decoded-frame-3',
+        stage: 'quick',
+        quickPredecessorFrameId: quickFrame.frameId,
+      }),
+    ],
+  ])('never bridges the quick pair into %s', (_, frame) => {
+    expect(derive({ frame })).toMatchObject({
+      ...retainedFlags,
+      currentProcessedFrameReady: false,
+      originalGpuReady: false,
+    })
+  })
+
+  it('bridges nothing without an accepted descriptor or its pixels', () => {
+    expect(derive({ frame: null })).toMatchObject({
+      ...retainedFlags,
+      originalGpuLayerEligible: false,
+      shouldMountOriginalGpuLayer: false,
+    })
+    expect(derive({ hasImageData: false })).toMatchObject({
+      ...retainedFlags,
+      originalGpuLayerEligible: false,
+    })
+  })
+
+  it('never retains a status that names no frame', () => {
+    expect(
+      derive({
+        processedFrameStatus: { ...quickProcessedFrame, frame: null },
+        originalGpuStatus: { ...quickOriginalFrame, frame: null },
+      }),
+    ).toMatchObject(retainedFlags)
+  })
+})
+
 describe('derivePreviewCompareReadiness embedded camera reference', () => {
   const quickImage = {
-    imageVersion: 1,
+    frame: quickFrame,
     displaySource: 'quick' as const,
-    imageSource: 'quick' as const,
-    imageWidth: 800,
-    imageHeight: 600,
     viewMode: 'processed' as const,
     originalGpuStatus: EMPTY_ORIGINAL_GPU_FRAME_STATUS,
   }
@@ -183,6 +305,7 @@ describe('derivePreviewCompareReadiness embedded camera reference', () => {
       derive({
         ...quickImage,
         displaySource: 'embedded',
+        frame: null,
         hasImageData: false,
         processedFrameStatus: EMPTY_PREVIEW_FRAME_STATUS,
       }),
@@ -204,43 +327,63 @@ describe('derivePreviewCompareReadiness embedded camera reference', () => {
 })
 
 describe('preview generation keys', () => {
-  const image = {
-    imageVersion: 2,
-    displaySource: 'bounded-hq' as const,
-    imageSource: 'bounded-hq' as const,
-    imageWidth: 1600,
-    imageHeight: 1200,
-    hasImageData: true,
-  }
-
-  it('keys the processed frame by its image alone, never by the view', () => {
+  it('keys the processed frame by its accepted frame alone, never by the view', () => {
     // The processed surface redraws for the original view, but the image on
     // the GPU and its first-frame proof stay valid across view changes.
-    const processedKey = getProcessedImageGenerationKey(image)
+    const processedKey = getProcessedImageGenerationKey({
+      frame: boundedHqFrame,
+    })
     for (const viewMode of ['processed', 'original', 'compare'] as const) {
-      expect(derive({ ...image, viewMode }).processedImageGenerationKey).toBe(
+      expect(derive({ viewMode }).processedImageGenerationKey).toBe(
         processedKey,
       )
     }
-    expect(processedKey).toBe('2:bounded-hq:bounded-hq:1600:1200:data')
+    // The display source and the image ref's pixels name no frame.
     expect(
-      getProcessedImageGenerationKey({ ...image, imageVersion: 3 }),
-    ).not.toBe(processedKey)
-    expect(
-      getProcessedImageGenerationKey({ ...image, hasImageData: false }),
-    ).not.toBe(processedKey)
+      derive({ displaySource: 'quick', hasImageData: false })
+        .processedImageGenerationKey,
+    ).toBe(processedKey)
   })
 
-  it('keys the original layer by view mode, compare policy, and suspension', () => {
+  it('gives every accepted frame its own key, whatever its size and stage', () => {
+    const key = (frame: DecodedPreviewFrame | null) =>
+      getProcessedImageGenerationKey({ frame })
+    const restored = frameDescriptor({
+      frameId: 'decoded-frame-3',
+      stage: 'bounded-hq',
+    })
+    const otherSource = frameDescriptor({
+      sessionId: 'session-2',
+      frameId: boundedHqFrame.frameId,
+      stage: 'bounded-hq',
+    })
+    const keys = [key(boundedHqFrame), key(restored), key(otherSource)]
+    expect(new Set(keys).size).toBe(3)
+    expect(key({ ...boundedHqFrame })).toBe(key(boundedHqFrame))
+    expect(key(null)).not.toBe(key(boundedHqFrame))
+    // An id that looks like a joined key cannot collide with another frame.
+    expect(
+      key(frameDescriptor({ sessionId: 'a:b', frameId: 'c', stage: 'quick' })),
+    ).not.toBe(
+      key(frameDescriptor({ sessionId: 'a', frameId: 'b:c', stage: 'quick' })),
+    )
+  })
+
+  it('keys the original layer by its frame, view mode, compare policy, and suspension', () => {
     const base = {
-      imageVersion: 2,
-      displaySource: 'bounded-hq' as const,
+      frame: boundedHqFrame,
       dualGpuAllowed: true,
       viewMode: 'compare' as const,
       suspended: false,
     }
     const key = getOriginalGpuGenerationKey(base)
-    expect(key).toBe('2:bounded-hq:dual:compare:active')
+    expect(
+      getOriginalGpuGenerationKey({ ...base, frame: { ...boundedHqFrame } }),
+    ).toBe(key)
+    expect(
+      getOriginalGpuGenerationKey({ ...base, frame: quickFrame }),
+    ).not.toBe(key)
+    expect(getOriginalGpuGenerationKey({ ...base, frame: null })).not.toBe(key)
     expect(
       getOriginalGpuGenerationKey({ ...base, viewMode: 'processed' }),
     ).not.toBe(key)
@@ -254,13 +397,6 @@ describe('preview generation keys', () => {
 })
 
 describe('derivePreviewCompareReadiness output selection', () => {
-  const currentProcessedFrame: PreviewFrameStatus = {
-    generationKey: '2:bounded-hq:bounded-hq:1600:1200:data',
-    displaySource: 'bounded-hq',
-    source: 'bounded-hq',
-    state: 'ready',
-  }
-
   it('keeps the processed frame ready across view modes while only compare mounts the original layer', () => {
     for (const viewMode of ['processed', 'original'] as const) {
       expect(
@@ -283,11 +419,7 @@ describe('derivePreviewCompareReadiness output selection', () => {
       derive({
         viewMode: 'compare',
         processedFrameStatus: currentProcessedFrame,
-        originalGpuStatus: {
-          generationKey: '2:bounded-hq:dual:processed:active',
-          displaySource: 'bounded-hq',
-          state: 'ready',
-        },
+        originalGpuStatus: originalStatus('ready', { viewMode: 'processed' }),
       }),
     ).toMatchObject({
       originalGpuReady: false,
@@ -314,13 +446,11 @@ describe('derivePreviewCompareReadiness obsolete work', () => {
   it('never marks a frame ready from an obsolete processed generation', () => {
     expect(
       derive({
-        imageVersion: 3,
-        processedFrameStatus: {
-          generationKey: '2:bounded-hq:bounded-hq:1600:1200:data',
-          displaySource: 'bounded-hq',
-          source: 'bounded-hq',
-          state: 'ready',
-        },
+        frame: frameDescriptor({
+          frameId: 'decoded-frame-3',
+          stage: 'bounded-hq',
+        }),
+        processedFrameStatus: currentProcessedFrame,
         originalGpuStatus: EMPTY_ORIGINAL_GPU_FRAME_STATUS,
       }),
     ).toMatchObject({
@@ -335,11 +465,7 @@ describe('derivePreviewCompareReadiness obsolete work', () => {
   it('isolates an obsolete original failure from the current compare', () => {
     expect(
       derive({
-        originalGpuStatus: {
-          generationKey: '1:quick:dual:compare:active',
-          displaySource: 'quick',
-          state: 'failed',
-        },
+        originalGpuStatus: { ...quickOriginalFrame, state: 'failed' },
       }),
     ).toMatchObject({
       originalGpuFailed: false,
@@ -352,17 +478,8 @@ describe('derivePreviewCompareReadiness obsolete work', () => {
 
   it('unmounts only the original layer after its current generation fails', () => {
     const failed = derive({
-      processedFrameStatus: {
-        generationKey: '2:bounded-hq:bounded-hq:1600:1200:data',
-        displaySource: 'bounded-hq',
-        source: 'bounded-hq',
-        state: 'ready',
-      },
-      originalGpuStatus: {
-        generationKey: '2:bounded-hq:dual:compare:active',
-        displaySource: 'bounded-hq',
-        state: 'failed',
-      },
+      processedFrameStatus: currentProcessedFrame,
+      originalGpuStatus: originalStatus('failed'),
     })
     expect(failed).toMatchObject({
       originalGpuFailed: true,
@@ -376,7 +493,12 @@ describe('derivePreviewCompareReadiness obsolete work', () => {
 
   it('withholds the original layer and retention while suspended', () => {
     expect(derive({ suspended: true })).toMatchObject({
-      originalGpuGenerationKey: '2:bounded-hq:dual:compare:suspended',
+      originalGpuGenerationKey: getOriginalGpuGenerationKey({
+        frame: boundedHqFrame,
+        dualGpuAllowed: true,
+        viewMode: 'compare',
+        suspended: true,
+      }),
       originalGpuLayerEligible: false,
       shouldMountOriginalGpuLayer: false,
       retainedOriginalGpuFrameReady: false,
@@ -456,12 +578,7 @@ describe('derivePreviewFrameStatusTransition', () => {
   })
 
   it('commits a changed processed frame generation', () => {
-    const nextStatus: PreviewFrameStatus = {
-      ...quickProcessedFrame,
-      generationKey: '2:bounded-hq:bounded-hq:1600:1200:data',
-      displaySource: 'bounded-hq',
-      source: 'bounded-hq',
-    }
+    const nextStatus = currentProcessedFrame
 
     expect(
       derivePreviewFrameStatusTransition({

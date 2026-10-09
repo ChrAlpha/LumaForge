@@ -1522,6 +1522,19 @@ describe('rawToolSurface', () => {
           {...compareStageProps({
             hasImage: true,
             dualGpuAllowed: true,
+            imageVersion: 1,
+            decodedFrame: {
+              sessionId: 'session-1',
+              frameId: 'decoded-frame-1',
+              stage: 'quick',
+              width: 1,
+              height: 1,
+              exposure: {
+                kind: 'unpinned',
+                value: { ev: 0, multiplier: 1, source: 'identity' },
+              },
+              quickPredecessorFrameId: null,
+            },
             imageRef: {
               current: {
                 data: new Uint16Array(3),
@@ -1837,6 +1850,7 @@ describe('rawToolSurface', () => {
         <PreviewCanvas
           imageRef={{ current: null }}
           imageVersion={0}
+          decodedFrame={null}
           color={stageColor}
           viewMode="processed"
           lutDataRef={{ current: null }}

@@ -1,31 +1,35 @@
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
+import { isEligibleQuickPredecessor } from '~/lib/preview/preview-frame'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
-import type { DecodedImageSource } from '~/lib/raw/decoder'
 
 import type { DisplaySource } from '../../model/session'
 
+/**
+ * A processed frame the surface drew: the generation it drew and the accepted
+ * frame whose pixels it drew, or none.
+ */
 export type PreviewFrameStatus = {
   generationKey: string
-  displaySource: DisplaySource
-  source: DecodedImageSource | 'preview'
+  frame: DecodedPreviewFrame | null
   state: 'idle' | 'ready'
 }
 
+/** The original layer's frame, keyed and described like the processed one. */
 export type OriginalGpuFrameStatus = {
   generationKey: string
-  displaySource: DisplaySource
+  frame: DecodedPreviewFrame | null
   state: 'idle' | 'ready' | 'failed'
 }
 
 export const EMPTY_PREVIEW_FRAME_STATUS: PreviewFrameStatus = {
   generationKey: '',
-  displaySource: 'none',
-  source: 'preview',
+  frame: null,
   state: 'idle',
 }
 
 export const EMPTY_ORIGINAL_GPU_FRAME_STATUS: OriginalGpuFrameStatus = {
   generationKey: '',
-  displaySource: 'none',
+  frame: null,
   state: 'idle',
 }
 
@@ -38,20 +42,22 @@ export function derivePreviewFrameStatusTransition({
 }) {
   return {
     nextStatus,
+    // The generation key names the frame, so an equal key with an equal
+    // state is the same status.
     shouldCommit:
       currentStatus.generationKey !== nextStatus.generationKey ||
-      currentStatus.displaySource !== nextStatus.displaySource ||
-      currentStatus.source !== nextStatus.source ||
       currentStatus.state !== nextStatus.state,
   }
 }
 
 type DerivePreviewCompareReadinessInput = {
-  imageVersion: number
+  /**
+   * The workflow's accepted descriptor of the decoded frame; null when no
+   * decoded frame is live. Without one nothing decoded is drawn, whatever
+   * pixels the image ref still holds.
+   */
+  frame: DecodedPreviewFrame | null
   displaySource: DisplaySource
-  imageSource?: DecodedImageSource
-  imageWidth: number
-  imageHeight: number
   hasImageData: boolean
   trackReady: boolean
   embeddedPreviewUrl?: string | null
@@ -63,45 +69,32 @@ type DerivePreviewCompareReadinessInput = {
   processedFrameStatus: PreviewFrameStatus
 }
 
+/**
+ * The image generation the processed surface uploads: the accepted frame
+ * alone. Version counters and dimensions never name a frame, and every frame
+ * the producer accepts, a restored one included, is a new generation.
+ */
 export function getProcessedImageGenerationKey({
-  imageVersion,
-  displaySource,
-  imageSource,
-  imageWidth,
-  imageHeight,
-  hasImageData,
-}: Pick<
-  DerivePreviewCompareReadinessInput,
-  | 'imageVersion'
-  | 'displaySource'
-  | 'imageSource'
-  | 'imageWidth'
-  | 'imageHeight'
-  | 'hasImageData'
->) {
-  return [
-    imageVersion,
-    displaySource,
-    imageSource ?? 'preview',
-    imageWidth,
-    imageHeight,
-    hasImageData ? 'data' : 'empty',
-  ].join(':')
+  frame,
+}: Pick<DerivePreviewCompareReadinessInput, 'frame'>) {
+  return JSON.stringify(frame ? [frame.sessionId, frame.frameId] : null)
 }
 
+/**
+ * The original layer's generation: the accepted frame plus the compare
+ * policy, view, and suspension it was drawn under.
+ */
 export function getOriginalGpuGenerationKey({
-  imageVersion,
-  displaySource,
+  frame,
   dualGpuAllowed,
   viewMode,
   suspended,
 }: Pick<
   DerivePreviewCompareReadinessInput,
-  'imageVersion' | 'displaySource' | 'dualGpuAllowed' | 'viewMode' | 'suspended'
+  'frame' | 'dualGpuAllowed' | 'viewMode' | 'suspended'
 >) {
   return [
-    imageVersion,
-    displaySource,
+    getProcessedImageGenerationKey({ frame }),
     dualGpuAllowed ? 'dual' : 'fallback',
     viewMode,
     suspended ? 'suspended' : 'active',
@@ -109,11 +102,8 @@ export function getOriginalGpuGenerationKey({
 }
 
 export function derivePreviewCompareReadiness({
-  imageVersion,
+  frame,
   displaySource,
-  imageSource,
-  imageWidth,
-  imageHeight,
   hasImageData,
   trackReady,
   embeddedPreviewUrl,
@@ -126,21 +116,14 @@ export function derivePreviewCompareReadiness({
 }: DerivePreviewCompareReadinessInput) {
   const showEmbeddedPreview =
     displaySource === 'embedded' && Boolean(embeddedPreviewUrl)
-  const processedImageGenerationKey = getProcessedImageGenerationKey({
-    imageVersion,
-    displaySource,
-    imageSource,
-    imageWidth,
-    imageHeight,
-    hasImageData,
-  })
+  const hasDecodedFrame = frame !== null && hasImageData
+  const processedImageGenerationKey = getProcessedImageGenerationKey({ frame })
   const currentProcessedFrameReady =
     processedFrameStatus.generationKey === processedImageGenerationKey &&
     processedFrameStatus.state === 'ready'
   const processedPreviewVisible = trackReady && currentProcessedFrameReady
   const originalGpuGenerationKey = getOriginalGpuGenerationKey({
-    imageVersion,
-    displaySource,
+    frame,
     dualGpuAllowed,
     viewMode,
     suspended,
@@ -154,24 +137,23 @@ export function derivePreviewCompareReadiness({
   const originalGpuLayerEligible =
     !showEmbeddedPreview &&
     !suspended &&
-    hasImageData &&
+    hasDecodedFrame &&
     viewMode === 'compare' &&
     supportsCssClip &&
     dualGpuAllowed
+  // A retained quick frame stands in only for the bounded-HQ frame that
+  // names it as its predecessor: never for another source's frame, a
+  // restored frame, or a frame of equal size that names none.
   const retainedOriginalGpuFrameReady =
     originalGpuLayerEligible &&
     !originalGpuReady &&
     !originalGpuFailed &&
     originalGpuStatus.state === 'ready' &&
-    originalGpuStatus.displaySource === 'quick' &&
-    displaySource === 'bounded-hq' &&
-    imageSource === 'bounded-hq'
+    isEligibleQuickPredecessor(originalGpuStatus.frame, frame)
   const retainedProcessedFrameReady =
+    hasDecodedFrame &&
     processedFrameStatus.state === 'ready' &&
-    processedFrameStatus.displaySource === 'quick' &&
-    processedFrameStatus.source === 'quick' &&
-    displaySource === 'bounded-hq' &&
-    imageSource === 'bounded-hq'
+    isEligibleQuickPredecessor(processedFrameStatus.frame, frame)
   const retainedCompareFrameReady =
     retainedOriginalGpuFrameReady && retainedProcessedFrameReady
   // GPU frames complete asynchronously: the original layer can report its
@@ -189,7 +171,7 @@ export function derivePreviewCompareReadiness({
   const embeddedHandoffPreviewVisible =
     displaySource === 'quick' &&
     Boolean(embeddedPreviewUrl) &&
-    hasImageData &&
+    hasDecodedFrame &&
     !showEmbeddedPreview &&
     !processedPreviewVisible
 

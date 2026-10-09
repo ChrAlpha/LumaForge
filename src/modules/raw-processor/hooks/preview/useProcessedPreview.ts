@@ -13,6 +13,7 @@ import {
   useState,
 } from 'react'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import { previewSurfaceOutputForViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
@@ -57,7 +58,17 @@ export interface ProcessedPreviewOptions<
   TPipeline extends ProcessedPreviewPipeline,
 > {
   imageRef: RefObject<DecodedImage | null>
+  /**
+   * Bumped whenever `imageRef` changes. It only notifies; it never names a
+   * frame.
+   */
   imageVersion: number
+  /**
+   * The workflow's accepted descriptor of the frame `imageRef` holds, which
+   * keys every upload, draw, and readiness report. Null authorizes no decoded
+   * drawing: the surface clears its image instead.
+   */
+  decodedFrame: DecodedPreviewFrame | null
   displaySource: DisplaySource
   /** The color the processed surface draws; it carries no view state. */
   color: ColorGraphIntent
@@ -129,8 +140,8 @@ function useStableColorIntent(color: ColorGraphIntent): ColorGraphIntent {
  * It does not own the pipeline's lifetime. It learns the current pipeline
  * only through `publishPipeline`, which the lifetime owner calls.
  *
- * A draw announces a ready frame only while its pipeline, request, and image
- * generation are all still current and the preview is not suspended, so
+ * A draw announces a ready frame only while its pipeline, request, and
+ * accepted frame are all still current and the preview is not suspended, so
  * failed or superseded work never claims the surface. Only the output
  * selection reaches the pipeline: the original view redraws the technical
  * original, while compare, the split, and the viewport stay in CSS.
@@ -140,6 +151,7 @@ export function useProcessedPreview<
 >({
   imageRef,
   imageVersion,
+  decodedFrame,
   displaySource,
   color,
   viewMode,
@@ -185,14 +197,9 @@ export function useProcessedPreview<
   suspendedRef.current = suspended
 
   const image = imageRef.current
-  const imageWidth = image?.width ?? 0
-  const imageHeight = image?.height ?? 0
   const readiness = derivePreviewCompareReadiness({
-    imageVersion,
+    frame: decodedFrame,
     displaySource,
-    imageSource: image?.source,
-    imageWidth,
-    imageHeight,
     hasImageData: Boolean(image?.data),
     trackReady,
     embeddedPreviewUrl,
@@ -217,9 +224,8 @@ export function useProcessedPreview<
     shouldDelayProcessedCompareRender,
   } = readiness
   processedGenerationKeyRef.current = processedImageGenerationKey
-  const processedTrackIdentity = [imageVersion, imageWidth, imageHeight].join(
-    ':',
-  )
+  // The track is fitted to one accepted frame.
+  const processedTrackIdentity = processedImageGenerationKey
 
   useLayoutEffect(() => {
     const transition = derivePreviewTrackReadinessTransition({
@@ -306,7 +312,8 @@ export function useProcessedPreview<
       return true
     }
 
-    const image = imageRef.current
+    // Pixels without an accepted descriptor are never uploaded.
+    const image = decodedFrame ? imageRef.current : null
     const uploadInput = createRawUploadInput({
       data: image?.data ?? null,
       layout: image?.layout ?? null,
@@ -326,7 +333,7 @@ export function useProcessedPreview<
       : ''
 
     return uploaded
-  }, [imageRef, processedImageGenerationKey, publishedPipeline])
+  }, [decodedFrame, imageRef, processedImageGenerationKey, publishedPipeline])
 
   const renderProcessedPreview = useCallback(async () => {
     const pipeline = pipelineRef.current
@@ -344,7 +351,6 @@ export function useProcessedPreview<
       if (!syncProcessedImageUpload()) return false
       pipeline.setParams(processedCanvasParams)
       const stats = pipeline.render()
-      const renderedImage = imageRef.current
       const readyFrame = processedFrameStatusRef.current
       if (
         readyFrame.state !== 'ready' ||
@@ -368,8 +374,7 @@ export function useProcessedPreview<
       if (!isCurrent()) return false
       commitProcessedFrameStatus({
         generationKey: processedImageGenerationKey,
-        displaySource,
-        source: renderedImage?.source ?? 'preview',
+        frame: decodedFrame,
         state: 'ready',
       })
       onStatsUpdate?.(stats)
@@ -385,8 +390,7 @@ export function useProcessedPreview<
     }
   }, [
     commitProcessedFrameStatus,
-    displaySource,
-    imageRef,
+    decodedFrame,
     onStatsUpdate,
     processedCanvasParams,
     processedImageGenerationKey,
@@ -456,24 +460,27 @@ export function useProcessedPreview<
     originalGpuLayer: {
       generationKey: originalGpuGenerationKey,
       onReady: (readyGenerationKey) => {
+        // Only the current generation's frame may become ready; late work
+        // for another frame or compare policy publishes nothing.
+        if (readyGenerationKey !== originalGpuGenerationKey) return
         // The original layer reached the frame the retained compare pair was
         // waiting for: the processed surface may draw the new image now.
-        if (
-          readyGenerationKey === originalGpuGenerationKey &&
-          shouldDelayProcessedCompareRender
-        ) {
+        if (shouldDelayProcessedCompareRender) {
           renderProcessedPreview()
         }
         setOriginalGpuStatus({
           generationKey: readyGenerationKey,
-          displaySource,
+          frame: decodedFrame,
           state: 'ready',
         })
       },
       onError: (_, failedGenerationKey) => {
         setOriginalGpuStatus({
           generationKey: failedGenerationKey,
-          displaySource,
+          frame:
+            failedGenerationKey === originalGpuGenerationKey
+              ? decodedFrame
+              : null,
           state: 'failed',
         })
         if (failedGenerationKey === originalGpuGenerationKey) {

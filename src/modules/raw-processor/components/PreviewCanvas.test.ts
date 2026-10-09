@@ -183,6 +183,48 @@ const decodedImage: DecodedImage = {
   renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
 }
 
+/** An accepted frame descriptor as the workflow's producer would mint it. */
+function frameDescriptor({
+  sessionId = 'session-1',
+  frameId,
+  stage = 'unknown',
+  width = 400,
+  height = 300,
+  quickPredecessorFrameId = null,
+}: Pick<DecodedPreviewFrame, 'frameId'> &
+  Partial<DecodedPreviewFrame>): DecodedPreviewFrame {
+  return {
+    sessionId,
+    frameId,
+    stage,
+    width,
+    height,
+    exposure: {
+      kind: 'unpinned',
+      value: { ev: 0, multiplier: 1, source: 'identity' },
+    },
+    quickPredecessorFrameId,
+  }
+}
+
+/** The descriptor tests pair with an image version; none before a decode. */
+function testFrame(imageVersion: number): DecodedPreviewFrame | null {
+  return imageVersion === 0
+    ? null
+    : frameDescriptor({ frameId: `decoded-frame-${imageVersion}` })
+}
+
+/** A quick frame and the bounded-HQ frame that names it. */
+const quickTestFrame = frameDescriptor({
+  frameId: 'decoded-frame-1',
+  stage: 'quick',
+})
+const boundedHqTestFrame = frameDescriptor({
+  frameId: 'decoded-frame-2',
+  stage: 'bounded-hq',
+  quickPredecessorFrameId: 'decoded-frame-1',
+})
+
 function getPipelineParamCalls() {
   return pipelineMock.instances.flatMap((instance) =>
     instance.setParams.mock.calls.map(([params]) => params),
@@ -323,6 +365,7 @@ function renderInteractivePreview({
     createElement(PreviewCanvas, {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -407,6 +450,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef,
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -419,7 +463,13 @@ describe('preview canvas upload descriptor', () => {
 
     pipelineMock.waitForGpu.mockClear().mockReturnValue(nextFrame.promise)
     imageRef.current = { ...decodedImage }
-    rerender(createElement(PreviewCanvas, { ...props, imageVersion: 2 }))
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        imageVersion: 2,
+        decodedFrame: testFrame(2),
+      }),
+    )
     await waitFor(() => expect(pipelineMock.waitForGpu).toHaveBeenCalled())
     await act(async () => firstFrame.reject(new Error('stale frame failed')))
     expect(onStatsUpdate).not.toHaveBeenCalled()
@@ -437,6 +487,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -481,6 +532,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef,
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -518,6 +570,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           ...props,
           imageVersion: 2,
+          decodedFrame: testFrame(2),
           color: { ...defaultColor, userExposureEv: 0.5 },
           viewMode: 'processed' as const,
         }),
@@ -528,49 +581,6 @@ describe('preview canvas upload descriptor', () => {
     expect(onStatsUpdate).toHaveBeenCalledOnce()
   })
 
-  it('takes the accepted frame descriptor without changing what it uploads and draws', async () => {
-    const acceptedFrame: DecodedPreviewFrame = {
-      sessionId: 'session-1',
-      frameId: 'decoded-frame-1',
-      stage: 'quick',
-      width: decodedImage.width,
-      height: decodedImage.height,
-      exposure: { kind: 'unpinned', value: decodedImage.renderExposure! },
-      quickPredecessorFrameId: null,
-    }
-    const drawOnce = async (decodedFrame?: DecodedPreviewFrame | null) => {
-      pipelineMock.instances.length = 0
-      pipelineMock.pipelineEvents.length = 0
-      const onStatsUpdate = vi.fn()
-      const view = render(
-        createElement(PreviewCanvas, {
-          imageRef: { current: decodedImage },
-          imageVersion: 1,
-          decodedFrame,
-          color: defaultColor,
-          viewMode: 'processed' as const,
-          lutDataRef: { current: null },
-          lutDataVersion: 0,
-          onStatsUpdate,
-        }),
-      )
-      await waitFor(() => expect(onStatsUpdate).toHaveBeenCalled())
-      const events = [...pipelineMock.pipelineEvents]
-      const params = getPipelineParamCalls()
-      view.unmount()
-      return { events, params }
-    }
-
-    const withoutDescriptor = await drawOnce()
-    const withDescriptor = await drawOnce(acceptedFrame)
-
-    expect(withDescriptor.events).toEqual([
-      { kind: 'processed', op: 'upload', width: 400, height: 300 },
-      { kind: 'processed', op: 'render', width: 400, height: 300 },
-    ])
-    expect(withDescriptor).toEqual(withoutDescriptor)
-  })
-
   it('draws the processed surface from the color intent and the explicit view alone', async () => {
     const color = pickColorGraphIntent({
       ...defaultParams,
@@ -579,6 +589,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       // A record that still carries view fields must not steer the surface.
       color: { ...color, viewMode: 'compare', compareSplit: 0.8 } as never,
       viewMode: 'original' as const,
@@ -610,6 +621,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color,
       viewMode: 'compare' as const,
       lutDataRef: { current: null },
@@ -663,6 +675,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: { ...defaultColor, styleKind: 'custom' as const },
       viewMode: 'processed' as const,
       lutDataRef,
@@ -698,6 +711,7 @@ describe('preview canvas upload descriptor', () => {
       const props = {
         imageRef: { current: decodedImage },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'processed' as const,
         lutDataRef: { current: null },
@@ -876,6 +890,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: null },
         imageVersion: 0,
+        decodedFrame: testFrame(0),
         color: defaultColor,
         viewMode: 'processed' as const,
         lutDataRef: { current: null },
@@ -908,6 +923,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: { ...defaultColor, styleKind: 'custom' as const },
       viewMode: 'processed' as const,
       lutDataRef,
@@ -975,6 +991,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: image },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'processed' as const,
         lutDataRef: { current: null },
@@ -1002,6 +1019,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: null },
         imageVersion: 0,
+        decodedFrame: testFrame(0),
         color: defaultColor,
         viewMode: 'processed' as const,
         lutDataRef: { current: null },
@@ -1049,6 +1067,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           imageRef: { current: decodedImage },
           imageVersion: 1,
+          decodedFrame: testFrame(1),
           color: defaultColor,
           viewMode: 'processed' as const,
           lutDataRef: { current: null },
@@ -1095,6 +1114,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -1146,6 +1166,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: { ...decodedImage, source: 'quick' as const } },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -1241,6 +1262,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: { ...defaultColor, selectiveColor },
         viewMode: 'processed' as const,
         lutDataRef: { current: null },
@@ -1261,6 +1283,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: null },
       imageVersion: 0,
+      decodedFrame: testFrame(0),
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -1330,6 +1353,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'compare',
         lutDataRef: { current: null },
@@ -1379,6 +1403,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: { ...decodedImage, source: 'quick' } },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'compare',
         lutDataRef: { current: null },
@@ -1425,6 +1450,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: { ...decodedImage, source: 'quick' } },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'processed' as const,
         lutDataRef: { current: null },
@@ -1479,6 +1505,7 @@ describe('preview canvas upload descriptor', () => {
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
       imageVersion: 0,
+      decodedFrame: testFrame(0),
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -1514,6 +1541,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         ...props,
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         displaySource: 'quick',
       }),
     )
@@ -1544,6 +1572,7 @@ describe('preview canvas upload descriptor', () => {
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
       imageVersion: 1,
+      decodedFrame: quickTestFrame,
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -1585,6 +1614,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         ...props,
         imageVersion: 2,
+        decodedFrame: boundedHqTestFrame,
         displaySource: 'bounded-hq',
       }),
     )
@@ -1604,6 +1634,7 @@ describe('preview canvas upload descriptor', () => {
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
       imageVersion: 1,
+      decodedFrame: quickTestFrame,
       color: defaultColor,
       viewMode: 'compare',
       lutDataRef: { current: null },
@@ -1632,6 +1663,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         ...props,
         imageVersion: 2,
+        decodedFrame: boundedHqTestFrame,
         displaySource: 'bounded-hq',
       }),
     )
@@ -1686,6 +1718,7 @@ describe('preview canvas upload descriptor', () => {
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
       imageVersion: 1,
+      decodedFrame: quickTestFrame,
       color: defaultColor,
       viewMode: 'compare',
       lutDataRef: { current: null },
@@ -1714,6 +1747,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         ...props,
         imageVersion: 2,
+        decodedFrame: boundedHqTestFrame,
         displaySource: 'bounded-hq',
       }),
     )
@@ -1732,6 +1766,7 @@ describe('preview canvas upload descriptor', () => {
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'compare',
       lutDataRef: { current: null },
@@ -1756,6 +1791,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         ...props,
         imageVersion: 2,
+        decodedFrame: testFrame(2),
       }),
     )
 
@@ -1794,6 +1830,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'compare',
         lutDataRef: { current: null },
@@ -1823,6 +1860,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'compare',
         lutDataRef: { current: null },
@@ -1862,6 +1900,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'compare',
         lutDataRef: { current: null },
@@ -1887,6 +1926,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 2,
+        decodedFrame: testFrame(2),
         color: defaultColor,
         viewMode: 'compare',
         lutDataRef: { current: null },
@@ -1991,6 +2031,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'compare',
         lutDataRef: { current: null },
@@ -2045,6 +2086,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'processed' as const,
         lutDataRef: { current: null },
@@ -2108,6 +2150,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'compare' as const,
       lutDataRef: { current: null },
@@ -2459,6 +2502,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'processed' as const,
         lutDataRef: { current: null },
@@ -2507,6 +2551,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -2562,6 +2607,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'compare' as const,
       lutDataRef: { current: null },
@@ -2629,6 +2675,7 @@ describe('preview canvas upload descriptor', () => {
     const props: ComponentProps<typeof PreviewCanvas> = {
       imageRef,
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'processed',
       lutDataRef: { current: null },
@@ -2655,6 +2702,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           ...props,
           imageVersion: 2,
+          decodedFrame: testFrame(2),
           displaySource: 'bounded-hq',
         }),
       )
@@ -2677,6 +2725,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef,
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -2689,6 +2738,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         ...props,
         imageVersion: 2,
+        decodedFrame: testFrame(2),
         color: { ...defaultColor, userExposureEv: 0.5 },
       }),
     )
@@ -2714,6 +2764,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: defaultColor,
       viewMode: 'processed' as const,
       lutDataRef: { current: null },
@@ -2764,6 +2815,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: { ...decodedImage, source: 'quick' as const } },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'processed' as const,
         lutDataRef: { current: null },
@@ -2803,6 +2855,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: decodedImage },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'compare',
         lutDataRef: { current: null },
@@ -2864,6 +2917,7 @@ describe('preview canvas upload descriptor', () => {
       createElement(PreviewCanvas, {
         imageRef: { current: { ...decodedImage, source: 'quick' as const } },
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'processed' as const,
         lutDataRef: { current: null },
@@ -2897,6 +2951,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: { ...decodedImage, source: 'quick' as const } },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: { ...defaultColor, styleKind: 'custom' as const },
       viewMode: 'processed' as const,
       lutDataRef,
@@ -2936,6 +2991,7 @@ describe('preview canvas upload descriptor', () => {
     const props = {
       imageRef: { current: decodedImage },
       imageVersion: 1,
+      decodedFrame: testFrame(1),
       color: { ...defaultColor, styleKind: 'custom' as const },
       viewMode: 'processed' as const,
       lutDataRef,
@@ -2979,6 +3035,268 @@ describe('preview canvas upload descriptor', () => {
     expect(onStatsUpdate).not.toHaveBeenCalled()
   })
 
+  describe('accepted frame identity', () => {
+    const quickFrame = frameDescriptor({
+      frameId: 'decoded-frame-1',
+      stage: 'quick',
+    })
+
+    function trackOf(container: HTMLElement) {
+      return container.querySelector('[data-raw-compare-track="image"]')
+    }
+
+    async function renderFittedQuickFrame(
+      overrides: Partial<ComponentProps<typeof PreviewCanvas>> = {},
+    ) {
+      const resizeCallbacks = captureResizeObservers()
+      const imageRef: RefObject<DecodedImage | null> = {
+        current: { ...decodedImage, source: 'quick' as const },
+      }
+      const props: ComponentProps<typeof PreviewCanvas> = {
+        imageRef,
+        imageVersion: 1,
+        decodedFrame: quickFrame,
+        color: defaultColor,
+        viewMode: 'processed' as const,
+        lutDataRef: { current: null },
+        lutDataVersion: 0,
+        displaySource: 'quick',
+        ...overrides,
+      }
+      const view = render(createElement(PreviewCanvas, props))
+      await waitFor(() => {
+        expect(processedPipelines()[0]?.render).toHaveBeenCalled()
+        expect(resizeCallbacks.length).toBeGreaterThan(0)
+      })
+      act(() => {
+        for (const callback of resizeCallbacks) fireResize(callback, 400, 300)
+      })
+      await waitFor(() => {
+        expect(trackOf(view.container)).toHaveAttribute(
+          'data-preview-track-ready',
+          'true',
+        )
+      })
+      return { ...view, imageRef, props }
+    }
+
+    /** Hands the canvas a bounded-HQ frame with the quick frame's size. */
+    function showBoundedHq(
+      view: Awaited<ReturnType<typeof renderFittedQuickFrame>>,
+      decodedFrame: DecodedPreviewFrame,
+    ) {
+      view.imageRef.current = {
+        ...decodedImage,
+        source: 'bounded-hq',
+        data: new Uint16Array(400 * 300 * 3),
+      }
+      view.rerender(
+        createElement(PreviewCanvas, {
+          ...view.props,
+          imageVersion: 2,
+          decodedFrame,
+          displaySource: 'bounded-hq',
+        }),
+      )
+    }
+
+    it('keeps the quick frame on screen for the bounded-HQ frame that names it', async () => {
+      const view = await renderFittedQuickFrame()
+
+      showBoundedHq(
+        view,
+        frameDescriptor({
+          frameId: 'decoded-frame-2',
+          stage: 'bounded-hq',
+          quickPredecessorFrameId: quickFrame.frameId,
+        }),
+      )
+
+      expect(trackOf(view.container)).toHaveAttribute(
+        'data-preview-track-ready',
+        'true',
+      )
+      await act(async () => {
+        await Promise.resolve()
+      })
+    })
+
+    it.each([
+      [
+        'another source with an equal size',
+        frameDescriptor({
+          sessionId: 'session-2',
+          frameId: 'decoded-frame-2',
+          stage: 'bounded-hq',
+          quickPredecessorFrameId: quickFrame.frameId,
+        }),
+      ],
+      [
+        'a restored frame that names no predecessor',
+        frameDescriptor({ frameId: 'decoded-frame-2', stage: 'bounded-hq' }),
+      ],
+      [
+        'a frame that names another quick frame',
+        frameDescriptor({
+          frameId: 'decoded-frame-3',
+          stage: 'bounded-hq',
+          quickPredecessorFrameId: 'decoded-frame-2',
+        }),
+      ],
+    ])('never bridges the quick frame into %s', async (_, successor) => {
+      const view = await renderFittedQuickFrame()
+
+      showBoundedHq(view, successor)
+
+      expect(trackOf(view.container)).toHaveAttribute(
+        'data-preview-track-ready',
+        'false',
+      )
+      await act(async () => {
+        await Promise.resolve()
+      })
+    })
+
+    it('never holds another source behind the retained quick compare pair', async () => {
+      const view = await renderFittedQuickFrame({
+        viewMode: 'compare',
+        dualGpuAllowed: true,
+      })
+      await waitFor(() => {
+        expect(
+          view.container.querySelector('[data-compare-mode="dual-gpu"]'),
+        ).toBeTruthy()
+      })
+      const originalFrame = deferred<void>()
+      pipelineMock.waitForGpu.mockImplementation((canvas: HTMLCanvasElement) =>
+        canvas.className.includes('raw-preview-original-gpu-canvas')
+          ? originalFrame.promise
+          : Promise.resolve(),
+      )
+      pipelineMock.pipelineEvents.length = 0
+
+      showBoundedHq(
+        view,
+        frameDescriptor({
+          sessionId: 'session-2',
+          frameId: 'decoded-frame-2',
+          stage: 'bounded-hq',
+        }),
+      )
+
+      // The new source draws at once instead of waiting behind the old
+      // source's compare pair, and compare waits for its own original.
+      expect(
+        view.container.querySelector('[data-compare-mode="dual-gpu"]'),
+      ).toBeNull()
+      await waitFor(() => {
+        expect(
+          pipelineMock.pipelineEvents.filter(
+            (event) => event.kind === 'processed' && event.op === 'render',
+          ),
+        ).toHaveLength(1)
+      })
+      expect(
+        view.container.querySelector('[data-compare-mode="dual-gpu"]'),
+      ).toBeNull()
+
+      await act(async () => originalFrame.resolve())
+      await waitFor(() => {
+        expect(
+          view.container.querySelector('[data-compare-mode="dual-gpu"]'),
+        ).toBeTruthy()
+      })
+    })
+
+    it('uploads and draws no decoded pixels without an accepted descriptor', async () => {
+      const onStatsUpdate = vi.fn()
+      const props: ComponentProps<typeof PreviewCanvas> = {
+        imageRef: { current: { ...decodedImage, source: 'quick' as const } },
+        imageVersion: 1,
+        decodedFrame: null,
+        color: defaultColor,
+        viewMode: 'compare' as const,
+        dualGpuAllowed: true,
+        lutDataRef: { current: null },
+        lutDataVersion: 0,
+        displaySource: 'quick',
+        onStatsUpdate,
+      }
+      const { rerender } = render(createElement(PreviewCanvas, props))
+      await waitFor(() => {
+        expect(processedPipelines()[0]?.initialize).toHaveBeenCalled()
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(pipelineMock.pipelineEvents).toEqual([])
+      expect(processedPipelines()[0]?.clearImage).toHaveBeenCalled()
+      expect(originalPipelines()).toHaveLength(0)
+      expect(onStatsUpdate).not.toHaveBeenCalled()
+
+      rerender(
+        createElement(PreviewCanvas, { ...props, decodedFrame: quickFrame }),
+      )
+      await waitFor(() => expect(onStatsUpdate).toHaveBeenCalledOnce())
+      expect(
+        pipelineMock.pipelineEvents.filter((event) => event.op === 'upload'),
+      ).toEqual([
+        { kind: 'processed', op: 'upload', width: 400, height: 300 },
+        { kind: 'original', op: 'upload', width: 400, height: 300 },
+      ])
+    })
+
+    it('never publishes late work of a replaced frame, whatever the version counter says', async () => {
+      const staleFrame = deferred<void>()
+      const currentFrame = deferred<void>()
+      pipelineMock.waitForGpu
+        .mockReturnValueOnce(staleFrame.promise)
+        .mockReturnValueOnce(currentFrame.promise)
+      const onStatsUpdate = vi.fn()
+      const imageRef: RefObject<DecodedImage | null> = {
+        current: { ...decodedImage, source: 'quick' as const },
+      }
+      const props: ComponentProps<typeof PreviewCanvas> = {
+        imageRef,
+        imageVersion: 1,
+        decodedFrame: quickFrame,
+        color: defaultColor,
+        viewMode: 'processed' as const,
+        lutDataRef: { current: null },
+        lutDataVersion: 0,
+        displaySource: 'quick',
+        onStatsUpdate,
+      }
+      const { rerender } = render(createElement(PreviewCanvas, props))
+      await waitFor(() => expect(pipelineMock.waitForGpu).toHaveBeenCalled())
+
+      // Another source's frame of the same size arrives under the same
+      // counter value: the descriptor alone says the pixels changed.
+      imageRef.current = { ...decodedImage, source: 'quick' as const }
+      rerender(
+        createElement(PreviewCanvas, {
+          ...props,
+          decodedFrame: frameDescriptor({
+            sessionId: 'session-2',
+            frameId: 'decoded-frame-1',
+            stage: 'quick',
+          }),
+        }),
+      )
+      await waitFor(() =>
+        expect(pipelineMock.waitForGpu).toHaveBeenCalledTimes(2),
+      )
+      expect(processedPipelines()[0]?.uploadImage.mock.calls.length).toBe(2)
+
+      await act(async () => staleFrame.resolve())
+      expect(onStatsUpdate).not.toHaveBeenCalled()
+
+      await act(async () => currentFrame.resolve())
+      expect(onStatsUpdate).toHaveBeenCalledOnce()
+    })
+  })
+
   describe('backing store resize', () => {
     async function renderSizedPreview(
       image: DecodedImage = decodedImage,
@@ -2989,6 +3307,7 @@ describe('preview canvas upload descriptor', () => {
       const props = {
         imageRef,
         imageVersion: 1,
+        decodedFrame: testFrame(1),
         color: defaultColor,
         viewMode: 'processed' as const,
         lutDataRef: { current: null },
@@ -3105,6 +3424,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           imageRef: { current: decodedImage },
           imageVersion: 1,
+          decodedFrame: testFrame(1),
           color: defaultColor,
           viewMode: 'processed' as const,
           lutDataRef: { current: null },
@@ -3169,7 +3489,13 @@ describe('preview canvas upload descriptor', () => {
           metadata: { width: 300, height: 400 },
         }
         props.imageRef.current = portrait
-        rerender(createElement(PreviewCanvas, { ...props, imageVersion: 2 }))
+        rerender(
+          createElement(PreviewCanvas, {
+            ...props,
+            imageVersion: 2,
+            decodedFrame: testFrame(2),
+          }),
+        )
 
         expect(pipeline.resize).toHaveBeenCalledExactlyOnceWith(200, 150)
         expect(vi.getTimerCount()).toBe(0)
@@ -3259,6 +3585,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           imageRef: { current: null },
           imageVersion: 0,
+          decodedFrame: testFrame(0),
           color: defaultColor,
           viewMode: 'processed' as const,
           lutDataRef: { current: null },
@@ -3321,6 +3648,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           imageRef: { current: null },
           imageVersion: 0,
+          decodedFrame: testFrame(0),
           color: defaultColor,
           viewMode: 'processed' as const,
           lutDataRef: { current: null },
@@ -3396,6 +3724,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           imageRef: { current: decodedImage },
           imageVersion: 1,
+          decodedFrame: testFrame(1),
           color: defaultColor,
           viewMode: 'compare',
           lutDataRef: { current: null },
@@ -3447,6 +3776,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           imageRef: { current: { ...decodedImage, source: 'quick' } },
           imageVersion: 1,
+          decodedFrame: testFrame(1),
           color: defaultColor,
           viewMode: 'compare',
           lutDataRef: { current: null },
@@ -3521,6 +3851,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           imageRef: { current: decodedImage },
           imageVersion: 1,
+          decodedFrame: testFrame(1),
           color: defaultColor,
           viewMode: 'compare',
           lutDataRef: { current: null },
@@ -3573,6 +3904,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           imageRef: { current: decodedImage },
           imageVersion: 1,
+          decodedFrame: testFrame(1),
           color: defaultColor,
           viewMode: 'compare',
           lutDataRef: { current: null },
@@ -3606,6 +3938,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           imageRef: { current: { ...decodedImage, source: 'quick' } },
           imageVersion: 1,
+          decodedFrame: testFrame(1),
           color: defaultColor,
           viewMode: 'processed' as const,
           lutDataRef: { current: null },
@@ -3638,6 +3971,7 @@ describe('preview canvas upload descriptor', () => {
         createElement(PreviewCanvas, {
           imageRef: { current: null },
           imageVersion: 0,
+          decodedFrame: testFrame(0),
           color: defaultColor,
           viewMode: 'processed' as const,
           lutDataRef: { current: null },

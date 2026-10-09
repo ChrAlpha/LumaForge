@@ -93,6 +93,19 @@ vi.mock('../hooks', async (importOriginal) => {
             hasImage: true,
             decodedImageRef: image,
             decodedImageVersion: 1,
+            // The descriptor the producer mints when it accepts the frame.
+            decodedFrame: {
+              sessionId: 'session-1',
+              frameId: 'decoded-frame-1',
+              stage: 'bounded-hq',
+              width: image.current.width,
+              height: image.current.height,
+              exposure: {
+                kind: 'source-pin',
+                value: image.current.renderExposure,
+              },
+              quickPredecessorFrameId: null,
+            },
             displaySource: 'bounded-hq',
           }
         : workflow

@@ -37,14 +37,16 @@ import { PreviewStageFrame } from './PreviewStageFrame'
 
 export interface PreviewCanvasProps {
   imageRef: React.RefObject<DecodedImage | null>
+  /** Bumped whenever `imageRef` changes; it never names a frame. */
   imageVersion: number
   /**
    * The workflow's accepted descriptor of the frame `imageRef` holds; null
    * while no decoded frame is live (before a decode, with only the embedded
-   * preview, and once the preview is released). Uploads and draws still key
-   * on `imageVersion`.
+   * preview, and once the preview is released). Both GPU layers key their
+   * uploads, draws, and readiness on it, and draw no decoded pixels without
+   * one.
    */
-  decodedFrame?: DecodedPreviewFrame | null
+  decodedFrame: DecodedPreviewFrame | null
   /** The color the processed surface draws; it carries no view state. */
   color: ColorGraphIntent
   /** How the stage shows the photo; compare layers the original over it. */
@@ -84,6 +86,7 @@ function createProcessedPipeline(canvas: HTMLCanvasElement) {
 export function PreviewCanvas({
   imageRef,
   imageVersion,
+  decodedFrame,
   color,
   viewMode,
   lutDataRef,
@@ -112,12 +115,13 @@ export function PreviewCanvas({
   const image = imageRef.current
   const imageWidth = image?.width ?? 0
   const imageHeight = image?.height ?? 0
-  const hasImageData = Boolean(image?.data)
+  const hasImageData = decodedFrame !== null && Boolean(image?.data)
   const supportsCssClip = supportsLayeredCompareCss()
 
   const processed = useProcessedPreview<RawProcessingPipeline>({
     imageRef,
     imageVersion,
+    decodedFrame,
     displaySource,
     color,
     viewMode,
@@ -252,7 +256,7 @@ export function PreviewCanvas({
         shouldMountOriginalGpuLayer ? (
           <OriginalGpuLayer
             imageRef={imageRef}
-            imageVersion={imageVersion}
+            decodedFrame={decodedFrame}
             generationKey={processed.originalGpuLayer.generationKey}
             onPipelineChange={onOriginalPreviewPipelineChange}
             onReady={processed.originalGpuLayer.onReady}

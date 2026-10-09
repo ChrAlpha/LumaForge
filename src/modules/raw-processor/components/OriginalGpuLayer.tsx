@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 import { RawProcessingPipeline as DefaultRawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
@@ -36,18 +37,26 @@ function createDefaultOriginalPipeline(canvas: HTMLCanvasElement) {
   return new DefaultRawProcessingPipeline(canvas, { reportFailures: false })
 }
 
+/**
+ * The technical original drawn on its own GPU pipeline under the processed
+ * canvas. It draws only an accepted frame and reports readiness against the
+ * generation key its owner derived from that frame; it never names a frame
+ * itself.
+ */
 export function OriginalGpuLayer({
   imageRef,
-  imageVersion,
-  generationKey = String(imageVersion),
+  decodedFrame,
+  generationKey,
   createPipeline = createDefaultOriginalPipeline,
   onReady,
   onError,
   onPipelineChange,
 }: {
   imageRef: React.RefObject<DecodedImage | null>
-  imageVersion: number
-  generationKey?: string
+  /** The accepted frame `imageRef` holds; null draws nothing. */
+  decodedFrame: DecodedPreviewFrame | null
+  /** Names the frame and the compare inputs this draw serves. */
+  generationKey: string
   createPipeline?: (canvas: HTMLCanvasElement) => OriginalPipeline
   onReady?: (generationKey: string) => void
   onError?: (error: unknown, generationKey: string) => void
@@ -59,6 +68,10 @@ export function OriginalGpuLayer({
   const onReadyRef = useRef(onReady)
   const onErrorRef = useRef(onError)
   const onPipelineChangeRef = useRef(onPipelineChange)
+  const hasDecodedFrame = decodedFrame !== null
+  // A new accepted frame is drawn even if its owner kept the key.
+  const frameSessionId = decodedFrame?.sessionId ?? null
+  const frameId = decodedFrame?.frameId ?? null
 
   useEffect(() => {
     generationKeyRef.current = generationKey
@@ -114,7 +127,7 @@ export function OriginalGpuLayer({
       onApply: () => {
         try {
           pipelineRef.current?.resize(canvas.width, canvas.height)
-          if (isInitialized && imageRef.current) {
+          if (isInitialized && hasDecodedFrame && imageRef.current) {
             pipelineRef.current?.render()
           }
         } catch (error) {
@@ -122,13 +135,21 @@ export function OriginalGpuLayer({
         }
       },
     })
-  }, [imageRef, isInitialized, pipelineRef, reportPipelineError])
+  }, [
+    hasDecodedFrame,
+    imageRef,
+    isInitialized,
+    pipelineRef,
+    reportPipelineError,
+  ])
 
   useEffect(() => {
     const canvas = canvasRef.current
     const pipeline = pipelineRef.current
     const image = imageRef.current
-    if (!canvas || !pipeline || !isInitialized || !image) return
+    if (!canvas || !pipeline || !isInitialized || !hasDecodedFrame || !image) {
+      return
+    }
 
     if (canvas.width <= 0 || canvas.height <= 0) {
       canvas.width = image.width
@@ -167,9 +188,11 @@ export function OriginalGpuLayer({
       cancelled = true
     }
   }, [
+    frameId,
+    frameSessionId,
     generationKey,
+    hasDecodedFrame,
     imageRef,
-    imageVersion,
     isInitialized,
     pipelineRef,
     reportPipelineError,

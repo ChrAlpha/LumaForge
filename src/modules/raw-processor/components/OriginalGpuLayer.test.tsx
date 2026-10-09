@@ -1,6 +1,7 @@
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { act, render, waitFor } from '@testing-library/react'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import { OriginalGpuLayer } from './OriginalGpuLayer'
@@ -19,6 +20,19 @@ const decodedImage: DecodedImage = {
     height: 300,
   },
   renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+}
+
+/** The accepted descriptor tests pair with an image version. */
+function testFrame(imageVersion: number): DecodedPreviewFrame {
+  return {
+    sessionId: 'session-1',
+    frameId: `decoded-frame-${imageVersion}`,
+    stage: 'quick',
+    width: decodedImage.width,
+    height: decodedImage.height,
+    exposure: { kind: 'unpinned', value: decodedImage.renderExposure },
+    quickPredecessorFrameId: null,
+  }
 }
 
 function deferred() {
@@ -108,7 +122,8 @@ describe('originalGpuLayer', () => {
     const createPipeline = () => pipeline as never
     const props = {
       imageRef: { current: decodedImage },
-      imageVersion: 1,
+      decodedFrame: testFrame(1),
+      generationKey: '1',
       createPipeline,
       onReady,
       onError,
@@ -117,7 +132,13 @@ describe('originalGpuLayer', () => {
     await waitFor(() => expect(pipeline.waitForGpu).toHaveBeenCalledOnce())
     expect(onReady).not.toHaveBeenCalled()
 
-    rerender(<OriginalGpuLayer {...props} imageVersion={2} />)
+    rerender(
+      <OriginalGpuLayer
+        {...props}
+        decodedFrame={testFrame(2)}
+        generationKey="2"
+      />,
+    )
     await waitFor(() => expect(pipeline.waitForGpu).toHaveBeenCalledTimes(2))
     await act(async () => firstFrame.reject(new Error('stale GPU failure')))
     expect(onReady).not.toHaveBeenCalled()
@@ -148,7 +169,8 @@ describe('originalGpuLayer', () => {
       const { unmount } = render(
         <OriginalGpuLayer
           imageRef={{ current: decodedImage }}
-          imageVersion={1}
+          decodedFrame={testFrame(1)}
+          generationKey="1"
           createPipeline={() => pipeline as never}
           onReady={onReady}
           onError={onError}
@@ -175,7 +197,8 @@ describe('originalGpuLayer', () => {
     render(
       <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
-        imageVersion={1}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
         createPipeline={() =>
           ({
             initialize: vi.fn().mockResolvedValue(undefined),
@@ -206,7 +229,8 @@ describe('originalGpuLayer', () => {
     render(
       <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
-        imageVersion={1}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
         createPipeline={() =>
           ({
             initialize: vi.fn().mockResolvedValue(undefined),
@@ -247,7 +271,8 @@ describe('originalGpuLayer', () => {
     render(
       <OriginalGpuLayer
         imageRef={{ current: image }}
-        imageVersion={1}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
         onReady={onReady}
         createPipeline={() =>
           ({
@@ -298,7 +323,8 @@ describe('originalGpuLayer', () => {
     const { rerender } = render(
       <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
-        imageVersion={1}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
         createPipeline={createPipeline}
         onReady={onReady}
       />,
@@ -314,7 +340,8 @@ describe('originalGpuLayer', () => {
     rerender(
       <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
-        imageVersion={2}
+        decodedFrame={testFrame(2)}
+        generationKey="2"
         createPipeline={createPipeline}
         onReady={onReady}
       />,
@@ -332,7 +359,8 @@ describe('originalGpuLayer', () => {
     const { unmount } = render(
       <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
-        imageVersion={1}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
         createPipeline={() =>
           ({
             initialize: vi.fn().mockResolvedValue(undefined),
@@ -361,7 +389,8 @@ describe('originalGpuLayer', () => {
     render(
       <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
-        imageVersion={1}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
         createPipeline={() =>
           ({
             initialize: vi.fn().mockResolvedValue(undefined),
@@ -406,7 +435,8 @@ describe('originalGpuLayer', () => {
     const { unmount } = render(
       <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
-        imageVersion={1}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
         createPipeline={() => pipeline as never}
         onPipelineChange={onPipelineChange}
         onReady={onReady}
@@ -437,7 +467,8 @@ describe('originalGpuLayer', () => {
         .filter((value) => value !== null)
     const props = {
       imageRef: { current: decodedImage },
-      imageVersion: 1,
+      decodedFrame: testFrame(1),
+      generationKey: '1',
       onPipelineChange,
     }
     const { rerender, unmount } = render(
@@ -476,7 +507,8 @@ describe('originalGpuLayer', () => {
     render(
       <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
-        imageVersion={1}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
         createPipeline={() => {
           throw new Error('WebGPU is not supported on this device')
         }}
@@ -501,7 +533,8 @@ describe('originalGpuLayer', () => {
     render(
       <OriginalGpuLayer
         imageRef={{ current: decodedImage }}
-        imageVersion={1}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
         createPipeline={() =>
           ({
             initialize: vi.fn().mockResolvedValue(undefined),
@@ -527,13 +560,70 @@ describe('originalGpuLayer', () => {
     })
     expect(dispose).toHaveBeenCalledWith({ releaseContext: true })
   })
+  it('draws no decoded pixels until an accepted frame names them', async () => {
+    const pipeline = createPipelineMock()
+    const onReady = vi.fn()
+    const props = {
+      imageRef: { current: decodedImage },
+      createPipeline: () => pipeline as never,
+      onReady,
+    }
+    const { rerender } = render(
+      <OriginalGpuLayer {...props} decodedFrame={null} generationKey="none" />,
+    )
+    await waitFor(() => expect(pipeline.initialize).toHaveBeenCalledOnce())
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(pipeline.uploadImage).not.toHaveBeenCalled()
+    expect(pipeline.render).not.toHaveBeenCalled()
+    expect(onReady).not.toHaveBeenCalled()
+
+    rerender(
+      <OriginalGpuLayer
+        {...props}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
+      />,
+    )
+    await waitFor(() => expect(onReady).toHaveBeenCalledExactlyOnceWith('1'))
+    expect(pipeline.uploadImage).toHaveBeenCalledOnce()
+    expect(pipeline.render).toHaveBeenCalledOnce()
+  })
+
+  it('draws every accepted frame, even one its owner keyed the same', async () => {
+    const pipeline = createPipelineMock()
+    const imageRef = { current: decodedImage }
+    const props = {
+      imageRef,
+      generationKey: 'frame',
+      createPipeline: () => pipeline as never,
+    }
+    const { rerender } = render(
+      <OriginalGpuLayer {...props} decodedFrame={testFrame(1)} />,
+    )
+    await waitFor(() => expect(pipeline.uploadImage).toHaveBeenCalledOnce())
+
+    imageRef.current = { ...decodedImage, width: 420, height: 320 }
+    rerender(
+      <OriginalGpuLayer
+        {...props}
+        decodedFrame={{ ...testFrame(1), sessionId: 'session-2' }}
+      />,
+    )
+    await waitFor(() => expect(pipeline.uploadImage).toHaveBeenCalledTimes(2))
+    expect(pipeline.uploadImage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ width: 420, height: 320 }),
+    )
+  })
+
   it('does one upload, draw, and fence per generation, and none for callback-only changes', async () => {
     const pipeline = createPipelineMock()
     const createPipeline = () => pipeline as never
     const onReady = vi.fn()
     const props = {
       imageRef: { current: decodedImage },
-      imageVersion: 1,
+      decodedFrame: testFrame(1),
       generationKey: '1:quick:dual:compare:active',
       createPipeline,
     }
@@ -603,10 +693,20 @@ describe('originalGpuLayer', () => {
       onPipelineChange,
     }
     const { rerender } = render(
-      <OriginalGpuLayer {...props} imageVersion={1} />,
+      <OriginalGpuLayer
+        {...props}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
+      />,
     )
     imageRef.current = { ...decodedImage, width: 420, height: 320 }
-    rerender(<OriginalGpuLayer {...props} imageVersion={2} />)
+    rerender(
+      <OriginalGpuLayer
+        {...props}
+        decodedFrame={testFrame(2)}
+        generationKey="2"
+      />,
+    )
     expect(pipeline.uploadImage).not.toHaveBeenCalled()
     expect(onPipelineChange).not.toHaveBeenCalled()
 
@@ -629,7 +729,8 @@ describe('originalGpuLayer', () => {
     const onReady = vi.fn()
     const props = {
       imageRef: { current: decodedImage },
-      imageVersion: 1,
+      decodedFrame: testFrame(1),
+      generationKey: '1',
       createPipeline: () => pipeline as never,
       onError,
       onReady,
@@ -665,7 +766,8 @@ describe('originalGpuLayer', () => {
       render(
         <OriginalGpuLayer
           imageRef={{ current: decodedImage }}
-          imageVersion={1}
+          decodedFrame={testFrame(1)}
+          generationKey="1"
           createPipeline={() => pipeline as never}
           onReady={onReady}
         />,
@@ -717,7 +819,7 @@ describe('originalGpuLayer', () => {
       render(
         <OriginalGpuLayer
           imageRef={{ current: decodedImage }}
-          imageVersion={1}
+          decodedFrame={testFrame(1)}
           generationKey="1:quick:dual:compare:active"
           createPipeline={() => pipeline as never}
           onReady={onReady}
@@ -763,7 +865,8 @@ describe('originalGpuLayer', () => {
       const result = render(
         <OriginalGpuLayer
           imageRef={{ current: decodedImage }}
-          imageVersion={1}
+          decodedFrame={testFrame(1)}
+          generationKey="1"
           createPipeline={() => pipeline as never}
           onReady={onReady}
         />,
@@ -886,7 +989,8 @@ describe('originalGpuLayer', () => {
       const { container } = render(
         <OriginalGpuLayer
           imageRef={{ current: decodedImage }}
-          imageVersion={1}
+          decodedFrame={testFrame(1)}
+          generationKey="1"
           createPipeline={() => pipeline as never}
           onReady={onReady}
         />,

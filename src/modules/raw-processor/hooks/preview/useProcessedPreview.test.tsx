@@ -3,6 +3,7 @@ import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
@@ -70,6 +71,26 @@ function decodedImage(overrides: Partial<DecodedImage> = {}): DecodedImage {
   }
 }
 
+/** An accepted frame descriptor as the workflow's producer would mint it. */
+function acceptedFrame(
+  frameId: string,
+  overrides: Partial<DecodedPreviewFrame> = {},
+): DecodedPreviewFrame {
+  return {
+    sessionId: 'session-1',
+    frameId,
+    stage: 'unknown',
+    width: 400,
+    height: 300,
+    exposure: {
+      kind: 'unpinned',
+      value: { ev: 0, multiplier: 1, source: 'identity' },
+    },
+    quickPredecessorFrameId: null,
+    ...overrides,
+  }
+}
+
 function createTestLut() {
   return {
     size: 2,
@@ -90,6 +111,7 @@ function renderProcessed(initial: Partial<Options> = {}) {
   const base: Options = {
     imageRef: { current: decodedImage() },
     imageVersion: 1,
+    decodedFrame: acceptedFrame('decoded-frame-1'),
     displaySource: 'quick',
     color: defaultColor,
     viewMode: 'processed',
@@ -180,7 +202,12 @@ describe('useProcessedPreview', () => {
     await view.publish(pipeline)
 
     view.props().imageRef.current = decodedImage({ width: 420, height: 320 })
-    await act(async () => view.update({ imageVersion: 2 }))
+    await act(async () =>
+      view.update({
+        imageVersion: 2,
+        decodedFrame: acceptedFrame('decoded-frame-2'),
+      }),
+    )
     expect(pipeline.uploadImage).toHaveBeenCalledTimes(2)
     expect(pipeline.waitForGpu).toHaveBeenCalledTimes(2)
 
@@ -343,6 +370,7 @@ describe('useProcessedPreview', () => {
     view.props().imageRef.current = decodedImage({ width: 420, height: 320 })
     view.update({
       imageVersion: 2,
+      decodedFrame: acceptedFrame('decoded-frame-2'),
       color: { ...defaultColor, userExposureEv: 0.5 },
     })
     act(() => view.result.current.redraw())
@@ -423,7 +451,12 @@ describe('useProcessedPreview', () => {
     it('holds the bounded-HQ draw behind the retained quick pair until the original layer reaches it', async () => {
       const pipeline = createPipeline()
       const imageRef = { current: decodedImage({ source: 'quick' }) }
-      const view = renderProcessed({ ...compare, imageRef })
+      const quickFrame = acceptedFrame('decoded-frame-1', { stage: 'quick' })
+      const view = renderProcessed({
+        ...compare,
+        imageRef,
+        decodedFrame: quickFrame,
+      })
       await view.publish(pipeline)
       await flush()
       act(() => view.result.current.markTrackReady())
@@ -444,7 +477,16 @@ describe('useProcessedPreview', () => {
         height: 1200,
       })
       await act(async () =>
-        view.update({ imageVersion: 2, displaySource: 'bounded-hq' }),
+        view.update({
+          imageVersion: 2,
+          decodedFrame: acceptedFrame('decoded-frame-2', {
+            stage: 'bounded-hq',
+            width: 1600,
+            height: 1200,
+            quickPredecessorFrameId: quickFrame.frameId,
+          }),
+          displaySource: 'bounded-hq',
+        }),
       )
 
       // The quick pair stays on screen and the track keeps its fit.
@@ -469,6 +511,103 @@ describe('useProcessedPreview', () => {
         kind: 'dual-gpu',
       })
     })
+    it('draws a restored frame as its own generation, with no quick bridge', async () => {
+      const pipeline = createPipeline()
+      const imageRef = { current: decodedImage({ source: 'quick' }) }
+      const quickFrame = acceptedFrame('decoded-frame-1', { stage: 'quick' })
+      const view = renderProcessed({
+        ...compare,
+        imageRef,
+        decodedFrame: quickFrame,
+      })
+      await view.publish(pipeline)
+      await flush()
+      act(() => view.result.current.markTrackReady())
+      act(() => {
+        view.result.current.originalGpuLayer.onReady(
+          view.result.current.originalGpuLayer.generationKey,
+        )
+      })
+      expect(view.result.current.compareRenderMode).toEqual({
+        kind: 'dual-gpu',
+      })
+
+      // The preview is released for export, then restored.
+      imageRef.current = null as never
+      await act(async () =>
+        view.update({ imageVersion: 2, decodedFrame: null }),
+      )
+      expect(view.result.current.shouldMountOriginalGpuLayer).toBe(false)
+      expect(pipeline.clearImage).toHaveBeenCalled()
+      pipeline.uploadImage.mockClear()
+      pipeline.render.mockClear()
+
+      imageRef.current = decodedImage({ source: 'bounded-hq' })
+      await act(async () =>
+        view.update({
+          imageVersion: 3,
+          decodedFrame: acceptedFrame('decoded-frame-3', {
+            stage: 'bounded-hq',
+          }),
+          displaySource: 'bounded-hq',
+        }),
+      )
+
+      // Nothing holds the restored frame back: it uploads, draws, and is
+      // ready on its own, while compare waits for its own original.
+      expect(view.result.current.retainedProcessedFrameReady).toBe(false)
+      expect(view.result.current.shouldDelayProcessedCompareRender).toBe(false)
+      expect(pipeline.uploadImage).toHaveBeenCalledOnce()
+      expect(pipeline.render).toHaveBeenCalledOnce()
+      expect(view.result.current.currentProcessedFrameReady).toBe(true)
+      expect(view.result.current.compareRenderMode).toEqual({
+        kind: 'embedded-fallback',
+        reason: 'original-gpu-pending',
+      })
+    })
+
+    it('publishes no original readiness from another frame', async () => {
+      const imageRef = { current: decodedImage({ source: 'quick' }) }
+      const view = renderProcessed({
+        ...compare,
+        imageRef,
+        decodedFrame: acceptedFrame('decoded-frame-1', { stage: 'quick' }),
+      })
+      await view.publish(createPipeline())
+      await flush()
+      const staleKey = view.result.current.originalGpuLayer.generationKey
+
+      imageRef.current = decodedImage({ source: 'quick' })
+      await act(async () =>
+        view.update({
+          imageVersion: 2,
+          decodedFrame: acceptedFrame('decoded-frame-1', {
+            sessionId: 'session-2',
+            stage: 'quick',
+          }),
+        }),
+      )
+      expect(view.result.current.originalGpuLayer.generationKey).not.toBe(
+        staleKey,
+      )
+      act(() => view.result.current.originalGpuLayer.onReady(staleKey))
+
+      expect(view.result.current.originalGpuReady).toBe(false)
+      expect(view.result.current.retainedOriginalGpuFrameReady).toBe(false)
+      expect(view.result.current.compareRenderMode).toEqual({
+        kind: 'embedded-fallback',
+        reason: 'original-gpu-pending',
+      })
+
+      act(() =>
+        view.result.current.originalGpuLayer.onReady(
+          view.result.current.originalGpuLayer.generationKey,
+        ),
+      )
+      expect(view.result.current.compareRenderMode).toEqual({
+        kind: 'dual-gpu',
+      })
+    })
   })
 
   it('resets the track fit for a new image unless a frame or handoff covers it', () => {
@@ -478,7 +617,10 @@ describe('useProcessedPreview', () => {
     expect(view.result.current.trackReady).toBe(true)
 
     imageRef.current = decodedImage({ width: 420, height: 320 })
-    view.update({ imageVersion: 2 })
+    view.update({
+      imageVersion: 2,
+      decodedFrame: acceptedFrame('decoded-frame-2'),
+    })
     expect(view.result.current.trackReady).toBe(false)
 
     // The embedded JPEG covers the quick decode, so the fit is kept.
@@ -486,6 +628,7 @@ describe('useProcessedPreview', () => {
     imageRef.current = decodedImage({ source: 'quick', width: 500 })
     view.update({
       imageVersion: 3,
+      decodedFrame: acceptedFrame('decoded-frame-3', { stage: 'quick' }),
       displaySource: 'quick',
       embeddedPreviewUrl: 'blob:embedded',
     })
