@@ -7,8 +7,10 @@ import type {
 import {
   NEUTRAL_SELECTIVE_COLOR,
   NEUTRAL_USER_COLOR_INTENT,
+  parseCubeLUT,
   pickColorGraphIntent,
   resolveExportColorGraph,
+  toLUTData,
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
@@ -358,14 +360,8 @@ function profile(overrides: Partial<LUTColorProfile> = {}): LUTColorProfile {
 }
 
 function lutData(profileResolution: LUTContractResolution): LUTData {
-  return {
-    size: 2,
-    data: new Float32Array(24).fill(0.5),
-    domainMin: [0, 0, 0],
-    domainMax: [1, 1, 1],
-    inputProfile: 'display-srgb',
-    profileResolution,
-  }
+  const cube = `LUT_3D_SIZE 2\n${'0.5 0.5 0.5\n'.repeat(8)}`
+  return { ...toLUTData(parseCubeLUT(cube)), profileResolution }
 }
 
 const confirmed = (overrides: Partial<LUTColorProfile> = {}) =>

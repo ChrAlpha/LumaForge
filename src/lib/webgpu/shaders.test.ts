@@ -1,6 +1,9 @@
+import type { LUTData } from '@lumaforge/luma-color-runtime'
 import {
   getLUTColorProfile,
   getProPhotoToTargetMatrix,
+  parseCubeLUT,
+  toLUTData,
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
@@ -53,17 +56,10 @@ describe('webGPU display-domain LUT blending', () => {
 describe('webGPU shader variants', () => {
   it('folds resolved LUT contracts and builtin presets while keeping data and tone live', () => {
     const profile = getLUTColorProfile('display-srgb')!
-    const lut = {
-      size: 2,
-      data: new Float32Array(24),
-      domainMin: [0, 0, 0] as [number, number, number],
-      domainMax: [1, 1, 1] as [number, number, number],
-      inputProfile: 'display-srgb' as const,
-      profileResolution: {
-        kind: 'confirmed' as const,
-        confidence: 'user' as const,
-        profile,
-      },
+    const cube = `LUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
+    const lut: LUTData = {
+      ...toLUTData(parseCubeLUT(cube)),
+      profileResolution: { kind: 'confirmed', confidence: 'user', profile },
     }
     const custom = createProcessShader(
       false,

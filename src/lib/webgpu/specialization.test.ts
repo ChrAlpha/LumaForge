@@ -1,5 +1,9 @@
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
-import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
+import {
+  getLUTColorProfile,
+  parseCubeLUT,
+  toLUTData,
+} from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -11,12 +15,9 @@ import type { GpuPreviewParams } from './uniforms'
 import { DEFAULT_PARAMS } from './uniforms'
 
 function lut(): LUTData {
+  const cube = `LUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
   return {
-    size: 2,
-    data: new Float32Array(24),
-    domainMin: [0, 0, 0],
-    domainMax: [1, 1, 1],
-    inputProfile: 'display-srgb',
+    ...toLUTData(parseCubeLUT(cube)),
     profileResolution: {
       kind: 'confirmed',
       confidence: 'user',

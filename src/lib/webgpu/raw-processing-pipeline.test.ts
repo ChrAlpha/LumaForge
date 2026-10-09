@@ -1,4 +1,5 @@
 import type { LUTData } from '@lumaforge/luma-color-runtime'
+import { parseCubeLUT, toLUTData } from '@lumaforge/luma-color-runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -39,12 +40,9 @@ const WEBGPU_FACTS = {
   reason: null,
 } as const
 
+const LUT_CUBE = `LUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
 const LUT: LUTData = {
-  size: 2,
-  data: new Float32Array(2 * 2 * 2 * 3),
-  domainMin: [0, 0, 0],
-  domainMax: [1, 1, 1],
-  inputProfile: 'display-srgb',
+  ...toLUTData(parseCubeLUT(LUT_CUBE)),
   profileResolution: { kind: 'unknown' },
 }
 

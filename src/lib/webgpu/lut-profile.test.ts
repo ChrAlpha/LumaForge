@@ -8,8 +8,10 @@ import {
   getLUTOutputToTargetMatrix,
   mat3ToColumnMajor,
   NEUTRAL_USER_COLOR_INTENT,
+  parseCubeLUT,
   resolveExportColorGraph,
   TIER1_LUT_COLOR_PROFILES,
+  toLUTData,
 } from '@lumaforge/luma-color-runtime'
 import {
   LUT_RANGE_UNIFORMS,
@@ -32,14 +34,8 @@ function resolved(profile: LUTColorProfile) {
 }
 
 function lutData(profileResolution: LUTContractResolution): LUTData {
-  return {
-    size: 2,
-    data: new Float32Array(24),
-    domainMin: [0, 0, 0],
-    domainMax: [1, 1, 1],
-    inputProfile: 'display-srgb',
-    profileResolution,
-  }
+  const cube = `LUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
+  return { ...toLUTData(parseCubeLUT(cube)), profileResolution }
 }
 
 const CUSTOM = {
