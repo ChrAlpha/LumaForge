@@ -672,6 +672,60 @@ describe('the committed configuration', () => {
     assert.deepEqual(checkKnipConfig({ config, files, workspaces }), [])
   })
 
+  it('ignores only dependencies whose consumer knip cannot see', async () => {
+    const config = JSON.parse(
+      readFileSync(new URL('knip.json', import.meta.url), 'utf8'),
+    )
+    const ignored = Object.fromEntries(
+      Object.entries(config.workspaces)
+        .filter(([, workspace]) => workspace.ignoreDependencies)
+        .map(([dir, workspace]) => [dir, workspace.ignoreDependencies]),
+    )
+    assert.deepEqual(ignored, {
+      '.': ['@iconify-json/mingcute', 'vercel', 'wrangler'],
+    })
+    assert.equal(config.ignoreDependencies, undefined)
+
+    // The deploy script runs both CLIs as `pnpm exec <bin>` subprocesses.
+    const { createPublishCommand } = await import('../deploy/publish.mjs')
+    const { createDeployConfig } = await import('../deploy/config.mjs')
+    const deployConfig = createDeployConfig('/repo')
+    const publishEnv = {
+      CLOUDFLARE_ACCOUNT_ID: 'account',
+      CLOUDFLARE_API_TOKEN: 'token',
+      [deployConfig.cloudflare.projectNameEnv]: 'lumaforge',
+      VERCEL_TOKEN: 'token',
+      [deployConfig.vercel.orgIdEnv]: 'org',
+      [deployConfig.vercel.projectIdEnv]: 'project',
+      GITHUB_REF_NAME: 'main',
+    }
+    for (const [target, bin] of [
+      ['cloudflare', 'wrangler'],
+      ['vercel', 'vercel'],
+    ]) {
+      const { command, args } = createPublishCommand(deployConfig, {
+        target,
+        deployEnv: 'preview',
+        env: publishEnv,
+      })
+      assert.deepEqual([command, ...args.slice(0, 2)], ['pnpm', 'exec', bin])
+    }
+
+    // The icons plugin finds installed `@iconify-json/<prefix>` collections
+    // by name and builds the `i-mingcute-*` classes from this one.
+    const css = readFileSync(`${repoRoot}src/styles/tailwind.css`, 'utf8')
+    assert.match(css, /^@plugin ['"]@egoist\/tailwindcss-icons['"];$/m)
+    const sources = listRepoFiles(repoRoot).filter((file) =>
+      /^src\/.*\.tsx?$/.test(file),
+    )
+    assert.ok(
+      sources.some((file) =>
+        /\bi-mingcute-[\w-]+/.test(readFileSync(`${repoRoot}${file}`, 'utf8')),
+      ),
+      'no source uses an i-mingcute-* icon class',
+    )
+  })
+
   it('keeps the baseline canonical', () => {
     const text = readFileSync(new URL('baseline.json', import.meta.url), 'utf8')
     const value = parseBaseline(JSON.parse(text))

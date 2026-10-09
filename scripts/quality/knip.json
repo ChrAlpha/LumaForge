@@ -10,8 +10,9 @@
         "scripts/**/*.{js,mjs,ts}",
         "plugins/**/*.ts"
       ],
-      "project": ["src/**/*.{ts,tsx}"],
-      "ignoreUnresolved": ["./generated-routes"]
+      "project": ["src/**/*.{ts,tsx,css}"],
+      "ignoreUnresolved": ["./generated-routes"],
+      "ignoreDependencies": ["@iconify-json/mingcute", "vercel", "wrangler"]
     },
     "packages/lmfg-cli": {
       "entry": [
