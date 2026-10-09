@@ -2,6 +2,7 @@ import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type {
@@ -24,6 +25,11 @@ export interface ComparePreviewStageProps {
   hasImage: boolean
   imageRef: React.RefObject<DecodedImage | null>
   imageVersion: number
+  /**
+   * The workflow's accepted descriptor of the frame `imageRef` holds, passed
+   * on to the canvas as received; null while no decoded frame is live.
+   */
+  decodedFrame?: DecodedPreviewFrame | null
   color: ColorGraphIntent
   /** How the photo is shown; compare layers the original at the split. */
   viewMode: PreviewViewMode
@@ -206,6 +212,7 @@ export function ComparePreviewStage({
   hasImage,
   imageRef,
   imageVersion,
+  decodedFrame = null,
   color,
   viewMode,
   lutDataRef,
@@ -285,6 +292,7 @@ export function ComparePreviewStage({
               <PreviewCanvas
                 imageRef={imageRef}
                 imageVersion={imageVersion}
+                decodedFrame={decodedFrame}
                 color={color}
                 viewMode={viewMode}
                 lutDataRef={lutDataRef}

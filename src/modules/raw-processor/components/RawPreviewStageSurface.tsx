@@ -78,6 +78,7 @@ export function RawPreviewStageSurface({
       hasImage={workflow.hasImage}
       imageRef={workflow.decodedImageRef}
       imageVersion={workflow.decodedImageVersion}
+      decodedFrame={workflow.decodedFrame}
       color={color}
       viewMode={workflow.viewMode}
       lutDataRef={workflow.lutDataRef}

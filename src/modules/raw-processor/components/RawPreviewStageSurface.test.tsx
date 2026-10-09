@@ -2,6 +2,8 @@ import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
+
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
 import { RawPreviewStageSurface } from './RawPreviewStageSurface'
 
@@ -46,6 +48,19 @@ const {
   ...expectedColor
 } = mixedParams
 
+const acceptedFrame: DecodedPreviewFrame = {
+  sessionId: 'session-1',
+  frameId: 'decoded-frame-2',
+  stage: 'bounded-hq',
+  width: 400,
+  height: 300,
+  exposure: {
+    kind: 'source-pin',
+    value: { ev: 0, multiplier: 1, source: 'identity' },
+  },
+  quickPredecessorFrameId: 'decoded-frame-1',
+}
+
 function workflow(overrides: Partial<UseRawWorkflowReturn>) {
   return {
     hasImage: true,
@@ -53,6 +68,7 @@ function workflow(overrides: Partial<UseRawWorkflowReturn>) {
     status: 'ready',
     decodedImageRef: { current: null },
     decodedImageVersion: 1,
+    decodedFrame: null,
     params: {},
     lutDataRef: { current: null },
     lutDataVersion: 0,
@@ -209,5 +225,35 @@ describe('rawPreviewStageSurface in GPU preview mode', () => {
 
     expect(onCompareReset).toHaveBeenCalledOnce()
     expect(current.setCompareSplit).not.toHaveBeenCalled()
+  })
+
+  it('hands the GPU canvas the accepted frame descriptor the workflow published', () => {
+    renderSurface(workflow({ decodedFrame: acceptedFrame }), {
+      isCpuMode: false,
+    })
+
+    expect(stageProps.gpu.at(-1)!.decodedFrame).toBe(acceptedFrame)
+  })
+
+  it('hands the GPU canvas no descriptor while only the embedded preview shows', () => {
+    renderSurface(workflow({ displaySource: 'embedded', decodedFrame: null }), {
+      isCpuMode: false,
+    })
+
+    const props = stageProps.gpu.at(-1)!
+    expect(props.displaySource).toBe('embedded')
+    expect(props.decodedFrame).toBeNull()
+  })
+
+  it('mounts no GPU canvas once export released the preview', () => {
+    const { container } = renderSurface(
+      workflow({ previewSuspended: true, decodedFrame: null }),
+      { isCpuMode: false },
+    )
+
+    expect(stageProps.gpu).toHaveLength(0)
+    expect(
+      container.querySelector('[data-raw-export-ready-handoff]'),
+    ).not.toBeNull()
   })
 })

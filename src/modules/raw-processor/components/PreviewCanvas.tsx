@@ -7,6 +7,7 @@ import './preview-canvas.css'
 import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import { useCallback, useEffect, useRef } from 'react'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
@@ -37,6 +38,13 @@ import { PreviewStageFrame } from './PreviewStageFrame'
 export interface PreviewCanvasProps {
   imageRef: React.RefObject<DecodedImage | null>
   imageVersion: number
+  /**
+   * The workflow's accepted descriptor of the frame `imageRef` holds; null
+   * while no decoded frame is live (before a decode, with only the embedded
+   * preview, and once the preview is released). Uploads and draws still key
+   * on `imageVersion`.
+   */
+  decodedFrame?: DecodedPreviewFrame | null
   /** The color the processed surface draws; it carries no view state. */
   color: ColorGraphIntent
   /** How the stage shows the photo; compare layers the original over it. */

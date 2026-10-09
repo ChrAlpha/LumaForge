@@ -8,6 +8,7 @@ import type { ComponentProps, RefObject } from 'react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
@@ -525,6 +526,49 @@ describe('preview canvas upload descriptor', () => {
 
     expect(pipeline.render).toHaveBeenCalledOnce()
     expect(onStatsUpdate).toHaveBeenCalledOnce()
+  })
+
+  it('takes the accepted frame descriptor without changing what it uploads and draws', async () => {
+    const acceptedFrame: DecodedPreviewFrame = {
+      sessionId: 'session-1',
+      frameId: 'decoded-frame-1',
+      stage: 'quick',
+      width: decodedImage.width,
+      height: decodedImage.height,
+      exposure: { kind: 'unpinned', value: decodedImage.renderExposure! },
+      quickPredecessorFrameId: null,
+    }
+    const drawOnce = async (decodedFrame?: DecodedPreviewFrame | null) => {
+      pipelineMock.instances.length = 0
+      pipelineMock.pipelineEvents.length = 0
+      const onStatsUpdate = vi.fn()
+      const view = render(
+        createElement(PreviewCanvas, {
+          imageRef: { current: decodedImage },
+          imageVersion: 1,
+          decodedFrame,
+          color: defaultColor,
+          viewMode: 'processed' as const,
+          lutDataRef: { current: null },
+          lutDataVersion: 0,
+          onStatsUpdate,
+        }),
+      )
+      await waitFor(() => expect(onStatsUpdate).toHaveBeenCalled())
+      const events = [...pipelineMock.pipelineEvents]
+      const params = getPipelineParamCalls()
+      view.unmount()
+      return { events, params }
+    }
+
+    const withoutDescriptor = await drawOnce()
+    const withDescriptor = await drawOnce(acceptedFrame)
+
+    expect(withDescriptor.events).toEqual([
+      { kind: 'processed', op: 'upload', width: 400, height: 300 },
+      { kind: 'processed', op: 'render', width: 400, height: 300 },
+    ])
+    expect(withDescriptor).toEqual(withoutDescriptor)
   })
 
   it('draws the processed surface from the color intent and the explicit view alone', async () => {
