@@ -5,6 +5,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_SELECTIVE_COLOR,
+  parseCubeLUT,
   toLUTData,
 } from '@lumaforge/luma-color-runtime'
 import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
@@ -76,6 +77,9 @@ const RAW_RENDER_EXPOSURE = {
   multiplier: 1,
   source: 'identity',
 } as const
+
+/** A two-point "Teal" cube; each test chooses its own contract. */
+const tealCube = `TITLE "Teal"\nLUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
 
 const INTERRUPTION: SourceInterruptionHint = {
   source: encodeExportSourceHint(SOURCE_FILE) ?? '',
@@ -444,12 +448,7 @@ describe('useRawExportStage', () => {
     // A LUT apply writes the LUT and the look, and a color edit lands, all
     // in the same tick, before any rerender or LUT effect.
     const appliedLut: LUTData = {
-      size: 2,
-      data: new Float32Array(2 * 2 * 2 * 3),
-      domainMin: [0, 0, 0],
-      domainMax: [1, 1, 1],
-      title: 'Teal',
-      inputProfile: 'display-srgb',
+      ...toLUTData(parseCubeLUT(tealCube)),
       profileResolution: { kind: 'unknown' },
     }
     storedLut = appliedLut
@@ -523,12 +522,7 @@ describe('useRawExportStage', () => {
     // A LUT apply writes the LUT and the look, and a color edit lands, all
     // in the same tick, before any rerender or LUT effect.
     const appliedLut: LUTData = {
-      size: 2,
-      data: new Float32Array(2 * 2 * 2 * 3),
-      domainMin: [0, 0, 0],
-      domainMax: [1, 1, 1],
-      title: 'Teal',
-      inputProfile: 'v-log',
+      ...toLUTData(parseCubeLUT(tealCube)),
       // A confirmed scene contract the WebGPU preview draws.
       profileResolution: {
         kind: 'confirmed',
@@ -601,15 +595,11 @@ describe('useRawExportStage', () => {
   })
   /** A parsed LUT whose confirmed scene contract the WebGPU preview draws. */
   function parsedLut(title: string): ParsedLUT {
+    const cube = `TITLE "${title}"\nLUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
     return {
-      title,
-      comments: [],
-      size: 2,
-      domainMin: [0, 0, 0],
-      domainMax: [1, 1, 1],
+      ...parseCubeLUT(cube),
       data: new Float32Array(2 * 2 * 2 * 3).fill(title.length / 10),
       fingerprint: title,
-      inputProfile: 'v-log',
       profileResolution: {
         kind: 'confirmed',
         confidence: 'user',

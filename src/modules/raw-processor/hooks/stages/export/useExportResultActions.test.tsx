@@ -1,5 +1,9 @@
 import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
-import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_USER_COLOR_INTENT,
+  parseCubeLUT,
+  toLUTData,
+} from '@lumaforge/luma-color-runtime'
 import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { renderHook } from '@testing-library/react'
@@ -36,14 +40,12 @@ function deferred<T>(): Deferred<T> {
 const sourceFile = new File(['raw'], 'frame.dng', { lastModified: 1_000 })
 const lutTable = new Float32Array(2 * 2 * 2 * 3).fill(0.5)
 
+const filmCube = `TITLE "Film"\nLUT_3D_SIZE 2\n${'0.5 0.5 0.5\n'.repeat(8)}`
+
 function makeLut(overrides: Partial<LUTData> = {}): LUTData {
   return {
-    size: 2,
+    ...toLUTData(parseCubeLUT(filmCube)),
     data: lutTable,
-    domainMin: [0, 0, 0],
-    domainMax: [1, 1, 1],
-    title: 'Film',
-    inputProfile: 'display-srgb',
     profileResolution: {
       kind: 'confirmed',
       profile: {
@@ -371,11 +373,7 @@ const STALE_CHANGES: Array<[string, (harness: Harness) => void]> = [
     (harness) => {
       harness.setLut(
         makeLut({
-          profileResolution: {
-            kind: 'unresolved',
-            recommendations: [],
-            reason: 'missing',
-          } as unknown as LUTData['profileResolution'],
+          profileResolution: { kind: 'unknown' },
         }),
       )
     },

@@ -1,5 +1,9 @@
 import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
-import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_USER_COLOR_INTENT,
+  parseCubeLUT,
+  toLUTData,
+} from '@lumaforge/luma-color-runtime'
 import type {
   ExportOutputResult,
   FileBackedOutputResult,
@@ -651,12 +655,12 @@ describe('export result actions', () => {
     const sourceFile = new File(['raw'], 'frame.dng', { lastModified: 1_000 })
     const lutTable = new Float32Array(2 * 2 * 2 * 3).fill(0.5)
     const lut: LUTData = {
-      size: 2,
+      ...toLUTData(
+        parseCubeLUT(
+          `TITLE "Film"\nLUT_3D_SIZE 2\n${'0.5 0.5 0.5\n'.repeat(8)}`,
+        ),
+      ),
       data: lutTable,
-      domainMin: [0, 0, 0],
-      domainMax: [1, 1, 1],
-      title: 'Film',
-      inputProfile: 'display-srgb',
       profileResolution: {
         kind: 'confirmed',
         profile: {

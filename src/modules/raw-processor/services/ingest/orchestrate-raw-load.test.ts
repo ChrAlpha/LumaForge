@@ -1,5 +1,8 @@
 import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
-import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_USER_COLOR_INTENT,
+  parseCubeLUT,
+} from '@lumaforge/luma-color-runtime'
 import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -846,17 +849,11 @@ describe('orchestrateRawLoad session store', () => {
   })
 
   function createParsedLut(): ParsedLUT {
+    const cube = `TITLE "Store Look"\nLUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
     return {
-      title: 'Store Look',
-      sourceName: 'store-look.cube',
-      comments: [],
-      size: 2,
-      domainMin: [0, 0, 0],
-      domainMax: [1, 1, 1],
-      data: new Float32Array(2 * 2 * 2 * 3),
+      ...parseCubeLUT(cube, { sourceName: 'store-look.cube' }),
       fingerprint: 'store-look-fingerprint',
       profileResolution: { kind: 'unknown' },
-      inputProfile: 'display-srgb',
     }
   }
 
