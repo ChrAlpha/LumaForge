@@ -120,7 +120,7 @@ function main() {
   const sorted = [...samples].sort((a, b) => a - b)
   const medianMs = sorted[Math.floor(sorted.length / 2)]
   const minMs = sorted[0]
-  const maxMs = sorted.at(-1)
+  const maxMs = Math.max(...samples)
 
   console.log(
     `selective_color_row: input=${WIDTH}x${HEIGHT} (${pixels} px), iterations=${ITERATIONS}`,

@@ -347,7 +347,11 @@ function installPageTrace({
     }
     const onSubmittedWorkDone = queue.onSubmittedWorkDone
     queue.onSubmittedWorkDone = function (this: GPUQueue) {
-      const done = Reflect.apply(onSubmittedWorkDone, this, []) as Promise<void>
+      const done = Reflect.apply(
+        onSubmittedWorkDone,
+        this,
+        [],
+      ) as Promise<undefined>
       if (!trace.holdGpuCompletions) return done
       trace.heldGpuCompletions.push(performance.now())
       const released = new Promise<void>((resolve) => {

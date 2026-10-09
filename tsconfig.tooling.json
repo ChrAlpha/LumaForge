@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": [
+    "./*.ts",
+    "./plugins/**/*.ts",
+    "./scripts/**/*.ts",
+    "./src/vite-env.d.ts",
+    "./src/global.d.ts"
+  ]
+}

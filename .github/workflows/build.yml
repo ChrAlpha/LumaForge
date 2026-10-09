@@ -54,7 +54,7 @@ jobs:
           }
 
           force_all='^(\.github/workflows/build\.yml|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$'
-          app_paths='^(src/|tests/browser/|scripts/(build|ci|deploy|native-runtime|quality)/|plugins/|packages/luma-(color|jpeg|raw)-runtime/|packages/render-engine/|public/|index\.html|vite\.config\.ts|vitest.*\.config\.ts|tsconfig.*|eslint.*|postcss.*|tailwind.*)'
+          app_paths='^(src/|tests/browser/|scripts/(build|ci|deploy|native-runtime|quality)/|plugins/|packages/luma-(color|jpeg|raw)-runtime/|packages/render-engine/|public/|index\.html|vite\.config\.ts|vitest.*\.config\.ts|tsconfig.*|eslint.*)'
           runtime_paths='^(packages/luma-(color|jpeg|raw)-runtime/|packages/render-engine/|src/lib/(export|raw|runtime|workers)/|scripts/native-runtime/)'
           native_paths='^(packages/luma-(jpeg|raw)-runtime/native/|scripts/native-runtime/)'
           webgpu_paths='^(src/lib/webgpu/|packages/luma-color-runtime/|packages/render-engine/src/preview/|scripts/webgpu/)'
@@ -88,8 +88,10 @@ jobs:
 
   quality:
     # Never path-selected, so docs-only changes are checked too. The path
-    # check and both script tests need only Node; the structure check runs the
-    # pinned knip and madge from the lockfile.
+    # check, the app alias check and both script tests need only Node; the
+    # test-project discovery test, the tooling typecheck and the structure
+    # check run the pinned Vitest, TypeScript, knip and madge from the
+    # lockfile.
     runs-on: ubuntu-latest
 
     steps:
@@ -109,6 +111,11 @@ jobs:
       - name: Test the structure check
         run: node --test scripts/quality/check-structure.test.mjs
 
+      # Reads every package manifest, so a change to any of them is checked
+      # even when no path-selected job runs.
+      - name: Check app aliases
+        run: node scripts/quality/app-aliases.mjs
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -127,6 +134,14 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Test the test-project discovery
+        run: node --test scripts/quality/test-project-discovery.test.mjs
+
+      # The tooling project includes every root config and every TS script,
+      # which no path filter enumerates, so it is checked on every change.
+      - name: Typecheck tooling
+        run: pnpm typecheck:tooling
 
       # Fails on a dead-code finding or dependency cycle that
       # scripts/quality/baseline.json does not list, and on any tool error.
@@ -167,6 +182,9 @@ jobs:
 
       - name: Check lint
         run: pnpm lint:check
+
+      - name: Typecheck browser specs
+        run: pnpm typecheck:browser
 
       - name: Test app surface
         run: pnpm test:app

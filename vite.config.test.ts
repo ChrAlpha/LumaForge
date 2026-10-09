@@ -29,8 +29,9 @@ async function resolveViteConfig() {
     },
     'vite.config.ts',
   )
+  if (!result) throw new Error('vite.config.ts did not load a config')
 
-  return result?.config
+  return result.config
 }
 
 const ROOT = fileURLToPath(new URL('./', import.meta.url))

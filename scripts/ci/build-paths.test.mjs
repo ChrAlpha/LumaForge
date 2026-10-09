@@ -53,6 +53,28 @@ function selectGates(changedFiles) {
     .sort()
 }
 
+function jobBody(job) {
+  const start = workflow.search(new RegExp(String.raw`^  ${job}:\r?$`, 'm'))
+  assert.notEqual(start, -1, `${job} is not a job`)
+  const rest = workflow.slice(start + 1)
+  const end = rest.search(/^ {2}\w[\w-]*:\r?$/m)
+  return end === -1 ? rest : rest.slice(0, end)
+}
+
+/** The `run:` commands of one job, in workflow order. */
+function jobCommands(job) {
+  return Array.from(
+    jobBody(job).matchAll(/^\s+run: (.+)\r?$/gm),
+    ([, run]) => run,
+  )
+}
+
+/** The always-on quality job plus every gate the change selects. */
+function jobsRunFor(file) {
+  assert.doesNotMatch(jobBody('quality'), /^ {4}if:/m)
+  return ['quality', ...selectGates([file])]
+}
+
 describe('build workflow gate selection', () => {
   it('reads every gate from the workflow', () => {
     assert.ok(forceAll, 'force_all is not defined')
@@ -77,10 +99,13 @@ describe('build workflow gate selection', () => {
     ['plugins/eslint-recursive-sort.js', ['app']],
     ['scripts/ci/build-paths.test.mjs', ['app']],
     ['src/modules/raw-processor/RawProcessorView.tsx', ['app']],
-    ['src/modules/transform-demo/transform-render.ts', ['app']],
+    ['src/lib/transform/transform-render.ts', ['app']],
     ['src/lib/export/full-res-export.ts', ['app', 'runtime']],
     ['src/lib/webgpu/device.ts', ['app', 'webgpu']],
     ['tests/browser/raw-hsl-smoke.spec.ts', ['app']],
+    // Both typecheck projects are app paths.
+    ['tsconfig.tooling.json', ['app']],
+    ['tests/browser/tsconfig.json', ['app']],
     ['scripts/deploy/check.mjs', ['app']],
     ['vite.config.ts', ['app']],
     [
@@ -127,6 +152,45 @@ describe('build workflow gate selection', () => {
         'scripts/webgpu/validate.mjs',
       ]),
       ['cli', 'webgpu'],
+    )
+  })
+})
+
+describe('build workflow checks', () => {
+  // Never path-selected, so a manifest change in any package fails here even
+  // when no app gate runs.
+  it('checks the app aliases and the test-project discovery in quality', () => {
+    const commands = jobCommands('quality')
+    assert.ok(commands.includes('node scripts/quality/app-aliases.mjs'))
+    assert.ok(
+      commands.includes(
+        'node --test scripts/quality/test-project-discovery.test.mjs',
+      ),
+    )
+  })
+
+  // One file per kind of tooling-project entry: top-level and nested scripts,
+  // and root configs that no path filter names.
+  for (const file of [
+    'scripts/bench-selective-color-row.ts',
+    'scripts/benchmarks/jpeg-runtime.ts',
+    'playwright.config.ts',
+    'vite.config.test.ts',
+  ]) {
+    it(`typechecks ${file} in a job that runs for it`, () => {
+      assert.ok(
+        jobsRunFor(file).some((job) =>
+          jobCommands(job).includes('pnpm typecheck:tooling'),
+        ),
+      )
+    })
+  }
+
+  it('typechecks the browser specs in a job that runs for them', () => {
+    assert.ok(
+      jobsRunFor('tests/browser/raw-hsl-smoke.spec.ts').some((job) =>
+        jobCommands(job).includes('pnpm typecheck:browser'),
+      ),
     )
   })
 })
