@@ -2,21 +2,12 @@ import type {
   LUTColorProfile,
   LUTContractResolution,
   LUTContractSelection,
-  LUTRole,
   ParsedLUT,
-  SignalRange,
   StoredLUTContractSelection,
 } from '@lumaforge/luma-color-runtime'
 import {
   buildStoredContractSelection,
   contractToLUTColorProfile as contractToRuntimeLUTColorProfile,
-  getLUTColorProfile,
-  isLUTRole,
-  isSignalRange,
-  resolveColorGamutId,
-  resolveTransferFunctionId,
-  toCompatInputProfile,
-  toLUTContractSelection,
 } from '@lumaforge/luma-color-runtime'
 
 // Browser storage and application adapters for LUT contracts. Contract
@@ -26,26 +17,16 @@ import {
 
 const LUT_PROFILE_SELECTIONS_STORAGE_KEY = 'lumaforge.lutProfileSelections.v1'
 
-function compactProfileText(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
-}
-
-function resolveCompatProfileId(profileId: string): string {
-  const compact = compactProfileText(profileId)
-  if (compact === 'vlog' || compact === 'vloginput') {
-    return 'panasonic-vgamut-vlog'
-  }
-  if (compact === 'displaysrgb' || compact === 'srgbdisplay') {
-    return 'display-srgb'
-  }
-  return profileId
-}
-
-function getCompatibleLUTColorProfile(
-  profileId: string,
-): LUTColorProfile | undefined {
-  return getLUTColorProfile(resolveCompatProfileId(profileId))
-}
+const STORED_CONTRACT_FIELDS = [
+  'inputProfile',
+  'role',
+  'inputGamut',
+  'inputTransfer',
+  'inputRange',
+  'outputGamut',
+  'outputTransfer',
+  'outputRange',
+] as const satisfies readonly (keyof StoredLUTContractSelection)[]
 
 function getLUTProfileStorage(): Storage | undefined {
   try {
@@ -55,85 +36,46 @@ function getLUTProfileStorage(): Storage | undefined {
   }
 }
 
-function isStoredLUTContractSelection(
-  value: unknown,
-): value is StoredLUTContractSelection {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false
-  }
-
-  const candidate = value as Record<string, unknown>
-  const role = candidate.role
-  const inputGamut = resolveColorGamutId(candidate.inputGamut)
-  const inputTransfer = resolveTransferFunctionId(candidate.inputTransfer)
-  const inputRange = candidate.inputRange
-  const outputGamut = resolveColorGamutId(candidate.outputGamut)
-  const outputTransfer = resolveTransferFunctionId(candidate.outputTransfer)
-  const outputRange = candidate.outputRange
-
-  if (
-    !isLUTRole(role) ||
-    !inputGamut ||
-    !inputTransfer ||
-    !isSignalRange(inputRange)
-  ) {
-    return false
-  }
-
-  const normalized = buildStoredContractSelection({
-    role,
-    inputGamut,
-    inputTransfer,
-    inputRange,
-    outputGamut,
-    outputTransfer,
-    outputRange: isSignalRange(outputRange) ? outputRange : undefined,
-  })
-  if (!normalized) {
-    return false
-  }
-
-  return true
-}
-
-function normalizeStoredLUTContractSelection(
+/**
+ * A stored record is trusted only in the exact form the writer produces: a
+ * structured contract whose fields are already canonical. Rebuilding it must
+ * return the same fields, so bare strings, aliases, labels, empty, non-string
+ * or extra fields, and records the contract rules refuse never confirm a
+ * profile.
+ */
+function readStoredLUTContractSelection(
   value: unknown,
 ): StoredLUTContractSelection | undefined {
-  if (typeof value === 'string') {
-    const profile = getCompatibleLUTColorProfile(value)
-    return profile
-      ? buildStoredContractSelection({
-          inputProfile: profile.id,
-          role: profile.role,
-          inputGamut: profile.inputGamut,
-          inputTransfer: profile.inputTransfer,
-          inputRange: profile.inputRange,
-          outputGamut: profile.outputGamut,
-          outputTransfer: profile.outputTransfer,
-          outputRange: profile.outputRange,
-        })
-      : undefined
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined
   }
 
-  if (!isStoredLUTContractSelection(value)) return undefined
+  const record = value as Record<string, unknown>
+  const knownFields: readonly string[] = STORED_CONTRACT_FIELDS
+  if (
+    Object.entries(record).some(
+      ([field, fieldValue]) =>
+        !knownFields.includes(field) ||
+        typeof fieldValue !== 'string' ||
+        fieldValue === '',
+    )
+  ) {
+    return undefined
+  }
 
-  const candidate = value
-  return buildStoredContractSelection({
-    inputProfile:
-      typeof candidate.inputProfile === 'string'
-        ? (getCompatibleLUTColorProfile(candidate.inputProfile)?.id ??
-          candidate.inputProfile)
-        : undefined,
-    role: candidate.role as LUTRole,
-    inputGamut: resolveColorGamutId(candidate.inputGamut),
-    inputTransfer: resolveTransferFunctionId(candidate.inputTransfer),
-    inputRange: candidate.inputRange as SignalRange,
-    outputGamut: resolveColorGamutId(candidate.outputGamut),
-    outputTransfer: resolveTransferFunctionId(candidate.outputTransfer),
-    outputRange: isSignalRange(candidate.outputRange)
-      ? candidate.outputRange
-      : undefined,
-  })
+  // Every field is a non-empty string here; the builder validates each one.
+  // The writer omits absent fields and never stores an empty string, which the
+  // builder would read as absent, so one is refused above.
+  const contract = buildStoredContractSelection(
+    record as unknown as LUTContractSelection,
+  )
+  if (!contract) return undefined
+
+  return STORED_CONTRACT_FIELDS.every(
+    (field) => contract[field] === record[field],
+  )
+    ? contract
+    : undefined
 }
 
 function readStoredLUTContractSelections(): Record<
@@ -154,7 +96,7 @@ function readStoredLUTContractSelections(): Record<
       Object.entries(parsed)
         .map(([fingerprint, value]) => [
           fingerprint,
-          normalizeStoredLUTContractSelection(value),
+          readStoredLUTContractSelection(value),
         ])
         .filter((entry): entry is [string, StoredLUTContractSelection] =>
           Boolean(entry[1]),
@@ -181,37 +123,11 @@ function writeStoredLUTContractSelections(
   }
 }
 
-function getContractProfileId(contract: StoredLUTContractSelection): string {
-  const baseProfile = contract.inputProfile
-    ? getCompatibleLUTColorProfile(contract.inputProfile)
-    : undefined
-
-  return (
-    baseProfile?.id ??
-    contract.inputProfile ??
-    `${contract.inputGamut}-${contract.inputTransfer}`
-  )
-}
-
-function normalizeAppContractSelection(
-  selection: LUTContractSelection,
-): LUTContractSelection {
-  const inputProfile =
-    typeof selection.inputProfile === 'string'
-      ? getCompatibleLUTColorProfile(selection.inputProfile)?.id
-      : undefined
-
-  return {
-    ...selection,
-    inputProfile,
-  }
-}
-
 function contractToLUTColorProfile(
   contract: StoredLUTContractSelection,
 ): LUTColorProfile {
   return contractToRuntimeLUTColorProfile(
-    getContractProfileId(contract),
+    contract.inputProfile ?? `${contract.inputGamut}-${contract.inputTransfer}`,
     contract,
   )
 }
@@ -229,17 +145,11 @@ export function getStoredLUTProfileSelection(
   return contract ? contractToLUTColorProfile(contract) : undefined
 }
 
-function buildAppContractSelection(
-  selection: LUTContractSelection,
-): StoredLUTContractSelection | undefined {
-  return buildStoredContractSelection(normalizeAppContractSelection(selection))
-}
-
 export function storeLUTContractSelection(
   fingerprint: string,
   selection: LUTContractSelection,
 ): LUTColorProfile | undefined {
-  const contract = buildAppContractSelection(selection)
+  const contract = buildStoredContractSelection(selection)
   if (!contract) return undefined
 
   writeStoredLUTContractSelections({
@@ -248,16 +158,6 @@ export function storeLUTContractSelection(
   })
 
   return contractToLUTColorProfile(contract)
-}
-
-export function storeLUTProfileSelection(
-  fingerprint: string,
-  profileId: string,
-): LUTColorProfile | undefined {
-  const profile = getCompatibleLUTColorProfile(profileId)
-  if (!profile) return undefined
-
-  return storeLUTContractSelection(fingerprint, toLUTContractSelection(profile))
 }
 
 type ConfirmedLUTContractConfidence = Extract<
@@ -276,11 +176,7 @@ function withConfirmedProfile(
     profile,
   }
 
-  return {
-    ...lut,
-    profileResolution,
-    inputProfile: toCompatInputProfile(profileResolution),
-  }
+  return { ...lut, profileResolution }
 }
 
 /** Pure contract application: never reads or writes user storage. */
@@ -289,7 +185,7 @@ function withLUTContract(
   selection: LUTContractSelection,
   confidence: ConfirmedLUTContractConfidence,
 ): ParsedLUT | undefined {
-  const contract = buildAppContractSelection(selection)
+  const contract = buildStoredContractSelection(selection)
   return contract
     ? withConfirmedProfile(lut, contractToLUTColorProfile(contract), confidence)
     : undefined
@@ -332,14 +228,4 @@ export function restorePersistedLUTContract(lut: ParsedLUT): ParsedLUT {
   return storedProfile
     ? withConfirmedProfile(lut, storedProfile, 'persisted-user')
     : lut
-}
-
-export function applyLUTProfileSelection(
-  lut: ParsedLUT,
-  profileId: string,
-): ParsedLUT | undefined {
-  const profile = getCompatibleLUTColorProfile(profileId)
-  if (!profile) return undefined
-
-  return applyLUTContractSelection(lut, toLUTContractSelection(profile))
 }
