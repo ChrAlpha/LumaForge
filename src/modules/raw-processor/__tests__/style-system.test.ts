@@ -59,7 +59,6 @@ describe('style-system', () => {
     expect(style.warning).toBe(
       'Choose the LUT input and output contract before preview or export.',
     )
-    expect(style.lutAsset?.inputProfile).toBe('display-srgb')
     expect(style.lutAsset?.profileResolution?.kind).not.toBe('confirmed')
   })
 
@@ -79,7 +78,6 @@ describe('style-system', () => {
       ),
     )
 
-    expect(style.lutAsset?.inputProfile).toBe('v-log')
     expect(style.warning).toBe(
       'This LUT uses Panasonic V-Gamut / V-Log -> Rec.709 display.',
     )
@@ -88,6 +86,36 @@ describe('style-system', () => {
         kind: 'confirmed',
         profile: { id: 'panasonic-vgamut-vlog' },
       },
+    })
+  })
+
+  it('carries the parsed contract and identity as the LUT asset', () => {
+    const lut = parseCubeLUT(
+      makeCube('Camera LUT', [
+        'LUMAFORGE_INPUT_PROFILE=panasonic-vgamut-vlog',
+        'LUMAFORGE_ROLE=combined-look-output',
+        'LUMAFORGE_OUTPUT_GAMUT=srgb-rec709',
+        'LUMAFORGE_OUTPUT_TRANSFER=bt709',
+        'LUMAFORGE_OUTPUT_RANGE=full',
+      ]),
+      { sourceName: 'Panasonic_VLog_to_Rec709.cube' },
+    )
+
+    const style = toCustomStyle(lut, { sha256: 'a'.repeat(64) })
+
+    expect(style.lutAsset).toEqual({
+      format: 'cube',
+      dimension: 2,
+      title: 'Camera LUT',
+      profileResolution: lut.profileResolution,
+      fingerprint: lut.fingerprint,
+      sha256: 'a'.repeat(64),
+      sourceName: 'Panasonic_VLog_to_Rec709.cube',
+    })
+    expect(style.lutAsset.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'metadata',
+      profile: { id: 'panasonic-vgamut-vlog' },
     })
   })
 

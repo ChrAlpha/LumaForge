@@ -73,8 +73,12 @@ describe('cube-parser input profiles', () => {
       'Created for web preview',
     ])
     expect(lut.fingerprint).toEqual(expect.any(String))
-    expect(lut.inputProfile).toBe('display-srgb')
-    expect(toLUTData(lut).inputProfile).toBe('display-srgb')
+    expect(lut.profileResolution).toMatchObject({ kind: 'recommended' })
+    if (lut.profileResolution.kind !== 'recommended') {
+      throw new Error('Expected the display comment to recommend a contract')
+    }
+    expect(lut.profileResolution.recommendations[0]?.id).toBe('display-srgb')
+    expect(toLUTData(lut).profileResolution).toEqual(lut.profileResolution)
   })
 
   it('does not force unknown LUTs to a display-sRGB profile resolution', () => {
@@ -85,7 +89,6 @@ describe('cube-parser input profiles', () => {
     expect(lut.profileResolution).toEqual({
       kind: 'unknown',
     })
-    expect(lut.inputProfile).toBe('display-srgb')
   })
 
   it('does not resolve LUT contracts from filename or free-form comments', () => {
@@ -179,9 +182,7 @@ describe('cube-parser input profiles', () => {
         expect.objectContaining({ id: 'panasonic-vgamut-vlog' }),
       ]),
     })
-    expect(lut.inputProfile).toBe('display-srgb')
     expect(toLUTData(lut)).toMatchObject({
-      inputProfile: 'display-srgb',
       profileResolution: {
         kind: 'recommended',
       },
@@ -205,7 +206,6 @@ describe('cube-parser input profiles', () => {
         }),
       ]),
     })
-    expect(lut.inputProfile).toBe('display-srgb')
   })
 
   it('does not treat output-side V-Log as Panasonic V-Log input', () => {
@@ -226,7 +226,6 @@ describe('cube-parser input profiles', () => {
       kind: 'confirmed',
       profile: { id: 'panasonic-vgamut-vlog' },
     })
-    expect(lut.inputProfile).toBe('display-srgb')
   })
 
   it('keeps ambiguous output-side V-Log filenames out of high-confidence V-Log input', () => {
@@ -238,7 +237,6 @@ describe('cube-parser input profiles', () => {
       kind: 'confirmed',
       profile: { id: 'panasonic-vgamut-vlog' },
     })
-    expect(lut.inputProfile).toBe('display-srgb')
   })
 
   it('suggests bare BT.709 and BT.1886 output phrases', () => {

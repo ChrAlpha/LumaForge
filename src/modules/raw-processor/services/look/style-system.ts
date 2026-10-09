@@ -127,7 +127,6 @@ export function toCustomStyle(
       format: 'cube' as const,
       dimension: lut.size as 17 | 33 | 65,
       title: lut.title,
-      inputProfile: lut.inputProfile,
       profileResolution: lut.profileResolution,
       fingerprint: lut.fingerprint,
       sha256: options.sha256 ?? lut.sha256,

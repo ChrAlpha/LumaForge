@@ -120,7 +120,7 @@ describe('parseCubeLUTOffThread', () => {
     expect(actual.title).toBe(expected.title)
     expect(actual.size).toBe(expected.size)
     expect(actual.fingerprint).toBe(expected.fingerprint)
-    expect(actual.inputProfile).toBe(expected.inputProfile)
+    expect(actual.profileResolution).toEqual(expected.profileResolution)
     expect(Array.from(actual.data)).toEqual(Array.from(expected.data))
   })
 
@@ -190,7 +190,6 @@ describe('parseCubeLUTOffThread', () => {
         outputRange: 'full',
       },
     })
-    expect(reloaded.inputProfile).toBe('v-log')
     expect(worker.terminate).toHaveBeenCalledTimes(1)
     expect(worker.removeEventListener).toHaveBeenCalledWith(
       'message',
@@ -230,7 +229,6 @@ describe('parseCubeLUTOffThread', () => {
       confidence: 'metadata',
       profile: { id: 'display-srgb', role: 'display-look' },
     })
-    expect(reloaded.inputProfile).toBe('display-srgb')
   })
 
   it('keeps the worker resolution when storage is absent', async () => {
@@ -241,7 +239,6 @@ describe('parseCubeLUTOffThread', () => {
     })
 
     expect(parsed.profileResolution).toEqual({ kind: 'unknown' })
-    expect(parsed.inputProfile).toBe('display-srgb')
   })
 
   it('keeps the worker resolution when storage throws', async () => {
@@ -281,7 +278,6 @@ describe('parseCubeLUTOffThread', () => {
 
       expect(viaWorker.fingerprint).toBe(viaFallback.fingerprint)
       expect(viaWorker.profileResolution).toEqual(viaFallback.profileResolution)
-      expect(viaWorker.inputProfile).toBe(viaFallback.inputProfile)
     }
   })
 

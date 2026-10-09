@@ -1,7 +1,6 @@
 import type {
   LUTColorProfile,
   LUTContractResolution,
-  LUTInputProfile,
 } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { PerformancePreference } from '@lumaforge/render-engine/policy'
@@ -110,7 +109,6 @@ export type StyleAsset = {
     fingerprint?: string
     /** SHA-256 of the .cube bytes; recorded in export manifests. */
     sha256?: string
-    inputProfile?: LUTInputProfile
     profileResolution?: LUTContractResolution
   }
   inputPrepProfile?: {
