@@ -34,7 +34,6 @@
   "scripts": {
     "build": "vite build --config vite.config.ts && tsc -p tsconfig.json --emitDeclarationOnly",
     "build:native": "bash native/build-libjpeg-turbo.sh",
-    "bench:serve": "vite --host 0.0.0.0 --port 4175 --config vite.config.ts",
     "native:fetch": "node native/scripts/fetch-sources.mjs",
     "native:verify": "node native/scripts/verify-native-artifacts.mjs",
     "test": "vitest run src worker native --exclude src/native-smoke.test.ts",

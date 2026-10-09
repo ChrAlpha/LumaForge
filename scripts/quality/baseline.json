@@ -126,7 +126,6 @@
     "types src/lib/webgpu/raw-processing-pipeline.ts: RawUploadInputFormat",
     "types src/modules/raw-processor/services/look/online-lut-sources.ts: OnlineLUTLoadRequest",
     "types src/modules/raw-processor/services/look/style-system.ts: LookIntensityPreset",
-    "unresolved packages/luma-jpeg-runtime/benchmarks/bench-jpeg-runtime.ts: ../../../src/lib/export/jpeg/row-writer",
     "unresolved scripts/webgpu/browser-suite.mjs: /packages/render-engine/src/preview/preview-render.ts",
     "unresolved scripts/webgpu/browser-suite.mjs: /src/lib/webgpu/pipeline.ts",
     "unresolved scripts/webgpu/golden-capture.mjs: /src/lib/gl/webgl-pipeline.ts"

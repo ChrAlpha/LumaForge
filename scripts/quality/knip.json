@@ -35,8 +35,7 @@
         "index.ts",
         "src/index.ts",
         "src/runtime-node.ts",
-        "worker/runtime.worker.ts",
-        "benchmarks/*.ts"
+        "worker/runtime.worker.ts"
       ],
       "project": ["src/**/*.ts", "worker/**/*.ts"]
     },

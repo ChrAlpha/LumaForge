@@ -1,14 +1,30 @@
-import type {JpegRowSink} from '../../../src/lib/export/jpeg/row-writer';
+/**
+ * Browser JPEG encode benchmark across the JPEG runtime and the engine's row
+ * writer.
+ *
+ * `runtimeDirect` drives the `@lumaforge/luma-jpeg-runtime` encoder alone.
+ * `runtimeWithRowWriterClone` drives the engine's public `createJpegRowWriter`
+ * over its WASM row sink, the path full-resolution export takes, so the row
+ * clone and sink bookkeeping are part of the measurement. Each record decodes
+ * the output and reports whether its dimensions match the encoded frame.
+ *
+ * Run `pnpm dev`, open `/scripts/benchmarks/jpeg-runtime.html`, and press Run.
+ */
+
+import { createLumaJpegRuntime } from '@lumaforge/luma-jpeg-runtime'
+import type { ExportOutputResult } from '@lumaforge/render-engine/export'
 import {
-  createJpegRowWriter
-} from '../../../src/lib/export/jpeg/row-writer'
-import { createLumaJpegRuntime } from '../src/index'
+  createBlobOutputResult,
+  createJpegRowWriter,
+  createWasmJpegRowSink,
+  materializeOutputBlob,
+} from '@lumaforge/render-engine/export'
 
 type Pattern = 'black' | 'gradient' | 'high-entropy'
 type Mode = 'runtimeDirect' | 'runtimeWithRowWriterClone'
 type BenchmarkWriter = {
   writeRows: (rows: Uint8Array, rowCount: number) => Promise<void>
-  close: () => Promise<Blob>
+  close: () => Promise<ExportOutputResult>
   abort: () => Promise<void> | void
   dispose?: () => void
 }
@@ -62,7 +78,7 @@ function createBenchmarkWriter(mode: Mode): BenchmarkWriter {
       width,
       height,
       quality,
-      sink: createBenchmarkWasmRowSink(),
+      sink: createWasmJpegRowSink(),
     })
   }
 
@@ -71,43 +87,13 @@ function createBenchmarkWriter(mode: Mode): BenchmarkWriter {
 
   return {
     writeRows: (rows, rowCount) => encoder.writeRows(rows, rowCount),
-    close: () => encoder.finish(),
+    close: async () =>
+      createBlobOutputResult({
+        filename: 'benchmark.jpg',
+        blob: await encoder.finish(),
+      }),
     abort: () => encoder.abort(),
     dispose: () => runtime.dispose(),
-  }
-}
-
-function createBenchmarkWasmRowSink(): JpegRowSink {
-  return {
-    createSession({ width, height, quality }) {
-      const runtime = createLumaJpegRuntime()
-      const encoder = runtime.createEncoder({ width, height, quality })
-      let disposed = false
-
-      function dispose() {
-        if (disposed) return
-        disposed = true
-        runtime.dispose()
-      }
-
-      return {
-        writeRows: (rows, rowCount) => encoder.writeRows(rows, rowCount),
-        async close() {
-          try {
-            return await encoder.finish()
-          } finally {
-            dispose()
-          }
-        },
-        abort() {
-          try {
-            encoder.abort()
-          } finally {
-            dispose()
-          }
-        },
-      }
-    },
   }
 }
 
@@ -148,9 +134,10 @@ async function runPattern(
     }
 
     const finishStart = now()
-    const blob = await writer.close()
+    const result = await writer.close()
     completed = true
     const finishMs = now() - finishStart
+    const blob = await materializeOutputBlob(result)
     const decodeStart = now()
     const bitmap = await createImageBitmap(blob)
     const decodeMs = now() - decodeStart
@@ -175,8 +162,10 @@ async function runPattern(
       finishMs,
       decodeMs,
       totalMs: now() - start,
-      outputBytes: blob.size,
-      mimeType: blob.type,
+      outputKind: result.kind,
+      outputBytes: result.byteLength,
+      mimeType: result.mimeType,
+      byteLengthMatch: blob.size === result.byteLength,
       decodedWidth,
       decodedHeight,
       dimensionMatch: decodedWidth === width && decodedHeight === height,
