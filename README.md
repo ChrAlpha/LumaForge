@@ -88,6 +88,10 @@ finished JPEG with a look they already enjoy.
   Cinematic, Fade, and Mono.
 - Adjust light finishing controls such as exposure, contrast, and look strength
   without turning the app into a full development cockpit.
+- Straighten and reframe with Transform: upright modes, manual vertical and
+  horizontal perspective, rotate, aspect, scale, and offset, with constrained
+  crop on by default. The full-resolution export reproduces the committed
+  framing and refuses a geometry it cannot plan.
 - Upload a custom `.cube` LUT and declare its input and output contract.
 - Work with profile families such as ARRI LogC, RED Log3G10, Sony S-Log,
   Panasonic V-Log, Fujifilm F-Log, Canon Log, Nikon N-Log, ACES, and display
@@ -162,13 +166,16 @@ and authoritative export share color intent, but they are not the same executor.
 - `src/lib/export`: the browser worker shell and output sinks for the engine's
   full-resolution export.
 - `src/modules/raw-processor`: the `/raw` workflow for upload, preview, style
-  selection, LUT contract selection, compare, status, and export actions.
+  selection, Adjust, Transform, LUT contract selection, compare, status, and
+  export actions.
 
 ### Command line: `lmfg`
 
 `packages/lmfg-cli` ships `lmfg`, a Node.js CLI for agents and scripts that
 runs the same RAW → look → export pipeline headlessly with sealed render
-manifests. See `packages/lmfg-cli/README.md` for the agent loop, JSON protocol,
+manifests. Its params carry no geometry, so it cannot author a Transform;
+`render replay` reapplies the geometry a full-resolution export manifest
+records. See `packages/lmfg-cli/README.md` for the agent loop, JSON protocol,
 and exit codes. Build it with `pnpm cli:build`.
 
 ## Local Development

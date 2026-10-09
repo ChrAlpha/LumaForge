@@ -76,20 +76,45 @@ image-editor assumptions.
   and moves the geometry that export reproduces only with them, and
   `src/modules/raw-processor/hooks/useRawTransformFeature.ts` keeps the
   preview frame, the worker, and the overlay.
+- The `/raw` mount owns the session it publishes.
+  `src/modules/raw-processor/hooks/stages/ingest/useRawProcessorLifecycle.ts`
+  ends that session on a real route departure, while a StrictMode effect
+  replay keeps it, and the workflow's RAW runtime host goes with the mount.
+  `src/modules/raw-processor/services/workflow/raw-workflow-resources.ts`
+  releases what a source holds on reset, replacement, and unmount by calling
+  each resource's own owner; there is no single lifecycle controller.
+  `docs/PERFORMANCE_RESOURCE_MANAGEMENT.md` ("Source Session Lifetime") holds
+  the order and keeps released preview pixels, route departure, the source's
+  exposure pin, and export result currency apart.
 - `src/modules/raw-processor/services/` contains scriptable domain behavior:
-  `ingest`, `preview`, `look`, `compare`, `export`, and `surface` (which
-  actions a tool surface may run, and why not). Prefer adding tested logic
-  here before growing React components.
+  `ingest`, `preview`, `look`, `compare`, `export`, `transform` (the pure
+  Transform session transitions), `workflow` (source teardown), and `surface`
+  (which actions a tool surface may run, and why not). Prefer adding tested
+  logic here before growing React components.
 - `src/modules/raw-processor/model/` defines session/workflow/export result
   shapes. Keep model changes small and contract-like.
 - `src/modules/raw-processor/state/` contains Jotai atoms for workflow and tool
   state. Prefer these over introducing a second state model.
+  `src/modules/raw-processor/state/session.atoms.ts` holds the current image
+  session on the production store the root providers mount;
   `src/modules/raw-processor/state/workflow.atoms.ts` stores the color intent
-  and holds no view state;
+  and the LUT and holds no view state;
   `src/modules/raw-processor/state/preview-view.atoms.ts` holds only the view
-  of the sample shown before a source loads.
+  of the sample shown before a source loads. Load, restore, export, and
+  delivery read the session, the color intent, and the LUT from the store
+  when they run, not from the last render, and fence on that read before
+  they write. The effective intent the photo renders and exports with is the
+  stored intent with the session's look projected over it
+  (`src/modules/raw-processor/services/look/effective-color-intent.ts`).
 - `src/modules/raw-processor/components/RawWorkflowToolProvider.tsx` is the
-  context bridge from workflow state/actions to tool surfaces.
+  bridge from workflow state/actions to tool surfaces. Surfaces read the
+  adjustments, the workflow stage, and its progress as store slices from
+  `src/modules/raw-processor/hooks/useRawToolState.ts`, the commands from
+  `useRawToolCommands`, and availability, export decisions, and file facts
+  from the context in
+  `src/modules/raw-processor/components/RawWorkflowContext.tsx`. Commands
+  keep their identity and decide when they are called; a surface reads
+  availability to disable a control, never to choose which command to hold.
 - `src/modules/raw-processor/components/RawToolSurface.tsx` switches desktop vs
   mobile surfaces by viewport. Respect that split.
 - `src/modules/raw-processor/components/tools/` is the desktop command rail:
@@ -128,11 +153,30 @@ image-editor assumptions.
   CPU preview worker (`webgpu -> cpu`). Do not reintroduce WebGL or GLSL.
 - `src/lib/preview` holds the preview backend probe
   (`src/lib/preview/gpu-backend.ts`: WebGPU or CPU, and why), the preview
-  capability decision (`src/lib/preview/raw-preview-capability.ts`), and the
-  renderer-neutral view contract (`src/lib/preview/preview-view.ts`). The CPU
-  preview worker is not here: it lives in
+  capability decision (`src/lib/preview/raw-preview-capability.ts`), the
+  renderer-neutral view contract (`src/lib/preview/preview-view.ts`), and the
+  decoded frame descriptor (`src/lib/preview/preview-frame.ts`, see Canonical
+  Owners). The CPU preview worker is not here: it lives in
   `packages/render-engine/src/preview/worker-bridge`, and
   `src/modules/raw-processor/hooks/useCpuPreview.ts` drives it.
+- `src/modules/raw-processor/hooks/preview/` holds the WebGPU preview stage's
+  mechanics.
+  `src/modules/raw-processor/hooks/preview/usePreviewPipelineLifecycle.ts` is
+  the one owner of each preview GPU pipeline (the processed one in
+  `src/modules/raw-processor/components/PreviewCanvas.tsx`, the original one
+  in `src/modules/raw-processor/components/OriginalGpuLayer.tsx`): it
+  publishes a pipeline only once it has initialized and releases it on
+  unmount or suspension; export evacuation calls that owner's release
+  through
+  `src/modules/raw-processor/hooks/stages/preview/usePreviewPipelineEvacuation.ts`.
+  `src/modules/raw-processor/hooks/preview/useProcessedPreview.ts` renders the
+  processed preview and owns its readiness, not the pipeline's lifetime;
+  `src/modules/raw-processor/hooks/preview/usePreviewViewportGestures.ts` owns
+  zoom and pan only, never the split; and
+  `src/modules/raw-processor/hooks/preview/backing-store-resize.ts` settles
+  GPU backing stores after layout resizes.
+  `src/modules/raw-processor/components/PreviewStageFrame.tsx` is the stage
+  markup and decides nothing.
 - `src/lib/export` adapts the engine's full-resolution export to the browser:
   the export worker shell (`src/lib/export/full-res-export.worker.ts`), its
   client, OPFS and blob output sinks and the cross-tab OPFS output lifetime
@@ -261,6 +305,14 @@ variant:
   stay with the preview viewport. Executors receive only their output
   selection. The deprecated `ProcessingParams.viewMode` and
   `ProcessingParams.compareSplit` are optional and never read.
+- Decoded preview frame identity: `DecodedPreviewFrame` in
+  `src/lib/preview/preview-frame.ts`. Only
+  `src/modules/raw-processor/hooks/stages/preview/useDecodedPreviewResource.ts`
+  mints one, once per accepted frame (a restored frame gets a new one). The
+  GPU and CPU previews, the histogram, the original reference snapshot, and
+  the Transform source key their work by it and never rebuild an identity
+  from dimensions, version counters, or byte lengths; a request's own
+  identity stays with its consumer.
 - Export output results: `packages/render-engine/src/export/jpeg/output-result.ts`.
   `src/lib/export/output-sink.ts`, the export worker and client, and the
   workflow import these types; the sink adds only OPFS addressing and

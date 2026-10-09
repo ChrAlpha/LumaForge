@@ -79,6 +79,9 @@
   Fade 和 Mono。
 - 调整轻度润色控制（如曝光、对比度和风格强度），而不会把应用变成完整的
   显影驾驶舱。
+- 用 Transform 校正和重新构图：自动校正（upright）模式，以及手动的垂直和
+  水平透视、旋转、宽高比、缩放和偏移，并默认开启约束裁切。全分辨率导出会
+  重现已提交的构图，无法规划的几何变换会拒绝导出。
 - 上传自定义 `.cube` LUT 并声明其输入和输出合约。
 - 处理各种配置文件系列，如 ARRI LogC、RED Log3G10、Sony S-Log、Panasonic
   V-Log、Fujifilm F-Log、Canon Log、Nikon N-Log、ACES 和显示 sRGB。
@@ -141,14 +144,15 @@ LumaForge 是一套运行在浏览器中的 RAW + LUT 处理管线。当前支�
   CPU 预览 Worker。
 - `src/lib/export`：引擎全分辨率导出在浏览器中的 Worker 外壳和输出通道。
 - `src/modules/raw-processor`：`/raw` 工作流，涵盖上传、预览、风格选择、
-  LUT 合约选择、对比、状态和导出操作。
+  调整（Adjust）、Transform、LUT 合约选择、对比、状态和导出操作。
 
 ### 命令行：`lmfg`
 
 `packages/lmfg-cli` 提供 `lmfg`：面向智能体和脚本的 Node.js CLI，以无界面方式
-运行同一条 RAW → 风格 → 导出管线，并为每次渲染生成密封的渲染清单。智能体
-工作循环、JSON 协议和退出码见 `packages/lmfg-cli/README.md`。使用
-`pnpm cli:build` 构建。
+运行同一条 RAW → 风格 → 导出管线，并为每次渲染生成密封的渲染清单。它的参数
+不含几何信息，因此无法创建 Transform；`render replay` 会重新应用全分辨率导出
+清单中记录的几何变换。智能体工作循环、JSON 协议和退出码见
+`packages/lmfg-cli/README.md`。使用 `pnpm cli:build` 构建。
 
 ## 本地开发
 
