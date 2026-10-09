@@ -205,8 +205,10 @@ image-editor assumptions.
   choices in the browser (`src/lib/lut/profile-resolution.ts` is a storage
   adapter over the package resolver, not a second resolver).
   `src/lib/profiles` parses and fetches online LUT catalogs and source URLs
-  (catalog entries and source URLs pass one shared transport URL check) and
-  maps catalog LUT contracts.
+  (catalog entries and source URLs pass one shared transport URL check). A
+  catalog entry's LUT contract is mapped by `mapProfileLUTContract` in
+  `packages/luma-color-runtime/src/lut-contract.ts`; the same-named function
+  in `src/lib/profiles` only forwards to it and is scheduled for deletion.
 - `packages/luma-color-runtime` is pure TypeScript color math: tone,
   temperature/tint color balance, LUT contracts, transfer/gamut transforms,
   graph resolution, row-band processing, and WGSL helpers
@@ -361,16 +363,23 @@ variant:
   `src/modules/raw-processor/services/look/lut-contract.ts`,
   `src/modules/raw-processor/services/look/lut-output-options.ts`, and
   `src/modules/raw-processor/services/look/lut-source-grouping.ts` compose
-  contracts, output options, and source groups for both surfaces;
-  `src/modules/raw-processor/components/tools/lut-contract-labels.ts` holds
-  only their labels.
+  contracts, output options, and source groups for both surfaces. Their
+  labels and profile grouping (`formatLUTContractOutput`,
+  `getProfileOutputLabel`, `groupProfiles`, and their siblings) are pure label
+  helpers that decide no contract. They still sit in the desktop rail folder
+  `src/modules/raw-processor/components/tools/`, so the output-options service
+  and the mobile Look footer import a desktop component module; they are
+  scheduled to move into `src/modules/raw-processor/services/look/`, and that
+  move deletes the old module. Do not add consumers of the old location.
 
 Known duplication. These copies exist today. Do not extend them; remove one
 only by finishing the move it belongs to:
 
-- The quick and bounded-HQ preview pixel caps are defined in both
-  `packages/render-engine/src/preview/preview-plan.ts` and
-  `src/lib/raw/decoder.ts`.
+- The quick and bounded-HQ preview pixel caps are owned by
+  `packages/render-engine/src/preview/preview-plan.ts`.
+  `src/lib/raw/decoder.ts` still defines and exports a copy for the app's RAW
+  adapter; the change that switches the app to the engine's caps deletes that
+  copy and this entry.
 
 Deprecated public API. These are still exported, but they are scheduled for
 removal, not protected: dedicated retirement changes delete them with a
