@@ -13,7 +13,11 @@ verification time. The source and test paths below were refreshed on
 selection moved into `src/lib/export/export-plan.ts` and export interruption
 history moved to source-scoped markers, and on 2026-10-08, after RAW decode
 work moved behind one runtime host per workflow and the processed-window
-export lifecycle moved into `@lumaforge/render-engine`.
+export lifecycle moved into `@lumaforge/render-engine`, and on 2026-10-09,
+after the `/raw` mount took ownership of the session it publishes, source
+teardown was delegated to the owners of each resource, each preview GPU
+pipeline got one lifecycle owner, and decoded preview frames got an identity
+their producer mints.
 
 Primary implementation sources:
 
@@ -30,6 +34,14 @@ Primary implementation sources:
 - `src/lib/raw/luma-runtime-adapter.ts`
 - `src/lib/raw/raw-runtime-host.ts`
 - `packages/render-engine/src/export/processed-window-export.ts`
+- `src/modules/raw-processor/state/session.atoms.ts`
+- `src/modules/raw-processor/hooks/stages/ingest/useRawProcessorLifecycle.ts`
+- `src/modules/raw-processor/services/workflow/raw-workflow-resources.ts`
+- `src/modules/raw-processor/hooks/preview/usePreviewPipelineLifecycle.ts`
+- `src/modules/raw-processor/hooks/stages/preview/usePreviewPipelineEvacuation.ts`
+- `src/lib/preview/preview-frame.ts`
+- `src/modules/raw-processor/hooks/stages/preview/useDecodedPreviewResource.ts`
+- `src/modules/raw-processor/hooks/stages/preview/useRestorePreviewAfterExport.ts`
 
 External API facts checked during the 2026-06-01 refresh:
 
@@ -436,7 +448,8 @@ large full-resolution export if the only output path is mobile `blob-handoff`.
 ## Resource Lifecycle And Evacuation
 
 Before full-resolution export starts, the app builds a lightweight export
-snapshot and disposes large preview-owned resources. Required owners are:
+snapshot and disposes large preview-owned resources through the resource
+registry. Required owners are:
 
 ```text
 preview
@@ -446,19 +459,33 @@ export-result
 lut-fetch
 ```
 
+`preview` covers the decoded preview frame, whichever stage decoded it, and
+the original reference snapshots; `gpu` covers the published processed and
+original WebGPU preview pipelines; `export-result` covers the previous
+result's output. Nothing registers under `bounded-hq` or `lut-fetch` today:
+the bounded-HQ frame is the decoded preview frame once it replaces the quick
+one, and online LUT fetches end through their own per-request abort signals.
+
 The evacuation sequence is:
 
 ```text
 user starts full-resolution export
--> freeze export graph, source facts, current params, LUT contract, and policy
+-> freeze export graph, source facts, color intent, LUT contract, committed
+   geometry, and policy, reading the session, color intent, and LUT from the
+   store when the export runs
+-> register the published processed and original GPU pipelines; each
+   registration calls its owner's own release
 -> cancel the preview's RAW session lease on the runtime host, which aborts
    in-flight preview and bounded-HQ work and disposes the RAW session once
--> end the preview's RAW decode worker generation
--> dispose WebGPU preview pipeline and textures
--> release bounded-HQ decoded buffer
--> release previous export Blob/object URLs
--> release obsolete LUT fetch buffers
--> verify ResourceRegistry has no remaining required owners
+-> revoke the embedded preview URL
+-> clear the previous export result from the session
+-> dispose the required owners: the decoded preview frame and its
+   descriptor, original reference snapshots, the GPU pipelines through their
+   owners, and the previous result's output
+-> verify ResourceRegistry has no remaining required owners; otherwise fail
+   with EXPORT_RESOURCE_EVICTION_INCOMPLETE
+-> end the preview's RAW decode worker generation before each export worker
+   attempt starts
 -> start full-resolution export worker with the selected plan
 ```
 
@@ -471,16 +498,29 @@ the RAW session's begin and end hooks. End runs only after a successful begin;
 an end failure rejects an otherwise successful export, and never replaces the
 export's own failure.
 
-Export completion may restore preview best-effort from the current session file,
-through a new session lease on the same runtime host. The restored preview keeps
-the source's RAW render exposure, which the first quick frame pinned and the
-export also used. Failure to restore bounded HQ preview must not invalidate a
-completed export.
-
 On resource-looking export failure, retry uses a fresh worker/runtime context and
 a lower policy. WebAssembly memory is effectively grow-only for this product, so
 retrying in the same grown worker after memory pressure is not accepted as a
 compatibility strategy.
+
+### Released Preview And Restore
+
+While the export runs, and afterwards while a ready result stands with no
+decoded frame and no embedded preview URL, the preview is released: the stage
+shows the export handoff in place of the WebGPU or CPU preview, whose owners
+release what they hold as it unmounts. Edits, LUT application, the original
+view and split, Transform, and HQ preview export are refused with the
+`preview-released` reason. Delivering the result (download, copy, share,
+manifest) does not read preview pixels and stays available.
+
+Restore is the user's Restore preview action on that handoff, never an
+automatic step. It reads the session from the store when it runs, takes a new
+session lease on the same runtime host, and decodes only the quick frame of
+the session's file with the source's pinned RAW render exposure. The restored
+frame is a new accepted frame of the same session, and it keeps the export
+result. A restore that a load, a reset, or route departure supersedes writes
+nothing; a restore failure leaves the status ready, shows a toast, and does
+not touch the completed export result.
 
 ## RAW Runtime Generations
 
@@ -505,6 +545,126 @@ what keeps a superseded load from running ahead of the next one and holding
 its memory. Readiness observers subscribe to the host's lifecycle snapshot;
 observing never retains the runtime or delays its idle termination.
 
+## Source Session Lifetime
+
+There is no single lifecycle controller. Each resource a shown source holds
+keeps one owner that makes its own release idempotent, and the moments that
+end a source call those owners in a fixed order. The rules below are separate
+on purpose: releasing preview pixels, leaving the route, keeping the source's
+exposure pin, and keeping an export result current are different lifetimes.
+
+### Session Store And Synchronous Reads
+
+The current image session is one Jotai atom on the production store
+(`src/modules/raw-processor/state/session.atoms.ts`), and the effective color
+intent and the LUT are read from the same store
+(`src/modules/raw-processor/state/workflow.atoms.ts`). Load, restore, export,
+and delivery read them when they run, not from the last render, so a write is
+visible to the next check in the same tick. Every asynchronous step fences on
+that live read before it writes: load and restore on their session id, export
+and delivery also on their export attempt and the export graph version.
+
+### Route Departure
+
+The session atom outlives the `/raw` mount, so the mount owns the session it
+published (`src/modules/raw-processor/hooks/stages/ingest/useRawProcessorLifecycle.ts`).
+When the mount unmounts it releases the source's resources at once, then ends
+its session:
+
+```text
+unmount:
+  mark the workflow unmounted
+  release the source's resources (as listed under Source Teardown)
+  a load still pending: clear it and its processor state now
+  a loaded session: after a microtask, if the mount has not been set up
+    again, clear it and its processor state
+```
+
+The workflow's RAW runtime host is disposed with the mount as well.
+
+The microtask check lets a StrictMode effect replay keep its session, while a
+real departure ends it, so coming back to `/raw` opens an empty lab that loads
+the next RAW on a fresh runtime. A departing mount clears only the session it
+published, and revokes only its own embedded preview URL; a session another
+mount has put in the store since, and that session's URL, are left alone.
+
+### Source Teardown
+
+`src/modules/raw-processor/services/workflow/raw-workflow-resources.ts`
+releases what a shown source holds when the session resets, when a new file
+replaces it, and when the workflow unmounts. It holds no state of its own:
+
+```text
+drop the runtime-work and pending-load fences
+abort the export work (its controller)
+cancel the RAW session lease (the runtime host)
+dispose the delivered export results (the resource registry)
+revoke the embedded preview URL (the preview stage)
+drop the preview copy canvas
+```
+
+The fences drop first, so a callback the outgoing load or restore still has in
+flight finds its session gone and writes nothing. Reset and replacement then
+release the decoded frame, which also releases the source's exposure pin. The
+GPU pipelines are not on this list: their owners release them when the preview
+unmounts or suspends.
+
+### Preview GPU Pipelines
+
+`src/modules/raw-processor/hooks/preview/usePreviewPipelineLifecycle.ts` is
+the one owner of each preview GPU pipeline, the processed one in
+`PreviewCanvas` and the original one in `OriginalGpuLayer`. It builds the
+pipeline for its canvas, publishes it only after it has initialized, releases
+it on unmount or suspension, and forgets it exactly once, whoever disposes it.
+A pipeline disposed or abandoned while it initializes is never published.
+Export evacuation does not clear a published pipeline itself:
+`src/modules/raw-processor/hooks/stages/preview/usePreviewPipelineEvacuation.ts`
+registers what an owner published and calls that owner's release, so a
+registration that outlives its pipeline cannot touch a successor.
+
+### Decoded Frame Identity
+
+`src/modules/raw-processor/hooks/stages/preview/useDecodedPreviewResource.ts`
+is the only producer of decoded preview frames. Accepting a frame mints its
+descriptor (`DecodedPreviewFrame` in `src/lib/preview/preview-frame.ts`): the
+session id, a frame id unique to that accepted frame, the stage, the size,
+the exposure it carries, and, for a bounded-HQ frame that replaces the live
+quick frame of the same session, that quick frame's id. A restored frame
+gets a new frame id.
+
+Consumers never mint an identity. The processed and original GPU layers, the
+CPU preview worker, the histogram, the original reference snapshot, and the
+Transform source key their requests by the descriptor, and readiness counts
+only when the frame a consumer drew is the accepted one, or is the quick
+predecessor the accepted bounded-HQ frame names. Equal dimensions, version
+counters, or byte lengths never make two frames the same, so after an
+equal-sized replacement a late answer for the replaced source readies
+nothing.
+
+A descriptor names its pixels only while they are the live frame. When export
+evacuation releases the decoded frame, its descriptor goes with it, and
+consumers see no frame until a restore or a new load accepts one.
+
+### Source Exposure Versus Released Pixels
+
+The RAW render exposure is pinned per source, not per frame: the first quick
+frame of a source sets it, and bounded-HQ frames, the restored frame, and the
+export render with it. Evacuation releases the pixels but keeps the pin, so a
+restore after export renders with the exposure the export used. Only releasing the
+source clears the pin: a reset, a replacement, or a new mount, whose workflow
+starts without one.
+
+### Export Result Currency
+
+A completed export result is current only while the session still holds it
+and the live inputs still name its request; delivery checks that through
+`src/modules/raw-processor/services/export/export-result-actions.ts` before
+and during each delivery. Released preview pixels do not make a result stale,
+and restoring the preview does not make a stale one current. Reset,
+replacement, and route departure dispose the delivered results with the
+source, and an edit that retires the result makes a delivery still reading
+its file refuse with a reason.
+
 ## What Must Not Change Accidentally
 
 - Do not make HQ preview export the primary product promise. It is a fallback or
@@ -521,6 +681,16 @@ observing never retains the runtime or delays its idle termination.
 - Do not reintroduce a named-profile table as the decision source. Names are
   telemetry/product-copy labels only; policy is derived from capability, intent,
   and export-time resources.
+- Do not add a broad lifecycle controller that clears other owners' state.
+  Source teardown calls each owner's own idempotent release, and only a
+  pipeline's lifecycle owner forgets a published GPU pipeline.
+- Do not identify a decoded frame by its size, a version counter, or a byte
+  length. Only the frame's producer mints a descriptor, and released pixels
+  take theirs with them.
+- Do not clear the source's exposure pin when the preview is released, and do
+  not keep it across a reset, a replacement, or route departure.
+- Do not treat a released preview as a stale export result, or a restored
+  preview as proof that a result is current.
 
 ## Verification Map
 
@@ -554,6 +724,29 @@ Export lifecycle and resource tests:
 - `tests/browser/raw-export-lifecycle-resources.spec.ts`
 - `tests/browser/raw-ios-safe-export.spec.ts`
 - `tests/browser/raw-hq-preview-export.spec.ts`
+
+Session lifetime, teardown, GPU ownership, and frame identity tests:
+
+- `src/modules/raw-processor/hooks/useImageSession.test.tsx`
+- `src/modules/raw-processor/hooks/stages/ingest/useRawProcessorLifecycle.test.tsx`
+- `src/modules/raw-processor/hooks/stages/ingest/useRawSessionReset.test.tsx`
+- `src/modules/raw-processor/services/workflow/raw-workflow-resources.test.ts`
+- `src/modules/raw-processor/services/ingest/orchestrate-raw-load.test.ts`
+- `src/modules/raw-processor/hooks/preview/usePreviewPipelineLifecycle.test.tsx`
+- `src/modules/raw-processor/hooks/stages/preview/usePreviewPipelineEvacuation.test.tsx`
+- `src/lib/preview/preview-frame.test.ts`
+- `src/modules/raw-processor/hooks/stages/preview/useDecodedPreviewResource.test.tsx`
+- `src/modules/raw-processor/services/preview/preview-compare-readiness.test.ts`
+- `src/modules/raw-processor/hooks/useCpuPreview.test.ts`
+- `src/modules/raw-processor/hooks/stages/preview/useRestorePreviewAfterExport.test.tsx`
+- `src/modules/raw-processor/services/export/export-result-actions.test.ts`
+- `tests/browser/raw-p3-lifetime.spec.ts`
+
+The browser spec covers route departure and return, equal-sized source
+replacement, Transform across the bounded HQ with export and Restore, and
+delivery after the preview is released, on the Chromium project (software
+WebGPU) and the WebKit project, which has no WebGPU and runs the CPU preview.
+It checks behavior and pixels, not hardware performance.
 
 When changing this policy, run the smallest focused unit set first, then
 production-like browser validation for any user-visible RAW preview, export
