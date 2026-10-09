@@ -67,6 +67,7 @@ import { getDetachedPreviewView } from '../state/preview-view.atoms'
 import { currentSessionAtom } from '../state/session.atoms'
 import { getProcessingParams, resetToDefaults } from '../state/workflow.atoms'
 import { acceptTransformGeometry } from './transform-session.fixture'
+import { useOriginalReferenceSnapshot } from './useOriginalReferenceSnapshot'
 import type { UseRawWorkflowReturn } from './useRawWorkflow'
 import { useRawWorkflow } from './useRawWorkflow'
 import { useRawWorkflowRefs } from './useRawWorkflowRefs'
@@ -237,6 +238,17 @@ vi.mock('../services/compare/original-reference-renderer', async () => {
     ...actual,
     renderOriginalReferenceSnapshot:
       originalReferenceSnapshotMock.renderOriginalReferenceSnapshot,
+  }
+})
+
+// The snapshot port runs as it is; the spy only records what the workflow
+// hands it.
+vi.mock('./useOriginalReferenceSnapshot', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('./useOriginalReferenceSnapshot')>()
+  return {
+    ...actual,
+    useOriginalReferenceSnapshot: vi.fn(actual.useOriginalReferenceSnapshot),
   }
 })
 
@@ -3671,6 +3683,37 @@ describe('useRawWorkflow embedded preview state', () => {
         originalReferenceSnapshotMock.renderOriginalReferenceSnapshot,
       ).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it('hands the original reference the descriptor of the frame it publishes', async () => {
+    vi.stubGlobal('CSS', {
+      supports: vi.fn(() => true),
+    })
+    setCapabilityVectorForTest({
+      coi: false,
+      pthread: false,
+      deviceMemoryGB: 4,
+      hwConcurrency: 4,
+      webKitClass: 'webkit-mobile',
+      deviceFormFactor: 'mobile',
+      maybeOpfsSupported: false,
+    })
+
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'frame.ARW'))
+    })
+    act(() => {
+      result.current.setViewMode('compare')
+    })
+    await flushPromises()
+
+    const published = result.current.decodedFrame
+    expect(published).not.toBeNull()
+    const portInput = vi.mocked(useOriginalReferenceSnapshot).mock.lastCall?.[0]
+    expect(portInput?.image).toBe(result.current.decodedImageRef.current)
+    expect(portInput?.frame).toBe(published)
   })
 
   it('does not prepare original reference snapshots when CSS clipping is unavailable', async () => {

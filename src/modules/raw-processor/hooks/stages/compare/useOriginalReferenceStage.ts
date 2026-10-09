@@ -1,6 +1,7 @@
 import type { MutableRefObject } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
@@ -15,6 +16,11 @@ type UseOriginalReferenceStageInput = {
   previewSuspended: boolean
   decodedImageRef: MutableRefObject<DecodedImage | null>
   decodedImageVersion: number
+  /**
+   * The accepted descriptor of the frame `decodedImageRef` holds; null while
+   * no decoded frame is live.
+   */
+  decodedFrame: DecodedPreviewFrame | null
   displaySource: DisplaySource
   resourceRegistryRef: MutableRefObject<ResourceRegistry | null>
 }
@@ -25,6 +31,7 @@ export function useOriginalReferenceStage({
   previewSuspended,
   decodedImageRef,
   decodedImageVersion,
+  decodedFrame,
   displaySource,
   resourceRegistryRef,
 }: UseOriginalReferenceStageInput) {
@@ -46,10 +53,13 @@ export function useOriginalReferenceStage({
     previewSourceWidth: decodedImage?.width ?? null,
     previewSourceHeight: decodedImage?.height ?? null,
   })
+  // The descriptor travels with the pixels it names: a frame the stage
+  // prepares no snapshot for hands the port neither.
   const originalReference = useOriginalReferenceSnapshot({
     sessionId,
     image: shouldPrepareOriginalReferenceSnapshot ? decodedImage : null,
     imageVersion: decodedImageVersion,
+    frame: shouldPrepareOriginalReferenceSnapshot ? decodedFrame : null,
     displaySource,
     capability: originalReferenceCapability,
     trackSnapshot: trackOriginalReferenceSnapshot,

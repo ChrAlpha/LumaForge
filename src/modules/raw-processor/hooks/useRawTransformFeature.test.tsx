@@ -6,6 +6,7 @@ import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import { identityMatrix, rotationMatrix } from '~/lib/transform/geometry/matrix'
 import type { UprightAnalysis } from '~/lib/transform/geometry/types'
 import type { PreviewSource } from '~/lib/transform/preview-types'
@@ -199,12 +200,33 @@ function lastCapturedCpuFrame() {
   return vi.mocked(captureTransformSource).mock.lastCall?.[0].cpuFrame
 }
 
+/**
+ * The accepted descriptor of decoded frame `n` of RAW `sessionId`, as the
+ * workflow publishes it: the first frame is the quick decode, every later
+ * one a bounded-HQ decode or a restored frame.
+ */
+function decodedFrameOf(n: number, sessionId = 'one'): DecodedPreviewFrame {
+  return {
+    sessionId,
+    frameId: `decoded-frame-${n}`,
+    stage: n === 1 ? 'quick' : 'bounded-hq',
+    width: 80,
+    height: 60,
+    exposure: {
+      kind: 'source-pin',
+      value: { ev: 0, multiplier: 1, source: 'identity' },
+    },
+    quickPredecessorFrameId: null,
+  }
+}
+
 function workflow(): UseRawWorkflowReturn {
   return {
     hasImage: true,
     sourceFileName: 'current.nef',
     status: 'ready',
     decodedImageVersion: 1,
+    decodedFrame: decodedFrameOf(1),
     lutDataVersion: 1,
     decodedImageRef: { current: { width: 80, height: 60 } },
     pipelineRef: { current: {} },
@@ -236,6 +258,12 @@ const commits =
 
 interface SessionInput {
   session?: string
+  /** The accepted decoded frame of the session the workflow holds. */
+  frame?: number
+  /**
+   * The workflow's decoded image counter, which moves with every accepted
+   * or released frame; it names no frame.
+   */
   decodedImageVersion?: number
   lutDataVersion?: number
   userExposureEv?: number
@@ -254,6 +282,7 @@ interface SessionInput {
  */
 function useSessionHarness({
   session = 'one',
+  frame = 1,
   decodedImageVersion = 1,
   lutDataVersion = 1,
   userExposureEv = 0,
@@ -273,6 +302,7 @@ function useSessionHarness({
       sourceFileName: 'current.nef',
       status: 'ready',
       decodedImageVersion,
+      decodedFrame: released ? null : decodedFrameOf(frame, session),
       lutDataVersion,
       decodedImageRef: { current: released ? null : image },
       pipelineRef,
@@ -564,7 +594,7 @@ describe('rAW Transform feature', () => {
     expect(hook.result.current.feature.current).toBe(true)
 
     // So does an analysis the worker failed.
-    hook.rerender({ userExposureEv: 1, decodedImageVersion: 2 })
+    hook.rerender({ userExposureEv: 1, frame: 2 })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(3)
     failAnalysis()
@@ -572,7 +602,7 @@ describe('rAW Transform feature', () => {
     expect(hook.result.current.feature.demo.ready).toBe(false)
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(3)
-    hook.rerender({ userExposureEv: 2, decodedImageVersion: 2 })
+    hook.rerender({ userExposureEv: 2, frame: 2 })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(4)
     expect(hook.result.current.feature.demo.error).toBeNull()
@@ -685,7 +715,7 @@ describe('rAW Transform feature', () => {
     expect(captureTransformSource).toHaveBeenCalledOnce()
 
     // The HQ decode replaces the photo WebGPU renders.
-    hook.rerender({ decodedImageVersion: 2 })
+    hook.rerender({ frame: 2 })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(2)
     analyzeCapture()
@@ -693,7 +723,7 @@ describe('rAW Transform feature', () => {
     expect(analyses()).toBe(2)
 
     // Falling back to the CPU waits for its first finished frame.
-    hook.rerender({ decodedImageVersion: 2, cpu: true })
+    hook.rerender({ frame: 2, cpu: true })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(2)
     const onCpu = cpuFrameOf(1, 'v2:80x60:28800')
@@ -705,7 +735,7 @@ describe('rAW Transform feature', () => {
     answer(lastRender())
 
     // The CPU stage keeps rendering its source across an HQ decode...
-    hook.rerender({ decodedImageVersion: 3, cpu: true })
+    hook.rerender({ frame: 3, cpu: true })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(3)
     expect(hook.result.current.feature.available).toBe(true)
@@ -719,7 +749,7 @@ describe('rAW Transform feature', () => {
     answer(lastRender())
 
     // Back on WebGPU.
-    hook.rerender({ decodedImageVersion: 3 })
+    hook.rerender({ frame: 3 })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(5)
     expect(lastCapturedCpuFrame()).toBeNull()
@@ -727,12 +757,134 @@ describe('rAW Transform feature', () => {
     answer(lastRender())
 
     // A new RAW starts over.
-    hook.rerender({ session: 'two', decodedImageVersion: 4 })
+    hook.rerender({ session: 'two', frame: 4 })
     expect(worker().messages.at(-1)).toMatchObject({ type: 'clear' })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(6)
     expect(analyses()).toBe(6)
     expect(commits).not.toHaveBeenCalled()
+    hook.unmount()
+  })
+
+  it('names the WebGPU frame by its accepted descriptor, never by the decoded image counter', async () => {
+    const hook = renderSession()
+    await captureNeutral(hook)
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+
+    // The counter moves without a new accepted frame: the photo is the same.
+    hook.rerender({ decodedImageVersion: 2 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    expect(hook.result.current.feature.current).toBe(true)
+
+    // A new accepted frame is a new photo, whatever the counter says.
+    hook.rerender({ decodedImageVersion: 2, frame: 2 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    analyzeCapture()
+    answer(lastRender())
+
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    const answered = lastRender()
+    answer(answered)
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    // The answer stands on the same accepted frame...
+    hook.rerender({ decodedImageVersion: 5, frame: 2 })
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    // ...and not on a frame decoded again for the same source.
+    hook.rerender({ decodedImageVersion: 5, frame: 3 })
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(3)
+    analyzeCapture()
+    answerLatest()
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    expect(commits).toHaveBeenCalledOnce()
+    expect(hook.result.current.geometry).toEqual(geometryOf(answered))
+    hook.unmount()
+  })
+
+  it('captures no WebGPU frame the workflow has not accepted', async () => {
+    const input = { ...workflow(), decodedFrame: null }
+    const { result, rerender, unmount } = renderHook(
+      ({ value }) => useFeature(value, false),
+      { initialProps: { value: input as UseRawWorkflowReturn } },
+    )
+    act(() => {
+      result.current.observe()
+    })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(result.current.available).toBe(false)
+    expect(captureTransformSource).not.toHaveBeenCalled()
+
+    rerender({ value: workflow() })
+    expect(result.current.available).toBe(true)
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    unmount()
+  })
+
+  it('keeps the CPU frame its own source and request identity across accepted frames', async () => {
+    const hook = renderSession({ cpu: true })
+    act(() => {
+      hook.result.current.feature.observe()
+    })
+    // The CPU stage names the quick source it renders, not the workflow's
+    // descriptor.
+    const quick = cpuFrameOf(1, 'cpu-source-quick')
+    act(() => hook.result.current.feature.setCpuFrame(quick))
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    analyzeCapture()
+    answer(lastRender())
+    expect(hook.result.current.feature.current).toBe(true)
+
+    // The bounded-HQ frame is accepted while the CPU stage keeps drawing its
+    // quick source: the retained frame stays the photo a neutral analysis
+    // was made on, though it is not the workflow's newest frame.
+    hook.rerender({ cpu: true, frame: 2, decodedImageVersion: 2 })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    expect(hook.result.current.feature.available).toBe(true)
+    expect(hook.result.current.feature.current).toBe(true)
+
+    // A Transform reads the newest processed frame the stage returned.
+    const next = cpuFrameOf(2, 'cpu-source-quick')
+    act(() => hook.result.current.feature.setCpuFrame(next))
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(2)
+    expect(lastCapturedCpuFrame()).toBe(next)
+    analyzeCapture()
+    answerLatest()
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    expect(commits).toHaveBeenCalledOnce()
+
+    // A newer render request on the same source is a new frame to answer on.
+    act(() =>
+      hook.result.current.feature.setCpuFrame(
+        cpuFrameOf(3, 'cpu-source-quick'),
+      ),
+    )
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledTimes(3)
+    analyzeCapture()
+    answerLatest()
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    expect(commits).toHaveBeenCalledOnce()
     hook.unmount()
   })
 
@@ -963,7 +1115,7 @@ describe('rAW Transform feature', () => {
     expect(hook.result.current.feature.exportBlock).toBeNull()
 
     // So did the HQ decode.
-    hook.rerender({ userExposureEv: 1, decodedImageVersion: 2 })
+    hook.rerender({ userExposureEv: 1, frame: 2 })
     expect(hook.result.current.feature.exportBlock).toBe('pending')
     await act(() => vi.advanceTimersByTimeAsync(60))
     expect(hook.result.current.feature.exportBlock).toBe('pending')
@@ -1039,7 +1191,7 @@ describe('rAW Transform feature', () => {
       }),
     )
     const first = lastRender()
-    hook.rerender({ decodedImageVersion: 2 })
+    hook.rerender({ frame: 2 })
     await act(() => vi.advanceTimersByTimeAsync(60))
     // The answer belongs to the frame the HQ decode replaced.
     answer(first)
@@ -1122,14 +1274,14 @@ describe('rAW Transform feature', () => {
     expect(hook.result.current.feature.exportBlock).toBeNull()
 
     // A finished export releases the preview. That is not a failure.
-    hook.rerender({ released: true, decodedImageVersion: 2 })
+    hook.rerender({ released: true, frame: 2 })
     expect(hook.result.current.feature.available).toBe(false)
     expect(hook.result.current.feature.active).toBe(true)
     expect(hook.result.current.feature.exportBlock).toBeNull()
     expect(commits).toHaveBeenCalledOnce()
 
     // Restore re-renders the same geometry on the restored frame.
-    hook.rerender({ decodedImageVersion: 3 })
+    hook.rerender({ frame: 3 })
     await act(() => vi.advanceTimersByTimeAsync(150))
     analyzeCapture()
     answer(lastRender())
@@ -1438,13 +1590,24 @@ describe('rAW Transform feature', () => {
     })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(result.current.available).toBe(true)
-    rerender({ value: { ...input, decodedImageVersion: 2 }, sourceId: 'one' })
+    rerender({
+      value: {
+        ...input,
+        decodedImageVersion: 2,
+        decodedFrame: decodedFrameOf(2),
+      },
+      sourceId: 'one',
+    })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(result.current.available).toBe(true)
     // The retained quick frame is the photo already analysed.
     expect(captureTransformSource).toHaveBeenCalledOnce()
     rerender({
-      value: { ...input, decodedImageVersion: 3 },
+      value: {
+        ...input,
+        decodedImageVersion: 3,
+        decodedFrame: decodedFrameOf(1, 'replacement'),
+      },
       sourceId: 'replacement',
     })
     await act(() => vi.advanceTimersByTimeAsync(150))

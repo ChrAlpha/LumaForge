@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import {
@@ -14,6 +15,7 @@ import {
 import type { DisplaySource, ImageSession } from '../../../model/session'
 import type { OriginalReferenceSnapshot } from '../../../services/compare/original-reference-snapshot'
 import { setCurrentSession } from '../../../state/session.atoms'
+import { useOriginalReferenceSnapshot } from '../../useOriginalReferenceSnapshot'
 import { useOriginalReferenceStage } from './useOriginalReferenceStage'
 
 const rendererMock = vi.hoisted(() => ({
@@ -23,6 +25,17 @@ const rendererMock = vi.hoisted(() => ({
 vi.mock('../../../services/compare/original-reference-renderer', () => ({
   renderOriginalReferenceSnapshot: rendererMock.renderOriginalReferenceSnapshot,
 }))
+
+// The snapshot port runs as it is; the spy only records what the stage hands
+// it.
+vi.mock('../../useOriginalReferenceSnapshot', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../useOriginalReferenceSnapshot')>()
+  return {
+    ...actual,
+    useOriginalReferenceSnapshot: vi.fn(actual.useOriginalReferenceSnapshot),
+  }
+})
 
 type PendingRender = {
   key: string
@@ -36,6 +49,8 @@ type StageProps = {
   viewMode: PreviewViewMode
   image: DecodedImage | null
   imageVersion: number
+  /** The workflow's accepted descriptor of `image`. */
+  frame?: DecodedPreviewFrame | null
   displaySource: DisplaySource
 }
 
@@ -151,6 +166,7 @@ function renderStageHook({
         previewSuspended: false,
         decodedImageRef,
         decodedImageVersion: props.imageVersion,
+        decodedFrame: props.frame ?? null,
         displaySource: props.displaySource,
         resourceRegistryRef,
       })
@@ -211,6 +227,48 @@ describe('useOriginalReferenceStage', () => {
     vi.unstubAllGlobals()
     resetCapabilityVectorForTest()
     setCurrentSession(null)
+    vi.mocked(useOriginalReferenceSnapshot).mockClear()
+  })
+
+  it('hands the snapshot port the accepted descriptor of the frame it prepares', async () => {
+    const quick = createImage('quick')
+    const descriptor: DecodedPreviewFrame = {
+      sessionId: 'session-original-reference',
+      frameId: 'decoded-frame-1',
+      stage: 'quick',
+      width: quick.width,
+      height: quick.height,
+      exposure: { kind: 'unpinned', value: quick.renderExposure },
+      quickPredecessorFrameId: null,
+    }
+    const lastPortInput = () =>
+      vi.mocked(useOriginalReferenceSnapshot).mock.lastCall?.[0]
+    const { rerender, unmount } = renderStage()
+    rerender({
+      sessionId: 'session-original-reference',
+      viewMode: 'compare',
+      image: quick,
+      imageVersion: 1,
+      frame: descriptor,
+      displaySource: 'quick',
+    })
+    // The same object the workflow published, beside the pixels it names.
+    expect(lastPortInput()?.image).toBe(quick)
+    expect(lastPortInput()?.frame).toBe(descriptor)
+
+    // A frame the stage does not prepare a snapshot for names none.
+    rerender({
+      sessionId: 'session-original-reference',
+      viewMode: 'processed',
+      image: quick,
+      imageVersion: 1,
+      frame: descriptor,
+      displaySource: 'quick',
+    })
+    expect(lastPortInput()?.image).toBeNull()
+    expect(lastPortInput()?.frame).toBeNull()
+    unmount()
+    await act(async () => {})
   })
 
   it('exposes compare fallback controls and no snapshot before an image is available', () => {
@@ -223,6 +281,7 @@ describe('useOriginalReferenceStage', () => {
         previewSuspended: false,
         decodedImageRef: { current: null },
         decodedImageVersion: 0,
+        decodedFrame: null,
         displaySource: 'bounded-hq',
         resourceRegistryRef: { current: createResourceRegistry() },
       }),

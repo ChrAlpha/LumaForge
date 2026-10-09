@@ -25,6 +25,7 @@ import {
 import { viewportAtom } from '~/atoms/viewport'
 import { I18nProvider } from '~/lib/i18n'
 import { jotaiStore } from '~/lib/jotai'
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import { identityMatrix } from '~/lib/transform/geometry/matrix'
 import type { UprightAnalysis } from '~/lib/transform/geometry/types'
 import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
@@ -193,6 +194,19 @@ class FakeWorker {
 }
 
 const capturedImage = { width: 80, height: 60 }
+/** The accepted descriptor the workflow publishes for `capturedImage`. */
+const capturedFrame: DecodedPreviewFrame = {
+  sessionId: 'one',
+  frameId: 'decoded-frame-1',
+  stage: 'quick',
+  width: 80,
+  height: 60,
+  exposure: {
+    kind: 'source-pin',
+    value: { ev: 0, multiplier: 1, source: 'identity' },
+  },
+  quickPredecessorFrameId: null,
+}
 const capturePipelineRef = { current: {} }
 const delivered = {
   kind: 'full-resolution',
@@ -239,6 +253,7 @@ function TransformSession({
     viewMode: 'processed',
     decodedImageRef: { current: released ? null : capturedImage },
     decodedImageVersion: released ? 2 : 1,
+    decodedFrame: released ? null : capturedFrame,
     lutDataVersion: 1,
     pipelineRef: capturePipelineRef,
     previewSuspended: released,

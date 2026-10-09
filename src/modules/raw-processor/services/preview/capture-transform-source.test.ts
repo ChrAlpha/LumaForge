@@ -8,8 +8,11 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
+
 import {
   captureTransformSource,
+  decodedFrameIdentity,
   transformInputKey,
 } from './capture-transform-source'
 
@@ -18,6 +21,19 @@ const INTENT: ColorGraphIntent = {
   styleKind: 'custom',
   builtinPreset: null,
   intensity: 0.37,
+}
+
+const FRAME: DecodedPreviewFrame = {
+  sessionId: 'session-a',
+  frameId: 'decoded-frame-1',
+  stage: 'quick',
+  width: 80,
+  height: 60,
+  exposure: {
+    kind: 'source-pin',
+    value: { ev: 0.5, multiplier: 2 ** 0.5, source: 'image-statistics' },
+  },
+  quickPredecessorFrameId: null,
 }
 
 describe('current-photo transform source', () => {
@@ -63,39 +79,64 @@ describe('current-photo transform source', () => {
   })
 
   it('refreshes for color, LUT and decode changes but not comparison movement', () => {
-    const key = transformInputKey(1, 1, INTENT)
+    const key = transformInputKey(FRAME, 1, INTENT)
     // A legacy record that still carries view fields keys the same.
     expect(
-      transformInputKey(1, 1, {
+      transformInputKey(FRAME, 1, {
         ...INTENT,
         viewMode: 'compare',
         compareSplit: 0.2,
       } as ColorGraphIntent),
     ).toBe(key)
-    expect(transformInputKey(1, 1, { ...INTENT, userExposureEv: 1 })).not.toBe(
-      key,
-    )
-    expect(transformInputKey(1, 2, INTENT)).not.toBe(key)
-    expect(transformInputKey(2, 1, INTENT)).not.toBe(key)
+    expect(
+      transformInputKey(FRAME, 1, { ...INTENT, userExposureEv: 1 }),
+    ).not.toBe(key)
+    expect(transformInputKey(FRAME, 2, INTENT)).not.toBe(key)
+    expect(
+      transformInputKey(
+        { ...FRAME, frameId: 'decoded-frame-2', stage: 'bounded-hq' },
+        1,
+        INTENT,
+      ),
+    ).not.toBe(key)
+  })
+
+  it('keys the decoded source by the accepted frame identity alone', () => {
+    const key = transformInputKey(FRAME, 1, INTENT)
+    // Another descriptor object naming the same accepted frame is that frame.
+    expect(transformInputKey({ ...FRAME }, 1, INTENT)).toBe(key)
+    // A frame decoded again for the same source is a new frame, however
+    // alike its size and exposure are.
+    expect(
+      transformInputKey({ ...FRAME, frameId: 'decoded-frame-7' }, 1, INTENT),
+    ).not.toBe(key)
+    // So is the same frame ID minted for another source session.
+    expect(
+      transformInputKey({ ...FRAME, sessionId: 'session-b' }, 1, INTENT),
+    ).not.toBe(key)
+    // No accepted frame names no decoded source.
+    expect(transformInputKey(null, 1, INTENT)).not.toBe(key)
+    expect(decodedFrameIdentity(null)).not.toBe(decodedFrameIdentity(FRAME))
+    expect(decodedFrameIdentity({ ...FRAME })).toBe(decodedFrameIdentity(FRAME))
   })
 
   it('keys every continuous color input the frame is drawn with', () => {
-    const key = transformInputKey(1, 1, INTENT)
-    expect(transformInputKey(1, 1, { ...INTENT, intensity: 0.62 })).not.toBe(
-      key,
-    )
-    expect(transformInputKey(1, 1, { ...INTENT, intensity: 0.371 })).not.toBe(
-      key,
-    )
+    const key = transformInputKey(FRAME, 1, INTENT)
     expect(
-      transformInputKey(1, 1, {
+      transformInputKey(FRAME, 1, { ...INTENT, intensity: 0.62 }),
+    ).not.toBe(key)
+    expect(
+      transformInputKey(FRAME, 1, { ...INTENT, intensity: 0.371 }),
+    ).not.toBe(key)
+    expect(
+      transformInputKey(FRAME, 1, {
         ...INTENT,
         styleKind: 'builtin',
         builtinPreset: 'warm',
       }),
     ).not.toBe(key)
     expect(
-      transformInputKey(1, 1, {
+      transformInputKey(FRAME, 1, {
         ...INTENT,
         selectiveColor: {
           ...NEUTRAL_SELECTIVE_COLOR,
@@ -106,13 +147,13 @@ describe('current-photo transform source', () => {
   })
 
   it('keys the color as the graph reads it, not how the record is spelled', () => {
-    const key = transformInputKey(1, 1, INTENT)
+    const key = transformInputKey(FRAME, 1, INTENT)
     const { selectiveColor: _hsl, ...withoutHsl } = INTENT
-    expect(transformInputKey(1, 1, withoutHsl)).toBe(key)
+    expect(transformInputKey(FRAME, 1, withoutHsl)).toBe(key)
     const reordered = Object.fromEntries(
       Object.entries(INTENT).reverse(),
     ) as unknown as ColorGraphIntent
-    expect(transformInputKey(1, 1, reordered)).toBe(key)
+    expect(transformInputKey(FRAME, 1, reordered)).toBe(key)
   })
 })
 

@@ -2,23 +2,34 @@ import type { ColorGraphIntentSource } from '@lumaforge/luma-color-runtime'
 import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 
+import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import { previewDimensions } from '~/lib/transform/preview-dimensions'
 import type { PreviewSource } from '~/lib/transform/preview-types'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 /**
- * What a processed Transform frame is drawn from: the decoded source, the LUT
- * and the color intent with its continuous strength. The intent is keyed the
- * way the color graph reads it, so view state, key order or a missing HSL
- * record never ask for a new frame, and any color change does.
+ * The decoded frame a Transform frame is drawn from, named by the identity
+ * the workflow minted when it accepted the frame. Two descriptors of one
+ * accepted frame name the same source; nothing here is rebuilt from sizes,
+ * exposure or counters. No accepted frame names no source.
+ */
+export function decodedFrameIdentity(frame: DecodedPreviewFrame | null) {
+  return JSON.stringify(frame ? [frame.sessionId, frame.frameId] : null)
+}
+
+/**
+ * What a processed Transform frame is drawn from: the accepted decoded frame,
+ * the LUT and the color intent with its continuous strength. The intent is
+ * keyed the way the color graph reads it, so view state, key order or a
+ * missing HSL record never ask for a new frame, and any color change does.
  */
 export function transformInputKey(
-  imageVersion: number,
+  frame: DecodedPreviewFrame | null,
   lutVersion: number,
   color: ColorGraphIntentSource,
 ) {
   return JSON.stringify([
-    imageVersion,
+    decodedFrameIdentity(frame),
     lutVersion,
     colorGraphIntentSignature(color),
   ])

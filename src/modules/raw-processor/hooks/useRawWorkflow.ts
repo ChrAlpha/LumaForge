@@ -362,6 +362,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     previewSuspended,
     decodedImageRef,
     decodedImageVersion,
+    decodedFrame,
     displaySource,
     resourceRegistryRef,
   })

@@ -10,6 +10,7 @@ import type { TransformIntent } from '../model/session'
 import { createNeutralTransformIntent } from '../model/session-factory'
 import {
   captureTransformSource,
+  decodedFrameIdentity,
   transformInputKey,
 } from '../services/preview/capture-transform-source'
 import type {
@@ -154,15 +155,14 @@ export function useRawTransformFeature(
   // LUT and strength edits do not read the frame back and analyse it again.
   const colorNeeded = intended || showOverlay
   // The CPU stage keeps rendering its quick source across HQ decodes and
-  // names that source on every finished frame; WebGPU renders each decode.
-  // Switching executor is a new source as well.
-  const decodedKey = `${sourceId}|${isCpuMode ? `cpu:${cpuFrame?.sourceId ?? 'none'}` : `gpu:${workflow.decodedImageVersion}`}`
+  // names that source on every finished frame, so its frames keep their own
+  // source and request identity and never have to be the workflow's newest
+  // frame. WebGPU renders each accepted frame, named by the descriptor the
+  // workflow minted for it. Switching executor is a new source as well.
+  const decodedFrame = workflow.decodedFrame
+  const decodedKey = `${sourceId}|${isCpuMode ? `cpu:${cpuFrame?.sourceId ?? 'none'}` : `gpu:${decodedFrameIdentity(decodedFrame)}`}`
   const colorKey = sourceId
-    ? transformInputKey(
-        workflow.decodedImageVersion,
-        workflow.lutDataVersion,
-        workflow.params,
-      )
+    ? transformInputKey(decodedFrame, workflow.lutDataVersion, workflow.params)
     : ''
   const key = `${decodedKey}|${colorKey}|${isCpuMode ? (cpuFrame?.requestId ?? 'none') : 'gpu'}`
   const previewSuspended = workflow.previewSuspended === true
@@ -171,8 +171,9 @@ export function useRawTransformFeature(
     image &&
     !previewSuspended &&
     // The CPU stage is keyed by RAW session and retains its quick frame
-    // when an HQ decode replaces the workflow's image reference.
-    (isCpuMode ? cpuFrame : workflow.pipelineRef.current),
+    // when an HQ decode replaces the workflow's image reference. WebGPU
+    // draws only a frame the workflow accepted.
+    (isCpuMode ? cpuFrame : decodedFrame && workflow.pipelineRef.current),
   )
 
   useEffect(() => {
