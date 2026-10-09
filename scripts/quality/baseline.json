@@ -109,10 +109,7 @@
     "types src/lib/webgpu/raw-processing-pipeline.ts: PipelineTransformPath",
     "types src/lib/webgpu/raw-processing-pipeline.ts: RawUploadInputFormat",
     "types src/modules/raw-processor/services/look/online-lut-sources.ts: OnlineLUTLoadRequest",
-    "types src/modules/raw-processor/services/look/style-system.ts: LookIntensityPreset",
-    "unresolved scripts/webgpu/browser-suite.mjs: /packages/render-engine/src/preview/preview-render.ts",
-    "unresolved scripts/webgpu/browser-suite.mjs: /src/lib/webgpu/pipeline.ts",
-    "unresolved scripts/webgpu/golden-capture.mjs: /src/lib/gl/webgl-pipeline.ts"
+    "types src/modules/raw-processor/services/look/style-system.ts: LookIntensityPreset"
   ],
   "cycles": [
     "src/lib/profiles/catalog.ts > src/lib/profiles/lut-contract.ts",

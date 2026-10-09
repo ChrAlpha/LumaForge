@@ -24,9 +24,9 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
   const graphParams = (params) =>
     Object.fromEntries(COLOR_GRAPH_INTENT_KEYS.map((key) => [key, params[key]]))
   const { renderCpuPreviewFrame } =
-    await import('/packages/render-engine/src/preview/preview-render.ts')
+    await import('../../packages/render-engine/src/preview/preview-render.ts')
   const { WebGPUProcessingPipeline } =
-    await import('/src/lib/webgpu/pipeline.ts')
+    await import('../../src/lib/webgpu/pipeline.ts')
   const adapter = await navigator.gpu?.requestAdapter()
   if (!adapter) throw new Error('WEBGPU_ADAPTER_UNAVAILABLE')
   const info = adapter.info

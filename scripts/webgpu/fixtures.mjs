@@ -354,12 +354,6 @@ export function subsampleRgb(rgba, width, height, stride = GOLDEN_STRIDE) {
   return Uint8Array.from(out)
 }
 
-export function bytesToBase64(bytes) {
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary)
-}
-
 export function base64ToBytes(base64) {
   return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
 }

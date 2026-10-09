@@ -7,37 +7,36 @@ import { dirname, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { deflateRawSync, inflateRawSync } from 'node:zlib'
+import { inflateRawSync } from 'node:zlib'
 
 import { chromium } from '@playwright/test'
 import { createServer } from 'vite'
 
 const { values } = parseArgs({
   options: {
-    root: { type: 'string', default: process.cwd() },
     output: { type: 'string' },
     iterations: { type: 'string', default: '30' },
     hardware: { type: 'boolean', default: false },
     unfilterable: { type: 'boolean', default: false },
-    'capture-goldens': { type: 'string' },
     help: { type: 'boolean', default: false },
   },
 })
 if (values.help) {
   process.stdout.write(
-    `${JSON.stringify({ usage: 'node scripts/webgpu/validate.mjs [--root checkout] [--output report.json] [--iterations 1..60] [--hardware] [--unfilterable] | --root <checkout with src/lib/gl> --capture-goldens scripts/webgpu/goldens.json', default: 'Chromium SwiftShader, 1024x768, five warmups, thirty edits', scope: 'WebGPU preview vs the TS export executor on synthetic scenes, plus WebGPU resource and frame acceptance; no RAW decoder' }, null, 2)}\n`,
+    `${JSON.stringify({ usage: 'node scripts/webgpu/validate.mjs [--output report.json] [--iterations 1..60] [--hardware] [--unfilterable]', default: 'Chromium SwiftShader, 1024x768, five warmups, thirty edits', scope: 'WebGPU preview vs the TS export executor on synthetic scenes, plus WebGPU resource and frame acceptance; no RAW decoder' }, null, 2)}\n`,
   )
   process.exit(0)
 }
-const root = resolve(values.root)
-const ownRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+// The suite imports the preview and the TS executor relative to itself, so
+// the checkout under validation is the one that holds this harness.
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const output = resolve(
   values.output ?? `/tmp/lumaforge-webgpu-validation-${Date.now()}.json`,
 )
 const iterations = Number(values.iterations)
 if (!Number.isInteger(iterations) || iterations < 1 || iterations > 60)
   throw new Error('ITERATIONS_MUST_BE_1_TO_60')
-const goldensPath = resolve(ownRoot, 'scripts/webgpu/goldens.json')
+const goldensPath = resolve(root, 'scripts/webgpu/goldens.json')
 const git = (...args) =>
   execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
 async function fingerprintSource() {
@@ -76,13 +75,11 @@ async function fingerprintHarness() {
     'browser-suite.mjs',
     'fixtures.mjs',
     'performance.mjs',
-    'golden-capture.mjs',
-    // Capture mode writes the goldens itself.
-    ...(values['capture-goldens'] ? [] : ['goldens.json']),
+    'goldens.json',
   ]) {
     harnessHash.update(name)
     harnessHash.update(
-      await readFile(resolve(ownRoot, 'scripts/webgpu', name)).catch(() => ''),
+      await readFile(resolve(root, 'scripts/webgpu', name)).catch(() => ''),
     )
   }
   return harnessHash.digest('hex')
@@ -117,21 +114,6 @@ try {
           find: '@lumaforge/luma-color-runtime/wgsl',
           replacement: resolve(root, 'packages/luma-color-runtime/src/wgsl.ts'),
         },
-        // Golden capture runs against a pre-removal checkout whose WebGL
-        // renderer still imports the GLSL entry.
-        ...(existsSync(
-          resolve(root, 'packages/luma-color-runtime/src/glsl.ts'),
-        )
-          ? [
-              {
-                find: '@lumaforge/luma-color-runtime/glsl',
-                replacement: resolve(
-                  root,
-                  'packages/luma-color-runtime/src/glsl.ts',
-                ),
-              },
-            ]
-          : []),
         {
           find: '@lumaforge/luma-color-runtime',
           replacement: resolve(
@@ -156,7 +138,7 @@ try {
       host: '127.0.0.1',
       port: 0,
       strictPort: false,
-      fs: { allow: [root, ownRoot] },
+      fs: { allow: [root] },
     },
     plugins: [
       {
@@ -228,77 +210,40 @@ try {
   }, 180_000)
   const address = server.httpServer.address()
   await page.goto(`http://127.0.0.1:${address.port}/__validation`)
-  if (values['capture-goldens']) {
-    const captureUrl = `/@fs/${resolve(ownRoot, 'scripts/webgpu/golden-capture.mjs')}`
-    const capture = await page.evaluate(async (captureUrl) => {
-      const { captureGoldens } = await import(captureUrl)
-      return captureGoldens()
-    }, captureUrl)
-    const goldens = {
-      schemaVersion: 1,
-      source: {
-        revision: report.revision,
-        renderer: capture.renderer,
-        browser: report.browser,
-        capabilities: capture.capabilities,
-        capturedAt: new Date().toISOString(),
-      },
-      stride: capture.stride,
-      width: capture.width,
-      height: capture.height,
-      encoding: 'base64(deflate-raw(rgb8 subsample))',
-      frames: Object.fromEntries(
-        Object.entries(capture.frames).map(([name, base64]) => [
-          name,
-          deflateRawSync(Buffer.from(base64, 'base64'), { level: 9 }).toString(
-            'base64',
-          ),
-        ]),
-      ),
-    }
-    await writeFile(
-      resolve(values['capture-goldens']),
-      `${JSON.stringify(goldens, null, 2)}\n`,
-    )
-    report.result = { tests: [], goldenFrames: Object.keys(goldens.frames) }
-    report.passed = report.errors.length === 0
-  } else {
-    const goldens = existsSync(goldensPath)
-      ? JSON.parse(await readFile(goldensPath, 'utf8'))
-      : null
-    const decodedGoldens = goldens && {
-      ...goldens,
-      frames: Object.fromEntries(
-        Object.entries(goldens.frames).map(([name, base64]) => [
-          name,
-          inflateRawSync(Buffer.from(base64, 'base64')).toString('base64'),
-        ]),
-      ),
-    }
-    const suiteUrl = `/@fs/${resolve(ownRoot, 'scripts/webgpu/browser-suite.mjs')}`
-    report.result = await page.evaluate(
-      async ({ suiteUrl, iterations, unfilterable, goldens }) => {
-        const { runAcceptance } = await import(suiteUrl)
-        return runAcceptance({ iterations, unfilterable, goldens })
-      },
-      {
-        suiteUrl,
-        iterations,
-        unfilterable: values.unfilterable,
-        goldens: decodedGoldens,
-      },
-    )
+  const goldens = existsSync(goldensPath)
+    ? JSON.parse(await readFile(goldensPath, 'utf8'))
+    : null
+  const decodedGoldens = goldens && {
+    ...goldens,
+    frames: Object.fromEntries(
+      Object.entries(goldens.frames).map(([name, base64]) => [
+        name,
+        inflateRawSync(Buffer.from(base64, 'base64')).toString('base64'),
+      ]),
+    ),
   }
+  const suiteUrl = `/@fs/${resolve(root, 'scripts/webgpu/browser-suite.mjs')}`
+  report.result = await page.evaluate(
+    async ({ suiteUrl, iterations, unfilterable, goldens }) => {
+      const { runAcceptance } = await import(suiteUrl)
+      return runAcceptance({ iterations, unfilterable, goldens })
+    },
+    {
+      suiteUrl,
+      iterations,
+      unfilterable: values.unfilterable,
+      goldens: decodedGoldens,
+    },
+  )
   if (values.hardware && report.result.performance?.software)
     report.errors.push({
       type: 'adapter',
       message: 'Hardware required but adapter identifies as software',
     })
-  if (!values['capture-goldens'])
-    report.passed =
-      report.errors.length === 0 &&
-      report.result.tests.length > 0 &&
-      report.result.tests.every((test) => test.passed)
+  report.passed =
+    report.errors.length === 0 &&
+    report.result.tests.length > 0 &&
+    report.result.tests.every((test) => test.passed)
 } catch (error) {
   if (page && !page.isClosed())
     report.result = await page
@@ -329,7 +274,7 @@ try {
   await mkdir(dirname(output), { recursive: true })
   await writeFile(output, `${JSON.stringify(report, null, 2)}\n`)
   process.stdout.write(
-    `${JSON.stringify({ artifact: output, passed: report.passed, errors: report.errors, tests: report.result?.tests.length, failures: report.result?.tests.filter((test) => !test.passed), uncovered: report.result?.uncovered, goldenFrames: report.result?.goldenFrames?.length, performance: report.result?.performance }, null, 2)}\n`,
+    `${JSON.stringify({ artifact: output, passed: report.passed, errors: report.errors, tests: report.result?.tests.length, failures: report.result?.tests.filter((test) => !test.passed), uncovered: report.result?.uncovered, performance: report.result?.performance }, null, 2)}\n`,
   )
   if (!report.passed) process.exitCode = 1
 }
