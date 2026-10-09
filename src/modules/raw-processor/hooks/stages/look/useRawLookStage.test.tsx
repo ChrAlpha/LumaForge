@@ -27,7 +27,10 @@ import { fetchVerifiedCubeAsset } from '~/lib/profiles/fetch'
 
 import { createExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
+import { createTransformState } from '../../../model/session-factory'
+import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import { clearExportResultState } from '../../../services/export/export-state'
+import { projectEffectiveColorIntent } from '../../../services/look/effective-color-intent'
 import type { LutLoadOutcome } from '../../../services/look/orchestrate-lut-load'
 import {
   buildLUTContractSelectionState,
@@ -71,11 +74,16 @@ const baseIntent: ColorGraphIntent = Object.freeze({
 })
 const baseParams: ColorGraphIntent = baseIntent
 
+const SOURCE_FILE = new File(['raw-12-bytes'], 'frame.ARW', {
+  lastModified: 1,
+})
+
 function createSession(): ImageSession {
   return {
     id: 'look-stage-session',
     createdAt: 1,
     sourceFile: {
+      file: SOURCE_FILE,
       name: 'frame.ARW',
       extension: 'arw',
       sizeBytes: 12,
@@ -112,6 +120,8 @@ function createSession(): ImageSession {
       },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState('look-stage-session'),
   }
 }
 
@@ -160,6 +170,7 @@ function withReadyExport(session: ImageSession): ImageSession {
       ...session.exportState,
       status: 'ready',
       result: createExportResult({
+        kind: 'full-resolution',
         output: createBlobOutputResult({
           filename: 'frame_fullres.jpg',
           blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
@@ -170,6 +181,16 @@ function withReadyExport(session: ImageSession): ImageSession {
         copyCapability: {
           mode: 'full-resolution',
         },
+        identity: captureExportResultIdentity({
+          resultKind: 'full-resolution',
+          attemptId: 'attempt-1',
+          sessionId: session.id,
+          sourceFile: SOURCE_FILE,
+          intent: projectEffectiveColorIntent(baseIntent, session),
+          lut: null,
+          rawRenderExposure: null,
+          geometry: null,
+        }),
       }),
     },
   }

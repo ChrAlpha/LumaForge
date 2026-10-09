@@ -62,9 +62,11 @@ import {
 import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 import enMessages from '~/locales/en.json'
 
+import { createTransformState } from '../model/session-factory'
 import { createExportInterruptionMarkers } from '../services/export/export-interruption'
 import type { ExportInterruptionMarkers } from '../services/export/export-recovery'
 import { readSourceInterruption } from '../services/export/export-recovery'
+import { captureExportResultIdentity } from '../services/export/export-result-identity'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { DEFAULT_PREVIEW_VIEWPORT } from '../services/preview/preview-viewport'
 import { deriveTransformStatus } from '../services/transform/transform-state'
@@ -454,6 +456,8 @@ function createTestSession() {
       },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-lut-test'),
   }
 }
 
@@ -6417,6 +6421,7 @@ describe('useRawWorkflow embedded preview state', () => {
           ...activeSession.exportState,
           status: 'ready',
           result: {
+            kind: 'full-resolution',
             output: createBlobOutputResult({
               blob: new Blob(['old'], { type: 'image/jpeg' }),
               filename: 'stale_fullres.jpg',
@@ -6430,6 +6435,16 @@ describe('useRawWorkflow embedded preview state', () => {
               mode: 'unavailable',
               reasonCode: 'clipboard-unsupported',
             },
+            identity: captureExportResultIdentity({
+              resultKind: 'full-resolution',
+              attemptId: 'attempt-stale',
+              sessionId: activeSession.id,
+              sourceFile: activeSession.sourceFile.file!,
+              intent: result.current.params,
+              lut: null,
+              rawRenderExposure: createDecodedImage('quick').renderExposure,
+              geometry: null,
+            }),
           },
         },
       })
@@ -7977,6 +7992,7 @@ describe('useRawWorkflow embedded preview state', () => {
           ...activeSession.exportState,
           status: 'ready',
           result: {
+            kind: 'full-resolution',
             output: createBlobOutputResult({
               blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
               filename: 'frame_neutral_fullres.jpg',
@@ -7990,6 +8006,16 @@ describe('useRawWorkflow embedded preview state', () => {
               mode: 'unavailable',
               reasonCode: 'clipboard-unsupported',
             },
+            identity: captureExportResultIdentity({
+              resultKind: 'full-resolution',
+              attemptId: 'attempt-1',
+              sessionId: activeSession.id,
+              sourceFile: activeSession.sourceFile.file!,
+              intent: result.current.params,
+              lut: null,
+              rawRenderExposure: quickExposure,
+              geometry: null,
+            }),
           },
         },
       })

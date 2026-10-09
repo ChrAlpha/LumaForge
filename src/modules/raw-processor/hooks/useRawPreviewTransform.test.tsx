@@ -1,5 +1,6 @@
 import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import { act, renderHook } from '@testing-library/react'
 import type { SetStateAction } from 'jotai'
 import { atom, createStore, useAtomValue } from 'jotai'
@@ -9,16 +10,26 @@ import type { ExportResult } from '../model/export-result'
 import type { ImageSession } from '../model/session'
 import { createImageSession } from '../model/session-factory'
 import { deriveFullResExportReadiness } from '../services/export/export-readiness'
+import { captureExportResultIdentity } from '../services/export/export-result-identity'
 import { deriveTransformStatus } from '../services/transform/transform-state'
 import { useExportGraphInvalidation } from './stages/export/useExportGraphInvalidation'
 import { useExportResultActions } from './stages/export/useExportResultActions'
 import { acceptTransformGeometry } from './transform-session.fixture'
 import { useRawPreviewTransform } from './useRawPreviewTransform'
 
+/** The color intent the export result actions read; it draws no look. */
+const COLOR_INTENT: ColorGraphIntent = {
+  styleKind: 'none',
+  builtinPreset: null,
+  intensity: 1,
+  ...NEUTRAL_USER_COLOR_INTENT,
+}
+
 function createReadySession(): ImageSession {
   const session = createImageSession(new File(['raw'], 'frame.dng'))
   return {
     ...session,
+    exportGeometry: null,
     previewBundle: {
       ...session.previewBundle,
       quickDecodePreview: { status: 'ready', width: 800, height: 600 },
@@ -30,7 +41,11 @@ function createReadySession(): ImageSession {
   }
 }
 
-function createExportResult(): ExportResult {
+/** A full-resolution result answering `session` under `geometry`. */
+function createExportResult(
+  session: ImageSession,
+  geometry: ExportGeometry | null,
+): ExportResult {
   return {
     kind: 'full-resolution',
     output: {
@@ -48,6 +63,16 @@ function createExportResult(): ExportResult {
     copyCapability: {
       mode: 'full-resolution',
     },
+    identity: captureExportResultIdentity({
+      resultKind: 'full-resolution',
+      attemptId: 'attempt-1',
+      sessionId: session.id,
+      sourceFile: session.sourceFile.file!,
+      intent: COLOR_INTENT,
+      lut: null,
+      rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+      geometry,
+    }),
   }
 }
 
@@ -67,12 +92,6 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
   const exportAbortControllerRef = { current: controller }
   const previewCopyCanvasRef = {
     current: document.createElement('canvas') as HTMLCanvasElement | null,
-  }
-  const colorIntent: ColorGraphIntent = {
-    styleKind: 'none',
-    builtinPreset: null,
-    intensity: 1,
-    ...NEUTRAL_USER_COLOR_INTENT,
   }
   const isMountedRef = { current: true }
   const queueExportResultResourceDisposal = vi.fn()
@@ -100,7 +119,7 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
     })
     const actions = useExportResultActions({
       getSession,
-      getColorIntent: () => colorIntent,
+      getColorIntent: () => COLOR_INTENT,
       getLutData: () => null,
       exportGraphVersionRef,
       exportAbortControllerRef,
@@ -141,7 +160,7 @@ describe('useRawPreviewTransform', () => {
   it('invalidates cached exports and imperative result actions synchronously', async () => {
     const session = createReadySession()
     session.exportState.status = 'ready'
-    session.exportState.result = createExportResult()
+    session.exportState.result = createExportResult(session, null)
     const harness = setup(session)
     const actions = harness.result.current.actions
 
@@ -196,7 +215,7 @@ describe('useRawPreviewTransform', () => {
         SAMPLE_GEOMETRY,
       ),
     )
-    const result = createExportResult()
+    const result = createExportResult(harness.getSession()!, SAMPLE_GEOMETRY)
     act(() =>
       harness.result.current.setSession((previous) =>
         previous
@@ -248,7 +267,7 @@ describe('useRawPreviewTransform', () => {
         SAMPLE_GEOMETRY,
       ),
     )
-    const result = createExportResult()
+    const result = createExportResult(harness.getSession()!, SAMPLE_GEOMETRY)
     act(() =>
       harness.result.current.setSession((previous) =>
         previous
@@ -406,17 +425,18 @@ describe('useRawPreviewTransform', () => {
     )
     expect(harness.result.current.transform.state).toBe(replacement.transform)
     expect(harness.result.current.previewTransform.active).toBe(false)
-    expect(harness.result.current.session?.exportGeometry).toBeUndefined()
+    expect(harness.result.current.session?.exportGeometry).toBeNull()
     // Only the first source's edit and geometry move invalidated anything.
     expect(harness.exportGraphVersionRef.current).toBe(2)
   })
 
-  it('starts a session without a Transform of its own neutral', () => {
-    const { transform: _omitted, ...bare } = createReadySession()
-    const harness = setup(bare)
+  it('starts a new session from its own neutral Transform', () => {
+    const session = createReadySession()
+    const harness = setup(session)
 
+    expect(harness.result.current.transform.state).toBe(session.transform)
     expect(harness.result.current.transform.state).toMatchObject({
-      sourceId: bare.id,
+      sourceId: session.id,
       accepted: null,
     })
     act(() =>
@@ -425,20 +445,23 @@ describe('useRawPreviewTransform', () => {
         SAMPLE_GEOMETRY,
       ),
     )
-    expect(harness.result.current.session?.transform?.sourceId).toBe(bare.id)
+    expect(harness.result.current.session?.transform?.sourceId).toBe(session.id)
     expect(harness.result.current.previewTransform.geometry).toEqual(
       SAMPLE_GEOMETRY,
     )
   })
 
   describe('in one tick, before a rerender', () => {
-    function withDeliveredExport(session: ImageSession): ImageSession {
+    function withDeliveredExport(
+      session: ImageSession,
+      geometry: ExportGeometry | null,
+    ): ImageSession {
       return {
         ...session,
         exportState: {
           ...session.exportState,
           status: 'ready',
-          result: createExportResult(),
+          result: createExportResult(session, geometry),
         },
       }
     }
@@ -571,7 +594,7 @@ describe('useRawPreviewTransform', () => {
       act(() => {
         // A newer write the rendered session does not have yet.
         harness.result.current.setSession((previous) =>
-          previous ? withDeliveredExport(previous) : previous,
+          previous ? withDeliveredExport(previous, SAMPLE_GEOMETRY) : previous,
         )
         const delivered = harness.getSession()
         dispatch({
@@ -622,7 +645,7 @@ describe('useRawPreviewTransform', () => {
       const version = harness.exportGraphVersionRef.current
       const disposals =
         harness.queueExportResultResourceDisposal.mock.calls.length
-      const replacement = withDeliveredExport(createReadySession())
+      const replacement = withDeliveredExport(createReadySession(), null)
 
       act(() => {
         harness.result.current.setSession(replacement)

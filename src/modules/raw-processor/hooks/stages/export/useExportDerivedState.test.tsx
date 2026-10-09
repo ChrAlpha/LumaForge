@@ -16,7 +16,9 @@ import type {
   HqPreviewExportReasonCode,
 } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
+import { createTransformState } from '../../../model/session-factory'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
+import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import { useExportDerivedState } from './useExportDerivedState'
 
 const NO_LOOK: ColorGraphIntent = {
@@ -76,7 +78,7 @@ const ACCEPTED_LUT = lutData({
   profile: lutProfile(),
 })
 
-function createExportResult(): ExportResult {
+function createExportResult(session: ImageSession): ExportResult {
   return {
     kind: 'full-resolution',
     output: {
@@ -94,6 +96,16 @@ function createExportResult(): ExportResult {
     copyCapability: {
       mode: 'full-resolution',
     },
+    identity: captureExportResultIdentity({
+      resultKind: 'full-resolution',
+      attemptId: 'attempt-1',
+      sessionId: session.id,
+      sourceFile: session.sourceFile.file!,
+      intent: NO_LOOK,
+      lut: null,
+      rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+      geometry: null,
+    }),
   }
 }
 
@@ -130,6 +142,8 @@ function createSession(): ImageSession {
       fullResCapability: { status: 'supported', width: 800, height: 600 },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-export'),
   }
 }
 
@@ -261,12 +275,13 @@ describe('useExportDerivedState', () => {
   })
 
   it('suspends HQ preview export while a ready full-res export owns the preview budget', () => {
+    const base = createSession()
     const session: ImageSession = {
-      ...createSession(),
+      ...base,
       exportState: {
-        ...createSession().exportState,
+        ...base.exportState,
         status: 'ready',
-        result: createExportResult(),
+        result: createExportResult(base),
         activePlan: {
           profileName: 'desktop-fast',
           preferredRows: 128,
@@ -322,7 +337,7 @@ describe('useExportDerivedState', () => {
       exportState: {
         ...session.exportState,
         status: 'ready',
-        result: createExportResult(),
+        result: createExportResult(session),
         activePlan: {
           profileName: 'desktop-fast',
           preferredRows: 128,

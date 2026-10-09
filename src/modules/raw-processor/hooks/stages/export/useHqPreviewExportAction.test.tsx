@@ -5,6 +5,7 @@ import type {
   LUTData,
 } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { renderHook } from '@testing-library/react'
 import { atom, createStore } from 'jotai'
 import type {
@@ -19,8 +20,11 @@ import { I18nProvider } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import enMessages from '~/locales/en.json'
 
+import type { ExportResult } from '../../../model/export-result'
+import { createExportResult } from '../../../model/export-result'
 import type { ImageSession, TransformState } from '../../../model/session'
 import { createTransformState } from '../../../model/session-factory'
+import { openExportDelivery } from '../../../services/export/export-result-actions'
 import {
   captureExportResultIdentity,
   isSameExportResult,
@@ -144,6 +148,8 @@ function createSession(): ImageSession {
       fullResCapability: { status: 'unknown' },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-1'),
   }
 }
 
@@ -164,6 +170,39 @@ function createDecodedImage(): DecodedImage {
       source: 'identity',
     },
   }
+}
+
+/**
+ * A full-resolution JPEG the session delivered for `intent` and `lut`, from
+ * the decoded frame's pinned exposure and no committed geometry.
+ */
+function createDeliveredFullResolution(
+  session: ImageSession,
+  intent: ColorGraphIntent,
+  lut: LUTData | null,
+  filename: string,
+): ExportResult {
+  return createExportResult({
+    kind: 'full-resolution',
+    output: createBlobOutputResult({
+      filename,
+      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+    }),
+    width: 800,
+    height: 600,
+    now: () => 1,
+    copyCapability: { mode: 'full-resolution' },
+    identity: captureExportResultIdentity({
+      resultKind: 'full-resolution',
+      attemptId: 'attempt-1',
+      sessionId: session.id,
+      sourceFile: session.sourceFile.file!,
+      intent,
+      lut,
+      rawRenderExposure: createDecodedImage().renderExposure,
+      geometry: null,
+    }),
+  })
 }
 
 /** A committed geometry: a slight rotation with the crop constrained. */
@@ -429,10 +468,7 @@ describe('useHqPreviewExportAction attempt currency', () => {
       supersede(h) {
         h.writeSession((live) => ({
           ...live!,
-          transform: editTransform(
-            live!.transform ?? createTransformState(live!.id),
-            4,
-          ),
+          transform: editTransform(live!.transform!, 4),
         }))
       },
     },
@@ -772,10 +808,12 @@ describe('useHqPreviewExportAction live store reads', () => {
     const h = setupHq()
     const pending = h.result.current.exportPreviewImage()
     // A full-resolution export takes the slot and delivers its result.
-    const fullResolution = {
-      kind: 'full-resolution',
-      filename: 'frame_cinema_fullres.jpg',
-    } as unknown as NonNullable<ImageSession['exportState']['result']>
+    const fullResolution = createDeliveredFullResolution(
+      h.session()!,
+      SESSION_LOOK,
+      null,
+      'frame_cinema_fullres.jpg',
+    )
     h.exportAbortControllerRef.current = new AbortController()
     h.writeSession((live) => ({
       ...live!,
@@ -1045,20 +1083,34 @@ describe('useHqPreviewExportAction', () => {
   })
 
   it('refuses an HQ export before the bounded HQ frame without clearing the delivered result', async () => {
-    const previousResult = {
-      kind: 'full-resolution',
-      filename: 'frame_cinema_fullres.jpg',
-    } as unknown as NonNullable<ImageSession['exportState']['result']>
+    const initialSession = createSession()
+    const previousResult = createDeliveredFullResolution(
+      initialSession,
+      SESSION_LOOK,
+      null,
+      'frame_cinema_fullres.jpg',
+    )
     const sessionRef: { current: ImageSession | null } = {
       current: {
-        ...createSession(),
+        ...initialSession,
         exportState: {
-          ...createSession().exportState,
+          ...initialSession.exportState,
           status: 'ready',
           result: previousResult,
         },
       },
     }
+    // The held result answers the session it is held by.
+    expect(
+      openExportDelivery(previousResult, {
+        mounted: true,
+        session: sessionRef.current,
+        graphVersion: 1,
+        exportAttempt: 'attempt-1',
+        intent: SESSION_LOOK,
+        lut: null,
+      }).kind,
+    ).toBe('open')
     const setSession = vi.fn()
     const setStatus = vi.fn()
     const queueExportResultResourceDisposal = vi.fn()
@@ -1194,20 +1246,35 @@ describe('useHqPreviewExportAction', () => {
 
   it('refuses an HQ export while the preview leaves out the selected LUT, even from a captured action', async () => {
     for (const selectedLut of [LINEAR_OUTPUT_LUT, UNCONFIRMED_LUT]) {
-      const previousResult = {
-        kind: 'full-resolution',
-        filename: 'frame_kodak-2383_fullres.jpg',
-      } as unknown as NonNullable<ImageSession['exportState']['result']>
+      const initialSession = createCustomLutSession()
+      const previousResult = createDeliveredFullResolution(
+        initialSession,
+        CUSTOM_LOOK,
+        ACCEPTED_LUT,
+        'frame_kodak-2383_fullres.jpg',
+      )
       const sessionRef = {
         current: {
-          ...createCustomLutSession(),
+          ...initialSession,
           exportState: {
-            ...createSession().exportState,
+            ...initialSession.exportState,
             status: 'ready' as const,
             result: previousResult,
           },
         },
       }
+      // The held result answers the session it is held by and the LUT it
+      // was exported with.
+      expect(
+        openExportDelivery(previousResult, {
+          mounted: true,
+          session: sessionRef.current,
+          graphVersion: 1,
+          exportAttempt: 'attempt-1',
+          intent: CUSTOM_LOOK,
+          lut: ACCEPTED_LUT,
+        }).kind,
+      ).toBe('open')
       const lutDataRef: { current: LUTData | null } = { current: ACCEPTED_LUT }
       const renderToHiddenCanvas = vi.fn()
       const abortExportWork = vi.fn()

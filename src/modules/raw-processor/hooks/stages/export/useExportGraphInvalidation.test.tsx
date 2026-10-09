@@ -3,6 +3,7 @@ import { atom, createStore } from 'jotai'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ImageSession } from '../../../model/session'
+import { createTransformState } from '../../../model/session-factory'
 import type { SetImageSession } from './useExportGraphInvalidation'
 import { useExportGraphInvalidation } from './useExportGraphInvalidation'
 
@@ -38,6 +39,8 @@ function createSession(status: ImageSession['exportState']['status']) {
       fullResCapability: { status: 'unknown' },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-export'),
   } satisfies ImageSession
 }
 

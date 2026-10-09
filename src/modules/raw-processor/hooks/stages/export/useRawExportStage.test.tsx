@@ -123,6 +123,8 @@ function createReadySession(): ImageSession {
       fullResCapability: { status: 'supported', width: 800, height: 600 },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-1'),
   }
 }
 
@@ -210,7 +212,6 @@ function createBoundedHqSession(): ImageSession {
       displaySource: 'bounded-hq',
     },
     renderState: { status: 'ready', lastRenderSource: 'bounded-hq' },
-    transform: createTransformState(session.id),
   }
 }
 
@@ -735,9 +736,7 @@ describe('useRawExportStage', () => {
     function renderDeliveryStage() {
       setLut(parsedLut('Teal'))
       const base = createReadySession()
-      setCurrentSession(
-        customLook({ ...base, transform: createTransformState(base.id) }),
-      )
+      setCurrentSession(customLook(base))
       const exportAbortControllerRef = {
         current: null as AbortController | null,
       }
