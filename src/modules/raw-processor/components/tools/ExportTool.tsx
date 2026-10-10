@@ -86,20 +86,26 @@ export function ExportTool({
     previewExportDisabledReason &&
     hqExportActionReasonText(previewExportDisabledReason, t)
   const copyButtonLabel = exportCopyActionLabel(exportResult?.copyCapability, t)
-  const resultKind = exportResult?.kind ?? 'full-resolution'
+  // Only a result that names its kind takes that kind's label; one that
+  // names none is never taken for a full-resolution JPEG.
+  const resultKind = exportResult?.kind
   const readyLabel =
     resultKind === 'hq-preview'
       ? t('raw.export.previewReady')
-      : t('raw.export.ready')
+      : resultKind === 'full-resolution'
+        ? t('raw.export.ready')
+        : null
 
   const innerContent = (
     <div className="grid min-w-0 gap-3">
       {exportResult ? (
         <div className="grid min-w-0 gap-3">
           <div className="grid min-w-0 gap-0.5">
-            <span className="text-[0.72rem] tracking-tight text-lf-on-surface/70">
-              {readyLabel}
-            </span>
+            {readyLabel ? (
+              <span className="text-[0.72rem] tracking-tight text-lf-on-surface/70">
+                {readyLabel}
+              </span>
+            ) : null}
             <strong
               className="min-w-0 truncate text-[0.82rem] font-semibold text-lf-on-surface"
               title={exportResult.filename}

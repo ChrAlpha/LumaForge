@@ -498,6 +498,26 @@ describe('mobileExportPanel', () => {
     ).toBeInTheDocument()
   })
 
+  it('never titles a result that names no kind as a full-resolution export', () => {
+    const { kind: _kind, ...incomplete } = createResult({
+      filename: 'DSC09142.jpg',
+    })
+    renderPanel({ exportResult: incomplete })
+
+    expect(
+      screen.queryByRole('heading', { level: 2, name: 'Exported' }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('heading', { level: 2, name: 'HQ preview ready' }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('heading', { name: 'DSC09142.jpg ready' }),
+    ).toBeNull()
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'DSC09142.jpg' }),
+    ).toBeInTheDocument()
+  })
+
   it('closes from a 44px header button', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()

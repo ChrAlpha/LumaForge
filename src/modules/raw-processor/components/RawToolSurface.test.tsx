@@ -1310,6 +1310,7 @@ describe('rawToolSurface', () => {
         hasImage: true,
         previewSuspended: true,
         exportResult: {
+          kind: 'full-resolution',
           output: {
             kind: 'blob',
             filename: 'DSC09142_fullres.jpg',
@@ -1370,6 +1371,7 @@ describe('rawToolSurface', () => {
       onShareExport,
       onCopyExport,
       exportResult: {
+        kind: 'full-resolution' as const,
         output: {
           kind: 'blob' as const,
           filename: 'DSC09142_fullres.jpg',

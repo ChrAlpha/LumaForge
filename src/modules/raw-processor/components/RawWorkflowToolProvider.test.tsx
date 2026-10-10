@@ -1453,6 +1453,7 @@ function PolicySurface({
 }
 
 const deliveredJpeg = {
+  kind: 'full-resolution',
   output: {
     kind: 'blob',
     filename: 'current_fullres.jpg',
@@ -1954,6 +1955,59 @@ describe('rawWorkflowToolProvider surface policy', () => {
     rerender(<PolicySurface commands={commands} />)
     expect(dockTab(/adjust/i)).toBeEnabled()
     expect(action()).toBeEnabled()
+  })
+
+  it('reads the mobile export action from the result kind, and glows ready only while idle', () => {
+    showMobile()
+    const commands = policyCommands()
+    const { container, rerender } = render(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{ status: 'decoding' }}
+      />,
+    )
+    const state = () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-mobile-export-action]')!
+        .getAttribute('data-state')
+    // A busy stage that is not export never reads as ready.
+    expect(state()).toBe('idle')
+    rerender(<PolicySurface commands={commands} />)
+    expect(state()).toBe('ready')
+
+    rerender(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{ exportResult: deliveredJpeg }}
+      />,
+    )
+    expect(state()).toBe('done')
+    rerender(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{
+          exportResult: { ...deliveredJpeg, kind: 'hq-preview' },
+        }}
+      />,
+    )
+    expect(state()).toBe('preview-done')
+
+    // A result that names no kind is never taken for a full-resolution JPEG.
+    const { kind: _kind, ...incomplete } = deliveredJpeg
+    rerender(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{ exportResult: incomplete }}
+      />,
+    )
+    expect(state()).toBe('ready')
+    rerender(
+      <PolicySurface
+        commands={commands}
+        workflowOverrides={{ status: 'decoding', exportResult: incomplete }}
+      />,
+    )
+    expect(state()).toBe('idle')
   })
 })
 

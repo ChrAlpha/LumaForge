@@ -28,6 +28,7 @@ function createResult(overrides: Partial<ExportResult> = {}): ExportResult {
   const blob = new Blob(['jpeg'], { type: 'image/jpeg' })
 
   return {
+    kind: 'full-resolution',
     output: createBlobOutputResult({
       blob,
       filename: 'frame_neutral_fullres.jpg',
@@ -215,6 +216,26 @@ describe('exportTool', () => {
     expect(
       screen.queryByRole('button', { name: 'Copy full-resolution image' }),
     ).toBeNull()
+  })
+
+  it('never labels a result that names no kind as a full-resolution JPEG', () => {
+    const { kind: _kind, ...incomplete } = createResult()
+    render(
+      <ExportTool
+        canExport
+        isProcessing={false}
+        onExport={vi.fn()}
+        exportResult={incomplete}
+        exportShareCapability={{ available: true }}
+        onShareExport={vi.fn()}
+        onDownloadExport={vi.fn()}
+        onCopyExport={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByText('JPEG ready')).toBeNull()
+    expect(screen.queryByText('HQ preview JPEG ready')).toBeNull()
+    expect(screen.getByText('frame_neutral_fullres.jpg')).toBeInTheDocument()
   })
 
   it('renders ready result actions without reusing the export button as download', async () => {

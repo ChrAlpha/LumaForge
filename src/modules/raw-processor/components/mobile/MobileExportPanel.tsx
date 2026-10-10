@@ -214,16 +214,18 @@ export function MobileExportPanel(props: {
     typeof props.progress === 'number' && Number.isFinite(props.progress)
       ? Math.round(Math.min(100, Math.max(0, props.progress)))
       : null
-  const resultKind = props.exportResult?.kind ?? 'full-resolution'
-  // An HQ preview result is the bounded compromise: it never takes the
-  // full-resolution "Exported" title.
+  // Only a result that names its kind takes that kind's title. An HQ
+  // preview result is the bounded compromise and never takes the
+  // full-resolution "Exported" title, and a result that names no kind takes
+  // neither.
+  const resultKind = props.exportResult?.kind
   const title = isExporting
     ? t('raw.mobile.export.exporting')
-    : props.exportResult
-      ? resultKind === 'hq-preview'
-        ? t('raw.mobile.export.previewDone')
-        : t('raw.mobile.export.done')
-      : t('raw.export.title')
+    : resultKind === 'hq-preview'
+      ? t('raw.mobile.export.previewDone')
+      : resultKind === 'full-resolution'
+        ? t('raw.mobile.export.done')
+        : t('raw.export.title')
   const unavailableReason = props.disabledReason
     ? fullExportActionReasonText(props.disabledReason, t)
     : t('raw.exportSourceLoading')
@@ -254,10 +256,6 @@ export function MobileExportPanel(props: {
   // The next export the user starts uses the current RAW and edits on a
   // safer plan; a running export already took it.
   const interruptionNote = props.isProcessing ? null : props.interruptionNote
-  const resultReadyLabel =
-    resultKind === 'hq-preview'
-      ? t('raw.export.previewReady')
-      : t('raw.export.ready')
 
   const body = props.exportResult ? (
     <m.div
@@ -279,10 +277,12 @@ export function MobileExportPanel(props: {
             title={props.exportResult.filename}
           >
             {resultKind === 'hq-preview'
-              ? resultReadyLabel
-              : t('raw.export.fileReady', {
-                  filename: props.exportResult.filename,
-                })}
+              ? t('raw.export.previewReady')
+              : resultKind === 'full-resolution'
+                ? t('raw.export.fileReady', {
+                    filename: props.exportResult.filename,
+                  })
+                : props.exportResult.filename}
           </h3>
           <p className="m-0 text-[0.7rem] text-lf-on-photo-ink/68 tabular-nums">
             {props.exportResult.width} x {props.exportResult.height} ·{' '}
