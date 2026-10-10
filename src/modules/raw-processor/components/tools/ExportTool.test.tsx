@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '~/lib/i18n'
 
 import type { ExportResult } from '../../model/export-result'
+import { createMockExportResultIdentity } from '../../model/export-result.fixture'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { ExportTool } from './ExportTool'
 
@@ -26,9 +27,11 @@ type ExportToolProps = ComponentProps<typeof ExportTool>
 
 function createResult(overrides: Partial<ExportResult> = {}): ExportResult {
   const blob = new Blob(['jpeg'], { type: 'image/jpeg' })
+  const kind = overrides.kind ?? 'full-resolution'
 
   return {
-    kind: 'full-resolution',
+    kind,
+    identity: createMockExportResultIdentity({ resultKind: kind }),
     output: createBlobOutputResult({
       blob,
       filename: 'frame_neutral_fullres.jpg',
@@ -216,26 +219,6 @@ describe('exportTool', () => {
     expect(
       screen.queryByRole('button', { name: 'Copy full-resolution image' }),
     ).toBeNull()
-  })
-
-  it('never labels a result that names no kind as a full-resolution JPEG', () => {
-    const { kind: _kind, ...incomplete } = createResult()
-    render(
-      <ExportTool
-        canExport
-        isProcessing={false}
-        onExport={vi.fn()}
-        exportResult={incomplete}
-        exportShareCapability={{ available: true }}
-        onShareExport={vi.fn()}
-        onDownloadExport={vi.fn()}
-        onCopyExport={vi.fn()}
-      />,
-    )
-
-    expect(screen.queryByText('JPEG ready')).toBeNull()
-    expect(screen.queryByText('HQ preview JPEG ready')).toBeNull()
-    expect(screen.getByText('frame_neutral_fullres.jpg')).toBeInTheDocument()
   })
 
   it('renders ready result actions without reusing the export button as download', async () => {

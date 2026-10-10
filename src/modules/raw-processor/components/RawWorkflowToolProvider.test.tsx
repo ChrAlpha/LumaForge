@@ -1991,23 +1991,6 @@ describe('rawWorkflowToolProvider surface policy', () => {
       />,
     )
     expect(state()).toBe('preview-done')
-
-    // A result that names no kind is never taken for a full-resolution JPEG.
-    const { kind: _kind, ...incomplete } = deliveredJpeg
-    rerender(
-      <PolicySurface
-        commands={commands}
-        workflowOverrides={{ exportResult: incomplete }}
-      />,
-    )
-    expect(state()).toBe('ready')
-    rerender(
-      <PolicySurface
-        commands={commands}
-        workflowOverrides={{ status: 'decoding', exportResult: incomplete }}
-      />,
-    )
-    expect(state()).toBe('idle')
   })
 })
 

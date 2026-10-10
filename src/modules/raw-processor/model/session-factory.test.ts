@@ -50,6 +50,7 @@ describe('createImageSession', () => {
         fullResCapability: { status: 'unknown' },
         retryRecommended: false,
       },
+      exportGeometry: null,
       transform: {
         sourceId: '00000000-0000-4000-8000-000000000001',
         intent: {
@@ -137,5 +138,18 @@ describe('createImageSession', () => {
     expect(replacing.transform?.intent).toEqual(first.transform?.intent)
     expect(replacing.transform?.intent).not.toBe(first.transform?.intent)
     expect(replacing.transform?.accepted).toBeNull()
+  })
+
+  it('initializes transform and exportGeometry as required fields', () => {
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(
+      '00000000-0000-4000-8000-000000000006',
+    )
+
+    const session = createImageSession(new File(['raw'], 'test.DNG'))
+
+    expect(session.transform).toBeDefined()
+    expect(session.exportGeometry).toBe(null)
+    expect('transform' in session).toBe(true)
+    expect('exportGeometry' in session).toBe(true)
   })
 })

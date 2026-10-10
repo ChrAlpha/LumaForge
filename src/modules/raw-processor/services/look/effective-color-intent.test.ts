@@ -59,6 +59,7 @@ function createSession(activeStyle: StyleAsset | null): ImageSession {
       fullResCapability: { status: 'supported', width: 4000, height: 3000 },
       retryRecommended: false,
     },
+    exportGeometry: null,
     transform: createTransformState('effective-intent-session'),
   }
 }

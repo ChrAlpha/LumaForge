@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 
 import type { ExportResult } from '../../../model/export-result'
+import { createMockExportResultIdentity } from '../../../model/export-result.fixture'
 import { useExportResourceManagement } from './useExportResourceManagement'
 
 function createFileBackedResult(cleanup: () => Promise<void>): ExportResult {
@@ -26,6 +27,7 @@ function createFileBackedResult(cleanup: () => Promise<void>): ExportResult {
     copyCapability: {
       mode: 'full-resolution',
     },
+    identity: createMockExportResultIdentity(),
   }
 }
 

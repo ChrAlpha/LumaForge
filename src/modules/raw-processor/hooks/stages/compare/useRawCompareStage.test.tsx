@@ -468,7 +468,7 @@ describe('useRawCompareStage command guards', () => {
       setCompareSplit(0.3)
     })
 
-    expect(result.current.session?.exportGeometry).toBeUndefined()
+    expect(result.current.session?.exportGeometry).toBeNull()
     expect(result.current.session?.viewState).toMatchObject({
       mode: 'original',
       compareSplit: 0.3,

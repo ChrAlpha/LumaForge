@@ -58,7 +58,7 @@ function withLazyJpegMetadata(input: {
  */
 export function createCompletedExportResult({
   jobResult,
-  kind = 'full-resolution',
+  kind,
   metadata,
   width,
   height,
@@ -68,16 +68,16 @@ export function createCompletedExportResult({
   identity,
 }: {
   jobResult: CompletedExportJobResult
-  kind?: ExportResultKind
+  kind: ExportResultKind
   metadata: unknown
   width: number
   height: number
   copyCapability: ExportCopyCapability
   now?: () => number
   manifestState?: ExportManifestState
-  identity?: ExportResultIdentity
+  identity: ExportResultIdentity
 }) {
-  if (identity && identity.resultKind !== kind) {
+  if (identity.resultKind !== kind) {
     throw new Error('EXPORT_RESULT_IDENTITY_MISMATCH')
   }
 

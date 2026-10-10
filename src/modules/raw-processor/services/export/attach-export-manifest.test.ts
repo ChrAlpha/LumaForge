@@ -85,6 +85,7 @@ function buildInput(
       blob: new Blob([jpegBytes], { type: 'image/jpeg' }),
       filename: 'frame_neutral_fullres.jpg',
     }),
+    kind: 'full-resolution',
     filename: 'frame_neutral_fullres.jpg',
     width: 4,
     height: 2,
@@ -290,7 +291,7 @@ describe('buildManifestForExportResult', () => {
 
     const sealing = buildManifestForExportResult({
       ...input,
-      result: anonymous,
+      result: anonymous as unknown as ExportResult,
     })
 
     await expect(sealing).rejects.toBeInstanceOf(ExportManifestUnavailableError)

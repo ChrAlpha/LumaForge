@@ -416,8 +416,10 @@ describe('export readiness helpers', () => {
 
     // No geometry is either a cleared one or the key the session factory
     // leaves out until a Transform moves the geometry.
-    const { exportGeometry: _cleared, ...factoryShaped } = createSession()
-    for (const session of [createSession(), factoryShaped]) {
+    for (const session of [
+      createSession(),
+      { ...createSession(), exportGeometry: null },
+    ]) {
       const neutral = deriveFullResExportReadiness({
         sourceFile: new File(['raw'], 'frame.ARW'),
         session,

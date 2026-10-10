@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryFileBackedOutputResult } from '~/lib/export/output-sink'
 
 import type { ExportCopyCapability } from '../../model/export-result'
+import { createMockExportResultIdentity } from '../../model/export-result.fixture'
 import { captureExportResultIdentity } from './export-result-identity'
 import { createCompletedExportResult } from './export-result-materialization'
 
@@ -42,11 +43,13 @@ describe('export result materialization', () => {
         filename: 'frame_neutral_fullres.jpg',
         blob,
       },
+      kind: 'full-resolution',
       metadata: { make: 'Sony' },
       width: 6048,
       height: 4024,
       copyCapability: fullResolutionCopy,
       now: () => 123,
+      identity: createMockExportResultIdentity(),
     })
 
     expect(result).toMatchObject({
@@ -76,11 +79,13 @@ describe('export result materialization', () => {
         output,
         blob: legacyBlob,
       },
+      kind: 'full-resolution',
       metadata: null,
       width: 4000,
       height: 3000,
       copyCapability: fullResolutionCopy,
       now: () => 456,
+      identity: createMockExportResultIdentity(),
     })
 
     expect(result.filename).toBe('requested-name.jpg')
@@ -104,11 +109,13 @@ describe('export result materialization', () => {
         filename: 'frame_with_metadata.jpg',
         output,
       },
+      kind: 'full-resolution',
       metadata,
       width: 6048,
       height: 4024,
       copyCapability: fullResolutionCopy,
       now: () => 789,
+      identity: createMockExportResultIdentity(),
     })
 
     expect(result.output.kind).toBe('file-backed')
@@ -156,11 +163,13 @@ describe('export result materialization', () => {
             cleanup,
           },
         },
+        kind: 'full-resolution',
         metadata: { make: 'Sony' },
         width: 6048,
         height: 4024,
         copyCapability: fullResolutionCopy,
         now: () => 1,
+        identity: createMockExportResultIdentity(),
       })
 
       expect(result.output).toMatchObject({
@@ -204,11 +213,13 @@ describe('export result materialization', () => {
           cleanup,
         },
       },
+      kind: 'full-resolution',
       metadata: { make: 'Sony' },
       width: 6048,
       height: 4024,
       copyCapability: fullResolutionCopy,
       now: () => 1,
+      identity: createMockExportResultIdentity(),
     })
 
     await expect(materializeOutputBlob(result.output)).rejects.toThrow(
@@ -222,11 +233,13 @@ describe('export result materialization', () => {
     expect(() =>
       createCompletedExportResult({
         jobResult: { filename: 'missing-output.jpg' },
+        kind: 'full-resolution',
         metadata: null,
         width: 6048,
         height: 4024,
         copyCapability: fullResolutionCopy,
         now: () => 123,
+        identity: createMockExportResultIdentity(),
       }),
     ).toThrow('EXPORT_OUTPUT_MISSING')
   })
@@ -261,14 +274,14 @@ describe('export result materialization', () => {
 
     function materialize(
       identity: ReturnType<typeof captureRequest>['identity'],
-      kind?: 'full-resolution' | 'hq-preview',
+      kind: 'full-resolution' | 'hq-preview' = 'full-resolution',
     ) {
       return createCompletedExportResult({
         jobResult: {
           filename: 'frame.jpg',
           blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
         },
-        ...(kind ? { kind } : {}),
+        kind,
         metadata: null,
         width: 6048,
         height: 4024,
@@ -306,20 +319,23 @@ describe('export result materialization', () => {
       )
     })
 
-    it('carries no identity when its producer captured none', () => {
+    it('requires an identity from its producer', () => {
       const result = createCompletedExportResult({
         jobResult: {
           filename: 'frame.jpg',
           blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
         },
+        kind: 'full-resolution',
         metadata: null,
         width: 6048,
         height: 4024,
         copyCapability: fullResolutionCopy,
         now: () => 1,
+        identity: createMockExportResultIdentity(),
       })
 
-      expect(result).not.toHaveProperty('identity')
+      expect(result.identity).toBeDefined()
+      expect(result.identity.resultKind).toBe('full-resolution')
     })
   })
 })

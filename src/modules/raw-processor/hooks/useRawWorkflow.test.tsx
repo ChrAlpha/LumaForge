@@ -5068,7 +5068,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(replacement?.sourceFile.name).toBe('second.ARW')
     expect(replacement?.id).not.toBe(firstSourceId)
     expect(replacement?.transform?.intent.manual).toEqual(NEUTRAL_TRANSFORM)
-    expect(replacement?.exportGeometry).toBeUndefined()
+    expect(replacement?.exportGeometry).toBeNull()
     expect(result.current.canExport).toBe(true)
   })
 
@@ -5166,7 +5166,7 @@ describe('useRawWorkflow embedded preview state', () => {
     act(() => acceptTransformGeometry(firstTransform, SAMPLE_GEOMETRY))
 
     expect(jotaiStore.get(currentSessionAtom)).toBe(replacementSession)
-    expect(replacementSession?.exportGeometry).toBeUndefined()
+    expect(replacementSession?.exportGeometry).toBeNull()
     expect(result.current.previewTransform?.sourceId).not.toBe(first.sourceId)
     expect(result.current.previewTransform?.active).toBe(false)
     expect(result.current.canExport).toBe(true)

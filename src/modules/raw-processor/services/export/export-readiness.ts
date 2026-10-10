@@ -264,10 +264,7 @@ export function deriveTransformExportRefusalReason(
   session: ImageSession,
   kind: ExportResultKind,
 ): FullResExportReason | HqPreviewExportReasonCode | undefined {
-  // A session built before it carried a Transform asks for none.
-  const status = session.transform
-    ? deriveTransformStatus(session.transform)
-    : 'neutral'
+  const status = deriveTransformStatus(session.transform)
   if (kind === 'hq-preview') {
     return status !== 'neutral' || session.exportGeometry
       ? 'transform-held'

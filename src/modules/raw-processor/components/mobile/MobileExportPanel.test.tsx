@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '~/lib/i18n'
 
 import type { ExportResult } from '../../model/export-result'
+import { createMockExportResultIdentity } from '../../model/export-result.fixture'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { MobileExportPanel } from './MobileExportPanel'
 
@@ -48,6 +49,7 @@ function createResult(overrides: Partial<ExportResult> = {}): ExportResult {
 
   return {
     kind: 'hq-preview',
+    identity: createMockExportResultIdentity({ resultKind: 'hq-preview' }),
     output: createBlobOutputResult({
       blob,
       filename: 'frame_neutral_hq-preview.jpg',
@@ -495,26 +497,6 @@ describe('mobileExportPanel', () => {
     ).toBeNull()
     expect(
       screen.getByRole('heading', { level: 3, name: 'HQ preview JPEG ready' }),
-    ).toBeInTheDocument()
-  })
-
-  it('never titles a result that names no kind as a full-resolution export', () => {
-    const { kind: _kind, ...incomplete } = createResult({
-      filename: 'DSC09142.jpg',
-    })
-    renderPanel({ exportResult: incomplete })
-
-    expect(
-      screen.queryByRole('heading', { level: 2, name: 'Exported' }),
-    ).toBeNull()
-    expect(
-      screen.queryByRole('heading', { level: 2, name: 'HQ preview ready' }),
-    ).toBeNull()
-    expect(
-      screen.queryByRole('heading', { name: 'DSC09142.jpg ready' }),
-    ).toBeNull()
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'DSC09142.jpg' }),
     ).toBeInTheDocument()
   })
 

@@ -73,6 +73,8 @@ export function createImageSession(
       boundedHqRequiredForExport: false,
     },
     activeStyle: retained?.activeStyle ?? null,
+    exportGeometry: null,
+    transform: createTransformState(id),
     lutProfileSelection: retained?.lutProfileSelection,
     viewState: {
       mode: DEFAULT_PREVIEW_VIEW.mode,
@@ -88,6 +90,5 @@ export function createImageSession(
       fullResCapability: { status: 'unknown' },
       retryRecommended: false,
     },
-    transform: createTransformState(id),
   }
 }

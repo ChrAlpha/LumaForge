@@ -16,6 +16,7 @@ import { createMemoryFileBackedOutputResult } from '~/lib/export/output-sink'
 
 import type { ExportResult, ExportResultKind } from '../../model/export-result'
 import { createExportResult } from '../../model/export-result'
+import { createMockExportResultIdentity } from '../../model/export-result.fixture'
 import type { ImageSession } from '../../model/session'
 import { createImageSession } from '../../model/session-factory'
 import type {
@@ -47,11 +48,14 @@ function createResult({
     blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
     filename: 'frame_neutral_fullres.jpg',
   }),
+  kind = 'full-resolution' as ExportResultKind,
 }: {
   output?: ExportOutputResult
+  kind?: ExportResultKind
 } = {}) {
   return createExportResult({
     output,
+    kind,
     filename: 'frame_neutral_fullres.jpg',
     width: 6048,
     height: 4024,
@@ -59,6 +63,7 @@ function createResult({
     copyCapability: {
       mode: 'full-resolution',
     },
+    identity: createMockExportResultIdentity({ resultKind: kind }),
   })
 }
 
@@ -694,8 +699,8 @@ describe('export result actions', () => {
         geometry,
       }
       return {
-        ...session.transform!,
-        intent: { ...session.transform!.intent, upright: 'auto' as const },
+        sourceId: session.transform.sourceId,
+        intent: { ...session.transform.intent, upright: 'auto' as const },
         capture: { key: 'capture-1', failed: false },
         issuedRequests: 1,
         request: { ...request, failure: null },
@@ -791,7 +796,7 @@ describe('export result actions', () => {
       const cases: Array<
         [ExportDeliveryRefusal, ExportResult, ExportDeliveryLiveState]
       > = [
-        ['unidentified', unidentified, state],
+        ['unidentified', unidentified as ExportResult, state],
         ['unidentified', { ...result, kind: 'hq-preview' }, state],
         ['unmounted', result, { ...state, mounted: false }],
         ['attempt-replaced', result, { ...state, exportAttempt: 'attempt-2' }],
@@ -811,8 +816,12 @@ describe('export result actions', () => {
           result,
           withSession(state, {
             transform: {
-              ...session.transform!,
-              intent: { ...session.transform!.intent, upright: 'auto' },
+              sourceId: session.transform.sourceId,
+              intent: { ...session.transform.intent, upright: 'auto' },
+              capture: session.transform.capture,
+              issuedRequests: session.transform.issuedRequests,
+              request: session.transform.request,
+              accepted: session.transform.accepted,
             },
           }),
         ],
@@ -868,7 +877,14 @@ describe('export result actions', () => {
         [
           'transform-pending',
           withSession(state, {
-            transform: { ...acceptedTransform(session), accepted: null },
+            transform: {
+              sourceId: session.transform.sourceId,
+              intent: acceptedTransform(session).intent,
+              capture: acceptedTransform(session).capture,
+              issuedRequests: acceptedTransform(session).issuedRequests,
+              request: acceptedTransform(session).request,
+              accepted: null,
+            },
           }),
         ],
         [

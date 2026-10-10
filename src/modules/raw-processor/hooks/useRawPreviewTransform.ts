@@ -1,8 +1,7 @@
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
 
 import type { ImageSession, TransformIntent } from '../model/session'
-import { createTransformState } from '../model/session-factory'
 import { clearExportResultState } from '../services/export/export-state'
 import type { TransformEvent } from '../services/transform/transform-state'
 import {
@@ -52,17 +51,18 @@ function transitionTransform(
   session: ImageSession,
   event: TransformEvent,
 ): { session: ImageSession; invalidated: boolean } | null {
-  const previous = session.transform ?? createTransformState(session.id)
-  const reduced = reduceTransformState(previous, event)
-  if (reduced === previous) return null
+  const reduced = reduceTransformState(session.transform, event)
+  if (reduced === session.transform) return null
 
-  const asked = !sameIntent(reduced.intent, previous.intent)
+  const asked = !sameIntent(reduced.intent, session.transform.intent)
   // An event that asks for the same Transform keeps the intent object, so an
   // export admitted for that intent stays current; only a real edit or reset
   // makes a new one.
-  const transform = asked ? reduced : { ...reduced, intent: previous.intent }
+  const transform = asked
+    ? reduced
+    : { ...reduced, intent: session.transform.intent }
   const geometry = heldTransformGeometry(transform)
-  const moved = !sameGeometry(geometry, session.exportGeometry ?? null)
+  const moved = !sameGeometry(geometry, session.exportGeometry)
   const invalidated = moved || asked
   return {
     invalidated,
@@ -93,11 +93,6 @@ export function useRawPreviewTransform({
   transform: NonNullable<UseRawWorkflowReturn['transform']>
 } {
   const sourceId = session?.id ?? null
-  // A session built before it carried a Transform starts neutral.
-  const neutral = useMemo(
-    () => (sourceId ? createTransformState(sourceId) : null),
-    [sourceId],
-  )
   // Each event reduces the session the store holds when it lands, so it never
   // acts on a source or Transform a newer write replaced. Invalidation runs
   // before the write; it touches only export state, which the transition
@@ -125,7 +120,7 @@ export function useRawPreviewTransform({
       geometry: session?.exportGeometry ?? null,
     },
     transform: {
-      state: session?.transform ?? neutral,
+      state: session?.transform ?? null,
       dispatch,
     },
   }

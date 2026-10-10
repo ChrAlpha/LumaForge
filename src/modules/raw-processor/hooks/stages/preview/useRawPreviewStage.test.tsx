@@ -81,6 +81,7 @@ function createSession(
       fullResCapability: { status: 'supported', width: 400, height: 300 },
       retryRecommended: false,
     },
+    exportGeometry: null,
     transform: createTransformState(id),
   }
 }

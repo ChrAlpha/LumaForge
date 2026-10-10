@@ -14,6 +14,7 @@ import { viewportAtom } from '~/atoms/viewport'
 import { jotaiStore } from '~/lib/jotai'
 
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
+import { createMockExportResultIdentity } from '../model/export-result.fixture'
 import {
   DEFAULT_OPEN_TOOL_CARDS,
   toolCardOpenAtom,
@@ -22,6 +23,10 @@ import { LutDropzone } from './Dropzone'
 import type { RawToolSurfaceFixtureProps } from './raw-tool-surface.fixture'
 import { renderRawToolSurface } from './raw-tool-surface.fixture'
 import { toolAvailabilityFixture } from './tool-availability.fixture'
+
+const mockIdentity = createMockExportResultIdentity({
+  source: { name: 'DSC09142.ARW', size: 1000, lastModified: 0 },
+})
 
 // Held to the surface contract, so a fixture cannot carry a field the
 // surfaces no longer take.
@@ -1311,6 +1316,7 @@ describe('rawToolSurface', () => {
         previewSuspended: true,
         exportResult: {
           kind: 'full-resolution',
+          identity: mockIdentity,
           output: {
             kind: 'blob',
             filename: 'DSC09142_fullres.jpg',
@@ -1372,6 +1378,7 @@ describe('rawToolSurface', () => {
       onCopyExport,
       exportResult: {
         kind: 'full-resolution' as const,
+        identity: mockIdentity,
         output: {
           kind: 'blob' as const,
           filename: 'DSC09142_fullres.jpg',

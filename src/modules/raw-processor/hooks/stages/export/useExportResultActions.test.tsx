@@ -85,7 +85,6 @@ function createResult({
   copyCapability = {
     mode: 'full-resolution',
   },
-  identified = true,
 }: {
   kind?: ExportResultKind
   attemptId?: string
@@ -93,10 +92,19 @@ function createResult({
   lut?: LUTData | null
   output: ExportResult['output']
   copyCapability?: ExportCopyCapability
-  identified?: boolean
 }): ExportResult {
   return {
     kind,
+    identity: captureExportResultIdentity({
+      resultKind: kind,
+      attemptId,
+      sessionId: session.id,
+      sourceFile,
+      intent,
+      lut,
+      rawRenderExposure: exposure,
+      geometry: session.exportGeometry ?? null,
+    }),
     output,
     filename: 'frame.jpg',
     width: 800,
@@ -104,20 +112,6 @@ function createResult({
     size: output.byteLength,
     createdAt: 1,
     copyCapability,
-    ...(identified
-      ? {
-          identity: captureExportResultIdentity({
-            resultKind: kind,
-            attemptId,
-            sessionId: session.id,
-            sourceFile,
-            intent,
-            lut,
-            rawRenderExposure: exposure,
-            geometry: session.exportGeometry ?? null,
-          }),
-        }
-      : {}),
   }
 }
 
@@ -384,8 +378,12 @@ const STALE_CHANGES: Array<[string, (harness: Harness) => void]> = [
       withSession(harness, (session) => ({
         ...session,
         transform: {
-          ...session.transform!,
-          intent: { ...session.transform!.intent, upright: 'auto' },
+          sourceId: session.transform.sourceId,
+          intent: { ...session.transform.intent, upright: 'auto' },
+          capture: session.transform.capture,
+          issuedRequests: session.transform.issuedRequests,
+          request: session.transform.request,
+          accepted: session.transform.accepted,
         },
       })),
   ],
@@ -591,9 +589,12 @@ describe('useExportResultActions', () => {
       const delivery = stubDelivery()
       const paused = createPausedOutput()
       const harness = setup({
-        result: (session) =>
-          createResult({ session, output: paused.output, identified: false }),
+        result: (session) => createResult({ session, output: paused.output }),
       })
+      // Strip the identity to simulate a malformed result
+      const malformed = harness.getSession()!.exportState.result!
+      const { identity: _identity, ...unidentified } = malformed
+      withResult(harness, unidentified as unknown as ExportResult)
 
       await run(harness, action)
 

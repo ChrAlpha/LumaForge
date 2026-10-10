@@ -175,7 +175,7 @@ export type ExportShareCapability =
   | { available: false; reasonCode: ExportShareReasonCode }
 
 export type ExportResult = {
-  kind?: ExportResultKind
+  kind: ExportResultKind
   output: ExportOutputResult
   filename: string
   width: number
@@ -188,12 +188,12 @@ export type ExportResult = {
   /** Absent for results that never seal a manifest (HQ preview exports). */
   manifestState?: ExportManifestState
   /** The request this result answers, exactly as its producer captured it. */
-  identity?: ExportResultIdentity
+  identity: ExportResultIdentity
 }
 
 export function createExportResult({
   output,
-  kind = 'full-resolution',
+  kind,
   filename = output.filename,
   width,
   height,
@@ -204,7 +204,7 @@ export function createExportResult({
   identity,
 }: {
   output: ExportOutputResult
-  kind?: ExportResultKind
+  kind: ExportResultKind
   filename?: string
   width: number
   height: number
@@ -212,7 +212,7 @@ export function createExportResult({
   copyCapability: ExportCopyCapability
   manifest?: RenderManifest
   manifestState?: ExportManifestState
-  identity?: ExportResultIdentity
+  identity: ExportResultIdentity
 }): ExportResult {
   const createdAt = now()
 
@@ -225,8 +225,8 @@ export function createExportResult({
     size: output.byteLength,
     createdAt,
     copyCapability,
+    identity,
     ...(manifest ? { manifest } : {}),
     ...(manifestState ? { manifestState } : {}),
-    ...(identity ? { identity } : {}),
   }
 }

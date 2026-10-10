@@ -720,6 +720,7 @@ export async function orchestrateFullResExport(
 
     const exportResult = createCompletedExportResult({
       jobResult: result,
+      kind: identity.resultKind,
       metadata: ctx.atoms.loadedImage.metadata,
       width: deliveredSize.width,
       height: deliveredSize.height,

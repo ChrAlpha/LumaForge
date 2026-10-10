@@ -547,4 +547,36 @@ describe('reduceTransformState', () => {
 
     expect(heldTransformGeometry(state)).toEqual(ROTATED)
   })
+
+  describe('complete state contract', () => {
+    it('refuses a pending request without a capture', () => {
+      const state = createTransformState(SOURCE)
+      const withRequest = reduceTransformState(state, request('k1', 1))
+
+      expect(withRequest).toBe(state)
+      expect(state.request).toBeNull()
+    })
+
+    it('refuses acknowledgement without a pending request', () => {
+      const state = run(createTransformState(SOURCE), capture('k1'))
+      const withAck = reduceTransformState(state, rendered('k1', 1))
+
+      expect(withAck).toBe(state)
+      expect(state.accepted).toBeNull()
+    })
+
+    it('refuses acknowledgement for a neutral intent', () => {
+      const state = run(
+        createTransformState(SOURCE),
+        capture('k1'),
+        request('k1', 1),
+      )
+
+      expect(isNeutralTransformIntent(state.intent)).toBe(true)
+      const withAck = reduceTransformState(state, rendered('k1', 1))
+
+      expect(withAck).toBe(state)
+      expect(state.accepted).toBeNull()
+    })
+  })
 })
