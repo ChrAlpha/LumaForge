@@ -38,7 +38,10 @@ describe('transform preview dimensions', () => {
         failure = error
       }
       expect(failure).toBeInstanceOf(ImageInputError)
-      expect((failure as ImageInputError).code).toBe('decode')
+      const code = (failure as ImageInputError).code
+      expect(code).toBe('decode')
+      // Literal-code assertion: the only production-thrown value.
+      const _check: 'decode' = code
     }
   })
 })

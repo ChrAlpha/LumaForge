@@ -367,6 +367,7 @@ describe('transform preview request lifecycle', () => {
       worker.emit({
         type: 'error',
         sourceId: lastAnalyze(worker).sourceId,
+        phase: 'analysis',
         message: 'processing',
       }),
     )
@@ -389,6 +390,7 @@ describe('transform preview request lifecycle', () => {
         type: 'error',
         sourceId: rejected.sourceId,
         requestId: rejected.requestId,
+        phase: 'render',
         message: 'invalid-transform',
       }),
     )
@@ -492,6 +494,7 @@ describe('transform preview request lifecycle', () => {
         type: 'error',
         sourceId,
         requestId: b.requestId,
+        phase: 'render',
         message: 'invalid-transform',
       }),
     )
@@ -635,6 +638,7 @@ describe('transform preview observer', () => {
         type: 'error',
         sourceId: refused.sourceId,
         requestId: refused.requestId,
+        phase: 'render',
         message: 'invalid-transform',
       }),
     )
@@ -656,6 +660,7 @@ describe('transform preview observer', () => {
       worker.emit({
         type: 'error',
         sourceId: lastAnalyze(worker).sourceId,
+        phase: 'analysis',
         message: 'processing',
       }),
     )

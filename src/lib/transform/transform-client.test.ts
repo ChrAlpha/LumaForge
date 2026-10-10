@@ -174,6 +174,7 @@ describe('transform worker client', () => {
     worker.emit({
       type: 'error',
       sourceId: worker.lastAnalyze().sourceId,
+      phase: 'analysis',
       message: 'processing-failed',
     })
     expect(on.analysisFailed).toHaveBeenCalledOnce()
@@ -217,6 +218,7 @@ describe('transform worker client', () => {
       type: 'error',
       sourceId: a.request.sourceId,
       requestId: a.request.requestId,
+      phase: 'render',
       message: 'invalid-transform',
     })
     expect(on.rendered).toHaveBeenCalledTimes(2)
@@ -231,6 +233,7 @@ describe('transform worker client', () => {
       type: 'error',
       sourceId: refused.sourceId,
       requestId: refused.requestId,
+      phase: 'render',
       message: 'invalid-transform',
     })
     expect(on.renderFailed).toHaveBeenLastCalledWith(refused, 'transform')
@@ -240,6 +243,7 @@ describe('transform worker client', () => {
       type: 'error',
       sourceId: failed.sourceId,
       requestId: failed.requestId,
+      phase: 'render',
       message: 'invalid-image',
     })
     expect(on.renderFailed).toHaveBeenLastCalledWith(failed, 'processing')
@@ -372,6 +376,144 @@ describe('transform worker client', () => {
     expect(FakeWorker.instances).toHaveLength(1)
     expect(FakeWorker.instances[0].messages[0].type).toBe('analyze')
     client.dispose()
+  })
+
+  it('distinguishes repeated local request IDs across client lifetimes', () => {
+    const { client: clientA, on: onA } = setup()
+    const { client: clientB, on: onB } = setup()
+    // Each client is its own lifetime; its epoch is fixed at creation.
+    expect(Number.isInteger(clientA.epoch)).toBe(true)
+    expect(clientB.epoch).toBeGreaterThan(clientA.epoch)
+
+    // Both clients number their first frame and render alike.
+    clientA.load(frame(1))
+    clientB.load(frame(2))
+    const [workerA, workerB] = FakeWorker.instances
+    const analyzeA = workerA.lastAnalyze()
+    const analyzeB = workerB.lastAnalyze()
+    expect(analyzeB.sourceId).toBe(analyzeA.sourceId)
+
+    // Analysis: A fails, B completes; each failure phase reaches only its
+    // own client.
+    workerA.emit({
+      type: 'error',
+      sourceId: analyzeA.sourceId,
+      phase: 'analysis',
+      message: 'processing-failed',
+    })
+    workerB.emit({
+      type: 'analyzed',
+      sourceId: analyzeB.sourceId,
+      analysis,
+      elapsedMs: 2,
+    })
+    expect(onA.analysisFailed).toHaveBeenCalledOnce()
+    expect(onA.analyzed).not.toHaveBeenCalled()
+    expect(onB.analyzed).toHaveBeenCalledExactlyOnceWith(analysis, 2)
+    expect(onB.analysisFailed).not.toHaveBeenCalled()
+
+    // A reloads its frame; the analysis completes this time.
+    clientA.load(frame(1))
+    const reanalyzeA = workerA.lastAnalyze()
+    workerA.emit({
+      type: 'analyzed',
+      sourceId: reanalyzeA.sourceId,
+      analysis,
+      elapsedMs: 1,
+    })
+    expect(onA.analyzed).toHaveBeenCalledOnce()
+
+    // Renders: the same local (sourceId, requestId) once B also reloads, told
+    // apart only by the epoch.
+    clientB.load(frame(2))
+    workerB.emit({
+      type: 'analyzed',
+      sourceId: workerB.lastAnalyze().sourceId,
+      analysis,
+      elapsedMs: 2,
+    })
+    const renderA = clientA.render(geometry(1)).request
+    const renderB = clientB.render(geometry(2)).request
+    expect([renderB.sourceId, renderB.requestId]).toEqual([
+      renderA.sourceId,
+      renderA.requestId,
+    ])
+    expect(clientA.epoch).not.toBe(clientB.epoch)
+
+    // A's render fails as a render, B's completes.
+    workerA.emit({
+      type: 'error',
+      sourceId: renderA.sourceId,
+      requestId: renderA.requestId,
+      phase: 'render',
+      message: 'invalid-transform',
+    })
+    workerB.emit(answer(renderB))
+    expect(onA.renderFailed).toHaveBeenCalledExactlyOnceWith(
+      renderA,
+      'transform',
+    )
+    expect(onA.analysisFailed).toHaveBeenCalledOnce()
+    expect(onA.rendered).not.toHaveBeenCalled()
+    expect(onB.rendered).toHaveBeenCalledOnce()
+    expect(onB.renderFailed).not.toHaveBeenCalled()
+
+    // A disposes with a render in flight; every late event from its worker
+    // is dropped: completion, both failure phases, analysis, and a crash.
+    const lateA = clientA.render(geometry(3)).request
+    clientA.dispose()
+    workerA.emit(answer(lateA))
+    workerA.emit({
+      type: 'error',
+      sourceId: lateA.sourceId,
+      requestId: lateA.requestId,
+      phase: 'render',
+      message: 'invalid-image',
+    })
+    workerA.emit({
+      type: 'error',
+      sourceId: lateA.sourceId,
+      phase: 'analysis',
+      message: 'processing-failed',
+    })
+    workerA.emit({
+      type: 'analyzed',
+      sourceId: lateA.sourceId,
+      analysis,
+      elapsedMs: 9,
+    })
+    workerA.onerror?.()
+    expect(onA.rendered).not.toHaveBeenCalled()
+    expect(onA.renderFailed).toHaveBeenCalledOnce()
+    expect(onA.analysisFailed).toHaveBeenCalledOnce()
+    expect(onA.analyzed).toHaveBeenCalledOnce()
+    expect(onA.crashed).not.toHaveBeenCalled()
+
+    // B's lifetime is untouched and keeps its own numbering.
+    const nextB = clientB.render(geometry(4)).request
+    expect(nextB.requestId).toBe(renderB.requestId + 1)
+    workerB.emit({
+      type: 'error',
+      sourceId: nextB.sourceId,
+      requestId: nextB.requestId,
+      phase: 'render',
+      message: 'invalid-image',
+    })
+    expect(onB.renderFailed).toHaveBeenCalledExactlyOnceWith(
+      nextB,
+      'processing',
+    )
+    expect(onB.analysisFailed).not.toHaveBeenCalled()
+
+    // A disposed client keeps its epoch when it starts over; a client made
+    // after it never reuses one.
+    const epochA = clientA.epoch
+    clientA.load(frame(1))
+    expect(clientA.epoch).toBe(epochA)
+    const { client: clientC } = setup()
+    expect(clientC.epoch).toBeGreaterThan(clientB.epoch)
+    clientA.dispose()
+    clientB.dispose()
   })
 })
 

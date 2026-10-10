@@ -50,6 +50,13 @@ export interface TransformRenderTicket {
 
 export interface TransformClient {
   /**
+   * The client's lifetime identity: unique among every client created in
+   * this module instance and never reused. Source and request ids number
+   * work within one client only, so two clients can post the same
+   * `(sourceId, requestId)`; the epoch tells their work apart.
+   */
+  readonly epoch: number
+  /**
    * Replace the frame under analysis, retiring everything asked of the
    * previous one. Returns false when the frame could not be handed to a
    * worker.
@@ -72,15 +79,21 @@ function createProductionWorker() {
   })
 }
 
+// The last epoch handed to a client; each client takes the next one.
+let lastClientEpoch = 0
+
 /**
  * The only owner of the Transform worker: one worker, monotonic source and
  * request ids, at most one render in flight, and only the newest render
- * waiting behind it.
+ * waiting behind it. Source and request ids are local to this client, which
+ * the epoch identifies; a new source id on load, clear, and disposal fences
+ * the worker's replies to everything asked before it.
  */
 export function createTransformClient(
   events: TransformClientEvents,
   { createWorker = createProductionWorker }: TransformClientOptions = {},
 ): TransformClient {
+  const epoch = ++lastClientEpoch
   let worker: Worker | null = null
   let sourceId = 0
   // The source id of the frame the worker holds; differs from `sourceId`
@@ -118,6 +131,10 @@ export function createTransformClient(
       events.analyzed(data.analysis, data.elapsedMs)
       return
     }
+    if (data.type === 'error' && data.phase === 'analysis') {
+      events.analysisFailed()
+      return
+    }
     inFlight = false
     const answered = latest
     if (
@@ -131,8 +148,6 @@ export function createTransformClient(
           answered,
           data.message === 'invalid-transform' ? 'transform' : 'processing',
         )
-    } else if (data.type === 'error' && data.requestId === undefined) {
-      events.analysisFailed()
     }
     if (pending) {
       const next = pending
@@ -156,6 +171,7 @@ export function createTransformClient(
   }
 
   return {
+    epoch,
     load(frame) {
       const id = ++sourceId
       loadedSourceId = id

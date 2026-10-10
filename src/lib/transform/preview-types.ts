@@ -14,7 +14,7 @@ export interface PreviewSource {
 
 export const MAX_PREVIEW_EDGE = 1600
 
-export type ImageInputErrorCode = 'unsupported' | 'too-large' | 'decode'
+export type ImageInputErrorCode = 'decode'
 
 export class ImageInputError extends Error {
   constructor(readonly code: ImageInputErrorCode) {

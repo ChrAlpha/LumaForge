@@ -45,6 +45,7 @@ self.onmessage = ({ data }: MessageEvent<TransformWorkerRequest>) => {
     self.postMessage({
       type: 'error',
       sourceId: data.sourceId,
+      phase: data.type === 'render' ? 'render' : 'analysis',
       requestId: data.type === 'render' ? data.requestId : undefined,
       message: error instanceof Error ? error.message : 'processing-failed',
     } satisfies TransformWorkerResponse)

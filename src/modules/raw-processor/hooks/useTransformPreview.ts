@@ -14,13 +14,6 @@ import type { RenderedPreview } from '~/lib/transform/transform-types'
 import type { TransformIntent } from '../model/session'
 
 /**
- * Why the preview cannot show the geometry the controls ask for: the worker
- * refused it (`transform`), or the frame could not be analysed or rendered
- * at all (`processing`).
- */
-type TransformPreviewError = TransformRenderFailure
-
-/**
  * What the preview reports as it happens, for whoever owns the intent. Each
  * render callback names the request as posted, geometry included; only the
  * newest request on the loaded frame is ever answered.
@@ -69,7 +62,7 @@ export function useTransformPreview(
   const preserveRef = useRef(false)
   const [loading, setLoading] = useState(false)
   const [rendering, setRendering] = useState(false)
-  const [error, setError] = useState<TransformPreviewError | null>(null)
+  const [error, setError] = useState<TransformRenderFailure | null>(null)
   const [analysisMs, setAnalysisMs] = useState(0)
   // The newest render asked of the current frame, and the request whose
   // answer is on screen. Each keeps the geometry it was posted with.

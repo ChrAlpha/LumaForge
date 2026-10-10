@@ -231,6 +231,7 @@ describe('transform worker protocol', () => {
       type: 'error',
       sourceId: 5,
       requestId: 9,
+      phase: 'render',
       message: 'invalid-transform',
     } satisfies TransformWorkerResponse)
   })

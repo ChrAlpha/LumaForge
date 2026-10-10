@@ -197,6 +197,7 @@ class FakeWorker {
       type: 'error',
       sourceId: request.sourceId,
       requestId: request.requestId,
+      phase: 'render',
       message: 'invalid-transform',
     })
   }

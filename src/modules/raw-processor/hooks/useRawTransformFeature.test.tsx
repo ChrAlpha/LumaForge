@@ -126,6 +126,7 @@ function failAnalysis() {
     worker().emit({
       type: 'error',
       sourceId: request.sourceId,
+      phase: 'analysis',
       message: 'processing',
     }),
   )
@@ -163,6 +164,7 @@ function refuse(request: RenderRequest) {
       type: 'error',
       sourceId: request.sourceId,
       requestId: request.requestId,
+      phase: 'render',
       message: 'invalid-transform',
     }),
   )
@@ -1471,6 +1473,7 @@ describe('rAW Transform feature', () => {
         type: 'error',
         sourceId: b.sourceId,
         requestId: b.requestId,
+        phase: 'render',
         message: 'processing',
       }),
     )

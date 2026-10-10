@@ -28,7 +28,15 @@ export type TransformWorkerResponse =
       requestId: number
       result: RenderedPreview
     }
-  | { type: 'error'; sourceId: number; requestId?: number; message: string }
+  | {
+      type: 'error'
+      sourceId: number
+      /** Which work failed: frame analysis or a specific render. */
+      phase: 'analysis' | 'render'
+      /** The render that failed; absent when analysis failed. */
+      requestId?: number
+      message: string
+    }
 
 export type TransformRenderRequest = Extract<
   TransformWorkerRequest,
