@@ -112,5 +112,8 @@ export function useTransformSessionFixture(
     setSession,
     invalidateExportGraph,
   })
-  return { ...ports, geometry: session.exportGeometry ?? null }
+  return {
+    transform: ports.transform,
+    geometry: session.exportGeometry ?? null,
+  }
 }

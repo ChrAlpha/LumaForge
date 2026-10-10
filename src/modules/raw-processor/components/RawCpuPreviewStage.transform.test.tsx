@@ -216,8 +216,7 @@ function CpuTransformHarness({
   decodedImage?: DecodedImage
   decodedFrame?: DecodedPreviewFrame
 }) {
-  const { previewTransform, transform, geometry } =
-    useTransformSessionFixture('one')
+  const { transform, geometry } = useTransformSessionFixture('one')
   const params = { ...baseParams, userTemperature }
   const feature = useRawTransformFeature(
     {
@@ -232,7 +231,6 @@ function CpuTransformHarness({
       viewMode: 'processed',
       params,
       previewSuspended: false,
-      previewTransform,
       transform,
       setViewMode: () => {},
     } as unknown as UseRawWorkflowReturn,

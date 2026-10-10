@@ -251,10 +251,7 @@ function TransformSession({
     (_source: string, next: ExportGeometry | null) => commit(next),
     [commit],
   )
-  const { previewTransform, transform: port } = useTransformSessionFixture(
-    'one',
-    onCommit,
-  )
+  const { transform: port } = useTransformSessionFixture('one', onCommit)
   const base = workflowFixture()
   const workflow = {
     ...base,
@@ -267,7 +264,6 @@ function TransformSession({
     pipelineRef: capturePipelineRef,
     previewSuspended: released,
     exportResult: released ? delivered : null,
-    previewTransform,
     transform: port,
     ...workflowOverrides,
   } as unknown as UseRawWorkflowReturn

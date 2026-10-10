@@ -89,10 +89,8 @@ export function useRawPreviewTransform({
   setSession,
   invalidateExportGraph,
 }: UseRawPreviewTransformInput): {
-  previewTransform: NonNullable<UseRawWorkflowReturn['previewTransform']>
   transform: NonNullable<UseRawWorkflowReturn['transform']>
 } {
-  const sourceId = session?.id ?? null
   // Each event reduces the session the store holds when it lands, so it never
   // acts on a source or Transform a newer write replaced. Invalidation runs
   // before the write; it touches only export state, which the transition
@@ -114,11 +112,6 @@ export function useRawPreviewTransform({
   )
 
   return {
-    previewTransform: {
-      sourceId,
-      active: Boolean(session?.exportGeometry),
-      geometry: session?.exportGeometry ?? null,
-    },
     transform: {
       state: session?.transform ?? null,
       dispatch,

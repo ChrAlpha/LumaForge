@@ -159,7 +159,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   )
   // Transform events reduce the session in the store when they land; every
   // export reader reads the store, so none needs a copy kept in step.
-  const { previewTransform, transform } = useRawPreviewTransform({
+  const { transform } = useRawPreviewTransform({
     session,
     getSession: getCurrentSession,
     setSession: setCurrentSession,
@@ -370,7 +370,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   }
 
   return buildRawWorkflowReturn({
-    previewTransform,
     transform,
     workflowState: {
       status,

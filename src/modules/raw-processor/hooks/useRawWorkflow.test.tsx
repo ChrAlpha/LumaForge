@@ -4210,7 +4210,9 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.exportResult).toBeNull()
     expect(result.current.status).toBe('ready')
     expect(result.current.canExport).toBe(true)
-    expect(result.current.previewTransform?.active).toBe(true)
+    expect(jotaiStore.get(currentSessionAtom)?.exportGeometry).toEqual(
+      SAMPLE_GEOMETRY,
+    )
     expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
       exportGeometry: SAMPLE_GEOMETRY,
       exportState: { status: 'idle', result: undefined },
@@ -5014,8 +5016,9 @@ describe('useRawWorkflow embedded preview state', () => {
 
     expect(result.current.viewMode).toBe('processed')
     expect(result.current.params).not.toHaveProperty('viewMode')
-    expect(result.current.previewTransform?.active).toBe(true)
-    expect(result.current.previewTransform?.geometry).toEqual(SAMPLE_GEOMETRY)
+    expect(jotaiStore.get(currentSessionAtom)?.exportGeometry).toEqual(
+      SAMPLE_GEOMETRY,
+    )
     expect(jotaiStore.get(currentSessionAtom)).toMatchObject({
       exportGeometry: SAMPLE_GEOMETRY,
       viewState: { mode: 'processed', compareSplit: 0.5 },
@@ -5042,7 +5045,9 @@ describe('useRawWorkflow embedded preview state', () => {
     })
 
     expect(result.current.viewMode).toBe('processed')
-    expect(result.current.previewTransform?.geometry).toEqual(SAMPLE_GEOMETRY)
+    expect(jotaiStore.get(currentSessionAtom)?.exportGeometry).toEqual(
+      SAMPLE_GEOMETRY,
+    )
   })
 
   it('lands a Transform edit from a replacing loadFile tick on neither source', async () => {
@@ -5156,7 +5161,8 @@ describe('useRawWorkflow embedded preview state', () => {
     await act(async () => {
       await result.current.loadFile(new File(['raw'], 'first.ARW'))
     })
-    const first = result.current.previewTransform!
+    const firstSession = jotaiStore.get(currentSessionAtom)
+    const firstSourceId = firstSession?.id
     const firstTransform = result.current.transform
     act(() => acceptTransformGeometry(firstTransform, SAMPLE_GEOMETRY))
     await act(async () => {
@@ -5167,11 +5173,11 @@ describe('useRawWorkflow embedded preview state', () => {
 
     expect(jotaiStore.get(currentSessionAtom)).toBe(replacementSession)
     expect(replacementSession?.exportGeometry).toBeNull()
-    expect(result.current.previewTransform?.sourceId).not.toBe(first.sourceId)
-    expect(result.current.previewTransform?.active).toBe(false)
+    expect(result.current.transform?.state?.sourceId).not.toBe(firstSourceId)
+    expect(replacementSession?.exportGeometry).toBeNull()
     expect(result.current.canExport).toBe(true)
     act(() => result.current.reset())
-    expect(result.current.previewTransform?.sourceId).toBeNull()
+    expect(result.current.transform?.state).toBeNull()
   })
 
   it('keeps a replacement session export when a previous source commits a geometry', async () => {
@@ -5215,7 +5221,7 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(result.current.exportResult?.filename).toBe(
       'second_neutral_fullres.jpg',
     )
-    expect(result.current.previewTransform?.active).toBe(false)
+    expect(jotaiStore.get(currentSessionAtom)?.exportGeometry).toBeNull()
     expect(cleanup).not.toHaveBeenCalled()
   })
 
@@ -8625,7 +8631,9 @@ describe('useRawWorkflow embedded preview state', () => {
       viewState: { compareSplit: 0.3 },
     })
     expect(getProcessingParams()).toBe(storedParamsBefore)
-    expect(result.current.previewTransform?.active).toBe(true)
+    expect(jotaiStore.get(currentSessionAtom)?.exportGeometry).toEqual(
+      SAMPLE_GEOMETRY,
+    )
 
     act(() => unmount())
     await flushPostCommitTasks()

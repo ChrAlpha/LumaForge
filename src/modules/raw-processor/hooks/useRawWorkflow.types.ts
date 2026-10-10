@@ -6,7 +6,6 @@ import type {
   LUTData,
   PreviewHistogramState,
 } from '@lumaforge/luma-color-runtime'
-import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { RefObject } from 'react'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
@@ -41,15 +40,6 @@ import type { TransformEvent } from '../services/transform/transform-state'
 import type { PreviewPipelineHandle } from './preview/usePreviewPipelineLifecycle'
 
 export interface UseRawWorkflowReturn {
-  previewTransform?: {
-    sourceId: string | null
-    active: boolean
-    /**
-     * Geometry the export reproduces at full resolution; null when neutral.
-     * It is the geometry `transform` holds, and moves only through it.
-     */
-    geometry: ExportGeometry | null
-  }
   /**
    * The loaded source's Transform intent and the answers accepted for it;
    * null without a source. `dispatch` applies one event to that source's

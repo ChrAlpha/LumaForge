@@ -243,11 +243,8 @@ function useFeature(
   cpu: boolean,
   sourceId = 'one',
 ) {
-  const { previewTransform, transform } = useTransformSessionFixture(
-    sourceId,
-    commits,
-  )
-  return useRawTransformFeature({ ...input, previewTransform, transform }, cpu)
+  const { transform } = useTransformSessionFixture(sourceId, commits)
+  return useRawTransformFeature({ ...input, transform }, cpu)
 }
 
 const image = { width: 80, height: 60 }
@@ -292,10 +289,7 @@ function useSessionHarness({
   cpu = false,
   released = false,
 }: SessionInput) {
-  const { previewTransform, transform, geometry } = useTransformSessionFixture(
-    session,
-    commits,
-  )
+  const { transform, geometry } = useTransformSessionFixture(session, commits)
   const feature = useRawTransformFeature(
     {
       hasImage: true,
@@ -314,7 +308,6 @@ function useSessionHarness({
         intensity,
       },
       previewSuspended: released,
-      previewTransform,
       transform,
       setViewMode,
     } as unknown as UseRawWorkflowReturn,
