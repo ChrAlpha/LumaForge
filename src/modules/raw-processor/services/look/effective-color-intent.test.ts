@@ -10,6 +10,7 @@ import {
 import { describe, expect, it } from 'vitest'
 
 import type { ImageSession, StyleAsset } from '../../model/session'
+import { createTransformState } from '../../model/session-factory'
 import {
   projectEffectiveColorIntent,
   projectSessionLookIntensity,
@@ -58,6 +59,7 @@ function createSession(activeStyle: StyleAsset | null): ImageSession {
       fullResCapability: { status: 'supported', width: 4000, height: 3000 },
       retryRecommended: false,
     },
+    transform: createTransformState('effective-intent-session'),
   }
 }
 

@@ -13,6 +13,7 @@ import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession } from '../../../model/session'
+import { createTransformState } from '../../../model/session-factory'
 import {
   getCurrentSession,
   setCurrentSession,
@@ -80,6 +81,7 @@ function createSession(
       fullResCapability: { status: 'supported', width: 400, height: 300 },
       retryRecommended: false,
     },
+    transform: createTransformState(id),
   }
 }
 
