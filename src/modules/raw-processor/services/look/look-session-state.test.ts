@@ -1,4 +1,7 @@
-import { parseCubeLUT } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_USER_COLOR_INTENT,
+  parseCubeLUT,
+} from '@lumaforge/luma-color-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { describe, expect, it } from 'vitest'
 
@@ -6,6 +9,8 @@ import type { ParsedLUT } from '~/lib/lut/cube-parser'
 
 import { createExportResult } from '../../model/export-result'
 import type { ImageSession, StyleAsset } from '../../model/session'
+import { createTransformState } from '../../model/session-factory'
+import { captureExportResultIdentity } from '../export/export-result-identity'
 import {
   applyActiveLookToSession,
   applyLookIntensityToSession,
@@ -65,6 +70,8 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
       fullResCapability: { status: 'supported', width: 1600, height: 1200 },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-look-state'),
     ...overrides,
   }
 }
@@ -75,6 +82,7 @@ function readyExportState(): ImageSession['exportState'] {
     fullResCapability: { status: 'supported', width: 1600, height: 1200 },
     retryRecommended: false,
     result: createExportResult({
+      kind: 'full-resolution',
       output: createBlobOutputResult({
         filename: 'frame_fullres.jpg',
         blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
@@ -85,6 +93,21 @@ function readyExportState(): ImageSession['exportState'] {
       copyCapability: {
         mode: 'full-resolution',
       },
+      identity: captureExportResultIdentity({
+        resultKind: 'full-resolution',
+        attemptId: 'attempt-look-state',
+        sessionId: 'session-look-state',
+        sourceFile: new File(['raw'], 'frame.ARW'),
+        intent: {
+          styleKind: 'none',
+          builtinPreset: null,
+          intensity: 0,
+          ...NEUTRAL_USER_COLOR_INTENT,
+        },
+        lut: null,
+        rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+        geometry: null,
+      }),
     }),
     lastProgress: { completedStrips: 4, totalStrips: 4 },
   }

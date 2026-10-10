@@ -1,8 +1,19 @@
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { describe, expect, it } from 'vitest'
 
 import type { PreviewBackendState } from '~/lib/preview/gpu-backend'
 
+import { createExportResult } from '../../model/export-result'
 import type { ImageSession } from '../../model/session'
+import { createTransformState } from '../../model/session-factory'
+import { captureExportResultIdentity } from '../export/export-result-identity'
+import type { TransformEvent } from '../transform/transform-state'
+import {
+  deriveTransformStatus,
+  heldTransformGeometry,
+  reduceTransformState,
+} from '../transform/transform-state'
 import type { SessionViewCommand } from './view-session-state'
 import {
   applyCompareSplitToSession,
@@ -45,6 +56,8 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
       fullResCapability: { status: 'supported', width: 1600, height: 1200 },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-view-state'),
     ...overrides,
   }
 }
@@ -125,8 +138,68 @@ function withExportState(
   }
 }
 
-const ACTIVE_PLAN = {} as NonNullable<ImageSession['exportState']['activePlan']>
-const RESULT = {} as NonNullable<ImageSession['exportState']['result']>
+const ACTIVE_PLAN: NonNullable<ImageSession['exportState']['activePlan']> = {
+  profileName: 'desktop-fast',
+  preferredRows: 128,
+  concurrency: 1,
+  runtimeMemoryProfile: 'desktop',
+  outputSink: 'blob-handoff',
+  checkpointMode: 'safe-retry',
+}
+const RESULT = createExportResult({
+  kind: 'full-resolution',
+  output: createBlobOutputResult({
+    filename: 'frame_fullres.jpg',
+    blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+  }),
+  width: 1600,
+  height: 1200,
+  copyCapability: { mode: 'full-resolution' },
+  identity: captureExportResultIdentity({
+    resultKind: 'full-resolution',
+    attemptId: 'attempt-view-state',
+    sessionId: 'session-view-state',
+    sourceFile: new File(['raw'], 'frame.ARW'),
+    intent: {
+      styleKind: 'none',
+      builtinPreset: null,
+      intensity: 0,
+      ...NEUTRAL_USER_COLOR_INTENT,
+    },
+    lut: null,
+    rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+    geometry: null,
+  }),
+})
+
+/** A Transform whose edit the preview answered: a committed geometry. */
+function acceptedTransform(sourceId: string) {
+  const geometry = {
+    matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
+    constrainCrop: true,
+  }
+  const neutral = createTransformState(sourceId)
+  const events: TransformEvent[] = [
+    {
+      type: 'edit',
+      sourceId,
+      intent: { manual: { ...neutral.intent.manual, rotate: 2 } },
+    },
+    { type: 'capture', sourceId, captureKey: 'k' },
+    { type: 'request', sourceId, captureKey: 'k', requestId: 1, geometry },
+    {
+      type: 'rendered',
+      sourceId,
+      captureKey: 'k',
+      requestId: 1,
+      geometry,
+      frame: { width: 800, height: 600 },
+    },
+  ]
+  const state = events.reduce(reduceTransformState, neutral)
+  expect(deriveTransformStatus(state)).toBe('accepted')
+  return state
+}
 
 describe('session view command policy', () => {
   it('maps each view mode to the command it asks for', () => {
@@ -142,8 +215,10 @@ describe('session view command policy', () => {
   })
 
   it('refuses the original and the split for a committed Transform', () => {
+    const transform = acceptedTransform('session-view-state')
     const session = createSession({
-      exportGeometry: {} as NonNullable<ImageSession['exportGeometry']>,
+      transform,
+      exportGeometry: heldTransformGeometry(transform),
     })
 
     expect(allowed(session, GPU)).toEqual([])
@@ -181,7 +256,7 @@ describe('session view command policy', () => {
         embeddedPreview: {
           status: 'ready',
           objectUrl: 'blob:embedded',
-        } as ImageSession['previewBundle']['embeddedPreview'],
+        },
       },
     }
     const planless = withExportState({ status: 'exporting' })

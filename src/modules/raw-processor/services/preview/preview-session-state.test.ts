@@ -1,6 +1,7 @@
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { ImageSession } from '../../model/session'
+import { createTransformState } from '../../model/session-factory'
 import {
   applyBoundedHqPreviewFailure,
   applyBoundedHqPreviewSkipped,
@@ -40,6 +41,8 @@ const baseSession: ImageSession = {
     fullResCapability: { status: 'unknown' },
     retryRecommended: false,
   },
+  exportGeometry: null,
+  transform: createTransformState('session-1'),
 }
 
 function createDecodedImage(

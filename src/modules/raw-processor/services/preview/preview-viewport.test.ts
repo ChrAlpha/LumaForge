@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ImageSession } from '../../model/session'
+import { createTransformState } from '../../model/session-factory'
 import { applyPreviewViewportToSession } from '../compare/view-session-state'
 import {
   DEFAULT_PREVIEW_VIEWPORT,
@@ -48,6 +49,8 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
       fullResCapability: { status: 'supported', width: 1600, height: 1200 },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-preview-viewport'),
     ...overrides,
   }
 }

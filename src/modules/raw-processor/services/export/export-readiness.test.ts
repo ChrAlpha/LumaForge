@@ -80,6 +80,8 @@ function createSession(
       retryRecommended: false,
       ...exportState,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-export-readiness'),
   }
 }
 
@@ -91,11 +93,13 @@ const SAMPLE_GEOMETRY = {
 
 /**
  * The session's Transform after the events that reach each status: a first
- * edit whose request is unanswered, an answered one, and the two failures.
+ * edit whose request for `geometry` is unanswered, an answered one, and the
+ * two failures.
  */
 function transformAt(
   status: TransformStatus,
   sourceId = 'session-export-readiness',
+  geometry: ExportGeometry = SAMPLE_GEOMETRY,
 ): TransformState {
   const events: TransformEvent[] = []
   const edit: TransformEvent = {
@@ -111,7 +115,7 @@ function transformAt(
     sourceId,
     captureKey: 'k',
     requestId: 1,
-    geometry: SAMPLE_GEOMETRY,
+    geometry,
   }
   if (status !== 'neutral') events.push(edit, capture)
   if (status === 'pending' || status === 'accepted' || status === 'invalid')
@@ -122,7 +126,7 @@ function transformAt(
       sourceId,
       captureKey: 'k',
       requestId: 1,
-      geometry: SAMPLE_GEOMETRY,
+      geometry,
       frame: { width: 800, height: 600 },
     })
   if (status === 'invalid')
@@ -141,6 +145,18 @@ function transformAt(
   )
   expect(deriveTransformStatus(state)).toBe(status)
   return state
+}
+
+/** A session whose accepted Transform answered and holds `geometry`. */
+function createGeometrySession(
+  geometry: ExportGeometry = SAMPLE_GEOMETRY,
+): ImageSession {
+  const transform = transformAt('accepted', undefined, geometry)
+  return {
+    ...createSession(),
+    transform,
+    exportGeometry: heldTransformGeometry(transform),
+  }
 }
 
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1] as const
@@ -171,7 +187,7 @@ const INVALID_GEOMETRIES: ReadonlyArray<
   ],
   [
     'a matrix that is not an array',
-    { matrix: {} as never, constrainCrop: true },
+    { matrix: {} as unknown as ExportGeometry['matrix'], constrainCrop: true },
   ],
   [
     'a NaN entry',
@@ -206,7 +222,7 @@ describe('export readiness helpers', () => {
   it('keeps full-resolution export available while a geometry is committed', () => {
     const input = {
       sourceFile: new File(['raw'], 'frame.ARW'),
-      session: { ...createSession(), exportGeometry: SAMPLE_GEOMETRY },
+      session: createGeometrySession(),
       rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' as const },
     }
 
@@ -214,10 +230,8 @@ describe('export readiness helpers', () => {
     const readiness = deriveFullResExportReadiness(input)
     expect(readiness.canExport).toBe(true)
     expect(
-      deriveFullResExportReadiness({
-        ...input,
-        session: { ...input.session, exportGeometry: null },
-      }).canExport,
+      deriveFullResExportReadiness({ ...input, session: createSession() })
+        .canExport,
     ).toBe(true)
   })
 
@@ -390,7 +404,7 @@ describe('export readiness helpers', () => {
 
     const cropped = deriveFullResExportReadiness({
       sourceFile: new File(['raw'], 'frame.ARW'),
-      session: { ...createSession(), exportGeometry: geometry },
+      session: createGeometrySession(geometry),
       rawRenderExposure: IDENTITY_EXPOSURE,
     })
     expect(cropped.canExport).toBe(true)
@@ -400,10 +414,13 @@ describe('export readiness helpers', () => {
       height: planned.outputHeight,
     })
 
-    for (const exportGeometry of [null, undefined]) {
+    // No geometry is either a cleared one or the key the session factory
+    // leaves out until a Transform moves the geometry.
+    const { exportGeometry: _cleared, ...factoryShaped } = createSession()
+    for (const session of [createSession(), factoryShaped]) {
       const neutral = deriveFullResExportReadiness({
         sourceFile: new File(['raw'], 'frame.ARW'),
-        session: { ...createSession(), exportGeometry },
+        session,
         rawRenderExposure: IDENTITY_EXPOSURE,
       })
       if (!neutral.canExport) throw new Error('expected export readiness')
@@ -617,10 +634,6 @@ describe('deriveTransformExportRefusalReason', () => {
   const FULL_RES_REFUSALS = ['pending', 'invalid', 'unavailable'] as const
 
   it('admits a full-resolution export only for a neutral or accepted Transform', () => {
-    const bare = createSession()
-    expect(
-      deriveTransformExportRefusalReason(bare, 'full-resolution'),
-    ).toBeUndefined()
     for (const status of ['neutral', 'accepted'] as const) {
       const transform = transformAt(status)
       const session: ImageSession = {
@@ -663,6 +676,8 @@ describe('deriveTransformExportRefusalReason', () => {
         'hq-preview',
       ),
     ).toBeUndefined()
+    // A held geometry beside a neutral Transform is a deliberately
+    // inconsistent input: the geometry alone still refuses a preview export.
     expect(
       deriveTransformExportRefusalReason(
         { ...createSession(), exportGeometry: SAMPLE_GEOMETRY },

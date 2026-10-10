@@ -5,6 +5,7 @@ import type {
 import {
   COLOR_GRAPH_INTENT_KEYS,
   NEUTRAL_SELECTIVE_COLOR,
+  NEUTRAL_USER_COLOR_INTENT,
 } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
@@ -12,6 +13,8 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import { createExportResult } from '../../model/export-result'
 import type { ImageSession } from '../../model/session'
+import { createTransformState } from '../../model/session-factory'
+import { captureExportResultIdentity } from './export-result-identity'
 import {
   buildExportFailureDescription,
   changesRenderGraphParams,
@@ -56,11 +59,14 @@ function createSession(
       retryRecommended: false,
       ...exportState,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-export-state'),
   }
 }
 
 function createReadyExportResult() {
   return createExportResult({
+    kind: 'full-resolution',
     output: createBlobOutputResult({
       filename: 'frame-neutral.jpg',
       blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
@@ -71,6 +77,21 @@ function createReadyExportResult() {
     copyCapability: {
       mode: 'full-resolution',
     },
+    identity: captureExportResultIdentity({
+      resultKind: 'full-resolution',
+      attemptId: 'attempt-export-state',
+      sessionId: 'session-export-state',
+      sourceFile: new File(['raw'], 'frame.ARW'),
+      intent: {
+        styleKind: 'none',
+        builtinPreset: null,
+        intensity: 0,
+        ...NEUTRAL_USER_COLOR_INTENT,
+      },
+      lut: null,
+      rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+      geometry: null,
+    }),
   })
 }
 

@@ -315,10 +315,8 @@ function createSession(
       boundedHqRequiredForExport: false,
     },
     activeStyle: overrides.activeStyle ?? null,
-    ...(overrides.exportGeometry
-      ? { exportGeometry: overrides.exportGeometry }
-      : {}),
-    ...(overrides.transform ? { transform: overrides.transform } : {}),
+    exportGeometry: overrides.exportGeometry ?? null,
+    transform: overrides.transform ?? createTransformState(id),
     viewState: {
       mode: 'compare',
       compareSplit: 0.5,
@@ -418,6 +416,22 @@ function createAcceptedTransformSession(id = 'session-1') {
   })
 }
 
+/** A session whose Transform answered `geometry`, which it commits. */
+function createGeometrySession(
+  geometry: ExportGeometry,
+  overrides: Parameters<typeof createSession>[1] = {},
+  id = 'session-1',
+) {
+  return createSession(id, {
+    ...overrides,
+    transform: answerTransform(
+      editTransform(createTransformState(id), 2),
+      geometry,
+    ),
+    exportGeometry: geometry,
+  })
+}
+
 /**
  * The same Transform on a new frame that has not been answered yet, or that
  * failed: no edit, so the intent stays the very same object.
@@ -479,6 +493,16 @@ function createPreviousResult(): ExportResult {
     createdAt: 1,
     copyCapability: CLIPBOARD_UNAVAILABLE,
     manifestState: { status: 'ready' },
+    identity: captureExportResultIdentity({
+      resultKind: 'full-resolution',
+      attemptId: 'previous-attempt',
+      sessionId: 'session-1',
+      sourceFile: SOURCE_FILE,
+      intent: DEFAULT_PARAMS,
+      lut: null,
+      rawRenderExposure: RAW_RENDER_EXPOSURE,
+      geometry: null,
+    }),
   }
 }
 
@@ -1252,7 +1276,7 @@ describe('orchestrateFullResExport success', () => {
     }
     expect(delivered.width).toBeLessThan(6000)
     const h = createHarness({
-      session: createSession('session-1', { exportGeometry: geometry }),
+      session: createGeometrySession(geometry),
     })
     const job = h.installJob()
 
@@ -1306,7 +1330,7 @@ describe('orchestrateFullResExport success', () => {
     expect(delivered.width).toBeLessThan(6000)
     const h = createHarness({
       runtime: OPFS_RUNTIME,
-      session: createSession('session-1', { exportGeometry: geometry }),
+      session: createGeometrySession(geometry),
     })
     const job = h.installJob()
 
@@ -1665,6 +1689,8 @@ describe('orchestrateFullResExport refusals', () => {
       const previousResult = createPreviousResult()
       // An OPFS plan reserves its output before the worker starts, so a
       // refusal that came late would leave a marker or a reservation behind.
+      // The geometry sits beside the neutral Transform on purpose: it is
+      // malformed admission input that the geometry gate alone must refuse.
       const h = createHarness({
         registry,
         runtime: OPFS_RUNTIME,
@@ -3679,10 +3705,7 @@ describe('orchestrateFullResExport color intent', () => {
     const h = createHarness({
       params,
       lut: CONFIRMED_LUT,
-      session: createSession('session-1', {
-        activeStyle: TEAL_STYLE,
-        exportGeometry: geometry,
-      }),
+      session: createGeometrySession(geometry, { activeStyle: TEAL_STYLE }),
     })
     const changeView = (mode: ImageSession['viewState']['mode']) => {
       const live = h.state.session!
@@ -4056,7 +4079,7 @@ describe('orchestrateFullResExport live session reads', () => {
     }
     const h = createHarness({ atomsSession: createSession() })
     // The store holds the geometry before the caller rerenders.
-    h.replaceSession(createSession('session-1', { exportGeometry: geometry }))
+    h.replaceSession(createGeometrySession(geometry))
     const job = h.installJob()
 
     const run = orchestrateFullResExport(OPTIONS, h.ctx)

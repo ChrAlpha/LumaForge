@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ImageSession } from '../../model/session'
+import { createTransformState } from '../../model/session-factory'
 import {
   clearEmbeddedPreviewUrlFromSession,
   createEmbeddedPreviewObjectUrl,
@@ -48,6 +49,8 @@ function createSession(
       fullResCapability: { status: 'probing' },
       retryRecommended: false,
     },
+    exportGeometry: null,
+    transform: createTransformState('session-embedded-preview'),
   }
 }
 
