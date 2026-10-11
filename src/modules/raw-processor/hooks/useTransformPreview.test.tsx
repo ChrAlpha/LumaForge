@@ -435,6 +435,36 @@ describe('transform preview request lifecycle', () => {
     expect(live.terminated).toBe(true)
   })
 
+  it('names each mount by its own client lifetime, whatever the local ids', () => {
+    const first = setupLoaded()
+    const epoch = first.result.current.clientEpoch
+    first.rerender()
+    expect(first.result.current.clientEpoch).toBe(epoch)
+    const firstRequest = lastRender(first.worker)
+    first.unmount()
+
+    // A new client numbers its frame and render as the first one did.
+    const second = renderHook(() => useOwnedPreview())
+    act(() => second.result.current.loadSource(photo()))
+    const secondWorker = PreviewWorker.instances[1]
+    analyze(secondWorker)
+    const repeated = lastRender(secondWorker)
+    expect([repeated.sourceId, repeated.requestId]).toEqual([
+      firstRequest.sourceId,
+      firstRequest.requestId,
+    ])
+    expect(second.result.current.clientEpoch).not.toBe(epoch)
+    second.unmount()
+
+    // A replayed mount effect keeps the client, and so its lifetime.
+    const strict = renderHook(() => useOwnedPreview(), { wrapper: StrictMode })
+    const strictEpoch = strict.result.current.clientEpoch
+    act(() => strict.result.current.loadSource(photo()))
+    analyze(PreviewWorker.instances[2])
+    expect(strict.result.current.clientEpoch).toBe(strictEpoch)
+    strict.unmount()
+  })
+
   it('coalesces slider work and only displays the newest render', () => {
     const { result, unmount, worker } = setupLoaded()
     expect(worker.messages).toHaveLength(2)

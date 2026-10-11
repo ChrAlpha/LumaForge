@@ -34,8 +34,11 @@ export type TransformExportBlock = Exclude<
 
 /**
  * Every event names the source it was raised for and is ignored by any
- * other. Capture and render events also name their capture and request, so
- * a late answer to something replaced cannot be accepted.
+ * other. Capture and render events also name their capture, the lifetime of
+ * the Transform client that holds it (`clientEpoch`), and their request, so a
+ * late answer to something replaced cannot be accepted. A client numbers its
+ * sources and requests from scratch, so only the client lifetime tells two
+ * clients' events apart when those numbers repeat.
  */
 export type TransformEvent =
   /**
@@ -44,14 +47,28 @@ export type TransformEvent =
    */
   | { type: 'edit'; sourceId: string; intent: Partial<TransformIntent> }
   | { type: 'reset'; sourceId: string }
-  /** A frame for these inputs replaces the one the answers were given on. */
-  | { type: 'capture'; sourceId: string; captureKey: string }
+  /**
+   * A frame for these inputs, handed to the client `clientEpoch`, replaces
+   * the one the answers were given on.
+   */
+  | {
+      type: 'capture'
+      sourceId: string
+      captureKey: string
+      clientEpoch: number
+    }
   /** That frame could not be read back, analysed or kept by the worker. */
-  | { type: 'capture-failed'; sourceId: string; captureKey: string }
+  | {
+      type: 'capture-failed'
+      sourceId: string
+      captureKey: string
+      clientEpoch: number
+    }
   | {
       type: 'request'
       sourceId: string
       captureKey: string
+      clientEpoch: number
       requestId: number
       geometry: ExportGeometry
     }
@@ -59,6 +76,7 @@ export type TransformEvent =
       type: 'rendered'
       sourceId: string
       captureKey: string
+      clientEpoch: number
       requestId: number
       /** The geometry the answered request was posted with. */
       geometry: ExportGeometry
@@ -69,6 +87,7 @@ export type TransformEvent =
       type: 'render-failed'
       sourceId: string
       captureKey: string
+      clientEpoch: number
       requestId: number
       failure: TransformRenderFailure
     }
@@ -130,21 +149,43 @@ function withIntent(state: TransformState, intent: TransformIntent) {
 }
 
 /**
+ * Whether the event comes from the client holding the current capture of
+ * this source, for that capture.
+ */
+function onCurrentCapture(
+  state: TransformState,
+  event: { sourceId: string; captureKey: string; clientEpoch: number },
+) {
+  const { capture } = state
+  return (
+    event.sourceId === state.sourceId &&
+    capture !== null &&
+    capture.key === event.captureKey &&
+    capture.clientEpoch === event.clientEpoch
+  )
+}
+
+/**
  * The request the event answers, when it answers the newest request on the
- * current capture of this source; otherwise null.
+ * current capture of this source, from the client that posted it; otherwise
+ * null.
  */
 function answeredRequest(
   state: TransformState,
-  event: { sourceId: string; captureKey: string; requestId: number },
+  event: {
+    sourceId: string
+    captureKey: string
+    clientEpoch: number
+    requestId: number
+  },
 ) {
   const { capture, request } = state
   if (
-    event.sourceId !== state.sourceId ||
-    !capture ||
-    capture.failed ||
-    capture.key !== event.captureKey ||
+    !onCurrentCapture(state, event) ||
+    capture?.failed ||
     !request ||
     request.captureKey !== event.captureKey ||
+    request.clientEpoch !== event.clientEpoch ||
     request.requestId !== event.requestId ||
     request.failure
   )
@@ -184,29 +225,36 @@ export function reduceTransformState(
       return withIntent(state, neutral)
     }
     case 'capture': {
-      if (state.capture?.key === event.captureKey && !state.capture.failed)
-        return state
+      // The same frame handed to another client is a new capture: nothing
+      // the previous client asked of it can be answered any more.
+      if (onCurrentCapture(state, event) && !state.capture?.failed) return state
       return {
         ...state,
-        capture: { key: event.captureKey, failed: false },
+        capture: {
+          key: event.captureKey,
+          clientEpoch: event.clientEpoch,
+          failed: false,
+        },
         request: null,
       }
     }
     case 'capture-failed': {
-      if (state.capture?.key !== event.captureKey || state.capture.failed)
-        return state
+      if (!onCurrentCapture(state, event) || state.capture?.failed) return state
       return {
         ...state,
-        capture: { key: event.captureKey, failed: true },
+        capture: {
+          key: event.captureKey,
+          clientEpoch: event.clientEpoch,
+          failed: true,
+        },
         request: null,
       }
     }
     case 'request': {
-      const { capture, request } = state
+      const { request } = state
       if (
-        !capture ||
-        capture.failed ||
-        capture.key !== event.captureKey ||
+        !onCurrentCapture(state, event) ||
+        state.capture?.failed ||
         (request && event.requestId <= request.requestId)
       )
         return state
@@ -216,6 +264,7 @@ export function reduceTransformState(
         issuedRequests: issued,
         request: {
           captureKey: event.captureKey,
+          clientEpoch: event.clientEpoch,
           requestId: event.requestId,
           issued,
           geometry: copyGeometry(event.geometry),
@@ -235,6 +284,7 @@ export function reduceTransformState(
         ...state,
         accepted: {
           captureKey: request.captureKey,
+          clientEpoch: request.clientEpoch,
           requestId: request.requestId,
           issued: request.issued,
           geometry: copyGeometry(request.geometry),

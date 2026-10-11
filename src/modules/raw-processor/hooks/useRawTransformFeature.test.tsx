@@ -315,7 +315,7 @@ function useSessionHarness({
     } as unknown as UseRawWorkflowReturn,
     cpu,
   )
-  return { feature, geometry }
+  return { feature, geometry, transform }
 }
 
 function renderSession(initial: SessionInput = {}) {
@@ -1497,6 +1497,75 @@ describe('rAW Transform feature', () => {
     answer(c)
     expect(commits).toHaveBeenCalledTimes(2)
     expect(commits).toHaveBeenLastCalledWith('one', geometryOf(c))
+    expect(hook.result.current.feature.exportBlock).toBeNull()
+    hook.unmount()
+  })
+
+  it('names its captures and requests after its client lifetime, and lets no other lifetime move the geometry', async () => {
+    const hook = renderSession()
+    await captureNeutral(hook)
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 3,
+      }),
+    )
+    const a = lastRender()
+    answer(a)
+    expect(commits).toHaveBeenCalledOnce()
+    const answered = hook.result.current.transform!.state!
+    const epoch = answered.capture!.clientEpoch
+    expect(answered.request?.clientEpoch).toBe(epoch)
+    expect(answered.accepted?.clientEpoch).toBe(epoch)
+
+    act(() =>
+      hook.result.current.feature.setManual({
+        ...NEUTRAL_TRANSFORM,
+        rotate: 6,
+      }),
+    )
+    const b = lastRender()
+    const { capture, request } = hook.result.current.transform!.state!
+    expect(request?.requestId).toBe(b.requestId)
+    // Another client numbers its frames and requests alike: every event below
+    // repeats the current source, capture and request but for its lifetime.
+    const other = {
+      sourceId: 'one',
+      captureKey: capture!.key,
+      clientEpoch: epoch + 1,
+    }
+    const { dispatch } = hook.result.current.transform!
+    act(() => {
+      dispatch({
+        type: 'rendered',
+        ...other,
+        requestId: b.requestId,
+        geometry: geometryOf(b),
+        frame: { width: 80, height: 60 },
+      })
+      dispatch({
+        type: 'render-failed',
+        ...other,
+        requestId: b.requestId,
+        failure: 'transform',
+      })
+      dispatch({ type: 'capture-failed', ...other })
+      dispatch({
+        type: 'request',
+        ...other,
+        requestId: b.requestId + 1,
+        geometry: geometryOf(a),
+      })
+    })
+    expect(hook.result.current.transform!.state!.request).toBe(request)
+    expect(hook.result.current.feature.exportBlock).toBe('pending')
+    expect(hook.result.current.geometry).toEqual(geometryOf(a))
+    expect(commits).toHaveBeenCalledOnce()
+
+    // The client that holds the frame still answers it.
+    answer(b)
+    expect(commits).toHaveBeenCalledTimes(2)
+    expect(commits).toHaveBeenLastCalledWith('one', geometryOf(b))
     expect(hook.result.current.feature.exportBlock).toBeNull()
     hook.unmount()
   })

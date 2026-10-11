@@ -230,12 +230,20 @@ describe('useRawPreviewTransform', () => {
     const sourceId = state!.sourceId
     const issued = state!.accepted!.issued
     // A new frame, its request and the worker's answer, each on its own.
-    act(() => dispatch({ type: 'capture', sourceId, captureKey: 'frame-2' }))
+    act(() =>
+      dispatch({
+        type: 'capture',
+        sourceId,
+        captureKey: 'frame-2',
+        clientEpoch: 1,
+      }),
+    )
     act(() =>
       dispatch({
         type: 'request',
         sourceId,
         captureKey: 'frame-2',
+        clientEpoch: 1,
         requestId: 500,
         geometry: SAMPLE_GEOMETRY,
       }),
@@ -245,6 +253,7 @@ describe('useRawPreviewTransform', () => {
         type: 'rendered',
         sourceId,
         captureKey: 'frame-2',
+        clientEpoch: 1,
         requestId: 500,
         geometry: SAMPLE_GEOMETRY,
         frame: { width: 800, height: 600 },
@@ -314,12 +323,20 @@ describe('useRawPreviewTransform', () => {
 
     // A request on a neutral intent asks for nothing, and resetting a neutral
     // Transform that a request is still out for changes no intent.
-    act(() => dispatch({ type: 'capture', sourceId, captureKey: 'frame-n' }))
+    act(() =>
+      dispatch({
+        type: 'capture',
+        sourceId,
+        captureKey: 'frame-n',
+        clientEpoch: 1,
+      }),
+    )
     act(() =>
       dispatch({
         type: 'request',
         sourceId,
         captureKey: 'frame-n',
+        clientEpoch: 1,
         requestId: 700,
         geometry: SAMPLE_GEOMETRY,
       }),
@@ -354,6 +371,7 @@ describe('useRawPreviewTransform', () => {
         type: 'request',
         sourceId,
         captureKey,
+        clientEpoch: 1,
         requestId: state!.request!.requestId + 1,
         geometry: OTHER_GEOMETRY,
       })
@@ -373,6 +391,7 @@ describe('useRawPreviewTransform', () => {
         type: 'rendered',
         sourceId,
         captureKey,
+        clientEpoch: 1,
         requestId: state!.request!.requestId,
         geometry: SAMPLE_GEOMETRY,
         frame: { width: 800, height: 600 },
@@ -504,11 +523,17 @@ describe('useRawPreviewTransform', () => {
       const versionAfterAccept = harness.exportGraphVersionRef.current
 
       act(() => {
-        dispatch({ type: 'capture', sourceId, captureKey: 'frame-2' })
+        dispatch({
+          type: 'capture',
+          sourceId,
+          captureKey: 'frame-2',
+          clientEpoch: 1,
+        })
         dispatch({
           type: 'request',
           sourceId,
           captureKey: 'frame-2',
+          clientEpoch: 1,
           requestId: 900,
           geometry: OTHER_GEOMETRY,
         })
@@ -521,6 +546,7 @@ describe('useRawPreviewTransform', () => {
           type: 'rendered',
           sourceId,
           captureKey: 'frame-2',
+          clientEpoch: 1,
           requestId: 900,
           geometry: OTHER_GEOMETRY,
           frame: { width: 800, height: 600 },
@@ -596,7 +622,12 @@ describe('useRawPreviewTransform', () => {
           sourceId,
           intent: { manual: { ...state!.intent.manual } },
         })
-        dispatch({ type: 'capture', sourceId, captureKey: state!.capture!.key })
+        dispatch({
+          type: 'capture',
+          sourceId,
+          captureKey: state!.capture!.key,
+          clientEpoch: 1,
+        })
         expect(harness.getSession()).toBe(delivered)
       })
 
@@ -644,7 +675,12 @@ describe('useRawPreviewTransform', () => {
       act(() => {
         harness.result.current.setSession(replacement)
         // Late acknowledgements and edits still addressed to the old source.
-        dispatch({ type: 'capture', sourceId, captureKey: 'late-frame' })
+        dispatch({
+          type: 'capture',
+          sourceId,
+          captureKey: 'late-frame',
+          clientEpoch: 1,
+        })
         dispatch({ type: 'reset', sourceId })
         expect(harness.getSession()).toBe(replacement)
       })

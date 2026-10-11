@@ -71,9 +71,14 @@ export function useRawTransformFeature(
   const lastSource = useRef<string | null>(null)
   // The capture the preview holds; null asks the next pass to capture again.
   const lastCapture = useRef<Omit<CapturedFrame, 'sourceId'> | null>(null)
-  // The source and inputs of the frame handed to the preview. Every request
-  // posted on that frame, and every answer to one, is named after it.
-  const loadedFrame = useRef<{ sourceId: string; key: string } | null>(null)
+  // The source and inputs of the frame handed to the preview, and the client
+  // lifetime it was handed to. Every request posted on that frame, and every
+  // answer to one, is named after it.
+  const loadedFrame = useRef<{
+    sourceId: string
+    key: string
+    clientEpoch: number
+  } | null>(null)
   // The frame a capture loaded, until its analysis lands. Matching the frame
   // tells that analysis apart from the one it replaces.
   const analysing = useRef<PreviewSource | null>(null)
@@ -87,6 +92,7 @@ export function useRawTransformFeature(
           type: 'request',
           sourceId: frame.sourceId,
           captureKey: frame.key,
+          clientEpoch: frame.clientEpoch,
           requestId: request.requestId,
           geometry: geometryOf(request),
         })
@@ -98,6 +104,7 @@ export function useRawTransformFeature(
           type: 'rendered',
           sourceId: frame.sourceId,
           captureKey: frame.key,
+          clientEpoch: frame.clientEpoch,
           requestId: request.requestId,
           geometry: geometryOf(request),
           frame: size,
@@ -110,6 +117,7 @@ export function useRawTransformFeature(
           type: 'render-failed',
           sourceId: frame.sourceId,
           captureKey: frame.key,
+          clientEpoch: frame.clientEpoch,
           requestId: request.requestId,
           failure,
         })
@@ -121,12 +129,15 @@ export function useRawTransformFeature(
           type: 'capture-failed',
           sourceId: frame.sourceId,
           captureKey: frame.key,
+          clientEpoch: frame.clientEpoch,
         })
       },
     }),
     [dispatch],
   )
-  const preview = useTransformPreview(intent, observer)
+  // The client lifetime names every capture and request of this preview; the
+  // tool surfaces read only what the preview shows.
+  const { clientEpoch, ...preview } = useTransformPreview(intent, observer)
   const {
     loadSource,
     clearSource,
@@ -202,25 +213,30 @@ export function useRawTransformFeature(
     if (previewError && previewError !== 'transform') lastCapture.current = null
   }, [previewError])
 
-  // An answer counts only on a frame read with the inputs the photo has now,
-  // so a Transform the controls ask for is pending from the moment they move
-  // on. An export releases the preview, so its inputs move on with no
-  // capture to follow them; the answers given before the export still stand.
-  const sessionCaptureKey = transformState?.capture?.key ?? null
+  // An answer counts only on a frame read with the inputs the photo has now
+  // and held by this preview's client, so a Transform the controls ask for is
+  // pending from the moment they move on. An export releases the preview, so
+  // its inputs move on with no capture to follow them; the answers given
+  // before the export still stand.
+  const sessionCapture = transformState?.capture ?? null
+  const sessionCaptureKey = sessionCapture?.key ?? null
+  const sessionCaptureEpoch = sessionCapture?.clientEpoch ?? null
   useEffect(() => {
     if (!sourceId || !intended || previewSuspended) return
-    if (sessionCaptureKey === key) return
-    dispatch({ type: 'capture', sourceId, captureKey: key })
+    if (sessionCaptureKey === key && sessionCaptureEpoch === clientEpoch) return
+    dispatch({ type: 'capture', sourceId, captureKey: key, clientEpoch })
     // The loaded frame already shows these inputs, so no capture follows it:
     // that frame is asked again.
     const frame = loadedFrame.current
     if (frame?.sourceId === sourceId && frame.key === key) requestRender()
   }, [
+    clientEpoch,
     dispatch,
     intended,
     key,
     previewSuspended,
     requestRender,
+    sessionCaptureEpoch,
     sessionCaptureKey,
     sourceId,
   ])
@@ -240,7 +256,7 @@ export function useRawTransformFeature(
     setCaptureError(false)
     // The frame this reads back replaces the one earlier answers were given
     // on, from now on.
-    dispatch({ type: 'capture', sourceId, captureKey: key })
+    dispatch({ type: 'capture', sourceId, captureKey: key, clientEpoch })
     const timer = setTimeout(() => {
       void captureTransformSource({
         width: image.width,
@@ -253,7 +269,7 @@ export function useRawTransformFeature(
           if (generation.current !== token || lastSource.current !== sourceId)
             return
           lastCapture.current = { decodedKey, key }
-          loadedFrame.current = { sourceId, key }
+          loadedFrame.current = { sourceId, key, clientEpoch }
           setCaptured({ sourceId, decodedKey, key })
           analysing.current = source
           loadSource(source, { preserveTransform: true })
@@ -264,7 +280,12 @@ export function useRawTransformFeature(
           // input has to try again rather than trust it.
           lastCapture.current = null
           setCaptureError(true)
-          dispatch({ type: 'capture-failed', sourceId, captureKey: key })
+          dispatch({
+            type: 'capture-failed',
+            sourceId,
+            captureKey: key,
+            clientEpoch,
+          })
         })
         .finally(() => {
           if (generation.current === token) setCapturing(false)
@@ -276,6 +297,7 @@ export function useRawTransformFeature(
     }
   }, [
     available,
+    clientEpoch,
     colorNeeded,
     cpuFrame,
     decodedKey,

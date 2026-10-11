@@ -4348,13 +4348,19 @@ describe('useRawWorkflow embedded preview state', () => {
       )
 
       act(() => {
-        dispatch({ type: 'capture', sourceId, captureKey: 'frame-a' })
+        dispatch({
+          type: 'capture',
+          sourceId,
+          captureKey: 'frame-a',
+          clientEpoch: 1,
+        })
       })
       act(() => {
         dispatch({
           type: 'request',
           sourceId,
           captureKey: 'frame-a',
+          clientEpoch: 1,
           requestId: 1,
           geometry: SAMPLE_GEOMETRY,
         })
@@ -4369,6 +4375,7 @@ describe('useRawWorkflow embedded preview state', () => {
           type: 'render-failed',
           sourceId,
           captureKey: 'frame-a',
+          clientEpoch: 1,
           requestId: 1,
           failure: 'transform',
         })
@@ -4379,10 +4386,20 @@ describe('useRawWorkflow embedded preview state', () => {
       )
 
       act(() => {
-        dispatch({ type: 'capture', sourceId, captureKey: 'frame-b' })
+        dispatch({
+          type: 'capture',
+          sourceId,
+          captureKey: 'frame-b',
+          clientEpoch: 1,
+        })
       })
       act(() => {
-        dispatch({ type: 'capture-failed', sourceId, captureKey: 'frame-b' })
+        dispatch({
+          type: 'capture-failed',
+          sourceId,
+          captureKey: 'frame-b',
+          clientEpoch: 1,
+        })
       })
       expect(deriveTransformStatus(liveTransform())).toBe('unavailable')
       await expectBothRefused(
@@ -4441,6 +4458,7 @@ describe('useRawWorkflow embedded preview state', () => {
           type: 'request',
           sourceId,
           captureKey,
+          clientEpoch: 1,
           requestId: 900,
           geometry: OTHER_GEOMETRY,
         }),
@@ -4453,6 +4471,7 @@ describe('useRawWorkflow embedded preview state', () => {
           type: 'rendered',
           sourceId,
           captureKey,
+          clientEpoch: 1,
           requestId: 900,
           geometry: OTHER_GEOMETRY,
           frame: FRAME,
@@ -4517,6 +4536,7 @@ describe('useRawWorkflow embedded preview state', () => {
           type: 'request',
           sourceId,
           captureKey,
+          clientEpoch: 1,
           requestId: 901,
           geometry: SAMPLE_GEOMETRY,
         }),
@@ -4526,6 +4546,7 @@ describe('useRawWorkflow embedded preview state', () => {
           type: 'rendered',
           sourceId,
           captureKey,
+          clientEpoch: 1,
           requestId: 901,
           geometry: SAMPLE_GEOMETRY,
           frame: FRAME,
@@ -4591,12 +4612,20 @@ describe('useRawWorkflow embedded preview state', () => {
       // A neutral Transform asks for nothing: a reset, a new frame and a
       // request on it leave the delivered export where it is.
       act(() => dispatch({ type: 'reset', sourceId }))
-      act(() => dispatch({ type: 'capture', sourceId, captureKey: 'frame-n' }))
+      act(() =>
+        dispatch({
+          type: 'capture',
+          sourceId,
+          captureKey: 'frame-n',
+          clientEpoch: 1,
+        }),
+      )
       act(() =>
         dispatch({
           type: 'request',
           sourceId,
           captureKey: 'frame-n',
+          clientEpoch: 1,
           requestId: 950,
           geometry: SAMPLE_GEOMETRY,
         }),
@@ -4626,12 +4655,20 @@ describe('useRawWorkflow embedded preview state', () => {
 
       // A new frame answers the same geometry again: the request and the
       // worker's answer arrive separately and neither discards the export.
-      act(() => dispatch({ type: 'capture', sourceId, captureKey: 'frame-r' }))
+      act(() =>
+        dispatch({
+          type: 'capture',
+          sourceId,
+          captureKey: 'frame-r',
+          clientEpoch: 1,
+        }),
+      )
       act(() =>
         dispatch({
           type: 'request',
           sourceId,
           captureKey: 'frame-r',
+          clientEpoch: 1,
           requestId: 951,
           geometry: SAMPLE_GEOMETRY,
         }),
@@ -4641,6 +4678,7 @@ describe('useRawWorkflow embedded preview state', () => {
           type: 'rendered',
           sourceId,
           captureKey: 'frame-r',
+          clientEpoch: 1,
           requestId: 951,
           geometry: SAMPLE_GEOMETRY,
           frame: FRAME,
@@ -4735,7 +4773,12 @@ describe('useRawWorkflow embedded preview state', () => {
         // The attempt started and samples the device; the preview reads a
         // new frame meanwhile, with no edit.
         expect(toastMock.dismiss).toHaveBeenCalled()
-        dispatch({ type: 'capture', sourceId, captureKey: 'frame-planning' })
+        dispatch({
+          type: 'capture',
+          sourceId,
+          captureKey: 'frame-planning',
+          clientEpoch: 1,
+        })
         await exporting
       })
       await flushScheduledToasts()
@@ -4782,6 +4825,7 @@ describe('useRawWorkflow embedded preview state', () => {
           type: 'capture-failed',
           sourceId,
           captureKey: liveTransform().capture!.key,
+          clientEpoch: 1,
         }),
       )
       expect(liveTransform().intent).toBe(intent)
@@ -4830,7 +4874,12 @@ describe('useRawWorkflow embedded preview state', () => {
       // The session keeps the delivered JPEG through a new frame, so its
       // manifest still lands on it.
       act(() =>
-        dispatch({ type: 'capture', sourceId, captureKey: 'frame-sealing' }),
+        dispatch({
+          type: 'capture',
+          sourceId,
+          captureKey: 'frame-sealing',
+          clientEpoch: 1,
+        }),
       )
       expect(deriveTransformStatus(liveTransform())).toBe('pending')
       act(() => job.seal())
@@ -4874,7 +4923,12 @@ describe('useRawWorkflow embedded preview state', () => {
       toastMock.error.mockClear()
       await act(async () => {
         const exporting = result.current.exportImage()
-        dispatch({ type: 'capture', sourceId, captureKey: 'frame-again' })
+        dispatch({
+          type: 'capture',
+          sourceId,
+          captureKey: 'frame-again',
+          clientEpoch: 1,
+        })
         await exporting
       })
       await flushScheduledToasts()
@@ -4904,6 +4958,7 @@ describe('useRawWorkflow embedded preview state', () => {
           type: 'request',
           sourceId,
           captureKey: 'frame-again',
+          clientEpoch: 1,
           requestId: 991,
           geometry: SAMPLE_GEOMETRY,
         }),
@@ -4913,6 +4968,7 @@ describe('useRawWorkflow embedded preview state', () => {
           type: 'rendered',
           sourceId,
           captureKey: 'frame-again',
+          clientEpoch: 1,
           requestId: 991,
           geometry: SAMPLE_GEOMETRY,
           frame: FRAME,
@@ -4937,12 +4993,15 @@ describe('useRawWorkflow embedded preview state', () => {
       const { dispatch, state } = transformPort(result)
       const sourceId = state!.sourceId
       function requestOnNeutral(captureKey: string, requestId: number) {
-        act(() => dispatch({ type: 'capture', sourceId, captureKey }))
+        act(() =>
+          dispatch({ type: 'capture', sourceId, captureKey, clientEpoch: 1 }),
+        )
         act(() =>
           dispatch({
             type: 'request',
             sourceId,
             captureKey,
+            clientEpoch: 1,
             requestId,
             geometry: SAMPLE_GEOMETRY,
           }),

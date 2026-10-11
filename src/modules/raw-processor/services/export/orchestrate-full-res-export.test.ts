@@ -361,12 +361,20 @@ function answerTransform(
   const captureKey = `frame-${requestId}`
   const { sourceId } = state
   const events: TransformEvent[] = [
-    { type: 'capture', sourceId, captureKey },
-    { type: 'request', sourceId, captureKey, requestId, geometry },
+    { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
+    {
+      type: 'request',
+      sourceId,
+      captureKey,
+      clientEpoch: 1,
+      requestId,
+      geometry,
+    },
     {
       type: 'rendered',
       sourceId,
       captureKey,
+      clientEpoch: 1,
       requestId,
       geometry,
       frame: { width: 1500, height: 1000 },
@@ -382,14 +390,22 @@ function transformAt(status: TransformStatus, sourceId = 'session-1') {
   if (status === 'accepted') return answerTransform(editTransform(neutral, 2))
   const requestId = ++transformRequests
   const captureKey = `frame-${requestId}`
-  const events: TransformEvent[] = [{ type: 'capture', sourceId, captureKey }]
+  const events: TransformEvent[] = [
+    { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
+  ]
   if (status === 'unavailable') {
-    events.push({ type: 'capture-failed', sourceId, captureKey })
+    events.push({
+      type: 'capture-failed',
+      sourceId,
+      captureKey,
+      clientEpoch: 1,
+    })
   } else {
     events.push({
       type: 'request',
       sourceId,
       captureKey,
+      clientEpoch: 1,
       requestId,
       geometry: TRANSFORM_GEOMETRY,
     })
@@ -398,6 +414,7 @@ function transformAt(status: TransformStatus, sourceId = 'session-1') {
         type: 'render-failed',
         sourceId,
         captureKey,
+        clientEpoch: 1,
         requestId,
         failure: 'transform',
       })
@@ -443,15 +460,23 @@ function recaptureTransform(
   const requestId = ++transformRequests
   const captureKey = `frame-${requestId}`
   const { sourceId } = state
-  const events: TransformEvent[] = [{ type: 'capture', sourceId, captureKey }]
+  const events: TransformEvent[] = [
+    { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
+  ]
   if (status === 'unavailable') {
-    events.push({ type: 'capture-failed', sourceId, captureKey })
+    events.push({
+      type: 'capture-failed',
+      sourceId,
+      captureKey,
+      clientEpoch: 1,
+    })
   } else if (status === 'invalid') {
     events.push(
       {
         type: 'request',
         sourceId,
         captureKey,
+        clientEpoch: 1,
         requestId,
         geometry: TRANSFORM_GEOMETRY,
       },
@@ -459,6 +484,7 @@ function recaptureTransform(
         type: 'render-failed',
         sourceId,
         captureKey,
+        clientEpoch: 1,
         requestId,
         failure: 'transform',
       },

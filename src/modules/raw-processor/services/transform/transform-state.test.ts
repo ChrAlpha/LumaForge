@@ -15,34 +15,27 @@ const SOURCE = 'session-a'
 const OTHER_SOURCE = 'session-b'
 const FRAME = { width: 600, height: 400 }
 
-const ROTATED: ExportGeometry = {
-  matrix: [
-    Math.cos(0.05),
-    -Math.sin(0.05),
-    0,
-    Math.sin(0.05),
-    Math.cos(0.05),
-    0,
-    0,
-    0,
-    1,
-  ],
-  constrainCrop: true,
+/** A rotation by `radians`, constrained to the crop. */
+function rotation(radians: number): ExportGeometry {
+  return {
+    matrix: [
+      Math.cos(radians),
+      -Math.sin(radians),
+      0,
+      Math.sin(radians),
+      Math.cos(radians),
+      0,
+      0,
+      0,
+      1,
+    ],
+    constrainCrop: true,
+  }
 }
-const ROTATED_FURTHER: ExportGeometry = {
-  matrix: [
-    Math.cos(0.1),
-    -Math.sin(0.1),
-    0,
-    Math.sin(0.1),
-    Math.cos(0.1),
-    0,
-    0,
-    0,
-    1,
-  ],
-  constrainCrop: true,
-}
+// The geometries `rotate(3)`, `rotate(6)` and `rotate(9)` ask for.
+const ROTATED = rotation(0.05)
+const ROTATED_FURTHER = rotation(0.1)
+const ROTATED_MOST = rotation(0.15)
 // The projective horizon crosses the unit square, so the export engine
 // refuses to plan it whatever the frame size.
 const FOLDED: ExportGeometry = {
@@ -69,20 +62,41 @@ const rotate = (degrees: number): TransformEvent => ({
     },
   },
 })
-const capture = (captureKey: string, sourceId = SOURCE): TransformEvent => ({
+// The lifetime of the client the events come from. A client numbers its
+// sources and requests from scratch, so two clients post the same local ids.
+const CLIENT = 1
+const NEXT_CLIENT = 2
+
+type From = { sourceId?: string; clientEpoch?: number }
+
+const capture = (
+  captureKey: string,
+  { sourceId = SOURCE, clientEpoch = CLIENT }: From = {},
+): TransformEvent => ({
   type: 'capture',
   sourceId,
   captureKey,
+  clientEpoch,
+})
+const captureFailed = (
+  captureKey: string,
+  { sourceId = SOURCE, clientEpoch = CLIENT }: From = {},
+): TransformEvent => ({
+  type: 'capture-failed',
+  sourceId,
+  captureKey,
+  clientEpoch,
 })
 const request = (
   captureKey: string,
   requestId: number,
   geometry: ExportGeometry = ROTATED,
-  sourceId = SOURCE,
+  { sourceId = SOURCE, clientEpoch = CLIENT }: From = {},
 ): TransformEvent => ({
   type: 'request',
   sourceId,
   captureKey,
+  clientEpoch,
   requestId,
   geometry,
 })
@@ -90,14 +104,28 @@ const rendered = (
   captureKey: string,
   requestId: number,
   geometry: ExportGeometry = ROTATED,
-  sourceId = SOURCE,
+  { sourceId = SOURCE, clientEpoch = CLIENT }: From = {},
 ): TransformEvent => ({
   type: 'rendered',
   sourceId,
   captureKey,
+  clientEpoch,
   requestId,
   geometry,
   frame: FRAME,
+})
+const renderFailed = (
+  captureKey: string,
+  requestId: number,
+  failure: 'transform' | 'processing' = 'transform',
+  { sourceId = SOURCE, clientEpoch = CLIENT }: From = {},
+): TransformEvent => ({
+  type: 'render-failed',
+  sourceId,
+  captureKey,
+  clientEpoch,
+  requestId,
+  failure,
 })
 
 /** A Transform answered and accepted on capture `k1` by request 1. */
@@ -177,6 +205,7 @@ describe('reduceTransformState', () => {
     expect(deriveTransformStatus(state)).toBe('accepted')
     expect(state.accepted).toEqual({
       captureKey: 'k1',
+      clientEpoch: CLIENT,
       requestId: 1,
       issued: 1,
       geometry: ROTATED,
@@ -212,8 +241,15 @@ describe('reduceTransformState', () => {
     run(accepted(), rotate(6), request('k1', 2, ROTATED_FURTHER))
 
   it.each<[string, TransformEvent]>([
-    ['another source', rendered('k1', 2, ROTATED_FURTHER, OTHER_SOURCE)],
+    [
+      'another source',
+      rendered('k1', 2, ROTATED_FURTHER, { sourceId: OTHER_SOURCE }),
+    ],
     ['another capture', rendered('k0', 2, ROTATED_FURTHER)],
+    [
+      'another client lifetime',
+      rendered('k1', 2, ROTATED_FURTHER, { clientEpoch: NEXT_CLIENT }),
+    ],
     ['an older request', rendered('k1', 1, ROTATED)],
     ['a request never posted', rendered('k1', 3, ROTATED_FURTHER)],
     ['another geometry for the newest request', rendered('k1', 2, ROTATED)],
@@ -224,6 +260,7 @@ describe('reduceTransformState', () => {
     expect(after).toBe(before)
     expect(after.accepted).toEqual({
       captureKey: 'k1',
+      clientEpoch: CLIENT,
       requestId: 1,
       issued: 1,
       geometry: ROTATED,
@@ -234,34 +271,27 @@ describe('reduceTransformState', () => {
   it.each<[string, TransformEvent]>([
     [
       'another source',
-      {
-        type: 'render-failed',
-        sourceId: OTHER_SOURCE,
-        captureKey: 'k1',
-        requestId: 2,
-        failure: 'transform',
-      },
+      renderFailed('k1', 2, 'transform', { sourceId: OTHER_SOURCE }),
+    ],
+    ['an older request', renderFailed('k1', 1)],
+    [
+      'another client lifetime failing',
+      renderFailed('k1', 2, 'transform', { clientEpoch: NEXT_CLIENT }),
+    ],
+    ['another capture', captureFailed('k0')],
+    [
+      'another client lifetime failing the capture',
+      captureFailed('k1', { clientEpoch: NEXT_CLIENT }),
+    ],
+    ['another source capturing', capture('k2', { sourceId: OTHER_SOURCE })],
+    [
+      'another source requesting',
+      request('k1', 3, ROTATED_MOST, { sourceId: OTHER_SOURCE }),
     ],
     [
-      'an older request',
-      {
-        type: 'render-failed',
-        sourceId: SOURCE,
-        captureKey: 'k1',
-        requestId: 1,
-        failure: 'transform',
-      },
+      'another client lifetime requesting',
+      request('k1', 3, ROTATED_MOST, { clientEpoch: NEXT_CLIENT }),
     ],
-    [
-      'another capture',
-      {
-        type: 'capture-failed',
-        sourceId: SOURCE,
-        captureKey: 'k0',
-      },
-    ],
-    ['another source capturing', capture('k2', OTHER_SOURCE)],
-    ['another source requesting', request('k1', 3, ROTATED, OTHER_SOURCE)],
     ['a request on another capture', request('k0', 3)],
     ['a request older than the newest', request('k1', 2)],
     [
@@ -282,13 +312,12 @@ describe('reduceTransformState', () => {
     ] as const)(
       'reports %s and keeps the last valid geometry held',
       (_label, failure, status) => {
-        const state = run(accepted(), rotate(6), request('k1', 2), {
-          type: 'render-failed',
-          sourceId: SOURCE,
-          captureKey: 'k1',
-          requestId: 2,
-          failure,
-        })
+        const state = run(
+          accepted(),
+          rotate(6),
+          request('k1', 2, ROTATED_FURTHER),
+          renderFailed('k1', 2, failure),
+        )
 
         expect(deriveTransformStatus(state)).toBe(status)
         expect(state.accepted?.requestId).toBe(1)
@@ -312,23 +341,17 @@ describe('reduceTransformState', () => {
       const state = run(
         accepted(),
         rotate(6),
-        request('k1', 2),
-        {
-          type: 'render-failed',
-          sourceId: SOURCE,
-          captureKey: 'k1',
-          requestId: 2,
-          failure: 'transform',
-        },
+        request('k1', 2, ROTATED_FURTHER),
+        renderFailed('k1', 2),
         rotate(9),
-        request('k1', 3, ROTATED_FURTHER),
+        request('k1', 3, ROTATED_MOST),
       )
 
       expect(deriveTransformStatus(state)).toBe('pending')
 
-      const answered = run(state, rendered('k1', 3, ROTATED_FURTHER))
+      const answered = run(state, rendered('k1', 3, ROTATED_MOST))
       expect(deriveTransformStatus(answered)).toBe('accepted')
-      expect(heldTransformGeometry(answered)).toEqual(ROTATED_FURTHER)
+      expect(heldTransformGeometry(answered)).toEqual(ROTATED_MOST)
     })
   })
 
@@ -355,11 +378,7 @@ describe('reduceTransformState', () => {
     })
 
     it('reports a failed capture as unavailable until a new capture starts', () => {
-      const failed = run(accepted(), capture('k2'), {
-        type: 'capture-failed',
-        sourceId: SOURCE,
-        captureKey: 'k2',
-      })
+      const failed = run(accepted(), capture('k2'), captureFailed('k2'))
 
       expect(deriveTransformStatus(failed)).toBe('unavailable')
       expect(heldTransformGeometry(failed)).toEqual(ROTATED)
@@ -384,21 +403,19 @@ describe('reduceTransformState', () => {
       expect(state.accepted).toBeNull()
       expect(state.request).toBeNull()
       // The frame stays captured; a neutral Transform needs no render.
-      expect(state.capture).toEqual({ key: 'k1', failed: false })
+      expect(state.capture).toEqual({
+        key: 'k1',
+        clientEpoch: CLIENT,
+        failed: false,
+      })
     })
 
     it('retires the failure the reset geometry raised', () => {
       const state = run(
         accepted(),
         rotate(6),
-        request('k1', 2),
-        {
-          type: 'render-failed',
-          sourceId: SOURCE,
-          captureKey: 'k1',
-          requestId: 2,
-          failure: 'transform',
-        },
+        request('k1', 2, ROTATED_FURTHER),
+        renderFailed('k1', 2),
         { type: 'reset', sourceId: SOURCE },
       )
 
@@ -483,9 +500,9 @@ describe('reduceTransformState', () => {
   })
 
   describe('request fence across a withdrawn request', () => {
-    // Request ids are numbered by the client that posts them, and a new
-    // client starts its numbering again, so an id alone does not name a
-    // request once the one it was compared with is withdrawn.
+    // A request id alone does not name a request once the one it was
+    // compared with is withdrawn; each taken request also gets an `issued`
+    // number no other request of this source holds.
     it('does not take an earlier acceptance for a new request reusing its id', () => {
       const state = run(
         accepted(),
@@ -513,25 +530,123 @@ describe('reduceTransformState', () => {
       expect(deriveTransformStatus(answeredThird)).toBe('accepted')
 
       // Back on capture k1, a client numbering from scratch asks 2, then 3.
+      const next = { clientEpoch: NEXT_CLIENT }
       const asked = run(
         answeredThird,
         capture('k2'),
-        capture('k1'),
+        capture('k1', next),
         rotate(6),
-        request('k1', 2, ROTATED_FURTHER),
+        request('k1', 2, ROTATED_FURTHER, next),
       )
       expect(deriveTransformStatus(asked)).toBe('pending')
 
-      const state = run(asked, rotate(9), request('k1', 3, ROTATED_FURTHER))
+      const state = run(asked, rotate(9), request('k1', 3, ROTATED_MOST, next))
       expect(deriveTransformStatus(state)).toBe('pending')
       expect(heldTransformGeometry(state)).toEqual(ROTATED)
-      // The answer to the replaced request 3 commits nothing.
+      // The answers to the earlier client's request 3 and to the withdrawn
+      // request 2 commit nothing.
       expect(reduceTransformState(state, rendered('k1', 3))).toBe(state)
+      expect(
+        reduceTransformState(state, rendered('k1', 3, ROTATED, next)),
+      ).toBe(state)
+      expect(
+        reduceTransformState(state, rendered('k1', 2, ROTATED_FURTHER, next)),
+      ).toBe(state)
 
-      const answered = run(state, rendered('k1', 3, ROTATED_FURTHER))
+      const answered = run(state, rendered('k1', 3, ROTATED_MOST, next))
       expect(deriveTransformStatus(answered)).toBe('accepted')
-      expect(heldTransformGeometry(answered)).toEqual(ROTATED_FURTHER)
+      expect(heldTransformGeometry(answered)).toEqual(ROTATED_MOST)
     })
+  })
+
+  describe('client lifetime fence', () => {
+    // Two clients number their requests alike: each event below repeats a
+    // source, capture, request and geometry of the other client, and only
+    // the client lifetime tells them apart.
+    const old = { clientEpoch: CLIENT }
+    const next = { clientEpoch: NEXT_CLIENT }
+
+    /** Client 1 answered request 1 on k1; client 2 now holds k1. */
+    const handedOver = () => run(accepted(), capture('k1', next))
+
+    it('starts a new capture when another client holds the same frame', () => {
+      const before = accepted()
+      const state = handedOver()
+
+      expect(state).not.toBe(before)
+      expect(state.capture).toEqual({
+        key: 'k1',
+        clientEpoch: NEXT_CLIENT,
+        failed: false,
+      })
+      expect(state.request).toBeNull()
+      expect(deriveTransformStatus(state)).toBe('pending')
+      expect(heldTransformGeometry(state)).toEqual(ROTATED)
+      expect(reduceTransformState(state, capture('k1', next))).toBe(state)
+    })
+
+    it('takes no request from the earlier client on the frame it handed over', () => {
+      const before = handedOver()
+
+      expect(reduceTransformState(before, request('k1', 1, ROTATED, old))).toBe(
+        before,
+      )
+    })
+
+    it.each<[string, TransformEvent]>([
+      ['later request', request('k1', 2, ROTATED_FURTHER, old)],
+      ['acknowledgement', rendered('k1', 1, ROTATED, old)],
+      ['render failure', renderFailed('k1', 1, 'transform', old)],
+      ['processing failure', renderFailed('k1', 1, 'processing', old)],
+      ['capture failure', captureFailed('k1', old)],
+    ])(
+      "ignores the earlier client's %s beside the current request 1",
+      (_label, event) => {
+        const before = run(handedOver(), request('k1', 1, ROTATED, next))
+        const after = reduceTransformState(before, event)
+
+        expect(after).toBe(before)
+        expect(after.request?.clientEpoch).toBe(NEXT_CLIENT)
+        expect(deriveTransformStatus(after)).toBe('pending')
+      },
+    )
+
+    it("takes only the current client's answer to the repeated request", () => {
+      const asked = run(handedOver(), request('k1', 1, ROTATED, next))
+      const answered = run(asked, rendered('k1', 1, ROTATED, next))
+
+      expect(deriveTransformStatus(answered)).toBe('accepted')
+      expect(answered.accepted).toEqual({
+        captureKey: 'k1',
+        clientEpoch: NEXT_CLIENT,
+        requestId: 1,
+        issued: 2,
+        geometry: ROTATED,
+      })
+    })
+
+    it.each<[string, TransformEvent]>([
+      ['success', rendered('k1', 1, ROTATED_FURTHER, old)],
+      ['refusal', renderFailed('k1', 1, 'transform', old)],
+      ['processing failure', renderFailed('k1', 1, 'processing', old)],
+      ['capture failure', captureFailed('k1', old)],
+    ])(
+      "keeps the current accepted geometry against the earlier client's %s",
+      (_label, event) => {
+        const current = run(
+          handedOver(),
+          rotate(6),
+          request('k1', 1, ROTATED_FURTHER, next),
+          rendered('k1', 1, ROTATED_FURTHER, next),
+        )
+        expect(deriveTransformStatus(current)).toBe('accepted')
+
+        const after = reduceTransformState(current, event)
+        expect(after).toBe(current)
+        expect(deriveTransformStatus(after)).toBe('accepted')
+        expect(heldTransformGeometry(after)).toEqual(ROTATED_FURTHER)
+      },
+    )
   })
 
   it('copies the geometry it stores', () => {

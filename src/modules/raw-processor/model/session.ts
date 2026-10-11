@@ -127,15 +127,22 @@ export type TransformIntent = {
 /**
  * The Transform of one source: the intent the controls set, and the answers
  * the preview gave for it. A capture is one frame of the photo, named by the
- * inputs it was read back with; a request is one render asked of that frame.
- * Only a render answering the newest request on the current capture is ever
- * accepted, so the accepted geometry always names the frame and request that
- * produced it. Overlay visibility and the worker are not part of it.
+ * inputs it was read back with and by the lifetime of the Transform client
+ * it was handed to; a request is one render that client asked of that frame.
+ * Only a render answering the newest request on the current capture, from
+ * the client that holds it, is ever accepted, so the accepted geometry
+ * always names the frame, client and request that produced it. Overlay
+ * visibility and the worker are not part of it.
  */
 export type TransformState = {
   sourceId: string
   intent: TransformIntent
-  capture: { key: string; failed: boolean } | null
+  /**
+   * `clientEpoch` is the lifetime of the client that holds the frame. Every
+   * request on the capture, and every answer or failure for it, must come
+   * from that client.
+   */
+  capture: { key: string; clientEpoch: number; failed: boolean } | null
   /**
    * How many requests this state has taken. Request ids are numbered by the
    * client that posts them and start again with a new client, so each taken
@@ -146,6 +153,7 @@ export type TransformState = {
   /** The newest render asked of the current capture for this intent. */
   request: {
     captureKey: string
+    clientEpoch: number
     requestId: number
     issued: number
     geometry: ExportGeometry
@@ -159,6 +167,7 @@ export type TransformState = {
    */
   accepted: {
     captureKey: string
+    clientEpoch: number
     requestId: number
     issued: number
     geometry: ExportGeometry

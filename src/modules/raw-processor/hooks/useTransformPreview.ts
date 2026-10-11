@@ -238,6 +238,12 @@ export function useTransformPreview(
   const retireFailure = useCallback(() => setError(null), [])
 
   return {
+    /**
+     * The lifetime of the client this preview renders with. Its source and
+     * request ids number work within that client only, so everything named
+     * after a request also names this.
+     */
+    clientEpoch: client.epoch,
     source,
     analysis,
     result,

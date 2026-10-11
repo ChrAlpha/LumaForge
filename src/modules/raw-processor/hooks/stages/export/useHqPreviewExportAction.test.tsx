@@ -230,38 +230,44 @@ function transformAt(status: TransformStatus): TransformState {
     type: 'request',
     sourceId,
     captureKey,
+    clientEpoch: 1,
     requestId: 1,
     geometry: SAMPLE_GEOMETRY,
   }
   const events: Record<TransformStatus, TransformEvent[]> = {
     neutral: [],
-    pending: [{ type: 'capture', sourceId, captureKey }, request],
+    pending: [
+      { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
+      request,
+    ],
     accepted: [
-      { type: 'capture', sourceId, captureKey },
+      { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
       request,
       {
         type: 'rendered',
         sourceId,
         captureKey,
+        clientEpoch: 1,
         requestId: 1,
         geometry: SAMPLE_GEOMETRY,
         frame: { width: 800, height: 600 },
       },
     ],
     invalid: [
-      { type: 'capture', sourceId, captureKey },
+      { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
       request,
       {
         type: 'render-failed',
         sourceId,
         captureKey,
+        clientEpoch: 1,
         requestId: 1,
         failure: 'transform',
       },
     ],
     unavailable: [
-      { type: 'capture', sourceId, captureKey },
-      { type: 'capture-failed', sourceId, captureKey },
+      { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
+      { type: 'capture-failed', sourceId, captureKey, clientEpoch: 1 },
     ],
   }
   const neutral = createTransformState(sourceId)

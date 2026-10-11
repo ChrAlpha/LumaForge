@@ -109,11 +109,17 @@ function transformAt(
       manual: { ...createTransformState(sourceId).intent.manual, rotate: 2 },
     },
   }
-  const capture: TransformEvent = { type: 'capture', sourceId, captureKey: 'k' }
+  const capture: TransformEvent = {
+    type: 'capture',
+    sourceId,
+    captureKey: 'k',
+    clientEpoch: 1,
+  }
   const request: TransformEvent = {
     type: 'request',
     sourceId,
     captureKey: 'k',
+    clientEpoch: 1,
     requestId: 1,
     geometry,
   }
@@ -125,6 +131,7 @@ function transformAt(
       type: 'rendered',
       sourceId,
       captureKey: 'k',
+      clientEpoch: 1,
       requestId: 1,
       geometry,
       frame: { width: 800, height: 600 },
@@ -134,11 +141,17 @@ function transformAt(
       type: 'render-failed',
       sourceId,
       captureKey: 'k',
+      clientEpoch: 1,
       requestId: 1,
       failure: 'transform',
     })
   if (status === 'unavailable')
-    events.push({ type: 'capture-failed', sourceId, captureKey: 'k' })
+    events.push({
+      type: 'capture-failed',
+      sourceId,
+      captureKey: 'k',
+      clientEpoch: 1,
+    })
   const state = events.reduce(
     reduceTransformState,
     createTransformState(sourceId),

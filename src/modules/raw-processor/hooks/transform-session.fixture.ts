@@ -34,11 +34,12 @@ export function acceptTransformGeometry(
     sourceId,
     intent: { manual: { ...NEUTRAL_TRANSFORM, rotate: requestId } },
   })
-  port.dispatch({ type: 'capture', sourceId, captureKey })
+  port.dispatch({ type: 'capture', sourceId, captureKey, clientEpoch: 1 })
   port.dispatch({
     type: 'request',
     sourceId,
     captureKey,
+    clientEpoch: 1,
     requestId,
     geometry,
   })
@@ -46,6 +47,7 @@ export function acceptTransformGeometry(
     type: 'rendered',
     sourceId,
     captureKey,
+    clientEpoch: 1,
     requestId,
     geometry,
     frame,

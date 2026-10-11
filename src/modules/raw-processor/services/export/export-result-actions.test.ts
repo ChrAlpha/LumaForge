@@ -694,6 +694,7 @@ describe('export result actions', () => {
     function acceptedTransform(session: ImageSession) {
       const request = {
         captureKey: 'capture-1',
+        clientEpoch: 1,
         requestId: 1,
         issued: 1,
         geometry,
@@ -701,7 +702,7 @@ describe('export result actions', () => {
       return {
         sourceId: session.transform.sourceId,
         intent: { ...session.transform.intent, upright: 'auto' as const },
-        capture: { key: 'capture-1', failed: false },
+        capture: { key: 'capture-1', clientEpoch: 1, failed: false },
         issuedRequests: 1,
         request: { ...request, failure: null },
         accepted: request,
