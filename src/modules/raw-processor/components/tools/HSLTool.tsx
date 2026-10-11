@@ -1,4 +1,8 @@
-import type { HSLBandId, HSLBandShift } from '@lumaforge/luma-color-runtime'
+import type {
+  HSLBandId,
+  HSLBandShift,
+  NormalizedSelectiveColorBands,
+} from '@lumaforge/luma-color-runtime'
 import { makeNeutralBand } from '@lumaforge/luma-color-runtime'
 import { RotateCcw } from 'lucide-react'
 import { useState } from 'react'
@@ -29,8 +33,6 @@ import {
   hslSaturationTrack,
 } from './slider-tracks'
 
-export type HSLToolValue = Readonly<Record<HSLBandId, Readonly<HSLBandShift>>>
-
 const HSL_AXIS_RESET_KEY: Record<keyof HSLBandShift, Parameters<Translate>[0]> =
   {
     hue: 'raw.hsl.resetHue',
@@ -55,7 +57,7 @@ function formatSignedInteger(value: number) {
 }
 
 function isBandAxisNeutral(
-  value: HSLToolValue | undefined,
+  value: NormalizedSelectiveColorBands | undefined,
   axis: keyof HSLBandShift,
 ): boolean {
   if (!value) return true
@@ -164,7 +166,7 @@ export function HSLTool({
   onChange,
   onReset,
 }: {
-  value: HSLToolValue | undefined
+  value: NormalizedSelectiveColorBands | undefined
   disabled: boolean
   onChange: (band: HSLBandId, shift: Partial<HSLBandShift>) => void
   onReset: () => void

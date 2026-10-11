@@ -1,11 +1,14 @@
-import type { HSLBandId, HSLBandShift } from '@lumaforge/luma-color-runtime'
+import type {
+  HSLBandId,
+  HSLBandShift,
+  NormalizedSelectiveColorBands,
+} from '@lumaforge/luma-color-runtime'
 
 import { useI18n } from '~/lib/i18n'
 
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
 import { ColorTool } from './ColorTool'
-import type { HSLToolValue } from './HSLTool'
 import { HSLTool } from './HSLTool'
 import { ToneTool } from './ToneTool'
 
@@ -23,7 +26,7 @@ export function AdjustTool({
 }: {
   tone: ToneValue
   color: ColorValue
-  selectiveColor: HSLToolValue | undefined
+  selectiveColor: NormalizedSelectiveColorBands | undefined
   disabled: boolean
   onToneChange: (value: Partial<ToneValue>) => void
   onToneReset: () => void

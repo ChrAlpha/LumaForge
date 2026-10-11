@@ -1,6 +1,11 @@
-import type { LUTContractResolution } from '@lumaforge/luma-color-runtime'
+import type {
+  LUTContractResolution,
+  NormalizedSelectiveColorBands,
+} from '@lumaforge/luma-color-runtime'
 
 import type { Translate } from '~/lib/i18n'
+import type { ImageMetadata } from '~/lib/raw/decoder'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type {
   LUTContractSelectionState,
@@ -17,12 +22,8 @@ import {
 } from '../../services/surface/raw-reason'
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
-import type { FileFactsTool } from '../tools/FileFactsTool'
-import type { HSLToolValue } from '../tools/HSLTool'
 import { countAdjustments } from './adjustment-count'
 import { getAvailableExportOutput } from './export-recap'
-
-type FileFactsProps = Parameters<typeof FileFactsTool>[0]
 
 export type MobileDetailsRow = { label: string; value: string }
 export type MobileDetailsStep = { index: number; label: string; detail: string }
@@ -34,7 +35,7 @@ export type MobileDetailsSheet = {
 
 export type LutContractStatus = 'confirmed' | 'needs-contract' | 'not-used'
 
-export function getCameraName(metadata: FileFactsProps['metadata']) {
+export function getCameraName(metadata: ImageMetadata | null) {
   if (!metadata) return ''
   return `${metadata.make ?? ''} ${metadata.model ?? ''}`.trim()
 }
@@ -68,11 +69,11 @@ export function getLutContractStatus(input: {
 export function buildMobileDetailsSheet(
   input: {
     supportLevel: SupportLevel
-    metadata: FileFactsProps['metadata']
-    stats: FileFactsProps['stats']
+    metadata: ImageMetadata | null
+    stats: Pick<PipelineStats, 'processTime' | 'previewSize'> | null
     tone: ToneValue
     color: ColorValue
-    selectiveColor: HSLToolValue | undefined
+    selectiveColor: NormalizedSelectiveColorBands | undefined
     currentLutName?: string | null
     lutProfileSelection?: LUTContractSelectionState | null
     lutProfileResolution?: LUTContractResolution | null

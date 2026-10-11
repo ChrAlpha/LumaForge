@@ -5,10 +5,12 @@ import type {
   LUTContractResolution,
   PreviewHistogramState,
 } from '@lumaforge/luma-color-runtime'
-import type { ComponentProps, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { createContext, useContext } from 'react'
 
 import type { MessageKey } from '~/lib/i18n'
+import type { ImageMetadata } from '~/lib/raw/decoder'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
 import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
@@ -32,7 +34,6 @@ import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { AppliedLut } from './mobile/mobile-lut-strip'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { ToneValue } from './tone-fields'
-import type { FileFactsTool } from './tools/FileFactsTool'
 
 /**
  * The loaded source's previous export was interrupted, so the next export the
@@ -113,8 +114,8 @@ export interface RawToolSurfaceProps {
   previewLookReason?: PreviewLookReason | null
   onlineLutSources?: UseOnlineLutSourcesResult
   supportLevel: SupportLevel
-  metadata: ComponentProps<typeof FileFactsTool>['metadata']
-  stats: ComponentProps<typeof FileFactsTool>['stats']
+  metadata: ImageMetadata | null
+  stats: Pick<PipelineStats, 'processTime' | 'inputSize' | 'previewSize'> | null
   previewFrameEl?: HTMLDivElement | null
   /**
    * Width / height of what the stage is displaying: the Transform result

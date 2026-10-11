@@ -1,12 +1,14 @@
+import type { NormalizedSelectiveColorBands } from '@lumaforge/luma-color-runtime'
 import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { Translate } from '~/lib/i18n'
+import type { ImageMetadata } from '~/lib/raw/decoder'
+import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 import enMessages from '~/locales/en.json'
 
 import { COLOR_NEUTRAL } from '../color-fields'
 import { TONE_NEUTRAL } from '../tone-fields'
-import type { HSLToolValue } from '../tools/HSLTool'
 import { countAdjustments } from './adjustment-count'
 import {
   buildMobileDetailsSheet,
@@ -22,7 +24,7 @@ const t: Translate = (key, values) => {
 }
 
 const neutralBand = { hue: 0, saturation: 0, lightness: 0 }
-const neutralHsl: HSLToolValue = {
+const neutralHsl: NormalizedSelectiveColorBands = {
   red: neutralBand,
   orange: neutralBand,
   yellow: neutralBand,
@@ -57,6 +59,17 @@ const base = {
   canExport: true,
   canPreviewExport: true,
 }
+
+describe('the details sheet input', () => {
+  it('reads decoded metadata and preview stats as the workflow holds them', () => {
+    type SheetInput = Parameters<typeof buildMobileDetailsSheet>[0]
+    expectTypeOf<SheetInput['metadata']>().toEqualTypeOf<ImageMetadata | null>()
+    expectTypeOf<SheetInput['stats']>().toEqualTypeOf<Pick<
+      PipelineStats,
+      'processTime' | 'previewSize'
+    > | null>()
+  })
+})
 
 describe('the Adjust step', () => {
   it('names the same adjustment count the export recap does', () => {

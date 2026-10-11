@@ -1,12 +1,12 @@
+import type { NormalizedSelectiveColorBands } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import { COLOR_NEUTRAL } from '../color-fields'
 import { TONE_NEUTRAL } from '../tone-fields'
-import type { HSLToolValue } from '../tools/HSLTool'
 import { countAdjustments } from './adjustment-count'
 
 const neutralBand = { hue: 0, saturation: 0, lightness: 0 }
-const neutralHsl: HSLToolValue = {
+const neutralHsl: NormalizedSelectiveColorBands = {
   red: neutralBand,
   orange: neutralBand,
   yellow: neutralBand,

@@ -1,3 +1,4 @@
+import type { NormalizedSelectiveColorBands } from '@lumaforge/luma-color-runtime'
 import {
   generateIdentityLUT,
   NEUTRAL_SELECTIVE_COLOR,
@@ -33,7 +34,6 @@ import {
 import type { ToneValue } from './tone-fields'
 import { TONE_NEUTRAL } from './tone-fields'
 import { toolAvailabilityFixture } from './tool-availability.fixture'
-import type { HSLToolValue } from './tools/HSLTool'
 
 /**
  * The facts a surface reads from the production store, seeded there before
@@ -45,7 +45,7 @@ interface RawToolStoreFacts {
   activeIntensity?: number
   tone?: Partial<ToneValue>
   color?: Partial<ColorValue>
-  selectiveColor?: HSLToolValue
+  selectiveColor?: NormalizedSelectiveColorBands
   /** The stage is `exporting`; otherwise `processing` or `ready`. */
   isExporting?: boolean
   progress?: number

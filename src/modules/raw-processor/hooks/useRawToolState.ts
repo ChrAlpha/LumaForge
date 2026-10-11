@@ -1,4 +1,7 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  NormalizedSelectiveColorBands,
+} from '@lumaforge/luma-color-runtime'
 import { atom, useAtomValue } from 'jotai'
 import { selectAtom } from 'jotai/utils'
 import { useMemo } from 'react'
@@ -7,7 +10,6 @@ import { jotaiStore } from '~/lib/jotai'
 
 import type { ColorValue } from '../components/color-fields'
 import type { ToneValue } from '../components/tone-fields'
-import type { HSLToolValue } from '../components/tools/HSLTool'
 import type { ProcessingStatus } from '../model/workflow'
 import { projectEffectiveColorIntent } from '../services/look/effective-color-intent'
 import { resolveActiveLook } from '../services/look/look-session-state'
@@ -32,7 +34,7 @@ export interface RawToolAdjustments {
   activeIntensity: number
   tone: ToneValue
   color: ColorValue
-  selectiveColor: HSLToolValue
+  selectiveColor: NormalizedSelectiveColorBands
 }
 
 const storeOptions = { store: jotaiStore }
@@ -79,7 +81,7 @@ const colorAtom = selectAtom(effectiveIntentAtom, pickColor, sameFields)
 // tone or colour edit leaves it the same record.
 const selectiveColorAtom = selectAtom(
   effectiveIntentAtom,
-  (intent): HSLToolValue => intent.selectiveColor,
+  (intent): NormalizedSelectiveColorBands => intent.selectiveColor,
 )
 // The strength the look applies at, resolved the way the active look is: the
 // session's look once a session exists, the detached LUT's before that.

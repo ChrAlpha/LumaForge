@@ -1,4 +1,8 @@
-import type { HSLBandId, HSLBandShift } from '@lumaforge/luma-color-runtime'
+import type {
+  HSLBandId,
+  HSLBandShift,
+  NormalizedSelectiveColorBands,
+} from '@lumaforge/luma-color-runtime'
 import { makeNeutralBand } from '@lumaforge/luma-color-runtime'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -7,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import enMessages from '~/locales/en.json'
 
 import { HSL_BAND_ORDER } from '../fields/hsl-fields'
-import type { HSLToolValue } from '../tools/HSLTool'
 import { HSLListPanel } from './HSLListPanel'
 
 function neutralBands(): Record<HSLBandId, HSLBandShift> {
@@ -27,7 +30,7 @@ function renderPanel(
   overrides: Partial<React.ComponentProps<typeof HSLListPanel>> = {},
 ) {
   const props = {
-    value: neutralBands() as HSLToolValue,
+    value: neutralBands() as NormalizedSelectiveColorBands,
     onChange: vi.fn(),
     onScrubChange: vi.fn(),
     ...overrides,
