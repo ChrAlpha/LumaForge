@@ -361,6 +361,73 @@ describe('useDecodedPreviewResource', () => {
       expect(readFrame()).toBeNull()
     })
 
+    it('keeps a frame accepted again when its previous resource is released', async () => {
+      const {
+        registry,
+        setDecodedImageRef,
+        readFrame,
+        decodedImageRef,
+        rawRenderExposureRef,
+        invalidateExportGraph,
+      } = renderResource()
+      const quick = createDecodedImage(0.25, undefined, 'quick')
+      setDecodedImageRef(quick)
+      const first = readFrame()
+
+      // The frame already carries the pin, so it is stored as the same object
+      // and the replaced resource names the very pixels just accepted.
+      setDecodedImageRef(quick)
+      const second = readFrame()
+
+      expect(decodedImageRef.current).toBe(quick)
+      expect(second).not.toBeNull()
+      expect(isSameDecodedPreviewFrame(first, second)).toBe(false)
+      expect(second?.quickPredecessorFrameId).toBeNull()
+      expect(rawRenderExposureRef.current).toEqual(quick.renderExposure)
+      expect(invalidateExportGraph).toHaveBeenCalledTimes(1)
+
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(readFrame()).toBe(second)
+      expect(registry.snapshot().live).toEqual([
+        {
+          id: 'decoded-preview-2',
+          owner: 'preview',
+          kind: 'array-buffer',
+          estimatedBytes: quick.data.byteLength,
+        },
+      ])
+
+      // The current owner still releases the frame and its descriptor.
+      await registry.disposeOwners(['preview'])
+      expect(decodedImageRef.current).toBeNull()
+      expect(readFrame()).toBeNull()
+      expect(rawRenderExposureRef.current).toEqual(quick.renderExposure)
+      expect(registry.snapshot().live).toEqual([])
+    })
+
+    it('keeps the quick lineage when a bounded HQ frame is accepted again', async () => {
+      const { registry, setDecodedImageRef, readFrame, decodedImageRef } =
+        renderResource()
+      setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
+      const quick = readFrame()
+      const boundedHq = createDecodedImage(0)
+      setDecodedImageRef(boundedHq)
+      const linked = readFrame()
+      expect(linked?.quickPredecessorFrameId).toBe(quick?.frameId)
+
+      setDecodedImageRef(boundedHq)
+      const again = readFrame()
+
+      expect(decodedImageRef.current).toBe(boundedHq)
+      expect(again?.stage).toBe('bounded-hq')
+      expect(isSameDecodedPreviewFrame(linked, again)).toBe(false)
+      // A bounded HQ frame replaces a bounded HQ frame, not a quick one.
+      expect(again?.quickPredecessorFrameId).toBeNull()
+      await Promise.resolve()
+      expect(registry.snapshot().live).toHaveLength(1)
+    })
+
     it('clears the descriptor with evacuated pixels and keeps the pin', async () => {
       const {
         registry,

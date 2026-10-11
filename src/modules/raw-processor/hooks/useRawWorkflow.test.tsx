@@ -3874,6 +3874,34 @@ describe('useRawWorkflow embedded preview state', () => {
     expect(session?.renderState.lastErrorCode).toBeUndefined()
   })
 
+  it('keeps the pixels when the bounded HQ stage hands back the quick frame object', async () => {
+    const decoded = createDecodedImage('quick')
+    const boundedHq = deferred<DecodedImage>()
+    rawRuntimeMock.decodeQuickRaw.mockResolvedValue(decoded)
+    rawRuntimeMock.decodeBoundedHqRaw.mockReturnValue(boundedHq.promise)
+
+    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+
+    await act(async () => {
+      await result.current.loadFile(new File(['raw'], 'sample.RAF'))
+    })
+    const quickFrame = result.current.decodedFrame
+    expect(quickFrame).not.toBeNull()
+
+    await act(async () => {
+      boundedHq.resolve(decoded)
+      await flushPromises()
+    })
+    await waitFor(() => {
+      expect(result.current.displaySource).toBe('bounded-hq')
+    })
+    await flushPromises()
+
+    expect(result.current.decodedImageRef.current).toBe(decoded)
+    expect(result.current.decodedFrame).not.toBeNull()
+    expect(result.current.decodedFrame?.frameId).not.toBe(quickFrame?.frameId)
+  })
+
   it('keeps full-resolution export enabled when processed-window capability is supported but bounded HQ preview fails', async () => {
     const file = createFileWithSize('large.ARW', 33 * 1024 * 1024)
     const decodeQuickRaw = vi

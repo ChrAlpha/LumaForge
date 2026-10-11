@@ -164,9 +164,11 @@ export function useDecodedPreviewResource({
         kind: 'array-buffer',
         estimatedBytes: decoded.data.byteLength,
         dispose: () => {
-          if (decodedPreviewResourceRef.current === tracked) {
-            decodedPreviewResourceRef.current = null
-          }
+          // Only the live resource releases the frame. A replaced resource
+          // has already handed its frame over, and the frame it names may be
+          // the very object accepted again in its place.
+          if (decodedPreviewResourceRef.current !== tracked) return
+          decodedPreviewResourceRef.current = null
           // Evacuation frees the pixels and their descriptor only; the
           // source exposure pin stays so a restored frame and the export keep
           // rendering with it.
