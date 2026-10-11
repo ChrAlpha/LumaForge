@@ -21,7 +21,9 @@ depend on this exact version.
   returns `Promise<void>`. It resolves once the encoder is released, or at
   once when the encoder was never created or has already finished or been
   aborted, and rejects when the native abort fails; it no longer runs in the
-  background or swallows the failure. Callers must await it or handle the
+  background or swallows the failure. A call made while an abort is in
+  flight settles with that abort, so it neither resolves before the encoder
+  is released nor misses the failure. Callers must await it or handle the
   rejection. The browser `LumaJpegEncoder.abort()` from the package entry is
   unchanged and still returns `void`.
 

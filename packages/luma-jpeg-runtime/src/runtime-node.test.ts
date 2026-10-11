@@ -176,6 +176,40 @@ describe('createLumaJpegRuntimeForNode abort', () => {
     expect(calls.abort).toBe(1)
   })
 
+  it('settles an overlapping abort only once the first one has released the encoder', async () => {
+    const { module, calls } = fakeNativeModule()
+    const runtime = await createLumaJpegRuntimeForNode({
+      nativeLoader: async () => module,
+    })
+    const encoder = runtime.createEncoder(options)
+    const first = encoder.abort()
+
+    await encoder.abort()
+    expect(calls).toEqual({ abort: 1, delete: 1 })
+    const next = runtime.createEncoder(options)
+    await next.writeRows(new Uint8Array(4 * 2 * 3), 2)
+    await expect(next.finish()).resolves.toBeInstanceOf(Uint8Array)
+    await expect(first).resolves.toBeUndefined()
+  })
+
+  it('rejects every overlapping abort with the native failure', async () => {
+    const abortError = new Error('NATIVE_ABORT_FAILED')
+    const { module, calls } = fakeNativeModule({ abort: abortError })
+    const runtime = await createLumaJpegRuntimeForNode({
+      nativeLoader: async () => module,
+    })
+    const encoder = runtime.createEncoder(options)
+    const first = encoder.abort()
+    const second = encoder.abort()
+
+    await expect(second).rejects.toBe(abortError)
+    await expect(first).rejects.toBe(abortError)
+    expect(calls).toEqual({ abort: 1, delete: 1 })
+    // The failure is reported once; a later call has nothing left to release.
+    await expect(encoder.abort()).resolves.toBeUndefined()
+    expect(calls.abort).toBe(1)
+  })
+
   it('rejects with the native failure and frees the runtime for the next encoder', async () => {
     const abortError = new Error('NATIVE_ABORT_FAILED')
     const { module, calls } = fakeNativeModule({ abort: abortError })

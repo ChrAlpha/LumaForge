@@ -42,7 +42,8 @@ export type LumaJpegNodeEncoder = {
   finish: () => Promise<Uint8Array>
   /**
    * Releases the encoder. Resolves once it is released (or was never
-   * created) and rejects when releasing it failed.
+   * created) and rejects when releasing it failed. A call made while an
+   * abort is in flight settles with that abort.
    */
   abort: () => Promise<void>
 }
@@ -154,6 +155,7 @@ export async function createLumaJpegRuntimeForNode(
     encoderActive = true
 
     let state: 'open' | 'finished' | 'aborted' = 'open'
+    let abortPromise: Promise<void> | undefined
     const createPromise = dispatch('create', encoderOptions).catch((error) => {
       state = 'aborted'
       encoderActive = false
@@ -188,20 +190,28 @@ export async function createLumaJpegRuntimeForNode(
         return blobToUint8Array(response.payload.blob)
       },
 
-      async abort() {
-        if (state !== 'open') return
+      abort() {
+        // A call made while an abort is in flight settles with it, so none
+        // reports the encoder released before it is. Once that abort has
+        // settled, later calls resolve at once like any other closed encoder.
+        if (abortPromise) return abortPromise
+        if (state !== 'open') return Promise.resolve()
         state = 'aborted'
-        try {
-          // An encoder that was never created has nothing to release; its
-          // creation failure is reported by the call that awaited it.
-          const created = await createPromise.then(
-            () => true,
-            () => false,
-          )
-          if (created) await dispatch('abort', {})
-        } finally {
-          encoderActive = false
-        }
+        abortPromise = (async () => {
+          try {
+            // An encoder that was never created has nothing to release; its
+            // creation failure is reported by the call that awaited it.
+            const created = await createPromise.then(
+              () => true,
+              () => false,
+            )
+            if (created) await dispatch('abort', {})
+          } finally {
+            encoderActive = false
+            abortPromise = undefined
+          }
+        })()
+        return abortPromise
       },
     }
   }
