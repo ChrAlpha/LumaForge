@@ -20,7 +20,9 @@ export function registerManifestCommands(
   manifest
     .command('verify')
     .argument('<file>', 'manifest JSON file')
-    .description('Recompute the canonical hash and check the manifest contract')
+    .description(
+      'Recompute the canonical hash, check the manifest contract, and check that its geometry and output can be exported',
+    )
     .action(async function (this: Command, file: string) {
       const ctx = host.context(this)
       host.setExitCode(
@@ -35,6 +37,9 @@ export function registerManifestCommands(
             const result = {
               path,
               valid: verification.valid,
+              structural_valid: verification.structural_valid,
+              geometry_executable: verification.geometry_executable,
+              geometry_refusal: verification.geometry_refusal,
               manifest_sha256:
                 typeof verification.raw?.manifest_sha256 === 'string'
                   ? (verification.raw.manifest_sha256 as string)

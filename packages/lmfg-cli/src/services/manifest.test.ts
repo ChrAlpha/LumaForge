@@ -79,6 +79,8 @@ describe('manifest service', () => {
     await writeFile(file, JSON.stringify(manifest))
     const ok = await verifyManifestFile(file, { environment })
     expect(ok.valid).toBe(true)
+    expect(ok.structural_valid).toBe(true)
+    expect(ok.geometry_executable).toBe(true)
     expect(ok.environment_match).toBe(true)
     const tampered = {
       ...manifest,
@@ -87,6 +89,9 @@ describe('manifest service', () => {
     await writeFile(file, JSON.stringify(tampered))
     const bad = await verifyManifestFile(file, { environment })
     expect(bad.valid).toBe(false)
+    expect(bad.structural_valid).toBe(false)
+    expect(bad.geometry_executable).toBeNull()
+    expect(bad.geometry_refusal).toBeNull()
     expect(bad.issues[0]).toMatch(/manifest_sha256/)
     await writeFile(file, JSON.stringify(manifest))
     const drift = await verifyManifestFile(file, {
@@ -131,6 +136,11 @@ describe('manifest service', () => {
       const result = await verify(manifest)
       expect(result.issues).toEqual([])
       expect(result.valid).toBe(true)
+      expect(result.structural_valid).toBe(true)
+      // Only an export has a frame to check; a preview or candidate that
+      // records no geometry has nothing to check.
+      expect(result.geometry_executable).toBe(kind === 'export' ? true : null)
+      expect(result.geometry_refusal).toBeNull()
       expect(result.manifest?.manifest_sha256).toBe(manifest.manifest_sha256)
       const descriptor = manifest.color_graph.descriptor as ColorGraphDescriptor
       expect(descriptor.descriptor_version).toBe(COLOR_GRAPH_DESCRIPTOR_VERSION)
@@ -422,6 +432,9 @@ describe('manifest service', () => {
       const manifest = resealed(edit)
       const result = await verify(manifest)
       expect(result.valid).toBe(false)
+      expect(result.structural_valid).toBe(false)
+      expect(result.geometry_executable).toBeNull()
+      expect(result.geometry_refusal).toBeNull()
       expect(result.manifest).toBeNull()
       expect(result.issues).toContainEqual(
         expect.stringMatching(new RegExp(`^${path.replaceAll('.', '\\.')}: `)),
@@ -431,6 +444,59 @@ describe('manifest service', () => {
       await expect(
         requireVerifiedManifest(path_, environment),
       ).rejects.toMatchObject({ code: 'manifest.invalid' })
+    },
+  )
+
+  /** A keystone whose horizon crosses the frame at x = 0.5: w = 1 - 2x. */
+  const FOLDING = [1, 0, 0, 0, 1, 0, -2, 0, 1]
+
+  it.each<[string, (manifest: Json) => void, Json, string]>([
+    [
+      'a geometry that folds the frame',
+      (m) =>
+        (m.render_params.geometry = {
+          matrix: FOLDING,
+          constrain_crop: false,
+          output: { width: 4, height: 2 },
+        }),
+      {
+        reason: 'unplannable-geometry',
+        source: { width: 4, height: 2 },
+        cause: expect.any(String),
+      },
+      'render_params.geometry',
+    ],
+    [
+      'an output that is not the source frame',
+      (m) => (m.output.dimensions = { width: 2, height: 2 }),
+      {
+        reason: 'output-mismatch',
+        delivered_by: 'source',
+        recorded: { width: 2, height: 2 },
+        delivered: { width: 4, height: 2 },
+      },
+      'output.dimensions',
+    ],
+  ])(
+    'refuses a correctly sealed, structurally valid export with %s for its geometry',
+    async (_label, edit, refusal, path) => {
+      const manifest = resealed(edit)
+      const result = await verify(manifest)
+      expect(result.structural_valid).toBe(true)
+      expect(result.manifest).toEqual(manifest)
+      expect(result.geometry_executable).toBe(false)
+      expect(result.geometry_refusal).toEqual(refusal)
+      expect(result.valid).toBe(false)
+      expect(result.issues).toEqual([
+        expect.stringMatching(new RegExp(`^${path.replaceAll('.', '\\.')}: `)),
+      ])
+      // The structural reader still returns it: replay refuses the geometry
+      // itself before any decode, with its own envelope.
+      const read = await requireVerifiedManifest(
+        join(dir, 'm.json'),
+        environment,
+      )
+      expect(read.manifest).toEqual(manifest)
     },
   )
 

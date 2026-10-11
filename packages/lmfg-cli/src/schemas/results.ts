@@ -541,9 +541,51 @@ export const MetricsRankResultSchema = z.object({
   ),
 })
 
+/** Why a structurally valid manifest records an export the engine cannot produce. */
+const ManifestGeometryRefusalSchema = z.discriminatedUnion('reason', [
+  z.object({
+    /** A preview or candidate records a geometry; only exports apply one. */
+    reason: z.literal('non-export-geometry'),
+    kind: z.enum(['preview', 'candidate']),
+  }),
+  z.object({
+    /** The planner refuses the geometry on the recorded source frame. */
+    reason: z.literal('unplannable-geometry'),
+    source: dims,
+    /** The planner's own refusal message. */
+    cause: z.string(),
+  }),
+  z.object({
+    /** The recorded geometry output is not the frame the planner plans. */
+    reason: z.literal('geometry-output-mismatch'),
+    source: dims,
+    recorded: dims,
+    planned: dims,
+  }),
+  z.object({
+    /** The recorded output is not the frame the source or geometry delivers. */
+    reason: z.literal('output-mismatch'),
+    delivered_by: z.enum(['geometry', 'source']),
+    recorded: dims,
+    delivered: dims,
+  }),
+])
+
 export const ManifestVerifyResultSchema = z.object({
   path: z.string(),
+  /** `structural_valid`, and the geometry is not unexecutable. */
   valid: z.boolean(),
+  /** The seal over the whole file and the full v1 structure. */
+  structural_valid: z.boolean(),
+  /**
+   * Whether the recorded geometry and output dimensions describe an export
+   * the engine can produce. Null when the manifest is not structurally valid
+   * (nothing was checked) or is a preview or candidate that records no
+   * geometry (nothing to check).
+   */
+  geometry_executable: z.boolean().nullable(),
+  /** Set exactly when `geometry_executable` is false. */
+  geometry_refusal: ManifestGeometryRefusalSchema.nullable(),
   manifest_sha256: sha256.nullable(),
   kind: nullableString,
   issues: z.array(z.string()),

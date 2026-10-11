@@ -90,7 +90,6 @@
     "types packages/lmfg-cli/src/schemas/results.ts: results.DryRunResult",
     "types packages/lmfg-cli/src/schemas/results.ts: results.Exposure",
     "types packages/lmfg-cli/src/schemas/results.ts: results.ManifestShowResult",
-    "types packages/lmfg-cli/src/schemas/results.ts: results.ManifestVerifyResult",
     "types packages/lmfg-cli/src/schemas/results.ts: results.RenderOutput",
     "types packages/lmfg-cli/src/services/color-graph.ts: ColorGraphDescriptor",
     "types src/components/ui/chip/index.ts: ChipProps",

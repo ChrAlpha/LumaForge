@@ -216,6 +216,20 @@ artifact build id. `render export --candidate` reuses the candidate's exposure
 and sets `parent_manifest_sha256` so the chain preview → candidate → export can
 be audited with `manifest verify`.
 
+`manifest verify` reports two checks separately. `structural_valid` is the
+seal over the whole file and the full v1 structure. `geometry_executable` says
+whether the recorded geometry and output dimensions describe an export the
+engine can produce: the recorded geometry must plan, from the recorded source
+frame, to its recorded output, and the recorded output must be that frame (the
+source frame when there is no geometry); a preview or candidate that records a
+geometry is unexecutable. It is null when the manifest is not structurally
+valid, or is a preview or candidate without a geometry. When it is false,
+`geometry_refusal` carries the typed reason (`non-export-geometry`,
+`unplannable-geometry`, `geometry-output-mismatch`, or `output-mismatch`).
+`valid` is true only when the manifest is structurally valid and its geometry
+is not unexecutable; otherwise the command fails with `manifest.invalid`
+(exit 1) and the same result in the error details.
+
 Export fails closed (exit 8) when the source bytes changed, the LUT file
 changed, the JPEG stream is incomplete, or the manifest fails
 self-verification. Unsupported RAWs exit 3; incomplete LUT contracts exit 4.
