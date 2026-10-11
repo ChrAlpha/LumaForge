@@ -3,7 +3,7 @@ import { ChevronRight, RefreshCw, Trash2 } from 'lucide-react'
 import { useI18n } from '~/lib/i18n'
 
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
-import { LutSourceWarning } from '../tools/lut/LutSourceWarning'
+import { LutSourceWarning } from '../shared/lut/LutSourceWarning'
 
 type Resource = UseOnlineLutSourcesResult['state']['resources'][number]
 type Issue = UseOnlineLutSourcesResult['state']['issues'][number]

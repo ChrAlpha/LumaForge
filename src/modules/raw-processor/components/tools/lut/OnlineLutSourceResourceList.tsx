@@ -8,8 +8,8 @@ import type {
   UseOnlineLutSourcesResult,
 } from '../../../hooks/useOnlineLutSources'
 import type { OnlineLUTSourceActivation } from '../../../services/look/online-lut-sources'
+import { LutSourceWarning } from '../../shared/lut/LutSourceWarning'
 import { LutIconButton } from './LutIconButton'
-import { LutSourceWarning } from './LutSourceWarning'
 import { OnlineLutCatalogEntryButton } from './OnlineLutCatalogEntryButton'
 
 export { entryLoadPercent } from './OnlineLutCatalogEntryButton'

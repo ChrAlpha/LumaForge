@@ -8,7 +8,7 @@ import { sheetSpring } from '~/lib/spring'
 import { useOnlineLutEntryLoader } from '../../hooks/useOnlineLutEntryLoader'
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
 import type { GroupedEntries } from '../../services/look/lut-source-grouping'
-import { LutSourceWarning } from '../tools/lut/LutSourceWarning'
+import { LutSourceWarning } from '../shared/lut/LutSourceWarning'
 import { MobileLutCatalogEntryButton } from './MobileLutCatalogEntryButton'
 
 type OnlineEntry = UseOnlineLutSourcesResult['state']['entries'][number]
