@@ -41,6 +41,7 @@ import {
   EMPTY_ORIGINAL_GPU_FRAME_STATUS,
   EMPTY_PREVIEW_FRAME_STATUS,
 } from '../../services/preview/preview-compare-readiness'
+import type { PreviewPipelineHandle } from './usePreviewPipelineLifecycle'
 
 /** The drawing surface of the processed preview pipeline. */
 export type ProcessedPreviewPipeline = Pick<
@@ -83,12 +84,21 @@ export interface ProcessedPreviewOptions<
   jpegSnapshotReady: boolean
   onStatsUpdate?: (stats: PipelineStats) => void
   onPipelineChange?: (pipeline: TPipeline | null) => void
+  /** Hears every pipeline the original GPU layer publishes or releases. */
+  onOriginalPipelineChange?: (pipeline: PreviewPipelineHandle | null) => void
   onRequestOriginalReferenceFallback?: () => void
 }
 
 export interface ProcessedPreview<
   TPipeline extends ProcessedPreviewPipeline,
-> extends PreviewCompareReadiness {
+> extends Pick<
+  PreviewCompareReadiness,
+  | 'showEmbeddedPreview'
+  | 'embeddedHandoffPreviewVisible'
+  | 'currentProcessedFrameReady'
+  | 'shouldMountOriginalGpuLayer'
+  | 'shouldDelayProcessedCompareRender'
+> {
   /**
    * The publication port for the pipeline's lifetime owner: every published
    * or forgotten pipeline starts with no image and no frame.
@@ -108,6 +118,11 @@ export interface ProcessedPreview<
     generationKey: string
     onReady: (generationKey: string) => void
     onError: (error: unknown, generationKey: string) => void
+    /**
+     * The layer's pipeline publication port. A ready original belongs to
+     * the pipeline that drew it, so publishing or releasing one forgets it.
+     */
+    onPipelineChange: (pipeline: PreviewPipelineHandle | null) => void
   }
 }
 
@@ -164,6 +179,7 @@ export function useProcessedPreview<
   jpegSnapshotReady,
   onStatsUpdate,
   onPipelineChange,
+  onOriginalPipelineChange,
   onRequestOriginalReferenceFallback,
 }: ProcessedPreviewOptions<TPipeline>): ProcessedPreview<TPipeline> {
   const pipelineRef = useRef<TPipeline | null>(null)
@@ -221,6 +237,7 @@ export function useProcessedPreview<
     retainedProcessedFrameReady,
     compareFrameBridgeReady,
     embeddedPreviewFallbackReady,
+    shouldMountOriginalGpuLayer,
     shouldDelayProcessedCompareRender,
   } = readiness
   processedGenerationKeyRef.current = processedImageGenerationKey
@@ -377,6 +394,8 @@ export function useProcessedPreview<
         frame: decodedFrame,
         state: 'ready',
       })
+      // A current frame on screen ends any earlier draw failure.
+      setError(null)
       onStatsUpdate?.(stats)
       return true
     } catch (error) {
@@ -435,8 +454,11 @@ export function useProcessedPreview<
 
   // Draw once per processed input change: image, params, or LUT. It runs
   // after the LUT upload effect above, so a LUT-only version change renders
-  // with the new LUT. Compare mode stays in CSS/DOM space, so the processed
-  // canvas never enters the legacy single-canvas shader split path.
+  // with the new LUT. While the retained compare pair holds a bounded-HQ
+  // frame back, this effect stays the one draw owner: the original layer's
+  // ready report lifts the delay, and the lifted delay draws. Compare mode
+  // stays in CSS/DOM space, so the processed canvas never enters the legacy
+  // single-canvas shader split path.
   useEffect(() => {
     if (shouldDelayProcessedCompareRender) return
     renderProcessedPreview()
@@ -448,8 +470,24 @@ export function useProcessedPreview<
     shouldDelayProcessedCompareRender,
   ])
 
+  const forgetOriginalGpuFrame = useCallback(
+    (pipeline: PreviewPipelineHandle | null) => {
+      // A failure stays recorded for its generation; only a drawn frame is
+      // tied to the pipeline that drew it.
+      setOriginalGpuStatus((current) =>
+        current.state === 'failed' ? current : EMPTY_ORIGINAL_GPU_FRAME_STATUS,
+      )
+      onOriginalPipelineChange?.(pipeline)
+    },
+    [onOriginalPipelineChange],
+  )
+
   return {
-    ...readiness,
+    showEmbeddedPreview,
+    embeddedHandoffPreviewVisible,
+    currentProcessedFrameReady,
+    shouldMountOriginalGpuLayer,
+    shouldDelayProcessedCompareRender,
     publishPipeline,
     reportInitializationError,
     error,
@@ -461,13 +499,10 @@ export function useProcessedPreview<
       generationKey: originalGpuGenerationKey,
       onReady: (readyGenerationKey) => {
         // Only the current generation's frame may become ready; late work
-        // for another frame or compare policy publishes nothing.
+        // for another frame or compare policy publishes nothing. Reaching
+        // the frame a retained compare pair waits for lifts the processed
+        // delay, and the draw effect then draws the new image.
         if (readyGenerationKey !== originalGpuGenerationKey) return
-        // The original layer reached the frame the retained compare pair was
-        // waiting for: the processed surface may draw the new image now.
-        if (shouldDelayProcessedCompareRender) {
-          renderProcessedPreview()
-        }
         setOriginalGpuStatus({
           generationKey: readyGenerationKey,
           frame: decodedFrame,
@@ -487,6 +522,7 @@ export function useProcessedPreview<
           onRequestOriginalReferenceFallback?.()
         }
       },
+      onPipelineChange: forgetOriginalGpuFrame,
     },
   }
 }

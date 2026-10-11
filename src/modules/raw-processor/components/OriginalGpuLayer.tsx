@@ -60,6 +60,11 @@ export function OriginalGpuLayer({
   createPipeline?: (canvas: HTMLCanvasElement) => OriginalPipeline
   onReady?: (generationKey: string) => void
   onError?: (error: unknown, generationKey: string) => void
+  /**
+   * Hears the pipeline once it has initialized, before any ready report from
+   * it, and `null` once it is released, before the failure that released it
+   * is reported. A ready report never outlives its pipeline.
+   */
   onPipelineChange?: (pipeline: PreviewPipelineHandle | null) => void
 }) {
   const layerRef = useRef<HTMLDivElement>(null)

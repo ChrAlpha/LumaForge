@@ -749,6 +749,68 @@ describe('originalGpuLayer', () => {
     expect(pipeline.dispose).toHaveBeenCalledOnce()
   })
 
+  it('reports readiness only inside its published pipeline lifetime and its release before a failure', async () => {
+    const events: string[] = []
+    const secondFrame = deferred()
+    const pipeline = createPipelineMock({
+      waitForGpu: vi
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockReturnValueOnce(secondFrame.promise),
+    })
+    const props = {
+      imageRef: { current: decodedImage },
+      decodedFrame: testFrame(1),
+      generationKey: '1',
+      createPipeline: () => pipeline as never,
+      onReady: (key: string) => events.push(`ready:${key}`),
+      onError: (_: unknown, key: string) => events.push(`error:${key}`),
+      onPipelineChange: (handle: unknown) =>
+        events.push(handle ? 'publish' : 'release'),
+    }
+    const { rerender } = render(<OriginalGpuLayer {...props} />)
+    await waitFor(() => expect(events).toEqual(['publish', 'ready:1']))
+
+    rerender(
+      <OriginalGpuLayer
+        {...props}
+        decodedFrame={testFrame(2)}
+        generationKey="2"
+      />,
+    )
+    await waitFor(() => expect(pipeline.waitForGpu).toHaveBeenCalledTimes(2))
+    await act(async () => secondFrame.reject(new Error('Original lost')))
+
+    // The owner forgets the drawn frame before it records the failure.
+    expect(events).toEqual(['publish', 'ready:1', 'release', 'error:2'])
+    expect(pipeline.dispose).toHaveBeenCalledExactlyOnceWith({
+      releaseContext: true,
+    })
+  })
+
+  it('reports the release of a pipeline that failed to initialize before the failure', async () => {
+    const events: string[] = []
+    const pipeline = createPipelineMock({
+      initialize: vi.fn().mockRejectedValue(new Error('No adapter')),
+    })
+    render(
+      <OriginalGpuLayer
+        imageRef={{ current: decodedImage }}
+        decodedFrame={testFrame(1)}
+        generationKey="1"
+        createPipeline={() => pipeline as never}
+        onReady={(key) => events.push(`ready:${key}`)}
+        onError={(_, key) => events.push(`error:${key}`)}
+        onPipelineChange={(handle) =>
+          events.push(handle ? 'publish' : 'release')
+        }
+      />,
+    )
+
+    await waitFor(() => expect(events).toEqual(['release', 'error:1']))
+    expect(pipeline.dispose).toHaveBeenCalledOnce()
+  })
+
   it('redraws a settled resize without a new upload or a second ready report', async () => {
     const resizeCallbacks: ResizeObserverCallback[] = []
     vi.stubGlobal(

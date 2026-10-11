@@ -108,6 +108,7 @@ function renderProcessed(initial: Partial<Options> = {}) {
   const onStatsUpdate = vi.fn()
   const onPipelineChange = vi.fn()
   const onRequestOriginalReferenceFallback = vi.fn()
+  const onOriginalPipelineChange = vi.fn()
   const base: Options = {
     imageRef: { current: decodedImage() },
     imageVersion: 1,
@@ -125,6 +126,7 @@ function renderProcessed(initial: Partial<Options> = {}) {
     onStatsUpdate,
     onPipelineChange,
     onRequestOriginalReferenceFallback,
+    onOriginalPipelineChange,
   }
   let props: Options = { ...base, ...initial }
   const result = renderHook(
@@ -148,6 +150,7 @@ function renderProcessed(initial: Partial<Options> = {}) {
     onStatsUpdate,
     onPipelineChange,
     onRequestOriginalReferenceFallback,
+    onOriginalPipelineChange,
   }
 }
 
@@ -365,6 +368,40 @@ describe('useProcessedPreview', () => {
     expect(view.result.current.error).toBeNull()
   })
 
+  it('clears a failed current draw once a later current draw succeeds, never from superseded work', async () => {
+    const supersededFrame = deferred()
+    const pipeline = createPipeline()
+    pipeline.waitForGpu.mockReturnValueOnce(supersededFrame.promise)
+    const view = renderProcessed()
+    await view.publish(pipeline)
+    expect(pipeline.render).toHaveBeenCalledOnce()
+
+    pipeline.render.mockImplementationOnce(() => {
+      throw new Error('Device lost while drawing')
+    })
+    await act(async () =>
+      view.update({ color: { ...defaultColor, userExposureEv: 0.1 } }),
+    )
+    expect(view.result.current.error).toBe('Device lost while drawing')
+
+    // The superseded draw completing proves nothing about the current one.
+    await act(async () => supersededFrame.resolve())
+    expect(view.result.current.error).toBe('Device lost while drawing')
+    expect(view.result.current.currentProcessedFrameReady).toBe(false)
+    expect(view.onStatsUpdate).not.toHaveBeenCalled()
+
+    await act(async () =>
+      view.update({ color: { ...defaultColor, userExposureEv: 0.2 } }),
+    )
+    await flush()
+    // The image upload is still current, so only the draw ran again.
+    expect(pipeline.uploadImage).toHaveBeenCalledOnce()
+    expect(pipeline.render).toHaveBeenCalledTimes(3)
+    expect(view.result.current.error).toBeNull()
+    expect(view.result.current.currentProcessedFrameReady).toBe(true)
+    expect(view.onStatsUpdate).toHaveBeenCalledOnce()
+  })
+
   it('draws nothing before a pipeline is published and catches up once it is', async () => {
     const view = renderProcessed()
     view.props().imageRef.current = decodedImage({ width: 420, height: 320 })
@@ -499,12 +536,12 @@ describe('useProcessedPreview', () => {
 
       const hqKey = view.result.current.originalGpuLayer.generationKey
       await act(async () => view.result.current.originalGpuLayer.onReady(hqKey))
-      // The handoff draws once and the lifted delay draws the same input once
-      // more; the new image uploads once.
+      // The lifted delay is the one draw of the new image, uploaded once.
+      expect(view.result.current.shouldDelayProcessedCompareRender).toBe(false)
       expect(pipeline.uploadImage).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ width: 1600, height: 1200 }),
       )
-      expect(pipeline.render).toHaveBeenCalledTimes(2)
+      expect(pipeline.render).toHaveBeenCalledOnce()
       await flush()
       expect(view.result.current.currentProcessedFrameReady).toBe(true)
       expect(view.result.current.compareRenderMode).toEqual({
@@ -555,7 +592,6 @@ describe('useProcessedPreview', () => {
 
       // Nothing holds the restored frame back: it uploads, draws, and is
       // ready on its own, while compare waits for its own original.
-      expect(view.result.current.retainedProcessedFrameReady).toBe(false)
       expect(view.result.current.shouldDelayProcessedCompareRender).toBe(false)
       expect(pipeline.uploadImage).toHaveBeenCalledOnce()
       expect(pipeline.render).toHaveBeenCalledOnce()
@@ -563,6 +599,76 @@ describe('useProcessedPreview', () => {
       expect(view.result.current.compareRenderMode).toEqual({
         kind: 'embedded-fallback',
         reason: 'original-gpu-pending',
+      })
+    })
+
+    it('forgets original readiness with the original pipeline and waits for the next one to draw', async () => {
+      const view = renderProcessed({ ...compare, embeddedPreviewUrl: null })
+      await view.publish(createPipeline())
+      await flush()
+      const { generationKey } = view.result.current.originalGpuLayer
+      const handle = {
+        dispose: vi.fn(),
+        snapshot: () => ({ live: true, estimatedBytes: 0 }),
+      }
+      act(() => view.result.current.originalGpuLayer.onPipelineChange(handle))
+      act(() => view.result.current.originalGpuLayer.onReady(generationKey))
+      expect(view.result.current.compareRenderMode).toEqual({
+        kind: 'dual-gpu',
+      })
+
+      // The released pipeline's frame is gone; the owner still hears it.
+      act(() => view.result.current.originalGpuLayer.onPipelineChange(null))
+      expect(view.onOriginalPipelineChange.mock.calls).toEqual([
+        [handle],
+        [null],
+      ])
+      expect(view.result.current.originalGpuLayer.generationKey).toBe(
+        generationKey,
+      )
+      expect(view.result.current.compareRenderMode).toEqual({
+        kind: 'processed-only',
+        reason: 'jpeg-fallback-unavailable',
+      })
+
+      // Same frame, new pipeline: compare waits until that pipeline draws.
+      const nextHandle = { ...handle, dispose: vi.fn() }
+      act(() =>
+        view.result.current.originalGpuLayer.onPipelineChange(nextHandle),
+      )
+      expect(view.onOriginalPipelineChange).toHaveBeenLastCalledWith(nextHandle)
+      expect(view.result.current.compareRenderMode).toEqual({
+        kind: 'processed-only',
+        reason: 'jpeg-fallback-unavailable',
+      })
+      act(() => view.result.current.originalGpuLayer.onReady(generationKey))
+      expect(view.result.current.compareRenderMode).toEqual({
+        kind: 'dual-gpu',
+      })
+    })
+
+    it('keeps an original failure recorded after its pipeline is released', async () => {
+      const view = renderProcessed({
+        ...compare,
+        embeddedPreviewUrl: null,
+        jpegSnapshotReady: true,
+      })
+      await view.publish(createPipeline())
+      await flush()
+      const { generationKey } = view.result.current.originalGpuLayer
+
+      act(() => {
+        view.result.current.originalGpuLayer.onPipelineChange(null)
+        view.result.current.originalGpuLayer.onError(
+          new Error('Original layer failed'),
+          generationKey,
+        )
+      })
+      act(() => view.result.current.originalGpuLayer.onPipelineChange(null))
+      expect(view.result.current.shouldMountOriginalGpuLayer).toBe(false)
+      expect(view.result.current.compareRenderMode).toEqual({
+        kind: 'jpeg-fallback',
+        reason: 'original-gpu-failed',
       })
     })
 
@@ -592,8 +698,7 @@ describe('useProcessedPreview', () => {
       )
       act(() => view.result.current.originalGpuLayer.onReady(staleKey))
 
-      expect(view.result.current.originalGpuReady).toBe(false)
-      expect(view.result.current.retainedOriginalGpuFrameReady).toBe(false)
+      // Neither a ready original nor a retained quick bridge.
       expect(view.result.current.compareRenderMode).toEqual({
         kind: 'embedded-fallback',
         reason: 'original-gpu-pending',

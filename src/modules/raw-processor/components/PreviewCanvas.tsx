@@ -134,6 +134,7 @@ export function PreviewCanvas({
     jpegSnapshotReady: Boolean(originalReferenceSnapshot),
     onStatsUpdate,
     onPipelineChange,
+    onOriginalPipelineChange: onOriginalPreviewPipelineChange,
     onRequestOriginalReferenceFallback,
   })
   const {
@@ -183,7 +184,28 @@ export function PreviewCanvas({
     suspended,
   })
 
-  // Handle canvas resize
+  // The resize observer reads the compare delay when a size applies, so a
+  // readiness change alone never rebuilds the observer: the draw effect is
+  // the one owner of the draw that lifting the delay starts.
+  const delayProcessedRenderRef = useRef(shouldDelayProcessedCompareRender)
+  useEffect(() => {
+    delayProcessedRenderRef.current = shouldDelayProcessedCompareRender
+  }, [shouldDelayProcessedCompareRender])
+  // The canvas backing store size the processed surface last drew on. It is
+  // recorded whether or not a pipeline exists yet: a pipeline published later
+  // draws on that same store through the draw effect. Only a changed size
+  // clears the canvas, so a rebuilt observer reporting its box again on
+  // observe() neither resizes nor draws a second time.
+  const appliedBackingStoreRef = useRef<{
+    canvas: HTMLCanvasElement
+    width: number
+    height: number
+  } | null>(null)
+
+  // Handle canvas resize. The observer is rebuilt for every accepted frame,
+  // because a frame without a retained predecessor hides the track until it
+  // is measured again; it redraws only for a changed backing store. The draw
+  // effect owns every draw an image, color, or readiness change starts.
   useEffect(() => {
     const container = containerRef.current
     const track = trackRef.current
@@ -213,24 +235,33 @@ export function PreviewCanvas({
         return backingStoreSize(fit)
       },
       onApply: () => {
+        const applied = appliedBackingStoreRef.current
+        const unchanged =
+          applied?.canvas === canvas &&
+          applied.width === canvas.width &&
+          applied.height === canvas.height
+        appliedBackingStoreRef.current = {
+          canvas,
+          width: canvas.width,
+          height: canvas.height,
+        }
         const pipeline = pipelineRef.current
-        if (!pipeline) return
+        if (!pipeline || unchanged) return
         pipeline.resize(canvas.width, canvas.height)
-        if (imageRef.current && !shouldDelayProcessedCompareRender) {
+        if (imageRef.current && !delayProcessedRenderRef.current) {
           redraw()
         }
       },
       applyImmediately: () => !pipelineRef.current,
     })
   }, [
+    decodedFrame,
     imageRef,
-    imageVersion,
     imageWidth,
     imageHeight,
     markTrackReady,
     pipelineRef,
     redraw,
-    shouldDelayProcessedCompareRender,
   ])
 
   return (
@@ -258,7 +289,7 @@ export function PreviewCanvas({
             imageRef={imageRef}
             decodedFrame={decodedFrame}
             generationKey={processed.originalGpuLayer.generationKey}
-            onPipelineChange={onOriginalPreviewPipelineChange}
+            onPipelineChange={processed.originalGpuLayer.onPipelineChange}
             onReady={processed.originalGpuLayer.onReady}
             onError={processed.originalGpuLayer.onError}
           />

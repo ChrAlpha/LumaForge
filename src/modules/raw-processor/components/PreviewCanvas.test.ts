@@ -16,6 +16,7 @@ import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
+import { BACKING_STORE_SETTLE_MS } from '../hooks/preview/backing-store-resize'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
 import { DEFAULT_PREVIEW_VIEWPORT } from '../services/preview/preview-viewport'
 import {
@@ -269,6 +270,36 @@ function captureResizeObservers() {
     })),
   )
   return callbacks
+}
+
+/**
+ * Holds every observer notification until the test delivers it, as the
+ * browser does: an observe() notification arrives on a later rendering step,
+ * not inside observe() itself.
+ */
+function queueFrameResizeObservers() {
+  const frameCallbacks: ResizeObserverCallback[] = []
+  vi.stubGlobal(
+    'ResizeObserver',
+    vi.fn().mockImplementation((callback: ResizeObserverCallback) => ({
+      observe: vi.fn((target: Element) => {
+        if (target.hasAttribute('data-raw-preview-frame')) {
+          frameCallbacks.push(callback)
+        }
+      }),
+      disconnect: vi.fn(),
+    })),
+  )
+  let delivered = 0
+  return {
+    /** Delivers the observe() notification of every frame observer not yet heard. */
+    deliverPending: (width: number, height: number) => {
+      const pending = frameCallbacks.slice(delivered)
+      delivered = frameCallbacks.length
+      for (const callback of pending) fireResize(callback, width, height)
+      return pending.length
+    },
+  }
 }
 
 function fireResize(
@@ -1683,9 +1714,8 @@ describe('preview canvas upload descriptor', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    // Each layer uploads the new generation once. The processed layer draws
-    // it twice: once from the original layer's ready handoff and once when
-    // the retained-compare delay lifts. Both draw the same input.
+    // Each layer uploads and draws the new generation once: the processed
+    // draw waits for the retained-compare delay to lift.
     const counts = (kind: 'original' | 'processed', op: 'upload' | 'render') =>
       pipelineMock.pipelineEvents.filter(
         (event) => event.kind === kind && event.op === op,
@@ -1693,7 +1723,222 @@ describe('preview canvas upload descriptor', () => {
     expect(counts('original', 'upload')).toBe(1)
     expect(counts('original', 'render')).toBe(1)
     expect(counts('processed', 'upload')).toBe(1)
-    expect(counts('processed', 'render')).toBe(2)
+    expect(counts('processed', 'render')).toBe(1)
+  })
+
+  it('draws the promoted bounded-HQ frame once when the observer reports the unchanged box on rebuild', async () => {
+    // Browsers deliver an initial notification whenever observe() starts on a
+    // non-zero box, so this stub reports the same frame box on every observe.
+    const frameObservers: ResizeObserverCallback[] = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation((callback: ResizeObserverCallback) => ({
+        observe: vi.fn((target: Element) => {
+          if (target.hasAttribute('data-raw-preview-frame')) {
+            frameObservers.push(callback)
+          }
+          fireResize(callback, 800, 600)
+        }),
+        disconnect: vi.fn(),
+      })),
+    )
+    const imageRef: RefObject<DecodedImage | null> = {
+      current: { ...decodedImage, source: 'quick' as const },
+    }
+    const props: ComponentProps<typeof PreviewCanvas> = {
+      imageRef,
+      imageVersion: 1,
+      decodedFrame: quickTestFrame,
+      color: defaultColor,
+      viewMode: 'compare',
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      displaySource: 'quick',
+      dualGpuAllowed: true,
+    }
+    const { container, rerender } = render(createElement(PreviewCanvas, props))
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-compare-mode="dual-gpu"]'),
+      ).toBeTruthy()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    pipelineMock.renderEvents.length = 0
+    pipelineMock.pipelineEvents.length = 0
+
+    // The bounded-HQ frame keeps the photo aspect ratio and the frame box, so
+    // nothing about the backing store changes across the promotion.
+    imageRef.current = {
+      ...decodedImage,
+      source: 'bounded-hq',
+      width: 800,
+      height: 600,
+      data: new Uint16Array(800 * 600 * 3),
+    }
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        imageVersion: 2,
+        decodedFrame: frameDescriptor({
+          frameId: 'decoded-frame-2',
+          stage: 'bounded-hq',
+          width: 800,
+          height: 600,
+          quickPredecessorFrameId: 'decoded-frame-1',
+        }),
+        displaySource: 'bounded-hq',
+      }),
+    )
+
+    await waitFor(() => {
+      expect(
+        pipelineMock.pipelineEvents.some(
+          (event) => event.kind === 'processed' && event.op === 'render',
+        ),
+      ).toBe(true)
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const processedRenders = pipelineMock.pipelineEvents.filter(
+      (event) => event.kind === 'processed' && event.op === 'render',
+    )
+    expect(processedRenders).toEqual([
+      { kind: 'processed', op: 'render', width: 800, height: 600 },
+    ])
+    expect(
+      container.querySelector('[data-compare-mode="dual-gpu"]'),
+    ).toBeTruthy()
+
+    // A real frame resize still resizes the backing store and redraws once,
+    // after it settles.
+    const processedCanvas = container.querySelector<HTMLCanvasElement>(
+      'canvas.raw-preview-canvas',
+    )
+    const processedPipeline = processedPipelines().at(-1)
+    processedPipeline?.resize.mockClear()
+    pipelineMock.pipelineEvents.length = 0
+    await act(async () => {
+      fireResize(frameObservers.at(-1), 600, 450)
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, BACKING_STORE_SETTLE_MS + 10),
+      )
+    })
+    expect(processedPipeline?.resize).toHaveBeenCalledTimes(1)
+    expect(processedPipeline?.resize).toHaveBeenCalledWith(
+      processedCanvas?.width,
+      processedCanvas?.height,
+    )
+    expect(
+      pipelineMock.pipelineEvents.filter(
+        (event) => event.kind === 'processed' && event.op === 'render',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('draws the promoted bounded-HQ frame once when the box was fitted before the pipeline initialized', async () => {
+    const observers = queueFrameResizeObservers()
+    const processedInitialize = deferred<void>()
+    pipelineMock.initialize.mockImplementation((canvas: HTMLCanvasElement) =>
+      canvas.className.includes('raw-preview-original-gpu-canvas')
+        ? Promise.resolve()
+        : processedInitialize.promise,
+    )
+    const imageRef: RefObject<DecodedImage | null> = {
+      current: { ...decodedImage, source: 'quick' as const },
+    }
+    const props: ComponentProps<typeof PreviewCanvas> = {
+      imageRef,
+      imageVersion: 1,
+      decodedFrame: quickTestFrame,
+      color: defaultColor,
+      viewMode: 'compare',
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      displaySource: 'quick',
+      dualGpuAllowed: true,
+    }
+    const { container, rerender } = render(createElement(PreviewCanvas, props))
+    const processedCanvas = container.querySelector<HTMLCanvasElement>(
+      'canvas.raw-preview-canvas',
+    )
+
+    // The frame box is measured and applied before the processed pipeline
+    // exists; the pipeline then draws the quick frame on that backing store.
+    expect(processedPipelines()).toHaveLength(1)
+    act(() => {
+      expect(observers.deliverPending(800, 600)).toBe(1)
+    })
+    expect(processedCanvas?.width).toBe(800)
+    expect(processedCanvas?.height).toBe(600)
+    await act(async () => {
+      processedInitialize.resolve()
+      await processedInitialize.promise
+    })
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-compare-mode="dual-gpu"]'),
+      ).toBeTruthy()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    const processedPipeline = processedPipelines()[0]!
+    processedPipeline.resize.mockClear()
+    pipelineMock.pipelineEvents.length = 0
+
+    // The promotion keeps the aspect ratio and the frame box. The original
+    // layer's ready report lifts the delay and the processed surface draws
+    // before the rebuilt observer's notification arrives.
+    imageRef.current = {
+      ...decodedImage,
+      source: 'bounded-hq',
+      width: 800,
+      height: 600,
+      data: new Uint16Array(800 * 600 * 3),
+    }
+    rerender(
+      createElement(PreviewCanvas, {
+        ...props,
+        imageVersion: 2,
+        decodedFrame: frameDescriptor({
+          frameId: 'decoded-frame-2',
+          stage: 'bounded-hq',
+          width: 800,
+          height: 600,
+          quickPredecessorFrameId: 'decoded-frame-1',
+        }),
+        displaySource: 'bounded-hq',
+      }),
+    )
+    await waitFor(() => {
+      expect(
+        pipelineMock.pipelineEvents.filter(
+          (event) => event.kind === 'processed' && event.op === 'render',
+        ),
+      ).toHaveLength(1)
+    })
+
+    act(() => {
+      expect(observers.deliverPending(800, 600)).toBeGreaterThan(0)
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(
+      pipelineMock.pipelineEvents.filter(
+        (event) => event.kind === 'processed' && event.op === 'render',
+      ),
+    ).toEqual([{ kind: 'processed', op: 'render', width: 800, height: 600 }])
+    expect(processedPipeline.resize).not.toHaveBeenCalled()
+    expect(
+      container.querySelector('[data-compare-mode="dual-gpu"]'),
+    ).toBeTruthy()
   })
 
   it('keeps retained dual-gpu compare visible while bounded-HQ layers catch up', async () => {
@@ -2738,6 +2983,68 @@ describe('preview canvas upload descriptor', () => {
     expect(processed!.disposeMock).not.toHaveBeenCalled()
   })
 
+  it('waits for a remounted original layer on the same frame to draw before claiming dual-gpu compare', async () => {
+    const onOriginalPreviewPipelineChange = vi.fn()
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      decodedFrame: testFrame(1),
+      color: defaultColor,
+      viewMode: 'compare' as const,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      dualGpuAllowed: true,
+      onOriginalPreviewPipelineChange,
+    } satisfies ComponentProps<typeof PreviewCanvas>
+    const { container, rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-compare-mode="dual-gpu"]'),
+      ).toBeTruthy(),
+    )
+    const [processed] = processedPipelines()
+    processed!.render.mockClear()
+
+    await act(async () => {
+      rerender(
+        createElement(PreviewCanvas, { ...props, viewMode: 'processed' }),
+      )
+    })
+    expect(originalPipelines()[0]!.disposeMock).toHaveBeenCalledOnce()
+    expect(onOriginalPreviewPipelineChange).toHaveBeenLastCalledWith(null)
+
+    const secondInitialize = deferred<void>()
+    pipelineMock.initialize.mockImplementation((canvas: HTMLCanvasElement) =>
+      canvas.className.includes('raw-preview-original-gpu-canvas')
+        ? secondInitialize.promise
+        : Promise.resolve(),
+    )
+    await act(async () => {
+      rerender(createElement(PreviewCanvas, { ...props, viewMode: 'compare' }))
+    })
+    expect(originalPipelines()).toHaveLength(2)
+    // The released layer's frame does not stand in for the new pipeline.
+    expect(
+      container.querySelector('[data-compare-mode="processed-only"]'),
+    ).toBeTruthy()
+    expect(originalPipelines()[1]!.render).not.toHaveBeenCalled()
+
+    await act(async () => {
+      secondInitialize.resolve()
+      await secondInitialize.promise
+    })
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-compare-mode="dual-gpu"]'),
+      ).toBeTruthy(),
+    )
+    expect(originalPipelines()[1]!.render).toHaveBeenCalledOnce()
+    expect(onOriginalPreviewPipelineChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ dispose: expect.any(Function) }),
+    )
+    expect(processed!.render).not.toHaveBeenCalled()
+  })
+
   it('uploads, draws, and fences a bounded-HQ frame once outside compare', async () => {
     const onStatsUpdate = vi.fn()
     const imageRef: RefObject<DecodedImage | null> = {
@@ -3013,6 +3320,47 @@ describe('preview canvas upload descriptor', () => {
     expect(pipeline.disposeMock).not.toHaveBeenCalled()
   })
 
+  it('takes down the draw error overlay once a later current draw succeeds', async () => {
+    const onStatsUpdate = vi.fn()
+    pipelineMock.initialize.mockImplementationOnce(
+      (canvas: HTMLCanvasElement) => {
+        const instance = pipelineMock.instances.find(
+          (candidate) => candidate.canvas === canvas,
+        )
+        instance?.render.mockImplementationOnce(() => {
+          throw new Error('Device lost while drawing')
+        })
+        return Promise.resolve()
+      },
+    )
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      decodedFrame: testFrame(1),
+      color: defaultColor,
+      viewMode: 'processed' as const,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      onStatsUpdate,
+    } satisfies ComponentProps<typeof PreviewCanvas>
+    const { rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() =>
+      expect(screen.getByText('Device lost while drawing')).toBeTruthy(),
+    )
+
+    await act(async () => {
+      rerender(
+        createElement(PreviewCanvas, {
+          ...props,
+          color: { ...defaultColor, userExposureEv: 0.4 },
+        }),
+      )
+    })
+    await waitFor(() => expect(onStatsUpdate).toHaveBeenCalledOnce())
+    expect(screen.queryByText('Device lost while drawing')).toBeNull()
+    expect(pipelineMock.instances[0]!.uploadImage).toHaveBeenCalledOnce()
+  })
+
   it('withholds readiness from in-flight frames once the selected LUT fails to upload', async () => {
     const firstFrame = deferred<void>()
     pipelineMock.waitForGpu.mockReturnValue(firstFrame.promise)
@@ -3226,6 +3574,90 @@ describe('preview canvas upload descriptor', () => {
       await act(async () => {
         await Promise.resolve()
       })
+    })
+
+    it('shows a same-size frame without a predecessor again once its box is measured, with one draw', async () => {
+      const observers = queueFrameResizeObservers()
+      const imageRef: RefObject<DecodedImage | null> = {
+        current: { ...decodedImage, source: 'quick' as const },
+      }
+      const props: ComponentProps<typeof PreviewCanvas> = {
+        imageRef,
+        imageVersion: 1,
+        decodedFrame: quickFrame,
+        color: defaultColor,
+        viewMode: 'processed' as const,
+        lutDataRef: { current: null },
+        lutDataVersion: 0,
+        displaySource: 'quick',
+      }
+      const { container, rerender } = render(
+        createElement(PreviewCanvas, props),
+      )
+      await waitFor(() => {
+        expect(processedPipelines()[0]?.render).toHaveBeenCalled()
+      })
+      act(() => {
+        observers.deliverPending(400, 300)
+      })
+      await waitFor(() => {
+        expect(trackOf(container)).toHaveAttribute(
+          'data-preview-track-ready',
+          'true',
+        )
+      })
+      const pipeline = processedPipelines()[0]!
+      pipeline.resize.mockClear()
+      pipelineMock.pipelineEvents.length = 0
+
+      // A restored frame with the same size names no predecessor, so the
+      // track hides until it is measured for this frame. The viewport never
+      // changes: only the observe() notification can measure it.
+      imageRef.current = {
+        ...decodedImage,
+        source: 'bounded-hq',
+        data: new Uint16Array(400 * 300 * 3),
+      }
+      rerender(
+        createElement(PreviewCanvas, {
+          ...props,
+          imageVersion: 2,
+          decodedFrame: frameDescriptor({
+            frameId: 'decoded-frame-2',
+            stage: 'bounded-hq',
+          }),
+          displaySource: 'bounded-hq',
+        }),
+      )
+      expect(trackOf(container)).toHaveAttribute(
+        'data-preview-track-ready',
+        'false',
+      )
+      await waitFor(() => {
+        expect(
+          pipelineMock.pipelineEvents.filter(
+            (event) => event.kind === 'processed' && event.op === 'render',
+          ),
+        ).toHaveLength(1)
+      })
+
+      act(() => {
+        expect(observers.deliverPending(400, 300)).toBe(1)
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(trackOf(container)).toHaveAttribute(
+        'data-preview-track-ready',
+        'true',
+      )
+      expect(
+        pipelineMock.pipelineEvents.filter(
+          (event) => event.kind === 'processed' && event.op === 'render',
+        ),
+      ).toHaveLength(1)
+      expect(pipeline.resize).not.toHaveBeenCalled()
     })
 
     it('never holds another source behind the retained quick compare pair', async () => {
