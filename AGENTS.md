@@ -119,8 +119,17 @@ image-editor assumptions.
   mobile surfaces by viewport. Respect that split.
 - `src/modules/raw-processor/components/tools/` is the desktop command rail:
   Adjust (Tone, Color, and HSL sections), Transform, Compare, Export, File
-  Facts, Histogram, the LUT contract tool under
-  `src/modules/raw-processor/components/tools/lut/`, and shared tool chrome.
+  Facts, the LUT contract tool under
+  `src/modules/raw-processor/components/tools/lut/`, and the rail's tool
+  chrome.
+- `src/modules/raw-processor/components/shared/` holds what both surfaces
+  render: the histogram, slider ticks and tracks, the segmented control paint
+  (`src/modules/raw-processor/components/shared/segmented-chrome.ts`), and
+  the LUT option buttons, issue copy, and source warnings under
+  `src/modules/raw-processor/components/shared/lut/`. The desktop rail and the
+  mobile shell never import each other; they share policy through services,
+  hooks, or this folder, and lint refuses a direct import between them (see
+  Verification).
 - `src/modules/raw-processor/components/mobile/` is the mobile photo-first
   shell (`DESIGN.md` "Mobile Shell: Tools, Lens, Action" holds the full
   spec):
@@ -207,8 +216,8 @@ image-editor assumptions.
   `src/lib/profiles` parses and fetches online LUT catalogs and source URLs
   (catalog entries and source URLs pass one shared transport URL check). A
   catalog entry's LUT contract is mapped by `mapProfileLUTContract` in
-  `packages/luma-color-runtime/src/lut-contract.ts`; the same-named function
-  in `src/lib/profiles` only forwards to it and is scheduled for deletion.
+  `packages/luma-color-runtime/src/lut-contract.ts`, which the catalog parser
+  imports.
 - `packages/luma-color-runtime` is pure TypeScript color math: tone,
   temperature/tint color balance, LUT contracts, transfer/gamut transforms,
   graph resolution, row-band processing, and WGSL helpers
@@ -365,17 +374,40 @@ variant:
   `src/modules/raw-processor/services/look/lut-source-grouping.ts` compose
   contracts, output options, and source groups for both surfaces. Their
   labels and profile grouping (`formatLUTContractOutput`,
-  `getProfileOutputLabel`, `groupProfiles`, and their siblings) are pure label
-  helpers that decide no contract. They still sit in the desktop rail folder
-  `src/modules/raw-processor/components/tools/`, so the output-options service
-  and the mobile Look footer import a desktop component module; they are
-  scheduled to move into `src/modules/raw-processor/services/look/`, and that
-  move deletes the old module. Do not add consumers of the old location.
+  `getProfileOutputLabel`, `groupProfiles`, and their siblings) live in
+  `src/modules/raw-processor/services/look/lut-contract-labels.ts`: pure label
+  helpers that decide no contract, which the desktop rail, the mobile Look
+  footer, and the output-options service all import.
 
-Deprecated public API. No export is deprecated today. A deprecated export is
-scheduled for removal, not protected: a dedicated retirement change deletes it
-with a `### Breaking` CHANGELOG entry. Until then no app or CLI code may start
-using it again, and an unrelated change does not remove it on the side.
+Known duplication. This copy exists today. Do not extend it; remove it only by
+finishing the move it belongs to:
+
+- The fallback LUT profile ID for a contract that names no input profile
+  (`${inputGamut}-${inputTransfer}`) is built in
+  `packages/luma-color-runtime/src/lut-profile-resolution.ts`, again in
+  `src/lib/lut/profile-resolution.ts`, and again in
+  `packages/lmfg-cli/src/services/lut.ts`. The move is a color-runtime
+  export that both consumers import.
+
+Retired public API. No published export is deprecated: a replaced export is
+deleted in the change that replaces it, with a `### Breaking` CHANGELOG entry,
+and no `@deprecated` forwarding export, compatibility re-export, or legacy
+field reader takes its place. `scripts/quality/check-retired-api.mjs`
+(`pnpm check:retired-api`) lists the retired names and fails when a published
+entry exports one again, an exported type regains a retired member, code or a
+document outside a test or CHANGELOG names one, or code outside a test carries
+a `@deprecated` tag.
+
+Data the deployed build has written to users' devices is not a compatibility
+path. Its readers are supported production code and stay while that data can
+exist: the OPFS export outputs, including those written straight into the
+active export directory before outputs moved into per-tab directories, read
+by `src/lib/export/output-sink.ts` and `src/lib/export/opfs-output-lifetime.ts`;
+the online LUT source registry and its removed-default tombstones in
+`src/modules/raw-processor/services/look/online-lut-sources.ts`; and the LUT
+contract choices `src/lib/lut/profile-resolution.ts` stores, which it trusts
+only in the exact canonical form it writes. The retired API check also fails
+when the OPFS or online LUT source readers it lists disappear.
 
 Close the extraction:
 
@@ -431,9 +463,9 @@ These are owner decisions. They override cleanup advice that says otherwise.
   returns `unsupported-pipeline` for `styleKind: 'builtin'`. The preview color
   plan lets the WebGPU preview keep drawing a preset, while the CPU preview
   and the histogram leave it out with a typed reason. Do not delete the
-  plumbing and do not restore a preset picker without a request. Product docs
-  that still describe choosing built-in finishes are intentionally left as
-  they are.
+  plumbing and do not restore a preset picker without a request. Product and
+  user docs describe only the looks a user can actually pick (catalog LUTs
+  and their own `.cube` files); do not describe a built-in finish picker.
 - Online LUT catalog activation is lazy.
   `src/modules/raw-processor/hooks/useOnlineLutSources.ts` requests no catalog
   when it mounts. A listed source (the default or a saved one) is requested
@@ -552,6 +584,9 @@ These are owner decisions. They override cleanup advice that says otherwise.
 - `docs/` holds user guides plus living references
   (`docs/PERFORMANCE_RESOURCE_MANAGEMENT.md`, the anti-AI-slop guardrails).
   Update them when the behavior they describe changes.
+- `README.md`, `docs/README.md`, and the user guides each have a Chinese
+  twin (`README_zh.md`, `docs/README_zh.md`, and the `_zh` guides). Change a
+  pair together so both say the same thing.
 - Write every repository path in this file in full from the repository root.
   `pnpm check:agent-paths` fails on a backticked path that does not resolve;
   CI runs it on every change, docs-only ones included.
@@ -606,13 +641,26 @@ These are owner decisions. They override cleanup advice that says otherwise.
     affect both the CLI and the browser export manifest: run the render-engine
     tests, `pnpm test:cli`, and `src/modules/raw-processor/services/export`
     app tests together.
+  - Repository tooling and browser specs: `pnpm typecheck:tooling` checks
+    the root TypeScript configs and the TypeScript under `scripts/` and
+    `plugins/` (`tsconfig.tooling.json`), and `pnpm typecheck:browser` checks
+    `tests/browser/tsconfig.json`. The color and JPEG runtime tests
+    typecheck with `pnpm typecheck:runtime-tests`.
+  - Structure and retired API: `pnpm check:structure` and
+    `pnpm check:retired-api` (see Retired public API under Canonical Owners)
+    read the whole repository; run them after removing or moving an export.
 - Default closeout verification for broad app changes remains:
   - `pnpm lint`
   - `pnpm test:run`
   - `pnpm build`
-- `pnpm test:run` is the full Vitest sweep. Do not make it the first command
-  after every UI batch when `pnpm test:ui` or `pnpm test:app` gives the faster
-  signal needed for the current scope.
+- `pnpm test:run` is the full Vitest sweep: `vitest.config.ts` names the
+  `app` and `tooling` projects and one project per workspace package, named
+  after its directory (for example `vitest run --project lmfg-mcp`). Each
+  package keeps its own config, so the aggregate runs a package's tests as
+  that package's own `test` script does. `pnpm test:app` runs the `app`,
+  `tooling`, and `luma-color-runtime` projects. Do not make `pnpm test:run`
+  the first command after every UI batch when `pnpm test:ui` or
+  `pnpm test:app` gives the faster signal needed for the current scope.
 - User-visible `/raw` behavior changes should include browser validation when
   the change affects interaction, rendering, export handoff, or mobile/WebKit
   behavior.
@@ -628,20 +676,27 @@ These are owner decisions. They override cleanup advice that says otherwise.
 - CI follows the same split (jobs in `.github/workflows/build.yml`, aggregated
   by its `build` job; every job except `quality` is path-selected):
   - `quality` runs on every change, docs-only ones included. It tests and runs
-    `scripts/quality/check-agent-paths.mjs` against this file, then installs
-    dependencies and runs `pnpm lint:check` and `pnpm check:structure`
-    (`scripts/quality/check-structure.mjs`). Lint covers the app, every
-    package, script and plugin, and the browser specs, and applies the
-    module ownership rule in `plugins/eslint-import-boundaries.mjs` (tested by
+    `scripts/quality/check-agent-paths.mjs` against this file and checks the
+    app alias map (`scripts/quality/app-aliases.mjs`, which the Vite and
+    Vitest configs share), then installs dependencies, tests the test-project
+    discovery, the structure check, and the import boundaries, and runs
+    `pnpm lint:check`, `pnpm typecheck:tooling`, `pnpm check:structure`
+    (`scripts/quality/check-structure.mjs`), and, after testing it,
+    `pnpm check:retired-api`. Lint covers the app, every package, script and
+    plugin, and the browser specs, and applies the module ownership rule in
+    `plugins/eslint-import-boundaries.mjs` (tested by
     `scripts/quality/import-boundaries.test.mjs`) to every import form by the
     resolved files on both sides, with no exceptions. knip and madge fail any
     unused file, export, dependency, unresolved import, or import cycle that
-    `scripts/quality/baseline.json` does not list. Code that resolves a
-    baseline entry drops it in the same commit (`pnpm check:structure --prune`);
-    the baseline never gains an entry without review.
-  - `app` uses `pnpm test:app`, prebuilt native assets, and app build checks.
-  - `runtime` runs runtime package typecheck/test/build and app adapter tests,
-    then typechecks, tests, and builds `packages/render-engine`.
+    `scripts/quality/baseline.json` does not list. The baseline lists nothing
+    today and never gains an entry without review; a change that resolves an
+    entry drops it in the same commit (`pnpm check:structure --prune`).
+  - `app` runs `pnpm typecheck:browser` and `pnpm test:app`, builds the app
+    with prebuilt native assets, checks the build artifact, and smokes the
+    landing page and the empty RAW Lab shell in Chromium.
+  - `runtime` runs runtime package typecheck/test/build,
+    `pnpm typecheck:runtime-tests`, and app adapter tests, then typechecks,
+    builds, and tests `packages/render-engine`.
   - `webgpu` installs Chromium and runs `pnpm test:webgpu` (WebGPU preview vs
     the TS export executor and frozen WebGL output) for `src/lib/webgpu`, the
     color runtime, render-engine preview, and `scripts/webgpu` changes.

@@ -84,10 +84,13 @@ finished JPEG with a look they already enjoy.
 - Compare original and processed output: a split with the WebGPU preview, or
   an original toggle in the slower CPU preview. On a phone the compare lens
   sits on the photo, and a hold peeks at the original.
-- Choose built-in finishes: Neutral, Warm, Cool, Film Soft, Film Contrast,
-  Cinematic, Fade, and Mono.
-- Adjust light finishing controls such as exposure, contrast, and look strength
-  without turning the app into a full development cockpit.
+- Pick a look from the LumaForge LUT catalog, or from another catalog you add
+  by URL. Catalog LUTs usually come with their input and output contract;
+  when one does not, LumaForge asks for it.
+- Fine-tune with a bounded set of controls: exposure, contrast, highlights,
+  shadows, whites, and blacks; temperature and tint; saturation and vibrance;
+  eight HSL bands; and look strength. They stop short of a full development
+  cockpit, and the export reproduces every one of them.
 - Straighten and reframe with Transform: upright modes, manual vertical and
   horizontal perspective, rotate, aspect, scale, and offset, with constrained
   crop on by default. The full-resolution export reproduces the committed
@@ -110,11 +113,15 @@ RAW file
 -> @lumaforge/luma-raw-runtime
 -> metadata, embedded preview, quick/HQ decode, export capability facts
 -> Linear ProPhoto scene-referred working image
+-> white balance, tone, saturation, and HSL adjustments
 -> LUT input gamut and transfer/log encoding
--> built-in look or declared .cube LUT
+-> declared .cube LUT, at the chosen strength
 -> declared LUT output transform
 -> Rec.709/sRGB JPEG output
 ```
+
+At export, a committed Transform is resampled at full resolution before this
+color path runs.
 
 LUT contracts are the small bit of structure that lets LumaForge apply creative
 looks to RAW files without making the user build a color pipeline by hand.
@@ -159,15 +166,18 @@ and authoritative export share color intent, but they are not the same executor.
   transfer/gamut transforms, graph logic, row processing, and WGSL helpers.
 - `packages/luma-jpeg-runtime`: bounded row-oriented JPEG encoding.
 - `packages/render-engine`: the headless engine shared by `/raw` and `lmfg`:
-  full-resolution export and its fail-closed gates, the CPU preview renderer,
-  resource policy, and render manifests.
+  full-resolution export and its fail-closed gates, export geometry, the CPU
+  preview renderer, resource policy, and render manifests.
 - `src/lib/webgpu`: WebGPU interactive preview rendering. Without WebGPU the
   preview falls back to the engine's CPU preview worker.
 - `src/lib/export`: the browser worker shell and output sinks for the engine's
   full-resolution export.
-- `src/modules/raw-processor`: the `/raw` workflow for upload, preview, style
-  selection, Adjust, Transform, LUT contract selection, compare, status, and
-  export actions.
+- `src/lib/transform`: the Transform controls' geometry, upright detection,
+  and the preview worker that shows the framing; export reproduces the
+  committed geometry in the engine.
+- `src/modules/raw-processor`: the `/raw` workflow for upload, preview, look
+  and LUT selection, Adjust, Transform, LUT contract selection, compare,
+  status, and export actions.
 
 ### Command line: `lmfg`
 
@@ -176,7 +186,8 @@ runs the same RAW → look → export pipeline headlessly with sealed render
 manifests. Its params carry no geometry, so it cannot author a Transform;
 `render replay` reapplies the geometry a full-resolution export manifest
 records. See `packages/lmfg-cli/README.md` for the agent loop, JSON protocol,
-and exit codes. Build it with `pnpm cli:build`.
+and exit codes. `packages/lmfg-mcp` serves the same commands, plus two
+image-reading tools, over MCP stdio. Build both with `pnpm cli:build`.
 
 ## Local Development
 
@@ -211,6 +222,19 @@ pnpm lint
 pnpm test:run
 pnpm build
 ```
+
+Scoped checks for a smaller change:
+
+```bash
+pnpm test:app        # app, tooling, and color runtime tests
+pnpm test:runtime    # runtime packages and the app's runtime adapters
+pnpm test:cli        # lmfg and lmfg-mcp (cli:build first)
+pnpm test:webgpu     # WebGPU preview against the export executor
+pnpm test:browser    # Playwright specs under tests/browser
+pnpm check:structure # unused code and import cycles
+```
+
+`AGENTS.md` maps which checks a change needs and where each contract lives.
 
 This repository uses `pnpm` only.
 

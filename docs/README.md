@@ -20,7 +20,7 @@ Start here if you want to use the RAW lab, not build or extend it.
 1. Open the RAW lab at `/raw`.
 2. Drop or pick one RAW file.
 3. Wait for the preview to become useful.
-4. Choose a built-in finish or add a `.cube` LUT.
+4. Pick a LUT from an online catalog or add your own `.cube` LUT.
 5. Compare the original and processed result.
 6. Export a JPEG when LumaForge says the full-resolution path is ready.
 

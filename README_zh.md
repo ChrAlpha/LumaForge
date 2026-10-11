@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  拖入一张相机 RAW 文件，本地预览，选择内置风格或声明
+  拖入一张相机 RAW 文件，本地预览，选择风格或声明
   <code>.cube</code> LUT 合约，对比效果，导出全分辨率 JPEG。
 </p>
 
@@ -75,10 +75,11 @@
 - 通过嵌入式预览、快速预览和受控高品质预览逐步看到图像。
 - 对比原始和处理后的输出：WebGPU 预览下为分屏对比，较慢的 CPU 预览下为
   原图切换。在手机上，对比镜头位于照片上，长按可临时查看原图。
-- 选择内置风格：Neutral、Warm、Cool、Film Soft、Film Contrast、Cinematic、
-  Fade 和 Mono。
-- 调整轻度润色控制（如曝光、对比度和风格强度），而不会把应用变成完整的
-  显影驾驶舱。
+- 从 LumaForge LUT 目录或你通过 URL 添加的其他目录中选择风格。目录中的 LUT
+  通常自带输入和输出合约；缺少合约时，LumaForge 会请你选择。
+- 用一组有限的控制项微调：曝光、对比度、高光、阴影、白色和黑色；色温和色调；
+  饱和度和自然饱和度；八个 HSL 色带；以及风格强度。它们不会把应用变成完整的
+  显影驾驶舱，导出会完整复现其中每一项。
 - 用 Transform 校正和重新构图：自动校正（upright）模式，以及手动的垂直和
   水平透视、旋转、宽高比、缩放和偏移，并默认开启约束裁切。全分辨率导出会
   重现已提交的构图，无法规划的几何变换会拒绝导出。
@@ -98,11 +99,14 @@ RAW 文件
 -> @lumaforge/luma-raw-runtime
 -> 元数据、嵌入式预览、快速/HQ 解码、导出能力信息
 -> Linear ProPhoto 场景参考工作图像
+-> 白平衡、影调、饱和度和 HSL 调整
 -> LUT 输入色域和传递/对数编码
--> 内置风格或声明的 .cube LUT
+-> 声明的 .cube LUT，按所选强度应用
 -> 声明的 LUT 输出变换
 -> Rec.709/sRGB JPEG 输出
 ```
+
+导出时，已提交的 Transform 会先以全分辨率重采样，然后才进入这条色彩路径。
 
 LUT 合约是一小段结构，让 LumaForge 能够将创意风格应用于 RAW
 文件，而无需用户手动构建色彩管线。当 LUT 本身携带有用元数据时，
@@ -139,12 +143,15 @@ LumaForge 是一套运行在浏览器中的 RAW + LUT 处理管线。当前支�
   传递函数/色域变换、图谱解析、行处理和 WGSL 辅助函数。
 - `packages/luma-jpeg-runtime`：受控的逐行 JPEG 编码器。
 - `packages/render-engine`：`/raw` 与 `lmfg` 共用的无界面引擎，包含全分辨率
-  导出及其失败即停（fail-closed）检查、CPU 预览渲染、资源策略和渲染清单。
+  导出及其失败即停（fail-closed）检查、导出几何、CPU 预览渲染、资源策略和
+  渲染清单。
 - `src/lib/webgpu`：WebGPU 交互式预览渲染。没有 WebGPU 时，预览回退到引擎的
   CPU 预览 Worker。
 - `src/lib/export`：引擎全分辨率导出在浏览器中的 Worker 外壳和输出通道。
-- `src/modules/raw-processor`：`/raw` 工作流，涵盖上传、预览、风格选择、
-  调整（Adjust）、Transform、LUT 合约选择、对比、状态和导出操作。
+- `src/lib/transform`：Transform 控制项的几何、自动校正检测，以及显示构图的
+  预览 Worker；导出在引擎中复现已提交的几何变换。
+- `src/modules/raw-processor`：`/raw` 工作流，涵盖上传、预览、风格与 LUT
+  选择、调整（Adjust）、Transform、LUT 合约选择、对比、状态和导出操作。
 
 ### 命令行：`lmfg`
 
@@ -152,7 +159,8 @@ LumaForge 是一套运行在浏览器中的 RAW + LUT 处理管线。当前支�
 运行同一条 RAW → 风格 → 导出管线，并为每次渲染生成密封的渲染清单。它的参数
 不含几何信息，因此无法创建 Transform；`render replay` 会重新应用全分辨率导出
 清单中记录的几何变换。智能体工作循环、JSON 协议和退出码见
-`packages/lmfg-cli/README.md`。使用 `pnpm cli:build` 构建。
+`packages/lmfg-cli/README.md`。`packages/lmfg-mcp` 通过 MCP stdio 提供同样的
+命令，另有两个读取图像的工具。使用 `pnpm cli:build` 构建两者。
 
 ## 本地开发
 
@@ -187,6 +195,19 @@ pnpm lint
 pnpm test:run
 pnpm build
 ```
+
+较小改动的范围检查：
+
+```bash
+pnpm test:app        # 应用、工具链和色彩运行时测试
+pnpm test:runtime    # 运行时包及应用的运行时适配层
+pnpm test:cli        # lmfg 和 lmfg-mcp（先运行 cli:build）
+pnpm test:webgpu     # 对照导出执行器检查 WebGPU 预览
+pnpm test:browser    # tests/browser 下的 Playwright 用例
+pnpm check:structure # 未使用的代码和导入环
+```
+
+`AGENTS.md` 说明每类改动需要哪些检查，以及每份合约归属何处。
 
 本仓库仅使用 `pnpm`。
 

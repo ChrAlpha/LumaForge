@@ -492,7 +492,7 @@ Mobile `/raw` is built for finishing one photo quickly: choose a look, fine-tune
 ### Mobile Stage Insets
 
 The mobile stage is photo-first.
-`computeMobileStageLayout` (`components/mobile/mobile-stage-layout.ts`) turns the shell size, the measured topbar and tab bar, the displayed preview's aspect, and the tool / deck / export state into `--raw-stage-inset-top` / `--raw-stage-inset-bottom` and a `--raw-photo-*` rect on the shell.
+`computeMobileStageLayout` (`src/modules/raw-processor/components/mobile/mobile-stage-layout.ts`) turns the shell size, the measured topbar and tab bar, the displayed preview's aspect, and the tool / deck / export state into `--raw-stage-inset-top` / `--raw-stage-inset-bottom` and a `--raw-photo-*` rect on the shell.
 `.raw-lab-stage` consumes the insets as padding over a 240ms `cubic-bezier(0.22, 1, 0.36, 1)` transition that matches `DOCK_SPRING`, and the deck height moves on the same curve.
 
 The stage region is exactly the photo's displayed height, so the frame's own centring anchors the photo flush under the topbar.
