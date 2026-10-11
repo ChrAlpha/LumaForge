@@ -10,7 +10,7 @@ import { clsxm } from '~/lib/cn'
 import type { Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 
-import { histogramClippingLabels } from './histogram-clipping'
+import { histogramClippingLabels } from '../../services/preview/histogram-clipping'
 
 const VIEWBOX_WIDTH = 128
 const VIEWBOX_HEIGHT = 88
