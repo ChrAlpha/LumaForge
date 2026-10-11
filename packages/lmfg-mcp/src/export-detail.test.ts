@@ -14,7 +14,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { resolveWorkspaceRoot, workspacePaths } from '@lumaforge/lmfg-cli'
@@ -741,19 +741,56 @@ describe('verified export JPEG detail', () => {
         await vi.importActual<typeof import('node:fs/promises')>(
           'node:fs/promises',
         )
-      vi.mocked(open).mockImplementation(async (...args) => {
-        const handle = await actual.open(...args)
-        if (String(args[0]).endsWith('.tmp')) {
-          vi.spyOn(handle, operation).mockRejectedValue(
-            new Error(`simulated ${operation} failure`),
-          )
-        }
-        return handle
-      })
-      await expect(createExportDetail(cwd, input)).rejects.toThrow(
-        `simulated ${operation} failure`,
-      )
-      expect(await readdir(join(sessionDir, 'exports', 'details'))).toEqual([])
+      const detailsDir = join(sessionDir, 'exports', 'details')
+      let temporaries: string[] = []
+      const failTemporaries = () => {
+        temporaries = []
+        vi.mocked(open).mockImplementation(async (...args) => {
+          const handle = await actual.open(...args)
+          if (String(args[0]).endsWith('.tmp')) {
+            temporaries.push(String(args[0]))
+            vi.spyOn(handle, operation).mockRejectedValue(
+              new Error(`simulated ${operation} failure`),
+            )
+          }
+          return handle
+        })
+      }
+      // The publisher must open its temporary through the mocked module; a
+      // test runner that hands it another module instance would let the real
+      // write succeed and never exercise the cleanup.
+      const failedPublication = async () => {
+        failTemporaries()
+        const failure = await createExportDetail(cwd, input).then(
+          () => undefined,
+          (error: unknown) => error,
+        )
+        expect(temporaries).toHaveLength(1)
+        expect(dirname(temporaries[0]!)).toBe(detailsDir)
+        expect(failure).toMatchObject({
+          message: `simulated ${operation} failure`,
+        })
+      }
+
+      await failedPublication()
+      expect(await readdir(detailsDir)).toEqual([])
+
+      vi.mocked(open).mockImplementation(actual.open)
+      const published = await createExportDetail(cwd, input)
+      const outputs = [
+        `${published.result.sha256}.png`,
+        `${published.result.receipt_sha256}.json`,
+      ].sort()
+      expect((await readdir(detailsDir)).sort()).toEqual(outputs)
+      const readOutputs = () =>
+        Promise.all(outputs.map((name) => readFile(join(detailsDir, name))))
+      const publishedBytes = await readOutputs()
+
+      // A failed republication removes only its own temporary and leaves the
+      // outputs already published intact.
+      await failedPublication()
+      expect((await readdir(detailsDir)).sort()).toEqual(outputs)
+      expect(await readOutputs()).toEqual(publishedBytes)
     },
   )
 })
