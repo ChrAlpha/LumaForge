@@ -6,9 +6,9 @@ import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
 import { scrubGainBandAtom } from '../../state/scrub.atoms'
+import type { SliderTickMark } from '../shared/SliderTicks'
+import { SliderTickLabels, SliderTickMarks } from '../shared/SliderTicks'
 import { GAIN_LABEL_KEY } from '../tools/scrub-gain-copy'
-import type { SliderTickMark } from '../tools/SliderTicks'
-import { SliderTickLabels, SliderTickMarks } from '../tools/SliderTicks'
 import { useSliderScrub } from '../tools/useSliderScrub'
 
 type AdjustSliderRowProps = {

@@ -5,7 +5,7 @@ import {
   DEFAULT_LOOK_INTENSITY,
   LOOK_INTENSITY_PRESETS,
 } from '../services/look/style-system'
-import type { SliderTickMark } from './tools/SliderTicks'
+import type { SliderTickMark } from './shared/SliderTicks'
 
 /**
  * The Strength row on both surfaces: how much of the applied LUT reaches

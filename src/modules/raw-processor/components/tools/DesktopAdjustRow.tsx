@@ -7,8 +7,8 @@ import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
 import { scrubGainBandAtom } from '../../state/scrub.atoms'
-import type { SliderTickMark } from './SliderTicks'
-import { SliderTickLabels, SliderTickMarks } from './SliderTicks'
+import type { SliderTickMark } from '../shared/SliderTicks'
+import { SliderTickLabels, SliderTickMarks } from '../shared/SliderTicks'
 import { useSliderScrub } from './useSliderScrub'
 
 export interface DesktopAdjustRowProps {
