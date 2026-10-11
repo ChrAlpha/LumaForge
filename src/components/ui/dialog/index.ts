@@ -1,12 +1,1 @@
-export {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  type DialogContentProps,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogOverlay,
-  DialogTitle,
-  DialogTrigger,
-} from './Dialog'
+export { Dialog, DialogDescription, DialogTitle } from './Dialog'

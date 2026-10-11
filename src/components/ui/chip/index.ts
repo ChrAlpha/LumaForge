@@ -1,2 +1,2 @@
-export type { ChipProps, ChipSize, ChipSurface, ChipTone } from './Chip'
+export type { ChipSurface } from './Chip'
 export { Chip } from './Chip'

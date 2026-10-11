@@ -5,9 +5,7 @@ import { clsxm } from '~/lib/cn'
 
 const ContextMenu = ContextMenuPrimitive.Root
 const ContextMenuTrigger = ContextMenuPrimitive.Trigger
-const ContextMenuGroup = ContextMenuPrimitive.Group
 const ContextMenuSub = ContextMenuPrimitive.Sub
-const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup
 const RootPortal = ContextMenuPrimitive.Portal
 
 const ContextMenuSubTrigger = ({
@@ -161,28 +159,6 @@ const ContextMenuCheckboxItem = ({
 ContextMenuCheckboxItem.displayName =
   ContextMenuPrimitive.CheckboxItem.displayName
 
-const ContextMenuLabel = ({
-  ref,
-  className,
-  inset,
-  ...props
-}: React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Label> & {
-  inset?: boolean
-} & {
-  ref?: React.Ref<React.ElementRef<typeof ContextMenuPrimitive.Label> | null>
-}) => (
-  <ContextMenuPrimitive.Label
-    ref={ref}
-    className={clsxm(
-      'text-text px-2 py-1.5 font-semibold',
-      inset && 'pl-8',
-      className,
-    )}
-    {...props}
-  />
-)
-ContextMenuLabel.displayName = ContextMenuPrimitive.Label.displayName
-
 const ContextMenuSeparator = ({
   ref,
   ...props
@@ -206,11 +182,8 @@ export {
   ContextMenu,
   ContextMenuCheckboxItem,
   ContextMenuContent,
-  ContextMenuGroup,
   ContextMenuItem,
-  ContextMenuLabel,
   RootPortal as ContextMenuPortal,
-  ContextMenuRadioGroup,
   ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,

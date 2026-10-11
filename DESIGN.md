@@ -421,8 +421,8 @@ Paint contract (cross-platform):
 - **Sizes diverge by interaction only**: 44px min-height for touch, 28px for desktop LUT contract tabs (tab density).
   Paint stays one across all sizes.
 
-The `SegmentGroup` / `SegmentItem` primitives in `src/components/ui/segment/` are intentionally **color-agnostic**.
-Consumers own all color (track, item text, active thumb) so the same primitive can render on the landing, on the workspace chrome, and on themed shared surfaces without color leaks (see Primitive Color Agnosticism Rule below).
+There is no shared segmented primitive in `src/components/ui`: each consumer renders its own control and applies this paint.
+Consumers own all color (track, item text, active thumb), as the Primitive Color Agnosticism Rule below requires of any primitive.
 
 ### Text Opacity Ladder
 
