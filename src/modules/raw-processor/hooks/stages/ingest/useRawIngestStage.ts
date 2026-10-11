@@ -54,7 +54,6 @@ type UseRawIngestStageInput = {
     options?: { preserveExportResult?: boolean },
   ) => void
   invalidateExportGraph: () => void
-  registerCurrentPreviewPipelineForEvacuation: () => void
   yieldToPaint: () => Promise<void>
   getPrewarmState: () => PrewarmState
   /** The workflow host owns each load's native session and cancellation. */

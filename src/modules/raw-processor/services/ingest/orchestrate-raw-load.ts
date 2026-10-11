@@ -114,7 +114,6 @@ export interface RawLoadContext {
     clearSessionEmbeddedPreviewUrl: (id?: string) => void
     setDecodedImageRef: (next: DecodedImage | null) => void
     invalidateExportGraph: () => void
-    registerCurrentPreviewPipelineForEvacuation: () => void
     yieldToPaint: () => Promise<void>
     getPrewarmState: () => PrewarmState
     /**

@@ -62,7 +62,6 @@ function createInput(
     clearSessionEmbeddedPreviewUrl: vi.fn(),
     setDecodedImageRef: vi.fn(),
     invalidateExportGraph: vi.fn(),
-    registerCurrentPreviewPipelineForEvacuation: vi.fn(),
     yieldToPaint: () => Promise.resolve(),
     getPrewarmState: vi.fn(),
     beginRuntimeSession: vi.fn(),

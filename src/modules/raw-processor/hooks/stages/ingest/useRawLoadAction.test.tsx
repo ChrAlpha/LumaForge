@@ -77,7 +77,6 @@ function createInput(
     clearSessionEmbeddedPreviewUrl: vi.fn(),
     setDecodedImageRef: vi.fn(),
     invalidateExportGraph: vi.fn(),
-    registerCurrentPreviewPipelineForEvacuation: vi.fn(),
     yieldToPaint: vi.fn(),
     getPrewarmState: vi.fn<() => PrewarmState>(() => 'idle'),
     beginRuntimeSession: createHostLeases().beginRuntimeSession,
@@ -117,8 +116,6 @@ describe('useRawLoadAction', () => {
         services: expect.objectContaining({
           replaceFile: input.replaceFile,
           setDecodedImageRef: input.setDecodedImageRef,
-          registerCurrentPreviewPipelineForEvacuation:
-            input.registerCurrentPreviewPipelineForEvacuation,
         }),
         refs: expect.objectContaining({
           pendingLoadSessionIdRef: input.pendingLoadSessionIdRef,
@@ -149,6 +146,22 @@ describe('useRawLoadAction', () => {
         'setSession',
         'setStats',
         'setStatus',
+      ].sort(),
+    )
+    expect(Object.keys(ctx.services).sort()).toEqual(
+      [
+        'abortExportWork',
+        'abortRuntimeWork',
+        'beginRuntimeSession',
+        'clearSessionEmbeddedPreviewUrl',
+        'getPrewarmState',
+        'invalidateExportGraph',
+        'notify',
+        'queueExportResultResourceDisposal',
+        'replaceFile',
+        'revokeCurrentEmbeddedPreviewUrl',
+        'setDecodedImageRef',
+        'yieldToPaint',
       ].sort(),
     )
   })

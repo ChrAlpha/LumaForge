@@ -249,7 +249,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     clearSessionEmbeddedPreviewUrl,
     setDecodedImageRef,
     invalidateExportGraph,
-    registerCurrentPreviewPipelineForEvacuation,
     yieldToPaint,
     getPrewarmState: rawRuntimeHost.getPrewarmState,
     beginRuntimeSession: rawRuntimeHost.beginSession,

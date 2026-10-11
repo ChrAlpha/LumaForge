@@ -153,7 +153,6 @@ function buildContext(
       clearSessionEmbeddedPreviewUrl: vi.fn(),
       setDecodedImageRef: vi.fn(),
       invalidateExportGraph: vi.fn(),
-      registerCurrentPreviewPipelineForEvacuation: vi.fn(),
       yieldToPaint: vi.fn(async () => {
         order.push('yieldToPaint')
         await hooks.yieldToPaint()
