@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto'
 import type {
   ColorGraphIntent,
   LUTData,
-  ProcessingParams,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
 import {
@@ -44,15 +43,9 @@ const exposure = {
   source: 'dng-baseline' as const,
 }
 
-/** The complete color intent with the view fields an app record carries. */
-type IntentWithView = ColorGraphIntent &
-  Pick<ProcessingParams, 'viewMode' | 'compareSplit'>
-
-function params(overrides: Partial<IntentWithView> = {}): IntentWithView {
+function params(overrides: Partial<ColorGraphIntent> = {}): ColorGraphIntent {
   return {
     intensity: 1,
-    viewMode: 'processed',
-    compareSplit: 0.5,
     styleKind: 'none',
     builtinPreset: null,
     userExposureEv: 0.3,
@@ -108,26 +101,6 @@ describe('toManifestRenderParams', () => {
       ).toBe(intensity)
     },
   )
-
-  it('describes the same render whatever the preview view state', () => {
-    const projected = toManifestRenderParams(
-      params({ viewMode: 'processed', compareSplit: 0.5 }),
-      exposure,
-    )
-
-    expect(
-      toManifestRenderParams(
-        params({ viewMode: 'original', compareSplit: 0.37 }),
-        exposure,
-      ),
-    ).toEqual(projected)
-    expect(
-      toManifestRenderParams(
-        params({ viewMode: 'compare', compareSplit: 0.62 }),
-        exposure,
-      ),
-    ).toEqual(projected)
-  })
 
   it('records selective color only when a band is shifted', () => {
     const shifted = toManifestRenderParams(
@@ -296,12 +269,10 @@ describe('toManifestRenderParams canonical bytes', () => {
   }
 
   function neutralParams(
-    overrides: Partial<IntentWithView> = {},
-  ): IntentWithView {
+    overrides: Partial<ColorGraphIntent> = {},
+  ): ColorGraphIntent {
     return {
       intensity: 1,
-      viewMode: 'processed',
-      compareSplit: 0.5,
       styleKind: 'none',
       builtinPreset: null,
       userExposureEv: 0,
@@ -614,7 +585,7 @@ describe('buildFullResExportManifest current record', () => {
   }
 
   function build(
-    intent: IntentWithView,
+    intent: ColorGraphIntent,
     options: { lut?: LUTData; geometry?: GeometryParams } = {},
   ): { graph: SupportedExportColorGraphDescriptor; manifest: RenderManifest } {
     const graph = resolveExportColorGraph({
@@ -681,7 +652,7 @@ describe('buildFullResExportManifest current record', () => {
   function expectCurrentRecord(
     manifest: RenderManifest,
     graph: SupportedExportColorGraphDescriptor,
-    intent: IntentWithView,
+    intent: ColorGraphIntent,
     shape: { selectiveColor: boolean; geometry: boolean },
   ): void {
     // The seal the writer produced covers the record exactly as written.

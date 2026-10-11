@@ -2,15 +2,19 @@ import type {
   ColorGraphIntent,
   HSLBandId,
   HSLBandShift,
-  ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
 import {
   makeNeutralBand,
   NEUTRAL_USER_COLOR_INTENT,
 } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
+import {
+  getProcessingParams,
+  resetToDefaults,
+} from '../../../state/workflow.atoms'
+import { useRawDetachedWorkflowState } from '../../useRawDetachedWorkflowState'
 import { useRawAdjustmentActions } from './useRawAdjustmentActions'
 
 const BAND_IDS: readonly HSLBandId[] = [
@@ -118,7 +122,7 @@ describe('useRawAdjustmentActions', () => {
     expect(invalidateExportGraph).toHaveBeenCalledTimes(1)
   })
 
-  it('never carries view fields in the color patch', () => {
+  it('drops fields outside the color intent from a patch', () => {
     const { ref, setColorIntent } = createParamsHarness(baseParams)
     const invalidateExportGraph = vi.fn()
     const { result } = renderHook(() =>
@@ -128,24 +132,22 @@ describe('useRawAdjustmentActions', () => {
         invalidateExportGraph,
       }),
     )
-    // A record that still carries view fields, as the published params do.
-    const mixedPatch: Partial<ProcessingParams> = {
-      viewMode: 'original',
-      compareSplit: 0.25,
+    // An untyped caller can still hand over a wider record.
+    const widePatch = {
       userContrast: 20,
-    }
+      rawRenderExposure: { ev: 1, multiplier: 2, source: 'auto' },
+    } as unknown as Partial<ColorGraphIntent>
 
     act(() => {
-      result.current.setParams(mixedPatch)
+      result.current.setParams(widePatch)
     })
 
     expect(ref.current).toEqual({ ...baseParams, userContrast: 20 })
-    expect(ref.current).not.toHaveProperty('viewMode')
-    expect(ref.current).not.toHaveProperty('compareSplit')
+    expect(ref.current).not.toHaveProperty('rawRenderExposure')
     expect(invalidateExportGraph).toHaveBeenCalledTimes(1)
   })
 
-  it('leaves the color intent and the export alone for a view-only record', () => {
+  it('leaves the color intent and the export alone for a patch without color fields', () => {
     const { ref, setColorIntent } = createParamsHarness(baseParams)
     const invalidateExportGraph = vi.fn()
     const { result } = renderHook(() =>
@@ -155,18 +157,89 @@ describe('useRawAdjustmentActions', () => {
         invalidateExportGraph,
       }),
     )
-    const viewOnly: Partial<ProcessingParams> = {
-      viewMode: 'processed',
+    const foreignOnly = {
       compareSplit: 0.8,
-    }
+    } as unknown as Partial<ColorGraphIntent>
 
     act(() => {
-      result.current.setParams(viewOnly)
+      result.current.setParams(foreignOnly)
     })
 
     expect(setColorIntent).not.toHaveBeenCalled()
     expect(ref.current).toBe(baseParams)
     expect(invalidateExportGraph).not.toHaveBeenCalled()
+  })
+
+  describe('over the stored intent', () => {
+    beforeEach(() => {
+      act(() => {
+        resetToDefaults()
+      })
+    })
+
+    function renderStoredActions(invalidateExportGraph: () => void) {
+      return renderHook(() => {
+        const { colorIntent, setColorIntent } = useRawDetachedWorkflowState()
+        return useRawAdjustmentActions({
+          params: colorIntent,
+          setColorIntent,
+          invalidateExportGraph,
+        })
+      })
+    }
+
+    it('stores neutral bands for an explicitly undefined selective color', () => {
+      const invalidateExportGraph = vi.fn()
+      const { result } = renderStoredActions(invalidateExportGraph)
+
+      act(() => {
+        result.current.setParams({ selectiveColor: undefined })
+      })
+
+      expect(getProcessingParams().selectiveColor).toEqual(
+        makeNeutralSelectiveColorFixture(),
+      )
+      expect(invalidateExportGraph).not.toHaveBeenCalled()
+
+      expect(() => {
+        act(() => {
+          result.current.setSelectiveColorBand('red', { hue: 12 })
+        })
+      }).not.toThrow()
+
+      const stored = getProcessingParams().selectiveColor
+      for (const id of BAND_IDS) {
+        expect(stored[id]).toEqual(
+          id === 'red'
+            ? { hue: 12, saturation: 0, lightness: 0 }
+            : { hue: 0, saturation: 0, lightness: 0 },
+        )
+      }
+      expect(invalidateExportGraph).toHaveBeenCalledTimes(1)
+    })
+
+    it('stores partial selective color as complete normalized bands', () => {
+      const invalidateExportGraph = vi.fn()
+      const { result } = renderStoredActions(invalidateExportGraph)
+
+      act(() => {
+        result.current.setParams({
+          selectiveColor: {
+            blue: { hue: 140, saturation: 20 },
+          } as unknown as ColorGraphIntent['selectiveColor'],
+        })
+      })
+
+      const stored = getProcessingParams().selectiveColor
+      for (const id of BAND_IDS) {
+        expect(stored[id]).toEqual(
+          id === 'blue'
+            ? { hue: 100, saturation: 20, lightness: 0 }
+            : { hue: 0, saturation: 0, lightness: 0 },
+        )
+      }
+      expect(invalidateExportGraph).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('composes tone and color updates issued before a rerender', () => {
@@ -198,8 +271,6 @@ describe('useRawAdjustmentActions', () => {
       saturation: 0,
       lightness: 0,
     })
-    expect(ref.current).not.toHaveProperty('viewMode')
-    expect(ref.current).not.toHaveProperty('compareSplit')
     expect(invalidateExportGraph).toHaveBeenCalledTimes(4)
   })
 

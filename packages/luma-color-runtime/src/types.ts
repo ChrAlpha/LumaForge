@@ -21,20 +21,8 @@ export interface LumaColorProcessingParams
     LumaColorToneParams,
     LumaColorBalanceParams,
     LumaColorSaturationParams,
-    Partial<LumaColorSelectiveColorParams> {
+    LumaColorSelectiveColorParams {
   intensity: number
-  /**
-   * @deprecated View state is not color. The color graph never reads it;
-   * pass the view to the preview separately. Kept optional so existing
-   * records still type-check.
-   */
-  viewMode?: 'processed' | 'original' | 'compare'
-  /**
-   * @deprecated View state is not color. The color graph never reads it;
-   * pass the compare split to the preview separately. Kept optional so
-   * existing records still type-check.
-   */
-  compareSplit?: number
   styleKind: 'none' | 'builtin' | 'custom'
   builtinPreset: BuiltinStylePreset | null
 }

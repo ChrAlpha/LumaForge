@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 
 import type {
   ColorGraphIntent,
-  ProcessingParams,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
 import {
@@ -33,11 +32,8 @@ import { captureExportResultIdentity } from './export-result-identity'
 
 const exposure = { ev: 0, multiplier: 1, source: 'identity' as const }
 
-const params: ColorGraphIntent &
-  Pick<ProcessingParams, 'viewMode' | 'compareSplit'> = {
+const params: ColorGraphIntent = {
   intensity: 1,
-  viewMode: 'processed',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
   userExposureEv: 0,

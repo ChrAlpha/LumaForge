@@ -129,13 +129,6 @@ export type UserColorIntentInput = Readonly<
   readonly selectiveColor?: SelectiveColorBandsInput | null
 }
 
-/**
- * Complete user color whose HSL may be missing, as in the legacy params.
- * Missing HSL reads as neutral.
- */
-export type UserColorIntentSource = Omit<UserColorIntent, 'selectiveColor'> &
-  Partial<Pick<UserColorIntent, 'selectiveColor'>>
-
 /** The look applied on top of the user color, built-in presets included. */
 export interface LookSelection {
   readonly styleKind: LookStyleKind
@@ -150,9 +143,6 @@ export type LookSelectionInput = Readonly<Partial<LookSelection>>
 export interface ColorGraphIntent extends LookSelection, UserColorIntent {}
 
 export type ColorGraphIntentInput = LookSelectionInput & UserColorIntentInput
-
-/** A complete intent whose HSL may be missing; legacy params are one. */
-export type ColorGraphIntentSource = LookSelection & UserColorIntentSource
 
 export interface LookIntensityEntry {
   /** The strength this entry point gives a look that states none. */
@@ -300,13 +290,8 @@ export const NEUTRAL_USER_COLOR_INTENT: UserColorIntent = Object.freeze({
   selectiveColor: NEUTRAL_SELECTIVE_COLOR,
 })
 
-/**
- * Copy the user color out of a larger record without changing a value.
- * Missing HSL becomes the shared neutral record.
- */
-export function pickUserColorIntent(
-  source: UserColorIntentSource,
-): UserColorIntent {
+/** Copy the user color out of a larger record without changing a value. */
+export function pickUserColorIntent(source: UserColorIntent): UserColorIntent {
   return {
     userExposureEv: source.userExposureEv,
     userContrast: source.userContrast,
@@ -318,7 +303,7 @@ export function pickUserColorIntent(
     userTint: source.userTint,
     userSaturation: source.userSaturation,
     userVibrance: source.userVibrance,
-    selectiveColor: source.selectiveColor ?? NEUTRAL_SELECTIVE_COLOR,
+    selectiveColor: source.selectiveColor,
   }
 }
 
@@ -331,15 +316,15 @@ export function pickLookSelection(source: LookSelection): LookSelection {
   }
 }
 
-/** Copy the full intent out of a larger record, such as legacy params. */
+/** Copy the full intent out of a larger record, such as the params. */
 export function pickColorGraphIntent(
-  source: ColorGraphIntentSource,
+  source: ColorGraphIntent,
 ): ColorGraphIntent {
   return { ...pickLookSelection(source), ...pickUserColorIntent(source) }
 }
 
 /** User fields as the color graph reads them, in a fixed order. */
-function userColorIdentity(source: UserColorIntentSource): unknown[] {
+function userColorIdentity(source: UserColorIntent): unknown[] {
   const normalized = normalizeUserColorIntent(source)
   return [
     ...USER_COLOR_SCALAR_KEYS.map((key) => normalized[key]),
@@ -356,12 +341,10 @@ function encodeNumber(value: number): number | string {
 
 /**
  * Identity of the user color. Fields are read the way the color graph reads
- * them, so key order, missing or neutral HSL, and values outside the bounds
- * that clamp to the same value share one signature.
+ * them, so key order, every spelling of neutral HSL, and values outside the
+ * bounds that clamp to the same value share one signature.
  */
-export function userColorIntentSignature(
-  source: UserColorIntentSource,
-): string {
+export function userColorIntentSignature(source: UserColorIntent): string {
   return JSON.stringify(userColorIdentity(source))
 }
 
@@ -371,9 +354,7 @@ export function userColorIntentSignature(
  * graph reads it. Anything else on the source (view state, RAW render
  * exposure, LUT data, geometry) is ignored.
  */
-export function colorGraphIntentSignature(
-  source: ColorGraphIntentSource,
-): string {
+export function colorGraphIntentSignature(source: ColorGraphIntent): string {
   return JSON.stringify([
     source.styleKind,
     source.builtinPreset,
@@ -383,15 +364,15 @@ export function colorGraphIntentSignature(
 }
 
 export function userColorIntentEquals(
-  left: UserColorIntentSource,
-  right: UserColorIntentSource,
+  left: UserColorIntent,
+  right: UserColorIntent,
 ): boolean {
   return userColorIntentSignature(left) === userColorIntentSignature(right)
 }
 
 export function colorGraphIntentEquals(
-  left: ColorGraphIntentSource,
-  right: ColorGraphIntentSource,
+  left: ColorGraphIntent,
+  right: ColorGraphIntent,
 ): boolean {
   return colorGraphIntentSignature(left) === colorGraphIntentSignature(right)
 }

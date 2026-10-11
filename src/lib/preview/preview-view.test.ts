@@ -1,4 +1,3 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
 import type { CpuPreviewVariant } from '@lumaforge/render-engine/preview'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
@@ -17,13 +16,11 @@ import {
 } from './preview-view'
 
 describe('preview view', () => {
-  it('names the three modes the legacy params already use', () => {
+  it('names the three view modes', () => {
     expect(PREVIEW_VIEW_MODES).toEqual(['processed', 'original', 'compare'])
     expect(Object.isFrozen(PREVIEW_VIEW_MODES)).toBe(true)
-    // Legacy params may still carry a view mode; when they do it is one of
-    // these, so a legacy record maps onto the app view without translation.
     expectTypeOf<PreviewViewMode>().toEqualTypeOf<
-      NonNullable<ProcessingParams['viewMode']>
+      (typeof PREVIEW_VIEW_MODES)[number]
     >()
   })
 

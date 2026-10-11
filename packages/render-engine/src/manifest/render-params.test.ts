@@ -212,10 +212,9 @@ describe('projectManifestRenderParams canonical bytes', () => {
   it('accepts the app processing params as user color', () => {
     const processing: ProcessingParams = {
       intensity: 0.7,
-      viewMode: 'processed',
-      compareSplit: 0.5,
       styleKind: 'builtin',
       builtinPreset: 'warm',
+      ...NEUTRAL_USER_COLOR_INTENT,
       ...nonNeutralUserColor,
     }
     const params = project({

@@ -2,7 +2,6 @@ import type {
   ColorGraphIntent,
   LUTData,
   PreviewHistogramState,
-  ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_SELECTIVE_COLOR,
@@ -30,15 +29,6 @@ const defaultParams: ColorGraphIntent = {
   intensity: 0.7,
   styleKind: 'none',
   builtinPreset: null,
-}
-
-/** The intent as a legacy record that still carries the view fields. */
-function withLegacyView(
-  params: ColorGraphIntent,
-  view: Pick<ProcessingParams, 'viewMode' | 'compareSplit'>,
-): ColorGraphIntent {
-  const legacy: ColorGraphIntent & typeof view = { ...params, ...view }
-  return legacy
 }
 
 function mutableRef<T>(current: T) {
@@ -678,7 +668,7 @@ describe('usePreviewHistogram', () => {
     })
   })
 
-  it('does not recompute on compare split changes', async () => {
+  it('does not recompute for an equal intent record rebuilt upstream', async () => {
     const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
       image: createImage('quick'),
     })
@@ -689,11 +679,7 @@ describe('usePreviewHistogram', () => {
 
     rerender({
       imageRef,
-      // A legacy record carrying view fields keeps the same job.
-      params: withLegacyView(defaultParams, {
-        viewMode: 'compare',
-        compareSplit: 0.82,
-      }),
+      params: { ...defaultParams },
       lutDataRef,
       lutDataVersion: 0,
       displaySource: 'quick',
@@ -843,40 +829,34 @@ describe('usePreviewHistogram', () => {
     ['temperature', { userTemperature: 25 }],
     ['saturation', { userSaturation: 25 }],
     ['vibrance', { userVibrance: 25 }],
-  ])(
-    'recomputes on %s changes while compare split remains irrelevant',
-    async (_field, colorChange) => {
-      const { result, rerender, imageRef, lutDataRef, renders } =
-        renderPreviewHistogram({
-          image: createImage('quick'),
-        })
-
-      await runAllWork()
-      expect(result.current.state).toBe('ready')
-      const previous = result.current
-      const rendersBeforeChange = renders.length
-
-      rerender({
-        imageRef,
-        params: withLegacyView(
-          { ...defaultParams, ...colorChange },
-          { viewMode: 'compare', compareSplit: 0.82 },
-        ),
-        lutDataRef,
-        lutDataVersion: 0,
-        displaySource: 'quick',
+  ])('recomputes on %s changes', async (_field, colorChange) => {
+    const { result, rerender, imageRef, lutDataRef, renders } =
+      renderPreviewHistogram({
+        image: createImage('quick'),
       })
 
-      expect(renders.slice(rendersBeforeChange)).not.toContain(previous)
-      expect(result.current).toEqual({ state: 'stale', previous })
+    await runAllWork()
+    expect(result.current.state).toBe('ready')
+    const previous = result.current
+    const rendersBeforeChange = renders.length
 
-      // A scrub run on the same source never flips the label to computing:
-      // the bins stay until the new run lands.
-      await runDebouncedWork(1)
-      expect(result.current.state).toBe('ready')
-      expect(result.current).not.toBe(previous)
-    },
-  )
+    rerender({
+      imageRef,
+      params: { ...defaultParams, ...colorChange },
+      lutDataRef,
+      lutDataVersion: 0,
+      displaySource: 'quick',
+    })
+
+    expect(renders.slice(rendersBeforeChange)).not.toContain(previous)
+    expect(result.current).toEqual({ state: 'stale', previous })
+
+    // A scrub run on the same source never flips the label to computing:
+    // the bins stay until the new run lands.
+    await runDebouncedWork(1)
+    expect(result.current.state).toBe('ready')
+    expect(result.current).not.toBe(previous)
+  })
 
   it('keeps previous bins on screen, marked stale, until the new run lands', async () => {
     const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
@@ -943,27 +923,6 @@ describe('usePreviewHistogram', () => {
     await runAllWork()
     expect(result.current.state).toBe('ready')
     expect(result.current).not.toBe(previous)
-  })
-
-  it('does not recompute when only the view mode changes', async () => {
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
-      image: createImage('quick'),
-    })
-
-    await runAllWork()
-    const ready = result.current
-    expect(ready.state).toBe('ready')
-
-    rerender({
-      imageRef,
-      params: withLegacyView(defaultParams, { viewMode: 'original' }),
-      lutDataRef,
-      lutDataVersion: 0,
-      displaySource: 'quick',
-    })
-
-    expect(result.current).toBe(ready)
-    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('does not recompute for an equal HSL record rebuilt upstream', async () => {

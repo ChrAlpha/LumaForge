@@ -134,19 +134,16 @@ function createCapability(
   }
 }
 
-type ProcessingParamClass = 'render' | 'look' | 'view'
+type ProcessingParamClass = 'render' | 'look'
 
 // Every ProcessingParams key must be classified; a new field fails the
 // typecheck until it is placed here. 'render' (user tone/color intent) and
 // 'look' (style, preset, intensity) keys reach the export color graph, so
-// changing them must invalidate a ready export. 'view' keys only change how
-// the preview is presented and must not.
+// changing them must invalidate a ready export.
 const PROCESSING_PARAM_CLASSES = {
   styleKind: 'look',
   builtinPreset: 'look',
   intensity: 'look',
-  viewMode: 'view',
-  compareSplit: 'view',
   userExposureEv: 'render',
   userContrast: 'render',
   userHighlights: 'render',
@@ -164,16 +161,10 @@ type ProcessingParamKey = keyof typeof PROCESSING_PARAM_CLASSES
 
 const NEUTRAL_HSL_BAND = { hue: 0, saturation: 0, lightness: 0 } as const
 
-/** The complete color intent with the view fields an app record carries. */
-type IntentWithView = ColorGraphIntent &
-  Pick<ProcessingParams, 'viewMode' | 'compareSplit'>
-
 // Matches the app's default color intent: no look, neutral user intent and
 // neutral HSL bands.
-const DEFAULT_PARAMS: IntentWithView = {
+const DEFAULT_PARAMS: ColorGraphIntent = {
   intensity: 0.7,
-  viewMode: 'compare',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
   userExposureEv: 0,
@@ -196,8 +187,6 @@ const NON_DEFAULT_VALUES: {
   styleKind: 'custom',
   builtinPreset: 'film-contrast',
   intensity: 0.35,
-  viewMode: 'original',
-  compareSplit: 0.8,
   userExposureEv: 0.5,
   userContrast: 20,
   userHighlights: -30,
@@ -256,7 +245,7 @@ describe('render graph param classification', () => {
   it.each(keysOfClass('render', 'look'))(
     'invalidates the render graph when %s changes',
     (key) => {
-      const changed: IntentWithView = {
+      const changed: ColorGraphIntent = {
         ...DEFAULT_PARAMS,
         ...patchOf(key, NON_DEFAULT_VALUES[key]),
       }
@@ -275,26 +264,6 @@ describe('render graph param classification', () => {
           DEFAULT_PARAMS,
           patchOf(key, DEFAULT_PARAMS[key]),
         ),
-      ).toBe(false)
-    },
-  )
-
-  it.each(keysOfClass('view'))(
-    'keeps the render graph when %s changes',
-    (key) => {
-      const changed: IntentWithView = {
-        ...DEFAULT_PARAMS,
-        ...patchOf(key, NON_DEFAULT_VALUES[key]),
-      }
-
-      expect(
-        changesRenderGraphParams(
-          DEFAULT_PARAMS,
-          patchOf(key, NON_DEFAULT_VALUES[key]),
-        ),
-      ).toBe(false)
-      expect(
-        changesRenderGraphParams(changed, patchOf(key, DEFAULT_PARAMS[key])),
       ).toBe(false)
     },
   )
@@ -332,40 +301,20 @@ describe('render graph param classification', () => {
     ).toBe(true)
   })
 
-  it('keeps the render graph for a view-only patch over a fully edited intent', () => {
-    const allNonDefault = { ...DEFAULT_PARAMS, ...NON_DEFAULT_VALUES }
-
-    expect(
-      changesRenderGraphParams(allNonDefault, {
-        viewMode: 'processed',
-        compareSplit: 0.12,
-      }),
-    ).toBe(false)
-  })
-
   it('compares only the keys a patch carries', () => {
     const allNonDefault = { ...DEFAULT_PARAMS, ...NON_DEFAULT_VALUES }
 
     expect(changesRenderGraphParams(allNonDefault, {})).toBe(false)
-    expect(
-      changesRenderGraphParams(allNonDefault, {
-        viewMode: 'compare',
-        compareSplit: 0.37,
-      }),
-    ).toBe(false)
-    expect(
-      changesRenderGraphParams(allNonDefault, {
-        viewMode: 'compare',
-        intensity: 0.62,
-      }),
-    ).toBe(true)
+    expect(changesRenderGraphParams(allNonDefault, { intensity: 0.62 })).toBe(
+      true,
+    )
   })
 })
 
 describe('continuous look strength', () => {
   // Light 0.4, Standard 0.7 and Strong 1 are only detents on the Strength
   // row; any amount in between is a distinct render graph input.
-  function withIntensity(intensity: number): IntentWithView {
+  function withIntensity(intensity: number): ColorGraphIntent {
     return { ...DEFAULT_PARAMS, styleKind: 'custom', intensity }
   }
 
@@ -462,8 +411,6 @@ describe('export state helpers', () => {
       styleKind: 'builtin',
       builtinPreset: 'warm',
       intensity: 0.7,
-      viewMode: 'compare',
-      compareSplit: 0.5,
       userExposureEv: 0,
       userContrast: 0,
       userHighlights: 0,
@@ -477,12 +424,6 @@ describe('export state helpers', () => {
       selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     } as const
 
-    expect(
-      changesRenderGraphParams(current, {
-        viewMode: 'original',
-        compareSplit: 0.8,
-      }),
-    ).toBe(false)
     expect(changesRenderGraphParams(current, { intensity: 0.8 })).toBe(true)
     expect(changesRenderGraphParams(current, { userExposureEv: 0.25 })).toBe(
       true,
@@ -502,8 +443,6 @@ describe('export state helpers', () => {
       styleKind: 'none',
       builtinPreset: null,
       intensity: 0.7,
-      viewMode: 'compare',
-      compareSplit: 0.5,
       userExposureEv: 0,
       userContrast: 0,
       userHighlights: 0,
@@ -539,8 +478,6 @@ describe('export state helpers', () => {
       styleKind: 'none',
       builtinPreset: null,
       intensity: 0.7,
-      viewMode: 'compare',
-      compareSplit: 0.5,
       userExposureEv: 0,
       userContrast: 0,
       userHighlights: 0,
@@ -590,12 +527,10 @@ describe('export state helpers', () => {
 
   it('treats setting selective color from neutral to a non-neutral record as a render graph change', () => {
     const neutralBand = { hue: 0, saturation: 0, lightness: 0 } as const
-    const current: IntentWithView = {
+    const current: ColorGraphIntent = {
       styleKind: 'none',
       builtinPreset: null,
       intensity: 0.7,
-      viewMode: 'compare',
-      compareSplit: 0.5,
       userExposureEv: 0,
       userContrast: 0,
       userHighlights: 0,

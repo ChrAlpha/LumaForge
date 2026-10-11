@@ -173,8 +173,9 @@ export function resolveUnsupportedLUTOutputReason(
 
 /**
  * What the export color graph reads: the look and user color (see
- * `ColorGraphIntent`), the LUT data, and the RAW render exposure. User fields
- * and HSL are optional and read as neutral when missing.
+ * `ColorGraphIntent`), the LUT data, and the RAW render exposure. Missing
+ * scalar user fields read as neutral; HSL is required as complete bands, so
+ * partial HSL goes through `normalizeColorGraphIntent` first.
  */
 export interface ExportColorGraphInput {
   styleKind: ProcessingParams['styleKind']
@@ -192,7 +193,7 @@ export interface ExportColorGraphInput {
   userTint?: LumaColorBalanceParams['userTint']
   userSaturation?: LumaColorSaturationParams['userSaturation']
   userVibrance?: LumaColorSaturationParams['userVibrance']
-  selectiveColor?: LumaColorSelectiveColorParams['selectiveColor']
+  selectiveColor: LumaColorSelectiveColorParams['selectiveColor']
 }
 
 export function resolveExportColorGraph(

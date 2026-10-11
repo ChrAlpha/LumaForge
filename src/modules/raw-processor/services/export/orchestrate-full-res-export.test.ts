@@ -1,8 +1,4 @@
-import type {
-  ColorGraphIntent,
-  LUTData,
-  ProcessingParams,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import {
   getLUTColorProfile,
   NEUTRAL_SELECTIVE_COLOR,
@@ -163,14 +159,8 @@ const RAW_RENDER_EXPOSURE = {
   source: 'dng-baseline',
 } as const
 
-/** The complete color intent with the view fields an app record carries. */
-type IntentWithView = ColorGraphIntent &
-  Pick<ProcessingParams, 'viewMode' | 'compareSplit'>
-
-const DEFAULT_PARAMS: IntentWithView = {
+const DEFAULT_PARAMS: ColorGraphIntent = {
   intensity: 0.7,
-  viewMode: 'compare',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
   userExposureEv: 0,
@@ -643,7 +633,7 @@ type HarnessOptions = {
   /** The session the React closure rendered with; defaults to the live one. */
   atomsSession?: ImageSession | null
   /** The color intent the store holds when the test starts. */
-  params?: IntentWithView
+  params?: ColorGraphIntent
   lut?: LUTData | null
   registry?: ResourceRegistry | null
   capability?: CapabilityVector
@@ -689,7 +679,7 @@ function createHarness(options: HarnessOptions = {}) {
     progress: null,
     session: initialSession,
   }
-  let colorIntent: IntentWithView = options.params ?? DEFAULT_PARAMS
+  let colorIntent: ColorGraphIntent = options.params ?? DEFAULT_PARAMS
   let storedLut: LUTData | null = options.lut ?? null
 
   function createMarkerPage(page: string) {
@@ -958,7 +948,7 @@ function createHarness(options: HarnessOptions = {}) {
       state.session = next
     },
     /** Writes the color intent to the store, as a color edit does. */
-    writeColorIntent(next: IntentWithView) {
+    writeColorIntent(next: ColorGraphIntent) {
       colorIntent = next
     },
     /**
@@ -1953,7 +1943,7 @@ describe('orchestrateFullResExport refusal order', () => {
   function unsupportedGraph() {
     const lut = tealLut({ kind: 'unknown' })
     return {
-      params: { ...DEFAULT_PARAMS, styleKind: 'custom' } as IntentWithView,
+      params: { ...DEFAULT_PARAMS, styleKind: 'custom' } as ColorGraphIntent,
       lut,
       activeStyle: {
         kind: 'custom',
@@ -3579,7 +3569,7 @@ describe('orchestrateFullResExport color intent', () => {
     currentIntensity: 0.37,
     lutAsset: { format: 'cube', dimension: 17 },
   }
-  const EDITED_PARAMS: IntentWithView = {
+  const EDITED_PARAMS: ColorGraphIntent = {
     ...DEFAULT_PARAMS,
     styleKind: 'custom',
     // Between the Light (0.4) and Standard (0.7) detents.
@@ -3627,7 +3617,7 @@ describe('orchestrateFullResExport color intent', () => {
   })
 
   it('records the request it was asked for through rendering and late sealing', async () => {
-    const params: IntentWithView = { ...EDITED_PARAMS }
+    const params: ColorGraphIntent = { ...EDITED_PARAMS }
     const geometry: ExportGeometry = {
       matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
       constrainCrop: true,
@@ -3897,7 +3887,7 @@ describe('orchestrateFullResExport color intent', () => {
 
     async function exportAfterSameTickLutChange(setup: {
       rendered: { lut: LUTData | null; style: ImageSession['activeStyle'] }
-      renderedParams: IntentWithView
+      renderedParams: ColorGraphIntent
       written: { lut: LUTData; style: NonNullable<ImageSession['activeStyle']> }
     }) {
       const h = createHarness({

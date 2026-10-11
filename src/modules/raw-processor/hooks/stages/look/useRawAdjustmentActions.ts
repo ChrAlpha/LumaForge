@@ -6,6 +6,7 @@ import type {
 import {
   COLOR_GRAPH_INTENT_KEYS,
   makeNeutralBand,
+  normalizeSelectiveColorParams,
 } from '@lumaforge/luma-color-runtime'
 import { useCallback } from 'react'
 
@@ -34,16 +35,23 @@ export type SetColorIntent = (
 
 /**
  * The color fields a patch carries, and only those. Fields are kept when the
- * patch owns them, so an explicit undefined still counts as written.
+ * patch owns them, so an explicit undefined still counts as written. Selective
+ * color is stored as its normalized bands, so an undefined, partial or
+ * out-of-range record lands complete, the same way the export change check
+ * reads it.
  */
 function pickColorIntentPatch(
   patch: Partial<ColorGraphIntent>,
 ): Partial<ColorGraphIntent> {
   const colorPatch: Record<string, unknown> = {}
   for (const key of COLOR_GRAPH_INTENT_KEYS) {
-    if (Object.hasOwn(patch, key)) {
-      colorPatch[key] = patch[key]
-    }
+    if (!Object.hasOwn(patch, key)) continue
+    colorPatch[key] =
+      key === 'selectiveColor'
+        ? normalizeSelectiveColorParams({
+            selectiveColor: patch.selectiveColor,
+          })
+        : patch[key]
   }
   return colorPatch as Partial<ColorGraphIntent>
 }
@@ -60,8 +68,7 @@ export function useRawAdjustmentActions({
   setColorIntent,
   invalidateExportGraph,
 }: UseRawAdjustmentActionsInput) {
-  // A color patch writes color only. View mode and compare split have their
-  // own setters on the view owner, so a view field in the record is dropped.
+  // A color patch writes color only; any other field in the record is dropped.
   const setProcessingParams = useCallback(
     (newParams: Partial<ColorGraphIntent>) => {
       const colorPatch = pickColorIntentPatch(newParams)

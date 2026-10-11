@@ -156,6 +156,20 @@ describe('resolveExportColorGraph with a complete intent', () => {
     }
   })
 
+  it('takes HSL only as complete bands, normalized before it arrives', () => {
+    const { selectiveColor: _omitted, ...withoutHsl } = NO_LOOK
+    // @ts-expect-error the graph input requires selectiveColor
+    const partial: ExportColorGraphInput = { ...withoutHsl, lut: null }
+    const normalized = normalizeColorGraphIntent(withoutHsl, {
+      defaultIntensity: 0.7,
+    })
+
+    expect(partial).not.toHaveProperty('selectiveColor')
+    expect(resolveExportColorGraph({ ...normalized, lut: null })).toEqual(
+      resolveExportColorGraph(graphInput()),
+    )
+  })
+
   it('routes the same LUT bytes by their contract resolution', () => {
     const vlogLook = confirmed({
       ...registryProfile('panasonic-vgamut-vlog'),

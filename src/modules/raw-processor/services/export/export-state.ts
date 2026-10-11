@@ -183,11 +183,11 @@ export function hasSameRawRenderExposure(
 
 /**
  * Whether a params patch changes the color graph a ready export was rendered
- * from. Only keys the patch carries are compared, each one of the canonical
- * color graph intent keys; view keys never count. Scalars and the look are
- * compared as written, so a non-detent strength or an explicit undefined is
- * a change. Selective color is compared by its normalized bands, so missing,
- * partial and all-neutral records are the same input.
+ * from. Only the canonical color graph intent keys the patch carries are
+ * compared. Scalars and the look are compared as written, so a non-detent
+ * strength or an explicit undefined is a change. Selective color is compared
+ * by its normalized bands, so explicitly undefined, partial and all-neutral
+ * records are the same input.
  */
 export function changesRenderGraphParams(
   current: ColorGraphIntent,
@@ -204,7 +204,7 @@ export function changesRenderGraphParams(
 
 function changesSelectiveColor(
   current: ColorGraphIntent['selectiveColor'],
-  next: ProcessingParams['selectiveColor'],
+  next: Partial<ProcessingParams>['selectiveColor'],
 ) {
   // The export color graph and the LUT bake read the normalized record, so
   // this compares the contract that actually feeds the renderer.

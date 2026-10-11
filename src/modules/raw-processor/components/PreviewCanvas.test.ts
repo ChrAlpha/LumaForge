@@ -623,8 +623,7 @@ describe('preview canvas upload descriptor', () => {
       imageRef: { current: decodedImage },
       imageVersion: 1,
       decodedFrame: testFrame(1),
-      // A record that still carries view fields must not steer the surface.
-      color: { ...color, viewMode: 'compare', compareSplit: 0.8 } as never,
+      color,
       viewMode: 'original' as const,
       lutDataRef: { current: null },
       lutDataVersion: 0,

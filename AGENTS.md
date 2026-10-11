@@ -305,8 +305,8 @@ variant:
   frame-anchored compare split) and maps a mode to what each executor draws.
   The session's `viewState` owns the view once a source loads; zoom and pan
   stay with the preview viewport. Executors receive only their output
-  selection. The deprecated `ProcessingParams.viewMode` and
-  `ProcessingParams.compareSplit` are optional and never read.
+  selection. The color params (`ProcessingParams`, `ColorGraphIntent`) carry
+  no view fields.
 - Decoded preview frame identity: `DecodedPreviewFrame` in
   `src/lib/preview/preview-frame.ts`. Only
   `src/modules/raw-processor/hooks/stages/preview/useDecodedPreviewResource.ts`
@@ -372,13 +372,10 @@ variant:
   scheduled to move into `src/modules/raw-processor/services/look/`, and that
   move deletes the old module. Do not add consumers of the old location.
 
-Deprecated public API. These are still exported, but they are scheduled for
-removal, not protected: dedicated retirement changes delete them with a
-`### Breaking` CHANGELOG entry. Until then no app or CLI code may start using
-them again, and an unrelated change does not remove them on the side:
-
-- `@lumaforge/luma-color-runtime`: `ProcessingParams.viewMode` and
-  `ProcessingParams.compareSplit`.
+Deprecated public API. No export is deprecated today. A deprecated export is
+scheduled for removal, not protected: a dedicated retirement change deletes it
+with a `### Breaking` CHANGELOG entry. Until then no app or CLI code may start
+using it again, and an unrelated change does not remove it on the side.
 
 Close the extraction:
 

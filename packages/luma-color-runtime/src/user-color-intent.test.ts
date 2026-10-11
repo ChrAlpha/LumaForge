@@ -29,7 +29,6 @@ import type { LUTData, ProcessingParams } from './types'
 import type {
   ColorGraphIntent,
   ColorGraphIntentInput,
-  ColorGraphIntentSource,
   LookSelection,
   UserColorIntent,
   UserColorIntentInput,
@@ -862,179 +861,93 @@ describe('retained built-in presets', () => {
   })
 })
 
-describe('compatibility', () => {
-  /** A legacy params record: view fields present, `selectiveColor` absent. */
-  const LEGACY_PARAMS: ProcessingParams = {
-    intensity: 0.37,
-    viewMode: 'compare',
-    compareSplit: 0.25,
-    styleKind: 'custom',
-    builtinPreset: null,
-    userExposureEv: 0.5,
-    userContrast: 12,
-    userHighlights: -20,
-    userShadows: 30,
-    userWhites: 4,
-    userBlacks: -6,
-    userTemperature: 18,
-    userTint: -7,
-    userSaturation: 9,
-    userVibrance: 15,
-  }
+describe('executor boundary', () => {
+  /** The edited intent with its HSL left out, as persisted data can be. */
+  const { selectiveColor: _omitted, ...WITHOUT_HSL } = EDITED
 
-  it('covers every legacy params field except the view', () => {
-    const everyLegacyField = {
-      ...LEGACY_PARAMS,
-      viewMode: 'compare',
-      compareSplit: 0.25,
-      selectiveColor: bands(),
-    } satisfies Required<ProcessingParams>
-    const legacyColorFields = Object.keys(everyLegacyField).filter(
-      (key) => key !== 'viewMode' && key !== 'compareSplit',
-    )
+  it('names exactly the color graph fields on the params', () => {
+    const params: ProcessingParams = { ...EDITED }
 
-    expect([...COLOR_GRAPH_INTENT_KEYS].sort()).toEqual(
-      legacyColorFields.sort(),
+    expect(Object.keys(params).sort()).toEqual(
+      [...COLOR_GRAPH_INTENT_KEYS].sort(),
     )
-    expectTypeOf<keyof ColorGraphIntent>().toEqualTypeOf<
-      Exclude<keyof ProcessingParams, 'viewMode' | 'compareSplit'>
+    expectTypeOf<keyof ProcessingParams>().toEqualTypeOf<
+      keyof ColorGraphIntent
     >()
+    expectTypeOf<ProcessingParams['selectiveColor']>().toEqualTypeOf<
+      UserColorIntent['selectiveColor']
+    >()
+    expectTypeOf<ProcessingParams['styleKind']>().toEqualTypeOf<
+      LookSelection['styleKind']
+    >()
+    expectTypeOf<ProcessingParams['builtinPreset']>().toEqualTypeOf<
+      LookSelection['builtinPreset']
+    >()
+    expectTypeOf<ProcessingParams>().not.toHaveProperty('viewMode')
+    expectTypeOf<ProcessingParams>().not.toHaveProperty('compareSplit')
   })
 
-  it('requires every field on the strict intents', () => {
-    const { selectiveColor: _omitted, ...withoutHsl } =
-      NEUTRAL_USER_COLOR_INTENT
+  it('requires HSL wherever a complete intent is read', () => {
+    // @ts-expect-error the params require selectiveColor
+    const params: ProcessingParams = WITHOUT_HSL
     // @ts-expect-error the strict intent requires selectiveColor
-    const strict: UserColorIntent = withoutHsl
+    const strict: UserColorIntent = WITHOUT_HSL
+    // @ts-expect-error view state is not part of the params
+    const withView: ProcessingParams = { ...EDITED, viewMode: 'compare' }
 
+    expect(params).not.toHaveProperty('selectiveColor')
     expect(strict).not.toHaveProperty('selectiveColor')
-    expectTypeOf<UserColorIntent['selectiveColor']>().toEqualTypeOf<
-      NonNullable<ProcessingParams['selectiveColor']>
+    expect(withView).toHaveProperty('viewMode')
+    expectTypeOf(pickUserColorIntent)
+      .parameter(0)
+      .toEqualTypeOf<UserColorIntent>()
+    expectTypeOf(pickColorGraphIntent)
+      .parameter(0)
+      .toEqualTypeOf<ColorGraphIntent>()
+    expectTypeOf(userColorIntentSignature)
+      .parameter(0)
+      .toEqualTypeOf<UserColorIntent>()
+    expectTypeOf(colorGraphIntentSignature)
+      .parameter(0)
+      .toEqualTypeOf<ColorGraphIntent>()
+    expectTypeOf(userColorIntentEquals).parameters.toEqualTypeOf<
+      [UserColorIntent, UserColorIntent]
     >()
-    expectTypeOf<LookSelection['styleKind']>().toEqualTypeOf<
-      ProcessingParams['styleKind']
+    expectTypeOf(colorGraphIntentEquals).parameters.toEqualTypeOf<
+      [ColorGraphIntent, ColorGraphIntent]
     >()
-    expectTypeOf<LookSelection['builtinPreset']>().toEqualTypeOf<
-      ProcessingParams['builtinPreset']
+    expectTypeOf<ExportColorGraphInput['selectiveColor']>().toEqualTypeOf<
+      UserColorIntent['selectiveColor']
     >()
-  })
-
-  it('picks and identifies legacy params with missing HSL as neutral', () => {
-    const picked = pickColorGraphIntent(LEGACY_PARAMS)
-
-    expect(picked).toEqual({
-      ...EDITED,
-      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
-    })
-    expect(picked.selectiveColor).toBe(NEUTRAL_SELECTIVE_COLOR)
-    expect(picked).not.toHaveProperty('viewMode')
-    expect(picked).not.toHaveProperty('compareSplit')
-    expect(pickUserColorIntent(LEGACY_PARAMS).selectiveColor).toBe(
-      NEUTRAL_SELECTIVE_COLOR,
-    )
-
-    const variants: ColorGraphIntentSource[] = [
-      LEGACY_PARAMS,
-      { ...LEGACY_PARAMS, selectiveColor: undefined },
-      {
-        ...LEGACY_PARAMS,
-        selectiveColor: loose<Record<HSLBandId, HSLBandShift>>({
-          red: { hue: 0 },
-        }),
-      },
-      { ...LEGACY_PARAMS, selectiveColor: bands() },
-    ]
-    const neutral = colorGraphIntentSignature(picked)
-    for (const variant of variants) {
-      expect(colorGraphIntentSignature(variant)).toBe(neutral)
-      expect(userColorIntentEquals(variant, picked)).toBe(true)
-    }
-  })
-
-  it('keeps legacy params without selectiveColor valid graph input', () => {
-    const lut = displayLookLut()
-    const fromLegacy = resolveExportColorGraph({ ...LEGACY_PARAMS, lut })
-    const fromIntent = resolveExportColorGraph({
-      ...pickColorGraphIntent(LEGACY_PARAMS),
-      lut,
-    })
-
-    expect(fromLegacy.supported).toBe(true)
-    expect(fromIntent).toEqual(fromLegacy)
-    expect(fromIntent).toMatchObject({
-      steps: expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'lut-output-to-srgb',
-          intensity: 0.37,
-        }),
-      ]),
-    })
-    expectTypeOf<ProcessingParams>().toExtend<ColorGraphIntentSource>()
-    expectTypeOf<ProcessingParams>().toExtend<UserColorIntentInput>()
-    expectTypeOf<
-      ProcessingParams & { lut: LUTData | null }
-    >().toExtend<ExportColorGraphInput>()
     expectTypeOf<
       ColorGraphIntent & { lut: LUTData | null }
     >().toExtend<ExportColorGraphInput>()
-    expectTypeOf<ExportColorGraphInput>().toEqualTypeOf<
-      Parameters<typeof resolveExportColorGraph>[0]
-    >()
+    expectTypeOf<
+      typeof WITHOUT_HSL & { lut: LUTData | null }
+    >().not.toExtend<ExportColorGraphInput>()
   })
 
-  it('keeps the deprecated view fields optional on legacy params', () => {
-    const {
-      viewMode: _mode,
-      compareSplit: _split,
-      ...withoutView
-    } = LEGACY_PARAMS
-    const noView: ProcessingParams = withoutView
-    const noViewNoHsl: ProcessingParams = {
-      ...withoutView,
-      selectiveColor: undefined,
-    }
-    const fullLegacy: ProcessingParams = {
-      ...LEGACY_PARAMS,
-      selectiveColor: bands({
-        red: { hue: 4, saturation: -10, lightness: 2 },
-      }),
+  it('takes partial input only through normalization', () => {
+    const normalized = normalizeColorGraphIntent(WITHOUT_HSL, APP_ENTRY)
+    const neutralHsl: ColorGraphIntent = {
+      ...EDITED,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     }
     const lut = displayLookLut()
 
-    expect(noView).not.toHaveProperty('viewMode')
-    expect(noView).not.toHaveProperty('compareSplit')
-    expect(pickColorGraphIntent(noView)).toEqual(
-      pickColorGraphIntent(LEGACY_PARAMS),
+    expect(normalized).toEqual(neutralHsl)
+    expect(normalizeUserColorIntent(WITHOUT_HSL)).toEqual(
+      pickUserColorIntent(neutralHsl),
     )
-    expect(colorGraphIntentEquals(noViewNoHsl, LEGACY_PARAMS)).toBe(true)
-    expect(colorGraphIntentEquals(fullLegacy, LEGACY_PARAMS)).toBe(false)
-    const processedView: ProcessingParams = {
-      ...LEGACY_PARAMS,
-      viewMode: 'processed',
-      compareSplit: 0,
-    }
-    const originalView: ProcessingParams = {
-      ...LEGACY_PARAMS,
-      viewMode: 'original',
-      compareSplit: 1,
-    }
-    expect(colorGraphIntentSignature(processedView)).toBe(
-      colorGraphIntentSignature(originalView),
+    expect(colorGraphIntentSignature(normalized)).toBe(
+      colorGraphIntentSignature(neutralHsl),
     )
-    expect(resolveExportColorGraph({ ...noView, lut })).toEqual(
-      resolveExportColorGraph({ ...LEGACY_PARAMS, lut }),
+    expect(resolveExportColorGraph({ ...normalized, lut })).toEqual(
+      resolveExportColorGraph({ ...neutralHsl, lut }),
     )
-    expectTypeOf<ProcessingParams['viewMode']>().toEqualTypeOf<
-      'processed' | 'original' | 'compare' | undefined
-    >()
-    expectTypeOf<ProcessingParams['compareSplit']>().toEqualTypeOf<
-      number | undefined
-    >()
-    expectTypeOf<ProcessingParams['styleKind']>().toEqualTypeOf<
-      'none' | 'builtin' | 'custom'
-    >()
-    expectTypeOf<ProcessingParams['selectiveColor']>().toEqualTypeOf<
-      UserColorIntent['selectiveColor'] | undefined
-    >()
+    expectTypeOf(normalizeUserColorIntent)
+      .parameter(0)
+      .toEqualTypeOf<UserColorIntentInput | null | undefined>()
+    expectTypeOf<typeof WITHOUT_HSL>().toExtend<ColorGraphIntentInput>()
   })
 })
