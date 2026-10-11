@@ -6,10 +6,11 @@ import { Slider } from '~/components/ui/slider'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
+import { useSliderScrub } from '../../hooks/useSliderScrub'
 import { scrubGainBandAtom } from '../../state/scrub.atoms'
+import { GAIN_LABEL_KEY } from '../shared/scrub-gain-copy'
 import type { SliderTickMark } from '../shared/SliderTicks'
 import { SliderTickLabels, SliderTickMarks } from '../shared/SliderTicks'
-import { useSliderScrub } from './useSliderScrub'
 
 export interface DesktopAdjustRowProps {
   label: string
@@ -146,7 +147,7 @@ export function DesktopAdjustRow({
         <span className="flex shrink-0 items-center gap-1.5">
           {fine && (
             <span className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-lf-on-surface/56">
-              {t('raw.adjust.gain.fine')}
+              {t(GAIN_LABEL_KEY.fine)}
             </span>
           )}
           {/* The readout stays one element across states. Swapping a button

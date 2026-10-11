@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Slider } from '~/components/ui/slider'
 
-import { SCRUB_LOCK_SLOP_PX } from '../../services/surface/slider-scrub-model'
+import { SCRUB_LOCK_SLOP_PX } from '../services/surface/slider-scrub-model'
 import { useSliderScrub } from './useSliderScrub'
 
 function Harness(props: {
@@ -409,6 +409,7 @@ describe('useSliderScrub gesture lifecycle safety', () => {
     )
   })
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
 
@@ -447,16 +448,36 @@ describe('useSliderScrub gesture lifecycle safety', () => {
     expect(onScrubChange).toHaveBeenLastCalledWith(false)
   })
 
-  it('arrests a coasting list on the next press and on unmount', () => {
-    const frames: FrameRequestCallback[] = []
-    const cancelled: number[] = []
+  it('leaves no frame pending after a flick release, a press, or an unmount', () => {
+    // The flick velocity comes from event timestamps and any glide from frame
+    // times. Both are driven here: jsdom stamps events with the integer wall
+    // clock, so two moves in one millisecond read as zero velocity and a
+    // stalled machine reads as a crawl below the glide floor. With them
+    // controlled the release is a real flick, above the glide floor.
+    let clock = 1_000
+    class TimedPointerEvent extends PointerEventPolyfill {
+      override get timeStamp() {
+        return clock
+      }
+    }
+    vi.stubGlobal('PointerEvent', TimedPointerEvent)
+    vi.spyOn(window.performance, 'now').mockImplementation(() => clock)
+    const pending = new Map<number, FrameRequestCallback>()
+    let nextHandle = 0
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      frames.push(cb)
-      return frames.length
+      nextHandle += 1
+      pending.set(nextHandle, cb)
+      return nextHandle
     })
     vi.stubGlobal('cancelAnimationFrame', (id: number) => {
-      cancelled.push(id)
+      pending.delete(id)
     })
+    const runFrame = (elapsed: number) => {
+      clock += elapsed
+      const frames = [...pending]
+      pending.clear()
+      for (const [, cb] of frames) cb(clock)
+    }
 
     const { unmount } = render(
       <div data-testid="scroller" style={{ overflowY: 'auto' }}>
@@ -483,24 +504,38 @@ describe('useSliderScrub gesture lifecycle safety', () => {
     const row = screen.getByTestId('row')
     mockTrackRect(row)
 
-    // Flick vertically and release: the list coasts.
-    fireEvent.pointerDown(row, touch(200, 50))
-    fireEvent.pointerMove(row, touch(201, 90))
-    fireEvent.pointerMove(row, touch(201, 130))
-    fireEvent.pointerUp(row, touch(201, 130))
-    const scheduled = frames.length
-    expect(scheduled).toBeGreaterThan(0)
+    const flick = () => {
+      fireEvent.pointerDown(row, touch(200, 50))
+      fireEvent.pointerMove(row, touch(201, 90))
+      clock += 16
+      // 40px in 16ms: 2.5px/ms, well above the glide floor.
+      fireEvent.pointerMove(row, touch(201, 130))
+      fireEvent.pointerUp(row, touch(201, 130))
+    }
 
-    // A press must stop it, the way every native scroller does.
-    fireEvent.pointerDown(row, touch(200, 50))
-    expect(cancelled).toContain(scheduled)
+    // Releasing a flick ends the gesture, and ending it arrests any glide,
+    // so the list stays where the finger let go.
+    flick()
+    expect(scrollTop).toBe(0)
+    expect(pending.size).toBe(0)
+    runFrame(16)
+    expect(scrollTop).toBe(0)
+    expect(pending.size).toBe(0)
 
-    // And a coast must not outlive the component.
-    fireEvent.pointerMove(row, touch(201, 90))
-    fireEvent.pointerMove(row, touch(201, 130))
-    fireEvent.pointerUp(row, touch(201, 130))
-    const secondGlide = frames.length
+    // A press and its release leave nothing scheduled either.
+    fireEvent.pointerDown(row, touch(200, 50))
+    expect(pending.size).toBe(0)
+    fireEvent.pointerUp(row, touch(200, 50))
+    runFrame(16)
+    expect(scrollTop).toBe(0)
+    expect(pending.size).toBe(0)
+
+    // Nor does a flick released right before the row unmounts.
+    flick()
     unmount()
-    expect(cancelled).toContain(secondGlide)
+    expect(pending.size).toBe(0)
+    runFrame(16)
+    // -40 is where the forwarded drag left the list (0 - 40px), not a coast.
+    expect(scrollTop).toBe(-40)
   })
 })

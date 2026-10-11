@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ScrubGainBand,
   ScrubSession,
-} from '../../services/surface/slider-scrub-model'
-import { createScrubSession } from '../../services/surface/slider-scrub-model'
+} from '../services/surface/slider-scrub-model'
+import { createScrubSession } from '../services/surface/slider-scrub-model'
 
 /**
  * Momentum decay per animation frame after a forwarded scroll flick, and the
@@ -127,7 +127,9 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
   } = options
   const hostRef = useRef<HTMLElement | null>(null)
   const sessionRef = useRef<ScrubSession | null>(null)
-  const glideFrameRef = useRef<number | null>(null)
+  // The glide keeps the window that scheduled it: the host ref is already
+  // null when an unmount cleanup arrests the glide.
+  const glideFrameRef = useRef<{ id: number; view: Window } | null>(null)
   const pointerIdRef = useRef<number | null>(null)
   const lastEmittedRef = useRef<number | null>(null)
   const lastGainRef = useRef<ScrubGainBand>('full')
@@ -165,7 +167,7 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
     const frame = glideFrameRef.current
     if (frame === null) return
     glideFrameRef.current = null
-    hostRef.current?.ownerDocument.defaultView?.cancelAnimationFrame(frame)
+    frame.view.cancelAnimationFrame(frame.id)
   }, [])
 
   const finish = useCallback(
@@ -312,9 +314,15 @@ export function useSliderScrub(options: UseSliderScrubOptions) {
           scroller.scrollTop -= v * elapsed
           v *= SCROLL_MOMENTUM_DECAY ** (elapsed / 16.67)
           if (Math.abs(v) < SCROLL_MOMENTUM_MIN_VELOCITY) return
-          glideFrameRef.current = view.requestAnimationFrame(advance)
+          glideFrameRef.current = {
+            id: view.requestAnimationFrame(advance),
+            view,
+          }
         }
-        glideFrameRef.current = view.requestAnimationFrame(advance)
+        glideFrameRef.current = {
+          id: view.requestAnimationFrame(advance),
+          view,
+        }
       }
 
       const onDocEnd = (native: PointerEvent) => {
