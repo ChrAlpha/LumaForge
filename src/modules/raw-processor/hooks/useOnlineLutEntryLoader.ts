@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 
-import type { UseOnlineLutSourcesResult } from '../../../hooks/useOnlineLutSources'
+import type { UseOnlineLutSourcesResult } from './useOnlineLutSources'
 
 type EntryLoaderSource = Pick<
   UseOnlineLutSourcesResult,

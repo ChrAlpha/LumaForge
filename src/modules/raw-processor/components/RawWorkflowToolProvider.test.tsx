@@ -36,6 +36,7 @@ import type {
 } from '~/lib/transform/worker-protocol'
 
 import { useTransformSessionFixture } from '../hooks/transform-session.fixture'
+import { useOnlineLutEntryLoader } from '../hooks/useOnlineLutEntryLoader'
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
 import { useRawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
@@ -56,7 +57,6 @@ import type { RawToolCommands, RawToolSurfaceProps } from './RawWorkflowContext'
 import { useRawToolCommands, useRawWorkflowContext } from './RawWorkflowContext'
 import { RawWorkflowToolProvider } from './RawWorkflowToolProvider'
 import { TONE_NEUTRAL } from './tone-fields'
-import { useOnlineLutEntryLoader } from './tools/lut/useOnlineLutEntryLoader'
 import { transformFeatureFixture } from './tools/transform-feature.fixture'
 import { resetTransformGroup } from './transform-fields'
 
