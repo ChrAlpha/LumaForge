@@ -21,17 +21,17 @@ import {
   isHSLNeutral,
 } from '../fields/hsl-fields'
 import {
+  SEGMENTED_FOCUS_RING,
+  SEGMENTED_ITEM_TEXT,
+  SEGMENTED_THUMB_BG,
+  SEGMENTED_TRACK,
+} from '../shared/segmented-chrome'
+import {
   hslHueTrack,
   hslLightnessTrack,
   hslSaturationTrack,
 } from '../shared/slider-tracks'
 import { DesktopAdjustRow } from './DesktopAdjustRow'
-import {
-  SEGMENTED_FOCUS_RING,
-  SEGMENTED_ITEM_TEXT,
-  SEGMENTED_THUMB_BG,
-  SEGMENTED_TRACK,
-} from './segmented-chrome'
 
 const HSL_AXIS_RESET_KEY: Record<keyof HSLBandShift, Parameters<Translate>[0]> =
   {

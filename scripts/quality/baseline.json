@@ -5,8 +5,7 @@
     "madge": "8.0.0"
   },
   "knip": [
-    "exports packages/render-engine/src/manifest/canonicalize.ts: __TEST_ONLY__",
-    "exports src/modules/raw-processor/components/tools/segmented-chrome.ts: SEGMENTED_THUMB_ACTIVE_VIA_PARENT"
+    "exports packages/render-engine/src/manifest/canonicalize.ts: __TEST_ONLY__"
   ],
   "cycles": []
 }

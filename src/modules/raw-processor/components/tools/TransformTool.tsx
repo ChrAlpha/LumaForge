@@ -9,6 +9,12 @@ import type { UprightMode } from '~/lib/transform/geometry/types'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
+import {
+  SEGMENTED_FOCUS_RING,
+  SEGMENTED_ITEM_TEXT,
+  SEGMENTED_THUMB_BG,
+  SEGMENTED_TRACK,
+} from '../shared/segmented-chrome'
 import type { TransformGroup } from '../transform-fields'
 import {
   applyTransformSlider,
@@ -22,12 +28,6 @@ import {
   uprightModeLabelKey,
 } from '../transform-fields'
 import { DesktopAdjustRow } from './DesktopAdjustRow'
-import {
-  SEGMENTED_FOCUS_RING,
-  SEGMENTED_ITEM_TEXT,
-  SEGMENTED_THUMB_BG,
-  SEGMENTED_TRACK,
-} from './segmented-chrome'
 
 /**
  * Transform on the desktop rail.

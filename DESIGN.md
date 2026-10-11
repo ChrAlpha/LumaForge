@@ -407,7 +407,7 @@ That hue was used briefly in early drafts and left a single warm wash inside an 
 
 The desktop LUT contract tabs (input / output) and the Adjust / Transform tab groups render segmented controls; mobile chooses the contract in the Look deck as two steps under a back-and-step header instead of tabs.
 Strength is not a segmented control: it is a continuous slider row (see The Adjust Scrub Contract).
-Their paint is centralized in `src/modules/raw-processor/components/tools/segmented-chrome.ts` — a single source so a future polish loop changes the look in one file and every consumer follows.
+Their paint is centralized in `src/modules/raw-processor/components/shared/segmented-chrome.ts` — a single source so a future polish loop changes the look in one file and every consumer follows.
 
 Paint contract (cross-platform):
 

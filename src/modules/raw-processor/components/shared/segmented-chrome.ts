@@ -57,7 +57,5 @@ export const SEGMENTED_ITEM_TEXT_ACTIVE =
 export const SEGMENTED_THUMB_BG =
   'bg-[oklch(0.96_0.006_255/0.10)] shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.14)]'
 
-export const SEGMENTED_THUMB_ACTIVE_VIA_PARENT = `data-[state=active]:[&_span[data-segment-thumb]]:bg-[oklch(0.96_0.006_255/0.10)] data-[state=active]:[&_span[data-segment-thumb]]:shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.14)]`
-
 export const SEGMENTED_FOCUS_RING =
   'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green/80'

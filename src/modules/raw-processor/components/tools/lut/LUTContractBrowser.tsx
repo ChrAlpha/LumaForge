@@ -20,7 +20,7 @@ import {
   SEGMENTED_ITEM_TEXT_ACTIVE,
   SEGMENTED_THUMB_BG,
   SEGMENTED_TRACK,
-} from '../segmented-chrome'
+} from '../../shared/segmented-chrome'
 import type { OnlineLutBrowserLayout } from './lut-browser-layout'
 import { getViewportBoundedBrowserLayout } from './lut-browser-layout'
 import { LutBrowserDialog } from './LutBrowserDialog'

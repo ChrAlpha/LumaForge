@@ -18,7 +18,7 @@ import {
   SEGMENTED_ITEM_TEXT,
   SEGMENTED_THUMB_BG,
   SEGMENTED_TRACK,
-} from '../tools/segmented-chrome'
+} from '../shared/segmented-chrome'
 import type { TransformField, TransformGroup } from '../transform-fields'
 import {
   applyTransformSlider,
