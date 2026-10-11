@@ -1,5 +1,3 @@
-import type { MobileMode } from './MobileModeDock'
-
 /**
  * Photo-first geometry for the mobile `/raw` stage.
  *
@@ -9,6 +7,12 @@ import type { MobileMode } from './MobileModeDock'
  * size and position in every tool; only a photo too tall for the space the
  * deck leaves gives ground, and it gives exactly what the deck needs.
  */
+
+/**
+ * The dock holds tools only. Compare is a lens over the photo and Export is a
+ * terminal action in the topbar; neither is a mutually exclusive mode.
+ */
+export type MobileMode = 'look' | 'tone' | 'transform'
 
 /** List tools fill the deck and scroll their rows inside it. */
 const LIST_TOOLS: ReadonlySet<MobileMode> = new Set(['tone', 'transform'])

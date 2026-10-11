@@ -3,8 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { IMMERSIVE_STAGGER_MS } from '../../motion'
 import type { ScrubFieldId } from './AdjustListPanel'
-import type { MobileLookView } from './mobile-stage-layout'
-import type { MobileMode } from './MobileModeDock'
+import type { MobileLookView, MobileMode } from './mobile-stage-layout'
 import { useMobilePreviewGestures } from './useMobilePreviewGestures'
 
 export type MobileLabViewMode = 'processed' | 'original' | 'compare'

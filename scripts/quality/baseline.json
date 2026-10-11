@@ -89,8 +89,5 @@
     "types src/modules/raw-processor/services/look/online-lut-sources.ts: OnlineLUTLoadRequest",
     "types src/modules/raw-processor/services/look/style-system.ts: LookIntensityPreset"
   ],
-  "cycles": [
-    "src/lib/profiles/catalog.ts > src/lib/profiles/lut-contract.ts",
-    "src/modules/raw-processor/components/mobile/MobileModeDock.tsx > src/modules/raw-processor/components/mobile/mobile-stage-layout.ts"
-  ]
+  "cycles": []
 }

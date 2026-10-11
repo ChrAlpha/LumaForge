@@ -9,14 +9,8 @@ import type { Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 
 import { DOCK_SPRING, TAP_SPRING } from '../../motion'
-import type { MobileLookView } from './mobile-stage-layout'
+import type { MobileLookView, MobileMode } from './mobile-stage-layout'
 import { DECK_PADDING_Y_PX, isMobileListDeck } from './mobile-stage-layout'
-
-/**
- * The dock holds tools only. Compare is a lens over the photo and Export is a
- * terminal action in the topbar; neither is a mutually exclusive mode.
- */
-export type MobileMode = 'look' | 'tone' | 'transform'
 
 const TABS: {
   id: MobileMode

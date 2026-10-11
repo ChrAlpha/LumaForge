@@ -1,6 +1,6 @@
 import type { LUTContractSelection } from '@lumaforge/luma-color-runtime'
+import { mapProfileLUTContract } from '@lumaforge/luma-color-runtime'
 
-import { mapProfileLUTContract } from './lut-contract'
 import { isProfileTransportUrl } from './source-url'
 
 export type OnlineProfileIssueCode =
