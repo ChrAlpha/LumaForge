@@ -1,5 +1,4 @@
 import { atom } from 'jotai'
-import { useCallback } from 'react'
 
 import { createAtomHooks } from '~/lib/jotai'
 
@@ -16,40 +15,9 @@ type ContextMenuState =
       abortController: AbortController
     }
 
-export const [
-  contextMenuAtom,
-  useContextMenuState,
-  useContextMenuValue,
-  useSetContextMenu,
-] = createAtomHooks(atom<ContextMenuState>({ open: false }))
-
-const useShowWebContextMenu = () => {
-  const setContextMenu = useSetContextMenu()
-
-  const showWebContextMenu = useCallback(
-    async (
-      menuItems: Array<FollowMenuItem>,
-      e: MouseEvent | React.MouseEvent,
-    ) => {
-      const abortController = new AbortController()
-      const resolvers = Promise.withResolvers<void>()
-      setContextMenu({
-        open: true,
-        position: { x: e.clientX, y: e.clientY },
-        menuItems,
-        abortController,
-      })
-
-      abortController.signal.addEventListener('abort', () => {
-        resolvers.resolve()
-      })
-      return resolvers.promise
-    },
-    [setContextMenu],
-  )
-
-  return showWebContextMenu
-}
+export const [, useContextMenuState] = createAtomHooks(
+  atom<ContextMenuState>({ open: false }),
+)
 
 // Menu
 
@@ -82,25 +50,6 @@ function filterNullableMenuItems(items: MenuItemInput[]): FollowMenuItem[] {
 export enum MenuItemType {
   Separator,
   Action,
-}
-
-export const useShowContextMenu = () => {
-  const showWebContextMenu = useShowWebContextMenu()
-
-  const showContextMenu = useCallback(
-    async (
-      inputMenu: Array<MenuItemInput>,
-      e: MouseEvent | React.MouseEvent,
-    ) => {
-      const menuItems = filterNullableMenuItems(inputMenu)
-      e.preventDefault()
-      e.stopPropagation()
-      await showWebContextMenu(menuItems, e)
-    },
-    [showWebContextMenu],
-  )
-
-  return showContextMenu
 }
 
 export class MenuItemSeparator {

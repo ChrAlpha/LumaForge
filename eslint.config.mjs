@@ -47,7 +47,7 @@ export default defineConfig(
           name: 'location',
           message:
             "Since you don't use the same router instance in electron and browser, you can't use the global location to get the route info. \n\n" +
-            'You can use `useLocaltion` or `getReadonlyRoute` to get the route info.',
+            'Use `useLocation` from react-router to get the route info.',
         },
       ],
       'ts/no-explicit-any': 'off',

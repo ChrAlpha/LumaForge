@@ -16,13 +16,6 @@ const themeAtom = atomWithStorage(
   },
 )
 
-function useDarkWebApp() {
-  const systemIsDark = useDarkQuery()
-  const mode = useAtomValue(themeAtom)
-  return mode === 'dark' || (mode === 'system' && systemIsDark)
-}
-export const useIsDark = useDarkWebApp
-
 export const useThemeAtomValue = () => useAtomValue(themeAtom)
 
 const useSyncThemeWebApp = () => {

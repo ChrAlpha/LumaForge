@@ -1,4 +1,4 @@
-import type { ExtractAtomValue, getDefaultStore } from 'jotai'
+import type { ExtractAtomValue } from 'jotai'
 import { useAtomValue } from 'jotai'
 import { selectAtom } from 'jotai/utils'
 import { useCallback } from 'react'
@@ -14,6 +14,3 @@ export const useViewport = <T>(
       useCallback((atomValue) => selector(atomValue), [selector]),
     ),
   )
-
-type JotaiStore = ReturnType<typeof getDefaultStore>
-export const getViewport = (store: JotaiStore) => store.get(viewportAtom)
