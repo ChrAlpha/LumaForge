@@ -20,6 +20,8 @@ export type SetImageSession = (
 type UseRestorePreviewAfterExportInput = {
   /** Reads the current session from the store, not from the last render. */
   getSession: () => ImageSession | null
+  /** The live decoded frame; a restore only runs once export released it. */
+  decodedImageRef: MutableRefObject<DecodedImage | null>
   /** The source exposure pin the restored frame must render with. */
   rawRenderExposureRef: MutableRefObject<RawRenderExposure | null>
   isMountedRef: MutableRefObject<boolean>
@@ -44,6 +46,27 @@ type UseRestorePreviewAfterExportInput = {
   }
 }
 
+/**
+ * A restore brings back only a preview an export released: the export plan
+ * that released it no longer runs, no decoded frame is live, and no load or
+ * restore holds the runtime work fence. Anything else keeps the RAW lease it
+ * holds, so a stale callback neither takes nor cancels one.
+ */
+function canAdmitRestore(
+  session: ImageSession,
+  hasLiveDecodedFrame: boolean,
+  runtimeWorkSessionId: string | null,
+): boolean {
+  const { exportState } = session
+  return (
+    runtimeWorkSessionId === null &&
+    !hasLiveDecodedFrame &&
+    Boolean(exportState.activePlan) &&
+    exportState.status !== 'preparing' &&
+    exportState.status !== 'exporting'
+  )
+}
+
 function mapPhaseToStatus(phase: RestorePreviewPhase): ProcessingStatus {
   if (phase === 'loading') return 'loading'
   if (phase === 'decoding') return 'decoding'
@@ -53,6 +76,7 @@ function mapPhaseToStatus(phase: RestorePreviewPhase): ProcessingStatus {
 
 export function useRestorePreviewAfterExport({
   getSession,
+  decodedImageRef,
   rawRenderExposureRef,
   isMountedRef,
   runtimeWorkSessionIdRef,
@@ -66,13 +90,24 @@ export function useRestorePreviewAfterExport({
   toast,
 }: UseRestorePreviewAfterExportInput) {
   const restorePreviewAfterExport = useCallback(async () => {
+    if (!isMountedRef.current) {
+      return
+    }
     const activeSession = getSession()
     // The file comes from the session the restore fences on, read from the
     // store when it runs, never from an older render, so a restore can only
     // decode the source it publishes to.
     const sourceFile = activeSession?.sourceFile.file
 
-    if (!activeSession || !sourceFile) {
+    if (
+      !activeSession ||
+      !sourceFile ||
+      !canAdmitRestore(
+        activeSession,
+        decodedImageRef.current !== null,
+        runtimeWorkSessionIdRef.current,
+      )
+    ) {
       return
     }
 
@@ -164,6 +199,7 @@ export function useRestorePreviewAfterExport({
     }
   }, [
     beginRuntimeSession,
+    decodedImageRef,
     getSession,
     isMountedRef,
     rawRenderExposureRef,

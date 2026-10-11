@@ -755,7 +755,7 @@ describe('useRawWorkflow embedded preview state', () => {
     interruptionMarkersMock.current = null
   })
 
-  it('warms, loads, and restores on the one RAW host it exposes', async () => {
+  it('warms and loads on the one RAW host it exposes, and restores nothing no export released', async () => {
     rawRuntimeHosts.length = 0
     rawRuntimeMock.getPrewarmState.mockReturnValue('idle')
     const { result, rerender } = renderHook(() => useRawWorkflow(), {
@@ -783,12 +783,13 @@ describe('useRawWorkflow embedded preview state', () => {
     )
     expect(host.openSession).not.toHaveBeenCalled()
 
+    // The decoded preview is live, so a restore has nothing to bring back
+    // and leaves the host slot alone.
     await act(async () => {
       await result.current.restorePreviewAfterExport()
     })
-    // Restore takes its session from the same host slot as the load.
-    expect(host.beginSession).toHaveBeenCalledTimes(2)
-    expect(rawRuntimeMock.openSession).toHaveBeenCalledTimes(2)
+    expect(host.beginSession).toHaveBeenCalledTimes(1)
+    expect(rawRuntimeMock.openSession).toHaveBeenCalledTimes(1)
     expect(host.openSession).not.toHaveBeenCalled()
     expect(rawRuntimeHosts).toHaveLength(1)
   })

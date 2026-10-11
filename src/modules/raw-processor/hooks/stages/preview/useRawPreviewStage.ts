@@ -111,6 +111,7 @@ export function useRawPreviewStage({
   })
   const { restorePreviewAfterExport } = useRestorePreviewAfterExport({
     getSession: getCurrentSession,
+    decodedImageRef,
     rawRenderExposureRef,
     isMountedRef,
     runtimeWorkSessionIdRef,

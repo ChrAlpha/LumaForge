@@ -1,3 +1,5 @@
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -5,14 +7,79 @@ import type { DecodedImage, ProgressCallback } from '~/lib/raw/decoder'
 import { createRawRuntimeSessionLeases } from '~/lib/raw/raw-runtime-host'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 
+import { createExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
 import { createTransformState } from '../../../model/session-factory'
+import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import type { SetImageSession } from './useRestorePreviewAfterExport'
 import { useRestorePreviewAfterExport } from './useRestorePreviewAfterExport'
 
+const ACTIVE_PLAN: NonNullable<ImageSession['exportState']['activePlan']> = {
+  profileName: 'desktop-fast',
+  preferredRows: 128,
+  concurrency: 1,
+  runtimeMemoryProfile: 'desktop',
+  outputSink: 'blob-handoff',
+  checkpointMode: 'safe-retry',
+}
+
+function createDeliveredResult(sessionId: string, file: File) {
+  return createExportResult({
+    kind: 'full-resolution',
+    output: createBlobOutputResult({
+      filename: 'restore_fullres.jpg',
+      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+    }),
+    width: 400,
+    height: 300,
+    copyCapability: { mode: 'full-resolution' },
+    identity: captureExportResultIdentity({
+      resultKind: 'full-resolution',
+      attemptId: `attempt-${sessionId}`,
+      sessionId,
+      sourceFile: file,
+      intent: {
+        styleKind: 'none',
+        builtinPreset: null,
+        intensity: 0,
+        ...NEUTRAL_USER_COLOR_INTENT,
+      },
+      lut: null,
+      rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+      geometry: null,
+    }),
+  })
+}
+
+/**
+ * A source whose export finished and released the decoded preview: the
+ * delivered JPEG stands in for it, the state a restore exists for.
+ */
 function createSession(
   id = 'session-restore',
   file = new File(['raw'], 'restore.dng'),
+): ImageSession {
+  return withExportState(createLoadingSession(id, file), {
+    status: 'ready',
+    activePlan: ACTIVE_PLAN,
+    result: createDeliveredResult(id, file),
+  })
+}
+
+function withExportState(
+  session: ImageSession,
+  exportState: Partial<ImageSession['exportState']>,
+): ImageSession {
+  return {
+    ...session,
+    exportState: { ...session.exportState, ...exportState },
+  }
+}
+
+/** A source a load has just published: nothing has exported it yet. */
+function createLoadingSession(
+  id: string,
+  file = new File(['raw'], `${id}.dng`),
 ): ImageSession {
   return {
     id,
@@ -43,7 +110,7 @@ function createSession(
     },
     renderState: { status: 'idle' },
     exportState: {
-      status: 'ready',
+      status: 'idle',
       fullResCapability: { status: 'supported', width: 400, height: 300 },
       retryRecommended: false,
     },
@@ -124,6 +191,7 @@ function createHostSessions(
 
 function renderRestore(input: {
   sessionRef: { current: ImageSession | null }
+  decodedImageRef?: { current: DecodedImage | null }
   rawRenderExposureRef?: { current: DecodedImage['renderExposure'] | null }
   isMountedRef?: { current: boolean }
   runtimeWorkSessionIdRef?: { current: string | null }
@@ -137,6 +205,7 @@ function renderRestore(input: {
   const rendered = renderHook(() =>
     useRestorePreviewAfterExport({
       getSession: () => input.sessionRef.current,
+      decodedImageRef: input.decodedImageRef ?? { current: null },
       rawRenderExposureRef: input.rawRenderExposureRef ?? { current: null },
       isMountedRef: input.isMountedRef ?? { current: true },
       runtimeWorkSessionIdRef: input.runtimeWorkSessionIdRef ?? {
@@ -302,7 +371,7 @@ describe('useRestorePreviewAfterExport', () => {
     await vi.waitFor(() => {
       expect(runtimeSession.decodeQuickRaw).toHaveBeenCalled()
     })
-    sessionRef.current = createSession('session-next')
+    sessionRef.current = createLoadingSession('session-next')
     quickDecode.resolve(createDecodedImage())
     await restore
 
@@ -340,7 +409,7 @@ describe('useRestorePreviewAfterExport', () => {
 
     // A replacing load publishes its session and takes the host's slot.
     const nextFile = new File(['raw'], 'next.dng')
-    sessionRef.current = createSession('session-next', nextFile)
+    sessionRef.current = createLoadingSession('session-next', nextFile)
     runtimeWorkSessionIdRef.current = 'session-next'
     const loadLease = hostSessions.beginSession()
     expect(hostSessions.openSignal(0)?.aborted).toBe(true)
@@ -506,5 +575,198 @@ describe('useRestorePreviewAfterExport', () => {
     )
     expect(sessionRef.current?.id).toBe('session-next')
     expect(sessionRef.current?.previewBundle.displaySource).toBe('quick')
+  })
+
+  it('refuses an old callback once a replacing load has started, leaving its lease alone', async () => {
+    const restored = createRuntimeSession(async () => createDecodedImage())
+    const replacement = createRuntimeSession(async () => createDecodedImage())
+    const nextFile = new File(['raw'], 'next.dng')
+    const hostSessions = createHostSessions(async (file) =>
+      file === nextFile ? replacement : restored,
+    )
+    const setStatus = vi.fn()
+    const setProgress = vi.fn()
+    const setDecodedImageRef = vi.fn()
+    const toastError = vi.fn()
+    const sessionRef = { current: createSession() as ImageSession | null }
+    const runtimeWorkSessionIdRef = { current: null as string | null }
+    const { result } = renderRestore({
+      sessionRef,
+      runtimeWorkSessionIdRef,
+      hostSessions,
+      setStatus,
+      setProgress,
+      setDecodedImageRef,
+      toastError,
+    })
+    const restoreFromReleasedRender = result.current.restorePreviewAfterExport
+
+    // The replacing load takes the host slot, publishes its session, and
+    // fences runtime work on it, all before it first yields.
+    const loadLease = hostSessions.beginSession()
+    sessionRef.current = createLoadingSession('session-next', nextFile)
+    runtimeWorkSessionIdRef.current = 'session-next'
+    await restoreFromReleasedRender()
+
+    expect(hostSessions.beginSession).toHaveBeenCalledTimes(1)
+    expect(loadLease.signal.aborted).toBe(false)
+    expect(runtimeWorkSessionIdRef.current).toBe('session-next')
+    expect(hostSessions.open).not.toHaveBeenCalled()
+    expect(setStatus).not.toHaveBeenCalled()
+    expect(setProgress).not.toHaveBeenCalled()
+    expect(setDecodedImageRef).not.toHaveBeenCalled()
+    expect(toastError).not.toHaveBeenCalled()
+    await expect(loadLease.open(nextFile)).resolves.toBe(replacement)
+    expect(replacement.dispose).not.toHaveBeenCalled()
+  })
+
+  it('refuses an old callback during an initial load without touching its lease', async () => {
+    const hostSessions = createHostSessions(async () =>
+      createRuntimeSession(async () => createDecodedImage()),
+    )
+    const setStatus = vi.fn()
+    const sessionRef = { current: null as ImageSession | null }
+    const runtimeWorkSessionIdRef = { current: null as string | null }
+    const { result } = renderRestore({
+      sessionRef,
+      runtimeWorkSessionIdRef,
+      hostSessions,
+      setStatus,
+    })
+
+    const loadLease = hostSessions.beginSession()
+    sessionRef.current = createLoadingSession('session-first')
+    runtimeWorkSessionIdRef.current = 'session-first'
+    await result.current.restorePreviewAfterExport()
+
+    expect(hostSessions.beginSession).toHaveBeenCalledTimes(1)
+    expect(loadLease.signal.aborted).toBe(false)
+    expect(runtimeWorkSessionIdRef.current).toBe('session-first')
+    expect(setStatus).not.toHaveBeenCalled()
+  })
+
+  it('refuses a source no export has released, even with no work running', async () => {
+    const hostSessions = createHostSessions(async () =>
+      createRuntimeSession(async () => createDecodedImage()),
+    )
+    const setStatus = vi.fn()
+    const { result } = renderRestore({
+      sessionRef: { current: createLoadingSession('session-loaded') },
+      hostSessions,
+      setStatus,
+    })
+
+    await result.current.restorePreviewAfterExport()
+
+    expect(hostSessions.beginSession).not.toHaveBeenCalled()
+    expect(setStatus).not.toHaveBeenCalled()
+  })
+
+  it('refuses while the export that released the preview still runs', async () => {
+    const hostSessions = createHostSessions(async () =>
+      createRuntimeSession(async () => createDecodedImage()),
+    )
+    const { result } = renderRestore({
+      sessionRef: {
+        current: withExportState(createSession(), {
+          status: 'exporting',
+          result: undefined,
+        }),
+      },
+      hostSessions,
+    })
+
+    await result.current.restorePreviewAfterExport()
+
+    expect(hostSessions.beginSession).not.toHaveBeenCalled()
+  })
+
+  it('refuses while a decoded frame is still live', async () => {
+    const hostSessions = createHostSessions(async () =>
+      createRuntimeSession(async () => createDecodedImage()),
+    )
+    const setDecodedImageRef = vi.fn()
+    const { result } = renderRestore({
+      sessionRef: { current: createSession() },
+      decodedImageRef: { current: createDecodedImage() },
+      hostSessions,
+      setDecodedImageRef,
+    })
+
+    await result.current.restorePreviewAfterExport()
+
+    expect(hostSessions.beginSession).not.toHaveBeenCalled()
+    expect(setDecodedImageRef).not.toHaveBeenCalled()
+  })
+
+  it('refuses after the workflow unmounted', async () => {
+    const hostSessions = createHostSessions(async () =>
+      createRuntimeSession(async () => createDecodedImage()),
+    )
+    const { result } = renderRestore({
+      sessionRef: { current: createSession() },
+      isMountedRef: { current: false },
+      hostSessions,
+    })
+
+    await result.current.restorePreviewAfterExport()
+
+    expect(hostSessions.beginSession).not.toHaveBeenCalled()
+  })
+
+  it('refuses a second restore while the first holds the lease, and lets the first finish', async () => {
+    const quickDecode = deferred<DecodedImage>()
+    const runtimeSession = createRuntimeSession(() => quickDecode.promise)
+    const hostSessions = createHostSessions(async () => runtimeSession)
+    const setDecodedImageRef = vi.fn()
+    const runtimeWorkSessionIdRef = { current: null as string | null }
+    const { result } = renderRestore({
+      sessionRef: { current: createSession() },
+      runtimeWorkSessionIdRef,
+      hostSessions,
+      setDecodedImageRef,
+    })
+
+    const first = result.current.restorePreviewAfterExport()
+    await vi.waitFor(() => {
+      expect(runtimeSession.decodeQuickRaw).toHaveBeenCalled()
+    })
+    await result.current.restorePreviewAfterExport()
+
+    expect(hostSessions.beginSession).toHaveBeenCalledTimes(1)
+    expect(hostSessions.openSignal()?.aborted).toBe(false)
+    const decoded = createDecodedImage()
+    quickDecode.resolve(decoded)
+    await first
+
+    expect(setDecodedImageRef).toHaveBeenCalledTimes(1)
+    expect(setDecodedImageRef).toHaveBeenCalledWith(decoded, {
+      preserveExportResult: true,
+    })
+    expect(runtimeWorkSessionIdRef.current).toBeNull()
+  })
+
+  it('restores a preview a failed export released', async () => {
+    const runtimeSession = createRuntimeSession(async () =>
+      createDecodedImage(),
+    )
+    const hostSessions = createHostSessions(async () => runtimeSession)
+    const setDecodedImageRef = vi.fn()
+    const { result } = renderRestore({
+      sessionRef: {
+        current: withExportState(createSession(), {
+          status: 'failed',
+          result: undefined,
+          lastErrorCode: 'EXPORT_RENDER_FAILED',
+        }),
+      },
+      hostSessions,
+      setDecodedImageRef,
+    })
+
+    await result.current.restorePreviewAfterExport()
+
+    expect(hostSessions.beginSession).toHaveBeenCalledTimes(1)
+    expect(setDecodedImageRef).toHaveBeenCalledTimes(1)
   })
 })

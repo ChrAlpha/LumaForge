@@ -3,6 +3,7 @@ import type {
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,8 +13,10 @@ import { createRawRuntimeSessionLeases } from '~/lib/raw/raw-runtime-host'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
+import { createExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
 import { createTransformState } from '../../../model/session-factory'
+import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import {
   getCurrentSession,
   setCurrentSession,
@@ -33,6 +36,54 @@ const params: ColorGraphIntent = {
   intensity: 0.7,
   styleKind: 'none',
   builtinPreset: null,
+}
+
+function createDeliveredResult(sessionId: string, file: File) {
+  return createExportResult({
+    kind: 'full-resolution',
+    output: createBlobOutputResult({
+      filename: `${sessionId}_fullres.jpg`,
+      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+    }),
+    width: 400,
+    height: 300,
+    copyCapability: { mode: 'full-resolution' },
+    identity: captureExportResultIdentity({
+      resultKind: 'full-resolution',
+      attemptId: `attempt-${sessionId}`,
+      sessionId,
+      sourceFile: file,
+      intent: params,
+      lut: null,
+      rawRenderExposure: { ev: 0, multiplier: 1, source: 'image-statistics' },
+      geometry: null,
+    }),
+  })
+}
+
+/** A source whose finished export released its decoded preview. */
+function createReleasedSession(
+  id: string,
+  options: { file?: File } = {},
+): ImageSession {
+  const file = options.file ?? new File(['raw'], `${id}.dng`)
+  const session = createSession(id, { file })
+  return {
+    ...session,
+    exportState: {
+      ...session.exportState,
+      status: 'ready',
+      activePlan: {
+        profileName: 'desktop-fast',
+        preferredRows: 128,
+        concurrency: 1,
+        runtimeMemoryProfile: 'desktop',
+        outputSink: 'blob-handoff',
+        checkpointMode: 'safe-retry',
+      },
+      result: createDeliveredResult(id, file),
+    },
+  }
 }
 
 function createSession(
@@ -192,9 +243,9 @@ describe('useRawPreviewStage', () => {
   })
 
   it('restores the source in the store, with its 0 EV pin, and keeps the delivered result', async () => {
-    const rendered = createSession('session-rendered')
+    const rendered = createReleasedSession('session-rendered')
     const replacementFile = new File(['raw'], 'replacement.dng')
-    const replacement = createSession('session-replacement', {
+    const replacement = createReleasedSession('session-replacement', {
       file: replacementFile,
     })
     setCurrentSession(rendered)
@@ -240,6 +291,9 @@ describe('useRawPreviewStage', () => {
     expect(getCurrentSession()?.id).toBe('session-replacement')
     expect(getCurrentSession()?.previewBundle.displaySource).toBe('quick')
     expect(getCurrentSession()?.exportState.status).toBe('ready')
+    expect(getCurrentSession()?.exportState.result).toBe(
+      replacement.exportState.result,
+    )
     expect(invalidateExportGraph).not.toHaveBeenCalled()
     // The restored frame is a fresh acceptance of the source in the store.
     rerender()
@@ -249,6 +303,30 @@ describe('useRawPreviewStage', () => {
       exposure: { kind: 'source-pin', value: pinnedExposure },
       quickPredecessorFrameId: null,
     })
+  })
+
+  it('leaves a live decoded frame in place instead of restoring over it', async () => {
+    setCurrentSession(createReleasedSession('session-live'))
+    const live = createDecodedImage({
+      ev: 0,
+      multiplier: 1,
+      source: 'image-statistics',
+    })
+    const beginRuntimeSession = vi.fn()
+    const setStatus = vi.fn()
+    const { result } = renderStage({
+      decodedImageRef: { current: live },
+      beginRuntimeSession,
+      setStatus,
+    })
+
+    await act(async () => {
+      await result.current.restorePreviewAfterExport()
+    })
+
+    expect(beginRuntimeSession).not.toHaveBeenCalled()
+    expect(setStatus).not.toHaveBeenCalled()
+    expect(getCurrentSession()?.previewBundle.displaySource).toBe('none')
   })
 
   it('revokes and clears the embedded URL of the source in the store only', () => {
