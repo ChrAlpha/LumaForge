@@ -671,3 +671,34 @@ describe('resolvePreviewColorPlan: selections and reasons per executor', () => {
     }
   }
 })
+
+describe('resolvePreviewColorPlan: complete intent', () => {
+  it('rejects an intent without HSL at compile time', () => {
+    const { selectiveColor: _omitted, ...withoutHsl } = ADJUSTED
+    const input = {
+      // @ts-expect-error The intent must carry HSL; nothing fills it in.
+      intent: withoutHsl,
+      lut: null,
+      executor: 'cpu',
+    } satisfies Parameters<typeof resolvePreviewColorPlan>[0]
+    expect(input.intent).not.toHaveProperty('selectiveColor')
+  })
+
+  for (const executor of EXECUTORS) {
+    it(`copies the given intent field for field on ${executor}`, () => {
+      const wider = deepFreeze({
+        ...ADJUSTED,
+        lut: lut(confirmed(profile())),
+        rawRenderExposure: RAW_RENDER_EXPOSURE,
+        extra: 'not color',
+      })
+      const result = plan(wider, wider.lut, executor)
+
+      expect(result.reason).toBeNull()
+      expect(result.effectiveIntent).toEqual(ADJUSTED)
+      expect(result.effectiveIntent.selectiveColor).toBe(
+        ADJUSTED.selectiveColor,
+      )
+    })
+  }
+})

@@ -1,17 +1,15 @@
 import type {
   ColorGraphIntent,
-  ColorGraphIntentSource,
   ExportColorGraphInput,
   LookSelection,
   LUTData,
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
+  UserColorIntent,
 } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_USER_COLOR_INTENT,
-  pickColorGraphIntent,
   pickLookSelection,
-  pickUserColorIntent,
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 
@@ -79,8 +77,11 @@ export type PreviewHistogramPlan =
   | { kind: 'unrepresented'; reason: 'builtin-no-ts-executor' }
 
 export interface ResolvePreviewColorPlanInput {
-  /** The selected look and user color, read and never written. */
-  intent: ColorGraphIntentSource
+  /**
+   * The selected look and the complete user color, HSL included; read and
+   * never written. Fields outside the intent are ignored.
+   */
+  intent: ColorGraphIntent
   /** The selected custom LUT's data, when loaded. */
   lut: LUTData | null
   rawRenderExposure?: RawRenderExposure
@@ -139,6 +140,23 @@ function lutContractRefusal(lut: LUTData): PreviewColorPlanReason | null {
   return null
 }
 
+/** The user color out of a larger record, every value as given. */
+function userColorOf(intent: ColorGraphIntent): UserColorIntent {
+  return {
+    userExposureEv: intent.userExposureEv,
+    userContrast: intent.userContrast,
+    userHighlights: intent.userHighlights,
+    userShadows: intent.userShadows,
+    userWhites: intent.userWhites,
+    userBlacks: intent.userBlacks,
+    userTemperature: intent.userTemperature,
+    userTint: intent.userTint,
+    userSaturation: intent.userSaturation,
+    userVibrance: intent.userVibrance,
+    selectiveColor: intent.selectiveColor,
+  }
+}
+
 function resolveTsGraph(
   input: ExportColorGraphInput,
 ): SupportedExportColorGraphDescriptor | null {
@@ -154,8 +172,8 @@ export function resolvePreviewColorPlan({
   variant = 'processed',
 }: ResolvePreviewColorPlanInput): PreviewColorPlan {
   const selected = pickLookSelection(intent)
-  const userColor = pickUserColorIntent(intent)
-  const asSelected = pickColorGraphIntent(intent)
+  const userColor = userColorOf(intent)
+  const asSelected: ColorGraphIntent = { ...selected, ...userColor }
 
   const drawn = (
     effective: LookSelection,
