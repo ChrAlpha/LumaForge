@@ -636,7 +636,6 @@ describe('preview canvas upload descriptor', () => {
     expect(pipeline.setParams).toHaveBeenLastCalledWith({
       ...color,
       viewMode: 'original',
-      compareSplit: 0.5,
     })
 
     rerender(createElement(PreviewCanvas, { ...props, viewMode: 'compare' }))
@@ -644,7 +643,6 @@ describe('preview canvas upload descriptor', () => {
     expect(pipeline.setParams).toHaveBeenLastCalledWith({
       ...color,
       viewMode: 'processed',
-      compareSplit: 0.5,
     })
   })
 
@@ -1396,7 +1394,6 @@ describe('preview canvas upload descriptor', () => {
       expect(getPipelineParamCalls()).toContainEqual(
         expect.objectContaining({
           viewMode: 'processed',
-          compareSplit: 0.5,
         }),
       )
     })
@@ -2116,7 +2113,6 @@ describe('preview canvas upload descriptor', () => {
       expect(getPipelineParamCalls()).toContainEqual(
         expect.objectContaining({
           viewMode: 'processed',
-          compareSplit: 0.5,
         }),
       )
     })

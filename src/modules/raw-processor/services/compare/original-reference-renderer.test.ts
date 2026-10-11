@@ -310,7 +310,6 @@ describe('renderOriginalReferenceSnapshot', () => {
     // Every user field is set neutral; none is left to the pipeline default.
     expect(setParams).toHaveBeenCalledExactlyOnceWith({
       viewMode: 'original',
-      compareSplit: 0.5,
       styleKind: 'none',
       builtinPreset: null,
       intensity: 0,
