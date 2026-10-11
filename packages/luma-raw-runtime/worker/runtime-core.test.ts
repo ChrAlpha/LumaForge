@@ -91,6 +91,62 @@ const makeNativeFactory = (): LumaRawNativeFactory => ({
   },
 })
 
+type SessionRequestType =
+  | 'extractEmbeddedPreviewFromSession'
+  | 'decodeQuickFromSession'
+  | 'decodeBoundedHqFromSession'
+  | 'probeExportCapabilityFromSession'
+  | 'beginProcessedWindowExportFromSession'
+  | 'readRawWindowFromSession'
+  | 'readProcessedWindowFromSession'
+  | 'endProcessedWindowExportFromSession'
+  | 'applyCalibrationToSession'
+  | 'closeSession'
+
+function sessionRequest(
+  type: SessionRequestType,
+  sessionId: string,
+  id = `classify-${type}`,
+): LumaRawWorkerRequest {
+  switch (type) {
+    case 'decodeBoundedHqFromSession':
+      return { id, type, payload: { sessionId, maxOutputPixels: 1_000_000 } }
+    case 'readRawWindowFromSession':
+      return {
+        id,
+        type,
+        payload: { sessionId, rect: { x: 0, y: 0, width: 2, height: 2 } },
+      }
+    case 'readProcessedWindowFromSession':
+      return {
+        id,
+        type,
+        payload: {
+          sessionId,
+          request: {
+            outputRect: { x: 0, y: 0, width: 2, height: 2 },
+            halo: { left: 0, top: 0, right: 0, bottom: 0 },
+          },
+        },
+      }
+    case 'applyCalibrationToSession':
+      return {
+        id,
+        type,
+        payload: {
+          sessionId,
+          cameraCalibration: {
+            profileId: 'p1',
+            profileName: 'Adobe Standard',
+            xyzToCamera: new Float32Array(9),
+          },
+        },
+      }
+    default:
+      return { id, type, payload: { sessionId } }
+  }
+}
+
 describe('runtime-core', () => {
   it('reports low-memory runtime info when initialized with low-memory profile', async () => {
     const core = createRuntimeCore(makeNativeFactory(), {
@@ -2447,62 +2503,6 @@ describe('runtime-core request failure classification', () => {
     return opened.payload.sessionId
   }
 
-  type SessionRequestType =
-    | 'extractEmbeddedPreviewFromSession'
-    | 'decodeQuickFromSession'
-    | 'decodeBoundedHqFromSession'
-    | 'probeExportCapabilityFromSession'
-    | 'beginProcessedWindowExportFromSession'
-    | 'readRawWindowFromSession'
-    | 'readProcessedWindowFromSession'
-    | 'endProcessedWindowExportFromSession'
-    | 'applyCalibrationToSession'
-    | 'closeSession'
-
-  function sessionRequest(
-    type: SessionRequestType,
-    sessionId: string,
-    id = `classify-${type}`,
-  ): LumaRawWorkerRequest {
-    switch (type) {
-      case 'decodeBoundedHqFromSession':
-        return { id, type, payload: { sessionId, maxOutputPixels: 1_000_000 } }
-      case 'readRawWindowFromSession':
-        return {
-          id,
-          type,
-          payload: { sessionId, rect: { x: 0, y: 0, width: 2, height: 2 } },
-        }
-      case 'readProcessedWindowFromSession':
-        return {
-          id,
-          type,
-          payload: {
-            sessionId,
-            request: {
-              outputRect: { x: 0, y: 0, width: 2, height: 2 },
-              halo: { left: 0, top: 0, right: 0, bottom: 0 },
-            },
-          },
-        }
-      case 'applyCalibrationToSession':
-        return {
-          id,
-          type,
-          payload: {
-            sessionId,
-            cameraCalibration: {
-              profileId: 'p1',
-              profileName: 'Adobe Standard',
-              xyzToCamera: new Float32Array(9),
-            },
-          },
-        }
-      default:
-        return { id, type, payload: { sessionId } }
-    }
-  }
-
   it.each([
     ['probe', 'openBuffer', 'RAW_OPEN_FAILED'],
     ['extractEmbeddedPreview', 'extractThumbnail', 'RAW_THUMBNAIL_UNAVAILABLE'],
@@ -2747,4 +2747,333 @@ describe('runtime-core request failure classification', () => {
       readProcessedWindowFromSession: 'RAW_WINDOW_READ_FAILED',
     })
   })
+})
+
+describe('runtime-core session jobs', () => {
+  type SessionJobType = Exclude<SessionRequestType, 'closeSession'>
+  type SessionJobMethod =
+    | 'extractThumbnail'
+    | 'decodePreview'
+    | 'decodeHq'
+    | 'probeExportCapability'
+    | 'beginProcessedWindowExport'
+    | 'readRawWindow'
+    | 'readProcessedWindow'
+    | 'endProcessedWindowExport'
+    | 'applyCalibration'
+
+  const sessionJobs = [
+    ['extractEmbeddedPreviewFromSession', 'extractThumbnail'],
+    ['decodeQuickFromSession', 'decodePreview'],
+    ['decodeBoundedHqFromSession', 'decodeHq'],
+    ['probeExportCapabilityFromSession', 'probeExportCapability'],
+    ['beginProcessedWindowExportFromSession', 'beginProcessedWindowExport'],
+    ['readRawWindowFromSession', 'readRawWindow'],
+    ['readProcessedWindowFromSession', 'readProcessedWindow'],
+    ['endProcessedWindowExportFromSession', 'endProcessedWindowExport'],
+    ['applyCalibrationToSession', 'applyCalibration'],
+  ] as const satisfies ReadonlyArray<
+    readonly [SessionJobType, SessionJobMethod]
+  >
+
+  const supportedCapability: LumaRawExportCapability = {
+    supported: true,
+    width: 2,
+    height: 2,
+    rawWidth: 2,
+    rawHeight: 2,
+    visibleCrop: { x: 0, y: 0, width: 2, height: 2 },
+    cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+    blackLevel: 64,
+    whiteLevel: 1023,
+    orientation: { code: 1, supported: true },
+    color: {
+      whiteBalance: [2, 1, 1.5, 1],
+      cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      workingSpace: 'linear-prophoto-rgb',
+      librawOutputColor: 'prophoto',
+      gamma: 'linear',
+      cameraWhiteBalanceAppliedByRuntime: true,
+      cameraMatrixAppliedByRuntime: true,
+    },
+    sensor: {
+      layout: 'bayer',
+      colorCount: 3,
+      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+      phaseIsWindowLocal: false,
+    },
+    windows: { librawProcessed: true, rawMosaic: true },
+    diagnostics: {
+      hasRawImage: true,
+      hasColor3Image: false,
+      hasColor4Image: false,
+      hasXTransTable: false,
+    },
+    reasons: [],
+  }
+
+  // Every session-job native operation records its call and runs the
+  // optional hook, which may queue a cancellation or throw mid-job.
+  function makeSessionJobCore(
+    onNativeCall?: (method: SessionJobMethod) => void,
+  ) {
+    const calls: SessionJobMethod[] = []
+    const record = <T>(method: SessionJobMethod, value: () => T) => {
+      calls.push(method)
+      onNativeCall?.(method)
+      return value()
+    }
+    const core = createRuntimeCore({
+      createProcessor() {
+        const processor = makeNativeFactory().createProcessor()
+        return {
+          ...processor,
+          extractThumbnail: () =>
+            record('extractThumbnail', () => processor.extractThumbnail()),
+          decodePreview: (options) =>
+            record('decodePreview', () => processor.decodePreview(options)),
+          decodeHq: (options) =>
+            record('decodeHq', () => processor.decodeHq(options)),
+          probeExportCapability: () =>
+            record('probeExportCapability', () => supportedCapability),
+          beginProcessedWindowExport: () =>
+            record('beginProcessedWindowExport', () => ({
+              active: true as const,
+            })),
+          readRawWindow: (rect) =>
+            record('readRawWindow', () => ({
+              rect,
+              cfa: supportedCapability.cfa,
+              data: new Uint16Array(rect.width * rect.height),
+              blackLevel: 64,
+              whiteLevel: 1023,
+            })),
+          readProcessedWindow: (request) =>
+            record('readProcessedWindow', () => ({
+              rect: request.outputRect,
+              workingSpace: 'linear-prophoto-rgb' as const,
+              data: new Uint16Array(
+                request.outputRect.width * request.outputRect.height * 3,
+              ),
+              width: request.outputRect.width,
+              height: request.outputRect.height,
+              stride: request.outputRect.width * 3,
+              normalized: false as const,
+              orientationApplied: true as const,
+              colorApplied: true as const,
+              warnings: [],
+            })),
+          endProcessedWindowExport: () =>
+            record('endProcessedWindowExport', () => undefined),
+          applyCalibration: () => record('applyCalibration', () => undefined),
+        }
+      },
+    })
+
+    return { core, calls }
+  }
+
+  async function openSessionId(core: ReturnType<typeof createRuntimeCore>) {
+    const opened = await core.handleRequest({
+      id: 'session-job-open',
+      type: 'openSession',
+      payload: {
+        fileBuffer: new ArrayBuffer(4),
+        fileName: 'sample.ARW',
+        fileSize: 4,
+      },
+    })
+    if (!opened.ok || opened.type !== 'openSession') {
+      throw new Error('session open failed in fixture')
+    }
+    return opened.payload.sessionId
+  }
+
+  function cancel(
+    core: ReturnType<typeof createRuntimeCore>,
+    targetJobId: string,
+  ) {
+    return core.handleRequest({
+      id: `${targetJobId}-cancel`,
+      type: 'cancel',
+      payload: { targetJobId },
+    })
+  }
+
+  it.each(sessionJobs)(
+    'refuses a pre-cancelled %s before the session lookup and native work, once',
+    async (type) => {
+      const { core, calls } = makeSessionJobCore()
+      const sessionId = await openSessionId(core)
+      const id = `pre-cancelled-${type}`
+
+      await cancel(core, id)
+      const cancelled = await core.handleRequest(
+        sessionRequest(type, 'raw-session-missing', id),
+      )
+      const rerun = await core.handleRequest(
+        sessionRequest(type, sessionId, id),
+      )
+
+      expect(cancelled).toEqual({
+        id,
+        ok: false,
+        type,
+        error: {
+          code: 'RAW_JOB_CANCELLED',
+          message: 'RAW runtime job was cancelled.',
+        },
+      })
+      expect(rerun).toMatchObject({ id, ok: true, type })
+      expect(calls).toHaveLength(1)
+    },
+  )
+
+  it.each(sessionJobs)(
+    'publishes cancellation that arrives while %s runs %s, once',
+    async (type, method) => {
+      const id = `late-cancelled-${type}`
+      let cancelQueued = false
+      const { core, calls } = makeSessionJobCore((called) => {
+        if (called !== method || cancelQueued) return
+        cancelQueued = true
+        void cancel(core, id)
+      })
+      const sessionId = await openSessionId(core)
+
+      const cancelled = await core.handleRequest(
+        sessionRequest(type, sessionId, id),
+      )
+      const rerun = await core.handleRequest(
+        sessionRequest(type, sessionId, id),
+      )
+
+      expect(cancelled).toEqual({
+        id,
+        ok: false,
+        type,
+        error: {
+          code: 'RAW_JOB_CANCELLED',
+          message: 'RAW runtime job was cancelled.',
+        },
+      })
+      expect(rerun).toMatchObject({ id, ok: true, type })
+      expect(calls).toEqual([method, method])
+    },
+  )
+
+  it.each(sessionJobs)(
+    'keeps a %s native failure ahead of cancellation queued during %s',
+    async (type, method) => {
+      const id = `failed-cancelled-${type}`
+      const { core } = makeSessionJobCore((called) => {
+        if (called !== method) return
+        void cancel(core, id)
+        throw new Error(`${method} exploded`)
+      })
+      const sessionId = await openSessionId(core)
+
+      await expect(
+        core.handleRequest(sessionRequest(type, sessionId, id)),
+      ).resolves.toEqual({
+        id,
+        ok: false,
+        type,
+        error: {
+          code: rawRequestFailureFallbackCodes[type],
+          message: `${method} exploded`,
+        },
+      })
+    },
+  )
+
+  it.each(sessionJobs)(
+    'reports an unknown session for %s without native work',
+    async (type) => {
+      const { core, calls } = makeSessionJobCore()
+      await openSessionId(core)
+
+      await expect(
+        core.handleRequest(sessionRequest(type, 'raw-session-missing')),
+      ).resolves.toEqual({
+        id: `classify-${type}`,
+        ok: false,
+        type,
+        error: {
+          code: 'RAW_WORKER_PROTOCOL_ERROR',
+          message: 'RAW runtime session does not exist: raw-session-missing',
+        },
+      })
+      expect(calls).toEqual([])
+    },
+  )
+
+  it('validates bounded HQ options after cancellation and before the session lookup', async () => {
+    const { core, calls } = makeSessionJobCore()
+    const invalid = (id: string): LumaRawWorkerRequest => ({
+      id,
+      type: 'decodeBoundedHqFromSession',
+      payload: { sessionId: 'raw-session-missing', maxOutputPixels: 0 },
+    })
+
+    await cancel(core, 'invalid-hq-cancelled')
+    const cancelled = await core.handleRequest(invalid('invalid-hq-cancelled'))
+    const rejected = await core.handleRequest(invalid('invalid-hq'))
+
+    expect(cancelled).toMatchObject({
+      ok: false,
+      error: { code: 'RAW_JOB_CANCELLED' },
+    })
+    expect(rejected).toEqual({
+      id: 'invalid-hq',
+      ok: false,
+      type: 'decodeBoundedHqFromSession',
+      error: {
+        code: 'RAW_WORKER_PROTOCOL_ERROR',
+        message:
+          'RAW runtime bounded HQ maxOutputPixels must be a positive finite number.',
+      },
+    })
+    expect(calls).toEqual([])
+  })
+
+  it.each([
+    ['readRawWindowFromSession', 'readRawWindow'],
+    ['readProcessedWindowFromSession', 'readProcessedWindow'],
+    ['applyCalibrationToSession', 'applyCalibration'],
+  ] as const)(
+    'looks up the session before reporting missing %s support',
+    async (type, method) => {
+      const core = createRuntimeCore({
+        createProcessor() {
+          const processor = makeNativeFactory().createProcessor()
+          return { ...processor, [method]: undefined }
+        },
+      })
+
+      await cancel(core, `missing-${type}-cancelled`)
+      const cancelled = await core.handleRequest(
+        sessionRequest(
+          type,
+          'raw-session-missing',
+          `missing-${type}-cancelled`,
+        ),
+      )
+      const unknownSession = await core.handleRequest(
+        sessionRequest(type, 'raw-session-missing'),
+      )
+
+      expect(cancelled).toMatchObject({
+        ok: false,
+        error: { code: 'RAW_JOB_CANCELLED' },
+      })
+      expect(unknownSession).toMatchObject({
+        ok: false,
+        error: {
+          code: 'RAW_WORKER_PROTOCOL_ERROR',
+          message: 'RAW runtime session does not exist: raw-session-missing',
+        },
+      })
+    },
+  )
 })

@@ -28,6 +28,8 @@ import type {
   LumaRawNativeProcessor,
   LumaRawNativeThumbnail,
 } from './native-types'
+import type { RawSessionJobContext, RawWorkerRequestRef } from './session-job'
+import { runSessionJob } from './session-job'
 
 const quickSettings = {
   halfSize: true,
@@ -262,7 +264,7 @@ export const rawRequestFailureFallbackCodes = {
 } as const satisfies Record<LumaRawWorkerRequestType, LumaRawErrorCode>
 
 function failureResponse(
-  request: LumaRawWorkerRequest,
+  request: RawWorkerRequestRef,
   error: unknown,
 ): LumaRawWorkerResponse {
   const runtimeError = normalizeRawRuntimeError(
@@ -282,7 +284,7 @@ function failureResponse(
 }
 
 function cancelledResponse(
-  request: LumaRawWorkerRequest,
+  request: RawWorkerRequestRef,
 ): LumaRawWorkerResponse {
   return failureResponse(
     request,
@@ -457,7 +459,7 @@ export function createRuntimeCore(
     }
   }
 
-  function consumeCancellation(request: LumaRawWorkerRequest) {
+  function consumeCancellation(request: RawWorkerRequestRef) {
     const wasCancelled = cancelledJobIds.delete(request.id)
     if (!wasCancelled) return false
 
@@ -466,6 +468,12 @@ export function createRuntimeCore(
       cancelledJobQueue.splice(index, 1)
     }
     return true
+  }
+
+  const sessionJobs: RawSessionJobContext<RuntimeSession> = {
+    consumeCancellation,
+    requireSession,
+    cancelledResponse,
   }
 
   function handleFileRequest(
@@ -718,51 +726,37 @@ export function createRuntimeCore(
   function handleExtractEmbeddedPreviewFromSession(
     request: LumaRawWorkerRequest<'extractEmbeddedPreviewFromSession'>,
   ): LumaRawWorkerResponse {
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
+    return runSessionJob(sessionJobs, request, {
+      run(session) {
+        const timer = createTimer()
+        const heapBefore = captureHeap(nativeFactory)
 
-    const session = requireSession(request.payload.sessionId)
-    const timer = createTimer()
-    const heapBefore = captureHeap(nativeFactory)
+        openProcessorWithSettings(session.processor, quickSettings, timer)
+        const nativeMetadata = session.processor.readMetadata()
+        timer.mark('metadata')
 
-    openProcessorWithSettings(session.processor, quickSettings, timer)
-    const nativeMetadata = session.processor.readMetadata()
-    timer.mark('metadata')
+        const thumbnail = session.processor.extractThumbnail()
+        timer.mark('thumbnail')
+        const heapAfter = captureHeap(nativeFactory)
+        const heap = heapStats(heapBefore, heapAfter)
 
-    const thumbnail = session.processor.extractThumbnail()
-    timer.mark('thumbnail')
-    const heapAfter = captureHeap(nativeFactory)
-    const heap = heapStats(heapBefore, heapAfter)
-
-    const payload: LumaEmbeddedPreview | null = thumbnail
-      ? {
-          jobId: request.id,
-          sessionId: session.sessionId,
-          source: 'embedded',
-          width: thumbnail.width,
-          height: thumbnail.height,
-          data: thumbnail.data,
-          mimeType: toMimeType(thumbnail),
-          colorSpace: 'display-srgb-preview',
-          orientation: nativeMetadata.orientation ?? 1,
-          timings: timer.finish(),
-          ...(heap ? { heap } : {}),
-        }
-      : null
-
-    const response: LumaRawWorkerResponse = {
-      id: request.id,
-      ok: true,
-      type: request.type,
-      payload,
-    }
-
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
-
-    return response
+        return thumbnail
+          ? {
+              jobId: request.id,
+              sessionId: session.sessionId,
+              source: 'embedded',
+              width: thumbnail.width,
+              height: thumbnail.height,
+              data: thumbnail.data,
+              mimeType: toMimeType(thumbnail),
+              colorSpace: 'display-srgb-preview',
+              orientation: nativeMetadata.orientation ?? 1,
+              timings: timer.finish(),
+              ...(heap ? { heap } : {}),
+            }
+          : null
+      },
+    })
   }
 
   function handleDecodeFromSession(
@@ -770,221 +764,140 @@ export function createRuntimeCore(
       'decodeQuickFromSession' | 'decodeBoundedHqFromSession'
     >,
   ): LumaRawWorkerResponse {
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
+    return runSessionJob(sessionJobs, request, {
+      options: (job) =>
+        isBoundedHqRequest(job)
+          ? requireBoundedHqMaxOutputPixels(job)
+          : undefined,
+      run(session, boundedHqMaxOutputPixels) {
+        const timer = createTimer()
+        const heapBefore = captureHeap(nativeFactory)
+        const settings = isBoundedHqRequest(request)
+          ? hqSettings
+          : quickSettings
 
-    const boundedHqMaxOutputPixels = isBoundedHqRequest(request)
-      ? requireBoundedHqMaxOutputPixels(request)
-      : undefined
-    const session = requireSession(request.payload.sessionId)
-    const timer = createTimer()
-    const heapBefore = captureHeap(nativeFactory)
-    const settings = isBoundedHqRequest(request) ? hqSettings : quickSettings
+        openProcessorWithSettings(session.processor, settings, timer)
+        const nativeMetadata = session.processor.readMetadata()
+        timer.mark('metadata')
 
-    openProcessorWithSettings(session.processor, settings, timer)
-    const nativeMetadata = session.processor.readMetadata()
-    timer.mark('metadata')
+        const image = isBoundedHqRequest(request)
+          ? session.processor.decodeHq({
+              maxOutputPixels: boundedHqMaxOutputPixels,
+            })
+          : session.processor.decodePreview({
+              maxOutputPixels:
+                request.payload.maxOutputPixels ??
+                session.maxOutputPixels ??
+                defaultQuickMaxOutputPixels,
+            })
+        timer.mark('unpack')
+        const heapAfter = captureHeap(nativeFactory)
 
-    const image = isBoundedHqRequest(request)
-      ? session.processor.decodeHq({
-          maxOutputPixels: boundedHqMaxOutputPixels,
-        })
-      : session.processor.decodePreview({
-          maxOutputPixels:
-            request.payload.maxOutputPixels ??
-            session.maxOutputPixels ??
-            defaultQuickMaxOutputPixels,
-        })
-    timer.mark('unpack')
-    const heapAfter = captureHeap(nativeFactory)
-    const response: LumaRawWorkerResponse = {
-      id: request.id,
-      ok: true,
-      type: request.type,
-      payload: createFramePayload(
-        request,
-        nativeMetadata,
-        image,
-        timer.finish(),
-        heapStats(heapBefore, heapAfter),
-      ),
-    }
-
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
-
-    return response
+        return createFramePayload(
+          request,
+          nativeMetadata,
+          image,
+          timer.finish(),
+          heapStats(heapBefore, heapAfter),
+        )
+      },
+    })
   }
 
   function handleProbeExportCapabilityFromSession(
     request: LumaRawWorkerRequest<'probeExportCapabilityFromSession'>,
   ): LumaRawWorkerResponse {
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
+    return runSessionJob(sessionJobs, request, {
+      run(session) {
+        openProcessorWithSettings(
+          session.processor,
+          quickSettings,
+          createTimer(),
+        )
 
-    const session = requireSession(request.payload.sessionId)
-    const timer = createTimer()
-    openProcessorWithSettings(session.processor, quickSettings, timer)
-
-    const response: LumaRawWorkerResponse = {
-      id: request.id,
-      ok: true,
-      type: request.type,
-      payload: session.processor.probeExportCapability
-        ? normalizeExportCapability(session.processor.probeExportCapability())
-        : unsupportedRawWindowCapability(),
-    }
-
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
-
-    return response
+        return session.processor.probeExportCapability
+          ? normalizeExportCapability(session.processor.probeExportCapability())
+          : unsupportedRawWindowCapability()
+      },
+    })
   }
 
   function handleBeginProcessedWindowExportFromSession(
     request: LumaRawWorkerRequest<'beginProcessedWindowExportFromSession'>,
   ): LumaRawWorkerResponse {
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
-
-    const session = requireSession(request.payload.sessionId)
-    const response: LumaRawWorkerResponse = {
-      id: request.id,
-      ok: true,
-      type: request.type,
-      payload: session.processor.beginProcessedWindowExport?.() ?? {
-        active: true,
-      },
-    }
-
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
-
-    return response
+    return runSessionJob(sessionJobs, request, {
+      run: (session) =>
+        session.processor.beginProcessedWindowExport?.() ?? { active: true },
+    })
   }
 
   function handleReadRawWindowFromSession(
     request: LumaRawWorkerRequest<'readRawWindowFromSession'>,
   ): LumaRawWorkerResponse {
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
+    return runSessionJob(sessionJobs, request, {
+      run(session) {
+        if (!session.processor.readRawWindow) {
+          throw new LumaRawRuntimeError(
+            'RAW_UNSUPPORTED_FORMAT',
+            'RAW runtime raw-window access is unavailable for this source.',
+          )
+        }
 
-    const session = requireSession(request.payload.sessionId)
-    if (!session.processor.readRawWindow) {
-      throw new LumaRawRuntimeError(
-        'RAW_UNSUPPORTED_FORMAT',
-        'RAW runtime raw-window access is unavailable for this source.',
-      )
-    }
-
-    const response: LumaRawWorkerResponse = {
-      id: request.id,
-      ok: true,
-      type: request.type,
-      payload: session.processor.readRawWindow(request.payload.rect),
-    }
-
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
-
-    return response
+        return session.processor.readRawWindow(request.payload.rect)
+      },
+    })
   }
 
   function handleReadProcessedWindowFromSession(
     request: LumaRawWorkerRequest<'readProcessedWindowFromSession'>,
   ): LumaRawWorkerResponse {
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
+    return runSessionJob(sessionJobs, request, {
+      run(session) {
+        if (!session.processor.readProcessedWindow) {
+          throw new LumaRawRuntimeError(
+            'RAW_RUNTIME_UNAVAILABLE',
+            'RAW runtime processed-window access is unavailable for this source.',
+          )
+        }
 
-    const session = requireSession(request.payload.sessionId)
-    if (!session.processor.readProcessedWindow) {
-      throw new LumaRawRuntimeError(
-        'RAW_RUNTIME_UNAVAILABLE',
-        'RAW runtime processed-window access is unavailable for this source.',
-      )
-    }
-
-    const response: LumaRawWorkerResponse = {
-      id: request.id,
-      ok: true,
-      type: request.type,
-      payload: session.processor.readProcessedWindow(request.payload.request),
-    }
-
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
-
-    return response
+        return session.processor.readProcessedWindow(request.payload.request)
+      },
+    })
   }
 
   function handleEndProcessedWindowExportFromSession(
     request: LumaRawWorkerRequest<'endProcessedWindowExportFromSession'>,
   ): LumaRawWorkerResponse {
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
-
-    const session = requireSession(request.payload.sessionId)
-    session.processor.endProcessedWindowExport?.()
-    const response: LumaRawWorkerResponse = {
-      id: request.id,
-      ok: true,
-      type: request.type,
-      payload: { ended: true },
-    }
-
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
-
-    return response
+    return runSessionJob(sessionJobs, request, {
+      run(session) {
+        session.processor.endProcessedWindowExport?.()
+        return { ended: true }
+      },
+    })
   }
 
   function handleApplyCalibrationToSession(
     request: LumaRawWorkerRequest<'applyCalibrationToSession'>,
   ): LumaRawWorkerResponse {
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
+    return runSessionJob(sessionJobs, request, {
+      run(session) {
+        if (!session.processor.applyCalibration) {
+          throw new LumaRawRuntimeError(
+            'RAW_RUNTIME_UNAVAILABLE',
+            'RAW runtime calibration application is unavailable for this source.',
+          )
+        }
 
-    const session = requireSession(request.payload.sessionId)
-    if (!session.processor.applyCalibration) {
-      throw new LumaRawRuntimeError(
-        'RAW_RUNTIME_UNAVAILABLE',
-        'RAW runtime calibration application is unavailable for this source.',
-      )
-    }
-
-    const { cameraCalibration } = request.payload
-    session.processor.applyCalibration({
-      xyzToCamera: cameraCalibration.xyzToCamera,
-      ...(cameraCalibration.toneCurveLut
-        ? { toneCurveLut: cameraCalibration.toneCurveLut }
-        : {}),
+        const { cameraCalibration } = request.payload
+        session.processor.applyCalibration({
+          xyzToCamera: cameraCalibration.xyzToCamera,
+          ...(cameraCalibration.toneCurveLut
+            ? { toneCurveLut: cameraCalibration.toneCurveLut }
+            : {}),
+        })
+        return { applied: true }
+      },
     })
-
-    const response: LumaRawWorkerResponse = {
-      id: request.id,
-      ok: true,
-      type: request.type,
-      payload: { applied: true },
-    }
-
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
-
-    return response
   }
 
   return {
