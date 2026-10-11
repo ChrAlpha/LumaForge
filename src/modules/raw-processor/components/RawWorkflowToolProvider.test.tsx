@@ -57,7 +57,12 @@ import type { RawToolCommands, RawToolSurfaceProps } from './RawWorkflowContext'
 import { useRawToolCommands, useRawWorkflowContext } from './RawWorkflowContext'
 import { RawWorkflowToolProvider } from './RawWorkflowToolProvider'
 import { TONE_NEUTRAL } from './tone-fields'
-import { transformFeatureFixture } from './tools/transform-feature.fixture'
+import type { TransformPreviewState } from './tools/transform-feature.fixture'
+import {
+  transformFeatureFixture,
+  transformPreviewOf,
+  withTransformPreview,
+} from './tools/transform-feature.fixture'
 import { resetTransformGroup } from './transform-fields'
 
 vi.mock(
@@ -356,7 +361,9 @@ describe('rawWorkflowToolProvider Transform guards', () => {
       ),
     })
     // The surfaces read the feature itself; only its edits are wrapped.
-    expect(result.current.transform?.demo).toBe(transform.demo)
+    expect(transformPreviewOf(result.current.transform!)).toBe(
+      transformPreviewOf(transform),
+    )
     expect(result.current.transform?.active).toBe(true)
     // Full resolution reproduces the geometry, so the promise stays open.
     expect(result.current.canExport).toBe(true)
@@ -893,16 +900,14 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     expect(result.current.previewAspect).toBe(1.5)
 
     // The Transform overlay draws its own result frame over the stage.
-    const base = transformFeatureFixture({ hasImage: true, showOverlay: true })
-    transform = {
-      ...base,
-      demo: {
-        ...base.demo,
+    transform = withTransformPreview(
+      transformFeatureFixture({ hasImage: true, showOverlay: true }),
+      {
         result: {
           frame: { width: 800, height: 1000 },
-        } as NonNullable<typeof base.demo.result>,
+        } as NonNullable<TransformPreviewState['result']>,
       },
-    }
+    )
     rerender()
     expect(result.current.previewAspect).toBe(0.8)
 
@@ -1173,7 +1178,9 @@ describe('rawWorkflowToolProvider released preview', () => {
       // Each mobile section reset, and the desktop controls, from a panel
       // that was on screen before the release.
       held.setConstrainCrop(true)
-      held.setManual(resetTransformGroup('perspective', held.demo.manual))
+      held.setManual(
+        resetTransformGroup('perspective', transformPreviewOf(held).manual),
+      )
       held.reset()
       result.current.transform!.setMode('auto')
       result.current.transform!.setConstrainCrop(false)
@@ -1182,7 +1189,7 @@ describe('rawWorkflowToolProvider released preview', () => {
     expect(worker.messages).toHaveLength(posted)
     expect(commit).toHaveBeenCalledOnce()
     expect(result.current.transform?.active).toBe(true)
-    expect(result.current.transform?.demo.manual.rotate).toBe(3)
+    expect(transformPreviewOf(result.current.transform!).manual.rotate).toBe(3)
     expect(result.current.exportResult).toBe(delivered)
     expect(result.current.canExport).toBe(true)
 
@@ -1645,7 +1652,7 @@ describe('rawWorkflowToolProvider surface policy', () => {
       available: true,
       current: true,
     })
-    transform = { ...ready, demo: { ...ready.demo, ready: true } }
+    transform = withTransformPreview(ready, { ready: true })
     rerender()
     for (const actions of transformActions()) {
       expect(actions).toEqual({ geometry: open, overlay: open, reset: open })
@@ -1664,7 +1671,7 @@ describe('rawWorkflowToolProvider surface policy', () => {
 
     // A decode replaces the frame on either surface, unlike the other edits
     // desktop keeps.
-    transform = { ...ready, demo: { ...ready.demo, ready: true } }
+    transform = withTransformPreview(ready, { ready: true })
     isCpuMode = false
     workflow = { ...workflow, status: 'decoding' } as UseRawWorkflowReturn
     rerender()

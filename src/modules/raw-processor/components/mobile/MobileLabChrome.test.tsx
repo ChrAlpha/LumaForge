@@ -1274,7 +1274,7 @@ describe('mobileLabChrome', () => {
     const { container } = render(
       <MobileLabChrome
         {...base}
-        transform={{ active: true, demo: { manual: undefined } } as never}
+        transform={transformFeatureFixture({ active: true, hasImage: true })}
         onViewModeChange={onViewModeChange}
       />,
     )

@@ -20,6 +20,7 @@ import type {
 } from '~/lib/transform/worker-protocol'
 
 import { useTransformSessionFixture } from '../hooks/transform-session.fixture'
+import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
 import { useRawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import { captureTransformSource } from '../services/preview/capture-transform-source'
@@ -200,8 +201,10 @@ const captured: PreviewSource = {
   frame: { width: 80, height: 60, data: new Uint8ClampedArray(80 * 60 * 4) },
 }
 
-type Feature = ReturnType<typeof useRawTransformFeature>
-const latest: { feature: Feature | null; geometry: ExportGeometry | null } = {
+const latest: {
+  feature: RawTransformFeature | null
+  geometry: ExportGeometry | null
+} = {
   feature: null,
   geometry: null,
 }

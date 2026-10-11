@@ -13,7 +13,10 @@ import { COLOR_NEUTRAL } from './color-fields'
 import type { RawToolSurfaceFixtureProps } from './raw-tool-surface.fixture'
 import { renderRawToolSurface } from './raw-tool-surface.fixture'
 import { TONE_NEUTRAL } from './tone-fields'
-import { transformFeatureFixture } from './tools/transform-feature.fixture'
+import {
+  transformFeatureFixture,
+  transformPreviewOf,
+} from './tools/transform-feature.fixture'
 
 const base: RawToolSurfaceFixtureProps = {
   activeIntensity: 0.7,
@@ -88,7 +91,7 @@ describe('raw Transform tool surfaces', () => {
       screen.getByText('Open a RAW photo to adjust its perspective.'),
     ).toBeInTheDocument()
     expect(transform.observe).toHaveBeenCalledOnce()
-    expect(transform.demo.loadSource).not.toHaveBeenCalled()
+    expect(transformPreviewOf(transform).loadSource).not.toHaveBeenCalled()
   })
 
   it('disables desktop Compare reset when Transform is active', async () => {
@@ -167,7 +170,7 @@ describe('raw Transform tool surfaces', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Look' }))
     expect(stop).toHaveBeenCalledOnce()
     expect(transform.reset).not.toHaveBeenCalled()
-    expect(transform.demo.loadSource).not.toHaveBeenCalled()
+    expect(transformPreviewOf(transform).loadSource).not.toHaveBeenCalled()
   })
 
   it('keeps the open tool when Transform becomes active and after reset', async () => {

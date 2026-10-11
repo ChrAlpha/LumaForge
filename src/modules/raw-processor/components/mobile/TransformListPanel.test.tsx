@@ -8,8 +8,11 @@ import type {
   TransformToolStateName,
 } from '../tools/transform-feature.fixture'
 import {
+  patchTransformPreview,
   TRANSFORM_TOOL_STATES,
+  transformPreviewOf,
   transformToolStateFixture,
+  withTransformPreview,
 } from '../tools/transform-feature.fixture'
 import { TransformListPanel } from './TransformListPanel'
 
@@ -26,12 +29,10 @@ function mobile(
   overrides: Partial<RawTransformFeature> = {},
 ): PanelState {
   const fixture = transformToolStateFixture('mobile', state, overrides)
-  if (state.hasImage) {
-    fixture.feature.demo = {
-      ...fixture.feature.demo,
-      manual: { ...fixture.feature.demo.manual, scale: 120, rotate: 2 },
-    }
-  }
+  if (state.hasImage)
+    patchTransformPreview(fixture.feature, {
+      manual: { scale: 120, rotate: 2 },
+    })
   return fixture
 }
 
@@ -218,7 +219,7 @@ describe('transformListPanel', () => {
 
   it('keeps every section reset for a dirty failed frame', async () => {
     const { feature, availability } = mobile(S.captureFailed, { active: true })
-    feature.demo = { ...feature.demo, mode: 'auto', constrainCrop: false }
+    patchTransformPreview(feature, { mode: 'auto', constrainCrop: false })
     renderPanel({ feature, availability })
     fireEvent.click(screen.getByRole('button', { name: 'Reset Upright' }))
     expect(feature.reset).toHaveBeenCalledOnce()
@@ -226,7 +227,7 @@ describe('transformListPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset Frame' }))
     expect(feature.setConstrainCrop).toHaveBeenCalledWith(true)
     expect(feature.setManual).toHaveBeenCalledWith({
-      ...feature.demo.manual,
+      ...transformPreviewOf(feature).manual,
       scale: 100,
     })
   })
@@ -260,17 +261,11 @@ describe('transformListPanel', () => {
     expect(scale).toHaveAttribute('aria-valuetext', '120%')
     fireEvent.click(screen.getByRole('button', { name: 'Reset Scale' }))
     expect(feature.setManual).toHaveBeenCalledWith({
-      ...feature.demo.manual,
+      ...transformPreviewOf(feature).manual,
       scale: 100,
     })
     rerender({
-      feature: {
-        ...feature,
-        demo: {
-          ...feature.demo,
-          manual: { ...feature.demo.manual, scale: 100 },
-        },
-      },
+      feature: withTransformPreview(feature, { manual: { scale: 100 } }),
       availability,
     })
     expect(scale).toHaveAttribute('aria-valuetext', '100%')
@@ -279,7 +274,7 @@ describe('transformListPanel', () => {
   it('enables full and Frame reset for a crop-only change', async () => {
     const panel = transformToolStateFixture('mobile', S.noFrame)
     const { feature } = panel
-    feature.demo = { ...feature.demo, constrainCrop: false }
+    patchTransformPreview(feature, { constrainCrop: false })
     renderPanel(panel)
     const fullReset = screen.getByRole('button', { name: 'Reset Upright' })
     expect(fullReset).toBeEnabled()
@@ -290,15 +285,14 @@ describe('transformListPanel', () => {
     expect(frameReset).toBeEnabled()
     fireEvent.click(frameReset)
     expect(feature.setConstrainCrop).toHaveBeenCalledWith(true)
-    expect(feature.setManual).toHaveBeenCalledWith(feature.demo.manual)
+    expect(feature.setManual).toHaveBeenCalledWith(
+      transformPreviewOf(feature).manual,
+    )
   })
 
   it('keeps a section reset off while that section is neutral', async () => {
     const panel = readyPanel()
-    panel.feature.demo = {
-      ...panel.feature.demo,
-      manual: { ...panel.feature.demo.manual, rotate: 0 },
-    }
+    patchTransformPreview(panel.feature, { manual: { rotate: 0 } })
     renderPanel(panel)
     expect(screen.getByRole('button', { name: 'Reset Upright' })).toBeEnabled()
     await openSection('Perspective')
@@ -342,12 +336,12 @@ describe('transformListPanel', () => {
   it('resets Frame without restoring stale geometry activation or other fields', async () => {
     const panel = readyPanel()
     const { feature } = panel
-    feature.demo = { ...feature.demo, constrainCrop: false }
+    patchTransformPreview(feature, { constrainCrop: false })
     renderPanel(panel)
     await openFrame()
     fireEvent.click(screen.getByRole('button', { name: 'Reset Frame' }))
     expect(feature.setManual).toHaveBeenCalledWith({
-      ...feature.demo.manual,
+      ...transformPreviewOf(feature).manual,
       scale: 100,
       offsetX: 0,
       offsetY: 0,

@@ -1,6 +1,7 @@
 import { vi } from 'vitest'
 
 import { identityMatrix } from '~/lib/transform/geometry/matrix'
+import type { ManualTransform } from '~/lib/transform/transform-types'
 import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
@@ -66,6 +67,60 @@ export function transformFeatureFixture(
     showOverlay: false,
     ...overrides,
   }
+}
+
+/** What a Transform feature shows, with the intent the session holds. */
+export type TransformPreviewState = RawTransformFeature['demo']
+
+/**
+ * A change to what a feature shows. `manual` merges over the feature's
+ * current manual geometry, so a test names only the fields it moves.
+ */
+export type TransformPreviewPatch = Partial<
+  Omit<TransformPreviewState, 'manual'>
+> & { manual?: Partial<ManualTransform> }
+
+/**
+ * What the feature shows. Tests read the preview through this, and change it
+ * only through the two helpers below, so the feature property has one name
+ * the fixture owns.
+ */
+export function transformPreviewOf(
+  feature: RawTransformFeature,
+): TransformPreviewState {
+  return feature.demo
+}
+
+function patchedPreview(
+  feature: RawTransformFeature,
+  { manual, ...patch }: TransformPreviewPatch,
+): TransformPreviewState {
+  const preview = transformPreviewOf(feature)
+  return {
+    ...preview,
+    ...patch,
+    manual: { ...preview.manual, ...manual },
+  }
+}
+
+/** A copy of the feature showing the patch; the feature itself is unchanged. */
+export function withTransformPreview(
+  feature: RawTransformFeature,
+  patch: TransformPreviewPatch,
+): RawTransformFeature {
+  return { ...feature, demo: patchedPreview(feature, patch) }
+}
+
+/**
+ * Changes what the feature shows in place, for a fixture already handed to a
+ * render that will read it again. Returns the same feature.
+ */
+export function patchTransformPreview(
+  feature: RawTransformFeature,
+  patch: TransformPreviewPatch,
+): RawTransformFeature {
+  feature.demo = patchedPreview(feature, patch)
+  return feature
 }
 
 /**
@@ -183,7 +238,7 @@ export function transformToolStateFixture(
     current: preview.current,
     ...overrides,
   })
-  feature.demo = { ...feature.demo, ready: preview.workerReady }
+  patchTransformPreview(feature, { ready: preview.workerReady })
   const availability = deriveToolAvailability({
     surface,
     hasImage,

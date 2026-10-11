@@ -2,7 +2,9 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import {
+  patchTransformPreview,
   TRANSFORM_TOOL_STATES,
+  transformPreviewOf,
   transformToolStateFixture,
 } from './transform-feature.fixture'
 import { TransformTool } from './TransformTool'
@@ -24,14 +26,13 @@ it('keeps the RAW Transform tool free of the removed comparison and preview-save
     'desktop',
     TRANSFORM_TOOL_STATES.ready,
   )
-  feature.demo = {
-    ...feature.demo,
+  patchTransformPreview(feature, {
     result: {
       frame: { width: 1280, height: 960, data: new Uint8ClampedArray(0) },
-      displayMatrix: feature.demo.solution.matrix,
+      displayMatrix: transformPreviewOf(feature).solution.matrix,
       retainedArea: 0.64,
     },
-  }
+  })
   const { container } = render(
     <TransformTool feature={feature} availability={availability} />,
   )

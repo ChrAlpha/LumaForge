@@ -8,8 +8,11 @@ import type {
   TransformToolStateName,
 } from './transform-feature.fixture'
 import {
+  patchTransformPreview,
   TRANSFORM_TOOL_STATES,
+  transformPreviewOf,
   transformToolStateFixture,
+  withTransformPreview,
 } from './transform-feature.fixture'
 import { TransformTool } from './TransformTool'
 
@@ -99,7 +102,7 @@ describe('transformTool', () => {
     const { feature } = state
     const { unmount, container } = renderTool(state)
     expect(feature.observe).toHaveBeenCalledOnce()
-    expect(feature.demo.loadSource).not.toHaveBeenCalled()
+    expect(transformPreviewOf(feature).loadSource).not.toHaveBeenCalled()
     expect(
       screen.getByText('Open a RAW photo to adjust its perspective.'),
     ).toBeInTheDocument()
@@ -135,22 +138,15 @@ describe('transformTool', () => {
   )('offers the controls the action policy allows: %s', (name, controls) => {
     const state = S[name]
     const fixture = desktop(state)
-    if (state.hasImage) {
-      fixture.feature.demo = {
-        ...fixture.feature.demo,
-        manual: { ...fixture.feature.demo.manual, scale: 120 },
-      }
-    }
+    if (state.hasImage)
+      patchTransformPreview(fixture.feature, { manual: { scale: 120 } })
     renderTool(fixture)
     expect(renderedControls()).toEqual(controls)
   })
 
   it('reads every control from its action, not from the feature', () => {
     const { feature } = desktop(S.ready)
-    feature.demo = {
-      ...feature.demo,
-      manual: { ...feature.demo.manual, scale: 120 },
-    }
+    patchTransformPreview(feature, { manual: { scale: 120 } })
     renderTool({ feature, availability: desktop(S.released).availability })
     expect(renderedControls()).toEqual({
       geometry: false,
@@ -162,7 +158,7 @@ describe('transformTool', () => {
   it('keeps Reset available after a failed active transform', () => {
     const fixture = desktop(S.captureFailed, { active: true, busy: true })
     const { feature } = fixture
-    feature.demo = { ...feature.demo, mode: 'auto' }
+    patchTransformPreview(feature, { mode: 'auto' })
     renderTool(fixture)
     expect(screen.getByRole('alert')).toHaveTextContent(
       'The processed preview is unavailable. Wait for it or reset Transform.',
@@ -187,7 +183,7 @@ describe('transformTool', () => {
       key: 'ArrowRight',
     })
     expect(feature.setManual).toHaveBeenCalledWith({
-      ...feature.demo.manual,
+      ...transformPreviewOf(feature).manual,
       scale: 101,
     })
   })
@@ -195,11 +191,13 @@ describe('transformTool', () => {
   it('explains abstention and allows manual correction', () => {
     const fixture = desktop(S.ready)
     const { feature, availability } = fixture
-    feature.demo = {
-      ...feature.demo,
+    patchTransformPreview(feature, {
       mode: 'auto',
-      solution: { ...feature.demo.solution, status: 'insufficient' },
-    }
+      solution: {
+        ...transformPreviewOf(feature).solution,
+        status: 'insufficient',
+      },
+    })
     const { rerender } = renderTool(fixture)
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Not enough reliable structure. Try manual adjustments.',
@@ -209,7 +207,7 @@ describe('transformTool', () => {
       'true',
     )
     rerender({
-      feature: { ...feature, demo: { ...feature.demo, mode: 'off' } },
+      feature: withTransformPreview(feature, { mode: 'off' }),
       availability,
     })
     expect(screen.queryByRole('alert')).toBeNull()
@@ -229,10 +227,7 @@ describe('transformTool', () => {
   it('resets the Scale readout to 100 percent without changing other fields', () => {
     const fixture = desktop(S.ready)
     const { feature } = fixture
-    feature.demo = {
-      ...feature.demo,
-      manual: { ...feature.demo.manual, scale: 120, rotate: 2 },
-    }
+    patchTransformPreview(feature, { manual: { scale: 120, rotate: 2 } })
     renderTool(fixture)
     expect(screen.getByRole('slider', { name: 'Scale' })).toHaveAttribute(
       'aria-valuetext',
@@ -240,7 +235,7 @@ describe('transformTool', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Reset Scale' }))
     expect(feature.setManual).toHaveBeenCalledWith({
-      ...feature.demo.manual,
+      ...transformPreviewOf(feature).manual,
       scale: 100,
     })
   })
@@ -248,7 +243,7 @@ describe('transformTool', () => {
   it('allows a full reset when only constrain crop has changed', () => {
     const fixture = desktop(S.noFrame)
     const { feature } = fixture
-    feature.demo = { ...feature.demo, constrainCrop: false }
+    patchTransformPreview(feature, { constrainCrop: false })
     renderTool(fixture)
     const reset = screen.getByRole('button', { name: 'Reset' })
     expect(reset).toBeEnabled()
