@@ -23,13 +23,13 @@ import type {
 } from '~/lib/webgpu/raw-processing-pipeline'
 import { gpuPreviewInputParams } from '~/lib/webgpu/uniforms'
 
-import {
-  createRawUploadInput,
-  syncRawUploadInput,
-} from '../../components/preview-canvas-helpers'
 import type { DisplaySource } from '../../model/session'
 import type { CompareRenderMode } from '../../services/compare/compare-render-mode'
 import { selectCompareRenderMode } from '../../services/compare/compare-render-mode'
+import {
+  createRawUploadInput,
+  syncRawUploadInput,
+} from '../../services/preview/preview-canvas-helpers'
 import type {
   PreviewCompareReadiness,
   PreviewFrameStatus,

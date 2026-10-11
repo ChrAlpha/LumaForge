@@ -5,13 +5,13 @@ import type {
 } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { TrackedPointer } from '../../components/preview-canvas-helpers'
+import type { TrackedPointer } from '../../services/preview/preview-canvas-helpers'
 import {
   getPointerDistance,
   getPointerMidpoint,
   tryCapturePointer,
   tryReleasePointer,
-} from '../../components/preview-canvas-helpers'
+} from '../../services/preview/preview-canvas-helpers'
 import type {
   PreviewViewport,
   PreviewViewportGeometry,

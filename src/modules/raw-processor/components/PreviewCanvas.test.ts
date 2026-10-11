@@ -18,11 +18,11 @@ import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import { BACKING_STORE_SETTLE_MS } from '../hooks/preview/backing-store-resize'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
-import { DEFAULT_PREVIEW_VIEWPORT } from '../services/preview/preview-viewport'
 import {
   createRawUploadInput,
   syncRawUploadInput,
-} from './preview-canvas-helpers'
+} from '../services/preview/preview-canvas-helpers'
+import { DEFAULT_PREVIEW_VIEWPORT } from '../services/preview/preview-viewport'
 import { PreviewCanvas } from './PreviewCanvas'
 
 const pipelineMock = vi.hoisted(() => ({

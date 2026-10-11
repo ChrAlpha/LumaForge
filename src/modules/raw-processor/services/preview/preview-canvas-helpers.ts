@@ -1,3 +1,7 @@
+// Shared adapters for the preview hooks and GPU layers. They hand decoded
+// pixels to a GPU pipeline and capture pointers on DOM elements; they are not
+// pure color or geometry math.
+
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type {
   RawProcessingPipeline,

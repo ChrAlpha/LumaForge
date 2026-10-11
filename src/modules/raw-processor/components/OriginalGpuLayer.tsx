@@ -13,7 +13,7 @@ import {
 import type { PreviewPipelineHandle } from '../hooks/preview/usePreviewPipelineLifecycle'
 import { usePreviewPipelineLifecycle } from '../hooks/preview/usePreviewPipelineLifecycle'
 import { TECHNICAL_ORIGINAL_GPU_INPUT } from '../services/compare/original-reference-renderer'
-import { createRawUploadInput } from './preview-canvas-helpers'
+import { createRawUploadInput } from '../services/preview/preview-canvas-helpers'
 
 type OriginalPipeline = Pick<
   RawProcessingPipeline,
