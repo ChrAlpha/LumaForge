@@ -12,8 +12,10 @@ import {
 } from '@lumaforge/lmfg-cli'
 import type { RenderManifest } from '@lumaforge/render-engine'
 import { canonicalizeJson } from '@lumaforge/render-engine'
-import { planExportGeometry } from '@lumaforge/render-engine/export'
-import { parseRenderManifest } from '@lumaforge/render-engine/manifest'
+import {
+  checkRecordedExportGeometry,
+  parseRenderManifest,
+} from '@lumaforge/render-engine/manifest'
 import { z } from 'zod'
 
 export const EXPORT_DETAIL_LIMITS = {
@@ -164,40 +166,37 @@ async function publish(path: string, bytes: Buffer): Promise<void> {
   }
 }
 
-const sameDimensions = (
-  a: { width: number; height: number },
-  b: { width: number; height: number },
-) => a.width === b.width && a.height === b.height
-
 /**
- * The full-resolution size the export must have delivered: the decoded source
- * frame, or under a recorded geometry the frame the export itself plans from
- * that source, which the geometry's recorded output must also state.
+ * The full-resolution size the export must have delivered, checked from the
+ * manifest before the JPEG is read: the decoded source frame, or under a
+ * recorded geometry the frame the export itself plans from that source, which
+ * the geometry's recorded output and the sealed output size must both state.
  */
 function deliveredDimensions(manifest: RenderManifest): {
   width: number
   height: number
 } {
-  const source = manifest.source_raw.decoded_dimensions
-  const geometry = manifest.render_params.geometry
-  if (!geometry) return source
-  let planned: { width: number; height: number }
-  try {
-    const plan = planExportGeometry(
-      { matrix: geometry.matrix, constrainCrop: geometry.constrain_crop },
-      source,
-    )
-    planned = { width: plan.outputWidth, height: plan.outputHeight }
-  } catch {
+  const check = checkRecordedExportGeometry(manifest)
+  if (check.ok && check.frame) return check.frame.output
+  if (check.ok || check.refusal.reason === 'non-export-geometry')
     throw new Error(
-      'Export geometry cannot be planned against its source frame.',
+      'Export detail requires a full-resolution export manifest (kind export, policy export-full).',
     )
+  switch (check.refusal.reason) {
+    case 'unplannable-geometry':
+      throw new Error(
+        'Export geometry cannot be planned against its source frame.',
+        { cause: check.refusal.cause },
+      )
+    case 'geometry-output-mismatch':
+      throw new Error(
+        'Export geometry output does not match the size the geometry plans from its source frame.',
+      )
+    case 'output-mismatch':
+      throw new Error(
+        'Export output dimensions do not match the size its source frame and geometry deliver.',
+      )
   }
-  if (!sameDimensions(geometry.output, planned))
-    throw new Error(
-      'Export geometry output does not match the size the geometry plans from its source frame.',
-    )
-  return planned
 }
 
 export async function createExportDetail(
@@ -225,12 +224,7 @@ export async function createExportDetail(
     throw new Error(
       'Export source identity or filename does not match the session and manifest.',
     )
-  const full = manifest.output.dimensions
-  const delivered = deliveredDimensions(manifest)
-  if (!sameDimensions(full, delivered))
-    throw new Error(
-      'Export output dimensions do not match the size its source frame and geometry deliver.',
-    )
+  const full = deliveredDimensions(manifest)
   if (full.width * full.height > EXPORT_DETAIL_LIMITS.max_source_pixels)
     throw new Error(
       `Export detail source exceeds ${EXPORT_DETAIL_LIMITS.max_source_pixels} pixels.`,

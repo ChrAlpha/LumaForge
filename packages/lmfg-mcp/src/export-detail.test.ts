@@ -266,6 +266,137 @@ describe('verified export JPEG detail', () => {
     await expect(createExportDetail(cwd, input)).rejects.toThrow(/session/i)
   })
 
+  describe('under an independent non-square geometry reference', () => {
+    // Derived by hand, not by the planner: a constrained 30 degree turn keeps
+    // the centred square of side 1 / (cos 30 + sin 30) = 0.7320508... of each
+    // normalized axis, so the 175x131 source frame delivers the 128x96 JPEG
+    // written in beforeEach (128.11 and 95.90 round to 128 and 96).
+    const decoded = { width: 175, height: 131 }
+    const angle = Math.PI / 6
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+    const turn = {
+      matrix: [
+        cos,
+        -sin,
+        0.5 - 0.5 * cos + 0.5 * sin,
+        sin,
+        cos,
+        0.5 - 0.5 * sin - 0.5 * cos,
+        0,
+        0,
+        1,
+      ],
+      constrain_crop: true,
+      output: full,
+    }
+    type Manifest = Record<string, any>
+    const turned = (change: (manifest: Manifest) => Manifest = (m) => m) => {
+      const original: Manifest = JSON.parse(JSON.stringify(manifest))
+      return seal(
+        change({
+          ...original,
+          source_raw: { ...original.source_raw, decoded_dimensions: decoded },
+          render_params: { ...original.render_params, geometry: turn },
+        }),
+      )
+    }
+
+    it('verifies exact 1:1 pixels of the turned export', async () => {
+      const sealed = turned()
+      await writeFile(manifestPath, JSON.stringify(sealed))
+      const region = { x: 93, y: 0, width: 35, height: 96 }
+      const { png, result } = await createExportDetail(cwd, {
+        ...input,
+        region,
+      })
+      const expected = await sharp(jpeg).extract({
+        left: region.x,
+        top: region.y,
+        width: region.width,
+        height: region.height,
+      })
+      expect(await sharp(png).removeAlpha().raw().toBuffer()).toEqual(
+        await expected.removeAlpha().raw().toBuffer(),
+      )
+      expect(result).toMatchObject({
+        export_manifest_sha256: sealed.manifest_sha256,
+        full_dimensions: full,
+        region,
+      })
+    })
+
+    it('refuses a recorded geometry output one pixel off the plan', async () => {
+      await writeFile(
+        manifestPath,
+        JSON.stringify(
+          turned((m) => ({
+            ...m,
+            output: { ...m.output, dimensions: { width: 129, height: 96 } },
+            render_params: {
+              ...m.render_params,
+              geometry: { ...turn, output: { width: 129, height: 96 } },
+            },
+          })),
+        ),
+      )
+      await expect(createExportDetail(cwd, input)).rejects.toThrow(
+        refusedWith(refusal.geometryOutput),
+      )
+    })
+
+    it('refuses an output one pixel off the planned frame before decoding or publishing', async () => {
+      await writeFile(
+        manifestPath,
+        JSON.stringify(
+          turned((m) => ({
+            ...m,
+            output: { ...m.output, dimensions: { width: 128, height: 97 } },
+          })),
+        ),
+      )
+      const loadDecoder = vi.fn(() => import('sharp'))
+      await expect(
+        createExportDetail(
+          cwd,
+          { ...input, region: { x: 0, y: 0, width: 1, height: 1 } },
+          loadDecoder,
+        ),
+      ).rejects.toThrow(refusedWith(refusal.outputDimensions))
+      expect(loadDecoder).not.toHaveBeenCalled()
+      expect(await readdir(join(sessionDir, 'exports'))).toEqual([
+        'final.jpg',
+        'final.manifest.json',
+      ])
+    })
+
+    it('refuses a crop that retains too little and keeps the planner refusal as its cause', async () => {
+      // Zooming out by 0.05 keeps less of the frame than the planner allows.
+      await writeFile(
+        manifestPath,
+        JSON.stringify(
+          turned((m) => ({
+            ...m,
+            render_params: {
+              ...m.render_params,
+              geometry: {
+                ...turn,
+                matrix: [0.05, 0, 0.475, 0, 0.05, 0.475, 0, 0, 1],
+              },
+            },
+          })),
+        ),
+      )
+      const refused = await createExportDetail(cwd, input).catch(
+        (error: unknown) => error,
+      )
+      expect(refused).toEqual(refusedWith(refusal.unplannable))
+      expect((refused as Error).cause).toEqual(
+        new Error('FULL_RES_EXPORT_INVALID_GEOMETRY'),
+      )
+    })
+  })
+
   describe('under a recorded geometry', () => {
     // A 0.8 zoom-out with a constrained crop: the 160x120 source frame
     // delivers the 128x96 JPEG written in beforeEach.
