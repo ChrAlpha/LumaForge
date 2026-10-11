@@ -7,15 +7,6 @@ export function resolveLUTContractProfile(
   profile: LUTColorProfile | string,
 ): LUTColorProfile | undefined {
   if (typeof profile !== 'string') return profile
-
-  const compact = profile.toLowerCase().replace(/[^a-z0-9]+/g, '')
-  if (compact === 'vlog' || compact === 'vloginput') {
-    return getLUTColorProfile('panasonic-vgamut-vlog')
-  }
-  if (compact === 'displaysrgb' || compact === 'srgbdisplay') {
-    return getLUTColorProfile('display-srgb')
-  }
-
   return getLUTColorProfile(profile)
 }
 

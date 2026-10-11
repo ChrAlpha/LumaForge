@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { resolveExportColorGraph } from './color-graph'
-import { parseCubeLUT, toLUTData, validateLUT } from './cube-parser'
+import {
+  generateIdentityLUT,
+  parseCubeLUT,
+  toLUTData,
+  validateLUT,
+} from './cube-parser'
 import type { LUTColorProfile } from './registry'
 import { getLUTColorProfile } from './registry'
 import { NEUTRAL_USER_COLOR_INTENT } from './user-color-intent'
@@ -452,33 +457,21 @@ describe('toLUTData', () => {
   })
 })
 
-describe('binary input projection', () => {
-  it('derives v-log only from a confirmed V-Log contract', () => {
-    const projections = [
+describe('lUT contract carrier', () => {
+  it('carries the contract only as the profile resolution', () => {
+    const parsed = [
       parseCubeLUT(cubeText({ comments: V_LOG_TO_REC709_METADATA })),
-      parseCubeLUT(
-        cubeText({
-          comments: [
-            'LUMAFORGE_INPUT_PROFILE=panasonic-vgamut-vlog',
-            'LUMAFORGE_ROLE=display-look',
-          ],
-        }),
-      ),
       parseCubeLUT(cubeText({ title: 'Client Look' })),
-      parseCubeLUT(cubeText({ title: 'Generated' }), {
-        sourceName: 'SLog3_SGamut3Cine_to_Rec709.cube',
-      }),
-    ].map((lut) => [lut.inputProfile, toLUTData(lut).inputProfile])
+      generateIdentityLUT(2),
+    ]
 
-    expect(projections).toEqual([
-      ['v-log', 'v-log'],
-      ['display-srgb', 'display-srgb'],
-      ['display-srgb', 'display-srgb'],
-      ['display-srgb', 'display-srgb'],
-    ])
+    for (const lut of parsed) {
+      expect(lut).not.toHaveProperty('inputProfile')
+      expect(toLUTData(lut)).not.toHaveProperty('inputProfile')
+    }
   })
 
-  it('carries nothing the export graph reads', () => {
+  it('lets the export graph read the profile resolution alone', () => {
     const lut = toLUTData(
       parseCubeLUT(cubeText({ comments: V_LOG_TO_REC709_METADATA })),
     )
@@ -488,19 +481,13 @@ describe('binary input projection', () => {
       builtinPreset: null,
       intensity: 1,
     } as const
-    const graph = resolveExportColorGraph({ ...intent, lut })
 
-    expect(graph.supported).toBe(true)
-    for (const inputProfile of ['display-srgb', 'v-log'] as const) {
-      expect(
-        resolveExportColorGraph({ ...intent, lut: { ...lut, inputProfile } }),
-      ).toEqual(graph)
-      expect(
-        resolveExportColorGraph({
-          ...intent,
-          lut: { ...lut, inputProfile, profileResolution: { kind: 'unknown' } },
-        }),
-      ).toMatchObject({ supported: false, reason: 'unsupported-pipeline' })
-    }
+    expect(resolveExportColorGraph({ ...intent, lut }).supported).toBe(true)
+    expect(
+      resolveExportColorGraph({
+        ...intent,
+        lut: { ...lut, profileResolution: { kind: 'unknown' } },
+      }),
+    ).toMatchObject({ supported: false, reason: 'unsupported-pipeline' })
   })
 })

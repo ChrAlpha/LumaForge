@@ -31,7 +31,6 @@ function lut(profileResolution: LUTContractResolution): LUTData {
     data: new Float32Array(2 ** 3 * 3),
     domainMin: [0, 0, 0],
     domainMax: [1, 1, 1],
-    inputProfile: 'v-log',
     profileResolution,
   }
 }

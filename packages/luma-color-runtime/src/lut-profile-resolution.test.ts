@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import {
-  inferLUTInputProfile,
-  resolveLUTProfile,
-  toCompatInputProfile,
-} from './lut-profile-resolution'
+import { resolveLUTProfile } from './lut-profile-resolution'
 import type { LUTColorProfile } from './registry'
 import { getLUTColorProfile } from './registry'
 
@@ -281,42 +277,55 @@ describe('lUT explicit profile labels', () => {
   })
 })
 
-describe('binary input projection', () => {
-  it('maps only confirmed V-Log contracts to the v-log compat profile', () => {
-    expect(
-      toCompatInputProfile(
-        resolveLUTProfile({
-          title: 'Trusted LUT',
-          comments: V_LOG_TO_REC709_METADATA,
-        }),
-      ),
-    ).toBe('v-log')
-    expect(
-      toCompatInputProfile(
-        resolveLUTProfile({
-          title: 'Panasonic technical LUT',
-          sourceName: 'Panasonic_VLog.cube',
-          comments: [],
-        }),
-      ),
-    ).toBe('display-srgb')
-    expect(toCompatInputProfile({ kind: 'unknown' })).toBe('display-srgb')
+describe('lUT structured input profile ids', () => {
+  function resolveInputProfile(inputProfile: string) {
+    return resolveLUTProfile({
+      title: 'Trusted LUT',
+      comments: [
+        `LUMAFORGE_INPUT_PROFILE=${inputProfile}`,
+        ...V_LOG_TO_REC709_METADATA.slice(1),
+      ],
+    })
+  }
+
+  it('confirms registry profile ids and registry aliases', () => {
+    for (const inputProfile of [
+      'panasonic-vgamut-vlog',
+      'Panasonic VLog',
+      'V-Gamut V-Log',
+    ]) {
+      expect(resolveInputProfile(inputProfile)).toMatchObject({
+        kind: 'confirmed',
+        confidence: 'metadata',
+        profile: {
+          id: 'panasonic-vgamut-vlog',
+          inputGamut: 'v-gamut',
+          inputTransfer: 'v-log',
+        },
+      })
+    }
   })
 
-  it('infers the compat input profile from cube text comments', () => {
-    const content = [
-      ...V_LOG_TO_REC709_METADATA.map((line) => `# ${line}`),
-      'LUT_3D_SIZE 2',
-    ].join('\n')
+  it('does not confirm the retired binary input profile names', () => {
+    for (const inputProfile of ['v-log', 'vlog', 'V-Log input']) {
+      expect(resolveInputProfile(inputProfile).kind).not.toBe('confirmed')
+    }
+  })
 
-    expect(inferLUTInputProfile({ content, sourceName: 'any.cube' })).toBe(
-      'v-log',
-    )
+  it('confirms an explicit input gamut and transfer without a profile id', () => {
     expect(
-      inferLUTInputProfile({
-        content: 'LUT_3D_SIZE 2',
-        sourceName: 'Panasonic_VLog.cube',
+      resolveLUTProfile({
+        title: 'Trusted LUT',
+        comments: [
+          'LUMAFORGE_INPUT_GAMUT=v-gamut',
+          'LUMAFORGE_INPUT_TRANSFER=v-log',
+          'LUMAFORGE_INPUT_RANGE=full',
+          ...V_LOG_TO_REC709_METADATA.slice(1),
+        ],
       }),
-    ).toBe('display-srgb')
+    ).toMatchObject({
+      kind: 'confirmed',
+      profile: { inputGamut: 'v-gamut', inputTransfer: 'v-log' },
+    })
   })
 })

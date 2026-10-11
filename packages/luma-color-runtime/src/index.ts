@@ -16,11 +16,7 @@ export * from './log-encoding'
 export * from './lut-contract'
 export * from './lut-domain'
 export type { ResolveLUTProfileInput } from './lut-profile-resolution'
-export {
-  inferLUTInputProfile,
-  resolveLUTProfile,
-  toCompatInputProfile,
-} from './lut-profile-resolution'
+export { resolveLUTProfile } from './lut-profile-resolution'
 export * from './lut3d'
 export * from './matrix'
 export * from './oklab'

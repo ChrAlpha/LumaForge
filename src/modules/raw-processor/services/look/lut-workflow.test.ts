@@ -33,12 +33,18 @@ describe('lut workflow helpers', () => {
     expect(resolveLUTContractProfile(profile)).toBe(profile)
   })
 
-  it('normalizes searchable LUT contract aliases to canonical profiles', () => {
-    expect(resolveLUTContractProfile('V-Log input')?.id).toBe(
-      'panasonic-vgamut-vlog',
-    )
+  it('resolves registry aliases of a profile to its canonical profile', () => {
     expect(resolveLUTContractProfile('sRGB display')?.id).toBe('display-srgb')
     expect(resolveLUTContractProfile('display_srgb')?.id).toBe('display-srgb')
+    expect(resolveLUTContractProfile('Panasonic VLog')?.id).toBe(
+      'panasonic-vgamut-vlog',
+    )
+  })
+
+  it('rejects retired compact names that are not registry ids or aliases', () => {
+    expect(resolveLUTContractProfile('V-Log input')).toBeUndefined()
+    expect(resolveLUTContractProfile('v-log')).toBeUndefined()
+    expect(resolveLUTContractProfile('vlog')).toBeUndefined()
   })
 
   it('resolves explicit profile ids and leaves unknown strings unresolved', () => {

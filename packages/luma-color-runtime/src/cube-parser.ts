@@ -1,13 +1,6 @@
-import {
-  resolveLUTProfile,
-  toCompatInputProfile,
-} from './lut-profile-resolution'
+import { resolveLUTProfile } from './lut-profile-resolution'
 import type { LUTColorProfile } from './registry'
-import type {
-  LumaColorLUTData,
-  LUTContractResolution,
-  LUTInputProfile,
-} from './types'
+import type { LumaColorLUTData, LUTContractResolution } from './types'
 
 export interface ParsedLUT {
   title: string
@@ -19,7 +12,6 @@ export interface ParsedLUT {
   data: Float32Array
   fingerprint: string
   profileResolution: LUTContractResolution
-  inputProfile: LUTInputProfile
   /** SHA-256 of the source .cube bytes when the caller recorded it (content identity for manifests). */
   sha256?: string
 }
@@ -216,7 +208,6 @@ export function parseCubeLUT(
     data,
     fingerprint,
     profileResolution,
-    inputProfile: toCompatInputProfile(profileResolution),
   }
 }
 
@@ -227,7 +218,6 @@ export function toLUTData(parsed: ParsedLUT): LumaColorLUTData {
     domainMin: parsed.domainMin,
     domainMax: parsed.domainMax,
     title: parsed.title,
-    inputProfile: parsed.inputProfile,
     profileResolution: parsed.profileResolution,
   }
 }
@@ -301,7 +291,6 @@ export function generateIdentityLUT(size = 33): ParsedLUT {
     data,
     fingerprint,
     profileResolution,
-    inputProfile: toCompatInputProfile(profileResolution),
   }
 }
 

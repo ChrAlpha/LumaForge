@@ -41,8 +41,6 @@ export interface LumaColorProcessingParams
 
 export type ProcessingParams = LumaColorProcessingParams
 
-export type LUTInputProfile = 'display-srgb' | 'v-log'
-
 export type LUTContractResolution =
   | {
       kind: 'confirmed'
@@ -59,7 +57,6 @@ export interface LumaColorLUTData {
   domainMin: [number, number, number]
   domainMax: [number, number, number]
   title?: string
-  inputProfile: LUTInputProfile
   profileResolution: LUTContractResolution
 }
 

@@ -8,11 +8,7 @@ import {
 } from './lut-contract'
 import type { LUTColorProfile } from './registry'
 import { getLUTColorProfile, inferLUTColorProfileHints } from './registry'
-import type {
-  LUTContractResolution,
-  LUTInputProfile,
-  StoredLUTContractSelection,
-} from './types'
+import type { LUTContractResolution, StoredLUTContractSelection } from './types'
 
 export interface ResolveLUTProfileInput {
   title: string
@@ -36,26 +32,9 @@ function compactProfileText(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
-function resolveCompatProfileId(profileId: string): string {
-  const compact = compactProfileText(profileId)
-  if (compact === 'vlog' || compact === 'vloginput') {
-    return 'panasonic-vgamut-vlog'
-  }
-  if (compact === 'displaysrgb' || compact === 'srgbdisplay') {
-    return 'display-srgb'
-  }
-  return profileId
-}
-
-function getCompatibleLUTColorProfile(
-  profileId: string,
-): LUTColorProfile | undefined {
-  return getLUTColorProfile(resolveCompatProfileId(profileId))
-}
-
 function getContractProfileId(contract: StoredLUTContractSelection): string {
   const baseProfile = contract.inputProfile
-    ? getCompatibleLUTColorProfile(contract.inputProfile)
+    ? getLUTColorProfile(contract.inputProfile)
     : undefined
 
   return (
@@ -106,7 +85,7 @@ function resolveStructuredMetadataContract(
 
   const contract = buildStoredContractSelection({
     inputProfile: inputProfile
-      ? getCompatibleLUTColorProfile(inputProfile)?.id
+      ? getLUTColorProfile(inputProfile)?.id
       : undefined,
     role,
     inputGamut,
@@ -298,49 +277,4 @@ export function resolveLUTProfile(
   }
 
   return { kind: 'unknown' }
-}
-
-export function toCompatInputProfile(
-  profileResolution: LUTContractResolution,
-): LUTInputProfile {
-  if (profileResolution.kind !== 'confirmed') return 'display-srgb'
-
-  const { profile } = profileResolution
-  if (
-    profile.id === 'panasonic-vgamut-vlog' ||
-    profile.inputTransfer === 'v-log'
-  ) {
-    return 'v-log'
-  }
-
-  return 'display-srgb'
-}
-
-function extractCubeComments(content: string): string[] {
-  return content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('#'))
-    .map((line) => line.replace(/^#+\s?/, '').trim())
-    .filter(Boolean)
-}
-
-function stripCubeExtension(name: string): string {
-  return name.replace(/\.cube$/i, '')
-}
-
-export function inferLUTInputProfile(input: {
-  content: string
-  sourceName?: string
-  title?: string
-}): LUTInputProfile {
-  return toCompatInputProfile(
-    resolveLUTProfile({
-      title:
-        input.title ||
-        (input.sourceName ? stripCubeExtension(input.sourceName) : ''),
-      sourceName: input.sourceName,
-      comments: extractCubeComments(input.content),
-    }),
-  )
 }

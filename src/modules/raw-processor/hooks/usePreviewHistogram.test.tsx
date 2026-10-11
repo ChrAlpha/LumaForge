@@ -80,7 +80,6 @@ function createLutData(profileId = 'test-vlog'): LUTData {
     ]),
     domainMin: [0, 0, 0],
     domainMax: [1, 1, 1],
-    inputProfile: 'v-log',
     profileResolution: {
       kind: 'confirmed',
       confidence: 'metadata',
