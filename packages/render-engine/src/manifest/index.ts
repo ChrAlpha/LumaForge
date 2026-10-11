@@ -19,6 +19,13 @@ export {
   createRenderManifest,
   type CreateRenderManifestInput,
 } from './create-render-manifest'
+export {
+  checkRecordedExportGeometry,
+  type RecordedDimensions,
+  type RecordedExportFrame,
+  type RecordedGeometryCheck,
+  type RecordedGeometryRefusal,
+} from './export-geometry'
 export { type LutIdentityFailure, lutIdentityFromProfile } from './lut-identity'
 export {
   parseRenderManifest,
