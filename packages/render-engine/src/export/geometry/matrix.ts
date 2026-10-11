@@ -6,7 +6,7 @@
  * export reproduces the framing the preview showed with the same arithmetic.
  * The engine's own tests cannot see the preview, so the sweep that holds the
  * two framings together lives app-side in
- * `src/lib/export/transform-preview-export-parity.test.ts`.
+ * `src/modules/raw-processor/services/export/transform-preview-export-parity.test.ts`.
  */
 export type Matrix3 = readonly [
   number,

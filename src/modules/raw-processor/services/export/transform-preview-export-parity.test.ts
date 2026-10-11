@@ -22,17 +22,17 @@ import {
 } from '~/lib/transform/transform-render'
 import type { RenderedPreview } from '~/lib/transform/transform-types'
 import { PREVIEW_MATTE } from '~/lib/transform/transform-types'
+import type { TransformGeometryCase } from '~/modules/raw-processor/test-support/transform-geometry-test-cases'
+import {
+  FOLDING_TRANSFORM,
+  transformGeometryCases,
+} from '~/modules/raw-processor/test-support/transform-geometry-test-cases'
 
 import {
   FOLDING_MATRIX_GEOMETRY,
   TRANSFORM_CASE_SOURCE,
   transformMatrixCases,
-} from '../../../packages/render-engine/src/geometry/testing/transform-cases'
-import type { TransformGeometryCase } from './transform-geometry-test-cases'
-import {
-  FOLDING_TRANSFORM,
-  transformGeometryCases,
-} from './transform-geometry-test-cases'
+} from '../../../../../packages/render-engine/src/geometry/testing/transform-cases'
 
 type Size = { width: number; height: number }
 

@@ -46,7 +46,6 @@ import type {
 import { selectExportPlan } from '~/lib/export/export-plan'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
-import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { createRawRuntimeSessionLeases } from '~/lib/raw/raw-runtime-host'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
@@ -55,6 +54,7 @@ import {
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
 import { composeManualTransform } from '~/lib/transform/transform-render'
+import { FOLDING_TRANSFORM } from '~/modules/raw-processor/test-support/transform-geometry-test-cases'
 
 import type {
   ExportResult,

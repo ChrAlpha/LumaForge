@@ -19,8 +19,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ExportPlanFacts } from '~/lib/export/export-plan'
 import { selectExportPlan } from '~/lib/export/export-plan'
-import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
 import { composeManualTransform } from '~/lib/transform/transform-render'
+import { FOLDING_TRANSFORM } from '~/modules/raw-processor/test-support/transform-geometry-test-cases'
 
 import {
   deriveExportRefusal,
