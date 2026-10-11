@@ -3,10 +3,13 @@ import {
   NEUTRAL_USER_COLOR_INTENT,
   pickColorGraphIntent,
 } from '@lumaforge/luma-color-runtime'
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
+import i18n from 'i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '~/lib/i18n'
+import enMessages from '~/locales/en.json'
+import zhMessages from '~/locales/zh-CN.json'
 
 import type { ImageSession } from '../../../model/session'
 import { createImageSession } from '../../../model/session-factory'
@@ -270,8 +273,24 @@ describe('useFullResExportAction', () => {
     it('shows a failure with its message and the level to retry at', async () => {
       const { order, runScheduled } = await notifyThroughHook([
         { kind: 'started' },
-        { kind: 'failed', message: 'Worker exploded', retryLevel: 'safe' },
-        { kind: 'failed', message: 'Worker exploded', retryLevel: null },
+        {
+          kind: 'failed',
+          code: 'EXPORT_RENDER_FAILED',
+          message: 'Worker exploded',
+          retryLevel: 'safe',
+        },
+        {
+          kind: 'failed',
+          code: 'EXPORT_RENDER_FAILED',
+          message: 'Worker exploded',
+          retryLevel: null,
+        },
+        {
+          kind: 'failed',
+          code: 'EXPORT_RENDER_FAILED',
+          message: null,
+          retryLevel: 'balanced',
+        },
       ])
 
       runScheduled()
@@ -280,6 +299,8 @@ describe('useFullResExportAction', () => {
         'dismiss',
         'scheduled',
         'scheduled',
+        'scheduled',
+        'error:Export failed',
         'error:Export failed',
         'error:Export failed',
       ])
@@ -289,16 +310,106 @@ describe('useFullResExportAction', () => {
           { description: 'Worker exploded. Retry with safe fidelity.' },
         ],
         ['Export failed', { description: 'Worker exploded' }],
+        [
+          'Export failed',
+          { description: 'Export failed. Retry with balanced fidelity.' },
+        ],
+      ])
+    })
+
+    it('describes a policy refusal by its code, whatever its message says', async () => {
+      const { runScheduled } = await notifyThroughHook([
+        {
+          kind: 'failed',
+          code: 'EXPORT_POLICY_CANNOT_COMPLETE',
+          message: 'Plan refused',
+          retryLevel: null,
+        },
+      ])
+
+      runScheduled()
+
+      expect(toastMock.toast.error.mock.calls).toEqual([
+        [
+          'Export failed',
+          { description: enMessages['raw.export.reason.cannotSafelyComplete'] },
+        ],
       ])
     })
 
     it('shows nothing for a notification whose scheduled task never runs', async () => {
       await notifyThroughHook([
         { kind: 'refused', refusal: { code: 'export-running' } },
-        { kind: 'failed', message: 'late', retryLevel: null },
+        {
+          kind: 'failed',
+          code: 'EXPORT_RENDER_FAILED',
+          message: 'late',
+          retryLevel: null,
+        },
       ])
 
       expect(toastMock.toast.error).not.toHaveBeenCalled()
+    })
+
+    it('shows each notification in the locale current when the export reports it', async () => {
+      toastMock.toast.error.mockReset()
+      let release!: () => void
+      const reported = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const scheduled: Array<() => void> = []
+      const orchestrateExport = vi.fn<typeof orchestrateFullResExport>(
+        async (_request, ctx) => {
+          await reported
+          ctx.services.notify({
+            kind: 'refused',
+            refusal: { code: 'source-loading' },
+          })
+          ctx.services.notify({
+            kind: 'failed',
+            code: 'EXPORT_RENDER_FAILED',
+            message: null,
+            retryLevel: 'safe',
+          })
+          ctx.services.notify({
+            kind: 'failed',
+            code: 'EXPORT_POLICY_CANNOT_COMPLETE',
+            message: 'Plan refused',
+            retryLevel: null,
+          })
+        },
+      )
+      const { result } = renderHook(
+        () =>
+          useFullResExportAction({
+            ...createInput(orchestrateExport),
+            scheduleToast: (show) => scheduled.push(show),
+          }),
+        { wrapper: I18nProvider },
+      )
+
+      try {
+        const pending = result.current.exportImage()
+        // The language menu switches while the export runs.
+        localStorage.setItem('lumaforge.locale', 'zh-CN')
+        await act(() => i18n.changeLanguage('zh-CN'))
+        release()
+        await pending
+        for (const show of scheduled) show()
+      } finally {
+        localStorage.clear()
+        await act(() => i18n.changeLanguage('en'))
+        document.documentElement.lang = 'en'
+      }
+
+      expect(toastMock.toast.error.mock.calls).toEqual([
+        ['全分辨率导出尚未就绪', { description: '全分辨率导出源还在加载。' }],
+        ['导出失败', { description: '导出失败。请以安全模式重试。' }],
+        [
+          '导出失败',
+          { description: zhMessages['raw.export.reason.cannotSafelyComplete'] },
+        ],
+      ])
     })
 
     describe('in another locale', () => {
@@ -309,6 +420,59 @@ describe('useFullResExportAction', () => {
       afterEach(() => {
         localStorage.clear()
         document.documentElement.lang = 'en'
+      })
+
+      it('shows failures in the current locale and runtime messages as given', async () => {
+        const { runScheduled } = await notifyThroughHook(
+          [
+            {
+              kind: 'failed',
+              code: 'EXPORT_RENDER_FAILED',
+              message: 'Worker exploded',
+              retryLevel: 'safe',
+            },
+            {
+              kind: 'failed',
+              code: 'FULL_RES_EXPORT_WORKER_OOM',
+              message: 'Worker exploded',
+              retryLevel: 'balanced',
+            },
+            {
+              kind: 'failed',
+              code: 'EXPORT_RENDER_FAILED',
+              message: 'Worker exploded',
+              retryLevel: null,
+            },
+            {
+              kind: 'failed',
+              code: 'EXPORT_RENDER_FAILED',
+              message: null,
+              retryLevel: null,
+            },
+            {
+              kind: 'failed',
+              code: 'EXPORT_POLICY_CANNOT_COMPLETE',
+              message: enMessages['raw.export.reason.cannotSafelyComplete'],
+              retryLevel: null,
+            },
+          ],
+          I18nProvider,
+        )
+
+        runScheduled()
+
+        expect(toastMock.toast.error.mock.calls).toEqual([
+          ['导出失败', { description: 'Worker exploded。请以安全模式重试。' }],
+          ['导出失败', { description: 'Worker exploded。请以均衡模式重试。' }],
+          ['导出失败', { description: 'Worker exploded' }],
+          ['导出失败', { description: '导出失败' }],
+          [
+            '导出失败',
+            {
+              description: zhMessages['raw.export.reason.cannotSafelyComplete'],
+            },
+          ],
+        ])
       })
 
       it('shows refusals in the current locale and diagnostics as given', async () => {

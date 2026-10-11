@@ -63,17 +63,6 @@ export function toFullResCapabilityState(
   }
 }
 
-export function buildExportFailureDescription(
-  message: string,
-  retryLevel: 'safe' | 'balanced' | null,
-) {
-  if (!retryLevel) {
-    return message
-  }
-
-  return `${message}. Retry with ${retryLevel} fidelity.`
-}
-
 /** An export owns the session: its abort handle is live or it is exporting. */
 export function hasActiveExport(
   exportAbortController: AbortController | null,

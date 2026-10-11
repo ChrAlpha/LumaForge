@@ -1,10 +1,9 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 
 import type { Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 
-import { buildExportFailureDescription } from '../../../services/export/export-state'
 import type {
   ExportContext,
   FullResExportNotification,
@@ -20,6 +19,29 @@ export type UseFullResExportActionInput = ExportContext['atoms'] &
     scheduleToast: (show: () => void) => void
     orchestrateExport?: typeof orchestrateFullResExport
   }
+
+/**
+ * A plan the policy refuses is told by its code; any other failure shows the
+ * runtime's message as given, or a generic one when it gave none, with the
+ * safer level to retry at.
+ */
+function fullResExportFailureText(
+  notification: Extract<FullResExportNotification, { kind: 'failed' }>,
+  t: Translate,
+) {
+  if (notification.code === 'EXPORT_POLICY_CANNOT_COMPLETE') {
+    return t('raw.export.reason.cannotSafelyComplete')
+  }
+  const { retryLevel } = notification
+  const message = notification.message ?? t('raw.export.toast.exportFallback')
+  if (retryLevel === 'safe') {
+    return t('raw.export.toast.retrySafe', { message })
+  }
+  if (retryLevel === 'balanced') {
+    return t('raw.export.toast.retryBalanced', { message })
+  }
+  return message
+}
 
 function showFullResExportNotification(
   notification: FullResExportNotification,
@@ -42,11 +64,9 @@ function showFullResExportNotification(
       break
     }
     case 'failed': {
-      const description = buildExportFailureDescription(
-        notification.message,
-        notification.retryLevel,
-      )
-      scheduleToast(() => toast.error('Export failed', { description }))
+      const title = t('raw.export.toast.exportFailed')
+      const description = fullResExportFailureText(notification, t)
+      scheduleToast(() => toast.error(title, { description }))
       break
     }
   }
@@ -80,7 +100,17 @@ export function useFullResExportAction({
   interruptionMarkers,
   orchestrateExport = orchestrateFullResExport,
 }: UseFullResExportActionInput) {
-  const { t } = useI18n()
+  const { t: renderedTranslate } = useI18n()
+  // Copy is built when a notification is, usually after an await, so it is
+  // read in the locale current then rather than the one this render saw.
+  const translateRef = useRef(renderedTranslate)
+  useLayoutEffect(() => {
+    translateRef.current = renderedTranslate
+  }, [renderedTranslate])
+  const t = useCallback<Translate>(
+    (key, values) => translateRef.current(key, values),
+    [],
+  )
   // The export decides what to report while its attempt is current; the
   // copy and the toast belong here.
   const notify = useCallback(

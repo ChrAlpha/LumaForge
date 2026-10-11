@@ -16,7 +16,6 @@ import type { ImageSession } from '../../model/session'
 import { createTransformState } from '../../model/session-factory'
 import { captureExportResultIdentity } from './export-result-identity'
 import {
-  buildExportFailureDescription,
   changesRenderGraphParams,
   clearExportResultForActiveExport,
   clearExportResultState,
@@ -873,14 +872,5 @@ describe('export state helpers', () => {
         color: undefined,
       } as unknown as LumaRawExportCapability),
     ).toEqual({ status: 'unsupported', reason: 'missing-color-transform' })
-  })
-
-  it('adds retry guidance only when a retry level exists', () => {
-    expect(buildExportFailureDescription('Worker failed', null)).toBe(
-      'Worker failed',
-    )
-    expect(buildExportFailureDescription('Worker failed', 'safe')).toBe(
-      'Worker failed. Retry with safe fidelity.',
-    )
   })
 })

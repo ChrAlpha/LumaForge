@@ -443,11 +443,22 @@ export async function copyExportResultToClipboard(
   await copyBlobToClipboard(blob, environment, guard)
 }
 
+/**
+ * Thrown when the browser encodes no image from the preview canvas: its
+ * `toBlob` hands back no blob and says nothing about why.
+ */
+export class PreviewCopyEncodeError extends Error {
+  constructor() {
+    super('Preview image copy failed.')
+    this.name = 'PreviewCopyEncodeError'
+  }
+}
+
 function canvasToBlob(canvas: HTMLCanvasElement, type: string) {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (!blob) {
-        reject(new Error('Preview image copy failed.'))
+        reject(new PreviewCopyEncodeError())
         return
       }
 

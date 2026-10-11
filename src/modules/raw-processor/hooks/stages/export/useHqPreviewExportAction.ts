@@ -1,9 +1,10 @@
 import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
-import { useCallback } from 'react'
+import { useCallback, useLayoutEffect, useRef } from 'react'
 import { toast as sonnerToast } from 'sonner'
 
+import type { Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
@@ -160,7 +161,17 @@ export function useHqPreviewExportAction({
   setStatus,
   toast = sonnerToast,
 }: UseHqPreviewExportActionInput) {
-  const { t } = useI18n()
+  const { t: renderedTranslate } = useI18n()
+  // Copy is built when a notification is, usually after an await, so it is
+  // read in the locale current then rather than the one this render saw.
+  const translateRef = useRef(renderedTranslate)
+  useLayoutEffect(() => {
+    translateRef.current = renderedTranslate
+  }, [renderedTranslate])
+  const t = useCallback<Translate>(
+    (key, values) => translateRef.current(key, values),
+    [],
+  )
   // A refusal stays a code up to the toast, which is the only place it
   // becomes copy, in the current locale.
   const refuse = useCallback(
@@ -380,12 +391,17 @@ export function useHqPreviewExportAction({
       )
       setProgress(100)
       setStatus('ready')
-      scheduleToast(() => toast.success('HQ preview JPEG ready'))
+      const message = t('raw.export.toast.hqPreviewReady')
+      scheduleToast(() => toast.success(message))
     } catch (err) {
       if (!isCurrentExport()) return
 
+      // A runtime's own message is shown as given.
+      const title = t('raw.export.toast.hqPreviewFailed')
       const description =
-        err instanceof Error ? err.message : 'HQ preview export failed.'
+        err instanceof Error
+          ? err.message
+          : t('raw.export.toast.hqPreviewFallback')
       setSession((prev) =>
         prev && prev.id === exportSessionId
           ? {
@@ -400,9 +416,7 @@ export function useHqPreviewExportAction({
       )
       setStatus('ready')
       setProgress(0)
-      scheduleToast(() =>
-        toast.error('HQ preview export failed', { description }),
-      )
+      scheduleToast(() => toast.error(title, { description }))
     } finally {
       if (exportAbortControllerRef.current === exportAbortController) {
         exportAbortControllerRef.current = null
@@ -428,6 +442,7 @@ export function useHqPreviewExportAction({
     setProgress,
     setSession,
     setStatus,
+    t,
     toast,
   ])
 

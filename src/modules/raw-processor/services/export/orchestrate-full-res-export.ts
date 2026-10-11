@@ -101,10 +101,15 @@ export type FullResExportNotification =
   | { kind: 'started' }
   /** The export cannot start, or a running attempt can no longer finish. */
   | { kind: 'refused'; refusal: FullResExportReason }
-  /** The attempt failed; `retryLevel` is the safer plan to retry with. */
+  /**
+   * The attempt failed with the stable `code` the session records and the
+   * runtime's `message`, null when what it threw carried none; `retryLevel`
+   * is the safer plan to retry with.
+   */
   | {
       kind: 'failed'
-      message: string
+      code: string
+      message: string | null
       retryLevel: Exclude<PerformancePreference, 'max'> | null
     }
 
@@ -847,7 +852,7 @@ export async function orchestrateFullResExport(
         })
       })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Export failed'
+    const message = err instanceof Error ? err.message : null
     const rawErrorCode = toUserFacingErrorCode(
       getStableErrorCode(err) ?? message,
     )
@@ -890,7 +895,12 @@ export async function orchestrateFullResExport(
         : prev,
     )
     ctx.atoms.setStatus('ready')
-    ctx.services.notify({ kind: 'failed', message, retryLevel })
+    ctx.services.notify({
+      kind: 'failed',
+      code: errorCode,
+      message,
+      retryLevel,
+    })
   } finally {
     discardUnadoptedOutput(unadoptedOutput)
     // An export dropped before its job ran ended without an interruption.

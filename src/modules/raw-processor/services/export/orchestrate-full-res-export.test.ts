@@ -1926,6 +1926,7 @@ describe('orchestrateFullResExport refusals', () => {
       { kind: 'started' },
       {
         kind: 'failed',
+        code: 'EXPORT_POLICY_CANNOT_COMPLETE',
         message: getExportModeCopy('cannot-safely-complete'),
         retryLevel: null,
       },
@@ -2249,6 +2250,15 @@ describe('orchestrateFullResExport failures', () => {
       message: 'Output sink closed',
       resourceFailure: false,
     },
+    {
+      name: 'a failure that is not an Error',
+      error: 'worker went away',
+      performancePreference: 'balanced',
+      code: 'EXPORT_RENDER_FAILED',
+      retryLevel: undefined,
+      message: null,
+      resourceFailure: false,
+    },
   ] as const)(
     'records $name as a failed export without a result',
     async ({
@@ -2292,7 +2302,12 @@ describe('orchestrateFullResExport failures', () => {
       ])
       expect(h.notifications).toEqual([
         { kind: 'started' },
-        { kind: 'failed', message, retryLevel: retryLevel ?? null },
+        {
+          kind: 'failed',
+          code,
+          message,
+          retryLevel: retryLevel ?? null,
+        },
       ])
       expect(h.state.session?.exportState).toMatchObject({
         status: 'failed',
@@ -2335,6 +2350,7 @@ describe('orchestrateFullResExport failures', () => {
       { kind: 'started' },
       {
         kind: 'failed',
+        code: 'EXPORT_RESOURCE_REGISTRY_MISSING',
         message: 'EXPORT_RESOURCE_REGISTRY_MISSING',
         retryLevel: null,
       },
@@ -2410,7 +2426,12 @@ describe('orchestrateFullResExport failures', () => {
       ])
       expect(h.notifications).toEqual([
         { kind: 'started' },
-        { kind: 'failed', message, retryLevel: null },
+        {
+          kind: 'failed',
+          code: 'EXPORT_RESOURCE_EVICTION_INCOMPLETE',
+          message,
+          retryLevel: null,
+        },
       ])
       expect(h.state.session?.exportState).toMatchObject({
         status: 'failed',

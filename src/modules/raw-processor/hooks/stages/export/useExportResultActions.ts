@@ -1,9 +1,9 @@
 import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
-import { useCallback } from 'react'
+import { useCallback, useLayoutEffect, useRef } from 'react'
 
 import { emitExportDebugEvent } from '~/lib/export/execution-profile'
-import type { MessageKey } from '~/lib/i18n'
+import type { MessageKey, Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
 import type {
   PipelineStats,
@@ -28,6 +28,7 @@ import {
   ExportActionUnavailableError,
   ExportDeliveryStaleError,
   openExportDelivery,
+  PreviewCopyEncodeError,
   shareExportResult as shareStoredExportResult,
   unavailableExportCopy,
 } from '../../../services/export/export-result-actions'
@@ -66,9 +67,6 @@ const EXPORT_ACTION_REASON_COPY = {
   ...EXPORT_COPY_REASON_COPY,
   ...EXPORT_SHARE_REASON_COPY,
 } as const satisfies Record<ExportActionReasonCode, MessageKey>
-
-const STALE_DELIVERY_DESCRIPTION =
-  'This export no longer matches the photo. Export again to deliver it.'
 
 type OpenedDelivery = { result: ExportResult; guard: ExportDeliveryGuard }
 
@@ -143,18 +141,31 @@ export function useExportResultActions({
     }
   }, [readLive])
 
-  const { t } = useI18n()
+  const { t: renderedTranslate } = useI18n()
+  // Copy is built when a notification is, usually after an await, so it is
+  // read in the locale current then rather than the one this render saw.
+  const translateRef = useRef(renderedTranslate)
+  useLayoutEffect(() => {
+    translateRef.current = renderedTranslate
+  }, [renderedTranslate])
+  const t = useCallback<Translate>(
+    (key, values) => translateRef.current(key, values),
+    [],
+  )
   // A failure stays structured up to the toast, which is the only place a
-  // refusal's code becomes copy, in the current locale.
+  // refusal's code becomes copy, in the current locale; a runtime's own
+  // message is shown as given.
   const describeFailure = useCallback(
-    (err: unknown, fallback: string) =>
+    (err: unknown, fallback: MessageKey) =>
       err instanceof ExportDeliveryStaleError
-        ? STALE_DELIVERY_DESCRIPTION
+        ? t('raw.export.toast.staleDelivery')
         : err instanceof ExportActionUnavailableError
           ? t(EXPORT_ACTION_REASON_COPY[err.reasonCode])
-          : err instanceof Error
-            ? err.message
-            : fallback,
+          : err instanceof PreviewCopyEncodeError
+            ? t('raw.export.toast.previewCopyEncodeFailed')
+            : err instanceof Error
+              ? err.message
+              : t(fallback),
     [t],
   )
 
@@ -167,9 +178,13 @@ export function useExportResultActions({
         guard: delivery.guard,
       })
     } catch (err) {
-      const description = describeFailure(err, 'Download action failed.')
+      const title = t('raw.export.toast.downloadFailed')
+      const description = describeFailure(
+        err,
+        'raw.export.toast.downloadFallback',
+      )
       scheduleToast(() =>
-        toast.error('Download failed', {
+        toast.error(title, {
           description,
         }),
       )
@@ -179,6 +194,7 @@ export function useExportResultActions({
     describeFailure,
     openDelivery,
     scheduleToast,
+    t,
     toast,
   ])
 
@@ -193,9 +209,13 @@ export function useExportResultActions({
         guard: delivery.guard,
       })
     } catch (err) {
-      const description = describeFailure(err, 'Manifest download failed.')
+      const title = t('raw.export.toast.manifestDownloadFailed')
+      const description = describeFailure(
+        err,
+        'raw.export.toast.manifestDownloadFallback',
+      )
       scheduleToast(() =>
-        toast.error('Manifest download failed', {
+        toast.error(title, {
           description,
         }),
       )
@@ -206,6 +226,7 @@ export function useExportResultActions({
     getSession,
     openDelivery,
     scheduleToast,
+    t,
     toast,
   ])
 
@@ -225,7 +246,7 @@ export function useExportResultActions({
       }
 
       const title = t('raw.export.toast.shareFailed')
-      const description = describeFailure(err, 'Share action failed.')
+      const description = describeFailure(err, 'raw.export.toast.shareFallback')
       scheduleToast(() =>
         toast.error(title, {
           description,
@@ -254,7 +275,8 @@ export function useExportResultActions({
           createMaterializationDiagnostics('copy'),
           guard,
         )
-        scheduleToast(() => toast.success('Full-resolution image copied'))
+        const message = t('raw.export.toast.fullResCopied')
+        scheduleToast(() => toast.success(message))
         return
       }
 
@@ -265,7 +287,8 @@ export function useExportResultActions({
           createMaterializationDiagnostics('copy'),
           guard,
         )
-        scheduleToast(() => toast.success('HQ preview image copied'))
+        const message = t('raw.export.toast.hqPreviewCopied')
+        scheduleToast(() => toast.success(message))
         return
       }
 
@@ -282,7 +305,8 @@ export function useExportResultActions({
               }
             },
           })
-          scheduleToast(() => toast.success('Preview-size image copied'))
+          const message = t('raw.export.toast.previewSizeCopied')
+          scheduleToast(() => toast.success(message))
           return
         }
 
@@ -298,14 +322,15 @@ export function useExportResultActions({
           height: previewSize.height,
         })
         await copyCanvasToClipboard(canvas, globalThis, guard)
-        scheduleToast(() => toast.success('Preview-size image copied'))
+        const message = t('raw.export.toast.previewSizeCopied')
+        scheduleToast(() => toast.success(message))
         return
       }
 
       throw new ExportActionUnavailableError(result.copyCapability)
     } catch (err) {
       const title = t('raw.export.toast.copyFailed')
-      const description = describeFailure(err, 'Copy action failed.')
+      const description = describeFailure(err, 'raw.export.toast.copyFallback')
       scheduleToast(() =>
         toast.error(title, {
           description,

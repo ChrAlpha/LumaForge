@@ -6,7 +6,8 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
+import i18n from 'i18next'
 import { atom, createStore } from 'jotai'
 import type { ComponentType, PropsWithChildren } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -865,5 +866,383 @@ describe('useExportResultActions refusal copy', () => {
     expect(harness.toast.error).toHaveBeenCalledWith('复制失败', {
       description: '预览图像尚未就绪，无法复制。',
     })
+  })
+})
+
+describe('useExportResultActions notification copy', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    localStorage.clear()
+    document.documentElement.lang = 'en'
+  })
+
+  /** Throws whatever it is given, as a runtime that throws a non-Error does. */
+  function fail(value: unknown): never {
+    throw value
+  }
+
+  type Scenario = (wrapper?: ComponentType<PropsWithChildren>) => Promise<{
+    success: unknown[][]
+    error: unknown[][]
+  }>
+
+  function copyAs(
+    kind: ExportResultKind,
+    copyCapability: ExportCopyCapability,
+    { encodes = true }: { encodes?: boolean } = {},
+  ): Scenario {
+    return async (wrapper) => {
+      stubDelivery()
+      // A browser that cannot encode the snapshot hands `toBlob` no blob.
+      const snapshot = {
+        toBlob: vi.fn((callback: BlobCallback) => {
+          callback(encodes ? new Blob(['png'], { type: 'image/png' }) : null)
+        }),
+      } as unknown as HTMLCanvasElement
+      const harness = setup({
+        wrapper,
+        previewCopyCanvas: snapshot,
+        result: (session) =>
+          createResult({
+            session,
+            kind,
+            output: blobOutput(),
+            copyCapability,
+          }),
+      })
+      await harness.actions().copyExportResult()
+      return {
+        success: harness.toast.success.mock.calls,
+        error: harness.toast.error.mock.calls,
+      }
+    }
+  }
+
+  function deliverWith(
+    prepare: (
+      delivery: ReturnType<typeof stubDelivery>,
+      harness: Harness,
+    ) => void,
+    action: (actions: ReturnType<Harness['actions']>) => Promise<void>,
+  ): Scenario {
+    return async (wrapper) => {
+      const delivery = stubDelivery()
+      const harness = setup({
+        wrapper,
+        result: (session) => ({
+          ...createResult({ session, output: blobOutput() }),
+          manifest: { manifest_version: 1 } as unknown as RenderManifest,
+        }),
+      })
+      prepare(delivery, harness)
+      await action(harness.actions())
+      return {
+        success: harness.toast.success.mock.calls,
+        error: harness.toast.error.mock.calls,
+      }
+    }
+  }
+
+  const SCENARIOS: Record<string, Scenario> = {
+    'full-resolution copy': copyAs('full-resolution', {
+      mode: 'full-resolution',
+    }),
+    'HQ preview copy': copyAs('hq-preview', { mode: 'hq-preview' }),
+    'preview-size copy': copyAs('full-resolution', {
+      mode: 'preview-size',
+      reasonCode: 'full-resolution-copy-unsupported',
+    }),
+    'preview-size copy the browser cannot encode': copyAs(
+      'full-resolution',
+      {
+        mode: 'preview-size',
+        reasonCode: 'full-resolution-copy-unsupported',
+      },
+      { encodes: false },
+    ),
+    'download failure': deliverWith(
+      (delivery) => {
+        delivery.createObjectURL.mockImplementation(() =>
+          fail(new Error('Object URL quota exceeded')),
+        )
+      },
+      (actions) => actions.downloadExportResult(),
+    ),
+    'download failure without a message': deliverWith(
+      (delivery) => {
+        delivery.createObjectURL.mockImplementation(() => fail('revoked'))
+      },
+      (actions) => actions.downloadExportResult(),
+    ),
+    'manifest failure without a message': deliverWith(
+      (delivery) => {
+        delivery.createObjectURL.mockImplementation(() => fail('revoked'))
+      },
+      (actions) => actions.downloadExportManifest(),
+    ),
+    'share failure without a message': deliverWith(
+      (delivery) => {
+        delivery.share.mockRejectedValue('denied')
+      },
+      (actions) => actions.shareExportResult(),
+    ),
+    'copy failure without a message': deliverWith(
+      (delivery) => {
+        delivery.clipboardWrite.mockRejectedValue('denied')
+      },
+      (actions) => actions.copyExportResult(),
+    ),
+    'stale download': deliverWith(
+      (_delivery, harness) => {
+        harness.setIntent({ ...intent, userContrast: 10 })
+      },
+      (actions) => actions.downloadExportResult(),
+    ),
+    'stale manifest download': deliverWith(
+      (_delivery, harness) => {
+        harness.setIntent({ ...intent, userContrast: 10 })
+      },
+      (actions) => actions.downloadExportManifest(),
+    ),
+    'stale share': deliverWith(
+      (_delivery, harness) => {
+        harness.setIntent({ ...intent, userContrast: 10 })
+      },
+      (actions) => actions.shareExportResult(),
+    ),
+    'stale copy': deliverWith(
+      (_delivery, harness) => {
+        harness.setIntent({ ...intent, userContrast: 10 })
+      },
+      (actions) => actions.copyExportResult(),
+    ),
+    'cancelled share': deliverWith(
+      (delivery) => {
+        delivery.share.mockRejectedValue(
+          new DOMException('Share canceled', 'AbortError'),
+        )
+      },
+      (actions) => actions.shareExportResult(),
+    ),
+    'delivery after unmount': deliverWith(
+      (_delivery, harness) => {
+        harness.isMountedRef.current = false
+      },
+      (actions) => actions.downloadExportResult(),
+    ),
+  }
+
+  async function notifyAll(wrapper?: ComponentType<PropsWithChildren>) {
+    const shown: Record<string, unknown[][]> = {}
+    for (const [name, scenario] of Object.entries(SCENARIOS)) {
+      const { success, error } = await scenario(wrapper)
+      shown[name] = [
+        ...success.map((call) => ['success', ...call]),
+        ...error.map((call) => ['error', ...call]),
+      ]
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+    }
+    return shown
+  }
+
+  const STALE =
+    'This export no longer matches the photo. Export again to deliver it.'
+  const STALE_ZH = '此导出已与照片不一致。请重新导出后再交付。'
+
+  it('keeps every English notification', async () => {
+    expect(await notifyAll()).toEqual({
+      'full-resolution copy': [['success', 'Full-resolution image copied']],
+      'HQ preview copy': [['success', 'HQ preview image copied']],
+      'preview-size copy': [['success', 'Preview-size image copied']],
+      'preview-size copy the browser cannot encode': [
+        ['error', 'Copy failed', { description: 'Preview image copy failed.' }],
+      ],
+      'download failure': [
+        [
+          'error',
+          'Download failed',
+          { description: 'Object URL quota exceeded' },
+        ],
+      ],
+      'download failure without a message': [
+        [
+          'error',
+          'Download failed',
+          { description: 'Download action failed.' },
+        ],
+      ],
+      'manifest failure without a message': [
+        [
+          'error',
+          'Manifest download failed',
+          { description: 'Manifest download failed.' },
+        ],
+      ],
+      'share failure without a message': [
+        ['error', 'Share failed', { description: 'Share action failed.' }],
+      ],
+      'copy failure without a message': [
+        ['error', 'Copy failed', { description: 'Copy action failed.' }],
+      ],
+      'stale download': [['error', 'Download failed', { description: STALE }]],
+      'stale manifest download': [
+        ['error', 'Manifest download failed', { description: STALE }],
+      ],
+      'stale share': [['error', 'Share failed', { description: STALE }]],
+      'stale copy': [['error', 'Copy failed', { description: STALE }]],
+      'cancelled share': [],
+      'delivery after unmount': [],
+    })
+  })
+
+  it('shows every notification in the current locale and runtime detail as given', async () => {
+    localStorage.setItem('lumaforge.locale', 'zh-CN')
+
+    expect(await notifyAll(I18nProvider)).toEqual({
+      'full-resolution copy': [['success', '已复制全分辨率图像']],
+      'HQ preview copy': [['success', '已复制 HQ 预览图像']],
+      'preview-size copy': [['success', '已复制预览尺寸图像']],
+      'preview-size copy the browser cannot encode': [
+        ['error', '复制失败', { description: '预览图像复制失败。' }],
+      ],
+      'download failure': [
+        ['error', '下载失败', { description: 'Object URL quota exceeded' }],
+      ],
+      'download failure without a message': [
+        ['error', '下载失败', { description: '下载操作失败。' }],
+      ],
+      'manifest failure without a message': [
+        ['error', '清单下载失败', { description: '清单下载失败。' }],
+      ],
+      'share failure without a message': [
+        ['error', '分享失败', { description: '分享操作失败。' }],
+      ],
+      'copy failure without a message': [
+        ['error', '复制失败', { description: '复制操作失败。' }],
+      ],
+      'stale download': [['error', '下载失败', { description: STALE_ZH }]],
+      'stale manifest download': [
+        ['error', '清单下载失败', { description: STALE_ZH }],
+      ],
+      'stale share': [['error', '分享失败', { description: STALE_ZH }]],
+      'stale copy': [['error', '复制失败', { description: STALE_ZH }]],
+      'cancelled share': [],
+      'delivery after unmount': [],
+    })
+  })
+})
+
+describe('useExportResultActions after a locale change', () => {
+  afterEach(async () => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    localStorage.clear()
+    await act(() => i18n.changeLanguage('en'))
+    document.documentElement.lang = 'en'
+  })
+
+  /** What the language menu does while a delivery waits. */
+  async function switchLocale(locale: 'en' | 'zh-CN') {
+    localStorage.setItem('lumaforge.locale', locale)
+    await act(() => i18n.changeLanguage(locale))
+  }
+
+  function setupFor(copyCapability: ExportCopyCapability) {
+    const delivery = stubDelivery()
+    let resolveWrite!: () => void
+    let rejectWrite!: (reason: unknown) => void
+    delivery.clipboardWrite.mockReturnValue(
+      new Promise<void>((resolve, reject) => {
+        resolveWrite = resolve
+        rejectWrite = reject
+      }),
+    )
+    const harness = setup({
+      wrapper: I18nProvider,
+      result: (session) =>
+        createResult({ session, output: blobOutput(), copyCapability }),
+    })
+    return { harness, resolveWrite, rejectWrite }
+  }
+
+  it('confirms a copy in the locale current when it completes', async () => {
+    const { harness, resolveWrite } = setupFor({ mode: 'full-resolution' })
+    const pending = harness.actions().copyExportResult()
+    await switchLocale('zh-CN')
+
+    resolveWrite()
+    await pending
+
+    expect(harness.toast.success.mock.calls).toEqual([['已复制全分辨率图像']])
+    expect(harness.toast.error).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed copy in the locale current when it fails', async () => {
+    const { harness, rejectWrite } = setupFor({ mode: 'full-resolution' })
+    const pending = harness.actions().copyExportResult()
+    await switchLocale('zh-CN')
+
+    rejectWrite('denied')
+    await pending
+
+    expect(harness.toast.error.mock.calls).toEqual([
+      ['复制失败', { description: '复制操作失败。' }],
+    ])
+  })
+
+  it('refuses a delivery that went stale in the locale current when it is refused', async () => {
+    stubDelivery()
+    const paused = createPausedOutput()
+    const harness = setup({
+      wrapper: I18nProvider,
+      result: (session) => createResult({ session, output: paused.output }),
+    })
+    const pending = harness.actions().downloadExportResult()
+    await switchLocale('zh-CN')
+    harness.setIntent({ ...intent, userContrast: 10 })
+
+    paused.release()
+    await pending
+
+    expect(harness.toast.error.mock.calls).toEqual([
+      [
+        '下载失败',
+        { description: '此导出已与照片不一致。请重新导出后再交付。' },
+      ],
+    ])
+  })
+
+  it('refuses a copy the browser cannot encode in the locale current when it fails', async () => {
+    stubDelivery()
+    let encode!: BlobCallback
+    const snapshot = {
+      toBlob: vi.fn((callback: BlobCallback) => {
+        encode = callback
+      }),
+    } as unknown as HTMLCanvasElement
+    const harness = setup({
+      wrapper: I18nProvider,
+      previewCopyCanvas: snapshot,
+      result: (session) =>
+        createResult({
+          session,
+          output: blobOutput(),
+          copyCapability: {
+            mode: 'preview-size',
+            reasonCode: 'full-resolution-copy-unsupported',
+          },
+        }),
+    })
+    const pending = harness.actions().copyExportResult()
+    await switchLocale('zh-CN')
+
+    encode(null)
+    await pending
+
+    expect(harness.toast.error.mock.calls).toEqual([
+      ['复制失败', { description: '预览图像复制失败。' }],
+    ])
   })
 })

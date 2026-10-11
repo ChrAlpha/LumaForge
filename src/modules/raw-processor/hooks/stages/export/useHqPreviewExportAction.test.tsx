@@ -6,7 +6,8 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
+import i18n from 'i18next'
 import { atom, createStore } from 'jotai'
 import type {
   ComponentType,
@@ -892,6 +893,117 @@ describe('useHqPreviewExportAction refusal copy', () => {
         '按全分辨率导出可保留变换；若要导出 HQ 预览 JPEG，请先重置变换。',
     })
     expect(h.toBlob).not.toHaveBeenCalled()
+  })
+})
+
+describe('useHqPreviewExportAction notification copy', () => {
+  afterEach(() => {
+    localStorage.clear()
+    document.documentElement.lang = 'en'
+  })
+
+  type Attempt = (h: ReturnType<typeof setupHq>) => void
+
+  const ATTEMPTS: Record<string, Attempt> = {
+    success: (h) => h.complete(),
+    failure: (h) => h.fail(new Error('GPU device lost')),
+    'failure without a message': (h) => h.fail('lost'),
+    superseded: (h) => {
+      h.exportGraphVersionRef.current += 1
+      h.fail(new Error('GPU device lost'))
+    },
+    unmounted: (h) => {
+      h.isMountedRef.current = false
+      h.complete()
+    },
+  }
+
+  async function notifyAll(wrapper?: ComponentType<PropsWithChildren>) {
+    const shown: Record<string, unknown[][]> = {}
+    for (const [name, settle] of Object.entries(ATTEMPTS)) {
+      const h = setupHq(createSession(), {}, wrapper)
+      const pending = h.result.current.exportPreviewImage()
+      settle(h)
+      await pending
+      shown[name] = [
+        ...h.success.mock.calls.map((call) => ['success', ...call]),
+        ...h.error.mock.calls.map((call) => ['error', ...call]),
+      ]
+    }
+    return shown
+  }
+
+  it('keeps every English notification', async () => {
+    expect(await notifyAll()).toEqual({
+      success: [['success', 'HQ preview JPEG ready']],
+      failure: [
+        [
+          'error',
+          'HQ preview export failed',
+          { description: 'GPU device lost' },
+        ],
+      ],
+      'failure without a message': [
+        [
+          'error',
+          'HQ preview export failed',
+          { description: 'HQ preview export failed.' },
+        ],
+      ],
+      superseded: [],
+      unmounted: [],
+    })
+  })
+
+  it('shows every notification in the current locale and runtime detail as given', async () => {
+    localStorage.setItem('lumaforge.locale', 'zh-CN')
+
+    expect(await notifyAll(I18nProvider)).toEqual({
+      success: [['success', 'HQ 预览 JPEG 已就绪']],
+      failure: [
+        ['error', 'HQ 预览导出失败', { description: 'GPU device lost' }],
+      ],
+      'failure without a message': [
+        ['error', 'HQ 预览导出失败', { description: 'HQ 预览导出失败。' }],
+      ],
+      superseded: [],
+      unmounted: [],
+    })
+  })
+
+  it('shows each notification in the locale current when the attempt settles', async () => {
+    const shown: Record<string, unknown[][]> = {}
+    try {
+      for (const [name, settle] of Object.entries(ATTEMPTS)) {
+        localStorage.clear()
+        await act(() => i18n.changeLanguage('en'))
+        const h = setupHq(createSession(), {}, I18nProvider)
+        const pending = h.result.current.exportPreviewImage()
+        // The language menu switches while the preview renders.
+        localStorage.setItem('lumaforge.locale', 'zh-CN')
+        await act(() => i18n.changeLanguage('zh-CN'))
+        settle(h)
+        await pending
+        shown[name] = [
+          ...h.success.mock.calls.map((call) => ['success', ...call]),
+          ...h.error.mock.calls.map((call) => ['error', ...call]),
+        ]
+      }
+    } finally {
+      await act(() => i18n.changeLanguage('en'))
+    }
+
+    expect(shown).toEqual({
+      success: [['success', 'HQ 预览 JPEG 已就绪']],
+      failure: [
+        ['error', 'HQ 预览导出失败', { description: 'GPU device lost' }],
+      ],
+      'failure without a message': [
+        ['error', 'HQ 预览导出失败', { description: 'HQ 预览导出失败。' }],
+      ],
+      superseded: [],
+      unmounted: [],
+    })
   })
 })
 
