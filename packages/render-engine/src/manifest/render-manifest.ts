@@ -109,23 +109,22 @@ export interface OutputIdentity {
 // ---------------------------------------------------------------------------
 
 export interface ToneCurveParams {
-  readonly highlights?: number
-  readonly shadows?: number
-  readonly whites?: number
-  readonly blacks?: number
-  readonly contrast?: number
+  readonly highlights: number
+  readonly shadows: number
+  readonly whites: number
+  readonly blacks: number
+  readonly contrast: number
 }
 
 export interface ColorBalanceParams {
-  readonly temp_k?: number
-  readonly tint?: number
-  /** LumaForge user temperature slider (-100..100); complements `temp_k`. */
-  readonly temperature?: number
+  /** LumaForge user temperature slider (-100..100). */
+  readonly temperature: number
+  readonly tint: number
 }
 
 export interface SaturationParams {
-  readonly saturation?: number
-  readonly vibrance?: number
+  readonly saturation: number
+  readonly vibrance: number
 }
 
 export type RawRenderExposureSource =
@@ -155,15 +154,19 @@ export interface GeometryParams {
 
 export interface RenderParams {
   readonly exposure_ev: number
-  readonly tone_curve?: ToneCurveParams
-  readonly color_balance?: ColorBalanceParams
-  readonly saturation?: SaturationParams
-  /** Per-band HSL shifts keyed by band id (red, orange, yellow, green, aqua, blue, purple, magenta). */
+  readonly tone_curve: ToneCurveParams
+  readonly color_balance: ColorBalanceParams
+  readonly saturation: SaturationParams
+  /**
+   * Per-band HSL shifts, all eight bands (red, orange, yellow, green, aqua,
+   * blue, purple, magenta); omitted when every band is neutral.
+   */
   readonly selective_color?: Readonly<Record<string, SelectiveColorBandShift>>
-  readonly intensity?: number
+  /** Look strength the color graph used, continuous in 0..1. */
+  readonly intensity: number
   /** Resolved raw-render exposure (EV) applied before user params. */
-  readonly raw_render_exposure_ev?: number
-  readonly raw_render_exposure_source?: RawRenderExposureSource
+  readonly raw_render_exposure_ev: number
+  readonly raw_render_exposure_source: RawRenderExposureSource
   /** Present only when a geometry was applied. */
   readonly geometry?: GeometryParams
 }

@@ -259,15 +259,16 @@ describe('invertManifestRenderParams', () => {
     expect(intent.geometry).toEqual(geometry)
   })
 
-  it('fills a partial recorded selective color with neutral bands', () => {
-    const intent = invertManifestRenderParams({
-      ...reread(project()),
-      selective_color: { aqua: { hue: 0, saturation: 15, lightness: 0 } },
-    })
-    expect(intent.userColor.selectiveColor).toEqual({
+  it('reads a recorded selective color band for band', () => {
+    const recorded = {
       ...explicitNeutralSelectiveColor,
       aqua: { hue: 0, saturation: 15, lightness: 0 },
+    }
+    const intent = invertManifestRenderParams({
+      ...reread(project()),
+      selective_color: recorded,
     })
+    expect(intent.userColor.selectiveColor).toEqual(recorded)
   })
 
   it('reads an explicit all-neutral record as neutral user color', () => {
@@ -294,28 +295,17 @@ describe('invertManifestRenderParams', () => {
   })
 })
 
-// No current writer omits these executable fields; the projection always
-// records the color sections, the strength and the exposure with its source.
-// These pin how inversion treats such records today, so that refusing them
-// is a visible change rather than a broken promise.
-describe('invertManifestRenderParams on historical omissions', () => {
-  it('reads absent color sections as neutral and absent strength and exposure as null', () => {
-    const intent = invertManifestRenderParams({ exposure_ev: 0 })
-    expect(intent).toEqual({
-      userColor: NEUTRAL_USER_COLOR_INTENT,
-      intensity: null,
-      rawRenderExposure: null,
-      geometry: null,
-    })
-  })
-
-  it('keeps a recorded EV whose source is missing', () => {
-    const { raw_render_exposure_source: _source, ...written } = reread(
-      project({ rawRenderExposure: { ev: 0.2, source: 'dng-baseline' } }),
+describe('invertManifestRenderParams reads what is recorded', () => {
+  it('reads the strength and the exposure with its provenance as written', () => {
+    const written = reread(
+      project({
+        intensity: 0,
+        rawRenderExposure: { ev: 0, source: 'user' },
+      }),
     )
-    expect(invertManifestRenderParams(written).rawRenderExposure).toEqual({
-      ev: 0.2,
-      source: null,
+    expect(invertManifestRenderParams(written)).toMatchObject({
+      intensity: 0,
+      rawRenderExposure: { ev: 0, source: 'user' },
     })
   })
 })
@@ -348,7 +338,7 @@ describe('projection round trip', () => {
       expect(restored.rawRenderExposure).toEqual(dngExposure)
 
       // The caller supplies the look; render_params never records it.
-      const restoredLook = { ...look, intensity: restored.intensity! }
+      const restoredLook = { ...look, intensity: restored.intensity }
       expect(
         colorGraphIntentSignature({ ...restoredLook, ...restored.userColor }),
       ).toBe(colorGraphIntentSignature({ ...look, ...nonNeutral }))
@@ -373,11 +363,8 @@ describe('projection round trip', () => {
     const restored = invertManifestRenderParams(written)
     const reprojected = projectManifestRenderParams({
       userColor: restored.userColor,
-      intensity: restored.intensity!,
-      rawRenderExposure: {
-        ev: restored.rawRenderExposure!.ev,
-        source: restored.rawRenderExposure!.source!,
-      },
+      intensity: restored.intensity,
+      rawRenderExposure: restored.rawRenderExposure,
       geometry: restored.geometry ?? undefined,
     })
     expect(canonicalizeJson(reprojected)).toBe(canonicalizeJson(written))

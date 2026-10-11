@@ -1,11 +1,15 @@
 // @vitest-environment node
 import {
+  generateIdentityLUT,
+  HSL_BAND_IDS,
   NEUTRAL_USER_COLOR_INTENT,
   resolveExportColorGraph,
+  toLUTData,
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import { computeManifestSha256 } from './canonicalize'
+import { fingerprintColorGraph } from './color-graph-descriptor'
 import { createRenderManifest } from './create-render-manifest'
 import { parseRenderManifest } from './parse-render-manifest'
 import type { RenderManifest } from './render-manifest'
@@ -32,7 +36,11 @@ const resolved = resolveExportColorGraph({
 if (!resolved.supported) throw new Error(resolved.message)
 const graph = resolved
 
-const lutContract = { gamut: 'srgb-rec709', transfer: 'srgb', range: 'full' }
+const lutContract = {
+  gamut: 'srgb-rec709',
+  transfer: 'srgb',
+  range: 'full' as const,
+}
 
 /** An export as the current writers seal it: Transform applied, HSL neutral. */
 function sealed(): RenderManifest {
@@ -86,6 +94,25 @@ function resealed(edit: (manifest: Json) => void): Json {
   return copy
 }
 
+/** Like `resealed`, with the color graph fingerprint recomputed first. */
+function regraphed(edit: (descriptor: Json) => void): Json {
+  return resealed((manifest) => {
+    edit(manifest.color_graph.descriptor)
+    manifest.color_graph.fingerprint = fingerprintColorGraph(
+      manifest.color_graph.descriptor,
+    )
+  })
+}
+
+const neutralBand = { hue: 0, saturation: 0, lightness: 0 }
+
+/** Selective color recorded as all eight bands, `shifts` applied. */
+function allBands(shifts: Json = {}): Json {
+  return Object.fromEntries(
+    HSL_BAND_IDS.map((band) => [band, shifts[band] ?? neutralBand]),
+  )
+}
+
 function issuePaths(value: unknown): string[] {
   const result = parseRenderManifest(value)
   return result.ok ? [] : result.issues.map((issue) => issue.path)
@@ -119,18 +146,59 @@ describe('parseRenderManifest', () => {
     expect(parseRenderManifest(plain)).toEqual({ ok: true, manifest: plain })
   })
 
-  it('accepts a sealed explicit all-neutral selective color record', () => {
-    const neutral = { hue: 0, saturation: 0, lightness: 0 }
-    expect(
-      parseRenderManifest(
-        resealed((manifest) => {
-          manifest.render_params.selective_color = {
-            red: neutral,
-            magenta: neutral,
-          }
-        }),
-      ).ok,
-    ).toBe(true)
+  it('accepts selective color recorded as all eight bands', () => {
+    for (const bands of [
+      allBands(),
+      allBands({ blue: { hue: 0, saturation: -30, lightness: 5 } }),
+    ]) {
+      const record = resealed((manifest) => {
+        manifest.render_params.selective_color = bands
+      })
+      expect(parseRenderManifest(record)).toEqual({
+        ok: true,
+        manifest: record,
+      })
+    }
+  })
+
+  it('accepts an export that applies a LUT', () => {
+    const lutGraph = resolveExportColorGraph({
+      styleKind: 'custom',
+      intensity: 0.37,
+      builtinPreset: null,
+      lut: toLUTData(generateIdentityLUT(17)),
+      ...userColor,
+      rawRenderExposure: {
+        ...rawRenderExposure,
+        multiplier: 2 ** rawRenderExposure.ev,
+      },
+    })
+    if (!lutGraph.supported) throw new Error(lutGraph.message)
+    const written = createRenderManifest({
+      ...sealed(),
+      lut: {
+        kind: 'local-file',
+        filename: 'look.cube',
+        sha256: 'd'.repeat(64),
+        input_contract: lutContract,
+        output_contract: lutContract,
+      },
+      graph: lutGraph,
+      render_params: projectManifestRenderParams({
+        userColor,
+        intensity: 0.37,
+        rawRenderExposure,
+      }),
+      output: {
+        width: 4032,
+        height: 3024,
+        quality: 92,
+        filename: 'final.jpg',
+        sha256: 'b'.repeat(64),
+      },
+    })
+    const record = JSON.parse(JSON.stringify(written)) as unknown
+    expect(parseRenderManifest(record)).toEqual({ ok: true, manifest: record })
   })
 
   it('accepts calibration and both LUT identity kinds', () => {
@@ -353,7 +421,7 @@ describe('parseRenderManifest', () => {
     ],
     [
       'a descriptor its fingerprint does not cover',
-      (m) => (m.color_graph.descriptor.output_gamut = 'display-p3'),
+      (m) => (m.color_graph.descriptor.steps[1].ev = 4),
       ['color_graph.fingerprint'],
     ],
     [
@@ -373,22 +441,22 @@ describe('parseRenderManifest', () => {
     ],
     [
       'a string tone field',
-      (m) => (m.render_params.tone_curve = { contrast: '10' }),
+      (m) => (m.render_params.tone_curve.contrast = '10'),
       ['render_params.tone_curve.contrast'],
     ],
     [
       'a null color balance field',
-      (m) => (m.render_params.color_balance = { temperature: null }),
+      (m) => (m.render_params.color_balance.temperature = null),
       ['render_params.color_balance.temperature'],
     ],
     [
       'a string saturation field',
-      (m) => (m.render_params.saturation = { vibrance: '5' }),
+      (m) => (m.render_params.saturation.vibrance = '5'),
       ['render_params.saturation.vibrance'],
     ],
     [
       'an incomplete HSL band',
-      (m) => (m.render_params.selective_color = { red: { hue: 10 } }),
+      (m) => (m.render_params.selective_color = allBands({ red: { hue: 10 } })),
       [
         'render_params.selective_color.red.saturation',
         'render_params.selective_color.red.lightness',
@@ -496,16 +564,26 @@ describe('parseRenderManifest', () => {
   )
 })
 
-// Shapes no current writer seals: the writers always record a current
-// descriptor, every color section in full, the look strength and the RAW
-// exposure with its source. The v1 reader still accepts these when sealed;
-// they are listed so that refusing them is a visible change, not a broken
-// compatibility promise.
-describe('historical shapes the v1 reader still accepts', () => {
-  const historical: [string, (manifest: Json) => void][] = [
+// Shapes the current writers never seal: they always record a current
+// descriptor, every color section in full, selective color as all eight bands
+// or not at all, the look strength and the RAW exposure with its source. A
+// record an earlier writer sealed in one of these shapes keeps a valid seal,
+// so the reader refuses it for its structure, never completing or
+// normalizing it.
+describe('sealed records of retired shapes', () => {
+  const executable = [
+    'render_params.tone_curve',
+    'render_params.color_balance',
+    'render_params.saturation',
+    'render_params.intensity',
+    'render_params.raw_render_exposure_ev',
+    'render_params.raw_render_exposure_source',
+  ]
+  const retired: [string, (manifest: Json) => void, string[]][] = [
     [
       'a descriptor without a version',
       (m) => delete m.color_graph.descriptor.descriptor_version,
+      ['color_graph.descriptor.descriptor_version'],
     ],
     [
       'an older descriptor version',
@@ -513,37 +591,137 @@ describe('historical shapes the v1 reader still accepts', () => {
         m.color_graph.descriptor = { descriptor_version: 1 }
         m.color_graph.fingerprint = 'f'.repeat(64)
       },
+      ['color_graph.descriptor.descriptor_version'],
     ],
-    ['no look strength', (m) => delete m.render_params.intensity],
+    [
+      'no look strength',
+      (m) => delete m.render_params.intensity,
+      ['render_params.intensity'],
+    ],
     [
       'no RAW exposure',
       (m) => {
         delete m.render_params.raw_render_exposure_ev
         delete m.render_params.raw_render_exposure_source
       },
+      [
+        'render_params.raw_render_exposure_ev',
+        'render_params.raw_render_exposure_source',
+      ],
     ],
     [
       'a RAW exposure without its source',
       (m) => delete m.render_params.raw_render_exposure_source,
+      ['render_params.raw_render_exposure_source'],
     ],
-    ['no tone section', (m) => delete m.render_params.tone_curve],
-    ['no color balance section', (m) => delete m.render_params.color_balance],
-    ['no saturation section', (m) => delete m.render_params.saturation],
+    [
+      'no tone section',
+      (m) => delete m.render_params.tone_curve,
+      ['render_params.tone_curve'],
+    ],
+    [
+      'no color balance section',
+      (m) => delete m.render_params.color_balance,
+      ['render_params.color_balance'],
+    ],
+    [
+      'no saturation section',
+      (m) => delete m.render_params.saturation,
+      ['render_params.saturation'],
+    ],
     [
       'a partial tone section',
       (m) => (m.render_params.tone_curve = { contrast: 10 }),
+      [
+        'render_params.tone_curve.highlights',
+        'render_params.tone_curve.shadows',
+        'render_params.tone_curve.whites',
+        'render_params.tone_curve.blacks',
+      ],
     ],
     [
       'a Kelvin color balance',
       (m) => (m.render_params.color_balance = { temp_k: 5600, tint: -2 }),
+      [
+        'render_params.color_balance.temperature',
+        'render_params.color_balance.temp_k',
+      ],
     ],
-    ['only an exposure', (m) => (m.render_params = { exposure_ev: 0 })],
+    [
+      'a Kelvin temperature next to the slider',
+      (m) => (m.render_params.color_balance.temp_k = 5600),
+      ['render_params.color_balance.temp_k'],
+    ],
+    [
+      'only an exposure',
+      (m) => (m.render_params = { exposure_ev: 0 }),
+      executable,
+    ],
+    [
+      'two explicit neutral HSL bands',
+      (m) =>
+        (m.render_params.selective_color = {
+          red: neutralBand,
+          magenta: neutralBand,
+        }),
+      HSL_BAND_IDS.filter((band) => band !== 'red' && band !== 'magenta').map(
+        (band) => `render_params.selective_color.${band}`,
+      ),
+    ],
+    [
+      'one shifted HSL band',
+      (m) =>
+        (m.render_params.selective_color = {
+          aqua: { hue: 0, saturation: 15, lightness: 0 },
+        }),
+      HSL_BAND_IDS.filter((band) => band !== 'aqua').map(
+        (band) => `render_params.selective_color.${band}`,
+      ),
+    ],
   ]
 
-  it.each(historical)('accepts a resealed manifest with %s', (_label, edit) => {
-    const legacy = resealed(edit)
-    expect(parseRenderManifest(legacy)).toEqual({ ok: true, manifest: legacy })
+  it.each(retired)('refuses a sealed record with %s', (_label, edit, paths) => {
+    const record = resealed(edit)
+    expect(issuePaths(record)).toEqual(paths)
   })
+
+  it('refuses a record completed after its original seal for its hash first', () => {
+    const record = resealed((m) => delete m.render_params.intensity)
+    record.render_params.intensity = 1
+    expect(issuePaths(record)).toEqual(['manifest_sha256'])
+  })
+})
+
+describe('sealed records of the current version with a malformed graph', () => {
+  const malformed: [string, (descriptor: Json) => void, string[]][] = [
+    [
+      'a later descriptor version',
+      (d) => (d.descriptor_version = 3),
+      ['color_graph.descriptor.descriptor_version'],
+    ],
+    [
+      'a step missing a field',
+      (d) => delete d.steps[1].multiplier,
+      ['color_graph.descriptor.steps.1.multiplier'],
+    ],
+    [
+      'a dropped step',
+      (d) => d.steps.splice(7, 1),
+      ['color_graph.descriptor.steps'],
+    ],
+    [
+      'an extra descriptor field',
+      (d) => (d.x_note = 'kept'),
+      ['color_graph.descriptor.x_note'],
+    ],
+  ]
+
+  it.each(malformed)(
+    'refuses a record whose fingerprint covers %s',
+    (_label, edit, paths) => {
+      expect(issuePaths(regraphed(edit))).toEqual(paths)
+    },
+  )
 })
 
 describe('reading render params from an untrusted manifest', () => {
@@ -578,21 +756,9 @@ describe('reading render params from an untrusted manifest', () => {
   })
 
   it('reads omitted HSL and an explicit all-neutral record alike', () => {
-    const neutral = { hue: 0, saturation: 0, lightness: 0 }
     const current = JSON.parse(JSON.stringify(sealed())) as Json
     const explicit = resealed((manifest) => {
-      manifest.render_params.selective_color = Object.fromEntries(
-        [
-          'red',
-          'orange',
-          'yellow',
-          'green',
-          'aqua',
-          'blue',
-          'purple',
-          'magenta',
-        ].map((band) => [band, neutral]),
-      )
+      manifest.render_params.selective_color = allBands()
     })
     const hash = explicit.manifest_sha256
     const read = readParams(current)
@@ -609,7 +775,9 @@ describe('reading render params from an untrusted manifest', () => {
       readParams(
         resealed((manifest) => {
           manifest.render_params.exposure_ev = 'x'
-          manifest.render_params.selective_color = { red: { hue: 10 } }
+          manifest.render_params.selective_color = allBands({
+            red: { hue: 10 },
+          })
         }),
       ),
     ).toEqual({

@@ -364,7 +364,11 @@ describe('candidate export input integrity', () => {
     const { raw_render_exposure_ev: _ev, ...params } = manifest.render_params
     await writeJsonAtomic(
       paths.manifest,
-      sealRenderManifest({ ...manifest, render_params: params }),
+      // A retired shape: the current params type cannot express it.
+      sealRenderManifest({
+        ...manifest,
+        render_params: params as RenderManifest['render_params'],
+      }),
     )
     await expectRefusedBeforeExport()
   })

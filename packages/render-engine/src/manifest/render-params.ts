@@ -21,10 +21,10 @@ import type {
   RenderParams,
 } from './render-manifest'
 
-/** The RAW render exposure a manifest records; older manifests may lack the source. */
+/** The RAW render exposure a manifest records, with its provenance. */
 export interface RecordedRawRenderExposure {
   readonly ev: number
-  readonly source: RawRenderExposureSource | null
+  readonly source: RawRenderExposureSource
 }
 
 export interface ManifestRenderParamsInput {
@@ -32,10 +32,7 @@ export interface ManifestRenderParamsInput {
   readonly userColor: UserColorIntentInput
   /** Look strength the color graph used, continuous in 0..1; recorded as is. */
   readonly intensity: number
-  readonly rawRenderExposure: {
-    readonly ev: number
-    readonly source: RawRenderExposureSource
-  }
+  readonly rawRenderExposure: RecordedRawRenderExposure
   /** Present only when a geometry was applied at full resolution. */
   readonly geometry?: GeometryParams
 }
@@ -43,10 +40,8 @@ export interface ManifestRenderParamsInput {
 /** What `render_params` says about a render, read back. */
 export interface ManifestRenderParamsIntent {
   readonly userColor: UserColorIntent
-  /** `null` when the manifest records no strength; the reader picks its default. */
-  readonly intensity: number | null
-  /** `null` when the manifest records no raw-render EV. */
-  readonly rawRenderExposure: RecordedRawRenderExposure | null
+  readonly intensity: number
+  readonly rawRenderExposure: RecordedRawRenderExposure
   readonly geometry: GeometryParams | null
 }
 
@@ -87,45 +82,39 @@ export function projectManifestRenderParams(
   }
 }
 
-function finiteNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
 /**
- * Read `render_params` back into user color intent. Missing sections and
- * bands read as neutral; recorded exposure, strength and geometry are kept as
- * written. The look selection and LUT are not part of the result.
+ * Read `render_params` back into user color intent. Omitted selective color
+ * reads as neutral, the only field a current record may leave out; every
+ * other field is read as recorded. The look selection and LUT are not part
+ * of the result.
  *
  * This projects params already typed as `RenderParams`; it validates
  * nothing. A manifest read from outside must pass `parseRenderManifest`
- * first, which verifies its hash and holds every section to the v1 shape.
+ * first, which verifies its hash and holds every executable field to the
+ * shape the current writers record.
  */
 export function invertManifestRenderParams(
   params: RenderParams,
 ): ManifestRenderParamsIntent {
-  const exposureEv = finiteNumber(params.raw_render_exposure_ev)
   return {
     userColor: normalizeUserColorIntent({
       userExposureEv: params.exposure_ev,
-      userContrast: params.tone_curve?.contrast,
-      userHighlights: params.tone_curve?.highlights,
-      userShadows: params.tone_curve?.shadows,
-      userWhites: params.tone_curve?.whites,
-      userBlacks: params.tone_curve?.blacks,
-      userTemperature: params.color_balance?.temperature,
-      userTint: params.color_balance?.tint,
-      userSaturation: params.saturation?.saturation,
-      userVibrance: params.saturation?.vibrance,
+      userContrast: params.tone_curve.contrast,
+      userHighlights: params.tone_curve.highlights,
+      userShadows: params.tone_curve.shadows,
+      userWhites: params.tone_curve.whites,
+      userBlacks: params.tone_curve.blacks,
+      userTemperature: params.color_balance.temperature,
+      userTint: params.color_balance.tint,
+      userSaturation: params.saturation.saturation,
+      userVibrance: params.saturation.vibrance,
       selectiveColor: params.selective_color,
     }),
-    intensity: finiteNumber(params.intensity),
-    rawRenderExposure:
-      exposureEv === null
-        ? null
-        : {
-            ev: exposureEv,
-            source: params.raw_render_exposure_source ?? null,
-          },
+    intensity: params.intensity,
+    rawRenderExposure: {
+      ev: params.raw_render_exposure_ev,
+      source: params.raw_render_exposure_source,
+    },
     geometry: params.geometry ?? null,
   }
 }

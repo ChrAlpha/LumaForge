@@ -2,28 +2,40 @@
 //
 // A valid `manifest_sha256` only proves the content is what its writer
 // sealed; anyone can seal malformed content. Readers that act on a manifest
-// first verify the hash over the complete parsed object, then check every
-// section they could execute against the v1 shape before treating the object
-// as a `RenderManifest`.
+// first verify the hash over the complete object exactly as given, then
+// check every section they could execute against the shape the current
+// writers record before treating the object as a `RenderManifest`.
 //
 // Rules:
 //   - Nothing is coerced, clamped or defaulted. A string where a number
 //     belongs, a non-finite number, a fractional dimension or `null` in an
 //     optional field is refused; the manifest is returned exactly as given.
-//   - Fields the v1 shape marks optional may be absent, so manifests written
-//     before a field existed keep their identity.
-//   - Fields this reader does not know are left alone: the hash already
-//     covers them.
+//   - Everything a replay executes must be recorded the way the current
+//     writers record it: a current color-graph descriptor with its step
+//     structure and fingerprint, complete tone, color balance and saturation
+//     sections, the look strength, and the RAW render exposure with its
+//     provenance. A record an earlier writer sealed without one of these is
+//     refused, never completed.
+//   - Selective color is either omitted (neutral) or recorded as all eight
+//     bands with all three axes; a geometry is recorded only when one was
+//     applied. Calibration is recorded as `null` or as a catalog identity.
+//   - The executable sections are closed: a field the current writers never
+//     record there is refused. Elsewhere, fields this reader does not know
+//     are left alone: the hash already covers them.
 //   - Value ranges of the user color params are not checked here; replaying
 //     readers hold those to their own params schema.
 
 import { invertMatrix, isMatrix3 } from '../export/geometry/matrix'
 import { computeManifestSha256 } from './canonicalize'
-import type { ColorGraphDescriptor } from './color-graph-descriptor'
+import type { FieldRules, Fields } from './color-graph-validation'
 import {
-  COLOR_GRAPH_DESCRIPTOR_VERSION,
-  fingerprintColorGraph,
-} from './color-graph-descriptor'
+  checkColorGraphIdentity,
+  checkRecord,
+  describeValue,
+  HSL_BANDS,
+  isFields,
+  SHA256_HEX,
+} from './color-graph-validation'
 import type { RenderManifest } from './render-manifest'
 
 export interface RenderManifestIssue {
@@ -36,9 +48,6 @@ export type ParseRenderManifestResult =
   | { readonly ok: true; readonly manifest: RenderManifest }
   | { readonly ok: false; readonly issues: readonly RenderManifestIssue[] }
 
-type Fields = Readonly<Record<string, unknown>>
-
-const SHA256_HEX = /^[0-9a-f]{64}$/
 const ISO_8601_UTC_OR_OFFSET =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
 
@@ -64,23 +73,11 @@ const ENVIRONMENT_VERSIONS = [
   'luma_jpeg_runtime',
 ] as const
 
-function isFields(value: unknown): value is Fields {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function describeValue(value: unknown): string {
-  if (value === undefined) return 'missing'
-  if (value === null) return 'null'
-  if (Array.isArray(value)) return 'an array'
-  if (typeof value === 'string') return `the string ${JSON.stringify(value)}`
-  if (typeof value === 'number') return `the number ${String(value)}`
-  return `a ${typeof value}`
-}
-
 class IssueList {
   readonly issues: RenderManifestIssue[] = []
 
-  add(path: string, message: string): void {
+  /** Records one issue; usable as an `IssueReporter`. */
+  readonly add = (path: string, message: string): void => {
     this.issues.push({ path, message })
   }
 
@@ -146,10 +143,6 @@ class IssueList {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       this.add(path, `must be a finite number, got ${describeValue(value)}.`)
     }
-  }
-
-  optionalFinite(parent: Fields, key: string, path: string): void {
-    if (Object.hasOwn(parent, key)) this.finite(parent, key, path)
   }
 
   integer(
@@ -254,74 +247,17 @@ function checkLut(list: IssueList, manifest: Fields): void {
   checkLutContract(list, lut, 'output_contract')
 }
 
-function fingerprintOf(descriptor: Fields): string | null {
-  try {
-    return fingerprintColorGraph(descriptor as ColorGraphDescriptor)
-  } catch {
-    return null
-  }
-}
-
-/**
- * The descriptor stays opaque except for its version. A descriptor of the
- * version this engine writes must hash to the recorded fingerprint, so a
- * reader that consults it reads what the fingerprint covers; older versions
- * cannot be recomputed and are left to the fingerprint alone.
- */
-function checkColorGraph(list: IssueList, manifest: Fields): void {
-  const graph = list.section(manifest, 'color_graph', 'color_graph')
-  if (!graph) return
-  list.sha256(graph, 'fingerprint', 'color_graph.fingerprint')
-  const descriptor = list.section(graph, 'descriptor', 'color_graph.descriptor')
-  if (!descriptor || !Object.hasOwn(descriptor, 'descriptor_version')) return
-  const before = list.issues.length
-  list.integer(
-    descriptor,
-    'descriptor_version',
-    'color_graph.descriptor.descriptor_version',
-    1,
-  )
-  if (
-    list.issues.length !== before ||
-    descriptor.descriptor_version !== COLOR_GRAPH_DESCRIPTOR_VERSION ||
-    typeof graph.fingerprint !== 'string' ||
-    !SHA256_HEX.test(graph.fingerprint)
-  ) {
-    return
-  }
-  if (fingerprintOf(descriptor) !== graph.fingerprint) {
-    list.add(
-      'color_graph.fingerprint',
-      'does not match the recorded descriptor.',
-    )
-  }
-}
-
-function checkOptionalNumbers(
-  list: IssueList,
-  params: Fields,
-  key: string,
-  fields: readonly string[],
-): void {
-  const path = `render_params.${key}`
-  const section = list.optionalSection(params, key, path)
-  if (!section) return
-  for (const field of fields) {
-    list.optionalFinite(section, field, `${path}.${field}`)
-  }
-}
-
-function checkSelectiveColor(list: IssueList, params: Fields): void {
-  const path = 'render_params.selective_color'
-  const bands = list.optionalSection(params, 'selective_color', path)
-  if (!bands) return
-  for (const band of Object.keys(bands)) {
-    const shift = list.section(bands, band, `${path}.${band}`)
-    if (!shift) continue
-    for (const axis of ['hue', 'saturation', 'lightness']) {
-      list.finite(shift, axis, `${path}.${band}.${axis}`)
-    }
-  }
+/** The executable color sections, each recorded complete. */
+const COLOR_SECTIONS: Readonly<Record<string, FieldRules>> = {
+  tone_curve: {
+    highlights: 'number',
+    shadows: 'number',
+    whites: 'number',
+    blacks: 'number',
+    contrast: 'number',
+  },
+  color_balance: { temperature: 'number', tint: 'number' },
+  saturation: { saturation: 'number', vibrance: 'number' },
 }
 
 function checkGeometry(list: IssueList, params: Fields): void {
@@ -341,34 +277,29 @@ function checkRenderParams(list: IssueList, manifest: Fields): void {
   const params = list.section(manifest, 'render_params', 'render_params')
   if (!params) return
   list.finite(params, 'exposure_ev', 'render_params.exposure_ev')
-  checkOptionalNumbers(list, params, 'tone_curve', [
-    'highlights',
-    'shadows',
-    'whites',
-    'blacks',
-    'contrast',
-  ])
-  checkOptionalNumbers(list, params, 'color_balance', [
-    'temp_k',
-    'tint',
-    'temperature',
-  ])
-  checkOptionalNumbers(list, params, 'saturation', ['saturation', 'vibrance'])
-  checkSelectiveColor(list, params)
-  list.optionalFinite(params, 'intensity', 'render_params.intensity')
-  list.optionalFinite(
+  for (const [key, rules] of Object.entries(COLOR_SECTIONS)) {
+    checkRecord(params[key], rules, `render_params.${key}`, list.add)
+  }
+  if (Object.hasOwn(params, 'selective_color')) {
+    checkRecord(
+      params.selective_color,
+      HSL_BANDS,
+      'render_params.selective_color',
+      list.add,
+    )
+  }
+  list.finite(params, 'intensity', 'render_params.intensity')
+  list.finite(
     params,
     'raw_render_exposure_ev',
     'render_params.raw_render_exposure_ev',
   )
-  if (Object.hasOwn(params, 'raw_render_exposure_source')) {
-    list.oneOf(
-      params,
-      'raw_render_exposure_source',
-      'render_params.raw_render_exposure_source',
-      RAW_RENDER_EXPOSURE_SOURCES,
-    )
-  }
+  list.oneOf(
+    params,
+    'raw_render_exposure_source',
+    'render_params.raw_render_exposure_source',
+    RAW_RENDER_EXPOSURE_SOURCES,
+  )
   checkGeometry(list, params)
 }
 
@@ -479,7 +410,7 @@ export function parseRenderManifest(value: unknown): ParseRenderManifestResult {
   checkSourceRaw(list, value)
   checkCalibration(list, value)
   checkLut(list, value)
-  checkColorGraph(list, value)
+  checkColorGraphIdentity(value.color_graph, 'color_graph', list.add)
   checkRenderParams(list, value)
   checkPolicy(list, value)
   checkEnvironment(list, value)
