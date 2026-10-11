@@ -1,5 +1,8 @@
 // @vitest-environment node
-import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_SELECTIVE_COLOR,
+  resolveExportColorGraph,
+} from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import { INVALID_EXPORT_GEOMETRY } from '../export/geometry/export-geometry'
@@ -21,6 +24,7 @@ const resolved = resolveExportColorGraph({
   intensity: 1,
   builtinPreset: null,
   lut: null,
+  selectiveColor: NEUTRAL_SELECTIVE_COLOR,
   rawRenderExposure: { ...rawRenderExposure, multiplier: 1 },
 })
 if (!resolved.supported) throw new Error(resolved.message)

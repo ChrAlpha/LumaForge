@@ -28,6 +28,7 @@ const resolved = resolveExportColorGraph({
   builtinPreset: null,
   lut: null,
   ...userColor,
+  selectiveColor: NEUTRAL_USER_COLOR_INTENT.selectiveColor,
   rawRenderExposure: {
     ...rawRenderExposure,
     multiplier: 2 ** rawRenderExposure.ev,
@@ -168,6 +169,7 @@ describe('parseRenderManifest', () => {
       builtinPreset: null,
       lut: toLUTData(generateIdentityLUT(17)),
       ...userColor,
+      selectiveColor: NEUTRAL_USER_COLOR_INTENT.selectiveColor,
       rawRenderExposure: {
         ...rawRenderExposure,
         multiplier: 2 ** rawRenderExposure.ev,

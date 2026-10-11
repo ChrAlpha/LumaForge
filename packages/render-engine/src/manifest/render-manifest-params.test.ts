@@ -1,5 +1,8 @@
 // @vitest-environment node
-import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_SELECTIVE_COLOR,
+  resolveExportColorGraph,
+} from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -30,6 +33,7 @@ const resolved = resolveExportColorGraph({
   builtinPreset: null,
   lut: null,
   ...userColor,
+  selectiveColor: NEUTRAL_SELECTIVE_COLOR,
   rawRenderExposure: {
     ev: -0.2177,
     multiplier: 2 ** -0.2177,

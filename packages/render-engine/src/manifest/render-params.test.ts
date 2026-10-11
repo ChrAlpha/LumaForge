@@ -116,6 +116,8 @@ function graphFingerprint(
   const graph = resolveExportColorGraph({
     ...look,
     ...userColor,
+    selectiveColor:
+      userColor.selectiveColor ?? NEUTRAL_USER_COLOR_INTENT.selectiveColor,
     lut: null,
     rawRenderExposure: { ...exposure, multiplier: 2 ** exposure.ev },
   })

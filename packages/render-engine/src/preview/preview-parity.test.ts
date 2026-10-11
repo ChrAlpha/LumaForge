@@ -2,6 +2,7 @@ import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import {
   createRowBandProcessor,
   exposureMultiplierFromEv,
+  NEUTRAL_SELECTIVE_COLOR,
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
@@ -21,6 +22,7 @@ function buildGraph(
     builtinPreset: null,
     lut: null,
     ...over,
+    selectiveColor: over.selectiveColor ?? NEUTRAL_SELECTIVE_COLOR,
   })
   if (!g.supported) throw new Error('expected supported graph')
   return g

@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 
 import {
   generateIdentityLUT,
+  NEUTRAL_SELECTIVE_COLOR,
   resolveExportColorGraph,
   toLUTData,
 } from '@lumaforge/luma-color-runtime'
@@ -145,6 +146,7 @@ describe('sealRenderManifest / verifyManifestSha256 roundtrip', () => {
       builtinPreset: null,
       lut: toLUTData(generateIdentityLUT(17)),
       ...userColor,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
       rawRenderExposure: {
         ...rawRenderExposure,
         multiplier: 2 ** rawRenderExposure.ev,

@@ -1,6 +1,7 @@
 import type { SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 import {
   createRowBandProcessor,
+  NEUTRAL_SELECTIVE_COLOR,
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
@@ -13,6 +14,7 @@ function neutralGraph(): SupportedExportColorGraphDescriptor {
     intensity: 0,
     builtinPreset: null,
     lut: null,
+    selectiveColor: NEUTRAL_SELECTIVE_COLOR,
   })
   if (!g.supported) throw new Error('expected supported graph')
   return g

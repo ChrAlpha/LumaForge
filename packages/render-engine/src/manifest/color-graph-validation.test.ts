@@ -34,6 +34,8 @@ function identityFor(input: Partial<ExportColorGraphInput> = {}): Json {
     lut: null,
     rawRenderExposure: exposure,
     ...input,
+    selectiveColor:
+      input.selectiveColor ?? NEUTRAL_USER_COLOR_INTENT.selectiveColor,
   })
   if (!graph.supported) throw new Error(graph.message)
   return JSON.parse(JSON.stringify(colorGraphIdentity(graph))) as Json

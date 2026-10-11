@@ -1,6 +1,7 @@
 // @vitest-environment node
 import {
   generateIdentityLUT,
+  NEUTRAL_SELECTIVE_COLOR,
   resolveExportColorGraph,
   toLUTData,
 } from '@lumaforge/luma-color-runtime'
@@ -23,6 +24,7 @@ function graphFor(input: { contrast?: number; lut?: boolean }) {
     lut: input.lut ? toLUTData(generateIdentityLUT(17)) : null,
     rawRenderExposure: exposure,
     userContrast: input.contrast ?? 0,
+    selectiveColor: NEUTRAL_SELECTIVE_COLOR,
   })
   if (!graph.supported) throw new Error(graph.message)
   return graph
