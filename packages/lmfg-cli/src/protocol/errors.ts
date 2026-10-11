@@ -115,13 +115,6 @@ export class LmfgError extends Error {
   }
 }
 
-/**
- * The RAW runtime codes the CLI maps: every runtime code, plus
- * RAW_CALIBRATION_FAILED, which a runtime build that classifies calibration
- * failures reports.
- */
-type MappedRawErrorCode = LumaRawErrorCode | 'RAW_CALIBRATION_FAILED'
-
 // Every runtime code maps explicitly; a code from a newer runtime build that is
 // not listed falls back to internal and keeps the code in details.runtime_code.
 const RAW_CODE_MAP = {
@@ -138,7 +131,7 @@ const RAW_CODE_MAP = {
   RAW_CALIBRATION_FAILED: 'render.failed',
   RAW_JOB_CANCELLED: 'cancelled',
   RAW_WORKER_PROTOCOL_ERROR: 'internal',
-} as const satisfies Record<MappedRawErrorCode, LmfgErrorCode>
+} as const satisfies Record<LumaRawErrorCode, LmfgErrorCode>
 
 /**
  * Looks a runtime code up among the map's own keys only, so a name the object
@@ -146,7 +139,7 @@ const RAW_CODE_MAP = {
  */
 function lmfgCodeForRawCode(runtimeCode: string): LmfgErrorCode {
   return Object.hasOwn(RAW_CODE_MAP, runtimeCode)
-    ? RAW_CODE_MAP[runtimeCode as MappedRawErrorCode]
+    ? RAW_CODE_MAP[runtimeCode as LumaRawErrorCode]
     : 'internal'
 }
 

@@ -24,77 +24,81 @@ type RawMapping = {
   retryable: boolean
 }
 
-// Every runtime code needs a row: a new code fails typecheck until it is mapped.
-// RAW_CALIBRATION_FAILED is mapped ahead of the runtime union that adds it.
-type MappedRawCode = LumaRawErrorCode | 'RAW_CALIBRATION_FAILED'
-
+// The expected taxonomy, written out independently of the CLI's own map and
+// exit table: every runtime code needs exactly one row, so a code the runtime
+// adds or drops fails typecheck until this table follows it.
 const RAW_MAPPINGS = {
   RAW_RUNTIME_UNAVAILABLE: {
     code: 'runtime.unavailable',
-    exitCode: EXIT_CODES.unsupported,
+    exitCode: 3,
     retryable: false,
   },
   RAW_CROSS_ORIGIN_ISOLATION_REQUIRED: {
     code: 'runtime.unavailable',
-    exitCode: EXIT_CODES.unsupported,
+    exitCode: 3,
     retryable: false,
   },
   RAW_UNSUPPORTED_FORMAT: {
     code: 'source.unsupported',
-    exitCode: EXIT_CODES.unsupported,
+    exitCode: 3,
     retryable: false,
   },
   RAW_OPEN_FAILED: {
     code: 'source.unsupported',
-    exitCode: EXIT_CODES.unsupported,
+    exitCode: 3,
     retryable: false,
   },
   RAW_METADATA_FAILED: {
     code: 'source.unsupported',
-    exitCode: EXIT_CODES.unsupported,
+    exitCode: 3,
     retryable: false,
   },
   RAW_THUMBNAIL_UNAVAILABLE: {
     code: 'render.failed',
-    exitCode: EXIT_CODES.render,
+    exitCode: 7,
     retryable: true,
   },
   RAW_QUICK_DECODE_FAILED: {
     code: 'render.failed',
-    exitCode: EXIT_CODES.render,
+    exitCode: 7,
     retryable: true,
   },
   RAW_HQ_DECODE_FAILED: {
     code: 'render.failed',
-    exitCode: EXIT_CODES.render,
+    exitCode: 7,
     retryable: true,
   },
   RAW_WINDOW_READ_FAILED: {
     code: 'render.failed',
-    exitCode: EXIT_CODES.render,
+    exitCode: 7,
+    retryable: true,
+  },
+  RAW_CALIBRATION_FAILED: {
+    code: 'render.failed',
+    exitCode: 7,
     retryable: true,
   },
   RAW_MEMORY_LIMIT: {
     code: 'render.failed',
-    exitCode: EXIT_CODES.render,
+    exitCode: 7,
     retryable: true,
   },
   RAW_JOB_CANCELLED: {
     code: 'cancelled',
-    exitCode: EXIT_CODES.cancelled,
+    exitCode: 9,
     retryable: false,
   },
   RAW_WORKER_PROTOCOL_ERROR: {
     code: 'internal',
-    exitCode: EXIT_CODES.internal,
+    exitCode: 10,
     retryable: false,
   },
-  RAW_CALIBRATION_FAILED: {
-    code: 'render.failed',
-    exitCode: EXIT_CODES.render,
-    retryable: true,
-  },
-} as const satisfies Record<MappedRawCode, RawMapping>
+} as const satisfies Record<LumaRawErrorCode, RawMapping>
+
+const RAW_MAPPING_ROWS = Object.entries(RAW_MAPPINGS) as [
+  LumaRawErrorCode,
+  RawMapping,
+][]
 
 describe('lmfgError', () => {
   it('maps codes to spec exit codes', () => {
@@ -154,46 +158,78 @@ describe('toLmfgError', () => {
     expect(error.details?.issues).toBeInstanceOf(Array)
   })
 
-  it.each(Object.entries(RAW_MAPPINGS) as [MappedRawCode, RawMapping][])(
-    'maps RAW runtime code %s',
+  it.each(RAW_MAPPING_ROWS)(
+    'maps RAW runtime code %s through the error envelope',
     (runtimeCode, expected) => {
-      const cause = new LumaRawRuntimeError(
-        runtimeCode as LumaRawErrorCode,
-        'runtime said no',
-      )
+      const cause = new LumaRawRuntimeError(runtimeCode, 'runtime said no')
       const error = toLmfgError(cause)
       expect({
         code: error.code,
         exitCode: error.exitCode,
         retryable: error.retryable,
       }).toEqual(expected)
-      expect(error.message).toBe('runtime said no')
       expect(error.cause).toBe(cause)
-      expect(error.details).toEqual({ runtime_code: runtimeCode })
-      expect(error.suggestedNextActions).toEqual([])
+      expect(error.toEnvelope()).toEqual({
+        schema: 'lmfg.error.v1',
+        ok: false,
+        error: {
+          code: expected.code,
+          message: 'runtime said no',
+          retryable: expected.retryable,
+          suggested_next_actions: [],
+          details: { runtime_code: runtimeCode },
+        },
+      })
     },
   )
 
-  it('serializes a RAW window read failure as a retryable render failure', () => {
-    const error = toLmfgError(
-      new LumaRawRuntimeError(
-        'RAW_WINDOW_READ_FAILED',
-        'Processed window read failed.',
-      ),
-    )
-    expect(error.exitCode).toBe(7)
-    expect(error.toEnvelope()).toEqual({
-      schema: 'lmfg.error.v1',
-      ok: false,
-      error: {
-        code: 'render.failed',
-        message: 'Processed window read failed.',
-        retryable: true,
-        suggested_next_actions: [],
-        details: { runtime_code: 'RAW_WINDOW_READ_FAILED' },
-      },
-    })
-  })
+  it.each(RAW_MAPPING_ROWS)(
+    'classifies a cleanup step that fails with RAW code %s',
+    (runtimeCode, expected) => {
+      const failure = cleanupFailure(
+        'end_processed_window_export',
+        new LumaRawRuntimeError(runtimeCode, 'cleanup said no'),
+      )
+      // A runtime error carries no errno, and its message stays out.
+      expect(failure).toEqual({
+        step: 'end_processed_window_export',
+        code: expected.code,
+      })
+    },
+  )
+
+  it.each(RAW_MAPPING_ROWS)(
+    'keeps RAW code %s as the primary failure beside bounded cleanup failures',
+    (runtimeCode, expected) => {
+      const primary = new LumaRawRuntimeError(runtimeCode, 'runtime said no')
+      const failures = Array.from(
+        { length: MAX_CLEANUP_FAILURES + 2 },
+        (_, index) =>
+          cleanupFailure(
+            index % 2 === 0 ? 'end_processed_window_export' : 'close_temp_file',
+            new LumaRawRuntimeError('RAW_JOB_CANCELLED', 'cancelled'),
+          ),
+      )
+      const combined = toLmfgError(withCleanupFailures(primary, failures))
+      expect(combined.exitCode).toBe(expected.exitCode)
+      expect(combined.toEnvelope()).toEqual({
+        schema: 'lmfg.error.v1',
+        ok: false,
+        error: {
+          code: expected.code,
+          message: 'runtime said no',
+          retryable: expected.retryable,
+          suggested_next_actions: [],
+          details: {
+            runtime_code: runtimeCode,
+            cleanup_failures: failures.slice(0, MAX_CLEANUP_FAILURES),
+            cleanup_failures_omitted: 2,
+          },
+        },
+      })
+      expect(cleanupFailuresOf(combined)).toEqual(failures)
+    },
+  )
 
   it('maps RAW codes from a newer runtime to internal and keeps the code', () => {
     const cause = new LumaRawRuntimeError(
@@ -249,27 +285,6 @@ describe('toLmfgError', () => {
       runtime_code: 'constructor',
       cleanup_failures: [failure],
     })
-  })
-
-  it('maps RAW runtime errors', () => {
-    expect(
-      toLmfgError(new LumaRawRuntimeError('RAW_UNSUPPORTED_FORMAT', 'nope'))
-        .code,
-    ).toBe('source.unsupported')
-    expect(
-      toLmfgError(new LumaRawRuntimeError('RAW_JOB_CANCELLED', 'nope')).code,
-    ).toBe('cancelled')
-    expect(
-      toLmfgError(new LumaRawRuntimeError('RAW_MEMORY_LIMIT', 'nope')).code,
-    ).toBe('render.failed')
-    expect(
-      toLmfgError(new LumaRawRuntimeError('RAW_WINDOW_READ_FAILED', 'nope'))
-        .code,
-    ).toBe('render.failed')
-    expect(
-      toLmfgError(new LumaRawRuntimeError('RAW_RUNTIME_UNAVAILABLE', 'nope'))
-        .code,
-    ).toBe('runtime.unavailable')
   })
 
   it('maps engine sentinel messages and abort errors', () => {
