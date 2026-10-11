@@ -83,34 +83,43 @@ export type CandidatePaths = {
 }
 
 export function createIterationStore(root: string, sessionId: string) {
-  const p = workspacePaths
   function candidatePaths(
     iterationId: string,
     candidateId: string,
   ): CandidatePaths {
     return {
-      dir: p.candidate(root, sessionId, iterationId, candidateId),
-      preview: p.candidatePreviewFile(
+      dir: workspacePaths.candidate(root, sessionId, iterationId, candidateId),
+      preview: workspacePaths.candidatePreviewFile(
         root,
         sessionId,
         iterationId,
         candidateId,
       ),
-      manifest: p.candidateManifestFile(
+      manifest: workspacePaths.candidateManifestFile(
         root,
         sessionId,
         iterationId,
         candidateId,
       ),
-      metrics: p.candidateMetricsFile(
+      metrics: workspacePaths.candidateMetricsFile(
         root,
         sessionId,
         iterationId,
         candidateId,
       ),
-      params: p.candidateParamsFile(root, sessionId, iterationId, candidateId),
-      tile: p.candidateTileFile(root, sessionId, iterationId, candidateId),
-      tileMeta: p.candidateTileMetaFile(
+      params: workspacePaths.candidateParamsFile(
+        root,
+        sessionId,
+        iterationId,
+        candidateId,
+      ),
+      tile: workspacePaths.candidateTileFile(
+        root,
+        sessionId,
+        iterationId,
+        candidateId,
+      ),
+      tileMeta: workspacePaths.candidateTileMetaFile(
         root,
         sessionId,
         iterationId,
@@ -120,7 +129,7 @@ export function createIterationStore(root: string, sessionId: string) {
   }
 
   async function read(iterationId: string): Promise<IterationRecord> {
-    const file = p.iterationPlanFile(root, sessionId, iterationId)
+    const file = workspacePaths.iterationPlanFile(root, sessionId, iterationId)
     if (!(await fileExists(file))) {
       throw new LmfgError('iteration.not_found', {
         message: `Iteration "${iterationId}" was not found in session ${sessionId}.`,
@@ -133,10 +142,10 @@ export function createIterationStore(root: string, sessionId: string) {
   return {
     candidatePaths,
     async create(record: IterationRecord): Promise<string> {
-      const dir = p.iteration(root, sessionId, record.id)
-      await ensureDir(p.candidates(root, sessionId, record.id))
+      const dir = workspacePaths.iteration(root, sessionId, record.id)
+      await ensureDir(workspacePaths.candidates(root, sessionId, record.id))
       await writeJsonAtomic(
-        p.iterationPlanFile(root, sessionId, record.id),
+        workspacePaths.iterationPlanFile(root, sessionId, record.id),
         record,
       )
       return dir
@@ -147,7 +156,7 @@ export function createIterationStore(root: string, sessionId: string) {
       event: Record<string, unknown>,
     ): Promise<void> {
       await appendLine(
-        p.iterationEventsFile(root, sessionId, iterationId),
+        workspacePaths.iterationEventsFile(root, sessionId, iterationId),
         JSON.stringify({ ...event, schema: 'lmfg.event.v1' }),
       )
     },
@@ -183,7 +192,7 @@ export function createIterationStore(root: string, sessionId: string) {
       return paths
     },
     async listCandidates(iterationId: string): Promise<string[]> {
-      return listDirs(p.candidates(root, sessionId, iterationId))
+      return listDirs(workspacePaths.candidates(root, sessionId, iterationId))
     },
     async readCandidateTile(
       iterationId: string,
@@ -264,8 +273,13 @@ export function createIterationStore(root: string, sessionId: string) {
       input: { jpeg: Uint8Array; map: ContactSheetMap; name?: string },
     ): Promise<{ sheet: string; map: string }> {
       ContactSheetMapSchema.parse(input.map)
-      const sheet = p.contactSheetFile(root, sessionId, iterationId, input.name)
-      const map = p.contactSheetMapFile(
+      const sheet = workspacePaths.contactSheetFile(
+        root,
+        sessionId,
+        iterationId,
+        input.name,
+      )
+      const map = workspacePaths.contactSheetMapFile(
         root,
         sessionId,
         iterationId,

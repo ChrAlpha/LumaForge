@@ -183,9 +183,8 @@ function jpegDimensions(bytes: Buffer): { width: number; height: number } {
 
 async function loadImage(cwd: string, input: ImageReadInput) {
   const root = await realpath(resolveWorkspaceRoot(cwd, input.workspace))
-  const paths = workspacePaths
   const session = SessionRecordSchema.parse(
-    await readMetadata(paths.sessionFile(root, input.session)),
+    await readMetadata(workspacePaths.sessionFile(root, input.session)),
   )
   if (session.id !== input.session)
     throw new Error(
@@ -197,14 +196,22 @@ async function loadImage(cwd: string, input: ImageReadInput) {
   let map: ContactSheetMap | null = null
   let tags = new Map<string, string | null>()
   if (artifact.kind === 'preview') {
-    path = paths.previewFile(root, input.session, artifact.preview_id)
+    path = workspacePaths.previewFile(root, input.session, artifact.preview_id)
     manifest = await readManifest(
-      paths.previewManifestFile(root, input.session, artifact.preview_id),
+      workspacePaths.previewManifestFile(
+        root,
+        input.session,
+        artifact.preview_id,
+      ),
     )
   } else {
     const plan = IterationRecordSchema.parse(
       await readMetadata(
-        paths.iterationPlanFile(root, input.session, artifact.iteration_id),
+        workspacePaths.iterationPlanFile(
+          root,
+          input.session,
+          artifact.iteration_id,
+        ),
       ),
     )
     if (plan.id !== artifact.iteration_id || plan.session_id !== input.session)
@@ -217,14 +224,14 @@ async function loadImage(cwd: string, input: ImageReadInput) {
     if (artifact.kind === 'candidate') {
       if (!tags.has(artifact.candidate_id))
         throw new Error('Candidate is not registered in the iteration.')
-      path = paths.candidatePreviewFile(
+      path = workspacePaths.candidatePreviewFile(
         root,
         input.session,
         artifact.iteration_id,
         artifact.candidate_id,
       )
       manifest = await readManifest(
-        paths.candidateManifestFile(
+        workspacePaths.candidateManifestFile(
           root,
           input.session,
           artifact.iteration_id,
@@ -232,7 +239,7 @@ async function loadImage(cwd: string, input: ImageReadInput) {
         ),
       )
     } else {
-      path = paths.contactSheetFile(
+      path = workspacePaths.contactSheetFile(
         root,
         input.session,
         artifact.iteration_id,
@@ -240,7 +247,7 @@ async function loadImage(cwd: string, input: ImageReadInput) {
       )
       map = ContactSheetMapSchema.parse(
         await readMetadata(
-          paths.contactSheetMapFile(
+          workspacePaths.contactSheetMapFile(
             root,
             input.session,
             artifact.iteration_id,

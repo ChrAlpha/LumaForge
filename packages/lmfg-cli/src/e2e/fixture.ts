@@ -10,7 +10,6 @@ export const PACKAGE_DIR = resolve(
 export {
   describeWithFixture,
   FIXTURE_PATH,
-  fixtureReady,
 } from '../test-support/describe-with-fixture'
 
 export type CliRun = {

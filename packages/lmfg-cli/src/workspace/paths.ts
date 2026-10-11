@@ -38,8 +38,6 @@ export function assertPortablePathSegment(value: string): string {
   return value
 }
 
-const segment = assertPortablePathSegment
-
 export function resolveWorkspaceRoot(cwd: string, option?: string): string {
   return resolve(cwd, option ?? DEFAULT_WORKSPACE_DIRNAME)
 }
@@ -49,20 +47,25 @@ export function toFileUri(path: string): string {
 }
 
 const session = (root: string, id: string) =>
-  join(root, 'sessions', segment(id))
+  join(root, 'sessions', assertPortablePathSegment(id))
 const iteration = (root: string, id: string, iterationId: string) =>
-  join(session(root, id), 'iterations', segment(iterationId))
+  join(session(root, id), 'iterations', assertPortablePathSegment(iterationId))
 const candidate = (
   root: string,
   id: string,
   iterationId: string,
   candidateId: string,
-) => join(iteration(root, id, iterationId), 'candidates', segment(candidateId))
+) =>
+  join(
+    iteration(root, id, iterationId),
+    'candidates',
+    assertPortablePathSegment(candidateId),
+  )
 
 export const workspacePaths = {
   luts: (root: string) => join(root, 'luts'),
   lutCacheFile: (root: string, sha256: string) =>
-    join(root, 'luts', `${segment(sha256)}.cube`),
+    join(root, 'luts', `${assertPortablePathSegment(sha256)}.cube`),
   sessions: (root: string) => join(root, 'sessions'),
   session,
   sessionFile: (root: string, id: string) =>
@@ -76,9 +79,17 @@ export const workspacePaths = {
     join(session(root, id), 'source', 'embedded-preview.jpg'),
   previews: (root: string, id: string) => join(session(root, id), 'previews'),
   previewFile: (root: string, id: string, previewId: string) =>
-    join(session(root, id), 'previews', `${segment(previewId)}.jpg`),
+    join(
+      session(root, id),
+      'previews',
+      `${assertPortablePathSegment(previewId)}.jpg`,
+    ),
   previewManifestFile: (root: string, id: string, previewId: string) =>
-    join(session(root, id), 'previews', `${segment(previewId)}.manifest.json`),
+    join(
+      session(root, id),
+      'previews',
+      `${assertPortablePathSegment(previewId)}.manifest.json`,
+    ),
   iterations: (root: string, id: string) =>
     join(session(root, id), 'iterations'),
   iteration,
@@ -91,13 +102,21 @@ export const workspacePaths = {
     id: string,
     iterationId: string,
     name = 'contact-sheet',
-  ) => join(iteration(root, id, iterationId), `${segment(name)}.jpg`),
+  ) =>
+    join(
+      iteration(root, id, iterationId),
+      `${assertPortablePathSegment(name)}.jpg`,
+    ),
   contactSheetMapFile: (
     root: string,
     id: string,
     iterationId: string,
     name = 'contact-sheet',
-  ) => join(iteration(root, id, iterationId), `${segment(name)}.map.json`),
+  ) =>
+    join(
+      iteration(root, id, iterationId),
+      `${assertPortablePathSegment(name)}.map.json`,
+    ),
   candidates: (root: string, id: string, iterationId: string) =>
     join(iteration(root, id, iterationId), 'candidates'),
   candidate,
@@ -139,16 +158,34 @@ export const workspacePaths = {
   ) => join(candidate(root, id, iterationId, candidateId), 'tile.json'),
   replays: (root: string, id: string) => join(session(root, id), 'replays'),
   replay: (root: string, id: string, key: string) =>
-    join(session(root, id), 'replays', segment(key)),
+    join(session(root, id), 'replays', assertPortablePathSegment(key)),
   replayOutputFile: (root: string, id: string, key: string) =>
-    join(session(root, id), 'replays', segment(key), 'output.jpg'),
+    join(
+      session(root, id),
+      'replays',
+      assertPortablePathSegment(key),
+      'output.jpg',
+    ),
   replayManifestFile: (root: string, id: string, key: string) =>
-    join(session(root, id), 'replays', segment(key), 'manifest.json'),
+    join(
+      session(root, id),
+      'replays',
+      assertPortablePathSegment(key),
+      'manifest.json',
+    ),
   workspaceReplay: (root: string, key: string) =>
-    join(root, 'replays', segment(key)),
+    join(root, 'replays', assertPortablePathSegment(key)),
   exports: (root: string, id: string) => join(session(root, id), 'exports'),
   exportFile: (root: string, id: string, name: string) =>
-    join(session(root, id), 'exports', `${segment(name)}.jpg`),
+    join(
+      session(root, id),
+      'exports',
+      `${assertPortablePathSegment(name)}.jpg`,
+    ),
   exportManifestFile: (root: string, id: string, name: string) =>
-    join(session(root, id), 'exports', `${segment(name)}.manifest.json`),
+    join(
+      session(root, id),
+      'exports',
+      `${assertPortablePathSegment(name)}.manifest.json`,
+    ),
 }
