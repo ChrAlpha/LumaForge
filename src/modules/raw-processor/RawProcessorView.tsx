@@ -226,5 +226,3 @@ function RawProcessorViewInner({
     </div>
   )
 }
-
-export default RawProcessorView

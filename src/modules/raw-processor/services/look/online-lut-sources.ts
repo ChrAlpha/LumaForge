@@ -62,11 +62,6 @@ export type OnlineLUTSourceActivation =
   | 'ready'
   | 'error'
 
-export interface OnlineLUTLoadRequest {
-  entryId: string
-  signal?: AbortSignal
-}
-
 export interface OnlineLUTSourceResolution {
   resource: ProfileSourceResource
   entries: OnlineLUTSourceEntry[]

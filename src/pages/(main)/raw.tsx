@@ -3,8 +3,8 @@
  * Route: /raw
  */
 
-import type {SeoRouteHandle} from '~/lib/seo';
-import { RAW_ROUTE_SEO  } from '~/lib/seo'
+import type { SeoRouteHandle } from '~/lib/seo'
+import { RAW_ROUTE_SEO } from '~/lib/seo'
 import { RawProcessorView } from '~/modules/raw-processor'
 
 export const handle = {
@@ -14,5 +14,3 @@ export const handle = {
 export const Component = () => {
   return <RawProcessorView />
 }
-
-export default Component

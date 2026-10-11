@@ -65,4 +65,3 @@ const AppLayer = () => {
 const AppSkeleton = () => {
   return null
 }
-export default App

@@ -14,5 +14,3 @@ export const handle = {
 export const loader = () => null
 
 export const Component = () => <LandingPage />
-
-export default Component
