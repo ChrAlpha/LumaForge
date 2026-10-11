@@ -56,7 +56,6 @@ const userColorField = (key: UserColorParamKey) =>
   bounded(USER_COLOR_FIELD_BOUNDS[USER_COLOR_PARAM_KEYS[key]])
 
 export { HSL_BAND_IDS }
-export type HslBandId = (typeof HSL_BAND_IDS)[number]
 
 export const BandShiftSchema = z.strictObject({
   hue: bounded(HSL_SHIFT_BOUNDS).optional(),
@@ -127,7 +126,6 @@ export const NUMERIC_PARAM_KEYS = [
   'vibrance',
   'intensity',
 ] as const
-export type NumericParamKey = (typeof NUMERIC_PARAM_KEYS)[number]
 
 export const RenderParamsSchema = z
   .strictObject({
@@ -170,7 +168,6 @@ export const RenderParamsOverrideSchema = z.strictObject({
   lut: PARAM_FIELDS.lut.optional(),
 })
 
-export type RenderParamsInput = z.input<typeof RenderParamsSchema>
 export type RenderParams = z.output<typeof RenderParamsSchema>
 export type RenderParamsOverride = z.output<typeof RenderParamsOverrideSchema>
 export type LutReference = z.output<typeof LutReferenceSchema>

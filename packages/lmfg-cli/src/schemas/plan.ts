@@ -47,8 +47,6 @@ export const SweepPlanSchema = z.strictObject({
 })
 
 export type ContactSheetOptions = z.output<typeof ContactSheetOptionsSchema>
-export type CandidatePlanInput = z.input<typeof CandidatePlanSchema>
-export type SweepPlanInput = z.input<typeof SweepPlanSchema>
 
 export type NormalizedCandidate = {
   id: string

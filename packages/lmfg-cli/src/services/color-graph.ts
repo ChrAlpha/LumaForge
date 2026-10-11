@@ -14,7 +14,6 @@ import {
   resolveRawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
 import type {
-  ColorGraphDescriptor,
   ColorGraphIdentity,
   RenderParams as ManifestRenderParams,
 } from '@lumaforge/render-engine'
@@ -41,7 +40,6 @@ export {
   describeColorGraph,
   fingerprintColorGraph,
 }
-export type { ColorGraphDescriptor }
 
 export type ExposureSourceFrame = {
   data: Uint16Array

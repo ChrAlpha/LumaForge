@@ -633,7 +633,6 @@ export type IterationRecord = z.output<typeof IterationRecordSchema>
 export type ContactSheetMap = z.output<typeof ContactSheetMapSchema>
 export type SessionStatusResult = z.output<typeof SessionStatusResultSchema>
 export type InspectResult = z.output<typeof InspectResultSchema>
-export type Exposure = z.output<typeof ExposureSchema>
 export type LutProfileOutput = z.output<typeof LutProfileOutputSchema>
 export type LutResolutionOutput = z.output<typeof LutResolutionSchema>
 export type LutInspectResult = z.output<typeof LutInspectResultSchema>
@@ -644,10 +643,8 @@ export type LutContractValidateResult = z.output<
   typeof LutContractValidateResultSchema
 >
 export type LutFetchResult = z.output<typeof LutFetchResultSchema>
-export type RenderOutput = z.output<typeof RenderOutputSchema>
 export type PreviewResult = z.output<typeof PreviewResultSchema>
 export type CandidateSummary = z.output<typeof CandidateSummarySchema>
-export type ContactSheetSummary = z.output<typeof ContactSheetSummarySchema>
 export type IterationResult = z.output<typeof IterationResultSchema>
 export type ExportResult = z.output<typeof ExportResultSchema>
 export type CompareSheetResult = z.output<typeof CompareSheetResultSchema>
@@ -655,7 +652,5 @@ export type ReplayResult = z.output<typeof ReplayResultSchema>
 export type Metrics = z.output<typeof MetricsSchema>
 export type MetricsResult = z.output<typeof MetricsResultSchema>
 export type ManifestVerifyResult = z.output<typeof ManifestVerifyResultSchema>
-export type ManifestShowResult = z.output<typeof ManifestShowResultSchema>
-export type DryRunResult = z.output<typeof DryRunResultSchema>
 export type MetricsCompareResult = z.output<typeof MetricsCompareResultSchema>
 export type MetricsRankResult = z.output<typeof MetricsRankResultSchema>
