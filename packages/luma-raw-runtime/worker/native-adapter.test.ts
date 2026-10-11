@@ -12,6 +12,7 @@ import type {
 
 type ProcessorValues = {
   openTimings?: unknown
+  metadata?: unknown
   thumbnail?: unknown
   exportCapability?: unknown
   rawWindow?: unknown
@@ -57,7 +58,7 @@ function createProcessor(values: ProcessorValues) {
         return values.openTimings
       }
       readMetadata() {
-        return {}
+        return values.metadata ?? {}
       }
       extractThumbnail() {
         return values.thumbnail
@@ -125,6 +126,77 @@ function createFactoryWithHeap(heap?: Uint8Array) {
       delete() {}
     },
   })
+}
+
+// The color and orientation facts the native wrapper's
+// supportedExportCapability emits for a processed-window source. The test
+// below holds this fixture to the wrapper source, so a fact the wrapper stops
+// emitting fails here instead of being defaulted by the adapter.
+const NATIVE_COLOR_FACTS = {
+  whiteBalance: [2.1, 1, 1.4, 1],
+  cameraToWorkingRgb: [1.2, -0.1, -0.1, -0.05, 1.1, -0.05, 0, -0.2, 1.2],
+  workingSpace: 'linear-prophoto-rgb',
+  librawOutputColor: 'prophoto',
+  gamma: 'linear',
+  cameraWhiteBalanceAppliedByRuntime: true,
+  cameraMatrixAppliedByRuntime: true,
+} as const
+
+function nativeSupportedCapability(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    supported: true,
+    strategy: 'libraw-processed-window',
+    width: 3000,
+    height: 4000,
+    rawWidth: 4024,
+    rawHeight: 3024,
+    visibleCrop: { x: 12, y: 12, width: 4000, height: 3000 },
+    cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+    blackLevel: 512,
+    whiteLevel: 16383,
+    orientation: {
+      code: 6,
+      supported: true,
+      outputWidth: 3000,
+      outputHeight: 4000,
+    },
+    sensor: {
+      layout: 'bayer',
+      colorCount: 3,
+      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+      phaseIsWindowLocal: false,
+    },
+    levels: {
+      black: 512,
+      white: 16383,
+      perChannelBlack: [0, 0, 0, 0],
+    },
+    windows: { librawProcessed: true, rawMosaic: true },
+    diagnostics: {
+      make: 'Nikon',
+      model: 'Fixture',
+      normalizedMake: 'Nikon',
+      normalizedModel: 'Fixture',
+      librawFilterCode: 0x94949494,
+      hasRawImage: true,
+      hasColor3Image: false,
+      hasColor4Image: false,
+      hasXTransTable: false,
+      canRepeatCropProcess: true,
+      lastLibRawWarningMask: 0,
+    },
+    color: { ...NATIVE_COLOR_FACTS },
+    reasons: [],
+    ...overrides,
+  }
+}
+
+function withoutColorFact(key: keyof typeof NATIVE_COLOR_FACTS) {
+  const color: Record<string, unknown> = { ...NATIVE_COLOR_FACTS }
+  delete color[key]
+  return color
 }
 
 describe('native-adapter', () => {
@@ -258,11 +330,7 @@ describe('native-adapter', () => {
         blackLevel: 512,
         whiteLevel: 16383,
         orientation: { code: 1, supported: true },
-        color: {
-          cameraWhiteBalance: [2100, 1000, 1400, 1000],
-          cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
-          workingSpace: 'prophoto-linear',
-        },
+        color: { ...NATIVE_COLOR_FACTS },
         windows: { librawProcessed: true, rawMosaic: true },
         reasons: [],
       },
@@ -319,13 +387,7 @@ describe('native-adapter', () => {
           white: 16383,
           perChannelBlack: [512, 513, 514, 515],
         },
-        color: {
-          workingSpace: 'linear-prophoto-rgb',
-          librawOutputColor: 'prophoto',
-          gamma: 'linear',
-          cameraWhiteBalanceAppliedByRuntime: true,
-          cameraMatrixAppliedByRuntime: true,
-        },
+        color: { ...NATIVE_COLOR_FACTS },
         windows: { librawProcessed: true, rawMosaic: false },
         diagnostics: {
           make: 'Nikon',
@@ -372,13 +434,7 @@ describe('native-adapter', () => {
         white: 16383,
         perChannelBlack: [512, 513, 514, 515],
       },
-      color: {
-        workingSpace: 'linear-prophoto-rgb',
-        librawOutputColor: 'prophoto',
-        gamma: 'linear',
-        cameraWhiteBalanceAppliedByRuntime: true,
-        cameraMatrixAppliedByRuntime: true,
-      },
+      color: { ...NATIVE_COLOR_FACTS },
       windows: { librawProcessed: true, rawMosaic: false },
       diagnostics: {
         make: 'Nikon',
@@ -411,13 +467,7 @@ describe('native-adapter', () => {
         blackLevel: 512,
         whiteLevel: 16383,
         orientation: { code: 1, supported: true },
-        color: {
-          workingSpace: 'linear-prophoto-rgb',
-          librawOutputColor: 'prophoto',
-          gamma: 'linear',
-          cameraWhiteBalanceAppliedByRuntime: true,
-          cameraMatrixAppliedByRuntime: true,
-        },
+        color: { ...NATIVE_COLOR_FACTS },
         windows: { librawProcessed: false, rawMosaic: true },
         diagnostics: {
           hasRawImage: true,
@@ -431,13 +481,7 @@ describe('native-adapter', () => {
 
     expect(processor.probeExportCapability?.()).toMatchObject({
       supported: false,
-      color: {
-        workingSpace: 'linear-prophoto-rgb',
-        librawOutputColor: 'prophoto',
-        gamma: 'linear',
-        cameraWhiteBalanceAppliedByRuntime: true,
-        cameraMatrixAppliedByRuntime: true,
-      },
+      color: { ...NATIVE_COLOR_FACTS },
       windows: { librawProcessed: false, rawMosaic: true },
       reasons: ['processed-window-unavailable'],
     })
@@ -1159,6 +1203,10 @@ describe('native-adapter', () => {
         whiteBalance: [2.1, 1, 1.4, 1],
         cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
         workingSpace: 'linear-prophoto-rgb',
+        librawOutputColor: 'prophoto',
+        gamma: 'linear',
+        cameraWhiteBalanceAppliedByRuntime: true,
+        cameraMatrixAppliedByRuntime: true,
       },
       reasons: [],
     }
@@ -1181,6 +1229,10 @@ describe('native-adapter', () => {
           whiteBalance: [2.1, 1, 1.4, 1],
           cameraToWorkingRgb: [0, 0, 0, 0, 0, 0, 0, 0, 0],
           workingSpace: 'linear-prophoto-rgb',
+          librawOutputColor: 'prophoto',
+          gamma: 'linear',
+          cameraWhiteBalanceAppliedByRuntime: true,
+          cameraMatrixAppliedByRuntime: true,
         },
       },
     })
@@ -1191,6 +1243,10 @@ describe('native-adapter', () => {
           whiteBalance: [2.1, 1, 1.4, 1],
           cameraToWorkingRgb: [1, 2, 3, 2, 4, 6, 0, 1, 0],
           workingSpace: 'linear-prophoto-rgb',
+          librawOutputColor: 'prophoto',
+          gamma: 'linear',
+          cameraWhiteBalanceAppliedByRuntime: true,
+          cameraMatrixAppliedByRuntime: true,
         },
       },
     })
@@ -1230,6 +1286,10 @@ describe('native-adapter', () => {
           whiteBalance: [2.1, 1, 1.4, 1],
           cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
           workingSpace: 'linear-prophoto-rgb',
+          librawOutputColor: 'prophoto',
+          gamma: 'linear',
+          cameraWhiteBalanceAppliedByRuntime: true,
+          cameraMatrixAppliedByRuntime: true,
         },
         reasons: [],
       },
@@ -1258,6 +1318,10 @@ describe('native-adapter', () => {
           whiteBalance: [2, 1, 1.5, 1],
           cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
           workingSpace: 'linear-prophoto-rgb',
+          librawOutputColor: 'prophoto',
+          gamma: 'linear',
+          cameraWhiteBalanceAppliedByRuntime: true,
+          cameraMatrixAppliedByRuntime: true,
         },
         reasons: [
           'unsupported-cfa',
@@ -1342,6 +1406,10 @@ describe('native-adapter', () => {
           whiteBalance: [2, 1, 1.5, 1],
           cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
           workingSpace: 'linear-prophoto-rgb',
+          librawOutputColor: 'prophoto',
+          gamma: 'linear',
+          cameraWhiteBalanceAppliedByRuntime: true,
+          cameraMatrixAppliedByRuntime: true,
         },
         reasons: ['raw-window-unavailable', 'bogus'],
       },
@@ -1795,5 +1863,184 @@ describe('native-adapter', () => {
     expect(nonObjectTiming.openBuffer(new Uint8Array([1]), settings)).toBe(
       undefined,
     )
+  })
+})
+
+describe('native export capability facts', () => {
+  it('holds the positive fixture to the facts the native wrapper emits', () => {
+    const wrapperSource = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        '..',
+        'native',
+        'libraw_wrapper.cpp',
+      ),
+      'utf8',
+    )
+    const supportedCapability = wrapperSource.match(
+      /val supportedExportCapability\(const libraw_data_t &imgdata,[\s\S]*?\n\}/,
+    )?.[0]
+    const colorFactKeys = Array.from((supportedCapability ?? '').matchAll(/color_facts\.set\("(\w+)"/g), (match) => match[1])
+
+    expect(colorFactKeys.sort()).toEqual(Object.keys(NATIVE_COLOR_FACTS).sort())
+    expect(supportedCapability).toContain(
+      'color_facts.set("workingSpace", std::string("linear-prophoto-rgb"));',
+    )
+    expect(supportedCapability).toContain(
+      'color_facts.set("librawOutputColor", std::string("prophoto"));',
+    )
+    expect(supportedCapability).toContain(
+      'color_facts.set("gamma", std::string("linear"));',
+    )
+    expect(supportedCapability).toContain(
+      'color_facts.set("cameraWhiteBalanceAppliedByRuntime", true);',
+    )
+    expect(supportedCapability).toContain(
+      'color_facts.set("cameraMatrixAppliedByRuntime", true);',
+    )
+    expect(supportedCapability).toContain(
+      'capability.set("orientation", orientationObject(sizes));',
+    )
+    expect(wrapperSource).toMatch(
+      /val orientationObject\(const libraw_image_sizes_t &sizes\) \{[\s\S]*?orientation\.set\("outputWidth"[\s\S]*?orientation\.set\("outputHeight"/,
+    )
+  })
+
+  it('accepts the canonical native facts', () => {
+    const processor = createProcessor({
+      exportCapability: nativeSupportedCapability(),
+    })
+
+    expect(processor.probeExportCapability?.()).toEqual(
+      nativeSupportedCapability(),
+    )
+  })
+
+  it.each(
+    Object.keys(NATIVE_COLOR_FACTS) as (keyof typeof NATIVE_COLOR_FACTS)[],
+  )('refuses a supported capability whose color facts lack %s', (key) => {
+    const processor = createProcessor({
+      exportCapability: nativeSupportedCapability({
+        color: withoutColorFact(key),
+      }),
+    })
+    const capability = processor.probeExportCapability?.()
+
+    expect(capability?.supported).toBe(false)
+    expect(capability?.color).toBeUndefined()
+    expect(capability?.reasons).toEqual(['missing-color-transform'])
+  })
+
+  it.each([
+    ['cameraWhiteBalanceAppliedByRuntime', 1],
+    ['cameraWhiteBalanceAppliedByRuntime', 'true'],
+    ['cameraWhiteBalanceAppliedByRuntime', null],
+    ['cameraMatrixAppliedByRuntime', 1],
+    ['cameraMatrixAppliedByRuntime', 'true'],
+    ['cameraMatrixAppliedByRuntime', null],
+  ])('treats %s = %j as an absent fact', (key, value) => {
+    const processor = createProcessor({
+      exportCapability: nativeSupportedCapability({
+        color: { ...NATIVE_COLOR_FACTS, [key]: value },
+      }),
+    })
+    const capability = processor.probeExportCapability?.()
+
+    expect(capability?.supported).toBe(false)
+    expect(capability?.color).toBeUndefined()
+    expect(capability?.reasons).toEqual(['missing-color-transform'])
+  })
+
+  it.each([
+    ['cameraWhiteBalanceAppliedByRuntime', 'missing-camera-white-balance'],
+    ['cameraMatrixAppliedByRuntime', 'missing-camera-to-output-color'],
+  ] as const)(
+    'keeps an explicit false %s and refuses the capability',
+    (key, reason) => {
+      const processor = createProcessor({
+        exportCapability: nativeSupportedCapability({
+          color: { ...NATIVE_COLOR_FACTS, [key]: false },
+        }),
+      })
+      const capability = processor.probeExportCapability?.()
+
+      expect(capability?.supported).toBe(false)
+      expect(capability?.color).toEqual({ ...NATIVE_COLOR_FACTS, [key]: false })
+      expect(capability?.reasons).toEqual([reason])
+    },
+  )
+
+  it('does not read cameraWhiteBalance as whiteBalance', () => {
+    const color = withoutColorFact('whiteBalance')
+    color.cameraWhiteBalance = [2100, 1000, 1400, 1000]
+    const processor = createProcessor({
+      exportCapability: nativeSupportedCapability({ color }),
+    })
+    const capability = processor.probeExportCapability?.()
+
+    expect(capability?.supported).toBe(false)
+    expect(capability?.color).toBeUndefined()
+    expect(capability?.reasons).toEqual(['missing-color-transform'])
+  })
+
+  it.each([
+    ['workingSpace', 'prophoto-linear'],
+    ['librawOutputColor', 'srgb'],
+    ['gamma', 'srgb'],
+  ])('refuses %s = %j', (key, value) => {
+    const processor = createProcessor({
+      exportCapability: nativeSupportedCapability({
+        color: { ...NATIVE_COLOR_FACTS, [key]: value },
+      }),
+    })
+    const capability = processor.probeExportCapability?.()
+
+    expect(capability?.supported).toBe(false)
+    expect(capability?.color).toBeUndefined()
+    expect(capability?.reasons).toEqual(['missing-color-transform'])
+  })
+
+  it.each([
+    ['non-positive', [2.1, 0, 1.4, 1]],
+    ['short', [2.1, 1, 1.4]],
+    ['non-finite', [2.1, 1, Number.NaN, 1]],
+  ])('refuses a %s whiteBalance', (_label, whiteBalance) => {
+    const processor = createProcessor({
+      exportCapability: nativeSupportedCapability({
+        color: { ...NATIVE_COLOR_FACTS, whiteBalance },
+      }),
+    })
+
+    expect(processor.probeExportCapability?.()).toMatchObject({
+      supported: false,
+      reasons: ['missing-color-transform'],
+    })
+  })
+
+  it.each([1, 6])(
+    'refuses numeric capability orientation %i and keeps metadata orientation',
+    (code) => {
+      const processor = createProcessor({
+        metadata: { orientation: code },
+        exportCapability: nativeSupportedCapability({ orientation: code }),
+      })
+      const capability = processor.probeExportCapability?.()
+
+      expect(capability?.supported).toBe(false)
+      expect(capability?.orientation).toBeUndefined()
+      expect(capability?.reasons).toEqual(['unsupported-orientation'])
+      expect(processor.readMetadata().orientation).toBe(code)
+    },
+  )
+
+  it('refuses a supported capability without orientation facts', () => {
+    const processor = createProcessor({
+      exportCapability: nativeSupportedCapability({ orientation: undefined }),
+    })
+
+    expect(processor.probeExportCapability?.()).toMatchObject({
+      supported: false,
+      reasons: ['unsupported-orientation'],
+    })
   })
 })

@@ -129,6 +129,42 @@ describeWithFixture('createLumaRawRuntimeForNode (live decode)', () => {
     }
   }, 60_000)
 
+  it('probes export capability with explicit native color and orientation facts', async () => {
+    const runtime = await createLumaRawRuntimeForNode()
+    try {
+      const input = await loadFixture()
+      const session = await runtime.openSession(input)
+      try {
+        const capability = await session.probeExportCapability()
+
+        expect(capability.supported).toBe(true)
+        expect(capability.reasons).toEqual([])
+        expect(capability.orientation).toEqual({
+          code: expect.any(Number),
+          supported: true,
+          outputWidth: capability.width,
+          outputHeight: capability.height,
+        })
+        expect(capability.color).toEqual({
+          workingSpace: 'linear-prophoto-rgb',
+          librawOutputColor: 'prophoto',
+          gamma: 'linear',
+          cameraWhiteBalanceAppliedByRuntime: true,
+          cameraMatrixAppliedByRuntime: true,
+          whiteBalance: expect.any(Array),
+          cameraToWorkingRgb: expect.any(Array),
+        })
+        expect(capability.color?.whiteBalance).toHaveLength(4)
+        expect(capability.color?.cameraToWorkingRgb).toHaveLength(9)
+        expect(session.probe.orientation).toBeTypeOf('number')
+      } finally {
+        session.dispose()
+      }
+    } finally {
+      runtime.dispose()
+    }
+  }, 60_000)
+
   it('rejects an empty buffer with a typed runtime error', async () => {
     const runtime = await createLumaRawRuntimeForNode()
     try {

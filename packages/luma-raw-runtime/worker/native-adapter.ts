@@ -487,12 +487,9 @@ function normalizeExportOrientation(
   value: unknown,
   options: { allowRuntimeAppliedOrientation?: boolean } = {},
 ): LumaRawExportOrientation | undefined {
-  if (typeof value === 'number') {
-    const code = asPositiveIntegerOrUndefined(value)
-    if (code === undefined) return undefined
-    return { code, supported: code === 1 }
-  }
-
+  // Capability orientation is the native orientation record. A bare number is
+  // not one: it says nothing about whether the processed window applies the
+  // rotation, so it leaves the capability without orientation facts.
   const raw = asRecord(value)
   const code = asPositiveIntegerOrUndefined(raw.code)
   if (code === undefined) return undefined
@@ -518,32 +515,6 @@ function normalizeFiniteTuple(value: unknown, length: number) {
   const numbers = value.map(asFiniteNumberOrUndefined)
   return numbers.every((number) => number !== undefined)
     ? (numbers as number[])
-    : undefined
-}
-
-function normalizeCameraWhiteBalanceTuple(value: unknown) {
-  const values = normalizeFiniteTuple(value, 4)
-  if (!values) return undefined
-
-  let minMultiplier = Number.POSITIVE_INFINITY
-  let maxMultiplier = 0
-
-  for (const value of values) {
-    if (value <= 0) return undefined
-    minMultiplier = Math.min(minMultiplier, value)
-    maxMultiplier = Math.max(maxMultiplier, value)
-  }
-
-  if (maxMultiplier <= minMultiplier) return undefined
-
-  // Native LibRaw cam_mul is green-normalized before becoming export WB. Keep
-  // the same defensive boundary here for older/native-like cameraWhiteBalance
-  // payloads without changing already-normalized whiteBalance payloads.
-  const normalizationScale = values[1]
-  const normalized = values.map((value) => value / normalizationScale)
-
-  return normalized.every((value) => Number.isFinite(value) && value > 0)
-    ? normalized
     : undefined
 }
 
@@ -625,69 +596,46 @@ function normalizeExportDiagnostics(
 function normalizeExportColorFacts(
   value: unknown,
 ): LumaRawExportColorFacts | undefined {
+  // Every color fact is read as the native wrapper writes it. An absent or
+  // malformed fact leaves the capability without color facts; nothing is
+  // defaulted, renamed, or inferred from another fact.
   const raw = asRecord(value)
-  const whiteBalance =
-    raw.whiteBalance != null
-      ? normalizeFiniteTuple(raw.whiteBalance, 4)
-      : normalizeCameraWhiteBalanceTuple(raw.cameraWhiteBalance)
+  const whiteBalance = normalizeFiniteTuple(raw.whiteBalance, 4)
   const cameraToWorkingRgb = normalizeFiniteTuple(raw.cameraToWorkingRgb, 9)
-  const workingSpace =
-    raw.workingSpace === 'prophoto-linear'
-      ? 'linear-prophoto-rgb'
-      : raw.workingSpace
-  const librawOutputColor = raw.librawOutputColor ?? 'prophoto'
-  const gamma = raw.gamma ?? 'linear'
-  const hasUsableWhiteBalance =
-    whiteBalance !== undefined && whiteBalance.every((value) => value > 0)
-  const hasUsableCameraMatrix =
-    cameraToWorkingRgb !== undefined && hasUsableMatrix3x3(cameraToWorkingRgb)
-  const cameraWhiteBalanceAppliedByRuntime =
-    raw.cameraWhiteBalanceAppliedByRuntime === true || hasUsableWhiteBalance
-  const cameraMatrixAppliedByRuntime =
-    raw.cameraMatrixAppliedByRuntime === true || hasUsableCameraMatrix
 
   if (
-    workingSpace !== 'linear-prophoto-rgb' ||
-    librawOutputColor !== 'prophoto' ||
-    gamma !== 'linear'
+    raw.workingSpace !== 'linear-prophoto-rgb' ||
+    raw.librawOutputColor !== 'prophoto' ||
+    raw.gamma !== 'linear' ||
+    typeof raw.cameraWhiteBalanceAppliedByRuntime !== 'boolean' ||
+    typeof raw.cameraMatrixAppliedByRuntime !== 'boolean' ||
+    whiteBalance === undefined ||
+    !whiteBalance.every((value) => value > 0) ||
+    cameraToWorkingRgb === undefined ||
+    !hasUsableMatrix3x3(cameraToWorkingRgb)
   ) {
     return undefined
   }
 
-  if (!hasUsableWhiteBalance && !cameraWhiteBalanceAppliedByRuntime) {
-    return undefined
-  }
-
-  if (!hasUsableCameraMatrix && !cameraMatrixAppliedByRuntime) {
-    return undefined
-  }
-
-  const color: LumaRawExportColorFacts = {
+  return {
     workingSpace: 'linear-prophoto-rgb',
     librawOutputColor: 'prophoto',
     gamma: 'linear',
-    cameraWhiteBalanceAppliedByRuntime,
-    cameraMatrixAppliedByRuntime,
+    cameraWhiteBalanceAppliedByRuntime: raw.cameraWhiteBalanceAppliedByRuntime,
+    cameraMatrixAppliedByRuntime: raw.cameraMatrixAppliedByRuntime,
+    whiteBalance: whiteBalance as [number, number, number, number],
+    cameraToWorkingRgb: cameraToWorkingRgb as [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ],
   }
-
-  if (whiteBalance) {
-    color.whiteBalance = whiteBalance as [number, number, number, number]
-  }
-  if (cameraToWorkingRgb) {
-    color.cameraToWorkingRgb = cameraToWorkingRgb as [
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-    ]
-  }
-
-  return color
 }
 
 export function normalizeExportCapability(
@@ -754,6 +702,13 @@ export function normalizeExportCapability(
     if (!color) {
       missingFactCount += 1
       reasons.add('missing-color-transform')
+    } else {
+      if (!color.cameraWhiteBalanceAppliedByRuntime) {
+        reasons.add('missing-camera-white-balance')
+      }
+      if (!color.cameraMatrixAppliedByRuntime) {
+        reasons.add('missing-camera-to-output-color')
+      }
     }
     if (missingFactCount > 1) {
       reasons.add('missing-export-facts')

@@ -93,8 +93,6 @@
     "types packages/lmfg-cli/src/schemas/results.ts: results.ManifestVerifyResult",
     "types packages/lmfg-cli/src/schemas/results.ts: results.RenderOutput",
     "types packages/lmfg-cli/src/services/color-graph.ts: ColorGraphDescriptor",
-    "types packages/luma-raw-runtime/worker/native-types.ts: LumaRawNativeProcessedWindow",
-    "types packages/luma-raw-runtime/worker/native-types.ts: LumaRawNativeProcessedWindowRequest",
     "types src/components/ui/chip/index.ts: ChipProps",
     "types src/components/ui/chip/index.ts: ChipSize",
     "types src/components/ui/chip/index.ts: ChipTone",

@@ -71,8 +71,6 @@ export type LumaRawNativeDecodeOptions = {
 }
 
 export type LumaRawNativeExportCapability = LumaRawExportCapability
-export type LumaRawNativeProcessedWindowRequest = LumaRawProcessedWindowRequest
-export type LumaRawNativeProcessedWindow = LumaRawProcessedWindow
 export type LumaRawNativeProcessedWindowExportSessionInfo = { active: true }
 
 // Subset of the LumaRawCameraCalibrationProfile carried into the native

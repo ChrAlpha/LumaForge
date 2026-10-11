@@ -113,7 +113,7 @@ describe('luma raw runtime public contract', () => {
       cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
       blackLevel: 512,
       whiteLevel: 16383,
-      orientation: 1,
+      orientation: { code: 1, supported: true },
       sensor: {
         layout: 'bayer',
         colorCount: 3,
@@ -138,7 +138,7 @@ describe('luma raw runtime public contract', () => {
       cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
       blackLevel: 0,
       whiteLevel: 0,
-      orientation: 1,
+      orientation: { code: 1, supported: true },
       sensor: {
         layout: 'unknown',
         colorCount: 0,

@@ -697,7 +697,7 @@ describe('runtime-core', () => {
   })
 
   it('passes through native raw-window capability and window payloads', async () => {
-    const nativeCapability = {
+    const nativeCapability: LumaRawExportCapability = {
       supported: true,
       width: 4,
       height: 4,
@@ -712,6 +712,10 @@ describe('runtime-core', () => {
         whiteBalance: [2, 1, 1.5, 1],
         cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
         workingSpace: 'linear-prophoto-rgb' as const,
+        librawOutputColor: 'prophoto' as const,
+        gamma: 'linear' as const,
+        cameraWhiteBalanceAppliedByRuntime: true,
+        cameraMatrixAppliedByRuntime: true,
       },
       sensor: {
         layout: 'bayer' as const,
@@ -801,13 +805,6 @@ describe('runtime-core', () => {
 
     expect(capability.payload).toEqual({
       ...nativeCapability,
-      color: {
-        ...nativeCapability.color,
-        librawOutputColor: 'prophoto',
-        gamma: 'linear',
-        cameraWhiteBalanceAppliedByRuntime: true,
-        cameraMatrixAppliedByRuntime: true,
-      },
       levels: { black: 64, white: 1023 },
     })
     expect(window.payload).toEqual(nativeWindow)
@@ -1353,6 +1350,10 @@ describe('runtime-core', () => {
                 whiteBalance: [2, 1, 1.5, 1],
                 cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
                 workingSpace: 'linear-prophoto-rgb',
+                librawOutputColor: 'prophoto',
+                gamma: 'linear',
+                cameraWhiteBalanceAppliedByRuntime: true,
+                cameraMatrixAppliedByRuntime: true,
               },
               sensor: {
                 layout: 'bayer',
@@ -1564,37 +1565,51 @@ describe('runtime-core', () => {
     })
   })
 
-  it('normalizes session export capability payloads before responding', async () => {
+  it('refuses a numeric capability orientation without changing metadata orientation', async () => {
+    // Native payloads are untrusted wire values; this one carries the bare
+    // orientation number older wrappers wrote instead of the orientation record.
+    const nativeCapability = {
+      supported: true,
+      strategy: 'libraw-processed-window',
+      width: 4000,
+      height: 3000,
+      rawWidth: 4024,
+      rawHeight: 3024,
+      visibleCrop: { x: 12, y: 12, width: 4000, height: 3000 },
+      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+      blackLevel: 512,
+      whiteLevel: 16383,
+      orientation: 1,
+      color: {
+        whiteBalance: [2, 1, 1.5, 1],
+        cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        workingSpace: 'linear-prophoto-rgb',
+        librawOutputColor: 'prophoto',
+        gamma: 'linear',
+        cameraWhiteBalanceAppliedByRuntime: true,
+        cameraMatrixAppliedByRuntime: true,
+      },
+      sensor: {
+        layout: 'bayer',
+        colorCount: 3,
+        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+        phaseIsWindowLocal: false,
+      },
+      windows: { librawProcessed: true, rawMosaic: true },
+      diagnostics: {
+        hasRawImage: true,
+        hasColor3Image: false,
+        hasColor4Image: false,
+        hasXTransTable: false,
+      },
+      reasons: [],
+    } as unknown as LumaRawExportCapability
     const core = createRuntimeCore({
       createProcessor() {
         return {
           ...makeNativeFactory().createProcessor(),
           probeExportCapability() {
-            return {
-              supported: true,
-              width: 4000,
-              height: 3000,
-              rawWidth: 4024,
-              rawHeight: 3024,
-              cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-              blackLevel: 512,
-              whiteLevel: 16383,
-              orientation: 1,
-              sensor: {
-                layout: 'bayer',
-                colorCount: 3,
-                cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-                phaseIsWindowLocal: false,
-              },
-              windows: { librawProcessed: false, rawMosaic: true },
-              diagnostics: {
-                hasRawImage: true,
-                hasColor3Image: false,
-                hasColor4Image: false,
-                hasXTransTable: false,
-              },
-              reasons: [],
-            }
+            return nativeCapability
           },
         }
       },
@@ -1611,6 +1626,7 @@ describe('runtime-core', () => {
     })
     expect(opened.ok && opened.type === 'openSession').toBe(true)
     if (!opened.ok || opened.type !== 'openSession') return
+    expect(opened.payload.probe.orientation).toBe(1)
 
     const capability = await core.handleRequest({
       id: 'job-export-normalized-capability',
@@ -1623,13 +1639,16 @@ describe('runtime-core', () => {
       type: 'probeExportCapabilityFromSession',
       payload: {
         supported: false,
-        orientation: { code: 1, supported: true },
-        reasons: expect.arrayContaining([
-          'missing-visible-crop',
-          'missing-color-transform',
-        ]),
+        reasons: ['unsupported-orientation'],
       },
     })
+    if (
+      !capability.ok ||
+      capability.type !== 'probeExportCapabilityFromSession'
+    ) {
+      return
+    }
+    expect(capability.payload.orientation).toBeUndefined()
   })
 
   it('fails closed for missing session raw-window support', async () => {

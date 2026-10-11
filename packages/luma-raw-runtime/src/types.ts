@@ -158,12 +158,6 @@ export type LumaRawExportDiagnostics = {
   lastLibRawWarningMask?: number
 }
 
-type LumaRawLegacyExportColorFacts = {
-  whiteBalance: number[]
-  cameraToWorkingRgb: number[]
-  workingSpace: 'linear-prophoto-rgb'
-}
-
 export type LumaRawExportCapability = {
   supported: boolean
   strategy?: LumaRawFullResInputStrategy
@@ -175,8 +169,8 @@ export type LumaRawExportCapability = {
   cfa: LumaRawCfaInfo
   blackLevel: number
   whiteLevel: number
-  orientation?: number | LumaRawExportOrientation
-  color?: LumaRawLegacyExportColorFacts | LumaRawExportColorFacts
+  orientation?: LumaRawExportOrientation
+  color?: LumaRawExportColorFacts
   sensor: LumaRawExportSensorFacts
   levels?: LumaRawExportLevelFacts
   windows: LumaRawExportWindowFacts

@@ -728,6 +728,10 @@ describe('createLumaRawRuntime', () => {
             whiteBalance: [2, 1, 1.5, 1],
             cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
             workingSpace: 'linear-prophoto-rgb',
+            librawOutputColor: 'prophoto',
+            gamma: 'linear',
+            cameraWhiteBalanceAppliedByRuntime: true,
+            cameraMatrixAppliedByRuntime: true,
           },
           sensor: {
             layout: 'bayer',
