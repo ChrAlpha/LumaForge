@@ -7,7 +7,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import {
   buildStoredContractSelection,
-  contractToLUTColorProfile as contractToRuntimeLUTColorProfile,
+  storedContractToLUTColorProfile,
 } from '@lumaforge/luma-color-runtime'
 
 // Browser storage and application adapters for LUT contracts. Contract
@@ -123,15 +123,6 @@ function writeStoredLUTContractSelections(
   }
 }
 
-function contractToLUTColorProfile(
-  contract: StoredLUTContractSelection,
-): LUTColorProfile {
-  return contractToRuntimeLUTColorProfile(
-    contract.inputProfile ?? `${contract.inputGamut}-${contract.inputTransfer}`,
-    contract,
-  )
-}
-
 export function getStoredLUTContractSelection(
   fingerprint: string,
 ): StoredLUTContractSelection | undefined {
@@ -142,7 +133,7 @@ export function getStoredLUTProfileSelection(
   fingerprint: string,
 ): LUTColorProfile | undefined {
   const contract = getStoredLUTContractSelection(fingerprint)
-  return contract ? contractToLUTColorProfile(contract) : undefined
+  return contract ? storedContractToLUTColorProfile(contract) : undefined
 }
 
 export function storeLUTContractSelection(
@@ -157,7 +148,7 @@ export function storeLUTContractSelection(
     [fingerprint]: contract,
   })
 
-  return contractToLUTColorProfile(contract)
+  return storedContractToLUTColorProfile(contract)
 }
 
 type ConfirmedLUTContractConfidence = Extract<
@@ -187,7 +178,11 @@ function withLUTContract(
 ): ParsedLUT | undefined {
   const contract = buildStoredContractSelection(selection)
   return contract
-    ? withConfirmedProfile(lut, contractToLUTColorProfile(contract), confidence)
+    ? withConfirmedProfile(
+        lut,
+        storedContractToLUTColorProfile(contract),
+        confidence,
+      )
     : undefined
 }
 

@@ -11,7 +11,6 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import {
   buildStoredContractSelection,
-  contractToLUTColorProfile,
   getLUTColorProfile,
   hasCompleteOutputContract,
   hasDisplayLikeInput,
@@ -21,6 +20,7 @@ import {
   resolveColorGamutId,
   resolveTransferFunctionId,
   resolveUnsupportedLUTOutputReason,
+  storedContractToLUTColorProfile,
   toLUTData,
   validateLUT,
 } from '@lumaforge/luma-color-runtime'
@@ -267,9 +267,7 @@ export function applyContractSelection(
     buildStoredContractSelection(selection)
   if (!contract)
     return { ok: false, issues: explainSelectionIssues(input, selection) }
-  const profileId =
-    contract.inputProfile ?? `${contract.inputGamut}-${contract.inputTransfer}`
-  const profile = contractToLUTColorProfile(profileId, contract)
+  const profile = storedContractToLUTColorProfile(contract)
   const profileResolution: LUTContractResolution = {
     kind: 'confirmed',
     confidence: 'user',

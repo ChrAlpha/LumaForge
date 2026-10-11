@@ -273,6 +273,23 @@ export function contractToLUTColorProfile(
   }
 }
 
+/**
+ * The LUT color profile a stored contract confirms. Its ID is the contract's
+ * input profile, canonicalized through the registry, or
+ * `${inputGamut}-${inputTransfer}` when the contract names no input profile.
+ */
+export function storedContractToLUTColorProfile(
+  contract: StoredLUTContractSelection,
+): LUTColorProfile {
+  const id =
+    (contract.inputProfile
+      ? getLUTColorProfile(contract.inputProfile)?.id
+      : undefined) ??
+    contract.inputProfile ??
+    `${contract.inputGamut}-${contract.inputTransfer}`
+  return contractToLUTColorProfile(id, contract)
+}
+
 function resolveRole(
   intent: unknown,
   hasCompleteOutput: boolean,

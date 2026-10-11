@@ -10,6 +10,7 @@ import {
   mapProfileLUTContract,
   resolveColorGamutId,
   resolveTransferFunctionId,
+  storedContractToLUTColorProfile,
   toLUTContractSelection,
 } from './lut-contract'
 import { getLUTColorProfile } from './registry'
@@ -128,6 +129,37 @@ describe('generic LUT contract validation', () => {
       inputTransfer: 's-log3',
       outputGamut: 'srgb-rec709',
       outputTransfer: 'bt709',
+    })
+  })
+
+  it('names a stored contract profile by its canonical input profile, or by its input when it names none', () => {
+    const contract: StoredLUTContractSelection = {
+      inputProfile: 'sony-sgamut3cine-slog3',
+      role: 'combined-look-output',
+      inputGamut: 's-gamut3-cine',
+      inputTransfer: 's-log3',
+      inputRange: 'full',
+      outputGamut: 'srgb-rec709',
+      outputTransfer: 'bt709',
+      outputRange: 'full',
+    }
+
+    expect(storedContractToLUTColorProfile(contract)).toEqual(
+      contractToLUTColorProfile('sony-sgamut3cine-slog3', contract),
+    )
+    expect(
+      storedContractToLUTColorProfile({
+        ...contract,
+        inputProfile: 'S-Gamut3.Cine S-Log3',
+      }).id,
+    ).toBe('sony-sgamut3cine-slog3')
+
+    const { inputProfile: _named, ...unnamed } = contract
+    expect(storedContractToLUTColorProfile(unnamed)).toMatchObject({
+      id: 's-gamut3-cine-s-log3',
+      label: 's-gamut3-cine / s-log3',
+      inputGamut: 's-gamut3-cine',
+      inputTransfer: 's-log3',
     })
   })
 

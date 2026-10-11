@@ -1,14 +1,14 @@
 import {
   buildStoredContractSelection,
-  contractToLUTColorProfile,
   isLUTRole,
   isSignalRange,
   resolveColorGamutId,
   resolveTransferFunctionId,
+  storedContractToLUTColorProfile,
 } from './lut-contract'
 import type { LUTColorProfile } from './registry'
 import { getLUTColorProfile, inferLUTColorProfileHints } from './registry'
-import type { LUTContractResolution, StoredLUTContractSelection } from './types'
+import type { LUTContractResolution } from './types'
 
 export interface ResolveLUTProfileInput {
   title: string
@@ -30,24 +30,6 @@ function normalizeProfileText(value: string): string {
 
 function compactProfileText(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
-}
-
-function getContractProfileId(contract: StoredLUTContractSelection): string {
-  const baseProfile = contract.inputProfile
-    ? getLUTColorProfile(contract.inputProfile)
-    : undefined
-
-  return (
-    baseProfile?.id ??
-    contract.inputProfile ??
-    `${contract.inputGamut}-${contract.inputTransfer}`
-  )
-}
-
-function resolvedProfileFromContract(
-  contract: StoredLUTContractSelection,
-): LUTColorProfile {
-  return contractToLUTColorProfile(getContractProfileId(contract), contract)
 }
 
 function readStructuredMetadata(comments: string[]): Map<string, string> {
@@ -96,7 +78,7 @@ function resolveStructuredMetadataContract(
     outputRange: isSignalRange(outputRange) ? outputRange : undefined,
   })
 
-  return contract ? resolvedProfileFromContract(contract) : undefined
+  return contract ? storedContractToLUTColorProfile(contract) : undefined
 }
 
 function buildProfileSignature(input: {

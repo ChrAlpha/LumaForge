@@ -108,6 +108,12 @@ depend on this exact version.
 - `ExportColorGraphInput` names the input of `resolveExportColorGraph`.
 - `ParsedLUT.sha256`: the SHA-256 of the source `.cube` bytes, when the
   caller records it, for manifest LUT identity.
+- `storedContractToLUTColorProfile`: the LUT color profile a stored contract
+  confirms, named by its input profile's canonical ID, or by
+  `${inputGamut}-${inputTransfer}` when the contract names no input profile.
+  `resolveLUTProfile` already named such profiles this way; the browser
+  app's stored contract choices and `lmfg`'s explicit contracts now use it
+  too instead of building the name themselves.
 
 ### Changed
 

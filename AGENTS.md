@@ -379,15 +379,9 @@ variant:
   helpers that decide no contract, which the desktop rail, the mobile Look
   footer, and the output-options service all import.
 
-Known duplication. This copy exists today. Do not extend it; remove it only by
-finishing the move it belongs to:
-
-- The fallback LUT profile ID for a contract that names no input profile
-  (`${inputGamut}-${inputTransfer}`) is built in
-  `packages/luma-color-runtime/src/lut-profile-resolution.ts`, again in
-  `src/lib/lut/profile-resolution.ts`, and again in
-  `packages/lmfg-cli/src/services/lut.ts`. The move is a color-runtime
-  export that both consumers import.
+Known duplication. None is known today. A copy found later is listed here,
+with the move that removes it, until that move lands; do not extend a listed
+copy.
 
 Retired public API. No published export is deprecated: a replaced export is
 deleted in the change that replaces it, with a `### Breaking` CHANGELOG entry,
