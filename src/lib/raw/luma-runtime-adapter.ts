@@ -382,14 +382,3 @@ export async function openRawSessionOnBridge(
     },
   }
 }
-
-export function toRawAdapterError(error: unknown) {
-  const code = getRawErrorCode(error)
-  if (code) return code
-
-  if (error instanceof Error) {
-    return error.message
-  }
-
-  return 'RAW_RUNTIME_UNAVAILABLE'
-}

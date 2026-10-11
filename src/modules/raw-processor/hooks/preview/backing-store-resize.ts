@@ -1,11 +1,11 @@
 /** A CSS box size in layout pixels. */
-export interface BoxSize {
+interface BoxSize {
   width: number
   height: number
 }
 
 /** A canvas backing store size in device pixels. */
-export interface BackingStoreSize {
+interface BackingStoreSize {
   width: number
   height: number
 }
@@ -14,7 +14,7 @@ export interface BackingStoreSize {
 export const BACKING_STORE_SETTLE_MS = 90
 
 /** Device pixel ratio of GPU backing stores: capped at 2, and 1 when unknown. */
-export function backingStorePixelRatio(): number {
+function backingStorePixelRatio(): number {
   return Math.min(window.devicePixelRatio || 1, 2)
 }
 

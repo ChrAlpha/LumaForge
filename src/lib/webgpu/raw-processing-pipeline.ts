@@ -5,14 +5,7 @@ import {
 
 import type { WebGPUProcessingPipeline } from './pipeline'
 
-export type {
-  ExportRenderStats,
-  PipelineStats,
-  PipelineTelemetrySnapshot,
-  PipelineTransformPath,
-  RawUploadInput,
-  RawUploadInputFormat,
-} from './contract'
+export type { PipelineStats, RawUploadInput } from './contract'
 
 /** Public renderer contract, without the executor's private resource state. */
 export type PreviewPipelineBackend = Pick<

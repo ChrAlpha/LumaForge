@@ -11,12 +11,7 @@ import { parseCubeLUT as parseCubeLUTCore } from '@lumaforge/luma-color-runtime'
 import { getStoredLUTProfileSelection } from './profile-resolution'
 
 export type { ParsedLUT } from '@lumaforge/luma-color-runtime'
-export {
-  generateIdentityLUT,
-  SUPPORTED_LUT_EXTENSIONS,
-  toLUTData,
-  validateLUT,
-} from '@lumaforge/luma-color-runtime'
+export { toLUTData, validateLUT } from '@lumaforge/luma-color-runtime'
 
 interface ParseCubeOptions {
   sourceName?: string
@@ -30,11 +25,6 @@ export function parseCubeLUT(
     ...options,
     lookupStoredProfile: getStoredLUTProfileSelection,
   })
-}
-
-export async function parseCubeFile(file: File): Promise<ParsedLUT> {
-  const content = await file.text()
-  return parseCubeLUT(content, { sourceName: file.name })
 }
 
 export function isSupportedLUT(file: File | string): boolean {

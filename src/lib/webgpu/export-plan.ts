@@ -134,12 +134,6 @@ export class ExportRenderError extends Error {
   }
 }
 
-export function isExportRenderError(
-  error: unknown,
-): error is ExportRenderError {
-  return error instanceof ExportRenderError
-}
-
 export function getExportRenderOptionsForPreference(
   preference: PerformancePreference,
 ): Required<ExportRenderOptions> {

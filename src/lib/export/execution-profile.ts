@@ -255,11 +255,6 @@ export function toExportPlanSelectedDebugPayload(
   }
 }
 
-export function getImageMegapixels(width?: number, height?: number) {
-  if (!width || !height) return 0
-  return (width * height) / 1_000_000
-}
-
 type ExportModeCopyTranslator = (key: 'raw.export.highPerformance') => string
 
 export function getExportModeCopy(

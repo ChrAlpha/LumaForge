@@ -30,7 +30,7 @@ const baseProcessingParamsAtom = atom<ColorGraphIntent>({
 
 export const [
   processingParamsAtom,
-  useProcessingParams,
+  ,
   useProcessingParamsValue,
   useSetProcessingParams,
   getProcessingParams,

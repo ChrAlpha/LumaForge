@@ -249,18 +249,6 @@ fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
 }
 `
 
-export const PASSTHROUGH_FRAGMENT_SHADER = /* wgsl */ `
-@group(0) @binding(0) var inputTex: texture_2d<f32>;
-@group(0) @binding(1) var inputSamp: sampler;
-
-@fragment
-fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
-  return textureSampleLevel(inputTex, inputSamp, texCoord, 0.0);
-}
-`
-
-export const EXPORT_FRAGMENT_SHADER = PASSTHROUGH_FRAGMENT_SHADER
-
 // float32-filterable is optional. Keep full-float LUT precision on baseline
 // devices with explicit trilinear interpolation rather than quantizing to FP16.
 const UNFILTERABLE_LUT = /* wgsl */ `
