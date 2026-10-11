@@ -37,7 +37,7 @@ describe('shader specialization features', () => {
       },
       null,
     )
-    // View fields ride along with the intent; they never reach the key.
+    // The view mode rides along with the intent; it never reaches the key.
     const withView: GpuPreviewParams = {
       ...DEFAULT_PARAMS,
       styleKind: 'builtin',
@@ -47,7 +47,6 @@ describe('shader specialization features', () => {
       userSaturation: -90,
       intensity: 0.2,
       viewMode: 'original',
-      compareSplit: 0.2,
     }
     const b = getShaderSpecialization(withView, lut())
     expect(getShaderSpecializationKey(a)).toBe(getShaderSpecializationKey(b))

@@ -31,18 +31,16 @@ import {
 /**
  * What the uniform packer reads: the complete color intent, HSL included,
  * plus the app view mode that selects the shader output. The view mode is the
- * app's own view contract, never a field read off legacy processing params. A
- * compare split may ride along from older callers; it is never packed.
+ * app's own view contract, never a field read off legacy processing params.
+ * The compare split is frame-anchored view state and never reaches the GPU.
  */
 export type GpuPreviewParams = ColorGraphIntent & {
   readonly viewMode: PreviewViewMode
-  readonly compareSplit?: number
 }
 
 export const DEFAULT_PARAMS: GpuPreviewParams = {
   intensity: 0.7,
   viewMode: 'processed',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
   userExposureEv: 0,
@@ -81,7 +79,6 @@ export function gpuPreviewInputParams(
   return {
     ...input.color,
     viewMode: OUTPUT_VIEW_MODES[input.output],
-    compareSplit: 0.5,
   }
 }
 

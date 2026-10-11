@@ -132,10 +132,12 @@ describe('webGPU uniform ABI', () => {
 
   it('carries no compare split and packs a legacy compare view as the processed output', () => {
     expect(UNIFORM_FIELDS).not.toHaveProperty('compareSplit')
+    expectTypeOf<GpuPreviewParams>().not.toHaveProperty('compareSplit')
+    expect(DEFAULT_PARAMS).not.toHaveProperty('compareSplit')
     const compare = packedBytes((view) =>
       packUniforms(
         view,
-        { ...DEFAULT_PARAMS, ...LOOK, viewMode: 'compare', compareSplit: 0.1 },
+        { ...DEFAULT_PARAMS, ...LOOK, viewMode: 'compare' },
         null,
         2,
         false,
@@ -144,12 +146,7 @@ describe('webGPU uniform ABI', () => {
     const processed = packedBytes((view) =>
       packUniforms(
         view,
-        {
-          ...DEFAULT_PARAMS,
-          ...LOOK,
-          viewMode: 'processed',
-          compareSplit: 0.9,
-        },
+        { ...DEFAULT_PARAMS, ...LOOK, viewMode: 'processed' },
         null,
         2,
         false,
@@ -177,7 +174,7 @@ describe('webGPU view selector', () => {
       const bytes = packedBytes((view) =>
         packUniforms(
           view,
-          { ...DEFAULT_PARAMS, ...LOOK, viewMode, compareSplit: 0.5 },
+          { ...DEFAULT_PARAMS, ...LOOK, viewMode },
           null,
           2,
           false,
@@ -196,7 +193,7 @@ describe('webGPU view selector', () => {
       const bytes = packedBytes((view) =>
         packUniforms(
           view,
-          { ...DEFAULT_PARAMS, ...LOOK, viewMode, compareSplit: 0.5 },
+          { ...DEFAULT_PARAMS, ...LOOK, viewMode },
           null,
           2,
           false,
@@ -262,20 +259,13 @@ describe('webGPU preview input', () => {
     expect(gpuPreviewInputParams(input)).toEqual({
       ...LOOK,
       viewMode: 'processed',
-      compareSplit: 0.5,
     })
     const packed = packedBytes((view) =>
       packGpuPreviewUniforms(view, input, null, 2, false),
     )
     expect(packed).toEqual(
       packedBytes((view) =>
-        packUniforms(
-          view,
-          { ...LOOK, viewMode: 'processed', compareSplit: 0.5 },
-          null,
-          2,
-          false,
-        ),
+        packUniforms(view, { ...LOOK, viewMode: 'processed' }, null, 2, false),
       ),
     )
     const view = new DataView(new Uint8Array(packed).buffer)
@@ -291,7 +281,6 @@ describe('webGPU preview input', () => {
     expect(params).toEqual({
       ...LOOK,
       viewMode: 'original',
-      compareSplit: 0.5,
     })
     expect(pickColorGraphIntent(params)).toEqual(LOOK)
     const packed = packedBytes((view) =>
@@ -299,13 +288,7 @@ describe('webGPU preview input', () => {
     )
     expect(packed).toEqual(
       packedBytes((view) =>
-        packUniforms(
-          view,
-          { ...LOOK, viewMode: 'original', compareSplit: 0.5 },
-          null,
-          2,
-          false,
-        ),
+        packUniforms(view, { ...LOOK, viewMode: 'original' }, null, 2, false),
       ),
     )
     const view = new DataView(new Uint8Array(packed).buffer)
@@ -463,7 +446,6 @@ describe('webGPU preview of a look export refuses', () => {
     const params = {
       ...LOOK,
       viewMode: 'processed',
-      compareSplit: 0.5,
     } as const
     const view = new DataView(new Uint8Array(packed(params, null)).buffer)
     const i = (name: string) => view.getInt32(UNIFORM_FIELDS[name].offset, true)
