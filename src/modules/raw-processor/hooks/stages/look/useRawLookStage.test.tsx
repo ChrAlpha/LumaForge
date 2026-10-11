@@ -55,6 +55,12 @@ vi.mock('~/lib/profiles/fetch', () => ({
   fetchCachedBytesWithLimit: vi.fn(),
 }))
 
+const toastMock = vi.hoisted(() => ({
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
+}))
+
+vi.mock('sonner', () => toastMock)
+
 // The stage reads and writes the session in the production store, so every
 // test seeds that store and leaves it empty.
 beforeEach(() => {
@@ -1492,6 +1498,291 @@ describe('useRawLookStage LUT loads against the current session', () => {
 
     expect(getCurrentSession()).toBe(session)
     expect(harness.setLut).not.toHaveBeenCalled()
+  })
+})
+
+describe('useRawLookStage notifications', () => {
+  /**
+   * Renders the stage over the production session store and keeps every
+   * scheduled toast, so a test can tell what the stage decided to report
+   * from when it is shown.
+   */
+  function renderNotificationHarness({
+    session,
+    lut = null,
+    canApplyLoadedLut = () => true,
+  }: {
+    session: ImageSession | null
+    lut?: ParsedLUT | null
+    canApplyLoadedLut?: () => boolean
+  }) {
+    setCurrentSession(session)
+    const scheduled: Array<() => void> = []
+    const scheduleToast = vi.fn((show: () => void) => {
+      scheduled.push(show)
+    })
+    const setLut = vi.fn()
+    const { result } = renderHook(() =>
+      useRawLookStage({
+        baseParams,
+        session,
+        lut,
+        setLut,
+        setColorIntent: vi.fn(),
+        lutDataRef: { current: lut },
+        setLutDataRef: vi.fn(),
+        scheduleToast,
+        invalidateExportGraph: vi.fn(),
+        canApplyLoadedLut,
+      }),
+    )
+    return {
+      actions: result.current,
+      scheduleToast,
+      setLut,
+      runScheduled() {
+        for (const show of scheduled.splice(0)) show()
+      },
+    }
+  }
+
+  function shownToasts() {
+    return {
+      error: toastMock.toast.error.mock.calls,
+      success: toastMock.toast.success.mock.calls,
+      info: toastMock.toast.info.mock.calls,
+    }
+  }
+
+  beforeEach(() => {
+    vi.mocked(fetchVerifiedCubeAsset).mockReset()
+    toastMock.toast.error.mockReset()
+    toastMock.toast.success.mockReset()
+    toastMock.toast.info.mockReset()
+  })
+
+  it('reports a loaded local LUT by title and grid only when its scheduled task runs', async () => {
+    const harness = renderNotificationHarness({
+      session: createSessionWithoutLook(),
+    })
+
+    await act(async () => {
+      await expect(
+        harness.actions.loadLUT(createCubeFile('Client Look', 'look.cube')),
+      ).resolves.toBe('loaded')
+    })
+
+    expect(harness.scheduleToast).toHaveBeenCalledTimes(1)
+    expect(toastMock.toast.success).not.toHaveBeenCalled()
+    harness.runScheduled()
+    expect(shownToasts()).toEqual({
+      error: [],
+      success: [['Loaded LUT: Client Look', { description: '17³ grid' }]],
+      info: [],
+    })
+  })
+
+  it('reports a loaded online LUT by title and grid', async () => {
+    vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue({
+      bytes: new TextEncoder().encode(createCubeContent('Online Look')),
+      sha256: 'b'.repeat(64),
+    })
+    const harness = renderNotificationHarness({
+      session: createSessionWithoutLook(),
+    })
+
+    await act(async () => {
+      await expect(harness.actions.loadOnlineLUT(onlineEntry)).resolves.toBe(
+        'loaded',
+      )
+    })
+
+    harness.runScheduled()
+    expect(shownToasts()).toEqual({
+      error: [],
+      success: [['Loaded LUT: Online Look', { description: '17³ grid' }]],
+      info: [],
+    })
+  })
+
+  it('reports an unsupported file format and records its code', async () => {
+    const harness = renderNotificationHarness({
+      session: createSessionWithoutLook(),
+    })
+
+    await act(async () => {
+      await expect(
+        harness.actions.loadLUT(
+          Object.assign(new File(['not a lut'], 'look.txt'), {
+            text: () => Promise.resolve('not a lut'),
+          }),
+        ),
+      ).resolves.toBe('failed')
+    })
+
+    expect(getCurrentSession()?.renderState.lastErrorCode).toBe(
+      'LUT_UNSUPPORTED_FORMAT',
+    )
+    harness.runScheduled()
+    expect(shownToasts()).toEqual({
+      error: [
+        [
+          'Unsupported LUT format',
+          { description: 'Only .cube files are supported' },
+        ],
+      ],
+      success: [],
+      info: [],
+    })
+  })
+
+  it('reports a parser failure with the parser detail', async () => {
+    const harness = renderNotificationHarness({
+      session: createSessionWithoutLook(),
+    })
+    const content = 'TITLE "Broken"\nLUT_3D_SIZE 2\n0 0 0\n'
+
+    await act(async () => {
+      await expect(
+        harness.actions.loadLUT(
+          Object.assign(new File([content], 'broken.cube'), {
+            text: () => Promise.resolve(content),
+          }),
+        ),
+      ).resolves.toBe('failed')
+    })
+
+    expect(harness.setLut).not.toHaveBeenCalled()
+    expect(getCurrentSession()?.renderState.lastErrorCode).toBe(
+      'LUT_PARSE_FAILED',
+    )
+    harness.runScheduled()
+    expect(shownToasts()).toEqual({
+      error: [
+        [
+          'Failed to load LUT',
+          { description: 'Invalid .cube file: expected 8 entries, got 1' },
+        ],
+      ],
+      success: [],
+      info: [],
+    })
+  })
+
+  it('reports an incomplete catalog contract as a failed load', async () => {
+    vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue({
+      bytes: new TextEncoder().encode(createCubeContent('Online Look')),
+      sha256: 'b'.repeat(64),
+    })
+    const harness = renderNotificationHarness({
+      session: createSessionWithoutLook(),
+    })
+
+    await act(async () => {
+      await expect(
+        harness.actions.loadOnlineLUT({
+          ...onlineEntry,
+          trustedContract: {
+            role: 'combined-look-output',
+            inputProfile: 'panasonic-vgamut-vlog',
+          },
+        }),
+      ).resolves.toBe('failed')
+    })
+
+    expect(getCurrentSession()?.renderState.lastErrorCode).toBe(
+      'LUT_PARSE_FAILED',
+    )
+    harness.runScheduled()
+    expect(shownToasts()).toEqual({
+      error: [
+        [
+          'Failed to load LUT',
+          { description: 'Unsupported LUT color contract.' },
+        ],
+      ],
+      success: [],
+      info: [],
+    })
+  })
+
+  it('reports an incomplete contract choice by the profile it named', () => {
+    const lut = createLut()
+    const harness = renderNotificationHarness({ session: createSession(), lut })
+
+    harness.actions.selectLUTProfile('not-a-profile')
+
+    expect(harness.setLut).not.toHaveBeenCalled()
+    harness.runScheduled()
+    expect(shownToasts()).toEqual({
+      error: [['Incomplete LUT contract', { description: 'not-a-profile' }]],
+      success: [],
+      info: [],
+    })
+  })
+
+  it('reports a contract choice made with no LUT loaded', () => {
+    const harness = renderNotificationHarness({ session: createSession() })
+
+    harness.actions.selectLUTProfile('display-srgb')
+
+    harness.runScheduled()
+    expect(shownToasts()).toEqual({
+      error: [['No LUT loaded']],
+      success: [],
+      info: [],
+    })
+  })
+
+  it('reports nothing for a contract choice that applies', () => {
+    const lut = createLut()
+    const harness = renderNotificationHarness({ session: createSession(), lut })
+
+    harness.actions.selectLUTProfile('display-srgb')
+
+    expect(harness.setLut).toHaveBeenCalledTimes(1)
+    expect(harness.scheduleToast).not.toHaveBeenCalled()
+  })
+
+  it('reports nothing for an aborted request, even one that also failed', async () => {
+    const download = Promise.withResolvers<{
+      bytes: Uint8Array
+      sha256: string
+    }>()
+    vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
+    const harness = renderNotificationHarness({
+      session: createSessionWithoutLook(),
+    })
+    const controller = new AbortController()
+    let load!: Promise<LutLoadOutcome>
+    act(() => {
+      load = harness.actions.loadOnlineLUT(onlineEntry, {
+        signal: controller.signal,
+      })
+    })
+    controller.abort()
+
+    await act(async () => {
+      download.reject(new Error('network down'))
+      await expect(load).resolves.toBe('aborted')
+    })
+
+    expect(harness.scheduleToast).not.toHaveBeenCalled()
+    expect(getCurrentSession()?.renderState.lastErrorCode).toBeUndefined()
+  })
+
+  it('reports a cleared LUT', () => {
+    const lut = createLut()
+    const harness = renderNotificationHarness({ session: createSession(), lut })
+
+    harness.actions.clearLUT()
+
+    harness.runScheduled()
+    expect(shownToasts()).toEqual({
+      error: [],
+      success: [],
+      info: [['LUT cleared']],
+    })
   })
 })
 

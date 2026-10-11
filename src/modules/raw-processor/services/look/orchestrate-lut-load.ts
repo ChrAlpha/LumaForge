@@ -6,7 +6,6 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { toLUTContractSelection } from '@lumaforge/luma-color-runtime'
 import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
-import { toast } from 'sonner'
 
 import { parseCubeLUTOffThread } from '~/lib/lut/cube-parse-async'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
@@ -48,10 +47,27 @@ const onlineProfileCache = createBrowserOnlineProfileCache()
 
 /**
  * How a LUT load attempt ended. Callers must branch on this instead of
- * assuming a resolved promise means success: failures are reported (toast +
- * session error code) inside the orchestrator and intentionally not rethrown.
+ * assuming a resolved promise means success: failures are reported (a
+ * notification + session error code) inside the orchestrator and
+ * intentionally not rethrown.
  */
 export type LutLoadOutcome = 'loaded' | 'failed' | 'aborted'
+
+/**
+ * What a LUT load or contract choice tells the user. A load reports at most
+ * one, after its session writes, and none once it went stale; how and when it
+ * is shown belongs to the caller.
+ */
+export type LutNotification =
+  | { kind: 'loaded'; title: string; gridSize: number }
+  /** The file is not a .cube. */
+  | { kind: 'unsupported-format' }
+  /** Read, download, parse, contract or validation failure, with its detail. */
+  | { kind: 'load-failed'; message: string }
+  /** A contract was chosen while no LUT is loaded. */
+  | { kind: 'no-lut' }
+  /** The chosen profile does not resolve to a complete LUT contract. */
+  | { kind: 'incomplete-contract'; profileId: string }
 
 interface LoadLUTContentOptions {
   /** Raw .cube text, or undecoded bytes (decoded on the parse worker). */
@@ -99,7 +115,7 @@ export interface LutLoadContext {
     lutDataRef: { current: LUTData | null }
   }
   services: {
-    scheduleToast: (notify: () => void) => void
+    notify: (notification: LutNotification) => void
     invalidateExportGraph: () => void
     setLutDataRef: (nextLutData: LUTData | null) => void
     /**
@@ -129,9 +145,7 @@ function reportLUTLoadFailure(error: unknown, ctx: LutLoadContext): void {
         }
       : prev,
   )
-  ctx.services.scheduleToast(() =>
-    toast.error('Failed to load LUT', { description: message }),
-  )
+  ctx.services.notify({ kind: 'load-failed', message })
 }
 
 function applyLoadedLUT(
@@ -159,11 +173,11 @@ function applyLoadedLUT(
       intensity: style.defaultIntensity,
     }))
   }
-  ctx.services.scheduleToast(() =>
-    toast.success(`Loaded LUT: ${parsed.title}`, {
-      description: `${parsed.size}³ grid`,
-    }),
-  )
+  ctx.services.notify({
+    kind: 'loaded',
+    title: parsed.title,
+    gridSize: parsed.size,
+  })
 }
 
 async function loadLUTContent(
@@ -239,11 +253,7 @@ export async function orchestrateLutLoadFromFile(
           }
         : prev,
     )
-    ctx.services.scheduleToast(() =>
-      toast.error('Unsupported LUT format', {
-        description: 'Only .cube files are supported',
-      }),
-    )
+    ctx.services.notify({ kind: 'unsupported-format' })
     return 'failed'
   }
 
@@ -343,7 +353,7 @@ export function orchestrateProfileSelection(
   ctx: LutLoadContext,
 ): void {
   if (!ctx.atoms.lut) {
-    ctx.services.scheduleToast(() => toast.error('No LUT loaded'))
+    ctx.services.notify({ kind: 'no-lut' })
     return
   }
 
@@ -356,11 +366,10 @@ export function orchestrateProfileSelection(
       )
     : undefined
   if (!updatedLut) {
-    ctx.services.scheduleToast(() =>
-      toast.error('Incomplete LUT contract', {
-        description: typeof profile === 'string' ? profile : profile.id,
-      }),
-    )
+    ctx.services.notify({
+      kind: 'incomplete-contract',
+      profileId: typeof profile === 'string' ? profile : profile.id,
+    })
     return
   }
 

@@ -11,7 +11,7 @@ import {
 } from '~/lib/profiles/fetch'
 
 import type { ImageSession } from '../../model/session'
-import type { LutLoadContext } from './orchestrate-lut-load'
+import type { LutLoadContext, LutNotification } from './orchestrate-lut-load'
 import {
   orchestrateLutLoadFromFile,
   orchestrateOnlineLutLoad,
@@ -34,14 +34,6 @@ vi.mock('@lumaforge/render-engine/manifest', async (importOriginal) => {
   }
 })
 
-vi.mock('sonner', () => ({
-  toast: {
-    error: vi.fn(),
-    success: vi.fn(),
-    info: vi.fn(),
-  },
-}))
-
 function cubeText(size: number): string {
   const lines = [`TITLE "Outcome Fixture"`, `LUT_3D_SIZE ${size}`]
   const step = 1 / (size - 1)
@@ -58,7 +50,7 @@ function cubeText(size: number): string {
 }
 
 function buildCtx() {
-  const scheduledToasts: Array<() => void> = []
+  const notifications: LutNotification[] = []
   // Stands in for the session store: the orchestrator reads it through the
   // getter each time, never through a copy taken when the load began.
   const store: { session: ImageSession | null } = { session: null }
@@ -74,15 +66,15 @@ function buildCtx() {
       lutDataRef: { current: null },
     },
     services: {
-      scheduleToast: (notify) => {
-        scheduledToasts.push(notify)
+      notify: (notification) => {
+        notifications.push(notification)
       },
       invalidateExportGraph: vi.fn(),
       setLutDataRef: vi.fn(),
       canApplyLoadedLut: vi.fn(() => true),
     },
   }
-  return { ctx, scheduledToasts, store }
+  return { ctx, notifications, store }
 }
 
 /** A .cube whose bytes arrive only when the test finishes the read. */
@@ -97,12 +89,12 @@ function deferredCubeFile(name: string) {
   return { file, finishRead }
 }
 
-function expectUntouched(ctx: LutLoadContext, scheduledToasts: unknown[]) {
+function expectUntouched(ctx: LutLoadContext, notifications: unknown[]) {
   expect(ctx.atoms.setLut).not.toHaveBeenCalled()
   expect(ctx.atoms.setSession).not.toHaveBeenCalled()
   expect(ctx.atoms.setColorIntent).not.toHaveBeenCalled()
   expect(ctx.services.invalidateExportGraph).not.toHaveBeenCalled()
-  expect(scheduledToasts).toHaveLength(0)
+  expect(notifications).toHaveLength(0)
 }
 
 function sessionWithId(id: string): ImageSession {
@@ -202,7 +194,7 @@ describe('orchestrateOnlineLutLoad outcome', () => {
       controller.abort()
       return verifiedCube(cubeText(17))
     })
-    const { ctx, scheduledToasts } = buildCtx()
+    const { ctx, notifications } = buildCtx()
 
     const outcome = await orchestrateOnlineLutLoad(
       entry,
@@ -212,20 +204,22 @@ describe('orchestrateOnlineLutLoad outcome', () => {
 
     expect(outcome).toBe('aborted')
     expect(ctx.atoms.setLut).not.toHaveBeenCalled()
-    expect(scheduledToasts).toHaveLength(0)
+    expect(notifications).toHaveLength(0)
   })
 
   it("returns 'loaded' and applies the LUT when download and parse succeed", async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
       verifiedCube(cubeText(17)),
     )
-    const { ctx, scheduledToasts } = buildCtx()
+    const { ctx, notifications } = buildCtx()
 
     const outcome = await orchestrateOnlineLutLoad(entry, undefined, ctx)
 
     expect(outcome).toBe('loaded')
     expect(ctx.atoms.setLut).toHaveBeenCalledTimes(1)
-    expect(scheduledToasts).toHaveLength(1)
+    expect(notifications).toEqual([
+      { kind: 'loaded', title: 'Outcome Fixture', gridSize: 17 },
+    ])
   })
 
   it('lands on the photo in the store when the online LUT arrives', async () => {
@@ -243,17 +237,19 @@ describe('orchestrateOnlineLutLoad outcome', () => {
     expect(ctx.atoms.setColorIntent).not.toHaveBeenCalled()
   })
 
-  it("returns 'failed' and schedules a failure toast when the download fails", async () => {
+  it("returns 'failed' and reports the failure detail when the download fails", async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockRejectedValue(
       new Error('HTTP 404 Not Found'),
     )
-    const { ctx, scheduledToasts } = buildCtx()
+    const { ctx, notifications } = buildCtx()
 
     const outcome = await orchestrateOnlineLutLoad(entry, undefined, ctx)
 
     expect(outcome).toBe('failed')
     expect(ctx.atoms.setLut).not.toHaveBeenCalled()
-    expect(scheduledToasts).toHaveLength(1)
+    expect(notifications).toEqual([
+      { kind: 'load-failed', message: 'HTTP 404 Not Found' },
+    ])
   })
 
   it('forwards download progress events from the verified fetch', async () => {
@@ -283,7 +279,7 @@ describe('orchestrateOnlineLutLoad outcome', () => {
   it("returns 'aborted' without fetching when the signal is already aborted", async () => {
     const controller = new AbortController()
     controller.abort()
-    const { ctx, scheduledToasts } = buildCtx()
+    const { ctx, notifications } = buildCtx()
 
     const outcome = await orchestrateOnlineLutLoad(
       entry,
@@ -293,32 +289,32 @@ describe('orchestrateOnlineLutLoad outcome', () => {
 
     expect(outcome).toBe('aborted')
     expect(fetchVerifiedCubeAsset).not.toHaveBeenCalled()
-    expect(scheduledToasts).toHaveLength(0)
+    expect(notifications).toHaveLength(0)
   })
 
   it("returns 'aborted' without applying when the workflow refuses the parsed LUT", async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
       verifiedCube(cubeText(17)),
     )
-    const { ctx, scheduledToasts } = buildCtx()
+    const { ctx, notifications } = buildCtx()
     vi.mocked(ctx.services.canApplyLoadedLut).mockReturnValue(false)
 
     const outcome = await orchestrateOnlineLutLoad(entry, undefined, ctx)
 
     expect(outcome).toBe('aborted')
-    expectUntouched(ctx, scheduledToasts)
+    expectUntouched(ctx, notifications)
   })
 
   it("returns 'aborted' without toasting when the fetch aborts mid-flight", async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockRejectedValue(
       new DOMException('Aborted', 'AbortError'),
     )
-    const { ctx, scheduledToasts } = buildCtx()
+    const { ctx, notifications } = buildCtx()
 
     const outcome = await orchestrateOnlineLutLoad(entry, undefined, ctx)
 
     expect(outcome).toBe('aborted')
-    expect(scheduledToasts).toHaveLength(0)
+    expect(notifications).toHaveLength(0)
   })
 })
 
@@ -393,7 +389,7 @@ describe('lUT contract provenance', () => {
       verifiedCube(cubeText(17)),
     )
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
-    const { ctx } = buildCtx()
+    const { ctx, notifications } = buildCtx()
 
     const outcome = await orchestrateOnlineLutLoad(
       {
@@ -410,6 +406,9 @@ describe('lUT contract provenance', () => {
     expect(outcome).toBe('failed')
     expect(ctx.atoms.setLut).not.toHaveBeenCalled()
     expect(selectionWrites(setItem)).toHaveLength(0)
+    expect(notifications).toEqual([
+      { kind: 'load-failed', message: 'Unsupported LUT color contract.' },
+    ])
   })
 
   it('writes a contract choice to the photo in the store, or else to the detached intent', async () => {
@@ -498,7 +497,7 @@ describe('orchestrateLutLoadFromFile outcome', () => {
   })
 
   it("returns 'aborted' untouched when the workflow refuses a load before it starts", async () => {
-    const { ctx, scheduledToasts } = buildCtx()
+    const { ctx, notifications } = buildCtx()
     vi.mocked(ctx.services.canApplyLoadedLut).mockReturnValue(false)
 
     const outcome = await orchestrateLutLoadFromFile(
@@ -507,24 +506,24 @@ describe('orchestrateLutLoadFromFile outcome', () => {
     )
 
     expect(outcome).toBe('aborted')
-    expectUntouched(ctx, scheduledToasts)
+    expectUntouched(ctx, notifications)
   })
 
   it("returns 'aborted' untouched when the workflow refuses edits while the file reads", async () => {
     const { file, finishRead } = deferredCubeFile('fixture.cube')
-    const { ctx, scheduledToasts } = buildCtx()
+    const { ctx, notifications } = buildCtx()
 
     const load = orchestrateLutLoadFromFile(file, ctx)
     vi.mocked(ctx.services.canApplyLoadedLut).mockReturnValue(false)
     finishRead()
 
     await expect(load).resolves.toBe('aborted')
-    expectUntouched(ctx, scheduledToasts)
+    expectUntouched(ctx, notifications)
   })
 
   it("returns 'aborted' untouched when its signal aborts while the file reads", async () => {
     const { file, finishRead } = deferredCubeFile('fixture.cube')
-    const { ctx, scheduledToasts } = buildCtx()
+    const { ctx, notifications } = buildCtx()
     const controller = new AbortController()
 
     const load = orchestrateLutLoadFromFile(file, ctx, {
@@ -534,12 +533,12 @@ describe('orchestrateLutLoadFromFile outcome', () => {
     finishRead()
 
     await expect(load).resolves.toBe('aborted')
-    expectUntouched(ctx, scheduledToasts)
+    expectUntouched(ctx, notifications)
   })
 
   it("returns 'aborted' untouched when the photo it was started on is replaced", async () => {
     const { file, finishRead } = deferredCubeFile('fixture.cube')
-    const { ctx, scheduledToasts, store } = buildCtx()
+    const { ctx, notifications, store } = buildCtx()
     store.session = sessionWithId('photo-a')
 
     const load = orchestrateLutLoadFromFile(file, ctx)
@@ -547,12 +546,12 @@ describe('orchestrateLutLoadFromFile outcome', () => {
     finishRead()
 
     await expect(load).resolves.toBe('aborted')
-    expectUntouched(ctx, scheduledToasts)
+    expectUntouched(ctx, notifications)
   })
 
   it("returns 'aborted' untouched when the photo it was started on is reset", async () => {
     const { file, finishRead } = deferredCubeFile('fixture.cube')
-    const { ctx, scheduledToasts, store } = buildCtx()
+    const { ctx, notifications, store } = buildCtx()
     store.session = sessionWithId('photo-a')
 
     const load = orchestrateLutLoadFromFile(file, ctx)
@@ -560,7 +559,7 @@ describe('orchestrateLutLoadFromFile outcome', () => {
     finishRead()
 
     await expect(load).resolves.toBe('aborted')
-    expectUntouched(ctx, scheduledToasts)
+    expectUntouched(ctx, notifications)
   })
 
   it('belongs to the photo in the store when it starts, not one read earlier', async () => {
@@ -609,11 +608,90 @@ describe('orchestrateLutLoadFromFile outcome', () => {
 
   it("returns 'failed' for an unsupported format", async () => {
     const file = asTextFile('not a lut', 'fixture.txt')
-    const { ctx, scheduledToasts } = buildCtx()
+    const { ctx, notifications } = buildCtx()
 
     const outcome = await orchestrateLutLoadFromFile(file, ctx)
 
     expect(outcome).toBe('failed')
-    expect(scheduledToasts).toHaveLength(1)
+    expect(notifications).toEqual([{ kind: 'unsupported-format' }])
+  })
+
+  it("returns 'failed' and reports the parser detail for a malformed .cube", async () => {
+    const file = asTextFile('LUT_3D_SIZE 2\n0 0 0\n', 'broken.cube')
+    const { ctx, notifications } = buildCtx()
+
+    const outcome = await orchestrateLutLoadFromFile(file, ctx)
+
+    expect(outcome).toBe('failed')
+    expect(ctx.atoms.setLut).not.toHaveBeenCalled()
+    expect(notifications).toEqual([
+      {
+        kind: 'load-failed',
+        message: 'Invalid .cube file: expected 8 entries, got 1',
+      },
+    ])
+  })
+
+  it('reports a failure only after recording its code on the session', async () => {
+    const file = asTextFile('not a lut', 'fixture.txt')
+    const { ctx } = buildCtx()
+    const order: string[] = []
+    vi.mocked(ctx.atoms.setSession).mockImplementation(() => {
+      order.push('session')
+    })
+    ctx.services.notify = (notification) => {
+      order.push(notification.kind)
+    }
+
+    await orchestrateLutLoadFromFile(file, ctx)
+
+    expect(order).toEqual(['session', 'unsupported-format'])
+  })
+})
+
+describe('orchestrateProfileSelection notifications', () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('reports a choice made with no LUT loaded and writes nothing', () => {
+    const { ctx, notifications } = buildCtx()
+
+    orchestrateProfileSelection('display-srgb', ctx)
+
+    expect(notifications).toEqual([{ kind: 'no-lut' }])
+    expect(ctx.atoms.setLut).not.toHaveBeenCalled()
+    expect(ctx.atoms.setSession).not.toHaveBeenCalled()
+  })
+
+  it('reports an incomplete contract choice by the profile it named', async () => {
+    const { ctx, notifications } = buildCtx()
+    await orchestrateLutLoadFromFile(asTextFile(cubeText(17), 'a.cube'), ctx)
+    ctx.atoms.lut = vi.mocked(ctx.atoms.setLut).mock.calls[0]![0]
+    vi.mocked(ctx.atoms.setLut).mockClear()
+    notifications.length = 0
+
+    orchestrateProfileSelection('not-a-profile', ctx)
+    orchestrateProfileSelection(
+      { ...getLUTColorProfile('panasonic-vgamut-vlog')!, id: 'partial-vlog' },
+      ctx,
+    )
+
+    expect(notifications).toEqual([
+      { kind: 'incomplete-contract', profileId: 'not-a-profile' },
+      { kind: 'incomplete-contract', profileId: 'partial-vlog' },
+    ])
+    expect(ctx.atoms.setLut).not.toHaveBeenCalled()
+  })
+
+  it('reports nothing for a choice that applies', async () => {
+    const { ctx, notifications } = buildCtx()
+    await orchestrateLutLoadFromFile(asTextFile(cubeText(17), 'a.cube'), ctx)
+    ctx.atoms.lut = vi.mocked(ctx.atoms.setLut).mock.calls[0]![0]
+    notifications.length = 0
+
+    orchestrateProfileSelection('display-srgb', ctx)
+
+    expect(notifications).toEqual([])
   })
 })

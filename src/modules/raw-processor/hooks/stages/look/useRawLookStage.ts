@@ -17,7 +17,10 @@ import type {
 } from '../../../model/session'
 import { projectEffectiveColorIntent } from '../../../services/look/effective-color-intent'
 import { resolveActiveLook } from '../../../services/look/look-session-state'
-import type { LutLoadContext } from '../../../services/look/orchestrate-lut-load'
+import type {
+  LutLoadContext,
+  LutNotification,
+} from '../../../services/look/orchestrate-lut-load'
 import {
   orchestrateLutLoadFromFile,
   orchestrateOnlineLutLoad,
@@ -58,6 +61,32 @@ type UseRawLookStageInput = {
   canApplyLoadedLut: () => boolean
 }
 
+function showLutNotification(notification: LutNotification) {
+  switch (notification.kind) {
+    case 'loaded':
+      toast.success(`Loaded LUT: ${notification.title}`, {
+        description: `${notification.gridSize}³ grid`,
+      })
+      break
+    case 'unsupported-format':
+      toast.error('Unsupported LUT format', {
+        description: 'Only .cube files are supported',
+      })
+      break
+    case 'load-failed':
+      toast.error('Failed to load LUT', { description: notification.message })
+      break
+    case 'no-lut':
+      toast.error('No LUT loaded')
+      break
+    case 'incomplete-contract':
+      toast.error('Incomplete LUT contract', {
+        description: notification.profileId,
+      })
+      break
+  }
+}
+
 export function useRawLookStage({
   baseParams,
   session,
@@ -87,6 +116,15 @@ export function useRawLookStage({
     [baseParams, session],
   )
 
+  // A load decides what to report while it owns the session; the toast
+  // itself waits for the scheduled post-commit task.
+  const notify = useCallback(
+    (notification: LutNotification) => {
+      scheduleToast(() => showLutNotification(notification))
+    },
+    [scheduleToast],
+  )
+
   // LUT loads read and write the session in the store, so a load, reset or
   // look write landing before this hook rerenders is what they see.
   const lutCtx = useMemo<LutLoadContext>(
@@ -102,7 +140,7 @@ export function useRawLookStage({
         lutDataRef,
       },
       services: {
-        scheduleToast,
+        notify,
         invalidateExportGraph,
         setLutDataRef,
         canApplyLoadedLut,
@@ -113,7 +151,7 @@ export function useRawLookStage({
       invalidateExportGraph,
       lut,
       lutDataRef,
-      scheduleToast,
+      notify,
       setColorIntent,
       setLut,
       setLutDataRef,
