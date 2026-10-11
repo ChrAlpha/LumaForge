@@ -1,11 +1,11 @@
 import type { LUTContractResolution } from '@lumaforge/luma-color-runtime'
 import { useMemo } from 'react'
 
-import type { LUTContractSelectionState } from '../../../model/session'
+import type { LUTContractSelectionState } from '../model/session'
 import {
   deriveLUTContractView,
   getResolvedProfile,
-} from '../../../services/look/lut-contract'
+} from '../services/look/lut-contract'
 
 type UseLutContractSummaryInput = {
   lutProfileSelection?: LUTContractSelectionState | null
