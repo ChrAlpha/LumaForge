@@ -1,8 +1,14 @@
 // @vitest-environment node
+import assert from 'node:assert/strict'
+import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 import { resolveConfig } from 'vite'
-import { describe, expect, it } from 'vitest'
+
+// Runs under `node --test` and under the Vitest tooling project.
+const { describe, it } = process.env.VITEST
+  ? await import('vitest')
+  : await import('node:test')
 
 // Each package test project: its config file, the environment its suite
 // runs in by default, and the build-only plugin (if any) that rewrites dist.
@@ -50,16 +56,15 @@ async function resolveProject(project, command) {
 }
 
 describe('package test projects', () => {
-  it.each(PROJECTS)(
-    '$dir is rooted at its package with an explicit name and environment',
-    async (project) => {
+  for (const project of PROJECTS) {
+    it(`${project.dir} is rooted at its package with an explicit name and environment`, async () => {
       const config = await resolveProject(project, 'serve')
 
-      expect(config.root).toBe(packageDir(project.dir))
-      expect(config.test?.name).toBe(`@lumaforge/${project.dir}`)
-      expect(config.test?.environment).toBe(project.environment)
-    },
-  )
+      assert.equal(config.root, packageDir(project.dir))
+      assert.equal(config.test?.name, `@lumaforge/${project.dir}`)
+      assert.equal(config.test?.environment, project.environment)
+    })
+  }
 
   it('gives every package project a unique name', async () => {
     const names = await Promise.all(
@@ -69,18 +74,17 @@ describe('package test projects', () => {
       ),
     )
 
-    expect(new Set(names).size).toBe(PROJECTS.length)
+    assert.equal(new Set(names).size, PROJECTS.length)
   })
 
-  it.each(PROJECTS.filter((project) => project.distPlugin))(
-    '$dir runs its dist-cleaning hook only when building',
-    async (project) => {
+  for (const project of PROJECTS.filter((project) => project.distPlugin)) {
+    it(`${project.dir} runs its dist-cleaning hook only when building`, async () => {
       const serve = await resolveProject(project, 'serve')
       const build = await resolveProject(project, 'build')
       const names = (config) => config.plugins.map((plugin) => plugin.name)
 
-      expect(names(serve)).not.toContain(project.distPlugin)
-      expect(names(build)).toContain(project.distPlugin)
-    },
-  )
+      assert.ok(!names(serve).includes(project.distPlugin))
+      assert.ok(names(build).includes(project.distPlugin))
+    })
+  }
 })
