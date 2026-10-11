@@ -1026,7 +1026,7 @@ describe('rAW Transform feature', () => {
     const onFirst = lastRender()
     answer(onFirst)
     expect(commits).toHaveBeenLastCalledWith('one', geometryOf(onFirst))
-    stop()
+    act(() => stop())
 
     hook.rerender({ session: 'two' })
     // The old photo's answer never lands on the new session.

@@ -2,6 +2,7 @@ import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   renderHook,
@@ -10,6 +11,7 @@ import {
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Provider as JotaiProvider } from 'jotai'
+import { RESET } from 'jotai/utils'
 import type { ComponentProps, ReactNode } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import {
@@ -44,6 +46,7 @@ import type { ExportResult } from '../model/export-result'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { captureTransformSource } from '../services/preview/capture-transform-source'
 import { setCurrentSession } from '../state/session.atoms'
+import { toolCardOpenAtom } from '../state/tool-card.atoms'
 import {
   getProcessingParams,
   resetToDefaults,
@@ -1349,6 +1352,9 @@ describe('rawWorkflowToolProvider interruption note', () => {
       )
       expect(onExport).toHaveBeenCalledExactlyOnceWith()
     } finally {
+      // Unmount the surface before restoring the viewport it reads, so the
+      // restore re-renders nothing outside act.
+      cleanup()
       jotaiStore.set(viewportAtom, prev)
     }
   })
@@ -1394,6 +1400,9 @@ describe('rawWorkflowToolProvider interruption note', () => {
       )
       expect(onExport).toHaveBeenCalledExactlyOnceWith()
     } finally {
+      // Unmount the surface before restoring the viewport it reads, so the
+      // restore re-renders nothing outside act.
+      cleanup()
       jotaiStore.set(viewportAtom, prev)
     }
   })
@@ -1498,7 +1507,12 @@ describe('rawWorkflowToolProvider surface policy', () => {
     )
   })
   afterEach(() => {
+    // Unmount the surface before restoring the viewport and the open tool
+    // cards it reads, so the restore re-renders nothing outside act and the
+    // next rail mounts with the cards its storage holds.
+    cleanup()
     jotaiStore.set(viewportAtom, previousViewport)
+    jotaiStore.set(toolCardOpenAtom, RESET)
   })
   const showDesktop = () =>
     jotaiStore.set(viewportAtom, { ...previousViewport, w: 1280, sm: true })
@@ -2012,7 +2026,12 @@ describe('rawWorkflowToolProvider export reasons on the surfaces', () => {
     )
   })
   afterEach(() => {
+    // Unmount the surface before restoring the viewport, the open tool cards
+    // and the locale it reads, so the restore re-renders nothing outside act
+    // and the next rail mounts with the cards its storage holds.
+    cleanup()
     jotaiStore.set(viewportAtom, previousViewport)
+    jotaiStore.set(toolCardOpenAtom, RESET)
     localStorage.clear()
     document.documentElement.lang = 'en'
   })
