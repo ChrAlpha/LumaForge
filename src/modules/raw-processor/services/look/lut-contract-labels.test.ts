@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest'
 import {
   getProfileAsOutputLabel,
   getProfileContractLabel,
+  getProfileGroupLabel,
   getProfileOutputLabel,
+  groupProfiles,
 } from './lut-contract-labels'
 
 const vlog709 = getLUTColorProfile('panasonic-vgamut-vlog')! // input-only unless output annotated
@@ -64,5 +66,31 @@ describe('getProfileContractLabel', () => {
 
   it('returns the profile label when the profile lacks an output contract', () => {
     expect(getProfileContractLabel(vlog709)).toBe(vlog709.label)
+  })
+})
+
+describe('groupProfiles', () => {
+  const sony = getLUTColorProfile('sony-sgamut3cine-slog3')!
+  const nikon = getLUTColorProfile('nikon-bt2020-nlog')!
+  const rec709 = getLUTColorProfile('rec709-gamma24')!
+
+  it('groups profiles by vendor in first-seen order', () => {
+    const groups = groupProfiles([nikon, displaySrgb, sony, rec709, vlog709])
+
+    expect(
+      groups.map((group) => [group.label, group.items.map((item) => item.id)]),
+    ).toEqual([
+      ['Nikon', [nikon.id]],
+      ['Output', [displaySrgb.id, rec709.id]],
+      ['Sony', [sony.id]],
+      ['Panasonic', [vlog709.id]],
+    ])
+  })
+
+  it('names a display look Output and an unknown vendor Other', () => {
+    expect(getProfileGroupLabel({ ...sony, role: 'display-look' })).toBe(
+      'Output',
+    )
+    expect(getProfileGroupLabel({ ...sony, label: 'Custom log' })).toBe('Other')
   })
 })

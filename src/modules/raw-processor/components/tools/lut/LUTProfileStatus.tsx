@@ -10,12 +10,12 @@ import { useI18n } from '~/lib/i18n'
 
 import type { LUTContractSelectionState } from '../../../model/session'
 import { deriveLUTContractView } from '../../../services/look/lut-contract'
-import type { PreviewLookReason } from '../../../services/surface/raw-reason'
-import { previewLookReasonMessageKey } from '../../../services/surface/raw-reason'
 import {
   formatLUTContractOutput,
   getProfileOutputLabel,
-} from '../lut-contract-labels'
+} from '../../../services/look/lut-contract-labels'
+import type { PreviewLookReason } from '../../../services/surface/raw-reason'
+import { previewLookReasonMessageKey } from '../../../services/surface/raw-reason'
 import { LUTContractBrowser } from './LUTContractBrowser'
 
 export function LUTProfileStatus({

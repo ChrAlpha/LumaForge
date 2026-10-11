@@ -1,10 +1,11 @@
 import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 
+import { toSelectableContract } from './lut-contract'
 import {
   getProfileAsOutputLabel,
+  getProfileGroupLabel,
   getProfileOutputLabel,
-} from '../../components/tools/lut-contract-labels'
-import { toSelectableContract } from './lut-contract'
+} from './lut-contract-labels'
 
 export type LUTOutputOption = {
   id: string
@@ -32,19 +33,6 @@ export function dedupeOutputOptions(options: LUTOutputOption[]) {
     seen.add(key)
     return true
   })
-}
-
-export function getOutputGroupLabel(profile: LUTColorProfile) {
-  if (profile.role === 'display-look') return 'Output'
-  if (profile.label.startsWith('ARRI')) return 'ARRI'
-  if (profile.label.startsWith('RED')) return 'RED'
-  if (profile.label.startsWith('Nikon')) return 'Nikon'
-  if (profile.label.startsWith('Sony')) return 'Sony'
-  if (profile.label.startsWith('Canon')) return 'Canon'
-  if (profile.label.startsWith('Fujifilm')) return 'Fujifilm'
-  if (profile.label.startsWith('Panasonic')) return 'Panasonic'
-  if (profile.label.startsWith('ACES')) return 'ACES'
-  return 'Other'
 }
 
 export function toDeclaredOutputOption(
@@ -101,7 +89,7 @@ export function groupOutputOptions(options: LUTOutputOption[]) {
   const groups = new Map<string, LUTOutputOption[]>()
 
   for (const option of options) {
-    const group = getOutputGroupLabel(option.sourceProfile)
+    const group = getProfileGroupLabel(option.sourceProfile)
     groups.set(group, [...(groups.get(group) ?? []), option])
   }
 

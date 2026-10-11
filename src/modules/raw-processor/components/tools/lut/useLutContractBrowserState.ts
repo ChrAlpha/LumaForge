@@ -2,6 +2,7 @@ import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 import { searchLUTColorProfiles } from '@lumaforge/luma-color-runtime'
 import { useMemo } from 'react'
 
+import { groupProfiles } from '../../../services/look/lut-contract-labels'
 import type { LUTOutputOption } from '../../../services/look/lut-output-options'
 import {
   dedupeOutputOptions,
@@ -10,7 +11,6 @@ import {
   toDeclaredOutputOption,
   toSearchOutputOption,
 } from '../../../services/look/lut-output-options'
-import { groupProfiles } from '../lut-contract-labels'
 
 type UseLutContractBrowserStateInput = {
   query: string

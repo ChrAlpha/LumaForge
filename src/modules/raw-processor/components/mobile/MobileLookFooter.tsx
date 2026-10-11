@@ -6,12 +6,12 @@ import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
 import type { LUTContractView } from '../../services/look/lut-contract'
+import { formatLUTContractOutput } from '../../services/look/lut-contract-labels'
 import type { PreviewLookReason } from '../../services/surface/raw-reason'
 import {
   previewLookReasonContractSide,
   previewLookReasonMessageKey,
 } from '../../services/surface/raw-reason'
-import { formatLUTContractOutput } from '../tools/lut-contract-labels'
 
 export type LookContractStep = 'input' | 'output'
 

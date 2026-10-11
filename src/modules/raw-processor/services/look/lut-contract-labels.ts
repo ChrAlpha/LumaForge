@@ -5,11 +5,8 @@ import {
   hasDisplayLikeInput,
 } from '@lumaforge/luma-color-runtime'
 
-import type {
-  KnownLUTContractOutput,
-  LUTContractOutput,
-} from '../../services/look/lut-contract'
-import { describeLUTContractOutput } from '../../services/look/lut-contract'
+import type { KnownLUTContractOutput, LUTContractOutput } from './lut-contract'
+import { describeLUTContractOutput } from './lut-contract'
 
 const DISPLAY_OUTPUT_LABEL = 'Rec.709 display'
 
