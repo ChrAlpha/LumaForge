@@ -397,7 +397,7 @@ export function useRawTransformFeature(
 
   return {
     // What the preview shows, with the intent the session holds.
-    demo: {
+    preview: {
       ...preview,
       mode: intent.upright,
       manual: intent.manual,

@@ -16,31 +16,31 @@ export function RawTransformOverlay({
 }) {
   const { t } = useI18n()
   if (!feature.showOverlay || !target) return null
-  const { demo } = feature
+  const { preview } = feature
   return createPortal(
     <div
       className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-lf-surface"
-      data-transform-matrix={demo.result?.displayMatrix.join(',')}
+      data-transform-matrix={preview.result?.displayMatrix.join(',')}
       data-raw-transform-preview
       aria-busy={feature.busy}
     >
-      {demo.source && demo.result ? (
+      {preview.source && preview.result ? (
         <TransformCanvas
-          source={demo.source.frame}
-          result={demo.result}
-          lines={demo.analysis?.lines ?? NO_LINES}
+          source={preview.source.frame}
+          result={preview.result}
+          lines={preview.analysis?.lines ?? NO_LINES}
           original={false}
           showLines={feature.showLines}
           showGrid={feature.showGrid}
         />
       ) : null}
-      {feature.busy || feature.captureError || demo.error ? (
+      {feature.busy || feature.captureError || preview.error ? (
         <span
           role="status"
           className="absolute inset-x-2 bottom-2 rounded-md bg-lf-surface/90 px-3 py-2 text-center text-xs text-lf-on-surface"
         >
           {t(
-            feature.captureError || demo.error
+            feature.captureError || preview.error
               ? 'raw.transform.unavailable'
               : 'transform.rendering',
           )}

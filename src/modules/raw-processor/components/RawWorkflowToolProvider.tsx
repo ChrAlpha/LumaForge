@@ -252,7 +252,7 @@ export function RawWorkflowToolProvider({
   // stays with the preview; the tool's commands read only these facts.
   const hasTransform = transform !== undefined
   const transformCanCapture = transform?.available === true
-  const transformWorkerReady = transform?.demo.ready === true
+  const transformWorkerReady = transform?.preview.ready === true
   const transformCaptureFailed = transform?.captureError === true
   const transformCurrent = transform?.current === true
   const transformPreview = useMemo(
@@ -334,7 +334,7 @@ export function RawWorkflowToolProvider({
       }
     : null
   const transformFrame = transform?.showOverlay
-    ? transform.demo.result?.frame
+    ? transform.preview.result?.frame
     : undefined
   const previewAspect =
     getAspect(transformFrame) ?? getAspect(decodedPreviewSize)

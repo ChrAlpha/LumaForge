@@ -74,7 +74,7 @@ export function TransformListPanel({
   onScrubChange: (field: ScrubFieldId | null) => void
 }) {
   const { t } = useI18n()
-  const { demo, observe } = feature
+  const { preview, observe } = feature
   useEffect(() => observe(), [observe])
 
   const [section, setSection] = useState<Section>('upright')
@@ -91,18 +91,18 @@ export function TransformListPanel({
   const resetDisabled =
     !availability.transformReset.available ||
     (section === 'upright'
-      ? !isTransformDirty(demo.mode, demo.manual) && demo.constrainCrop
-      : isTransformGroupNeutral(section, demo.manual) &&
-        (section !== 'frame' || demo.constrainCrop))
+      ? !isTransformDirty(preview.mode, preview.manual) && preview.constrainCrop
+      : isTransformGroupNeutral(section, preview.manual) &&
+        (section !== 'frame' || preview.constrainCrop))
   const onSectionReset = () => {
     if (section === 'upright') {
       feature.reset()
       return
     }
-    if (section === 'frame' && !demo.constrainCrop) {
+    if (section === 'frame' && !preview.constrainCrop) {
       feature.setConstrainCrop(true)
     }
-    feature.setManual(resetTransformGroup(section, demo.manual))
+    feature.setManual(resetTransformGroup(section, preview.manual))
   }
 
   return (
@@ -224,7 +224,7 @@ export function TransformListPanel({
                   <ModeButton
                     key={mode}
                     mode={mode}
-                    active={demo.mode === mode}
+                    active={preview.mode === mode}
                     disabled={controlsDisabled}
                     onSelect={feature.setMode}
                   />
@@ -262,7 +262,7 @@ export function TransformListPanel({
             >
               <TransformFieldList
                 fields={transformFieldsIn(section)}
-                manual={demo.manual}
+                manual={preview.manual}
                 disabled={controlsDisabled}
                 onChange={feature.setManual}
                 onScrubChange={onScrubChange}
@@ -270,7 +270,7 @@ export function TransformListPanel({
               {section === 'frame' && (
                 <label className="mt-1 flex min-h-11 cursor-pointer items-center gap-3 px-3 text-[0.82rem] font-medium text-lf-on-photo-ink [text-shadow:0_1px_2px_oklch(0_0_0/0.45)]">
                   <Checkbox
-                    checked={demo.constrainCrop}
+                    checked={preview.constrainCrop}
                     onCheckedChange={(value) =>
                       feature.setConstrainCrop(value === true)
                     }

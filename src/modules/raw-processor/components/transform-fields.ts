@@ -198,27 +198,27 @@ export interface TransformMessage {
 export function resolveTransformMessage(
   feature: RawTransformFeature,
 ): TransformMessage {
-  const { demo } = feature
+  const { preview } = feature
   if (!feature.hasImage)
     return { tone: 'hint', key: 'raw.transform.awaitImage' }
   // Naming the action that is actually on screen beats telling someone to wait
   // for something that will not come back on its own.
   if (feature.previewSuspended)
     return { tone: 'hint', key: 'raw.transform.previewReleased' }
-  if (feature.captureError || demo.error || !feature.available) {
+  if (feature.captureError || preview.error || !feature.available) {
     return {
       tone: 'alert',
       key:
-        demo.error === 'transform'
+        preview.error === 'transform'
           ? 'transform.error.transform'
           : 'raw.transform.unavailable',
     }
   }
-  if (feature.busy && !demo.result)
+  if (feature.busy && !preview.result)
     return { tone: 'hint', key: 'raw.transform.preparing' }
-  if (demo.mode !== 'off' && demo.solution.status === 'insufficient')
+  if (preview.mode !== 'off' && preview.solution.status === 'insufficient')
     return { tone: 'alert', key: 'transform.insufficient' }
-  return { tone: 'hint', key: `transform.modeHelp.${demo.mode}` }
+  return { tone: 'hint', key: `transform.modeHelp.${preview.mode}` }
 }
 
 export const UPRIGHT_MODES: UprightMode[] = [

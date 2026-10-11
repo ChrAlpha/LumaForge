@@ -51,13 +51,14 @@ export function TransformTool({
   >
 }) {
   const { t } = useI18n()
-  const { demo, observe } = feature
+  const { preview, observe } = feature
   useEffect(() => observe(), [observe])
 
   const message = resolveTransformMessage(feature)
   const controlsDisabled = !availability.transformGeometry.available
   const viewDisabled = !availability.transformOverlay.available
-  const dirty = isTransformDirty(demo.mode, demo.manual) || !demo.constrainCrop
+  const dirty =
+    isTransformDirty(preview.mode, preview.manual) || !preview.constrainCrop
 
   return (
     <div data-raw-transform-tool className="grid min-w-0 gap-3">
@@ -70,7 +71,7 @@ export function TransformTool({
           <ModeButton
             key={mode}
             mode={mode}
-            active={demo.mode === mode}
+            active={preview.mode === mode}
             disabled={controlsDisabled}
             onSelect={feature.setMode}
           />
@@ -140,7 +141,7 @@ export function TransformTool({
       <FieldGroup group="frame" feature={feature} disabled={controlsDisabled}>
         <label className="flex min-h-9 cursor-pointer items-center gap-2.5 px-1.5 text-[0.8rem] text-lf-on-surface/80">
           <Checkbox
-            checked={demo.constrainCrop}
+            checked={preview.constrainCrop}
             onCheckedChange={(value) =>
               feature.setConstrainCrop(value === true)
             }
@@ -236,7 +237,7 @@ function FieldGroup({
 }) {
   const { t } = useI18n()
   const label = t(TRANSFORM_GROUP_LABEL[group])
-  const { demo } = feature
+  const { preview } = feature
 
   return (
     <section
@@ -248,7 +249,7 @@ function FieldGroup({
         {label}
       </h3>
       {transformFieldsIn(group).map((field) => {
-        const value = transformSliderValue(field, demo.manual)
+        const value = transformSliderValue(field, preview.manual)
         return (
           <DesktopAdjustRow
             key={field.key}
@@ -261,7 +262,9 @@ function FieldGroup({
             formatValue={(next) => formatTransformValue(field, next)}
             valueText={formatTransformValue(field, value)}
             onChange={(next) =>
-              feature.setManual(applyTransformSlider(field, demo.manual, next))
+              feature.setManual(
+                applyTransformSlider(field, preview.manual, next),
+              )
             }
           />
         )

@@ -17,7 +17,7 @@ export function transformFeatureFixture(
   overrides: Partial<RawTransformFeature> = {},
 ): RawTransformFeature {
   return {
-    demo: {
+    preview: {
       source: null,
       analysis: null,
       result: null,
@@ -70,7 +70,7 @@ export function transformFeatureFixture(
 }
 
 /** What a Transform feature shows, with the intent the session holds. */
-export type TransformPreviewState = RawTransformFeature['demo']
+export type TransformPreviewState = RawTransformFeature['preview']
 
 /**
  * A change to what a feature shows. `manual` merges over the feature's
@@ -88,7 +88,7 @@ export type TransformPreviewPatch = Partial<
 export function transformPreviewOf(
   feature: RawTransformFeature,
 ): TransformPreviewState {
-  return feature.demo
+  return feature.preview
 }
 
 function patchedPreview(
@@ -108,7 +108,7 @@ export function withTransformPreview(
   feature: RawTransformFeature,
   patch: TransformPreviewPatch,
 ): RawTransformFeature {
-  return { ...feature, demo: patchedPreview(feature, patch) }
+  return { ...feature, preview: patchedPreview(feature, patch) }
 }
 
 /**
@@ -119,7 +119,7 @@ export function patchTransformPreview(
   feature: RawTransformFeature,
   patch: TransformPreviewPatch,
 ): RawTransformFeature {
-  feature.demo = patchedPreview(feature, patch)
+  feature.preview = patchedPreview(feature, patch)
   return feature
 }
 

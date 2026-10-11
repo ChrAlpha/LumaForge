@@ -411,7 +411,9 @@ describe('rAW Transform feature', () => {
     expect(
       worker().messages.filter((message) => message.type === 'analyze'),
     ).toHaveLength(2)
-    expect(result.current.demo.mode).toBe('vertical')
+    expect(result.current.preview.mode).toBe('vertical')
+    // The production contract names what it shows once, as the preview.
+    expect(result.current).not.toHaveProperty('demo')
     expect(initial.setViewMode).toHaveBeenCalledWith('processed')
     unmount()
   })
@@ -485,8 +487,8 @@ describe('rAW Transform feature', () => {
 
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(2)
-    expect(hook.result.current.feature.demo.source).toBe(latest)
-    expect(hook.result.current.feature.demo.manual.rotate).toBe(3)
+    expect(hook.result.current.feature.preview.source).toBe(latest)
+    expect(hook.result.current.feature.preview.manual.rotate).toBe(3)
     expect(hook.result.current.feature.exportBlock).toBe('pending')
     analyzeCapture()
     const fresh = lastRender()
@@ -563,7 +565,7 @@ describe('rAW Transform feature', () => {
     analyzeCapture(uprightAnalysis(4))
     expect(answerLatest().matrix).toEqual(first.matrix)
     expect(commits).toHaveBeenCalledOnce()
-    expect(hook.result.current.feature.demo.mode).toBe('auto')
+    expect(hook.result.current.feature.preview.mode).toBe('auto')
     expect(hook.result.current.feature.exportBlock).toBeNull()
     hook.unmount()
   })
@@ -574,7 +576,7 @@ describe('rAW Transform feature', () => {
 
     // The worker crashes. Nothing retries by itself...
     act(() => worker().onerror?.())
-    expect(hook.result.current.feature.demo.error).toBe('processing')
+    expect(hook.result.current.feature.preview.error).toBe('processing')
     expect(hook.result.current.feature.current).toBe(false)
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledOnce()
@@ -583,7 +585,7 @@ describe('rAW Transform feature', () => {
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(2)
     expect(FakeWorker.instances).toHaveLength(2)
-    expect(hook.result.current.feature.demo.error).toBeNull()
+    expect(hook.result.current.feature.preview.error).toBeNull()
     analyzeCapture()
     answer(lastRender())
     expect(hook.result.current.feature.current).toBe(true)
@@ -593,14 +595,14 @@ describe('rAW Transform feature', () => {
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(3)
     failAnalysis()
-    expect(hook.result.current.feature.demo.error).toBe('processing')
-    expect(hook.result.current.feature.demo.ready).toBe(false)
+    expect(hook.result.current.feature.preview.error).toBe('processing')
+    expect(hook.result.current.feature.preview.ready).toBe(false)
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(3)
     hook.rerender({ userExposureEv: 2, frame: 2 })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(4)
-    expect(hook.result.current.feature.demo.error).toBeNull()
+    expect(hook.result.current.feature.preview.error).toBeNull()
     analyzeCapture()
     answer(lastRender())
     expect(hook.result.current.feature.current).toBe(true)
@@ -645,13 +647,13 @@ describe('rAW Transform feature', () => {
     expect(lastCapturedCpuFrame()).toBe(first)
     analyzeCapture()
     answer(lastRender())
-    const analysed = hook.result.current.feature.demo.source
+    const analysed = hook.result.current.feature.preview.source
 
     // Peeking at the original hands Transform nothing, and the processed
     // frame that comes back is the same photo, not a new one.
     act(() => hook.result.current.feature.setCpuFrame(null))
     expect(hook.result.current.feature.available).toBe(false)
-    expect(hook.result.current.feature.demo.source).toBe(analysed)
+    expect(hook.result.current.feature.preview.source).toBe(analysed)
     act(() => hook.result.current.feature.setCpuFrame(cpuFrameOf(2)))
     await act(() => vi.advanceTimersByTimeAsync(150))
     // So is every frame a colour edit renders.
@@ -665,7 +667,7 @@ describe('rAW Transform feature', () => {
     expect(worker().messages.some((message) => message.type === 'clear')).toBe(
       false,
     )
-    expect(hook.result.current.feature.demo.source).toBe(analysed)
+    expect(hook.result.current.feature.preview.source).toBe(analysed)
     expect(hook.result.current.feature.available).toBe(true)
     expect(hook.result.current.feature.current).toBe(true)
 
@@ -1030,8 +1032,10 @@ describe('rAW Transform feature', () => {
     // The old photo's answer never lands on the new session.
     expect(commits).toHaveBeenCalledOnce()
     expect(hook.result.current.geometry).toBeNull()
-    expect(hook.result.current.feature.demo.mode).toBe('off')
-    expect(hook.result.current.feature.demo.manual).toEqual(NEUTRAL_TRANSFORM)
+    expect(hook.result.current.feature.preview.mode).toBe('off')
+    expect(hook.result.current.feature.preview.manual).toEqual(
+      NEUTRAL_TRANSFORM,
+    )
     expect(hook.result.current.feature.exportBlock).toBeNull()
     expect(worker().messages.at(-1)).toMatchObject({ type: 'clear' })
 
@@ -1328,7 +1332,7 @@ describe('rAW Transform feature', () => {
     await act(() => vi.advanceTimersByTimeAsync(150))
     // Nothing about the photo changed, so nothing is read back again.
     expect(captureTransformSource).toHaveBeenCalledOnce()
-    expect(hook.result.current.feature.demo.manual.rotate).toBe(3)
+    expect(hook.result.current.feature.preview.manual.rotate).toBe(3)
     expect(hook.result.current.feature.active).toBe(true)
     expect(hook.result.current.feature.exportBlock).toBeNull()
 
@@ -1591,9 +1595,9 @@ describe('rAW Transform feature', () => {
       complete(frame)
       await Promise.resolve()
     })
-    // The capture never reached the demo, so no worker analysed it.
+    // The capture never reached the preview, so no worker analysed it.
     expect(FakeWorker.instances).toHaveLength(0)
-    expect(result.current.demo.source).toBeNull()
+    expect(result.current.preview.source).toBeNull()
     unmount()
   })
 

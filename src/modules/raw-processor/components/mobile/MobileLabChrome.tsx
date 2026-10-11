@@ -385,7 +385,7 @@ export function MobileLabChrome(props: {
         tone={props.tone}
         color={props.color}
         selectiveColor={props.selectiveColor}
-        manualTransform={props.transform?.demo.manual}
+        manualTransform={props.transform?.preview.manual}
         lookIntensity={props.lutBrowser.activeIntensity}
         onExitImmersive={exitImmersive}
         lensVisible={lensVisible}
