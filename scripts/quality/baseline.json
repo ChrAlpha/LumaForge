@@ -4,8 +4,6 @@
     "knip": "6.39.0",
     "madge": "8.0.0"
   },
-  "knip": [
-    "exports packages/render-engine/src/manifest/canonicalize.ts: __TEST_ONLY__"
-  ],
+  "knip": [],
   "cycles": []
 }

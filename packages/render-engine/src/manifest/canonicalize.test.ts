@@ -99,6 +99,15 @@ describe('computeManifestSha256', () => {
     ).toBe(nodeSha256OfText('{"a":1,"b":{"c":1,"d":2}}'))
   })
 
+  it('keeps literal SHA-256 vectors of canonical text', () => {
+    expect(computeManifestSha256({ manifest_sha256: 'x' })).toBe(
+      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+    )
+    expect(
+      computeManifestSha256({ b: { d: 2, c: 1 }, a: 1, manifest_sha256: 'x' }),
+    ).toBe('e76ac5ae6490996b6dca973d72bbd741c6f70ce416729c49c3c0b61241ec5644')
+  })
+
   it('hashes an own top-level __proto__ field like any other field', () => {
     const parsed = JSON.parse(
       '{"a":1,"__proto__":{"evil":1},"manifest_sha256":"x"}',

@@ -6,7 +6,16 @@ import {
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
   createProgressivePreviewPlan,
   decideBoundedHqPreview,
-  QUICK_PREVIEW_MAX_PIXELS} from './preview-plan'
+  QUICK_PREVIEW_MAX_PIXELS,
+} from './preview-plan'
+
+describe('preview pixel caps', () => {
+  it('keeps the quick and bounded-HQ thresholds', () => {
+    expect(QUICK_PREVIEW_MAX_PIXELS).toBe(2_500_000)
+    expect(BOUNDED_HQ_PREVIEW_MAX_PIXELS).toBe(12_000_000)
+    expect(BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS).toBe(8_000_000)
+  })
+})
 
 describe('createProgressivePreviewPlan', () => {
   it('makes the quick-to-bounded-HQ preview upgrade target explicit', () => {
@@ -90,5 +99,14 @@ describe('decideBoundedHqPreview', () => {
       kind: 'skip',
       reason: `Source fits within quick preview cap ${QUICK_PREVIEW_MAX_PIXELS}.`,
     })
+  })
+
+  it('decodes bounded HQ only past the quick cap', () => {
+    expect(
+      decideBoundedHqPreview({ sourceWidth: 2_500_000, sourceHeight: 1 }).kind,
+    ).toBe('skip')
+    expect(
+      decideBoundedHqPreview({ sourceWidth: 2_500_001, sourceHeight: 1 }).kind,
+    ).toBe('decode')
   })
 })

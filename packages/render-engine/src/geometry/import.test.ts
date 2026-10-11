@@ -1,9 +1,7 @@
-/// <reference types="node" />
 // @vitest-environment node
 
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+// Which modules the subpath entry may import is the `geometry-kernel` lint
+// boundary. These tests observe what loading it does at run time.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -36,34 +34,6 @@ const BROWSER_GLOBALS = [
   'ImageData',
   'GPU',
 ] as const
-
-const geometryEntry = fileURLToPath(new URL('./index.ts', import.meta.url))
-
-function relativeImportClosure(entry: string): {
-  files: string[]
-  bareSpecifiers: string[]
-} {
-  const files: string[] = []
-  const bareSpecifiers: string[] = []
-  const pending = [entry]
-  // `from '...'`, side-effect `import '...'` and dynamic `import('...')`.
-  const importPattern = /\b(?:from|import)\s*(?:\(\s*)?['"]([^'"]+)['"]/g
-  while (pending.length > 0) {
-    const file = pending.pop()!
-    if (files.includes(file)) continue
-    files.push(file)
-    const source = readFileSync(file, 'utf8')
-    for (const match of source.matchAll(importPattern)) {
-      const specifier = match[1]!
-      if (specifier.startsWith('.')) {
-        pending.push(resolve(dirname(file), `${specifier}.ts`))
-      } else {
-        bareSpecifiers.push(specifier)
-      }
-    }
-  }
-  return { files, bareSpecifiers }
-}
 
 describe('@lumaforge/render-engine/geometry import purity', () => {
   const touchedGlobals = new Set<string>()
@@ -102,15 +72,6 @@ describe('@lumaforge/render-engine/geometry import purity', () => {
     expect(typeof mod.applyMatrix).toBe('function')
     expect([...loadedRuntimes]).toEqual([])
     expect([...touchedGlobals]).toEqual([])
-  })
-
-  it('imports nothing outside its own relative module graph', () => {
-    const { files, bareSpecifiers } = relativeImportClosure(geometryEntry)
-    expect(bareSpecifiers).toEqual([])
-    expect(files.map((file) => file.slice(file.indexOf('src/')))).toEqual([
-      'src/geometry/index.ts',
-      'src/export/geometry/matrix.ts',
-    ])
   })
 
   it('re-exports the export-stage kernel instead of a copy', async () => {

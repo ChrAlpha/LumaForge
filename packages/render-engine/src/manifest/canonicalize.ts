@@ -135,5 +135,3 @@ export function verifyManifestSha256(manifest: unknown): boolean {
   const recomputed = computeManifestSha256(obj)
   return recomputed === claimed
 }
-
-export const __TEST_ONLY__ = { sha256HexOfString }
