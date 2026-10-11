@@ -112,8 +112,6 @@ export const TRANSFORM_FIELDS: TransformField[] = [
   },
 ]
 
-export const TRANSFORM_GROUPS: TransformGroup[] = ['perspective', 'frame']
-
 export const TRANSFORM_GROUP_LABEL: Record<TransformGroup, MessageKey> = {
   perspective: 'raw.transform.group.perspective',
   frame: 'raw.transform.group.frame',

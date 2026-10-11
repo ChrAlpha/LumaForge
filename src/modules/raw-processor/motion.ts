@@ -8,7 +8,6 @@ import { Spring } from '~/lib/spring'
 // smooth --mrl-ease and no overshoot. A bouncy spring read as off-substrate,
 // so this is a no-bounce ~320ms spring instead of the snappy preset.
 export const SHEET_SPRING = Spring.smooth(0.32)
-export const BACKDROP_SPRING = Spring.smooth(0.3)
 export const TAP_SPRING = Spring.snappy(0.25)
 
 // Mode-dock panel reveal/collapse, the active-tab indicator slide, and the

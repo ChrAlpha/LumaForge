@@ -23,8 +23,6 @@ export const LOOK_INTENSITY_PRESETS = {
   strong: 1,
 } as const
 
-export type LookIntensityPreset = keyof typeof LOOK_INTENSITY_PRESETS
-
 /** Where a fresh look starts, and what a Strength reset returns to. */
 export const DEFAULT_LOOK_INTENSITY = LOOK_INTENSITY_PRESETS.standard
 

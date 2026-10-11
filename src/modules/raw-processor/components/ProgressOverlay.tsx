@@ -321,36 +321,3 @@ export function ErrorOverlay({
     </AnimatePresence>
   )
 }
-
-/**
- * Success toast notification.
- */
-export function SuccessToast({
-  visible,
-  message,
-  className,
-}: {
-  visible: boolean
-  message: string
-  className?: string
-}) {
-  return (
-    <AnimatePresence>
-      {visible && (
-        <m.div
-          className={clsxm(
-            'fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-3 rounded-lg bg-green/10 border border-green/20 shadow-lg z-50',
-            className,
-          )}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 20 }}
-          transition={Spring.presets.snappy}
-        >
-          <i className="i-mingcute-check-circle-fill text-lg text-green" />
-          <span className="text-sm font-medium text-text">{message}</span>
-        </m.div>
-      )}
-    </AnimatePresence>
-  )
-}
