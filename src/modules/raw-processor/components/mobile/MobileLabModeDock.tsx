@@ -1,4 +1,8 @@
-import type { HSLBandId, HSLBandShift } from '@lumaforge/luma-color-runtime'
+import type {
+  HSLBandId,
+  HSLBandShift,
+  NormalizedSelectiveColorBands,
+} from '@lumaforge/luma-color-runtime'
 import { m } from 'motion/react'
 import type { ReactNode } from 'react'
 
@@ -8,7 +12,6 @@ import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
-import type { HSLToolValue } from '../tools/HSLTool'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { AdjustListPanel } from './AdjustListPanel'
 import type { MobileLookView, MobileMode } from './mobile-stage-layout'
@@ -70,7 +73,7 @@ export function MobileLabModeDock({
   prefersReduced: boolean
   tone: ToneValue
   color: ColorValue
-  selectiveColor: HSLToolValue | undefined
+  selectiveColor: NormalizedSelectiveColorBands | undefined
   lutBrowser: MobileLookControls
   exportPanel: ReactNode
   onModeChange: (mode: MobileMode) => void
@@ -177,7 +180,7 @@ function MobileLabModePanel({
   mode: MobileMode
   tone: ToneValue
   color: ColorValue
-  selectiveColor: HSLToolValue | undefined
+  selectiveColor: NormalizedSelectiveColorBands | undefined
   lutBrowser: MobileLookControls
   scrubbing: boolean
   onToneChange: (patch: Partial<ToneValue>) => void

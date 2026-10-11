@@ -1,6 +1,7 @@
 import type {
   HSLBandId,
   HSLBandShift,
+  NormalizedSelectiveColorBands,
   PreviewHistogramState,
 } from '@lumaforge/luma-color-runtime'
 import { useSetAtom } from 'jotai'
@@ -21,7 +22,6 @@ import type { CpuPreviewNotice } from '../CpuPreviewBanner'
 import { CpuPreviewBanner } from '../CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from '../raw-runtime-readiness'
 import type { ToneValue } from '../tone-fields'
-import type { HSLToolValue } from '../tools/HSLTool'
 import type { MobileDetailsSheet } from './mobile-details-sheet'
 import { computeMobileStageLayout } from './mobile-stage-layout'
 import {
@@ -70,7 +70,7 @@ export function MobileLabChrome(props: {
   hasImage: boolean
   tone: ToneValue
   color: ColorValue
-  selectiveColor: HSLToolValue | undefined
+  selectiveColor: NormalizedSelectiveColorBands | undefined
   onToneChange: (patch: Partial<ToneValue>) => void
   onToneReset: () => void
   onColorChange: (patch: Partial<ColorValue>) => void

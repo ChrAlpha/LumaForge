@@ -1,4 +1,8 @@
-import type { HSLBandId, HSLBandShift } from '@lumaforge/luma-color-runtime'
+import type {
+  HSLBandId,
+  HSLBandShift,
+  NormalizedSelectiveColorBands,
+} from '@lumaforge/luma-color-runtime'
 import { RotateCcw } from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import { useId, useState } from 'react'
@@ -14,7 +18,6 @@ import { isColorNeutral } from '../color-fields'
 import { isHSLNeutral } from '../fields/hsl-fields'
 import type { ToneValue } from '../tone-fields'
 import { isToneNeutral } from '../tone-fields'
-import type { HSLToolValue } from '../tools/HSLTool'
 import { ColorListPanel } from './ColorListPanel'
 import { HSLListPanel } from './HSLListPanel'
 import { ToneListPanel } from './ToneListPanel'
@@ -34,7 +37,7 @@ export type ScrubFieldId =
 type AdjustListPanelProps = {
   tone: ToneValue
   color: ColorValue
-  selectiveColor: HSLToolValue | undefined
+  selectiveColor: NormalizedSelectiveColorBands | undefined
   onToneChange: (patch: Partial<ToneValue>) => void
   onColorChange: (patch: Partial<ColorValue>) => void
   onSelectiveColorChange: (

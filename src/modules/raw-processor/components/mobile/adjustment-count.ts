@@ -1,9 +1,10 @@
+import type { NormalizedSelectiveColorBands } from '@lumaforge/luma-color-runtime'
+
 import type { ColorValue } from '../color-fields'
 import { COLOR_FIELDS } from '../color-fields'
 import { HSL_BAND_ORDER, HSL_FIELDS } from '../fields/hsl-fields'
 import type { ToneValue } from '../tone-fields'
 import { TONE_FIELDS } from '../tone-fields'
-import type { HSLToolValue } from '../tools/HSLTool'
 
 /**
  * Every Adjust field away from neutral counts once: the tone fields, the
@@ -13,7 +14,7 @@ import type { HSLToolValue } from '../tools/HSLTool'
 export function countAdjustments(input: {
   tone: ToneValue
   color: ColorValue
-  selectiveColor: HSLToolValue | undefined
+  selectiveColor: NormalizedSelectiveColorBands | undefined
 }): number {
   let count = 0
   for (const field of TONE_FIELDS) if (input.tone[field.key] !== 0) count += 1

@@ -1,4 +1,7 @@
-import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
+import type {
+  NormalizedSelectiveColorBands,
+  PreviewHistogramState,
+} from '@lumaforge/luma-color-runtime'
 import { makeNeutralBand } from '@lumaforge/luma-color-runtime'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 
@@ -20,7 +23,6 @@ import {
 import type { ToneValue } from '../tone-fields'
 import { formatToneValue, TONE_FIELDS } from '../tone-fields'
 import { HistogramPlot, readyHistogram } from '../tools/HistogramTool'
-import type { HSLToolValue } from '../tools/HSLTool'
 import {
   formatTransformValue,
   TRANSFORM_FIELDS,
@@ -32,7 +34,7 @@ type ScrubValueHudProps = {
   field: ScrubFieldId | null
   tone: ToneValue
   color: ColorValue
-  selectiveColor: HSLToolValue | undefined
+  selectiveColor: NormalizedSelectiveColorBands | undefined
   manualTransform: ManualTransform | undefined
   /** How much of the applied LUT reaches the photo, 0..1. */
   lookIntensity?: number

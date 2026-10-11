@@ -1,4 +1,8 @@
-import type { HSLBandId, HSLBandShift } from '@lumaforge/luma-color-runtime'
+import type {
+  HSLBandId,
+  HSLBandShift,
+  NormalizedSelectiveColorBands,
+} from '@lumaforge/luma-color-runtime'
 import { makeNeutralBand } from '@lumaforge/luma-color-runtime'
 import { ChevronDown } from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
@@ -16,7 +20,6 @@ import {
   HSL_FIELDS,
   isHSLBandNeutral,
 } from '../fields/hsl-fields'
-import type { HSLToolValue } from '../tools/HSLTool'
 import {
   hslHueTrack,
   hslLightnessTrack,
@@ -27,7 +30,7 @@ import { AdjustSliderRow } from './AdjustSliderRow'
 type HSLScrubField = { band: HSLBandId; key: keyof HSLBandShift }
 
 type HSLListPanelProps = {
-  value: HSLToolValue | undefined
+  value: NormalizedSelectiveColorBands | undefined
   onChange: (band: HSLBandId, shift: Partial<HSLBandShift>) => void
   onScrubChange: (field: HSLScrubField | null) => void
 }

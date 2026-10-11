@@ -1,4 +1,7 @@
-import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
+import type {
+  NormalizedSelectiveColorBands,
+  PreviewHistogramState,
+} from '@lumaforge/luma-color-runtime'
 import { AnimatePresence, m } from 'motion/react'
 import type { CSSProperties } from 'react'
 
@@ -9,7 +12,6 @@ import type { ManualTransform } from '~/lib/transform/transform-types'
 
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
-import type { HSLToolValue } from '../tools/HSLTool'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { FloatingHistogramCard } from './FloatingHistogramCard'
 import { ScrubValueHud } from './ScrubValueHud'
@@ -101,7 +103,7 @@ export interface MobileFloatingOverlaysProps {
   scrubField: ScrubFieldId | null
   tone: ToneValue
   color: ColorValue
-  selectiveColor: HSLToolValue | undefined
+  selectiveColor: NormalizedSelectiveColorBands | undefined
   manualTransform: ManualTransform | undefined
   /** How much of the applied LUT reaches the photo, 0..1. */
   lookIntensity?: number

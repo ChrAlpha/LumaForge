@@ -1,8 +1,9 @@
+import type { NormalizedSelectiveColorBands } from '@lumaforge/luma-color-runtime'
+
 import type { DeliveredExportSize } from '../../services/export/delivered-export-size'
 import type { PreviewLookReason } from '../../services/surface/raw-reason'
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'
-import type { HSLToolValue } from '../tools/HSLTool'
 import { countAdjustments } from './adjustment-count'
 
 /**
@@ -50,7 +51,7 @@ export function buildMobileExportRecap(input: {
   intensity: number
   tone: ToneValue
   color: ColorValue
-  selectiveColor: HSLToolValue | undefined
+  selectiveColor: NormalizedSelectiveColorBands | undefined
   transformApplied: boolean
   /** Why the preview does not draw the selected look; null when it does. */
   previewLookReason: PreviewLookReason | null | undefined
