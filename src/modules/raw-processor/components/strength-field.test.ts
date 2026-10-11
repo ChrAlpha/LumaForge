@@ -7,6 +7,7 @@ import {
   DEFAULT_LOOK_INTENSITY,
   LOOK_INTENSITY_PRESETS,
 } from '../services/look/style-system'
+import { createScrubSession } from '../services/surface/slider-scrub-model'
 import {
   formatStrengthPercent,
   intensityToStrengthPercent,
@@ -16,7 +17,6 @@ import {
   strengthPercentToIntensity,
   strengthTickMarks,
 } from './strength-field'
-import { createScrubSession } from './tools/slider-scrub-model'
 
 const t = ((key: string) =>
   (enMessages as Record<string, string>)[key] ?? key) as Translate

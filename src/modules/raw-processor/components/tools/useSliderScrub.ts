@@ -1,8 +1,11 @@
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ScrubGainBand, ScrubSession } from './slider-scrub-model'
-import { createScrubSession } from './slider-scrub-model'
+import type {
+  ScrubGainBand,
+  ScrubSession,
+} from '../../services/surface/slider-scrub-model'
+import { createScrubSession } from '../../services/surface/slider-scrub-model'
 
 /**
  * Momentum decay per animation frame after a forwarded scroll flick, and the

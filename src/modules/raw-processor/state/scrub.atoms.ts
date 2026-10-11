@@ -1,6 +1,6 @@
 import { atom } from 'jotai'
 
-import type { ScrubGainBand } from '../components/tools/slider-scrub-model'
+import type { ScrubGainBand } from '../services/surface/slider-scrub-model'
 
 /**
  * Gain band of the slider scrub currently in progress (touch only).

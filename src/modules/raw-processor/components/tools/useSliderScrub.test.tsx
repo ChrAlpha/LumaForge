@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Slider } from '~/components/ui/slider'
 
-import { SCRUB_LOCK_SLOP_PX } from './slider-scrub-model'
+import { SCRUB_LOCK_SLOP_PX } from '../../services/surface/slider-scrub-model'
 import { useSliderScrub } from './useSliderScrub'
 
 function Harness(props: {

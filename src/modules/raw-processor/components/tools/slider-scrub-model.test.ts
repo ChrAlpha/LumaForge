@@ -7,7 +7,7 @@ import {
   SCRUB_LOCK_SLOP_PX,
   SCRUB_STICKY_ZERO_RELEASE_PX,
   SCRUB_ZERO_CAPTURE_PX,
-} from './slider-scrub-model'
+} from '../../services/surface/slider-scrub-model'
 
 // A 200px track at x=100..300 mapping [-100, 100] → 1 unit per px.
 const TRACK = { left: 100, width: 200, centerY: 50 }

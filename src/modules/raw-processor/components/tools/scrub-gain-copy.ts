@@ -1,4 +1,4 @@
-import type { ScrubGainBand } from './slider-scrub-model'
+import type { ScrubGainBand } from '../../services/surface/slider-scrub-model'
 
 /**
  * Copy for the precision bands a touch scrub can enter. `full` has no label:
