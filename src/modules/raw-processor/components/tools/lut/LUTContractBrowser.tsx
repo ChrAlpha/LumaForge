@@ -12,6 +12,8 @@ import { useLutContractBrowserState } from '../../../hooks/useLutContractBrowser
 import { composeLUTContractProfile } from '../../../services/look/lut-contract'
 import type { LUTOutputOption } from '../../../services/look/lut-output-options'
 import { toOutputCarrierProfile } from '../../../services/look/lut-output-options'
+import { LUTOutputOptionButton } from '../../shared/lut/LUTOutputOptionButton'
+import { LUTProfileButton } from '../../shared/lut/LUTProfileButton'
 import {
   SEGMENTED_FOCUS_RING,
   SEGMENTED_ITEM_TEXT,
@@ -22,8 +24,6 @@ import {
 import type { OnlineLutBrowserLayout } from './lut-browser-layout'
 import { getViewportBoundedBrowserLayout } from './lut-browser-layout'
 import { LutBrowserDialog } from './LutBrowserDialog'
-import { LUTOutputOptionButton } from './LUTOutputOptionButton'
-import { LUTProfileButton } from './LUTProfileButton'
 
 type LUTContractBrowserStep = 'input' | 'output'
 
