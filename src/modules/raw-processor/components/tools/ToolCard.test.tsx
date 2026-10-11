@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -11,6 +11,8 @@ import {
 import { ToolCard, ToolCardStack } from './ToolCard'
 
 afterEach(() => {
+  // Unmount before the reset write, so the store change reaches no card.
+  cleanup()
   jotaiStore.set(toolCardOpenAtom, DEFAULT_OPEN_TOOL_CARDS)
 })
 

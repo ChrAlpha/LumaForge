@@ -1,6 +1,7 @@
 import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -249,6 +250,8 @@ describe('rawToolSurface', () => {
   })
 
   afterEach(() => {
+    // Unmount before the reset writes, so no store change reaches the surface.
+    cleanup()
     vi.unstubAllGlobals()
     resetToolCards()
     localStorage.clear()
@@ -1224,6 +1227,7 @@ describe('rawToolSurface', () => {
         container.querySelector('[data-raw-tool-surface="raw-finishing"]'),
       ).toBeNull()
     } finally {
+      cleanup()
       jotaiStore.set(viewportAtom, prev)
     }
   })
@@ -1243,6 +1247,7 @@ describe('rawToolSurface', () => {
         screen.getByRole('tablist', { name: /lab modes/i }).parentElement,
       ).toHaveClass('pointer-events-auto')
     } finally {
+      cleanup()
       jotaiStore.set(viewportAtom, prev)
     }
   })
@@ -1278,6 +1283,7 @@ describe('rawToolSurface', () => {
 
       expect(onChange).not.toHaveBeenCalled()
     } finally {
+      cleanup()
       jotaiStore.set(viewportAtom, prev)
     }
   })
@@ -1302,6 +1308,7 @@ describe('rawToolSurface', () => {
         screen.getByRole('tablist', { name: /lab modes/i }),
       ).toBeInTheDocument()
     } finally {
+      cleanup()
       jotaiStore.set(viewportAtom, prev)
     }
   })
@@ -1353,6 +1360,7 @@ describe('rawToolSurface', () => {
         screen.getByRole('button', { name: /download/i }),
       ).toBeInTheDocument()
     } finally {
+      cleanup()
       jotaiStore.set(viewportAtom, prev)
     }
   })
@@ -1444,6 +1452,7 @@ describe('rawToolSurface', () => {
       })
       expect(onToneChange).toHaveBeenCalled()
     } finally {
+      cleanup()
       jotaiStore.set(viewportAtom, prev)
     }
   })

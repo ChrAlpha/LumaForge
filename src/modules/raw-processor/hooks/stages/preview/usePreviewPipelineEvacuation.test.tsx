@@ -134,6 +134,18 @@ async function flush() {
   })
 }
 
+/**
+ * Disposal reaches the owners, which unpublish their pipelines through React
+ * state, so it runs inside act.
+ */
+async function disposeGpuOwners(
+  registry: ReturnType<typeof createResourceRegistry>,
+) {
+  await act(async () => {
+    await registry.disposeOwners(['gpu'])
+  })
+}
+
 describe('usePreviewPipelineEvacuation', () => {
   it('accounts for both GPU owners with the bytes their pipelines hold', async () => {
     const processed = createPipeline({ estimatedBytes: 4096 })
@@ -173,7 +185,7 @@ describe('usePreviewPipelineEvacuation', () => {
     await flush()
 
     result.current.registerCurrentPreviewPipelineForEvacuation()
-    await registry.disposeOwners(['gpu'])
+    await disposeGpuOwners(registry)
 
     expect(processed.release).toHaveBeenCalledExactlyOnceWith({
       releaseContext: true,
@@ -187,7 +199,7 @@ describe('usePreviewPipelineEvacuation', () => {
     // Neither owner publishes a pipeline any more, so nothing is registered,
     // and repeated cleanup releases nothing again.
     result.current.registerCurrentPreviewPipelineForEvacuation()
-    await registry.disposeOwners(['gpu'])
+    await disposeGpuOwners(registry)
     unmount()
     expect(registry.snapshot().live).toEqual([])
     expect(processed.release).toHaveBeenCalledOnce()
@@ -227,7 +239,7 @@ describe('usePreviewPipelineEvacuation', () => {
     await flush()
     expect(pipelineRef.current).toBe(second)
 
-    await registry.disposeOwners(['gpu'])
+    await disposeGpuOwners(registry)
 
     expect(first.release).toHaveBeenCalledOnce()
     expect(second.dispose).not.toHaveBeenCalled()
@@ -247,7 +259,7 @@ describe('usePreviewPipelineEvacuation', () => {
 
     // Export evacuates the preview, then holds it suspended.
     result.current.registerCurrentPreviewPipelineForEvacuation()
-    await registry.disposeOwners(['gpu'])
+    await disposeGpuOwners(registry)
     rerender({ suspended: true })
 
     // Restore resumes the preview; its owners build and publish anew.
@@ -257,7 +269,7 @@ describe('usePreviewPipelineEvacuation', () => {
 
     result.current.registerCurrentPreviewPipelineForEvacuation()
     expect(registry.snapshot().totalEstimatedBytes).toBe(12288)
-    await registry.disposeOwners(['gpu'])
+    await disposeGpuOwners(registry)
 
     expect(first.release).toHaveBeenCalledOnce()
     expect(firstOriginal.release).toHaveBeenCalledOnce()

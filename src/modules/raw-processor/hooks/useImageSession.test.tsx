@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, cleanup, renderHook } from '@testing-library/react'
 import { Provider } from 'jotai'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -32,6 +32,8 @@ describe('useImageSession store binding', () => {
   })
 
   afterEach(() => {
+    // Unmount before the reset write, so the store change reaches no hook.
+    cleanup()
     setCurrentSession(null)
   })
 
