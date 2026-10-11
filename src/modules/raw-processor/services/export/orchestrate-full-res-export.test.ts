@@ -47,7 +47,6 @@ import { selectExportPlan } from '~/lib/export/export-plan'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import { FOLDING_TRANSFORM } from '~/lib/export/transform-geometry-test-cases'
-import type { MessageKey, Translate } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { createRawRuntimeSessionLeases } from '~/lib/raw/raw-runtime-host'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
@@ -56,10 +55,11 @@ import {
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
 import { composeManualTransform } from '~/lib/transform/transform-render'
-import enMessages from '~/locales/en.json'
-import zhMessages from '~/locales/zh-CN.json'
 
-import type { ExportResult } from '../../model/export-result'
+import type {
+  ExportResult,
+  FullResExportReason,
+} from '../../model/export-result'
 import type { ImageSession, TransformState } from '../../model/session'
 import { createTransformState } from '../../model/session-factory'
 import type { ProcessingStatus } from '../../model/workflow'
@@ -89,7 +89,10 @@ import {
 } from './export-result-identity'
 import { claimExportSlot, clearExportResultState } from './export-state'
 import type { runFullResolutionExportJob } from './export-system'
-import type { ExportContext } from './orchestrate-full-res-export'
+import type {
+  ExportContext,
+  FullResExportNotification,
+} from './orchestrate-full-res-export'
 import { orchestrateFullResExport } from './orchestrate-full-res-export'
 
 const mocks = vi.hoisted(() => ({
@@ -99,12 +102,6 @@ const mocks = vi.hoisted(() => ({
   buildManifestForExportResult: vi.fn(),
   reserveOpfsOutputDirectory: vi.fn(),
   scheduleAbandonedOpfsOutputCollection: vi.fn(),
-  toastError: vi.fn(),
-  toastDismiss: vi.fn(),
-}))
-
-vi.mock('sonner', () => ({
-  toast: { error: mocks.toastError, dismiss: mocks.toastDismiss },
 }))
 
 vi.mock('./export-system', async (importOriginal) => ({
@@ -496,14 +493,12 @@ function recaptureTransform(
   return next
 }
 
+/** The refusal each Transform status leaves a full-resolution export with. */
 const TRANSFORM_REFUSALS = {
-  pending:
-    'Transform is still preparing the current photo. Export once the preview shows it.',
-  invalid:
-    'This Transform leaves too little usable image. Reduce the adjustment or reset Transform to export.',
-  unavailable:
-    'The processed preview is unavailable. Wait for it or reset Transform to export.',
-} as const
+  pending: { code: 'transform-pending' },
+  invalid: { code: 'transform-invalid' },
+  unavailable: { code: 'transform-unavailable' },
+} as const satisfies Record<string, FullResExportReason>
 
 function createPreviousResult(): ExportResult {
   return {
@@ -643,15 +638,8 @@ function toSourceTuple(file: File): ExportSourceTuple {
   return { name: file.name, size: file.size, lastModified: file.lastModified }
 }
 
-/** A locale's copy as the workflow's translator reads it. */
-function translator(messages: Record<MessageKey, string>): Translate {
-  return (key) => messages[key]
-}
-
 type HarnessOptions = {
   session?: ImageSession
-  /** The locale copy refusals read; English by default. */
-  t?: Translate
   /** The session the React closure rendered with; defaults to the live one. */
   atomsSession?: ImageSession | null
   /** The color intent the store holds when the test starts. */
@@ -670,11 +658,12 @@ type HarnessOptions = {
  * A direct ExportContext whose functional setters apply to real test state.
  * Every observable step lands in one ordered trace, prefixed by channel:
  * `state:` for workflow writes, `debug:` for export diagnostics, `service:`
- * for side-effecting collaborators, `toast:` for user notifications and
+ * for side-effecting collaborators, `notify:` for user notifications and
  * `test:` for the moments a test intervenes.
  */
 function createHarness(options: HarnessOptions = {}) {
   const trace: string[] = []
+  const notifications: FullResExportNotification[] = []
   const debugEvents: ExportDebugEvent[] = []
   const plans: ExportExecutionPlan[] = []
   const planInputs: PlanInput[] = []
@@ -800,11 +789,10 @@ function createHarness(options: HarnessOptions = {}) {
     },
     refs,
     services: {
-      scheduleToast: vi.fn((notify: () => void) => {
-        trace.push('service:scheduleToast')
-        notify()
+      notify: vi.fn((notification: FullResExportNotification) => {
+        notifications.push(notification)
+        trace.push(`notify:${notification.kind}`)
       }),
-      t: options.t ?? translator(enMessages),
       // Mirrors the workflow's abortExportWork: abort, then release the ref.
       abortExportWork: vi.fn(() => {
         trace.push('service:abortExportWork')
@@ -828,13 +816,6 @@ function createHarness(options: HarnessOptions = {}) {
       interruptionMarkers,
     },
   }
-
-  mocks.toastError.mockImplementation((title: string) => {
-    trace.push(`toast:error:${title}`)
-  })
-  mocks.toastDismiss.mockImplementation(() => {
-    trace.push('toast:dismiss')
-  })
 
   // Facts sampled for an explicitly chosen device, then real plans from the
   // real planner and policy.
@@ -926,6 +907,7 @@ function createHarness(options: HarnessOptions = {}) {
   return {
     ctx,
     trace,
+    notifications,
     state,
     debugEvents,
     plans,
@@ -960,7 +942,7 @@ function createHarness(options: HarnessOptions = {}) {
     since(index: number) {
       return trace.slice(index)
     },
-    channel(name: 'state' | 'debug' | 'service' | 'toast') {
+    channel(name: 'state' | 'debug' | 'service' | 'notify') {
       return trace.filter((entry) => entry.startsWith(`${name}:`))
     },
     debugPayloads<TType extends ExportDebugEvent['type']>(type: TType) {
@@ -1082,7 +1064,7 @@ describe('orchestrateFullResExport success', () => {
       'state:status:exporting',
       'state:progress:0',
       'state:error:null',
-      'toast:dismiss',
+      'notify:started',
       'service:sampleExportPlanFacts',
       'service:registerCurrentPreviewPipelineForEvacuation',
       'debug:export-plan-selected',
@@ -1114,6 +1096,8 @@ describe('orchestrateFullResExport success', () => {
       'debug:export-progress',
       'debug:export-worker-attempt',
     ])
+    // A delivered export reports only that it started; the result is the news.
+    expect(h.notifications).toEqual([{ kind: 'started' }])
 
     const result = h.state.session?.exportState.result
     expect(h.state.session?.exportState).toEqual({
@@ -1686,14 +1670,10 @@ describe('orchestrateFullResExport refusals', () => {
 
     await orchestrateFullResExport(OPTIONS, h.ctx)
 
-    expect(h.trace).toEqual([
-      'service:scheduleToast',
-      'toast:error:Full-resolution export is not ready',
+    expect(h.trace).toEqual(['notify:refused'])
+    expect(h.notifications).toEqual([
+      { kind: 'refused', refusal: { code: 'source-loading' } },
     ])
-    expect(mocks.toastError).toHaveBeenCalledWith(
-      'Full-resolution export is not ready',
-      { description: 'Full-resolution export source is still loading.' },
-    )
     expect(h.state).toEqual({
       status: null,
       error: undefined,
@@ -1740,17 +1720,10 @@ describe('orchestrateFullResExport refusals', () => {
 
       await orchestrateFullResExport(OPTIONS, h.ctx)
 
-      expect(h.trace).toEqual([
-        'service:scheduleToast',
-        'toast:error:Full-resolution export is not ready',
+      expect(h.trace).toEqual(['notify:refused'])
+      expect(h.notifications).toEqual([
+        { kind: 'refused', refusal: { code: 'geometry-unplannable' } },
       ])
-      expect(mocks.toastError).toHaveBeenCalledWith(
-        'Full-resolution export is not ready',
-        {
-          description:
-            'This Transform cannot be reproduced at full resolution. Adjust or reset Transform to export.',
-        },
-      )
       // Nothing was planned, marked, evacuated or started.
       expect(h.planInputs).toEqual([])
       expect(h.markerStore.markers()).toEqual([])
@@ -1773,22 +1746,9 @@ describe('orchestrateFullResExport refusals', () => {
     },
   )
 
-  it.each([
-    [
-      'pending',
-      'Transform is still preparing the current photo. Export once the preview shows it.',
-    ],
-    [
-      'invalid',
-      'This Transform leaves too little usable image. Reduce the adjustment or reset Transform to export.',
-    ],
-    [
-      'unavailable',
-      'The processed preview is unavailable. Wait for it or reset Transform to export.',
-    ],
-  ] as const)(
+  it.each(['pending', 'invalid', 'unavailable'] as const)(
     'refuses a %s Transform before sampling, a marker, evacuation, the worker or an output',
-    async (status, description) => {
+    async (status) => {
       const registry = createResourceRegistry()
       const previousResult = createPreviousResult()
       const transform = transformAt(status)
@@ -1815,14 +1775,10 @@ describe('orchestrateFullResExport refusals', () => {
 
       await orchestrateFullResExport(OPTIONS, h.ctx)
 
-      expect(h.trace).toEqual([
-        'service:scheduleToast',
-        'toast:error:Full-resolution export is not ready',
+      expect(h.trace).toEqual(['notify:refused'])
+      expect(h.notifications).toEqual([
+        { kind: 'refused', refusal: TRANSFORM_REFUSALS[status] },
       ])
-      expect(mocks.toastError).toHaveBeenCalledWith(
-        'Full-resolution export is not ready',
-        { description },
-      )
       expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
       expect(h.markerStore.markers()).toEqual([])
       expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
@@ -1850,16 +1806,12 @@ describe('orchestrateFullResExport refusals', () => {
     await orchestrateFullResExport(OPTIONS, h.ctx)
 
     expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
-    expect(mocks.toastError).toHaveBeenCalledWith(
-      'Full-resolution export is not ready',
-      {
-        description:
-          'Transform is still preparing the current photo. Export once the preview shows it.',
-      },
-    )
+    expect(h.notifications).toEqual([
+      { kind: 'refused', refusal: TRANSFORM_REFUSALS.pending },
+    ])
   })
 
-  it('shows the runtime diagnostic as given, never deciding on its text', async () => {
+  it('carries the runtime diagnostic as given, never deciding on its text', async () => {
     // The diagnostic reads like another refusal; the verdict alone decides.
     const h = createHarness({
       session: createSession('session-1', {
@@ -1875,68 +1827,18 @@ describe('orchestrateFullResExport refusals', () => {
 
     await orchestrateFullResExport(OPTIONS, h.ctx)
 
-    expect(h.trace).toEqual([
-      'service:scheduleToast',
-      'toast:error:Full-resolution export is not ready',
+    expect(h.trace).toEqual(['notify:refused'])
+    expect(h.notifications).toEqual([
+      {
+        kind: 'refused',
+        refusal: {
+          code: 'runtime-unsupported',
+          detail: 'Quick preview is still being prepared.',
+        },
+      },
     ])
-    expect(mocks.toastError).toHaveBeenCalledWith(
-      'Full-resolution export is not ready',
-      { description: 'Quick preview is still being prepared.' },
-    )
     expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
     expect(h.state.session).toBe(liveSession)
-  })
-
-  it('shows a readiness refusal in the current locale', async () => {
-    const h = createHarness({
-      atomsSession: createSession('session-rendered-earlier'),
-      t: translator(zhMessages),
-    })
-
-    await orchestrateFullResExport(OPTIONS, h.ctx)
-
-    expect(mocks.toastError).toHaveBeenCalledWith('全分辨率导出尚未就绪', {
-      description: '全分辨率导出源还在加载。',
-    })
-    expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
-  })
-
-  it('shows a Transform refusal in the current locale', async () => {
-    const h = createHarness({
-      atomsSession: createSession(),
-      t: translator(zhMessages),
-    })
-    h.replaceSession(
-      createSession('session-1', { transform: transformAt('pending') }),
-    )
-
-    await orchestrateFullResExport(OPTIONS, h.ctx)
-
-    expect(mocks.toastError).toHaveBeenCalledWith('全分辨率导出尚未就绪', {
-      description: '变换仍在准备当前照片。预览显示后再导出。',
-    })
-    expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
-  })
-
-  it('keeps the runtime diagnostic as given in any locale', async () => {
-    const h = createHarness({
-      session: createSession('session-1', {
-        exportState: {
-          fullResCapability: {
-            status: 'unsupported',
-            reason: 'Quick preview is still being prepared.',
-          },
-        },
-      }),
-      t: translator(zhMessages),
-    })
-
-    await orchestrateFullResExport(OPTIONS, h.ctx)
-
-    expect(mocks.toastError).toHaveBeenCalledWith('全分辨率导出尚未就绪', {
-      description: 'Quick preview is still being prepared.',
-    })
-    expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
   })
 
   it('refuses an unsupported color graph without touching other export work', async () => {
@@ -1982,7 +1884,7 @@ describe('orchestrateFullResExport refusals', () => {
     expect(otherExport.signal.aborted).toBe(false)
     expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
     expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
-    expect(mocks.toastError).not.toHaveBeenCalled()
+    expect(h.notifications).toEqual([])
   })
 
   it('fails closed when the run-time plan cannot safely complete after readiness passed', async () => {
@@ -2014,16 +1916,20 @@ describe('orchestrateFullResExport refusals', () => {
       'state:status:exporting',
       'state:progress:0',
       'state:error:null',
-      'toast:dismiss',
+      'notify:started',
       'service:sampleExportPlanFacts',
       'state:session:failed',
       'state:status:ready',
-      'service:scheduleToast',
-      'toast:error:Export failed',
+      'notify:failed',
     ])
-    expect(mocks.toastError).toHaveBeenCalledWith('Export failed', {
-      description: getExportModeCopy('cannot-safely-complete'),
-    })
+    expect(h.notifications).toEqual([
+      { kind: 'started' },
+      {
+        kind: 'failed',
+        message: getExportModeCopy('cannot-safely-complete'),
+        retryLevel: null,
+      },
+    ])
     expect(h.state.session?.exportState).toMatchObject({
       status: 'failed',
       lastErrorCode: 'EXPORT_POLICY_CANNOT_COMPLETE',
@@ -2058,21 +1964,15 @@ describe('orchestrateFullResExport refusal order', () => {
     }
   }
 
-  /** What a refusal before the attempt leaves: one toast, nothing else. */
+  /** What a refusal before the attempt leaves: one notice, nothing else. */
   function expectRefusedBeforeAttempt(
     h: Harness,
     liveSession: ImageSession | null,
     otherExport: AbortController,
-    description: string,
+    refusal: FullResExportReason,
   ) {
-    expect(h.trace).toEqual([
-      'service:scheduleToast',
-      'toast:error:Full-resolution export is not ready',
-    ])
-    expect(mocks.toastError).toHaveBeenCalledWith(
-      'Full-resolution export is not ready',
-      { description },
-    )
+    expect(h.trace).toEqual(['notify:refused'])
+    expect(h.notifications).toEqual([{ kind: 'refused', refusal }])
     expect(h.planInputs).toEqual([])
     expect(h.markerStore.markers()).toEqual([])
     expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
@@ -2106,12 +2006,9 @@ describe('orchestrateFullResExport refusal order', () => {
 
     await orchestrateFullResExport(OPTIONS, h.ctx)
 
-    expectRefusedBeforeAttempt(
-      h,
-      h.state.session,
-      otherExport,
-      'This Transform cannot be reproduced at full resolution. Adjust or reset Transform to export.',
-    )
+    expectRefusedBeforeAttempt(h, h.state.session, otherExport, {
+      code: 'geometry-unplannable',
+    })
   })
 
   it('refuses a pending Transform before the color graph', async () => {
@@ -2155,12 +2052,9 @@ describe('orchestrateFullResExport refusal order', () => {
 
     await orchestrateFullResExport(OPTIONS, h.ctx)
 
-    expectRefusedBeforeAttempt(
-      h,
-      h.state.session,
-      otherExport,
-      getExportModeCopy('cannot-safely-complete'),
-    )
+    expectRefusedBeforeAttempt(h, h.state.session, otherExport, {
+      code: 'cannot-safely-complete',
+    })
   })
 
   it.each([
@@ -2314,7 +2208,7 @@ describe('orchestrateFullResExport failures', () => {
       performancePreference: 'balanced',
       code: 'FULL_RES_EXPORT_WORKER_FAILED',
       retryLevel: 'safe',
-      description: 'FULL_RES_EXPORT_WORKER_FAILED. Retry with safe fidelity.',
+      message: 'FULL_RES_EXPORT_WORKER_FAILED',
       resourceFailure: true,
     },
     {
@@ -2323,8 +2217,7 @@ describe('orchestrateFullResExport failures', () => {
       performancePreference: 'max',
       code: 'FULL_RES_EXPORT_RESOURCE_FAILURE',
       retryLevel: 'balanced',
-      description:
-        'FULL_RES_EXPORT_RESOURCE_FAILURE. Retry with balanced fidelity.',
+      message: 'FULL_RES_EXPORT_RESOURCE_FAILURE',
       resourceFailure: true,
     },
     {
@@ -2333,7 +2226,7 @@ describe('orchestrateFullResExport failures', () => {
       performancePreference: 'safe',
       code: 'FULL_RES_EXPORT_WORKER_FAILED',
       retryLevel: undefined,
-      description: 'FULL_RES_EXPORT_WORKER_FAILED',
+      message: 'FULL_RES_EXPORT_WORKER_FAILED',
       resourceFailure: true,
     },
     {
@@ -2342,7 +2235,7 @@ describe('orchestrateFullResExport failures', () => {
       performancePreference: 'balanced',
       code: 'EXPORT_RENDER_FAILED',
       retryLevel: undefined,
-      description: 'decoder exploded',
+      message: 'decoder exploded',
       resourceFailure: false,
     },
     {
@@ -2353,7 +2246,7 @@ describe('orchestrateFullResExport failures', () => {
       performancePreference: 'balanced',
       code: 'EXPORT_OUTPUT_SINK_FAILED',
       retryLevel: undefined,
-      description: 'Output sink closed',
+      message: 'Output sink closed',
       resourceFailure: false,
     },
   ] as const)(
@@ -2363,7 +2256,7 @@ describe('orchestrateFullResExport failures', () => {
       performancePreference,
       code,
       retryLevel,
-      description,
+      message,
       resourceFailure,
     }) => {
       const h = createHarness()
@@ -2395,12 +2288,12 @@ describe('orchestrateFullResExport failures', () => {
         ...(resourceFailure ? ['state:interruption-refresh'] : []),
         'state:session:failed',
         'state:status:ready',
-        'service:scheduleToast',
-        'toast:error:Export failed',
+        'notify:failed',
       ])
-      expect(mocks.toastError).toHaveBeenCalledWith('Export failed', {
-        description,
-      })
+      expect(h.notifications).toEqual([
+        { kind: 'started' },
+        { kind: 'failed', message, retryLevel: retryLevel ?? null },
+      ])
       expect(h.state.session?.exportState).toMatchObject({
         status: 'failed',
         lastErrorCode: code,
@@ -2429,19 +2322,23 @@ describe('orchestrateFullResExport failures', () => {
       'state:status:exporting',
       'state:progress:0',
       'state:error:null',
-      'toast:dismiss',
+      'notify:started',
       'service:sampleExportPlanFacts',
       'service:registerCurrentPreviewPipelineForEvacuation',
       'debug:export-plan-selected',
       'state:session:exporting',
       'state:session:failed',
       'state:status:ready',
-      'service:scheduleToast',
-      'toast:error:Export failed',
+      'notify:failed',
     ])
-    expect(mocks.toastError).toHaveBeenCalledWith('Export failed', {
-      description: 'EXPORT_RESOURCE_REGISTRY_MISSING',
-    })
+    expect(h.notifications).toEqual([
+      { kind: 'started' },
+      {
+        kind: 'failed',
+        message: 'EXPORT_RESOURCE_REGISTRY_MISSING',
+        retryLevel: null,
+      },
+    ])
     // The attempt began before evacuation and ends as a plain failure.
     expect(h.markerStore.markers()).toEqual([])
     expect(h.state.session?.exportState).toMatchObject({
@@ -2466,8 +2363,7 @@ describe('orchestrateFullResExport failures', () => {
         })
       },
       evacuatedTrace: [],
-      description:
-        'Export resources could not be evacuated before worker start.',
+      message: 'Export resources could not be evacuated before worker start.',
     },
     {
       name: 'a resource registers during evacuation',
@@ -2487,11 +2383,11 @@ describe('orchestrateFullResExport failures', () => {
         })
       },
       evacuatedTrace: ['debug:resource-evacuated'],
-      description: 'EXPORT_RESOURCE_EVICTION_INCOMPLETE',
+      message: 'EXPORT_RESOURCE_EVICTION_INCOMPLETE',
     },
   ])(
     'fails closed before the worker starts when $name',
-    async ({ register, evacuatedTrace, description }) => {
+    async ({ register, evacuatedTrace, message }) => {
       const registry = createResourceRegistry()
       register(registry)
       const h = createHarness({ registry })
@@ -2510,12 +2406,12 @@ describe('orchestrateFullResExport failures', () => {
         ...evacuatedTrace,
         'state:session:failed',
         'state:status:ready',
-        'service:scheduleToast',
-        'toast:error:Export failed',
+        'notify:failed',
       ])
-      expect(mocks.toastError).toHaveBeenCalledWith('Export failed', {
-        description,
-      })
+      expect(h.notifications).toEqual([
+        { kind: 'started' },
+        { kind: 'failed', message, retryLevel: null },
+      ])
       expect(h.state.session?.exportState).toMatchObject({
         status: 'failed',
         lastErrorCode: 'EXPORT_RESOURCE_EVICTION_INCOMPLETE',
@@ -2569,7 +2465,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     // The orchestrator leaves the exporting state for whoever cancelled it.
     expect(h.state.status).toBe('exporting')
     expect(h.state.session?.exportState.status).toBe('exporting')
-    expect(mocks.toastError).not.toHaveBeenCalled()
+    expect(h.notifications).toEqual([{ kind: 'started' }])
     // A cancelled attempt is not an interruption.
     expect(h.markerStore.markers()).toEqual([])
     expect(h.ctx.atoms.refreshExportInterruption).not.toHaveBeenCalled()
@@ -2726,7 +2622,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
 
       expect(h.since(supersededAt)).toEqual(['test:superseded'])
       expect(h.state.session).toBe(sessionAfterSupersession)
-      expect(mocks.toastError).not.toHaveBeenCalled()
+      expect(h.notifications).toEqual([{ kind: 'started' }])
       if (takesSlot) {
         expect(h.ctx.refs.exportAbortControllerRef.current).not.toBeNull()
       } else {
@@ -2783,7 +2679,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       'state:status:exporting',
       'state:progress:0',
       'state:error:null',
-      'toast:dismiss',
+      'notify:started',
       'service:sampleExportPlanFacts',
       'test:superseded',
     ])
@@ -2908,11 +2804,10 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     h: Harness,
     status: keyof typeof TRANSFORM_REFUSALS,
   ) {
-    expect(mocks.toastError).toHaveBeenCalledTimes(1)
-    expect(mocks.toastError).toHaveBeenCalledWith(
-      'Full-resolution export is not ready',
-      { description: TRANSFORM_REFUSALS[status] },
-    )
+    expect(h.notifications).toEqual([
+      { kind: 'started' },
+      { kind: 'refused', refusal: TRANSFORM_REFUSALS[status] },
+    ])
     expect(h.state.status).toBe('ready')
     expect(h.state.progress).toBe(0)
     expect(h.state.session?.exportState.status).toBe('idle')
@@ -2941,8 +2836,7 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
       'state:session:unchanged',
       'state:status:ready',
       'state:progress:0',
-      'service:scheduleToast',
-      'toast:error:Full-resolution export is not ready',
+      'notify:refused',
     ])
     expectRefusedAndSettled(h, 'pending')
     expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
@@ -2950,13 +2844,12 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
 
-  it('shows a refusal that ends a running attempt in the current locale', async () => {
+  it('reports the refusal that ends a running attempt by its code', async () => {
     const planGate = deferred()
     const h = createHarness({
       planGate: planGate.promise,
       runtime: OPFS_RUNTIME,
       session: createAcceptedTransformSession(),
-      t: translator(zhMessages),
     })
 
     const run = orchestrateFullResExport(OPTIONS, h.ctx)
@@ -2964,9 +2857,10 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     planGate.resolve()
     await run
 
-    expect(mocks.toastError).toHaveBeenCalledWith('全分辨率导出尚未就绪', {
-      description: '处理后的预览暂不可用。请等待预览就绪或重置变换后再导出。',
-    })
+    expect(h.notifications).toEqual([
+      { kind: 'started' },
+      { kind: 'refused', refusal: TRANSFORM_REFUSALS.unavailable },
+    ])
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
 
@@ -3029,8 +2923,7 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
       'state:session:idle',
       'state:status:ready',
       'state:progress:0',
-      'service:scheduleToast',
-      'toast:error:Full-resolution export is not ready',
+      'notify:refused',
     ])
     expectRefusedAndSettled(h, 'pending')
     expect(h.markerStore.markers()).toEqual([])
@@ -3160,11 +3053,11 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
 
       // The later attempt claimed the export slot, so the earlier result can
       // no longer be delivered; the session stops offering it.
-      expect(mocks.toastError).toHaveBeenCalledTimes(1)
-      expect(mocks.toastError).toHaveBeenCalledWith(
-        'Full-resolution export is not ready',
-        { description: TRANSFORM_REFUSALS.pending },
-      )
+      expect(h.notifications).toEqual([
+        { kind: 'started' },
+        { kind: 'started' },
+        { kind: 'refused', refusal: TRANSFORM_REFUSALS.pending },
+      ])
       expect(h.state.status).toBe('ready')
       expect(h.state.progress).toBe(0)
       expect(h.state.session?.exportState.status).toBe('idle')
@@ -3202,10 +3095,10 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     h.manifest.resolve(SEALED_MANIFEST)
     await settle()
 
-    expect(mocks.toastError).toHaveBeenCalledWith(
-      'Full-resolution export is not ready',
-      { description: TRANSFORM_REFUSALS.pending },
-    )
+    expect(h.notifications).toEqual([
+      { kind: 'started' },
+      { kind: 'refused', refusal: TRANSFORM_REFUSALS.pending },
+    ])
     expect(h.state.session?.exportState.status).toBe('ready')
     expect(h.state.session?.exportState.result).toEqual({
       ...earlier,
@@ -3350,7 +3243,7 @@ describe('orchestrateFullResExport completed output ownership', () => {
 
       expect(outputs[0]!.cleanup).toHaveBeenCalledTimes(1)
       expect(warn).toHaveBeenCalledTimes(1)
-      expect(mocks.toastError).not.toHaveBeenCalled()
+      expect(h.notifications).toEqual([{ kind: 'started' }])
     },
   )
 })
@@ -3440,7 +3333,7 @@ describe('orchestrateFullResExport delayed manifest', () => {
       })
       expect(h.state.session?.exportState.result?.output).toBe(result.output)
       expect(h.state.status).toBe('ready')
-      expect(mocks.toastError).not.toHaveBeenCalled()
+      expect(h.notifications).toEqual([{ kind: 'started' }])
       expect(h.debugPayloads('export-manifest-failed')).toEqual([
         { reason, message },
       ])
@@ -4158,10 +4051,10 @@ describe('orchestrateFullResExport live session reads', () => {
     job.reject(new DOMException('Aborted', 'AbortError'))
     await run
 
-    expect(mocks.toastError).toHaveBeenCalledWith(
-      'Full-resolution export is not ready',
-      { description: TRANSFORM_REFUSALS.pending },
-    )
+    expect(h.notifications).toEqual([
+      { kind: 'started' },
+      { kind: 'refused', refusal: TRANSFORM_REFUSALS.pending },
+    ])
     expect(h.state.status).toBe('ready')
     expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
   })

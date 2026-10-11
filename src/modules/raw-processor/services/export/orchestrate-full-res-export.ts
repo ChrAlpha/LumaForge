@@ -8,7 +8,6 @@ import type {
   ExportOutputResult,
 } from '@lumaforge/render-engine/export'
 import type { PerformancePreference } from '@lumaforge/render-engine/policy'
-import { toast } from 'sonner'
 
 import {
   emitExportDebugEvent,
@@ -21,7 +20,6 @@ import {
   scheduleAbandonedOpfsOutputCollection,
 } from '~/lib/export/opfs-output-lifetime'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
-import type { Translate } from '~/lib/i18n'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
 import type {
   PipelineStats,
@@ -43,7 +41,6 @@ import {
   isRetryableFullResExportFailure,
   toUserFacingErrorCode,
 } from '../ingest/workflow-status'
-import { fullResExportReasonText } from '../surface/raw-reason'
 import {
   buildManifestForExportResult,
   ExportManifestUnavailableError,
@@ -79,7 +76,6 @@ import {
 import { captureExportResultIdentity } from './export-result-identity'
 import { createCompletedExportResult } from './export-result-materialization'
 import {
-  buildExportFailureDescription,
   claimExportSlot,
   clearExportResultForActiveExport,
   clearExportResultState,
@@ -93,6 +89,24 @@ import {
   runFullResolutionExportJob,
   sampleExportPlanFacts,
 } from './export-system'
+
+/**
+ * What a full-resolution export tells the user. An attempt reports each one
+ * only while it is current, and a refusal or a failure carries its structured
+ * reason or the runtime's message as given; how and when each is shown, and
+ * in which locale, belongs to the caller.
+ */
+export type FullResExportNotification =
+  /** The attempt claimed the export slot: earlier notices no longer apply. */
+  | { kind: 'started' }
+  /** The export cannot start, or a running attempt can no longer finish. */
+  | { kind: 'refused'; refusal: FullResExportReason }
+  /** The attempt failed; `retryLevel` is the safer plan to retry with. */
+  | {
+      kind: 'failed'
+      message: string
+      retryLevel: Exclude<PerformancePreference, 'max'> | null
+    }
 
 export interface ExportContext {
   atoms: {
@@ -144,9 +158,7 @@ export interface ExportContext {
     previewCopyCanvasRef: { current: HTMLCanvasElement | null }
   }
   services: {
-    scheduleToast: (fn: () => void) => void
-    /** The current locale's copy, for the refusals this action shows. */
-    t: Translate
+    notify: (notification: FullResExportNotification) => void
     abortExportWork: () => void
     /**
      * The preview's RAW runtime on the workflow host. Evacuation cancels its
@@ -293,15 +305,10 @@ export async function orchestrateFullResExport(
       currentSession?.id === ctx.atoms.session?.id ? currentSession : null,
     rawRenderExposure,
   })
-  // The refusal stays structured up to the toast, which is the only place it
-  // becomes copy, in the current locale. Runtime diagnostics read as given.
+  // The refusal stays structured up to the caller, which alone turns it into
+  // copy. Runtime diagnostics travel as given.
   const refuse = (refusal: FullResExportReason) => {
-    const { t } = ctx.services
-    const title = t('raw.export.toast.fullResNotReady')
-    const description = fullResExportReasonText(refusal, t)
-    ctx.services.scheduleToast(() =>
-      toast.error(title, description ? { description } : undefined),
-    )
+    ctx.services.notify({ kind: 'refused', refusal })
   }
   if (!exportReadiness.canExport) {
     refuse(exportReadiness.refusal)
@@ -460,7 +467,7 @@ export async function orchestrateFullResExport(
     ctx.atoms.setStatus('exporting')
     ctx.atoms.setProgress(0)
     ctx.atoms.setError(null)
-    toast.dismiss()
+    ctx.services.notify({ kind: 'started' })
     ctx.refs.previewCopyCanvasRef.current = null
     // The device facts are sampled now, for this export. Facts sampled for
     // an attempt that is no longer current plan nothing.
@@ -883,11 +890,7 @@ export async function orchestrateFullResExport(
         : prev,
     )
     ctx.atoms.setStatus('ready')
-    ctx.services.scheduleToast(() =>
-      toast.error('Export failed', {
-        description: buildExportFailureDescription(message, retryLevel),
-      }),
-    )
+    ctx.services.notify({ kind: 'failed', message, retryLevel })
   } finally {
     discardUnadoptedOutput(unadoptedOutput)
     // An export dropped before its job ran ended without an interruption.
