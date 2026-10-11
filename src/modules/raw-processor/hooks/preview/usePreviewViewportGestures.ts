@@ -26,6 +26,18 @@ import {
 /** How long the wheel transform stays active after the last wheel event. */
 const WHEEL_INTERACTION_IDLE_MS = 180
 
+/** How many delivered commits may wait for the parent to render them back. */
+const MAX_UNECHOED_COMMITS = 8
+
+function sameViewport(a: PreviewViewport, b: PreviewViewport) {
+  return (
+    a.zoom === b.zoom &&
+    a.panX === b.panX &&
+    a.panY === b.panY &&
+    a.fitMode === b.fitMode
+  )
+}
+
 export interface PreviewViewportGestureOptions {
   /** The interactive frame: gestures are measured against its center. */
   frameRef: RefObject<HTMLDivElement | null>
@@ -45,6 +57,7 @@ export interface PreviewViewportGestures {
     onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void
     onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void
     onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => void
+    onLostPointerCapture: (event: ReactPointerEvent<HTMLDivElement>) => void
     onDoubleClick: (event: ReactMouseEvent<HTMLDivElement>) => void
   }
 }
@@ -52,8 +65,14 @@ export interface PreviewViewportGestures {
 /**
  * Wheel zoom, one-pointer pan, two-pointer pinch, and double-click reset for
  * the preview frame. Moves are batched into one viewport commit per animation
- * frame; lifting the last pointer commits at once. It owns only zoom and pan:
- * the compare split and the processed color are not its concern.
+ * frame; lifting, cancelling, or losing the capture of the last pointer
+ * commits at once. Gestures accumulate on the hook's own viewport: a render
+ * that hands back an equal viewport, or one this hook committed, leaves it
+ * alone, and only a different viewport from outside supersedes it, dropping
+ * the commit still waiting and rebasing a held pinch. Disabling ends the
+ * gesture, drops what it has not committed, and returns to the viewport last
+ * delivered. It owns only zoom and pan: the compare split and the processed
+ * color are not its concern.
  */
 export function usePreviewViewportGestures({
   frameRef,
@@ -63,6 +82,10 @@ export function usePreviewViewportGestures({
   onViewportChange,
 }: PreviewViewportGestureOptions): PreviewViewportGestures {
   const viewportRef = useRef(viewport)
+  const viewportPropRef = useRef(viewport)
+  /** The newest viewport the parent holds: delivered to it, or given from it. */
+  const deliveredViewportRef = useRef(viewport)
+  const unechoedCommitsRef = useRef<PreviewViewport[]>([])
   const activePointersRef = useRef(new Map<number, TrackedPointer>())
   const captureTargetRef = useRef<HTMLElement | null>(null)
   const pinchStartRef = useRef<{
@@ -75,10 +98,6 @@ export function usePreviewViewportGestures({
   const wheelInteractionTimeoutRef = useRef<number | null>(null)
   const [isPointerPanning, setIsPointerPanning] = useState(false)
   const [isWheelInteracting, setIsWheelInteracting] = useState(false)
-
-  useEffect(() => {
-    viewportRef.current = viewport
-  }, [viewport])
 
   const getViewportGeometry = useCallback(() => {
     const frame = frameRef.current
@@ -130,13 +149,30 @@ export function usePreviewViewportGestures({
     [getViewportGeometry],
   )
 
-  const commitViewport = useCallback(
+  /**
+   * Delivers a viewport and remembers it until the parent renders it back;
+   * one equal to the viewport already shown changes no prop to wait for.
+   */
+  const deliverViewport = useCallback(
     (next: PreviewViewport) => {
-      viewportRef.current = next
+      if (!sameViewport(next, viewportPropRef.current)) {
+        const unechoed = unechoedCommitsRef.current
+        unechoed.push(next)
+        if (unechoed.length > MAX_UNECHOED_COMMITS) unechoed.shift()
+      }
+      deliveredViewportRef.current = next
       onViewportChange?.(next)
     },
     [onViewportChange],
   )
+
+  const dropPendingCommit = useCallback(() => {
+    if (pendingViewportRafRef.current !== null) {
+      cancelAnimationFrame(pendingViewportRafRef.current)
+      pendingViewportRafRef.current = null
+    }
+    pendingViewportRef.current = null
+  }, [])
 
   const scheduleViewportCommit = useCallback(
     (next: PreviewViewport) => {
@@ -150,30 +186,73 @@ export function usePreviewViewportGestures({
         const pending = pendingViewportRef.current
         if (pending) {
           pendingViewportRef.current = null
-          onViewportChange?.(pending)
+          deliverViewport(pending)
         }
       })
     },
-    [onViewportChange],
+    [deliverViewport],
   )
 
   const flushViewportCommit = useCallback(() => {
-    if (pendingViewportRafRef.current !== null) {
-      cancelAnimationFrame(pendingViewportRafRef.current)
-      pendingViewportRafRef.current = null
-    }
     const pending = pendingViewportRef.current
-    if (pending) {
-      pendingViewportRef.current = null
-      onViewportChange?.(pending)
-    }
-  }, [onViewportChange])
+    dropPendingCommit()
+    if (pending) deliverViewport(pending)
+  }, [deliverViewport, dropPendingCommit])
 
-  const resetActivePointers = useCallback(() => {
+  /** Releases every capture the gesture holds and forgets its pointers. */
+  const releaseActivePointers = useCallback(() => {
+    const captureTarget = captureTargetRef.current
+    if (captureTarget) {
+      for (const pointerId of activePointersRef.current.keys()) {
+        tryReleasePointer(captureTarget, pointerId)
+      }
+    }
+    captureTargetRef.current = null
     activePointersRef.current.clear()
     pinchStartRef.current = null
-    setIsPointerPanning(false)
   }, [])
+
+  // A viewport prop moves the gesture only when it is new from outside: an
+  // equal one, or one this hook committed coming back, keeps the gesture's
+  // own accumulation.
+  useEffect(() => {
+    if (sameViewport(viewport, viewportPropRef.current)) return
+    viewportPropRef.current = viewport
+
+    const unechoed = unechoedCommitsRef.current
+    const echoIndex = unechoed.findIndex((committed) =>
+      sameViewport(committed, viewport),
+    )
+    if (echoIndex >= 0) {
+      unechoed.splice(0, echoIndex + 1)
+      return
+    }
+
+    unechoed.length = 0
+    dropPendingCommit()
+    viewportRef.current = viewport
+    deliveredViewportRef.current = viewport
+    const pointers = Array.from(activePointersRef.current.values())
+    if (pointers.length >= 2 && pinchStartRef.current) {
+      const [first, second] = pointers
+      pinchStartRef.current = {
+        distance: getPointerDistance(first!, second!),
+        midpoint: getPointerMidpoint(first!, second!),
+        viewport,
+      }
+    }
+  }, [viewport, dropPendingCommit])
+
+  // What the gesture had not delivered is dropped with it, so the next
+  // gesture builds on the viewport the parent holds, not on the dropped one.
+  useEffect(() => {
+    if (enabled) return
+    dropPendingCommit()
+    viewportRef.current = deliveredViewportRef.current
+    if (activePointersRef.current.size === 0) return
+    releaseActivePointers()
+    setIsPointerPanning(false)
+  }, [enabled, dropPendingCommit, releaseActivePointers])
 
   const handleWheel = useCallback(
     (event: WheelEvent) => {
@@ -226,28 +305,15 @@ export function usePreviewViewportGestures({
   // Teardown drops a pending commit rather than delivering a viewport after
   // the frame is gone, and releases whatever the gesture still holds.
   useEffect(() => {
-    const activePointers = activePointersRef.current
     return () => {
-      if (pendingViewportRafRef.current !== null) {
-        cancelAnimationFrame(pendingViewportRafRef.current)
-        pendingViewportRafRef.current = null
-      }
-      pendingViewportRef.current = null
+      dropPendingCommit()
       if (wheelInteractionTimeoutRef.current !== null) {
         window.clearTimeout(wheelInteractionTimeoutRef.current)
         wheelInteractionTimeoutRef.current = null
       }
-      const captureTarget = captureTargetRef.current
-      if (captureTarget) {
-        for (const pointerId of activePointers.keys()) {
-          tryReleasePointer(captureTarget, pointerId)
-        }
-      }
-      captureTargetRef.current = null
-      activePointers.clear()
-      pinchStartRef.current = null
+      releaseActivePointers()
     }
-  }, [])
+  }, [dropPendingCommit, releaseActivePointers])
 
   const handlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -333,8 +399,8 @@ export function usePreviewViewportGestures({
     [enabled, scheduleViewportCommit, getRelativeOrigin, getViewportGeometry],
   )
 
-  // Release and cancel end a pointer even while interaction is disabled, so
-  // a gesture that started before never stays captured.
+  // Release, cancel, and a lost capture each end their pointer the same way,
+  // even while interaction is disabled, so no pointer stays held or captured.
   const handlePointerRelease = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!activePointersRef.current.has(event.pointerId)) return
@@ -348,6 +414,7 @@ export function usePreviewViewportGestures({
         pinchStartRef.current = null
       }
       if (activePointersRef.current.size === 0) {
+        captureTargetRef.current = null
         flushViewportCommit()
         setIsPointerPanning(false)
       }
@@ -355,16 +422,21 @@ export function usePreviewViewportGestures({
     [flushViewportCommit],
   )
 
+  // The reset supersedes whatever the gesture has not committed yet.
   const handleDoubleClick = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       if (!enabled) return
 
       event.preventDefault()
       event.stopPropagation()
-      resetActivePointers()
-      commitViewport(resetPreviewViewport())
+      releaseActivePointers()
+      setIsPointerPanning(false)
+      dropPendingCommit()
+      const reset = resetPreviewViewport()
+      viewportRef.current = reset
+      deliverViewport(reset)
     },
-    [enabled, commitViewport, resetActivePointers],
+    [enabled, deliverViewport, dropPendingCommit, releaseActivePointers],
   )
 
   return {
@@ -375,6 +447,7 @@ export function usePreviewViewportGestures({
       onPointerMove: handlePointerMove,
       onPointerUp: handlePointerRelease,
       onPointerCancel: handlePointerRelease,
+      onLostPointerCapture: handlePointerRelease,
       onDoubleClick: handleDoubleClick,
     },
   }

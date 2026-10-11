@@ -309,6 +309,210 @@ describe('usePreviewViewportGestures', () => {
     expect(frame).toHaveAttribute('data-panning', 'false')
   })
 
+  it('ends a pointer whose capture is lost without a cancel', () => {
+    const onViewportChange = vi.fn()
+    const viewport = normalizePreviewViewport({
+      zoom: 2,
+      panX: 0,
+      panY: 0,
+      fitMode: 'custom',
+    })
+    const { frame } = renderGestures({ viewport, onViewportChange })
+
+    fireEvent.pointerDown(frame, {
+      pointerId: 5,
+      button: 0,
+      clientX: 300,
+      clientY: 200,
+    })
+    fireEvent.pointerMove(frame, {
+      pointerId: 5,
+      clientX: 320,
+      clientY: 210,
+    })
+    fireEvent.lostPointerCapture(frame, { pointerId: 5 })
+
+    expect(frames.pending()).toBe(0)
+    expect(onViewportChange).toHaveBeenCalledTimes(1)
+    expect(onViewportChange).toHaveBeenLastCalledWith({
+      zoom: 2,
+      panX: 20,
+      panY: 10,
+      fitMode: 'custom',
+    })
+    expect(frame).toHaveAttribute('data-panning', 'false')
+
+    fireEvent.pointerMove(frame, {
+      pointerId: 5,
+      clientX: 360,
+      clientY: 210,
+    })
+    fireEvent.pointerUp(frame, { pointerId: 5 })
+    expect(frames.request).toHaveBeenCalledTimes(1)
+    expect(onViewportChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('ends a held gesture and drops its uncommitted move when disabled', () => {
+    const onViewportChange = vi.fn()
+    const viewport = normalizePreviewViewport({
+      zoom: 2,
+      panX: 0,
+      panY: 0,
+      fitMode: 'custom',
+    })
+    const { frame, rerender } = renderGestures({ viewport, onViewportChange })
+
+    fireEvent.pointerDown(frame, {
+      pointerId: 1,
+      button: 0,
+      clientX: 300,
+      clientY: 200,
+    })
+    fireEvent.pointerMove(frame, {
+      pointerId: 1,
+      clientX: 320,
+      clientY: 200,
+    })
+    expect(frames.pending()).toBe(1)
+
+    rerender(
+      <Harness
+        viewport={viewport}
+        enabled={false}
+        onViewportChange={onViewportChange}
+      />,
+    )
+
+    expect(frames.pending()).toBe(0)
+    expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledWith(1)
+    expect(frame).toHaveAttribute('data-panning', 'false')
+    frames.run()
+    expect(onViewportChange).not.toHaveBeenCalled()
+
+    rerender(
+      <Harness
+        viewport={viewport}
+        enabled
+        onViewportChange={onViewportChange}
+      />,
+    )
+    fireEvent.pointerMove(frame, {
+      pointerId: 1,
+      clientX: 340,
+      clientY: 200,
+    })
+    expect(frames.pending()).toBe(0)
+    expect(frame).toHaveAttribute('data-panning', 'false')
+  })
+
+  it('rebuilds on the shown viewport after disable drops an uncommitted gesture', () => {
+    const onViewportChange = vi.fn()
+    const viewport = normalizePreviewViewport({
+      zoom: 2,
+      panX: 0,
+      panY: 0,
+      fitMode: 'custom',
+    })
+    const { frame, rerender } = renderGestures({ viewport, onViewportChange })
+
+    fireEvent.pointerDown(frame, {
+      pointerId: 1,
+      button: 0,
+      clientX: 300,
+      clientY: 200,
+    })
+    fireEvent.pointerMove(frame, {
+      pointerId: 1,
+      clientX: 320,
+      clientY: 200,
+    })
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    rerender(
+      <Harness
+        viewport={viewport}
+        enabled={false}
+        onViewportChange={onViewportChange}
+      />,
+    )
+    rerender(
+      <Harness
+        viewport={normalizePreviewViewport({ ...viewport })}
+        enabled
+        onViewportChange={onViewportChange}
+      />,
+    )
+    frames.run()
+    expect(onViewportChange).not.toHaveBeenCalled()
+
+    fireEvent.pointerDown(frame, {
+      pointerId: 2,
+      button: 0,
+      clientX: 300,
+      clientY: 200,
+    })
+    fireEvent.pointerMove(frame, {
+      pointerId: 2,
+      clientX: 310,
+      clientY: 200,
+    })
+    fireEvent.pointerUp(frame, { pointerId: 2 })
+    expect(onViewportChange).toHaveBeenLastCalledWith({
+      zoom: 2,
+      panX: 10,
+      panY: 0,
+      fitMode: 'custom',
+    })
+
+    // The pan was delivered: the next wheel builds on it, not on the dropped
+    // drag or the dropped wheel.
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    frames.run()
+    const zoomed = onViewportChange.mock.calls[1]?.[0] as PreviewViewport
+    expect(onViewportChange).toHaveBeenCalledTimes(2)
+    expect(zoomed.zoom).toBeCloseTo(2 * 1.1)
+    expect(zoomed.panX).toBeCloseTo(10 * 1.1)
+    expect(zoomed.panY).toBeCloseTo(0)
+  })
+
+  it('keeps a delivered commit as the base when disable drops a later move', () => {
+    const onViewportChange = vi.fn()
+    const viewport = normalizePreviewViewport({
+      zoom: 2,
+      panX: 0,
+      panY: 0,
+      fitMode: 'custom',
+    })
+    const { frame, rerender } = renderGestures({ viewport, onViewportChange })
+
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    frames.run()
+    expect(onViewportChange.mock.calls[0]?.[0].zoom).toBeCloseTo(2 * 1.1)
+
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    rerender(
+      <Harness
+        viewport={viewport}
+        enabled={false}
+        onViewportChange={onViewportChange}
+      />,
+    )
+    rerender(
+      <Harness
+        viewport={viewport}
+        enabled
+        onViewportChange={onViewportChange}
+      />,
+    )
+    frames.run()
+    expect(onViewportChange).toHaveBeenCalledTimes(1)
+
+    // The parent has not rendered the delivered zoom yet; it stays the base.
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    frames.run()
+    expect(onViewportChange).toHaveBeenCalledTimes(2)
+    expect(onViewportChange.mock.calls[1]?.[0].zoom).toBeCloseTo(2 * 1.1 ** 2)
+  })
+
   it('still releases a gesture that outlives its interaction', () => {
     const onViewportChange = vi.fn()
     const viewport = normalizePreviewViewport({
@@ -332,6 +536,8 @@ describe('usePreviewViewportGestures', () => {
         onViewportChange={onViewportChange}
       />,
     )
+    expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledWith(1)
+    expect(frame).toHaveAttribute('data-panning', 'false')
     fireEvent.pointerMove(frame, {
       pointerId: 1,
       clientX: 340,
@@ -340,7 +546,6 @@ describe('usePreviewViewportGestures', () => {
     expect(frames.request).not.toHaveBeenCalled()
 
     fireEvent.pointerUp(frame, { pointerId: 1 })
-    expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledWith(1)
     expect(frame).toHaveAttribute('data-panning', 'false')
     expect(onViewportChange).not.toHaveBeenCalled()
 
@@ -379,6 +584,134 @@ describe('usePreviewViewportGestures', () => {
     expect(frame).toHaveAttribute('data-wheeling', 'false')
   })
 
+  it('keeps zoomed wheel accumulation across renders of an equal viewport', () => {
+    const onViewportChange = vi.fn()
+    const zoomed = { zoom: 2, panX: 0, panY: 0, fitMode: 'custom' } as const
+    const { frame, rerender } = renderGestures({
+      viewport: normalizePreviewViewport(zoomed),
+      onViewportChange,
+    })
+
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    // The parent normalizes again on every render: same value, new object.
+    rerender(
+      <Harness
+        viewport={normalizePreviewViewport(zoomed)}
+        onViewportChange={onViewportChange}
+      />,
+    )
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    frames.run()
+
+    expect(frames.request).toHaveBeenCalledTimes(1)
+    expect(onViewportChange).toHaveBeenCalledTimes(1)
+    expect(onViewportChange.mock.calls[0]?.[0].zoom).toBeCloseTo(2 * 1.1 ** 2)
+  })
+
+  it('keeps accumulating when a committed viewport echoes back late', () => {
+    const onViewportChange = vi.fn()
+    const viewport = normalizePreviewViewport({
+      zoom: 2,
+      panX: 0,
+      panY: 0,
+      fitMode: 'custom',
+    })
+    const { frame, rerender } = renderGestures({ viewport, onViewportChange })
+
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    frames.run()
+    const committed = onViewportChange.mock.calls[0]?.[0] as PreviewViewport
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    rerender(
+      <Harness
+        viewport={normalizePreviewViewport({ ...committed })}
+        onViewportChange={onViewportChange}
+      />,
+    )
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    frames.run()
+
+    expect(onViewportChange).toHaveBeenCalledTimes(2)
+    expect(onViewportChange.mock.calls[1]?.[0].zoom).toBeCloseTo(2 * 1.1 ** 3)
+  })
+
+  it('lets a genuine external viewport change supersede an in-flight wheel', () => {
+    const onViewportChange = vi.fn()
+    const { frame, rerender } = renderGestures({
+      viewport: normalizePreviewViewport({
+        zoom: 2,
+        panX: 0,
+        panY: 0,
+        fitMode: 'custom',
+      }),
+      onViewportChange,
+    })
+
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    expect(frames.pending()).toBe(1)
+    rerender(
+      <Harness
+        viewport={normalizePreviewViewport({
+          zoom: 4,
+          panX: 0,
+          panY: 0,
+          fitMode: 'custom',
+        })}
+        onViewportChange={onViewportChange}
+      />,
+    )
+    expect(frames.pending()).toBe(0)
+    frames.run()
+    expect(onViewportChange).not.toHaveBeenCalled()
+
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    frames.run()
+    expect(onViewportChange).toHaveBeenCalledTimes(1)
+    expect(onViewportChange.mock.calls[0]?.[0].zoom).toBeCloseTo(4.4)
+  })
+
+  it('rebases a held pinch on a genuine external viewport change', () => {
+    const onViewportChange = vi.fn()
+    const { frame, rerender } = renderGestures({
+      viewport: DEFAULT_PREVIEW_VIEWPORT,
+      onViewportChange,
+    })
+
+    // Pointers at (+50, 0) and (+150, 0) from the center: distance 100.
+    fireEvent.pointerDown(frame, {
+      pointerId: 1,
+      button: 0,
+      clientX: 350,
+      clientY: 200,
+    })
+    fireEvent.pointerDown(frame, {
+      pointerId: 2,
+      button: 0,
+      clientX: 450,
+      clientY: 200,
+    })
+    rerender(
+      <Harness
+        viewport={normalizePreviewViewport({
+          zoom: 2,
+          panX: 0,
+          panY: 0,
+          fitMode: 'custom',
+        })}
+        onViewportChange={onViewportChange}
+      />,
+    )
+    fireEvent.pointerMove(frame, {
+      pointerId: 2,
+      clientX: 550,
+      clientY: 200,
+    })
+    frames.run()
+
+    // The pinch doubles the external zoom, not the fitted one it began at.
+    expect(onViewportChange.mock.calls.at(-1)?.[0].zoom).toBeCloseTo(4)
+  })
+
   it('resets zoom and pan on double click and forgets active pointers', () => {
     const onViewportChange = vi.fn()
     const viewport = normalizePreviewViewport({
@@ -395,12 +728,20 @@ describe('usePreviewViewportGestures', () => {
       clientX: 300,
       clientY: 200,
     })
+    fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -30 })
+    expect(frames.pending()).toBe(1)
     fireEvent.doubleClick(frame)
 
+    expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledWith(1)
+    expect(onViewportChange).toHaveBeenCalledTimes(1)
     expect(onViewportChange).toHaveBeenCalledWith(DEFAULT_PREVIEW_VIEWPORT)
     expect(frame).toHaveAttribute('data-panning', 'false')
+    // The reset supersedes the wheel commit that was still waiting.
+    expect(frames.pending()).toBe(0)
+    frames.run()
+    expect(onViewportChange).toHaveBeenCalledTimes(1)
     fireEvent.pointerMove(frame, { pointerId: 1, clientX: 340, clientY: 200 })
-    expect(frames.request).not.toHaveBeenCalled()
+    expect(frames.request).toHaveBeenCalledTimes(1)
   })
 
   it('drops pending commits, timers, and captures on unmount', () => {

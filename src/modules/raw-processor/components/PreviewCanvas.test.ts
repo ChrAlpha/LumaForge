@@ -2377,6 +2377,91 @@ describe('preview canvas upload descriptor', () => {
     }
   })
 
+  it('keeps a zoomed wheel burst across a render that normalizes the same viewport', async () => {
+    const onPreviewViewportChange = vi.fn()
+    const props = {
+      imageRef: { current: decodedImage },
+      imageVersion: 1,
+      decodedFrame: testFrame(1),
+      color: defaultColor,
+      viewMode: 'processed' as const,
+      lutDataRef: { current: null },
+      lutDataVersion: 0,
+      previewViewport: {
+        zoom: 2,
+        panX: 0,
+        panY: 0,
+        fitMode: 'custom' as const,
+      },
+      onPreviewViewportChange,
+    }
+    const { container, rerender } = render(createElement(PreviewCanvas, props))
+    await waitFor(() => {
+      expect(pipelineMock.instances).toHaveLength(1)
+    })
+    const frame = container.querySelector<HTMLElement>(
+      '[data-raw-preview-frame]',
+    )!
+    setElementRect(frame, { width: 400, height: 300 })
+    setElementRect(
+      container.querySelector<HTMLElement>('[data-raw-compare-track="image"]')!,
+      { width: 400, height: 300 },
+    )
+    const frames = captureAnimationFrames()
+
+    try {
+      fireEvent.wheel(frame, { clientX: 200, clientY: 150, deltaY: -30 })
+      rerender(createElement(PreviewCanvas, { ...props }))
+      fireEvent.wheel(frame, { clientX: 200, clientY: 150, deltaY: -30 })
+      frames.run()
+
+      expect(frames.request).toHaveBeenCalledTimes(1)
+      expect(onPreviewViewportChange).toHaveBeenCalledTimes(1)
+      expect(onPreviewViewportChange.mock.calls[0]?.[0].zoom).toBeCloseTo(
+        2 * 1.1 ** 2,
+      )
+    } finally {
+      frames.restore()
+    }
+  })
+
+  it('ends a pointer whose capture is lost without a cancel', async () => {
+    const { frame, onPreviewViewportChange } = renderInteractivePreview({
+      previewViewport: { zoom: 2, panX: 0, panY: 0, fitMode: 'custom' },
+    })
+    await waitFor(() => {
+      expect(pipelineMock.instances).toHaveLength(1)
+    })
+    const frames = captureAnimationFrames()
+
+    try {
+      fireEvent.pointerDown(frame!, {
+        pointerId: 1,
+        button: 0,
+        clientX: 200,
+        clientY: 150,
+      })
+      fireEvent.pointerMove(frame!, {
+        pointerId: 1,
+        clientX: 230,
+        clientY: 140,
+      })
+      fireEvent.lostPointerCapture(frame!, { pointerId: 1 })
+
+      expect(frames.cancel).toHaveBeenCalledWith(frames.lastId())
+      expect(onPreviewViewportChange).toHaveBeenCalledTimes(1)
+      expect(onPreviewViewportChange).toHaveBeenLastCalledWith({
+        zoom: 2,
+        panX: 30,
+        panY: -10,
+        fitMode: 'custom',
+      })
+      expect(frame).not.toHaveClass('raw-preview-frame-panning')
+    } finally {
+      frames.restore()
+    }
+  })
+
   it('batches wheel zoom into one frame and ends the wheel transform after it idles', async () => {
     const addEventListener = vi.spyOn(HTMLElement.prototype, 'addEventListener')
     const { frame, onPreviewViewportChange } = renderInteractivePreview()
