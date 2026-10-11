@@ -9,6 +9,7 @@ describe('normalizeRawRuntimeError', () => {
     'RAW_MEMORY_LIMIT',
     'RAW_WORKER_PROTOCOL_ERROR',
     'RAW_UNSUPPORTED_FORMAT',
+    'RAW_RUNTIME_UNAVAILABLE',
   ] satisfies LumaRawErrorCode[])(
     'keeps an existing %s error over the fallback code',
     (code) => {
@@ -34,6 +35,16 @@ describe('normalizeRawRuntimeError', () => {
     expect(normalized).toBeInstanceOf(LumaRawRuntimeError)
     expect(normalized.name).toBe('LumaRawRuntimeError')
     expect(normalized.code).toBe('RAW_WINDOW_READ_FAILED')
+    expect(normalized.message).toBe(cause.message)
+    expect(normalized.cause).toBe(cause)
+  })
+
+  it('classifies a native calibration throw with the calibration fallback', () => {
+    const cause = new Error('native calibration rejected the matrix')
+
+    const normalized = normalizeRawRuntimeError(cause, 'RAW_CALIBRATION_FAILED')
+
+    expect(normalized.code).toBe('RAW_CALIBRATION_FAILED')
     expect(normalized.message).toBe(cause.message)
     expect(normalized.cause).toBe(cause)
   })

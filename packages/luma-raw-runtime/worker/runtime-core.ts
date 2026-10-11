@@ -20,6 +20,7 @@ import type {
 } from '../src/worker-protocol'
 import { normalizeExportCapability } from './native-adapter'
 import type {
+  LumaRawNativeCalibrationPayload,
   LumaRawNativeFactory,
   LumaRawNativeImage,
   LumaRawNativeMetadata,
@@ -260,7 +261,7 @@ export const rawRequestFailureFallbackCodes = {
   readRawWindowFromSession: 'RAW_WINDOW_READ_FAILED',
   readProcessedWindowFromSession: 'RAW_WINDOW_READ_FAILED',
   endProcessedWindowExportFromSession: 'RAW_WINDOW_READ_FAILED',
-  applyCalibrationToSession: 'RAW_WORKER_PROTOCOL_ERROR',
+  applyCalibrationToSession: 'RAW_CALIBRATION_FAILED',
 } as const satisfies Record<LumaRawWorkerRequestType, LumaRawErrorCode>
 
 function failureResponse(
@@ -371,6 +372,58 @@ function requireBoundedHqMaxOutputPixels(
   }
 
   return maxOutputPixels
+}
+
+const CALIBRATION_MATRIX_LENGTH = 9
+const CALIBRATION_TONE_CURVE_MIN_ENTRIES = 4096
+
+function malformedCalibration(message: string): LumaRawRuntimeError {
+  return new LumaRawRuntimeError(
+    'RAW_WORKER_PROTOCOL_ERROR',
+    `RAW runtime calibration ${message}`,
+  )
+}
+
+// A calibration request whose payload is not a finite row-major 3x3 matrix,
+// with an optional tone-curve LUT of at least 4096 finite entries, is
+// malformed: it is refused as a protocol error before native work, so a native
+// calibration failure keeps its own code.
+function requireCalibrationPayload(
+  request: LumaRawWorkerRequest<'applyCalibrationToSession'>,
+): LumaRawNativeCalibrationPayload {
+  const calibration = (request.payload as { cameraCalibration?: unknown })
+    .cameraCalibration
+  if (typeof calibration !== 'object' || calibration === null) {
+    throw malformedCalibration('payload must be a camera calibration profile.')
+  }
+
+  const { xyzToCamera, toneCurveLut } = calibration as {
+    xyzToCamera?: unknown
+    toneCurveLut?: unknown
+  }
+  if (
+    !(xyzToCamera instanceof Float32Array) ||
+    xyzToCamera.length !== CALIBRATION_MATRIX_LENGTH ||
+    !xyzToCamera.every(Number.isFinite)
+  ) {
+    throw malformedCalibration(
+      'xyzToCamera must be a Float32Array of 9 finite values.',
+    )
+  }
+  if (toneCurveLut === undefined) {
+    return { xyzToCamera }
+  }
+  if (
+    !(toneCurveLut instanceof Float32Array) ||
+    toneCurveLut.length < CALIBRATION_TONE_CURVE_MIN_ENTRIES ||
+    !toneCurveLut.every(Number.isFinite)
+  ) {
+    throw malformedCalibration(
+      'toneCurveLut must be a Float32Array of at least 4096 finite entries.',
+    )
+  }
+
+  return { xyzToCamera, toneCurveLut }
 }
 
 function captureHeap(nativeFactory: LumaRawNativeFactory) {
@@ -880,7 +933,8 @@ export function createRuntimeCore(
     request: LumaRawWorkerRequest<'applyCalibrationToSession'>,
   ): LumaRawWorkerResponse {
     return runSessionJob(sessionJobs, request, {
-      run(session) {
+      options: requireCalibrationPayload,
+      run(session, calibration) {
         if (!session.processor.applyCalibration) {
           throw new LumaRawRuntimeError(
             'RAW_RUNTIME_UNAVAILABLE',
@@ -888,13 +942,7 @@ export function createRuntimeCore(
           )
         }
 
-        const { cameraCalibration } = request.payload
-        session.processor.applyCalibration({
-          xyzToCamera: cameraCalibration.xyzToCamera,
-          ...(cameraCalibration.toneCurveLut
-            ? { toneCurveLut: cameraCalibration.toneCurveLut }
-            : {}),
-        })
+        session.processor.applyCalibration(calibration)
         return { applied: true }
       },
     })

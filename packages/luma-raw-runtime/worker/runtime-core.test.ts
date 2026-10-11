@@ -2369,6 +2369,201 @@ describe('runtime-core', () => {
     })
   })
 
+  describe('applyCalibrationToSession failures', () => {
+    function makeCalibrationCore(applyCalibration: () => void) {
+      const calls: number[] = []
+      const core = createRuntimeCore({
+        createProcessor() {
+          return {
+            ...makeNativeFactory().createProcessor(),
+            applyCalibration() {
+              calls.push(1)
+              applyCalibration()
+            },
+          }
+        },
+      })
+      return { core, calls }
+    }
+
+    async function openCalibrationSession(
+      core: ReturnType<typeof createRuntimeCore>,
+    ) {
+      const opened = await core.handleRequest({
+        id: 'calibration-failure-open',
+        type: 'openSession',
+        payload: {
+          fileBuffer: new ArrayBuffer(4),
+          fileName: 'sample.ARW',
+          fileSize: 4,
+        },
+      })
+      if (!opened.ok || opened.type !== 'openSession') {
+        throw new Error('session open failed in fixture')
+      }
+      return opened.payload.sessionId
+    }
+
+    function calibrationRequest(
+      sessionId: string,
+      cameraCalibration: unknown,
+      id = 'calibration-failure',
+    ): LumaRawWorkerRequest {
+      return {
+        id,
+        type: 'applyCalibrationToSession',
+        payload: {
+          sessionId,
+          cameraCalibration,
+        },
+      } as LumaRawWorkerRequest
+    }
+
+    const validCalibration = {
+      profileId: 'p1',
+      profileName: 'Adobe Standard',
+      xyzToCamera: new Float32Array(9),
+    }
+
+    // A full-length tone curve with one non-finite entry.
+    function toneCurveHolding(value: number) {
+      const lut = new Float32Array(4096)
+      lut[2048] = value
+      return lut
+    }
+
+    it('classifies an unclassified native failure as a calibration failure', async () => {
+      const { core } = makeCalibrationCore(() => {
+        throw new Error('native calibration rejected the matrix')
+      })
+      const sessionId = await openCalibrationSession(core)
+
+      await expect(
+        core.handleRequest(calibrationRequest(sessionId, validCalibration)),
+      ).resolves.toEqual({
+        id: 'calibration-failure',
+        ok: false,
+        type: 'applyCalibrationToSession',
+        error: {
+          code: 'RAW_CALIBRATION_FAILED',
+          message: 'native calibration rejected the matrix',
+        },
+      })
+    })
+
+    it('keeps a specific runtime error the native operation raised', async () => {
+      const { core } = makeCalibrationCore(() => {
+        throw new LumaRawRuntimeError(
+          'RAW_MEMORY_LIMIT',
+          'RAW runtime ran out of memory.',
+        )
+      })
+      const sessionId = await openCalibrationSession(core)
+
+      await expect(
+        core.handleRequest(calibrationRequest(sessionId, validCalibration)),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: 'RAW_MEMORY_LIMIT',
+          message: 'RAW runtime ran out of memory.',
+        },
+      })
+    })
+
+    it.each([
+      ['a missing calibration', undefined],
+      ['a non-object calibration', 'adobe-standard'],
+      [
+        'a plain-array matrix',
+        { ...validCalibration, xyzToCamera: [1, 0, 0, 0, 1, 0, 0, 0, 1] },
+      ],
+      [
+        'a short matrix',
+        { ...validCalibration, xyzToCamera: new Float32Array(8) },
+      ],
+      [
+        'a non-finite matrix',
+        {
+          ...validCalibration,
+          xyzToCamera: new Float32Array([1, 0, 0, 0, Number.NaN, 0, 0, 0, 1]),
+        },
+      ],
+      [
+        'a plain-array tone curve',
+        { ...validCalibration, toneCurveLut: [0, 1] },
+      ],
+      [
+        'a short tone curve',
+        { ...validCalibration, toneCurveLut: new Float32Array(4095) },
+      ],
+      [
+        'a tone curve holding NaN',
+        { ...validCalibration, toneCurveLut: toneCurveHolding(Number.NaN) },
+      ],
+      [
+        'a tone curve holding +Infinity',
+        {
+          ...validCalibration,
+          toneCurveLut: toneCurveHolding(Number.POSITIVE_INFINITY),
+        },
+      ],
+      [
+        'a tone curve holding -Infinity',
+        {
+          ...validCalibration,
+          toneCurveLut: toneCurveHolding(Number.NEGATIVE_INFINITY),
+        },
+      ],
+    ])(
+      'refuses %s as malformed before the session lookup and native work',
+      async (_label, cameraCalibration) => {
+        const { core, calls } = makeCalibrationCore(() => {})
+        const sessionId = await openCalibrationSession(core)
+
+        const known = await core.handleRequest(
+          calibrationRequest(sessionId, cameraCalibration),
+        )
+        const unknown = await core.handleRequest(
+          calibrationRequest('raw-session-missing', cameraCalibration),
+        )
+
+        for (const response of [known, unknown]) {
+          expect(response).toMatchObject({
+            ok: false,
+            type: 'applyCalibrationToSession',
+            error: { code: 'RAW_WORKER_PROTOCOL_ERROR' },
+          })
+          expect(response).not.toMatchObject({
+            error: { message: expect.stringContaining('session does not') },
+          })
+        }
+        expect(calls).toEqual([])
+      },
+    )
+
+    it('refuses a pre-cancelled malformed calibration as cancelled', async () => {
+      const { core, calls } = makeCalibrationCore(() => {})
+      const sessionId = await openCalibrationSession(core)
+
+      await core.handleRequest({
+        id: 'calibration-malformed-cancel',
+        type: 'cancel',
+        payload: { targetJobId: 'calibration-malformed' },
+      })
+
+      await expect(
+        core.handleRequest(
+          calibrationRequest(sessionId, undefined, 'calibration-malformed'),
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: 'RAW_JOB_CANCELLED' },
+      })
+      expect(calls).toEqual([])
+    })
+  })
+
   it('bounds best-effort cancellation tracking', async () => {
     const core = createRuntimeCore(makeNativeFactory())
 
@@ -2580,11 +2775,7 @@ describe('runtime-core request failure classification', () => {
       'endProcessedWindowExport',
       'RAW_WINDOW_READ_FAILED',
     ],
-    [
-      'applyCalibrationToSession',
-      'applyCalibration',
-      'RAW_WORKER_PROTOCOL_ERROR',
-    ],
+    ['applyCalibrationToSession', 'applyCalibration', 'RAW_CALIBRATION_FAILED'],
     ['closeSession', 'dispose', 'RAW_RUNTIME_UNAVAILABLE'],
   ] as const)(
     'classifies unexpected %s failures by operation',
@@ -2745,6 +2936,7 @@ describe('runtime-core request failure classification', () => {
       probe: 'RAW_OPEN_FAILED',
       readRawWindowFromSession: 'RAW_WINDOW_READ_FAILED',
       readProcessedWindowFromSession: 'RAW_WINDOW_READ_FAILED',
+      applyCalibrationToSession: 'RAW_CALIBRATION_FAILED',
     })
   })
 })
