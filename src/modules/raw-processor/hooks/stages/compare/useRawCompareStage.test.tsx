@@ -1,6 +1,6 @@
 import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
-import { act, renderHook } from '@testing-library/react'
+import { act, cleanup, renderHook } from '@testing-library/react'
 import { useRef, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -91,7 +91,9 @@ beforeEach(() => {
   setCurrentSession(null)
 })
 
+// A mounted harness would re-render on the reset, so it unmounts first.
 afterEach(() => {
+  cleanup()
   setCurrentSession(null)
 })
 

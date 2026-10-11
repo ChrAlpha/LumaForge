@@ -6,7 +6,7 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
-import { act, renderHook } from '@testing-library/react'
+import { act, cleanup, renderHook } from '@testing-library/react'
 import i18n from 'i18next'
 import { atom, createStore, useAtomValue } from 'jotai'
 import type { ComponentType, PropsWithChildren, SetStateAction } from 'react'
@@ -68,13 +68,15 @@ const toastMock = vi.hoisted(() => ({
 vi.mock('sonner', () => toastMock)
 
 // The stage reads and writes the session, and reads the LUT, in the
-// production store, so every test seeds that store and leaves it empty.
+// production store, so every test seeds that store and leaves it empty. A
+// mounted hook would re-render on the reset, so it unmounts first.
 beforeEach(() => {
   setCurrentSession(null)
   setStoredLut(null)
 })
 
 afterEach(() => {
+  cleanup()
   setCurrentSession(null)
   setStoredLut(null)
 })
@@ -2107,6 +2109,7 @@ describe('useRawLookStage notifications', () => {
 
 describe('useRawLookStage effective intent against the store', () => {
   afterEach(() => {
+    cleanup()
     setProcessingParams({ ...baseIntent })
   })
 

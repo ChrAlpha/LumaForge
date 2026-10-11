@@ -4,10 +4,18 @@ import {
   pickColorGraphIntent,
 } from '@lumaforge/luma-color-runtime'
 import type { LumaRawRuntime } from '@lumaforge/luma-raw-runtime'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import type { RenderResult } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Provider } from 'jotai'
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactElement } from 'react'
 import { afterEach, beforeEach, vi } from 'vitest'
 
 import { viewportAtom } from '~/atoms/viewport'
@@ -115,6 +123,15 @@ const stageColor = pickColorGraphIntent({
   styleKind: 'none',
   builtinPreset: null,
 })
+
+/** Renders inside act, so the mocked preview pipelines finish initializing. */
+async function renderSettled(ui: ReactElement): Promise<RenderResult> {
+  let rendered!: RenderResult
+  await act(async () => {
+    rendered = render(ui)
+  })
+  return rendered
+}
 
 function compareStageProps(
   overrides: Partial<ComponentProps<typeof ComparePreviewStage>> = {},
@@ -568,6 +585,9 @@ describe('rawProcessorView', () => {
       expect(desktopActionsRow).not.toHaveClass('sm:border-border-secondary')
       expect(desktopActionsRow).toHaveClass('sm:border-lf-on-photo-bord-soft')
     } finally {
+      // The view unmounts before the viewport is restored, so the restore
+      // re-renders nothing.
+      cleanup()
       jotaiStore.set(viewportAtom, prevViewport)
     }
   })
@@ -1208,8 +1228,8 @@ describe('rawToolSurface', () => {
     expect(onRawDrop).toHaveBeenCalledWith([file])
   })
 
-  it('keeps preview stage focus visually neutral', () => {
-    const { container } = render(
+  it('keeps preview stage focus visually neutral', async () => {
+    const { container } = await renderSettled(
       <ComparePreviewStage
         {...compareStageProps({
           hasImage: true,
@@ -1225,8 +1245,8 @@ describe('rawToolSurface', () => {
     expect(stageFrame).not.toHaveClass('focus-visible:ring-accent')
   })
 
-  it('uses a neutral preview mat instead of a black preview background', () => {
-    const { container } = render(
+  it('uses a neutral preview mat instead of a black preview background', async () => {
+    const { container } = await renderSettled(
       <ComparePreviewStage
         {...compareStageProps({
           hasImage: true,

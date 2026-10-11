@@ -4436,7 +4436,8 @@ describe('preview canvas upload descriptor', () => {
       ])
     })
 
-    it('places the embedded handoff preview beside the track, outside the zoomed surface', () => {
+    it('places the embedded handoff preview beside the track, outside the zoomed surface', async () => {
+      const onStatsUpdate = vi.fn()
       const { container } = render(
         createElement(PreviewCanvas, {
           imageRef: { current: { ...decodedImage, source: 'quick' } },
@@ -4448,6 +4449,7 @@ describe('preview canvas upload descriptor', () => {
           lutDataVersion: 0,
           embeddedPreviewUrl: 'blob:embedded-preview',
           displaySource: 'quick',
+          onStatsUpdate,
         }),
       )
 
@@ -4466,6 +4468,10 @@ describe('preview canvas upload descriptor', () => {
           'data-raw-preview-handoff-preview': 'true',
         }),
       )
+
+      // The mocked pipeline initializes and publishes the first frame
+      // before the test ends.
+      await waitFor(() => expect(onStatsUpdate).toHaveBeenCalledOnce())
     })
 
     it('covers the stage with the error overlay instead of the empty state', async () => {
