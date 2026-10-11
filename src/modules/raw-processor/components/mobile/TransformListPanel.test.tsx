@@ -6,14 +6,14 @@ import type { ToolAvailability } from '../../services/surface/derive-tool-availa
 import type {
   TransformToolState,
   TransformToolStateName,
-} from '../tools/transform-feature.fixture'
+} from '../shared/transform-feature.fixture'
 import {
   patchTransformPreview,
   TRANSFORM_TOOL_STATES,
   transformPreviewOf,
   transformToolStateFixture,
   withTransformPreview,
-} from '../tools/transform-feature.fixture'
+} from '../shared/transform-feature.fixture'
 import { TransformListPanel } from './TransformListPanel'
 
 const S = TRANSFORM_TOOL_STATES

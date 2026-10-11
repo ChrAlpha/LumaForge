@@ -59,13 +59,13 @@ import { RawToolSurface } from './RawToolSurface'
 import type { RawToolCommands, RawToolSurfaceProps } from './RawWorkflowContext'
 import { useRawToolCommands, useRawWorkflowContext } from './RawWorkflowContext'
 import { RawWorkflowToolProvider } from './RawWorkflowToolProvider'
-import { TONE_NEUTRAL } from './tone-fields'
-import type { TransformPreviewState } from './tools/transform-feature.fixture'
+import type { TransformPreviewState } from './shared/transform-feature.fixture'
 import {
   transformFeatureFixture,
   transformPreviewOf,
   withTransformPreview,
-} from './tools/transform-feature.fixture'
+} from './shared/transform-feature.fixture'
+import { TONE_NEUTRAL } from './tone-fields'
 import { resetTransformGroup } from './transform-fields'
 
 vi.mock(

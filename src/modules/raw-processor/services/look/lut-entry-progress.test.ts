@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-import type { OnlineLutEntryLoadProgress } from '../../hooks/useOnlineLutSources'
 import { entryLoadPercent } from './lut-entry-progress'
 
 describe('entryLoadPercent', () => {
@@ -31,12 +30,8 @@ describe('entryLoadPercent', () => {
     )
   })
 
-  it('reads the progress the catalog hook reports', () => {
-    const progress: OnlineLutEntryLoadProgress = {
-      entryId: 'a',
-      receivedBytes: 50,
-      totalBytes: 200,
-    }
+  it('reads the byte counts of a progress record that also names its entry', () => {
+    const progress = { entryId: 'a', receivedBytes: 50, totalBytes: 200 }
     expect(entryLoadPercent(progress)).toBe(25)
   })
 })

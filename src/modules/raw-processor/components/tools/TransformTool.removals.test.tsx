@@ -6,7 +6,7 @@ import {
   TRANSFORM_TOOL_STATES,
   transformPreviewOf,
   transformToolStateFixture,
-} from './transform-feature.fixture'
+} from '../shared/transform-feature.fixture'
 import { TransformTool } from './TransformTool'
 
 beforeEach(() => {

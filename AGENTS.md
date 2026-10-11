@@ -632,14 +632,17 @@ These are owner decisions. They override cleanup advice that says otherwise.
   by its `build` job; every job except `quality` is path-selected):
   - `quality` runs on every change, docs-only ones included. It tests and runs
     `scripts/quality/check-agent-paths.mjs` against this file, then installs
-    dependencies and runs `pnpm check:structure`
-    (`scripts/quality/check-structure.mjs`): knip and madge fail any unused
-    file, export, dependency, unresolved import, or import cycle that
+    dependencies and runs `pnpm lint:check` and `pnpm check:structure`
+    (`scripts/quality/check-structure.mjs`). Lint covers the app, every
+    package, script and plugin, and the browser specs, and applies the
+    module ownership rule in `plugins/eslint-import-boundaries.mjs` (tested by
+    `scripts/quality/import-boundaries.test.mjs`) to every import form by the
+    resolved files on both sides, with no exceptions. knip and madge fail any
+    unused file, export, dependency, unresolved import, or import cycle that
     `scripts/quality/baseline.json` does not list. Code that resolves a
     baseline entry drops it in the same commit (`pnpm check:structure --prune`);
     the baseline never gains an entry without review.
-  - `app` uses `pnpm lint:check`, `pnpm test:app`, prebuilt native assets, and
-    app build checks.
+  - `app` uses `pnpm test:app`, prebuilt native assets, and app build checks.
   - `runtime` runs runtime package typecheck/test/build and app adapter tests,
     then typechecks, tests, and builds `packages/render-engine`.
   - `webgpu` installs Chromium and runs `pnpm test:webgpu` (WebGPU preview vs

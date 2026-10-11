@@ -3,7 +3,6 @@ import type { CpuPreviewVariant } from '@lumaforge/render-engine/preview'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { GpuPreviewOutput } from '~/lib/webgpu/contract'
-import type { ImageSession } from '~/modules/raw-processor/model/session'
 
 import type {
   PreviewSurfaceOutput,
@@ -18,12 +17,9 @@ import {
 } from './preview-view'
 
 describe('preview view', () => {
-  it('names the three modes the session and the legacy params already use', () => {
+  it('names the three modes the legacy params already use', () => {
     expect(PREVIEW_VIEW_MODES).toEqual(['processed', 'original', 'compare'])
     expect(Object.isFrozen(PREVIEW_VIEW_MODES)).toBe(true)
-    expectTypeOf<PreviewViewMode>().toEqualTypeOf<
-      ImageSession['viewState']['mode']
-    >()
     // Legacy params may still carry a view mode; when they do it is one of
     // these, so a legacy record maps onto the app view without translation.
     expectTypeOf<PreviewViewMode>().toEqualTypeOf<

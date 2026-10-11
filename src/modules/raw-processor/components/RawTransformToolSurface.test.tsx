@@ -12,11 +12,11 @@ import {
 import { COLOR_NEUTRAL } from './color-fields'
 import type { RawToolSurfaceFixtureProps } from './raw-tool-surface.fixture'
 import { renderRawToolSurface } from './raw-tool-surface.fixture'
-import { TONE_NEUTRAL } from './tone-fields'
 import {
   transformFeatureFixture,
   transformPreviewOf,
-} from './tools/transform-feature.fixture'
+} from './shared/transform-feature.fixture'
+import { TONE_NEUTRAL } from './tone-fields'
 
 const base: RawToolSurfaceFixtureProps = {
   activeIntensity: 0.7,

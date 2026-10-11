@@ -1,6 +1,8 @@
 // @ts-check
 import { defineConfig } from 'eslint-config-hyoban'
 
+import importBoundaries from './plugins/eslint-import-boundaries.mjs'
+
 export default defineConfig(
   {
     formatting: false,
@@ -52,6 +54,15 @@ export default defineConfig(
       ],
       'ts/no-explicit-any': 'off',
       'ts/no-use-before-define': 'off',
+    },
+  },
+  {
+    // Module ownership by resolved import target: every linted file, every
+    // import form. The boundary table lives with the rule.
+    files: ['**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'],
+    plugins: { lumaforge: importBoundaries },
+    rules: {
+      'lumaforge/import-boundaries': 'error',
     },
   },
 )

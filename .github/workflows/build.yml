@@ -89,9 +89,9 @@ jobs:
   quality:
     # Never path-selected, so docs-only changes are checked too. The path
     # check, the app alias check and both script tests need only Node; the
-    # test-project discovery test, the tooling typecheck and the structure
-    # check run the pinned Vitest, TypeScript, knip and madge from the
-    # lockfile.
+    # test-project discovery test, the import-boundary test, lint, the
+    # tooling typecheck and the structure check run the pinned Vitest,
+    # ESLint, TypeScript, knip and madge from the lockfile.
     runs-on: ubuntu-latest
 
     steps:
@@ -138,6 +138,15 @@ jobs:
       - name: Test the test-project discovery
         run: node --test scripts/quality/test-project-discovery.test.mjs
 
+      # Lint covers the app, every package, script and plugin, and the browser
+      # specs, and its import-boundary rule judges an import by the files on
+      # both sides, so it runs on every change rather than behind a path gate.
+      - name: Test the import boundaries
+        run: node --test scripts/quality/import-boundaries.test.mjs
+
+      - name: Check lint
+        run: pnpm lint:check
+
       # The tooling project includes every root config and every TS script,
       # which no path filter enumerates, so it is checked on every change.
       - name: Typecheck tooling
@@ -179,9 +188,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Check lint
-        run: pnpm lint:check
 
       - name: Typecheck browser specs
         run: pnpm typecheck:browser
