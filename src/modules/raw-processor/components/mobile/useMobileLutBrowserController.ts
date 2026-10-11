@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 
+import { useOnlineLutResourceState } from '../../hooks/useOnlineLutResourceState'
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
-import { useOnlineLutResourceState } from '../tools/lut/useOnlineLutResourceState'
 
 type MobileLutView = 'overview' | 'catalog'
 

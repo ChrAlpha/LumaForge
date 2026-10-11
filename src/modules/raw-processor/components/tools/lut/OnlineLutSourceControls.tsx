@@ -15,6 +15,7 @@ import { useScrollEdgeFade } from '~/hooks/common'
 import { useI18n } from '~/lib/i18n'
 
 import { useOnlineLutEntryLoader } from '../../../hooks/useOnlineLutEntryLoader'
+import { useOnlineLutResourceState } from '../../../hooks/useOnlineLutResourceState'
 import type { UseOnlineLutSourcesResult } from '../../../hooks/useOnlineLutSources'
 import type { OnlineLutBrowserLayout } from './lut-browser-layout'
 import { getViewportBoundedBrowserLayout } from './lut-browser-layout'
@@ -22,7 +23,6 @@ import { LutIconButton } from './LutIconButton'
 import { LutSourceWarning } from './LutSourceWarning'
 import { OnlineLutSourceBrowser } from './OnlineLutSourceBrowser'
 import { OnlineLutSourceResourceList } from './OnlineLutSourceResourceList'
-import { useOnlineLutResourceState } from './useOnlineLutResourceState'
 
 export function OnlineLutSourceControls({
   onlineLutSources,

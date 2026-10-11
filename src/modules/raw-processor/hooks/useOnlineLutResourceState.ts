@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 
-import type { UseOnlineLutSourcesResult } from '../../../hooks/useOnlineLutSources'
-import { groupEntriesByFamily } from '../../../services/look/lut-source-grouping'
+import { groupEntriesByFamily } from '../services/look/lut-source-grouping'
+import type { UseOnlineLutSourcesResult } from './useOnlineLutSources'
 
 type OnlineLutState = UseOnlineLutSourcesResult['state']
 type OnlineResource = OnlineLutState['resources'][number]
