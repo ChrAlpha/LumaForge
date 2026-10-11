@@ -114,6 +114,12 @@ export interface LutLoadContext {
      * written in the same tick is seen before any rerender.
      */
     getSession: () => ImageSession | null
+    /**
+     * Reads the LUT from the store when called, so a contract choice applies
+     * to the LUT current when it runs, never to one replaced or cleared since
+     * the caller last rendered.
+     */
+    getLut: () => ParsedLUT | null
     setLut: (lut: ParsedLUT | null) => void
     setSession: (
       value:
@@ -125,7 +131,6 @@ export interface LutLoadContext {
     setColorIntent: (
       value: ColorGraphIntent | ((prev: ColorGraphIntent) => ColorGraphIntent),
     ) => void
-    lut: ParsedLUT | null
   }
   refs: {
     lutDataRef: { current: LUTData | null }
@@ -372,7 +377,10 @@ export function orchestrateProfileSelection(
   profile: LUTColorProfile | string,
   ctx: LutLoadContext,
 ): void {
-  if (!ctx.atoms.lut) {
+  // The choice belongs to the LUT the store holds now: its table, hash and
+  // fingerprint, never those of a LUT replaced or cleared before it ran.
+  const lut = ctx.atoms.getLut()
+  if (!lut) {
     ctx.services.notify({ kind: 'no-lut' })
     return
   }
@@ -380,10 +388,7 @@ export function orchestrateProfileSelection(
   const contractProfile = resolveLUTContractProfile(profile)
   // An explicit user choice is the only contract persisted for later loads.
   const updatedLut = contractProfile
-    ? applyLUTContractSelection(
-        ctx.atoms.lut,
-        toLUTContractSelection(contractProfile),
-      )
+    ? applyLUTContractSelection(lut, toLUTContractSelection(contractProfile))
     : undefined
   if (!updatedLut) {
     ctx.services.notify({

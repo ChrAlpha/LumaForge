@@ -51,16 +51,22 @@ function cubeText(size: number): string {
 
 function buildCtx() {
   const notifications: LutNotification[] = []
-  // Stands in for the session store: the orchestrator reads it through the
-  // getter each time, never through a copy taken when the load began.
-  const store: { session: ImageSession | null } = { session: null }
+  // Stands in for the session and LUT stores: the orchestrator reads them
+  // through the getters each time, never through a copy taken when the load
+  // or the caller began.
+  const store: { session: ImageSession | null; lut: ParsedLUT | null } = {
+    session: null,
+    lut: null,
+  }
   const ctx: LutLoadContext = {
     atoms: {
       getSession: vi.fn(() => store.session),
-      setLut: vi.fn(),
+      getLut: vi.fn(() => store.lut),
+      setLut: vi.fn((lut: ParsedLUT | null) => {
+        store.lut = lut
+      }),
       setSession: vi.fn(),
       setColorIntent: vi.fn(),
-      lut: null,
     },
     refs: {
       lutDataRef: { current: null },
@@ -415,7 +421,6 @@ describe('lUT contract provenance', () => {
       asTextFile(cubeText(17), 'user-look.cube'),
       ctx,
     )
-    ctx.atoms.lut = lastLoadedLut(ctx)
     vi.mocked(ctx.atoms.setSession).mockClear()
     vi.mocked(ctx.atoms.setColorIntent).mockClear()
 
@@ -435,7 +440,6 @@ describe('lUT contract provenance', () => {
       asTextFile(cubeText(17), 'user-look.cube'),
       ctx,
     )
-    ctx.atoms.lut = lastLoadedLut(ctx)
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
 
     orchestrateProfileSelection(
@@ -647,6 +651,70 @@ describe('orchestrateLutLoadFromFile outcome', () => {
   })
 })
 
+describe('orchestrateProfileSelection against the stored LUT', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    localStorage.clear()
+  })
+
+  async function loadTwoLuts() {
+    const built = buildCtx()
+    await orchestrateLutLoadFromFile(
+      asTextFile(cubeText(17), 'a.cube'),
+      built.ctx,
+    )
+    const lutA = built.store.lut!
+    await orchestrateLutLoadFromFile(
+      asTextFile(
+        cubeText(17).replace('Outcome Fixture', 'Second Fixture'),
+        'b.cube',
+      ),
+      built.ctx,
+    )
+    const lutB = built.store.lut!
+    expect(lutB.fingerprint).not.toBe(lutA.fingerprint)
+    vi.mocked(built.ctx.atoms.setLut).mockClear()
+    vi.mocked(built.ctx.atoms.setSession).mockClear()
+    vi.mocked(built.ctx.atoms.setColorIntent).mockClear()
+    vi.mocked(built.ctx.services.invalidateExportGraph).mockClear()
+    built.notifications.length = 0
+    return { ...built, lutA, lutB }
+  }
+
+  it('applies a choice to the LUT the store holds when it runs', async () => {
+    const { ctx, store, lutA, lutB } = await loadTwoLuts()
+    store.session = sessionWithId('photo-a')
+
+    orchestrateProfileSelection('display-srgb', ctx)
+
+    expect(ctx.atoms.setLut).toHaveBeenCalledTimes(1)
+    const selected = vi.mocked(ctx.atoms.setLut).mock.calls[0]![0]!
+    expect(selected.fingerprint).toBe(lutB.fingerprint)
+    expect(selected.data).toBe(lutB.data)
+    expect(selected.title).toBe('Second Fixture')
+    expect(selected.sha256).toBe(lutB.sha256)
+    expect(getStoredLUTContractSelection(lutB.fingerprint)).toBeDefined()
+    expect(getStoredLUTContractSelection(lutA.fingerprint)).toBeUndefined()
+  })
+
+  it('refuses a choice once the store holds no LUT, writing nothing', async () => {
+    const { ctx, store, notifications, lutB } = await loadTwoLuts()
+    store.session = sessionWithId('photo-a')
+    store.lut = null
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+
+    orchestrateProfileSelection('display-srgb', ctx)
+
+    expect(notifications).toEqual([{ kind: 'no-lut' }])
+    expect(ctx.atoms.setLut).not.toHaveBeenCalled()
+    expect(ctx.atoms.setSession).not.toHaveBeenCalled()
+    expect(ctx.atoms.setColorIntent).not.toHaveBeenCalled()
+    expect(ctx.services.invalidateExportGraph).not.toHaveBeenCalled()
+    expect(setItem).not.toHaveBeenCalled()
+    expect(getStoredLUTContractSelection(lutB.fingerprint)).toBeUndefined()
+  })
+})
+
 describe('orchestrateProfileSelection notifications', () => {
   afterEach(() => {
     localStorage.clear()
@@ -665,7 +733,6 @@ describe('orchestrateProfileSelection notifications', () => {
   it('reports an incomplete contract choice by the profile it named', async () => {
     const { ctx, notifications } = buildCtx()
     await orchestrateLutLoadFromFile(asTextFile(cubeText(17), 'a.cube'), ctx)
-    ctx.atoms.lut = vi.mocked(ctx.atoms.setLut).mock.calls[0]![0]
     vi.mocked(ctx.atoms.setLut).mockClear()
     notifications.length = 0
 
@@ -685,7 +752,6 @@ describe('orchestrateProfileSelection notifications', () => {
   it('reports nothing for a choice that applies', async () => {
     const { ctx, notifications } = buildCtx()
     await orchestrateLutLoadFromFile(asTextFile(cubeText(17), 'a.cube'), ctx)
-    ctx.atoms.lut = vi.mocked(ctx.atoms.setLut).mock.calls[0]![0]
     notifications.length = 0
 
     orchestrateProfileSelection('display-srgb', ctx)

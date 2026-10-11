@@ -24,6 +24,7 @@ import { I18nProvider } from '~/lib/i18n'
 import { jotaiStore } from '~/lib/jotai'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import { parseCubeLUT } from '~/lib/lut/cube-parser'
+import { getStoredLUTContractSelection } from '~/lib/lut/profile-resolution'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 import { fetchVerifiedCubeAsset } from '~/lib/profiles/fetch'
 
@@ -45,7 +46,9 @@ import {
 } from '../../../state/session.atoms'
 import {
   getEffectiveColorIntent,
+  getLut as getStoredLut,
   getProcessingParams,
+  setLut as setStoredLut,
   setProcessingParams,
   useProcessingParamsValue,
 } from '../../../state/workflow.atoms'
@@ -63,14 +66,16 @@ const toastMock = vi.hoisted(() => ({
 
 vi.mock('sonner', () => toastMock)
 
-// The stage reads and writes the session in the production store, so every
-// test seeds that store and leaves it empty.
+// The stage reads and writes the session, and reads the LUT, in the
+// production store, so every test seeds that store and leaves it empty.
 beforeEach(() => {
   setCurrentSession(null)
+  setStoredLut(null)
 })
 
 afterEach(() => {
   setCurrentSession(null)
+  setStoredLut(null)
 })
 
 /** The stored color intent the hook renders from; it carries no view. */
@@ -258,6 +263,7 @@ function renderLookStageHarness({
   lut?: ParsedLUT | null
 }) {
   setCurrentSession(session)
+  setStoredLut(lut)
   const store = createStore()
   const paramsAtom = atom<ColorGraphIntent>(params)
   const sessionNotifications = vi.fn()
@@ -275,7 +281,8 @@ function renderLookStageHarness({
   const invalidateExportGraph = vi.fn(() =>
     setCurrentSession(clearExportResultState),
   )
-  const setLut = vi.fn()
+  // The LUT lands in the production store, as the workflow's setter does.
+  const setLut = vi.fn((next: ParsedLUT | null) => setStoredLut(next))
   const setLutDataRef = vi.fn()
   const scheduleToast = vi.fn()
 
@@ -446,6 +453,7 @@ describe('useRawLookStage', () => {
     const lut = parseCubeLUT(createCubeContent('Client Look'), {
       sourceName: 'look.cube',
     })
+    setStoredLut(lut)
     const { result } = renderHook(() =>
       useRawLookStage({
         baseParams,
@@ -864,7 +872,7 @@ describe('useRawLookStage continuous strength', () => {
     expect(harness.setColorIntent).not.toHaveBeenCalled()
   })
 
-  it('gives a contract choice the hash of the LUT it applies to, not the one loaded since', async () => {
+  it('applies a contract choice to the LUT loaded since the callback was made, with its own hash', async () => {
     const contentA = createCubeContent('Client Look')
     const { sha256: sha256A } = await sourceContentIdFromBytes(
       new TextEncoder().encode(contentA),
@@ -877,31 +885,106 @@ describe('useRawLookStage continuous strength', () => {
       session: createSession(),
       lut: lutA,
     })
+    localStorage.clear()
+    onTestFinished(() => localStorage.clear())
 
     await act(async () => {
       await expect(
         harness.actions.loadLUT(createCubeFile('Second Look', 'second.cube')),
       ).resolves.toBe('loaded')
     })
-    const lutAssetB = harness.readSession()?.activeStyle?.lutAsset
-    expect(lutAssetB?.fingerprint).not.toBe(lutA.fingerprint)
-    expect(lutAssetB?.sha256).toMatch(/^[0-9a-f]{64}$/)
-    expect(lutAssetB?.sha256).not.toBe(sha256A)
+    const lutB = getStoredLut()!
+    expect(lutB.fingerprint).not.toBe(lutA.fingerprint)
+    expect(lutB.sha256).toMatch(/^[0-9a-f]{64}$/)
+    expect(lutB.sha256).not.toBe(sha256A)
+    harness.actions.setIntensity(0.43)
+    harness.setLut.mockClear()
 
-    // A callback captured while LUT A was current still applies to LUT A.
+    // The callback was made while LUT A was current; it applies to LUT B.
     harness.actions.selectLUTProfile('display-srgb')
 
+    expect(harness.setLut).toHaveBeenCalledTimes(1)
     const selected = harness.setLut.mock.lastCall?.[0] as ParsedLUT
-    expect(selected.fingerprint).toBe(lutA.fingerprint)
-    expect(selected.data).toBe(lutA.data)
-    expect(selected.sha256).toBe(sha256A)
-    expect(harness.readSession()?.activeStyle?.lutAsset).toMatchObject({
-      fingerprint: lutA.fingerprint,
-      sha256: sha256A,
+    expect(selected.fingerprint).toBe(lutB.fingerprint)
+    expect(selected.data).toBe(lutB.data)
+    expect(selected.sha256).toBe(lutB.sha256)
+    expect(selected.profileResolution).toMatchObject({
+      kind: 'confirmed',
+      confidence: 'user',
+    })
+    expect(harness.readSession()?.activeStyle).toMatchObject({
+      kind: 'custom',
+      name: 'Second Look',
+      currentIntensity: 0.43,
+      lutAsset: { fingerprint: lutB.fingerprint, sha256: lutB.sha256 },
     })
     expect(harness.readSession()?.lutProfileSelection).toMatchObject({
-      fingerprint: lutA.fingerprint,
+      fingerprint: lutB.fingerprint,
     })
+    expect(getStoredLUTContractSelection(lutB.fingerprint)).toBeDefined()
+    expect(getStoredLUTContractSelection(lutA.fingerprint)).toBeUndefined()
+  })
+
+  it('refuses a contract choice made after the LUT was cleared, before a rerender', () => {
+    const lut = createLut()
+    const session = {
+      ...createSession(),
+      lutProfileSelection: buildLUTContractSelectionState(lut),
+    }
+    const harness = renderLookStageHarness({ session, lut })
+    localStorage.clear()
+    onTestFinished(() => localStorage.clear())
+
+    harness.actions.clearLUT()
+    const clearedSession = harness.readSession()
+    const writes = {
+      setLut: harness.setLut.mock.calls.length,
+      session: harness.sessionNotifications.mock.calls.length,
+      invalidations: harness.invalidateExportGraph.mock.calls.length,
+      toasts: harness.scheduleToast.mock.calls.length,
+    }
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    onTestFinished(() => setItem.mockRestore())
+
+    harness.actions.selectLUTProfile('display-srgb')
+
+    expect(getStoredLut()).toBeNull()
+    expect(harness.setLut).toHaveBeenCalledTimes(writes.setLut)
+    expect(harness.readSession()).toBe(clearedSession)
+    expect(harness.sessionNotifications).toHaveBeenCalledTimes(writes.session)
+    expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(
+      writes.invalidations,
+    )
+    expect(harness.setColorIntent).not.toHaveBeenCalled()
+    expect(setItem).not.toHaveBeenCalled()
+    expect(getStoredLUTContractSelection(lut.fingerprint)).toBeUndefined()
+    expect(harness.scheduleToast).toHaveBeenCalledTimes(writes.toasts + 1)
+  })
+
+  it('refuses a detached contract choice once the store dropped the LUT', () => {
+    const lut = createLut()
+    const harness = renderLookStageHarness({
+      session: null,
+      params: { ...baseIntent, styleKind: 'custom', intensity: 0.37 },
+      lut,
+    })
+    localStorage.clear()
+    onTestFinished(() => localStorage.clear())
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    onTestFinished(() => setItem.mockRestore())
+
+    // A reset drops the LUT in the store without this hook rerendering.
+    setStoredLut(null)
+    harness.actions.selectLUTProfile('display-srgb')
+
+    expect(harness.setLut).not.toHaveBeenCalled()
+    expect(harness.setColorIntent).not.toHaveBeenCalled()
+    expect(harness.paramsNotifications).not.toHaveBeenCalled()
+    expect(harness.readSession()).toBeNull()
+    expect(harness.invalidateExportGraph).not.toHaveBeenCalled()
+    expect(setItem).not.toHaveBeenCalled()
+    expect(getStoredLUTContractSelection(lut.fingerprint)).toBeUndefined()
+    expect(harness.scheduleToast).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the hash the session holds for the same LUT when the LUT contract changes', () => {
@@ -1521,11 +1604,12 @@ describe('useRawLookStage notifications', () => {
     wrapper?: ComponentType<PropsWithChildren>
   }) {
     setCurrentSession(session)
+    setStoredLut(lut)
     const scheduled: Array<() => void> = []
     const scheduleToast = vi.fn((show: () => void) => {
       scheduled.push(show)
     })
-    const setLut = vi.fn()
+    const setLut = vi.fn((next: ParsedLUT | null) => setStoredLut(next))
     const { result } = renderHook(
       () =>
         useRawLookStage({

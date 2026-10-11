@@ -42,6 +42,7 @@ import {
   getCurrentSession,
   setCurrentSession,
 } from '../../../state/session.atoms'
+import { getLut } from '../../../state/workflow.atoms'
 import type { SetColorIntent } from './useRawAdjustmentActions'
 import { useRawAdjustmentActions } from './useRawAdjustmentActions'
 
@@ -150,16 +151,17 @@ export function useRawLookStage({
     [scheduleToast],
   )
 
-  // LUT loads read and write the session in the store, so a load, reset or
-  // look write landing before this hook rerenders is what they see.
+  // LUT loads read and write the session in the store, and contract choices
+  // read the LUT there, so a load, reset, clear or look write landing before
+  // this hook rerenders is what they see.
   const lutCtx = useMemo<LutLoadContext>(
     () => ({
       atoms: {
         getSession: getCurrentSession,
+        getLut,
         setLut,
         setSession: setCurrentSession,
         setColorIntent,
-        lut,
       },
       refs: {
         lutDataRef,
@@ -174,7 +176,6 @@ export function useRawLookStage({
     [
       canApplyLoadedLut,
       invalidateExportGraph,
-      lut,
       lutDataRef,
       notify,
       setColorIntent,
