@@ -41,13 +41,16 @@ import { captureResourceUsage } from './resource'
 
 export const DEFAULT_EXPORT_STRIP_ROWS = 512
 
+/** The RAW render exposure a verified manifest records, as the graph applies it. */
 export function exposureFromManifest(
   manifest: RenderManifest,
-): RawRenderExposure | null {
+): RawRenderExposure {
   const ev = manifest.render_params.raw_render_exposure_ev
-  const source = manifest.render_params.raw_render_exposure_source
-  if (typeof ev !== 'number' || !source) return null
-  return { ev, multiplier: exposureMultiplierFromEv(ev), source }
+  return {
+    ev,
+    multiplier: exposureMultiplierFromEv(ev),
+    source: manifest.render_params.raw_render_exposure_source,
+  }
 }
 
 /**

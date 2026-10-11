@@ -30,7 +30,6 @@ import { LmfgError } from '../protocol/errors'
 import type { RenderParams, UserColorParamKey } from '../schemas/params'
 import {
   HSL_BAND_IDS,
-  PARAM_DEFAULTS,
   parseRenderParams,
   USER_COLOR_PARAM_KEYS,
 } from '../schemas/params'
@@ -133,50 +132,52 @@ export function toManifestRenderParams(
   })
 }
 
-/** The recorded HSL bands under their CLI shape; unknown bands are not read. */
+/** The recorded HSL bands under their CLI shape; a current record holds all eight. */
 function recordedSelectiveColor(
   recorded: ManifestRenderParams['selective_color'],
 ): Record<string, unknown> | null {
   if (!recorded) return null
-  const bands = HSL_BAND_IDS.filter((id) => recorded[id]).map((id) => {
-    const band = recorded[id]
-    return [
-      id,
-      { hue: band.hue, saturation: band.saturation, lightness: band.lightness },
-    ]
-  })
-  return bands.length > 0 ? Object.fromEntries(bands) : null
+  return Object.fromEntries(
+    HSL_BAND_IDS.map((id) => {
+      const band = recorded[id]
+      return [
+        id,
+        {
+          hue: band.hue,
+          saturation: band.saturation,
+          lightness: band.lightness,
+        },
+      ]
+    }),
+  )
 }
 
 /**
  * Inverse of `toManifestRenderParams`: rebuild CLI params from a manifest so a
- * render can be replayed. The recorded values go through the params schema as
- * written, so a value outside it is refused rather than clamped. Sections an
- * older writer did not record read as neutral, a missing strength as the CLI
- * default, and the recorded raw-render exposure becomes an explicit EV. HSL
+ * render can be replayed. Every value is read as recorded and goes through the
+ * params schema as written, so a value outside it is refused rather than
+ * clamped; the recorded raw-render exposure becomes an explicit EV, and HSL
  * that shifts nothing reads as none. The LUT reference is resolved separately
- * by the caller. Callers verify the manifest's own signature first: this
- * reads, it does not verify.
+ * by the caller. Callers read the manifest through `parseRenderManifest`
+ * first, which refuses a record missing any of these fields: this reads, it
+ * does not verify or fill anything in.
  */
 export function manifestToRenderParams(
   params: ManifestRenderParams,
 ): RenderParams {
   const parsed = parseRenderParams({
     exposure_ev: params.exposure_ev,
-    contrast: params.tone_curve?.contrast ?? 0,
-    highlights: params.tone_curve?.highlights ?? 0,
-    shadows: params.tone_curve?.shadows ?? 0,
-    whites: params.tone_curve?.whites ?? 0,
-    blacks: params.tone_curve?.blacks ?? 0,
-    temperature: params.color_balance?.temperature ?? 0,
-    tint: params.color_balance?.tint ?? 0,
-    saturation: params.saturation?.saturation ?? 0,
-    vibrance: params.saturation?.vibrance ?? 0,
-    intensity: params.intensity ?? PARAM_DEFAULTS.intensity,
-    raw_render_exposure:
-      typeof params.raw_render_exposure_ev === 'number'
-        ? params.raw_render_exposure_ev
-        : 'auto',
+    contrast: params.tone_curve.contrast,
+    highlights: params.tone_curve.highlights,
+    shadows: params.tone_curve.shadows,
+    whites: params.tone_curve.whites,
+    blacks: params.tone_curve.blacks,
+    temperature: params.color_balance.temperature,
+    tint: params.color_balance.tint,
+    saturation: params.saturation.saturation,
+    vibrance: params.saturation.vibrance,
+    intensity: params.intensity,
+    raw_render_exposure: params.raw_render_exposure_ev,
     selective_color: recordedSelectiveColor(params.selective_color),
     lut: null,
   })

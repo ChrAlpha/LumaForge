@@ -404,7 +404,7 @@ export const ReplayResultSchema = z.object({
   reproduced: z.boolean(),
   expected_sha256: sha256,
   actual_sha256: sha256,
-  fingerprint_match: z.boolean().nullable(),
+  fingerprint_match: z.literal(true),
   output: RenderOutputSchema,
   manifest_uri: z.string(),
   manifest_sha256: sha256,

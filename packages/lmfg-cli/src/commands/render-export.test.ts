@@ -185,25 +185,14 @@ async function expectRefused(message: RegExp) {
 }
 
 /**
- * The structured refusals a sealed candidate of a retired manifest shape may
- * end in, with the exit code each one carries: the manifest reader refuses it
- * as invalid, or candidate admission refuses the export. Which of the two
- * stops it is not part of this contract.
- */
-const ADMISSION_REFUSAL_EXIT_CODES: Record<string, number> = {
-  'manifest.invalid': EXIT_CODES.failure,
-  'export.refused': EXIT_CODES.exportRefused,
-}
-
-/**
  * Runs a real `--yes --emit ndjson` export over an earlier `final.jpg` and
- * requires the candidate to be refused before anything runs: a structured
- * error completion with a nonzero exit, no `started` or `artifact.ready`
+ * requires the manifest reader to refuse the candidate before anything runs:
+ * a `manifest.invalid` completion naming the refused field, no `started` or `artifact.ready`
  * event on either stream, no RAW or JPEG runtime created (so nothing is
  * decoded or encoded), no export manifest or temporary file, no allocation in
  * the session record, and the earlier export left byte for byte.
  */
-async function expectRefusedBeforeExport() {
+async function expectInvalidBeforeExport(issuePath: string) {
   const root = join(cwd, '.lmfg')
   const exportsDir = workspacePaths.exports(root, sessionId)
   const destination = workspacePaths.exportFile(root, sessionId, 'final')
@@ -229,14 +218,22 @@ async function expectRefusedBeforeExport() {
     'cand_0001',
   )
 
+  expect(result.code, result.stdout).toBe(EXIT_CODES.failure)
   expect(result.envelope).toMatchObject({
     event: 'completed',
     ok: false,
-    error: { code: expect.any(String), message: expect.any(String) },
+    error: {
+      code: 'manifest.invalid',
+      message: expect.stringContaining(issuePath),
+      details: {
+        issues: expect.arrayContaining([
+          expect.stringMatching(
+            new RegExp(`^${issuePath.replaceAll('.', '\\.')}[.:]`),
+          ),
+        ]),
+      },
+    },
   })
-  const code = String(result.envelope.error!.code)
-  expect(Object.keys(ADMISSION_REFUSAL_EXIT_CODES)).toContain(code)
-  expect(result.code, result.stdout).toBe(ADMISSION_REFUSAL_EXIT_CODES[code])
   expect(
     result.lines.filter(
       (line) => line.event === 'started' || line.event === 'artifact.ready',
@@ -343,9 +340,8 @@ describe('candidate export input integrity', () => {
     await expectRefused(/rebuilt color graph does not match/)
   })
 
-  // A correctly sealed candidate of a retired shape is refused before any
-  // decode, encode, or publication; the refusal is structured, but the stage
-  // that refuses it and its wording are not pinned here.
+  // A correctly sealed candidate of a retired shape is refused by the
+  // manifest reader before any decode, encode, or publication.
   it('refuses a sealed candidate with a non-current descriptor version before exporting', async () => {
     await writeJsonAtomic(
       paths.manifest,
@@ -357,7 +353,7 @@ describe('candidate export input integrity', () => {
         },
       }),
     )
-    await expectRefusedBeforeExport()
+    await expectInvalidBeforeExport('color_graph.descriptor.descriptor_version')
   })
 
   it('refuses a sealed candidate without recorded RAW exposure before exporting, instead of resolving it again', async () => {
@@ -370,7 +366,7 @@ describe('candidate export input integrity', () => {
         render_params: params as RenderManifest['render_params'],
       }),
     )
-    await expectRefusedBeforeExport()
+    await expectInvalidBeforeExport('render_params.raw_render_exposure_ev')
   })
 })
 

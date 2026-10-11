@@ -28,7 +28,7 @@ export async function prepareCandidateExport(input: {
           input.candidateParamsPath,
         )
       : null
-    const plan = await prepareReplay({
+    return await prepareReplay({
       manifest: input.manifest,
       source: input.source,
       lutPath:
@@ -38,13 +38,6 @@ export async function prepareCandidateExport(input: {
       workspaceRoot: input.workspaceRoot,
       cwd: input.cwd,
     })
-    if (plan.fingerprintMatch !== true) {
-      throw new LmfgError('manifest.invalid', {
-        message:
-          'The selected candidate uses a color graph descriptor this runtime cannot verify.',
-      })
-    }
-    return plan
   } catch (error) {
     const failure = toLmfgError(error)
     throw new LmfgError('export.refused', {

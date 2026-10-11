@@ -186,15 +186,19 @@ describe('manifest service', () => {
     }
   })
 
-  // Records of shapes earlier writers sealed. Nothing here promises that the
-  // reader admits them for rendering or replay; each vector holds only the
-  // seal: it is checked over the record exactly as written, before any rule
-  // about its structure, and completing or normalizing the record after it
-  // was sealed is reported as tampering first.
+  // Records of shapes earlier writers sealed. The seal is checked over the
+  // record exactly as written, before any rule about its structure; a
+  // correctly sealed record of a retired shape is then refused for that
+  // structure, never completed or normalized into a current one.
   const neutralBand = { hue: 0, saturation: 0, lightness: 0 }
   const current = COLOR_GRAPH_DESCRIPTOR_VERSION
   const historical: Array<
-    [string, (manifest: Json) => void, (manifest: Json) => void]
+    [
+      string,
+      (manifest: Json) => void,
+      (manifest: Json) => void,
+      readonly string[],
+    ]
   > = [
     [
       'color sections, strength and RAW exposure omitted',
@@ -206,28 +210,38 @@ describe('manifest service', () => {
           raw_render_exposure_ev: 0,
           raw_render_exposure_source: 'identity',
         }),
+      [
+        'render_params.tone_curve',
+        'render_params.color_balance',
+        'render_params.saturation',
+        'render_params.intensity',
+        'render_params.raw_render_exposure_ev',
+        'render_params.raw_render_exposure_source',
+      ],
+    ],
+    [
+      'no look strength',
+      (m) => delete m.render_params.intensity,
+      (m) => (m.render_params.intensity = 1),
+      ['render_params.intensity'],
+    ],
+    [
+      'no RAW exposure',
+      (m) => delete m.render_params.raw_render_exposure_ev,
+      (m) => (m.render_params.raw_render_exposure_ev = 0),
+      ['render_params.raw_render_exposure_ev'],
     ],
     [
       'no RAW exposure source',
       (m) => delete m.render_params.raw_render_exposure_source,
       (m) => (m.render_params.raw_render_exposure_source = 'identity'),
+      ['render_params.raw_render_exposure_source'],
     ],
     [
-      'all eight neutral HSL bands recorded',
-      (m) =>
-        (m.render_params.selective_color = Object.fromEntries(
-          [
-            'red',
-            'orange',
-            'yellow',
-            'green',
-            'aqua',
-            'blue',
-            'purple',
-            'magenta',
-          ].map((band) => [band, neutralBand]),
-        )),
-      (m) => delete m.render_params.selective_color,
+      'a Kelvin color balance',
+      (m) => (m.render_params.color_balance = { temp_k: 5500, tint: 0 }),
+      (m) => (m.render_params.color_balance = { temperature: 0, tint: 0 }),
+      ['render_params.color_balance'],
     ],
     [
       'an older descriptor version',
@@ -237,23 +251,39 @@ describe('manifest service', () => {
           descriptor: { descriptor_version: 1 },
         }),
       (m) => (m.color_graph.descriptor.descriptor_version = current),
+      ['color_graph.descriptor.descriptor_version'],
     ],
     [
       'an unversioned descriptor',
       (m) => (m.color_graph = { fingerprint: 'd'.repeat(64), descriptor: {} }),
       (m) => (m.color_graph.descriptor.descriptor_version = current),
+      ['color_graph.descriptor.descriptor_version'],
     ],
   ]
 
   it.each(historical)(
-    'checks the original seal of a record with %s as written',
-    async (_label, edit) => {
+    'refuses a correctly sealed record with %s for its structure',
+    async (_label, edit, _complete, paths) => {
       const record = sealedAsWritten(edit)
       const result = await verify(record)
       expect(result.raw).toEqual(record)
+      expect(result.valid).toBe(false)
+      expect(result.manifest).toBeNull()
       expect(result.issues.join(' ')).not.toMatch(/manifest_sha256/)
-      // Admitted or not, a record is never read back as a normalized copy.
-      if (result.manifest !== null) expect(result.manifest).toEqual(record)
+      for (const path of paths) {
+        expect(result.issues).toContainEqual(
+          expect.stringMatching(
+            new RegExp(`^${path.replaceAll('.', '\\.')}[.:]`),
+          ),
+        )
+      }
+      await expect(
+        requireVerifiedManifest(join(dir, 'm.json'), environment),
+      ).rejects.toMatchObject({
+        code: 'manifest.invalid',
+        exitCode: 1,
+        details: { issues: result.issues },
+      })
     },
   )
 
@@ -280,6 +310,28 @@ describe('manifest service', () => {
       expect(result.issues[0]).toMatch(/^manifest_sha256: .*tampered/)
     },
   )
+
+  it('accepts all eight neutral HSL bands as written, without dropping them', async () => {
+    const record = sealedAsWritten(
+      (m) =>
+        (m.render_params.selective_color = Object.fromEntries(
+          [
+            'red',
+            'orange',
+            'yellow',
+            'green',
+            'aqua',
+            'blue',
+            'purple',
+            'magenta',
+          ].map((band) => [band, neutralBand]),
+        )),
+    )
+    const result = await verify(record)
+    expect(result.issues).toEqual([])
+    expect(result.valid).toBe(true)
+    expect(result.manifest).toEqual(record)
+  })
 
   it('keeps opaque extension fields the hash covers', async () => {
     const result = await verify(

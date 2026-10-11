@@ -3,6 +3,7 @@ import type {
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
 import type {
+  ColorGraphDescriptor,
   GeometryParams,
   RenderEnvironment,
   RenderManifest,
@@ -33,7 +34,6 @@ import {
 import { toFileUri, workspacePaths } from '../workspace/paths'
 import {
   buildColorGraph,
-  COLOR_GRAPH_DESCRIPTOR_VERSION,
   describeColorGraph,
   fingerprintColorGraph,
   manifestToRenderParams,
@@ -57,8 +57,8 @@ export type ReplayPlan = {
   exposure: RawRenderExposure
   lut: ResolvedLut | null
   graph: SupportedExportColorGraphDescriptor
-  /** `null` when the manifest was written with a different descriptor version. */
-  fingerprintMatch: boolean | null
+  /** A plan exists only once the rebuilt graph reproduces the recorded fingerprint. */
+  fingerprintMatch: true
 }
 
 export function replayKey(manifest: RenderManifest): string {
@@ -66,47 +66,19 @@ export function replayKey(manifest: RenderManifest): string {
 }
 
 /**
- * The descriptor records the ranges the graph actually applied; browser
- * manifests may record `'unknown'` in the identity when the user left a
- * range unspecified, and replay must not guess a different one.
+ * The verified descriptor records the ranges the graph actually applied;
+ * browser manifests may record `'unknown'` in the identity when the user
+ * left a range unspecified, and replay must not guess a different one.
  */
 function effectiveLutRangesFromManifest(
   manifest: RenderManifest,
 ): EffectiveLutRanges {
-  if (descriptorVersionOf(manifest) !== COLOR_GRAPH_DESCRIPTOR_VERSION) {
-    return {}
-  }
-  const descriptor = manifest.color_graph.descriptor as {
-    lut_profile?: {
-      input?: { range?: unknown }
-      output?: { range?: unknown }
-    } | null
-  }
-  const profile = descriptor.lut_profile
+  const profile = (manifest.color_graph.descriptor as ColorGraphDescriptor)
+    .lut_profile
   return {
-    input_range:
-      typeof profile?.input?.range === 'string'
-        ? profile.input.range
-        : undefined,
-    output_range:
-      typeof profile?.output?.range === 'string'
-        ? profile.output.range
-        : undefined,
+    input_range: profile?.input.range,
+    output_range: profile?.output.range,
   }
-}
-
-function descriptorVersionOf(manifest: RenderManifest): number | null {
-  const descriptor = manifest.color_graph.descriptor
-  if (
-    descriptor &&
-    typeof descriptor === 'object' &&
-    'descriptor_version' in descriptor
-  ) {
-    const version = (descriptor as { descriptor_version?: unknown })
-      .descriptor_version
-    return typeof version === 'number' ? version : null
-  }
-  return null
 }
 
 type Dimensions = { width: number; height: number }
@@ -293,33 +265,24 @@ export async function prepareReplay(input: {
 
   const params = manifestToRenderParams(manifest.render_params)
   const exposure = exposureFromManifest(manifest)
-  if (!exposure) {
-    throw new LmfgError('args.invalid', {
-      message:
-        'The manifest does not record raw_render_exposure_ev; it cannot be replayed.',
-    })
-  }
   const graph = requireSupportedGraph(
     buildColorGraph(params, lut?.lutData ?? null, exposure),
   )
-  const descriptor = describeColorGraph(graph)
-  const fingerprint = fingerprintColorGraph(descriptor)
-  let fingerprintMatch: boolean | null = null
-  if (descriptorVersionOf(manifest) === COLOR_GRAPH_DESCRIPTOR_VERSION) {
-    fingerprintMatch = fingerprint === manifest.color_graph.fingerprint
-    if (!fingerprintMatch) {
-      throw new LmfgError('replay.mismatch', {
-        message:
-          'The rebuilt color graph does not match the manifest fingerprint; the runtime or LUT contract has drifted.',
-        details: {
-          stage: 'color-graph',
-          expected_fingerprint: manifest.color_graph.fingerprint,
-          actual_fingerprint: fingerprint,
-        },
-      })
-    }
+  // Every replay holds the graph it rebuilds now to the recorded fingerprint;
+  // a descriptor this runtime does not write never reproduces it.
+  const fingerprint = fingerprintColorGraph(describeColorGraph(graph))
+  if (fingerprint !== manifest.color_graph.fingerprint) {
+    throw new LmfgError('replay.mismatch', {
+      message:
+        'The rebuilt color graph does not match the manifest fingerprint; the runtime or LUT contract has drifted.',
+      details: {
+        stage: 'color-graph',
+        expected_fingerprint: manifest.color_graph.fingerprint,
+        actual_fingerprint: fingerprint,
+      },
+    })
   }
-  return { manifest, params, exposure, lut, graph, fingerprintMatch }
+  return { manifest, params, exposure, lut, graph, fingerprintMatch: true }
 }
 
 type ReplayEnvironmentField =

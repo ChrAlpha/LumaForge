@@ -21,6 +21,7 @@ import type {
 import {
   computeManifestSha256,
   createRenderManifest,
+  sealRenderManifest,
   verifyManifestSha256,
 } from '@lumaforge/render-engine'
 import { planExportGeometry } from '@lumaforge/render-engine/export'
@@ -345,6 +346,37 @@ describe('prepareReplay', () => {
       },
     })
   })
+
+  // Sealed with the descriptor an earlier writer recorded. The reader refuses
+  // these records; a plan built from one directly still verifies the graph it
+  // rebuilds against the recorded fingerprint instead of skipping the check.
+  it.each<[string, unknown]>([
+    ['an older descriptor version', { descriptor_version: 1 }],
+    ['an unversioned descriptor', {}],
+  ])(
+    'refuses a sealed manifest with %s before any decode',
+    async (_label, descriptor) => {
+      const manifest = sealRenderManifest({
+        ...manifestFor(),
+        color_graph: { fingerprint: 'f'.repeat(64), descriptor },
+      })
+      expect(verifyManifestSha256(manifest)).toBe(true)
+      const path = join(dir, 'old.json')
+      await writeFile(path, JSON.stringify(manifest))
+      await expect(
+        requireVerifiedManifest(path, environment),
+      ).rejects.toMatchObject({ code: 'manifest.invalid', exitCode: 1 })
+      await expect(prepare(manifest)).rejects.toMatchObject({
+        code: 'replay.mismatch',
+        exitCode: 8,
+        details: {
+          stage: 'color-graph',
+          expected_fingerprint: 'f'.repeat(64),
+          actual_fingerprint: manifestFor().color_graph.fingerprint,
+        },
+      })
+    },
+  )
 
   it('requires the LUT file recorded in the manifest', async () => {
     const manifest = manifestFor()
@@ -723,7 +755,15 @@ describe('replaying a sealed manifest that records out-of-schema params', () => 
     ['a string intensity', { intensity: '0.37' }, { contrast: 5 }],
     [
       'an out-of-range HSL axis',
-      { selective_color: { red: { hue: 101, saturation: 0, lightness: 0 } } },
+      {
+        selective_color: {
+          ...toManifestRenderParams(
+            parseRenderParams({ selective_color: { red: { hue: 100 } } }),
+            exposure,
+          ).selective_color,
+          red: { hue: 101, saturation: 0, lightness: 0 },
+        },
+      },
       { contrast: 5, selective_color: { red: { hue: 100 } } },
     ],
     [

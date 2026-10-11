@@ -97,7 +97,12 @@ export function contactSheetMap(
 const NEUTRAL_BAND = { hue: 0, saturation: 0, lightness: 0 }
 const LUMINANCE = [0.2880402, 0.7118741, 0.0000857]
 
-/** The descriptor lmfg records for a neutral render without a LUT at 0 EV. */
+/**
+ * The descriptor lmfg records for a neutral render without a LUT at 0 EV.
+ * The workspace-records test replays a manifest that records it through the
+ * CLI, which rebuilds the graph from the recorded params and refuses a
+ * fingerprint it does not reproduce.
+ */
 const NEUTRAL_COLOR_GRAPH_DESCRIPTOR: ColorGraphDescriptor = {
   descriptor_version: 2,
   output_gamut: 'srgb-rec709',
