@@ -85,6 +85,18 @@ ranges publish as those exact versions. Publish
   attempt whose cleanup failed and the export then succeeded,
   `lmfg.render.export.v1` reports that attempt's failures under its own
   optional `cleanup_failures` and `cleanup_failures_omitted`.
+- `render replay` was added after the published 0.1.0, and two of its
+  results changed before this release. The result's `fingerprint_match` is
+  always `true`: it was `null` for a manifest that recorded another
+  color-graph descriptor version, which replay now refuses with
+  `manifest.invalid` (see the first entry), and a fingerprint the replay
+  does not reproduce still fails with `replay.mismatch` (stage
+  `color-graph`). An output that does not reproduce the manifest still fails
+  with `replay.mismatch`, but the replay's JPEG and manifest are no longer
+  written and kept for inspection: nothing is published, and the error
+  details carry `published: false` and no `output` or `manifest_uri`. The
+  entry is for code built against the repository's CLI in that window;
+  Added describes the full contract.
 - `capabilities` names the (unshipped) browser tier's preview support
   `webgpu-preview` instead of `webgl2-preview`.
 

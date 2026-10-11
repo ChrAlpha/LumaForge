@@ -87,6 +87,14 @@ this package, then `@lumaforge/lmfg-cli` 0.2.0 and `@lumaforge/lmfg-mcp`
   which the browser app records for a range the user left unspecified;
   readers treat it as unverified. Code that switches exhaustively over
   `'full' | 'legal'` needs a case for it.
+- `resolvePreviewColorPlan` (`@lumaforge/render-engine/preview`) takes a
+  complete `ColorGraphIntent`: an `intent` without `selectiveColor` no longer
+  type-checks, and the plan no longer reads missing HSL as neutral bands.
+  Pass partial input through `normalizeColorGraphIntent` from
+  `@lumaforge/luma-color-runtime` first. The function was added after the
+  published 0.1.0 with an HSL-optional intent, so no published version had
+  that signature; the entry is for code built against the repository's
+  package entries in that window.
 - The preview GPU policy types are named after the WebGPU executor: in
   `PreviewGpuCapabilitySnapshot`, `webgl2` is now `webgpu` and
   `maxRenderbufferSize` is removed; in `PreviewGpuBudget`, `dualWebglAllowed`
