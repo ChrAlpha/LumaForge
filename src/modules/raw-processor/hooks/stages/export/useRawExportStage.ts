@@ -45,7 +45,8 @@ type UseRawExportStageInput = {
   getColorIntent: () => ColorGraphIntent
   /** Reads the LUT the store holds when called. */
   getLutData: () => LUTData | null
-  lutDataRef: MutableRefObject<LUTData | null>
+  /** The LUT this render holds; only what the panels show reads it. */
+  lutData: LUTData | null
   decodedImageRef: MutableRefObject<DecodedImage | null>
   stats: PipelineStats | null
   refreshExportInterruption: () => void
@@ -87,7 +88,7 @@ export function useRawExportStage({
   getSession,
   getColorIntent,
   getLutData,
-  lutDataRef,
+  lutData,
   decodedImageRef,
   stats,
   refreshExportInterruption,
@@ -162,7 +163,7 @@ export function useRawExportStage({
     sourceFile: loadedImage.file,
     rawRenderExposure,
     params,
-    lutData: lutDataRef.current,
+    lutData,
     stats,
   })
   // Full-resolution export starts only from an explicit user action, which

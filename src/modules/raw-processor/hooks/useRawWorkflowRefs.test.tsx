@@ -1,13 +1,26 @@
 import { renderHook } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { PreviewView } from '~/lib/preview/preview-view'
 
+import { createImageSession } from '../model/session-factory'
+import { setCurrentSession } from '../state/session.atoms'
+import {
+  getProcessingParams,
+  setProcessingParams,
+} from '../state/workflow.atoms'
 import { useRawWorkflowRefs } from './useRawWorkflowRefs'
 
 const view: PreviewView = { mode: 'compare', compareSplit: 0.5 }
 
 describe('useRawWorkflowRefs', () => {
+  const storedIntent = getProcessingParams()
+
+  afterEach(() => {
+    setCurrentSession(null)
+    setProcessingParams(storedIntent)
+  })
+
   it('keeps one RAW host and one resource registry across renders', () => {
     const { result, rerender } = renderHook(() =>
       useRawWorkflowRefs({ initialView: view }),
@@ -37,28 +50,35 @@ describe('useRawWorkflowRefs', () => {
     expect(result.current.runtimeWorkSessionIdRef.current).toBeNull()
   })
 
-  it('holds no copy of the image session', () => {
-    const { result } = renderHook(() =>
+  it('holds no copy of the image session or the color intent', () => {
+    // The view is the only state the refs start from.
+    expectTypeOf<Parameters<typeof useRawWorkflowRefs>[0]>().toEqualTypeOf<{
+      initialView: PreviewView
+    }>()
+    const { result, rerender } = renderHook(() =>
       useRawWorkflowRefs({ initialView: view }),
     )
+    const held = () =>
+      Object.values(result.current).map((value) =>
+        value && typeof value === 'object' && 'current' in value
+          ? value.current
+          : value,
+      )
+    const before = held()
 
-    expect(Object.keys(result.current)).not.toContain('sessionRef')
-    expect(
-      Object.keys(result.current).filter((key) => /^session/i.test(key)),
-    ).toEqual([])
-  })
+    // A session and a color edit landing in the store, then a rerender,
+    // leave every ref holding what it held: none follows either.
+    const session = createImageSession(new File(['raw'], 'frame.dng'))
+    const intent = { ...getProcessingParams(), userContrast: 25 }
+    setCurrentSession(session)
+    setProcessingParams(intent)
+    rerender()
 
-  it('holds no copy of the color intent beside the view', () => {
-    const { result } = renderHook(() =>
-      useRawWorkflowRefs({ initialView: view }),
-    )
-
-    expect(Object.keys(result.current)).not.toContain('paramsRef')
-    expect(
-      Object.keys(result.current).filter((key) =>
-        /params|color|intent|look/i.test(key),
-      ),
-    ).toEqual([])
+    expect(held()).toEqual(before)
+    expect(held()).not.toContain(session)
+    expect(held()).not.toContain(intent)
+    expect(result.current).not.toHaveProperty('sessionRef')
+    expect(result.current).not.toHaveProperty('paramsRef')
     expect(result.current.viewRef.current).toBe(view)
   })
 })

@@ -74,8 +74,10 @@ describe('useRawWorkflowActions', () => {
       mode: 'original',
       compareSplit: 0.62,
     })
-    // The port reads the ref when called, not the render that made it.
+    // The port reads the ref when called, not the render that made it, and
+    // hands out the view its owner holds, with nothing composed onto it.
     viewRef.current = { mode: 'compare', compareSplit: 0.2 }
+    expect(result.current.getCurrentView()).toBe(viewRef.current)
     expect(result.current.getCurrentView()).toEqual({
       mode: 'compare',
       compareSplit: 0.2,
@@ -83,12 +85,7 @@ describe('useRawWorkflowActions', () => {
 
     // Color is read from the store by its readers; the view port neither
     // takes nor hands out a color intent.
-    expect(Object.keys(result.current)).not.toContain('getCurrentColorIntent')
-    expect(
-      Object.keys(result.current).filter((key) =>
-        /params|color|intent/i.test(key),
-      ),
-    ).toEqual([])
+    expect(result.current).not.toHaveProperty('getCurrentColorIntent')
     type ActionsInput = Parameters<typeof useRawWorkflowActions>[0]
     expectTypeOf<ActionsInput>().not.toHaveProperty('paramsRef')
   })

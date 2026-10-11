@@ -31,9 +31,9 @@ import { useRawWorkflowState } from './useRawWorkflowState'
 
 /**
  * The LUT the store holds, in the shape the pipeline reads, read when
- * called. `lutDataRef` follows the store only once its effect runs; this
- * shares the parsed table with what it then holds, so a request that names
- * the table here names the one `lutDataRef` catches up to.
+ * called. It shares the parsed table with the copy the preview takes once
+ * the LUT's effect runs, so a request that names the table here names the
+ * one the preview catches up to.
  */
 function getStoredLutData(): LUTData | null {
   const lut = getLut()
@@ -295,7 +295,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     getSession: getCurrentSession,
     getColorIntent: getEffectiveColorIntent,
     getLutData: getStoredLutData,
-    lutDataRef,
+    lutData: lutDataRef.current,
     decodedImageRef,
     stats,
     refreshExportInterruption,

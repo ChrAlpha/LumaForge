@@ -23,7 +23,10 @@ import {
 
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
+import type {
+  PipelineStats,
+  RawProcessingPipeline,
+} from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
@@ -142,7 +145,7 @@ function createStageInput(
     getSession: () => null,
     getColorIntent: () => params,
     getLutData: () => null,
-    lutDataRef: { current: null },
+    lutData: null,
     decodedImageRef: { current: null },
     stats: null,
     refreshExportInterruption: vi.fn(),
@@ -318,6 +321,61 @@ describe('useRawExportStage', () => {
     expect(
       Object.keys(result.current).filter((key) => /recover|retry/i.test(key)),
     ).toEqual([])
+  })
+
+  it('decides HQ export readiness from the LUT the render holds', () => {
+    const session = createBoundedHqSession()
+    const getLutData = vi.fn((): LUTData | null => null)
+    const drawnLut: LUTData = {
+      ...toLUTData(parseCubeLUT(tealCube)),
+      // A confirmed scene contract the WebGPU preview draws.
+      profileResolution: {
+        kind: 'confirmed',
+        confidence: 'user',
+        profile: {
+          id: 'teal-profile',
+          label: 'Teal profile',
+          role: 'scene-creative',
+          inputGamut: 'v-gamut',
+          inputTransfer: 'v-log',
+          inputRange: 'full',
+          outputGamut: 'srgb-rec709',
+          outputTransfer: 'srgb',
+          outputRange: 'full',
+          aliases: [],
+        },
+      },
+    }
+    const renderedWith = (lutData: LUTData | null) =>
+      createStageInput({
+        loadedImage: { file: SOURCE_FILE, metadata: null },
+        session,
+        params: { ...params, styleKind: 'custom' },
+        getLutData,
+        lutData,
+        decodedImageRef: { current: createBoundedHqImage() },
+        stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+        status: 'ready',
+        hasImage: true,
+        displaySource: 'bounded-hq',
+        rawRenderExposure: RAW_RENDER_EXPOSURE,
+      })
+    const view = renderHook(
+      (input: ExportStageInput) => useRawExportStage(input),
+      { initialProps: renderedWith(null) },
+    )
+
+    // A custom look whose LUT the render does not hold yet would be left out.
+    expect(view.result.current.canPreviewExport).toBe(false)
+    expect(view.result.current.previewExportRefusal).toBe('look-dropped')
+
+    view.rerender(renderedWith(drawnLut))
+
+    expect(view.result.current.canPreviewExport).toBe(true)
+    expect(view.result.current.previewExportRefusal).toBeUndefined()
+    // The store's LUT is read by the export commands when they run; what
+    // the panels show never calls for it.
+    expect(getLutData).not.toHaveBeenCalled()
   })
 
   it('never exports from discovery, source load or readiness changes', () => {
@@ -802,7 +860,7 @@ describe('useRawExportStage', () => {
             getSession: getCurrentSession,
             getColorIntent: getEffectiveColorIntent,
             getLutData: getStoredLutData,
-            lutDataRef: { current: getStoredLutData() },
+            lutData: getStoredLutData(),
             setSession: setCurrentSession,
             exportAbortControllerRef,
             scheduleToast: (notify) => notify(),

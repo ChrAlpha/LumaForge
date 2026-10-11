@@ -52,6 +52,7 @@ import {
   setProcessingParams,
   useProcessingParamsValue,
 } from '../../../state/workflow.atoms'
+import { useRawToolAdjustments } from '../../useRawToolState'
 import { useRawLookStage } from './useRawLookStage'
 
 vi.mock('~/lib/profiles/fetch', () => ({
@@ -343,7 +344,6 @@ describe('useRawLookStage', () => {
     expect(Object.keys(result.current.params).sort()).toEqual(
       [...COLOR_GRAPH_INTENT_KEYS].sort(),
     )
-    expect(result.current.activeIntensity).toBe(1)
     expect(result.current.currentLutName).toBe('Client Look')
   })
 
@@ -372,7 +372,6 @@ describe('useRawLookStage', () => {
     expect(result.current.params.intensity).toBe(0.7)
     expect(result.current.params.styleKind).toBe('none')
     expect(result.current.params.builtinPreset).toBeNull()
-    expect(result.current.activeIntensity).toBe(0.7)
   })
 
   it('normalizes tone params and invalidates export when the render graph changes', () => {
@@ -1094,9 +1093,13 @@ describe('useRawLookStage continuous strength', () => {
       },
     }
     const harness = renderLookStageHarness({ session })
+    const strength = renderHook(() => useRawToolAdjustments())
 
     expect(harness.actions.params.intensity).toBe(0.37)
-    expect(harness.actions.activeIntensity).toBe(0.37)
+    // The strength the surfaces show is the tool slice's, resolved from the
+    // same session; the stage hands out no second copy.
+    expect(strength.result.current.activeIntensity).toBe(0.37)
+    expect(harness.actions).not.toHaveProperty('activeIntensity')
     expect(pickColorGraphIntent(harness.actions.params)).toEqual({
       ...baseIntent,
       styleKind: 'custom',

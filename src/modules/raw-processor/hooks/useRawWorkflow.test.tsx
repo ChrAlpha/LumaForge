@@ -4324,6 +4324,41 @@ describe('useRawWorkflow embedded preview state', () => {
       return { ...hook, renderToHiddenCanvas }
     }
 
+    it('decides HQ export readiness from the LUT the workflow renders', async () => {
+      const { result } = await loadForHqExport()
+      expect(result.current.canPreviewExport).toBe(true)
+
+      await act(async () => {
+        await result.current.loadLUT(
+          createContractCubeFile('Look A', 'look-a.cube', [
+            'LUMAFORGE_INPUT_PROFILE=display-srgb',
+            'LUMAFORGE_ROLE=display-look',
+          ]),
+        )
+      })
+      await waitFor(() => {
+        expect(result.current.lutData?.title).toBe('Look A')
+      })
+
+      // A LUT whose contract the preview draws keeps the HQ export open.
+      expect(result.current.params.styleKind).toBe('custom')
+      expect(result.current.canPreviewExport).toBe(true)
+      expect(result.current.previewExportRefusal).toBeUndefined()
+
+      await act(async () => {
+        await result.current.loadLUT(
+          createCubeFile('Unconfirmed', 'unconfirmed.cube'),
+        )
+      })
+      await waitFor(() => {
+        expect(result.current.lutData?.title).toBe('Unconfirmed')
+      })
+
+      // One the preview leaves out closes it, as rendered.
+      expect(result.current.canPreviewExport).toBe(false)
+      expect(result.current.previewExportRefusal).toBe('look-dropped')
+    })
+
     it('refuses full and HQ export from actions captured before the first edit while the Transform is pending, invalid or unavailable', async () => {
       exportSystemMock.runFullResolutionExportJob.mockResolvedValue({
         filename: 'frame_neutral_fullres.jpg',

@@ -34,10 +34,7 @@ import {
   computeSessionClearLUT,
   computeSessionIntensityChange,
 } from '../../../services/look/orchestrate-params-update'
-import {
-  buildLUTContractSelectionState,
-  DEFAULT_LOOK_INTENSITY,
-} from '../../../services/look/style-system'
+import { buildLUTContractSelectionState } from '../../../services/look/style-system'
 import {
   getCurrentSession,
   setCurrentSession,
@@ -125,8 +122,6 @@ export function useRawLookStage({
   const lutProfileSelection =
     session?.lutProfileSelection ||
     (lut ? buildLUTContractSelectionState(lut) : null)
-  const activeIntensity =
-    activeStyle?.currentIntensity ?? DEFAULT_LOOK_INTENSITY
   const currentLutName =
     activeStyle?.kind === 'custom' ? activeStyle.name : null
 
@@ -327,7 +322,6 @@ export function useRawLookStage({
     activeStyle: activeStyle as StyleAsset | null,
     lutProfileSelection:
       lutProfileSelection as LUTContractSelectionState | null,
-    activeIntensity,
     currentLutName,
     loadLUT,
     cancelLUTFileLoad,
