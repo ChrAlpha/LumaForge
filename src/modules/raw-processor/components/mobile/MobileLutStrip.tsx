@@ -7,7 +7,7 @@ import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
 import type { OnlineLutEntryLoadProgress } from '../../hooks/useOnlineLutSources'
-import { entryLoadPercent } from '../tools/lut/OnlineLutSourceResourceList'
+import { entryLoadPercent } from '../../services/look/lut-entry-progress'
 import type { LutStripEntryItem, LutStripItem } from './mobile-lut-strip'
 import { getAppliedStripKey } from './mobile-lut-strip'
 

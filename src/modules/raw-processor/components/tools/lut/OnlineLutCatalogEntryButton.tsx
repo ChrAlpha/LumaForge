@@ -6,6 +6,7 @@ import type {
   OnlineLutEntryLoadProgress,
   UseOnlineLutSourcesResult,
 } from '../../../hooks/useOnlineLutSources'
+import { entryLoadPercent } from '../../../services/look/lut-entry-progress'
 
 type OnlineLutEntry = UseOnlineLutSourcesResult['state']['entries'][number]
 
@@ -83,16 +84,5 @@ export function OnlineLutCatalogEntryButton({
         </span>
       )}
     </button>
-  )
-}
-
-export function entryLoadPercent(
-  progress: OnlineLutEntryLoadProgress | null,
-): number | null {
-  if (!progress?.totalBytes) return null
-
-  return Math.min(
-    100,
-    Math.round((progress.receivedBytes / progress.totalBytes) * 100),
   )
 }

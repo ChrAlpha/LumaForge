@@ -12,8 +12,6 @@ import { LutSourceWarning } from '../../shared/lut/LutSourceWarning'
 import { LutIconButton } from './LutIconButton'
 import { OnlineLutCatalogEntryButton } from './OnlineLutCatalogEntryButton'
 
-export { entryLoadPercent } from './OnlineLutCatalogEntryButton'
-
 type OnlineLutResource = UseOnlineLutSourcesResult['state']['resources'][number]
 type OnlineLutEntry = UseOnlineLutSourcesResult['state']['entries'][number]
 type OnlineLutIssue = UseOnlineLutSourcesResult['state']['issues'][number]

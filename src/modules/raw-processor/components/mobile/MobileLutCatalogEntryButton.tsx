@@ -3,7 +3,7 @@ import { Aperture, CircleAlert, Download, X } from 'lucide-react'
 import { useI18n } from '~/lib/i18n'
 
 import type { OnlineLutEntryLoadProgress } from '../../hooks/useOnlineLutSources'
-import { entryLoadPercent } from '../tools/lut/OnlineLutSourceResourceList'
+import { entryLoadPercent } from '../../services/look/lut-entry-progress'
 
 export function MobileLutCatalogEntryButton(props: {
   title: string
