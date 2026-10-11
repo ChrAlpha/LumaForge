@@ -13,6 +13,8 @@ import type { ComponentType, PropsWithChildren } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '~/lib/i18n'
+import type { DecodedImage } from '~/lib/raw/decoder'
+import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type {
   ExportCopyCapability,
@@ -24,6 +26,12 @@ import { createImageSession } from '../../../model/session-factory'
 import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import { claimExportSlot } from '../../../services/export/export-state'
 import { useExportResultActions } from './useExportResultActions'
+
+/** A preview pipeline as the hidden-canvas copy reads it. */
+type PreviewPipeline = Pick<
+  RawProcessingPipeline,
+  'renderToHiddenCanvas' | 'getParams' | 'getLutData'
+>
 
 type Deferred<T> = {
   promise: Promise<T>
@@ -194,7 +202,7 @@ function setup({
   session?: ImageSession
   result: (session: ImageSession) => ExportResult
   previewCopyCanvas?: HTMLCanvasElement | null
-  pipeline?: { renderToHiddenCanvas: () => Promise<HTMLCanvasElement> } | null
+  pipeline?: Pick<PreviewPipeline, 'renderToHiddenCanvas'> | null
   wrapper?: ComponentType<PropsWithChildren>
 }) {
   const stored = result(session)
@@ -208,6 +216,16 @@ function setup({
   const intentAtom = atom<ColorGraphIntent>(intent)
   const lutAtom = atom<LUTData | null>(makeLut())
   const getSession = () => store.get(sessionAtom)
+  // The pipeline draws the look it holds, which follows the store only when
+  // a test says the preview's effects have run; it starts caught up.
+  const held = { intent: store.get(intentAtom), lut: store.get(lutAtom) }
+  const holdLook = (
+    rendering: Pick<PreviewPipeline, 'renderToHiddenCanvas'>,
+  ): PreviewPipeline => ({
+    renderToHiddenCanvas: rendering.renderToHiddenCanvas,
+    getParams: () => ({ ...held.intent, viewMode: 'processed' as const }),
+    getLutData: () => held.lut,
+  })
   const refs = {
     getSession,
     getColorIntent: () => store.get(intentAtom),
@@ -215,7 +233,12 @@ function setup({
     exportGraphVersionRef: { current: 3 },
     exportAbortControllerRef: { current: null as AbortController | null },
     isMountedRef: { current: true },
-    pipelineRef: { current: pipeline },
+    pipelineRef: {
+      current: pipeline ? holdLook(pipeline) : null,
+    } as { current: PreviewPipeline | null },
+    decodedImageRef: {
+      current: { renderExposure: exposure },
+    } as { current: Pick<DecodedImage, 'renderExposure'> | null },
     previewCopyCanvasRef: { current: previewCopyCanvas },
   }
   // The attempt that produced the result claimed the slot and released it
@@ -239,6 +262,8 @@ function setup({
   )
   return {
     ...refs,
+    held,
+    holdLook,
     stored,
     toast,
     actions: () => hook.current,
@@ -750,6 +775,228 @@ describe('useExportResultActions', () => {
 
     expect(canvas.toBlob).not.toHaveBeenCalled()
     expect(clipboardWrite).not.toHaveBeenCalled()
+  })
+
+  describe('preview-size copy from the pipeline', () => {
+    const NOT_READY = [
+      'Copy failed',
+      { description: 'Preview image is not ready to copy.' },
+    ]
+
+    function previewSizeResult(session: ImageSession) {
+      return createResult({
+        session,
+        output: blobOutput(),
+        copyCapability: {
+          mode: 'preview-size',
+          reasonCode: 'full-resolution-copy-unsupported',
+        },
+      })
+    }
+
+    function encodingCanvas(encode?: Promise<Blob | null>) {
+      return {
+        toBlob: vi.fn((callback: BlobCallback) => {
+          if (encode) void encode.then(callback)
+          else callback(new Blob(['png'], { type: 'image/png' }))
+        }),
+      } as unknown as HTMLCanvasElement
+    }
+
+    /** Ways the pipeline stops drawing the result the store still names. */
+    const LAGS: Array<[string, (harness: Harness) => void]> = [
+      [
+        'the pipeline holds another tone than the store',
+        (harness) => {
+          harness.held.intent = { ...intent, userExposureEv: 0.4 }
+        },
+      ],
+      [
+        'the pipeline holds another look strength than the store',
+        (harness) => {
+          harness.held.intent = { ...intent, intensity: 0.38 }
+        },
+      ],
+      [
+        'the pipeline holds another LUT table than the store',
+        (harness) => {
+          harness.held.lut = makeLut({ data: lutTable.slice() })
+        },
+      ],
+      [
+        'the pipeline holds no LUT yet',
+        (harness) => {
+          harness.held.lut = null
+        },
+      ],
+      [
+        'the preview frame carries another RAW render exposure',
+        (harness) => {
+          harness.decodedImageRef.current = {
+            renderExposure: { ...exposure, ev: 1, multiplier: 2 },
+          }
+        },
+      ],
+      [
+        'the preview has no frame',
+        (harness) => {
+          harness.decodedImageRef.current = null
+        },
+      ],
+    ]
+
+    it.each(LAGS)(
+      'renders nothing and copies nothing when %s',
+      async (_, lag) => {
+        const { clipboardWrite } = stubDelivery()
+        const renderToHiddenCanvas = vi.fn(async () => encodingCanvas())
+        const harness = setup({
+          pipeline: { renderToHiddenCanvas },
+          result: previewSizeResult,
+        })
+        lag(harness)
+
+        await harness.actions().copyExportResult()
+
+        expect(renderToHiddenCanvas).not.toHaveBeenCalled()
+        expect(clipboardWrite).not.toHaveBeenCalled()
+        expect(harness.toast.success).not.toHaveBeenCalled()
+        expect(harness.toast.error.mock.calls).toEqual([NOT_READY])
+      },
+    )
+
+    const DURING_RENDER: Array<[string, (harness: Harness) => void]> = [
+      ...LAGS,
+      [
+        'the preview replaces its pipeline',
+        (harness) => {
+          harness.pipelineRef.current = harness.holdLook({
+            renderToHiddenCanvas: vi.fn(async () => encodingCanvas()),
+          })
+        },
+      ],
+      [
+        'the preview releases its pipeline',
+        (harness) => {
+          harness.pipelineRef.current = null
+        },
+      ],
+    ]
+
+    it.each(DURING_RENDER)(
+      'never encodes a hidden-canvas render once %s while it renders',
+      async (_, lag) => {
+        const { clipboardWrite } = stubDelivery()
+        const rendered = deferred<HTMLCanvasElement>()
+        const canvas = encodingCanvas()
+        const harness = setup({
+          pipeline: { renderToHiddenCanvas: () => rendered.promise },
+          result: previewSizeResult,
+        })
+
+        const pending = harness.actions().copyExportResult()
+        lag(harness)
+        rendered.resolve(canvas)
+        await pending
+
+        expect(canvas.toBlob).not.toHaveBeenCalled()
+        expect(clipboardWrite).not.toHaveBeenCalled()
+        expect(harness.toast.success).not.toHaveBeenCalled()
+        expect(harness.toast.error.mock.calls).toEqual([NOT_READY])
+      },
+    )
+
+    it.each(DURING_RENDER)(
+      'never copies an encoded render once %s while it encodes',
+      async (_, lag) => {
+        const { clipboardWrite } = stubDelivery()
+        const encoded = deferred<Blob | null>()
+        const canvas = encodingCanvas(encoded.promise)
+        const harness = setup({
+          pipeline: { renderToHiddenCanvas: vi.fn(async () => canvas) },
+          result: previewSizeResult,
+        })
+
+        const pending = harness.actions().copyExportResult()
+        await vi.waitFor(() => expect(canvas.toBlob).toHaveBeenCalled())
+        lag(harness)
+        encoded.resolve(new Blob(['png'], { type: 'image/png' }))
+        await pending
+
+        expect(clipboardWrite).not.toHaveBeenCalled()
+        expect(harness.toast.success).not.toHaveBeenCalled()
+        expect(harness.toast.error.mock.calls).toEqual([NOT_READY])
+      },
+    )
+
+    it('copies once the pipeline catches up with the store', async () => {
+      const { clipboardWrite } = stubDelivery()
+      const renderToHiddenCanvas = vi.fn(async () => encodingCanvas())
+      const harness = setup({
+        pipeline: { renderToHiddenCanvas },
+        result: previewSizeResult,
+      })
+      harness.held.intent = { ...intent, userExposureEv: 0.4 }
+      await harness.actions().copyExportResult()
+      expect(clipboardWrite).not.toHaveBeenCalled()
+
+      // The preview's effects run: the pipeline takes the stored look.
+      harness.held.intent = harness.getColorIntent()
+      harness.held.lut = harness.getLutData()
+      await harness.actions().copyExportResult()
+
+      expect(renderToHiddenCanvas).toHaveBeenCalledTimes(1)
+      expect(clipboardWrite).toHaveBeenCalledTimes(1)
+      expect(harness.toast.success).toHaveBeenCalledWith(
+        'Preview-size image copied',
+      )
+    })
+
+    it('still copies the retained snapshot whatever the pipeline holds', async () => {
+      const { clipboardWrite } = stubDelivery()
+      const renderToHiddenCanvas = vi.fn(async () => encodingCanvas())
+      const harness = setup({
+        previewCopyCanvas: encodingCanvas(),
+        pipeline: { renderToHiddenCanvas },
+        result: previewSizeResult,
+      })
+      harness.held.intent = { ...intent, userExposureEv: 0.4 }
+
+      await harness.actions().copyExportResult()
+
+      expect(renderToHiddenCanvas).not.toHaveBeenCalled()
+      expect(clipboardWrite).toHaveBeenCalledTimes(1)
+      expect(harness.toast.success).toHaveBeenCalledWith(
+        'Preview-size image copied',
+      )
+    })
+
+    it('reports a store edit during the render as a stale delivery', async () => {
+      const { clipboardWrite } = stubDelivery()
+      const rendered = deferred<HTMLCanvasElement>()
+      const canvas = encodingCanvas()
+      const harness = setup({
+        pipeline: { renderToHiddenCanvas: () => rendered.promise },
+        result: previewSizeResult,
+      })
+
+      const pending = harness.actions().copyExportResult()
+      harness.setIntent({ ...intent, userExposureEv: 0.4 })
+      rendered.resolve(canvas)
+      await pending
+
+      expect(canvas.toBlob).not.toHaveBeenCalled()
+      expect(clipboardWrite).not.toHaveBeenCalled()
+      expect(harness.toast.error.mock.calls).toEqual([
+        [
+          'Copy failed',
+          {
+            description:
+              'This export no longer matches the photo. Export again to deliver it.',
+          },
+        ],
+      ])
+    })
   })
 
   it('delivers a current result after export released the preview', async () => {

@@ -125,6 +125,7 @@ function setup(initialSession: ImageSession | null = createReadySession()) {
       exportAbortControllerRef,
       isMountedRef,
       pipelineRef: { current: null },
+      decodedImageRef: { current: null },
       previewCopyCanvasRef,
       scheduleToast: (notify) => notify(),
       toast,

@@ -362,6 +362,9 @@ function setupHq(
     store.get(lutAtom),
     renderToHiddenCanvas,
   )
+  const pipelineRef: { current: typeof pipeline | null } = {
+    current: pipeline,
+  }
   const { result } = renderHook(
     () =>
       useHqPreviewExportAction({
@@ -369,7 +372,7 @@ function setupHq(
         getColorIntent: () => store.get(intentAtom),
         getLutData: () => store.get(lutAtom),
         decodedImageRef,
-        pipelineRef: { current: pipeline },
+        pipelineRef,
         isMountedRef,
         exportGraphVersionRef,
         exportAbortControllerRef,
@@ -407,6 +410,7 @@ function setupHq(
       held.lut = store.get(lutAtom)
     },
     held,
+    pipelineRef,
     decodedImageRef,
     exportGraphVersionRef,
     exportAbortControllerRef,
@@ -782,6 +786,54 @@ describe('useHqPreviewExportAction live store reads', () => {
     expect(h.exportAbortControllerRef.current).toBeNull()
   })
 
+  it.each([
+    [
+      'the preview replaces its pipeline',
+      (h: ReturnType<typeof setupHq>) => {
+        // A pipeline holding the very same look still did not draw it.
+        h.pipelineRef.current = createPipeline(
+          h.held.params,
+          h.held.lut,
+          vi.fn(),
+        ).pipeline
+      },
+    ],
+    [
+      'the preview releases its pipeline',
+      (h: ReturnType<typeof setupHq>) => {
+        h.pipelineRef.current = null
+      },
+    ],
+    [
+      'the preview frame carries another RAW render exposure',
+      (h: ReturnType<typeof setupHq>) => {
+        h.decodedImageRef.current = {
+          ...createDecodedImage(),
+          renderExposure: { ev: 1, multiplier: 2, source: 'identity' },
+        }
+      },
+    ],
+  ])('never encodes a render once %s while it draws', async (_, change) => {
+    const h = setupHq()
+    const pending = h.result.current.exportPreviewImage()
+    expect(h.renderToHiddenCanvas).toHaveBeenCalledTimes(1)
+    const changedAt = h.trace.push('test:changed') - 1
+    change(h)
+    h.complete()
+    await pending
+
+    expect(h.trace.slice(changedAt)).toEqual([
+      'test:changed',
+      'state:session:idle',
+      'state:status:ready',
+      'state:progress:0',
+      'toast:error:HQ preview export is not ready',
+    ])
+    expect(h.toBlob).not.toHaveBeenCalled()
+    expect(h.registerExportResultResource).not.toHaveBeenCalled()
+    expect(h.session()?.exportState.result).toBeUndefined()
+  })
+
   it.each(['completes', 'fails'] as const)(
     'leaves a successor attempt its state when a superseded render %s',
     async (ending) => {
@@ -1032,16 +1084,14 @@ describe('useHqPreviewExportAction result identity', () => {
 
       // While it renders, what the request was read from moves on without
       // ending the attempt: the intent record in place, the stored color and
-      // LUT, the decoded image, the view.
+      // LUT, the decoded image (a new frame carries the source's pinned
+      // exposure), the view.
       Object.assign(look, { intensity: 0.1, userExposureEv: 1.5 })
       h.writeIntent({ ...params, intensity: 0.2 })
       h.writeLut(
         lut && { ...lut, data: new Float32Array(lut.data.length).fill(1) },
       )
-      h.decodedImageRef.current = {
-        ...createDecodedImage(),
-        renderExposure: { ev: 1, multiplier: 2, source: 'user' },
-      }
+      h.decodedImageRef.current = { ...createDecodedImage(), width: 400 }
       h.writeSession((live) => ({
         ...live!,
         viewState: { ...live!.viewState, mode: 'original', zoom: 2 },

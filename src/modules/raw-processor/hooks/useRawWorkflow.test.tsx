@@ -8186,10 +8186,15 @@ describe('useRawWorkflow embedded preview state', () => {
       mode: 'preview-size',
     })
 
+    // The restored preview draws a frame with the source's pinned exposure
+    // through a pipeline holding the photo's look.
     act(() => {
+      result.current.decodedImageRef.current = createDecodedImage('bounded-hq')
       result.current.pipelineRef.current = {
         renderToHiddenCanvas,
         dispose,
+        getParams: () => ({ ...result.current.params, viewMode: 'processed' }),
+        getLutData: () => null,
       } as never
     })
 

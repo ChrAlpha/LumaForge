@@ -5,6 +5,7 @@ import { useCallback, useLayoutEffect, useRef } from 'react'
 import { emitExportDebugEvent } from '~/lib/export/execution-profile'
 import type { MessageKey, Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
+import type { DecodedImage } from '~/lib/raw/decoder'
 import type {
   PipelineStats,
   RawProcessingPipeline,
@@ -33,6 +34,7 @@ import {
   unavailableExportCopy,
 } from '../../../services/export/export-result-actions'
 import { readExportSlotAttempt } from '../../../services/export/export-state'
+import { pipelineHoldsLook } from '../../../services/preview/pipeline-holds-look'
 import {
   EXPORT_COPY_REASON_COPY,
   EXPORT_SHARE_REASON_COPY,
@@ -55,8 +57,10 @@ type UseExportResultActionsInput = {
   isMountedRef: MutableRefObject<boolean>
   pipelineRef: MutableRefObject<Pick<
     RawProcessingPipeline,
-    'renderToHiddenCanvas'
+    'renderToHiddenCanvas' | 'getParams' | 'getLutData'
   > | null>
+  /** The frame the preview draws; its RAW render exposure is read. */
+  decodedImageRef: MutableRefObject<Pick<DecodedImage, 'renderExposure'> | null>
   previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
   previewSize?: PipelineStats['previewSize']
   scheduleToast: (notify: () => void) => void
@@ -78,6 +82,7 @@ export function useExportResultActions({
   exportAbortControllerRef,
   isMountedRef,
   pipelineRef,
+  decodedImageRef,
   previewCopyCanvasRef,
   previewSize,
   scheduleToast,
@@ -310,18 +315,39 @@ export function useExportResultActions({
           return
         }
 
-        const pipeline = pipelineRef.current
-        if (!pipeline || !previewSize) {
-          throw new ExportActionUnavailableError(
+        const notReady = () =>
+          new ExportActionUnavailableError(
             unavailableExportCopy('preview-copy-not-ready'),
           )
-        }
+        const pipeline = pipelineRef.current
+        if (!pipeline || !previewSize) throw notReady()
 
+        // The pipeline renders what it holds, which follows the store only
+        // once the preview's effects run. The guard holds the store to the
+        // result, so the render stands for the result only while the preview
+        // still publishes this pipeline, holding the stored look, over a
+        // frame with the result's exposure: asked before the render, after
+        // every await, and right before the clipboard write.
+        const drawsResult: ExportDeliveryGuard = {
+          assertCurrent() {
+            guard.assertCurrent()
+            const drawn = pipelineHoldsLook({
+              pipeline,
+              publishedPipeline: pipelineRef.current,
+              frameExposure: decodedImageRef.current?.renderExposure ?? null,
+              intent: getColorIntent(),
+              lut: getLutData(),
+              rawRenderExposure: result.identity.rawRenderExposure,
+            })
+            if (!drawn) throw notReady()
+          },
+        }
+        drawsResult.assertCurrent()
         const canvas = await pipeline.renderToHiddenCanvas({
           width: previewSize.width,
           height: previewSize.height,
         })
-        await copyCanvasToClipboard(canvas, globalThis, guard)
+        await copyCanvasToClipboard(canvas, globalThis, drawsResult)
         const message = t('raw.export.toast.previewSizeCopied')
         scheduleToast(() => toast.success(message))
         return
@@ -339,7 +365,10 @@ export function useExportResultActions({
     }
   }, [
     createMaterializationDiagnostics,
+    decodedImageRef,
     describeFailure,
+    getColorIntent,
+    getLutData,
     openDelivery,
     pipelineRef,
     previewCopyCanvasRef,

@@ -1,5 +1,4 @@
 import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
-import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useLayoutEffect, useRef } from 'react'
 import { toast as sonnerToast } from 'sonner'
@@ -35,6 +34,7 @@ import {
   runPreviewExportJob,
 } from '../../../services/export/export-system'
 import { resolveHqPreviewLookRefusal } from '../../../services/export/hq-preview-look'
+import { pipelineHoldsLook } from '../../../services/preview/pipeline-holds-look'
 import { HQ_PREVIEW_EXPORT_REASON_COPY } from '../../../services/surface/raw-reason'
 
 type HqPreviewPipeline = Pick<
@@ -84,40 +84,6 @@ type HqPreviewExportAttempt = Readonly<{
   transformIntent: TransformIntent | undefined
   controller: AbortController
 }>
-
-/**
- * Whether the pipeline holds the color and the LUT an attempt admitted. The
- * HQ JPEG is drawn from what the pipeline holds, which follows the store
- * only once the preview's effects run, so a write that has not reached it
- * yet would put other pixels under the admitted identity. The LUT counts
- * only when the look draws one, as in the identity; a table counts as held
- * only when the pipeline holds the same table, domain and contract.
- */
-function pipelineHoldsLook(
-  pipeline: HqPreviewPipeline,
-  intent: ColorGraphIntent,
-  lut: LUTData | null,
-): boolean {
-  let held: ColorGraphIntent
-  try {
-    held = pipeline.getParams()
-  } catch {
-    return false
-  }
-  if (colorGraphIntentSignature(held) !== colorGraphIntentSignature(intent)) {
-    return false
-  }
-  if (intent.styleKind !== 'custom') return true
-  const heldLut = pipeline.getLutData()
-  if (!heldLut || !lut) return heldLut === lut
-  return (
-    heldLut.data === lut.data &&
-    heldLut.size === lut.size &&
-    heldLut.domainMin === lut.domainMin &&
-    heldLut.domainMax === lut.domainMax &&
-    heldLut.profileResolution === lut.profileResolution
-  )
-}
 
 let lastHqPreviewAttempt = 0
 
@@ -222,9 +188,20 @@ export function useHqPreviewExportAction({
       refuse('look-dropped')
       return
     }
-    // The pipeline draws the JPEG, so it starts only once the pipeline holds
-    // the look admitted here.
-    if (!pipelineHoldsLook(pipeline, intent, lut)) {
+    // The HQ JPEG is drawn from what the pipeline holds, which follows the
+    // store only once the preview's effects run, so it starts only once the
+    // published pipeline holds the look admitted here, over a frame that
+    // carries the admitted frame's exposure.
+    const drawsLook = () =>
+      pipelineHoldsLook({
+        pipeline,
+        publishedPipeline: pipelineRef.current,
+        frameExposure: decodedImageRef.current?.renderExposure ?? null,
+        intent,
+        lut,
+        rawRenderExposure: image.renderExposure,
+      })
+    if (!drawsLook()) {
       refuse('not-ready')
       return
     }
@@ -321,12 +298,13 @@ export function useHqPreviewExportAction({
     }
 
     /**
-     * Whether this attempt is current and the pipeline still holds the look
-     * it admitted; a pipeline that has moved on ends the attempt.
+     * Whether this attempt is current and the preview still publishes the
+     * pipeline it admitted, holding the look and the exposure it names; a
+     * pipeline that has moved on or been replaced ends the attempt.
      */
     const drawsAdmittedLook = () => {
       if (!isCurrentExport()) return false
-      if (pipelineHoldsLook(pipeline, intent, lut)) return true
+      if (drawsLook()) return true
       endRefused('not-ready')
       return false
     }

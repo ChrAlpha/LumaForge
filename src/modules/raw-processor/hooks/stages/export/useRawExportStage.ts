@@ -185,6 +185,7 @@ export function useRawExportStage({
     exportAbortControllerRef,
     isMountedRef,
     pipelineRef,
+    decodedImageRef,
     previewCopyCanvasRef,
     previewSize: stats?.previewSize,
     scheduleToast,
