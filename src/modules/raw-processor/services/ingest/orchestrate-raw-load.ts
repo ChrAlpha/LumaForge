@@ -1,7 +1,6 @@
 import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { deriveInteractivePolicy } from '@lumaforge/render-engine/policy'
 import { createProgressivePreviewPlan } from '@lumaforge/render-engine/preview'
-import { toast } from 'sonner'
 
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import { resolvePreviewBackend } from '~/lib/preview/gpu-backend'
@@ -53,6 +52,25 @@ class RawAdapterErrorLike extends Error {
   }
 }
 
+/**
+ * What a load tells the user about its outcome. A load reports each one at
+ * most once and only while it still owns the active session; how and when it
+ * is shown belongs to the caller.
+ */
+export type RawLoadNotification =
+  /** The quick decode failed, so the source has no RAW preview exposure. */
+  | { kind: 'preview-unavailable' }
+  /** The bounded HQ frame is ready; carries that frame's size and camera. */
+  | {
+      kind: 'loaded'
+      fileName: string
+      width: number
+      height: number
+      make: string | undefined
+      model: string | undefined
+    }
+  | { kind: 'load-failed'; message: string }
+
 export interface RawLoadContext {
   atoms: {
     setStatus: (status: ProcessingStatus) => void
@@ -82,7 +100,7 @@ export interface RawLoadContext {
     setStats: (stats: PipelineStats | null) => void
   }
   services: {
-    scheduleToast: (notify: () => void) => void
+    notify: (notification: RawLoadNotification) => void
     /** Publishes the new source's session to the store before it returns. */
     replaceFile: (
       file: File,
@@ -437,23 +455,20 @@ export async function orchestrateRawLoad(
             ctx.atoms.setStatus('error')
             ctx.atoms.setProgress(100)
             ctx.atoms.setError(event.message)
-            ctx.services.scheduleToast(() =>
-              toast.error('Preview unavailable', {
-                description:
-                  'Full-resolution export needs a decoded RAW preview exposure before it can run.',
-              }),
-            )
+            ctx.services.notify({ kind: 'preview-unavailable' })
             break
           }
           case 'bounded-hq-ready': {
             updatePreviewState('bounded-hq', event, boundedHqPreview)
             if (boundedHqPreview) {
-              const description = `${boundedHqPreview.width}×${boundedHqPreview.height} • ${boundedHqPreview.metadata.make || 'Unknown'} ${boundedHqPreview.metadata.model || ''}`
-              ctx.services.scheduleToast(() =>
-                toast.success(`Loaded ${file.name}`, {
-                  description,
-                }),
-              )
+              ctx.services.notify({
+                kind: 'loaded',
+                fileName: file.name,
+                width: boundedHqPreview.width,
+                height: boundedHqPreview.height,
+                make: boundedHqPreview.metadata.make,
+                model: boundedHqPreview.metadata.model,
+              })
             }
             break
           }
@@ -520,9 +535,7 @@ export async function orchestrateRawLoad(
       const message = err instanceof Error ? err.message : 'Failed to load file'
       ctx.atoms.setError(message)
       ctx.atoms.setStatus('error')
-      ctx.services.scheduleToast(() =>
-        toast.error('Failed to load RAW file', { description: message }),
-      )
+      ctx.services.notify({ kind: 'load-failed', message })
       return
     }
 
@@ -552,9 +565,7 @@ export async function orchestrateRawLoad(
         : prev,
     )
     ctx.atoms.setStatus('error')
-    ctx.services.scheduleToast(() =>
-      toast.error('Failed to load RAW file', { description: message }),
-    )
+    ctx.services.notify({ kind: 'load-failed', message })
   } finally {
     // A load that stopped early aborts what it left in flight; a completed
     // one only gives its session back. Either is a no-op on a lease a newer

@@ -5,9 +5,18 @@ import { describe, expect, it, vi } from 'vitest'
 import type { RawRuntimeSessionLease } from '~/lib/raw/raw-runtime-host'
 import type { PrewarmState } from '~/lib/raw/runtime-adapter'
 
-import type { RawLoadContext } from '../../../services/ingest/orchestrate-raw-load'
+import type {
+  RawLoadContext,
+  RawLoadNotification,
+} from '../../../services/ingest/orchestrate-raw-load'
 import type { UseRawLoadActionInput } from './useRawLoadAction'
 import { useRawLoadAction } from './useRawLoadAction'
+
+const toastMock = vi.hoisted(() => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}))
+
+vi.mock('sonner', () => toastMock)
 
 function createColorIntent(): ReturnType<
   UseRawLoadActionInput['getColorIntent']
@@ -180,5 +189,88 @@ describe('useRawLoadAction', () => {
     const [, ctx] = orchestrateLoad.mock.calls[0] as [File, RawLoadContext]
     expect(ctx.services.beginRuntimeSession).toBe(host.beginRuntimeSession)
     expect(host.leases).toHaveLength(1)
+  })
+
+  describe('notifications', () => {
+    async function notifyThroughHook(notifications: RawLoadNotification[]) {
+      toastMock.toast.success.mockReset()
+      toastMock.toast.error.mockReset()
+      const scheduled: Array<() => void> = []
+      const scheduleToast = vi.fn((show: () => void) => {
+        scheduled.push(show)
+      })
+      const orchestrateLoad = vi.fn(
+        async (_file: File, ctx: RawLoadContext) => {
+          for (const notification of notifications) {
+            ctx.services.notify(notification)
+          }
+        },
+      )
+      const { result } = renderHook(() =>
+        useRawLoadAction({ ...createInput(orchestrateLoad), scheduleToast }),
+      )
+
+      await result.current.loadFile(new File(['raw'], 'frame.dng'))
+
+      return { scheduled, scheduleToast }
+    }
+
+    it('shows each load outcome only when its scheduled task runs, in order', async () => {
+      const { scheduled, scheduleToast } = await notifyThroughHook([
+        { kind: 'preview-unavailable' },
+        { kind: 'load-failed', message: 'open exploded' },
+      ])
+
+      expect(scheduleToast).toHaveBeenCalledTimes(2)
+      expect(toastMock.toast.error).not.toHaveBeenCalled()
+
+      for (const show of scheduled) show()
+
+      expect(toastMock.toast.error.mock.calls).toEqual([
+        [
+          'Preview unavailable',
+          {
+            description:
+              'Full-resolution export needs a decoded RAW preview exposure before it can run.',
+          },
+        ],
+        ['Failed to load RAW file', { description: 'open exploded' }],
+      ])
+      expect(toastMock.toast.success).not.toHaveBeenCalled()
+    })
+
+    it('describes a loaded source by its bounded HQ size and camera', async () => {
+      const { scheduled } = await notifyThroughHook([
+        {
+          kind: 'loaded',
+          fileName: 'frame.dng',
+          width: 4243,
+          height: 2828,
+          make: 'Sony',
+          model: 'ILCE-7RM5',
+        },
+        {
+          kind: 'loaded',
+          fileName: 'bare.dng',
+          width: 1600,
+          height: 1067,
+          make: undefined,
+          model: undefined,
+        },
+      ])
+
+      for (const show of scheduled) show()
+
+      expect(toastMock.toast.success.mock.calls).toEqual([
+        ['Loaded frame.dng', { description: '4243×2828 • Sony ILCE-7RM5' }],
+        ['Loaded bare.dng', { description: '1600×1067 • Unknown ' }],
+      ])
+    })
+
+    it('shows nothing for a notification whose scheduled task never runs', async () => {
+      await notifyThroughHook([{ kind: 'load-failed', message: 'late' }])
+
+      expect(toastMock.toast.error).not.toHaveBeenCalled()
+    })
   })
 })

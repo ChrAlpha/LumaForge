@@ -139,7 +139,7 @@ function buildContext(
       setStats: vi.fn(),
     },
     services: {
-      scheduleToast: vi.fn(),
+      notify: vi.fn(),
       replaceFile: vi.fn((file, retained) => {
         order.push('replaceFile')
         const next = createImageSession(file, retained)
@@ -536,7 +536,9 @@ describe('orchestrateRawLoad ack-before-work contract', () => {
 
     expect(ctx.atoms.setError).toHaveBeenCalledWith('session creation failed')
     expect(order).toContain('status:error')
-    expect(ctx.services.scheduleToast).toHaveBeenCalled()
+    expect(vi.mocked(ctx.services.notify).mock.calls).toEqual([
+      [{ kind: 'load-failed', message: 'session creation failed' }],
+    ])
   })
 
   it('releases the outgoing source after its status tail and before the new lease, fences first', () => {
@@ -768,7 +770,7 @@ describe('orchestrateRawLoad host session lease', () => {
       'The RAW session lease ended.',
     )
     expect(ctx.atoms.setStatus).not.toHaveBeenCalledWith('error')
-    expect(ctx.services.scheduleToast).not.toHaveBeenCalled()
+    expect(ctx.services.notify).not.toHaveBeenCalled()
   })
 
   it('publishes nothing from an open that settles after unmount and cancels the lease', async () => {
@@ -806,7 +808,83 @@ describe('orchestrateRawLoad host session lease', () => {
 
     await vi.waitFor(() => expect(host.leases[0]!.release).toHaveBeenCalled())
     expect(ctx.services.setDecodedImageRef).toHaveBeenCalledTimes(decodedWrites)
-    expect(ctx.services.scheduleToast).not.toHaveBeenCalled()
+    expect(ctx.services.notify).not.toHaveBeenCalled()
+  })
+
+  it('reports a loaded source once its bounded HQ frame is ready', async () => {
+    const boundedHq = deferred<DecodedImage>()
+    openSessionMock.mockResolvedValue(
+      createRuntimeSession({
+        decodeBoundedHqRaw: vi.fn(() => boundedHq.promise),
+      }),
+    )
+    const { ctx, host } = buildLeaseContext()
+
+    await orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
+    expect(ctx.services.notify).not.toHaveBeenCalled()
+
+    boundedHq.resolve({
+      ...createDecodedImage(4243, 2828),
+      metadata: { width: 4243, height: 2828, make: 'Sony', model: 'ILCE-7RM5' },
+    })
+    await vi.waitFor(() => expect(host.leases[0]!.release).toHaveBeenCalled())
+
+    expect(vi.mocked(ctx.services.notify).mock.calls).toEqual([
+      [
+        {
+          kind: 'loaded',
+          fileName: 'sample.ARW',
+          width: 4243,
+          height: 2828,
+          make: 'Sony',
+          model: 'ILCE-7RM5',
+        },
+      ],
+    ])
+  })
+
+  it('reports an unavailable preview once when the quick decode fails', async () => {
+    openSessionMock.mockResolvedValue(
+      createRuntimeSession({
+        decodeQuickRaw: vi.fn().mockRejectedValue(
+          Object.assign(new Error('decode exploded'), {
+            code: 'RAW_DECODE_FAILED',
+          }),
+        ),
+      }),
+    )
+    const { ctx } = buildLeaseContext()
+
+    await orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
+
+    expect(ctx.atoms.setStatus).toHaveBeenLastCalledWith('error')
+    expect(vi.mocked(ctx.services.notify).mock.calls).toEqual([
+      [{ kind: 'preview-unavailable' }],
+    ])
+  })
+
+  it('reports a load failure with the error message when the source does not open', async () => {
+    openSessionMock.mockRejectedValue(
+      Object.assign(new Error('open exploded'), { code: 'RAW_OPEN_FAILED' }),
+    )
+    const { ctx } = buildLeaseContext()
+
+    await orchestrateRawLoad(new File(['raw'], 'broken.ARW'), ctx)
+
+    expect(vi.mocked(ctx.services.notify).mock.calls).toEqual([
+      [{ kind: 'load-failed', message: 'open exploded' }],
+    ])
+  })
+
+  it('reports nothing for an unsupported file', async () => {
+    const { ctx } = buildLeaseContext()
+
+    await orchestrateRawLoad(new File(['x'], 'notes.txt'), ctx)
+
+    expect(ctx.atoms.setError).toHaveBeenCalledWith(
+      'Unsupported file format: notes.txt',
+    )
+    expect(ctx.services.notify).not.toHaveBeenCalled()
   })
 
   it('begins a fresh lease for each load', async () => {
@@ -967,7 +1045,7 @@ describe('orchestrateRawLoad session store', () => {
     expect(ctx.refs.pendingLoadSessionIdRef.current).toBe(successor.id)
     expect(ctx.atoms.setError).not.toHaveBeenCalledWith('open exploded')
     expect(ctx.atoms.setStatus).not.toHaveBeenCalledWith('error')
-    expect(ctx.services.scheduleToast).not.toHaveBeenCalled()
+    expect(ctx.services.notify).not.toHaveBeenCalled()
     expect(host.leases[0]!.cancel).toHaveBeenCalled()
     expect(host.leases[1]!.cancel).not.toHaveBeenCalled()
     expect(host.leases[1]!.release).not.toHaveBeenCalled()
@@ -1002,7 +1080,7 @@ describe('orchestrateRawLoad session store', () => {
     expect(ctx.refs.runtimeWorkSessionIdRef.current).toBe(successor.id)
     expect(ctx.refs.pendingLoadSessionIdRef.current).toBe(successor.id)
     expect(ctx.atoms.setStatus).not.toHaveBeenCalledWith('error')
-    expect(ctx.services.scheduleToast).not.toHaveBeenCalled()
+    expect(ctx.services.notify).not.toHaveBeenCalled()
   })
 
   it('opens nothing for a load replaced while it warms and leaves the successor its epochs', async () => {

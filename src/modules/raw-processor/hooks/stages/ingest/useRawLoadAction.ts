@@ -1,13 +1,40 @@
 import { useCallback, useMemo } from 'react'
+import { toast } from 'sonner'
 
-import type { RawLoadContext } from '../../../services/ingest/orchestrate-raw-load'
+import type {
+  RawLoadContext,
+  RawLoadNotification,
+} from '../../../services/ingest/orchestrate-raw-load'
 import { orchestrateRawLoad } from '../../../services/ingest/orchestrate-raw-load'
 
 export type UseRawLoadActionInput = RawLoadContext['atoms'] &
-  RawLoadContext['services'] &
+  Omit<RawLoadContext['services'], 'notify'> &
   RawLoadContext['refs'] & {
+    /** Runs a toast after the current commit, and only while mounted. */
+    scheduleToast: (show: () => void) => void
     orchestrateLoad?: typeof orchestrateRawLoad
   }
+
+function showRawLoadNotification(notification: RawLoadNotification) {
+  switch (notification.kind) {
+    case 'preview-unavailable':
+      toast.error('Preview unavailable', {
+        description:
+          'Full-resolution export needs a decoded RAW preview exposure before it can run.',
+      })
+      break
+    case 'loaded':
+      toast.success(`Loaded ${notification.fileName}`, {
+        description: `${notification.width}×${notification.height} • ${notification.make || 'Unknown'} ${notification.model || ''}`,
+      })
+      break
+    case 'load-failed':
+      toast.error('Failed to load RAW file', {
+        description: notification.message,
+      })
+      break
+  }
+}
 
 export function useRawLoadAction({
   setStatus,
@@ -42,6 +69,15 @@ export function useRawLoadAction({
   previewCopyCanvasRef,
   orchestrateLoad = orchestrateRawLoad,
 }: UseRawLoadActionInput) {
+  // The load decides what to report while it owns the session; the toast
+  // itself waits for the scheduled post-commit task.
+  const notify = useCallback(
+    (notification: RawLoadNotification) => {
+      scheduleToast(() => showRawLoadNotification(notification))
+    },
+    [scheduleToast],
+  )
+
   const rawLoadCtx = useMemo<RawLoadContext>(
     () => ({
       atoms: {
@@ -58,7 +94,7 @@ export function useRawLoadAction({
         setStats,
       },
       services: {
-        scheduleToast,
+        notify,
         replaceFile,
         abortRuntimeWork,
         abortExportWork,
@@ -101,8 +137,8 @@ export function useRawLoadAction({
       registerCurrentPreviewPipelineForEvacuation,
       replaceFile,
       revokeCurrentEmbeddedPreviewUrl,
+      notify,
       runtimeWorkSessionIdRef,
-      scheduleToast,
       setColorIntent,
       setDecodedImageRef,
       setDecodedImageVersion,
