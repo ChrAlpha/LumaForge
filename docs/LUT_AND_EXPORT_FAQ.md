@@ -22,6 +22,12 @@ saturated, or simply wrong.
 
 ## Which Contract Should I Pick?
 
+A LUT from an online catalog, such as the default LumaForge Profiles catalog,
+declares its contract in the catalog entry, which LumaForge reads when you pick
+that LUT. If the entry's contract cannot be read, LumaForge reports an issue for
+that entry and the LUT does not come with a trusted contract; treat it like one
+of your own `.cube` files. The question below is about those files.
+
 Use the LUT's name, download page, or folder name first. LUT packs often include
 clues such as `Rec709`, `sRGB`, `LogC`, `SLog3`, `FLog`, `CLog`, `VLog`, or
 `REDLog3G10`.
@@ -74,10 +80,25 @@ Export may be disabled when:
 - the RAW file cannot expose the processed-window facts needed for safe export;
 - the browser does not have enough capability or memory for the file;
 - the selected LUT contract is incomplete or unsupported;
-- the export worker cannot prove that it can reproduce the previewed graph.
+- the export worker cannot prove that it can reproduce the previewed graph;
+- a Transform is still preparing on the preview, leaves too little usable
+  image, or cannot be reproduced at full resolution.
 
 This is a guardrail. LumaForge should not silently save a lower-quality preview
 or change the color path just to make a download button appear.
+
+An HQ preview JPEG, where it is offered, is labeled as an HQ preview, is made
+from the preview at no more than 12 megapixels, and never includes a Transform.
+It is not a replacement for the full-resolution export.
+
+## Can An Interrupted Export Be Resumed?
+
+No. If an export of a file was interrupted, for example because the tab closed
+or the device ran out of memory, loading the same file again in the same
+browser can show a note in the export panel, and the next export you start
+uses a safer setting. That export starts from the beginning. LumaForge does not
+resume a partial file, does not ask you to reselect the source, and never
+exports on its own.
 
 ## Does LumaForge Upload My Photo?
 
@@ -85,10 +106,20 @@ No. The selected RAW file is processed in the browser. The normal workflow does
 not require an account, cloud upload, native helper, license activation, or local
 daemon.
 
+A full-resolution JPEG may be written to the browser's private storage for this
+site while you deliver it. LumaForge removes it when you export again, reset,
+replace the file, or leave the lab. A file left behind by a tab that closed is
+normally removed by a later export in another visit, and never while that tab
+is still open.
+
 ## Which Browser Should I Use?
 
 Use a modern desktop browser with WebGPU for the best baseline. Large RAW files
 can stress browser memory, especially on mobile devices.
+
+Without WebGPU the preview runs on a slower CPU path with no split view.
+Full-resolution export does not use WebGPU, so it can still run when the file
+and the browser's memory allow it.
 
 Mobile browsers are useful for experimentation and lighter files, but they are
 not the strongest target for large full-resolution RAW export.
@@ -107,6 +138,7 @@ Try this order:
 
 1. Use a modern desktop browser.
 2. Try a smaller RAW from the same camera.
-3. Try a built-in finish instead of a custom LUT.
+3. Try a catalog LUT, or no LUT, instead of a custom LUT.
 4. If a custom LUT is required, confirm the contract from the LUT pack.
-5. Keep the unsupported file as a compatibility case rather than forcing export.
+5. Reset Transform if export reports that it cannot reproduce it.
+6. Keep the unsupported file as a compatibility case rather than forcing export.

@@ -3,21 +3,38 @@
 This document is intended to be self-contained. Source links and code paths are
 provenance only; the runtime formulas and project-specific resource rules are
 written out here so a reader does not need to chase every implementation file to
-understand how LumaForge preserves compatibility without leaving available
-performance unused.
+understand how LumaForge sizes preview and export work to the device it runs
+on, and which owner releases each large resource it holds.
 
-Snapshot checked on 2026-06-01 against the resource policy current at
-verification time. The source and test paths below were refreshed on
-2026-10-05, after the policy and preview-plan modules moved into
-`@lumaforge/render-engine`, and again on 2026-10-06, after browser plan
-selection moved into `src/lib/export/export-plan.ts` and export interruption
-history moved to source-scoped markers, and on 2026-10-08, after RAW decode
-work moved behind one runtime host per workflow and the processed-window
-export lifecycle moved into `@lumaforge/render-engine`, and on 2026-10-09,
-after the `/raw` mount took ownership of the session it publishes, source
-teardown was delegated to the owners of each resource, each preview GPU
-pipeline got one lifecycle owner, and decoded preview frames got an identity
-their producer mints.
+Every number below is a policy input or threshold that the code applies, not a
+measurement of speed or memory use. The tests and browser specs in the
+Verification Map check behavior and pixels, not throughput. A performance
+claim, here or in the user guides, names its measurement: the device, the
+browser, the file, and the benchmark that produced it, such as
+`scripts/benchmarks/jpeg-runtime.ts` (JPEG encoding through the export row
+writer) or `packages/luma-raw-runtime/benchmarks/bench-runtime.ts` (RAW decode
+stages).
+
+The policy snapshot was checked on 2026-06-01 against the resource policy
+current at verification time. Source and test paths were last refreshed on
+2026-10-11. The refreshes followed these moves:
+
+- 2026-10-05: the policy and preview-plan modules moved into
+  `@lumaforge/render-engine`.
+- 2026-10-06: browser plan selection moved into
+  `src/lib/export/export-plan.ts`, and export interruption history moved to
+  source-scoped markers.
+- 2026-10-08: RAW decode work moved behind one runtime host per workflow, and
+  the processed-window export lifecycle moved into `@lumaforge/render-engine`.
+- 2026-10-09: the `/raw` mount took ownership of the session it publishes,
+  source teardown was delegated to the owners of each resource, each preview
+  GPU pipeline got one lifecycle owner, and decoded preview frames got an
+  identity their producer mints.
+- 2026-10-11: the CPU preview's cached originals go with the worker source they
+  were rendered from, a replaced decoded-frame resource no longer releases the
+  frame that replaced it, and Transform events are fenced by the lifetime of
+  the client that holds the frame. The on-device storage, online LUT source,
+  and Transform preview lifetimes were added.
 
 Primary implementation sources:
 
@@ -42,6 +59,13 @@ Primary implementation sources:
 - `src/lib/preview/preview-frame.ts`
 - `src/modules/raw-processor/hooks/stages/preview/useDecodedPreviewResource.ts`
 - `src/modules/raw-processor/hooks/stages/preview/useRestorePreviewAfterExport.ts`
+- `src/modules/raw-processor/hooks/useCpuPreview.ts`
+- `src/modules/raw-processor/hooks/useTransformPreview.ts`
+- `src/modules/raw-processor/hooks/useOnlineLutSources.ts`
+- `src/modules/raw-processor/services/look/online-lut-sources.ts`
+- `src/lib/lut/profile-resolution.ts`
+- `src/lib/export/output-sink.ts`
+- `src/lib/export/opfs-output-lifetime.ts`
 
 External API facts checked during the 2026-06-01 refresh:
 
@@ -252,15 +276,18 @@ allowConcurrentDecodeAndLutParse = budget.allowConcurrentDecodeAndLutParse
 Preview capability is then decided from graphics facts:
 
 ```text
-if a WebGPU adapter and device are available within the probe timeout:
-  previewMode = "gpu"
-else if ?forcePreview=cpu on a dev or localhost build:
+if ?forcePreview=cpu on a dev build or on localhost:
   previewMode = "cpu", reason = "forced"
+else if a WebGPU adapter and device are acquired within 5 seconds:
+  previewMode = "gpu"
 else:
   previewMode = "cpu", reason = "webgpu-unavailable"
 after a WebGPU initialization failure or device loss:
   previewMode = "cpu", reason = "gpu-preview-failed"
 ```
+
+Full-resolution export does not use WebGPU, so the preview backend does not
+decide whether an export can run.
 
 Cross-origin isolation is not a preview capability gate by itself. The RAW
 runtime adapter uses the policy-selected memory profile: desktop profile requires
@@ -327,6 +354,9 @@ else:
 
 The `64MB` margin exists because OPFS quota is advisory and the export path has
 metadata, encoder, and handoff overhead beyond image megapixels.
+
+The app wires no streaming sink: it always reports `streamingSinkAvailable`
+as false, so a browser export uses `opfs-file` or `blob-handoff`.
 
 Persist cadence:
 
@@ -424,11 +454,11 @@ device family.
 | Constraint                                       | Detection                                              | Policy consequence                                                                            | Reason                                                                       |
 | ------------------------------------------------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Source fits quick preview                        | `sourceWidth * sourceHeight <= 2_500_000`              | Skip bounded HQ decode                                                                        | Avoid spending memory on a redundant stage.                                  |
-| Normal RAW size                                  | Below `50MP` and below `100MP` thresholds              | Use derived row/concurrency budget directly                                                   | Keep common 24-45MP photos responsive.                                       |
+| Normal RAW size                                  | Below `50MP` and below `100MP` thresholds              | Use derived row/concurrency budget directly                                                   | Neither large-export rule applies to common 24-45MP photos.                  |
 | Large local export                               | `megapixels > 50`                                      | If only `blob-handoff` is available, show non-durable desktop copy or fail-closed mobile copy | Large final JPEG handoff can spike memory.                                   |
 | 100MP-class export                               | `megapixels >= 100`                                    | Halve starting row slice before other caps                                                    | Bound RAW/JPEG strip working set.                                            |
-| OPFS available and enough quota                  | `opfsAvailableMB > megapixels * 4 + 64`                | Prefer `opfs-file`                                                                            | Durable output; finalizing still reads the whole JPEG back.                  |
-| OPFS absent, unknown, private, or low quota      | Runtime snapshot has no fitting OPFS sink              | Use streaming if wired; otherwise `blob-handoff`                                              | Storage capability is volatile and cannot be cached from boot.               |
+| OPFS available and enough quota                  | `opfsAvailableMB > megapixels * 4 + 64`                | Prefer `opfs-file`                                                                            | File-backed output; finalizing still reads the whole JPEG back once.         |
+| OPFS absent, unknown, private, or low quota      | Runtime snapshot has no fitting OPFS sink              | `blob-handoff` (the app wires no streaming sink)                                              | Storage capability is volatile and cannot be cached from boot.               |
 | Worker cannot open the reserved OPFS output      | OPFS writable fails to open before any decode          | Re-derive without OPFS on a fresh worker, never above the current rows/concurrency            | The reported plan names the real sink; refusals still apply.                 |
 | Mobile form factor + large export + blob handoff | `mobileFormFactor`, `megapixels > 50`, no durable sink | `cannot-safely-complete`                                                                      | Fail closed instead of risking process termination or false full-res output. |
 | Previous resource failure                        | Resource-failure marker for the same file tuple        | Halve rows, force concurrency `1`, fresh worker retry                                         | Do not retry near the same heap boundary.                                    |
@@ -460,11 +490,21 @@ lut-fetch
 ```
 
 `preview` covers the decoded preview frame, whichever stage decoded it, and
-the original reference snapshots; `gpu` covers the published processed and
-original WebGPU preview pipelines; `export-result` covers the previous
-result's output. Nothing registers under `bounded-hq` or `lut-fetch` today:
-the bounded-HQ frame is the decoded preview frame once it replaces the quick
-one, and online LUT fetches end through their own per-request abort signals.
+the original reference snapshot with any snapshot render still pending; `gpu`
+covers the published processed and original WebGPU preview pipelines;
+`export-result` covers the previous result's output, an OPFS file included.
+Nothing registers under `bounded-hq` or `lut-fetch` today: the bounded-HQ
+frame is the decoded preview frame once it replaces the quick one, and export
+does not cancel online LUT requests (see Online LUT Sources).
+
+Two things outside the registry stay alive while an export runs, both bounded:
+
+- The Transform preview, once Transform has been opened or applied for the
+  source: its worker keeps the frame it captured, at most 1600 pixels on the
+  long edge, and the page keeps the last rendered overlay frame. They go when
+  the source changes or the lab unmounts (see Transform Preview).
+- An online LUT request already in flight: a catalog document is capped at
+  1,000,000 bytes and a `.cube` download at 64 MiB.
 
 The evacuation sequence is:
 
@@ -665,6 +705,141 @@ replacement, and route departure dispose the delivered results with the
 source, and an edit that retires the result makes a delivery still reading
 its file refuse with a reason.
 
+### CPU Preview Caches
+
+`src/modules/raw-processor/hooks/useCpuPreview.ts` owns the CPU preview
+worker client and the original (neutral) frames it caches so a look toggle
+does not render again. Cached frames belong to the worker source they were
+rendered from: loading another source, a source with no accepted frame (the
+export releases it), and unmount drop the cache and every render still
+outstanding, and a late frame from a replaced source is neither shown nor
+cached. With no accepted frame the client is disposed, which ends its worker.
+
+### Transform Preview
+
+`src/modules/raw-processor/hooks/useTransformPreview.ts` owns one Transform
+client, and `src/modules/raw-processor/hooks/useRawTransformFeature.ts`
+decides when it captures a frame: only while Transform is open, applied, or
+asked for. The client's worker holds the captured frame, bounded to 1600 pixels
+on the long edge, and answers geometry on it. A new RAW session clears the
+frame and every answer, a worker crash drops the rendered frame, and unmounting
+the lab terminates the worker. Each client has an epoch that is never reused,
+and the session counts a capture, request, answer, or failure only from the
+client holding the current capture, so an earlier client cannot move the
+accepted geometry.
+
+The export does not read this frame. It plans and resamples the committed
+geometry at full resolution in the engine, and it waits until the session has
+accepted the preview's answer to the newest request; releasing the preview
+does not change that acceptance.
+
+### Online LUT Sources
+
+`src/modules/raw-processor/hooks/useOnlineLutSources.ts` requests no catalog
+when it mounts. A listed source is requested when a surface that shows its
+catalog asks for it; a `?luts=` link, adding a source, and Refresh request at
+once, and a failed source waits for Retry or Refresh. Each catalog request and
+each `.cube` download has its own abort controller: requesting a source again
+aborts its earlier request, Cancel aborts a download, and unmount aborts them
+all. A catalog document is limited to 1,000,000 bytes and a `.cube` download to
+64 MiB. Only one catalog LUT downloads at a time.
+
+Downloaded `.cube` bytes persist in the Cache Storage cache
+`lumaforge-online-profiles` (`src/lib/profiles/fetch.ts`, opened by
+`src/modules/raw-processor/services/look/orchestrate-lut-load.ts`). A catalog
+asset that declares a SHA-256 is cached under `sha256:<hash>` and checked
+against that hash whenever it is read back; a cached entry that does not match
+is downloaded again and overwritten, so it does not fail the load. A direct
+`.cube` URL is cached under `url:<normalized URL>` and returned as stored. A
+catalog asset without a hash is not cached. The next download of the same key
+reuses the stored bytes. Nothing removes these entries and the cache has no
+total size bound; each entry is at most the 64 MiB download limit. Where the browser has no Cache Storage,
+the cache lives in page memory instead. An error from Cache Storage while
+reading or writing an entry fails that LUT load.
+
+## On-Device Storage
+
+The RAW file is never stored, and the only image the app stores is an
+`opfs-file` export result. The app keeps these entries in the browser's
+storage for its origin and reads each one back. It tolerates an entry's
+absence, so storage that is unavailable or full only loses the entry, with one
+exception: a Cache Storage error while reading or writing the LUT cache fails
+that LUT load (see Online LUT Sources).
+
+| Entry                                               | Kind          | Owner                                                                                                      | Read for                                                                                                              | Removed or replaced                                                                                               |
+| --------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `.lumaforge-exports/active/tab-<id>/<export>`       | OPFS          | `src/lib/export/output-sink.ts`                                                                            | Delivering an `opfs-file` result                                                                                      | By the result's owner (next export, reset, replacement, route departure); after the tab closes, see below         |
+| `.lumaforge-exports/active/untracked-<id>/<export>` | OPFS          | `src/lib/export/output-sink.ts`                                                                            | Delivering a result from a page that could not hold its tab lock                                                      | By the result's owner only; never collected                                                                       |
+| `.lumaforge-exports/active/<export>`                | OPFS          | written by versions released before tab directories; collected by `src/lib/export/opfs-output-lifetime.ts` | Collection only                                                                                                       | Once older than seven days, see below                                                                             |
+| `lumaforge.export-interruption.v1.<attempt>`        | localStorage  | `src/modules/raw-processor/services/export/export-interruption.ts`                                         | The interruption hint for the same file tuple                                                                         | On completion, cancel, or failure; once its hint was used; pruned by the next export past `7` days or `8` markers |
+| `lumaforge.raw.onlineLutSources.v1`                 | localStorage  | `src/modules/raw-processor/services/look/online-lut-sources.ts`                                            | Saved LUT sources and the default sources the user removed (`removedDefaultUrls`)                                     | Rewritten when the user changes the list                                                                          |
+| `lumaforge.lutProfileSelections.v1`                 | localStorage  | `src/lib/lut/profile-resolution.ts`                                                                        | The contract a user chose for a `.cube`, keyed by its content fingerprint                                             | Never; a newer choice for the same fingerprint replaces it                                                        |
+| `lumaforge.exportDebugEvents.v1`                    | localStorage  | `src/lib/export/execution-profile.ts`                                                                      | Export diagnostics                                                                                                    | Only the newest `256` events are kept                                                                             |
+| `lumaforge-online-profiles`                         | Cache Storage | `src/lib/profiles/fetch.ts`                                                                                | Downloaded `.cube` bytes, keyed by `sha256:<hash>` or `url:<normalized URL>`, reused by the next download of that key | Never; no total size bound, each entry up to 64 MiB; a failed read or write fails that LUT load                   |
+| `lumaforge.locale`                                  | localStorage  | `src/lib/i18n.tsx`                                                                                         | The chosen language                                                                                                   | Never                                                                                                             |
+| `lumaforge.raw.mobile.lensHintSeen.v1`              | localStorage  | `src/modules/raw-processor/components/mobile/MobileCompareLens.tsx`                                        | Whether the mobile compare lens hint was seen                                                                         | Never                                                                                                             |
+| `raw-tool-cards-open`                               | localStorage  | `src/modules/raw-processor/state/tool-card.atoms.ts`                                                       | Which desktop tool cards are open                                                                                     | Rewritten when the user opens or closes a card; never removed                                                     |
+
+The development build also reads the localStorage flag `lumaforge:react-scan`
+(`src/main.tsx`), which the app never writes. The app likewise reads the
+localStorage key `color-mode` (`src/hooks/common/useDark.ts`) for the document
+theme and the toast theme, and never writes it.
+`src/components/common/ErrorElement.tsx` keeps the sessionStorage flag `reload`
+so that the current tab reloads at most once after a failed module load.
+
+### OPFS Output Lifetime
+
+A page writes its OPFS outputs under one `tab-<id>` directory and holds the
+exclusive Web Lock `lumaforge-export-tab:<id>` from its first OPFS export
+until it closes, taken before any output exists. Once per page, at idle time
+after its first export starts, `src/lib/export/opfs-output-lifetime.ts` collects what other pages
+left:
+
+```text
+tab-<id> whose lock this page is granted (its page is gone):
+  removed
+tab-<id> whose lock is held (its page is alive), or this page's own:
+  kept, however old
+untracked-<id>:
+  kept; only its owner removes it
+a directory directly under active/ (written before tab directories):
+  removed once its finalized marker, or else its newest file, is more than
+  seven days old
+  left alone when it holds a recovery journal (manifest.json), more than 16
+  entries, a subdirectory, or anything unreadable or undated
+```
+
+One pass lists at most `4096` names and examines at most `64` entries,
+starting at a random point when it cannot cover them all. Without Web Locks
+nothing is collected. Collection never delays or fails the export that
+scheduled it; its outcome is a debug event.
+
+### Readers Kept And Contracts Refused
+
+The entries above include data that released builds write on users'
+devices: the pre-tab OPFS output directories, the localStorage registries and
+preferences (saved LUT sources, contract choices, the language, the lens hint,
+and the open desktop tool cards in `raw-tool-cards-open`), and the
+`lumaforge-online-profiles` Cache Storage LUT cache. Their readers stay.
+Removing one would orphan a user's saved LUT sources, contract choices, cached
+LUT downloads, or exported files, so such a reader is not a compatibility
+shim. For example, a default LUT source the user removed while the default
+lived at its earlier catalog URL stays removed after the default URL moved.
+
+That is a different question from contracts the project refuses on purpose:
+
+- The app writes no export journal or checkpoint and reads none. An earlier
+  version's recovery journal is neither resumed nor turned into an
+  interruption hint; the collector leaves its directory in place.
+- The app writes render manifests and reads none back. `lmfg` and `lmfg-mcp`
+  read them through `parseRenderManifest`: the seal over the whole file, then
+  the full current structure. A manifest without a field the current writer
+  records is refused (`lmfg` reports `manifest.invalid`), never filled in with
+  defaults.
+- Engine and runtime exports that were retired are removed outright, with a
+  `### Breaking` entry in that package's CHANGELOG, not kept behind forwarding
+  shims.
+
 ## What Must Not Change Accidentally
 
 - Do not make HQ preview export the primary product promise. It is a fallback or
@@ -691,6 +866,13 @@ its file refuse with a reason.
   not keep it across a reset, a replacement, or route departure.
 - Do not treat a released preview as a stale export result, or a restored
   preview as proof that a result is current.
+- Do not collect a tab's OPFS directory without holding its lock, and do not
+  collect an untracked directory or one holding a recovery journal.
+- Do not remove a reader of data that a released build writes to users'
+  devices (OPFS export directories, localStorage registries, the
+  `lumaforge-online-profiles` Cache Storage cache).
+- Do not let a cached CPU preview frame outlive the worker source it was
+  rendered from.
 
 ## Verification Map
 
@@ -742,11 +924,24 @@ Session lifetime, teardown, GPU ownership, and frame identity tests:
 - `src/modules/raw-processor/services/export/export-result-actions.test.ts`
 - `tests/browser/raw-p3-lifetime.spec.ts`
 
-The browser spec covers route departure and return, equal-sized source
-replacement, Transform across the bounded HQ with export and Restore, and
-delivery after the preview is released, on the Chromium project (software
-WebGPU) and the WebKit project, which has no WebGPU and runs the CPU preview.
-It checks behavior and pixels, not hardware performance.
+Preview side workers, online LUT sources, and on-device storage tests:
+
+- `src/modules/raw-processor/hooks/useTransformPreview.test.tsx`
+- `src/modules/raw-processor/hooks/useRawTransformFeature.test.tsx`
+- `src/lib/transform/transform-client.test.ts`
+- `src/modules/raw-processor/hooks/useOnlineLutSources.test.tsx`
+- `src/modules/raw-processor/services/look/online-lut-sources.test.ts`
+- `src/lib/lut/profile-resolution.test.ts`
+- `src/lib/export/output-sink.test.ts`
+- `src/lib/export/opfs-output-lifetime.test.ts`
+- `tests/browser/raw-online-lut-source.spec.ts`
+- `tests/browser/raw-opfs-output-lifecycle.spec.ts`
+
+`tests/browser/raw-p3-lifetime.spec.ts` covers route departure and return,
+equal-sized source replacement, Transform across the bounded HQ with export
+and Restore, and delivery after the preview is released, on the Chromium
+project (software WebGPU) and the WebKit project, which has no WebGPU and runs
+the CPU preview. It checks behavior and pixels, not hardware performance.
 
 When changing this policy, run the smallest focused unit set first, then
 production-like browser validation for any user-visible RAW preview, export

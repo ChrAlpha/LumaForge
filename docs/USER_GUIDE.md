@@ -43,16 +43,24 @@ built through the full-resolution worker path when that path is ready.
 
 ## 4. Choose A Look
 
-For the quickest path, choose one of the built-in finishes. They are designed to
-work without making you declare a LUT contract.
+A look is a `.cube` LUT, applied at the strength you pick. You can also keep no
+LUT and finish the photo with tone and color alone.
 
-For a custom `.cube` LUT, add the LUT and choose the input and output contract if
-LumaForge asks for it. The contract tells the app what kind of image the LUT
-expects and what kind of image it produces.
+LUTs from an online catalog, such as the default LumaForge Profiles catalog,
+arrive with the contract their catalog entry declares, so you do not have to
+choose one. If an entry's contract cannot be read, LumaForge reports an issue
+for it when you pick it, and you choose that LUT's contract as for your own
+file.
+
+For your own `.cube` LUT, add the file and choose the input and output contract
+if LumaForge asks for it. The contract tells the app what kind of image the LUT
+expects and what kind of image it produces. This browser remembers the
+contract you chose for that LUT file the next time you add it.
 
 Online LUT catalogs are requested only when a view that lists them opens, such
 as a catalog source in the desktop LUT tool, or the Look strip or LUT sources
 sheet on a phone. A shared `?luts=` link loads the catalog it names right away.
+A catalog that fails to load waits until you choose Retry or Refresh.
 
 Good defaults:
 
@@ -80,10 +88,22 @@ Without WebGPU, the slower CPU preview has no split. Switch between the
 original and the processed photo instead: with the Processed and Original
 buttons under the photo on desktop, or by tapping the compare lens on a phone.
 
-Light finishing controls are there to help you land the JPEG. They are not meant
-to turn the app into a full desktop RAW editor.
+## 6. Adjust And Transform
 
-## 6. Export The JPEG
+Adjust holds tone, color (temperature, tint, saturation, and vibrance), and
+HSL controls. Transform straightens and reframes the photo: Upright modes,
+vertical and horizontal perspective, rotate, aspect, scale, and offset, with
+the crop constrained to the image by default. Export reproduces both at full
+resolution.
+
+While a Transform is applied, the original view and the split are not
+available, because the preview shows only the transformed photo. Reset
+Transform to compare again.
+
+These controls are there to help you land the JPEG. They are not meant to turn
+the app into a full desktop RAW editor.
+
+## 7. Export The JPEG
 
 Export becomes available only when LumaForge can rebuild the selected source and
 color graph through the full-resolution export path. If export is disabled, read
@@ -98,11 +118,30 @@ On a phone, Export is the button at the top right. It opens the export panel
 with the photo still in view and explains what is missing when export is not
 ready.
 
-The JPEG is written at a fixed quality of 0.92. If an earlier export of the same
-file was interrupted, for example because the tab closed or the device ran out
-of memory, the export panel tells you, and the next export you start uses a
-safer setting. That export starts from the beginning: LumaForge does not resume a
-partial file and never exports on its own.
+After a Transform change, export waits until the preview shows the new
+framing. A Transform that leaves too little usable image, or that cannot be
+reproduced at full resolution, keeps export disabled until you reduce or reset
+it.
+
+The JPEG is written at a fixed quality of 0.92. When it is ready you can
+download it, copy or share it where the browser supports that, and download its
+render manifest once the manifest is sealed. A browser that cannot copy a JPEG
+gets a labeled preview-size copy instead. If you change the photo afterwards,
+that JPEG no longer matches it: export again before delivering it.
+
+To free memory for the export, LumaForge releases the preview while it runs.
+Afterwards the JPEG stays available, and Restore preview brings the photo back
+so you can keep editing.
+
+An HQ preview JPEG, where the export panel offers one, is a smaller file made
+from the preview (at most 12 megapixels). It is labeled as an HQ preview, it
+never includes a Transform, and it is not the full-resolution export.
+
+If an earlier export of the same file was interrupted, for example because the
+tab closed or the device ran out of memory, the export panel can tell you when
+you load that file again in the same browser, and the next export you start
+uses a safer setting. That export starts from the beginning: LumaForge does
+not resume a partial file and never exports on its own.
 
 ## Quick Troubleshooting
 

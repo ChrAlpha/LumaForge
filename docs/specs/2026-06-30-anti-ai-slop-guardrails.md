@@ -1,7 +1,7 @@
 # Anti-AI-slop guardrails
 
 **Date:** 2026-06-30
-**Last verified:** 2026-07-23
+**Last verified:** 2026-10-11
 **Status:** standing reference (not a point-in-time spec)
 **Applies to:** UI edits under `src/modules/landing/` and `src/pages/(main)/index.sync.tsx` (landing), `src/modules/raw-processor/` (`/raw`), and the shared components or primitives those surfaces consume.
 
@@ -33,7 +33,7 @@ These are what a model reaches for by default. If you are about to write one, st
 - **Em dashes and `--` in UI copy.** Use a period, colon, or parentheses.
 - **Modal as first thought.** Exhaust inline and progressive disclosure first. `RawResetConfirmationDialog` (a real destructive `alertdialog`) is the bar for when a dialog is justified.
 - **Theme-following Tailwind colors in `/raw`** (`green`, `yellow`, `red`, `text`, `fill`, `bg`). `/raw` is a theme-fixed darkroom; use `--color-lf-*` tokens or the shared `Chip`.
-- **Forking centralized chrome.** Import `segmented-chrome.ts` and `slider-tracks.ts`; never re-hardcode their values "to match."
+- **Forking centralized chrome.** Import `src/modules/raw-processor/components/shared/segmented-chrome.ts` and `src/modules/raw-processor/components/shared/slider-tracks.ts`; never re-hardcode their values "to match."
 - **Leftover component-gallery content** on product surfaces (dead, barrel-exported components carrying off-palette tokens). Delete it.
 
 ## The positive contract: do this
@@ -44,18 +44,20 @@ Derived from the openclaw reference study, operationalized for our React + Tailw
 - **Prove contrast.** Target WCAG AA. For a new foreground/background pair, note the ratio in a comment. Never encode state with color alone; pair it with an icon and text (`PRODUCT.md` accessibility).
 - **Full state coverage.** Every control ships default, hover, `:focus-visible`, active, disabled. Every async surface ships loading, empty, and error. Error states show the real message and a next action (the export path already does this; match it).
 - **Empty states teach.** Distinguish "nothing yet" (drop a RAW file to begin) from "filter excludes everything." `UnsupportedState` and `MobileEmptyState` are the references.
-- **Motion conveys state.** 150 to 250 ms, ease-out, no bounce. Respect `prefers-reduced-motion` globally. No decorative or page-load choreography in the tool. Use the presets in `src/lib/spring`.
+- **Motion conveys state.** 150 to 250 ms, ease-out, no bounce. Respect `prefers-reduced-motion` globally. No decorative or page-load choreography in the tool. Use the presets in `src/lib/spring.ts`.
 - **Copy is specific and externalized.** Route every string through i18n. Name recovery actions. No template filler.
-- **Reuse primitives.** Reach for `src/components/ui` (`Chip`, `Dialog`, `Slider`, `Segment`) and the shared chrome modules before hand-rolling. Build a new behavioral primitive rarely and deliberately, never a one-off pill or tab that a primitive already covers.
+- **Reuse primitives.** Reach for `src/components/ui` (`Chip`, `Dialog`, `Slider`) and the shared chrome modules before hand-rolling. There is no shared segmented primitive: a segmented control applies the `segmented-chrome.ts` paint instead of inventing its own. Build a new behavioral primitive rarely and deliberately, never a one-off pill or tab that a primitive already covers.
 - **Photographic-first on brand.** When explaining RAW, LUTs, compare, or export, use a real image surface. Alt text must match what actually renders.
 
 ## The functional-slop rule (most important)
 
 Preview and export are not interchangeable, and this is the contract worth protecting above all others.
 
-- Export must **fail closed with plain language** when the runtime cannot prove the declared pipeline is reproducible. The gates in `src/modules/raw-processor/services/export/orchestrate-full-res-export.ts` (readiness, color-graph supported, policy can-complete) are the contract. Do not add a path that silently exports a degraded or preview-only result.
+- Export must **fail closed with plain language** when the runtime cannot prove the declared pipeline is reproducible. The gates in `src/modules/raw-processor/services/export/orchestrate-full-res-export.ts` (readiness, a Transform the engine can plan and the preview has shown, color-graph supported, policy can-complete) and the engine's own gates in `runFullResolutionJpegExport` (`packages/render-engine/src/export`) are the contract. Do not add a path that silently exports a degraded or preview-only result.
 - Keep the copy distinction intact: full-resolution versus HQ preview; "JPEG ready" versus "HQ preview JPEG ready."
 - A control that looks wired must be wired. No fake screens, no dead components mounted on product surfaces.
+- Do not promise what the runtime does not do: no copy that implies an interrupted export resumes, that a look the export refuses will export, or that the app keeps or restores work it does not store.
+- A speed, memory, or device-support claim in UI copy or docs names its measurement: the device, browser, file, and the command or benchmark it came from. Policy thresholds and budgets are not measurements.
 
 ## Pre-flight (before editing UI)
 
