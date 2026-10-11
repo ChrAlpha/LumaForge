@@ -1,5 +1,8 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
+
+import type { Translate } from '~/lib/i18n'
+import { useI18n } from '~/lib/i18n'
 
 import type {
   RawLoadContext,
@@ -15,24 +18,39 @@ export type UseRawLoadActionInput = RawLoadContext['atoms'] &
     orchestrateLoad?: typeof orchestrateRawLoad
   }
 
-function showRawLoadNotification(notification: RawLoadNotification) {
+/**
+ * Builds a load outcome's toast in the locale current when the load reports
+ * it. A runtime's own message and the camera's make and model are shown as
+ * given.
+ */
+function rawLoadToast(
+  notification: RawLoadNotification,
+  t: Translate,
+): () => void {
   switch (notification.kind) {
-    case 'preview-unavailable':
-      toast.error('Preview unavailable', {
-        description:
-          'Full-resolution export needs a decoded RAW preview exposure before it can run.',
+    case 'preview-unavailable': {
+      const title = t('raw.preview.unavailable')
+      const description = t('raw.ingest.toast.previewUnavailableDescription')
+      return () => toast.error(title, { description })
+    }
+    case 'loaded': {
+      const title = t('raw.ingest.toast.loaded', {
+        fileName: notification.fileName,
       })
-      break
-    case 'loaded':
-      toast.success(`Loaded ${notification.fileName}`, {
-        description: `${notification.width}×${notification.height} • ${notification.make || 'Unknown'} ${notification.model || ''}`,
+      const description = t('raw.ingest.toast.loadedDescription', {
+        width: notification.width,
+        height: notification.height,
+        make: notification.make || t('raw.ingest.toast.unknownMake'),
+        model: notification.model || '',
       })
-      break
-    case 'load-failed':
-      toast.error('Failed to load RAW file', {
-        description: notification.message,
-      })
-      break
+      return () => toast.success(title, { description })
+    }
+    case 'load-failed': {
+      const title = t('raw.ingest.toast.loadFailed')
+      const description =
+        notification.message ?? t('raw.ingest.toast.loadFallback')
+      return () => toast.error(title, { description })
+    }
   }
 }
 
@@ -69,11 +87,18 @@ export function useRawLoadAction({
   previewCopyCanvasRef,
   orchestrateLoad = orchestrateRawLoad,
 }: UseRawLoadActionInput) {
+  const { t: renderedTranslate } = useI18n()
+  // Copy is built when a notification is, usually after an await, so it is
+  // read in the locale current then rather than the one this render saw.
+  const translateRef = useRef(renderedTranslate)
+  useLayoutEffect(() => {
+    translateRef.current = renderedTranslate
+  }, [renderedTranslate])
   // The load decides what to report while it owns the session; the toast
   // itself waits for the scheduled post-commit task.
   const notify = useCallback(
     (notification: RawLoadNotification) => {
-      scheduleToast(() => showRawLoadNotification(notification))
+      scheduleToast(rawLoadToast(notification, translateRef.current))
     },
     [scheduleToast],
   )

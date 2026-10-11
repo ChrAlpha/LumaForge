@@ -4,9 +4,11 @@ import type {
   LUTData,
 } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 
+import type { Translate } from '~/lib/i18n'
+import { useI18n } from '~/lib/i18n'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 
@@ -61,29 +63,45 @@ type UseRawLookStageInput = {
   canApplyLoadedLut: () => boolean
 }
 
-function showLutNotification(notification: LutNotification) {
+/**
+ * Builds a LUT outcome's toast in the locale current when the load or choice
+ * reports it. A parser's or runtime's own message, a LUT's title and a
+ * profile id are shown as given.
+ */
+function lutToast(notification: LutNotification, t: Translate): () => void {
   switch (notification.kind) {
-    case 'loaded':
-      toast.success(`Loaded LUT: ${notification.title}`, {
-        description: `${notification.gridSize}³ grid`,
+    case 'loaded': {
+      const title = t('raw.lut.toast.loaded', { title: notification.title })
+      const description = t('raw.lut.toast.grid', {
+        size: notification.gridSize,
       })
-      break
-    case 'unsupported-format':
-      toast.error('Unsupported LUT format', {
-        description: 'Only .cube files are supported',
-      })
-      break
-    case 'load-failed':
-      toast.error('Failed to load LUT', { description: notification.message })
-      break
-    case 'no-lut':
-      toast.error('No LUT loaded')
-      break
-    case 'incomplete-contract':
-      toast.error('Incomplete LUT contract', {
-        description: notification.profileId,
-      })
-      break
+      return () => toast.success(title, { description })
+    }
+    case 'unsupported-format': {
+      const title = t('raw.lut.toast.unsupportedFormat')
+      const description = t('raw.lut.toast.unsupportedFormatDescription')
+      return () => toast.error(title, { description })
+    }
+    case 'load-failed': {
+      const title = t('raw.lut.toast.loadFailed')
+      const description =
+        notification.message ?? t('raw.lut.toast.loadFallback')
+      return () => toast.error(title, { description })
+    }
+    case 'unsupported-contract': {
+      const title = t('raw.lut.toast.loadFailed')
+      const description = t('raw.lut.toast.unsupportedContract')
+      return () => toast.error(title, { description })
+    }
+    case 'no-lut': {
+      const title = t('raw.lut.toast.noLut')
+      return () => toast.error(title)
+    }
+    case 'incomplete-contract': {
+      const title = t('raw.lut.toast.incompleteContract')
+      const description = notification.profileId
+      return () => toast.error(title, { description })
+    }
   }
 }
 
@@ -116,11 +134,18 @@ export function useRawLookStage({
     [baseParams, session],
   )
 
+  const { t: renderedTranslate } = useI18n()
+  // Copy is built when a notification is, usually after an await, so it is
+  // read in the locale current then rather than the one this render saw.
+  const translateRef = useRef(renderedTranslate)
+  useLayoutEffect(() => {
+    translateRef.current = renderedTranslate
+  }, [renderedTranslate])
   // A load decides what to report while it owns the session; the toast
   // itself waits for the scheduled post-commit task.
   const notify = useCallback(
     (notification: LutNotification) => {
-      scheduleToast(() => showLutNotification(notification))
+      scheduleToast(lutToast(notification, translateRef.current))
     },
     [scheduleToast],
   )
@@ -270,7 +295,8 @@ export function useRawLookStage({
     if (shouldInvalidateExportGraph) {
       invalidateExportGraph()
     }
-    scheduleToast(() => toast.info('LUT cleared'))
+    const message = translateRef.current('raw.lut.toast.cleared')
+    scheduleToast(() => toast.info(message))
   }, [
     invalidateExportGraph,
     lut,

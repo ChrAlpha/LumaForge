@@ -7,8 +7,9 @@ import {
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
 import { act, renderHook } from '@testing-library/react'
+import i18n from 'i18next'
 import { atom, createStore, useAtomValue } from 'jotai'
-import type { SetStateAction } from 'react'
+import type { ComponentType, PropsWithChildren, SetStateAction } from 'react'
 import {
   afterEach,
   beforeEach,
@@ -19,6 +20,7 @@ import {
   vi,
 } from 'vitest'
 
+import { I18nProvider } from '~/lib/i18n'
 import { jotaiStore } from '~/lib/jotai'
 import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import { parseCubeLUT } from '~/lib/lut/cube-parser'
@@ -1511,10 +1513,12 @@ describe('useRawLookStage notifications', () => {
     session,
     lut = null,
     canApplyLoadedLut = () => true,
+    wrapper,
   }: {
     session: ImageSession | null
     lut?: ParsedLUT | null
     canApplyLoadedLut?: () => boolean
+    wrapper?: ComponentType<PropsWithChildren>
   }) {
     setCurrentSession(session)
     const scheduled: Array<() => void> = []
@@ -1522,19 +1526,21 @@ describe('useRawLookStage notifications', () => {
       scheduled.push(show)
     })
     const setLut = vi.fn()
-    const { result } = renderHook(() =>
-      useRawLookStage({
-        baseParams,
-        session,
-        lut,
-        setLut,
-        setColorIntent: vi.fn(),
-        lutDataRef: { current: lut },
-        setLutDataRef: vi.fn(),
-        scheduleToast,
-        invalidateExportGraph: vi.fn(),
-        canApplyLoadedLut,
-      }),
+    const { result } = renderHook(
+      () =>
+        useRawLookStage({
+          baseParams,
+          session,
+          lut,
+          setLut,
+          setColorIntent: vi.fn(),
+          lutDataRef: { current: lut },
+          setLutDataRef: vi.fn(),
+          scheduleToast,
+          invalidateExportGraph: vi.fn(),
+          canApplyLoadedLut,
+        }),
+      { wrapper },
     )
     return {
       actions: result.current,
@@ -1782,6 +1788,232 @@ describe('useRawLookStage notifications', () => {
       error: [],
       success: [],
       info: [['LUT cleared']],
+    })
+  })
+
+  it('describes a load failure that carried no message of its own', async () => {
+    vi.mocked(fetchVerifiedCubeAsset).mockRejectedValue('socket closed')
+    const harness = renderNotificationHarness({
+      session: createSessionWithoutLook(),
+    })
+
+    await act(async () => {
+      await expect(harness.actions.loadOnlineLUT(onlineEntry)).resolves.toBe(
+        'failed',
+      )
+    })
+
+    expect(getCurrentSession()?.renderState.lastErrorCode).toBe(
+      'LUT_PARSE_FAILED',
+    )
+    harness.runScheduled()
+    expect(shownToasts()).toEqual({
+      error: [['Failed to load LUT', { description: 'Failed to parse LUT' }]],
+      success: [],
+      info: [],
+    })
+  })
+
+  describe('in the current locale', () => {
+    afterEach(async () => {
+      localStorage.clear()
+      await act(() => i18n.changeLanguage('en'))
+    })
+
+    function renderInChinese(input: {
+      session: ImageSession | null
+      lut?: ParsedLUT | null
+    }) {
+      localStorage.setItem('lumaforge.locale', 'zh-CN')
+      return renderNotificationHarness({ ...input, wrapper: I18nProvider })
+    }
+
+    it('names a loaded LUT and its grid', async () => {
+      const harness = renderInChinese({ session: createSessionWithoutLook() })
+
+      await act(async () => {
+        await harness.actions.loadLUT(
+          createCubeFile('Client Look', 'look.cube'),
+        )
+      })
+
+      harness.runScheduled()
+      expect(shownToasts()).toEqual({
+        error: [],
+        success: [['已载入 LUT：Client Look', { description: '17³ 网格' }]],
+        info: [],
+      })
+    })
+
+    it('reports an unsupported file format', async () => {
+      const harness = renderInChinese({ session: createSessionWithoutLook() })
+
+      await act(async () => {
+        await harness.actions.loadLUT(
+          Object.assign(new File(['not a lut'], 'look.txt'), {
+            text: () => Promise.resolve('not a lut'),
+          }),
+        )
+      })
+
+      harness.runScheduled()
+      expect(shownToasts()).toEqual({
+        error: [['不支持的 LUT 格式', { description: '仅支持 .cube 文件' }]],
+        success: [],
+        info: [],
+      })
+    })
+
+    it('keeps the parser detail as given', async () => {
+      const harness = renderInChinese({ session: createSessionWithoutLook() })
+      const content = 'TITLE "Broken"\nLUT_3D_SIZE 2\n0 0 0\n'
+
+      await act(async () => {
+        await harness.actions.loadLUT(
+          Object.assign(new File([content], 'broken.cube'), {
+            text: () => Promise.resolve(content),
+          }),
+        )
+      })
+
+      harness.runScheduled()
+      expect(shownToasts()).toEqual({
+        error: [
+          [
+            '无法载入 LUT',
+            { description: 'Invalid .cube file: expected 8 entries, got 1' },
+          ],
+        ],
+        success: [],
+        info: [],
+      })
+    })
+
+    it('describes a catalog contract that does not apply and one with no message', async () => {
+      vi.mocked(fetchVerifiedCubeAsset)
+        .mockResolvedValueOnce({
+          bytes: new TextEncoder().encode(createCubeContent('Online Look')),
+          sha256: 'b'.repeat(64),
+        })
+        .mockRejectedValueOnce('socket closed')
+      const harness = renderInChinese({ session: createSessionWithoutLook() })
+
+      await act(async () => {
+        await harness.actions.loadOnlineLUT({
+          ...onlineEntry,
+          trustedContract: {
+            role: 'combined-look-output',
+            inputProfile: 'panasonic-vgamut-vlog',
+          },
+        })
+        await harness.actions.loadOnlineLUT(onlineEntry)
+      })
+
+      harness.runScheduled()
+      expect(shownToasts()).toEqual({
+        error: [
+          ['无法载入 LUT', { description: '不支持此 LUT 色彩契约。' }],
+          ['无法载入 LUT', { description: '无法解析 LUT' }],
+        ],
+        success: [],
+        info: [],
+      })
+    })
+
+    it('reports contract choices it cannot apply by the profile they named', () => {
+      const harness = renderInChinese({ session: createSession() })
+      harness.actions.selectLUTProfile('display-srgb')
+      const withLut = renderInChinese({
+        session: createSession(),
+        lut: createLut(),
+      })
+      withLut.actions.selectLUTProfile('not-a-profile')
+
+      harness.runScheduled()
+      withLut.runScheduled()
+      expect(shownToasts()).toEqual({
+        error: [
+          ['未载入 LUT'],
+          ['LUT 契约不完整', { description: 'not-a-profile' }],
+        ],
+        success: [],
+        info: [],
+      })
+    })
+
+    it('reports a cleared LUT', () => {
+      const harness = renderInChinese({
+        session: createSession(),
+        lut: createLut(),
+      })
+
+      harness.actions.clearLUT()
+
+      harness.runScheduled()
+      expect(shownToasts()).toEqual({
+        error: [],
+        success: [],
+        info: [['已清除 LUT']],
+      })
+    })
+
+    it('uses the locale current when a download lands, not when it began', async () => {
+      const download = Promise.withResolvers<{
+        bytes: Uint8Array
+        sha256: string
+      }>()
+      vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
+      await act(() => i18n.changeLanguage('en'))
+      const harness = renderNotificationHarness({
+        session: createSessionWithoutLook(),
+        wrapper: I18nProvider,
+      })
+      let load!: Promise<LutLoadOutcome>
+      act(() => {
+        load = harness.actions.loadOnlineLUT(onlineEntry)
+      })
+
+      // The language menu switches while the LUT downloads.
+      localStorage.setItem('lumaforge.locale', 'zh-CN')
+      await act(() => i18n.changeLanguage('zh-CN'))
+      await act(async () => {
+        download.resolve({
+          bytes: new TextEncoder().encode(createCubeContent('Online Look')),
+          sha256: 'b'.repeat(64),
+        })
+        await expect(load).resolves.toBe('loaded')
+      })
+
+      harness.runScheduled()
+      expect(shownToasts()).toEqual({
+        error: [],
+        success: [['已载入 LUT：Online Look', { description: '17³ 网格' }]],
+        info: [],
+      })
+    })
+
+    it('reports nothing for an aborted request that also failed', async () => {
+      const download = Promise.withResolvers<{
+        bytes: Uint8Array
+        sha256: string
+      }>()
+      vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
+      const harness = renderInChinese({ session: createSessionWithoutLook() })
+      const controller = new AbortController()
+      let load!: Promise<LutLoadOutcome>
+      act(() => {
+        load = harness.actions.loadOnlineLUT(onlineEntry, {
+          signal: controller.signal,
+        })
+      })
+      controller.abort()
+
+      await act(async () => {
+        download.reject(new Error('network down'))
+        await expect(load).resolves.toBe('aborted')
+      })
+
+      expect(harness.scheduleToast).not.toHaveBeenCalled()
     })
   })
 })

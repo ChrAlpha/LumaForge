@@ -406,9 +406,7 @@ describe('lUT contract provenance', () => {
     expect(outcome).toBe('failed')
     expect(ctx.atoms.setLut).not.toHaveBeenCalled()
     expect(selectionWrites(setItem)).toHaveLength(0)
-    expect(notifications).toEqual([
-      { kind: 'load-failed', message: 'Unsupported LUT color contract.' },
-    ])
+    expect(notifications).toEqual([{ kind: 'unsupported-contract' }])
   })
 
   it('writes a contract choice to the photo in the store, or else to the detached intent', async () => {

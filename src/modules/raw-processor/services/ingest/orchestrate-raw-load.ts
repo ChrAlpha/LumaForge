@@ -69,7 +69,8 @@ export type RawLoadNotification =
       make: string | undefined
       model: string | undefined
     }
-  | { kind: 'load-failed'; message: string }
+  /** The runtime's own message, shown as given; null when it gave none. */
+  | { kind: 'load-failed'; message: string | null }
 
 export interface RawLoadContext {
   atoms: {
@@ -532,8 +533,8 @@ export async function orchestrateRawLoad(
       // session creation). That window is synchronous, so no newer load can
       // have superseded this one — surface the failure instead of leaving
       // the workflow stuck in warming/loading with no error.
-      const message = err instanceof Error ? err.message : 'Failed to load file'
-      ctx.atoms.setError(message)
+      const message = err instanceof Error ? err.message : null
+      ctx.atoms.setError(message ?? 'Failed to load file')
       ctx.atoms.setStatus('error')
       ctx.services.notify({ kind: 'load-failed', message })
       return
@@ -549,9 +550,9 @@ export async function orchestrateRawLoad(
     ctx.refs.runtimeWorkSessionIdRef.current = null
     ctx.refs.pendingLoadSessionIdRef.current = null
 
-    const message = err instanceof Error ? err.message : 'Failed to load file'
+    const message = err instanceof Error ? err.message : null
     const errorCode = toUserFacingErrorCode(getStableErrorCode(err) ?? message)
-    ctx.atoms.setError(message)
+    ctx.atoms.setError(message ?? 'Failed to load file')
     ctx.atoms.setSession((prev) =>
       prev && prev.id === loadSessionId
         ? {

@@ -62,8 +62,13 @@ export type LutNotification =
   | { kind: 'loaded'; title: string; gridSize: number }
   /** The file is not a .cube. */
   | { kind: 'unsupported-format' }
-  /** Read, download, parse, contract or validation failure, with its detail. */
-  | { kind: 'load-failed'; message: string }
+  /**
+   * Read, download, parse or validation failure. The message is the
+   * runtime's or parser's own detail, shown as given; null when it gave none.
+   */
+  | { kind: 'load-failed'; message: string | null }
+  /** A catalog contract that does not apply to the LUT it came with. */
+  | { kind: 'unsupported-contract' }
   /** A contract was chosen while no LUT is loaded. */
   | { kind: 'no-lut' }
   /** The chosen profile does not resolve to a complete LUT contract. */
@@ -88,6 +93,17 @@ export class LUTLoadError extends Error {
     super(message)
     this.name = 'LUTLoadError'
     this.code = code
+  }
+}
+
+/**
+ * Thrown when a catalog's trusted contract does not apply to the LUT it came
+ * with. It carries no code, so the session records it as a parse failure.
+ */
+class UnsupportedLUTContractError extends Error {
+  constructor() {
+    super('Unsupported LUT color contract.')
+    this.name = 'UnsupportedLUTContractError'
   }
 }
 
@@ -127,7 +143,7 @@ export interface LutLoadContext {
 }
 
 function reportLUTLoadFailure(error: unknown, ctx: LutLoadContext): void {
-  const message = error instanceof Error ? error.message : 'Failed to parse LUT'
+  const message = error instanceof Error ? error.message : null
   const stableCode = getStableErrorCode(error)
   const errorCode =
     toUserFacingErrorCode(stableCode ?? message) === 'RAW_UNKNOWN'
@@ -145,7 +161,11 @@ function reportLUTLoadFailure(error: unknown, ctx: LutLoadContext): void {
         }
       : prev,
   )
-  ctx.services.notify({ kind: 'load-failed', message })
+  ctx.services.notify(
+    error instanceof UnsupportedLUTContractError
+      ? { kind: 'unsupported-contract' }
+      : { kind: 'load-failed', message },
+  )
 }
 
 function applyLoadedLUT(
@@ -193,7 +213,7 @@ async function loadLUTContent(
   const contracted = options.trustedContract
     ? applyTrustedLUTContract(parsed, options.trustedContract)
     : parsed
-  if (!contracted) throw new Error('Unsupported LUT color contract.')
+  if (!contracted) throw new UnsupportedLUTContractError()
 
   const validation = validateLUT(contracted)
   if (!validation.valid) {

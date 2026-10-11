@@ -1,7 +1,8 @@
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
-import { useCallback } from 'react'
+import { useCallback, useLayoutEffect, useRef } from 'react'
 
+import { useI18n } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 
@@ -89,6 +90,14 @@ export function useRestorePreviewAfterExport({
   scheduleToast,
   toast,
 }: UseRestorePreviewAfterExportInput) {
+  const { t: renderedTranslate } = useI18n()
+  // Copy is built when the failure is reported, after the decode, so it is
+  // read in the locale current then rather than the one this render saw.
+  const translateRef = useRef(renderedTranslate)
+  useLayoutEffect(() => {
+    translateRef.current = renderedTranslate
+  }, [renderedTranslate])
+
   const restorePreviewAfterExport = useCallback(async () => {
     if (!isMountedRef.current) {
       return
@@ -180,12 +189,15 @@ export function useRestorePreviewAfterExport({
         return
       }
 
+      // A runtime's own message is shown as given.
+      const t = translateRef.current
+      const title = t('raw.preview.restoreFailed')
       const description =
-        err instanceof Error ? err.message : 'Preview restore failed.'
+        err instanceof Error ? err.message : t('raw.preview.restoreFallback')
       setStatus('ready')
       setProgress(0)
       scheduleToast(() =>
-        toast.error('Preview restore failed', {
+        toast.error(title, {
           description,
         }),
       )

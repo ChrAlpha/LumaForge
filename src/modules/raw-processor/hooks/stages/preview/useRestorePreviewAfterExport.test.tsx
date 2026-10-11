@@ -1,8 +1,11 @@
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
-import { renderHook } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
+import i18n from 'i18next'
+import type { ComponentType, PropsWithChildren } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { I18nProvider } from '~/lib/i18n'
 import type { DecodedImage, ProgressCallback } from '~/lib/raw/decoder'
 import { createRawRuntimeSessionLeases } from '~/lib/raw/raw-runtime-host'
 import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
@@ -159,6 +162,9 @@ function applySessionUpdate(sessionRef: {
   }
 }
 
+/** A rejection that is not an Error, so it carries no message to show. */
+const NON_ERROR_REJECTION = { reason: 'socket closed' }
+
 function createRuntimeSession(
   decodeQuickRaw: RawRuntimeSession['decodeQuickRaw'],
 ): RawRuntimeSession {
@@ -200,26 +206,29 @@ function renderRestore(input: {
   setProgress?: ReturnType<typeof vi.fn>
   setDecodedImageRef?: ReturnType<typeof vi.fn>
   toastError?: ReturnType<typeof vi.fn>
+  wrapper?: ComponentType<PropsWithChildren>
 }) {
   const scheduleToast = vi.fn((notify: () => void) => notify())
-  const rendered = renderHook(() =>
-    useRestorePreviewAfterExport({
-      getSession: () => input.sessionRef.current,
-      decodedImageRef: input.decodedImageRef ?? { current: null },
-      rawRenderExposureRef: input.rawRenderExposureRef ?? { current: null },
-      isMountedRef: input.isMountedRef ?? { current: true },
-      runtimeWorkSessionIdRef: input.runtimeWorkSessionIdRef ?? {
-        current: null,
-      },
-      beginRuntimeSession: input.hostSessions.beginSession,
-      setStatus: input.setStatus ?? vi.fn(),
-      setProgress: input.setProgress ?? vi.fn(),
-      setError: vi.fn(),
-      setSession: applySessionUpdate(input.sessionRef),
-      setDecodedImageRef: input.setDecodedImageRef ?? vi.fn(),
-      scheduleToast,
-      toast: { error: input.toastError ?? vi.fn() },
-    }),
+  const rendered = renderHook(
+    () =>
+      useRestorePreviewAfterExport({
+        getSession: () => input.sessionRef.current,
+        decodedImageRef: input.decodedImageRef ?? { current: null },
+        rawRenderExposureRef: input.rawRenderExposureRef ?? { current: null },
+        isMountedRef: input.isMountedRef ?? { current: true },
+        runtimeWorkSessionIdRef: input.runtimeWorkSessionIdRef ?? {
+          current: null,
+        },
+        beginRuntimeSession: input.hostSessions.beginSession,
+        setStatus: input.setStatus ?? vi.fn(),
+        setProgress: input.setProgress ?? vi.fn(),
+        setError: vi.fn(),
+        setSession: applySessionUpdate(input.sessionRef),
+        setDecodedImageRef: input.setDecodedImageRef ?? vi.fn(),
+        scheduleToast,
+        toast: { error: input.toastError ?? vi.fn() },
+      }),
+    { wrapper: input.wrapper },
   )
   return { ...rendered, scheduleToast }
 }
@@ -539,6 +548,121 @@ describe('useRestorePreviewAfterExport', () => {
 
     expect(toastError).toHaveBeenCalledWith('Preview restore failed', {
       description: 'open failed',
+    })
+  })
+
+  it('describes a failed restore that carried no message of its own', async () => {
+    const hostSessions = createHostSessions(() =>
+      Promise.reject(NON_ERROR_REJECTION),
+    )
+    const toastError = vi.fn()
+    const { result } = renderRestore({
+      sessionRef: { current: createSession() },
+      hostSessions,
+      toastError,
+    })
+
+    await result.current.restorePreviewAfterExport()
+
+    expect(toastError.mock.calls).toEqual([
+      ['Preview restore failed', { description: 'Preview restore failed.' }],
+    ])
+  })
+
+  describe('in the current locale', () => {
+    afterEach(async () => {
+      localStorage.clear()
+      await act(() => i18n.changeLanguage('en'))
+    })
+
+    it('reports a failed restore with the runtime detail as given', async () => {
+      localStorage.setItem('lumaforge.locale', 'zh-CN')
+      const toastError = vi.fn()
+      const { result } = renderRestore({
+        sessionRef: { current: createSession() },
+        hostSessions: createHostSessions(async () => {
+          throw new Error('open failed')
+        }),
+        toastError,
+        wrapper: I18nProvider,
+      })
+
+      await result.current.restorePreviewAfterExport()
+
+      expect(toastError.mock.calls).toEqual([
+        ['预览恢复失败', { description: 'open failed' }],
+      ])
+    })
+
+    it('describes a failed restore that carried no message of its own', async () => {
+      localStorage.setItem('lumaforge.locale', 'zh-CN')
+      const toastError = vi.fn()
+      const { result } = renderRestore({
+        sessionRef: { current: createSession() },
+        hostSessions: createHostSessions(() =>
+          Promise.reject(NON_ERROR_REJECTION),
+        ),
+        toastError,
+        wrapper: I18nProvider,
+      })
+
+      await result.current.restorePreviewAfterExport()
+
+      expect(toastError.mock.calls).toEqual([
+        ['预览恢复失败', { description: '预览恢复失败。' }],
+      ])
+    })
+
+    it('uses the locale current when the decode fails, not when it began', async () => {
+      const decode = deferred<DecodedImage>()
+      const runtimeSession = createRuntimeSession(() => decode.promise)
+      const hostSessions = createHostSessions(async () => runtimeSession)
+      const toastError = vi.fn()
+      await act(() => i18n.changeLanguage('en'))
+      const { result } = renderRestore({
+        sessionRef: { current: createSession() },
+        hostSessions,
+        toastError,
+        wrapper: I18nProvider,
+      })
+
+      const restore = result.current.restorePreviewAfterExport()
+      await vi.waitFor(() =>
+        expect(runtimeSession.decodeQuickRaw).toHaveBeenCalled(),
+      )
+      // The language menu switches while the RAW decodes.
+      localStorage.setItem('lumaforge.locale', 'zh-CN')
+      await act(() => i18n.changeLanguage('zh-CN'))
+      decode.reject(new Error('decode failed'))
+      await restore
+
+      expect(toastError.mock.calls).toEqual([
+        ['预览恢复失败', { description: 'decode failed' }],
+      ])
+    })
+
+    it('stays silent when a reset cancels the lease mid-restore', async () => {
+      localStorage.setItem('lumaforge.locale', 'zh-CN')
+      const decode = deferred<DecodedImage>()
+      const runtimeSession = createRuntimeSession(() => decode.promise)
+      const hostSessions = createHostSessions(async () => runtimeSession)
+      const toastError = vi.fn()
+      const { result } = renderRestore({
+        sessionRef: { current: createSession() },
+        hostSessions,
+        toastError,
+        wrapper: I18nProvider,
+      })
+
+      const restore = result.current.restorePreviewAfterExport()
+      await vi.waitFor(() =>
+        expect(runtimeSession.decodeQuickRaw).toHaveBeenCalled(),
+      )
+      hostSessions.cancelSession()
+      decode.reject(new Error('decode failed'))
+      await restore
+
+      expect(toastError).not.toHaveBeenCalled()
     })
   })
 

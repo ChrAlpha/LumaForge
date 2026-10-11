@@ -876,6 +876,18 @@ describe('orchestrateRawLoad host session lease', () => {
     ])
   })
 
+  it('reports a load failure without a message when the rejection carries none', async () => {
+    openSessionMock.mockRejectedValue({ reason: 'socket closed' })
+    const { ctx } = buildLeaseContext()
+
+    await orchestrateRawLoad(new File(['raw'], 'broken.ARW'), ctx)
+
+    expect(ctx.atoms.setError).toHaveBeenLastCalledWith('Failed to load file')
+    expect(vi.mocked(ctx.services.notify).mock.calls).toEqual([
+      [{ kind: 'load-failed', message: null }],
+    ])
+  })
+
   it('reports nothing for an unsupported file', async () => {
     const { ctx } = buildLeaseContext()
 
