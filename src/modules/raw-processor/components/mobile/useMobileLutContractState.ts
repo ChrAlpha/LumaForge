@@ -1,8 +1,8 @@
 import type { LUTContractResolution } from '@lumaforge/luma-color-runtime'
 
+import { useLutContractBrowserState } from '../../hooks/useLutContractBrowserState'
 import { useLutContractSummary } from '../../hooks/useLutContractSummary'
 import type { LUTContractSelectionState } from '../../model/session'
-import { useLutContractBrowserState } from '../tools/lut/useLutContractBrowserState'
 
 type UseMobileLutContractStateInput = {
   contractQuery: string

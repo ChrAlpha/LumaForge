@@ -8,6 +8,7 @@ import { useScrollEdgeFade } from '~/hooks/common'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
+import { useLutContractBrowserState } from '../../../hooks/useLutContractBrowserState'
 import { composeLUTContractProfile } from '../../../services/look/lut-contract'
 import type { LUTOutputOption } from '../../../services/look/lut-output-options'
 import { toOutputCarrierProfile } from '../../../services/look/lut-output-options'
@@ -23,7 +24,6 @@ import { getViewportBoundedBrowserLayout } from './lut-browser-layout'
 import { LutBrowserDialog } from './LutBrowserDialog'
 import { LUTOutputOptionButton } from './LUTOutputOptionButton'
 import { LUTProfileButton } from './LUTProfileButton'
-import { useLutContractBrowserState } from './useLutContractBrowserState'
 
 type LUTContractBrowserStep = 'input' | 'output'
 
