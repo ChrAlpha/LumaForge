@@ -90,8 +90,9 @@ jobs:
     # Never path-selected, so docs-only changes are checked too. The path
     # check, the app alias check and both script tests need only Node; the
     # test-project discovery test, the import-boundary test, lint, the
-    # tooling typecheck and the structure check run the pinned Vitest,
-    # ESLint, TypeScript, knip and madge from the lockfile.
+    # tooling typecheck, the structure check and the retired API check run
+    # the pinned Vitest, ESLint, TypeScript, knip and madge from the
+    # lockfile.
     runs-on: ubuntu-latest
 
     steps:
@@ -107,9 +108,6 @@ jobs:
 
       - name: Check agent-map paths
         run: node scripts/quality/check-agent-paths.mjs
-
-      - name: Test the structure check
-        run: node --test scripts/quality/check-structure.test.mjs
 
       # Reads every package manifest, so a change to any of them is checked
       # even when no path-selected job runs.
@@ -138,6 +136,11 @@ jobs:
       - name: Test the test-project discovery
         run: node --test scripts/quality/test-project-discovery.test.mjs
 
+      # Parses the package Vite configurations with the pinned TypeScript, so
+      # it runs after the install.
+      - name: Test the structure check
+        run: node --test scripts/quality/check-structure.test.mjs
+
       # Lint covers the app, every package, script and plugin, and the browser
       # specs, and its import-boundary rule judges an import by the files on
       # both sides, so it runs on every change rather than behind a path gate.
@@ -152,10 +155,18 @@ jobs:
       - name: Typecheck tooling
         run: pnpm typecheck:tooling
 
-      # Fails on a dead-code finding or dependency cycle that
-      # scripts/quality/baseline.json does not list, and on any tool error.
+      # Fails on any dead-code finding or dependency cycle, on any entry in
+      # scripts/quality/baseline.json, and on any tool error.
       - name: Check dead code and dependency cycles
         run: pnpm check:structure
+
+      # Reads the published entries with the pinned TypeScript, so it runs
+      # after the install.
+      - name: Test the retired API check
+        run: node --test scripts/quality/check-retired-api.test.mjs
+
+      - name: Check retired APIs
+        run: pnpm check:retired-api
 
   app:
     needs: changes

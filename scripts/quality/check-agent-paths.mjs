@@ -2,7 +2,9 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
+
+import { isMainModule } from './is-main-module.mjs'
 
 /**
  * Checks that the repository paths a Markdown agent map names in backticks
@@ -651,7 +653,7 @@ function parseArguments(argv, cwd) {
   return { documents: documents.length > 0 ? documents : undefined, verbose }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+if (isMainModule(import.meta.url)) {
   try {
     const { documents, verbose } = parseArguments(
       process.argv.slice(2),

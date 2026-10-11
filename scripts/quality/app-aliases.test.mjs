@@ -787,6 +787,8 @@ describe('app aliases', () => {
 
   it('refuses lists with entries a reader could see differently', () => {
     const extra = Object.assign(['./node'], { more: './policy' })
+    // 4294967295 is not an array index, so forEach and map skip it.
+    const pastIndices = Object.assign(['./node'], { 4294967295: './policy' })
     const custom = Object.setPrototypeOf(['./node'], [])
     const hiddenIndex = Object.defineProperty([], 0, {
       value: './node',
@@ -795,6 +797,7 @@ describe('app aliases', () => {
     const cases = [
       [withHole(['./node', '', './policy'], 1), 'has a hole at 1'],
       [extra, 'has non-index key more'],
+      [pastIndices, 'has non-index key 4294967295'],
       [custom, 'has a custom prototype'],
       [hiddenIndex, 'has non-enumerable key 0'],
       [['./node', 1], 'entry 1 is not a string'],

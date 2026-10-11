@@ -1,7 +1,9 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
+
+import { isMainModule } from './is-main-module.mjs'
 
 /**
  * @typedef {{ find: string, path: string }} AppAlias
@@ -192,8 +194,9 @@ const INDEX_KEY = /^(?:0|[1-9]\d*)$/
 
 /**
  * Why a value is not a plain list, or `undefined`: a dense array with
- * `Array.prototype` and only index entries, so every reader sees the same
- * entries in the same order.
+ * `Array.prototype` and only index entries below its length, so every reader
+ * sees the same entries in the same order. A canonical decimal key at or
+ * past the length (4294967295 and up) is an ordinary property, not an index.
  */
 function listShape(value) {
   if (!Array.isArray(value)) return 'not an array'
@@ -203,7 +206,9 @@ function listShape(value) {
   const hidden = hiddenPropertyShape(value, 'length')
   if (hidden !== undefined) return hidden
   for (const key of Object.keys(value)) {
-    if (!INDEX_KEY.test(key)) return `has non-index key ${key}`
+    if (!INDEX_KEY.test(key) || Number(key) >= value.length) {
+      return `has non-index key ${key}`
+    }
   }
   for (let index = 0; index < value.length; index += 1) {
     if (!Object.hasOwn(value, index)) return `has a hole at ${index}`
@@ -696,7 +701,7 @@ export function checkAppAliases(options = {}) {
   return problems
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+if (isMainModule(import.meta.url)) {
   const problems = checkAppAliases()
   for (const problem of problems) console.error(problem)
   if (problems.length === 0) console.log('app aliases: consistent')

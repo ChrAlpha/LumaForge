@@ -63,7 +63,7 @@
       "project": ["src/**/*.ts"]
     },
     "packages/luma-native-artifacts": {
-      "entry": ["load-for-node.mjs"]
+      "entry": ["load-for-node.mjs", "load-for-node.d.mts"]
     }
   }
 }

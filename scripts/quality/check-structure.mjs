@@ -11,25 +11,26 @@ import {
   sep,
 } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
+
+import { isMainModule } from './is-main-module.mjs'
 
 /**
- * Blocks new dead code and new dependency cycles. It runs knip (unused files,
+ * Blocks dead code and dependency cycles. It runs knip (unused files,
  * exports, types, dependencies, unresolved imports, duplicate exports) and
- * madge (import cycles) and compares what they find with a reviewed baseline,
- * `scripts/quality/baseline.json`.
+ * madge (import cycles), and passes only when neither finds anything. There
+ * are no exceptions: every finding fails the check, and so does any entry in
+ * `scripts/quality/baseline.json`, which only records the tool versions the
+ * check was reviewed with. An older branch whose baseline still lists
+ * entries drops the resolved ones with `--prune`; `--prune` never adds one.
  *
- * Findings are compared as identities, never as counts:
+ * Findings are reported as identities:
  * - a knip finding is `<issue type> <file>: <symbol>`, or `files <file>` for
  *   an unused file;
  * - a cycle is its module paths joined by ` > `, rotated to start at the
  *   smallest path so the same cycle always reads the same way.
  * Paths are relative to the repository root; line numbers and columns are
- * dropped, so moving code never changes an identity. A finding the baseline
- * does not list fails the check even when the total went down. A baseline
- * entry that is no longer found passes and is reported; `--prune` removes
- * such entries and never adds one. A new exception is a hand edit to the
- * baseline, reviewed like any other change.
+ * dropped, so moving code never changes an identity.
  *
  * knip runs in its default mode with `scripts/quality/knip.json`: tests and
  * tool configs count as consumers, so a test helper is not dead code, while a
@@ -51,8 +52,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
  *
  * `--prune` also writes the baseline without its resolved entries.
  * `--print [--root <checkout>]` prints the findings of a checkout in baseline
- * form without comparing them; that is how a baseline is recorded, and how a
- * tool upgrade is reviewed.
+ * form without checking them; that is how a tool upgrade is reviewed before
+ * its version is recorded.
  */
 
 const REPO_ROOT = resolve(fileURLToPath(new URL('../../', import.meta.url)))
@@ -238,20 +239,6 @@ export function normalizeCycles(cycles, options) {
   return sortedUnique(cycles.map((cycle) => canonicalCycle(cycle, options)))
 }
 
-/**
- * Set differences between the baseline and the current findings.
- * @param {string[]} baseline
- * @param {string[]} current
- */
-export function diffFindings(baseline, current) {
-  const known = new Set(baseline)
-  const found = new Set(current)
-  return {
-    added: current.filter((identity) => !known.has(identity)),
-    resolved: baseline.filter((identity) => !found.has(identity)),
-  }
-}
-
 function checkIdentityList(list, name, isWellFormed) {
   if (!Array.isArray(list) || list.some((item) => typeof item !== 'string')) {
     throw new ConfigError(`baseline ${name} must be an array of strings`)
@@ -288,7 +275,8 @@ function isCycleIdentity(identity) {
 }
 
 /**
- * Validates the baseline file contents.
+ * Validates the shape of the baseline file. Listed entries are well-formed
+ * here so `--prune` can read an older baseline; `runCheck` fails them.
  * @param {unknown} value Parsed `baseline.json`.
  * @returns {{ source: string, tools: { knip: string, madge: string },
  *   knip: string[], cycles: string[] }}
@@ -360,15 +348,26 @@ export function listRepoFiles(root) {
  * @property {Record<string, unknown>} manifest Parsed `package.json`.
  * @property {{ rootDir?: string, outDir?: string }} compilerOptions From the
  *   package `tsconfig.json`, when it has one.
+ * @property {{ outDir: string, outputs: Record<string, string> }
+ *   | { problem: string }} [bundle]
+ *   For a package Vite builds (one with a `vite.config.*`), its output
+ *   directory and each library output mapped to its source, all relative to
+ *   the package, or why its configuration cannot be read.
  */
+
+/** Loads the TypeScript compiler the Vite configurations are parsed with. */
+export async function loadTypeScript() {
+  return (await import('typescript')).default
+}
 
 /**
  * The workspace packages under `packages/`.
  * @param {string[]} files Repository files.
  * @param {(path: string) => string} readFile
+ * @param {typeof import('typescript')} ts From `loadTypeScript`.
  * @returns {WorkspacePackage[]}
  */
-export function readWorkspacePackages(files, readFile) {
+export function readWorkspacePackages(files, readFile, ts) {
   const fileSet = new Set(files)
   return files
     .filter((file) => /^packages\/[^/]+\/package\.json$/.test(file))
@@ -376,53 +375,435 @@ export function readWorkspacePackages(files, readFile) {
     .map((file) => {
       const dir = file.slice(0, -'/package.json'.length)
       const tsconfig = `${dir}/tsconfig.json`
+      const viteConfigs = files.filter(
+        (path) =>
+          path.startsWith(`${dir}/`) &&
+          /^vite\.config\.[^/]+$/.test(path.slice(dir.length + 1)),
+      )
+      const bundle =
+        viteConfigs.length === 0
+          ? undefined
+          : viteConfigs.length === 1 &&
+              viteConfigs[0] === `${dir}/vite.config.ts`
+            ? viteLibraryOutputs(readFile(viteConfigs[0]), ts)
+            : {
+                problem: `only a single vite.config.ts is read, not ${viteConfigs
+                  .map((path) => path.slice(dir.length + 1))
+                  .join(', ')}`,
+              }
       return {
         dir,
         manifest: JSON.parse(readFile(file)),
         compilerOptions: fileSet.has(tsconfig)
           ? (JSON.parse(readFile(tsconfig)).compilerOptions ?? {})
           : {},
+        ...(bundle ? { bundle } : {}),
       }
     })
 }
 
-function exportTargets(value) {
-  if (typeof value === 'string') return [value]
-  if (!isRecord(value)) return []
-  return ['types', 'import', 'default', 'node', 'require']
-    .map((condition) => value[condition])
-    .filter((target) => typeof target === 'string')
+/**
+ * The outputs of a Vite library build and their sources, read from the
+ * syntax tree of its `vite.config.ts`: `<outDir>/<name>.js` for each
+ * `build.lib.entry` name. Only the form the packages use is read: a single
+ * `export default defineConfig({ ... })` whose `build.outDir` is a string
+ * naming a directory inside the package, whose
+ * `build.rollupOptions.output.entryFileNames` is `'[name].js'`, and whose
+ * `build.lib.entry` is an object of
+ * `name: fileURLToPath(new URL('./src/x.ts', import.meta.url))` properties
+ * whose path is a plain relative path (see `isPlainPath`), which names the
+ * same file inside the package as a URL and as a path. Any other form maps
+ * nothing and names the property instead of guessing, so every target of the
+ * package fails the checks.
+ * @param {string} text Contents of `vite.config.ts`, at the package root.
+ * @param {typeof import('typescript')} ts
+ * @returns {{ outDir: string, outputs: Record<string, string> }
+ *   | { problem: string }}
+ */
+export function viteLibraryOutputs(text, ts) {
+  const fail = (problem) => ({ problem: `vite.config.ts ${problem}` })
+  const syntax = ts.transpileModule(text, {
+    fileName: 'vite.config.ts',
+    reportDiagnostics: true,
+  }).diagnostics
+  if (syntax.length > 0) {
+    return fail(
+      `does not parse: ${ts.flattenDiagnosticMessageText(syntax[0].messageText, ' ')}`,
+    )
+  }
+  const source = ts.createSourceFile(
+    'vite.config.ts',
+    text,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TS,
+  )
+  const isDefaultExport = (statement) =>
+    ts.isExportAssignment(statement) ||
+    (ts.canHaveModifiers(statement) &&
+      (ts.getModifiers(statement) ?? []).some(
+        (modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword,
+      )) ||
+    (ts.isExportDeclaration(statement) &&
+      statement.exportClause !== undefined &&
+      (ts.isNamespaceExport(statement.exportClause)
+        ? statement.exportClause.name.text === 'default'
+        : statement.exportClause.elements.some(
+            (element) => element.name.text === 'default',
+          )))
+  const defaults = source.statements.filter(isDefaultExport)
+  if (defaults.length !== 1) {
+    return fail(`has ${defaults.length} default exports, not one`)
+  }
+  const [exported] = defaults
+  const call =
+    ts.isExportAssignment(exported) && !exported.isExportEquals
+      ? exported.expression
+      : undefined
+  if (
+    !call ||
+    !ts.isCallExpression(call) ||
+    call.questionDotToken ||
+    !isIdentifierNamed(ts, call.expression, 'defineConfig') ||
+    call.arguments.length !== 1 ||
+    !ts.isObjectLiteralExpression(call.arguments[0])
+  ) {
+    return fail('default export is not defineConfig({ ... })')
+  }
+
+  /** The value at `path` under the configuration, or why it is unreadable. */
+  const read = (path) => {
+    let value = call.arguments[0]
+    const names = path.split('.')
+    for (const [index, name] of names.entries()) {
+      const at = names.slice(0, index + 1).join('.')
+      if (!ts.isObjectLiteralExpression(value)) {
+        return {
+          problem: `${names.slice(0, index).join('.')} is not an object literal`,
+        }
+      }
+      const found = propertyNamed(ts, value, name)
+      if (found.problem) return { problem: `${at} ${found.problem}` }
+      value = found.value
+    }
+    return { value }
+  }
+  const outDir = read('build.outDir')
+  if (outDir.problem) return fail(outDir.problem)
+  if (!ts.isStringLiteral(outDir.value)) {
+    return fail('build.outDir is not a string literal')
+  }
+  const outputDir = packageDirectory(outDir.value.text)
+  if (outputDir === undefined) {
+    return fail('build.outDir is not a directory inside the package')
+  }
+  const fileNames = read('build.rollupOptions.output.entryFileNames')
+  if (fileNames.problem) return fail(fileNames.problem)
+  if (
+    !ts.isStringLiteral(fileNames.value) ||
+    fileNames.value.text !== '[name].js'
+  ) {
+    return fail(
+      "build.rollupOptions.output.entryFileNames is not the string literal '[name].js'",
+    )
+  }
+  const entry = read('build.lib.entry')
+  if (entry.problem) return fail(entry.problem)
+  if (!ts.isObjectLiteralExpression(entry.value)) {
+    return fail('build.lib.entry is not an object literal')
+  }
+  if (entry.value.properties.length === 0) {
+    return fail('build.lib.entry names no entry')
+  }
+  const outputs = {}
+  const seen = new Set()
+  for (const member of entry.value.properties) {
+    if (ts.isSpreadAssignment(member)) {
+      return fail('build.lib.entry has a spread element')
+    }
+    const name = memberName(ts, member)
+    if (name === undefined) {
+      return fail('build.lib.entry has a computed or non-literal key')
+    }
+    const at = `build.lib.entry.${name}`
+    if (seen.has(name)) return fail(`${at} is declared twice`)
+    seen.add(name)
+    if (!ts.isPropertyAssignment(member)) {
+      return fail(`${at} is not a name: value property`)
+    }
+    // Rollup refuses a `[name]` that is absolute or relative.
+    if (
+      posix.normalize(name) !== name ||
+      posix.isAbsolute(name) ||
+      name === '.' ||
+      name === '..' ||
+      name.startsWith('../')
+    ) {
+      return fail(`${at} is not an output name inside build.outDir`)
+    }
+    const entryPath = fileUrlLiteral(ts, member.initializer)
+    if (entryPath === undefined) {
+      return fail(
+        `${at} is not fileURLToPath(new URL('<string literal>', import.meta.url))`,
+      )
+    }
+    if (!isPlainPath(entryPath)) {
+      return fail(
+        `${at} path ${JSON.stringify(entryPath)} is not a plain ./ path`,
+      )
+    }
+    outputs[posix.join(outputDir, `${name}.js`)] = entryPath.slice(2)
+  }
+  return { outDir: outputDir, outputs }
 }
 
 /**
- * The source file a published target is built from, relative to the package.
- * A declaration under `outDir` maps back through `rootDir`; a target outside
- * `outDir` is its own source.
+ * The package-relative directory a Vite `outDir` names, resolved against the
+ * package the way Vite resolves it; missing for one that is absolute, is the
+ * package itself, or lies outside it.
+ */
+function packageDirectory(outDir) {
+  if (outDir.includes('\\') || /^[a-z]:/i.test(outDir)) return undefined
+  const path = posix.normalize(outDir).replace(/\/+$/, '')
+  return path === '' ||
+    path === '.' ||
+    path === '..' ||
+    path.startsWith('../') ||
+    posix.isAbsolute(path)
+    ? undefined
+    : path
+}
+
+/**
+ * A `./`-prefixed path of plain segments, relative to the package: no
+ * percent-encoding, query, fragment, backslash, colon, whitespace, empty,
+ * `.`, or `..` segment, so a URL, Node, and TypeScript all read it as the
+ * same file, which lies inside the package. Nothing else is decoded or
+ * resolved.
+ */
+function isPlainPath(path) {
+  return (
+    typeof path === 'string' &&
+    path.startsWith('./') &&
+    path
+      .slice(2)
+      .split('/')
+      .every(
+        (segment) =>
+          /^[\w.-]+$/.test(segment) && segment !== '.' && segment !== '..',
+      )
+  )
+}
+
+function isIdentifierNamed(ts, node, name) {
+  return ts.isIdentifier(node) && node.text === name
+}
+
+/**
+ * The static key of an object literal member: an identifier or a string
+ * literal. A spread, computed, numeric, or private key has none.
+ */
+function memberName(ts, member) {
+  if (ts.isSpreadAssignment(member) || !member.name) return undefined
+  const { name } = member
+  return ts.isIdentifier(name) || ts.isStringLiteral(name)
+    ? name.text
+    : undefined
+}
+
+/**
+ * The value of the single `name: value` property called `name`. A spread or
+ * a member without a static key could also define it, so either one makes
+ * the property unreadable; members with another static key are not it.
+ */
+function propertyNamed(ts, object, name) {
+  let found
+  for (const member of object.properties) {
+    if (ts.isSpreadAssignment(member)) {
+      return { problem: 'is unknown beside a spread element' }
+    }
+    const key = memberName(ts, member)
+    if (key === undefined) {
+      return { problem: 'is unknown beside a computed or non-literal key' }
+    }
+    if (key !== name) continue
+    if (found) return { problem: 'is declared twice' }
+    found = member
+  }
+  if (!found) return { problem: 'is missing' }
+  if (!ts.isPropertyAssignment(found)) {
+    return { problem: 'is not a name: value property' }
+  }
+  return { value: found.initializer }
+}
+
+/** `'<path>'` of `fileURLToPath(new URL('<path>', import.meta.url))`. */
+function fileUrlLiteral(ts, node) {
+  if (
+    !ts.isCallExpression(node) ||
+    node.questionDotToken ||
+    !isIdentifierNamed(ts, node.expression, 'fileURLToPath') ||
+    node.arguments.length !== 1
+  ) {
+    return undefined
+  }
+  const [url] = node.arguments
+  if (
+    !ts.isNewExpression(url) ||
+    !isIdentifierNamed(ts, url.expression, 'URL') ||
+    url.arguments?.length !== 2
+  ) {
+    return undefined
+  }
+  const [path, base] = url.arguments
+  const isImportMetaUrl =
+    ts.isPropertyAccessExpression(base) &&
+    !base.questionDotToken &&
+    base.name.text === 'url' &&
+    ts.isMetaProperty(base.expression) &&
+    base.expression.keywordToken === ts.SyntaxKind.ImportKeyword &&
+    base.expression.name.text === 'meta'
+  return ts.isStringLiteral(path) && isImportMetaUrl ? path.text : undefined
+}
+
+/**
+ * Every target of an `exports` value with the conditions that lead to it
+ * (`node.import` for a nested one). A `null` target excludes the path; any
+ * other value that is not a path is a target without a source.
+ * @returns {{ condition: string, target?: string }[]}
+ */
+function exportTargets(value, conditions = []) {
+  const condition = conditions.join('.') || 'default'
+  if (typeof value === 'string') return [{ condition, target: value }]
+  if (value === null) return []
+  if (Array.isArray(value)) {
+    return value.flatMap((fallback) => exportTargets(fallback, conditions))
+  }
+  if (!isRecord(value)) return [{ condition }]
+  return Object.entries(value).flatMap(([key, nested]) =>
+    exportTargets(nested, [...conditions, key]),
+  )
+}
+
+/** The sources tsc emits a file of each output extension from. */
+const EMITTED_FROM = [
+  ['.d.ts', ['.ts', '.tsx']],
+  ['.js', ['.ts', '.tsx']],
+  ['.d.mts', ['.mts']],
+  ['.mjs', ['.mts']],
+  ['.d.cts', ['.cts']],
+  ['.cjs', ['.cts']],
+]
+
+/** A directory option as a normalized package-relative path. */
+function directoryOption(value) {
+  return typeof value === 'string'
+    ? posix.normalize(value).replace(/\/+$/, '')
+    : undefined
+}
+
+/**
+ * The source file a published target, a plain path (see `isPlainPath`), is
+ * built from, relative to the package.
+ * A Vite library output maps to its entry; the Vite `outDir` holds no other
+ * script. A declaration, or a script tsc emits, under the package
+ * tsconfig's `outDir` maps back through its `rootDir`, which the tsconfig
+ * then has to declare itself, since tsc derives a missing one from the
+ * program. A target outside both is its own source.
+ * @returns {{ source?: string, problem?: string }} No source when none could
+ *   be found; a problem when the package does not say which file it is.
  */
 function targetSource(target, workspace, fileSet) {
-  const path = posix.normalize(target)
-  const outDir = posix.normalize(workspace.compilerOptions.outDir ?? 'dist')
-  const rootDir = posix.normalize(workspace.compilerOptions.rootDir ?? '.')
+  const { bundle, compilerOptions } = workspace
+  const path = target.slice(2)
   const has = (candidate) => fileSet.has(`${workspace.dir}/${candidate}`)
-  if (path.startsWith(`${outDir}/`)) {
-    const built = posix.join(rootDir, path.slice(outDir.length + 1))
-    const stem = built.replace(/(?:\.d)?\.[cm]?[jt]s$/, '')
-    return ['.ts', '.tsx', '.mts'].map((ext) => stem + ext).find(has)
+  const found = (candidates) => {
+    const existing = candidates.filter(has)
+    if (existing.length > 1) {
+      return { problem: `${target} can be built from ${existing.join(' or ')}` }
+    }
+    return existing.length === 1 ? { source: existing[0] } : {}
   }
-  return !DECLARATION.test(path) && has(path) ? path : undefined
+  const under = (dir) => dir !== undefined && path.startsWith(`${dir}/`)
+  const script = !DECLARATION.test(path)
+  if (bundle && Object.hasOwn(bundle.outputs, path)) {
+    return found([bundle.outputs[path]])
+  }
+  if (bundle && script && under(bundle.outDir)) return {}
+  const outDir = directoryOption(compilerOptions.outDir)
+  if (under(outDir)) {
+    if (bundle && script) return {}
+    const rootDir = directoryOption(compilerOptions.rootDir)
+    if (rootDir === undefined) {
+      return { problem: 'tsconfig.json declares outDir but not rootDir' }
+    }
+    const built = posix.join(rootDir, path.slice(outDir.length + 1))
+    const emitted = EMITTED_FROM.find(([suffix]) => built.endsWith(suffix))
+    if (!emitted) return {}
+    const [suffix, extensions] = emitted
+    return found(
+      extensions.map((extension) => built.slice(0, -suffix.length) + extension),
+    )
+  }
+  return found([path])
 }
 
 /**
- * Published entry points of a workspace package and their sources.
+ * Why the `exports` field cannot be read as a map of subpaths or as the
+ * conditions of the package root, if it cannot.
+ */
+function exportsProblem(exportsField) {
+  if (exportsField === null) return 'package.json exports is null'
+  if (!isRecord(exportsField)) return undefined
+  const keys = Object.keys(exportsField)
+  const subpaths = keys.filter((key) => key.startsWith('.'))
+  if (subpaths.length > 0 && subpaths.length < keys.length) {
+    return 'package.json exports mixes subpaths and conditions'
+  }
+  const invalid = subpaths.find((key) => key !== '.' && !key.startsWith('./'))
+  return invalid === undefined
+    ? undefined
+    : `package.json exports key ${invalid} is not a subpath`
+}
+
+/** Fields a package without `exports` is resolved through. */
+const ENTRY_FIELDS = ['main', 'module', 'types', 'typings']
+
+/**
+ * Published entry points of a workspace package and their sources, one per
+ * export condition target, since each condition can lead to a different file.
+ * A package without `exports` publishes its entry fields instead.
+ *
+ * A package maps nothing when its Vite configuration or `exports` cannot be
+ * read, when any target in its `exports`, entry fields, or `bin` is a string
+ * that is not a plain path (see `isPlainPath`), or when it is not private and
+ * publishes no entry: it has a single entry, named by the package, with the
+ * problem and without a source, so no target of it falls back to a guessed
+ * source. A private package publishes nothing, so it may have no entry.
  * @param {WorkspacePackage} workspace
  * @param {Set<string>} fileSet Repository files.
- * @returns {{ specifier: string, source?: string }[]} `source` is relative to
- *   the package and missing when no source file could be found.
+ * @returns {{ specifier: string, condition?: string, source?: string,
+ *   problem?: string }[]}
+ *   `condition` is missing for a bin and for a package that maps nothing;
+ *   `source` is relative to the package and missing when no source file
+ *   could be found. `problem` then says why, when the package does not say
+ *   which file it is.
  */
 export function publishedEntries(workspace, fileSet) {
   const { manifest } = workspace
-  const name = String(manifest.name)
-  const entries = []
+  const named = typeof manifest.name === 'string' && manifest.name !== ''
+  const name = named ? manifest.name : workspace.dir
+  const mapsNothing = (problem) => [
+    { specifier: name, source: undefined, problem },
+  ]
+  const packageProblem = named
+    ? (workspace.bundle?.problem ?? exportsProblem(manifest.exports))
+    : 'package.json has no name'
+  if (packageProblem !== undefined) return mapsNothing(packageProblem)
+
+  // Every target the manifest names, with the field it is in; the entry
+  // fields are only published by a package without `exports`.
+  const targets = []
   const exportsField = manifest.exports
   const exportMap =
     isRecord(exportsField) &&
@@ -433,25 +814,66 @@ export function publishedEntries(workspace, fileSet) {
         : { '.': exportsField }
   for (const [key, value] of Object.entries(exportMap)) {
     const specifier = key === '.' ? name : `${name}${key.slice(1)}`
-    const source = exportTargets(value)
-      .map((target) => targetSource(target, workspace, fileSet))
-      .find(Boolean)
-    entries.push({ specifier, source })
+    for (const { condition, target } of exportTargets(value)) {
+      targets.push({
+        specifier,
+        condition,
+        target,
+        field: `exports ${key} ${condition}`,
+      })
+    }
   }
+  for (const field of ENTRY_FIELDS) {
+    if (manifest[field] === undefined) continue
+    targets.push({
+      specifier: name,
+      condition: field,
+      target: manifest[field],
+      field,
+      published: exportsField === undefined,
+    })
+  }
+  const bin = manifest.bin
   const bins =
-    typeof manifest.bin === 'string'
-      ? { [name]: manifest.bin }
-      : isRecord(manifest.bin)
-        ? manifest.bin
-        : {}
-  for (const [bin, target] of Object.entries(bins)) {
-    entries.push({
-      specifier: `bin ${bin}`,
-      source:
+    typeof bin === 'string'
+      ? { [name]: bin }
+      : isRecord(bin)
+        ? bin
+        : bin === undefined
+          ? {}
+          : { [name]: undefined }
+  for (const [command, target] of Object.entries(bins)) {
+    targets.push({
+      specifier: `bin ${command}`,
+      target,
+      field: `bin ${command}`,
+    })
+  }
+
+  const unsupported = targets.find(
+    ({ target }) => typeof target === 'string' && !isPlainPath(target),
+  )
+  if (unsupported) {
+    return mapsNothing(
+      `package.json ${unsupported.field} has an unsupported export target form: ${JSON.stringify(unsupported.target)}`,
+    )
+  }
+  const entries = targets
+    .filter(({ published }) => published !== false)
+    .map(({ specifier, condition, target }) => {
+      const { source, problem } =
         typeof target === 'string'
           ? targetSource(target, workspace, fileSet)
-          : undefined,
+          : {}
+      return {
+        specifier,
+        ...(condition === undefined ? {} : { condition }),
+        source,
+        ...(problem ? { problem } : {}),
+      }
     })
+  if (entries.length === 0 && manifest.private !== true) {
+    return mapsNothing('package.json publishes no entry')
   }
   return entries
 }
@@ -521,10 +943,21 @@ export function checkKnipConfig({ config, files, workspaces }) {
     }
     const workspace = workspaces.find((candidate) => candidate.dir === dir)
     if (!workspace || workspace.manifest.private === true) continue
-    for (const { specifier, source } of publishedEntries(workspace, fileSet)) {
+    const reported = new Set()
+    for (const { specifier, condition, source, problem } of publishedEntries(
+      workspace,
+      fileSet,
+    )) {
+      const entry = condition ? `${specifier} ${condition}` : specifier
       if (!source) {
-        problems.push(`${specifier} has no source file in ${dir}`)
-      } else if (!entries.some((pattern) => matchesGlob(source, pattern))) {
+        problems.push(
+          `${entry} has no source file in ${dir}${problem ? `: ${problem}` : ''}`,
+        )
+      } else if (
+        !reported.has(source) &&
+        !entries.some((pattern) => matchesGlob(source, pattern))
+      ) {
+        reported.add(source)
         problems.push(
           `${specifier} (${dir}/${source}) is not a knip entry of ${dir}`,
         )
@@ -561,10 +994,12 @@ export function madgeScope({ config, files, workspaces, rootPaths }) {
   }
   for (const workspace of workspaces) {
     for (const { specifier, source } of publishedEntries(workspace, fileSet)) {
-      if (!source || specifier.startsWith('bin ')) continue
+      if (!source || specifier.startsWith('bin ') || DECLARATION.test(source)) {
+        continue
+      }
       const path = `${workspace.dir}/${source}`
       roots.push(path)
-      paths[specifier] = [`./${path}`]
+      paths[specifier] ??= [`./${path}`]
     }
   }
   const covered = (path, root) => path === root || path.startsWith(`${root}/`)
@@ -725,8 +1160,9 @@ export async function runMadge({
 /**
  * Loads everything the tools need from a checkout.
  * @param {string} root
+ * @param {typeof import('typescript')} ts From `loadTypeScript`.
  */
-export function loadRepository(root) {
+export function loadRepository(root, ts) {
   const files = listRepoFiles(root)
   const readFile = (path) => readFileSync(join(root, path), 'utf8')
   let config
@@ -739,7 +1175,7 @@ export function loadRepository(root) {
       `cannot read knip.json or tsconfig.json: ${error.message}`,
     )
   }
-  const workspaces = readWorkspacePackages(files, readFile)
+  const workspaces = readWorkspacePackages(files, readFile, ts)
   const problems = checkKnipConfig({ config, files, workspaces })
   if (problems.length > 0) {
     throw new ConfigError(
@@ -775,57 +1211,79 @@ function headCommit(root) {
 }
 
 /**
- * Compares current findings with the baseline and renders the report.
+ * Runs both tools and renders the report. The check passes only when knip
+ * and madge find nothing and the baseline lists nothing; with `prune`, the
+ * baseline is first reduced to the entries that are still found.
  * @param {object} input
  * @param {ReturnType<typeof parseBaseline>} input.baseline
  * @param {{ knip: string, madge: string }} input.versions Installed tools.
  * @param {() => string[]} input.knip Current knip identities.
  * @param {() => Promise<{ modules: number, cycles: string[] }>} input.madge
+ * @param {boolean} [input.prune]
  * @returns {Promise<{ ok: boolean, output: string[], errors: string[],
  *   pruned: ReturnType<typeof parseBaseline> }>}
  */
-export async function runCheck({ baseline, versions, knip, madge }) {
+export async function runCheck({
+  baseline,
+  versions,
+  knip,
+  madge,
+  prune = false,
+}) {
   for (const tool of ['knip', 'madge']) {
     if (baseline.tools[tool] !== versions[tool]) {
       throw new ConfigError(
         `the baseline was recorded with ${tool} ${baseline.tools[tool]}, but ${tool} ${versions[tool]} is installed. ` +
-          `Print the findings with --print, review how they differ, and record the new version with the reviewed baseline.`,
+          `Print the findings with --print, resolve them, and record the new version in the baseline.`,
       )
     }
   }
   const findings = knip()
   const graph = await madge()
-  const knipDiff = diffFindings(baseline.knip, findings)
-  const cycleDiff = diffFindings(baseline.cycles, graph.cycles)
 
   const output = [
-    `knip ${versions.knip}: ${findings.length} findings, ${knipDiff.added.length} new, ${knipDiff.resolved.length} resolved`,
-    `madge ${versions.madge}: ${graph.modules} modules, ${graph.cycles.length} cycles, ${cycleDiff.added.length} new, ${cycleDiff.resolved.length} resolved`,
+    `knip ${versions.knip}: ${findings.length} findings`,
+    `madge ${versions.madge}: ${graph.modules} modules, ${graph.cycles.length} cycles`,
   ]
-  const resolved = [...knipDiff.resolved, ...cycleDiff.resolved]
-  if (resolved.length > 0) {
-    output.push('Resolved baseline entries (drop them with --prune):')
-    for (const identity of resolved) output.push(`  ${identity}`)
-  }
-
-  const errors = [
-    ...knipDiff.added.map((identity) => `New knip finding: ${identity}`),
-    ...cycleDiff.added.map((identity) => `New dependency cycle: ${identity}`),
-  ]
-  const added = knipDiff.added.length + cycleDiff.added.length
-  if (added > 0) {
-    errors.push(
-      `${added} new ${added === 1 ? 'finding' : 'findings'}. Remove the dead code or break the cycle; ` +
-        'an intended exception is a reviewed entry in scripts/quality/baseline.json.',
-    )
-  }
   const found = new Set([...findings, ...graph.cycles])
   const pruned = {
     ...baseline,
     knip: baseline.knip.filter((identity) => found.has(identity)),
     cycles: baseline.cycles.filter((identity) => found.has(identity)),
   }
-  return { ok: added === 0, output, errors, pruned }
+  const resolved = [...baseline.knip, ...baseline.cycles].filter(
+    (identity) => !found.has(identity),
+  )
+  if (resolved.length > 0) {
+    output.push(
+      prune
+        ? 'Removed resolved baseline entries:'
+        : 'Resolved baseline entries (drop them with --prune):',
+    )
+    for (const identity of resolved) output.push(`  ${identity}`)
+  }
+
+  const errors = [
+    ...findings.map((identity) => `knip finding: ${identity}`),
+    ...graph.cycles.map((identity) => `dependency cycle: ${identity}`),
+  ]
+  if (errors.length > 0) {
+    errors.push(
+      `${errors.length} structural ${errors.length === 1 ? 'finding' : 'findings'}. Remove the dead code or break the cycle; ` +
+        'scripts/quality/baseline.json takes no exceptions.',
+    )
+  }
+  const listed = prune ? pruned : baseline
+  const exceptions = [...listed.knip, ...listed.cycles]
+  if (exceptions.length > 0) {
+    errors.push(
+      ...exceptions.map((identity) => `baseline exception: ${identity}`),
+      `scripts/quality/baseline.json lists ${exceptions.length} ${
+        exceptions.length === 1 ? 'exception' : 'exceptions'
+      } and must list none. Drop resolved entries with --prune.`,
+    )
+  }
+  return { ok: errors.length === 0, output, errors, pruned }
 }
 
 const USAGE =
@@ -855,7 +1313,7 @@ function parseArguments(argv, cwd) {
 async function main(argv) {
   const options = parseArguments(argv, process.cwd())
   const tools = installedTools()
-  const repository = loadRepository(options.root)
+  const repository = loadRepository(options.root, await loadTypeScript())
   const knip = () => runKnip({ root: options.root, knipBin: tools.knipBin })
   const madge = () => runMadge(repository)
 
@@ -885,19 +1343,17 @@ async function main(argv) {
     versions: tools.versions,
     knip,
     madge,
+    prune: options.prune,
   })
   for (const line of output) console.log(line)
   for (const line of errors) console.error(line)
   if (options.prune && formatBaseline(pruned) !== formatBaseline(baseline)) {
     writeFileSync(BASELINE_PATH, formatBaseline(pruned))
-    console.log(
-      'Removed the resolved entries from scripts/quality/baseline.json.',
-    )
   }
   return ok ? 0 : 1
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+if (isMainModule(import.meta.url)) {
   try {
     process.exitCode = await main(process.argv.slice(2))
   } catch (error) {

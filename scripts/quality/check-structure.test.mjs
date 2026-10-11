@@ -1,6 +1,9 @@
 // @vitest-environment node
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
@@ -8,10 +11,10 @@ import {
   canonicalCycle,
   checkKnipConfig,
   ConfigError,
-  diffFindings,
   formatBaseline,
   KNIP_ISSUE_TYPES,
   listRepoFiles,
+  loadTypeScript,
   madgeScope,
   normalizeCycles,
   normalizeKnipReport,
@@ -22,7 +25,9 @@ import {
   runKnip,
   runMadge,
   ToolError,
+  viteLibraryOutputs,
 } from './check-structure.mjs'
+import { isMainModule } from './is-main-module.mjs'
 
 // Runs under `node --test` and under the Vitest app gate.
 const { describe, it } = process.env.VITEST
@@ -31,6 +36,7 @@ const { describe, it } = process.env.VITEST
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const ROOT = '/repo'
+const ts = await loadTypeScript()
 
 /** One knip report entry that lists every issue type, as knip 6 does. */
 function entry(file, issues = {}) {
@@ -85,19 +91,26 @@ function baseline(overrides = {}) {
   return {
     source: '07cd794e1696739b03216751fcb8d43292eea870',
     tools: { ...VERSIONS },
-    knip: [
-      'exports src/a.ts: alpha',
-      'exports src/b.ts: beta',
-      'files src/c.ts',
-    ],
-    cycles: ['src/x.ts > src/y.ts'],
+    knip: [],
+    cycles: [],
     ...overrides,
   }
 }
 
-function check(current, { cycles = ['src/x.ts > src/y.ts'], ...rest } = {}) {
+/** A baseline that still lists exceptions, as an older branch may carry. */
+function listedBaseline() {
+  return baseline({
+    knip: ['exports src/a.ts: alpha', 'files src/c.ts'],
+    cycles: ['src/x.ts > src/y.ts'],
+  })
+}
+
+function check(
+  current,
+  { cycles = [], baseline: recorded = baseline(), ...rest } = {},
+) {
   return runCheck({
-    baseline: baseline(),
+    baseline: recorded,
     versions: VERSIONS,
     knip: () => current,
     madge: async () => ({ modules: 10, cycles }),
@@ -209,69 +222,90 @@ describe('cycle identities', () => {
   })
 })
 
-describe('baseline comparison', () => {
-  it('passes when the findings are the baseline', async () => {
-    const result = await check(baseline().knip)
+describe('exception-free check', () => {
+  it('passes only with no finding, no cycle, and an empty baseline', async () => {
+    const result = await check([])
     assert.equal(result.ok, true)
     assert.deepEqual(result.errors, [])
+    assert.deepEqual(result.output, [
+      'knip 6.39.0: 0 findings',
+      'madge 8.0.0: 10 modules, 0 cycles',
+    ])
   })
 
-  it('fails a new unused symbol even when the total goes down', async () => {
-    const result = await check([
-      'exports src/a.ts: alpha',
-      'exports src/d.ts: delta',
-    ])
+  const mutations = {
+    'an unused export': 'exports src/d.ts: delta',
+    'an unused type': 'types src/d.ts: Delta',
+    'an unused file': 'files src/d.ts',
+    'an unused dependency': 'dependencies package.json: lodash',
+    'an unresolved import': 'unresolved scripts/suite.mjs: ./gone.mjs',
+  }
+  for (const [label, identity] of Object.entries(mutations)) {
+    it(`fails ${label}`, async () => {
+      const result = await check([identity])
+      assert.equal(result.ok, false)
+      assert.deepEqual(result.errors, [
+        `knip finding: ${identity}`,
+        '1 structural finding. Remove the dead code or break the cycle; scripts/quality/baseline.json takes no exceptions.',
+      ])
+    })
+  }
+
+  it('fails a dependency cycle', async () => {
+    const result = await check([], { cycles: ['src/a.ts > src/b.ts'] })
     assert.equal(result.ok, false)
-    assert.deepEqual(result.errors.slice(0, 1), [
-      'New knip finding: exports src/d.ts: delta',
-    ])
-    assert.match(result.errors.at(-1), /^1 new finding\./)
+    assert.equal(result.errors[0], 'dependency cycle: src/a.ts > src/b.ts')
   })
 
-  it('fails a new cycle', async () => {
-    const result = await check(baseline().knip, {
-      cycles: ['src/a.ts > src/b.ts', 'src/x.ts > src/y.ts'],
+  it('fails a finding even when the baseline lists it', async () => {
+    const result = await check(['exports src/a.ts: alpha'], {
+      cycles: ['src/x.ts > src/y.ts'],
+      baseline: listedBaseline(),
     })
     assert.equal(result.ok, false)
-    assert.equal(result.errors[0], 'New dependency cycle: src/a.ts > src/b.ts')
+    assert.ok(result.errors.includes('knip finding: exports src/a.ts: alpha'))
+    assert.ok(result.errors.includes('dependency cycle: src/x.ts > src/y.ts'))
   })
 
-  it('passes a removed finding, reports it, and prunes only it', async () => {
-    const result = await check(['exports src/a.ts: alpha', 'files src/c.ts'], {
-      cycles: [],
-    })
+  it('fails a baseline that lists exceptions even when nothing is found', async () => {
+    const result = await check([], { baseline: listedBaseline() })
+    assert.equal(result.ok, false)
+    assert.deepEqual(result.errors, [
+      'baseline exception: exports src/a.ts: alpha',
+      'baseline exception: files src/c.ts',
+      'baseline exception: src/x.ts > src/y.ts',
+      'scripts/quality/baseline.json lists 3 exceptions and must list none. Drop resolved entries with --prune.',
+    ])
+  })
+
+  it('prunes resolved entries, then passes once nothing is found', async () => {
+    const result = await check([], { baseline: listedBaseline(), prune: true })
     assert.equal(result.ok, true)
-    assert.ok(result.output.includes('  exports src/b.ts: beta'))
-    assert.ok(result.output.includes('  src/x.ts > src/y.ts'))
-    assert.deepEqual(result.pruned.knip, [
-      'exports src/a.ts: alpha',
-      'files src/c.ts',
-    ])
+    assert.deepEqual(result.errors, [])
+    assert.deepEqual(result.pruned, baseline())
+    assert.ok(result.output.includes('  exports src/a.ts: alpha'))
+  })
+
+  it('keeps an entry that is still found and still fails it', async () => {
+    const result = await check(['files src/c.ts'], {
+      baseline: listedBaseline(),
+      prune: true,
+    })
+    assert.equal(result.ok, false)
+    assert.deepEqual(result.pruned.knip, ['files src/c.ts'])
     assert.deepEqual(result.pruned.cycles, [])
+    assert.ok(result.errors.includes('knip finding: files src/c.ts'))
   })
 
   it('never prunes a new finding into the baseline', async () => {
-    const result = await check(['exports src/d.ts: delta'])
+    const result = await check(['exports src/d.ts: delta'], { prune: true })
     assert.equal(result.ok, false)
     assert.deepEqual(result.pruned.knip, [])
   })
 
-  it('passes when only line numbers moved', async () => {
-    const before = normalizeKnipReport(report(), { root: ROOT })
-    const after = normalizeKnipReport(report(7), { root: ROOT })
-    const result = await runCheck({
-      baseline: baseline({ knip: before }),
-      versions: VERSIONS,
-      knip: () => after,
-      madge: async () => ({ modules: 10, cycles: baseline().cycles }),
-    })
-    assert.equal(result.ok, true)
-    assert.deepEqual(diffFindings(before, after), { added: [], resolved: [] })
-  })
-
   it('refuses tool versions the baseline was not recorded with', async () => {
     await assert.rejects(
-      check(baseline().knip, { versions: { ...VERSIONS, knip: '6.40.0' } }),
+      check([], { versions: { ...VERSIONS, knip: '6.40.0' } }),
       ConfigError,
     )
   })
@@ -290,7 +324,7 @@ describe('baseline comparison', () => {
 
 describe('baseline file', () => {
   it('accepts a canonical baseline and formats it stably', () => {
-    const value = baseline()
+    const value = listedBaseline()
     assert.equal(parseBaseline(value), value)
     assert.deepEqual(JSON.parse(formatBaseline(value)), value)
     assert.ok(formatBaseline(value).endsWith('}\n'))
@@ -309,7 +343,10 @@ describe('baseline file', () => {
   }
   for (const [label, overrides] of Object.entries(invalid)) {
     it(`rejects ${label}`, () => {
-      assert.throws(() => parseBaseline(baseline(overrides)), ConfigError)
+      assert.throws(
+        () => parseBaseline({ ...listedBaseline(), ...overrides }),
+        ConfigError,
+      )
     })
   }
 
@@ -518,6 +555,22 @@ describe('knip configuration coverage', () => {
     'packages/engine/tsconfig.json': JSON.stringify({
       compilerOptions: { rootDir: '.', outDir: 'dist' },
     }),
+    'packages/engine/vite.config.ts': [
+      'export default defineConfig({',
+      '  build: {',
+      "    outDir: 'dist',",
+      '    lib: {',
+      '      entry: {',
+      "        index: fileURLToPath(new URL('./src/index.ts', import.meta.url)),",
+      "        'export': fileURLToPath(",
+      "          new URL('./src/export/index.ts', import.meta.url),",
+      '        ),',
+      '      },',
+      '    },',
+      "    rollupOptions: { output: { entryFileNames: '[name].js' } },",
+      '  },',
+      '})',
+    ].join('\n'),
     'packages/engine/src/index.ts': '',
     'packages/engine/src/export/index.ts': '',
     'packages/color/package.json': JSON.stringify({
@@ -537,10 +590,11 @@ describe('knip configuration coverage', () => {
       },
     }),
     'packages/cli/bin/x.mjs': '',
+    'packages/cli/load.d.mts': '',
     'packages/cli/load.mjs': '',
   }
   const files = Object.keys(FILES)
-  const workspaces = readWorkspacePackages(files, (path) => FILES[path])
+  const workspaces = readWorkspacePackages(files, (path) => FILES[path], ts)
 
   function config(overrides = {}) {
     return {
@@ -554,7 +608,7 @@ describe('knip configuration coverage', () => {
           project: ['src/**/*.ts'],
         },
         'packages/color': { entry: ['src/index.ts'], project: ['src/**/*.ts'] },
-        'packages/cli': { entry: ['bin/*.mjs', 'load.mjs'] },
+        'packages/cli': { entry: ['bin/*.mjs', 'load.mjs', 'load.d.mts'] },
         ...overrides,
       },
     }
@@ -564,16 +618,507 @@ describe('knip configuration coverage', () => {
     const fileSet = new Set(files)
     const byDir = (dir) => workspaces.find((workspace) => workspace.dir === dir)
     assert.deepEqual(publishedEntries(byDir('packages/engine'), fileSet), [
-      { specifier: '@x/engine', source: 'src/index.ts' },
-      { specifier: '@x/engine/export', source: 'src/export/index.ts' },
+      { specifier: '@x/engine', condition: 'types', source: 'src/index.ts' },
+      { specifier: '@x/engine', condition: 'import', source: 'src/index.ts' },
+      {
+        specifier: '@x/engine/export',
+        condition: 'types',
+        source: 'src/export/index.ts',
+      },
+      {
+        specifier: '@x/engine/export',
+        condition: 'import',
+        source: 'src/export/index.ts',
+      },
     ])
     assert.deepEqual(publishedEntries(byDir('packages/color'), fileSet), [
-      { specifier: '@x/color', source: 'src/index.ts' },
+      { specifier: '@x/color', condition: 'types', source: 'src/index.ts' },
     ])
+    // A package without a vite.config.ts is not a Vite build.
+    assert.equal(byDir('packages/color').bundle, undefined)
     assert.deepEqual(publishedEntries(byDir('packages/cli'), fileSet), [
-      { specifier: '@x/cli/load', source: 'load.mjs' },
+      { specifier: '@x/cli/load', condition: 'types', source: 'load.d.mts' },
+      { specifier: '@x/cli/load', condition: 'import', source: 'load.mjs' },
       { specifier: 'bin x', source: 'bin/x.mjs' },
     ])
+  })
+
+  it('maps every condition on its own, nested ones included', () => {
+    const manifest = {
+      name: '@x/color',
+      exports: {
+        '.': {
+          types: './dist/index.d.ts',
+          node: { import: './dist/node.js', require: './dist/gone.cjs' },
+          browser: null,
+          worker: ['./dist/index.js'],
+          deno: 5,
+        },
+      },
+    }
+    const color = {
+      dir: 'packages/color',
+      manifest,
+      compilerOptions: { rootDir: 'src', outDir: 'dist' },
+    }
+    const fileSet = new Set([
+      'packages/color/src/index.ts',
+      'packages/color/src/node.ts',
+    ])
+    assert.deepEqual(publishedEntries(color, fileSet), [
+      { specifier: '@x/color', condition: 'types', source: 'src/index.ts' },
+      {
+        specifier: '@x/color',
+        condition: 'node.import',
+        source: 'src/node.ts',
+      },
+      { specifier: '@x/color', condition: 'node.require', source: undefined },
+      { specifier: '@x/color', condition: 'worker', source: 'src/index.ts' },
+      { specifier: '@x/color', condition: 'deno', source: undefined },
+    ])
+  })
+
+  it('maps a Vite library output only through its literal entry', () => {
+    const fileSet = new Set(files)
+    const engine = workspaces.find(({ dir }) => dir === 'packages/engine')
+    assert.deepEqual(engine.bundle, {
+      outDir: 'dist',
+      outputs: {
+        'dist/index.js': 'src/index.ts',
+        'dist/export.js': 'src/export/index.ts',
+      },
+    })
+    const sources = (bundle, compilerOptions = engine.compilerOptions) =>
+      publishedEntries({ ...engine, bundle, compilerOptions }, fileSet).map(
+        ({ condition, source, problem }) =>
+          `${condition} ${source}${problem ? `: ${problem}` : ''}`,
+      )
+    // In a package Vite builds, outDir holds no script tsc maps back.
+    assert.deepEqual(sources({ outDir: 'dist', outputs: {} }), [
+      'types src/index.ts',
+      'import undefined',
+      'types src/export/index.ts',
+      'import undefined',
+    ])
+    // Nor does the Vite outDir when the tsconfig emits elsewhere.
+    assert.deepEqual(
+      sources(
+        { outDir: 'dist', outputs: {} },
+        { rootDir: '.', outDir: 'types' },
+      ),
+      [
+        'types undefined',
+        'import undefined',
+        'types undefined',
+        'import undefined',
+      ],
+    )
+  })
+
+  it('maps no target of a package whose Vite configuration it cannot read', () => {
+    const vite = 'packages/engine/vite.config.ts'
+    const unread = (text, manifest) => {
+      const read = {
+        ...FILES,
+        [vite]: text,
+        'packages/engine/package.json': JSON.stringify(manifest),
+      }
+      const [engine] = readWorkspacePackages(
+        Object.keys(read).filter((path) => path.startsWith('packages/engine/')),
+        (path) => read[path],
+        ts,
+      )
+      return publishedEntries(engine, new Set(Object.keys(read)))
+    }
+    const engine = JSON.parse(FILES['packages/engine/package.json'])
+    const notDefineConfig =
+      'vite.config.ts default export is not defineConfig({ ... })'
+    assert.deepEqual(
+      unread(
+        "export default { build: { lib: { entry: 'src/index.ts' } } }",
+        engine,
+      ),
+      [{ specifier: '@x/engine', source: undefined, problem: notDefineConfig }],
+    )
+    // Neither a declaration tsc maps back nor a target that is a source
+    // stands in for the build the configuration does not describe.
+    const variableOutDir = `const outputDir = 'dist'\n${FILES[vite].replace(
+      "outDir: 'dist'",
+      'outDir: outputDir',
+    )}`
+    const outDirProblem = {
+      specifier: '@x/engine',
+      source: undefined,
+      problem: 'vite.config.ts build.outDir is not a string literal',
+    }
+    for (const rootExport of [
+      { types: './dist/index.d.ts' },
+      { types: './dist/index.d.ts', import: './src/index.ts' },
+    ]) {
+      assert.deepEqual(
+        unread(variableOutDir, {
+          name: '@x/engine',
+          exports: { '.': rootExport },
+        }),
+        [outDirProblem],
+      )
+    }
+    assert.deepEqual(
+      unread(variableOutDir, {
+        name: '@x/engine',
+        bin: { x: './src/index.ts' },
+      }),
+      [outDirProblem],
+    )
+  })
+
+  it('maps no target of a package whose exports it cannot read', () => {
+    const engine = workspaces.find(({ dir }) => dir === 'packages/engine')
+    const entries = (manifest) =>
+      publishedEntries({ ...engine, manifest }, new Set(files))
+    assert.deepEqual(
+      entries({
+        name: '@x/engine',
+        exports: { '.': './dist/index.js', import: './dist/index.js' },
+      }),
+      [
+        {
+          specifier: '@x/engine',
+          source: undefined,
+          problem: 'package.json exports mixes subpaths and conditions',
+        },
+      ],
+    )
+    assert.deepEqual(
+      entries({
+        name: '@x/engine',
+        exports: { '.export': './dist/export.js' },
+      }),
+      [
+        {
+          specifier: '@x/engine',
+          source: undefined,
+          problem: 'package.json exports key .export is not a subpath',
+        },
+      ],
+    )
+    assert.deepEqual(entries({ exports: './dist/index.js' }), [
+      {
+        specifier: 'packages/engine',
+        source: undefined,
+        problem: 'package.json has no name',
+      },
+    ])
+  })
+
+  it('maps a tsc output back only through the rootDir the tsconfig declares', () => {
+    const color = {
+      dir: 'packages/color',
+      manifest: {
+        name: '@x/color',
+        exports: {
+          '.': { types: './dist/index.d.ts', import: './dist/index.js' },
+          './node': { types: './dist/node.d.mts', import: './dist/node.mjs' },
+          './view': './dist/view.js',
+          './data': './dist/data.json',
+        },
+      },
+    }
+    const sources = (compilerOptions, extra = []) =>
+      publishedEntries(
+        { ...color, compilerOptions },
+        new Set([
+          'packages/color/src/index.ts',
+          'packages/color/src/node.ts',
+          'packages/color/src/node.mts',
+          ...extra,
+        ]),
+      ).map(
+        ({ specifier, condition, source, problem }) =>
+          `${specifier} ${condition} ${source}${problem ? `: ${problem}` : ''}`,
+      )
+    // Each output comes from the source extension tsc emits it from.
+    assert.deepEqual(sources({ rootDir: 'src', outDir: './dist/' }), [
+      '@x/color types src/index.ts',
+      '@x/color import src/index.ts',
+      '@x/color/node types src/node.mts',
+      '@x/color/node import src/node.mts',
+      '@x/color/view default undefined',
+      '@x/color/data default undefined',
+    ])
+    // tsc derives a missing rootDir from the program, so none is assumed.
+    const noRootDir = ': tsconfig.json declares outDir but not rootDir'
+    assert.deepEqual(sources({ outDir: 'dist' }), [
+      `@x/color types undefined${noRootDir}`,
+      `@x/color import undefined${noRootDir}`,
+      `@x/color/node types undefined${noRootDir}`,
+      `@x/color/node import undefined${noRootDir}`,
+      `@x/color/view default undefined${noRootDir}`,
+      `@x/color/data default undefined${noRootDir}`,
+    ])
+    // Without an outDir, a target under dist is a file of its own.
+    assert.deepEqual(sources({}), [
+      '@x/color types undefined',
+      '@x/color import undefined',
+      '@x/color/node types undefined',
+      '@x/color/node import undefined',
+      '@x/color/view default undefined',
+      '@x/color/data default undefined',
+    ])
+    // Two sources tsc could emit the same output from are not guessed at.
+    assert.deepEqual(
+      sources({ rootDir: 'src', outDir: 'dist' }, [
+        'packages/color/src/index.tsx',
+      ]),
+      [
+        '@x/color types undefined: ./dist/index.d.ts can be built from src/index.ts or src/index.tsx',
+        '@x/color import undefined: ./dist/index.js can be built from src/index.ts or src/index.tsx',
+        '@x/color/node types src/node.mts',
+        '@x/color/node import src/node.mts',
+        '@x/color/view default undefined',
+        '@x/color/data default undefined',
+      ],
+    )
+  })
+
+  it('names the unreadable Vite property of a package it cannot map', () => {
+    const vite = 'packages/engine/vite.config.ts'
+    const read = {
+      ...FILES,
+      [vite]: FILES[vite].replace(/entry: \{/, 'entry: { ...shared,'),
+    }
+    const problems = checkKnipConfig({
+      config: config(),
+      files,
+      workspaces: readWorkspacePackages(files, (path) => read[path], ts),
+    })
+    const problem = 'vite.config.ts build.lib.entry has a spread element'
+    assert.deepEqual(problems, [
+      `@x/engine has no source file in packages/engine: ${problem}`,
+    ])
+  })
+
+  it('reads only a single vite.config.ts', () => {
+    const [mts] = readWorkspacePackages(
+      ['packages/engine/package.json', 'packages/engine/vite.config.mts'],
+      (path) => FILES[path] ?? FILES['packages/engine/vite.config.ts'],
+      ts,
+    )
+    assert.deepEqual(mts.bundle, {
+      problem: 'only a single vite.config.ts is read, not vite.config.mts',
+    })
+    const [both] = readWorkspacePackages(
+      [
+        'packages/engine/package.json',
+        'packages/engine/vite.config.js',
+        'packages/engine/vite.config.ts',
+      ],
+      (path) => FILES[path] ?? FILES['packages/engine/vite.config.ts'],
+      ts,
+    )
+    assert.deepEqual(both.bundle, {
+      problem:
+        'only a single vite.config.ts is read, not vite.config.js, vite.config.ts',
+    })
+  })
+
+  it('publishes the entry fields of a package without exports', () => {
+    const legacy = {
+      dir: 'packages/color',
+      manifest: {
+        name: '@x/color',
+        main: './dist/index.js',
+        types: './dist/index.d.ts',
+        module: 5,
+      },
+      compilerOptions: { rootDir: 'src', outDir: 'dist' },
+    }
+    const fileSet = new Set(['packages/color/src/index.ts'])
+    assert.deepEqual(publishedEntries(legacy, fileSet), [
+      { specifier: '@x/color', condition: 'main', source: 'src/index.ts' },
+      { specifier: '@x/color', condition: 'module', source: undefined },
+      { specifier: '@x/color', condition: 'types', source: 'src/index.ts' },
+    ])
+    const withExports = {
+      ...legacy,
+      manifest: { ...legacy.manifest, exports: { '.': './dist/index.js' } },
+    }
+    assert.deepEqual(publishedEntries(withExports, fileSet), [
+      { specifier: '@x/color', condition: 'default', source: 'src/index.ts' },
+    ])
+  })
+
+  it('fails a bin that is neither a path nor a map of paths', () => {
+    const cli = {
+      dir: 'packages/cli',
+      manifest: { name: '@x/cli', bin: ['./bin/x.mjs'] },
+      compilerOptions: {},
+    }
+    assert.deepEqual(
+      publishedEntries(cli, new Set(['packages/cli/bin/x.mjs'])),
+      [{ specifier: 'bin @x/cli', source: undefined }],
+    )
+  })
+
+  it('maps nothing for a target that is not a plain ./ path', () => {
+    // Node decodes ./dist/%6eode.js to dist/node.js, which Vite builds from
+    // the node entry, while the literal output is the %6eode entry.
+    const read = {
+      ...FILES,
+      'packages/engine/vite.config.ts': FILES[
+        'packages/engine/vite.config.ts'
+      ].replace(
+        '      },\n    },',
+        [
+          "        node: fileURLToPath(new URL('./src/node.ts', import.meta.url)),",
+          "        '%6eode': fileURLToPath(new URL('./src/clean.ts', import.meta.url)),",
+          '      },',
+          '    },',
+        ].join('\n'),
+      ),
+      'packages/engine/package.json': JSON.stringify({
+        name: '@x/engine',
+        exports: {
+          '.': {
+            types: './dist/src/index.d.ts',
+            node: './dist/%6eode.js',
+            import: './dist/index.js',
+          },
+        },
+      }),
+      'packages/engine/src/node.ts': '',
+      'packages/engine/src/clean.ts': '',
+    }
+    const readFiles = Object.keys(read)
+    const readWorkspaces = readWorkspacePackages(
+      readFiles,
+      (path) => read[path],
+      ts,
+    )
+    const engine = readWorkspaces.find(({ dir }) => dir === 'packages/engine')
+    assert.equal(engine.bundle.outputs['dist/%6eode.js'], 'src/clean.ts')
+    assert.equal(engine.bundle.outputs['dist/node.js'], 'src/node.ts')
+    const problem =
+      'package.json exports . node has an unsupported export target form: "./dist/%6eode.js"'
+    assert.deepEqual(publishedEntries(engine, new Set(readFiles)), [
+      { specifier: '@x/engine', source: undefined, problem },
+    ])
+    assert.deepEqual(
+      checkKnipConfig({
+        config: config(),
+        files: readFiles,
+        workspaces: readWorkspaces,
+      }),
+      [`@x/engine has no source file in packages/engine: ${problem}`],
+    )
+
+    const color = {
+      dir: 'packages/color',
+      compilerOptions: { rootDir: 'src', outDir: 'dist' },
+    }
+    const fileSet = new Set(['packages/color/src/index.ts'])
+    const mapped = (manifest) =>
+      publishedEntries(
+        { ...color, manifest: { name: '@x/color', ...manifest } },
+        fileSet,
+      )
+    for (const target of [
+      './dist/%69ndex.js',
+      './dist/index.js?x',
+      './dist/index.js#x',
+      './dist\\index.js',
+      './dist/c:index.js',
+      './dist/in dex.js',
+      './dist/../dist/index.js',
+      './dist/./index.js',
+      './dist//index.js',
+      './dist/*.js',
+      'dist/index.js',
+      '/dist/index.js',
+      'file:///dist/index.js',
+    ]) {
+      const unsupported = (field) => [
+        {
+          specifier: '@x/color',
+          source: undefined,
+          problem: `package.json ${field} has an unsupported export target form: ${JSON.stringify(target)}`,
+        },
+      ]
+      assert.deepEqual(
+        mapped({ exports: { './view': { import: target } } }),
+        unsupported('exports ./view import'),
+        target,
+      )
+      assert.deepEqual(mapped({ main: target }), unsupported('main'), target)
+      // An entry field is not published beside exports, but it is still a
+      // target a resolver can read.
+      assert.deepEqual(
+        mapped({ exports: './dist/index.js', types: target }),
+        unsupported('types'),
+        target,
+      )
+      assert.deepEqual(
+        mapped({ bin: { x: target } }),
+        unsupported('bin x'),
+        target,
+      )
+    }
+  })
+
+  it('maps nothing for exports that are null', () => {
+    const color = {
+      dir: 'packages/color',
+      manifest: { name: '@x/color', exports: null, main: './dist/index.js' },
+      compilerOptions: { rootDir: 'src', outDir: 'dist' },
+    }
+    assert.deepEqual(
+      publishedEntries(color, new Set(['packages/color/src/index.ts'])),
+      [
+        {
+          specifier: '@x/color',
+          source: undefined,
+          problem: 'package.json exports is null',
+        },
+      ],
+    )
+  })
+
+  it('maps nothing for a public package that publishes no entry', () => {
+    const fileSet = new Set(['packages/color/src/index.ts'])
+    const entries = (manifest) =>
+      publishedEntries(
+        { dir: 'packages/color', manifest, compilerOptions: {} },
+        fileSet,
+      )
+    const none = [
+      {
+        specifier: '@x/color',
+        source: undefined,
+        problem: 'package.json publishes no entry',
+      },
+    ]
+    assert.deepEqual(entries({ name: '@x/color' }), none)
+    assert.deepEqual(entries({ name: '@x/color', private: false }), none)
+    assert.deepEqual(
+      entries({ name: '@x/color', exports: { '.': null } }),
+      none,
+    )
+    // A private package publishes nothing.
+    assert.deepEqual(entries({ name: '@x/color', private: true }), [])
+    assert.deepEqual(
+      checkKnipConfig({
+        config: config({ 'packages/color': { entry: [] } }),
+        files,
+        workspaces: workspaces.map((workspace) =>
+          workspace.dir === 'packages/color'
+            ? { ...workspace, manifest: { name: '@x/color' } }
+            : workspace,
+        ),
+      }),
+      [
+        '@x/color has no source file in packages/color: package.json publishes no entry',
+      ],
+    )
   })
 
   it('accepts a configuration that names every published entry', () => {
@@ -583,6 +1128,17 @@ describe('knip configuration coverage', () => {
     )
   })
 
+  it('reports a published condition without a source', () => {
+    const problems = checkKnipConfig({
+      config: config({ 'packages/cli': { entry: ['bin/*.mjs', 'load.mjs'] } }),
+      files: files.filter((file) => file !== 'packages/cli/load.d.mts'),
+      workspaces,
+    })
+    assert.deepEqual(problems, [
+      '@x/cli/load types has no source file in packages/cli',
+    ])
+  })
+
   it('reports a published export or bin without a knip entry', () => {
     const problems = checkKnipConfig({
       config: config({
@@ -590,7 +1146,7 @@ describe('knip configuration coverage', () => {
           entry: ['src/index.ts'],
           project: ['src/**/*.ts'],
         },
-        'packages/cli': { entry: ['load.mjs'] },
+        'packages/cli': { entry: ['load.mjs', 'load.d.mts'] },
       }),
       files,
       workspaces,
@@ -660,14 +1216,441 @@ describe('knip configuration coverage', () => {
   })
 })
 
+describe('Vite library entries', () => {
+  const entryLine = (name, path) =>
+    `      ${name}: fileURLToPath(new URL('${path}', import.meta.url)),`
+  /** A package configuration in the form the packages use. */
+  function viteConfig({
+    before = [],
+    entry = [
+      entryLine('index', './src/index.ts'),
+      entryLine('node', './src/node.ts'),
+    ],
+    outDir = "'dist'",
+    entryFileNames = "'[name].js'",
+    after = [],
+  } = {}) {
+    return [
+      "import { fileURLToPath } from 'node:url'",
+      "import { defineConfig } from 'vite'",
+      "const root = fileURLToPath(new URL('.', import.meta.url))",
+      'export default defineConfig({',
+      '  root,',
+      ...before,
+      '  build: {',
+      `    outDir: ${outDir},`,
+      '    lib: {',
+      '      entry: {',
+      ...entry,
+      '      },',
+      "      formats: ['es'],",
+      '    },',
+      '    rollupOptions: {',
+      `      output: { chunkFileNames: '[name].js', entryFileNames: ${entryFileNames} },`,
+      '    },',
+      '  },',
+      '})',
+      ...after,
+    ].join('\n')
+  }
+  const MAPPED = {
+    outDir: 'dist',
+    outputs: { 'dist/index.js': 'src/index.ts', 'dist/node.js': 'src/node.ts' },
+  }
+  const read = (text) => viteLibraryOutputs(text, ts)
+  const problem = (text) =>
+    read(text).problem?.replace(/^vite\.config\.ts /, '')
+
+  it('reads the entries of the configuration form the packages use', () => {
+    assert.deepEqual(read(viteConfig()), MAPPED)
+    assert.deepEqual(
+      read(
+        viteConfig({
+          outDir: "'./out/'",
+          entry: [
+            entryLine("'export'", './src/export/index.ts'),
+            entryLine("'policy/index'", './src/policy/index.ts'),
+          ],
+        }),
+      ),
+      {
+        outDir: 'out',
+        outputs: {
+          'out/export.js': 'src/export/index.ts',
+          'out/policy/index.js': 'src/policy/index.ts',
+        },
+      },
+    )
+  })
+
+  it('reads only a plain ./ entry path and decodes nothing', () => {
+    for (const path of [
+      // A URL reads these differently from a path.
+      './src/%6eode.ts',
+      './src/%2e%2e/src/node.ts',
+      './src%2Findex.ts',
+      './src/a%20b.ts',
+      './src/index.ts?raw',
+      './src/index.ts#x',
+      './src/a b.ts',
+      './src\\index.ts',
+      './src/c:index.ts',
+      // Not inside the package, or not one normalized relative path.
+      '../pkg/src/node.ts',
+      './src/../src/node.ts',
+      './src/./node.ts',
+      './src//node.ts',
+      './',
+      '.',
+      'src/node.ts',
+      '/packages/pkg/src/index.ts',
+      'file:///packages/pkg/src/index.ts',
+    ]) {
+      const text = viteConfig({
+        entry: [
+          `      node: fileURLToPath(new URL(${JSON.stringify(path)}, import.meta.url)),`,
+        ],
+      })
+      assert.equal(
+        problem(text),
+        `build.lib.entry.node path ${JSON.stringify(path)} is not a plain ./ path`,
+        path,
+      )
+      assert.equal(read(text).outputs, undefined)
+    }
+  })
+
+  it('ignores a commented-out entry beside the real one', () => {
+    const entry = [
+      entryLine('index', './src/index.ts'),
+      entryLine('node', './src/node.ts'),
+      `  // ${entryLine('node', './src/index.ts').trim()}`,
+      `  /* ${entryLine('index', './src/gone.ts').trim()} */`,
+    ]
+    assert.deepEqual(read(viteConfig({ entry })), MAPPED)
+  })
+
+  it('ignores entry text inside a string or a comment elsewhere', () => {
+    const decoy = `entry: { ${entryLine('index', './src/gone.ts').trim()} }`
+    assert.deepEqual(
+      read(
+        viteConfig({
+          before: [
+            `  define: { banner: ${JSON.stringify(decoy)} },`,
+            `  // ${decoy}`,
+          ],
+          after: [`const unused = { build: { lib: { ${decoy} } } }`],
+        }),
+      ),
+      MAPPED,
+    )
+  })
+
+  it('maps nothing when the entry block is commented out', () => {
+    const text = viteConfig().replace(
+      /^ {6}entry: \{\n(?:.*\n)*? {6}\},$/m,
+      (block) => block.replace(/^/gm, '// '),
+    )
+    assert.match(text, /^\/\/ {7}entry: \{$/m)
+    assert.equal(problem(text), 'build.lib.entry is missing')
+  })
+
+  const rejected = [
+    [
+      'a duplicate entry key',
+      viteConfig({
+        entry: [
+          entryLine('index', './src/index.ts'),
+          entryLine("'index'", './src/gone.ts'),
+        ],
+      }),
+      'build.lib.entry.index is declared twice',
+    ],
+    [
+      'a spread entry',
+      viteConfig({
+        entry: ['      ...shared,', entryLine('index', './src/index.ts')],
+      }),
+      'build.lib.entry has a spread element',
+    ],
+    [
+      'a computed entry key',
+      viteConfig({ entry: [entryLine('[name]', './src/index.ts')] }),
+      'build.lib.entry has a computed or non-literal key',
+    ],
+    [
+      'a numeric entry key',
+      viteConfig({ entry: [entryLine('1', './src/index.ts')] }),
+      'build.lib.entry has a computed or non-literal key',
+    ],
+    [
+      'a shorthand entry',
+      viteConfig({ entry: ['      index,'] }),
+      'build.lib.entry.index is not a name: value property',
+    ],
+    [
+      'a method entry',
+      viteConfig({ entry: ['      index() {},'] }),
+      'build.lib.entry.index is not a name: value property',
+    ],
+    [
+      'an entry that is a variable',
+      viteConfig({ entry: ['      index: indexPath,'] }),
+      "build.lib.entry.index is not fileURLToPath(new URL('<string literal>', import.meta.url))",
+    ],
+    [
+      'an entry path that is a template literal',
+      viteConfig({
+        entry: [
+          '      index: fileURLToPath(new URL(`./src/index.ts`, import.meta.url)),',
+        ],
+      }),
+      "build.lib.entry.index is not fileURLToPath(new URL('<string literal>', import.meta.url))",
+    ],
+    [
+      'an entry resolved against another base',
+      viteConfig({
+        entry: ["      index: fileURLToPath(new URL('./src/index.ts', base)),"],
+      }),
+      "build.lib.entry.index is not fileURLToPath(new URL('<string literal>', import.meta.url))",
+    ],
+    [
+      'an entry built by another function',
+      viteConfig({
+        entry: [
+          "      index: resolve(new URL('./src/index.ts', import.meta.url)),",
+        ],
+      }),
+      "build.lib.entry.index is not fileURLToPath(new URL('<string literal>', import.meta.url))",
+    ],
+    [
+      'an entry name that is a relative path',
+      viteConfig({ entry: [entryLine("'../index'", './src/index.ts')] }),
+      'build.lib.entry.../index is not an output name inside build.outDir',
+    ],
+    [
+      'an entry name that is not normalized',
+      viteConfig({ entry: [entryLine("'a//index'", './src/index.ts')] }),
+      'build.lib.entry.a//index is not an output name inside build.outDir',
+    ],
+    [
+      'an empty entry name',
+      viteConfig({ entry: [entryLine("''", './src/index.ts')] }),
+      'build.lib.entry. is not an output name inside build.outDir',
+    ],
+    [
+      'an empty entry object',
+      viteConfig({ entry: [] }),
+      'build.lib.entry names no entry',
+    ],
+    [
+      'an entry that is not an object',
+      viteConfig().replace(
+        /entry: \{[\s\S]*?\n {6}\},/,
+        "entry: './src/index.ts',",
+      ),
+      'build.lib.entry is not an object literal',
+    ],
+    [
+      'a shorthand lib entry',
+      viteConfig().replace(/entry: \{[\s\S]*?\n {6}\},/, 'entry,'),
+      'build.lib.entry is not a name: value property',
+    ],
+    [
+      'an outDir that is a variable',
+      viteConfig({ outDir: 'dist' }),
+      'build.outDir is not a string literal',
+    ],
+    [
+      'an outDir that is a template literal',
+      viteConfig({ outDir: '`dist`' }),
+      'build.outDir is not a string literal',
+    ],
+    [
+      'an outDir outside the package',
+      viteConfig({ outDir: "'../dist'" }),
+      'build.outDir is not a directory inside the package',
+    ],
+    [
+      'an absolute outDir',
+      viteConfig({ outDir: "'/dist'" }),
+      'build.outDir is not a directory inside the package',
+    ],
+    [
+      'an outDir that is the package',
+      viteConfig({ outDir: "'./'" }),
+      'build.outDir is not a directory inside the package',
+    ],
+    [
+      'a missing outDir',
+      viteConfig().replace("    outDir: 'dist',\n", ''),
+      'build.outDir is missing',
+    ],
+    [
+      'other entry file names',
+      viteConfig({ entryFileNames: "'[name].mjs'" }),
+      "build.rollupOptions.output.entryFileNames is not the string literal '[name].js'",
+    ],
+    [
+      'entry file names from a function',
+      viteConfig({ entryFileNames: "() => '[name].js'" }),
+      "build.rollupOptions.output.entryFileNames is not the string literal '[name].js'",
+    ],
+    [
+      'missing entry file names',
+      viteConfig().replace(/, entryFileNames: [^ ]+ \}/, ' }'),
+      'build.rollupOptions.output.entryFileNames is missing',
+    ],
+    [
+      'output options that are not an object',
+      viteConfig().replace(/output: \{.*\},/, 'output: [],'),
+      'build.rollupOptions.output is not an object literal',
+    ],
+    [
+      'a spread beside a property it could override',
+      viteConfig().replace('  build: {\n', '  build: {\n    ...shared,\n'),
+      'build.outDir is unknown beside a spread element',
+    ],
+    [
+      'a computed key beside the build options',
+      viteConfig({ before: ['  [key]: {},'] }),
+      'build is unknown beside a computed or non-literal key',
+    ],
+    [
+      'a duplicate build property',
+      viteConfig({ before: ["  build: { outDir: 'gone' },"] }),
+      'build is declared twice',
+    ],
+    [
+      'build options from a variable',
+      viteConfig().replace(/ {2}build: \{[\s\S]*\n {2}\},\n/, '  build,\n'),
+      'build is not a name: value property',
+    ],
+    [
+      'a second default export',
+      viteConfig({ after: ['export { root as default }'] }),
+      'has 2 default exports, not one',
+    ],
+    [
+      'a default export declaration',
+      `${viteConfig().replace(
+        'export default defineConfig(',
+        'const config = defineConfig(',
+      )}\nexport default function config2() {}`,
+      'default export is not defineConfig({ ... })',
+    ],
+    [
+      'no default export',
+      viteConfig().replace('export default ', 'const config = '),
+      'has 0 default exports, not one',
+    ],
+    [
+      'a default export that is not defineConfig',
+      viteConfig().replace('defineConfig({', 'mergeConfig({'),
+      'default export is not defineConfig({ ... })',
+    ],
+    [
+      'defineConfig of a variable',
+      'const config = {}\nexport default defineConfig(config)\n',
+      'default export is not defineConfig({ ... })',
+    ],
+    [
+      'an export assignment',
+      viteConfig().replace('export default ', 'export = '),
+      'default export is not defineConfig({ ... })',
+    ],
+    [
+      'a syntax error',
+      `${viteConfig()}\nconst = 1`,
+      'does not parse: Variable declaration expected.',
+    ],
+  ]
+  for (const [label, text, expected] of rejected) {
+    it(`maps nothing for ${label}`, () => {
+      assert.equal(problem(text), expected)
+      assert.equal(read(text).outputs, undefined)
+    })
+  }
+
+  it('maps the six package configurations exactly', () => {
+    const outputs = Object.fromEntries(
+      [
+        'lmfg-cli',
+        'lmfg-mcp',
+        'luma-color-runtime',
+        'luma-jpeg-runtime',
+        'luma-raw-runtime',
+        'render-engine',
+      ].map((name) => [
+        name,
+        read(
+          readFileSync(`${repoRoot}packages/${name}/vite.config.ts`, 'utf8'),
+        ),
+      ]),
+    )
+    assert.deepEqual(outputs, {
+      'lmfg-cli': {
+        outDir: 'dist',
+        outputs: {
+          'dist/index.js': 'src/index.ts',
+          'dist/candidate-worker.js': 'src/workers/candidate-worker.ts',
+        },
+      },
+      'lmfg-mcp': {
+        outDir: 'dist',
+        outputs: { 'dist/index.js': 'src/index.ts' },
+      },
+      'luma-color-runtime': {
+        outDir: 'dist',
+        outputs: {
+          'dist/index.js': 'src/index.ts',
+          'dist/wgsl.js': 'src/wgsl.ts',
+        },
+      },
+      'luma-jpeg-runtime': {
+        outDir: 'dist',
+        outputs: {
+          'dist/index.js': 'src/index.ts',
+          'dist/node.js': 'src/runtime-node.ts',
+        },
+      },
+      'luma-raw-runtime': {
+        outDir: 'dist',
+        outputs: {
+          'dist/index.js': 'src/index.ts',
+          'dist/node.js': 'src/runtime-node.ts',
+        },
+      },
+      'render-engine': {
+        outDir: 'dist',
+        outputs: {
+          'dist/index.js': 'src/index.ts',
+          'dist/export.js': 'src/export/index.ts',
+          'dist/geometry.js': 'src/geometry/index.ts',
+          'dist/manifest.js': 'src/manifest/index.ts',
+          'dist/policy.js': 'src/policy/index.ts',
+          'dist/preview.js': 'src/preview/index.ts',
+        },
+      },
+    })
+    const files = listRepoFiles(repoRoot)
+    assert.deepEqual(
+      files.filter((file) => /^packages\/[^/]+\/vite\.config\./.test(file)),
+      Object.keys(outputs).map((name) => `packages/${name}/vite.config.ts`),
+    )
+  })
+})
+
 describe('the committed configuration', () => {
   it('covers every workspace package and published entry', () => {
     const files = listRepoFiles(repoRoot)
     const config = JSON.parse(
       readFileSync(new URL('knip.json', import.meta.url), 'utf8'),
     )
-    const workspaces = readWorkspacePackages(files, (path) =>
-      readFileSync(`${repoRoot}${path}`, 'utf8'),
+    const workspaces = readWorkspacePackages(
+      files,
+      (path) => readFileSync(`${repoRoot}${path}`, 'utf8'),
+      ts,
     )
     assert.deepEqual(checkKnipConfig({ config, files, workspaces }), [])
   })
@@ -726,10 +1709,12 @@ describe('the committed configuration', () => {
     )
   })
 
-  it('keeps the baseline canonical', () => {
+  it('keeps the baseline canonical and free of exceptions', () => {
     const text = readFileSync(new URL('baseline.json', import.meta.url), 'utf8')
     const value = parseBaseline(JSON.parse(text))
     assert.equal(formatBaseline(value), text.replaceAll('\r\n', '\n'))
+    assert.deepEqual(value.knip, [])
+    assert.deepEqual(value.cycles, [])
   })
 
   it('runs the structure check in the quality job after installing tools', () => {
@@ -745,7 +1730,7 @@ describe('the committed configuration', () => {
     )
     const install = quality.indexOf('run: pnpm install --frozen-lockfile')
     const run = quality.indexOf('run: pnpm check:structure')
-    assert.ok(test >= 0 && install >= 0 && run > install)
+    assert.ok(install >= 0 && test > install && run > install)
 
     const manifest = JSON.parse(readFileSync(`${repoRoot}package.json`, 'utf8'))
     assert.equal(
@@ -754,5 +1739,44 @@ describe('the committed configuration', () => {
     )
     assert.match(manifest.devDependencies.knip, /^\d+\.\d+\.\d+$/)
     assert.match(manifest.devDependencies.madge, /^\d+\.\d+\.\d+$/)
+  })
+})
+
+describe('quality script entry points', () => {
+  // Node loads a symlinked script from its target, so each script must still
+  // see itself as the entry point when started through a symlink.
+  const scripts = [
+    ['check-structure.mjs', ['--unknown'], 2, /Unknown argument --unknown/],
+    ['check-agent-paths.mjs', ['--unknown'], 2, /Unknown option --unknown/],
+    ['check-retired-api.mjs', ['--unknown'], 2, /Unknown argument --unknown/],
+    ['app-aliases.mjs', [], 0, /app aliases: consistent/],
+  ]
+  for (const [script, args, status, message] of scripts) {
+    it(`runs ${script} when started through a symlink`, () => {
+      const dir = mkdtempSync(join(tmpdir(), 'lf-quality-main-'))
+      try {
+        const link = join(dir, script)
+        symlinkSync(fileURLToPath(new URL(script, import.meta.url)), link)
+        const result = spawnSync(process.execPath, [link, ...args], {
+          cwd: repoRoot,
+          encoding: 'utf8',
+        })
+        assert.equal(result.status, status, result.stderr)
+        assert.match(`${result.stdout}${result.stderr}`, message)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+  }
+
+  it('is not the entry point of a script it was not started as', () => {
+    const self = fileURLToPath(import.meta.url)
+    assert.equal(isMainModule(import.meta.url, self), true)
+    assert.equal(
+      isMainModule(new URL('knip.json', import.meta.url).href, self),
+      false,
+    )
+    assert.equal(isMainModule(import.meta.url, ''), false)
+    assert.equal(isMainModule(import.meta.url, join(tmpdir(), 'gone')), false)
   })
 })
