@@ -16,13 +16,13 @@ import {
   HSL_BAND_LABEL_KEY,
   HSL_FIELDS,
 } from '../fields/hsl-fields'
+import { HistogramPlot, readyHistogram } from '../shared/HistogramTool'
 import {
   formatStrengthPercent,
   intensityToStrengthPercent,
 } from '../strength-field'
 import type { ToneValue } from '../tone-fields'
 import { formatToneValue, TONE_FIELDS } from '../tone-fields'
-import { HistogramPlot, readyHistogram } from '../tools/HistogramTool'
 import {
   formatTransformValue,
   TRANSFORM_FIELDS,

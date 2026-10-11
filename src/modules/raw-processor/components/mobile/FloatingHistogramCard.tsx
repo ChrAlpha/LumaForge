@@ -4,7 +4,7 @@ import { m, useReducedMotion } from 'motion/react'
 import { clsxm } from '~/lib/cn'
 import { surfaceFade } from '~/lib/spring'
 
-import { HistogramTool } from '../tools/HistogramTool'
+import { HistogramTool } from '../shared/HistogramTool'
 
 export function FloatingHistogramCard(props: {
   histogram: PreviewHistogramState
