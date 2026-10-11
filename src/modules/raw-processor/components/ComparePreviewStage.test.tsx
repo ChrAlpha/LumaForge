@@ -1,11 +1,13 @@
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { cleanup, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 
+import type { ComparePreviewStageProps } from './ComparePreviewStage'
 import { ComparePreviewStage } from './ComparePreviewStage'
+import type { PreviewCanvasProps } from './PreviewCanvas'
 
 const stageProps = vi.hoisted(() => ({
   canvas: [] as Array<Record<string, unknown>>,
@@ -46,6 +48,7 @@ function stage(
       hasImage
       imageRef={{ current: null }}
       imageVersion={1}
+      decodedFrame={null}
       color={{
         styleKind: 'none',
         builtinPreset: null,
@@ -74,6 +77,15 @@ describe('comparePreviewStage', () => {
     stageProps.splitHandle.length = 0
   })
 
+  it('requires every composition to name the accepted frame, null included', () => {
+    expectTypeOf<
+      Pick<ComparePreviewStageProps, 'decodedFrame'>
+    >().toEqualTypeOf<{ decodedFrame: DecodedPreviewFrame | null }>()
+    expectTypeOf<Pick<PreviewCanvasProps, 'decodedFrame'>>().toEqualTypeOf<{
+      decodedFrame: DecodedPreviewFrame | null
+    }>()
+  })
+
   it('hands the canvas the descriptor it received, not a copy', () => {
     render(stage({ decodedFrame: acceptedFrame }))
 
@@ -96,10 +108,6 @@ describe('comparePreviewStage', () => {
 
   it('hands the canvas no descriptor while none is accepted', () => {
     render(stage({ displaySource: 'embedded', decodedFrame: null }))
-    expect(stageProps.canvas.at(-1)!.decodedFrame).toBeNull()
-
-    cleanup()
-    render(stage({ displaySource: 'embedded' }))
     expect(stageProps.canvas.at(-1)!.decodedFrame).toBeNull()
   })
 

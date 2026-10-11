@@ -763,6 +763,71 @@ describe('usePreviewHistogram', () => {
     expect(result.current).not.toEqual(previous)
   })
 
+  it('measures a replacing source of identical size, never the old run landing late', async () => {
+    const width = 1000
+    const height = 501
+    const oldData = new Uint16Array(width * height * 3)
+    const newData = new Uint16Array(width * height * 3)
+    oldData.fill(32768)
+    newData.fill(8192)
+    const oldImage = createImage('quick', { width, height, data: oldData })
+    const newImage = createImage('quick', { width, height, data: newData })
+    // Both producers numbered their first frame alike: only the session
+    // tells the replacing source apart.
+    const oldFrame = describeFrame(oldImage, {
+      sessionId: 'session-old',
+      frameId: 'decoded-frame-1',
+    })
+    const newFrame = describeFrame(newImage, {
+      sessionId: 'session-new',
+      frameId: 'decoded-frame-1',
+    })
+
+    const reference = renderPreviewHistogram({
+      image: newImage,
+      frame: describeFrame(newImage, { sessionId: 'session-reference' }),
+    })
+    await runChunkedWorkUntilReady(reference.result)
+    const expected = reference.result.current
+    reference.unmount()
+    expect(expected.state).toBe('ready')
+
+    const { result, rerender, imageRef, lutDataRef, renders } =
+      renderPreviewHistogram({ image: oldImage, frame: oldFrame })
+
+    // The old source's first run is under way, chunked, when it is replaced.
+    await act(async () => {
+      await vi.advanceTimersToNextTimerAsync()
+    })
+    expect(result.current).toEqual({ state: 'computing', previous: null })
+
+    const rendersBeforeReplace = renders.length
+    imageRef.current = newImage
+    rerender({
+      imageRef,
+      frame: newFrame,
+      params: defaultParams,
+      lutDataRef,
+      lutDataVersion: 0,
+      displaySource: 'quick',
+    })
+    await runChunkedWorkUntilReady(result)
+
+    const afterReplace = renders.slice(rendersBeforeReplace)
+    const landed = afterReplace.filter((state) => state.state === 'ready')
+    expect(landed.length).toBeGreaterThan(0)
+    for (const state of [...afterReplace, result.current]) {
+      expect(state.state === 'stale' ? state.previous : null).toBeNull()
+    }
+    if (result.current.state !== 'ready' || expected.state !== 'ready') {
+      throw new Error('expected both histograms to be ready')
+    }
+    for (const state of landed) {
+      if (state.state === 'ready') expect(state.bins).toEqual(expected.bins)
+    }
+    expect(result.current.bins).toEqual(expected.bins)
+  })
+
   it('measures no pixels the workflow has not accepted', async () => {
     const { result } = renderPreviewHistogram({
       image: createImage('quick'),

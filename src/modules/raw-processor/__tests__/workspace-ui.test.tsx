@@ -123,6 +123,7 @@ function compareStageProps(
     hasImage: false,
     imageRef: { current: null },
     imageVersion: 0,
+    decodedFrame: null,
     color: stageColor,
     viewMode: 'compare',
     lutDataRef: { current: null },
@@ -1166,6 +1167,7 @@ describe('rawToolSurface', () => {
         hasImage
         imageRef={{ current: null }}
         imageVersion={0}
+        decodedFrame={null}
         color={stageColor}
         viewMode="processed"
         lutDataRef={{ current: null }}
@@ -1246,6 +1248,7 @@ describe('rawToolSurface', () => {
         hasImage={false}
         imageRef={{ current: null }}
         imageVersion={0}
+        decodedFrame={null}
         color={stageColor}
         viewMode="processed"
         lutDataRef={{ current: null }}

@@ -28,8 +28,9 @@ export interface ComparePreviewStageProps {
   /**
    * The workflow's accepted descriptor of the frame `imageRef` holds, passed
    * on to the canvas as received; null while no decoded frame is live.
+   * Required so no composition can leave the frame out.
    */
-  decodedFrame?: DecodedPreviewFrame | null
+  decodedFrame: DecodedPreviewFrame | null
   color: ColorGraphIntent
   /** How the photo is shown; compare layers the original at the split. */
   viewMode: PreviewViewMode
@@ -212,7 +213,7 @@ export function ComparePreviewStage({
   hasImage,
   imageRef,
   imageVersion,
-  decodedFrame = null,
+  decodedFrame,
   color,
   viewMode,
   lutDataRef,
