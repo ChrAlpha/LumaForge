@@ -1,13 +1,68 @@
 # Changelog
 
 All notable changes to `@lumaforge/luma-raw-runtime` are documented here. The
-format follows Keep a Changelog; versions follow semver. Releases before 0.1.2
+format follows Keep a Changelog; versions follow semver. Releases up to 0.1.1
 predate this file.
 
-## 0.1.2 - Unreleased
+## 0.2.0 - Unreleased
+
+Proposed version. This release removes public exports and changes error
+codes and capability facts, which a 0.x package releases as a minor version.
+`package.json` reads 0.1.2, a version that was never published; set it to
+0.2.0 before publishing. Runtime info and render manifests report the version
+in `package.json`.
 
 Requires `@lumaforge/luma-native-artifacts` 0.0.4, which carries the rebuilt
-RAW artifacts; publish that package before this one.
+RAW artifacts; publish that package before this one. Publish this one before
+`@lumaforge/render-engine` 0.2.0 and `@lumaforge/lmfg-cli` 0.2.0, which
+depend on this exact version.
+
+### Breaking
+
+- `analyzeRawDynamicRange` and its result type `RawDynamicRangeInfo` are
+  removed from the package entry. Nothing in LumaForge called them, and their
+  SDR/HDR `recommendation` drove neither preview nor export. Code that
+  imported them must drop the import; there is no replacement.
+- `LumaRawErrorCode` gains `RAW_WINDOW_READ_FAILED` and
+  `RAW_CALIBRATION_FAILED`. Code that switches exhaustively over the union
+  needs a case for each.
+- Worker request failures without a runtime error code are classified by the
+  request that failed instead of always reporting `RAW_OPEN_FAILED`.
+  Thumbnail extraction reports `RAW_THUMBNAIL_UNAVAILABLE`, quick decodes
+  `RAW_QUICK_DECODE_FAILED`, bounded HQ decodes `RAW_HQ_DECODE_FAILED`, export
+  capability probes `RAW_METADATA_FAILED`, processed-window export begin/end
+  and raw or processed window reads `RAW_WINDOW_READ_FAILED`, calibration
+  `RAW_CALIBRATION_FAILED`, and `init`, `cancel`, and `closeSession`
+  `RAW_RUNTIME_UNAVAILABLE`. Source opens and file probes still report
+  `RAW_OPEN_FAILED`. Errors that already carry a code (cancellation, memory
+  limit, protocol, unsupported format, runtime unavailable) keep it. Code that
+  matched `RAW_OPEN_FAILED` for these operations must match the new codes.
+- A calibration request whose `cameraCalibration` is not a profile with
+  `xyzToCamera` as a `Float32Array` of 9 finite values, and an optional
+  `toneCurveLut` as a `Float32Array` of at least 4096 finite entries, is
+  refused with `RAW_WORKER_PROTOCOL_ERROR` before any session lookup or
+  native work. A calibration the native module fails to apply reports
+  `RAW_CALIBRATION_FAILED`. `applyCalibration` itself stays.
+- Export capability facts are read exactly as the native wrapper records
+  them, with nothing defaulted, renamed or inferred.
+  `LumaRawExportCapability.orientation` is only a `LumaRawExportOrientation`
+  record: a bare orientation number says nothing about whether processed
+  windows apply the rotation, so it leaves the capability without
+  orientation and unsupported (`unsupported-orientation`).
+  `LumaRawExportCapability.color` is only `LumaRawExportColorFacts`: it is
+  present only when the native facts record `workingSpace:
+  'linear-prophoto-rgb'`, `librawOutputColor: 'prophoto'`, `gamma: 'linear'`,
+  both `cameraWhiteBalanceAppliedByRuntime` and
+  `cameraMatrixAppliedByRuntime` as booleans, a positive four-value
+  `whiteBalance` and a usable 3x3 `cameraToWorkingRgb`; otherwise the
+  capability reports `missing-color-transform`. The `cameraWhiteBalance` and
+  `prophoto-linear` spellings and the defaults for an absent gamma or output
+  color are gone, and an applied flag is no longer inferred from a usable
+  tuple: a flag recorded as `false` adds `missing-camera-white-balance` or
+  `missing-camera-to-output-color`. The bundled native artifacts record every
+  fact, so their capabilities are unchanged; a native module that records
+  fewer facts now gets an unsupported export capability. Metadata, decoded
+  frame and EXIF orientation numbers are unchanged.
 
 ### Changed
 
@@ -27,7 +82,7 @@ RAW artifacts; publish that package before this one.
   their native build ids change. Toolchain and sources are unchanged (emsdk
   5.0.6, LibRaw 0.22.1, Little CMS 2.18).
 - Manifests recorded on 0.1.1 or earlier name that runtime version and native
-  build and reproduce only there: `lmfg render replay` (lmfg-cli 0.1.1)
+  build and reproduce only there: `lmfg render replay` (lmfg-cli 0.2.0)
   refuses them on this version before decoding.
 - `native:fetch` retries downloads with mirrors and time limits. Little CMS is
   fetched from its GitHub release, with the SourceForge archive as a mirror
@@ -40,30 +95,10 @@ RAW artifacts; publish that package before this one.
   applied) was normalized to its own peak, so neighboring strips could
   differ in brightness by up to log2(1/0.75), about 0.42 EV, and show bands.
 - Runtime info reports the package version; it reported `0.1.0` before.
-- Worker request failures without a runtime error code are classified by the
-  request that failed instead of always reporting `RAW_OPEN_FAILED`. Thumbnail
-  extraction reports `RAW_THUMBNAIL_UNAVAILABLE`, quick decodes
-  `RAW_QUICK_DECODE_FAILED`, bounded HQ decodes `RAW_HQ_DECODE_FAILED`, export
-  capability probes `RAW_METADATA_FAILED`, processed-window export begin/end
-  and raw or processed window reads `RAW_WINDOW_READ_FAILED`, calibration
-  `RAW_WORKER_PROTOCOL_ERROR`, and `init`, `cancel`, and `closeSession`
-  `RAW_RUNTIME_UNAVAILABLE`. Source opens and file probes still report
-  `RAW_OPEN_FAILED`. Errors that already carry a code (cancellation, memory
-  limit, protocol, unsupported format) keep it.
 
 ### Added
 
-- `RAW_WINDOW_READ_FAILED` joins `LumaRawErrorCode`. Code that switches
-  exhaustively over the union needs a case for it.
 - `native:check-window-normalization` reads the public DNG fixture as 256-row,
   512-row, and full-height processed windows with the exporter's 2px halo, top
   down and then bottom up in a fresh session, for each memory profile, and
   requires byte-identical RGB16 rows.
-
-### Deprecated
-
-- `analyzeRawDynamicRange` and its result type `RawDynamicRangeInfo` are
-  deprecated. They stay exported from the package entry, and existing calls
-  return the same results. Nothing in LumaForge calls them, and their SDR/HDR
-  `recommendation` drives neither preview nor export. They may be removed in a
-  future major version.
