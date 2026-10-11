@@ -24,7 +24,7 @@ import {
   hslHueTrack,
   hslLightnessTrack,
   hslSaturationTrack,
-} from '../tools/slider-tracks'
+} from '../shared/slider-tracks'
 import { AdjustSliderRow } from './AdjustSliderRow'
 
 type HSLScrubField = { band: HSLBandId; key: keyof HSLBandShift }

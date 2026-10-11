@@ -9,7 +9,7 @@ import {
   temperatureTrack,
   tintTrack,
   vibranceTrack,
-} from '../tools/slider-tracks'
+} from '../shared/slider-tracks'
 import { AdjustSliderRow } from './AdjustSliderRow'
 
 type ColorListPanelProps = {

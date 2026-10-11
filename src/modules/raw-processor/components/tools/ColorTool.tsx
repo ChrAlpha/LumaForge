@@ -9,13 +9,13 @@ import {
   formatColorValueShort,
   isColorNeutral,
 } from '../color-fields'
-import { DesktopAdjustRow } from './DesktopAdjustRow'
 import {
   saturationTrack,
   temperatureTrack,
   tintTrack,
   vibranceTrack,
-} from './slider-tracks'
+} from '../shared/slider-tracks'
+import { DesktopAdjustRow } from './DesktopAdjustRow'
 
 const COLOR_TRACK: Record<keyof ColorValue, string> = {
   userTemperature: temperatureTrack(),

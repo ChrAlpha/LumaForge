@@ -4,8 +4,10 @@ import {
   hslHueTrack,
   hslLightnessTrack,
   hslSaturationTrack,
+  saturationTrack,
   temperatureTrack,
   tintTrack,
+  vibranceTrack,
 } from './slider-tracks'
 
 describe('slider-tracks', () => {
@@ -67,6 +69,28 @@ describe('slider-tracks', () => {
       expect(track).toContain('340') // magenta hue
       expect(track).toContain('145') // green hue
       expect(track).toMatch(/ 50%,/)
+    })
+  })
+
+  describe('saturationTrack', () => {
+    it('renders gray ↔ neutral ↔ vivid warm at chroma 0.20', () => {
+      expect(saturationTrack()).toBe(
+        'linear-gradient(to right, ' +
+          'oklch(from var(--color-lf-on-surface) l 0 h / 0.55) 0%, ' +
+          'oklch(from var(--color-lf-on-surface) l c h / 0.06) 50%, ' +
+          'oklch(0.72 0.20 50 / 0.55) 100%)',
+      )
+    })
+  })
+
+  describe('vibranceTrack', () => {
+    it('renders gray ↔ neutral ↔ softer warm at chroma 0.13', () => {
+      expect(vibranceTrack()).toBe(
+        'linear-gradient(to right, ' +
+          'oklch(from var(--color-lf-on-surface) l 0 h / 0.55) 0%, ' +
+          'oklch(from var(--color-lf-on-surface) l c h / 0.06) 50%, ' +
+          'oklch(0.72 0.13 50 / 0.55) 100%)',
+      )
     })
   })
 })

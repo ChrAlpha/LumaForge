@@ -20,6 +20,11 @@ import {
   HSL_FIELDS,
   isHSLNeutral,
 } from '../fields/hsl-fields'
+import {
+  hslHueTrack,
+  hslLightnessTrack,
+  hslSaturationTrack,
+} from '../shared/slider-tracks'
 import { DesktopAdjustRow } from './DesktopAdjustRow'
 import {
   SEGMENTED_FOCUS_RING,
@@ -27,11 +32,6 @@ import {
   SEGMENTED_THUMB_BG,
   SEGMENTED_TRACK,
 } from './segmented-chrome'
-import {
-  hslHueTrack,
-  hslLightnessTrack,
-  hslSaturationTrack,
-} from './slider-tracks'
 
 const HSL_AXIS_RESET_KEY: Record<keyof HSLBandShift, Parameters<Translate>[0]> =
   {
