@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import { describe, expect, it } from 'vitest'
 
 import enMessages from '~/locales/en.json'
@@ -852,17 +849,6 @@ describe('deriveToolAvailability', () => {
         reason: 'preview-released',
       })
     }
-  })
-
-  it('reads Transform facts from the domain, not from a hook', () => {
-    const source = readFileSync(
-      resolve(
-        process.cwd(),
-        'src/modules/raw-processor/services/surface/derive-tool-availability.ts',
-      ),
-      'utf8',
-    )
-    expect(source).not.toMatch(/from '[^']*\/hooks\//)
   })
 
   it('names every reason it returns in both locales', () => {

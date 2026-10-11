@@ -238,42 +238,23 @@ describe('transform worker protocol', () => {
 })
 
 describe('production transform renderer ownership', () => {
-  const sources = [
+  const workerSideModules = [
     'src/lib/transform/transform-render.ts',
     'src/lib/transform/worker-protocol.ts',
     'src/lib/transform/transform.worker.ts',
     'src/lib/transform/preview-dimensions.ts',
-    'src/modules/raw-processor/components/TransformCanvas.tsx',
   ]
 
-  it('imports no demo implementation', () => {
-    for (const file of sources) {
-      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-      expect(source, file).not.toMatch(/transform-demo/)
-    }
-  })
-
   it('keeps React out of the worker-side modules', () => {
-    for (const file of sources.filter((path) => path.endsWith('.ts'))) {
+    for (const file of workerSideModules) {
       const source = readFileSync(resolve(process.cwd(), file), 'utf8')
       expect(source, file).not.toMatch(/from\s+['"](?:react|react-dom)[/'"]/)
     }
   })
 
-  it('keeps the only renderer, worker, and canvas outside the demo module', () => {
-    for (const file of [
-      'transform-render.ts',
-      'transform-render.test.ts',
-      'transform-types.ts',
-      'preview-types.ts',
-      'worker-protocol.ts',
-      'transform.worker.ts',
-      'TransformCanvas.tsx',
-    ]) {
-      expect(
-        existsSync(resolve(process.cwd(), 'src/modules/transform-demo', file)),
-        file,
-      ).toBe(false)
-    }
+  it('keeps the demo module deleted, so no import can resolve into it', () => {
+    expect(
+      existsSync(resolve(process.cwd(), 'src/modules/transform-demo')),
+    ).toBe(false)
   })
 })

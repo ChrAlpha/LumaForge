@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 import { act, renderHook } from '@testing-library/react'
@@ -1687,18 +1684,5 @@ describe('rAW Transform feature', () => {
     expect(result.current.available).toBe(false)
     expect(captureTransformSource).toHaveBeenCalledOnce()
     unmount()
-  })
-})
-
-describe('rAW Transform production ownership', () => {
-  it('drives the preview, overlay and fields from production homes only', () => {
-    for (const file of [
-      'src/modules/raw-processor/hooks/useRawTransformFeature.ts',
-      'src/modules/raw-processor/components/RawTransformOverlay.tsx',
-      'src/modules/raw-processor/components/transform-fields.ts',
-    ]) {
-      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-      expect(source, file).not.toMatch(/transform-demo/)
-    }
   })
 })

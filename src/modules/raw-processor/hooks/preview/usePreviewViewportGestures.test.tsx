@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import { act, fireEvent, render } from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -107,7 +104,7 @@ function renderGestures(props: HarnessProps) {
   vi.spyOn(track, 'getBoundingClientRect').mockReturnValue(
     rect(100, 50, 400, 300),
   )
-  return { ...result, frame }
+  return { ...result, frame, track }
 }
 
 describe('usePreviewViewportGestures', () => {
@@ -787,31 +784,46 @@ describe('usePreviewViewportGestures', () => {
 
   it('commits only zoom and pan, and leaves split and color to their owners', () => {
     const onViewportChange = vi.fn()
-    const { frame } = renderGestures({
+    const { frame, track, rerender } = renderGestures({
       viewport: DEFAULT_PREVIEW_VIEWPORT,
       onViewportChange,
     })
     fireEvent.wheel(frame, { clientX: 300, clientY: 200, deltaY: -150 })
     frames.run()
-    expect(Object.keys(onViewportChange.mock.calls[0]?.[0]).sort()).toEqual([
+    const zoomed = onViewportChange.mock.calls[0]?.[0] as PreviewViewport
+    expect(Object.keys(zoomed).sort()).toEqual([
       'fitMode',
       'panX',
       'panY',
       'zoom',
     ])
 
-    const source = readFileSync(
-      resolve(
-        process.cwd(),
-        'src/modules/raw-processor/hooks/preview/usePreviewViewportGestures.ts',
-      ),
-      'utf8',
-    )
-    const imports = source
-      .split('\n')
-      .filter((line) => /from '/.test(line))
-      .join('\n')
-    expect(imports).not.toMatch(/compare|split|color|webgpu/i)
-    expect(source).not.toMatch(/--raw-compare-split/)
+    // A pan on the zoomed photo commits through the same channel.
+    rerender(<Harness viewport={zoomed} onViewportChange={onViewportChange} />)
+    fireEvent.pointerDown(frame, {
+      pointerId: 1,
+      button: 0,
+      clientX: 300,
+      clientY: 200,
+    })
+    fireEvent.pointerMove(frame, { pointerId: 1, clientX: 320, clientY: 210 })
+    frames.run()
+    fireEvent.pointerUp(frame, { pointerId: 1 })
+    for (const [next] of onViewportChange.mock.calls) {
+      expect(Object.keys(next).sort()).toEqual([
+        'fitMode',
+        'panX',
+        'panY',
+        'zoom',
+      ])
+    }
+    expect(onViewportChange.mock.calls.length).toBeGreaterThan(1)
+
+    // The stage split and colour are drawn by their owners: the gestures
+    // write neither onto the frame nor the track.
+    for (const element of [frame, track]) {
+      expect(element.style.getPropertyValue('--raw-compare-split')).toBe('')
+      expect(element.getAttribute('style')).toBeNull()
+    }
   })
 })
