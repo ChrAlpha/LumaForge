@@ -11,7 +11,10 @@ import { promisify } from 'node:util'
 import type { Download, Page, TestInfo } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
+import {
+  computeManifestSha256,
+  verifyManifestSha256,
+} from '../../packages/render-engine/src/manifest/canonicalize'
 import {
   gateRawFixture,
   REQUIRE_PUBLIC_FIXTURE_ENV,
@@ -49,6 +52,8 @@ const RAW_RUNTIME_IDLE_MS = 10_000
  * an explicit end would.
  */
 const IDLE_GAP_MIN_MS = RAW_RUNTIME_IDLE_MS - 2_000
+/** An idle window for probing the trace's own timer hold. */
+const TIMER_PROBE_MS = 1_357
 const STALE_DELIVERY_COPY =
   'This export no longer matches the photo. Export again to deliver it.'
 /** What the export surface says while Transform waits on its worker. */
@@ -108,6 +113,8 @@ type PageTrace = {
   holdIdleTimers: boolean
   /** Idle-window timers scheduled while held and not yet cleared. */
   heldIdleTimers: number
+  /** Released idle-window timers that have neither run nor been cleared. */
+  releasedIdleTimers: number
 }
 
 type ExportManifest = {
@@ -170,15 +177,20 @@ function installPageTrace({ idleMs }: { idleMs: number }) {
     delivery: { armed: false, held: 0 },
     holdIdleTimers: false,
     heldIdleTimers: 0,
+    releasedIdleTimers: 0,
   }
   // A held idle timer is not scheduled at all; clearing it forgets it, and
-  // releasing schedules it again with its whole window.
+  // releasing schedules it again with its whole window. The page keeps the
+  // id it was given, so a released timer stays mapped to the browser timer
+  // it became until that runs or the page clears it.
   const nativeSetTimeout = window.setTimeout.bind(window)
   const nativeClearTimeout = window.clearTimeout.bind(window)
   const heldIdleTimers = new Map<number, () => void>()
+  const releasedIdleTimers = new Map<number, number>()
   let nextHeldTimer = 2 ** 30
-  const countHeldIdleTimers = () => {
+  const countIdleTimers = () => {
     trace.heldIdleTimers = heldIdleTimers.size
+    trace.releasedIdleTimers = releasedIdleTimers.size
   }
   window.setTimeout = function (
     handler: TimerHandler,
@@ -192,14 +204,21 @@ function installPageTrace({ idleMs }: { idleMs: number }) {
     ) {
       const id = nextHeldTimer++
       heldIdleTimers.set(id, () => handler(...args))
-      countHeldIdleTimers()
+      countIdleTimers()
       return id
     }
     return nativeSetTimeout(handler, delay, ...args)
   } as typeof window.setTimeout
   window.clearTimeout = function (id?: number) {
     if (id !== undefined && heldIdleTimers.delete(id)) {
-      countHeldIdleTimers()
+      countIdleTimers()
+      return
+    }
+    const released = id === undefined ? undefined : releasedIdleTimers.get(id)
+    if (released !== undefined) {
+      releasedIdleTimers.delete(id!)
+      countIdleTimers()
+      nativeClearTimeout(released)
       return
     }
     nativeClearTimeout(id)
@@ -209,9 +228,14 @@ function installPageTrace({ idleMs }: { idleMs: number }) {
       trace.holdIdleTimers = false
       for (const [id, run] of [...heldIdleTimers]) {
         heldIdleTimers.delete(id)
-        nativeSetTimeout(run, idleMs)
+        const native = nativeSetTimeout(() => {
+          releasedIdleTimers.delete(id)
+          countIdleTimers()
+          run()
+        }, idleMs)
+        releasedIdleTimers.set(id, native)
       }
-      countHeldIdleTimers()
+      countIdleTimers()
     },
     __p2Trace: trace,
     __p2ReleaseTransformRenders() {
@@ -803,6 +827,61 @@ async function expectExecutorLens(page: Page, testInfo: TestInfo) {
   expect(await settledCpuFrame(page)).toBe(processed)
 }
 
+test('trace: an idle-window timer the trace held and then released is still cancelled by the id the page was given, and forgotten once it fires', async ({
+  page,
+}, testInfo) => {
+  // A window no timer of the app uses, so only the probe's timers are held.
+  await page.addInitScript(installPageTrace, { idleMs: TIMER_PROBE_MS })
+  await page.goto(rawPreviewUrl(testInfo, '/'))
+  // One synchronous turn: nothing else can schedule while the hold is on.
+  const scheduled = await page.evaluate((delay) => {
+    const probe = window as unknown as {
+      __p2Trace: PageTrace
+      __p2ReleaseIdleTimers: () => void
+      __p2Fired: string[]
+    }
+    probe.__p2Fired = []
+    const fire = (name: string) => () => probe.__p2Fired.push(name)
+    probe.__p2Trace.holdIdleTimers = true
+    const forgotten = window.setTimeout(fire('forgotten'), delay)
+    const cancelled = window.setTimeout(fire('cancelled'), delay)
+    window.setTimeout(fire('kept'), delay)
+    const held = probe.__p2Trace.heldIdleTimers
+    // Cleared while held: it is forgotten and never scheduled.
+    window.clearTimeout(forgotten)
+    probe.__p2ReleaseIdleTimers()
+    const released = probe.__p2Trace.releasedIdleTimers
+    // Cleared after the release: the browser timer it became is cancelled.
+    window.clearTimeout(cancelled)
+    return {
+      held,
+      released,
+      afterCancel: probe.__p2Trace.releasedIdleTimers,
+      heldAfterRelease: probe.__p2Trace.heldIdleTimers,
+    }
+  }, TIMER_PROBE_MS)
+  await page.waitForTimeout(TIMER_PROBE_MS * 2 + 500)
+  const after = await page.evaluate(() => {
+    const probe = window as unknown as {
+      __p2Trace: PageTrace
+      __p2Fired: string[]
+    }
+    return {
+      fired: probe.__p2Fired,
+      released: probe.__p2Trace.releasedIdleTimers,
+    }
+  })
+  expect(after.fired, 'only the timer nobody cleared runs').toEqual(['kept'])
+  expect(scheduled).toEqual({
+    held: 3,
+    released: 2,
+    afterCancel: 1,
+    heldAfterRelease: 0,
+  })
+  // The one that ran is forgotten too.
+  expect(after.released).toBe(0)
+})
+
 test('runtime: an idle prewarmed runtime ends on its own, the next RAW warms a fresh one, and a loaded RAW gives its runtime back only once its bounded HQ settled', async ({
   page,
 }, testInfo) => {
@@ -1197,15 +1276,42 @@ async function newestLmfgSource() {
   return newest
 }
 
+type ReplayEnvelope =
+  | {
+      ok: true
+      result: {
+        reproduced: boolean
+        actual_sha256: string
+        output: { path: string; sha256: string }
+        manifest_uri: string
+      }
+    }
+  | {
+      ok: false
+      error: {
+        code: string
+        message: string
+        details?: Record<string, unknown>
+      }
+    }
+
 /**
  * Runs `lmfg render replay` on a browser manifest against the same RAW, in a
- * fresh workspace, with the native variant the browser recorded.
+ * fresh workspace named `name`, with the native variant the browser recorded.
  */
 async function replayWithLmfg(
   testInfo: TestInfo,
-  manifestPath: string,
-  manifest: ExportManifest,
-  rawPath: string,
+  {
+    manifestPath,
+    manifest,
+    rawPath,
+    name,
+  }: {
+    manifestPath: string
+    manifest: ExportManifest
+    rawPath: string
+    name: string
+  },
 ) {
   expect(
     existsSync(LMFG_DIST),
@@ -1219,7 +1325,7 @@ async function replayWithLmfg(
     newest.mtimeMs,
     `The lmfg CLI build is older than ${newest.path}. Run pnpm cli:build before this browser validation.`,
   ).toBeLessThanOrEqual(built)
-  const workspace = testInfo.outputPath('lmfg-replay')
+  const workspace = testInfo.outputPath(`lmfg-${name}`)
   await mkdir(workspace, { recursive: true })
   const args = [
     LMFG_BIN,
@@ -1236,7 +1342,7 @@ async function replayWithLmfg(
     '--source',
     rawPath,
     '--name',
-    'browser-export',
+    name,
   ]
   let stdout: string
   try {
@@ -1247,33 +1353,49 @@ async function replayWithLmfg(
     stdout = (error as { stdout?: string }).stdout ?? ''
     if (!stdout) throw error
   }
-  const envelope = JSON.parse(stdout) as
-    | {
-        ok: true
-        result: {
-          reproduced: boolean
-          actual_sha256: string
-          output: { path: string; sha256: string }
-          manifest_uri: string
-        }
-      }
-    | {
-        ok: false
-        error: {
-          code: string
-          message: string
-          details?: Record<string, unknown>
-        }
-      }
+  const envelope = JSON.parse(stdout) as ReplayEnvelope
+  const directory = join(workspace, 'replays', name)
   const published = {
-    jpeg: join(workspace, 'replays', 'browser-export', 'output.jpg'),
-    manifest: join(workspace, 'replays', 'browser-export', 'manifest.json'),
+    directory,
+    jpeg: join(directory, 'output.jpg'),
+    manifest: join(directory, 'manifest.json'),
   }
   return { envelope, published }
 }
 
+/** Every file under `directory`, or none when it was never made. */
+async function filesUnder(directory: string) {
+  if (!existsSync(directory)) return []
+  const entries = await readdir(directory, {
+    recursive: true,
+    withFileTypes: true,
+  })
+  return entries.filter((entry) => entry.isFile()).map((entry) => entry.name)
+}
+
+/**
+ * The browser manifest resealed with an output hash no replay can produce:
+ * it still passes the hash over the whole file and every check made before
+ * the render, so only the comparison of the rendered output can refuse it.
+ */
+async function forgeOutputHash(manifestPath: string, actual: string[]) {
+  const sealed = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+    manifest_sha256: string
+    output: Record<string, unknown>
+  }
+  const expected = createHash('sha256')
+    .update(`not the output of ${sealed.manifest_sha256}`)
+    .digest('hex')
+  expect(actual).not.toContain(expected)
+  const forged = { ...sealed, output: { ...sealed.output, sha256: expected } }
+  forged.manifest_sha256 = computeManifestSha256(forged)
+  expect(verifyManifestSha256(forged)).toBe(true)
+  expect(forged.manifest_sha256).not.toBe(sealed.manifest_sha256)
+  return { forged, expected }
+}
+
 for (const surface of ['desktop', 'mobile'] as const) {
-  test(`${surface} Transform: an edit still waiting on its worker holds both exports, the export then delivers the newest geometry, and lmfg replays its manifest or refuses before publishing`, async ({
+  test(`${surface} Transform: an edit still waiting on its worker holds both exports, the export then delivers the newest geometry, and lmfg replays its manifest and refuses a resealed copy whose output hash it cannot match before publishing`, async ({
     page,
   }, testInfo) => {
     // Desktop runs on the Chromium GPU preview; mobile on the WebKit CPU
@@ -1390,13 +1512,15 @@ for (const surface of ['desktop', 'mobile'] as const) {
     // match, or the replay refuses on the hash and publishes nothing.
     const copy = testInfo.outputPath('browser-export.manifest.json')
     await writeFile(copy, await readFile(manifestPath))
-    const { envelope, published } = await replayWithLmfg(
-      testInfo,
-      copy,
+    const { envelope, published } = await replayWithLmfg(testInfo, {
+      manifestPath: copy,
       manifest,
       rawPath,
-    )
+      name: 'browser-export',
+    })
+    let replayedSha256: string
     if (envelope.ok) {
+      replayedSha256 = envelope.result.actual_sha256
       expect(envelope.result.reproduced).toBe(true)
       expect(envelope.result.actual_sha256).toBe(jpeg.sha256)
       expect(envelope.result.output.sha256).toBe(jpeg.sha256)
@@ -1424,10 +1548,55 @@ for (const surface of ['desktop', 'mobile'] as const) {
       })
       expect(existsSync(published.jpeg)).toBe(false)
       expect(existsSync(published.manifest)).toBe(false)
+      replayedSha256 = String(envelope.error.details?.actual_sha256)
       testInfo.annotations.push({
         type: 'lmfg replay',
-        description: `refused before publication: expected ${jpeg.sha256}, replay ${String(envelope.error.details?.actual_sha256)} (native ${manifest.environment.native_artifacts.variant} ${manifest.environment.native_artifacts.build_id})`,
+        description: `refused before publication: expected ${jpeg.sha256}, replay ${replayedSha256} (native ${manifest.environment.native_artifacts.variant} ${manifest.environment.native_artifacts.build_id})`,
       })
     }
+    expect(replayedSha256).toMatch(/^[0-9a-f]{64}$/)
+
+    // The same browser manifest, validly resealed around an output hash the
+    // render cannot match: lmfg admits it, renders the same frame, and then
+    // refuses on the output hash without publishing the JPEG or a manifest.
+    const { forged, expected } = await forgeOutputHash(manifestPath, [
+      jpeg.sha256,
+      replayedSha256,
+    ])
+    const forgedPath = testInfo.outputPath('forged-output.manifest.json')
+    await writeFile(forgedPath, JSON.stringify(forged, null, 2))
+    const refused = await replayWithLmfg(testInfo, {
+      manifestPath: forgedPath,
+      manifest,
+      rawPath,
+      name: 'forged-output',
+    })
+    if (refused.envelope.ok) {
+      throw new Error(
+        `lmfg published a replay of a manifest whose output hash no render matches: ${refused.envelope.result.output.path}`,
+      )
+    }
+    expect(refused.envelope.error.code, refused.envelope.error.message).toBe(
+      'replay.mismatch',
+    )
+    expect(refused.envelope.error.details).toMatchObject({
+      stage: 'output',
+      kind: 'export',
+      published: false,
+      reproduced: false,
+      fingerprint_match: true,
+      expected_sha256: expected,
+      actual_sha256: replayedSha256,
+      parent_manifest_sha256: forged.manifest_sha256,
+      expected: { width: jpeg.width, height: jpeg.height },
+      actual: expect.objectContaining({
+        width: jpeg.width,
+        height: jpeg.height,
+      }),
+    })
+    expect(existsSync(refused.published.jpeg)).toBe(false)
+    expect(existsSync(refused.published.manifest)).toBe(false)
+    // The provisional export it rendered into is gone as well.
+    expect(await filesUnder(refused.published.directory)).toEqual([])
   })
 }
