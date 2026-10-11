@@ -3,7 +3,10 @@ import './full-res-export.worker'
 
 import { createHash } from 'node:crypto'
 
-import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_SELECTIVE_COLOR,
+  resolveExportColorGraph,
+} from '@lumaforge/luma-color-runtime'
 import { createLumaJpegRuntime } from '@lumaforge/luma-jpeg-runtime'
 import type { LumaRawProcessedWindowRequest } from '@lumaforge/luma-raw-runtime'
 import { createLumaRawRuntime } from '@lumaforge/luma-raw-runtime'
@@ -773,6 +776,7 @@ describe('full-resolution export worker delivered JPEG metadata', () => {
     intensity: 1,
     builtinPreset: null,
     lut: null,
+    selectiveColor: NEUTRAL_SELECTIVE_COLOR,
   })
 
   /** Source-normalized to output-normalized turn about the frame centre. */

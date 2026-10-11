@@ -1,5 +1,8 @@
 import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
-import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_SELECTIVE_COLOR,
+  pickColorGraphIntent,
+} from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type {
   CpuPreviewRequest,
@@ -177,8 +180,6 @@ const hqImage = { ...image, source: 'bounded-hq' } as DecodedImage
 
 const baseParams: ProcessingParams = {
   intensity: 1,
-  viewMode: 'processed',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
   userExposureEv: 0,
@@ -191,6 +192,7 @@ const baseParams: ProcessingParams = {
   userTint: 0,
   userSaturation: 0,
   userVibrance: 0,
+  selectiveColor: NEUTRAL_SELECTIVE_COLOR,
 }
 
 const captured: PreviewSource = {

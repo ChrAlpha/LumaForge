@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 
 import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
 import {
+  NEUTRAL_SELECTIVE_COLOR,
   parseCubeLUT,
   pickColorGraphIntent,
   toLUTData,
@@ -156,9 +157,8 @@ const defaultParams: ProcessingParams = {
   userTint: 0,
   userSaturation: 0,
   userVibrance: 0,
+  selectiveColor: NEUTRAL_SELECTIVE_COLOR,
   intensity: 0.7,
-  viewMode: 'processed',
-  compareSplit: 0.5,
   styleKind: 'none',
   builtinPreset: null,
 }

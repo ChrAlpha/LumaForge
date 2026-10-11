@@ -119,6 +119,7 @@ const stageColor = pickColorGraphIntent({
   userTint: 0,
   userSaturation: 0,
   userVibrance: 0,
+  selectiveColor: NEUTRAL_SELECTIVE_COLOR,
   intensity: 0.7,
   styleKind: 'none',
   builtinPreset: null,

@@ -7,7 +7,10 @@ import process from 'node:process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
-import { resolveExportColorGraph } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_SELECTIVE_COLOR,
+  resolveExportColorGraph,
+} from '@lumaforge/luma-color-runtime'
 import { createLumaRawRuntime } from '@lumaforge/luma-raw-runtime'
 import { processedWindowToRgb16Rows } from '@lumaforge/render-engine'
 import {
@@ -405,6 +408,7 @@ function createResolvedVLogClassic709Graph(
     userShadows: 35,
     userWhites: -20,
     userBlacks: 15,
+    selectiveColor: NEUTRAL_SELECTIVE_COLOR,
   })
 
   if (!graph.supported) {

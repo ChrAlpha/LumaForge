@@ -501,6 +501,7 @@ describe('buildFullResExportManifest', () => {
       lut: null,
       rawRenderExposure: exposure,
       userExposureEv: 0.3,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     })
     if (!graph.supported) throw new Error(graph.message)
     const manifest = buildFullResExportManifest({
@@ -540,6 +541,7 @@ describe('buildFullResExportManifest', () => {
       builtinPreset: null,
       lut: null,
       rawRenderExposure: exposure,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     })
     if (!graph.supported) throw new Error(graph.message)
     const manifest = buildFullResExportManifest({
