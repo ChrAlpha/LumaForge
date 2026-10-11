@@ -15,6 +15,7 @@ import type {
 } from '@lumaforge/render-engine/preview'
 import { resolvePreviewColorPlan } from '@lumaforge/render-engine/preview'
 import { act, renderHook } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
@@ -1067,7 +1068,9 @@ describe('useCpuPreview source identity', () => {
     const hook = renderHook((input: HookProps) => useCpuPreview(input), {
       initialProps: props(),
     })
-    const worker = () => FakeWorker.instances[0]!
+    // A disable or a removed source disposes the client; the next one loads
+    // on a fresh worker.
+    const worker = () => FakeWorker.instances.at(-1)!
     const loads = () =>
       worker().posted.filter((message) => message.type === 'loadSource')
     const renders = () =>
@@ -1138,6 +1141,133 @@ describe('useCpuPreview source identity', () => {
     view.answer(90)
     expect(view.result.current.frame?.sourceId).toBe(replacement.frameId)
     expect(view.result.current.frame?.rgba[0]).toBe(90)
+  })
+
+  it('releases the cached original of a replaced source of the same size', () => {
+    const view = mount(makeDecodedImage('quick'), quickFrame)
+    view.answer(200)
+    view.rerender({}, 'neutral')
+    view.answer(40)
+
+    const replacement = makeFrame({
+      sessionId: 'session-2',
+      frameId: 'decoded-frame-4',
+      stage: 'quick',
+    })
+    view.rerender(
+      { image: makeDecodedImage('quick'), decodedFrame: replacement },
+      'neutral',
+    )
+    view.answer(90)
+
+    // The first descriptor comes back: its original was released with the
+    // worker source it was rendered from, so it renders again.
+    view.rerender(
+      { image: makeDecodedImage('quick'), decodedFrame: quickFrame },
+      'neutral',
+    )
+    expect(view.loads()).toHaveLength(3)
+    expect(view.result.current.frame).toBeNull()
+    expect(view.renders().at(-1)).toMatchObject({
+      sourceId: quickFrame.frameId,
+      variant: 'neutral',
+    })
+    expect(view.result.current.inFlight).toBe(true)
+  })
+
+  it('does not cache an original that lands after its source was replaced', () => {
+    const view = mount(makeDecodedImage('quick'), quickFrame)
+    view.answer(200)
+    view.rerender({}, 'neutral')
+    const late = view.renders().at(-1)!
+    expect(late.variant).toBe('neutral')
+
+    const replacement = makeFrame({
+      sessionId: 'session-2',
+      frameId: 'decoded-frame-4',
+      stage: 'quick',
+    })
+    view.rerender(
+      { image: makeDecodedImage('quick'), decodedFrame: replacement },
+      'neutral',
+    )
+    view.answer(40, late)
+    expect(view.result.current.frame).toBeNull()
+    expect(view.result.current.inFlight).toBe(true)
+
+    view.rerender(
+      { image: makeDecodedImage('quick'), decodedFrame: quickFrame },
+      'neutral',
+    )
+    expect(view.result.current.frame).toBeNull()
+    expect(view.renders().at(-1)).toMatchObject({
+      sourceId: quickFrame.frameId,
+      variant: 'neutral',
+    })
+  })
+
+  it.each([
+    ['disabled', { enabled: false }],
+    ['left without a source', { image: null, decodedFrame: null }],
+  ] as const)(
+    'releases the cached original when the preview is %s',
+    (_label, off) => {
+      const view = mount(makeDecodedImage('quick'), quickFrame)
+      view.answer(200)
+      view.rerender({}, 'neutral')
+      view.answer(40)
+      const first = view.worker()
+
+      view.rerender(off, 'neutral')
+      expect(first.terminate).toHaveBeenCalled()
+      expect(view.result.current.frame).toBeNull()
+
+      view.rerender({}, 'neutral')
+      expect(view.worker()).not.toBe(first)
+      expect(view.loads()).toHaveLength(1)
+      expect(view.result.current.frame).toBeNull()
+      expect(view.renders()).toHaveLength(1)
+      expect(view.renders()[0]).toMatchObject({
+        sourceId: quickFrame.frameId,
+        variant: 'neutral',
+      })
+      expect(view.result.current.inFlight).toBe(true)
+    },
+  )
+
+  it('loads the source again after a StrictMode effect replay', () => {
+    vi.stubGlobal('Worker', FakeWorker)
+    const { result } = renderHook(
+      () =>
+        useCpuPreview({
+          enabled: true,
+          image: makeDecodedImage('quick'),
+          decodedFrame: quickFrame,
+          params: { ...baseParams },
+          variant: 'processed',
+        }),
+      { wrapper: StrictMode },
+    )
+    const worker = FakeWorker.instances.at(-1)!
+    expect(worker.terminate).not.toHaveBeenCalled()
+    expect(worker.posted[0]).toMatchObject({
+      type: 'loadSource',
+      sourceId: quickFrame.frameId,
+    })
+    const render = worker.posted.find((message) => message.type === 'render')
+    if (render?.type !== 'render') throw new Error('expected a render')
+    act(() =>
+      worker.respond({
+        type: 'rendered',
+        sourceId: render.sourceId,
+        requestId: render.requestId,
+        width: 2,
+        height: 2,
+        rgba: new Uint8ClampedArray(16),
+      }),
+    )
+    expect(result.current.frame?.sourceId).toBe(quickFrame.frameId)
+    expect(result.current.inFlight).toBe(false)
   })
 
   it('does not load the same accepted frame again for a fresh image object', () => {

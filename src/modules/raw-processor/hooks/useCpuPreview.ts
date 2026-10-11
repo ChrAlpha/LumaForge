@@ -132,7 +132,8 @@ export function useCpuPreview({
   const [failureReason, setFailureReason] =
     useState<CpuPreviewFailureReason | null>(null)
 
-  // Cache neutral frames so toggling look doesn't recompute.
+  // Cache neutral frames so toggling look doesn't recompute. Entries belong
+  // to the worker source they were rendered from and go with it.
   const neutralCacheRef = useRef<Map<string, CpuPreviewFrame>>(new Map())
 
   // The accepted frame whose pixels the worker holds. Its frame ID is the
@@ -173,9 +174,14 @@ export function useCpuPreview({
       const client = new CpuPreviewClient()
       client.onFrame((f, request) => {
         const neutralKey = liveRendersRef.current.get(request)
-        // A cached original replaced this render: neither show nor cache it.
+        // A cached original or a source replacement retired this render:
+        // neither show nor cache it.
         if (neutralKey === undefined) return
-        if (neutralKey !== null) {
+        // Only the loaded source's originals are kept.
+        if (
+          neutralKey !== null &&
+          f.sourceId === loadedFrameRef.current?.frameId
+        ) {
           neutralCacheRef.current.set(neutralKey, f)
         }
         // A frame of the other variant leaves the photo on screen; the render
@@ -192,6 +198,16 @@ export function useCpuPreview({
     }
 
     return clientRef.current
+  }
+
+  // Forget the worker source and what was rendered from it: its cached
+  // originals and the renders still outstanding on it.
+  function retireSource() {
+    loadedFrameRef.current = null
+    neutralCacheRef.current.clear()
+    liveRendersRef.current = new WeakMap()
+    lastRenderKeyRef.current = null
+    latestRequestRef.current = null
   }
 
   // Load a source when the accepted frame changes.
@@ -223,9 +239,7 @@ export function useCpuPreview({
           : createCpuRecoverySource(image)
         : null
     if (!decodedFrame || !source) {
-      loadedFrameRef.current = null
-      lastRenderKeyRef.current = null
-      latestRequestRef.current = null
+      retireSource()
       setFrame(null)
       setInFlight(false)
       setFailureReason(null)
@@ -234,8 +248,8 @@ export function useCpuPreview({
       return
     }
 
+    retireSource()
     loadedFrameRef.current = decodedFrame
-    lastRenderKeyRef.current = null
     setFrame(null)
     setInFlight(true)
     setFailureReason(null)
@@ -331,9 +345,11 @@ export function useCpuPreview({
     [frame, inFlight, failureReason],
   )
 
-  // Dispose the client on unmount.
+  // Dispose the client on unmount. The source goes with it, so an effect
+  // replay loads it again into a fresh client.
   useEffect(() => {
     return () => {
+      retireSource()
       clientRef.current?.dispose()
       clientRef.current = null
     }
