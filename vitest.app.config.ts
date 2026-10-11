@@ -1,6 +1,8 @@
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
+import { routeBuilderPlugin } from 'vite-plugin-route-builder'
+import type { Plugin } from 'vitest/config'
 import { defineProject } from 'vitest/config'
 
 import { resolveRenderEnvironments } from './scripts/build/runtime-environment.mjs'
@@ -13,6 +15,17 @@ const ROOT = fileURLToPath(new URL('.', import.meta.url))
 // their own projects and never see these.
 export default defineProject({
   root: ROOT,
+  // Route tests import the gitignored route table, so the project writes it
+  // the same way the app's dev server does instead of relying on a copy left
+  // by an earlier build. The plugin is typed against the app's Vite while
+  // Vitest bundles its own, so the plugin is passed as Vitest's type.
+  plugins: [
+    routeBuilderPlugin({
+      pagePattern: `${ROOT}src/pages/**/*.tsx`,
+      outputPath: `${ROOT}src/generated-routes.ts`,
+      enableInDev: true,
+    }) as unknown as Plugin,
+  ],
   esbuild: {
     jsx: 'automatic',
   },
