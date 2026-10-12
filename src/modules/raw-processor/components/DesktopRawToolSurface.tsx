@@ -1,15 +1,20 @@
-import type { ReactNode } from 'react'
-import { useState } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 
 import { useScrollEdgeFade } from '~/hooks/common'
 import { useI18n } from '~/lib/i18n'
 
 import {
   useRawToolAdjustments,
+  useRawToolIntensity,
   useRawToolStatus,
 } from '../hooks/useRawToolState'
 import { histogramClippingLabels } from '../services/preview/histogram-clipping'
-import { useRawToolCommands, useRawWorkflowContext } from './RawWorkflowContext'
+import {
+  useRawPreviewHistogram,
+  useRawToolCommands,
+  useRawWorkflowContext,
+} from './RawWorkflowContext'
 import { HistogramTool } from './shared/HistogramTool'
 import { AdjustTool } from './tools/AdjustTool'
 import { CompareTool } from './tools/CompareTool'
@@ -23,7 +28,6 @@ import { TransformTool } from './tools/TransformTool'
 export function DesktopRawToolSurface() {
   const props = useRawWorkflowContext()
   const commands = useRawToolCommands()
-  const adjustments = useRawToolAdjustments()
   const { isExporting } = useRawToolStatus()
   const { t } = useI18n()
   // Each control is off exactly where the shared action policy refuses its
@@ -35,13 +39,6 @@ export function DesktopRawToolSurface() {
   const strengthDisabled = !availability.strength.available
   const compareResetDisabled = !availability.splitReset.available
   const hasAppliedLut = Boolean(props.currentLutName)
-  const histogramClipping =
-    props.histogram.state === 'ready'
-      ? histogramClippingLabels(props.histogram, t)
-      : undefined
-  const histogramMeta = histogramClipping
-    ? `${histogramClipping.shadows} · ${histogramClipping.highlights}`
-    : undefined
 
   return (
     <DesktopToolAside
@@ -77,13 +74,7 @@ export function DesktopRawToolSurface() {
       }
     >
       <ToolCardStack ariaLabel={t('raw.tools.aria')}>
-        <ToolCard
-          id="histogram"
-          title={t('raw.histogram.title')}
-          meta={histogramMeta}
-        >
-          <HistogramTool histogram={props.histogram} />
-        </ToolCard>
+        <DesktopHistogramCard />
         <ToolCard id="look" title={t('raw.lutContract.title')}>
           <LutContractTool
             currentLutName={props.currentLutName}
@@ -98,8 +89,7 @@ export function DesktopRawToolSurface() {
             onlineLutSources={props.onlineLutSources}
           />
           <div className="mt-3">
-            <DesktopStrengthRow
-              intensity={adjustments.activeIntensity}
+            <DesktopLookStrength
               onIntensityChange={commands.onIntensityChange}
               disabled={strengthDisabled}
               noLut={props.hasImage && !hasAppliedLut}
@@ -107,10 +97,7 @@ export function DesktopRawToolSurface() {
           </div>
         </ToolCard>
         <ToolCard id="adjust" title={t('raw.adjust.title')}>
-          <AdjustTool
-            tone={adjustments.tone}
-            color={adjustments.color}
-            selectiveColor={adjustments.selectiveColor}
+          <DesktopAdjust
             disabled={editorDisabled}
             onToneChange={commands.onToneChange}
             onToneReset={commands.onToneReset}
@@ -143,6 +130,57 @@ export function DesktopRawToolSurface() {
         </ToolCard>
       </ToolCardStack>
     </DesktopToolAside>
+  )
+}
+
+// The histogram is read where it is drawn: each preview render replaces it,
+// and only the clipping in the card's header and the plot render again, not
+// the card or its accordion item.
+function DesktopHistogramCard() {
+  const { t } = useI18n()
+  const meta = useMemo(() => <DesktopHistogramClipping />, [])
+  const body = useMemo(() => <DesktopHistogram />, [])
+  return (
+    <ToolCard id="histogram" title={t('raw.histogram.title')} meta={meta}>
+      {body}
+    </ToolCard>
+  )
+}
+
+function DesktopHistogramClipping() {
+  const histogram = useRawPreviewHistogram()
+  const { t } = useI18n()
+  if (histogram.state !== 'ready') return null
+  const clipping = histogramClippingLabels(histogram, t)
+  return `${clipping.shadows} · ${clipping.highlights}`
+}
+
+function DesktopHistogram() {
+  return <HistogramTool histogram={useRawPreviewHistogram()} />
+}
+
+// The adjustment values are read where they are drawn: a scrub rerenders
+// the section it moves, not the rail around it.
+function DesktopLookStrength(
+  props: Omit<ComponentProps<typeof DesktopStrengthRow>, 'intensity'>,
+) {
+  return <DesktopStrengthRow {...props} intensity={useRawToolIntensity()} />
+}
+
+function DesktopAdjust(
+  props: Omit<
+    ComponentProps<typeof AdjustTool>,
+    'tone' | 'color' | 'selectiveColor'
+  >,
+) {
+  const { tone, color, selectiveColor } = useRawToolAdjustments()
+  return (
+    <AdjustTool
+      {...props}
+      tone={tone}
+      color={color}
+      selectiveColor={selectiveColor}
+    />
   )
 }
 

@@ -65,6 +65,26 @@ export function useExportDerivedState({
     () => resolveHqPreviewLookRefusal({ intent: params, lut: lutData }),
     [lutData, params],
   )
+  // Preview renders publish their timings every few hundred milliseconds;
+  // the HQ export reads only whether the preview has measured its input.
+  const previewMeasured = Boolean(stats?.inputSize)
+  const exportResult = session?.exportState.result ?? null
+  const exportShareCapability = useMemo<ExportShareCapability>(
+    () =>
+      exportResult
+        ? resolveExportShareButtonCapability()
+        : unavailableExportShare('no-result'),
+    [exportResult],
+  )
+  const fullResCapability = session?.exportState.fullResCapability
+  const exportGeometry = session?.exportGeometry
+  const deliveredExportSize = useMemo(
+    () => resolveDeliveredExportSize({ fullResCapability, exportGeometry }),
+    [exportGeometry, fullResCapability],
+  )
+  // The decoded image is read as this render finds it, so the decisions
+  // below follow a decode, a release or a restore.
+  const decodedImage = decodedImageRef.current
   return useMemo(() => {
     const fullResExportReadiness = deriveFullResExportReadiness({
       sourceFile,
@@ -76,10 +96,6 @@ export function useExportDerivedState({
       fullResExportReadiness.canExport
         ? undefined
         : fullResExportReadiness.refusal
-    const exportResult = session?.exportState.result ?? null
-    const exportShareCapability: ExportShareCapability = exportResult
-      ? resolveExportShareButtonCapability()
-      : unavailableExportShare('no-result')
     // Read-only, and only for the loaded source the hint was read for.
     const exportInterrupted = isInterruptedSource(
       exportInterruption,
@@ -95,12 +111,12 @@ export function useExportDerivedState({
     const previewEvacuatedForReadyExport =
       exportState?.status === 'ready' &&
       Boolean(exportState.result) &&
-      !decodedImageRef.current &&
+      !decodedImage &&
       !embeddedPreviewUrl
     const previewSuspended =
       exportPlanSuspendsPreview &&
       (status === 'exporting' || previewEvacuatedForReadyExport)
-    const hqPreviewImage = decodedImageRef.current
+    const hqPreviewImage = decodedImage
     const canPreviewExport =
       !session?.exportGeometry &&
       status === 'ready' &&
@@ -108,7 +124,7 @@ export function useExportDerivedState({
       !hqPreviewLookRefusal &&
       displaySource === 'bounded-hq' &&
       hqPreviewImage?.source === 'bounded-hq' &&
-      Boolean(stats?.inputSize)
+      previewMeasured
     const previewExportRefusal: HqPreviewExportReasonCode | undefined =
       session?.exportGeometry
         ? 'transform-held'
@@ -121,14 +137,9 @@ export function useExportDerivedState({
               : displaySource !== 'bounded-hq' ||
                   hqPreviewImage?.source !== 'bounded-hq'
                 ? 'hq-preview-pending'
-                : !stats?.inputSize
+                : !previewMeasured
                   ? 'not-ready'
                   : undefined
-
-    const deliveredExportSize = resolveDeliveredExportSize({
-      fullResCapability: session?.exportState.fullResCapability,
-      exportGeometry: session?.exportGeometry,
-    })
 
     return {
       canExport,
@@ -142,16 +153,19 @@ export function useExportDerivedState({
       previewExportRefusal,
     }
   }, [
-    decodedImageRef,
+    decodedImage,
+    deliveredExportSize,
     displaySource,
     exportInterruption,
     embeddedPreviewUrl,
+    exportResult,
+    exportShareCapability,
     hasImage,
     hqPreviewLookRefusal,
+    previewMeasured,
     rawRenderExposure,
     session,
     sourceFile,
-    stats,
     status,
   ])
 }

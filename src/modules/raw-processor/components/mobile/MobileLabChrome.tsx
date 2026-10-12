@@ -2,7 +2,6 @@ import type {
   HSLBandId,
   HSLBandShift,
   NormalizedSelectiveColorBands,
-  PreviewHistogramState,
 } from '@lumaforge/luma-color-runtime'
 import { useSetAtom } from 'jotai'
 import { AnimatePresence, m } from 'motion/react'
@@ -87,7 +86,6 @@ export function MobileLabChrome(props: {
    * toggles the original instead of opening a split.
    */
   compareSupported?: boolean
-  histogram: PreviewHistogramState
   fileName: string
   fileMeta: string
   supportLevel: SupportLevel
@@ -380,7 +378,6 @@ export function MobileLabChrome(props: {
         handoffActive={handoffActive}
         peeking={peeking}
         histogramOpen={histogramOpen}
-        histogram={props.histogram}
         scrubField={scrubField}
         tone={props.tone}
         color={props.color}

@@ -124,3 +124,8 @@ export function useRawToolAdjustments(): RawToolAdjustments {
     [activeIntensity, color, selectiveColor, tone],
   )
 }
+
+/** How much of the look reaches the photo, 0..1, alone: a tone or colour edit leaves its reader alone. */
+export function useRawToolIntensity(): number {
+  return useAtomValue(activeIntensityAtom, storeOptions)
+}

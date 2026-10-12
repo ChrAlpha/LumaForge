@@ -93,7 +93,6 @@ export interface RawToolSurfaceProps {
   previewSuspended?: boolean
   exportResult: ExportResult | null
   exportShareCapability: ExportShareCapability
-  histogram: PreviewHistogramState
   /** Set while the loaded source's previous export was interrupted. */
   interruptionNote?: ExportInterruptionNote | null
   hasImage: boolean
@@ -167,6 +166,11 @@ export interface RawToolCommands {
 
 const RawWorkflowContext = createContext<RawToolSurfaceProps | null>(null)
 const RawToolCommandsContext = createContext<RawToolCommands | null>(null)
+/** Without a provider there is no photo, so nothing to measure. */
+const RawPreviewHistogramContext = createContext<PreviewHistogramState>({
+  state: 'unavailable',
+  reason: 'no-image',
+})
 
 export function RawToolCommandsProvider({
   commands,
@@ -210,4 +214,27 @@ export function useRawWorkflowContext(): RawToolSurfaceProps {
     throw new Error('RawWorkflowProvider is missing')
   }
   return value
+}
+
+/**
+ * The preview histogram as the surfaces show it. It moves with every preview
+ * render, so it travels apart from the workflow context: a new histogram
+ * renders what draws it, not every surface reading the workflow.
+ */
+export function RawPreviewHistogramProvider({
+  histogram,
+  children,
+}: {
+  histogram: PreviewHistogramState
+  children: ReactNode
+}) {
+  return (
+    <RawPreviewHistogramContext.Provider value={histogram}>
+      {children}
+    </RawPreviewHistogramContext.Provider>
+  )
+}
+
+export function useRawPreviewHistogram(): PreviewHistogramState {
+  return useContext(RawPreviewHistogramContext)
 }

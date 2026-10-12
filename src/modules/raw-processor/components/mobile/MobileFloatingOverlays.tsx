@@ -1,7 +1,4 @@
-import type {
-  NormalizedSelectiveColorBands,
-  PreviewHistogramState,
-} from '@lumaforge/luma-color-runtime'
+import type { NormalizedSelectiveColorBands } from '@lumaforge/luma-color-runtime'
 import { AnimatePresence, m } from 'motion/react'
 import type { CSSProperties } from 'react'
 
@@ -11,6 +8,7 @@ import { surfaceFade } from '~/lib/spring'
 import type { ManualTransform } from '~/lib/transform/transform-types'
 
 import type { ColorValue } from '../color-fields'
+import { useRawPreviewHistogram } from '../RawWorkflowContext'
 import type { ToneValue } from '../tone-fields'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { FloatingHistogramCard } from './FloatingHistogramCard'
@@ -99,7 +97,6 @@ export interface MobileFloatingOverlaysProps {
   handoffActive: boolean
   peeking: boolean
   histogramOpen: boolean
-  histogram: PreviewHistogramState
   scrubField: ScrubFieldId | null
   tone: ToneValue
   color: ColorValue
@@ -120,7 +117,6 @@ export function MobileFloatingOverlays({
   handoffActive,
   peeking,
   histogramOpen,
-  histogram,
   scrubField,
   tone,
   color,
@@ -132,6 +128,7 @@ export function MobileFloatingOverlays({
   peekPlacement = 'row',
 }: MobileFloatingOverlaysProps) {
   const { t } = useI18n()
+  const histogram = useRawPreviewHistogram()
   const peekBelow = peekPlacement === 'below'
 
   return (

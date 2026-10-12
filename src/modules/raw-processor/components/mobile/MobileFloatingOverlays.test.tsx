@@ -1,7 +1,9 @@
+import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
 import { render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { COLOR_NEUTRAL } from '../color-fields'
+import { RawPreviewHistogramProvider } from '../RawWorkflowContext'
 import { TONE_NEUTRAL } from '../tone-fields'
 import type { MobileFloatingOverlaysProps } from './MobileFloatingOverlays'
 import {
@@ -11,25 +13,31 @@ import {
   MobileFloatingOverlays,
 } from './MobileFloatingOverlays'
 
-function renderOverlays(overrides: Partial<MobileFloatingOverlaysProps> = {}) {
+function renderOverlays({
+  histogram = { state: 'unavailable', reason: 'no-image' },
+  ...overrides
+}: Partial<MobileFloatingOverlaysProps> & {
+  histogram?: PreviewHistogramState
+} = {}) {
   return render(
-    <MobileFloatingOverlays
-      immersive={false}
-      focusActive={false}
-      hasImage
-      handoffActive={false}
-      peeking={false}
-      histogramOpen={false}
-      histogram={{ state: 'unavailable', reason: 'no-image' }}
-      scrubField={null}
-      tone={TONE_NEUTRAL}
-      color={COLOR_NEUTRAL}
-      selectiveColor={undefined}
-      manualTransform={undefined}
-      onExitImmersive={vi.fn()}
-      lensVisible
-      {...overrides}
-    />,
+    <RawPreviewHistogramProvider histogram={histogram}>
+      <MobileFloatingOverlays
+        immersive={false}
+        focusActive={false}
+        hasImage
+        handoffActive={false}
+        peeking={false}
+        histogramOpen={false}
+        scrubField={null}
+        tone={TONE_NEUTRAL}
+        color={COLOR_NEUTRAL}
+        selectiveColor={undefined}
+        manualTransform={undefined}
+        onExitImmersive={vi.fn()}
+        lensVisible
+        {...overrides}
+      />
+    </RawPreviewHistogramProvider>,
   )
 }
 
@@ -172,7 +180,7 @@ describe('mobileFloatingOverlays', () => {
         inputByteLength: 24,
         rowBandRows: 32,
       },
-    } as MobileFloatingOverlaysProps['histogram']
+    } as PreviewHistogramState
     const scrub = {
       focusActive: true,
       scrubField: { kind: 'tone', key: 'userContrast' },

@@ -47,37 +47,42 @@ export function ToolCardStack({
   )
 }
 
-export function ToolCard({
-  id,
-  title,
-  meta,
-  className,
-  children,
-}: {
-  id: ToolCardId
-  title: string
-  meta?: ReactNode
-  className?: string
-  children: ReactNode
-}) {
-  return (
-    <AccordionItem
-      value={id}
-      data-tool-card={id}
-      className={clsxm(
-        'rounded-md border border-transparent transition-[background,border-color] duration-150 ease-out',
-        'hover:bg-[oklch(0.96_0.006_255/0.05)]',
-        'data-[state=open]:border-lf-on-photo-bord-soft',
-        className,
-      )}
-    >
-      <ToolCardTrigger id={id} title={title} meta={meta} />
-      <AccordionContent className="px-2.5 pt-0 pb-2.5 text-lf-body">
-        {children}
-      </AccordionContent>
-    </AccordionItem>
-  )
-}
+// A card renders again only when what it is handed moves, so a body that
+// keeps its element (the histogram plot reads its own data) leaves the card
+// and its accordion item alone.
+export const ToolCard = memo(
+  ({
+    id,
+    title,
+    meta,
+    className,
+    children,
+  }: {
+    id: ToolCardId
+    title: string
+    meta?: ReactNode
+    className?: string
+    children: ReactNode
+  }) => {
+    return (
+      <AccordionItem
+        value={id}
+        data-tool-card={id}
+        className={clsxm(
+          'rounded-md border border-transparent transition-[background,border-color] duration-150 ease-out',
+          'hover:bg-[oklch(0.96_0.006_255/0.05)]',
+          'data-[state=open]:border-lf-on-photo-bord-soft',
+          className,
+        )}
+      >
+        <ToolCardTrigger id={id} title={title} meta={meta} />
+        <AccordionContent className="px-2.5 pt-0 pb-2.5 text-lf-body">
+          {children}
+        </AccordionContent>
+      </AccordionItem>
+    )
+  },
+)
 
 // The trigger depends on its title and meta alone, so a card whose body
 // rerenders (a workflow change, a histogram result) leaves it alone.

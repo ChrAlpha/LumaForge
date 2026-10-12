@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 import { useViewport } from '~/hooks/common'
 
 import { DesktopRawToolSurface } from './DesktopRawToolSurface'
@@ -13,9 +15,10 @@ export function useIsMobileRawSurface() {
 /**
  * The desktop or the mobile tool surface, by viewport. Each reads the
  * workflow context, the store slices and the tool commands its provider
- * mounts above it.
+ * mounts above it, so it takes no props and renders only when what it reads
+ * moves, never because the view around it rendered.
  */
-export function RawToolSurface() {
+export const RawToolSurface = memo(() => {
   const isMobileViewport = useIsMobileRawSurface()
 
   return isMobileViewport ? (
@@ -27,4 +30,4 @@ export function RawToolSurface() {
   ) : (
     <DesktopRawToolSurface />
   )
-}
+})

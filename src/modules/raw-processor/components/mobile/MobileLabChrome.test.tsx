@@ -44,7 +44,6 @@ const base = {
   onSelectiveColorReset: vi.fn(),
   viewMode: 'processed' as const,
   onViewModeChange: vi.fn(),
-  histogram: { state: 'unavailable', reason: 'no-image' } as never,
   fileName: 'DSC09142.ARW',
   fileMeta: 'Sony α7 IV · Experimental support',
   supportLevel: 'experimental' as const,

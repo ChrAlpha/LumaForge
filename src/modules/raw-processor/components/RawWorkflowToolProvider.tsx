@@ -1,3 +1,4 @@
+import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
 import { useAtomValue } from 'jotai'
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -20,8 +21,10 @@ import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type {
   ExportInterruptionNote,
   RawToolCommands,
+  RawToolSurfaceProps,
 } from './RawWorkflowContext'
 import {
+  RawPreviewHistogramProvider,
   RawToolCommandsProvider,
   RawWorkflowProvider,
 } from './RawWorkflowContext'
@@ -51,6 +54,65 @@ function getAspect(size: { width: number; height: number } | null | undefined) {
 }
 
 const INTERRUPTED_NOTE: ExportInterruptionNote = { kind: 'interrupted' }
+
+/**
+ * The measured preview histogram, unless the preview on screen is not what
+ * it measured: a committed Transform reframes the photo, and the CPU preview
+ * runs no histogram. It reads the store itself, so a new histogram renders
+ * this gate and what draws the histogram, not the provider above it.
+ */
+function PreviewHistogramGate({
+  transformActive,
+  isCpuMode,
+  children,
+}: {
+  transformActive: boolean
+  isCpuMode: boolean
+  children: ReactNode
+}) {
+  const { t } = useI18n()
+  const measured = useAtomValue(previewHistogramStateAtom, {
+    store: jotaiStore,
+  })
+  const histogram = useMemo<PreviewHistogramState>(
+    () =>
+      transformActive
+        ? {
+            state: 'unsupported',
+            reason: t('raw.transform.histogramUnavailable'),
+          }
+        : isCpuMode
+          ? {
+              state: 'unsupported',
+              reason: t('raw.preview.cpuDegraded.banner'),
+            }
+          : measured,
+    [isCpuMode, measured, t, transformActive],
+  )
+  return (
+    <RawPreviewHistogramProvider histogram={histogram}>
+      {children}
+    </RawPreviewHistogramProvider>
+  )
+}
+
+/**
+ * The previous context value while every field is the same one, so a
+ * surface reading the context skips a provider render that moves nothing in
+ * it (a scrub moves the photo, not the export decisions).
+ */
+function useShallowStable<Value extends object>(value: Value): Value {
+  const ref = useRef(value)
+  const previous = ref.current
+  if (previous !== value) {
+    const keys = Object.keys(value) as (keyof Value)[]
+    const same =
+      keys.length === Object.keys(previous).length &&
+      keys.every((key) => Object.is(previous[key], value[key]))
+    if (!same) ref.current = value
+  }
+  return ref.current
+}
 
 /**
  * The note for the loaded source's interruption hint. It names no source,
@@ -177,10 +239,6 @@ export function RawWorkflowToolProvider({
   onPrepareRuntime,
   children,
 }: RawWorkflowToolProviderProps) {
-  const { t } = useI18n()
-  const measuredHistogram = useAtomValue(previewHistogramStateAtom, {
-    store: jotaiStore,
-  })
   const previewSuspended = workflow.previewSuspended === true
   // While export holds the preview released, an edit would discard the
   // delivered JPEG, so edits refuse until the preview is restored. The state
@@ -380,78 +438,77 @@ export function RawWorkflowToolProvider({
     [decodedPreviewSize, stats],
   )
 
+  const { activeStyle } = workflow
+  const appliedLut = useMemo(
+    () =>
+      activeStyle?.kind === 'custom'
+        ? {
+            name: activeStyle.name,
+            sha256: activeStyle.lutAsset?.sha256 ?? null,
+            sourceName: activeStyle.lutAsset?.sourceName ?? null,
+          }
+        : null,
+    [activeStyle],
+  )
+  const value = useShallowStable<RawToolSurfaceProps>({
+    transform: editableTransform,
+    fileName: workflow.sourceFileName,
+    toolAvailability,
+    // What the stage shows: the CPU preview has no split surface but
+    // can still show the original, and a committed Transform shows the
+    // processed photo alone.
+    viewMode: transformActive
+      ? 'processed'
+      : isCpuMode && workflow.viewMode === 'compare'
+        ? 'processed'
+        : workflow.viewMode,
+    compareSplit: workflow.compareSplit,
+    compareSupported: !isCpuMode,
+    currentLutName: workflow.currentLutName,
+    appliedLut,
+    lutProfileSelection: workflow.lutProfileSelection,
+    lutProfileResolution:
+      workflow.activeStyle?.kind === 'custom'
+        ? workflow.activeStyle.lutAsset?.profileResolution
+        : null,
+    previewLookReason,
+    onlineLutSources: editableOnlineLutSources,
+    // Full resolution reproduces a committed geometry, so it stays
+    // available once the preview has rendered it.
+    canExport: fullExport.available,
+    disabledReason,
+    // Only when the contract is the reason export states; an earlier
+    // gate (the source still loading, or Transform) would make the
+    // action a detour.
+    exportBlockedByLutContract:
+      lutContractBlocksExport && disabledReason?.source === 'workflow',
+    deliveredExportSize: workflow.deliveredExportSize ?? null,
+    canPreviewExport: hqExport.available,
+    previewExportDisabledReason,
+    isProcessing,
+    runtimeReadinessState,
+    previewSuspended,
+    exportResult: workflow.exportResult,
+    exportShareCapability: workflow.exportShareCapability,
+    interruptionNote: toInterruptionNote(workflow.exportInterrupted),
+    hasImage: workflow.hasImage,
+    supportLevel: workflow.supportLevel,
+    metadata: workflow.loadedImage.metadata,
+    stats: toolStats,
+    previewFrameEl: transformActive ? null : previewFrameEl,
+    previewAspect,
+    cpuPreviewNotice,
+  })
+
   return (
-    <RawWorkflowProvider
-      value={{
-        transform: editableTransform,
-        fileName: workflow.sourceFileName,
-        toolAvailability,
-        // What the stage shows: the CPU preview has no split surface but
-        // can still show the original, and a committed Transform shows the
-        // processed photo alone.
-        viewMode: transformActive
-          ? 'processed'
-          : isCpuMode && workflow.viewMode === 'compare'
-            ? 'processed'
-            : workflow.viewMode,
-        compareSplit: workflow.compareSplit,
-        compareSupported: !isCpuMode,
-        currentLutName: workflow.currentLutName,
-        appliedLut:
-          workflow.activeStyle?.kind === 'custom'
-            ? {
-                name: workflow.activeStyle.name,
-                sha256: workflow.activeStyle.lutAsset?.sha256 ?? null,
-                sourceName: workflow.activeStyle.lutAsset?.sourceName ?? null,
-              }
-            : null,
-        lutProfileSelection: workflow.lutProfileSelection,
-        lutProfileResolution:
-          workflow.activeStyle?.kind === 'custom'
-            ? workflow.activeStyle.lutAsset?.profileResolution
-            : null,
-        previewLookReason,
-        onlineLutSources: editableOnlineLutSources,
-        // Full resolution reproduces a committed geometry, so it stays
-        // available once the preview has rendered it.
-        canExport: fullExport.available,
-        disabledReason,
-        // Only when the contract is the reason export states; an earlier
-        // gate (the source still loading, or Transform) would make the
-        // action a detour.
-        exportBlockedByLutContract:
-          lutContractBlocksExport && disabledReason?.source === 'workflow',
-        deliveredExportSize: workflow.deliveredExportSize ?? null,
-        canPreviewExport: hqExport.available,
-        previewExportDisabledReason,
-        isProcessing,
-        runtimeReadinessState,
-        previewSuspended,
-        exportResult: workflow.exportResult,
-        exportShareCapability: workflow.exportShareCapability,
-        interruptionNote: toInterruptionNote(workflow.exportInterrupted),
-        hasImage: workflow.hasImage,
-        supportLevel: workflow.supportLevel,
-        metadata: workflow.loadedImage.metadata,
-        stats: toolStats,
-        histogram: transformActive
-          ? {
-              state: 'unsupported',
-              reason: t('raw.transform.histogramUnavailable'),
-            }
-          : isCpuMode
-            ? {
-                state: 'unsupported',
-                reason: t('raw.preview.cpuDegraded.banner'),
-              }
-            : measuredHistogram,
-        previewFrameEl: transformActive ? null : previewFrameEl,
-        previewAspect,
-        cpuPreviewNotice,
-      }}
-    >
+    <RawWorkflowProvider value={value}>
       <RawToolCommandsProvider commands={commands}>
-        {children}
+        <PreviewHistogramGate
+          transformActive={transformActive}
+          isCpuMode={isCpuMode}
+        >
+          {children}
+        </PreviewHistogramGate>
       </RawToolCommandsProvider>
     </RawWorkflowProvider>
   )

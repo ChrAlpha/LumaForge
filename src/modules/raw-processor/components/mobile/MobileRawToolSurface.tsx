@@ -92,7 +92,6 @@ export function MobileRawToolSurface() {
       viewMode={props.viewMode}
       onViewModeChange={commands.onViewModeChange}
       compareSupported={props.compareSupported !== false}
-      histogram={props.histogram}
       fileName={props.fileName}
       fileMeta={fileMeta || props.fileName}
       supportLevel={props.supportLevel}

@@ -58,7 +58,11 @@ import {
 import { COLOR_NEUTRAL } from './color-fields'
 import { RawToolSurface } from './RawToolSurface'
 import type { RawToolCommands, RawToolSurfaceProps } from './RawWorkflowContext'
-import { useRawToolCommands, useRawWorkflowContext } from './RawWorkflowContext'
+import {
+  useRawPreviewHistogram,
+  useRawToolCommands,
+  useRawWorkflowContext,
+} from './RawWorkflowContext'
 import { RawWorkflowToolProvider } from './RawWorkflowToolProvider'
 import type { TransformPreviewState } from './shared/transform-feature.fixture'
 import {
@@ -293,7 +297,11 @@ function useToolBoundary() {
 
 /** What a shell reads from its provider: the context and the commands. */
 function useSurfaceView() {
-  return { ...useRawWorkflowContext(), ...useRawToolCommands() }
+  return {
+    ...useRawWorkflowContext(),
+    ...useRawToolCommands(),
+    histogram: useRawPreviewHistogram(),
+  }
 }
 type SurfaceView = ReturnType<typeof useSurfaceView>
 
@@ -2554,7 +2562,8 @@ describe('rawWorkflowToolProvider surface contract', () => {
     // What the context hands the surfaces: action-specific availability,
     // the export decisions and their reasons, one typed note and the size
     // export will really deliver. Adjustments, the stage and its progress
-    // are the store's, and the commands are the commands provider's.
+    // are the store's, the commands are the commands provider's, and the
+    // histogram has a provider of its own.
     expect(Object.keys(result.current).sort()).toEqual(
       [
         'appliedLut',
@@ -2571,7 +2580,6 @@ describe('rawWorkflowToolProvider surface contract', () => {
         'exportShareCapability',
         'fileName',
         'hasImage',
-        'histogram',
         'interruptionNote',
         'isProcessing',
         'lutProfileResolution',
