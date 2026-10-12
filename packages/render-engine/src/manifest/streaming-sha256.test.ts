@@ -100,6 +100,21 @@ describe('streaming-sha256 (chunk-size equivalence)', () => {
     }
     expect(hasher.digestHex()).toBe(expected)
   })
+
+  it('keeps interleaved hashers apart', () => {
+    // Compression shares one message schedule; each hasher's state is its
+    // own, so alternating updates must not leak between them.
+    const left = randomBytes(10_000)
+    const right = randomBytes(7_777)
+    const leftHasher = createStreamingSha256()
+    const rightHasher = createStreamingSha256()
+    for (let offset = 0; offset < 10_000; offset += 333) {
+      leftHasher.update(left.subarray(offset, offset + 333))
+      rightHasher.update(right.subarray(offset, offset + 333))
+    }
+    expect(leftHasher.digestHex()).toBe(nodeSha256Hex(left))
+    expect(rightHasher.digestHex()).toBe(nodeSha256Hex(right))
+  })
 })
 
 describe('streaming-sha256 (API contract)', () => {

@@ -4,6 +4,15 @@ All notable changes to `@lumaforge/render-engine` are documented here. The
 format follows Keep a Changelog; versions follow semver. Release 0.1.0
 predates this file.
 
+## Unreleased
+
+### Changed
+
+- `createStreamingSha256` and `sha256Hex` hash about three times faster: the
+  compression runs on 32-bit integer words over whole blocks at a time and
+  allocates nothing per block (Node 24, a 64 MiB buffer fed in 64 KiB chunks:
+  73 MB/s before, about 250 MB/s after). Digests are unchanged.
+
 ## 0.2.0 - 2026-10-12
 
 This release removes and changes public exports, which a 0.x package releases

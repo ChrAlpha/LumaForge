@@ -7,9 +7,12 @@
 // module is the universal fallback and the v1 reference.
 //
 // Algorithm: FIPS PUB 180-4 §6.2 SHA-256.
-// JS arithmetic notes: bitwise operators coerce to int32, so the `>>> 0`
-// after every addition forces the modulo-2^32 result. ROTR(n) on a 32-bit
-// word is `(x >>> n) | (x << (32 - n))`.
+// JS arithmetic notes: every word stays a signed int32. Bitwise operators
+// coerce to int32, so `| 0` after an addition is the modulo-2^32 result and
+// keeps the value in V8's small-integer range; only the digest bytes are
+// read back unsigned. ROTR(n) on a 32-bit word is
+// `(x >>> n) | (x << (32 - n))`. The message schedule and working words
+// are reused across blocks, so a digest allocates nothing per block.
 
 export interface StreamingSha256 {
   update: (chunk: Uint8Array) => this
@@ -24,14 +27,14 @@ export interface StreamingSha256 {
 
 // FIPS 180-4 §5.3.3 initial hash values (first 32 bits of fractional parts
 // of the square roots of the first 8 primes).
-const INITIAL_H: ReadonlyArray<number> = [
+const INITIAL_H = new Int32Array([
   0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C,
   0x1F83D9AB, 0x5BE0CD19,
-]
+])
 
 // FIPS 180-4 §4.2.2 round constants (first 32 bits of fractional parts of
 // the cube roots of the first 64 primes).
-const K: ReadonlyArray<number> = [
+const K = new Int32Array([
   0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5, 0x3956C25B, 0x59F111F1,
   0x923F82A4, 0xAB1C5ED5, 0xD807AA98, 0x12835B01, 0x243185BE, 0x550C7DC3,
   0x72BE5D74, 0x80DEB1FE, 0x9BDC06A7, 0xC19BF174, 0xE49B69C1, 0xEFBE4786,
@@ -43,10 +46,14 @@ const K: ReadonlyArray<number> = [
   0x19A4C116, 0x1E376C08, 0x2748774C, 0x34B0BCB5, 0x391C0CB3, 0x4ED8AA4A,
   0x5B9CCA4F, 0x682E6FF3, 0x748F82EE, 0x78A5636F, 0x84C87814, 0x8CC70208,
   0x90BEFFFA, 0xA4506CEB, 0xBEF9A3F7, 0xC67178F2,
-]
+])
+
+// The message schedule of the block being compressed. Compression runs to
+// completion synchronously, so every state can share one.
+const W = new Int32Array(64)
 
 class Sha256Impl implements StreamingSha256 {
-  private readonly h: Uint32Array
+  private readonly h: Int32Array
   private readonly buffer: Uint8Array
   private readonly bufferView: DataView
   private bufferLen: number
@@ -55,7 +62,7 @@ class Sha256Impl implements StreamingSha256 {
   private digestBytes: Uint8Array | null
 
   constructor() {
-    this.h = new Uint32Array(INITIAL_H)
+    this.h = new Int32Array(INITIAL_H)
     this.buffer = new Uint8Array(64)
     this.bufferView = new DataView(this.buffer.buffer)
     this.bufferLen = 0
@@ -82,15 +89,16 @@ class Sha256Impl implements StreamingSha256 {
       chunkOffset += fillCount
       chunkRemaining -= fillCount
       if (this.bufferLen === 64) {
-        this.processBlock(this.buffer, 0)
+        this.processBlocks(this.buffer, 0, 64)
         this.bufferLen = 0
       }
     }
 
-    while (chunkRemaining >= 64) {
-      this.processBlock(chunk, chunkOffset)
-      chunkOffset += 64
-      chunkRemaining -= 64
+    const wholeBlockBytes = chunkRemaining - (chunkRemaining % 64)
+    if (wholeBlockBytes > 0) {
+      this.processBlocks(chunk, chunkOffset, chunkOffset + wholeBlockBytes)
+      chunkOffset += wholeBlockBytes
+      chunkRemaining -= wholeBlockBytes
     }
 
     if (chunkRemaining > 0) {
@@ -116,7 +124,7 @@ class Sha256Impl implements StreamingSha256 {
       while (this.bufferLen < 64) {
         this.buffer[this.bufferLen++] = 0
       }
-      this.processBlock(this.buffer, 0)
+      this.processBlocks(this.buffer, 0, 64)
       this.bufferLen = 0
     }
     while (this.bufferLen < 56) {
@@ -129,7 +137,7 @@ class Sha256Impl implements StreamingSha256 {
     const low = totalBits >>> 0
     this.bufferView.setUint32(56, high >>> 0, false)
     this.bufferView.setUint32(60, low, false)
-    this.processBlock(this.buffer, 0)
+    this.processBlocks(this.buffer, 0, 64)
     this.bufferLen = 0
     this.finalized = true
 
@@ -146,63 +154,90 @@ class Sha256Impl implements StreamingSha256 {
     return bytesToHex(this.digest())
   }
 
-  private processBlock(input: Uint8Array, blockOffset: number): void {
-    const W = new Uint32Array(64)
-    const view = new DataView(input.buffer, input.byteOffset + blockOffset, 64)
+  /** Compress the whole 64-byte blocks of `input` from `start` to `end`. */
+  private processBlocks(input: Uint8Array, start: number, end: number): void {
+    const w = W
+    const k = K
+    const state = this.h
+    let h0 = state[0]
+    let h1 = state[1]
+    let h2 = state[2]
+    let h3 = state[3]
+    let h4 = state[4]
+    let h5 = state[5]
+    let h6 = state[6]
+    let h7 = state[7]
 
-    for (let i = 0; i < 16; i += 1) {
-      W[i] = view.getUint32(i * 4, false)
+    for (let block = start; block < end; block += 64) {
+      for (let i = 0, j = block; i < 16; i += 1, j += 4) {
+        w[i] =
+          (input[j] << 24) |
+          (input[j + 1] << 16) |
+          (input[j + 2] << 8) |
+          input[j + 3]
+      }
+      for (let i = 16; i < 64; i += 1) {
+        const w15 = w[i - 15]
+        const w2 = w[i - 2]
+        const s0 =
+          ((w15 >>> 7) | (w15 << 25)) ^
+          ((w15 >>> 18) | (w15 << 14)) ^
+          (w15 >>> 3)
+        const s1 =
+          ((w2 >>> 17) | (w2 << 15)) ^ ((w2 >>> 19) | (w2 << 13)) ^ (w2 >>> 10)
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0
+      }
+
+      let a = h0
+      let b = h1
+      let c = h2
+      let d = h3
+      let e = h4
+      let f = h5
+      let g = h6
+      let h = h7
+
+      for (let i = 0; i < 64; i += 1) {
+        const S1 =
+          ((e >>> 6) | (e << 26)) ^
+          ((e >>> 11) | (e << 21)) ^
+          ((e >>> 25) | (e << 7))
+        const ch = (e & f) ^ (~e & g)
+        const t1 = (h + S1 + ch + k[i] + w[i]) | 0
+        const S0 =
+          ((a >>> 2) | (a << 30)) ^
+          ((a >>> 13) | (a << 19)) ^
+          ((a >>> 22) | (a << 10))
+        const maj = (a & b) ^ (a & c) ^ (b & c)
+        const t2 = (S0 + maj) | 0
+        h = g
+        g = f
+        f = e
+        e = (d + t1) | 0
+        d = c
+        c = b
+        b = a
+        a = (t1 + t2) | 0
+      }
+
+      h0 = (h0 + a) | 0
+      h1 = (h1 + b) | 0
+      h2 = (h2 + c) | 0
+      h3 = (h3 + d) | 0
+      h4 = (h4 + e) | 0
+      h5 = (h5 + f) | 0
+      h6 = (h6 + g) | 0
+      h7 = (h7 + h) | 0
     }
-    for (let i = 16; i < 64; i += 1) {
-      const w15 = W[i - 15]
-      const w2 = W[i - 2]
-      const s0 =
-        ((w15 >>> 7) | (w15 << 25)) ^ ((w15 >>> 18) | (w15 << 14)) ^ (w15 >>> 3)
-      const s1 =
-        ((w2 >>> 17) | (w2 << 15)) ^ ((w2 >>> 19) | (w2 << 13)) ^ (w2 >>> 10)
-      W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0
-    }
 
-    let a = this.h[0]
-    let b = this.h[1]
-    let c = this.h[2]
-    let d = this.h[3]
-    let e = this.h[4]
-    let f = this.h[5]
-    let g = this.h[6]
-    let h = this.h[7]
-
-    for (let i = 0; i < 64; i += 1) {
-      const S1 =
-        ((e >>> 6) | (e << 26)) ^
-        ((e >>> 11) | (e << 21)) ^
-        ((e >>> 25) | (e << 7))
-      const ch = (e & f) ^ (~e & g)
-      const t1 = (h + S1 + ch + K[i] + W[i]) >>> 0
-      const S0 =
-        ((a >>> 2) | (a << 30)) ^
-        ((a >>> 13) | (a << 19)) ^
-        ((a >>> 22) | (a << 10))
-      const maj = (a & b) ^ (a & c) ^ (b & c)
-      const t2 = (S0 + maj) >>> 0
-      h = g
-      g = f
-      f = e
-      e = (d + t1) >>> 0
-      d = c
-      c = b
-      b = a
-      a = (t1 + t2) >>> 0
-    }
-
-    this.h[0] = (this.h[0] + a) >>> 0
-    this.h[1] = (this.h[1] + b) >>> 0
-    this.h[2] = (this.h[2] + c) >>> 0
-    this.h[3] = (this.h[3] + d) >>> 0
-    this.h[4] = (this.h[4] + e) >>> 0
-    this.h[5] = (this.h[5] + f) >>> 0
-    this.h[6] = (this.h[6] + g) >>> 0
-    this.h[7] = (this.h[7] + h) >>> 0
+    state[0] = h0
+    state[1] = h1
+    state[2] = h2
+    state[3] = h3
+    state[4] = h4
+    state[5] = h5
+    state[6] = h6
+    state[7] = h7
   }
 }
 
