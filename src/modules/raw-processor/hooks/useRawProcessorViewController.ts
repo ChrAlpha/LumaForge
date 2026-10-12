@@ -86,9 +86,10 @@ export function useRawProcessorViewController({
     },
   })
 
+  const { open: openReplacePicker } = replacePicker
   const handleReplaceFile = useCallback(() => {
-    replacePicker.open()
-  }, [replacePicker])
+    openReplacePicker()
+  }, [openReplacePicker])
 
   const handleStatsUpdate = useCallback(
     (newStats: PipelineStats) => {

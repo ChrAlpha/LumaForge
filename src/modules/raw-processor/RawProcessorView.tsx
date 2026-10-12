@@ -8,7 +8,7 @@ import './raw-lab.surface.css'
 import './raw-lab.effects.css'
 
 import { useAtomValue, useSetAtom } from 'jotai'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useInRouterContext, useLocation } from 'react-router'
 
 import { clsxm } from '~/lib/cn'
@@ -106,13 +106,27 @@ function RawProcessorViewInner({
   useEffect(() => {
     setHistogramEnabled(histogramEnabled)
   }, [histogramEnabled, setHistogramEnabled])
-  const cpuPreviewNotice: CpuPreviewNotice | undefined =
-    view.isCpuMode && !view.cpuPreviewBannerDismissed
-      ? {
-          reason: view.cpuPreviewReason,
-          onDismiss: () => view.setCpuPreviewBannerDismissed(true),
-        }
-      : undefined
+  const {
+    isCpuMode,
+    cpuPreviewBannerDismissed,
+    cpuPreviewReason,
+    setCpuPreviewBannerDismissed,
+  } = view
+  const cpuPreviewNotice = useMemo<CpuPreviewNotice | undefined>(
+    () =>
+      isCpuMode && !cpuPreviewBannerDismissed
+        ? {
+            reason: cpuPreviewReason,
+            onDismiss: () => setCpuPreviewBannerDismissed(true),
+          }
+        : undefined,
+    [
+      cpuPreviewBannerDismissed,
+      cpuPreviewReason,
+      isCpuMode,
+      setCpuPreviewBannerDismissed,
+    ],
+  )
   const {
     status,
     error,

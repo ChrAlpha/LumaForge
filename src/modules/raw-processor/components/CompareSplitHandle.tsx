@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
@@ -241,344 +241,352 @@ function tryReleasePointerCapture(target: HTMLElement, pointerId: number) {
   }
 }
 
-export function CompareSplitHandle({
-  value,
-  onChange,
-  onReset,
-  disabled = false,
-  className,
-}: {
-  value: number
-  /**
-   * Commits a split. Dragging only paints the handle and the clip; the split
-   * is committed once, when the gesture completes (release or a key press).
-   */
-  onChange: (value: number) => void
-  /**
-   * The compare reset, run by a double-click (mouse) or double-tap (touch /
-   * pen) and shared by both viewports. It owns the 50% write; without it the
-   * handle commits 50% itself.
-   */
-  onReset?: () => void
-  disabled?: boolean
-  className?: string
-}) {
-  const { t } = useI18n()
-  const handleRef = useRef<HTMLButtonElement>(null)
-  const activePointerIdRef = useRef<number | null>(null)
-  const dragFrameRef = useRef<HTMLElement | null>(null)
-  const pressStartRef = useRef<{ x: number; y: number } | null>(null)
-  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null)
-  const lastPointerTypeRef = useRef<string | null>(null)
-  const pendingClientXRef = useRef<number | null>(null)
-  const pendingAnimationFrameRef = useRef<number | null>(null)
-  const committedSplitRef = useRef(clampCompareSplit(value))
-  const latestPreviewSplitRef = useRef(clampCompareSplit(value))
+export const CompareSplitHandle = memo(
+  ({
+    value,
+    onChange,
+    onReset,
+    disabled = false,
+    className,
+  }: {
+    value: number
+    /**
+     * Commits a split. Dragging only paints the handle and the clip; the split
+     * is committed once, when the gesture completes (release or a key press).
+     */
+    onChange: (value: number) => void
+    /**
+     * The compare reset, run by a double-click (mouse) or double-tap (touch /
+     * pen) and shared by both viewports. It owns the 50% write; without it the
+     * handle commits 50% itself.
+     */
+    onReset?: () => void
+    disabled?: boolean
+    className?: string
+  }) => {
+    const { t } = useI18n()
+    const handleRef = useRef<HTMLButtonElement>(null)
+    const activePointerIdRef = useRef<number | null>(null)
+    const dragFrameRef = useRef<HTMLElement | null>(null)
+    const pressStartRef = useRef<{ x: number; y: number } | null>(null)
+    const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(
+      null,
+    )
+    const lastPointerTypeRef = useRef<string | null>(null)
+    const pendingClientXRef = useRef<number | null>(null)
+    const pendingAnimationFrameRef = useRef<number | null>(null)
+    const committedSplitRef = useRef(clampCompareSplit(value))
+    const latestPreviewSplitRef = useRef(clampCompareSplit(value))
 
-  useLayoutEffect(() => {
-    const handle = handleRef.current
-    committedSplitRef.current = clampCompareSplit(value)
-    if (!handle) return
+    useLayoutEffect(() => {
+      const handle = handleRef.current
+      committedSplitRef.current = clampCompareSplit(value)
+      if (!handle) return
 
-    if (activePointerIdRef.current === null) {
-      latestPreviewSplitRef.current = committedSplitRef.current
-      applyHandlePosition(handle, value)
-    }
+      if (activePointerIdRef.current === null) {
+        latestPreviewSplitRef.current = committedSplitRef.current
+        applyHandlePosition(handle, value)
+      }
 
-    if (typeof ResizeObserver === 'undefined') return
+      if (typeof ResizeObserver === 'undefined') return
 
-    const frame = handle.parentElement
-    const imageTrack = frame?.querySelector<HTMLElement>(IMAGE_TRACK_SELECTOR)
-    const observer = new ResizeObserver(() => {
-      applyHandlePosition(handle, latestPreviewSplitRef.current)
+      const frame = handle.parentElement
+      const imageTrack = frame?.querySelector<HTMLElement>(IMAGE_TRACK_SELECTOR)
+      const observer = new ResizeObserver(() => {
+        applyHandlePosition(handle, latestPreviewSplitRef.current)
+      })
+
+      if (frame) observer.observe(frame)
+      if (imageTrack) observer.observe(imageTrack)
+
+      return () => {
+        observer.disconnect()
+      }
     })
 
-    if (frame) observer.observe(frame)
-    if (imageTrack) observer.observe(imageTrack)
-
-    return () => {
-      observer.disconnect()
-    }
-  })
-
-  const cancelPendingPreview = useCallback(() => {
-    pendingClientXRef.current = null
-    const frame = pendingAnimationFrameRef.current
-    if (frame !== null) {
-      window.cancelAnimationFrame(frame)
-      pendingAnimationFrameRef.current = null
-    }
-  }, [])
-
-  const previewFromPointer = useCallback(
-    (target: HTMLElement, clientX: number) => {
-      const split = applyPointerPosition(target, clientX)
-      latestPreviewSplitRef.current = split
-      return split
-    },
-    [],
-  )
-
-  const schedulePointerPreview = useCallback(
-    (target: HTMLElement, clientX: number) => {
-      pendingClientXRef.current = clientX
-
-      if (pendingAnimationFrameRef.current !== null) return
-
-      pendingAnimationFrameRef.current = window.requestAnimationFrame(() => {
+    const cancelPendingPreview = useCallback(() => {
+      pendingClientXRef.current = null
+      const frame = pendingAnimationFrameRef.current
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame)
         pendingAnimationFrameRef.current = null
-        const nextClientX = pendingClientXRef.current
-        if (nextClientX === null) return
-        previewFromPointer(target, nextClientX)
-      })
-    },
-    [previewFromPointer],
-  )
-
-  const flushPointerPreview = useCallback(
-    (target: HTMLElement, clientX: number) => {
-      cancelPendingPreview()
-      return previewFromPointer(target, clientX)
-    },
-    [cancelPendingPreview, previewFromPointer],
-  )
-
-  const setFrameDragging = useCallback(
-    (target: HTMLElement, active: boolean) => {
-      const frame = active ? target.parentElement : dragFrameRef.current
-      dragFrameRef.current = active ? frame : null
-      if (!frame) return
-      if (active) {
-        frame.setAttribute('data-raw-compare-dragging', '')
-      } else {
-        frame.removeAttribute('data-raw-compare-dragging')
       }
-    },
-    [],
-  )
+    }, [])
 
-  // Paints the last committed split again, dropping any transient drag
-  // position.
-  const restoreCommittedSplit = useCallback((target: HTMLElement) => {
-    latestPreviewSplitRef.current = committedSplitRef.current
-    applyHandlePosition(target, committedSplitRef.current)
-  }, [])
+    const previewFromPointer = useCallback(
+      (target: HTMLElement, clientX: number) => {
+        const split = applyPointerPosition(target, clientX)
+        latestPreviewSplitRef.current = split
+        return split
+      },
+      [],
+    )
 
-  // Ends an unfinished drag without committing it: cancel, lost capture,
-  // disable and unmount all land back on the committed split.
-  const abandonDrag = useCallback(
-    (target: HTMLElement | null) => {
-      const pointerId = activePointerIdRef.current
-      cancelPendingPreview()
-      pressStartRef.current = null
-      lastTapRef.current = null
-      if (pointerId === null) return
+    const schedulePointerPreview = useCallback(
+      (target: HTMLElement, clientX: number) => {
+        pendingClientXRef.current = clientX
 
-      activePointerIdRef.current = null
-      if (target) {
-        setFrameDragging(target, false)
-        tryReleasePointerCapture(target, pointerId)
-        restoreCommittedSplit(target)
-      } else {
-        // The handle is gone but the frame can outlive it: put the committed
-        // split back on the frame so nothing keeps showing the abandoned drag.
-        const frame = dragFrameRef.current
-        dragFrameRef.current = null
-        if (frame) {
-          frame.removeAttribute('data-raw-compare-dragging')
-          applyFramePosition(frame, committedSplitRef.current)
-        }
-      }
-    },
-    [cancelPendingPreview, restoreCommittedSplit, setFrameDragging],
-  )
+        if (pendingAnimationFrameRef.current !== null) return
 
-  useEffect(() => {
-    if (disabled) abandonDrag(handleRef.current)
-  }, [abandonDrag, disabled])
+        pendingAnimationFrameRef.current = window.requestAnimationFrame(() => {
+          pendingAnimationFrameRef.current = null
+          const nextClientX = pendingClientXRef.current
+          if (nextClientX === null) return
+          previewFromPointer(target, nextClientX)
+        })
+      },
+      [previewFromPointer],
+    )
 
-  useEffect(() => {
-    return () => {
-      abandonDrag(null)
-    }
-  }, [abandonDrag])
+    const flushPointerPreview = useCallback(
+      (target: HTMLElement, clientX: number) => {
+        cancelPendingPreview()
+        return previewFromPointer(target, clientX)
+      },
+      [cancelPendingPreview, previewFromPointer],
+    )
 
-  // One reset transaction: the compare reset when wired, else a single 50%
-  // commit. The handle shows the committed split meanwhile; the reset's own
-  // re-render moves it, and a refused reset leaves it where the split is.
-  const resetSplit = useCallback(
-    (target: HTMLElement) => {
-      cancelPendingPreview()
-      restoreCommittedSplit(target)
-      if (onReset) {
-        onReset()
-      } else {
-        onChange(RESET_SPLIT)
-      }
-    },
-    [cancelPendingPreview, onChange, onReset, restoreCommittedSplit],
-  )
-
-  const handlePointerDown = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      event.stopPropagation()
-      lastPointerTypeRef.current = event.pointerType
-      if (disabled) return
-
-      pressStartRef.current = { x: event.clientX, y: event.clientY }
-      trySetPointerCapture(event.currentTarget, event.pointerId)
-      activePointerIdRef.current = event.pointerId
-      setFrameDragging(event.currentTarget, true)
-      schedulePointerPreview(event.currentTarget, event.clientX)
-    },
-    [disabled, schedulePointerPreview, setFrameDragging],
-  )
-
-  const handlePointerMove = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      event.stopPropagation()
-      if (disabled || activePointerIdRef.current !== event.pointerId) {
-        return
-      }
-
-      schedulePointerPreview(event.currentTarget, event.clientX)
-    },
-    [disabled, schedulePointerPreview],
-  )
-
-  const handlePointerUp = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      event.stopPropagation()
-      if (disabled || activePointerIdRef.current !== event.pointerId) return
-
-      const target = event.currentTarget
-      const start = pressStartRef.current
-      pressStartRef.current = null
-      activePointerIdRef.current = null
-      setFrameDragging(target, false)
-      tryReleasePointerCapture(target, event.pointerId)
-
-      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-        const travelled = start
-          ? Math.hypot(event.clientX - start.x, event.clientY - start.y)
-          : 0
-        const now = Date.now()
-        const last = lastTapRef.current
-        if (travelled > DOUBLE_TAP_SLOP_PX) {
-          // A drag, not a tap.
-          lastTapRef.current = null
-        } else if (
-          last &&
-          now - last.time <= DOUBLE_TAP_MS &&
-          Math.hypot(event.clientX - last.x, event.clientY - last.y) <=
-            DOUBLE_TAP_SLOP_PX
-        ) {
-          // The second tap is the reset, not a split commit of its own.
-          lastTapRef.current = null
-          resetSplit(target)
-          return
+    const setFrameDragging = useCallback(
+      (target: HTMLElement, active: boolean) => {
+        const frame = active ? target.parentElement : dragFrameRef.current
+        dragFrameRef.current = active ? frame : null
+        if (!frame) return
+        if (active) {
+          frame.setAttribute('data-raw-compare-dragging', '')
         } else {
-          lastTapRef.current = { time: now, x: event.clientX, y: event.clientY }
+          frame.removeAttribute('data-raw-compare-dragging')
         }
+      },
+      [],
+    )
+
+    // Paints the last committed split again, dropping any transient drag
+    // position.
+    const restoreCommittedSplit = useCallback((target: HTMLElement) => {
+      latestPreviewSplitRef.current = committedSplitRef.current
+      applyHandlePosition(target, committedSplitRef.current)
+    }, [])
+
+    // Ends an unfinished drag without committing it: cancel, lost capture,
+    // disable and unmount all land back on the committed split.
+    const abandonDrag = useCallback(
+      (target: HTMLElement | null) => {
+        const pointerId = activePointerIdRef.current
+        cancelPendingPreview()
+        pressStartRef.current = null
+        lastTapRef.current = null
+        if (pointerId === null) return
+
+        activePointerIdRef.current = null
+        if (target) {
+          setFrameDragging(target, false)
+          tryReleasePointerCapture(target, pointerId)
+          restoreCommittedSplit(target)
+        } else {
+          // The handle is gone but the frame can outlive it: put the committed
+          // split back on the frame so nothing keeps showing the abandoned drag.
+          const frame = dragFrameRef.current
+          dragFrameRef.current = null
+          if (frame) {
+            frame.removeAttribute('data-raw-compare-dragging')
+            applyFramePosition(frame, committedSplitRef.current)
+          }
+        }
+      },
+      [cancelPendingPreview, restoreCommittedSplit, setFrameDragging],
+    )
+
+    useEffect(() => {
+      if (disabled) abandonDrag(handleRef.current)
+    }, [abandonDrag, disabled])
+
+    useEffect(() => {
+      return () => {
+        abandonDrag(null)
       }
+    }, [abandonDrag])
 
-      onChange(flushPointerPreview(target, event.clientX))
-    },
-    [disabled, flushPointerPreview, onChange, resetSplit, setFrameDragging],
-  )
+    // One reset transaction: the compare reset when wired, else a single 50%
+    // commit. The handle shows the committed split meanwhile; the reset's own
+    // re-render moves it, and a refused reset leaves it where the split is.
+    const resetSplit = useCallback(
+      (target: HTMLElement) => {
+        cancelPendingPreview()
+        restoreCommittedSplit(target)
+        if (onReset) {
+          onReset()
+        } else {
+          onChange(RESET_SPLIT)
+        }
+      },
+      [cancelPendingPreview, onChange, onReset, restoreCommittedSplit],
+    )
 
-  const handlePointerCancel = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      event.stopPropagation()
-      if (activePointerIdRef.current !== event.pointerId) return
-      abandonDrag(event.currentTarget)
-    },
-    [abandonDrag],
-  )
+    const handlePointerDown = useCallback(
+      (event: React.PointerEvent<HTMLButtonElement>) => {
+        event.stopPropagation()
+        lastPointerTypeRef.current = event.pointerType
+        if (disabled) return
 
-  const handleLostPointerCapture = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      // Capture lost without a release (the element moved, the page hid):
-      // end the drag the same way a cancel does. A release clears the active
-      // pointer before it lets capture go, so it never lands here.
-      if (activePointerIdRef.current !== event.pointerId) return
-      abandonDrag(event.currentTarget)
-    },
-    [abandonDrag],
-  )
+        pressStartRef.current = { x: event.clientX, y: event.clientY }
+        trySetPointerCapture(event.currentTarget, event.pointerId)
+        activePointerIdRef.current = event.pointerId
+        setFrameDragging(event.currentTarget, true)
+        schedulePointerPreview(event.currentTarget, event.clientX)
+      },
+      [disabled, schedulePointerPreview, setFrameDragging],
+    )
 
-  const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLButtonElement>) => {
-      event.stopPropagation()
-      if (disabled) return
+    const handlePointerMove = useCallback(
+      (event: React.PointerEvent<HTMLButtonElement>) => {
+        event.stopPropagation()
+        if (disabled || activePointerIdRef.current !== event.pointerId) {
+          return
+        }
 
-      if (event.key === 'ArrowLeft') {
+        schedulePointerPreview(event.currentTarget, event.clientX)
+      },
+      [disabled, schedulePointerPreview],
+    )
+
+    const handlePointerUp = useCallback(
+      (event: React.PointerEvent<HTMLButtonElement>) => {
+        event.stopPropagation()
+        if (disabled || activePointerIdRef.current !== event.pointerId) return
+
+        const target = event.currentTarget
+        const start = pressStartRef.current
+        pressStartRef.current = null
+        activePointerIdRef.current = null
+        setFrameDragging(target, false)
+        tryReleasePointerCapture(target, event.pointerId)
+
+        if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+          const travelled = start
+            ? Math.hypot(event.clientX - start.x, event.clientY - start.y)
+            : 0
+          const now = Date.now()
+          const last = lastTapRef.current
+          if (travelled > DOUBLE_TAP_SLOP_PX) {
+            // A drag, not a tap.
+            lastTapRef.current = null
+          } else if (
+            last &&
+            now - last.time <= DOUBLE_TAP_MS &&
+            Math.hypot(event.clientX - last.x, event.clientY - last.y) <=
+              DOUBLE_TAP_SLOP_PX
+          ) {
+            // The second tap is the reset, not a split commit of its own.
+            lastTapRef.current = null
+            resetSplit(target)
+            return
+          } else {
+            lastTapRef.current = {
+              time: now,
+              x: event.clientX,
+              y: event.clientY,
+            }
+          }
+        }
+
+        onChange(flushPointerPreview(target, event.clientX))
+      },
+      [disabled, flushPointerPreview, onChange, resetSplit, setFrameDragging],
+    )
+
+    const handlePointerCancel = useCallback(
+      (event: React.PointerEvent<HTMLButtonElement>) => {
+        event.stopPropagation()
+        if (activePointerIdRef.current !== event.pointerId) return
+        abandonDrag(event.currentTarget)
+      },
+      [abandonDrag],
+    )
+
+    const handleLostPointerCapture = useCallback(
+      (event: React.PointerEvent<HTMLButtonElement>) => {
+        // Capture lost without a release (the element moved, the page hid):
+        // end the drag the same way a cancel does. A release clears the active
+        // pointer before it lets capture go, so it never lands here.
+        if (activePointerIdRef.current !== event.pointerId) return
+        abandonDrag(event.currentTarget)
+      },
+      [abandonDrag],
+    )
+
+    const handleKeyDown = useCallback(
+      (event: React.KeyboardEvent<HTMLButtonElement>) => {
+        event.stopPropagation()
+        if (disabled) return
+
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault()
+          onChange(clampCompareSplit(clampCompareSplit(value) - KEYBOARD_STEP))
+        } else if (event.key === 'ArrowRight') {
+          event.preventDefault()
+          onChange(clampCompareSplit(clampCompareSplit(value) + KEYBOARD_STEP))
+        } else if (event.key === 'Home') {
+          event.preventDefault()
+          onChange(MIN_SPLIT)
+        } else if (event.key === 'End') {
+          event.preventDefault()
+          onChange(MAX_SPLIT)
+        }
+      },
+      [disabled, onChange, value],
+    )
+
+    const handleDoubleClick = useCallback(
+      (event: React.MouseEvent<HTMLButtonElement>) => {
+        // Keep the stage's own double-click (viewport reset) out of this.
+        event.stopPropagation()
         event.preventDefault()
-        onChange(clampCompareSplit(clampCompareSplit(value) - KEYBOARD_STEP))
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault()
-        onChange(clampCompareSplit(clampCompareSplit(value) + KEYBOARD_STEP))
-      } else if (event.key === 'Home') {
-        event.preventDefault()
-        onChange(MIN_SPLIT)
-      } else if (event.key === 'End') {
-        event.preventDefault()
-        onChange(MAX_SPLIT)
-      }
-    },
-    [disabled, onChange, value],
-  )
+        if (disabled) return
+        // Touch and pen reset through the double-tap path; a synthesized
+        // dblclick after it must not reset twice.
+        const pointerType = lastPointerTypeRef.current
+        if (pointerType === 'touch' || pointerType === 'pen') return
+        resetSplit(event.currentTarget)
+      },
+      [disabled, resetSplit],
+    )
 
-  const handleDoubleClick = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      // Keep the stage's own double-click (viewport reset) out of this.
-      event.stopPropagation()
-      event.preventDefault()
-      if (disabled) return
-      // Touch and pen reset through the double-tap path; a synthesized
-      // dblclick after it must not reset twice.
-      const pointerType = lastPointerTypeRef.current
-      if (pointerType === 'touch' || pointerType === 'pen') return
-      resetSplit(event.currentTarget)
-    },
-    [disabled, resetSplit],
-  )
+    const stopInteractionPropagation = useCallback(
+      (event: React.SyntheticEvent<HTMLButtonElement>) => {
+        event.stopPropagation()
+      },
+      [],
+    )
 
-  const stopInteractionPropagation = useCallback(
-    (event: React.SyntheticEvent<HTMLButtonElement>) => {
-      event.stopPropagation()
-    },
-    [],
-  )
+    const ariaValueNow = Math.round(clampCompareSplit(value) * 100)
 
-  const ariaValueNow = Math.round(clampCompareSplit(value) * 100)
-
-  return (
-    <button
-      ref={handleRef}
-      type="button"
-      role="slider"
-      aria-label={t('raw.stage.sliderAria')}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={ariaValueNow}
-      disabled={disabled}
-      className={clsxm('raw-lab-compare-handle', className)}
-      style={
-        {
-          '--raw-compare-split': `${clampCompareSplit(value) * 100}%`,
-        } as React.CSSProperties
-      }
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerCancel}
-      onLostPointerCapture={handleLostPointerCapture}
-      onClick={stopInteractionPropagation}
-      onDoubleClick={handleDoubleClick}
-      onKeyDown={handleKeyDown}
-    >
-      <span aria-hidden="true">↔</span>
-    </button>
-  )
-}
+    return (
+      <button
+        ref={handleRef}
+        type="button"
+        role="slider"
+        aria-label={t('raw.stage.sliderAria')}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={ariaValueNow}
+        disabled={disabled}
+        className={clsxm('raw-lab-compare-handle', className)}
+        style={
+          {
+            '--raw-compare-split': `${clampCompareSplit(value) * 100}%`,
+          } as React.CSSProperties
+        }
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onLostPointerCapture={handleLostPointerCapture}
+        onClick={stopInteractionPropagation}
+        onDoubleClick={handleDoubleClick}
+        onKeyDown={handleKeyDown}
+      >
+        <span aria-hidden="true">↔</span>
+      </button>
+    )
+  },
+)
