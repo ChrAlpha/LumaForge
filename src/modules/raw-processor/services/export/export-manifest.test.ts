@@ -33,7 +33,6 @@ import {
   buildFullResExportManifest,
   lutIdentityForStyle,
   resolveExportEnvironment,
-  sha256OfBlob,
   toManifestRenderParams,
 } from './export-manifest'
 
@@ -452,14 +451,6 @@ describe('lutIdentityForStyle', () => {
         },
       }).reason,
     ).toBe('lut-unconfirmed')
-  })
-})
-
-describe('sha256OfBlob', () => {
-  it('matches node crypto for the same bytes', async () => {
-    const bytes = new Uint8Array(70_000).map((_, i) => i % 251)
-    const expected = createHash('sha256').update(bytes).digest('hex')
-    expect(await sha256OfBlob(new Blob([bytes]))).toBe(expected)
   })
 })
 

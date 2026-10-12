@@ -16,9 +16,9 @@ import {
   runProcessedWindowExportLifecycle,
   sha256OfJpegWithMetadata,
 } from '@lumaforge/render-engine/export'
-import { createStreamingSha256 } from '@lumaforge/render-engine/manifest'
 
 import { createRawExportSession } from '../raw/export-runtime-adapter'
+import { sha256OfBlob } from './blob-sha256'
 import type {
   FullResExportWorkerRequest,
   FullResExportWorkerResponse,
@@ -328,31 +328,10 @@ async function prepareSuccessOutput(input: {
   return createBlobOutputResult({
     filename: input.output.filename,
     blob: blobWithMetadata,
-    sha256: await sha256OfBlobBytes(blobWithMetadata),
+    // The delivered JPEG, after metadata injection, is what the manifest
+    // must identify.
+    sha256: await sha256OfBlob(blobWithMetadata),
   })
-}
-
-function readBlobBytes(blob: Blob): Promise<Uint8Array> {
-  if (typeof blob.arrayBuffer === 'function') {
-    return blob.arrayBuffer().then((buffer) => new Uint8Array(buffer))
-  }
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.addEventListener('load', () => {
-      resolve(new Uint8Array(reader.result as ArrayBuffer))
-    })
-    reader.addEventListener('error', () => {
-      reject(reader.error ?? new Error('Blob read failed.'))
-    })
-    reader.readAsArrayBuffer(blob)
-  })
-}
-
-/** The delivered JPEG (after metadata injection) is what the manifest must identify. */
-async function sha256OfBlobBytes(blob: Blob): Promise<string> {
-  const hasher = createStreamingSha256()
-  hasher.update(await readBlobBytes(blob))
-  return hasher.digestHex()
 }
 
 const activeRequests = new Map<string, AbortController>()

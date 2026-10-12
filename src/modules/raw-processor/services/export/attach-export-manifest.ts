@@ -7,6 +7,8 @@ import type {
   RenderManifest,
 } from '@lumaforge/render-engine/manifest'
 
+import { sha256OfBlobOffThread } from '~/lib/export/blob-sha256-client'
+
 import type {
   ExportManifestUnavailableReason,
   ExportResult,
@@ -15,7 +17,6 @@ import type { StyleAsset } from '../../model/session'
 import {
   buildFullResExportManifest,
   lutIdentityForStyle,
-  sha256OfBlob,
 } from './export-manifest'
 
 export type BuildExportManifestInput = {
@@ -62,12 +63,12 @@ async function resolveOutputSha256(
       'The export output hash was not recorded, so the manifest cannot be sealed without reopening the file.',
     )
   }
-  return sha256OfBlob(await materializeOutputBlob(output))
+  return sha256OfBlobOffThread(await materializeOutputBlob(output))
 }
 
 /**
- * Hash the source RAW (streaming) and seal the manifest around the delivered
- * JPEG. Throws when the active custom LUT cannot be identified; callers treat
+ * Hash the source RAW (streaming, on a worker) and seal the manifest around
+ * the delivered JPEG. Throws when the active custom LUT cannot be identified; callers treat
  * that as "manifest unavailable" rather than failing the export.
  */
 export async function buildManifestForExportResult(
@@ -99,7 +100,7 @@ export async function buildManifestForExportResult(
     )
   }
   const [sourceSha256, outputSha256] = await Promise.all([
-    sha256OfBlob(input.sourceFile),
+    sha256OfBlobOffThread(input.sourceFile),
     resolveOutputSha256(input.result.output),
   ])
   return buildFullResExportManifest({
