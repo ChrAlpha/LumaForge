@@ -16,6 +16,7 @@ import { OnlineLutSourceControls } from './OnlineLutSourceControls'
 export const LutContractTool = memo(
   ({
     currentLutName,
+    hasImage,
     disabled,
     onLutLoad,
     onLutClear,
@@ -26,6 +27,8 @@ export const LutContractTool = memo(
     onlineLutSources,
   }: {
     currentLutName?: string | null
+    /** A RAW is loaded, so a LUT added now applies at once. */
+    hasImage: boolean
     disabled: boolean
     onLutLoad: (files: File[]) => void
     onLutClear: () => void
@@ -57,7 +60,7 @@ export const LutContractTool = memo(
             previewLookReason={previewLookReason}
             onSelect={onLutProfileSelect}
           />
-        ) : (
+        ) : hasImage ? null : (
           <p className="m-0 text-[0.72rem] leading-relaxed text-lf-on-surface/72">
             {t('raw.lutContract.empty')}
           </p>

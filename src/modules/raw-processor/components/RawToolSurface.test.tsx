@@ -379,6 +379,16 @@ describe('rawToolSurface', () => {
     expect(lutHint.className).toBe(catalogHint.className)
   })
 
+  it('drops the staged LUT hint once a RAW is loaded', () => {
+    renderRawToolSurface({ ...baseProps, hasImage: true })
+
+    expect(
+      screen.queryByText(
+        'Add a .cube LUT now, it stays staged until a RAW file is loaded.',
+      ),
+    ).toBeNull()
+  })
+
   it('reveals the histogram plot when its card is expanded', async () => {
     const user = userEvent.setup()
     const luma = new Uint32Array(256)

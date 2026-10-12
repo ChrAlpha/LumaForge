@@ -87,6 +87,7 @@ export function DesktopRawToolSurface() {
         <ToolCard id="look" title={t('raw.lutContract.title')}>
           <LutContractTool
             currentLutName={props.currentLutName}
+            hasImage={props.hasImage}
             disabled={lutDropDisabled}
             onLutLoad={commands.onLutLoad}
             onLutClear={commands.onLutClear}
