@@ -1,5 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
@@ -55,6 +55,29 @@ function areSamePipelineStats(a: PipelineStats, b: PipelineStats) {
   )
 }
 
+/** How a frame's render took, not what the pipeline is. */
+const PIPELINE_TIMING_FIELDS: ReadonlySet<keyof PipelineStats> = new Set([
+  'uploadTime',
+  'lutUploadTime',
+  'processTime',
+  'totalTime',
+])
+
+/**
+ * A preview render reports fresh timings on every frame. The pipeline facts
+ * (sizes, formats, the LUT path) publish at once; a change in timings alone
+ * reaches the stats readers at most this often, because every stats change
+ * rerenders the whole workspace and only a readout shows the timings.
+ */
+export const PIPELINE_TIMING_PUBLISH_MS = 250
+
+function differsOnlyInTiming(a: PipelineStats, b: PipelineStats) {
+  return PIPELINE_STATS_FIELDS.every(
+    (key) =>
+      PIPELINE_TIMING_FIELDS.has(key) || isSamePipelineStatsField(key, a, b),
+  )
+}
+
 type UseRawWorkflowActionsInput = {
   viewRef: MutableRefObject<PreviewView>
   isMountedRef: MutableRefObject<boolean>
@@ -62,6 +85,8 @@ type UseRawWorkflowActionsInput = {
   setError: (error: string | null) => void
   setStatus: (status: ProcessingStatus) => void
   setStats: Dispatch<SetStateAction<PipelineStats | null>>
+  /** The stats as the store holds them now. */
+  getStats: () => PipelineStats | null
   postCommitTask?: (task: () => void) => void
 }
 
@@ -72,6 +97,7 @@ export function useRawWorkflowActions({
   setError,
   setStatus,
   setStats,
+  getStats,
   postCommitTask = enqueuePostCommitTask,
 }: UseRawWorkflowActionsInput) {
   // The view as last rendered, read at call time. The color intent has no
@@ -104,15 +130,49 @@ export function useRawWorkflowActions({
     }
   }, [setError, status, setStatus])
 
+  const timingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingTimingRef = useRef<PipelineStats | null>(null)
+
   const updateStats = useCallback(
     (newStats: PipelineStats) => {
       // Preview renders report freshly allocated stats; keep the current value
       // when nothing changed so stats subscribers are not notified again.
-      setStats((current) =>
-        current && areSamePipelineStats(current, newStats) ? current : newStats,
-      )
+      const publish = (next: PipelineStats) =>
+        setStats((current) =>
+          current && areSamePipelineStats(current, next) ? current : next,
+        )
+      const current = getStats()
+      if (current && differsOnlyInTiming(current, newStats)) {
+        pendingTimingRef.current = newStats
+        if (timingTimerRef.current !== null) return
+        timingTimerRef.current = setTimeout(() => {
+          timingTimerRef.current = null
+          const pending = pendingTimingRef.current
+          pendingTimingRef.current = null
+          // A reset or a new pipeline since then outdates these timings.
+          const latest = getStats()
+          if (pending && latest && differsOnlyInTiming(latest, pending)) {
+            publish(pending)
+          }
+        }, PIPELINE_TIMING_PUBLISH_MS)
+        return
+      }
+      if (timingTimerRef.current !== null) {
+        clearTimeout(timingTimerRef.current)
+        timingTimerRef.current = null
+      }
+      pendingTimingRef.current = null
+      publish(newStats)
     },
-    [setStats],
+    [getStats, setStats],
+  )
+
+  useEffect(
+    () => () => {
+      if (timingTimerRef.current !== null) clearTimeout(timingTimerRef.current)
+      timingTimerRef.current = null
+    },
+    [],
   )
 
   return {

@@ -80,7 +80,7 @@ export const [
   ,
   usePipelineStatsValue,
   useSetPipelineStats,
-  ,
+  getPipelineStats,
   setPipelineStats,
 ] = createAtomHooks(basePipelineStatsAtom)
 

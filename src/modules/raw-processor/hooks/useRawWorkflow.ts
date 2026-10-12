@@ -7,7 +7,11 @@ import { toLUTData } from '~/lib/lut/cube-parser'
 
 import { hasActiveExport } from '../services/export/export-state'
 import { getCurrentSession, setCurrentSession } from '../state/session.atoms'
-import { getEffectiveColorIntent, getLut } from '../state/workflow.atoms'
+import {
+  getEffectiveColorIntent,
+  getLut,
+  getPipelineStats,
+} from '../state/workflow.atoms'
 import { buildRawWorkflowReturn } from './buildRawWorkflowReturn'
 import { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
 import { useRawCompareStage } from './stages/compare/useRawCompareStage'
@@ -93,6 +97,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
       setError,
       setStatus,
       setStats,
+      getStats: getPipelineStats,
     })
   const {
     hasImage,

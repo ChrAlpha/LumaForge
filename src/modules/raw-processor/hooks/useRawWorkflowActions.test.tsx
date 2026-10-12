@@ -1,11 +1,22 @@
 import { renderHook } from '@testing-library/react'
 import { atom, createStore } from 'jotai'
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from 'vitest'
 
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
-import { useRawWorkflowActions } from './useRawWorkflowActions'
+import {
+  PIPELINE_TIMING_PUBLISH_MS,
+  useRawWorkflowActions,
+} from './useRawWorkflowActions'
 
 const view: PreviewView = { mode: 'compare', compareSplit: 0.5 }
 
@@ -42,6 +53,7 @@ function renderStatsHarness(status: 'ready' | 'error' = 'ready') {
       setError,
       setStatus,
       setStats: (update) => store.set(statsAtom, update),
+      getStats: () => store.get(statsAtom),
     }),
   )
 
@@ -51,6 +63,7 @@ function renderStatsHarness(status: 'ready' | 'error' = 'ready') {
     setStatus,
     notifications,
     readStats: () => store.get(statsAtom),
+    resetStats: () => store.set(statsAtom, null),
   }
 }
 
@@ -67,6 +80,7 @@ describe('useRawWorkflowActions', () => {
         setError: vi.fn(),
         setStatus: vi.fn(),
         setStats: vi.fn(),
+        getStats: () => null,
       }),
     )
 
@@ -102,6 +116,7 @@ describe('useRawWorkflowActions', () => {
         setError: vi.fn(),
         setStatus: vi.fn(),
         setStats: vi.fn(),
+        getStats: () => null,
         postCommitTask: (task) => queuedTasks.push(task),
       }),
     )
@@ -140,12 +155,6 @@ describe('useRawWorkflowActions', () => {
     expect(readStats()).toBe(stats)
     expect(notifications).toHaveBeenCalledTimes(1)
 
-    const changedTiming = createStats({ processTime: 2.5 })
-    result.current.updateStats(changedTiming)
-
-    expect(readStats()).toBe(changedTiming)
-    expect(notifications).toHaveBeenCalledTimes(2)
-
     const changedDimension = createStats({
       processTime: 2.5,
       previewSize: { width: 640, height: 481 },
@@ -153,14 +162,69 @@ describe('useRawWorkflowActions', () => {
     result.current.updateStats(changedDimension)
 
     expect(readStats()).toBe(changedDimension)
-    expect(notifications).toHaveBeenCalledTimes(3)
+    expect(notifications).toHaveBeenCalledTimes(2)
+  })
+
+  describe('render timings', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it.each<[string, Partial<PipelineStats>]>([
+      ['uploadTime', { uploadTime: 1.5 }],
+      ['lutUploadTime', { lutUploadTime: 0.5 }],
+      ['processTime', { processTime: 2.5 }],
+      ['totalTime', { totalTime: 3.5 }],
+    ])(
+      'publishes a %s change alone on a trailing beat with the latest timings',
+      (_field, overrides) => {
+        const { result, notifications, readStats } = renderStatsHarness()
+        const first = createStats()
+        result.current.updateStats(first)
+
+        result.current.updateStats(createStats(overrides))
+        const latest = createStats({ ...overrides, processTime: 9 })
+        result.current.updateStats(latest)
+        expect(readStats()).toBe(first)
+
+        vi.advanceTimersByTime(PIPELINE_TIMING_PUBLISH_MS)
+        expect(readStats()).toBe(latest)
+        expect(notifications).toHaveBeenCalledTimes(2)
+      },
+    )
+
+    it('publishes a pipeline change at once and drops the timings it outdates', () => {
+      const { result, notifications, readStats } = renderStatsHarness()
+      result.current.updateStats(createStats())
+      result.current.updateStats(createStats({ processTime: 4 }))
+
+      const resized = createStats({
+        processTime: 5,
+        previewSize: { width: 641, height: 480 },
+      })
+      result.current.updateStats(resized)
+      expect(readStats()).toBe(resized)
+
+      vi.advanceTimersByTime(PIPELINE_TIMING_PUBLISH_MS)
+      expect(readStats()).toBe(resized)
+      expect(notifications).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not bring timings back over a reset', () => {
+      const { result, readStats, resetStats } = renderStatsHarness()
+      result.current.updateStats(createStats())
+      result.current.updateStats(createStats({ processTime: 4 }))
+      resetStats()
+
+      vi.advanceTimersByTime(PIPELINE_TIMING_PUBLISH_MS)
+      expect(readStats()).toBeNull()
+    })
   })
 
   it.each<[string, Partial<PipelineStats>]>([
-    ['uploadTime', { uploadTime: 1.5 }],
-    ['lutUploadTime', { lutUploadTime: 0.5 }],
-    ['processTime', { processTime: 2.5 }],
-    ['totalTime', { totalTime: 3.5 }],
     ['inputSize.width', { inputSize: { width: 801, height: 600 } }],
     ['inputSize.height', { inputSize: { width: 800, height: 601 } }],
     ['previewSize.width', { previewSize: { width: 641, height: 480 } }],
@@ -170,7 +234,7 @@ describe('useRawWorkflowActions', () => {
     ['lutInputTransfer', { lutInputTransfer: 's-log3' }],
     ['lutOutputTransfer', { lutOutputTransfer: 's-log3' }],
     ['lutSize', { lutSize: 33 }],
-  ])('publishes a stat update when %s changes', (_field, overrides) => {
+  ])('publishes a pipeline change to %s at once', (_field, overrides) => {
     const { result, notifications, readStats } = renderStatsHarness()
 
     result.current.updateStats(createStats())
