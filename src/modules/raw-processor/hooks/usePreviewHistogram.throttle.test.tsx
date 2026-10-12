@@ -25,6 +25,11 @@ const tracker = vi.hoisted(() => ({
   interleaved: false,
   // Every color graph the hook resolved, by the user exposure it was for.
   graphs: [] as (number | undefined)[],
+  // The main-thread clock the hook reads: it moves only by what each
+  // sampled row costs, so a chunk's busy time never depends on the host.
+  clock: 0,
+  rowCostMs: 0,
+  rowsFed: 0,
 }))
 
 vi.mock('@lumaforge/luma-color-runtime', async (importOriginal) => {
@@ -50,6 +55,8 @@ vi.mock('@lumaforge/luma-color-runtime', async (importOriginal) => {
           ...args: Parameters<typeof processor.processUint16Rows>
         ) => {
           if (tracker.created.at(-1) !== entry) tracker.interleaved = true
+          tracker.rowsFed += args[1]
+          tracker.clock += args[1] * tracker.rowCostMs
           return processor.processUint16Rows(...args)
         },
         finish: (...args: Parameters<typeof processor.finish>) => {
@@ -180,6 +187,10 @@ describe('usePreviewHistogram throttle', () => {
     tracker.created.length = 0
     tracker.interleaved = false
     tracker.graphs.length = 0
+    tracker.clock = 0
+    tracker.rowCostMs = 0
+    tracker.rowsFed = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => tracker.clock)
   })
 
   afterEach(() => {
@@ -307,18 +318,19 @@ describe('usePreviewHistogram throttle', () => {
     await settleFirstRun(result)
     await advance(HISTOGRAM_THROTTLE_MS)
 
-    // Every band of the next run reads as 25ms of busy main thread (the
-    // clock moves 25ms between a band's start and end reads).
-    let clock = 0
-    vi.spyOn(performance, 'now').mockImplementation(() => {
-      clock += 25
-      return clock
-    })
+    // Every sampled row of the next run costs 1.25ms of main thread: its
+    // chunks yield on their time budget, and their busy time adds up.
+    const rowCostMs = 1.25
+    tracker.rowCostMs = rowCostMs
     setExposure(0.5)
-    await advance(2)
-    expect(result.current.state).toBe('ready')
-    // Two bands, 50ms busy: past 150 / 6, so the interval becomes 300ms.
-    const busyMs = 2 * 25
+    for (let i = 0; i < 16 && result.current.state !== 'ready'; i += 1) {
+      await advance(1)
+    }
+    const coarse = result.current
+    expect(coarse.state).toBe('ready')
+    if (coarse.state !== 'ready') return
+    // About 40 rows, 50ms busy: past 150 / 6, so the interval becomes ~300ms.
+    const busyMs = (coarse.sampledPixels / 1000) * rowCostMs
     const intervalMs = busyMs * HISTOGRAM_BUSY_SHARE_DENOMINATOR
     expect(intervalMs).toBeGreaterThan(HISTOGRAM_THROTTLE_MS)
 
@@ -329,6 +341,28 @@ describe('usePreviewHistogram throttle', () => {
     expect(result.current.state).toBe('stale')
     await advance(20)
     expect(tracker.created.length).toBe(created + 1)
+  })
+
+  it('yields mid-band once a chunk has spent its time budget', async () => {
+    const { result, setExposure } = setup()
+    const first = await settleFirstRun(result)
+    await advance(HISTOGRAM_THROTTLE_MS)
+
+    // 2ms a row: a 32-row band would hold the main thread for 64ms.
+    tracker.rowCostMs = 2
+    const fedBefore = tracker.rowsFed
+    setExposure(0.5)
+    await advance(0)
+    const firstChunk = tracker.rowsFed - fedBefore
+    expect(firstChunk).toBeGreaterThan(0)
+    expect(firstChunk).toBeLessThan(32)
+    expect(result.current).toEqual({ state: 'stale', previous: first })
+
+    for (let i = 0; i < 32 && result.current.state !== 'ready'; i += 1) {
+      await advance(1)
+    }
+    expect(result.current.state).toBe('ready')
+    expect(tracker.interleaved).toBe(false)
   })
 
   it('restarts and resolves nothing while the owner rerenders the same frame', async () => {

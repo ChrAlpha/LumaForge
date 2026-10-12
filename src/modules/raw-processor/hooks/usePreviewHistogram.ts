@@ -23,6 +23,14 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 import type { DisplaySource } from '../model/session'
 
 const ROW_BAND_ROWS = 32
+/** Rows a chunk processes between looks at the clock. */
+const CHUNK_CLOCK_ROWS = 4
+/**
+ * A chunk yields once it has run this long, even short of its rows: a band
+ * at the full budget is tens of milliseconds on a slow device, and a scrub
+ * resumed meanwhile would wait for all of it before its pointer move lands.
+ */
+const HISTOGRAM_CHUNK_BUDGET_MS = 6
 /**
  * Live feedback cadence: while the look moves, a histogram run starts at
  * most this often (leading and trailing), one at a time, always on the
@@ -418,25 +426,27 @@ export function usePreviewHistogram(
     let processedRows = 0
     let busyMs = 0
 
-    const processOneBand = () => {
+    // Up to `limit` sampled rows; returns how many it took.
+    const processRows = (limit: number) => {
       if (rowStep === 1) {
-        const rowCount = Math.min(ROW_BAND_ROWS, image.height - nextRow)
+        const rowCount = Math.min(limit, image.height - nextRow)
         const start = nextRow * image.width * 3
         const end = start + rowCount * image.width * 3
         processor.processUint16Rows(image.data.subarray(start, end), rowCount)
         nextRow += rowCount
         processedRows += rowCount
-      } else {
-        let rowsThisChunk = 0
-        while (rowsThisChunk < ROW_BAND_ROWS && nextRow < image.height) {
-          const start = nextRow * image.width * 3
-          const end = start + image.width * 3
-          processor.processUint16Rows(image.data.subarray(start, end), 1)
-          nextRow += rowStep
-          processedRows += 1
-          rowsThisChunk += 1
-        }
+        return rowCount
       }
+      let rowCount = 0
+      while (rowCount < limit && nextRow < image.height) {
+        const start = nextRow * image.width * 3
+        const end = start + image.width * 3
+        processor.processUint16Rows(image.data.subarray(start, end), 1)
+        nextRow += rowStep
+        processedRows += 1
+        rowCount += 1
+      }
+      return rowCount
     }
 
     const finish = () => {
@@ -489,16 +499,18 @@ export function usePreviewHistogram(
       }
     }
 
+    const chunkRows = ROW_BAND_ROWS * bandsPerChunk
+    const chunkBudgetMs = HISTOGRAM_CHUNK_BUDGET_MS * bandsPerChunk
     const processNextBand = () => {
       run.chunkTimer = null
       if (run.cancelled) return
       const startedAt = performance.now()
-      for (
-        let band = 0;
-        band < bandsPerChunk && nextRow < image.height;
-        band += 1
-      ) {
-        processOneBand()
+      let rowsThisChunk = 0
+      while (rowsThisChunk < chunkRows && nextRow < image.height) {
+        rowsThisChunk += processRows(
+          Math.min(CHUNK_CLOCK_ROWS, chunkRows - rowsThisChunk),
+        )
+        if (performance.now() - startedAt >= chunkBudgetMs) break
       }
       busyMs += performance.now() - startedAt
       if (nextRow >= image.height) {
