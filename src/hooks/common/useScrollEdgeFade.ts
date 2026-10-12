@@ -7,6 +7,12 @@ type Edge = 'top' | 'bottom' | 'both' | 'none'
  * element so raw-lab.surface.css can render an edge gradient mask matching
  * the current scroll position. The companion CSS lives under the
  * `[data-raw-scroll="fade"]` selectors.
+ *
+ * The edge is measured only where layout is already clean: on scroll, and in
+ * the ResizeObserver callback that follows the target or one of its direct
+ * children changing size. Text and attribute changes deeper in the tree (a
+ * slider readout moving under a scrub) never force a layout read here, and
+ * the attribute is written only when the edge actually changes.
  */
 export function useScrollEdgeFade(
   target: HTMLElement | null | undefined,
@@ -19,6 +25,7 @@ export function useScrollEdgeFade(
     if (!target || !enabled) return
 
     target.dataset.rawScroll = 'fade'
+    let current: Edge = 'none'
 
     const update = () => {
       const { scrollTop, scrollHeight, clientHeight } = target
@@ -33,6 +40,8 @@ export function useScrollEdgeFade(
       else if (atBottom) edge = 'top'
       else edge = 'both'
 
+      if (edge === current) return
+      current = edge
       if (edge === 'none') {
         delete target.dataset.rawScrollEdge
       } else {
@@ -40,36 +49,46 @@ export function useScrollEdgeFade(
       }
     }
 
-    // Run after layout settles; on first mount the target's scrollHeight
-    // may equal clientHeight before children finish painting.
-    const initial = requestAnimationFrame(() => {
-      update()
-      requestAnimationFrame(update)
-    })
+    let frame = 0
+    const scheduleUpdate = () => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        update()
+      })
+    }
 
     target.addEventListener('scroll', update, { passive: true })
 
+    // A newly observed element reports its size once, so observing the
+    // target and each direct child also takes the first measurement.
     const resizeObserver =
       typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
     resizeObserver?.observe(target)
     for (const child of Array.from(target.children)) {
       resizeObserver?.observe(child)
     }
-    const childObserver = new MutationObserver(update)
-    childObserver.observe(target, {
-      attributes: true,
-      attributeFilter: ['data-state', 'data-open', 'aria-expanded'],
-      childList: true,
-      subtree: true,
-      characterData: true,
+    if (!resizeObserver) scheduleUpdate()
+
+    // Direct children only: a list that gains rows reports them through the
+    // observer above; one that loses rows can shrink without any remaining
+    // element resizing, so it gets a measurement on the next frame.
+    const childObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of Array.from(record.addedNodes)) {
+          if (node instanceof Element) resizeObserver?.observe(node)
+        }
+        for (const node of Array.from(record.removedNodes)) {
+          if (node instanceof Element) resizeObserver?.unobserve(node)
+        }
+      }
+      scheduleUpdate()
     })
-    const win = target.ownerDocument?.defaultView
-    win?.addEventListener('resize', update)
+    childObserver.observe(target, { childList: true })
 
     return () => {
-      cancelAnimationFrame(initial)
+      if (frame) cancelAnimationFrame(frame)
       target.removeEventListener('scroll', update)
-      win?.removeEventListener('resize', update)
       resizeObserver?.disconnect()
       childObserver.disconnect()
       delete target.dataset.rawScroll
