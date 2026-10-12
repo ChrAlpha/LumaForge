@@ -237,34 +237,65 @@ export function useTransformPreview(
    */
   const retireFailure = useCallback(() => setError(null), [])
 
-  return {
-    /**
-     * The lifetime of the client this preview renders with. Its source and
-     * request ids number work within that client only, so everything named
-     * after a request also names this.
-     */
-    clientEpoch: client.epoch,
-    source,
-    analysis,
-    result,
-    loading,
-    rendering,
-    error,
-    analysisMs,
-    loadSource,
-    clearSource,
-    solveUpright,
-    retireFailure,
-    requestRender,
-    matrix,
-    acknowledged,
-    ready: Boolean(analysis && source),
-    solution: solutions?.[mode] ?? {
-      matrix: identityMatrix(),
-      confidence: 0,
-      status: 'unchanged' as const,
-      reason: '',
-      rotationDegrees: 0,
-    },
-  }
+  const solution = useMemo(
+    () =>
+      solutions?.[mode] ?? {
+        matrix: identityMatrix(),
+        confidence: 0,
+        status: 'unchanged' as const,
+        reason: '',
+        rotationDegrees: 0,
+      },
+    [mode, solutions],
+  )
+  const ready = Boolean(analysis && source)
+  const clientEpoch = client.epoch
+
+  // One object while nothing in it moves, so a feature built on it can keep
+  // its identity across renders that change nothing it reports.
+  return useMemo(
+    () => ({
+      /**
+       * The lifetime of the client this preview renders with. Its source and
+       * request ids number work within that client only, so everything named
+       * after a request also names this.
+       */
+      clientEpoch,
+      source,
+      analysis,
+      result,
+      loading,
+      rendering,
+      error,
+      analysisMs,
+      loadSource,
+      clearSource,
+      solveUpright,
+      retireFailure,
+      requestRender,
+      matrix,
+      acknowledged,
+      ready,
+      solution,
+    }),
+    [
+      acknowledged,
+      analysis,
+      analysisMs,
+      clearSource,
+      clientEpoch,
+      error,
+      loadSource,
+      loading,
+      matrix,
+      ready,
+      rendering,
+      requestRender,
+      result,
+      retireFailure,
+      solution,
+      solveUpright,
+      source,
+    ],
+  )
 }

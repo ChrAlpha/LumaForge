@@ -160,12 +160,12 @@ describe('rawCpuPreviewStage', () => {
     const onProcessedFrame = vi.fn()
 
     const { rerender } = renderStage({ onProcessedFrame })
-    expect(onProcessedFrame).toHaveBeenLastCalledWith(cpuFrame)
+    expect(onProcessedFrame).toHaveBeenLastCalledWith(cpuFrame, false)
 
     // The stage's own Original toggle shows the neutral frame, never captured.
     fireEvent.click(screen.getByRole('button', { name: 'Original' }))
     expect(lastVariant()).toBe('neutral')
-    expect(onProcessedFrame).toHaveBeenLastCalledWith(null)
+    expect(onProcessedFrame).toHaveBeenLastCalledWith(null, false)
 
     const stage = (
       props: Partial<React.ComponentProps<typeof RawCpuPreviewStage>>,
@@ -182,23 +182,33 @@ describe('rawCpuPreviewStage', () => {
     )
     // A controlled neutral variant (the mobile lens) is not captured either.
     rerender(stage({ variant: 'neutral' }))
-    expect(onProcessedFrame).toHaveBeenLastCalledWith(null)
+    expect(onProcessedFrame).toHaveBeenLastCalledWith(null, false)
 
     rerender(stage({ variant: 'processed' }))
-    expect(onProcessedFrame).toHaveBeenLastCalledWith(cpuFrame)
+    expect(onProcessedFrame).toHaveBeenLastCalledWith(cpuFrame, false)
 
     // Under an applied Transform the stage renders processed and captures it.
     rerender(stage({ variant: 'neutral', transformActive: true }))
     expect(lastVariant()).toBe('processed')
-    expect(onProcessedFrame).toHaveBeenLastCalledWith(cpuFrame)
+    expect(onProcessedFrame).toHaveBeenLastCalledWith(cpuFrame, false)
 
-    // An in-flight or failed frame is never captured.
+    // A frame being replaced is still the processed photo on screen, but
+    // not yet the photo as it now looks.
     useCpuPreview.mockReturnValue({
       frame: cpuFrame,
       inFlight: true,
       failureReason: null,
     })
     rerender(stage({ variant: 'processed', decodedFrame: null }))
-    expect(onProcessedFrame).toHaveBeenLastCalledWith(null)
+    expect(onProcessedFrame).toHaveBeenLastCalledWith(cpuFrame, true)
+
+    // A failed render shows no processed photo.
+    useCpuPreview.mockReturnValue({
+      frame: cpuFrame,
+      inFlight: false,
+      failureReason: 'render-failed',
+    })
+    rerender(stage({ variant: 'processed' }))
+    expect(onProcessedFrame).toHaveBeenLastCalledWith(null, false)
   })
 })

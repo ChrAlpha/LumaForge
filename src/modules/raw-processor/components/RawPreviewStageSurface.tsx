@@ -39,7 +39,10 @@ export function RawPreviewStageSurface({
   onStatsUpdate: (stats: PipelineStats) => void
   onPipelineChange: (pipeline: RawProcessingPipeline | null) => void
   onPreviewFrameChange: (node: HTMLDivElement | null) => void
-  onCpuProcessedFrame?: (frame: CpuPreviewFrame | null) => void
+  onCpuProcessedFrame?: (
+    frame: CpuPreviewFrame | null,
+    rendering: boolean,
+  ) => void
   /** Same reset the desktop Compare tool runs; the split handle reuses it. */
   onCompareReset?: () => void
   transformActive?: boolean

@@ -60,7 +60,20 @@ export function useRawTransformFeature(
     [],
   )
   const [observing, setObserving] = useState(false)
-  const [cpuFrame, setCpuFrame] = useState<CpuPreviewFrame | null>(null)
+  // The processed frame the CPU stage shows, and whether its next frame is
+  // still rendering. A frame being replaced keeps the Transform available;
+  // only a settled one is the photo as it now looks, and only that one is
+  // captured.
+  const [cpuFrame, setCpuFrameShown] = useState<CpuPreviewFrame | null>(null)
+  const [cpuRendering, setCpuRendering] = useState(false)
+  const setCpuFrame = useCallback(
+    (frame: CpuPreviewFrame | null, rendering = false) => {
+      setCpuFrameShown(frame)
+      setCpuRendering(frame !== null && rendering)
+    },
+    [],
+  )
+  const settledCpuFrame = cpuRendering ? null : cpuFrame
   const [capturing, setCapturing] = useState(false)
   const [captureError, setCaptureError] = useState(false)
   const [showLines, setShowLines] = useState(false)
@@ -137,7 +150,8 @@ export function useRawTransformFeature(
   )
   // The client lifetime names every capture and request of this preview; the
   // tool surfaces read only what the preview shows.
-  const { clientEpoch, ...preview } = useTransformPreview(intent, observer)
+  const transformPreview = useTransformPreview(intent, observer)
+  const { clientEpoch, ...preview } = transformPreview
   const {
     loadSource,
     clearSource,
@@ -175,7 +189,7 @@ export function useRawTransformFeature(
   const colorKey = sourceId
     ? transformInputKey(decodedFrame, workflow.lutDataVersion, workflow.params)
     : ''
-  const key = `${decodedKey}|${colorKey}|${isCpuMode ? (cpuFrame?.requestId ?? 'none') : 'gpu'}`
+  const key = `${decodedKey}|${colorKey}|${isCpuMode ? (settledCpuFrame?.requestId ?? 'none') : 'gpu'}`
   const previewSuspended = workflow.previewSuspended === true
   const available = Boolean(
     sourceId &&
@@ -200,7 +214,7 @@ export function useRawTransformFeature(
     setCaptureError(false)
     setShowLines(false)
     setShowGrid(false)
-  }, [clearSource, sourceId])
+  }, [clearSource, setCpuFrame, sourceId])
 
   const invalidateCapture = useCallback(() => {
     generation.current++
@@ -247,7 +261,8 @@ export function useRawTransformFeature(
       !last ||
       last.decodedKey !== decodedKey ||
       (colorNeeded && last.key !== key)
-    if (!needed || !available || !image || !sourceId || !stale) {
+    const unsettled = isCpuMode && !settledCpuFrame
+    if (!needed || !available || unsettled || !image || !sourceId || !stale) {
       setCapturing(false)
       return
     }
@@ -263,7 +278,7 @@ export function useRawTransformFeature(
         height: image.height,
         name: workflow.sourceFileName,
         pipeline: isCpuMode ? null : workflow.pipelineRef.current,
-        cpuFrame: isCpuMode ? cpuFrame : null,
+        cpuFrame: isCpuMode ? settledCpuFrame : null,
       })
         .then((source) => {
           if (generation.current !== token || lastSource.current !== sourceId)
@@ -299,7 +314,6 @@ export function useRawTransformFeature(
     available,
     clientEpoch,
     colorNeeded,
-    cpuFrame,
     decodedKey,
     dispatch,
     image,
@@ -308,6 +322,7 @@ export function useRawTransformFeature(
     key,
     loadSource,
     needed,
+    settledCpuFrame,
     sourceId,
     workflow.pipelineRef,
     workflow.sourceFileName,
@@ -360,25 +375,50 @@ export function useRawTransformFeature(
   const request = () => {
     workflow.setViewMode('processed')
   }
-  const setMode = (mode: UprightMode) => {
-    request()
-    edit({ upright: mode })
-    solveUpright()
+  // The commands keep their identity for as long as the feature is mounted,
+  // so a surface that holds them skips every render that moves nothing it
+  // shows; each one runs what the latest render would.
+  const latestCommands = {
+    setMode: (mode: UprightMode) => {
+      request()
+      edit({ upright: mode })
+      solveUpright()
+    },
+    setManual: (manual: ManualTransform) => {
+      request()
+      edit({ manual })
+    },
+    setConstrainCrop: (crop: boolean) => {
+      request()
+      edit({ constrainCrop: crop })
+    },
+    reset: () => {
+      if (sourceId) dispatch({ type: 'reset', sourceId })
+      retireFailure()
+      setShowLines(false)
+      setShowGrid(false)
+    },
+    setShowLines: (value: boolean) => {
+      workflow.setViewMode('processed')
+      setShowLines(value)
+    },
+    setShowGrid: (value: boolean) => {
+      workflow.setViewMode('processed')
+      setShowGrid(value)
+    },
   }
-  const setManual = (manual: ManualTransform) => {
-    request()
-    edit({ manual })
-  }
-  const setConstrainCrop = (crop: boolean) => {
-    request()
-    edit({ constrainCrop: crop })
-  }
-  const reset = () => {
-    if (sourceId) dispatch({ type: 'reset', sourceId })
-    retireFailure()
-    setShowLines(false)
-    setShowGrid(false)
-  }
+  const commandsRef = useRef(latestCommands)
+  commandsRef.current = latestCommands
+  const [commands] = useState(() => ({
+    setMode: (mode: UprightMode) => commandsRef.current.setMode(mode),
+    setManual: (manual: ManualTransform) =>
+      commandsRef.current.setManual(manual),
+    setConstrainCrop: (crop: boolean) =>
+      commandsRef.current.setConstrainCrop(crop),
+    reset: () => commandsRef.current.reset(),
+    setShowLines: (value: boolean) => commandsRef.current.setShowLines(value),
+    setShowGrid: (value: boolean) => commandsRef.current.setShowGrid(value),
+  }))
   // The preview's frame is the photo the tool works on: the same decoded
   // source, and the same colour wherever the colour counts.
   const frameMatches =
@@ -395,43 +435,62 @@ export function useRawTransformFeature(
     !preview.error &&
     !captureError
 
-  return {
-    // What the preview shows, with the intent the session holds.
-    preview: {
-      ...preview,
+  // What the preview shows, with the intent the session holds.
+  const previewView = useMemo(() => {
+    // The client epoch names the worker the preview renders with, which
+    // only the capture above reads; keyed by the hook's own result, the view
+    // keeps its identity while that result does.
+    const { clientEpoch: _clientEpoch, ...shown } = transformPreview
+    return {
+      ...shown,
       mode: intent.upright,
       manual: intent.manual,
       constrainCrop: intent.constrainCrop,
-    },
-    active,
-    available,
-    // Export releases the preview to keep the delivered file stable. That is a
-    // different state from "not ready yet", and it has its own way out.
-    previewSuspended,
-    hasImage: workflow.hasImage,
-    observe,
-    busy:
-      capturing || preview.loading || preview.rendering || (active && !current),
-    captureError,
-    current,
-    exportBlock,
-    showLines,
-    setShowLines: (value: boolean) => {
-      workflow.setViewMode('processed')
-      setShowLines(value)
-    },
-    showGrid,
-    setShowGrid: (value: boolean) => {
-      workflow.setViewMode('processed')
-      setShowGrid(value)
-    },
-    setMode,
-    setManual,
-    setConstrainCrop,
-    reset,
-    setCpuFrame,
-    showOverlay,
-  }
+    }
+  }, [intent.constrainCrop, intent.manual, intent.upright, transformPreview])
+  const busy =
+    capturing || preview.loading || preview.rendering || (active && !current)
+  const { hasImage } = workflow
+
+  return useMemo(
+    () => ({
+      preview: previewView,
+      active,
+      available,
+      // Export releases the preview to keep the delivered file stable. That
+      // is a different state from "not ready yet", and it has its own way
+      // out.
+      previewSuspended,
+      hasImage,
+      observe,
+      busy,
+      captureError,
+      current,
+      exportBlock,
+      showLines,
+      showGrid,
+      ...commands,
+      setCpuFrame,
+      showOverlay,
+    }),
+    [
+      active,
+      available,
+      busy,
+      captureError,
+      commands,
+      current,
+      exportBlock,
+      hasImage,
+      observe,
+      previewSuspended,
+      previewView,
+      setCpuFrame,
+      showGrid,
+      showLines,
+      showOverlay,
+    ],
+  )
 }
 
 export type RawTransformFeature = ReturnType<typeof useRawTransformFeature>

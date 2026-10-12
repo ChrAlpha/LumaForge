@@ -308,6 +308,35 @@ describe('cPU preview frames handed to Transform', () => {
     view.unmount()
   })
 
+  it('keeps Transform available, and the same feature, while the next colour renders', async () => {
+    const view = render(<CpuTransformHarness userTemperature={0} />)
+    expect(latest.feature!.available).toBe(false)
+    finishCpuRender(cpuRenders().at(-1)!)
+    expect(latest.feature!.available).toBe(true)
+    const settled = latest.feature
+
+    // The stage keeps showing the earlier frame while the edit renders, so
+    // the tool neither disables its controls nor hands its surfaces a new
+    // feature; nothing reads that frame back.
+    view.rerender(<CpuTransformHarness userTemperature={10} />)
+    expect(cpuRenders()).toHaveLength(2)
+    expect(latest.feature).toBe(settled)
+    act(() => {
+      latest.feature!.observe()
+    })
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(latest.feature!.available).toBe(true)
+    expect(captureTransformSource).not.toHaveBeenCalled()
+
+    finishCpuRender(cpuRenders().at(-1)!)
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(captureTransformSource).toHaveBeenCalledOnce()
+    expect(
+      vi.mocked(captureTransformSource).mock.lastCall?.[0].cpuFrame?.requestId,
+    ).toBe(cpuRenders().at(-1)!.requestId)
+    view.unmount()
+  })
+
   it('hands Transform frames named by the CPU source the accepted frame loaded', async () => {
     const view = render(<CpuTransformHarness userTemperature={0} />)
     const loads = () =>

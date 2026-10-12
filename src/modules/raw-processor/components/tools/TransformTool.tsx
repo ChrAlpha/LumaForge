@@ -41,138 +41,142 @@ import { DesktopAdjustRow } from './DesktopAdjustRow'
  * Each control is off exactly where the shared action policy refuses its
  * Transform action; Reset is also off for an intent with nothing to reset.
  */
-export function TransformTool({
-  feature,
-  availability,
-}: {
-  feature: RawTransformFeature
-  availability: Pick<
-    ToolAvailability,
-    'transformGeometry' | 'transformOverlay' | 'transformReset'
-  >
-}) {
-  const { t } = useI18n()
-  const { preview, observe } = feature
-  useEffect(() => observe(), [observe])
-  // The feature is a new object on every workflow render; the rows and mode
-  // buttons hold these instead, which read it when they are called.
-  const featureRef = useRef(feature)
-  featureRef.current = feature
-  const selectMode = useCallback(
-    (mode: UprightMode) => featureRef.current.setMode(mode),
-    [],
-  )
-  const changeField = useCallback((field: TransformField, next: number) => {
-    const current = featureRef.current
-    current.setManual(applyTransformSlider(field, current.preview.manual, next))
-  }, [])
+export const TransformTool = memo(
+  ({
+    feature,
+    availability,
+  }: {
+    feature: RawTransformFeature
+    availability: Pick<
+      ToolAvailability,
+      'transformGeometry' | 'transformOverlay' | 'transformReset'
+    >
+  }) => {
+    const { t } = useI18n()
+    const { preview, observe } = feature
+    useEffect(() => observe(), [observe])
+    // The feature is a new object whenever the preview moves; the rows and
+    // mode buttons hold these instead, which read it when they are called.
+    const featureRef = useRef(feature)
+    featureRef.current = feature
+    const selectMode = useCallback(
+      (mode: UprightMode) => featureRef.current.setMode(mode),
+      [],
+    )
+    const changeField = useCallback((field: TransformField, next: number) => {
+      const current = featureRef.current
+      current.setManual(
+        applyTransformSlider(field, current.preview.manual, next),
+      )
+    }, [])
 
-  const message = resolveTransformMessage(feature)
-  const controlsDisabled = !availability.transformGeometry.available
-  const viewDisabled = !availability.transformOverlay.available
-  const dirty =
-    isTransformDirty(preview.mode, preview.manual) || !preview.constrainCrop
+    const message = resolveTransformMessage(feature)
+    const controlsDisabled = !availability.transformGeometry.available
+    const viewDisabled = !availability.transformOverlay.available
+    const dirty =
+      isTransformDirty(preview.mode, preview.manual) || !preview.constrainCrop
 
-  return (
-    <div data-raw-transform-tool className="grid min-w-0 gap-3">
-      <div
-        role="group"
-        aria-label={t('transform.modes')}
-        className={clsxm('grid grid-cols-5 gap-0.5', SEGMENTED_TRACK)}
-      >
-        {UPRIGHT_MODES.map((mode) => (
-          <ModeButton
-            key={mode}
-            mode={mode}
-            active={preview.mode === mode}
-            disabled={controlsDisabled}
-            onSelect={selectMode}
-          />
-        ))}
-      </div>
-
-      <p
-        role={message.tone === 'alert' ? 'alert' : 'status'}
-        data-raw-transform-message={message.tone}
-        className={clsxm(
-          // Two lines are reserved so switching mode does not shuffle the
-          // slider stack under the pointer.
-          'flex min-h-8 items-start gap-1.5 px-1.5 text-[0.72rem] leading-snug',
-          message.tone === 'alert'
-            ? 'text-lf-amber-soft'
-            : 'text-lf-on-surface/56',
-        )}
-      >
-        {message.tone === 'alert' && (
-          <TriangleAlert size={13} aria-hidden className="mt-px shrink-0" />
-        )}
-        {t(message.key)}
-      </p>
-
-      <div className="flex items-center justify-between gap-1">
+    return (
+      <div data-raw-transform-tool className="grid min-w-0 gap-3">
         <div
           role="group"
-          aria-label={t('raw.transform.overlays')}
-          className="flex min-w-0 items-center gap-0.5"
+          aria-label={t('transform.modes')}
+          className={clsxm('grid grid-cols-5 gap-0.5', SEGMENTED_TRACK)}
         >
-          <ToggleButton
-            icon={<Ruler size={13} aria-hidden />}
-            label={t('transform.lines')}
-            pressed={feature.showLines}
-            disabled={viewDisabled}
-            onToggle={() => feature.setShowLines(!feature.showLines)}
-          />
-          <ToggleButton
-            icon={<Grid3x3 size={13} aria-hidden />}
-            label={t('transform.grid')}
-            pressed={feature.showGrid}
-            disabled={viewDisabled}
-            onToggle={() => feature.setShowGrid(!feature.showGrid)}
-          />
+          {UPRIGHT_MODES.map((mode) => (
+            <ModeButton
+              key={mode}
+              mode={mode}
+              active={preview.mode === mode}
+              disabled={controlsDisabled}
+              onSelect={selectMode}
+            />
+          ))}
         </div>
-        <button
-          type="button"
-          onClick={feature.reset}
-          disabled={!availability.transformReset.available || !dirty}
+
+        <p
+          role={message.tone === 'alert' ? 'alert' : 'status'}
+          data-raw-transform-message={message.tone}
           className={clsxm(
-            'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[0.72rem] font-medium transition-colors duration-150',
-            'text-lf-on-surface/72 hover:bg-[oklch(0.96_0.006_255/0.06)] hover:text-lf-amber-soft',
-            SEGMENTED_FOCUS_RING,
-            'disabled:pointer-events-none disabled:opacity-40',
+            // Two lines are reserved so switching mode does not shuffle the
+            // slider stack under the pointer.
+            'flex min-h-8 items-start gap-1.5 px-1.5 text-[0.72rem] leading-snug',
+            message.tone === 'alert'
+              ? 'text-lf-amber-soft'
+              : 'text-lf-on-surface/56',
           )}
         >
-          <RotateCcw size={13} aria-hidden />
-          {t('transform.reset')}
-        </button>
-      </div>
+          {message.tone === 'alert' && (
+            <TriangleAlert size={13} aria-hidden className="mt-px shrink-0" />
+          )}
+          {t(message.key)}
+        </p>
 
-      <FieldGroup
-        group="perspective"
-        manual={preview.manual}
-        disabled={controlsDisabled}
-        onFieldChange={changeField}
-      />
-      <FieldGroup
-        group="frame"
-        manual={preview.manual}
-        disabled={controlsDisabled}
-        onFieldChange={changeField}
-      >
-        <label className="flex min-h-9 cursor-pointer items-center gap-2.5 px-1.5 text-[0.8rem] text-lf-on-surface/80">
-          <Checkbox
-            checked={preview.constrainCrop}
-            onCheckedChange={(value) =>
-              feature.setConstrainCrop(value === true)
-            }
-            disabled={controlsDisabled}
-            className="size-4 border border-[oklch(0.96_0.006_255/0.24)] bg-[oklch(0.96_0.006_255/0.06)] data-[state=checked]:border-lf-green data-[state=checked]:bg-lf-green data-[state=checked]:text-lf-surface"
-          />
-          {t('transform.crop')}
-        </label>
-      </FieldGroup>
-    </div>
-  )
-}
+        <div className="flex items-center justify-between gap-1">
+          <div
+            role="group"
+            aria-label={t('raw.transform.overlays')}
+            className="flex min-w-0 items-center gap-0.5"
+          >
+            <ToggleButton
+              icon={<Ruler size={13} aria-hidden />}
+              label={t('transform.lines')}
+              pressed={feature.showLines}
+              disabled={viewDisabled}
+              onToggle={() => feature.setShowLines(!feature.showLines)}
+            />
+            <ToggleButton
+              icon={<Grid3x3 size={13} aria-hidden />}
+              label={t('transform.grid')}
+              pressed={feature.showGrid}
+              disabled={viewDisabled}
+              onToggle={() => feature.setShowGrid(!feature.showGrid)}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={feature.reset}
+            disabled={!availability.transformReset.available || !dirty}
+            className={clsxm(
+              'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[0.72rem] font-medium transition-colors duration-150',
+              'text-lf-on-surface/72 hover:bg-[oklch(0.96_0.006_255/0.06)] hover:text-lf-amber-soft',
+              SEGMENTED_FOCUS_RING,
+              'disabled:pointer-events-none disabled:opacity-40',
+            )}
+          >
+            <RotateCcw size={13} aria-hidden />
+            {t('transform.reset')}
+          </button>
+        </div>
+
+        <FieldGroup
+          group="perspective"
+          manual={preview.manual}
+          disabled={controlsDisabled}
+          onFieldChange={changeField}
+        />
+        <FieldGroup
+          group="frame"
+          manual={preview.manual}
+          disabled={controlsDisabled}
+          onFieldChange={changeField}
+        >
+          <label className="flex min-h-9 cursor-pointer items-center gap-2.5 px-1.5 text-[0.8rem] text-lf-on-surface/80">
+            <Checkbox
+              checked={preview.constrainCrop}
+              onCheckedChange={(value) =>
+                feature.setConstrainCrop(value === true)
+              }
+              disabled={controlsDisabled}
+              className="size-4 border border-[oklch(0.96_0.006_255/0.24)] bg-[oklch(0.96_0.006_255/0.06)] data-[state=checked]:border-lf-green data-[state=checked]:bg-lf-green data-[state=checked]:text-lf-surface"
+            />
+            {t('transform.crop')}
+          </label>
+        </FieldGroup>
+      </div>
+    )
+  },
+)
 
 const ModeButton = memo(
   ({

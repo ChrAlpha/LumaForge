@@ -22,7 +22,13 @@ export interface RawCpuPreviewStageProps {
   color: ColorGraphIntent
   lut: LUTData | null
   fallbackThumbnailUrl: string | null
-  onProcessedFrame?: (frame: CpuPreviewFrame | null) => void
+  /**
+   * The frame the stage shows while it shows the processed photo (null for
+   * the original or a failed render), and whether the next one is still
+   * rendering. Only a frame that is not rendering is the photo as it now
+   * looks.
+   */
+  onProcessedFrame?: (frame: CpuPreviewFrame | null, rendering: boolean) => void
   previewFrameRef?: (element: HTMLDivElement | null) => void
   transformActive?: boolean
   /**
@@ -66,11 +72,10 @@ export function RawCpuPreviewStage({
 
   useEffect(() => {
     onProcessedFrame?.(
-      !cpuPreview.inFlight &&
-        !cpuPreview.failureReason &&
-        (transformActive || variant === 'processed')
+      !cpuPreview.failureReason && (transformActive || variant === 'processed')
         ? cpuPreview.frame
         : null,
+      cpuPreview.inFlight,
     )
   }, [
     cpuPreview.failureReason,
