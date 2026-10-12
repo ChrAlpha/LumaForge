@@ -7,7 +7,6 @@ import type { MutableRefObject } from 'react'
 import { useMemo } from 'react'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type {
   ExportShareCapability,
@@ -25,6 +24,7 @@ import {
   unavailableExportShare,
 } from '../../../services/export/export-result-actions'
 import { resolveHqPreviewLookRefusal } from '../../../services/export/hq-preview-look'
+import type { PipelineFacts } from '../../../services/preview/pipeline-stats'
 
 type UseExportDerivedStateInput = {
   session: ImageSession | null
@@ -40,7 +40,7 @@ type UseExportDerivedStateInput = {
   params: ColorGraphIntent
   /** The selected custom LUT's data the preview pipeline holds. */
   lutData: LUTData | null
-  stats: PipelineStats | null
+  previewFacts: PipelineFacts | null
 }
 
 export function useExportDerivedState({
@@ -55,7 +55,7 @@ export function useExportDerivedState({
   rawRenderExposure,
   params,
   lutData,
-  stats,
+  previewFacts,
 }: UseExportDerivedStateInput) {
   // The HQ JPEG is the WebGPU preview's render, so it refuses while that
   // preview leaves out the selected look its name would claim. Only that
@@ -65,9 +65,8 @@ export function useExportDerivedState({
     () => resolveHqPreviewLookRefusal({ intent: params, lut: lutData }),
     [lutData, params],
   )
-  // Preview renders publish their timings every few hundred milliseconds;
-  // the HQ export reads only whether the preview has measured its input.
-  const previewMeasured = Boolean(stats?.inputSize)
+  // The HQ export reads only whether the preview has measured its input.
+  const previewMeasured = Boolean(previewFacts?.inputSize)
   const exportResult = session?.exportState.result ?? null
   const exportShareCapability = useMemo<ExportShareCapability>(
     () =>

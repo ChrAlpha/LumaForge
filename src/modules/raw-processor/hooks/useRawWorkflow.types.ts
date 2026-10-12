@@ -34,6 +34,7 @@ import type { ProcessingStatus } from '../model/workflow'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
 import type { DeliveredExportSize } from '../services/export/delivered-export-size'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
+import type { PipelineFacts } from '../services/preview/pipeline-stats'
 import type { PreviewViewport } from '../services/preview/preview-viewport'
 import type { TransformEvent } from '../services/transform/transform-state'
 import type { PreviewPipelineHandle } from './preview/usePreviewPipelineLifecycle'
@@ -69,7 +70,8 @@ export interface UseRawWorkflowReturn {
   lutData: LUTData | null
   lutDataRef: RefObject<LUTData | null>
   lutDataVersion: number
-  stats: PipelineStats | null
+  /** The preview pipeline's facts, without its frame timings. */
+  previewFacts: PipelineFacts | null
   hasImage: boolean
   canExport: boolean
   /** Why a full-resolution export cannot start; unset while it can. */

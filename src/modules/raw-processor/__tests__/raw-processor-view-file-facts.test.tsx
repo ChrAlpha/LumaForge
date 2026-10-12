@@ -7,6 +7,24 @@ import { createRawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
 import { RawProcessorView } from '../RawProcessorView'
+import { toPipelineFacts } from '../services/preview/pipeline-stats'
+import { setPipelineStats } from '../state/workflow.atoms'
+
+// What the preview reported for its last frame, as the store holds it.
+const LOADED_STATS = {
+  uploadTime: 4,
+  lutUploadTime: 0,
+  processTime: 18,
+  totalTime: 22,
+  inputSize: { width: 4000, height: 2666 },
+  previewSize: { width: 1200, height: 800 },
+  inputFormat: 'uint16-rgb' as const,
+  transformPath: 'no-lut' as const,
+  lutRole: null,
+  lutInputTransfer: null,
+  lutOutputTransfer: null,
+  lutSize: null,
+}
 
 const mockUseRawWorkflow = vi.hoisted(() => vi.fn())
 const mockUseCapabilityGate = vi.hoisted(() => vi.fn())
@@ -136,20 +154,7 @@ function createLoadedProcessorState(
     lutData: null,
     lutDataRef: { current: null },
     lutDataVersion: 0,
-    stats: {
-      uploadTime: 4,
-      lutUploadTime: 0,
-      processTime: 18,
-      totalTime: 22,
-      inputSize: { width: 4000, height: 2666 },
-      previewSize: { width: 1200, height: 800 },
-      inputFormat: 'uint16-rgb',
-      transformPath: 'no-lut',
-      lutRole: null,
-      lutInputTransfer: null,
-      lutOutputTransfer: null,
-      lutSize: null,
-    },
+    previewFacts: toPipelineFacts(LOADED_STATS),
     hasImage: true,
     canExport: true,
     exportRefusal: undefined,
@@ -235,6 +240,7 @@ describe('rawProcessorView file facts', () => {
   })
 
   afterEach(() => {
+    setPipelineStats(null)
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -242,6 +248,7 @@ describe('rawProcessorView file facts', () => {
   it('keeps source Size separate from bounded preview dimensions', async () => {
     const user = userEvent.setup()
     mockUseRawWorkflow.mockReturnValue(createLoadedProcessorState())
+    setPipelineStats(LOADED_STATS)
 
     await act(async () => {
       render(<RawProcessorView />)

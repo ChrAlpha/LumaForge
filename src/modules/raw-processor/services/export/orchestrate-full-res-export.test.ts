@@ -772,7 +772,7 @@ function createHarness(options: HarnessOptions = {}) {
       getColorIntent: () => colorIntent,
       getLutData: () => storedLut,
       decodedImageRef: { current: createDecodedImage() },
-      stats: null,
+      previewFacts: null,
       refreshExportInterruption: vi.fn(() => {
         trace.push('state:interruption-refresh')
       }),

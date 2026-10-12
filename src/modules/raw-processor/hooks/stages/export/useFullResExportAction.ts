@@ -78,7 +78,7 @@ export function useFullResExportAction({
   getSession,
   getColorIntent,
   getLutData,
-  stats,
+  previewFacts,
   decodedImageRef,
   exportAbortControllerRef,
   exportGraphVersionRef,
@@ -132,7 +132,7 @@ export function useFullResExportAction({
         getColorIntent,
         getLutData,
         decodedImageRef,
-        stats,
+        previewFacts,
         refreshExportInterruption,
       },
       refs: {
@@ -178,7 +178,7 @@ export function useFullResExportAction({
       setProgress,
       setSession,
       setStatus,
-      stats,
+      previewFacts,
     ],
   )
 

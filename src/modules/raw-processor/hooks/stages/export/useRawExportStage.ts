@@ -8,10 +8,7 @@ import { useCallback } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
-import type {
-  PipelineStats,
-  RawProcessingPipeline,
-} from '~/lib/webgpu/raw-processing-pipeline'
+import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { DisplaySource, ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
@@ -21,6 +18,7 @@ import type {
 } from '../../../services/export/export-recovery'
 import { withInterruptionHistory } from '../../../services/export/export-recovery'
 import type { ExportContext } from '../../../services/export/orchestrate-full-res-export'
+import type { PipelineFacts } from '../../../services/preview/pipeline-stats'
 import { useExportDerivedState } from './useExportDerivedState'
 import { useExportResultActions } from './useExportResultActions'
 import { useFullResExportAction } from './useFullResExportAction'
@@ -48,7 +46,7 @@ type UseRawExportStageInput = {
   /** The LUT this render holds; only what the panels show reads it. */
   lutData: LUTData | null
   decodedImageRef: MutableRefObject<DecodedImage | null>
-  stats: PipelineStats | null
+  previewFacts: PipelineFacts | null
   refreshExportInterruption: () => void
   interruptionMarkers: ExportInterruptionMarkers
   exportAbortControllerRef: MutableRefObject<AbortController | null>
@@ -90,7 +88,7 @@ export function useRawExportStage({
   getLutData,
   lutData,
   decodedImageRef,
-  stats,
+  previewFacts,
   refreshExportInterruption,
   interruptionMarkers,
   exportAbortControllerRef,
@@ -126,7 +124,7 @@ export function useRawExportStage({
     getColorIntent,
     getLutData,
     decodedImageRef,
-    stats,
+    previewFacts,
     refreshExportInterruption,
     exportAbortControllerRef,
     exportGraphVersionRef,
@@ -164,7 +162,7 @@ export function useRawExportStage({
     rawRenderExposure,
     params,
     lutData,
-    stats,
+    previewFacts,
   })
   // Full-resolution export starts only from an explicit user action, which
   // chooses nothing: the JPEG quality is fixed. The loaded source's
@@ -188,7 +186,7 @@ export function useRawExportStage({
     pipelineRef,
     decodedImageRef,
     previewCopyCanvasRef,
-    previewSize: stats?.previewSize,
+    previewSize: previewFacts?.previewSize,
     scheduleToast,
     toast,
   })

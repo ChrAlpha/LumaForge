@@ -62,7 +62,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setError,
     progress,
     setProgress,
-    stats,
+    previewFacts,
     setStats,
   } = useRawWorkflowState()
   const { session, replaceFile, resetSession, setSession } = useImageSession()
@@ -296,7 +296,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     getLutData: getStoredLutData,
     lutData: lutDataRef.current,
     decodedImageRef,
-    stats,
+    previewFacts,
     refreshExportInterruption,
     interruptionMarkers,
     exportAbortControllerRef,
@@ -373,7 +373,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
       status,
       error,
       progress,
-      stats,
+      previewFacts,
       dismissError,
       updateStats,
     },

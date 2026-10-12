@@ -1,6 +1,6 @@
 import {
   useErrorMessageValue,
-  usePipelineStatsValue,
+  usePipelineFactsValue,
   useProcessingStatusValue,
   useProgressValue,
   useSetErrorMessage,
@@ -16,7 +16,9 @@ export function useRawWorkflowState() {
   const setError = useSetErrorMessage()
   const progress = useProgressValue()
   const setProgress = useSetProgress()
-  const stats = usePipelineStatsValue()
+  // The facts alone: the timings a preview render reports are the stats
+  // provider's, so a new timing leaves the workflow as it was.
+  const previewFacts = usePipelineFactsValue()
   const setStats = useSetPipelineStats()
 
   return {
@@ -26,7 +28,7 @@ export function useRawWorkflowState() {
     setError,
     progress,
     setProgress,
-    stats,
+    previewFacts,
     setStats,
   }
 }

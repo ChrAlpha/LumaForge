@@ -23,10 +23,7 @@ import {
 
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type {
-  PipelineStats,
-  RawProcessingPipeline,
-} from '~/lib/webgpu/raw-processing-pipeline'
+import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
@@ -37,6 +34,7 @@ import type { SourceInterruptionHint } from '../../../services/export/export-rec
 import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import { claimExportSlot } from '../../../services/export/export-state'
 import { orchestrateFullResExport } from '../../../services/export/orchestrate-full-res-export'
+import type { PipelineFacts } from '../../../services/preview/pipeline-stats'
 import { reduceTransformState } from '../../../services/transform/transform-state'
 import {
   getCurrentSession,
@@ -147,7 +145,7 @@ function createStageInput(
     getLutData: () => null,
     lutData: null,
     decodedImageRef: { current: null },
-    stats: null,
+    previewFacts: null,
     refreshExportInterruption: vi.fn(),
     interruptionMarkers: {
       begin: vi.fn(),
@@ -354,7 +352,9 @@ describe('useRawExportStage', () => {
         getLutData,
         lutData,
         decodedImageRef: { current: createBoundedHqImage() },
-        stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+        previewFacts: {
+          inputSize: { width: 800, height: 600 },
+        } as PipelineFacts,
         status: 'ready',
         hasImage: true,
         displaySource: 'bounded-hq',

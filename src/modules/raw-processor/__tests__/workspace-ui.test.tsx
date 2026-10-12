@@ -188,7 +188,7 @@ function rawProcessorViewState(
     lutData: null,
     lutDataRef: { current: null },
     lutDataVersion: 0,
-    stats: null,
+    previewFacts: null,
     hasImage: false,
     canExport: false,
     exportRefusal: { code: 'source-loading' },

@@ -16,6 +16,7 @@ import { deriveToolAvailability } from '../services/surface/derive-tool-availabi
 import type { ExportActionReason } from '../services/surface/raw-reason'
 import { resolvePreviewLookReason } from '../services/surface/raw-reason'
 import { previewHistogramStateAtom } from '../state/histogram.atoms'
+import { usePipelineStatsValue } from '../state/workflow.atoms'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type {
@@ -55,6 +56,35 @@ function getAspect(size: { width: number; height: number } | null | undefined) {
 }
 
 const INTERRUPTED_NOTE: ExportInterruptionNote = { kind: 'interrupted' }
+
+/**
+ * The preview stats as the surfaces show them, with the decoded preview's
+ * size over the renderer's own. It reads the store itself, so a new frame
+ * timing renders this gate and what names it, not the provider above it.
+ */
+function PreviewStatsGate({
+  decodedPreviewSize,
+  children,
+}: {
+  decodedPreviewSize: { width: number; height: number } | null
+  children: ReactNode
+}) {
+  const stats = usePipelineStatsValue()
+  const shown = useMemo(
+    () =>
+      stats
+        ? {
+            processTime: stats.processTime,
+            inputSize: stats.inputSize,
+            previewSize: decodedPreviewSize ?? stats.previewSize,
+          }
+        : null,
+    [decodedPreviewSize, stats],
+  )
+  return (
+    <RawPreviewStatsProvider stats={shown}>{children}</RawPreviewStatsProvider>
+  )
+}
 
 /**
  * The measured preview histogram, unless the preview on screen is not what
@@ -426,18 +456,6 @@ export function RawWorkflowToolProvider({
         : null,
     [hasImage, isCpuMode, lutData, params],
   )
-  const { stats } = workflow
-  const toolStats = useMemo(
-    () =>
-      stats
-        ? {
-            processTime: stats.processTime,
-            inputSize: stats.inputSize,
-            previewSize: decodedPreviewSize ?? stats.previewSize,
-          }
-        : null,
-    [decodedPreviewSize, stats],
-  )
 
   const { activeStyle } = workflow
   const appliedLut = useMemo(
@@ -503,14 +521,14 @@ export function RawWorkflowToolProvider({
   return (
     <RawWorkflowProvider value={value}>
       <RawToolCommandsProvider commands={commands}>
-        <RawPreviewStatsProvider stats={toolStats}>
+        <PreviewStatsGate decodedPreviewSize={decodedPreviewSize}>
           <PreviewHistogramGate
             transformActive={transformActive}
             isCpuMode={isCpuMode}
           >
             {children}
           </PreviewHistogramGate>
-        </RawPreviewStatsProvider>
+        </PreviewStatsGate>
       </RawToolCommandsProvider>
     </RawWorkflowProvider>
   )

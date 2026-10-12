@@ -7,6 +7,7 @@ import type {
 } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ProcessingStatus } from '../model/workflow'
+import type { PipelineFacts } from '../services/preview/pipeline-stats'
 import type { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
 import type { useRawCompareStage } from './stages/compare/useRawCompareStage'
 import type { useRawExportStage } from './stages/export/useRawExportStage'
@@ -22,7 +23,7 @@ type BuildRawWorkflowReturnInput = {
     status: ProcessingStatus
     error: string | null
     progress: number
-    stats: PipelineStats | null
+    previewFacts: PipelineFacts | null
     dismissError: () => void
     updateStats: (stats: PipelineStats) => void
   }
@@ -79,7 +80,7 @@ export function buildRawWorkflowReturn({
     lutData: lutData.lutData,
     lutDataRef: lutData.lutDataRef,
     lutDataVersion: lutData.lutDataVersion,
-    stats: workflowState.stats,
+    previewFacts: workflowState.previewFacts,
     hasImage: sourceState.hasImage,
     canExport: exportStage.canExport,
     exportRefusal: exportStage.exportRefusal,

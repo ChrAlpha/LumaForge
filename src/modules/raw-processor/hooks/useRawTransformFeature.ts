@@ -326,7 +326,7 @@ export function useRawTransformFeature(
     sourceId,
     workflow.pipelineRef,
     workflow.sourceFileName,
-    workflow.stats,
+    workflow.previewFacts,
   ])
 
   // A new frame keeps the Upright solutions the preview holds, so an

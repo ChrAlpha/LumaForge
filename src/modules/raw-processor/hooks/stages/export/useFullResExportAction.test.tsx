@@ -42,7 +42,7 @@ function createInput(
     getSession: vi.fn(() => null),
     getColorIntent: vi.fn(() => NEUTRAL_INTENT),
     getLutData: vi.fn(() => null),
-    stats: null,
+    previewFacts: null,
     decodedImageRef: { current: null },
     exportAbortControllerRef: { current: null },
     exportGraphVersionRef: { current: 0 },
@@ -86,7 +86,7 @@ describe('useFullResExportAction', () => {
           getSession: input.getSession,
           getColorIntent: input.getColorIntent,
           getLutData: input.getLutData,
-          stats: input.stats,
+          previewFacts: input.previewFacts,
         }),
         refs: expect.objectContaining({
           exportAbortControllerRef: input.exportAbortControllerRef,

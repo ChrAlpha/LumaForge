@@ -9,7 +9,6 @@ import { renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type {
   ExportResult,
@@ -19,6 +18,7 @@ import type { ImageSession } from '../../../model/session'
 import { createTransformState } from '../../../model/session-factory'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
 import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
+import type { PipelineFacts } from '../../../services/preview/pipeline-stats'
 import { useExportDerivedState } from './useExportDerivedState'
 
 const NO_LOOK: ColorGraphIntent = {
@@ -183,7 +183,9 @@ describe('useExportDerivedState', () => {
         rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
         params: NO_LOOK,
         lutData: null,
-        stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+        previewFacts: {
+          inputSize: { width: 800, height: 600 },
+        } as PipelineFacts,
       }),
     )
 
@@ -197,7 +199,9 @@ describe('useExportDerivedState', () => {
 
   it('enables HQ preview export for a ready bounded-HQ decoded preview', () => {
     const session = createSession()
-    const stats = { inputSize: { width: 800, height: 600 } } as PipelineStats
+    const previewFacts = {
+      inputSize: { width: 800, height: 600 },
+    } as PipelineFacts
     const decodedImageRef = { current: createBoundedHqImage() }
 
     const { result } = renderHook(() =>
@@ -213,7 +217,7 @@ describe('useExportDerivedState', () => {
         rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
         params: NO_LOOK,
         lutData: null,
-        stats,
+        previewFacts,
       }),
     )
 
@@ -240,7 +244,9 @@ describe('useExportDerivedState', () => {
           rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
           params: CUSTOM_LOOK,
           lutData: selectedLut,
-          stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+          previewFacts: {
+            inputSize: { width: 800, height: 600 },
+          } as PipelineFacts,
         }),
       )
 
@@ -265,7 +271,9 @@ describe('useExportDerivedState', () => {
         rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
         params: CUSTOM_LOOK,
         lutData: ACCEPTED_LUT,
-        stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+        previewFacts: {
+          inputSize: { width: 800, height: 600 },
+        } as PipelineFacts,
       }),
     )
 
@@ -305,7 +313,9 @@ describe('useExportDerivedState', () => {
         rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
         params: NO_LOOK,
         lutData: null,
-        stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+        previewFacts: {
+          inputSize: { width: 800, height: 600 },
+        } as PipelineFacts,
       }),
     )
 
@@ -329,7 +339,7 @@ describe('useExportDerivedState', () => {
       rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' as const },
       params: NO_LOOK,
       lutData: null,
-      stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+      previewFacts: { inputSize: { width: 800, height: 600 } } as PipelineFacts,
     }
     const released: ImageSession = {
       ...session,
@@ -376,8 +386,11 @@ describe('useExportDerivedState', () => {
         { ...ready, params: CUSTOM_LOOK, displaySource: 'quick' },
         'look-dropped',
       ],
-      [{ ...ready, displaySource: 'quick', stats: null }, 'hq-preview-pending'],
-      [{ ...ready, stats: null }, 'not-ready'],
+      [
+        { ...ready, displaySource: 'quick', previewFacts: null },
+        'hq-preview-pending',
+      ],
+      [{ ...ready, previewFacts: null }, 'not-ready'],
       [ready, undefined],
     ]
     for (const [input, code] of cases) {
@@ -401,7 +414,7 @@ describe('useExportDerivedState', () => {
       rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' as const },
       params: NO_LOOK,
       lutData: null,
-      stats: { inputSize: { width: 800, height: 600 } } as PipelineStats,
+      previewFacts: { inputSize: { width: 800, height: 600 } } as PipelineFacts,
     }
 
     const loading = renderHook(() =>
@@ -452,7 +465,7 @@ describe('useExportDerivedState', () => {
         rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
         params: NO_LOOK,
         lutData: null,
-        stats: null,
+        previewFacts: null,
       }),
     )
 
@@ -488,7 +501,7 @@ describe('useExportDerivedState', () => {
           rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
           params: NO_LOOK,
           lutData: null,
-          stats: null,
+          previewFacts: null,
         }),
       ).result.current.exportInterrupted
 

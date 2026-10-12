@@ -51,6 +51,7 @@ import { toolCardOpenAtom } from '../state/tool-card.atoms'
 import {
   getProcessingParams,
   resetToDefaults,
+  setPipelineStats,
   setProcessingParams,
   setProcessingStatus,
   setProgress,
@@ -97,7 +98,7 @@ function workflowFixture() {
     status: 'ready',
     decodedImageRef: { current: null },
     loadedImage: { file: null, metadata: null },
-    stats: null,
+    previewFacts: null,
     viewMode: 'compare',
     compareSplit: 0.7,
     setViewMode: vi.fn(),
@@ -2605,20 +2606,29 @@ describe('rawWorkflowToolProvider surface contract', () => {
   })
 
   it('hands the preview stats on their own channel, a new timing leaving the context as it was', () => {
-    const stats = (processTime: number) =>
-      ({
-        processTime,
-        inputSize: { width: 7008, height: 4672 },
-        previewSize: { width: 1024, height: 683 },
-      }) as UseRawWorkflowReturn['stats']
-    let workflow = {
+    const stats = (processTime: number) => ({
+      uploadTime: 0,
+      lutUploadTime: 0,
+      processTime,
+      totalTime: processTime,
+      inputSize: { width: 7008, height: 4672 },
+      previewSize: { width: 1024, height: 683 },
+      inputFormat: 'uint16-rgb' as const,
+      transformPath: 'no-lut' as const,
+      lutRole: null,
+      lutInputTransfer: null,
+      lutOutputTransfer: null,
+      lutSize: null,
+    })
+    onTestFinished(() => setPipelineStats(null))
+    act(() => setPipelineStats(stats(41.6)))
+    const workflow = {
       ...interruptedWorkflow(false),
       decodedImageRef: { current: { width: 2048, height: 1365 } },
-      stats: stats(41.6),
     } as unknown as UseRawWorkflowReturn
     const onlineLutSources = {} as UseOnlineLutSourcesResult
     const command = vi.fn()
-    const { result, rerender } = renderHook(
+    const { result } = renderHook(
       () => ({
         surface: useRawWorkflowContext(),
         stats: useRawPreviewStats(),
@@ -2652,8 +2662,7 @@ describe('rawWorkflowToolProvider surface contract', () => {
     })
 
     const surface = result.current.surface
-    workflow = { ...workflow, stats: stats(38.2) }
-    rerender()
+    act(() => setPipelineStats(stats(38.2)))
     expect(result.current.stats?.processTime).toBe(38.2)
     expect(result.current.surface).toBe(surface)
   })
