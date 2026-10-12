@@ -235,6 +235,8 @@ export function deriveToolAvailability(
   )
   // Transform names the block only where the workflow has nothing earlier
   // to say: an export that could otherwise run, or one held by the contract.
+  // Before any source, a refusal says so: the workflow's own reason reads
+  // as a source on its way.
   const fullExport = !exportEntry.available
     ? exportEntry
     : busy
@@ -244,7 +246,7 @@ export function deriveToolAvailability(
         ? refused(TRANSFORM_EXPORT_REASON[transformExportBlock])
         : input.canExport
           ? AVAILABLE
-          : refused(null)
+          : refused(hasImage ? null : 'no-source')
   // The HQ preview never applies Transform.
   const hqExport = !exportEntry.available
     ? exportEntry
@@ -254,7 +256,7 @@ export function deriveToolAvailability(
         ? refused('transform-hq-export')
         : input.canPreviewExport
           ? AVAILABLE
-          : refused(null)
+          : refused(hasImage ? null : 'no-source')
   const delivery = !exportEntry.available
     ? exportEntry
     : input.hasExportResult

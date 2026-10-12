@@ -107,7 +107,7 @@
   "raw.mobile.peek.hint": "正在显示未处理的 RAW",
   "raw.mobile.export.actionIdle": "导出不可用：查看原因",
   "raw.mobile.export.actionReady": "导出已就绪：打开导出选项",
-  "raw.mobile.export.actionExporting": "正在导出 {{percent}}%",
+  "raw.export.exportingPercent": "正在导出 {{percent}}%",
   "raw.mobile.export.actionDone": "已导出：打开结果",
   "raw.mobile.export.exporting": "正在导出",
   "raw.mobile.export.done": "已导出",

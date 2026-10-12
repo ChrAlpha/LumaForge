@@ -89,7 +89,7 @@ export function MobileExportAction(props: {
     state === 'ready'
       ? t('raw.mobile.export.actionReady')
       : state === 'exporting'
-        ? t('raw.mobile.export.actionExporting', { percent })
+        ? t('raw.export.exportingPercent', { percent })
         : state === 'done'
           ? t('raw.mobile.export.actionDone')
           : state === 'preview-done'

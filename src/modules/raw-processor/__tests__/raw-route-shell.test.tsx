@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { toast } from 'sonner'
@@ -293,7 +293,7 @@ describe('rawProcessorView', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('keeps export disabled copy visible before a RAW is loaded', () => {
+  it('says no RAW is loaded, once, in the export block before one is', () => {
     mockedUseCapabilityGate.mockReturnValue({
       ready: true,
       supportStatus: 'supported',
@@ -303,11 +303,17 @@ describe('rawProcessorView', () => {
 
     render(<RawProcessorView />)
 
+    const exportBlock = screen.getByRole('region', { name: 'Export' })
+    expect(within(exportBlock).getAllByText('No image loaded')).toHaveLength(1)
     expect(
-      screen.getByText('Full-resolution export source is still loading.'),
-    ).toBeInTheDocument()
+      within(exportBlock).queryByText(
+        'Full-resolution export source is still loading.',
+      ),
+    ).toBeNull()
     expect(
-      screen.getByRole('button', { name: /export full-resolution jpeg/i }),
+      within(exportBlock).getByRole('button', {
+        name: /export full-resolution jpeg/i,
+      }),
     ).toBeDisabled()
   })
 })

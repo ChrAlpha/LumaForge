@@ -4,7 +4,10 @@ import { useState } from 'react'
 import { useScrollEdgeFade } from '~/hooks/common'
 import { useI18n } from '~/lib/i18n'
 
-import { useRawToolAdjustments } from '../hooks/useRawToolState'
+import {
+  useRawToolAdjustments,
+  useRawToolStatus,
+} from '../hooks/useRawToolState'
 import { histogramClippingLabels } from '../services/preview/histogram-clipping'
 import { useRawToolCommands, useRawWorkflowContext } from './RawWorkflowContext'
 import { HistogramTool } from './shared/HistogramTool'
@@ -21,6 +24,7 @@ export function DesktopRawToolSurface() {
   const props = useRawWorkflowContext()
   const commands = useRawToolCommands()
   const adjustments = useRawToolAdjustments()
+  const { isExporting } = useRawToolStatus()
   const { t } = useI18n()
   // Each control is off exactly where the shared action policy refuses its
   // action. Reset returns the stage to its split, so it is off where the
@@ -47,7 +51,9 @@ export function DesktopRawToolSurface() {
           aria-label={t('raw.export.title')}
           data-raw-export-block="persistent"
           data-raw-export-ready={props.canExport ? 'true' : 'false'}
-          className="grid min-h-[104px] content-center bg-lf-on-photo-bg px-3 py-3"
+          // The buttons hold the foot of the rail; a note or a result grows
+          // the block upward instead of shifting them.
+          className="grid min-h-[104px] content-end bg-lf-on-photo-bg px-3 py-3"
         >
           <ExportTool
             canExport={props.canExport}
@@ -55,6 +61,7 @@ export function DesktopRawToolSurface() {
             canPreviewExport={props.canPreviewExport}
             previewExportDisabledReason={props.previewExportDisabledReason}
             isProcessing={props.isProcessing}
+            isExporting={isExporting}
             onExport={commands.onExport}
             onPreviewExport={commands.onPreviewExport}
             exportResult={props.exportResult}

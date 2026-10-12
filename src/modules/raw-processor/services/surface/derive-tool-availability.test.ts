@@ -527,6 +527,19 @@ describe('deriveToolAvailability', () => {
       available: false,
       reason: 'no-source',
     })
+    // The desktop export block stays on screen: before a source it says
+    // there is none, not that one is loading.
+    const refusedEmpty = deriveToolAvailability(
+      input({ ...empty, canExport: false, canPreviewExport: false }),
+    )
+    expect(refusedEmpty.fullExport).toEqual({
+      available: false,
+      reason: 'no-source',
+    })
+    expect(refusedEmpty.hqExport).toEqual({
+      available: false,
+      reason: 'no-source',
+    })
     const mobile = deriveToolAvailability(
       input({ ...empty, surface: 'mobile' }),
     )

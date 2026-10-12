@@ -107,7 +107,7 @@
   "raw.mobile.peek.hint": "Showing unprocessed RAW",
   "raw.mobile.export.actionIdle": "Export blocked: open details",
   "raw.mobile.export.actionReady": "Export ready: open options",
-  "raw.mobile.export.actionExporting": "Exporting {{percent}}%",
+  "raw.export.exportingPercent": "Exporting {{percent}}%",
   "raw.mobile.export.actionDone": "Exported: open result",
   "raw.mobile.export.exporting": "Exporting",
   "raw.mobile.export.done": "Exported",

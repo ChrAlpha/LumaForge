@@ -1,6 +1,6 @@
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +9,7 @@ import { I18nProvider } from '~/lib/i18n'
 
 import type { ExportResult } from '../../model/export-result'
 import { createMockExportResultIdentity } from '../../model/export-result.fixture'
+import { setProgress } from '../../state/workflow.atoms'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { ExportTool } from './ExportTool'
 
@@ -661,5 +662,138 @@ describe('exportTool reason copy', () => {
     expect(
       screen.getByRole('button', { name: '复制全分辨率图像' }),
     ).toBeEnabled()
+  })
+})
+
+describe('exportTool in progress', () => {
+  afterEach(() => {
+    setProgress(0)
+  })
+
+  const idleProps: ExportToolProps = {
+    canExport: true,
+    canPreviewExport: true,
+    isProcessing: false,
+    onExport: vi.fn(),
+    onPreviewExport: vi.fn(),
+    exportResult: null,
+    exportShareCapability: { available: false, reasonCode: 'no-result' },
+    onShareExport: vi.fn(),
+    onDownloadExport: vi.fn(),
+    onCopyExport: vi.fn(),
+  }
+
+  it('says what a busy stage is doing instead of naming an export', () => {
+    render(
+      <ExportTool
+        {...idleProps}
+        canExport={false}
+        canPreviewExport={false}
+        disabledReason={{ source: 'surface', code: 'preview-decoding' }}
+        previewExportDisabledReason={{
+          source: 'surface',
+          code: 'preview-decoding',
+        }}
+        isProcessing
+      />,
+    )
+
+    expect(screen.getAllByText('Building the first preview...')).toHaveLength(1)
+    const primary = screen.getByRole('button', {
+      name: 'Export full-resolution JPEG',
+    })
+    expect(primary).toBeDisabled()
+    expect(primary).not.toHaveAttribute('aria-busy')
+    expect(screen.queryByText(/exporting/i)).toBeNull()
+  })
+
+  it('places every note above both buttons', () => {
+    render(
+      <ExportTool
+        {...idleProps}
+        canPreviewExport={false}
+        previewExportDisabledReason={{
+          source: 'workflow',
+          reason: 'hq-preview-pending',
+        }}
+      />,
+    )
+
+    const note = screen.getByText(
+      'HQ preview export is available after the bounded HQ preview finishes.',
+    )
+    const primary = screen.getByRole('button', {
+      name: 'Export full-resolution JPEG',
+    })
+    expect(
+      note.compareDocumentPosition(primary) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: 'Export HQ preview JPEG' }),
+    ).toHaveAccessibleDescription(
+      'HQ preview export is available after the bounded HQ preview finishes.',
+    )
+  })
+
+  it.each([
+    [
+      'full resolution',
+      /export full-resolution jpeg/i,
+      /export hq preview jpeg/i,
+    ],
+    ['HQ preview', /export hq preview jpeg/i, /export full-resolution jpeg/i],
+  ])(
+    'shows a %s export running on the button that started it',
+    async (_kind, started, other) => {
+      const user = userEvent.setup()
+      const { rerender } = render(<ExportTool {...idleProps} />)
+
+      await user.click(screen.getByRole('button', { name: started }))
+      act(() => setProgress(41.6))
+      rerender(<ExportTool {...idleProps} isProcessing isExporting />)
+
+      const running = screen.getByRole('button', { name: 'Exporting 42%' })
+      expect(running).toHaveAttribute('aria-busy', 'true')
+      expect(running).toBeDisabled()
+      expect(screen.getByRole('button', { name: other })).toBeDisabled()
+
+      act(() => setProgress(90))
+      expect(
+        screen.getByRole('button', { name: 'Exporting 90%' }),
+      ).toBeInTheDocument()
+
+      rerender(<ExportTool {...idleProps} />)
+      expect(screen.getByRole('button', { name: started })).toBeEnabled()
+    },
+  )
+
+  it('holds a delivery busy until it settles, and ignores a second press', async () => {
+    const user = userEvent.setup()
+    let settle = () => {}
+    const onCopyExport = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve
+        }),
+    )
+    render(
+      <ExportTool
+        {...idleProps}
+        exportResult={createResult()}
+        exportShareCapability={{ available: true }}
+        onCopyExport={onCopyExport}
+      />,
+    )
+
+    const copy = screen.getByRole('button', { name: 'Copy preview-size image' })
+    await user.click(copy)
+    expect(copy).toHaveAttribute('aria-busy', 'true')
+    await user.click(copy)
+    await user.click(screen.getByRole('button', { name: 'Share' }))
+    expect(onCopyExport).toHaveBeenCalledOnce()
+    expect(idleProps.onShareExport).not.toHaveBeenCalled()
+
+    await act(async () => settle())
+    expect(copy).not.toHaveAttribute('aria-busy')
   })
 })
