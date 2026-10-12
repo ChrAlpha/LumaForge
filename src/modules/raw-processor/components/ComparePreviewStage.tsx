@@ -1,4 +1,5 @@
 import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
+import { Check, Upload } from 'lucide-react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
@@ -106,7 +107,9 @@ function UploadDock({
     <button
       type="button"
       data-raw-upload-dock
-      className="absolute bottom-[clamp(52px,7vw,78px)] left-1/2 z-[7] flex min-w-[min(320px,calc(100%-36px))] max-w-[min(420px,calc(100%-36px))] -translate-x-1/2 items-start gap-3 rounded-md border border-[var(--color-stage-hairline)] bg-[var(--color-stage-panel)] px-3 py-2.5 text-left text-[var(--color-on-stage)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 max-[640px]:bottom-[18px] max-[640px]:min-w-[min(300px,calc(100%-28px))]"
+      // A press sinks it half a pixel; the shift composes with the centring
+      // translate because both write the `translate` property.
+      className="group absolute bottom-[clamp(52px,7vw,78px)] left-1/2 z-[7] flex min-w-[min(320px,calc(100%-36px))] max-w-[min(420px,calc(100%-36px))] -translate-x-1/2 items-start gap-3 rounded-md border border-[var(--color-stage-hairline)] bg-[var(--color-stage-panel)] px-3 py-2.5 text-left text-[var(--color-on-stage)] transition-[translate,border-color] duration-120 ease-lf-standard enabled:hover:border-[oklch(0.96_0.006_255/0.14)] enabled:active:translate-y-[0.5px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none max-[640px]:bottom-[18px] max-[640px]:min-w-[min(300px,calc(100%-28px))]"
       onPointerEnter={onPrepareRuntime}
       onFocus={onPrepareRuntime}
       onClick={(event) => {
@@ -117,10 +120,10 @@ function UploadDock({
       disabled={disabled}
     >
       <span
-        className="grid size-[34px] shrink-0 place-items-center rounded-[5px] bg-accent font-bold text-background"
+        className="grid size-[34px] shrink-0 place-items-center rounded-[5px] bg-accent text-background transition-colors duration-150 group-enabled:group-hover:bg-lf-green-hover"
         aria-hidden="true"
       >
-        ↑
+        <Upload className="size-4" strokeWidth={2.25} />
       </span>
       <span className="grid min-w-0 gap-1">
         <strong className="block text-sm leading-tight">
@@ -171,11 +174,13 @@ function ExportReadyHandoff({
       data-raw-export-ready-handoff
     >
       <div className="grid max-w-[22rem] gap-3">
+        {/* Done is the committed state: Lab Green, not the amber that
+            meant the export was still running. */}
         <span
-          className="mx-auto grid size-12 place-items-center rounded-[8px] border border-[var(--color-stage-hairline)] bg-[var(--color-stage-panel)] text-[1.35rem] font-semibold text-[var(--color-progress)]"
+          className="mx-auto grid size-12 place-items-center rounded-[8px] border border-[var(--color-stage-hairline)] bg-[var(--color-stage-panel)] text-accent"
           aria-hidden="true"
         >
-          ✓
+          <Check className="size-5" strokeWidth={2.25} />
         </span>
         <div className="grid gap-2">
           <h2 className="m-0 text-base font-semibold text-[var(--color-on-stage)]">
