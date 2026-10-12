@@ -116,7 +116,10 @@ export async function renderSnapshot(
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
-  const context = canvas.getContext('2d')
+  // The tiles arrive as CPU pixels and every reader takes them back out on
+  // the CPU (getImageData, toBlob), so the canvas stays in CPU memory: a
+  // GPU-backed one would upload each tile and stall on a readback per read.
+  const context = canvas.getContext('2d', { willReadFrequently: true })
   if (!context) throw new Error('EXPORT_CANVAS_CONTEXT_MISSING')
   const params = gpuPreviewInputParams({
     color: structuredClone(input.color),

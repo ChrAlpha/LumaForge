@@ -64,6 +64,38 @@ describe('current-photo transform source', () => {
     expect(result.name).toBe('current.nef')
   })
 
+  it('reads the snapshot back from a CPU-backed context', async () => {
+    const data = new Uint8ClampedArray(4)
+    const getContext = vi.fn(() => ({ getImageData: () => ({ data }) }))
+    await captureTransformSource({
+      width: 1,
+      height: 1,
+      name: 'tiny.nef',
+      pipeline: {
+        renderToHiddenCanvas: vi
+          .fn()
+          .mockResolvedValue({ width: 1, height: 1, getContext }),
+      },
+    })
+    expect(getContext).toHaveBeenCalledWith('2d', { willReadFrequently: true })
+  })
+
+  it('takes a CPU frame already at the Transform edge without a canvas', async () => {
+    const createElement = vi.spyOn(document, 'createElement')
+    const rgba = new Uint8ClampedArray(120 * 80 * 4).fill(7)
+    const result = await captureTransformSource({
+      width: 6000,
+      height: 4000,
+      name: 'cpu.nef',
+      cpuFrame: { width: 120, height: 80, rgba } as never,
+    })
+    expect(createElement).not.toHaveBeenCalled()
+    expect(result.frame).toMatchObject({ width: 120, height: 80 })
+    expect(result.frame.data).toEqual(rgba)
+    expect(result.frame.data).not.toBe(rgba)
+    createElement.mockRestore()
+  })
+
   it('rejects missing or inconsistent capture output', async () => {
     await expect(
       captureTransformSource({ width: 100, height: 100, name: 'x' }),

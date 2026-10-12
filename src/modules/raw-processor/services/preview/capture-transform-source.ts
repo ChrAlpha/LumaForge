@@ -53,12 +53,34 @@ export async function captureTransformSource({
     cpuFrame?.width ?? width,
     cpuFrame?.height ?? height,
   )
+  const source = {
+    name,
+    kind: 'raw' as const,
+    originalWidth: width,
+    originalHeight: height,
+  }
+  // A CPU frame already at the Transform edge is the frame itself.
+  if (
+    cpuFrame &&
+    cpuFrame.width === target.width &&
+    cpuFrame.height === target.height
+  ) {
+    return {
+      ...source,
+      frame: { ...target, data: new Uint8ClampedArray(cpuFrame.rgba) },
+    }
+  }
+  // Every canvas here is read back with getImageData, so each is created
+  // CPU-backed; a GPU-backed one stalls the main thread on the readback.
+  const readable: CanvasRenderingContext2DSettings = {
+    willReadFrequently: true,
+  }
   let canvas: HTMLCanvasElement
   if (cpuFrame) {
     const input = document.createElement('canvas')
     input.width = cpuFrame.width
     input.height = cpuFrame.height
-    const context = input.getContext('2d')
+    const context = input.getContext('2d', readable)
     if (!context) throw new Error('transform-source-unavailable')
     context.putImageData(
       new ImageData(
@@ -72,13 +94,13 @@ export async function captureTransformSource({
     canvas = document.createElement('canvas')
     canvas.width = target.width
     canvas.height = target.height
-    const output = canvas.getContext('2d')
+    const output = canvas.getContext('2d', readable)
     if (!output) throw new Error('transform-source-unavailable')
     output.drawImage(input, 0, 0, target.width, target.height)
   } else if (pipeline) {
     canvas = await pipeline.renderToHiddenCanvas(target)
   } else throw new Error('transform-source-unavailable')
-  const context = canvas.getContext('2d', { willReadFrequently: true })
+  const context = canvas.getContext('2d', readable)
   if (
     !context ||
     canvas.width !== target.width ||
@@ -86,10 +108,7 @@ export async function captureTransformSource({
   )
     throw new Error('transform-source-unavailable')
   return {
-    name,
-    kind: 'raw',
-    originalWidth: width,
-    originalHeight: height,
+    ...source,
     frame: {
       ...target,
       data: context.getImageData(0, 0, target.width, target.height).data,
