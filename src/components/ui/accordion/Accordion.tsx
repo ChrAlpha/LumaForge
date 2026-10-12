@@ -1,16 +1,25 @@
 'use client'
 
 import * as AccordionPrimitive from '@radix-ui/react-accordion'
-import type { HTMLMotionProps, Transition } from 'motion/react'
-import { AnimatePresence, m as motion, useReducedMotion } from 'motion/react'
 import * as React from 'react'
 
 import { clsxm } from '~/lib/cn'
-import { Spring } from '~/lib/spring'
+
+/**
+ * How long a panel takes to fold or unfold. The CSS transition reads it
+ * through `--accordion-duration`, and a closing panel stays rendered for
+ * exactly this long before it is hidden, so the two cannot drift apart.
+ */
+const ACCORDION_COLLAPSE_MS = 220
+
+type AccordionValue = string | string[] | undefined
+
+const AccordionOpenContext = React.createContext<ReadonlySet<string>>(new Set())
 
 type AccordionItemContextType = {
-  isOpen: boolean
-  setIsOpen: (open: boolean) => void
+  open: boolean
+  triggerId: string
+  contentId: string
 }
 
 const AccordionItemContext = React.createContext<
@@ -25,10 +34,46 @@ const useAccordionItem = (): AccordionItemContextType => {
   return context
 }
 
+function toOpenSet(value: AccordionValue): ReadonlySet<string> {
+  if (value == null || value === '') return new Set()
+  return new Set(Array.isArray(value) ? value : [value])
+}
+
 type AccordionProps = React.ComponentProps<typeof AccordionPrimitive.Root>
 
+/**
+ * Radix owns the keyboard model and the trigger semantics; this wrapper
+ * always drives it with an explicit value so each item can read its own open
+ * state during render instead of observing `data-state` after the commit.
+ */
 function Accordion(props: AccordionProps) {
-  return <AccordionPrimitive.Root data-slot="accordion" {...props} />
+  const controlled = props.value !== undefined
+  const [uncontrolled, setUncontrolled] = React.useState<AccordionValue>(
+    props.defaultValue,
+  )
+  const value: AccordionValue = controlled ? props.value : uncontrolled
+  const openSet = React.useMemo(() => toOpenSet(value), [value])
+  const { onValueChange } = props
+  const handleValueChange = React.useCallback(
+    (next: string | string[]) => {
+      if (!controlled) setUncontrolled(next)
+      ;(onValueChange as ((value: string | string[]) => void) | undefined)?.(
+        next,
+      )
+    },
+    [controlled, onValueChange],
+  )
+
+  return (
+    <AccordionOpenContext value={openSet}>
+      <AccordionPrimitive.Root
+        data-slot="accordion"
+        {...(props as AccordionPrimitive.AccordionMultipleProps)}
+        value={value as string[]}
+        onValueChange={handleValueChange}
+      />
+    </AccordionOpenContext>
+  )
 }
 
 type AccordionItemProps = React.ComponentProps<
@@ -37,13 +82,25 @@ type AccordionItemProps = React.ComponentProps<
   children: React.ReactNode
 }
 
-function AccordionItem({ className, children, ...props }: AccordionItemProps) {
-  const [isOpen, setIsOpen] = React.useState(false)
+function AccordionItem({
+  className,
+  children,
+  value,
+  ...props
+}: AccordionItemProps) {
+  const open = React.use(AccordionOpenContext).has(value)
+  const triggerId = React.useId()
+  const contentId = React.useId()
+  const context = React.useMemo(
+    () => ({ open, triggerId, contentId }),
+    [open, triggerId, contentId],
+  )
 
   return (
-    <AccordionItemContext value={{ isOpen, setIsOpen }}>
+    <AccordionItemContext value={context}>
       <AccordionPrimitive.Item
         data-slot="accordion-item"
+        value={value}
         className={clsxm('border-border border-b', className)}
         {...props}
       >
@@ -56,54 +113,25 @@ function AccordionItem({ className, children, ...props }: AccordionItemProps) {
 type AccordionTriggerProps = React.ComponentProps<
   typeof AccordionPrimitive.Trigger
 > & {
-  transition?: Transition
   chevron?: boolean
 }
 
 function AccordionTrigger({
-  ref,
   className,
   children,
-  transition = Spring.presets.smooth,
   chevron = true,
   ...props
 }: AccordionTriggerProps) {
-  const triggerRef = React.useRef<HTMLButtonElement | null>(null)
-  React.useImperativeHandle(ref, () => triggerRef.current as HTMLButtonElement)
-  const { isOpen, setIsOpen } = useAccordionItem()
-  const prefersReducedMotion = useReducedMotion()
-  const chevronTransition = prefersReducedMotion ? { duration: 0 } : transition
-
-  React.useEffect(() => {
-    const node = triggerRef.current
-    if (!node) return
-
-    const observer = new MutationObserver((mutationsList) => {
-      mutationsList.forEach((mutation) => {
-        if (mutation.attributeName === 'data-state') {
-          const currentState = node.dataset.state
-          setIsOpen(currentState === 'open')
-        }
-      })
-    })
-    observer.observe(node, {
-      attributes: true,
-      attributeFilter: ['data-state'],
-    })
-    const initialState = node.dataset.state
-    setIsOpen(initialState === 'open')
-    return () => {
-      observer.disconnect()
-    }
-  }, [setIsOpen])
+  const { triggerId, contentId } = useAccordionItem()
 
   return (
     <AccordionPrimitive.Header data-slot="accordion-header" className="flex">
       <AccordionPrimitive.Trigger
-        ref={triggerRef}
         data-slot="accordion-trigger"
+        id={triggerId}
+        aria-controls={contentId}
         className={clsxm(
-          'flex flex-1 items-center justify-between rounded-md py-4 text-start font-medium transition-colors duration-150 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+          'group/accordion-trigger flex flex-1 items-center justify-between rounded-md py-4 text-start font-medium transition-colors duration-150 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
           className,
         )}
         {...props}
@@ -111,63 +139,85 @@ function AccordionTrigger({
         {children}
 
         {chevron && (
-          <motion.div
+          <span
+            aria-hidden="true"
             data-slot="accordion-trigger-chevron"
-            animate={{ rotate: isOpen ? 180 : 0 }}
-            transition={chevronTransition}
+            className="inline-flex transition-transform duration-(--accordion-duration) ease-lf-standard group-data-[state=open]/accordion-trigger:rotate-180 motion-reduce:transition-none"
+            style={accordionDurationStyle}
           >
             <i className="text-text-secondary i-mingcute-down-line size-4 shrink-0" />
-          </motion.div>
+          </span>
         )}
       </AccordionPrimitive.Trigger>
     </AccordionPrimitive.Header>
   )
 }
 
-type AccordionContentProps = React.ComponentProps<
-  typeof AccordionPrimitive.Content
-> &
-  HTMLMotionProps<'div'> & {
-    transition?: Transition
-  }
+const accordionDurationStyle = {
+  '--accordion-duration': `${ACCORDION_COLLAPSE_MS}ms`,
+} as React.CSSProperties
 
+type AccordionContentProps = Omit<React.ComponentProps<'div'>, 'children'> & {
+  children: React.ReactNode
+}
+
+/**
+ * The panel body stays mounted once rendered: a closed panel is hidden behind
+ * `<Activity>`, which keeps its state and DOM, unmounts its effects, and
+ * renders its updates at idle priority. Opening a panel therefore reveals
+ * work that is already done instead of mounting the whole subtree on the
+ * frame the fold starts.
+ *
+ * The fold is a `grid-template-rows` transition between `0fr` and `1fr`, so
+ * each frame restyles one element and relayouts nothing inside the panel. A
+ * panel that opens from `hidden` starts at `0fr` through `@starting-style`.
+ * A closing panel stays rendered (inert) until the fold finishes, then hides.
+ */
 function AccordionContent({
   className,
   children,
-  transition = Spring.presets.snappy,
+  style,
   ...props
 }: AccordionContentProps) {
-  const { isOpen } = useAccordionItem()
-  const prefersReducedMotion = useReducedMotion()
-  const contentTransition = prefersReducedMotion ? { duration: 0 } : transition
+  const { open, triggerId, contentId } = useAccordionItem()
+  const [present, setPresent] = React.useState(open)
+  if (open && !present) setPresent(true)
+
+  React.useEffect(() => {
+    if (open || !present) return
+    const timer = setTimeout(setPresent, ACCORDION_COLLAPSE_MS, false)
+    return () => clearTimeout(timer)
+  }, [open, present])
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <AccordionPrimitive.Content forceMount {...props}>
-          <motion.div
-            key="accordion-content"
-            data-slot="accordion-content"
-            initial={{ height: 0, opacity: 0, '--mask-stop': '0%' }}
-            animate={{ height: 'auto', opacity: 1, '--mask-stop': '100%' }}
-            exit={{ height: 0, opacity: 0, '--mask-stop': '0%' }}
-            transition={contentTransition}
-            style={{
-              maskImage:
-                'linear-gradient(black var(--mask-stop), transparent var(--mask-stop))',
-              WebkitMaskImage:
-                'linear-gradient(black var(--mask-stop), transparent var(--mask-stop))',
-            }}
-            className="overflow-hidden"
-            {...props}
-          >
+    <div
+      role="region"
+      id={contentId}
+      aria-labelledby={triggerId}
+      data-slot="accordion-content"
+      data-state={open ? 'open' : 'closed'}
+      hidden={!present}
+      inert={!open}
+      className="grid grid-rows-[1fr] transition-[grid-template-rows] duration-(--accordion-duration) ease-lf-standard starting:grid-rows-[0fr] data-[state=closed]:grid-rows-[0fr] motion-reduce:transition-none"
+      style={{ ...accordionDurationStyle, ...style }}
+      {...props}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div
+          data-slot="accordion-content-body"
+          className={clsxm(
+            'transition-[opacity,translate] duration-(--accordion-duration) ease-lf-standard starting:-translate-y-1 starting:opacity-0 motion-reduce:transition-none',
+            open ? 'opacity-100' : '-translate-y-1 opacity-0',
+          )}
+        >
+          <React.Activity mode={present ? 'visible' : 'hidden'}>
             <div className={clsxm('pt-0 pb-4 text-sm', className)}>
               {children}
             </div>
-          </motion.div>
-        </AccordionPrimitive.Content>
-      )}
-    </AnimatePresence>
+          </React.Activity>
+        </div>
+      </div>
+    </div>
   )
 }
 

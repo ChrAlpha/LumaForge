@@ -1,5 +1,6 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useEffect, useState } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { jotaiStore } from '~/lib/jotai'
@@ -37,9 +38,54 @@ describe('toolCard', () => {
     expect(screen.getByText('adjust body')).toBeInTheDocument()
   })
 
-  it('keeps a collapsed card body out of the document', () => {
+  it('keeps a collapsed card body hidden and out of the accessibility tree', () => {
     setup()
-    expect(screen.queryByText('hist body')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Histogram' })).toBeNull()
+    expect(screen.getByText('hist body')).not.toBeVisible()
+    const trigger = screen.getByRole('button', { name: 'Histogram' })
+    const region = document.getElementById(
+      trigger.getAttribute('aria-controls') ?? '',
+    )
+    expect(region).toHaveAttribute('hidden')
+    expect(region).toHaveAttribute('aria-labelledby', trigger.id)
+  })
+
+  it('keeps a card body mounted across a fold, with its effects only while shown', async () => {
+    const user = userEvent.setup()
+    const effects: string[] = []
+    function Counter() {
+      const [count, setCount] = useState(0)
+      useEffect(() => {
+        effects.push('mount')
+        return () => {
+          effects.push('unmount')
+        }
+      }, [])
+      return (
+        <button type="button" onClick={() => setCount(count + 1)}>
+          count {count}
+        </button>
+      )
+    }
+    render(
+      <ToolCardStack ariaLabel="RAW finishing controls">
+        <ToolCard id="adjust" title="Adjust">
+          <Counter />
+        </ToolCard>
+      </ToolCardStack>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'count 0' }))
+    const trigger = screen.getByRole('button', { name: 'Adjust' })
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    // The fold plays before the body hides and its effects stop.
+    await waitFor(() => expect(screen.getByText('count 1')).not.toBeVisible())
+    expect(effects).toEqual(['mount', 'unmount'])
+
+    await user.click(trigger)
+    expect(screen.getByRole('button', { name: 'count 1' })).toBeVisible()
+    expect(effects).toEqual(['mount', 'unmount', 'mount'])
   })
 
   it('toggles open state and aria-expanded on trigger click', async () => {
