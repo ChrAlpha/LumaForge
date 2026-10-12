@@ -276,6 +276,8 @@ describe('rawToolSurface', () => {
       'mouse-keyboard',
     )
     expect(desktopSurface).toHaveClass('bg-lf-on-photo-bg-strong')
+    // The rail sits beside the photo: a solid plate, not glass.
+    expect(desktopSurface!.className).not.toMatch(/backdrop-blur/)
     // card stack present
     expect(
       screen.getByRole('group', { name: 'RAW finishing controls' }),

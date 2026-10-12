@@ -82,6 +82,26 @@ describe('raw lab css tokens', () => {
   })
 })
 
+describe('desktop chrome plates', () => {
+  it('keeps the topbar and the rail, which sit beside the photo, free of backdrop filters', () => {
+    const desktopMedia = extractRuleBody(
+      rawLabEffectsCss,
+      '@media (min-width: 641px)',
+    )
+    for (const chrome of ['on-photo-topbar', 'on-photo-tools']) {
+      const rule = extractRuleBody(
+        desktopMedia,
+        `.raw-lab [data-raw-desktop-chrome='${chrome}']`,
+      )
+      expect(rule).not.toContain('backdrop-filter')
+    }
+    // The compare handle sits on the photo and keeps its glass.
+    expect(
+      extractRuleBody(desktopMedia, '.raw-lab .raw-lab-compare-handle span'),
+    ).toContain('backdrop-filter')
+  })
+})
+
 describe('compare handle interaction contract', () => {
   it('clips the split line to the published photo box instead of the frame', () => {
     const rule = extractRuleBody(

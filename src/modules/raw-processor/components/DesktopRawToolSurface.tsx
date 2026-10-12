@@ -198,7 +198,7 @@ function DesktopToolAside({
 
   return (
     <aside
-      className="raw-tool-surface relative grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-0 overflow-hidden bg-lf-on-photo-bg-strong p-0 text-lf-on-photo-ink backdrop-blur-background max-[980px]:max-h-[min(42svh,390px)]"
+      className="raw-tool-surface relative grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-0 overflow-hidden bg-lf-on-photo-bg-strong p-0 text-lf-on-photo-ink max-[980px]:max-h-[min(42svh,390px)]"
       data-raw-tool-surface="raw-finishing"
       data-raw-desktop-chrome="on-photo-tools"
       data-raw-desktop-density="linear-compact"

@@ -336,7 +336,7 @@ Do not describe the default path as display sRGB followed by a LUT.
 ## 6. Workspace Chrome (RAW)
 
 The `/raw` workspace runs in a **photo-first dark on-photo chrome**.
-The photograph is the substrate; the topbar, tool rail, and export footer float over it as translucent control surfaces.
+The photograph is the substrate; the topbar, tool rail, and export footer frame it as solid slate plates, and only the controls that sit on the photo are glass.
 This is the canonical environment for evaluating RAW color, and it is also the language mobile `/raw` has used from day one — desktop now matches.
 
 This register applies **only inside `/raw`**.
@@ -392,7 +392,7 @@ That hue was used briefly in early drafts and left a single warm wash inside an 
 
 ### Tool Rail
 
-- Right column, dark on-photo plate with `backdrop-filter: blur(14px) saturate(120%)`.
+- Right column, a solid dark on-photo plate with no `backdrop-filter`: the rail sits beside the stage, so there is no photo behind it to tint it.
 - No drawn border; the seam to the stage is an inset hairline `inset 1px 0 0 oklch(0.96 0.006 255 / 0.06)`.
 - Scrollbar uses the dark thumb token, scrollbar-gutter: stable to prevent jitter on first scroll.
 - Tool cards are Radix Accordion items:
@@ -559,17 +559,17 @@ fighting it.
 - The export progress overlay runs in the same cool slate palette as the rest of the chrome (the shared mobile darkroom is warm amber; the desktop variant overrides it).
 - Flat-handoff variant — used for full-stage export — paints a radial slate gradient with a darkroom film-strip overlay at 4% opacity.
 
-### Topbar and Tool Rail Are Glass
+### Topbar and Tool Rail Are Plates
 
-Both the topbar and the tool rail are translucent: `backdrop-filter: blur(14px) saturate(120%)`.
-This is intentional. It lets the photograph's color tint the chrome, so a warm-toned image warms the rail and a cool-toned image cools it.
-The chrome reads as one continuous material with the photograph, not as a separate UI slab.
+The topbar and the tool rail sit beside the photo, not over it, so they are solid slate plates under a top gradient, as the mobile topbar and deck are.
+They carry no `backdrop-filter`. A blur there samples only the slate behind it, so it changes nothing on screen, yet it re-blurs the plate's whole area on every rail scroll and card fold.
+Measured on the empty `/raw` at 1440x900 in Chromium with software GPU, over seven card folds and forty wheel steps on the rail: the compositor's viz thread was busy 439-481 ms with the blur and 279-305 ms without, and screenshots with and without are identical over the topbar and the rail.
 
 ### Named Rules
 
 **The Photo Owns the Stage Rule.** The photograph is the substrate; chrome is the layer over it. Topbar and tool rail must not compete with the photo for visual hierarchy.
 
-**The Chrome Is Glass Rule.** Every chrome surface that floats over the photo uses `backdrop-filter`. The chrome does not invent its own opaque color; it tints with the photo.
+**The Glass Is On the Photo Rule.** A chrome surface that sits on the photo (the compare handle and lens, their hints, the peek pill, the CPU preview notice, the histogram card) uses `backdrop-filter`, so the photo tints it. A surface beside the photo is a solid plate: with nothing behind it to tint, glass is cost without effect.
 
 **The Slate, Not Black Rule.** Substrate is `oklch(0.064–0.12, c≈0.006)`. Never pure black. The faint cool tint distinguishes it from a generic dark UI and keeps it photographic.
 
@@ -588,7 +588,7 @@ The chrome reads as one continuous material with the photograph, not as a separa
 ### Cross-platform parity
 
 Mobile `/raw` has used this language since the first mobile design.
-This section documents desktop catching up — both viewports now share one set of tokens (`lf-on-photo-*`, `lf-hero-ink`, the stage palette), one set of idioms (glass chrome, photo-owned stage, ghost actions, lf-green accent), and one mental model.
+This section documents desktop catching up — both viewports now share one set of tokens (`lf-on-photo-*`, `lf-hero-ink`, the stage palette), one set of idioms (solid plates around the photo and glass on it, photo-owned stage, ghost actions, lf-green accent), and one mental model.
 Avoid letting them diverge again.
 
 Parity now extends to interaction, not just paint: one Adjust row component

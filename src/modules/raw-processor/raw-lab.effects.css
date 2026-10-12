@@ -7,7 +7,10 @@
  * See DESIGN.md "Theme contract".
  */
 
-/* Desktop chrome effects (relocated from raw-lab.css). */
+/* Desktop chrome effects (relocated from raw-lab.css). The topbar and the
+   rail sit beside the photo, not over it, so they are solid plates with no
+   backdrop-filter: a blur there samples only the slate behind them and
+   repaints their whole area on every scroll and fold. */
 @media (min-width: 641px) {
   .raw-lab [data-raw-desktop-chrome='on-photo-topbar'] {
     border-color: transparent;
@@ -18,8 +21,6 @@
       inset 0 1px 0 oklch(0.96 0.006 255 / 0.04),
       inset 0 -1px 0 oklch(0.96 0.006 255 / 0.08),
       0 14px 38px oklch(0.04 0.006 255 / 0.34);
-    -webkit-backdrop-filter: blur(14px) saturate(120%);
-    backdrop-filter: blur(14px) saturate(120%);
   }
 
   /* `translate` rather than `transform` so the press survives the shared
@@ -39,8 +40,6 @@
       inset 0 1px 0 oklch(0.96 0.006 255 / 0.05),
       inset 0 -1px 0 oklch(0.04 0.006 255 / 0.42),
       0 18px 54px oklch(0.04 0.006 255 / 0.36);
-    -webkit-backdrop-filter: blur(14px) saturate(120%);
-    backdrop-filter: blur(14px) saturate(120%);
   }
 
   .raw-lab [data-raw-tool-scroll] {
