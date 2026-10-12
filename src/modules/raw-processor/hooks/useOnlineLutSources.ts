@@ -654,22 +654,43 @@ export function useOnlineLutSources({
     [hasShareCapability, shareResources.length, shareUrl],
   )
 
-  return {
-    state,
-    sourceUrlInput,
-    setSourceUrlInput,
-    addSourceFromInput,
-    refreshSource,
-    removeSource,
-    loadEntry,
-    loadingEntryId,
-    failedEntryId,
-    entryLoadProgress,
-    cancelEntryLoad,
-    loadedEntry,
-    activateCatalogs,
-    resourceActivation,
-    catalogActivation,
-    share,
-  }
+  // One object while nothing in it changes, so the surfaces that take the
+  // sources skip a rerender when the workflow moves without them.
+  return useMemo(
+    () => ({
+      state,
+      sourceUrlInput,
+      setSourceUrlInput,
+      addSourceFromInput,
+      refreshSource,
+      removeSource,
+      loadEntry,
+      loadingEntryId,
+      failedEntryId,
+      entryLoadProgress,
+      cancelEntryLoad,
+      loadedEntry,
+      activateCatalogs,
+      resourceActivation,
+      catalogActivation,
+      share,
+    }),
+    [
+      state,
+      sourceUrlInput,
+      addSourceFromInput,
+      refreshSource,
+      removeSource,
+      loadEntry,
+      loadingEntryId,
+      failedEntryId,
+      entryLoadProgress,
+      cancelEntryLoad,
+      loadedEntry,
+      activateCatalogs,
+      resourceActivation,
+      catalogActivation,
+      share,
+    ],
+  )
 }

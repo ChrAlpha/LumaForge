@@ -328,17 +328,26 @@ export function RawWorkflowToolProvider({
     fullExportAvailable: fullExport.available,
     hqExportAvailable: hqExport.available,
   }
-  const disabledReason = exportActionReason(fullExport, exportRefusal)
-  const previewExportDisabledReason = exportActionReason(
-    hqExport,
-    previewExportRefusal,
+  // The reasons and facts below are rebuilt only when what they say moves,
+  // so the memoized export and file-facts tools skip a workflow render that
+  // leaves them alone (a scrub, a histogram result).
+  const disabledReason = useMemo(
+    () => exportActionReason(fullExport, exportRefusal),
+    [exportRefusal, fullExport],
   )
-  const decodedPreviewSize = workflow.decodedImageRef.current
-    ? {
-        width: workflow.decodedImageRef.current.width,
-        height: workflow.decodedImageRef.current.height,
-      }
-    : null
+  const previewExportDisabledReason = useMemo(
+    () => exportActionReason(hqExport, previewExportRefusal),
+    [hqExport, previewExportRefusal],
+  )
+  const decodedWidth = workflow.decodedImageRef.current?.width
+  const decodedHeight = workflow.decodedImageRef.current?.height
+  const decodedPreviewSize = useMemo(
+    () =>
+      decodedWidth !== undefined && decodedHeight !== undefined
+        ? { width: decodedWidth, height: decodedHeight }
+        : null,
+    [decodedHeight, decodedWidth],
+  )
   const transformFrame = transform?.showOverlay
     ? transform.preview.result?.frame
     : undefined
@@ -358,13 +367,18 @@ export function RawWorkflowToolProvider({
         : null,
     [hasImage, isCpuMode, lutData, params],
   )
-  const toolStats = workflow.stats
-    ? {
-        processTime: workflow.stats.processTime,
-        inputSize: workflow.stats.inputSize,
-        previewSize: decodedPreviewSize ?? workflow.stats.previewSize,
-      }
-    : null
+  const { stats } = workflow
+  const toolStats = useMemo(
+    () =>
+      stats
+        ? {
+            processTime: stats.processTime,
+            inputSize: stats.inputSize,
+            previewSize: decodedPreviewSize ?? stats.previewSize,
+          }
+        : null,
+    [decodedPreviewSize, stats],
+  )
 
   return (
     <RawWorkflowProvider

@@ -4,7 +4,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { scaleLinear } from '@visx/scale'
 import { AreaClosed, LinePath } from '@visx/shape'
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import type { Translate } from '~/lib/i18n'
@@ -110,189 +110,193 @@ function statusReason(histogram: PreviewHistogramState, t: Translate) {
  * without the grid, and with strokes held at their pixel width so the
  * curves stay legible at that size.
  */
-export function HistogramPlot({
-  bins,
-  ariaLabel,
-  variant = 'card',
-}: {
-  bins: ReadyPreviewHistogram['bins']
-  ariaLabel: string
-  variant?: 'card' | 'mini'
-}) {
-  const mini = variant === 'mini'
-  const stroke = mini ? 'non-scaling-stroke' : undefined
-  const series = useMemo(
-    () => ({
-      red: binsToPoints(bins.red),
-      green: binsToPoints(bins.green),
-      blue: binsToPoints(bins.blue),
-      luma: binsToPoints(bins.luma),
-    }),
-    [bins],
-  )
+export const HistogramPlot = memo(
+  ({
+    bins,
+    ariaLabel,
+    variant = 'card',
+  }: {
+    bins: ReadyPreviewHistogram['bins']
+    ariaLabel: string
+    variant?: 'card' | 'mini'
+  }) => {
+    const mini = variant === 'mini'
+    const stroke = mini ? 'non-scaling-stroke' : undefined
+    const series = useMemo(
+      () => ({
+        red: binsToPoints(bins.red),
+        green: binsToPoints(bins.green),
+        blue: binsToPoints(bins.blue),
+        luma: binsToPoints(bins.luma),
+      }),
+      [bins],
+    )
 
-  return (
-    <svg
-      role="img"
-      aria-label={ariaLabel}
-      data-histogram-plot={variant}
-      className={clsxm(
-        'raw-histogram-plot block overflow-hidden',
-        mini ? 'h-7 w-24 rounded-[3px]' : 'h-[108px] w-full rounded-md',
-      )}
-      viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
-      preserveAspectRatio="none"
-    >
-      {!mini && (
-        <g className="raw-histogram-grid" aria-hidden="true">
-          {GRID_X.map((x) => (
+    return (
+      <svg
+        role="img"
+        aria-label={ariaLabel}
+        data-histogram-plot={variant}
+        className={clsxm(
+          'raw-histogram-plot block overflow-hidden',
+          mini ? 'h-7 w-24 rounded-[3px]' : 'h-[108px] w-full rounded-md',
+        )}
+        viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
+        preserveAspectRatio="none"
+      >
+        {!mini && (
+          <g className="raw-histogram-grid" aria-hidden="true">
+            {GRID_X.map((x) => (
+              <line
+                key={`x-${x}`}
+                x1={x}
+                x2={x}
+                y1={PLOT_PADDING}
+                y2={BASELINE_Y}
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+            {GRID_Y.map((y) => (
+              <line
+                key={`y-${y}`}
+                x1="0"
+                x2={VIEWBOX_WIDTH}
+                y1={y}
+                y2={y}
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
             <line
-              key={`x-${x}`}
-              x1={x}
-              x2={x}
-              y1={PLOT_PADDING}
+              className="raw-histogram-baseline"
+              x1="0"
+              x2={VIEWBOX_WIDTH}
+              y1={BASELINE_Y}
               y2={BASELINE_Y}
               vectorEffect="non-scaling-stroke"
             />
-          ))}
-          {GRID_Y.map((y) => (
-            <line
-              key={`y-${y}`}
-              x1="0"
-              x2={VIEWBOX_WIDTH}
-              y1={y}
-              y2={y}
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
-          <line
-            className="raw-histogram-baseline"
-            x1="0"
-            x2={VIEWBOX_WIDTH}
-            y1={BASELINE_Y}
-            y2={BASELINE_Y}
-            vectorEffect="non-scaling-stroke"
-          />
-        </g>
-      )}
-      <AreaClosed
-        className="raw-histogram-channel-fill raw-histogram-channel-fill-red"
-        data={series.red.points}
-        x={(d) => d.x}
-        y={(d) => d.y}
-        yScale={series.red.yScale}
-      />
-      <AreaClosed
-        className="raw-histogram-channel-fill raw-histogram-channel-fill-green"
-        data={series.green.points}
-        x={(d) => d.x}
-        y={(d) => d.y}
-        yScale={series.green.yScale}
-      />
-      <AreaClosed
-        className="raw-histogram-channel-fill raw-histogram-channel-fill-blue"
-        data={series.blue.points}
-        x={(d) => d.x}
-        y={(d) => d.y}
-        yScale={series.blue.yScale}
-      />
-      {hasNonZeroBins(bins.red) && (
-        <LinePath
-          className="raw-histogram-channel-line raw-histogram-channel-line-red"
+          </g>
+        )}
+        <AreaClosed
+          className="raw-histogram-channel-fill raw-histogram-channel-fill-red"
           data={series.red.points}
           x={(d) => d.x}
           y={(d) => d.y}
-          vectorEffect={stroke}
+          yScale={series.red.yScale}
         />
-      )}
-      {hasNonZeroBins(bins.green) && (
-        <LinePath
-          className="raw-histogram-channel-line raw-histogram-channel-line-green"
+        <AreaClosed
+          className="raw-histogram-channel-fill raw-histogram-channel-fill-green"
           data={series.green.points}
           x={(d) => d.x}
           y={(d) => d.y}
-          vectorEffect={stroke}
+          yScale={series.green.yScale}
         />
-      )}
-      {hasNonZeroBins(bins.blue) && (
-        <LinePath
-          className="raw-histogram-channel-line raw-histogram-channel-line-blue"
+        <AreaClosed
+          className="raw-histogram-channel-fill raw-histogram-channel-fill-blue"
           data={series.blue.points}
+          x={(d) => d.x}
+          y={(d) => d.y}
+          yScale={series.blue.yScale}
+        />
+        {hasNonZeroBins(bins.red) && (
+          <LinePath
+            className="raw-histogram-channel-line raw-histogram-channel-line-red"
+            data={series.red.points}
+            x={(d) => d.x}
+            y={(d) => d.y}
+            vectorEffect={stroke}
+          />
+        )}
+        {hasNonZeroBins(bins.green) && (
+          <LinePath
+            className="raw-histogram-channel-line raw-histogram-channel-line-green"
+            data={series.green.points}
+            x={(d) => d.x}
+            y={(d) => d.y}
+            vectorEffect={stroke}
+          />
+        )}
+        {hasNonZeroBins(bins.blue) && (
+          <LinePath
+            className="raw-histogram-channel-line raw-histogram-channel-line-blue"
+            data={series.blue.points}
+            x={(d) => d.x}
+            y={(d) => d.y}
+            vectorEffect={stroke}
+          />
+        )}
+        <LinePath
+          className="raw-histogram-luma"
+          data={series.luma.points}
           x={(d) => d.x}
           y={(d) => d.y}
           vectorEffect={stroke}
         />
-      )}
-      <LinePath
-        className="raw-histogram-luma"
-        data={series.luma.points}
-        x={(d) => d.x}
-        y={(d) => d.y}
-        vectorEffect={stroke}
-      />
-    </svg>
-  )
-}
+      </svg>
+    )
+  },
+)
 
-export function HistogramTool({
-  histogram,
-  heading = false,
-}: {
-  histogram: PreviewHistogramState
-  /**
-   * Render the "Histogram" title in the card itself. Desktop leaves it off
-   * because its tool card trigger already carries the title; the floating
-   * mobile card has no trigger, so without this the source label read as the
-   * title.
-   */
-  heading?: boolean
-}) {
-  const { t } = useI18n()
-  const ready = readyHistogram(histogram)
-  const label = statusLabel(histogram, t)
-  const reason = statusReason(histogram, t)
-  const clipping = ready ? histogramClippingLabels(ready, t) : null
+export const HistogramTool = memo(
+  ({
+    histogram,
+    heading = false,
+  }: {
+    histogram: PreviewHistogramState
+    /**
+     * Render the "Histogram" title in the card itself. Desktop leaves it off
+     * because its tool card trigger already carries the title; the floating
+     * mobile card has no trigger, so without this the source label read as the
+     * title.
+     */
+    heading?: boolean
+  }) => {
+    const { t } = useI18n()
+    const ready = readyHistogram(histogram)
+    const label = statusLabel(histogram, t)
+    const reason = statusReason(histogram, t)
+    const clipping = ready ? histogramClippingLabels(ready, t) : null
 
-  return (
-    <div className="grid gap-3">
-      <div className="grid gap-1">
-        <div className="flex items-baseline justify-between gap-2">
-          {heading && (
-            <h2 className="m-0 text-[0.82rem] font-semibold leading-tight text-lf-on-surface">
-              {t('raw.histogram.title')}
-            </h2>
-          )}
-          {/* Source (Quick / HQ preview) or pipeline state, as meta. */}
-          <span
-            data-histogram-source
-            className="text-[0.68rem] font-medium text-lf-on-surface/56"
-          >
-            {label}
-          </span>
-        </div>
-        {reason && (
-          <p className="m-0 text-[0.78rem] leading-snug text-lf-on-surface/72">
-            {reason}
-          </p>
-        )}
-      </div>
-      {ready && clipping ? (
-        <>
-          <HistogramPlot
-            bins={ready.bins}
-            ariaLabel={t('raw.histogram.aria')}
-          />
-          {/* Clipping as a share of sampled pixels; raw counts said nothing
-              without the total. */}
-          <div
-            data-histogram-clipping
-            className="flex flex-wrap gap-x-3 gap-y-1 text-[0.72rem] tabular-nums text-lf-on-surface/76"
-          >
-            <span>{clipping.shadows}</span>
-            <span>{clipping.highlights}</span>
+    return (
+      <div className="grid gap-3">
+        <div className="grid gap-1">
+          <div className="flex items-baseline justify-between gap-2">
+            {heading && (
+              <h2 className="m-0 text-[0.82rem] font-semibold leading-tight text-lf-on-surface">
+                {t('raw.histogram.title')}
+              </h2>
+            )}
+            {/* Source (Quick / HQ preview) or pipeline state, as meta. */}
+            <span
+              data-histogram-source
+              className="text-[0.68rem] font-medium text-lf-on-surface/56"
+            >
+              {label}
+            </span>
           </div>
-        </>
-      ) : null}
-    </div>
-  )
-}
+          {reason && (
+            <p className="m-0 text-[0.78rem] leading-snug text-lf-on-surface/72">
+              {reason}
+            </p>
+          )}
+        </div>
+        {ready && clipping ? (
+          <>
+            <HistogramPlot
+              bins={ready.bins}
+              ariaLabel={t('raw.histogram.aria')}
+            />
+            {/* Clipping as a share of sampled pixels; raw counts said nothing
+              without the total. */}
+            <div
+              data-histogram-clipping
+              className="flex flex-wrap gap-x-3 gap-y-1 text-[0.72rem] tabular-nums text-lf-on-surface/76"
+            >
+              <span>{clipping.shadows}</span>
+              <span>{clipping.highlights}</span>
+            </div>
+          </>
+        ) : null}
+      </div>
+    )
+  },
+)

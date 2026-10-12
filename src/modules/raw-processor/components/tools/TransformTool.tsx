@@ -1,11 +1,12 @@
 import { Grid3x3, RotateCcw, Ruler, TriangleAlert } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { useEffect } from 'react'
+import { memo, useCallback, useEffect, useRef } from 'react'
 
 import { Checkbox } from '~/components/ui/checkbox'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 import type { UprightMode } from '~/lib/transform/geometry/types'
+import type { ManualTransform } from '~/lib/transform/transform-types'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
@@ -15,7 +16,7 @@ import {
   SEGMENTED_THUMB_BG,
   SEGMENTED_TRACK,
 } from '../shared/segmented-chrome'
-import type { TransformGroup } from '../transform-fields'
+import type { TransformField, TransformGroup } from '../transform-fields'
 import {
   applyTransformSlider,
   formatTransformValue,
@@ -53,6 +54,18 @@ export function TransformTool({
   const { t } = useI18n()
   const { preview, observe } = feature
   useEffect(() => observe(), [observe])
+  // The feature is a new object on every workflow render; the rows and mode
+  // buttons hold these instead, which read it when they are called.
+  const featureRef = useRef(feature)
+  featureRef.current = feature
+  const selectMode = useCallback(
+    (mode: UprightMode) => featureRef.current.setMode(mode),
+    [],
+  )
+  const changeField = useCallback((field: TransformField, next: number) => {
+    const current = featureRef.current
+    current.setManual(applyTransformSlider(field, current.preview.manual, next))
+  }, [])
 
   const message = resolveTransformMessage(feature)
   const controlsDisabled = !availability.transformGeometry.available
@@ -73,7 +86,7 @@ export function TransformTool({
             mode={mode}
             active={preview.mode === mode}
             disabled={controlsDisabled}
-            onSelect={feature.setMode}
+            onSelect={selectMode}
           />
         ))}
       </div>
@@ -135,10 +148,16 @@ export function TransformTool({
 
       <FieldGroup
         group="perspective"
-        feature={feature}
+        manual={preview.manual}
         disabled={controlsDisabled}
+        onFieldChange={changeField}
       />
-      <FieldGroup group="frame" feature={feature} disabled={controlsDisabled}>
+      <FieldGroup
+        group="frame"
+        manual={preview.manual}
+        disabled={controlsDisabled}
+        onFieldChange={changeField}
+      >
         <label className="flex min-h-9 cursor-pointer items-center gap-2.5 px-1.5 text-[0.8rem] text-lf-on-surface/80">
           <Checkbox
             checked={preview.constrainCrop}
@@ -155,40 +174,42 @@ export function TransformTool({
   )
 }
 
-function ModeButton({
-  mode,
-  active,
-  disabled,
-  onSelect,
-}: {
-  mode: UprightMode
-  active: boolean
-  disabled: boolean
-  onSelect: (mode: UprightMode) => void
-}) {
-  const { t } = useI18n()
-  return (
-    <button
-      type="button"
-      data-testid={`mode-${mode}`}
-      aria-pressed={active}
-      disabled={disabled}
-      onClick={() => onSelect(mode)}
-      className={clsxm(
-        // Five segments share a 292px rail at its narrowest, so the label
-        // scale is set by the longest mode ("Vertical") rather than by the
-        // rail's usual 0.74rem control text.
-        'inline-flex h-9 min-w-0 items-center justify-center rounded-[6px] px-0.5 text-[0.68rem] transition-colors duration-150',
-        SEGMENTED_ITEM_TEXT,
-        SEGMENTED_FOCUS_RING,
-        'disabled:pointer-events-none disabled:opacity-45',
-        active && `${SEGMENTED_THUMB_BG} font-semibold text-lf-on-surface`,
-      )}
-    >
-      <span className="truncate">{t(uprightModeLabelKey(mode))}</span>
-    </button>
-  )
-}
+const ModeButton = memo(
+  ({
+    mode,
+    active,
+    disabled,
+    onSelect,
+  }: {
+    mode: UprightMode
+    active: boolean
+    disabled: boolean
+    onSelect: (mode: UprightMode) => void
+  }) => {
+    const { t } = useI18n()
+    return (
+      <button
+        type="button"
+        data-testid={`mode-${mode}`}
+        aria-pressed={active}
+        disabled={disabled}
+        onClick={() => onSelect(mode)}
+        className={clsxm(
+          // Five segments share a 292px rail at its narrowest, so the label
+          // scale is set by the longest mode ("Vertical") rather than by the
+          // rail's usual 0.74rem control text.
+          'inline-flex h-9 min-w-0 items-center justify-center rounded-[6px] px-0.5 text-[0.68rem] transition-colors duration-150',
+          SEGMENTED_ITEM_TEXT,
+          SEGMENTED_FOCUS_RING,
+          'disabled:pointer-events-none disabled:opacity-45',
+          active && `${SEGMENTED_THUMB_BG} font-semibold text-lf-on-surface`,
+        )}
+      >
+        <span className="truncate">{t(uprightModeLabelKey(mode))}</span>
+      </button>
+    )
+  },
+)
 
 function ToggleButton({
   icon,
@@ -226,18 +247,19 @@ function ToggleButton({
 
 function FieldGroup({
   group,
-  feature,
+  manual,
   disabled,
+  onFieldChange,
   children,
 }: {
   group: TransformGroup
-  feature: RawTransformFeature
+  manual: ManualTransform
   disabled: boolean
+  onFieldChange: (field: TransformField, next: number) => void
   children?: ReactNode
 }) {
   const { t } = useI18n()
   const label = t(TRANSFORM_GROUP_LABEL[group])
-  const { preview } = feature
 
   return (
     <section
@@ -248,28 +270,49 @@ function FieldGroup({
       <h3 className="px-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.04em] text-lf-on-surface/50">
         {label}
       </h3>
-      {transformFieldsIn(group).map((field) => {
-        const value = transformSliderValue(field, preview.manual)
-        return (
-          <DesktopAdjustRow
-            key={field.key}
-            label={t(field.labelKey)}
-            value={value}
-            min={field.min}
-            max={field.max}
-            step={field.step}
-            disabled={disabled}
-            formatValue={(next) => formatTransformValue(field, next)}
-            valueText={formatTransformValue(field, value)}
-            onChange={(next) =>
-              feature.setManual(
-                applyTransformSlider(field, preview.manual, next),
-              )
-            }
-          />
-        )
-      })}
+      {transformFieldsIn(group).map((field) => (
+        <TransformFieldRow
+          key={field.key}
+          field={field}
+          label={t(field.labelKey)}
+          value={transformSliderValue(field, manual)}
+          disabled={disabled}
+          onFieldChange={onFieldChange}
+        />
+      ))}
       {children}
     </section>
   )
 }
+
+// A row takes its own slider value, so a scrub rerenders the one row that
+// moves rather than every geometry control.
+const TransformFieldRow = memo(
+  ({
+    field,
+    label,
+    value,
+    disabled,
+    onFieldChange,
+  }: {
+    field: TransformField
+    label: string
+    value: number
+    disabled: boolean
+    onFieldChange: (field: TransformField, next: number) => void
+  }) => {
+    return (
+      <DesktopAdjustRow
+        label={label}
+        value={value}
+        min={field.min}
+        max={field.max}
+        step={field.step}
+        disabled={disabled}
+        formatValue={(next) => formatTransformValue(field, next)}
+        valueText={formatTransformValue(field, value)}
+        onChange={(next) => onFieldChange(field, next)}
+      />
+    )
+  },
+)

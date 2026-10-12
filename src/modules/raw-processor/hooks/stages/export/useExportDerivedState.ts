@@ -57,6 +57,14 @@ export function useExportDerivedState({
   lutData,
   stats,
 }: UseExportDerivedStateInput) {
+  // The HQ JPEG is the WebGPU preview's render, so it refuses while that
+  // preview leaves out the selected look its name would claim. Only that
+  // answer reaches the state below, so a scrub that keeps it rebuilds none
+  // of the export decisions.
+  const hqPreviewLookRefusal = useMemo(
+    () => resolveHqPreviewLookRefusal({ intent: params, lut: lutData }),
+    [lutData, params],
+  )
   return useMemo(() => {
     const fullResExportReadiness = deriveFullResExportReadiness({
       sourceFile,
@@ -93,12 +101,6 @@ export function useExportDerivedState({
       exportPlanSuspendsPreview &&
       (status === 'exporting' || previewEvacuatedForReadyExport)
     const hqPreviewImage = decodedImageRef.current
-    // The HQ JPEG is the WebGPU preview's render, so it refuses while that
-    // preview leaves out the selected look its name would claim.
-    const hqPreviewLookRefusal = resolveHqPreviewLookRefusal({
-      intent: params,
-      lut: lutData,
-    })
     const canPreviewExport =
       !session?.exportGeometry &&
       status === 'ready' &&
@@ -145,8 +147,7 @@ export function useExportDerivedState({
     exportInterruption,
     embeddedPreviewUrl,
     hasImage,
-    lutData,
-    params,
+    hqPreviewLookRefusal,
     rawRenderExposure,
     session,
     sourceFile,
