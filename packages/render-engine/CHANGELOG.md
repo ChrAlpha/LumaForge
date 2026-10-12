@@ -4,18 +4,18 @@ All notable changes to `@lumaforge/render-engine` are documented here. The
 format follows Keep a Changelog; versions follow semver. Release 0.1.0
 predates this file.
 
-## 0.2.0 - Unreleased
+## 0.2.0 - 2026-10-12
 
-Proposed version. This release removes and changes public exports, which a
-0.x package releases as a minor version. `package.json` still reads 0.1.0,
-the published release; set it to 0.2.0 before publishing.
+This release removes and changes public exports, which a 0.x package releases
+as a minor version.
 
-Requires `@lumaforge/luma-color-runtime` 0.2.0, `@lumaforge/luma-jpeg-runtime`
-0.2.0 and `@lumaforge/luma-raw-runtime` 0.2.0 as peers; the `workspace:*`
-peer ranges publish as those exact versions. Publish
-`@lumaforge/luma-native-artifacts` 0.0.4 and those three runtimes first, then
-this package, then `@lumaforge/lmfg-cli` 0.2.0 and `@lumaforge/lmfg-mcp`
-0.1.0.
+Requires `@lumaforge/luma-color-runtime` 0.2.1, `@lumaforge/luma-jpeg-runtime`
+0.2.0 and `@lumaforge/luma-raw-runtime` 0.2.0 as peers; the `workspace:*` peer
+ranges publish as those exact versions. Publish order:
+`@lumaforge/luma-native-artifacts` 0.0.5, then `@lumaforge/luma-color-runtime`
+0.2.1, `@lumaforge/luma-jpeg-runtime` 0.2.0 and `@lumaforge/luma-raw-runtime`
+0.2.0, then `@lumaforge/render-engine` 0.2.0, then `@lumaforge/lmfg-cli`
+0.2.0, then `@lumaforge/lmfg-mcp` 0.1.0.
 
 ### Breaking
 

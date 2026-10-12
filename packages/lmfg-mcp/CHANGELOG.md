@@ -3,13 +3,12 @@
 All notable changes to `@lumaforge/lmfg-mcp` are documented here. The format
 follows Keep a Changelog; versions follow semver.
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 2026-10-12
 
-First release; `package.json` already reads 0.1.0. Requires
-`@lumaforge/lmfg-cli` 0.2.0 and `@lumaforge/render-engine` 0.2.0; the
-`workspace:*` dependency ranges publish as those exact versions. Publish
-this package last, after `@lumaforge/lmfg-cli` and every package that one
-requires (see its changelog).
+First release. Requires `@lumaforge/lmfg-cli` 0.2.0 and
+`@lumaforge/render-engine` 0.2.0; the `workspace:*` dependency ranges publish
+as those exact versions. Publish this package last, after
+`@lumaforge/lmfg-cli` and every package that one requires (see its changelog).
 
 ### Added
 

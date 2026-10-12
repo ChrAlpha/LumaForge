@@ -1,15 +1,22 @@
 # Changelog
 
 All notable changes to `@lumaforge/luma-color-runtime` are documented here.
-The format follows Keep a Changelog; versions follow semver. Releases before
-0.2.0 predate this file.
+The format follows Keep a Changelog; versions follow semver. Releases up to
+0.1.1 predate this file.
 
-## 0.2.0 - Unreleased
+## 0.2.1 - 2026-10-12
 
 A minor release over the published 0.1.1: it removes and changes public
-exports. `package.json` already reads 0.2.0. Publish it before
-`@lumaforge/render-engine` 0.2.0 and `@lumaforge/lmfg-cli` 0.2.0, which
-depend on this exact version.
+exports. 0.2.0 was published by mistake from a stale pre-release build and has
+been unpublished; npm does not allow that version again, so this release ships
+as 0.2.1. Read every entry below as a change from 0.1.1.
+
+Publish order: `@lumaforge/luma-native-artifacts` 0.0.5, then
+`@lumaforge/luma-color-runtime` 0.2.1, `@lumaforge/luma-jpeg-runtime` 0.2.0
+and `@lumaforge/luma-raw-runtime` 0.2.0, then `@lumaforge/render-engine`
+0.2.0, then `@lumaforge/lmfg-cli` 0.2.0, then `@lumaforge/lmfg-mcp` 0.1.0.
+`@lumaforge/render-engine` 0.2.0 and `@lumaforge/lmfg-cli` 0.2.0 depend on
+this exact version.
 
 ### Breaking
 

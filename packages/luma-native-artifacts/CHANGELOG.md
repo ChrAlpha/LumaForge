@@ -1,22 +1,26 @@
 # Changelog
 
 All notable changes to `@lumaforge/luma-native-artifacts` are documented here.
-The format follows Keep a Changelog; versions follow semver. Releases before
-0.0.4 predate this file.
+The format follows Keep a Changelog; versions follow semver. Releases up to
+0.0.3 predate this file.
 
-## 0.0.4 - Unreleased
+## 0.0.5 - 2026-10-12
 
 The loader API (`./load-for-node`) is unchanged; only the artifacts change.
 
-Publish order: this package first, then `@lumaforge/luma-color-runtime`
-0.2.0, `@lumaforge/luma-jpeg-runtime` 0.2.0 and `@lumaforge/luma-raw-runtime`
-0.2.0, then `@lumaforge/render-engine` 0.2.0, `@lumaforge/lmfg-cli` 0.2.0 and
-`@lumaforge/lmfg-mcp` 0.1.0, then push `main`. The RAW and JPEG runtimes
-depend on exactly 0.0.4. `pnpm native:prepare` fetches this package from npm
-at the version in its `package.json` when the workspace has no native build,
-so a clean checkout, including the CI app and deploy builds and the publish
-workflow's package build, cannot prepare native assets until 0.0.4 is
-published.
+0.0.4 was published by mistake with the 0.0.3 RAW artifacts and has been
+unpublished; npm does not allow that version again, so these artifacts ship as
+0.0.5.
+
+Publish order: `@lumaforge/luma-native-artifacts` 0.0.5, then
+`@lumaforge/luma-color-runtime` 0.2.1, `@lumaforge/luma-jpeg-runtime` 0.2.0
+and `@lumaforge/luma-raw-runtime` 0.2.0, then `@lumaforge/render-engine`
+0.2.0, then `@lumaforge/lmfg-cli` 0.2.0, then `@lumaforge/lmfg-mcp` 0.1.0. The
+RAW and JPEG runtimes depend on exactly 0.0.5. `pnpm native:prepare` fetches
+this package from npm at the version in its `package.json` when the workspace
+has no native build, so a clean checkout, including the CI app and deploy
+builds and the publish workflow's package build, cannot prepare native assets
+until 0.0.5 is published.
 
 ### Changed
 
