@@ -1,3 +1,4 @@
+import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
 import { atom } from 'jotai'
 
 /**
@@ -32,3 +33,18 @@ export function isPreviewHistogramShown(input: {
     !input.transformActive
   )
 }
+
+/** What the histogram says while no frame is decoded. */
+export const NO_IMAGE_HISTOGRAM: PreviewHistogramState = Object.freeze({
+  state: 'unavailable',
+  reason: 'no-image',
+})
+
+/**
+ * The preview histogram as its runner last measured it. The runner sits
+ * beside the stage rather than inside the workflow, so a result (one per
+ * look change while a scrub moves) rerenders the surfaces that read this,
+ * not the workspace above them.
+ */
+export const previewHistogramStateAtom =
+  atom<PreviewHistogramState>(NO_IMAGE_HISTOGRAM)

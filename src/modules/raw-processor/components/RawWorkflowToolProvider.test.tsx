@@ -45,6 +45,7 @@ import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import type { ExportResult } from '../model/export-result'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { captureTransformSource } from '../services/preview/capture-transform-source'
+import { previewHistogramStateAtom } from '../state/histogram.atoms'
 import { setCurrentSession } from '../state/session.atoms'
 import { toolCardOpenAtom } from '../state/tool-card.atoms'
 import {
@@ -99,7 +100,6 @@ function workflowFixture() {
     canExport: true,
     canPreviewExport: true,
     exportPreviewImage: vi.fn(),
-    histogram: { state: 'unavailable', reason: 'no-image' },
   } as unknown as UseRawWorkflowReturn
 }
 
@@ -338,6 +338,7 @@ async function renderTransformSession<Result = SurfaceView>(
 describe('rawWorkflowToolProvider Transform guards', () => {
   it('keeps full-resolution export while blocking HQ preview, compare and the stale histogram under Transform', () => {
     const workflow = workflowFixture()
+    const measured = jotaiStore.get(previewHistogramStateAtom)
     const onExport = vi.fn()
     const onCompareReset = vi.fn()
     const frame = document.createElement('div')
@@ -409,7 +410,7 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     rerender()
     expect(result.current.canExport).toBe(true)
     expect(result.current.canPreviewExport).toBe(true)
-    expect(result.current.histogram).toBe(workflow.histogram)
+    expect(result.current.histogram).toBe(measured)
     expect(result.current.previewFrameEl).toBe(frame)
     for (const surface of ['desktop', 'mobile'] as const) {
       const actions = result.current.toolAvailability[surface]

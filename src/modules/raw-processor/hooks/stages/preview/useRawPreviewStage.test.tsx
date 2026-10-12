@@ -21,15 +21,7 @@ import {
   getCurrentSession,
   setCurrentSession,
 } from '../../../state/session.atoms'
-import { usePreviewHistogram } from '../../usePreviewHistogram'
 import { useRawPreviewStage } from './useRawPreviewStage'
-
-// The real histogram hook runs; the wrapper only records what it receives.
-vi.mock('../../usePreviewHistogram', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../../usePreviewHistogram')>()
-  return { ...actual, usePreviewHistogram: vi.fn(actual.usePreviewHistogram) }
-})
 
 const params: ColorGraphIntent = {
   ...NEUTRAL_USER_COLOR_INTENT,
@@ -165,10 +157,6 @@ function renderStage(
     embeddedPreviewUrlRef: { current: null },
     setSession: setCurrentSession,
     pipelineRef: { current: null as RawProcessingPipeline | null },
-    params,
-    lutDataRef: { current: null },
-    lutDataVersion: 0,
-    displaySource: 'none',
     isMountedRef: { current: true },
     runtimeWorkSessionIdRef: { current: null },
     beginRuntimeSession: vi.fn(),
@@ -192,10 +180,7 @@ describe('useRawPreviewStage', () => {
     const beginRuntimeSession = vi.fn()
     const { result } = renderStage({ beginRuntimeSession })
 
-    expect(result.current.histogram).toEqual({
-      state: 'unavailable',
-      reason: 'no-image',
-    })
+    expect(result.current.decodedFrame).toBeNull()
     expect(typeof result.current.setDecodedImageRef).toBe('function')
     expect(typeof result.current.restorePreviewAfterExport).toBe('function')
     expect(
@@ -208,7 +193,7 @@ describe('useRawPreviewStage', () => {
     expect(beginRuntimeSession).not.toHaveBeenCalled()
   })
 
-  it('publishes the accepted descriptor to the workflow and the histogram as one object', () => {
+  it('publishes the accepted descriptor to the workflow', () => {
     setCurrentSession(createSession('session-accepted'))
     const decodedImageRef = { current: null as DecodedImage | null }
     const { result, rerender } = renderStage({ decodedImageRef })
@@ -232,14 +217,12 @@ describe('useRawPreviewStage', () => {
       width: 64,
       height: 48,
     })
-    expect(vi.mocked(usePreviewHistogram).mock.lastCall?.[0].frame).toBe(frame)
 
     act(() => {
       result.current.setDecodedImageRef(null)
     })
     rerender()
     expect(result.current.decodedFrame).toBeNull()
-    expect(vi.mocked(usePreviewHistogram).mock.lastCall?.[0].frame).toBeNull()
   })
 
   it('restores the source in the store, with its 0 EV pin, and keeps the delivered result', async () => {

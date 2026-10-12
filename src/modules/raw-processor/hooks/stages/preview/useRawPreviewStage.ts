@@ -1,9 +1,4 @@
-import type {
-  ColorGraphIntent,
-  LUTData,
-  RawRenderExposure,
-} from '@lumaforge/luma-color-runtime'
-import { useAtomValue } from 'jotai'
+import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
@@ -11,11 +6,9 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
-import type { DisplaySource, ImageSession } from '../../../model/session'
+import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
-import { previewHistogramEnabledAtom } from '../../../state/histogram.atoms'
 import { getCurrentSession } from '../../../state/session.atoms'
-import { usePreviewHistogram } from '../../usePreviewHistogram'
 import { useDecodedPreviewResource } from './useDecodedPreviewResource'
 import { useEmbeddedPreviewUrlLifecycle } from './useEmbeddedPreviewUrlLifecycle'
 import { usePreviewPipelineEvacuation } from './usePreviewPipelineEvacuation'
@@ -30,11 +23,6 @@ type UseRawPreviewStageInput = {
   embeddedPreviewUrlRef: MutableRefObject<string | null>
   setSession: Dispatch<SetStateAction<ImageSession | null>>
   pipelineRef: MutableRefObject<RawProcessingPipeline | null>
-  /** The color intent the preview renders; the view never reaches here. */
-  params: ColorGraphIntent
-  lutDataRef: MutableRefObject<LUTData | null>
-  lutDataVersion: number
-  displaySource: DisplaySource
   isMountedRef: MutableRefObject<boolean>
   runtimeWorkSessionIdRef: MutableRefObject<string | null>
   /** Restore takes its RAW session from the workflow host's one slot. */
@@ -62,10 +50,6 @@ export function useRawPreviewStage({
   embeddedPreviewUrlRef,
   setSession,
   pipelineRef,
-  params,
-  lutDataRef,
-  lutDataVersion,
-  displaySource,
   isMountedRef,
   runtimeWorkSessionIdRef,
   beginRuntimeSession,
@@ -99,16 +83,6 @@ export function useRawPreviewStage({
     invalidateExportGraph,
     getSessionId: getCurrentSessionId,
   })
-  const histogramEnabled = useAtomValue(previewHistogramEnabledAtom)
-  const histogram = usePreviewHistogram({
-    enabled: histogramEnabled,
-    imageRef: decodedImageRef,
-    frame: decodedFrame,
-    params,
-    lutDataRef,
-    lutDataVersion,
-    displaySource,
-  })
   const { restorePreviewAfterExport } = useRestorePreviewAfterExport({
     getSession: getCurrentSession,
     decodedImageRef,
@@ -131,7 +105,6 @@ export function useRawPreviewStage({
      * histogram receives; null while no decoded frame is live.
      */
     decodedFrame,
-    histogram,
     clearSessionEmbeddedPreviewUrl,
     revokeCurrentEmbeddedPreviewUrl,
     registerCurrentPreviewPipelineForEvacuation,

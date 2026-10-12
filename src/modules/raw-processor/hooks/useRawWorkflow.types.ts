@@ -4,7 +4,6 @@ import type {
   HSLBandShift,
   LUTColorProfile,
   LUTData,
-  PreviewHistogramState,
 } from '@lumaforge/luma-color-runtime'
 import type { RefObject } from 'react'
 
@@ -105,7 +104,6 @@ export interface UseRawWorkflowReturn {
   originalReferenceSnapshot: OriginalReferenceSnapshot | null
   originalReferenceFallbackReason: string | null
   dualGpuAllowed: boolean
-  histogram: PreviewHistogramState
   previewSuspended: boolean
   loadFile: (file: File) => Promise<void>
   loadLUT: (file: File) => Promise<LutLoadOutcome>

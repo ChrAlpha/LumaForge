@@ -31,7 +31,7 @@ import {
 } from '@lumaforge/render-engine/export'
 import { BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 import { act, render, renderHook, waitFor } from '@testing-library/react'
-import { Provider } from 'jotai'
+import { Provider, useAtomValue } from 'jotai'
 import type { ReactNode } from 'react'
 import { StrictMode } from 'react'
 import type { NavigateFunction } from 'react-router'
@@ -70,6 +70,7 @@ import { captureExportResultIdentity } from '../services/export/export-result-id
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { DEFAULT_PREVIEW_VIEWPORT } from '../services/preview/preview-viewport'
 import { deriveTransformStatus } from '../services/transform/transform-state'
+import { previewHistogramStateAtom } from '../state/histogram.atoms'
 import { getDetachedPreviewView } from '../state/preview-view.atoms'
 import { currentSessionAtom } from '../state/session.atoms'
 import {
@@ -79,6 +80,7 @@ import {
 } from '../state/workflow.atoms'
 import { acceptTransformGeometry } from './transform-session.fixture'
 import { useOriginalReferenceSnapshot } from './useOriginalReferenceSnapshot'
+import { usePublishedPreviewHistogram } from './usePublishedPreviewHistogram'
 import { useRawToolAdjustments } from './useRawToolState'
 import type { UseRawWorkflowReturn } from './useRawWorkflow'
 import { useRawWorkflow } from './useRawWorkflow'
@@ -636,6 +638,17 @@ function publishOwnedPipeline(
 
 function wrapper({ children }: { children: ReactNode }) {
   return <Provider store={jotaiStore}>{children}</Provider>
+}
+
+// The workflow as the view hosts it: the histogram runs beside it and
+// publishes to its atom.
+function useWorkflowWithHistogram() {
+  const workflow = useRawWorkflow()
+  usePublishedPreviewHistogram(workflow)
+  const histogram = useAtomValue(previewHistogramStateAtom, {
+    store: jotaiStore,
+  })
+  return { workflow, histogram }
 }
 
 /**
@@ -3172,10 +3185,12 @@ describe('useRawWorkflow embedded preview state', () => {
       }),
     )
 
-    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    const { result } = renderHook(() => useWorkflowWithHistogram(), {
+      wrapper,
+    })
 
     await act(async () => {
-      const loadPromise = result.current.loadFile(
+      const loadPromise = result.current.workflow.loadFile(
         new File(['raw'], 'frame.ARW'),
       )
       await Promise.resolve()
@@ -3218,9 +3233,11 @@ describe('useRawWorkflow embedded preview state', () => {
       }),
     )
 
-    const { result } = renderHook(() => useRawWorkflow(), { wrapper })
+    const { result } = renderHook(() => useWorkflowWithHistogram(), {
+      wrapper,
+    })
     await act(async () => {
-      const loadPromise = result.current.loadFile(
+      const loadPromise = result.current.workflow.loadFile(
         new File(['raw'], 'frame.ARW'),
       )
       await Promise.resolve()
@@ -3235,7 +3252,7 @@ describe('useRawWorkflow embedded preview state', () => {
     const histogram = result.current.histogram
 
     act(() => {
-      result.current.setCompareSplit(0.8)
+      result.current.workflow.setCompareSplit(0.8)
     })
 
     expect(result.current.histogram).toBe(histogram)

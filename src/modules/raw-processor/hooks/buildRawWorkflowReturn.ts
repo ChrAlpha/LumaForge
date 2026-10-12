@@ -41,10 +41,7 @@ type BuildRawWorkflowReturnInput = {
   lookStage: ReturnType<typeof useRawLookStage>
   previewStage: Pick<
     ReturnType<typeof useRawPreviewStage>,
-    | 'decodedFrame'
-    | 'histogram'
-    | 'restorePreviewAfterExport'
-    | 'setOriginalPreviewPipeline'
+    'decodedFrame' | 'restorePreviewAfterExport' | 'setOriginalPreviewPipeline'
   >
   ingestStage: Pick<ReturnType<typeof useRawIngestStage>, 'loadFile' | 'reset'>
   exportStage: ReturnType<typeof useRawExportStage>
@@ -107,7 +104,6 @@ export function buildRawWorkflowReturn({
     originalReferenceFallbackReason:
       originalReferenceStage.originalReferenceFallbackReason,
     dualGpuAllowed: originalReferenceStage.dualGpuAllowed,
-    histogram: previewStage.histogram,
     previewSuspended: exportStage.previewSuspended,
     loadFile: ingestStage.loadFile,
     loadLUT: lookStage.loadLUT,

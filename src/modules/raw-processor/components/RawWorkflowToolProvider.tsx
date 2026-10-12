@@ -1,7 +1,9 @@
+import { useAtomValue } from 'jotai'
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useI18n } from '~/lib/i18n'
+import { jotaiStore } from '~/lib/jotai'
 
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
 import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
@@ -12,6 +14,7 @@ import type { ActionAvailability } from '../services/surface/derive-tool-availab
 import { deriveToolAvailability } from '../services/surface/derive-tool-availability'
 import type { ExportActionReason } from '../services/surface/raw-reason'
 import { resolvePreviewLookReason } from '../services/surface/raw-reason'
+import { previewHistogramStateAtom } from '../state/histogram.atoms'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type {
@@ -175,6 +178,9 @@ export function RawWorkflowToolProvider({
   children,
 }: RawWorkflowToolProviderProps) {
   const { t } = useI18n()
+  const measuredHistogram = useAtomValue(previewHistogramStateAtom, {
+    store: jotaiStore,
+  })
   const previewSuspended = workflow.previewSuspended === true
   // While export holds the preview released, an edit would discard the
   // delivered JPEG, so edits refuse until the preview is restored. The state
@@ -424,10 +430,7 @@ export function RawWorkflowToolProvider({
                 state: 'unsupported',
                 reason: t('raw.preview.cpuDegraded.banner'),
               }
-            : (workflow.histogram ?? {
-                state: 'unavailable',
-                reason: 'no-image',
-              }),
+            : measuredHistogram,
         previewFrameEl: transformActive ? null : previewFrameEl,
         previewAspect,
         cpuPreviewNotice,

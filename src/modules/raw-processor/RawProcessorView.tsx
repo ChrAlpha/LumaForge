@@ -21,6 +21,7 @@ import {
 } from './components'
 import type { CpuPreviewNotice } from './components/CpuPreviewBanner'
 import { CpuPreviewBanner } from './components/CpuPreviewBanner'
+import { PreviewHistogramRunner } from './components/PreviewHistogramRunner'
 import { RawPreviewStageSurface } from './components/RawPreviewStageSurface'
 import { RawResetConfirmationDialog } from './components/RawResetConfirmationDialog'
 import { useIsMobileRawSurface } from './components/RawToolSurface'
@@ -186,6 +187,15 @@ function RawProcessorViewInner({
                 : 'processed'
               : undefined
           }
+        />
+
+        <PreviewHistogramRunner
+          decodedImageRef={workflow.decodedImageRef}
+          decodedFrame={workflow.decodedFrame}
+          params={workflow.params}
+          lutDataRef={workflow.lutDataRef}
+          lutDataVersion={workflow.lutDataVersion}
+          displaySource={workflow.displaySource}
         />
 
         <RawWorkflowToolProvider

@@ -174,7 +174,6 @@ function createLoadedProcessorState(
     originalReferenceSnapshot: null,
     originalReferenceFallbackReason: null,
     dualGpuAllowed: false,
-    histogram: { state: 'unavailable', reason: 'no-image' },
     previewSuspended: false,
     loadFile: vi.fn(),
     loadLUT: vi.fn(),

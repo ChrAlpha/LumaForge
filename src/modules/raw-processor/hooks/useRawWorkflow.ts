@@ -185,7 +185,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   viewRef.current = compareStage.view
   const {
     decodedFrame,
-    histogram,
     clearSessionEmbeddedPreviewUrl,
     revokeCurrentEmbeddedPreviewUrl,
     registerCurrentPreviewPipelineForEvacuation,
@@ -201,10 +200,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     embeddedPreviewUrlRef,
     setSession,
     pipelineRef,
-    params,
-    lutDataRef,
-    lutDataVersion,
-    displaySource,
     isMountedRef,
     runtimeWorkSessionIdRef,
     beginRuntimeSession: rawRuntimeHost.beginSession,
@@ -216,7 +211,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   })
   const previewStage = {
     decodedFrame,
-    histogram,
     restorePreviewAfterExport,
     setOriginalPreviewPipeline,
   }
