@@ -26,8 +26,22 @@ import {
   hslSaturationTrack,
 } from '../shared/slider-tracks'
 import { AdjustSliderRow } from './AdjustSliderRow'
+import { useAdjustRowHandlers } from './useAdjustRowHandlers'
 
 type HSLScrubField = { band: HSLBandId; key: keyof HSLBandShift }
+type HSLFieldId = `${HSLBandId}:${keyof HSLBandShift}`
+
+const HSL_FORMAT = Object.fromEntries(
+  HSL_FIELDS.map((field) => [
+    field.key,
+    (value: number) => formatHSLValueShort(field.key, value),
+  ]),
+) as Record<keyof HSLBandShift, (value: number) => string>
+
+function hslField(id: HSLFieldId): HSLScrubField {
+  const [band, key] = id.split(':') as [HSLBandId, keyof HSLBandShift]
+  return { band, key }
+}
 
 type HSLListPanelProps = {
   value: NormalizedSelectiveColorBands | undefined
@@ -52,6 +66,17 @@ export function HSLListPanel(props: HSLListPanelProps) {
   const [scrub, setScrub] = useState<HSLScrubField | null>(null)
   const prefersReduced = useReducedMotion() ?? false
   const { onScrubChange: notifyParent } = props
+  const handlersFor = useAdjustRowHandlers<HSLFieldId>({
+    onChange: (id, value) => {
+      const { band, key } = hslField(id)
+      props.onChange(band, { [key]: value })
+    },
+    onScrubChange: (id, scrubbing) => {
+      const next = scrubbing ? hslField(id) : null
+      setScrub(next)
+      props.onScrubChange(next)
+    },
+  })
 
   const selectBand = (band: HSLBandId) => {
     if (band === openBand) {
@@ -151,28 +176,16 @@ export function HSLListPanel(props: HSLListPanelProps) {
                         max={field.max}
                         step={field.step}
                         track={trackForField(band, field.key)}
-                        formatValue={(v) => formatHSLValueShort(field.key, v)}
+                        formatValue={HSL_FORMAT[field.key]}
                         resetAriaLabel={t('raw.adjust.fieldResetAria', {
                           label: fieldLabel,
                         })}
                         activeScrub={isActive}
                         siblingScrubbing={isSibling}
-                        onChange={(next) =>
-                          props.onChange(band, { [field.key]: next })
+                        onChange={handlersFor(`${band}:${field.key}`).onChange}
+                        onScrubChange={
+                          handlersFor(`${band}:${field.key}`).onScrubChange
                         }
-                        onScrubChange={(scrubbing) => {
-                          if (scrubbing) {
-                            const next: HSLScrubField = {
-                              band,
-                              key: field.key,
-                            }
-                            setScrub(next)
-                            notifyParent(next)
-                          } else {
-                            setScrub(null)
-                            notifyParent(null)
-                          }
-                        }}
                       />
                     )
                   })}

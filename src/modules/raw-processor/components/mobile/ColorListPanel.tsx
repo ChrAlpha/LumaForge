@@ -11,6 +11,7 @@ import {
   vibranceTrack,
 } from '../shared/slider-tracks'
 import { AdjustSliderRow } from './AdjustSliderRow'
+import { useAdjustRowHandlers } from './useAdjustRowHandlers'
 
 type ColorListPanelProps = {
   color: ColorValue
@@ -25,12 +26,26 @@ const COLOR_FIELD_TRACK: Record<keyof ColorValue, string> = {
   userVibrance: vibranceTrack(),
 }
 
+const COLOR_FORMAT = Object.fromEntries(
+  COLOR_FIELDS.map((field) => [
+    field.key,
+    (value: number) => formatColorValueShort(field.key, value),
+  ]),
+) as Record<keyof ColorValue, (value: number) => string>
+
 export function ColorListPanel(props: ColorListPanelProps) {
   const { t } = useI18n()
   const [scrubbingKey, setScrubbingKey] = useState<keyof ColorValue | null>(
     null,
   )
-  const { onScrubChange: notifyParent } = props
+  const handlersFor = useAdjustRowHandlers<keyof ColorValue>({
+    onChange: (key, value) => props.onChange({ [key]: value }),
+    onScrubChange: (key, scrubbing) => {
+      const next = scrubbing ? key : null
+      setScrubbingKey(next)
+      props.onScrubChange(next ? { key: next } : null)
+    },
+  })
 
   return (
     <div
@@ -52,18 +67,14 @@ export function ColorListPanel(props: ColorListPanelProps) {
             max={field.max}
             step={field.step}
             track={COLOR_FIELD_TRACK[field.key]}
-            formatValue={(v) => formatColorValueShort(field.key, v)}
+            formatValue={COLOR_FORMAT[field.key]}
             resetAriaLabel={t('raw.adjust.fieldResetAria', {
               label,
             })}
             activeScrub={isActive}
             siblingScrubbing={isSibling}
-            onChange={(value) => props.onChange({ [field.key]: value })}
-            onScrubChange={(scrubbing) => {
-              const next = scrubbing ? field.key : null
-              setScrubbingKey(next)
-              notifyParent(next ? { key: next } : null)
-            }}
+            onChange={handlersFor(field.key).onChange}
+            onScrubChange={handlersFor(field.key).onScrubChange}
           />
         )
       })}

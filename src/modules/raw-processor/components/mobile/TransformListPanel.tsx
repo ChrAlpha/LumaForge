@@ -35,6 +35,7 @@ import {
 } from '../transform-fields'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { AdjustSliderRow } from './AdjustSliderRow'
+import { useAdjustRowHandlers } from './useAdjustRowHandlers'
 
 type Section = 'upright' | TransformGroup
 
@@ -288,6 +289,21 @@ export function TransformListPanel({
   )
 }
 
+const transformFormatters = new WeakMap<
+  TransformField,
+  (value: number) => string
+>()
+
+/** One formatter per field, so a row's props stay the same across renders. */
+function transformFormatter(field: TransformField) {
+  let format = transformFormatters.get(field)
+  if (!format) {
+    format = (value: number) => formatTransformValue(field, value)
+    transformFormatters.set(field, format)
+  }
+  return format
+}
+
 function TransformFieldList({
   fields,
   manual,
@@ -303,6 +319,16 @@ function TransformFieldList({
 }) {
   const { t } = useI18n()
   const [scrubbingKey, setScrubbingKey] = useState<string | null>(null)
+  const handlersFor = useAdjustRowHandlers<TransformField['key']>({
+    onChange: (key, value) => {
+      const field = fields.find((candidate) => candidate.key === key)
+      if (field) onChange(applyTransformSlider(field, manual, value))
+    },
+    onScrubChange: (key, scrubbing) => {
+      setScrubbingKey(scrubbing ? key : null)
+      onScrubChange(scrubbing ? { kind: 'transform', key } : null)
+    },
+  })
 
   return (
     <div className="grid gap-0.5">
@@ -318,7 +344,7 @@ function TransformFieldList({
             max={field.max}
             step={field.step}
             disabled={disabled}
-            formatValue={(value) => formatTransformValue(field, value)}
+            formatValue={transformFormatter(field)}
             valueText={formatTransformValue(
               field,
               transformSliderValue(field, manual),
@@ -326,15 +352,8 @@ function TransformFieldList({
             resetAriaLabel={t('raw.adjust.fieldResetAria', { label })}
             activeScrub={isActive}
             siblingScrubbing={scrubbingKey !== null && !isActive}
-            onChange={(value) =>
-              onChange(applyTransformSlider(field, manual, value))
-            }
-            onScrubChange={(scrubbing) => {
-              setScrubbingKey(scrubbing ? field.key : null)
-              onScrubChange(
-                scrubbing ? { kind: 'transform', key: field.key } : null,
-              )
-            }}
+            onChange={handlersFor(field.key).onChange}
+            onScrubChange={handlersFor(field.key).onScrubChange}
           />
         )
       })}

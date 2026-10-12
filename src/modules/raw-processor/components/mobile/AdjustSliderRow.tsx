@@ -1,5 +1,5 @@
 import { useSetAtom } from 'jotai'
-import { useRef } from 'react'
+import { memo, useRef } from 'react'
 
 import { Slider } from '~/components/ui/slider/Slider'
 import { clsxm } from '~/lib/cn'
@@ -55,7 +55,10 @@ type AdjustSliderRowProps = {
   onScrubChange: (scrubbing: boolean) => void
 }
 
-export function AdjustSliderRow(props: AdjustSliderRowProps) {
+// A row renders only when what it is handed moves: the lists hand each row
+// handlers and a formatter that keep their identity, so a scrub renders the
+// one row that moves.
+export const AdjustSliderRow = memo((props: AdjustSliderRowProps) => {
   const neutral = props.neutral ?? 0
   const compact = props.density === 'compact'
   const dirty = props.value !== neutral
@@ -213,4 +216,4 @@ export function AdjustSliderRow(props: AdjustSliderRowProps) {
       )}
     </div>
   )
-}
+})
