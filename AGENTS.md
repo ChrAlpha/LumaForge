@@ -112,9 +112,13 @@ image-editor assumptions.
   `src/modules/raw-processor/hooks/useRawToolState.ts`, the commands from
   `useRawToolCommands`, and availability, export decisions, and file facts
   from the context in
-  `src/modules/raw-processor/components/RawWorkflowContext.tsx`. Commands
-  keep their identity and decide when they are called; a surface reads
-  availability to disable a control, never to choose which command to hold.
+  `src/modules/raw-processor/components/RawWorkflowContext.tsx`, where the
+  preview histogram and the preview stats, which move with every render,
+  have providers of their own. A value is read where it is shown, so a
+  scrub step or a new render timing renders the control that names it, not
+  the surface around it. Commands keep their identity and decide when they
+  are called; a surface reads availability to disable a control, never to
+  choose which command to hold.
 - `src/modules/raw-processor/components/RawToolSurface.tsx` switches desktop vs
   mobile surfaces by viewport. Respect that split.
 - `src/modules/raw-processor/components/tools/` is the desktop command rail:

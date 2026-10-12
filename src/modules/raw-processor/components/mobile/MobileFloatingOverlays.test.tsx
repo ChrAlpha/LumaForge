@@ -2,9 +2,7 @@ import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
 import { render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { COLOR_NEUTRAL } from '../color-fields'
 import { RawPreviewHistogramProvider } from '../RawWorkflowContext'
-import { TONE_NEUTRAL } from '../tone-fields'
 import type { MobileFloatingOverlaysProps } from './MobileFloatingOverlays'
 import {
   getCpuNoticePlacement,
@@ -29,9 +27,6 @@ function renderOverlays({
         peeking={false}
         histogramOpen={false}
         scrubField={null}
-        tone={TONE_NEUTRAL}
-        color={COLOR_NEUTRAL}
-        selectiveColor={undefined}
         manualTransform={undefined}
         onExitImmersive={vi.fn()}
         lensVisible

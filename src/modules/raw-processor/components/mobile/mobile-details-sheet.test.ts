@@ -51,9 +51,7 @@ const base = {
     inputSize: { width: 7008, height: 4672 },
     previewSize: { width: 2048, height: 1365 },
   },
-  tone: TONE_NEUTRAL,
-  color: COLOR_NEUTRAL,
-  selectiveColor: undefined,
+  adjustments: 0,
   currentLutName: null,
   transformActive: false,
   canExport: true,
@@ -81,7 +79,10 @@ describe('the Adjust step', () => {
         blue: { hue: 0, saturation: -20, lightness: 5 },
       },
     }
-    const sheet = buildMobileDetailsSheet({ ...base, ...edits }, t)
+    const sheet = buildMobileDetailsSheet(
+      { ...base, adjustments: countAdjustments(edits) },
+      t,
+    )
     expect(countAdjustments(edits)).toBe(5)
     expect(sheet.pipelineSteps[1]).toEqual({
       index: 2,
@@ -175,7 +176,7 @@ describe('buildMobileDetailsSheet', () => {
       {
         ...base,
         supportLevel: 'unsupported',
-        tone: { ...TONE_NEUTRAL, userContrast: 10 },
+        adjustments: 1,
         currentLutName: 'Film.cube',
         lutProfileResolution: {
           kind: 'confirmed',
@@ -205,7 +206,7 @@ describe('buildMobileDetailsSheet', () => {
     const unresolved = buildMobileDetailsSheet(
       {
         ...base,
-        color: { ...COLOR_NEUTRAL, userSaturation: 8, userVibrance: 4 },
+        adjustments: 2,
         currentLutName: 'Film.cube',
         lutProfileResolution: { kind: 'unknown' },
       },

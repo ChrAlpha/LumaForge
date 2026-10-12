@@ -129,3 +129,27 @@ export function useRawToolAdjustments(): RawToolAdjustments {
 export function useRawToolIntensity(): number {
   return useAtomValue(activeIntensityAtom, storeOptions)
 }
+
+const adjustmentsAtom = atom(
+  (get): RawToolAdjustments => ({
+    activeIntensity: get(activeIntensityAtom),
+    tone: get(toneAtom),
+    color: get(colorAtom),
+    selectiveColor: get(selectiveColorAtom),
+  }),
+)
+
+/**
+ * One value read from the adjustments, for a reader that shows a summary of
+ * them: it rerenders when the value changes, not on every scrub step that
+ * leaves it the same. `select` keeps its identity across renders.
+ */
+export function useRawToolAdjustmentsSummary<Value>(
+  select: (adjustments: RawToolAdjustments) => Value,
+): Value {
+  const summaryAtom = useMemo(
+    () => atom((get) => select(get(adjustmentsAtom))),
+    [select],
+  )
+  return useAtomValue(summaryAtom, storeOptions)
+}

@@ -5,7 +5,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { RotateCcw } from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
-import { useId, useState } from 'react'
+import { memo, useCallback, useId, useState } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
@@ -63,37 +63,27 @@ const SECTIONS: {
 export function AdjustListPanel(props: AdjustListPanelProps) {
   const { t } = useI18n()
   const [section, setSection] = useState<Section>('tone')
-  const prefersReduced = useReducedMotion() ?? false
-  // Per-instance id so multiple AdjustListPanels (e.g. a future side-by-side)
-  // animate their own indicators rather than fighting over a shared layoutId.
-  const indicatorLayoutId = useId()
-
   const isNeutral =
     section === 'tone'
       ? isToneNeutral(props.tone)
       : section === 'color'
         ? isColorNeutral(props.color)
         : isHSLNeutral(props.selectiveColor)
-  const resetLabel =
-    section === 'tone'
-      ? t('raw.tone.reset')
-      : section === 'color'
-        ? t('raw.color.reset')
-        : t('raw.hsl.reset')
   const onSectionReset =
     section === 'tone'
       ? props.onToneReset
       : section === 'color'
         ? props.onColorReset
         : props.onSelectiveColorReset
-
   const scrubbing = props.scrubbing === true
-
-  const selectSection = (next: Section) => {
-    if (next === section) return
-    props.onScrubChange(null)
-    setSection(next)
-  }
+  const { onScrubChange } = props
+  const selectSection = useCallback(
+    (next: Section) => {
+      onScrubChange(null)
+      setSection(next)
+    },
+    [onScrubChange],
+  )
 
   return (
     <div
@@ -102,76 +92,13 @@ export function AdjustListPanel(props: AdjustListPanelProps) {
       data-scrubbing={scrubbing || undefined}
       className="flex h-full flex-col gap-2"
     >
-      <div
-        data-adjust-section-chrome
-        className={clsxm(
-          // Header in a flex column — never overlaps the slider list, so
-          // we don't need an opaque "obscurer" bg. The slider list lives
-          // in its own scroll region beneath and cannot reach the chrome.
-          'shrink-0',
-          // Negative x margin extends the bar edge-to-edge of the dock's
-          // padding-box, covering the px-3.5 lateral gutters; matching
-          // px-3.5 restores the inner content position.
-          '-mx-3.5 px-3.5',
-          'grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2',
-          // The bar sits flush under the deck's own top hairline and paints
-          // nothing of its own above: one seam at the top of the deck. Its
-          // only line is the divider under the tabs, which the active
-          // underline rides.
-          'border-b border-lf-on-photo-bord-soft',
-          'transition-opacity duration-150',
-          // Dim, do not delete: the section you are in is context a
-          // photographer keeps reading while a value moves.
-          scrubbing && 'pointer-events-none opacity-45',
-        )}
-      >
-        <div
-          role="tablist"
-          aria-label={t('raw.adjust.title')}
-          className="inline-flex min-h-11 items-stretch gap-5 px-0.5"
-        >
-          {SECTIONS.map((s) => {
-            const isActive = s.id === section
-            return (
-              <button
-                key={s.id}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => selectSection(s.id)}
-                className={clsxm(
-                  'relative inline-flex min-h-11 items-center px-1 text-[0.86rem] font-medium leading-none tracking-normal transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80',
-                  isActive
-                    ? 'font-semibold text-lf-on-photo-ink'
-                    : 'text-lf-on-photo-ink/62 hover:text-lf-on-photo-ink/88',
-                )}
-              >
-                {t(s.labelKey)}
-                {isActive && (
-                  <m.span
-                    aria-hidden="true"
-                    layoutId={prefersReduced ? undefined : indicatorLayoutId}
-                    transition={DOCK_SPRING}
-                    className="absolute inset-x-1 -bottom-px h-0.5 rounded-lf-pill bg-[oklch(0.96_0.006_255/0.85)]"
-                  />
-                )}
-              </button>
-            )
-          })}
-        </div>
-        <button
-          type="button"
-          onClick={onSectionReset}
-          disabled={isNeutral}
-          aria-label={resetLabel}
-          className="-mr-1 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md bg-transparent text-lf-on-photo-ink/82 transition-colors hover:bg-[oklch(0.96_0.006_255/0.08)] hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-lf-on-photo-ink/82"
-        >
-          <RotateCcw
-            aria-hidden="true"
-            className="size-[18px] stroke-current"
-          />
-        </button>
-      </div>
+      <AdjustSectionBar
+        section={section}
+        onSelect={selectSection}
+        isNeutral={isNeutral}
+        onReset={onSectionReset}
+        scrubbing={scrubbing}
+      />
       <div
         data-adjust-list-scroll
         // Independent scroll region — slider list scrolls here, never
@@ -245,3 +172,111 @@ export function AdjustListPanel(props: AdjustListPanelProps) {
     </div>
   )
 }
+
+/**
+ * The section tabs and the section's reset. A scrub step leaves every prop
+ * the same, so the bar, and the underline motion measures for its slide,
+ * stay out of the step's commit.
+ */
+const AdjustSectionBar = memo(
+  ({
+    section,
+    onSelect,
+    isNeutral,
+    onReset,
+    scrubbing,
+  }: {
+    section: Section
+    onSelect: (section: Section) => void
+    isNeutral: boolean
+    onReset: () => void
+    scrubbing: boolean
+  }) => {
+    const { t } = useI18n()
+    const prefersReduced = useReducedMotion() ?? false
+    // Per-instance id so multiple AdjustListPanels (e.g. a future side-by-side)
+    // animate their own indicators rather than fighting over a shared layoutId.
+    const indicatorLayoutId = useId()
+    const resetLabel =
+      section === 'tone'
+        ? t('raw.tone.reset')
+        : section === 'color'
+          ? t('raw.color.reset')
+          : t('raw.hsl.reset')
+
+    return (
+      <div
+        data-adjust-section-chrome
+        className={clsxm(
+          // Header in a flex column — never overlaps the slider list, so
+          // we don't need an opaque "obscurer" bg. The slider list lives
+          // in its own scroll region beneath and cannot reach the chrome.
+          'shrink-0',
+          // Negative x margin extends the bar edge-to-edge of the dock's
+          // padding-box, covering the px-3.5 lateral gutters; matching
+          // px-3.5 restores the inner content position.
+          '-mx-3.5 px-3.5',
+          'grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2',
+          // The bar sits flush under the deck's own top hairline and paints
+          // nothing of its own above: one seam at the top of the deck. Its
+          // only line is the divider under the tabs, which the active
+          // underline rides.
+          'border-b border-lf-on-photo-bord-soft',
+          'transition-opacity duration-150',
+          // Dim, do not delete: the section you are in is context a
+          // photographer keeps reading while a value moves.
+          scrubbing && 'pointer-events-none opacity-45',
+        )}
+      >
+        <div
+          role="tablist"
+          aria-label={t('raw.adjust.title')}
+          className="inline-flex min-h-11 items-stretch gap-5 px-0.5"
+        >
+          {SECTIONS.map((s) => {
+            const isActive = s.id === section
+            return (
+              <button
+                key={s.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => {
+                  if (!isActive) onSelect(s.id)
+                }}
+                className={clsxm(
+                  'relative inline-flex min-h-11 items-center px-1 text-[0.86rem] font-medium leading-none tracking-normal transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80',
+                  isActive
+                    ? 'font-semibold text-lf-on-photo-ink'
+                    : 'text-lf-on-photo-ink/62 hover:text-lf-on-photo-ink/88',
+                )}
+              >
+                {t(s.labelKey)}
+                {isActive && (
+                  <m.span
+                    aria-hidden="true"
+                    layoutId={prefersReduced ? undefined : indicatorLayoutId}
+                    transition={DOCK_SPRING}
+                    className="absolute inset-x-1 -bottom-px h-0.5 rounded-lf-pill bg-[oklch(0.96_0.006_255/0.85)]"
+                  />
+                )}
+              </button>
+            )
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={isNeutral}
+          aria-label={resetLabel}
+          className="-mr-1 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md bg-transparent text-lf-on-photo-ink/82 transition-colors hover:bg-[oklch(0.96_0.006_255/0.08)] hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lf-green/80 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-lf-on-photo-ink/82"
+        >
+          <RotateCcw
+            aria-hidden="true"
+            className="size-[18px] stroke-current"
+          />
+        </button>
+      </div>
+    )
+  },
+)

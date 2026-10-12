@@ -12,6 +12,7 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
+import { seedRawToolStore } from '../raw-tool-surface.fixture'
 import type { MobileLookView } from './mobile-stage-layout'
 import type { MobileLookControls } from './MobileLookDeck'
 import { MobileLookDeck } from './MobileLookDeck'
@@ -81,7 +82,6 @@ function look(overrides: Partial<MobileLookControls> = {}): MobileLookControls {
     lutProfileResolution: null,
     onLutProfileSelect: vi.fn(),
     onlineLutSources: sourcesFixture(),
-    activeIntensity: 0.7,
     onIntensityChange: vi.fn(),
     ...overrides,
   }
@@ -453,10 +453,10 @@ describe('mobileLookDeck', () => {
   })
 
   it('sets a continuous strength on a slider with Light, Standard and Strong detents', () => {
+    seedRawToolStore({ currentLutName: 'Kodak 2383', activeIntensity: 0.62 })
     const controls = look({
       currentLutName: 'Kodak 2383',
       appliedLut: { name: 'Kodak 2383', sha256: SHA_KODAK },
-      activeIntensity: 0.62,
       strengthDisabled: false,
     })
     const { container } = renderDeck(controls)
@@ -497,15 +497,15 @@ describe('mobileLookDeck', () => {
       appliedLut: { name: 'Kodak 2383', sha256: SHA_KODAK },
       strengthDisabled: false,
     }
-    const { rerenderDeck } = renderDeck(
-      look({ ...applied, activeIntensity: 0.7 }),
-    )
+    seedRawToolStore({ currentLutName: 'Kodak 2383', activeIntensity: 0.7 })
+    renderDeck(look(applied))
     const reset = screen.getByRole('button', { name: 'Reset Strength' })
     expect(reset).toHaveTextContent('70%')
     expect(reset).toBeDisabled()
     expect(reset.className).not.toMatch(/amber/)
 
-    rerenderDeck(look({ ...applied, activeIntensity: 0 }))
+    // The row follows the stored strength without the deck rendering again.
+    seedRawToolStore({ currentLutName: 'Kodak 2383', activeIntensity: 0 })
     expect(screen.getByRole('slider', { name: 'Strength' })).toHaveAttribute(
       'aria-valuetext',
       'Off',
@@ -642,9 +642,9 @@ describe('mobileLookDeck', () => {
           confidence: 'user',
         },
         previewLookReason: 'lut-output-transfer-linear',
-        activeIntensity: 0.37,
         strengthDisabled: false,
       })
+      seedRawToolStore({ currentLutName: 'Linear Look', activeIntensity: 0.37 })
       const onViewChange = vi.fn()
       const { container } = renderDeck(controls, { onViewChange })
 

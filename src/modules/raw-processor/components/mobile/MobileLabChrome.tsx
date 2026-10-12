@@ -1,8 +1,4 @@
-import type {
-  HSLBandId,
-  HSLBandShift,
-  NormalizedSelectiveColorBands,
-} from '@lumaforge/luma-color-runtime'
+import type { HSLBandId, HSLBandShift } from '@lumaforge/luma-color-runtime'
 import { useSetAtom } from 'jotai'
 import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
@@ -21,7 +17,6 @@ import type { CpuPreviewNotice } from '../CpuPreviewBanner'
 import { CpuPreviewBanner } from '../CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from '../raw-runtime-readiness'
 import type { ToneValue } from '../tone-fields'
-import type { MobileDetailsSheet } from './mobile-details-sheet'
 import { computeMobileStageLayout } from './mobile-stage-layout'
 import {
   COMPARE_LENS_POSITION,
@@ -44,7 +39,6 @@ import { MobileLabTopbar } from './MobileLabTopbar'
 import type { MobileLookControls } from './MobileLookDeck'
 import { MobileLutBrowser } from './MobileLutBrowser'
 import { isMobileDeckVisible } from './MobileModeDock'
-import { MobileMoreSheet } from './MobileMoreSheet'
 import type { MobileLabViewMode } from './useMobileLabChromeController'
 import { useMobileLabChromeController } from './useMobileLabChromeController'
 
@@ -67,9 +61,6 @@ export function MobileLabChrome(props: {
   availability: ToolAvailability
   canExport?: boolean
   hasImage: boolean
-  tone: ToneValue
-  color: ColorValue
-  selectiveColor: NormalizedSelectiveColorBands | undefined
   onToneChange: (patch: Partial<ToneValue>) => void
   onToneReset: () => void
   onColorChange: (patch: Partial<ColorValue>) => void
@@ -109,7 +100,11 @@ export function MobileLabChrome(props: {
     onClose: () => void
     onChooseLutContract: () => void
   }) => ReactNode
-  moreSheet: MobileDetailsSheet
+  /**
+   * The File & pipeline details sheet, open while the chrome says so. It
+   * reads the facts it lists itself.
+   */
+  moreSheet: (controls: { open: boolean; onClose: () => void }) => ReactNode
   previewSuspended?: boolean
   preferExportMode?: boolean
   previewFrameEl?: HTMLDivElement | null
@@ -379,11 +374,7 @@ export function MobileLabChrome(props: {
         peeking={peeking}
         histogramOpen={histogramOpen}
         scrubField={scrubField}
-        tone={props.tone}
-        color={props.color}
-        selectiveColor={props.selectiveColor}
         manualTransform={props.transform?.preview.manual}
-        lookIntensity={props.lutBrowser.activeIntensity}
         onExitImmersive={exitImmersive}
         lensVisible={lensVisible}
         peekPlacement={getPeekPillPlacement(photoWidth, lensVisible)}
@@ -462,9 +453,6 @@ export function MobileLabChrome(props: {
                 onOpenMore={() => setMoreOpen(true)}
                 scrubbing={focusActive}
                 prefersReduced={prefersReduced}
-                tone={props.tone}
-                color={props.color}
-                selectiveColor={props.selectiveColor}
                 lutBrowser={props.lutBrowser}
                 exportPanel={props.exportPanel({
                   onClose: closeExportPanel,
@@ -496,13 +484,10 @@ export function MobileLabChrome(props: {
         onlineLutSources={props.lutBrowser.onlineLutSources}
       />
 
-      <MobileMoreSheet
-        open={props.hasImage && !handoffActive && moreOpen}
-        onClose={() => setMoreOpen(false)}
-        pipelineSteps={props.moreSheet.pipelineSteps}
-        lutRows={props.moreSheet.lutRows}
-        fileRows={props.moreSheet.fileRows}
-      />
+      {props.moreSheet({
+        open: props.hasImage && !handoffActive && moreOpen,
+        onClose: () => setMoreOpen(false),
+      })}
     </div>
   )
 }

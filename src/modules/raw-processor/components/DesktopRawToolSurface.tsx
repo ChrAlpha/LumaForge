@@ -12,6 +12,7 @@ import {
 import { histogramClippingLabels } from '../services/preview/histogram-clipping'
 import {
   useRawPreviewHistogram,
+  useRawPreviewStats,
   useRawToolCommands,
   useRawWorkflowContext,
 } from './RawWorkflowContext'
@@ -122,10 +123,9 @@ export function DesktopRawToolSurface() {
           />
         </ToolCard>
         <ToolCard id="fileFacts" title={t('raw.fileFacts.title')}>
-          <FileFactsTool
+          <DesktopFileFacts
             supportLevel={props.supportLevel}
             metadata={props.metadata}
-            stats={props.stats}
           />
         </ToolCard>
       </ToolCardStack>
@@ -215,4 +215,13 @@ function DesktopToolAside({
       <div>{exportBlock}</div>
     </aside>
   )
+}
+
+// The preview stats are read where they are named: a new render timing
+// renders the file facts, not the rail.
+function DesktopFileFacts(
+  props: Omit<ComponentProps<typeof FileFactsTool>, 'stats'>,
+) {
+  const stats = useRawPreviewStats()
+  return <FileFactsTool {...props} stats={stats} />
 }

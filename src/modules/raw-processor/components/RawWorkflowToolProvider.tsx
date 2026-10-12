@@ -25,6 +25,7 @@ import type {
 } from './RawWorkflowContext'
 import {
   RawPreviewHistogramProvider,
+  RawPreviewStatsProvider,
   RawToolCommandsProvider,
   RawWorkflowProvider,
 } from './RawWorkflowContext'
@@ -494,7 +495,6 @@ export function RawWorkflowToolProvider({
     hasImage: workflow.hasImage,
     supportLevel: workflow.supportLevel,
     metadata: workflow.loadedImage.metadata,
-    stats: toolStats,
     previewFrameEl: transformActive ? null : previewFrameEl,
     previewAspect,
     cpuPreviewNotice,
@@ -503,12 +503,14 @@ export function RawWorkflowToolProvider({
   return (
     <RawWorkflowProvider value={value}>
       <RawToolCommandsProvider commands={commands}>
-        <PreviewHistogramGate
-          transformActive={transformActive}
-          isCpuMode={isCpuMode}
-        >
-          {children}
-        </PreviewHistogramGate>
+        <RawPreviewStatsProvider stats={toolStats}>
+          <PreviewHistogramGate
+            transformActive={transformActive}
+            isCpuMode={isCpuMode}
+          >
+            {children}
+          </PreviewHistogramGate>
+        </RawPreviewStatsProvider>
       </RawToolCommandsProvider>
     </RawWorkflowProvider>
   )

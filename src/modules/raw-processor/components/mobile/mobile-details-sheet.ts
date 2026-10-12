@@ -1,7 +1,4 @@
-import type {
-  LUTContractResolution,
-  NormalizedSelectiveColorBands,
-} from '@lumaforge/luma-color-runtime'
+import type { LUTContractResolution } from '@lumaforge/luma-color-runtime'
 
 import type { Translate } from '~/lib/i18n'
 import type { ImageMetadata } from '~/lib/raw/decoder'
@@ -20,9 +17,6 @@ import {
   previewLookReasonMessageKey,
   supportLevelMessageKey,
 } from '../../services/surface/raw-reason'
-import type { ColorValue } from '../color-fields'
-import type { ToneValue } from '../tone-fields'
-import { countAdjustments } from './adjustment-count'
 import { getAvailableExportOutput } from './export-recap'
 
 export type MobileDetailsRow = { label: string; value: string }
@@ -71,9 +65,8 @@ export function buildMobileDetailsSheet(
     supportLevel: SupportLevel
     metadata: ImageMetadata | null
     stats: Pick<PipelineStats, 'processTime' | 'previewSize'> | null
-    tone: ToneValue
-    color: ColorValue
-    selectiveColor: NormalizedSelectiveColorBands | undefined
+    /** Adjust fields away from neutral, as `countAdjustments` counts them. */
+    adjustments: number
     currentLutName?: string | null
     lutProfileSelection?: LUTContractSelectionState | null
     lutProfileResolution?: LUTContractResolution | null
@@ -91,7 +84,7 @@ export function buildMobileDetailsSheet(
   const cameraName = getCameraName(input.metadata)
   const support = t(supportLevelMessageKey(input.supportLevel))
 
-  const adjusted = countAdjustments(input)
+  const adjusted = input.adjustments
   const adjustDetail =
     adjusted === 0
       ? t('raw.mobile.more.adjustNone')

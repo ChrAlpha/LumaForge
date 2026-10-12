@@ -1,13 +1,10 @@
-import type {
-  HSLBandId,
-  HSLBandShift,
-  NormalizedSelectiveColorBands,
-} from '@lumaforge/luma-color-runtime'
+import type { HSLBandId, HSLBandShift } from '@lumaforge/luma-color-runtime'
 import { m } from 'motion/react'
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 
 import { surfaceFade } from '~/lib/spring'
 
+import { useRawToolAdjustments } from '../../hooks/useRawToolState'
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
 import type { ColorValue } from '../color-fields'
@@ -31,9 +28,6 @@ export function MobileLabModeDock({
   disabled,
   scrubbing,
   prefersReduced,
-  tone,
-  color,
-  selectiveColor,
   lutBrowser,
   exportPanel,
   onModeChange,
@@ -71,9 +65,6 @@ export function MobileLabModeDock({
   disabled: boolean
   scrubbing: boolean
   prefersReduced: boolean
-  tone: ToneValue
-  color: ColorValue
-  selectiveColor: NormalizedSelectiveColorBands | undefined
   lutBrowser: MobileLookControls
   exportPanel: ReactNode
   onModeChange: (mode: MobileMode) => void
@@ -132,9 +123,6 @@ export function MobileLabModeDock({
               transform={transform}
               availability={availability}
               mode={mode}
-              tone={tone}
-              color={color}
-              selectiveColor={selectiveColor}
               lutBrowser={lutBrowser}
               scrubbing={scrubbing}
               onToneChange={onToneChange}
@@ -159,9 +147,6 @@ function MobileLabModePanel({
   transform,
   availability,
   mode,
-  tone,
-  color,
-  selectiveColor,
   lutBrowser,
   scrubbing,
   onToneChange,
@@ -178,9 +163,6 @@ function MobileLabModePanel({
   transform?: RawTransformFeature
   availability: ToolAvailability
   mode: MobileMode
-  tone: ToneValue
-  color: ColorValue
-  selectiveColor: NormalizedSelectiveColorBands | undefined
   lutBrowser: MobileLookControls
   scrubbing: boolean
   onToneChange: (patch: Partial<ToneValue>) => void
@@ -210,10 +192,7 @@ function MobileLabModePanel({
 
   if (mode === 'tone') {
     return (
-      <AdjustListPanel
-        tone={tone}
-        color={color}
-        selectiveColor={selectiveColor}
+      <MobileAdjustPanel
         onToneChange={onToneChange}
         onColorChange={onColorChange}
         onSelectiveColorChange={onSelectiveColorChange}
@@ -233,6 +212,27 @@ function MobileLabModePanel({
       view={lookView}
       onViewChange={onLookViewChange}
       onScrubChange={onScrubChange}
+    />
+  )
+}
+
+/**
+ * The Adjust list over the adjustments it edits. It reads them itself, so a
+ * scrub step renders the list and leaves the dock and the chrome alone.
+ */
+function MobileAdjustPanel(
+  props: Omit<
+    ComponentProps<typeof AdjustListPanel>,
+    'tone' | 'color' | 'selectiveColor'
+  >,
+) {
+  const { tone, color, selectiveColor } = useRawToolAdjustments()
+  return (
+    <AdjustListPanel
+      tone={tone}
+      color={color}
+      selectiveColor={selectiveColor}
+      {...props}
     />
   )
 }

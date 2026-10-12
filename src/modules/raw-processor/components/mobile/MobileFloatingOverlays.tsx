@@ -1,4 +1,4 @@
-import type { NormalizedSelectiveColorBands } from '@lumaforge/luma-color-runtime'
+import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
 import { AnimatePresence, m } from 'motion/react'
 import type { CSSProperties } from 'react'
 
@@ -7,9 +7,8 @@ import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
 import type { ManualTransform } from '~/lib/transform/transform-types'
 
-import type { ColorValue } from '../color-fields'
+import { useRawToolAdjustments } from '../../hooks/useRawToolState'
 import { useRawPreviewHistogram } from '../RawWorkflowContext'
-import type { ToneValue } from '../tone-fields'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { FloatingHistogramCard } from './FloatingHistogramCard'
 import { ScrubValueHud } from './ScrubValueHud'
@@ -98,12 +97,7 @@ export interface MobileFloatingOverlaysProps {
   peeking: boolean
   histogramOpen: boolean
   scrubField: ScrubFieldId | null
-  tone: ToneValue
-  color: ColorValue
-  selectiveColor: NormalizedSelectiveColorBands | undefined
   manualTransform: ManualTransform | undefined
-  /** How much of the applied LUT reaches the photo, 0..1. */
-  lookIntensity?: number
   onExitImmersive: () => void
   /** Whether the compare lens is on screen beside the peek pill. */
   lensVisible?: boolean
@@ -118,11 +112,7 @@ export function MobileFloatingOverlays({
   peeking,
   histogramOpen,
   scrubField,
-  tone,
-  color,
-  selectiveColor,
   manualTransform,
-  lookIntensity,
   onExitImmersive,
   lensVisible = false,
   peekPlacement = 'row',
@@ -198,17 +188,37 @@ export function MobileFloatingOverlays({
           )}
       </AnimatePresence>
 
-      <ScrubValueHud
+      <AdjustmentScrubHud
         field={scrubField}
-        tone={tone}
-        color={color}
-        selectiveColor={selectiveColor}
         manualTransform={manualTransform}
-        lookIntensity={lookIntensity}
         // The histogram rides the HUD while the user has it on: the card
         // steps aside during a scrub, the curve does not.
         histogram={histogramOpen && hasImage ? histogram : null}
       />
     </>
+  )
+}
+
+/**
+ * The scrub HUD over the values it names. It reads the adjustments and the
+ * look strength itself, so a scrub step renders the HUD alone.
+ */
+function AdjustmentScrubHud(props: {
+  field: ScrubFieldId | null
+  manualTransform: ManualTransform | undefined
+  histogram: PreviewHistogramState | null
+}) {
+  const { tone, color, selectiveColor, activeIntensity } =
+    useRawToolAdjustments()
+  return (
+    <ScrubValueHud
+      field={props.field}
+      tone={tone}
+      color={color}
+      selectiveColor={selectiveColor}
+      manualTransform={props.manualTransform}
+      lookIntensity={activeIntensity}
+      histogram={props.histogram}
+    />
   )
 }

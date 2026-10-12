@@ -14,12 +14,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
 import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
-import { COLOR_NEUTRAL } from '../color-fields'
+import { seedRawToolStore } from '../raw-tool-surface.fixture'
 import { transformFeatureFixture } from '../shared/transform-feature.fixture'
-import { TONE_NEUTRAL } from '../tone-fields'
 import { mobileAvailabilityFixture } from '../tool-availability.fixture'
 import { MobileLabChrome as Chrome } from './MobileLabChrome'
 import type { MobileLookControls } from './MobileLookDeck'
+import { MobileMoreSheet } from './MobileMoreSheet'
 
 type ChromeProps = ComponentProps<typeof Chrome>
 
@@ -33,9 +33,6 @@ function MobileLabChrome(
 
 const base = {
   hasImage: true,
-  tone: TONE_NEUTRAL,
-  color: COLOR_NEUTRAL,
-  selectiveColor: undefined,
   onToneChange: vi.fn(),
   onToneReset: vi.fn(),
   onColorChange: vi.fn(),
@@ -68,7 +65,14 @@ const base = {
       </button>
     </div>
   ),
-  moreSheet: { pipelineSteps: [], lutRows: [], fileRows: [] },
+  moreSheet: (controls: { open: boolean; onClose: () => void }) => (
+    <MobileMoreSheet
+      {...controls}
+      pipelineSteps={[]}
+      lutRows={[]}
+      fileRows={[]}
+    />
+  ),
 }
 
 function mountPreviewFrame() {
@@ -357,7 +361,6 @@ describe('mobileLabChrome', () => {
     const confirmedLook = {
       ...base.lutBrowser,
       currentLutName: 'client-look.cube',
-      activeIntensity: 0.7,
       onIntensityChange: vi.fn(),
       strengthDisabled: false,
       lutProfileSelection: {
@@ -726,12 +729,8 @@ describe('mobileLabChrome', () => {
   })
 
   it('opens Adjust color controls without adding a dock mode', async () => {
-    render(
-      <MobileLabChrome
-        {...base}
-        color={{ ...COLOR_NEUTRAL, userTemperature: 24, userTint: -12 }}
-      />,
-    )
+    seedRawToolStore({ color: { userTemperature: 24, userTint: -12 } })
+    render(<MobileLabChrome {...base} />)
     const dock = screen.getByRole('tablist', { name: /lab modes/i })
     expect(within(dock).getAllByRole('tab')).toHaveLength(2)
 

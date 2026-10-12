@@ -29,9 +29,14 @@ import {
 import type { ColorValue } from './color-fields'
 import { COLOR_NEUTRAL } from './color-fields'
 import { RawToolSurface } from './RawToolSurface'
-import type { RawToolCommands, RawToolSurfaceProps } from './RawWorkflowContext'
+import type {
+  RawPreviewStats,
+  RawToolCommands,
+  RawToolSurfaceProps,
+} from './RawWorkflowContext'
 import {
   RawPreviewHistogramProvider,
+  RawPreviewStatsProvider,
   RawToolCommandsProvider,
   RawWorkflowProvider,
 } from './RawWorkflowContext'
@@ -66,6 +71,8 @@ export type RawToolSurfaceFixtureProps = RawToolStoreFacts &
   Partial<RawToolSurfaceProps> & {
     /** The preview histogram, through its own provider. */
     histogram?: PreviewHistogramState
+    /** The preview stats, through their own provider. */
+    stats?: RawPreviewStats | null
   }
 
 const CONTEXT_DEFAULTS: Omit<RawToolSurfaceProps, 'toolAvailability'> = {
@@ -79,7 +86,6 @@ const CONTEXT_DEFAULTS: Omit<RawToolSurfaceProps, 'toolAvailability'> = {
   fileName: '',
   supportLevel: 'experimental',
   metadata: null,
-  stats: null,
 }
 
 /** The stage the store holds for the facts, as the availability reads it. */
@@ -174,6 +180,7 @@ function contextFacts(
     isExporting: _isExporting,
     progress: _progress,
     histogram: _histogram,
+    stats: _stats,
     ...rest
   } = props
   return Object.fromEntries(
@@ -206,13 +213,15 @@ function FixtureToolProviders({
       }}
     >
       <RawToolCommandsProvider commands={commands}>
-        <RawPreviewHistogramProvider
-          histogram={
-            props.histogram ?? { state: 'unavailable', reason: 'no-image' }
-          }
-        >
-          {children}
-        </RawPreviewHistogramProvider>
+        <RawPreviewStatsProvider stats={props.stats ?? null}>
+          <RawPreviewHistogramProvider
+            histogram={
+              props.histogram ?? { state: 'unavailable', reason: 'no-image' }
+            }
+          >
+            {children}
+          </RawPreviewHistogramProvider>
+        </RawPreviewStatsProvider>
       </RawToolCommandsProvider>
     </RawWorkflowProvider>
   )
@@ -231,6 +240,18 @@ function surfaceTree(props: RawToolSurfaceFixtureProps) {
 export type RawToolSurfaceRenderResult = Omit<RenderResult, 'rerender'> & {
   /** Seed the store with the new facts, then render them. */
   rerender: (props: RawToolSurfaceFixtureProps) => void
+}
+
+/**
+ * Seed the production store with store facts alone, for a test that renders
+ * a part of a surface that reads its own store slice. The store returns to
+ * its defaults when the test finishes.
+ */
+export function seedRawToolStore(
+  facts: RawToolStoreFacts & { currentLutName?: string | null } = {},
+) {
+  onTestFinished(resetToolStore)
+  act(() => seedToolStore(facts))
 }
 
 /**

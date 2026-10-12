@@ -114,7 +114,6 @@ export interface RawToolSurfaceProps {
   onlineLutSources?: UseOnlineLutSourcesResult
   supportLevel: SupportLevel
   metadata: ImageMetadata | null
-  stats: Pick<PipelineStats, 'processTime' | 'inputSize' | 'previewSize'> | null
   previewFrameEl?: HTMLDivElement | null
   /**
    * Width / height of what the stage is displaying: the Transform result
@@ -164,6 +163,12 @@ export interface RawToolCommands {
   onPrepareRuntime: () => void
 }
 
+/** What the surfaces show of the preview pipeline: its sizes and timing. */
+export type RawPreviewStats = Pick<
+  PipelineStats,
+  'processTime' | 'inputSize' | 'previewSize'
+>
+
 const RawWorkflowContext = createContext<RawToolSurfaceProps | null>(null)
 const RawToolCommandsContext = createContext<RawToolCommands | null>(null)
 /** Without a provider there is no photo, so nothing to measure. */
@@ -171,6 +176,7 @@ const RawPreviewHistogramContext = createContext<PreviewHistogramState>({
   state: 'unavailable',
   reason: 'no-image',
 })
+const RawPreviewStatsContext = createContext<RawPreviewStats | null>(null)
 
 export function RawToolCommandsProvider({
   commands,
@@ -237,4 +243,29 @@ export function RawPreviewHistogramProvider({
 
 export function useRawPreviewHistogram(): PreviewHistogramState {
   return useContext(RawPreviewHistogramContext)
+}
+
+/**
+ * The preview pipeline's stats as the surfaces show them. A preview render
+ * reports a new timing a few times a second while an edit moves, so they
+ * travel apart from the workflow context: a new timing renders the facts
+ * that name it, not every surface reading the workflow.
+ */
+export function RawPreviewStatsProvider({
+  stats,
+  children,
+}: {
+  stats: RawPreviewStats | null
+  children: ReactNode
+}) {
+  return (
+    <RawPreviewStatsContext.Provider value={stats}>
+      {children}
+    </RawPreviewStatsContext.Provider>
+  )
+}
+
+/** Null before the first preview render. */
+export function useRawPreviewStats(): RawPreviewStats | null {
+  return useContext(RawPreviewStatsContext)
 }

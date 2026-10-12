@@ -60,6 +60,7 @@ import { RawToolSurface } from './RawToolSurface'
 import type { RawToolCommands, RawToolSurfaceProps } from './RawWorkflowContext'
 import {
   useRawPreviewHistogram,
+  useRawPreviewStats,
   useRawToolCommands,
   useRawWorkflowContext,
 } from './RawWorkflowContext'
@@ -2563,7 +2564,7 @@ describe('rawWorkflowToolProvider surface contract', () => {
     // the export decisions and their reasons, one typed note and the size
     // export will really deliver. Adjustments, the stage and its progress
     // are the store's, the commands are the commands provider's, and the
-    // histogram has a provider of its own.
+    // histogram and the preview stats have providers of their own.
     expect(Object.keys(result.current).sort()).toEqual(
       [
         'appliedLut',
@@ -2592,7 +2593,6 @@ describe('rawWorkflowToolProvider surface contract', () => {
         'previewLookReason',
         'previewSuspended',
         'runtimeReadinessState',
-        'stats',
         'supportLevel',
         'toolAvailability',
         'transform',
@@ -2602,5 +2602,59 @@ describe('rawWorkflowToolProvider surface contract', () => {
     expect(result.current.interruptionNote).toEqual({ kind: 'interrupted' })
     // The GPU stage can split; the CPU one is reported separately.
     expect(result.current.compareSupported).toBe(true)
+  })
+
+  it('hands the preview stats on their own channel, a new timing leaving the context as it was', () => {
+    const stats = (processTime: number) =>
+      ({
+        processTime,
+        inputSize: { width: 7008, height: 4672 },
+        previewSize: { width: 1024, height: 683 },
+      }) as UseRawWorkflowReturn['stats']
+    let workflow = {
+      ...interruptedWorkflow(false),
+      decodedImageRef: { current: { width: 2048, height: 1365 } },
+      stats: stats(41.6),
+    } as unknown as UseRawWorkflowReturn
+    const onlineLutSources = {} as UseOnlineLutSourcesResult
+    const command = vi.fn()
+    const { result, rerender } = renderHook(
+      () => ({
+        surface: useRawWorkflowContext(),
+        stats: useRawPreviewStats(),
+      }),
+      {
+        wrapper: ({ children }) => (
+          <RawWorkflowToolProvider
+            workflow={workflow}
+            onlineLutSources={onlineLutSources}
+            isCpuMode={false}
+            isProcessing={false}
+            runtimeReadinessState="ready"
+            previewFrameEl={null}
+            onReplaceFile={command}
+            onResetSession={command}
+            onCompareReset={command}
+            onLutDrop={command}
+            onExport={command}
+            onPrepareRuntime={command}
+          >
+            {children}
+          </RawWorkflowToolProvider>
+        ),
+      },
+    )
+    // The size named is the decoded preview's, over the renderer's own.
+    expect(result.current.stats).toEqual({
+      processTime: 41.6,
+      inputSize: { width: 7008, height: 4672 },
+      previewSize: { width: 2048, height: 1365 },
+    })
+
+    const surface = result.current.surface
+    workflow = { ...workflow, stats: stats(38.2) }
+    rerender()
+    expect(result.current.stats?.processTime).toBe(38.2)
+    expect(result.current.surface).toBe(surface)
   })
 })

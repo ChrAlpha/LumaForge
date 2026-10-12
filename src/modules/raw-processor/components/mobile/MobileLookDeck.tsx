@@ -3,6 +3,7 @@ import type {
   LUTContractResolution,
 } from '@lumaforge/luma-color-runtime'
 import { m } from 'motion/react'
+import type { ComponentProps } from 'react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { clsxm } from '~/lib/cn'
@@ -11,8 +12,8 @@ import { surfaceFade } from '~/lib/spring'
 import { useLutContractSummary } from '../../hooks/useLutContractSummary'
 import { useOnlineLutEntryLoader } from '../../hooks/useOnlineLutEntryLoader'
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
+import { useRawToolIntensity } from '../../hooks/useRawToolState'
 import type { LUTContractSelectionState } from '../../model/session'
-import { DEFAULT_LOOK_INTENSITY } from '../../services/look/style-system'
 import type { PreviewLookReason } from '../../services/surface/raw-reason'
 import { previewLookReasonContractSide } from '../../services/surface/raw-reason'
 import type { ScrubFieldId } from './AdjustListPanel'
@@ -46,8 +47,6 @@ export interface MobileLookControls {
   previewLookReason?: PreviewLookReason | null
   onLutProfileSelect: (profile: LUTColorProfile) => void
   onlineLutSources?: UseOnlineLutSourcesResult
-  /** How much of the look reaches the photo, 0..1. */
-  activeIntensity?: number
   onIntensityChange?: (value: number) => void
   strengthDisabled?: boolean
 }
@@ -307,8 +306,7 @@ export function MobileLookDeck(props: {
           }}
         />
       </div>
-      <MobileLookStrength
-        value={look.activeIntensity ?? DEFAULT_LOOK_INTENSITY}
+      <LookStrengthRow
         onChange={look.onIntensityChange}
         disabled={look.strengthDisabled ?? !lutApplied}
         describedBy={lutApplied ? undefined : strengthReasonId}
@@ -347,4 +345,15 @@ export function MobileLookDeck(props: {
       </div>
     </m.div>
   )
+}
+
+/**
+ * The Strength row over the strength it sets. It reads the strength itself,
+ * so a Strength scrub renders the row and leaves the strip alone.
+ */
+function LookStrengthRow(
+  props: Omit<ComponentProps<typeof MobileLookStrength>, 'value'>,
+) {
+  const value = useRawToolIntensity()
+  return <MobileLookStrength value={value} {...props} />
 }
