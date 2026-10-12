@@ -171,10 +171,13 @@ export function PreviewStageFrame({
           </div>
 
           {showEmbeddedPreview && (
+            // The camera's embedded JPEG can be full-size; decoded in step
+            // with the frame commit, it holds the main thread until done.
             <img
               src={embeddedPreviewUrl ?? undefined}
               alt={t('raw.preview.embeddedAlt')}
               className="raw-preview-embedded"
+              decoding="async"
             />
           )}
         </div>
@@ -188,6 +191,7 @@ export function PreviewStageFrame({
           draggable={false}
           className="raw-preview-handoff-preview"
           data-raw-preview-handoff-preview
+          decoding="async"
         />
       )}
 

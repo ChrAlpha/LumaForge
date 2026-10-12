@@ -4200,6 +4200,7 @@ describe('preview canvas upload descriptor', () => {
                     node('img', {
                       src: 'blob:embedded-preview',
                       alt: 'Embedded RAW preview',
+                      decoding: 'async',
                       class: 'raw-preview-embedded',
                     }),
                   ],
@@ -4459,6 +4460,7 @@ describe('preview canvas upload descriptor', () => {
           alt: '',
           'aria-hidden': 'true',
           draggable: 'false',
+          decoding: 'async',
           class: 'raw-preview-handoff-preview',
           'data-raw-preview-handoff-preview': 'true',
         }),

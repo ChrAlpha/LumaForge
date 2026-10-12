@@ -201,6 +201,7 @@ export function CpuPreviewCanvas({
             alt={t('raw.preview.embeddedAlt')}
             className="max-w-full max-h-full object-contain"
             draggable={false}
+            decoding="async"
           />
           {inFlight && (
             <div
