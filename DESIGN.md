@@ -401,6 +401,8 @@ That hue was used briefly in early drafts and left a single warm wash inside an 
   - Open: gradient fill, top highlight at **lift-card** (`inset 0 1px 0 oklch(0.96 0.006 255 / 0.08)`) + lower inset shadow for depth.
   - Trigger: 32px min-height, label color ladder `66 → 88 → 100%`, chevron `40 → 64 → 72%`.
   - Focus-visible: inset 2px `lf-green/80` outline (does not collide with the open hairline).
+  - Fold: the body's row runs `grid-template-rows` 0fr ↔ 1fr over 220ms on `ease-lf-standard` while the body fades and rises 4px; the chevron rotates in CSS. Nothing animates a property the body's subtree inherits, so a fold restyles only the card it moves.
+  - A folded body stays mounted but hidden and inert under React `<Activity>`: its state (the HSL axis in view, which catalog is open) survives a fold, while its effects stop until it opens again.
 - Meta strings on triggers use `tabular-nums` so counts (e.g. histogram clipping) do not reflow as values cross thresholds.
 
 ### Segmented Controls
@@ -513,7 +515,7 @@ Immersive and the empty state reset both insets to `0`, so entering immersive gr
 Because the photo sits below the mobile topbar and above the deck rather than under them, those two are solid plates, not glass.
 The topbar is the stage base (`oklch(0.064 0.006 255)`), only the top safe area plus 12px plus one 44px row tall, and the scrub HUD takes that same band.
 With the histogram turned on, an Adjust, HSL or Strength scrub (not Transform) draws the same histogram at 96x28 to the right of the HUD value, in the band rather than on the photo, while the floating card steps aside; it fades over the surface fade (none under reduced motion) and is absent when the histogram is unsupported (CPU preview, Transform applied).
-The histogram stays live during a scrub: runs are throttled to one per 150ms, sample at most 40k pixels while values move, and refine at the full budget once input settles.
+The histogram stays live during a scrub: runs are throttled to one per 150ms, sample at most 40k pixels while values move, and refine at the full budget once input settles. A run yields to input whenever a chunk has worked 6ms, even partway through a band, so a scrub resumed during a refine is never held behind one.
 It runs only while a surface draws it: always on the desktop rail (the card or its trigger's clipping counts), on a phone only while it is turned on, and never in the CPU preview or over an applied Transform.
 The tab bar (48px tabs, 4px above and below, plus the safe area) and the deck are `oklch(0.085 0.006 255)`; the deck carries a lift-card top highlight and the tab bar a lift-soft seam.
 Glass stays with the overlays that sit on the photo: the compare lens, its hints, the peek pill, the CPU preview notice, and the histogram card.
@@ -525,11 +527,12 @@ pipeline pass per frame.
 ### Press Feedback
 
 A press answers with a **0.5px downward shift** over 120ms: the desktop
-command cluster, the mobile topbar actions (including the Export action and
-the compare lens), the mobile Adjust section chrome, the Look strip tiles, and
-the mobile Export panel actions. The mobile dock tabs
-are the one documented exception and keep their `scale(0.96)` tap spring,
-because they are a segmented selector rather than a button.
+command cluster, the empty stage's upload dock, the mobile topbar actions
+(including the Export action and the compare lens), the mobile Adjust
+section chrome, the Look strip tiles, and the mobile Export panel actions.
+The mobile dock tabs are the one documented exception and keep their
+`scale(0.96)` tap spring, because they are a segmented selector rather than
+a button.
 
 Write the shift with the CSS **`translate` property**, or with motion's
 `whileTap={{ y: 0.5 }}`, never with `transform: translateY(...)`. Several
@@ -545,6 +548,9 @@ fighting it.
 ### Export Footer (persistent action zone)
 
 - The bottom of the tool rail is reserved for the export action and its result block.
+- The buttons hold the foot of the rail. Every note (why full resolution or the HQ preview is refused, a low-memory plan, an interrupted export) sits above them, so a reason that comes and goes during a load never moves the button under the cursor. A note that changes fades in where the last one was.
+- A busy stage keeps its own reason readable ("Building the first preview..."); only an export that is actually running changes a button. The button that started it shows a spinner and `Exporting N%`, with a 2px `lf-green` hairline filling along its foot, and keeps a full-strength plate rather than the disabled fade.
+- Share, Copy, and Manifest show a spinner in place of their icon while they work (after 150ms, so an instant action never flickers), and take one press at a time.
 - A 1px **lf-green ready-stripe** sits on top of the footer, opacity 0 → 1 as `canExport` flips true. This is the chrome's commit cue — Linear / X use the same idiom for "this is the action that ships".
 - Footer plate is the deepest tone in the rail; an inset baseline shadow stratifies it below the tool card stack.
 
