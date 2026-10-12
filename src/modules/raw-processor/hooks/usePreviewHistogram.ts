@@ -1,18 +1,27 @@
 import type {
   ColorGraphIntent,
+  CreatePreviewHistogramProcessorInput,
   LUTData,
   PreviewHistogramState,
   ReadyPreviewHistogram,
 } from '@lumaforge/luma-color-runtime'
 import {
   colorGraphIntentSignature,
-  createPreviewHistogramProcessor,
   pickColorGraphIntent,
 } from '@lumaforge/luma-color-runtime'
 import { resolvePreviewColorPlan } from '@lumaforge/render-engine/preview'
 import type { RefObject } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import type {
+  HistogramExecutor,
+  HistogramRunHandle,
+} from '~/lib/preview/histogram-executor'
+import { createPreviewHistogramExecutor } from '~/lib/preview/histogram-executor'
+import {
+  HISTOGRAM_FULL_SAMPLE_PIXELS,
+  histogramRowStep,
+} from '~/lib/preview/histogram-sampling'
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import {
   isEligibleQuickPredecessor,
@@ -22,15 +31,6 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { DisplaySource } from '../model/session'
 
-const ROW_BAND_ROWS = 32
-/** Rows a chunk processes between looks at the clock. */
-const CHUNK_CLOCK_ROWS = 4
-/**
- * A chunk yields once it has run this long, even short of its rows: a band
- * at the full budget is tens of milliseconds on a slow device, and a scrub
- * resumed meanwhile would wait for all of it before its pointer move lands.
- */
-const HISTOGRAM_CHUNK_BUDGET_MS = 6
 /**
  * Live feedback cadence: while the look moves, a histogram run starts at
  * most this often (leading and trailing), one at a time, always on the
@@ -45,7 +45,6 @@ export const HISTOGRAM_SETTLE_MS = 150
  * run's busy time when a device is slow enough to need it.
  */
 export const HISTOGRAM_BUSY_SHARE_DENOMINATOR = 6
-const MAX_HISTOGRAM_SAMPLED_PIXELS = 500_000
 /**
  * Sample budget of a run made while the look is moving. A run costs about
  * 0.5us per sampled pixel with a LUT on a desktop CPU (~240ms at the full
@@ -59,6 +58,7 @@ const UNSUPPORTED_PREVIEW_REASON =
 const HISTOGRAM_OFF_REASON = 'No surface shows the preview histogram.'
 const UNREPRESENTED_LOOK_REASON =
   'The histogram does not measure built-in styles.'
+const FAILED_RUN_REASON = 'The preview histogram could not be measured.'
 
 type PreviewHistogramInput = {
   /**
@@ -104,7 +104,7 @@ type HistogramJob =
       /** What the preview draws over the frame. */
       drawnKey: string
       image: ValidHistogramImage
-      graph: Parameters<typeof createPreviewHistogramProcessor>[0]['graph']
+      graph: CreatePreviewHistogramProcessorInput['graph']
     }
 
 type ComputeHistogramJob = Extract<HistogramJob, { kind: 'compute' }>
@@ -232,23 +232,6 @@ function createInitialState(job: HistogramJob): PreviewHistogramState {
   return { state: 'computing', previous: null }
 }
 
-function scheduleChunk(work: () => void) {
-  return window.setTimeout(work, 0)
-}
-
-function getPreviewHistogramRowStep(
-  width: number,
-  height: number,
-  budget = MAX_HISTOGRAM_SAMPLED_PIXELS,
-) {
-  const totalPixels = width * height
-  if (!Number.isSafeInteger(totalPixels) || totalPixels <= budget) {
-    return 1
-  }
-
-  return Math.max(1, Math.ceil(totalPixels / budget))
-}
-
 function sameHistogramFrame(a: ComputeHistogramJob, b: HistogramJob) {
   return b.kind === 'compute' && isSameDecodedPreviewFrame(a.frame, b.frame)
 }
@@ -264,7 +247,7 @@ interface HistogramRun {
   job: ComputeHistogramJob
   kind: HistogramRunKind
   cancelled: boolean
-  chunkTimer: number | null
+  handle: HistogramRunHandle | null
 }
 
 interface HistogramScheduler {
@@ -330,6 +313,9 @@ export function usePreviewHistogram(
   const [state, setState] = useState<PreviewHistogramState>(() =>
     createInitialState(job),
   )
+  // Off the main thread where the browser allows it; the scheduler below
+  // decides when runs start either way.
+  const [executor] = useState<HistogramExecutor>(createPreviewHistogramExecutor)
   const stateRef = useRef(state)
   const jobKeyRef = useRef(job.key)
   const latestJobRef = useRef(job)
@@ -356,7 +342,7 @@ export function usePreviewHistogram(
   const cancelRun = useCallback((run: HistogramRun | null) => {
     if (!run) return
     run.cancelled = true
-    if (run.chunkTimer !== null) window.clearTimeout(run.chunkTimer)
+    run.handle?.cancel()
     const scheduler = schedulerRef.current
     if (scheduler.running === run) scheduler.running = null
   }, [])
@@ -398,7 +384,7 @@ export function usePreviewHistogram(
     if (job.kind !== 'compute' || scheduler.running) return
 
     const previous = getPreviousReady(stateRef.current)
-    const run: HistogramRun = { job, kind, cancelled: false, chunkTimer: null }
+    const run: HistogramRun = { job, kind, cancelled: false, handle: null }
     scheduler.running = run
     // A run on anything but the latest job owes the latest a run after it.
     scheduler.pending = job !== latestJobRef.current
@@ -408,56 +394,14 @@ export function usePreviewHistogram(
     if (kind === 'full') commitState({ state: 'computing', previous })
 
     const { image } = job
-    const processor = createPreviewHistogramProcessor({
-      width: image.width,
-      rowBandRows: ROW_BAND_ROWS,
-      graph: job.graph,
-    })
-    const rowStep = getPreviewHistogramRowStep(
-      image.width,
-      image.height,
+    const sampleBudget =
       kind === 'scrub'
         ? SCRUB_HISTOGRAM_SAMPLED_PIXELS
-        : MAX_HISTOGRAM_SAMPLED_PIXELS,
-    )
+        : HISTOGRAM_FULL_SAMPLE_PIXELS
+    const rowStep = histogramRowStep(image.width, image.height, sampleBudget)
     const isFirstQuickRun = previous === null && image.source === 'quick'
-    const bandsPerChunk = isFirstQuickRun ? 4 : 1
-    let nextRow = 0
-    let processedRows = 0
-    let busyMs = 0
 
-    // Up to `limit` sampled rows; returns how many it took.
-    const processRows = (limit: number) => {
-      if (rowStep === 1) {
-        const rowCount = Math.min(limit, image.height - nextRow)
-        const start = nextRow * image.width * 3
-        const end = start + rowCount * image.width * 3
-        processor.processUint16Rows(image.data.subarray(start, end), rowCount)
-        nextRow += rowCount
-        processedRows += rowCount
-        return rowCount
-      }
-      let rowCount = 0
-      while (rowCount < limit && nextRow < image.height) {
-        const start = nextRow * image.width * 3
-        const end = start + image.width * 3
-        processor.processUint16Rows(image.data.subarray(start, end), 1)
-        nextRow += rowStep
-        processedRows += 1
-        rowCount += 1
-      }
-      return rowCount
-    }
-
-    const finish = () => {
-      const ready = processor.finish({
-        source: image.source,
-        width: image.width,
-        height: image.height,
-        totalRows: processedRows,
-        ownership: 'main-thread-chunked-no-copy',
-        inputByteLength: image.data.buffer.byteLength,
-      })
+    const finish = (ready: ReadyPreviewHistogram, busyMs: number) => {
       scheduler.running = null
       if (kind === 'scrub') {
         scheduler.intervalMs = Math.max(
@@ -499,28 +443,28 @@ export function usePreviewHistogram(
       }
     }
 
-    const chunkRows = ROW_BAND_ROWS * bandsPerChunk
-    const chunkBudgetMs = HISTOGRAM_CHUNK_BUDGET_MS * bandsPerChunk
-    const processNextBand = () => {
-      run.chunkTimer = null
-      if (run.cancelled) return
-      const startedAt = performance.now()
-      let rowsThisChunk = 0
-      while (rowsThisChunk < chunkRows && nextRow < image.height) {
-        rowsThisChunk += processRows(
-          Math.min(CHUNK_CLOCK_ROWS, chunkRows - rowsThisChunk),
-        )
-        if (performance.now() - startedAt >= chunkBudgetMs) break
-      }
-      busyMs += performance.now() - startedAt
-      if (nextRow >= image.height) {
-        finish()
-      } else {
-        run.chunkTimer = scheduleChunk(processNextBand)
-      }
-    }
-
-    processNextBand()
+    run.handle = executor.run(
+      {
+        frameKey: `${job.frame.sessionId}:${job.frame.frameId}`,
+        frame: image,
+        graph: job.graph,
+        sampleBudget,
+        // The first quick histogram is the first thing the user sees: its
+        // chunks take more rows at a time to land sooner.
+        bandsPerChunk: isFirstQuickRun ? 4 : 1,
+      },
+      {
+        onResult: (ready, busyMs) => {
+          if (!run.cancelled) finish(ready, busyMs)
+        },
+        onError: () => {
+          if (run.cancelled) return
+          scheduler.running = null
+          scheduler.pending = false
+          commitState({ state: 'unsupported', reason: FAILED_RUN_REASON })
+        },
+      },
+    )
   }
 
   scheduleRef.current = (kind, job) => {
@@ -561,6 +505,8 @@ export function usePreviewHistogram(
       cancelRun(scheduler.running)
       clearTimers()
       scheduler.pending = false
+      // Nothing to measure: the worker and its copy of the frame go.
+      executor.release()
       commitState(job.state)
       return
     }
@@ -600,14 +546,15 @@ export function usePreviewHistogram(
       }
     }
     scheduleRef.current(kind, job)
-  }, [cancelRun, clearTimers, commitState, job])
+  }, [cancelRun, clearTimers, commitState, executor, job])
 
   useEffect(
     () => () => {
       cancelRun(schedulerRef.current.running)
       clearTimers()
+      executor.release()
     },
-    [cancelRun, clearTimers],
+    [cancelRun, clearTimers, executor],
   )
 
   if (jobKeyRef.current !== job.key) {

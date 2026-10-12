@@ -715,6 +715,26 @@ export releases it), and unmount drop the cache and every render still
 outstanding, and a late frame from a replaced source is neither shown nor
 cached. With no accepted frame the client is disposed, which ends its worker.
 
+### Preview Histogram
+
+`src/modules/raw-processor/hooks/usePreviewHistogram.ts` decides when a
+histogram run starts (throttled while values move, refined once they settle)
+and hands each run to `src/lib/preview/histogram-executor.ts`. The executor
+measures on a worker (`src/lib/preview/histogram.worker.ts`) that holds the
+rows of one decoded frame and one 3D LUT; a run carries only its color graph.
+A run never samples more than 500k pixels, so the worker gets a packed copy of
+only the rows a settled run reads: at most about 3 MB, made once per accepted
+frame and transferred, whatever the preview's size. A settled run reads the
+same rows on the worker as it would on the main thread, so its bins match.
+Turning the histogram off, a look it cannot measure, losing the frame, and
+unmounting terminate the worker and drop that copy. Where module workers are
+unavailable, or once the worker fails, runs measure on the main thread in
+chunks that yield after 6 ms.
+
+Measured on a 3264 x 4901 bounded-HQ preview in Chromium at 4x CPU throttle,
+over a 40-step exposure scrub: the main thread spent 5.2 to 6.6 seconds in the
+histogram's row processing before the worker, and none after.
+
 ### Transform Preview
 
 `src/modules/raw-processor/hooks/useTransformPreview.ts` owns one Transform
