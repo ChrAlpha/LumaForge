@@ -8,7 +8,7 @@ import {
   X,
 } from 'lucide-react'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
-import { useId } from 'react'
+import { useId, useState } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
@@ -37,6 +37,23 @@ import type { MobileExportRecap } from './export-recap'
 // idle/busy/done transitions feel like the design rather than a hard snap.
 const MRL_EASE = [0.22, 1, 0.36, 1] as const
 const PANEL_TRANSITION = { duration: 0.22, ease: MRL_EASE }
+
+// A running export's button keeps its plate readable: the disabled fade
+// would read as refused while it is the one thing working.
+const RUNNING_BUTTON_CLASS =
+  'relative overflow-hidden disabled:cursor-progress disabled:text-lf-on-photo-ink/85'
+
+/** The running export's progress, filling along the foot of its button. */
+function ExportProgressHairline({ percent }: { percent: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-export-progress
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 origin-left bg-lf-green transition-transform duration-200 ease-lf-standard motion-reduce:transition-none"
+      style={{ transform: `scaleX(${percent / 100})` }}
+    />
+  )
+}
 
 function BusySpinner() {
   const reduced = useReducedMotion() ?? false
@@ -210,6 +227,10 @@ export function MobileExportPanel(props: {
   const previewReasonId = useId()
   const titleId = useId()
   const isExporting = props.isExporting === true
+  // Both exports run under one workflow status, so the panel remembers
+  // which button started the one running.
+  const [startedKind, setStartedKind] = useState<'full' | 'hq'>('full')
+  const runningKind = isExporting ? startedKind : null
   const percent =
     typeof props.progress === 'number' && Number.isFinite(props.progress)
       ? Math.round(Math.min(100, Math.max(0, props.progress)))
@@ -233,7 +254,9 @@ export function MobileExportPanel(props: {
     props.exportResult?.copyCapability,
     t,
   )
-  const showUnavailableReason = !props.isProcessing && !props.canExport
+  // A busy stage refuses with its own reason (loading, decoding), which
+  // stays readable; a running export shows on its button instead.
+  const showUnavailableReason = !isExporting && !props.canExport
   // A block caused by the LUT's colour contract reads in amber, the
   // contract colour, and offers the route into the contract. Every other
   // block stays neutral.
@@ -249,7 +272,7 @@ export function MobileExportPanel(props: {
   const previewExportDisabled =
     !props.canPreviewExport || props.isProcessing || !props.onPreviewExport
   const showPreviewUnavailableReason =
-    !props.isProcessing &&
+    !isExporting &&
     !props.canPreviewExport &&
     Boolean(previewUnavailableReason) &&
     !(showUnavailableReason && previewUnavailableReason === unavailableReason)
@@ -405,33 +428,57 @@ export function MobileExportPanel(props: {
         <m.button
           type="button"
           disabled={!props.canExport || props.isProcessing}
+          aria-busy={runningKind === 'full' || undefined}
           whileTap={
             !props.canExport || props.isProcessing ? undefined : { y: 0.5 }
           }
           transition={PANEL_TRANSITION}
-          onClick={() => props.onExport()}
-          className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-md border border-lf-green-deep/40 bg-lf-green px-3 text-sm font-semibold text-lf-on-surface transition-colors hover:bg-lf-green-hover disabled:cursor-not-allowed disabled:border-lf-on-photo-bord-soft disabled:bg-lf-on-photo-bg disabled:text-lf-on-photo-ink/35"
+          onClick={() => {
+            setStartedKind('full')
+            props.onExport()
+          }}
+          className={clsxm(
+            'inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-md border border-lf-green-deep/40 bg-lf-green px-3 text-sm font-semibold text-lf-on-surface transition-colors hover:bg-lf-green-hover disabled:cursor-not-allowed disabled:border-lf-on-photo-bord-soft disabled:bg-lf-on-photo-bg disabled:text-lf-on-photo-ink/35',
+            runningKind === 'full' && RUNNING_BUTTON_CLASS,
+          )}
         >
-          {props.isProcessing ? (
+          {runningKind === 'full' ? (
             <BusySpinner />
           ) : (
             <Download aria-hidden="true" className="size-4 shrink-0" />
           )}
-          {props.isProcessing ? t('raw.export.preparing') : t('raw.export.run')}
+          {t('raw.export.run')}
+          {runningKind === 'full' && (
+            <ExportProgressHairline percent={percent ?? 0} />
+          )}
         </m.button>
         <m.button
           type="button"
           disabled={previewExportDisabled}
+          aria-busy={runningKind === 'hq' || undefined}
           aria-describedby={
             showPreviewUnavailableReason ? previewReasonId : undefined
           }
           whileTap={previewExportDisabled ? undefined : { y: 0.5 }}
           transition={PANEL_TRANSITION}
-          onClick={() => props.onPreviewExport?.()}
-          className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-3 text-[0.8rem] font-semibold text-lf-on-photo-ink transition-colors enabled:hover:bg-[oklch(0.96_0.006_255/0.08)] disabled:cursor-not-allowed disabled:bg-lf-on-photo-bg/60 disabled:text-lf-on-photo-ink/35"
+          onClick={() => {
+            setStartedKind('hq')
+            void props.onPreviewExport?.()
+          }}
+          className={clsxm(
+            'inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-3 text-[0.8rem] font-semibold text-lf-on-photo-ink transition-colors enabled:hover:bg-[oklch(0.96_0.006_255/0.08)] disabled:cursor-not-allowed disabled:bg-lf-on-photo-bg/60 disabled:text-lf-on-photo-ink/35',
+            runningKind === 'hq' && RUNNING_BUTTON_CLASS,
+          )}
         >
-          <Download aria-hidden="true" className="size-4 shrink-0" />
+          {runningKind === 'hq' ? (
+            <BusySpinner />
+          ) : (
+            <Download aria-hidden="true" className="size-4 shrink-0" />
+          )}
           {t('raw.export.runPreview')}
+          {runningKind === 'hq' && (
+            <ExportProgressHairline percent={percent ?? 0} />
+          )}
         </m.button>
         {showPreviewUnavailableReason && (
           <p

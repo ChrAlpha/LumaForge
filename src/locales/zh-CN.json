@@ -395,7 +395,6 @@
   "raw.export.lowMemory": "当前设备会使用低内存导出模式，导出可能更慢。写入 JPEG 时请保持标签页打开。",
   "raw.export.interrupted": "上次导出被中断。你下次开始的导出会使用当前 RAW 与调整，并改用更安全的导出设置。",
   "raw.export.blocked": "色彩契约失败",
-  "raw.export.preparing": "正在准备 JPEG...",
   "raw.export.run": "导出全分辨率 JPEG",
   "raw.export.runPreview": "导出 HQ 预览 JPEG",
   "raw.export.sourcePath": "使用全分辨率 processed-window 路径导出。",

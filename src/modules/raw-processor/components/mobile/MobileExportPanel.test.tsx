@@ -25,8 +25,8 @@ function buttonNames() {
 
 type MobileExportPanelProps = ComponentProps<typeof MobileExportPanel>
 
-function renderPanel(overrides: Partial<MobileExportPanelProps> = {}) {
-  render(
+function panel(overrides: Partial<MobileExportPanelProps> = {}) {
+  return (
     <MobileExportPanel
       canExport
       isProcessing={false}
@@ -40,8 +40,12 @@ function renderPanel(overrides: Partial<MobileExportPanelProps> = {}) {
       onDownloadExport={vi.fn()}
       onCopyExport={vi.fn()}
       {...overrides}
-    />,
+    />
   )
+}
+
+function renderPanel(overrides: Partial<MobileExportPanelProps> = {}) {
+  return render(panel(overrides))
 }
 
 function createResult(overrides: Partial<ExportResult> = {}): ExportResult {
@@ -347,21 +351,79 @@ describe('mobileExportPanel', () => {
     expect(box.querySelector('svg')).not.toBeNull()
   })
 
-  it('does not show a blocked export error while export progress is already visible', () => {
-    renderPanel({
+  it('shows a running export on its button instead of a blocked export error', () => {
+    const { container } = renderPanel({
       canExport: false,
       disabledReason: {
         source: 'workflow',
         reason: { code: 'export-running' },
       },
       isProcessing: true,
+      isExporting: true,
+      progress: 41.6,
     })
 
+    const primary = screen.getByRole('button', {
+      name: 'Export full-resolution JPEG',
+    })
+    expect(primary).toBeDisabled()
+    expect(primary).toHaveAttribute('aria-busy', 'true')
+    // The plate stays readable rather than fading as refused, and the
+    // progress fills along its foot.
+    expect(primary).toHaveClass('disabled:text-lf-on-photo-ink/85')
+    const hairline = container.querySelector('[data-export-progress]')
+    expect(primary).toContainElement(hairline as HTMLElement)
+    expect(hairline).toHaveStyle({ transform: 'scaleX(0.42)' })
     expect(
-      screen.getByRole('button', { name: /preparing jpeg/i }),
-    ).toBeDisabled()
+      screen.getByRole('button', { name: 'Export HQ preview JPEG' }),
+    ).not.toHaveAttribute('aria-busy')
     expect(screen.queryByText(/color contract failed/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/already running/i)).not.toBeInTheDocument()
+  })
+
+  it('says what a busy stage is doing instead of naming an export', () => {
+    renderPanel({
+      canExport: false,
+      canPreviewExport: false,
+      disabledReason: { source: 'surface', code: 'preview-decoding' },
+      previewExportDisabledReason: {
+        source: 'surface',
+        code: 'preview-decoding',
+      },
+      isProcessing: true,
+    })
+
+    expect(screen.getAllByText('Building the first preview...')).toHaveLength(1)
+    const primary = screen.getByRole('button', {
+      name: 'Export full-resolution JPEG',
+    })
+    expect(primary).toBeDisabled()
+    expect(primary).not.toHaveAttribute('aria-busy')
+    expect(document.querySelector('[data-export-progress]')).toBeNull()
+    expect(screen.queryByText(/preparing jpeg/i)).toBeNull()
+  })
+
+  it('marks the HQ preview button as the running export when it started one', async () => {
+    const user = userEvent.setup()
+    const onPreviewExport = vi.fn()
+    const props = {
+      canExport: true,
+      canPreviewExport: true,
+      onPreviewExport,
+    }
+    const { rerender } = renderPanel(props)
+    await user.click(
+      screen.getByRole('button', { name: 'Export HQ preview JPEG' }),
+    )
+    expect(onPreviewExport).toHaveBeenCalledOnce()
+
+    rerender(panel({ ...props, isProcessing: true, isExporting: true }))
+    expect(
+      screen.getByRole('button', { name: 'Export HQ preview JPEG' }),
+    ).toHaveAttribute('aria-busy', 'true')
+    expect(
+      screen.getByRole('button', { name: 'Export full-resolution JPEG' }),
+    ).not.toHaveAttribute('aria-busy')
   })
 
   it('keeps the ready result compact without secondary helper copy', () => {

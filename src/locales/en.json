@@ -395,7 +395,6 @@
   "raw.export.lowMemory": "This device is using low-memory export mode. Export may take longer. Keep the tab open while the JPEG is being written.",
   "raw.export.interrupted": "The previous export was interrupted. The next export you start uses the current RAW and adjustments with a safer setting.",
   "raw.export.blocked": "Color contract failed",
-  "raw.export.preparing": "Preparing JPEG...",
   "raw.export.run": "Export full-resolution JPEG",
   "raw.export.runPreview": "Export HQ preview JPEG",
   "raw.export.sourcePath": "Exports from the full-resolution processed-window path.",
