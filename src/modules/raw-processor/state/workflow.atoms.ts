@@ -18,7 +18,12 @@ import {
   areSamePipelineFacts,
   toPipelineFacts,
 } from '../services/preview/pipeline-stats'
-import { currentSessionAtom } from './session.atoms'
+import { getCurrentView } from './preview-view.atoms'
+import {
+  currentSessionAtom,
+  getCurrentSession,
+  setCurrentSession,
+} from './session.atoms'
 
 /**
  * The stored color intent: the user's color, plus the look selection while no
@@ -83,28 +88,22 @@ export function getEffectiveColorIntent(): ColorGraphIntent {
 
 const baseLutAtom = atom<ParsedLUT | null>(null)
 
-export const [lutAtom, , useLutValue, useSetLut, getLut, setLut] =
+export const [lutAtom, , useLutValue, , getLut, setLut] =
   createAtomHooks(baseLutAtom)
 
 const baseProcessingStatusAtom = atom<ProcessingStatus>('idle')
 
-export const [
-  ,
-  ,
-  useProcessingStatusValue,
-  useSetProcessingStatus,
-  ,
-  setProcessingStatus,
-] = createAtomHooks(baseProcessingStatusAtom)
+export const [, , useProcessingStatusValue, , , setProcessingStatus] =
+  createAtomHooks(baseProcessingStatusAtom)
 
 const baseErrorMessageAtom = atom<string | null>(null)
 
-export const [, , useErrorMessageValue, useSetErrorMessage, , setErrorMessage] =
+export const [, , useErrorMessageValue, , , setErrorMessage] =
   createAtomHooks(baseErrorMessageAtom)
 
 const baseProgressAtom = atom<number>(0)
 
-export const [, , useProgressValue, useSetProgress, , setProgress] =
+export const [, , useProgressValue, , , setProgress] =
   createAtomHooks(baseProgressAtom)
 
 const basePipelineStatsAtom = atom<PipelineStats | null>(null)
@@ -129,4 +128,24 @@ const pipelineFactsAtom = selectAtom(
 
 export function usePipelineFactsValue(): PipelineFacts | null {
   return useAtomValue(pipelineFactsAtom, { store: jotaiStore })
+}
+
+/**
+ * The workflow's store accessors, all on the production store: a read sees a
+ * write made in the same tick, before any rerender. Commands and the
+ * services they drive take these instead of values from the last render.
+ */
+export const rawWorkflowStore = {
+  getSession: getCurrentSession,
+  setSession: setCurrentSession,
+  /** The effective intent the photo renders and exports with. */
+  getColorIntent: getEffectiveColorIntent,
+  setColorIntent,
+  getLut,
+  setLut,
+  getView: getCurrentView,
+  setStatus: setProcessingStatus,
+  setError: setErrorMessage,
+  setProgress,
+  setStats: setPipelineStats,
 }

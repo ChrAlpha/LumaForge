@@ -1,4 +1,3 @@
-import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import i18n from 'i18next'
 import type { ComponentType, PropsWithChildren } from 'react'
@@ -25,17 +24,6 @@ const loadMock = vi.hoisted(() => ({ orchestrateRawLoad: vi.fn() }))
 
 vi.mock('../../../services/ingest/orchestrate-raw-load', () => loadMock)
 
-function createColorIntent(): ReturnType<
-  UseRawLoadActionInput['getColorIntent']
-> {
-  return {
-    ...NEUTRAL_USER_COLOR_INTENT,
-    intensity: 0.7,
-    styleKind: 'none',
-    builtinPreset: null,
-  }
-}
-
 function createHostLeases() {
   const leases: Array<{
     signal: AbortSignal
@@ -59,15 +47,6 @@ function createHostLeases() {
 
 function createInput(): UseRawLoadActionInput {
   return {
-    setStatus: vi.fn(),
-    setError: vi.fn(),
-    setProgress: vi.fn(),
-    getColorIntent: vi.fn(createColorIntent),
-    getView: vi.fn(() => ({ mode: 'compare' as const, compareSplit: 0.5 })),
-    getLut: vi.fn(() => null),
-    setColorIntent: vi.fn(),
-    getSession: vi.fn(() => null),
-    setSession: vi.fn(),
     scheduleToast: vi.fn(),
     replaceFile: vi.fn(),
     abortRuntimeWork: vi.fn(),
@@ -75,7 +54,6 @@ function createInput(): UseRawLoadActionInput {
     queueExportResultResourceDisposal: vi.fn(),
     revokeCurrentEmbeddedPreviewUrl: vi.fn(),
     setDecodedImageRef: vi.fn(),
-    yieldToPaint: vi.fn(),
     getPrewarmState: vi.fn<() => PrewarmState>(() => 'idle'),
     beginRuntimeSession: createHostLeases().beginRuntimeSession,
     embeddedPreviewUrlRef: { current: null },

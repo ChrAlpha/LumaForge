@@ -3,36 +3,47 @@ import { toLUTData } from '@lumaforge/luma-color-runtime'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import { yieldToPaint } from '~/lib/dom'
-
+import { withInterruptionHistory } from '../services/export/export-recovery'
 import { hasActiveExport } from '../services/export/export-state'
-import { getCurrentView } from '../state/preview-view.atoms'
-import { getCurrentSession, setCurrentSession } from '../state/session.atoms'
 import {
-  getEffectiveColorIntent,
+  useDetachedPreviewViewValue,
+  useSetDetachedPreviewView,
+} from '../state/preview-view.atoms'
+import { useCurrentSession } from '../state/session.atoms'
+import {
   getLut,
   getPipelineStats,
+  rawWorkflowStore,
+  useErrorMessageValue,
+  useLutValue,
+  usePipelineFactsValue,
+  useProcessingParamsValue,
+  useProcessingStatusValue,
+  useProgressValue,
+  useSetPipelineStats,
 } from '../state/workflow.atoms'
-import { buildRawWorkflowReturn } from './buildRawWorkflowReturn'
 import { useOriginalReference } from './stages/compare/useOriginalReference'
 import { useRawCompareStage } from './stages/compare/useRawCompareStage'
+import { useExportDerivedState } from './stages/export/useExportDerivedState'
 import { useExportGraphInvalidation } from './stages/export/useExportGraphInvalidation'
 import { useExportInterruptionState } from './stages/export/useExportInterruptionState'
 import { useExportResourceManagement } from './stages/export/useExportResourceManagement'
-import { useRawExportStage } from './stages/export/useRawExportStage'
+import { useExportResultActions } from './stages/export/useExportResultActions'
+import { useFullResExportAction } from './stages/export/useFullResExportAction'
+import { useHqPreviewExportAction } from './stages/export/useHqPreviewExportAction'
 import { useRawIngestStage } from './stages/ingest/useRawIngestStage'
 import { useRawRuntimeControls } from './stages/ingest/useRawRuntimeControls'
 import { useRawSourceState } from './stages/ingest/useRawSourceState'
 import { useLutDataState } from './stages/look/useLutDataState'
 import { useRawLookStage } from './stages/look/useRawLookStage'
-import { useRawPreviewStage } from './stages/preview/useRawPreviewStage'
-import { useImageSession } from './useImageSession'
-import { useRawDetachedWorkflowState } from './useRawDetachedWorkflowState'
+import { useDecodedPreviewResource } from './stages/preview/useDecodedPreviewResource'
+import { useEmbeddedPreviewUrlLifecycle } from './stages/preview/useEmbeddedPreviewUrlLifecycle'
+import { usePreviewPipelineEvacuation } from './stages/preview/usePreviewPipelineEvacuation'
+import { useRestorePreviewAfterExport } from './stages/preview/useRestorePreviewAfterExport'
 import { useRawPreviewTransform } from './useRawPreviewTransform'
 import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 import { useRawWorkflowActions } from './useRawWorkflowActions'
 import { useRawWorkflowRefs } from './useRawWorkflowRefs'
-import { useRawWorkflowState } from './useRawWorkflowState'
 
 /**
  * The LUT the store holds, in the shape the pipeline reads, read when
@@ -45,44 +56,30 @@ function getStoredLutData(): LUTData | null {
   return lut ? toLUTData(lut) : null
 }
 
+/** A frame belongs to the session the store holds when it is accepted. */
+function getCurrentSessionId(): string | null {
+  return rawWorkflowStore.getSession()?.id ?? null
+}
+
 export type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
 export function useRawWorkflow(): UseRawWorkflowReturn {
-  const {
-    colorIntent,
-    setColorIntent,
-    detachedView,
-    setDetachedView,
-    lut,
-    setLut,
-  } = useRawDetachedWorkflowState()
-  const {
-    status,
-    setStatus,
-    error,
-    setError,
-    progress,
-    setProgress,
-    previewFacts,
-    setStats,
-  } = useRawWorkflowState()
-  const { session, replaceFile, resetSession, setSession } = useImageSession()
+  const colorIntent = useProcessingParamsValue()
+  const detachedView = useDetachedPreviewViewValue()
+  const setDetachedView = useSetDetachedPreviewView()
+  const lut = useLutValue()
+  const status = useProcessingStatusValue()
+  const error = useErrorMessageValue()
+  const progress = useProgressValue()
+  // The facts alone: the timings a preview render reports are the stats
+  // provider's, so a new timing leaves the workflow as it was.
+  const previewFacts = usePipelineFactsValue()
+  const setStats = useSetPipelineStats()
+  const [session] = useCurrentSession()
 
-  const {
-    rawRuntimeHost,
-    pipelineRef,
-    resourceRegistryRef,
-    previewCopyCanvasRef,
-    embeddedPreviewUrlRef,
-    isMountedRef,
-    runtimeWorkSessionIdRef,
-    pendingLoadSessionIdRef,
-    exportAbortControllerRef,
-    exportGraphVersionRef,
-    decodedImageRef,
-    rawRenderExposureRef,
-  } = useRawWorkflowRefs()
-  const compareStage = useRawCompareStage({
+  const runtime = useRawWorkflowRefs()
+  const { rawRuntimeHost, decodedImageRef, rawRenderExposureRef } = runtime
+  const { view: _view, ...compareStage } = useRawCompareStage({
     detachedView,
     setDetachedView,
     session,
@@ -90,38 +87,22 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   })
   const [decodedImageVersion, setDecodedImageVersion] = useState(0)
   const { scheduleToast, dismissError, updateStats } = useRawWorkflowActions({
-    isMountedRef,
+    isMountedRef: runtime.isMountedRef,
     status,
-    setError,
-    setStatus,
+    setError: rawWorkflowStore.setError,
+    setStatus: rawWorkflowStore.setStatus,
     setStats,
     getStats: getPipelineStats,
   })
-  const {
-    hasImage,
-    loadedImage,
-    sourceFileName,
-    supportLevel,
-    progressRecoveryHint,
-    embeddedPreviewUrl,
-    displaySource,
-  } = useRawSourceState({ session, status })
-  const sourceState = {
-    hasImage,
-    loadedImage,
-    sourceFileName,
-    supportLevel,
-    progressRecoveryHint,
-    embeddedPreviewUrl,
-    displaySource,
-  }
+  const sourceState = useRawSourceState({ session, status })
+  const { hasImage, loadedImage, embeddedPreviewUrl, displaySource } =
+    sourceState
   const rawRenderExposure =
     decodedImageRef.current?.renderExposure ?? rawRenderExposureRef.current
-  const { viewMode } = compareStage
   const { abortRuntimeWork, abortExportWork } = useRawRuntimeControls({
     cancelHostSession: rawRuntimeHost.cancelSession,
-    runtimeWorkSessionIdRef,
-    exportAbortControllerRef,
+    runtimeWorkSessionIdRef: runtime.runtimeWorkSessionIdRef,
+    exportAbortControllerRef: runtime.exportAbortControllerRef,
   })
 
   // Export evacuates the preview through the host: its session lease ends,
@@ -136,18 +117,13 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   )
 
   const { registerExportResultResource, queueExportResultResourceDisposal } =
-    useExportResourceManagement({ resourceRegistryRef })
+    useExportResourceManagement(runtime)
 
   const { invalidateExportGraph } = useExportGraphInvalidation({
-    exportGraphVersionRef,
-    previewCopyCanvasRef,
-    exportAbortControllerRef,
-    getSession: getCurrentSession,
+    ...runtime,
+    ...rawWorkflowStore,
     abortExportWork,
     queueExportResultResourceDisposal,
-    setSession,
-    setStatus,
-    setProgress,
   })
   const { lutDataRef, lutDataVersion, setLutDataRef } = useLutDataState(lut)
   // A LUT landing while an export runs or holds the preview released would
@@ -157,24 +133,27 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   const canApplyLoadedLut = useCallback(
     () =>
       !previewSuspendedRef.current &&
-      !hasActiveExport(exportAbortControllerRef.current, getCurrentSession()),
-    [exportAbortControllerRef],
+      !hasActiveExport(
+        runtime.exportAbortControllerRef.current,
+        rawWorkflowStore.getSession(),
+      ),
+    [runtime],
   )
   // Transform events reduce the session in the store when they land; every
   // export reader reads the store, so none needs a copy kept in step.
   const { transform } = useRawPreviewTransform({
     session,
-    getSession: getCurrentSession,
-    setSession: setCurrentSession,
+    getSession: rawWorkflowStore.getSession,
+    setSession: rawWorkflowStore.setSession,
     invalidateExportGraph,
   })
 
-  const lookStage = useRawLookStage({
+  const { cancelLUTFileLoad, ...lookStage } = useRawLookStage({
     baseParams: colorIntent,
     session,
     lut,
-    setLut,
-    setColorIntent,
+    setLut: rawWorkflowStore.setLut,
+    setColorIntent: rawWorkflowStore.setColorIntent,
     lutDataRef,
     setLutDataRef,
     scheduleToast,
@@ -185,35 +164,31 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   // command needs it; only the view it is shown in is published here, and
   // never through a color setter.
   const { params } = lookStage
+
+  // Embedded URL cleanup and restore read the session in the store when they
+  // run, so a load or reset landing before this rerenders is the source they
+  // act on.
+  const { revokeCurrentEmbeddedPreviewUrl } = useEmbeddedPreviewUrlLifecycle({
+    ...runtime,
+    ...rawWorkflowStore,
+  })
   const {
-    decodedFrame,
-    revokeCurrentEmbeddedPreviewUrl,
     registerCurrentPreviewPipelineForEvacuation,
     setOriginalPreviewPipeline,
-    setDecodedImageRef,
-    restorePreviewAfterExport,
-  } = useRawPreviewStage({
-    decodedImageRef,
-    rawRenderExposureRef,
-    resourceRegistryRef,
+  } = usePreviewPipelineEvacuation(runtime)
+  const { setDecodedImageRef, decodedFrame } = useDecodedPreviewResource({
+    ...runtime,
     setDecodedImageVersion,
     invalidateExportGraph,
-    embeddedPreviewUrlRef,
-    setSession,
-    pipelineRef,
-    isMountedRef,
-    runtimeWorkSessionIdRef,
+    getSessionId: getCurrentSessionId,
+  })
+  const { restorePreviewAfterExport } = useRestorePreviewAfterExport({
+    ...runtime,
+    ...rawWorkflowStore,
     beginRuntimeSession: rawRuntimeHost.beginSession,
-    setStatus,
-    setProgress,
-    setError,
+    setDecodedImageRef,
     scheduleToast,
   })
-  const previewStage = {
-    decodedFrame,
-    restorePreviewAfterExport,
-    setOriginalPreviewPipeline,
-  }
 
   const {
     interruptionMarkers,
@@ -223,35 +198,14 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   } = useExportInterruptionState(loadedImage.file)
 
   const { loadFile, reset } = useRawIngestStage({
-    setStatus,
-    setError,
-    setProgress,
-    getColorIntent: getEffectiveColorIntent,
-    getView: getCurrentView,
-    getLut,
-    setColorIntent,
-    getSession: getCurrentSession,
-    setSession,
-    setStats,
+    runtime,
     scheduleToast,
-    replaceFile,
     abortRuntimeWork,
     abortExportWork,
     queueExportResultResourceDisposal,
     revokeCurrentEmbeddedPreviewUrl,
     setDecodedImageRef,
-    yieldToPaint,
-    getPrewarmState: rawRuntimeHost.getPrewarmState,
-    beginRuntimeSession: rawRuntimeHost.beginSession,
-    decodedImageRef,
-    embeddedPreviewUrlRef,
-    isMountedRef,
-    runtimeWorkSessionIdRef,
-    pendingLoadSessionIdRef,
-    previewCopyCanvasRef,
-    resetSession,
   })
-  const ingestStage = { loadFile, reset }
   // The host lives as long as the workflow: unmounting terminates its worker,
   // including a warm-up still in flight. This cleanup runs after the ingest
   // lifecycle has cancelled the RAW session on the host, so it finds no
@@ -259,130 +213,102 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   // again with a fresh history.
   useEffect(() => () => rawRuntimeHost.dispose(), [rawRuntimeHost])
 
-  const {
-    canExport,
-    exportRefusal,
-    deliveredExportSize,
-    exportResult,
-    exportShareCapability,
-    exportInterrupted,
-    previewSuspended,
-    canPreviewExport,
-    previewExportRefusal,
-    exportImage,
-    downloadExportResult,
-    downloadExportManifest,
-    shareExportResult,
-    copyExportResult,
-    exportPreviewImage,
-  } = useRawExportStage({
-    setStatus,
-    setError,
-    setProgress,
-    setSession,
-    loadedImage,
-    session,
-    params,
-    getSession: getCurrentSession,
-    getColorIntent: getEffectiveColorIntent,
+  const exportCommandInput = {
+    ...runtime,
+    ...rawWorkflowStore,
     getLutData: getStoredLutData,
-    lutData: lutDataRef.current,
-    decodedImageRef,
-    previewFacts,
-    refreshExportInterruption,
-    interruptionMarkers,
-    exportAbortControllerRef,
-    exportGraphVersionRef,
-    isMountedRef,
-    pipelineRef,
-    resourceRegistryRef,
-    previewCopyCanvasRef,
     scheduleToast,
     abortExportWork,
+    registerExportResultResource,
+  }
+  const { exportImage } = useFullResExportAction({
+    ...exportCommandInput,
+    loadedImage,
+    session,
+    previewFacts,
+    refreshExportInterruption,
     previewRuntime,
     registerCurrentPreviewPipelineForEvacuation,
-    registerExportResultResource,
     revokeCurrentEmbeddedPreviewUrl,
+    interruptionMarkers,
+  })
+  const exportState = useExportDerivedState({
+    session,
     exportInterruption,
-    exportInterruptionRef,
+    decodedImageRef,
     embeddedPreviewUrl,
     status,
     hasImage,
     displaySource,
+    sourceFile: loadedImage.file,
     rawRenderExposure,
+    params,
+    lutData: lutDataRef.current,
+    previewFacts,
+  })
+  const { previewSuspended, previewExportRefusal } = exportState
+  previewSuspendedRef.current = previewSuspended
+  // Full-resolution export starts only from an explicit user action, which
+  // chooses nothing: the JPEG quality is fixed. The loaded source's
+  // interruption hint asks it for the safer plan.
+  const exportWithInterruptionHistory = useCallback(
+    () => exportImage(withInterruptionHistory(exportInterruptionRef.current)),
+    [exportImage, exportInterruptionRef],
+  )
+  const exportResultActions = useExportResultActions({
+    ...exportCommandInput,
+    previewSize: previewFacts?.previewSize,
+    toast,
+  })
+  const { exportPreviewImage } = useHqPreviewExportAction({
+    ...exportCommandInput,
+    previewSuspended,
+    previewExportRefusal,
     queueExportResultResourceDisposal,
     toast,
   })
-  previewSuspendedRef.current = previewSuspended
   // Export commits the look on screen, so a local LUT still reading or
   // parsing when it starts is dropped rather than held for afterwards.
-  const { cancelLUTFileLoad } = lookStage
   useEffect(() => {
     if (status === 'exporting' || previewSuspended) cancelLUTFileLoad()
   }, [cancelLUTFileLoad, previewSuspended, status])
-  const exportStage = {
-    canExport,
-    exportRefusal,
-    deliveredExportSize,
-    exportResult,
-    exportShareCapability,
-    exportInterrupted,
-    previewSuspended,
-    canPreviewExport,
-    previewExportRefusal,
-    exportImage,
-    downloadExportResult,
-    downloadExportManifest,
-    shareExportResult,
-    copyExportResult,
-    exportPreviewImage,
-  }
 
-  const {
-    originalReferenceSnapshot,
-    originalReferenceFallbackReason,
-    dualGpuAllowed,
-    requestOriginalReferenceFallback,
-  } = useOriginalReference({
+  const originalReference = useOriginalReference({
+    ...runtime,
     sessionId: session?.id ?? null,
-    viewMode,
+    viewMode: compareStage.viewMode,
     previewSuspended,
-    decodedImageRef,
     decodedFrame,
     displaySource,
-    resourceRegistryRef,
   })
-  const originalReferenceStage = {
-    originalReferenceSnapshot,
-    originalReferenceFallbackReason,
-    dualGpuAllowed,
-    requestOriginalReferenceFallback,
-  }
 
-  return buildRawWorkflowReturn({
+  return {
+    ...sourceState,
+    ...compareStage,
+    ...lookStage,
+    ...exportState,
+    ...exportResultActions,
+    ...originalReference,
     transform,
-    workflowState: {
-      status,
-      error,
-      progress,
-      previewFacts,
-      dismissError,
-      updateStats,
-    },
-    refs: { decodedImageRef, pipelineRef },
-    rawRuntimeHost,
+    decodedImageRef,
     decodedImageVersion,
-    lutData: {
-      lutData: lutDataRef.current,
-      lutDataRef,
-      lutDataVersion,
-    },
-    sourceState,
-    compareStage,
-    lookStage,
-    previewStage,
-    ingestStage,
-    exportStage,
-    originalReferenceStage,
-  })
+    decodedFrame,
+    status,
+    error,
+    progress,
+    lutData: lutDataRef.current,
+    lutDataRef,
+    lutDataVersion,
+    previewFacts,
+    exportImage: exportWithInterruptionHistory,
+    exportPreviewImage,
+    restorePreviewAfterExport,
+    setOriginalPreviewPipeline,
+    loadFile,
+    reset,
+    dismissError,
+    updateStats,
+    pipelineRef: runtime.pipelineRef,
+    rawRuntimeHost,
+  }
 }

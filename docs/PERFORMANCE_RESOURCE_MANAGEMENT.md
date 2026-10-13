@@ -921,7 +921,7 @@ Export lifecycle and resource tests:
 
 Session lifetime, teardown, GPU ownership, and frame identity tests:
 
-- `src/modules/raw-processor/hooks/useImageSession.test.tsx`
+- `src/modules/raw-processor/state/session.atoms.test.tsx`
 - `src/modules/raw-processor/hooks/stages/ingest/useRawProcessorLifecycle.test.tsx`
 - `src/modules/raw-processor/services/workflow/raw-workflow-resources.test.ts`
 - `src/modules/raw-processor/services/ingest/orchestrate-raw-load.test.ts`

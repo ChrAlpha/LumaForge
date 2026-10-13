@@ -1,42 +1,19 @@
-import type { ColorGraphIntent, ParsedLUT } from '@lumaforge/luma-color-runtime'
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useRef } from 'react'
 
 import type { ExportResourceCleanupReason } from '~/lib/export/execution-profile'
-import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
-import type { PrewarmState } from '~/lib/raw/runtime-adapter'
-import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession, StyleAsset } from '../../../model/session'
-import type { ProcessingStatus } from '../../../model/workflow'
-import type { SetColorIntent } from '../../../state/workflow.atoms'
+import { createImageSession } from '../../../model/session-factory'
+import { releaseSourceForReset } from '../../../services/workflow/raw-workflow-resources'
+import { rawWorkflowStore } from '../../../state/workflow.atoms'
+import type { RawWorkflowRuntime } from '../../useRawWorkflowRefs'
 import { useRawLoadAction } from './useRawLoadAction'
 import { useRawProcessorLifecycle } from './useRawProcessorLifecycle'
-import { useRawSessionReset } from './useRawSessionReset'
 
 type UseRawIngestStageInput = {
-  setStatus: (status: ProcessingStatus) => void
-  setError: (error: string | null) => void
-  setProgress: (progress: number) => void
-  getColorIntent: () => ColorGraphIntent
-  getView: () => PreviewView
-  getLut: () => ParsedLUT | null
-  setColorIntent: SetColorIntent
-  /** Reads the session store; the load publishes and checks through it. */
-  getSession: () => ImageSession | null
-  setSession: Dispatch<SetStateAction<ImageSession | null>>
-  setStats: (stats: PipelineStats | null) => void
+  runtime: RawWorkflowRuntime
   scheduleToast: (notify: () => void) => void
-  /** Publishes the new source's session to the store before it returns. */
-  replaceFile: (
-    file: File,
-    retained?: {
-      activeStyle?: StyleAsset | null
-      lutProfileSelection?: ImageSession['lutProfileSelection']
-    },
-  ) => ImageSession
   abortRuntimeWork: () => void
   abortExportWork: () => void
   queueExportResultResourceDisposal: (
@@ -47,54 +24,108 @@ type UseRawIngestStageInput = {
     decoded: DecodedImage | null,
     options?: { preserveExportResult?: boolean },
   ) => void
-  yieldToPaint: () => Promise<void>
-  getPrewarmState: () => PrewarmState
-  /** The workflow host owns each load's native session and cancellation. */
-  beginRuntimeSession: RawRuntimeHost['beginSession']
-  decodedImageRef: MutableRefObject<DecodedImage | null>
-  embeddedPreviewUrlRef: MutableRefObject<string | null>
-  isMountedRef: MutableRefObject<boolean>
-  runtimeWorkSessionIdRef: MutableRefObject<string | null>
-  pendingLoadSessionIdRef: MutableRefObject<string | null>
-  previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
-  resetSession: () => void
 }
 
-export function useRawIngestStage(input: UseRawIngestStageInput) {
+export function useRawIngestStage({
+  runtime,
+  scheduleToast,
+  abortRuntimeWork,
+  abortExportWork,
+  queueExportResultResourceDisposal,
+  revokeCurrentEmbeddedPreviewUrl,
+  setDecodedImageRef,
+}: UseRawIngestStageInput) {
+  const {
+    rawRuntimeHost,
+    isMountedRef,
+    runtimeWorkSessionIdRef,
+    pendingLoadSessionIdRef,
+    decodedImageRef,
+    previewCopyCanvasRef,
+    embeddedPreviewUrlRef,
+  } = runtime
   // The session this mount last published. Only that one ends when the mount
   // departs; a session another mount publishes is never this mount's.
   const ownedSessionIdRef = useRef<string | null>(null)
-  const { replaceFile: publishSession } = input
-  const replaceFile = useCallback<UseRawIngestStageInput['replaceFile']>(
-    (file, retained) => {
-      const next = publishSession(file, retained)
+  // Publishes the new source's session to the store before it returns.
+  const replaceFile = useCallback(
+    (
+      file: File,
+      retained?: {
+        activeStyle?: StyleAsset | null
+        lutProfileSelection?: ImageSession['lutProfileSelection']
+      },
+    ) => {
+      const next = createImageSession(file, retained)
+      rawWorkflowStore.setSession(next)
       ownedSessionIdRef.current = next.id
       return next
     },
-    [publishSession],
+    [],
   )
 
   useRawProcessorLifecycle({
-    isMountedRef: input.isMountedRef,
-    runtimeWorkSessionIdRef: input.runtimeWorkSessionIdRef,
-    pendingLoadSessionIdRef: input.pendingLoadSessionIdRef,
+    isMountedRef,
+    runtimeWorkSessionIdRef,
+    pendingLoadSessionIdRef,
     ownedSessionIdRef,
-    decodedImageRef: input.decodedImageRef,
-    previewCopyCanvasRef: input.previewCopyCanvasRef,
-    getSession: input.getSession,
-    abortExportWork: input.abortExportWork,
-    abortRuntimeWork: input.abortRuntimeWork,
-    queueExportResultResourceDisposal: input.queueExportResultResourceDisposal,
-    revokeCurrentEmbeddedPreviewUrl: input.revokeCurrentEmbeddedPreviewUrl,
-    setStatus: input.setStatus,
-    setError: input.setError,
-    setProgress: input.setProgress,
-    setStats: input.setStats,
-    setSession: input.setSession,
+    decodedImageRef,
+    previewCopyCanvasRef,
+    getSession: rawWorkflowStore.getSession,
+    abortExportWork,
+    abortRuntimeWork,
+    queueExportResultResourceDisposal,
+    revokeCurrentEmbeddedPreviewUrl,
+    setStatus: rawWorkflowStore.setStatus,
+    setError: rawWorkflowStore.setError,
+    setProgress: rawWorkflowStore.setProgress,
+    setStats: rawWorkflowStore.setStats,
+    setSession: rawWorkflowStore.setSession,
   })
 
-  const { loadFile } = useRawLoadAction({ ...input, replaceFile })
-  const { reset } = useRawSessionReset(input)
+  const { loadFile } = useRawLoadAction({
+    scheduleToast,
+    replaceFile,
+    abortRuntimeWork,
+    abortExportWork,
+    queueExportResultResourceDisposal,
+    revokeCurrentEmbeddedPreviewUrl,
+    setDecodedImageRef,
+    getPrewarmState: rawRuntimeHost.getPrewarmState,
+    beginRuntimeSession: rawRuntimeHost.beginSession,
+    embeddedPreviewUrlRef,
+    isMountedRef,
+    runtimeWorkSessionIdRef,
+    pendingLoadSessionIdRef,
+    previewCopyCanvasRef,
+  })
+
+  const reset = useCallback(() => {
+    releaseSourceForReset({
+      runtimeWorkSessionIdRef,
+      pendingLoadSessionIdRef,
+      previewCopyCanvasRef,
+      abortExportWork,
+      abortRuntimeWork,
+      queueExportResultResourceDisposal,
+      revokeCurrentEmbeddedPreviewUrl,
+    })
+    setDecodedImageRef(null)
+    rawWorkflowStore.setStatus('idle')
+    rawWorkflowStore.setError(null)
+    rawWorkflowStore.setProgress(0)
+    rawWorkflowStore.setStats(null)
+    rawWorkflowStore.setSession(null)
+  }, [
+    abortExportWork,
+    abortRuntimeWork,
+    pendingLoadSessionIdRef,
+    previewCopyCanvasRef,
+    queueExportResultResourceDisposal,
+    revokeCurrentEmbeddedPreviewUrl,
+    runtimeWorkSessionIdRef,
+    setDecodedImageRef,
+  ])
 
   return { loadFile, reset }
 }

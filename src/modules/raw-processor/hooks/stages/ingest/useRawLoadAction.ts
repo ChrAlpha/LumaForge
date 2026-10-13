@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 
+import { yieldToPaint } from '~/lib/dom'
 import type { Translate } from '~/lib/i18n'
 
 import type {
@@ -8,10 +9,13 @@ import type {
   RawLoadNotification,
 } from '../../../services/ingest/orchestrate-raw-load'
 import { orchestrateRawLoad } from '../../../services/ingest/orchestrate-raw-load'
+import { rawWorkflowStore } from '../../../state/workflow.atoms'
 import { useLatestTranslate } from '../../useLatestTranslate'
 
-export type UseRawLoadActionInput = RawLoadContext['atoms'] &
-  Omit<RawLoadContext['services'], 'notify'> &
+export type UseRawLoadActionInput = Omit<
+  RawLoadContext['services'],
+  'notify' | 'yieldToPaint'
+> &
   RawLoadContext['refs'] & {
     /** Runs a toast after the current commit, and only while mounted. */
     scheduleToast: (show: () => void) => void
@@ -54,15 +58,6 @@ function rawLoadToast(
 }
 
 export function useRawLoadAction({
-  setStatus,
-  setError,
-  setProgress,
-  getColorIntent,
-  getView,
-  getLut,
-  setColorIntent,
-  getSession,
-  setSession,
   scheduleToast,
   replaceFile,
   abortRuntimeWork,
@@ -70,7 +65,6 @@ export function useRawLoadAction({
   queueExportResultResourceDisposal,
   revokeCurrentEmbeddedPreviewUrl,
   setDecodedImageRef,
-  yieldToPaint,
   getPrewarmState,
   beginRuntimeSession,
   embeddedPreviewUrlRef,
@@ -91,17 +85,7 @@ export function useRawLoadAction({
 
   const rawLoadCtx = useMemo<RawLoadContext>(
     () => ({
-      atoms: {
-        setStatus,
-        setError,
-        setProgress,
-        getColorIntent,
-        getView,
-        getLut,
-        setColorIntent,
-        getSession,
-        setSession,
-      },
+      atoms: rawWorkflowStore,
       services: {
         notify,
         replaceFile,
@@ -127,11 +111,7 @@ export function useRawLoadAction({
       abortRuntimeWork,
       beginRuntimeSession,
       embeddedPreviewUrlRef,
-      getColorIntent,
-      getLut,
       getPrewarmState,
-      getSession,
-      getView,
       isMountedRef,
       pendingLoadSessionIdRef,
       previewCopyCanvasRef,
@@ -140,13 +120,7 @@ export function useRawLoadAction({
       revokeCurrentEmbeddedPreviewUrl,
       notify,
       runtimeWorkSessionIdRef,
-      setColorIntent,
       setDecodedImageRef,
-      setError,
-      setProgress,
-      setSession,
-      setStatus,
-      yieldToPaint,
     ],
   )
 
