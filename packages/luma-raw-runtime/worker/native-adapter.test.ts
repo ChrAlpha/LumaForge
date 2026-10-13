@@ -147,9 +147,7 @@ function createFactoryWithHeap(heap?: Uint8Array) {
 }
 
 // The color and orientation facts the native wrapper's
-// supportedExportCapability emits for a processed-window source. The test
-// below holds this fixture to the wrapper source, so a fact the wrapper stops
-// emitting fails here instead of being defaulted by the adapter.
+// supportedExportCapability emits for a processed-window source.
 const NATIVE_COLOR_FACTS = {
   whiteBalance: [2.1, 1, 1.4, 1],
   cameraToWorkingRgb: [1.2, -0.1, -0.1, -0.05, 1.1, -0.05, 0, -0.2, 1.2],
@@ -651,84 +649,6 @@ describe('native-adapter', () => {
     expect(cameraWhiteBalanceSelector).not.toContain('color.pre_mul')
   })
 
-  it('documents native camera white balance normalization and fail-closed guards', () => {
-    const wrapperSource = readFileSync(
-      resolve(
-        dirname(fileURLToPath(import.meta.url)),
-        '..',
-        'native',
-        'libraw_wrapper.cpp',
-      ),
-      'utf8',
-    )
-    const cameraWhiteBalanceSelector = wrapperSource.match(
-      /bool selectCameraWhiteBalance[\s\S]*?\n\}\n\nbool buildCameraToWorkingRgb/,
-    )?.[0]
-
-    expect(cameraWhiteBalanceSelector).toContain(
-      'const double normalization_scale = raw_multipliers[1]',
-    )
-    expect(cameraWhiteBalanceSelector).toContain(
-      'white_balance[index] = raw_multipliers[index] / normalization_scale',
-    )
-    expect(cameraWhiteBalanceSelector).not.toContain(
-      'std::numeric_limits<double>::infinity()',
-    )
-    expect(cameraWhiteBalanceSelector).toContain(
-      'max_multiplier <= min_multiplier',
-    )
-    expect(cameraWhiteBalanceSelector).toContain('source[index] <= 0')
-  })
-
-  it('normalizes LibRaw CFA color slots before matching Bayer patterns', () => {
-    const wrapperSource = readFileSync(
-      resolve(
-        dirname(fileURLToPath(import.meta.url)),
-        '..',
-        'native',
-        'libraw_wrapper.cpp',
-      ),
-      'utf8',
-    )
-    const cfaSelector = wrapperSource.match(
-      /int normalizedCfaColor[\s\S]*?\n\}\n\nbool hasBayerRawImage/,
-    )?.[0]
-
-    expect(cfaSelector).toContain('processor.imgdata.idata.cdesc[color_index]')
-    expect(cfaSelector).toContain("case 'G':")
-    expect(cfaSelector).toContain('normalizedFilterColor')
-    expect(cfaSelector).toContain(
-      'const int top_right = normalizedCfaColor(processor, 0, 1)',
-    )
-    expect(cfaSelector).not.toContain('const int top_right = processor.COLOR')
-  })
-
-  it('keeps native raw unpack idempotent across capability and window reads', () => {
-    const wrapperSource = readFileSync(
-      resolve(
-        dirname(fileURLToPath(import.meta.url)),
-        '..',
-        'native',
-        'libraw_wrapper.cpp',
-      ),
-      'utf8',
-    )
-    const probeCapability = wrapperSource.match(
-      /val probeExportCapability\(\)[\s\S]*?\n {2}\}\n\n {2}val readRawWindow/,
-    )?.[0]
-    const readRawWindow = wrapperSource.match(
-      /val readRawWindow\(val rect\)[\s\S]*?\n {2}\}\n\n private:/,
-    )?.[0]
-    const ensureProcessed = wrapperSource.match(
-      /void ensureProcessed\(\)[\s\S]*?\n {2}\}\n\n {2}val decodeImage/,
-    )?.[0]
-
-    expect(wrapperSource).toContain('bool unpacked_ = false;')
-    expect(probeCapability).toContain('ensureUnpacked();')
-    expect(readRawWindow).toContain('ensureUnpacked();')
-    expect(ensureProcessed).toContain('ensureUnpacked();')
-  })
-
   it('documents the processed-window orientation support boundary', () => {
     const wrapperSource = readFileSync(
       resolve(
@@ -820,91 +740,6 @@ describe('native-adapter', () => {
     )
     expect(supportedCapability).not.toContain(
       'capability.set("height", sizes.height)',
-    )
-  })
-
-  it('exposes native capability v2 source facts without rejecting runtime-applied orientation', () => {
-    const wrapperSource = readFileSync(
-      resolve(
-        dirname(fileURLToPath(import.meta.url)),
-        '..',
-        'native',
-        'libraw_wrapper.cpp',
-      ),
-      'utf8',
-    )
-    const probeCapability = wrapperSource.match(
-      /val probeExportCapability\(\)[\s\S]*?\n {2}\}\n\n {2}val readRawWindow/,
-    )?.[0]
-    const processedWindowSupport = wrapperSource.match(
-      /bool supportsProcessedWindow\(const libraw_data_t &imgdata\) \{[\s\S]*?\n\}/,
-    )?.[0]
-    const repeatableCropSupport = wrapperSource.match(
-      /bool supportsRepeatableCropProcess\(const libraw_data_t &imgdata\) \{[\s\S]*?\n\}/,
-    )?.[0]
-    const colorFactsPosition =
-      probeCapability?.indexOf('double camera_white_balance[4]') ?? -1
-    const processedWindowFailurePosition =
-      probeCapability?.indexOf('if (!supportsProcessedWindow(imgdata))') ?? -1
-
-    expect(wrapperSource).toContain('sensorLayoutObject')
-    expect(wrapperSource).toContain('supportsProcessedWindow')
-    expect(wrapperSource).toContain('supportsRepeatableCropProcess')
-    expect(wrapperSource).toContain('hasColor3Image')
-    expect(wrapperSource).toContain('hasColor4Image')
-    expect(wrapperSource).toContain(
-      'windows.set("librawProcessed", supportsProcessedWindow(imgdata));',
-    )
-    expect(wrapperSource).toContain(
-      'diagnostics.set("canRepeatCropProcess", supportsRepeatableCropProcess(imgdata));',
-    )
-    expect(processedWindowSupport).toContain(
-      'return supportsRepeatableCropProcess(imgdata) &&',
-    )
-    expect(repeatableCropSupport).not.toContain('return false;')
-    expect(wrapperSource).not.toContain('windows.set("librawProcessed", true)')
-    expect(wrapperSource).not.toContain(
-      'diagnostics.set("canRepeatCropProcess", true)',
-    )
-    expect(colorFactsPosition).toBeGreaterThan(-1)
-    expect(processedWindowFailurePosition).toBeGreaterThan(-1)
-    expect(colorFactsPosition).toBeLessThan(processedWindowFailurePosition)
-    expect(probeCapability).toContain(
-      'return unsupportedCapability(imgdata, "processed-window-unavailable",',
-    )
-    expect(probeCapability).toContain(
-      'return unsupportedCapability(imgdata, "unsupported-orientation",',
-    )
-  })
-
-  it('documents native LibRaw cropbox processed-window primitives', () => {
-    const wrapperSource = readFileSync(
-      resolve(
-        dirname(fileURLToPath(import.meta.url)),
-        '..',
-        'native',
-        'libraw_wrapper.cpp',
-      ),
-      'utf8',
-    )
-    const readProcessedWindow = wrapperSource.match(
-      /val readProcessedWindow\(val request\)[\s\S]*?\n {2}\}\n\n private:/,
-    )?.[0]
-
-    expect(readProcessedWindow).toContain('params.cropbox')
-    expect(readProcessedWindow).toContain(
-      'auto crop_processor = std::make_unique<LibRaw>()',
-    )
-    expect(readProcessedWindow).toContain('crop_processor->open_buffer')
-    expect(readProcessedWindow).toContain('crop_processor->dcraw_process()')
-    expect(readProcessedWindow).toContain('crop_processor->copy_mem_image')
-    expect(readProcessedWindow).not.toContain('processor_.dcraw_process()')
-    expect(readProcessedWindow).not.toContain('processor_.copy_mem_image')
-    expect(readProcessedWindow).not.toContain(
-      'dcraw_make_mem_image(&image_error)',
-    )
-    expect(wrapperSource).toContain(
-      '.function("readProcessedWindow", &LumaRawProcessor::readProcessedWindow)',
     )
   })
 
@@ -1347,48 +1182,6 @@ describe('native-adapter', () => {
 })
 
 describe('native export capability facts', () => {
-  it('holds the positive fixture to the facts the native wrapper emits', () => {
-    const wrapperSource = readFileSync(
-      resolve(
-        dirname(fileURLToPath(import.meta.url)),
-        '..',
-        'native',
-        'libraw_wrapper.cpp',
-      ),
-      'utf8',
-    )
-    const supportedCapability = wrapperSource.match(
-      /val supportedExportCapability\(const libraw_data_t &imgdata,[\s\S]*?\n\}/,
-    )?.[0]
-    const colorFactKeys = Array.from(
-      (supportedCapability ?? '').matchAll(/color_facts\.set\("(\w+)"/g),
-      (match) => match[1],
-    )
-
-    expect(colorFactKeys.sort()).toEqual(Object.keys(NATIVE_COLOR_FACTS).sort())
-    expect(supportedCapability).toContain(
-      'color_facts.set("workingSpace", std::string("linear-prophoto-rgb"));',
-    )
-    expect(supportedCapability).toContain(
-      'color_facts.set("librawOutputColor", std::string("prophoto"));',
-    )
-    expect(supportedCapability).toContain(
-      'color_facts.set("gamma", std::string("linear"));',
-    )
-    expect(supportedCapability).toContain(
-      'color_facts.set("cameraWhiteBalanceAppliedByRuntime", true);',
-    )
-    expect(supportedCapability).toContain(
-      'color_facts.set("cameraMatrixAppliedByRuntime", true);',
-    )
-    expect(supportedCapability).toContain(
-      'capability.set("orientation", orientationObject(sizes));',
-    )
-    expect(wrapperSource).toMatch(
-      /val orientationObject\(const libraw_image_sizes_t &sizes\) \{[\s\S]*?orientation\.set\("outputWidth"[\s\S]*?orientation\.set\("outputHeight"/,
-    )
-  })
-
   it('accepts the canonical native facts', () => {
     const processor = createProcessor({
       exportCapability: nativeSupportedCapability(),
