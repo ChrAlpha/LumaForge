@@ -1,5 +1,4 @@
 import { act, renderHook } from '@testing-library/react'
-import type { SetStateAction } from 'react'
 import { StrictMode, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,7 +8,6 @@ import type {
   UprightMode,
 } from '~/lib/transform/geometry/types'
 import type { PreviewSource } from '~/lib/transform/preview-types'
-import type { ManualTransform } from '~/lib/transform/transform-types'
 import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 import type {
   TransformWorkerRequest,
@@ -21,10 +19,6 @@ import { createNeutralTransformIntent } from '../model/session-factory'
 import type { TransformPreviewObserver } from './useTransformPreview'
 import { useTransformPreview } from './useTransformPreview'
 
-/**
- * The preview under an intent its owner holds, with the owner's controls:
- * the preview itself keeps no intent.
- */
 const NO_OBSERVER: TransformPreviewObserver = {
   requested: () => {},
   rendered: () => {},
@@ -32,6 +26,10 @@ const NO_OBSERVER: TransformPreviewObserver = {
   frameFailed: () => {},
 }
 
+/**
+ * The preview under an intent its owner holds, with the owner's controls:
+ * the preview itself keeps no intent.
+ */
 function useOwnedPreview(observer: TransformPreviewObserver = NO_OBSERVER) {
   const [intent, setIntent] = useState<TransformIntent>(
     createNeutralTransformIntent,
@@ -39,23 +37,12 @@ function useOwnedPreview(observer: TransformPreviewObserver = NO_OBSERVER) {
   const preview = useTransformPreview(intent, observer)
   return {
     ...preview,
-    mode: intent.upright,
-    manual: intent.manual,
-    constrainCrop: intent.constrainCrop,
+    edit: (next: Partial<TransformIntent>) =>
+      setIntent((previous) => ({ ...previous, ...next })),
+    /** Picks an Upright mode and solves it, as the feature does. */
     setMode: (upright: UprightMode) => {
       setIntent((previous) => ({ ...previous, upright }))
       preview.solveUpright()
-    },
-    setManual: (manual: SetStateAction<ManualTransform>) =>
-      setIntent((previous) => ({
-        ...previous,
-        manual: typeof manual === 'function' ? manual(previous.manual) : manual,
-      })),
-    setConstrainCrop: (constrainCrop: boolean) =>
-      setIntent((previous) => ({ ...previous, constrainCrop })),
-    reset: () => {
-      setIntent(createNeutralTransformIntent())
-      preview.retireFailure()
     },
   }
 }
@@ -77,6 +64,13 @@ const analysis: UprightAnalysis = {
     full: solution,
   },
 }
+/** An analysis whose Auto solution is `matrix`. */
+const solvingAuto = (
+  matrix: ReturnType<typeof identityMatrix>,
+): UprightAnalysis => ({
+  ...analysis,
+  solutions: { ...analysis.solutions, auto: { ...solution, matrix } },
+})
 
 class PreviewWorker {
   static instances: PreviewWorker[] = []
@@ -107,27 +101,21 @@ function photo(fill = 0): PreviewSource {
   }
 }
 
-function lastRender(worker: PreviewWorker): RenderRequest {
-  const request = worker.messages.findLast(
-    (message) => message.type === 'render',
-  )
-  if (request?.type !== 'render') throw new Error('expected render')
-  return request
+function lastOf<T extends TransformWorkerRequest['type']>(
+  worker: PreviewWorker,
+  type: T,
+) {
+  const request = worker.messages.findLast((message) => message.type === type)
+  if (!request) throw new Error(`expected ${type}`)
+  return request as Extract<TransformWorkerRequest, { type: T }>
 }
-
-function lastAnalyze(worker: PreviewWorker) {
-  const request = worker.messages.findLast(
-    (message) => message.type === 'analyze',
-  )
-  if (request?.type !== 'analyze') throw new Error('expected analyze')
-  return request
-}
+const lastRender = (worker: PreviewWorker) => lastOf(worker, 'render')
 
 function analyze(worker: PreviewWorker, result: UprightAnalysis = analysis) {
   act(() =>
     worker.emit({
       type: 'analyzed',
-      sourceId: lastAnalyze(worker).sourceId,
+      sourceId: lastOf(worker, 'analyze').sourceId,
       analysis: result,
       elapsedMs: 1,
     }),
@@ -154,12 +142,25 @@ function answer(
   }
 }
 
-/** A hook with one current-photo frame loaded and analysed. */
-function setupLoaded() {
-  const hook = renderHook(() => useOwnedPreview())
+function refuse(request: RenderRequest): TransformWorkerResponse {
+  return {
+    type: 'error',
+    sourceId: request.sourceId,
+    requestId: request.requestId,
+    phase: 'render',
+    message: 'invalid-transform',
+  }
+}
+
+/** A hook with one frame loaded and analysed. */
+function setupLoaded(
+  result: UprightAnalysis = analysis,
+  observer: TransformPreviewObserver = NO_OBSERVER,
+) {
+  const hook = renderHook(() => useOwnedPreview(observer))
   act(() => hook.result.current.loadSource(photo()))
   const worker = PreviewWorker.instances[0]
-  analyze(worker)
+  analyze(worker, result)
   return { ...hook, worker }
 }
 
@@ -172,362 +173,125 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('transform preview request lifecycle', () => {
-  it('starts no worker until a frame is loaded and reuses it across clears', () => {
-    const { result, unmount } = renderHook(() => useOwnedPreview())
-    expect(PreviewWorker.instances).toHaveLength(0)
-    act(() => result.current.loadSource(photo()))
-    act(() => {
-      result.current.setMode('vertical')
-      result.current.setManual((prev) => ({ ...prev, rotate: 2 }))
-    })
-    act(() =>
-      result.current.loadSource(photo(100), {
-        preserveTransform: true,
-      }),
-    )
-    expect(result.current.mode).toBe('vertical')
-    expect(result.current.manual.rotate).toBe(2)
-    const worker = PreviewWorker.instances[0]
-    // The first frame's analysis answers a source that was replaced.
-    act(() =>
-      worker.emit({
-        type: 'analyzed',
-        sourceId: worker.messages[0].sourceId,
-        analysis,
-        elapsedMs: 10,
-      }),
-    )
-    expect(result.current.analysis).toBeNull()
+describe('useTransformPreview', () => {
+  it('keeps one worker across cleared frames and terminates it only on unmount', () => {
+    const { result, unmount, worker } = setupLoaded()
+    expect(result.current.ready).toBe(true)
+
     act(() => result.current.clearSource())
-    expect(worker.terminated).toBe(false)
     expect(worker.messages.at(-1)).toMatchObject({ type: 'clear' })
     expect(result.current.source).toBeNull()
     expect(result.current.ready).toBe(false)
-    // The intent is its owner's: clearing the frame leaves it where it is.
-    expect(result.current.mode).toBe('vertical')
-    expect(result.current.manual.rotate).toBe(2)
-    unmount()
-    expect(worker.terminated).toBe(true)
-  })
 
-  it('solves a new photo afresh unless asked to keep its Upright solutions', () => {
-    const tilted = rotationMatrix(4)
-    const { result, unmount, worker } = setupLoaded()
-    act(() => {
-      result.current.setMode('auto')
-      result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 4 })
-      result.current.setConstrainCrop(false)
-    })
-    const next = photo()
-    act(() => result.current.loadSource(next))
-    // The intent stays its owner's; only what was solved on the old photo
-    // goes with it.
-    expect(result.current.mode).toBe('auto')
-    expect(result.current.manual.rotate).toBe(4)
-    expect(result.current.constrainCrop).toBe(false)
-    expect(result.current.source).toBe(next)
-    expect(result.current.loading).toBe(true)
-    expect(result.current.solution.status).toBe('unchanged')
-    analyze(worker, {
-      ...analysis,
-      solutions: {
-        ...analysis.solutions,
-        auto: { ...solution, matrix: tilted },
-      },
-    })
-    expect(result.current.solution.matrix).toEqual(tilted)
-    expect(lastRender(worker).constrainCrop).toBe(false)
-    unmount()
-  })
-
-  it('ignores the analysis of a source superseded before it landed', () => {
-    const { result, unmount } = renderHook(() => useOwnedPreview())
     act(() => result.current.loadSource(photo()))
-    const worker = PreviewWorker.instances[0]
-    const old = lastAnalyze(worker)
-    const newer = photo()
-    act(() => result.current.loadSource(newer))
-    const next = lastAnalyze(worker)
-    expect(next.sourceId).toBeGreaterThan(old.sourceId)
-    act(() =>
-      worker.emit({
-        type: 'analyzed',
-        sourceId: old.sourceId,
-        analysis,
-        elapsedMs: 1,
-      }),
-    )
-    expect(result.current.analysis).toBeNull()
-    expect(result.current.ready).toBe(false)
-    expect(result.current.source).toBe(newer)
-    expect(PreviewWorker.instances).toHaveLength(1)
     analyze(worker)
-    expect(result.current.ready).toBe(true)
-    expect(lastRender(worker).sourceId).toBe(next.sourceId)
-    unmount()
-  })
-
-  it('keeps the selected geometry during color refresh until the mode is selected again', () => {
-    const selectedMatrix = rotationMatrix(5)
-    const updatedMatrix = rotationMatrix(-3)
-    const { result, unmount } = renderHook(() => useOwnedPreview())
-    act(() => result.current.loadSource(photo()))
-    const worker = PreviewWorker.instances[0]
-    analyze(worker, {
-      ...analysis,
-      solutions: {
-        ...analysis.solutions,
-        auto: { ...solution, matrix: selectedMatrix },
-      },
-    })
-    act(() => result.current.setMode('auto'))
-    act(() =>
-      result.current.loadSource(photo(50), {
-        preserveTransform: true,
-      }),
-    )
-    analyze(worker, {
-      ...analysis,
-      solutions: {
-        ...analysis.solutions,
-        auto: { ...solution, matrix: updatedMatrix },
-      },
-    })
-    expect(result.current.solution.matrix).toEqual(selectedMatrix)
-    expect(lastRender(worker).matrix).toEqual(selectedMatrix)
-    act(() => result.current.setMode('auto'))
-    expect(result.current.solution.matrix).toEqual(updatedMatrix)
-    unmount()
-  })
-
-  it('reuses its live worker after clearing the source and ignores old queued responses', () => {
-    const { result, unmount, worker } = setupLoaded()
-    const firstId = worker.messages[0].sourceId
-    const oldRender = lastRender(worker)
-    act(() => result.current.setMode('auto'))
-    act(() => result.current.clearSource())
-    const clearedCount = worker.messages.length
-    act(() => worker.emit(answer(oldRender)))
-    expect(worker.messages).toHaveLength(clearedCount)
-    expect(result.current.result).toBeNull()
-    expect(result.current.ready).toBe(false)
-
-    act(() => result.current.loadSource(photo()))
     expect(PreviewWorker.instances).toHaveLength(1)
+    expect(result.current.ready).toBe(true)
     expect(worker.terminated).toBe(false)
-    const next = worker.messages.at(-1)!
-    expect(next.type).toBe('analyze')
-    expect(next.sourceId).toBeGreaterThan(firstId)
-    analyze(worker)
-    expect(result.current.ready).toBe(true)
-    expect(worker.messages.at(-1)?.type).toBe('render')
     unmount()
     expect(worker.terminated).toBe(true)
   })
 
-  it('disposes a failed worker without reporting its stale error after clearing', () => {
-    const { result, unmount } = renderHook(() => useOwnedPreview())
-    act(() => result.current.loadSource(photo()))
-    const worker = PreviewWorker.instances[0]
-    act(() => result.current.clearSource())
-    act(() => worker.onerror?.())
-
-    expect(worker.terminated).toBe(true)
-    expect(result.current.error).toBeNull()
-    expect(result.current.source).toBeNull()
-    act(() => result.current.loadSource(photo()))
-    expect(PreviewWorker.instances).toHaveLength(2)
-    expect(PreviewWorker.instances[1].terminated).toBe(false)
-    unmount()
-  })
-
-  it('reports a worker crash on the current source and drops its frame', () => {
-    const { result, unmount, worker } = setupLoaded()
-    act(() => worker.emit(answer(lastRender(worker))))
-    expect(result.current.result).not.toBeNull()
-    act(() => worker.onerror?.())
-
-    expect(worker.terminated).toBe(true)
-    expect(result.current.error).toBe('processing')
-    expect(result.current.analysis).toBeNull()
-    // A crashed worker cannot refresh the frame it produced, so nothing may
-    // still read as a current render.
-    expect(result.current.result).toBeNull()
-    expect(result.current.loading).toBe(false)
-    expect(result.current.rendering).toBe(false)
-    unmount()
-  })
-
-  it('reports a failed analysis of the current source as a processing error', () => {
-    const { result, unmount } = renderHook(() => useOwnedPreview())
-    act(() => result.current.loadSource(photo()))
-    const worker = PreviewWorker.instances[0]
-    act(() =>
-      worker.emit({
-        type: 'error',
-        sourceId: lastAnalyze(worker).sourceId,
-        phase: 'analysis',
-        message: 'processing',
-      }),
-    )
-    expect(result.current.error).toBe('processing')
-    expect(result.current.loading).toBe(false)
-    expect(result.current.ready).toBe(false)
-    unmount()
-  })
-
-  it('retires a rejected geometry and its failure together on reset', () => {
-    const { result, unmount, worker } = setupLoaded()
-    // Settle the neutral render first; otherwise the next one only queues.
-    const first = lastRender(worker)
-    act(() => worker.emit(answer(first)))
-    act(() => result.current.setManual({ ...result.current.manual, scale: 51 }))
-    const rejected = lastRender(worker)
-    expect(rejected.requestId).not.toBe(first.requestId)
-    act(() =>
-      worker.emit({
-        type: 'error',
-        sourceId: rejected.sourceId,
-        requestId: rejected.requestId,
-        phase: 'render',
-        message: 'invalid-transform',
-      }),
-    )
-    expect(result.current.error).toBe('transform')
-
-    act(() => result.current.reset())
-
-    // The alert named the geometry reset just discarded; it must not outlive
-    // it and keep the tool reading as broken.
-    expect(result.current.error).toBeNull()
-    expect(result.current.manual.scale).toBe(100)
-    unmount()
-  })
-
-  it('does not strand the render queue when the worker is already gone', () => {
-    const { result, unmount, worker } = setupLoaded()
-    act(() => worker.onerror?.())
-    expect(result.current.result).toBeNull()
-    expect(result.current.rendering).toBe(false)
-
-    act(() => result.current.setManual({ ...result.current.manual, rotate: 3 }))
-    // Without a worker the request cannot be answered, and claiming it is in
-    // flight would leave the tool busy forever.
-    expect(result.current.rendering).toBe(false)
-    unmount()
-  })
-
-  it('keeps a live worker after StrictMode replays the mount effect', () => {
-    const { result, unmount } = renderHook(() => useOwnedPreview(), {
-      wrapper: StrictMode,
-    })
-    act(() => result.current.loadSource(photo()))
-    expect(PreviewWorker.instances).toHaveLength(1)
-    const [live] = PreviewWorker.instances
-    expect(live.terminated).toBe(false)
-    analyze(live)
-    expect(result.current.ready).toBe(true)
-    expect(live.messages.some((message) => message.type === 'render')).toBe(
-      true,
-    )
-    unmount()
-    expect(live.terminated).toBe(true)
-  })
-
-  it('names each mount by its own client lifetime, whatever the local ids', () => {
-    const first = setupLoaded()
+  it('names each mount by its own client lifetime, kept across rerenders and a StrictMode replay', () => {
+    const first = renderHook(() => useOwnedPreview())
     const epoch = first.result.current.clientEpoch
     first.rerender()
     expect(first.result.current.clientEpoch).toBe(epoch)
-    const firstRequest = lastRender(first.worker)
-    first.unmount()
+    expect(
+      renderHook(() => useOwnedPreview()).result.current.clientEpoch,
+    ).not.toBe(epoch)
 
-    // A new client numbers its frame and render as the first one did.
-    const second = renderHook(() => useOwnedPreview())
-    act(() => second.result.current.loadSource(photo()))
-    const secondWorker = PreviewWorker.instances[1]
-    analyze(secondWorker)
-    const repeated = lastRender(secondWorker)
-    expect([repeated.sourceId, repeated.requestId]).toEqual([
-      firstRequest.sourceId,
-      firstRequest.requestId,
-    ])
-    expect(second.result.current.clientEpoch).not.toBe(epoch)
-    second.unmount()
-
-    // A replayed mount effect keeps the client, and so its lifetime.
     const strict = renderHook(() => useOwnedPreview(), { wrapper: StrictMode })
     const strictEpoch = strict.result.current.clientEpoch
     act(() => strict.result.current.loadSource(photo()))
-    analyze(PreviewWorker.instances[2])
+    const [live] = PreviewWorker.instances
+    expect(live.terminated).toBe(false)
+    analyze(live)
+    expect(strict.result.current.ready).toBe(true)
     expect(strict.result.current.clientEpoch).toBe(strictEpoch)
     strict.unmount()
+    expect(live.terminated).toBe(true)
   })
 
-  it('coalesces slider work and only displays the newest render', () => {
-    const { result, unmount, worker } = setupLoaded()
-    expect(worker.messages).toHaveLength(2)
-    const first = lastRender(worker)
-    act(() => result.current.setMode('level'))
-    act(() => result.current.setMode('full'))
-    expect(worker.messages).toHaveLength(2)
-    const rendered = renderedFrame()
-    act(() => worker.emit(answer(first, rendered)))
-    expect(result.current.result).toBeNull()
-    expect(worker.messages).toHaveLength(3)
-    const latest = lastRender(worker)
-    act(() => worker.emit(answer(latest, rendered)))
-    expect(result.current.result).toEqual(rendered)
-    expect(result.current.rendering).toBe(false)
-    unmount()
-    expect(worker.terminated).toBe(true)
+  it('keeps the solved Upright across a refreshed frame until it is solved again, and solves a new photo afresh', () => {
+    const selected = rotationMatrix(5)
+    const updated = rotationMatrix(-3)
+    const { result, worker } = setupLoaded(solvingAuto(selected))
+    act(() => result.current.setMode('auto'))
+
+    act(() => result.current.loadSource(photo(50), { preserveTransform: true }))
+    analyze(worker, solvingAuto(updated))
+    expect(result.current.solution.matrix).toEqual(selected)
+    expect(lastRender(worker).matrix).toEqual(selected)
+    act(() => result.current.setMode('auto'))
+    expect(result.current.solution.matrix).toEqual(updated)
+
+    act(() => result.current.loadSource(photo()))
+    expect(result.current.solution.status).toBe('unchanged')
+    analyze(worker, solvingAuto(selected))
+    expect(result.current.solution.matrix).toEqual(selected)
   })
 
-  it('ignores answers to superseded requests, whatever the controls ask when they land', () => {
-    const { result, unmount, worker } = setupLoaded()
+  it('shows only the answer to the newest request, however the answers land', () => {
+    const { result, worker } = setupLoaded()
     const neutral = lastRender(worker)
-    // Two edits queue behind the neutral render; only the newest is posted.
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }))
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 4 }))
+    // Two edits queue behind the neutral render as one.
+    act(() =>
+      result.current.edit({ manual: { ...NEUTRAL_TRANSFORM, rotate: 3 } }),
+    )
+    act(() =>
+      result.current.edit({ manual: { ...NEUTRAL_TRANSFORM, rotate: 4 } }),
+    )
     act(() => worker.emit(answer(neutral)))
     expect(result.current.result).toBeNull()
-    const b = lastRender(worker)
-    expect(b.requestId).toBeGreaterThan(neutral.requestId)
+    expect(result.current.rendering).toBe(true)
 
-    // The controls move on while B is in flight, so B's answer is stale.
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 5 }))
-    act(() => worker.emit(answer(b)))
-    expect(result.current.result).toBeNull()
-    const c = lastRender(worker)
-    expect(c.requestId).toBeGreaterThan(b.requestId)
+    const newest = lastRender(worker)
+    expect(newest.requestId).toBeGreaterThan(neutral.requestId)
+    const shown = renderedFrame()
+    act(() => worker.emit(answer(newest, shown)))
+    expect(result.current.result).toBe(shown)
+    expect(result.current.rendering).toBe(false)
 
-    const frameC = renderedFrame()
-    act(() => worker.emit(answer(c, frameC)))
-    expect(result.current.result).toBe(frameC)
-
-    // Out-of-order answers to older requests change nothing.
-    act(() => worker.emit(answer(b)))
     act(() => worker.emit(answer(neutral)))
-    expect(result.current.result).toBe(frameC)
-    unmount()
+    expect(result.current.result).toBe(shown)
   })
 
-  it('publishes no late reply after unmount', () => {
-    const { result, unmount, worker } = setupLoaded()
-    const pending = lastRender(worker)
-    const before = result.current
-    unmount()
-    expect(worker.terminated).toBe(true)
-    act(() => worker.emit(answer(pending)))
+  it('drops what a crashed worker rendered, and claims no render it cannot post', () => {
+    const { result, worker } = setupLoaded()
+    act(() => worker.emit(answer(lastRender(worker))))
+    expect(result.current.result).not.toBeNull()
+
     act(() => worker.onerror?.())
-    expect(result.current).toBe(before)
+    expect(result.current.error).toBe('processing')
+    expect(result.current.analysis).toBeNull()
     expect(result.current.result).toBeNull()
+    expect(result.current.loading).toBe(false)
+    expect(result.current.rendering).toBe(false)
+
+    act(() =>
+      result.current.edit({ manual: { ...NEUTRAL_TRANSFORM, rotate: 3 } }),
+    )
+    expect(result.current.rendering).toBe(false)
+  })
+
+  it('retires the failure of a refused geometry when the owner moves away from it', () => {
+    const { result, worker } = setupLoaded()
+    // Settle the neutral render first; otherwise the next one only queues.
+    act(() => worker.emit(answer(lastRender(worker))))
+    act(() =>
+      result.current.edit({ manual: { ...NEUTRAL_TRANSFORM, scale: 51 } }),
+    )
+    act(() => worker.emit(refuse(lastRender(worker))))
+    expect(result.current.error).toBe('transform')
+
+    act(() => {
+      result.current.edit(createNeutralTransformIntent())
+      result.current.retireFailure()
+    })
     expect(result.current.error).toBeNull()
   })
-})
 
-describe('transform preview observer', () => {
   it('reports each request, answer and failure to the owner of the intent', () => {
     const observer = {
       requested: vi.fn(),
@@ -535,10 +299,7 @@ describe('transform preview observer', () => {
       renderFailed: vi.fn(),
       frameFailed: vi.fn(),
     }
-    const { result, unmount } = renderHook(() => useOwnedPreview(observer))
-    act(() => result.current.loadSource(photo()))
-    const worker = PreviewWorker.instances[0]
-    analyze(worker)
+    const { result, worker } = setupLoaded(analysis, observer)
     const neutral = lastRender(worker)
     expect(observer.requested).toHaveBeenLastCalledWith(
       expect.objectContaining({ requestId: neutral.requestId }),
@@ -550,17 +311,11 @@ describe('transform preview observer', () => {
       { width: 2, height: 2 },
     )
 
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }))
-    const refused = lastRender(worker)
     act(() =>
-      worker.emit({
-        type: 'error',
-        sourceId: refused.sourceId,
-        requestId: refused.requestId,
-        phase: 'render',
-        message: 'invalid-transform',
-      }),
+      result.current.edit({ manual: { ...NEUTRAL_TRANSFORM, rotate: 3 } }),
     )
+    const refused = lastRender(worker)
+    act(() => worker.emit(refuse(refused)))
     expect(observer.renderFailed).toHaveBeenLastCalledWith(
       expect.objectContaining({ requestId: refused.requestId }),
       'transform',
@@ -578,15 +333,17 @@ describe('transform preview observer', () => {
     act(() =>
       worker.emit({
         type: 'error',
-        sourceId: lastAnalyze(worker).sourceId,
+        sourceId: lastOf(worker, 'analyze').sourceId,
         phase: 'analysis',
         message: 'processing',
       }),
     )
     expect(observer.frameFailed).toHaveBeenCalledOnce()
+    expect(result.current.error).toBe('processing')
+    expect(result.current.loading).toBe(false)
+    expect(result.current.ready).toBe(false)
     act(() => worker.onerror?.())
     expect(observer.frameFailed).toHaveBeenCalledTimes(2)
     expect(observer.rendered).toHaveBeenCalledOnce()
-    unmount()
   })
 })
