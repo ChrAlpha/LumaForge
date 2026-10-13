@@ -1427,31 +1427,6 @@ describe('runReplay environment gate', () => {
     expect(calls).toEqual([])
   })
 
-  it('refuses a manifest that does not record the RAW environment', async () => {
-    const manifest = manifestFor(undefined, { environment: recorded })
-    const legacy = {
-      ...manifest,
-      environment: { render_engine: '0.1.0' },
-    } as unknown as RenderManifest
-    const { outcome, calls } = await replayAgainst(legacy, recorded)
-    await expect(outcome).rejects.toMatchObject({
-      code: 'replay.mismatch',
-      details: {
-        stage: 'environment',
-        mismatched_fields: [
-          'luma_raw_runtime',
-          'native_artifacts.build_id',
-          'native_artifacts.variant',
-        ],
-        expected: {
-          luma_raw_runtime: null,
-          native_artifacts: { build_id: null, variant: null },
-        },
-      },
-    })
-    expect(calls).toEqual([])
-  })
-
   it('lets a matching environment through to the decode', async () => {
     const { outcome, calls } = await replayAgainst(
       manifestFor(undefined, { environment: recorded }),

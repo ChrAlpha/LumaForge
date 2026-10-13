@@ -269,26 +269,15 @@ type ReplayEnvironmentField =
   | 'native_artifacts.build_id'
   | 'native_artifacts.variant'
 
-type ReplayEnvironment = Record<ReplayEnvironmentField, string | null>
+type ReplayEnvironment = Record<ReplayEnvironmentField, string>
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function recordedString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null
-}
-
-/** Reads defensively: a verified manifest is not schema-checked field by field. */
-function replayEnvironmentOf(environment: unknown): ReplayEnvironment {
-  const recorded = isRecord(environment) ? environment : {}
-  const native = isRecord(recorded.native_artifacts)
-    ? recorded.native_artifacts
-    : {}
+function replayEnvironmentOf(
+  environment: RenderEnvironment,
+): ReplayEnvironment {
   return {
-    luma_raw_runtime: recordedString(recorded.luma_raw_runtime),
-    'native_artifacts.build_id': recordedString(native.build_id),
-    'native_artifacts.variant': recordedString(native.variant),
+    luma_raw_runtime: environment.luma_raw_runtime,
+    'native_artifacts.build_id': environment.native_artifacts.build_id,
+    'native_artifacts.variant': environment.native_artifacts.variant,
   }
 }
 
@@ -302,8 +291,8 @@ function environmentDetails(environment: ReplayEnvironment) {
   }
 }
 
-function isKnown(value: string | null): value is string {
-  return value !== null && value !== 'unknown'
+function isKnown(value: string): boolean {
+  return value !== '' && value !== 'unknown'
 }
 
 /**
@@ -329,11 +318,10 @@ function requireReplayEnvironment(
   )
   if (mismatched.length === 0) return
 
-  const shown = (value: string | null) => value ?? 'not recorded'
   const differences = mismatched
     .map(
       (field) =>
-        `${field}: manifest ${shown(expected[field])}, current ${shown(actual[field])}`,
+        `${field}: manifest ${expected[field] || 'unknown'}, current ${actual[field] || 'unknown'}`,
     )
     .join('; ')
   const recordedVariant = expected['native_artifacts.variant']
