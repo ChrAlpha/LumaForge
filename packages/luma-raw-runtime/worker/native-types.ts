@@ -68,8 +68,6 @@ export type LumaRawNativeDecodeOptions = {
   maxOutputPixels?: number
 }
 
-export type LumaRawNativeExportCapability = LumaRawExportCapability
-
 // The part of a LumaRawCameraCalibrationProfile the native wrapper takes:
 // LibRaw needs the matrix and tone curve, not which profile produced them.
 export type LumaRawNativeCalibrationPayload = {
@@ -84,7 +82,7 @@ export type LumaRawNativeProcessor = {
   ) => LumaRawNativeOpenTimings
   readMetadata: () => LumaRawNativeMetadata
   extractThumbnail: () => LumaRawNativeThumbnail | undefined
-  probeExportCapability: () => LumaRawNativeExportCapability
+  probeExportCapability: () => LumaRawExportCapability
   readProcessedWindow: (
     request: LumaRawProcessedWindowRequest,
   ) => LumaRawProcessedWindow

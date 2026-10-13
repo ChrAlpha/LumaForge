@@ -1,4 +1,6 @@
 import type {
+  JpegWorkerChunk,
+  JpegWorkerErrorResponse,
   JpegWorkerRequest,
   JpegWorkerResponse,
 } from '../worker/runtime-core'
@@ -16,11 +18,8 @@ export type LumaJpegEncoder = {
   abort: () => void
 }
 
-export type LumaJpegChunk = {
-  bytes: Uint8Array
-  byteOffset: number
-  final: boolean
-}
+/** One run of the JPEG stream, at its offset; the last one is final. */
+export type LumaJpegChunk = JpegWorkerChunk
 
 export type LumaJpegRuntime = {
   createEncoder: (options: LumaJpegEncoderOptions) => LumaJpegEncoder
@@ -30,13 +29,6 @@ export type LumaJpegRuntime = {
 export type LumaJpegRuntimeOptions = {
   workerFactory?: () => Worker
   onChunk?: (chunk: LumaJpegChunk) => void | Promise<void>
-}
-
-type JpegWorkerErrorResponse = {
-  id: string
-  ok: false
-  type: JpegWorkerRequest['type']
-  error: { message: string }
 }
 
 type WorkerResponse = JpegWorkerResponse | JpegWorkerErrorResponse

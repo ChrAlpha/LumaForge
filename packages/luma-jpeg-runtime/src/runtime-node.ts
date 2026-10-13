@@ -86,7 +86,6 @@ export async function createLumaJpegRuntimeForNode(
 
   const core = createJpegRuntimeCore(encoderFactoryLoader, {
     onResponse: async (response) => {
-      if (!response.ok) return
       if (response.type !== 'chunk') return
       if (!options.onChunk) return
       // Promise.resolve().then(...) converts a synchronous throw inside
@@ -121,11 +120,7 @@ export async function createLumaJpegRuntimeForNode(
       type,
       payload,
     } as JpegWorkerRequest
-    const response = (await core.handleRequest(request)) as JpegWorkerResponse
-    if (!response.ok) {
-      throw new Error('LUMA_JPEG_RUNTIME_UNEXPECTED_FAILURE')
-    }
-    return response as JpegResponseByType[T]
+    return (await core.handleRequest(request)) as JpegResponseByType[T]
   }
 
   async function drainChunkQueue(): Promise<void> {

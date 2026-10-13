@@ -25,6 +25,14 @@ export type JpegWorkerChunk = {
 
 export type JpegWorkerFinishMode = 'blob' | 'chunks'
 
+/** What the worker posts when a request throws. */
+export type JpegWorkerErrorResponse = {
+  id: string
+  ok: false
+  type: JpegWorkerRequest['type']
+  error: { message: string }
+}
+
 export type JpegWorkerResponse =
   | {
       id: string

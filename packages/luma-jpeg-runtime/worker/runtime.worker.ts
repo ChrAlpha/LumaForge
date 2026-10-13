@@ -1,15 +1,12 @@
 import { loadNativeJpegEncoderFactory } from './load-native-module'
-import type { JpegWorkerRequest, JpegWorkerResponse } from './runtime-core'
+import type {
+  JpegWorkerErrorResponse,
+  JpegWorkerRequest,
+  JpegWorkerResponse,
+} from './runtime-core'
 import { createJpegRuntimeCore } from './runtime-core'
 
 let core: ReturnType<typeof createJpegRuntimeCore> | undefined
-
-type JpegWorkerErrorResponse = {
-  id: string
-  ok: false
-  type: JpegWorkerRequest['type']
-  error: { message: string }
-}
 
 function errorMessage(error: unknown) {
   if (error instanceof Error) {
