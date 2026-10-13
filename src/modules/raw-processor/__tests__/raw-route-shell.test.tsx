@@ -13,6 +13,7 @@ import {
   ONLINE_LUT_SOURCE_STORAGE_KEY,
 } from '../services/look/online-lut-sources'
 import { getLut, getProcessingParams } from '../state/workflow.atoms'
+import { createTestCube } from '../test-support/builders'
 import { resetToDefaults } from '../test-support/workflow-store'
 
 const fetchMock = vi.fn<typeof fetch>()
@@ -66,23 +67,8 @@ function installClipboard() {
   return writeText
 }
 
-function createCube(title: string, size = 17) {
-  const lines = [`TITLE "${title}"`, `LUT_3D_SIZE ${size}`, '']
-  const step = 1 / (size - 1)
-
-  for (let b = 0; b < size; b += 1) {
-    for (let g = 0; g < size; g += 1) {
-      for (let r = 0; r < size; r += 1) {
-        lines.push(`${r * step} ${g * step} ${b * step}`)
-      }
-    }
-  }
-
-  return lines.join('\n')
-}
-
 function encodeCube(title: string) {
-  return new TextEncoder().encode(createCube(title))
+  return new TextEncoder().encode(createTestCube(title))
 }
 
 function restoreNavigatorProperty(property: 'clipboard' | 'share') {

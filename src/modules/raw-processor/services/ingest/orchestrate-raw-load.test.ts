@@ -13,6 +13,7 @@ import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 
 import type { ImageSession } from '../../model/session'
 import { createImageSession } from '../../model/session-factory'
+import { createTestDecodedImage } from '../../test-support/builders'
 import { toCustomStyle } from '../look/style-system'
 import type { RawLoadContext } from './orchestrate-raw-load'
 import { orchestrateRawLoad } from './orchestrate-raw-load'
@@ -183,18 +184,7 @@ function deferred<T>() {
 }
 
 function createDecodedImage(width: number, height: number): DecodedImage {
-  return {
-    width,
-    height,
-    channels: 3,
-    bitsPerChannel: 16,
-    data: new Uint16Array(0),
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
-    source: 'quick',
-    metadata: { width, height },
-    renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-  }
+  return createTestDecodedImage({ width, height, data: new Uint16Array(0) })
 }
 
 function createRuntimeSession(

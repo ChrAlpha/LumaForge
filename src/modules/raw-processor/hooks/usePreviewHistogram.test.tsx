@@ -22,6 +22,7 @@ import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { DisplaySource } from '../model/session'
+import { createTestDecodedImage } from '../test-support/builders'
 import { usePreviewHistogram } from './usePreviewHistogram'
 
 const defaultParams: ColorGraphIntent = {
@@ -39,27 +40,15 @@ function createImage(
   source: 'quick' | 'bounded-hq',
   overrides: Partial<DecodedImage> = {},
 ): DecodedImage {
-  const width = overrides.width ?? 2
-  const height = overrides.height ?? 2
-  const data =
-    overrides.data ??
-    new Uint16Array([
+  return createTestDecodedImage({
+    width: 2,
+    height: 2,
+    data: new Uint16Array([
       0, 0, 0, 65535, 65535, 65535, 32768, 32768, 32768, 16384, 16384, 16384,
-    ])
-
-  return {
-    width,
-    height,
-    channels: 3,
-    bitsPerChannel: 16,
-    data,
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
+    ]),
     source,
-    metadata: { width, height },
-    renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
     ...overrides,
-  }
+  })
 }
 
 function createLutData(profileId = 'test-vlog'): LUTData {

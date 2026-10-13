@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { createFakeLocks } from '../../test-support/web-locks'
 import type { ExportInterruptionEnvironment } from './export-interruption'
 import {
   createExportInterruptionMarkers,
@@ -36,46 +37,6 @@ function createMemoryStorage() {
 }
 
 const OWNER_LOCK_PREFIX = 'lumaforge-export-attempt-owner:'
-
-/**
- * Exclusive `ifAvailable` Web Locks shared by every page; a lock is released
- * when its callback settles, and a page's lifetime lock when the page closes.
- */
-function createFakeLocks() {
-  const held = new Set<string>()
-  const probes: string[] = []
-
-  function forPage(page: string) {
-    return {
-      async request(
-        name: string,
-        options: LockOptions,
-        callback: LockGrantedCallback<unknown>,
-      ) {
-        if (!options.ifAvailable) {
-          throw new Error(`fake lock manager does not queue: ${name}`)
-        }
-        // A page taking its own lifetime lock is not a liveness probe.
-        if (name !== `${OWNER_LOCK_PREFIX}${page}`) probes.push(name)
-        if (held.has(name)) return callback(null)
-        held.add(name)
-        try {
-          return await callback({ name, mode: 'exclusive' } as Lock)
-        } finally {
-          held.delete(name)
-        }
-      },
-    } as unknown as Pick<LockManager, 'request'>
-  }
-
-  return {
-    forPage,
-    probes,
-    closePage(page: string) {
-      held.delete(`${OWNER_LOCK_PREFIX}${page}`)
-    },
-  }
-}
 
 const RAW = { name: 'frame.RAF', size: 42_000_000, lastModified: 1_700_000 }
 

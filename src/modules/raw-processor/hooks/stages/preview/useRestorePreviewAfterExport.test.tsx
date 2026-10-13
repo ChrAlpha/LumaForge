@@ -12,9 +12,12 @@ import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 
 import { createExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
-import { createTransformState } from '../../../model/session-factory'
 import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import type { SetImageSession } from '../../../state/session.atoms'
+import {
+  createTestDecodedImage,
+  createTestSession,
+} from '../../../test-support/builders'
 import { useRestorePreviewAfterExport } from './useRestorePreviewAfterExport'
 
 const toastMock = vi.hoisted(() => ({ toast: { error: vi.fn() } }))
@@ -93,61 +96,26 @@ function createLoadingSession(
   id: string,
   file = new File(['raw'], `${id}.dng`),
 ): ImageSession {
-  return {
+  return createTestSession({
     id,
-    createdAt: 1,
     sourceFile: {
       file,
       name: file.name,
       extension: 'dng',
-      sizeBytes: 3,
       metadata: { width: 400, height: 300 },
-      supportLevel: 'experimental',
-    },
-    previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'idle' },
-      boundedHqPreview: { status: 'idle' },
-      displaySource: 'none',
-      boundedHqRequiredForExport: false,
-    },
-    activeStyle: null,
-    viewState: {
-      mode: 'processed',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
     },
     exportState: {
-      status: 'idle',
       fullResCapability: { status: 'supported', width: 400, height: 300 },
-      retryRecommended: false,
     },
-    exportGeometry: null,
-    transform: createTransformState(id),
-  }
+  })
 }
 
 function createDecodedImage(): DecodedImage {
-  return {
+  return createTestDecodedImage({
     width: 640,
     height: 480,
-    channels: 4,
-    bitsPerChannel: 32,
-    data: new Float32Array(640 * 480 * 4),
-    layout: 'rgba-float32',
-    colorSpace: 'linear-prophoto-rgb',
-    source: 'quick',
     metadata: { width: 640, height: 480, make: 'Fuji', model: 'X-T5' },
-    renderExposure: {
-      ev: 0,
-      multiplier: 1,
-      source: 'identity',
-    },
-    timings: { decodeMs: 12 },
-  }
+  })
 }
 
 function deferred<T>() {

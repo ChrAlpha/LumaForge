@@ -4,23 +4,10 @@ import { act, render, waitFor } from '@testing-library/react'
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
+import { createTestDecodedImage } from '../test-support/builders'
 import { OriginalGpuLayer } from './OriginalGpuLayer'
 
-const decodedImage: DecodedImage = {
-  width: 400,
-  height: 300,
-  channels: 3,
-  bitsPerChannel: 16,
-  data: new Uint16Array(400 * 300 * 3),
-  layout: 'rgb-u16',
-  colorSpace: 'linear-prophoto-rgb',
-  source: 'quick',
-  metadata: {
-    width: 400,
-    height: 300,
-  },
-  renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-}
+const decodedImage = createTestDecodedImage()
 
 /** The accepted descriptor tests pair with an image version. */
 function testFrame(imageVersion: number): DecodedPreviewFrame {

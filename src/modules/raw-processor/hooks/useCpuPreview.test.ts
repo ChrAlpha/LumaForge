@@ -21,6 +21,7 @@ import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
+import { createTestDecodedImage } from '../test-support/builders'
 import type { CpuPreviewParams } from './useCpuPreview'
 import { neutralFrameCacheKey, useCpuPreview } from './useCpuPreview'
 
@@ -91,19 +92,13 @@ function makeDecodedImage(
   source: 'quick' | 'bounded-hq',
   over: Partial<DecodedImage> = {},
 ): DecodedImage {
-  return {
+  return createTestDecodedImage({
     width: 2,
     height: 2,
-    channels: 3,
-    bitsPerChannel: 16,
-    data: new Uint16Array(12),
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
     source,
-    metadata: { width: 2, height: 2 },
     renderExposure: exposure,
     ...over,
-  }
+  })
 }
 
 function makeFrame(

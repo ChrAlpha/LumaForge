@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ImageSession } from '../../model/session'
-import { createTransformState } from '../../model/session-factory'
+import type { TestSessionOverrides } from '../../test-support/builders'
+import { createLoadedTestSession } from '../../test-support/builders'
 import { applyPreviewViewportToSession } from '../compare/view-session-state'
 import {
   DEFAULT_PREVIEW_VIEWPORT,
@@ -17,41 +18,12 @@ const geometry = {
   contentHeight: 300,
 }
 
-function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
-  return {
+function createSession(overrides: TestSessionOverrides = {}): ImageSession {
+  return createLoadedTestSession({
     id: 'session-preview-viewport',
-    createdAt: 1,
-    sourceFile: {
-      name: 'frame.ARW',
-      extension: 'arw',
-      sizeBytes: 12,
-      supportLevel: 'experimental',
-    },
-    previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'ready', width: 800, height: 600 },
-      boundedHqPreview: { status: 'ready', width: 1600, height: 1200 },
-      displaySource: 'bounded-hq',
-      boundedHqRequiredForExport: false,
-    },
-    activeStyle: null,
-    viewState: {
-      mode: 'compare',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
-    exportState: {
-      status: 'ready',
-      fullResCapability: { status: 'supported', width: 1600, height: 1200 },
-      retryRecommended: false,
-    },
-    exportGeometry: null,
-    transform: createTransformState('session-preview-viewport'),
+    exportState: { status: 'ready' },
     ...overrides,
-  }
+  })
 }
 
 describe('preview viewport interaction math', () => {

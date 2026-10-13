@@ -25,6 +25,10 @@ import { useCpuPreview } from '../hooks/useCpuPreview'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
 import { RawProcessorView } from '../RawProcessorView'
 import { getLut, getProcessingParams } from '../state/workflow.atoms'
+import {
+  createTestCubeFile,
+  createTestDecodedImage,
+} from '../test-support/builders'
 import { resetToDefaults } from '../test-support/workflow-store'
 
 const gpu = vi.hoisted(() => ({
@@ -192,35 +196,11 @@ describe('rawProcessorView CPU preview degraded path', () => {
   })
 })
 
-const decodedImage: DecodedImage = {
+const decodedImage = createTestDecodedImage({
   width: 4,
   height: 3,
-  channels: 3,
-  bitsPerChannel: 16,
-  data: new Uint16Array(4 * 3 * 3),
-  layout: 'rgb-u16',
-  colorSpace: 'linear-prophoto-rgb',
   source: 'bounded-hq',
-  metadata: { width: 4, height: 3 },
-  renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-}
-
-function createCubeFile(title: string, name: string, size = 17) {
-  const lines = [`TITLE "${title}"`, `LUT_3D_SIZE ${size}`, '']
-  const step = 1 / (size - 1)
-  for (let b = 0; b < size; b++) {
-    for (let g = 0; g < size; g++) {
-      for (let r = 0; r < size; r++) {
-        lines.push(`${r * step} ${g * step} ${b * step}`)
-      }
-    }
-  }
-  const content = lines.join('\n')
-  // jsdom's File has no text()/arrayBuffer(); the loader reads text instead.
-  return Object.assign(new File([content], name), {
-    text: () => Promise.resolve(content),
-  })
-}
+})
 
 function primaryExecutor() {
   return gpu.executors.find((executor) =>
@@ -274,7 +254,7 @@ describe('rawProcessorView GPU LUT upload failure', () => {
       null
     await act(async () => {
       outcome = await workflowHarness.latest!.loadLUT(
-        createCubeFile('Failing Look', 'failing-look.cube'),
+        createTestCubeFile('Failing Look', 'failing-look.cube'),
       )
     })
     expect(outcome).toBe('loaded')

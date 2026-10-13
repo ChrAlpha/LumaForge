@@ -1,7 +1,9 @@
 import type { DecodedImage } from '~/lib/raw/decoder'
 
-import type { ImageSession } from '../../model/session'
-import { createTransformState } from '../../model/session-factory'
+import {
+  createTestDecodedImage,
+  createTestSession,
+} from '../../test-support/builders'
 import {
   applyBoundedHqPreviewFailure,
   applyBoundedHqPreviewSkipped,
@@ -10,63 +12,17 @@ import {
   applyQuickPreviewFailure,
 } from './preview-session-state'
 
-const baseSession: ImageSession = {
-  id: 'session-1',
-  createdAt: 1,
-  sourceFile: {
-    name: 'frame.ARW',
-    extension: 'arw',
-    sizeBytes: 123,
-    supportLevel: 'experimental',
-  },
-  previewBundle: {
-    embeddedPreview: { status: 'idle' },
-    quickDecodePreview: { status: 'idle' },
-    boundedHqPreview: { status: 'idle' },
-    displaySource: 'none',
-    boundedHqRequiredForExport: false,
-  },
-  activeStyle: null,
-  viewState: {
-    mode: 'processed',
-    compareSplit: 0.5,
-    zoom: 1,
-    panX: 0,
-    panY: 0,
-    fitMode: 'screen',
-  },
-  exportState: {
-    status: 'idle',
-    fullResCapability: { status: 'unknown' },
-    retryRecommended: false,
-  },
-  exportGeometry: null,
-  transform: createTransformState('session-1'),
-}
+const baseSession = createTestSession({ viewState: { mode: 'processed' } })
 
-function createDecodedImage(
-  source: 'quick' | 'bounded-hq',
-  overrides: Partial<DecodedImage> = {},
-): DecodedImage {
-  return {
-    width: source === 'quick' ? 800 : 4000,
-    height: source === 'quick' ? 600 : 3000,
-    channels: 3,
-    bitsPerChannel: 16,
-    data: new Uint16Array([0, 1024, 65535]),
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
+function createDecodedImage(source: 'quick' | 'bounded-hq'): DecodedImage {
+  const [width, height] = source === 'quick' ? [800, 600] : [4000, 3000]
+  return createTestDecodedImage({
+    width,
+    height,
     source,
-    timings: { total: source === 'quick' ? 20 : 120 },
-    metadata: {
-      make: 'Sony',
-      model: 'A7',
-      width: source === 'quick' ? 800 : 4000,
-      height: source === 'quick' ? 600 : 3000,
-    },
-    renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-    ...overrides,
-  }
+    data: new Uint16Array([0, 1024, 65535]),
+    metadata: { make: 'Sony', model: 'A7', width, height },
+  })
 }
 
 describe('preview session state transitions', () => {
@@ -140,10 +96,10 @@ describe('preview session state transitions', () => {
   })
 
   it('keeps an unsupported source fact when decoded camera facts arrive', () => {
-    const unsupportedSession: ImageSession = {
-      ...baseSession,
-      sourceFile: { ...baseSession.sourceFile, supportLevel: 'unsupported' },
-    }
+    const unsupportedSession = createTestSession({
+      viewState: { mode: 'processed' },
+      sourceFile: { supportLevel: 'unsupported' },
+    })
 
     const session = applyPreviewReady(
       unsupportedSession,

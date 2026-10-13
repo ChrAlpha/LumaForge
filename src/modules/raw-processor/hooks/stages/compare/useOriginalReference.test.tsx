@@ -16,6 +16,7 @@ import type { DisplaySource } from '../../../model/session'
 import { createImageSession } from '../../../model/session-factory'
 import type { OriginalReferenceSnapshot } from '../../../services/compare/original-reference-snapshot'
 import { setCurrentSession } from '../../../state/session.atoms'
+import { createTestDecodedImage } from '../../../test-support/builders'
 import { useOriginalReference } from './useOriginalReference'
 
 const rendererMock = vi.hoisted(() => ({
@@ -75,18 +76,7 @@ function createImage(
   source: 'quick' | 'bounded-hq',
   width = 1600,
 ): DecodedImage {
-  return {
-    width,
-    height: 1000,
-    channels: 3,
-    bitsPerChannel: 16,
-    data: new Uint16Array(width * 1000 * 3),
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
-    source,
-    metadata: { width, height: 1000 },
-    renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-  }
+  return createTestDecodedImage({ width, height: 1000, source })
 }
 
 const acceptedFrames = new Map<string, DecodedPreviewFrame>()

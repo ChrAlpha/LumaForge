@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
+import { createTestDecodedImage } from '../test-support/builders'
 import {
   HISTOGRAM_BUSY_SHARE_DENOMINATOR,
   HISTOGRAM_SETTLE_MS,
@@ -77,24 +78,11 @@ const baseParams: ColorGraphIntent = {
 
 /** 1000 x 501: past the full budget, and two bands at the scrub budget. */
 function largeImage(): DecodedImage {
-  const width = 1000
-  const height = 501
-  const data = new Uint16Array(width * height * 3)
-  for (let index = 0; index < data.length; index += 1) {
-    data[index] = (index * 2654435761) & 0xFFFF
+  const image = createTestDecodedImage({ width: 1000, height: 501 })
+  for (let index = 0; index < image.data.length; index += 1) {
+    image.data[index] = (index * 2654435761) & 0xFFFF
   }
-  return {
-    width,
-    height,
-    channels: 3,
-    bitsPerChannel: 16,
-    data,
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
-    source: 'quick',
-    metadata: { width, height },
-    renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-  }
+  return image
 }
 
 let frameSequence = 0

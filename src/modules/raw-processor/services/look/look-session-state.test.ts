@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest'
 
 import { createExportResult } from '../../model/export-result'
 import type { ImageSession, StyleAsset } from '../../model/session'
-import { createTransformState } from '../../model/session-factory'
+import type { TestSessionOverrides } from '../../test-support/builders'
+import { createLoadedTestSession } from '../../test-support/builders'
 import { captureExportResultIdentity } from '../export/export-result-identity'
 import {
   applyActiveLookToSession,
@@ -35,41 +36,8 @@ function createStyle(overrides: Partial<StyleAsset> = {}): StyleAsset {
   }
 }
 
-function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
-  return {
-    id: 'session-look-state',
-    createdAt: 1,
-    sourceFile: {
-      name: 'frame.ARW',
-      extension: 'arw',
-      sizeBytes: 12,
-      supportLevel: 'experimental',
-    },
-    previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'ready', width: 800, height: 600 },
-      boundedHqPreview: { status: 'ready', width: 1600, height: 1200 },
-      displaySource: 'bounded-hq',
-      boundedHqRequiredForExport: false,
-    },
-    activeStyle: null,
-    viewState: {
-      mode: 'compare',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
-    exportState: {
-      status: 'idle',
-      fullResCapability: { status: 'supported', width: 1600, height: 1200 },
-      retryRecommended: false,
-    },
-    exportGeometry: null,
-    transform: createTransformState('session-look-state'),
-    ...overrides,
-  }
+function createSession(overrides: TestSessionOverrides = {}): ImageSession {
+  return createLoadedTestSession({ id: 'session-look-state', ...overrides })
 }
 
 function readyExportState(): ImageSession['exportState'] {

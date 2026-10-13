@@ -3,51 +3,25 @@ import { renderHook } from '@testing-library/react'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { ImageSession, SupportLevel } from '../../../model/session'
-import {
-  createImageSession,
-  createTransformState,
-  toAppSupportLevel,
-} from '../../../model/session-factory'
+import { toAppSupportLevel } from '../../../model/session-factory'
+import type { TestSessionOverrides } from '../../../test-support/builders'
+import { createTestSession } from '../../../test-support/builders'
 import { useRawSourceState } from './useRawSourceState'
 
-function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
-  const sourceFile = new File(['raw'], 'fallback-name.dng')
-
-  return {
+function createSession(overrides: TestSessionOverrides = {}): ImageSession {
+  return createTestSession({
     id: 'session-source',
-    createdAt: 1,
     sourceFile: {
-      file: sourceFile,
+      file: new File(['raw'], 'fallback-name.dng'),
       name: 'frame.dng',
       extension: 'dng',
-      sizeBytes: sourceFile.size,
-      supportLevel: 'experimental',
     },
     previewBundle: {
       embeddedPreview: { status: 'ready', objectUrl: 'blob:embedded' },
-      quickDecodePreview: { status: 'idle' },
-      boundedHqPreview: { status: 'idle' },
       displaySource: 'embedded',
-      boundedHqRequiredForExport: false,
     },
-    activeStyle: null,
-    viewState: {
-      mode: 'processed',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
-    exportState: {
-      status: 'idle',
-      fullResCapability: { status: 'unknown' },
-      retryRecommended: false,
-    },
-    exportGeometry: null,
-    transform: createTransformState('session-source'),
     ...overrides,
-  }
+  })
 }
 
 describe('useRawSourceState', () => {
@@ -71,19 +45,10 @@ describe('useRawSourceState', () => {
   it('falls back to file name and empty source defaults without a displayable session', () => {
     const sourceFile = new File(['raw'], 'file-fallback.dng')
     const session = createSession({
-      sourceFile: {
-        file: sourceFile,
-        name: '',
-        extension: 'dng',
-        sizeBytes: sourceFile.size,
-        supportLevel: 'experimental',
-      },
+      sourceFile: { file: sourceFile, name: '' },
       previewBundle: {
         embeddedPreview: { status: 'idle' },
-        quickDecodePreview: { status: 'idle' },
-        boundedHqPreview: { status: 'idle' },
         displaySource: 'none',
-        boundedHqRequiredForExport: false,
       },
     })
 
@@ -99,37 +64,20 @@ describe('useRawSourceState', () => {
     expect(result.current.progressRecoveryHint).toBeDefined()
   })
 
-  it('passes an unsupported source through instead of calling it experimental', () => {
-    const session = createSession()
-    session.sourceFile.supportLevel = 'unsupported'
-
-    const { result } = renderHook(() =>
-      useRawSourceState({ session, status: 'ready' }),
-    )
-
-    expect(result.current.supportLevel).toBe('unsupported')
-  })
-
-  it('states a legacy official level as experimental, never as certified', () => {
-    const session = createSession()
+  it.each([
+    ['unsupported', 'unsupported'],
     // Older runtimes can still report the published 'official' member.
-    session.sourceFile.supportLevel = 'official' as LumaRawSupportLevel as never
+    ['official', 'experimental'],
+  ] as const)('states a %s source as %s', (runtimeLevel, appLevel) => {
+    const session = createSession({
+      sourceFile: { supportLevel: runtimeLevel as never },
+    })
 
     const { result } = renderHook(() =>
       useRawSourceState({ session, status: 'ready' }),
     )
 
-    expect(result.current.supportLevel).toBe('experimental')
-  })
-
-  it('starts a new or reset source as experimental', () => {
-    const session = createImageSession(new File(['raw'], 'next.ARW'))
-
-    const { result } = renderHook(() =>
-      useRawSourceState({ session, status: 'ready' }),
-    )
-
-    expect(result.current.supportLevel).toBe('experimental')
+    expect(result.current.supportLevel).toBe(appLevel)
   })
 
   it('maps every published runtime support level onto the app levels', () => {

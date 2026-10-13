@@ -11,6 +11,7 @@ import {
 } from '~/lib/profiles/fetch'
 
 import type { ImageSession } from '../../model/session'
+import { createTestCube } from '../../test-support/builders'
 import type { LutLoadContext, LutNotification } from './orchestrate-lut-load'
 import {
   orchestrateLutLoadFromFile,
@@ -33,21 +34,6 @@ vi.mock('@lumaforge/render-engine/manifest', async (importOriginal) => {
     sourceContentIdFromBytes: vi.fn(actual.sourceContentIdFromBytes),
   }
 })
-
-function cubeText(size: number): string {
-  const lines = [`TITLE "Outcome Fixture"`, `LUT_3D_SIZE ${size}`]
-  const step = 1 / (size - 1)
-  for (let b = 0; b < size; b++) {
-    for (let g = 0; g < size; g++) {
-      for (let r = 0; r < size; r++) {
-        lines.push(
-          `${(r * step).toFixed(6)} ${(g * step).toFixed(6)} ${(b * step).toFixed(6)}`,
-        )
-      }
-    }
-  }
-  return lines.join('\n')
-}
 
 function buildCtx() {
   const notifications: LutNotification[] = []
@@ -81,7 +67,7 @@ function buildCtx() {
 
 /** A .cube whose bytes arrive only when the test finishes the read. */
 function deferredCubeFile(name: string) {
-  const bytes = new TextEncoder().encode(cubeText(17))
+  const bytes = new TextEncoder().encode(createTestCube('Outcome Fixture'))
   let finishRead!: () => void
   const read = new Promise<ArrayBuffer>((resolve) => {
     finishRead = () => resolve(bytes.buffer)
@@ -155,7 +141,7 @@ describe('orchestrateOnlineLutLoad outcome', () => {
   it('records the verified catalog hash without hashing the bytes again', async () => {
     const verifiedSha256 = 'b'.repeat(64)
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
-      verifiedCube(cubeText(17), verifiedSha256),
+      verifiedCube(createTestCube('Outcome Fixture'), verifiedSha256),
     )
     const { ctx } = buildCtx()
 
@@ -167,7 +153,7 @@ describe('orchestrateOnlineLutLoad outcome', () => {
   })
 
   it('hashes the bytes of a direct .cube URL, which declares no hash', async () => {
-    const text = cubeText(17)
+    const text = createTestCube('Outcome Fixture')
     vi.mocked(fetchCachedBytesWithLimit).mockResolvedValue(
       new TextEncoder().encode(text),
     )
@@ -194,7 +180,7 @@ describe('orchestrateOnlineLutLoad outcome', () => {
     const controller = new AbortController()
     vi.mocked(fetchVerifiedCubeAsset).mockImplementation(async () => {
       controller.abort()
-      return verifiedCube(cubeText(17))
+      return verifiedCube(createTestCube('Outcome Fixture'))
     })
     const { ctx, notifications } = buildCtx()
 
@@ -211,7 +197,7 @@ describe('orchestrateOnlineLutLoad outcome', () => {
 
   it("returns 'loaded' and applies the LUT when download and parse succeed", async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
-      verifiedCube(cubeText(17)),
+      verifiedCube(createTestCube('Outcome Fixture')),
     )
     const { ctx, notifications } = buildCtx()
 
@@ -232,7 +218,7 @@ describe('orchestrateOnlineLutLoad outcome', () => {
     // The request began before any photo; a photo loaded while it ran.
     const load = orchestrateOnlineLutLoad(entry, undefined, ctx)
     store.session = sessionWithId('photo-a')
-    download.resolve(verifiedCube(cubeText(17)))
+    download.resolve(verifiedCube(createTestCube('Outcome Fixture')))
 
     await expect(load).resolves.toBe('loaded')
     expect(ctx.atoms.setSession).toHaveBeenCalledTimes(1)
@@ -259,7 +245,7 @@ describe('orchestrateOnlineLutLoad outcome', () => {
       async (_asset, options) => {
         options.onProgress?.(8, 64)
         options.onProgress?.(64, 64)
-        return verifiedCube(cubeText(17))
+        return verifiedCube(createTestCube('Outcome Fixture'))
       },
     )
     const { ctx } = buildCtx()
@@ -296,7 +282,7 @@ describe('orchestrateOnlineLutLoad outcome', () => {
 
   it("returns 'aborted' without applying when the workflow refuses the parsed LUT", async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
-      verifiedCube(cubeText(17)),
+      verifiedCube(createTestCube('Outcome Fixture')),
     )
     const { ctx, notifications } = buildCtx()
     vi.mocked(ctx.services.canApplyLoadedLut).mockReturnValue(false)
@@ -358,7 +344,7 @@ describe('lUT contract provenance', () => {
 
   it('applies catalog contracts as metadata without creating a user selection', async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
-      verifiedCube(cubeText(17)),
+      verifiedCube(createTestCube('Outcome Fixture')),
     )
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
     const { ctx } = buildCtx()
@@ -377,7 +363,7 @@ describe('lUT contract provenance', () => {
 
     const { ctx: reloadCtx } = buildCtx()
     await orchestrateLutLoadFromFile(
-      asTextFile(cubeText(17), 'catalog-vlog.cube'),
+      asTextFile(createTestCube('Outcome Fixture'), 'catalog-vlog.cube'),
       reloadCtx,
     )
     expect(lastLoadedLut(reloadCtx).fingerprint).toBe(loaded.fingerprint)
@@ -388,7 +374,7 @@ describe('lUT contract provenance', () => {
 
   it('fails closed on incomplete catalog contracts without writing storage', async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(
-      verifiedCube(cubeText(17)),
+      verifiedCube(createTestCube('Outcome Fixture')),
     )
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
     const { ctx, notifications } = buildCtx()
@@ -414,7 +400,7 @@ describe('lUT contract provenance', () => {
   it('writes a contract choice to the photo in the store, or else to the detached intent', async () => {
     const { ctx, store } = buildCtx()
     await orchestrateLutLoadFromFile(
-      asTextFile(cubeText(17), 'user-look.cube'),
+      asTextFile(createTestCube('Outcome Fixture'), 'user-look.cube'),
       ctx,
     )
     vi.mocked(ctx.atoms.setSession).mockClear()
@@ -433,7 +419,7 @@ describe('lUT contract provenance', () => {
   it('persists explicit user selections and restores them on reload', async () => {
     const { ctx } = buildCtx()
     await orchestrateLutLoadFromFile(
-      asTextFile(cubeText(17), 'user-look.cube'),
+      asTextFile(createTestCube('Outcome Fixture'), 'user-look.cube'),
       ctx,
     )
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
@@ -463,7 +449,7 @@ describe('lUT contract provenance', () => {
 
     const { ctx: reloadCtx } = buildCtx()
     await orchestrateLutLoadFromFile(
-      asTextFile(cubeText(17), 'renamed-look.cube'),
+      asTextFile(createTestCube('Outcome Fixture'), 'renamed-look.cube'),
       reloadCtx,
     )
     expect(lastLoadedLut(reloadCtx).profileResolution).toMatchObject({
@@ -476,7 +462,7 @@ describe('lUT contract provenance', () => {
 
 describe('orchestrateLutLoadFromFile outcome', () => {
   it('records the hash of the file bytes', async () => {
-    const text = cubeText(17)
+    const text = createTestCube('Outcome Fixture')
     const { ctx } = buildCtx()
 
     await orchestrateLutLoadFromFile(asTextFile(text, 'local.cube'), ctx)
@@ -485,7 +471,7 @@ describe('orchestrateLutLoadFromFile outcome', () => {
   })
 
   it("returns 'loaded' for a valid .cube file", async () => {
-    const file = asTextFile(cubeText(17), 'fixture.cube')
+    const file = asTextFile(createTestCube('Outcome Fixture'), 'fixture.cube')
     const { ctx } = buildCtx()
 
     const outcome = await orchestrateLutLoadFromFile(file, ctx)
@@ -499,7 +485,7 @@ describe('orchestrateLutLoadFromFile outcome', () => {
     vi.mocked(ctx.services.canApplyLoadedLut).mockReturnValue(false)
 
     const outcome = await orchestrateLutLoadFromFile(
-      asTextFile(cubeText(17), 'fixture.cube'),
+      asTextFile(createTestCube('Outcome Fixture'), 'fixture.cube'),
       ctx,
     )
 
@@ -640,15 +626,12 @@ describe('orchestrateProfileSelection against the stored LUT', () => {
   async function loadTwoLuts() {
     const built = buildCtx()
     await orchestrateLutLoadFromFile(
-      asTextFile(cubeText(17), 'a.cube'),
+      asTextFile(createTestCube('Outcome Fixture'), 'a.cube'),
       built.ctx,
     )
     const lutA = built.store.lut!
     await orchestrateLutLoadFromFile(
-      asTextFile(
-        cubeText(17).replace('Outcome Fixture', 'Second Fixture'),
-        'b.cube',
-      ),
+      asTextFile(createTestCube('Second Fixture'), 'b.cube'),
       built.ctx,
     )
     const lutB = built.store.lut!
@@ -712,7 +695,10 @@ describe('orchestrateProfileSelection notifications', () => {
 
   it('reports an incomplete contract choice by the profile it named', async () => {
     const { ctx, notifications } = buildCtx()
-    await orchestrateLutLoadFromFile(asTextFile(cubeText(17), 'a.cube'), ctx)
+    await orchestrateLutLoadFromFile(
+      asTextFile(createTestCube('Outcome Fixture'), 'a.cube'),
+      ctx,
+    )
     vi.mocked(ctx.atoms.setLut).mockClear()
     notifications.length = 0
 
@@ -731,7 +717,10 @@ describe('orchestrateProfileSelection notifications', () => {
 
   it('reports nothing for a choice that applies', async () => {
     const { ctx, notifications } = buildCtx()
-    await orchestrateLutLoadFromFile(asTextFile(cubeText(17), 'a.cube'), ctx)
+    await orchestrateLutLoadFromFile(
+      asTextFile(createTestCube('Outcome Fixture'), 'a.cube'),
+      ctx,
+    )
     notifications.length = 0
 
     orchestrateProfileSelection('display-srgb', ctx)

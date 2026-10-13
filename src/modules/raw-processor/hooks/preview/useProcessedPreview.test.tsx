@@ -12,6 +12,7 @@ import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
+import { createTestDecodedImage } from '../../test-support/builders'
 import type {
   ProcessedPreviewOptions,
   ProcessedPreviewPipeline,
@@ -61,20 +62,7 @@ const defaultParams: ProcessingParams = {
 const defaultColor = pickColorGraphIntent(defaultParams)
 
 function decodedImage(overrides: Partial<DecodedImage> = {}): DecodedImage {
-  const width = overrides.width ?? 400
-  const height = overrides.height ?? 300
-  return {
-    width,
-    height,
-    channels: 3,
-    bitsPerChannel: 16,
-    data: new Uint16Array(width * height * 3),
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
-    metadata: { width, height },
-    renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-    ...overrides,
-  }
+  return createTestDecodedImage({ source: undefined, ...overrides })
 }
 
 /** An accepted frame descriptor as the workflow's producer would mint it. */

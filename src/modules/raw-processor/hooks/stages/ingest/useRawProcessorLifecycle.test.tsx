@@ -4,8 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { ImageSession } from '../../../model/session'
-import { createTransformState } from '../../../model/session-factory'
 import type { SetImageSession } from '../../../state/session.atoms'
+import {
+  createTestDecodedImage,
+  createTestSession,
+} from '../../../test-support/builders'
 import { useEmbeddedPreviewUrlLifecycle } from '../preview/useEmbeddedPreviewUrlLifecycle'
 import { useRawProcessorLifecycle } from './useRawProcessorLifecycle'
 
@@ -14,54 +17,7 @@ afterEach(() => {
 })
 
 function createSession(id = 'pending-session'): ImageSession {
-  return {
-    id,
-    createdAt: 1,
-    sourceFile: {
-      name: 'frame.dng',
-      extension: 'dng',
-      sizeBytes: 3,
-      supportLevel: 'experimental',
-    },
-    previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'idle' },
-      boundedHqPreview: { status: 'idle' },
-      displaySource: 'none',
-      boundedHqRequiredForExport: false,
-    },
-    activeStyle: null,
-    viewState: {
-      mode: 'processed',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
-    exportState: {
-      status: 'idle',
-      fullResCapability: { status: 'unknown' },
-      retryRecommended: false,
-    },
-    exportGeometry: null,
-    transform: createTransformState(id),
-  }
-}
-
-function createDecodedImage(): DecodedImage {
-  return {
-    width: 1,
-    height: 1,
-    channels: 4,
-    bitsPerChannel: 32,
-    data: new Float32Array(4),
-    layout: 'rgba-float32',
-    colorSpace: 'linear-prophoto-rgb',
-    source: 'quick',
-    metadata: { width: 1, height: 1 },
-    renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-  }
+  return createTestSession({ id })
 }
 
 function withEmbeddedPreview(
@@ -72,13 +28,7 @@ function withEmbeddedPreview(
     ...session,
     previewBundle: {
       ...session.previewBundle,
-      embeddedPreview: {
-        status: 'ready',
-        objectUrl,
-        width: 1600,
-        height: 1200,
-        mimeType: 'image/jpeg',
-      },
+      embeddedPreview: { status: 'ready', objectUrl },
       displaySource: 'embedded',
     },
   }
@@ -109,7 +59,7 @@ function renderLifecycle(
     current: refs.pendingLoadSessionId ?? null,
   }
   const decodedImageRef = {
-    current: createDecodedImage() as DecodedImage | null,
+    current: createTestDecodedImage() as DecodedImage | null,
   }
   const previewCopyCanvasRef = { current: null as HTMLCanvasElement | null }
   // The mount owns the session it published: the pending load, or the
@@ -182,7 +132,7 @@ describe('useRawProcessorLifecycle', () => {
     const isMountedRef = { current: false }
     const runtimeWorkSessionIdRef = { current: 'runtime-work' }
     const pendingLoadSessionIdRef = { current: 'pending-session' }
-    const decodedImageRef = { current: createDecodedImage() }
+    const decodedImageRef = { current: createTestDecodedImage() }
     const previewCopyCanvasRef = {
       current: document.createElement('canvas') as HTMLCanvasElement | null,
     }
@@ -348,7 +298,7 @@ describe('useRawProcessorLifecycle', () => {
       const embeddedPreviewUrlRef = { current: refs.embeddedPreviewUrl }
       const ownedSessionIdRef = { current: refs.ownedSessionId }
       const decodedImageRef = {
-        current: createDecodedImage() as DecodedImage | null,
+        current: createTestDecodedImage() as DecodedImage | null,
       }
       const setStatus = vi.fn()
       const rendered = renderHook(() => {
@@ -495,7 +445,7 @@ describe('useRawProcessorLifecycle', () => {
       // Another owner's source lands in the store before the real unmount.
       const replacement = createSession('replacement-session')
       lifecycle.store.session = replacement
-      lifecycle.decodedImageRef.current = createDecodedImage()
+      lifecycle.decodedImageRef.current = createTestDecodedImage()
 
       lifecycle.unmount()
       await settleDeparture()

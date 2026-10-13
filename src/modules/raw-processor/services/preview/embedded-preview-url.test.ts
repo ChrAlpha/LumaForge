@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ImageSession } from '../../model/session'
-import { createTransformState } from '../../model/session-factory'
+import { createTestSession } from '../../test-support/builders'
 import {
   clearEmbeddedPreviewUrlFromSession,
   createEmbeddedPreviewObjectUrl,
@@ -18,39 +18,10 @@ function createSession(
   },
   displaySource: ImageSession['previewBundle']['displaySource'] = 'embedded',
 ): ImageSession {
-  return {
+  return createTestSession({
     id: 'session-embedded-preview',
-    createdAt: 1,
-    sourceFile: {
-      name: 'frame.ARW',
-      extension: 'arw',
-      sizeBytes: 12,
-      supportLevel: 'experimental',
-    },
-    previewBundle: {
-      embeddedPreview,
-      quickDecodePreview: { status: 'idle' },
-      boundedHqPreview: { status: 'idle' },
-      displaySource,
-      boundedHqRequiredForExport: false,
-    },
-    activeStyle: null,
-    viewState: {
-      mode: 'compare',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
-    exportState: {
-      status: 'idle',
-      fullResCapability: { status: 'probing' },
-      retryRecommended: false,
-    },
-    exportGeometry: null,
-    transform: createTransformState('session-embedded-preview'),
-  }
+    previewBundle: { embeddedPreview, displaySource },
+  })
 }
 
 describe('embedded preview URL lifecycle', () => {

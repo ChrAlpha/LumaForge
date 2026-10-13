@@ -27,6 +27,7 @@ import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
 import { useRawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import { captureTransformSource } from '../services/preview/capture-transform-source'
+import { createTestDecodedImage } from '../test-support/builders'
 import { RawCpuPreviewStage } from './RawCpuPreviewStage'
 
 vi.mock(
@@ -145,18 +146,7 @@ function answerTransform() {
   })
 }
 
-const image = {
-  width: 80,
-  height: 60,
-  channels: 3,
-  bitsPerChannel: 16,
-  data: new Uint16Array(80 * 60 * 3),
-  layout: 'rgb-u16',
-  colorSpace: 'linear-prophoto-rgb',
-  source: 'quick',
-  metadata: { width: 80, height: 60 },
-  renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-} as DecodedImage
+const image = createTestDecodedImage({ width: 80, height: 60 })
 
 function acceptedFrame(
   over: Partial<DecodedPreviewFrame> &

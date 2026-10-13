@@ -2,53 +2,21 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ImageSession } from '../../../model/session'
-import { createTransformState } from '../../../model/session-factory'
 import type { SetImageSession } from '../../../state/session.atoms'
+import { createTestSession } from '../../../test-support/builders'
 import { useEmbeddedPreviewUrlLifecycle } from './useEmbeddedPreviewUrlLifecycle'
 
 function createSession(
   id = 'session-embedded-preview',
   embeddedObjectUrl = 'blob:embedded-preview',
 ): ImageSession {
-  return {
+  return createTestSession({
     id,
-    createdAt: 1,
-    sourceFile: {
-      name: 'frame.ARW',
-      extension: 'arw',
-      sizeBytes: 12,
-      supportLevel: 'experimental',
-    },
     previewBundle: {
-      embeddedPreview: {
-        status: 'ready',
-        objectUrl: embeddedObjectUrl,
-        width: 1600,
-        height: 1200,
-        mimeType: 'image/jpeg',
-      },
-      quickDecodePreview: { status: 'idle' },
-      boundedHqPreview: { status: 'idle' },
+      embeddedPreview: { status: 'ready', objectUrl: embeddedObjectUrl },
       displaySource: 'embedded',
-      boundedHqRequiredForExport: false,
     },
-    activeStyle: null,
-    viewState: {
-      mode: 'processed',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
-    exportState: {
-      status: 'idle',
-      fullResCapability: { status: 'probing' },
-      retryRecommended: false,
-    },
-    exportGeometry: null,
-    transform: createTransformState(id),
-  }
+  })
 }
 
 function applySessionUpdate(currentSessionRef: {

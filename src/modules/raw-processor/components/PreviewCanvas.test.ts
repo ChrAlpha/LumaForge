@@ -20,6 +20,7 @@ import {
   syncRawUploadInput,
 } from '../services/preview/preview-canvas-helpers'
 import { DEFAULT_PREVIEW_VIEWPORT } from '../services/preview/preview-viewport'
+import { createTestDecodedImage } from '../test-support/builders'
 import { PreviewCanvas } from './PreviewCanvas'
 
 const pipelineMock = vi.hoisted(() => ({
@@ -160,20 +161,7 @@ const defaultParams: ProcessingParams = {
 
 const defaultColor = pickColorGraphIntent(defaultParams)
 
-const decodedImage: DecodedImage = {
-  width: 400,
-  height: 300,
-  channels: 3,
-  bitsPerChannel: 16,
-  data: new Uint16Array(400 * 300 * 3),
-  layout: 'rgb-u16',
-  colorSpace: 'linear-prophoto-rgb',
-  metadata: {
-    width: 400,
-    height: 300,
-  },
-  renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-}
+const decodedImage = createTestDecodedImage({ source: undefined })
 
 /** An accepted frame descriptor as the workflow's producer would mint it. */
 function frameDescriptor({

@@ -54,6 +54,13 @@ import { previewHistogramStateAtom } from '../state/histogram.atoms'
 import { getDetachedPreviewView } from '../state/preview-view.atoms'
 import { currentSessionAtom } from '../state/session.atoms'
 import { getProcessingParams } from '../state/workflow.atoms'
+import {
+  createDeferredTestCubeFile,
+  createTestCube,
+  createTestCubeFile,
+  createTestDecodedImage,
+} from '../test-support/builders'
+import { createFakeLocks } from '../test-support/web-locks'
 import { resetToDefaults } from '../test-support/workflow-store'
 import { acceptTransformGeometry } from './transform-session.fixture'
 import { usePublishedPreviewHistogram } from './usePublishedPreviewHistogram'
@@ -231,48 +238,14 @@ function createDecodedImage(
   source: 'quick' | 'bounded-hq',
   overrides: Partial<DecodedImage> = {},
 ): DecodedImage {
-  const isQuick = source === 'quick'
-
-  return {
-    width: isQuick ? 800 : 4000,
-    height: isQuick ? 600 : 3000,
-    channels: 3,
-    bitsPerChannel: 16,
+  const [width, height] = source === 'quick' ? [800, 600] : [4000, 3000]
+  return createTestDecodedImage({
+    width,
+    height,
     data: new Uint16Array([0, 1024, 65535]),
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
     source,
-    timings: { total: isQuick ? 20 : 120 },
-    metadata: {
-      make: 'Sony',
-      model: 'A7',
-      width: isQuick ? 800 : 4000,
-      height: isQuick ? 600 : 3000,
-    },
-    renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
+    metadata: { make: 'Sony', model: 'A7', width, height },
     ...overrides,
-  }
-}
-
-function createCube(title: string, size = 17) {
-  const lines = [`TITLE "${title}"`, `LUT_3D_SIZE ${size}`, '']
-  const step = 1 / (size - 1)
-
-  for (let b = 0; b < size; b++) {
-    for (let g = 0; g < size; g++) {
-      for (let r = 0; r < size; r++) {
-        lines.push(`${r * step} ${g * step} ${b * step}`)
-      }
-    }
-  }
-
-  return lines.join('\n')
-}
-
-function createCubeFile(title: string, name: string) {
-  const content = createCube(title)
-  return Object.assign(new File([content], name), {
-    text: () => Promise.resolve(content),
   })
 }
 
@@ -285,58 +258,21 @@ function createContractCubeFile(
 ) {
   const content = [
     ...metadata.map((entry) => `# ${entry}`),
-    createCube(title, size),
+    createTestCube(title, size),
   ].join('\n')
   return Object.assign(new File([content], name), {
     text: () => Promise.resolve(content),
   })
 }
 
-/** A .cube whose bytes arrive only when the test finishes the read. */
-function createDeferredCubeFile(title: string, name: string) {
-  const bytes = new TextEncoder().encode(createCube(title))
-  const read = deferred<ArrayBuffer>()
-  const file = new File([bytes], name)
-  Object.defineProperty(file, 'arrayBuffer', { value: () => read.promise })
-  return { file, finishRead: () => read.resolve(bytes.buffer) }
-}
-
 const MARKER_PREFIX = 'lumaforge.export-interruption.v1.'
-const OWNER_LOCK_PREFIX = 'lumaforge-export-attempt-owner:'
-
-/** Exclusive `ifAvailable` Web Locks shared by the pages of one test. */
-function createFakeLocks() {
-  const held = new Set<string>()
-  const locks = {
-    async request(
-      name: string,
-      _options: LockOptions,
-      callback: LockGrantedCallback<unknown>,
-    ) {
-      if (held.has(name)) return callback(null)
-      held.add(name)
-      try {
-        return await callback({ name, mode: 'exclusive' } as Lock)
-      } finally {
-        held.delete(name)
-      }
-    },
-  } as unknown as Pick<LockManager, 'request'>
-  return {
-    locks,
-    closePage(page: string) {
-      held.delete(`${OWNER_LOCK_PREFIX}${page}`)
-    },
-  }
-}
-
 let fakeLocks = createFakeLocks()
 
 function createMarkerPage(page: string) {
   let attempts = 0
   return createExportInterruptionMarkers({
     getStorage: () => localStorage,
-    getLocks: () => fakeLocks.locks,
+    getLocks: () => fakeLocks.forPage(page),
     createId: (kind) =>
       kind === 'owner' ? page : `${page}-attempt-${++attempts}`,
   })
@@ -1238,7 +1174,7 @@ describe('useRawWorkflow embedded preview state', () => {
         await result.current.loadFile(new File(['raw'], 'first.ARW'))
       })
       const first = jotaiStore.get(currentSessionAtom)
-      const pick = createDeferredCubeFile('Second Look', 'second-look.cube')
+      const pick = createDeferredTestCubeFile('Second Look', 'second-look.cube')
 
       // Both commands come from the first source's render and run before
       // React renders the replacement, so the pick belongs to the source
@@ -1270,7 +1206,7 @@ describe('useRawWorkflow embedded preview state', () => {
       const lookStrength = renderLookStrength()
       await act(async () => {
         await result.current.loadLUT(
-          createCubeFile('Strength Look', 'strength.cube'),
+          createTestCubeFile('Strength Look', 'strength.cube'),
         )
       })
       await act(async () => {
@@ -1305,7 +1241,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await act(async () => {
         await result.current.loadFile(new File(['raw'], 'first.ARW'))
       })
-      const pick = createDeferredCubeFile('Reset Look', 'reset-look.cube')
+      const pick = createDeferredTestCubeFile('Reset Look', 'reset-look.cube')
 
       const { reset, loadLUT } = result.current
       let lutLoad!: Promise<LutLoadOutcome>
@@ -2697,7 +2633,7 @@ describe('useRawWorkflow embedded preview state', () => {
     })
     await act(async () => {
       await result.current.loadLUT(
-        createCubeFile('Client Secret Sauce', 'client-look.cube'),
+        createTestCubeFile('Client Secret Sauce', 'client-look.cube'),
       )
     })
     act(() => {
@@ -3209,7 +3145,9 @@ describe('useRawWorkflow embedded preview state', () => {
       const { result } = renderHook(() => useRawWorkflow(), { wrapper })
       const lookStrength = renderLookStrength()
       await act(async () => {
-        await result.current.loadLUT(createCubeFile('Client Look', 'look.cube'))
+        await result.current.loadLUT(
+          createTestCubeFile('Client Look', 'look.cube'),
+        )
       })
       await act(async () => {
         await result.current.loadFile(new File(['raw'], 'first.ARW'))
@@ -3257,7 +3195,9 @@ describe('useRawWorkflow embedded preview state', () => {
       const { result } = renderHook(() => useRawWorkflow(), { wrapper })
       const lookStrength = renderLookStrength()
       await act(async () => {
-        await result.current.loadLUT(createCubeFile('Client Look', 'look.cube'))
+        await result.current.loadLUT(
+          createTestCubeFile('Client Look', 'look.cube'),
+        )
       })
       await act(async () => {
         await result.current.loadFile(new File(['raw'], 'first.ARW'))

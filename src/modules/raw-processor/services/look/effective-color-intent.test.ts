@@ -10,7 +10,7 @@ import {
 import { describe, expect, it } from 'vitest'
 
 import type { ImageSession, StyleAsset } from '../../model/session'
-import { createTransformState } from '../../model/session-factory'
+import { createTestSession } from '../../test-support/builders'
 import {
   projectEffectiveColorIntent,
   projectSessionLookIntensity,
@@ -28,39 +28,11 @@ const storedIntent: ColorGraphIntent = Object.freeze({
 })
 
 function createSession(activeStyle: StyleAsset | null): ImageSession {
-  return {
+  return createTestSession({
     id: 'effective-intent-session',
-    createdAt: 1,
-    sourceFile: {
-      name: 'frame.ARW',
-      extension: 'arw',
-      sizeBytes: 12,
-      supportLevel: 'experimental',
-    },
-    previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'ready', width: 800, height: 600 },
-      boundedHqPreview: { status: 'ready', width: 800, height: 600 },
-      displaySource: 'bounded-hq',
-      boundedHqRequiredForExport: false,
-    },
     activeStyle,
-    viewState: {
-      mode: 'compare',
-      compareSplit: 0.3,
-      zoom: 2,
-      panX: 10,
-      panY: 20,
-      fitMode: 'screen',
-    },
-    exportState: {
-      status: 'idle',
-      fullResCapability: { status: 'supported', width: 4000, height: 3000 },
-      retryRecommended: false,
-    },
-    exportGeometry: null,
-    transform: createTransformState('effective-intent-session'),
-  }
+    viewState: { compareSplit: 0.3, zoom: 2, panX: 10, panY: 20 },
+  })
 }
 
 function customLook(currentIntensity: number): StyleAsset {

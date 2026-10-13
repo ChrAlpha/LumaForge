@@ -6,14 +6,13 @@ import type { PreviewBackendState } from '~/lib/preview/gpu-backend'
 
 import { createExportResult } from '../../model/export-result'
 import type { ImageSession } from '../../model/session'
-import { createTransformState } from '../../model/session-factory'
-import { captureExportResultIdentity } from '../export/export-result-identity'
-import type { TransformEvent } from '../transform/transform-state'
+import type { TestSessionOverrides } from '../../test-support/builders'
 import {
-  deriveTransformStatus,
-  heldTransformGeometry,
-  reduceTransformState,
-} from '../transform/transform-state'
+  createLoadedTestSession,
+  transformAt,
+} from '../../test-support/builders'
+import { captureExportResultIdentity } from '../export/export-result-identity'
+import { heldTransformGeometry } from '../transform/transform-state'
 import type { SessionViewCommand } from './view-session-state'
 import {
   applyCompareSplitToSession,
@@ -24,41 +23,10 @@ import {
   sessionViewCommandForMode,
 } from './view-session-state'
 
-function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
-  return {
-    id: 'session-view-state',
-    createdAt: 1,
-    sourceFile: {
-      name: 'frame.ARW',
-      extension: 'arw',
-      sizeBytes: 12,
-      supportLevel: 'experimental',
-    },
-    previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'ready', width: 800, height: 600 },
-      boundedHqPreview: { status: 'ready', width: 1600, height: 1200 },
-      displaySource: 'bounded-hq',
-      boundedHqRequiredForExport: false,
-    },
-    activeStyle: null,
-    viewState: {
-      mode: 'compare',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
-    exportState: {
-      status: 'idle',
-      fullResCapability: { status: 'supported', width: 1600, height: 1200 },
-      retryRecommended: false,
-    },
-    exportGeometry: null,
-    transform: createTransformState('session-view-state'),
-    ...overrides,
-  }
+const SESSION_ID = 'session-view-state'
+
+function createSession(overrides: TestSessionOverrides = {}): ImageSession {
+  return createLoadedTestSession({ id: SESSION_ID, ...overrides })
 }
 
 describe('view session state transitions', () => {
@@ -130,11 +98,7 @@ function allowed(
 function withExportState(
   exportState: Partial<ImageSession['exportState']>,
 ): ImageSession {
-  const session = createSession()
-  return {
-    ...session,
-    exportState: { ...session.exportState, ...exportState },
-  }
+  return createSession({ exportState })
 }
 
 const ACTIVE_PLAN: NonNullable<ImageSession['exportState']['activePlan']> = {
@@ -157,7 +121,7 @@ const RESULT = createExportResult({
   identity: captureExportResultIdentity({
     resultKind: 'full-resolution',
     attemptId: 'attempt-view-state',
-    sessionId: 'session-view-state',
+    sessionId: SESSION_ID,
     sourceFile: new File(['raw'], 'frame.ARW'),
     intent: {
       styleKind: 'none',
@@ -170,43 +134,6 @@ const RESULT = createExportResult({
     geometry: null,
   }),
 })
-
-/** A Transform whose edit the preview answered: a committed geometry. */
-function acceptedTransform(sourceId: string) {
-  const geometry = {
-    matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
-    constrainCrop: true,
-  }
-  const neutral = createTransformState(sourceId)
-  const events: TransformEvent[] = [
-    {
-      type: 'edit',
-      sourceId,
-      intent: { manual: { ...neutral.intent.manual, rotate: 2 } },
-    },
-    { type: 'capture', sourceId, captureKey: 'k', clientEpoch: 1 },
-    {
-      type: 'request',
-      sourceId,
-      captureKey: 'k',
-      clientEpoch: 1,
-      requestId: 1,
-      geometry,
-    },
-    {
-      type: 'rendered',
-      sourceId,
-      captureKey: 'k',
-      clientEpoch: 1,
-      requestId: 1,
-      geometry,
-      frame: { width: 800, height: 600 },
-    },
-  ]
-  const state = events.reduce(reduceTransformState, neutral)
-  expect(deriveTransformStatus(state)).toBe('accepted')
-  return state
-}
 
 describe('session view command policy', () => {
   it('maps each view mode to the command it asks for', () => {
@@ -222,7 +149,7 @@ describe('session view command policy', () => {
   })
 
   it('refuses the original and the split for a committed Transform', () => {
-    const transform = acceptedTransform('session-view-state')
+    const transform = transformAt('accepted', SESSION_ID)
     const session = createSession({
       transform,
       exportGeometry: heldTransformGeometry(transform),

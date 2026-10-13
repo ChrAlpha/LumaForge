@@ -28,7 +28,6 @@ import { fetchVerifiedCubeAsset } from '~/lib/profiles/fetch'
 
 import { createExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
-import { createTransformState } from '../../../model/session-factory'
 import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import { clearExportResultState } from '../../../services/export/export-state'
 import { projectEffectiveColorIntent } from '../../../services/look/effective-color-intent'
@@ -49,6 +48,12 @@ import {
   setLut as setStoredLut,
   setProcessingParams,
 } from '../../../state/workflow.atoms'
+import {
+  createDeferredTestCubeFile,
+  createTestCube,
+  createTestCubeFile,
+  createTestSession,
+} from '../../../test-support/builders'
 import { useRawToolAdjustments } from '../../useRawToolState'
 import { useRawLookStage } from './useRawLookStage'
 
@@ -92,22 +97,18 @@ const SOURCE_FILE = new File(['raw-12-bytes'], 'frame.ARW', {
 })
 
 function createSession(): ImageSession {
-  return {
+  return createTestSession({
     id: 'look-stage-session',
-    createdAt: 1,
     sourceFile: {
       file: SOURCE_FILE,
       name: 'frame.ARW',
       extension: 'arw',
       sizeBytes: 12,
-      supportLevel: 'experimental',
     },
     previewBundle: {
-      embeddedPreview: { status: 'idle' },
       quickDecodePreview: { status: 'ready', width: 800, height: 600 },
       boundedHqPreview: { status: 'ready', width: 800, height: 600 },
       displaySource: 'bounded-hq',
-      boundedHqRequiredForExport: false,
     },
     activeStyle: {
       kind: 'custom',
@@ -115,26 +116,11 @@ function createSession(): ImageSession {
       defaultIntensity: 0.7,
       currentIntensity: 1,
     },
-    viewState: {
-      mode: 'processed',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
+    viewState: { mode: 'processed' },
     exportState: {
-      status: 'idle',
-      fullResCapability: {
-        status: 'supported',
-        width: 4000,
-        height: 3000,
-      },
-      retryRecommended: false,
+      fullResCapability: { status: 'supported', width: 4000, height: 3000 },
     },
-    exportGeometry: null,
-    transform: createTransformState('look-stage-session'),
-  }
+  })
 }
 
 function createSessionWithoutLook(): ImageSession {
@@ -145,32 +131,8 @@ function createSessionWithoutLook(): ImageSession {
   }
 }
 
-function createCubeContent(title: string) {
-  const size = 17
-  const step = 1 / (size - 1)
-  const lines = [`TITLE "${title}"`, `LUT_3D_SIZE ${size}`]
-
-  for (let b = 0; b < size; b++) {
-    for (let g = 0; g < size; g++) {
-      for (let r = 0; r < size; r++) {
-        lines.push(`${r * step} ${g * step} ${b * step}`)
-      }
-    }
-  }
-
-  return lines.join('\n')
-}
-
-function createCubeFile(title: string, name: string) {
-  const content = createCubeContent(title)
-
-  return Object.assign(new File([content], name), {
-    text: () => Promise.resolve(content),
-  })
-}
-
 function createLut() {
-  return parseCubeLUT(createCubeContent('Client Look'), {
+  return parseCubeLUT(createTestCube('Client Look'), {
     sourceName: 'look.cube',
   })
 }
@@ -243,16 +205,19 @@ type SetColorIntentUpdate =
   | ((prev: ColorGraphIntent) => ColorGraphIntent)
 
 /**
- * Backs the hook with the production session store and a real intent store,
- * so updaters run against whatever is current when an action fires. The hook
- * renders once and never rerenders: `actions` keep the initial render's
- * snapshot, like a callback captured before React commits concurrent updates.
+ * Backs the hook with the production session and LUT stores and a real
+ * intent store, so updaters run against whatever is current when an action
+ * fires. The hook renders once and never rerenders: `actions` keep the
+ * initial render's snapshot, like a callback captured before React commits
+ * concurrent updates. Scheduled toasts wait for `runScheduled`.
  */
 function renderLookStageHarness({
   session,
   params = baseIntent,
   renderedParams = { ...baseParams, ...params },
   lut = null,
+  canApplyLoadedLut = () => true,
+  wrapper,
 }: {
   session: ImageSession | null
   /** Detached color intent held by the store. */
@@ -260,6 +225,8 @@ function renderLookStageHarness({
   /** Color intent the hook renders with. */
   renderedParams?: ColorGraphIntent
   lut?: ParsedLUT | null
+  canApplyLoadedLut?: () => boolean
+  wrapper?: ComponentType<PropsWithChildren>
 }) {
   setCurrentSession(session)
   setStoredLut(lut)
@@ -283,30 +250,41 @@ function renderLookStageHarness({
   // The LUT lands in the production store, as the workflow's setter does.
   const setLut = vi.fn((next: ParsedLUT | null) => setStoredLut(next))
   const setLutDataRef = vi.fn()
-  const scheduleToast = vi.fn()
+  const scheduled: Array<() => void> = []
+  const scheduleToast = vi.fn((show: () => void) => {
+    scheduled.push(show)
+  })
 
-  const { result } = renderHook(() =>
-    useRawLookStage({
-      baseParams: renderedParams,
-      session,
-      lut,
-      setLut,
-      setColorIntent,
-      lutDataRef: { current: lut },
-      setLutDataRef,
-      scheduleToast,
-      invalidateExportGraph,
-      canApplyLoadedLut: () => true,
-    }),
+  const { result, unmount } = renderHook(
+    () =>
+      useRawLookStage({
+        baseParams: renderedParams,
+        session,
+        lut,
+        setLut,
+        setColorIntent,
+        lutDataRef: { current: lut },
+        setLutDataRef,
+        scheduleToast,
+        invalidateExportGraph,
+        canApplyLoadedLut,
+      }),
+    { wrapper },
   )
 
   return {
     actions: result.current,
+    unmount,
     setColorIntent,
     invalidateExportGraph,
     setLut,
     setLutDataRef,
     scheduleToast,
+    runScheduled() {
+      for (const show of scheduled.splice(0)) show()
+    },
+    loadedTitles: () =>
+      setLut.mock.calls.map(([next]) => (next as ParsedLUT | null)?.title),
     sessionNotifications,
     paramsNotifications,
     readSession: getCurrentSession,
@@ -320,160 +298,70 @@ function renderLookStageHarness({
 
 describe('useRawLookStage', () => {
   it('projects session style intensity into processing params', () => {
-    const session = createSession()
-    const { result } = renderHook(() =>
-      useRawLookStage({
-        baseParams,
-        session,
-        lut: null,
-        setLut: vi.fn(),
-        setColorIntent: vi.fn(),
-        lutDataRef: { current: null },
-        setLutDataRef: vi.fn(),
-        scheduleToast: vi.fn(),
-        invalidateExportGraph: vi.fn(),
-        canApplyLoadedLut: () => true,
-      }),
-    )
+    const { actions } = renderLookStageHarness({ session: createSession() })
 
-    expect(result.current.params.intensity).toBe(1)
-    expect(result.current.params.styleKind).toBe('custom')
-    expect(result.current.params.builtinPreset).toBeNull()
-    expect(Object.keys(result.current.params).sort()).toEqual(
+    expect(actions.params.intensity).toBe(1)
+    expect(actions.params.styleKind).toBe('custom')
+    expect(actions.params.builtinPreset).toBeNull()
+    expect(Object.keys(actions.params).sort()).toEqual(
       [...COLOR_GRAPH_INTENT_KEYS].sort(),
     )
-    expect(result.current.currentLutName).toBe('Client Look')
+    expect(actions.currentLutName).toBe('Client Look')
   })
 
   it('projects a style-less session into neutral look params', () => {
-    const session = createSessionWithoutLook()
-    const staleParams: ColorGraphIntent = {
-      ...baseParams,
-      intensity: 1,
-      styleKind: 'custom',
-    }
-    const { result } = renderHook(() =>
-      useRawLookStage({
-        baseParams: staleParams,
-        session,
-        lut: null,
-        setLut: vi.fn(),
-        setColorIntent: vi.fn(),
-        lutDataRef: { current: null },
-        setLutDataRef: vi.fn(),
-        scheduleToast: vi.fn(),
-        invalidateExportGraph: vi.fn(),
-        canApplyLoadedLut: () => true,
-      }),
-    )
+    const { actions } = renderLookStageHarness({
+      session: createSessionWithoutLook(),
+      renderedParams: { ...baseParams, intensity: 1, styleKind: 'custom' },
+    })
 
-    expect(result.current.params.intensity).toBe(0.7)
-    expect(result.current.params.styleKind).toBe('none')
-    expect(result.current.params.builtinPreset).toBeNull()
+    expect(actions.params.intensity).toBe(0.7)
+    expect(actions.params.styleKind).toBe('none')
+    expect(actions.params.builtinPreset).toBeNull()
   })
 
   it('normalizes tone params and invalidates export when the render graph changes', () => {
-    const setColorIntent = vi.fn(
-      (
-        value:
-          | ColorGraphIntent
-          | ((prev: ColorGraphIntent) => ColorGraphIntent),
-      ) => (typeof value === 'function' ? value(baseIntent) : value),
-    )
-    const invalidateExportGraph = vi.fn()
-    const session = createSession()
-    const { result } = renderHook(() =>
-      useRawLookStage({
-        baseParams,
-        session,
-        lut: null,
-        setLut: vi.fn(),
-        setColorIntent,
-        lutDataRef: { current: null },
-        setLutDataRef: vi.fn(),
-        scheduleToast: vi.fn(),
-        invalidateExportGraph,
-        canApplyLoadedLut: () => true,
-      }),
-    )
+    const harness = renderLookStageHarness({ session: createSession() })
 
-    result.current.setToneParams({ userContrast: 120 })
+    harness.actions.setToneParams({ userContrast: 120 })
 
-    expect(setColorIntent).toHaveBeenCalledTimes(1)
-    const updater = setColorIntent.mock.calls[0]?.[0]
-    expect(typeof updater).toBe('function')
-    const written = (updater as (prev: ColorGraphIntent) => ColorGraphIntent)(
-      baseIntent,
-    )
-    expect(written).toEqual({ ...baseIntent, userContrast: 100 })
-    expect(written).not.toHaveProperty('viewMode')
-    expect(invalidateExportGraph).toHaveBeenCalledTimes(1)
+    expect(harness.setColorIntent).toHaveBeenCalledTimes(1)
+    expect(harness.readParams()).toEqual({ ...baseIntent, userContrast: 100 })
+    expect(harness.readParams()).not.toHaveProperty('viewMode')
+    expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(1)
   })
 
   it('loads custom LUTs into the active session without writing the detached intent', async () => {
     const session = createSessionWithoutLook()
-    setCurrentSession(session)
-    const setColorIntent = vi.fn()
-    const setLut = vi.fn()
-    const { result } = renderHook(() =>
-      useRawLookStage({
-        baseParams,
-        session,
-        lut: null,
-        setLut,
-        setColorIntent,
-        lutDataRef: { current: null },
-        setLutDataRef: vi.fn(),
-        scheduleToast: vi.fn(),
-        invalidateExportGraph: vi.fn(),
-        canApplyLoadedLut: () => true,
-      }),
-    )
+    const harness = renderLookStageHarness({ session })
 
     await act(async () => {
-      await result.current.loadLUT(createCubeFile('Client Look', 'look.cube'))
+      await harness.actions.loadLUT(
+        createTestCubeFile('Client Look', 'look.cube'),
+      )
     })
 
-    expect(setLut).toHaveBeenCalledTimes(1)
+    expect(harness.setLut).toHaveBeenCalledTimes(1)
     expect(getCurrentSession()).toMatchObject({
       id: session.id,
       activeStyle: { kind: 'custom', name: 'Client Look' },
     })
-    expect(setColorIntent).not.toHaveBeenCalled()
+    expect(harness.setColorIntent).not.toHaveBeenCalled()
   })
 
   it('selects LUT profiles in the active session without writing the detached intent', () => {
     const session = createSession()
-    setCurrentSession(session)
-    const setColorIntent = vi.fn()
-    const setLut = vi.fn()
-    const lut = parseCubeLUT(createCubeContent('Client Look'), {
-      sourceName: 'look.cube',
-    })
-    setStoredLut(lut)
-    const { result } = renderHook(() =>
-      useRawLookStage({
-        baseParams,
-        session,
-        lut,
-        setLut,
-        setColorIntent,
-        lutDataRef: { current: null },
-        setLutDataRef: vi.fn(),
-        scheduleToast: vi.fn(),
-        invalidateExportGraph: vi.fn(),
-        canApplyLoadedLut: () => true,
-      }),
-    )
+    const lut = createLut()
+    const harness = renderLookStageHarness({ session, lut })
 
-    result.current.selectLUTProfile('display-srgb')
+    harness.actions.selectLUTProfile('display-srgb')
 
-    expect(setLut).toHaveBeenCalledTimes(1)
+    expect(harness.setLut).toHaveBeenCalledTimes(1)
     expect(getCurrentSession()).not.toBe(session)
     expect(getCurrentSession()?.lutProfileSelection).toMatchObject({
       fingerprint: lut.fingerprint,
     })
-    expect(setColorIntent).not.toHaveBeenCalled()
+    expect(harness.setColorIntent).not.toHaveBeenCalled()
   })
 
   it('clears session LUTs without writing the detached intent', () => {
@@ -923,7 +811,7 @@ describe('useRawLookStage continuous strength', () => {
 
     await act(async () => {
       await harness.actions.loadLUT(
-        createCubeFile('Second Look', 'second.cube'),
+        createTestCubeFile('Second Look', 'second.cube'),
       )
     })
 
@@ -993,18 +881,6 @@ describe('useRawLookStage setIntensity', () => {
   })
 })
 
-/** A .cube whose bytes arrive only when the test finishes the read. */
-function createDeferredCubeFile(title: string, name: string) {
-  const bytes = new TextEncoder().encode(createCubeContent(title))
-  let finishRead!: () => void
-  const read = new Promise<ArrayBuffer>((resolve) => {
-    finishRead = () => resolve(bytes.buffer)
-  })
-  const file = new File([bytes], name)
-  Object.defineProperty(file, 'arrayBuffer', { value: () => read })
-  return { file, finishRead }
-}
-
 const onlineEntry: OnlineLUTEntry = {
   id: 'online-look',
   title: 'Online Look',
@@ -1018,49 +894,6 @@ const onlineEntry: OnlineLUTEntry = {
   tags: [],
 }
 
-/**
- * Renders the stage once over the production session store. Its callbacks
- * keep that render's snapshot, so every later session change reaches them
- * only through the store, as a load or reset does before React rerenders.
- */
-function renderLutLoadHarness({
-  session,
-  canApplyLoadedLut = () => true,
-}: {
-  session: ImageSession | null
-  canApplyLoadedLut?: () => boolean
-}) {
-  setCurrentSession(session)
-  const setColorIntent = vi.fn()
-  const setLut = vi.fn()
-  const invalidateExportGraph = vi.fn()
-  const scheduleToast = vi.fn()
-  const { result, unmount } = renderHook(() =>
-    useRawLookStage({
-      baseParams,
-      session,
-      lut: null,
-      setLut,
-      setColorIntent,
-      lutDataRef: { current: null },
-      setLutDataRef: vi.fn(),
-      scheduleToast,
-      invalidateExportGraph,
-      canApplyLoadedLut,
-    }),
-  )
-  return {
-    actions: result.current,
-    unmount,
-    setColorIntent,
-    setLut,
-    invalidateExportGraph,
-    scheduleToast,
-    loadedTitles: () =>
-      setLut.mock.calls.map(([lut]) => (lut as ParsedLUT | null)?.title),
-  }
-}
-
 describe('useRawLookStage LUT loads against the current session', () => {
   beforeEach(() => {
     vi.mocked(fetchVerifiedCubeAsset).mockReset()
@@ -1068,8 +901,8 @@ describe('useRawLookStage LUT loads against the current session', () => {
 
   it('applies only the newest of two overlapping local picks', async () => {
     const session = createSessionWithoutLook()
-    const harness = renderLutLoadHarness({ session })
-    const slow = createDeferredCubeFile('Slow Look', 'slow.cube')
+    const harness = renderLookStageHarness({ session })
+    const slow = createDeferredTestCubeFile('Slow Look', 'slow.cube')
     let slowLoad!: Promise<LutLoadOutcome>
     act(() => {
       slowLoad = harness.actions.loadLUT(slow.file)
@@ -1077,7 +910,7 @@ describe('useRawLookStage LUT loads against the current session', () => {
 
     await act(async () => {
       await expect(
-        harness.actions.loadLUT(createCubeFile('Quick Look', 'quick.cube')),
+        harness.actions.loadLUT(createTestCubeFile('Quick Look', 'quick.cube')),
       ).resolves.toBe('loaded')
     })
     await act(async () => {
@@ -1092,8 +925,8 @@ describe('useRawLookStage LUT loads against the current session', () => {
   })
 
   it('drops a local pick once the stage cancels it', async () => {
-    const harness = renderLutLoadHarness({ session: createSession() })
-    const pick = createDeferredCubeFile('Cancelled Look', 'cancelled.cube')
+    const harness = renderLookStageHarness({ session: createSession() })
+    const pick = createDeferredTestCubeFile('Cancelled Look', 'cancelled.cube')
     let load!: Promise<LutLoadOutcome>
     act(() => {
       load = harness.actions.loadLUT(pick.file)
@@ -1111,8 +944,8 @@ describe('useRawLookStage LUT loads against the current session', () => {
 
   it('drops a local pick still loading when the stage unmounts', async () => {
     const session = createSessionWithoutLook()
-    const harness = renderLutLoadHarness({ session })
-    const pick = createDeferredCubeFile('Departed Look', 'departed.cube')
+    const harness = renderLookStageHarness({ session })
+    const pick = createDeferredTestCubeFile('Departed Look', 'departed.cube')
     let load!: Promise<LutLoadOutcome>
     act(() => {
       load = harness.actions.loadLUT(pick.file)
@@ -1132,8 +965,8 @@ describe('useRawLookStage LUT loads against the current session', () => {
 
   it('keeps session changes published while a pick was loading', async () => {
     const session = createSessionWithoutLook()
-    const harness = renderLutLoadHarness({ session })
-    const pick = createDeferredCubeFile('Client Look', 'client.cube')
+    const harness = renderLookStageHarness({ session })
+    const pick = createDeferredTestCubeFile('Client Look', 'client.cube')
     let load!: Promise<LutLoadOutcome>
     act(() => {
       load = harness.actions.loadLUT(pick.file)
@@ -1159,7 +992,7 @@ describe('useRawLookStage LUT loads against the current session', () => {
       sha256: string
     }>()
     vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
-    const harness = renderLutLoadHarness({
+    const harness = renderLookStageHarness({
       session: createSessionWithoutLook(),
     })
     let load!: Promise<LutLoadOutcome>
@@ -1182,7 +1015,7 @@ describe('useRawLookStage LUT loads against the current session', () => {
     vi.mocked(fetchVerifiedCubeAsset).mockRejectedValue(
       new Error('network down'),
     )
-    const harness = renderLutLoadHarness({
+    const harness = renderLookStageHarness({
       session: createSessionWithoutLook(),
     })
 
@@ -1197,55 +1030,6 @@ describe('useRawLookStage LUT loads against the current session', () => {
 })
 
 describe('useRawLookStage notifications', () => {
-  /**
-   * Renders the stage over the production session store and keeps every
-   * scheduled toast, so a test can tell what the stage decided to report
-   * from when it is shown.
-   */
-  function renderNotificationHarness({
-    session,
-    lut = null,
-    canApplyLoadedLut = () => true,
-    wrapper,
-  }: {
-    session: ImageSession | null
-    lut?: ParsedLUT | null
-    canApplyLoadedLut?: () => boolean
-    wrapper?: ComponentType<PropsWithChildren>
-  }) {
-    setCurrentSession(session)
-    setStoredLut(lut)
-    const scheduled: Array<() => void> = []
-    const scheduleToast = vi.fn((show: () => void) => {
-      scheduled.push(show)
-    })
-    const setLut = vi.fn((next: ParsedLUT | null) => setStoredLut(next))
-    const { result } = renderHook(
-      () =>
-        useRawLookStage({
-          baseParams,
-          session,
-          lut,
-          setLut,
-          setColorIntent: vi.fn(),
-          lutDataRef: { current: lut },
-          setLutDataRef: vi.fn(),
-          scheduleToast,
-          invalidateExportGraph: vi.fn(),
-          canApplyLoadedLut,
-        }),
-      { wrapper },
-    )
-    return {
-      actions: result.current,
-      scheduleToast,
-      setLut,
-      runScheduled() {
-        for (const show of scheduled.splice(0)) show()
-      },
-    }
-  }
-
   function shownToasts() {
     return {
       error: toastMock.toast.error.mock.calls,
@@ -1262,13 +1046,13 @@ describe('useRawLookStage notifications', () => {
   })
 
   it('reports a loaded local LUT by title and grid only when its scheduled task runs', async () => {
-    const harness = renderNotificationHarness({
+    const harness = renderLookStageHarness({
       session: createSessionWithoutLook(),
     })
 
     await act(async () => {
       await expect(
-        harness.actions.loadLUT(createCubeFile('Client Look', 'look.cube')),
+        harness.actions.loadLUT(createTestCubeFile('Client Look', 'look.cube')),
       ).resolves.toBe('loaded')
     })
 
@@ -1284,10 +1068,10 @@ describe('useRawLookStage notifications', () => {
 
   it('reports a loaded online LUT by title and grid', async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue({
-      bytes: new TextEncoder().encode(createCubeContent('Online Look')),
+      bytes: new TextEncoder().encode(createTestCube('Online Look')),
       sha256: 'b'.repeat(64),
     })
-    const harness = renderNotificationHarness({
+    const harness = renderLookStageHarness({
       session: createSessionWithoutLook(),
     })
 
@@ -1306,7 +1090,7 @@ describe('useRawLookStage notifications', () => {
   })
 
   it('reports an unsupported file format and records its code', async () => {
-    const harness = renderNotificationHarness({
+    const harness = renderLookStageHarness({
       session: createSessionWithoutLook(),
     })
 
@@ -1334,7 +1118,7 @@ describe('useRawLookStage notifications', () => {
   })
 
   it('reports a parser failure with the parser detail', async () => {
-    const harness = renderNotificationHarness({
+    const harness = renderLookStageHarness({
       session: createSessionWithoutLook(),
     })
     const content = 'TITLE "Broken"\nLUT_3D_SIZE 2\n0 0 0\n'
@@ -1365,10 +1149,10 @@ describe('useRawLookStage notifications', () => {
 
   it('reports an incomplete catalog contract as a failed load', async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue({
-      bytes: new TextEncoder().encode(createCubeContent('Online Look')),
+      bytes: new TextEncoder().encode(createTestCube('Online Look')),
       sha256: 'b'.repeat(64),
     })
-    const harness = renderNotificationHarness({
+    const harness = renderLookStageHarness({
       session: createSessionWithoutLook(),
     })
 
@@ -1399,7 +1183,7 @@ describe('useRawLookStage notifications', () => {
 
   it('reports an incomplete contract choice by the profile it named', () => {
     const lut = createLut()
-    const harness = renderNotificationHarness({ session: createSession(), lut })
+    const harness = renderLookStageHarness({ session: createSession(), lut })
 
     harness.actions.selectLUTProfile('not-a-profile')
 
@@ -1413,7 +1197,7 @@ describe('useRawLookStage notifications', () => {
   })
 
   it('reports a contract choice made with no LUT loaded', () => {
-    const harness = renderNotificationHarness({ session: createSession() })
+    const harness = renderLookStageHarness({ session: createSession() })
 
     harness.actions.selectLUTProfile('display-srgb')
 
@@ -1427,7 +1211,7 @@ describe('useRawLookStage notifications', () => {
 
   it('reports nothing for a contract choice that applies', () => {
     const lut = createLut()
-    const harness = renderNotificationHarness({ session: createSession(), lut })
+    const harness = renderLookStageHarness({ session: createSession(), lut })
 
     harness.actions.selectLUTProfile('display-srgb')
 
@@ -1441,7 +1225,7 @@ describe('useRawLookStage notifications', () => {
       sha256: string
     }>()
     vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
-    const harness = renderNotificationHarness({
+    const harness = renderLookStageHarness({
       session: createSessionWithoutLook(),
     })
     const controller = new AbortController()
@@ -1463,7 +1247,7 @@ describe('useRawLookStage notifications', () => {
 
   it('reports a cleared LUT', () => {
     const lut = createLut()
-    const harness = renderNotificationHarness({ session: createSession(), lut })
+    const harness = renderLookStageHarness({ session: createSession(), lut })
 
     harness.actions.clearLUT()
 
@@ -1477,7 +1261,7 @@ describe('useRawLookStage notifications', () => {
 
   it('describes a load failure that carried no message of its own', async () => {
     vi.mocked(fetchVerifiedCubeAsset).mockRejectedValue('socket closed')
-    const harness = renderNotificationHarness({
+    const harness = renderLookStageHarness({
       session: createSessionWithoutLook(),
     })
 
@@ -1508,7 +1292,7 @@ describe('useRawLookStage notifications', () => {
       }>()
       vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
       await act(() => i18n.changeLanguage('en'))
-      const harness = renderNotificationHarness({
+      const harness = renderLookStageHarness({
         session: createSessionWithoutLook(),
         wrapper: I18nProvider,
       })
@@ -1522,7 +1306,7 @@ describe('useRawLookStage notifications', () => {
       await act(() => i18n.changeLanguage('zh-CN'))
       await act(async () => {
         download.resolve({
-          bytes: new TextEncoder().encode(createCubeContent('Online Look')),
+          bytes: new TextEncoder().encode(createTestCube('Online Look')),
           sha256: 'b'.repeat(64),
         })
         await expect(load).resolves.toBe('loaded')
