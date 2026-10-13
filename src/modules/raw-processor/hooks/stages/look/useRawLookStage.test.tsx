@@ -1,52 +1,30 @@
 import type { ColorGraphIntent, ParsedLUT } from '@lumaforge/luma-color-runtime'
 import {
-  COLOR_GRAPH_INTENT_KEYS,
   NEUTRAL_USER_COLOR_INTENT,
   parseCubeLUT,
-  pickColorGraphIntent,
 } from '@lumaforge/luma-color-runtime'
-import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import i18n from 'i18next'
-import type { ComponentType, PropsWithChildren, SetStateAction } from 'react'
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  onTestFinished,
-  vi,
-} from 'vitest'
+import type { ComponentType, PropsWithChildren } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '~/lib/i18n'
-import { jotaiStore } from '~/lib/jotai'
 import { getStoredLUTContractSelection } from '~/lib/lut/profile-resolution'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 import { fetchVerifiedCubeAsset } from '~/lib/profiles/fetch'
 
-import { createExportResult } from '../../../model/export-result'
-import type { ImageSession } from '../../../model/session'
-import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
-import { clearExportResultState } from '../../../services/export/export-state'
-import { projectEffectiveColorIntent } from '../../../services/look/effective-color-intent'
+import type { ImageSession, StyleAsset } from '../../../model/session'
 import type { LutLoadOutcome } from '../../../services/look/orchestrate-lut-load'
 import {
-  buildLUTContractSelectionState,
-  LOOK_INTENSITY_PRESETS,
-} from '../../../services/look/style-system'
-import {
-  currentSessionAtom,
   getCurrentSession,
   setCurrentSession,
 } from '../../../state/session.atoms'
 import {
   getEffectiveColorIntent,
-  getLut as getStoredLut,
+  getLut,
   getProcessingParams,
-  processingParamsAtom,
-  rawWorkflowStore,
-  setLut as setStoredLut,
+  setColorIntent,
+  setLut,
   setProcessingParams,
 } from '../../../state/workflow.atoms'
 import {
@@ -55,7 +33,6 @@ import {
   createTestCubeFile,
   createTestSession,
 } from '../../../test-support/builders'
-import { useRawToolAdjustments } from '../../useRawToolState'
 import { useRawLookStage } from './useRawLookStage'
 
 vi.mock('~/lib/profiles/fetch', () => ({
@@ -70,67 +47,41 @@ const toastMock = vi.hoisted(() => ({
 
 vi.mock('sonner', () => toastMock)
 
-// The stage reads and writes the session, and reads the LUT, in the
-// production store, so every test seeds that store and leaves it empty. A
-// mounted hook would re-render on the reset, so it unmounts first.
+// The stage reads and writes the session, intent and LUT in the production
+// store; a mounted hook would rerender on the reset, so it unmounts first.
 beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(fetchVerifiedCubeAsset).mockReset()
   setCurrentSession(null)
-  setStoredLut(null)
+  setLut(null)
 })
 
 afterEach(() => {
   cleanup()
-  vi.restoreAllMocks()
+  localStorage.clear()
   setCurrentSession(null)
-  setStoredLut(null)
+  setLut(null)
 })
 
-/** The stored color intent the hook renders from; it carries no view. */
 const baseIntent: ColorGraphIntent = Object.freeze({
   ...NEUTRAL_USER_COLOR_INTENT,
   intensity: 0.7,
   styleKind: 'none',
   builtinPreset: null,
 })
-const baseParams: ColorGraphIntent = baseIntent
+const detachedLook: ColorGraphIntent = { ...baseIntent, styleKind: 'custom' }
 
-const SOURCE_FILE = new File(['raw-12-bytes'], 'frame.ARW', {
-  lastModified: 1,
-})
-
-function createSession(): ImageSession {
-  return createTestSession({
-    id: 'look-stage-session',
-    sourceFile: {
-      file: SOURCE_FILE,
-      name: 'frame.ARW',
-      extension: 'arw',
-      sizeBytes: 12,
-    },
-    previewBundle: {
-      quickDecodePreview: { status: 'ready', width: 800, height: 600 },
-      boundedHqPreview: { status: 'ready', width: 800, height: 600 },
-      displaySource: 'bounded-hq',
-    },
-    activeStyle: {
-      kind: 'custom',
-      name: 'Client Look',
-      defaultIntensity: 0.7,
-      currentIntensity: 1,
-    },
-    viewState: { mode: 'processed' },
-    exportState: {
-      fullResCapability: { status: 'supported', width: 4000, height: 3000 },
-    },
-  })
+function clientLook(currentIntensity = 1): StyleAsset {
+  return {
+    kind: 'custom',
+    name: 'Client Look',
+    defaultIntensity: 0.7,
+    currentIntensity,
+  }
 }
 
-function createSessionWithoutLook(): ImageSession {
-  return {
-    ...createSession(),
-    activeStyle: null,
-    lutProfileSelection: undefined,
-  }
+function createSession(activeStyle: StyleAsset | null = clientLook()) {
+  return createTestSession({ activeStyle })
 }
 
 function createLut() {
@@ -139,729 +90,19 @@ function createLut() {
   })
 }
 
-function withReadyExport(session: ImageSession): ImageSession {
-  return {
-    ...session,
-    exportState: {
-      ...session.exportState,
-      status: 'ready',
-      result: createExportResult({
-        kind: 'full-resolution',
-        output: createBlobOutputResult({
-          filename: 'frame_fullres.jpg',
-          blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
-        }),
-        width: 4000,
-        height: 3000,
-        now: () => 1,
-        copyCapability: {
-          mode: 'full-resolution',
-        },
-        identity: captureExportResultIdentity({
-          resultKind: 'full-resolution',
-          attemptId: 'attempt-1',
-          sessionId: session.id,
-          sourceFile: SOURCE_FILE,
-          intent: projectEffectiveColorIntent(baseIntent, session),
-          lut: null,
-          rawRenderExposure: null,
-          geometry: null,
-        }),
-      }),
-    },
-  }
+/** jsdom's File cannot read text, so the file answers `text()` itself. */
+function textFile(content: string, name: string) {
+  return Object.assign(new File([content], name), {
+    text: () => Promise.resolve(content),
+  })
 }
 
-const publishedBoundedHq = {
-  status: 'ready',
-  width: 1600,
-  height: 1200,
-} as const
-const publishedCapability = {
-  status: 'supported',
-  width: 6000,
-  height: 4000,
-} as const
-
-function publishPreviewAndCapability(
-  prev: ImageSession | null,
-): ImageSession | null {
-  if (!prev) return prev
-
+function cubeDownload(title = 'Online Look') {
   return {
-    ...prev,
-    previewBundle: {
-      ...prev.previewBundle,
-      boundedHqPreview: publishedBoundedHq,
-      displaySource: 'bounded-hq',
-    },
-    exportState: {
-      ...prev.exportState,
-      fullResCapability: publishedCapability,
-    },
+    bytes: new TextEncoder().encode(createTestCube(title)),
+    sha256: 'b'.repeat(64),
   }
 }
-
-/**
- * Backs the hook with the production session, LUT and intent stores, so
- * updaters run against whatever is current when an action fires. The hook
- * renders once and never rerenders: `actions` keep the initial render's
- * snapshot, like a callback captured before React commits concurrent
- * updates. Scheduled toasts wait for `runScheduled`.
- */
-function renderLookStageHarness({
-  session,
-  params = baseIntent,
-  renderedParams = { ...baseParams, ...params },
-  lut = null,
-  canApplyLoadedLut = () => true,
-  wrapper,
-}: {
-  session: ImageSession | null
-  /** Detached color intent held by the store. */
-  params?: ColorGraphIntent
-  /** Color intent the hook renders with. */
-  renderedParams?: ColorGraphIntent
-  lut?: ParsedLUT | null
-  canApplyLoadedLut?: () => boolean
-  wrapper?: ComponentType<PropsWithChildren>
-}) {
-  setCurrentSession(session)
-  setStoredLut(lut)
-  setProcessingParams(params)
-  const sessionNotifications = vi.fn()
-  const paramsNotifications = vi.fn()
-  onTestFinished(jotaiStore.sub(currentSessionAtom, sessionNotifications))
-  onTestFinished(jotaiStore.sub(processingParamsAtom, paramsNotifications))
-
-  const setColorIntent = vi.spyOn(rawWorkflowStore, 'setColorIntent')
-  const setLut = vi.spyOn(rawWorkflowStore, 'setLut')
-  const invalidateExportGraph = vi.fn(() =>
-    setCurrentSession(clearExportResultState),
-  )
-  const scheduled: Array<() => void> = []
-  const scheduleToast = vi.fn((show: () => void) => {
-    scheduled.push(show)
-  })
-
-  const { result, unmount } = renderHook(
-    () =>
-      useRawLookStage({
-        baseParams: renderedParams,
-        session,
-        lut,
-        scheduleToast,
-        invalidateExportGraph,
-        canApplyLoadedLut,
-      }),
-    { wrapper },
-  )
-
-  return {
-    actions: result.current,
-    unmount,
-    setColorIntent,
-    invalidateExportGraph,
-    setLut,
-    scheduleToast,
-    runScheduled() {
-      for (const show of scheduled.splice(0)) show()
-    },
-    loadedTitles: () => setLut.mock.calls.map(([next]) => next?.title),
-    sessionNotifications,
-    paramsNotifications,
-    readSession: getCurrentSession,
-    readParams: getProcessingParams,
-    publishSession: (update: SetStateAction<ImageSession | null>) =>
-      setCurrentSession(update),
-    publishParams: (update: SetStateAction<ColorGraphIntent>) =>
-      jotaiStore.set(processingParamsAtom, update),
-  }
-}
-
-describe('useRawLookStage', () => {
-  it('projects session style intensity into processing params', () => {
-    const { actions } = renderLookStageHarness({ session: createSession() })
-
-    expect(actions.params.intensity).toBe(1)
-    expect(actions.params.styleKind).toBe('custom')
-    expect(actions.params.builtinPreset).toBeNull()
-    expect(Object.keys(actions.params).sort()).toEqual(
-      [...COLOR_GRAPH_INTENT_KEYS].sort(),
-    )
-    expect(actions.currentLutName).toBe('Client Look')
-  })
-
-  it('projects a style-less session into neutral look params', () => {
-    const { actions } = renderLookStageHarness({
-      session: createSessionWithoutLook(),
-      renderedParams: { ...baseParams, intensity: 1, styleKind: 'custom' },
-    })
-
-    expect(actions.params.intensity).toBe(0.7)
-    expect(actions.params.styleKind).toBe('none')
-    expect(actions.params.builtinPreset).toBeNull()
-  })
-
-  it('normalizes tone params and invalidates export when the render graph changes', () => {
-    const harness = renderLookStageHarness({ session: createSession() })
-
-    harness.actions.setToneParams({ userContrast: 120 })
-
-    expect(harness.setColorIntent).toHaveBeenCalledTimes(1)
-    expect(harness.readParams()).toEqual({ ...baseIntent, userContrast: 100 })
-    expect(harness.readParams()).not.toHaveProperty('viewMode')
-    expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(1)
-  })
-
-  it('loads custom LUTs into the active session without writing the detached intent', async () => {
-    const session = createSessionWithoutLook()
-    const harness = renderLookStageHarness({ session })
-
-    await act(async () => {
-      await harness.actions.loadLUT(
-        createTestCubeFile('Client Look', 'look.cube'),
-      )
-    })
-
-    expect(harness.setLut).toHaveBeenCalledTimes(1)
-    expect(getCurrentSession()).toMatchObject({
-      id: session.id,
-      activeStyle: { kind: 'custom', name: 'Client Look' },
-    })
-    expect(harness.setColorIntent).not.toHaveBeenCalled()
-  })
-
-  it('selects LUT profiles in the active session without writing the detached intent', () => {
-    const session = createSession()
-    const lut = createLut()
-    const harness = renderLookStageHarness({ session, lut })
-
-    harness.actions.selectLUTProfile('display-srgb')
-
-    expect(harness.setLut).toHaveBeenCalledTimes(1)
-    expect(getCurrentSession()).not.toBe(session)
-    expect(getCurrentSession()?.lutProfileSelection).toMatchObject({
-      fingerprint: lut.fingerprint,
-    })
-    expect(harness.setColorIntent).not.toHaveBeenCalled()
-  })
-
-  it('clears session LUTs without writing the detached intent', () => {
-    const lut = createLut()
-    const session = {
-      ...createSession(),
-      lutProfileSelection: buildLUTContractSelectionState(lut),
-    }
-    const harness = renderLookStageHarness({ session, lut })
-
-    harness.actions.clearLUT()
-
-    expect(harness.setLut).toHaveBeenCalledWith(null)
-    expect(harness.sessionNotifications).toHaveBeenCalledTimes(1)
-    expect(harness.readSession()).toMatchObject({
-      activeStyle: null,
-      lutProfileSelection: undefined,
-    })
-    expect(harness.setColorIntent).not.toHaveBeenCalled()
-    expect(harness.readParams()).toBe(baseIntent)
-    expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(1)
-    expect(harness.scheduleToast).toHaveBeenCalledTimes(1)
-  })
-
-  describe('look actions run against the current state', () => {
-    it('applies look actions to a session created after a session-less render', () => {
-      const lut = createLut()
-      const detachedParams: ColorGraphIntent = {
-        ...baseIntent,
-        styleKind: 'custom',
-      }
-      const harness = renderLookStageHarness({
-        session: null,
-        params: detachedParams,
-        lut,
-      })
-      const createdSession = createSession()
-
-      // Ingest publishes the new session to the store before React rerenders.
-      harness.publishSession(createdSession)
-      harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.light)
-
-      expect(harness.readSession()).toMatchObject({
-        id: createdSession.id,
-        activeStyle: { currentIntensity: LOOK_INTENSITY_PRESETS.light },
-      })
-      expect(harness.readParams()).toBe(detachedParams)
-
-      harness.actions.clearLUT()
-
-      expect(harness.readSession()).toMatchObject({
-        id: createdSession.id,
-        activeStyle: null,
-      })
-      expect(harness.readParams()).toBe(detachedParams)
-      expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(2)
-    })
-
-    it('does not resurrect a session reset after render', () => {
-      const lut = createLut()
-      const detachedParams: ColorGraphIntent = {
-        ...baseIntent,
-        styleKind: 'custom',
-      }
-      const harness = renderLookStageHarness({
-        session: createSession(),
-        params: detachedParams,
-        lut,
-      })
-
-      harness.publishSession(null)
-      harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.light)
-
-      expect(harness.readSession()).toBeNull()
-      expect(harness.readParams()).toEqual({
-        ...detachedParams,
-        intensity: 0.4,
-      })
-
-      harness.actions.clearLUT()
-
-      expect(harness.readSession()).toBeNull()
-      expect(harness.readParams()).toEqual({
-        ...detachedParams,
-        intensity: 0.4,
-        styleKind: 'none',
-        builtinPreset: null,
-      })
-      expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(2)
-    })
-
-    it('composes consecutive intensity selections issued before a rerender', () => {
-      const session = withReadyExport(createSession())
-      const harness = renderLookStageHarness({ session })
-
-      harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.light)
-      harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.strong)
-
-      expect(harness.readSession()?.activeStyle?.currentIntensity).toBe(
-        LOOK_INTENSITY_PRESETS.strong,
-      )
-      expect(harness.readSession()?.exportState).toMatchObject({
-        status: 'idle',
-        result: undefined,
-      })
-      expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(2)
-      expect(harness.paramsNotifications).not.toHaveBeenCalled()
-    })
-
-    it('keeps a cleared look cleared when a later action fires before a rerender', () => {
-      const lut = createLut()
-      const session = withReadyExport(createSession())
-      const harness = renderLookStageHarness({ session, lut })
-
-      harness.actions.clearLUT()
-      harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.light)
-
-      expect(harness.readSession()).toMatchObject({
-        activeStyle: null,
-        exportState: { status: 'idle', result: undefined },
-      })
-      expect(harness.readSession()?.viewState).toBe(session.viewState)
-      expect(harness.readParams()).toEqual({ ...baseIntent, intensity: 0.4 })
-    })
-
-    it('leaves both stores untouched when the session look already has the selected intensity', () => {
-      const session = withReadyExport(createSession())
-      const harness = renderLookStageHarness({ session })
-
-      harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.strong)
-
-      expect(harness.readSession()).toBe(session)
-      expect(harness.readParams()).toBe(baseIntent)
-      expect(harness.sessionNotifications).not.toHaveBeenCalled()
-      expect(harness.paramsNotifications).not.toHaveBeenCalled()
-      expect(harness.invalidateExportGraph).not.toHaveBeenCalled()
-    })
-
-    it('leaves detached params untouched when they already carry the selected intensity', () => {
-      const lut = createLut()
-      const detachedParams: ColorGraphIntent = {
-        ...baseIntent,
-        styleKind: 'custom',
-      }
-      const harness = renderLookStageHarness({
-        session: null,
-        params: detachedParams,
-        lut,
-      })
-
-      harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.standard)
-
-      expect(harness.readParams()).toBe(detachedParams)
-      expect(harness.readSession()).toBeNull()
-      expect(harness.paramsNotifications).not.toHaveBeenCalled()
-      expect(harness.sessionNotifications).not.toHaveBeenCalled()
-      expect(harness.invalidateExportGraph).not.toHaveBeenCalled()
-    })
-
-    it('keeps detached color changes published after a session-less render', () => {
-      const lut = createLut()
-      const detachedParams: ColorGraphIntent = {
-        ...baseIntent,
-        styleKind: 'custom',
-      }
-      const harness = renderLookStageHarness({
-        session: null,
-        params: detachedParams,
-        lut,
-      })
-
-      harness.publishParams((prev) => ({ ...prev, userContrast: 25 }))
-      harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.strong)
-
-      expect(harness.readParams()).toEqual({
-        ...detachedParams,
-        userContrast: 25,
-        intensity: 1,
-      })
-
-      harness.actions.clearLUT()
-
-      expect(harness.readParams()).toEqual({
-        ...detachedParams,
-        userContrast: 25,
-        intensity: 1,
-        styleKind: 'none',
-        builtinPreset: null,
-      })
-      expect(harness.readParams()).not.toHaveProperty('viewMode')
-      expect(harness.readParams()).not.toHaveProperty('compareSplit')
-      expect(harness.readSession()).toBeNull()
-      expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(2)
-    })
-
-    it('carries a look-less session intensity in the detached intent without copying session view state', () => {
-      const session: ImageSession = {
-        ...createSessionWithoutLook(),
-        viewState: {
-          ...createSession().viewState,
-          mode: 'original',
-          compareSplit: 0.3,
-        },
-      }
-      const harness = renderLookStageHarness({
-        session,
-        params: baseIntent,
-        renderedParams: baseParams,
-      })
-
-      harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.strong)
-
-      expect(harness.readParams()).toEqual({ ...baseIntent, intensity: 1 })
-      expect(harness.readParams()).not.toHaveProperty('viewMode')
-      expect(harness.readParams()).not.toHaveProperty('compareSplit')
-      expect(harness.readSession()?.viewState).toBe(session.viewState)
-      expect(harness.readSession()?.activeStyle).toBeNull()
-    })
-
-    it('keeps view and geometry published after render through every look action', () => {
-      const lut = createLut()
-      const session = withReadyExport({
-        ...createSession(),
-        lutProfileSelection: buildLUTContractSelectionState(lut),
-      })
-      const harness = renderLookStageHarness({ session, lut })
-      const publishedViewState: ImageSession['viewState'] = {
-        ...session.viewState,
-        mode: 'compare',
-        compareSplit: 0.62,
-      }
-      const publishedGeometry = {
-        matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
-        constrainCrop: true,
-      }
-      harness.publishSession((prev) =>
-        prev
-          ? {
-              ...prev,
-              viewState: publishedViewState,
-              exportGeometry: publishedGeometry,
-            }
-          : prev,
-      )
-
-      harness.actions.setIntensity(0.37)
-      expect(harness.readSession()?.activeStyle?.currentIntensity).toBe(0.37)
-      harness.actions.setToneParams({ userShadows: 20 })
-      harness.actions.setColorParams({ userTint: 6 })
-      harness.actions.clearLUT()
-
-      const current = harness.readSession()
-      expect(current?.viewState).toBe(publishedViewState)
-      expect(current?.exportGeometry).toBe(publishedGeometry)
-      expect(current?.activeStyle).toBeNull()
-      expect(harness.readParams()).toEqual({
-        ...baseIntent,
-        userShadows: 20,
-        userTint: 6,
-      })
-    })
-  })
-})
-
-describe('useRawLookStage continuous strength', () => {
-  it.each([0.37, 0.62])(
-    'stores the detached strength %s as given and leaves the view out',
-    (value) => {
-      const lut = createLut()
-      const harness = renderLookStageHarness({
-        session: null,
-        params: { ...baseIntent, styleKind: 'custom' },
-        lut,
-      })
-
-      harness.actions.setIntensity(value)
-
-      expect(harness.readParams().intensity).toBe(value)
-      expect(harness.readParams()).not.toHaveProperty('viewMode')
-      expect(harness.readParams()).not.toHaveProperty('compareSplit')
-      expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(1)
-    },
-  )
-
-  it('clamps a non-number strength to the default on both owners', () => {
-    const lut = createLut()
-    const detached = renderLookStageHarness({
-      session: null,
-      params: { ...baseIntent, styleKind: 'custom', intensity: 0.37 },
-      lut,
-    })
-    detached.actions.setIntensity(Number.NaN)
-    expect(detached.readParams().intensity).toBe(0.7)
-
-    const attached = renderLookStageHarness({ session: createSession() })
-    attached.actions.setIntensity(Number.NaN)
-    expect(attached.readSession()?.activeStyle?.currentIntensity).toBe(0.7)
-    attached.actions.setIntensity(1.6)
-    expect(attached.readSession()?.activeStyle?.currentIntensity).toBe(1)
-  })
-
-  it('keeps a continuous detached strength when the LUT contract changes', () => {
-    const lut = createLut()
-    const harness = renderLookStageHarness({
-      session: null,
-      params: { ...baseIntent, styleKind: 'custom', intensity: 0.37 },
-      lut,
-    })
-
-    harness.actions.selectLUTProfile('display-srgb')
-
-    expect(harness.readParams()).toEqual({
-      ...baseIntent,
-      styleKind: 'custom',
-      builtinPreset: null,
-      intensity: 0.37,
-    })
-  })
-
-  it('keeps a session Strength set before a rerender when the LUT contract changes', () => {
-    const lut = createLut()
-    const session = createSession()
-    const harness = renderLookStageHarness({ session, lut })
-
-    harness.actions.setIntensity(0.43)
-    harness.actions.selectLUTProfile('display-srgb')
-
-    expect(harness.readSession()?.activeStyle).toMatchObject({
-      kind: 'custom',
-      currentIntensity: 0.43,
-    })
-    expect(harness.readSession()?.lutProfileSelection).toMatchObject({
-      fingerprint: lut.fingerprint,
-    })
-    expect(harness.setColorIntent).not.toHaveBeenCalled()
-  })
-
-  it('refuses a contract choice made after the LUT was cleared, before a rerender', () => {
-    const lut = createLut()
-    const session = {
-      ...createSession(),
-      lutProfileSelection: buildLUTContractSelectionState(lut),
-    }
-    const harness = renderLookStageHarness({ session, lut })
-    localStorage.clear()
-    onTestFinished(() => localStorage.clear())
-
-    harness.actions.clearLUT()
-    const clearedSession = harness.readSession()
-    const writes = {
-      setLut: harness.setLut.mock.calls.length,
-      session: harness.sessionNotifications.mock.calls.length,
-      invalidations: harness.invalidateExportGraph.mock.calls.length,
-      toasts: harness.scheduleToast.mock.calls.length,
-    }
-    const setItem = vi.spyOn(Storage.prototype, 'setItem')
-    onTestFinished(() => setItem.mockRestore())
-
-    harness.actions.selectLUTProfile('display-srgb')
-
-    expect(getStoredLut()).toBeNull()
-    expect(harness.setLut).toHaveBeenCalledTimes(writes.setLut)
-    expect(harness.readSession()).toBe(clearedSession)
-    expect(harness.sessionNotifications).toHaveBeenCalledTimes(writes.session)
-    expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(
-      writes.invalidations,
-    )
-    expect(harness.setColorIntent).not.toHaveBeenCalled()
-    expect(setItem).not.toHaveBeenCalled()
-    expect(getStoredLUTContractSelection(lut.fingerprint)).toBeUndefined()
-    expect(harness.scheduleToast).toHaveBeenCalledTimes(writes.toasts + 1)
-  })
-
-  it('keeps the hash the session holds for the same LUT when the LUT contract changes', () => {
-    const lut = createLut()
-    const harness = renderLookStageHarness({ session: createSession(), lut })
-    const currentSha256 = 'c'.repeat(64)
-    const withAsset = (fingerprint: string) =>
-      harness.publishSession((prev) =>
-        prev?.activeStyle
-          ? {
-              ...prev,
-              activeStyle: {
-                ...prev.activeStyle,
-                lutAsset: {
-                  format: 'cube',
-                  dimension: 17,
-                  fingerprint,
-                  sha256: currentSha256,
-                },
-              },
-            }
-          : prev,
-      )
-
-    withAsset(lut.fingerprint)
-    harness.actions.selectLUTProfile('display-srgb')
-    expect(harness.readSession()?.activeStyle?.lutAsset?.sha256).toBe(
-      currentSha256,
-    )
-
-    // A hash recorded for another LUT never transfers to this one.
-    withAsset('lut-other')
-    harness.actions.selectLUTProfile('display-srgb')
-    expect(harness.readSession()?.activeStyle?.lutAsset).toMatchObject({
-      fingerprint: lut.fingerprint,
-    })
-    expect(harness.readSession()?.activeStyle?.lutAsset?.sha256).toBeUndefined()
-  })
-
-  it('keeps a detached Strength set before a rerender when the LUT contract changes', () => {
-    const lut = createLut()
-    const harness = renderLookStageHarness({
-      session: null,
-      params: { ...baseIntent, styleKind: 'custom' },
-      lut,
-    })
-
-    harness.actions.setIntensity(0.43)
-    harness.actions.selectLUTProfile('display-srgb')
-
-    expect(harness.readParams()).toEqual({
-      ...baseIntent,
-      styleKind: 'custom',
-      builtinPreset: null,
-      intensity: 0.43,
-    })
-    expect(harness.readSession()).toBeNull()
-  })
-
-  it('starts a LUT loaded after a clear at the default strength', async () => {
-    const lut = createLut()
-    const harness = renderLookStageHarness({
-      session: null,
-      params: { ...baseIntent, styleKind: 'custom', intensity: 0.62 },
-      lut,
-    })
-
-    harness.actions.clearLUT()
-    expect(harness.readParams()).toEqual({
-      ...baseIntent,
-      styleKind: 'none',
-      builtinPreset: null,
-      intensity: 0.62,
-    })
-
-    await act(async () => {
-      await harness.actions.loadLUT(
-        createTestCubeFile('Second Look', 'second.cube'),
-      )
-    })
-
-    expect(harness.readParams()).toEqual({
-      ...baseIntent,
-      styleKind: 'custom',
-      builtinPreset: null,
-      intensity: 0.7,
-    })
-  })
-
-  it('keeps a continuous session strength on the session look and off the detached intent', () => {
-    const harness = renderLookStageHarness({ session: createSession() })
-
-    harness.actions.setIntensity(0.37)
-    harness.actions.setIntensity(0.62)
-
-    expect(harness.readSession()?.activeStyle?.currentIntensity).toBe(0.62)
-    expect(harness.readParams()).toBe(baseIntent)
-    expect(harness.setColorIntent).not.toHaveBeenCalled()
-  })
-
-  it('projects a continuous session strength into the rendered params', () => {
-    const session: ImageSession = {
-      ...createSession(),
-      activeStyle: {
-        ...createSession().activeStyle!,
-        currentIntensity: 0.37,
-      },
-    }
-    const harness = renderLookStageHarness({ session })
-    const strength = renderHook(() => useRawToolAdjustments())
-
-    expect(harness.actions.params.intensity).toBe(0.37)
-    // The strength the surfaces show is the tool slice's, resolved from the
-    // same session; the stage hands out no second copy.
-    expect(strength.result.current.activeIntensity).toBe(0.37)
-    expect(harness.actions).not.toHaveProperty('activeIntensity')
-    expect(pickColorGraphIntent(harness.actions.params)).toEqual({
-      ...baseIntent,
-      styleKind: 'custom',
-      intensity: 0.37,
-    })
-  })
-})
-
-describe('useRawLookStage setIntensity', () => {
-  it('sets a continuous amount on the latest session, keeping changes made since this render', () => {
-    const session = createSession()
-    const harness = renderLookStageHarness({ session })
-
-    // A view change that landed mid-scrub survives the update.
-    harness.publishSession((prev) =>
-      prev
-        ? { ...prev, viewState: { ...prev.viewState, compareSplit: 0.31 } }
-        : prev,
-    )
-    act(() => {
-      harness.actions.setIntensity(0.62)
-    })
-
-    expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(1)
-    // The session owns the look, so params are derived, not written.
-    expect(harness.setColorIntent).not.toHaveBeenCalled()
-    expect(harness.readSession()?.activeStyle?.currentIntensity).toBe(0.62)
-    expect(harness.readSession()?.viewState.compareSplit).toBe(0.31)
-  })
-})
 
 const onlineEntry: OnlineLUTEntry = {
   id: 'online-look',
@@ -876,461 +117,527 @@ const onlineEntry: OnlineLUTEntry = {
   tags: [],
 }
 
-describe('useRawLookStage LUT loads against the current session', () => {
-  beforeEach(() => {
-    vi.mocked(fetchVerifiedCubeAsset).mockReset()
+/**
+ * Seeds the production store and renders the stage once, never again:
+ * `actions` keep that render's callbacks, like ones captured before React
+ * commits concurrent updates. Each export invalidation records the look the
+ * store held when it ran; scheduled toasts wait for `runScheduled`.
+ */
+function renderLookStage({
+  session,
+  params = baseIntent,
+  lut = null,
+  wrapper,
+}: {
+  session: ImageSession | null
+  params?: ColorGraphIntent
+  lut?: ParsedLUT | null
+  wrapper?: ComponentType<PropsWithChildren>
+}) {
+  setCurrentSession(session)
+  setLut(lut)
+  setProcessingParams(params)
+  const invalidations: Array<{
+    styleKind: ColorGraphIntent['styleKind']
+    intensity: number
+    lut: string | null
+  }> = []
+  const invalidateExportGraph = vi.fn(() => {
+    const { styleKind, intensity } = getEffectiveColorIntent()
+    invalidations.push({ styleKind, intensity, lut: getLut()?.title ?? null })
+  })
+  const scheduled: Array<() => void> = []
+  const scheduleToast = vi.fn((show: () => void) => {
+    scheduled.push(show)
   })
 
-  it('applies only the newest of two overlapping local picks', async () => {
-    const session = createSessionWithoutLook()
-    const harness = renderLookStageHarness({ session })
-    const slow = createDeferredTestCubeFile('Slow Look', 'slow.cube')
-    let slowLoad!: Promise<LutLoadOutcome>
-    act(() => {
-      slowLoad = harness.actions.loadLUT(slow.file)
-    })
+  const { result, unmount } = renderHook(
+    () =>
+      useRawLookStage({
+        baseParams: params,
+        session,
+        lut,
+        scheduleToast,
+        invalidateExportGraph,
+        canApplyLoadedLut: () => true,
+      }),
+    { wrapper },
+  )
 
-    await act(async () => {
-      await expect(
-        harness.actions.loadLUT(createTestCubeFile('Quick Look', 'quick.cube')),
-      ).resolves.toBe('loaded')
-    })
-    await act(async () => {
-      slow.finishRead()
-      await expect(slowLoad).resolves.toBe('aborted')
-    })
-
-    expect(harness.loadedTitles()).toEqual(['Quick Look'])
-    expect(getCurrentSession()?.activeStyle).toMatchObject({
-      name: 'Quick Look',
-    })
-  })
-
-  it('drops a local pick once the stage cancels it', async () => {
-    const harness = renderLookStageHarness({ session: createSession() })
-    const pick = createDeferredTestCubeFile('Cancelled Look', 'cancelled.cube')
-    let load!: Promise<LutLoadOutcome>
-    act(() => {
-      load = harness.actions.loadLUT(pick.file)
-    })
-
-    harness.actions.cancelLUTFileLoad()
-    await act(async () => {
-      pick.finishRead()
-      await expect(load).resolves.toBe('aborted')
-    })
-
-    expect(harness.setLut).not.toHaveBeenCalled()
-    expect(harness.invalidateExportGraph).not.toHaveBeenCalled()
-  })
-
-  it('drops a local pick still loading when the stage unmounts', async () => {
-    const session = createSessionWithoutLook()
-    const harness = renderLookStageHarness({ session })
-    const pick = createDeferredTestCubeFile('Departed Look', 'departed.cube')
-    let load!: Promise<LutLoadOutcome>
-    act(() => {
-      load = harness.actions.loadLUT(pick.file)
-    })
-
-    // The store keeps a loaded session for a return to /raw.
-    harness.unmount()
-    pick.finishRead()
-    await expect(load).resolves.toBe('aborted')
-
-    expect(getCurrentSession()).toBe(session)
-    expect(harness.setLut).not.toHaveBeenCalled()
-    expect(harness.setColorIntent).not.toHaveBeenCalled()
-    expect(harness.invalidateExportGraph).not.toHaveBeenCalled()
-    expect(harness.scheduleToast).not.toHaveBeenCalled()
-  })
-
-  it('keeps session changes published while a pick was loading', async () => {
-    const session = createSessionWithoutLook()
-    const harness = renderLookStageHarness({ session })
-    const pick = createDeferredTestCubeFile('Client Look', 'client.cube')
-    let load!: Promise<LutLoadOutcome>
-    act(() => {
-      load = harness.actions.loadLUT(pick.file)
-    })
-    setCurrentSession(publishPreviewAndCapability)
-
-    await act(async () => {
-      pick.finishRead()
-      await expect(load).resolves.toBe('loaded')
-    })
-
-    expect(getCurrentSession()).toMatchObject({
-      id: session.id,
-      previewBundle: { boundedHqPreview: publishedBoundedHq },
-      exportState: { fullResCapability: publishedCapability },
-      activeStyle: { name: 'Client Look' },
-    })
-  })
-
-  it('reports nothing on the replacement when an online LUT fails after its photo was replaced', async () => {
-    const download = Promise.withResolvers<{
-      bytes: Uint8Array
-      sha256: string
-    }>()
-    vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
-    const harness = renderLookStageHarness({
-      session: createSessionWithoutLook(),
-    })
-    let load!: Promise<LutLoadOutcome>
-    act(() => {
-      load = harness.actions.loadOnlineLUT(onlineEntry)
-    })
-    const replacement = { ...createSessionWithoutLook(), id: 'replacement' }
-    setCurrentSession(replacement)
-
-    await act(async () => {
-      download.reject(new Error('network down'))
-      await expect(load).resolves.toBe('aborted')
-    })
-
-    expect(getCurrentSession()).toBe(replacement)
-    expect(harness.scheduleToast).not.toHaveBeenCalled()
-  })
-
-  it('still reports an online LUT failure on the photo it was started on', async () => {
-    vi.mocked(fetchVerifiedCubeAsset).mockRejectedValue(
-      new Error('network down'),
-    )
-    const harness = renderLookStageHarness({
-      session: createSessionWithoutLook(),
-    })
-
-    await act(async () => {
-      await expect(harness.actions.loadOnlineLUT(onlineEntry)).resolves.toBe(
-        'failed',
-      )
-    })
-
-    expect(harness.scheduleToast).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('useRawLookStage notifications', () => {
-  function shownToasts() {
-    return {
-      error: toastMock.toast.error.mock.calls,
-      success: toastMock.toast.success.mock.calls,
-      info: toastMock.toast.info.mock.calls,
-    }
+  return {
+    actions: result.current,
+    unmount,
+    invalidations,
+    scheduleToast,
+    runScheduled() {
+      for (const show of scheduled.splice(0)) show()
+    },
   }
+}
 
-  beforeEach(() => {
-    vi.mocked(fetchVerifiedCubeAsset).mockReset()
-    toastMock.toast.error.mockReset()
-    toastMock.toast.success.mockReset()
-    toastMock.toast.info.mockReset()
+type LookStageHarness = ReturnType<typeof renderLookStage>
+type LookStage = LookStageHarness['actions']
+
+describe('useRawLookStage', () => {
+  it('renders the stored intent with the session look projected over it', () => {
+    const { actions } = renderLookStage({
+      session: createSession(clientLook(0.37)),
+    })
+
+    expect(actions.params).toEqual({
+      ...baseIntent,
+      styleKind: 'custom',
+      intensity: 0.37,
+    })
+    expect(actions.currentLutName).toBe('Client Look')
   })
 
-  it('reports a loaded local LUT by title and grid only when its scheduled task runs', async () => {
-    const harness = renderLookStageHarness({
-      session: createSessionWithoutLook(),
+  describe('look actions read the store when they fire', () => {
+    it('applies Strength and clear to a session published after a session-less render', () => {
+      const harness = renderLookStage({
+        session: null,
+        params: detachedLook,
+        lut: createLut(),
+      })
+
+      // Ingest publishes the new session before React rerenders.
+      setCurrentSession(createSession())
+      harness.actions.setIntensity(0.4)
+      expect(getCurrentSession()?.activeStyle?.currentIntensity).toBe(0.4)
+
+      harness.actions.clearLUT()
+      expect(getCurrentSession()?.activeStyle).toBeNull()
+      expect(getProcessingParams()).toBe(detachedLook)
     })
 
-    await act(async () => {
-      await expect(
-        harness.actions.loadLUT(createTestCubeFile('Client Look', 'look.cube')),
-      ).resolves.toBe('loaded')
-    })
+    it('writes the detached intent the store holds once the rendered session is reset', () => {
+      const harness = renderLookStage({
+        session: createSession(),
+        params: detachedLook,
+        lut: createLut(),
+      })
 
-    expect(harness.scheduleToast).toHaveBeenCalledTimes(1)
-    expect(toastMock.toast.success).not.toHaveBeenCalled()
-    harness.runScheduled()
-    expect(shownToasts()).toEqual({
-      error: [],
-      success: [['Loaded LUT: Client Look', { description: '17³ grid' }]],
-      info: [],
-    })
-  })
+      setCurrentSession(null)
+      setColorIntent((prev) => ({ ...prev, userContrast: 25 }))
+      harness.actions.setIntensity(0.4)
+      harness.actions.clearLUT()
 
-  it('reports a loaded online LUT by title and grid', async () => {
-    vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue({
-      bytes: new TextEncoder().encode(createTestCube('Online Look')),
-      sha256: 'b'.repeat(64),
-    })
-    const harness = renderLookStageHarness({
-      session: createSessionWithoutLook(),
-    })
-
-    await act(async () => {
-      await expect(harness.actions.loadOnlineLUT(onlineEntry)).resolves.toBe(
-        'loaded',
-      )
-    })
-
-    harness.runScheduled()
-    expect(shownToasts()).toEqual({
-      error: [],
-      success: [['Loaded LUT: Online Look', { description: '17³ grid' }]],
-      info: [],
-    })
-  })
-
-  it('reports an unsupported file format and records its code', async () => {
-    const harness = renderLookStageHarness({
-      session: createSessionWithoutLook(),
-    })
-
-    await act(async () => {
-      await expect(
-        harness.actions.loadLUT(
-          Object.assign(new File(['not a lut'], 'look.txt'), {
-            text: () => Promise.resolve('not a lut'),
-          }),
-        ),
-      ).resolves.toBe('failed')
-    })
-
-    harness.runScheduled()
-    expect(shownToasts()).toEqual({
-      error: [
-        [
-          'Unsupported LUT format',
-          { description: 'Only .cube files are supported' },
-        ],
-      ],
-      success: [],
-      info: [],
-    })
-  })
-
-  it('reports a parser failure with the parser detail', async () => {
-    const harness = renderLookStageHarness({
-      session: createSessionWithoutLook(),
-    })
-    const content = 'TITLE "Broken"\nLUT_3D_SIZE 2\n0 0 0\n'
-
-    await act(async () => {
-      await expect(
-        harness.actions.loadLUT(
-          Object.assign(new File([content], 'broken.cube'), {
-            text: () => Promise.resolve(content),
-          }),
-        ),
-      ).resolves.toBe('failed')
-    })
-
-    expect(harness.setLut).not.toHaveBeenCalled()
-    harness.runScheduled()
-    expect(shownToasts()).toEqual({
-      error: [
-        [
-          'Failed to load LUT',
-          { description: 'Invalid .cube file: expected 8 entries, got 1' },
-        ],
-      ],
-      success: [],
-      info: [],
-    })
-  })
-
-  it('reports an incomplete catalog contract as a failed load', async () => {
-    vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue({
-      bytes: new TextEncoder().encode(createTestCube('Online Look')),
-      sha256: 'b'.repeat(64),
-    })
-    const harness = renderLookStageHarness({
-      session: createSessionWithoutLook(),
-    })
-
-    await act(async () => {
-      await expect(
-        harness.actions.loadOnlineLUT({
-          ...onlineEntry,
-          trustedContract: {
-            role: 'combined-look-output',
-            inputProfile: 'panasonic-vgamut-vlog',
-          },
-        }),
-      ).resolves.toBe('failed')
-    })
-
-    harness.runScheduled()
-    expect(shownToasts()).toEqual({
-      error: [
-        [
-          'Failed to load LUT',
-          { description: 'Unsupported LUT color contract.' },
-        ],
-      ],
-      success: [],
-      info: [],
-    })
-  })
-
-  it('reports an incomplete contract choice by the profile it named', () => {
-    const lut = createLut()
-    const harness = renderLookStageHarness({ session: createSession(), lut })
-
-    harness.actions.selectLUTProfile('not-a-profile')
-
-    expect(harness.setLut).not.toHaveBeenCalled()
-    harness.runScheduled()
-    expect(shownToasts()).toEqual({
-      error: [['Incomplete LUT contract', { description: 'not-a-profile' }]],
-      success: [],
-      info: [],
-    })
-  })
-
-  it('reports a contract choice made with no LUT loaded', () => {
-    const harness = renderLookStageHarness({ session: createSession() })
-
-    harness.actions.selectLUTProfile('display-srgb')
-
-    harness.runScheduled()
-    expect(shownToasts()).toEqual({
-      error: [['No LUT loaded']],
-      success: [],
-      info: [],
-    })
-  })
-
-  it('reports nothing for a contract choice that applies', () => {
-    const lut = createLut()
-    const harness = renderLookStageHarness({ session: createSession(), lut })
-
-    harness.actions.selectLUTProfile('display-srgb')
-
-    expect(harness.setLut).toHaveBeenCalledTimes(1)
-    expect(harness.scheduleToast).not.toHaveBeenCalled()
-  })
-
-  it('reports nothing for an aborted request, even one that also failed', async () => {
-    const download = Promise.withResolvers<{
-      bytes: Uint8Array
-      sha256: string
-    }>()
-    vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
-    const harness = renderLookStageHarness({
-      session: createSessionWithoutLook(),
-    })
-    const controller = new AbortController()
-    let load!: Promise<LutLoadOutcome>
-    act(() => {
-      load = harness.actions.loadOnlineLUT(onlineEntry, {
-        signal: controller.signal,
+      expect(getCurrentSession()).toBeNull()
+      expect(getProcessingParams()).toEqual({
+        ...baseIntent,
+        userContrast: 25,
+        intensity: 0.4,
       })
     })
-    controller.abort()
 
-    await act(async () => {
-      download.reject(new Error('network down'))
-      await expect(load).resolves.toBe('aborted')
-    })
-
-    expect(harness.scheduleToast).not.toHaveBeenCalled()
-  })
-
-  it('reports a cleared LUT', () => {
-    const lut = createLut()
-    const harness = renderLookStageHarness({ session: createSession(), lut })
-
-    harness.actions.clearLUT()
-
-    harness.runScheduled()
-    expect(shownToasts()).toEqual({
-      error: [],
-      success: [],
-      info: [['LUT cleared']],
-    })
-  })
-
-  it('describes a load failure that carried no message of its own', async () => {
-    vi.mocked(fetchVerifiedCubeAsset).mockRejectedValue('socket closed')
-    const harness = renderLookStageHarness({
-      session: createSessionWithoutLook(),
-    })
-
-    await act(async () => {
-      await expect(harness.actions.loadOnlineLUT(onlineEntry)).resolves.toBe(
-        'failed',
-      )
-    })
-
-    harness.runScheduled()
-    expect(shownToasts()).toEqual({
-      error: [['Failed to load LUT', { description: 'Failed to parse LUT' }]],
-      success: [],
-      info: [],
-    })
-  })
-
-  describe('in the current locale', () => {
-    afterEach(async () => {
-      localStorage.clear()
-      await act(() => i18n.changeLanguage('en'))
-    })
-
-    it('uses the locale current when a download lands, not when it began', async () => {
-      const download = Promise.withResolvers<{
-        bytes: Uint8Array
-        sha256: string
-      }>()
-      vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
-      await act(() => i18n.changeLanguage('en'))
-      const harness = renderLookStageHarness({
-        session: createSessionWithoutLook(),
-        wrapper: I18nProvider,
+    it('keeps the Strength on a session look, and on the detached intent once the session has none', () => {
+      const harness = renderLookStage({
+        session: createSession(),
+        lut: createLut(),
       })
+
+      harness.actions.setIntensity(0.37)
+      harness.actions.setIntensity(0.62)
+      expect(getCurrentSession()?.activeStyle?.currentIntensity).toBe(0.62)
+      expect(getProcessingParams()).toBe(baseIntent)
+
+      harness.actions.clearLUT()
+      harness.actions.setIntensity(0.4)
+      expect(getCurrentSession()?.activeStyle).toBeNull()
+      expect(getProcessingParams()).toEqual({ ...baseIntent, intensity: 0.4 })
+    })
+
+    it('invalidates the export graph only once the store holds the change', () => {
+      const harness = renderLookStage({
+        session: createSession(),
+        lut: createLut(),
+      })
+
+      harness.actions.setIntensity(0.62)
+      harness.actions.clearLUT()
+      setCurrentSession(null)
+      harness.actions.setIntensity(0.4)
+
+      expect(harness.invalidations).toEqual([
+        { styleKind: 'custom', intensity: 0.62, lut: 'Client Look' },
+        { styleKind: 'none', intensity: 0.7, lut: null },
+        { styleKind: 'none', intensity: 0.4, lut: null },
+      ])
+    })
+
+    it.each([
+      ['the session look', () => createSession(), baseIntent, 1],
+      ['the detached intent', () => null, detachedLook, 0.7],
+    ])(
+      'leaves the export alone when %s already holds the Strength',
+      (_, createRendered, params, value) => {
+        const session = createRendered()
+        const harness = renderLookStage({ session, params, lut: createLut() })
+
+        harness.actions.setIntensity(value)
+
+        expect(getCurrentSession()).toBe(session)
+        expect(getProcessingParams()).toBe(params)
+        expect(harness.invalidations).toEqual([])
+      },
+    )
+
+    it('keeps view and geometry published after render, and a same-tick Strength, through a contract change and a clear', () => {
+      const lut = createLut()
+      const harness = renderLookStage({ session: createSession(), lut })
+      const viewState: ImageSession['viewState'] = {
+        ...createSession().viewState,
+        mode: 'compare',
+        compareSplit: 0.62,
+      }
+      const exportGeometry = {
+        matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        constrainCrop: true,
+      }
+      setCurrentSession(
+        (prev) => prev && { ...prev, viewState, exportGeometry },
+      )
+
+      harness.actions.setIntensity(0.43)
+      harness.actions.selectLUTProfile('display-srgb')
+      expect(getCurrentSession()).toMatchObject({
+        activeStyle: { kind: 'custom', currentIntensity: 0.43 },
+        lutProfileSelection: { fingerprint: lut.fingerprint },
+      })
+
+      harness.actions.clearLUT()
+      expect(getCurrentSession()).toMatchObject({ activeStyle: null })
+      expect(getCurrentSession()?.viewState).toBe(viewState)
+      expect(getCurrentSession()?.exportGeometry).toBe(exportGeometry)
+    })
+
+    it('carries a detached Strength through a contract change and starts a LUT loaded after a clear at the default', async () => {
+      const harness = renderLookStage({
+        session: null,
+        params: detachedLook,
+        lut: createLut(),
+      })
+
+      harness.actions.setIntensity(0.43)
+      harness.actions.selectLUTProfile('display-srgb')
+      expect(getProcessingParams()).toEqual({
+        ...detachedLook,
+        intensity: 0.43,
+      })
+
+      harness.actions.clearLUT()
+      await act(async () => {
+        await harness.actions.loadLUT(
+          createTestCubeFile('Second Look', 'second.cube'),
+        )
+      })
+      expect(getProcessingParams()).toEqual(detachedLook)
+    })
+
+    it('refuses a contract choice made after the LUT was cleared, before a rerender', () => {
+      const lut = createLut()
+      const harness = renderLookStage({ session: createSession(), lut })
+
+      harness.actions.clearLUT()
+      const cleared = getCurrentSession()
+      harness.actions.selectLUTProfile('display-srgb')
+
+      expect(getLut()).toBeNull()
+      expect(getCurrentSession()).toBe(cleared)
+      expect(getStoredLUTContractSelection(lut.fingerprint)).toBeUndefined()
+      expect(harness.invalidations).toHaveLength(1)
+    })
+
+    it('keeps the hash the session look holds only for the same LUT when the contract changes', () => {
+      const lut = createLut()
+      const harness = renderLookStage({ session: createSession(), lut })
+      const sha256 = 'c'.repeat(64)
+      const choose = (fingerprint: string) => {
+        setCurrentSession((prev) =>
+          prev?.activeStyle
+            ? {
+                ...prev,
+                activeStyle: {
+                  ...prev.activeStyle,
+                  lutAsset: {
+                    format: 'cube',
+                    dimension: 17,
+                    fingerprint,
+                    sha256,
+                  },
+                },
+              }
+            : prev,
+        )
+        harness.actions.selectLUTProfile('display-srgb')
+        return getCurrentSession()?.activeStyle?.lutAsset
+      }
+
+      expect(choose(lut.fingerprint)?.sha256).toBe(sha256)
+      const other = choose('lut-other')
+      expect(other?.fingerprint).toBe(lut.fingerprint)
+      expect(other?.sha256).toBeUndefined()
+    })
+  })
+
+  describe('local picks', () => {
+    it('applies only the newest of two overlapping picks', async () => {
+      const harness = renderLookStage({ session: createSession(null) })
+      const slow = createDeferredTestCubeFile('Slow Look', 'slow.cube')
+      let slowLoad!: Promise<LutLoadOutcome>
+      act(() => {
+        slowLoad = harness.actions.loadLUT(slow.file)
+      })
+
+      await act(async () => {
+        await expect(
+          harness.actions.loadLUT(
+            createTestCubeFile('Quick Look', 'quick.cube'),
+          ),
+        ).resolves.toBe('loaded')
+      })
+      await act(async () => {
+        slow.finishRead()
+        await expect(slowLoad).resolves.toBe('aborted')
+      })
+
+      expect(getLut()?.title).toBe('Quick Look')
+      expect(getCurrentSession()?.activeStyle?.name).toBe('Quick Look')
+    })
+
+    it.each<[string, (harness: LookStageHarness) => void]>([
+      [
+        'the stage cancels it',
+        (harness) => harness.actions.cancelLUTFileLoad(),
+      ],
+      // The store keeps a loaded session for a return to /raw.
+      ['the stage unmounts', (harness) => harness.unmount()],
+    ])('drops a pick still reading when %s', async (_, drop) => {
+      const session = createSession(null)
+      const harness = renderLookStage({ session })
+      const pick = createDeferredTestCubeFile('Dropped Look', 'dropped.cube')
       let load!: Promise<LutLoadOutcome>
       act(() => {
-        load = harness.actions.loadOnlineLUT(onlineEntry)
+        load = harness.actions.loadLUT(pick.file)
       })
 
-      // The language menu switches while the LUT downloads.
-      localStorage.setItem('lumaforge.locale', 'zh-CN')
-      await act(() => i18n.changeLanguage('zh-CN'))
+      drop(harness)
       await act(async () => {
-        download.resolve({
-          bytes: new TextEncoder().encode(createTestCube('Online Look')),
-          sha256: 'b'.repeat(64),
-        })
+        pick.finishRead()
+        await expect(load).resolves.toBe('aborted')
+      })
+
+      expect(getCurrentSession()).toBe(session)
+      expect(getLut()).toBeNull()
+      expect(harness.invalidations).toEqual([])
+      expect(harness.scheduleToast).not.toHaveBeenCalled()
+    })
+
+    it('keeps session changes published while a pick was reading', async () => {
+      const harness = renderLookStage({ session: createSession(null) })
+      const pick = createDeferredTestCubeFile('Client Look', 'client.cube')
+      let load!: Promise<LutLoadOutcome>
+      act(() => {
+        load = harness.actions.loadLUT(pick.file)
+      })
+      setCurrentSession(
+        (prev) =>
+          prev && {
+            ...prev,
+            viewState: { ...prev.viewState, compareSplit: 0.31 },
+          },
+      )
+
+      await act(async () => {
+        pick.finishRead()
         await expect(load).resolves.toBe('loaded')
       })
 
-      harness.runScheduled()
-      expect(shownToasts()).toEqual({
-        error: [],
-        success: [['已载入 LUT：Online Look', { description: '17³ 网格' }]],
-        info: [],
+      expect(getCurrentSession()).toMatchObject({
+        viewState: { compareSplit: 0.31 },
+        activeStyle: { name: 'Client Look' },
       })
     })
   })
-})
 
-describe('useRawLookStage effective intent against the store', () => {
-  afterEach(() => {
-    cleanup()
-    setProcessingParams({ ...baseIntent })
-  })
+  describe('notifications', () => {
+    function shownToasts() {
+      return (['success', 'error', 'info'] as const).flatMap((kind) =>
+        toastMock.toast[kind].mock.calls.map((args) => [kind, ...args]),
+      )
+    }
 
-  it('reads the stored intent and session without any render', () => {
-    setCurrentSession(null)
-    setProcessingParams({ ...baseIntent, userContrast: 0.2 })
-
-    expect(getEffectiveColorIntent()).toBe(getProcessingParams())
-
-    setCurrentSession({
-      ...createSession(),
-      activeStyle: {
-        kind: 'custom',
-        name: 'Client Look',
-        defaultIntensity: 0.7,
-        currentIntensity: 0.37,
+    it.each<{
+      name: string
+      lut?: boolean
+      run: (stage: LookStage) => unknown
+      shown: unknown[]
+    }>([
+      {
+        name: 'a loaded LUT by title and grid',
+        run: (stage) =>
+          stage.loadLUT(createTestCubeFile('Client Look', 'look.cube')),
+        shown: [
+          'success',
+          'Loaded LUT: Client Look',
+          { description: '17³ grid' },
+        ],
       },
-    })
+      {
+        name: 'an unsupported file format',
+        run: (stage) => stage.loadLUT(textFile('not a lut', 'look.txt')),
+        shown: [
+          'error',
+          'Unsupported LUT format',
+          { description: 'Only .cube files are supported' },
+        ],
+      },
+      {
+        name: 'a parser failure with its detail',
+        run: (stage) =>
+          stage.loadLUT(
+            textFile('TITLE "Broken"\nLUT_3D_SIZE 2\n0 0 0\n', 'broken.cube'),
+          ),
+        shown: [
+          'error',
+          'Failed to load LUT',
+          { description: 'Invalid .cube file: expected 8 entries, got 1' },
+        ],
+      },
+      {
+        name: 'a failure that carried no message of its own',
+        run: (stage) => {
+          vi.mocked(fetchVerifiedCubeAsset).mockRejectedValue('socket closed')
+          return stage.loadOnlineLUT(onlineEntry)
+        },
+        shown: [
+          'error',
+          'Failed to load LUT',
+          { description: 'Failed to parse LUT' },
+        ],
+      },
+      {
+        name: 'a catalog contract that does not apply',
+        run: (stage) => {
+          vi.mocked(fetchVerifiedCubeAsset).mockResolvedValue(cubeDownload())
+          return stage.loadOnlineLUT({
+            ...onlineEntry,
+            trustedContract: {
+              role: 'combined-look-output',
+              inputProfile: 'panasonic-vgamut-vlog',
+            },
+          })
+        },
+        shown: [
+          'error',
+          'Failed to load LUT',
+          { description: 'Unsupported LUT color contract.' },
+        ],
+      },
+      {
+        name: 'an incomplete contract choice by the profile it named',
+        lut: true,
+        run: (stage) => stage.selectLUTProfile('not-a-profile'),
+        shown: [
+          'error',
+          'Incomplete LUT contract',
+          { description: 'not-a-profile' },
+        ],
+      },
+      {
+        name: 'a contract choice made with no LUT loaded',
+        run: (stage) => stage.selectLUTProfile('display-srgb'),
+        shown: ['error', 'No LUT loaded'],
+      },
+      {
+        name: 'a cleared LUT',
+        lut: true,
+        run: (stage) => stage.clearLUT(),
+        shown: ['info', 'LUT cleared'],
+      },
+    ])(
+      'reports $name only when its scheduled task runs',
+      async ({ lut, run, shown }) => {
+        const harness = renderLookStage({
+          session: createSession(null),
+          lut: lut ? createLut() : null,
+        })
 
-    expect(getEffectiveColorIntent()).toEqual({
-      ...baseIntent,
-      userContrast: 0.2,
-      styleKind: 'custom',
-      intensity: 0.37,
+        await act(async () => {
+          await run(harness.actions)
+        })
+
+        expect(harness.scheduleToast).toHaveBeenCalledTimes(1)
+        expect(shownToasts()).toEqual([])
+        harness.runScheduled()
+        expect(shownToasts()).toEqual([shown])
+      },
+    )
+
+    it.each<[string, (controller: AbortController) => void]>([
+      ['its request was aborted', (controller) => controller.abort()],
+      [
+        'its photo was replaced',
+        () => setCurrentSession(createTestSession({ id: 'replacement' })),
+      ],
+    ])(
+      'reports nothing when an online LUT fails after %s',
+      async (_, interrupt) => {
+        const download =
+          Promise.withResolvers<ReturnType<typeof cubeDownload>>()
+        vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
+        const harness = renderLookStage({ session: createSession(null) })
+        const controller = new AbortController()
+        let load!: Promise<LutLoadOutcome>
+        act(() => {
+          load = harness.actions.loadOnlineLUT(onlineEntry, {
+            signal: controller.signal,
+          })
+        })
+
+        interrupt(controller)
+        await act(async () => {
+          download.reject(new Error('network down'))
+          await expect(load).resolves.toBe('aborted')
+        })
+
+        expect(harness.scheduleToast).not.toHaveBeenCalled()
+      },
+    )
+
+    describe('in the current locale', () => {
+      afterEach(async () => {
+        localStorage.clear()
+        await act(() => i18n.changeLanguage('en'))
+      })
+
+      it('uses the locale current when a download lands, not when it began', async () => {
+        const download =
+          Promise.withResolvers<ReturnType<typeof cubeDownload>>()
+        vi.mocked(fetchVerifiedCubeAsset).mockReturnValue(download.promise)
+        await act(() => i18n.changeLanguage('en'))
+        const harness = renderLookStage({
+          session: createSession(null),
+          wrapper: I18nProvider,
+        })
+        let load!: Promise<LutLoadOutcome>
+        act(() => {
+          load = harness.actions.loadOnlineLUT(onlineEntry)
+        })
+
+        // The language menu switches while the LUT downloads.
+        localStorage.setItem('lumaforge.locale', 'zh-CN')
+        await act(() => i18n.changeLanguage('zh-CN'))
+        await act(async () => {
+          download.resolve(cubeDownload())
+          await expect(load).resolves.toBe('loaded')
+        })
+
+        harness.runScheduled()
+        expect(shownToasts()).toEqual([
+          ['success', '已载入 LUT：Online Look', { description: '17³ 网格' }],
+        ])
+      })
     })
   })
 })
