@@ -1,10 +1,8 @@
 import { LumaRawRuntimeError } from '../src/errors'
 import type { LumaRawRuntimeMemoryProfile } from '../src/types'
+import type { EmbindModule } from './native-adapter'
 import { createNativeFactory } from './native-adapter'
-import type {
-  LumaRawNativeDecodeOptions,
-  LumaRawNativeFactory,
-} from './native-types'
+import type { LumaRawNativeFactory } from './native-types'
 
 type NativeModuleFactory = (options?: {
   locateFile?: (path: string) => string
@@ -68,16 +66,5 @@ export async function loadNativeFactory({
     throw createMissingNativeAssetsError(error)
   }
 
-  return createNativeFactory(
-    module as {
-      LumaRawProcessor: new () => {
-        openBuffer: (data: Uint8Array, settings: unknown) => void
-        readMetadata: () => unknown
-        extractThumbnail: () => unknown
-        decodePreview: (options?: LumaRawNativeDecodeOptions) => unknown
-        decodeHq: (options?: LumaRawNativeDecodeOptions) => unknown
-        delete?: () => void
-      }
-    },
-  )
+  return createNativeFactory(module as EmbindModule)
 }

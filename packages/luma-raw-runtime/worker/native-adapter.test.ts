@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
+import type { LumaRawProcessedWindowRequest } from '../src/types'
 import { createNativeFactory } from './native-adapter'
 import type {
   LumaRawNativeDecodeOptions,
@@ -35,6 +36,41 @@ const settings = {
   gamm: [1, 1, 1, 1, 0, 0],
 } satisfies LumaRawNativeOpenSettings
 
+/**
+ * An embind processor whose every method answers neutrally; each fake
+ * overrides the methods its test exercises.
+ */
+class BaseEmbindProcessor {
+  loadBuffer(_data: Uint8Array): unknown {
+    return { copyToWasm: 0 }
+  }
+  openWithSettings(_settings: LumaRawNativeOpenSettings): unknown {
+    return { copyToWasm: 0, librawOpen: 0 }
+  }
+  readMetadata(): unknown {
+    return {}
+  }
+  extractThumbnail(): unknown {
+    return undefined
+  }
+  probeExportCapability(): unknown {
+    return undefined
+  }
+  readProcessedWindow(_request: LumaRawProcessedWindowRequest): unknown {
+    return undefined
+  }
+  applyCalibration(_params: unknown): unknown {
+    return undefined
+  }
+  decodePreview(_options?: LumaRawNativeDecodeOptions): unknown {
+    return { data: new Uint16Array([1, 2, 3]), width: 1, height: 1 }
+  }
+  decodeHq(_options?: LumaRawNativeDecodeOptions): unknown {
+    return { data: new Uint16Array([1, 2, 3]), width: 1, height: 1 }
+  }
+  delete() {}
+}
+
 function createProcessor(values: ProcessorValues) {
   const image = values.image ?? {
     data: new Uint16Array([1, 2, 3]),
@@ -43,7 +79,7 @@ function createProcessor(values: ProcessorValues) {
   }
 
   return createNativeFactory({
-    LumaRawProcessor: class {
+    LumaRawProcessor: class extends BaseEmbindProcessor {
       loadBuffer(_data: Uint8Array) {
         return { copyToWasm: 0 }
       }
@@ -86,7 +122,7 @@ function createProcessor(values: ProcessorValues) {
 function createFactoryWithHeap(heap?: Uint8Array) {
   return createNativeFactory({
     ...(heap !== undefined ? { HEAPU8: heap } : {}),
-    LumaRawProcessor: class {
+    LumaRawProcessor: class extends BaseEmbindProcessor {
       loadBuffer() {
         return { copyToWasm: 0 }
       }
@@ -202,7 +238,7 @@ describe('native-adapter', () => {
 
   it('normalizes finite DNG baseline exposure metadata', () => {
     const processor = createNativeFactory({
-      LumaRawProcessor: class {
+      LumaRawProcessor: class extends BaseEmbindProcessor {
         loadBuffer() {
           return { copyToWasm: 0 }
         }
@@ -264,36 +300,6 @@ describe('native-adapter', () => {
     const processor = createProcessor({ thumbnail: undefined })
 
     expect(processor.extractThumbnail()).toBeUndefined()
-  })
-
-  it('falls back to an unsupported export capability when raw-window probing is unavailable', () => {
-    const processor = createFactoryWithHeap().createProcessor()
-
-    expect(processor.probeExportCapability?.()).toEqual({
-      supported: false,
-      width: 0,
-      height: 0,
-      rawWidth: 0,
-      rawHeight: 0,
-      cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
-      blackLevel: 0,
-      whiteLevel: 0,
-      orientation: { code: 1, supported: true },
-      sensor: {
-        layout: 'unknown',
-        colorCount: 0,
-        cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
-        phaseIsWindowLocal: false,
-      },
-      windows: { librawProcessed: false },
-      diagnostics: {
-        hasRawImage: false,
-        hasColor3Image: false,
-        hasColor4Image: false,
-        hasXTransTable: false,
-      },
-      reasons: ['raw-window-unavailable'],
-    })
   })
 
   it('fails closed when a supported payload lacks a LibRaw processed window', () => {
@@ -523,7 +529,7 @@ describe('native-adapter', () => {
 
   it('preserves native receiver when reading processed windows', () => {
     const processor = createNativeFactory({
-      LumaRawProcessor: class {
+      LumaRawProcessor: class extends BaseEmbindProcessor {
         processedWindow = {
           rect: { x: 0, y: 2, width: 2, height: 1 },
           workingSpace: 'linear-prophoto-rgb',
@@ -573,38 +579,6 @@ describe('native-adapter', () => {
       rect: { x: 0, y: 2, width: 2, height: 1 },
       workingSpace: 'linear-prophoto-rgb',
     })
-  })
-
-  it('omits processed-window access when native processor does not expose it', () => {
-    const processor = createNativeFactory({
-      LumaRawProcessor: class {
-        loadBuffer(_data: Uint8Array) {
-          return { copyToWasm: 0 }
-        }
-        openWithSettings(_settings: LumaRawNativeOpenSettings) {
-          return {
-            copyToWasm: 0,
-            librawOpen: 0,
-          }
-        }
-        readMetadata() {
-          return {}
-        }
-        extractThumbnail() {
-          return undefined
-        }
-        decodePreview() {
-          return { data: new Uint16Array([1, 2, 3]), width: 1, height: 1 }
-        }
-        decodeHq() {
-          return { data: new Uint16Array([1, 2, 3]), width: 1, height: 1 }
-        }
-        delete() {}
-      },
-    }).createProcessor()
-
-    expect('readProcessedWindow' in processor).toBe(false)
-    expect(processor.readProcessedWindow).toBeUndefined()
   })
 
   it('rejects malformed processed-window payloads', () => {
@@ -1044,7 +1018,7 @@ describe('native-adapter', () => {
 
   it('normalizes JPEG thumbnail dimensions from metadata fallback fields', () => {
     const module = {
-      LumaRawProcessor: class {
+      LumaRawProcessor: class extends BaseEmbindProcessor {
         loadBuffer() {
           return { copyToWasm: 1 }
         }
@@ -1366,7 +1340,7 @@ describe('native-adapter', () => {
 
     for (const processor of [negativeTiming, missingTiming, nonObjectTiming]) {
       expect(() => processor.openWithSettings(settings)).toThrow(
-        'Native RAW openBuffer returned invalid timing data.',
+        'Native RAW open returned invalid timing data.',
       )
     }
   })

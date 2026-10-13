@@ -70,10 +70,8 @@ export type LumaRawNativeDecodeOptions = {
 
 export type LumaRawNativeExportCapability = LumaRawExportCapability
 
-// Subset of the LumaRawCameraCalibrationProfile carried into the native
-// wrapper. The runtime adapter strips identity fields (profileId,
-// profileName) before invoking the native call because LibRaw does not need
-// to know which profile produced the matrix.
+// The part of a LumaRawCameraCalibrationProfile the native wrapper takes:
+// LibRaw needs the matrix and tone curve, not which profile produced them.
 export type LumaRawNativeCalibrationPayload = {
   xyzToCamera: Float32Array
   toneCurveLut?: Float32Array
@@ -86,11 +84,11 @@ export type LumaRawNativeProcessor = {
   ) => LumaRawNativeOpenTimings
   readMetadata: () => LumaRawNativeMetadata
   extractThumbnail: () => LumaRawNativeThumbnail | undefined
-  probeExportCapability?: () => LumaRawNativeExportCapability
-  readProcessedWindow?: (
+  probeExportCapability: () => LumaRawNativeExportCapability
+  readProcessedWindow: (
     request: LumaRawProcessedWindowRequest,
   ) => LumaRawProcessedWindow
-  applyCalibration?: (payload: LumaRawNativeCalibrationPayload) => void
+  applyCalibration: (payload: LumaRawNativeCalibrationPayload) => void
   decodePreview: (options?: LumaRawNativeDecodeOptions) => LumaRawNativeImage
   decodeHq: (options?: LumaRawNativeDecodeOptions) => LumaRawNativeImage
   dispose: () => void

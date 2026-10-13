@@ -8,8 +8,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import type { EmbindModule } from '../worker/native-adapter'
 import { createNativeFactory } from '../worker/native-adapter'
-import type { LumaRawNativeDecodeOptions } from '../worker/native-types'
 import { createRuntimeCore } from '../worker/runtime-core'
 import type { LumaRawErrorCode } from './errors'
 import { normalizeRawRuntimeError } from './errors'
@@ -205,18 +205,7 @@ async function loadSmokeNativeFactory() {
     },
   })
 
-  return createNativeFactory(
-    module as {
-      LumaRawProcessor: new () => {
-        openBuffer: (data: Uint8Array, settings: unknown) => void
-        readMetadata: () => unknown
-        extractThumbnail: () => unknown
-        decodePreview: (options?: LumaRawNativeDecodeOptions) => unknown
-        decodeHq: (options?: LumaRawNativeDecodeOptions) => unknown
-        delete?: () => void
-      }
-    },
-  )
+  return createNativeFactory(module as EmbindModule)
 }
 
 async function createNativeCore() {

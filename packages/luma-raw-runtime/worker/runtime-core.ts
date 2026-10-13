@@ -2,7 +2,6 @@ import { version as runtimeVersion } from '../package.json'
 import type { LumaRawErrorCode } from '../src/errors'
 import { LumaRawRuntimeError, normalizeRawRuntimeError } from '../src/errors'
 import type {
-  LumaRawExportCapability,
   LumaRawFrame,
   LumaRawHeapStats,
   LumaRawMetadata,
@@ -17,14 +16,12 @@ import type {
   LumaRawWorkerRequestType,
   LumaRawWorkerResponse,
 } from '../src/worker-protocol'
-import { normalizeExportCapability } from './native-adapter'
 import type {
   LumaRawNativeCalibrationPayload,
   LumaRawNativeFactory,
   LumaRawNativeImage,
   LumaRawNativeMetadata,
   LumaRawNativeOpenSettings,
-  LumaRawNativeOpenTimings,
   LumaRawNativeProcessor,
   LumaRawNativeThumbnail,
 } from './native-types'
@@ -162,77 +159,13 @@ function toMimeType(thumbnail: LumaRawNativeThumbnail) {
   return thumbnail.format === 'jpeg' ? 'image/jpeg' : 'application/octet-stream'
 }
 
-function asOpenTiming(value: unknown, label: keyof LumaRawNativeOpenTimings) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new TypeError(
-      `Native RAW openBuffer returned invalid ${label} timing.`,
-    )
-  }
-
-  return value
-}
-
-function maybeOpenTiming(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0
-    ? value
-    : undefined
-}
-
-function normalizeOpenTimings(
-  timings: unknown,
-): LumaRawNativeOpenTimings | undefined {
-  if (timings === undefined) return undefined
-  if (timings === null || typeof timings !== 'object') {
-    return undefined
-  }
-
-  const raw = timings as Record<string, unknown>
-  const copyToWasm = maybeOpenTiming(raw.copyToWasm)
-  const librawOpen = maybeOpenTiming(raw.librawOpen)
-  if (copyToWasm === undefined || librawOpen === undefined) {
-    return undefined
-  }
-
-  return {
-    copyToWasm,
-    librawOpen,
-  }
-}
-
-function normalizeRequiredOpenTimings(timings: unknown) {
-  const openTimings = normalizeOpenTimings(timings)
-  if (!openTimings) {
-    throw new TypeError('Native RAW openBuffer returned invalid timing data.')
-  }
-
-  return openTimings
-}
-
-function normalizeLoadBufferTimings(timings: unknown) {
-  if (
-    timings === null ||
-    timings === undefined ||
-    typeof timings !== 'object'
-  ) {
-    throw new TypeError('Native RAW openBuffer returned invalid timing data.')
-  }
-
-  const raw = timings as Record<string, unknown>
-
-  return {
-    copyToWasm: asOpenTiming(raw.copyToWasm, 'copyToWasm'),
-  }
-}
-
 function openProcessorWithSettings(
   processor: LumaRawNativeProcessor,
   settings: LumaRawNativeOpenSettings,
   timer: Timer,
   copyToWasmOffset = 0,
 ) {
-  const openTimings = normalizeRequiredOpenTimings(
-    processor.openWithSettings(settings),
-  )
+  const openTimings = processor.openWithSettings(settings)
   const copyToWasm = copyToWasmOffset + openTimings.copyToWasm
   timer.assign({
     copyToWasm,
@@ -424,34 +357,6 @@ function heapStats(
   }
 }
 
-function unsupportedRawWindowCapability(): LumaRawExportCapability {
-  return {
-    supported: false,
-    width: 0,
-    height: 0,
-    rawWidth: 0,
-    rawHeight: 0,
-    cfa: { pattern: 'unsupported' as const, xPhase: 0, yPhase: 0 },
-    blackLevel: 0,
-    whiteLevel: 0,
-    orientation: { code: 1, supported: true },
-    sensor: {
-      layout: 'unknown',
-      colorCount: 0,
-      cfa: { pattern: 'unsupported' as const, xPhase: 0, yPhase: 0 },
-      phaseIsWindowLocal: false,
-    },
-    windows: { librawProcessed: false },
-    diagnostics: {
-      hasRawImage: false,
-      hasColor3Image: false,
-      hasColor4Image: false,
-      hasXTransTable: false,
-    },
-    reasons: ['raw-window-unavailable'],
-  }
-}
-
 export function createRuntimeCore(
   nativeFactory: LumaRawNativeFactory,
   options: RuntimeCoreOptions = {},
@@ -542,8 +447,8 @@ export function createRuntimeCore(
     let disposeError: unknown
 
     try {
-      const loadTimings = normalizeLoadBufferTimings(
-        processor.loadBuffer(new Uint8Array(request.payload.fileBuffer)),
+      const loadTimings = processor.loadBuffer(
+        new Uint8Array(request.payload.fileBuffer),
       )
       openProcessorWithSettings(
         processor,
@@ -718,9 +623,7 @@ export function createRuntimeCore(
           createTimer(),
         )
 
-        return session.processor.probeExportCapability
-          ? normalizeExportCapability(session.processor.probeExportCapability())
-          : unsupportedRawWindowCapability()
+        return session.processor.probeExportCapability()
       },
     })
   }
@@ -730,13 +633,6 @@ export function createRuntimeCore(
   ): LumaRawWorkerResponse {
     return runSessionJob(sessionJobs, request, {
       run(session) {
-        if (!session.processor.readProcessedWindow) {
-          throw new LumaRawRuntimeError(
-            'RAW_RUNTIME_UNAVAILABLE',
-            'RAW runtime processed-window access is unavailable for this source.',
-          )
-        }
-
         return session.processor.readProcessedWindow(request.payload.request)
       },
     })
@@ -748,13 +644,6 @@ export function createRuntimeCore(
     return runSessionJob(sessionJobs, request, {
       options: requireCalibrationPayload,
       run(session, calibration) {
-        if (!session.processor.applyCalibration) {
-          throw new LumaRawRuntimeError(
-            'RAW_RUNTIME_UNAVAILABLE',
-            'RAW runtime calibration application is unavailable for this source.',
-          )
-        }
-
         session.processor.applyCalibration(calibration)
         return { applied: true }
       },

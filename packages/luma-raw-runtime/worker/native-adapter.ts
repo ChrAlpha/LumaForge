@@ -13,7 +13,6 @@ import type {
   LumaRawWindowRect,
 } from '../src/types'
 import type {
-  LumaRawNativeCalibrationPayload,
   LumaRawNativeDecodeOptions,
   LumaRawNativeFactory,
   LumaRawNativeOpenSettings,
@@ -27,19 +26,19 @@ type EmbindCalibrationParams = {
 }
 
 type EmbindProcessor = {
-  loadBuffer?: (data: Uint8Array) => unknown
-  openWithSettings?: (settings: LumaRawNativeOpenSettings) => unknown
+  loadBuffer: (data: Uint8Array) => unknown
+  openWithSettings: (settings: LumaRawNativeOpenSettings) => unknown
   readMetadata: () => unknown
   extractThumbnail: () => unknown
-  probeExportCapability?: () => unknown
-  readProcessedWindow?: (request: LumaRawProcessedWindowRequest) => unknown
-  applyCalibration?: (params: EmbindCalibrationParams) => unknown
+  probeExportCapability: () => unknown
+  readProcessedWindow: (request: LumaRawProcessedWindowRequest) => unknown
+  applyCalibration: (params: EmbindCalibrationParams) => unknown
   decodePreview: (options?: LumaRawNativeDecodeOptions) => unknown
   decodeHq: (options?: LumaRawNativeDecodeOptions) => unknown
   delete?: () => void
 }
 
-type EmbindModule = {
+export type EmbindModule = {
   LumaRawProcessor: new () => EmbindProcessor
   HEAPU8?: Uint8Array
 }
@@ -67,9 +66,7 @@ function asNumber(value: unknown): number | undefined {
 
 function asOpenTiming(value: unknown, label: keyof LumaRawNativeOpenTimings) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new TypeError(
-      `Native RAW openBuffer returned invalid ${label} timing.`,
-    )
+    throw new TypeError(`Native RAW open returned invalid ${label} timing.`)
   }
 
   return value
@@ -296,7 +293,7 @@ function normalizeOpenTimings(
 function normalizeRequiredOpenTimings(value: unknown) {
   const timings = normalizeOpenTimings(value)
   if (!timings) {
-    throw new TypeError('Native RAW openBuffer returned invalid timing data.')
+    throw new TypeError('Native RAW open returned invalid timing data.')
   }
 
   return timings
@@ -304,7 +301,7 @@ function normalizeRequiredOpenTimings(value: unknown) {
 
 function normalizeLoadBufferTimings(value: unknown) {
   if (value === null || value === undefined || typeof value !== 'object') {
-    throw new TypeError('Native RAW openBuffer returned invalid timing data.')
+    throw new TypeError('Native RAW open returned invalid timing data.')
   }
 
   const raw = asRecord(value)
@@ -625,9 +622,7 @@ function normalizeExportColorFacts(
   }
 }
 
-export function normalizeExportCapability(
-  value: unknown,
-): LumaRawExportCapability {
+function normalizeExportCapability(value: unknown): LumaRawExportCapability {
   const raw = asRecord(value)
   const width = asNonNegativeIntegerOrUndefined(raw.width) ?? 0
   const height = asNonNegativeIntegerOrUndefined(raw.height) ?? 0
@@ -860,21 +855,11 @@ export function createNativeFactory(
     createProcessor(): LumaRawNativeProcessor {
       const processor = new module.LumaRawProcessor()
 
-      const adapted: LumaRawNativeProcessor = {
+      return {
         loadBuffer(data) {
-          if (!processor.loadBuffer) {
-            throw new TypeError(
-              'Native RAW openBuffer returned invalid timing data.',
-            )
-          }
           return normalizeLoadBufferTimings(processor.loadBuffer(data))
         },
         openWithSettings(settings) {
-          if (!processor.openWithSettings) {
-            throw new TypeError(
-              'Native RAW openBuffer returned invalid timing data.',
-            )
-          }
           return normalizeRequiredOpenTimings(
             processor.openWithSettings(settings),
           )
@@ -886,35 +871,20 @@ export function createNativeFactory(
           return normalizeThumbnail(processor.extractThumbnail())
         },
         probeExportCapability() {
-          if (!processor.probeExportCapability) {
-            return {
-              supported: false,
-              width: 0,
-              height: 0,
-              rawWidth: 0,
-              rawHeight: 0,
-              cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
-              blackLevel: 0,
-              whiteLevel: 0,
-              orientation: { code: 1, supported: true },
-              sensor: {
-                layout: 'unknown',
-                colorCount: 0,
-                cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
-                phaseIsWindowLocal: false,
-              },
-              windows: { librawProcessed: false },
-              diagnostics: {
-                hasRawImage: false,
-                hasColor3Image: false,
-                hasColor4Image: false,
-                hasXTransTable: false,
-              },
-              reasons: ['raw-window-unavailable'],
-            }
-          }
-
           return normalizeExportCapability(processor.probeExportCapability())
+        },
+        readProcessedWindow(request) {
+          return normalizeProcessedWindow(
+            processor.readProcessedWindow(request),
+          )
+        },
+        // The worker protocol validated the payload. Embind val("number[]")
+        // takes plain arrays, so the typed arrays convert once here.
+        applyCalibration({ xyzToCamera, toneCurveLut }) {
+          processor.applyCalibration({
+            xyzToCamera: Array.from(xyzToCamera),
+            ...(toneCurveLut ? { toneCurveLut: Array.from(toneCurveLut) } : {}),
+          })
         },
         decodePreview(options) {
           return normalizeImage(
@@ -930,73 +900,6 @@ export function createNativeFactory(
           processor.delete?.()
         },
       }
-
-      if (processor.readProcessedWindow) {
-        adapted.readProcessedWindow = (request) => {
-          if (!processor.readProcessedWindow) {
-            throw new TypeError(
-              'Native RAW processed-window access is unavailable.',
-            )
-          }
-
-          return normalizeProcessedWindow(
-            processor.readProcessedWindow(request),
-          )
-        }
-      }
-      if (processor.applyCalibration) {
-        adapted.applyCalibration = (
-          payload: LumaRawNativeCalibrationPayload,
-        ) => {
-          if (!processor.applyCalibration) {
-            throw new TypeError(
-              'Native RAW calibration application is unavailable.',
-            )
-          }
-
-          if (!(payload.xyzToCamera instanceof Float32Array)) {
-            throw new TypeError(
-              'Native RAW calibration payload xyzToCamera must be a Float32Array.',
-            )
-          }
-          if (payload.xyzToCamera.length !== 9) {
-            throw new TypeError(
-              'Native RAW calibration payload xyzToCamera must have length 9.',
-            )
-          }
-          for (let index = 0; index < 9; index += 1) {
-            if (!Number.isFinite(payload.xyzToCamera[index])) {
-              throw new TypeError(
-                'Native RAW calibration payload xyzToCamera must contain finite values.',
-              )
-            }
-          }
-
-          // Embind val("number[]") accepts plain JS arrays. Convert from
-          // Float32Array once at the boundary instead of marshaling the typed
-          // array element-by-element across the JS<->Wasm bridge.
-          const params: EmbindCalibrationParams = {
-            xyzToCamera: Array.from(payload.xyzToCamera),
-          }
-          if (payload.toneCurveLut) {
-            if (!(payload.toneCurveLut instanceof Float32Array)) {
-              throw new TypeError(
-                'Native RAW calibration payload toneCurveLut must be a Float32Array.',
-              )
-            }
-            if (payload.toneCurveLut.length < 4096) {
-              throw new TypeError(
-                'Native RAW calibration payload toneCurveLut must have at least 4096 entries.',
-              )
-            }
-            params.toneCurveLut = Array.from(payload.toneCurveLut)
-          }
-
-          processor.applyCalibration(params)
-        }
-      }
-
-      return adapted
     },
     heapBytes() {
       const heap = (module as unknown as { HEAPU8?: Uint8Array }).HEAPU8
