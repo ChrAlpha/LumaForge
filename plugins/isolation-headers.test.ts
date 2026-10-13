@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import type { ViteDevServer } from 'vite'
 import { describe, expect, it } from 'vitest'
 
-import { preserveIsolationHeaders } from '../../plugins/isolation-headers'
+import { preserveIsolationHeaders } from './isolation-headers'
 
 describe('isolation headers on cached worker responses', () => {
   it.each(['configureServer', 'configurePreviewServer'] as const)(
