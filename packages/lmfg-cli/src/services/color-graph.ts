@@ -8,7 +8,6 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import {
   exposureMultiplierFromEv,
-  isSelectiveColorNeutral,
   normalizeUserColorIntent,
   resolveExportColorGraph,
   resolveRawRenderExposure,
@@ -154,16 +153,16 @@ function recordedSelectiveColor(
  * Inverse of `toManifestRenderParams`: rebuild CLI params from a manifest so a
  * render can be replayed. Every value is read as recorded and goes through the
  * params schema as written, so a value outside it is refused rather than
- * clamped; the recorded raw-render exposure becomes an explicit EV, and HSL
- * that shifts nothing reads as none. The LUT reference is resolved separately
- * by the caller. Callers read the manifest through `parseRenderManifest`
- * first, which refuses a record missing any of these fields: this reads, it
- * does not verify or fill anything in.
+ * clamped, and the recorded raw-render exposure becomes an explicit EV. The
+ * LUT reference is resolved separately by the caller. Callers read the
+ * manifest through `parseRenderManifest` first, which refuses a record
+ * missing any of these fields: this reads, it does not verify or fill
+ * anything in.
  */
 export function manifestToRenderParams(
   params: ManifestRenderParams,
 ): RenderParams {
-  const parsed = parseRenderParams({
+  return parseRenderParams({
     exposure_ev: params.exposure_ev,
     contrast: params.tone_curve.contrast,
     highlights: params.tone_curve.highlights,
@@ -179,7 +178,4 @@ export function manifestToRenderParams(
     selective_color: recordedSelectiveColor(params.selective_color),
     lut: null,
   })
-  return isSelectiveColorNeutral(parsed.selective_color)
-    ? { ...parsed, selective_color: null }
-    : parsed
 }

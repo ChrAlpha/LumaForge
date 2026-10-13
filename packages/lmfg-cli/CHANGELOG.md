@@ -3,6 +3,14 @@
 All notable changes to `@lumaforge/lmfg-cli` are documented here. The format
 follows Keep a Changelog; versions follow semver.
 
+## Unreleased
+
+### Breaking
+
+- `render replay` reads a recorded `selective_color` as written. Manifests
+  that development builds of 0.2.0 sealed with eight neutral bands are no
+  longer read as recording no HSL.
+
 ## 0.2.0 - 2026-10-12
 
 This release changes the manifest, error, and `capabilities` protocol of

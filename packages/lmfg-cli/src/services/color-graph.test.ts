@@ -141,36 +141,6 @@ describe('buildColorGraph + describeColorGraph', () => {
   })
 })
 
-describe('manifest render params of an earlier writer', () => {
-  const identityExposure = { ev: 0, multiplier: 1, source: 'identity' as const }
-  const EXPLICIT_NEUTRAL_HSL_GOLDEN =
-    '{"color_balance":{"temperature":0,"tint":0},"exposure_ev":0,' +
-    '"intensity":1,"raw_render_exposure_ev":0,' +
-    '"raw_render_exposure_source":"identity",' +
-    '"saturation":{"saturation":0,"vibrance":0},' +
-    '"selective_color":{' +
-    '"aqua":{"hue":0,"lightness":0,"saturation":0},' +
-    '"blue":{"hue":0,"lightness":0,"saturation":0},' +
-    '"green":{"hue":0,"lightness":0,"saturation":0},' +
-    '"magenta":{"hue":0,"lightness":0,"saturation":0},' +
-    '"orange":{"hue":0,"lightness":0,"saturation":0},' +
-    '"purple":{"hue":0,"lightness":0,"saturation":0},' +
-    '"red":{"hue":0,"lightness":0,"saturation":0},' +
-    '"yellow":{"hue":0,"lightness":0,"saturation":0}},' +
-    '"tone_curve":{"blacks":0,"contrast":0,"highlights":0,"shadows":0,"whites":0}}'
-
-  it('reads an explicit all-neutral record written earlier as no HSL', () => {
-    const legacy = JSON.parse(EXPLICIT_NEUTRAL_HSL_GOLDEN)
-    const restored = manifestToRenderParams(legacy)
-    expect(restored).toEqual(
-      parseRenderParams({ raw_render_exposure: 0, selective_color: null }),
-    )
-    expect(
-      toManifestRenderParams(restored, identityExposure),
-    ).not.toHaveProperty('selective_color')
-  })
-})
-
 describe('color graph fingerprints', () => {
   // Reviewed literal fingerprints; the graph a set of params builds must not
   // move when the CLI changes how it maps its params onto the shared fields.
