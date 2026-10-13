@@ -13,7 +13,7 @@ import {
   computeColorParams,
   computeToneParams,
 } from '../../../services/look/orchestrate-params-update'
-import type { SetColorIntent } from '../../../state/workflow.atoms'
+import { rawWorkflowStore } from '../../../state/workflow.atoms'
 
 const NEUTRAL_TONE: ToneValue = {
   userExposureEv: 0,
@@ -31,15 +31,7 @@ const NEUTRAL_COLOR: ColorValue = {
   userVibrance: 0,
 }
 
-type UseRawAdjustmentActionsInput = {
-  setColorIntent: SetColorIntent
-  invalidateExportGraph: () => void
-}
-
-export function useRawAdjustmentActions({
-  setColorIntent,
-  invalidateExportGraph,
-}: UseRawAdjustmentActionsInput) {
+export function useRawAdjustmentActions(invalidateExportGraph: () => void) {
   // Each edit is decided against the stored intent when it lands, and the
   // export graph is invalidated only once the write has returned.
   const update = useCallback(
@@ -50,14 +42,14 @@ export function useRawAdjustmentActions({
       },
     ) => {
       let shouldClearExportResult = false
-      setColorIntent((prev) => {
+      rawWorkflowStore.setColorIntent((prev) => {
         const next = change(prev)
         shouldClearExportResult = next.shouldClearExportResult
         return next.params
       })
       if (shouldClearExportResult) invalidateExportGraph()
     },
-    [invalidateExportGraph, setColorIntent],
+    [invalidateExportGraph],
   )
 
   const setToneParams = useCallback(

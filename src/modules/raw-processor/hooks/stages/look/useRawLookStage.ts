@@ -32,12 +32,7 @@ import {
   computeSessionIntensityChange,
 } from '../../../services/look/orchestrate-params-update'
 import { buildLUTContractSelectionState } from '../../../services/look/style-system'
-import {
-  getCurrentSession,
-  setCurrentSession,
-} from '../../../state/session.atoms'
-import type { SetColorIntent } from '../../../state/workflow.atoms'
-import { getLut } from '../../../state/workflow.atoms'
+import { rawWorkflowStore } from '../../../state/workflow.atoms'
 import { useLatestTranslate } from '../../useLatestTranslate'
 import { useRawAdjustmentActions } from './useRawAdjustmentActions'
 
@@ -46,12 +41,6 @@ type UseRawLookStageInput = {
   baseParams: ColorGraphIntent
   session: ImageSession | null
   lut: ParsedLUT | null
-  setLut: (lut: ParsedLUT | null) => void
-  /**
-   * Writes the detached color intent. Look actions write color here and
-   * nowhere else; the view has its own owner and is never part of a write.
-   */
-  setColorIntent: SetColorIntent
   scheduleToast: (notify: () => void) => void
   invalidateExportGraph: () => void
   canApplyLoadedLut: () => boolean
@@ -103,8 +92,6 @@ export function useRawLookStage({
   baseParams,
   session,
   lut,
-  setLut,
-  setColorIntent,
   scheduleToast,
   invalidateExportGraph,
   canApplyLoadedLut,
@@ -139,20 +126,10 @@ export function useRawLookStage({
   // this hook rerenders is what they see.
   const lutCtx = useMemo<LutLoadContext>(
     () => ({
-      atoms: {
-        getSession: getCurrentSession,
-        getLut,
-        setLut,
-        setSession: setCurrentSession,
-        setColorIntent,
-      },
-      services: {
-        notify,
-        invalidateExportGraph,
-        canApplyLoadedLut,
-      },
+      atoms: rawWorkflowStore,
+      services: { notify, invalidateExportGraph, canApplyLoadedLut },
     }),
-    [canApplyLoadedLut, invalidateExportGraph, notify, setColorIntent, setLut],
+    [canApplyLoadedLut, invalidateExportGraph, notify],
   )
 
   const fileLoadRef = useRef<AbortController | null>(null)
@@ -210,7 +187,7 @@ export function useRawLookStage({
       let sessionOwnsLook = false
       let shouldInvalidateExportGraph = false
 
-      setCurrentSession((prev) => {
+      rawWorkflowStore.setSession((prev) => {
         if (!prev) return prev
 
         const change = computeSessionIntensityChange(prev, value)
@@ -223,7 +200,7 @@ export function useRawLookStage({
       // look, but decides the graph change only when no session projects over
       // it. The amount is stored as given (0..1), never snapped to a detent.
       if (!sessionOwnsLook) {
-        setColorIntent((prev) => {
+        rawWorkflowStore.setColorIntent((prev) => {
           const change = computeDetachedIntensityChange(prev, value)
           if (!hasSession) {
             shouldInvalidateExportGraph = change.shouldInvalidateExportGraph
@@ -236,15 +213,15 @@ export function useRawLookStage({
         invalidateExportGraph()
       }
     },
-    [invalidateExportGraph, setColorIntent],
+    [invalidateExportGraph],
   )
 
   const clearLUT = useCallback(() => {
-    const hasLoadedLut = getLut() !== null
+    const hasLoadedLut = rawWorkflowStore.getLut() !== null
     let hasSession = false
     let shouldInvalidateExportGraph = false
 
-    setCurrentSession((prev) => {
+    rawWorkflowStore.setSession((prev) => {
       if (!prev) return prev
 
       const change = computeSessionClearLUT(prev, hasLoadedLut)
@@ -255,25 +232,22 @@ export function useRawLookStage({
     // The session owns the look once it exists; before that, the detached
     // intent does.
     if (!hasSession) {
-      setColorIntent((prev) => {
+      rawWorkflowStore.setColorIntent((prev) => {
         const change = computeDetachedClearLUT(prev, hasLoadedLut)
         shouldInvalidateExportGraph = change.shouldInvalidateExportGraph
         return change.params
       })
     }
 
-    setLut(null)
+    rawWorkflowStore.setLut(null)
     if (shouldInvalidateExportGraph) {
       invalidateExportGraph()
     }
     const message = t('raw.lut.toast.cleared')
     scheduleToast(() => toast.info(message))
-  }, [invalidateExportGraph, scheduleToast, setColorIntent, setLut, t])
+  }, [invalidateExportGraph, scheduleToast, t])
 
-  const adjustmentActions = useRawAdjustmentActions({
-    setColorIntent,
-    invalidateExportGraph,
-  })
+  const adjustmentActions = useRawAdjustmentActions(invalidateExportGraph)
 
   return {
     params,

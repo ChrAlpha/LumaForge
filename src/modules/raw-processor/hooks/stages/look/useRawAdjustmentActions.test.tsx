@@ -1,40 +1,16 @@
-import type {
-  ColorGraphIntent,
-  HSLBandId,
-  HSLBandShift,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import {
-  makeNeutralBand,
+  NEUTRAL_SELECTIVE_COLOR,
   NEUTRAL_USER_COLOR_INTENT,
 } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import {
+  getProcessingParams,
+  setProcessingParams,
+} from '../../../state/workflow.atoms'
 import { useRawAdjustmentActions } from './useRawAdjustmentActions'
-
-const BAND_IDS: readonly HSLBandId[] = [
-  'red',
-  'orange',
-  'yellow',
-  'green',
-  'aqua',
-  'blue',
-  'purple',
-  'magenta',
-]
-
-function makeNeutralSelectiveColorFixture(): Record<HSLBandId, HSLBandShift> {
-  return {
-    red: makeNeutralBand(),
-    orange: makeNeutralBand(),
-    yellow: makeNeutralBand(),
-    green: makeNeutralBand(),
-    aqua: makeNeutralBand(),
-    blue: makeNeutralBand(),
-    purple: makeNeutralBand(),
-    magenta: makeNeutralBand(),
-  }
-}
 
 const baseParams: ColorGraphIntent = {
   ...NEUTRAL_USER_COLOR_INTENT,
@@ -43,47 +19,45 @@ const baseParams: ColorGraphIntent = {
   builtinPreset: null,
 }
 
-type ColorIntentUpdate =
-  | ColorGraphIntent
-  | ((prev: ColorGraphIntent) => ColorGraphIntent)
-
-type MutableParamsRef = {
-  current: ColorGraphIntent
+const SHIFTED_BANDS: ColorGraphIntent['selectiveColor'] = {
+  red: { hue: 10, saturation: 25, lightness: -12 },
+  orange: { hue: 1, saturation: 2, lightness: 3 },
+  yellow: { hue: 4, saturation: 5, lightness: 6 },
+  green: { hue: 7, saturation: 8, lightness: 9 },
+  aqua: { hue: 10, saturation: 11, lightness: 12 },
+  blue: { hue: 13, saturation: 14, lightness: 15 },
+  purple: { hue: 16, saturation: 17, lightness: 18 },
+  magenta: { hue: 19, saturation: 20, lightness: 21 },
 }
 
-function createParamsHarness(initial: ColorGraphIntent) {
-  const ref: MutableParamsRef = { current: initial }
-  const setColorIntent = vi.fn((value: ColorIntentUpdate) => {
-    ref.current = typeof value === 'function' ? value(ref.current) : value
-  })
-  return { ref, setColorIntent }
+/** The actions over the stored intent `initial`, rendered once. */
+function renderActions(initial: ColorGraphIntent) {
+  setProcessingParams(initial)
+  const invalidateExportGraph = vi.fn()
+  const { result } = renderHook(() =>
+    useRawAdjustmentActions(invalidateExportGraph),
+  )
+  return { actions: result.current, invalidateExportGraph }
 }
 
 describe('useRawAdjustmentActions', () => {
-  it('composes tone and color updates issued before a rerender', () => {
-    const { ref, setColorIntent } = createParamsHarness(baseParams)
-    const invalidateExportGraph = vi.fn()
-    const { result } = renderHook(() =>
-      useRawAdjustmentActions({
-        setColorIntent,
-        invalidateExportGraph,
-      }),
-    )
+  it('composes tone, color and HSL edits issued before a rerender', () => {
+    const { actions, invalidateExportGraph } = renderActions(baseParams)
 
     act(() => {
-      result.current.setToneParams({ userContrast: 140 })
-      result.current.setToneParams({ userShadows: 15 })
-      result.current.setColorParams({ userTemperature: 30 })
-      result.current.setSelectiveColorBand('red', { hue: 12 })
+      actions.setToneParams({ userContrast: 140 })
+      actions.setToneParams({ userShadows: 15 })
+      actions.setColorParams({ userTemperature: 30 })
+      actions.setSelectiveColorBand('red', { hue: 12 })
     })
 
-    expect(ref.current).toMatchObject({
+    expect(getProcessingParams()).toMatchObject({
       userContrast: 100,
       userShadows: 15,
       userTemperature: 30,
       intensity: 0.7,
     })
-    expect(ref.current.selectiveColor.red).toEqual({
+    expect(getProcessingParams().selectiveColor.red).toEqual({
       hue: 12,
       saturation: 0,
       lightness: 0,
@@ -91,273 +65,51 @@ describe('useRawAdjustmentActions', () => {
     expect(invalidateExportGraph).toHaveBeenCalledTimes(4)
   })
 
-  describe('setSelectiveColorBand', () => {
-    it('state safety at action layer leaves other bands untouched', () => {
-      // Pre-populate non-target bands with sentinel values that must be preserved.
-      const initial: ColorGraphIntent = {
-        ...baseParams,
-        selectiveColor: {
-          red: { hue: 0, saturation: 0, lightness: 0 },
-          orange: { hue: 1, saturation: 2, lightness: 3 },
-          yellow: { hue: 4, saturation: 5, lightness: 6 },
-          green: { hue: 7, saturation: 8, lightness: 9 },
-          aqua: { hue: 10, saturation: 11, lightness: 12 },
-          blue: { hue: 13, saturation: 14, lightness: 15 },
-          purple: { hue: 16, saturation: 17, lightness: 18 },
-          magenta: { hue: 19, saturation: 20, lightness: 21 },
-        },
-      }
-
-      const { ref, setColorIntent } = createParamsHarness(initial)
-      const invalidateExportGraph = vi.fn()
-      const { result } = renderHook(() =>
-        useRawAdjustmentActions({
-          setColorIntent,
-          invalidateExportGraph,
-        }),
-      )
-
-      act(() => {
-        result.current.setSelectiveColorBand('red', { hue: 50 })
-      })
-
-      expect(ref.current.selectiveColor?.red).toEqual({
-        hue: 50,
-        saturation: 0,
-        lightness: 0,
-      })
-      // Other bands must be byte-identical to the pre-call sentinel values.
-      expect(ref.current.selectiveColor?.orange).toEqual({
-        hue: 1,
-        saturation: 2,
-        lightness: 3,
-      })
-      expect(ref.current.selectiveColor?.yellow).toEqual({
-        hue: 4,
-        saturation: 5,
-        lightness: 6,
-      })
-      expect(ref.current.selectiveColor?.green).toEqual({
-        hue: 7,
-        saturation: 8,
-        lightness: 9,
-      })
-      expect(ref.current.selectiveColor?.aqua).toEqual({
-        hue: 10,
-        saturation: 11,
-        lightness: 12,
-      })
-      expect(ref.current.selectiveColor?.blue).toEqual({
-        hue: 13,
-        saturation: 14,
-        lightness: 15,
-      })
-      expect(ref.current.selectiveColor?.purple).toEqual({
-        hue: 16,
-        saturation: 17,
-        lightness: 18,
-      })
-      expect(ref.current.selectiveColor?.magenta).toEqual({
-        hue: 19,
-        saturation: 20,
-        lightness: 21,
-      })
-      expect(invalidateExportGraph).toHaveBeenCalled()
+  it('moves only the named fields of one band', () => {
+    const { actions } = renderActions({
+      ...baseParams,
+      selectiveColor: SHIFTED_BANDS,
     })
 
-    it('partial band update preserves other fields in the same band', () => {
-      const initial: ColorGraphIntent = {
-        ...baseParams,
-        selectiveColor: {
-          ...makeNeutralSelectiveColorFixture(),
-          red: { hue: 10, saturation: 25, lightness: -12 },
-        },
-      }
-      const { ref, setColorIntent } = createParamsHarness(initial)
-      const invalidateExportGraph = vi.fn()
-      const { result } = renderHook(() =>
-        useRawAdjustmentActions({
-          setColorIntent,
-          invalidateExportGraph,
-        }),
-      )
+    act(() => actions.setSelectiveColorBand('red', { hue: 50 }))
 
-      act(() => {
-        result.current.setSelectiveColorBand('red', { hue: 50 })
-      })
-
-      expect(ref.current.selectiveColor?.red).toEqual({
-        hue: 50,
-        saturation: 25,
-        lightness: -12,
-      })
-    })
-
-    it('keeps every other band neutral when shifting one band of a neutral record', () => {
-      const initial: ColorGraphIntent = { ...baseParams }
-      const { ref, setColorIntent } = createParamsHarness(initial)
-      const invalidateExportGraph = vi.fn()
-      const { result } = renderHook(() =>
-        useRawAdjustmentActions({
-          setColorIntent,
-          invalidateExportGraph,
-        }),
-      )
-
-      act(() => {
-        result.current.setSelectiveColorBand('blue', { saturation: 30 })
-      })
-
-      expect(ref.current.selectiveColor).toBeDefined()
-      for (const id of BAND_IDS) {
-        if (id === 'blue') {
-          expect(ref.current.selectiveColor![id]).toEqual({
-            hue: 0,
-            saturation: 30,
-            lightness: 0,
-          })
-        } else {
-          expect(ref.current.selectiveColor![id]).toEqual({
-            hue: 0,
-            saturation: 0,
-            lightness: 0,
-          })
-        }
-      }
-      expect(invalidateExportGraph).toHaveBeenCalled()
+    expect(getProcessingParams().selectiveColor).toEqual({
+      ...SHIFTED_BANDS,
+      red: { hue: 50, saturation: 25, lightness: -12 },
     })
   })
 
-  describe('resetSelectiveColor', () => {
-    it('reset scope isolation clears all 24 selective-color scalars but preserves tone and color balance', () => {
-      const initial: ColorGraphIntent = {
-        ...baseParams,
-        userExposureEv: 1.5,
-        userContrast: -20,
-        userTemperature: 12,
-        userTint: -8,
-        selectiveColor: {
-          red: { hue: 50, saturation: 30, lightness: -10 },
-          orange: { hue: 5, saturation: 5, lightness: 5 },
-          yellow: { hue: 5, saturation: 5, lightness: 5 },
-          green: { hue: 5, saturation: 5, lightness: 5 },
-          aqua: { hue: 5, saturation: 5, lightness: 5 },
-          blue: { hue: 5, saturation: 5, lightness: 5 },
-          purple: { hue: 5, saturation: 5, lightness: 5 },
-          magenta: { hue: 5, saturation: 5, lightness: 5 },
-        },
-      }
-      const { ref, setColorIntent } = createParamsHarness(initial)
-      const invalidateExportGraph = vi.fn()
-      const { result } = renderHook(() =>
-        useRawAdjustmentActions({
-          setColorIntent,
-          invalidateExportGraph,
-        }),
-      )
-
-      act(() => {
-        result.current.resetSelectiveColor()
-      })
-
-      // All 24 scalars across all 8 bands must be zero.
-      for (const id of BAND_IDS) {
-        expect(ref.current.selectiveColor![id]).toEqual({
-          hue: 0,
-          saturation: 0,
-          lightness: 0,
-        })
-      }
-      // Tone scalars preserved.
-      expect(ref.current.userExposureEv).toBe(1.5)
-      expect(ref.current.userContrast).toBe(-20)
-      // Color balance scalars preserved.
-      expect(ref.current.userTemperature).toBe(12)
-      expect(ref.current.userTint).toBe(-8)
-      expect(invalidateExportGraph).toHaveBeenCalled()
+  it('resets HSL without touching tone or color, and tone or color without touching HSL', () => {
+    const adjusted: ColorGraphIntent = {
+      ...baseParams,
+      userExposureEv: 1.5,
+      userContrast: -20,
+      userTemperature: 12,
+      userTint: -8,
+      selectiveColor: SHIFTED_BANDS,
+    }
+    let { actions } = renderActions(adjusted)
+    act(() => actions.resetSelectiveColor())
+    expect(getProcessingParams()).toEqual({
+      ...adjusted,
+      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
     })
-
-    it('resetTone does not touch selective color', () => {
-      const initial: ColorGraphIntent = {
-        ...baseParams,
-        userExposureEv: 1.0,
-        selectiveColor: {
-          ...makeNeutralSelectiveColorFixture(),
-          red: { hue: 50, saturation: 0, lightness: 0 },
-        },
-      }
-      const { ref, setColorIntent } = createParamsHarness(initial)
-      const invalidateExportGraph = vi.fn()
-      const { result } = renderHook(() =>
-        useRawAdjustmentActions({
-          setColorIntent,
-          invalidateExportGraph,
-        }),
-      )
-
-      act(() => {
-        result.current.resetTone()
-      })
-
-      expect(ref.current.userExposureEv).toBe(0)
-      expect(ref.current.selectiveColor?.red).toEqual({
-        hue: 50,
-        saturation: 0,
-        lightness: 0,
-      })
+    ;({ actions } = renderActions(adjusted))
+    act(() => {
+      actions.resetTone()
+      actions.resetColor()
     })
-
-    it('resetColor does not touch selective color', () => {
-      const initial: ColorGraphIntent = {
-        ...baseParams,
-        userTemperature: 18,
-        userTint: -5,
-        selectiveColor: {
-          ...makeNeutralSelectiveColorFixture(),
-          red: { hue: 50, saturation: 0, lightness: 0 },
-        },
-      }
-      const { ref, setColorIntent } = createParamsHarness(initial)
-      const invalidateExportGraph = vi.fn()
-      const { result } = renderHook(() =>
-        useRawAdjustmentActions({
-          setColorIntent,
-          invalidateExportGraph,
-        }),
-      )
-
-      act(() => {
-        result.current.resetColor()
-      })
-
-      expect(ref.current.userTemperature).toBe(0)
-      expect(ref.current.userTint).toBe(0)
-      expect(ref.current.selectiveColor?.red).toEqual({
-        hue: 50,
-        saturation: 0,
-        lightness: 0,
-      })
+    expect(getProcessingParams()).toEqual({
+      ...baseParams,
+      selectiveColor: SHIFTED_BANDS,
     })
+  })
 
-    it('does not invalidate the export graph when already neutral', () => {
-      const initial: ColorGraphIntent = {
-        ...baseParams,
-        selectiveColor: makeNeutralSelectiveColorFixture(),
-      }
-      const { setColorIntent } = createParamsHarness(initial)
-      const invalidateExportGraph = vi.fn()
-      const { result } = renderHook(() =>
-        useRawAdjustmentActions({
-          setColorIntent,
-          invalidateExportGraph,
-        }),
-      )
+  it('does not invalidate the export graph when HSL is already neutral', () => {
+    const { actions, invalidateExportGraph } = renderActions(baseParams)
 
-      act(() => {
-        result.current.resetSelectiveColor()
-      })
+    act(() => actions.resetSelectiveColor())
 
-      expect(invalidateExportGraph).not.toHaveBeenCalled()
-    })
+    expect(invalidateExportGraph).not.toHaveBeenCalled()
   })
 })

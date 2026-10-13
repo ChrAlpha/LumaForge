@@ -8,7 +8,6 @@ import {
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import i18n from 'i18next'
-import { atom, createStore } from 'jotai'
 import type { ComponentType, PropsWithChildren, SetStateAction } from 'react'
 import {
   afterEach,
@@ -45,6 +44,8 @@ import {
   getEffectiveColorIntent,
   getLut as getStoredLut,
   getProcessingParams,
+  processingParamsAtom,
+  rawWorkflowStore,
   setLut as setStoredLut,
   setProcessingParams,
 } from '../../../state/workflow.atoms'
@@ -79,6 +80,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   setCurrentSession(null)
   setStoredLut(null)
 })
@@ -200,16 +202,12 @@ function publishPreviewAndCapability(
   }
 }
 
-type SetColorIntentUpdate =
-  | ColorGraphIntent
-  | ((prev: ColorGraphIntent) => ColorGraphIntent)
-
 /**
- * Backs the hook with the production session and LUT stores and a real
- * intent store, so updaters run against whatever is current when an action
- * fires. The hook renders once and never rerenders: `actions` keep the
- * initial render's snapshot, like a callback captured before React commits
- * concurrent updates. Scheduled toasts wait for `runScheduled`.
+ * Backs the hook with the production session, LUT and intent stores, so
+ * updaters run against whatever is current when an action fires. The hook
+ * renders once and never rerenders: `actions` keep the initial render's
+ * snapshot, like a callback captured before React commits concurrent
+ * updates. Scheduled toasts wait for `runScheduled`.
  */
 function renderLookStageHarness({
   session,
@@ -230,25 +228,17 @@ function renderLookStageHarness({
 }) {
   setCurrentSession(session)
   setStoredLut(lut)
-  const store = createStore()
-  const paramsAtom = atom<ColorGraphIntent>(params)
+  setProcessingParams(params)
   const sessionNotifications = vi.fn()
   const paramsNotifications = vi.fn()
-  const unsubscribeSession = jotaiStore.sub(
-    currentSessionAtom,
-    sessionNotifications,
-  )
-  onTestFinished(unsubscribeSession)
-  store.sub(paramsAtom, paramsNotifications)
+  onTestFinished(jotaiStore.sub(currentSessionAtom, sessionNotifications))
+  onTestFinished(jotaiStore.sub(processingParamsAtom, paramsNotifications))
 
-  const setColorIntent = vi.fn((update: SetColorIntentUpdate) =>
-    store.set(paramsAtom, update),
-  )
+  const setColorIntent = vi.spyOn(rawWorkflowStore, 'setColorIntent')
+  const setLut = vi.spyOn(rawWorkflowStore, 'setLut')
   const invalidateExportGraph = vi.fn(() =>
     setCurrentSession(clearExportResultState),
   )
-  // The LUT lands in the production store, as the workflow's setter does.
-  const setLut = vi.fn((next: ParsedLUT | null) => setStoredLut(next))
   const scheduled: Array<() => void> = []
   const scheduleToast = vi.fn((show: () => void) => {
     scheduled.push(show)
@@ -260,8 +250,6 @@ function renderLookStageHarness({
         baseParams: renderedParams,
         session,
         lut,
-        setLut,
-        setColorIntent,
         scheduleToast,
         invalidateExportGraph,
         canApplyLoadedLut,
@@ -279,16 +267,15 @@ function renderLookStageHarness({
     runScheduled() {
       for (const show of scheduled.splice(0)) show()
     },
-    loadedTitles: () =>
-      setLut.mock.calls.map(([next]) => (next as ParsedLUT | null)?.title),
+    loadedTitles: () => setLut.mock.calls.map(([next]) => next?.title),
     sessionNotifications,
     paramsNotifications,
     readSession: getCurrentSession,
-    readParams: () => store.get(paramsAtom),
+    readParams: getProcessingParams,
     publishSession: (update: SetStateAction<ImageSession | null>) =>
       setCurrentSession(update),
-    publishParams: (update: SetColorIntentUpdate) =>
-      store.set(paramsAtom, update),
+    publishParams: (update: SetStateAction<ColorGraphIntent>) =>
+      jotaiStore.set(processingParamsAtom, update),
   }
 }
 

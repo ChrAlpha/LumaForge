@@ -148,8 +148,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     baseParams: colorIntent,
     session,
     lut,
-    setLut: rawWorkflowStore.setLut,
-    setColorIntent: rawWorkflowStore.setColorIntent,
     scheduleToast,
     invalidateExportGraph,
     canApplyLoadedLut,
