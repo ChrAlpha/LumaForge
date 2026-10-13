@@ -505,7 +505,7 @@ These are owner decisions. They override cleanup advice that says otherwise.
   the two surfaces feel like the same product.
 - Read `DESIGN.md` "Theme contract" before touching tokens or theme code.
 - Before adding or restyling UI, read
-  `docs/specs/2026-06-30-anti-ai-slop-guardrails.md`: the standing anti-AI-slop
+  `docs/ANTI_AI_SLOP_GUARDRAILS.md`: the standing anti-AI-slop
   checklist (register-aware reflex bans plus the preview-vs-export
   functional-slop rule).
 - Follow existing UI boundaries:
@@ -580,7 +580,8 @@ These are owner decisions. They override cleanup advice that says otherwise.
   record. If a workflow or agent skill wants to write one (for example under
   `docs/superpowers/`), keep it out of the repository unless the user asks.
 - `docs/` holds user guides plus living references
-  (`docs/PERFORMANCE_RESOURCE_MANAGEMENT.md`, the anti-AI-slop guardrails).
+  (`docs/PERFORMANCE_RESOURCE_MANAGEMENT.md`,
+  `docs/ANTI_AI_SLOP_GUARDRAILS.md`).
   Update them when the behavior they describe changes.
 - `README.md`, `docs/README.md`, and the user guides each have a Chinese
   twin (`README_zh.md`, `docs/README_zh.md`, and the `_zh` guides). Change a

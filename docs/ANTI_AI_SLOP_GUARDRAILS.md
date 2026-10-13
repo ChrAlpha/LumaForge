@@ -1,13 +1,10 @@
 # Anti-AI-slop guardrails
 
-**Date:** 2026-06-30
-**Last verified:** 2026-10-11
-**Status:** standing reference (not a point-in-time spec)
 **Applies to:** UI edits under `src/modules/landing/` and `src/pages/(main)/index.sync.tsx` (landing), `src/modules/raw-processor/` (`/raw`), and the shared components or primitives those surfaces consume.
 
 ## Why this exists
 
-LumaForge already bans the textbook AI-slop tells in `PRODUCT.md` (Anti-references) and `DESIGN.md` (Theme contract). The live risk is therefore **regression, not origination**: an AI-generated change reintroducing a banned pattern or bypassing a contract that already exists. A June 2026 audit found exactly this on the landing page. Those defects were remediated; this document is the standing checklist that prevents their return. It also draws on a study of `openclaw-control-ui` as a non-slop reference.
+LumaForge already bans the textbook AI-slop tells in `PRODUCT.md` (Anti-references) and `DESIGN.md` (Theme contract). The live risk is therefore **regression, not origination**: an AI-generated change reintroducing a banned pattern or bypassing a contract that already exists. This is the standing checklist that prevents it.
 
 ## The test, by register
 

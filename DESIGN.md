@@ -474,13 +474,8 @@ viewport.
 ### Don't:
 
 - **Don't** mimic DaVinci Resolve with dense dark panels, nodes, scopes, and unlimited grading controls.
-- **Don't** add a hero metric block, repeated same-size icon cards, or centered template stacks.
-- **Don't** use purple gradients, gradient text, decorative orbs, bokeh blobs, or marketing-decoration glassmorphism. The workspace chrome's glass (§6) is a photographic-substrate tinter, not a decorative pattern — keep it scoped to `/raw`.
-- **Don't** use colored side stripes on cards, list items, callouts, or alerts. The export footer's top-edge `lf-green` ready-stripe (§6) is a state cue tied to a runtime fact, not a card ornament — do not generalize that pattern outside the workspace chrome's commit zone.
-- **Don't** use pure black, pure white, or category-reflex dark blue tool styling. The workspace chrome's slate is `oklch(0.064–0.12, c≈0.006)`, a near-neutral with a faint cool cast — not navy, not black.
+- **Don't** reach for the generic AI-slop patterns: hero metrics, identical icon cards, centered template stacks, purple gradients, gradient text, decorative orbs, side-stripe accents, pure black or white, template or component-gallery leftovers. `docs/ANTI_AI_SLOP_GUARDRAILS.md` holds the full list and the pre-ship check. Two have scoped exceptions here: the workspace chrome's glass (§6) tints the controls on the photo and stays inside `/raw`, and the export footer's top-edge `lf-green` ready-stripe (§6) is a state cue tied to a runtime fact, not a card ornament.
+- **Don't** style the tool as category-reflex navy or black. The workspace slate is `oklch(0.064–0.12, c≈0.006)`, a near-neutral with a faint cool cast.
 - **Don't** silently render mismatched gamma, log, gamut, or LUT output choices.
-- **Don't** leave template attribution, placeholder demo widgets, or component-gallery copy on user-facing pages.
 - **Don't** drift the brand and the workspace chrome apart. Both must keep `lf-green` as the only ready/focus accent, `lf-rose` as the only destructive accent, Geist Sans as the only sans family, and the same rounded scale.
-- **Don't** hardcode color tokens (`text-text`, `text-text-secondary`, `bg-fill-*`, `bg-background`) into the `src/components/ui/*` primitives. `tailwind-merge` does not dedupe `@theme` tokens against arbitrary `bg-[oklch(...)]` / `text-[...]` overrides; the hardcoded default will silently win on any chrome variant whose `@media` override does not touch that specific token (the mobile track and the mobile active-text regressions both traced back to this exact shape). Keep primitives color-agnostic; let consumers paint.
-- **Don't** pull structural lifts from `oklch(from var(--color-lf-on-photo-ink) l c h / *)` (warm). Use the Lift Wash Ladder (`oklch(0.96 0.006 255 / *)`, cool). Warmth belongs to accent / destructive, not to neutral interaction.
-- **Don't** draw borders on segmented controls, dropdown wells, or button groups inside the chrome. A drawn 1px hairline reads heavier on the flatter mobile sheets than on the structurally-rich desktop tool card, breaking cross-platform parity. Use a Lift Wash fill instead.
+- **Don't** break the §6 chrome rules: Inset Hairline, Cool Lift, Borderless Track, and Primitive Color Agnosticism.
