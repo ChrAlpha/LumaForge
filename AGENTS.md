@@ -677,18 +677,17 @@ These are owner decisions. They override cleanup advice that says otherwise.
     `scripts/quality/check-agent-paths.mjs` against this file and checks the
     app alias map (`scripts/quality/app-aliases.mjs`, which the Vite and
     Vitest configs share), then installs dependencies, tests the test-project
-    discovery, the structure check, and the import boundaries, and runs
-    `pnpm lint:check`, `pnpm typecheck:tooling`, `pnpm check:structure`
-    (`scripts/quality/check-structure.mjs`), and, after testing it,
-    `pnpm check:retired-api`. Lint covers the app, every package, script and
-    plugin, and the browser specs, and applies the module ownership rule in
+    discovery and the import boundaries, and runs `pnpm lint:check`,
+    `pnpm typecheck:tooling`, `pnpm check:structure` (knip with
+    `scripts/quality/knip.json`, then madge through
+    `scripts/quality/check-cycles.mjs`), and `pnpm check:retired-api`. Lint
+    covers the app, every package, script and plugin, and the browser specs,
+    and applies the module ownership rule in
     `plugins/eslint-import-boundaries.mjs` (tested by
     `scripts/quality/import-boundaries.test.mjs`) to every import form by the
-    resolved files on both sides, with no exceptions. knip and madge fail any
-    unused file, export, dependency, unresolved import, or import cycle that
-    `scripts/quality/baseline.json` does not list. The baseline lists nothing
-    today and never gains an entry without review; a change that resolves an
-    entry drops it in the same commit (`pnpm check:structure --prune`).
+    resolved files on both sides, with no exceptions. The structure check
+    fails on any unused file, export, or dependency, any unresolved import,
+    any knip configuration hint, and any import cycle; it takes no baseline.
   - `app` runs `pnpm typecheck:browser` and `pnpm test:app`, builds the app
     with prebuilt native assets, checks the build artifact, and smokes the
     landing page and the empty RAW Lab shell in Chromium.
