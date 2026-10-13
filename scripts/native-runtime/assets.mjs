@@ -32,6 +32,13 @@ const nativeRuntimeAssetSpecs = [
   },
 ]
 
+/** Native runtime files a build ships, relative to its output directory. */
+export function nativeRuntimeAssetPaths() {
+  return nativeRuntimeAssetSpecs.flatMap((spec) =>
+    spec.files.map((file) => `${spec.targetDir}/${file}`),
+  )
+}
+
 export function resolveWorkspaceRoot(startDir = process.cwd()) {
   let currentDir = resolve(startDir)
 

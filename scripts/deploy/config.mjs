@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import process from 'node:process'
 
 import deployConfig from '../../deploy.config.mjs'
+import { nativeRuntimeAssetPaths } from '../native-runtime/assets.mjs'
 
 export const DEPLOY_TARGETS = ['cloudflare', 'vercel']
 export const DEPLOY_ENVS = ['preview', 'production']
@@ -15,7 +16,7 @@ export function createDeployConfig(root = process.cwd()) {
     root,
     siteUrl: deployConfig.siteUrl,
     outputDir,
-    nativeAssets: deployConfig.nativeAssets,
+    nativeAssets: nativeRuntimeAssetPaths(),
     crossOriginIsolationHeaders: deployConfig.crossOriginIsolationHeaders,
     wasmHeaders: deployConfig.wasmHeaders,
     cloudflare: {
