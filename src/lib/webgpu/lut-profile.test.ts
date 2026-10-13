@@ -4,8 +4,8 @@ import type {
   LUTData,
 } from '@lumaforge/luma-color-runtime'
 import {
+  getGamutMatrix,
   getLUTColorProfile,
-  getLUTOutputToTargetMatrix,
   mat3ToColumnMajor,
   NEUTRAL_USER_COLOR_INTENT,
   parseCubeLUT,
@@ -165,9 +165,7 @@ describe('lUT pipeline profile uniforms', () => {
     expect(Array.from(uniforms.inputToLutGamut)).toEqual(IDENTITY_MATRIX)
     expect(Array.from(uniforms.lutOutputToDisplayGamut)).toEqual(
       Array.from(
-        mat3ToColumnMajor(
-          getLUTOutputToTargetMatrix('display-p3', 'srgb-rec709'),
-        ),
+        mat3ToColumnMajor(getGamutMatrix('display-p3', 'srgb-rec709')),
       ),
     )
   })

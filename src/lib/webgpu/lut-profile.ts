@@ -12,8 +12,7 @@ import type {
   TransferFunctionId,
 } from '@lumaforge/luma-color-runtime'
 import {
-  getLinearProPhotoToGamutMatrix,
-  getLUTOutputToTargetMatrix,
+  getGamutMatrix,
   mat3Identity,
   mat3ToColumnMajor,
 } from '@lumaforge/luma-color-runtime'
@@ -119,7 +118,7 @@ export function resolveLUTPipelineProfileUniforms(
         outputGamut === DISPLAY_TARGET_GAMUT
           ? DISPLAY_PROFILE_UNIFORMS.lutOutputToDisplayGamut
           : mat3ToColumnMajor(
-              getLUTOutputToTargetMatrix(outputGamut, DISPLAY_TARGET_GAMUT),
+              getGamutMatrix(outputGamut, DISPLAY_TARGET_GAMUT),
             ),
       lutInputTransfer:
         LUT_TRANSFER_UNIFORMS[profile.inputTransfer] ??
@@ -138,11 +137,11 @@ export function resolveLUTPipelineProfileUniforms(
   const lutOutputToDisplayGamut =
     outputGamut === DISPLAY_TARGET_GAMUT
       ? mat3Identity()
-      : getLUTOutputToTargetMatrix(outputGamut, DISPLAY_TARGET_GAMUT)
+      : getGamutMatrix(outputGamut, DISPLAY_TARGET_GAMUT)
 
   return {
     inputToLutGamut: mat3ToColumnMajor(
-      getLinearProPhotoToGamutMatrix(profile.inputGamut),
+      getGamutMatrix('prophoto-rgb', profile.inputGamut),
     ),
     lutOutputToDisplayGamut: mat3ToColumnMajor(lutOutputToDisplayGamut),
     lutInputTransfer: LUT_TRANSFER_UNIFORMS[profile.inputTransfer],

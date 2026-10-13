@@ -1,7 +1,7 @@
 import type { LUTData } from '@lumaforge/luma-color-runtime'
 import {
+  getGamutMatrix,
   getLUTColorProfile,
-  getProPhotoToTargetMatrix,
   parseCubeLUT,
   toLUTData,
 } from '@lumaforge/luma-color-runtime'
@@ -27,7 +27,7 @@ describe('webGPU linear ProPhoto input', () => {
       (match) => match[1]!.split(',').map(Number),
     )
     expect(rows).toHaveLength(3)
-    const computed = getProPhotoToTargetMatrix('srgb-rec709')
+    const computed = getGamutMatrix('prophoto-rgb', 'srgb-rec709')
     for (let row = 0; row < 3; row++)
       for (let column = 0; column < 3; column++)
         expect(rows[row]![column]).toBeCloseTo(computed[row * 3 + column]!, 6)

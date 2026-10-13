@@ -4,7 +4,7 @@ import type {
 } from './color-graph'
 import { resolveExportColorGraph } from './color-graph'
 import type { Mat3 } from './matrix'
-import { getLinearProPhotoToGamutMatrix, mat3Identity } from './matrix'
+import { getGamutMatrix, mat3Identity } from './matrix'
 import { linearProPhotoToOklab, oklabToLinearProPhoto } from './oklab'
 import type { LUTColorProfile } from './registry'
 import { createRowBandProcessor } from './row-band-processor'
@@ -441,7 +441,7 @@ describe('createRowBandProcessor', () => {
     // matrix multiplies on neutral input would introduce F32 ULP drift that
     // can flip 8-bit byte boundaries, surfacing as a test failure here
     // rather than as a silent preview/export parity break.
-    const M_PROPHOTO_TO_SRGB = getLinearProPhotoToGamutMatrix('srgb-rec709')
+    const M_PROPHOTO_TO_SRGB = getGamutMatrix('prophoto-rgb', 'srgb-rec709')
     const expected = new Uint8Array(pixelCount * 3)
     for (let p = 0; p < pixelCount; p += 1) {
       const r = linear[p * 3 + 0]

@@ -1,9 +1,5 @@
 import type { ColorGamutId, ColorSpaceDef } from './constants'
-import {
-  COLOR_GAMUT_SOURCE_URLS,
-  COLOR_GAMUT_TO_COLOR_SPACE,
-  COLOR_SPACES,
-} from './constants'
+import { COLOR_GAMUT_SOURCE_URLS, COLOR_SPACES } from './constants'
 import type {
   TransferFunctionId,
   TransferFunctionMetadata,
@@ -42,23 +38,12 @@ export interface ColorGamut {
   source: string
 }
 
-function getRequiredColorSpace(id: ColorGamutId): ColorSpaceDef {
-  const key = COLOR_GAMUT_TO_COLOR_SPACE[id]
-  const colorSpace = COLOR_SPACES[key]
-
-  if (!colorSpace) {
-    throw new Error(`Missing color space definition for gamut ${id}`)
-  }
-
-  return colorSpace
-}
-
 function createColorGamut(
   id: ColorGamutId,
   label: string,
   extraAliases: string[] = [],
 ): ColorGamut {
-  const colorSpace = getRequiredColorSpace(id)
+  const colorSpace = COLOR_SPACES[id]
   return {
     id,
     label,
@@ -66,14 +51,9 @@ function createColorGamut(
     primaries: colorSpace.primaries,
     whitePoint: colorSpace.whitePoint,
     aliases: Array.from(
-      new Set([
-        label,
-        colorSpace.name,
-        ...(colorSpace.aliases ?? []),
-        ...extraAliases,
-      ]),
+      new Set([label, colorSpace.name, ...colorSpace.aliases, ...extraAliases]),
     ),
-    source: colorSpace.source ?? COLOR_GAMUT_SOURCE_URLS[id],
+    source: COLOR_GAMUT_SOURCE_URLS[id],
   }
 }
 

@@ -55,7 +55,6 @@ export const COLOR_GAMUT_SOURCE_URLS: Record<ColorGamutId, string> = {
  * Using CIE 1931 xyY chromaticity coordinates.
  */
 export interface ColorSpaceDef {
-  id?: ColorGamutId
   name: string
   primaries: {
     red: [number, number]
@@ -63,9 +62,7 @@ export interface ColorSpaceDef {
     blue: [number, number]
   }
   whitePoint: [number, number] // D50 or D65
-  gamma?: number | 'linear'
-  aliases?: string[]
-  source?: string
+  aliases: string[]
 }
 
 // D65 standard illuminant
@@ -77,9 +74,8 @@ export const D50_WHITE: [number, number] = [0.3457, 0.3585]
 // ACES white point (D60)
 export const ACES_WHITE: [number, number] = [0.32168, 0.33767]
 
-export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
-  'ProPhoto RGB': {
-    id: 'prophoto-rgb',
+export const COLOR_SPACES: Record<ColorGamutId, ColorSpaceDef> = {
+  'prophoto-rgb': {
     name: 'ProPhoto RGB',
     primaries: {
       red: [0.7347, 0.2653],
@@ -87,12 +83,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.0366, 0.0001],
     },
     whitePoint: D50_WHITE,
-    gamma: 'linear',
-    aliases: ['ProPhoto', 'ROMM RGB', 'prophoto-rgb'],
-    source: COLOR_GAMUT_SOURCE_URLS['prophoto-rgb'],
+    aliases: ['ProPhoto', 'ROMM RGB'],
   },
-  sRGB: {
-    id: 'srgb-rec709',
+  'srgb-rec709': {
     name: 'sRGB',
     primaries: {
       red: [0.64, 0.33],
@@ -100,25 +93,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.15, 0.06],
     },
     whitePoint: D65_WHITE,
-    gamma: 2.4,
-    aliases: ['Rec.709', 'BT.709', 'ITU-R BT.709', 'srgb-rec709'],
-    source: COLOR_GAMUT_SOURCE_URLS['srgb-rec709'],
+    aliases: ['Rec.709', 'BT.709', 'ITU-R BT.709'],
   },
-  'Rec.709': {
-    id: 'srgb-rec709',
-    name: 'Rec.709',
-    primaries: {
-      red: [0.64, 0.33],
-      green: [0.3, 0.6],
-      blue: [0.15, 0.06],
-    },
-    whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: ['sRGB', 'BT.709', 'ITU-R BT.709', 'srgb-rec709'],
-    source: COLOR_GAMUT_SOURCE_URLS['srgb-rec709'],
-  },
-  'Display P3': {
-    id: 'display-p3',
+  'display-p3': {
     name: 'Display P3',
     primaries: {
       red: [0.68, 0.32],
@@ -126,12 +103,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.15, 0.06],
     },
     whitePoint: D65_WHITE,
-    gamma: 2.4,
-    aliases: ['P3-D65', 'display-p3'],
-    source: COLOR_GAMUT_SOURCE_URLS['display-p3'],
+    aliases: ['P3-D65'],
   },
-  'ITU-R BT.2020': {
-    id: 'rec2020',
+  rec2020: {
     name: 'ITU-R BT.2020',
     primaries: {
       red: [0.708, 0.292],
@@ -139,7 +113,6 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.131, 0.046],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
     aliases: [
       'Rec.2020',
       'BT.2020',
@@ -147,12 +120,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       'N-Log Rec.2020',
       'Leica L-Gamut',
       'leica-l-gamut',
-      'rec2020',
     ],
-    source: COLOR_GAMUT_SOURCE_URLS.rec2020,
   },
-  'DJI D-Gamut': {
-    id: 'dji-d-gamut',
+  'dji-d-gamut': {
     name: 'DJI D-Gamut',
     primaries: {
       red: [0.71, 0.31],
@@ -160,12 +130,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.09, -0.08],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: ['D-Gamut', 'DJI D-Gamut/D-Log', 'dji-d-gamut'],
-    source: COLOR_GAMUT_SOURCE_URLS['dji-d-gamut'],
+    aliases: ['D-Gamut', 'DJI D-Gamut/D-Log'],
   },
-  'S-Gamut': {
-    id: 's-gamut',
+  's-gamut': {
     name: 'S-Gamut',
     primaries: {
       red: [0.73, 0.28],
@@ -173,12 +140,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.1, -0.05],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: ['S-Gamut/S-Log2', 'Sony S-Gamut', 'sony-s-gamut', 's-gamut'],
-    source: COLOR_GAMUT_SOURCE_URLS['s-gamut'],
+    aliases: ['S-Gamut/S-Log2', 'Sony S-Gamut', 'sony-s-gamut'],
   },
-  'S-Gamut3': {
-    id: 's-gamut3',
+  's-gamut3': {
     name: 'S-Gamut3',
     primaries: {
       red: [0.73, 0.28],
@@ -186,12 +150,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.1, -0.05],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: ['S-Gamut3/S-Log3', 's-gamut3'],
-    source: COLOR_GAMUT_SOURCE_URLS['s-gamut3'],
+    aliases: ['S-Gamut3/S-Log3'],
   },
-  'S-Gamut3.Cine': {
-    id: 's-gamut3-cine',
+  's-gamut3-cine': {
     name: 'S-Gamut3.Cine',
     primaries: {
       red: [0.766, 0.275],
@@ -199,18 +160,14 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.089, -0.087],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
     aliases: [
       'S-Gamut3Cine',
       'S-Gamut3.Cine/S-Log3',
       'Sony S-Gamut3.Cine',
       'sony-s-gamut3-cine',
-      's-gamut3-cine',
     ],
-    source: COLOR_GAMUT_SOURCE_URLS['s-gamut3-cine'],
   },
-  'V-Gamut': {
-    id: 'v-gamut',
+  'v-gamut': {
     name: 'V-Gamut',
     primaries: {
       red: [0.73, 0.28],
@@ -218,12 +175,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.1, -0.03],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: ['V-Gamut/V-Log', 'v-gamut'],
-    source: COLOR_GAMUT_SOURCE_URLS['v-gamut'],
+    aliases: ['V-Gamut/V-Log'],
   },
-  'F-Gamut': {
-    id: 'f-gamut',
+  'f-gamut': {
     name: 'F-Gamut',
     primaries: {
       red: [0.708, 0.292],
@@ -231,12 +185,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.131, 0.046],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: ['F-Gamut/F-Log', 'f-gamut'],
-    source: COLOR_GAMUT_SOURCE_URLS['f-gamut'],
+    aliases: ['F-Gamut/F-Log'],
   },
-  'F-Gamut C': {
-    id: 'f-gamut-c',
+  'f-gamut-c': {
     name: 'F-Gamut C',
     primaries: {
       red: [0.7347, 0.2653],
@@ -244,31 +195,14 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.1173, -0.0224],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
     aliases: [
       'F-GamutC',
       'F-Gamut C/F-Log2C',
       'Fujifilm F-Gamut C',
       'fujifilm-f-gamut-c',
-      'f-gamut-c',
     ],
-    source: COLOR_GAMUT_SOURCE_URLS['f-gamut-c'],
   },
-  'Cinema Gamut': {
-    id: 'canon-cinema-gamut',
-    name: 'Cinema Gamut',
-    primaries: {
-      red: [0.74, 0.27],
-      green: [0.17, 1.14],
-      blue: [0.08, -0.1],
-    },
-    whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: ['Canon Cinema Gamut', 'Canon C.Gamut', 'canon-cinema-gamut'],
-    source: COLOR_GAMUT_SOURCE_URLS['canon-cinema-gamut'],
-  },
-  'Canon Cinema Gamut': {
-    id: 'canon-cinema-gamut',
+  'canon-cinema-gamut': {
     name: 'Canon Cinema Gamut',
     primaries: {
       red: [0.74, 0.27],
@@ -276,12 +210,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.08, -0.1],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: ['Cinema Gamut', 'Canon C.Gamut', 'canon-cinema-gamut'],
-    source: COLOR_GAMUT_SOURCE_URLS['canon-cinema-gamut'],
+    aliases: ['Cinema Gamut', 'Canon C.Gamut'],
   },
-  'ARRI Wide Gamut 3': {
-    id: 'arri-wide-gamut-3',
+  'arri-wide-gamut-3': {
     name: 'ARRI Wide Gamut 3',
     primaries: {
       red: [0.684, 0.313],
@@ -289,17 +220,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.0861, -0.102],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: [
-      'AWG3',
-      'Alexa Wide Gamut',
-      'ARRI ALEXA Wide Gamut',
-      'arri-wide-gamut-3',
-    ],
-    source: COLOR_GAMUT_SOURCE_URLS['arri-wide-gamut-3'],
+    aliases: ['AWG3', 'Alexa Wide Gamut', 'ARRI ALEXA Wide Gamut'],
   },
-  'ARRI Wide Gamut 4': {
-    id: 'arri-wide-gamut-4',
+  'arri-wide-gamut-4': {
     name: 'ARRI Wide Gamut 4',
     primaries: {
       red: [0.7347, 0.2653],
@@ -307,12 +230,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.0991, -0.0308],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: ['AWG4', 'ARRI Wide Gamut 4', 'arri-wide-gamut-4'],
-    source: COLOR_GAMUT_SOURCE_URLS['arri-wide-gamut-4'],
+    aliases: ['AWG4', 'ARRI Wide Gamut 4'],
   },
-  REDWideGamutRGB: {
-    id: 'red-wide-gamut-rgb',
+  'red-wide-gamut-rgb': {
     name: 'REDWideGamutRGB',
     primaries: {
       red: [0.780308, 0.304253],
@@ -320,25 +240,9 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.095612, -0.084589],
     },
     whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: ['RED Wide Gamut RGB', 'RWG', 'red-wide-gamut-rgb'],
-    source: COLOR_GAMUT_SOURCE_URLS['red-wide-gamut-rgb'],
+    aliases: ['RED Wide Gamut RGB', 'RWG'],
   },
-  'N-Gamut': {
-    id: 'rec2020',
-    name: 'N-Gamut',
-    primaries: {
-      red: [0.708, 0.292],
-      green: [0.17, 0.797],
-      blue: [0.131, 0.046],
-    },
-    whitePoint: D65_WHITE,
-    gamma: 'linear',
-    aliases: ['N-Gamut', 'N-Log Rec.2020', 'Rec.2020', 'BT.2020', 'rec2020'],
-    source: COLOR_GAMUT_SOURCE_URLS.rec2020,
-  },
-  'ACES AP1': {
-    id: 'aces-ap1',
+  'aces-ap1': {
     name: 'ACES AP1',
     primaries: {
       red: [0.713, 0.293],
@@ -346,58 +250,6 @@ export const COLOR_SPACES: Record<string, ColorSpaceDef> = {
       blue: [0.128, 0.044],
     },
     whitePoint: ACES_WHITE,
-    gamma: 'linear',
-    aliases: ['ACEScg', 'AP1', 'aces-ap1'],
-    source: COLOR_GAMUT_SOURCE_URLS['aces-ap1'],
+    aliases: ['ACEScg', 'AP1'],
   },
-}
-
-export const COLOR_GAMUT_TO_COLOR_SPACE: Record<ColorGamutId, string> = {
-  'prophoto-rgb': 'ProPhoto RGB',
-  'srgb-rec709': 'sRGB',
-  'display-p3': 'Display P3',
-  rec2020: 'ITU-R BT.2020',
-  'dji-d-gamut': 'DJI D-Gamut',
-  's-gamut': 'S-Gamut',
-  's-gamut3': 'S-Gamut3',
-  's-gamut3-cine': 'S-Gamut3.Cine',
-  'v-gamut': 'V-Gamut',
-  'f-gamut': 'F-Gamut',
-  'f-gamut-c': 'F-Gamut C',
-  'canon-cinema-gamut': 'Canon Cinema Gamut',
-  'arri-wide-gamut-3': 'ARRI Wide Gamut 3',
-  'arri-wide-gamut-4': 'ARRI Wide Gamut 4',
-  'red-wide-gamut-rgb': 'REDWideGamutRGB',
-  'aces-ap1': 'ACES AP1',
-}
-
-function normalizeColorSpaceKey(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[\s._/]+/g, '-')
-    .replace(/-+/g, '-')
-}
-
-const COLOR_SPACE_ALIAS_TO_KEY = new Map<string, string>()
-
-for (const [key, colorSpace] of Object.entries(COLOR_SPACES)) {
-  COLOR_SPACE_ALIAS_TO_KEY.set(normalizeColorSpaceKey(key), key)
-  COLOR_SPACE_ALIAS_TO_KEY.set(normalizeColorSpaceKey(colorSpace.name), key)
-
-  if (colorSpace.id) {
-    COLOR_SPACE_ALIAS_TO_KEY.set(normalizeColorSpaceKey(colorSpace.id), key)
-  }
-
-  for (const alias of colorSpace.aliases ?? []) {
-    COLOR_SPACE_ALIAS_TO_KEY.set(normalizeColorSpaceKey(alias), key)
-  }
-}
-
-for (const [id, key] of Object.entries(COLOR_GAMUT_TO_COLOR_SPACE)) {
-  COLOR_SPACE_ALIAS_TO_KEY.set(normalizeColorSpaceKey(id), key)
-}
-
-export function resolveColorSpaceKey(nameOrId: string): string | undefined {
-  if (COLOR_SPACES[nameOrId]) return nameOrId
-  return COLOR_SPACE_ALIAS_TO_KEY.get(normalizeColorSpaceKey(nameOrId))
 }

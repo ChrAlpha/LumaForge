@@ -3,11 +3,7 @@ import { resolveColorBalanceParams } from './color-balance'
 import type { ColorGamutId } from './constants'
 import type { TransferFunctionId } from './log-encoding'
 import type { Mat3 } from './matrix'
-import {
-  getLinearProPhotoToGamutMatrix,
-  getLUTOutputToTargetMatrix,
-  mat3Identity,
-} from './matrix'
+import { getGamutMatrix, mat3Identity } from './matrix'
 import type { RawRenderExposure } from './raw-render-exposure'
 import type { LUTColorProfile, LUTRole, SignalRange } from './registry'
 import type { LumaColorSaturationParams } from './saturation'
@@ -351,13 +347,13 @@ export function resolveExportColorGraph(
   const inputMatrix =
     profile.inputGamut === 'prophoto-rgb'
       ? mat3Identity()
-      : getLinearProPhotoToGamutMatrix(profile.inputGamut)
+      : getGamutMatrix('prophoto-rgb', profile.inputGamut)
   const outputGamut = profile.outputGamut ?? profile.inputGamut
   const outputRange = profile.outputRange ?? 'full'
   const outputMatrix =
     outputGamut === OUTPUT_GAMUT
       ? mat3Identity()
-      : getLUTOutputToTargetMatrix(outputGamut, OUTPUT_GAMUT)
+      : getGamutMatrix(outputGamut, OUTPUT_GAMUT)
 
   return {
     supported: true,

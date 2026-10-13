@@ -34,6 +34,16 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
   `inputByteLength`; `HistogramInputOwnership` is removed. Nothing read them.
 - `LumaColorLUTData` and `LumaColorProcessingParams` are removed; they were
   second names for `LUTData` and `ProcessingParams`.
+- `getGamutMatrix(src, dst)` takes `ColorGamutId`s and throws for an id
+  outside the gamut table; it no longer accepts display names or aliases and
+  no longer returns an identity matrix with a warning for an unknown space.
+  `getProPhotoToTargetMatrix`, `getLinearProPhotoToGamutMatrix`,
+  `getLinearGamutMatrix` and `getLUTOutputToTargetMatrix` are removed; call
+  `getGamutMatrix('prophoto-rgb', target)` or `getGamutMatrix(src, dst)`.
+  Resolve a name or alias to an id with `getColorGamut` first.
+- `COLOR_SPACES` is keyed by `ColorGamutId`, and `ColorSpaceDef` drops `id`,
+  `gamma` and `source` (`COLOR_GAMUT_SOURCE_URLS` holds the sources);
+  `COLOR_GAMUT_TO_COLOR_SPACE` and `resolveColorSpaceKey` are removed.
 
 ### Added
 

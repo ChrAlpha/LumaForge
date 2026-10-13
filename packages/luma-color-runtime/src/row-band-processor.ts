@@ -1,7 +1,7 @@
 import type { SupportedExportColorGraphDescriptor } from './color-graph'
 import { compressLutInputToDomain } from './lut-domain'
 import { mix, sampleLutTrilinear } from './lut3d'
-import { getProPhotoToTargetMatrix } from './matrix'
+import { getGamutMatrix } from './matrix'
 import { getTransferFunction } from './registry'
 import { applyUserSaturationTo } from './saturation'
 import type { PreparedSelectiveColorLut } from './selective-color'
@@ -43,7 +43,7 @@ function toEncodedByte(encoded: number) {
 const LEGAL_RANGE_SCALE = (940 - 64) / 1023
 const LEGAL_RANGE_OFFSET = 64 / 1023
 const LEGAL_RANGE_INV_SCALE = 1023 / (940 - 64)
-const PROPHOTO_TO_SRGB_MATRIX = getProPhotoToTargetMatrix('srgb-rec709')
+const PROPHOTO_TO_SRGB_MATRIX = getGamutMatrix('prophoto-rgb', 'srgb-rec709')
 
 function applySignalRangeForLutInput(value: number, isLegalRange: boolean) {
   if (!isLegalRange) return value

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { getLinearProPhotoToGamutMatrix, mat3Invert } from './matrix'
+import { getGamutMatrix, mat3Invert } from './matrix'
 import {
   linearProPhotoToOklab,
   oklabToLinearProPhoto,
@@ -139,7 +139,7 @@ describe('canonical red LUT position (canonical_red_lut_position)', () => {
 
     // Step 2: convert linear sRGB -> linear ProPhoto via the inverse of the
     // pro-photo -> sRGB gamut matrix.
-    const proPhotoToSrgb = getLinearProPhotoToGamutMatrix('srgb-rec709')
+    const proPhotoToSrgb = getGamutMatrix('prophoto-rgb', 'srgb-rec709')
     const srgbToProPhoto = mat3Invert(proPhotoToSrgb)
     const linearProPhotoRed = new Float32Array(3)
     linearProPhotoRed[0] =
@@ -414,7 +414,7 @@ describe('band_center_boundary_consistency', () => {
 // Apply-path fixtures and helpers (Task 5 failure-mode sweep)
 // ---------------------------------------------------------------------------
 
-const proPhotoToSrgbGlobal = getLinearProPhotoToGamutMatrix('srgb-rec709')
+const proPhotoToSrgbGlobal = getGamutMatrix('prophoto-rgb', 'srgb-rec709')
 const srgbToProPhotoGlobal = mat3Invert(proPhotoToSrgbGlobal)
 
 function linearSrgbToLinearProPhoto(

@@ -1,4 +1,4 @@
-import { getLinearProPhotoToGamutMatrix, mat3Invert } from './matrix'
+import { getGamutMatrix, mat3Invert } from './matrix'
 import {
   linearProPhotoToOklab,
   oklabToLinearProPhoto,
@@ -123,7 +123,7 @@ function shortArcMidpoint(left: number, right: number): number {
 }
 
 function computeBandCentersRad(): readonly number[] {
-  const proPhotoToSrgb = getLinearProPhotoToGamutMatrix('srgb-rec709')
+  const proPhotoToSrgb = getGamutMatrix('prophoto-rgb', 'srgb-rec709')
   const srgbToProPhoto = mat3Invert(proPhotoToSrgb)
   const labScratch = new Float32Array(3)
   const lchScratch = new Float32Array(3)

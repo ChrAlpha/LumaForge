@@ -1,11 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import {
-  getGamutMatrix,
-  getLinearGamutMatrix,
-  getLinearProPhotoToGamutMatrix,
-  mat3Identity,
-} from './matrix'
+import { getGamutMatrix, mat3Identity } from './matrix'
 
 function expectMatrixClose(
   actual: Float32Array,
@@ -28,16 +23,9 @@ function applyMatrix(matrix: Float32Array, rgb: [number, number, number]) {
 }
 
 describe('gamut matrix registry integration', () => {
-  it('preserves legacy string names while accepting typed color gamut ids', () => {
-    const byLegacyNames = getGamutMatrix('ITU-R BT.2020', 'sRGB')
-    const byTypedIds = getGamutMatrix('rec2020', 'srgb-rec709')
-
-    expectMatrixClose(byTypedIds, Array.from(byLegacyNames), 6)
-  })
-
   it('matches a known Rec.2020 to Rec.709 linear conversion matrix', () => {
     expectMatrixClose(
-      getLinearGamutMatrix('rec2020', 'srgb-rec709'),
+      getGamutMatrix('rec2020', 'srgb-rec709'),
       [
         1.660491, -0.587641, -0.07285, -0.12455, 1.1329, -0.008349, -0.018151,
         -0.100579, 1.11873,
@@ -46,7 +34,7 @@ describe('gamut matrix registry integration', () => {
   })
 
   it('precomputes ProPhoto D50 to target gamut matrices with white adaptation', () => {
-    const matrix = getLinearProPhotoToGamutMatrix('arri-wide-gamut-4')
+    const matrix = getGamutMatrix('prophoto-rgb', 'arri-wide-gamut-4')
     const white = applyMatrix(matrix, [1, 1, 1])
 
     expect(white[0]).toBeCloseTo(1, 4)
@@ -58,7 +46,7 @@ describe('gamut matrix registry integration', () => {
   })
 
   it('precomputes LUT output gamut to display/export target matrices', () => {
-    const matrix = getLinearGamutMatrix('red-wide-gamut-rgb', 'display-p3')
+    const matrix = getGamutMatrix('red-wide-gamut-rgb', 'display-p3')
 
     for (const value of matrix) {
       expect(Number.isFinite(value)).toBe(true)
@@ -81,7 +69,7 @@ describe('gamut matrix registry integration', () => {
     ] as const
 
     for (const gamut of catalogInputGamutsWithPublicMath) {
-      const matrix = getLinearProPhotoToGamutMatrix(gamut)
+      const matrix = getGamutMatrix('prophoto-rgb', gamut)
 
       expect(Array.from(matrix).every(Number.isFinite), gamut).toBe(true)
     }
@@ -89,22 +77,18 @@ describe('gamut matrix registry integration', () => {
     const catalogOutputGamutsWithPublicMath = ['srgb-rec709'] as const
 
     for (const gamut of catalogOutputGamutsWithPublicMath) {
-      const matrix = getLinearGamutMatrix(gamut, 'srgb-rec709')
+      const matrix = getGamutMatrix(gamut, 'srgb-rec709')
 
       expect(Array.from(matrix).every(Number.isFinite), gamut).toBe(true)
     }
   })
 
-  it('keeps unknown gamut fallback behavior unchanged', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    expect(Array.from(getGamutMatrix('Unknown Input', 'sRGB'))).toEqual(
-      Array.from(mat3Identity()),
+  it('refuses a gamut outside the table', () => {
+    expect(() =>
+      getGamutMatrix('Unknown Input' as never, 'srgb-rec709'),
+    ).toThrow('Unknown color gamut: Unknown Input or srgb-rec709')
+    expect(() => getGamutMatrix('srgb-rec709', 'toString' as never)).toThrow(
+      'Unknown color gamut',
     )
-    expect(warn).toHaveBeenCalledWith(
-      'Unknown color space: Unknown Input or sRGB',
-    )
-
-    warn.mockRestore()
   })
 })
