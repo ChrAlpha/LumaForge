@@ -121,6 +121,74 @@ describe('lUT contract precedence', () => {
   })
 })
 
+describe('lUT name hints', () => {
+  function recommendationsFor(sourceName: string, comments: string[] = []) {
+    const resolution = resolveLUTProfile({
+      title: 'Sony technical LUT',
+      sourceName,
+      comments,
+    })
+    if (resolution.kind !== 'recommended') {
+      throw new Error(`Expected ${sourceName} to recommend a contract`)
+    }
+    return resolution.recommendations
+  }
+
+  it('recommends input profiles from comments and file names', () => {
+    expect(
+      recommendationsFor('Client Display Look.cube', [
+        'Input: display referred sRGB',
+      ])[0]?.id,
+    ).toBe('display-srgb')
+    expect(
+      recommendationsFor('FLog2C_to_CLASSIC-Neg_VLog.cube', [
+        'LUMIXPHOTOSTYLE VLOG',
+      ]),
+    ).toContainEqual(expect.objectContaining({ id: 'panasonic-vgamut-vlog' }))
+  })
+
+  it('annotates Rec.709, bare BT.709 and BT.1886 outputs as full-range gamma 2.4', () => {
+    for (const sourceName of [
+      'SLog3_SGamut3Cine_to_Rec709.cube',
+      'SLog3_SGamut3Cine_BT709.cube',
+      'SLog3_SGamut3Cine_BT.1886.cube',
+    ]) {
+      expect(recommendationsFor(sourceName)).toContainEqual(
+        expect.objectContaining({
+          id: 'sony-sgamut3cine-slog3',
+          role: 'combined-look-output',
+          outputGamut: 'srgb-rec709',
+          outputTransfer: 'gamma24',
+          outputRange: 'full',
+        }),
+      )
+    }
+  })
+
+  it('annotates to-Linear and to-V-Log outputs as technical with an unknown range', () => {
+    expect(
+      recommendationsFor('SLog3_SGamut3Cine_to_Linear.cube'),
+    ).toContainEqual(
+      expect.objectContaining({
+        id: 'sony-sgamut3cine-slog3',
+        role: 'technical-output',
+        outputTransfer: 'linear',
+        outputRange: 'unknown',
+      }),
+    )
+    const toVLog = recommendationsFor('SLog3_SGamut3Cine_to_VLog.cube')
+    expect(toVLog).toContainEqual(
+      expect.objectContaining({
+        id: 'sony-sgamut3cine-slog3',
+        outputRange: 'unknown',
+      }),
+    )
+    expect(toVLog).not.toContainEqual(
+      expect.objectContaining({ id: 'panasonic-vgamut-vlog' }),
+    )
+  })
+})
+
 describe('lUT explicit profile labels', () => {
   it('does not resolve LUT contracts from filename or free-form comments', () => {
     const resolution = resolveLUTProfile({

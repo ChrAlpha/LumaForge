@@ -1,9 +1,8 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, ParsedLUT } from '@lumaforge/luma-color-runtime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useRef } from 'react'
 
 import type { ExportResourceCleanupReason } from '~/lib/export/execution-profile'
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'

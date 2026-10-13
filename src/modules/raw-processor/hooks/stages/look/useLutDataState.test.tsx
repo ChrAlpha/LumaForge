@@ -1,3 +1,4 @@
+import type { ParsedLUT } from '@lumaforge/luma-color-runtime'
 import {
   getLUTColorProfile,
   parseCubeLUT,
@@ -5,8 +6,6 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 
 import { useLutDataState } from './useLutDataState'
 

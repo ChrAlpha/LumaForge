@@ -1,11 +1,10 @@
+import type { ParsedLUT } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_USER_COLOR_INTENT,
   parseCubeLUT,
 } from '@lumaforge/luma-color-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import { describe, expect, it } from 'vitest'
-
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 
 import { createExportResult } from '../../model/export-result'
 import type { ImageSession, StyleAsset } from '../../model/session'

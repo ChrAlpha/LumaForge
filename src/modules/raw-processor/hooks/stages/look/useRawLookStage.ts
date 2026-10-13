@@ -2,6 +2,7 @@ import type {
   ColorGraphIntent,
   LUTColorProfile,
   LUTData,
+  ParsedLUT,
 } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
@@ -9,7 +10,6 @@ import { toast } from 'sonner'
 
 import type { Translate } from '~/lib/i18n'
 import { useI18n } from '~/lib/i18n'
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 
 import type {

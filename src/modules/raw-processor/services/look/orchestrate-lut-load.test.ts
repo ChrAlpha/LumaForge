@@ -1,8 +1,8 @@
+import type { ParsedLUT } from '@lumaforge/luma-color-runtime'
 import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
 import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import { getStoredLUTContractSelection } from '~/lib/lut/profile-resolution'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 import {

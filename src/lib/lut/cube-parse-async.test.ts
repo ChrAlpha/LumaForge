@@ -1,10 +1,9 @@
 import type { LUTContractSelection } from '@lumaforge/luma-color-runtime'
-import { parseCubeLUT as parseCubeLUTWithoutStorage } from '@lumaforge/luma-color-runtime'
+import { parseCubeLUT } from '@lumaforge/luma-color-runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CubeParseRequest, CubeParseResponse } from './cube-parse.worker'
 import { parseCubeLUTOffThread } from './cube-parse-async'
-import { parseCubeLUT } from './cube-parser'
 import { storeLUTContractSelection } from './profile-resolution'
 
 function cubeText(size: number): string {
@@ -60,7 +59,7 @@ function createStoragelessWorker() {
           response = {
             id,
             ok: true,
-            parsed: parseCubeLUTWithoutStorage(content, { sourceName }),
+            parsed: parseCubeLUT(content, { sourceName }),
           }
         } catch (error) {
           response = { id, ok: false, message: (error as Error).message }
@@ -157,7 +156,7 @@ describe('parseCubeLUTOffThread', () => {
 
   it('restores a stored user contract after a storage-free worker parse', async () => {
     const content = cubeText(17)
-    const { fingerprint } = parseCubeLUTWithoutStorage(content)
+    const { fingerprint } = parseCubeLUT(content)
     storeLUTContractSelection(fingerprint, userVLogContract)
     const { worker, requests, factory } = createStoragelessWorker()
 
@@ -232,8 +231,7 @@ describe('cube parse worker', () => {
     ]
     expect(response).toMatchObject({ id: 7, ok: true })
     expect(response.parsed.fingerprint).toBe(
-      parseCubeLUTWithoutStorage(content, { sourceName: 'fixture.cube' })
-        .fingerprint,
+      parseCubeLUT(content, { sourceName: 'fixture.cube' }).fingerprint,
     )
     expect(response.parsed.profileResolution).toEqual({ kind: 'unknown' })
     expect(transfer).toEqual([response.parsed.data.buffer])

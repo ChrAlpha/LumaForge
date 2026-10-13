@@ -2,11 +2,13 @@ import type {
   ColorGraphIntent,
   ProcessingParams,
 } from '@lumaforge/luma-color-runtime'
-import { NEUTRAL_SELECTIVE_COLOR } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_SELECTIVE_COLOR,
+  parseCubeLUT,
+} from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { parseCubeLUT } from '~/lib/lut/cube-parser'
 import { DEFAULT_PREVIEW_VIEW } from '~/lib/preview/preview-view'
 
 import { getDetachedPreviewView } from '../state/preview-view.atoms'

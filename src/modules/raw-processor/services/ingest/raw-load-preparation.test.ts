@@ -1,6 +1,6 @@
+import { parseCubeLUT } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
-import { parseCubeLUT } from '~/lib/lut/cube-parser'
 import type { PreviewView } from '~/lib/preview/preview-view'
 
 import type { StyleAsset } from '../../model/session'

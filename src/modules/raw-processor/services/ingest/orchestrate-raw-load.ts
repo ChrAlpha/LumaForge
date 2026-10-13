@@ -1,8 +1,7 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, ParsedLUT } from '@lumaforge/luma-color-runtime'
 import { deriveInteractivePolicy } from '@lumaforge/render-engine/policy'
 import { createProgressivePreviewPlan } from '@lumaforge/render-engine/preview'
 
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import { resolvePreviewBackend } from '~/lib/preview/gpu-backend'
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'

@@ -3,13 +3,16 @@ import type {
   LUTColorProfile,
   LUTContractSelection,
   LUTData,
+  ParsedLUT,
 } from '@lumaforge/luma-color-runtime'
-import { toLUTContractSelection } from '@lumaforge/luma-color-runtime'
+import {
+  isSupportedLUT,
+  toLUTContractSelection,
+  validateLUT,
+} from '@lumaforge/luma-color-runtime'
 import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
 
 import { parseCubeLUTOffThread } from '~/lib/lut/cube-parse-async'
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
-import { isSupportedLUT, validateLUT } from '~/lib/lut/cube-parser'
 import {
   applyLUTContractSelection,
   applyTrustedLUTContract,
@@ -266,7 +269,7 @@ export async function orchestrateLutLoadFromFile(
     ctx.services.canApplyLoadedLut()
 
   if (!mayApply()) return 'aborted'
-  if (!isSupportedLUT(file)) {
+  if (!isSupportedLUT(file.name)) {
     ctx.atoms.setSession((prev) =>
       prev
         ? {

@@ -1,4 +1,4 @@
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
+import type { ParsedLUT } from '@lumaforge/luma-color-runtime'
 
 import type {
   ImageSession,

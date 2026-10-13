@@ -1,9 +1,9 @@
 import type { LUTData } from '@lumaforge/luma-color-runtime'
+import { toLUTData } from '@lumaforge/luma-color-runtime'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { yieldToPaint } from '~/lib/dom'
-import { toLUTData } from '~/lib/lut/cube-parser'
 
 import { hasActiveExport } from '../services/export/export-state'
 import { getCurrentSession, setCurrentSession } from '../state/session.atoms'

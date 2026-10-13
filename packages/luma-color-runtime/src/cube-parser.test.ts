@@ -264,9 +264,18 @@ describe('parseCubeLUT title and comments', () => {
       { sourceName: 'first.cube' },
     )
 
+    const interiorRows = identityRows(3)
+    interiorRows[13] = '0.123450 0.500000 0.500000'
+    const interior = parseCubeLUT(
+      cubeText({ title: 'Same Look', size: 3, rows: interiorRows }),
+    )
+
     expect(first.fingerprint).toMatch(/^lut-[0-9a-z]+$/)
     expect(renamed.fingerprint).toBe(first.fingerprint)
     expect(recommented.fingerprint).not.toBe(first.fingerprint)
+    expect(interior.fingerprint).not.toBe(
+      parseCubeLUT(cubeText({ title: 'Same Look', size: 3 })).fingerprint,
+    )
   })
 })
 

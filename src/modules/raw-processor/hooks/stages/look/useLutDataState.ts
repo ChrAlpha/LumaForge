@@ -1,8 +1,6 @@
-import type { LUTData } from '@lumaforge/luma-color-runtime'
+import type { LUTData, ParsedLUT } from '@lumaforge/luma-color-runtime'
+import { toLUTData } from '@lumaforge/luma-color-runtime'
 import { useCallback, useEffect, useRef, useState } from 'react'
-
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
-import { toLUTData } from '~/lib/lut/cube-parser'
 
 export function useLutDataState(lut: ParsedLUT | null) {
   const lutDataRef = useRef<LUTData | null>(null)

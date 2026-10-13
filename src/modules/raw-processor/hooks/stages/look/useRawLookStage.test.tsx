@@ -1,7 +1,8 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, ParsedLUT } from '@lumaforge/luma-color-runtime'
 import {
   COLOR_GRAPH_INTENT_KEYS,
   NEUTRAL_USER_COLOR_INTENT,
+  parseCubeLUT,
   pickColorGraphIntent,
 } from '@lumaforge/luma-color-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
@@ -21,8 +22,6 @@ import {
 
 import { I18nProvider } from '~/lib/i18n'
 import { jotaiStore } from '~/lib/jotai'
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
-import { parseCubeLUT } from '~/lib/lut/cube-parser'
 import { getStoredLUTContractSelection } from '~/lib/lut/profile-resolution'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 import { fetchVerifiedCubeAsset } from '~/lib/profiles/fetch'

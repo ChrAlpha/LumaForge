@@ -1,10 +1,9 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, ParsedLUT } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { atom, useAtomValue } from 'jotai'
 import { selectAtom } from 'jotai/utils'
 
 import { createAtomHooks, jotaiStore } from '~/lib/jotai'
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ProcessingStatus } from '../model/workflow'

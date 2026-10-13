@@ -1,6 +1,5 @@
-import type { LookSelection } from '@lumaforge/luma-color-runtime'
+import type { LookSelection, ParsedLUT } from '@lumaforge/luma-color-runtime'
 
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { PreviewView } from '~/lib/preview/preview-view'
 
 import type { StyleAsset } from '../../model/session'

@@ -1,9 +1,10 @@
 import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
-import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_USER_COLOR_INTENT,
+  parseCubeLUT,
+} from '@lumaforge/luma-color-runtime'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-
-import { parseCubeLUT } from '~/lib/lut/cube-parser'
 
 import type { ImageSession, StyleAsset } from '../model/session'
 import { createImageSession } from '../model/session-factory'

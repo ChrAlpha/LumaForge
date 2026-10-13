@@ -1,13 +1,12 @@
 import type {
   LUTColorProfile,
   LUTContractResolution,
+  ParsedLUT,
 } from '@lumaforge/luma-color-runtime'
 import {
   getColorGamut,
   getTransferFunction,
 } from '@lumaforge/luma-color-runtime'
-
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 
 import type { LUTContractSelectionState } from '../../model/session'
 

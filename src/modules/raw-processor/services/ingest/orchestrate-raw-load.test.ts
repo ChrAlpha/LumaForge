@@ -1,4 +1,4 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, ParsedLUT } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_USER_COLOR_INTENT,
   parseCubeLUT,
@@ -6,7 +6,6 @@ import {
 import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ParsedLUT } from '~/lib/lut/cube-parser'
 import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawRuntimeSessionLease } from '~/lib/raw/raw-runtime-host'
