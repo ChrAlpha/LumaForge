@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
+import { decodedPreviewFrameKey } from '~/lib/preview/preview-frame'
 
 import type {
   OriginalGpuFrameStatus,
@@ -13,7 +14,6 @@ import {
   EMPTY_ORIGINAL_GPU_FRAME_STATUS,
   EMPTY_PREVIEW_FRAME_STATUS,
   getOriginalGpuGenerationKey,
-  getProcessedImageGenerationKey,
 } from './preview-compare-readiness'
 
 function frameDescriptor({
@@ -52,7 +52,7 @@ const boundedHqFrame = frameDescriptor({
 })
 
 const quickProcessedFrame: PreviewFrameStatus = {
-  generationKey: getProcessedImageGenerationKey({ frame: quickFrame }),
+  generationKey: decodedPreviewFrameKey(quickFrame),
   frame: quickFrame,
   state: 'ready',
 }
@@ -69,7 +69,7 @@ const quickOriginalFrame: OriginalGpuFrameStatus = {
 }
 
 const currentProcessedFrame: PreviewFrameStatus = {
-  generationKey: getProcessedImageGenerationKey({ frame: boundedHqFrame }),
+  generationKey: decodedPreviewFrameKey(boundedHqFrame),
   frame: boundedHqFrame,
   state: 'ready',
 }
@@ -330,9 +330,7 @@ describe('preview generation keys', () => {
   it('keys the processed frame by its accepted frame alone, never by the view', () => {
     // The processed surface redraws for the original view, but the image on
     // the GPU and its first-frame proof stay valid across view changes.
-    const processedKey = getProcessedImageGenerationKey({
-      frame: boundedHqFrame,
-    })
+    const processedKey = decodedPreviewFrameKey(boundedHqFrame)
     for (const viewMode of ['processed', 'original', 'compare'] as const) {
       expect(derive({ viewMode }).processedImageGenerationKey).toBe(
         processedKey,
@@ -347,7 +345,7 @@ describe('preview generation keys', () => {
 
   it('gives every accepted frame its own key, whatever its size and stage', () => {
     const key = (frame: DecodedPreviewFrame | null) =>
-      getProcessedImageGenerationKey({ frame })
+      decodedPreviewFrameKey(frame)
     const restored = frameDescriptor({
       frameId: 'decoded-frame-3',
       stage: 'bounded-hq',

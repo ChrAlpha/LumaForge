@@ -3,19 +3,10 @@ import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
+import { decodedPreviewFrameKey } from '~/lib/preview/preview-frame'
 import { previewDimensions } from '~/lib/transform/preview-dimensions'
 import type { PreviewSource } from '~/lib/transform/preview-types'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
-
-/**
- * The decoded frame a Transform frame is drawn from, named by the identity
- * the workflow minted when it accepted the frame. Two descriptors of one
- * accepted frame name the same source; nothing here is rebuilt from sizes,
- * exposure or counters. No accepted frame names no source.
- */
-export function decodedFrameIdentity(frame: DecodedPreviewFrame | null) {
-  return JSON.stringify(frame ? [frame.sessionId, frame.frameId] : null)
-}
 
 /**
  * What a processed Transform frame is drawn from: the accepted decoded frame,
@@ -30,7 +21,7 @@ export function transformInputKey(
   color: ColorGraphIntent,
 ) {
   return JSON.stringify([
-    decodedFrameIdentity(frame),
+    decodedPreviewFrameKey(frame),
     lutVersion,
     colorGraphIntentSignature(color),
   ])

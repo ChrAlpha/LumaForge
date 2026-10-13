@@ -9,7 +9,6 @@ import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 
 import {
   captureTransformSource,
-  decodedFrameIdentity,
   transformInputKey,
 } from './capture-transform-source'
 
@@ -146,8 +145,6 @@ describe('current-photo transform source', () => {
     ).not.toBe(key)
     // No accepted frame names no decoded source.
     expect(transformInputKey(null, 1, INTENT)).not.toBe(key)
-    expect(decodedFrameIdentity(null)).not.toBe(decodedFrameIdentity(FRAME))
-    expect(decodedFrameIdentity({ ...FRAME })).toBe(decodedFrameIdentity(FRAME))
   })
 
   it('keys every continuous color input the frame is drawn with', () => {

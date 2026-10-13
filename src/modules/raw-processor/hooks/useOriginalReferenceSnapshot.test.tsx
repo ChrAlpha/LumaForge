@@ -157,8 +157,7 @@ describe('useOriginalReferenceSnapshot', () => {
     const [firstKey, againKey] = renderSnapshot.mock.calls.map(
       ([input]) => input.key,
     )
-    expect(firstKey).toContain(`frame:${frameOf(first)?.frameId}`)
-    expect(againKey).toContain(`frame:${frameOf(again)?.frameId}`)
+    expect(againKey).not.toBe(firstKey)
     expect(trackedUrls(owner)).toEqual(['blob:1', 'blob:2'])
 
     // The same frame rerendered keys the same snapshot.

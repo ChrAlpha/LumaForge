@@ -1,6 +1,7 @@
 import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
+import { decodedPreviewFrameKey } from '~/lib/preview/preview-frame'
 
 import type { DisplaySource } from '../../model/session'
 
@@ -42,8 +43,7 @@ export function createOriginalReferenceSnapshotKey({
   return [
     'original-reference',
     `policy:${policyVersion}`,
-    `session:${frame.sessionId}`,
-    `frame:${frame.frameId}`,
+    `frame:${decodedPreviewFrameKey(frame)}`,
     `source:${displaySource}`,
   ].join('|')
 }

@@ -22,8 +22,6 @@ describe('original reference snapshot policy', () => {
         policyVersion: 1,
       }),
     ).toBe(base)
-    expect(base).toContain('session:session-a')
-    expect(base).toContain('frame:decoded-frame-3')
   })
 
   it('changes the key for another accepted frame, however alike its pixels', () => {

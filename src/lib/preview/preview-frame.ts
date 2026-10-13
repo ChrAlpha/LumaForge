@@ -54,6 +54,16 @@ export interface DecodedPreviewFrame {
   readonly quickPredecessorFrameId: string | null
 }
 
+/**
+ * The key work done for one accepted frame is cached and compared under. Two
+ * descriptors of one frame share it; no frame has a key of its own.
+ */
+export function decodedPreviewFrameKey(
+  frame: Pick<DecodedPreviewFrame, 'sessionId' | 'frameId'> | null,
+): string {
+  return JSON.stringify(frame ? [frame.sessionId, frame.frameId] : null)
+}
+
 /** Both descriptors name one frame. A missing descriptor names none. */
 export function isSameDecodedPreviewFrame(
   a: DecodedPreviewFrame | null,

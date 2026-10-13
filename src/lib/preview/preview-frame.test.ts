@@ -1,5 +1,6 @@
 import type { DecodedPreviewFrame } from './preview-frame'
 import {
+  decodedPreviewFrameKey,
   isEligibleQuickPredecessor,
   isSameDecodedPreviewFrame,
 } from './preview-frame'
@@ -49,6 +50,19 @@ describe('decoded preview frame', () => {
     expect(
       isSameDecodedPreviewFrame(quickA, { ...quickA, frameId: 'frame-a-3' }),
     ).toBe(false)
+  })
+
+  it('keys one frame alike from any descriptor of it, and no other frame', () => {
+    expect(decodedPreviewFrameKey({ ...quickA })).toBe(
+      decodedPreviewFrameKey(quickA),
+    )
+    expect(decodedPreviewFrameKey(quickA)).not.toBe(decodedPreviewFrameKey(hqA))
+    expect(decodedPreviewFrameKey(quickA)).not.toBe(
+      decodedPreviewFrameKey(quickB),
+    )
+    expect(decodedPreviewFrameKey(null)).not.toBe(
+      decodedPreviewFrameKey(quickA),
+    )
   })
 
   it('treats a missing descriptor as no frame', () => {

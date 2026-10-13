@@ -1,6 +1,7 @@
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { decodedPreviewFrameKey } from '~/lib/preview/preview-frame'
 import type { UprightMode } from '~/lib/transform/geometry/types'
 import type { PreviewSource } from '~/lib/transform/preview-types'
 import type { TransformRenderRequest } from '~/lib/transform/transform-client'
@@ -10,7 +11,6 @@ import type { TransformIntent } from '../model/session'
 import { createNeutralTransformIntent } from '../model/session-factory'
 import {
   captureTransformSource,
-  decodedFrameIdentity,
   transformInputKey,
 } from '../services/preview/capture-transform-source'
 import type {
@@ -185,7 +185,7 @@ export function useRawTransformFeature(
   // frame. WebGPU renders each accepted frame, named by the descriptor the
   // workflow minted for it. Switching executor is a new source as well.
   const decodedFrame = workflow.decodedFrame
-  const decodedKey = `${sourceId}|${isCpuMode ? `cpu:${cpuFrame?.sourceId ?? 'none'}` : `gpu:${decodedFrameIdentity(decodedFrame)}`}`
+  const decodedKey = `${sourceId}|${isCpuMode ? `cpu:${cpuFrame?.sourceId ?? 'none'}` : `gpu:${decodedPreviewFrameKey(decodedFrame)}`}`
   const colorKey = sourceId
     ? transformInputKey(decodedFrame, workflow.lutDataVersion, workflow.params)
     : ''

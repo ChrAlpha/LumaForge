@@ -24,6 +24,7 @@ import {
 } from '~/lib/preview/histogram-sampling'
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import {
+  decodedPreviewFrameKey,
   isEligibleQuickPredecessor,
   isSameDecodedPreviewFrame,
 } from '~/lib/preview/preview-frame'
@@ -159,7 +160,7 @@ function createHistogramJob({
     }
   }
 
-  const frameKey = ['frame', frame.sessionId, frame.frameId].join(':')
+  const frameKey = decodedPreviewFrameKey(frame)
 
   if (
     image.layout !== 'rgb-u16' ||
@@ -445,7 +446,7 @@ export function usePreviewHistogram(
 
     run.handle = executor.run(
       {
-        frameKey: `${job.frame.sessionId}:${job.frame.frameId}`,
+        frameKey: decodedPreviewFrameKey(job.frame),
         frame: image,
         graph: job.graph,
         sampleBudget,

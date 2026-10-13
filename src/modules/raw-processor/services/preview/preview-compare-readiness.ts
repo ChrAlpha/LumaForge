@@ -1,5 +1,8 @@
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
-import { isEligibleQuickPredecessor } from '~/lib/preview/preview-frame'
+import {
+  decodedPreviewFrameKey,
+  isEligibleQuickPredecessor,
+} from '~/lib/preview/preview-frame'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 
 import type { DisplaySource } from '../../model/session'
@@ -70,17 +73,6 @@ type DerivePreviewCompareReadinessInput = {
 }
 
 /**
- * The image generation the processed surface uploads: the accepted frame
- * alone. Version counters and dimensions never name a frame, and every frame
- * the producer accepts, a restored one included, is a new generation.
- */
-export function getProcessedImageGenerationKey({
-  frame,
-}: Pick<DerivePreviewCompareReadinessInput, 'frame'>) {
-  return JSON.stringify(frame ? [frame.sessionId, frame.frameId] : null)
-}
-
-/**
  * The original layer's generation: the accepted frame plus the compare
  * policy, view, and suspension it was drawn under.
  */
@@ -94,7 +86,7 @@ export function getOriginalGpuGenerationKey({
   'frame' | 'dualGpuAllowed' | 'viewMode' | 'suspended'
 >) {
   return [
-    getProcessedImageGenerationKey({ frame }),
+    decodedPreviewFrameKey(frame),
     dualGpuAllowed ? 'dual' : 'fallback',
     viewMode,
     suspended ? 'suspended' : 'active',
@@ -117,7 +109,9 @@ export function derivePreviewCompareReadiness({
   const showEmbeddedPreview =
     displaySource === 'embedded' && Boolean(embeddedPreviewUrl)
   const hasDecodedFrame = frame !== null && hasImageData
-  const processedImageGenerationKey = getProcessedImageGenerationKey({ frame })
+  // The processed surface uploads the accepted frame alone: every frame the
+  // producer accepts, a restored one included, is a new generation.
+  const processedImageGenerationKey = decodedPreviewFrameKey(frame)
   const currentProcessedFrameReady =
     processedFrameStatus.generationKey === processedImageGenerationKey &&
     processedFrameStatus.state === 'ready'
