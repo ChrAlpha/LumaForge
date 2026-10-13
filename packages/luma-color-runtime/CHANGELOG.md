@@ -44,6 +44,21 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
 - `COLOR_SPACES` is keyed by `ColorGamutId`, and `ColorSpaceDef` drops `id`,
   `gamma` and `source` (`COLOR_GAMUT_SOURCE_URLS` holds the sources);
   `COLOR_GAMUT_TO_COLOR_SPACE` and `resolveColorSpaceKey` are removed.
+- The package entry no longer exports internals of the color math that no
+  consumer imported: the individual transfer encode and decode functions and
+  `linearTransfer` (reach them through `TRANSFER_FUNCTIONS` or
+  `getTransferFunction`), the DCP helpers `mccamyXyToCct`, `xyFromXyz`,
+  `invert3x3`, `matVec3` and `matLerp9`, the selective color band helpers
+  and constants `adjacentBandCenters`, `wrapFraction`, `mixBandShift`,
+  `applySelectiveColorRow`, `BAND_CENTERS_RAD`, `HUE_MAX_DELTA_RAD`,
+  `SAT_MAX_FACTOR` and `LIGHT_MAX_DELTA`, the OKLab matrices `M_*` and
+  `signedCbrt`, `clamp01`, `mix`, `sampleLutTrilinear`,
+  `compressLutInputToDomain`, `RgbTuple`, `MutableRgbTuple`, `mat3Multiply`,
+  `mat3Invert`, `COLOR_GAMUTS`, `inferLUTColorProfileHints`,
+  `estimateRawRenderExposureFromRgbU16`, `applyUserSaturationTo`,
+  `USER_SATURATION_MIN`/`MAX` and `USER_VIBRANCE_MIN`/`MAX` (read
+  `USER_COLOR_FIELD_BOUNDS`), `COLOR_SPACES`, `ColorSpaceDef`,
+  `COLOR_GAMUT_SOURCE_URLS`, `D50_WHITE`, `D65_WHITE` and `ACES_WHITE`.
 
 ### Added
 

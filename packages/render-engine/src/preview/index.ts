@@ -20,7 +20,6 @@ export {
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
   type BoundedHqPreviewTarget,
   createProgressivePreviewPlan,
-  decideBoundedHqPreview,
   type ProgressivePreviewPlan,
   QUICK_PREVIEW_MAX_PIXELS,
   type QuickPreviewTarget,

@@ -79,10 +79,8 @@ describe('luma color runtime package boundary', () => {
     const entryUrl = pathToFileURL(join(sourceRoot, 'index.ts')).href
     const runtime = await import(/* @vite-ignore */ entryUrl)
 
-    expect(runtime).toHaveProperty('applySelectiveColorRow')
     expect(runtime).toHaveProperty('resolveSelectiveColorParams')
     expect(runtime).toHaveProperty('normalizeSelectiveColorParams')
-    expect(typeof runtime.applySelectiveColorRow).toBe('function')
     expect(typeof runtime.resolveSelectiveColorParams).toBe('function')
     expect(typeof runtime.normalizeSelectiveColorParams).toBe('function')
   })

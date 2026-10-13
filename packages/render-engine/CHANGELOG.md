@@ -26,6 +26,9 @@ predates this file.
   `@lumaforge/render-engine/preview`. Render a candidate with
   `renderCpuPreviewFrame` and encode it with `encodePreviewFrameToJpeg`, as
   `lmfg` does for each one.
+- `decideBoundedHqPreview` is no longer exported from
+  `@lumaforge/render-engine/preview`; `createProgressivePreviewPlan` returns
+  its decision as `boundedHq`.
 - `RawRenderExposureSource` is no longer exported from
   `@lumaforge/render-engine` or `@lumaforge/render-engine/manifest`; import it
   from `@lumaforge/luma-color-runtime`, which defines it.
