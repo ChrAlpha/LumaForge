@@ -12,13 +12,11 @@ import { orchestrateFullResExport } from '../../../services/export/orchestrate-f
 import { fullResExportReasonText } from '../../../services/surface/raw-reason'
 import { useLatestTranslate } from '../../useLatestTranslate'
 
-export type UseFullResExportActionInput = ExportContext['atoms'] &
-  ExportContext['refs'] &
-  Omit<ExportContext['services'], 'notify'> & {
-    /** Runs a toast after the current commit, and only while mounted. */
-    scheduleToast: (show: () => void) => void
-    orchestrateExport?: typeof orchestrateFullResExport
-  }
+export type UseFullResExportActionInput = Omit<ExportContext, 'notify'> & {
+  /** Runs a toast after the current commit, and only while mounted. */
+  scheduleToast: (show: () => void) => void
+  orchestrateExport?: typeof orchestrateFullResExport
+}
 
 /**
  * A plan the policy refuses is told by its code; any other failure shows the
@@ -108,34 +106,28 @@ export function useFullResExportAction({
   )
   const exportCtx = useMemo<ExportContext>(
     () => ({
-      atoms: {
-        setStatus,
-        setError,
-        setProgress,
-        setSession,
-        loadedImage,
-        session,
-        getSession,
-        getColorIntent,
-        getLutData,
-        decodedImageRef,
-        refreshExportInterruption,
-      },
-      refs: {
-        exportAbortControllerRef,
-        exportGraphVersionRef,
-        isMountedRef,
-        resourceRegistryRef,
-      },
-      services: {
-        notify,
-        abortExportWork,
-        previewRuntime,
-        registerCurrentPreviewPipelineForEvacuation,
-        registerExportResultResource,
-        revokeCurrentEmbeddedPreviewUrl,
-        interruptionMarkers,
-      },
+      setStatus,
+      setError,
+      setProgress,
+      setSession,
+      loadedImage,
+      session,
+      getSession,
+      getColorIntent,
+      getLutData,
+      decodedImageRef,
+      refreshExportInterruption,
+      exportAbortControllerRef,
+      exportGraphVersionRef,
+      isMountedRef,
+      resourceRegistryRef,
+      notify,
+      abortExportWork,
+      previewRuntime,
+      registerCurrentPreviewPipelineForEvacuation,
+      registerExportResultResource,
+      revokeCurrentEmbeddedPreviewUrl,
+      interruptionMarkers,
     }),
     [
       abortExportWork,

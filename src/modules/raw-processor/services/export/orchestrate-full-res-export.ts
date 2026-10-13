@@ -97,73 +97,68 @@ export type FullResExportNotification =
       retryLevel: Exclude<PerformancePreference, 'max'> | null
     }
 
+/** What a full-resolution export reads, writes, and calls on the workflow. */
 export interface ExportContext {
-  atoms: {
-    setStatus: (status: ProcessingStatus) => void
-    setError: (error: string | null) => void
-    setProgress: (progress: number) => void
-    setSession: (
-      value:
-        | ImageSession
-        | null
-        | ((prev: ImageSession | null) => ImageSession | null),
-    ) => void
-    loadedImage: { file: File | null; metadata: ImageMetadata | null }
-    /**
-     * The session the caller rendered with. Admission refuses when the live
-     * session is another source; nothing else reads it.
-     */
-    session: ImageSession | null
-    /**
-     * Reads the session from the store when called, so a write in the same
-     * tick is seen before any rerender. Admission and every later currency
-     * check read it here.
-     */
-    getSession: () => ImageSession | null
-    /**
-     * Reads the color intent the photo renders with from the store when
-     * called; view state plays no part in it. The export samples it once,
-     * when the command is admitted.
-     */
-    getColorIntent: () => ColorGraphIntent
-    /**
-     * Reads the LUT the store holds when called. A LUT apply or a contract
-     * change writes it in the same tick as the session's look and the
-     * color, so the export samples all three together, when the command is
-     * admitted.
-     */
-    getLutData: () => LUTData | null
-    decodedImageRef: { current: DecodedImage | null }
-    /** Asks the page to read the loaded source's interruption hint again. */
-    refreshExportInterruption: () => void
+  setStatus: (status: ProcessingStatus) => void
+  setError: (error: string | null) => void
+  setProgress: (progress: number) => void
+  setSession: (
+    update:
+      | ImageSession
+      | null
+      | ((prev: ImageSession | null) => ImageSession | null),
+  ) => void
+  loadedImage: { file: File | null; metadata: ImageMetadata | null }
+  /**
+   * The session the caller rendered with. Admission refuses when the live
+   * session is another source; nothing else reads it.
+   */
+  session: ImageSession | null
+  /**
+   * Reads the session from the store when called, so a write in the same
+   * tick is seen before any rerender. Admission and every later currency
+   * check read it here.
+   */
+  getSession: () => ImageSession | null
+  /**
+   * Reads the color intent the photo renders with from the store when
+   * called; view state plays no part in it. The export samples it once,
+   * when the command is admitted.
+   */
+  getColorIntent: () => ColorGraphIntent
+  /**
+   * Reads the LUT the store holds when called. A LUT apply or a contract
+   * change writes it in the same tick as the session's look and the
+   * color, so the export samples all three together, when the command is
+   * admitted.
+   */
+  getLutData: () => LUTData | null
+  decodedImageRef: { current: DecodedImage | null }
+  /** Asks the page to read the loaded source's interruption hint again. */
+  refreshExportInterruption: () => void
+  exportAbortControllerRef: { current: AbortController | null }
+  exportGraphVersionRef: { current: number }
+  isMountedRef: { current: boolean }
+  resourceRegistryRef: { current: ResourceRegistry | null }
+  notify: (notification: FullResExportNotification) => void
+  abortExportWork: () => void
+  /**
+   * The preview's RAW runtime on the workflow host. Evacuation cancels its
+   * session lease and preview work; the export worker starts only after
+   * `terminate` stopped the host's decode worker. Neither reaches the
+   * export's own cancellation: the export worker runs its own runtime.
+   */
+  previewRuntime: {
+    cancel: () => void
+    terminate: () => void | Promise<void>
   }
-  refs: {
-    exportAbortControllerRef: { current: AbortController | null }
-    exportGraphVersionRef: { current: number }
-    isMountedRef: { current: boolean }
-    resourceRegistryRef: { current: ResourceRegistry | null }
-  }
-  services: {
-    notify: (notification: FullResExportNotification) => void
-    abortExportWork: () => void
-    /**
-     * The preview's RAW runtime on the workflow host. Evacuation cancels its
-     * session lease and preview work; the export worker starts only after
-     * `terminate` stopped the host's decode worker. Neither reaches the
-     * export's own cancellation: the export worker runs its own runtime.
-     */
-    previewRuntime: {
-      cancel: () => void
-      terminate: () => void | Promise<void>
-    }
-    registerCurrentPreviewPipelineForEvacuation: () => void
-    registerExportResultResource: (result: ExportResult) => void
-    revokeCurrentEmbeddedPreviewUrl: () => void
-    interruptionMarkers: Pick<
-      ExportInterruptionMarkers,
-      'begin' | 'finish' | 'retire'
-    >
-  }
+  registerCurrentPreviewPipelineForEvacuation: () => void
+  registerExportResultResource: (result: ExportResult) => void
+  revokeCurrentEmbeddedPreviewUrl: () => void
+  interruptionMarkers: Pick<
+    ExportInterruptionMarkers,
+    'begin' | 'finish' | 'retire'
+  >
 }
 
 let lastExportAttempt = 0
@@ -220,13 +215,12 @@ function readAttemptStanding(
   attempt: FullResExportAttempt,
   stage: 'work' | 'sealing',
 ): AttemptStanding {
-  const { refs } = ctx
-  const live = ctx.atoms.getSession()
+  const live = ctx.getSession()
   if (
-    !refs.isMountedRef.current ||
+    !ctx.isMountedRef.current ||
     attempt.controller.signal.aborted ||
-    !isLatestExportClaim(refs.exportAbortControllerRef, attempt.controller) ||
-    refs.exportGraphVersionRef.current !== attempt.graphVersion ||
+    !isLatestExportClaim(ctx.exportAbortControllerRef, attempt.controller) ||
+    ctx.exportGraphVersionRef.current !== attempt.graphVersion ||
     !live ||
     live.id !== attempt.sessionId ||
     live.transform?.intent !== attempt.transformIntent ||
@@ -268,22 +262,20 @@ export async function orchestrateFullResExport(
 ): Promise<void> {
   const performancePreference = options.performancePreference ?? 'balanced'
 
-  const rawRenderExposure =
-    ctx.atoms.decodedImageRef.current?.renderExposure ?? null
-  const sourceFile = ctx.atoms.loadedImage.file
+  const rawRenderExposure = ctx.decodedImageRef.current?.renderExposure ?? null
+  const sourceFile = ctx.loadedImage.file
   // The live session answers only for the source the caller rendered: a
   // source loaded since then is still loading as far as this command knows.
-  const currentSession = ctx.atoms.getSession()
+  const currentSession = ctx.getSession()
   const exportReadiness = deriveFullResExportReadiness({
     sourceFile,
-    session:
-      currentSession?.id === ctx.atoms.session?.id ? currentSession : null,
+    session: currentSession?.id === ctx.session?.id ? currentSession : null,
     rawRenderExposure,
   })
   // The refusal stays structured up to the caller, which alone turns it into
   // copy. Runtime diagnostics travel as given.
   const refuse = (refusal: FullResExportReason) => {
-    ctx.services.notify({ kind: 'refused', refusal })
+    ctx.notify({ kind: 'refused', refusal })
   }
   if (!exportReadiness.canExport) {
     refuse(exportReadiness.refusal)
@@ -334,8 +326,8 @@ export async function orchestrateFullResExport(
   // manifest's look, whatever the store holds afterwards. The strength goes
   // in as given: zero keeps the LUT and its contract checks, it does not
   // clear the look.
-  const colorIntent = pickColorGraphIntent(ctx.atoms.getColorIntent())
-  const lut = ctx.atoms.getLutData()
+  const colorIntent = pickColorGraphIntent(ctx.getColorIntent())
+  const lut = ctx.getLutData()
   const graph = resolveExportColorGraph({
     ...colorIntent,
     lut,
@@ -343,9 +335,9 @@ export async function orchestrateFullResExport(
   })
 
   if (!graph.supported) {
-    ctx.atoms.setError(graph.message)
-    ctx.atoms.setStatus('error')
-    ctx.atoms.setSession((prev) =>
+    ctx.setError(graph.message)
+    ctx.setStatus('error')
+    ctx.setSession((prev) =>
       prev
         ? {
             ...prev,
@@ -373,8 +365,8 @@ export async function orchestrateFullResExport(
   })
 
   const exportSessionId = activeSession.id
-  const exportGraphVersion = ctx.refs.exportGraphVersionRef.current
-  ctx.services.abortExportWork()
+  const exportGraphVersion = ctx.exportGraphVersionRef.current
+  ctx.abortExportWork()
   const attempt: FullResExportAttempt = Object.freeze({
     sessionId: exportSessionId,
     graphVersion: exportGraphVersion,
@@ -384,7 +376,7 @@ export async function orchestrateFullResExport(
   })
   const exportAbortController = attempt.controller
   claimExportSlot(
-    ctx.refs.exportAbortControllerRef,
+    ctx.exportAbortControllerRef,
     exportAbortController,
     identity.attemptId,
   )
@@ -398,21 +390,21 @@ export async function orchestrateFullResExport(
     const standing = readAttemptStanding(ctx, attempt, 'work')
     if (standing.kind === 'refused') {
       exportAbortController.abort()
-      const replacedResult = Boolean(ctx.atoms.getSession()?.exportState.result)
-      ctx.atoms.setSession((prev) =>
+      const replacedResult = Boolean(ctx.getSession()?.exportState.result)
+      ctx.setSession((prev) =>
         prev && prev.id === exportSessionId
           ? clearExportResultState(prev)
           : prev,
       )
       if (replacedResult) {
-        void ctx.refs.resourceRegistryRef.current
+        void ctx.resourceRegistryRef.current
           ?.disposeOwners(['export-result'])
           .catch((error: unknown) => {
             console.warn('Failed to release the replaced export result:', error)
           })
       }
-      ctx.atoms.setStatus('ready')
-      ctx.atoms.setProgress(0)
+      ctx.setStatus('ready')
+      ctx.setProgress(0)
       refuse(standing.refusal)
     }
     return standing.kind === 'current'
@@ -422,7 +414,7 @@ export async function orchestrateFullResExport(
 
   // This attempt's marker, from just before the worker work until the
   // attempt ends; each attempt ends only its own marker.
-  const markers = ctx.services.interruptionMarkers
+  const markers = ctx.interruptionMarkers
   let markedAttempt: string | null = null
   // The job's finished output belongs to this attempt until a registered
   // result holds it. Whatever ends the attempt before then removes it.
@@ -435,10 +427,10 @@ export async function orchestrateFullResExport(
   }
 
   try {
-    ctx.atoms.setStatus('exporting')
-    ctx.atoms.setProgress(0)
-    ctx.atoms.setError(null)
-    ctx.services.notify({ kind: 'started' })
+    ctx.setStatus('exporting')
+    ctx.setProgress(0)
+    ctx.setError(null)
+    ctx.notify({ kind: 'started' })
     // The device facts are sampled now, for this export. Facts sampled for
     // an attempt that is no longer current plan nothing.
     const sampledFacts = await sampleExportPlanFacts()
@@ -482,7 +474,7 @@ export async function orchestrateFullResExport(
 
     // Capture the current GPU pipeline before the active plan suspends
     // PreviewCanvas and clears the ref; evacuation releases it.
-    ctx.services.registerCurrentPreviewPipelineForEvacuation()
+    ctx.registerCurrentPreviewPipelineForEvacuation()
 
     // No export state outlives the tab: an interrupted export always starts
     // again from the first row, whatever the sink.
@@ -491,7 +483,7 @@ export async function orchestrateFullResExport(
       payload: toExportPlanSelectedDebugPayload(jobExecutionPlan),
     })
 
-    ctx.atoms.setSession((prev) =>
+    ctx.setSession((prev) =>
       prev && prev.id === exportSessionId
         ? {
             ...prev,
@@ -506,7 +498,7 @@ export async function orchestrateFullResExport(
         : prev,
     )
 
-    const registry = ctx.refs.resourceRegistryRef.current
+    const registry = ctx.resourceRegistryRef.current
     if (!registry) {
       throw Object.assign(new Error('EXPORT_RESOURCE_REGISTRY_MISSING'), {
         code: 'EXPORT_RESOURCE_REGISTRY_MISSING',
@@ -517,11 +509,11 @@ export async function orchestrateFullResExport(
       registry,
       profile: jobExecutionPlan.profileName,
       stopPreview: () => {
-        ctx.services.previewRuntime.cancel()
-        ctx.services.revokeCurrentEmbeddedPreviewUrl()
+        ctx.previewRuntime.cancel()
+        ctx.revokeCurrentEmbeddedPreviewUrl()
       },
       releasePreviousExportResult() {
-        ctx.atoms.setSession((prev) =>
+        ctx.setSession((prev) =>
           prev && prev.id === exportSessionId
             ? clearExportResultForActiveExport(prev)
             : prev,
@@ -571,7 +563,7 @@ export async function orchestrateFullResExport(
           type: 'export-plan-selected',
           payload: toExportPlanSelectedDebugPayload(plan),
         })
-        ctx.atoms.setSession((prev) =>
+        ctx.setSession((prev) =>
           prev && prev.id === exportSessionId
             ? {
                 ...prev,
@@ -598,8 +590,8 @@ export async function orchestrateFullResExport(
           })
         }
 
-        ctx.atoms.setProgress(entry.progress)
-        ctx.atoms.setSession((prev) =>
+        ctx.setProgress(entry.progress)
+        ctx.setSession((prev) =>
           prev && prev.id === exportSessionId
             ? {
                 ...prev,
@@ -614,14 +606,14 @@ export async function orchestrateFullResExport(
             : prev,
         )
       },
-      beforeStart: ctx.services.previewRuntime.terminate,
+      beforeStart: ctx.previewRuntime.terminate,
       signal: exportAbortController.signal,
     })
     unadoptedOutput = result.output
     // The job finished, so the attempt is over even if its JPEG is dropped.
     endAttempt('completed')
 
-    const completedSession = ctx.atoms.getSession()
+    const completedSession = ctx.getSession()
     if (
       !isCurrentExport() ||
       !completedSession ||
@@ -634,17 +626,17 @@ export async function orchestrateFullResExport(
     const exportResult = createCompletedExportResult({
       jobResult: result,
       kind: identity.resultKind,
-      metadata: ctx.atoms.loadedImage.metadata,
+      metadata: ctx.loadedImage.metadata,
       width: deliveredSize.width,
       height: deliveredSize.height,
       copyCapability: resolveExportCopyCapability(),
       manifestState: { status: 'sealing' },
       identity,
     })
-    ctx.services.registerExportResultResource(exportResult)
+    ctx.registerExportResultResource(exportResult)
     unadoptedOutput = undefined
 
-    ctx.atoms.setSession((prev) =>
+    ctx.setSession((prev) =>
       prev && prev.id === exportSessionId
         ? {
             ...prev,
@@ -656,12 +648,12 @@ export async function orchestrateFullResExport(
           }
         : prev,
     )
-    ctx.atoms.setStatus('ready')
+    ctx.setStatus('ready')
     if (interruption) {
       // The safer export of this source delivered, whatever its sink: the
       // hint has been used, and the page reads the source's hint again.
       markers.retire(interruption.attempts)
-      ctx.atoms.refreshExportInterruption()
+      ctx.refreshExportInterruption()
     }
 
     // The manifest is attached after "ready" so hashing the source and the
@@ -689,7 +681,7 @@ export async function orchestrateFullResExport(
     })
       .then((manifest) => {
         if (!isCurrentSeal()) return
-        ctx.atoms.setSession((prev) =>
+        ctx.setSession((prev) =>
           prev &&
           prev.id === exportSessionId &&
           prev.exportState.result === exportResult
@@ -722,7 +714,7 @@ export async function orchestrateFullResExport(
           error instanceof ExportManifestUnavailableError
             ? error.reason
             : 'internal'
-        ctx.atoms.setSession((prev) =>
+        ctx.setSession((prev) =>
           prev &&
           prev.id === exportSessionId &&
           prev.exportState.result === exportResult
@@ -767,14 +759,14 @@ export async function orchestrateFullResExport(
 
     if (hadAttempt && outcome === 'resource-failure') {
       // The failure stays as a hint for the next export of this source.
-      ctx.atoms.refreshExportInterruption()
+      ctx.refreshExportInterruption()
     }
 
     const retryLevel = isRetryableFullResExportFailure(errorCode)
       ? recommendRetryLevel(performancePreference)
       : null
 
-    ctx.atoms.setSession((prev) =>
+    ctx.setSession((prev) =>
       prev && prev.id === exportSessionId
         ? {
             ...prev,
@@ -786,8 +778,8 @@ export async function orchestrateFullResExport(
           }
         : prev,
     )
-    ctx.atoms.setStatus('ready')
-    ctx.services.notify({
+    ctx.setStatus('ready')
+    ctx.notify({
       kind: 'failed',
       code: errorCode,
       message,
@@ -797,8 +789,8 @@ export async function orchestrateFullResExport(
     discardUnadoptedOutput(unadoptedOutput)
     // An export dropped before its job ran ended without an interruption.
     endAttempt('cancelled')
-    if (ctx.refs.exportAbortControllerRef.current === exportAbortController) {
-      ctx.refs.exportAbortControllerRef.current = null
+    if (ctx.exportAbortControllerRef.current === exportAbortController) {
+      ctx.exportAbortControllerRef.current = null
     }
   }
 }

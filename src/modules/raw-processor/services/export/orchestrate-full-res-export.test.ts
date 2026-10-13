@@ -125,7 +125,7 @@ const { planFullResExport: actualPlanFullResExport } =
 
 type JobInput = Parameters<typeof runFullResolutionExportJob>[0]
 type PlanInput = ExportPlanRequest
-type SetSessionValue = Parameters<ExportContext['atoms']['setSession']>[0]
+type SetSessionValue = Parameters<ExportContext['setSession']>[0]
 
 const FIXED_ISO = '2026-10-05T12:00:00.000Z'
 const FIXED_NOW = Date.parse(FIXED_ISO)
@@ -651,15 +651,14 @@ function createHarness(options: HarnessOptions = {}) {
     })
   }
   const pageMarkers = createMarkerPage('this-page')
-  const interruptionMarkers: ExportContext['services']['interruptionMarkers'] =
-    {
-      ...pageMarkers,
-      async begin(source) {
-        beginStarted.resolve()
-        await options.beginGate
-        return pageMarkers.begin(source)
-      },
-    }
+  const interruptionMarkers: ExportContext['interruptionMarkers'] = {
+    ...pageMarkers,
+    async begin(source) {
+      beginStarted.resolve()
+      await options.beginGate
+      return pageMarkers.begin(source)
+    },
+  }
 
   const onDebug = (event: Event) => {
     const detail = (event as CustomEvent<ExportDebugEvent>).detail
@@ -685,81 +684,71 @@ function createHarness(options: HarnessOptions = {}) {
       trace.push(`service:${name}`)
     })
 
-  const refs: ExportContext['refs'] = {
+  const ctx: ExportContext = {
     exportAbortControllerRef: { current: null },
     exportGraphVersionRef: { current: 3 },
     isMountedRef: { current: true },
     resourceRegistryRef: { current: registry },
-  }
-
-  const ctx: ExportContext = {
-    atoms: {
-      setStatus: vi.fn((status: ProcessingStatus) => {
-        state.status = status
-        trace.push(`state:status:${status}`)
-      }),
-      setError: vi.fn((error: string | null) => {
-        state.error = error
-        trace.push(`state:error:${error}`)
-      }),
-      setProgress: vi.fn((progress: number) => {
-        state.progress = progress
-        trace.push(`state:progress:${progress}`)
-      }),
-      setSession: vi.fn((value: SetSessionValue) => {
-        const prev = state.session
-        const next = typeof value === 'function' ? value(prev) : value
-        state.session = next
-        trace.push(
-          `state:session:${next === prev ? 'unchanged' : (next?.exportState.status ?? 'null')}`,
-        )
-      }),
-      loadedImage: {
-        file: SOURCE_FILE,
-        metadata: { width: 6000, height: 4000 },
-      },
-      session:
-        options.atomsSession === undefined
-          ? initialSession
-          : options.atomsSession,
-      // The store: a write is read back in the same tick, before the caller
-      // renders again.
-      getSession: () => state.session,
-      getColorIntent: () => colorIntent,
-      getLutData: () => storedLut,
-      decodedImageRef: { current: createDecodedImage() },
-      refreshExportInterruption: vi.fn(() => {
-        trace.push('state:interruption-refresh')
-      }),
+    setStatus: vi.fn((status: ProcessingStatus) => {
+      state.status = status
+      trace.push(`state:status:${status}`)
+    }),
+    setError: vi.fn((error: string | null) => {
+      state.error = error
+      trace.push(`state:error:${error}`)
+    }),
+    setProgress: vi.fn((progress: number) => {
+      state.progress = progress
+      trace.push(`state:progress:${progress}`)
+    }),
+    setSession: vi.fn((value: SetSessionValue) => {
+      const prev = state.session
+      const next = typeof value === 'function' ? value(prev) : value
+      state.session = next
+      trace.push(
+        `state:session:${next === prev ? 'unchanged' : (next?.exportState.status ?? 'null')}`,
+      )
+    }),
+    loadedImage: {
+      file: SOURCE_FILE,
+      metadata: { width: 6000, height: 4000 },
     },
-    refs,
-    services: {
-      notify: vi.fn((notification: FullResExportNotification) => {
-        notifications.push(notification)
-        trace.push(`notify:${notification.kind}`)
-      }),
-      // Mirrors the workflow's abortExportWork: abort, then release the ref.
-      abortExportWork: vi.fn(() => {
-        trace.push('service:abortExportWork')
-        const controller = refs.exportAbortControllerRef.current
-        if (controller && !controller.signal.aborted) controller.abort()
-        refs.exportAbortControllerRef.current = null
-      }),
-      previewRuntime: {
-        cancel: recordService('cancelPreviewRuntime'),
-        terminate: recordService('terminatePreviewRuntime'),
-      },
-      registerCurrentPreviewPipelineForEvacuation: recordService(
-        'registerCurrentPreviewPipelineForEvacuation',
-      ),
-      registerExportResultResource: recordService(
-        'registerExportResultResource',
-      ),
-      revokeCurrentEmbeddedPreviewUrl: recordService(
-        'revokeCurrentEmbeddedPreviewUrl',
-      ),
-      interruptionMarkers,
+    session:
+      options.atomsSession === undefined
+        ? initialSession
+        : options.atomsSession,
+    // The store: a write is read back in the same tick, before the caller
+    // renders again.
+    getSession: () => state.session,
+    getColorIntent: () => colorIntent,
+    getLutData: () => storedLut,
+    decodedImageRef: { current: createDecodedImage() },
+    refreshExportInterruption: vi.fn(() => {
+      trace.push('state:interruption-refresh')
+    }),
+    notify: vi.fn((notification: FullResExportNotification) => {
+      notifications.push(notification)
+      trace.push(`notify:${notification.kind}`)
+    }),
+    // Mirrors the workflow's abortExportWork: abort, then release the ref.
+    abortExportWork: vi.fn(() => {
+      trace.push('service:abortExportWork')
+      const controller = ctx.exportAbortControllerRef.current
+      if (controller && !controller.signal.aborted) controller.abort()
+      ctx.exportAbortControllerRef.current = null
+    }),
+    previewRuntime: {
+      cancel: recordService('cancelPreviewRuntime'),
+      terminate: recordService('terminatePreviewRuntime'),
     },
+    registerCurrentPreviewPipelineForEvacuation: recordService(
+      'registerCurrentPreviewPipelineForEvacuation',
+    ),
+    registerExportResultResource: recordService('registerExportResultResource'),
+    revokeCurrentEmbeddedPreviewUrl: recordService(
+      'revokeCurrentEmbeddedPreviewUrl',
+    ),
+    interruptionMarkers,
   }
 
   // Facts sampled for an explicitly chosen device, then real plans from the
@@ -988,7 +977,7 @@ describe('orchestrateFullResExport success', () => {
 
     const run = orchestrateFullResExport(OPTIONS, h.ctx)
     const input = await job.started
-    const controller = h.ctx.refs.exportAbortControllerRef.current
+    const controller = h.ctx.exportAbortControllerRef.current
     // The running attempt is marked by its file tuple alone.
     expect(h.markerStore.markers()).toEqual([
       {
@@ -1086,14 +1075,12 @@ describe('orchestrateFullResExport success', () => {
       progress: 100,
       error: null,
     })
-    expect(h.ctx.services.registerExportResultResource).toHaveBeenCalledWith(
+    expect(h.ctx.registerExportResultResource).toHaveBeenCalledWith(result)
+    expect(vi.mocked(h.ctx.registerExportResultResource).mock.calls[0][0]).toBe(
       result,
     )
-    expect(
-      vi.mocked(h.ctx.services.registerExportResultResource).mock.calls[0][0],
-    ).toBe(result)
     expect(controller?.signal.aborted).toBe(false)
-    expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+    expect(h.ctx.exportAbortControllerRef.current).toBeNull()
     expect(registry.snapshot().live).toEqual([])
 
     expect(h.planInputs).toEqual([
@@ -1108,7 +1095,7 @@ describe('orchestrateFullResExport success', () => {
     ])
     // A completed attempt leaves no marker behind.
     expect(h.markerStore.markers()).toEqual([])
-    expect(h.ctx.atoms.refreshExportInterruption).not.toHaveBeenCalled()
+    expect(h.ctx.refreshExportInterruption).not.toHaveBeenCalled()
     expect(input).toMatchObject({
       file: SOURCE_FILE,
       filename: FULL_RES_FILENAME,
@@ -1116,7 +1103,7 @@ describe('orchestrateFullResExport success', () => {
     expect(input.outputLocation).toBeUndefined()
     expect(input).not.toHaveProperty('geometry')
     expect(input.executionPlan).toBe(h.plans[0])
-    expect(input.beforeStart).toBe(h.ctx.services.previewRuntime.terminate)
+    expect(input.beforeStart).toBe(h.ctx.previewRuntime.terminate)
     expect(input.signal).toBe(controller?.signal)
     expect(input.graph).toMatchObject({ supported: true, lutProfile: null })
     expect(input.graph.steps[1]).toEqual({
@@ -1305,7 +1292,7 @@ describe('orchestrateFullResExport success', () => {
       })
       // The used hint is retired whatever the sink, and the page re-reads.
       expect(h.markerStore.markers()).toEqual([])
-      expect(h.ctx.atoms.refreshExportInterruption).toHaveBeenCalledTimes(1)
+      expect(h.ctx.refreshExportInterruption).toHaveBeenCalledTimes(1)
       expect(h.trace.indexOf('state:interruption-refresh')).toBeGreaterThan(
         h.trace.indexOf('state:status:ready'),
       )
@@ -1378,7 +1365,7 @@ describe('orchestrateFullResExport success', () => {
         source: encodeExportSourceHint(toSourceTuple(interruptedFile)),
       }),
     ])
-    expect(h.ctx.atoms.refreshExportInterruption).not.toHaveBeenCalled()
+    expect(h.ctx.refreshExportInterruption).not.toHaveBeenCalled()
     expect(h.state.session?.exportState.status).toBe('ready')
   })
 
@@ -1522,7 +1509,7 @@ describe('orchestrateFullResExport success', () => {
 
     const run = orchestrateFullResExport(OPTIONS, h.ctx)
     const input = await job.started
-    h.ctx.refs.exportGraphVersionRef.current += 1
+    h.ctx.exportGraphVersionRef.current += 1
     const sessionAfterSupersession = h.state.session
     const replacedAt = h.mark('replacement-plan')
     input.onPlan?.(h.plans[0]!)
@@ -1541,7 +1528,7 @@ describe('orchestrateFullResExport refusals', () => {
     })
     const liveSession = h.state.session
     const otherExport = new AbortController()
-    h.ctx.refs.exportAbortControllerRef.current = otherExport
+    h.ctx.exportAbortControllerRef.current = otherExport
 
     await orchestrateFullResExport(OPTIONS, h.ctx)
 
@@ -1556,7 +1543,7 @@ describe('orchestrateFullResExport refusals', () => {
       session: liveSession,
     })
     expect(otherExport.signal.aborted).toBe(false)
-    expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
+    expect(h.ctx.exportAbortControllerRef.current).toBe(otherExport)
     expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
   })
 
@@ -1591,7 +1578,7 @@ describe('orchestrateFullResExport refusals', () => {
       })
       const liveSession = h.state.session
       const otherExport = new AbortController()
-      h.ctx.refs.exportAbortControllerRef.current = otherExport
+      h.ctx.exportAbortControllerRef.current = otherExport
 
       await orchestrateFullResExport(OPTIONS, h.ctx)
 
@@ -1604,9 +1591,9 @@ describe('orchestrateFullResExport refusals', () => {
       expect(h.markerStore.markers()).toEqual([])
       expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
       expect(
-        h.ctx.services.registerCurrentPreviewPipelineForEvacuation,
+        h.ctx.registerCurrentPreviewPipelineForEvacuation,
       ).not.toHaveBeenCalled()
-      expect(h.ctx.services.previewRuntime.cancel).not.toHaveBeenCalled()
+      expect(h.ctx.previewRuntime.cancel).not.toHaveBeenCalled()
       expect(registry.snapshot().live).toHaveLength(1)
       expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
       expect(h.state).toEqual({
@@ -1617,7 +1604,7 @@ describe('orchestrateFullResExport refusals', () => {
       })
       expect(liveSession?.exportState.result).toBe(previousResult)
       expect(otherExport.signal.aborted).toBe(false)
-      expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
+      expect(h.ctx.exportAbortControllerRef.current).toBe(otherExport)
     },
   )
 
@@ -1646,7 +1633,7 @@ describe('orchestrateFullResExport refusals', () => {
       })
       const liveSession = h.state.session
       const otherExport = new AbortController()
-      h.ctx.refs.exportAbortControllerRef.current = otherExport
+      h.ctx.exportAbortControllerRef.current = otherExport
 
       await orchestrateFullResExport(OPTIONS, h.ctx)
 
@@ -1666,7 +1653,7 @@ describe('orchestrateFullResExport refusals', () => {
         session: liveSession,
       })
       expect(otherExport.signal.aborted).toBe(false)
-      expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
+      expect(h.ctx.exportAbortControllerRef.current).toBe(otherExport)
     },
   )
 
@@ -1736,7 +1723,7 @@ describe('orchestrateFullResExport refusals', () => {
       }),
     })
     const otherExport = new AbortController()
-    h.ctx.refs.exportAbortControllerRef.current = otherExport
+    h.ctx.exportAbortControllerRef.current = otherExport
 
     await orchestrateFullResExport(OPTIONS, h.ctx)
 
@@ -1754,7 +1741,7 @@ describe('orchestrateFullResExport refusals', () => {
       'Choose a LUT input profile before full-resolution export.',
     )
     expect(otherExport.signal.aborted).toBe(false)
-    expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
+    expect(h.ctx.exportAbortControllerRef.current).toBe(otherExport)
     expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
     expect(h.notifications).toEqual([])
   })
@@ -1807,14 +1794,14 @@ describe('orchestrateFullResExport refusals', () => {
     })
     expect(h.state.session?.exportState.activePlan).toBeUndefined()
     expect(
-      h.ctx.services.registerCurrentPreviewPipelineForEvacuation,
+      h.ctx.registerCurrentPreviewPipelineForEvacuation,
     ).not.toHaveBeenCalled()
-    expect(h.ctx.services.previewRuntime.cancel).not.toHaveBeenCalled()
+    expect(h.ctx.previewRuntime.cancel).not.toHaveBeenCalled()
     expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
     // A refused plan never begins an attempt.
     expect(h.markerStore.markers()).toEqual([])
-    expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+    expect(h.ctx.exportAbortControllerRef.current).toBeNull()
   })
 })
 
@@ -1832,7 +1819,7 @@ describe('orchestrateFullResExport refusal order', () => {
     expect(h.markerStore.markers()).toEqual([])
     expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
     expect(mocks.scheduleAbandonedOpfsOutputCollection).not.toHaveBeenCalled()
-    expect(h.ctx.services.previewRuntime.cancel).not.toHaveBeenCalled()
+    expect(h.ctx.previewRuntime.cancel).not.toHaveBeenCalled()
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
     expect(h.state).toEqual({
       status: null,
@@ -1841,7 +1828,7 @@ describe('orchestrateFullResExport refusal order', () => {
       session: liveSession,
     })
     expect(otherExport.signal.aborted).toBe(false)
-    expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
+    expect(h.ctx.exportAbortControllerRef.current).toBe(otherExport)
   }
 
   it('refuses a plan no storage could rescue before sampling device facts', async () => {
@@ -1857,7 +1844,7 @@ describe('orchestrateFullResExport refusal order', () => {
       }),
     })
     const otherExport = new AbortController()
-    h.ctx.refs.exportAbortControllerRef.current = otherExport
+    h.ctx.exportAbortControllerRef.current = otherExport
 
     await orchestrateFullResExport(OPTIONS, h.ctx)
 
@@ -1964,9 +1951,9 @@ describe('orchestrateFullResExport failures', () => {
       })
       expect(h.state.session?.exportState.result).toBeUndefined()
       expect(h.state).toMatchObject({ status: 'ready', progress: 25 })
-      expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
+      expect(h.ctx.registerExportResultResource).not.toHaveBeenCalled()
       expect(mocks.buildManifestForExportResult).not.toHaveBeenCalled()
-      expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+      expect(h.ctx.exportAbortControllerRef.current).toBeNull()
     },
   )
 
@@ -2104,11 +2091,11 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
 
     const run = orchestrateFullResExport(OPTIONS, h.ctx)
     await job.started
-    const cancelled = h.ctx.refs.exportAbortControllerRef.current
+    const cancelled = h.ctx.exportAbortControllerRef.current
     const cancelAt = h.mark('cancel')
-    h.ctx.services.abortExportWork()
+    h.ctx.abortExportWork()
     const newer = new AbortController()
-    h.ctx.refs.exportAbortControllerRef.current = newer
+    h.ctx.exportAbortControllerRef.current = newer
     job.progress(2, 2)
     job.reject(new DOMException('Aborted', 'AbortError'))
     await run
@@ -2119,7 +2106,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       'service:abortExportWork',
     ])
     expect(cancelled?.signal.aborted).toBe(true)
-    expect(h.ctx.refs.exportAbortControllerRef.current).toBe(newer)
+    expect(h.ctx.exportAbortControllerRef.current).toBe(newer)
     expect(newer.signal.aborted).toBe(false)
     // The orchestrator leaves the exporting state for whoever cancelled it.
     expect(h.state.status).toBe('exporting')
@@ -2127,7 +2114,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     expect(h.notifications).toEqual([{ kind: 'started' }])
     // A cancelled attempt is not an interruption.
     expect(h.markerStore.markers()).toEqual([])
-    expect(h.ctx.atoms.refreshExportInterruption).not.toHaveBeenCalled()
+    expect(h.ctx.refreshExportInterruption).not.toHaveBeenCalled()
   })
 
   it("never lets an older attempt's end remove a newer attempt's marker", async () => {
@@ -2175,14 +2162,14 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       name: 'export signal is aborted',
       aborts: true,
       supersede(h: Harness) {
-        h.ctx.refs.exportAbortControllerRef.current?.abort()
+        h.ctx.exportAbortControllerRef.current?.abort()
       },
     },
     {
       name: 'another attempt takes the export slot',
       takesSlot: true,
       supersede(h: Harness) {
-        h.ctx.refs.exportAbortControllerRef.current = new AbortController()
+        h.ctx.exportAbortControllerRef.current = new AbortController()
       },
     },
     {
@@ -2214,7 +2201,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     {
       name: 'export graph version advances',
       supersede(h: Harness) {
-        h.ctx.refs.exportGraphVersionRef.current += 1
+        h.ctx.exportGraphVersionRef.current += 1
       },
     },
     {
@@ -2226,7 +2213,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     {
       name: 'view unmounts',
       supersede(h: Harness) {
-        h.ctx.refs.isMountedRef.current = false
+        h.ctx.isMountedRef.current = false
       },
     },
   ]
@@ -2251,12 +2238,12 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       expect(h.state.session).toBe(sessionAfterSupersession)
       expect(h.state.session?.exportState.result).toBeUndefined()
       expect(h.state.status).toBe('exporting')
-      expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
+      expect(h.ctx.registerExportResultResource).not.toHaveBeenCalled()
       expect(mocks.buildManifestForExportResult).not.toHaveBeenCalled()
       if (takesSlot) {
-        expect(h.ctx.refs.exportAbortControllerRef.current).not.toBeNull()
+        expect(h.ctx.exportAbortControllerRef.current).not.toBeNull()
       } else {
-        expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+        expect(h.ctx.exportAbortControllerRef.current).toBeNull()
       }
       // The job completed, so its attempt is over even though it is dropped.
       expect(h.markerStore.markers()).toEqual([])
@@ -2282,9 +2269,9 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       expect(h.state.session).toBe(sessionAfterSupersession)
       expect(h.notifications).toEqual([{ kind: 'started' }])
       if (takesSlot) {
-        expect(h.ctx.refs.exportAbortControllerRef.current).not.toBeNull()
+        expect(h.ctx.exportAbortControllerRef.current).not.toBeNull()
       } else {
-        expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+        expect(h.ctx.exportAbortControllerRef.current).toBeNull()
       }
       // The attempt still ends by what happened to it: a cancellation leaves
       // nothing, a resource failure stays as a hint for the source.
@@ -2316,7 +2303,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       expect(input.outputLocation?.sink).toBe('opfs-file')
       expect(outputs).toHaveLength(1)
       expect(outputs[0]!.cleanup).toHaveBeenCalledTimes(1)
-      expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
+      expect(h.ctx.registerExportResultResource).not.toHaveBeenCalled()
       expect(h.state.session?.exportState.result).toBeUndefined()
     },
   )
@@ -2346,7 +2333,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     // Visible status is left for the owner that superseded the export.
     expect(h.state.status).toBe('exporting')
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
-    expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+    expect(h.ctx.exportAbortControllerRef.current).toBeNull()
     expect(h.markerStore.markers()).toEqual([])
   })
 
@@ -2358,7 +2345,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     })
 
     const run = orchestrateFullResExport(OPTIONS, h.ctx)
-    h.ctx.refs.exportGraphVersionRef.current += 1
+    h.ctx.exportGraphVersionRef.current += 1
     planGate.resolve()
     await run
 
@@ -2432,7 +2419,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     await disposeStarted.promise
     const sessionDuringEvacuation = h.state.session
     const supersededAt = h.mark('superseded')
-    h.ctx.refs.exportGraphVersionRef.current += 1
+    h.ctx.exportGraphVersionRef.current += 1
     disposeGate.resolve()
     await run
 
@@ -2470,9 +2457,9 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     expect(h.state.progress).toBe(0)
     expect(h.state.session?.exportState.status).toBe('idle')
     expect(h.state.session?.exportState.result).toBeUndefined()
-    expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
+    expect(h.ctx.registerExportResultResource).not.toHaveBeenCalled()
     expect(mocks.buildManifestForExportResult).not.toHaveBeenCalled()
-    expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+    expect(h.ctx.exportAbortControllerRef.current).toBeNull()
   }
 
   it('ends an export whose Transform goes pending on a new frame while its plan is sampled', async () => {
@@ -2634,8 +2621,8 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
       hold(h: Harness) {
         const reached = deferred()
         const gate = deferred()
-        const markers = h.ctx.services.interruptionMarkers
-        h.ctx.services.interruptionMarkers = {
+        const markers = h.ctx.interruptionMarkers
+        h.ctx.interruptionMarkers = {
           ...markers,
           async begin(source) {
             reached.resolve()
@@ -2657,7 +2644,7 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
       })
       await runToReady(h)
       const disposeEarlier = vi.fn(async () => undefined)
-      h.ctx.refs.resourceRegistryRef.current!.register({
+      h.ctx.resourceRegistryRef.current!.register({
         id: 'export-result-earlier',
         owner: 'export-result',
         kind: 'blob',
@@ -2683,12 +2670,10 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
       expect(h.state.progress).toBe(0)
       expect(h.state.session?.exportState.status).toBe('idle')
       expect(h.state.session?.exportState.result).toBeUndefined()
-      expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
+      expect(h.ctx.exportAbortControllerRef.current).toBeNull()
       expect(disposeEarlier).toHaveBeenCalledTimes(1)
       // Only the earlier export ever registered a result.
-      expect(h.ctx.services.registerExportResultResource).toHaveBeenCalledTimes(
-        1,
-      )
+      expect(h.ctx.registerExportResultResource).toHaveBeenCalledTimes(1)
       expect(mocks.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
       expect(h.markerStore.markers()).toEqual([])
 
@@ -2704,7 +2689,7 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     const h = createHarness({ session: createAcceptedTransformSession() })
     const earlier = await runToReady(h)
     const disposeEarlier = vi.fn(async () => undefined)
-    h.ctx.refs.resourceRegistryRef.current!.register({
+    h.ctx.resourceRegistryRef.current!.register({
       id: 'export-result-earlier',
       owner: 'export-result',
       kind: 'blob',
@@ -2771,9 +2756,9 @@ describe('orchestrateFullResExport completed output ownership', () => {
     h.manifest.resolve(SEALED_MANIFEST)
     await settle()
 
-    expect(h.ctx.services.registerExportResultResource).toHaveBeenCalledTimes(1)
-    const [registered] = vi.mocked(h.ctx.services.registerExportResultResource)
-      .mock.calls[0]!
+    expect(h.ctx.registerExportResultResource).toHaveBeenCalledTimes(1)
+    const [registered] = vi.mocked(h.ctx.registerExportResultResource).mock
+      .calls[0]!
     // The result wraps the output to inject metadata on delivery; removing
     // it is still the output's own cleanup.
     expect(registered.output).toMatchObject({
@@ -2807,16 +2792,14 @@ describe('orchestrateFullResExport completed output ownership', () => {
     await run
 
     expect(outputs[0]!.cleanup).toHaveBeenCalledTimes(1)
-    expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
+    expect(h.ctx.registerExportResultResource).not.toHaveBeenCalled()
   })
 
   it('removes the finished output when the result cannot be registered', async () => {
     const h = createHarness({ runtime: OPFS_RUNTIME })
-    vi.mocked(h.ctx.services.registerExportResultResource).mockImplementation(
-      () => {
-        throw new Error('RESOURCE_REGISTRY_DUPLICATE_ID:export-result-1')
-      },
-    )
+    vi.mocked(h.ctx.registerExportResultResource).mockImplementation(() => {
+      throw new Error('RESOURCE_REGISTRY_DUPLICATE_ID:export-result-1')
+    })
     const outputs: Array<ReturnType<typeof createFileBackedOutput>> = []
     const job = installFileBackedJob(h, outputs)
 
@@ -2856,7 +2839,7 @@ describe('orchestrateFullResExport completed output ownership', () => {
 
       const run = orchestrateFullResExport(OPTIONS, h.ctx)
       await job.started
-      h.ctx.refs.exportGraphVersionRef.current += 1
+      h.ctx.exportGraphVersionRef.current += 1
       job.resolve()
       await expect(run).resolves.toBeUndefined()
       await settle()
@@ -2945,8 +2928,8 @@ describe('orchestrateFullResExport delayed manifest', () => {
     {
       name: 'the result is cleared on the same session',
       supersede(h: Harness) {
-        h.ctx.refs.exportGraphVersionRef.current += 1
-        h.ctx.atoms.setSession(clearExportResultState)
+        h.ctx.exportGraphVersionRef.current += 1
+        h.ctx.setSession(clearExportResultState)
       },
       resolvedTrace: [],
       rejectedTrace: [],
@@ -2955,7 +2938,7 @@ describe('orchestrateFullResExport delayed manifest', () => {
     {
       name: 'a later attempt claims the export slot and ends',
       supersede(h: Harness) {
-        const slot = h.ctx.refs.exportAbortControllerRef
+        const slot = h.ctx.exportAbortControllerRef
         claimExportSlot(slot, new AbortController(), 'later-attempt')
         slot.current = null
       },
@@ -2980,7 +2963,7 @@ describe('orchestrateFullResExport delayed manifest', () => {
     {
       name: 'the result is replaced on the current attempt',
       supersede(h: Harness) {
-        h.ctx.atoms.setSession((prev) =>
+        h.ctx.setSession((prev) =>
           prev
             ? {
                 ...prev,
@@ -3089,7 +3072,7 @@ describe('orchestrateFullResExport delayed manifest', () => {
 describe('orchestrateFullResExport color intent', () => {
   it('samples the complete color intent from the store', () => {
     expectTypeOf<
-      ReturnType<ExportContext['atoms']['getColorIntent']>
+      ReturnType<ExportContext['getColorIntent']>
     >().toEqualTypeOf<ColorGraphIntent>()
   })
 
@@ -3171,7 +3154,7 @@ describe('orchestrateFullResExport color intent', () => {
       ...CONFIRMED_LUT,
       data: new Float32Array(2 * 2 * 2 * 3).fill(1),
     })
-    h.ctx.atoms.decodedImageRef.current = {
+    h.ctx.decodedImageRef.current = {
       ...createDecodedImage(),
       renderExposure: { ev: 2, multiplier: 4, source: 'user' },
     }
@@ -3184,9 +3167,9 @@ describe('orchestrateFullResExport color intent', () => {
     expect(published?.identity).toEqual(expected)
     expect(isSameExportResult(published!.identity!, expected)).toBe(true)
     expect(Object.isFrozen(published!.identity)).toBe(true)
-    expect(
-      vi.mocked(h.ctx.services.registerExportResultResource).mock.calls[0][0],
-    ).toBe(published)
+    expect(vi.mocked(h.ctx.registerExportResultResource).mock.calls[0][0]).toBe(
+      published,
+    )
     // The manifest seals the result's own request, whatever the record says.
     expect(h.manifestInputs[0].result).toBe(published)
     expect(h.manifestInputs[0]).not.toHaveProperty('params')
@@ -3363,7 +3346,7 @@ describe('orchestrateFullResExport color intent', () => {
       })
       // The change invalidates the export graph first, then writes the LUT,
       // the look and the color, all before the older action runs.
-      h.ctx.refs.exportGraphVersionRef.current += 1
+      h.ctx.exportGraphVersionRef.current += 1
       h.writeLut(setup.written.lut)
       h.replaceSession(
         createSession('session-1', { activeStyle: setup.written.style }),

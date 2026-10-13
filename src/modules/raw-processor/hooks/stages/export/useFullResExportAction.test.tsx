@@ -68,50 +68,22 @@ function createInput(
 }
 
 describe('useFullResExportAction', () => {
-  it('orchestrates full-res export with a stable export context', async () => {
+  it('hands the orchestrator the workflow it was given and its own notifier', async () => {
     const orchestrateExport = vi.fn().mockResolvedValue(undefined)
     const input = createInput(orchestrateExport)
     const { result } = renderHook(() => useFullResExportAction(input))
     await result.current.exportImage()
 
+    const {
+      scheduleToast: _scheduleToast,
+      orchestrateExport: _,
+      ...context
+    } = input
     expect(orchestrateExport).toHaveBeenCalledTimes(1)
     expect(orchestrateExport).toHaveBeenCalledWith(
       {},
-      expect.objectContaining({
-        atoms: expect.objectContaining({
-          loadedImage: input.loadedImage,
-          getSession: input.getSession,
-          getColorIntent: input.getColorIntent,
-          getLutData: input.getLutData,
-        }),
-        refs: expect.objectContaining({
-          exportAbortControllerRef: input.exportAbortControllerRef,
-          exportGraphVersionRef: input.exportGraphVersionRef,
-          isMountedRef: input.isMountedRef,
-        }),
-        services: expect.objectContaining({
-          abortExportWork: input.abortExportWork,
-          previewRuntime: input.previewRuntime,
-          revokeCurrentEmbeddedPreviewUrl:
-            input.revokeCurrentEmbeddedPreviewUrl,
-        }),
-      }),
+      { ...context, notify: expect.any(Function) },
     )
-  })
-
-  it('hands the export the page markers and the interruption refresh', async () => {
-    const orchestrateExport = vi.fn().mockResolvedValue(undefined)
-    const input = createInput(orchestrateExport)
-    const { result } = renderHook(() => useFullResExportAction(input))
-
-    await result.current.exportImage()
-
-    const [, ctx] = orchestrateExport.mock.calls[0]!
-    expect(ctx.services.interruptionMarkers).toBe(input.interruptionMarkers)
-    expect(ctx.atoms.refreshExportInterruption).toBe(
-      input.refreshExportInterruption,
-    )
-    expect(ctx.atoms).not.toHaveProperty('setDiscoveredRecoveryState')
   })
 
   it('reads session and color when an action from an older render runs', async () => {
@@ -127,8 +99,8 @@ describe('useFullResExportAction', () => {
     const orchestrateExport = vi.fn<typeof orchestrateFullResExport>(
       async (_request, ctx) => {
         admitted.push({
-          session: ctx.atoms.getSession(),
-          intent: pickColorGraphIntent(ctx.atoms.getColorIntent()),
+          session: ctx.getSession(),
+          intent: pickColorGraphIntent(ctx.getColorIntent()),
         })
       },
     )
@@ -185,7 +157,7 @@ describe('useFullResExportAction', () => {
       const orchestrateExport = vi.fn<typeof orchestrateFullResExport>(
         async (_request, ctx) => {
           for (const notification of notifications) {
-            ctx.services.notify(notification)
+            ctx.notify(notification)
           }
         },
       )
@@ -357,17 +329,17 @@ describe('useFullResExportAction', () => {
       const orchestrateExport = vi.fn<typeof orchestrateFullResExport>(
         async (_request, ctx) => {
           await reported
-          ctx.services.notify({
+          ctx.notify({
             kind: 'refused',
             refusal: { code: 'source-loading' },
           })
-          ctx.services.notify({
+          ctx.notify({
             kind: 'failed',
             code: 'EXPORT_RENDER_FAILED',
             message: null,
             retryLevel: 'safe',
           })
-          ctx.services.notify({
+          ctx.notify({
             kind: 'failed',
             code: 'EXPORT_POLICY_CANNOT_COMPLETE',
             message: 'Plan refused',
