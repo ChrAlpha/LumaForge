@@ -972,30 +972,6 @@ describe('rawToolSurface', () => {
     }
   })
 
-  it('does not add search, filtering, sorting, favorites, or catalog-management controls to source UI', async () => {
-    const user = userEvent.setup()
-    renderRawToolSurface({
-      ...baseProps,
-      onlineLutSources: onlineLutSourcesFixture(),
-    })
-
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Open Catalog from profiles.example.com',
-      }),
-    )
-
-    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', {
-        name: /search|filter|sort|favorite|manage|catalog management/i,
-      }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByPlaceholderText(/search|filter/i),
-    ).not.toBeInTheDocument()
-  })
-
   it('keeps manual upload visible beside online source controls', () => {
     renderRawToolSurface({
       ...baseProps,

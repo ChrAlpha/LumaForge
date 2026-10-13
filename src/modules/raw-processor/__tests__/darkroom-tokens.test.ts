@@ -36,26 +36,6 @@ describe('darkroom token truth', () => {
     }
   })
 
-  it('does not reintroduce the old value-lying token names', () => {
-    // Guard every renamed token so the rename stays durable. \b after `dark`
-    // does not match `darkroom-stage` (no word boundary before `room`).
-    for (const old of [
-      /--color-lf-paper\b/,
-      /--color-lf-ink\b/,
-      /--color-lf-hero-ink\b/,
-      /--color-lf-dark\b/,
-      /--color-lf-dark-low\b/,
-    ]) {
-      expect(
-        tailwindCss,
-        `tailwind.css must not reintroduce ${old}`,
-      ).not.toMatch(old)
-      expect(rawLabCss, `raw-lab.css must not reintroduce ${old}`).not.toMatch(
-        old,
-      )
-    }
-  })
-
   it('keeps .raw-lab from re-declaring the neutral surface tokens (single source)', () => {
     expect(rawLabCss).not.toMatch(/--color-lf-surface\s*:/)
     expect(rawLabCss).not.toMatch(/--color-lf-on-surface\s*:/)

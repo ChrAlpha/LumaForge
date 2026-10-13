@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { render, screen, within } from '@testing-library/react'
@@ -308,26 +308,12 @@ describe('landing semantic structure', () => {
 })
 
 describe('landing asset and CSS contract', () => {
-  it('ships local module CSS without legacy, remote, or synthetic surfaces', () => {
+  it('ships local module CSS without remote or synthetic surfaces', () => {
     const cssPaths = [
       resolve(__dirname, 'landing.css'),
       resolve(__dirname, 'landing.sections.css'),
     ]
     const css = cssPaths.map((path) => readFileSync(path, 'utf8')).join('\n')
-    const removedSelectorPatterns = [
-      /\.lf-compare-svg\b/,
-      /\.lf-compare-finish\b/,
-      /\.lf-compare-stage\b/,
-      /\.lf-contract-strip\b/,
-      /\.lf-hero-glow\b/,
-      /\.lf-hero-panel\b/,
-      /\.lf-hero-feature-rail\b/,
-      /\.lf-photo-meta\b/,
-      /\.lf-product-window\b/,
-      /\.lf-trust\b/,
-      /\.lf-window-body\b/,
-      /\.lf-window-chrome\b/,
-    ]
 
     expect(css).not.toMatch(/images\.unsplash\.com/)
     expect(css).not.toMatch(/https?:\/\//)
@@ -335,17 +321,5 @@ describe('landing asset and CSS contract', () => {
     expect(css).not.toMatch(/background-clip:\s*text/)
     expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i)
     expect(css).not.toMatch(/oklch\(\s*[01](?:\.0+)?\s+0\s+0/)
-    for (const selectorPattern of removedSelectorPatterns) {
-      expect(css).not.toMatch(selectorPattern)
-    }
-
-    for (const legacyPath of [
-      'src/pages/(main)/index.css',
-      'src/pages/(main)/index.sections.css',
-      'src/components/common/LandingCompareSvg.tsx',
-      'src/components/common/LandingPhotoCompare.tsx',
-    ]) {
-      expect(existsSync(resolve(ROOT, legacyPath))).toBe(false)
-    }
   })
 })

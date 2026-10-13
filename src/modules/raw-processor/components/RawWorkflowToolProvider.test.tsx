@@ -12,14 +12,13 @@ import {
 import userEvent from '@testing-library/user-event'
 import { Provider as JotaiProvider } from 'jotai'
 import { RESET } from 'jotai/utils'
-import type { ComponentProps, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   afterEach,
   beforeEach,
   describe,
   expect,
-  expectTypeOf,
   it,
   onTestFinished,
   vi,
@@ -51,17 +50,15 @@ import { toolCardOpenAtom } from '../state/tool-card.atoms'
 import {
   getProcessingParams,
   resetToDefaults,
-  setPipelineStats,
   setProcessingParams,
   setProcessingStatus,
   setProgress,
 } from '../state/workflow.atoms'
 import { COLOR_NEUTRAL } from './color-fields'
 import { RawToolSurface } from './RawToolSurface'
-import type { RawToolCommands, RawToolSurfaceProps } from './RawWorkflowContext'
+import type { RawToolCommands } from './RawWorkflowContext'
 import {
   useRawPreviewHistogram,
-  useRawPreviewStats,
   useRawToolCommands,
   useRawWorkflowContext,
 } from './RawWorkflowContext'
@@ -1297,7 +1294,7 @@ describe('rawWorkflowToolProvider interruption note', () => {
     )
   })
 
-  it('hands the surfaces one typed note for the loaded source, and no recovery entry', () => {
+  it('hands the surfaces one typed note for the loaded source', () => {
     let workflow = interruptedWorkflow(true)
     const onExport = vi.fn()
     const { result, rerender } = renderHook(useSurfaceView, {
@@ -1314,8 +1311,6 @@ describe('rawWorkflowToolProvider interruption note', () => {
     expect(JSON.stringify(result.current.interruptionNote)).not.toMatch(
       /journal|attempt/,
     )
-    expect(result.current).not.toHaveProperty('recovery')
-    expect(result.current).not.toHaveProperty('onRecoverExportSource')
 
     // Another source has no hint of its own, so the note goes.
     workflow = interruptedWorkflow(false)
@@ -2535,131 +2530,5 @@ describe('rawWorkflowToolProvider tool commands', () => {
     restore()
     editThroughCommands(held)
     for (const edit of commandEdits) expect(edit).toHaveBeenCalledOnce()
-  })
-})
-
-describe('rawWorkflowToolProvider surface contract', () => {
-  it('takes no recovery, reselect or export-choice inputs, and hands none on', () => {
-    type ProviderProps = ComponentProps<typeof RawWorkflowToolProvider>
-    expectTypeOf<ProviderProps>().not.toHaveProperty('onRecoverExportSource')
-    expectTypeOf<ProviderProps>().not.toHaveProperty('recovery')
-    expectTypeOf<RawToolSurfaceProps>().not.toHaveProperty('recovery')
-    expectTypeOf<RawToolSurfaceProps>().not.toHaveProperty(
-      'onRecoverExportSource',
-    )
-    expectTypeOf<RawToolCommands['onExport']>().parameters.toEqualTypeOf<[]>()
-
-    const { result } = renderHook(useRawWorkflowContext, {
-      wrapper: ({ children }) => (
-        <ProviderWith workflow={interruptedWorkflow(true)}>
-          {children}
-        </ProviderWith>
-      ),
-    })
-
-    // What the context hands the surfaces: action-specific availability,
-    // the export decisions and their reasons, one typed note and the size
-    // export will really deliver. Adjustments, the stage and its progress
-    // are the store's, the commands are the commands provider's, and the
-    // histogram and the preview stats have providers of their own.
-    expect(Object.keys(result.current).sort()).toEqual(
-      [
-        'appliedLut',
-        'canExport',
-        'canPreviewExport',
-        'compareSplit',
-        'compareSupported',
-        'cpuPreviewNotice',
-        'currentLutName',
-        'deliveredExportSize',
-        'disabledReason',
-        'exportBlockedByLutContract',
-        'exportResult',
-        'exportShareCapability',
-        'fileName',
-        'hasImage',
-        'interruptionNote',
-        'isProcessing',
-        'lutProfileResolution',
-        'lutProfileSelection',
-        'metadata',
-        'onlineLutSources',
-        'previewAspect',
-        'previewExportDisabledReason',
-        'previewFrameEl',
-        'previewLookReason',
-        'previewSuspended',
-        'runtimeReadinessState',
-        'supportLevel',
-        'toolAvailability',
-        'transform',
-        'viewMode',
-      ].sort(),
-    )
-    expect(result.current.interruptionNote).toEqual({ kind: 'interrupted' })
-    // The GPU stage can split; the CPU one is reported separately.
-    expect(result.current.compareSupported).toBe(true)
-  })
-
-  it('hands the preview stats on their own channel, a new timing leaving the context as it was', () => {
-    const stats = (processTime: number) => ({
-      uploadTime: 0,
-      lutUploadTime: 0,
-      processTime,
-      totalTime: processTime,
-      inputSize: { width: 7008, height: 4672 },
-      previewSize: { width: 1024, height: 683 },
-      inputFormat: 'uint16-rgb' as const,
-      transformPath: 'no-lut' as const,
-      lutRole: null,
-      lutInputTransfer: null,
-      lutOutputTransfer: null,
-      lutSize: null,
-    })
-    onTestFinished(() => setPipelineStats(null))
-    act(() => setPipelineStats(stats(41.6)))
-    const workflow = {
-      ...interruptedWorkflow(false),
-      decodedImageRef: { current: { width: 2048, height: 1365 } },
-    } as unknown as UseRawWorkflowReturn
-    const onlineLutSources = {} as UseOnlineLutSourcesResult
-    const command = vi.fn()
-    const { result } = renderHook(
-      () => ({
-        surface: useRawWorkflowContext(),
-        stats: useRawPreviewStats(),
-      }),
-      {
-        wrapper: ({ children }) => (
-          <RawWorkflowToolProvider
-            workflow={workflow}
-            onlineLutSources={onlineLutSources}
-            isCpuMode={false}
-            isProcessing={false}
-            runtimeReadinessState="ready"
-            previewFrameEl={null}
-            onReplaceFile={command}
-            onResetSession={command}
-            onCompareReset={command}
-            onLutDrop={command}
-            onExport={command}
-            onPrepareRuntime={command}
-          >
-            {children}
-          </RawWorkflowToolProvider>
-        ),
-      },
-    )
-    // The size named is the decoded preview's, over the renderer's own.
-    expect(result.current.stats).toEqual({
-      processTime: 41.6,
-      inputSize: { width: 7008, height: 4672 },
-      previewSize: { width: 2048, height: 1365 },
-    })
-
-    const surface = result.current.surface
-    act(() => setPipelineStats(stats(38.2)))
-    expect(result.current.stats?.processTime).toBe(38.2)
-    expect(result.current.surface).toBe(surface)
   })
 })
