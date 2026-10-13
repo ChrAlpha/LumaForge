@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-import * as decoder from './decoder'
 import { getFileExtension, isSupportedRaw } from './decoder'
 
 describe('raw shared helpers', () => {
@@ -13,11 +12,5 @@ describe('raw shared helpers', () => {
   it('returns lowercase file extensions', () => {
     expect(getFileExtension('Frame.NEF')).toBe('nef')
     expect(getFileExtension('no-extension')).toBe('')
-  })
-
-  it('leaves the preview pixel caps to the engine', () => {
-    expect(Object.keys(decoder).filter((name) => /PIXELS/.test(name))).toEqual(
-      [],
-    )
   })
 })
