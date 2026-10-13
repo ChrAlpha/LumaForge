@@ -10,7 +10,6 @@ import type {
   LumaRawProcessedWindowRequest,
   LumaRawProcessedWindowTimings,
   LumaRawVisibleCrop,
-  LumaRawWindow,
   LumaRawWindowRect,
 } from '../src/types'
 import type {
@@ -34,7 +33,6 @@ type EmbindProcessor = {
   readMetadata: () => unknown
   extractThumbnail: () => unknown
   probeExportCapability?: () => unknown
-  readRawWindow?: (rect: LumaRawWindowRect) => unknown
   readProcessedWindow?: (request: LumaRawProcessedWindowRequest) => unknown
   applyCalibration?: (params: EmbindCalibrationParams) => unknown
   decodePreview: (options?: LumaRawNativeDecodeOptions) => unknown
@@ -104,14 +102,6 @@ function asNonNegativeInteger(value: unknown, label: string) {
     !Number.isInteger(value) ||
     value < 0
   ) {
-    throw new TypeError(`Native RAW ${label} returned invalid ${label}.`)
-  }
-
-  return value
-}
-
-function asFiniteNumber(value: unknown, label: string) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new TypeError(`Native RAW ${label} returned invalid ${label}.`)
   }
 
@@ -727,21 +717,12 @@ export function normalizeExportCapability(
     blackLevel: blackLevel ?? 0,
     whiteLevel: whiteLevel ?? 0,
     sensor,
-    windows: {
-      librawProcessed,
-      rawMosaic:
-        typeof rawWindows.rawMosaic === 'boolean'
-          ? rawWindows.rawMosaic
-          : supported,
-    },
+    windows: { librawProcessed },
     diagnostics: normalizeExportDiagnostics(raw.diagnostics, supported),
     reasons: [...reasons],
   }
 
-  if (
-    raw.strategy === 'libraw-processed-window' ||
-    raw.strategy === 'raw-mosaic-window'
-  ) {
+  if (raw.strategy === 'libraw-processed-window') {
     capability.strategy = raw.strategy
   }
   if (visibleCrop) capability.visibleCrop = visibleCrop
@@ -771,35 +752,6 @@ function normalizeWindowRect(value: unknown): LumaRawWindowRect {
     y: asNonNegativeInteger(raw.y, 'y'),
     width: asPositiveInteger(raw.width, 'width'),
     height: asPositiveInteger(raw.height, 'height'),
-  }
-}
-
-function normalizeRawWindow(value: unknown): LumaRawWindow {
-  const raw = asRecord(value)
-  const rect = normalizeWindowRect(raw.rect)
-
-  if (!(raw.data instanceof Uint16Array)) {
-    throw new TypeError(
-      'Native RAW raw-window did not return Uint16Array data.',
-    )
-  }
-
-  const expectedLength = rect.width * rect.height
-  if (!Number.isSafeInteger(expectedLength)) {
-    throw new TypeError('Native RAW raw-window dimensions are too large.')
-  }
-  if (raw.data.length !== expectedLength) {
-    throw new TypeError(
-      'Native RAW raw-window data length does not match rect dimensions.',
-    )
-  }
-
-  return {
-    rect,
-    cfa: normalizeCfa(raw.cfa),
-    data: normalizeUint16Output(raw.data, 'raw-window'),
-    blackLevel: asFiniteNumber(raw.blackLevel, 'blackLevel'),
-    whiteLevel: asFiniteNumber(raw.whiteLevel, 'whiteLevel'),
   }
 }
 
@@ -955,7 +907,7 @@ export function createNativeFactory(
                 cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
                 phaseIsWindowLocal: false,
               },
-              windows: { librawProcessed: false, rawMosaic: false },
+              windows: { librawProcessed: false },
               diagnostics: {
                 hasRawImage: false,
                 hasColor3Image: false,
@@ -967,13 +919,6 @@ export function createNativeFactory(
           }
 
           return normalizeExportCapability(processor.probeExportCapability())
-        },
-        readRawWindow(rect) {
-          if (!processor.readRawWindow) {
-            throw new TypeError('Native RAW raw-window access is unavailable.')
-          }
-
-          return normalizeRawWindow(processor.readRawWindow(rect))
         },
         decodePreview(options) {
           return normalizeImage(

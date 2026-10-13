@@ -93,7 +93,7 @@ function makeCapability(): LumaRawExportCapability {
       phaseIsWindowLocal: false,
     },
     levels: { black: 0, white: 65535 },
-    windows: { librawProcessed: true, rawMosaic: false },
+    windows: { librawProcessed: true },
     diagnostics: {
       hasRawImage: true,
       hasColor3Image: false,
@@ -119,7 +119,6 @@ function makeSession(
     timings: { total: 1 },
     extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
     probeExportCapability: vi.fn().mockResolvedValue(makeCapability()),
-    readRawWindow: vi.fn(),
     readProcessedWindow: vi.fn(),
     decodeQuick: vi.fn().mockResolvedValue(makeFrame('quick')),
     decodeBoundedHq: vi.fn().mockResolvedValue(makeFrame('bounded-hq')),

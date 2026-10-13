@@ -96,7 +96,6 @@ type SessionRequestType =
   | 'decodeQuickFromSession'
   | 'decodeBoundedHqFromSession'
   | 'probeExportCapabilityFromSession'
-  | 'readRawWindowFromSession'
   | 'readProcessedWindowFromSession'
   | 'applyCalibrationToSession'
   | 'closeSession'
@@ -109,12 +108,6 @@ function sessionRequest(
   switch (type) {
     case 'decodeBoundedHqFromSession':
       return { id, type, payload: { sessionId, maxOutputPixels: 1_000_000 } }
-    case 'readRawWindowFromSession':
-      return {
-        id,
-        type,
-        payload: { sessionId, rect: { x: 0, y: 0, width: 2, height: 2 } },
-      }
     case 'readProcessedWindowFromSession':
       return {
         id,
@@ -750,121 +743,7 @@ describe('runtime-core', () => {
     expect(decodeHq).not.toHaveBeenCalled()
   })
 
-  it('passes through native raw-window capability and window payloads', async () => {
-    const nativeCapability: LumaRawExportCapability = {
-      supported: true,
-      width: 4,
-      height: 4,
-      rawWidth: 4,
-      rawHeight: 4,
-      visibleCrop: { x: 0, y: 0, width: 4, height: 4 },
-      cfa: { pattern: 'rggb' as const, xPhase: 0 as const, yPhase: 0 as const },
-      blackLevel: 64,
-      whiteLevel: 1023,
-      orientation: { code: 1, supported: true },
-      color: {
-        whiteBalance: [2, 1, 1.5, 1],
-        cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
-        workingSpace: 'linear-prophoto-rgb' as const,
-        librawOutputColor: 'prophoto' as const,
-        gamma: 'linear' as const,
-        cameraWhiteBalanceAppliedByRuntime: true,
-        cameraMatrixAppliedByRuntime: true,
-      },
-      sensor: {
-        layout: 'bayer' as const,
-        colorCount: 3,
-        cfa: {
-          pattern: 'rggb' as const,
-          xPhase: 0 as const,
-          yPhase: 0 as const,
-        },
-        phaseIsWindowLocal: false,
-      },
-      windows: { librawProcessed: true, rawMosaic: true },
-      diagnostics: {
-        hasRawImage: true,
-        hasColor3Image: false,
-        hasColor4Image: false,
-        hasXTransTable: false,
-      },
-      reasons: [],
-    }
-
-    const nativeWindow = {
-      rect: { x: 0, y: 0, width: 2, height: 2 },
-      cfa: nativeCapability.cfa,
-      data: new Uint16Array([100, 200, 300, 400]),
-      blackLevel: 64,
-      whiteLevel: 1023,
-    }
-
-    const core = createRuntimeCore({
-      createProcessor() {
-        const processor = makeNativeFactory().createProcessor()
-        return {
-          ...processor,
-          probeExportCapability() {
-            return nativeCapability
-          },
-          readRawWindow(rect) {
-            expect(rect).toEqual(nativeWindow.rect)
-            return nativeWindow
-          },
-        }
-      },
-    })
-
-    const open = await core.handleRequest({
-      id: 'job-window-open',
-      type: 'openSession',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-
-    expect(open.ok && open.type === 'openSession').toBe(true)
-    if (!open.ok || open.type !== 'openSession') return
-
-    const sessionId = open.payload.sessionId
-    const capability = await core.handleRequest({
-      id: 'job-window-capability',
-      type: 'probeExportCapabilityFromSession',
-      payload: { sessionId },
-    })
-    const window = await core.handleRequest({
-      id: 'job-window-read',
-      type: 'readRawWindowFromSession',
-      payload: { sessionId, rect: nativeWindow.rect },
-    })
-
-    expect(capability).toMatchObject({
-      ok: true,
-      type: 'probeExportCapabilityFromSession',
-    })
-    expect(window).toMatchObject({
-      ok: true,
-      type: 'readRawWindowFromSession',
-    })
-    if (
-      !capability.ok ||
-      capability.type !== 'probeExportCapabilityFromSession' ||
-      !window.ok ||
-      window.type !== 'readRawWindowFromSession'
-    ) {
-      return
-    }
-
-    expect(capability.payload).toEqual({
-      ...nativeCapability,
-      levels: { black: 64, white: 1023 },
-    })
-    expect(window.payload).toEqual(nativeWindow)
-  })
-
-  it('falls back closed when native raw-window support is unavailable', async () => {
+  it('falls back closed when native export probing is unavailable', async () => {
     const core = createRuntimeCore(makeNativeFactory())
 
     const open = await core.handleRequest({
@@ -885,14 +764,6 @@ describe('runtime-core', () => {
       id: 'job-window-unsupported-capability',
       type: 'probeExportCapabilityFromSession',
       payload: { sessionId },
-    })
-    const window = await core.handleRequest({
-      id: 'job-window-unsupported-read',
-      type: 'readRawWindowFromSession',
-      payload: {
-        sessionId,
-        rect: { x: 0, y: 0, width: 2, height: 2 },
-      },
     })
 
     expect(capability).toEqual({
@@ -915,7 +786,7 @@ describe('runtime-core', () => {
           cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
           phaseIsWindowLocal: false,
         },
-        windows: { librawProcessed: false, rawMosaic: false },
+        windows: { librawProcessed: false },
         diagnostics: {
           hasRawImage: false,
           hasColor3Image: false,
@@ -923,16 +794,6 @@ describe('runtime-core', () => {
           hasXTransTable: false,
         },
         reasons: ['raw-window-unavailable'],
-      },
-    })
-    expect(window).toEqual({
-      id: 'job-window-unsupported-read',
-      ok: false,
-      type: 'readRawWindowFromSession',
-      error: {
-        code: 'RAW_UNSUPPORTED_FORMAT',
-        message:
-          'RAW runtime raw-window access is unavailable for this source.',
       },
     })
   })
@@ -1100,116 +961,6 @@ describe('runtime-core', () => {
     expect(receivedMaxOutputPixels).toBe(1_500_000)
   })
 
-  it('returns session export capability and raw-window payloads', async () => {
-    const core = createRuntimeCore({
-      createProcessor() {
-        return {
-          ...makeNativeFactory().createProcessor(),
-          probeExportCapability() {
-            return {
-              supported: true,
-              width: 4000,
-              height: 3000,
-              rawWidth: 4024,
-              rawHeight: 3024,
-              visibleCrop: { x: 12, y: 12, width: 4000, height: 3000 },
-              cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-              blackLevel: 512,
-              whiteLevel: 16383,
-              orientation: { code: 1, supported: true },
-              color: {
-                whiteBalance: [2, 1, 1.5, 1],
-                cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
-                workingSpace: 'linear-prophoto-rgb',
-                librawOutputColor: 'prophoto',
-                gamma: 'linear',
-                cameraWhiteBalanceAppliedByRuntime: true,
-                cameraMatrixAppliedByRuntime: true,
-              },
-              sensor: {
-                layout: 'bayer',
-                colorCount: 3,
-                cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-                phaseIsWindowLocal: false,
-              },
-              windows: { librawProcessed: true, rawMosaic: true },
-              diagnostics: {
-                hasRawImage: true,
-                hasColor3Image: false,
-                hasColor4Image: false,
-                hasXTransTable: false,
-              },
-              reasons: [],
-            }
-          },
-          readRawWindow(rect) {
-            return {
-              rect,
-              cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-              data: new Uint16Array(rect.width * rect.height),
-              blackLevel: 512,
-              whiteLevel: 16383,
-            }
-          },
-        }
-      },
-    })
-
-    const opened = await core.handleRequest({
-      id: 'job-export-open',
-      type: 'openSession',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-    expect(opened.ok && opened.type === 'openSession').toBe(true)
-    if (!opened.ok || opened.type !== 'openSession') return
-
-    const capability = await core.handleRequest({
-      id: 'job-export-capability',
-      type: 'probeExportCapabilityFromSession',
-      payload: { sessionId: opened.payload.sessionId },
-    })
-    const window = await core.handleRequest({
-      id: 'job-export-window',
-      type: 'readRawWindowFromSession',
-      payload: {
-        sessionId: opened.payload.sessionId,
-        rect: { x: 4, y: 6, width: 2, height: 3 },
-      },
-    })
-
-    expect(capability).toMatchObject({
-      ok: true,
-      type: 'probeExportCapabilityFromSession',
-      payload: {
-        supported: true,
-        width: 4000,
-        rawWidth: 4024,
-        visibleCrop: { x: 12, y: 12, width: 4000, height: 3000 },
-        orientation: { code: 1, supported: true },
-        color: {
-          whiteBalance: expect.any(Array),
-          cameraToWorkingRgb: expect.any(Array),
-          workingSpace: 'linear-prophoto-rgb',
-        },
-        cfa: { pattern: 'rggb' },
-      },
-    })
-    expect(window).toMatchObject({
-      ok: true,
-      type: 'readRawWindowFromSession',
-      payload: {
-        rect: { x: 4, y: 6, width: 2, height: 3 },
-        cfa: { pattern: 'rggb' },
-        blackLevel: 512,
-        whiteLevel: 16383,
-      },
-    })
-  })
-
   it('reopens the session before probing export capability after preview decode', async () => {
     let sensorFactsAvailable = false
     let openWithSettingsCount = 0
@@ -1245,7 +996,7 @@ describe('runtime-core', () => {
         },
         phaseIsWindowLocal: false,
       },
-      windows: { librawProcessed: true, rawMosaic: true },
+      windows: { librawProcessed: true },
       diagnostics: {
         hasRawImage: true,
         hasColor3Image: false,
@@ -1332,54 +1083,6 @@ describe('runtime-core', () => {
         cfa: { pattern: 'rggb' },
         sensor: { layout: 'bayer' },
         reasons: [],
-      },
-    })
-  })
-
-  it('fails closed for missing session raw-window support', async () => {
-    const core = createRuntimeCore(makeNativeFactory())
-
-    const opened = await core.handleRequest({
-      id: 'job-export-fallback-open',
-      type: 'openSession',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-    expect(opened.ok && opened.type === 'openSession').toBe(true)
-    if (!opened.ok || opened.type !== 'openSession') return
-
-    const capability = await core.handleRequest({
-      id: 'job-export-fallback-capability',
-      type: 'probeExportCapabilityFromSession',
-      payload: { sessionId: opened.payload.sessionId },
-    })
-    const window = await core.handleRequest({
-      id: 'job-export-fallback-window',
-      type: 'readRawWindowFromSession',
-      payload: {
-        sessionId: opened.payload.sessionId,
-        rect: { x: 0, y: 0, width: 1, height: 1 },
-      },
-    })
-
-    expect(capability).toMatchObject({
-      ok: true,
-      type: 'probeExportCapabilityFromSession',
-      payload: {
-        supported: false,
-        reasons: ['raw-window-unavailable'],
-      },
-    })
-    expect(window).toMatchObject({
-      ok: false,
-      type: 'readRawWindowFromSession',
-      error: {
-        code: 'RAW_UNSUPPORTED_FORMAT',
-        message:
-          'RAW runtime raw-window access is unavailable for this source.',
       },
     })
   })
@@ -2227,7 +1930,6 @@ describe('runtime-core request failure classification', () => {
     | 'decodePreview'
     | 'decodeHq'
     | 'probeExportCapability'
-    | 'readRawWindow'
     | 'readProcessedWindow'
     | 'applyCalibration'
     | 'dispose'
@@ -2248,7 +1950,7 @@ describe('runtime-core request failure classification', () => {
       cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
       phaseIsWindowLocal: false,
     },
-    windows: { librawProcessed: false, rawMosaic: false },
+    windows: { librawProcessed: false },
     diagnostics: {
       hasRawImage: false,
       hasColor3Image: false,
@@ -2270,9 +1972,6 @@ describe('runtime-core request failure classification', () => {
       return {
         ...processor,
         probeExportCapability: () => unsupportedNativeCapability,
-        readRawWindow: () => {
-          throw new Error('unexpected raw-window read')
-        },
         readProcessedWindow: () => {
           throw new Error('unexpected processed-window read')
         },
@@ -2364,7 +2063,6 @@ describe('runtime-core request failure classification', () => {
       'probeExportCapability',
       'RAW_METADATA_FAILED',
     ],
-    ['readRawWindowFromSession', 'readRawWindow', 'RAW_WINDOW_READ_FAILED'],
     [
       'readProcessedWindowFromSession',
       'readProcessedWindow',
@@ -2442,7 +2140,11 @@ describe('runtime-core request failure classification', () => {
       'readProcessedWindow',
       'readProcessedWindowFromSession',
     ],
-    ['RAW_JOB_CANCELLED', 'readRawWindow', 'readRawWindowFromSession'],
+    [
+      'RAW_JOB_CANCELLED',
+      'extractThumbnail',
+      'extractEmbeddedPreviewFromSession',
+    ],
     ['RAW_UNSUPPORTED_FORMAT', 'decodePreview', 'decodeQuickFromSession'],
   ] as const)(
     'keeps specific %s failures thrown during %s',
@@ -2465,38 +2167,6 @@ describe('runtime-core request failure classification', () => {
     },
   )
 
-  it('keeps cancellation and protocol failures ahead of operation fallbacks', async () => {
-    const core = createRuntimeCore(
-      makeFailingFactory('readRawWindow', new Error('should not run')),
-    )
-    const sessionId = await openSession(core)
-
-    await core.handleRequest({
-      id: 'classify-cancel',
-      type: 'cancel',
-      payload: { targetJobId: 'classify-cancelled-read' },
-    })
-    const cancelled = await core.handleRequest(
-      sessionRequest(
-        'readRawWindowFromSession',
-        sessionId,
-        'classify-cancelled-read',
-      ),
-    )
-    const unknownSession = await core.handleRequest(
-      sessionRequest('readProcessedWindowFromSession', 'raw-session-missing'),
-    )
-
-    expect(cancelled).toMatchObject({
-      ok: false,
-      error: { code: 'RAW_JOB_CANCELLED' },
-    })
-    expect(unknownSession).toMatchObject({
-      ok: false,
-      error: { code: 'RAW_WORKER_PROTOCOL_ERROR' },
-    })
-  })
-
   it('assigns a fallback code to every worker request operation', () => {
     const requestTypes = [
       'init',
@@ -2505,7 +2175,6 @@ describe('runtime-core request failure classification', () => {
       'decodeQuickFromSession',
       'decodeBoundedHqFromSession',
       'probeExportCapabilityFromSession',
-      'readRawWindowFromSession',
       'readProcessedWindowFromSession',
       'applyCalibrationToSession',
       'closeSession',
@@ -2522,7 +2191,6 @@ describe('runtime-core request failure classification', () => {
     expect(rawRequestFailureFallbackCodes).toMatchObject({
       openSession: 'RAW_OPEN_FAILED',
       probe: 'RAW_OPEN_FAILED',
-      readRawWindowFromSession: 'RAW_WINDOW_READ_FAILED',
       readProcessedWindowFromSession: 'RAW_WINDOW_READ_FAILED',
       applyCalibrationToSession: 'RAW_CALIBRATION_FAILED',
     })
@@ -2536,7 +2204,6 @@ describe('runtime-core session jobs', () => {
     | 'decodePreview'
     | 'decodeHq'
     | 'probeExportCapability'
-    | 'readRawWindow'
     | 'readProcessedWindow'
     | 'applyCalibration'
 
@@ -2545,7 +2212,6 @@ describe('runtime-core session jobs', () => {
     ['decodeQuickFromSession', 'decodePreview'],
     ['decodeBoundedHqFromSession', 'decodeHq'],
     ['probeExportCapabilityFromSession', 'probeExportCapability'],
-    ['readRawWindowFromSession', 'readRawWindow'],
     ['readProcessedWindowFromSession', 'readProcessedWindow'],
     ['applyCalibrationToSession', 'applyCalibration'],
   ] as const satisfies ReadonlyArray<
@@ -2578,7 +2244,7 @@ describe('runtime-core session jobs', () => {
       cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
       phaseIsWindowLocal: false,
     },
-    windows: { librawProcessed: true, rawMosaic: true },
+    windows: { librawProcessed: true },
     diagnostics: {
       hasRawImage: true,
       hasColor3Image: false,
@@ -2612,14 +2278,6 @@ describe('runtime-core session jobs', () => {
             record('decodeHq', () => processor.decodeHq(options)),
           probeExportCapability: () =>
             record('probeExportCapability', () => supportedCapability),
-          readRawWindow: (rect) =>
-            record('readRawWindow', () => ({
-              rect,
-              cfa: supportedCapability.cfa,
-              data: new Uint16Array(rect.width * rect.height),
-              blackLevel: 64,
-              whiteLevel: 1023,
-            })),
           readProcessedWindow: (request) =>
             record('readProcessedWindow', () => ({
               rect: request.outputRect,
@@ -2808,7 +2466,6 @@ describe('runtime-core session jobs', () => {
   })
 
   it.each([
-    ['readRawWindowFromSession', 'readRawWindow'],
     ['readProcessedWindowFromSession', 'readProcessedWindow'],
     ['applyCalibrationToSession', 'applyCalibration'],
   ] as const)(

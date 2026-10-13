@@ -16,7 +16,6 @@ import {
   sha256OfJpegWithMetadata,
 } from '@lumaforge/render-engine/export'
 
-import { createRawExportSession } from '../raw/export-runtime-adapter'
 import { sha256OfBlob } from './blob-sha256'
 import type {
   FullResExportWorkerRequest,
@@ -394,11 +393,8 @@ async function handleStart(
     }
 
     try {
-      const exportSession = createRawExportSession(session)
       const exportMetadata = toJpegExportMetadata(session.probe)
-      const capability = await exportSession.probeExportCapability(
-        controller.signal,
-      )
+      const capability = await session.probeExportCapability(controller.signal)
       const jpegSink = outputLocation
         ? createOpfsJpegRowSink({
             location: outputLocation,
@@ -417,7 +413,7 @@ async function handleStart(
         quality: message.quality,
         jpegSink,
         signal: controller.signal,
-        readProcessedWindow: exportSession.readProcessedWindow,
+        readProcessedWindow: session.readProcessedWindow,
         retryPolicy:
           message.executionPlan?.checkpointMode === 'safe-retry'
             ? 'surface-resource-failure'

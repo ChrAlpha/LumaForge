@@ -679,7 +679,7 @@ describe('createLumaRawRuntime', () => {
     session.dispose()
   })
 
-  it('forwards export capability and raw-window requests through the session', async () => {
+  it('forwards export capability and processed-window requests through the session', async () => {
     const processedWindowRequest = {
       outputRect: { x: 0, y: 0, width: 2, height: 1 },
       halo: { left: 1, top: 1, right: 1, bottom: 1 },
@@ -738,7 +738,7 @@ describe('createLumaRawRuntime', () => {
             cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
             phaseIsWindowLocal: false,
           },
-          windows: { librawProcessed: false, rawMosaic: true },
+          windows: { librawProcessed: true },
           diagnostics: {
             hasRawImage: true,
             hasColor3Image: false,
@@ -746,15 +746,6 @@ describe('createLumaRawRuntime', () => {
             hasXTransTable: false,
           },
           reasons: [],
-        }
-      }
-      if (request.type === 'readRawWindowFromSession') {
-        return {
-          rect: request.payload.rect,
-          cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-          data: new Uint16Array(4),
-          blackLevel: 0,
-          whiteLevel: 65535,
         }
       }
       if (request.type === 'readProcessedWindowFromSession') {
@@ -792,11 +783,6 @@ describe('createLumaRawRuntime', () => {
         cameraToWorkingRgb: expect.any(Array),
         workingSpace: 'linear-prophoto-rgb',
       },
-    })
-    await expect(
-      session.readRawWindow({ x: 0, y: 0, width: 2, height: 2 }),
-    ).resolves.toMatchObject({
-      rect: { x: 0, y: 0, width: 2, height: 2 },
     })
     const controller = new AbortController()
     await expect(

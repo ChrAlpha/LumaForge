@@ -315,7 +315,7 @@ function makeCapability(
       cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
       phaseIsWindowLocal: false,
     },
-    windows: { librawProcessed: true, rawMosaic: false },
+    windows: { librawProcessed: true },
     diagnostics: {
       hasRawImage: true,
       hasColor3Image: false,
@@ -719,14 +719,6 @@ describe('runFullResolutionExport source assessment', () => {
       ['source-unsupported'],
     ],
     ['zero dimensions', { width: 0, height: 0 }, ['invalid-dimensions']],
-    [
-      'the raw-mosaic strategy',
-      {
-        strategy: 'raw-mosaic-window',
-        windows: { librawProcessed: false, rawMosaic: true },
-      },
-      ['strategy-not-processed-window', 'processed-windows-unavailable'],
-    ],
     ['missing color facts', { color: undefined }, ['color-facts-missing']],
     [
       'runtime white balance not applied',

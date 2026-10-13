@@ -32,7 +32,7 @@ function makeCapability(
       cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
       phaseIsWindowLocal: false,
     },
-    windows: { librawProcessed: true, rawMosaic: false },
+    windows: { librawProcessed: true },
     diagnostics: {
       hasRawImage: true,
       hasColor3Image: false,
@@ -69,21 +69,13 @@ const refusedCapabilities: Array<
   ['a non-finite height', { height: Number.NaN }, ['invalid-dimensions']],
   ['a string width', { width: '4032' }, ['invalid-dimensions']],
   [
-    'the raw-mosaic strategy',
-    {
-      strategy: 'raw-mosaic-window',
-      windows: { librawProcessed: false, rawMosaic: true },
-    },
-    ['strategy-not-processed-window', 'processed-windows-unavailable'],
-  ],
-  [
     'a missing strategy',
     { strategy: undefined },
     ['strategy-not-processed-window'],
   ],
   [
     'processed windows not available',
-    { windows: { librawProcessed: false, rawMosaic: true } },
+    { windows: { librawProcessed: false } },
     ['processed-windows-unavailable'],
   ],
   [
@@ -151,7 +143,7 @@ const refusedCapabilities: Array<
     {
       supported: false,
       width: 0,
-      strategy: 'raw-mosaic-window',
+      strategy: undefined,
       color: undefined,
     },
     [

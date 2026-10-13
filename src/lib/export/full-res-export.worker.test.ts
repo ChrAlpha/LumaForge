@@ -542,7 +542,6 @@ describe('full-resolution export worker lifecycle responses', () => {
         width: 9504,
         height: 6336,
       })),
-      readRawWindow: vi.fn(),
       readProcessedWindow: vi.fn(),
       dispose: vi.fn(),
     }
@@ -809,7 +808,7 @@ describe('full-resolution export worker delivered JPEG metadata', () => {
       strategy: 'libraw-processed-window',
       width: SENSOR.width,
       height: SENSOR.height,
-      windows: { librawProcessed: true, rawMosaic: false },
+      windows: { librawProcessed: true },
       color: {
         workingSpace: 'linear-prophoto-rgb',
         librawOutputColor: 'prophoto',

@@ -17,8 +17,6 @@ import type {
   LumaRawQuickOptions,
   LumaRawRuntimeInfo,
   LumaRawRuntimeMemoryProfile,
-  LumaRawWindow,
-  LumaRawWindowRect,
 } from './types'
 import type {
   LumaRawWorkerPayloadByType,
@@ -232,15 +230,6 @@ export async function createLumaRawRuntimeForNode(
           counter,
           stageSignal,
         ) as Promise<LumaRawExportCapability>
-      },
-      readRawWindow(rect: LumaRawWindowRect, stageSignal?: AbortSignal) {
-        return dispatch(
-          core,
-          'readRawWindowFromSession',
-          { sessionId: sessionInfo.sessionId, rect },
-          counter,
-          stageSignal,
-        ) as Promise<LumaRawWindow>
       },
       readProcessedWindow(
         request: LumaRawProcessedWindowRequest,

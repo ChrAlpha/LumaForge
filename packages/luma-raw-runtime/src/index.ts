@@ -34,7 +34,6 @@ export type {
   LumaRawSessionInfo,
   LumaRawSupportLevel,
   LumaRawTimings,
-  LumaRawWindow,
   LumaRawWindowRect,
 } from './types'
 export { LumaRawWorkerClient } from './worker-client'

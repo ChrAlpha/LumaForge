@@ -117,7 +117,7 @@ function makeCapability(): LumaRawExportCapability {
       phaseIsWindowLocal: false,
     },
     levels: { black: 0, white: 65535 },
-    windows: { librawProcessed: true, rawMosaic: false },
+    windows: { librawProcessed: true },
     diagnostics: {
       hasRawImage: true,
       hasColor3Image: false,
@@ -136,14 +136,6 @@ function colorFactsWithout(fact: keyof LumaRawExportColorFacts) {
   const facts: Partial<LumaRawExportColorFacts> = makeNativeColorFacts()
   delete facts[fact]
   return facts
-}
-
-function makeRawMosaicCapability(): LumaRawExportCapability {
-  return {
-    ...makeCapability(),
-    strategy: 'raw-mosaic-window',
-    windows: { librawProcessed: false, rawMosaic: true },
-  }
 }
 
 function makeLumaRuntime(
@@ -201,7 +193,6 @@ function makeLumaRuntime(
         timings: { total: 1 },
         extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
         probeExportCapability: vi.fn().mockResolvedValue(makeCapability()),
-        readRawWindow: vi.fn(),
         readProcessedWindow: vi.fn(),
         decodeQuick: vi.fn().mockResolvedValue(makeLumaFrame('quick')),
         decodeBoundedHq: vi.fn().mockResolvedValue(makeLumaFrame('bounded-hq')),
@@ -369,7 +360,6 @@ describe('raw runtime host conversion and export gate', () => {
         timings: { total: 1 },
         extractEmbeddedPreview,
         probeExportCapability,
-        readRawWindow: vi.fn(),
         readProcessedWindow: vi.fn(),
         decodeQuick,
         decodeBoundedHq,
@@ -432,7 +422,6 @@ describe('raw runtime host conversion and export gate', () => {
         decodeQuick: vi.fn().mockResolvedValue(makeLumaFrame('quick')),
         decodeBoundedHq,
         probeExportCapability: vi.fn().mockResolvedValue(makeCapability()),
-        readRawWindow: vi.fn(),
         readProcessedWindow: vi.fn(),
         applyCalibration: vi.fn().mockResolvedValue({ applied: true } as const),
         dispose: vi.fn(),
@@ -471,7 +460,6 @@ describe('raw runtime host conversion and export gate', () => {
         decodeQuick: vi.fn().mockResolvedValue(makeLumaFrame('quick')),
         decodeBoundedHq: vi.fn().mockRejectedValue(new Error('bounded failed')),
         probeExportCapability: vi.fn().mockResolvedValue(makeCapability()),
-        readRawWindow: vi.fn(),
         readProcessedWindow: vi.fn(),
         applyCalibration: vi.fn().mockResolvedValue({ applied: true } as const),
         dispose: vi.fn(),
@@ -507,7 +495,6 @@ describe('raw runtime host conversion and export gate', () => {
         timings: { total: 1 },
         extractEmbeddedPreview: vi.fn(),
         probeExportCapability,
-        readRawWindow: vi.fn(),
         readProcessedWindow: vi.fn(),
         decodeQuick: vi.fn(),
         decodeBoundedHq: vi.fn(),
@@ -558,7 +545,6 @@ describe('raw runtime host conversion and export gate', () => {
           timings: { total: 1 },
           extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
           probeExportCapability,
-          readRawWindow: vi.fn(),
           readProcessedWindow: vi.fn(),
           decodeQuick: vi.fn().mockResolvedValue(makeLumaFrame('quick')),
           decodeBoundedHq: vi
@@ -611,7 +597,6 @@ describe('raw runtime host conversion and export gate', () => {
         timings: { total: 1 },
         extractEmbeddedPreview: vi.fn(),
         probeExportCapability,
-        readRawWindow: vi.fn(),
         readProcessedWindow: vi.fn(),
         decodeQuick: vi.fn(),
         decodeBoundedHq: vi.fn(),
@@ -640,13 +625,8 @@ describe('raw runtime host conversion and export gate', () => {
       ['missing-color-transform'],
     ],
     [
-      'raw-mosaic-only-export',
-      makeRawMosaicCapability(),
-      ['processed-window-unavailable'],
-    ],
-    [
       'missing processed window',
-      { windows: { librawProcessed: false, rawMosaic: false } },
+      { windows: { librawProcessed: false } },
       ['processed-window-unavailable'],
     ],
     ['missing dimensions', { width: 0 }, ['missing-dimensions']],
@@ -720,7 +700,6 @@ describe('raw runtime host conversion and export gate', () => {
           probeExportCapability: vi
             .fn()
             .mockResolvedValue({ ...makeCapability(), ...overrides }),
-          readRawWindow: vi.fn(),
           readProcessedWindow: vi.fn(),
           decodeQuick: vi.fn(),
           decodeBoundedHq: vi.fn(),
@@ -782,7 +761,6 @@ describe('raw runtime host conversion and export gate', () => {
         },
         timings: { total: 1 },
         extractEmbeddedPreview,
-        readRawWindow: vi.fn(),
         readProcessedWindow: vi.fn(),
         decodeQuick,
         decodeBoundedHq,

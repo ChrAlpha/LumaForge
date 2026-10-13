@@ -56,9 +56,7 @@ export type LumaRawSensorLayout =
   | 'rgb-like'
   | 'unknown'
 
-export type LumaRawFullResInputStrategy =
-  | 'libraw-processed-window'
-  | 'raw-mosaic-window'
+export type LumaRawFullResInputStrategy = 'libraw-processed-window'
 
 export type LumaRawWindowRect = {
   x: number
@@ -141,7 +139,6 @@ export type LumaRawExportLevelFacts = {
 
 export type LumaRawExportWindowFacts = {
   librawProcessed: boolean
-  rawMosaic: boolean
 }
 
 export type LumaRawExportDiagnostics = {
@@ -176,14 +173,6 @@ export type LumaRawExportCapability = {
   windows: LumaRawExportWindowFacts
   diagnostics: LumaRawExportDiagnostics
   reasons: LumaRawExportUnsupportedReason[]
-}
-
-export type LumaRawWindow = {
-  rect: LumaRawWindowRect
-  cfa: LumaRawCfaInfo
-  data: Uint16Array
-  blackLevel: number
-  whiteLevel: number
 }
 
 export type LumaRawProcessedWindowRequest = {
@@ -326,10 +315,6 @@ export type LumaRawDecodeSession = LumaRawSessionInfo & {
   probeExportCapability: (
     signal?: AbortSignal,
   ) => Promise<LumaRawExportCapability>
-  readRawWindow: (
-    rect: LumaRawWindowRect,
-    signal?: AbortSignal,
-  ) => Promise<LumaRawWindow>
   readProcessedWindow: (
     request: LumaRawProcessedWindowRequest,
     signal?: AbortSignal,

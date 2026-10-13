@@ -257,7 +257,6 @@ export const rawRequestFailureFallbackCodes = {
   decodeBoundedHq: 'RAW_HQ_DECODE_FAILED',
   decodeBoundedHqFromSession: 'RAW_HQ_DECODE_FAILED',
   probeExportCapabilityFromSession: 'RAW_METADATA_FAILED',
-  readRawWindowFromSession: 'RAW_WINDOW_READ_FAILED',
   readProcessedWindowFromSession: 'RAW_WINDOW_READ_FAILED',
   applyCalibrationToSession: 'RAW_CALIBRATION_FAILED',
 } as const satisfies Record<LumaRawWorkerRequestType, LumaRawErrorCode>
@@ -457,7 +456,7 @@ function unsupportedRawWindowCapability(): LumaRawExportCapability {
       cfa: { pattern: 'unsupported' as const, xPhase: 0, yPhase: 0 },
       phaseIsWindowLocal: false,
     },
-    windows: { librawProcessed: false, rawMosaic: false },
+    windows: { librawProcessed: false },
     diagnostics: {
       hasRawImage: false,
       hasColor3Image: false,
@@ -873,23 +872,6 @@ export function createRuntimeCore(
     })
   }
 
-  function handleReadRawWindowFromSession(
-    request: LumaRawWorkerRequest<'readRawWindowFromSession'>,
-  ): LumaRawWorkerResponse {
-    return runSessionJob(sessionJobs, request, {
-      run(session) {
-        if (!session.processor.readRawWindow) {
-          throw new LumaRawRuntimeError(
-            'RAW_UNSUPPORTED_FORMAT',
-            'RAW runtime raw-window access is unavailable for this source.',
-          )
-        }
-
-        return session.processor.readRawWindow(request.payload.rect)
-      },
-    })
-  }
-
   function handleReadProcessedWindowFromSession(
     request: LumaRawWorkerRequest<'readProcessedWindowFromSession'>,
   ): LumaRawWorkerResponse {
@@ -959,8 +941,6 @@ export function createRuntimeCore(
             return handleExtractEmbeddedPreviewFromSession(request)
           case 'probeExportCapabilityFromSession':
             return handleProbeExportCapabilityFromSession(request)
-          case 'readRawWindowFromSession':
-            return handleReadRawWindowFromSession(request)
           case 'readProcessedWindowFromSession':
             return handleReadProcessedWindowFromSession(request)
           case 'applyCalibrationToSession':

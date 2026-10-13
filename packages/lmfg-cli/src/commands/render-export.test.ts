@@ -366,7 +366,7 @@ function retryingRawSession() {
         cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
         phaseIsWindowLocal: false,
       },
-      windows: { librawProcessed: true, rawMosaic: false },
+      windows: { librawProcessed: true },
       diagnostics: {
         hasRawImage: true,
         hasColor3Image: false,

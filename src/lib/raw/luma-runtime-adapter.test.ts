@@ -62,7 +62,6 @@ function makeLumaRuntime(
       timings: { total: 1 },
       extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
       probeExportCapability: vi.fn(),
-      readRawWindow: vi.fn(),
       readProcessedWindow: vi.fn(),
       decodeQuick: sessionDecodeQuick,
       decodeBoundedHq: sessionDecodeBoundedHq,

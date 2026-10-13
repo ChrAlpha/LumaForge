@@ -42,16 +42,9 @@ describe('runFullResolutionJpegExport', () => {
   it.each([
     ['missing color facts', { color: undefined }],
     [
-      'raw-mosaic strategy',
-      {
-        strategy: 'raw-mosaic-window',
-        windows: { librawProcessed: false, rawMosaic: true },
-      },
-    ],
-    [
       'missing processed windows',
       {
-        windows: { librawProcessed: false, rawMosaic: true },
+        windows: { librawProcessed: false },
       },
     ],
     [

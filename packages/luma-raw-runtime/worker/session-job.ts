@@ -13,7 +13,6 @@ type RawSessionJobType = Extract<
   | 'decodeQuickFromSession'
   | 'decodeBoundedHqFromSession'
   | 'probeExportCapabilityFromSession'
-  | 'readRawWindowFromSession'
   | 'readProcessedWindowFromSession'
   | 'applyCalibrationToSession'
 >

@@ -2,8 +2,6 @@ import type {
   LumaRawExportCapability,
   LumaRawProcessedWindow,
   LumaRawProcessedWindowRequest,
-  LumaRawWindow,
-  LumaRawWindowRect,
 } from '../src/types'
 
 export type LumaRawNativeMetadata = {
@@ -93,7 +91,6 @@ export type LumaRawNativeProcessor = {
   readMetadata: () => LumaRawNativeMetadata
   extractThumbnail: () => LumaRawNativeThumbnail | undefined
   probeExportCapability?: () => LumaRawNativeExportCapability
-  readRawWindow?: (rect: LumaRawWindowRect) => LumaRawWindow
   readProcessedWindow?: (
     request: LumaRawProcessedWindowRequest,
   ) => LumaRawProcessedWindow

@@ -82,7 +82,7 @@ const ADMITTED = {
     cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
     phaseIsWindowLocal: false,
   },
-  windows: { librawProcessed: true, rawMosaic: false },
+  windows: { librawProcessed: true },
   diagnostics: {
     hasRawImage: true,
     hasColor3Image: false,
@@ -186,7 +186,7 @@ describe('inspectSource export capability', () => {
     expect(
       await inspectCapability({
         ...ADMITTED,
-        windows: { librawProcessed: false, rawMosaic: false },
+        windows: { librawProcessed: false },
       }),
     ).toEqual({
       supported: false,
@@ -203,7 +203,7 @@ describe('inspectSource export capability', () => {
         ...ADMITTED,
         supported: false,
         strategy: undefined,
-        windows: { librawProcessed: false, rawMosaic: false },
+        windows: { librawProcessed: false },
         reasons: ['libraw-cropbox-window-unavailable'],
       }),
     ).toEqual({

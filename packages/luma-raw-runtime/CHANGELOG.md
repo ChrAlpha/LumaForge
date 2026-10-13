@@ -13,6 +13,11 @@ predate this file.
   and `endProcessedWindowExportFromSession` worker requests, are removed. No
   native build bound them, so the worker answered begin without native work
   and end did nothing; read processed windows from the session directly.
+- The raw-mosaic window path is removed: `LumaRawDecodeSession.readRawWindow`,
+  the `readRawWindowFromSession` worker request, the `LumaRawWindow` type,
+  the `'raw-mosaic-window'` member of `LumaRawFullResInputStrategy`, and
+  `LumaRawExportWindowFacts.rawMosaic`. Full-resolution export reads only
+  LibRaw processed windows, and nothing read a raw mosaic window.
 
 ## 0.2.0 - 2026-10-12
 

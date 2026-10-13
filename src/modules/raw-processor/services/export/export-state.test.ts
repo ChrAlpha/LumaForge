@@ -121,7 +121,6 @@ function createCapability(
     },
     windows: {
       librawProcessed: true,
-      rawMosaic: true,
     },
     diagnostics: {
       hasRawImage: true,
@@ -489,7 +488,7 @@ describe('export state helpers', () => {
       toFullResCapabilityState(
         createCapability({
           supported: true,
-          windows: { librawProcessed: false, rawMosaic: true },
+          windows: { librawProcessed: false },
         }),
       ),
     ).toEqual({
@@ -535,8 +534,8 @@ describe('export state helpers', () => {
     ],
     ['a zero width', { ...createCapability(), width: 0 }, 'missing-dimensions'],
     [
-      'a raw-mosaic strategy',
-      { ...createCapability(), strategy: 'raw-mosaic-window' },
+      'a missing strategy',
+      { ...createCapability(), strategy: undefined },
       'processed-window-unavailable',
     ],
   ]
@@ -558,7 +557,7 @@ describe('export state helpers', () => {
         reasons: ['libraw-unpack-failed'],
         width: 0,
         color: undefined,
-        windows: { librawProcessed: false, rawMosaic: true },
+        windows: { librawProcessed: false },
       } as unknown as LumaRawExportCapability),
     ).toEqual({
       status: 'unsupported',
@@ -572,8 +571,8 @@ describe('export state helpers', () => {
         ...createCapability(),
         supported: false,
         reasons: ['processed-window-unavailable'],
-        strategy: 'raw-mosaic-window',
-        windows: { librawProcessed: false, rawMosaic: true },
+        strategy: undefined,
+        windows: { librawProcessed: false },
       }),
     ).toEqual({
       status: 'unsupported',

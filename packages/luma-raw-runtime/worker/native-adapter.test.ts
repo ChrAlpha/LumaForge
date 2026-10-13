@@ -15,7 +15,6 @@ type ProcessorValues = {
   metadata?: unknown
   thumbnail?: unknown
   exportCapability?: unknown
-  rawWindow?: unknown
   processedWindow?: unknown
   image?: unknown
   onDecodePreview?: (options?: LumaRawNativeDecodeOptions) => void
@@ -65,14 +64,6 @@ function createProcessor(values: ProcessorValues) {
       }
       probeExportCapability() {
         return values.exportCapability
-      }
-      readRawWindow(_rect: {
-        x: number
-        y: number
-        width: number
-        height: number
-      }) {
-        return values.rawWindow
       }
       readProcessedWindow(_request: {
         outputRect: {
@@ -173,7 +164,7 @@ function nativeSupportedCapability(
       white: 16383,
       perChannelBlack: [0, 0, 0, 0],
     },
-    windows: { librawProcessed: true, rawMosaic: true },
+    windows: { librawProcessed: true },
     diagnostics: {
       make: 'Nikon',
       model: 'Fixture',
@@ -306,7 +297,7 @@ describe('native-adapter', () => {
         cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
         phaseIsWindowLocal: false,
       },
-      windows: { librawProcessed: false, rawMosaic: false },
+      windows: { librawProcessed: false },
       diagnostics: {
         hasRawImage: false,
         hasColor3Image: false,
@@ -332,7 +323,7 @@ describe('native-adapter', () => {
         whiteLevel: 16383,
         orientation: { code: 1, supported: true },
         color: { ...NATIVE_COLOR_FACTS },
-        windows: { librawProcessed: false, rawMosaic: true },
+        windows: { librawProcessed: false },
         diagnostics: {
           hasRawImage: true,
           hasColor3Image: true,
@@ -346,7 +337,7 @@ describe('native-adapter', () => {
     expect(processor.probeExportCapability?.()).toMatchObject({
       supported: false,
       color: { ...NATIVE_COLOR_FACTS },
-      windows: { librawProcessed: false, rawMosaic: true },
+      windows: { librawProcessed: false },
       reasons: ['processed-window-unavailable'],
     })
   })
@@ -380,7 +371,7 @@ describe('native-adapter', () => {
           white: 16383,
           perChannelBlack: [512, 512, 512, 512],
         },
-        windows: { librawProcessed: false, rawMosaic: false },
+        windows: { librawProcessed: false },
         diagnostics: {
           hasRawImage: false,
           hasColor3Image: false,
@@ -395,7 +386,7 @@ describe('native-adapter', () => {
     expect(processor.probeExportCapability?.()).toMatchObject({
       supported: false,
       sensor: { layout: 'unknown' },
-      windows: { librawProcessed: false, rawMosaic: false },
+      windows: { librawProcessed: false },
       diagnostics: {
         hasRawImage: false,
         canRepeatCropProcess: false,
@@ -1052,7 +1043,7 @@ describe('native-adapter', () => {
         phaseIsWindowLocal: false,
       },
       levels: { black: 512, white: 16383 },
-      windows: { librawProcessed: false, rawMosaic: false },
+      windows: { librawProcessed: false },
       diagnostics: {
         hasRawImage: false,
         hasColor3Image: false,
@@ -1067,57 +1058,6 @@ describe('native-adapter', () => {
         'processed-window-unavailable',
       ],
     })
-  })
-
-  it('normalizes valid raw-window output', () => {
-    const pooled = new Uint16Array([9, 1, 2, 3, 4, 8]).subarray(1, 5)
-    const processor = createProcessor({
-      rawWindow: {
-        rect: { x: 1, y: 2, width: 2, height: 2 },
-        cfa: { pattern: 'x-trans', xPhase: 6, yPhase: -1 },
-        data: pooled,
-        blackLevel: 64,
-        whiteLevel: 4095,
-      },
-    })
-
-    const window = processor.readRawWindow?.({
-      x: 1,
-      y: 2,
-      width: 2,
-      height: 2,
-    })
-
-    expect(window).toEqual({
-      rect: { x: 1, y: 2, width: 2, height: 2 },
-      cfa: { pattern: 'x-trans', xPhase: 5, yPhase: 0 },
-      data: new Uint16Array([1, 2, 3, 4]),
-      blackLevel: 64,
-      whiteLevel: 4095,
-    })
-    expect(window?.data).not.toBe(pooled)
-  })
-
-  it('throws when raw-window access is unavailable or malformed', () => {
-    const unavailable = createFactoryWithHeap().createProcessor()
-    const malformed = createProcessor({
-      rawWindow: {
-        rect: { x: 0, y: 0, width: 2, height: 2 },
-        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-        data: new Uint16Array([1, 2, 3]),
-        blackLevel: 0,
-        whiteLevel: 1023,
-      },
-    })
-
-    expect(() =>
-      unavailable.readRawWindow?.({ x: 0, y: 0, width: 1, height: 1 }),
-    ).toThrow('Native RAW raw-window access is unavailable.')
-    expect(() =>
-      malformed.readRawWindow?.({ x: 0, y: 0, width: 2, height: 2 }),
-    ).toThrow(
-      'Native RAW raw-window data length does not match rect dimensions.',
-    )
   })
 
   it('normalizes JPEG thumbnail dimensions from metadata fallback fields', () => {

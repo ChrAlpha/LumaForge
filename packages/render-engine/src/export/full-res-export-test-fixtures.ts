@@ -58,7 +58,7 @@ export function makeCapability(
       phaseIsWindowLocal: false,
     },
     levels: overrides.levels,
-    windows: overrides.windows ?? { librawProcessed: true, rawMosaic: false },
+    windows: overrides.windows ?? { librawProcessed: true },
     diagnostics: overrides.diagnostics ?? {
       hasRawImage: true,
       hasColor3Image: false,
