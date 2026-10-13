@@ -50,13 +50,13 @@ export function useRawTransformFeature(
 ) {
   // The session owns the intent and what was accepted for it; this hook
   // owns only the frame, the worker and what is drawn over the photo.
-  const transformState = workflow.transform?.state ?? null
+  const transformState = workflow.transform.state
   const sourceId = transformState?.sourceId ?? null
   const intent = transformState?.intent ?? NO_SOURCE_INTENT
-  const dispatchRef = useRef(workflow.transform?.dispatch)
-  dispatchRef.current = workflow.transform?.dispatch
+  const dispatchRef = useRef(workflow.transform.dispatch)
+  dispatchRef.current = workflow.transform.dispatch
   const dispatch = useCallback(
-    (event: TransformEvent) => dispatchRef.current?.(event),
+    (event: TransformEvent) => dispatchRef.current(event),
     [],
   )
   const [observing, setObserving] = useState(false)

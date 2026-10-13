@@ -22,11 +22,7 @@ import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { CpuPreviewParams } from './useCpuPreview'
-import {
-  buildCpuPreviewGraph,
-  neutralFrameCacheKey,
-  useCpuPreview,
-} from './useCpuPreview'
+import { neutralFrameCacheKey, useCpuPreview } from './useCpuPreview'
 
 const exposure: RawRenderExposure = {
   ev: 0.5,
@@ -52,6 +48,22 @@ const baseParams: CpuPreviewParams = {
   userSaturation: 0,
   userVibrance: 0,
   selectiveColor: NEUTRAL_SELECTIVE_COLOR,
+}
+
+/** The graph the CPU preview worker is asked to draw for a variant. */
+function buildCpuPreviewGraph(
+  params: CpuPreviewParams,
+  variant: 'processed' | 'neutral',
+) {
+  const { graph } = resolvePreviewColorPlan({
+    intent: params,
+    lut: params.lut,
+    rawRenderExposure: params.rawRenderExposure,
+    executor: 'cpu',
+    variant,
+  })
+  if (!graph) throw new Error('Expected a CPU preview graph')
+  return graph
 }
 
 class FakeWorker {
@@ -180,7 +192,6 @@ describe('useCpuPreview helpers', () => {
 
   it('neutral zeros ALL look + tone but keeps render exposure', () => {
     const neutral = buildCpuPreviewGraph(baseParams, 'neutral')
-    expect('unsupportedReason' in neutral).toBe(false)
     // Equivalent to a fully-zeroed-edits processed graph with the same exposure.
     const zeroed = buildCpuPreviewGraph(
       {
@@ -208,16 +219,12 @@ describe('useCpuPreview helpers', () => {
 
   it('processed honors the look + tone params', () => {
     const processed = buildCpuPreviewGraph(baseParams, 'processed')
-    expect('unsupportedReason' in processed).toBe(false)
     // Differs from neutral because edits are applied.
     expect(processed).not.toEqual(buildCpuPreviewGraph(baseParams, 'neutral'))
   })
 
   it('passes color balance params to the processed CPU preview graph', () => {
     const graph = buildCpuPreviewGraph(baseParams, 'processed')
-
-    expect('unsupportedReason' in graph).toBe(false)
-    if ('unsupportedReason' in graph) throw new Error('Expected graph')
     expect(
       graph.steps.find((step) => step.kind === 'user-color-balance'),
     ).toMatchObject({
@@ -229,9 +236,6 @@ describe('useCpuPreview helpers', () => {
 
   it('resets color balance params in the neutral CPU preview graph', () => {
     const graph = buildCpuPreviewGraph(baseParams, 'neutral')
-
-    expect('unsupportedReason' in graph).toBe(false)
-    if ('unsupportedReason' in graph) throw new Error('Expected graph')
     expect(
       graph.steps.find((step) => step.kind === 'user-color-balance'),
     ).toMatchObject({

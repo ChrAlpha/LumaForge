@@ -96,7 +96,7 @@ describe('useRawWorkflowActions', () => {
   })
 
   it('runs scheduled toasts only while mounted', () => {
-    const queuedTasks: Array<() => void> = []
+    vi.useFakeTimers()
     const notify = vi.fn()
     const isMountedRef = { current: false }
     const { result } = renderHook(() =>
@@ -108,18 +108,20 @@ describe('useRawWorkflowActions', () => {
         setStatus: vi.fn(),
         setStats: vi.fn(),
         getStats: () => null,
-        postCommitTask: (task) => queuedTasks.push(task),
       }),
     )
 
     result.current.scheduleToast(notify)
-    queuedTasks.pop()?.()
+    vi.runAllTimers()
     expect(notify).not.toHaveBeenCalled()
 
     isMountedRef.current = true
     result.current.scheduleToast(notify)
-    queuedTasks.pop()?.()
+    // The toast waits for the task after the current commit.
+    expect(notify).not.toHaveBeenCalled()
+    vi.runAllTimers()
     expect(notify).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
   })
 
   it('dismisses errors and publishes only changed stat updates', () => {

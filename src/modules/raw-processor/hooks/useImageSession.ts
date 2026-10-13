@@ -26,12 +26,5 @@ export function useImageSession() {
     setSession(null)
   }, [setSession])
 
-  const setActiveStyle = useCallback(
-    (style: StyleAsset | null) => {
-      setSession((prev) => (prev ? { ...prev, activeStyle: style } : prev))
-    },
-    [setSession],
-  )
-
-  return { session, replaceFile, resetSession, setActiveStyle, setSession }
+  return { session, replaceFile, resetSession, setSession }
 }

@@ -21,6 +21,10 @@ const toastMock = vi.hoisted(() => ({
 
 vi.mock('sonner', () => toastMock)
 
+const loadMock = vi.hoisted(() => ({ orchestrateRawLoad: vi.fn() }))
+
+vi.mock('../../../services/ingest/orchestrate-raw-load', () => loadMock)
+
 function createColorIntent(): ReturnType<
   UseRawLoadActionInput['getColorIntent']
 > {
@@ -53,9 +57,7 @@ function createHostLeases() {
   return { leases, beginRuntimeSession }
 }
 
-function createInput(
-  orchestrateLoad = vi.fn().mockResolvedValue(undefined),
-): UseRawLoadActionInput {
+function createInput(): UseRawLoadActionInput {
   return {
     setStatus: vi.fn(),
     setError: vi.fn(),
@@ -66,27 +68,21 @@ function createInput(
     setColorIntent: vi.fn(),
     getSession: vi.fn(() => null),
     setSession: vi.fn(),
-    setDecodedImageVersion: vi.fn(),
-    setStats: vi.fn(),
     scheduleToast: vi.fn(),
     replaceFile: vi.fn(),
     abortRuntimeWork: vi.fn(),
     abortExportWork: vi.fn(),
     queueExportResultResourceDisposal: vi.fn(),
     revokeCurrentEmbeddedPreviewUrl: vi.fn(),
-    clearSessionEmbeddedPreviewUrl: vi.fn(),
     setDecodedImageRef: vi.fn(),
-    invalidateExportGraph: vi.fn(),
     yieldToPaint: vi.fn(),
     getPrewarmState: vi.fn<() => PrewarmState>(() => 'idle'),
     beginRuntimeSession: createHostLeases().beginRuntimeSession,
-    decodedImageRef: { current: null },
     embeddedPreviewUrlRef: { current: null },
     isMountedRef: { current: true },
     runtimeWorkSessionIdRef: { current: null },
     pendingLoadSessionIdRef: { current: null },
     previewCopyCanvasRef: { current: null },
-    orchestrateLoad,
   }
 }
 
@@ -102,7 +98,7 @@ describe('useRawLoadAction', () => {
       const scheduleToast = vi.fn((show: () => void) => {
         scheduled.push(show)
       })
-      const orchestrateLoad = vi.fn(
+      loadMock.orchestrateRawLoad.mockImplementation(
         async (_file: File, ctx: RawLoadContext) => {
           for (const notification of notifications) {
             ctx.services.notify(notification)
@@ -110,8 +106,7 @@ describe('useRawLoadAction', () => {
         },
       )
       const { result } = renderHook(
-        () =>
-          useRawLoadAction({ ...createInput(orchestrateLoad), scheduleToast }),
+        () => useRawLoadAction({ ...createInput(), scheduleToast }),
         { wrapper },
       )
 
@@ -220,7 +215,7 @@ describe('useRawLoadAction', () => {
       toastMock.toast.error.mockReset()
       const scheduled: Array<() => void> = []
       const reported = Promise.withResolvers<void>()
-      const orchestrateLoad = vi.fn(
+      loadMock.orchestrateRawLoad.mockImplementation(
         async (_file: File, ctx: RawLoadContext) => {
           await reported.promise
           ctx.services.notify({ kind: 'load-failed', message: null })
@@ -231,7 +226,7 @@ describe('useRawLoadAction', () => {
         const { result } = renderHook(
           () =>
             useRawLoadAction({
-              ...createInput(orchestrateLoad),
+              ...createInput(),
               scheduleToast: (show) => scheduled.push(show),
             }),
           { wrapper: I18nProvider },

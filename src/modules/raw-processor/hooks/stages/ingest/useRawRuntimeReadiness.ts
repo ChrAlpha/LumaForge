@@ -18,14 +18,10 @@ export function useRawRuntimeReadiness(host: RawRuntimeHost) {
   const runtimeReadinessState = deriveRawRuntimeReadiness(snapshot)
 
   const triggerRawRuntimePrewarm = useCallback(() => {
-    if (typeof window === 'undefined') return
-    if (import.meta.env.MODE === 'test') return
     void host.prewarm()
   }, [host])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (import.meta.env.MODE === 'test') return
     let cancelled = false
     const trigger = () => {
       if (cancelled) return

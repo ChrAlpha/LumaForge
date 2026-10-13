@@ -190,7 +190,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   viewRef.current = compareStage.view
   const {
     decodedFrame,
-    clearSessionEmbeddedPreviewUrl,
     revokeCurrentEmbeddedPreviewUrl,
     registerCurrentPreviewPipelineForEvacuation,
     setOriginalPreviewPipeline,
@@ -212,7 +211,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setProgress,
     setError,
     scheduleToast,
-    toast,
   })
   const previewStage = {
     decodedFrame,
@@ -237,7 +235,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     setColorIntent,
     getSession: getCurrentSession,
     setSession,
-    setDecodedImageVersion,
     setStats,
     scheduleToast,
     replaceFile,
@@ -245,9 +242,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     abortExportWork,
     queueExportResultResourceDisposal,
     revokeCurrentEmbeddedPreviewUrl,
-    clearSessionEmbeddedPreviewUrl,
     setDecodedImageRef,
-    invalidateExportGraph,
     yieldToPaint,
     getPrewarmState: rawRuntimeHost.getPrewarmState,
     beginRuntimeSession: rawRuntimeHost.beginSession,

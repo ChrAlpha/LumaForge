@@ -2,7 +2,6 @@ import type {
   ColorGraphIntent,
   LUTData,
   RawRenderExposure,
-  SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
 import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type {
@@ -58,7 +57,7 @@ export function neutralFrameCacheKey(
  * the user's tone and color stay. The neutral variant draws no look and
  * neutral user color. Both keep the RAW render exposure.
  */
-export function resolveCpuPreviewPlan(
+function resolveCpuPreviewPlan(
   params: CpuPreviewParams,
   variant: CpuPreviewVariant,
 ): PreviewColorPlan {
@@ -69,20 +68,6 @@ export function resolveCpuPreviewPlan(
     executor: 'cpu',
     variant,
   })
-}
-
-/** The colour graph the CPU preview worker draws for a variant. */
-export function buildCpuPreviewGraph(
-  params: CpuPreviewParams,
-  variant: CpuPreviewVariant,
-): SupportedExportColorGraphDescriptor | { unsupportedReason: string } {
-  try {
-    const { graph } = resolveCpuPreviewPlan(params, variant)
-    if (graph) return graph
-  } catch (error) {
-    if (error instanceof Error) return { unsupportedReason: error.message }
-  }
-  return { unsupportedReason: 'The CPU preview resolved no color graph.' }
 }
 
 // ---------------------------------------------------------------------------

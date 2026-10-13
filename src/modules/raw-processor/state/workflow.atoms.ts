@@ -14,7 +14,6 @@ import {
   areSamePipelineFacts,
   toPipelineFacts,
 } from '../services/preview/pipeline-stats'
-import { resetDetachedPreviewView } from './preview-view.atoms'
 import { getCurrentSession } from './session.atoms'
 
 /**
@@ -22,7 +21,7 @@ import { getCurrentSession } from './session.atoms'
  * session owns the look. It holds no view state; the session, or the detached
  * sample view before one exists, owns view mode and compare split.
  */
-const DEFAULT_COLOR_INTENT: ColorGraphIntent = Object.freeze({
+export const DEFAULT_COLOR_INTENT: ColorGraphIntent = Object.freeze({
   ...NEUTRAL_USER_COLOR_INTENT,
   styleKind: 'none',
   builtinPreset: null,
@@ -100,18 +99,4 @@ const pipelineFactsAtom = selectAtom(
 
 export function usePipelineFactsValue(): PipelineFacts | null {
   return useAtomValue(pipelineFactsAtom, { store: jotaiStore })
-}
-
-export function resetProcessorState(): void {
-  setProcessingStatus('idle')
-  setErrorMessage(null)
-  setProgress(0)
-  setPipelineStats(null)
-}
-
-export function resetToDefaults(): void {
-  resetProcessorState()
-  setLut(null)
-  setProcessingParams({ ...DEFAULT_COLOR_INTENT })
-  resetDetachedPreviewView()
 }

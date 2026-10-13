@@ -30,7 +30,6 @@ type UseRawIngestStageInput = {
   /** Reads the session store; the load publishes and checks through it. */
   getSession: () => ImageSession | null
   setSession: Dispatch<SetStateAction<ImageSession | null>>
-  setDecodedImageVersion: Dispatch<SetStateAction<number>>
   setStats: (stats: PipelineStats | null) => void
   scheduleToast: (notify: () => void) => void
   /** Publishes the new source's session to the store before it returns. */
@@ -47,12 +46,10 @@ type UseRawIngestStageInput = {
     reason?: ExportResourceCleanupReason,
   ) => void
   revokeCurrentEmbeddedPreviewUrl: (ownerSessionId?: string | null) => void
-  clearSessionEmbeddedPreviewUrl: (sessionId?: string) => void
   setDecodedImageRef: (
     decoded: DecodedImage | null,
     options?: { preserveExportResult?: boolean },
   ) => void
-  invalidateExportGraph: () => void
   yieldToPaint: () => Promise<void>
   getPrewarmState: () => PrewarmState
   /** The workflow host owns each load's native session and cancellation. */

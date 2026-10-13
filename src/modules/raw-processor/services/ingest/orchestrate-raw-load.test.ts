@@ -134,8 +134,6 @@ function buildContext(
       setColorIntent: vi.fn(),
       getSession: vi.fn(store.get),
       setSession: vi.fn(store.set),
-      setDecodedImageVersion: vi.fn(),
-      setStats: vi.fn(),
     },
     services: {
       notify: vi.fn(),
@@ -149,9 +147,7 @@ function buildContext(
       abortExportWork: vi.fn(() => order.push('abortExportWork')),
       queueExportResultResourceDisposal: vi.fn(),
       revokeCurrentEmbeddedPreviewUrl: vi.fn(),
-      clearSessionEmbeddedPreviewUrl: vi.fn(),
       setDecodedImageRef: vi.fn(),
-      invalidateExportGraph: vi.fn(),
       yieldToPaint: vi.fn(async () => {
         order.push('yieldToPaint')
         await hooks.yieldToPaint()
@@ -160,7 +156,6 @@ function buildContext(
       beginRuntimeSession: host.beginRuntimeSession,
     },
     refs: {
-      decodedImageRef: { current: null },
       embeddedPreviewUrlRef: { current: null },
       isMountedRef: { current: true },
       runtimeWorkSessionIdRef: { current: null },

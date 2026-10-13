@@ -18,7 +18,7 @@ import type { useRawPreviewStage } from './stages/preview/useRawPreviewStage'
 import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
 type BuildRawWorkflowReturnInput = {
-  transform?: UseRawWorkflowReturn['transform']
+  transform: UseRawWorkflowReturn['transform']
   workflowState: {
     status: ProcessingStatus
     error: string | null
@@ -116,7 +116,6 @@ export function buildRawWorkflowReturn({
     resetCompareView: compareStage.resetCompareView,
     setPreviewViewport: compareStage.setPreviewViewport,
     clearLUT: lookStage.clearLUT,
-    setParams: lookStage.setParams,
     setToneParams: lookStage.setToneParams,
     resetTone: lookStage.resetTone,
     setColorParams: lookStage.setColorParams,

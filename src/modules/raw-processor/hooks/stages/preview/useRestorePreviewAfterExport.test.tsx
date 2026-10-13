@@ -17,6 +17,15 @@ import { captureExportResultIdentity } from '../../../services/export/export-res
 import type { SetImageSession } from './useRestorePreviewAfterExport'
 import { useRestorePreviewAfterExport } from './useRestorePreviewAfterExport'
 
+const toastMock = vi.hoisted(() => ({ toast: { error: vi.fn() } }))
+
+vi.mock('sonner', () => toastMock)
+
+function freshToastError() {
+  toastMock.toast.error.mockReset()
+  return toastMock.toast.error
+}
+
 const ACTIVE_PLAN: NonNullable<ImageSession['exportState']['activePlan']> = {
   profileName: 'desktop-fast',
   preferredRows: 128,
@@ -204,7 +213,6 @@ function renderRestore(input: {
   setStatus?: ReturnType<typeof vi.fn>
   setProgress?: ReturnType<typeof vi.fn>
   setDecodedImageRef?: ReturnType<typeof vi.fn>
-  toastError?: ReturnType<typeof vi.fn>
   wrapper?: ComponentType<PropsWithChildren>
 }) {
   const scheduleToast = vi.fn((notify: () => void) => notify())
@@ -225,7 +233,6 @@ function renderRestore(input: {
         setSession: applySessionUpdate(input.sessionRef),
         setDecodedImageRef: input.setDecodedImageRef ?? vi.fn(),
         scheduleToast,
-        toast: { error: input.toastError ?? vi.fn() },
       }),
     { wrapper: input.wrapper },
   )
@@ -397,7 +404,7 @@ describe('useRestorePreviewAfterExport', () => {
     )
     const setDecodedImageRef = vi.fn()
     const setStatus = vi.fn()
-    const toastError = vi.fn()
+    const toastError = freshToastError()
     const sessionRef = { current: createSession() as ImageSession | null }
     const runtimeWorkSessionIdRef = { current: null as string | null }
     const { result } = renderRestore({
@@ -406,7 +413,6 @@ describe('useRestorePreviewAfterExport', () => {
       hostSessions,
       setDecodedImageRef,
       setStatus,
-      toastError,
     })
 
     const restore = result.current.restorePreviewAfterExport()
@@ -444,13 +450,12 @@ describe('useRestorePreviewAfterExport', () => {
     const runtimeSession = createRuntimeSession(() => quickDecode.promise)
     const hostSessions = createHostSessions(async () => runtimeSession)
     const setDecodedImageRef = vi.fn()
-    const toastError = vi.fn()
+    const toastError = freshToastError()
     const sessionRef = { current: createSession() as ImageSession | null }
     const { result } = renderRestore({
       sessionRef,
       hostSessions,
       setDecodedImageRef,
-      toastError,
     })
 
     const restore = result.current.restorePreviewAfterExport()
@@ -475,9 +480,9 @@ describe('useRestorePreviewAfterExport', () => {
       createDecodedImage(),
     )
     const hostSessions = createHostSessions(() => lateOpen.promise)
-    const toastError = vi.fn()
+    const toastError = freshToastError()
     const sessionRef = { current: createSession() as ImageSession | null }
-    const { result } = renderRestore({ sessionRef, hostSessions, toastError })
+    const { result } = renderRestore({ sessionRef, hostSessions })
 
     const restore = result.current.restorePreviewAfterExport()
     await vi.waitFor(() => {
@@ -500,7 +505,7 @@ describe('useRestorePreviewAfterExport', () => {
     const setStatus = vi.fn()
     const setProgress = vi.fn()
     const setDecodedImageRef = vi.fn()
-    const toastError = vi.fn()
+    const toastError = freshToastError()
     const session = createSession()
     const sessionRef = { current: session as ImageSession | null }
     const runtimeWorkSessionIdRef = { current: null as string | null }
@@ -511,7 +516,6 @@ describe('useRestorePreviewAfterExport', () => {
       setStatus,
       setProgress,
       setDecodedImageRef,
-      toastError,
     })
 
     await result.current.restorePreviewAfterExport()
@@ -536,11 +540,10 @@ describe('useRestorePreviewAfterExport', () => {
     const hostSessions = createHostSessions(async () => {
       throw new Error('open failed')
     })
-    const toastError = vi.fn()
+    const toastError = freshToastError()
     const { result } = renderRestore({
       sessionRef: { current: createSession() },
       hostSessions,
-      toastError,
     })
 
     await result.current.restorePreviewAfterExport()
@@ -554,11 +557,10 @@ describe('useRestorePreviewAfterExport', () => {
     const hostSessions = createHostSessions(() =>
       Promise.reject(NON_ERROR_REJECTION),
     )
-    const toastError = vi.fn()
+    const toastError = freshToastError()
     const { result } = renderRestore({
       sessionRef: { current: createSession() },
       hostSessions,
-      toastError,
     })
 
     await result.current.restorePreviewAfterExport()
@@ -576,13 +578,12 @@ describe('useRestorePreviewAfterExport', () => {
 
     it('reports a failed restore with the runtime detail as given', async () => {
       localStorage.setItem('lumaforge.locale', 'zh-CN')
-      const toastError = vi.fn()
+      const toastError = freshToastError()
       const { result } = renderRestore({
         sessionRef: { current: createSession() },
         hostSessions: createHostSessions(async () => {
           throw new Error('open failed')
         }),
-        toastError,
         wrapper: I18nProvider,
       })
 
@@ -595,13 +596,12 @@ describe('useRestorePreviewAfterExport', () => {
 
     it('describes a failed restore that carried no message of its own', async () => {
       localStorage.setItem('lumaforge.locale', 'zh-CN')
-      const toastError = vi.fn()
+      const toastError = freshToastError()
       const { result } = renderRestore({
         sessionRef: { current: createSession() },
         hostSessions: createHostSessions(() =>
           Promise.reject(NON_ERROR_REJECTION),
         ),
-        toastError,
         wrapper: I18nProvider,
       })
 
@@ -616,12 +616,11 @@ describe('useRestorePreviewAfterExport', () => {
       const decode = deferred<DecodedImage>()
       const runtimeSession = createRuntimeSession(() => decode.promise)
       const hostSessions = createHostSessions(async () => runtimeSession)
-      const toastError = vi.fn()
+      const toastError = freshToastError()
       await act(() => i18n.changeLanguage('en'))
       const { result } = renderRestore({
         sessionRef: { current: createSession() },
         hostSessions,
-        toastError,
         wrapper: I18nProvider,
       })
 
@@ -645,11 +644,10 @@ describe('useRestorePreviewAfterExport', () => {
       const decode = deferred<DecodedImage>()
       const runtimeSession = createRuntimeSession(() => decode.promise)
       const hostSessions = createHostSessions(async () => runtimeSession)
-      const toastError = vi.fn()
+      const toastError = freshToastError()
       const { result } = renderRestore({
         sessionRef: { current: createSession() },
         hostSessions,
-        toastError,
         wrapper: I18nProvider,
       })
 
@@ -710,7 +708,7 @@ describe('useRestorePreviewAfterExport', () => {
     const setStatus = vi.fn()
     const setProgress = vi.fn()
     const setDecodedImageRef = vi.fn()
-    const toastError = vi.fn()
+    const toastError = freshToastError()
     const sessionRef = { current: createSession() as ImageSession | null }
     const runtimeWorkSessionIdRef = { current: null as string | null }
     const { result } = renderRestore({
@@ -720,7 +718,6 @@ describe('useRestorePreviewAfterExport', () => {
       setStatus,
       setProgress,
       setDecodedImageRef,
-      toastError,
     })
     const restoreFromReleasedRender = result.current.restorePreviewAfterExport
 

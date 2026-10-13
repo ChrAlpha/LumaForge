@@ -31,9 +31,6 @@ type UseRawPreviewStageInput = {
   setProgress: (progress: number) => void
   setError: (error: string | null) => void
   scheduleToast: (notify: () => void) => void
-  toast: {
-    error: (message: string, options?: { description?: string }) => void
-  }
 }
 
 /** A frame belongs to the session the store holds when it is accepted. */
@@ -57,17 +54,15 @@ export function useRawPreviewStage({
   setProgress,
   setError,
   scheduleToast,
-  toast,
 }: UseRawPreviewStageInput) {
   // Embedded URL cleanup and restore read the session in the store when they
   // run, so a load or reset landing before this stage rerenders is the source
   // they act on.
-  const { clearSessionEmbeddedPreviewUrl, revokeCurrentEmbeddedPreviewUrl } =
-    useEmbeddedPreviewUrlLifecycle({
-      embeddedPreviewUrlRef,
-      getSession: getCurrentSession,
-      setSession,
-    })
+  const { revokeCurrentEmbeddedPreviewUrl } = useEmbeddedPreviewUrlLifecycle({
+    embeddedPreviewUrlRef,
+    getSession: getCurrentSession,
+    setSession,
+  })
   const {
     registerCurrentPreviewPipelineForEvacuation,
     setOriginalPreviewPipeline,
@@ -96,7 +91,6 @@ export function useRawPreviewStage({
     setSession,
     setDecodedImageRef,
     scheduleToast,
-    toast,
   })
 
   return {
@@ -105,7 +99,6 @@ export function useRawPreviewStage({
      * histogram receives; null while no decoded frame is live.
      */
     decodedFrame,
-    clearSessionEmbeddedPreviewUrl,
     revokeCurrentEmbeddedPreviewUrl,
     registerCurrentPreviewPipelineForEvacuation,
     setOriginalPreviewPipeline,

@@ -45,7 +45,7 @@ export interface UseRawWorkflowReturn {
    * null without a source. `dispatch` applies one event to that source's
    * state, and an event raised for any other source changes nothing.
    */
-  transform?: {
+  transform: {
     state: TransformState | null
     dispatch: (event: TransformEvent) => void
   }
@@ -128,8 +128,6 @@ export interface UseRawWorkflowReturn {
   resetCompareView: () => void
   setPreviewViewport: (viewport: PreviewViewport) => void
   clearLUT: () => void
-  /** Write color fields; the view has its own setters. */
-  setParams: (params: Partial<ColorGraphIntent>) => void
   setToneParams: (
     params: Partial<
       Pick<

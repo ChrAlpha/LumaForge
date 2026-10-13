@@ -16,7 +16,6 @@ import {
   derivePreviewGpuBudget,
   detectPreviewGpuCapabilitySnapshot,
 } from '~/lib/runtime/preview-gpu-budget'
-import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { DisplaySource, ImageSession } from '../../model/session'
 import type { RetainedSessionState } from '../../model/session-factory'
@@ -96,8 +95,6 @@ export interface RawLoadContext {
         | null
         | ((prev: ImageSession | null) => ImageSession | null),
     ) => void
-    setDecodedImageVersion: (value: number | ((prev: number) => number)) => void
-    setStats: (stats: PipelineStats | null) => void
   }
   services: {
     notify: (notification: RawLoadNotification) => void
@@ -110,9 +107,7 @@ export interface RawLoadContext {
     abortExportWork: () => void
     queueExportResultResourceDisposal: () => void
     revokeCurrentEmbeddedPreviewUrl: () => void
-    clearSessionEmbeddedPreviewUrl: (id?: string) => void
     setDecodedImageRef: (next: DecodedImage | null) => void
-    invalidateExportGraph: () => void
     yieldToPaint: () => Promise<void>
     getPrewarmState: () => PrewarmState
     /**
@@ -123,7 +118,6 @@ export interface RawLoadContext {
     beginRuntimeSession: () => RawRuntimeSessionLease
   }
   refs: {
-    decodedImageRef: { current: DecodedImage | null }
     embeddedPreviewUrlRef: { current: string | null }
     isMountedRef: { current: boolean }
     runtimeWorkSessionIdRef: { current: string | null }

@@ -1,6 +1,7 @@
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
 import { useCallback, useLayoutEffect, useRef } from 'react'
+import { toast } from 'sonner'
 
 import { useI18n } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
@@ -42,9 +43,6 @@ type UseRestorePreviewAfterExportInput = {
     options?: { preserveExportResult?: boolean },
   ) => void
   scheduleToast: (notify: () => void) => void
-  toast: {
-    error: (message: string, options?: { description?: string }) => void
-  }
 }
 
 /**
@@ -88,7 +86,6 @@ export function useRestorePreviewAfterExport({
   setSession,
   setDecodedImageRef,
   scheduleToast,
-  toast,
 }: UseRestorePreviewAfterExportInput) {
   const { t: renderedTranslate } = useI18n()
   // Copy is built when the failure is reported, after the decode, so it is
@@ -222,7 +219,6 @@ export function useRestorePreviewAfterExport({
     setProgress,
     setSession,
     setStatus,
-    toast,
   ])
 
   return { restorePreviewAfterExport }

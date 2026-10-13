@@ -12,11 +12,8 @@ import {
   DEFAULT_LUMAFORGE_PROFILE_SOURCE,
   ONLINE_LUT_SOURCE_STORAGE_KEY,
 } from '../services/look/online-lut-sources'
-import {
-  getLut,
-  getProcessingParams,
-  resetToDefaults,
-} from '../state/workflow.atoms'
+import { getLut, getProcessingParams } from '../state/workflow.atoms'
+import { resetToDefaults } from '../test-support/workflow-store'
 
 const fetchMock = vi.fn<typeof fetch>()
 const mockedToastSuccess = vi.mocked(toast.success)

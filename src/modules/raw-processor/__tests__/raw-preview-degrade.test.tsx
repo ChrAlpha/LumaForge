@@ -24,11 +24,8 @@ import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 import { useCpuPreview } from '../hooks/useCpuPreview'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
 import { RawProcessorView } from '../RawProcessorView'
-import {
-  getLut,
-  getProcessingParams,
-  resetToDefaults,
-} from '../state/workflow.atoms'
+import { getLut, getProcessingParams } from '../state/workflow.atoms'
+import { resetToDefaults } from '../test-support/workflow-store'
 
 const gpu = vi.hoisted(() => ({
   executors: [] as Array<{
@@ -78,8 +75,9 @@ vi.mock('~/lib/webgpu/pipeline', () => ({
 }))
 
 // The real workflow, with a decoded image standing in for a finished decode.
-vi.mock('../hooks', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../hooks')>()
+vi.mock('../hooks/useRawWorkflow', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../hooks/useRawWorkflow')>()
   return {
     ...actual,
     useRawWorkflow: () => {

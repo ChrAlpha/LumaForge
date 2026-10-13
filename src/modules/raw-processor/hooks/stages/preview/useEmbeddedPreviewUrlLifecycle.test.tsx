@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ImageSession } from '../../../model/session'
 import { createTransformState } from '../../../model/session-factory'
@@ -61,49 +61,35 @@ function applySessionUpdate(currentSessionRef: {
   }
 }
 
+const revokeObjectURL = vi.fn()
+
+function revokedUrls() {
+  return revokeObjectURL.mock.calls.map(([url]) => url)
+}
+
 describe('useEmbeddedPreviewUrlLifecycle', () => {
-  it('clears embedded preview URL state only for the matching session', () => {
-    const sessionRef = { current: createSession('active-session') }
-    const embeddedPreviewUrlRef = { current: 'blob:embedded-preview' }
-    const setSession = applySessionUpdate(sessionRef)
-
-    const { result } = renderHook(() =>
-      useEmbeddedPreviewUrlLifecycle({
-        embeddedPreviewUrlRef,
-        getSession: () => sessionRef.current,
-        setSession,
-      }),
+  beforeEach(() => {
+    revokeObjectURL.mockReset()
+    vi.stubGlobal(
+      'URL',
+      Object.assign(class extends URL {}, { revokeObjectURL }),
     )
+  })
 
-    act(() => {
-      result.current.clearSessionEmbeddedPreviewUrl('other-session')
-    })
-    expect(sessionRef.current?.previewBundle.embeddedPreview).toMatchObject({
-      objectUrl: 'blob:embedded-preview',
-    })
-
-    act(() => {
-      result.current.clearSessionEmbeddedPreviewUrl('active-session')
-    })
-
-    expect(sessionRef.current?.previewBundle.embeddedPreview).toEqual({
-      status: 'idle',
-    })
-    expect(sessionRef.current?.previewBundle.displaySource).toBe('none')
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('revokes current embedded preview URLs once and clears refs plus session URL', () => {
     const sessionRef = { current: createSession() }
     const embeddedPreviewUrlRef = { current: 'blob:embedded-preview' }
     const setSession = applySessionUpdate(sessionRef)
-    const revokeObjectUrls = vi.fn()
 
     const { result } = renderHook(() =>
       useEmbeddedPreviewUrlLifecycle({
         embeddedPreviewUrlRef,
         getSession: () => sessionRef.current,
         setSession,
-        revokeObjectUrls,
       }),
     )
 
@@ -111,9 +97,7 @@ describe('useEmbeddedPreviewUrlLifecycle', () => {
       result.current.revokeCurrentEmbeddedPreviewUrl()
     })
 
-    expect(revokeObjectUrls).toHaveBeenCalledWith(
-      new Set(['blob:embedded-preview']),
-    )
+    expect(revokedUrls()).toEqual(['blob:embedded-preview'])
     expect(embeddedPreviewUrlRef.current).toBeNull()
     expect(sessionRef.current?.previewBundle.embeddedPreview).toEqual({
       status: 'idle',
@@ -129,14 +113,12 @@ describe('useEmbeddedPreviewUrlLifecycle', () => {
     }
     const embeddedPreviewUrlRef = { current: null as string | null }
     const setSession = applySessionUpdate(sessionRef)
-    const revokeObjectUrls = vi.fn()
 
     const { result } = renderHook(() =>
       useEmbeddedPreviewUrlLifecycle({
         embeddedPreviewUrlRef,
         getSession: () => sessionRef.current,
         setSession,
-        revokeObjectUrls,
       }),
     )
     const revokeFromEarlierRender =
@@ -150,10 +132,7 @@ describe('useEmbeddedPreviewUrlLifecycle', () => {
       revokeFromEarlierRender()
     })
 
-    expect(revokeObjectUrls).toHaveBeenCalledTimes(1)
-    expect(revokeObjectUrls).toHaveBeenCalledWith(
-      new Set(['blob:replacement-preview']),
-    )
+    expect(revokedUrls()).toEqual(['blob:replacement-preview'])
     expect(sessionRef.current?.id).toBe('replacement-session')
     expect(sessionRef.current?.previewBundle.embeddedPreview).toEqual({
       status: 'idle',
@@ -165,14 +144,12 @@ describe('useEmbeddedPreviewUrlLifecycle', () => {
       current: 'blob:pending-preview' as string | null,
     }
     const setSession = vi.fn()
-    const revokeObjectUrls = vi.fn()
 
     const { result } = renderHook(() =>
       useEmbeddedPreviewUrlLifecycle({
         embeddedPreviewUrlRef,
         getSession: () => null,
         setSession,
-        revokeObjectUrls,
       }),
     )
 
@@ -180,9 +157,7 @@ describe('useEmbeddedPreviewUrlLifecycle', () => {
       result.current.revokeCurrentEmbeddedPreviewUrl()
     })
 
-    expect(revokeObjectUrls).toHaveBeenCalledWith(
-      new Set(['blob:pending-preview']),
-    )
+    expect(revokedUrls()).toEqual(['blob:pending-preview'])
     expect(embeddedPreviewUrlRef.current).toBeNull()
     expect(setSession).not.toHaveBeenCalled()
   })

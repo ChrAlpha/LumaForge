@@ -13,7 +13,7 @@ import { RawProcessorView } from '../RawProcessorView'
 const mockUseRawWorkflow = vi.hoisted(() => vi.fn())
 const mockUseCapabilityGate = vi.hoisted(() => vi.fn())
 
-vi.mock('../hooks', () => ({
+vi.mock('../hooks/useRawWorkflow', () => ({
   useRawWorkflow: mockUseRawWorkflow,
 }))
 
@@ -90,7 +90,6 @@ function rawProcessorViewState(
     setCompareSplit: vi.fn(),
     resetCompareView: vi.fn(),
     clearLUT: vi.fn(),
-    setParams: vi.fn(),
     setToneParams: vi.fn(),
     setColorParams: vi.fn(),
     resetTone: vi.fn(),
@@ -111,6 +110,7 @@ function rawProcessorViewState(
     updateStats: vi.fn(),
     pipelineRef: { current: null },
     rawRuntimeHost: createRawRuntimeHost(),
+    transform: { state: null, dispatch: vi.fn() },
     ...overrides,
     previewViewport: overrides.previewViewport ?? {
       zoom: 1,

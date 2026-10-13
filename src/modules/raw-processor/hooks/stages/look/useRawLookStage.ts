@@ -158,25 +158,13 @@ export function useRawLookStage({
         setSession: setCurrentSession,
         setColorIntent,
       },
-      refs: {
-        lutDataRef,
-      },
       services: {
         notify,
         invalidateExportGraph,
-        setLutDataRef,
         canApplyLoadedLut,
       },
     }),
-    [
-      canApplyLoadedLut,
-      invalidateExportGraph,
-      lutDataRef,
-      notify,
-      setColorIntent,
-      setLut,
-      setLutDataRef,
-    ],
+    [canApplyLoadedLut, invalidateExportGraph, notify, setColorIntent, setLut],
   )
 
   const fileLoadRef = useRef<AbortController | null>(null)
@@ -303,16 +291,7 @@ export function useRawLookStage({
     setLutDataRef,
   ])
 
-  const {
-    setParams: setProcessingParams,
-    setToneParams,
-    resetTone,
-    setColorParams,
-    resetColor,
-    setSelectiveColorBand,
-    resetSelectiveColor,
-  } = useRawAdjustmentActions({
-    params,
+  const adjustmentActions = useRawAdjustmentActions({
     setColorIntent,
     invalidateExportGraph,
   })
@@ -329,12 +308,6 @@ export function useRawLookStage({
     selectLUTProfile,
     setIntensity,
     clearLUT,
-    setParams: setProcessingParams,
-    setToneParams,
-    resetTone,
-    setColorParams,
-    resetColor,
-    setSelectiveColorBand,
-    resetSelectiveColor,
+    ...adjustmentActions,
   }
 }

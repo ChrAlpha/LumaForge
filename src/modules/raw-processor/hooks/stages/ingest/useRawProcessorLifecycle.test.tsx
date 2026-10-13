@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
 
@@ -8,6 +8,10 @@ import { createTransformState } from '../../../model/session-factory'
 import { useEmbeddedPreviewUrlLifecycle } from '../preview/useEmbeddedPreviewUrlLifecycle'
 import type { SetImageSession } from './useRawProcessorLifecycle'
 import { useRawProcessorLifecycle } from './useRawProcessorLifecycle'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 function createSession(id = 'pending-session'): ImageSession {
   return {
@@ -337,7 +341,11 @@ describe('useRawProcessorLifecycle', () => {
       const store = { session: refs.session }
       const getSession = () => store.session
       const setSession = applySessionUpdate(store)
-      const revokeObjectUrls = vi.fn()
+      const revokeObjectURL = vi.fn()
+      vi.stubGlobal(
+        'URL',
+        Object.assign(class extends URL {}, { revokeObjectURL }),
+      )
       const embeddedPreviewUrlRef = { current: refs.embeddedPreviewUrl }
       const ownedSessionIdRef = { current: refs.ownedSessionId }
       const decodedImageRef = {
@@ -350,7 +358,6 @@ describe('useRawProcessorLifecycle', () => {
             embeddedPreviewUrlRef,
             getSession,
             setSession,
-            revokeObjectUrls,
           })
         useRawProcessorLifecycle({
           isMountedRef: { current: false },
@@ -372,9 +379,7 @@ describe('useRawProcessorLifecycle', () => {
         })
       })
       const revokedUrls = () =>
-        revokeObjectUrls.mock.calls.flatMap(([urls]) =>
-          Array.from(urls as Iterable<string>),
-        )
+        revokeObjectURL.mock.calls.map(([url]) => url as string)
       return {
         ...rendered,
         store,

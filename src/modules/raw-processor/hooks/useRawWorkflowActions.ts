@@ -10,10 +10,6 @@ import {
   differsOnlyInTiming,
 } from '../services/preview/pipeline-stats'
 
-function enqueuePostCommitTask(task: () => void) {
-  setTimeout(task, 0)
-}
-
 /**
  * A preview render reports fresh timings on every frame. The pipeline facts
  * (sizes, formats, the LUT path) publish at once; a change in timings alone
@@ -31,7 +27,6 @@ type UseRawWorkflowActionsInput = {
   setStats: Dispatch<SetStateAction<PipelineStats | null>>
   /** The stats as the store holds them now. */
   getStats: () => PipelineStats | null
-  postCommitTask?: (task: () => void) => void
 }
 
 export function useRawWorkflowActions({
@@ -42,7 +37,6 @@ export function useRawWorkflowActions({
   setStatus,
   setStats,
   getStats,
-  postCommitTask = enqueuePostCommitTask,
 }: UseRawWorkflowActionsInput) {
   // The view as last rendered, read at call time. The color intent has no
   // port here: readers take it from the store, so a view port can never hand
@@ -56,15 +50,11 @@ export function useRawWorkflowActions({
     (notify: () => void) => {
       // Sonner uses flushSync internally; move RAW-workspace toasts out of the
       // current commit so dev-only tooling does not crash on the same render pass.
-      postCommitTask(() => {
-        if (!isMountedRef.current) {
-          return
-        }
-
-        notify()
-      })
+      setTimeout(() => {
+        if (isMountedRef.current) notify()
+      }, 0)
     },
-    [isMountedRef, postCommitTask],
+    [isMountedRef],
   )
 
   const dismissError = useCallback(() => {

@@ -15,7 +15,6 @@ export type UseRawLoadActionInput = RawLoadContext['atoms'] &
   RawLoadContext['refs'] & {
     /** Runs a toast after the current commit, and only while mounted. */
     scheduleToast: (show: () => void) => void
-    orchestrateLoad?: typeof orchestrateRawLoad
   }
 
 /**
@@ -64,27 +63,21 @@ export function useRawLoadAction({
   setColorIntent,
   getSession,
   setSession,
-  setDecodedImageVersion,
-  setStats,
   scheduleToast,
   replaceFile,
   abortRuntimeWork,
   abortExportWork,
   queueExportResultResourceDisposal,
   revokeCurrentEmbeddedPreviewUrl,
-  clearSessionEmbeddedPreviewUrl,
   setDecodedImageRef,
-  invalidateExportGraph,
   yieldToPaint,
   getPrewarmState,
   beginRuntimeSession,
-  decodedImageRef,
   embeddedPreviewUrlRef,
   isMountedRef,
   runtimeWorkSessionIdRef,
   pendingLoadSessionIdRef,
   previewCopyCanvasRef,
-  orchestrateLoad = orchestrateRawLoad,
 }: UseRawLoadActionInput) {
   const { t: renderedTranslate } = useI18n()
   // Copy is built when a notification is, usually after an await, so it is
@@ -114,8 +107,6 @@ export function useRawLoadAction({
         setColorIntent,
         getSession,
         setSession,
-        setDecodedImageVersion,
-        setStats,
       },
       services: {
         notify,
@@ -124,15 +115,12 @@ export function useRawLoadAction({
         abortExportWork,
         queueExportResultResourceDisposal,
         revokeCurrentEmbeddedPreviewUrl,
-        clearSessionEmbeddedPreviewUrl,
         setDecodedImageRef,
-        invalidateExportGraph,
         yieldToPaint,
         getPrewarmState,
         beginRuntimeSession,
       },
       refs: {
-        decodedImageRef,
         embeddedPreviewUrlRef,
         isMountedRef,
         runtimeWorkSessionIdRef,
@@ -144,15 +132,12 @@ export function useRawLoadAction({
       abortExportWork,
       abortRuntimeWork,
       beginRuntimeSession,
-      clearSessionEmbeddedPreviewUrl,
-      decodedImageRef,
       embeddedPreviewUrlRef,
       getColorIntent,
       getLut,
       getPrewarmState,
       getSession,
       getView,
-      invalidateExportGraph,
       isMountedRef,
       pendingLoadSessionIdRef,
       previewCopyCanvasRef,
@@ -163,19 +148,17 @@ export function useRawLoadAction({
       runtimeWorkSessionIdRef,
       setColorIntent,
       setDecodedImageRef,
-      setDecodedImageVersion,
       setError,
       setProgress,
       setSession,
-      setStats,
       setStatus,
       yieldToPaint,
     ],
   )
 
   const loadFile = useCallback(
-    (file: File) => orchestrateLoad(file, rawLoadCtx),
-    [orchestrateLoad, rawLoadCtx],
+    (file: File) => orchestrateRawLoad(file, rawLoadCtx),
+    [rawLoadCtx],
   )
 
   return { loadFile }

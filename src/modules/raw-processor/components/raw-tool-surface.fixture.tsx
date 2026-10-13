@@ -20,12 +20,12 @@ import { DEFAULT_LOOK_INTENSITY } from '../services/look/style-system'
 import { setCurrentSession } from '../state/session.atoms'
 import {
   getProcessingParams,
-  resetToDefaults,
   setLut,
   setProcessingParams,
   setProcessingStatus,
   setProgress,
 } from '../state/workflow.atoms'
+import { resetToDefaults } from '../test-support/workflow-store'
 import type { ColorValue } from './color-fields'
 import { COLOR_NEUTRAL } from './color-fields'
 import { RawToolSurface } from './RawToolSurface'

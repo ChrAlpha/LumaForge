@@ -27,9 +27,9 @@ import {
 import { RawTransformOverlay } from './components/RawTransformOverlay'
 import { RawWorkflowToolProvider } from './components/RawWorkflowToolProvider'
 import { WorkspaceHeader } from './components/WorkspaceHeader'
-import { useRawWorkflow } from './hooks'
 import { useRawProcessorViewController } from './hooks/useRawProcessorViewController'
 import { useRawTransformFeature } from './hooks/useRawTransformFeature'
+import { useRawWorkflow } from './hooks/useRawWorkflow'
 import {
   isPreviewHistogramShown,
   mobileHistogramShownAtom,

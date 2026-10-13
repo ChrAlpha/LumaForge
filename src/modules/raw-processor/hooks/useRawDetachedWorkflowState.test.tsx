@@ -12,7 +12,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_PREVIEW_VIEW } from '~/lib/preview/preview-view'
 
 import { getDetachedPreviewView } from '../state/preview-view.atoms'
-import { getProcessingParams, resetToDefaults } from '../state/workflow.atoms'
+import { getProcessingParams } from '../state/workflow.atoms'
+import { resetToDefaults } from '../test-support/workflow-store'
 import { useRawDetachedWorkflowState } from './useRawDetachedWorkflowState'
 
 describe('useRawDetachedWorkflowState', () => {

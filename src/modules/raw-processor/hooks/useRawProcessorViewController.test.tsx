@@ -78,7 +78,6 @@ describe('useRawProcessorViewController', () => {
 
   afterEach(() => {
     vi.useRealTimers()
-    vi.unstubAllEnvs()
   })
 
   it('mounts only the Replace RAW picker, and a picked file loads as a new photo', () => {
@@ -178,10 +177,9 @@ describe('useRawProcessorViewController', () => {
   })
 
   describe('runtime readiness', () => {
-    // Outside tests the view warms the RAW engine once the page is idle.
+    // The view warms the RAW engine once the page is idle.
     beforeEach(() => {
       vi.useFakeTimers()
-      vi.stubEnv('MODE', 'production')
     })
 
     function renderController(workflow: UseRawWorkflowReturn) {

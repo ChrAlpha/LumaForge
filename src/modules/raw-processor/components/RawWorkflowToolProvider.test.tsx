@@ -45,12 +45,12 @@ import { setCurrentSession } from '../state/session.atoms'
 import { toolCardOpenAtom } from '../state/tool-card.atoms'
 import {
   getProcessingParams,
-  resetToDefaults,
   setPipelineStats,
   setProcessingParams,
   setProcessingStatus,
   setProgress,
 } from '../state/workflow.atoms'
+import { resetToDefaults } from '../test-support/workflow-store'
 import { COLOR_NEUTRAL } from './color-fields'
 import { RawToolSurface } from './RawToolSurface'
 import type { RawToolCommands } from './RawWorkflowContext'

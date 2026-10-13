@@ -19,7 +19,3 @@ export const [
   getDetachedPreviewView,
   setDetachedPreviewView,
 ] = createAtomHooks(baseDetachedPreviewViewAtom)
-
-export function resetDetachedPreviewView(): void {
-  setDetachedPreviewView(DEFAULT_PREVIEW_VIEW)
-}

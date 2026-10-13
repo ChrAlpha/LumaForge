@@ -84,10 +84,10 @@ function workflow(overrides: Partial<UseRawWorkflowReturn>) {
     progressRecoveryHint: null,
     restorePreviewAfterExport: vi.fn(),
     setCompareSplit: vi.fn(),
-    setParams: vi.fn(),
     setPreviewViewport: vi.fn(),
     setOriginalPreviewPipeline: vi.fn(),
     requestOriginalReferenceFallback: vi.fn(),
+    transform: { state: null, dispatch: vi.fn() },
     ...overrides,
   } as unknown as UseRawWorkflowReturn
 }
@@ -226,7 +226,6 @@ describe('rawPreviewStageSurface in GPU preview mode', () => {
 
     expect(current.setCompareSplit).toHaveBeenCalledOnce()
     expect(current.setCompareSplit).toHaveBeenLastCalledWith(0.64)
-    expect(current.setParams).not.toHaveBeenCalled()
   })
 
   it('hands the split handle the compare reset as its one reset transaction', () => {

@@ -13,12 +13,12 @@ import { setCurrentSession } from '../state/session.atoms'
 import {
   getEffectiveColorIntent,
   getProcessingParams,
-  resetToDefaults,
   setLut,
   setProcessingParams,
   setProcessingStatus,
   setProgress,
 } from '../state/workflow.atoms'
+import { resetToDefaults } from '../test-support/workflow-store'
 import {
   useRawToolAdjustments,
   useRawToolProgress,

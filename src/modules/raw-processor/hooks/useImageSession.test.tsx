@@ -87,12 +87,12 @@ describe('useImageSession store binding', () => {
 
   it('applies a hook update on top of an imperative write in the same tick', () => {
     const { result } = renderHook(() => useImageSession())
-    const { setActiveStyle, resetSession } = result.current
+    const { setSession, resetSession } = result.current
     const outside = createImageSession(rawFile('outside.ARW'))
 
     act(() => {
       setCurrentSession(outside)
-      setActiveStyle(LOOK)
+      setSession((prev) => (prev ? { ...prev, activeStyle: LOOK } : prev))
     })
 
     expect(getCurrentSession()).toMatchObject({

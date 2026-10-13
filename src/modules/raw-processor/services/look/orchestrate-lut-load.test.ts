@@ -68,15 +68,11 @@ function buildCtx() {
       setSession: vi.fn(),
       setColorIntent: vi.fn(),
     },
-    refs: {
-      lutDataRef: { current: null },
-    },
     services: {
       notify: (notification) => {
         notifications.push(notification)
       },
       invalidateExportGraph: vi.fn(),
-      setLutDataRef: vi.fn(),
       canApplyLoadedLut: vi.fn(() => true),
     },
   }

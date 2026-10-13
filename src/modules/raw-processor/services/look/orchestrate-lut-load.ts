@@ -2,7 +2,6 @@ import type {
   ColorGraphIntent,
   LUTColorProfile,
   LUTContractSelection,
-  LUTData,
   ParsedLUT,
 } from '@lumaforge/luma-color-runtime'
 import {
@@ -135,13 +134,9 @@ export interface LutLoadContext {
       value: ColorGraphIntent | ((prev: ColorGraphIntent) => ColorGraphIntent),
     ) => void
   }
-  refs: {
-    lutDataRef: { current: LUTData | null }
-  }
   services: {
     notify: (notification: LutNotification) => void
     invalidateExportGraph: () => void
-    setLutDataRef: (nextLutData: LUTData | null) => void
     /**
      * False while an export runs or holds the preview released: a LUT
      * landing then would cancel that export or discard its JPEG.

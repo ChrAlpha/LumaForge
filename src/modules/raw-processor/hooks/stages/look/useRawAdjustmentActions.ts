@@ -3,208 +3,122 @@ import type {
   HSLBandId,
   HSLBandShift,
 } from '@lumaforge/luma-color-runtime'
-import {
-  COLOR_GRAPH_INTENT_KEYS,
-  makeNeutralBand,
-  normalizeSelectiveColorParams,
-} from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_SELECTIVE_COLOR } from '@lumaforge/luma-color-runtime'
 import { useCallback } from 'react'
 
+import type { ColorValue } from '../../../components/color-fields'
+import type { ToneValue } from '../../../components/tone-fields'
 import { changesRenderGraphParams } from '../../../services/export/export-state'
 import {
   computeColorParams,
   computeToneParams,
 } from '../../../services/look/orchestrate-params-update'
 
-function makeNeutralSelectiveColor(): Record<HSLBandId, HSLBandShift> {
-  return {
-    red: makeNeutralBand(),
-    orange: makeNeutralBand(),
-    yellow: makeNeutralBand(),
-    green: makeNeutralBand(),
-    aqua: makeNeutralBand(),
-    blue: makeNeutralBand(),
-    purple: makeNeutralBand(),
-    magenta: makeNeutralBand(),
-  }
-}
-
 export type SetColorIntent = (
   value: ColorGraphIntent | ((prev: ColorGraphIntent) => ColorGraphIntent),
 ) => void
 
-/**
- * The color fields a patch carries, and only those. Fields are kept when the
- * patch owns them, so an explicit undefined still counts as written. Selective
- * color is stored as its normalized bands, so an undefined, partial or
- * out-of-range record lands complete, the same way the export change check
- * reads it.
- */
-function pickColorIntentPatch(
-  patch: Partial<ColorGraphIntent>,
-): Partial<ColorGraphIntent> {
-  const colorPatch: Record<string, unknown> = {}
-  for (const key of COLOR_GRAPH_INTENT_KEYS) {
-    if (!Object.hasOwn(patch, key)) continue
-    colorPatch[key] =
-      key === 'selectiveColor'
-        ? normalizeSelectiveColorParams({
-            selectiveColor: patch.selectiveColor,
-          })
-        : patch[key]
-  }
-  return colorPatch as Partial<ColorGraphIntent>
+const NEUTRAL_TONE: ToneValue = {
+  userExposureEv: 0,
+  userContrast: 0,
+  userHighlights: 0,
+  userShadows: 0,
+  userWhites: 0,
+  userBlacks: 0,
+}
+
+const NEUTRAL_COLOR: ColorValue = {
+  userTemperature: 0,
+  userTint: 0,
+  userSaturation: 0,
+  userVibrance: 0,
 }
 
 type UseRawAdjustmentActionsInput = {
-  /** The color the photo renders with now; decides whether a patch changes the graph. */
-  params: ColorGraphIntent
   setColorIntent: SetColorIntent
   invalidateExportGraph: () => void
 }
 
 export function useRawAdjustmentActions({
-  params,
   setColorIntent,
   invalidateExportGraph,
 }: UseRawAdjustmentActionsInput) {
-  // A color patch writes color only; any other field in the record is dropped.
-  const setProcessingParams = useCallback(
-    (newParams: Partial<ColorGraphIntent>) => {
-      const colorPatch = pickColorIntentPatch(newParams)
-      if (Object.keys(colorPatch).length === 0) {
-        return
-      }
-
-      const shouldClearExportResult = changesRenderGraphParams(
-        params,
-        colorPatch,
-      )
-      setColorIntent((prev) => ({ ...prev, ...colorPatch }))
-      if (shouldClearExportResult) {
-        invalidateExportGraph()
-      }
+  // Each edit is decided against the stored intent when it lands, and the
+  // export graph is invalidated only once the write has returned.
+  const update = useCallback(
+    (
+      change: (prev: ColorGraphIntent) => {
+        params: ColorGraphIntent
+        shouldClearExportResult: boolean
+      },
+    ) => {
+      let shouldClearExportResult = false
+      setColorIntent((prev) => {
+        const next = change(prev)
+        shouldClearExportResult = next.shouldClearExportResult
+        return next.params
+      })
+      if (shouldClearExportResult) invalidateExportGraph()
     },
-    [invalidateExportGraph, params, setColorIntent],
+    [invalidateExportGraph, setColorIntent],
   )
 
   const setToneParams = useCallback(
-    (
-      toneParams: Partial<
-        Pick<
-          ColorGraphIntent,
-          | 'userExposureEv'
-          | 'userContrast'
-          | 'userHighlights'
-          | 'userShadows'
-          | 'userWhites'
-          | 'userBlacks'
-        >
-      >,
-    ) => {
-      let shouldClearExportResult = false
-      setColorIntent((prev) => {
-        const { params: nextParams, shouldClearExportResult: shouldClear } =
-          computeToneParams(prev, toneParams)
-        shouldClearExportResult = shouldClear
-        return nextParams
-      })
-
-      if (shouldClearExportResult) {
-        invalidateExportGraph()
-      }
-    },
-    [invalidateExportGraph, setColorIntent],
+    (toneParams: Partial<ToneValue>) =>
+      update((prev) => computeToneParams(prev, toneParams)),
+    [update],
   )
-
-  const resetTone = useCallback(() => {
-    setProcessingParams({
-      userExposureEv: 0,
-      userContrast: 0,
-      userHighlights: 0,
-      userShadows: 0,
-      userWhites: 0,
-      userBlacks: 0,
-    })
-  }, [setProcessingParams])
+  const resetTone = useCallback(
+    () => setToneParams(NEUTRAL_TONE),
+    [setToneParams],
+  )
 
   const setColorParams = useCallback(
-    (
-      colorParams: Partial<
-        Pick<
-          ColorGraphIntent,
-          'userTemperature' | 'userTint' | 'userSaturation' | 'userVibrance'
-        >
-      >,
-    ) => {
-      let shouldClearExportResult = false
-      setColorIntent((prev) => {
-        const { params: nextParams, shouldClearExportResult: shouldClear } =
-          computeColorParams(prev, colorParams)
-        shouldClearExportResult = shouldClear
-        return nextParams
-      })
-
-      if (shouldClearExportResult) {
-        invalidateExportGraph()
-      }
-    },
-    [invalidateExportGraph, setColorIntent],
+    (colorParams: Partial<ColorValue>) =>
+      update((prev) => computeColorParams(prev, colorParams)),
+    [update],
+  )
+  const resetColor = useCallback(
+    () => setColorParams(NEUTRAL_COLOR),
+    [setColorParams],
   )
 
-  const resetColor = useCallback(() => {
-    setProcessingParams({
-      userTemperature: 0,
-      userTint: 0,
-      userSaturation: 0,
-      userVibrance: 0,
-    })
-  }, [setProcessingParams])
+  const setSelectiveColor = useCallback(
+    (
+      next: (
+        prev: ColorGraphIntent['selectiveColor'],
+      ) => ColorGraphIntent['selectiveColor'],
+    ) =>
+      update((prev) => {
+        const selectiveColor = next(prev.selectiveColor)
+        return {
+          params: { ...prev, selectiveColor },
+          shouldClearExportResult: changesRenderGraphParams(prev, {
+            selectiveColor,
+          }),
+        }
+      }),
+    [update],
+  )
 
   const setSelectiveColorBand = useCallback(
-    (band: HSLBandId, shift: Partial<HSLBandShift>) => {
-      let shouldClearExportResult = false
-      setColorIntent((prev) => {
-        const previousBand = prev.selectiveColor[band]
-        const nextBand: HSLBandShift = {
-          hue: shift.hue ?? previousBand.hue,
-          saturation: shift.saturation ?? previousBand.saturation,
-          lightness: shift.lightness ?? previousBand.lightness,
-        }
-        const nextSelectiveColor: Record<HSLBandId, HSLBandShift> = {
-          ...prev.selectiveColor,
-          [band]: nextBand,
-        }
-        shouldClearExportResult = changesRenderGraphParams(prev, {
-          selectiveColor: nextSelectiveColor,
-        })
-        return { ...prev, selectiveColor: nextSelectiveColor }
-      })
-
-      if (shouldClearExportResult) {
-        invalidateExportGraph()
-      }
-    },
-    [invalidateExportGraph, setColorIntent],
+    (band: HSLBandId, shift: Partial<HSLBandShift>) =>
+      setSelectiveColor((prev) => ({
+        ...prev,
+        [band]: {
+          hue: shift.hue ?? prev[band].hue,
+          saturation: shift.saturation ?? prev[band].saturation,
+          lightness: shift.lightness ?? prev[band].lightness,
+        },
+      })),
+    [setSelectiveColor],
+  )
+  const resetSelectiveColor = useCallback(
+    () => setSelectiveColor(() => NEUTRAL_SELECTIVE_COLOR),
+    [setSelectiveColor],
   )
 
-  const resetSelectiveColor = useCallback(() => {
-    let shouldClearExportResult = false
-    setColorIntent((prev) => {
-      const nextSelectiveColor = makeNeutralSelectiveColor()
-      shouldClearExportResult = changesRenderGraphParams(prev, {
-        selectiveColor: nextSelectiveColor,
-      })
-      return { ...prev, selectiveColor: nextSelectiveColor }
-    })
-
-    if (shouldClearExportResult) {
-      invalidateExportGraph()
-    }
-  }, [invalidateExportGraph, setColorIntent])
-
   return {
-    setParams: setProcessingParams,
     setToneParams,
     resetTone,
     setColorParams,

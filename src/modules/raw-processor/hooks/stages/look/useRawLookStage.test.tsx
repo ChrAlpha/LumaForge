@@ -724,7 +724,7 @@ describe('useRawLookStage', () => {
       harness.actions.setIntensity(0.37)
       expect(harness.readSession()?.activeStyle?.currentIntensity).toBe(0.37)
       harness.actions.setToneParams({ userShadows: 20 })
-      harness.actions.setParams({ userTint: 6 })
+      harness.actions.setColorParams({ userTint: 6 })
       harness.actions.clearLUT()
 
       const current = harness.readSession()
