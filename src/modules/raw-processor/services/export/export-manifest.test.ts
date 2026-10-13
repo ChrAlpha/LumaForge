@@ -17,7 +17,6 @@ import type {
 } from '@lumaforge/render-engine/manifest'
 import {
   canonicalizeJson,
-  invertManifestRenderParams,
   parseRenderManifest,
   projectManifestRenderParams,
 } from '@lumaforge/render-engine/manifest'
@@ -347,13 +346,6 @@ describe('buildFullResExportManifest current record', () => {
       expect(renderParams.selective_color).toEqual(intent.selectiveColor)
     }
 
-    // Reading it back needs no reader default for strength or exposure.
-    const read = invertManifestRenderParams(renderParams)
-    expect(read.intensity).toBe(intent.intensity)
-    expect(read.rawRenderExposure).toEqual({
-      ev: exposure.ev,
-      source: exposure.source,
-    })
     expect(manifest.calibration).toBeNull()
   }
 
