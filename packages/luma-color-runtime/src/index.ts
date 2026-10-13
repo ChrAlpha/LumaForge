@@ -27,7 +27,6 @@ export type { LumaColorSaturationParams } from './saturation'
 export {
   applyUserSaturationTo,
   normalizeSaturationParams,
-  resolveSaturationParams,
   SKIN_HUE_CENTER_DEG,
   SKIN_HUE_SIGMA_DEG,
   SKIN_PROTECT_STRENGTH,

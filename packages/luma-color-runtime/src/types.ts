@@ -16,7 +16,7 @@ export type BuiltinStylePreset =
   | 'fade'
   | 'mono'
 
-export interface LumaColorProcessingParams
+export interface ProcessingParams
   extends
     LumaColorToneParams,
     LumaColorBalanceParams,
@@ -26,8 +26,6 @@ export interface LumaColorProcessingParams
   styleKind: 'none' | 'builtin' | 'custom'
   builtinPreset: BuiltinStylePreset | null
 }
-
-export type ProcessingParams = LumaColorProcessingParams
 
 export type LUTContractResolution =
   | {
@@ -39,7 +37,7 @@ export type LUTContractResolution =
   | { kind: 'unknown' }
   | { kind: 'unsupported-output'; recommendations: LUTColorProfile[] }
 
-export interface LumaColorLUTData {
+export interface LUTData {
   size: number
   data: Float32Array
   domainMin: [number, number, number]
@@ -47,8 +45,6 @@ export interface LumaColorLUTData {
   title?: string
   profileResolution: LUTContractResolution
 }
-
-export type LUTData = LumaColorLUTData
 
 export interface LUTContractSelection {
   inputProfile?: string

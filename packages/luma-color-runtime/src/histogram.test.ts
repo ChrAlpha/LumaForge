@@ -37,8 +37,6 @@ function finishTwoPixelHistogram(source: Uint16Array) {
     width: 2,
     height: 1,
     totalRows: 1,
-    ownership: 'main-thread-chunked-no-copy',
-    inputByteLength: source.buffer.byteLength,
   })
 }
 
@@ -81,8 +79,6 @@ describe('createPreviewHistogramProcessor', () => {
       width: 1,
       height: 1,
       totalRows: 1,
-      ownership: 'main-thread-chunked-no-copy',
-      inputByteLength: 6,
     })
 
     const nonZeroLumaBins = Array.from(histogram.bins.luma.entries()).filter(
@@ -106,8 +102,6 @@ describe('createPreviewHistogramProcessor', () => {
       width: 1,
       height: 1,
       totalRows: 1,
-      ownership: 'main-thread-chunked-no-copy',
-      inputByteLength: 6,
     })
 
     const nonZeroLumaBins = Array.from(histogram.bins.luma.entries()).filter(
@@ -115,17 +109,6 @@ describe('createPreviewHistogramProcessor', () => {
     )
     expect(nonZeroLumaBins).toHaveLength(1)
     expect(nonZeroLumaBins[0]![0]).toBeGreaterThan(225)
-  })
-
-  it('never detaches or copies the source buffer in the default path', () => {
-    const source = new Uint16Array([0, 0, 0, 65535, 65535, 65535])
-    const beforeByteLength = source.buffer.byteLength
-    const histogram = finishTwoPixelHistogram(source)
-
-    expect(source.buffer.byteLength).toBe(beforeByteLength)
-    expect(histogram.diagnostics.ownership).toBe('main-thread-chunked-no-copy')
-    expect(histogram.diagnostics.copiedInputBytes).toBe(0)
-    expect(histogram.diagnostics.transferredInput).toBe(false)
   })
 
   it('rejects invalid row slices before accumulation', () => {
@@ -158,8 +141,6 @@ describe('createPreviewHistogramProcessor', () => {
         width: 2,
         height: 2,
         totalRows: 2,
-        ownership: 'main-thread-chunked-no-copy',
-        inputByteLength: 12,
       }),
     ).toThrow('PREVIEW_HISTOGRAM_ROW_COUNT_MISMATCH')
     expect(() =>
@@ -168,8 +149,6 @@ describe('createPreviewHistogramProcessor', () => {
         width: 2,
         height: 1,
         totalRows: 2,
-        ownership: 'main-thread-chunked-no-copy',
-        inputByteLength: 12,
       }),
     ).toThrow('PREVIEW_HISTOGRAM_INVALID_ROW_COUNT')
   })
@@ -189,8 +168,6 @@ describe('createPreviewHistogramProcessor', () => {
         width: 1,
         height: 1,
         totalRows: 1,
-        ownership: 'main-thread-chunked-no-copy',
-        inputByteLength: 12,
       }),
     ).toThrow('PREVIEW_HISTOGRAM_INVALID_WIDTH')
   })
@@ -208,8 +185,6 @@ describe('createPreviewHistogramProcessor', () => {
       width: 1,
       height: 1,
       totalRows: 1,
-      ownership: 'main-thread-chunked-no-copy',
-      inputByteLength: 6,
     })
     processor.processUint16Rows(new Uint16Array([65535, 65535, 65535]), 1)
     const second = processor.finish({
@@ -217,8 +192,6 @@ describe('createPreviewHistogramProcessor', () => {
       width: 1,
       height: 2,
       totalRows: 2,
-      ownership: 'main-thread-chunked-no-copy',
-      inputByteLength: 12,
     })
 
     expect(first.sampledPixels).toBe(1)

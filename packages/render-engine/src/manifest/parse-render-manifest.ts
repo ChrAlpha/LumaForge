@@ -25,6 +25,8 @@
 //   - Value ranges of the user color params are not checked here; replaying
 //     readers hold those to their own params schema.
 
+import { RAW_RENDER_EXPOSURE_SOURCES } from '@lumaforge/luma-color-runtime'
+
 import { invertMatrix, isMatrix3 } from '../export/geometry/matrix'
 import { computeManifestSha256 } from './canonicalize'
 import type { FieldRules, Fields } from './color-graph-validation'
@@ -60,12 +62,6 @@ const POLICY_KINDS = [
 ]
 const NATIVE_VARIANTS = ['desktop', 'low-memory']
 const LUT_RANGES = ['full', 'legal', 'unknown']
-const RAW_RENDER_EXPOSURE_SOURCES = [
-  'dng-baseline',
-  'image-statistics',
-  'identity',
-  'user',
-]
 const ENVIRONMENT_VERSIONS = [
   'render_engine',
   'luma_color_runtime',

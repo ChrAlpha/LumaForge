@@ -50,37 +50,6 @@ export const COLOR_GAMUT_SOURCE_URLS: Record<ColorGamutId, string> = {
   'aces-ap1': 'https://docs.acescentral.com/encodings/acescct/',
 }
 
-// Maps user-facing Log space names to their corresponding linear color gamuts
-export const LOG_TO_WORKING_SPACE: Record<string, string> = {
-  'F-Log': 'F-Gamut',
-  'F-Log2': 'F-Gamut',
-  'F-Log2C': 'F-Gamut C',
-  'V-Log': 'V-Gamut',
-  'N-Log': 'N-Gamut',
-  'L-Log': 'ITU-R BT.2020',
-  'Canon Log 2': 'Cinema Gamut',
-  'Canon Log 3': 'Cinema Gamut',
-  'S-Log3': 'S-Gamut3',
-  'S-Log3.Cine': 'S-Gamut3.Cine',
-  'Arri LogC3': 'ARRI Wide Gamut 3',
-  'Arri LogC4': 'ARRI Wide Gamut 4',
-  Log3G10: 'REDWideGamutRGB',
-}
-
-// Available log spaces for UI selection
-export const LOG_SPACES = Object.keys(LOG_TO_WORKING_SPACE)
-
-// ProPhoto RGB luminance coefficients
-export const PROPHOTO_LUMA_COEFFS = new Float32Array([
-  0.28804, 0.71187, 0.00009,
-])
-
-// sRGB luminance coefficients (Rec. 709)
-export const SRGB_LUMA_COEFFS = new Float32Array([0.2126, 0.7152, 0.0722])
-
-// Rec. 2020 luminance coefficients
-export const REC2020_LUMA_COEFFS = new Float32Array([0.2627, 0.678, 0.0593])
-
 /**
  * Color space primaries and white points for gamut transformations.
  * Using CIE 1931 xyY chromaticity coordinates.
@@ -432,21 +401,3 @@ export function resolveColorSpaceKey(nameOrId: string): string | undefined {
   if (COLOR_SPACES[nameOrId]) return nameOrId
   return COLOR_SPACE_ALIAS_TO_KEY.get(normalizeColorSpaceKey(nameOrId))
 }
-
-export function getColorSpaceDefinition(
-  nameOrId: string,
-): ColorSpaceDef | undefined {
-  const key = resolveColorSpaceKey(nameOrId)
-  return key ? COLOR_SPACES[key] : undefined
-}
-
-// Available metering modes
-export const METERING_MODES = [
-  'average',
-  'center-weighted',
-  'highlight-safe',
-  'hybrid',
-  'matrix',
-] as const
-
-export type MeteringMode = (typeof METERING_MODES)[number]

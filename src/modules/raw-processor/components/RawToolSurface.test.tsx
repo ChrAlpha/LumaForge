@@ -422,13 +422,6 @@ describe('rawToolSurface', () => {
           shadowLuma: 1,
           highlightLuma: 1,
         },
-        diagnostics: {
-          ownership: 'main-thread-chunked-no-copy',
-          copiedInputBytes: 0,
-          transferredInput: false,
-          inputByteLength: 12,
-          rowBandRows: 32,
-        },
       },
     })
 

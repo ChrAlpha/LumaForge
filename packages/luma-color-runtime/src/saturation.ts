@@ -42,18 +42,6 @@ export function normalizeSaturationParams(
   }
 }
 
-export function resolveSaturationParams(params: LumaColorSaturationParams): {
-  readonly saturation: number
-  readonly vibrance: number
-  readonly isIdentity: boolean
-} {
-  return {
-    saturation: params.userSaturation,
-    vibrance: params.userVibrance,
-    isIdentity: params.userSaturation === 0 && params.userVibrance === 0,
-  }
-}
-
 const RAD_TO_DEG = 180 / Math.PI
 
 function wrapHueDeg(h: number): number {

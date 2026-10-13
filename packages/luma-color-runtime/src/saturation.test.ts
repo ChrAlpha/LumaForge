@@ -4,7 +4,6 @@ import { linearProPhotoToOklab } from './oklab'
 import {
   applyUserSaturationTo,
   normalizeSaturationParams,
-  resolveSaturationParams,
   USER_SATURATION_MAX,
   USER_SATURATION_MIN,
   USER_VIBRANCE_MAX,
@@ -50,34 +49,6 @@ describe('saturation', () => {
     })
   })
 
-  describe('resolveSaturationParams', () => {
-    it('marks identity when both are zero', () => {
-      const resolved = resolveSaturationParams({
-        userSaturation: 0,
-        userVibrance: 0,
-      })
-      expect(resolved.isIdentity).toBe(true)
-      expect(resolved.saturation).toBe(0)
-      expect(resolved.vibrance).toBe(0)
-    })
-
-    it('marks non-identity when saturation is non-zero', () => {
-      const resolved = resolveSaturationParams({
-        userSaturation: 50,
-        userVibrance: 0,
-      })
-      expect(resolved.isIdentity).toBe(false)
-    })
-
-    it('marks non-identity when vibrance is non-zero', () => {
-      const resolved = resolveSaturationParams({
-        userSaturation: 0,
-        userVibrance: -30,
-      })
-      expect(resolved.isIdentity).toBe(false)
-    })
-  })
-
   it('exports range constants', () => {
     expect(USER_SATURATION_MIN).toBe(-100)
     expect(USER_SATURATION_MAX).toBe(100)
@@ -115,9 +86,9 @@ function oklabHueDeg(r: number, g: number, b: number): number {
 describe('applyUserSaturationTo', () => {
   it('identity: S=0 V=0 returns exact input', () => {
     const buf = new Float32Array([0.3, 0.18, 0.05])
-    const r0 = buf[0];
-      const g0 = buf[1];
-      const b0 = buf[2]
+    const r0 = buf[0]
+    const g0 = buf[1]
+    const b0 = buf[2]
     applyUserSaturationTo(buf, 0, 0, 0)
     expect(buf[0]).toBe(r0)
     expect(buf[1]).toBe(g0)
@@ -125,9 +96,9 @@ describe('applyUserSaturationTo', () => {
   })
 
   it('s=+100 approximately doubles chroma, preserves L', () => {
-    const r = 0.3;
-      const g = 0.18;
-      const b = 0.05
+    const r = 0.3
+    const g = 0.18
+    const b = 0.05
     const chromaBefore = oklabChroma(r, g, b)
     const lBefore = oklabL(r, g, b)
     const out = applyAndRead(r, g, b, 100, 0)
@@ -143,9 +114,9 @@ describe('applyUserSaturationTo', () => {
   })
 
   it('preserves hue when S > 0', () => {
-    const r = 0.3;
-      const g = 0.18;
-      const b = 0.05
+    const r = 0.3
+    const g = 0.18
+    const b = 0.05
     const hueBefore = oklabHueDeg(r, g, b)
     const out = applyAndRead(r, g, b, 50, 0)
     const hueAfter = oklabHueDeg(out.r, out.g, out.b)
@@ -205,9 +176,9 @@ describe('applyUserSaturationTo', () => {
   })
 
   it('s and V combine multiplicatively', () => {
-    const r = 0.2;
-      const g = 0.15;
-      const b = 0.1
+    const r = 0.2
+    const g = 0.15
+    const b = 0.1
     const satOnly = applyAndRead(r, g, b, 50, 0)
     const vibOnly = applyAndRead(r, g, b, 0, 50)
     const both = applyAndRead(r, g, b, 50, 50)

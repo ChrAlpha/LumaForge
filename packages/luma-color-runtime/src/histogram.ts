@@ -3,12 +3,6 @@ import { createRowBandProcessor } from './row-band-processor'
 
 export type PreviewHistogramSource = 'quick' | 'bounded-hq'
 
-export type HistogramInputOwnership =
-  | 'main-thread-chunked-no-copy'
-  | 'worker-transfer-detaches-source'
-  | 'worker-copy-accepted-under-budget'
-  | 'worker-shared-buffer-requires-coi'
-
 export type ReadyPreviewHistogram = {
   state: 'ready'
   source: PreviewHistogramSource
@@ -27,13 +21,6 @@ export type ReadyPreviewHistogram = {
     highlightAnyChannel: number
     shadowLuma: number
     highlightLuma: number
-  }
-  diagnostics: {
-    ownership: HistogramInputOwnership
-    copiedInputBytes: number
-    transferredInput: boolean
-    inputByteLength: number
-    rowBandRows: number
   }
 }
 
@@ -55,8 +42,6 @@ export type FinishPreviewHistogramInput = {
   width: number
   height: number
   totalRows: number
-  ownership: HistogramInputOwnership
-  inputByteLength: number
 }
 
 const CHANNELS_PER_PIXEL = 3
@@ -189,17 +174,6 @@ export function createPreviewHistogramProcessor({
         totalPixels,
         bins: copyBins(bins),
         clipping: copyClipping(clipping),
-        diagnostics: {
-          ownership: input.ownership,
-          copiedInputBytes:
-            input.ownership === 'worker-copy-accepted-under-budget'
-              ? input.inputByteLength
-              : 0,
-          transferredInput:
-            input.ownership === 'worker-transfer-detaches-source',
-          inputByteLength: input.inputByteLength,
-          rowBandRows,
-        },
       }
     },
   }

@@ -4,11 +4,15 @@ const TARGET_P95_LUMINANCE = 0.75
 const TARGET_P99_LUMINANCE = 0.65
 const MIN_USABLE_LUMINANCE = 1 / UINT16_MAX
 
+export const RAW_RENDER_EXPOSURE_SOURCES = [
+  'dng-baseline',
+  'image-statistics',
+  'identity',
+  'user',
+] as const
+
 export type RawRenderExposureSource =
-  | 'dng-baseline'
-  | 'image-statistics'
-  | 'identity'
-  | 'user'
+  (typeof RAW_RENDER_EXPOSURE_SOURCES)[number]
 
 export type RawRenderExposure = {
   ev: number

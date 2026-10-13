@@ -3,8 +3,6 @@
  * Implements transfer functions matching industry-standard log curves.
  */
 
-import { warn } from './warnings'
-
 /**
  * Log encoding function signature
  */
@@ -575,41 +573,6 @@ export function linearTransfer(value: number): number {
   return value
 }
 
-/**
- * Mapping of log space names to encode/decode functions
- */
-export const LOG_FUNCTIONS: Record<
-  string,
-  { encode: LogEncodingFn; decode: LogDecodingFn }
-> = {
-  'S-Log2': { encode: sLog2Encode, decode: sLog2Decode },
-  'S-Log3': { encode: sLog3Encode, decode: sLog3Decode },
-  'S-Log3.Cine': { encode: sLog3Encode, decode: sLog3Decode },
-  'V-Log': { encode: vLogEncode, decode: vLogDecode },
-  'F-Log': { encode: fLogEncode, decode: fLogDecode },
-  'F-Log2': { encode: fLog2Encode, decode: fLog2Decode },
-  'F-Log2C': { encode: fLog2Encode, decode: fLog2Decode },
-  'N-Log': { encode: nLogEncode, decode: nLogDecode },
-  'Canon Log': { encode: canonLogEncode, decode: canonLogDecode },
-  'Canon Log 2': { encode: canonLog2Encode, decode: canonLog2Decode },
-  'Canon Log 3': { encode: canonLog3Encode, decode: canonLog3Decode },
-  'Arri LogC3': { encode: logC3Encode, decode: logC3Decode },
-  'Arri LogC4': { encode: logC4Encode, decode: logC4Decode },
-  Log3G10: { encode: log3G10Encode, decode: log3G10Decode },
-  'Apple Log': { encode: appleLogEncode, decode: appleLogDecode },
-  'DJI D-Log': { encode: djiDLogEncode, decode: djiDLogDecode },
-  ACEScc: { encode: acesccEncode, decode: acesccDecode },
-  ACEScct: { encode: acescctEncode, decode: acescctDecode },
-  sRGB: { encode: srgbEncode, decode: srgbDecode },
-  'BT.709': { encode: bt709Encode, decode: bt709Decode },
-  'Rec.709': { encode: bt709Encode, decode: bt709Decode },
-  'Gamma 2.4': { encode: gamma24Encode, decode: gamma24Decode },
-  'Rec.709 Gamma 2.4': { encode: gamma24Encode, decode: gamma24Decode },
-  'L-Log': { encode: lLogEncode, decode: lLogDecode },
-  Linear: { encode: linearTransfer, decode: linearTransfer },
-  linear: { encode: linearTransfer, decode: linearTransfer },
-}
-
 function referencePoint(
   label: string,
   linear: number,
@@ -894,28 +857,4 @@ export const TRANSFER_FUNCTIONS: Record<
     source: TRANSFER_SOURCE_URLS.linear,
     referencePoints: [referencePoint('18% gray', 0.18, 0.18)],
   },
-}
-
-/**
- * Get log encoding function for a given log space
- */
-export function getLogEncoder(logSpace: string): LogEncodingFn {
-  const funcs = LOG_FUNCTIONS[logSpace]
-  if (!funcs) {
-    warn(`Unknown log space: ${logSpace}, using S-Log3`)
-    return sLog3Encode
-  }
-  return funcs.encode
-}
-
-/**
- * Get log decoding function for a given log space
- */
-export function getLogDecoder(logSpace: string): LogDecodingFn {
-  const funcs = LOG_FUNCTIONS[logSpace]
-  if (!funcs) {
-    warn(`Unknown log space: ${logSpace}, using S-Log3`)
-    return sLog3Decode
-  }
-  return funcs.decode
 }

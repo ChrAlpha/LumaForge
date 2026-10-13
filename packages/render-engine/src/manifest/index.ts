@@ -44,7 +44,6 @@ export type {
   NativeArtifactEnvironment,
   OutputIdentity,
   PolicyChoice,
-  RawRenderExposureSource,
   RenderEnvironment,
   RenderIdentity,
   RenderManifest,

@@ -37,13 +37,6 @@ function readyHistogram(
       shadowLuma: 21_019,
       highlightLuma: 10_048,
     },
-    diagnostics: {
-      ownership: 'main-thread-chunked-no-copy',
-      copiedInputBytes: 0,
-      transferredInput: false,
-      inputByteLength: 0,
-      rowBandRows: 32,
-    },
     ...overrides,
   }
 }

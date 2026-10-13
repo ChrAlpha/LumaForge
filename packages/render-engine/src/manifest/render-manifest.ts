@@ -4,6 +4,8 @@
 //   - RenderParams / PolicyChoice / RenderEnvironment
 //   Canonicalization + self-hash live in `./canonicalize.ts`.
 
+import type { RawRenderExposureSource } from '@lumaforge/luma-color-runtime'
+
 // ---------------------------------------------------------------------------
 // Identity sub-types
 // ---------------------------------------------------------------------------
@@ -126,12 +128,6 @@ export interface SaturationParams {
   readonly saturation: number
   readonly vibrance: number
 }
-
-export type RawRenderExposureSource =
-  | 'dng-baseline'
-  | 'image-statistics'
-  | 'identity'
-  | 'user'
 
 export interface SelectiveColorBandShift {
   readonly hue: number

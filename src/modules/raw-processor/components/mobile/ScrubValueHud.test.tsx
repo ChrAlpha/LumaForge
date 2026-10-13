@@ -33,13 +33,6 @@ function readyHistogram(): Extract<PreviewHistogramState, { state: 'ready' }> {
       shadowLuma: 0,
       highlightLuma: 0,
     },
-    diagnostics: {
-      ownership: 'main-thread-chunked-no-copy',
-      copiedInputBytes: 0,
-      transferredInput: false,
-      inputByteLength: 24,
-      rowBandRows: 32,
-    },
   } as Extract<PreviewHistogramState, { state: 'ready' }>
 }
 

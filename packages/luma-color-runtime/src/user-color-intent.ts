@@ -362,17 +362,3 @@ export function colorGraphIntentSignature(source: ColorGraphIntent): string {
     ...userColorIdentity(source),
   ])
 }
-
-export function userColorIntentEquals(
-  left: UserColorIntent,
-  right: UserColorIntent,
-): boolean {
-  return userColorIntentSignature(left) === userColorIntentSignature(right)
-}
-
-export function colorGraphIntentEquals(
-  left: ColorGraphIntent,
-  right: ColorGraphIntent,
-): boolean {
-  return colorGraphIntentSignature(left) === colorGraphIntentSignature(right)
-}

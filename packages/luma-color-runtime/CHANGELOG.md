@@ -17,6 +17,28 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
   alone. `code` is `incomplete-output` while the output still has to be
   stated and `unsupported-output` when the stated output cannot be encoded,
   so callers no longer read the cause from the message text.
+- Removed exports no consumer read: `LOG_TO_WORKING_SPACE`, `LOG_SPACES`,
+  `PROPHOTO_LUMA_COEFFS`, `SRGB_LUMA_COEFFS`, `REC2020_LUMA_COEFFS`,
+  `METERING_MODES`, `MeteringMode`, `getColorSpaceDefinition`, the LUT
+  lattice `read`, `resolveSaturationParams`, `userColorIntentEquals` and
+  `colorGraphIntentEquals` (compare `userColorIntentSignature` or
+  `colorGraphIntentSignature` instead), and the `ColorGraphStep`,
+  `ColorGraph` and `SupportedColorGraph` aliases of `ExportColorGraphStep`,
+  `ExportColorGraphDescriptor` and `SupportedExportColorGraphDescriptor`.
+- Removed `LOG_FUNCTIONS`, `getLogEncoder` and `getLogDecoder`, a second
+  name-keyed transfer registry that fell back to S-Log3 for an unknown name.
+  Resolve a transfer with `getTransferFunction`, which returns `undefined`
+  for a name it does not know, or read `TRANSFER_FUNCTIONS` by id.
+- `ReadyPreviewHistogram` no longer carries `diagnostics`, and
+  `FinishPreviewHistogramInput` no longer takes `ownership` or
+  `inputByteLength`; `HistogramInputOwnership` is removed. Nothing read them.
+- `LumaColorLUTData` and `LumaColorProcessingParams` are removed; they were
+  second names for `LUTData` and `ProcessingParams`.
+
+### Added
+
+- `RAW_RENDER_EXPOSURE_SOURCES`, the provenance values
+  `RawRenderExposureSource` names, for readers that validate a recorded one.
 
 ## 0.2.1 - 2026-10-12
 

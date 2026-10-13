@@ -180,11 +180,6 @@ describe('worker histogram executor', () => {
           height: size.height,
           totalPixels: size.width * size.height,
         })
-        expect(onWorker.diagnostics).toMatchObject({
-          ownership: 'worker-copy-accepted-under-budget',
-          transferredInput: false,
-        })
-        expect(onMain.diagnostics.ownership).toBe('main-thread-chunked-no-copy')
       }
     }
   })
@@ -264,7 +259,8 @@ describe('worker histogram executor', () => {
     const answered = runOn(executor, input)
     workers[0]!.emit('error', new Event('error') as never)
     const histogram = await answered
-    expect(histogram.diagnostics.ownership).toBe('main-thread-chunked-no-copy')
+    expect(fallbackRun).toHaveBeenCalledTimes(1)
+    expect(histogram.state).toBe('ready')
     expect(workers[0]!.terminated).toBe(true)
 
     await runOn(executor, input)

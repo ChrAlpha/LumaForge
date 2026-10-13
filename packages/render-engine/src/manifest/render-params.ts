@@ -7,6 +7,7 @@
 // identity and their own context, never from `render_params`.
 
 import type {
+  RawRenderExposureSource,
   UserColorIntent,
   UserColorIntentInput,
 } from '@lumaforge/luma-color-runtime'
@@ -15,11 +16,7 @@ import {
   normalizeUserColorIntent,
 } from '@lumaforge/luma-color-runtime'
 
-import type {
-  GeometryParams,
-  RawRenderExposureSource,
-  RenderParams,
-} from './render-manifest'
+import type { GeometryParams, RenderParams } from './render-manifest'
 
 /** The RAW render exposure a manifest records, with its provenance. */
 export interface RecordedRawRenderExposure {

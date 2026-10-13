@@ -105,8 +105,6 @@ export function createMainThreadHistogramExecutor(): HistogramExecutor {
             width: frame.width,
             height: frame.height,
             totalRows: sampler.sampledRows,
-            ownership: 'main-thread-chunked-no-copy',
-            inputByteLength: frame.data.buffer.byteLength,
           })
           handlers.onResult(histogram, busyMs)
         } catch (error) {

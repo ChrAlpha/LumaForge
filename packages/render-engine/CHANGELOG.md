@@ -17,6 +17,9 @@ predates this file.
   `nowMs` from `@lumaforge/render-engine/export`. They were internal steps of
   the full-resolution export, which no consumer called; export metrics still
   reach `onMetric` as `ExportPerfMetric` records.
+- `RawRenderExposureSource` is no longer exported from
+  `@lumaforge/render-engine` or `@lumaforge/render-engine/manifest`; import it
+  from `@lumaforge/luma-color-runtime`, which defines it.
 - `@lumaforge/render-engine/export` no longer re-exports `applyMatrix`,
   `invertMatrix`, `isMatrix3` and `Matrix3`; import them from
   `@lumaforge/render-engine/geometry`.

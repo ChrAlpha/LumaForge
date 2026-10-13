@@ -17,11 +17,8 @@ import {
   djiDLogEncode,
   gamma24Decode,
   gamma24Encode,
-  getLogDecoder,
-  getLogEncoder,
   lLogDecode,
   lLogEncode,
-  LOG_FUNCTIONS,
   log3G10Encode,
   logC4Decode,
   logC4Encode,
@@ -88,19 +85,6 @@ describe('transfer function registry', () => {
     expect(TRANSFER_FUNCTIONS['f-log2c'].decode).toBe(
       TRANSFER_FUNCTIONS['f-log2'].decode,
     )
-    expect(LOG_FUNCTIONS['F-Log2C'].encode(0.18)).toBeCloseTo(
-      LOG_FUNCTIONS['F-Log2'].encode(0.18),
-      8,
-    )
-  })
-
-  it('returns no-op encode and decode helpers for linear aliases', () => {
-    for (const alias of ['Linear', 'linear']) {
-      expect(getLogEncoder(alias)(0.42)).toBe(0.42)
-      expect(getLogDecoder(alias)(0.42)).toBe(0.42)
-      expect(LOG_FUNCTIONS[alias].encode(0.18)).toBe(0.18)
-      expect(LOG_FUNCTIONS[alias].decode(0.18)).toBe(0.18)
-    }
   })
 
   it('round trips practical scene-linear reference values for every Tier 1 transfer', () => {

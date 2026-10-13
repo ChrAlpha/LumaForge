@@ -1,6 +1,6 @@
 import { resolveLUTProfile } from './lut-profile-resolution'
 import type { LUTColorProfile } from './registry'
-import type { LumaColorLUTData, LUTContractResolution } from './types'
+import type { LUTContractResolution, LUTData } from './types'
 
 export interface ParsedLUT {
   title: string
@@ -211,7 +211,7 @@ export function parseCubeLUT(
   }
 }
 
-export function toLUTData(parsed: ParsedLUT): LumaColorLUTData {
+export function toLUTData(parsed: ParsedLUT): LUTData {
   return {
     size: parsed.size,
     data: parsed.data,

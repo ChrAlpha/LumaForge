@@ -130,8 +130,6 @@ export function createHistogramWorkerRuntime(
           width,
           height,
           totalRows: sampler.sampledRows,
-          ownership: 'worker-copy-accepted-under-budget',
-          inputByteLength: current.rows.byteLength,
         }),
       })
     } catch (error) {

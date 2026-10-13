@@ -395,7 +395,3 @@ export function resolveExportColorGraph(
     ],
   }
 }
-
-export type ColorGraphStep = ExportColorGraphStep
-export type ColorGraph = ExportColorGraphDescriptor
-export type SupportedColorGraph = SupportedExportColorGraphDescriptor

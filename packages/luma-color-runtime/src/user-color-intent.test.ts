@@ -34,7 +34,6 @@ import type {
 import {
   BUILTIN_STYLE_PRESETS,
   COLOR_GRAPH_INTENT_KEYS,
-  colorGraphIntentEquals,
   colorGraphIntentSignature,
   HSL_SHIFT_BOUNDS,
   LOOK_SELECTION_KEYS,
@@ -49,7 +48,6 @@ import {
   USER_COLOR_FIELD_BOUNDS,
   USER_COLOR_INTENT_KEYS,
   USER_COLOR_SCALAR_KEYS,
-  userColorIntentEquals,
   userColorIntentSignature,
 } from './user-color-intent'
 
@@ -88,6 +86,14 @@ function bands(
       overrides[id] ?? { hue: 0, saturation: 0, lightness: 0 },
     ]),
   ) as Record<HSLBandId, HSLBandShift>
+}
+
+function sameColorGraphIntent(left: ColorGraphIntent, right: ColorGraphIntent) {
+  return colorGraphIntentSignature(left) === colorGraphIntentSignature(right)
+}
+
+function sameUserColorIntent(left: UserColorIntent, right: UserColorIntent) {
+  return userColorIntentSignature(left) === userColorIntentSignature(right)
 }
 
 /** Input the types would reject, as persisted or hand-written data can be. */
@@ -421,7 +427,7 @@ describe('normalize', () => {
 
     expect(app.intensity).toBe(0.7)
     expect(cli.intensity).toBe(1)
-    expect(colorGraphIntentEquals(app, cli)).toBe(false)
+    expect(sameColorGraphIntent(app, cli)).toBe(false)
     for (const intensity of [0, 0.37, 1]) {
       expect(
         normalizeLookSelection({ ...lookWithoutStrength, intensity }, APP_ENTRY)
@@ -568,7 +574,7 @@ describe('identity', () => {
     expect(colorGraphIntentSignature(reordered)).toBe(
       colorGraphIntentSignature(base),
     )
-    expect(colorGraphIntentEquals(reordered, base)).toBe(true)
+    expect(sameColorGraphIntent(reordered, base)).toBe(true)
     expect(userColorIntentSignature(reordered)).toBe(
       userColorIntentSignature(base),
     )
@@ -587,9 +593,9 @@ describe('identity', () => {
     expect(colorGraphIntentSignature(decorated)).toBe(
       colorGraphIntentSignature(base),
     )
-    expect(colorGraphIntentEquals(decorated, base)).toBe(true)
+    expect(sameColorGraphIntent(decorated, base)).toBe(true)
     const otherView = { ...decorated, viewMode: 'processed', compareSplit: 0 }
-    expect(colorGraphIntentEquals(otherView, decorated)).toBe(true)
+    expect(sameColorGraphIntent(otherView, decorated)).toBe(true)
   })
 
   it('shares one identity for every spelling of neutral HSL', () => {
@@ -610,17 +616,17 @@ describe('identity', () => {
     const expected = colorGraphIntentSignature(neutral)
 
     expect(colorGraphIntentSignature(explicit)).toBe(expected)
-    expect(colorGraphIntentEquals(explicit, neutral)).toBe(true)
-    expect(userColorIntentEquals(explicit, neutral)).toBe(true)
+    expect(sameColorGraphIntent(explicit, neutral)).toBe(true)
+    expect(sameUserColorIntent(explicit, neutral)).toBe(true)
     for (const input of inputs) {
       const normalized = normalizeColorGraphIntent(input, APP_ENTRY)
       expect(isSelectiveColorNeutral(normalized.selectiveColor)).toBe(true)
       expect(colorGraphIntentSignature(normalized)).toBe(expected)
       expect(
-        userColorIntentEquals(normalizeUserColorIntent(input), neutral),
+        sameUserColorIntent(normalizeUserColorIntent(input), neutral),
       ).toBe(true)
     }
-    expect(colorGraphIntentEquals(EDITED, neutral)).toBe(false)
+    expect(sameColorGraphIntent(EDITED, neutral)).toBe(false)
   })
 
   it('changes with any continuous look strength', () => {
@@ -631,7 +637,7 @@ describe('identity', () => {
 
     expect(new Set(signatures).size).toBe(strengths.length)
     expect(
-      colorGraphIntentEquals(
+      sameColorGraphIntent(
         { ...base, intensity: 0.37 },
         { ...base, intensity: 0.4 },
       ),
@@ -653,8 +659,8 @@ describe('identity', () => {
 
     for (const key of USER_COLOR_SCALAR_KEYS) {
       const changed = { ...base, [key]: base[key] + 1 }
-      expect(colorGraphIntentEquals(changed, base)).toBe(false)
-      expect(userColorIntentEquals(changed, base)).toBe(false)
+      expect(sameColorGraphIntent(changed, base)).toBe(false)
+      expect(sameUserColorIntent(changed, base)).toBe(false)
     }
     for (const id of HSL_BAND_IDS) {
       for (const axis of HSL_SHIFT_AXES) {
@@ -665,7 +671,7 @@ describe('identity', () => {
             [id]: { ...base.selectiveColor[id], [axis]: 1 },
           },
         }
-        expect(colorGraphIntentEquals(shifted, base)).toBe(false)
+        expect(sameColorGraphIntent(shifted, base)).toBe(false)
       }
     }
   })
@@ -681,8 +687,8 @@ describe('identity', () => {
     expect(userColorIntentSignature(otherLook)).toBe(
       userColorIntentSignature(base),
     )
-    expect(userColorIntentEquals(otherLook, base)).toBe(true)
-    expect(colorGraphIntentEquals(otherLook, base)).toBe(false)
+    expect(sameUserColorIntent(otherLook, base)).toBe(true)
+    expect(sameColorGraphIntent(otherLook, base)).toBe(false)
   })
 
   it('follows what the export graph reads', () => {
@@ -809,12 +815,6 @@ describe('executor boundary', () => {
     expectTypeOf(colorGraphIntentSignature)
       .parameter(0)
       .toEqualTypeOf<ColorGraphIntent>()
-    expectTypeOf(userColorIntentEquals).parameters.toEqualTypeOf<
-      [UserColorIntent, UserColorIntent]
-    >()
-    expectTypeOf(colorGraphIntentEquals).parameters.toEqualTypeOf<
-      [ColorGraphIntent, ColorGraphIntent]
-    >()
     expectTypeOf<ExportColorGraphInput['selectiveColor']>().toEqualTypeOf<
       UserColorIntent['selectiveColor']
     >()

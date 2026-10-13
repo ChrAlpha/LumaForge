@@ -2,17 +2,6 @@ export function clamp01(value: number) {
   return Math.min(1, Math.max(0, value))
 }
 
-export function read(
-  data: Float32Array,
-  size: number,
-  r: number,
-  g: number,
-  b: number,
-): [number, number, number] {
-  const index = ((b * size + g) * size + r) * 3
-  return [data[index] ?? 0, data[index + 1] ?? 0, data[index + 2] ?? 0]
-}
-
 export function mix(a: number, b: number, t: number) {
   return a + (b - a) * t
 }
