@@ -282,37 +282,8 @@ async function readOutputTile(
       bytesPerRow * height,
     )
     const encoder = device.createCommandEncoder({ label: 'raw-snapshot' })
-    const process = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: images.processedView!,
-          loadOp: 'clear',
-          storeOp: 'store',
-          clearValue: [0, 0, 0, 1],
-        },
-      ],
-    })
-    process.setPipeline(programs.processU16)
-    process.setBindGroup(0, uniforms)
-    process.setBindGroup(1, images.inputGroup!)
-    process.setBindGroup(2, images.lutGroup)
-    process.setBindGroup(3, images.selectiveGroup)
-    process.draw(3)
-    process.end()
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: output.createView(),
-          loadOp: 'clear',
-          storeOp: 'store',
-          clearValue: [0, 0, 0, 1],
-        },
-      ],
-    })
-    pass.setPipeline(programs.snapshotOutput)
-    pass.setBindGroup(0, images.outputGroup!)
-    pass.draw(3)
-    pass.end()
+    images.encodeProcess(encoder, programs.processU16, uniforms)
+    images.encodeOutput(encoder, programs.snapshotOutput, output.createView())
     encoder.copyTextureToBuffer({ texture: output }, { buffer, bytesPerRow }, [
       width,
       height,

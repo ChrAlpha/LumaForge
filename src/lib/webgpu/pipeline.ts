@@ -230,65 +230,21 @@ export class WebGPUProcessingPipeline {
         )
         device.queue.writeBuffer(this.uniformBuffer!, 0, this.uniformData)
         this.uniformUploads++
-        this.encodeProcess(encoder, images.processedView, this.uniformGroup)
+        images.encodeProcess(
+          encoder,
+          this.programs.processU16,
+          this.uniformGroup,
+        )
+        this.processDraws++
         this.dirty = false
       }
-      this.encodeOutput(
+      images.encodeOutput(
         encoder,
-        this.context.getCurrentTexture().createView(),
-        images.outputGroup!,
         this.programs.output,
+        this.context.getCurrentTexture().createView(),
       )
       device.queue.submit([encoder.finish()])
     }
-  }
-
-  private encodeProcess(
-    encoder: GPUCommandEncoder,
-    target: GPUTextureView,
-    uniforms: GPUBindGroup,
-  ) {
-    const images = this.images!
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: target,
-          loadOp: 'clear',
-          storeOp: 'store',
-          clearValue: [0, 0, 0, 1],
-        },
-      ],
-    })
-    pass.setPipeline(this.programs.processU16)
-    pass.setBindGroup(0, uniforms)
-    pass.setBindGroup(1, images.inputGroup!)
-    pass.setBindGroup(2, images.lutGroup)
-    pass.setBindGroup(3, images.selectiveGroup)
-    pass.draw(3)
-    pass.end()
-    this.processDraws++
-  }
-
-  private encodeOutput(
-    encoder: GPUCommandEncoder,
-    target: GPUTextureView,
-    source: GPUBindGroup,
-    pipeline: GPURenderPipeline,
-  ) {
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: target,
-          loadOp: 'clear',
-          storeOp: 'store',
-          clearValue: [0, 0, 0, 1],
-        },
-      ],
-    })
-    pass.setPipeline(pipeline)
-    pass.setBindGroup(0, source)
-    pass.draw(3)
-    pass.end()
   }
 
   async waitForGpu() {

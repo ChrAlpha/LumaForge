@@ -11,6 +11,14 @@ import type { RawUploadInput } from './contract'
 import type { WebGPUPrograms } from './programs'
 import { padLut, uploadRgb16, validateImageUpload } from './texture-data'
 
+function beginClearedPass(encoder: GPUCommandEncoder, view: GPUTextureView) {
+  return encoder.beginRenderPass({
+    colorAttachments: [
+      { view, loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] },
+    ],
+  })
+}
+
 /** Textures and bind groups change only with source, LUT, or dimensions. */
 export class WebGPUImages {
   input: GPUTexture | null = null
@@ -226,6 +234,35 @@ export class WebGPUImages {
       LUT_SIZE * 16 +
       16
     )
+  }
+
+  /** Draws the processed target from the source, LUT and HSL bands. */
+  encodeProcess(
+    encoder: GPUCommandEncoder,
+    pipeline: GPURenderPipeline,
+    uniforms: GPUBindGroup,
+  ) {
+    const pass = beginClearedPass(encoder, this.processedView!)
+    pass.setPipeline(pipeline)
+    pass.setBindGroup(0, uniforms)
+    pass.setBindGroup(1, this.inputGroup!)
+    pass.setBindGroup(2, this.lutGroup)
+    pass.setBindGroup(3, this.selectiveGroup)
+    pass.draw(3)
+    pass.end()
+  }
+
+  /** Draws the processed target into an output view. */
+  encodeOutput(
+    encoder: GPUCommandEncoder,
+    pipeline: GPURenderPipeline,
+    target: GPUTextureView,
+  ) {
+    const pass = beginClearedPass(encoder, target)
+    pass.setPipeline(pipeline)
+    pass.setBindGroup(0, this.outputGroup!)
+    pass.draw(3)
+    pass.end()
   }
 
   dispose() {
