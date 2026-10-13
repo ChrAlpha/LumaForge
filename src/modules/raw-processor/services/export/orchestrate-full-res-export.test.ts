@@ -63,14 +63,16 @@ import {
   heldTransformGeometry,
   reduceTransformState,
 } from '../transform/transform-state'
-import type { BuildExportManifestInput } from './attach-export-manifest'
-import { ExportManifestUnavailableError } from './attach-export-manifest'
 import type { ExportSourceTuple } from './export-interruption'
 import {
   createExportInterruptionMarkers,
   encodeExportSourceHint,
 } from './export-interruption'
-import { resolveExportEnvironment } from './export-manifest'
+import type { BuildExportManifestInput } from './export-manifest'
+import {
+  ExportManifestUnavailableError,
+  resolveExportEnvironment,
+} from './export-manifest'
 import type { SourceInterruptionHint } from './export-recovery'
 import { readSourceInterruption } from './export-recovery'
 import {
@@ -107,8 +109,8 @@ vi.mock('./export-readiness', async (importOriginal) => ({
   planFullResExport: mocks.planFullResExport,
 }))
 
-vi.mock('./attach-export-manifest', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./attach-export-manifest')>()),
+vi.mock('./export-manifest', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./export-manifest')>()),
   buildManifestForExportResult: mocks.buildManifestForExportResult,
 }))
 
@@ -1169,7 +1171,6 @@ describe('orchestrateFullResExport success', () => {
       sourceFile: SOURCE_FILE,
       sourceDimensions: { width: 6000, height: 4000 },
       style: null,
-      quality: 0.92,
       policy: { kind: 'export-full', row_slice: 512, concurrency: 2 },
       environment: resolveExportEnvironment('desktop'),
     })
@@ -1240,7 +1241,6 @@ describe('orchestrateFullResExport success', () => {
           geometry: { matrix: geometry.matrix, constrainCrop: true },
         },
       },
-      quality: 0.92,
     })
   })
 
@@ -1331,8 +1331,6 @@ describe('orchestrateFullResExport success', () => {
       previousCrashLikeInterruption: false,
       previousResourceFailure: true,
     })
-    // A retry after a resource failure is lighter, not lower quality.
-    expect(h.manifestInputs[0]).toMatchObject({ quality: 0.92 })
     expect(h.markerStore.markers()).toEqual([])
   })
 

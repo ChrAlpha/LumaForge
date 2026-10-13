@@ -33,14 +33,14 @@ import {
   isRetryableFullResExportFailure,
   toUserFacingErrorCode,
 } from '../ingest/workflow-status'
+import { evacuateBeforeExport } from './export-evacuation'
+import type { ExportAttemptOutcome } from './export-interruption'
 import {
   buildManifestForExportResult,
   ExportManifestUnavailableError,
+  resolveExportEnvironment,
   sealExportResultManifest,
-} from './attach-export-manifest'
-import { evacuateBeforeExport } from './export-evacuation'
-import type { ExportAttemptOutcome } from './export-interruption'
-import { resolveExportEnvironment } from './export-manifest'
+} from './export-manifest'
 import {
   deriveFullResExportReadiness,
   deriveTransformExportRefusalReason,
@@ -69,7 +69,6 @@ import {
 import {
   buildExportFilename,
   createExportPolicyRefusal,
-  EXPORT_JPEG_QUALITY,
   recommendRetryLevel,
   runFullResolutionExportJob,
   sampleExportPlanFacts,
@@ -598,7 +597,6 @@ export async function orchestrateFullResExport(
         height: completedCapability.height,
       },
       style: activeSession.activeStyle,
-      quality: EXPORT_JPEG_QUALITY,
       policy: {
         kind: 'export-full',
         row_slice: jobExecutionPlan.preferredRows,
