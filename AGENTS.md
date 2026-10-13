@@ -56,8 +56,6 @@ image-editor assumptions.
   the `PhotoCompare` slider and its sweep hook,
   `src/modules/landing/content.ts` (typed key lists and the real
   supported-format count), module CSS, and colocated tests.
-- There is no `/transform-demo` route and no demo module; `/raw` Transform is
-  production code (see Retained And Scheduled Slices).
 - `src/providers/root-providers.tsx` owns `LazyMotion`, Jotai, i18n, error
   boundary, viewport width, settings sync, and toasts. Preserve provider order
   unless a concrete bug requires changing it.
@@ -98,7 +96,8 @@ image-editor assumptions.
   `src/modules/raw-processor/state/session.atoms.ts` holds the current image
   session on the production store the root providers mount;
   `src/modules/raw-processor/state/workflow.atoms.ts` stores the color intent
-  and the LUT and holds no view state;
+  and the LUT, holds no view state, and exports `rawWorkflowStore`, the store
+  accessors the workflow's commands and services read and write through;
   `src/modules/raw-processor/state/preview-view.atoms.ts` holds only the view
   of the sample shown before a source loads. Load, restore, export, and
   delivery read the session, the color intent, and the LUT from the store
@@ -131,30 +130,16 @@ image-editor assumptions.
   (`src/modules/raw-processor/components/shared/segmented-chrome.ts`), and
   the LUT option buttons, issue copy, and source warnings under
   `src/modules/raw-processor/components/shared/lut/`. The desktop rail and the
-  mobile shell never import each other; they share policy through services,
-  hooks, or this folder, and lint refuses a direct import between them (see
-  Verification).
+  mobile shell never import each other (`plugins/eslint-import-boundaries.mjs`
+  refuses it); they share through services, hooks, or this folder.
 - `src/modules/raw-processor/components/mobile/` is the mobile photo-first
-  shell (`DESIGN.md` "Mobile Shell: Tools, Lens, Action" holds the full
-  spec):
-  - the topbar carries the Export action, which opens the export panel in the
-    deck, and the More menu, which holds real actions only: Replace RAW, File
-    & pipeline details (measured file facts and pipeline steps from current
-    state), the Histogram toggle, Language, and Reset session;
-  - the dock holds tools only (Look, Adjust, and Transform when available)
-    over a deck; compare and export are not dock tabs;
-  - the compare lens sits on the photo: a tap toggles the split under the
-    WebGPU preview; in the CPU preview, which has no split, it toggles the
-    original; a hold peeks in both;
-  - the Look deck is the LUT strip, the Strength row, and a footer line whose
-    LUT contract is chosen inline in the deck; the LUT sources sheet only
-    administers catalogs;
-  - Adjust list panels (Tone, Color, HSL), the Transform list panel, and the
-    scrub HUD;
-  - the histogram runs only while it is turned on from More, and never in the
-    CPU preview or over an applied Transform;
-  - `src/modules/raw-processor/components/mobile/mobile-stage-layout.ts` fits
-    the photo first and sizes the deck from what is left.
+  shell: a topbar with the Export action and a More menu of real actions, a
+  dock of tools over a deck, and the compare lens on the photo. `DESIGN.md`
+  "Mobile Shell: Tools, Lens, Action" is its spec. The histogram runs only
+  while More turns it on, and never in the CPU preview or over an applied
+  Transform;
+  `src/modules/raw-processor/components/mobile/mobile-stage-layout.ts` fits
+  the photo first and sizes the deck from what is left.
 - `src/modules/raw-processor/raw-lab.css`,
   `src/modules/raw-processor/raw-lab.surface.css`, and
   `src/modules/raw-processor/raw-lab.effects.css` hold `/raw` surface and
@@ -213,10 +198,10 @@ image-editor assumptions.
   GPU budget derived from them (`src/lib/runtime/preview-gpu-budget.ts`).
   Export and interactive policy decisions live in
   `packages/render-engine/src/policy`.
-- `src/lib/lut` wraps the `@lumaforge/luma-color-runtime` `.cube` parser
-  (including an off-main-thread parse worker) and persists LUT contract
-  choices in the browser (`src/lib/lut/profile-resolution.ts` is a storage
-  adapter over the package resolver, not a second resolver).
+- `src/lib/lut` runs the `@lumaforge/luma-color-runtime` `.cube` parser off
+  the main thread (`src/lib/lut/cube-parse-async.ts`) and persists LUT
+  contract choices in the browser (`src/lib/lut/profile-resolution.ts` is a
+  storage adapter over the package resolver, not a second resolver).
   `src/lib/profiles` parses and fetches online LUT catalogs and source URLs
   (catalog entries and source URLs pass one shared transport URL check). A
   catalog entry's LUT contract is mapped by `mapProfileLUTContract` in
@@ -267,12 +252,10 @@ image-editor assumptions.
   manifests), `packages/lmfg-cli/src/commands/` are thin protocol adapters, and
   `packages/lmfg-cli/src/protocol/` owns the JSON/NDJSON envelope and spec exit
   codes. The browser bridge tier is not shipped; keep `capabilities` honest
-  about it. The CLI params have no geometry, so `lmfg` cannot author a
-  Transform; `render replay` reapplies the validated geometry a
-  full-resolution export manifest records (see Retained And Scheduled
-  Slices). The package entry exports the workspace layout
-  (`packages/lmfg-cli/src/workspace/paths.ts`) and the stored record schemas
-  (`packages/lmfg-cli/src/schemas/results.ts`).
+  about it. It authors no Transform geometry; `render replay` reapplies a
+  recorded one (see Retained And Scheduled Slices). The package entry exports
+  the workspace layout (`packages/lmfg-cli/src/workspace/paths.ts`) and the
+  stored record schemas (`packages/lmfg-cli/src/schemas/results.ts`).
 - `packages/lmfg-mcp` is the `lmfg-mcp` stdio MCP server. The tools declared in
   `packages/lmfg-mcp/src/tools.ts` map one-to-one to `lmfg` commands: each runs
   the CLI in-process and returns its envelope unchanged. Two tools are
@@ -406,18 +389,13 @@ contract choices `src/lib/lut/profile-resolution.ts` stores, which it trusts
 only in the exact canonical form it writes. The retired API check also fails
 when the OPFS or online LUT source readers it lists disappear.
 
-Close the extraction:
-
-- When you move code to its canonical owner, finish the move in the same
-  change: switch every consumer to the owner's export and delete the old copy.
-  Do not leave type-only mirrors, "keep these in step" comments, or app-side
-  forwarding shims behind.
-- This holds for the published packages (`@lumaforge/render-engine`,
-  `@lumaforge/luma-raw-runtime`, `@lumaforge/luma-color-runtime`,
-  `@lumaforge/luma-jpeg-runtime`) too: breaking changes are allowed. When a
-  move replaces an exported symbol, delete the old one in the same change, check
-  every consumer in the repository, and record it under `### Breaking` in that
-  package's CHANGELOG. Do not add `@deprecated` forwarding exports.
+Close the extraction. When you move code to its canonical owner, switch every
+consumer to the owner's export and delete the old copy in the same change: no
+type-only mirrors, "keep these in step" comments, or forwarding shims. This
+holds for the published packages (`@lumaforge/render-engine`,
+`@lumaforge/luma-raw-runtime`, `@lumaforge/luma-color-runtime`,
+`@lumaforge/luma-jpeg-runtime`) too; check every consumer in the repository
+and record the break as above.
 
 ## Retained And Scheduled Slices
 
@@ -429,8 +407,8 @@ These are owner decisions. They override cleanup advice that says otherwise.
   `src/modules/raw-processor/hooks/useTransformPreview.ts`, and the preview
   overlay renders through
   `src/modules/raw-processor/components/TransformCanvas.tsx`.
-  The `/transform-demo` route and its demo module are deleted. Four paths
-  touch a geometry and stay distinct:
+  There is no `/transform-demo` route or demo module. Four paths touch a
+  geometry and stay distinct:
   - preview: the app's Transform worker resamples the processed preview
     frame for the overlay; it shows the framing but is not the export
     reference;
@@ -564,10 +542,9 @@ These are owner decisions. They override cleanup advice that says otherwise.
   `TransformListPanel` on mobile.
 - The stable color insertion point for user tone and color balance is after
   raw-render exposure and before LUT input conversion.
-- Transform geometry is not a color step. Export resamples the committed
-  geometry at full resolution before the color graph and paints the matte in
-  output space afterwards. The preview must show the same framing, and a
-  geometry the engine cannot plan fails export closed.
+- Transform geometry is not a color step: export resamples it before the color
+  graph and paints the matte in output space afterwards, and the preview must
+  show the same framing.
 - CPU preview/degraded mode must have a usable startup/empty-state path.
   Production validation should include `/raw?forcePreview=cpu` when touching
   degraded-preview behavior.
@@ -672,40 +649,19 @@ These are owner decisions. They override cleanup advice that says otherwise.
   exercises the CPU preview.
 - Built-app preview validation can use `pnpm serve` or
   `pnpm exec vite preview` after `pnpm build`.
-- CI follows the same split (jobs in `.github/workflows/build.yml`, aggregated
-  by its `build` job; every job except `quality` is path-selected):
-  - `quality` runs on every change, docs-only ones included. It runs
-    `scripts/quality/check-agent-paths.mjs` against this file and the
-    performance reference, then installs dependencies and runs
-    `scripts/quality/check-test-projects.mjs` (every
-    test file runs in exactly one Vitest project), `pnpm lint:check`,
-    `pnpm typecheck:tooling`, `pnpm check:structure` (knip with
-    `scripts/quality/knip.json`, then madge through
-    `scripts/quality/check-cycles.mjs`), and `pnpm check:retired-api`. The
-    structure check fails on any unused file, export, or dependency, any
-    unresolved import, any knip configuration hint, and any import cycle; it
-    takes no baseline. Lint covers the app, every package, script and plugin,
-    and the browser specs, and applies the module ownership rule in
-    `plugins/eslint-import-boundaries.mjs` to every import form the code uses
-    by the resolved files on both sides, with no exceptions. The checkers'
-    own tests run in the `tooling` project of `pnpm test:app`.
-  - `app` runs `pnpm typecheck:browser` and `pnpm test:app`, builds the app
-    with prebuilt native assets, checks the build artifact, and smokes the
-    landing page and the empty RAW Lab shell in Chromium.
-  - `runtime` runs runtime package typecheck/test/build,
-    `pnpm typecheck:runtime-tests`, and app adapter tests, then typechecks,
-    builds, and tests `packages/render-engine`.
-  - `webgpu` installs Chromium and runs `pnpm test:webgpu` (WebGPU preview vs
-    the TS export executor and frozen WebGL output) for `src/lib/webgpu`, the
-    color runtime, render-engine preview, and `scripts/webgpu` changes.
-  - `native` installs Emscripten and runs native build/verify/smoke only for
-    native source paths (`packages/luma-*-runtime/native/`,
-    `scripts/native-runtime/`); prebuilt artifact version bumps under
-    `packages/luma-native-artifacts/` run through the `cli` job instead.
-  - `cli` tests the native artifact package, builds the runtimes and render
-    engine, typechecks and builds `lmfg-cli` and `lmfg-mcp`, runs both suites
-    with the public fixture and `LMFG_REQUIRE_FIXTURE=1`, and dry-run packs
-    render-engine, `lmfg-cli`, and `lmfg-mcp`.
+- Tests use the shared fixtures in
+  `src/modules/raw-processor/test-support/builders.ts` (sessions, decoded
+  frames, Transform states, LUT cubes) and
+  `src/modules/raw-processor/test-support/web-locks.ts`; extend them instead
+  of hand-writing literals. Cover a contract once, at the lowest layer that
+  owns it.
+- CI (`.github/workflows/build.yml`) follows the same split; every job except
+  `quality` is path-selected. `quality` runs on every change, docs-only ones
+  included: the path check above, `scripts/quality/check-test-projects.mjs`
+  (each test file runs in exactly one Vitest project), `pnpm lint:check`
+  (with the module ownership rule in `plugins/eslint-import-boundaries.mjs`),
+  `pnpm typecheck:tooling`, `pnpm check:structure` (knip, then import
+  cycles; no baseline), and `pnpm check:retired-api`.
 
 ## When Unsure
 
