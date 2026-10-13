@@ -78,6 +78,15 @@ const RETIRED_EXPORTS = Object.freeze({
     // The SDR/HDR analysis that drove neither preview nor export.
     'RawDynamicRangeInfo',
     'analyzeRawDynamicRange',
+    // The raw-mosaic window path.
+    'LumaRawWindow',
+    // The worker client and error normalizer behind createLumaRawRuntime.
+    'LumaRawWorkerClient',
+    'normalizeRawRuntimeError',
+    // Runtime info and capability facts nothing read.
+    'LumaRawExportDiagnostics',
+    'LumaRawExportLevelFacts',
+    'LumaRawMemoryTier',
   ]),
 })
 
@@ -94,6 +103,36 @@ const RETIRED_MEMBERS = Object.freeze({
   '@lumaforge/render-engine': Object.freeze({
     // No writer records a Kelvin temperature.
     ColorBalanceParams: Object.freeze(['temp_k']),
+  }),
+  '@lumaforge/luma-raw-runtime': Object.freeze({
+    // Decode through a session, not one-shot from the file.
+    LumaRawRuntime: Object.freeze([
+      'probe',
+      'extractEmbeddedPreview',
+      'decodeQuick',
+      'decodeBoundedHq',
+    ]),
+    LumaRawDecodeSession: Object.freeze([
+      'beginProcessedWindowExport',
+      'endProcessedWindowExport',
+      'readRawWindow',
+    ]),
+    // Facts and timings nothing read or wrote.
+    LumaRawExportCapability: Object.freeze(['cfa', 'levels', 'diagnostics']),
+    LumaRawExportSensorFacts: Object.freeze(['colorCount', 'phaseIsWindowLocal']),
+    LumaRawRuntimeInfo: Object.freeze([
+      'simd',
+      'pthreads',
+      'memoryTier',
+      'workerPoolSize',
+    ]),
+    LumaRawTimings: Object.freeze([
+      'transferToWorker',
+      'process',
+      'makeMemImage',
+      'outputCopy',
+      'transfer',
+    ]),
   }),
 })
 

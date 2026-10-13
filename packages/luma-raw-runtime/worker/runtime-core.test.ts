@@ -16,24 +16,15 @@ const unsupportedNativeCapability: LumaRawExportCapability = {
   height: 0,
   rawWidth: 0,
   rawHeight: 0,
-  cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
   blackLevel: 0,
   whiteLevel: 0,
   orientation: { code: 1, supported: true },
   sensor: {
     layout: 'unknown',
-    colorCount: 0,
     cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 0 },
-    phaseIsWindowLocal: false,
   },
   windows: { librawProcessed: false },
-  diagnostics: {
-    hasRawImage: false,
-    hasColor3Image: false,
-    hasColor4Image: false,
-    hasXTransTable: false,
-  },
-  reasons: ['raw-window-unavailable'],
+  reasons: ['processed-window-unavailable'],
 }
 
 const makeNativeFactory = (): LumaRawNativeFactory => ({
@@ -216,10 +207,7 @@ describe('runtime-core', () => {
     ).resolves.toMatchObject({
       ok: true,
       payload: {
-        pthreads: false,
-        memoryTier: 'low',
         memoryProfile: 'low-memory',
-        workerPoolSize: 1,
       },
     })
   })
@@ -802,7 +790,6 @@ describe('runtime-core', () => {
       rawWidth: 4024,
       rawHeight: 3024,
       visibleCrop: { x: 12, y: 12, width: 4000, height: 3000 },
-      cfa: { pattern: 'rggb' as const, xPhase: 0 as const, yPhase: 0 as const },
       blackLevel: 512,
       whiteLevel: 16383,
       orientation: { code: 1, supported: true },
@@ -817,40 +804,25 @@ describe('runtime-core', () => {
       },
       sensor: {
         layout: 'bayer' as const,
-        colorCount: 3,
         cfa: {
           pattern: 'rggb' as const,
           xPhase: 0 as const,
           yPhase: 0 as const,
         },
-        phaseIsWindowLocal: false,
       },
       windows: { librawProcessed: true },
-      diagnostics: {
-        hasRawImage: true,
-        hasColor3Image: false,
-        hasColor4Image: false,
-        hasXTransTable: false,
-      },
       reasons: [],
     }
     const unsupportedCapability: LumaRawExportCapability = {
       ...supportedCapability,
       supported: false,
-      cfa: {
-        pattern: 'unsupported' as const,
-        xPhase: 0 as const,
-        yPhase: 0 as const,
-      },
       sensor: {
         layout: 'unknown' as const,
-        colorCount: 0,
         cfa: {
           pattern: 'unsupported' as const,
           xPhase: 0 as const,
           yPhase: 0 as const,
         },
-        phaseIsWindowLocal: false,
       },
       reasons: ['unsupported-sensor-layout' as const],
     }
@@ -909,8 +881,7 @@ describe('runtime-core', () => {
       type: 'probeExportCapabilityFromSession',
       payload: {
         supported: true,
-        cfa: { pattern: 'rggb' },
-        sensor: { layout: 'bayer' },
+        sensor: { layout: 'bayer', cfa: { pattern: 'rggb' } },
         reasons: [],
       },
     })
@@ -1770,7 +1741,6 @@ describe('runtime-core session jobs', () => {
     rawWidth: 2,
     rawHeight: 2,
     visibleCrop: { x: 0, y: 0, width: 2, height: 2 },
-    cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
     blackLevel: 64,
     whiteLevel: 1023,
     orientation: { code: 1, supported: true },
@@ -1785,17 +1755,9 @@ describe('runtime-core session jobs', () => {
     },
     sensor: {
       layout: 'bayer',
-      colorCount: 3,
       cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-      phaseIsWindowLocal: false,
     },
     windows: { librawProcessed: true },
-    diagnostics: {
-      hasRawImage: true,
-      hasColor3Image: false,
-      hasColor4Image: false,
-      hasXTransTable: false,
-    },
     reasons: [],
   }
 

@@ -62,9 +62,6 @@ export function normalizeCapability(capability) {
       ? { visibleCrop: capability.visibleCrop }
       : {}),
     ...(capability.windows !== undefined ? { windows: capability.windows } : {}),
-    ...(capability.diagnostics !== undefined
-      ? { diagnostics: capability.diagnostics }
-      : {}),
   }
 }
 

@@ -11,12 +11,15 @@ It is kept small so native smoke tests remain practical in CI.
 
 `public.lock.json` is the provenance record for every fixture: its source
 URL, upstream host, license declaration, device, RAW family, purpose, and
-SHA-256. The fetch script checks every download, and every cached file it
-reuses, against that hash and fails on a mismatch. Each download URL is
+SHA-256.
+The fetch script checks every download, and every cached file it
+reuses, against that hash and fails on a mismatch.
+Each download URL is
 tried up to `LUMAFORGE_FIXTURE_ATTEMPTS` times (default 3) with a per-attempt
 time limit of `LUMAFORGE_FIXTURE_TIMEOUT_MS` (default 120000) before the next
 URL: `LUMAFORGE_FIXTURE_MIRROR` (a mirror base URL) first when it is set, then
-the canonical URL, then any mirrors the lockfile lists. A mirrored file must
+the canonical URL, then any mirrors the lockfile lists.
+A mirrored file must
 have the locked hash too.
 
 The `ci-smoke` DNG is also the fixture the `lmfg` CLI suite runs against.
@@ -38,7 +41,8 @@ packages/luma-raw-runtime/fixtures/.cache/public/
 
 That directory is ignored and must not be committed.
 
-Run the phone RAW diagnostics matrix after native artifacts exist. It decodes
+Run the phone RAW diagnostics matrix after native artifacts exist.
+It decodes
 each fixture through the package's Node runtime (`dist/node.js`) over the
 native build in `dist/native`:
 

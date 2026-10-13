@@ -1,22 +1,15 @@
-export type LumaRawMemoryTier = 'low' | 'normal' | 'high'
-
 export type LumaRawRuntimeMemoryProfile = 'desktop' | 'low-memory'
 
 export type LumaRawSupportLevel = 'official' | 'experimental' | 'unsupported'
 
 export type LumaRawTimings = {
   readFile?: number
-  transferToWorker?: number
   copyToWasm?: number
   librawOpen?: number
   openBuffer?: number
   metadata?: number
   thumbnail?: number
   unpack?: number
-  process?: number
-  makeMemImage?: number
-  outputCopy?: number
-  transfer?: number
   total: number
 }
 
@@ -66,25 +59,14 @@ export type LumaRawWindowRect = {
 }
 
 export type LumaRawExportUnsupportedReason =
-  | 'libraw-open-failed'
-  | 'libraw-unpack-failed'
-  | 'libraw-cropbox-window-unavailable'
-  | 'libraw-cropbox-not-repeatable'
-  | 'orientation-transform-unimplemented'
   | 'unsupported-sensor-layout'
-  | 'unsupported-cfa-pattern'
   | 'missing-visible-crop'
   | 'missing-levels'
   | 'missing-camera-white-balance'
   | 'missing-camera-to-output-color'
-  | 'degenerate-camera-to-output-color'
   | 'processed-window-unavailable'
-  | 'raw-window-unavailable-after-unpack'
-  | 'jpeg-runtime-unavailable'
   | 'unsupported-source'
   | 'unsupported-cfa'
-  | 'compressed-raw-window-unavailable'
-  | 'raw-window-unavailable'
   | 'missing-dimensions'
   | 'unsupported-orientation'
   | 'missing-color-transform'
@@ -126,33 +108,11 @@ export type LumaRawExportColorFacts = {
 
 export type LumaRawExportSensorFacts = {
   layout: LumaRawSensorLayout
-  colorCount: number
   cfa?: LumaRawCfaInfo
-  phaseIsWindowLocal: boolean
-}
-
-export type LumaRawExportLevelFacts = {
-  black: number
-  white: number
-  perChannelBlack?: [number, number, number, number]
 }
 
 export type LumaRawExportWindowFacts = {
   librawProcessed: boolean
-}
-
-export type LumaRawExportDiagnostics = {
-  make?: string
-  model?: string
-  normalizedMake?: string
-  normalizedModel?: string
-  librawFilterCode?: number
-  hasRawImage: boolean
-  hasColor3Image: boolean
-  hasColor4Image: boolean
-  hasXTransTable: boolean
-  canRepeatCropProcess?: boolean
-  lastLibRawWarningMask?: number
 }
 
 export type LumaRawExportCapability = {
@@ -163,15 +123,12 @@ export type LumaRawExportCapability = {
   rawWidth: number
   rawHeight: number
   visibleCrop?: LumaRawVisibleCrop
-  cfa: LumaRawCfaInfo
   blackLevel: number
   whiteLevel: number
   orientation?: LumaRawExportOrientation
   color?: LumaRawExportColorFacts
   sensor: LumaRawExportSensorFacts
-  levels?: LumaRawExportLevelFacts
   windows: LumaRawExportWindowFacts
-  diagnostics: LumaRawExportDiagnostics
   reasons: LumaRawExportUnsupportedReason[]
 }
 
@@ -235,12 +192,8 @@ export type LumaRawMetadata = {
 export type LumaRawRuntimeInfo = {
   runtime: 'luma'
   version: string
-  simd: boolean
-  pthreads: boolean
   crossOriginIsolated: boolean
-  memoryTier: LumaRawMemoryTier
   memoryProfile: LumaRawRuntimeMemoryProfile
-  workerPoolSize: number
 }
 
 export type LumaRawProbe = LumaRawMetadata & {

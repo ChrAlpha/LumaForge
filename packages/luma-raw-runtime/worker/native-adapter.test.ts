@@ -334,7 +334,7 @@ describe('native-adapter', () => {
     })
   })
 
-  it('preserves unknown native source diagnostics without overclaiming processed windows', () => {
+  it('keeps an unknown sensor layout without overclaiming processed windows', () => {
     const processor = createProcessor({
       exportCapability: {
         supported: false,
@@ -379,10 +379,6 @@ describe('native-adapter', () => {
       supported: false,
       sensor: { layout: 'unknown' },
       windows: { librawProcessed: false },
-      diagnostics: {
-        hasRawImage: false,
-        canRepeatCropProcess: false,
-      },
       reasons: expect.arrayContaining(['unsupported-sensor-layout']),
     })
   })
@@ -814,7 +810,6 @@ describe('native-adapter', () => {
       rawWidth: 6048,
       rawHeight: 4024,
       visibleCrop: { x: 24, y: 20, width: 6000, height: 4000 },
-      cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 5 },
       blackLevel: 512,
       whiteLevel: 16383,
       orientation: { code: 1, supported: true },
@@ -829,21 +824,11 @@ describe('native-adapter', () => {
       },
       sensor: {
         layout: 'unknown',
-        colorCount: 3,
         cfa: { pattern: 'unsupported', xPhase: 0, yPhase: 5 },
-        phaseIsWindowLocal: false,
       },
-      levels: { black: 512, white: 16383 },
       windows: { librawProcessed: false },
-      diagnostics: {
-        hasRawImage: false,
-        hasColor3Image: false,
-        hasColor4Image: false,
-        hasXTransTable: false,
-      },
       reasons: [
         'unsupported-cfa',
-        'compressed-raw-window-unavailable',
         'missing-dimensions',
         'missing-levels',
         'processed-window-unavailable',
@@ -1182,14 +1167,24 @@ describe('native-adapter', () => {
 })
 
 describe('native export capability facts', () => {
-  it('accepts the canonical native facts', () => {
+  it('accepts the canonical native facts and keeps only the read ones', () => {
     const processor = createProcessor({
       exportCapability: nativeSupportedCapability(),
     })
+    const {
+      cfa: _cfa,
+      levels: _levels,
+      diagnostics: _diagnostics,
+      ...readFacts
+    } = nativeSupportedCapability()
 
-    expect(processor.probeExportCapability?.()).toEqual(
-      nativeSupportedCapability(),
-    )
+    expect(processor.probeExportCapability?.()).toEqual({
+      ...readFacts,
+      sensor: {
+        layout: 'bayer',
+        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
+      },
+    })
   })
 
   it.each(
@@ -1311,11 +1306,7 @@ describe('native export capability facts', () => {
 
   it.each([
     ['zero width', { width: 0 }, 'missing-dimensions'],
-    [
-      'a non-finite black level',
-      { blackLevel: Number.NaN, levels: undefined },
-      'missing-levels',
-    ],
+    ['a non-finite black level', { blackLevel: Number.NaN }, 'missing-levels'],
   ])('refuses a supported capability with %s', (_label, overrides, reason) => {
     const processor = createProcessor({
       exportCapability: nativeSupportedCapability(overrides),

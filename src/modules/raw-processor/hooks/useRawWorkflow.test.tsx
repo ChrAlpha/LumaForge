@@ -374,7 +374,6 @@ function createSupportedCapability(): LumaRawExportCapability {
     rawWidth: 6048,
     rawHeight: 4024,
     visibleCrop: { x: 0, y: 0, width: 6048, height: 4024 },
-    cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
     blackLevel: 0,
     whiteLevel: 65535,
     orientation: {
@@ -385,11 +384,8 @@ function createSupportedCapability(): LumaRawExportCapability {
     },
     sensor: {
       layout: 'bayer',
-      colorCount: 3,
       cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-      phaseIsWindowLocal: false,
     },
-    levels: { black: 0, white: 65535 },
     color: {
       whiteBalance: [2.0546875, 1, 1.5234375, 1],
       cameraToWorkingRgb: [
@@ -402,13 +398,7 @@ function createSupportedCapability(): LumaRawExportCapability {
       cameraWhiteBalanceAppliedByRuntime: true,
       cameraMatrixAppliedByRuntime: true,
     },
-    windows: { librawProcessed: true, rawMosaic: false },
-    diagnostics: {
-      hasRawImage: true,
-      hasColor3Image: false,
-      hasColor4Image: false,
-      hasXTransTable: false,
-    },
+    windows: { librawProcessed: true },
     reasons: [],
   }
 }
@@ -700,12 +690,8 @@ describe('useRawWorkflow embedded preview state', () => {
       const info: LumaRawRuntimeInfo = {
         runtime: 'luma',
         version: '0.1.0',
-        simd: true,
-        pthreads: true,
         crossOriginIsolated: true,
-        memoryTier: 'normal',
         memoryProfile: 'desktop',
-        workerPoolSize: 2,
       }
       return {
         info,
@@ -881,7 +867,6 @@ describe('useRawWorkflow embedded preview state', () => {
                 probeExportCapability: vi.fn(() =>
                   run('probeExportCapability', createSupportedCapability),
                 ),
-                readRawWindow: vi.fn(),
                 readProcessedWindow: vi.fn(),
                 decodeQuick: vi.fn(() =>
                   run('decodeQuick', () => makeFrame('quick', file.name)),

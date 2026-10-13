@@ -35,12 +35,8 @@ class RecordingWorker {
               payload: {
                 runtime: 'luma',
                 version: '0.1.0',
-                simd: true,
-                pthreads: true,
                 crossOriginIsolated: true,
-                memoryTier: 'normal',
                 memoryProfile: 'desktop',
-                workerPoolSize: 2,
               },
             },
           } as MessageEvent<LumaRawWorkerResponse>)
@@ -218,7 +214,7 @@ describe('createLumaRawRuntime', () => {
 
     await expect(runtime.init()).resolves.toMatchObject({
       runtime: 'luma',
-      memoryTier: 'normal',
+      memoryProfile: 'desktop',
     })
 
     expect(worker.postMessage).toHaveBeenCalledWith(
@@ -244,12 +240,8 @@ describe('createLumaRawRuntime', () => {
       return {
         runtime: 'luma',
         version: '0.1.0',
-        simd: true,
-        pthreads: false,
         crossOriginIsolated: false,
-        memoryTier: 'low',
         memoryProfile: 'low-memory',
-        workerPoolSize: 1,
       }
     })
 
@@ -260,8 +252,6 @@ describe('createLumaRawRuntime', () => {
 
     await expect(runtime.init()).resolves.toMatchObject({
       memoryProfile: 'low-memory',
-      pthreads: false,
-      memoryTier: 'low',
     })
     expect(requests[0]).toMatchObject({
       type: 'init',
@@ -376,10 +366,9 @@ describe('createLumaRawRuntime', () => {
             },
             timings: {
               readFile: 5,
-              transferToWorker: 1,
               copyToWasm: 20,
               librawOpen: 30,
-              total: 56,
+              total: 55,
             },
             heap: { before: 268435456, after: 268435456 },
           },
@@ -561,12 +550,8 @@ describe('createLumaRawRuntime', () => {
         return {
           runtime: 'luma',
           version: '0.1.0',
-          simd: true,
-          pthreads: true,
           crossOriginIsolated: true,
-          memoryTier: 'normal',
           memoryProfile: 'desktop',
-          workerPoolSize: 1,
         }
       }
       if (request.type === 'openSession') {
@@ -590,7 +575,6 @@ describe('createLumaRawRuntime', () => {
           rawWidth: 4,
           rawHeight: 4,
           visibleCrop: { x: 0, y: 0, width: 4, height: 4 },
-          cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
           blackLevel: 0,
           whiteLevel: 65535,
           orientation: { code: 1, supported: true },
@@ -605,17 +589,9 @@ describe('createLumaRawRuntime', () => {
           },
           sensor: {
             layout: 'bayer',
-            colorCount: 3,
             cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-            phaseIsWindowLocal: false,
           },
           windows: { librawProcessed: true },
-          diagnostics: {
-            hasRawImage: true,
-            hasColor3Image: false,
-            hasColor4Image: false,
-            hasXTransTable: false,
-          },
           reasons: [],
         }
       }

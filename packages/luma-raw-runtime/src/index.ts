@@ -1,5 +1,5 @@
 export type { LumaRawErrorCode } from './errors'
-export { LumaRawRuntimeError, normalizeRawRuntimeError } from './errors'
+export { LumaRawRuntimeError } from './errors'
 export type { LumaRawRuntimeOptions } from './runtime'
 export { createLumaRawRuntime } from './runtime'
 export type {
@@ -11,8 +11,6 @@ export type {
   LumaRawDecodeSession,
   LumaRawExportCapability,
   LumaRawExportColorFacts,
-  LumaRawExportDiagnostics,
-  LumaRawExportLevelFacts,
   LumaRawExportOrientation,
   LumaRawExportSensorFacts,
   LumaRawExportUnsupportedReason,
@@ -20,7 +18,6 @@ export type {
   LumaRawFrame,
   LumaRawFullResInputStrategy,
   LumaRawHeapStats,
-  LumaRawMemoryTier,
   LumaRawMetadata,
   LumaRawProbe,
   LumaRawProcessedWindow,
@@ -36,4 +33,3 @@ export type {
   LumaRawTimings,
   LumaRawWindowRect,
 } from './types'
-export { LumaRawWorkerClient } from './worker-client'

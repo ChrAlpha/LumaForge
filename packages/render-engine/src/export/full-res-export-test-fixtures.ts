@@ -34,7 +34,6 @@ export function makeCapability(
       'visibleCrop' in overrides
         ? overrides.visibleCrop
         : { x: 0, y: 0, width: 4, height: 4 },
-    cfa: overrides.cfa ?? { pattern: 'rggb', xPhase: 0, yPhase: 0 },
     blackLevel: overrides.blackLevel ?? 0,
     whiteLevel: overrides.whiteLevel ?? 255,
     orientation:
@@ -53,18 +52,9 @@ export function makeCapability(
           },
     sensor: overrides.sensor ?? {
       layout: 'bayer',
-      colorCount: 3,
       cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-      phaseIsWindowLocal: false,
     },
-    levels: overrides.levels,
     windows: overrides.windows ?? { librawProcessed: true },
-    diagnostics: overrides.diagnostics ?? {
-      hasRawImage: true,
-      hasColor3Image: false,
-      hasColor4Image: false,
-      hasXTransTable: false,
-    },
     reasons: overrides.reasons ?? [],
   }
 }

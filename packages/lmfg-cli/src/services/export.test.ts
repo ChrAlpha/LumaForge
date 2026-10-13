@@ -298,7 +298,6 @@ function makeCapability(
     rawWidth: 4,
     rawHeight: 4,
     visibleCrop: { x: 0, y: 0, width: 4, height: 4 },
-    cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
     blackLevel: 0,
     whiteLevel: 255,
     orientation: { code: 1, supported: true },
@@ -311,17 +310,9 @@ function makeCapability(
     },
     sensor: {
       layout: 'bayer',
-      colorCount: 3,
       cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-      phaseIsWindowLocal: false,
     },
     windows: { librawProcessed: true },
-    diagnostics: {
-      hasRawImage: true,
-      hasColor3Image: false,
-      hasColor4Image: false,
-      hasXTransTable: false,
-    },
     reasons: [],
     ...overrides,
   }

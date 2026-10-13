@@ -85,12 +85,8 @@ describe('lumaRawWorkerClient', () => {
       payload: {
         runtime: 'luma',
         version: '0.1.0',
-        simd: true,
-        pthreads: true,
         crossOriginIsolated: true,
-        memoryTier: 'normal',
         memoryProfile: 'desktop',
-        workerPoolSize: 2,
       },
     })
 

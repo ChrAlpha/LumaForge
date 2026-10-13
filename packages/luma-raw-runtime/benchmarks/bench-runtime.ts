@@ -37,13 +37,10 @@ type BenchRecord = {
   total: BenchMetric
   totalMs: BenchMetric
   read: BenchMetric
-  transfer: BenchMetric
   copyToWasm: BenchMetric
   librawOpen: BenchMetric
   openBuffer: BenchMetric
   unpack: BenchMetric
-  process: BenchMetric
-  output: BenchMetric
   heapBytes: BenchMetric
   heapBefore: BenchMetric
   heapAfter: BenchMetric
@@ -205,15 +202,10 @@ function heapStatsFields(heap: BenchHeap | undefined) {
 function recordTimingFields(timings: BenchTimings | undefined) {
   return {
     read: metric(firstTiming(timings, ['read', 'readFile'])),
-    transfer: metric(firstTiming(timings, ['transfer', 'transferToWorker'])),
     copyToWasm: metric(firstTiming(timings, ['copyToWasm'])),
     librawOpen: metric(firstTiming(timings, ['librawOpen'])),
     openBuffer: metric(firstTiming(timings, ['openBuffer'])),
     unpack: metric(firstTiming(timings, ['unpack'])),
-    process: metric(firstTiming(timings, ['process'])),
-    output: metric(
-      firstTiming(timings, ['output', 'outputCopy', 'makeMemImage']),
-    ),
   }
 }
 

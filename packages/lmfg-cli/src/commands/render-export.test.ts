@@ -349,7 +349,6 @@ function retryingRawSession() {
       rawWidth: frame.width,
       rawHeight: frame.height,
       visibleCrop: { x: 0, y: 0, ...frame },
-      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
       blackLevel: 0,
       whiteLevel: 255,
       orientation: { code: 1, supported: true },
@@ -362,17 +361,9 @@ function retryingRawSession() {
       },
       sensor: {
         layout: 'bayer',
-        colorCount: 3,
         cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-        phaseIsWindowLocal: false,
       },
       windows: { librawProcessed: true },
-      diagnostics: {
-        hasRawImage: true,
-        hasColor3Image: false,
-        hasColor4Image: false,
-        hasXTransTable: false,
-      },
       reasons: [],
     }),
     readProcessedWindow: async (request: {

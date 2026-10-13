@@ -19,7 +19,6 @@ const supportedCapability = {
   reasons: [],
   sensor: {
     layout: 'bayer',
-    colorCount: 3,
     cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
   },
   orientation: {
@@ -30,15 +29,6 @@ const supportedCapability = {
   },
   visibleCrop: { x: 8, y: 8, width: 4032, height: 3024 },
   windows: { librawProcessed: true, rawMosaic: true },
-  diagnostics: {
-    librawFilterCode: 512,
-    hasRawImage: true,
-    hasColor3Image: false,
-    hasColor4Image: false,
-    hasXTransTable: false,
-    canRepeatCropProcess: true,
-    lastLibRawWarningMask: 0,
-  },
 }
 
 describe('compatibility report classification', () => {
@@ -123,7 +113,6 @@ describe('compatibility report classification', () => {
       orientation: supportedCapability.orientation,
       visibleCrop: supportedCapability.visibleCrop,
       windows: supportedCapability.windows,
-      diagnostics: supportedCapability.diagnostics,
     })
   })
 

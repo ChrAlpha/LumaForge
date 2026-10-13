@@ -66,7 +66,6 @@ const ADMITTED = {
   height: 48,
   rawWidth: 64,
   rawHeight: 48,
-  cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
   blackLevel: 0,
   whiteLevel: 4095,
   color: {
@@ -78,17 +77,9 @@ const ADMITTED = {
   },
   sensor: {
     layout: 'bayer',
-    colorCount: 3,
     cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-    phaseIsWindowLocal: false,
   },
   windows: { librawProcessed: true },
-  diagnostics: {
-    hasRawImage: true,
-    hasColor3Image: false,
-    hasColor4Image: false,
-    hasXTransTable: false,
-  },
   reasons: [],
 } as const
 

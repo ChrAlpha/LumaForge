@@ -2,7 +2,6 @@ import type {
   LumaRawCfaInfo,
   LumaRawExportCapability,
   LumaRawExportColorFacts,
-  LumaRawExportDiagnostics,
   LumaRawExportOrientation,
   LumaRawExportSensorFacts,
   LumaRawExportUnsupportedReason,
@@ -401,6 +400,22 @@ function normalizeCfa(value: unknown) {
   } as const
 }
 
+const UNSUPPORTED_REASONS: ReadonlySet<string> =
+  new Set<LumaRawExportUnsupportedReason>([
+    'unsupported-sensor-layout',
+    'missing-visible-crop',
+    'missing-levels',
+    'missing-camera-white-balance',
+    'missing-camera-to-output-color',
+    'processed-window-unavailable',
+    'unsupported-source',
+    'unsupported-cfa',
+    'missing-dimensions',
+    'unsupported-orientation',
+    'missing-color-transform',
+    'missing-export-facts',
+  ])
+
 function normalizeUnsupportedReasons(
   value: unknown,
 ): LumaRawExportUnsupportedReason[] {
@@ -408,29 +423,7 @@ function normalizeUnsupportedReasons(
 
   const reasons = value.filter(
     (reason): reason is LumaRawExportUnsupportedReason =>
-      reason === 'libraw-open-failed' ||
-      reason === 'libraw-unpack-failed' ||
-      reason === 'libraw-cropbox-window-unavailable' ||
-      reason === 'libraw-cropbox-not-repeatable' ||
-      reason === 'orientation-transform-unimplemented' ||
-      reason === 'unsupported-sensor-layout' ||
-      reason === 'unsupported-cfa-pattern' ||
-      reason === 'missing-camera-white-balance' ||
-      reason === 'missing-camera-to-output-color' ||
-      reason === 'degenerate-camera-to-output-color' ||
-      reason === 'processed-window-unavailable' ||
-      reason === 'raw-window-unavailable-after-unpack' ||
-      reason === 'jpeg-runtime-unavailable' ||
-      reason === 'unsupported-source' ||
-      reason === 'unsupported-cfa' ||
-      reason === 'compressed-raw-window-unavailable' ||
-      reason === 'raw-window-unavailable' ||
-      reason === 'missing-dimensions' ||
-      reason === 'missing-levels' ||
-      reason === 'missing-visible-crop' ||
-      reason === 'unsupported-orientation' ||
-      reason === 'missing-color-transform' ||
-      reason === 'missing-export-facts',
+      UNSUPPORTED_REASONS.has(reason),
   )
 
   return [...new Set(reasons)]
@@ -530,51 +523,7 @@ function normalizeExportSensorFacts(
         : fallbackCfa.pattern === 'unsupported'
           ? 'unknown'
           : 'bayer'
-  const colorCount = asPositiveIntegerOrUndefined(raw.colorCount) ?? 3
-
-  return {
-    layout,
-    colorCount,
-    cfa,
-    phaseIsWindowLocal: raw.phaseIsWindowLocal === true,
-  }
-}
-
-function normalizeExportDiagnostics(
-  value: unknown,
-  supported: boolean,
-): LumaRawExportDiagnostics {
-  const raw = asRecord(value)
-  const diagnostics: LumaRawExportDiagnostics = {
-    hasRawImage:
-      typeof raw.hasRawImage === 'boolean' ? raw.hasRawImage : supported,
-    hasColor3Image:
-      typeof raw.hasColor3Image === 'boolean' ? raw.hasColor3Image : false,
-    hasColor4Image:
-      typeof raw.hasColor4Image === 'boolean' ? raw.hasColor4Image : false,
-    hasXTransTable:
-      typeof raw.hasXTransTable === 'boolean' ? raw.hasXTransTable : false,
-  }
-
-  if (typeof raw.make === 'string') diagnostics.make = raw.make
-  if (typeof raw.model === 'string') diagnostics.model = raw.model
-  if (typeof raw.normalizedMake === 'string') {
-    diagnostics.normalizedMake = raw.normalizedMake
-  }
-  if (typeof raw.normalizedModel === 'string') {
-    diagnostics.normalizedModel = raw.normalizedModel
-  }
-  if (typeof raw.librawFilterCode === 'number') {
-    diagnostics.librawFilterCode = raw.librawFilterCode
-  }
-  if (typeof raw.canRepeatCropProcess === 'boolean') {
-    diagnostics.canRepeatCropProcess = raw.canRepeatCropProcess
-  }
-  if (typeof raw.lastLibRawWarningMask === 'number') {
-    diagnostics.lastLibRawWarningMask = raw.lastLibRawWarningMask
-  }
-
-  return diagnostics
+  return { layout, cfa }
 }
 
 function normalizeExportColorFacts(
@@ -631,13 +580,8 @@ function normalizeExportCapability(value: unknown): LumaRawExportCapability {
   const visibleCrop = normalizeVisibleCrop(raw.visibleCrop, rawWidth, rawHeight)
   const cfa = normalizeCfa(raw.cfa)
   const sensor = normalizeExportSensorFacts(raw.sensor, cfa)
-  const rawLevels = asRecord(raw.levels)
-  const blackLevel =
-    asFiniteNumberOrUndefined(raw.blackLevel) ??
-    asFiniteNumberOrUndefined(rawLevels.black)
-  const whiteLevel =
-    asFiniteNumberOrUndefined(raw.whiteLevel) ??
-    asFiniteNumberOrUndefined(rawLevels.white)
+  const blackLevel = asFiniteNumberOrUndefined(raw.blackLevel)
+  const whiteLevel = asFiniteNumberOrUndefined(raw.whiteLevel)
   const rawWindows = asRecord(raw.windows)
   const librawProcessed = rawWindows.librawProcessed === true
   const orientation = normalizeExportOrientation(raw.orientation, {
@@ -707,12 +651,10 @@ function normalizeExportCapability(value: unknown): LumaRawExportCapability {
     height,
     rawWidth,
     rawHeight,
-    cfa,
     blackLevel: blackLevel ?? 0,
     whiteLevel: whiteLevel ?? 0,
     sensor,
     windows: { librawProcessed },
-    diagnostics: normalizeExportDiagnostics(raw.diagnostics, supported),
     reasons: [...reasons],
   }
 
@@ -722,19 +664,6 @@ function normalizeExportCapability(value: unknown): LumaRawExportCapability {
   if (visibleCrop) capability.visibleCrop = visibleCrop
   if (orientation) capability.orientation = orientation
   if (color) capability.color = color
-  if (blackLevel !== undefined && whiteLevel !== undefined) {
-    const perChannelBlack = normalizeFiniteTuple(rawLevels.perChannelBlack, 4)
-    capability.levels = { black: blackLevel, white: whiteLevel }
-    if (perChannelBlack) {
-      capability.levels.perChannelBlack = perChannelBlack as [
-        number,
-        number,
-        number,
-        number,
-      ]
-    }
-  }
-
   return capability
 }
 

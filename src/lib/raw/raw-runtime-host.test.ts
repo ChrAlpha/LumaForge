@@ -21,12 +21,8 @@ function makeRuntimeInfo(): LumaRawRuntimeInfo {
   return {
     runtime: 'luma',
     version: '0.1.0',
-    simd: true,
-    pthreads: true,
     crossOriginIsolated: true,
-    memoryTier: 'normal',
     memoryProfile: 'desktop',
-    workerPoolSize: 2,
   }
 }
 
@@ -66,7 +62,6 @@ function makeCapability(): LumaRawExportCapability {
     rawWidth: 6240,
     rawHeight: 4168,
     visibleCrop: { x: 0, y: 0, width: 6240, height: 4168 },
-    cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
     blackLevel: 0,
     whiteLevel: 65535,
     strategy: 'libraw-processed-window',
@@ -90,18 +85,9 @@ function makeCapability(): LumaRawExportCapability {
     },
     sensor: {
       layout: 'bayer',
-      colorCount: 3,
       cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-      phaseIsWindowLocal: false,
     },
-    levels: { black: 0, white: 65535 },
     windows: { librawProcessed: true },
-    diagnostics: {
-      hasRawImage: true,
-      hasColor3Image: false,
-      hasColor4Image: false,
-      hasXTransTable: false,
-    },
     reasons: [],
   }
 }

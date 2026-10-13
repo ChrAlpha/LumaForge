@@ -25,6 +25,25 @@ predate this file.
   `decodeBoundedHq` worker requests with them. Open a session and run the
   stage on it. `LumaRawWorkerFilePayload.sessionId` is removed, and
   `LumaRawFrame.sessionId` and `LumaEmbeddedPreview.sessionId` are required.
+- The package entry no longer exports `LumaRawWorkerClient` or
+  `normalizeRawRuntimeError`; `createLumaRawRuntime` and `LumaRawRuntimeError`
+  stay.
+- `LumaRawExportUnsupportedReason` keeps only the reasons the native wrapper
+  or the adapter reports. `libraw-open-failed`, `libraw-unpack-failed`,
+  `libraw-cropbox-window-unavailable`, `libraw-cropbox-not-repeatable`,
+  `orientation-transform-unimplemented`, `unsupported-cfa-pattern`,
+  `degenerate-camera-to-output-color`, `raw-window-unavailable-after-unpack`,
+  `jpeg-runtime-unavailable`, `compressed-raw-window-unavailable`, and
+  `raw-window-unavailable` are removed, and a native capability naming one
+  drops it like any other unknown reason.
+- `LumaRawExportCapability` drops `cfa` (read `sensor.cfa`), `levels` (read
+  `blackLevel` and `whiteLevel`), and `diagnostics`;
+  `LumaRawExportSensorFacts` drops `colorCount` and `phaseIsWindowLocal`. The
+  `LumaRawExportDiagnostics` and `LumaRawExportLevelFacts` types are removed.
+- `LumaRawRuntimeInfo` drops `simd`, `pthreads`, `memoryTier`, and
+  `workerPoolSize`, and the `LumaRawMemoryTier` type is removed.
+  `LumaRawTimings` drops `transferToWorker`, `process`, `makeMemImage`,
+  `outputCopy`, and `transfer`, which no stage wrote.
 
 ## 0.2.0 - 2026-10-12
 

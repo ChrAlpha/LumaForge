@@ -99,14 +99,6 @@ function createTimer(): Timer {
 function getRuntimeInfo(
   memoryProfile: LumaRawRuntimeMemoryProfile,
 ): LumaRawRuntimeInfo {
-  const hardwareConcurrency =
-    typeof globalThis.navigator?.hardwareConcurrency === 'number'
-      ? globalThis.navigator.hardwareConcurrency
-      : 1
-  const workerPoolSize =
-    memoryProfile === 'low-memory'
-      ? 1
-      : Math.max(1, Math.min(4, hardwareConcurrency))
   const isolated =
     'crossOriginIsolated' in globalThis
       ? Boolean(globalThis.crossOriginIsolated)
@@ -115,12 +107,8 @@ function getRuntimeInfo(
   return {
     runtime: 'luma',
     version: runtimeVersion,
-    simd: true,
-    pthreads: memoryProfile === 'desktop',
     crossOriginIsolated: isolated,
-    memoryTier: memoryProfile === 'low-memory' ? 'low' : 'normal',
     memoryProfile,
-    workerPoolSize,
   }
 }
 
