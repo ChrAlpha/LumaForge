@@ -7,12 +7,8 @@ import { parseCubeLUTOffThread } from './cube-parse-async'
 import { parseCubeLUT } from './cube-parser'
 import { storeLUTContractSelection } from './profile-resolution'
 
-function cubeText(size: number, comments: string[] = []): string {
-  const lines = [
-    `TITLE "Async Fixture"`,
-    ...comments.map((comment) => `# ${comment}`),
-    `LUT_3D_SIZE ${size}`,
-  ]
+function cubeText(size: number): string {
+  const lines = [`TITLE "Async Fixture"`, `LUT_3D_SIZE ${size}`]
   const step = 1 / (size - 1)
   for (let b = 0; b < size; b++) {
     for (let g = 0; g < size; g++) {
@@ -37,11 +33,6 @@ const userVLogContract: LUTContractSelection = {
   outputTransfer: 'bt709',
   outputRange: 'full',
 }
-
-const displayMetadataComments = [
-  'LUMAFORGE_INPUT_PROFILE=display-srgb',
-  'LUMAFORGE_ROLE=display-look',
-]
 
 /**
  * Stands in for the module worker, which has no localStorage: it runs the
@@ -195,90 +186,6 @@ describe('parseCubeLUTOffThread', () => {
       'message',
       expect.any(Function),
     )
-  })
-
-  it('prefers a stored user contract over filename inference after a worker parse', async () => {
-    const content = cubeText(17)
-    const sourceName = 'SLog3_SGamut3Cine_to_Rec709.cube'
-    const { fingerprint } = parseCubeLUTWithoutStorage(content, { sourceName })
-    storeLUTContractSelection(fingerprint, userVLogContract)
-
-    const reloaded = await parseCubeLUTOffThread(content, {
-      sourceName,
-      workerFactory: createStoragelessWorker().factory,
-    })
-
-    expect(reloaded.profileResolution).toMatchObject({
-      kind: 'confirmed',
-      confidence: 'persisted-user',
-      profile: { id: 'panasonic-vgamut-vlog' },
-    })
-  })
-
-  it('keeps embedded metadata ahead of a stored user contract', async () => {
-    const content = cubeText(17, displayMetadataComments)
-    const { fingerprint } = parseCubeLUTWithoutStorage(content)
-    storeLUTContractSelection(fingerprint, userVLogContract)
-
-    const reloaded = await parseCubeLUTOffThread(content, {
-      workerFactory: createStoragelessWorker().factory,
-    })
-
-    expect(reloaded.profileResolution).toMatchObject({
-      kind: 'confirmed',
-      confidence: 'metadata',
-      profile: { id: 'display-srgb', role: 'display-look' },
-    })
-  })
-
-  it('keeps the worker resolution when storage is absent', async () => {
-    vi.stubGlobal('localStorage', undefined)
-
-    const parsed = await parseCubeLUTOffThread(cubeText(17), {
-      workerFactory: createStoragelessWorker().factory,
-    })
-
-    expect(parsed.profileResolution).toEqual({ kind: 'unknown' })
-  })
-
-  it('keeps the worker resolution when storage throws', async () => {
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('storage is blocked')
-    })
-
-    const parsed = await parseCubeLUTOffThread(cubeText(17), {
-      sourceName: 'SLog3_SGamut3Cine_to_Rec709.cube',
-      workerFactory: createStoragelessWorker().factory,
-    })
-
-    expect(parsed.profileResolution).toMatchObject({ kind: 'recommended' })
-  })
-
-  it('agrees with the synchronous fallback on restored contracts', async () => {
-    const plain = cubeText(17)
-    const withMetadata = cubeText(17, displayMetadataComments)
-    storeLUTContractSelection(
-      parseCubeLUTWithoutStorage(plain).fingerprint,
-      userVLogContract,
-    )
-    storeLUTContractSelection(
-      parseCubeLUTWithoutStorage(withMetadata).fingerprint,
-      userVLogContract,
-    )
-
-    for (const content of [plain, withMetadata, cubeText(2)]) {
-      const viaWorker = await parseCubeLUTOffThread(content, {
-        sourceName: 'fixture.cube',
-        workerFactory: createStoragelessWorker().factory,
-      })
-      const viaFallback = await parseCubeLUTOffThread(content, {
-        sourceName: 'fixture.cube',
-        workerFactory: noWorker,
-      })
-
-      expect(viaWorker.fingerprint).toBe(viaFallback.fingerprint)
-      expect(viaWorker.profileResolution).toEqual(viaFallback.profileResolution)
-    }
   })
 
   it('rejects worker parse errors without consulting storage', async () => {

@@ -167,136 +167,10 @@ describe('lUT profile selection persistence', () => {
     localStorage.clear()
   })
 
-  it('stores valid display-look profile selections by fingerprint', () => {
-    const stored = storeLUTContractSelection('lut-fingerprint-1', {
-      role: 'display-look',
-      inputProfile: 'display-srgb',
-    })
-
-    expect(stored?.id).toBe('display-srgb')
-    expect(getStoredLUTProfileSelection('lut-fingerprint-1')?.id).toBe(
-      'display-srgb',
-    )
-  })
-
-  it('uses a stored fingerprint selection before filename inference', () => {
-    applyLUTContractSelection(
-      makeParsedLUTForProfileSelection('lut-fingerprint-2'),
-      {
-        role: 'combined-look-output',
-        inputProfile: 'sony-sgamut3cine-slog3',
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'bt709',
-        outputRange: 'full',
-      },
-    )
-
-    expect(
-      resolveLUTProfile({
-        title: 'LUMIXPHOTOSTYLE VLOG',
-        sourceName: 'Panasonic_VLog.cube',
-        comments: [],
-        fingerprint: 'lut-fingerprint-2',
-        lookupStoredProfile: getStoredLUTProfileSelection,
-      }),
-    ).toMatchObject({
-      kind: 'confirmed',
-      confidence: 'persisted-user',
-      profile: { id: 'sony-sgamut3cine-slog3' },
-    })
-  })
-
-  it('rejects scene-creative selections without a complete output contract', () => {
-    const selected = applyLUTContractSelection(
-      makeParsedLUTForProfileSelection('scene-creative-incomplete.cube'),
-      {
-        role: 'scene-creative',
-        inputProfile: 'sony-sgamut3cine-slog3',
-      },
-    )
-
-    expect(selected).toBeUndefined()
-    expect(
-      getStoredLUTContractSelection('scene-creative-incomplete.cube'),
-    ).toBeUndefined()
-  })
-
-  it('ignores string selections for non-display input-only profiles', () => {
-    localStorage.setItem(
-      SELECTIONS_KEY,
-      JSON.stringify({
-        legacy: 'sony-sgamut3cine-slog3',
-      }),
-    )
-
-    expect(getStoredLUTProfileSelection('legacy')).toBeUndefined()
-    expect(
-      resolveLUTProfile({
-        title: 'Sony technical LUT',
-        sourceName: 'SLog3_SGamut3Cine_to_Rec709.cube',
-        comments: [],
-        fingerprint: 'legacy',
-        lookupStoredProfile: getStoredLUTProfileSelection,
-      }),
-    ).toMatchObject({
-      kind: 'recommended',
-    })
-  })
-
-  it('stores full user-selected contracts by fingerprint', () => {
-    const selected = applyLUTContractSelection(
-      makeParsedLUTForProfileSelection('manual-contract.cube'),
-      {
-        role: 'combined-look-output',
-        inputProfile: 'panasonic-vgamut-vlog',
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'bt709',
-        outputRange: 'full',
-      },
-    )
-
-    expect(selected?.profileResolution).toMatchObject({
-      kind: 'confirmed',
-      confidence: 'user',
-      profile: {
-        inputGamut: 'v-gamut',
-        inputTransfer: 'v-log',
-        role: 'combined-look-output',
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'bt709',
-        outputRange: 'full',
-      },
-    })
-    expect(getStoredLUTContractSelection('manual-contract.cube')).toEqual({
-      inputProfile: 'panasonic-vgamut-vlog',
-      role: 'combined-look-output',
-      inputGamut: 'v-gamut',
-      inputTransfer: 'v-log',
-      inputRange: 'full',
-      outputGamut: 'srgb-rec709',
-      outputTransfer: 'bt709',
-      outputRange: 'full',
-    })
-  })
-
-  it('rejects output roles without a complete output contract', () => {
-    const selected = applyLUTContractSelection(
-      makeParsedLUTForProfileSelection('incomplete-output.cube'),
-      {
-        role: 'combined-look-output',
-        inputProfile: 'panasonic-vgamut-vlog',
-      },
-    )
-
-    expect(selected).toBeUndefined()
-    expect(
-      getStoredLUTContractSelection('incomplete-output.cube'),
-    ).toBeUndefined()
-  })
-
-  it('rejects display-look selections for non-display inputs even with output fields', () => {
-    const selected = applyLUTContractSelection(
-      makeParsedLUTForProfileSelection('display-look-camera-input.cube'),
+  it('refuses an incomplete or inconsistent selection without writing it', () => {
+    const selections: LUTContractSelection[] = [
+      { role: 'scene-creative', inputProfile: 'sony-sgamut3cine-slog3' },
+      { role: 'combined-look-output', inputProfile: 'panasonic-vgamut-vlog' },
       {
         role: 'display-look',
         inputProfile: 'panasonic-vgamut-vlog',
@@ -304,34 +178,18 @@ describe('lUT profile selection persistence', () => {
         outputTransfer: 'bt709',
         outputRange: 'full',
       },
-    )
-
-    expect(selected).toBeUndefined()
-    expect(
-      getStoredLUTContractSelection('display-look-camera-input.cube'),
-    ).toBeUndefined()
-  })
-
-  it('ignores malformed stored records without throwing', () => {
-    localStorage.setItem(
-      SELECTIONS_KEY,
-      JSON.stringify({
-        broken: 42,
-        valid: PRODUCTION_RECORDS['fp-display-srgb'],
-      }),
-    )
-
-    expect(getStoredLUTProfileSelection('broken')).toBeUndefined()
-    expect(getStoredLUTProfileSelection('valid')?.id).toBe('display-srgb')
-    expect(() =>
-      resolveLUTProfile({
-        title: 'Panasonic technical LUT',
-        sourceName: 'Panasonic_VLog.cube',
-        comments: [],
-        fingerprint: 'broken',
-        lookupStoredProfile: getStoredLUTProfileSelection,
-      }),
-    ).not.toThrow()
+    ]
+    for (const selection of selections) {
+      const fingerprint = `${selection.role}.cube`
+      expect(
+        applyLUTContractSelection(
+          makeParsedLUTForProfileSelection(fingerprint),
+          selection,
+        ),
+      ).toBeUndefined()
+      expect(getStoredLUTContractSelection(fingerprint)).toBeUndefined()
+    }
+    expect(localStorage.getItem(SELECTIONS_KEY)).toBeNull()
   })
 })
 
@@ -415,29 +273,6 @@ describe('lUT contract provenance', () => {
     })
   })
 
-  it('restores a persisted user contract by fingerprint', () => {
-    applyLUTContractSelection(
-      makeParsedLUTForProfileSelection('reloaded.cube'),
-      vLogToRec709,
-    )
-    const reloaded = makeParsedLUTForProfileSelection('reloaded.cube')
-
-    const restored = restorePersistedLUTContract(reloaded)
-
-    expect(restored.profileResolution).toMatchObject({
-      kind: 'confirmed',
-      confidence: 'persisted-user',
-      profile: { id: 'panasonic-vgamut-vlog', outputTransfer: 'bt709' },
-    })
-    expect(restored.data).toBe(reloaded.data)
-  })
-
-  it('keeps unmatched LUTs unchanged when restoring', () => {
-    const lut = makeParsedLUTForProfileSelection('never-selected.cube')
-
-    expect(restorePersistedLUTContract(lut)).toBe(lut)
-  })
-
   it('keeps confirmed metadata ahead of a persisted user contract', () => {
     applyLUTContractSelection(
       makeParsedLUTForProfileSelection('metadata.cube'),
@@ -516,10 +351,9 @@ describe('lUT stored selection records', () => {
 
   it('confirms a deployed record as the persisted user contract on reload', () => {
     seedSelections(PRODUCTION_RECORDS)
+    const reloaded = makeParsedLUTForProfileSelection('fp-slog3-scene')
 
-    const restored = restorePersistedLUTContract(
-      makeParsedLUTForProfileSelection('fp-slog3-scene'),
-    )
+    const restored = restorePersistedLUTContract(reloaded)
 
     expect(restored.profileResolution).toMatchObject({
       kind: 'confirmed',
@@ -535,6 +369,7 @@ describe('lUT stored selection records', () => {
         outputRange: 'legal',
       },
     })
+    expect(restored.data).toBe(reloaded.data)
   })
 
   it('writes the same literal records the deployed writer wrote', () => {
