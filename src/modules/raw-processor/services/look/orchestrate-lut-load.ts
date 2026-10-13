@@ -5,7 +5,9 @@ import type {
   ParsedLUT,
 } from '@lumaforge/luma-color-runtime'
 import {
+  getLUTColorProfile,
   isSupportedLUT,
+  normalizeLookIntensity,
   toLUTContractSelection,
   validateLUT,
 } from '@lumaforge/luma-color-runtime'
@@ -31,12 +33,8 @@ import {
   preserveCustomLookIntensity,
 } from './look-session-state'
 import {
-  resolveLUTContractProfile,
-  resolveOnlineLUTSourceName,
-} from './lut-workflow'
-import {
   buildLUTContractSelectionState,
-  clampLookIntensity,
+  DEFAULT_LOOK_INTENSITY,
   toCustomStyle,
 } from './style-system'
 
@@ -153,7 +151,6 @@ function applyLoadedLUT(
       ? applyActiveLookToSession(prev, {
           style,
           lutProfileSelection: buildLUTContractSelectionState(parsed),
-          clearExportResult: true,
         })
       : prev,
   )
@@ -290,7 +287,7 @@ export async function orchestrateOnlineLutLoad(
     await loadLUTContent(
       {
         source: bytes,
-        sourceName: resolveOnlineLUTSourceName(entry),
+        sourceName: entry.title,
         sha256:
           verifiedSha256 ?? (await sourceContentIdFromBytes(bytes)).sha256,
         trustedContract:
@@ -338,7 +335,8 @@ export function orchestrateProfileSelection(
     return
   }
 
-  const contractProfile = resolveLUTContractProfile(profile)
+  const contractProfile =
+    typeof profile === 'string' ? getLUTColorProfile(profile) : profile
   // An explicit user choice is the only contract persisted for later loads.
   const updatedLut = contractProfile
     ? applyLUTContractSelection(lut, toLUTContractSelection(contractProfile))
@@ -367,7 +365,6 @@ export function orchestrateProfileSelection(
             prev.activeStyle,
           ),
           lutProfileSelection: buildLUTContractSelectionState(updatedLut),
-          clearExportResult: true,
         })
       : prev,
   )
@@ -376,7 +373,7 @@ export function orchestrateProfileSelection(
       ...prev,
       styleKind: 'custom',
       builtinPreset: null,
-      intensity: clampLookIntensity(prev.intensity),
+      intensity: normalizeLookIntensity(prev.intensity, DEFAULT_LOOK_INTENSITY),
     }))
   }
 }

@@ -1,7 +1,8 @@
+import { normalizeLookIntensity } from '@lumaforge/luma-color-runtime'
+
 import type { Translate } from '~/lib/i18n'
 
 import {
-  clampLookIntensity,
   DEFAULT_LOOK_INTENSITY,
   LOOK_INTENSITY_PRESETS,
 } from '../services/look/style-system'
@@ -53,11 +54,13 @@ export function strengthTickMarks(t: Translate): SliderTickMark[] {
 }
 
 export function intensityToStrengthPercent(intensity: number): number {
-  return Math.round(clampLookIntensity(intensity) * 100)
+  return Math.round(
+    normalizeLookIntensity(intensity, DEFAULT_LOOK_INTENSITY) * 100,
+  )
 }
 
 export function strengthPercentToIntensity(percent: number): number {
-  return clampLookIntensity(percent / 100)
+  return normalizeLookIntensity(percent / 100, DEFAULT_LOOK_INTENSITY)
 }
 
 /** "62%", and "Off" at 0, where none of the look reaches the photo. */

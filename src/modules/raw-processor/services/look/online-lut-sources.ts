@@ -1,4 +1,8 @@
-import type { OnlineLUTEntry, OnlineProfileIssue } from '~/lib/profiles/catalog'
+import type {
+  OnlineLUTEntry,
+  OnlineProfileIssue,
+  OnlineProfileResult,
+} from '~/lib/profiles/catalog'
 import { parseReleaseCatalog, parseReleaseEntry } from '~/lib/profiles/catalog'
 import type { fetchJsonWithLimit } from '~/lib/profiles/fetch'
 import { OnlineProfileFetchError } from '~/lib/profiles/fetch'
@@ -10,12 +14,11 @@ import { normalizeProfileSourceUrl } from '~/lib/profiles/source-url'
 // LUT_CATALOG_MAX_BYTES) — both sides lock the same 1_000_000 literal in
 // their contract tests, so a drift breaks the build on whichever side moved.
 export const ONLINE_LUT_MAX_JSON_BYTES = 1_000_000
-const defaultMaxJsonBytes = ONLINE_LUT_MAX_JSON_BYTES
 export const ONLINE_LUT_SOURCE_STORAGE_KEY = 'lumaforge.raw.onlineLutSources.v1'
 export const DEFAULT_LUMAFORGE_PROFILE_SOURCE: ProfileSourceResource = {
   id: 'lumaforge-default-profiles',
   // Channel-pinned LUT-scoped catalog (kind: "lut" entries only). The producer
-  // keeps luts/catalog.json inside defaultMaxJsonBytes
+  // keeps luts/catalog.json inside ONLINE_LUT_MAX_JSON_BYTES
   // (lumaforge-profiles lut-catalog.ts, LUT_CATALOG_MAX_BYTES) — see
   // lut-catalog-contract.test.ts for the locked boundary.
   url: 'https://luma-prof.ichr.me/channels/stable/luts/catalog.json',
@@ -112,12 +115,17 @@ function isStoredResource(
   )
 }
 
-function normalizeStoredUrl(value: string): string | null {
+/** A source URL in its canonical form; null when it is not a source URL. */
+function normalizeUrl(value: string): string | null {
   try {
     return normalizeProfileSourceUrl(value)
   } catch {
     return null
   }
+}
+
+function normalizeResourceUrl(resource: ProfileSourceResource): string {
+  return normalizeUrl(resource.url) ?? resource.url
 }
 
 function readStoredOnlineLUTSourceRegistry(
@@ -140,7 +148,7 @@ function readStoredOnlineLUTSourceRegistry(
       ? record.resources.flatMap((resource) => {
           if (!isStoredResource(resource)) return []
 
-          const normalizedUrl = normalizeStoredUrl(resource.url)
+          const normalizedUrl = normalizeUrl(resource.url)
           if (!normalizedUrl || seenResources.has(normalizedUrl)) return []
 
           seenResources.add(normalizedUrl)
@@ -159,7 +167,7 @@ function readStoredOnlineLUTSourceRegistry(
             record.removedDefaultUrls.flatMap((value) => {
               if (typeof value !== 'string') return []
 
-              const normalizedUrl = normalizeStoredUrl(value)
+              const normalizedUrl = normalizeUrl(value)
               return normalizedUrl ? [normalizedUrl] : []
             }),
           ),
@@ -197,16 +205,16 @@ function isDefaultSourceRemoved(
   )
 }
 
-function getDefaultSourceUrl(defaultSource: ProfileSourceResource): string {
-  return normalizeStoredUrl(defaultSource.url) ?? defaultSource.url
-}
+const DEFAULT_SOURCE_URL = normalizeResourceUrl(
+  DEFAULT_LUMAFORGE_PROFILE_SOURCE,
+)
 
 function toStoredResource(
   resource: ProfileSourceResource,
 ): StoredOnlineLUTSourceResource | null {
   if (resource.isDefault || resource.fromQuery) return null
 
-  const normalizedUrl = normalizeStoredUrl(resource.url)
+  const normalizedUrl = normalizeUrl(resource.url)
   if (!normalizedUrl) return null
 
   return {
@@ -217,21 +225,16 @@ function toStoredResource(
 }
 
 export function getInitialOnlineLUTSourceResources(
-  options: {
-    storage?: Storage | null
-    defaultSource?: ProfileSourceResource
-  } = {},
+  options: { storage?: Storage | null } = {},
 ): ProfileSourceResource[] {
-  const defaultSource =
-    options.defaultSource ?? DEFAULT_LUMAFORGE_PROFILE_SOURCE
   const registry = readStoredOnlineLUTSourceRegistry(options.storage)
-  const defaultUrl = getDefaultSourceUrl(defaultSource)
+  const defaultUrl = DEFAULT_SOURCE_URL
   const resources: ProfileSourceResource[] = []
 
   const removedDefault = isDefaultSourceRemoved(registry, defaultUrl)
 
   if (!removedDefault) {
-    resources.push({ ...defaultSource, url: defaultUrl })
+    resources.push({ ...DEFAULT_LUMAFORGE_PROFILE_SOURCE, url: defaultUrl })
   }
 
   for (const [index, resource] of registry.resources.entries()) {
@@ -259,10 +262,9 @@ export function persistOnlineLUTSourceResource(
   if (!storedResource) return
 
   const registry = readStoredOnlineLUTSourceRegistry(options.storage)
-  const defaultUrl = getDefaultSourceUrl(DEFAULT_LUMAFORGE_PROFILE_SOURCE)
   if (
-    storedResource.url === defaultUrl &&
-    !isDefaultSourceRemoved(registry, defaultUrl)
+    storedResource.url === DEFAULT_SOURCE_URL &&
+    !isDefaultSourceRemoved(registry, DEFAULT_SOURCE_URL)
   ) {
     return
   }
@@ -285,7 +287,7 @@ export function persistOnlineLUTSourceRemoval(
   options: { storage?: Storage | null } = {},
 ) {
   const registry = readStoredOnlineLUTSourceRegistry(options.storage)
-  const normalizedUrl = normalizeStoredUrl(resource.url) ?? resource.url
+  const normalizedUrl = normalizeResourceUrl(resource)
   const nextRegistry: StoredOnlineLUTSourceRegistry = {
     resources: registry.resources.filter((item) => item.url !== normalizedUrl),
     removedDefaultUrls: registry.removedDefaultUrls,
@@ -327,32 +329,51 @@ function mapFetchIssue(
   sourceUrl: string,
   entryId?: string,
 ): OnlineLUTSourceIssue {
-  if (error instanceof OnlineProfileFetchError) {
-    return {
-      code: error.code,
-      message: error.message,
-      resourceId,
-      entryId,
-      sourceUrl,
-    }
-  }
-
-  if (error instanceof Error) {
-    return {
-      code: 'network',
-      message: error.message,
-      resourceId,
-      entryId,
-      sourceUrl,
-    }
-  }
-
   return {
-    code: 'network',
-    message: 'Failed to fetch online profile resource.',
+    code: error instanceof OnlineProfileFetchError ? error.code : 'network',
+    message:
+      error instanceof Error
+        ? error.message
+        : 'Failed to fetch online profile resource.',
     resourceId,
     entryId,
     sourceUrl,
+  }
+}
+
+type FetchOptions = {
+  fetchJson: typeof fetchJsonWithLimit
+  signal?: AbortSignal
+}
+
+/**
+ * Fetches one JSON document within the online LUT budget and parses it. A
+ * fetch or parse failure comes back as issues owned by the given resource
+ * (and entry), never as a throw.
+ */
+async function fetchParsed<Value>(
+  url: string,
+  parse: (document: unknown, sourceUrl: string) => OnlineProfileResult<Value>,
+  options: FetchOptions,
+  owner: { resourceId: string; entryId?: string },
+): Promise<{ value: Value | null; issues: OnlineLUTSourceIssue[] }> {
+  try {
+    const document = await options.fetchJson<unknown>(url, {
+      signal: options.signal,
+      maxBytes: ONLINE_LUT_MAX_JSON_BYTES,
+    })
+    const result = parse(document, url)
+    return result.ok
+      ? { value: result.value, issues: [] }
+      : {
+          value: null,
+          issues: mapProfileIssues(result.issues, owner.resourceId, url),
+        }
+  } catch (error) {
+    return {
+      value: null,
+      issues: [mapFetchIssue(error, owner.resourceId, url, owner.entryId)],
+    }
   }
 }
 
@@ -363,14 +384,6 @@ function directCubeTitle(resource: ProfileSourceResource): string {
     const url = new URL(resource.url)
 
     return url.pathname.split('/').filter(Boolean).at(-1) ?? resource.url
-  } catch {
-    return resource.url
-  }
-}
-
-function normalizeResourceUrl(resource: ProfileSourceResource): string {
-  try {
-    return normalizeProfileSourceUrl(resource.url)
   } catch {
     return resource.url
   }
@@ -392,14 +405,8 @@ function retargetIssue(
 
 export async function resolveProfileSourceResource(
   resource: ProfileSourceResource,
-  options: {
-    fetchJson: typeof fetchJsonWithLimit
-    signal?: AbortSignal
-    maxJsonBytes?: number
-  },
+  options: FetchOptions,
 ): Promise<OnlineLUTSourceResolution> {
-  const maxBytes = options.maxJsonBytes ?? defaultMaxJsonBytes
-
   if (resource.type === 'cube') {
     const title = directCubeTitle(resource)
 
@@ -424,108 +431,51 @@ export async function resolveProfileSourceResource(
     }
   }
 
+  const owner = { resourceId: resource.id }
   if (resource.type === 'entry') {
-    try {
-      const document = await options.fetchJson<unknown>(resource.url, {
-        signal: options.signal,
-        maxBytes,
-      })
-      const result = parseReleaseEntry(document, resource.url)
-
-      if (!result.ok) {
-        return {
-          resource,
-          entries: [],
-          issues: mapProfileIssues(result.issues, resource.id, resource.url),
-        }
-      }
-
-      return {
-        resource,
-        entries: [withResourceId(result.value, resource.id)],
-        issues: [],
-      }
-    } catch (error) {
-      return {
-        resource,
-        entries: [],
-        issues: [mapFetchIssue(error, resource.id, resource.url)],
-      }
+    const { value, issues } = await fetchParsed(
+      resource.url,
+      parseReleaseEntry,
+      options,
+      owner,
+    )
+    return {
+      resource,
+      entries: value ? [withResourceId(value, resource.id)] : [],
+      issues,
     }
   }
 
-  try {
-    const document = await options.fetchJson<unknown>(resource.url, {
-      signal: options.signal,
-      maxBytes,
-    })
-    const catalog = parseReleaseCatalog(document, resource.url)
-
-    if (!catalog.ok) {
-      return {
-        resource,
-        entries: [],
-        issues: mapProfileIssues(catalog.issues, resource.id, resource.url),
-      }
-    }
-
-    return {
-      resource,
-      entries: catalog.value.map((entry) => withResourceId(entry, resource.id)),
-      issues: [],
-    }
-  } catch (error) {
-    return {
-      resource,
-      entries: [],
-      issues: [mapFetchIssue(error, resource.id, resource.url)],
-    }
+  const { value, issues } = await fetchParsed(
+    resource.url,
+    parseReleaseCatalog,
+    options,
+    owner,
+  )
+  return {
+    resource,
+    entries: (value ?? []).map((entry) => withResourceId(entry, resource.id)),
+    issues,
   }
 }
 
 export async function resolveOnlineLUTSourceEntry(
   entry: OnlineLUTSourceEntry,
-  options: {
-    fetchJson: typeof fetchJsonWithLimit
-    signal?: AbortSignal
-    maxJsonBytes?: number
-  },
+  options: FetchOptions,
 ): Promise<OnlineLUTSourceEntryResolution> {
   if (entry.sourceType !== 'catalog-entry' || entry.trustedContract) {
     return { entry, issues: [] }
   }
 
-  const maxBytes = options.maxJsonBytes ?? defaultMaxJsonBytes
-
-  try {
-    const document = await options.fetchJson<unknown>(entry.sourceUrl, {
-      signal: options.signal,
-      maxBytes,
-    })
-    const result = parseReleaseEntry(document, entry.sourceUrl)
-
-    if (!result.ok) {
-      return {
-        entry,
-        issues: mapProfileIssues(
-          result.issues,
-          entry.resourceId,
-          entry.sourceUrl,
-        ),
-      }
-    }
-
-    return {
-      entry: withResourceId(result.value, entry.resourceId),
-      issues: [],
-    }
-  } catch (error) {
-    return {
-      entry,
-      issues: [
-        mapFetchIssue(error, entry.resourceId, entry.sourceUrl, entry.id),
-      ],
-    }
+  const { value, issues } = await fetchParsed(
+    entry.sourceUrl,
+    parseReleaseEntry,
+    options,
+    { resourceId: entry.resourceId, entryId: entry.id },
+  )
+  return {
+    entry: value ? withResourceId(value, entry.resourceId) : entry,
+    issues,
   }
 }
 
@@ -561,12 +511,8 @@ export function findOnlineLUTSourceResourceByUrl(
   resources: readonly ProfileSourceResource[],
   url: string,
 ): ProfileSourceResource | undefined {
-  let normalizedUrl: string
-  try {
-    normalizedUrl = normalizeProfileSourceUrl(url)
-  } catch {
-    return undefined
-  }
+  const normalizedUrl = normalizeUrl(url)
+  if (!normalizedUrl) return undefined
 
   return resources.find(
     (resource) => normalizeResourceUrl(resource) === normalizedUrl,

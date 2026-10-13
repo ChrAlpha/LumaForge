@@ -1,11 +1,7 @@
 import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 
 import { toSelectableContract } from './lut-contract'
-import {
-  getProfileAsOutputLabel,
-  getProfileGroupLabel,
-  getProfileOutputLabel,
-} from './lut-contract-labels'
+import { getProfileOutputLabel, groupByProfile } from './lut-contract-labels'
 
 export type LUTOutputOption = {
   id: string
@@ -49,8 +45,7 @@ export function toDeclaredOutputOption(
 
   return {
     id: `${profile.id}:declared-output`,
-    label:
-      getProfileOutputLabel(selectable) ?? getProfileAsOutputLabel(profile),
+    label: getProfileOutputLabel(selectable),
     gamut: selectable.outputGamut,
     transfer: selectable.outputTransfer,
     range: selectable.outputRange,
@@ -86,15 +81,5 @@ export function toOutputCarrierProfile(
 }
 
 export function groupOutputOptions(options: LUTOutputOption[]) {
-  const groups = new Map<string, LUTOutputOption[]>()
-
-  for (const option of options) {
-    const group = getProfileGroupLabel(option.sourceProfile)
-    groups.set(group, [...(groups.get(group) ?? []), option])
-  }
-
-  return Array.from(groups.entries()).map(([label, items]) => ({
-    label,
-    items,
-  }))
+  return groupByProfile(options, (option) => option.sourceProfile)
 }

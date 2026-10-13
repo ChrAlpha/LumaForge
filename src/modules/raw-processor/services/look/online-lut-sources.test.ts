@@ -15,6 +15,7 @@ import {
   getOnlineLUTSourceResolutionActivation,
   getShareableOnlineLUTSourceResources,
   mergeOnlineLUTSourceResolution,
+  ONLINE_LUT_MAX_JSON_BYTES,
   persistOnlineLUTSourceResource,
   removeOnlineLUTSourceResource,
   resolveOnlineLUTSourceEntry,
@@ -149,14 +150,13 @@ describe('online LUT source metadata service', () => {
 
     const resolution = await resolveProfileSourceResource(resource({}), {
       fetchJson,
-      maxJsonBytes: 1234,
     })
     const state = mergeOnlineLUTSourceResolution(emptyState(), resolution)
 
     expect(fetchJson).toHaveBeenCalledTimes(1)
     expect(fetchJson).toHaveBeenNthCalledWith(1, catalogUrl, {
       signal: undefined,
-      maxBytes: 1234,
+      maxBytes: ONLINE_LUT_MAX_JSON_BYTES,
     })
     expect(state.entries).toMatchObject([
       {
@@ -177,7 +177,6 @@ describe('online LUT source metadata service', () => {
 
     const resolution = await resolveProfileSourceResource(resource({}), {
       fetchJson,
-      maxJsonBytes: 1234,
     })
 
     expect(resolution.entries).toMatchObject([
@@ -200,7 +199,6 @@ describe('online LUT source metadata service', () => {
 
     const catalogResolution = await resolveProfileSourceResource(resource({}), {
       fetchJson,
-      maxJsonBytes: 1234,
     })
     expect(fetchJson.mock.calls.map(([url]) => url)).toEqual([catalogUrl])
 
@@ -208,13 +206,12 @@ describe('online LUT source metadata service', () => {
     const [catalogEntry] = catalogResolution.entries
     const entryResolution = await resolveOnlineLUTSourceEntry(catalogEntry, {
       fetchJson,
-      maxJsonBytes: 2345,
     })
 
     expect(fetchJson).toHaveBeenCalledTimes(1)
     expect(fetchJson).toHaveBeenCalledWith(entryUrl, {
       signal: undefined,
-      maxBytes: 2345,
+      maxBytes: ONLINE_LUT_MAX_JSON_BYTES,
     })
     expect(entryResolution).toMatchObject({
       entry: {
@@ -243,7 +240,6 @@ describe('online LUT source metadata service', () => {
 
     const entryResolution = await resolveOnlineLUTSourceEntry(catalogEntry, {
       fetchJson,
-      maxJsonBytes: 2345,
     })
 
     expect(entryResolution.entry).toEqual(catalogEntry)
@@ -267,13 +263,13 @@ describe('online LUT source metadata service', () => {
         type: 'entry',
         label: 'Entry from profiles.example.com',
       }),
-      { fetchJson, maxJsonBytes: 2048 },
+      { fetchJson },
     )
 
     expect(fetchJson).toHaveBeenCalledTimes(1)
     expect(fetchJson).toHaveBeenCalledWith(entryUrl, {
       signal: undefined,
-      maxBytes: 2048,
+      maxBytes: ONLINE_LUT_MAX_JSON_BYTES,
     })
     expect(resolution.entries).toMatchObject([
       {
@@ -294,7 +290,7 @@ describe('online LUT source metadata service', () => {
         type: 'cube',
         label: 'Kodak Cube',
       }),
-      { fetchJson, maxJsonBytes: 2048 },
+      { fetchJson },
     )
 
     expect(fetchJson).not.toHaveBeenCalled()
@@ -320,7 +316,7 @@ describe('online LUT source metadata service', () => {
     const fetchJson = createFetchJson({ [entryUrl]: entryManifest() })
     const resolution = await resolveProfileSourceResource(
       resource({ id: 'entry-source', url: entryUrl, type: 'entry' }),
-      { fetchJson, maxJsonBytes: 2048 },
+      { fetchJson },
     )
     const state = mergeOnlineLUTSourceResolution(
       emptyState({ issues: [existingIssue] }),
@@ -344,7 +340,7 @@ describe('online LUT source metadata service', () => {
         url: entryUrl,
         type: 'entry',
       }),
-      { fetchJson, maxJsonBytes: 2048 },
+      { fetchJson },
     )
     const state = mergeOnlineLUTSourceResolution(
       emptyState({ resources: [oldResource] }),
@@ -530,12 +526,10 @@ describe('online LUT source metadata service', () => {
 
     const first = await resolveProfileSourceResource(resource({}), {
       fetchJson,
-      maxJsonBytes: 2048,
     })
     const firstState = mergeOnlineLUTSourceResolution(emptyState(), first)
     const second = await resolveProfileSourceResource(resource({}), {
       fetchJson,
-      maxJsonBytes: 2048,
     })
     const refreshed = mergeOnlineLUTSourceResolution(firstState, second)
 

@@ -2,7 +2,6 @@ import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import {
-  getProfileAsOutputLabel,
   getProfileContractLabel,
   getProfileGroupLabel,
   getProfileOutputLabel,
@@ -40,14 +39,6 @@ describe('getProfileOutputLabel', () => {
 
   it('asks for an output when the contract has none', () => {
     expect(getProfileOutputLabel(vlog709)).toBe('Output profile required')
-    expect(getProfileOutputLabel(undefined)).toBeUndefined()
-  })
-})
-
-describe('getProfileAsOutputLabel', () => {
-  it('names a profile used as an output by its input side', () => {
-    expect(getProfileAsOutputLabel(displaySrgb)).toBe('Rec.709 display')
-    expect(getProfileAsOutputLabel(vlog709)).toBe('V-Gamut / V-Log')
   })
 })
 

@@ -25,8 +25,6 @@ function createStyle(overrides: Partial<StyleAsset> = {}): StyleAsset {
     name: 'Client LUT',
     defaultIntensity: 0.7,
     currentIntensity: 0.7,
-    warning:
-      'Choose the LUT input and output contract before preview or export.',
     lutAsset: {
       format: 'cube',
       dimension: 17,
@@ -112,7 +110,7 @@ function readyExportState(): ImageSession['exportState'] {
 }
 
 describe('look session state transitions', () => {
-  it('applies a custom look and LUT profile selection while clearing a ready export when requested', () => {
+  it('applies a custom look and LUT profile selection and clears a ready export', () => {
     const selection = {
       status: 'unknown' as const,
       fingerprint: 'lut-fingerprint',
@@ -124,7 +122,6 @@ describe('look session state transitions', () => {
     const next = applyActiveLookToSession(session, {
       style,
       lutProfileSelection: selection,
-      clearExportResult: true,
     })
 
     expect(next).not.toBe(session)
@@ -138,83 +135,29 @@ describe('look session state transitions', () => {
     })
   })
 
-  it('applies a builtin look and clears LUT profile selection without clearing export results when not requested', () => {
-    const session = createSession({
-      activeStyle: createStyle(),
-      lutProfileSelection: {
-        status: 'unknown',
-        fingerprint: 'previous',
-        title: 'Previous LUT',
-      },
-      exportState: readyExportState(),
-    })
-    const builtin = createStyle({
-      kind: 'builtin',
-      name: 'Neutral',
-      lutAsset: undefined,
-    })
-
-    const next = applyActiveLookToSession(session, {
-      style: builtin,
-      lutProfileSelection: undefined,
-      clearExportResult: false,
-    })
-
-    expect(next).not.toBe(session)
-    expect(next.activeStyle).toBe(builtin)
-    expect(next.lutProfileSelection).toBeUndefined()
-    expect(next.exportState.status).toBe('ready')
-    expect(next.exportState.result).toBeDefined()
-  })
-
-  it('updates active style intensity and clears a ready export only when requested', () => {
+  it('updates active style intensity and clears a ready export', () => {
     const session = createSession({
       activeStyle: createStyle({ currentIntensity: 0.7 }),
       exportState: readyExportState(),
     })
 
-    const next = applyLookIntensityToSession(session, {
-      intensity: 0.62,
-      clearExportResult: true,
-    })
+    const next = applyLookIntensityToSession(session, 0.62)
 
     // Continuous: the amount lands exactly, not snapped to a preset.
     expect(next.activeStyle).toMatchObject({ currentIntensity: 0.62 })
     expect(next.exportState.status).toBe('idle')
     expect(next.exportState.result).toBeUndefined()
 
-    const repeated = applyLookIntensityToSession(next, {
-      intensity: 0.62,
-      clearExportResult: false,
+    // Out-of-range amounts clamp to 0..1; a non-number is the default.
+    expect(applyLookIntensityToSession(next, 1.4).activeStyle).toMatchObject({
+      currentIntensity: 1,
     })
-
-    expect(repeated).not.toBe(next)
-    expect(repeated.activeStyle).toMatchObject({
-      currentIntensity: 0.62,
-    })
-
-    // Out-of-range amounts clamp to 0..1.
     expect(
-      applyLookIntensityToSession(next, {
-        intensity: 1.4,
-        clearExportResult: false,
-      }).activeStyle,
-    ).toMatchObject({ currentIntensity: 1 })
-    expect(repeated.exportState.status).toBe('idle')
+      applyLookIntensityToSession(next, Number.NaN).activeStyle,
+    ).toMatchObject({ currentIntensity: 0.7 })
   })
 
-  it('leaves a style-less session unchanged by reference when intensity repeats without export invalidation', () => {
-    const session = createSession()
-
-    expect(
-      applyLookIntensityToSession(session, {
-        intensity: 0.7,
-        clearExportResult: false,
-      }),
-    ).toBe(session)
-  })
-
-  it('clears active look and LUT profile selection while preserving ready export results when not requested', () => {
+  it('clears the active look, its LUT profile selection, and a ready export', () => {
     const session = createSession({
       activeStyle: createStyle(),
       lutProfileSelection: {
@@ -225,15 +168,12 @@ describe('look session state transitions', () => {
       exportState: readyExportState(),
     })
 
-    const next = clearActiveLookFromSession(session, {
-      clearExportResult: false,
-    })
+    const next = clearActiveLookFromSession(session)
 
-    expect(next).not.toBe(session)
     expect(next.activeStyle).toBeNull()
     expect(next.lutProfileSelection).toBeUndefined()
-    expect(next.exportState.status).toBe('ready')
-    expect(next.exportState.result).toBeDefined()
+    expect(next.exportState.status).toBe('idle')
+    expect(next.exportState.result).toBeUndefined()
   })
 
   it('preserves current custom intensity only across custom look replacements', () => {

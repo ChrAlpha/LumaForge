@@ -1,4 +1,5 @@
 import type { ParsedLUT } from '@lumaforge/luma-color-runtime'
+import { normalizeLookIntensity } from '@lumaforge/luma-color-runtime'
 
 import type {
   ImageSession,
@@ -6,7 +7,7 @@ import type {
   StyleAsset,
 } from '../../model/session'
 import { clearExportResultState } from '../export/export-state'
-import { clampLookIntensity, toCustomStyle } from './style-system'
+import { DEFAULT_LOOK_INTENSITY, toCustomStyle } from './style-system'
 
 /**
  * Resolve the detached (pre-session) look from the standalone LUT atom.
@@ -23,7 +24,7 @@ export function resolveDetachedLookStyle(
 
   return {
     ...toCustomStyle(lut),
-    currentIntensity: clampLookIntensity(intensity),
+    currentIntensity: normalizeLookIntensity(intensity, DEFAULT_LOOK_INTENSITY),
   }
 }
 
@@ -64,53 +65,40 @@ export function applyActiveLookToSession(
   input: {
     style: StyleAsset | null
     lutProfileSelection?: LUTContractSelectionState
-    clearExportResult: boolean
   },
 ): ImageSession {
-  const nextSession = {
+  return clearExportResultState({
     ...session,
     activeStyle: input.style,
     lutProfileSelection: input.lutProfileSelection,
-  }
-
-  return input.clearExportResult
-    ? clearExportResultState(nextSession)
-    : nextSession
+  })
 }
 
 export function applyLookIntensityToSession(
   session: ImageSession,
-  input: {
-    intensity: number
-    clearExportResult: boolean
-  },
+  intensity: number,
 ): ImageSession {
-  if (!session.activeStyle) {
-    return input.clearExportResult ? clearExportResultState(session) : session
-  }
-
-  const nextSession = {
-    ...session,
-    activeStyle: {
-      ...session.activeStyle,
-      currentIntensity: clampLookIntensity(input.intensity),
-    },
-  }
-
-  return input.clearExportResult
-    ? clearExportResultState(nextSession)
-    : nextSession
+  return clearExportResultState(
+    session.activeStyle
+      ? {
+          ...session,
+          activeStyle: {
+            ...session.activeStyle,
+            currentIntensity: normalizeLookIntensity(
+              intensity,
+              DEFAULT_LOOK_INTENSITY,
+            ),
+          },
+        }
+      : session,
+  )
 }
 
 export function clearActiveLookFromSession(
   session: ImageSession,
-  input: {
-    clearExportResult: boolean
-  },
 ): ImageSession {
   return applyActiveLookToSession(session, {
     style: null,
     lutProfileSelection: undefined,
-    clearExportResult: input.clearExportResult,
   })
 }

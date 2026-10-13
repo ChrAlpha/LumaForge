@@ -4,6 +4,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import {
   normalizeColorBalanceParams,
+  normalizeLookIntensity,
   normalizeSaturationParams,
   normalizeToneParams,
 } from '@lumaforge/luma-color-runtime'
@@ -21,7 +22,7 @@ import {
   applyLookIntensityToSession,
   clearActiveLookFromSession,
 } from './look-session-state'
-import { clampLookIntensity } from './style-system'
+import { DEFAULT_LOOK_INTENSITY } from './style-system'
 
 export function computeCompareSplitChange(
   session: ImageSession | null,
@@ -58,16 +59,13 @@ export function computeSessionIntensityChange(
   prevSession: ImageSession,
   value: number,
 ): { session: ImageSession; shouldInvalidateExportGraph: boolean } {
-  const intensity = clampLookIntensity(value)
+  const intensity = normalizeLookIntensity(value, DEFAULT_LOOK_INTENSITY)
   const shouldInvalidateExportGraph =
     projectSessionLookIntensity(prevSession) !== intensity
 
   return {
     session: shouldInvalidateExportGraph
-      ? applyLookIntensityToSession(prevSession, {
-          intensity,
-          clearExportResult: true,
-        })
+      ? applyLookIntensityToSession(prevSession, intensity)
       : prevSession,
     shouldInvalidateExportGraph,
   }
@@ -83,7 +81,7 @@ export function computeDetachedIntensityChange(
   prevParams: ColorGraphIntent,
   value: number,
 ): { params: ColorGraphIntent; shouldInvalidateExportGraph: boolean } {
-  const intensity = clampLookIntensity(value)
+  const intensity = normalizeLookIntensity(value, DEFAULT_LOOK_INTENSITY)
   const shouldInvalidateExportGraph = prevParams.intensity !== intensity
 
   return {
@@ -110,7 +108,7 @@ export function computeSessionClearLUT(
 
   return {
     session: shouldInvalidateExportGraph
-      ? clearActiveLookFromSession(prevSession, { clearExportResult: true })
+      ? clearActiveLookFromSession(prevSession)
       : prevSession,
     shouldInvalidateExportGraph,
   }

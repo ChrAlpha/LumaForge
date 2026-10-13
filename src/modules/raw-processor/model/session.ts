@@ -97,7 +97,6 @@ export type StyleAsset = {
   currentIntensity: number
   /** The amount a fresh look starts at and a Strength reset returns to. */
   defaultIntensity: number
-  warning?: string
   lutAsset?: {
     format: 'cube'
     dimension: 17 | 33 | 65

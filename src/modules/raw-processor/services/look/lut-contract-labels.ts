@@ -2,7 +2,6 @@ import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
 import {
   getColorGamut,
   getTransferFunction,
-  hasDisplayLikeInput,
 } from '@lumaforge/luma-color-runtime'
 
 import type { KnownLUTContractOutput, LUTContractOutput } from './lut-contract'
@@ -27,19 +26,8 @@ function formatOutput(output: LUTContractOutput) {
   return formatLUTContractOutput(output)
 }
 
-export function getProfileOutputLabel(profile?: LUTColorProfile) {
-  if (!profile) return undefined
+export function getProfileOutputLabel(profile: LUTColorProfile) {
   return formatOutput(describeLUTContractOutput(profile))
-}
-
-export function getProfileAsOutputLabel(profile: LUTColorProfile) {
-  if (hasDisplayLikeInput(profile)) return DISPLAY_OUTPUT_LABEL
-
-  const gamut = getColorGamut(profile.inputGamut)?.label ?? profile.inputGamut
-  const transfer =
-    getTransferFunction(profile.inputTransfer)?.label ?? profile.inputTransfer
-
-  return `${gamut} / ${transfer}`
 }
 
 export function getProfileContractLabel(profile: LUTColorProfile) {
@@ -59,16 +47,19 @@ export function getProfileGroupLabel(profile: LUTColorProfile) {
   return 'Other'
 }
 
-export function groupProfiles(profiles: LUTColorProfile[]) {
-  const groups = new Map<string, LUTColorProfile[]>()
-
-  for (const profile of profiles) {
-    const group = getProfileGroupLabel(profile)
-    groups.set(group, [...(groups.get(group) ?? []), profile])
+/** Groups items by the group label of the profile each names, in first-seen order. */
+export function groupByProfile<Item>(
+  items: readonly Item[],
+  profileOf: (item: Item) => LUTColorProfile,
+) {
+  const groups = new Map<string, Item[]>()
+  for (const item of items) {
+    const label = getProfileGroupLabel(profileOf(item))
+    groups.set(label, [...(groups.get(label) ?? []), item])
   }
+  return Array.from(groups, ([label, grouped]) => ({ label, items: grouped }))
+}
 
-  return Array.from(groups.entries()).map(([label, items]) => ({
-    label,
-    items,
-  }))
+export function groupProfiles(profiles: LUTColorProfile[]) {
+  return groupByProfile(profiles, (profile) => profile)
 }
