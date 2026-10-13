@@ -297,7 +297,7 @@ describe('preview pipeline facade', () => {
     const options = {
       width: 64,
       height: 32,
-      exportOptions: { memoryBudgetBytes: 4096 },
+      budgetBytes: 4096,
     }
     await expect(pipeline.renderToHiddenCanvas(options)).resolves.toBe(output)
     expect(fixtures.gpu.renderToHiddenCanvas).toHaveBeenCalledExactlyOnceWith(

@@ -2,78 +2,152 @@ import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { LUT_SIZE } from '@lumaforge/luma-color-runtime'
 
 import type { GPUReadbackScope } from './async-resources'
-import type { ExportRenderOptions, ExportRenderPlan } from './export-plan'
-import {
-  createExportTiles,
-  cropRawUploadInput,
-  planExportRenderTarget,
-} from './export-plan'
+import type { RawUploadInput } from './contract'
 import { WebGPUImages } from './images'
 import type { WebGPUPrograms } from './programs'
 import { UNIFORM_BUFFER_SIZE } from './uniform-layout'
 import { gpuPreviewInputParams, packUniforms } from './uniforms'
 
+export type SnapshotPlan =
+  | { strategy: 'full-frame'; width: number; height: number }
+  | {
+      strategy: 'tiled'
+      width: number
+      height: number
+      tileWidth: number
+      tileHeight: number
+      reason: 'texture-limit' | 'memory-budget'
+    }
+  | {
+      strategy: 'fail'
+      width: number
+      height: number
+      reason: 'canvas-limit' | 'gpu-limit'
+    }
+
+interface SnapshotTile {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+const MAX_CANVAS_SIZE = 16_384
+const MAX_CANVAS_PIXELS = 120_000_000
+const DEFAULT_BUDGET_BYTES = 768 * 1024 * 1024
+const RENDER_BYTES_PER_PIXEL = 32
+// RGBA16 uint source texel; WebGPU has no three-channel 16-bit format.
+const INPUT_BYTES_PER_PIXEL = 8
+const MIN_TILE_SIZE = 256
+
+function readbackBytes(width: number, height: number): number {
+  return Math.ceil((width * 4) / 256) * 256 * height
+}
+
+/**
+ * Plans the HQ preview snapshot: one full-frame readback when the GPU texture
+ * limit and the memory budget hold it, otherwise square tiles whose source,
+ * process and readback targets plus the LUT stay inside the budget.
+ */
 export function planSnapshotRender({
   width,
   height,
   maxTextureSize,
   lutSize,
-  exportOptions = {},
+  budgetBytes = DEFAULT_BUDGET_BYTES,
 }: {
   width: number
   height: number
   maxTextureSize: number
   lutSize: number
-  exportOptions?: ExportRenderOptions
-}): ExportRenderPlan {
-  const plan = planExportRenderTarget({
+  budgetBytes?: number
+}): SnapshotPlan {
+  const pixels = width * height
+  if (
+    !(width > 0 && height > 0) ||
+    width > MAX_CANVAS_SIZE ||
+    height > MAX_CANVAS_SIZE ||
+    pixels > MAX_CANVAS_PIXELS
+  )
+    return { strategy: 'fail', width, height, reason: 'canvas-limit' }
+  const gpuLimit = {
+    strategy: 'fail',
     width,
     height,
-    maxTextureSize,
-    ...exportOptions,
-  })
-  if (plan.strategy === 'fail') return plan
-  const budget = exportOptions.memoryBudgetBytes ?? 768 * 1024 * 1024
-  const fullReadbackBytes =
-    width * height * 4 +
-    Math.ceil((width * 4) / 256) * 256 * height +
-    UNIFORM_BUFFER_SIZE
-  if (plan.strategy === 'full-frame' && fullReadbackBytes <= budget) return plan
+    reason: 'gpu-limit',
+  } as const
+  if (!Number.isFinite(maxTextureSize) || maxTextureSize < MIN_TILE_SIZE)
+    return gpuLimit
+  const fitsTexture = width <= maxTextureSize && height <= maxTextureSize
+  const fullFrameFits =
+    fitsTexture && pixels * RENDER_BYTES_PER_PIXEL <= budgetBytes
+  if (
+    fullFrameFits &&
+    pixels * 4 + readbackBytes(width, height) + UNIFORM_BUFFER_SIZE <=
+      budgetBytes
+  )
+    return { strategy: 'full-frame', width, height }
+  // A frame too large for one render needs tiles of at least MIN_TILE_SIZE.
+  if (
+    !fullFrameFits &&
+    Math.sqrt(budgetBytes / RENDER_BYTES_PER_PIXEL) < MIN_TILE_SIZE
+  )
+    return gpuLimit
   const fixedBytes =
     lutSize ** 3 * 16 + LUT_SIZE * 16 + 16 + UNIFORM_BUFFER_SIZE
-  // RGBA16 uint source texel; WebGPU has no three-channel 16-bit format.
-  const inputBytesPerPixel = 8
-  const renderBytesPerPixel = Math.max(
-    inputBytesPerPixel + 16,
-    exportOptions.renderBytesPerPixel ?? 32,
-  )
+  const tileBytes = (side: number) =>
+    fixedBytes +
+    side * side * (INPUT_BYTES_PER_PIXEL + 12) +
+    readbackBytes(side, side)
   let side = Math.min(
     maxTextureSize,
     Math.floor(
-      Math.sqrt(Math.max(0, budget - fixedBytes) / renderBytesPerPixel),
+      Math.sqrt(Math.max(0, budgetBytes - fixedBytes) / RENDER_BYTES_PER_PIXEL),
     ),
   )
-  const bytes = (n: number) =>
-    fixedBytes +
-    n * n * (inputBytesPerPixel + 12) +
-    Math.ceil((n * 4) / 256) * 256 * n
-  while (side > 0 && bytes(side) > budget) side--
-  if (side < 1)
-    return {
-      strategy: 'fail',
-      width,
-      height,
-      reason: 'gpu-limit',
-      retryable: false,
-    }
+  while (side > 0 && tileBytes(side) > budgetBytes) side--
+  if (side < 1) return gpuLimit
   return {
     strategy: 'tiled',
     width,
     height,
-    reason: plan.strategy === 'tiled' ? plan.reason : 'memory-budget',
+    reason: fitsTexture ? 'memory-budget' : 'texture-limit',
     tileWidth: Math.min(width, side),
     tileHeight: Math.min(height, side),
   }
+}
+
+export function snapshotTiles({
+  width,
+  height,
+  tileWidth,
+  tileHeight,
+}: Extract<SnapshotPlan, { strategy: 'tiled' }>): SnapshotTile[] {
+  const tiles: SnapshotTile[] = []
+  for (let y = 0; y < height; y += tileHeight) {
+    for (let x = 0; x < width; x += tileWidth) {
+      tiles.push({
+        x,
+        y,
+        width: Math.min(tileWidth, width - x),
+        height: Math.min(tileHeight, height - y),
+      })
+    }
+  }
+  return tiles
+}
+
+export function cropSnapshotSource(
+  input: RawUploadInput,
+  tile: SnapshotTile,
+): RawUploadInput {
+  const data = new Uint16Array(tile.width * tile.height * 3)
+  const rowLength = tile.width * 3
+  for (let row = 0; row < tile.height; row++) {
+    const offset = ((tile.y + row) * input.width + tile.x) * 3
+    data.set(input.data.subarray(offset, offset + rowLength), row * rowLength)
+  }
+  return { ...input, width: tile.width, height: tile.height, data }
 }
 
 interface SnapshotInput {
@@ -85,7 +159,7 @@ interface SnapshotInput {
   exposure: number
   width: number
   height: number
-  plan: Exclude<ExportRenderPlan, { strategy: 'fail' }>
+  plan: Exclude<SnapshotPlan, { strategy: 'fail' }>
   scope: GPUReadbackScope
   assertReady: () => void
 }
@@ -158,12 +232,12 @@ export async function renderSnapshot(
   })
   const tiles =
     plan.strategy === 'tiled'
-      ? createExportTiles(plan)
+      ? snapshotTiles(plan)
       : [{ x: 0, y: 0, width, height }]
   for (const tile of tiles) {
     assertReady()
     if (plan.strategy === 'tiled')
-      targets.uploadImage(cropRawUploadInput(source, tile))
+      targets.uploadImage(cropSnapshotSource(source, tile))
     const pixels = await readOutputTile(
       { ...input, images: targets },
       uniforms,

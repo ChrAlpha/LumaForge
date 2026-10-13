@@ -332,7 +332,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
       const actual = await gpu.renderToHiddenCanvas({
         width: tiledFixture.width,
         height: tiledFixture.height,
-        exportOptions: { memoryBudgetBytes: 256 * 256 * 32 },
+        budgetBytes: 256 * 256 * 32,
       })
       const stats = gpu.getLastExportStats()
       check(

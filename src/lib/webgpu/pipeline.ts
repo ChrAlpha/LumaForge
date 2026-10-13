@@ -10,8 +10,6 @@ import type {
 } from './contract'
 import type { WebGPUDeviceLease } from './device'
 import { acquireWebGPUDevice } from './device'
-import type { ExportRenderOptions } from './export-plan'
-import { ExportRenderError } from './export-plan'
 import { WebGPUFrameScheduler } from './frame-scheduler'
 import { WebGPUImages } from './images'
 import { webGPUCapabilities, webGPUTelemetry } from './pipeline-telemetry'
@@ -323,11 +321,12 @@ export class WebGPUProcessingPipeline {
   async renderToHiddenCanvas({
     width,
     height,
-    exportOptions,
+    budgetBytes,
   }: {
     width: number
     height: number
-    exportOptions?: ExportRenderOptions
+    /** Snapshot memory budget; defaults to the planner's. */
+    budgetBytes?: number
   }) {
     const { device, images } = this.assertReady()
     if (!images.inputUpload) throw new Error('EXPORT_SOURCE_MISSING')
@@ -337,7 +336,7 @@ export class WebGPUProcessingPipeline {
       height,
       maxTextureSize: device.limits.maxTextureDimension2D,
       lutSize: images.lutData?.size ?? 0,
-      exportOptions,
+      budgetBytes,
     })
     const planningTime = performance.now() - start
     const stats = {
@@ -354,9 +353,13 @@ export class WebGPUProcessingPipeline {
         ...stats,
         strategy: 'fail',
         reason: plan.reason,
-        retryable: plan.retryable,
+        retryable: plan.reason === 'canvas-limit',
       }
-      throw ExportRenderError.fromFailedPlan(plan)
+      throw new Error(
+        plan.reason === 'canvas-limit'
+          ? 'EXPORT_CANVAS_LIMIT_EXCEEDED'
+          : 'EXPORT_GPU_LIMIT_EXCEEDED',
+      )
     }
     const scope = this.readbacks.create()
     try {
