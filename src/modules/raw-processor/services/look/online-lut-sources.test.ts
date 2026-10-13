@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { fetchJsonWithLimit } from '~/lib/profiles/fetch'
 import type { ProfileSourceResource } from '~/lib/profiles/source-url'
@@ -16,6 +16,8 @@ import {
   getShareableOnlineLUTSourceResources,
   mergeOnlineLUTSourceResolution,
   ONLINE_LUT_MAX_JSON_BYTES,
+  ONLINE_LUT_SOURCE_STORAGE_KEY,
+  persistOnlineLUTSourceRemoval,
   persistOnlineLUTSourceResource,
   removeOnlineLUTSourceResource,
   resolveOnlineLUTSourceEntry,
@@ -43,7 +45,7 @@ const primaryAsset = {
 }
 
 function resource(
-  overrides: Partial<ProfileSourceResource>,
+  overrides: Partial<ProfileSourceResource> = {},
 ): ProfileSourceResource {
   return {
     id: 'source-1',
@@ -55,9 +57,7 @@ function resource(
   }
 }
 
-function entryManifest(
-  overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
+function entryManifest(): Record<string, unknown> {
   return {
     schemaVersion: 1,
     id: 'kodak-2383-rec709',
@@ -84,28 +84,47 @@ function entryManifest(
       output: { gamut: 'rec709', transfer: 'gamma24', range: 'legal' },
     },
     tags: ['film-print'],
+  }
+}
+
+function catalogDocument(): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    entries: [
+      {
+        id: 'kodak-2383-rec709',
+        kind: 'lut',
+        version: '1.0.0',
+        title: 'Kodak 2383 Rec.709',
+        license: 'NOASSERTION',
+        redistributionAllowed: true,
+        primaryAsset,
+        entryUrl,
+      },
+    ],
+  }
+}
+
+function sourceEntry(
+  overrides: Partial<OnlineLUTSourceEntry> = {},
+): OnlineLUTSourceEntry {
+  return {
+    id: 'kodak-2383-rec709',
+    resourceId: 'source-1',
+    title: 'Kodak 2383 Rec.709',
+    sourceUrl: entryUrl,
+    sourceType: 'catalog-entry',
+    cube: { url: cubeUrl, sha256 },
+    tags: [],
     ...overrides,
   }
 }
 
-function catalogDocument(
-  entries: Record<string, unknown>[] = [
-    {
-      id: 'kodak-2383-rec709',
-      kind: 'lut',
-      version: '1.0.0',
-      title: 'Kodak 2383 Rec.709',
-      license: 'NOASSERTION',
-      redistributionAllowed: true,
-      primaryAsset,
-      entryUrl,
-    },
-  ],
-): Record<string, unknown> {
-  return {
-    schemaVersion: 1,
-    entries,
-  }
+function issue(
+  message: string,
+  overrides: Partial<OnlineLUTSourceIssue> = {},
+): OnlineLUTSourceIssue {
+  return { code: 'network', message, ...overrides }
 }
 
 function emptyState(
@@ -121,6 +140,7 @@ function emptyState(
   }
 }
 
+/** Serves JSON fixtures by URL; a CUBE byte request fails the test. */
 function createFetchJson(fixtures: Record<string, unknown>) {
   const mock = vi.fn(
     async (
@@ -130,11 +150,7 @@ function createFetchJson(fixtures: Record<string, unknown>) {
       if (url.endsWith('.cube')) {
         throw new Error(`CUBE bytes must not be fetched: ${url}`)
       }
-
-      if (!(url in fixtures)) {
-        throw new Error(`Missing fixture for ${url}`)
-      }
-
+      if (!(url in fixtures)) throw new Error(`Missing fixture for ${url}`)
       return fixtures[url]
     },
   )
@@ -142,83 +158,43 @@ function createFetchJson(fixtures: Record<string, unknown>) {
   return mock as typeof fetchJsonWithLimit & typeof mock
 }
 
+const jsonRequest = (url: string) =>
+  [url, { signal: undefined, maxBytes: ONLINE_LUT_MAX_JSON_BYTES }] as const
+
 describe('online LUT source metadata service', () => {
-  it('adds a catalog resource by fetching only catalog JSON and keeping entryUrl for lazy load', async () => {
-    const fetchJson = createFetchJson({
-      [catalogUrl]: catalogDocument(),
-    })
-
-    const resolution = await resolveProfileSourceResource(resource({}), {
-      fetchJson,
-    })
-    const state = mergeOnlineLUTSourceResolution(emptyState(), resolution)
-
-    expect(fetchJson).toHaveBeenCalledTimes(1)
-    expect(fetchJson).toHaveBeenNthCalledWith(1, catalogUrl, {
-      signal: undefined,
-      maxBytes: ONLINE_LUT_MAX_JSON_BYTES,
-    })
-    expect(state.entries).toMatchObject([
-      {
-        id: 'kodak-2383-rec709',
-        resourceId: 'source-1',
-        sourceUrl: entryUrl,
-        cube: { url: cubeUrl, sha256 },
-        trustedContract: undefined,
-      },
-    ])
-    expect(state.issues).toEqual([])
-  })
-
-  it('does not report entry manifest fetch failures while only catalog rows are being listed', async () => {
-    const fetchJson = createFetchJson({
-      [catalogUrl]: catalogDocument(),
-    })
-
-    const resolution = await resolveProfileSourceResource(resource({}), {
-      fetchJson,
-    })
-
-    expect(resolution.entries).toMatchObject([
-      {
-        id: 'kodak-2383-rec709',
-        resourceId: 'source-1',
-        sourceUrl: entryUrl,
-        trustedContract: undefined,
-      },
-    ])
-    expect(fetchJson).toHaveBeenCalledTimes(1)
-    expect(resolution.issues).toEqual([])
-  })
-
-  it('resolves a selected catalog row by fetching only that entry manifest', async () => {
+  it("lists catalog rows from the catalog JSON alone and fetches a row's entry manifest only when it is resolved", async () => {
     const fetchJson = createFetchJson({
       [catalogUrl]: catalogDocument(),
       [entryUrl]: entryManifest(),
     })
 
-    const catalogResolution = await resolveProfileSourceResource(resource({}), {
-      fetchJson,
-    })
-    expect(fetchJson.mock.calls.map(([url]) => url)).toEqual([catalogUrl])
-
-    fetchJson.mockClear()
-    const [catalogEntry] = catalogResolution.entries
-    const entryResolution = await resolveOnlineLUTSourceEntry(catalogEntry, {
+    const resolution = await resolveProfileSourceResource(resource(), {
       fetchJson,
     })
 
-    expect(fetchJson).toHaveBeenCalledTimes(1)
-    expect(fetchJson).toHaveBeenCalledWith(entryUrl, {
-      signal: undefined,
-      maxBytes: ONLINE_LUT_MAX_JSON_BYTES,
-    })
-    expect(entryResolution).toMatchObject({
-      entry: {
+    expect(fetchJson.mock.calls).toEqual([jsonRequest(catalogUrl)])
+    expect(resolution.issues).toEqual([])
+    expect(resolution.entries).toMatchObject([
+      {
         id: 'kodak-2383-rec709',
         resourceId: 'source-1',
         sourceUrl: entryUrl,
         cube: { url: cubeUrl, sha256 },
+        trustedContract: undefined,
+      },
+    ])
+
+    fetchJson.mockClear()
+    const entryResolution = await resolveOnlineLUTSourceEntry(
+      resolution.entries[0],
+      { fetchJson },
+    )
+
+    expect(fetchJson.mock.calls).toEqual([jsonRequest(entryUrl)])
+    expect(entryResolution).toMatchObject({
+      entry: {
+        id: 'kodak-2383-rec709',
+        resourceId: 'source-1',
         trustedContract: { inputTransfer: 'logc3' },
         tags: ['film-print'],
       },
@@ -226,24 +202,15 @@ describe('online LUT source metadata service', () => {
     })
   })
 
-  it('falls back to catalog summary rows when a selected entry manifest cannot be fetched', async () => {
-    const fetchJson = createFetchJson({})
-    const catalogEntry: OnlineLUTSourceEntry = {
-      id: 'kodak-2383-rec709',
-      resourceId: 'source-1',
-      title: 'Kodak 2383 Rec.709',
-      sourceUrl: entryUrl,
-      sourceType: 'catalog-entry',
-      cube: { url: cubeUrl, sha256, bytes: 12, title: 'Kodak 2383 Rec.709' },
-      tags: [],
-    }
+  it('keeps the catalog row when its entry manifest cannot be fetched', async () => {
+    const row = sourceEntry()
 
-    const entryResolution = await resolveOnlineLUTSourceEntry(catalogEntry, {
-      fetchJson,
+    const resolution = await resolveOnlineLUTSourceEntry(row, {
+      fetchJson: createFetchJson({}),
     })
 
-    expect(entryResolution.entry).toEqual(catalogEntry)
-    expect(entryResolution.issues).toMatchObject([
+    expect(resolution.entry).toBe(row)
+    expect(resolution.issues).toMatchObject([
       {
         code: 'network',
         resourceId: 'source-1',
@@ -253,417 +220,214 @@ describe('online LUT source metadata service', () => {
     ])
   })
 
-  it('adds an entry resource by fetching only that entry manifest', async () => {
+  it('adds an entry resource by fetching only its manifest', async () => {
     const fetchJson = createFetchJson({ [entryUrl]: entryManifest() })
 
     const resolution = await resolveProfileSourceResource(
-      resource({
-        id: 'entry-source',
-        url: entryUrl,
-        type: 'entry',
-        label: 'Entry from profiles.example.com',
-      }),
+      resource({ id: 'entry-source', url: entryUrl, type: 'entry' }),
       { fetchJson },
     )
 
-    expect(fetchJson).toHaveBeenCalledTimes(1)
-    expect(fetchJson).toHaveBeenCalledWith(entryUrl, {
-      signal: undefined,
-      maxBytes: ONLINE_LUT_MAX_JSON_BYTES,
-    })
+    expect(fetchJson.mock.calls).toEqual([jsonRequest(entryUrl)])
     expect(resolution.entries).toMatchObject([
       {
         id: 'kodak-2383-rec709',
         resourceId: 'entry-source',
-        sourceUrl: entryUrl,
         trustedContract: { outputTransfer: 'gamma24' },
       },
     ])
   })
 
-  it('adds a direct CUBE resource without fetching JSON or bytes', async () => {
-    const fetchJson = createFetchJson({})
-    const resolution = await resolveProfileSourceResource(
-      resource({
-        id: 'cube-source',
-        url: cubeUrl,
-        type: 'cube',
-        label: 'Kodak Cube',
-      }),
-      { fetchJson },
-    )
+  it.each([
+    ['its label', 'Kodak Cube', 'Kodak Cube'],
+    ['its file name without a label', '', `${sha256}.cube`],
+  ])(
+    'adds a direct CUBE resource titled by %s without fetching anything',
+    async (_, label, title) => {
+      const fetchJson = createFetchJson({})
 
-    expect(fetchJson).not.toHaveBeenCalled()
-    expect(resolution.entries).toEqual([
-      {
-        id: 'cube-source',
-        resourceId: 'cube-source',
-        title: 'Kodak Cube',
-        sourceUrl: cubeUrl,
-        sourceType: 'direct-cube',
-        cube: { url: cubeUrl, sha256: '', title: 'Kodak Cube' },
-        tags: [],
-      },
-    ])
-  })
+      const resolution = await resolveProfileSourceResource(
+        resource({ id: 'cube-source', url: cubeUrl, type: 'cube', label }),
+        { fetchJson },
+      )
 
-  it('preserves invalid query issues while merging valid resources', async () => {
-    const existingIssue: OnlineLUTSourceIssue = {
+      expect(fetchJson).not.toHaveBeenCalled()
+      expect(resolution.entries).toEqual([
+        {
+          id: 'cube-source',
+          resourceId: 'cube-source',
+          title,
+          sourceUrl: cubeUrl,
+          sourceType: 'direct-cube',
+          cube: { url: cubeUrl, sha256: '', title },
+          tags: [],
+        },
+      ])
+    },
+  )
+
+  it('keeps loose input issues when a resolution merges', () => {
+    const inputIssue = issue('Source URL is invalid.', {
       code: 'invalid-url',
-      message: 'Source URL is invalid.',
       raw: 'not-a-url',
-    }
-    const fetchJson = createFetchJson({ [entryUrl]: entryManifest() })
-    const resolution = await resolveProfileSourceResource(
-      resource({ id: 'entry-source', url: entryUrl, type: 'entry' }),
-      { fetchJson },
-    )
+    })
+
     const state = mergeOnlineLUTSourceResolution(
-      emptyState({ issues: [existingIssue] }),
-      resolution,
+      emptyState({ issues: [inputIssue] }),
+      { resource: resource(), entries: [sourceEntry()], issues: [] },
     )
 
-    expect(state.issues).toContainEqual(existingIssue)
+    expect(state.issues).toEqual([inputIssue])
     expect(state.entries).toHaveLength(1)
   })
 
-  it('dedupes duplicate resources by normalized URL and keeps the older id', async () => {
-    const oldResource = resource({
-      id: 'old-source',
-      url: entryUrl,
+  it('merges a duplicate URL into the older source, replacing what either id held', () => {
+    const older = resource({ id: 'old-source', url: entryUrl, type: 'entry' })
+    const newer = resource({ id: 'new-source', url: entryUrl, type: 'entry' })
+    const unrelated = resource({
+      id: 'unrelated-source',
+      url: secondEntryUrl,
       type: 'entry',
     })
-    const fetchJson = createFetchJson({ [entryUrl]: entryManifest() })
-    const resolution = await resolveProfileSourceResource(
-      resource({
-        id: 'new-source',
-        url: entryUrl,
-        type: 'entry',
-      }),
-      { fetchJson },
-    )
+    const unrelatedEntry = sourceEntry({
+      id: 'unrelated-entry',
+      resourceId: 'unrelated-source',
+    })
+    const unrelatedIssue = issue('Unrelated.', {
+      resourceId: 'unrelated-source',
+    })
+
     const state = mergeOnlineLUTSourceResolution(
-      emptyState({ resources: [oldResource] }),
-      resolution,
+      emptyState({
+        resources: [older, newer, unrelated],
+        entries: [
+          sourceEntry({ id: 'old-entry', resourceId: 'old-source' }),
+          sourceEntry({ id: 'new-entry', resourceId: 'new-source' }),
+          unrelatedEntry,
+        ],
+        issues: [
+          issue('Old.', { resourceId: 'old-source' }),
+          issue('New.', { resourceId: 'new-source' }),
+          unrelatedIssue,
+        ],
+      }),
+      {
+        resource: newer,
+        entries: [sourceEntry({ id: 'fresh', resourceId: 'new-source' })],
+        issues: [issue('Fresh.', { resourceId: 'new-source' })],
+      },
     )
 
-    expect(state.resources).toEqual([oldResource])
-    expect(state.entries).toMatchObject([{ resourceId: 'old-source' }])
-    expect(state.activeResourceId).toBe('old-source')
+    expect(state).toEqual({
+      resources: [older, unrelated],
+      entries: [
+        unrelatedEntry,
+        sourceEntry({ id: 'fresh', resourceId: 'old-source' }),
+      ],
+      issues: [unrelatedIssue, issue('Fresh.', { resourceId: 'old-source' })],
+      activeResourceId: 'old-source',
+      isLoading: false,
+    })
   })
 
-  it('retargets synthetic resolution issues to the merged resource id so removal cleans them up', () => {
+  it('retargets resolution issues to the merged source so its removal clears them', () => {
     const state = mergeOnlineLUTSourceResolution(emptyState(), {
-      resource: resource({ id: 'issue-source', url: entryUrl, type: 'entry' }),
+      resource: resource({ id: 'issue-source' }),
       entries: [],
-      issues: [
-        {
-          code: 'invalid-entry',
-          message: 'Release entry shape is invalid.',
-          sourceUrl: entryUrl,
-        },
-      ],
+      issues: [issue('Release entry shape is invalid.')],
     })
 
     expect(state.issues).toEqual([
-      {
-        code: 'invalid-entry',
-        message: 'Release entry shape is invalid.',
-        resourceId: 'issue-source',
-        sourceUrl: entryUrl,
-      },
+      issue('Release entry shape is invalid.', { resourceId: 'issue-source' }),
     ])
-
     expect(removeOnlineLUTSourceResource(state, 'issue-source').issues).toEqual(
       [],
     )
   })
 
-  it('removes stale entries and issues for both ids when duplicate URL merges keep the older id', () => {
-    const oldResource = resource({
-      id: 'old-source',
-      url: entryUrl,
-      type: 'entry',
-    })
-    const newResource = resource({
-      id: 'new-source',
-      url: entryUrl,
-      type: 'entry',
-    })
-    const unrelatedResource = resource({
-      id: 'unrelated-source',
-      url: secondEntryUrl,
-      type: 'entry',
-    })
-    const oldEntry: OnlineLUTSourceEntry = {
-      id: 'old-entry',
-      resourceId: 'old-source',
-      title: 'Old Entry',
-      sourceUrl: entryUrl,
-      sourceType: 'catalog-entry',
-      cube: { url: cubeUrl, sha256 },
-      tags: [],
-    }
-    const newEntry: OnlineLUTSourceEntry = {
-      ...oldEntry,
-      id: 'new-entry',
-      resourceId: 'new-source',
-    }
-    const unrelatedEntry: OnlineLUTSourceEntry = {
-      ...oldEntry,
-      id: 'unrelated-entry',
-      resourceId: 'unrelated-source',
-      sourceUrl: secondEntryUrl,
-    }
-    const oldIssue: OnlineLUTSourceIssue = {
-      code: 'network',
-      message: 'Old issue.',
-      resourceId: 'old-source',
-    }
-    const newIssue: OnlineLUTSourceIssue = {
-      code: 'network',
-      message: 'New issue.',
-      resourceId: 'new-source',
-    }
-    const unrelatedIssue: OnlineLUTSourceIssue = {
-      code: 'network',
-      message: 'Unrelated issue.',
-      resourceId: 'unrelated-source',
-    }
+  it('removes only what a removed source owns and drops it as the active source', () => {
+    const kept = sourceEntry({ id: 'kept', resourceId: 'kept-source' })
+    const keptIssue = issue('Failed.', { resourceId: 'kept-source' })
 
-    const state = mergeOnlineLUTSourceResolution(
-      emptyState({
-        resources: [oldResource, newResource, unrelatedResource],
-        entries: [oldEntry, newEntry, unrelatedEntry],
-        issues: [oldIssue, newIssue, unrelatedIssue],
-      }),
-      {
-        resource: newResource,
-        entries: [
-          {
-            ...newEntry,
-            id: 'fresh-entry',
-          },
-        ],
-        issues: [
-          {
-            code: 'invalid-entry',
-            message: 'Fresh issue.',
-            resourceId: 'new-source',
-          },
-        ],
-      },
-    )
-
-    expect(state.resources).toEqual([oldResource, unrelatedResource])
-    expect(state.entries).toEqual([
-      unrelatedEntry,
-      {
-        ...newEntry,
-        id: 'fresh-entry',
-        resourceId: 'old-source',
-      },
-    ])
-    expect(state.issues).toEqual([
-      unrelatedIssue,
-      {
-        code: 'invalid-entry',
-        message: 'Fresh issue.',
-        resourceId: 'old-source',
-      },
-    ])
-    expect(state.activeResourceId).toBe('old-source')
-  })
-
-  it('removes entries and issues owned only by a removed resource while preserving others', () => {
-    const removedEntry: OnlineLUTSourceEntry = {
-      id: 'removed',
-      resourceId: 'removed-source',
-      title: 'Removed',
-      sourceUrl: entryUrl,
-      sourceType: 'catalog-entry',
-      cube: { url: cubeUrl, sha256 },
-      tags: [],
-    }
-    const keptEntry: OnlineLUTSourceEntry = {
-      ...removedEntry,
-      id: 'kept',
-      resourceId: 'kept-source',
-    }
-    const removedIssue: OnlineLUTSourceIssue = {
-      code: 'network',
-      message: 'Failed.',
-      resourceId: 'removed-source',
-    }
-    const keptIssue: OnlineLUTSourceIssue = {
-      code: 'network',
-      message: 'Failed.',
-      resourceId: 'kept-source',
-    }
     const state = removeOnlineLUTSourceResource(
       emptyState({
         resources: [
           resource({ id: 'removed-source' }),
           resource({ id: 'kept-source' }),
         ],
-        entries: [removedEntry, keptEntry],
-        issues: [removedIssue, keptIssue],
+        entries: [sourceEntry({ resourceId: 'removed-source' }), kept],
+        issues: [issue('Failed.', { resourceId: 'removed-source' }), keptIssue],
         activeResourceId: 'removed-source',
       }),
       'removed-source',
     )
 
     expect(state.resources).toMatchObject([{ id: 'kept-source' }])
-    expect(state.entries).toEqual([keptEntry])
+    expect(state.entries).toEqual([kept])
     expect(state.issues).toEqual([keptIssue])
     expect(state.activeResourceId).toBeNull()
   })
 
-  it('refreshes catalog metadata by re-fetching JSON but never fetching CUBE bytes', async () => {
-    const fetchJson = createFetchJson({
-      [catalogUrl]: catalogDocument(),
+  it('replaces the entries of a refreshed source, and a failed refresh leaves it nothing to share', () => {
+    const listed = resource({ fromQuery: false })
+    const state = emptyState({
+      resources: [listed],
+      entries: [sourceEntry()],
     })
 
-    const first = await resolveProfileSourceResource(resource({}), {
-      fetchJson,
+    const refreshed = mergeOnlineLUTSourceResolution(state, {
+      resource: listed,
+      entries: [sourceEntry()],
+      issues: [],
     })
-    const firstState = mergeOnlineLUTSourceResolution(emptyState(), first)
-    const second = await resolveProfileSourceResource(resource({}), {
-      fetchJson,
-    })
-    const refreshed = mergeOnlineLUTSourceResolution(firstState, second)
+    expect(refreshed.entries).toEqual([sourceEntry()])
+    expect(getShareableOnlineLUTSourceResources(refreshed)).toEqual([listed])
 
-    expect(fetchJson).toHaveBeenCalledTimes(2)
-    expect(fetchJson.mock.calls.map(([url]) => url)).toEqual([
-      catalogUrl,
-      catalogUrl,
-    ])
-    expect(refreshed.entries).toHaveLength(1)
-  })
-
-  it('refresh failure removes stale entries and excludes the failed resource from sharing', () => {
-    const validResource = resource({
-      id: 'entry-source',
-      url: entryUrl,
-      type: 'entry',
-    })
-    const entry: OnlineLUTSourceEntry = {
-      id: 'kodak-2383-rec709',
-      resourceId: 'entry-source',
-      title: 'Kodak 2383 Rec.709',
-      sourceUrl: entryUrl,
-      sourceType: 'catalog-entry',
-      cube: { url: cubeUrl, sha256 },
-      tags: [],
-    }
-    const initialState = emptyState({
-      resources: [validResource],
-      entries: [entry],
-    })
-
-    const failedRefresh = mergeOnlineLUTSourceResolution(initialState, {
-      resource: validResource,
+    const failedIssue = issue('Failed to refresh.', { resourceId: 'source-1' })
+    const failed = mergeOnlineLUTSourceResolution(state, {
+      resource: listed,
       entries: [],
-      issues: [
-        {
-          code: 'network',
-          message: 'Failed to refresh.',
-          resourceId: 'entry-source',
-          sourceUrl: entryUrl,
-        },
-      ],
+      issues: [failedIssue],
     })
-
-    expect(failedRefresh.entries).toEqual([])
-    expect(failedRefresh.issues).toEqual([
-      {
-        code: 'network',
-        message: 'Failed to refresh.',
-        resourceId: 'entry-source',
-        sourceUrl: entryUrl,
-      },
-    ])
-    expect(getShareableOnlineLUTSourceResources(failedRefresh)).toEqual([])
+    expect(failed.entries).toEqual([])
+    expect(failed.issues).toEqual([failedIssue])
+    expect(getShareableOnlineLUTSourceResources(failed)).toEqual([])
   })
 
-  it('builds share resources from valid source rows only', () => {
-    const valid = resource({ id: 'valid-source', url: entryUrl, type: 'entry' })
-    const invalid = resource({
-      id: 'invalid-source',
-      url: secondEntryUrl,
-      type: 'entry',
-    })
-    const entry: OnlineLUTSourceEntry = {
-      id: 'kodak-2383-rec709',
-      resourceId: 'valid-source',
-      title: 'Kodak 2383 Rec.709',
-      sourceUrl: entryUrl,
-      sourceType: 'catalog-entry',
-      cube: { url: cubeUrl, sha256 },
-      tags: [],
-    }
+  it('shares only non-default sources that list entries', () => {
+    const listing = resource({ id: 'listing' })
+    const empty = resource({ id: 'empty', url: secondEntryUrl })
+    const defaultSource = { ...DEFAULT_LUMAFORGE_PROFILE_SOURCE }
 
     expect(
       getShareableOnlineLUTSourceResources(
         emptyState({
-          resources: [valid, invalid],
-          entries: [entry],
-          issues: [
-            {
-              code: 'invalid-entry',
-              message: 'Release entry shape is invalid.',
-              resourceId: 'invalid-source',
-            },
+          resources: [listing, empty, defaultSource],
+          entries: [
+            sourceEntry({ resourceId: 'listing' }),
+            sourceEntry({ resourceId: defaultSource.id }),
           ],
+          issues: [issue('Invalid.', { resourceId: 'empty' })],
         }),
       ),
-    ).toEqual([valid])
+    ).toEqual([listing])
   })
 })
 
 describe('online LUT catalog activation', () => {
-  it('reports a resolution ready when it lists entries or fails nothing', () => {
-    const entry: OnlineLUTSourceEntry = {
-      id: 'kodak-2383-rec709',
-      resourceId: 'source-1',
-      title: 'Kodak 2383 Rec.709',
-      sourceUrl: entryUrl,
-      sourceType: 'catalog-entry',
-      cube: { url: cubeUrl, sha256 },
-      tags: [],
-    }
-
-    expect(
-      getOnlineLUTSourceResolutionActivation({
-        resource: resource({}),
-        entries: [entry],
-        issues: [],
-      }),
-    ).toBe('ready')
+  it.each([
+    ['ready when it lists entries', [sourceEntry()], [], 'ready'],
     // An empty catalog is a settled answer, not a failure to retry.
+    ['ready when it lists nothing and fails nothing', [], [], 'ready'],
+    ['an error when it only reports issues', [], [issue('Failed.')], 'error'],
+  ])('reports a resolution %s', (_, entries, issues, activation) => {
     expect(
       getOnlineLUTSourceResolutionActivation({
-        resource: resource({}),
-        entries: [],
-        issues: [],
+        resource: resource(),
+        entries,
+        issues,
       }),
-    ).toBe('ready')
-  })
-
-  it('reports a resolution that only produced issues as an error', () => {
-    expect(
-      getOnlineLUTSourceResolutionActivation({
-        resource: resource({}),
-        entries: [],
-        issues: [
-          {
-            code: 'network',
-            message: 'Failed to fetch.',
-            resourceId: 'source-1',
-          },
-        ],
-      }),
-    ).toBe('error')
+    ).toBe(activation)
   })
 
   it('summarizes resource activation with in-flight and untouched sources first', () => {
@@ -683,7 +447,7 @@ describe('online LUT catalog activation', () => {
   })
 
   it('finds a known resource by its normalized URL', () => {
-    const known = resource({ id: 'known', url: catalogUrl })
+    const known = resource({ id: 'known' })
 
     expect(
       findOnlineLUTSourceResourceByUrl(
@@ -699,37 +463,66 @@ describe('online LUT catalog activation', () => {
 })
 
 describe('online LUT source registry', () => {
-  function memoryStorage(initial?: unknown): Storage {
-    const items = new Map<string, string>()
-    if (initial !== undefined) {
-      items.set('lumaforge.raw.onlineLutSources.v1', JSON.stringify(initial))
-    }
-    return {
-      get length() {
-        return items.size
-      },
-      clear: () => items.clear(),
-      getItem: (key) => items.get(key) ?? null,
-      key: (index) => Array.from(items.keys())[index] ?? null,
-      removeItem: (key) => {
-        items.delete(key)
-      },
-      setItem: (key, value) => {
-        items.set(key, value)
-      },
-    }
-  }
+  const defaultUrl = DEFAULT_LUMAFORGE_PROFILE_SOURCE.url
 
-  function storedResources(storage: Storage) {
-    return (
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  const seed = (registry: unknown) =>
+    localStorage.setItem(
+      ONLINE_LUT_SOURCE_STORAGE_KEY,
+      JSON.stringify(registry),
+    )
+  const storedResources = () =>
+    (
       JSON.parse(
-        storage.getItem('lumaforge.raw.onlineLutSources.v1') ?? '{}',
+        localStorage.getItem(ONLINE_LUT_SOURCE_STORAGE_KEY) ?? '{}',
       ) as { resources?: unknown[] }
-    ).resources
-  }
+    ).resources ?? []
+  const listedIds = () =>
+    getInitialOnlineLUTSourceResources().map((item) => item.id)
+
+  it('lists a saved source on the next load and forgets it once removed', () => {
+    const added = resource({ id: 'lut-source-1', fromQuery: false })
+
+    persistOnlineLUTSourceResource(added)
+    expect(getInitialOnlineLUTSourceResources()).toEqual([
+      expect.objectContaining({ id: 'lumaforge-default-profiles' }),
+      {
+        id: 'stored-lut-source-1',
+        url: catalogUrl,
+        type: 'catalog',
+        label: added.label,
+        fromQuery: false,
+      },
+    ])
+
+    persistOnlineLUTSourceRemoval(added)
+    expect(listedIds()).toEqual(['lumaforge-default-profiles'])
+  })
+
+  it('keeps a removed default hidden until its tombstone is gone', () => {
+    persistOnlineLUTSourceRemoval({ ...DEFAULT_LUMAFORGE_PROFILE_SOURCE })
+    expect(listedIds()).toEqual([])
+
+    localStorage.clear()
+    expect(listedIds()).toEqual(['lumaforge-default-profiles'])
+  })
+
+  it('keeps the default hidden for users who removed it at its legacy flat-catalog URL', () => {
+    seed({
+      resources: [],
+      removedDefaultUrls: [
+        'https://luma-prof.ichr.me/channels/stable/catalog.json',
+      ],
+    })
+
+    expect(listedIds()).toEqual([])
+  })
 
   it('lists a saved copy of the default URL once, as the default', () => {
-    const storage = memoryStorage({
+    seed({
       resources: [
         {
           url: 'https://LUMA-PROF.ichr.me/channels/stable/luts/catalog.json',
@@ -741,33 +534,22 @@ describe('online LUT source registry', () => {
       removedDefaultUrls: [],
     })
 
-    expect(
-      getInitialOnlineLUTSourceResources({ storage }).map((item) => ({
-        id: item.id,
-        isDefault: item.isDefault ?? false,
-      })),
-    ).toEqual([
-      { id: 'lumaforge-default-profiles', isDefault: true },
-      { id: 'stored-lut-source-2', isDefault: false },
+    expect(listedIds()).toEqual([
+      'lumaforge-default-profiles',
+      'stored-lut-source-2',
     ])
   })
 
   it('keeps a saved source at the default URL while the default is removed', () => {
-    const storage = memoryStorage({
-      resources: [
-        {
-          url: DEFAULT_LUMAFORGE_PROFILE_SOURCE.url,
-          type: 'catalog',
-          label: 'Saved copy',
-        },
-      ],
-      removedDefaultUrls: [DEFAULT_LUMAFORGE_PROFILE_SOURCE.url],
+    seed({
+      resources: [{ url: defaultUrl, type: 'catalog', label: 'Saved copy' }],
+      removedDefaultUrls: [defaultUrl],
     })
 
-    expect(getInitialOnlineLUTSourceResources({ storage })).toEqual([
+    expect(getInitialOnlineLUTSourceResources()).toEqual([
       expect.objectContaining({
         id: 'stored-lut-source-1',
-        url: DEFAULT_LUMAFORGE_PROFILE_SOURCE.url,
+        url: defaultUrl,
         label: 'Saved copy',
       }),
     ])
@@ -779,18 +561,14 @@ describe('online LUT source registry', () => {
       id: 'lut-source-1',
       isDefault: undefined,
     }
-    const listed = memoryStorage()
-    const removed = memoryStorage({
-      resources: [],
-      removedDefaultUrls: [DEFAULT_LUMAFORGE_PROFILE_SOURCE.url],
-    })
 
-    persistOnlineLUTSourceResource(copy, { storage: listed })
-    persistOnlineLUTSourceResource(copy, { storage: removed })
+    persistOnlineLUTSourceResource(copy)
+    expect(storedResources()).toEqual([])
 
-    expect(storedResources(listed) ?? []).toEqual([])
-    expect(storedResources(removed)).toEqual([
-      expect.objectContaining({ url: DEFAULT_LUMAFORGE_PROFILE_SOURCE.url }),
+    seed({ resources: [], removedDefaultUrls: [defaultUrl] })
+    persistOnlineLUTSourceResource(copy)
+    expect(storedResources()).toEqual([
+      expect.objectContaining({ url: defaultUrl }),
     ])
   })
 })
