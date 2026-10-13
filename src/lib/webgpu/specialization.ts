@@ -1,11 +1,8 @@
-import type {
-  BuiltinStylePreset,
-  ColorGraphIntent,
-  LUTData,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import { isSelectiveColorNeutral } from '@lumaforge/luma-color-runtime'
 
 import { resolveGpuPreviewLook } from './lut-profile'
+import { BUILTIN_PRESET_UNIFORMS, STYLE_KIND_UNIFORMS } from './uniforms'
 
 export interface ShaderSpecialization {
   readonly styleKind: 0 | 1 | 2
@@ -28,16 +25,6 @@ export const MAX_QUEUED_SHADER_SPECIALIZATIONS = 32
 export const MAX_PARALLEL_SHADER_COMPILATIONS = 2
 export const WEBGPU_SPECIALIZATION_BUSY = 'WEBGPU_SPECIALIZATION_BUSY'
 
-const PRESETS: Record<BuiltinStylePreset, number> = {
-  neutral: 0,
-  warm: 1,
-  cool: 2,
-  'film-soft': 3,
-  'film-contrast': 4,
-  cinematic: 5,
-  fade: 6,
-  mono: 7,
-}
 const boundedId = (value: number | undefined, maximum: number) =>
   value !== undefined &&
   Number.isInteger(value) &&
@@ -87,18 +74,19 @@ export function getShaderSpecialization(
     uniforms: resolved,
   } = resolveGpuPreviewLook(params, lut)
   return normalizeShaderSpecialization({
-    styleKind:
-      look.styleKind === 'builtin' ? 1 : look.styleKind === 'custom' ? 2 : 0,
+    styleKind: STYLE_KIND_UNIFORMS[look.styleKind],
     useLut: drawnLut !== null,
     selectiveColorActive: !isSelectiveColorNeutral(params.selectiveColor),
-    // Match the actual f32 upload. Signed zero and values rounded to zero take
-    // the existing neutral bypass; nonfinite values stay dynamic, not hidden.
-    builtinPreset: PRESETS[look.builtinPreset ?? 'neutral'] ?? 0,
+    builtinPreset: look.builtinPreset
+      ? BUILTIN_PRESET_UNIFORMS[look.builtinPreset]
+      : 0,
     lutRole: resolved.lutRole,
     lutInputTransfer: resolved.lutInputTransfer,
     lutOutputTransfer: resolved.lutOutputTransfer,
     lutInputRange: resolved.lutInputRange,
     lutOutputRange: resolved.lutOutputRange,
+    // Match the actual f32 upload. Signed zero and values rounded to zero take
+    // the existing neutral bypass; nonfinite values stay dynamic, not hidden.
     saturationActive: Math.fround(params.userSaturation) !== 0,
     vibranceActive: Math.fround(params.userVibrance) !== 0,
   })

@@ -59,13 +59,13 @@ const OUTPUT_UNIFORMS: Record<PreviewSurfaceOutput, 0 | 1> = {
   'technical-original': 1,
 }
 
-const STYLE_KIND_UNIFORMS: Record<LookStyleKind, number> = {
+export const STYLE_KIND_UNIFORMS: Record<LookStyleKind, 0 | 1 | 2> = {
   none: 0,
   builtin: 1,
   custom: 2,
 }
 
-const BUILTIN_PRESET_UNIFORMS: Record<BuiltinStylePreset, number> = {
+export const BUILTIN_PRESET_UNIFORMS: Record<BuiltinStylePreset, number> = {
   neutral: 0,
   warm: 1,
   cool: 2,
