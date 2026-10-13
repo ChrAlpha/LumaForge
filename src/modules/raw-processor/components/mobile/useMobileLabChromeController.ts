@@ -176,8 +176,9 @@ export function useMobileLabChromeController({
     if (viewMode !== 'processed') requestViewMode('processed')
   }, [compareDisabled, requestViewMode, viewMode])
 
-  useEffect(() => {
-    if (hasImage) return
+  // Closes everything transient over the photo: a scrub, immersive mode,
+  // the LUT sources, More, the compare split and the histogram.
+  const resetTransientChrome = useCallback(() => {
     if (immersiveStaggerTimer.current !== null) {
       clearTimeout(immersiveStaggerTimer.current)
       immersiveStaggerTimer.current = null
@@ -186,39 +187,32 @@ export function useMobileLabChromeController({
     setScrubField(null)
     setImmersive(false)
     setLutBrowserOpen(false)
-    setLookView('strip')
     setMoreOpen(false)
-    setDockExpanded(true)
     compareSplitOpenRef.current = false
     suppressNextPeekRestore.current = false
+    setCompareSplitOpen(false)
+    setHistogramOpen(false)
+  }, [])
+
+  useEffect(() => {
+    if (hasImage) return
+    resetTransientChrome()
+    setLookView('strip')
+    setDockExpanded(true)
     lensPeekActive.current = false
     originalShownRef.current = false
     setOriginalShown(false)
-    setCompareSplitOpen(false)
-    setHistogramOpen(false)
     setExportOpen(false)
     setMode('look')
-  }, [hasImage])
+  }, [hasImage, resetTransientChrome])
 
   useEffect(() => {
     if (!handoffActive) return
-    if (immersiveStaggerTimer.current !== null) {
-      clearTimeout(immersiveStaggerTimer.current)
-      immersiveStaggerTimer.current = null
-    }
-    expandedBeforeImmersive.current = false
-    setScrubField(null)
-    setImmersive(false)
-    setLutBrowserOpen(false)
-    setMoreOpen(false)
-    compareSplitOpenRef.current = false
-    suppressNextPeekRestore.current = false
     // A lens held into a handoff is not reset here: the lens leaves with the
     // handoff and ends its own peek, which restores the processed view.
-    setCompareSplitOpen(false)
-    setHistogramOpen(false)
+    resetTransientChrome()
     setPeeking(false)
-  }, [handoffActive])
+  }, [handoffActive, resetTransientChrome])
 
   useEffect(() => {
     if (!hasImage || compareSplitOpen || viewMode !== 'compare') return
@@ -233,23 +227,10 @@ export function useMobileLabChromeController({
     preferExportModeWasActive.current = preferExportMode === true
 
     if (!shouldActivate) return
-    if (immersiveStaggerTimer.current !== null) {
-      clearTimeout(immersiveStaggerTimer.current)
-      immersiveStaggerTimer.current = null
-    }
-    expandedBeforeImmersive.current = false
-
+    resetTransientChrome()
     setExportOpen(true)
     setDockExpanded(true)
-    setScrubField(null)
-    setImmersive(false)
-    setLutBrowserOpen(false)
-    setMoreOpen(false)
-    compareSplitOpenRef.current = false
-    suppressNextPeekRestore.current = false
-    setCompareSplitOpen(false)
-    setHistogramOpen(false)
-  }, [hasImage, preferExportMode])
+  }, [hasImage, preferExportMode, resetTransientChrome])
 
   useEffect(
     () => () => {
