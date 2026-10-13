@@ -1,108 +1,41 @@
-import type { SupportedExportColorGraphDescriptor } from './color-graph'
+import type {
+  ExportColorGraphInput,
+  SupportedExportColorGraphDescriptor,
+} from './color-graph'
+import { resolveExportColorGraph } from './color-graph'
+import type { Mat3 } from './matrix'
 import { getLinearProPhotoToGamutMatrix, mat3Identity } from './matrix'
 import { linearProPhotoToOklab, oklabToLinearProPhoto } from './oklab'
 import type { LUTColorProfile } from './registry'
 import { createRowBandProcessor } from './row-band-processor'
 import {
-  SKIN_HUE_CENTER_DEG,
-  SKIN_HUE_SIGMA_DEG,
-  SKIN_PROTECT_STRENGTH,
-  USER_SATURATION_MAX_FACTOR,
-  USER_VIBRANCE_MAX_FACTOR,
-  VIBRANCE_CHROMA_REF,
-} from './saturation'
-import type { NormalizedSelectiveColorBands } from './selective-color'
-import {
   CHROMA_CLAMP_HIGH,
   CHROMA_CLAMP_LOW,
   HUE_MAX_DELTA_RAD,
-  LUT_CONSTANTS_VERSION,
-  makeNeutralBand,
+  NEUTRAL_SELECTIVE_COLOR,
   resolveSelectiveColorParams,
 } from './selective-color'
+import { NEUTRAL_USER_COLOR_INTENT } from './user-color-intent'
 
-function neutralColorStep(): SupportedExportColorGraphDescriptor['steps'][number] {
-  return {
-    kind: 'user-color-balance',
-    temperature: 0,
-    tint: 0,
-    gain: [1, 1, 1],
-    operator: 'linear-prophoto-relative-rgb-gain',
-    luminanceCoefficients: [0.2880402, 0.7118741, 0.0000857],
-  }
+/** The graph export resolves for an untouched photo with no look, plus `overrides`. */
+function resolvedGraph(
+  overrides: Partial<ExportColorGraphInput> = {},
+): SupportedExportColorGraphDescriptor {
+  const graph = resolveExportColorGraph({
+    ...NEUTRAL_USER_COLOR_INTENT,
+    styleKind: 'none',
+    builtinPreset: null,
+    intensity: 1,
+    lut: null,
+    ...overrides,
+  })
+  if (!graph.supported) throw new Error(graph.message)
+  return graph
 }
 
-function neutralBands(): NormalizedSelectiveColorBands {
-  return {
-    red: makeNeutralBand(),
-    orange: makeNeutralBand(),
-    yellow: makeNeutralBand(),
-    green: makeNeutralBand(),
-    aqua: makeNeutralBand(),
-    blue: makeNeutralBand(),
-    purple: makeNeutralBand(),
-    magenta: makeNeutralBand(),
-  }
-}
+const noLutGraph = resolvedGraph()
 
-function neutralSaturationStep(): SupportedExportColorGraphDescriptor['steps'][number] {
-  return {
-    kind: 'user-saturation',
-    operator: 'oklab-chroma-with-skin-protection',
-    saturation: 0,
-    vibrance: 0,
-    satMaxFactor: USER_SATURATION_MAX_FACTOR,
-    vibMaxFactor: USER_VIBRANCE_MAX_FACTOR,
-    chromaRef: VIBRANCE_CHROMA_REF,
-    skinHueCenterDeg: SKIN_HUE_CENTER_DEG,
-    skinHueSigmaDeg: SKIN_HUE_SIGMA_DEG,
-    skinProtectStrength: SKIN_PROTECT_STRENGTH,
-  }
-}
-
-function neutralSelectiveColorStep(
-  bands: NormalizedSelectiveColorBands = neutralBands(),
-): SupportedExportColorGraphDescriptor['steps'][number] {
-  return {
-    kind: 'user-selective-color',
-    bands,
-    chromaClampLow: CHROMA_CLAMP_LOW,
-    chromaClampHigh: CHROMA_CLAMP_HIGH,
-    workingSpace: 'oklab-via-prophoto-d65',
-    operator: 'oklch-per-band-shift',
-    constantsVersion: LUT_CONSTANTS_VERSION,
-  }
-}
-
-function neutralToneSteps(): SupportedExportColorGraphDescriptor['steps'] {
-  return [
-    { kind: 'user-exposure', ev: 0, multiplier: 1 },
-    {
-      kind: 'user-contrast',
-      amount: 0,
-      factor: 1,
-      pivot: 0.18,
-      operator: 'linear-prophoto-luminance-scale',
-      luminanceCoefficients: [0.2880402, 0.7118741, 0.0000857],
-      zeroLuminanceMode: 'return-black',
-    },
-    {
-      kind: 'user-regional-tone',
-      highlights: 0,
-      shadows: 0,
-      whites: 0,
-      blacks: 0,
-      operator: 'linear-prophoto-log-luminance-regions',
-      pivot: 0.18,
-      luminanceCoefficients: [0.2880402, 0.7118741, 0.0000857],
-      zeroLuminanceMode: 'return-black',
-    },
-    neutralSaturationStep(),
-    neutralSelectiveColorStep(),
-  ]
-}
-
-const PRECISION_PROBE_LUT_PROFILE: LUTColorProfile = {
+const LINEAR_PROBE_LUT_PROFILE: LUTColorProfile = {
   id: 'test-linear-prophoto-probe',
   label: 'Test Linear ProPhoto Probe',
   role: 'scene-creative',
@@ -113,20 +46,6 @@ const PRECISION_PROBE_LUT_PROFILE: LUTColorProfile = {
   outputTransfer: 'linear',
   outputRange: 'full',
   aliases: [],
-}
-
-const noLutGraph: SupportedExportColorGraphDescriptor = {
-  supported: true,
-  outputGamut: 'srgb-rec709',
-  outputTransfer: 'srgb',
-  lutProfile: null,
-  steps: [
-    { kind: 'input-linear-prophoto' },
-    { kind: 'raw-render-exposure', ev: 0, multiplier: 1 },
-    neutralColorStep(),
-    ...neutralToneSteps(),
-    { kind: 'output-srgb' },
-  ],
 }
 
 function clamp01(value: number) {
@@ -144,70 +63,57 @@ function toSrgbByte(linear: number) {
   return Math.round(clamp01(linearToSrgb(linear)) * 255)
 }
 
-function makeRedRampLut() {
+/** A 2-point LUT whose output at each lattice corner is `corner(r, g, b)`. */
+function makeLut(
+  corner: (red: number, green: number, blue: number) => readonly number[],
+) {
   const lut = new Float32Array(2 * 2 * 2 * 3)
-
   for (let blue = 0; blue < 2; blue += 1) {
     for (let green = 0; green < 2; green += 1) {
       for (let red = 0; red < 2; red += 1) {
-        const index = ((blue * 2 + green) * 2 + red) * 3
-        lut[index] = red
-        lut[index + 1] = red
-        lut[index + 2] = red
+        lut.set(corner(red, green, blue), ((blue * 2 + green) * 2 + red) * 3)
       }
     }
   }
-
   return lut
 }
 
-function makeIdentityLut() {
-  const lut = new Float32Array(2 * 2 * 2 * 3)
+const makeRedRampLut = () => makeLut((red) => [red, red, red])
+const makeIdentityLut = () => makeLut((red, green, blue) => [red, green, blue])
 
-  for (let blue = 0; blue < 2; blue += 1) {
-    for (let green = 0; green < 2; green += 1) {
-      for (let red = 0; red < 2; red += 1) {
-        const index = ((blue * 2 + green) * 2 + red) * 3
-        lut[index] = red
-        lut[index + 1] = green
-        lut[index + 2] = blue
-      }
-    }
-  }
-
-  return lut
-}
-
-function makePrecisionProbeGraph(
-  domainMin: number,
-  domainMax: number,
-): SupportedExportColorGraphDescriptor {
+/**
+ * The neutral scene steps followed by a linear ProPhoto LUT stage, which no
+ * catalog contract resolves to, so the LUT steps are written here.
+ */
+function makeLinearLutGraph({
+  data,
+  domainMin = [0, 0, 0],
+  domainMax = [1, 1, 1],
+  outputMatrix = mat3Identity(),
+}: {
+  data: Float32Array
+  domainMin?: [number, number, number]
+  domainMax?: [number, number, number]
+  outputMatrix?: Mat3
+}): SupportedExportColorGraphDescriptor {
+  const sceneSteps = structuredClone(noLutGraph.steps.slice(0, -1))
   return {
     supported: true,
     outputGamut: 'srgb-rec709',
     outputTransfer: 'srgb',
-    lutProfile: PRECISION_PROBE_LUT_PROFILE,
+    lutProfile: LINEAR_PROBE_LUT_PROFILE,
     steps: [
-      { kind: 'input-linear-prophoto' },
-      { kind: 'raw-render-exposure', ev: 0, multiplier: 1 },
-      neutralColorStep(),
-      ...neutralToneSteps(),
+      ...sceneSteps,
       {
         kind: 'gamut-to-lut-input',
         matrix: mat3Identity(),
         gamut: 'prophoto-rgb',
       },
       { kind: 'encode-lut-transfer', transfer: 'linear', range: 'full' },
-      {
-        kind: 'lut3d',
-        size: 2,
-        data: makeRedRampLut(),
-        domainMin: [domainMin, 0, 0],
-        domainMax: [domainMax, 1, 1],
-      },
+      { kind: 'lut3d', size: 2, data, domainMin, domainMax },
       {
         kind: 'lut-output-to-srgb',
-        matrix: mat3Identity(),
+        matrix: outputMatrix,
         transfer: 'linear',
         range: 'full',
         role: 'scene-creative',
@@ -218,57 +124,20 @@ function makePrecisionProbeGraph(
   }
 }
 
-function makeIdentityProbeGraph(): SupportedExportColorGraphDescriptor {
-  return {
-    supported: true,
-    outputGamut: 'srgb-rec709',
-    outputTransfer: 'srgb',
-    lutProfile: PRECISION_PROBE_LUT_PROFILE,
-    steps: [
-      { kind: 'input-linear-prophoto' },
-      { kind: 'raw-render-exposure', ev: 0, multiplier: 1 },
-      neutralColorStep(),
-      ...neutralToneSteps(),
-      {
-        kind: 'gamut-to-lut-input',
-        matrix: mat3Identity(),
-        gamut: 'prophoto-rgb',
-      },
-      { kind: 'encode-lut-transfer', transfer: 'linear', range: 'full' },
-      {
-        kind: 'lut3d',
-        size: 2,
-        data: makeIdentityLut(),
-        domainMin: [0, 0, 0],
-        domainMax: [1, 1, 1],
-      },
-      {
-        kind: 'lut-output-to-srgb',
-        matrix: mat3Identity(),
-        transfer: 'linear',
-        range: 'full',
-        role: 'scene-creative',
-        intensity: 1,
-      },
-      { kind: 'output-srgb' },
-    ],
-  }
+function makePrecisionProbeGraph(domainMin: number, domainMax: number) {
+  return makeLinearLutGraph({
+    data: makeRedRampLut(),
+    domainMin: [domainMin, 0, 0],
+    domainMax: [domainMax, 1, 1],
+  })
 }
 
 describe('createRowBandProcessor', () => {
   it('changes no-lut output when user exposure changes', () => {
-    const graph: SupportedExportColorGraphDescriptor = {
-      ...noLutGraph,
-      steps: noLutGraph.steps.map((step) =>
-        step.kind === 'user-exposure'
-          ? { kind: 'user-exposure', ev: 1, multiplier: 2 }
-          : step,
-      ),
-    }
     const processor = createRowBandProcessor({
       width: 1,
       rowBandRows: 1,
-      graph,
+      graph: resolvedGraph({ userExposureEv: 1 }),
     })
     const rows = processor.processFloatRows(
       new Float32Array([0.1, 0.1, 0.1]),
@@ -295,22 +164,10 @@ describe('createRowBandProcessor', () => {
   })
 
   it('applies color balance before tone in no-lut export', () => {
-    const graph: SupportedExportColorGraphDescriptor = {
-      ...noLutGraph,
-      steps: noLutGraph.steps.map((step) =>
-        step.kind === 'user-color-balance'
-          ? {
-              ...step,
-              temperature: 100,
-              gain: [1.15, 1, 0.85],
-            }
-          : step,
-      ),
-    }
     const processor = createRowBandProcessor({
       width: 1,
       rowBandRows: 1,
-      graph,
+      graph: resolvedGraph({ userTemperature: 100 }),
     })
 
     const rows = processor.processFloatRows(
@@ -431,7 +288,7 @@ describe('createRowBandProcessor', () => {
     const processor = createRowBandProcessor({
       width: 1,
       rowBandRows: 1,
-      graph: makeIdentityProbeGraph(),
+      graph: makeLinearLutGraph({ data: makeIdentityLut() }),
     })
 
     const rows = processor.processFloatRows(
@@ -555,33 +412,6 @@ describe('createRowBandProcessor', () => {
     ).toHaveLength(3)
   })
 
-  it('detects the post-T7 no-LUT graph (9 steps) as supported', () => {
-    expect(noLutGraph.steps).toHaveLength(9)
-    expect(noLutGraph.steps[6]?.kind).toBe('user-saturation')
-    expect(noLutGraph.steps[7]?.kind).toBe('user-selective-color')
-    expect(noLutGraph.steps[8]?.kind).toBe('output-srgb')
-
-    expect(() =>
-      createRowBandProcessor({ width: 1, rowBandRows: 1, graph: noLutGraph }),
-    ).not.toThrow()
-  })
-
-  it('detects the post-T7 custom-LUT graph (13 steps) as supported', () => {
-    const lutGraph = makeIdentityProbeGraph()
-    expect(lutGraph.steps).toHaveLength(13)
-    expect(lutGraph.steps[6]?.kind).toBe('user-saturation')
-    expect(lutGraph.steps[7]?.kind).toBe('user-selective-color')
-    expect(lutGraph.steps[8]?.kind).toBe('gamut-to-lut-input')
-    expect(lutGraph.steps[9]?.kind).toBe('encode-lut-transfer')
-    expect(lutGraph.steps[10]?.kind).toBe('lut3d')
-    expect(lutGraph.steps[11]?.kind).toBe('lut-output-to-srgb')
-    expect(lutGraph.steps[12]?.kind).toBe('output-srgb')
-
-    expect(() =>
-      createRowBandProcessor({ width: 1, rowBandRows: 1, graph: lutGraph }),
-    ).not.toThrow()
-  })
-
   it('treats a neutral selective-color step as identity at the row-band level', () => {
     // Synthetic linear-ProPhoto row that exercises every channel at multiple
     // chroma levels. After a graph with neutral selective color, the pipeline
@@ -664,46 +494,11 @@ describe('createRowBandProcessor', () => {
     }
 
     // Graph where only the selective-color step differs from neutral.
-    const bands = neutralBands()
-    const redShiftBands: NormalizedSelectiveColorBands = {
-      ...bands,
+    const redShiftBands = {
+      ...NEUTRAL_SELECTIVE_COLOR,
       red: { hue: 50, saturation: 0, lightness: 0 },
     }
-    const graph: SupportedExportColorGraphDescriptor = {
-      supported: true,
-      outputGamut: 'srgb-rec709',
-      outputTransfer: 'srgb',
-      lutProfile: null,
-      steps: [
-        { kind: 'input-linear-prophoto' },
-        { kind: 'raw-render-exposure', ev: 0, multiplier: 1 },
-        neutralColorStep(),
-        { kind: 'user-exposure', ev: 0, multiplier: 1 },
-        {
-          kind: 'user-contrast',
-          amount: 0,
-          factor: 1,
-          pivot: 0.18,
-          operator: 'linear-prophoto-luminance-scale',
-          luminanceCoefficients: [0.2880402, 0.7118741, 0.0000857],
-          zeroLuminanceMode: 'return-black',
-        },
-        {
-          kind: 'user-regional-tone',
-          highlights: 0,
-          shadows: 0,
-          whites: 0,
-          blacks: 0,
-          operator: 'linear-prophoto-log-luminance-regions',
-          pivot: 0.18,
-          luminanceCoefficients: [0.2880402, 0.7118741, 0.0000857],
-          zeroLuminanceMode: 'return-black',
-        },
-        neutralSaturationStep(),
-        neutralSelectiveColorStep(redShiftBands),
-        { kind: 'output-srgb' },
-      ],
-    }
+    const graph = resolvedGraph({ selectiveColor: redShiftBands })
 
     // Bake the LUT outside the processor so we can derive the expected hue
     // shift by lifting the apply-row algebra to the selective-color step
@@ -764,12 +559,7 @@ describe('createRowBandProcessor', () => {
     const neutralProcessor = createRowBandProcessor({
       width: pixelCount,
       rowBandRows: 1,
-      graph: {
-        ...graph,
-        steps: graph.steps.map((s) =>
-          s.kind === 'user-selective-color' ? neutralSelectiveColorStep() : s,
-        ),
-      },
+      graph: noLutGraph,
     })
 
     const out = processor.processFloatRows(linear, 1)
@@ -781,5 +571,39 @@ describe('createRowBandProcessor', () => {
     expect(out[0]).not.toEqual(outNeutral[0])
     expect(out[0]).toBeLessThan(outNeutral[0])
     expect(out[1]).toBeGreaterThanOrEqual(outNeutral[1])
+  })
+
+  it('preserves signed linear scene LUT input until declared domain sampling', () => {
+    const processor = createRowBandProcessor({
+      width: 1,
+      rowBandRows: 1,
+      graph: makeLinearLutGraph({
+        data: makeRedRampLut(),
+        domainMin: [-1, 0, 0],
+        domainMax: [1, 1, 1],
+      }),
+    })
+
+    const rows = processor.processFloatRows(new Float32Array([-0.5, 0, 0]), 1)
+
+    expect(rows).toEqual(
+      new Uint8Array([toSrgbByte(0.25), toSrgbByte(0.25), toSrgbByte(0.25)]),
+    )
+    expect(rows[0]).toBeLessThan(toSrgbByte(0.5))
+  })
+
+  it('preserves signed LUT output until the output gamut matrix is applied', () => {
+    const processor = createRowBandProcessor({
+      width: 1,
+      rowBandRows: 1,
+      graph: makeLinearLutGraph({
+        data: makeLut(() => [-0.25, 0, 0]),
+        outputMatrix: new Float32Array([-1, 0, 0, 0, 1, 0, 0, 0, 1]),
+      }),
+    })
+
+    const rows = processor.processFloatRows(new Float32Array([0.5, 0, 0]), 1)
+
+    expect(rows).toEqual(new Uint8Array([toSrgbByte(0.25), 0, 0]))
   })
 })

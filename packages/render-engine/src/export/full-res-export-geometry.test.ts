@@ -5,12 +5,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { runFullResolutionJpegExport } from './full-res-export'
 import {
   concatByteRows,
-  IDENTITY_RAW_RENDER_EXPOSURE_STEP,
   makeCapability,
   makeJpegOutput,
   makePatternedProcessedWindow,
   makeRgbRampLut,
-  neutralToneSteps,
+  neutralGraph,
+  neutralSceneSteps,
 } from './full-res-export-test-fixtures'
 import {
   EXPORT_GEOMETRY_MATTE,
@@ -19,18 +19,7 @@ import {
 } from './geometry/export-geometry'
 
 describe('runFullResolutionJpegExport with geometry', () => {
-  const geometryGraph: SupportedExportColorGraphDescriptor = {
-    supported: true,
-    outputGamut: 'srgb-rec709',
-    outputTransfer: 'srgb',
-    lutProfile: null,
-    steps: [
-      { kind: 'input-linear-prophoto' },
-      IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-      ...neutralToneSteps(),
-      { kind: 'output-srgb' },
-    ],
-  }
+  const geometryGraph: SupportedExportColorGraphDescriptor = neutralGraph()
 
   function collectingWriter() {
     const writtenRows: Array<{ bytes: Uint8Array; rowCount: number }> = []
@@ -186,9 +175,7 @@ describe('runFullResolutionJpegExport with geometry', () => {
       outputTransfer: 'srgb',
       lutProfile: null,
       steps: [
-        { kind: 'input-linear-prophoto' },
-        IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-        ...neutralToneSteps(),
+        ...neutralSceneSteps(),
         {
           kind: 'gamut-to-lut-input',
           matrix: mat3Identity(),

@@ -35,5 +35,8 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "sharp": "0.34.5",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@lumaforge/luma-color-runtime": "workspace:*"
   }
 }

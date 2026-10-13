@@ -267,6 +267,10 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      '@lumaforge/luma-color-runtime':
+        specifier: workspace:*
+        version: link:../luma-color-runtime
 
   packages/luma-color-runtime: {}
 

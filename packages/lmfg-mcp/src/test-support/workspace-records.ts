@@ -4,10 +4,13 @@
 // descriptor and render params a current writer seals for a neutral render
 // without a LUT, and no optional section a neutral render omits.
 
-import type { ColorGraphDescriptor } from '@lumaforge/render-engine/manifest'
 import {
+  NEUTRAL_USER_COLOR_INTENT,
+  resolveExportColorGraph,
+} from '@lumaforge/luma-color-runtime'
+import {
+  colorGraphIdentity,
   computeManifestSha256,
-  fingerprintColorGraph,
   projectManifestRenderParams,
 } from '@lumaforge/render-engine/manifest'
 
@@ -94,87 +97,17 @@ export function contactSheetMap(
   }
 }
 
-const NEUTRAL_BAND = { hue: 0, saturation: 0, lightness: 0 }
-const LUMINANCE = [0.2880402, 0.7118741, 0.0000857]
+const neutralGraph = resolveExportColorGraph({
+  ...NEUTRAL_USER_COLOR_INTENT,
+  styleKind: 'none',
+  builtinPreset: null,
+  intensity: 1,
+  lut: null,
+})
+if (!neutralGraph.supported) throw new Error(neutralGraph.message)
 
-/**
- * The descriptor lmfg records for a neutral render without a LUT at 0 EV.
- * The workspace-records test replays a manifest that records it through the
- * CLI, which rebuilds the graph from the recorded params and refuses a
- * fingerprint it does not reproduce.
- */
-const NEUTRAL_COLOR_GRAPH_DESCRIPTOR: ColorGraphDescriptor = {
-  descriptor_version: 2,
-  output_gamut: 'srgb-rec709',
-  output_transfer: 'srgb',
-  lut_profile: null,
-  steps: [
-    { kind: 'input-linear-prophoto' },
-    { kind: 'raw-render-exposure', ev: 0, multiplier: 1 },
-    {
-      kind: 'user-color-balance',
-      temperature: 0,
-      tint: 0,
-      gain: [1, 1, 1],
-      operator: 'linear-prophoto-relative-rgb-gain',
-      luminanceCoefficients: LUMINANCE,
-    },
-    { kind: 'user-exposure', ev: 0, multiplier: 1 },
-    {
-      kind: 'user-contrast',
-      amount: 0,
-      factor: 1,
-      pivot: 0.18,
-      operator: 'linear-prophoto-luminance-scale',
-      luminanceCoefficients: LUMINANCE,
-      zeroLuminanceMode: 'return-black',
-    },
-    {
-      kind: 'user-regional-tone',
-      highlights: 0,
-      shadows: 0,
-      whites: 0,
-      blacks: 0,
-      operator: 'linear-prophoto-log-luminance-regions',
-      pivot: 0.18,
-      luminanceCoefficients: LUMINANCE,
-      zeroLuminanceMode: 'return-black',
-    },
-    {
-      kind: 'user-saturation',
-      operator: 'oklab-chroma-with-skin-protection',
-      saturation: 0,
-      vibrance: 0,
-      satMaxFactor: 1,
-      vibMaxFactor: 0.5,
-      chromaRef: 0.25,
-      skinHueCenterDeg: 50,
-      skinHueSigmaDeg: 20,
-      skinProtectStrength: 0.5,
-    },
-    {
-      kind: 'user-selective-color',
-      bands: Object.fromEntries(
-        [
-          'red',
-          'orange',
-          'yellow',
-          'green',
-          'aqua',
-          'blue',
-          'purple',
-          'magenta',
-        ].map((band) => [band, NEUTRAL_BAND]),
-      ),
-      chromaClampLow: 0.005,
-      chromaClampHigh: 0.02,
-      workingSpace: 'oklab-via-prophoto-d65',
-      operator: 'oklch-per-band-shift',
-      constantsVersion: 1,
-    },
-    { kind: 'output-srgb' },
-  ],
-}
+/** The color graph lmfg records for a neutral render without a LUT at 0 EV. */
+const NEUTRAL_COLOR_GRAPH = colorGraphIdentity(neutralGraph)
 
 export function seal<T extends object>(manifest: T) {
   return { ...manifest, manifest_sha256: computeManifestSha256(manifest) }
@@ -200,10 +133,7 @@ export function renderManifest(input: {
     },
     calibration: null,
     lut: null,
-    color_graph: {
-      fingerprint: fingerprintColorGraph(NEUTRAL_COLOR_GRAPH_DESCRIPTOR),
-      descriptor: NEUTRAL_COLOR_GRAPH_DESCRIPTOR,
-    },
+    color_graph: NEUTRAL_COLOR_GRAPH,
     render_params: projectManifestRenderParams({
       userColor: {},
       intensity: 1,

@@ -21,7 +21,7 @@ describe('render manifest fixture', () => {
 
   // A replay plan rebuilds the color graph with the CLI's own builder from
   // the recorded params and refuses a fingerprint it does not reproduce, so
-  // the fixture's literal descriptor cannot drift from what lmfg writes.
+  // the fixture's graph and params cannot drift from what lmfg writes.
   it('records the color graph the CLI rebuilds for its params', async () => {
     const bytes = Buffer.from('fixture source bytes')
     await writeFile(join(cwd, 'source.dng'), bytes)

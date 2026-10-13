@@ -3,12 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { runFullResolutionJpegExport } from './full-res-export'
 import {
-  IDENTITY_RAW_RENDER_EXPOSURE_STEP,
   makeCapability,
   makeJpegOutput,
   makePatternedProcessedWindow,
   makeProcessedWindow,
-  neutralToneSteps,
+  neutralGraph,
 } from './full-res-export-test-fixtures'
 import type { FileBackedOutputResult } from './jpeg/output-result'
 import { materializeOutputBlob } from './jpeg/output-result'
@@ -37,18 +36,7 @@ describe('runFullResolutionJpegExport', () => {
 
     const blob = await runFullResolutionJpegExportBlob({
       capability: makeCapability(),
-      graph: {
-        supported: true,
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'srgb',
-        lutProfile: null,
-        steps: [
-          { kind: 'input-linear-prophoto' },
-          IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-          ...neutralToneSteps(),
-          { kind: 'output-srgb' },
-        ],
-      },
+      graph: neutralGraph(),
       preferredRows: 2,
       readProcessedWindow,
       writerFactory: () => writer,
@@ -81,18 +69,7 @@ describe('runFullResolutionJpegExport', () => {
 
     await runFullResolutionJpegExport({
       capability: makeCapability(),
-      graph: {
-        supported: true,
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'srgb',
-        lutProfile: null,
-        steps: [
-          { kind: 'input-linear-prophoto' },
-          IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-          ...neutralToneSteps(),
-          { kind: 'output-srgb' },
-        ],
-      },
+      graph: neutralGraph(),
       preferredRows: 2,
       readProcessedWindow: async (request) => makeProcessedWindow(request),
       writerFactory: () => writer,
@@ -145,18 +122,7 @@ describe('runFullResolutionJpegExport', () => {
           rawHeight: outputRect.height,
           visibleCrop: outputRect,
         }),
-        graph: {
-          supported: true,
-          outputGamut: 'srgb-rec709',
-          outputTransfer: 'srgb',
-          lutProfile: null,
-          steps: [
-            { kind: 'input-linear-prophoto' },
-            IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-            ...neutralToneSteps(),
-            { kind: 'output-srgb' },
-          ],
-        },
+        graph: neutralGraph(),
         preferredRows: outputRect.height,
         readProcessedWindow: async (request) =>
           makePatternedProcessedWindow(request),
@@ -198,18 +164,7 @@ describe('runFullResolutionJpegExport', () => {
         rawHeight: outputRect.height,
         visibleCrop: outputRect,
       }),
-      graph: {
-        supported: true,
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'srgb',
-        lutProfile: null,
-        steps: [
-          { kind: 'input-linear-prophoto' },
-          IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-          ...neutralToneSteps(),
-          { kind: 'output-srgb' },
-        ],
-      },
+      graph: neutralGraph(),
       preferredRows: outputRect.height,
       readProcessedWindow: async (request) =>
         makePatternedProcessedWindow(request),
@@ -246,18 +201,7 @@ describe('runFullResolutionJpegExport', () => {
         rawHeight: 130,
         visibleCrop: { x: 0, y: 0, width: 4, height: 130 },
       }),
-      graph: {
-        supported: true,
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'srgb',
-        lutProfile: null,
-        steps: [
-          { kind: 'input-linear-prophoto' },
-          IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-          ...neutralToneSteps(),
-          { kind: 'output-srgb' },
-        ],
-      },
+      graph: neutralGraph(),
       preferredRows: 64.5,
       readProcessedWindow,
       writerFactory: () => writer,
@@ -293,18 +237,7 @@ describe('runFullResolutionJpegExport', () => {
         rawHeight: 30,
         visibleCrop: { x: 5, y: 7, width: 4, height: 4 },
       }),
-      graph: {
-        supported: true,
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'srgb',
-        lutProfile: null,
-        steps: [
-          { kind: 'input-linear-prophoto' },
-          IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-          ...neutralToneSteps(),
-          { kind: 'output-srgb' },
-        ],
-      },
+      graph: neutralGraph(),
       preferredRows: 2,
       readProcessedWindow,
       writerFactory: () => writer,
@@ -338,18 +271,7 @@ describe('runFullResolutionJpegExport', () => {
     await expect(
       runFullResolutionJpegExport({
         capability: makeCapability(),
-        graph: {
-          supported: true,
-          outputGamut: 'srgb-rec709',
-          outputTransfer: 'srgb',
-          lutProfile: null,
-          steps: [
-            { kind: 'input-linear-prophoto' },
-            IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-            ...neutralToneSteps(),
-            { kind: 'output-srgb' },
-          ],
-        },
+        graph: neutralGraph(),
         preferredRows: 4,
         readProcessedWindow: async (request) => makeProcessedWindow(request),
         writerFactory: () => writer,
@@ -372,18 +294,7 @@ describe('runFullResolutionJpegExport', () => {
         rawHeight: 130,
         visibleCrop: { x: 0, y: 0, width: 4, height: 130 },
       }),
-      graph: {
-        supported: true,
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'srgb',
-        lutProfile: null,
-        steps: [
-          { kind: 'input-linear-prophoto' },
-          IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-          ...neutralToneSteps(),
-          { kind: 'output-srgb' },
-        ],
-      },
+      graph: neutralGraph(),
       preferredRows: 64,
       concurrency: 1,
       readProcessedWindow: vi.fn((request: LumaRawProcessedWindowRequest) =>
@@ -420,18 +331,7 @@ describe('runFullResolutionJpegExport', () => {
         rawHeight: 128,
         visibleCrop: { x: 0, y: 0, width: 4, height: 128 },
       }),
-      graph: {
-        supported: true,
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'srgb',
-        lutProfile: null,
-        steps: [
-          { kind: 'input-linear-prophoto' },
-          IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-          ...neutralToneSteps(),
-          { kind: 'output-srgb' },
-        ],
-      },
+      graph: neutralGraph(),
       preferredRows: 64,
       readProcessedWindow: async (request) => makeProcessedWindow(request),
       writerFactory: () => writer,

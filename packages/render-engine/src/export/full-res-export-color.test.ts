@@ -10,14 +10,14 @@ import { runFullResolutionJpegExport } from './full-res-export'
 import {
   clamp01,
   concatByteRows,
-  IDENTITY_RAW_RENDER_EXPOSURE_STEP,
   linearToSrgb,
   makeCapability,
   makeJpegOutput,
   makePatternedProcessedWindow,
   makeProcessedWindow,
   makeRgbRampLut,
-  neutralToneSteps,
+  neutralGraph,
+  neutralSceneSteps,
 } from './full-res-export-test-fixtures'
 import { processedWindowToLinearProPhotoTile } from './processed-window-transform'
 
@@ -30,9 +30,13 @@ describe('runFullResolutionJpegExport', () => {
       outputTransfer: 'srgb',
       lutProfile: null,
       steps: [
-        { kind: 'input-linear-prophoto' },
-        { kind: 'raw-render-exposure', ev: 0.1375, multiplier: 1.1 },
-        ...neutralToneSteps(),
+        ...neutralSceneSteps({
+          rawRenderExposure: {
+            ev: 0.1375,
+            multiplier: 1.1,
+            source: 'image-statistics',
+          },
+        }),
         {
           kind: 'gamut-to-lut-input',
           matrix: mat3Identity(),
@@ -123,18 +127,7 @@ describe('runFullResolutionJpegExport', () => {
     try {
       await runFullResolutionJpegExport({
         capability: makeCapability(),
-        graph: {
-          supported: true,
-          outputGamut: 'srgb-rec709',
-          outputTransfer: 'srgb',
-          lutProfile: null,
-          steps: [
-            { kind: 'input-linear-prophoto' },
-            IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-            ...neutralToneSteps(),
-            { kind: 'output-srgb' },
-          ],
-        },
+        graph: neutralGraph(),
         preferredRows: 2,
         readProcessedWindow: async (request) => makeProcessedWindow(request),
         writerFactory: () => writer,
@@ -183,9 +176,7 @@ describe('runFullResolutionJpegExport', () => {
         outputTransfer: 'srgb',
         lutProfile: null,
         steps: [
-          { kind: 'input-linear-prophoto' },
-          IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-          ...neutralToneSteps(),
+          ...neutralSceneSteps(),
           {
             kind: 'gamut-to-lut-input',
             matrix: mat3Identity(),
@@ -250,9 +241,13 @@ describe('runFullResolutionJpegExport', () => {
         outputTransfer: 'srgb',
         lutProfile: null,
         steps: [
-          { kind: 'input-linear-prophoto' },
-          { kind: 'raw-render-exposure', ev: 1, multiplier: 2 },
-          ...neutralToneSteps(),
+          ...neutralSceneSteps({
+            rawRenderExposure: {
+              ev: 1,
+              multiplier: 2,
+              source: 'image-statistics',
+            },
+          }),
           { kind: 'output-srgb' },
         ],
       },
@@ -300,9 +295,13 @@ describe('runFullResolutionJpegExport', () => {
         outputTransfer: 'srgb',
         lutProfile: null,
         steps: [
-          { kind: 'input-linear-prophoto' },
-          { kind: 'raw-render-exposure', ev: 1, multiplier: 2 },
-          ...neutralToneSteps(),
+          ...neutralSceneSteps({
+            rawRenderExposure: {
+              ev: 1,
+              multiplier: 2,
+              source: 'image-statistics',
+            },
+          }),
           {
             kind: 'gamut-to-lut-input',
             matrix: mat3Identity(),
@@ -368,18 +367,7 @@ describe('runFullResolutionJpegExport', () => {
 
     await runFullResolutionJpegExport({
       capability: makeCapability(),
-      graph: {
-        supported: true,
-        outputGamut: 'srgb-rec709',
-        outputTransfer: 'srgb',
-        lutProfile: null,
-        steps: [
-          { kind: 'input-linear-prophoto' },
-          IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-          ...neutralToneSteps(),
-          { kind: 'output-srgb' },
-        ],
-      },
+      graph: neutralGraph(),
       preferredRows: 2,
       readProcessedWindow,
       writerFactory: () => writer,
@@ -426,9 +414,7 @@ describe('runFullResolutionJpegExport', () => {
         outputTransfer: 'srgb',
         lutProfile: null,
         steps: [
-          { kind: 'input-linear-prophoto' },
-          IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-          ...neutralToneSteps(),
+          ...neutralSceneSteps(),
           {
             kind: 'gamut-to-lut-input',
             matrix: mat3Identity(),

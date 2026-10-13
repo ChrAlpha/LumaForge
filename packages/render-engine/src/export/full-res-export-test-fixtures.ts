@@ -1,21 +1,16 @@
 // Pure builders for executor tests: a processed-window capability, synthetic
-// processed windows, a neutral color graph, and the sRGB encode math the
+// processed windows, the resolved neutral color graph, and the sRGB encode math the
 // expected pixels are computed with. Nothing here runs the executor, so
 // expectations stay independent of the code under test.
 
-import type { ExportColorGraphStep } from '@lumaforge/luma-color-runtime'
+import type {
+  ExportColorGraphInput,
+  ExportColorGraphStep,
+  SupportedExportColorGraphDescriptor,
+} from '@lumaforge/luma-color-runtime'
 import {
-  CHROMA_CLAMP_HIGH,
-  CHROMA_CLAMP_LOW,
-  LUT_CONSTANTS_VERSION,
-  makeNeutralBand,
-  resolveColorBalanceParams,
-  SKIN_HUE_CENTER_DEG,
-  SKIN_HUE_SIGMA_DEG,
-  SKIN_PROTECT_STRENGTH,
-  USER_SATURATION_MAX_FACTOR,
-  USER_VIBRANCE_MAX_FACTOR,
-  VIBRANCE_CHROMA_REF,
+  NEUTRAL_USER_COLOR_INTENT,
+  resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 import type {
   LumaRawExportCapability,
@@ -165,74 +160,25 @@ export function makeRgbRampLut() {
   return lut
 }
 
-export const IDENTITY_RAW_RENDER_EXPOSURE_STEP = {
-  kind: 'raw-render-exposure' as const,
-  ev: 0,
-  multiplier: 1,
+/** The graph export resolves for an untouched photo with no look, plus `overrides`. */
+export function neutralGraph(
+  overrides: Partial<ExportColorGraphInput> = {},
+): SupportedExportColorGraphDescriptor {
+  const graph = resolveExportColorGraph({
+    ...NEUTRAL_USER_COLOR_INTENT,
+    styleKind: 'none',
+    builtinPreset: null,
+    intensity: 1,
+    lut: null,
+    ...overrides,
+  })
+  if (!graph.supported) throw new Error(graph.message)
+  return graph
 }
 
-const neutralColorBalance = resolveColorBalanceParams()
-
-export function neutralToneSteps(): ExportColorGraphStep[] {
-  return [
-    {
-      kind: 'user-color-balance',
-      temperature: neutralColorBalance.userTemperature,
-      tint: neutralColorBalance.userTint,
-      gain: neutralColorBalance.gain,
-      operator: neutralColorBalance.operator,
-      luminanceCoefficients: neutralColorBalance.luminanceCoefficients,
-    },
-    { kind: 'user-exposure', ev: 0, multiplier: 1 },
-    {
-      kind: 'user-contrast',
-      amount: 0,
-      factor: 1,
-      pivot: 0.18,
-      operator: 'linear-prophoto-luminance-scale',
-      luminanceCoefficients: [0.2880402, 0.7118741, 0.0000857],
-      zeroLuminanceMode: 'return-black',
-    },
-    {
-      kind: 'user-regional-tone',
-      highlights: 0,
-      shadows: 0,
-      whites: 0,
-      blacks: 0,
-      operator: 'linear-prophoto-log-luminance-regions',
-      pivot: 0.18,
-      luminanceCoefficients: [0.2880402, 0.7118741, 0.0000857],
-      zeroLuminanceMode: 'return-black',
-    },
-    {
-      kind: 'user-saturation',
-      operator: 'oklab-chroma-with-skin-protection',
-      saturation: 0,
-      vibrance: 0,
-      satMaxFactor: USER_SATURATION_MAX_FACTOR,
-      vibMaxFactor: USER_VIBRANCE_MAX_FACTOR,
-      chromaRef: VIBRANCE_CHROMA_REF,
-      skinHueCenterDeg: SKIN_HUE_CENTER_DEG,
-      skinHueSigmaDeg: SKIN_HUE_SIGMA_DEG,
-      skinProtectStrength: SKIN_PROTECT_STRENGTH,
-    },
-    {
-      kind: 'user-selective-color',
-      bands: {
-        red: makeNeutralBand(),
-        orange: makeNeutralBand(),
-        yellow: makeNeutralBand(),
-        green: makeNeutralBand(),
-        aqua: makeNeutralBand(),
-        blue: makeNeutralBand(),
-        purple: makeNeutralBand(),
-        magenta: makeNeutralBand(),
-      },
-      chromaClampLow: CHROMA_CLAMP_LOW,
-      chromaClampHigh: CHROMA_CLAMP_HIGH,
-      workingSpace: 'oklab-via-prophoto-d65',
-      operator: 'oklch-per-band-shift',
-      constantsVersion: LUT_CONSTANTS_VERSION,
-    },
-  ]
+/** The scene steps of `neutralGraph(overrides)`, which a LUT stage follows. */
+export function neutralSceneSteps(
+  overrides: Partial<ExportColorGraphInput> = {},
+): ExportColorGraphStep[] {
+  return neutralGraph(overrides).steps.slice(0, -1)
 }

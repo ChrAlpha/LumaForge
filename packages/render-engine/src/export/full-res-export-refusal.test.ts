@@ -7,10 +7,10 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { runFullResolutionJpegExport } from './full-res-export'
 import {
-  IDENTITY_RAW_RENDER_EXPOSURE_STEP,
   makeCapability,
   makeProcessedWindow,
-  neutralToneSteps,
+  neutralGraph,
+  neutralSceneSteps,
 } from './full-res-export-test-fixtures'
 import { createWasmJpegRowSink } from './jpeg/wasm-row-sink'
 
@@ -29,18 +29,7 @@ describe('runFullResolutionJpegExport', () => {
     await expect(
       runFullResolutionJpegExport({
         capability: makeCapability({ supported: false }),
-        graph: {
-          supported: true,
-          outputGamut: 'srgb-rec709',
-          outputTransfer: 'srgb',
-          lutProfile: null,
-          steps: [
-            { kind: 'input-linear-prophoto' },
-            IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-            ...neutralToneSteps(),
-            { kind: 'output-srgb' },
-          ],
-        },
+        graph: neutralGraph(),
         readProcessedWindow,
         jpegSink,
       }),
@@ -112,18 +101,7 @@ describe('runFullResolutionJpegExport', () => {
       await expect(
         runFullResolutionJpegExport({
           capability: makeCapability(overrides),
-          graph: {
-            supported: true,
-            outputGamut: 'srgb-rec709',
-            outputTransfer: 'srgb',
-            lutProfile: null,
-            steps: [
-              { kind: 'input-linear-prophoto' },
-              IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-              ...neutralToneSteps(),
-              { kind: 'output-srgb' },
-            ],
-          },
+          graph: neutralGraph(),
           readProcessedWindow,
           jpegSink: {
             createSession,
@@ -149,18 +127,7 @@ describe('runFullResolutionJpegExport', () => {
       await expect(
         runFullResolutionJpegExport({
           capability: makeCapability(),
-          graph: {
-            supported: true,
-            outputGamut: 'srgb-rec709',
-            outputTransfer: 'srgb',
-            lutProfile: null,
-            steps: [
-              { kind: 'input-linear-prophoto' },
-              IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-              ...neutralToneSteps(),
-              { kind: 'output-srgb' },
-            ],
-          },
+          graph: neutralGraph(),
           preferredRows,
           readProcessedWindow,
           writerFactory: () => writer,
@@ -186,18 +153,7 @@ describe('runFullResolutionJpegExport', () => {
       await expect(
         runFullResolutionJpegExport({
           capability: makeCapability(),
-          graph: {
-            supported: true,
-            outputGamut: 'srgb-rec709',
-            outputTransfer: 'srgb',
-            lutProfile: null,
-            steps: [
-              { kind: 'input-linear-prophoto' },
-              IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-              ...neutralToneSteps(),
-              { kind: 'output-srgb' },
-            ],
-          },
+          graph: neutralGraph(),
           concurrency,
           readProcessedWindow,
           writerFactory: () => writer,
@@ -229,18 +185,7 @@ describe('runFullResolutionJpegExport', () => {
     await expect(
       runFullResolutionJpegExport({
         capability: makeCapability(),
-        graph: {
-          supported: true,
-          outputGamut: 'srgb-rec709',
-          outputTransfer: 'srgb',
-          lutProfile: null,
-          steps: [
-            { kind: 'input-linear-prophoto' },
-            IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-            ...neutralToneSteps(),
-            { kind: 'output-srgb' },
-          ],
-        },
+        graph: neutralGraph(),
         preferredRows: 2,
         readProcessedWindow,
         writerFactory: () => writer,
@@ -256,18 +201,7 @@ describe('runFullResolutionJpegExport', () => {
     await expect(
       runFullResolutionJpegExport({
         capability: makeCapability(),
-        graph: {
-          supported: true,
-          outputGamut: 'srgb-rec709',
-          outputTransfer: 'srgb',
-          lutProfile: null,
-          steps: [
-            { kind: 'input-linear-prophoto' },
-            IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-            ...neutralToneSteps(),
-            { kind: 'output-srgb' },
-          ],
-        },
+        graph: neutralGraph(),
         readProcessedWindow,
         jpegSink: createWasmJpegRowSink(() => {
           throw new Error('JPEG_RUNTIME_UNAVAILABLE')
@@ -291,18 +225,7 @@ describe('runFullResolutionJpegExport', () => {
     await expect(
       runFullResolutionJpegExport({
         capability: makeCapability(),
-        graph: {
-          supported: true,
-          outputGamut: 'srgb-rec709',
-          outputTransfer: 'srgb',
-          lutProfile: null,
-          steps: [
-            { kind: 'input-linear-prophoto' },
-            IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-            ...neutralToneSteps(),
-            { kind: 'output-srgb' },
-          ],
-        },
+        graph: neutralGraph(),
         readProcessedWindow: vi
           .fn()
           .mockRejectedValue(new Error('read failed')),
@@ -329,9 +252,7 @@ describe('runFullResolutionJpegExport', () => {
           outputTransfer: 'srgb',
           lutProfile: null,
           steps: [
-            { kind: 'input-linear-prophoto' },
-            IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-            ...neutralToneSteps(),
+            ...neutralSceneSteps(),
             {
               kind: 'lut-output-to-srgb',
               matrix: mat3Identity(),
@@ -368,9 +289,7 @@ describe('runFullResolutionJpegExport', () => {
           outputTransfer: 'srgb',
           lutProfile: null,
           steps: [
-            { kind: 'input-linear-prophoto' },
-            IDENTITY_RAW_RENDER_EXPOSURE_STEP,
-            ...neutralToneSteps(),
+            ...neutralSceneSteps(),
             {
               kind: 'gamut-to-lut-input',
               matrix: mat3Identity(),
