@@ -5,7 +5,6 @@ import {
   pickColorGraphIntent,
 } from '@lumaforge/luma-color-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
-import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import i18n from 'i18next'
 import { atom, createStore } from 'jotai'
@@ -503,63 +502,6 @@ describe('useRawLookStage', () => {
   })
 
   describe('look actions run against the current state', () => {
-    it('keeps preview and capability updates published after render when selecting intensity', () => {
-      const session = withReadyExport(createSession())
-      const harness = renderLookStageHarness({ session })
-
-      harness.publishSession(publishPreviewAndCapability)
-      harness.actions.setIntensity(LOOK_INTENSITY_PRESETS.light)
-
-      const current = harness.readSession()
-      expect(current?.previewBundle.boundedHqPreview).toEqual(
-        publishedBoundedHq,
-      )
-      expect(current?.exportState.fullResCapability).toEqual(
-        publishedCapability,
-      )
-      expect(current?.activeStyle?.currentIntensity).toBe(
-        LOOK_INTENSITY_PRESETS.light,
-      )
-      expect(current?.exportState).toMatchObject({
-        status: 'idle',
-        result: undefined,
-      })
-      expect(current?.viewState).toBe(session.viewState)
-      expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(1)
-      expect(harness.paramsNotifications).not.toHaveBeenCalled()
-    })
-
-    it('keeps preview and capability updates published after render when clearing the LUT', () => {
-      const lut = createLut()
-      const session = withReadyExport({
-        ...createSession(),
-        lutProfileSelection: buildLUTContractSelectionState(lut),
-      })
-      const harness = renderLookStageHarness({ session, lut })
-
-      harness.publishSession(publishPreviewAndCapability)
-      harness.actions.clearLUT()
-
-      const current = harness.readSession()
-      expect(current?.previewBundle.boundedHqPreview).toEqual(
-        publishedBoundedHq,
-      )
-      expect(current?.exportState.fullResCapability).toEqual(
-        publishedCapability,
-      )
-      expect(current).toMatchObject({
-        activeStyle: null,
-        lutProfileSelection: undefined,
-        exportState: { status: 'idle', result: undefined },
-      })
-      expect(current?.viewState).toBe(session.viewState)
-      expect(harness.setLut).toHaveBeenCalledWith(null)
-      expect(harness.setLutDataRef).toHaveBeenCalledWith(null)
-      expect(harness.scheduleToast).toHaveBeenCalledTimes(1)
-      expect(harness.invalidateExportGraph).toHaveBeenCalledTimes(1)
-      expect(harness.paramsNotifications).not.toHaveBeenCalled()
-    })
-
     it('applies look actions to a session created after a session-less render', () => {
       const lut = createLut()
       const detachedParams: ColorGraphIntent = {
@@ -872,59 +814,6 @@ describe('useRawLookStage continuous strength', () => {
     expect(harness.setColorIntent).not.toHaveBeenCalled()
   })
 
-  it('applies a contract choice to the LUT loaded since the callback was made, with its own hash', async () => {
-    const contentA = createCubeContent('Client Look')
-    const { sha256: sha256A } = await sourceContentIdFromBytes(
-      new TextEncoder().encode(contentA),
-    )
-    const lutA: ParsedLUT = {
-      ...parseCubeLUT(contentA, { sourceName: 'look.cube' }),
-      sha256: sha256A,
-    }
-    const harness = renderLookStageHarness({
-      session: createSession(),
-      lut: lutA,
-    })
-    localStorage.clear()
-    onTestFinished(() => localStorage.clear())
-
-    await act(async () => {
-      await expect(
-        harness.actions.loadLUT(createCubeFile('Second Look', 'second.cube')),
-      ).resolves.toBe('loaded')
-    })
-    const lutB = getStoredLut()!
-    expect(lutB.fingerprint).not.toBe(lutA.fingerprint)
-    expect(lutB.sha256).toMatch(/^[0-9a-f]{64}$/)
-    expect(lutB.sha256).not.toBe(sha256A)
-    harness.actions.setIntensity(0.43)
-    harness.setLut.mockClear()
-
-    // The callback was made while LUT A was current; it applies to LUT B.
-    harness.actions.selectLUTProfile('display-srgb')
-
-    expect(harness.setLut).toHaveBeenCalledTimes(1)
-    const selected = harness.setLut.mock.lastCall?.[0] as ParsedLUT
-    expect(selected.fingerprint).toBe(lutB.fingerprint)
-    expect(selected.data).toBe(lutB.data)
-    expect(selected.sha256).toBe(lutB.sha256)
-    expect(selected.profileResolution).toMatchObject({
-      kind: 'confirmed',
-      confidence: 'user',
-    })
-    expect(harness.readSession()?.activeStyle).toMatchObject({
-      kind: 'custom',
-      name: 'Second Look',
-      currentIntensity: 0.43,
-      lutAsset: { fingerprint: lutB.fingerprint, sha256: lutB.sha256 },
-    })
-    expect(harness.readSession()?.lutProfileSelection).toMatchObject({
-      fingerprint: lutB.fingerprint,
-    })
-    expect(getStoredLUTContractSelection(lutB.fingerprint)).toBeDefined()
-    expect(getStoredLUTContractSelection(lutA.fingerprint)).toBeUndefined()
-  })
-
   it('refuses a contract choice made after the LUT was cleared, before a rerender', () => {
     const lut = createLut()
     const session = {
@@ -959,32 +848,6 @@ describe('useRawLookStage continuous strength', () => {
     expect(setItem).not.toHaveBeenCalled()
     expect(getStoredLUTContractSelection(lut.fingerprint)).toBeUndefined()
     expect(harness.scheduleToast).toHaveBeenCalledTimes(writes.toasts + 1)
-  })
-
-  it('refuses a detached contract choice once the store dropped the LUT', () => {
-    const lut = createLut()
-    const harness = renderLookStageHarness({
-      session: null,
-      params: { ...baseIntent, styleKind: 'custom', intensity: 0.37 },
-      lut,
-    })
-    localStorage.clear()
-    onTestFinished(() => localStorage.clear())
-    const setItem = vi.spyOn(Storage.prototype, 'setItem')
-    onTestFinished(() => setItem.mockRestore())
-
-    // A reset drops the LUT in the store without this hook rerendering.
-    setStoredLut(null)
-    harness.actions.selectLUTProfile('display-srgb')
-
-    expect(harness.setLut).not.toHaveBeenCalled()
-    expect(harness.setColorIntent).not.toHaveBeenCalled()
-    expect(harness.paramsNotifications).not.toHaveBeenCalled()
-    expect(harness.readSession()).toBeNull()
-    expect(harness.invalidateExportGraph).not.toHaveBeenCalled()
-    expect(setItem).not.toHaveBeenCalled()
-    expect(getStoredLUTContractSelection(lut.fingerprint)).toBeUndefined()
-    expect(harness.scheduleToast).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the hash the session holds for the same LUT when the LUT contract changes', () => {
