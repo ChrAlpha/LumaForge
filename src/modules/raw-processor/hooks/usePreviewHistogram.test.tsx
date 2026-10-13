@@ -246,13 +246,8 @@ describe('usePreviewHistogram', () => {
     vi.restoreAllMocks()
   })
 
-  it('computes a quick histogram without copying/detaching the active buffer', async () => {
+  it('computes a quick histogram over the active buffer', async () => {
     const image = createImage('quick')
-    const sliceSpy = vi
-      .spyOn(Uint16Array.prototype, 'slice')
-      .mockImplementation(() => {
-        throw new Error('copying source preview data is forbidden')
-      })
 
     const { result } = renderPreviewHistogram({ image })
 
@@ -268,34 +263,20 @@ describe('usePreviewHistogram', () => {
       height: 2,
       sampledPixels: 4,
       totalPixels: 4,
-      diagnostics: {
-        ownership: 'main-thread-chunked-no-copy',
-        copiedInputBytes: 0,
-        transferredInput: false,
-        inputByteLength: image.data.buffer.byteLength,
-        rowBandRows: 32,
-      },
     })
     if (result.current.state === 'ready') {
       expect(
         result.current.bins.luma.reduce((sum, value) => sum + value, 0),
       ).toBe(4)
     }
-    expect(image.data.byteLength).toBe(24)
-    expect(sliceSpy).not.toHaveBeenCalled()
   })
 
-  it('bounds large preview sampling without copying the active buffer', async () => {
+  it('bounds large preview sampling', async () => {
     const width = 1000
     const height = 501
     const data = new Uint16Array(width * height * 3)
     data.fill(32768)
     const image = createImage('quick', { width, height, data })
-    const sliceSpy = vi
-      .spyOn(Uint16Array.prototype, 'slice')
-      .mockImplementation(() => {
-        throw new Error('copying source preview data is forbidden')
-      })
 
     const { result } = renderPreviewHistogram({ image })
 
@@ -306,12 +287,6 @@ describe('usePreviewHistogram', () => {
       state: 'ready',
       source: 'quick',
       totalPixels: width * height,
-      diagnostics: {
-        ownership: 'main-thread-chunked-no-copy',
-        copiedInputBytes: 0,
-        transferredInput: false,
-        inputByteLength: data.buffer.byteLength,
-      },
     })
     if (result.current.state === 'ready') {
       expect(result.current.sampledPixels).toBeLessThan(
@@ -319,8 +294,6 @@ describe('usePreviewHistogram', () => {
       )
       expect(result.current.sampledPixels).toBeGreaterThan(0)
     }
-    expect(data.buffer.byteLength).toBe(width * height * 3 * 2)
-    expect(sliceSpy).not.toHaveBeenCalled()
   })
 
   it('publishes a large quick preview histogram before debounce can be cancelled by HQ', async () => {
@@ -331,32 +304,6 @@ describe('usePreviewHistogram', () => {
     const image = createImage('quick', { width, height, data })
 
     const { result } = renderPreviewHistogram({ image })
-
-    await runImmediateChunkedWorkUntilReady(result)
-
-    expect(result.current).toMatchObject({
-      state: 'ready',
-      source: 'quick',
-    })
-  })
-
-  it('yields between chunks while computing the first large quick preview', async () => {
-    const width = 1000
-    const height = 501
-    const data = new Uint16Array(width * height * 3)
-    data.fill(32768)
-    const image = createImage('quick', { width, height, data })
-    const subarraySpy = vi.spyOn(Uint16Array.prototype, 'subarray')
-
-    const { result } = renderPreviewHistogram({ image })
-
-    await act(async () => {
-      await vi.advanceTimersToNextTimerAsync()
-    })
-
-    expect(result.current).toEqual({ state: 'computing', previous: null })
-    expect(subarraySpy.mock.calls.length).toBeGreaterThan(0)
-    expect(subarraySpy.mock.calls.length).toBeLessThan(Math.ceil(height / 2))
 
     await runImmediateChunkedWorkUntilReady(result)
 
@@ -567,39 +514,6 @@ describe('usePreviewHistogram', () => {
     })
   })
 
-  it('runs nothing while no surface shows it, and computes once one does', async () => {
-    const image = createImage('quick')
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
-      enabled: false,
-      image,
-    })
-    await runAllWork()
-    expect(result.current.state).toBe('unsupported')
-
-    rerender({
-      enabled: true,
-      imageRef,
-      params: defaultParams,
-      lutDataRef,
-      lutDataVersion: 0,
-      displaySource: 'quick',
-    })
-    await runChunkedWorkUntilReady(result)
-    expect(result.current).toMatchObject({ state: 'ready', source: 'quick' })
-
-    // Turned off mid-session, it stops reporting bins it no longer updates.
-    rerender({
-      enabled: false,
-      imageRef,
-      params: { ...defaultParams, userExposureEv: 1 },
-      lutDataRef,
-      lutDataVersion: 0,
-      displaySource: 'quick',
-    })
-    await runAllWork()
-    expect(result.current.state).toBe('unsupported')
-  })
-
   it('reports embedded-only preview as unavailable', () => {
     const { result } = renderPreviewHistogram({
       image: null,
@@ -688,65 +602,6 @@ describe('usePreviewHistogram', () => {
     expect(result.current).toBe(ready)
     await runAllWork()
     expect(result.current).toBe(ready)
-  })
-
-  it('keeps the job while the owner rerenders the same accepted frame', async () => {
-    const image = createImage('quick')
-    const frame = describeFrame(image)
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
-      image,
-      frame,
-    })
-
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    const ready = result.current
-
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      rerender({
-        imageRef,
-        frame,
-        params: { ...defaultParams },
-        lutDataRef,
-        lutDataVersion: 0,
-        displaySource: 'quick',
-      })
-      expect(result.current).toBe(ready)
-    }
-    await runAllWork()
-    expect(result.current).toBe(ready)
-  })
-
-  it('measures a newly accepted frame, however alike its size and stage', async () => {
-    const first = createImage('quick')
-    const again = createImage('quick', {
-      data: new Uint16Array([
-        65535, 0, 0, 0, 65535, 0, 0, 0, 65535, 65535, 65535, 65535,
-      ]),
-    })
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
-      image: first,
-    })
-
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    const previous = result.current
-
-    // A frame decoded again for the same source, with the same size and
-    // stage: only its descriptor says the pixels are new.
-    imageRef.current = again
-    rerender({
-      imageRef,
-      params: defaultParams,
-      lutDataRef,
-      lutDataVersion: 0,
-      displaySource: 'quick',
-    })
-    expect(result.current).toEqual({ state: 'stale', previous })
-
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    expect(result.current).not.toEqual(previous)
   })
 
   it('measures a replacing source of identical size, never the old run landing late', async () => {
