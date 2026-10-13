@@ -90,11 +90,7 @@ export function createTestDecodedImage(
   return {
     width,
     height,
-    channels: 3,
-    bitsPerChannel: 16,
     data: new Uint16Array(width * height * 3),
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
     source: 'quick',
     metadata: { width, height },
     renderExposure: { ev: 0, multiplier: 1, source: 'identity' },

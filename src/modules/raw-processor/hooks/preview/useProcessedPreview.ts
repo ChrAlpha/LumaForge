@@ -25,10 +25,7 @@ import type {
 import type { DisplaySource } from '../../model/session'
 import type { CompareRenderMode } from '../../services/compare/compare-render-mode'
 import { selectCompareRenderMode } from '../../services/compare/compare-render-mode'
-import {
-  createRawUploadInput,
-  syncRawUploadInput,
-} from '../../services/preview/preview-canvas-helpers'
+import { syncRawUploadInput } from '../../services/preview/preview-canvas-helpers'
 import type {
   PreviewCompareReadiness,
   PreviewFrameStatus,
@@ -320,20 +317,8 @@ export function useProcessedPreview<
 
     // Pixels without an accepted descriptor are never uploaded.
     const image = decodedFrame ? imageRef.current : null
-    const uploadInput = createRawUploadInput({
-      data: image?.data ?? null,
-      layout: image?.layout ?? null,
-      colorSpace: image?.colorSpace ?? null,
-      width: image?.width ?? 0,
-      height: image?.height ?? 0,
-      renderExposureEv: image?.renderExposure.ev ?? 0,
-    })
-    const uploaded = syncRawUploadInput({
-      pipeline,
-      imageData: image?.data ?? null,
-      uploadInput,
-      setError,
-    })
+    const uploaded = syncRawUploadInput(pipeline, image)
+    setError(null)
     processedUploadGenerationKeyRef.current = uploaded
       ? processedImageGenerationKey
       : ''

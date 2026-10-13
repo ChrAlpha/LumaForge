@@ -19,6 +19,7 @@ import { createTransformState } from '../../../model/session-factory'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
 import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import type { PipelineFacts } from '../../../services/preview/pipeline-stats'
+import { createTestDecodedImage } from '../../../test-support/builders'
 import { useExportDerivedState } from './useExportDerivedState'
 
 const NO_LOOK: ColorGraphIntent = {
@@ -146,18 +147,11 @@ function createSession(): ImageSession {
 }
 
 function createBoundedHqImage(): DecodedImage {
-  return {
+  return createTestDecodedImage({
     width: 800,
     height: 600,
-    channels: 4,
-    bitsPerChannel: 32,
-    data: new Float32Array(800 * 600 * 4),
-    layout: 'rgba-float32',
-    colorSpace: 'linear-prophoto-rgb',
     source: 'bounded-hq',
-    metadata: { width: 800, height: 600 },
-    renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-  }
+  })
 }
 
 /** A committed geometry: a slight rotation with the crop constrained. */

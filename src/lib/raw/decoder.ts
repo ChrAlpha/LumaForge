@@ -1,21 +1,16 @@
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 
-type DecodedImageLayout = 'rgba-float32' | 'rgb-u16'
-
-type DecodedImageColorSpace = 'display-srgb-preview' | 'linear-prophoto-rgb'
-
 export type DecodedImageSource = 'quick' | 'bounded-hq'
 
+/**
+ * A decoded preview frame: the RAW render as linear ProPhoto RGB16, three
+ * channels per pixel, the one layout the RAW runtime decodes to.
+ */
 export interface DecodedImage {
   width: number
   height: number
-  channels: 3 | 4
-  bitsPerChannel: 16 | 32
-  data: Float32Array | Uint16Array
-  layout: DecodedImageLayout
-  colorSpace: DecodedImageColorSpace
+  data: Uint16Array
   source?: DecodedImageSource
-  timings?: Record<string, number | undefined>
   metadata: ImageMetadata
   renderExposure: RawRenderExposure
 }

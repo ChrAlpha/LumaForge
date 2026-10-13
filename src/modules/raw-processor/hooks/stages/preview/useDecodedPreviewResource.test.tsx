@@ -8,30 +8,22 @@ import {
 } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
+import { createTestDecodedImage } from '../../../test-support/builders'
 import { useDecodedPreviewResource } from './useDecodedPreviewResource'
 
 function createDecodedImage(
   ev: number,
-  data = new Float32Array(4),
+  data = new Uint16Array(3),
   source: DecodedImage['source'] = 'bounded-hq',
   size = { width: 1, height: 1 },
 ): DecodedImage {
-  return {
-    width: size.width,
-    height: size.height,
-    channels: 4,
-    bitsPerChannel: 32,
+  return createTestDecodedImage({
+    ...size,
     data,
-    layout: 'rgba-float32',
-    colorSpace: 'linear-prophoto-rgb',
     source,
     metadata: { width: 1, height: 1 },
-    renderExposure: {
-      ev,
-      multiplier: 2 ** ev,
-      source: 'identity',
-    },
-  }
+    renderExposure: { ev, multiplier: 2 ** ev, source: 'identity' },
+  })
 }
 
 describe('useDecodedPreviewResource', () => {

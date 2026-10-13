@@ -18,46 +18,18 @@ export type TrackedPointer = {
   clientY: number
 }
 
-/**
- * The GPU draws only the RGB16 linear ProPhoto render. Any other decoded layout
- * yields null so the caller refuses it instead of uploading.
- */
-export function createRawUploadInput({
-  data,
-  layout,
-  colorSpace,
-  width,
-  height,
-  renderExposureEv,
-}: {
-  data: DecodedImage['data'] | null
-  layout: DecodedImage['layout'] | null
-  colorSpace: DecodedImage['colorSpace'] | null
-  width: number
-  height: number
-  renderExposureEv?: number | null
-}): RawUploadInput | null {
-  if (
-    layout !== 'rgb-u16' ||
-    colorSpace !== 'linear-prophoto-rgb' ||
-    !(data instanceof Uint16Array)
-  ) {
-    return null
-  }
-
-  const ev =
-    typeof renderExposureEv === 'number' && Number.isFinite(renderExposureEv)
-      ? renderExposureEv
-      : 0
-
+/** The GPU upload of a decoded frame, with the frame's RAW render exposure. */
+export function createRawUploadInput(image: DecodedImage): RawUploadInput {
+  const { ev } = image.renderExposure
+  const renderExposureEv = Number.isFinite(ev) ? ev : 0
   return {
-    data,
-    width,
-    height,
-    layout,
-    colorSpace,
-    renderExposureEv: ev,
-    renderExposureMultiplier: Math.pow(2, ev),
+    data: image.data,
+    width: image.width,
+    height: image.height,
+    layout: 'rgb-u16',
+    colorSpace: 'linear-prophoto-rgb',
+    renderExposureEv,
+    renderExposureMultiplier: Math.pow(2, renderExposureEv),
   }
 }
 
@@ -88,30 +60,15 @@ export function tryReleasePointer(target: HTMLElement, pointerId: number) {
   }
 }
 
-export function syncRawUploadInput({
-  pipeline,
-  imageData,
-  uploadInput,
-  setError,
-}: {
-  pipeline: RawUploadPipeline
-  imageData: Float32Array | Uint16Array | null
-  uploadInput: RawUploadInput | null
-  setError: (error: string | null) => void
-}): boolean {
-  if (!imageData) {
+/** Uploads the frame, or clears the pipeline's stale input without one. */
+export function syncRawUploadInput(
+  pipeline: RawUploadPipeline,
+  image: DecodedImage | null,
+): boolean {
+  if (!image) {
     pipeline.clearImage()
-    setError(null)
     return false
   }
-
-  if (!uploadInput) {
-    pipeline.clearImage()
-    setError('Decoded image data does not match the GPU upload layout')
-    return false
-  }
-
-  pipeline.uploadImage(uploadInput)
-  setError(null)
+  pipeline.uploadImage(createRawUploadInput(image))
   return true
 }

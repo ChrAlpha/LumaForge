@@ -32,6 +32,7 @@ import {
   deriveTransformStatus,
   reduceTransformState,
 } from '../../../services/transform/transform-state'
+import { createTestDecodedImage } from '../../../test-support/builders'
 import { useHqPreviewExportAction } from './useHqPreviewExportAction'
 
 /** The look the test session names: a built-in style WebGPU draws. */
@@ -147,22 +148,11 @@ function createSession(): ImageSession {
 }
 
 function createDecodedImage(): DecodedImage {
-  return {
+  return createTestDecodedImage({
     width: 800,
     height: 600,
-    channels: 4,
-    bitsPerChannel: 32,
-    data: new Float32Array(800 * 600 * 4),
-    layout: 'rgba-float32',
-    colorSpace: 'linear-prophoto-rgb',
     source: 'bounded-hq',
-    metadata: { width: 800, height: 600 },
-    renderExposure: {
-      ev: 0,
-      multiplier: 1,
-      source: 'identity',
-    },
-  }
+  })
 }
 
 /**

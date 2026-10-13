@@ -470,158 +470,42 @@ describe('preview canvas upload descriptor', () => {
     expect(onStatsUpdate).toHaveBeenCalledOnce()
   })
 
-  it('refuses legacy Float32 RGBA display-sRGB input for the GPU upload', () => {
-    expect(
-      createRawUploadInput({
-        data: new Float32Array(4),
-        layout: 'rgba-float32',
-        colorSpace: 'display-srgb-preview',
-        width: 1,
-        height: 1,
-      }),
-    ).toBeNull()
-  })
+  it('uploads a decoded frame with its RAW render exposure', () => {
+    const data = new Uint16Array([1024, 1024, 1024])
+    const image = createTestDecodedImage({
+      width: 1,
+      height: 1,
+      data,
+      renderExposure: { ev: 1.5, multiplier: 2 ** 1.5, source: 'identity' },
+    })
 
-  it('accepts RGB16 Linear ProPhoto input', () => {
-    const data = new Uint16Array(3)
-
-    expect(
-      createRawUploadInput({
-        data,
-        layout: 'rgb-u16',
-        colorSpace: 'linear-prophoto-rgb',
-        width: 1,
-        height: 1,
-        renderExposureEv: 0,
-      }),
-    ).toEqual({
+    expect(createRawUploadInput(image)).toEqual({
       data,
       layout: 'rgb-u16',
       colorSpace: 'linear-prophoto-rgb',
       width: 1,
       height: 1,
-      renderExposureEv: 0,
-      renderExposureMultiplier: 1,
-    })
-  })
-
-  it('passes decoded raw render exposure into GPU upload input', () => {
-    const data = new Uint16Array([1024, 1024, 1024])
-    expect(
-      createRawUploadInput({
-        data,
-        layout: 'rgb-u16',
-        colorSpace: 'linear-prophoto-rgb',
-        width: 1,
-        height: 1,
-        renderExposureEv: 1.5,
-      }),
-    ).toMatchObject({
       renderExposureEv: 1.5,
       renderExposureMultiplier: Math.pow(2, 1.5),
     })
   })
 
-  it('rejects mismatched data, layout, and color space combinations', () => {
-    expect(
-      createRawUploadInput({
-        data: new Uint16Array(3),
-        layout: 'rgba-float32',
-        colorSpace: 'display-srgb-preview',
-        width: 1,
-        height: 1,
-      }),
-    ).toBeNull()
-    expect(
-      createRawUploadInput({
-        data: new Float32Array(4),
-        layout: 'rgb-u16',
-        colorSpace: 'linear-prophoto-rgb',
-        width: 1,
-        height: 1,
-        renderExposureEv: 0,
-      }),
-    ).toBeNull()
-    expect(
-      createRawUploadInput({
-        data: new Uint16Array(3),
-        layout: 'rgb-u16',
-        colorSpace: 'display-srgb-preview',
-        width: 1,
-        height: 1,
-      }),
-    ).toBeNull()
-  })
-
-  it('clears stale pipeline input when data is missing', () => {
+  it('uploads a frame, and clears the stale input without one', () => {
     const pipeline = {
       clearImage: vi.fn(),
       uploadImage: vi.fn(),
     }
-    const setError = vi.fn()
+    const image = createTestDecodedImage({ width: 1, height: 1 })
 
-    expect(
-      syncRawUploadInput({
-        pipeline,
-        imageData: null,
-        uploadInput: null,
-        setError,
-      }),
-    ).toBe(false)
-    expect(pipeline.clearImage).toHaveBeenCalledTimes(1)
-    expect(pipeline.uploadImage).not.toHaveBeenCalled()
-    expect(setError).toHaveBeenCalledWith(null)
-  })
-
-  it('clears stale pipeline input when descriptor validation fails', () => {
-    const pipeline = {
-      clearImage: vi.fn(),
-      uploadImage: vi.fn(),
-    }
-    const setError = vi.fn()
-
-    expect(
-      syncRawUploadInput({
-        pipeline,
-        imageData: new Uint16Array(3),
-        uploadInput: null,
-        setError,
-      }),
-    ).toBe(false)
-    expect(pipeline.clearImage).toHaveBeenCalledTimes(1)
-    expect(pipeline.uploadImage).not.toHaveBeenCalled()
-    expect(setError).toHaveBeenCalledWith(
-      'Decoded image data does not match the GPU upload layout',
-    )
-  })
-
-  it('uploads valid descriptors without clearing the pipeline', () => {
-    const pipeline = {
-      clearImage: vi.fn(),
-      uploadImage: vi.fn(),
-    }
-    const setError = vi.fn()
-    const uploadInput = {
-      data: new Uint16Array(3),
-      layout: 'rgb-u16',
-      colorSpace: 'linear-prophoto-rgb',
-      width: 1,
-      height: 1,
-      renderExposureEv: 0,
-      renderExposureMultiplier: 1,
-    } as const
-
-    expect(
-      syncRawUploadInput({
-        pipeline,
-        imageData: uploadInput.data,
-        uploadInput,
-        setError,
-      }),
-    ).toBe(true)
+    expect(syncRawUploadInput(pipeline, image)).toBe(true)
     expect(pipeline.clearImage).not.toHaveBeenCalled()
-    expect(pipeline.uploadImage).toHaveBeenCalledWith(uploadInput)
-    expect(setError).toHaveBeenCalledWith(null)
+    expect(pipeline.uploadImage).toHaveBeenCalledWith(
+      createRawUploadInput(image),
+    )
+
+    expect(syncRawUploadInput(pipeline, null)).toBe(false)
+    expect(pipeline.clearImage).toHaveBeenCalledTimes(1)
+    expect(pipeline.uploadImage).toHaveBeenCalledTimes(1)
   })
 
   it('describes preview initialization failures without exposing a WebGL error panel', async () => {

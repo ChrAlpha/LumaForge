@@ -75,14 +75,6 @@ function resolveCpuPreviewPlan(
 // Hook
 // ---------------------------------------------------------------------------
 
-function isQuickU16(image: DecodedImage): boolean {
-  return (
-    image.source === 'quick' &&
-    image.data instanceof Uint16Array &&
-    image.layout === 'rgb-u16'
-  )
-}
-
 export type UseCpuPreviewOptions = {
   /** Whether the hook should actively drive the client. */
   enabled: boolean
@@ -217,12 +209,8 @@ export function useCpuPreview({
     // quick frame's size; the decoded frame stays intact.
     const source =
       enabled && image && decodedFrame
-        ? isQuickU16(image)
-          ? {
-              width: image.width,
-              height: image.height,
-              data: image.data as Uint16Array,
-            }
+        ? image.source === 'quick'
+          ? { width: image.width, height: image.height, data: image.data }
           : sampleRgb16Frame(image, QUICK_PREVIEW_MAX_PIXELS)
         : null
     if (!decodedFrame || !source) {
@@ -347,7 +335,7 @@ export function useCpuPreview({
       enabled &&
       image &&
       decodedFrame &&
-      isQuickU16(image) &&
+      image.source === 'quick' &&
       !failureReason
     ) {
       return { frame: null, inFlight: true, failureReason: null }

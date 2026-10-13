@@ -35,7 +35,7 @@ function estimateFor(frame: LumaRawFrame): RawRenderExposure {
 }
 
 describe('frameToDecodedImage', () => {
-  it('keeps the RGB16 Linear ProPhoto frame data and maps its metadata', () => {
+  it('keeps the frame data and maps its metadata', () => {
     const frame = makeFrame(20_000, { make: 'Sony', model: 'A7' })
 
     const image = frameToDecodedImage(frame)
@@ -44,10 +44,6 @@ describe('frameToDecodedImage', () => {
     expect(image).toMatchObject({
       width: 4,
       height: 4,
-      channels: 3,
-      bitsPerChannel: 16,
-      layout: 'rgb-u16',
-      colorSpace: 'linear-prophoto-rgb',
       source: 'quick',
       metadata: {
         make: 'Sony',

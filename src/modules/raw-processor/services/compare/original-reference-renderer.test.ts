@@ -2,29 +2,18 @@ import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
 
+import { createTestDecodedImage } from '../../test-support/builders'
 import { renderOriginalReferenceSnapshot } from './original-reference-renderer'
 
 const createObjectURL = vi.fn(() => 'blob:original-rendered')
 const revokeObjectURL = vi.fn()
 
 function createImage(): DecodedImage {
-  return {
+  return createTestDecodedImage({
     width: 1600,
     height: 1000,
-    channels: 3,
-    bitsPerChannel: 16,
-    data: new Uint16Array(1600 * 1000 * 3),
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
-    source: 'quick',
-    metadata: {
-      width: 1600,
-      height: 1000,
-      make: 'Test',
-      model: 'Fixture',
-    },
-    renderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-  }
+    metadata: { width: 1600, height: 1000, make: 'Test', model: 'Fixture' },
+  })
 }
 
 describe('renderOriginalReferenceSnapshot', () => {
@@ -151,21 +140,14 @@ describe('renderOriginalReferenceSnapshot', () => {
     })
   })
 
-  it('refuses a legacy float display frame before any pipeline or encode', async () => {
+  it('refuses a frame whose buffer does not match its size before any pipeline or encode', async () => {
     const createPipeline = vi.fn()
     const createCanvas = vi.fn()
 
     await expect(
       renderOriginalReferenceSnapshot({
-        image: {
-          ...createImage(),
-          channels: 4,
-          bitsPerChannel: 32,
-          data: new Float32Array(1600 * 1000 * 4),
-          layout: 'rgba-float32',
-          colorSpace: 'display-srgb-preview',
-        },
-        key: 'float-frame',
+        image: { ...createImage(), data: new Uint16Array(3) },
+        key: 'short-frame',
         maxPixels: 1_000_000,
         createPipeline,
         createCanvas,

@@ -59,13 +59,8 @@ export function frameToDecodedImage(
   return {
     width: frame.width,
     height: frame.height,
-    channels: 3,
-    bitsPerChannel: 16,
     data: frame.data,
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
     source: frame.source,
-    timings: { ...frame.timings },
     metadata,
     renderExposure: resolveFrameRenderExposure(
       frame,

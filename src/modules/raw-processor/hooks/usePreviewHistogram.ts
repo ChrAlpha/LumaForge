@@ -127,8 +127,6 @@ function getPreviousReady(
 }
 
 function hasExpectedRgb16DataLength(image: DecodedImage) {
-  if (!(image.data instanceof Uint16Array)) return false
-
   const expectedLength = image.width * image.height * 3
   return (
     Number.isSafeInteger(expectedLength) &&
@@ -163,8 +161,6 @@ function createHistogramJob({
   const frameKey = decodedPreviewFrameKey(frame)
 
   if (
-    image.layout !== 'rgb-u16' ||
-    image.colorSpace !== 'linear-prophoto-rgb' ||
     !hasExpectedRgb16DataLength(image) ||
     (image.source !== 'quick' && image.source !== 'bounded-hq')
   ) {

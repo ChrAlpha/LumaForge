@@ -73,8 +73,8 @@ export async function renderOriginalReferenceSnapshot({
     new RawProcessingPipeline(canvas, { reportFailures: false }),
   createObjectURL = URL.createObjectURL.bind(URL),
 }: RenderOriginalReferenceSnapshotInput): Promise<OriginalReferenceSnapshot> {
-  // Only the RGB16 linear ProPhoto render reaches the GPU; other layouts are
-  // refused before any pipeline exists.
+  // A frame whose buffer does not match its size is refused before any
+  // pipeline exists.
   const target = sampleRgb16Frame(image, maxPixels)
   if (!target) throw new Error('ORIGINAL_REFERENCE_SNAPSHOT_UNSUPPORTED_INPUT')
   const canvas = createCanvas()

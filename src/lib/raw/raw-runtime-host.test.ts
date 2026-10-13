@@ -575,8 +575,6 @@ describe('raw runtime host', () => {
     )
     expect(opened.sourceDimensions).toEqual({ width: 6240, height: 4168 })
     expect(image).toMatchObject({
-      layout: 'rgb-u16',
-      colorSpace: 'linear-prophoto-rgb',
       source: 'quick',
       metadata: { make: 'Sony', model: 'A7', width: 1, height: 1 },
       renderExposure: { ev: 1, multiplier: 2, source: 'dng-baseline' },

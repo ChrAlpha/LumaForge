@@ -57,6 +57,7 @@ import type {
 import type { ImageSession, TransformState } from '../../model/session'
 import { createTransformState } from '../../model/session-factory'
 import type { ProcessingStatus } from '../../model/workflow'
+import { createTestDecodedImage } from '../../test-support/builders'
 import type {
   TransformEvent,
   TransformStatus,
@@ -513,18 +514,13 @@ function createFileBackedOutput(filename: string) {
 }
 
 function createDecodedImage(): DecodedImage {
-  return {
+  return createTestDecodedImage({
     width: 1500,
     height: 1000,
-    channels: 4,
-    bitsPerChannel: 32,
-    data: new Float32Array(0),
-    layout: 'rgba-float32',
-    colorSpace: 'linear-prophoto-rgb',
-    source: 'quick',
+    data: new Uint16Array(0),
     metadata: { width: 6000, height: 4000 },
     renderExposure: RAW_RENDER_EXPOSURE,
-  }
+  })
 }
 
 function deferred<T = void>() {

@@ -1,17 +1,13 @@
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 /**
- * The linear ProPhoto RGB16 pixels of a decoded frame, sampled to the nearest
- * pixel so they fit within `maxPixels`. A frame that already fits hands back
- * its own buffer; a larger one gets a new buffer and the frame is never
- * mutated. Any other layout, or a buffer that does not match its size, is
- * refused with null.
+ * The pixels of a decoded frame, sampled to the nearest pixel so they fit
+ * within `maxPixels`. A frame that already fits hands back its own buffer; a
+ * larger one gets a new buffer and the frame is never mutated. A buffer that
+ * does not match the frame's size is refused with null.
  */
 export function sampleRgb16Frame(image: DecodedImage, maxPixels: number) {
   if (
-    image.layout !== 'rgb-u16' ||
-    image.colorSpace !== 'linear-prophoto-rgb' ||
-    !(image.data instanceof Uint16Array) ||
     image.width < 1 ||
     image.height < 1 ||
     image.data.length !== image.width * image.height * 3

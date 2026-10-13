@@ -157,15 +157,7 @@ export function OriginalGpuLayer({
       pipeline.resize(canvas.width, canvas.height)
     }
 
-    const uploadInput = createRawUploadInput({
-      data: image.data,
-      layout: image.layout,
-      colorSpace: image.colorSpace,
-      width: image.width,
-      height: image.height,
-      renderExposureEv: image.renderExposure.ev,
-    })
-    if (!uploadInput) return
+    const uploadInput = createRawUploadInput(image)
 
     let cancelled = false
     const isCurrent = () =>
