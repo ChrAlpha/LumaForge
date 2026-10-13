@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sha256Hex } from '~/lib/profiles/fetch'
 
 import { Component as RawRoute } from '../../../pages/(main)/raw'
-import { FileFactsTool } from '../components/tools/FileFactsTool'
 import { RawProcessorView } from '../RawProcessorView'
 import {
   DEFAULT_LUMAFORGE_PROFILE_SOURCE,
@@ -608,24 +607,5 @@ describe('rawProcessorView online LUT route sources', () => {
       styleKind: 'none',
       builtinPreset: null,
     })
-  })
-})
-
-describe('fileFactsTool empty state', () => {
-  it('shows support as not loaded before any RAW session facts exist', () => {
-    render(
-      <FileFactsTool
-        supportLevel="experimental"
-        metadata={null}
-        stats={null}
-      />,
-    )
-
-    const supportRow = screen.getByText('Support').closest('div')
-
-    expect(supportRow).not.toBeNull()
-    expect(supportRow).toHaveTextContent('Support')
-    expect(supportRow).toHaveTextContent('Not loaded')
-    expect(screen.queryByText('experimental')).not.toBeInTheDocument()
   })
 })

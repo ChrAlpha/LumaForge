@@ -46,6 +46,7 @@ import { toolCardOpenAtom } from '../state/tool-card.atoms'
 import {
   getProcessingParams,
   resetToDefaults,
+  setPipelineStats,
   setProcessingParams,
   setProcessingStatus,
   setProgress,
@@ -55,6 +56,7 @@ import { RawToolSurface } from './RawToolSurface'
 import type { RawToolCommands } from './RawWorkflowContext'
 import {
   useRawPreviewHistogram,
+  useRawPreviewStats,
   useRawToolCommands,
   useRawWorkflowContext,
 } from './RawWorkflowContext'
@@ -873,6 +875,43 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     workflow.exportRefusal = { code: 'quick-preview-pending' }
     rerender()
     expect(result.current.exportBlockedByLutContract).toBe(false)
+  })
+
+  it("shows the decoded preview size over the renderer's own, apart from the source size", () => {
+    const workflow = {
+      ...workflowFixture(),
+      decodedImageRef: { current: { width: 4000, height: 2666 } },
+    } as unknown as UseRawWorkflowReturn
+    act(() =>
+      setPipelineStats({
+        uploadTime: 4,
+        lutUploadTime: 0,
+        processTime: 18,
+        totalTime: 22,
+        inputSize: { width: 4000, height: 2666 },
+        previewSize: { width: 1200, height: 800 },
+        inputFormat: 'uint16-rgb',
+        transformPath: 'no-lut',
+        lutRole: null,
+        lutInputTransfer: null,
+        lutOutputTransfer: null,
+        lutSize: null,
+      }),
+    )
+    try {
+      const { result } = renderHook(useRawPreviewStats, {
+        wrapper: ({ children }) => (
+          <ProviderWith workflow={workflow}>{children}</ProviderWith>
+        ),
+      })
+      expect(result.current).toEqual({
+        processTime: 18,
+        inputSize: { width: 4000, height: 2666 },
+        previewSize: { width: 4000, height: 2666 },
+      })
+    } finally {
+      act(() => setPipelineStats(null))
+    }
   })
 
   it('reports the aspect the stage is displaying', () => {
