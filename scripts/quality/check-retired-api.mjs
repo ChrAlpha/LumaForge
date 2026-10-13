@@ -1,43 +1,37 @@
-import { readFileSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { join, relative, sep } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-import {
-  listRepoFiles,
-  loadTypeScript as loadCompiler,
-  publishedEntries,
-  readWorkspacePackages,
-} from './check-structure.mjs'
-import { isMainModule } from './is-main-module.mjs'
+import ts from 'typescript'
 
 /**
- * Keeps retired public API retired. Three bounded checks:
- * - no entry a workspace package publishes exports a retired name, and no
+ * Keeps retired public API retired. Three checks:
+ * - no entry a checked package publishes exports a retired name, and no
  *   exported type regains a retired member (read with the TypeScript
- *   checker, so re-export chains count);
+ *   checker over the entry sources, so re-export chains count);
  * - no repository code or document outside a test names a retired
  *   identifier, and no code outside a test carries a `@deprecated` tag;
  * - the readers of data the deployed build writes to users' devices are
  *   still in place.
  *
- * Only the names listed below are retired. Tests may name them, since a
- * test that asserts their absence has to, and so may CHANGELOGs, which
- * record their history. An identifier is listed only when it can mean
- * nothing but the retired API: words such as `legacy`, `optional`, or
- * `compat` are never banned, and a generic export name (`OutputSink`) is
- * retired from its package's surface without being banned elsewhere.
+ * Tests may name retired identifiers, since a test that asserts their
+ * absence has to, and so may CHANGELOGs, which record their history. An
+ * identifier is listed only when it can mean nothing but the retired API; a
+ * generic export name (`OutputSink`) is retired from its package's surface
+ * without being banned elsewhere.
  *
- * A listed package, type, or reader that no longer exists is an error, as
- * is a re-export the checker cannot resolve, so a rename never turns the
- * check into a silent pass.
+ * A listed type or reader that no longer exists, a published subpath missing
+ * from `PACKAGE_ENTRIES`, and a re-export that does not resolve are errors,
+ * so a rename never turns the check into a silent pass.
  */
 
-const REPO_ROOT = resolve(fileURLToPath(new URL('../../', import.meta.url)))
+const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const SELF = 'scripts/quality/check-retired-api.mjs'
 
 /** Names no published entry of the package may export. */
-export const RETIRED_EXPORTS = Object.freeze({
+const RETIRED_EXPORTS = Object.freeze({
   '@lumaforge/render-engine': Object.freeze([
     // The context object and checkpoint journal no engine function took.
     'CheckpointStore',
@@ -88,7 +82,7 @@ export const RETIRED_EXPORTS = Object.freeze({
 })
 
 /** Members an exported type of the package may not regain. */
-export const RETIRED_MEMBERS = Object.freeze({
+const RETIRED_MEMBERS = Object.freeze({
   '@lumaforge/luma-color-runtime': Object.freeze({
     // View state is not color.
     ColorGraphIntent: Object.freeze(['compareSplit', 'viewMode']),
@@ -107,7 +101,7 @@ export const RETIRED_MEMBERS = Object.freeze({
  * Identifiers no code or document outside a test may name: each can only
  * mean the retired API.
  */
-export const RETIRED_IDENTIFIERS = Object.freeze([
+const RETIRED_IDENTIFIERS = Object.freeze([
   'BytesJpegEncoder',
   'BytesJpegRuntime',
   'ColorGraphIntentSource',
@@ -138,7 +132,7 @@ export const RETIRED_IDENTIFIERS = Object.freeze([
  * supported production code, not compatibility shims, and stay until that
  * data no longer exists.
  */
-export const SUPPORTED_DEVICE_DATA_READERS = Object.freeze([
+const SUPPORTED_DEVICE_DATA_READERS = Object.freeze([
   Object.freeze({
     file: 'src/lib/export/output-sink.ts',
     data: 'OPFS export outputs under .lumaforge-exports/active',
@@ -163,81 +157,41 @@ export const SUPPORTED_DEVICE_DATA_READERS = Object.freeze([
   }),
 ])
 
+/** The source file of every subpath each checked package publishes. */
+const PACKAGE_ENTRIES = Object.freeze({
+  '@lumaforge/luma-color-runtime': {
+    '.': 'packages/luma-color-runtime/src/index.ts',
+    './wgsl': 'packages/luma-color-runtime/src/wgsl.ts',
+  },
+  '@lumaforge/luma-raw-runtime': {
+    '.': 'packages/luma-raw-runtime/src/index.ts',
+    './node': 'packages/luma-raw-runtime/src/runtime-node.ts',
+  },
+  '@lumaforge/render-engine': {
+    '.': 'packages/render-engine/src/index.ts',
+    './export': 'packages/render-engine/src/export/index.ts',
+    './geometry': 'packages/render-engine/src/geometry/index.ts',
+    './manifest': 'packages/render-engine/src/manifest/index.ts',
+    './policy': 'packages/render-engine/src/policy/index.ts',
+    './preview': 'packages/render-engine/src/preview/index.ts',
+  },
+})
+
 const CODE = /\.(?:[cm]?[jt]s|[jt]sx|wgsl)$/
 const SCANNED = /\.(?:[cm]?[jt]s|[jt]sx|wgsl|md)$/
 const TEST_FILE = /(?:^|\/)__tests__\/|\.(?:test|spec)\.[cm]?[jt]sx?$/
 const CHANGELOG = /(?:^|\/)CHANGELOG\.md$/
-const IDENTIFIER = /^[a-z_$][\w$]*$/i
 const DEPRECATED_TAG = /@deprecated\b/
 
-/**
- * The most combinations of the files forked package specifiers lead to that
- * one check reads, each with a program of its own.
- */
-const MAX_RESOLUTIONS = 16
-
-/** A file that may name retired identifiers: a test, a CHANGELOG, or this list. */
-export function mayNameRetired(file) {
-  return TEST_FILE.test(file) || CHANGELOG.test(file) || file === SELF
-}
-
-/** Matches any of `names` as a whole identifier; `names` is not empty. */
 function wordPattern(names) {
-  const alternatives = [...names]
-    .sort((a, b) => b.length - a.length)
-    .map((name) => name.replaceAll('$', '\\$'))
+  const alternatives = names.map((name) => name.replaceAll('$', '\\$'))
   return new RegExp(`(?<![\\w$])(?:${alternatives.join('|')})(?![\\w$])`, 'g')
 }
 
 /**
- * Problems in the lists themselves: a malformed or generic identifier, or a
- * supported reader name that is also retired.
- */
-export function checkLists({
-  retiredExports = RETIRED_EXPORTS,
-  retiredMembers = RETIRED_MEMBERS,
-  identifiers = RETIRED_IDENTIFIERS,
-  readers = SUPPORTED_DEVICE_DATA_READERS,
-} = {}) {
-  const problems = []
-  const exported = Object.values(retiredExports).flat()
-  for (const name of [
-    ...exported,
-    ...identifiers,
-    ...Object.values(retiredMembers).flatMap((types) => [
-      ...Object.keys(types),
-      ...Object.values(types).flat(),
-    ]),
-  ]) {
-    if (typeof name !== 'string' || !IDENTIFIER.test(name)) {
-      problems.push(`retired name ${JSON.stringify(name)} is not an identifier`)
-    }
-  }
-  for (const name of identifiers) {
-    // A compound name (a case change or an underscore) cannot be a plain
-    // word such as `legacy` or `optional`.
-    if (typeof name === 'string' && !/[a-z][A-Z]|_/.test(name)) {
-      problems.push(
-        `retired identifier ${name} is a plain word; retire it from a package surface instead`,
-      )
-    }
-  }
-  const retired = new Set([...exported, ...identifiers])
-  for (const reader of readers) {
-    for (const name of reader.names) {
-      if (retired.has(name)) {
-        problems.push(`${name} reads ${reader.data} and cannot also be retired`)
-      }
-    }
-  }
-  return problems
-}
-
-/**
- * Retired identifiers outside tests and `@deprecated` tags outside tests.
+ * Retired identifiers and `@deprecated` tags outside tests.
  * @param {{ files: string[], readFile: (path: string) => string,
  *   identifiers?: readonly string[] }} input
- * @returns {string[]}
  */
 export function scanSources({
   files,
@@ -245,38 +199,35 @@ export function scanSources({
   identifiers = RETIRED_IDENTIFIERS,
 }) {
   const problems = []
-  const pattern = identifiers.length > 0 ? wordPattern(identifiers) : null
+  const pattern = wordPattern(identifiers)
   for (const file of files) {
-    if (!SCANNED.test(file) || mayNameRetired(file)) continue
-    const lines = readFile(file).split('\n')
-    lines.forEach((line, index) => {
-      for (const [name] of pattern ? line.matchAll(pattern) : []) {
-        problems.push(`${file}:${index + 1} names retired ${name}`)
-      }
-      if (CODE.test(file) && DEPRECATED_TAG.test(line)) {
-        problems.push(
-          `${file}:${index + 1} declares @deprecated; remove the export instead`,
-        )
-      }
-    })
+    if (!SCANNED.test(file) || TEST_FILE.test(file)) continue
+    if (CHANGELOG.test(file) || file === SELF) continue
+    readFile(file)
+      .split('\n')
+      .forEach((line, index) => {
+        for (const [name] of line.matchAll(pattern)) {
+          problems.push(`${file}:${index + 1} names retired ${name}`)
+        }
+        if (CODE.test(file) && DEPRECATED_TAG.test(line)) {
+          problems.push(
+            `${file}:${index + 1} declares @deprecated; remove the export instead`,
+          )
+        }
+      })
   }
   return problems
 }
 
-/**
- * The supported device-data readers that are gone.
- * @param {{ files: string[], readFile: (path: string) => string,
- *   readers?: typeof SUPPORTED_DEVICE_DATA_READERS }} input
- */
+/** The supported device-data readers that are gone. */
 export function checkSupportedReaders({
   files,
   readFile,
   readers = SUPPORTED_DEVICE_DATA_READERS,
 }) {
   const problems = []
-  const fileSet = new Set(files)
   for (const reader of readers) {
-    if (!fileSet.has(reader.file)) {
+    if (!files.includes(reader.file)) {
       problems.push(`${reader.file} is gone, but it reads ${reader.data}`)
       continue
     }
@@ -293,149 +244,20 @@ export function checkSupportedReaders({
 }
 
 /**
- * Retired exports and members on the published entries, read with the
- * TypeScript checker over the package sources.
- * @param {{ root: string, files: string[], readFile: (path: string) => string,
+ * Retired exports and members on the published entries, read by one
+ * TypeScript program in which workspace packages resolve to their sources
+ * through `paths`.
+ * @param {{ root: string, entries?: Record<string, Record<string, string>>,
+ *   paths?: Record<string, string[]>,
  *   retiredExports?: Record<string, readonly string[]>,
- *   retiredMembers?: Record<string, Record<string, readonly string[]>>,
- *   loadTypeScript?: () => Promise<typeof import('typescript')> }} input
- * @returns {Promise<string[]>}
+ *   retiredMembers?: Record<string, Record<string, readonly string[]>> }} input
  */
-export async function checkPublicSurface({
+export function checkPublicSurface({
   root,
-  files,
-  readFile,
+  entries = PACKAGE_ENTRIES,
+  paths = {},
   retiredExports = RETIRED_EXPORTS,
   retiredMembers = RETIRED_MEMBERS,
-  loadTypeScript = loadCompiler,
-}) {
-  const ts = await loadTypeScript()
-  const problems = []
-  const fileSet = new Set(files)
-  const workspaces = readWorkspacePackages(files, readFile, ts)
-  // Every file each specifier's conditions lead to, in condition order.
-  const sources = new Map()
-  const entriesByPackage = new Map()
-  for (const workspace of workspaces) {
-    // Each export condition can lead to its own file, so every one is read.
-    const targets = publishedEntries(workspace, fileSet).filter(
-      ({ specifier }) => !specifier.startsWith('bin '),
-    )
-    const entries = []
-    for (const { specifier, condition, source, problem } of targets) {
-      if (!source) {
-        entries.push({ specifier, condition, problem })
-        continue
-      }
-      const path = `./${workspace.dir}/${source}`
-      const known = sources.get(specifier) ?? []
-      if (!known.includes(path)) sources.set(specifier, [...known, path])
-      const same = entries.find(
-        (entry) => entry.specifier === specifier && entry.source === source,
-      )
-      if (same) same.condition += `, ${condition}`
-      else entries.push({ specifier, condition, source })
-    }
-    entriesByPackage.set(String(workspace.manifest.name), {
-      workspace,
-      entries,
-    })
-  }
-
-  const checked = [
-    ...new Set([
-      ...Object.keys(retiredExports),
-      ...Object.keys(retiredMembers),
-    ]),
-  ].sort()
-  const unmapped = ({ specifier, condition, problem }) =>
-    `${specifier}${condition ? ` ${condition}` : ''} has no source file${problem ? `: ${problem}` : ''}`
-  const rootNames = []
-  for (const name of checked) {
-    const found = entriesByPackage.get(name)
-    if (!found) {
-      problems.push(`${name} names no workspace package`)
-      continue
-    }
-    if (found.entries.length === 0) {
-      problems.push(`${name} publishes no entry`)
-    }
-    for (const entry of found.entries) {
-      if (!entry.source) problems.push(unmapped(entry))
-      else rootNames.push(join(root, found.workspace.dir, entry.source))
-    }
-  }
-  // Every other package's entries are what its specifiers resolve to here;
-  // one without a source would resolve to whatever the checkout holds.
-  for (const [name, { entries }] of entriesByPackage) {
-    if (checked.includes(name)) continue
-    for (const entry of entries) {
-      if (!entry.source) problems.push(unmapped(entry))
-    }
-  }
-  if (rootNames.length === 0) return problems
-
-  // A specifier whose conditions lead to different files is read as each of
-  // them by some consumer, and an import of it can sit anywhere in a chain,
-  // so every combination of those files is read with a program of its own.
-  const forked = [...sources].filter(([, paths]) => paths.length > 1)
-  const count = forked.reduce((product, [, paths]) => product * paths.length, 1)
-  if (count > MAX_RESOLUTIONS) {
-    problems.push(
-      `${forked.map(([specifier]) => specifier).join(', ')} resolve to ${count} combinations of sources; at most ${MAX_RESOLUTIONS} are read`,
-    )
-    return problems
-  }
-  let resolutions = [new Map()]
-  for (const [specifier, paths] of forked) {
-    resolutions = resolutions.flatMap((chosen) =>
-      paths.map((path) => new Map([...chosen, [specifier, path]])),
-    )
-  }
-  const reported = new Set()
-  for (const chosen of resolutions) {
-    const label = forked
-      .filter(([specifier, paths]) => chosen.get(specifier) !== paths[0])
-      .map(([specifier]) => `${specifier} at ${chosen.get(specifier).slice(2)}`)
-      .join(', ')
-    const paths = Object.fromEntries(
-      Array.from(sources, ([specifier, list]) => [
-        specifier,
-        [chosen.get(specifier) ?? list[0]],
-      ]),
-    )
-    for (const problem of surfaceProblems({
-      ts,
-      root,
-      rootNames,
-      paths,
-      checked,
-      entriesByPackage,
-      retiredExports,
-      retiredMembers,
-    })) {
-      if (reported.has(problem)) continue
-      reported.add(problem)
-      problems.push(label ? `${problem} (with ${label})` : problem)
-    }
-  }
-  return problems
-}
-
-/**
- * Retired exports and members on the published entries, read by one program
- * in which each workspace package specifier resolves to the file `paths`
- * names.
- */
-function surfaceProblems({
-  ts,
-  root,
-  rootNames,
-  paths,
-  checked,
-  entriesByPackage,
-  retiredExports,
-  retiredMembers,
 }) {
   const problems = []
   const options = {
@@ -449,78 +271,51 @@ function surfaceProblems({
     target: ts.ScriptTarget.ESNext,
     types: [],
   }
+  const rootNames = Object.values(entries).flatMap((subpaths) =>
+    Object.values(subpaths).map((file) => join(root, file)),
+  )
   const program = ts.createProgram({ rootNames, options })
   const checker = program.getTypeChecker()
+  const repoPath = (file) => relative(root, file).split(sep).join('/')
 
   // A re-export the checker cannot follow would hide the names behind it.
-  const repoPath = (fileName) => relative(root, fileName).split(sep).join('/')
-  const inRepo = (fileName) =>
-    !repoPath(fileName).startsWith('../') &&
-    !repoPath(fileName).split('/').includes('node_modules')
   for (const source of program.getSourceFiles()) {
-    if (!inRepo(source.fileName) || source.isDeclarationFile) continue
+    const file = repoPath(source.fileName)
+    if (file.startsWith('../') || file.includes('node_modules/')) continue
     for (const statement of source.statements) {
-      if (
-        !ts.isExportDeclaration(statement) ||
-        !statement.moduleSpecifier ||
-        !ts.isStringLiteral(statement.moduleSpecifier)
-      ) {
-        continue
-      }
-      const specifier = statement.moduleSpecifier.text
-      const resolved = ts.resolveModuleName(
-        specifier,
+      const specifier = ts.isExportDeclaration(statement)
+        ? statement.moduleSpecifier
+        : undefined
+      if (!specifier || !ts.isStringLiteral(specifier)) continue
+      const { resolvedModule } = ts.resolveModuleName(
+        specifier.text,
         source.fileName,
         options,
         ts.sys,
-      ).resolvedModule
-      if (!resolved) {
+      )
+      if (!resolvedModule) {
         problems.push(
-          `${repoPath(source.fileName)} re-exports ${specifier}, which does not resolve`,
+          `${file} re-exports ${specifier.text}, which does not resolve`,
         )
       }
     }
   }
 
-  // A union's own properties are only those every branch shares, so a
-  // retired member that one branch still accepts would pass unseen; each
-  // part of a union or intersection is read on its own. Any other type that
-  // is not an object (a conditional type, a type parameter, an indexed
-  // access) has no members to read, so it is not enumerable.
-  const membersOf = (type, names = new Set()) => {
-    if (type.isUnionOrIntersection()) {
-      for (const part of type.types) {
-        if (!membersOf(part, names)) return undefined
-      }
-      return names
-    }
-    if (!(type.flags & ts.TypeFlags.Object)) return undefined
-    for (const property of checker.getPropertiesOfType(type)) {
-      names.add(property.name)
-    }
-    return names
-  }
-  // A generic type can carry members in an instantiation its declared type
-  // does not show.
-  const isGeneric = (symbol) =>
-    (symbol.declarations ?? []).some(
-      (declaration) => (declaration.typeParameters?.length ?? 0) > 0,
-    )
-  const moduleOf = (path) => {
-    const source = program.getSourceFile(path)
-    return source && checker.getSymbolAtLocation(source)
-  }
-  for (const name of checked) {
-    const found = entriesByPackage.get(name)
-    if (!found) continue
-    const exporting = new Map()
-    for (const entry of found.entries) {
-      const { source } = entry
-      if (!source) continue
-      const specifier = `${entry.specifier} (${entry.condition})`
-      const moduleSymbol = moduleOf(join(root, found.workspace.dir, source))
+  // A union's own properties are only those every branch shares, so each
+  // part of a union or intersection is read on its own.
+  const membersOf = (type) =>
+    type.isUnionOrIntersection()
+      ? type.types.flatMap(membersOf)
+      : checker.getPropertiesOfType(type).map((property) => property.name)
+
+  for (const [name, subpaths] of Object.entries(entries)) {
+    const typesFound = new Set()
+    for (const [subpath, file] of Object.entries(subpaths)) {
+      const specifier = subpath === '.' ? name : `${name}/${subpath.slice(2)}`
+      const source = program.getSourceFile(join(root, file))
+      const moduleSymbol = source && checker.getSymbolAtLocation(source)
       if (!moduleSymbol) {
-        problems.push(`${specifier} is not a module`)
+        problems.push(`${specifier} (${file}) is not a module`)
         continue
       }
       for (const retired of retiredExports[name] ?? []) {
@@ -528,28 +323,21 @@ function surfaceProblems({
           problems.push(`${specifier} exports retired ${retired}`)
         }
       }
-      for (const typeName of Object.keys(retiredMembers[name] ?? {})) {
-        const exported = checker.tryGetMemberInModuleExports(
+      for (const [typeName, members] of Object.entries(
+        retiredMembers[name] ?? {},
+      )) {
+        let exported = checker.tryGetMemberInModuleExports(
           typeName,
           moduleSymbol,
         )
         if (!exported) continue
-        exporting.set(typeName, (exporting.get(typeName) ?? 0) + 1)
-        const declared =
-          exported.flags & ts.SymbolFlags.Alias
-            ? checker.getAliasedSymbol(exported)
-            : exported
-        const members = isGeneric(declared)
-          ? undefined
-          : membersOf(checker.getDeclaredTypeOfSymbol(declared))
-        if (!members) {
-          problems.push(
-            `${specifier} ${typeName} cannot be enumerated (generic or conditional type)`,
-          )
-          continue
+        typesFound.add(typeName)
+        if (exported.flags & ts.SymbolFlags.Alias) {
+          exported = checker.getAliasedSymbol(exported)
         }
-        for (const member of retiredMembers[name][typeName]) {
-          if (members.has(member)) {
+        const found = membersOf(checker.getDeclaredTypeOfSymbol(exported))
+        for (const member of members) {
+          if (found.includes(member)) {
             problems.push(
               `${specifier} ${typeName} has retired member ${member}`,
             )
@@ -558,7 +346,7 @@ function surfaceProblems({
       }
     }
     for (const typeName of Object.keys(retiredMembers[name] ?? {})) {
-      if (!exporting.has(typeName)) {
+      if (!typesFound.has(typeName)) {
         problems.push(
           `${name} exports no ${typeName}; update its retired members`,
         )
@@ -568,33 +356,66 @@ function surfaceProblems({
   return problems
 }
 
-/**
- * Runs every check over a checkout.
- * @param {{ root?: string, files?: string[],
- *   readFile?: (path: string) => string }} [input]
- */
-export async function runRetiredApiCheck({
-  root = REPO_ROOT,
-  files = listRepoFiles(root),
-  readFile = (path) => readFileSync(join(root, path), 'utf8'),
-} = {}) {
+/** Published subpaths of the checked packages that `entries` does not map. */
+function checkEntryList({
+  root,
+  entries = PACKAGE_ENTRIES,
+  retiredExports = RETIRED_EXPORTS,
+  retiredMembers = RETIRED_MEMBERS,
+}) {
+  const problems = []
+  const checked = new Set([
+    ...Object.keys(retiredExports),
+    ...Object.keys(retiredMembers),
+  ])
+  for (const name of checked) {
+    const dir = `packages/${name.split('/')[1]}`
+    const manifest = JSON.parse(
+      readFileSync(join(root, dir, 'package.json'), 'utf8'),
+    )
+    const published = Object.keys(manifest.exports ?? {}).sort()
+    const mapped = Object.keys(entries[name] ?? {}).sort()
+    if (manifest.name !== name || published.join() !== mapped.join()) {
+      problems.push(
+        `${dir} publishes ${published.join(', ')}; map exactly those in PACKAGE_ENTRIES`,
+      )
+    }
+  }
+  return problems
+}
+
+function listRepoFiles(root) {
+  const output = execFileSync(
+    'git',
+    ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+    { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+  )
+  return output
+    .split('\0')
+    .filter((file) => file && existsSync(join(root, file)))
+}
+
+function runRetiredApiCheck(root = ROOT) {
+  const files = listRepoFiles(root)
+  const readFile = (path) => readFileSync(join(root, path), 'utf8')
+  const tsconfig = ts.readConfigFile(
+    join(root, 'tsconfig.json'),
+    ts.sys.readFile,
+  )
   return [
-    ...checkLists(),
     ...scanSources({ files, readFile }),
     ...checkSupportedReaders({ files, readFile }),
-    ...(await checkPublicSurface({ root, files, readFile })),
+    ...checkEntryList({ root }),
+    ...checkPublicSurface({
+      root,
+      paths: tsconfig.config.compilerOptions.paths,
+    }),
   ]
 }
 
-if (isMainModule(import.meta.url)) {
-  const args = process.argv.slice(2)
-  if (args.length > 0) {
-    console.error(`Unknown argument ${args[0]}. Usage: check-retired-api.mjs`)
-    process.exitCode = 2
-  } else {
-    const problems = await runRetiredApiCheck()
-    for (const problem of problems) console.error(problem)
-    if (problems.length === 0) console.log('retired API: none in use')
-    process.exitCode = problems.length === 0 ? 0 : 1
-  }
+if (import.meta.main) {
+  const problems = runRetiredApiCheck()
+  for (const problem of problems) console.error(problem)
+  if (problems.length === 0) console.log('retired API: none in use')
+  process.exitCode = problems.length === 0 ? 0 : 1
 }

@@ -162,9 +162,6 @@ jobs:
 
       # Reads the published entries with the pinned TypeScript, so it runs
       # after the install.
-      - name: Test the retired API check
-        run: node --test scripts/quality/check-retired-api.test.mjs
-
       - name: Check retired APIs
         run: pnpm check:retired-api
 

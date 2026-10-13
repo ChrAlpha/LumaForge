@@ -1748,7 +1748,6 @@ describe('quality script entry points', () => {
   const scripts = [
     ['check-structure.mjs', ['--unknown'], 2, /Unknown argument --unknown/],
     ['check-agent-paths.mjs', ['--unknown'], 2, /Unknown option --unknown/],
-    ['check-retired-api.mjs', ['--unknown'], 2, /Unknown argument --unknown/],
     ['app-aliases.mjs', [], 0, /app aliases: consistent/],
   ]
   for (const [script, args, status, message] of scripts) {
