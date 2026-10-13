@@ -7,7 +7,7 @@ import { createVitest } from 'vitest/node'
 
 /**
  * Fails unless every test file in the checkout (the Playwright specs under
- * `tests/browser/` aside) runs in exactly one project of the root Vitest
+ * `tests/browser/` aside, not their support tests) runs in exactly one project of the root Vitest
  * config, and in the project that owns its directory: a package's tests in
  * the project named after the package, `src` tests in `app`, and every other
  * test in `tooling`.
@@ -26,7 +26,8 @@ const files = execFileSync(
   { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
 )
   .split('\n')
-  .filter((file) => TEST_FILE.test(file) && !file.startsWith('tests/browser/'))
+  .filter((file) => TEST_FILE.test(file))
+  .filter((file) => !/^tests\/browser\/.*\.spec\.ts$/.test(file))
   .filter((file) => existsSync(`${ROOT}${file}`))
 
 const vitest = await createVitest(
