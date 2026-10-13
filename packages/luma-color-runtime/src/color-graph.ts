@@ -123,6 +123,33 @@ export type SupportedExportColorGraphDescriptor = Extract<
   { supported: true }
 >
 
+const EXPORT_SCENE_STEP_KINDS = [
+  'input-linear-prophoto',
+  'raw-render-exposure',
+  'user-color-balance',
+  'user-exposure',
+  'user-contrast',
+  'user-regional-tone',
+  'user-saturation',
+  'user-selective-color',
+] as const
+
+/** The step sequence of a supported export graph without a LUT. */
+export const EXPORT_PLAIN_STEP_KINDS = [
+  ...EXPORT_SCENE_STEP_KINDS,
+  'output-srgb',
+] as const
+
+/** The step sequence of a supported export graph that applies a LUT. */
+export const EXPORT_LUT_STEP_KINDS = [
+  ...EXPORT_SCENE_STEP_KINDS,
+  'gamut-to-lut-input',
+  'encode-lut-transfer',
+  'lut3d',
+  'lut-output-to-srgb',
+  'output-srgb',
+] as const
+
 const OUTPUT_GAMUT = 'srgb-rec709'
 const OUTPUT_TRANSFER = 'srgb'
 const IDENTITY_RAW_RENDER_EXPOSURE: RawRenderExposure = {

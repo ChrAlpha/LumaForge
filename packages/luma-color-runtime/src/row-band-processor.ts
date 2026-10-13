@@ -1,13 +1,16 @@
-import type { SupportedExportColorGraphDescriptor } from './color-graph'
+import type {
+  ExportColorGraphStep,
+  SupportedExportColorGraphDescriptor,
+} from './color-graph'
+import { EXPORT_LUT_STEP_KINDS, EXPORT_PLAIN_STEP_KINDS } from './color-graph'
 import { compressLutInputToDomain } from './lut-domain'
-import { mix, sampleLutTrilinear } from './lut3d'
+import { clamp01, mix, sampleLutTrilinear } from './lut3d'
 import { getGamutMatrix } from './matrix'
 import { getTransferFunction } from './registry'
 import { applyUserSaturationTo } from './saturation'
-import type { PreparedSelectiveColorLut } from './selective-color'
 import {
   applySelectiveColorRow,
-  LUT_SIZE as SELECTIVE_COLOR_LUT_SIZE,
+  isSelectiveColorNeutral,
   resolveSelectiveColorParams,
 } from './selective-color'
 import {
@@ -18,12 +21,6 @@ import {
 
 const CHANNELS_PER_PIXEL = 3
 const UINT16_MAX = 65535
-
-function clamp01(value: number) {
-  if (value <= 0) return 0
-  if (value >= 1) return 1
-  return value
-}
 
 function clampMin0(value: number) {
   return value < 0 ? 0 : value
@@ -68,135 +65,34 @@ function normalizeLutSample(
   return clamp01((value - domainMin) * inverseDomainSpan)
 }
 
-type UserColorBalanceStep = Extract<
-  SupportedExportColorGraphDescriptor['steps'][number],
-  { kind: 'user-color-balance' }
->
+type StepOfKind<Kind> = Extract<ExportColorGraphStep, { kind: Kind }>
 
-type UserSelectiveColorStep = Extract<
-  SupportedExportColorGraphDescriptor['steps'][number],
-  { kind: 'user-selective-color' }
->
-
-type UserSaturationStep = Extract<
-  SupportedExportColorGraphDescriptor['steps'][number],
-  { kind: 'user-saturation' }
->
-
-function isSimpleNoLutGraph(
-  graph: SupportedExportColorGraphDescriptor,
-): graph is SupportedExportColorGraphDescriptor & {
-  steps: [
-    { kind: 'input-linear-prophoto' },
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'raw-render-exposure' }
-    >,
-    UserColorBalanceStep,
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'user-exposure' }
-    >,
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'user-contrast' }
-    >,
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'user-regional-tone' }
-    >,
-    UserSaturationStep,
-    UserSelectiveColorStep,
-    { kind: 'output-srgb' },
-  ]
-} {
-  return (
-    graph.lutProfile === null &&
-    graph.steps.length === 9 &&
-    graph.steps[0]?.kind === 'input-linear-prophoto' &&
-    graph.steps[1]?.kind === 'raw-render-exposure' &&
-    graph.steps[2]?.kind === 'user-color-balance' &&
-    graph.steps[3]?.kind === 'user-exposure' &&
-    graph.steps[4]?.kind === 'user-contrast' &&
-    graph.steps[5]?.kind === 'user-regional-tone' &&
-    graph.steps[6]?.kind === 'user-saturation' &&
-    graph.steps[7]?.kind === 'user-selective-color' &&
-    graph.steps[8]?.kind === 'output-srgb'
-  )
+/** A step list narrowed to exactly `Kinds`, in order. */
+type StepsOfKinds<Kinds extends readonly ExportColorGraphStep['kind'][]> = {
+  -readonly [Index in keyof Kinds]: StepOfKind<Kinds[Index]>
 }
 
-function isSupportedLutGraph(
-  graph: SupportedExportColorGraphDescriptor,
-): graph is SupportedExportColorGraphDescriptor & {
-  steps: [
-    { kind: 'input-linear-prophoto' },
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'raw-render-exposure' }
-    >,
-    UserColorBalanceStep,
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'user-exposure' }
-    >,
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'user-contrast' }
-    >,
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'user-regional-tone' }
-    >,
-    UserSaturationStep,
-    UserSelectiveColorStep,
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'gamut-to-lut-input' }
-    >,
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'encode-lut-transfer' }
-    >,
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'lut3d' }
-    >,
-    Extract<
-      SupportedExportColorGraphDescriptor['steps'][number],
-      { kind: 'lut-output-to-srgb' }
-    >,
-    { kind: 'output-srgb' },
-  ]
-} {
+type PlainSteps = StepsOfKinds<typeof EXPORT_PLAIN_STEP_KINDS>
+type LutSteps = StepsOfKinds<typeof EXPORT_LUT_STEP_KINDS>
+
+function hasStepKinds<Kinds extends readonly ExportColorGraphStep['kind'][]>(
+  steps: readonly ExportColorGraphStep[],
+  kinds: Kinds,
+): steps is StepsOfKinds<Kinds> {
   return (
-    graph.steps.length === 13 &&
-    graph.steps[0]?.kind === 'input-linear-prophoto' &&
-    graph.steps[1]?.kind === 'raw-render-exposure' &&
-    graph.steps[2]?.kind === 'user-color-balance' &&
-    graph.steps[3]?.kind === 'user-exposure' &&
-    graph.steps[4]?.kind === 'user-contrast' &&
-    graph.steps[5]?.kind === 'user-regional-tone' &&
-    graph.steps[6]?.kind === 'user-saturation' &&
-    graph.steps[7]?.kind === 'user-selective-color' &&
-    graph.steps[8]?.kind === 'gamut-to-lut-input' &&
-    graph.steps[9]?.kind === 'encode-lut-transfer' &&
-    graph.steps[10]?.kind === 'lut3d' &&
-    graph.steps[11]?.kind === 'lut-output-to-srgb' &&
-    graph.steps[12]?.kind === 'output-srgb'
+    steps.length === kinds.length &&
+    steps.every((step, index) => step.kind === kinds[index])
   )
 }
 
 function getRawRenderExposureMultiplier(
-  step: Extract<
-    SupportedExportColorGraphDescriptor['steps'][number],
-    { kind: 'raw-render-exposure' }
-  >,
+  step: StepOfKind<'raw-render-exposure'>,
 ) {
   return Number.isFinite(step.multiplier) ? step.multiplier : 1
 }
 
 function getUserColorBalanceGain(
-  step: UserColorBalanceStep,
+  step: StepOfKind<'user-color-balance'>,
 ): readonly [number, number, number] {
   return [
     Number.isFinite(step.gain[0]) ? step.gain[0] : 1,
@@ -205,20 +101,7 @@ function getUserColorBalanceGain(
   ]
 }
 
-type UserExposureStep = Extract<
-  SupportedExportColorGraphDescriptor['steps'][number],
-  { kind: 'user-exposure' }
->
-type UserContrastStep = Extract<
-  SupportedExportColorGraphDescriptor['steps'][number],
-  { kind: 'user-contrast' }
->
-type UserRegionalToneStep = Extract<
-  SupportedExportColorGraphDescriptor['steps'][number],
-  { kind: 'user-regional-tone' }
->
-
-function getUserExposureMultiplier(step: UserExposureStep) {
+function getUserExposureMultiplier(step: StepOfKind<'user-exposure'>) {
   return Number.isFinite(step.multiplier) ? step.multiplier : 1
 }
 
@@ -228,7 +111,7 @@ function applyUserContrastScalarTo(
   r: number,
   g: number,
   b: number,
-  step: UserContrastStep,
+  step: StepOfKind<'user-contrast'>,
   out: MutableRgb,
 ) {
   if (step.amount === 0) {
@@ -256,7 +139,7 @@ function applyUserRegionalToneScalarTo(
   r: number,
   g: number,
   b: number,
-  step: UserRegionalToneStep,
+  step: StepOfKind<'user-regional-tone'>,
   out: MutableRgb,
 ) {
   if (!hasRegionalTone(step)) {
@@ -281,225 +164,50 @@ function applyUserRegionalToneScalarTo(
   return out
 }
 
-type SelectiveColorContext = {
-  step: UserSelectiveColorStep
-  lutBuffer: Float32Array
-  prepared: PreparedSelectiveColorLut
-  bandsRef: UserSelectiveColorStep['bands'] | null
-}
+/** Applies a step in place to the first `length` values of `sceneScratch`. */
+type SceneScratchStep = (sceneScratch: Float32Array, length: number) => void
 
-function createSelectiveColorContext(
-  step: UserSelectiveColorStep,
-): SelectiveColorContext {
-  const lutBuffer = new Float32Array(4 * SELECTIVE_COLOR_LUT_SIZE)
-  return {
-    step,
-    lutBuffer,
-    prepared: {
-      bands: step.bands,
-      buffer: lutBuffer,
-      constantsVersion: step.constantsVersion,
-    },
-    bandsRef: null,
-  }
-}
-
-function allBandsNeutral(step: UserSelectiveColorStep) {
-  const bands = step.bands
-  for (const id of [
-    'red',
-    'orange',
-    'yellow',
-    'green',
-    'aqua',
-    'blue',
-    'purple',
-    'magenta',
-  ] as const) {
-    const band = bands[id]
-    if (band.hue !== 0 || band.saturation !== 0 || band.lightness !== 0) {
-      return false
-    }
-  }
-  return true
-}
-
-function ensureSelectiveColorPrepared(context: SelectiveColorContext) {
-  const bands = context.step.bands
-  if (context.bandsRef === bands) {
-    return context.prepared
-  }
-  const { prepared } = resolveSelectiveColorParams(
-    { selectiveColor: bands },
-    context.lutBuffer,
-  )
-  context.prepared = prepared
-  context.bandsRef = bands
-  return prepared
-}
-
-function applySelectiveColorToSceneScratch(
-  sceneScratch: Float32Array,
-  pixelLength: number,
-  context: SelectiveColorContext,
-) {
-  // All-neutral bands are mathematically identity, but the OKLab roundtrip
-  // inside applySelectiveColorRow introduces ~1 ULP drift in linear ProPhoto.
-  // That drift can flip a 1-byte boundary in the downstream sRGB byte at
-  // tightly-clamped LUT domains, breaking byte-exact precision contracts.
-  // Skip the apply when every band is neutral to preserve byte-exactness.
-  if (allBandsNeutral(context.step)) {
-    return
-  }
-  const prepared = ensureSelectiveColorPrepared(context)
-  const view = sceneScratch.subarray(0, pixelLength)
-  applySelectiveColorRow(
-    view,
-    view,
-    prepared,
-    context.step.chromaClampLow,
-    context.step.chromaClampHigh,
-  )
-}
-
-type GraphApplier = (
-  linear: Float32Array,
-  bytes: Uint8Array,
-  sceneScratch: Float32Array,
-) => void
-
-function compileGraphApplier(
-  graph: SupportedExportColorGraphDescriptor,
-): GraphApplier {
-  if (isSimpleNoLutGraph(graph)) {
-    const rawRenderExposureMultiplier = getRawRenderExposureMultiplier(
-      graph.steps[1],
+function compileSelectiveColor(
+  step: StepOfKind<'user-selective-color'>,
+): SceneScratchStep {
+  // Neutral bands are identity, but the OKLab round trip inside
+  // applySelectiveColorRow drifts about 1 ULP in linear ProPhoto, which can
+  // flip a downstream sRGB byte at a tightly clamped LUT domain. Skip them.
+  if (isSelectiveColorNeutral(step.bands)) return () => {}
+  const { prepared } = resolveSelectiveColorParams({
+    selectiveColor: step.bands,
+  })
+  return (sceneScratch, length) => {
+    const view = sceneScratch.subarray(0, length)
+    applySelectiveColorRow(
+      view,
+      view,
+      prepared,
+      step.chromaClampLow,
+      step.chromaClampHigh,
     )
-    const colorBalanceGain = getUserColorBalanceGain(graph.steps[2])
-    const exposureMultiplier = getUserExposureMultiplier(graph.steps[3])
-    const contrastStep = graph.steps[4]
-    const regionalToneStep = graph.steps[5]
-    const saturationStep = graph.steps[6]
-    const isSatIdentity =
-      saturationStep.saturation === 0 && saturationStep.vibrance === 0
-    const selectiveColorContext = createSelectiveColorContext(graph.steps[7])
-    const toneScratch: MutableRgb = [0, 0, 0]
-
-    return (linear, bytes, sceneScratch) => {
-      const length = linear.length
-      for (let index = 0; index < length; index += 3) {
-        const baseR = (linear[index] ?? 0) * rawRenderExposureMultiplier
-        const baseG = (linear[index + 1] ?? 0) * rawRenderExposureMultiplier
-        const baseB = (linear[index + 2] ?? 0) * rawRenderExposureMultiplier
-        const exposedR = baseR * colorBalanceGain[0] * exposureMultiplier
-        const exposedG = baseG * colorBalanceGain[1] * exposureMultiplier
-        const exposedB = baseB * colorBalanceGain[2] * exposureMultiplier
-        const contrasted = applyUserContrastScalarTo(
-          exposedR,
-          exposedG,
-          exposedB,
-          contrastStep,
-          toneScratch,
-        )
-        const scene = applyUserRegionalToneScalarTo(
-          contrasted[0],
-          contrasted[1],
-          contrasted[2],
-          regionalToneStep,
-          toneScratch,
-        )
-        sceneScratch[index] = scene[0]
-        sceneScratch[index + 1] = scene[1]
-        sceneScratch[index + 2] = scene[2]
-      }
-
-      if (!isSatIdentity) {
-        for (let index = 0; index < length; index += 3) {
-          applyUserSaturationTo(
-            sceneScratch,
-            index,
-            saturationStep.saturation,
-            saturationStep.vibrance,
-          )
-        }
-      }
-
-      applySelectiveColorToSceneScratch(
-        sceneScratch,
-        length,
-        selectiveColorContext,
-      )
-
-      for (let index = 0; index < length; index += 3) {
-        const sceneR = sceneScratch[index]
-        const sceneG = sceneScratch[index + 1]
-        const sceneB = sceneScratch[index + 2]
-        const displayLinearR = clampMin0(
-          PROPHOTO_TO_SRGB_MATRIX[0] * sceneR +
-            PROPHOTO_TO_SRGB_MATRIX[1] * sceneG +
-            PROPHOTO_TO_SRGB_MATRIX[2] * sceneB,
-        )
-        const displayLinearG = clampMin0(
-          PROPHOTO_TO_SRGB_MATRIX[3] * sceneR +
-            PROPHOTO_TO_SRGB_MATRIX[4] * sceneG +
-            PROPHOTO_TO_SRGB_MATRIX[5] * sceneB,
-        )
-        const displayLinearB = clampMin0(
-          PROPHOTO_TO_SRGB_MATRIX[6] * sceneR +
-            PROPHOTO_TO_SRGB_MATRIX[7] * sceneG +
-            PROPHOTO_TO_SRGB_MATRIX[8] * sceneB,
-        )
-        bytes[index] = toSrgbByte(displayLinearR)
-        bytes[index + 1] = toSrgbByte(displayLinearG)
-        bytes[index + 2] = toSrgbByte(displayLinearB)
-      }
-    }
   }
+}
 
-  if (!isSupportedLutGraph(graph)) {
-    throw new Error('FULL_RES_EXPORT_UNSUPPORTED_PIPELINE')
-  }
-
-  const rawRenderExposureMultiplier = getRawRenderExposureMultiplier(
-    graph.steps[1],
-  )
-  const colorBalanceGain = getUserColorBalanceGain(graph.steps[2])
-  const exposureMultiplier = getUserExposureMultiplier(graph.steps[3])
-  const contrastStep = graph.steps[4]
-  const regionalToneStep = graph.steps[5]
-  const saturationStep = graph.steps[6]
+/**
+ * The scene steps both graphs share, from the RAW render exposure through
+ * selective color, written to `sceneScratch` in linear ProPhoto.
+ */
+function compileSceneStage(
+  steps: PlainSteps | LutSteps,
+): (linear: Float32Array, sceneScratch: Float32Array) => void {
+  const rawRenderExposureMultiplier = getRawRenderExposureMultiplier(steps[1])
+  const colorBalanceGain = getUserColorBalanceGain(steps[2])
+  const exposureMultiplier = getUserExposureMultiplier(steps[3])
+  const contrastStep = steps[4]
+  const regionalToneStep = steps[5]
+  const saturationStep = steps[6]
   const isSatIdentity =
     saturationStep.saturation === 0 && saturationStep.vibrance === 0
-  const selectiveColorContext = createSelectiveColorContext(graph.steps[7])
-  const inputMatrix = graph.steps[8].matrix
-  const encodeStep = graph.steps[9]
-  const lutStep = graph.steps[10]
-  const outputStep = graph.steps[11]
-  const outputMatrix = outputStep.matrix
-  const encodeTransfer = getTransferFunction(encodeStep.transfer)
-  const decodeTransfer = getTransferFunction(outputStep.transfer)
-  if (!encodeTransfer || !decodeTransfer) {
-    throw new Error('FULL_RES_EXPORT_UNSUPPORTED_PIPELINE')
-  }
-
-  const inputIsLegalRange = encodeStep.range === 'legal'
-  const outputIsLegalRange = outputStep.range === 'legal'
-  const role = outputStep.role
-  const intensity = outputStep.intensity
-  const domainMin = lutStep.domainMin
-  const domainMax = lutStep.domainMax
-  const inverseDomainSpanR =
-    domainMax[0] === domainMin[0] ? 0 : 1 / (domainMax[0] - domainMin[0])
-  const inverseDomainSpanG =
-    domainMax[1] === domainMin[1] ? 0 : 1 / (domainMax[1] - domainMin[1])
-  const inverseDomainSpanB =
-    domainMax[2] === domainMin[2] ? 0 : 1 / (domainMax[2] - domainMin[2])
+  const applySelectiveColor = compileSelectiveColor(steps[7])
   const toneScratch: MutableRgb = [0, 0, 0]
-  const lutInputEncoded: MutableRgb = [0, 0, 0]
-  const lutInputDomain: MutableRgb = [0, 0, 0]
-  const lutSample: [number, number, number] = [0, 0, 0]
 
-  return (linear, bytes, sceneScratch) => {
+  return (linear, sceneScratch) => {
     const length = linear.length
     for (let index = 0; index < length; index += 3) {
       const baseR = (linear[index] ?? 0) * rawRenderExposureMultiplier
@@ -538,11 +246,91 @@ function compileGraphApplier(
       }
     }
 
-    applySelectiveColorToSceneScratch(
-      sceneScratch,
-      length,
-      selectiveColorContext,
-    )
+    applySelectiveColor(sceneScratch, length)
+  }
+}
+
+type GraphApplier = (
+  linear: Float32Array,
+  bytes: Uint8Array,
+  sceneScratch: Float32Array,
+) => void
+
+function compileGraphApplier(
+  graph: SupportedExportColorGraphDescriptor,
+): GraphApplier {
+  const { steps } = graph
+  if (
+    graph.lutProfile === null &&
+    hasStepKinds(steps, EXPORT_PLAIN_STEP_KINDS)
+  ) {
+    const applyScene = compileSceneStage(steps)
+
+    return (linear, bytes, sceneScratch) => {
+      const length = linear.length
+      applyScene(linear, sceneScratch)
+
+      for (let index = 0; index < length; index += 3) {
+        const sceneR = sceneScratch[index]
+        const sceneG = sceneScratch[index + 1]
+        const sceneB = sceneScratch[index + 2]
+        const displayLinearR = clampMin0(
+          PROPHOTO_TO_SRGB_MATRIX[0] * sceneR +
+            PROPHOTO_TO_SRGB_MATRIX[1] * sceneG +
+            PROPHOTO_TO_SRGB_MATRIX[2] * sceneB,
+        )
+        const displayLinearG = clampMin0(
+          PROPHOTO_TO_SRGB_MATRIX[3] * sceneR +
+            PROPHOTO_TO_SRGB_MATRIX[4] * sceneG +
+            PROPHOTO_TO_SRGB_MATRIX[5] * sceneB,
+        )
+        const displayLinearB = clampMin0(
+          PROPHOTO_TO_SRGB_MATRIX[6] * sceneR +
+            PROPHOTO_TO_SRGB_MATRIX[7] * sceneG +
+            PROPHOTO_TO_SRGB_MATRIX[8] * sceneB,
+        )
+        bytes[index] = toSrgbByte(displayLinearR)
+        bytes[index + 1] = toSrgbByte(displayLinearG)
+        bytes[index + 2] = toSrgbByte(displayLinearB)
+      }
+    }
+  }
+
+  if (!hasStepKinds(steps, EXPORT_LUT_STEP_KINDS)) {
+    throw new Error('FULL_RES_EXPORT_UNSUPPORTED_PIPELINE')
+  }
+
+  const applyScene = compileSceneStage(steps)
+  const inputMatrix = steps[8].matrix
+  const encodeStep = steps[9]
+  const lutStep = steps[10]
+  const outputStep = steps[11]
+  const outputMatrix = outputStep.matrix
+  const encodeTransfer = getTransferFunction(encodeStep.transfer)
+  const decodeTransfer = getTransferFunction(outputStep.transfer)
+  if (!encodeTransfer || !decodeTransfer) {
+    throw new Error('FULL_RES_EXPORT_UNSUPPORTED_PIPELINE')
+  }
+
+  const inputIsLegalRange = encodeStep.range === 'legal'
+  const outputIsLegalRange = outputStep.range === 'legal'
+  const role = outputStep.role
+  const intensity = outputStep.intensity
+  const domainMin = lutStep.domainMin
+  const domainMax = lutStep.domainMax
+  const inverseDomainSpanR =
+    domainMax[0] === domainMin[0] ? 0 : 1 / (domainMax[0] - domainMin[0])
+  const inverseDomainSpanG =
+    domainMax[1] === domainMin[1] ? 0 : 1 / (domainMax[1] - domainMin[1])
+  const inverseDomainSpanB =
+    domainMax[2] === domainMin[2] ? 0 : 1 / (domainMax[2] - domainMin[2])
+  const lutInputEncoded: MutableRgb = [0, 0, 0]
+  const lutInputDomain: MutableRgb = [0, 0, 0]
+  const lutSample: [number, number, number] = [0, 0, 0]
+
+  return (linear, bytes, sceneScratch) => {
+    const length = linear.length
+    applyScene(linear, sceneScratch)
 
     for (let index = 0; index < length; index += 3) {
       const sceneR = sceneScratch[index]

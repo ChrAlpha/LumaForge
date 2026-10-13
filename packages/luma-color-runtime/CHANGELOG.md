@@ -77,6 +77,9 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
 - `contrastScaleFromLuminance(luminance, factor, pivot)` and
   `hasRegionalTone(input)`, the scalar contrast and regional tone helpers the
   row-band executor runs.
+- `EXPORT_PLAIN_STEP_KINDS` and `EXPORT_LUT_STEP_KINDS`, the step sequences
+  of a supported export graph without and with a LUT. The row-band executor
+  accepts exactly these, and manifest readers validate against them.
 
 ## 0.2.1 - 2026-10-12
 

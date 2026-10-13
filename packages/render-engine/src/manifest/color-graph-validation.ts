@@ -9,7 +9,11 @@
 // Nothing is defaulted or normalized; an older or unversioned descriptor is
 // refused rather than read as current.
 
-import { HSL_BAND_IDS } from '@lumaforge/luma-color-runtime'
+import {
+  EXPORT_LUT_STEP_KINDS,
+  EXPORT_PLAIN_STEP_KINDS,
+  HSL_BAND_IDS,
+} from '@lumaforge/luma-color-runtime'
 
 import type { ColorGraphDescriptor } from './color-graph-descriptor'
 import {
@@ -228,28 +232,6 @@ const STEP_FIELDS: Readonly<Record<string, FieldRules>> = {
   'output-srgb': {},
 }
 
-const USER_STEPS = [
-  'input-linear-prophoto',
-  'raw-render-exposure',
-  'user-color-balance',
-  'user-exposure',
-  'user-contrast',
-  'user-regional-tone',
-  'user-saturation',
-  'user-selective-color',
-]
-/** The step sequence of a supported export graph without a LUT. */
-const PLAIN_STEPS = [...USER_STEPS, 'output-srgb']
-/** The step sequence of a supported export graph that applies a LUT. */
-const LUT_STEPS = [
-  ...USER_STEPS,
-  'gamut-to-lut-input',
-  'encode-lut-transfer',
-  'lut3d',
-  'lut-output-to-srgb',
-  'output-srgb',
-]
-
 const CONTRACT: FieldRules = {
   gamut: 'string',
   transfer: 'string',
@@ -275,7 +257,9 @@ function checkSteps(
     report(path, `must be an array, got ${describeValue(steps)}.`)
     return
   }
-  const expected = appliesLut ? LUT_STEPS : PLAIN_STEPS
+  const expected: readonly string[] = appliesLut
+    ? EXPORT_LUT_STEP_KINDS
+    : EXPORT_PLAIN_STEP_KINDS
   const kinds = steps.map(stepKind)
   if (
     kinds.length !== expected.length ||
