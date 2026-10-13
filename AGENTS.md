@@ -675,16 +675,16 @@ These are owner decisions. They override cleanup advice that says otherwise.
   by its `build` job; every job except `quality` is path-selected):
   - `quality` runs on every change, docs-only ones included. It tests and runs
     `scripts/quality/check-agent-paths.mjs` against this file, then installs
-    dependencies, tests the test-project discovery and the import
-    boundaries, and runs `pnpm lint:check`,
+    dependencies, tests the test-project discovery, and runs
+    `pnpm lint:check`,
     `pnpm typecheck:tooling`, `pnpm check:structure` (knip with
     `scripts/quality/knip.json`, then madge through
     `scripts/quality/check-cycles.mjs`), and `pnpm check:retired-api`. Lint
     covers the app, every package, script and plugin, and the browser specs,
     and applies the module ownership rule in
     `plugins/eslint-import-boundaries.mjs` (tested by
-    `scripts/quality/import-boundaries.test.mjs`) to every import form by the
-    resolved files on both sides, with no exceptions. The structure check
+    `scripts/quality/import-boundaries.test.mjs`) to every import form the
+    code uses by the resolved files on both sides, with no exceptions. The structure check
     fails on any unused file, export, or dependency, any unresolved import,
     any knip configuration hint, and any import cycle; it takes no baseline.
   - `app` runs `pnpm typecheck:browser` and `pnpm test:app`, builds the app

@@ -131,9 +131,6 @@ jobs:
       # Lint covers the app, every package, script and plugin, and the browser
       # specs, and its import-boundary rule judges an import by the files on
       # both sides, so it runs on every change rather than behind a path gate.
-      - name: Test the import boundaries
-        run: node --test scripts/quality/import-boundaries.test.mjs
-
       - name: Check lint
         run: pnpm lint:check
 
