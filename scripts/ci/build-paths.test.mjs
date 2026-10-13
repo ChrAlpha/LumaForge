@@ -96,7 +96,6 @@ describe('build workflow gate selection', () => {
     ],
     // Vite and ESLint configs import the local plugins.
     ['plugins/isolation-headers.ts', ['app']],
-    ['plugins/eslint-recursive-sort.js', ['app']],
     ['scripts/ci/build-paths.test.mjs', ['app']],
     ['src/modules/raw-processor/RawProcessorView.tsx', ['app']],
     ['src/lib/transform/transform-render.ts', ['app']],
@@ -172,7 +171,6 @@ describe('build workflow checks', () => {
   // One file per kind of tooling-project entry: top-level and nested scripts,
   // and root configs that no path filter names.
   for (const file of [
-    'scripts/bench-selective-color-row.ts',
     'scripts/benchmarks/jpeg-runtime.ts',
     'playwright.config.ts',
     'vite.config.test.ts',

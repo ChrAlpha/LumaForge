@@ -1,14 +1,11 @@
-import { Buffer } from 'node:buffer'
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { Alias, AliasOptions } from 'vite'
 import { createServer, loadConfigFromFile } from 'vite'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { fetchImageDataUrl } from './scripts/build/image-data-url'
 import {
   deferRawRouteAppModule,
   deferRawRouteStylesheets,
@@ -132,26 +129,6 @@ describe('vite config', () => {
 
     expect(config.server?.watch?.ignored).toEqual(
       expect.arrayContaining(['**/.worktrees/**', '**/.claude/worktrees/**']),
-    )
-  })
-
-  it('falls back to a local OG image source when the remote hero cannot be fetched', async () => {
-    const fallbackImage = await readFile('public/favicon.png')
-    const onFallback = vi.fn()
-
-    await expect(
-      fetchImageDataUrl('https://images.example.invalid/photo.jpg', {
-        fallbackPath: 'public/favicon.png',
-        fetchImpl: vi.fn(async () => {
-          throw new Error('network unavailable')
-        }),
-        onFallback,
-      }),
-    ).resolves.toBe(
-      `data:image/png;base64,${Buffer.from(fallbackImage).toString('base64')}`,
-    )
-    expect(onFallback).toHaveBeenCalledWith(
-      expect.stringContaining('network unavailable'),
     )
   })
 

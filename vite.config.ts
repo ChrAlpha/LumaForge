@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
@@ -14,7 +15,6 @@ import { routeBuilderPlugin } from 'vite-plugin-route-builder'
 
 import PKG from './package.json'
 import { preserveIsolationHeaders } from './plugins/isolation-headers'
-import { toDataUrl } from './scripts/build/image-data-url'
 import {
   deferRawRouteAppModule,
   deferRawRouteStylesheets,
@@ -41,6 +41,10 @@ import {
   resolveDeployEnvironment,
 } from './src/lib/seo'
 import { renderLumaForgeOgImage } from './src/pages/(main)/og-image'
+
+function toDataUrl(mimeType: string, data: Uint8Array) {
+  return `data:${mimeType};base64,${Buffer.from(data).toString('base64')}`
+}
 
 const ROOT = fileURLToPath(new URL('./', import.meta.url))
 const LUMAFORGE_OG_IMAGE_OUTPUT = 'og-image.png'

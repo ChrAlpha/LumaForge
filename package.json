@@ -19,7 +19,6 @@
     "deploy:publish": "node scripts/deploy/publish.mjs",
     "deploy:smoke": "node scripts/deploy/smoke.mjs",
     "dev": "vite --host 0.0.0.0",
-    "color:boundary-visual": "pnpm --filter @lumaforge/luma-color-runtime build && node scripts/color-boundary-visual-check.mjs",
     "worktree": "bash scripts/worktree.sh",
     "format": "prettier --write \"src/**/*.ts\" ",
     "lint": "eslint --fix --ignore-pattern \"src/generated-routes.ts\" \"src/**/*.{js,jsx,ts,tsx}\" \"scripts/**/*.{js,mjs,cjs,ts}\" \"plugins/**/*.{js,mjs,cjs,ts}\" \"tests/**/*.{js,mjs,cjs,ts,tsx}\" \"packages/*/{src,worker,bin,benchmarks,fixtures/scripts,native/scripts}/**/*.{js,mjs,cjs,ts,tsx}\" \"packages/*/*.{js,mjs,cjs,ts}\" \"*.{js,mjs,cjs,ts}\"",
