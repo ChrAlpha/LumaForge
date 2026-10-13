@@ -183,64 +183,49 @@ describe('toLmfgError', () => {
     },
   )
 
-  it.each(RAW_MAPPING_ROWS)(
-    'classifies a cleanup step that fails with RAW code %s',
-    (runtimeCode, expected) => {
-      const failure = cleanupFailure(
-        'end_processed_window_export',
-        new LumaRawRuntimeError(runtimeCode, 'cleanup said no'),
-      )
-      // A runtime error carries no errno, and its message stays out.
-      expect(failure).toEqual({
-        step: 'end_processed_window_export',
-        code: expected.code,
-      })
-    },
-  )
-
-  it.each(RAW_MAPPING_ROWS)(
-    'keeps RAW code %s as the primary failure beside bounded cleanup failures',
-    (runtimeCode, expected) => {
-      const primary = new LumaRawRuntimeError(runtimeCode, 'runtime said no')
-      const failures = Array.from(
-        { length: MAX_CLEANUP_FAILURES + 2 },
-        (_, index) =>
-          cleanupFailure(
-            index % 2 === 0 ? 'end_processed_window_export' : 'close_temp_file',
-            new LumaRawRuntimeError('RAW_JOB_CANCELLED', 'cancelled'),
-          ),
-      )
-      const combined = toLmfgError(withCleanupFailures(primary, failures))
-      expect(combined.exitCode).toBe(expected.exitCode)
-      expect(combined.toEnvelope()).toEqual({
-        schema: 'lmfg.error.v1',
-        ok: false,
-        error: {
-          code: expected.code,
-          message: 'runtime said no',
-          retryable: expected.retryable,
-          suggested_next_actions: [],
-          details: {
-            runtime_code: runtimeCode,
-            cleanup_failures: failures.slice(0, MAX_CLEANUP_FAILURES),
-            cleanup_failures_omitted: 2,
-          },
-        },
-      })
-      expect(cleanupFailuresOf(combined)).toEqual(failures)
-    },
-  )
-
-  it('maps RAW codes from a newer runtime to internal and keeps the code', () => {
-    const cause = new LumaRawRuntimeError(
-      'RAW_FUTURE_FAILURE' as LumaRawErrorCode,
-      'unknown runtime failure',
+  it('classifies a cleanup step that fails with a RAW code', () => {
+    const failure = cleanupFailure(
+      'end_processed_window_export',
+      new LumaRawRuntimeError('RAW_MEMORY_LIMIT', 'cleanup said no'),
     )
-    const error = toLmfgError(cause)
-    expect(error.code).toBe('internal')
-    expect(error.exitCode).toBe(EXIT_CODES.internal)
-    expect(error.retryable).toBe(false)
-    expect(error.details).toEqual({ runtime_code: 'RAW_FUTURE_FAILURE' })
+    // A runtime error carries no errno, and its message stays out.
+    expect(failure).toEqual({
+      step: 'end_processed_window_export',
+      code: 'render.failed',
+    })
+  })
+
+  it('keeps a RAW primary failure beside bounded cleanup failures', () => {
+    const primary = new LumaRawRuntimeError(
+      'RAW_MEMORY_LIMIT',
+      'runtime said no',
+    )
+    const failures = Array.from(
+      { length: MAX_CLEANUP_FAILURES + 2 },
+      (_, index) =>
+        cleanupFailure(
+          index % 2 === 0 ? 'end_processed_window_export' : 'close_temp_file',
+          new LumaRawRuntimeError('RAW_JOB_CANCELLED', 'cancelled'),
+        ),
+    )
+    const combined = toLmfgError(withCleanupFailures(primary, failures))
+    expect(combined.exitCode).toBe(7)
+    expect(combined.toEnvelope()).toEqual({
+      schema: 'lmfg.error.v1',
+      ok: false,
+      error: {
+        code: 'render.failed',
+        message: 'runtime said no',
+        retryable: true,
+        suggested_next_actions: [],
+        details: {
+          runtime_code: 'RAW_MEMORY_LIMIT',
+          cleanup_failures: failures.slice(0, MAX_CLEANUP_FAILURES),
+          cleanup_failures_omitted: 2,
+        },
+      },
+    })
+    expect(cleanupFailuresOf(combined)).toEqual(failures)
   })
 
   it.each([
