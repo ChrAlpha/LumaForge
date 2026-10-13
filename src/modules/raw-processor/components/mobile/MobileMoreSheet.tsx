@@ -3,8 +3,9 @@ import { AnimatePresence, m, useDragControls } from 'motion/react'
 
 import { IconButton } from '~/components/ui/button'
 import { useI18n } from '~/lib/i18n'
+import { sheetSpring } from '~/lib/spring'
 
-import { SHEET_SPRING, useToolMotion } from '../../motion'
+import { useToolMotion } from '../../motion'
 import type {
   MobileDetailsRow as Row,
   MobileDetailsStep as Step,
@@ -90,7 +91,7 @@ export function MobileMoreSheet(props: {
           initial={prefersReduced ? { opacity: 0 } : { y: '100%' }}
           animate={prefersReduced ? { opacity: 1 } : { y: '0%' }}
           exit={prefersReduced ? { opacity: 0 } : { y: '100%' }}
-          transition={SHEET_SPRING}
+          transition={sheetSpring}
           drag={prefersReduced ? false : 'y'}
           dragControls={dragControls}
           dragListener={false}

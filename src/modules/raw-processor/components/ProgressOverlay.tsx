@@ -16,10 +16,8 @@ export interface ProgressOverlayProps {
   visible: boolean
   phase: 'warming' | 'loading' | 'decoding' | 'processing' | 'exporting'
   progress?: number // 0-100
-  message?: string
   recoveryHint?: string
   variant?: 'flat-handoff'
-  className?: string
 }
 
 export const ProgressOverlay = memo(
@@ -27,10 +25,8 @@ export const ProgressOverlay = memo(
     visible,
     phase,
     progress,
-    message,
     recoveryHint,
     variant,
-    className,
   }: ProgressOverlayProps) => {
     const { t } = useI18n()
     const reduced = useReducedMotion() ?? false
@@ -70,9 +66,9 @@ export const ProgressOverlay = memo(
         : null
     const ringProgress =
       normalizedProgress === null ? 32 : Math.max(8, normalizedProgress)
-    const progressTitle =
-      message ||
-      (isExportHandoff ? t('raw.progress.previewReleased') : phaseLabels[phase])
+    const progressTitle = isExportHandoff
+      ? t('raw.progress.previewReleased')
+      : phaseLabels[phase]
     const renderProgressRing = (
       frameClassName: string,
       showPercent: boolean,
@@ -135,11 +131,7 @@ export const ProgressOverlay = memo(
       <AnimatePresence>
         {visible && (
           <m.div
-            className={clsxm(
-              'raw-progress-overlay inset-0 flex items-center justify-center',
-              'absolute z-50',
-              className,
-            )}
+            className="raw-progress-overlay absolute inset-0 z-50 flex items-center justify-center"
             role="status"
             aria-live="polite"
             aria-label={progressTitle}

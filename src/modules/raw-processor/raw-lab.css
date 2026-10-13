@@ -18,17 +18,13 @@
   --color-text-tertiary: oklch(0.5 0.035 75);
   --color-border: oklch(from var(--color-lf-on-surface) l c h / 0.06);
   --color-border-secondary: oklch(from var(--color-lf-on-surface) l c h / 0.04);
-  --color-border-strong: oklch(from var(--color-lf-on-surface) l c h / 0.1);
   --color-accent: var(--color-lf-green);
   --color-fill: var(--color-lf-surface-sunk);
   --color-fill-secondary: oklch(from var(--color-lf-surface-muted) l c h / 0.9);
   --color-fill-tertiary: oklch(0.86 0.03 80 / 0.56);
   --color-material-opaque: var(--color-lf-surface-raised);
   --color-material-medium: oklch(0.942 0.024 86);
-  --color-accent-strong: var(--color-lf-green-deep);
   --color-stage-background: var(--color-lf-darkroom-stage);
-  --color-stage-grad-1: var(--color-lf-darkroom-stage-low);
-  --color-stage-grad-2: oklch(0.16 0.02 76);
   --color-stage-scrim: oklch(0.16 0.018 76 / 0.82);
   --color-stage-panel: oklch(0.16 0.018 76 / 0.78);
   --color-preview-mat: oklch(0.9 0.024 86);
@@ -81,7 +77,6 @@
     --color-text-tertiary: oklch(0.74 0.01 255 / 0.56);
     --color-border: var(--color-lf-on-photo-bord-soft);
     --color-border-secondary: oklch(0.92 0.006 255 / 0.16);
-    --color-border-strong: var(--color-lf-on-photo-bord);
     --color-fill: oklch(0.09 0.006 255);
     --color-fill-secondary: oklch(0.135 0.007 255 / 0.76);
     --color-fill-tertiary: oklch(0.18 0.008 255 / 0.68);
@@ -103,8 +98,6 @@
        compare handle and the export progress overlay share one
        material — not the warm darkroom inherited from the mobile base. */
     --color-stage-background: oklch(0.064 0.006 255);
-    --color-stage-grad-1: oklch(0.09 0.006 255);
-    --color-stage-grad-2: oklch(0.12 0.006 255);
     --color-stage-scrim: oklch(0.105 0.006 255 / 0.84);
     --color-stage-panel: oklch(0.13 0.006 255 / 0.78);
     --color-stage-hairline: oklch(0.96 0.006 255 / 0.2);
@@ -234,7 +227,6 @@
     --color-text-tertiary: oklch(0.74 0.01 255 / 0.56);
     --color-border: var(--color-lf-on-photo-bord-soft);
     --color-border-secondary: oklch(0.92 0.006 255 / 0.16);
-    --color-border-strong: var(--color-lf-on-photo-bord);
     --color-fill: oklch(0.09 0.006 255);
     --color-fill-secondary: oklch(0.135 0.007 255 / 0.76);
     --color-fill-tertiary: oklch(0.18 0.008 255 / 0.68);
@@ -252,8 +244,6 @@
     /* Stage + preview carry the cool slate; mobile stage is full-bleed so the
        mat is the stage field itself and the frame border collapses. */
     --color-stage-background: oklch(0.064 0.006 255);
-    --color-stage-grad-1: oklch(0.09 0.006 255);
-    --color-stage-grad-2: oklch(0.12 0.006 255);
     --color-stage-scrim: oklch(0.105 0.006 255 / 0.84);
     --color-stage-panel: oklch(0.13 0.006 255 / 0.78);
     --color-stage-hairline: oklch(0.96 0.006 255 / 0.2);

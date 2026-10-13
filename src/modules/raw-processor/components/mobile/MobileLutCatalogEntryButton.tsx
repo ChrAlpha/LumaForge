@@ -40,7 +40,7 @@ export function MobileLutCatalogEntryButton(props: {
         {props.title}
       </span>
       {props.loading ? (
-        <span className="inline-flex items-center gap-1 text-xs font-semibold text-lf-on-photo-text-soft">
+        <span className="inline-flex items-center gap-1 text-xs font-semibold">
           <X aria-hidden="true" className="size-4" />
           {t('raw.mobile.lut.cancel')}
         </span>

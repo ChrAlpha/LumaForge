@@ -13,15 +13,19 @@ import { useInRouterContext, useLocation } from 'react-router'
 
 import { clsxm } from '~/lib/cn'
 
-import { ErrorOverlay, RawToolSurface, WorkspaceHeader } from './components'
 import type { CpuPreviewNotice } from './components/CpuPreviewBanner'
 import { CpuPreviewBanner } from './components/CpuPreviewBanner'
 import { PreviewHistogramRunner } from './components/PreviewHistogramRunner'
+import { ErrorOverlay } from './components/ProgressOverlay'
 import { RawPreviewStageSurface } from './components/RawPreviewStageSurface'
 import { RawResetConfirmationDialog } from './components/RawResetConfirmationDialog'
-import { useIsMobileRawSurface } from './components/RawToolSurface'
+import {
+  RawToolSurface,
+  useIsMobileRawSurface,
+} from './components/RawToolSurface'
 import { RawTransformOverlay } from './components/RawTransformOverlay'
 import { RawWorkflowToolProvider } from './components/RawWorkflowToolProvider'
+import { WorkspaceHeader } from './components/WorkspaceHeader'
 import { useRawWorkflow } from './hooks'
 import { useRawProcessorViewController } from './hooks/useRawProcessorViewController'
 import { useRawTransformFeature } from './hooks/useRawTransformFeature'
