@@ -39,13 +39,11 @@ export function transformInputKey(
 export async function captureTransformSource({
   width,
   height,
-  name,
   pipeline,
   cpuFrame,
 }: {
   width: number
   height: number
-  name: string
   pipeline?: Pick<RawProcessingPipeline, 'renderToHiddenCanvas'> | null
   cpuFrame?: CpuPreviewFrame | null
 }): Promise<PreviewSource> {
@@ -53,12 +51,6 @@ export async function captureTransformSource({
     cpuFrame?.width ?? width,
     cpuFrame?.height ?? height,
   )
-  const source = {
-    name,
-    kind: 'raw' as const,
-    originalWidth: width,
-    originalHeight: height,
-  }
   // A CPU frame already at the Transform edge is the frame itself.
   if (
     cpuFrame &&
@@ -66,7 +58,6 @@ export async function captureTransformSource({
     cpuFrame.height === target.height
   ) {
     return {
-      ...source,
       frame: { ...target, data: new Uint8ClampedArray(cpuFrame.rgba) },
     }
   }
@@ -108,7 +99,6 @@ export async function captureTransformSource({
   )
     throw new Error('transform-source-unavailable')
   return {
-    ...source,
     frame: {
       ...target,
       data: context.getImageData(0, 0, target.width, target.height).data,

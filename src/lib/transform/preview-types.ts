@@ -6,10 +6,6 @@ export interface PreviewFrame {
 
 export interface PreviewSource {
   frame: PreviewFrame
-  name: string
-  kind: 'image' | 'raw' | 'sample'
-  originalWidth: number
-  originalHeight: number
 }
 
 export const MAX_PREVIEW_EDGE = 1600

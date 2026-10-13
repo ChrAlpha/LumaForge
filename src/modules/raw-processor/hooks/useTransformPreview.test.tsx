@@ -97,12 +97,8 @@ class PreviewWorker {
 
 type RenderRequest = Extract<TransformWorkerRequest, { type: 'render' }>
 
-function photo(name = 'current.nef', fill = 0): PreviewSource {
+function photo(fill = 0): PreviewSource {
   return {
-    name,
-    kind: 'raw',
-    originalWidth: 6000,
-    originalHeight: 4000,
     frame: { width: 2, height: 2, data: new Uint8ClampedArray(16).fill(fill) },
   }
 }
@@ -182,7 +178,7 @@ describe('transform preview request lifecycle', () => {
       result.current.setManual((prev) => ({ ...prev, rotate: 2 }))
     })
     act(() =>
-      result.current.loadSource(photo('current.nef', 100), {
+      result.current.loadSource(photo(100), {
         preserveTransform: true,
       }),
     )
@@ -219,13 +215,14 @@ describe('transform preview request lifecycle', () => {
       result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 4 })
       result.current.setConstrainCrop(false)
     })
-    act(() => result.current.loadSource(photo('next.nef')))
+    const next = photo()
+    act(() => result.current.loadSource(next))
     // The intent stays its owner's; only what was solved on the old photo
     // goes with it.
     expect(result.current.mode).toBe('auto')
     expect(result.current.manual.rotate).toBe(4)
     expect(result.current.constrainCrop).toBe(false)
-    expect(result.current.source?.name).toBe('next.nef')
+    expect(result.current.source).toBe(next)
     expect(result.current.loading).toBe(true)
     expect(result.current.matrix).toBeNull()
     expect(result.current.solution.status).toBe('unchanged')
@@ -243,10 +240,11 @@ describe('transform preview request lifecycle', () => {
 
   it('ignores the analysis of a source superseded before it landed', () => {
     const { result, unmount } = renderHook(() => useOwnedPreview())
-    act(() => result.current.loadSource(photo('old.nef')))
+    act(() => result.current.loadSource(photo()))
     const worker = PreviewWorker.instances[0]
     const old = lastAnalyze(worker)
-    act(() => result.current.loadSource(photo('new.nef')))
+    const newer = photo()
+    act(() => result.current.loadSource(newer))
     const next = lastAnalyze(worker)
     expect(next.sourceId).toBeGreaterThan(old.sourceId)
     act(() =>
@@ -259,7 +257,7 @@ describe('transform preview request lifecycle', () => {
     )
     expect(result.current.analysis).toBeNull()
     expect(result.current.ready).toBe(false)
-    expect(result.current.source?.name).toBe('new.nef')
+    expect(result.current.source).toBe(newer)
     expect(PreviewWorker.instances).toHaveLength(1)
     analyze(worker)
     expect(result.current.ready).toBe(true)
@@ -282,7 +280,7 @@ describe('transform preview request lifecycle', () => {
     })
     act(() => result.current.setMode('auto'))
     act(() =>
-      result.current.loadSource(photo('current.nef', 50), {
+      result.current.loadSource(photo(50), {
         preserveTransform: true,
       }),
     )
@@ -602,7 +600,7 @@ describe('transform preview request lifecycle', () => {
 
     // A colour refresh replaces the frame; A answered the old one.
     act(() =>
-      result.current.loadSource(photo('refresh.nef'), {
+      result.current.loadSource(photo(), {
         preserveTransform: true,
       }),
     )
@@ -685,7 +683,7 @@ describe('transform preview observer', () => {
     expect(observer.frameFailed).not.toHaveBeenCalled()
 
     // A failed analysis and a dead worker both fail the frame.
-    act(() => result.current.loadSource(photo('next.nef')))
+    act(() => result.current.loadSource(photo()))
     act(() =>
       worker.emit({
         type: 'error',

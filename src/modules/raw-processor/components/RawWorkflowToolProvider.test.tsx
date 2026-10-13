@@ -310,10 +310,6 @@ async function renderTransformSession<Result = SurfaceView>(
   FakeWorker.instances = []
   vi.stubGlobal('Worker', FakeWorker)
   vi.mocked(captureTransformSource).mockResolvedValue({
-    name: 'current.nef',
-    kind: 'raw',
-    originalWidth: 80,
-    originalHeight: 60,
     frame: { width: 80, height: 60, data: new Uint8ClampedArray(19200) },
   })
   const state = { observing: true, released: false, exposure: 0 }

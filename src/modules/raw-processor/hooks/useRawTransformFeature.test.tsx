@@ -335,10 +335,6 @@ async function captureNeutral(
 }
 
 const frame: PreviewSource = {
-  name: 'current.nef',
-  kind: 'raw',
-  originalWidth: 80,
-  originalHeight: 60,
   frame: { width: 80, height: 60, data: new Uint8ClampedArray(80 * 60 * 4) },
 }
 beforeEach(() => {

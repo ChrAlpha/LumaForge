@@ -196,10 +196,6 @@ const baseParams: ProcessingParams = {
 }
 
 const captured: PreviewSource = {
-  name: 'frame.nef',
-  kind: 'raw',
-  originalWidth: 80,
-  originalHeight: 60,
   frame: { width: 80, height: 60, data: new Uint8ClampedArray(80 * 60 * 4) },
 }
 

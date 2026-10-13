@@ -50,7 +50,6 @@ describe('current-photo transform source', () => {
     const result = await captureTransformSource({
       width: 6000,
       height: 4000,
-      name: 'current.nef',
       pipeline: { renderToHiddenCanvas },
     })
     expect(renderToHiddenCanvas).toHaveBeenCalledWith({
@@ -58,7 +57,6 @@ describe('current-photo transform source', () => {
       height: 1067,
     })
     expect(result.frame.data).toBe(data)
-    expect(result.name).toBe('current.nef')
   })
 
   it('reads the snapshot back from a CPU-backed context', async () => {
@@ -67,7 +65,6 @@ describe('current-photo transform source', () => {
     await captureTransformSource({
       width: 1,
       height: 1,
-      name: 'tiny.nef',
       pipeline: {
         renderToHiddenCanvas: vi
           .fn()
@@ -83,7 +80,6 @@ describe('current-photo transform source', () => {
     const result = await captureTransformSource({
       width: 6000,
       height: 4000,
-      name: 'cpu.nef',
       cpuFrame: { width: 120, height: 80, rgba } as never,
     })
     expect(createElement).not.toHaveBeenCalled()
@@ -95,13 +91,12 @@ describe('current-photo transform source', () => {
 
   it('rejects missing or inconsistent capture output', async () => {
     await expect(
-      captureTransformSource({ width: 100, height: 100, name: 'x' }),
+      captureTransformSource({ width: 100, height: 100 }),
     ).rejects.toThrow('transform-source-unavailable')
     await expect(
       captureTransformSource({
         width: 100,
         height: 100,
-        name: 'x',
         pipeline: {
           renderToHiddenCanvas: vi.fn().mockResolvedValue({
             width: 50,

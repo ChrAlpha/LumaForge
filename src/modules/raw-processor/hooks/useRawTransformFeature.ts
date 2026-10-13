@@ -276,7 +276,6 @@ export function useRawTransformFeature(
       void captureTransformSource({
         width: image.width,
         height: image.height,
-        name: workflow.sourceFileName,
         pipeline: isCpuMode ? null : workflow.pipelineRef.current,
         cpuFrame: isCpuMode ? settledCpuFrame : null,
       })
@@ -325,7 +324,6 @@ export function useRawTransformFeature(
     settledCpuFrame,
     sourceId,
     workflow.pipelineRef,
-    workflow.sourceFileName,
     workflow.previewFacts,
   ])
 
