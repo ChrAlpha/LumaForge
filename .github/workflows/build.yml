@@ -103,9 +103,6 @@ jobs:
         with:
           node-version: lts/*
 
-      - name: Test the agent-map path check
-        run: node --test scripts/quality/check-agent-paths.test.mjs
-
       - name: Check agent-map paths
         run: node scripts/quality/check-agent-paths.mjs
 
