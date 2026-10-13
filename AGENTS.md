@@ -674,10 +674,9 @@ These are owner decisions. They override cleanup advice that says otherwise.
 - CI follows the same split (jobs in `.github/workflows/build.yml`, aggregated
   by its `build` job; every job except `quality` is path-selected):
   - `quality` runs on every change, docs-only ones included. It tests and runs
-    `scripts/quality/check-agent-paths.mjs` against this file and checks the
-    app alias map (`scripts/quality/app-aliases.mjs`, which the Vite and
-    Vitest configs share), then installs dependencies, tests the test-project
-    discovery and the import boundaries, and runs `pnpm lint:check`,
+    `scripts/quality/check-agent-paths.mjs` against this file, then installs
+    dependencies, tests the test-project discovery and the import
+    boundaries, and runs `pnpm lint:check`,
     `pnpm typecheck:tooling`, `pnpm check:structure` (knip with
     `scripts/quality/knip.json`, then madge through
     `scripts/quality/check-cycles.mjs`), and `pnpm check:retired-api`. Lint

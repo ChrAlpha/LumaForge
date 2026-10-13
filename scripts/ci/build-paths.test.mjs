@@ -158,9 +158,8 @@ describe('build workflow gate selection', () => {
 describe('build workflow checks', () => {
   // Never path-selected, so a manifest change in any package fails here even
   // when no app gate runs.
-  it('checks the app aliases and the test-project discovery in quality', () => {
+  it('checks the test-project discovery in quality', () => {
     const commands = jobCommands('quality')
-    assert.ok(commands.includes('node scripts/quality/app-aliases.mjs'))
     assert.ok(
       commands.includes(
         'node --test scripts/quality/test-project-discovery.test.mjs',

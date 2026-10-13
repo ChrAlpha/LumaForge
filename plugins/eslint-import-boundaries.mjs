@@ -3,7 +3,7 @@ import { existsSync, realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { APP_ALIASES } from '../scripts/quality/app-aliases.mjs'
+import { APP_ALIASES } from '../scripts/build/app-aliases.mjs'
 
 /**
  * @typedef {{

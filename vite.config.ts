@@ -15,6 +15,7 @@ import { routeBuilderPlugin } from 'vite-plugin-route-builder'
 
 import PKG from './package.json'
 import { preserveIsolationHeaders } from './plugins/isolation-headers'
+import { resolveAppAliases } from './scripts/build/app-aliases.mjs'
 import {
   deferRawRouteAppModule,
   deferRawRouteStylesheets,
@@ -28,7 +29,6 @@ import {
   copyNativeRuntimeAssets,
   resolveNativeRuntimeAssets,
 } from './scripts/native-runtime/assets.mjs'
-import { resolveAppAliases } from './scripts/quality/app-aliases.mjs'
 import {
   createRobotsTxt,
   createSitemapXml,

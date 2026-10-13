@@ -5,8 +5,8 @@ import { routeBuilderPlugin } from 'vite-plugin-route-builder'
 import type { Plugin } from 'vitest/config'
 import { defineProject } from 'vitest/config'
 
+import { resolveAppAliases } from './scripts/build/app-aliases.mjs'
 import { resolveRenderEnvironments } from './scripts/build/runtime-environment.mjs'
-import { resolveAppAliases } from './scripts/quality/app-aliases.mjs'
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url))
 

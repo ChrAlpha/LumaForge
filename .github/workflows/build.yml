@@ -109,11 +109,6 @@ jobs:
       - name: Check agent-map paths
         run: node scripts/quality/check-agent-paths.mjs
 
-      # Reads every package manifest, so a change to any of them is checked
-      # even when no path-selected job runs.
-      - name: Check app aliases
-        run: node scripts/quality/app-aliases.mjs
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:

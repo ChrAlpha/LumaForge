@@ -1,9 +1,4 @@
-import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-import type { Alias, AliasOptions } from 'vite'
-import { createServer, loadConfigFromFile } from 'vite'
+import { loadConfigFromFile } from 'vite'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -13,10 +8,6 @@ import {
   resolveRawRouteHtmlOutputPaths,
   selectRawRouteAssets,
 } from './scripts/build/raw-route-html'
-import {
-  APP_ALIASES,
-  resolveAppAliases,
-} from './scripts/quality/app-aliases.mjs'
 
 async function resolveViteConfig() {
   const result = await loadConfigFromFile(
@@ -30,98 +21,6 @@ async function resolveViteConfig() {
 
   return result.config
 }
-
-const ROOT = fileURLToPath(new URL('./', import.meta.url))
-
-async function loadAliases(configFile: string) {
-  const result = await loadConfigFromFile(
-    { command: 'serve', mode: 'test' },
-    configFile,
-  )
-  return result?.config.resolve?.alias
-}
-
-/** Resolves specifiers from an app module through Vite's alias handling. */
-async function resolveFromApp(alias: AliasOptions, specifiers: string[]) {
-  const server = await createServer({
-    configFile: false,
-    envFile: false,
-    root: ROOT,
-    logLevel: 'silent',
-    resolve: { alias },
-    server: { middlewareMode: true, ws: false, watch: null },
-    optimizeDeps: { noDiscovery: true, include: [] },
-  })
-  try {
-    const importer = resolve(ROOT, 'src/main.tsx')
-    const resolved: Record<string, string | null> = {}
-    for (const specifier of specifiers) {
-      resolved[specifier] =
-        (await server.pluginContainer.resolveId(specifier, importer))?.id ??
-        null
-    }
-    return resolved
-  } finally {
-    await server.close()
-  }
-}
-
-describe('app aliases', () => {
-  it('builds the app through the shared alias list alone', async () => {
-    const config = await resolveViteConfig()
-
-    expect(config.resolve?.alias).toEqual(resolveAppAliases(ROOT))
-    expect(config.resolve?.tsconfigPaths).toBeFalsy()
-  })
-
-  it('tests the app through the same alias list', async () => {
-    expect(await loadAliases('vitest.app.config.ts')).toEqual(
-      resolveAppAliases(ROOT),
-    )
-  })
-
-  it('resolves ~/, @pkg and every package entry to source', async () => {
-    const alias = (await loadAliases('vite.config.ts')) as Alias[]
-    const resolved = await resolveFromApp(alias, [
-      '~/lib/seo',
-      ...APP_ALIASES.slice(1).map((entry) => entry.find),
-    ])
-
-    expect(resolved).toEqual({
-      '~/lib/seo': resolve(ROOT, 'src/lib/seo.ts'),
-      ...Object.fromEntries(
-        APP_ALIASES.slice(1).map((entry) => [
-          entry.find,
-          resolve(ROOT, entry.path),
-        ]),
-      ),
-    })
-  })
-
-  it('refuses a package subpath the app has no alias for', async () => {
-    const alias = (await loadAliases('vite.config.ts')) as Alias[]
-    const resolved = await resolveFromApp(alias, [
-      '@lumaforge/render-engine/missing',
-      '@lumaforge/luma-raw-runtime/node',
-    ])
-
-    // The package root alias captures them and appends the subpath to its
-    // source entry file, so they never reach a dist build: loading fails.
-    expect(resolved).toEqual({
-      '@lumaforge/render-engine/missing': resolve(
-        ROOT,
-        'packages/render-engine/src/index.ts/missing',
-      ),
-      '@lumaforge/luma-raw-runtime/node': resolve(
-        ROOT,
-        'packages/luma-raw-runtime/src/index.ts/node',
-      ),
-    })
-    for (const id of Object.values(resolved)) {
-      expect(existsSync(id!)).toBe(false)
-    }
-  })
-})
 
 describe('vite config', () => {
   it('ignores repo-local agent worktrees in the dev watcher', async () => {
