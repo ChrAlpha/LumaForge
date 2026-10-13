@@ -41,7 +41,7 @@ Product surfaces inherit the same brand atoms — green action affordances, ambe
 - **Brand / Landing.** Opaque cool-slate canvas with editorial spacing, real photography, and sparse calibrated accents.
 - **Workspace Chrome (`/raw`).** Photo-first dark on-photo chrome described in §6. Photographic-judgement environment, slate-and-glass, the photo owns the surface.
 
-Both registers share the hue-255 neutral family, `lf-green`, `lf-amber`, `lf-rose`, Geist Sans, the same rounded scale, and the same component grammar (Compare Panel, Contract Rail). They diverge in material and density: the landing is opaque and spacious; `/raw` uses translucent photo-owned chrome and tighter task surfaces.
+Both registers share the hue-255 neutral family, `lf-green`, `lf-amber`, `lf-rose`, Geist Sans, the same rounded scale, and the same component grammar (Compare Panel, Contract Rail). They diverge in material and density: the landing is opaque and spacious; `/raw` frames the photo with solid slate plates, keeps glass for the controls on the photo, and uses tighter task surfaces.
 
 **Key Characteristics:**
 
@@ -200,7 +200,7 @@ Do not describe the default path as display sRGB followed by a LUT.
 
 The `/raw` workspace runs in a **photo-first dark on-photo chrome**.
 The photograph is the substrate; the topbar, tool rail, and export footer frame it as solid slate plates, and only the controls that sit on the photo are glass.
-This is the canonical environment for evaluating RAW color, and it is also the language mobile `/raw` has used from day one — desktop now matches.
+This is the canonical environment for evaluating RAW color, on desktop and mobile alike.
 
 This register applies **only inside `/raw`**.
 The landing uses its own opaque cool-slate register; shared non-workspace
@@ -209,7 +209,7 @@ surfaces may still follow Pastel `data-theme`.
 ### Why the split
 
 The landing and `/raw` share neutral hue and accent intent, but `/raw` is the
-photographic evaluation environment. Its translucent chrome lets the photograph
+photographic evaluation environment. Its photo-first chrome lets the photograph
 own the stage without turning the landing into a grading cockpit. The workspace
 keeps the brand accents while using denser, photo-aware material.
 
@@ -241,11 +241,11 @@ The ladder, lowest to brightest:
 - **14% (lift-highlight)** — segmented thumb top highlight, compare handle inset highlight.
 
 Do not pull structural lifts from `--color-lf-on-photo-ink` (warm).
-That hue was used briefly in early drafts and left a single warm wash inside an otherwise cool-keyed chrome; aligning to the ladder restores material continuity.
+A warm wash inside the cool-keyed chrome breaks its material continuity.
 
 ### Topbar
 
-- 52px min-height, translucent slate plate, `backdrop-filter: blur(14px) saturate(120%)`.
+- 52px min-height, a solid slate plate with no `backdrop-filter` (see "Topbar and Tool Rail Are Plates").
 - Brand block on the left (24px icon with 1px inset ring, title at 0.875rem semibold tracking-tight, subtitle at 0.685rem at 52% opacity).
 - Action cluster on the right is **ghost-style**: rest is `bg-transparent`, hover is the **lift-medium wash** (`oklch(0.96 0.006 255 / 0.06)`), focus is 2px `lf-green/80` outline with -1px offset.
   Hover wash must come from the ladder above, not from `bg-on-photo-bg` — on the topbar's near-floor substrate that token resolves to ~L=0.11 over L=0.09 and the hover becomes invisible.
@@ -276,12 +276,12 @@ Their paint is centralized in `src/modules/raw-processor/components/shared/segme
 
 Paint contract (cross-platform):
 
-- **Track**: borderless **lift-soft wash** (`bg-[oklch(0.96_0.006_255/0.05)]`). No drawn hairline. The fill itself lifts the track above the chrome surface; on the flatter mobile LUT sheet that was previously the dominant edge of the control, while on the structured desktop tool card it became a third hairline competing with the existing seams.
+- **Track**: borderless **lift-soft wash** (`bg-[oklch(0.96_0.006_255/0.05)]`). No drawn hairline. The fill itself lifts the track above the chrome surface; a drawn hairline would dominate the control on the flat mobile LUT sheet and compete with the existing seams on the structured desktop tool card.
 - **Inactive item**: `text-lf-on-photo-ink/72` at rest, `text-lf-on-photo-ink/92` on pointer hover — the segment under the pointer previews a lift before commit.
 - **Active item**: `text-lf-on-photo-ink` (full) + **`font-semibold`** weight contrast.
   Weight is the readability anchor when the bg delta is subtle.
 - **Active thumb**: **lift-strong wash** (`oklch(0.96 0.006 255 / 0.10)`) + 1px **lift-highlight** top inset.
-  No outline ring, no drop shadow, no glass border — earlier drafts stacked all three and the segment read as crystalline rather than as one of the chrome's surfaces.
+  No outline ring, no drop shadow, no glass border: stacked together they make the segment read as crystalline rather than as one of the chrome's surfaces.
 - **Focus ring**: 2px `lf-green/80` outline with -1px offset, matching topbar and tool card focus.
 - **Sizes diverge by interaction only**: 44px min-height for touch, 28px for desktop LUT contract tabs (tab density).
   Paint stays one across all sizes.
@@ -450,11 +450,10 @@ Measured on the empty `/raw` at 1440x900 in Chromium with software GPU, over sev
 
 ### Cross-platform parity
 
-Mobile `/raw` has used this language since the first mobile design.
-This section documents desktop catching up — both viewports now share one set of tokens (`lf-on-photo-*`, `lf-on-photo-ink`, the stage palette), one set of idioms (solid plates around the photo and glass on it, photo-owned stage, ghost actions, lf-green accent), and one mental model.
-Avoid letting them diverge again.
+Desktop and mobile `/raw` share one set of tokens (`lf-on-photo-*`, `lf-on-photo-ink`, the stage palette), one set of idioms (solid plates around the photo and glass on it, photo-owned stage, ghost actions, lf-green accent), and one mental model.
+Do not let them diverge.
 
-Parity now extends to interaction, not just paint: one Adjust row component
+Parity extends to interaction, not just paint: one Adjust row component
 (`DesktopAdjustRow`) and one mobile row (`AdjustSliderRow`) run the same
 `useSliderScrub` model, the per-field reset uses one i18n key, the compare
 drag state is one rule, and a press feels the same on both surfaces. When a
