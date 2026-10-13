@@ -12,6 +12,9 @@ import { inflateRawSync } from 'node:zlib'
 import { chromium } from '@playwright/test'
 import { createServer } from 'vite'
 
+import { resolveAppAliases } from '../build/app-aliases.mjs'
+import { SOFTWARE_WEBGPU_CHROMIUM_ARGS } from './software-webgpu.mjs'
+
 const { values } = parseArgs({
   options: {
     output: { type: 'string' },
@@ -109,29 +112,7 @@ try {
     root,
     logLevel: 'silent',
     resolve: {
-      alias: [
-        {
-          find: '@lumaforge/luma-color-runtime/wgsl',
-          replacement: resolve(root, 'packages/luma-color-runtime/src/wgsl.ts'),
-        },
-        {
-          find: '@lumaforge/luma-color-runtime',
-          replacement: resolve(
-            root,
-            'packages/luma-color-runtime/src/index.ts',
-          ),
-        },
-        // The WebGPU preview resolves its color plan through the shared
-        // preview policy; validate the source, never a stale package build.
-        {
-          find: '@lumaforge/render-engine/preview',
-          replacement: resolve(
-            root,
-            'packages/render-engine/src/preview/index.ts',
-          ),
-        },
-        { find: '~/', replacement: `${root}/src/` },
-      ],
+      alias: resolveAppAliases(root),
     },
     optimizeDeps: { noDiscovery: true, include: [] },
     server: {
@@ -156,16 +137,7 @@ try {
   await server.listen()
   browser = await chromium.launch({
     headless: true,
-    args: values.hardware
-      ? []
-      : [
-          '--enable-unsafe-webgpu',
-          '--use-angle=swiftshader',
-          '--enable-unsafe-swiftshader',
-          '--enable-features=Vulkan',
-          '--use-vulkan=swiftshader',
-          '--disable-vulkan-surface',
-        ],
+    args: values.hardware ? [] : [...SOFTWARE_WEBGPU_CHROMIUM_ARGS],
   })
   report.browser = browser.version()
   report.presentationMechanism = 'Playwright canvas compositor screenshot'
