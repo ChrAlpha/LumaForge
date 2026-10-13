@@ -36,7 +36,7 @@
     "build:native": "bash native/build-libjpeg-turbo.sh",
     "native:fetch": "node native/scripts/fetch-sources.mjs",
     "native:verify": "node native/scripts/verify-native-artifacts.mjs",
-    "test": "vitest run src worker native --exclude src/native-smoke.test.ts",
+    "test": "vitest run src worker --exclude src/native-smoke.test.ts",
     "test:native-smoke": "vitest run src/native-smoke.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

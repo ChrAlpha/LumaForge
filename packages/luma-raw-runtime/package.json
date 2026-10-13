@@ -33,7 +33,6 @@
     "native/build-libraw.sh",
     "native/emcc-flags.sh",
     "native/libraw_wrapper.cpp",
-    "native/patches/README.md",
     "native/scripts",
     "native/sources.lock.json"
   ],

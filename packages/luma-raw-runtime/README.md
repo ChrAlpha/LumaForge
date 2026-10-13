@@ -48,7 +48,8 @@ Those components are not relicensed by LumaForge:
 - Little CMS is distributed under the MIT license.
 
 Keep `THIRD_PARTY_NOTICES.md` and `THIRD_PARTY_LICENSES/` with any redistributed package or native artifact bundle.
-If upstream native sources are modified, record the patch under `native/patches/`, keep the original notices intact, and update `THIRD_PARTY_NOTICES.md`.
+The native artifacts are built from the unmodified archives that `native/sources.lock.json` pins.
+A change to an upstream source must ship as a patch that `native/scripts/build-deps.sh` applies, keep the original notices intact, and be recorded in `THIRD_PARTY_NOTICES.md`.
 
 Before external redistribution, verify the exact distribution form with legal review.
 This package documentation is a compliance inventory, not legal advice.

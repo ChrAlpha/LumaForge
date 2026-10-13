@@ -3,10 +3,25 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { downloadToFile, isRetryableStatus } from './download.mjs'
+
+// Each runtime package publishes its own native/scripts for the LGPL
+// rebuild, so the JPEG runtime keeps a copy of this script; this suite tests
+// both by holding the copy to the same bytes.
+it('keeps the JPEG runtime copy of download.mjs byte-identical', async () => {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const jpegCopy = path.resolve(
+    here,
+    '../../../luma-jpeg-runtime/native/scripts/download.mjs',
+  )
+  expect(await readFile(jpegCopy, 'utf8')).toBe(
+    await readFile(path.join(here, 'download.mjs'), 'utf8'),
+  )
+})
 
 let server
 let base
