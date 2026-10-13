@@ -37,7 +37,7 @@ describe('shader specialization features', () => {
       },
       null,
     )
-    // The view mode rides along with the intent; it never reaches the key.
+    // The output rides along with the intent; it never reaches the key.
     const withView: GpuPreviewParams = {
       ...DEFAULT_PARAMS,
       styleKind: 'builtin',
@@ -46,7 +46,7 @@ describe('shader specialization features', () => {
       userContrast: 50,
       userSaturation: -90,
       intensity: 0.2,
-      viewMode: 'original',
+      output: 'technical-original',
     }
     const b = getShaderSpecialization(withView, lut())
     expect(getShaderSpecializationKey(a)).toBe(getShaderSpecializationKey(b))

@@ -140,7 +140,11 @@ export function scenarios(transferIds = []) {
     },
     {
       name: 'original',
-      params: { viewMode: 'original', userExposureEv: 1, userContrast: 40 },
+      params: {
+        output: 'technical-original',
+        userExposureEv: 1,
+        userContrast: 40,
+      },
     },
   )
   for (const [role, transfer, legal] of [

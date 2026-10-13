@@ -1,13 +1,7 @@
 import type { CpuPreviewVariant } from '@lumaforge/render-engine/preview'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
-import type { GpuPreviewOutput } from '~/lib/webgpu/contract'
-
-import type {
-  PreviewSurfaceOutput,
-  PreviewView,
-  PreviewViewMode,
-} from './preview-view'
+import type { PreviewView, PreviewViewMode } from './preview-view'
 import {
   cpuPreviewVariantForViewMode,
   DEFAULT_PREVIEW_VIEW,
@@ -44,10 +38,6 @@ describe('preview view', () => {
       ['original', 'technical-original'],
       ['compare', 'processed'],
     ])
-  })
-
-  it('selects an output the GPU executor accepts', () => {
-    expectTypeOf<PreviewSurfaceOutput>().toEqualTypeOf<GpuPreviewOutput>()
   })
 
   it('maps original to the neutral CPU frame and everything else to processed', () => {

@@ -8,14 +8,12 @@ import {
   CHROMA_CLAMP_HIGH,
   CHROMA_CLAMP_LOW,
   NEUTRAL_SELECTIVE_COLOR,
-  pickColorGraphIntent,
   resolveColorBalanceParams,
   resolveToneParams,
 } from '@lumaforge/luma-color-runtime'
 
-import type { PreviewViewMode } from '~/lib/preview/preview-view'
+import type { PreviewSurfaceOutput } from '~/lib/preview/preview-view'
 
-import type { GpuPreviewInput } from './contract'
 import { resolveGpuPreviewLook } from './lut-profile'
 import {
   writeUniformF32,
@@ -27,17 +25,17 @@ import {
 
 /**
  * What the uniform packer reads: the complete color intent, HSL included,
- * plus the app view mode that selects the shader output. The view mode is the
- * app's own view contract, never a field read off legacy processing params.
- * The compare split is frame-anchored view state and never reaches the GPU.
+ * plus the output the surface draws. Selecting the technical original never
+ * rewrites the color intent, and the frame-anchored compare split never
+ * reaches the GPU.
  */
 export type GpuPreviewParams = ColorGraphIntent & {
-  readonly viewMode: PreviewViewMode
+  readonly output: PreviewSurfaceOutput
 }
 
 export const DEFAULT_PARAMS: GpuPreviewParams = {
   intensity: 0.7,
-  viewMode: 'processed',
+  output: 'processed',
   styleKind: 'none',
   builtinPreset: null,
   userExposureEv: 0,
@@ -53,56 +51,12 @@ export const DEFAULT_PARAMS: GpuPreviewParams = {
   selectiveColor: NEUTRAL_SELECTIVE_COLOR,
 }
 
-export const DEFAULT_GPU_PREVIEW_INPUT: GpuPreviewInput = Object.freeze({
-  color: Object.freeze(pickColorGraphIntent(DEFAULT_PARAMS)),
-  output: 'processed',
-})
-
-const OUTPUT_VIEW_MODES: Record<
-  GpuPreviewInput['output'],
-  Exclude<PreviewViewMode, 'compare'>
-> = {
-  processed: 'processed',
-  'technical-original': 'original',
-}
-
-/**
- * The uniform-level params for a preview input. The output selects the shader
- * branch; the color intent passes through unchanged.
- */
-export function gpuPreviewInputParams(
-  input: GpuPreviewInput,
-): GpuPreviewParams {
-  return {
-    ...input.color,
-    viewMode: OUTPUT_VIEW_MODES[input.output],
-  }
-}
-
-export function packGpuPreviewUniforms(
-  v: DataView,
-  input: GpuPreviewInput,
-  lut: LUTData | null,
-  rawRenderExposureMultiplier: number,
-  selectiveColorActive: boolean,
-): void {
-  packUniforms(
-    v,
-    gpuPreviewInputParams(input),
-    lut,
-    rawRenderExposureMultiplier,
-    selectiveColorActive,
-  )
-}
-
-// The shader renders one output per draw. Compare is composed from
-// frame-anchored layers above the canvas, so a compare view mode packs as the
-// processed output and the compare split never reaches the GPU. Original
-// selects the technical base (VIEW_MODE_ORIGINAL in the shader).
-const VIEW_MODE_UNIFORMS: Record<PreviewViewMode, 0 | 1> = {
+// The shader renders one output per draw; compare is composed from
+// frame-anchored layers above the canvas. The technical original selects the
+// technical base (VIEW_MODE_ORIGINAL in the shader).
+const OUTPUT_UNIFORMS: Record<PreviewSurfaceOutput, 0 | 1> = {
   processed: 0,
-  original: 1,
-  compare: 0,
+  'technical-original': 1,
 }
 
 const STYLE_KIND_UNIFORMS: Record<LookStyleKind, number> = {
@@ -192,7 +146,7 @@ export function packUniforms(
     CHROMA_CLAMP_LOW,
     CHROMA_CLAMP_HIGH,
   )
-  writeUniformI32(v, 'viewMode', VIEW_MODE_UNIFORMS[p.viewMode])
+  writeUniformI32(v, 'viewMode', OUTPUT_UNIFORMS[p.output])
   writeUniformI32(v, 'styleKind', STYLE_KIND_UNIFORMS[drawn.look.styleKind])
   writeUniformI32(
     v,

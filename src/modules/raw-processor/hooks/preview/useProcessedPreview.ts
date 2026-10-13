@@ -21,7 +21,6 @@ import type {
   PipelineStats,
   RawProcessingPipeline,
 } from '~/lib/webgpu/raw-processing-pipeline'
-import { gpuPreviewInputParams } from '~/lib/webgpu/uniforms'
 
 import type { DisplaySource } from '../../model/session'
 import type { CompareRenderMode } from '../../services/compare/compare-render-mode'
@@ -275,11 +274,7 @@ export function useProcessedPreview<
   const stableColor = useStableColorIntent(color)
   const processedSurfaceOutput = previewSurfaceOutputForViewMode(viewMode)
   const processedCanvasParams = useMemo(
-    () =>
-      gpuPreviewInputParams({
-        color: stableColor,
-        output: processedSurfaceOutput,
-      }),
+    () => ({ ...stableColor, output: processedSurfaceOutput }),
     [processedSurfaceOutput, stableColor],
   )
 

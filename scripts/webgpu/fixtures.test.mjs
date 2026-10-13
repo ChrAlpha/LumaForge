@@ -39,7 +39,6 @@ describe('webGPU validation scenarios', () => {
   it('renders no scenario through a shader compare', () => {
     for (const scenario of scenarios(Object.keys(TRANSFER_FUNCTIONS))) {
       expect(scenario.name).not.toMatch(/^compare-/)
-      expect(scenario.params.viewMode ?? 'processed').not.toBe('compare')
       expect(scenario.params).not.toHaveProperty('compareSplit')
     }
   })

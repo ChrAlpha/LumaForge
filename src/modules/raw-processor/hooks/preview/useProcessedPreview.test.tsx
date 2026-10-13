@@ -294,13 +294,13 @@ describe('useProcessedPreview', () => {
 
     await act(async () => view.update({ viewMode: 'original' }))
     expect(pipeline.setParams).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ viewMode: 'original' }),
+      expect.objectContaining({ output: 'technical-original' }),
     )
     expect(pipeline.render).toHaveBeenCalledOnce()
 
     await act(async () => view.update({ viewMode: 'compare' }))
     expect(pipeline.setParams).toHaveBeenLastCalledWith(
-      expect.objectContaining({ viewMode: 'processed' }),
+      expect.objectContaining({ output: 'processed' }),
     )
     expect(pipeline.render).toHaveBeenCalledTimes(2)
     // The image on the GPU and its first-frame proof survive view changes.

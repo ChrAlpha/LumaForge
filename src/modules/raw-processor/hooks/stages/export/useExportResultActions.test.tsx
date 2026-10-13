@@ -223,7 +223,7 @@ function setup({
     rendering: Pick<PreviewPipeline, 'renderToHiddenCanvas'>,
   ): PreviewPipeline => ({
     renderToHiddenCanvas: rendering.renderToHiddenCanvas,
-    getParams: () => ({ ...held.intent, viewMode: 'processed' as const }),
+    getParams: () => ({ ...held.intent, output: 'processed' as const }),
     getLutData: () => held.lut,
   })
   const refs = {

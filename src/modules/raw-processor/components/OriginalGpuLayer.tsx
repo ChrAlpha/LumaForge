@@ -4,7 +4,6 @@ import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 import { RawProcessingPipeline as DefaultRawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
-import { gpuPreviewInputParams } from '~/lib/webgpu/uniforms'
 
 import {
   backingStoreSize,
@@ -26,10 +25,6 @@ type OriginalPipeline = Pick<
   | 'dispose'
 > &
   Partial<Pick<RawProcessingPipeline, 'onDisposed' | 'getResourceStats'>>
-
-const ORIGINAL_LAYER_PARAMS = gpuPreviewInputParams(
-  TECHNICAL_ORIGINAL_GPU_INPUT,
-)
 
 function createDefaultOriginalPipeline(canvas: HTMLCanvasElement) {
   // A failed original layer demotes compare to the JPEG fallback; it must not
@@ -180,7 +175,7 @@ export function OriginalGpuLayer({
     const renderOriginal = async () => {
       try {
         pipeline.uploadImage(uploadInput)
-        pipeline.setParams(ORIGINAL_LAYER_PARAMS)
+        pipeline.setParams(TECHNICAL_ORIGINAL_GPU_INPUT)
         pipeline.render()
         await pipeline.waitForGpu()
         if (isCurrent()) onReadyRef.current?.(generationKey)

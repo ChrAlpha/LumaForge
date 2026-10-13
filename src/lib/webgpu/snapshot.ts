@@ -6,7 +6,8 @@ import type { RawUploadInput } from './contract'
 import { WebGPUImages } from './images'
 import type { WebGPUPrograms } from './programs'
 import { UNIFORM_BUFFER_SIZE } from './uniform-layout'
-import { gpuPreviewInputParams, packUniforms } from './uniforms'
+import type { GpuPreviewParams } from './uniforms'
+import { packUniforms } from './uniforms'
 
 export type SnapshotPlan =
   | { strategy: 'full-frame'; width: number; height: number }
@@ -195,10 +196,10 @@ export async function renderSnapshot(
   // GPU-backed one would upload each tile and stall on a readback per read.
   const context = canvas.getContext('2d', { willReadFrequently: true })
   if (!context) throw new Error('EXPORT_CANVAS_CONTEXT_MISSING')
-  const params = gpuPreviewInputParams({
-    color: structuredClone(input.color),
+  const params: GpuPreviewParams = {
+    ...structuredClone(input.color),
     output: 'processed',
-  })
+  }
   const uniform = scope.track(
     device.createBuffer({
       label: 'raw-snapshot-uniforms',

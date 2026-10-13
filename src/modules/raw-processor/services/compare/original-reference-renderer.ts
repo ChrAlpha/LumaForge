@@ -1,10 +1,9 @@
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type { GpuPreviewInput } from '~/lib/webgpu/contract'
 import type { RawUploadInput } from '~/lib/webgpu/raw-processing-pipeline'
 import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
-import { gpuPreviewInputParams } from '~/lib/webgpu/uniforms'
+import type { GpuPreviewParams } from '~/lib/webgpu/uniforms'
 
 import type { OriginalReferenceSnapshot } from './original-reference-snapshot'
 
@@ -34,19 +33,13 @@ export type RenderOriginalReferenceSnapshotInput = {
  * exposure, no look and neutral user color. The upload carries the exposure;
  * the input sets every color field so none falls back to a pipeline default.
  */
-export const TECHNICAL_ORIGINAL_GPU_INPUT: GpuPreviewInput = Object.freeze({
-  color: Object.freeze({
-    styleKind: 'none',
-    builtinPreset: null,
-    intensity: 0,
-    ...NEUTRAL_USER_COLOR_INTENT,
-  }),
+export const TECHNICAL_ORIGINAL_GPU_INPUT: GpuPreviewParams = Object.freeze({
+  styleKind: 'none',
+  builtinPreset: null,
+  intensity: 0,
+  ...NEUTRAL_USER_COLOR_INTENT,
   output: 'technical-original',
 })
-
-const ORIGINAL_REFERENCE_PARAMS = gpuPreviewInputParams(
-  TECHNICAL_ORIGINAL_GPU_INPUT,
-)
 
 function fitWithinPixelCap(width: number, height: number, maxPixels: number) {
   const sourcePixels = Math.max(1, width * height)
@@ -177,7 +170,7 @@ export async function renderOriginalReferenceSnapshot({
     await pipeline.initialize()
     throwIfAborted(signal)
     pipeline.uploadImage(createSnapshotUploadInput(image, target))
-    pipeline.setParams(ORIGINAL_REFERENCE_PARAMS)
+    pipeline.setParams(TECHNICAL_ORIGINAL_GPU_INPUT)
     pipeline.render()
     await pipeline.waitForGpu()
     throwIfAborted(signal)

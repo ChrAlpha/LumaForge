@@ -14,10 +14,6 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
-import type { PreviewViewMode } from '~/lib/preview/preview-view'
-import { PREVIEW_VIEW_MODES } from '~/lib/preview/preview-view'
-
-import type { GpuPreviewInput } from './contract'
 import type { WebGPUImages } from './images'
 import { resolveGpuPreviewLook } from './lut-profile'
 import { getShaderSpecialization } from './specialization'
@@ -27,13 +23,7 @@ import {
   writeUniformMat3x3f,
 } from './uniform-layout'
 import type { GpuPreviewParams } from './uniforms'
-import {
-  DEFAULT_GPU_PREVIEW_INPUT,
-  DEFAULT_PARAMS,
-  gpuPreviewInputParams,
-  packGpuPreviewUniforms,
-  packUniforms,
-} from './uniforms'
+import { DEFAULT_PARAMS, packUniforms } from './uniforms'
 
 function packedBytes(pack: (view: DataView) => void): number[] {
   const data = new ArrayBuffer(UNIFORM_BUFFER_SIZE)
@@ -70,7 +60,6 @@ describe('webGPU uniform ABI', () => {
       view,
       {
         ...DEFAULT_PARAMS,
-        viewMode: 'processed',
         styleKind: 'builtin',
         builtinPreset: 'mono',
         userExposureEv: 2,
@@ -128,81 +117,37 @@ describe('webGPU uniform ABI', () => {
     })
     expect(UNIFORM_BUFFER_SIZE).toBe(240)
   })
-
-  it('carries no compare split and packs a legacy compare view as the processed output', () => {
-    expect(UNIFORM_FIELDS).not.toHaveProperty('compareSplit')
-    expectTypeOf<GpuPreviewParams>().not.toHaveProperty('compareSplit')
-    expect(DEFAULT_PARAMS).not.toHaveProperty('compareSplit')
-    const compare = packedBytes((view) =>
-      packUniforms(
-        view,
-        { ...DEFAULT_PARAMS, ...LOOK, viewMode: 'compare' },
-        null,
-        2,
-        false,
-      ),
-    )
-    const processed = packedBytes((view) =>
-      packUniforms(
-        view,
-        { ...DEFAULT_PARAMS, ...LOOK, viewMode: 'processed' },
-        null,
-        2,
-        false,
-      ),
-    )
-    expect(compare).toEqual(processed)
-    const view = new DataView(new Uint8Array(compare).buffer)
-    expect(view.getInt32(UNIFORM_FIELDS.viewMode.offset, true)).toBe(0)
-  })
 })
 
-describe('webGPU view selector', () => {
-  it('reads the view from the explicit app view mode, not from legacy params', () => {
-    expectTypeOf<
-      GpuPreviewParams['viewMode']
-    >().toEqualTypeOf<PreviewViewMode>()
-    expectTypeOf(packUniforms).parameter(1).toEqualTypeOf<GpuPreviewParams>()
-    expectTypeOf(
-      gpuPreviewInputParams,
-    ).returns.toEqualTypeOf<GpuPreviewParams>()
+describe('webGPU output selector', () => {
+  const packedOutput = (output: GpuPreviewParams['output']) =>
+    packedBytes((view) =>
+      packUniforms(
+        view,
+        { ...DEFAULT_PARAMS, ...LOOK, output },
+        null,
+        2,
+        false,
+      ),
+    )
+
+  it('selects the technical original without rewriting the color intent', () => {
+    const offset = UNIFORM_FIELDS.viewMode.offset
+    const selector = (bytes: number[]) =>
+      new DataView(new Uint8Array(bytes).buffer).getInt32(offset, true)
+    const withoutSelector = (bytes: number[]) => [
+      ...bytes.slice(0, offset),
+      ...bytes.slice(offset + 4),
+    ]
+    const processed = packedOutput('processed')
+    const original = packedOutput('technical-original')
+    expect([selector(processed), selector(original)]).toEqual([0, 1])
+    expect(withoutSelector(original)).toEqual(withoutSelector(processed))
   })
 
-  it('packs the original/processed selector from the view field alone', () => {
-    const selectors = PREVIEW_VIEW_MODES.map((viewMode) => {
-      const bytes = packedBytes((view) =>
-        packUniforms(
-          view,
-          { ...DEFAULT_PARAMS, ...LOOK, viewMode },
-          null,
-          2,
-          false,
-        ),
-      )
-      const view = new DataView(new Uint8Array(bytes).buffer)
-      return [viewMode, view.getInt32(UNIFORM_FIELDS.viewMode.offset, true)]
-    })
-    expect(selectors).toEqual([
-      ['processed', 0],
-      ['original', 1],
-      ['compare', 0],
-    ])
-
-    const withoutSelector = (viewMode: PreviewViewMode) => {
-      const bytes = packedBytes((view) =>
-        packUniforms(
-          view,
-          { ...DEFAULT_PARAMS, ...LOOK, viewMode },
-          null,
-          2,
-          false,
-        ),
-      )
-      const offset = UNIFORM_FIELDS.viewMode.offset
-      return [...bytes.slice(0, offset), ...bytes.slice(offset + 4)]
-    }
-    // Only the selector differs; the color the shader draws is the same.
-    expect(withoutSelector('original')).toEqual(withoutSelector('processed'))
+  it('carries no compare split to the GPU', () => {
+    expect(UNIFORM_FIELDS).not.toHaveProperty('compareSplit')
+    expectTypeOf<GpuPreviewParams>().not.toHaveProperty('compareSplit')
   })
 })
 
@@ -223,86 +168,9 @@ describe('webGPU color intent', () => {
       .toEqualTypeOf<ColorGraphIntent['selectiveColor']>()
   })
 
-  it('starts the pipeline on neutral HSL bands', () => {
+  it('starts the pipeline on the processed output and neutral HSL bands', () => {
+    expect(DEFAULT_PARAMS.output).toBe('processed')
     expect(DEFAULT_PARAMS.selectiveColor).toBe(NEUTRAL_SELECTIVE_COLOR)
-  })
-})
-
-describe('webGPU preview input', () => {
-  it('starts the pipeline on the processed output', () => {
-    expect(DEFAULT_PARAMS.viewMode).toBe('processed')
-  })
-
-  it('defaults to the processed output of the app default color', () => {
-    expect(DEFAULT_GPU_PREVIEW_INPUT.output).toBe('processed')
-    expect(DEFAULT_GPU_PREVIEW_INPUT.color).toEqual(
-      pickColorGraphIntent(DEFAULT_PARAMS),
-    )
-    expect(DEFAULT_GPU_PREVIEW_INPUT.color.intensity).toBe(0.7)
-    expect(DEFAULT_GPU_PREVIEW_INPUT.color.selectiveColor).toBe(
-      NEUTRAL_SELECTIVE_COLOR,
-    )
-    expect(Object.isFrozen(DEFAULT_GPU_PREVIEW_INPUT)).toBe(true)
-  })
-
-  it('carries color intent apart from the output selection', () => {
-    expectTypeOf<keyof GpuPreviewInput>().toEqualTypeOf<'color' | 'output'>()
-    expectTypeOf<GpuPreviewInput['color']>().toEqualTypeOf<ColorGraphIntent>()
-    expectTypeOf<GpuPreviewInput['color']>().not.toHaveProperty('viewMode')
-    expectTypeOf<GpuPreviewInput['color']>().not.toHaveProperty('compareSplit')
-  })
-
-  it('packs processed output exactly as the legacy processed params, strength kept continuous', () => {
-    const input: GpuPreviewInput = { color: LOOK, output: 'processed' }
-    expect(gpuPreviewInputParams(input)).toEqual({
-      ...LOOK,
-      viewMode: 'processed',
-    })
-    const packed = packedBytes((view) =>
-      packGpuPreviewUniforms(view, input, null, 2, false),
-    )
-    expect(packed).toEqual(
-      packedBytes((view) =>
-        packUniforms(view, { ...LOOK, viewMode: 'processed' }, null, 2, false),
-      ),
-    )
-    const view = new DataView(new Uint8Array(packed).buffer)
-    expect(view.getInt32(UNIFORM_FIELDS.viewMode.offset, true)).toBe(0)
-    expect(view.getFloat32(UNIFORM_FIELDS.intensity.offset, true)).toBe(
-      Math.fround(0.37),
-    )
-  })
-
-  it('selects the technical original without rewriting the color intent', () => {
-    const input: GpuPreviewInput = { color: LOOK, output: 'technical-original' }
-    const params = gpuPreviewInputParams(input)
-    expect(params).toEqual({
-      ...LOOK,
-      viewMode: 'original',
-    })
-    expect(pickColorGraphIntent(params)).toEqual(LOOK)
-    const packed = packedBytes((view) =>
-      packGpuPreviewUniforms(view, input, null, 2, false),
-    )
-    expect(packed).toEqual(
-      packedBytes((view) =>
-        packUniforms(view, { ...LOOK, viewMode: 'original' }, null, 2, false),
-      ),
-    )
-    const view = new DataView(new Uint8Array(packed).buffer)
-    expect(view.getInt32(UNIFORM_FIELDS.viewMode.offset, true)).toBe(1)
-    expect(view.getInt32(UNIFORM_FIELDS.styleKind.offset, true)).toBe(1)
-    expect(view.getFloat32(UNIFORM_FIELDS.intensity.offset, true)).toBe(
-      Math.fround(0.37),
-    )
-  })
-
-  it('never selects the shader compare from a preview input', () => {
-    for (const output of ['processed', 'technical-original'] as const) {
-      expect(gpuPreviewInputParams({ color: LOOK, output }).viewMode).not.toBe(
-        'compare',
-      )
-    }
   })
 })
 
@@ -434,10 +302,7 @@ describe('webGPU preview of a look export refuses', () => {
   })
 
   it('draws the selected built-in preset, which only WebGPU implements', () => {
-    const params = {
-      ...LOOK,
-      viewMode: 'processed',
-    } as const
+    const params = { ...LOOK, output: 'processed' } as const
     const view = new DataView(new Uint8Array(packed(params, null)).buffer)
     const i = (name: string) => view.getInt32(UNIFORM_FIELDS[name].offset, true)
     expect([i('styleKind'), i('builtinPreset')]).toEqual([1, 3])

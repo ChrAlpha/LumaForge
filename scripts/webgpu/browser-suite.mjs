@@ -123,7 +123,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
       fixture,
       params,
       lut,
-      params.viewMode === 'original' ? 'technical-base' : 'edited',
+      params.output === 'technical-original' ? 'technical-base' : 'edited',
     )
 
   let canvasSequence = 0
@@ -157,7 +157,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
   const gpu = surface.pipeline
   const neutral = {
     ...gpu.getParams(),
-    viewMode: 'processed',
+    output: 'processed',
     styleKind: 'none',
     intensity: 1,
     selectiveColor: undefined,
@@ -248,7 +248,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
       userExposureEv: 0.35,
       userTemperature: 30,
       userSaturation: 20,
-      viewMode: 'original',
+      output: 'technical-original',
     }
     try {
       const params = reset(fixture, snapshotParams)
@@ -261,7 +261,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
       check(
         'u16/snapshot-full',
         full,
-        referenceFrame(fixture, { ...params, viewMode: 'processed' }),
+        referenceFrame(fixture, { ...params, output: 'processed' }),
         REFERENCE,
         { plan: gpu.getLastSnapshotPlan() },
       )

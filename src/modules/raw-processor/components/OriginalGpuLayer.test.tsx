@@ -169,7 +169,7 @@ describe('originalGpuLayer', () => {
     await waitFor(() => expect(renderPipeline).toHaveBeenCalled())
     expect(setParams).toHaveBeenCalledWith(
       expect.objectContaining({
-        viewMode: 'original',
+        output: 'technical-original',
         styleKind: 'none',
         intensity: 0,
       }),
@@ -218,7 +218,7 @@ describe('originalGpuLayer', () => {
     )
     // Every user field is set neutral; none is left to the pipeline default.
     expect(setParams).toHaveBeenCalledExactlyOnceWith({
-      viewMode: 'original',
+      output: 'technical-original',
       styleKind: 'none',
       builtinPreset: null,
       intensity: 0,

@@ -132,7 +132,7 @@ describe('renderOriginalReferenceSnapshot', () => {
     expect(uploadImage.mock.calls[0]?.[0].data).toHaveLength(1264 * 790 * 3)
     expect(setParams).toHaveBeenCalledWith(
       expect.objectContaining({
-        viewMode: 'original',
+        output: 'technical-original',
         styleKind: 'none',
         intensity: 0,
       }),
@@ -309,7 +309,7 @@ describe('renderOriginalReferenceSnapshot', () => {
     )
     // Every user field is set neutral; none is left to the pipeline default.
     expect(setParams).toHaveBeenCalledExactlyOnceWith({
-      viewMode: 'original',
+      output: 'technical-original',
       styleKind: 'none',
       builtinPreset: null,
       intensity: 0,

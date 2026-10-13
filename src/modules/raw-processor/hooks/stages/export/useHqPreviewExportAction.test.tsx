@@ -292,7 +292,7 @@ function createPipeline(
     held,
     pipeline: {
       renderToHiddenCanvas,
-      getParams: () => ({ ...held.params, viewMode: 'processed' as const }),
+      getParams: () => ({ ...held.params, output: 'processed' as const }),
       getLutData: () => held.lut,
     },
   }

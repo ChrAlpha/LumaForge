@@ -445,7 +445,7 @@ describe('preview canvas upload descriptor', () => {
       }),
     )
     expect(pipeline.setParams).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ intensity: 0.37, viewMode: 'processed' }),
+      expect.objectContaining({ intensity: 0.37, output: 'processed' }),
     )
     expect(pipeline.render).toHaveBeenCalledOnce()
   })
@@ -852,14 +852,9 @@ describe('preview canvas upload descriptor', () => {
     )
     await waitFor(() => {
       expect(getPipelineParamCalls()).toContainEqual(
-        expect.objectContaining({
-          viewMode: 'processed',
-        }),
+        expect.objectContaining({ output: 'processed' }),
       )
     })
-    expect(getPipelineParamCalls()).not.toContainEqual(
-      expect.objectContaining({ viewMode: 'compare' }),
-    )
   })
 
   it('keeps the embedded preview clipped on the left while original GPU warms', async () => {
@@ -946,14 +941,9 @@ describe('preview canvas upload descriptor', () => {
     )
     await waitFor(() => {
       expect(getPipelineParamCalls()).toContainEqual(
-        expect.objectContaining({
-          viewMode: 'processed',
-        }),
+        expect.objectContaining({ output: 'processed' }),
       )
     })
-    expect(getPipelineParamCalls()).not.toContainEqual(
-      expect.objectContaining({ viewMode: 'compare' }),
-    )
   })
 
   it('exposes structured processed-only compare fallback reasons', async () => {

@@ -35,7 +35,7 @@ function createPipeline(
   return {
     getParams: () => ({
       ...(held.params ?? LOOK),
-      viewMode: 'processed' as const,
+      output: 'processed' as const,
     }),
     getLutData: () => (held.lut === undefined ? LUT : held.lut),
   }
