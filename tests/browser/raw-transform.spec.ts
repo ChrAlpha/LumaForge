@@ -1,134 +1,74 @@
 import { Buffer } from 'node:buffer'
+import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, stat } from 'node:fs/promises'
+import { basename, join } from 'node:path'
+import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 
-import type { Page } from '@playwright/test'
+import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+import type { ExportManifest } from './support/files'
+import { downloadJpeg, downloadManifest, sha256 } from './support/files'
 import {
+  dngFile,
+  gateRawFixture,
+  PUBLIC_DNG,
+  PUBLIC_DNG_SIZE,
+} from './support/fixtures'
+import { settledCpuFrame } from './support/frames'
+import {
+  chooseRaw,
+  chooseReplacement,
+  downloadButton,
   expectWebGPUPreview,
-  NO_WEBGPU_SKIP_REASON,
-  projectHasWebGPU,
-  rawPreviewUrl,
-} from './raw-preview-backend'
+  exportFullResolution,
+  exportSurface,
+  fullExportButton,
+  hqExportButton,
+  isChromium,
+  isMobile,
+  loadedLab,
+  loadRaw,
+  moveAwayFromToasts,
+  openLab,
+  openTool,
+  previewFrame,
+  restoreButton,
+  rotateSlider,
+  selectTransformSection,
+  transformMatrix,
+  transformOverlay,
+  transformTool,
+  waitForLoaded,
+  waitForTransform,
+} from './support/lab'
+import { readTrace, release, setTrace } from './support/trace'
 
-const rawPath = fileURLToPath(
-  new URL(
-    '../../packages/luma-raw-runtime/fixtures/.cache/public/raw-pixls-iphone-se.dng',
-    import.meta.url,
-  ),
-)
-const rawName = 'raw-pixls-iphone-se.dng'
+// Transform on both preview executors: the overlay the Transform worker
+// draws from the processed preview, the exports it allows or refuses, Upright
+// and the manual controls, and the full-resolution export that reproduces the
+// committed geometry, which lmfg replays from the browser's manifest. The
+// Chromium project runs the GPU preview and forces the CPU one; the WebKit
+// project (no WebGPU adapter) runs the CPU preview at a phone viewport.
+
+const rawName = basename(PUBLIC_DNG.path!)
 const replacementName = 'replacement-iphone-se.dng'
+const NO_WEBGPU_SKIP_REASON =
+  'Needs the GPU preview; this browser build has no WebGPU adapter and runs the CPU preview'
+/** What the export surface says while Transform waits on its worker. */
+const TRANSFORM_PENDING_COPY = 'Preparing the current photo…'
+
 const hqExportReason =
   'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.'
 const IDENTITY_MATRIX = '1,0,0,0,1,0,0,0,1'
 const refusedTransformReason =
   'This transform leaves too little usable image. Reduce the adjustment or reset.'
 
-function isMobile(page: Page) {
-  return (page.viewportSize()?.width ?? 1280) <= 640
-}
-
-function transformTool(page: Page) {
-  return page.locator('[data-raw-transform-tool]')
-}
-
 function transformCanvas(page: Page) {
   return page.locator('[data-raw-transform-preview] canvas')
-}
-
-async function openTool(page: Page, name: 'Transform' | 'Adjust' | 'Export') {
-  if (isMobile(page)) {
-    // Export is not a tool on mobile: the topbar action opens its panel in
-    // the deck, and a tool tab hands the deck back.
-    if (name === 'Export') {
-      const panel = page.locator('[data-mobile-export-panel]')
-      if (!(await panel.isVisible())) {
-        await page.locator('[data-mobile-export-action]').click()
-      }
-      await expect(panel).toBeVisible()
-      return
-    }
-    const tab = page.getByRole('tab', { name, exact: true })
-    if ((await tab.getAttribute('aria-selected')) !== 'true') {
-      await tab.click()
-    }
-    return
-  }
-  const transform = page.locator('[data-tool-card-trigger="transform"]')
-  if (
-    name !== 'Transform' &&
-    (await transform.getAttribute('aria-expanded')) === 'true'
-  ) {
-    await transform.click()
-    await expect(transformTool(page)).not.toBeVisible()
-  }
-  if (name === 'Export') return
-  const trigger = page.locator(
-    `[data-tool-card-trigger="${name.toLowerCase()}"]`,
-  )
-  if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
-    await trigger.click()
-  }
-}
-
-async function waitForRaw(page: Page, name: string) {
-  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible({
-    timeout: 120_000,
-  })
-  await expect(
-    page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
-  ).toBeVisible()
-  // Ingest emits this success only after bounded HQ, including CPU mode.
-  await expect(page.getByText(`Loaded ${name}`, { exact: true })).toBeVisible({
-    timeout: 120_000,
-  })
-  await expect(page.locator('.raw-progress-overlay')).toHaveCount(0, {
-    timeout: 120_000,
-  })
-}
-
-async function loadRaw(page: Page) {
-  const choosing = page.waitForEvent('filechooser')
-  if (isMobile(page)) {
-    await page.getByRole('button', { name: /browse raw files/i }).click()
-  } else {
-    await page
-      .getByRole('button', { name: /finish a raw with a lut/i })
-      .click({ position: { x: 24, y: 24 } })
-  }
-  await (await choosing).setFiles(rawPath)
-  await waitForRaw(page, rawName)
-}
-
-async function waitForTransform(page: Page) {
-  const tool = transformTool(page)
-  await expect(tool).toBeVisible()
-  await expect(
-    tool.locator('[data-testid="mode-auto"], [role="slider"]').first(),
-  ).toBeEnabled({ timeout: 30_000 })
-  const overlay = page.locator('[data-raw-transform-preview]')
-  if (await overlay.count()) {
-    await expect(overlay).toHaveAttribute('aria-busy', 'false', {
-      timeout: 30_000,
-    })
-  }
-  await expect(tool.getByRole('alert')).toHaveCount(0)
-}
-
-async function selectTransformSection(
-  page: Page,
-  name: 'Upright' | 'Perspective' | 'Frame',
-) {
-  if (!isMobile(page)) return
-  await transformTool(page).getByRole('tab', { name, exact: true }).click()
-  await expect(
-    transformTool(page).locator(
-      `[data-transform-list-section="${name.toLowerCase()}"]`,
-    ),
-  ).toBeVisible()
 }
 
 async function showGrid(page: Page) {
@@ -331,13 +271,6 @@ async function expectStandardExports(
   }
 }
 
-/** Where the export actions and their reasons live on each surface. */
-function exportSurface(page: Page) {
-  return isMobile(page)
-    ? page.locator('[data-mobile-export-panel]')
-    : page.locator('[data-raw-export-block="persistent"]')
-}
-
 /** Moves a Transform slider to one end of its range with the keyboard. */
 async function setTransformSliderEdge(
   page: Page,
@@ -389,12 +322,6 @@ async function expectTransformExportBlocked(page: Page) {
   await expect(
     exportSurface(page).getByText(refusedTransformReason, { exact: true }),
   ).toBeVisible()
-}
-
-function transformMatrix(page: Page) {
-  return page
-    .locator('[data-raw-transform-preview]')
-    .getAttribute('data-transform-matrix')
 }
 
 async function resetUpright(page: Page) {
@@ -470,27 +397,9 @@ async function expectNarrowTransformLayout(page: Page) {
   expect(photo.height).toBeGreaterThanOrEqual(200)
 }
 
-async function chooseReplacement(
-  page: Page,
-  file: { name: string; mimeType: string; buffer: Buffer },
-) {
-  const choosing = page.waitForEvent('filechooser')
-  if (isMobile(page)) {
-    await page.getByRole('button', { name: 'More actions' }).click()
-    await page.getByRole('menuitem', { name: 'Replace RAW' }).click()
-  } else {
-    await page.locator('[data-raw-header-action="replace"]').click()
-  }
-  await (await choosing).setFiles(file)
-}
-
-async function replaceRaw(page: Page) {
-  await chooseReplacement(page, {
-    name: replacementName,
-    mimeType: 'image/x-adobe-dng',
-    buffer: await readFile(rawPath),
-  })
-  await waitForRaw(page, replacementName)
+async function replaceRaw(page: Page, testInfo: TestInfo) {
+  await chooseReplacement(page, await dngFile(testInfo, replacementName))
+  await waitForLoaded(page, replacementName)
 }
 
 async function resetSession(page: Page) {
@@ -517,30 +426,20 @@ for (const preview of ['gpu', 'cpu'] as const) {
   test(`${preview}: RAW Transform preserves geometry across tabs and tone edits, guards exports, and clears with the RAW session`, async ({
     page,
   }, testInfo) => {
-    test.skip(
-      preview === 'gpu' && !projectHasWebGPU(testInfo),
-      NO_WEBGPU_SKIP_REASON,
-    )
+    test.skip(preview === 'gpu' && !isChromium(testInfo), NO_WEBGPU_SKIP_REASON)
     testInfo.setTimeout(360_000)
-    expect(
-      existsSync(rawPath),
-      'Required public DNG is missing. Run pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public before browser validation.',
-    ).toBe(true)
-    await page.addInitScript(() => {
-      localStorage.setItem('lumaforge.locale', 'en')
+    const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
+    await openLab(page, testInfo, {
+      path: preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
     })
-    await page.goto(
-      rawPreviewUrl(
-        testInfo,
-        preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
-      ),
-    )
     if (preview === 'cpu') await expectCpuNoticeBelowHeader(page)
-    await loadRaw(page)
+    await loadRaw(page, rawPath)
     if (preview === 'cpu') {
       await expectCpuNoticeBelowHeader(page)
       await expectMobileCpuLensToggle(page)
-      await expect(page.getByText(/GPU preview unavailable/)).toBeVisible()
+      await expect(page.locator('[data-cpu-preview-banner]')).toContainText(
+        'GPU preview unavailable',
+      )
       await expect(page.getByTestId('cpu-preview-unavailable')).toHaveCount(0)
       await expect(page.locator('.raw-preview-canvas')).toHaveCount(0)
     } else {
@@ -679,7 +578,7 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await openTool(page, 'Adjust')
     await page.getByRole('button', { name: /reset exposure/i }).click()
     await expect(exposure).toHaveAttribute('aria-valuenow', '0')
-    await replaceRaw(page)
+    await replaceRaw(page, testInfo)
     await openTool(page, 'Transform')
     await waitForTransform(page)
     await selectTransformSection(page, 'Perspective')
@@ -708,7 +607,7 @@ for (const preview of ['gpu', 'cpu'] as const) {
     await showGrid(page)
     expect(await snapshot(page)).toEqual(original)
     await resetSession(page)
-    await loadRaw(page)
+    await loadRaw(page, rawPath)
     await openTool(page, 'Transform')
     await waitForTransform(page)
     await selectTransformSection(page, 'Perspective')
@@ -722,25 +621,13 @@ for (const preview of ['gpu', 'cpu'] as const) {
   test(`${preview}: a refused folding Transform keeps the last valid frame, blocks export, and recovers`, async ({
     page,
   }, testInfo) => {
-    test.skip(
-      preview === 'gpu' && !projectHasWebGPU(testInfo),
-      NO_WEBGPU_SKIP_REASON,
-    )
+    test.skip(preview === 'gpu' && !isChromium(testInfo), NO_WEBGPU_SKIP_REASON)
     testInfo.setTimeout(360_000)
-    expect(
-      existsSync(rawPath),
-      'Required public DNG is missing. Run pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public before browser validation.',
-    ).toBe(true)
-    await page.addInitScript(() => {
-      localStorage.setItem('lumaforge.locale', 'en')
+    const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
+    await openLab(page, testInfo, {
+      path: preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
     })
-    await page.goto(
-      rawPreviewUrl(
-        testInfo,
-        preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
-      ),
-    )
-    await loadRaw(page)
+    await loadRaw(page, rawPath)
     if (preview === 'gpu') {
       await expectWebGPUPreview(page, testInfo)
     } else {
@@ -887,16 +774,11 @@ for (const preview of ['gpu', 'cpu'] as const) {
 test('full-resolution export delivers the committed geometry, not a crop of the original', async ({
   page,
 }, testInfo) => {
-  test.skip(!projectHasWebGPU(testInfo), NO_WEBGPU_SKIP_REASON)
+  test.skip(!isChromium(testInfo), NO_WEBGPU_SKIP_REASON)
   testInfo.setTimeout(360_000)
-  expect(
-    existsSync(rawPath),
-    'Required public DNG is missing. Run pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public before browser validation.',
-  ).toBe(true)
-  await page.setViewportSize({ width: 1440, height: 1000 })
-  await page.addInitScript(() => localStorage.setItem('lumaforge.locale', 'en'))
-  await page.goto(rawPreviewUrl(testInfo))
-  await loadRaw(page)
+  const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
+  await openLab(page, testInfo, { surface: 'desktop' })
+  await loadRaw(page, rawPath)
   await expectWebGPUPreview(page, testInfo)
 
   // A WebGPU canvas's drawing buffer may be recycled after presentation.
@@ -1050,25 +932,13 @@ for (const preview of ['gpu', 'cpu'] as const) {
   test(`${preview}: Upright settles on the newest mode, manual steps and overlays return exactly, and an unconstrained crop keeps the whole frame`, async ({
     page,
   }, testInfo) => {
-    test.skip(
-      preview === 'gpu' && !projectHasWebGPU(testInfo),
-      NO_WEBGPU_SKIP_REASON,
-    )
+    test.skip(preview === 'gpu' && !isChromium(testInfo), NO_WEBGPU_SKIP_REASON)
     testInfo.setTimeout(360_000)
-    expect(
-      existsSync(rawPath),
-      'Required public DNG is missing. Run pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public before browser validation.',
-    ).toBe(true)
-    await page.addInitScript(() => {
-      localStorage.setItem('lumaforge.locale', 'en')
+    const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
+    await openLab(page, testInfo, {
+      path: preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
     })
-    await page.goto(
-      rawPreviewUrl(
-        testInfo,
-        preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
-      ),
-    )
-    await loadRaw(page)
+    await loadRaw(page, rawPath)
     if (preview === 'gpu') {
       await expectWebGPUPreview(page, testInfo)
     } else {
@@ -1186,25 +1056,13 @@ for (const preview of ['gpu', 'cpu'] as const) {
   test(`${preview}: Auto, picked on its own with the manual controls neutral, straightens the tilted verticals`, async ({
     page,
   }, testInfo) => {
-    test.skip(
-      preview === 'gpu' && !projectHasWebGPU(testInfo),
-      NO_WEBGPU_SKIP_REASON,
-    )
+    test.skip(preview === 'gpu' && !isChromium(testInfo), NO_WEBGPU_SKIP_REASON)
     testInfo.setTimeout(240_000)
-    expect(
-      existsSync(rawPath),
-      'Required public DNG is missing. Run pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public before browser validation.',
-    ).toBe(true)
-    await page.addInitScript(() => {
-      localStorage.setItem('lumaforge.locale', 'en')
+    const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
+    await openLab(page, testInfo, {
+      path: preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
     })
-    await page.goto(
-      rawPreviewUrl(
-        testInfo,
-        preview === 'cpu' ? '/raw?forcePreview=cpu' : '/raw',
-      ),
-    )
-    await loadRaw(page)
+    await loadRaw(page, rawPath)
     if (preview === 'gpu') {
       await expectWebGPUPreview(page, testInfo)
     } else {
@@ -1257,17 +1115,11 @@ test('a RAW that fails to load clears the Transform, and the next RAW starts neu
   page,
 }, testInfo) => {
   testInfo.setTimeout(360_000)
-  expect(
-    existsSync(rawPath),
-    'Required public DNG is missing. Run pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public before browser validation.',
-  ).toBe(true)
-  await page.addInitScript(() => {
-    localStorage.setItem('lumaforge.locale', 'en')
-  })
+  const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
   // Each project runs its own preview: WebGPU in Chromium, the CPU preview
   // in WebKit.
-  await page.goto(rawPreviewUrl(testInfo))
-  await loadRaw(page)
+  await openLab(page, testInfo)
+  await loadRaw(page, rawPath)
   await expectWebGPUPreview(page, testInfo)
   await openTool(page, 'Transform')
   await waitForTransform(page)
@@ -1319,7 +1171,7 @@ test('a RAW that fails to load clears the Transform, and the next RAW starts neu
     .click()
   await expect(error).toHaveCount(0)
 
-  await loadRaw(page)
+  await loadRaw(page, rawPath)
   await openTool(page, 'Transform')
   await waitForTransform(page)
   await selectTransformSection(page, 'Upright')
@@ -1347,3 +1199,428 @@ test('a RAW that fails to load clears the Transform, and the next RAW starts neu
   expect(await transformMatrix(page)).toBe(fullMatrix)
   await expect(transformCanvas(page)).toBeVisible()
 })
+
+test('Transform keeps the RAW viewport fixed and lets replacement drops reach the stage', async ({
+  page,
+}, testInfo) => {
+  // The wheel-lock half of this check has no equivalent input on mobile
+  // WebKit, where Playwright refuses `mouse.wheel` outright.
+  test.skip(
+    !isChromium(testInfo),
+    'Wheel input does not exist in mobile WebKit',
+  )
+  const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
+  await openLab(page, testInfo, { surface: 'desktop' })
+  await loadRaw(page, rawPath)
+  await expect(page.locator('[data-preview-track-ready]')).toHaveAttribute(
+    'data-preview-track-ready',
+    'true',
+  )
+  await expectWebGPUPreview(page, testInfo)
+  await openTool(page, 'Transform')
+  const auto = transformTool(page).getByRole('button', {
+    name: 'Auto',
+    exact: true,
+  })
+  await expect(auto).toBeEnabled({ timeout: 30_000 })
+  await auto.click()
+  const overlay = transformOverlay(page)
+  await expect(overlay).toHaveAttribute('aria-busy', 'false', {
+    timeout: 30_000,
+  })
+  await expect(overlay.locator('canvas')).toBeVisible()
+  const track = page.locator('[data-raw-compare-track]')
+  const zoom = await track.evaluate((node) =>
+    getComputedStyle(node).getPropertyValue('--raw-preview-zoom'),
+  )
+  const box = (await overlay.boundingBox())!
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  await page.mouse.move(point.x, point.y)
+  await page.mouse.wheel(0, -300)
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  )
+  expect(
+    await track.evaluate((node) =>
+      getComputedStyle(node).getPropertyValue('--raw-preview-zoom'),
+    ),
+  ).toBe(zoom)
+
+  const prevented = await page.evaluate(
+    ({ point, base64 }) => {
+      const target = document.elementFromPoint(point.x, point.y)!
+      if (target.closest('[data-raw-transform-preview]'))
+        throw new Error('Transform intercepted the file drop')
+      const bytes = Uint8Array.from(atob(base64), (character) =>
+        character.charCodeAt(0),
+      )
+      const transfer = new DataTransfer()
+      transfer.items.add(
+        new File([bytes], 'dropped-raw.dng', { type: 'image/x-adobe-dng' }),
+      )
+      const events = ['dragover', 'drop'].map(
+        (type) =>
+          new DragEvent(type, {
+            dataTransfer: transfer,
+            bubbles: true,
+            cancelable: true,
+            clientX: point.x,
+            clientY: point.y,
+          }),
+      )
+      for (const event of events) target.dispatchEvent(event)
+      return events.map((event) => event.defaultPrevented)
+    },
+    { point, base64: (await readFile(rawPath)).toString('base64') },
+  )
+  expect(prevented).toEqual([true, true])
+  await expect(
+    page.getByRole('heading', { name: 'dropped-raw.dng', exact: true }),
+  ).toBeVisible()
+  await expect(overlay).toHaveCount(0)
+})
+
+const LMFG_BIN = fileURLToPath(
+  new URL('../../packages/lmfg-cli/bin/lmfg.mjs', import.meta.url),
+)
+const LMFG_DIST = fileURLToPath(
+  new URL('../../packages/lmfg-cli/dist/index.js', import.meta.url),
+)
+/** The sources `pnpm cli:build` builds into the lmfg the replay runs. */
+const LMFG_SOURCES = [
+  'lmfg-cli',
+  'render-engine',
+  'luma-color-runtime',
+  'luma-raw-runtime',
+  'luma-jpeg-runtime',
+].map((name) =>
+  fileURLToPath(new URL(`../../packages/${name}/src`, import.meta.url)),
+)
+const execFileAsync = promisify(execFile)
+
+/** The newest source file `pnpm cli:build` builds the replay's lmfg from. */
+async function newestLmfgSource() {
+  let newest = { path: '', mtimeMs: 0 }
+  for (const root of LMFG_SOURCES) {
+    for (const entry of await readdir(root, { recursive: true })) {
+      if (!/\.ts$/.test(entry) || /\.test\.ts$/.test(entry)) continue
+      const path = join(root, entry)
+      const { mtimeMs } = await stat(path)
+      if (mtimeMs > newest.mtimeMs) newest = { path, mtimeMs }
+    }
+  }
+  return newest
+}
+
+type ReplayEnvelope =
+  | {
+      ok: true
+      result: {
+        reproduced: boolean
+        actual_sha256: string
+        output: { path: string; sha256: string }
+      }
+    }
+  | {
+      ok: false
+      error: {
+        code: string
+        message: string
+        details?: Record<string, unknown>
+      }
+    }
+
+/**
+ * Runs `lmfg render replay` on a browser manifest against the same RAW, in a
+ * fresh workspace, with the native variant the browser recorded.
+ */
+async function replayWithLmfg(
+  testInfo: TestInfo,
+  manifestPath: string,
+  manifest: ExportManifest,
+  rawPath: string,
+) {
+  expect(
+    existsSync(LMFG_DIST),
+    'The lmfg CLI is not built. Run pnpm cli:build before this browser validation.',
+  ).toBe(true)
+  // A replay on a stale build would refuse for reasons the browser export
+  // never had.
+  const built = (await stat(LMFG_DIST)).mtimeMs
+  const newest = await newestLmfgSource()
+  expect(
+    newest.mtimeMs,
+    `The lmfg CLI build is older than ${newest.path}. Run pnpm cli:build before this browser validation.`,
+  ).toBeLessThanOrEqual(built)
+  const workspace = testInfo.outputPath('lmfg')
+  await mkdir(workspace, { recursive: true })
+  const name = 'browser-export'
+  let stdout: string
+  try {
+    ;({ stdout } = await execFileAsync(
+      process.execPath,
+      [
+        LMFG_BIN,
+        '--workspace',
+        workspace,
+        '--json',
+        '--quiet',
+        '--memory-profile',
+        manifest.environment.native_artifacts.variant,
+        'render',
+        'replay',
+        '--manifest',
+        manifestPath,
+        '--source',
+        rawPath,
+        '--name',
+        name,
+      ],
+      { maxBuffer: 16 * 1024 * 1024 },
+    ))
+  } catch (error) {
+    stdout = (error as { stdout?: string }).stdout ?? ''
+    if (!stdout) throw error
+  }
+  const directory = join(workspace, 'replays', name)
+  return {
+    envelope: JSON.parse(stdout) as ReplayEnvelope,
+    published: {
+      jpeg: join(directory, 'output.jpg'),
+      manifest: join(directory, 'manifest.json'),
+    },
+  }
+}
+
+for (const surface of ['desktop', 'mobile'] as const) {
+  test(`${surface} Transform: export runs only a geometry the worker answered on the frame on screen, across the bounded HQ and the next edit; the JPEG, its manifest and lmfg's replay agree on the newest geometry, and Restore keeps it`, async ({
+    page,
+  }, testInfo) => {
+    // Desktop runs on the Chromium GPU preview, mobile on the WebKit CPU
+    // preview, so each executor drives one surface.
+    test.skip(
+      (surface === 'desktop') !== isChromium(testInfo),
+      surface === 'desktop'
+        ? 'The desktop GPU surface runs on the Chromium project'
+        : 'The mobile CPU surface runs on the WebKit project',
+    )
+    testInfo.setTimeout(600_000)
+    const gpu = isChromium(testInfo)
+    const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
+    const raw = await dngFile(testInfo, 'transform-export.dng')
+    await openLab(page, testInfo, { surface })
+
+    // Only the quick frame is decoded while the bounded HQ is held.
+    await setTrace(page, { holdRawRequest: 'decodeBoundedHqFromSession' })
+    await chooseRaw(page, raw)
+    await expect(loadedLab(page)).toBeVisible({ timeout: 120_000 })
+    await expect
+      .poll(async () => (await readTrace(page)).heldRawRequests, {
+        timeout: 120_000,
+      })
+      .toBe(1)
+    if (gpu) {
+      await expect(previewFrame(page)).toHaveAttribute(
+        'data-display-source',
+        'quick',
+        { timeout: 60_000 },
+      )
+    } else {
+      await settledCpuFrame(page)
+    }
+
+    // A geometry answered on the quick frame: full resolution exports it,
+    // the HQ preview JPEG refuses it.
+    await openTool(page, 'Transform')
+    await waitForTransform(page)
+    await selectTransformSection(page, 'Perspective')
+    await rotateSlider(page).focus()
+    await rotateSlider(page).press('PageUp')
+    await expect(rotateSlider(page)).toHaveAttribute('aria-valuenow', '1')
+    await waitForTransform(page)
+    const onQuick = await transformMatrix(page)
+    await openTool(page, 'Export')
+    await expect(fullExportButton(page)).toBeEnabled({ timeout: 30_000 })
+    await expect(hqExportButton(page)).toBeDisabled()
+
+    const expectHeld = async () => {
+      await openTool(page, 'Export')
+      await expect(fullExportButton(page)).toBeDisabled()
+      await expect(hqExportButton(page)).toBeDisabled()
+      await expect(
+        exportSurface(page).getByText(TRANSFORM_PENDING_COPY, { exact: true }),
+      ).toBeVisible()
+    }
+    const expectOpen = async () => {
+      await openTool(page, 'Export')
+      await expect(
+        exportSurface(page).getByText(TRANSFORM_PENDING_COPY, { exact: true }),
+      ).toHaveCount(0)
+    }
+
+    // The bounded HQ arrives while the Transform worker holds its answers.
+    await setTrace(page, { holdTransformRenders: true })
+    const heldBefore = (await readTrace(page)).heldTransformRenders
+    await release(page, 'rawRequests')
+    await expect(
+      page.getByText(`Loaded ${raw.name}`, { exact: true }),
+    ).toBeVisible({ timeout: 120_000 })
+    await moveAwayFromToasts(page)
+    if (gpu) {
+      await expect(previewFrame(page)).toHaveAttribute(
+        'data-display-source',
+        'bounded-hq',
+        { timeout: 120_000 },
+      )
+      // The HQ frame is a new frame: the geometry is asked again on it, and
+      // until the worker answers neither export runs the answer given on
+      // the quick frame.
+      await expect
+        .poll(async () => (await readTrace(page)).heldTransformRenders, {
+          timeout: 60_000,
+        })
+        .toBeGreaterThan(heldBefore)
+      await expectHeld()
+      await page.waitForTimeout(1_500)
+      await expectHeld()
+    }
+    await release(page, 'transformRenders')
+    await openTool(page, 'Transform')
+    await waitForTransform(page)
+    // The same geometry, now answered on the photo as it looks.
+    expect(await transformMatrix(page)).toEqual(onQuick)
+    await expectOpen()
+
+    // The next edit reaches the worker, which has not answered yet: neither
+    // export runs on the geometry the preview is leaving, and nothing
+    // reopens them while the worker waits.
+    await openTool(page, 'Transform')
+    await waitForTransform(page)
+    await selectTransformSection(page, 'Perspective')
+    await setTrace(page, { holdTransformRenders: true })
+    await rotateSlider(page).focus()
+    await rotateSlider(page).press('PageUp')
+    await expect(rotateSlider(page)).toHaveAttribute('aria-valuenow', '2')
+    await expect
+      .poll(async () => (await readTrace(page)).heldTransformRenders, {
+        timeout: 30_000,
+      })
+      .toBeGreaterThanOrEqual(1)
+    await expect(transformOverlay(page)).toHaveAttribute('aria-busy', 'true')
+    await expectHeld()
+    await page.waitForTimeout(1_500)
+    await expectHeld()
+    expect(await transformMatrix(page)).toEqual(onQuick)
+
+    // The worker answers: the newest geometry is accepted and exports.
+    await release(page, 'transformRenders')
+    await openTool(page, 'Transform')
+    await waitForTransform(page)
+    const newest = await transformMatrix(page)
+    expect(newest).not.toEqual(onQuick)
+    const overlaySize = await transformOverlay(page)
+      .locator('canvas')
+      .evaluate((canvas) => ({
+        width: (canvas as HTMLCanvasElement).width,
+        height: (canvas as HTMLCanvasElement).height,
+      }))
+    await expectOpen()
+    await exportFullResolution(page)
+    await expect(restoreButton(page)).toBeVisible()
+    const jpeg = await downloadJpeg(page)
+    const { manifest, path: manifestPath } = await downloadManifest(page)
+
+    // The file, its markers and its manifest agree on the delivered frame:
+    // the newest geometry at full resolution, not the sensor frame.
+    expect(manifest.output.sha256).toBe(jpeg.sha256)
+    expect(manifest.output.dimensions).toEqual({
+      width: jpeg.width,
+      height: jpeg.height,
+    })
+    expect(manifest.source_raw.decoded_dimensions).toEqual(PUBLIC_DNG_SIZE)
+    const geometry = manifest.render_params.geometry!
+    expect(geometry, 'the manifest records the geometry').toBeTruthy()
+    expect(geometry.constrain_crop).toBe(true)
+    expect(geometry.output).toEqual(manifest.output.dimensions)
+    // Rotate stood at 2 degrees when the worker answered and at 1 degree in
+    // the geometry the edit left: the manifest records the newest one.
+    expect(geometry.matrix).toHaveLength(9)
+    const cosine = (degrees: number) => Math.cos((degrees * Math.PI) / 180)
+    expect(geometry.matrix[0]).toBeCloseTo(cosine(2), 9)
+    expect(geometry.matrix[4]).toBeCloseTo(cosine(2), 9)
+    expect(Math.abs(geometry.matrix[0]! - cosine(1))).toBeGreaterThan(1e-4)
+    expect(geometry.matrix.slice(6)).toEqual([0, 0, 1])
+    expect(jpeg.width).toBeLessThan(PUBLIC_DNG_SIZE.width)
+    expect(jpeg.width).toBeGreaterThan(overlaySize.width * 2)
+    expect(jpeg.width / jpeg.height).toBeCloseTo(
+      overlaySize.width / overlaySize.height,
+      1,
+    )
+
+    // The same manifest through lmfg with the same native build, against
+    // the same bytes: the replay matches, or it refuses on the output hash
+    // and publishes nothing.
+    const { envelope, published } = await replayWithLmfg(
+      testInfo,
+      manifestPath,
+      manifest,
+      rawPath,
+    )
+    if (envelope.ok) {
+      expect(envelope.result.reproduced).toBe(true)
+      expect(envelope.result.actual_sha256).toBe(jpeg.sha256)
+      expect(envelope.result.output.sha256).toBe(jpeg.sha256)
+      expect(sha256(await readFile(envelope.result.output.path))).toBe(
+        jpeg.sha256,
+      )
+    } else {
+      expect(envelope.error.code, envelope.error.message).toBe(
+        'replay.mismatch',
+      )
+      expect(envelope.error.details).toMatchObject({
+        stage: 'output',
+        published: false,
+        expected_sha256: jpeg.sha256,
+        expected: { width: jpeg.width, height: jpeg.height },
+        actual: expect.objectContaining({
+          width: jpeg.width,
+          height: jpeg.height,
+        }),
+      })
+      expect(existsSync(published.jpeg)).toBe(false)
+      expect(existsSync(published.manifest)).toBe(false)
+    }
+    testInfo.annotations.push({
+      type: 'lmfg replay',
+      description: envelope.ok
+        ? `byte-identical: ${jpeg.sha256}`
+        : `refused before publication: expected ${jpeg.sha256}, replay ${String(envelope.error.details?.actual_sha256)}`,
+    })
+
+    // Restore hands the photo back with the geometry still accepted: the
+    // result delivers without waiting on the worker.
+    await restoreButton(page).click()
+    await expect(restoreButton(page)).toHaveCount(0, { timeout: 120_000 })
+    if (gpu) {
+      await expectWebGPUPreview(page, testInfo)
+      await expect(previewFrame(page)).toHaveAttribute(
+        'data-display-source',
+        'quick',
+        { timeout: 120_000 },
+      )
+    } else {
+      await settledCpuFrame(page)
+    }
+    await openTool(page, 'Transform')
+    await waitForTransform(page)
+    await selectTransformSection(page, 'Perspective')
+    await expect(rotateSlider(page)).toHaveAttribute('aria-valuenow', '2')
+    expect(await transformMatrix(page)).toEqual(newest)
+    await openTool(page, 'Export')
+    await expect(downloadButton(page)).toBeEnabled({ timeout: 60_000 })
+    await expectOpen()
+  })
+}

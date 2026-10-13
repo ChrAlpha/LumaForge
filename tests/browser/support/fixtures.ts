@@ -1,4 +1,6 @@
+import { Buffer } from 'node:buffer'
 import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -166,6 +168,9 @@ export const PUBLIC_DNG = resolvePublicRawFixture({
   env: { [REQUIRE_PUBLIC_FIXTURE_ENV]: '1' },
 })
 
+/** The public DNG's sensor size, as the decoder reports it. */
+export const PUBLIC_DNG_SIZE = { width: 4032, height: 3024 }
+
 /** The 100MP RAF whose size selects the expected export plans. */
 export const LARGE_RAF = resolvePrivateRawFixture(
   'LUMAFORGE_100MP_RAF',
@@ -188,3 +193,46 @@ export const EXPOSURE_RAW = resolvePrivateRawFixture(
   'LUMAFORGE_EXPOSURE_RAW',
   'a local non-DNG RAW whose quick and bounded HQ frames estimate different image-statistics exposures (a Sony FX30 ARW or a Nikon Z 7 NEF does)',
 )
+
+export type RawFile = { name: string; mimeType: string; buffer: Buffer }
+
+/**
+ * The public DNG under another name: a distinct source of the same size.
+ * With an `orientation`, its first IFD's Orientation tag says so instead.
+ */
+export async function dngFile(
+  testInfo: { skip: (condition: boolean, description: string) => void },
+  name: string,
+  { orientation }: { orientation?: number } = {},
+): Promise<RawFile> {
+  const buffer = await readFile(gateRawFixture(testInfo, PUBLIC_DNG))
+  return {
+    name,
+    mimeType: 'image/x-adobe-dng',
+    buffer:
+      orientation === undefined ? buffer : withOrientation(buffer, orientation),
+  }
+}
+
+/** A copy of an upright TIFF-based RAW whose IFD0 Orientation (tag 274) is replaced. */
+function withOrientation(bytes: Buffer, orientation: number) {
+  const copy = Buffer.from(bytes)
+  const little = copy.toString('latin1', 0, 2) === 'II'
+  const u16 = (offset: number) =>
+    little ? copy.readUInt16LE(offset) : copy.readUInt16BE(offset)
+  const u32 = (offset: number) =>
+    little ? copy.readUInt32LE(offset) : copy.readUInt32BE(offset)
+  const ifd = u32(4)
+  for (let index = 0; index < u16(ifd); index++) {
+    const entry = ifd + 2 + index * 12
+    if (u16(entry) !== 274) continue
+    if (u16(entry + 2) !== 3 || u32(entry + 4) !== 1) {
+      throw new Error('Orientation is not one SHORT')
+    }
+    if (u16(entry + 8) !== 1) throw new Error('The RAW does not ship upright')
+    if (little) copy.writeUInt16LE(orientation, entry + 8)
+    else copy.writeUInt16BE(orientation, entry + 8)
+    return copy
+  }
+  throw new Error('The RAW names no orientation in IFD0')
+}

@@ -1,13 +1,18 @@
 import { Buffer } from 'node:buffer'
-import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
-import { basename } from 'node:path'
 
 import type { BrowserContext, Page, TestInfo } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-import { isDesktopChromiumProject, rawPreviewUrl } from './raw-preview-backend'
+import { createCube, sha256 } from './support/files'
 import { gateRawFixture, PUBLIC_DNG } from './support/fixtures'
+import {
+  DESKTOP_VIEWPORT,
+  isChromium,
+  loadRaw,
+  openLab,
+  prepareLab,
+} from './support/lab'
 
 // Online LUT catalogs are fetched on first use, not on mount: the default
 // and saved sources are listed from the first render, and their catalog is
@@ -28,35 +33,18 @@ const SHARED_CATALOG_URL = 'https://luts.example.com/shared/catalog.json'
 const SHARED_SOURCE_LABEL = 'Catalog from luts.example.com'
 const SHARED_ENTRY_TITLE = 'Shared Print'
 
-const DESKTOP_VIEWPORT = { width: 1440, height: 1000 }
-const MOBILE_VIEWPORT = { width: 393, height: 852 }
 /** Long enough for any mount-time request to have been sent. */
 const QUIET_MS = 2_500
-
-function createIdentityCube(title: string, size = 17) {
-  const lines = [`TITLE "${title}"`, `LUT_3D_SIZE ${size}`]
-  const step = 1 / (size - 1)
-  for (let b = 0; b < size; b += 1) {
-    for (let g = 0; g < size; g += 1) {
-      for (let r = 0; r < size; r += 1) {
-        lines.push(
-          `${(r * step).toFixed(6)} ${(g * step).toFixed(6)} ${(b * step).toFixed(6)}`,
-        )
-      }
-    }
-  }
-  return lines.join('\n')
-}
 
 /** A one-LUT catalog whose entry and cube live beside it. */
 function createCatalog(catalogUrl: string, id: string, title: string) {
   const base = new URL('./', catalogUrl).href
-  const cube = createIdentityCube(title)
+  const cube = createCube(title)
   const primaryAsset = {
     url: `${base}${id}.cube`,
     role: 'cube-lut',
     mediaType: 'application/x-cube-lut',
-    sha256: createHash('sha256').update(cube).digest('hex'),
+    sha256: sha256(cube),
     size: Buffer.byteLength(cube),
     title,
   }
@@ -143,38 +131,6 @@ async function serveCatalogs(
   }
 }
 
-async function prepareLab(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem('lumaforge.locale', 'en')
-    localStorage.setItem('lumaforge.raw.mobile.lensHintSeen.v1', '1')
-  })
-}
-
-async function waitForLoadedRaw(page: Page, name: string) {
-  await expect(
-    page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
-  ).toBeVisible({ timeout: 120_000 })
-  await expect(page.getByText(`Loaded ${name}`, { exact: true })).toBeVisible({
-    timeout: 120_000,
-  })
-}
-
-async function loadDesktopRaw(page: Page, path: string) {
-  const choosing = page.waitForEvent('filechooser')
-  await page
-    .getByRole('button', { name: /finish a raw with a lut/i })
-    .click({ position: { x: 24, y: 24 } })
-  await (await choosing).setFiles(path)
-  await waitForLoadedRaw(page, basename(path))
-}
-
-async function loadMobileRaw(page: Page, path: string) {
-  const choosing = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: 'Browse RAW files' }).click()
-  await (await choosing).setFiles(path)
-  await waitForLoadedRaw(page, basename(path))
-}
-
 /** The desktop row of one listed source. */
 function desktopSource(page: Page, label: string) {
   return page
@@ -197,7 +153,7 @@ async function closeDesktopSource(page: Page, label: string) {
 }
 
 function skipUnlessChromium(testInfo: TestInfo) {
-  test.skip(!isDesktopChromiumProject(testInfo), CHROMIUM_ONLY)
+  test.skip(!isChromium(testInfo), CHROMIUM_ONLY)
 }
 
 test.describe('online LUT catalogs load on first use', () => {
@@ -209,10 +165,7 @@ test.describe('online LUT catalogs load on first use', () => {
     const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
     testInfo.setTimeout(240_000)
     const catalogs = await serveCatalogs(context)
-    await prepareLab(page)
-    await page.setViewportSize(DESKTOP_VIEWPORT)
-
-    await page.goto(rawPreviewUrl(testInfo, '/raw'))
+    await openLab(page, testInfo, { surface: 'desktop' })
     await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
     // The default source is listed, not loaded.
     await expect(desktopSource(page, DEFAULT_SOURCE_LABEL)).toBeVisible()
@@ -224,10 +177,10 @@ test.describe('online LUT catalogs load on first use', () => {
     await page.waitForTimeout(QUIET_MS)
     expect(catalogs.all()).toEqual([])
 
-    await loadDesktopRaw(page, rawPath)
+    await loadRaw(page, rawPath)
     // A local LUT and its contract are not a catalog either.
     const cubePath = testInfo.outputPath('local-contract.cube')
-    await writeFile(cubePath, createIdentityCube('Local Contract'), 'utf8')
+    await writeFile(cubePath, createCube('Local Contract'), 'utf8')
     await page
       .locator('input[type="file"][accept=".cube"]')
       .first()
@@ -275,10 +228,7 @@ test.describe('online LUT catalogs load on first use', () => {
     const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
     testInfo.setTimeout(240_000)
     const catalogs = await serveCatalogs(context)
-    await prepareLab(page)
-    await page.setViewportSize(MOBILE_VIEWPORT)
-
-    await page.goto(rawPreviewUrl(testInfo, '/raw'))
+    await openLab(page, testInfo, { surface: 'mobile' })
     await expect(
       page.getByRole('button', { name: 'Browse RAW files' }),
     ).toBeVisible()
@@ -286,7 +236,7 @@ test.describe('online LUT catalogs load on first use', () => {
     expect(catalogs.all()).toEqual([])
 
     // The strip is the mobile browser: once it shows, its looks load.
-    await loadMobileRaw(page, rawPath)
+    await loadRaw(page, rawPath)
     const strip = page.getByRole('group', { name: 'Looks' })
     await expect(strip).toBeVisible()
     await expect(
@@ -318,15 +268,10 @@ test.describe('online LUT catalogs load on first use', () => {
     testInfo.setTimeout(180_000)
     const catalogs = await serveCatalogs(context)
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await prepareLab(page)
-    await page.setViewportSize(DESKTOP_VIEWPORT)
-
-    await page.goto(
-      rawPreviewUrl(
-        testInfo,
-        `/raw?luts=${encodeURIComponent(SHARED_CATALOG_URL)}`,
-      ),
-    )
+    await openLab(page, testInfo, {
+      surface: 'desktop',
+      path: `/raw?luts=${encodeURIComponent(SHARED_CATALOG_URL)}`,
+    })
     // The link is an explicit request for its source, before any RAW or
     // click; the default source stays listed and unrequested.
     await expect.poll(() => catalogs.count(SHARED_CATALOG_URL)).toBe(1)
@@ -358,9 +303,7 @@ test.describe('online LUT catalogs load on first use', () => {
     const second = await context.newPage()
     await prepareLab(second)
     await second.setViewportSize(DESKTOP_VIEWPORT)
-    await second.goto(
-      rawPreviewUrl(testInfo, `${shared.pathname}${shared.search}`),
-    )
+    await second.goto(`${shared.pathname}${shared.search}`)
     await expect.poll(() => catalogs.count(SHARED_CATALOG_URL)).toBe(2)
     await expect(desktopSource(second, SHARED_SOURCE_LABEL)).toHaveCount(1)
     await second.waitForTimeout(QUIET_MS)

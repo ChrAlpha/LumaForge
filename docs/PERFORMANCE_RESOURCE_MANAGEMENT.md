@@ -923,9 +923,9 @@ Export lifecycle and resource tests:
 - `src/modules/raw-processor/services/export/export-recovery.test.ts`
 - `src/lib/raw/raw-runtime-host.test.ts`
 - `packages/render-engine/src/export/processed-window-export.test.ts`
-- `tests/browser/raw-export-lifecycle-resources.spec.ts`
-- `tests/browser/raw-ios-safe-export.spec.ts`
-- `tests/browser/raw-hq-preview-export.spec.ts`
+- `tests/browser/raw-mobile-workflow.spec.ts`
+- `tests/browser/raw-export-storage.spec.ts`
+- `tests/browser/raw-export-acceptance.spec.ts`
 
 Session lifetime, teardown, GPU ownership, and frame identity tests:
 
@@ -941,7 +941,7 @@ Session lifetime, teardown, GPU ownership, and frame identity tests:
 - `src/modules/raw-processor/hooks/useCpuPreview.test.ts`
 - `src/modules/raw-processor/hooks/stages/preview/useRestorePreviewAfterExport.test.tsx`
 - `src/modules/raw-processor/services/export/export-result-actions.test.ts`
-- `tests/browser/raw-p3-lifetime.spec.ts`
+- `tests/browser/raw-source-lifetime.spec.ts`
 
 Preview side workers, online LUT sources, and on-device storage tests:
 
@@ -953,14 +953,20 @@ Preview side workers, online LUT sources, and on-device storage tests:
 - `src/lib/lut/profile-resolution.test.ts`
 - `src/lib/export/output-sink.test.ts`
 - `src/lib/export/opfs-output-lifetime.test.ts`
+- `tests/browser/raw-transform.spec.ts`
 - `tests/browser/raw-online-lut-source.spec.ts`
-- `tests/browser/raw-opfs-output-lifecycle.spec.ts`
+- `tests/browser/raw-export-storage.spec.ts`
 
-`tests/browser/raw-p3-lifetime.spec.ts` covers route departure and return,
-equal-sized source replacement, Transform across the bounded HQ with export
-and Restore, and delivery after the preview is released, on the Chromium
+`tests/browser/raw-source-lifetime.spec.ts` covers runtime idle and
+supersession, route departure and return, equal-sized source replacement,
+and delivery after the preview is released; `tests/browser/raw-transform.spec.ts`
+covers Transform across the bounded HQ with export and Restore;
+`tests/browser/raw-mobile-workflow.spec.ts` covers the export evacuation,
+released preview, and Restore on a fresh runtime. Each runs on the Chromium
 project (software WebGPU) and the WebKit project, which has no WebGPU and runs
-the CPU preview. It checks behavior and pixels, not hardware performance.
+the CPU preview. They check behavior and pixels, not hardware performance.
+`tests/browser/raw-export-acceptance.spec.ts` needs private large RAWs and
+skips without them.
 
 When changing this policy, run the smallest focused unit set first, then
 production-like browser validation for any user-visible RAW preview, export

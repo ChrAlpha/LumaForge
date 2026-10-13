@@ -171,7 +171,7 @@ jobs:
         timeout-minutes: 10
         env:
           LUMAFORGE_NATIVE_RUNTIME_MODE: prebuilt
-        run: pnpm exec playwright test tests/browser/raw-viewport-scroll.spec.ts --project=chromium-desktop --grep 'keeps RAW Lab tool scrolling|keeps the CPU preview notice|opens the RAW picker'
+        run: pnpm exec playwright test tests/browser/raw-shell.spec.ts --project=chromium-desktop --grep 'keeps RAW Lab tool scrolling|keeps the CPU preview notice|opens the RAW picker'
 
   webgpu:
     # Holds the WGSL preview to the TS export executor on a software adapter.

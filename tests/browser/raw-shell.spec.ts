@@ -1,123 +1,20 @@
 import { writeFile } from 'node:fs/promises'
 
-import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+import { createCube } from './support/files'
 import { gateRawFixture, RAW_FIXTURE } from './support/fixtures'
+import {
+  chooseRaw,
+  deck,
+  exportAction,
+  isChromium,
+  loadedLab,
+} from './support/lab'
 
-function createIdentityCube(title: string) {
-  return [
-    `TITLE "${title}"`,
-    'LUT_3D_SIZE 2',
-    '0 0 0',
-    '1 0 0',
-    '0 1 0',
-    '1 1 0',
-    '0 0 1',
-    '1 0 1',
-    '0 1 1',
-    '1 1 1',
-  ].join('\n')
-}
-
-async function loadRawFixture(page: Page, fixture: string) {
-  const isMobileViewport = await page.evaluate(() => window.innerWidth <= 640)
-  const trigger = isMobileViewport
-    ? page.getByRole('button', { name: /browse raw files/i })
-    : page.getByRole('button', { name: /finish a raw with a lut/i })
-
-  await expect(trigger).toBeVisible()
-  const fileChooserPromise = page.waitForEvent('filechooser')
-  if (isMobileViewport) {
-    await trigger.click()
-  } else {
-    await trigger.click({ position: { x: 24, y: 24 } })
-  }
-  const fileChooser = await fileChooserPromise
-  await fileChooser.setFiles(fixture)
-}
-
-async function dragSlider(page: Page, sliderName: string, targetRatio: number) {
-  const slider = page.getByRole('slider', { name: sliderName })
-  await expect(slider).toBeVisible()
-  // A rail row can sit below the fold under the pinned export footer; the
-  // compare handle lives on the stage, which never scrolls.
-  if (sliderName !== 'Compare unprocessed RAW and final JPEG') {
-    await slider.scrollIntoViewIfNeeded()
-  }
-  const box = await slider.boundingBox()
-
-  expect(box).toBeTruthy()
-
-  const before = Number(await slider.getAttribute('aria-valuenow'))
-
-  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
-  await page.mouse.down()
-  if (sliderName === 'Compare unprocessed RAW and final JPEG') {
-    const trackBox = await page
-      .locator('[data-raw-compare-track="image"]')
-      .boundingBox()
-      .catch(() => null)
-    const frameBox = await page
-      .locator('[data-raw-preview-frame]')
-      .boundingBox()
-      .catch(() => null)
-    const targetBox = trackBox ?? frameBox ?? box!
-
-    await page.mouse.move(
-      targetBox.x + targetBox.width * targetRatio,
-      box!.y + box!.height / 2,
-      { steps: 10 },
-    )
-  } else {
-    await page.mouse.move(
-      box!.x + box!.width * targetRatio,
-      box!.y + box!.height / 2,
-      { steps: 10 },
-    )
-  }
-  await page.mouse.up()
-
-  await expect
-    .poll(async () => Number(await slider.getAttribute('aria-valuenow')))
-    .not.toBe(before)
-
-  return {
-    before,
-    after: Number(await slider.getAttribute('aria-valuenow')),
-  }
-}
-
-async function readCompareHandleCenterX(page: Page) {
-  const slider = page.getByRole('slider', {
-    name: 'Compare unprocessed RAW and final JPEG',
-  })
-  const box = await slider.boundingBox()
-
-  expect(box).toBeTruthy()
-
-  return box!.x + box!.width / 2
-}
-
-async function readPreviewViewport(page: Page) {
-  return page.evaluate(() => {
-    const track = document.querySelector<HTMLElement>(
-      '[data-raw-compare-track="image"]',
-    )
-
-    if (!track) {
-      return { zoom: 1, panX: 0, panY: 0 }
-    }
-
-    const style = getComputedStyle(track)
-
-    return {
-      zoom: Number.parseFloat(style.getPropertyValue('--raw-preview-zoom')),
-      panX: Number.parseFloat(style.getPropertyValue('--raw-preview-pan-x')),
-      panY: Number.parseFloat(style.getPropertyValue('--raw-preview-pan-y')),
-    }
-  })
-}
+// The /raw shell as a fixed frame: what stays in the viewport, what scrolls,
+// and where notices and toasts land around the photo. The tests that load no
+// RAW are the RAW Lab smoke CI runs by name.
 
 test('keeps RAW Lab tool scrolling inside the viewport shell', async ({
   page,
@@ -249,43 +146,29 @@ test('keeps the CPU preview notice visible without taking the stage', async ({
 test('keeps the loaded mobile export panel clear of the toolbar', async ({
   page,
 }, testInfo) => {
-  test.skip(
-    testInfo.project.name !== 'webkit-ios-safe',
-    'mobile export dock regression',
-  )
+  test.skip(isChromium(testInfo), 'The mobile export deck runs on WebKit')
   const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
 
   await page.goto('/raw')
-  await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-
-  await loadRawFixture(page, rawPath)
-
-  await expect(
-    page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
-  ).toBeVisible({ timeout: 120_000 })
+  await chooseRaw(page, rawPath)
+  await expect(loadedLab(page)).toBeVisible({ timeout: 120_000 })
 
   // Export opens from the topbar action into the deck above the tab bar.
-  const exportAction = page.locator('[data-mobile-export-action]')
-  await expect(exportAction).toBeEnabled({ timeout: 120_000 })
-  await exportAction.click()
-  await expect(exportAction).toHaveAttribute('aria-expanded', 'true')
+  await expect(exportAction(page)).toBeEnabled({ timeout: 120_000 })
+  await exportAction(page).click()
+  await expect(exportAction(page)).toHaveAttribute('aria-expanded', 'true')
   await expect(page.locator('[data-mobile-export-panel]')).toBeVisible()
-
   await expect(
-    page.getByRole('button', {
-      name: /export full-resolution jpeg/i,
-    }),
+    page.getByRole('button', { name: /export full-resolution jpeg/i }),
   ).toBeVisible()
   await expect(
-    page.getByRole('button', {
-      name: /hq preview jpeg/i,
-    }),
+    page.getByRole('button', { name: /hq preview jpeg/i }),
   ).toBeVisible()
 
-  // The dock panel enters on a spring (DOCK_SPRING) and its height moves
-  // on a 240ms curve as the layout hands it the export panel's height.
-  // Sampling mid-flight reports a deck that has not reached its height
-  // yet, which is not what this test is about; wait for both to settle.
+  // The dock panel enters on a spring (DOCK_SPRING) and its height moves on
+  // a 240ms curve as the layout hands it the export panel's height, so the
+  // first frames can still clip the content. A clip that persists fails
+  // these polls; a settling one does not.
   await expect
     .poll(async () =>
       page.evaluate(() => {
@@ -300,11 +183,6 @@ test('keeps the loaded mobile export panel clear of the toolbar', async ({
       }),
     )
     .toBe('none')
-
-  // The deck takes the export panel's height one layout pass after the
-  // panel mounts (the content is measured, then the stage layout resizes the
-  // deck on its 240ms curve), so the first frames can still clip the content.
-  // A clip that persists fails this poll; a settling one does not.
   await expect
     .poll(async () =>
       page.evaluate(() => {
@@ -322,11 +200,9 @@ test('keeps the loaded mobile export panel clear of the toolbar', async ({
     const panel = dock?.firstElementChild as HTMLElement | null
     const panelContent = panel?.firstElementChild as HTMLElement | null
     const tablist = dock?.querySelector<HTMLElement>('[role="tablist"]')
-
     const panelRect = panel?.getBoundingClientRect()
     const contentRect = panelContent?.getBoundingClientRect()
     const tablistRect = tablist?.getBoundingClientRect()
-
     return {
       documentScrollOverflow:
         documentRoot.scrollHeight - documentRoot.clientHeight,
@@ -358,14 +234,10 @@ test('keeps the loaded mobile export panel clear of the toolbar', async ({
 test('opens the RAW picker from the empty desktop preview dock', async ({
   page,
 }, testInfo) => {
-  test.skip(
-    testInfo.project.name !== 'chromium-desktop',
-    'desktop preview dock regression',
-  )
+  test.skip(!isChromium(testInfo), 'The desktop preview dock runs on Chromium')
 
   await page.goto('/raw')
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-
   const uploadDock = page.getByRole('button', {
     name: /Finish a RAW with a LUT/,
   })
@@ -378,7 +250,6 @@ test('opens the RAW picker from the empty desktop preview dock', async ({
 
   const fileChooserPromise = page.waitForEvent('filechooser')
   await uploadDock.click({ timeout: 3_000 })
-
   const fileChooser = await fileChooserPromise
   expect(fileChooser.isMultiple()).toBe(false)
 })
@@ -386,46 +257,35 @@ test('opens the RAW picker from the empty desktop preview dock', async ({
 test('keeps desktop RAW load toasts out of the persistent export action lane', async ({
   page,
 }, testInfo) => {
-  test.skip(
-    testInfo.project.name !== 'chromium-desktop',
-    'desktop export action lane regression',
-  )
+  test.skip(!isChromium(testInfo), 'The desktop export lane runs on Chromium')
   const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
 
   await page.goto('/raw')
-  await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-
-  await loadRawFixture(page, rawPath)
-
-  const exportButton = page
-    .getByRole('region', { name: 'Export' })
-    .first()
-    .getByRole('button', { name: /export full-resolution jpeg/i })
-    .first()
-  await expect(exportButton).toBeEnabled({ timeout: 60_000 })
+  await chooseRaw(page, rawPath)
+  await expect(
+    page
+      .locator('[data-raw-export-block="persistent"]')
+      .getByRole('button', { name: /export full-resolution jpeg/i }),
+  ).toBeEnabled({ timeout: 60_000 })
 
   const cubePath = testInfo.outputPath('toast-lane.cube')
-  await writeFile(cubePath, createIdentityCube('Toast Lane'), 'utf8')
+  await writeFile(cubePath, createCube('Toast Lane'), 'utf8')
   await page
     .locator('input[type="file"][accept=".cube"]')
     .first()
     .setInputFiles(cubePath)
   await expect(page.locator('[data-sonner-toast]').first()).toBeVisible()
 
-  const metrics = await page.evaluate(() => {
-    const button = document
+  const metrics = await page.evaluate(() => ({
+    button: document
       .querySelector('[data-raw-export-block="persistent"] button')
       ?.getBoundingClientRect()
-    const toast = document
+      .toJSON(),
+    toast: document
       .querySelector('[data-sonner-toast]')
       ?.getBoundingClientRect()
-
-    return {
-      button: button?.toJSON(),
-      toast: toast?.toJSON(),
-    }
-  })
-
+      .toJSON(),
+  }))
   expect(metrics.button).toBeTruthy()
   expect(metrics.toast).toBeTruthy()
   expect(metrics.toast!.right).toBeLessThanOrEqual(metrics.button!.left)
@@ -434,23 +294,17 @@ test('keeps desktop RAW load toasts out of the persistent export action lane', a
 test('keeps mobile /raw toasts below the topbar and its Export action', async ({
   page,
 }, testInfo) => {
-  test.skip(
-    testInfo.project.name !== 'webkit-ios-safe',
-    'mobile toast lane targets the iOS project',
-  )
+  test.skip(isChromium(testInfo), 'The mobile toast lane runs on WebKit')
   const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(180_000)
 
   await page.goto('/raw')
-  await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-  await loadRawFixture(page, rawPath)
-  await expect(
-    page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
-  ).toBeVisible({ timeout: 90_000 })
+  await chooseRaw(page, rawPath)
+  await expect(loadedLab(page)).toBeVisible({ timeout: 90_000 })
 
   // The Look strip's Import .cube input: loading a LUT announces itself.
   const cubePath = testInfo.outputPath('mobile-toast-lane.cube')
-  await writeFile(cubePath, createIdentityCube('Mobile Toast Lane'), 'utf8')
+  await writeFile(cubePath, createCube('Mobile Toast Lane'), 'utf8')
   await page.locator('[data-mobile-lut-import-input]').setInputFiles(cubePath)
   const toast = page.locator('[data-sonner-toast]').first()
   await expect(toast).toBeVisible()
@@ -496,7 +350,6 @@ test('keeps mobile /raw toasts below the topbar and its Export action', async ({
       ?.getBoundingClientRect()
       .toJSON(),
   }))
-
   expect(metrics.topbar).toBeTruthy()
   expect(metrics.exportAction).toBeTruthy()
   expect(metrics.toast).toBeTruthy()
@@ -506,110 +359,79 @@ test('keeps mobile /raw toasts below the topbar and its Export action', async ({
   )
 })
 
-test('keeps desktop tone, compare, zoom, and pan interactions live after RAW load', async ({
-  page,
+test('keeps the mobile photo clear of the chrome and returns it in immersive', async ({
+  browser,
 }, testInfo) => {
-  test.skip(
-    testInfo.project.name !== 'chromium-desktop',
-    'desktop RAW interaction regression',
-  )
+  // A touch phone context on the WebGPU browser measures the GPU stage.
+  test.skip(!isChromium(testInfo), 'The GPU stage needs a WebGPU adapter')
   const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
+  testInfo.setTimeout(300_000)
 
-  await page.goto('/raw')
-  await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-
-  await loadRawFixture(page, rawPath)
-
-  await expect(
-    page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
-  ).toBeVisible({ timeout: 60_000 })
-  await expect(page.getByRole('slider', { name: 'Exposure' })).toBeVisible()
-
-  const exposure = await dragSlider(page, 'Exposure', 0.75)
-  expect(exposure.after).toBeGreaterThan(exposure.before)
-
-  const compare = await dragSlider(
-    page,
-    'Compare unprocessed RAW and final JPEG',
-    1,
-  )
-  expect(compare.after).toBeGreaterThan(compare.before)
-  const compareHandleCenterBeforeZoom = await readCompareHandleCenterX(page)
-
-  const previewFrame = page.locator('[data-raw-preview-frame]')
-  const previewBox = await previewFrame.boundingBox()
-
-  expect(previewBox).toBeTruthy()
-
-  await page.mouse.move(
-    previewBox!.x + previewBox!.width * 0.33,
-    previewBox!.y + previewBox!.height * 0.44,
-  )
-  await page.mouse.wheel(0, -1200)
-
-  await expect
-    .poll(async () => (await readPreviewViewport(page)).zoom)
-    .toBeGreaterThan(1)
-  expect(await readCompareHandleCenterX(page)).toBeCloseTo(
-    compareHandleCenterBeforeZoom,
-    0,
-  )
-
-  const scaledBounds = await page.evaluate(() => {
-    const frame = document.querySelector<HTMLElement>(
-      '[data-raw-preview-frame]',
-    )
-    const track = document.querySelector<HTMLElement>(
-      '[data-raw-compare-track="image"]',
-    )
-    const surface = document.querySelector<HTMLElement>(
-      '[data-raw-preview-surface]',
-    )
-
-    const frameRect = frame?.getBoundingClientRect()
-    const surfaceRect = surface?.getBoundingClientRect()
-
-    return {
-      frame: frameRect?.toJSON(),
-      surface: surfaceRect?.toJSON(),
-      surfaceLayoutWidth: surface?.offsetWidth ?? track?.offsetWidth ?? 0,
-      surfaceLayoutHeight: surface?.offsetHeight ?? track?.offsetHeight ?? 0,
-      frameOverflow: frame ? getComputedStyle(frame).overflow : '',
-    }
+  const context = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+    viewport: { width: 393, height: 852 },
+    isMobile: true,
+    hasTouch: true,
   })
-
-  expect(scaledBounds.frame).toBeTruthy()
-  expect(scaledBounds.surface).toBeTruthy()
-  expect(scaledBounds.frameOverflow).toBe('hidden')
-  expect(scaledBounds.surface!.width).toBeGreaterThan(
-    scaledBounds.surfaceLayoutWidth,
-  )
-  expect(scaledBounds.surface!.height).toBeGreaterThan(
-    scaledBounds.surfaceLayoutHeight,
-  )
-
-  const panBefore = await readPreviewViewport(page)
-
-  await page.mouse.down()
-  await page.mouse.move(
-    previewBox!.x + previewBox!.width * 0.5,
-    previewBox!.y + previewBox!.height * 0.6,
-    { steps: 12 },
-  )
-  await page.mouse.up()
-
-  await expect
-    .poll(async () => {
-      const next = await readPreviewViewport(page)
-
-      return (
-        Math.abs(next.panX - panBefore.panX) +
-        Math.abs(next.panY - panBefore.panY)
-      )
+  try {
+    const page = await context.newPage()
+    await page.goto('/raw')
+    await chooseRaw(page, rawPath)
+    await expect(loadedLab(page)).toBeVisible({ timeout: 90_000 })
+    await expect(page.locator('.raw-progress-overlay')).toHaveCount(0, {
+      timeout: 120_000,
     })
-    .toBeGreaterThan(0)
-  expect(await readCompareHandleCenterX(page)).toBeCloseTo(
-    compareHandleCenterBeforeZoom,
-    0,
-  )
+
+    const readGeometry = async () =>
+      page.evaluate(() => {
+        const box = (selector: string) =>
+          document.querySelector(selector)?.getBoundingClientRect()
+        const topbar = box('[data-mobile-topbar]')
+        const dockPanel = box('[data-mobile-dock-panel]')
+        const photo = box('[data-raw-compare-track="image"]')
+        return {
+          topbarBottom: topbar ? Math.round(topbar.bottom) : null,
+          dockTop: dockPanel ? Math.round(dockPanel.top) : null,
+          photoTop: photo ? Math.round(photo.top) : null,
+          photoBottom: photo ? Math.round(photo.bottom) : null,
+          photoWidth: photo ? Math.round(photo.width) : null,
+        }
+      })
+
+    await page.getByRole('tab', { name: 'Adjust' }).click()
+    await expect(deck(page)).toBeVisible()
+    await page.waitForTimeout(600)
+    const open = await readGeometry()
+    expect(open.photoTop).not.toBeNull()
+    // The photograph is fully judged, not rendered behind the panel.
+    expect(open.photoTop!).toBeGreaterThanOrEqual(open.topbarBottom! - 1)
+    expect(open.photoBottom!).toBeLessThanOrEqual(open.dockTop! + 1)
+
+    // Collapsing the dock hands the space back.
+    await page.getByRole('tab', { name: 'Adjust' }).click()
+    await page.waitForTimeout(600)
+    const collapsed = await readGeometry()
+    expect(collapsed.photoWidth!).toBeGreaterThanOrEqual(open.photoWidth!)
+
+    // Immersive drops both insets to zero for a true full-bleed stage.
+    const frame = await page.locator('[data-raw-preview-frame]').boundingBox()
+    if (!frame) throw new Error('preview frame has no box')
+    await page.touchscreen.tap(
+      frame.x + frame.width / 2,
+      frame.y + frame.height / 2,
+    )
+    await page.waitForTimeout(900)
+    const insets = await page.evaluate(() => {
+      const style = getComputedStyle(
+        document.querySelector('[data-raw-lab-shell]')!,
+      )
+      return {
+        top: style.getPropertyValue('--raw-stage-inset-top').trim(),
+        bottom: style.getPropertyValue('--raw-stage-inset-bottom').trim(),
+      }
+    })
+    expect(insets).toEqual({ top: '0px', bottom: '0px' })
+  } finally {
+    await context.close()
+  }
 })

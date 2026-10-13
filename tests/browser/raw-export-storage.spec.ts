@@ -1,18 +1,31 @@
-import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { stat } from 'node:fs/promises'
+import { basename } from 'node:path'
 
 import type { Page, Route, TestInfo } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
-import { isDesktopChromiumProject } from './raw-preview-backend'
-import { gateRawFixture, RAW_FIXTURE } from './support/fixtures'
+import { downloadJpeg, downloadManifest } from './support/files'
+import { gateRawFixture, PUBLIC_DNG, RAW_FIXTURE } from './support/fixtures'
+import {
+  exportAction,
+  exportSurface,
+  fullExportButton,
+  hqExportButton,
+  isChromium,
+  loadRaw,
+  openLab,
+  openTool,
+  prepareLab,
+} from './support/lab'
+import { eventPayload, readTrace } from './support/trace'
 
-// Two pages of one origin share OPFS and Web Locks. Each page reserves one
-// `active/` subdirectory for its outputs and collects other pages' leftovers
-// once per page lifetime, when its first export is planned. The spec drives
-// both through the product's own export and reads storage and locks only
-// through browser APIs.
+// Export storage across page lifetimes. Two pages of one origin share OPFS
+// and Web Locks: each page reserves one `active/` subdirectory for its
+// outputs and collects other pages' leftovers once per page lifetime, when
+// its first export is planned; the tests drive both through the product's
+// own export and read storage and locks only through browser APIs. An export
+// a closed page left unfinished is a hint on the next load of the same file,
+// never a recovery: nothing reselects the source or exports on its own.
 
 const DESKTOP_CHROMIUM_ONLY =
   'The two-page OPFS lifecycle runs on desktop Chromium'
@@ -54,18 +67,6 @@ type CollectionReport = {
 }
 
 type HeldLock = { name: string; mode: string }
-
-type DownloadedJpeg = {
-  filename: string
-  byteLength: number
-  sha256: string
-}
-
-type ExportManifest = {
-  kind: string
-  manifest_sha256: string
-  output: { sha256: string; filename: string }
-}
 
 type Evidence = Array<{ step: string; at: string; detail?: unknown }>
 
@@ -464,36 +465,17 @@ function soleOutputDirectory(tree: string[], owner: string) {
   return `${owner}/${exports[0]}`
 }
 
-function exportRegion(page: Page) {
-  return page.getByRole('region', { name: 'Export' }).first()
-}
-
-async function openRawLab(page: Page) {
+/** A desktop page of the lab whose locale is English. */
+async function openPage(page: Page) {
+  await prepareLab(page)
   await page.goto('/raw')
   await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-}
-
-async function loadPublicDng(page: Page, rawPath: string) {
-  const fileChooserPromise = page.waitForEvent('filechooser')
-  await page
-    .getByRole('button', { name: /finish a raw with a lut/i })
-    .click({ position: { x: 24, y: 24 } })
-  const fileChooser = await fileChooserPromise
-  await fileChooser.setFiles(rawPath)
-  await expect(
-    page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
-  ).toBeVisible({ timeout: 90_000 })
-  await expect(
-    exportRegion(page).getByRole('button', {
-      name: /export full-resolution jpeg/i,
-    }),
-  ).toBeEnabled({ timeout: 90_000 })
 }
 
 /** Clicks the product's Export and requires the plan to write to OPFS. */
 async function startFullResolutionExport(page: Page) {
   const before = (await eventPayloads(page, 'export-plan-selected')).length
-  await exportRegion(page)
+  await exportSurface(page)
     .getByRole('button', { name: /export full-resolution jpeg/i })
     .click()
   await expect
@@ -505,46 +487,13 @@ async function startFullResolutionExport(page: Page) {
   // Collection only concerns OPFS outputs; a blob or streaming plan would
   // leave nothing to retain or collect and must not pass for coverage.
   expect(plan.outputSink, 'the export plan writes to OPFS').toBe('opfs-file')
-  // The OPFS output is the file itself: no recovery journal is planned.
-  expect(plan.checkpointDurableExpected).toBe(false)
   return plan
 }
 
 async function waitForJpegReady(page: Page) {
-  await expect(exportRegion(page).getByText('JPEG ready')).toBeVisible({
+  await expect(exportSurface(page).getByText('JPEG ready')).toBeVisible({
     timeout: 300_000,
   })
-}
-
-async function downloadJpeg(page: Page): Promise<DownloadedJpeg> {
-  const downloadPromise = page.waitForEvent('download')
-  await exportRegion(page)
-    .getByRole('button', { name: /^download$/i })
-    .click()
-  const download = await downloadPromise
-  const path = await download.path()
-  const bytes = await readFile(path)
-  return {
-    filename: download.suggestedFilename(),
-    byteLength: bytes.byteLength,
-    sha256: createHash('sha256').update(bytes).digest('hex'),
-  }
-}
-
-async function downloadManifest(page: Page) {
-  const manifestButton = exportRegion(page).getByRole('button', {
-    name: /^manifest$/i,
-  })
-  await expect(manifestButton).toBeEnabled({ timeout: 180_000 })
-  const downloadPromise = page.waitForEvent('download')
-  await manifestButton.click()
-  const download = await downloadPromise
-  const manifest = JSON.parse(
-    await readFile(await download.path(), 'utf8'),
-  ) as ExportManifest
-  expect(verifyManifestSha256(manifest)).toBe(true)
-  expect(manifest.kind).toBe('export')
-  return manifest
 }
 
 test.describe('tab-owned OPFS outputs across two pages', () => {
@@ -552,7 +501,7 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
     context,
     page: pageA,
   }, testInfo) => {
-    test.skip(!isDesktopChromiumProject(testInfo), DESKTOP_CHROMIUM_ONLY)
+    test.skip(!isChromium(testInfo), DESKTOP_CHROMIUM_ONLY)
     const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
     testInfo.setTimeout(900_000)
     const evidence: Evidence = []
@@ -561,8 +510,8 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
     const pageB = await context.newPage()
 
     try {
-      await openRawLab(pageA)
-      await openRawLab(pageB)
+      await openPage(pageA)
+      await openPage(pageB)
       expect(await listActiveTree(pageA), 'a fresh context').toEqual([])
       expect(await heldTabLockNames(pageA)).toEqual([])
 
@@ -571,18 +520,18 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
       record(evidence, 'seeded retention sentinels', Object.keys(sentinels))
 
       // A exports through the product and keeps its result.
-      await loadPublicDng(pageA, rawPath)
+      await loadRaw(pageA, rawPath)
       const planA = await startFullResolutionExport(pageA)
       await waitForJpegReady(pageA)
       const downloadA = await downloadJpeg(pageA)
-      const manifestA = await downloadManifest(pageA)
+      const { manifest: manifestA } = await downloadManifest(pageA)
       expect(manifestA.output.sha256).toBe(downloadA.sha256)
-      expect(manifestA.output.filename).toBe(downloadA.filename)
+      expect(manifestA.output.filename).toBe(downloadA.name)
       // A's export also ran A's own collection, with nothing to collect.
       const reportA = await waitForCollectionReport(pageA)
       record(evidence, 'A exported', {
         derivedLabel: planA.derivedLabel,
-        download: downloadA,
+        download: { name: downloadA.name, sha256: downloadA.sha256 },
         manifestOutputSha256: manifestA.output.sha256,
         collection: reportA,
       })
@@ -618,7 +567,7 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
       record(evidence, 'aged A finalized marker', agedMarkerA)
 
       // B's own export runs B's collection while A is alive.
-      await loadPublicDng(pageB, rawPath)
+      await loadRaw(pageB, rawPath)
       expect(await eventPayloads(pageB, 'opfs-output-collection')).toEqual([])
       await startFullResolutionExport(pageB)
       const firstReportB = await waitForCollectionReport(pageB)
@@ -659,10 +608,13 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
       expect(tabDirectoriesAfterFirstB).toHaveLength(2)
       const firstTabB = tabDirectoriesAfterFirstB.find((name) => name !== tabA)!
       const redownloadA = await downloadJpeg(pageA)
-      expect(redownloadA).toEqual(downloadA)
+      expect([redownloadA.name, redownloadA.sha256]).toEqual([
+        downloadA.name,
+        downloadA.sha256,
+      ])
       record(evidence, 'A output survived B collection', {
         firstTabB,
-        redownload: redownloadA,
+        redownload: redownloadA.sha256,
         tree: treeAfterFirstB,
       })
 
@@ -690,7 +642,7 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
       await expect(
         pageB.locator('[data-raw-lab-shell="viewport"]'),
       ).toBeVisible()
-      await loadPublicDng(pageB, rawPath)
+      await loadRaw(pageB, rawPath)
       expect(await eventPayloads(pageB, 'opfs-output-collection')).toEqual([])
       await expect
         .poll(() => heldTabLockNames(pageB), {
@@ -736,7 +688,7 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
     context,
     page: pageA,
   }, testInfo) => {
-    test.skip(!isDesktopChromiumProject(testInfo), DESKTOP_CHROMIUM_ONLY)
+    test.skip(!isChromium(testInfo), DESKTOP_CHROMIUM_ONLY)
     const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
     testInfo.setTimeout(900_000)
     const evidence: Evidence = []
@@ -757,13 +709,13 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
     const pageB = await context.newPage()
 
     try {
-      await openRawLab(pageA)
-      await openRawLab(pageB)
+      await openPage(pageA)
+      await openPage(pageB)
       expect(await listActiveTree(pageB), 'a fresh context').toEqual([])
 
       // B is ready before A writes, so its collection can run mid-write.
-      await loadPublicDng(pageB, rawPath)
-      await loadPublicDng(pageA, rawPath)
+      await loadRaw(pageB, rawPath)
+      await loadRaw(pageA, rawPath)
 
       // A's export worker opens its output before it loads the RAW runtime.
       // Holding that one download keeps A's output open and unfinished for
@@ -834,7 +786,7 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
       await waitForJpegReady(pageA)
       await pageA.unroute(RAW_RUNTIME_WASM, holdRuntime)
       const downloadA = await downloadJpeg(pageA)
-      const manifestA = await downloadManifest(pageA)
+      const { manifest: manifestA } = await downloadManifest(pageA)
       expect(manifestA.output.sha256).toBe(downloadA.sha256)
       expect(filesIn(await listActiveTree(pageA), outputA)).toEqual([
         OUTPUT_FILE,
@@ -855,7 +807,7 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
         treeAtFirstB.at,
       )
       record(evidence, 'A finished; marker aged', {
-        download: downloadA,
+        download: { name: downloadA.name, sha256: downloadA.sha256 },
         manifestOutputSha256: manifestA.output.sha256,
         finalizedAt: marker.original.finalizedAt,
         agedMarker: marker.aged,
@@ -868,7 +820,7 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
       await expect(
         pageB.locator('[data-raw-lab-shell="viewport"]'),
       ).toBeVisible()
-      await loadPublicDng(pageB, rawPath)
+      await loadRaw(pageB, rawPath)
       expect(await eventPayloads(pageB, 'opfs-output-collection')).toEqual([])
       await expect
         .poll(() => heldTabLockNames(pageB), {
@@ -898,9 +850,12 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
         FINALIZED_MARKER,
       ])
       const redownloadA = await downloadJpeg(pageA)
-      expect(redownloadA).toEqual(downloadA)
+      expect([redownloadA.name, redownloadA.sha256]).toEqual([
+        downloadA.name,
+        downloadA.sha256,
+      ])
       record(evidence, 'A output survived both collections', {
-        redownload: redownloadA,
+        redownload: redownloadA.sha256,
         tree: treeAfterSecondB,
       })
     } finally {
@@ -915,3 +870,148 @@ test.describe('tab-owned OPFS outputs across two pages', () => {
     }
   })
 })
+
+const INTERRUPTED_COPY =
+  'The previous export was interrupted. The next export you start uses the current RAW and adjustments with a safer setting.'
+
+/**
+ * What a page that closed mid-export leaves behind: an unfinished
+ * interruption marker for the public DNG's file tuple, written while its
+ * owner held a lifetime lock that nobody holds any more. A marker matches
+ * only the exact tuple, so it is seeded for the file's mtime as a browser may
+ * report it (floored, rounded, or at second precision).
+ */
+async function seedInterruptedExport(
+  page: Page,
+  testInfo: TestInfo,
+  rawPath: string,
+) {
+  const { size, mtimeMs } = await stat(rawPath)
+  await page.goto('/')
+  // Only a released owner lock proves the page is gone; a browser without
+  // Web Locks never reports an interruption.
+  const locks = await page.evaluate(() => Boolean(navigator.locks?.request))
+  if (!isChromium(testInfo)) {
+    test.skip(
+      !locks,
+      'This browser build has no Web Locks to prove an export page closed',
+    )
+  }
+  expect(locks, 'Web Locks are required to report an interruption').toBe(true)
+  const lastModifiedCandidates = [
+    ...new Set([
+      Math.floor(mtimeMs),
+      Math.round(mtimeMs),
+      Math.floor(mtimeMs / 1000) * 1000,
+    ]),
+  ]
+  await page.evaluate(
+    ({ name, size, lastModifiedCandidates }) => {
+      const now = Date.now()
+      lastModifiedCandidates.forEach((lastModified, index) => {
+        const attempt = `interrupted-${index}`
+        localStorage.setItem(
+          `lumaforge.export-interruption.v1.${attempt}`,
+          JSON.stringify({
+            version: 1,
+            attempt,
+            owner: 'closed-page',
+            ownerLocked: true,
+            source: JSON.stringify([name, size, lastModified]),
+            startedAt: now,
+            updatedAt: now,
+            terminal: null,
+          }),
+        )
+      })
+    },
+    { name: basename(rawPath), size, lastModifiedCandidates },
+  )
+}
+
+async function exportEventTypes(page: Page) {
+  return (await readTrace(page)).exportEvents.map((event) => event.type)
+}
+
+for (const surface of ['mobile', 'desktop'] as const) {
+  test(`${surface}: an interrupted export reads as a hint: no file picker and no export until one is started, which then takes the safer plan`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      surface === 'desktop' && !isChromium(testInfo),
+      'The desktop command rail runs on Chromium',
+    )
+    const rawPath = gateRawFixture(testInfo, PUBLIC_DNG)
+    testInfo.setTimeout(420_000)
+    // The marker is seeded on the landing page, before the lab loads.
+    await openLab(page, testInfo, { surface, path: '/' })
+    await seedInterruptedExport(page, testInfo, rawPath)
+    await page.goto(isChromium(testInfo) ? '/raw?forcePreview=cpu' : '/raw')
+    await expect(page.locator('[data-cpu-preview-banner]')).toBeVisible()
+    // Loading the RAW opens the one file chooser this test expects.
+    let choosers = 0
+    page.on('filechooser', () => {
+      choosers += 1
+    })
+    await loadRaw(page, rawPath)
+    expect(choosers).toBe(1)
+
+    await openTool(page, 'Export')
+    const panel = exportSurface(page)
+    const hint = panel.locator('[data-export-interruption]')
+    await expect(hint).toHaveText(INTERRUPTED_COPY)
+    await expect(panel).not.toContainText(/reselect/i)
+    await expect(panel.locator('input[type="file"]')).toHaveCount(0)
+    await expect(fullExportButton(page)).toBeEnabled({ timeout: 60_000 })
+    await expect(hqExportButton(page)).toBeVisible()
+    if (surface === 'mobile') {
+      // The panel offers only the normal exports and its close.
+      const buttons = panel.getByRole('button')
+      await expect(buttons).toHaveCount(3)
+      await expect(buttons.nth(0)).toHaveAccessibleName('Close export')
+      await expect(buttons.nth(1)).toHaveAccessibleName(
+        'Export full-resolution JPEG',
+      )
+      await expect(buttons.nth(2)).toHaveAccessibleName(
+        'Export HQ preview JPEG',
+      )
+    }
+
+    // Nothing starts on its own, however long the hint is on screen.
+    await page.waitForTimeout(3_000)
+    expect(choosers).toBe(1)
+    expect(await exportEventTypes(page)).not.toContain('export-plan-selected')
+    await expect(hint).toBeVisible()
+    if (surface === 'mobile') {
+      await expect(exportAction(page)).toHaveAttribute('data-state', 'ready')
+    }
+
+    // The export the user starts takes the safer interrupted-retry plan.
+    await fullExportButton(page).click()
+    await expect
+      .poll(async () =>
+        eventPayload(
+          (await readTrace(page)).exportEvents,
+          'export-plan-selected',
+        ),
+      )
+      .toBeTruthy()
+    const plan = eventPayload(
+      (await readTrace(page)).exportEvents,
+      'export-plan-selected',
+    )!
+    expect((plan.policyVector as { productCopy: string }).productCopy).toBe(
+      'interrupted-retry',
+    )
+    await expect(
+      exportSurface(page).getByRole('button', {
+        name: 'Download',
+        exact: true,
+      }),
+    ).toBeVisible({
+      timeout: 300_000,
+    })
+    await expect(hint).toHaveCount(0)
+    expect(choosers).toBe(1)
+  })
+}
