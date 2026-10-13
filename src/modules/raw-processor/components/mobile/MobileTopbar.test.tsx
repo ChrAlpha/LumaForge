@@ -6,14 +6,34 @@ import { I18nProvider } from '~/lib/i18n'
 
 import { MobileTopbar } from './MobileTopbar'
 
-type MobileTopbarProps = React.ComponentProps<typeof MobileTopbar>
-
-function renderMobileTopbar(props: MobileTopbarProps) {
-  return render(
+function renderTopbar(
+  overrides: Partial<React.ComponentProps<typeof MobileTopbar>> = {},
+) {
+  const props: React.ComponentProps<typeof MobileTopbar> = {
+    hasImage: true,
+    fileName: 'DSC09142.ARW',
+    fileMeta: 'Experimental support · Sony ILCE-7M4',
+    histogramShown: false,
+    onToggleHistogram: vi.fn(),
+    onReplaceFile: vi.fn(),
+    onOpenFileDetails: vi.fn(),
+    onResetSession: vi.fn(),
+    ...overrides,
+  }
+  const view = render(
     <I18nProvider>
       <MobileTopbar {...props} />
     </I18nProvider>,
   )
+  return {
+    ...view,
+    rerenderWith: (next: Partial<React.ComponentProps<typeof MobileTopbar>>) =>
+      view.rerender(
+        <I18nProvider>
+          <MobileTopbar {...props} {...next} />
+        </I18nProvider>,
+      ),
+  }
 }
 
 describe('mobileTopbar', () => {
@@ -22,163 +42,98 @@ describe('mobileTopbar', () => {
   })
 
   it('shows the file title with only More and the export action beside it', () => {
-    renderMobileTopbar({
-      hasImage: true,
-      fileName: 'DSC09142.ARW',
-      fileMeta: 'Sony α7 IV · 47.8 MB',
-      supportLevel: 'experimental',
-      moreMenuItems: [],
-      exportAction: <button type="button">Export</button>,
-    })
+    renderTopbar({ exportAction: <button type="button">Export</button> })
     expect(
       screen.getByRole('heading', { name: 'DSC09142.ARW' }),
     ).toBeInTheDocument()
-    // The histogram toggle and file details live in the More menu; the
-    // topbar keeps one filled action, export, at the far right.
-    expect(
-      screen.queryByRole('button', { name: /histogram/i }),
-    ).not.toBeInTheDocument()
+    // The histogram toggle, the locale switch and file details live in the
+    // More menu; the topbar keeps one filled action, export, at the far right.
     const buttons = screen.getAllByRole('button')
     expect(buttons.map((button) => button.textContent)).toEqual(['', 'Export'])
     expect(buttons[0]).toHaveAccessibleName(/more actions/i)
   })
 
-  it('opens the more menu and invokes an item', async () => {
-    const onSelect = vi.fn()
-    renderMobileTopbar({
-      hasImage: true,
-      fileName: 'DSC09142.ARW',
-      fileMeta: 'Sony α7 IV',
-      supportLevel: 'experimental',
-      moreMenuItems: [
-        {
-          kind: 'item',
-          icon: () => null,
-          label: 'Replace RAW',
-          onSelect,
-        },
-      ],
-    })
-    await userEvent.click(screen.getByRole('button', { name: /more actions/i }))
-    await userEvent.click(
-      await screen.findByRole('menuitem', { name: /replace raw/i }),
-    )
-    expect(onSelect).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps the locale switch out of the topbar (it lives in the More menu)', () => {
-    renderMobileTopbar({
-      hasImage: true,
-      fileName: 'DSC09142.ARW',
-      fileMeta: 'Experimental support · Sony ILCE-7M4',
-      supportLevel: 'experimental',
-      moreMenuItems: [],
-    })
-
-    expect(
-      screen.queryByRole('button', { name: /switch to (english|chinese)/i }),
-    ).not.toBeInTheDocument()
-    // Only the More trigger competes with the meta line for width.
-    expect(screen.getAllByRole('button')).toHaveLength(1)
-  })
-
-  it('renders trailing detail text on a More menu item', async () => {
-    renderMobileTopbar({
-      hasImage: true,
-      fileName: 'DSC09142.ARW',
-      fileMeta: 'Sony α7 IV',
-      supportLevel: 'experimental',
-      moreMenuItems: [
-        {
-          kind: 'item',
-          icon: () => null,
-          label: 'Language',
-          detail: 'English',
-          onSelect: vi.fn(),
-        },
-      ],
-    })
-    await userEvent.click(screen.getByRole('button', { name: /more actions/i }))
-    const item = await screen.findByRole('menuitem', { name: /language/i })
-    expect(item).toHaveTextContent('LanguageEnglish')
-  })
-
-  it('yields the safe-area slot to the scrub HUD by fading content while scrubbing', () => {
-    const { container, rerender } = renderMobileTopbar({
-      hasImage: true,
-      fileName: 'DSC09142.ARW',
-      fileMeta: 'Sony α7 IV',
-      supportLevel: 'experimental',
-      moreMenuItems: [],
-    })
-
+  it('yields its content to the scrub HUD while scrubbing', () => {
+    const { container, rerenderWith } = renderTopbar()
     const header = container.querySelector('[data-mobile-topbar]')!
     expect(header).not.toHaveAttribute('data-scrubbing')
-    const idleChildren = Array.from(header.children) as HTMLElement[]
-    for (const child of idleChildren) {
-      expect(child).not.toHaveClass('opacity-0')
-      expect(child).toHaveClass('pointer-events-auto')
-    }
 
-    rerender(
-      <I18nProvider>
-        <MobileTopbar
-          hasImage
-          fileName="DSC09142.ARW"
-          fileMeta="Sony α7 IV"
-          supportLevel="experimental"
-          moreMenuItems={[]}
-          scrubbing
-        />
-      </I18nProvider>,
-    )
-
-    const scrubbingHeader = container.querySelector('[data-mobile-topbar]')!
-    expect(scrubbingHeader).toHaveAttribute('data-scrubbing', 'true')
-    const scrubbingChildren = Array.from(
-      scrubbingHeader.children,
-    ) as HTMLElement[]
-    expect(scrubbingChildren.length).toBeGreaterThan(0)
-    for (const child of scrubbingChildren) {
-      expect(child).toHaveClass('opacity-0')
-      expect(child).toHaveClass('pointer-events-none')
-      expect(child).not.toHaveClass('pointer-events-auto')
+    rerenderWith({ scrubbing: true })
+    expect(header).toHaveAttribute('data-scrubbing', 'true')
+    for (const child of Array.from(header.children)) {
+      expect(child).toHaveClass('opacity-0', 'pointer-events-none')
     }
-    // The solid plate on the header itself stays: that is what backs the
-    // HUD readout.
-    expect(scrubbingHeader).toHaveClass('bg-[oklch(0.064_0.006_255)]')
   })
 
-  it('sits on a solid stage-base plate no taller than its 44px row', () => {
-    const { container } = renderMobileTopbar({
-      hasImage: true,
-      fileName: 'DSC09142.ARW',
-      fileMeta: 'Sony α7 IV',
-      supportLevel: 'experimental',
-      moreMenuItems: [],
-    })
-    const header = container.querySelector('[data-mobile-topbar]')!
-    // The photo is anchored below the topbar, so nothing reads through it.
-    expect(header).toHaveClass(
-      'bg-[oklch(0.064_0.006_255)]',
-      'pt-safe-offset-3',
-      'auto-rows-[minmax(2.75rem,auto)]',
+  it('lists only real actions in the More menu, reset last', async () => {
+    localStorage.setItem('lumaforge.locale', 'en')
+    renderTopbar()
+    await userEvent.click(screen.getByRole('button', { name: /more actions/i }))
+
+    const menu = await screen.findByRole('menu')
+    const rows = Array.from(
+      menu.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"]'),
     )
-    expect(header.className).not.toMatch(/gradient|pb-5|backdrop-blur/)
-  })
-
-  it('keeps no histogram slot before a RAW is loaded', () => {
-    const { container } = renderMobileTopbar({
-      hasImage: false,
-      fileName: '',
-      fileMeta: '',
-      supportLevel: 'experimental',
-      moreMenuItems: [],
-    })
-
+    for (const row of rows) expect(row).toBeEnabled()
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'Replace RAW',
+      'File & pipeline details',
+      'Histogram',
+      'LanguageEnglish',
+      'Reset session',
+    ])
+    // LUT import lives in the Look tool, not in the menu.
+    expect(screen.queryByText(/add \.cube lut/i)).not.toBeInTheDocument()
+    // The old disabled pseudo-items claimed "Official RAW support" even for
+    // an experimental file.
+    expect(screen.queryByText(/official raw support/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/no upload/i)).not.toBeInTheDocument()
     expect(
-      container.querySelector('[data-mobile-histogram-slot]'),
-    ).not.toBeInTheDocument()
-    expect(screen.getAllByRole('button')).toHaveLength(1)
+      screen.getByRole('menuitem', { name: /reset session/i }),
+    ).toHaveAttribute('data-tone', 'destructive')
+  })
+
+  it('toggles the histogram from a checkable menu item', async () => {
+    localStorage.setItem('lumaforge.locale', 'en')
+    const onToggleHistogram = vi.fn()
+    renderTopbar({ histogramShown: true, onToggleHistogram })
+    await userEvent.click(screen.getByRole('button', { name: /more actions/i }))
+
+    const histogram = await screen.findByRole('menuitemcheckbox', {
+      name: /histogram/i,
+    })
+    expect(histogram).toHaveAttribute('aria-checked', 'true')
+    await userEvent.click(histogram)
+    expect(onToggleHistogram).toHaveBeenCalledTimes(1)
+    // Selecting an item closes the menu.
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('offers only the language switch before a RAW is loaded', async () => {
+    localStorage.setItem('lumaforge.locale', 'en')
+    renderTopbar({ hasImage: false })
+    await userEvent.click(screen.getByRole('button', { name: /more actions/i }))
+
+    const menu = await screen.findByRole('menu')
+    const rows = Array.from(
+      menu.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"]'),
+    )
+    expect(rows.map((row) => row.textContent)).toEqual(['LanguageEnglish'])
+  })
+
+  it('switches language from the More menu', async () => {
+    localStorage.setItem('lumaforge.locale', 'en')
+    renderTopbar()
+    await userEvent.click(screen.getByRole('button', { name: /more actions/i }))
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: /language/i }),
+    )
+
+    expect(localStorage.getItem('lumaforge.locale')).toBe('zh-CN')
+    await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
+    const language = await screen.findByRole('menuitem', { name: /语言/ })
+    expect(language).toHaveTextContent('语言中文')
+    await userEvent.click(language)
+    expect(localStorage.getItem('lumaforge.locale')).toBe('en')
   })
 })

@@ -60,7 +60,6 @@ export function MobileRawToolSurface() {
       compareSupported={props.compareSupported}
       fileName={props.fileName}
       fileMeta={fileMeta || props.fileName}
-      supportLevel={props.supportLevel}
       onReplaceFile={commands.onReplaceFile}
       onResetSession={commands.onResetSession}
       isProcessing={props.isProcessing}

@@ -7,14 +7,12 @@ import { MobileModeDock } from './MobileModeDock'
 describe('mobileModeDock', () => {
   it('renders the tool tabs only and switches tool when expanded', async () => {
     const onModeChange = vi.fn()
-    const onOpenMore = vi.fn()
     render(
       <MobileModeDock
         mode="tone"
         expanded
         onModeChange={onModeChange}
         onCollapse={vi.fn()}
-        onOpenMore={onOpenMore}
         panel={<div data-testid="panel">tone-panel</div>}
       />,
     )
@@ -36,7 +34,6 @@ describe('mobileModeDock', () => {
     ).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: /look/i }))
     expect(onModeChange).toHaveBeenCalledWith('look')
-    expect(onOpenMore).not.toHaveBeenCalled()
   })
 
   it('adds Transform as the third tool when the feature exists', () => {
@@ -122,7 +119,6 @@ describe('mobileModeDock', () => {
         expanded
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
-        onOpenMore={vi.fn()}
         panel={<div>look-panel</div>}
       />,
     )
@@ -179,7 +175,6 @@ describe('mobileModeDock', () => {
         deckHeight={212}
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
-        onOpenMore={vi.fn()}
         panel={<div data-testid="panel">export-panel</div>}
       />,
     )
@@ -206,7 +201,6 @@ describe('mobileModeDock', () => {
         deckHeight={250}
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
-        onOpenMore={vi.fn()}
         panel={<div data-testid="panel">tone-panel</div>}
       />,
     )
@@ -251,7 +245,6 @@ describe('mobileModeDock', () => {
         scrubbing
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
-        onOpenMore={vi.fn()}
         panel={<div>tone-panel</div>}
       />,
     )
@@ -268,7 +261,6 @@ describe('mobileModeDock', () => {
         expanded
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
-        onOpenMore={vi.fn()}
         panel={<div data-testid="panel">tone-panel</div>}
       />,
     )
@@ -285,7 +277,6 @@ describe('mobileModeDock', () => {
         scrubbing
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
-        onOpenMore={vi.fn()}
         panel={<div data-testid="panel">tone-panel</div>}
       />,
     )
@@ -303,7 +294,6 @@ describe('mobileModeDock', () => {
         expanded
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
-        onOpenMore={vi.fn()}
         panel={<div data-testid="panel">look-panel</div>}
       />,
     )
@@ -329,7 +319,6 @@ describe('mobileModeDock', () => {
         expanded={false}
         onModeChange={onModeChange}
         onCollapse={onCollapse}
-        onOpenMore={vi.fn()}
         panel={<div data-testid="p">x</div>}
       />,
     )
@@ -343,7 +332,6 @@ describe('mobileModeDock', () => {
         expanded
         onModeChange={onModeChange}
         onCollapse={onCollapse}
-        onOpenMore={vi.fn()}
         panel={<div data-testid="p">x</div>}
       />,
     )
@@ -357,7 +345,6 @@ describe('mobileModeDock', () => {
       mode: 'tone' as const,
       onModeChange: vi.fn(),
       onCollapse: vi.fn(),
-      onOpenMore: vi.fn(),
       panel: <div>x</div>,
     }
     const { rerender } = render(<MobileModeDock {...common} expanded={false} />)
@@ -378,7 +365,6 @@ describe('mobileModeDock', () => {
         expanded
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
-        onOpenMore={vi.fn()}
         panel={<div>x</div>}
       />,
     )
@@ -397,7 +383,6 @@ describe('mobileModeDock', () => {
         showTransform
         onModeChange={vi.fn()}
         onCollapse={vi.fn()}
-        onOpenMore={vi.fn()}
         panel={<div>x</div>}
       />,
     )

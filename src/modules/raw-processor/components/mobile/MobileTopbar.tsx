@@ -1,10 +1,10 @@
+import { BarChart3, ImageUp, Info, Languages, RotateCcw } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useLayoutEffect, useRef } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
-import type { SupportLevel } from '../../model/session'
 import type { MobileMoreMenuItem } from './MobileMoreMenu'
 import { MobileMoreMenu } from './MobileMoreMenu'
 
@@ -14,15 +14,71 @@ export function MobileTopbar(props: {
   hasImage: boolean
   fileName: string
   fileMeta: string
-  supportLevel: SupportLevel
-  moreMenuItems: MobileMoreMenuItem[]
+  histogramShown: boolean
+  onToggleHistogram: () => void
+  onReplaceFile: () => void
+  onOpenFileDetails: () => void
+  onResetSession: () => void
   /** Terminal export action, rendered at the far right after More. */
   exportAction?: ReactNode
   scrubbing?: boolean
   /** Rendered height (px) so the stage can keep the photo below the topbar. */
   onHeightChange?: (height: number) => void
 }) {
-  const { t } = useI18n()
+  const {
+    hasImage,
+    histogramShown,
+    onToggleHistogram,
+    onReplaceFile,
+    onOpenFileDetails,
+    onResetSession,
+  } = props
+  const { t, toggleLocale } = useI18n()
+
+  // Same switch as the shared LocaleToggle; it lives here so the topbar's
+  // meta line keeps room for the camera name.
+  const language: MobileMoreMenuItem = {
+    kind: 'item',
+    icon: Languages,
+    label: t('raw.mobile.more.language'),
+    detail: t('raw.mobile.more.languageCurrent'),
+    onSelect: toggleLocale,
+  }
+
+  // File actions only exist once a RAW is open. Reset is destructive, so it
+  // sits last behind a separator. LUT import lives in the Look tool.
+  const moreMenuItems: MobileMoreMenuItem[] = hasImage
+    ? [
+        {
+          kind: 'item',
+          icon: ImageUp,
+          label: t('raw.mobile.more.replace'),
+          onSelect: onReplaceFile,
+        },
+        {
+          kind: 'item',
+          icon: Info,
+          label: t('raw.mobile.more.fileDetails'),
+          onSelect: onOpenFileDetails,
+        },
+        {
+          kind: 'checkbox',
+          icon: BarChart3,
+          label: t('raw.histogram.title'),
+          checked: histogramShown,
+          onCheckedChange: onToggleHistogram,
+        },
+        language,
+        { kind: 'separator' },
+        {
+          kind: 'item',
+          icon: RotateCcw,
+          label: t('raw.mobile.more.reset'),
+          onSelect: onResetSession,
+          tone: 'destructive',
+        },
+      ]
+    : [language]
   const headerRef = useRef<HTMLElement>(null)
   const { onHeightChange } = props
   useLayoutEffect(() => {
@@ -102,7 +158,7 @@ export function MobileTopbar(props: {
             export is the one filled action, at the far right. */}
         <MobileMoreMenu
           ariaLabel={t('raw.mobile.more.menuAria')}
-          items={props.moreMenuItems}
+          items={moreMenuItems}
         />
         {props.exportAction}
       </div>

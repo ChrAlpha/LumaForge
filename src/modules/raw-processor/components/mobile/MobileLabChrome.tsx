@@ -8,7 +8,6 @@ import { clsxm } from '~/lib/cn'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ExportResultKind } from '../../model/export-result'
-import type { SupportLevel } from '../../model/session'
 import { DOCK_SPRING } from '../../motion'
 import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
 import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
@@ -35,10 +34,10 @@ import {
   MobileFloatingOverlays,
 } from './MobileFloatingOverlays'
 import { MobileLabModeDock } from './MobileLabModeDock'
-import { MobileLabTopbar } from './MobileLabTopbar'
 import type { MobileLookControls } from './MobileLookDeck'
 import { MobileLutBrowser } from './MobileLutBrowser'
 import { isMobileDeckVisible } from './MobileModeDock'
+import { MobileTopbar } from './MobileTopbar'
 import type { MobileLabViewMode } from './useMobileLabChromeController'
 import { useMobileLabChromeController } from './useMobileLabChromeController'
 
@@ -79,7 +78,6 @@ export function MobileLabChrome(props: {
   compareSupported?: boolean
   fileName: string
   fileMeta: string
-  supportLevel: SupportLevel
   onReplaceFile: () => void
   onResetSession: () => void
   isProcessing: boolean
@@ -394,15 +392,14 @@ export function MobileLabChrome(props: {
             exit={{ opacity: 0 }}
             transition={DOCK_SPRING}
           >
-            <MobileLabTopbar
+            <MobileTopbar
               hasImage={props.hasImage}
               fileName={props.fileName}
               fileMeta={props.fileMeta}
-              supportLevel={props.supportLevel}
               histogramShown={histogramOpen}
               onToggleHistogram={() => setHistogramOpen((v) => !v)}
               onReplaceFile={props.onReplaceFile}
-              onOpenMore={() => setMoreOpen(true)}
+              onOpenFileDetails={() => setMoreOpen(true)}
               onResetSession={props.onResetSession}
               exportAction={
                 props.hasImage ? (
@@ -450,7 +447,6 @@ export function MobileLabChrome(props: {
                 disabled={toolsDisabled}
                 onModeChange={handleModeChange}
                 onCollapse={() => setDockExpanded(false)}
-                onOpenMore={() => setMoreOpen(true)}
                 scrubbing={focusActive}
                 prefersReduced={prefersReduced}
                 lutBrowser={props.lutBrowser}

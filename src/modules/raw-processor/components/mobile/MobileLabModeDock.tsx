@@ -32,7 +32,6 @@ export function MobileLabModeDock({
   exportPanel,
   onModeChange,
   onCollapse,
-  onOpenMore,
   onToneChange,
   onToneReset,
   onColorChange,
@@ -69,7 +68,6 @@ export function MobileLabModeDock({
   exportPanel: ReactNode
   onModeChange: (mode: MobileMode) => void
   onCollapse: () => void
-  onOpenMore: () => void
   onToneChange: (patch: Partial<ToneValue>) => void
   onToneReset: () => void
   onColorChange: (patch: Partial<ColorValue>) => void
@@ -97,7 +95,6 @@ export function MobileLabModeDock({
       disabled={disabled}
       onModeChange={onModeChange}
       onCollapse={onCollapse}
-      onOpenMore={onOpenMore}
       scrubbing={scrubbing}
       lookView={lookView}
       deckHeight={deckHeight}

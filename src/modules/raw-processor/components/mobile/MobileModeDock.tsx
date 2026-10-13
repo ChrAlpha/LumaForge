@@ -42,7 +42,6 @@ export function MobileModeDock(props: {
   expanded: boolean
   onModeChange: (mode: MobileMode) => void
   onCollapse: () => void
-  onOpenMore?: () => void
   disabled?: boolean
   showTransform?: boolean
   /**
