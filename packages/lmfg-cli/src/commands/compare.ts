@@ -1,12 +1,10 @@
-import { encodePreviewFrameToJpeg } from '@lumaforge/render-engine/preview'
 import type { Command } from 'commander'
 import { InvalidArgumentError } from 'commander'
 
 import type { CompareSheetResult } from '../schemas/results'
 import type { SheetTile } from '../services/contact-sheet'
-import { buildContactSheet } from '../services/contact-sheet'
+import { writeIterationContactSheet } from '../services/contact-sheet'
 import { createIterationStore } from '../workspace/iteration-store'
-import { toFileUri } from '../workspace/paths'
 import type { CommandHost } from './context'
 import { runCommand } from './context'
 import {
@@ -82,68 +80,32 @@ export function registerCompareCommands(
               )
               tiles.push({ id: candidate.id, ...tile })
             }
-            const cols =
-              options.layout?.cols ?? Math.ceil(Math.sqrt(tiles.length))
-            const built = buildContactSheet({
-              tiles,
-              cols,
-              rows: options.layout?.rows,
-              gap: options.gap,
-            })
-            const name =
-              options.name ??
-              (options.layout
-                ? `contact-sheet-${built.cols}x${built.rows}`
-                : 'contact-sheet')
             return withRuntime(ctx, async (runtime) => {
-              const jpegRuntime = await runtime.jpeg()
-              const jpeg = (await encodePreviewFrameToJpeg(
-                (o) => jpegRuntime.createEncoder(o),
-                {
-                  rgba: built.sheet.rgba,
-                  width: built.sheet.width,
-                  height: built.sheet.height,
-                  quality: 0.85,
-                },
-              )) as Uint8Array
-              const written = await iterationStore.writeContactSheet(
-                iteration.id,
-                {
-                  name,
-                  jpeg,
-                  map: {
-                    schema: 'lmfg.contact-sheet-map.v1',
-                    iteration_id: iteration.id,
-                    cols: built.cols,
-                    rows: built.rows,
-                    tile_width: built.tileWidth,
-                    tile_height: built.tileHeight,
-                    gap: built.gap,
-                    width: built.sheet.width,
-                    height: built.sheet.height,
-                    tiles: built.map,
-                  },
-                },
-              )
+              const { summary, map } = await writeIterationContactSheet({
+                jpegRuntime: await runtime.jpeg(),
+                iterationStore,
+                iterationId: iteration.id,
+                tiles,
+                cols:
+                  options.layout?.cols ?? Math.ceil(Math.sqrt(tiles.length)),
+                rows: options.layout?.rows,
+                gap: options.gap,
+                name:
+                  options.name ??
+                  (options.layout
+                    ? `contact-sheet-${options.layout.cols}x${options.layout.rows}`
+                    : 'contact-sheet'),
+              })
               ctx.output.event({
                 event: 'artifact.ready',
                 role: 'contact-sheet',
-                uri: toFileUri(written.sheet),
+                uri: summary.uri,
               })
               return {
                 session_id: record.id,
                 iteration_id: iteration.id,
-                contact_sheet: {
-                  uri: toFileUri(written.sheet),
-                  map_uri: toFileUri(written.map),
-                  width: built.sheet.width,
-                  height: built.sheet.height,
-                  cols: built.cols,
-                  rows: built.rows,
-                  tile_width: built.tileWidth,
-                  tile_height: built.tileHeight,
-                },
-                tiles: built.map,
+                contact_sheet: summary,
+                tiles: map,
               }
             })
           },

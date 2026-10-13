@@ -1,7 +1,6 @@
 import type { Command } from 'commander'
 
 import { assertTierAvailable } from '../runtime/capability'
-import { createLmfgRuntime } from '../runtime/node-runtime'
 import { loadSessionSource, loadSourceFile } from '../runtime/source-loader'
 import { inspectSource } from '../services/inspect'
 import { writeJsonAtomic } from '../workspace/atomic-fs'
@@ -9,6 +8,7 @@ import { workspacePaths } from '../workspace/paths'
 import { createSessionStore } from '../workspace/session-store'
 import type { CommandHost } from './context'
 import { runCommand } from './context'
+import { withRuntime } from './render-shared'
 
 export function registerInspectCommand(
   program: Command,
@@ -28,13 +28,10 @@ export function registerInspectCommand(
           { schema: 'lmfg.inspect.v1', command: 'inspect' },
           async () => {
             assertTierAvailable(ctx.options.tier)
-            const runtime = createLmfgRuntime({
-              memoryProfile: ctx.options.memoryProfile,
-            })
-            try {
+            return withRuntime(ctx, async (runtime) => {
               if (file) {
                 const source = await loadSourceFile(file, ctx.cwd)
-                return await inspectSource({
+                return inspectSource({
                   runtime,
                   source,
                   sessionId: null,
@@ -69,9 +66,7 @@ export function registerInspectCommand(
                 decoded_dimensions: result.decoded_dimensions,
               }))
               return result
-            } finally {
-              runtime.dispose()
-            }
+            })
           },
           async () => {
             const source = file

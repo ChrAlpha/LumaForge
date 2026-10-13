@@ -1,9 +1,6 @@
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import type { RenderEnvironment } from '@lumaforge/render-engine'
-import {
-  encodePreviewFrameToJpeg,
-  QUICK_PREVIEW_MAX_PIXELS,
-} from '@lumaforge/render-engine/preview'
+import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 
 import type { Output } from '../protocol/output'
 import type { LmfgRuntime } from '../runtime/node-runtime'
@@ -23,7 +20,7 @@ import type { CandidateTask, ConcurrencyRequest } from './candidate-pool'
 import { renderCandidates, resolveConcurrency } from './candidate-pool'
 import { buildColorGraph, requireSupportedGraph } from './color-graph'
 import type { SheetTile } from './contact-sheet'
-import { buildContactSheet, fitTileSize } from './contact-sheet'
+import { fitTileSize, writeIterationContactSheet } from './contact-sheet'
 import type { ResolvedLut } from './lut'
 import { resolveLutForParams } from './lut'
 import {
@@ -263,48 +260,14 @@ export async function runIteration(
     let contactSheet: IterationResult['contact_sheet'] = null
     if (sheetOptions) {
       const sheetStart = performance.now()
-      const built = buildContactSheet({
+      ;({ summary: contactSheet } = await writeIterationContactSheet({
+        jpegRuntime: jpeg,
+        iterationStore: input.iterationStore,
+        iterationId,
         tiles,
         cols: sheetOptions.cols,
         gap: sheetOptions.gap,
-      })
-      const sheetJpeg = (await encodePreviewFrameToJpeg(
-        (options) => jpeg.createEncoder(options),
-        {
-          rgba: built.sheet.rgba,
-          width: built.sheet.width,
-          height: built.sheet.height,
-          quality: 0.85,
-        },
-      )) as Uint8Array
-      const written = await input.iterationStore.writeContactSheet(
-        iterationId,
-        {
-          jpeg: sheetJpeg,
-          map: {
-            schema: 'lmfg.contact-sheet-map.v1',
-            iteration_id: iterationId,
-            cols: built.cols,
-            rows: built.rows,
-            tile_width: built.tileWidth,
-            tile_height: built.tileHeight,
-            gap: built.gap,
-            width: built.sheet.width,
-            height: built.sheet.height,
-            tiles: built.map,
-          },
-        },
-      )
-      contactSheet = {
-        uri: toFileUri(written.sheet),
-        map_uri: toFileUri(written.map),
-        width: built.sheet.width,
-        height: built.sheet.height,
-        cols: built.cols,
-        rows: built.rows,
-        tile_width: built.tileWidth,
-        tile_height: built.tileHeight,
-      }
+      }))
       timings.contact_sheet_ms = performance.now() - sheetStart
       await emit({
         event: 'artifact.ready',

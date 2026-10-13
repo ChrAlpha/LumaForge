@@ -51,30 +51,22 @@ export function registerMetricsCommands(
               record.id,
             )
             await iterationStore.read(options.iteration)
-            const paths = iterationStore.candidatePaths(
+            const metrics = await loadMetrics(
+              iterationStore,
               options.iteration,
               options.candidate,
             )
-            let stored = await iterationStore.readCandidateMetrics(
-              options.iteration,
-              options.candidate,
-            )
-            if (!stored) {
-              const tile = await iterationStore.readCandidateTile(
-                options.iteration,
-                options.candidate,
-              )
-              stored = computeImageMetrics(tile.rgba, tile.width, tile.height, {
-                approximate: true,
-              })
-              await writeJsonAtomic(paths.metrics, stored)
-            }
             return {
               session_id: record.id,
               iteration_id: options.iteration,
               candidate_id: options.candidate,
-              metrics_uri: toFileUri(paths.metrics),
-              metrics: stored,
+              metrics_uri: toFileUri(
+                iterationStore.candidatePaths(
+                  options.iteration,
+                  options.candidate,
+                ).metrics,
+              ),
+              metrics,
             }
           },
         ),

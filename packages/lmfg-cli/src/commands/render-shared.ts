@@ -42,15 +42,8 @@ export function parseNonNegativeInteger(value: string): number {
   return parsed
 }
 
-export async function loadParamsFile(
-  ctx: CommandContext,
-  file: string | undefined,
-): Promise<RenderParams> {
-  return parseRenderParams(file ? await readJson(ctx.resolvePath(file)) : {})
-}
-
-/** Inline JSON for `--params-json` / `--plan-json` (agent hosts pass objects, not files). */
-export function parseInlineJson(value: string, flag: string): unknown {
+/** Inline JSON for a `--<name>-json` flag (agent hosts pass objects, not files). */
+function parseInlineJson(value: string, flag: string): unknown {
   try {
     return JSON.parse(value)
   } catch (error) {
@@ -60,24 +53,41 @@ export function parseInlineJson(value: string, flag: string): unknown {
   }
 }
 
-export type ParamsSource = { params?: string; paramsJson?: string }
-
-/** `--params <file>` or `--params-json <json>`; both together is an error. */
-export async function loadParams(
-  ctx: CommandContext,
-  source: ParamsSource,
-): Promise<RenderParams> {
-  if (source.params !== undefined && source.paramsJson !== undefined) {
+/**
+ * A JSON input given as `--<name> <file>` or `--<name>-json <json>`; both
+ * together is an error, and so is neither unless the input is optional.
+ */
+export async function readJsonInput(
+  ctx: Pick<CommandContext, 'resolvePath'>,
+  name: string,
+  input: { file?: string; json?: string },
+  required = true,
+): Promise<unknown> {
+  const usage = `--${name} <file> or --${name}-json <json>`
+  if (input.file !== undefined && input.json !== undefined) {
     throw new LmfgError('args.invalid', {
-      message: 'Pass either --params <file> or --params-json <json>, not both.',
+      message: `Pass either ${usage}, not both.`,
     })
   }
-  if (source.paramsJson !== undefined) {
-    return parseRenderParams(
-      parseInlineJson(source.paramsJson, '--params-json'),
-    )
-  }
-  return loadParamsFile(ctx, source.params)
+  if (input.json !== undefined)
+    return parseInlineJson(input.json, `--${name}-json`)
+  if (input.file !== undefined) return readJson(ctx.resolvePath(input.file))
+  if (!required) return undefined
+  throw new LmfgError('args.invalid', { message: `Pass ${usage}.` })
+}
+
+/** `--params <file>` or `--params-json <json>`; defaults apply when neither is given. */
+export async function loadParams(
+  ctx: CommandContext,
+  source: { params?: string; paramsJson?: string },
+): Promise<RenderParams> {
+  const json = await readJsonInput(
+    ctx,
+    'params',
+    { file: source.params, json: source.paramsJson },
+    false,
+  )
+  return parseRenderParams(json ?? {})
 }
 
 export type RenderSessionContext = {

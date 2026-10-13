@@ -1,9 +1,4 @@
-import {
-  Command,
-  CommanderError,
-  InvalidArgumentError,
-  Option,
-} from 'commander'
+import { Command, CommanderError, Option } from 'commander'
 
 import { registerCompareCommands } from './commands/compare'
 import type { CliIo, CommandHost, GlobalOptions } from './commands/context'
@@ -14,17 +9,10 @@ import { registerLutCommands } from './commands/lut'
 import { registerManifestCommands } from './commands/manifest'
 import { registerMetricsCommands } from './commands/metrics'
 import { registerRenderCommands } from './commands/render'
+import { parsePositiveInteger } from './commands/render-shared'
 import { registerSessionCommands } from './commands/session'
 import { LmfgError } from './protocol/errors'
 import { LMFG_VERSION } from './runtime/versions'
-
-function parsePositiveInt(value: string): number {
-  const parsed = Number.parseInt(value, 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new InvalidArgumentError('Expected a positive integer.')
-  }
-  return parsed
-}
 
 export type RegisterCommands = (program: Command, host: CommandHost) => void
 
@@ -74,7 +62,7 @@ export function createProgram(
     .option(
       '--timeout <ms>',
       'per-command timeout in milliseconds',
-      parsePositiveInt,
+      parsePositiveInteger,
     )
     .addOption(
       new Option('--memory-profile <profile>', 'native memory profile')

@@ -63,29 +63,18 @@ export async function decodeFrame(
     await session.probeExportCapability(signal),
     session.probe,
   )
-  if (maxPixels <= QUICK_PREVIEW_MAX_PIXELS) {
-    const frame = await session.decodeQuick(
-      { maxOutputPixels: maxPixels },
-      signal,
-    )
-    return {
-      data: frame.data,
-      width: frame.width,
-      height: frame.height,
-      sourceDimensions,
-      decode: 'quick',
-    }
-  }
-  const frame = await session.decodeBoundedHq(
-    { maxOutputPixels: maxPixels },
-    signal,
-  )
+  const decode = maxPixels <= QUICK_PREVIEW_MAX_PIXELS ? 'quick' : 'bounded-hq'
+  const options = { maxOutputPixels: maxPixels }
+  const frame =
+    decode === 'quick'
+      ? await session.decodeQuick(options, signal)
+      : await session.decodeBoundedHq(options, signal)
   return {
     data: frame.data,
     width: frame.width,
     height: frame.height,
     sourceDimensions,
-    decode: 'bounded-hq',
+    decode,
   }
 }
 

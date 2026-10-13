@@ -28,7 +28,7 @@ import { resolveLutForParams } from '../services/lut'
 import { requireVerifiedManifest } from '../services/manifest'
 import { clampMaxPixels, publishPreview } from '../services/preview'
 import { prepareReplay, replayKey, runReplay } from '../services/replay'
-import { fileExists, readJson } from '../workspace/atomic-fs'
+import { fileExists } from '../workspace/atomic-fs'
 import { createIterationStore } from '../workspace/iteration-store'
 import { workspacePaths } from '../workspace/paths'
 import { createSessionStore } from '../workspace/session-store'
@@ -37,9 +37,9 @@ import { runCommand } from './context'
 import {
   loadParams,
   openRenderSession,
-  parseInlineJson,
   parsePositiveInteger,
   parseQualityPercent,
+  readJsonInput,
   resolveParamsAndLut,
   withRuntime,
 } from './render-shared'
@@ -173,21 +173,10 @@ function registerIteration(
     .action(async function (this: Command, options: IterationOptions) {
       const ctx = host.context(this)
       const loadPlan = async (): Promise<NormalizedPlan> => {
-        if (options.plan === undefined && options.planJson === undefined) {
-          throw new LmfgError('args.invalid', {
-            message: 'Pass --plan <file> or --plan-json <json>.',
-          })
-        }
-        if (options.plan !== undefined && options.planJson !== undefined) {
-          throw new LmfgError('args.invalid', {
-            message:
-              'Pass either --plan <file> or --plan-json <json>, not both.',
-          })
-        }
-        const json =
-          options.planJson !== undefined
-            ? parseInlineJson(options.planJson, '--plan-json')
-            : await readJson(ctx.resolvePath(options.plan!))
+        const json = await readJsonInput(ctx, 'plan', {
+          file: options.plan,
+          json: options.planJson,
+        })
         return kind === 'candidate'
           ? normalizeCandidatePlan(json)
           : expandSweepPlan(json)

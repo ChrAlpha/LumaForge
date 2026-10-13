@@ -1,7 +1,14 @@
+import type { LumaJpegNodeRuntime } from '@lumaforge/luma-jpeg-runtime/node'
 import type { ContactSheet } from '@lumaforge/render-engine/preview'
-import { composeContactSheet } from '@lumaforge/render-engine/preview'
+import {
+  composeContactSheet,
+  encodePreviewFrameToJpeg,
+} from '@lumaforge/render-engine/preview'
 
 import { LmfgError } from '../protocol/errors'
+import type { IterationResult } from '../schemas/results'
+import type { IterationStore } from '../workspace/iteration-store'
+import { toFileUri } from '../workspace/paths'
 
 export function fitTileSize(
   srcWidth: number,
@@ -121,4 +128,61 @@ export function buildContactSheet(input: {
     height: tileHeight,
   }))
   return { sheet, rows, cols, gap, tileWidth, tileHeight, map }
+}
+
+export type ContactSheetSummary = NonNullable<IterationResult['contact_sheet']>
+
+/** Composes a contact sheet of an iteration's tiles and writes it with its map. */
+export async function writeIterationContactSheet(input: {
+  jpegRuntime: LumaJpegNodeRuntime
+  iterationStore: IterationStore
+  iterationId: string
+  tiles: SheetTile[]
+  cols: number
+  rows?: number
+  gap?: number
+  name?: string
+}): Promise<{ summary: ContactSheetSummary; map: BuiltContactSheet['map'] }> {
+  const built = buildContactSheet(input)
+  const jpeg = (await encodePreviewFrameToJpeg(
+    (options) => input.jpegRuntime.createEncoder(options),
+    {
+      rgba: built.sheet.rgba,
+      width: built.sheet.width,
+      height: built.sheet.height,
+      quality: 0.85,
+    },
+  )) as Uint8Array
+  const written = await input.iterationStore.writeContactSheet(
+    input.iterationId,
+    {
+      name: input.name,
+      jpeg,
+      map: {
+        schema: 'lmfg.contact-sheet-map.v1',
+        iteration_id: input.iterationId,
+        cols: built.cols,
+        rows: built.rows,
+        tile_width: built.tileWidth,
+        tile_height: built.tileHeight,
+        gap: built.gap,
+        width: built.sheet.width,
+        height: built.sheet.height,
+        tiles: built.map,
+      },
+    },
+  )
+  return {
+    summary: {
+      uri: toFileUri(written.sheet),
+      map_uri: toFileUri(written.map),
+      width: built.sheet.width,
+      height: built.sheet.height,
+      cols: built.cols,
+      rows: built.rows,
+      tile_width: built.tileWidth,
+      tile_height: built.tileHeight,
+    },
+    map: built.map,
+  }
 }
