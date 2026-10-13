@@ -11,6 +11,7 @@ import {
   COLOR_GRAPH_DESCRIPTOR_VERSION,
   fingerprintColorGraph,
 } from './color-graph-descriptor'
+import type { CreateRenderManifestInput } from './create-render-manifest'
 import { createRenderManifest } from './create-render-manifest'
 import { lutIdentityFromProfile } from './lut-identity'
 import { parseRenderManifest } from './parse-render-manifest'
@@ -34,7 +35,7 @@ const resolved = resolveExportColorGraph({
 if (!resolved.supported) throw new Error(resolved.message)
 const graph = resolved
 
-function sealedExport() {
+function sealedExport(overrides: Partial<CreateRenderManifestInput> = {}) {
   return createRenderManifest({
     kind: 'export',
     source_raw: {
@@ -68,6 +69,7 @@ function sealedExport() {
     },
     parent_manifest_sha256: null,
     produced_at: '2026-09-05T00:00:00.000Z',
+    ...overrides,
   })
 }
 
@@ -116,6 +118,26 @@ describe('createRenderManifest', () => {
 
   it('writes a manifest the canonical reader accepts as written', () => {
     const written = JSON.parse(JSON.stringify(sealedExport())) as unknown
+    expect(parseRenderManifest(written)).toEqual({
+      ok: true,
+      manifest: written,
+    })
+  })
+
+  it('writes a candidate manifest with its decode budget the reader accepts', () => {
+    const written = JSON.parse(
+      JSON.stringify(
+        sealedExport({
+          kind: 'candidate',
+          policy: {
+            kind: 'candidate',
+            row_slice: 32,
+            concurrency: 1,
+            max_pixels: 300_000,
+          },
+        }),
+      ),
+    ) as unknown
     expect(parseRenderManifest(written)).toEqual({
       ok: true,
       manifest: written,

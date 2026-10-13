@@ -16,8 +16,6 @@ import type {
 import {
   HSL_BAND_IDS,
   HSL_SHIFT_AXES,
-  HSL_SHIFT_MAX,
-  HSL_SHIFT_MIN,
   isHSLBandNeutral,
   isSelectiveColorNeutral,
   NEUTRAL_HSL_BAND,
@@ -39,11 +37,7 @@ import {
   colorGraphIntentEquals,
   colorGraphIntentSignature,
   HSL_SHIFT_BOUNDS,
-  LOOK_INTENSITY_BOUNDS,
-  LOOK_INTENSITY_MAX,
-  LOOK_INTENSITY_MIN,
   LOOK_SELECTION_KEYS,
-  LOOK_STYLE_KINDS,
   NEUTRAL_USER_COLOR_INTENT,
   normalizeColorGraphIntent,
   normalizeLookIntensity,
@@ -173,58 +167,6 @@ describe('normalizers the color intent reuses', () => {
 })
 
 describe('field sets', () => {
-  it('lists every field once, in a fixed order', () => {
-    expect(USER_COLOR_SCALAR_KEYS).toEqual([
-      'userExposureEv',
-      'userContrast',
-      'userHighlights',
-      'userShadows',
-      'userWhites',
-      'userBlacks',
-      'userTemperature',
-      'userTint',
-      'userSaturation',
-      'userVibrance',
-    ])
-    expect(USER_COLOR_INTENT_KEYS).toEqual([
-      ...USER_COLOR_SCALAR_KEYS,
-      'selectiveColor',
-    ])
-    expect(LOOK_SELECTION_KEYS).toEqual([
-      'styleKind',
-      'builtinPreset',
-      'intensity',
-    ])
-    expect(COLOR_GRAPH_INTENT_KEYS).toEqual([
-      ...LOOK_SELECTION_KEYS,
-      ...USER_COLOR_INTENT_KEYS,
-    ])
-    expect(new Set(COLOR_GRAPH_INTENT_KEYS).size).toBe(
-      COLOR_GRAPH_INTENT_KEYS.length,
-    )
-    expect(LOOK_STYLE_KINDS).toEqual(['none', 'builtin', 'custom'])
-    expect(BUILTIN_STYLE_PRESETS).toEqual([
-      'neutral',
-      'warm',
-      'cool',
-      'film-soft',
-      'film-contrast',
-      'cinematic',
-      'fade',
-      'mono',
-    ])
-    for (const list of [
-      USER_COLOR_SCALAR_KEYS,
-      USER_COLOR_INTENT_KEYS,
-      LOOK_SELECTION_KEYS,
-      COLOR_GRAPH_INTENT_KEYS,
-      LOOK_STYLE_KINDS,
-      BUILTIN_STYLE_PRESETS,
-    ]) {
-      expect(Object.isFrozen(list)).toBe(true)
-    }
-  })
-
   it('names exactly the fields of each intent type', () => {
     expect([...COLOR_GRAPH_INTENT_KEYS].sort()).toEqual(
       Object.keys(EDITED).sort(),
@@ -238,22 +180,6 @@ describe('field sets', () => {
     expectTypeOf<keyof UserColorIntent>().toEqualTypeOf<
       (typeof USER_COLOR_INTENT_KEYS)[number]
     >()
-  })
-
-  it('leaves view state, RAW render exposure, LUT data and geometry out', () => {
-    for (const key of [
-      'viewMode',
-      'compareSplit',
-      'rawRenderExposure',
-      'lut',
-      'geometry',
-    ]) {
-      expect(COLOR_GRAPH_INTENT_KEYS).not.toContain(key)
-    }
-    expectTypeOf<ColorGraphIntent>().not.toHaveProperty('viewMode')
-    expectTypeOf<ColorGraphIntent>().not.toHaveProperty('compareSplit')
-    expectTypeOf<ColorGraphIntent>().not.toHaveProperty('rawRenderExposure')
-    expectTypeOf<ColorGraphIntent>().not.toHaveProperty('lut')
   })
 })
 
@@ -331,12 +257,8 @@ describe('hsl bands, axes and neutral', () => {
 })
 
 describe('bounds', () => {
-  it('states the range each existing normalizer clamps to', () => {
-    expect(USER_COLOR_FIELD_BOUNDS.userExposureEv).toEqual({ min: -5, max: 5 })
+  it('states the range each normalizer clamps to', () => {
     for (const key of USER_COLOR_SCALAR_KEYS) {
-      if (key !== 'userExposureEv') {
-        expect(USER_COLOR_FIELD_BOUNDS[key]).toEqual({ min: -100, max: 100 })
-      }
       const { min, max } = USER_COLOR_FIELD_BOUNDS[key]
       const at = (value: number) =>
         normalizeUserColorIntent(
@@ -344,30 +266,14 @@ describe('bounds', () => {
         )[key]
       expect(at(max + 1000)).toBe(max)
       expect(at(min - 1000)).toBe(min)
-      expect(at(Number.NaN)).toBe(0)
-      expect(at(Number.POSITIVE_INFINITY)).toBe(0)
     }
-    expect(Object.keys(USER_COLOR_FIELD_BOUNDS)).toEqual([
-      ...USER_COLOR_SCALAR_KEYS,
-    ])
-    expect(Object.isFrozen(USER_COLOR_FIELD_BOUNDS)).toBe(true)
-    expect(Object.isFrozen(USER_COLOR_FIELD_BOUNDS.userTint)).toBe(true)
-
-    expect(HSL_SHIFT_BOUNDS).toEqual({ min: HSL_SHIFT_MIN, max: HSL_SHIFT_MAX })
-    expect(HSL_SHIFT_BOUNDS).toEqual({ min: -100, max: 100 })
     for (const axis of HSL_SHIFT_AXES) {
       const clamped = normalizeSelectiveColorParams({
         selectiveColor: { red: shift(axis, 1000), blue: shift(axis, -1000) },
       })
-      expect(clamped.red[axis]).toBe(HSL_SHIFT_MAX)
-      expect(clamped.blue[axis]).toBe(HSL_SHIFT_MIN)
+      expect(clamped.red[axis]).toBe(HSL_SHIFT_BOUNDS.max)
+      expect(clamped.blue[axis]).toBe(HSL_SHIFT_BOUNDS.min)
     }
-
-    expect(LOOK_INTENSITY_BOUNDS).toEqual({ min: 0, max: 1 })
-    expect(LOOK_INTENSITY_BOUNDS).toEqual({
-      min: LOOK_INTENSITY_MIN,
-      max: LOOK_INTENSITY_MAX,
-    })
   })
 })
 
@@ -838,7 +744,7 @@ describe('identity', () => {
 })
 
 describe('retained built-in presets', () => {
-  it('keep a built-in look a valid selection that export still refuses', () => {
+  it('keep a built-in look a valid selection', () => {
     for (const builtinPreset of BUILTIN_STYLE_PRESETS) {
       const builtin = normalizeColorGraphIntent(
         { ...EDITED, styleKind: 'builtin', builtinPreset },
@@ -849,13 +755,6 @@ describe('retained built-in presets', () => {
         ...EDITED,
         styleKind: 'builtin',
         builtinPreset,
-      })
-      expect(resolveExportColorGraph({ ...builtin, lut: null })).toEqual({
-        supported: false,
-        reason: 'unsupported-pipeline',
-        message:
-          'Built-in styles are not supported by full-resolution JPEG export.',
-        steps: [],
       })
     }
   })

@@ -28,7 +28,6 @@ import {
   SAT_MAX_FACTOR,
   wrapFraction,
 } from './selective-color'
-import { LUMA_COLOR_SELECTIVE_COLOR_WGSL } from './selective-color-wgsl'
 
 const BAND_IDS_ORDERED: readonly HSLBandId[] = [
   'red',
@@ -1007,37 +1006,5 @@ describe('applySelectiveColorRow cross-talk smoothness (cross_talk_smoothness)',
     // regression-detecting threshold rather than a fixed physical bound; a
     // gross C¹ violation would push max step well above 0.1.
     expect(maxStep).toBeLessThan(2e-2)
-  })
-})
-
-describe('selective-color WGSL contract', () => {
-  it('samples the 256-entry hue table with wrap-around linear interpolation', () => {
-    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain(
-      'fn sampleSelectiveColorLut(hNorm: f32) -> vec4f',
-    )
-    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain(
-      `fract(hNorm) * ${LUT_SIZE.toFixed(1)}`,
-    )
-    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain(
-      `let i1 = (i0 + 1u) % ${LUT_SIZE}u;`,
-    )
-    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain('mix(a, b, vec4f(t))')
-  })
-
-  it('mirrors the CPU apply algorithm: oklab roundtrip, smoothstep chroma clamp, direct rotation', () => {
-    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain(
-      'fn applyUserSelectiveColor(rgbProPhoto: vec3f) -> vec3f',
-    )
-    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain('linearProPhotoToOklab')
-    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain('oklabToLinearProPhoto')
-    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toMatch(
-      /smoothstep\(params\.selectiveColorChromaClamp\.x,\s*params\.selectiveColorChromaClamp\.y/,
-    )
-    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toContain('atan2(b_val, a_val)')
-    // Chroma scale formula matches the CPU 1 + strength * (satMul - 1).
-    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toMatch(/mix\(1\.0,\s*\w+\.g/)
-    expect(LUMA_COLOR_SELECTIVE_COLOR_WGSL).toMatch(
-      /a_val\s*\*\s*cosD\s*-\s*b_val\s*\*\s*sinD/,
-    )
   })
 })

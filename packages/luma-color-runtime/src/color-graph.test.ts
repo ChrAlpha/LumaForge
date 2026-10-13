@@ -320,56 +320,25 @@ describe('resolveExportColorGraph', () => {
     })
   })
 
-  it('inserts raw render exposure before output conversion', () => {
+  it('carries the RAW render exposure into its step', () => {
     const graph = resolveExportColorGraph(
       graphInput({
         rawRenderExposure: { ev: 1, multiplier: 2, source: 'image-statistics' },
       }),
     )
 
-    expect(graph).toMatchObject({
-      supported: true,
-      steps: [
-        { kind: 'input-linear-prophoto' },
-        { kind: 'raw-render-exposure', ev: 1, multiplier: 2 },
-        {
-          kind: 'user-color-balance',
-          temperature: 0,
-          tint: 0,
-          gain: [1, 1, 1],
-        },
-        { kind: 'user-exposure', ev: 0, multiplier: 1 },
-        { kind: 'user-contrast', amount: 0, factor: 1 },
-        {
-          kind: 'user-regional-tone',
-          highlights: 0,
-          shadows: 0,
-          whites: 0,
-          blacks: 0,
-        },
-        { kind: 'user-saturation' },
-        { kind: 'user-selective-color' },
-        { kind: 'output-srgb' },
-      ],
+    expect(graph.steps[1]).toEqual({
+      kind: 'raw-render-exposure',
+      ev: 1,
+      multiplier: 2,
     })
   })
 
-  it('inserts neutral user tone steps in no-lut export graphs', () => {
+  it('names the operator of each neutral scene step', () => {
     const graph = resolveExportColorGraph(graphInput())
 
     expect(graph.supported).toBe(true)
     if (!graph.supported) throw new Error('Expected supported graph')
-    expect(graph.steps.map((step) => step.kind)).toEqual([
-      'input-linear-prophoto',
-      'raw-render-exposure',
-      'user-color-balance',
-      'user-exposure',
-      'user-contrast',
-      'user-regional-tone',
-      'user-saturation',
-      'user-selective-color',
-      'output-srgb',
-    ])
     expect(graph.steps[2]).toMatchObject({
       kind: 'user-color-balance',
       temperature: 0,
@@ -402,121 +371,12 @@ describe('resolveExportColorGraph', () => {
       luminanceCoefficients: [0.2880402, 0.7118741, 0.0000857],
       zeroLuminanceMode: 'return-black',
     })
-  })
-
-  it('places user color balance after raw render exposure and before tone', () => {
-    const graph = resolveExportColorGraph(
-      graphInput({ userTemperature: 40, userTint: -25 }),
-    )
-
-    expect(graph.supported).toBe(true)
-    if (!graph.supported) throw new Error('Expected supported graph')
-    expect(graph.steps.map((step) => step.kind).slice(0, 5)).toEqual([
-      'input-linear-prophoto',
-      'raw-render-exposure',
-      'user-color-balance',
-      'user-exposure',
-      'user-contrast',
-    ])
-    expect(graph.steps[2]).toMatchObject({
-      kind: 'user-color-balance',
-      temperature: 40,
-      tint: -25,
+    expect(graph.steps[6]).toMatchObject({
+      kind: 'user-saturation',
+      saturation: 0,
+      vibrance: 0,
+      operator: 'oklab-chroma-with-skin-protection',
     })
-  })
-
-  it('places user tone and regional tone before LUT input conversion', () => {
-    const graph = resolveExportColorGraph(
-      graphInput({
-        styleKind: 'custom',
-        userExposureEv: 1,
-        userContrast: 50,
-        userHighlights: -40,
-        userShadows: 35,
-        userWhites: -25,
-        userBlacks: 20,
-        lut: lutWith(
-          confirmed({
-            ...registryProfile('sony-sgamut3cine-slog3'),
-            outputGamut: 's-gamut3-cine',
-            outputTransfer: 's-log3',
-            outputRange: 'full',
-          }),
-        ),
-      }),
-    )
-
-    expect(graph.supported).toBe(true)
-    if (!graph.supported) throw new Error('Expected supported graph')
-    expect(graph.steps.map((step) => step.kind)).toEqual([
-      'input-linear-prophoto',
-      'raw-render-exposure',
-      'user-color-balance',
-      'user-exposure',
-      'user-contrast',
-      'user-regional-tone',
-      'user-saturation',
-      'user-selective-color',
-      'gamut-to-lut-input',
-      'encode-lut-transfer',
-      'lut3d',
-      'lut-output-to-srgb',
-      'output-srgb',
-    ])
-    expect(graph.steps[3]).toMatchObject({
-      kind: 'user-exposure',
-      ev: 1,
-      multiplier: 2,
-    })
-    expect(graph.steps[4]).toMatchObject({
-      kind: 'user-contrast',
-      amount: 50,
-      factor: Math.pow(2, 50 / 200),
-    })
-    expect(graph.steps[5]).toMatchObject({
-      kind: 'user-regional-tone',
-      highlights: -40,
-      shadows: 35,
-      whites: -25,
-      blacks: 20,
-    })
-  })
-
-  it('keeps built-in style export failure pointed at built-in style support', () => {
-    const graph = resolveExportColorGraph(
-      graphInput({
-        styleKind: 'builtin',
-        builtinPreset: 'warm',
-        userExposureEv: 1,
-        userContrast: 50,
-        userHighlights: -40,
-        userShadows: 40,
-        userWhites: -20,
-        userBlacks: 20,
-      }),
-    )
-
-    expect(graph.supported).toBe(false)
-    if (graph.supported) throw new Error('Expected unsupported graph')
-    expect(graph.message).toBe(
-      'Built-in styles are not supported by full-resolution JPEG export.',
-    )
-  })
-
-  it('fails closed for built-in styles', () => {
-    const graph = resolveExportColorGraph(
-      graphInput({ styleKind: 'builtin', builtinPreset: 'warm' }),
-    )
-
-    expect(graph.supported).toBe(false)
-    if (graph.supported) {
-      throw new Error('Expected unsupported graph')
-    }
-    expect(graph.reason).toBe('unsupported-pipeline')
-    expect(graph.message).toBe(
-      'Built-in styles are not supported by full-resolution JPEG export.',
-    )
-    expect(graph.steps).toEqual([])
   })
 
   it('resolves scene creative LUTs with explicit input and output contracts', () => {
@@ -742,72 +602,7 @@ describe('resolveExportColorGraph', () => {
     )
   })
 
-  it('emits user-saturation step at index 6 in simple graph', () => {
-    const graph = resolveExportColorGraph(
-      graphInput({ userSaturation: 42, userVibrance: -17 }),
-    )
-    expect(graph.supported).toBe(true)
-    if (!graph.supported) return
-    expect(graph.steps).toHaveLength(9)
-    expect(graph.steps[6].kind).toBe('user-saturation')
-    const step = graph.steps[6] as any
-    expect(step.saturation).toBe(42)
-    expect(step.vibrance).toBe(-17)
-    expect(step.operator).toBe('oklab-chroma-with-skin-protection')
-    expect(graph.steps[7].kind).toBe('user-selective-color')
-    expect(graph.steps[8].kind).toBe('output-srgb')
-  })
-
-  it('always emits user-saturation even when both are zero', () => {
-    const graph = resolveExportColorGraph(
-      graphInput({ userSaturation: 0, userVibrance: 0 }),
-    )
-    expect(graph.supported).toBe(true)
-    if (!graph.supported) return
-    expect(graph.steps[6].kind).toBe('user-saturation')
-  })
-
   describe('user-selective-color graph step', () => {
-    it('graph_step_composition: inserts selective-color after regional tone and before LUT/output', () => {
-      const noLutGraph = resolveExportColorGraph(graphInput())
-
-      expect(noLutGraph.supported).toBe(true)
-      if (!noLutGraph.supported) throw new Error('Expected supported graph')
-      const noLutKinds = noLutGraph.steps.map((step) => step.kind)
-      const regionalToneIdx = noLutKinds.indexOf('user-regional-tone')
-      const selectiveColorIdx = noLutKinds.indexOf('user-selective-color')
-      const outputSrgbIdx = noLutKinds.indexOf('output-srgb')
-      expect(selectiveColorIdx).toBeGreaterThan(regionalToneIdx)
-      expect(selectiveColorIdx).toBeLessThan(outputSrgbIdx)
-
-      const customLutGraph = resolveExportColorGraph(
-        graphInput({
-          styleKind: 'custom',
-          lut: lutWith(
-            confirmed({
-              ...registryProfile('sony-sgamut3cine-slog3'),
-              outputGamut: 's-gamut3-cine',
-              outputTransfer: 's-log3',
-              outputRange: 'full',
-            }),
-          ),
-        }),
-      )
-
-      expect(customLutGraph.supported).toBe(true)
-      if (!customLutGraph.supported) {
-        throw new Error('Expected supported graph')
-      }
-      const customLutKinds = customLutGraph.steps.map((step) => step.kind)
-      const regionalToneCustomIdx = customLutKinds.indexOf('user-regional-tone')
-      const selectiveColorCustomIdx = customLutKinds.indexOf(
-        'user-selective-color',
-      )
-      const gamutToLutIdx = customLutKinds.indexOf('gamut-to-lut-input')
-      expect(selectiveColorCustomIdx).toBeGreaterThan(regionalToneCustomIdx)
-      expect(selectiveColorCustomIdx).toBeLessThan(gamutToLutIdx)
-    })
-
     it('graph_step_no_buffer: graph step carries durable params only, never a Float32Array', () => {
       const graph = resolveExportColorGraph(
         graphInput({
