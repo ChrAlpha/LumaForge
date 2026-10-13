@@ -4,7 +4,11 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { exposureMultiplierFromEv } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
-import type { RenderManifest } from '@lumaforge/render-engine'
+import type {
+  PolicyChoice,
+  RenderEnvironment,
+  RenderManifest,
+} from '@lumaforge/render-engine'
 import type {
   ExportGeometry,
   FullResolutionExportProgress,
@@ -22,12 +26,17 @@ import type { CleanupFailure } from '../protocol/errors'
 import {
   attemptCleanup,
   cleanupFailure,
+  cleanupFailureFields,
   LmfgError,
   withCleanupFailures,
 } from '../protocol/errors'
 import type { LmfgRuntime } from '../runtime/node-runtime'
 import type { LoadedSource } from '../runtime/source-loader'
 import type { RenderParams } from '../schemas/params'
+import type { ExportResult, SessionRecord } from '../schemas/results'
+import { writeJsonAtomic } from '../workspace/atomic-fs'
+import { toFileUri, workspacePaths } from '../workspace/paths'
+import type { SessionStore } from '../workspace/session-store'
 import {
   buildColorGraph,
   requireSupportedGraph,
@@ -35,11 +44,15 @@ import {
 } from './color-graph'
 import { createFileJpegRowSink } from './jpeg-file-sink'
 import type { ResolvedLut } from './lut'
-import { percentToQuality } from './manifest'
+import {
+  buildRenderManifest,
+  percentToQuality,
+  toSourceIdentity,
+} from './manifest'
 import type { ResourceUsage } from './resource'
 import { captureResourceUsage } from './resource'
 
-export const DEFAULT_EXPORT_STRIP_ROWS = 512
+const DEFAULT_EXPORT_STRIP_ROWS = 512
 
 /** The RAW render exposure a verified manifest records, as the graph applies it. */
 export function exposureFromManifest(
@@ -145,10 +158,12 @@ export type ExportRunResult = {
   source: Dimensions
   graph: SupportedExportColorGraphDescriptor
   exposure: RawRenderExposure
+  /** The strip height and concurrency the export ran with. */
+  policy: PolicyChoice
   strips: number
   timings: Record<string, number>
   resource: ResourceUsage
-  /** Publish the validated JPEG at `path`; call after the manifest is verified. */
+  /** Publish the validated JPEG at `path`. */
   commit: () => Promise<void>
   /** Drop the validated JPEG without publishing; rejects if it stays on disk. */
   discard: () => Promise<void>
@@ -198,6 +213,11 @@ export async function runFullResolutionExport(
       buildColorGraph(input.params, input.lut?.lutData ?? null, exposure),
     )
 
+    const policy: PolicyChoice = {
+      kind: 'export-full',
+      row_slice: input.preferredRows ?? DEFAULT_EXPORT_STRIP_ROWS,
+      concurrency: 1,
+    }
     let strips = 0
     const exportStart = performance.now()
     const sink = createFileJpegRowSink({
@@ -228,8 +248,8 @@ export async function runFullResolutionExport(
             graph,
             readProcessedWindow: session.readProcessedWindow,
             quality: percentToQuality(input.quality),
-            preferredRows: input.preferredRows ?? DEFAULT_EXPORT_STRIP_ROWS,
-            concurrency: 1,
+            preferredRows: policy.row_slice,
+            concurrency: policy.concurrency,
             ...(input.geometry ? { geometry: input.geometry } : {}),
             jpegSink: sink,
             signal: input.signal,
@@ -259,6 +279,7 @@ export async function runFullResolutionExport(
         source: frame.source,
         graph,
         exposure,
+        policy,
         strips,
         timings,
         resource: captureResourceUsage(),
@@ -280,5 +301,81 @@ export async function runFullResolutionExport(
     }
   } finally {
     session.dispose()
+  }
+}
+
+export type ExportPublishInput = Omit<
+  ExportRunInput,
+  'geometry' | 'verifyFrame'
+> & {
+  store: SessionStore
+  record: SessionRecord
+  environment: RenderEnvironment
+  /** Artifact base name under `exports/`. */
+  name: string
+  /** The candidate manifest the export chains to, if any. */
+  parentManifestSha256: string | null
+}
+
+/**
+ * Runs a full-resolution export and publishes the JPEG and its manifest under
+ * `exports/<name>`. A failed publish keeps the cleanup failures of an attempt
+ * the engine abandoned beside it.
+ */
+export async function publishExport(
+  input: ExportPublishInput,
+): Promise<ExportResult> {
+  const { record, source, lut } = input
+  const result = await runFullResolutionExport(input)
+  const manifestPath = workspacePaths.exportManifestFile(
+    input.store.root,
+    record.id,
+    input.name,
+  )
+  const manifest = buildRenderManifest({
+    kind: 'export',
+    source: toSourceIdentity(source, result.source),
+    lut: lut?.identity ?? null,
+    graph: result.graph,
+    params: input.params,
+    exposure: result.exposure,
+    policy: result.policy,
+    environment: input.environment,
+    output: {
+      width: result.width,
+      height: result.height,
+      quality: input.quality,
+      filename: `${input.name}.jpg`,
+      sha256: result.sha256,
+    },
+    parentManifestSha256: input.parentManifestSha256,
+  })
+  try {
+    await result.commit()
+    await writeJsonAtomic(manifestPath, manifest)
+    await input.store.allocate(record.id, 'exports')
+  } catch (error) {
+    throw withCleanupFailures(error, result.cleanupFailures)
+  }
+  return {
+    session_id: record.id,
+    output: {
+      uri: toFileUri(input.outputPath),
+      path: input.outputPath,
+      width: result.width,
+      height: result.height,
+      byte_size: result.byteLength,
+      sha256: result.sha256,
+      quality: input.quality,
+    },
+    manifest_uri: toFileUri(manifestPath),
+    manifest_sha256: manifest.manifest_sha256,
+    parent_manifest_sha256: input.parentManifestSha256,
+    color_graph_fingerprint: manifest.color_graph.fingerprint,
+    raw_render_exposure: result.exposure,
+    strips: result.strips,
+    resource: result.resource,
+    timings_ms: result.timings,
+    ...cleanupFailureFields(result.cleanupFailures),
   }
 }

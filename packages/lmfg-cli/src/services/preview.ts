@@ -7,6 +7,7 @@ import type {
   LumaRawDecodeSession,
   LumaRawProbe,
 } from '@lumaforge/luma-raw-runtime'
+import type { RenderEnvironment } from '@lumaforge/render-engine'
 import { sha256Hex } from '@lumaforge/render-engine'
 import {
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
@@ -18,6 +19,11 @@ import {
 import type { LmfgRuntime } from '../runtime/node-runtime'
 import type { LoadedSource } from '../runtime/source-loader'
 import type { RenderParams } from '../schemas/params'
+import type { PreviewResult, SessionRecord } from '../schemas/results'
+import { writeFileAtomic, writeJsonAtomic } from '../workspace/atomic-fs'
+import { formatPreviewId } from '../workspace/ids'
+import { toFileUri, workspacePaths } from '../workspace/paths'
+import type { SessionStore } from '../workspace/session-store'
 import {
   buildColorGraph,
   requireSupportedGraph,
@@ -25,6 +31,14 @@ import {
 } from './color-graph'
 import { decodedDimensions } from './inspect'
 import type { ResolvedLut } from './lut'
+import {
+  buildRenderManifest,
+  percentToQuality,
+  toSourceIdentity,
+} from './manifest'
+
+/** The row band the engine's CPU preview renders a frame in. */
+export const PREVIEW_ROW_SLICE = 32
 
 export type DecodedFrame = {
   data: Uint16Array
@@ -231,5 +245,92 @@ export async function renderPreview(
     return { probe: session.probe, frame, exposure, graph, rendered, timings }
   } finally {
     session.dispose()
+  }
+}
+
+export type PreviewPublishInput = Omit<
+  PreviewRenderInput,
+  'exposure' | 'quality'
+> & {
+  store: SessionStore
+  record: SessionRecord
+  environment: RenderEnvironment
+  /** JPEG quality as an integer percentage. */
+  quality: number
+}
+
+/**
+ * Renders one preview and publishes the JPEG and its manifest into the
+ * session under the next preview id.
+ */
+export async function publishPreview(
+  input: PreviewPublishInput,
+): Promise<PreviewResult> {
+  const { record, source, lut, params } = input
+  const result = await renderPreview({
+    runtime: input.runtime,
+    source,
+    params,
+    lut,
+    maxPixels: input.maxPixels,
+    quality: percentToQuality(input.quality),
+    signal: input.signal,
+  })
+  const previewId = formatPreviewId(
+    await input.store.allocate(record.id, 'previews'),
+  )
+  const root = input.store.root
+  const outputPath = workspacePaths.previewFile(root, record.id, previewId)
+  const manifestPath = workspacePaths.previewManifestFile(
+    root,
+    record.id,
+    previewId,
+  )
+  const manifest = buildRenderManifest({
+    kind: 'preview',
+    source: toSourceIdentity(source, result.frame.sourceDimensions),
+    lut: lut?.identity ?? null,
+    graph: result.graph,
+    params,
+    exposure: result.exposure,
+    policy: {
+      kind:
+        result.frame.decode === 'quick'
+          ? 'preview-quick'
+          : 'preview-bounded-hq',
+      row_slice: PREVIEW_ROW_SLICE,
+      concurrency: 1,
+      max_pixels: input.maxPixels,
+    },
+    environment: input.environment,
+    output: {
+      width: result.frame.width,
+      height: result.frame.height,
+      quality: input.quality,
+      filename: `${previewId}.jpg`,
+      sha256: result.rendered.sha256,
+    },
+    parentManifestSha256: null,
+  })
+  await writeFileAtomic(outputPath, result.rendered.jpeg)
+  await writeJsonAtomic(manifestPath, manifest)
+  return {
+    session_id: record.id,
+    preview_id: previewId,
+    output: {
+      uri: toFileUri(outputPath),
+      path: outputPath,
+      width: result.frame.width,
+      height: result.frame.height,
+      byte_size: result.rendered.jpeg.byteLength,
+      sha256: result.rendered.sha256,
+      quality: input.quality,
+    },
+    manifest_uri: toFileUri(manifestPath),
+    manifest_sha256: manifest.manifest_sha256,
+    decode: result.frame.decode,
+    raw_render_exposure: result.exposure,
+    color_graph_fingerprint: manifest.color_graph.fingerprint,
+    timings_ms: result.timings,
   }
 }

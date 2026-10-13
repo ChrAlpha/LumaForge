@@ -1,14 +1,7 @@
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
-import { verifyManifestSha256 } from '@lumaforge/render-engine'
 import type { Command } from 'commander'
 
-import type { CleanupFailure } from '../protocol/errors'
-import {
-  attemptCleanup,
-  cleanupFailureFields,
-  LmfgError,
-  withCleanupFailures,
-} from '../protocol/errors'
+import { LmfgError } from '../protocol/errors'
 import { assertTierAvailable } from '../runtime/capability'
 import { loadSourceFile } from '../runtime/source-loader'
 import {
@@ -28,27 +21,16 @@ import {
   parseConcurrency,
   resolveConcurrency,
 } from '../services/candidate-pool'
-import { runFullResolutionExport } from '../services/export'
+import { publishExport } from '../services/export'
 import { runIteration } from '../services/iteration'
 import type { ResolvedLut } from '../services/lut'
 import { resolveLutForParams } from '../services/lut'
-import {
-  buildRenderManifest,
-  percentToQuality,
-  requireVerifiedManifest,
-  toSourceIdentity,
-} from '../services/manifest'
-import { clampMaxPixels, renderPreview } from '../services/preview'
+import { requireVerifiedManifest } from '../services/manifest'
+import { clampMaxPixels, publishPreview } from '../services/preview'
 import { prepareReplay, replayKey, runReplay } from '../services/replay'
-import {
-  fileExists,
-  readJson,
-  writeFileAtomic,
-  writeJsonAtomic,
-} from '../workspace/atomic-fs'
-import { formatPreviewId } from '../workspace/ids'
+import { fileExists, readJson } from '../workspace/atomic-fs'
 import { createIterationStore } from '../workspace/iteration-store'
-import { toFileUri, workspacePaths } from '../workspace/paths'
+import { workspacePaths } from '../workspace/paths'
 import { createSessionStore } from '../workspace/session-store'
 import type { CommandHost } from './context'
 import { runCommand } from './context'
@@ -99,83 +81,25 @@ function registerPreview(render: Command, host: CommandHost): void {
               ctx,
               await loadParams(ctx, options),
             )
-            const maxPixels = clampMaxPixels(options.maxPixels)
             return withRuntime(ctx, async (runtime) => {
-              const result = await renderPreview({
+              const result = await publishPreview({
                 runtime,
+                store,
+                record,
                 source,
+                environment,
                 params,
                 lut,
-                maxPixels,
-                quality: percentToQuality(options.quality),
+                maxPixels: clampMaxPixels(options.maxPixels),
+                quality: options.quality,
                 signal: ctx.signal,
               })
-              const previewId = formatPreviewId(
-                await store.allocate(record.id, 'previews'),
-              )
-              const root = ctx.workspaceRoot
-              const outputPath = workspacePaths.previewFile(
-                root,
-                record.id,
-                previewId,
-              )
-              const manifestPath = workspacePaths.previewManifestFile(
-                root,
-                record.id,
-                previewId,
-              )
-              const manifest = buildRenderManifest({
-                kind: 'preview',
-                source: toSourceIdentity(source, result.frame.sourceDimensions),
-                lut: lut?.identity ?? null,
-                graph: result.graph,
-                params,
-                exposure: result.exposure,
-                policy: {
-                  kind:
-                    result.frame.decode === 'quick'
-                      ? 'preview-quick'
-                      : 'preview-bounded-hq',
-                  row_slice: 32,
-                  concurrency: 1,
-                  max_pixels: maxPixels,
-                },
-                environment,
-                output: {
-                  width: result.frame.width,
-                  height: result.frame.height,
-                  quality: options.quality,
-                  filename: `${previewId}.jpg`,
-                  sha256: result.rendered.sha256,
-                },
-                parentManifestSha256: null,
-              })
-              await writeFileAtomic(outputPath, result.rendered.jpeg)
-              await writeJsonAtomic(manifestPath, manifest)
               ctx.output.event({
                 event: 'artifact.ready',
                 role: 'preview',
-                uri: toFileUri(outputPath),
+                uri: result.output.uri,
               })
-              return {
-                session_id: record.id,
-                preview_id: previewId,
-                output: {
-                  uri: toFileUri(outputPath),
-                  path: outputPath,
-                  width: result.frame.width,
-                  height: result.frame.height,
-                  byte_size: result.rendered.jpeg.byteLength,
-                  sha256: result.rendered.sha256,
-                  quality: options.quality,
-                },
-                manifest_uri: toFileUri(manifestPath),
-                manifest_sha256: manifest.manifest_sha256,
-                decode: result.frame.decode,
-                raw_render_exposure: result.exposure,
-                color_graph_fingerprint: manifest.color_graph.fingerprint,
-                timings_ms: result.timings,
-              }
+              return result
             })
           },
           async () => {
@@ -462,15 +386,20 @@ function registerExport(render: Command, host: CommandHost): void {
               session_id: record.id,
             })
             return withRuntime(ctx, async (runtime) => {
-              const result = await runFullResolutionExport({
+              const result = await publishExport({
                 runtime,
+                store,
+                record,
                 source,
+                environment,
                 params,
                 lut,
                 exposure,
                 quality: options.quality,
+                name: options.output,
                 outputPath,
                 preferredRows: options.preferredRows,
+                parentManifestSha256: parent,
                 signal: ctx.signal,
                 onProgress: (progress) =>
                   ctx.output.event({
@@ -480,87 +409,13 @@ function registerExport(render: Command, host: CommandHost): void {
                     progress: progress.progress,
                   }),
               })
-              const manifestPath = workspacePaths.exportManifestFile(
-                ctx.workspaceRoot,
-                record.id,
-                options.output,
-              )
-              const manifest = buildRenderManifest({
-                kind: 'export',
-                source: toSourceIdentity(source, {
-                  width: result.width,
-                  height: result.height,
-                }),
-                lut: lut?.identity ?? null,
-                graph: result.graph,
-                params,
-                exposure: result.exposure,
-                policy: {
-                  kind: 'export-full',
-                  row_slice: options.preferredRows ?? 512,
-                  concurrency: 1,
-                },
-                environment,
-                output: {
-                  width: result.width,
-                  height: result.height,
-                  quality: options.quality,
-                  filename: `${options.output}.jpg`,
-                  sha256: result.sha256,
-                },
-                parentManifestSha256: parent,
-              })
-              // A retried attempt's failed cleanup is reported with whatever
-              // this export ends in.
-              if (!verifyManifestSha256(manifest)) {
-                const failures: CleanupFailure[] = [...result.cleanupFailures]
-                await attemptCleanup(
-                  failures,
-                  'remove_temp_file',
-                  result.discard,
-                )
-                throw withCleanupFailures(
-                  new LmfgError('export.refused', {
-                    message:
-                      'Export manifest failed self-verification; nothing was published.',
-                  }),
-                  failures,
-                )
-              }
-              try {
-                await result.commit()
-                await writeJsonAtomic(manifestPath, manifest)
-                await store.allocate(record.id, 'exports')
-              } catch (error) {
-                throw withCleanupFailures(error, result.cleanupFailures)
-              }
               ctx.output.event({
                 event: 'artifact.ready',
                 role: 'export',
-                uri: toFileUri(outputPath),
-                manifest_sha256: manifest.manifest_sha256,
+                uri: result.output.uri,
+                manifest_sha256: result.manifest_sha256,
               })
-              return {
-                session_id: record.id,
-                output: {
-                  uri: toFileUri(outputPath),
-                  path: outputPath,
-                  width: result.width,
-                  height: result.height,
-                  byte_size: result.byteLength,
-                  sha256: result.sha256,
-                  quality: options.quality,
-                },
-                manifest_uri: toFileUri(manifestPath),
-                manifest_sha256: manifest.manifest_sha256,
-                parent_manifest_sha256: parent,
-                color_graph_fingerprint: manifest.color_graph.fingerprint,
-                raw_render_exposure: result.exposure,
-                strips: result.strips,
-                resource: result.resource,
-                timings_ms: result.timings,
-                ...cleanupFailureFields(result.cleanupFailures),
-              }
+              return result
             })
           },
           async () => {

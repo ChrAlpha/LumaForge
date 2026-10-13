@@ -31,7 +31,12 @@ import {
   percentToQuality,
   toSourceIdentity,
 } from './manifest'
-import { clampMaxPixels, createExposureResolver, decodeFrame } from './preview'
+import {
+  clampMaxPixels,
+  createExposureResolver,
+  decodeFrame,
+  PREVIEW_ROW_SLICE,
+} from './preview'
 import { captureResourceUsage } from './resource'
 
 export type IterationRunInput = {
@@ -205,7 +210,7 @@ export async function runIteration(
         exposure: exposures[result.index],
         policy: {
           kind: 'candidate',
-          row_slice: 32,
+          row_slice: PREVIEW_ROW_SLICE,
           concurrency: pool.concurrency,
           max_pixels: maxPixels,
         },
