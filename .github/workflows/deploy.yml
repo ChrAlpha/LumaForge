@@ -56,29 +56,8 @@ jobs:
               ;;
           esac
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Configure pnpm store
-        run: pnpm config set store-dir ~/.pnpm-store
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup pnpm, Node.js and dependencies
+        uses: ./.github/actions/setup
 
       - name: Build deploy artifact
         run: pnpm run deploy:build-artifact

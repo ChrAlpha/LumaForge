@@ -53,7 +53,7 @@ jobs:
             printf '%s\n' "$changed_files" | grep -E -q "$1"
           }
 
-          force_all='^(\.github/workflows/build\.yml|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$'
+          force_all='^(\.github/workflows/build\.yml|\.github/actions/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$'
           app_paths='^(src/|tests/browser/|scripts/(build|ci|deploy|native-runtime|quality)/|plugins/|packages/luma-(color|jpeg|raw)-runtime/|packages/render-engine/|public/|index\.html|vite\.config\.ts|vitest.*\.config\.ts|tsconfig.*|eslint.*)'
           runtime_paths='^(packages/luma-(color|jpeg|raw)-runtime/|packages/render-engine/|src/lib/(export|raw|runtime|workers)/|scripts/native-runtime/)'
           native_paths='^(packages/luma-(jpeg|raw)-runtime/native/|scripts/native-runtime/)'
@@ -87,41 +87,20 @@ jobs:
           echo "webgpu=$webgpu" >> "$GITHUB_OUTPUT"
 
   quality:
-    # Never path-selected, so docs-only changes are checked too. The path
-    # check needs only Node; the rest run the pinned Vitest, ESLint,
-    # TypeScript, knip and madge from the lockfile. The checkers' own tests
-    # run in the tooling project of `pnpm test:app`.
+    # Never path-selected, so docs-only changes are checked too. The checks
+    # run the pinned Vitest, ESLint, TypeScript, knip and madge from the
+    # lockfile; the checkers' own tests run in the tooling project of
+    # `pnpm test:app`.
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
+      - name: Setup pnpm, Node.js and dependencies
+        uses: ./.github/actions/setup
 
       - name: Check agent-map paths
         run: node scripts/quality/check-agent-paths.mjs
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Configure pnpm store
-        run: pnpm config set store-dir ~/.pnpm-store
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       # Every test file runs in exactly one Vitest project, the one that owns
       # its directory.
@@ -157,29 +136,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Configure pnpm store
-        run: pnpm config set store-dir ~/.pnpm-store
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup pnpm, Node.js and dependencies
+        uses: ./.github/actions/setup
 
       - name: Typecheck browser specs
         run: pnpm typecheck:browser
@@ -224,29 +182,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Configure pnpm store
-        run: pnpm config set store-dir ~/.pnpm-store
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup pnpm, Node.js and dependencies
+        uses: ./.github/actions/setup
 
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
@@ -269,29 +206,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Configure pnpm store
-        run: pnpm config set store-dir ~/.pnpm-store
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup pnpm, Node.js and dependencies
+        uses: ./.github/actions/setup
 
       - name: Typecheck color runtime package
         run: pnpm --filter @lumaforge/luma-color-runtime typecheck
@@ -339,31 +255,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Configure pnpm store
-        run: pnpm config set store-dir ~/.pnpm-store
+      - name: Setup pnpm, Node.js and dependencies
+        uses: ./.github/actions/setup
 
       - name: Install native build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y autoconf automake libtool pkg-config
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
 
       - name: Cache Emscripten SDK
         uses: actions/cache@v4
@@ -382,9 +280,6 @@ jobs:
           git reset --hard "$EMSDK_REF"
           ./emsdk install "$EMSDK_VERSION"
           ./emsdk activate "$EMSDK_VERSION"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Native build diagnostics
         run: |
@@ -439,29 +334,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Configure pnpm store
-        run: pnpm config set store-dir "$HOME/.pnpm-store"
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup pnpm, Node.js and dependencies
+        uses: ./.github/actions/setup
 
       - name: Prepare prebuilt native assets
         run: LUMAFORGE_NATIVE_RUNTIME_MODE=prebuilt pnpm native:prepare

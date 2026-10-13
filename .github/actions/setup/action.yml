@@ -1,0 +1,26 @@
+name: Setup
+description: Installs pnpm and Node.js with the pnpm store cache, then the locked dependencies.
+
+inputs:
+  registry-url:
+    description: npm registry to write an .npmrc for, when publishing.
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        run_install: false
+
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: lts/*
+        cache: pnpm
+        registry-url: ${{ inputs.registry-url }}
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
