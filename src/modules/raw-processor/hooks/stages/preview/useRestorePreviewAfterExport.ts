@@ -54,7 +54,6 @@ function canAdmitRestore(
     runtimeWorkSessionId === null &&
     !hasLiveDecodedFrame &&
     Boolean(exportState.activePlan) &&
-    exportState.status !== 'preparing' &&
     exportState.status !== 'exporting'
   )
 }

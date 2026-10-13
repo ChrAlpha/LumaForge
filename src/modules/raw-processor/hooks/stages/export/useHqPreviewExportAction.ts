@@ -348,8 +348,6 @@ export function useHqPreviewExportAction({
                 ...prev.exportState,
                 status: 'ready',
                 result: exportResult,
-                retryRecommended: false,
-                lastSuccessfulSize: outputSize,
               },
             }
           : prev,

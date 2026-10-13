@@ -121,7 +121,6 @@ function createSession(): ImageSession {
       quickDecodePreview: { status: 'idle' },
       boundedHqPreview: { status: 'ready', width: 800, height: 600 },
       displaySource: 'bounded-hq',
-      boundedHqRequiredForExport: false,
     },
     activeStyle: {
       kind: 'builtin',
@@ -140,7 +139,6 @@ function createSession(): ImageSession {
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'unknown' },
-      retryRecommended: false,
     },
     exportGeometry: null,
     transform: createTransformState('session-1'),

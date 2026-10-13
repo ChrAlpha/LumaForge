@@ -44,7 +44,6 @@ function readyExportState(): ImageSession['exportState'] {
   return {
     status: 'ready',
     fullResCapability: { status: 'supported', width: 1600, height: 1200 },
-    retryRecommended: false,
     result: createExportResult({
       kind: 'full-resolution',
       output: createBlobOutputResult({

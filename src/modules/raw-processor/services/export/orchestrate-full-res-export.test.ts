@@ -274,7 +274,6 @@ function createSession(
       quickDecodePreview: { status: 'ready', width: 1500, height: 1000 },
       boundedHqPreview: { status: 'idle' },
       displaySource: 'quick',
-      boundedHqRequiredForExport: false,
     },
     activeStyle: overrides.activeStyle ?? null,
     exportGeometry: overrides.exportGeometry ?? null,
@@ -290,7 +289,6 @@ function createSession(
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 6000, height: 4000 },
-      retryRecommended: false,
       ...overrides.exportState,
     },
   }
@@ -983,7 +981,6 @@ describe('orchestrateFullResExport success', () => {
         exportState: {
           status: 'ready',
           result: previousResult,
-          lastSuccessfulSize: { width: 6000, height: 4000 },
         },
       }),
     })
@@ -1092,8 +1089,6 @@ describe('orchestrateFullResExport success', () => {
         }),
       },
       lastProgress: { completedStrips: 2, totalStrips: 2 },
-      retryRecommended: false,
-      lastSuccessfulSize: { width: 6000, height: 4000 },
     })
     expect(result).not.toBe(previousResult)
     expect(h.state).toMatchObject({
@@ -1257,7 +1252,6 @@ describe('orchestrateFullResExport success', () => {
     ])
     const published = h.state.session?.exportState.result
     expect(published).toMatchObject(delivered)
-    expect(h.state.session?.exportState.lastSuccessfulSize).toEqual(delivered)
     // The manifest records the geometry the result's identity names, over
     // the frame the result delivers.
     expect(h.manifestInputs[0].result).toBe(published)
@@ -1763,11 +1757,8 @@ describe('orchestrateFullResExport refusals', () => {
     ])
     expect(h.state.session?.exportState).toMatchObject({
       status: 'failed',
-      lastErrorCode: 'EXPORT_UNSUPPORTED_PIPELINE',
-      retryRecommended: false,
     })
     expect(h.state.session?.exportState.result).toBeUndefined()
-    expect(h.state.session?.exportState.recommendedRetryLevel).toBeUndefined()
     expect(h.state.status).toBe('error')
     expect(h.state.error).toBe(
       'Choose a LUT input profile before full-resolution export.',
@@ -1823,11 +1814,8 @@ describe('orchestrateFullResExport refusals', () => {
     ])
     expect(h.state.session?.exportState).toMatchObject({
       status: 'failed',
-      lastErrorCode: 'EXPORT_POLICY_CANNOT_COMPLETE',
-      retryRecommended: false,
     })
     expect(h.state.session?.exportState.activePlan).toBeUndefined()
-    expect(h.state.session?.exportState.recommendedRetryLevel).toBeUndefined()
     expect(
       h.ctx.services.registerCurrentPreviewPipelineForEvacuation,
     ).not.toHaveBeenCalled()
@@ -1981,14 +1969,9 @@ describe('orchestrateFullResExport failures', () => {
       ])
       expect(h.state.session?.exportState).toMatchObject({
         status: 'failed',
-        lastErrorCode: code,
-        retryRecommended: Boolean(retryLevel),
         lastProgress: { completedStrips: 1, totalStrips: 4 },
         activePlan: { outputSink: 'blob-handoff' },
       })
-      expect(h.state.session?.exportState.recommendedRetryLevel).toBe(
-        retryLevel,
-      )
       expect(h.state.session?.exportState.result).toBeUndefined()
       expect(h.state).toMatchObject({ status: 'ready', progress: 25 })
       expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
@@ -2029,8 +2012,6 @@ describe('orchestrateFullResExport failures', () => {
     expect(h.markerStore.markers()).toEqual([])
     expect(h.state.session?.exportState).toMatchObject({
       status: 'failed',
-      lastErrorCode: 'EXPORT_RESOURCE_REGISTRY_MISSING',
-      retryRecommended: false,
     })
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
@@ -2105,8 +2086,6 @@ describe('orchestrateFullResExport failures', () => {
       ])
       expect(h.state.session?.exportState).toMatchObject({
         status: 'failed',
-        lastErrorCode: 'EXPORT_RESOURCE_EVICTION_INCOMPLETE',
-        retryRecommended: false,
       })
       expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
       if (evacuatedTrace.length > 0) {
@@ -2773,7 +2752,6 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     await settle()
 
     expectRefusedAndSettled(h, 'pending')
-    expect(h.state.session?.exportState.lastErrorCode).toBeUndefined()
   })
 })
 
@@ -2941,9 +2919,7 @@ describe('orchestrateFullResExport delayed manifest', () => {
       ])
       expect(h.state.session?.exportState).toMatchObject({
         status: 'ready',
-        retryRecommended: false,
       })
-      expect(h.state.session?.exportState.lastErrorCode).toBeUndefined()
       expect(h.state.session?.exportState.result).toEqual({
         ...result,
         manifestState: { status: 'unavailable', reason },

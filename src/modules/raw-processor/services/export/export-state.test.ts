@@ -37,7 +37,6 @@ function createSession(
       quickDecodePreview: { status: 'ready', width: 800, height: 600 },
       boundedHqPreview: { status: 'ready', width: 800, height: 600 },
       displaySource: 'bounded-hq',
-      boundedHqRequiredForExport: false,
     },
     activeStyle: null,
     viewState: {
@@ -51,7 +50,6 @@ function createSession(
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 4000, height: 3000 },
-      retryRecommended: false,
       ...exportState,
     },
     exportGeometry: null,
@@ -338,8 +336,6 @@ describe('export state helpers', () => {
       status: 'ready',
       result,
       lastProgress: { completedStrips: 3, totalStrips: 3 },
-      retryRecommended: true,
-      recommendedRetryLevel: 'safe',
     })
 
     const next = clearExportResultState(session)
@@ -351,8 +347,6 @@ describe('export state helpers', () => {
       completedStrips: 3,
       totalStrips: 3,
     })
-    expect(next.exportState.retryRecommended).toBe(true)
-    expect(next.exportState.recommendedRetryLevel).toBe('safe')
   })
 
   it('clears exporting export results and progress while returning the session to idle', () => {
@@ -377,8 +371,6 @@ describe('export state helpers', () => {
       status: 'exporting',
       result,
       lastProgress: { completedStrips: 1, totalStrips: 4 },
-      retryRecommended: true,
-      recommendedRetryLevel: 'balanced',
     })
 
     const next = clearExportResultForActiveExport(session)
@@ -386,8 +378,6 @@ describe('export state helpers', () => {
     expect(next.exportState.status).toBe('exporting')
     expect(next.exportState.result).toBeUndefined()
     expect(next.exportState.lastProgress).toBeUndefined()
-    expect(next.exportState.retryRecommended).toBe(false)
-    expect(next.exportState.recommendedRetryLevel).toBeUndefined()
   })
 
   it('compares selective color by value: an equal copy keeps, any band scalar changes', () => {

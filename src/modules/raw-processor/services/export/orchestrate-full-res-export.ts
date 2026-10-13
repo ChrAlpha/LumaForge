@@ -358,9 +358,6 @@ export async function orchestrateFullResExport(
               ...prev.exportState,
               status: 'failed',
               result: undefined,
-              lastErrorCode: 'EXPORT_UNSUPPORTED_PIPELINE',
-              retryRecommended: false,
-              recommendedRetryLevel: undefined,
             },
           }
         : prev,
@@ -510,8 +507,6 @@ export async function orchestrateFullResExport(
               activePlan,
               result: undefined,
               lastProgress: undefined,
-              retryRecommended: false,
-              recommendedRetryLevel: undefined,
             },
           }
         : prev,
@@ -692,11 +687,6 @@ export async function orchestrateFullResExport(
               ...prev.exportState,
               status: 'ready',
               result: exportResult,
-              retryRecommended: false,
-              lastSuccessfulSize: {
-                width: deliveredSize.width,
-                height: deliveredSize.height,
-              },
             },
           }
         : prev,
@@ -827,9 +817,6 @@ export async function orchestrateFullResExport(
               ...prev.exportState,
               status: 'failed',
               result: undefined,
-              lastErrorCode: errorCode,
-              retryRecommended: Boolean(retryLevel),
-              recommendedRetryLevel: retryLevel ?? undefined,
             },
           }
         : prev,

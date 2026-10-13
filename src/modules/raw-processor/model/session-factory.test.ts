@@ -32,7 +32,6 @@ describe('createImageSession', () => {
         quickDecodePreview: { status: 'idle' },
         boundedHqPreview: { status: 'idle' },
         displaySource: 'none',
-        boundedHqRequiredForExport: false,
       },
       activeStyle: null,
       lutProfileSelection: undefined,
@@ -47,7 +46,6 @@ describe('createImageSession', () => {
       exportState: {
         status: 'idle',
         fullResCapability: { status: 'unknown' },
-        retryRecommended: false,
       },
       exportGeometry: null,
       transform: {

@@ -62,7 +62,6 @@ function createSession(
       quickDecodePreview: { status: 'ready', width: 800, height: 600 },
       boundedHqPreview: { status: 'ready', width: 800, height: 600 },
       displaySource: 'bounded-hq',
-      boundedHqRequiredForExport: false,
     },
     activeStyle: null,
     viewState: {
@@ -76,7 +75,6 @@ function createSession(
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 4000, height: 3000 },
-      retryRecommended: false,
       ...exportState,
     },
     exportGeometry: null,

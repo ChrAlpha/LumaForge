@@ -3,7 +3,6 @@ import type {
   LUTContractResolution,
 } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
-import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 
 import type { ExportAttemptPlan } from '~/lib/export/export-plan'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
@@ -70,7 +69,6 @@ export type PreviewBundle = {
   quickDecodePreview: PreviewAsset
   boundedHqPreview: PreviewAsset
   displaySource: DisplaySource
-  boundedHqRequiredForExport: false
 }
 
 export type StyleAsset = {
@@ -193,7 +191,7 @@ export type ImageSession = {
     fitMode: 'screen' | 'custom'
   }
   exportState: {
-    status: 'idle' | 'preparing' | 'exporting' | 'ready' | 'failed'
+    status: 'idle' | 'exporting' | 'ready' | 'failed'
     fullResCapability: FullResExportCapabilityState
     activePlan?: ExportAttemptPlan
     result?: ExportResult
@@ -201,9 +199,5 @@ export type ImageSession = {
       completedStrips: number
       totalStrips: number
     }
-    recommendedRetryLevel?: Exclude<PerformancePreference, 'max'>
-    lastSuccessfulSize?: { width: number; height: number }
-    lastErrorCode?: string
-    retryRecommended: boolean
   }
 }

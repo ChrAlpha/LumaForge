@@ -70,7 +70,6 @@ export function createImageSession(
       quickDecodePreview: { status: 'idle' },
       boundedHqPreview: { status: 'idle' },
       displaySource: 'none',
-      boundedHqRequiredForExport: false,
     },
     activeStyle: retained?.activeStyle ?? null,
     exportGeometry: null,
@@ -87,7 +86,6 @@ export function createImageSession(
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'unknown' },
-      retryRecommended: false,
     },
   }
 }

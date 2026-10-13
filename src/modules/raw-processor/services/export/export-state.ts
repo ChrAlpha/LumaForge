@@ -159,8 +159,6 @@ export function clearExportResultForActiveExport(
       ...session.exportState,
       result: undefined,
       lastProgress: undefined,
-      retryRecommended: false,
-      recommendedRetryLevel: undefined,
     },
   }
 }
