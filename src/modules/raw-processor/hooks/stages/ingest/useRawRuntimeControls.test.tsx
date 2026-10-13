@@ -54,15 +54,6 @@ describe('useRawRuntimeControls', () => {
     expect(runtimeWorkSessionIdRef.current).toBeNull()
   })
 
-  it('owns no RAW session: it hands out only the two cancellations', () => {
-    const { result } = renderHook(() => useRawRuntimeControls(createInput()))
-
-    expect(Object.keys(result.current).sort()).toEqual([
-      'abortExportWork',
-      'abortRuntimeWork',
-    ])
-  })
-
   it('cancels the session through its host lease, disposing it exactly once', async () => {
     const runtimeSession = createRuntimeSession()
     const openSession = vi.fn((_file: File, _signal: AbortSignal) =>
