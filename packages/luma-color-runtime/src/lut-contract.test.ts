@@ -60,7 +60,15 @@ describe('generic LUT contract validation', () => {
         inputTransfer: 's-log3',
         inputRange: 'full',
       }),
-    ).toBeUndefined()
+    ).toEqual({
+      ok: false,
+      issues: [
+        {
+          code: 'unsupported-contract',
+          message: 'Display-look LUT input must be display-like.',
+        },
+      ],
+    })
   })
 
   it('requires complete output contracts for non-display roles', () => {
@@ -79,7 +87,16 @@ describe('generic LUT contract validation', () => {
           inputRange: 'full',
         }),
       ),
-    ).toBeUndefined()
+    ).toEqual({
+      ok: false,
+      issues: [
+        {
+          code: 'unsupported-contract',
+          message:
+            'A scene-creative LUT requires an output gamut, transfer, and range.',
+        },
+      ],
+    })
   })
 
   it('builds a persistable combined-output contract', () => {
@@ -96,14 +113,60 @@ describe('generic LUT contract validation', () => {
         }),
       ),
     ).toEqual({
-      inputProfile: 'sony-sgamut3cine-slog3',
-      role: 'combined-look-output',
-      inputGamut: 's-gamut3-cine',
-      inputTransfer: 's-log3',
-      inputRange: 'legal',
-      outputGamut: 'srgb-rec709',
-      outputTransfer: 'gamma24',
-      outputRange: 'full',
+      ok: true,
+      value: {
+        inputProfile: 'sony-sgamut3cine-slog3',
+        role: 'combined-look-output',
+        inputGamut: 's-gamut3-cine',
+        inputTransfer: 's-log3',
+        inputRange: 'legal',
+        outputGamut: 'srgb-rec709',
+        outputTransfer: 'gamma24',
+        outputRange: 'full',
+      },
+    })
+  })
+
+  it('lists every reason a selection cannot be stored', () => {
+    const refused = buildStoredContractSelection(
+      withDisplayLabels({
+        inputProfile: 'sony-sgamut3cine-slog3',
+        role: 'display-look',
+        inputGamut: 'Rec.709',
+        inputTransfer: 'S-Log3',
+        outputGamut: 'Rec.709',
+      }),
+    )
+    expect(refused).toEqual({
+      ok: false,
+      issues: [
+        {
+          code: 'unsupported-contract',
+          message: 'Input gamut conflicts with the input profile.',
+        },
+        {
+          code: 'unsupported-contract',
+          message: 'Display-look LUT input must be display-like.',
+        },
+        {
+          code: 'unsupported-contract',
+          message:
+            'A display-look output contract must be complete when any output field is given.',
+        },
+      ],
+    })
+    expect(
+      buildStoredContractSelection(
+        withDisplayLabels({ role: 'monitoring' as never }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      issues: [
+        { message: 'LUT role is unsupported.' },
+        { message: expect.stringMatching(/^Input gamut is missing/) },
+        { message: expect.stringMatching(/^Input transfer is missing/) },
+        { message: expect.stringMatching(/^Input range is missing/) },
+      ],
     })
   })
 

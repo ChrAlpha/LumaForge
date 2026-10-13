@@ -4,6 +4,15 @@ All notable changes to `@lumaforge/luma-color-runtime` are documented here.
 The format follows Keep a Changelog; versions follow semver. Releases up to
 0.1.1 predate this file.
 
+## Unreleased
+
+### Breaking
+
+- `buildStoredContractSelection` returns a
+  `LUTContractResult<StoredLUTContractSelection>`: `{ ok: true, value }`, or
+  `{ ok: false, issues }` listing every reason the selection cannot be
+  stored, instead of `undefined`.
+
 ## 0.2.1 - 2026-10-12
 
 A minor release over the published 0.1.1: it removes and changes public

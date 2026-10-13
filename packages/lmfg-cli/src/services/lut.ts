@@ -7,14 +7,10 @@ import type {
   LUTContractSelection,
   LUTData,
   ParsedLUT,
-  StoredLUTContractSelection,
 } from '@lumaforge/luma-color-runtime'
 import {
   buildStoredContractSelection,
   getLUTColorProfile,
-  hasCompleteOutputContract,
-  hasDisplayLikeInput,
-  isLUTRole,
   isSupportedLUT,
   parseCubeLUT,
   resolveColorGamutId,
@@ -180,80 +176,6 @@ function contractInputToSelection(
   }
 }
 
-function explainSelectionIssues(
-  input: LutContractInput,
-  selection: LUTContractSelection,
-): string[] {
-  const issues: string[] = []
-  if (!isLUTRole(input.role))
-    issues.push(`role "${input.role}" is not supported.`)
-  const profile = input.input_profile
-    ? getLUTColorProfile(input.input_profile)
-    : undefined
-  if (input.input_profile && !profile) {
-    issues.push(
-      `input_profile "${input.input_profile}" is not a known profile id.`,
-    )
-  }
-  const inputGamut = profile?.inputGamut ?? selection.inputGamut
-  const inputTransfer = profile?.inputTransfer ?? selection.inputTransfer
-  if (!inputGamut) {
-    issues.push(
-      'input_gamut is missing or unsupported (set input_profile or input_gamut).',
-    )
-  }
-  if (!inputTransfer) {
-    issues.push(
-      'input_transfer is missing or unsupported (set input_profile or input_transfer).',
-    )
-  }
-  if (!profile && !input.input_range) {
-    issues.push('input_range is required when input_profile is not given.')
-  }
-  if (
-    input.input_gamut &&
-    profile &&
-    resolveColorGamutId(input.input_gamut) !== profile.inputGamut
-  ) {
-    issues.push('input_gamut conflicts with input_profile.')
-  }
-  if (
-    input.input_transfer &&
-    profile &&
-    resolveTransferFunctionId(input.input_transfer) !== profile.inputTransfer
-  ) {
-    issues.push('input_transfer conflicts with input_profile.')
-  }
-  const outputComplete = hasCompleteOutputContract(selection)
-  if (input.role !== 'display-look' && !outputComplete) {
-    issues.push(
-      `role "${input.role}" requires output_gamut, output_transfer and output_range.`,
-    )
-  }
-  if (
-    input.role === 'display-look' &&
-    inputGamut &&
-    inputTransfer &&
-    !hasDisplayLikeInput({ inputGamut, inputTransfer })
-  ) {
-    issues.push(
-      'display-look LUTs require a display-like input (srgb-rec709 with srgb, bt709 or gamma24).',
-    )
-  }
-  if (
-    input.role === 'display-look' &&
-    (input.output_gamut || input.output_transfer || input.output_range) &&
-    !outputComplete
-  ) {
-    issues.push(
-      'display-look output contract must be complete when any output field is given.',
-    )
-  }
-  return issues.length > 0
-    ? issues
-    : ['The contract is incomplete or inconsistent.']
-}
-
 export type AppliedContract =
   | { ok: true; parsed: ParsedLUT; profile: LUTColorProfile }
   | { ok: false; issues: string[] }
@@ -262,12 +184,13 @@ export function applyContractSelection(
   parsed: ParsedLUT,
   input: LutContractInput,
 ): AppliedContract {
-  const selection = contractInputToSelection(input)
-  const contract: StoredLUTContractSelection | undefined =
-    buildStoredContractSelection(selection)
-  if (!contract)
-    return { ok: false, issues: explainSelectionIssues(input, selection) }
-  const profile = storedContractToLUTColorProfile(contract)
+  const contract = buildStoredContractSelection(contractInputToSelection(input))
+  if (!contract.ok)
+    return {
+      ok: false,
+      issues: contract.issues.map((issue) => issue.message),
+    }
+  const profile = storedContractToLUTColorProfile(contract.value)
   const profileResolution: LUTContractResolution = {
     kind: 'confirmed',
     confidence: 'user',

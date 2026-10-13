@@ -66,10 +66,11 @@ function readStoredLUTContractSelection(
   // Every field is a non-empty string here; the builder validates each one.
   // The writer omits absent fields and never stores an empty string, which the
   // builder would read as absent, so one is refused above.
-  const contract = buildStoredContractSelection(
+  const built = buildStoredContractSelection(
     record as unknown as LUTContractSelection,
   )
-  if (!contract) return undefined
+  if (!built.ok) return undefined
+  const contract = built.value
 
   return STORED_CONTRACT_FIELDS.every(
     (field) => contract[field] === record[field],
@@ -141,14 +142,14 @@ export function storeLUTContractSelection(
   selection: LUTContractSelection,
 ): LUTColorProfile | undefined {
   const contract = buildStoredContractSelection(selection)
-  if (!contract) return undefined
+  if (!contract.ok) return undefined
 
   writeStoredLUTContractSelections({
     ...readStoredLUTContractSelections(),
-    [fingerprint]: contract,
+    [fingerprint]: contract.value,
   })
 
-  return storedContractToLUTColorProfile(contract)
+  return storedContractToLUTColorProfile(contract.value)
 }
 
 type ConfirmedLUTContractConfidence = Extract<
@@ -177,10 +178,10 @@ function withLUTContract(
   confidence: ConfirmedLUTContractConfidence,
 ): ParsedLUT | undefined {
   const contract = buildStoredContractSelection(selection)
-  return contract
+  return contract.ok
     ? withConfirmedProfile(
         lut,
-        storedContractToLUTColorProfile(contract),
+        storedContractToLUTColorProfile(contract.value),
         confidence,
       )
     : undefined

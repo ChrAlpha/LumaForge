@@ -78,7 +78,9 @@ function resolveStructuredMetadataContract(
     outputRange: isSignalRange(outputRange) ? outputRange : undefined,
   })
 
-  return contract ? storedContractToLUTColorProfile(contract) : undefined
+  return contract.ok
+    ? storedContractToLUTColorProfile(contract.value)
+    : undefined
 }
 
 function buildProfileSignature(input: {

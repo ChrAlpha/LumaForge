@@ -93,40 +93,29 @@ export function hasDisplayLikeInput(selection: {
   )
 }
 
-function hasConflictingProfileInputFields(
+function profileInputConflicts(
   profile: LUTColorProfile | undefined,
   selection: LUTContractSelection,
-): boolean {
-  if (!profile) return false
-
-  const explicitInputGamut = resolveColorGamutId(selection.inputGamut)
-  if (selection.inputGamut && explicitInputGamut !== profile.inputGamut) {
-    return true
+): LUTContractIssue[] {
+  if (!profile) return []
+  const issues: LUTContractIssue[] = []
+  if (
+    selection.inputGamut &&
+    resolveColorGamutId(selection.inputGamut) !== profile.inputGamut
+  ) {
+    issues.push(issue('Input gamut conflicts with the input profile.'))
   }
-
-  const explicitInputTransfer = resolveTransferFunctionId(
-    selection.inputTransfer,
-  )
   if (
     selection.inputTransfer &&
-    explicitInputTransfer !== profile.inputTransfer
+    resolveTransferFunctionId(selection.inputTransfer) !== profile.inputTransfer
   ) {
-    return true
+    issues.push(issue('Input transfer conflicts with the input profile.'))
   }
-
-  return false
+  return issues
 }
 
 function roleRequiresOutputContract(role: LUTRole): boolean {
   return role !== 'display-look'
-}
-
-function isDisplayLookContractAllowed(selection: {
-  role: LUTRole
-  inputGamut?: ColorGamutId
-  inputTransfer?: TransferFunctionId
-}): boolean {
-  return selection.role !== 'display-look' || hasDisplayLikeInput(selection)
 }
 
 function resolveInputProfileId(input: {
@@ -170,17 +159,22 @@ function hasAnyOutputContractField(selection: {
   )
 }
 
+/**
+ * The contract a selection stores, or every reason it cannot be stored. An
+ * input profile supplies the input gamut, transfer, and range the selection
+ * leaves out and must agree with the ones it states.
+ */
 export function buildStoredContractSelection(
   selection: LUTContractSelection,
-): StoredLUTContractSelection | undefined {
-  if (!isLUTRole(selection.role)) return undefined
+): LUTContractResult<StoredLUTContractSelection> {
+  const issues: LUTContractIssue[] = []
+  const role = isLUTRole(selection.role) ? selection.role : undefined
+  if (!role) issues.push(issue('LUT role is unsupported.'))
 
   const profile = selection.inputProfile
     ? getLUTColorProfile(selection.inputProfile)
     : undefined
-  if (hasConflictingProfileInputFields(profile, selection)) {
-    return undefined
-  }
+  issues.push(...profileInputConflicts(profile, selection))
 
   const inputGamut =
     profile?.inputGamut ?? resolveColorGamutId(selection.inputGamut)
@@ -191,46 +185,85 @@ export function buildStoredContractSelection(
   const outputTransfer = resolveTransferFunctionId(selection.outputTransfer)
   const outputRange = selection.outputRange
 
-  if (!inputGamut || !inputTransfer || !isSignalRange(inputRange)) {
-    return undefined
+  if (!inputGamut) {
+    issues.push(
+      issue(
+        'Input gamut is missing or unsupported; name an input profile or gamut.',
+      ),
+    )
   }
-  if (selection.outputRange && !isSignalRange(selection.outputRange)) {
-    return undefined
+  if (!inputTransfer) {
+    issues.push(
+      issue(
+        'Input transfer is missing or unsupported; name an input profile or transfer.',
+      ),
+    )
+  }
+  if (!isSignalRange(inputRange)) {
+    issues.push(
+      issue(
+        'Input range is missing or unsupported; name an input profile or range.',
+      ),
+    )
+  }
+  if (outputRange && !isSignalRange(outputRange)) {
+    issues.push(issue('Output range is unsupported.'))
   }
 
-  const contract: StoredLUTContractSelection = {
-    inputProfile: resolveInputProfileId({
-      inputProfile: profile?.id,
-      inputGamut,
-      inputTransfer,
-    }),
-    role: selection.role,
-    inputGamut,
-    inputTransfer,
-    inputRange,
-    outputGamut,
-    outputTransfer,
-    outputRange,
+  const output = { outputGamut, outputTransfer, outputRange }
+  if (
+    role === 'display-look' &&
+    inputGamut &&
+    inputTransfer &&
+    !hasDisplayLikeInput({ inputGamut, inputTransfer })
+  ) {
+    issues.push(issue('Display-look LUT input must be display-like.'))
   }
-
-  if (!isDisplayLookContractAllowed(contract)) {
-    return undefined
-  }
-
-  const requiresOutputContract = roleRequiresOutputContract(contract.role)
-  if (requiresOutputContract && !hasCompleteOutputContract(contract)) {
-    return undefined
+  if (role && roleRequiresOutputContract(role)) {
+    if (!hasCompleteOutputContract(output)) {
+      issues.push(
+        issue(`A ${role} LUT requires an output gamut, transfer, and range.`),
+      )
+    }
+  } else if (
+    role &&
+    hasAnyOutputContractField(output) &&
+    !hasCompleteOutputContract(output)
+  ) {
+    issues.push(
+      issue(
+        'A display-look output contract must be complete when any output field is given.',
+      ),
+    )
   }
 
   if (
-    !requiresOutputContract &&
-    hasAnyOutputContractField(contract) &&
-    !hasCompleteOutputContract(contract)
+    issues.length > 0 ||
+    !role ||
+    !inputGamut ||
+    !inputTransfer ||
+    !isSignalRange(inputRange)
   ) {
-    return undefined
+    return { ok: false, issues }
   }
 
-  return contract
+  return {
+    ok: true,
+    value: {
+      inputProfile: resolveInputProfileId({
+        inputProfile: profile?.id,
+        inputGamut,
+        inputTransfer,
+      }),
+      role,
+      inputGamut,
+      inputTransfer,
+      inputRange,
+      outputGamut,
+      outputTransfer,
+      outputRange,
+    },
+  }
 }
 
 export function toLUTContractSelection(
