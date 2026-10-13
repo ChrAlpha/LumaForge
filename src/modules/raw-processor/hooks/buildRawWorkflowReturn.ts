@@ -8,7 +8,7 @@ import type {
 
 import type { ProcessingStatus } from '../model/workflow'
 import type { PipelineFacts } from '../services/preview/pipeline-stats'
-import type { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
+import type { useOriginalReference } from './stages/compare/useOriginalReference'
 import type { useRawCompareStage } from './stages/compare/useRawCompareStage'
 import type { useRawExportStage } from './stages/export/useRawExportStage'
 import type { useRawIngestStage } from './stages/ingest/useRawIngestStage'
@@ -46,7 +46,7 @@ type BuildRawWorkflowReturnInput = {
   >
   ingestStage: Pick<ReturnType<typeof useRawIngestStage>, 'loadFile' | 'reset'>
   exportStage: ReturnType<typeof useRawExportStage>
-  originalReferenceStage: ReturnType<typeof useOriginalReferenceStage>
+  originalReferenceStage: ReturnType<typeof useOriginalReference>
 }
 
 export function buildRawWorkflowReturn({

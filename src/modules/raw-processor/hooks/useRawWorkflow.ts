@@ -13,7 +13,7 @@ import {
   getPipelineStats,
 } from '../state/workflow.atoms'
 import { buildRawWorkflowReturn } from './buildRawWorkflowReturn'
-import { useOriginalReferenceStage } from './stages/compare/useOriginalReferenceStage'
+import { useOriginalReference } from './stages/compare/useOriginalReference'
 import { useRawCompareStage } from './stages/compare/useRawCompareStage'
 import { useExportGraphInvalidation } from './stages/export/useExportGraphInvalidation'
 import { useExportInterruptionState } from './stages/export/useExportInterruptionState'
@@ -346,7 +346,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     originalReferenceFallbackReason,
     dualGpuAllowed,
     requestOriginalReferenceFallback,
-  } = useOriginalReferenceStage({
+  } = useOriginalReference({
     sessionId: session?.id ?? null,
     viewMode,
     previewSuspended,

@@ -13,9 +13,10 @@ import {
 } from '~/lib/runtime/capability-vector'
 
 import type { DisplaySource } from '../../../model/session'
+import { createImageSession } from '../../../model/session-factory'
 import type { OriginalReferenceSnapshot } from '../../../services/compare/original-reference-snapshot'
-import { useOriginalReferenceSnapshot } from '../../useOriginalReferenceSnapshot'
-import { useOriginalReferenceStage } from './useOriginalReferenceStage'
+import { setCurrentSession } from '../../../state/session.atoms'
+import { useOriginalReference } from './useOriginalReference'
 
 const rendererMock = vi.hoisted(() => ({
   renderOriginalReferenceSnapshot: vi.fn(),
@@ -25,16 +26,19 @@ vi.mock('../../../services/compare/original-reference-renderer', () => ({
   renderOriginalReferenceSnapshot: rendererMock.renderOriginalReferenceSnapshot,
 }))
 
-// The snapshot port runs as it is; the spy only records what the stage hands
-// it.
-vi.mock('../../useOriginalReferenceSnapshot', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../../useOriginalReferenceSnapshot')>()
-  return {
-    ...actual,
-    useOriginalReferenceSnapshot: vi.fn(actual.useOriginalReferenceSnapshot),
-  }
-})
+// The GPU budget, when the device reports one, decides dual GPU compare.
+const gpuBudget = vi.hoisted(() => ({
+  current: null as { dualGpuAllowed: boolean } | null,
+}))
+
+vi.mock('~/lib/runtime/preview-gpu-budget', () => ({
+  detectPreviewGpuCapabilitySnapshot: () => (gpuBudget.current ? {} : null),
+  derivePreviewGpuBudget: () => ({
+    ...gpuBudget.current,
+    boundedHqMaxPixels: 4_000_000,
+    originalReferenceSnapshotMaxPixels: 2_000_000,
+  }),
+}))
 
 type PendingRender = {
   key: string
@@ -46,6 +50,7 @@ type PendingRender = {
 type StageProps = {
   sessionId: string | null
   viewMode: PreviewViewMode
+  previewSuspended?: boolean
   image: DecodedImage | null
   /**
    * Bumped with every frame the producer accepts. The harness keys its
@@ -153,10 +158,10 @@ function renderStageHook({
   return renderHook(
     (props: StageProps) => {
       decodedImageRef.current = props.image
-      return useOriginalReferenceStage({
+      return useOriginalReference({
         sessionId: props.sessionId,
         viewMode: props.viewMode,
-        previewSuspended: false,
+        previewSuspended: props.previewSuspended ?? false,
         decodedImageRef,
         decodedFrame: props.frame === undefined ? frameOf(props) : props.frame,
         displaySource: props.displaySource,
@@ -181,7 +186,31 @@ function renderStage({ strict = false }: { strict?: boolean } = {}) {
   return { ...renderStageHook({ registry, strict }), registry }
 }
 
-describe('useOriginalReferenceStage', () => {
+const QUICK_PROPS: StageProps = {
+  sessionId: 'session-original-reference',
+  viewMode: 'compare',
+  image: createImage('quick'),
+  imageVersion: 1,
+  displaySource: 'quick',
+}
+
+function liveResources(registry: ResourceRegistry, kind: string) {
+  return registry.snapshot().live.filter((entry) => entry.kind === kind)
+}
+
+function simulateDualGpuDevice() {
+  setCapabilityVectorForTest({
+    coi: true,
+    pthread: true,
+    deviceMemoryGB: 8,
+    hwConcurrency: 8,
+    webKitClass: 'chromium',
+    deviceFormFactor: 'desktop',
+    maybeOpfsSupported: true,
+  })
+}
+
+describe('useOriginalReference', () => {
   beforeEach(() => {
     renders.length = 0
     acceptedFrames.clear()
@@ -219,48 +248,8 @@ describe('useOriginalReferenceStage', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     resetCapabilityVectorForTest()
-    vi.mocked(useOriginalReferenceSnapshot).mockClear()
-  })
-
-  it('hands the snapshot port the accepted descriptor of the frame it prepares', async () => {
-    const quick = createImage('quick')
-    const descriptor: DecodedPreviewFrame = {
-      sessionId: 'session-original-reference',
-      frameId: 'decoded-frame-1',
-      stage: 'quick',
-      width: quick.width,
-      height: quick.height,
-      exposure: { kind: 'unpinned', value: quick.renderExposure },
-      quickPredecessorFrameId: null,
-    }
-    const lastPortInput = () =>
-      vi.mocked(useOriginalReferenceSnapshot).mock.lastCall?.[0]
-    const { rerender, unmount } = renderStage()
-    rerender({
-      sessionId: 'session-original-reference',
-      viewMode: 'compare',
-      image: quick,
-      imageVersion: 1,
-      frame: descriptor,
-      displaySource: 'quick',
-    })
-    // The same object the workflow published, beside the pixels it names.
-    expect(lastPortInput()?.image).toBe(quick)
-    expect(lastPortInput()?.frame).toBe(descriptor)
-
-    // A frame the stage does not prepare a snapshot for names none.
-    rerender({
-      sessionId: 'session-original-reference',
-      viewMode: 'processed',
-      image: quick,
-      imageVersion: 1,
-      frame: descriptor,
-      displaySource: 'quick',
-    })
-    expect(lastPortInput()?.image).toBeNull()
-    expect(lastPortInput()?.frame).toBeNull()
-    unmount()
-    await act(async () => {})
+    gpuBudget.current = null
+    setCurrentSession(null)
   })
 
   it('revokes the previous snapshot exactly once when a bounded HQ upgrade replaces it', async () => {
@@ -338,5 +327,146 @@ describe('useOriginalReferenceStage', () => {
 
     expect(revokedUrls()).toEqual([replayed.objectUrl, live.objectUrl])
     expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
+  })
+
+  it('prepares a snapshot without dual GPU compare, and on a fallback request with it', async () => {
+    const { result, unmount } = renderStage()
+    expect(result.current.dualGpuAllowed).toBe(false)
+    await waitFor(() => expect(renders).toHaveLength(1))
+    unmount()
+
+    simulateDualGpuDevice()
+    const session = createImageSession(new File(['raw'], 'frame.dng'))
+    setCurrentSession(session)
+    const dual = renderStage()
+    dual.rerender({ ...QUICK_PROPS, sessionId: session.id })
+    expect(dual.result.current.dualGpuAllowed).toBe(true)
+    await act(async () => {})
+    expect(renders).toHaveLength(1)
+
+    act(() => dual.result.current.requestOriginalReferenceFallback())
+    await waitFor(() => expect(renders).toHaveLength(2))
+
+    // Leaving compare ends the request; returning does not revive it.
+    dual.rerender({
+      ...QUICK_PROPS,
+      sessionId: session.id,
+      viewMode: 'processed',
+    })
+    dual.rerender({ ...QUICK_PROPS, sessionId: session.id })
+    await act(async () => {})
+    expect(renders).toHaveLength(2)
+    dual.unmount()
+  })
+
+  it('lets the GPU budget allow dual GPU compare without pthreads', () => {
+    gpuBudget.current = { dualGpuAllowed: true }
+    const { result, unmount } = renderStage()
+    expect(result.current.dualGpuAllowed).toBe(true)
+    expect(renders).toHaveLength(0)
+    unmount()
+  })
+
+  it('never carries a fallback request over to a replacement source', async () => {
+    simulateDualGpuDevice()
+    const first = createImageSession(new File(['raw'], 'first.dng'))
+    setCurrentSession(first)
+    const { result, rerender, unmount } = renderStage()
+    rerender({ ...QUICK_PROPS, sessionId: first.id })
+    // The store already holds the replacement when the request runs.
+    const second = createImageSession(new File(['raw'], 'second.dng'))
+    setCurrentSession(second)
+    act(() => result.current.requestOriginalReferenceFallback())
+    await act(async () => {})
+    expect(renders).toHaveLength(0)
+
+    rerender({ ...QUICK_PROPS, sessionId: second.id })
+    await waitFor(() => expect(renders).toHaveLength(1))
+    unmount()
+  })
+
+  it('draws only frames the workflow accepted for this session', async () => {
+    const { rerender, unmount } = renderStage()
+    await waitFor(() => expect(renders).toHaveLength(1))
+    rerender({ ...QUICK_PROPS, imageVersion: 2, frame: null })
+    rerender({
+      ...QUICK_PROPS,
+      imageVersion: 3,
+      frame: frameOf({ ...QUICK_PROPS, sessionId: 'another-session' }),
+    })
+    await act(async () => {})
+    expect(renders).toHaveLength(1)
+    expect(renders[0]?.signal?.aborted).toBe(true)
+    unmount()
+  })
+
+  it('drops the previous session snapshot while the replacement renders', async () => {
+    const { result, rerender, unmount } = renderStage()
+    await waitFor(() => expect(renders).toHaveLength(1))
+    const first = await resolveRender(0)
+
+    rerender({ ...QUICK_PROPS, sessionId: 'session-replacement' })
+    await waitFor(() => expect(renders).toHaveLength(2))
+    expect(result.current.originalReferenceSnapshot).toBeNull()
+    expect(revokedUrls()).toEqual([first.objectUrl])
+    unmount()
+  })
+
+  it('releases a render that settles after unmount and reports render failures', async () => {
+    const { unmount, registry } = renderStage()
+    await waitFor(() => expect(renders).toHaveLength(1))
+    // The pending render is a preview resource until it settles.
+    expect(liveResources(registry, 'gpu-pipeline')).toHaveLength(1)
+    unmount()
+    const late = await resolveRender(0)
+    expect(revokedUrls()).toEqual([late.objectUrl])
+    expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
+
+    rendererMock.renderOriginalReferenceSnapshot.mockRejectedValueOnce({
+      message: 'ORIGINAL_REFERENCE_SNAPSHOT_TIMEOUT',
+    })
+    const failing = renderStage()
+    await waitFor(() =>
+      expect(failing.result.current.originalReferenceFallbackReason).toBe(
+        'ORIGINAL_REFERENCE_SNAPSHOT_TIMEOUT',
+      ),
+    )
+    failing.unmount()
+  })
+
+  it('keeps a snapshot live when its release throws, so evacuation fails closed', async () => {
+    const { unmount, registry } = renderStage()
+    await waitFor(() => expect(renders).toHaveLength(1))
+    const snapshot = await resolveRender(0)
+    revokeObjectURL.mockImplementationOnce(() => {
+      throw new Error('snapshot release failed')
+    })
+
+    await expect(registry.disposeOwners(['preview'])).rejects.toThrow(
+      'snapshot release failed',
+    )
+    expect(liveSnapshotUrls(registry)).toHaveLength(1)
+
+    await registry.disposeOwners(['preview'])
+    unmount()
+    await act(async () => {})
+    expect(revokedUrls()).toEqual([snapshot.objectUrl, snapshot.objectUrl])
+    expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
+  })
+
+  it('owns snapshots without a resource registry', async () => {
+    const { rerender, unmount } = renderStageHook({ registry: null })
+    await waitFor(() => expect(renders).toHaveLength(1))
+    const first = await resolveRender(0)
+    rerender({
+      ...QUICK_PROPS,
+      image: createImage('bounded-hq', 2400),
+      imageVersion: 2,
+      displaySource: 'bounded-hq',
+    })
+    await waitFor(() => expect(renders).toHaveLength(2))
+    const second = await resolveRender(1)
+    unmount()
+    expect(revokedUrls()).toEqual([first.objectUrl, second.objectUrl])
   })
 })
