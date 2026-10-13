@@ -6,6 +6,8 @@ delete process.env.NO_COLOR
 
 export default defineConfig({
   testDir: './tests/browser',
+  // Helpers and their Vitest unit tests, which the tooling project runs.
+  testIgnore: '**/support/**',
   timeout: 120_000,
   workers: 1,
   expect: { timeout: 15_000 },

@@ -5,19 +5,15 @@ import type { Page } from '@playwright/test'
 import { devices, expect, test } from '@playwright/test'
 
 import {
-  gateRawFixture,
-  resolvePublicRawFixture,
-} from '../../scripts/ci/raw-fixtures.mjs'
-import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
   rawPreviewUrl,
   requireWebGPUFixture,
 } from './raw-preview-backend'
+import { gateRawFixture, RAW_FIXTURE } from './support/fixtures'
 
 // The compare ladder, split, zoom/pan and bounded-HQ handoff hold for any RAW
 // above the quick-preview cap, so the public fixture covers them.
-const RAW_COMPARE_FIXTURE = resolvePublicRawFixture()
 const RAW_COMPARE_URL = process.env.LUMAFORGE_RAW_COMPARE_URL ?? '/raw'
 
 type LayeredCompareMode = 'dual-gpu' | 'jpeg-fallback'
@@ -473,8 +469,8 @@ test('keeps dual-layer RAW compare usable through split zoom and pan', async ({
     !isDesktopChromiumProject(testInfo),
     'dual GPU compare path is a desktop Chromium regression target',
   )
-  requireWebGPUFixture(testInfo, RAW_COMPARE_FIXTURE.path)
-  const rawPath = gateRawFixture(testInfo, RAW_COMPARE_FIXTURE)
+  requireWebGPUFixture(testInfo, RAW_FIXTURE.path!)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(180_000)
 
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -616,8 +612,8 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
     !isDesktopChromiumProject(testInfo),
     'mobile-class fallback is exercised in a Chromium context with WebKit-class UA',
   )
-  requireWebGPUFixture(testInfo, RAW_COMPARE_FIXTURE.path)
-  const rawPath = gateRawFixture(testInfo, RAW_COMPARE_FIXTURE)
+  requireWebGPUFixture(testInfo, RAW_FIXTURE.path!)
+  const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(240_000)
 
   const baseURL = rawPreviewUrl(testInfo, RAW_COMPARE_URL)

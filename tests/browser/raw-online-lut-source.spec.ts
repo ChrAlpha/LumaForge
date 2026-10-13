@@ -6,24 +6,14 @@ import { basename } from 'node:path'
 import type { BrowserContext, Page, TestInfo } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-import {
-  gateRawFixture,
-  REQUIRE_PUBLIC_FIXTURE_ENV,
-  resolvePublicRawFixture,
-} from '../../scripts/ci/raw-fixtures.mjs'
 import { isDesktopChromiumProject, rawPreviewUrl } from './raw-preview-backend'
+import { gateRawFixture, PUBLIC_DNG } from './support/fixtures'
 
 // Online LUT catalogs are fetched on first use, not on mount: the default
 // and saved sources are listed from the first render, and their catalog is
 // requested only when a surface that shows it opens, a ?luts= link names it,
 // or the user adds or refreshes a source. Every catalog request is answered
 // here and counted per URL; no request leaves the test.
-
-// The steps load a RAW where the surface needs one, so a missing public
-// fixture fails instead of skipping.
-const PUBLIC_DNG = resolvePublicRawFixture({
-  env: { [REQUIRE_PUBLIC_FIXTURE_ENV]: '1' },
-})
 
 const CHROMIUM_ONLY =
   'Catalog activation runs on the Chromium project at desktop and phone viewports'

@@ -3,7 +3,8 @@ import { fileURLToPath } from 'node:url'
 import { defineProject } from 'vitest/config'
 
 // The repository tooling project: build, CI, deploy, native-runtime and
-// quality scripts, the Vite plugins and the root Vite config test, in Node.
+// quality scripts, the Vite plugins, the browser specs' support modules and
+// the root Vite config test, in Node.
 export default defineProject({
   root: fileURLToPath(new URL('.', import.meta.url)),
   resolve: {
@@ -21,6 +22,7 @@ export default defineProject({
     include: [
       'scripts/**/*.{test,spec}.{ts,js,mjs}',
       'plugins/**/*.{test,spec}.{ts,js,mjs}',
+      'tests/browser/support/**/*.test.ts',
       '*.{test,spec}.{ts,js,mjs}',
     ],
     // Replaces the default exclude, which skips `*.config.*` files and so

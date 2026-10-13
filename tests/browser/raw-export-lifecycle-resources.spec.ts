@@ -6,18 +6,7 @@ import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
 import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
-import {
-  gateRawFixture,
-  REQUIRE_PUBLIC_FIXTURE_ENV,
-  resolvePublicRawFixture,
-} from '../../scripts/ci/raw-fixtures.mjs'
-import { resolveSonyArwFixture } from './raw-export-fixtures'
-
-// The mobile lifecycle runs on the public DNG, which it requires: a missing
-// copy fails instead of skipping.
-const PUBLIC_DNG = resolvePublicRawFixture({
-  env: { [REQUIRE_PUBLIC_FIXTURE_ENV]: '1' },
-})
+import { gateRawFixture, PUBLIC_DNG, SONY_ARW } from './support/fixtures'
 
 type ExportDebugEvent = {
   type: string
@@ -279,7 +268,7 @@ test('monitors a full desktop RAW export lifecycle with resource diagnostics', a
     'desktop lifecycle resource monitor uses Chromium performance APIs and OPFS',
   )
   // Resource diagnostics are meant for a large export, so this needs the ARW.
-  const sonyRawPath = resolveSonyArwFixture(testInfo)
+  const sonyRawPath = gateRawFixture(testInfo, SONY_ARW)
   testInfo.setTimeout(600_000)
 
   const samples: LifecycleResourceSample[] = []

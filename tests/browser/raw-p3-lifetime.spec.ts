@@ -7,11 +7,6 @@ import { expect, test } from '@playwright/test'
 
 import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
 import { QUICK_PREVIEW_MAX_PIXELS } from '../../packages/render-engine/src/preview/preview-plan'
-import {
-  gateRawFixture,
-  REQUIRE_PUBLIC_FIXTURE_ENV,
-  resolvePublicRawFixture,
-} from '../../scripts/ci/raw-fixtures.mjs'
 import { BACKING_STORE_SETTLE_MS } from '../../src/modules/raw-processor/hooks/preview/backing-store-resize'
 import {
   expectWebGPUPreview,
@@ -19,6 +14,7 @@ import {
   projectHasWebGPU,
   rawPreviewUrl,
 } from './raw-preview-backend'
+import { gateRawFixture, PUBLIC_DNG } from './support/fixtures'
 
 // How long a source's work may live, observed only through what a user can
 // do and what the page then holds: leaving the route ends the session and
@@ -28,11 +24,6 @@ import {
 // for or refuses. The Chromium project runs the GPU preview on a software
 // adapter, the WebKit project (no WebGPU adapter) the CPU preview.
 
-// The assertions name the public DNG's own facts, so a missing copy fails
-// instead of skipping.
-const PUBLIC_DNG = resolvePublicRawFixture({
-  env: { [REQUIRE_PUBLIC_FIXTURE_ENV]: '1' },
-})
 /** The public DNG's sensor size, as the decoder reports it. */
 const PUBLIC_DNG_SIZE = { width: 4032, height: 3024 }
 const MOBILE_VIEWPORT = { width: 393, height: 852 }

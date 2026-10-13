@@ -3,12 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-import {
-  gateRawFixture,
-  resolvePublicRawFixture,
-} from '../../scripts/ci/raw-fixtures.mjs'
-
-const RAW_FIXTURE = resolvePublicRawFixture()
+import { gateRawFixture, RAW_FIXTURE } from './support/fixtures'
 
 function createIdentityCube(title: string) {
   return [

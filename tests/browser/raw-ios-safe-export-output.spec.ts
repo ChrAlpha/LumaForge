@@ -6,7 +6,7 @@ import type { Page } from '@playwright/test'
 import { devices, expect, test } from '@playwright/test'
 
 import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
-import { resolveSonyArwFixture } from './raw-export-fixtures'
+import { gateRawFixture, SONY_ARW } from './support/fixtures'
 
 type ExportDebugEvent = {
   type: string
@@ -174,7 +174,7 @@ test('low-memory WebKit export decodes without a bottom color band for the Sony 
   page,
 }, testInfo) => {
   // The decoded size and bottom-band limits below belong to the Sony ARW.
-  const sonyRawPath = resolveSonyArwFixture(testInfo)
+  const sonyRawPath = gateRawFixture(testInfo, SONY_ARW)
   testInfo.setTimeout(600_000)
 
   await page.addInitScript(() => {

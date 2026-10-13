@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-import { resolveRawFixture } from './raw-export-fixtures'
+import { gateRawFixture, LARGE_RAF } from './support/fixtures'
 
 type ExportDebugEvent = {
   type: string
@@ -108,7 +108,7 @@ test('browser preflight records expected export policy before export', async ({
   page,
 }, testInfo) => {
   testInfo.setTimeout(240_000)
-  const fixture = resolveRawFixture(testInfo)
+  const fixture = gateRawFixture(testInfo, LARGE_RAF)
   const expectedPlan = getExpectedProjectPlan(testInfo.project.name)
 
   await page.addInitScript(() => {

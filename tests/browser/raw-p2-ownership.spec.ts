@@ -16,16 +16,12 @@ import {
   verifyManifestSha256,
 } from '../../packages/render-engine/src/manifest/canonicalize'
 import {
-  gateRawFixture,
-  REQUIRE_PUBLIC_FIXTURE_ENV,
-  resolvePublicRawFixture,
-} from '../../scripts/ci/raw-fixtures.mjs'
-import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
   projectHasWebGPU,
   rawPreviewUrl,
 } from './raw-preview-backend'
+import { gateRawFixture, PUBLIC_DNG } from './support/fixtures'
 
 // Who owns the RAW runtime, the export attempt and the delivery, observed
 // only through what a user can do and what the page then holds: the runtime
@@ -34,11 +30,6 @@ import {
 // Chromium project runs the GPU preview, the WebKit project (no WebGPU
 // adapter) the CPU preview; the desktop forced-CPU case runs on Chromium.
 
-// The assertions name the public DNG's own facts, so a missing copy fails
-// instead of skipping.
-const PUBLIC_DNG = resolvePublicRawFixture({
-  env: { [REQUIRE_PUBLIC_FIXTURE_ENV]: '1' },
-})
 /** The public DNG's sensor size, as the decoder reports it. */
 const PUBLIC_DNG_SIZE = { width: 4032, height: 3024 }
 const MOBILE_VIEWPORT = { width: 393, height: 852 }

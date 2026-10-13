@@ -7,23 +7,12 @@ import { expect, test } from '@playwright/test'
 
 import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
 import {
-  gateRawFixture,
-  REQUIRE_PUBLIC_FIXTURE_ENV,
-  resolvePublicRawFixture,
-} from '../../scripts/ci/raw-fixtures.mjs'
-import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
   projectHasWebGPU,
   rawPreviewUrl,
 } from './raw-preview-backend'
-
-// The assertions below name the public DNG's own facts (its support level,
-// its size), so the spec always runs on that file, and a missing copy fails
-// instead of skipping.
-const PUBLIC_DNG = resolvePublicRawFixture({
-  env: { [REQUIRE_PUBLIC_FIXTURE_ENV]: '1' },
-})
+import { gateRawFixture, PUBLIC_DNG } from './support/fixtures'
 
 /** The public DNG's sensor size, as the decoder reports it. */
 const PUBLIC_DNG_SIZE = { width: 4032, height: 3024 }
@@ -498,7 +487,7 @@ function createIdentityCube(title: string, size = 17) {
  * report it (floored, rounded, or at second precision).
  */
 async function seedInterruptedExport(page: Page, testInfo: TestInfo) {
-  const { size, mtimeMs } = await stat(PUBLIC_DNG.path)
+  const { size, mtimeMs } = await stat(PUBLIC_DNG.path!)
   await page.goto(rawPreviewUrl(testInfo, '/'))
   // Only a released owner lock proves the page is gone; a browser without
   // Web Locks never reports an interruption.
@@ -537,7 +526,7 @@ async function seedInterruptedExport(page: Page, testInfo: TestInfo) {
         )
       })
     },
-    { name: basename(PUBLIC_DNG.path), size, lastModifiedCandidates },
+    { name: basename(PUBLIC_DNG.path!), size, lastModifiedCandidates },
   )
 }
 

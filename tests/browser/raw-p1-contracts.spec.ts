@@ -14,17 +14,12 @@ import { expect, test } from '@playwright/test'
 
 import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
 import {
-  gateRawFixture,
-  REQUIRE_PUBLIC_FIXTURE_ENV,
-  resolvePrivateRawFixture,
-  resolvePublicRawFixture,
-} from '../../scripts/ci/raw-fixtures.mjs'
-import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
   projectHasWebGPU,
   rawPreviewUrl,
 } from './raw-preview-backend'
+import { EXPOSURE_RAW, gateRawFixture, PUBLIC_DNG } from './support/fixtures'
 
 // The current mobile /raw surfaces, driven only through what a user does:
 // the dock and its deck, the compare lens, the topbar Export and the panel it
@@ -33,19 +28,6 @@ import {
 // runs them on the GPU preview, the WebKit project (no WebGPU adapter) on the
 // CPU preview; each asserts the lens its executor offers.
 
-// The assertions name the public DNG's own facts, so a missing copy fails
-// instead of skipping.
-const PUBLIC_DNG = resolvePublicRawFixture({
-  env: { [REQUIRE_PUBLIC_FIXTURE_ENV]: '1' },
-})
-// The DNG's BaselineExposure decides every frame's exposure on its own, so
-// it cannot show the source keeping its quick frame's estimate. That needs a
-// RAW with no baseline whose quick and bounded HQ frames estimate different
-// exposures from their own pixels.
-const EXPOSURE_RAW = resolvePrivateRawFixture(
-  'LUMAFORGE_EXPOSURE_RAW',
-  'a local non-DNG RAW whose quick and bounded HQ frames estimate different image-statistics exposures (a Sony FX30 ARW or a Nikon Z 7 NEF does)',
-)
 /** The public DNG's sensor size, as the decoder reports it. */
 const PUBLIC_DNG_SIZE = { width: 4032, height: 3024 }
 const MOBILE_VIEWPORT = { width: 393, height: 852 }

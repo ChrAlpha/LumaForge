@@ -5,10 +5,7 @@ import { writeFile } from 'node:fs/promises'
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-import {
-  gateRawFixture,
-  resolvePublicRawFixture,
-} from '../../scripts/ci/raw-fixtures.mjs'
+import { gateRawFixture, RAW_FIXTURE } from './support/fixtures'
 
 function createIdentityCube(title: string, size = 17) {
   const lines = [`TITLE "${title}"`, `LUT_3D_SIZE ${size}`]
@@ -99,8 +96,6 @@ function createCatalogFixture() {
     },
   }
 }
-
-const RAW_FIXTURE = resolvePublicRawFixture()
 
 async function loadRawFixtureMobile(page: Page, fixture: string) {
   const fileChooserPromise = page.waitForEvent('filechooser')

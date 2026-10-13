@@ -4,12 +4,12 @@ import { readFile } from 'node:fs/promises'
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-import { resolveSonyArwFixture } from './raw-export-fixtures'
 import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
   rawPreviewUrl,
 } from './raw-preview-backend'
+import { gateRawFixture, SONY_ARW } from './support/fixtures'
 
 async function loadRawFixture(page: Page, fixture: string) {
   const fileChooserPromise = page.waitForEvent('filechooser')
@@ -45,7 +45,7 @@ test('exports an HQ preview JPEG from a real RAW upload without replacing full-r
     'HQ preview export acceptance uses desktop Chromium download APIs',
   )
   // The 8-12MP, 3:2 output bounds need the Sony ARW's size and aspect.
-  const sonyRawPath = resolveSonyArwFixture(testInfo)
+  const sonyRawPath = gateRawFixture(testInfo, SONY_ARW)
   testInfo.setTimeout(240_000)
 
   await page.goto(rawPreviewUrl(testInfo))

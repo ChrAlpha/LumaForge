@@ -5,11 +5,8 @@ import type { Page, Route, TestInfo } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
 import { verifyManifestSha256 } from '../../packages/render-engine/src/manifest/canonicalize'
-import {
-  gateRawFixture,
-  resolvePublicRawFixture,
-} from '../../scripts/ci/raw-fixtures.mjs'
 import { isDesktopChromiumProject } from './raw-preview-backend'
+import { gateRawFixture, RAW_FIXTURE } from './support/fixtures'
 
 // Two pages of one origin share OPFS and Web Locks. Each page reserves one
 // `active/` subdirectory for its outputs and collects other pages' leftovers
@@ -17,7 +14,6 @@ import { isDesktopChromiumProject } from './raw-preview-backend'
 // both through the product's own export and reads storage and locks only
 // through browser APIs.
 
-const RAW_FIXTURE = resolvePublicRawFixture()
 const DESKTOP_CHROMIUM_ONLY =
   'The two-page OPFS lifecycle runs on desktop Chromium'
 

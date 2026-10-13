@@ -19,10 +19,6 @@ import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
 import {
-  gateRawFixture,
-  resolvePublicRawFixture,
-} from '../../scripts/ci/raw-fixtures.mjs'
-import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
   NO_WEBGPU_SKIP_REASON,
@@ -30,8 +26,7 @@ import {
   rawPreviewUrl,
   requireWebGPUFixture,
 } from './raw-preview-backend'
-
-const RAW_FIXTURE = resolvePublicRawFixture()
+import { gateRawFixture, RAW_FIXTURE } from './support/fixtures'
 
 /**
  * The stage keeps a blocking progress overlay up through decode and the
@@ -72,7 +67,7 @@ test('desktop: a press anywhere on an Adjust row grabs the value, Shift halves t
     !isDesktopChromiumProject(testInfo),
     'Desktop scrub contract targets desktop Chromium only',
   )
-  requireWebGPUFixture(testInfo, RAW_FIXTURE.path)
+  requireWebGPUFixture(testInfo, RAW_FIXTURE.path!)
   const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(300_000)
 
@@ -208,7 +203,7 @@ test('compare: the split line and its labels hug the photograph', async ({
     !isDesktopChromiumProject(testInfo),
     'Compare geometry is asserted once, on desktop Chromium',
   )
-  requireWebGPUFixture(testInfo, RAW_FIXTURE.path)
+  requireWebGPUFixture(testInfo, RAW_FIXTURE.path!)
   const rawPath = gateRawFixture(testInfo, RAW_FIXTURE)
   testInfo.setTimeout(300_000)
 
