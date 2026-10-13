@@ -12,6 +12,7 @@ import { useEffect, useMemo } from 'react'
 import { useInRouterContext, useLocation } from 'react-router'
 
 import { clsxm } from '~/lib/cn'
+import { cpuPreviewVariantForViewMode } from '~/lib/preview/preview-view'
 
 import type { CpuPreviewNotice } from './components/CpuPreviewBanner'
 import { CpuPreviewBanner } from './components/CpuPreviewBanner'
@@ -180,9 +181,7 @@ function RawProcessorViewInner({
           // photo; its compare lens drives original / processed instead.
           cpuVariant={
             isMobileSurface
-              ? workflow.viewMode === 'original'
-                ? 'neutral'
-                : 'processed'
+              ? cpuPreviewVariantForViewMode(workflow.viewMode)
               : undefined
           }
         />
