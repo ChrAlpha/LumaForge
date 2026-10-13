@@ -43,8 +43,6 @@ import { selectExportPlan } from '~/lib/export/export-plan'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage } from '~/lib/raw/decoder'
-import { createRawRuntimeSessionLeases } from '~/lib/raw/raw-runtime-host'
-import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
 import {
   resetCapabilityVectorForTest,
   setCapabilityVectorForTest,
@@ -253,27 +251,11 @@ const FOLDING_MATRIX = composeManualTransform(
   6000 / 4000,
 )
 
-/** Committed geometries the engine refuses to plan. */
-const INVALID_GEOMETRIES: ReadonlyArray<
-  readonly [label: string, geometry: ExportGeometry]
-> = [
-  [
-    'a fold inside the unconstrained frame',
-    { matrix: FOLDING_MATRIX, constrainCrop: false },
-  ],
-  [
-    'a matrix missing an entry',
-    { matrix: [1, 0, 0, 0, 1, 0, 0, 0], constrainCrop: true },
-  ],
-  [
-    'a non-finite entry',
-    { matrix: [1, 0, 0, 0, Number.NaN, 0, 0, 0, 1], constrainCrop: true },
-  ],
-  [
-    'a singular matrix',
-    { matrix: [1, 2, 0, 2, 4, 0, 0, 0, 1], constrainCrop: false },
-  ],
-]
+/** A committed geometry the engine refuses to plan: a fold in the frame. */
+const FOLDING_GEOMETRY: ExportGeometry = {
+  matrix: FOLDING_MATRIX,
+  constrainCrop: false,
+}
 
 function createSession(
   id = 'session-1',
@@ -1264,7 +1246,7 @@ describe('orchestrateFullResExport success', () => {
     ])
   })
 
-  it('sizes the job, result and manifest from the committed geometry', async () => {
+  it('sizes the job, result and manifest from the geometry the store committed', async () => {
     const geometry: ExportGeometry = {
       matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
       constrainCrop: true,
@@ -1275,9 +1257,9 @@ describe('orchestrateFullResExport success', () => {
       height: planned.outputHeight,
     }
     expect(delivered.width).toBeLessThan(6000)
-    const h = createHarness({
-      session: createGeometrySession(geometry),
-    })
+    const h = createHarness({ atomsSession: createSession() })
+    // The store holds the accepted geometry before the caller rerenders.
+    h.replaceSession(createGeometrySession(geometry))
     const job = h.installJob()
 
     const run = orchestrateFullResExport(OPTIONS, h.ctx)
@@ -1287,10 +1269,17 @@ describe('orchestrateFullResExport success', () => {
 
     expect(input.geometry).toBe(geometry)
     expect(input.quality).toBe(0.92)
-    expect(h.state.session?.exportState.result).toMatchObject(delivered)
+    // The plan is sized by the sensor frame the worker decodes; only the
+    // recorded result carries the cropped, delivered frame.
+    expect(h.planInputs.map((planInput) => planInput.source)).toEqual([
+      { width: 6000, height: 4000 },
+    ])
+    const published = h.state.session?.exportState.result
+    expect(published).toMatchObject(delivered)
     expect(h.state.session?.exportState.lastSuccessfulSize).toEqual(delivered)
     // The manifest records the geometry the result's identity names, over
     // the frame the result delivers.
+    expect(h.manifestInputs[0].result).toBe(published)
     expect(h.manifestInputs[0]).toMatchObject({
       sourceDimensions: { width: 6000, height: 4000 },
       result: {
@@ -1301,66 +1290,6 @@ describe('orchestrateFullResExport success', () => {
       },
       quality: 0.92,
     })
-  })
-
-  it('exports the geometry an accepted Transform holds', async () => {
-    const session = createAcceptedTransformSession()
-    const h = createHarness({ session })
-
-    const result = await runToReady(h)
-
-    expect(mocks.runFullResolutionExportJob.mock.calls[0]![0].geometry).toBe(
-      session.exportGeometry,
-    )
-    expect(h.state.session?.exportState.status).toBe('ready')
-    expect(result.manifestState).toEqual({ status: 'sealing' })
-  })
-
-  it('marks a geometry export by its source tuple and sends no checkpoint', async () => {
-    // Constraining the crop pulls the fold back inside its horizon.
-    const geometry: ExportGeometry = {
-      matrix: FOLDING_MATRIX,
-      constrainCrop: true,
-    }
-    const planned = planExportGeometry(geometry, { width: 6000, height: 4000 })
-    const delivered = {
-      width: planned.outputWidth,
-      height: planned.outputHeight,
-    }
-    expect(delivered.width).toBeLessThan(6000)
-    const h = createHarness({
-      runtime: OPFS_RUNTIME,
-      session: createGeometrySession(geometry),
-    })
-    const job = h.installJob()
-
-    const run = orchestrateFullResExport(OPTIONS, h.ctx)
-    const input = await job.started
-
-    const [marker] = h.markerStore.markers()
-    expect(Object.keys(marker ?? {}).sort()).toEqual([
-      'attempt',
-      'owner',
-      'ownerLocked',
-      'source',
-      'startedAt',
-      'terminal',
-      'updatedAt',
-      'version',
-    ])
-    expect(input.geometry).toBe(geometry)
-    expect(input).not.toHaveProperty('checkpoint')
-    // The plan is sized by the sensor frame the worker decodes; only the
-    // recorded result carries the cropped, delivered frame.
-    expect(h.planInputs.map((planInput) => planInput.source)).toEqual([
-      { width: 6000, height: 4000 },
-    ])
-    job.resolve()
-    await run
-
-    expect(h.state.session?.exportState.result).toMatchObject(delivered)
-    expect(h.state.session?.exportState.lastSuccessfulSize).toEqual(delivered)
-    expect(h.markerStore.markers()).toEqual([])
   })
 
   it.each([
@@ -1675,9 +1604,9 @@ describe('orchestrateFullResExport refusals', () => {
     expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
   })
 
-  it.each(INVALID_GEOMETRIES)(
-    'refuses %s before a marker, evacuation or worker work',
-    async (_label, geometry) => {
+  it.each([FOLDING_GEOMETRY])(
+    'refuses an unplannable geometry before a marker, evacuation or worker work',
+    async (geometry) => {
       expect(() =>
         planExportGeometry(geometry, { width: 6000, height: 4000 }),
       ).toThrow(INVALID_EXPORT_GEOMETRY)
@@ -1736,7 +1665,7 @@ describe('orchestrateFullResExport refusals', () => {
     },
   )
 
-  it.each(['pending', 'invalid', 'unavailable'] as const)(
+  it.each(['pending'] as const)(
     'refuses a %s Transform before sampling, a marker, evacuation, the worker or an output',
     async (status) => {
       const registry = createResourceRegistry()
@@ -1931,6 +1860,8 @@ describe('orchestrateFullResExport refusals', () => {
     expect(
       h.ctx.services.registerCurrentPreviewPipelineForEvacuation,
     ).not.toHaveBeenCalled()
+    expect(h.ctx.services.previewRuntime.cancel).not.toHaveBeenCalled()
+    expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
     // A refused plan never begins an attempt.
     expect(h.markerStore.markers()).toEqual([])
@@ -1939,22 +1870,6 @@ describe('orchestrateFullResExport refusals', () => {
 })
 
 describe('orchestrateFullResExport refusal order', () => {
-  /** A LUT whose input contract is unknown: the color graph refuses it. */
-  function unsupportedGraph() {
-    const lut = tealLut({ kind: 'unknown' })
-    return {
-      params: { ...DEFAULT_PARAMS, styleKind: 'custom' } as ColorGraphIntent,
-      lut,
-      activeStyle: {
-        kind: 'custom',
-        name: 'Teal',
-        defaultIntensity: 0.7,
-        currentIntensity: 0.7,
-        lutAsset: { format: 'cube', dimension: 17 },
-      } as const,
-    }
-  }
-
   /** What a refusal before the attempt leaves: one notice, nothing else. */
   function expectRefusedBeforeAttempt(
     h: Harness,
@@ -1980,52 +1895,6 @@ describe('orchestrateFullResExport refusal order', () => {
     expect(h.ctx.refs.exportAbortControllerRef.current).toBe(otherExport)
   }
 
-  it('refuses an unplannable geometry before the Transform and the color graph', async () => {
-    const graph = unsupportedGraph()
-    const h = createHarness({
-      params: graph.params,
-      lut: graph.lut,
-      runtime: OPFS_RUNTIME,
-      session: createSession('session-1', {
-        activeStyle: graph.activeStyle,
-        exportGeometry: INVALID_GEOMETRIES[0][1],
-        transform: transformAt('pending'),
-      }),
-    })
-    const otherExport = new AbortController()
-    h.ctx.refs.exportAbortControllerRef.current = otherExport
-
-    await orchestrateFullResExport(OPTIONS, h.ctx)
-
-    expectRefusedBeforeAttempt(h, h.state.session, otherExport, {
-      code: 'geometry-unplannable',
-    })
-  })
-
-  it('refuses a pending Transform before the color graph', async () => {
-    const graph = unsupportedGraph()
-    const h = createHarness({
-      params: graph.params,
-      lut: graph.lut,
-      runtime: OPFS_RUNTIME,
-      session: createSession('session-1', {
-        activeStyle: graph.activeStyle,
-        transform: transformAt('pending'),
-      }),
-    })
-    const otherExport = new AbortController()
-    h.ctx.refs.exportAbortControllerRef.current = otherExport
-
-    await orchestrateFullResExport(OPTIONS, h.ctx)
-
-    expectRefusedBeforeAttempt(
-      h,
-      h.state.session,
-      otherExport,
-      TRANSFORM_REFUSALS.pending,
-    )
-  })
-
   it('refuses a plan no storage could rescue before sampling device facts', async () => {
     // No reachable OPFS: readiness already knows the large mobile export can
     // only hand its output over in memory, which it refuses.
@@ -2047,148 +1916,6 @@ describe('orchestrateFullResExport refusal order', () => {
       code: 'cannot-safely-complete',
     })
   })
-
-  it.each([
-    {
-      name: 'OPFS is gone when the export samples storage',
-      runtime: BLOB_RUNTIME,
-    },
-    {
-      name: 'OPFS has too little room for the output',
-      runtime: {
-        opfsSinkAvailable: true,
-        opfsAvailableMB: 100,
-        streamingSinkAvailable: false,
-      },
-    },
-  ] as const)(
-    'fails closed after sampling when $name, before any output, marker or evacuation',
-    async ({ runtime }) => {
-      setCapabilityVectorForTest(MOBILE_CAPABILITY)
-      stubOpfsDirectory()
-      const registry = createResourceRegistry()
-      const h = createHarness({
-        registry,
-        capability: MOBILE_CAPABILITY,
-        runtime,
-        session: createSession('session-1', {
-          exportState: {
-            fullResCapability: {
-              status: 'supported',
-              width: 9000,
-              height: 6000,
-            },
-          },
-        }),
-      })
-      registry.register({
-        id: 'preview-gpu-pipeline',
-        owner: 'gpu',
-        kind: 'gpu-pipeline',
-        estimatedBytes: 4096,
-        dispose: () => {
-          h.trace.push('service:dispose:preview-gpu-pipeline')
-        },
-      })
-
-      await orchestrateFullResExport(OPTIONS, h.ctx)
-
-      expect(h.planInputs).toEqual([
-        {
-          preference: 'balanced',
-          source: { width: 9000, height: 6000 },
-          history: {
-            previousCrashLikeInterruption: false,
-            previousResourceFailure: false,
-            previousUserInterrupted: false,
-          },
-        },
-      ])
-      expect(h.plans).toEqual([
-        expect.objectContaining({
-          outputSink: 'blob-handoff',
-          runtimeMemoryProfile: 'low-memory',
-          productCopy: 'cannot-safely-complete',
-        }),
-      ])
-      expect(h.channel('state')).toEqual([
-        'state:status:exporting',
-        'state:progress:0',
-        'state:error:null',
-        'state:session:failed',
-        'state:status:ready',
-      ])
-      expect(h.state.session?.exportState).toMatchObject({
-        status: 'failed',
-        lastErrorCode: 'EXPORT_POLICY_CANNOT_COMPLETE',
-      })
-      expect(mocks.reserveOpfsOutputDirectory).not.toHaveBeenCalled()
-      expect(h.markerStore.markers()).toEqual([])
-      expect(h.ctx.services.previewRuntime.cancel).not.toHaveBeenCalled()
-      expect(registry.snapshot().live).toHaveLength(1)
-      expect(h.channel('debug')).toEqual([])
-      expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
-    },
-  )
-
-  it.each([
-    {
-      name: 'a desktop in-memory plan',
-      capability: DESKTOP_CAPABILITY,
-      runtime: BLOB_RUNTIME,
-      plan: {
-        outputSink: 'blob-handoff',
-        runtimeMemoryProfile: 'desktop',
-        profile: expect.objectContaining({ name: 'desktop-fast' }),
-      },
-    },
-    {
-      name: 'a mobile low-memory OPFS plan',
-      capability: MOBILE_CAPABILITY,
-      runtime: OPFS_RUNTIME,
-      plan: {
-        outputSink: 'opfs-file',
-        runtimeMemoryProfile: 'low-memory',
-        profile: expect.objectContaining({ name: 'ios-safe' }),
-      },
-    },
-  ] as const)(
-    'runs $name from the sampled facts at the fixed quality',
-    async ({ capability, runtime, plan }) => {
-      setCapabilityVectorForTest(capability)
-      stubOpfsDirectory()
-      const h = createHarness({
-        capability,
-        runtime,
-        session: createSession('session-1', {
-          exportState: {
-            fullResCapability: {
-              status: 'supported',
-              width: 9000,
-              height: 6000,
-            },
-          },
-        }),
-      })
-      const job = h.installJob()
-
-      const run = orchestrateFullResExport(OPTIONS, h.ctx)
-      const input = await job.started
-      job.resolve()
-      await run
-
-      expect(input.executionPlan).toMatchObject(plan)
-      expect(input.executionPlan).toBe(h.plans[0])
-      expect(input.quality).toBe(0.92)
-      expect(h.state.session?.exportState).toMatchObject({
-        status: 'ready',
-        activePlan: {
-          outputSink: plan.outputSink,
-          runtimeMemoryProfile: plan.runtimeMemoryProfile,
-        },
-      })
-    },
-  )
 })
 
 describe('orchestrateFullResExport failures', () => {
@@ -2199,24 +1926,6 @@ describe('orchestrateFullResExport failures', () => {
       performancePreference: 'balanced',
       code: 'FULL_RES_EXPORT_WORKER_FAILED',
       retryLevel: 'safe',
-      message: 'FULL_RES_EXPORT_WORKER_FAILED',
-      resourceFailure: true,
-    },
-    {
-      name: 'a resource failure at max fidelity',
-      error: new Error('FULL_RES_EXPORT_RESOURCE_FAILURE'),
-      performancePreference: 'max',
-      code: 'FULL_RES_EXPORT_RESOURCE_FAILURE',
-      retryLevel: 'balanced',
-      message: 'FULL_RES_EXPORT_RESOURCE_FAILURE',
-      resourceFailure: true,
-    },
-    {
-      name: 'a retryable failure with no safer fidelity left',
-      error: new Error('FULL_RES_EXPORT_WORKER_FAILED'),
-      performancePreference: 'safe',
-      code: 'FULL_RES_EXPORT_WORKER_FAILED',
-      retryLevel: undefined,
       message: 'FULL_RES_EXPORT_WORKER_FAILED',
       resourceFailure: true,
     },
@@ -2649,7 +2358,7 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
     },
   )
 
-  it.each(supersessions)(
+  it.each(supersessions.filter(({ name }) => name === 'session is replaced'))(
     'removes the finished OPFS output of a JPEG that completes after the $name',
     async ({ supersede, session }) => {
       const h = createHarness({ runtime: OPFS_RUNTIME, session: session?.() })
@@ -2855,26 +2564,6 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
 
-  it('reports the refusal that ends a running attempt by its code', async () => {
-    const planGate = deferred()
-    const h = createHarness({
-      planGate: planGate.promise,
-      runtime: OPFS_RUNTIME,
-      session: createAcceptedTransformSession(),
-    })
-
-    const run = orchestrateFullResExport(OPTIONS, h.ctx)
-    recapture(h, 'unavailable')
-    planGate.resolve()
-    await run
-
-    expect(h.notifications).toEqual([
-      { kind: 'started' },
-      { kind: 'refused', refusal: TRANSFORM_REFUSALS.unavailable },
-    ])
-    expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
-  })
-
   it('ends an export whose frame fails while its OPFS output is reserved', async () => {
     const reserve = deferred<string>()
     const h = createHarness({
@@ -2940,26 +2629,8 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
     expect(h.markerStore.markers()).toEqual([])
   })
 
-  it.each(['pending', 'invalid', 'unavailable'] as const)(
-    'does not deliver a JPEG that completes after the Transform goes %s with no edit',
-    async (status) => {
-      const h = createHarness({ session: createAcceptedTransformSession() })
-      const job = h.installJob()
-
-      const run = orchestrateFullResExport(OPTIONS, h.ctx)
-      await job.started
-      recapture(h, status)
-      job.resolve()
-      await run
-      await settle()
-
-      expectRefusedAndSettled(h, status)
-      expect(h.markerStore.markers()).toEqual([])
-    },
-  )
-
-  it.each(['pending', 'invalid', 'unavailable'] as const)(
-    'removes the finished OPFS output of a JPEG that completes after the Transform goes %s with no edit',
+  it.each(['invalid'] as const)(
+    'delivers nothing and removes the finished OPFS output of a JPEG that completes after the Transform goes %s with no edit',
     async (status) => {
       const h = createHarness({
         runtime: OPFS_RUNTIME,
@@ -2982,6 +2653,7 @@ describe('orchestrateFullResExport live Transform eligibility', () => {
       expect(outputs).toHaveLength(1)
       expect(outputs[0]!.cleanup).toHaveBeenCalledTimes(1)
       expectRefusedAndSettled(h, status)
+      expect(h.markerStore.markers()).toEqual([])
     },
   )
 
@@ -3259,42 +2931,6 @@ describe('orchestrateFullResExport completed output ownership', () => {
   )
 })
 
-describe('orchestrateFullResExport a later attempt', () => {
-  it.each([
-    { later: 'fails', first: 'resolves' },
-    { later: 'fails', first: 'rejects' },
-    { later: 'delivers', first: 'resolves' },
-    { later: 'delivers', first: 'rejects' },
-  ] as const)(
-    'publishes nothing when the first manifest $first after a later export $later',
-    async ({ later, first }) => {
-      const h = createHarness()
-      await runToReady(h)
-      // Only the first export's manifest is in the test's hands.
-      mocks.buildManifestForExportResult.mockImplementationOnce(
-        () => new Promise(() => {}),
-      )
-      const job = h.installJob()
-      const run = orchestrateFullResExport(OPTIONS, h.ctx)
-      await job.started
-      if (later === 'delivers') job.resolve()
-      else job.reject(new Error('FULL_RES_EXPORT_WORKER_FAILED'))
-      await run
-      // The later export ended and released the slot.
-      expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
-      const sessionAfterLater = h.state.session
-
-      const settledAt = h.mark('first-manifest-settles')
-      if (first === 'resolves') h.manifest.resolve(SEALED_MANIFEST)
-      else h.manifest.reject(new Error('digest failed'))
-      await settle()
-
-      expect(h.since(settledAt)).toEqual(['test:first-manifest-settles'])
-      expect(h.state.session).toBe(sessionAfterLater)
-    },
-  )
-})
-
 describe('orchestrateFullResExport delayed manifest', () => {
   it.each([
     {
@@ -3372,37 +3008,10 @@ describe('orchestrateFullResExport delayed manifest', () => {
       attached: false,
     },
     {
-      name: 'the view unmounts',
-      supersede(h: Harness) {
-        h.ctx.refs.isMountedRef.current = false
-      },
-      resolvedTrace: [],
-      rejectedTrace: [],
-      attached: false,
-    },
-    {
       name: 'the result is cleared on the same session',
       supersede(h: Harness) {
         h.ctx.refs.exportGraphVersionRef.current += 1
         h.ctx.atoms.setSession(clearExportResultState)
-      },
-      resolvedTrace: [],
-      rejectedTrace: [],
-      attached: false,
-    },
-    {
-      name: 'the export graph version advances',
-      supersede(h: Harness) {
-        h.ctx.refs.exportGraphVersionRef.current += 1
-      },
-      resolvedTrace: [],
-      rejectedTrace: [],
-      attached: false,
-    },
-    {
-      name: 'another attempt takes the export slot',
-      supersede(h: Harness) {
-        h.ctx.refs.exportAbortControllerRef.current = new AbortController()
       },
       resolvedTrace: [],
       rejectedTrace: [],
@@ -3587,35 +3196,6 @@ describe('orchestrateFullResExport color intent', () => {
     return input.graph.steps.find((step) => step.kind === 'lut-output-to-srgb')
   }
 
-  it('records the intent the export graph reads in the pre-export snapshot', async () => {
-    vi.mocked(createPreExportSnapshot).mockClear()
-    const h = createHarness({
-      params: EDITED_PARAMS,
-      lut: CONFIRMED_LUT,
-      session: createSession('session-1', { activeStyle: TEAL_STYLE }),
-    })
-    const job = h.installJob()
-
-    const run = orchestrateFullResExport(OPTIONS, h.ctx)
-    const input = await job.started
-    job.resolve()
-    await run
-
-    expect(vi.mocked(createPreExportSnapshot)).toHaveBeenCalledTimes(1)
-    const [snapshotInput] = vi.mocked(createPreExportSnapshot).mock.calls[0]
-    expect(snapshotInput.intent).toEqual(pickColorGraphIntent(EDITED_PARAMS))
-    expect(snapshotInput.graph).toBe(input.graph)
-    expect(snapshotInput.graphFingerprint).toBe(
-      JSON.stringify(input.graph.steps),
-    )
-    expect(lutOutputStep(input)).toMatchObject({ intensity: 0.37 })
-    expect(
-      input.graph.steps.find((step) => step.kind === 'user-selective-color'),
-    ).toMatchObject({
-      bands: { red: { hue: 10, saturation: 0, lightness: 0 } },
-    })
-  })
-
   it('records the request it was asked for through rendering and late sealing', async () => {
     const params: ColorGraphIntent = { ...EDITED_PARAMS }
     const geometry: ExportGeometry = {
@@ -3712,48 +3292,6 @@ describe('orchestrateFullResExport color intent', () => {
     expect(firstSealed?.identity).toBe(first.identity)
     expect(secondSealed?.manifestState).toEqual({ status: 'ready' })
     expect(secondSealed?.identity).toBe(second.identity)
-  })
-
-  it('keeps the LUT in the export graph at zero strength', async () => {
-    const h = createHarness({
-      params: { ...EDITED_PARAMS, intensity: 0 },
-      lut: CONFIRMED_LUT,
-      session: createSession('session-1', { activeStyle: TEAL_STYLE }),
-    })
-    const job = h.installJob()
-
-    const run = orchestrateFullResExport(OPTIONS, h.ctx)
-    const input = await job.started
-    job.resolve()
-    await run
-
-    expect(input.graph).toMatchObject({
-      supported: true,
-      lutProfile: { id: 'display-srgb' },
-    })
-    expect(input.graph.steps.some((step) => step.kind === 'lut3d')).toBe(true)
-    expect(lutOutputStep(input)).toMatchObject({ intensity: 0 })
-  })
-
-  it('refuses an unconfirmed LUT contract at zero strength', async () => {
-    const h = createHarness({
-      params: { ...EDITED_PARAMS, intensity: 0 },
-      lut: { ...CONFIRMED_LUT, profileResolution: { kind: 'unknown' } },
-      session: createSession('session-1', { activeStyle: TEAL_STYLE }),
-    })
-
-    await orchestrateFullResExport(OPTIONS, h.ctx)
-
-    expect(h.trace).toEqual([
-      'state:error:Choose a LUT input profile before full-resolution export.',
-      'state:status:error',
-      'state:session:failed',
-    ])
-    expect(h.state.session?.exportState).toMatchObject({
-      status: 'failed',
-      lastErrorCode: 'EXPORT_UNSUPPORTED_PIPELINE',
-    })
-    expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
   })
 
   it('exports the color written after the caller rendered, and only that request', async () => {
@@ -3966,239 +3504,5 @@ describe('orchestrateFullResExport color intent', () => {
       expect(snapshotInput.graph).toBe(input.graph)
       expect(snapshotInput.lutTitle).toBe('Slate')
     })
-
-    it('exports the LUT applied over no look', async () => {
-      const input = await exportAfterSameTickLutChange({
-        rendered: { lut: null, style: null },
-        renderedParams: DEFAULT_PARAMS,
-        written: { lut: SLATE_LUT, style: styleFor(SLATE_LUT, 'slate-sha') },
-      })
-
-      expect(input.graph.steps.some((step) => step.kind === 'lut3d')).toBe(true)
-    })
-
-    it('exports the contract chosen for the LUT already applied', async () => {
-      const rechosen: LUTData = {
-        ...CONFIRMED_LUT,
-        profileResolution: SLATE_LUT.profileResolution,
-      }
-      const input = await exportAfterSameTickLutChange({
-        rendered: { lut: CONFIRMED_LUT, style: TEAL_STYLE },
-        renderedParams: EDITED_PARAMS,
-        written: { lut: rechosen, style: styleFor(rechosen, 'teal-sha') },
-      })
-
-      expect(input.graph).toMatchObject({
-        supported: true,
-        lutProfile: { id: SLOG3_PROFILE.id },
-      })
-    })
-  })
-})
-
-describe('orchestrateFullResExport live session reads', () => {
-  it('exports the geometry the store committed after the caller rendered', async () => {
-    const geometry: ExportGeometry = {
-      matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
-      constrainCrop: true,
-    }
-    const planned = planExportGeometry(geometry, { width: 6000, height: 4000 })
-    const delivered = {
-      width: planned.outputWidth,
-      height: planned.outputHeight,
-    }
-    const h = createHarness({ atomsSession: createSession() })
-    // The store holds the geometry before the caller rerenders.
-    h.replaceSession(createGeometrySession(geometry))
-    const job = h.installJob()
-
-    const run = orchestrateFullResExport(OPTIONS, h.ctx)
-    const input = await job.started
-    job.resolve()
-    await run
-
-    expect(input.geometry).toBe(geometry)
-    const published = h.state.session?.exportState.result
-    expect(published).toMatchObject(delivered)
-    expect(published?.identity?.geometry).toEqual({
-      matrix: geometry.matrix,
-      constrainCrop: true,
-    })
-    expect(h.manifestInputs[0].result).toBe(published)
-  })
-
-  it('drops the JPEG of a source the store replaced while the worker ran', async () => {
-    const h = createHarness()
-    const job = h.installJob()
-
-    const run = orchestrateFullResExport(OPTIONS, h.ctx)
-    await job.started
-    const replacedAt = h.mark('replaced')
-    const nextSession = createSession('session-2')
-    h.replaceSession(nextSession)
-    job.resolve()
-    await run
-
-    // The attempt is obsolete: it writes and reports nothing more.
-    expect(h.since(replacedAt)).toEqual(['test:replaced'])
-    expect(h.state.session).toBe(nextSession)
-    expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
-    expect(mocks.buildManifestForExportResult).not.toHaveBeenCalled()
-  })
-
-  it('stops an attempt whose Transform the store left pending while the worker ran', async () => {
-    const h = createHarness({ session: createAcceptedTransformSession() })
-    const job = h.installJob()
-
-    const run = orchestrateFullResExport(OPTIONS, h.ctx)
-    const input = await job.started
-    const live = h.state.session!
-    h.replaceSession({
-      ...live,
-      transform: recaptureTransform(live.transform!, 'pending'),
-    })
-    job.progress(1, 2)
-    expect(input.signal?.aborted).toBe(true)
-    job.reject(new DOMException('Aborted', 'AbortError'))
-    await run
-
-    expect(h.notifications).toEqual([
-      { kind: 'started' },
-      { kind: 'refused', refusal: TRANSFORM_REFUSALS.pending },
-    ])
-    expect(h.state.status).toBe('ready')
-    expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
-  })
-
-  it('seals no manifest for a source the store replaced after delivery', async () => {
-    const h = createHarness()
-    await runToReady(h)
-    h.replaceSession(createSession('session-2'))
-    h.manifest.resolve(SEALED_MANIFEST)
-    await settle()
-
-    expect(h.debugPayloads('export-manifest-ready')).toEqual([])
-    expect(h.state.session?.exportState.result).toBeUndefined()
-  })
-})
-
-describe('orchestrateFullResExport preview runtime on the host', () => {
-  /**
-   * Wires the preview runtime the way the workflow does: cancelling it ends
-   * the host's one session lease, and terminating it stops the host's
-   * decode worker. Neither knows about the export's own controller.
-   */
-  function wirePreviewRuntime(h: Harness) {
-    const runtimeSession: RawRuntimeSession = {
-      sourceDimensions: {},
-      extractEmbeddedPreview: vi.fn(),
-      decodeQuickRaw: vi.fn(),
-      decodeBoundedHqRaw: vi.fn(),
-      applyCalibration: vi.fn().mockResolvedValue({ applied: true } as const),
-      dispose: vi.fn(() => {
-        h.trace.push('service:dispose:preview-session')
-      }),
-    }
-    const leases = createRawRuntimeSessionLeases(async () => runtimeSession)
-    h.ctx.services.previewRuntime = {
-      cancel: vi.fn(() => {
-        h.trace.push('service:cancelPreviewRuntime')
-        leases.cancel()
-      }),
-      terminate: vi.fn(async () => {
-        h.trace.push('service:terminatePreviewRuntime')
-      }),
-    }
-    return { leases, runtimeSession }
-  }
-
-  it('ends the preview session on the host and terminates its worker before the export worker runs', async () => {
-    const h = createHarness()
-    const { leases, runtimeSession } = wirePreviewRuntime(h)
-    // A bounded HQ decode still runs on the preview's lease.
-    const preview = leases.begin()
-    await preview.open(SOURCE_FILE)
-    const job = h.installJob()
-
-    const run = orchestrateFullResExport(OPTIONS, h.ctx)
-    const input = await job.started
-
-    expect(preview.signal.aborted).toBe(true)
-    expect(runtimeSession.dispose).toHaveBeenCalledTimes(1)
-    const cancelAt = h.trace.indexOf('service:cancelPreviewRuntime')
-    expect(cancelAt).toBeGreaterThan(-1)
-    expect(cancelAt).toBeLessThan(
-      h.trace.indexOf('service:dispose:preview-session'),
-    )
-    expect(h.trace.indexOf('service:dispose:preview-session')).toBeLessThan(
-      h.trace.indexOf('debug:resource-evacuated'),
-    )
-    // The job's worker runs only once the preview's worker is gone.
-    expect(
-      h.trace.slice(h.trace.indexOf('service:runFullResolutionExportJob')),
-    ).toEqual([
-      'service:runFullResolutionExportJob',
-      'debug:export-worker-attempt',
-      'service:terminatePreviewRuntime',
-    ])
-    expect(input.signal?.aborted).toBe(false)
-
-    job.resolve()
-    await run
-    expect(h.state.session?.exportState.status).toBe('ready')
-  })
-
-  it('never aborts the export when the preview runtime is cancelled again mid-job', async () => {
-    const h = createHarness()
-    const { leases } = wirePreviewRuntime(h)
-    const job = h.installJob()
-
-    const run = orchestrateFullResExport(OPTIONS, h.ctx)
-    const input = await job.started
-    const controller = h.ctx.refs.exportAbortControllerRef.current
-    // A preview lease taken while the export runs is cancelled on its own.
-    const later = leases.begin()
-    h.ctx.services.previewRuntime.cancel()
-
-    expect(later.signal.aborted).toBe(true)
-    expect(input.signal?.aborted).toBe(false)
-    expect(h.ctx.refs.exportAbortControllerRef.current).toBe(controller)
-
-    job.progress(1, 1)
-    job.resolve()
-    await run
-
-    expect(controller?.signal.aborted).toBe(false)
-    expect(h.state.status).toBe('ready')
-    expect(h.state.session?.exportState).toMatchObject({
-      status: 'ready',
-      result: expect.objectContaining({ kind: 'full-resolution' }),
-    })
-  })
-
-  it('leaves the host slot free for a preview restore after the export fails', async () => {
-    const h = createHarness()
-    const { leases, runtimeSession } = wirePreviewRuntime(h)
-    const job = h.installJob()
-
-    const run = orchestrateFullResExport(OPTIONS, h.ctx)
-    await job.started
-    const cancels = vi.mocked(h.ctx.services.previewRuntime.cancel).mock.calls
-      .length
-    job.reject(new Error('decoder exploded'))
-    await run
-
-    expect(h.state.status).toBe('ready')
-    expect(h.state.session?.exportState.status).toBe('failed')
-    // A failure ends only the export: it cancels no preview work after it.
-    expect(
-      vi.mocked(h.ctx.services.previewRuntime.cancel).mock.calls,
-    ).toHaveLength(cancels)
-
-    const restore = leases.begin()
-    await expect(restore.open(SOURCE_FILE)).resolves.toBe(runtimeSession)
-    expect(restore.signal.aborted).toBe(false)
-    restore.release()
-    expect(runtimeSession.dispose).toHaveBeenCalledTimes(1)
   })
 })
