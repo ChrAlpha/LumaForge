@@ -1168,7 +1168,8 @@ describe('useRawWorkflow', () => {
         expect(exportSystemMock.runPreviewExportJob).toHaveBeenCalledWith(
           expect.objectContaining({
             filename: 'frame_neutral_hq-preview.jpg',
-                }),
+            quality: 0.92,
+          }),
         )
         const [{ width, height }] = renderToHiddenCanvas.mock.calls[0]!
         expect(result.current.exportResult).toMatchObject({

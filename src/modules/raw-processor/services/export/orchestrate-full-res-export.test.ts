@@ -700,9 +700,7 @@ function createHarness(options: HarnessOptions = {}) {
     exportAbortControllerRef: { current: null },
     exportGraphVersionRef: { current: 3 },
     isMountedRef: { current: true },
-    pipelineRef: { current: null },
     resourceRegistryRef: { current: registry },
-    previewCopyCanvasRef: { current: null },
   }
 
   const ctx: ExportContext = {
@@ -741,7 +739,6 @@ function createHarness(options: HarnessOptions = {}) {
       getColorIntent: () => colorIntent,
       getLutData: () => storedLut,
       decodedImageRef: { current: createDecodedImage() },
-      previewFacts: null,
       refreshExportInterruption: vi.fn(() => {
         trace.push('state:interruption-refresh')
       }),
@@ -999,7 +996,6 @@ describe('orchestrateFullResExport success', () => {
         h.trace.push('service:dispose:preview-gpu-pipeline')
       },
     })
-    h.ctx.refs.previewCopyCanvasRef.current = document.createElement('canvas')
     const job = h.installJob()
 
     const run = orchestrateFullResExport(OPTIONS, h.ctx)
@@ -1113,7 +1109,6 @@ describe('orchestrateFullResExport success', () => {
     ).toBe(result)
     expect(controller?.signal.aborted).toBe(false)
     expect(h.ctx.refs.exportAbortControllerRef.current).toBeNull()
-    expect(h.ctx.refs.previewCopyCanvasRef.current).toBeNull()
     expect(registry.snapshot().live).toEqual([])
 
     expect(h.planInputs).toEqual([
@@ -2290,7 +2285,6 @@ describe('orchestrateFullResExport cancellation and supersession', () => {
       expect(h.state.status).toBe('exporting')
       expect(h.ctx.services.registerExportResultResource).not.toHaveBeenCalled()
       expect(mocks.buildManifestForExportResult).not.toHaveBeenCalled()
-      expect(h.ctx.refs.previewCopyCanvasRef.current).toBeNull()
       if (takesSlot) {
         expect(h.ctx.refs.exportAbortControllerRef.current).not.toBeNull()
       } else {

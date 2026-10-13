@@ -21,7 +21,6 @@ import {
 } from '~/lib/export/opfs-output-lifetime'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage, ImageMetadata } from '~/lib/raw/decoder'
-import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type {
   ExportResult,
@@ -34,7 +33,6 @@ import {
   isRetryableFullResExportFailure,
   toUserFacingErrorCode,
 } from '../ingest/workflow-status'
-import type { PipelineFacts } from '../preview/pipeline-stats'
 import {
   buildManifestForExportResult,
   ExportManifestUnavailableError,
@@ -141,8 +139,6 @@ export interface ExportContext {
      */
     getLutData: () => LUTData | null
     decodedImageRef: { current: DecodedImage | null }
-    /** The preview pipeline's facts; a preview-size copy renders at its size. */
-    previewFacts: PipelineFacts | null
     /** Asks the page to read the loaded source's interruption hint again. */
     refreshExportInterruption: () => void
   }
@@ -150,9 +146,7 @@ export interface ExportContext {
     exportAbortControllerRef: { current: AbortController | null }
     exportGraphVersionRef: { current: number }
     isMountedRef: { current: boolean }
-    pipelineRef: { current: RawProcessingPipeline | null }
     resourceRegistryRef: { current: ResourceRegistry | null }
-    previewCopyCanvasRef: { current: HTMLCanvasElement | null }
   }
   services: {
     notify: (notification: FullResExportNotification) => void
@@ -454,7 +448,6 @@ export async function orchestrateFullResExport(
     ctx.atoms.setProgress(0)
     ctx.atoms.setError(null)
     ctx.services.notify({ kind: 'started' })
-    ctx.refs.previewCopyCanvasRef.current = null
     // The device facts are sampled now, for this export. Facts sampled for
     // an attempt that is no longer current plan nothing.
     const sampledFacts = await sampleExportPlanFacts()

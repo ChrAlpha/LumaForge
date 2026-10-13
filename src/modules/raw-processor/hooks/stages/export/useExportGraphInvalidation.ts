@@ -1,4 +1,4 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
+import type { MutableRefObject } from 'react'
 import { useCallback } from 'react'
 
 import type { ImageSession } from '../../../model/session'
@@ -7,12 +7,10 @@ import {
   clearExportResultState,
   hasActiveExport,
 } from '../../../services/export/export-state'
-
-export type SetImageSession = Dispatch<SetStateAction<ImageSession | null>>
+import type { SetImageSession } from '../../../state/session.atoms'
 
 type UseExportGraphInvalidationInput = {
   exportGraphVersionRef: MutableRefObject<number>
-  previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
   exportAbortControllerRef: MutableRefObject<AbortController | null>
   /** Reads the session from the store when called. */
   getSession: () => ImageSession | null
@@ -25,7 +23,6 @@ type UseExportGraphInvalidationInput = {
 
 export function useExportGraphInvalidation({
   exportGraphVersionRef,
-  previewCopyCanvasRef,
   exportAbortControllerRef,
   getSession,
   abortExportWork,
@@ -36,7 +33,6 @@ export function useExportGraphInvalidation({
 }: UseExportGraphInvalidationInput) {
   const invalidateExportGraph = useCallback(() => {
     exportGraphVersionRef.current += 1
-    previewCopyCanvasRef.current = null
     // The session the store holds now, so an export a write in the same tick
     // started or settled, before any rerender, decides whether to settle.
     const exportWasActive = hasActiveExport(
@@ -57,7 +53,6 @@ export function useExportGraphInvalidation({
     exportAbortControllerRef,
     exportGraphVersionRef,
     getSession,
-    previewCopyCanvasRef,
     queueExportResultResourceDisposal,
     setProgress,
     setSession,

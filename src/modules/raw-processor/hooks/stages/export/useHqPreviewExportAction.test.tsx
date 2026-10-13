@@ -359,7 +359,6 @@ function setupHq(
         isMountedRef,
         exportGraphVersionRef,
         exportAbortControllerRef,
-        previewCopyCanvasRef: { current: null },
         previewSuspended: false,
         abortExportWork: () => {
           trace.push('service:abortExportWork')

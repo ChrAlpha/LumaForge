@@ -1,10 +1,9 @@
 import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
-import { useCallback, useLayoutEffect, useRef } from 'react'
+import { useCallback } from 'react'
 
 import { emitExportDebugEvent } from '~/lib/export/execution-profile'
-import type { MessageKey, Translate } from '~/lib/i18n'
-import { useI18n } from '~/lib/i18n'
+import type { MessageKey } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type {
   PipelineStats,
@@ -39,6 +38,7 @@ import {
   EXPORT_COPY_REASON_COPY,
   EXPORT_SHARE_REASON_COPY,
 } from '../../../services/surface/raw-reason'
+import { useLatestTranslate } from '../../useLatestTranslate'
 
 type ExportResultActionToast = {
   success: (message: string) => void
@@ -61,7 +61,6 @@ type UseExportResultActionsInput = {
   > | null>
   /** The frame the preview draws; its RAW render exposure is read. */
   decodedImageRef: MutableRefObject<Pick<DecodedImage, 'renderExposure'> | null>
-  previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
   previewSize?: PipelineStats['previewSize']
   scheduleToast: (notify: () => void) => void
   toast: ExportResultActionToast
@@ -83,7 +82,6 @@ export function useExportResultActions({
   isMountedRef,
   pipelineRef,
   decodedImageRef,
-  previewCopyCanvasRef,
   previewSize,
   scheduleToast,
   toast,
@@ -146,17 +144,7 @@ export function useExportResultActions({
     }
   }, [readLive])
 
-  const { t: renderedTranslate } = useI18n()
-  // Copy is built when a notification is, usually after an await, so it is
-  // read in the locale current then rather than the one this render saw.
-  const translateRef = useRef(renderedTranslate)
-  useLayoutEffect(() => {
-    translateRef.current = renderedTranslate
-  }, [renderedTranslate])
-  const t = useCallback<Translate>(
-    (key, values) => translateRef.current(key, values),
-    [],
-  )
+  const t = useLatestTranslate()
   // A failure stays structured up to the toast, which is the only place a
   // refusal's code becomes copy, in the current locale; a runtime's own
   // message is shown as given.
@@ -298,23 +286,6 @@ export function useExportResultActions({
       }
 
       if (result.copyCapability.mode === 'preview-size') {
-        // The snapshot the export kept is copied only while it is still the
-        // one held: an edit or a later attempt drops or replaces it.
-        const previewCopyCanvas = previewCopyCanvasRef.current
-        if (previewCopyCanvas) {
-          await copyCanvasToClipboard(previewCopyCanvas, globalThis, {
-            assertCurrent() {
-              guard.assertCurrent()
-              if (previewCopyCanvasRef.current !== previewCopyCanvas) {
-                throw new ExportDeliveryStaleError('result-replaced')
-              }
-            },
-          })
-          const message = t('raw.export.toast.previewSizeCopied')
-          scheduleToast(() => toast.success(message))
-          return
-        }
-
         const notReady = () =>
           new ExportActionUnavailableError(
             unavailableExportCopy('preview-copy-not-ready'),
@@ -371,7 +342,6 @@ export function useExportResultActions({
     getLutData,
     openDelivery,
     pipelineRef,
-    previewCopyCanvasRef,
     previewSize,
     scheduleToast,
     t,

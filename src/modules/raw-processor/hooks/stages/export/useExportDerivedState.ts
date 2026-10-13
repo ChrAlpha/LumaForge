@@ -15,6 +15,7 @@ import type {
 } from '../../../model/export-result'
 import type { DisplaySource, ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
+import { isSessionPreviewReleased } from '../../../services/compare/view-session-state'
 import { resolveDeliveredExportSize } from '../../../services/export/delivered-export-size'
 import { deriveFullResExportReadiness } from '../../../services/export/export-readiness'
 import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
@@ -30,7 +31,6 @@ type UseExportDerivedStateInput = {
   session: ImageSession | null
   exportInterruption: SourceInterruptionHint | null
   decodedImageRef: MutableRefObject<DecodedImage | null>
-  embeddedPreviewUrl: string | null
   status: ProcessingStatus
   hasImage: boolean
   displaySource: DisplaySource
@@ -47,7 +47,6 @@ export function useExportDerivedState({
   session,
   exportInterruption,
   decodedImageRef,
-  embeddedPreviewUrl,
   status,
   hasImage,
   displaySource,
@@ -100,21 +99,9 @@ export function useExportDerivedState({
       exportInterruption,
       sourceFile,
     )
-    const exportState = session?.exportState
-    const activeExportPlan =
-      exportState?.status === 'exporting' ||
-      (exportState?.status === 'ready' && exportState.result)
-        ? exportState.activePlan
-        : undefined
-    const exportPlanSuspendsPreview = Boolean(activeExportPlan)
-    const previewEvacuatedForReadyExport =
-      exportState?.status === 'ready' &&
-      Boolean(exportState.result) &&
-      !decodedImage &&
-      !embeddedPreviewUrl
-    const previewSuspended =
-      exportPlanSuspendsPreview &&
-      (status === 'exporting' || previewEvacuatedForReadyExport)
+    const previewSuspended = session
+      ? isSessionPreviewReleased(session, Boolean(decodedImage))
+      : false
     const hqPreviewImage = decodedImage
     const canPreviewExport =
       !session?.exportGeometry &&
@@ -156,7 +143,6 @@ export function useExportDerivedState({
     deliveredExportSize,
     displaySource,
     exportInterruption,
-    embeddedPreviewUrl,
     exportResult,
     exportShareCapability,
     hasImage,

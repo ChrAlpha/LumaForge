@@ -1,10 +1,8 @@
 import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
-import { useCallback, useLayoutEffect, useRef } from 'react'
+import type { MutableRefObject } from 'react'
+import { useCallback } from 'react'
 import { toast as sonnerToast } from 'sonner'
 
-import type { Translate } from '~/lib/i18n'
-import { useI18n } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
@@ -36,6 +34,8 @@ import {
 import { resolveHqPreviewLookRefusal } from '../../../services/export/hq-preview-look'
 import { pipelineHoldsLook } from '../../../services/preview/pipeline-holds-look'
 import { HQ_PREVIEW_EXPORT_REASON_COPY } from '../../../services/surface/raw-reason'
+import type { SetImageSession } from '../../../state/session.atoms'
+import { useLatestTranslate } from '../../useLatestTranslate'
 
 type HqPreviewPipeline = Pick<
   RawProcessingPipeline,
@@ -59,7 +59,6 @@ type UseHqPreviewExportActionInput = {
   isMountedRef: MutableRefObject<boolean>
   exportGraphVersionRef: MutableRefObject<number>
   exportAbortControllerRef: MutableRefObject<AbortController | null>
-  previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
   previewSuspended: boolean
   /** Why the surfaces refuse the HQ preview export as last rendered. */
   previewExportRefusal?: HqPreviewExportReasonCode
@@ -68,7 +67,7 @@ type UseHqPreviewExportActionInput = {
   registerExportResultResource: (result: ExportResult) => void
   scheduleToast: (notify: () => void) => void
   setProgress: (progress: number) => void
-  setSession: Dispatch<SetStateAction<ImageSession | null>>
+  setSession: SetImageSession
   setStatus: (status: ProcessingStatus) => void
   toast?: HqPreviewExportToast
 }
@@ -115,7 +114,6 @@ export function useHqPreviewExportAction({
   isMountedRef,
   exportGraphVersionRef,
   exportAbortControllerRef,
-  previewCopyCanvasRef,
   previewSuspended,
   previewExportRefusal,
   abortExportWork,
@@ -127,17 +125,7 @@ export function useHqPreviewExportAction({
   setStatus,
   toast = sonnerToast,
 }: UseHqPreviewExportActionInput) {
-  const { t: renderedTranslate } = useI18n()
-  // Copy is built when a notification is, usually after an await, so it is
-  // read in the locale current then rather than the one this render saw.
-  const translateRef = useRef(renderedTranslate)
-  useLayoutEffect(() => {
-    translateRef.current = renderedTranslate
-  }, [renderedTranslate])
-  const t = useCallback<Translate>(
-    (key, values) => translateRef.current(key, values),
-    [],
-  )
+  const t = useLatestTranslate()
   // A refusal stays a code up to the toast, which is the only place it
   // becomes copy, in the current locale.
   const refuse = useCallback(
@@ -235,7 +223,6 @@ export function useHqPreviewExportAction({
       exportAbortController,
       identity.attemptId,
     )
-    previewCopyCanvasRef.current = null
     queueExportResultResourceDisposal()
     setStatus('exporting')
     setProgress(0)
@@ -410,7 +397,6 @@ export function useHqPreviewExportAction({
     getSession,
     isMountedRef,
     pipelineRef,
-    previewCopyCanvasRef,
     previewExportRefusal,
     previewSuspended,
     queueExportResultResourceDisposal,

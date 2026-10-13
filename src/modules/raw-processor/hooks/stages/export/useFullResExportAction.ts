@@ -1,8 +1,7 @@
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 
 import type { Translate } from '~/lib/i18n'
-import { useI18n } from '~/lib/i18n'
 
 import type {
   ExportContext,
@@ -11,6 +10,7 @@ import type {
 } from '../../../services/export/orchestrate-full-res-export'
 import { orchestrateFullResExport } from '../../../services/export/orchestrate-full-res-export'
 import { fullResExportReasonText } from '../../../services/surface/raw-reason'
+import { useLatestTranslate } from '../../useLatestTranslate'
 
 export type UseFullResExportActionInput = ExportContext['atoms'] &
   ExportContext['refs'] &
@@ -78,14 +78,11 @@ export function useFullResExportAction({
   getSession,
   getColorIntent,
   getLutData,
-  previewFacts,
   decodedImageRef,
   exportAbortControllerRef,
   exportGraphVersionRef,
   isMountedRef,
-  pipelineRef,
   resourceRegistryRef,
-  previewCopyCanvasRef,
   setStatus,
   setError,
   setProgress,
@@ -100,17 +97,7 @@ export function useFullResExportAction({
   interruptionMarkers,
   orchestrateExport = orchestrateFullResExport,
 }: UseFullResExportActionInput) {
-  const { t: renderedTranslate } = useI18n()
-  // Copy is built when a notification is, usually after an await, so it is
-  // read in the locale current then rather than the one this render saw.
-  const translateRef = useRef(renderedTranslate)
-  useLayoutEffect(() => {
-    translateRef.current = renderedTranslate
-  }, [renderedTranslate])
-  const t = useCallback<Translate>(
-    (key, values) => translateRef.current(key, values),
-    [],
-  )
+  const t = useLatestTranslate()
   // The export decides what to report while its attempt is current; the
   // copy and the toast belong here.
   const notify = useCallback(
@@ -132,16 +119,13 @@ export function useFullResExportAction({
         getColorIntent,
         getLutData,
         decodedImageRef,
-        previewFacts,
         refreshExportInterruption,
       },
       refs: {
         exportAbortControllerRef,
         exportGraphVersionRef,
         isMountedRef,
-        pipelineRef,
         resourceRegistryRef,
-        previewCopyCanvasRef,
       },
       services: {
         notify,
@@ -165,8 +149,6 @@ export function useFullResExportAction({
       isMountedRef,
       loadedImage,
       notify,
-      pipelineRef,
-      previewCopyCanvasRef,
       previewRuntime,
       refreshExportInterruption,
       registerCurrentPreviewPipelineForEvacuation,
@@ -178,7 +160,6 @@ export function useFullResExportAction({
       setProgress,
       setSession,
       setStatus,
-      previewFacts,
     ],
   )
 

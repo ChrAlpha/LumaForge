@@ -195,13 +195,11 @@ function createReadySession(
 function setup({
   session = createReadySession(),
   result,
-  previewCopyCanvas = null,
   pipeline = null,
   wrapper,
 }: {
   session?: ImageSession
   result: (session: ImageSession) => ExportResult
-  previewCopyCanvas?: HTMLCanvasElement | null
   pipeline?: Pick<PreviewPipeline, 'renderToHiddenCanvas'> | null
   wrapper?: ComponentType<PropsWithChildren>
 }) {
@@ -239,7 +237,6 @@ function setup({
     decodedImageRef: {
       current: { renderExposure: exposure },
     } as { current: Pick<DecodedImage, 'renderExposure'> | null },
-    previewCopyCanvasRef: { current: previewCopyCanvas },
   }
   // The attempt that produced the result claimed the slot and released it
   // when it ended, as every completed export does.
@@ -511,36 +508,6 @@ describe('useExportResultActions', () => {
     expect(createObjectURL).not.toHaveBeenCalled()
   })
 
-  it('does not copy a preview snapshot replaced while it encodes', async () => {
-    const { clipboardWrite } = stubDelivery()
-    const encoded = deferred<Blob | null>()
-    const snapshot = {
-      toBlob: vi.fn((callback: BlobCallback) => {
-        void encoded.promise.then(callback)
-      }),
-    } as unknown as HTMLCanvasElement
-    const harness = setup({
-      previewCopyCanvas: snapshot,
-      result: (session) =>
-        createResult({
-          session,
-          output: blobOutput(),
-          copyCapability: {
-            mode: 'preview-size',
-            reasonCode: 'full-resolution-copy-unsupported',
-          },
-        }),
-    })
-
-    const pending = harness.actions().copyExportResult()
-    harness.previewCopyCanvasRef.current = null
-    encoded.resolve(new Blob(['png'], { type: 'image/png' }))
-    await pending
-
-    expect(clipboardWrite).not.toHaveBeenCalled()
-    expect(harness.toast.success).not.toHaveBeenCalled()
-  })
-
   it('does not copy a hidden-canvas render that became stale', async () => {
     const { clipboardWrite } = stubDelivery()
     const rendered = deferred<HTMLCanvasElement>()
@@ -746,25 +713,6 @@ describe('useExportResultActions', () => {
       )
     })
 
-    it('still copies the retained snapshot whatever the pipeline holds', async () => {
-      const { clipboardWrite } = stubDelivery()
-      const renderToHiddenCanvas = vi.fn(async () => encodingCanvas())
-      const harness = setup({
-        previewCopyCanvas: encodingCanvas(),
-        pipeline: { renderToHiddenCanvas },
-        result: previewSizeResult,
-      })
-      harness.held.intent = { ...intent, userExposureEv: 0.4 }
-
-      await harness.actions().copyExportResult()
-
-      expect(renderToHiddenCanvas).not.toHaveBeenCalled()
-      expect(clipboardWrite).toHaveBeenCalledTimes(1)
-      expect(harness.toast.success).toHaveBeenCalledWith(
-        'Preview-size image copied',
-      )
-    })
-
     it('reports a store edit during the render as a stale delivery', async () => {
       const { clipboardWrite } = stubDelivery()
       const rendered = deferred<HTMLCanvasElement>()
@@ -795,13 +743,7 @@ describe('useExportResultActions', () => {
 
   it('delivers a current result after export released the preview', async () => {
     const delivery = stubDelivery()
-    const snapshot = {
-      toBlob: vi.fn((callback: BlobCallback) => {
-        callback(new Blob(['png'], { type: 'image/png' }))
-      }),
-    } as unknown as HTMLCanvasElement
     const harness = setup({
-      previewCopyCanvas: snapshot,
       pipeline: null,
       result: (session) =>
         createResult({
@@ -816,11 +758,9 @@ describe('useExportResultActions', () => {
 
     await harness.actions().downloadExportResult()
     await harness.actions().shareExportResult()
-    await harness.actions().copyExportResult()
 
     expect(delivery.click).toHaveBeenCalledTimes(1)
     expect(delivery.share).toHaveBeenCalledTimes(1)
-    expect(delivery.clipboardWrite).toHaveBeenCalledTimes(1)
     expect(harness.toast.error).not.toHaveBeenCalled()
   })
 })
@@ -920,15 +860,15 @@ describe('useExportResultActions notification copy', () => {
   ): Scenario {
     return async (wrapper) => {
       stubDelivery()
-      // A browser that cannot encode the snapshot hands `toBlob` no blob.
-      const snapshot = {
+      // A browser that cannot encode the render hands `toBlob` no blob.
+      const rendered = {
         toBlob: vi.fn((callback: BlobCallback) => {
           callback(encodes ? new Blob(['png'], { type: 'image/png' }) : null)
         }),
       } as unknown as HTMLCanvasElement
       const harness = setup({
         wrapper,
-        previewCopyCanvas: snapshot,
+        pipeline: { renderToHiddenCanvas: async () => rendered },
         result: (session) =>
           createResult({
             session,

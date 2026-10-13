@@ -92,8 +92,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     getStats: getPipelineStats,
   })
   const sourceState = useRawSourceState({ session, status })
-  const { hasImage, loadedImage, embeddedPreviewUrl, displaySource } =
-    sourceState
+  const { hasImage, loadedImage, displaySource } = sourceState
   const rawRenderExposure =
     decodedImageRef.current?.renderExposure ?? rawRenderExposureRef.current
   const { abortRuntimeWork, abortExportWork } = useRawRuntimeControls({
@@ -216,7 +215,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     ...exportCommandInput,
     loadedImage,
     session,
-    previewFacts,
     refreshExportInterruption,
     previewRuntime,
     registerCurrentPreviewPipelineForEvacuation,
@@ -227,7 +225,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     session,
     exportInterruption,
     decodedImageRef,
-    embeddedPreviewUrl,
     status,
     hasImage,
     displaySource,
