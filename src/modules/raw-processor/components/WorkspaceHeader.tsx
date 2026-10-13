@@ -1,15 +1,9 @@
 import { useAtomValue } from 'jotai'
-import { FolderOpen, MoreHorizontal, RotateCcw } from 'lucide-react'
+import { FolderOpen, RotateCcw } from 'lucide-react'
 import { memo } from 'react'
 
 import { LocaleToggle } from '~/components/common/LocaleToggle'
 import { Button } from '~/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '~/components/ui/dropdown-menu/DropdownMenu'
 import { useI18n } from '~/lib/i18n'
 
 import type { SupportLevel } from '../model/session'
@@ -54,7 +48,7 @@ export const WorkspaceHeader = memo(
               {hasImage ? fileName : t('raw.header.title')}
             </h1>
             {hasImage && (
-              <span className="inline-flex max-[640px]:hidden">
+              <span className="inline-flex">
                 <SupportBadge level={supportLevel} />
               </span>
             )}
@@ -72,10 +66,10 @@ export const WorkspaceHeader = memo(
           className="flex shrink-0 items-center gap-1"
           data-raw-desktop-actions="command-cluster"
         >
-          <LocaleToggle className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border-0 bg-transparent px-2 text-[0.72rem] font-medium text-lf-on-photo-ink/68 shadow-none transition-colors hover:bg-[oklch(0.96_0.006_255/0.06)] hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green/80 max-[640px]:hidden" />
+          <LocaleToggle className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border-0 bg-transparent px-2 text-[0.72rem] font-medium text-lf-on-photo-ink/68 shadow-none transition-colors hover:bg-[oklch(0.96_0.006_255/0.06)] hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green/80" />
           <span
             aria-hidden="true"
-            className="mx-1 h-4 w-px bg-lf-on-photo-bord-soft max-[640px]:hidden"
+            className="mx-1 h-4 w-px bg-lf-on-photo-bord-soft"
           />
           <Button
             variant="secondary"
@@ -84,7 +78,7 @@ export const WorkspaceHeader = memo(
             onClick={onReplaceFile}
             disabled={isExporting}
             data-raw-header-action="replace"
-            className="h-7 gap-1.5 rounded-md border-0 bg-transparent px-2 text-[0.72rem] font-medium text-lf-on-photo-ink/78 shadow-none transition-colors hover:bg-[oklch(0.96_0.006_255/0.06)] hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green/80 max-[640px]:hidden [&_svg]:size-[13px] [&_svg]:stroke-[1.85]"
+            className="h-7 gap-1.5 rounded-md border-0 bg-transparent px-2 text-[0.72rem] font-medium text-lf-on-photo-ink/78 shadow-none transition-colors hover:bg-[oklch(0.96_0.006_255/0.06)] hover:text-lf-on-photo-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-green/80 [&_svg]:size-[13px] [&_svg]:stroke-[1.85]"
           >
             <FolderOpen aria-hidden="true" />
             {hasImage ? t('raw.header.replace') : t('raw.header.chooseRaw')}
@@ -96,42 +90,11 @@ export const WorkspaceHeader = memo(
             onClick={onResetSession}
             disabled={!hasImage || isExporting}
             data-raw-header-action="reset"
-            className="h-7 gap-1.5 rounded-md border-0 bg-transparent px-2 text-[0.72rem] font-medium text-lf-on-photo-ink/78 shadow-none transition-colors hover:bg-lf-rose/14 hover:text-lf-rose focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-rose/70 max-[640px]:hidden [&_svg]:size-[13px] [&_svg]:stroke-[1.85]"
+            className="h-7 gap-1.5 rounded-md border-0 bg-transparent px-2 text-[0.72rem] font-medium text-lf-on-photo-ink/78 shadow-none transition-colors hover:bg-lf-rose/14 hover:text-lf-rose focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-lf-rose/70 [&_svg]:size-[13px] [&_svg]:stroke-[1.85]"
           >
             <RotateCcw aria-hidden="true" />
             {t('raw.header.reset')}
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="secondary"
-                size="sm"
-                type="button"
-                className="hidden gap-1.5 max-[640px]:inline-flex"
-              >
-                <MoreHorizontal aria-hidden="true" className="size-4" />
-                {t('raw.header.more')}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                className="gap-2"
-                disabled={isExporting}
-                onSelect={onReplaceFile}
-              >
-                <FolderOpen aria-hidden="true" className="size-[15px]" />
-                {hasImage ? t('raw.header.replace') : t('raw.header.chooseRaw')}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="gap-2"
-                disabled={!hasImage || isExporting}
-                onSelect={onResetSession}
-              >
-                <RotateCcw aria-hidden="true" className="size-[15px]" />
-                {t('raw.header.reset')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </header>
     )

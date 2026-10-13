@@ -68,7 +68,6 @@
   "raw.header.unavailablePrefix": "Full-res JPEG unavailable: {{reason}}",
   "raw.header.chooseRaw": "Choose RAW",
   "raw.header.replace": "Replace",
-  "raw.header.more": "More",
   "raw.header.reset": "Reset",
   "raw.resetConfirm.title": "Reset session",
   "raw.resetConfirm.description": "This clears the current RAW, LUT, tone changes, compare position, and export result. Your local files stay untouched.",

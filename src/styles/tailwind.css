@@ -4,7 +4,6 @@
 @plugin "@tailwindcss/typography";
 @plugin '@egoist/tailwindcss-icons';
 @plugin "tailwind-scrollbar";
-@plugin 'tailwindcss-animate';
 
 @import '@pastel-palette/tailwindcss/dist/theme-oklch.css';
 

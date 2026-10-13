@@ -68,7 +68,6 @@
   "raw.header.unavailablePrefix": "全分辨率 JPEG 暂不可用：{{reason}}",
   "raw.header.chooseRaw": "选择 RAW",
   "raw.header.replace": "替换",
-  "raw.header.more": "更多",
   "raw.header.reset": "重置",
   "raw.resetConfirm.title": "重置会话",
   "raw.resetConfirm.description": "这会清除当前 RAW、LUT、影调调整、对比位置和导出结果。本地文件不会被修改。",
