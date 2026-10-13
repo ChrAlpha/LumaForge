@@ -1,13 +1,15 @@
 // @vitest-environment node
 import { generateIdentityLUT, toLUTData } from '@lumaforge/luma-color-runtime'
+import {
+  COLOR_GRAPH_DESCRIPTOR_VERSION,
+  describeColorGraph,
+  fingerprintColorGraph,
+} from '@lumaforge/render-engine/manifest'
 import { describe, expect, it } from 'vitest'
 
 import { parseRenderParams } from '../schemas/params'
 import {
   buildColorGraph,
-  COLOR_GRAPH_DESCRIPTOR_VERSION,
-  describeColorGraph,
-  fingerprintColorGraph,
   manifestToRenderParams,
   requireSupportedGraph,
   resolveExposure,

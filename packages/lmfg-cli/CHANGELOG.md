@@ -10,6 +10,9 @@ follows Keep a Changelog; versions follow semver.
 - `render replay` reads a recorded `selective_color` as written. Manifests
   that development builds of 0.2.0 sealed with eight neutral bands are no
   longer read as recording no HSL.
+- `workspacePaths` no longer has `luts`, `replays`, `replay`, or
+  `workspaceReplay`. `replayOutputFile` and `replayManifestFile` take a
+  `null` session id for a replay under the workspace root.
 
 ### Changed
 

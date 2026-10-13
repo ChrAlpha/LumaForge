@@ -17,7 +17,6 @@ import { buildColorGraph, requireSupportedGraph } from './color-graph'
 import {
   buildRenderManifest,
   percentToQuality,
-  qualityToPercent,
   requireVerifiedManifest,
   verifyManifestFile,
 } from './manifest'
@@ -232,7 +231,6 @@ describe('manifest service', () => {
   )
 
   it('converts quality between percent and unit scale', () => {
-    expect(qualityToPercent(0.92)).toBe(92)
     expect(percentToQuality(85)).toBe(0.85)
   })
 })

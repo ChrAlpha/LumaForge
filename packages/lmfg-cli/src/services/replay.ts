@@ -10,7 +10,11 @@ import type {
 } from '@lumaforge/render-engine'
 import { createRenderManifest } from '@lumaforge/render-engine'
 import type { RecordedExportFrame } from '@lumaforge/render-engine/manifest'
-import { checkRecordedExportGeometry } from '@lumaforge/render-engine/manifest'
+import {
+  checkRecordedExportGeometry,
+  describeColorGraph,
+  fingerprintColorGraph,
+} from '@lumaforge/render-engine/manifest'
 
 import type { CleanupFailure } from '../protocol/errors'
 import {
@@ -31,8 +35,6 @@ import {
 import { toFileUri, workspacePaths } from '../workspace/paths'
 import {
   buildColorGraph,
-  describeColorGraph,
-  fingerprintColorGraph,
   manifestToRenderParams,
   requireSupportedGraph,
   toManifestRenderParams,

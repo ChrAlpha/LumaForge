@@ -45,10 +45,6 @@ export type BuildManifestInput = {
   producedAt?: Date
 }
 
-export function qualityToPercent(quality: number): number {
-  return Math.round(quality * 100)
-}
-
 export function percentToQuality(percent: number): number {
   return percent / 100
 }

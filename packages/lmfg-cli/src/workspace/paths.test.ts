@@ -27,7 +27,7 @@ describe('workspace artifact segments', () => {
     ['sheet', (value) => paths.contactSheetMapFile(root, sid, iter, value)],
     ['export', (value) => paths.exportManifestFile(root, sid, value)],
     ['session replay', (value) => paths.replayOutputFile(root, sid, value)],
-    ['workspace replay', (value) => paths.workspaceReplay(root, value)],
+    ['workspace replay', (value) => paths.replayOutputFile(root, null, value)],
     ['LUT cache', (value) => paths.lutCacheFile(root, value)],
   ]
 

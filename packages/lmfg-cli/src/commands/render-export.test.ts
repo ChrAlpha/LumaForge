@@ -15,7 +15,10 @@ import { fileURLToPath } from 'node:url'
 import { createLumaJpegRuntimeForNode } from '@lumaforge/luma-jpeg-runtime/node'
 import { createLumaRawRuntimeForNode } from '@lumaforge/luma-raw-runtime/node'
 import type { RenderManifest } from '@lumaforge/render-engine'
-import { sealRenderManifest } from '@lumaforge/render-engine/manifest'
+import {
+  colorGraphIdentity,
+  sealRenderManifest,
+} from '@lumaforge/render-engine/manifest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -33,7 +36,6 @@ import {
   buildColorGraph,
   manifestToRenderParams,
   requireSupportedGraph,
-  toColorGraphIdentity,
 } from '../services/color-graph'
 import { exposureFromManifest } from '../services/export'
 import { resolveLutForParams } from '../services/lut'
@@ -305,7 +307,7 @@ describe('candidate export input integrity', () => {
       sealRenderManifest({
         ...manifest,
         lut: null,
-        color_graph: toColorGraphIdentity(graph),
+        color_graph: colorGraphIdentity(graph),
       }),
     )
     const result = await exportCandidate()

@@ -493,12 +493,16 @@ function registerReplay(render: Command, host: CommandHost): void {
         const key = options.name
           ? requireReplayName(options.name)
           : replayKey(manifest)
-        const outputPath = sessionId
-          ? workspacePaths.replayOutputFile(ctx.workspaceRoot, sessionId, key)
-          : `${workspacePaths.workspaceReplay(ctx.workspaceRoot, key)}/output.jpg`
-        const manifestOutputPath = sessionId
-          ? workspacePaths.replayManifestFile(ctx.workspaceRoot, sessionId, key)
-          : `${workspacePaths.workspaceReplay(ctx.workspaceRoot, key)}/manifest.json`
+        const outputPath = workspacePaths.replayOutputFile(
+          ctx.workspaceRoot,
+          sessionId,
+          key,
+        )
+        const manifestOutputPath = workspacePaths.replayManifestFile(
+          ctx.workspaceRoot,
+          sessionId,
+          key,
+        )
         if (
           ((await fileExists(outputPath)) ||
             (await fileExists(manifestOutputPath))) &&

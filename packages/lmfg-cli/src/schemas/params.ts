@@ -55,8 +55,6 @@ export type UserColorParamKey = keyof typeof USER_COLOR_PARAM_KEYS
 const userColorField = (key: UserColorParamKey) =>
   bounded(USER_COLOR_FIELD_BOUNDS[USER_COLOR_PARAM_KEYS[key]])
 
-export { HSL_BAND_IDS }
-
 export const BandShiftSchema = z.strictObject({
   hue: bounded(HSL_SHIFT_BOUNDS).optional(),
   saturation: bounded(HSL_SHIFT_BOUNDS).optional(),

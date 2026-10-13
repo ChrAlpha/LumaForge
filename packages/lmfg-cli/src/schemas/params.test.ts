@@ -1,6 +1,5 @@
 // @vitest-environment node
 import {
-  HSL_BAND_IDS as SHARED_HSL_BAND_IDS,
   HSL_SHIFT_BOUNDS,
   LOOK_INTENSITY_BOUNDS,
   USER_COLOR_FIELD_BOUNDS,
@@ -9,7 +8,6 @@ import {
 import { describe, expect, it } from 'vitest'
 
 import {
-  HSL_BAND_IDS,
   mergeRenderParams,
   parseRenderParams,
   RenderParamsOverrideSchema,
@@ -242,7 +240,6 @@ describe('shared color field contract', () => {
     expect(Object.values(USER_COLOR_PARAM_KEYS).toSorted()).toEqual(
       [...USER_COLOR_SCALAR_KEYS].toSorted(),
     )
-    expect(HSL_BAND_IDS).toEqual(SHARED_HSL_BAND_IDS)
   })
 
   it.each(

@@ -8,37 +8,17 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import {
   exposureMultiplierFromEv,
+  HSL_BAND_IDS,
   normalizeUserColorIntent,
   resolveExportColorGraph,
   resolveRawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
-import type {
-  ColorGraphIdentity,
-  RenderParams as ManifestRenderParams,
-} from '@lumaforge/render-engine'
-import {
-  COLOR_GRAPH_DESCRIPTOR_VERSION,
-  colorGraphIdentity,
-  describeColorGraph,
-  fingerprintColorGraph,
-  projectManifestRenderParams,
-} from '@lumaforge/render-engine'
+import type { RenderParams as ManifestRenderParams } from '@lumaforge/render-engine'
+import { projectManifestRenderParams } from '@lumaforge/render-engine'
 
 import { LmfgError } from '../protocol/errors'
 import type { RenderParams, UserColorParamKey } from '../schemas/params'
-import {
-  HSL_BAND_IDS,
-  parseRenderParams,
-  USER_COLOR_PARAM_KEYS,
-} from '../schemas/params'
-
-// The descriptor and fingerprint live in `@lumaforge/render-engine/manifest`
-// so the browser app and the CLI hash color graphs identically.
-export {
-  COLOR_GRAPH_DESCRIPTOR_VERSION,
-  describeColorGraph,
-  fingerprintColorGraph,
-}
+import { parseRenderParams, USER_COLOR_PARAM_KEYS } from '../schemas/params'
 
 export type ExposureSourceFrame = {
   data: Uint16Array
@@ -110,12 +90,6 @@ export function requireSupportedGraph(
       'lmfg lut contract validate --lut <file.cube> --contract <contract.json>',
     ],
   })
-}
-
-export function toColorGraphIdentity(
-  graph: SupportedExportColorGraphDescriptor,
-): ColorGraphIdentity {
-  return colorGraphIdentity(graph)
 }
 
 export function toManifestRenderParams(

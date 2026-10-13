@@ -71,11 +71,7 @@ describe('iteration store', () => {
     expect(await store.readCandidateTile('iter_0001', 'cand_0001')).toEqual(
       tile,
     )
-    expect(await store.listCandidates('iter_0001')).toEqual(['cand_0001'])
     expect((await store.read('iter_0001')).candidates[0].id).toBe('cand_0001')
-    expect(await store.readCandidateParams('iter_0001', 'cand_0001')).toEqual(
-      params,
-    )
     await expect(store.read('iter_9999')).rejects.toMatchObject({
       code: 'iteration.not_found',
     })
@@ -377,15 +373,12 @@ describe('stored candidate records', () => {
   }
 
   it('round-trips the records the current writer produces unchanged', async () => {
-    const { store, params, manifest, metrics } = await writeCandidate()
+    const { store, manifest, metrics } = await writeCandidate()
     expect(await store.readCandidateTile('iter_0001', 'cand_0001')).toEqual(
       tile,
     )
     expect(await store.readCandidateMetrics('iter_0001', 'cand_0001')).toEqual(
       metrics,
-    )
-    expect(await store.readCandidateParams('iter_0001', 'cand_0001')).toEqual(
-      params,
     )
     expect(await store.readCandidateManifest('iter_0001', 'cand_0001')).toEqual(
       manifest,
@@ -406,10 +399,6 @@ describe('stored candidate records', () => {
     await expect(
       store.readCandidateManifest('iter_0001', 'cand_0001'),
     ).rejects.toMatchObject({ code: 'candidate.not_found' })
-    await rm(paths.params)
-    await expect(
-      store.readCandidateParams('iter_0001', 'cand_0001'),
-    ).rejects.toMatchObject({ code: 'file.not_found' })
   })
 
   it.each([
@@ -481,22 +470,6 @@ describe('stored candidate records', () => {
       store.readCandidateMetrics('iter_0001', 'cand_0001'),
     ).rejects.toMatchObject(
       storedRecordFailure('schema.invalid', paths.metrics, field),
-    )
-  })
-
-  it.each([
-    ['a string contrast', { contrast: '5' }, 'contrast'],
-    ['a null intensity', { intensity: null }, 'intensity'],
-    ['an out-of-range exposure', { exposure_ev: 99 }, 'exposure_ev'],
-    ['a foreign schema id', { schema: 'lmfg.params.v2' }, 'schema'],
-    ['an unknown field', { grain: 3 }, ''],
-  ])('rejects stored params with %s', async (_name, patch, field) => {
-    const { store, paths } = await writeCandidate()
-    await rewriteJson(paths.params, (doc) => ({ ...doc, ...patch }))
-    await expect(
-      store.readCandidateParams('iter_0001', 'cand_0001'),
-    ).rejects.toMatchObject(
-      storedRecordFailure('schema.invalid', paths.params, field),
     )
   })
 

@@ -62,8 +62,11 @@ const candidate = (
     assertPortablePathSegment(candidateId),
   )
 
+/** A replay directory: under its session, or under the workspace root when no session is given. */
+const replay = (root: string, id: string | null, key: string) =>
+  join(id ? session(root, id) : root, 'replays', assertPortablePathSegment(key))
+
 export const workspacePaths = {
-  luts: (root: string) => join(root, 'luts'),
   lutCacheFile: (root: string, sha256: string) =>
     join(root, 'luts', `${assertPortablePathSegment(sha256)}.cube`),
   sessions: (root: string) => join(root, 'sessions'),
@@ -156,25 +159,10 @@ export const workspacePaths = {
     iterationId: string,
     candidateId: string,
   ) => join(candidate(root, id, iterationId, candidateId), 'tile.json'),
-  replays: (root: string, id: string) => join(session(root, id), 'replays'),
-  replay: (root: string, id: string, key: string) =>
-    join(session(root, id), 'replays', assertPortablePathSegment(key)),
-  replayOutputFile: (root: string, id: string, key: string) =>
-    join(
-      session(root, id),
-      'replays',
-      assertPortablePathSegment(key),
-      'output.jpg',
-    ),
-  replayManifestFile: (root: string, id: string, key: string) =>
-    join(
-      session(root, id),
-      'replays',
-      assertPortablePathSegment(key),
-      'manifest.json',
-    ),
-  workspaceReplay: (root: string, key: string) =>
-    join(root, 'replays', assertPortablePathSegment(key)),
+  replayOutputFile: (root: string, id: string | null, key: string) =>
+    join(replay(root, id, key), 'output.jpg'),
+  replayManifestFile: (root: string, id: string | null, key: string) =>
+    join(replay(root, id, key), 'manifest.json'),
   exports: (root: string, id: string) => join(session(root, id), 'exports'),
   exportFile: (root: string, id: string, name: string) =>
     join(

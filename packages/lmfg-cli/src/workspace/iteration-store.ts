@@ -6,7 +6,6 @@ import { z } from 'zod'
 
 import { LmfgError } from '../protocol/errors'
 import type { RenderParams } from '../schemas/params'
-import { RenderParamsSchema } from '../schemas/params'
 import type {
   ContactSheetMap,
   IterationRecord,
@@ -21,7 +20,6 @@ import {
   appendLine,
   ensureDir,
   fileExists,
-  listDirs,
   readJson,
   readJsonOrNull,
   writeFileAtomic,
@@ -191,9 +189,6 @@ export function createIterationStore(root: string, sessionId: string) {
       } satisfies CandidateTileMeta)
       return paths
     },
-    async listCandidates(iterationId: string): Promise<string[]> {
-      return listDirs(workspacePaths.candidates(root, sessionId, iterationId))
-    },
     async readCandidateTile(
       iterationId: string,
       candidateId: string,
@@ -258,15 +253,6 @@ export function createIterationStore(root: string, sessionId: string) {
         )
       }
       return parsed.manifest
-    },
-    async readCandidateParams(
-      iterationId: string,
-      candidateId: string,
-    ): Promise<RenderParams> {
-      return readStoredRecord(
-        candidatePaths(iterationId, candidateId).params,
-        RenderParamsSchema,
-      )
     },
     async writeContactSheet(
       iterationId: string,

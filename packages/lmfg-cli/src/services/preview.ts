@@ -3,10 +3,7 @@ import type {
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
 import type { LumaJpegNodeRuntime } from '@lumaforge/luma-jpeg-runtime/node'
-import type {
-  LumaRawDecodeSession,
-  LumaRawProbe,
-} from '@lumaforge/luma-raw-runtime'
+import type { LumaRawDecodeSession } from '@lumaforge/luma-raw-runtime'
 import type { RenderEnvironment } from '@lumaforge/render-engine'
 import { sha256Hex } from '@lumaforge/render-engine'
 import {
@@ -186,7 +183,6 @@ export type PreviewRenderInput = {
 }
 
 export type PreviewRenderResult = {
-  probe: LumaRawProbe
   frame: DecodedFrame
   exposure: RawRenderExposure
   graph: SupportedExportColorGraphDescriptor
@@ -231,7 +227,7 @@ export async function renderPreview(
     timings.render_ms = rendered.timings.render_ms
     timings.encode_ms = rendered.timings.encode_ms
     timings.total_ms = performance.now() - total
-    return { probe: session.probe, frame, exposure, graph, rendered, timings }
+    return { frame, exposure, graph, rendered, timings }
   } finally {
     session.dispose()
   }
