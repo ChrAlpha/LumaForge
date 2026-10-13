@@ -97,7 +97,7 @@ describe('diagnose RAW compatibility CLI', () => {
     await expect(
       requireNativeArtifacts({ packageDir, profile: 'low-memory' }),
     ).rejects.toThrow(
-      `Missing native diagnostics artifact: ${expectedPath}\nRun pnpm --filter @lumaforge/luma-raw-runtime build:native:low-memory before diagnostics.`,
+      `Missing native diagnostics artifact: ${expectedPath}\nRun pnpm --filter @lumaforge/luma-raw-runtime build:native:low-memory and pnpm --filter @lumaforge/luma-raw-runtime build before diagnostics.`,
     )
   })
 })

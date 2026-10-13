@@ -1,28 +1,15 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
 
-import { captureStage, stageError, stageOk } from './compatibility-report.mjs'
+import { loadNativeModuleForNode } from '@lumaforge/luma-native-artifacts/load-for-node'
 
-export const quickSettings = {
-  halfSize: true,
-  useCameraWb: true,
-  outputColor: 4,
-  outputBps: 16,
-  noAutoBright: true,
-  useAutoWb: false,
-  useCameraMatrix: 1,
-  bright: 1,
-  highlight: 2,
-  userQual: 0,
-  gamm: [1, 1, 1, 1, 0, 0],
-}
-
-export const hqSettings = {
-  ...quickSettings,
-  halfSize: false,
-  userQual: 2,
-}
+import {
+  buildProcessedWindowRequest,
+  captureStage,
+  stageError,
+  stageOk,
+} from './compatibility-report.mjs'
 
 const stageNames = [
   'open',
@@ -33,36 +20,11 @@ const stageNames = [
   'processedWindow',
 ]
 
-const missingStageMessages = {
-  open: 'open not attempted',
-  thumbnail: 'thumbnail not attempted',
-  quick: 'quick not attempted',
-  boundedHq: 'bounded HQ not attempted',
-  exportCapability: 'export capability not attempted',
-  processedWindow: 'processed-window not attempted',
-}
-
 const notAttemptedDurationMs = stageOk(0).durationMs
 
-function isFiniteNumber(value) {
-  return Number.isFinite(value)
-}
-
 function pickFinite(target, source, key) {
-  if (isFiniteNumber(source[key])) {
+  if (Number.isFinite(source[key])) {
     target[key] = source[key]
-  }
-}
-
-function normalizeThumbnail(thumbnail) {
-  if (!thumbnail || typeof thumbnail !== 'object') {
-    return undefined
-  }
-
-  return {
-    ...(thumbnail.width !== undefined ? { width: thumbnail.width } : {}),
-    ...(thumbnail.height !== undefined ? { height: thumbnail.height } : {}),
-    ...(thumbnail.format !== undefined ? { format: thumbnail.format } : {}),
   }
 }
 
@@ -73,7 +35,7 @@ export function normalizeMetadata(metadata) {
 
   const normalized = {}
 
-  for (const key of ['make', 'model', 'normalizedMake', 'normalizedModel']) {
+  for (const key of ['make', 'model']) {
     if (metadata[key] !== undefined) {
       normalized[key] = metadata[key]
     }
@@ -90,196 +52,120 @@ export function normalizeMetadata(metadata) {
     pickFinite(normalized, metadata, key)
   }
 
-  if (metadata.thumbnail !== undefined) {
-    const thumbnail = normalizeThumbnail(metadata.thumbnail)
-    if (thumbnail !== undefined) {
-      normalized.thumbnail = thumbnail
-    }
-  } else if (metadata.thumbWidth && metadata.thumbHeight) {
-    normalized.thumbnail = {
-      width: metadata.thumbWidth,
-      height: metadata.thumbHeight,
-      format: metadata.thumbFormat ?? 'unknown',
-    }
+  if (metadata.thumbnail && typeof metadata.thumbnail === 'object') {
+    const { width, height, format } = metadata.thumbnail
+    normalized.thumbnail = { width, height, format }
   }
 
   return normalized
 }
 
-async function fetchWithFileUrlFallback(originalFetch, resource, options) {
-  const url = typeof resource === 'string' ? resource : resource?.url
-
-  if (typeof url === 'string' && url.startsWith('file://')) {
-    const bytes = await readFile(fileURLToPath(url))
-    return new Response(new Uint8Array(bytes), {
-      status: 200,
-      statusText: 'OK',
-    })
-  }
-
-  return originalFetch(resource, options)
-}
-
-export function readNativeStage(callback) {
-  return captureStage(callback)
-}
-
-export function createProcessorSession(nativeFactory, bytes) {
-  const processor = nativeFactory.createProcessor()
-  let disposed = false
-
-  return {
-    processor,
-    open(settings) {
-      processor.loadBuffer(new Uint8Array(bytes))
-      processor.openWithSettings(settings)
-    },
-    dispose() {
-      if (disposed) {
-        return
-      }
-
-      disposed = true
-      processor.delete?.()
-    },
-  }
-}
-
-export async function loadNativeFactory({ packageDir, profile = 'desktop' }) {
-  const jsPath = path.join(packageDir, 'dist/native', profile, 'luma_raw.js')
-  const wasmPath = path.join(
-    packageDir,
-    'dist/native',
-    profile,
-    'luma_raw.wasm',
+/**
+ * The package's own Node runtime over the native build in `dist/native`, so
+ * the diagnostics decode with the settings the runtime ships.
+ */
+export async function createDiagnosticsRuntime({
+  packageDir,
+  profile = 'desktop',
+}) {
+  const { createLumaRawRuntimeForNode } = await import(
+    pathToFileURL(path.join(packageDir, 'dist', 'node.js')).href
   )
-  const nativeModule = await import(pathToFileURL(jsPath).href)
-  const createModule = nativeModule.default ?? nativeModule
-  let module = createModule
-
-  if (typeof createModule === 'function') {
-    const originalFetch = globalThis.fetch
-
-    globalThis.fetch = (resource, options) =>
-      fetchWithFileUrlFallback(originalFetch, resource, options)
-
-    try {
-      module = await createModule({
-        locateFile(file) {
-          return file === 'luma_raw.wasm' ? pathToFileURL(wasmPath).href : file
-        },
-      })
-    } finally {
-      globalThis.fetch = originalFetch
-    }
-  }
-
-  return {
-    createProcessor() {
-      return new module.LumaRawProcessor()
-    },
-  }
+  const nativeDir = path.join(packageDir, 'dist', 'native')
+  return createLumaRawRuntimeForNode({
+    memoryProfile: profile,
+    nativeLoader: (options) =>
+      loadNativeModuleForNode({ kind: 'raw', nativeDir, ...options }),
+  })
 }
 
-function withDefaultStages(stages) {
-  return Object.fromEntries(
-    stageNames.map((stageName) => [
-      stageName,
-      stages[stageName] ??
-        stageError(
-          new Error(missingStageMessages[stageName]),
-          notAttemptedDurationMs,
-        ),
-    ]),
-  )
+function notAttempted(message) {
+  return stageError(new Error(message), notAttemptedDurationMs)
 }
 
 export async function diagnoseNativeFixture({
   fixturePath,
   fixture,
-  nativeFactory,
+  runtime,
   memoryProfile = 'desktop',
   quickMaxOutputPixels = 2_500_000,
   boundedHqMaxOutputPixels = 8_000_000,
 }) {
-  const bytes = await readFile(fixturePath)
-  const session = createProcessorSession(nativeFactory, bytes)
+  const data = new Uint8Array(await readFile(fixturePath))
+  const { version } = await runtime.init()
   const stages = {}
   let metadata
   let capability
 
-  try {
-    const open = await readNativeStage(() => {
-      session.open(quickSettings)
-      return session.processor.readMetadata()
-    })
-    stages.open = open.stage
-    metadata = normalizeMetadata(open.value)
+  const open = await captureStage(() =>
+    runtime.openSession(
+      { data, name: fixture.file },
+      { maxOutputPixels: quickMaxOutputPixels },
+    ),
+  )
+  stages.open = open.stage
+  const session = open.value
 
-    const thumbnail = await readNativeStage(() => {
-      session.open(quickSettings)
-      return session.processor.extractThumbnail?.()
-    })
-    stages.thumbnail = thumbnail.value
-      ? thumbnail.stage
-      : stageError(
-          new Error('thumbnail unavailable'),
-          thumbnail.stage.durationMs,
+  if (session) {
+    try {
+      metadata = normalizeMetadata(session.probe)
+
+      stages.thumbnail = (
+        await captureStage(async () => {
+          const preview = await session.extractEmbeddedPreview()
+          if (!preview) throw new Error('thumbnail unavailable')
+          return preview
+        })
+      ).stage
+
+      stages.quick = (
+        await captureStage(() =>
+          session.decodeQuick({ maxOutputPixels: quickMaxOutputPixels }),
         )
+      ).stage
+      stages.boundedHq = (
+        await captureStage(() =>
+          session.decodeBoundedHq({
+            maxOutputPixels: boundedHqMaxOutputPixels,
+          }),
+        )
+      ).stage
 
-    const quick = await readNativeStage(() => {
-      session.open(quickSettings)
-      return session.processor.decodePreview({
-        maxOutputPixels: quickMaxOutputPixels,
-      })
-    })
-    stages.quick = quick.stage
-
-    const boundedHq = await readNativeStage(() => {
-      session.open(hqSettings)
-      return session.processor.decodeHq({
-        maxOutputPixels: boundedHqMaxOutputPixels,
-      })
-    })
-    stages.boundedHq = boundedHq.stage
-
-    const exportCapability = await readNativeStage(() => {
-      session.open(quickSettings)
-      return session.processor.probeExportCapability()
-    })
-    stages.exportCapability = exportCapability.stage
-    capability = exportCapability.value
-
-    if (
-      capability?.supported === true &&
-      capability.strategy === 'libraw-processed-window' &&
-      capability.windows?.librawProcessed === true
-    ) {
-      const { buildProcessedWindowRequest } =
-        await import('./compatibility-report.mjs')
-      const processedWindow = await readNativeStage(() =>
-        session.processor.readProcessedWindow(
-          buildProcessedWindowRequest(capability),
-        ),
+      const exportCapability = await captureStage(() =>
+        session.probeExportCapability(),
       )
-      stages.processedWindow = processedWindow.stage
-    } else {
-      stages.processedWindow = stageError(
-        new Error(
-          'processed-window not attempted because export capability is unsupported',
-        ),
-        notAttemptedDurationMs,
-      )
+      stages.exportCapability = exportCapability.stage
+      capability = exportCapability.value
+
+      stages.processedWindow =
+        capability?.supported === true &&
+        capability.strategy === 'libraw-processed-window' &&
+        capability.windows?.librawProcessed === true
+          ? (
+              await captureStage(() =>
+                session.readProcessedWindow(
+                  buildProcessedWindowRequest(capability),
+                ),
+              )
+            ).stage
+          : notAttempted(
+              'processed-window not attempted because export capability is unsupported',
+            )
+    } finally {
+      session.dispose()
     }
-  } finally {
-    session.dispose()
   }
 
   return {
     fixture,
-    runtime: { version: '0.1.0', memoryProfile },
+    runtime: { version, memoryProfile },
     ...(metadata !== undefined ? { metadata } : {}),
-    stages: withDefaultStages(stages),
+    stages: Object.fromEntries(
+      stageNames.map((name) => [
+        name,
+        stages[name] ?? notAttempted(`${name} not attempted`),
+      ]),
+    ),
     ...(capability !== undefined ? { capability } : {}),
   }
 }

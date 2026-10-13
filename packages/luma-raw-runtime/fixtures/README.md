@@ -38,10 +38,13 @@ packages/luma-raw-runtime/fixtures/.cache/public/
 
 That directory is ignored and must not be committed.
 
-Run the phone RAW diagnostics matrix after native artifacts exist:
+Run the phone RAW diagnostics matrix after native artifacts exist. It decodes
+each fixture through the package's Node runtime (`dist/node.js`) over the
+native build in `dist/native`:
 
 ```bash
 pnpm --filter @lumaforge/luma-raw-runtime build:native:desktop
+pnpm --filter @lumaforge/luma-raw-runtime build
 pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public:all
 pnpm --filter @lumaforge/luma-raw-runtime fixtures:diagnose-mobile-raw
 ```

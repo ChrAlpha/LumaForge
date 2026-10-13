@@ -10,8 +10,8 @@ import {
   selectFixtures,
 } from './fixture-registry.mjs'
 import {
+  createDiagnosticsRuntime,
   diagnoseNativeFixture,
-  loadNativeFactory,
 } from './native-diagnostics-runtime.mjs'
 
 const scriptPath = fileURLToPath(import.meta.url)
@@ -149,7 +149,7 @@ export async function requireNativeArtifacts({
     }
 
     throw new Error(
-      `Missing native diagnostics artifact: ${absolutePath}\nRun pnpm --filter @lumaforge/luma-raw-runtime build:native:${profile} before diagnostics.`,
+      `Missing native diagnostics artifact: ${absolutePath}\nRun pnpm --filter @lumaforge/luma-raw-runtime build:native:${profile} and pnpm --filter @lumaforge/luma-raw-runtime build before diagnostics.`,
     )
   }
 
@@ -165,21 +165,25 @@ export async function runDiagnostics(options) {
   const selectedFixtures = await preflightCachedFixtures(fixtures)
   await requireNativeArtifacts({ profile: options.profile })
 
-  const nativeFactory = await loadNativeFactory({
+  const runtime = await createDiagnosticsRuntime({
     packageDir,
     profile: options.profile,
   })
   const entries = []
 
-  for (const { fixture, fixturePath } of selectedFixtures) {
-    const raw = await diagnoseNativeFixture({
-      fixture,
-      fixturePath,
-      nativeFactory,
-      memoryProfile: options.profile,
-    })
-    entries.push(buildReportEntry(raw))
-    console.log(`${fixture.name}: ${entries.at(-1).classification}`)
+  try {
+    for (const { fixture, fixturePath } of selectedFixtures) {
+      const raw = await diagnoseNativeFixture({
+        fixture,
+        fixturePath,
+        runtime,
+        memoryProfile: options.profile,
+      })
+      entries.push(buildReportEntry(raw))
+      console.log(`${fixture.name}: ${entries.at(-1).classification}`)
+    }
+  } finally {
+    runtime.dispose()
   }
 
   const output = options.output ?? defaultReportPath(fixturesDir)
