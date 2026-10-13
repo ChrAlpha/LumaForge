@@ -33,7 +33,6 @@ import {
 } from 'vitest'
 
 import type { ExportDebugEvent } from '~/lib/export/execution-profile'
-import { getExportModeCopy } from '~/lib/export/execution-profile'
 import type {
   ExportExecutionPlan,
   ExportPlanFacts,
@@ -205,12 +204,10 @@ const OPFS_RUNTIME: ExportRuntimeResources = {
 }
 
 const DESKTOP_ACTIVE_PLAN = {
-  profileName: 'desktop-fast',
   preferredRows: 512,
   concurrency: 2,
   runtimeMemoryProfile: 'desktop',
   outputSink: 'blob-handoff',
-  checkpointMode: 'safe-retry',
 } as const
 
 const PRE_EXPORT_OWNERS = [
@@ -828,7 +825,7 @@ function createHarness(options: HarnessOptions = {}) {
         jobInput = input
         const attempt = {
           attempt: 1,
-          profile: input.executionPlan?.profile.name,
+          profile: input.executionPlan?.profileName,
           preferredRows: input.executionPlan?.preferredRows,
           concurrency: input.executionPlan?.concurrency,
         }
@@ -1160,8 +1157,6 @@ describe('orchestrateFullResExport success', () => {
         concurrency: 2,
         runtimeMemoryProfile: 'desktop',
         outputSink: 'blob-handoff',
-        checkpointMode: 'safe-retry',
-        checkpointDurableExpected: false,
       }),
     ])
     expect(h.debugPayloads('resource-evacuated')).toEqual([
@@ -1492,7 +1487,6 @@ describe('orchestrateFullResExport success', () => {
       expect(h.debugPayloads('export-plan-selected')).toEqual([
         expect.objectContaining({
           outputSink: 'opfs-file',
-          checkpointDurableExpected: false,
         }),
       ])
       expect(input.executionPlan?.outputSink).toBe('opfs-file')
@@ -1541,11 +1535,9 @@ describe('orchestrateFullResExport success', () => {
     expect(h.debugPayloads('export-plan-selected')).toEqual([
       expect.objectContaining({
         outputSink: 'opfs-file',
-        checkpointDurableExpected: false,
       }),
       expect.objectContaining({
         outputSink: 'blob-handoff',
-        checkpointDurableExpected: false,
       }),
     ])
 
@@ -1843,7 +1835,7 @@ describe('orchestrateFullResExport refusals', () => {
       {
         kind: 'failed',
         code: 'EXPORT_POLICY_CANNOT_COMPLETE',
-        message: getExportModeCopy('cannot-safely-complete'),
+        message: expect.any(String),
         retryLevel: null,
       },
     ])

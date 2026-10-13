@@ -43,12 +43,10 @@ describe('progressOverlay', () => {
 
   it('labels low-memory mobile-balanced exports as safe exports', () => {
     renderOverlayWithActivePlan({
-      profileName: 'mobile-balanced',
       preferredRows: 256,
       concurrency: 2,
       runtimeMemoryProfile: 'low-memory',
       outputSink: 'streaming',
-      checkpointMode: 'safe-retry',
     })
 
     expect(
@@ -58,12 +56,10 @@ describe('progressOverlay', () => {
 
   it('uses the same flat export handoff for desktop plans', () => {
     renderOverlayWithActivePlan({
-      profileName: 'desktop-fast',
       preferredRows: 1024,
       concurrency: 3,
       runtimeMemoryProfile: 'desktop',
       outputSink: 'streaming',
-      checkpointMode: 'safe-retry',
     })
 
     const overlay = screen.getByRole('status')
@@ -84,12 +80,10 @@ describe('progressOverlay', () => {
 
   it('labels desktop exports as high-performance exports', () => {
     renderOverlayWithActivePlan({
-      profileName: 'desktop-fast',
       preferredRows: 1024,
       concurrency: 3,
       runtimeMemoryProfile: 'desktop',
       outputSink: 'streaming',
-      checkpointMode: 'safe-retry',
     })
 
     expect(

@@ -356,7 +356,6 @@
   "raw.export.copyPreviewNotReady": "Preview image is not ready to copy.",
   "raw.export.shareUnsupported": "This browser cannot share JPEG files.",
   "raw.export.shareNoResult": "Export a JPEG before sharing.",
-  "raw.export.highPerformance": "Using high-performance full-resolution export.",
   "raw.export.lowMemory": "This device is using low-memory export mode. Export may take longer. Keep the tab open while the JPEG is being written.",
   "raw.export.interrupted": "The previous export was interrupted. The next export you start uses the current RAW and adjustments with a safer setting.",
   "raw.export.run": "Export full-resolution JPEG",

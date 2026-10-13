@@ -5,12 +5,7 @@ import type {
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 
-import type {
-  ExportCheckpointMode,
-  ExportExecutionProfileName,
-  ExportOutputSink,
-  ExportRuntimeMemoryProfile,
-} from '~/lib/export/export-plan'
+import type { ExportAttemptPlan } from '~/lib/export/export-plan'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { ImageMetadata } from '~/lib/raw/decoder'
 import type { UprightMode } from '~/lib/transform/geometry/types'
@@ -30,15 +25,6 @@ export type FullResExportCapabilityState =
   | { status: 'probing' }
   | { status: 'supported'; width: number; height: number }
   | { status: 'unsupported'; reason: string }
-
-export type ActiveExportPlanState = {
-  profileName: ExportExecutionProfileName
-  preferredRows: number
-  concurrency: number
-  runtimeMemoryProfile: ExportRuntimeMemoryProfile
-  outputSink: ExportOutputSink
-  checkpointMode: ExportCheckpointMode
-}
 
 export type LUTContractSelectionState =
   | {
@@ -209,7 +195,7 @@ export type ImageSession = {
   exportState: {
     status: 'idle' | 'preparing' | 'exporting' | 'ready' | 'failed'
     fullResCapability: FullResExportCapabilityState
-    activePlan?: ActiveExportPlanState
+    activePlan?: ExportAttemptPlan
     result?: ExportResult
     lastProgress?: {
       completedStrips: number

@@ -3,7 +3,6 @@ import { afterEach, vi } from 'vitest'
 import type { ExportDebugEvent } from './execution-profile'
 import {
   emitExportDebugEvent,
-  getExportModeCopy,
   toExportPlanSelectedDebugPayload,
 } from './execution-profile'
 import { selectExportPlan } from './export-plan'
@@ -22,21 +21,6 @@ function clearExportDebugDiagnostics() {
 describe('export execution profile selection', () => {
   afterEach(() => {
     vi.restoreAllMocks()
-  })
-
-  it('maps product copy without saying resume for safe retry', () => {
-    expect(getExportModeCopy('interrupted-source-needed')).toBe(
-      'The browser interrupted the previous export. Please reselect the same RAW file so LumaForge can retry with a safer setting.',
-    )
-    expect(getExportModeCopy('interrupted-source-needed')).not.toMatch(
-      /resume/i,
-    )
-  })
-
-  it('allows high-performance copy to be localized without coupling policy code to i18n', () => {
-    expect(
-      getExportModeCopy('high-performance', (key) => `translated:${key}`),
-    ).toBe('translated:raw.export.highPerformance')
   })
 
   it('emits typed export debug events with machine-checkable payloads', () => {

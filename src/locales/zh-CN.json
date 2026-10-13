@@ -356,7 +356,6 @@
   "raw.export.copyPreviewNotReady": "预览图像尚未就绪，无法复制。",
   "raw.export.shareUnsupported": "此浏览器无法分享 JPEG 文件。",
   "raw.export.shareNoResult": "请先导出 JPEG，再分享。",
-  "raw.export.highPerformance": "正在使用高性能全分辨率导出。",
   "raw.export.lowMemory": "当前设备会使用低内存导出模式，导出可能更慢。写入 JPEG 时请保持标签页打开。",
   "raw.export.interrupted": "上次导出被中断。你下次开始的导出会使用当前 RAW 与调整，并改用更安全的导出设置。",
   "raw.export.run": "导出全分辨率 JPEG",

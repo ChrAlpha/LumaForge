@@ -414,10 +414,10 @@ async function handleStart(
         jpegSink,
         signal: controller.signal,
         readProcessedWindow: session.readProcessedWindow,
-        retryPolicy:
-          message.executionPlan?.checkpointMode === 'safe-retry'
-            ? 'surface-resource-failure'
-            : 'in-process',
+        // A planned attempt hands a resource failure back for a fresh worker.
+        retryPolicy: message.executionPlan
+          ? 'surface-resource-failure'
+          : 'in-process',
         onProgress(progress) {
           self.postMessage({
             kind: 'progress',

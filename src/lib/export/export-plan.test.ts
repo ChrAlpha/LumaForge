@@ -5,7 +5,6 @@ import type {
 } from '@lumaforge/render-engine/policy'
 import { describe, expect, it } from 'vitest'
 
-import { toExportPlanSelectedDebugPayload } from './execution-profile'
 import { selectExportPlan } from './export-plan'
 
 const CAPABILITIES = {
@@ -122,7 +121,7 @@ describe('selectExportPlan policy table', () => {
       })
 
       expect({
-        profile: plan.profile.name,
+        profile: plan.profileName,
         rows: plan.preferredRows,
         concurrency: plan.concurrency,
         memory: plan.runtimeMemoryProfile,
@@ -133,7 +132,7 @@ describe('selectExportPlan policy table', () => {
   )
 })
 
-describe('selectExportPlan request and durability', () => {
+describe('selectExportPlan request', () => {
   it('records the request with absent history flags as false so a retry can re-derive it', () => {
     const plan = selectExportPlan({
       preference: 'max',
@@ -178,24 +177,5 @@ describe('selectExportPlan request and durability', () => {
         ...facts,
       }),
     )
-  })
-
-  it('claims no durable export state for any sink', () => {
-    for (const runtime of Object.values(RUNTIMES)) {
-      const plan = selectExportPlan({
-        preference: 'balanced',
-        source: { width: 6000, height: 4000 },
-        capability: CAPABILITIES.desktop,
-        runtime,
-      })
-
-      expect(plan.checkpointMode).toBe('safe-retry')
-      expect(plan.profile).not.toHaveProperty('checkpointOutput')
-      expect(toExportPlanSelectedDebugPayload(plan)).toMatchObject({
-        outputSink: plan.outputSink,
-        checkpointMode: 'safe-retry',
-        checkpointDurableExpected: false,
-      })
-    }
   })
 })

@@ -13,11 +13,6 @@ export type ExportExecutionProfileName =
   | 'mobile-balanced'
   | 'desktop-fast'
 
-/**
- * The only mode: a retry is a fresh worker from the first row. No export
- * state outlives an attempt, so nothing resumes.
- */
-export type ExportCheckpointMode = 'safe-retry'
 export type ExportOutputSink = 'opfs-file' | 'streaming' | 'blob-handoff'
 export type ExportRuntimeMemoryProfile = 'low-memory' | 'desktop'
 
@@ -49,29 +44,16 @@ export type ExportPlanFacts = {
 
 export type SelectExportPlanInput = ExportPlanRequest & ExportPlanFacts
 
-export type ExportExecutionProfile = {
-  name: ExportExecutionProfileName
-  minRows: number
-  maxRows: number
-  preferredRowsFor100Mp: number
-  preferredRowsBelow100Mp: number
-  rowBandRows: number
-  initialConcurrency: number
-  maxConcurrency: number
-  releasePreviewPipelineBeforeExport: boolean
-  releaseBoundedHqBufferBeforeExport: boolean
-  releasePreviousExportResultBeforeExport: boolean
-  checkpointMode: ExportCheckpointMode
-}
-
+/**
+ * The plan of one export. Every attempt starts a fresh worker from the first
+ * row; no export state outlives an attempt, so nothing resumes.
+ */
 export type ExportExecutionPlan = {
-  profile: ExportExecutionProfile
+  profileName: ExportExecutionProfileName
   preferredRows: number
   concurrency: number
-  maxConcurrency: number
   runtimeMemoryProfile: ExportRuntimeMemoryProfile
   outputSink: ExportOutputSink
-  checkpointMode: ExportCheckpointMode
   productCopy: ExportOrchestrationCopy
   derivedLabel: string
   policyVector: ExportPolicy
@@ -102,24 +84,20 @@ function chooseProfile(
   return 'mobile-balanced'
 }
 
-function synthesizeProfile(
-  profileName: ExportExecutionProfileName,
-  policy: ExportPolicy,
-): ExportExecutionProfile {
+/** What an attempt runs with: its strips, its workers, their memory and its sink. */
+export type ExportAttemptPlan = Pick<
+  ExportExecutionPlan,
+  'preferredRows' | 'concurrency' | 'runtimeMemoryProfile' | 'outputSink'
+>
+
+export function toExportAttemptPlan(
+  plan: ExportExecutionPlan,
+): ExportAttemptPlan {
   return {
-    name: profileName,
-    minRows: 64,
-    maxRows: Math.max(64, policy.rowSlice),
-    preferredRowsFor100Mp: policy.rowSlice,
-    preferredRowsBelow100Mp: policy.rowSlice,
-    rowBandRows: 64,
-    initialConcurrency: policy.concurrency,
-    maxConcurrency: policy.maxConcurrency,
-    releasePreviewPipelineBeforeExport: true,
-    releaseBoundedHqBufferBeforeExport: true,
-    releasePreviousExportResultBeforeExport: true,
-    // Every retry is a fresh worker from the first row; nothing resumes.
-    checkpointMode: 'safe-retry',
+    preferredRows: plan.preferredRows,
+    concurrency: plan.concurrency,
+    runtimeMemoryProfile: plan.runtimeMemoryProfile,
+    outputSink: plan.outputSink,
   }
 }
 
@@ -148,19 +126,13 @@ export function selectExportPlan(
     intent,
     input.runtime,
   )
-  const profile = synthesizeProfile(
-    chooseProfile(policy, input.capability),
-    policy,
-  )
 
   return {
-    profile,
+    profileName: chooseProfile(policy, input.capability),
     preferredRows: policy.rowSlice,
     concurrency: policy.concurrency,
-    maxConcurrency: policy.maxConcurrency,
     runtimeMemoryProfile: policy.workerMemoryProfile,
     outputSink: policy.outputSink,
-    checkpointMode: profile.checkpointMode,
     productCopy: policy.productCopy,
     derivedLabel: policy.derivedLabel,
     policyVector: policy,

@@ -283,12 +283,10 @@ describe('useExportDerivedState', () => {
         status: 'ready',
         result: createExportResult(base),
         activePlan: {
-          profileName: 'desktop-fast',
           preferredRows: 128,
           concurrency: 1,
           runtimeMemoryProfile: 'desktop',
           outputSink: 'blob-handoff',
-          checkpointMode: 'safe-retry',
         },
       },
     }
@@ -341,12 +339,10 @@ describe('useExportDerivedState', () => {
         status: 'ready',
         result: createExportResult(session),
         activePlan: {
-          profileName: 'desktop-fast',
           preferredRows: 128,
           concurrency: 1,
           runtimeMemoryProfile: 'desktop',
           outputSink: 'blob-handoff',
-          checkpointMode: 'safe-retry',
         },
       },
     }

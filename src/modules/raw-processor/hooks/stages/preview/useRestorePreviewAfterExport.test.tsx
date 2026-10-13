@@ -37,12 +37,10 @@ function exportedSession(
     exportState: {
       status: 'ready',
       activePlan: {
-        profileName: 'desktop-fast',
         preferredRows: 128,
         concurrency: 1,
         runtimeMemoryProfile: 'desktop',
         outputSink: 'blob-handoff',
-        checkpointMode: 'safe-retry',
       },
       ...exportState,
     },

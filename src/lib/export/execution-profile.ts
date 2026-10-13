@@ -1,7 +1,6 @@
 import type { ExportPolicy } from '@lumaforge/render-engine/policy'
 
 import type {
-  ExportCheckpointMode,
   ExportExecutionPlan,
   ExportExecutionProfileName,
   ExportOutputSink,
@@ -20,9 +19,6 @@ export type ExportPlanSelectedDebugPayload = {
   concurrency: number
   runtimeMemoryProfile: ExportRuntimeMemoryProfile
   outputSink: ExportOutputSink
-  checkpointMode: ExportCheckpointMode
-  /** Always false: no export state outlives the tab, whatever the sink. */
-  checkpointDurableExpected: false
 }
 
 export type ExportResourceEvacuatedDebugPayload = {
@@ -243,41 +239,12 @@ export function toExportPlanSelectedDebugPayload(
   plan: ExportExecutionPlan,
 ): ExportPlanSelectedDebugPayload {
   return {
-    profile: plan.profile.name,
+    profile: plan.profileName,
     derivedLabel: plan.derivedLabel,
     policyVector: plan.policyVector,
     preferredRows: plan.preferredRows,
     concurrency: plan.concurrency,
     runtimeMemoryProfile: plan.runtimeMemoryProfile,
     outputSink: plan.outputSink,
-    checkpointMode: plan.checkpointMode,
-    checkpointDurableExpected: false,
   }
-}
-
-type ExportModeCopyTranslator = (key: 'raw.export.highPerformance') => string
-
-export function getExportModeCopy(
-  key: ExportExecutionPlan['productCopy'],
-  t?: ExportModeCopyTranslator,
-) {
-  const copy: Record<ExportExecutionPlan['productCopy'], string> = {
-    'high-performance':
-      t?.('raw.export.highPerformance') ??
-      'Using high-performance full-resolution export.',
-    'safe-export':
-      'This device is using low-memory export mode. Export may take longer.',
-    'resource-retry':
-      'Export hit a browser memory limit. Retrying with a safer setting.',
-    'interrupted-retry':
-      'The browser interrupted the previous export. LumaForge will retry with a safer low-memory setting.',
-    'interrupted-source-needed':
-      'The browser interrupted the previous export. Please reselect the same RAW file so LumaForge can retry with a safer setting.',
-    'non-durable-checkpoint':
-      'Keep the tab open while the JPEG is being written.',
-    'cannot-safely-complete':
-      'This browser cannot safely complete this large local full-resolution export without durable file storage. Use a secure browser URL with OPFS enabled, try a desktop browser, or export a smaller version.',
-  }
-
-  return copy[key]
 }

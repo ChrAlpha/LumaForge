@@ -13,7 +13,7 @@ import {
   emitExportDebugEvent,
   toExportPlanSelectedDebugPayload,
 } from '~/lib/export/execution-profile'
-import type { ExportExecutionPlan } from '~/lib/export/export-plan'
+import { toExportAttemptPlan } from '~/lib/export/export-plan'
 import type { FullResWorkerOutputLocation } from '~/lib/export/full-res-export-client'
 import {
   reserveOpfsOutputDirectory,
@@ -27,11 +27,7 @@ import type {
   ExportResult,
   FullResExportReason,
 } from '../../model/export-result'
-import type {
-  ActiveExportPlanState,
-  ImageSession,
-  TransformIntent,
-} from '../../model/session'
+import type { ImageSession, TransformIntent } from '../../model/session'
 import type { ProcessingStatus } from '../../model/workflow'
 import {
   getStableErrorCode,
@@ -67,10 +63,7 @@ import {
   interruptionForSource,
   toExportSourceTuple,
 } from './export-recovery'
-import {
-  resolveExportCopyCapability,
-  unavailableExportCopy,
-} from './export-result-actions'
+import { resolveExportCopyCapability } from './export-result-actions'
 import { captureExportResultIdentity } from './export-result-identity'
 import { createCompletedExportResult } from './export-result-materialization'
 import {
@@ -196,17 +189,6 @@ function createExportId() {
     globalThis.crypto?.randomUUID?.() ??
     `export-${Date.now()}-${lastExportAttempt}`
   )
-}
-
-function toActivePlanState(plan: ExportExecutionPlan): ActiveExportPlanState {
-  return {
-    profileName: plan.profile.name,
-    preferredRows: plan.preferredRows,
-    concurrency: plan.concurrency,
-    runtimeMemoryProfile: plan.runtimeMemoryProfile,
-    outputSink: plan.outputSink,
-    checkpointMode: plan.checkpointMode,
-  }
 }
 
 /**
@@ -512,13 +494,11 @@ export async function orchestrateFullResExport(
       return
     }
 
-    const activePlan = toActivePlanState(jobExecutionPlan)
+    const activePlan = toExportAttemptPlan(jobExecutionPlan)
 
-    if (jobExecutionPlan.profile.releasePreviewPipelineBeforeExport) {
-      // Capture the current GPU pipeline before activePlan state and
-      // preview-copy prep can suspend PreviewCanvas and clear the ref.
-      ctx.services.registerCurrentPreviewPipelineForEvacuation()
-    }
+    // Capture the current GPU pipeline before the active plan suspends
+    // PreviewCanvas and clears the ref; evacuation releases it.
+    ctx.services.registerCurrentPreviewPipelineForEvacuation()
 
     // No export state outlives the tab: an interrupted export always starts
     // again from the first row, whatever the sink.
@@ -544,36 +524,6 @@ export async function orchestrateFullResExport(
         : prev,
     )
 
-    let copyCapability = resolveExportCopyCapability()
-    let previewCopyCanvas: HTMLCanvasElement | null = null
-    const preparePreviewCopyCanvas =
-      copyCapability.mode === 'preview-size' &&
-      !jobExecutionPlan.profile.releasePreviewPipelineBeforeExport
-
-    if (preparePreviewCopyCanvas) {
-      const pipeline = ctx.refs.pipelineRef.current
-      const previewSize = ctx.atoms.previewFacts?.previewSize
-
-      if (pipeline && previewSize) {
-        try {
-          previewCopyCanvas = await pipeline.renderToHiddenCanvas({
-            width: previewSize.width,
-            height: previewSize.height,
-          })
-        } catch {
-          previewCopyCanvas = null
-        }
-      }
-
-      if (!isCurrentExport()) {
-        return
-      }
-
-      if (!previewCopyCanvas) {
-        copyCapability = unavailableExportCopy('preview-copy-not-ready')
-      }
-    }
-
     const snapshot = createPreExportSnapshot({
       file: activeSourceFile,
       metadata: ctx.atoms.loadedImage.metadata,
@@ -596,7 +546,7 @@ export async function orchestrateFullResExport(
     }
 
     const evacuationOwners = getPreExportEvacuationOwners(
-      jobExecutionPlan.profile.name,
+      jobExecutionPlan.profileName,
     )
     const evacuation = await evacuateBeforeExport({
       registry,
@@ -627,7 +577,7 @@ export async function orchestrateFullResExport(
     emitExportDebugEvent({
       type: 'resource-evacuated',
       payload: toResourceEvacuatedDebugPayload({
-        profile: jobExecutionPlan.profile.name,
+        profile: jobExecutionPlan.profileName,
         evacuation,
       }),
     })
@@ -675,7 +625,7 @@ export async function orchestrateFullResExport(
                 ...prev,
                 exportState: {
                   ...prev.exportState,
-                  activePlan: toActivePlanState(plan),
+                  activePlan: toExportAttemptPlan(plan),
                 },
               }
             : prev,
@@ -735,11 +685,10 @@ export async function orchestrateFullResExport(
       metadata: ctx.atoms.loadedImage.metadata,
       width: deliveredSize.width,
       height: deliveredSize.height,
-      copyCapability,
+      copyCapability: resolveExportCopyCapability(),
       manifestState: { status: 'sealing' },
       identity,
     })
-    ctx.refs.previewCopyCanvasRef.current = previewCopyCanvas
     ctx.services.registerExportResultResource(exportResult)
     unadoptedOutput = undefined
 

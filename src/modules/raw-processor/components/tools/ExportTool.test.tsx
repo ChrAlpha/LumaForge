@@ -374,12 +374,10 @@ describe('exportTool', () => {
       id: 's1',
       exportState: {
         activePlan: {
-          profileName: 'ios-safe',
           preferredRows: 64,
           concurrency: 1,
           runtimeMemoryProfile: 'low-memory',
           outputSink: 'blob-handoff',
-          checkpointMode: 'safe-retry',
         },
       },
     } as ImageSession)

@@ -158,7 +158,6 @@ test('preflight: the 100MP RAF selects each project’s expected export plan bef
   expect(plan).toMatchObject({
     concurrency: expected.concurrency,
     runtimeMemoryProfile: expected.runtimeMemoryProfile,
-    checkpointMode: 'safe-retry',
     outputSink: 'opfs-file',
     policyVector: {
       workerMemoryProfile: expected.runtimeMemoryProfile,
@@ -290,7 +289,6 @@ test.describe('as an iPhone', () => {
           return {
             runtimeMemoryProfile: plan?.runtimeMemoryProfile,
             outputSink: plan?.outputSink,
-            checkpointMode: plan?.checkpointMode,
             derivedLabel: plan?.derivedLabel,
             workerMemoryProfile: (
               plan?.policyVector as
@@ -304,7 +302,6 @@ test.describe('as an iPhone', () => {
       .toMatchObject({
         runtimeMemoryProfile: 'low-memory',
         outputSink: 'opfs-file',
-        checkpointMode: 'safe-retry',
         derivedLabel: expect.stringContaining('wkwebkit-mobile'),
         workerMemoryProfile: 'low-memory',
       })
@@ -330,7 +327,6 @@ test.describe('as an iPhone', () => {
  * never gives up, and its label names the rows and the sink.
  */
 function expectCoherentPlan(plan: Record<string, unknown>) {
-  expect(plan).toMatchObject({ checkpointMode: 'safe-retry' })
   const vector = plan.policyVector as Record<string, unknown>
   expect(vector).toMatchObject({
     workerMemoryProfile: plan.runtimeMemoryProfile,

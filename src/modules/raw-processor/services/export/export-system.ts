@@ -2,15 +2,14 @@ import type { ExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 import type { FullResolutionExportProgress } from '@lumaforge/render-engine/export'
 import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 
-import { getExportModeCopy } from '~/lib/export/execution-profile'
 import type {
   ExportExecutionPlan,
+  ExportExecutionProfileName,
   ExportPlanFacts,
   ExportPlanRequest,
 } from '~/lib/export/export-plan'
-import { selectExportPlan } from '~/lib/export/export-plan'
+import { selectExportPlan, toExportAttemptPlan } from '~/lib/export/export-plan'
 import type {
-  FullResWorkerExecutionPlan,
   FullResWorkerOutputLocation,
   RunFullResolutionJpegExportInWorkerInput,
 } from '~/lib/export/full-res-export-client'
@@ -100,7 +99,7 @@ export async function planExportWithSampledFacts(
 
 export type FullResolutionExportAttemptEvent = {
   attempt: number
-  profile?: ExportExecutionPlan['profile']['name']
+  profile?: ExportExecutionProfileName
   preferredRows?: number
   concurrency?: number
   phase: 'started' | 'retry-scheduled' | 'disposed'
@@ -177,9 +176,12 @@ const MAX_EXPORT_ATTEMPTS = 3
 
 /** The refusal for a plan the policy says cannot safely complete. */
 export function createExportPolicyRefusal() {
-  return Object.assign(new Error(getExportModeCopy('cannot-safely-complete')), {
-    code: 'EXPORT_POLICY_CANNOT_COMPLETE',
-  })
+  return Object.assign(
+    new Error(
+      'This browser cannot safely complete this large local full-resolution export without durable file storage.',
+    ),
+    { code: 'EXPORT_POLICY_CANNOT_COMPLETE' },
+  )
 }
 
 /**
@@ -285,19 +287,6 @@ function getFreshWorkerRetryRows(error: unknown) {
     : undefined
 }
 
-function toWorkerExecutionPlan(
-  plan: ExportExecutionPlan,
-): FullResWorkerExecutionPlan {
-  return {
-    profileName: plan.profile.name,
-    preferredRows: plan.preferredRows,
-    concurrency: plan.concurrency,
-    runtimeMemoryProfile: plan.runtimeMemoryProfile,
-    outputSink: plan.outputSink,
-    checkpointMode: plan.checkpointMode,
-  }
-}
-
 export async function runFullResolutionExportJob({
   file,
   filename,
@@ -373,7 +362,7 @@ export async function runFullResolutionExportJob({
     try {
       emitFullResolutionExportAttempt(onAttempt, {
         attempt: attempts,
-        profile: attemptPlan?.profile.name,
+        profile: attemptPlan?.profileName,
         preferredRows: attemptPlan?.preferredRows ?? preferredRows,
         concurrency: attemptPlan?.concurrency ?? concurrency,
         phase: 'started',
@@ -391,7 +380,7 @@ export async function runFullResolutionExportJob({
         preferredRows: attemptPlan?.preferredRows ?? preferredRows,
         concurrency: attemptPlan?.concurrency ?? concurrency,
         executionPlan: attemptPlan
-          ? toWorkerExecutionPlan(attemptPlan)
+          ? toExportAttemptPlan(attemptPlan)
           : undefined,
         outputLocation: attemptOutputLocation,
         onProgress,
@@ -418,7 +407,7 @@ export async function runFullResolutionExportJob({
 
         emitFullResolutionExportAttempt(onAttempt, {
           attempt: attempts,
-          profile: attemptPlan.profile.name,
+          profile: attemptPlan.profileName,
           preferredRows: attemptPlan.preferredRows,
           concurrency: attemptPlan.concurrency,
           phase: 'retry-scheduled',
@@ -454,7 +443,7 @@ export async function runFullResolutionExportJob({
 
       emitFullResolutionExportAttempt(onAttempt, {
         attempt: attempts,
-        profile: attemptPlan.profile.name,
+        profile: attemptPlan.profileName,
         preferredRows: attemptPlan.preferredRows,
         concurrency: attemptPlan.concurrency,
         phase: 'retry-scheduled',
@@ -478,7 +467,7 @@ export async function runFullResolutionExportJob({
       await bridge.terminate()
       emitFullResolutionExportAttempt(onAttempt, {
         attempt: attempts,
-        profile: attemptPlan?.profile.name,
+        profile: attemptPlan?.profileName,
         preferredRows: attemptPlan?.preferredRows ?? preferredRows,
         concurrency: attemptPlan?.concurrency ?? concurrency,
         phase: 'disposed',

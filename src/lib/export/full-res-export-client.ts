@@ -12,22 +12,8 @@ import {
   normalizePreferredStripRows,
 } from '@lumaforge/render-engine/export'
 
-import type {
-  ExportCheckpointMode,
-  ExportExecutionProfileName,
-  ExportOutputSink,
-  ExportRuntimeMemoryProfile,
-} from './export-plan'
+import type { ExportAttemptPlan } from './export-plan'
 import { createOpfsFileBackedOutputResult } from './output-sink'
-
-export type FullResWorkerExecutionPlan = {
-  profileName: ExportExecutionProfileName
-  preferredRows: number
-  concurrency: number
-  runtimeMemoryProfile: ExportRuntimeMemoryProfile
-  outputSink: ExportOutputSink
-  checkpointMode: ExportCheckpointMode
-}
 
 /**
  * Where the worker writes the JPEG. An `opfs-file` plan must carry exactly
@@ -66,7 +52,7 @@ export type FullResExportWorkerStartMessage = {
   file: File
   filename?: string
   graph: ExportColorGraphDescriptor
-  executionPlan?: FullResWorkerExecutionPlan
+  executionPlan?: ExportAttemptPlan
   outputLocation?: FullResWorkerOutputLocation
   preferredRows?: number
   concurrency?: number
@@ -124,7 +110,7 @@ export type RunFullResolutionJpegExportInWorkerInput = {
   concurrency?: number
   quality?: number
   geometry?: ExportGeometry
-  executionPlan?: FullResWorkerExecutionPlan
+  executionPlan?: ExportAttemptPlan
   outputLocation?: FullResWorkerOutputLocation
   signal?: AbortSignal
   onProgress?: (progress: FullResolutionExportProgress) => void

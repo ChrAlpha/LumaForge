@@ -6,7 +6,6 @@ import type {
 } from '@lumaforge/render-engine/policy'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { getExportModeCopy } from '~/lib/export/execution-profile'
 import type { ExportExecutionPlan } from '~/lib/export/export-plan'
 import { selectExportPlan } from '~/lib/export/export-plan'
 import type { RunFullResolutionJpegExportInWorkerInput } from '~/lib/export/full-res-export-client'
@@ -257,7 +256,6 @@ describe('runFullResolutionExportJob plan safety', () => {
       }),
     ).rejects.toMatchObject({
       code: 'EXPORT_POLICY_CANNOT_COMPLETE',
-      message: getExportModeCopy('cannot-safely-complete'),
     })
     expect(script.clientFactory).not.toHaveBeenCalled()
   })
@@ -372,7 +370,6 @@ describe('runFullResolutionExportJob plan safety', () => {
       }),
     ).rejects.toMatchObject({
       code: 'EXPORT_POLICY_CANNOT_COMPLETE',
-      message: getExportModeCopy('cannot-safely-complete'),
     })
     expect(script.clientFactory).toHaveBeenCalledTimes(1)
     expect(script.clients[0]!.dispose).toHaveBeenCalledTimes(1)

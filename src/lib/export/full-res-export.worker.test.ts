@@ -156,12 +156,10 @@ describe('full-resolution export worker lifecycle responses', () => {
           steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
         },
         executionPlan: {
-          profileName: 'desktop-fast',
           preferredRows: 64,
           concurrency: 1,
           runtimeMemoryProfile: 'low-memory',
           outputSink: 'opfs-file',
-          checkpointMode: 'safe-retry',
         },
         outputLocation: {
           sink: 'opfs-file',
@@ -267,12 +265,10 @@ describe('full-resolution export worker lifecycle responses', () => {
           steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
         },
         executionPlan: {
-          profileName: 'ios-safe',
           preferredRows: 64,
           concurrency: 1,
           runtimeMemoryProfile: 'low-memory',
           outputSink: 'opfs-file',
-          checkpointMode: 'safe-retry',
         },
         outputLocation: {
           sink: 'opfs-file',
@@ -362,12 +358,10 @@ describe('full-resolution export worker lifecycle responses', () => {
           steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
         },
         executionPlan: {
-          profileName: 'ios-safe',
           preferredRows: 64,
           concurrency: 1,
           runtimeMemoryProfile: 'low-memory',
           outputSink: 'opfs-file',
-          checkpointMode: 'safe-retry',
         },
         outputLocation: {
           sink: 'opfs-file',
@@ -981,12 +975,10 @@ describe('full-resolution export worker delivered JPEG metadata', () => {
       const result = await startExport({
         geometry,
         executionPlan: {
-          profileName: 'ios-safe',
           preferredRows: 64,
           concurrency: 1,
           runtimeMemoryProfile: 'low-memory',
           outputSink: 'opfs-file',
-          checkpointMode: 'safe-retry',
         },
         outputLocation: {
           sink: 'opfs-file',
@@ -1036,20 +1028,16 @@ describe('full-resolution export worker output sink', () => {
     steps: [{ kind: 'input-linear-prophoto' }, { kind: 'output-srgb' }],
   }
   const opfsPlan = {
-    profileName: 'ios-safe',
     preferredRows: 64,
     concurrency: 1,
     runtimeMemoryProfile: 'low-memory',
     outputSink: 'opfs-file',
-    checkpointMode: 'safe-retry',
   }
   const blobPlan = {
-    profileName: 'desktop-fast',
     preferredRows: 512,
     concurrency: 2,
     runtimeMemoryProfile: 'desktop',
     outputSink: 'blob-handoff',
-    checkpointMode: 'safe-retry',
   }
   beforeEach(() => {
     // Any export that reaches the encoder succeeds, so a sink the worker

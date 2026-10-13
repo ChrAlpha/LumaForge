@@ -90,12 +90,10 @@ describe('fullResolutionExportWorkerClient', () => {
       file: new File(['raw'], 'sample.RAF'),
       graph: supportedGraph,
       executionPlan: {
-        profileName: 'ios-safe',
         preferredRows: 64,
         concurrency: 1,
         runtimeMemoryProfile: 'low-memory',
         outputSink: 'opfs-file',
-        checkpointMode: 'safe-retry',
       },
       // A caller that still hands over a journal identity gets nothing
       // forwarded to the worker.
@@ -117,7 +115,6 @@ describe('fullResolutionExportWorkerClient', () => {
     expect(start).toMatchObject({
       kind: 'start',
       executionPlan: {
-        profileName: 'ios-safe',
         preferredRows: 64,
         runtimeMemoryProfile: 'low-memory',
       },
@@ -148,12 +145,10 @@ describe('fullResolutionExportWorkerClient', () => {
       () => worker as unknown as Worker,
     )
     const executionPlan = {
-      profileName: 'desktop-fast',
       preferredRows: 512,
       concurrency: 2,
       runtimeMemoryProfile: 'desktop',
       outputSink: 'opfs-file',
-      checkpointMode: 'safe-retry',
     } as const
 
     const run = client.run({

@@ -102,12 +102,10 @@ function withExportState(
 }
 
 const ACTIVE_PLAN: NonNullable<ImageSession['exportState']['activePlan']> = {
-  profileName: 'desktop-fast',
   preferredRows: 128,
   concurrency: 1,
   runtimeMemoryProfile: 'desktop',
   outputSink: 'blob-handoff',
-  checkpointMode: 'safe-retry',
 }
 const RESULT = createExportResult({
   kind: 'full-resolution',
