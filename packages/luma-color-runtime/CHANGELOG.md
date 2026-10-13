@@ -8,6 +8,10 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
 
 ### Breaking
 
+- Removed the `lookupStoredProfile` option of `parseCubeLUT` and
+  `resolveLUTProfile`, and the `fingerprint` input that only fed it. The
+  parser no longer reads stored contracts; a host that keeps user contracts
+  applies them to the parsed LUT by its `fingerprint`.
 - `buildStoredContractSelection` returns a
   `LUTContractResult<StoredLUTContractSelection>`: `{ ok: true, value }`, or
   `{ ok: false, issues }` listing every reason the selection cannot be

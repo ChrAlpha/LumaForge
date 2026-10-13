@@ -14,8 +14,6 @@ export interface ResolveLUTProfileInput {
   title: string
   sourceName?: string
   comments: string[]
-  fingerprint?: string
-  lookupStoredProfile?: (fingerprint: string) => LUTColorProfile | undefined
 }
 
 function normalizeProfileText(value: string): string {
@@ -231,17 +229,6 @@ export function resolveLUTProfile(
       kind: 'confirmed',
       confidence: 'metadata',
       profile: metadataProfile,
-    }
-  }
-
-  if (input.fingerprint && input.lookupStoredProfile) {
-    const storedProfile = input.lookupStoredProfile(input.fingerprint)
-    if (storedProfile) {
-      return {
-        kind: 'confirmed',
-        confidence: 'persisted-user',
-        profile: storedProfile,
-      }
     }
   }
 

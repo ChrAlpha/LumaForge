@@ -1,5 +1,4 @@
 import { resolveLUTProfile } from './lut-profile-resolution'
-import type { LUTColorProfile } from './registry'
 import type { LUTContractResolution, LUTData } from './types'
 
 export interface ParsedLUT {
@@ -18,7 +17,6 @@ export interface ParsedLUT {
 
 export interface ParseCubeOptions {
   sourceName?: string
-  lookupStoredProfile?: (fingerprint: string) => LUTColorProfile | undefined
 }
 
 const CUBE_FLOAT_PATTERN = '[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:e[+-]?\\d+)?'
@@ -194,8 +192,6 @@ export function parseCubeLUT(
     title: resolvedTitle,
     sourceName: options.sourceName,
     comments,
-    fingerprint,
-    lookupStoredProfile: options.lookupStoredProfile,
   })
 
   return {

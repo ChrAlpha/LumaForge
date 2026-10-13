@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { resolveExportColorGraph } from './color-graph'
 import {
@@ -7,8 +7,6 @@ import {
   toLUTData,
   validateLUT,
 } from './cube-parser'
-import type { LUTColorProfile } from './registry'
-import { getLUTColorProfile } from './registry'
 import { NEUTRAL_USER_COLOR_INTENT } from './user-color-intent'
 
 const V_LOG_TO_REC709_METADATA = [
@@ -61,12 +59,6 @@ function cubeText({
     '',
     ...(rows ?? identityRows(numericSize)),
   ].join('\n')
-}
-
-function registryProfile(id: string): LUTColorProfile {
-  const profile = getLUTColorProfile(id)
-  if (!profile) throw new Error(`Missing registry profile ${id}`)
-  return profile
 }
 
 describe('parseCubeLUT size and data count', () => {
@@ -366,10 +358,9 @@ describe('parseCubeLUT non-finite values', () => {
 
 describe('parseCubeLUT profile metadata', () => {
   it('confirms a full structured contract from LUMAFORGE_ comments', () => {
-    const lookupStoredProfile = vi.fn(() => registryProfile('display-srgb'))
     const lut = parseCubeLUT(
       cubeText({ title: 'Trusted', comments: V_LOG_TO_REC709_METADATA }),
-      { sourceName: 'renamed.cube', lookupStoredProfile },
+      { sourceName: 'renamed.cube' },
     )
 
     expect(lut.profileResolution).toMatchObject({
@@ -384,7 +375,6 @@ describe('parseCubeLUT profile metadata', () => {
         outputRange: 'full',
       },
     })
-    expect(lookupStoredProfile).not.toHaveBeenCalled()
   })
 
   it('parses an incomplete contract but leaves it unconfirmed', () => {
@@ -408,22 +398,6 @@ describe('parseCubeLUT profile metadata', () => {
     })
 
     expect(lut.profileResolution).toEqual({ kind: 'unknown' })
-  })
-
-  it('looks up a stored contract by the content fingerprint', () => {
-    const stored = registryProfile('sony-sgamut3cine-slog3')
-    const lookupStoredProfile = vi.fn(() => stored)
-    const lut = parseCubeLUT(cubeText({ title: 'Stored' }), {
-      sourceName: 'stored.cube',
-      lookupStoredProfile,
-    })
-
-    expect(lookupStoredProfile).toHaveBeenCalledWith(lut.fingerprint)
-    expect(lut.profileResolution).toEqual({
-      kind: 'confirmed',
-      confidence: 'persisted-user',
-      profile: stored,
-    })
   })
 
   it('recommends but does not confirm a profile named only in the file name', () => {

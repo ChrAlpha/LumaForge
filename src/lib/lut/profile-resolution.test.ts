@@ -487,15 +487,6 @@ describe('lUT stored selection records', () => {
       expect(getStoredLUTProfileSelection(fingerprint)).toBeUndefined()
       const lut = makeParsedLUTForProfileSelection(fingerprint)
       expect(restorePersistedLUTContract(lut)).toBe(lut)
-      expect(
-        resolveLUTProfile({
-          title: 'Panasonic technical LUT',
-          sourceName: 'Panasonic_VLog_to_Rec709.cube',
-          comments: [],
-          fingerprint,
-          lookupStoredProfile: getStoredLUTProfileSelection,
-        }).kind,
-      ).not.toBe('confirmed')
       expect(getStoredLUTContractSelection('fp-vlog-rec709')).toEqual(
         PRODUCTION_RECORDS['fp-vlog-rec709'],
       )

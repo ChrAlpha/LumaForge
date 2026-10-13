@@ -99,6 +99,12 @@ const RETIRED_MEMBERS = Object.freeze({
     // The binary LUT input projection.
     LUTData: Object.freeze(['inputProfile']),
     ParsedLUT: Object.freeze(['inputProfile']),
+    // The parser reads no stored contracts; the host restores them.
+    ParseCubeOptions: Object.freeze(['lookupStoredProfile']),
+    ResolveLUTProfileInput: Object.freeze([
+      'fingerprint',
+      'lookupStoredProfile',
+    ]),
   }),
   '@lumaforge/render-engine': Object.freeze({
     // No writer records a Kelvin temperature.

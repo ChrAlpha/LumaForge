@@ -1,8 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { resolveLUTProfile } from './lut-profile-resolution'
-import type { LUTColorProfile } from './registry'
-import { getLUTColorProfile } from './registry'
 
 const V_LOG_TO_REC709_METADATA = [
   'LUMAFORGE_INPUT_PROFILE=panasonic-vgamut-vlog',
@@ -11,115 +9,6 @@ const V_LOG_TO_REC709_METADATA = [
   'LUMAFORGE_OUTPUT_TRANSFER=bt709',
   'LUMAFORGE_OUTPUT_RANGE=full',
 ]
-
-function registryProfile(id: string): LUTColorProfile {
-  const profile = getLUTColorProfile(id)
-  if (!profile) throw new Error(`Missing registry profile ${id}`)
-  return profile
-}
-
-describe('lUT contract precedence', () => {
-  it('resolves structured metadata ahead of a stored user contract', () => {
-    const lookupStoredProfile = vi.fn(() => registryProfile('display-srgb'))
-
-    expect(
-      resolveLUTProfile({
-        title: 'Trusted LUT',
-        comments: V_LOG_TO_REC709_METADATA,
-        fingerprint: 'metadata-and-stored',
-        lookupStoredProfile,
-      }),
-    ).toMatchObject({
-      kind: 'confirmed',
-      confidence: 'metadata',
-      profile: { id: 'panasonic-vgamut-vlog' },
-    })
-    expect(lookupStoredProfile).not.toHaveBeenCalled()
-  })
-
-  it('resolves a stored user contract ahead of name recommendations', () => {
-    const lookupStoredProfile = vi.fn(() =>
-      registryProfile('sony-sgamut3cine-slog3'),
-    )
-
-    expect(
-      resolveLUTProfile({
-        title: 'LUMIXPHOTOSTYLE VLOG',
-        sourceName: 'Panasonic_VLog.cube',
-        comments: [],
-        fingerprint: 'stored-fingerprint',
-        lookupStoredProfile,
-      }),
-    ).toMatchObject({
-      kind: 'confirmed',
-      confidence: 'persisted-user',
-      profile: { id: 'sony-sgamut3cine-slog3' },
-    })
-    expect(lookupStoredProfile).toHaveBeenCalledWith('stored-fingerprint')
-  })
-
-  it('resolves a stored user contract ahead of an unsupported output annotation', () => {
-    expect(
-      resolveLUTProfile({
-        title: 'Sony technical LUT',
-        sourceName: 'SLog3_SGamut3Cine_to_Cineon.cube',
-        comments: [],
-        fingerprint: 'stored-cineon',
-        lookupStoredProfile: () => registryProfile('display-srgb'),
-      }),
-    ).toMatchObject({
-      kind: 'confirmed',
-      confidence: 'persisted-user',
-      profile: { id: 'display-srgb' },
-    })
-  })
-
-  it('falls through to recommendations when the stored lookup misses', () => {
-    expect(
-      resolveLUTProfile({
-        title: 'Sony technical LUT',
-        sourceName: 'SLog3_SGamut3Cine_to_Rec709.cube',
-        comments: [],
-        fingerprint: 'unknown-fingerprint',
-        lookupStoredProfile: () => undefined,
-      }),
-    ).toMatchObject({
-      kind: 'recommended',
-      recommendations: expect.arrayContaining([
-        expect.objectContaining({
-          id: 'sony-sgamut3cine-slog3',
-          role: 'combined-look-output',
-          outputGamut: 'srgb-rec709',
-          outputTransfer: 'gamma24',
-          outputRange: 'full',
-        }),
-      ]),
-    })
-  })
-
-  it('never consults storage without both a fingerprint and a lookup', () => {
-    const lookupStoredProfile = vi.fn(() => registryProfile('display-srgb'))
-
-    expect(
-      resolveLUTProfile({
-        title: 'Panasonic technical LUT',
-        sourceName: 'Panasonic_VLog.cube',
-        comments: [],
-        lookupStoredProfile,
-      }).kind,
-    ).toBe('recommended')
-    expect(lookupStoredProfile).not.toHaveBeenCalled()
-
-    expect(
-      resolveLUTProfile({
-        title: 'Panasonic technical LUT',
-        sourceName: 'Panasonic_VLog.cube',
-        comments: [],
-        fingerprint: 'no-lookup',
-      }).kind,
-    ).toBe('recommended')
-  })
-})
 
 describe('lUT name hints', () => {
   function recommendationsFor(sourceName: string, comments: string[] = []) {
