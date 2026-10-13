@@ -10,7 +10,11 @@ import {
   LUT_SIZE as SELECTIVE_COLOR_LUT_SIZE,
   resolveSelectiveColorParams,
 } from './selective-color'
-import { regionalToneScaleFromLuminance } from './tone'
+import {
+  contrastScaleFromLuminance,
+  hasRegionalTone,
+  regionalToneScaleFromLuminance,
+} from './tone'
 
 const CHANNELS_PER_PIXEL = 3
 const UINT16_MAX = 65535
@@ -241,28 +245,11 @@ function applyUserContrastScalarTo(
     step.luminanceCoefficients[0] * positiveR +
     step.luminanceCoefficients[1] * positiveG +
     step.luminanceCoefficients[2] * positiveB
-  if (y <= 0) {
-    out[0] = 0
-    out[1] = 0
-    out[2] = 0
-    return out
-  }
-
-  const targetY = step.pivot * Math.pow(y / step.pivot, step.factor)
-  const scale = targetY / y
+  const scale = contrastScaleFromLuminance(y, step.factor, step.pivot)
   out[0] = positiveR * scale
   out[1] = positiveG * scale
   out[2] = positiveB * scale
   return out
-}
-
-function hasRegionalTone(step: UserRegionalToneStep) {
-  return (
-    step.highlights !== 0 ||
-    step.shadows !== 0 ||
-    step.whites !== 0 ||
-    step.blacks !== 0
-  )
 }
 
 function applyUserRegionalToneScalarTo(
@@ -286,13 +273,7 @@ function applyUserRegionalToneScalarTo(
     step.luminanceCoefficients[0] * positiveR +
     step.luminanceCoefficients[1] * positiveG +
     step.luminanceCoefficients[2] * positiveB
-  const scale = regionalToneScaleFromLuminance(y, {
-    highlights: step.highlights,
-    shadows: step.shadows,
-    whites: step.whites,
-    blacks: step.blacks,
-    pivot: step.pivot,
-  })
+  const scale = regionalToneScaleFromLuminance(y, step)
 
   out[0] = positiveR * scale
   out[1] = positiveG * scale

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  applyColorBalanceRgb,
   normalizeColorBalanceParams,
   resolveColorBalanceParams,
 } from './color-balance'
@@ -71,18 +70,5 @@ describe('color balance', () => {
     expect(magenta.gain[1]).toBeLessThan(magenta.gain[2])
     expect(green.gain[1]).toBeGreaterThan(green.gain[0])
     expect(green.gain[1]).toBeGreaterThan(green.gain[2])
-  })
-
-  it('applies gain without clamping channel values', () => {
-    const resolved = resolveColorBalanceParams({
-      userTemperature: 100,
-      userTint: 100,
-    })
-
-    const output = applyColorBalanceRgb([-0.1, 0.18, 2], resolved.gain)
-
-    expect(output[0]).toBeLessThan(0)
-    expect(output[1]).toBeGreaterThan(0)
-    expect(output[2]).toBeGreaterThan(1)
   })
 })

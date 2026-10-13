@@ -59,11 +59,24 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
   `USER_SATURATION_MIN`/`MAX` and `USER_VIBRANCE_MIN`/`MAX` (read
   `USER_COLOR_FIELD_BOUNDS`), `COLOR_SPACES`, `ColorSpaceDef`,
   `COLOR_GAMUT_SOURCE_URLS`, `D50_WHITE`, `D65_WHITE` and `ACES_WHITE`.
+- The RGB reference copies of the tone and color balance math, which export
+  never ran, are removed: `applyUserExposureRgb`, `applyUserContrastRgb`,
+  `applyUserRegionalToneRgb`, `applyUserToneRgb` and their `Into` variants,
+  `applyColorBalanceRgb(Into)`, `userContrastScaleFromLuminance`,
+  `userRegionalToneEvFromLuminance`, `userRegionalToneScaleFromLuminance`,
+  `hasUserRegionalTone`, `linearProPhotoLuminanceFromRgb`,
+  `regionalToneEvFromLuminance`, and the `Rgb`, `MutableRgb`,
+  `ColorBalanceRgb` and `MutableColorBalanceRgb` types. The row-band
+  executor is the reference; it scales RGB by `contrastScaleFromLuminance`
+  and `regionalToneScaleFromLuminance`.
 
 ### Added
 
 - `RAW_RENDER_EXPOSURE_SOURCES`, the provenance values
   `RawRenderExposureSource` names, for readers that validate a recorded one.
+- `contrastScaleFromLuminance(luminance, factor, pivot)` and
+  `hasRegionalTone(input)`, the scalar contrast and regional tone helpers the
+  row-band executor runs.
 
 ## 0.2.1 - 2026-10-12
 

@@ -27,9 +27,6 @@ export interface ResolvedToneParams extends LumaColorToneParams {
   luminanceCoefficients: readonly [number, number, number]
 }
 
-export type Rgb = readonly [number, number, number]
-export type MutableRgb = [number, number, number]
-
 export interface RegionalToneScaleInput {
   highlights: number
   shadows: number
@@ -65,64 +62,33 @@ function smoothstep(edge0: number, edge1: number, value: number) {
   return t * t * (3 - 2 * t)
 }
 
-export function linearProPhotoLuminanceFromRgb(
-  r: number,
-  g: number,
-  b: number,
-  coefficients: readonly [number, number, number] = LINEAR_PROPHOTO_LUMINANCE,
-) {
-  return coefficients[0] * r + coefficients[1] * g + coefficients[2] * b
-}
-
-export function userContrastScaleFromLuminance(
+// The scale contrast applies to an RGB triple of linear luminance `luminance`:
+// the luminance maps through a power curve around the pivot, so black and
+// the pivot stay put and RGB ratios are kept.
+export function contrastScaleFromLuminance(
   luminance: number,
-  tone: ResolvedToneParams,
+  factor: number,
+  pivot: number,
 ) {
-  if (tone.userContrast === 0) return 1
   if (luminance <= 0) return 0
-
-  const targetY =
-    tone.contrastPivot *
-    Math.pow(luminance / tone.contrastPivot, tone.userContrastFactor)
+  const targetY = pivot * Math.pow(luminance / pivot, factor)
   return targetY / luminance
 }
 
-export function hasUserRegionalTone(tone: LumaColorToneParams) {
+export function hasRegionalTone(input: RegionalToneScaleInput) {
   return (
-    tone.userHighlights !== 0 ||
-    tone.userShadows !== 0 ||
-    tone.userWhites !== 0 ||
-    tone.userBlacks !== 0
+    input.highlights !== 0 ||
+    input.shadows !== 0 ||
+    input.whites !== 0 ||
+    input.blacks !== 0
   )
 }
 
-export function userRegionalToneEvFromLuminance(
-  luminance: number,
-  tone: ResolvedToneParams,
-) {
-  return regionalToneEvFromLuminance(luminance, {
-    highlights: tone.userHighlights,
-    shadows: tone.userShadows,
-    whites: tone.userWhites,
-    blacks: tone.userBlacks,
-    pivot: tone.regionalTonePivot,
-  })
-}
-
-export function regionalToneEvFromLuminance(
+// Called only for positive luminance with some regional tone set.
+function regionalToneEvFromLuminance(
   luminance: number,
   input: RegionalToneScaleInput,
 ) {
-  if (
-    input.highlights === 0 &&
-    input.shadows === 0 &&
-    input.whites === 0 &&
-    input.blacks === 0
-  ) {
-    return 0
-  }
-  if (luminance <= 0) return 0
-
   const logLuminance = Math.log2(
     luminance / (input.pivot ?? USER_REGIONAL_TONE_PIVOT),
   )
@@ -143,31 +109,9 @@ export function regionalToneScaleFromLuminance(
   luminance: number,
   input: RegionalToneScaleInput,
 ) {
-  if (
-    input.highlights === 0 &&
-    input.shadows === 0 &&
-    input.whites === 0 &&
-    input.blacks === 0
-  ) {
-    return 1
-  }
+  if (!hasRegionalTone(input)) return 1
   if (luminance <= 0) return 0
   return Math.pow(2, regionalToneEvFromLuminance(luminance, input))
-}
-
-export function userRegionalToneScaleFromLuminance(
-  luminance: number,
-  tone: ResolvedToneParams,
-) {
-  if (!hasUserRegionalTone(tone)) return 1
-  if (luminance <= 0) return 0
-  return regionalToneScaleFromLuminance(luminance, {
-    highlights: tone.userHighlights,
-    shadows: tone.userShadows,
-    whites: tone.userWhites,
-    blacks: tone.userBlacks,
-    pivot: tone.regionalTonePivot,
-  })
 }
 
 export function normalizeToneParams(
@@ -221,101 +165,4 @@ export function resolveToneParams(
     regionalTonePivot: USER_REGIONAL_TONE_PIVOT,
     luminanceCoefficients: LINEAR_PROPHOTO_LUMINANCE,
   }
-}
-
-export function applyUserExposureRgb(
-  rgb: Rgb,
-  multiplier: number,
-): [number, number, number] {
-  return applyUserExposureRgbInto(rgb, multiplier, [0, 0, 0])
-}
-
-export function applyUserExposureRgbInto(
-  rgb: Rgb,
-  multiplier: number,
-  out: MutableRgb,
-): MutableRgb {
-  out[0] = rgb[0] * multiplier
-  out[1] = rgb[1] * multiplier
-  out[2] = rgb[2] * multiplier
-  return out
-}
-
-export function applyUserContrastRgb(
-  rgb: Rgb,
-  tone: ResolvedToneParams,
-): [number, number, number] {
-  return applyUserContrastRgbInto(rgb, tone, [0, 0, 0])
-}
-
-export function applyUserContrastRgbInto(
-  rgb: Rgb,
-  tone: ResolvedToneParams,
-  out: MutableRgb,
-): MutableRgb {
-  if (tone.userContrast === 0) {
-    out[0] = rgb[0]
-    out[1] = rgb[1]
-    out[2] = rgb[2]
-    return out
-  }
-
-  const r = Math.max(rgb[0], 0)
-  const g = Math.max(rgb[1], 0)
-  const b = Math.max(rgb[2], 0)
-  const y = linearProPhotoLuminanceFromRgb(r, g, b, tone.luminanceCoefficients)
-  const scale = userContrastScaleFromLuminance(y, tone)
-
-  out[0] = r * scale
-  out[1] = g * scale
-  out[2] = b * scale
-  return out
-}
-
-export function applyUserRegionalToneRgb(
-  rgb: Rgb,
-  tone: ResolvedToneParams,
-): [number, number, number] {
-  return applyUserRegionalToneRgbInto(rgb, tone, [0, 0, 0])
-}
-
-export function applyUserRegionalToneRgbInto(
-  rgb: Rgb,
-  tone: ResolvedToneParams,
-  out: MutableRgb,
-): MutableRgb {
-  if (!hasUserRegionalTone(tone)) {
-    out[0] = rgb[0]
-    out[1] = rgb[1]
-    out[2] = rgb[2]
-    return out
-  }
-
-  const r = Math.max(rgb[0], 0)
-  const g = Math.max(rgb[1], 0)
-  const b = Math.max(rgb[2], 0)
-  const y = linearProPhotoLuminanceFromRgb(r, g, b, tone.luminanceCoefficients)
-  const scale = userRegionalToneScaleFromLuminance(y, tone)
-
-  out[0] = r * scale
-  out[1] = g * scale
-  out[2] = b * scale
-  return out
-}
-
-export function applyUserToneRgb(
-  rgb: Rgb,
-  tone: ResolvedToneParams,
-): [number, number, number] {
-  return applyUserToneRgbInto(rgb, tone, [0, 0, 0])
-}
-
-export function applyUserToneRgbInto(
-  rgb: Rgb,
-  tone: ResolvedToneParams,
-  out: MutableRgb,
-): MutableRgb {
-  applyUserExposureRgbInto(rgb, tone.userExposureMultiplier, out)
-  applyUserContrastRgbInto(out, tone, out)
-  return applyUserRegionalToneRgbInto(out, tone, out)
 }

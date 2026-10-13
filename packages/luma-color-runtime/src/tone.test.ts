@@ -1,29 +1,43 @@
 import { describe, expect, it } from 'vitest'
 
+import type { RegionalToneScaleInput } from './tone'
 import {
-  applyUserContrastRgb,
-  applyUserContrastRgbInto,
-  applyUserExposureRgb,
-  applyUserExposureRgbInto,
-  applyUserRegionalToneRgb,
-  applyUserRegionalToneRgbInto,
-  applyUserToneRgb,
-  applyUserToneRgbInto,
   contrastFactorFromAmount,
+  contrastScaleFromLuminance,
   normalizeToneParams,
-  resolveToneParams,
+  regionalToneScaleFromLuminance,
+  USER_CONTRAST_PIVOT,
   userExposureMultiplierFromEv,
 } from './tone'
 
-const EPS = 1e-12
+/** Luminance after contrast at `amount`, as the executor scales it. */
+function contrasted(luminance: number, amount: number) {
+  return (
+    luminance *
+    contrastScaleFromLuminance(
+      luminance,
+      contrastFactorFromAmount(amount),
+      USER_CONTRAST_PIVOT,
+    )
+  )
+}
 
-function expectRgbClose(
-  actual: readonly [number, number, number],
-  expected: readonly [number, number, number],
-) {
-  expect(actual[0]).toBeCloseTo(expected[0], 12)
-  expect(actual[1]).toBeCloseTo(expected[1], 12)
-  expect(actual[2]).toBeCloseTo(expected[2], 12)
+const NO_REGIONAL_TONE: RegionalToneScaleInput = {
+  highlights: 0,
+  shadows: 0,
+  whites: 0,
+  blacks: 0,
+}
+
+/** Luminance after regional tone, as the executor scales it. */
+function regional(luminance: number, input: Partial<RegionalToneScaleInput>) {
+  return (
+    luminance *
+    regionalToneScaleFromLuminance(luminance, {
+      ...NO_REGIONAL_TONE,
+      ...input,
+    })
+  )
 }
 
 describe('tone math', () => {
@@ -83,196 +97,86 @@ describe('tone math', () => {
     expect(contrastFactorFromAmount(100)).toBeCloseTo(Math.SQRT2, 12)
   })
 
-  it('keeps exposure as pure gain without clipping negative channels', () => {
-    expectRgbClose(applyUserExposureRgb([-0.25, 0.5, 2], 2), [-0.5, 1, 4])
-  })
-
-  it('writes exposure into a caller-owned RGB tuple', () => {
-    const out: [number, number, number] = [Number.NaN, Number.NaN, Number.NaN]
-
-    expect(applyUserExposureRgbInto([-0.25, 0.5, 2], 2, out)).toBe(out)
-    expectRgbClose(out, [-0.5, 1, 4])
-  })
-
-  it('keeps neutral contrast as exact passthrough including negative channels', () => {
-    const tone = resolveToneParams({ userExposureEv: 0, userContrast: 0 })
-    expectRgbClose(applyUserContrastRgb([-0.25, 0.5, 2], tone), [-0.25, 0.5, 2])
-  })
-
-  it('clips negative channels only at non-neutral contrast entry', () => {
-    const tone = resolveToneParams({ userExposureEv: 0, userContrast: 50 })
-    expectRgbClose(applyUserContrastRgb([-0.1, -0.2, -0.3], tone), [0, 0, 0])
-  })
-
-  it('writes contrast into a caller-owned RGB tuple', () => {
-    const tone = resolveToneParams({ userExposureEv: 0, userContrast: 50 })
-    const out: [number, number, number] = [Number.NaN, Number.NaN, Number.NaN]
-
-    expect(applyUserContrastRgbInto([0.32, 0.16, 0.08], tone, out)).toBe(out)
-    expectRgbClose(out, applyUserContrastRgb([0.32, 0.16, 0.08], tone))
-  })
-
-  it('keeps neutral regional tone as exact passthrough including negative channels', () => {
-    const tone = resolveToneParams({
-      userExposureEv: 0,
-      userContrast: 0,
-      userHighlights: 0,
-      userShadows: 0,
-      userWhites: 0,
-      userBlacks: 0,
-    })
-
-    expectRgbClose(
-      applyUserRegionalToneRgb([-0.25, 0.5, 2], tone),
-      [-0.25, 0.5, 2],
-    )
-  })
-
-  it('applies highlights and whites primarily to bright scene-linear ranges', () => {
-    const highlights = resolveToneParams({
-      userHighlights: 100,
-      userWhites: 100,
-    })
-
-    const shadow = applyUserRegionalToneRgb([0.02, 0.02, 0.02], highlights)[0]
-    const mid = applyUserRegionalToneRgb([0.18, 0.18, 0.18], highlights)[0]
-    const bright = applyUserRegionalToneRgb([1.2, 1.2, 1.2], highlights)[0]
-
-    expect(shadow).toBeCloseTo(0.02, 6)
-    expect(bright - 1.2).toBeGreaterThan(mid - 0.18)
-    expect(mid).toBeGreaterThanOrEqual(0.18)
-  })
-
-  it('applies shadows and blacks primarily to dark scene-linear ranges', () => {
-    const shadows = resolveToneParams({
-      userShadows: 100,
-      userBlacks: 100,
-    })
-
-    const black = applyUserRegionalToneRgb([0, 0, 0], shadows)[0]
-    const toe = applyUserRegionalToneRgb([0.01, 0.01, 0.01], shadows)[0]
-    const mid = applyUserRegionalToneRgb([0.18, 0.18, 0.18], shadows)[0]
-    const highlight = applyUserRegionalToneRgb([1.2, 1.2, 1.2], shadows)[0]
-
-    expect(black).toBe(0)
-    expect(toe / 0.01).toBeGreaterThan(mid / 0.18)
-    expect(highlight).toBeCloseTo(1.2, 6)
-  })
-
-  it('clips negative channels only at non-neutral regional tone entry', () => {
-    const tone = resolveToneParams({ userShadows: 50 })
-
-    expectRgbClose(
-      applyUserRegionalToneRgb([-0.1, -0.2, -0.3], tone),
-      [0, 0, 0],
-    )
-  })
-
-  it('keeps regional tone monotonic on a grayscale ramp for each slider endpoint', () => {
-    const cases = [
-      { userHighlights: 100 },
-      { userHighlights: -100 },
-      { userShadows: 100 },
-      { userShadows: -100 },
-      { userWhites: 100 },
-      { userWhites: -100 },
-      { userBlacks: 100 },
-      { userBlacks: -100 },
-    ]
-
-    for (const input of cases) {
-      const tone = resolveToneParams(input)
-      let previous = applyUserRegionalToneRgb([0, 0, 0], tone)[0]
-      for (const y of [
-        1e-6, 3e-6, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 0.1, 0.18,
-        0.3, 0.6, 1, 2, 4, 8,
-      ]) {
-        const next = applyUserRegionalToneRgb([y, y, y], tone)[0]
-        expect(next).toBeGreaterThanOrEqual(previous)
-        previous = next
-      }
+  it('leaves black and the 18 percent pivot stable under contrast', () => {
+    for (const amount of [-100, 50, 100]) {
+      expect(contrasted(0, amount)).toBe(0)
+      expect(contrasted(USER_CONTRAST_PIVOT, amount)).toBeCloseTo(
+        USER_CONTRAST_PIVOT,
+        12,
+      )
     }
+    expect(contrastScaleFromLuminance(-0.1, Math.SQRT2, 0.18)).toBe(0)
   })
 
-  it('writes regional tone into a caller-owned RGB tuple', () => {
-    const tone = resolveToneParams({ userHighlights: -50, userShadows: 50 })
-    const out: [number, number, number] = [Number.NaN, Number.NaN, Number.NaN]
-
-    expect(applyUserRegionalToneRgbInto([0.32, 0.16, 0.08], tone, out)).toBe(
-      out,
-    )
-    expectRgbClose(out, applyUserRegionalToneRgb([0.32, 0.16, 0.08], tone))
-  })
-
-  it('leaves black and 18 percent luminance stable under contrast', () => {
-    const tone = resolveToneParams({ userExposureEv: 0, userContrast: 100 })
-    expectRgbClose(applyUserContrastRgb([0, 0, 0], tone), [0, 0, 0])
-    expectRgbClose(
-      applyUserContrastRgb([0.18, 0.18, 0.18], tone),
-      [0.18, 0.18, 0.18],
-    )
+  it('spreads luminance away from the pivot for positive contrast', () => {
+    expect(contrasted(0.09, 60)).toBeLessThan(0.09)
+    expect(contrasted(0.72, 60)).toBeGreaterThan(0.72)
+    expect(contrasted(0.09, -60)).toBeGreaterThan(0.09)
+    expect(contrasted(0.72, -60)).toBeLessThan(0.72)
   })
 
   it.each([1e-8, 1e-6, 1e-4])(
     'keeps near-black positive luminance continuous for Y=%s',
     (y) => {
-      const lift = resolveToneParams({ userExposureEv: 0, userContrast: -100 })
-      const crush = resolveToneParams({ userExposureEv: 0, userContrast: 100 })
-      const lifted = applyUserContrastRgb([y, y, y], lift)
-      const crushed = applyUserContrastRgb([y, y, y], crush)
-
-      expect(lifted[0]).toBeGreaterThan(y)
-      expect(crushed[0]).toBeLessThan(y)
-      expect(lifted[0]).toBeGreaterThan(EPS)
-      expect(crushed[0]).toBeGreaterThanOrEqual(0)
+      expect(contrasted(y, -100)).toBeGreaterThan(y)
+      expect(contrasted(y, 100)).toBeLessThan(y)
+      expect(contrasted(y, 100)).toBeGreaterThanOrEqual(0)
     },
   )
 
-  it('preserves positive RGB ratios before downstream gamut and output clipping', () => {
-    const tone = resolveToneParams({ userExposureEv: 0, userContrast: 60 })
-    const actual = applyUserContrastRgb([0.32, 0.16, 0.08], tone)
-
-    expect(actual[0] / actual[1]).toBeCloseTo(2, 12)
-    expect(actual[1] / actual[2]).toBeCloseTo(2, 12)
+  it('keeps neutral regional tone as an exact unit scale at any luminance', () => {
+    for (const y of [-0.25, 0, 0.18, 2]) {
+      expect(regionalToneScaleFromLuminance(y, NO_REGIONAL_TONE)).toBe(1)
+    }
+    expect(
+      regionalToneScaleFromLuminance(-0.1, {
+        ...NO_REGIONAL_TONE,
+        shadows: 50,
+      }),
+    ).toBe(0)
   })
 
-  it('applies user tone as exposure then contrast', () => {
-    const tone = resolveToneParams({ userExposureEv: 1, userContrast: 60 })
-    const rgb = [0.12, 0.24, 0.48] as const
-    const exposed = applyUserExposureRgb(rgb, tone.userExposureMultiplier)
+  it('applies highlights and whites primarily to bright scene-linear ranges', () => {
+    const input = { highlights: 100, whites: 100 }
 
-    expectRgbClose(
-      applyUserToneRgb(rgb, tone),
-      applyUserRegionalToneRgb(applyUserContrastRgb(exposed, tone), tone),
+    expect(regional(0.02, input)).toBeCloseTo(0.02, 6)
+    expect(regional(1.2, input) - 1.2).toBeGreaterThan(
+      regional(0.18, input) - 0.18,
     )
+    expect(regional(0.18, input)).toBeGreaterThanOrEqual(0.18)
   })
 
-  it('writes full user tone into a caller-owned RGB tuple', () => {
-    const tone = resolveToneParams({ userExposureEv: 1, userContrast: 60 })
-    const rgb = [0.12, 0.24, 0.48] as const
-    const out: [number, number, number] = [Number.NaN, Number.NaN, Number.NaN]
+  it('applies shadows and blacks primarily to dark scene-linear ranges', () => {
+    const input = { shadows: 100, blacks: 100 }
 
-    expect(applyUserToneRgbInto(rgb, tone, out)).toBe(out)
-    expectRgbClose(out, applyUserToneRgb(rgb, tone))
+    expect(regional(0, input)).toBe(0)
+    expect(regional(0.01, input) / 0.01).toBeGreaterThan(
+      regional(0.18, input) / 0.18,
+    )
+    expect(regional(1.2, input)).toBeCloseTo(1.2, 6)
   })
 
-  it.each([
-    ['saturated red', [1, 0, 0] as const],
-    ['saturated green', [0, 1, 0] as const],
-    ['saturated blue', [0, 0, 1] as const],
-    ['sky blue', [0.22, 0.48, 0.95] as const],
-    ['skin tone', [0.78, 0.46, 0.32] as const],
-    ['foliage', [0.18, 0.42, 0.12] as const],
-    ['cyan', [0, 1, 1] as const],
-    ['magenta', [1, 0, 1] as const],
-    ['neon', [0.1, 1.2, 0.75] as const],
-  ])('keeps %s finite and ratio-stable', (_label, sample) => {
-    const tone = resolveToneParams({ userExposureEv: 0, userContrast: 50 })
-    const actual = applyUserContrastRgb(sample, tone)
-    expect(actual.every(Number.isFinite)).toBe(true)
-    for (let channel = 0; channel < 3; channel += 1) {
-      if (sample[channel] > 0) {
-        expect(actual[channel]).toBeGreaterThan(0)
+  it('keeps regional tone monotonic on a grayscale ramp for each slider endpoint', () => {
+    const cases = [
+      { highlights: 100 },
+      { highlights: -100 },
+      { shadows: 100 },
+      { shadows: -100 },
+      { whites: 100 },
+      { whites: -100 },
+      { blacks: 100 },
+      { blacks: -100 },
+    ]
+
+    for (const input of cases) {
+      let previous = regional(0, input)
+      for (const y of [
+        1e-6, 3e-6, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 0.1, 0.18,
+        0.3, 0.6, 1, 2, 4, 8,
+      ]) {
+        const next = regional(y, input)
+        expect(next).toBeGreaterThanOrEqual(previous)
+        previous = next
       }
     }
   })

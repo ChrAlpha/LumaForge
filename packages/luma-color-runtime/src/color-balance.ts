@@ -19,9 +19,6 @@ export interface ResolvedColorBalanceParams extends LumaColorBalanceParams {
   luminanceCoefficients: readonly [number, number, number]
 }
 
-export type ColorBalanceRgb = readonly [number, number, number]
-export type MutableColorBalanceRgb = [number, number, number]
-
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
@@ -87,22 +84,4 @@ export function resolveColorBalanceParams(
     operator: 'linear-prophoto-relative-rgb-gain',
     luminanceCoefficients: LINEAR_PROPHOTO_LUMINANCE,
   }
-}
-
-export function applyColorBalanceRgb(
-  rgb: ColorBalanceRgb,
-  gain: readonly [number, number, number],
-): [number, number, number] {
-  return applyColorBalanceRgbInto(rgb, gain, [0, 0, 0])
-}
-
-export function applyColorBalanceRgbInto(
-  rgb: ColorBalanceRgb,
-  gain: readonly [number, number, number],
-  out: MutableColorBalanceRgb,
-): MutableColorBalanceRgb {
-  out[0] = rgb[0] * gain[0]
-  out[1] = rgb[1] * gain[1]
-  out[2] = rgb[2] * gain[2]
-  return out
 }
