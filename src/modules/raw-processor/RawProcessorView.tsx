@@ -13,12 +13,7 @@ import { useInRouterContext, useLocation } from 'react-router'
 
 import { clsxm } from '~/lib/cn'
 
-import {
-  ErrorOverlay,
-  RawToolSurface,
-  UnsupportedState,
-  WorkspaceHeader,
-} from './components'
+import { ErrorOverlay, RawToolSurface, WorkspaceHeader } from './components'
 import type { CpuPreviewNotice } from './components/CpuPreviewBanner'
 import { CpuPreviewBanner } from './components/CpuPreviewBanner'
 import { PreviewHistogramRunner } from './components/PreviewHistogramRunner'
@@ -135,21 +130,6 @@ function RawProcessorViewInner({
     supportLevel,
     dismissError,
   } = workflow
-
-  if (
-    view.capability.ready &&
-    view.capability.supportStatus === 'unsupported'
-  ) {
-    return (
-      <div
-        className={clsxm('raw-lab', className)}
-        data-raw-lab-shell="viewport"
-        data-raw-lab-state="unsupported"
-      >
-        <UnsupportedState reason={view.unsupportedReason} />
-      </div>
-    )
-  }
 
   return (
     <div

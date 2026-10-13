@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { useI18n } from '~/lib/i18n'
 import type {
   PipelineStats,
   RawProcessingPipeline,
@@ -27,7 +26,6 @@ export function useRawProcessorViewController({
   rawRouteLocation,
   workflow,
 }: UseRawProcessorViewControllerInput) {
-  const { t } = useI18n()
   const {
     status,
     hasImage,
@@ -135,10 +133,6 @@ export function useRawProcessorViewController({
     status === 'exporting'
   const capability = useCapabilityGate()
   const isCpuMode = capability.ready && capability.previewMode === 'cpu'
-  const unsupportedReason =
-    capability.ready && capability.supportStatus === 'unsupported'
-      ? t('raw.unsupported.coi')
-      : t('raw.unsupported.gpu')
   const cpuPreviewReason =
     capability.supportStatus === 'degraded'
       ? capability.reason
@@ -166,9 +160,7 @@ export function useRawProcessorViewController({
     confirmSessionReset,
     replacePicker,
     isProcessing,
-    capability,
     isCpuMode,
-    unsupportedReason,
     cpuPreviewReason,
   }
 }

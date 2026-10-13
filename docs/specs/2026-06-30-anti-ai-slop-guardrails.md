@@ -43,7 +43,7 @@ Derived from the openclaw reference study, operationalized for our React + Tailw
 - **Tokens by role and depth, OKLCH, tinted.** Reuse `--color-lf-*` (app) and `--lf-*` (landing). Do not invent ad hoc colors. Every neutral carries a tint.
 - **Prove contrast.** Target WCAG AA. For a new foreground/background pair, note the ratio in a comment. Never encode state with color alone; pair it with an icon and text (`PRODUCT.md` accessibility).
 - **Full state coverage.** Every control ships default, hover, `:focus-visible`, active, disabled. Every async surface ships loading, empty, and error. Error states show the real message and a next action (the export path already does this; match it).
-- **Empty states teach.** Distinguish "nothing yet" (drop a RAW file to begin) from "filter excludes everything." `UnsupportedState` and `MobileEmptyState` are the references.
+- **Empty states teach.** Distinguish "nothing yet" (drop a RAW file to begin) from "filter excludes everything." `MobileEmptyState` is the reference.
 - **Motion conveys state.** 150 to 250 ms, ease-out, no bounce. Respect `prefers-reduced-motion` globally. No decorative or page-load choreography in the tool. Use the presets in `src/lib/spring.ts`.
 - **Copy is specific and externalized.** Route every string through i18n. Name recovery actions. No template filler.
 - **Reuse primitives.** Reach for `src/components/ui` (`Chip`, `Dialog`, `Slider`) and the shared chrome modules before hand-rolling. There is no shared segmented primitive: a segmented control applies the `segmented-chrome.ts` paint instead of inventing its own. Build a new behavioral primitive rarely and deliberately, never a one-off pill or tab that a primitive already covers.

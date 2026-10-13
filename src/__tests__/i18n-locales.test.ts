@@ -70,7 +70,7 @@ describe('i18n locale catalogs', () => {
     expect(zhMessages['raw.export.derivedLabelHint']).toContain('{{label}}')
   })
 
-  it('gives every typed reason and the unsupported state copy in both locales', () => {
+  it('gives every typed reason copy in both locales', () => {
     const keys = [
       ...Object.values(RAW_REASON_COPY),
       ...Object.values(FULL_RES_EXPORT_REASON_COPY),
@@ -79,10 +79,6 @@ describe('i18n locale catalogs', () => {
       ...Object.values(EXPORT_COPY_REASON_COPY),
       ...Object.values(EXPORT_SHARE_REASON_COPY),
       'raw.export.copy',
-      'raw.unsupported.title',
-      'raw.unsupported.copy',
-      'raw.unsupported.coi',
-      'raw.unsupported.gpu',
     ] as const
     for (const key of keys) {
       expect(enMessages[key], key).toBeTruthy()

@@ -1,7 +1,6 @@
 import type { CpuPreviewReason, PreviewBackendFacts } from './gpu-backend'
 
 export type RawPreviewCapability =
-  | { supportStatus: 'unsupported'; previewMode: null; reason: 'coi-missing' }
   | { supportStatus: 'degraded'; previewMode: 'cpu'; reason: CpuPreviewReason }
   | { supportStatus: 'supported'; previewMode: 'gpu'; reason: null }
 

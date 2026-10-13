@@ -1,10 +1,8 @@
 /**
  * Tests for the CPU preview safety-net degraded path in RawProcessorView.
  *
- * Task 8 — verify that:
- *   - degraded/cpu renders the normal workspace shell (NOT full-page UnsupportedState)
- *   - degraded/cpu renders CpuPreviewBanner; GPU PreviewCanvas is absent
- *   - unsupported/coi-missing still renders the full-page UnsupportedState block
+ *   - degraded/cpu renders the normal workspace shell and CpuPreviewBanner;
+ *     GPU PreviewCanvas is absent
  *   - a failed primary GPU LUT upload moves the real capability gate to the
  *     CPU preview without dropping the selected look
  */
@@ -147,7 +145,7 @@ beforeEach(() => {
 })
 
 describe('rawProcessorView CPU preview degraded path', () => {
-  it('renders workspace shell (not UnsupportedState) when degraded/cpu with gpu-preview-failed', () => {
+  it('renders the workspace shell when degraded/cpu with gpu-preview-failed', () => {
     mockedUseCapabilityGate.mockReturnValue({
       ready: true,
       supportStatus: 'degraded',
@@ -157,20 +155,10 @@ describe('rawProcessorView CPU preview degraded path', () => {
 
     const { container } = render(<RawProcessorView />)
 
-    // Must NOT render the full-page unsupported block
-    expect(
-      screen.queryByText('This browser cannot run the RAW Lab'),
-    ).not.toBeInTheDocument()
-
     // Must render the normal workspace viewport shell
-    const viewportShell = container.querySelector(
-      '[data-raw-lab-shell="viewport"]',
-    )
-    expect(viewportShell).not.toBeNull()
-    expect(viewportShell).not.toHaveAttribute(
-      'data-raw-lab-state',
-      'unsupported',
-    )
+    expect(
+      container.querySelector('[data-raw-lab-shell="viewport"]'),
+    ).toHaveAttribute('data-raw-lab-state', 'empty')
 
     // CPU degrade banner must be present
     const banner = container.querySelector('[data-cpu-preview-banner]')
@@ -191,7 +179,7 @@ describe('rawProcessorView CPU preview degraded path', () => {
     ).toBeNull()
   })
 
-  it('renders workspace shell (not UnsupportedState) when degraded/cpu with webgpu-unavailable', () => {
+  it('shows the CPU preview banner when degraded/cpu with webgpu-unavailable', () => {
     mockedUseCapabilityGate.mockReturnValue({
       ready: true,
       supportStatus: 'degraded',
@@ -201,36 +189,8 @@ describe('rawProcessorView CPU preview degraded path', () => {
 
     const { container } = render(<RawProcessorView />)
 
-    expect(
-      screen.queryByText('This browser cannot run the RAW Lab'),
-    ).not.toBeInTheDocument()
-
     const banner = container.querySelector('[data-cpu-preview-banner]')
     expect(banner).not.toBeNull()
-  })
-
-  it('renders full-page UnsupportedState when unsupported/coi-missing', () => {
-    mockedUseCapabilityGate.mockReturnValue({
-      ready: true,
-      supportStatus: 'unsupported',
-      previewMode: null,
-      reason: 'coi-missing',
-    })
-
-    const { container } = render(<RawProcessorView />)
-
-    // Full-page unsupported block must be present
-    expect(
-      screen.getByText('This browser cannot run the RAW Lab'),
-    ).toBeInTheDocument()
-
-    const viewportShell = container.querySelector(
-      '[data-raw-lab-shell="viewport"]',
-    )
-    expect(viewportShell).toHaveAttribute('data-raw-lab-state', 'unsupported')
-
-    // The reason shown must NOT be the raw literal 'coi-missing'
-    expect(screen.queryByText('coi-missing')).not.toBeInTheDocument()
   })
 })
 

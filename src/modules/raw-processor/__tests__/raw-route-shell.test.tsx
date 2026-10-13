@@ -318,34 +318,6 @@ describe('rawProcessorView', () => {
   })
 })
 
-describe('rawProcessorView shell states', () => {
-  it('keeps unsupported isolation state inside the raw route shell contract', () => {
-    mockedUseCapabilityGate.mockReturnValue({
-      ready: true,
-      supportStatus: 'unsupported',
-      previewMode: null,
-      reason: 'coi-missing',
-    })
-
-    const { container } = render(<RawProcessorView />)
-    const viewportShell = container.querySelector(
-      '[data-raw-lab-shell="viewport"]',
-    )
-
-    expect(viewportShell).not.toBeNull()
-    expect(viewportShell).toHaveClass('raw-lab')
-    expect(viewportShell).toHaveAttribute('data-raw-lab-state', 'unsupported')
-    expect(
-      screen.getByText('This browser cannot run the RAW Lab'),
-    ).toBeInTheDocument()
-    // coi-missing maps to the localized COI message (not the raw token)
-    expect(
-      screen.getByText('Cross-origin isolation is required for RAW decode'),
-    ).toBeInTheDocument()
-    expect(screen.queryByText('coi-missing')).not.toBeInTheDocument()
-  })
-})
-
 describe('rawProcessorView online LUT route sources', () => {
   beforeEach(() => {
     hideDefaultOnlineLutSource()
