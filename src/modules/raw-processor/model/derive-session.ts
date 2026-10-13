@@ -60,15 +60,6 @@ export function deriveLutContractExportRefusal(
   return { code: 'lut-input-unconfirmed' }
 }
 
-export function deriveCanExport(session: ImageSession): boolean {
-  return (
-    session.previewBundle.quickDecodePreview.status === 'ready' &&
-    session.exportState.fullResCapability.status === 'supported' &&
-    session.exportState.status !== 'exporting' &&
-    !deriveUnsupportedExportPipelineRefusal(session)
-  )
-}
-
 /**
  * Why the session keeps a full-resolution export from starting. The runtime's
  * verdict decides an unsupported source; its reasons are only the detail.
