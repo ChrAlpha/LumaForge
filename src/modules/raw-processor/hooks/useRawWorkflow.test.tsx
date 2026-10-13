@@ -1224,30 +1224,49 @@ describe('useRawWorkflow embedded preview state', () => {
     await waitFor(() => {
       expect(result.current.exportInterrupted).toBe(true)
     })
+    act(() => {
+      result.current.setToneParams({ userExposureEv: 0.5 })
+    })
     expect(exportSystemMock.runFullResolutionExportJob).not.toHaveBeenCalled()
 
     await act(async () => {
       await result.current.exportImage()
     })
 
+    // Only the source-scoped hint travels: the plan sizes from the current
+    // source and the graph renders the current look.
     expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledTimes(1)
-    expect(exportSystemMock.runFullResolutionExportJob).toHaveBeenCalledWith(
-      expect.objectContaining({
-        quality: 0.92,
-        executionPlan: expect.objectContaining({
-          productCopy: 'interrupted-retry',
-          runtimeMemoryProfile: 'low-memory',
-          request: expect.objectContaining({
-            source: { width: 6048, height: 4024 },
-          }),
-        }),
-      }),
-    )
+    const [retry] = exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
+    expect(retry).toMatchObject({
+      quality: 0.92,
+      executionPlan: {
+        productCopy: 'interrupted-retry',
+        runtimeMemoryProfile: 'low-memory',
+        request: { source: { width: 6048, height: 4024 } },
+      },
+    })
+    expect(
+      retry.graph.steps.find(
+        (step: ExportColorGraphStep) => step.kind === 'user-exposure',
+      ),
+    ).toMatchObject({ ev: 0.5 })
     // The delivered export used the hint up; nothing is left to read again.
     await waitFor(() => {
       expect(result.current.exportInterrupted).toBe(false)
     })
     expect(storedMarkers()).toEqual([])
+
+    // The next explicit export carries no interruption history.
+    await act(async () => {
+      await result.current.restorePreviewAfterExport()
+    })
+    await act(async () => {
+      await result.current.exportImage()
+    })
+    expect(
+      exportSystemMock.runFullResolutionExportJob.mock.calls[1]![0]
+        .executionPlan,
+    ).toMatchObject({ productCopy: 'safe-export' })
   })
 
   describe('local LUT loads against the current session', () => {
