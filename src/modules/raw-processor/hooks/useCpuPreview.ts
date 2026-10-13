@@ -44,7 +44,7 @@ export type CpuPreviewParams = ColorGraphIntent & {
  * Stable memoisation key for a neutral (original) frame.
  * Only the source identity and the intrinsic render-exposure EV matter.
  */
-export function neutralFrameCacheKey(
+function neutralFrameCacheKey(
   sourceId: string,
   renderExposureEv: number,
 ): string {
