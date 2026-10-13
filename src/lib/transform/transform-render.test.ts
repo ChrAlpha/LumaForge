@@ -1,3 +1,4 @@
+import { EXPORT_GEOMETRY_MATTE } from '@lumaforge/render-engine/export'
 import { applyMatrix } from '@lumaforge/render-engine/geometry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,10 +7,7 @@ import {
   composeManualTransform,
   renderTransformedPreview,
 } from '~/lib/transform/transform-render'
-import {
-  NEUTRAL_TRANSFORM,
-  PREVIEW_MATTE,
-} from '~/lib/transform/transform-types'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 import type {
   TransformWorkerRequest,
   TransformWorkerResponse,
@@ -45,7 +43,9 @@ describe('transform preview resampling', () => {
     const input = frame()
     const matrix = rotationMatrix(12, input.width / input.height)
     const uncropped = renderTransformedPreview(input, matrix, false)
-    expect(Array.from(uncropped.frame.data.slice(0, 3))).toEqual(PREVIEW_MATTE)
+    expect(Array.from(uncropped.frame.data.slice(0, 3))).toEqual(
+      EXPORT_GEOMETRY_MATTE,
+    )
     const cropped = renderTransformedPreview(input, matrix, true)
     expect(cropped.frame.width).toBeLessThan(input.width)
     expect(cropped.frame.width / cropped.frame.height).toBeCloseTo(1.25, 1)
@@ -67,7 +67,7 @@ describe('transform preview resampling', () => {
     const rendered = renderTransformedPreview(input, identityMatrix(), false)
     for (let i = 0; i < rendered.frame.data.length; i += 4) {
       expect(Array.from(rendered.frame.data.slice(i, i + 4))).toEqual([
-        ...PREVIEW_MATTE,
+        ...EXPORT_GEOMETRY_MATTE,
         255,
       ])
     }

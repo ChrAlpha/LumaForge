@@ -27,5 +27,3 @@ export interface RenderedPreview {
   displayMatrix: Matrix3
   retainedArea: number
 }
-
-export const PREVIEW_MATTE = [18, 20, 25] as const

@@ -5,7 +5,6 @@ import type {
 } from '@lumaforge/render-engine/export'
 import {
   applyGeometryMatte,
-  EXPORT_GEOMETRY_MATTE,
   INVALID_EXPORT_GEOMETRY,
   planExportGeometry,
   planGeometryTiles,
@@ -21,7 +20,6 @@ import {
   renderTransformedPreview,
 } from '~/lib/transform/transform-render'
 import type { RenderedPreview } from '~/lib/transform/transform-types'
-import { PREVIEW_MATTE } from '~/lib/transform/transform-types'
 import type { TransformGeometryCase } from '~/modules/raw-processor/test-support/transform-geometry-test-cases'
 import {
   FOLDING_TRANSFORM,
@@ -262,10 +260,6 @@ describe('transform geometry corpus', () => {
 })
 
 describe('transform preview and export geometry parity', () => {
-  it('paints the same matte in both paths', () => {
-    expect([...PREVIEW_MATTE]).toEqual([...EXPORT_GEOMETRY_MATTE])
-  })
-
   it('checks both refused and delivered geometry in each crop mode', () => {
     const outcomes = new Set(
       sweep().map(([, frame, manual, constrainCrop]) => {

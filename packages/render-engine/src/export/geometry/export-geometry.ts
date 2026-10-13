@@ -6,10 +6,9 @@ import { applyMatrix, invertMatrix, isMatrix3 } from './matrix'
 export const INVALID_EXPORT_GEOMETRY = 'FULL_RES_EXPORT_INVALID_GEOMETRY'
 
 /**
- * Matte for output pixels with no source behind them, in output sRGB.
- *
- * Same triple the preview paints (`PREVIEW_MATTE`), so an unconstrained crop
- * exports the border the photographer was looking at.
+ * Matte for output pixels with no source behind them, in output sRGB. The
+ * Transform preview paints it too, so an unconstrained crop exports the
+ * border the photographer was looking at.
  */
 export const EXPORT_GEOMETRY_MATTE = [18, 20, 25] as const
 

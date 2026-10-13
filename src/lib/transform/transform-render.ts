@@ -1,3 +1,4 @@
+import { EXPORT_GEOMETRY_MATTE } from '@lumaforge/render-engine/export'
 import type { Matrix3, Point } from '@lumaforge/render-engine/geometry'
 import { applyMatrix, invertMatrix } from '@lumaforge/render-engine/geometry'
 
@@ -10,7 +11,6 @@ import type {
   ManualTransform,
   RenderedPreview,
 } from '~/lib/transform/transform-types'
-import { PREVIEW_MATTE } from '~/lib/transform/transform-types'
 
 const CORNERS: Point[] = [
   { x: 0, y: 0 },
@@ -172,7 +172,7 @@ export function renderTransformedPreview(
         sy < -0.5 ||
         sy > source.height - 0.5
       ) {
-        data.set(PREVIEW_MATTE, dest)
+        data.set(EXPORT_GEOMETRY_MATTE, dest)
         continue
       }
       const boundedX = Math.max(0, Math.min(source.width - 1, sx))
@@ -202,7 +202,7 @@ export function renderTransformedPreview(
           value +=
             weights[sample] *
             (source.data[offsets[sample] + channel] * alpha +
-              PREVIEW_MATTE[channel] * (1 - alpha))
+              EXPORT_GEOMETRY_MATTE[channel] * (1 - alpha))
         }
         data[dest + channel] = value
       }
