@@ -5,8 +5,13 @@ import type { TransformRenderFailure } from '~/lib/transform/transform-client'
 import type { ManualTransform } from '~/lib/transform/transform-types'
 import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 
-import type { TransformIntent, TransformState } from '../../model/session'
+import type {
+  ImageSession,
+  TransformIntent,
+  TransformState,
+} from '../../model/session'
 import { createNeutralTransformIntent } from '../../model/session-factory'
+import { clearExportResultState } from '../export/export-state'
 
 /**
  * Whether the export may reproduce the held geometry as the Transform the
@@ -107,7 +112,16 @@ function sameManual(a: ManualTransform, b: ManualTransform) {
   )
 }
 
-function sameGeometry(a: ExportGeometry, b: ExportGeometry) {
+function sameIntent(a: TransformIntent, b: TransformIntent) {
+  return (
+    a.upright === b.upright &&
+    a.constrainCrop === b.constrainCrop &&
+    sameManual(a.manual, b.manual)
+  )
+}
+
+function sameGeometry(a: ExportGeometry | null, b: ExportGeometry | null) {
+  if (!a || !b) return a === b
   return (
     a.constrainCrop === b.constrainCrop &&
     a.matrix.length === b.matrix.length &&
@@ -329,4 +343,37 @@ export function heldTransformGeometry(
 ): ExportGeometry | null {
   if (isNeutralTransformIntent(state.intent)) return null
   return state.accepted?.geometry ?? null
+}
+
+/**
+ * `session` after a Transform event, and whether the event discards what was
+ * exported for the Transform before it; null when the event changes nothing.
+ * The geometry the export reproduces is only ever the one the state holds.
+ * Moving it, or asking for another Transform, discards any export made or
+ * running for the previous one at once, even while the held geometry waits
+ * for the new answer. An event that asks for the same Transform keeps the
+ * intent object, so an export admitted for that intent stays current.
+ */
+export function transitionSessionTransform(
+  session: ImageSession,
+  event: TransformEvent,
+): { session: ImageSession; invalidated: boolean } | null {
+  const reduced = reduceTransformState(session.transform, event)
+  if (reduced === session.transform) return null
+
+  const asked = !sameIntent(reduced.intent, session.transform.intent)
+  const transform = asked
+    ? reduced
+    : { ...reduced, intent: session.transform.intent }
+  const geometry = heldTransformGeometry(transform)
+  const moved = !sameGeometry(geometry, session.exportGeometry)
+  const invalidated = moved || asked
+  return {
+    invalidated,
+    session: {
+      ...(invalidated ? clearExportResultState(session) : session),
+      transform,
+      ...(moved ? { exportGeometry: geometry } : {}),
+    },
+  }
 }

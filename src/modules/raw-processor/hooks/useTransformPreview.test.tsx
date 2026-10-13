@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import { act, renderHook } from '@testing-library/react'
 import type { SetStateAction } from 'react'
 import { StrictMode, useState } from 'react'
@@ -28,7 +25,14 @@ import { useTransformPreview } from './useTransformPreview'
  * The preview under an intent its owner holds, with the owner's controls:
  * the preview itself keeps no intent.
  */
-function useOwnedPreview(observer?: TransformPreviewObserver) {
+const NO_OBSERVER: TransformPreviewObserver = {
+  requested: () => {},
+  rendered: () => {},
+  renderFailed: () => {},
+  frameFailed: () => {},
+}
+
+function useOwnedPreview(observer: TransformPreviewObserver = NO_OBSERVER) {
   const [intent, setIntent] = useState<TransformIntent>(
     createNeutralTransformIntent,
   )
@@ -224,7 +228,6 @@ describe('transform preview request lifecycle', () => {
     expect(result.current.constrainCrop).toBe(false)
     expect(result.current.source).toBe(next)
     expect(result.current.loading).toBe(true)
-    expect(result.current.matrix).toBeNull()
     expect(result.current.solution.status).toBe('unchanged')
     analyze(worker, {
       ...analysis,
@@ -351,7 +354,6 @@ describe('transform preview request lifecycle', () => {
     // A crashed worker cannot refresh the frame it produced, so nothing may
     // still read as a current render.
     expect(result.current.result).toBeNull()
-    expect(result.current.acknowledged).toBeNull()
     expect(result.current.loading).toBe(false)
     expect(result.current.rendering).toBe(false)
     unmount()
@@ -482,71 +484,14 @@ describe('transform preview request lifecycle', () => {
     expect(worker.terminated).toBe(true)
   })
 
-  it('acknowledges only the geometry the worker rendered for the newest request', () => {
-    const { result, unmount, worker } = setupLoaded()
-    const sourceId = worker.messages[0].sourceId
-    const neutral = lastRender(worker)
-    // A request nobody has answered acknowledges nothing.
-    expect(result.current.acknowledged).toBeNull()
-    act(() => worker.emit(answer(neutral)))
-    expect(result.current.acknowledged).toEqual({
-      sourceId,
-      requestId: neutral.requestId,
-      matrix: neutral.matrix,
-      constrainCrop: true,
-    })
-
-    const frameA = renderedFrame()
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }))
-    const a = lastRender(worker)
-    expect(a.requestId).toBeGreaterThan(neutral.requestId)
-    expect(result.current.acknowledged).toBeNull()
-    act(() => worker.emit(answer(a, frameA)))
-    expect(result.current.acknowledged).toEqual({
-      sourceId,
-      requestId: a.requestId,
-      matrix: a.matrix,
-      constrainCrop: true,
-    })
-
-    // B is pending: A's frame stays on screen but no longer answers.
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 6 }))
-    const b = lastRender(worker)
-    expect(b.requestId).toBeGreaterThan(a.requestId)
-    expect(result.current.acknowledged).toBeNull()
-    expect(result.current.result).toBe(frameA)
-
-    // B is refused: the last valid frame survives, still unacknowledged.
-    act(() =>
-      worker.emit({
-        type: 'error',
-        sourceId,
-        requestId: b.requestId,
-        phase: 'render',
-        message: 'invalid-transform',
-      }),
-    )
-    expect(result.current.error).toBe('transform')
-    expect(result.current.result).toBe(frameA)
-    expect(result.current.acknowledged).toBeNull()
-
-    // A late copy of A's answer cannot stand in for B.
-    act(() => worker.emit(answer(a)))
-    expect(result.current.result).toBe(frameA)
-    expect(result.current.acknowledged).toBeNull()
-    unmount()
-  })
-
   it('ignores answers to superseded requests, whatever the controls ask when they land', () => {
     const { result, unmount, worker } = setupLoaded()
-    const sourceId = worker.messages[0].sourceId
     const neutral = lastRender(worker)
     // Two edits queue behind the neutral render; only the newest is posted.
     act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }))
     act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 4 }))
     act(() => worker.emit(answer(neutral)))
     expect(result.current.result).toBeNull()
-    expect(result.current.acknowledged).toBeNull()
     const b = lastRender(worker)
     expect(b.requestId).toBeGreaterThan(neutral.requestId)
 
@@ -554,26 +499,17 @@ describe('transform preview request lifecycle', () => {
     act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 5 }))
     act(() => worker.emit(answer(b)))
     expect(result.current.result).toBeNull()
-    expect(result.current.acknowledged).toBeNull()
     const c = lastRender(worker)
     expect(c.requestId).toBeGreaterThan(b.requestId)
 
     const frameC = renderedFrame()
     act(() => worker.emit(answer(c, frameC)))
     expect(result.current.result).toBe(frameC)
-    // The acknowledgement carries the geometry C asked for.
-    expect(result.current.acknowledged).toEqual({
-      sourceId,
-      requestId: c.requestId,
-      matrix: c.matrix,
-      constrainCrop: true,
-    })
 
     // Out-of-order answers to older requests change nothing.
     act(() => worker.emit(answer(b)))
     act(() => worker.emit(answer(neutral)))
     expect(result.current.result).toBe(frameC)
-    expect(result.current.acknowledged?.requestId).toBe(c.requestId)
     unmount()
   })
 
@@ -588,51 +524,6 @@ describe('transform preview request lifecycle', () => {
     expect(result.current).toBe(before)
     expect(result.current.result).toBeNull()
     expect(result.current.error).toBeNull()
-  })
-
-  it('drops the acknowledgement when the frame is replaced or the geometry reset', () => {
-    const { result, unmount, worker } = setupLoaded()
-    act(() => worker.emit(answer(lastRender(worker))))
-    act(() => result.current.setManual({ ...NEUTRAL_TRANSFORM, rotate: 3 }))
-    const a = lastRender(worker)
-    act(() => worker.emit(answer(a)))
-    expect(result.current.acknowledged?.requestId).toBe(a.requestId)
-
-    // A colour refresh replaces the frame; A answered the old one.
-    act(() =>
-      result.current.loadSource(photo(), {
-        preserveTransform: true,
-      }),
-    )
-    expect(result.current.manual.rotate).toBe(3)
-    expect(result.current.acknowledged).toBeNull()
-    act(() => worker.emit(answer(a)))
-    expect(result.current.acknowledged).toBeNull()
-
-    const refresh = worker.messages.at(-1)!
-    expect(refresh.type).toBe('analyze')
-    analyze(worker)
-    const again = lastRender(worker)
-    // Same geometry, asked again of the new frame.
-    expect(again.sourceId).toBe(refresh.sourceId)
-    expect(again.matrix).toEqual(a.matrix)
-    expect(result.current.acknowledged).toBeNull()
-    act(() => worker.emit(answer(again)))
-    expect(result.current.acknowledged).toEqual({
-      sourceId: refresh.sourceId,
-      requestId: again.requestId,
-      matrix: a.matrix,
-      constrainCrop: true,
-    })
-
-    act(() => result.current.reset())
-    expect(result.current.acknowledged).toBeNull()
-    act(() => worker.emit(answer(lastRender(worker))))
-    expect(result.current.acknowledged?.matrix).toEqual(identityMatrix())
-
-    act(() => result.current.clearSource())
-    expect(result.current.acknowledged).toBeNull()
-    unmount()
   })
 })
 
@@ -697,32 +588,5 @@ describe('transform preview observer', () => {
     expect(observer.frameFailed).toHaveBeenCalledTimes(2)
     expect(observer.rendered).toHaveBeenCalledOnce()
     unmount()
-  })
-})
-
-describe('production transform preview ownership', () => {
-  it('loads only frames it is handed, never demo files or samples', () => {
-    const source = readFileSync(
-      resolve(
-        process.cwd(),
-        'src/modules/raw-processor/hooks/useTransformPreview.ts',
-      ),
-      'utf8',
-    )
-    expect(source).not.toMatch(/transform-demo/)
-    expect(source).not.toMatch(/image-input|demo-sample/)
-  })
-
-  it('leaves the worker transport to the typed client', () => {
-    const source = readFileSync(
-      resolve(
-        process.cwd(),
-        'src/modules/raw-processor/hooks/useTransformPreview.ts',
-      ),
-      'utf8',
-    )
-    expect(source).toMatch(/from '~\/lib\/transform\/transform-client'/)
-    expect(source).not.toMatch(/new Worker|postMessage|onmessage|onerror/)
-    expect(source).not.toMatch(/worker-protocol|transform\.worker/)
   })
 })

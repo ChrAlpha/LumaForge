@@ -20,18 +20,18 @@ import type { TransformIntent } from '../model/session'
  */
 export interface TransformPreviewObserver {
   /** A render was asked of the loaded frame, answerable or not. */
-  requested?: (request: TransformRenderRequest) => void
+  requested: (request: TransformRenderRequest) => void
   /** `frame` is the size of the frame the request was rendered on. */
-  rendered?: (
+  rendered: (
     request: TransformRenderRequest,
     frame: { width: number; height: number },
   ) => void
-  renderFailed?: (
+  renderFailed: (
     request: TransformRenderRequest,
     failure: TransformRenderFailure,
   ) => void
   /** The loaded frame could not be handed over, analysed or kept. */
-  frameFailed?: () => void
+  frameFailed: () => void
 }
 
 /**
@@ -41,7 +41,7 @@ export interface TransformPreviewObserver {
  */
 export function useTransformPreview(
   intent: TransformIntent,
-  observer?: TransformPreviewObserver,
+  observer: TransformPreviewObserver,
 ) {
   const [source, setSource] = useState<PreviewSource | null>(null)
   const [analysis, setAnalysis] = useState<UprightAnalysis | null>(null)
@@ -63,18 +63,11 @@ export function useTransformPreview(
   const [loading, setLoading] = useState(false)
   const [rendering, setRendering] = useState(false)
   const [error, setError] = useState<TransformRenderFailure | null>(null)
-  const [analysisMs, setAnalysisMs] = useState(0)
-  // The newest render asked of the current frame, and the request whose
-  // answer is on screen. Each keeps the geometry it was posted with.
-  const [requested, setRequested] = useState<TransformRenderRequest | null>(
-    null,
-  )
-  const [rendered, setRendered] = useState<TransformRenderRequest | null>(null)
   // The client publishes only replies to the newest frame and render, so
   // these handlers never see a superseded answer.
   const [client] = useState(() =>
     createTransformClient({
-      analyzed(next, elapsedMs) {
+      analyzed(next) {
         setError(null)
         setAnalysis(next)
         setSolutions((previous) =>
@@ -82,24 +75,20 @@ export function useTransformPreview(
             ? previous
             : next.solutions,
         )
-        setAnalysisMs(elapsedMs)
         setLoading(false)
       },
       analysisFailed() {
         setError('processing')
         setLoading(false)
-        observerRef.current?.frameFailed?.()
+        observerRef.current.frameFailed()
       },
       rendered(request, frame) {
         setResult(frame)
-        // The frame carries the geometry its request was posted with,
-        // whatever the controls have moved to since.
-        setRendered(request)
         setError(null)
         setRendering(false)
         const loaded = sourceRef.current?.frame
         if (loaded)
-          observerRef.current?.rendered?.(request, {
+          observerRef.current.rendered(request, {
             width: loaded.width,
             height: loaded.height,
           })
@@ -107,7 +96,7 @@ export function useTransformPreview(
       renderFailed(request, failure) {
         setError(failure)
         setRendering(false)
-        observerRef.current?.renderFailed?.(request, failure)
+        observerRef.current.renderFailed(request, failure)
       },
       crashed() {
         setError('processing')
@@ -116,10 +105,9 @@ export function useTransformPreview(
         // must not survive as something the UI can report as current.
         setSolutions(null)
         setResult(null)
-        setRendered(null)
         setLoading(false)
         setRendering(false)
-        observerRef.current?.frameFailed?.()
+        observerRef.current.frameFailed()
       },
     }),
   )
@@ -138,14 +126,12 @@ export function useTransformPreview(
       setError(null)
       setAnalysis(null)
       setResult(null)
-      setRequested(null)
-      setRendered(null)
       setSource(next)
       if (!preserveTransform) setSolutions(null)
       if (!client.load(next.frame)) {
         setError('processing')
         setLoading(false)
-        observerRef.current?.frameFailed?.()
+        observerRef.current.frameFailed()
       }
     },
     [client],
@@ -158,8 +144,6 @@ export function useTransformPreview(
     setAnalysis(null)
     setSolutions(null)
     setResult(null)
-    setRequested(null)
-    setRendered(null)
     setError(null)
     setLoading(false)
     setRendering(false)
@@ -170,9 +154,8 @@ export function useTransformPreview(
   const { upright: mode, manual, constrainCrop } = intent
 
   /**
-   * The geometry the intent asks for. It is only a request: what reaches the
-   * screen is `acknowledged`, and an export reproduces only an answer the
-   * owner of the intent accepted.
+   * The geometry the intent asks for. It is only a request: an export
+   * reproduces only an answer the owner of the intent accepted.
    */
   const matrix = useMemo(
     () =>
@@ -190,40 +173,13 @@ export function useTransformPreview(
   const requestRender = useCallback(() => {
     if (!source || !analysis || !solutions || !matrix) return
     const { request, posted } = client.render({ matrix, constrainCrop })
-    setRequested(request)
     if (posted) setRendering(true)
-    observerRef.current?.requested?.(request)
+    observerRef.current.requested(request)
   }, [analysis, client, constrainCrop, matrix, solutions, source])
 
   useEffect(() => {
     requestRender()
   }, [requestRender])
-
-  /**
-   * The geometry of the frame on screen, while that frame answers the newest
-   * request against the current source and the controls still ask for it.
-   * Null while that request is pending, after it was refused, and before any
-   * answer: a refused edit keeps the last valid frame on screen, but that
-   * frame no longer answers what the controls ask.
-   */
-  const acknowledged = useMemo(
-    () =>
-      rendered &&
-      requested &&
-      matrix &&
-      rendered.sourceId === requested.sourceId &&
-      rendered.requestId === requested.requestId &&
-      rendered.constrainCrop === constrainCrop &&
-      rendered.matrix.every((value, index) => value === matrix[index])
-        ? {
-            sourceId: rendered.sourceId,
-            requestId: rendered.requestId,
-            matrix: rendered.matrix,
-            constrainCrop: rendered.constrainCrop,
-          }
-        : null,
-    [constrainCrop, matrix, rendered, requested],
-  )
 
   /** Compose the Upright the intent names from the newest analysis. */
   const solveUpright = useCallback(() => {
@@ -267,27 +223,21 @@ export function useTransformPreview(
       loading,
       rendering,
       error,
-      analysisMs,
       loadSource,
       clearSource,
       solveUpright,
       retireFailure,
       requestRender,
-      matrix,
-      acknowledged,
       ready,
       solution,
     }),
     [
-      acknowledged,
       analysis,
-      analysisMs,
       clearSource,
       clientEpoch,
       error,
       loadSource,
       loading,
-      matrix,
       ready,
       rendering,
       requestRender,

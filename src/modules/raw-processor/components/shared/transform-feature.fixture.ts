@@ -27,15 +27,11 @@ export function transformFeatureFixture(
       loading: false,
       rendering: false,
       error: null,
-      analysisMs: 0,
       loadSource: vi.fn(),
       clearSource: vi.fn(),
       solveUpright: vi.fn(),
       retireFailure: vi.fn(),
       requestRender: vi.fn(),
-      matrix: null,
-      // No render has been answered yet.
-      acknowledged: null,
       ready: false,
       solution: {
         matrix: identityMatrix(),

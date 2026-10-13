@@ -96,58 +96,53 @@ export function useRawTransformFeature(
   // tells that analysis apart from the one it replaces.
   const analysing = useRef<PreviewSource | null>(null)
   const generation = useRef(0)
-  const observer = useMemo<TransformPreviewObserver>(
-    () => ({
-      requested(request) {
-        const frame = loadedFrame.current
-        if (!frame) return
-        dispatch({
-          type: 'request',
+  const observer = useMemo<TransformPreviewObserver>(() => {
+    // Every report names the frame the preview holds; one that arrives
+    // without a frame has nothing to answer.
+    const report = (
+      event: (frame: {
+        sourceId: string
+        captureKey: string
+        clientEpoch: number
+      }) => TransformEvent,
+    ) => {
+      const frame = loadedFrame.current
+      if (!frame) return
+      dispatch(
+        event({
           sourceId: frame.sourceId,
           captureKey: frame.key,
           clientEpoch: frame.clientEpoch,
+        }),
+      )
+    }
+    return {
+      requested: (request) =>
+        report((frame) => ({
+          type: 'request',
+          ...frame,
           requestId: request.requestId,
           geometry: geometryOf(request),
-        })
-      },
-      rendered(request, size) {
-        const frame = loadedFrame.current
-        if (!frame) return
-        dispatch({
+        })),
+      rendered: (request, size) =>
+        report((frame) => ({
           type: 'rendered',
-          sourceId: frame.sourceId,
-          captureKey: frame.key,
-          clientEpoch: frame.clientEpoch,
+          ...frame,
           requestId: request.requestId,
           geometry: geometryOf(request),
           frame: size,
-        })
-      },
-      renderFailed(request, failure) {
-        const frame = loadedFrame.current
-        if (!frame) return
-        dispatch({
+        })),
+      renderFailed: (request, failure) =>
+        report((frame) => ({
           type: 'render-failed',
-          sourceId: frame.sourceId,
-          captureKey: frame.key,
-          clientEpoch: frame.clientEpoch,
+          ...frame,
           requestId: request.requestId,
           failure,
-        })
-      },
-      frameFailed() {
-        const frame = loadedFrame.current
-        if (!frame) return
-        dispatch({
-          type: 'capture-failed',
-          sourceId: frame.sourceId,
-          captureKey: frame.key,
-          clientEpoch: frame.clientEpoch,
-        })
-      },
-    }),
-    [dispatch],
-  )
+        })),
+      frameFailed: () =>
+        report((frame) => ({ type: 'capture-failed', ...frame })),
+    }
+  }, [dispatch])
   // The client lifetime names every capture and request of this preview; the
   // tool surfaces read only what the preview shows.
   const transformPreview = useTransformPreview(intent, observer)

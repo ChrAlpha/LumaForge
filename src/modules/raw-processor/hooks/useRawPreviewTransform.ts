@@ -1,13 +1,8 @@
-import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import { useCallback } from 'react'
 
-import type { ImageSession, TransformIntent } from '../model/session'
-import { clearExportResultState } from '../services/export/export-state'
+import type { ImageSession } from '../model/session'
 import type { TransformEvent } from '../services/transform/transform-state'
-import {
-  heldTransformGeometry,
-  reduceTransformState,
-} from '../services/transform/transform-state'
+import { transitionSessionTransform } from '../services/transform/transform-state'
 import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
 type UseRawPreviewTransformInput = {
@@ -24,64 +19,9 @@ type UseRawPreviewTransformInput = {
   invalidateExportGraph: () => void
 }
 
-function sameGeometry(a: ExportGeometry | null, b: ExportGeometry | null) {
-  if (!a || !b) return a === b
-  return (
-    a.constrainCrop === b.constrainCrop &&
-    a.matrix.length === b.matrix.length &&
-    a.matrix.every((value, index) => value === b.matrix[index])
-  )
-}
-
-function sameIntent(a: TransformIntent, b: TransformIntent) {
-  return (
-    a.upright === b.upright &&
-    a.constrainCrop === b.constrainCrop &&
-    (Object.keys(a.manual) as Array<keyof TransformIntent['manual']>).every(
-      (key) => a.manual[key] === b.manual[key],
-    )
-  )
-}
-
 /**
- * `session` after a Transform event, and whether the event discards what was
- * exported for the Transform before it. Null when the event changes nothing.
- */
-function transitionTransform(
-  session: ImageSession,
-  event: TransformEvent,
-): { session: ImageSession; invalidated: boolean } | null {
-  const reduced = reduceTransformState(session.transform, event)
-  if (reduced === session.transform) return null
-
-  const asked = !sameIntent(reduced.intent, session.transform.intent)
-  // An event that asks for the same Transform keeps the intent object, so an
-  // export admitted for that intent stays current; only a real edit or reset
-  // makes a new one.
-  const transform = asked
-    ? reduced
-    : { ...reduced, intent: session.transform.intent }
-  const geometry = heldTransformGeometry(transform)
-  const moved = !sameGeometry(geometry, session.exportGeometry)
-  const invalidated = moved || asked
-  return {
-    invalidated,
-    session: {
-      ...(invalidated ? clearExportResultState(session) : session),
-      transform,
-      ...(moved ? { exportGeometry: geometry } : {}),
-    },
-  }
-}
-
-/**
- * The session's Transform: its intent and accepted answers, and the geometry
- * the export reproduces, which is only ever the geometry that state holds.
- * Moving that geometry, or asking for another Transform, discards any export
- * made or running for the previous one at once, even while the held geometry
- * waits for the new answer. Events that ask for nothing new and leave the
- * geometry where it is, such as a request or a new frame answering the same
- * geometry, keep any delivered export.
+ * The session's Transform: its intent and accepted answers, and a dispatch
+ * that applies one event to the session the store holds when it lands.
  */
 export function useRawPreviewTransform({
   session,
@@ -99,12 +39,12 @@ export function useRawPreviewTransform({
     (event: TransformEvent) => {
       const live = getSession()
       if (!live || live.id !== event.sourceId) return
-      const planned = transitionTransform(live, event)
+      const planned = transitionSessionTransform(live, event)
       if (!planned) return
       if (planned.invalidated) invalidateExportGraph()
       setSession((current) =>
         current?.id === event.sourceId
-          ? (transitionTransform(current, event)?.session ?? current)
+          ? (transitionSessionTransform(current, event)?.session ?? current)
           : current,
       )
     },
