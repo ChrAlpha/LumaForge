@@ -65,7 +65,6 @@ import {
 } from '../transform/transform-state'
 import type { BuildExportManifestInput } from './attach-export-manifest'
 import { ExportManifestUnavailableError } from './attach-export-manifest'
-import { createPreExportSnapshot } from './export-evacuation'
 import type { ExportSourceTuple } from './export-interruption'
 import {
   createExportInterruptionMarkers,
@@ -107,14 +106,6 @@ vi.mock('./export-readiness', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./export-readiness')>()),
   planFullResExport: mocks.planFullResExport,
 }))
-
-vi.mock('./export-evacuation', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./export-evacuation')>()
-  return {
-    ...actual,
-    createPreExportSnapshot: vi.fn(actual.createPreExportSnapshot),
-  }
-})
 
 vi.mock('./attach-export-manifest', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./attach-export-manifest')>()),
@@ -1028,7 +1019,6 @@ describe('orchestrateFullResExport success', () => {
       'state:session:exporting',
       'service:cancelPreviewRuntime',
       'service:revokeCurrentEmbeddedPreviewUrl',
-      'service:cancelPreviewRuntime',
       'state:session:exporting',
       'service:dispose:preview-gpu-pipeline',
       'debug:resource-evacuated',
@@ -2068,7 +2058,6 @@ describe('orchestrateFullResExport failures', () => {
         'state:session:exporting',
         'service:cancelPreviewRuntime',
         'service:revokeCurrentEmbeddedPreviewUrl',
-        'service:cancelPreviewRuntime',
         'state:session:exporting',
         ...evacuatedTrace,
         'state:session:failed',
@@ -3241,7 +3230,6 @@ describe('orchestrateFullResExport color intent', () => {
   })
 
   it('exports the color written after the caller rendered, and only that request', async () => {
-    vi.mocked(createPreExportSnapshot).mockClear()
     const h = createHarness({
       params: { ...EDITED_PARAMS, intensity: 0.7, userContrast: 0 },
       lut: CONFIRMED_LUT,
@@ -3277,8 +3265,6 @@ describe('orchestrateFullResExport color intent', () => {
       }),
     )
     expect(lutOutputStep(input)).toMatchObject({ intensity: 0.37 })
-    const [snapshotInput] = vi.mocked(createPreExportSnapshot).mock.calls[0]
-    expect(snapshotInput.intent).toEqual(pickColorGraphIntent(EDITED_PARAMS))
     const published = h.state.session?.exportState.result
     expect(published?.identity).toEqual(expected)
     expect(h.manifestInputs[0].graph).toBe(input.graph)
@@ -3286,7 +3272,6 @@ describe('orchestrateFullResExport color intent', () => {
   })
 
   it('reads the look strength and the color from the same instant', async () => {
-    vi.mocked(createPreExportSnapshot).mockClear()
     const renderedStyle = { ...TEAL_STYLE!, currentIntensity: 0.7 }
     const h = createHarness({
       params: { ...EDITED_PARAMS, intensity: 0.7 },
@@ -3305,11 +3290,6 @@ describe('orchestrateFullResExport color intent', () => {
     job.resolve()
     await run
 
-    const [snapshotInput] = vi.mocked(createPreExportSnapshot).mock.calls[0]
-    expect(snapshotInput.style).toBe(liveSession.activeStyle)
-    expect(snapshotInput.intent.intensity).toBe(
-      liveSession.activeStyle?.currentIntensity,
-    )
     expect(lutOutputStep(input)).toMatchObject({ intensity: 0.37 })
     expect(h.manifestInputs[0].style).toBe(liveSession.activeStyle)
     expect(h.state.session?.exportState.result?.identity).toEqual(
@@ -3432,7 +3412,6 @@ describe('orchestrateFullResExport color intent', () => {
     }
 
     it('exports the LUT applied over another one', async () => {
-      vi.mocked(createPreExportSnapshot).mockClear()
       const input = await exportAfterSameTickLutChange({
         rendered: { lut: CONFIRMED_LUT, style: TEAL_STYLE },
         renderedParams: EDITED_PARAMS,
@@ -3446,9 +3425,6 @@ describe('orchestrateFullResExport color intent', () => {
           rawRenderExposure: RAW_RENDER_EXPOSURE,
         }),
       )
-      const [snapshotInput] = vi.mocked(createPreExportSnapshot).mock.calls[0]
-      expect(snapshotInput.graph).toBe(input.graph)
-      expect(snapshotInput.lutTitle).toBe('Slate')
     })
   })
 })

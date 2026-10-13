@@ -1,10 +1,4 @@
 import type {
-  ColorGraphIntent,
-  ExportColorGraphDescriptor,
-} from '@lumaforge/luma-color-runtime'
-import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
-
-import type {
   ExportResourceCleanupDebugPayload,
   ExportResourceCleanupReason,
   ExportResourceEvacuatedDebugPayload,
@@ -17,41 +11,8 @@ import type {
   ResourceRegistrySnapshot,
 } from '~/lib/export/resource-registry'
 
-export type PreExportSnapshot = {
-  file: File
-  metadata: unknown
-  graph?: ExportColorGraphDescriptor
-  graphFingerprint: string
-  lutTitle?: string
-  quickPreviewReady: boolean
-  /**
-   * The full color graph intent the export renders: look, its continuous
-   * strength as given and every user color field. View state is not part of
-   * it.
-   */
-  intent: ColorGraphIntent
-  style: unknown
-}
-
-export function createPreExportSnapshot(
-  input: PreExportSnapshot,
-): PreExportSnapshot {
-  return { ...input, intent: pickColorGraphIntent(input.intent) }
-}
-
-export class ExportEvacuationError extends Error {
-  readonly code = 'EXPORT_RESOURCE_EVICTION_INCOMPLETE'
-
-  constructor(
-    message = 'Export resources could not be evacuated.',
-    cause?: unknown,
-  ) {
-    super(message, { cause })
-    this.name = 'ExportEvacuationError'
-  }
-}
-
-const PRE_EXPORT_DISPOSABLE_OWNERS: LargeResourceOwner[] = [
+/** Every owner a full-resolution export releases before its worker starts. */
+const EXPORT_EVACUATION_OWNERS: readonly LargeResourceOwner[] = [
   'preview',
   'bounded-hq',
   'gpu',
@@ -59,58 +20,27 @@ const PRE_EXPORT_DISPOSABLE_OWNERS: LargeResourceOwner[] = [
   'lut-fetch',
 ]
 
-export function getPreExportEvacuationOwners(
-  _profile: ExportExecutionProfileName,
-): LargeResourceOwner[] {
-  return [...PRE_EXPORT_DISPOSABLE_OWNERS]
-}
-
-export type ExportEvacuationResult = {
-  snapshot: PreExportSnapshot
-  registryCheck: ResourceRegistryCheck
-  requiredOwners: LargeResourceOwner[]
-  disposedOwners: LargeResourceOwner[]
-  remainingLive: ResourceRegistrySnapshot['live']
-  estimatedBytesByOwner: ResourceRegistrySnapshot['estimatedBytesByOwner']
-  totalEstimatedBytes: number
-  evacuatedAt: string
-}
-
-function toDebugRegistryCheck(
+/** What the registry still holds, without its internals or dispose hooks. */
+function reportRegistry(
   check: ResourceRegistryCheck,
-): ResourceRegistryCheck {
-  if (check.ok) return { ok: true }
-
+  snapshot: ResourceRegistrySnapshot,
+): Pick<
+  ExportResourceEvacuatedDebugPayload,
+  | 'registryCheck'
+  | 'remainingLive'
+  | 'estimatedBytesByOwner'
+  | 'totalEstimatedBytes'
+> {
   return {
-    ok: false,
-    live: check.live.map(({ id, owner, kind }) => ({
+    registryCheck: check,
+    remainingLive: snapshot.live.map(({ id, owner, kind, estimatedBytes }) => ({
       id,
       owner,
       kind,
+      estimatedBytes,
     })),
-  }
-}
-
-export function toResourceEvacuatedDebugPayload(input: {
-  profile: ExportExecutionProfileName
-  evacuation: ExportEvacuationResult
-}): ExportResourceEvacuatedDebugPayload {
-  return {
-    profile: input.profile,
-    requiredOwners: input.evacuation.requiredOwners,
-    disposedOwners: input.evacuation.disposedOwners,
-    registryCheck: toDebugRegistryCheck(input.evacuation.registryCheck),
-    remainingLive: input.evacuation.remainingLive.map(
-      ({ id, owner, kind, estimatedBytes }) => ({
-        id,
-        owner,
-        kind,
-        estimatedBytes,
-      }),
-    ),
-    estimatedBytesByOwner: input.evacuation.estimatedBytesByOwner,
-    totalEstimatedBytes: input.evacuation.totalEstimatedBytes,
-    evacuatedAt: input.evacuation.evacuatedAt,
+    estimatedBytesByOwner: snapshot.estimatedBytesByOwner,
+    totalEstimatedBytes: snapshot.totalEstimatedBytes,
   }
 }
 
@@ -124,69 +54,47 @@ export function toResourceCleanupDebugPayload(input: {
   return {
     reason: input.reason,
     disposedOwners: input.disposedOwners,
-    registryCheck: toDebugRegistryCheck(input.registryCheck),
-    remainingLive: input.snapshot.live.map(
-      ({ id, owner, kind, estimatedBytes }) => ({
-        id,
-        owner,
-        kind,
-        estimatedBytes,
-      }),
-    ),
-    estimatedBytesByOwner: input.snapshot.estimatedBytesByOwner,
-    totalEstimatedBytes: input.snapshot.totalEstimatedBytes,
+    ...reportRegistry(input.registryCheck, input.snapshot),
     cleanedAt: input.cleanedAt ?? new Date().toISOString(),
   }
 }
 
-function hasOwner(owners: LargeResourceOwner[], owner: LargeResourceOwner) {
-  return owners.includes(owner)
-}
-
+/**
+ * Stops the preview's work, drops the previous result, and disposes every
+ * evacuated owner, then reports what is still live. The export starts its
+ * worker only when that report's registry check passes; a dispose that
+ * throws fails the export with `EXPORT_RESOURCE_EVICTION_INCOMPLETE`.
+ */
 export async function evacuateBeforeExport(input: {
   registry: ResourceRegistry
-  snapshot: PreExportSnapshot
-  owners: LargeResourceOwner[]
-  abortPreview?: () => void
-  abortBoundedHq?: () => void
-  releasePreviousExportResult?: () => void
-  stopLutFetches?: () => void
-}): Promise<ExportEvacuationResult> {
-  const owners = [...input.owners]
-
+  profile: ExportExecutionProfileName
+  stopPreview: () => void
+  releasePreviousExportResult: () => void
+}): Promise<ExportResourceEvacuatedDebugPayload> {
+  const owners = [...EXPORT_EVACUATION_OWNERS]
   try {
-    if (hasOwner(owners, 'preview') || hasOwner(owners, 'gpu')) {
-      input.abortPreview?.()
-    }
-    if (hasOwner(owners, 'bounded-hq')) {
-      input.abortBoundedHq?.()
-    }
-    if (hasOwner(owners, 'export-result')) {
-      input.releasePreviousExportResult?.()
-    }
-    if (hasOwner(owners, 'lut-fetch')) {
-      input.stopLutFetches?.()
-    }
-
+    input.stopPreview()
+    input.releasePreviousExportResult()
     await input.registry.disposeOwners(owners)
   } catch (error) {
-    throw new ExportEvacuationError(
-      'Export resources could not be evacuated before worker start.',
-      error,
+    throw Object.assign(
+      new Error(
+        'Export resources could not be evacuated before worker start.',
+        {
+          cause: error,
+        },
+      ),
+      { code: 'EXPORT_RESOURCE_EVICTION_INCOMPLETE' },
     )
   }
-
-  const registryCheck = input.registry.assertZeroLive(owners)
-  const snapshot = input.registry.snapshot()
-
   return {
-    snapshot: input.snapshot,
-    registryCheck,
+    profile: input.profile,
     requiredOwners: owners,
     disposedOwners: owners,
-    remainingLive: snapshot.live,
-    estimatedBytesByOwner: snapshot.estimatedBytesByOwner,
-    totalEstimatedBytes: snapshot.totalEstimatedBytes,
+    ...reportRegistry(
+      input.registry.assertZeroLive(owners),
+      input.registry.snapshot(),
+    ),
     evacuatedAt: new Date().toISOString(),
   }
 }

@@ -38,12 +38,7 @@ import {
   ExportManifestUnavailableError,
   sealExportResultManifest,
 } from './attach-export-manifest'
-import {
-  createPreExportSnapshot,
-  evacuateBeforeExport,
-  getPreExportEvacuationOwners,
-  toResourceEvacuatedDebugPayload,
-} from './export-evacuation'
+import { evacuateBeforeExport } from './export-evacuation'
 import type { ExportAttemptOutcome } from './export-interruption'
 import { resolveExportEnvironment } from './export-manifest'
 import {
@@ -364,7 +359,6 @@ export async function orchestrateFullResExport(
     )
     return
   }
-  const graphFingerprint = JSON.stringify(graph.steps)
   // The request the result will answer, fixed from the same reads the graph
   // took; the result and its manifest carry it whatever moves meanwhile.
   const identity = captureExportResultIdentity({
@@ -512,20 +506,6 @@ export async function orchestrateFullResExport(
         : prev,
     )
 
-    const snapshot = createPreExportSnapshot({
-      file: activeSourceFile,
-      metadata: ctx.atoms.loadedImage.metadata,
-      graph,
-      graphFingerprint,
-      lutTitle:
-        activeSession.activeStyle?.kind === 'custom'
-          ? activeSession.activeStyle.name
-          : undefined,
-      quickPreviewReady:
-        activeSession.previewBundle.quickDecodePreview.status === 'ready',
-      intent: colorIntent,
-      style: activeSession.activeStyle,
-    })
     const registry = ctx.refs.resourceRegistryRef.current
     if (!registry) {
       throw Object.assign(new Error('EXPORT_RESOURCE_REGISTRY_MISSING'), {
@@ -533,18 +513,13 @@ export async function orchestrateFullResExport(
       })
     }
 
-    const evacuationOwners = getPreExportEvacuationOwners(
-      jobExecutionPlan.profileName,
-    )
     const evacuation = await evacuateBeforeExport({
       registry,
-      snapshot,
-      owners: evacuationOwners,
-      abortPreview: () => {
+      profile: jobExecutionPlan.profileName,
+      stopPreview: () => {
         ctx.services.previewRuntime.cancel()
         ctx.services.revokeCurrentEmbeddedPreviewUrl()
       },
-      abortBoundedHq: ctx.services.previewRuntime.cancel,
       releasePreviousExportResult() {
         ctx.atoms.setSession((prev) =>
           prev && prev.id === exportSessionId
@@ -552,23 +527,13 @@ export async function orchestrateFullResExport(
             : prev,
         )
       },
-      stopLutFetches() {
-        // Online LUT fetches already use per-request abort signals. This hook keeps
-        // the owner contract explicit for future registered LUT fetch resources.
-      },
     })
 
     if (!isCurrentExport()) {
       return
     }
 
-    emitExportDebugEvent({
-      type: 'resource-evacuated',
-      payload: toResourceEvacuatedDebugPayload({
-        profile: jobExecutionPlan.profileName,
-        evacuation,
-      }),
-    })
+    emitExportDebugEvent({ type: 'resource-evacuated', payload: evacuation })
 
     if (!evacuation.registryCheck.ok) {
       throw Object.assign(new Error('EXPORT_RESOURCE_EVICTION_INCOMPLETE'), {
