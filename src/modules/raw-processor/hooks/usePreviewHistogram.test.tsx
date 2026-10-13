@@ -8,47 +8,103 @@ import {
   NEUTRAL_USER_COLOR_INTENT,
 } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  expectTypeOf,
-  it,
-  vi,
-} from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
-import type { DecodedImage } from '~/lib/raw/decoder'
+import type { DecodedImage, DecodedImageSource } from '~/lib/raw/decoder'
 
-import type { DisplaySource } from '../model/session'
 import { createTestDecodedImage } from '../test-support/builders'
-import { usePreviewHistogram } from './usePreviewHistogram'
+import {
+  HISTOGRAM_BUSY_SHARE_DENOMINATOR,
+  HISTOGRAM_SETTLE_MS,
+  HISTOGRAM_THROTTLE_MS,
+  SCRUB_HISTOGRAM_SAMPLED_PIXELS,
+  usePreviewHistogram,
+} from './usePreviewHistogram'
 
-const defaultParams: ColorGraphIntent = {
+// Every processor the hook creates, in order, and every band it was fed:
+// a band fed to anything but the newest processor means two runs
+// interleaved.
+const tracker = vi.hoisted(() => ({
+  created: [] as { finished: boolean }[],
+  interleaved: false,
+  // Every color graph the hook resolved, by the user exposure it was for.
+  graphs: [] as (number | undefined)[],
+  // The main-thread clock the hook reads: it moves only by what each
+  // sampled row costs, so a chunk's busy time never depends on the host.
+  clock: 0,
+  rowCostMs: 0,
+  rowsFed: 0,
+}))
+
+vi.mock('@lumaforge/luma-color-runtime', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@lumaforge/luma-color-runtime')>()
+  return {
+    ...actual,
+    resolveExportColorGraph: (
+      input: Parameters<typeof actual.resolveExportColorGraph>[0],
+    ) => {
+      tracker.graphs.push(input.userExposureEv)
+      return actual.resolveExportColorGraph(input)
+    },
+    createPreviewHistogramProcessor: (
+      input: Parameters<typeof actual.createPreviewHistogramProcessor>[0],
+    ) => {
+      const processor = actual.createPreviewHistogramProcessor(input)
+      const entry = { finished: false }
+      tracker.created.push(entry)
+      return {
+        ...processor,
+        processUint16Rows: (
+          ...args: Parameters<typeof processor.processUint16Rows>
+        ) => {
+          if (tracker.created.at(-1) !== entry) tracker.interleaved = true
+          tracker.rowsFed += args[1]
+          tracker.clock += args[1] * tracker.rowCostMs
+          return processor.processUint16Rows(...args)
+        },
+        finish: (...args: Parameters<typeof processor.finish>) => {
+          entry.finished = true
+          return processor.finish(...args)
+        },
+      }
+    },
+  }
+})
+
+type HookInput = Parameters<typeof usePreviewHistogram>[0]
+type Ready = Extract<PreviewHistogramState, { state: 'ready' }>
+
+const baseParams: ColorGraphIntent = {
   ...NEUTRAL_USER_COLOR_INTENT,
   intensity: 0.7,
   styleKind: 'none',
   builtinPreset: null,
 }
 
-function mutableRef<T>(current: T) {
-  return { current }
+// Non-neutral user color, so a measure that drops it shows.
+const adjusted: ColorGraphIntent = {
+  ...baseParams,
+  styleKind: 'custom',
+  userExposureEv: 1,
+  userContrast: 30,
+  userSaturation: 20,
 }
 
-function createImage(
-  source: 'quick' | 'bounded-hq',
-  overrides: Partial<DecodedImage> = {},
+/**
+ * Varied RGB16, 1000 wide: 501 rows are past the full sample budget and two
+ * bands at the scrub budget.
+ */
+function frameImage(
+  source: DecodedImageSource = 'quick',
+  { height = 501, seed = 0 } = {},
 ): DecodedImage {
-  return createTestDecodedImage({
-    width: 2,
-    height: 2,
-    data: new Uint16Array([
-      0, 0, 0, 65535, 65535, 65535, 32768, 32768, 32768, 16384, 16384, 16384,
-    ]),
-    source,
-    ...overrides,
-  })
+  const image = createTestDecodedImage({ width: 1000, height, source })
+  for (let index = 0; index < image.data.length; index += 1) {
+    image.data[index] = (index * 2654435761 + seed) & 0xFFFF
+  }
+  return image
 }
 
 function createLutData(profileId = 'test-vlog'): LUTData {
@@ -78,9 +134,15 @@ function createLutData(profileId = 'test-vlog'): LUTData {
   }
 }
 
+/** The LUT under a contract export refuses: unconfirmed. */
+function refusedLut(lut = createLutData()): LUTData {
+  return { ...lut, profileResolution: { kind: 'unknown' } }
+}
+
 let frameSequence = 0
 
-function describeFrame(
+/** Plays the frame producer: every accepted frame gets a new identity. */
+function acceptFrame(
   image: DecodedImage,
   overrides: Partial<DecodedPreviewFrame> = {},
 ): DecodedPreviewFrame {
@@ -97,743 +159,123 @@ function describeFrame(
   }
 }
 
-/**
- * Plays the frame producer: one descriptor per image it is handed, read
- * from the ref at render time, a bounded-HQ frame naming the quick frame it
- * replaces.
- */
-function createFrameProducer() {
-  const frames = new WeakMap<DecodedImage, DecodedPreviewFrame>()
-  let live: DecodedPreviewFrame | null = null
-  return (image: DecodedImage | null): DecodedPreviewFrame | null => {
-    if (!image) {
-      live = null
-      return null
-    }
-    let frame = frames.get(image)
-    if (!frame) {
-      frame = describeFrame(image, {
-        quickPredecessorFrameId:
-          image.source === 'bounded-hq' && live?.stage === 'quick'
-            ? live.frameId
-            : null,
-      })
-      frames.set(image, frame)
-    }
-    live = frame
-    return frame
-  }
-}
-
-type HistogramHarnessProps = Omit<
-  Parameters<typeof usePreviewHistogram>[0],
-  'frame'
-> & {
-  /** The accepted descriptor; the harness producer's when left out. */
-  frame?: DecodedPreviewFrame | null
-}
-
-function renderPreviewHistogram(options: {
-  enabled?: boolean
-  image: DecodedImage | null
-  frame?: DecodedPreviewFrame | null
-  params?: ColorGraphIntent
-  lutData?: LUTData | null
-  displaySource?: DisplaySource
-}) {
-  const imageRef = mutableRef<DecodedImage | null>(options.image)
-  const props: HistogramHarnessProps & { imageRef: typeof imageRef } = {
-    enabled: options.enabled ?? true,
+/** Renders the hook; `update` rerenders with the input merged in. */
+function renderHistogram({
+  image = frameImage(),
+  ...initial
+}: Partial<HookInput> & { image?: DecodedImage | null } = {}) {
+  const imageRef = { current: image }
+  let input: HookInput = {
     imageRef,
-    ...('frame' in options ? { frame: options.frame } : {}),
-    params: options.params ?? defaultParams,
-    lutData: options.lutData ?? null,
-    displaySource: options.displaySource ?? 'quick',
+    frame: image ? acceptFrame(image) : null,
+    params: baseParams,
+    lutData: null,
+    displaySource: 'quick',
+    ...initial,
   }
-
-  const produceFrame = createFrameProducer()
-  const renders: PreviewHistogramState[] = []
+  const states: PreviewHistogramState[] = []
   const hook = renderHook(
-    ({ frame, ...currentProps }: HistogramHarnessProps) => {
-      const state = usePreviewHistogram({
-        ...currentProps,
-        frame:
-          frame === undefined
-            ? produceFrame(currentProps.imageRef.current)
-            : frame,
-      })
-      renders.push(state)
+    (current: HookInput) => {
+      const state = usePreviewHistogram(current)
+      states.push(state)
       return state
     },
-    { initialProps: props },
+    { initialProps: input },
   )
-
-  return { ...hook, imageRef, renders, produceFrame }
+  const update = (next: Partial<HookInput>) => {
+    input = { ...input, ...next }
+    hook.rerender(input)
+  }
+  /**
+   * Puts a newly accepted frame in the ref and returns its input; a
+   * bounded-HQ frame names the quick frame it replaces.
+   */
+  const showFrame = (
+    next: DecodedImage,
+    frame: Partial<DecodedPreviewFrame> = {},
+  ): Partial<HookInput> => {
+    const replaced = input.frame
+    imageRef.current = next
+    return {
+      frame: acceptFrame(next, {
+        quickPredecessorFrameId:
+          next.source === 'bounded-hq' && replaced?.stage === 'quick'
+            ? replaced.frameId
+            : null,
+        ...frame,
+      }),
+      displaySource: next.source ?? input.displaySource,
+    }
+  }
+  return {
+    result: hook.result,
+    states,
+    unmount: hook.unmount,
+    update,
+    showFrame,
+    accept: (next: DecodedImage) => update(showFrame(next)),
+    setParams: (change: Partial<ColorGraphIntent>) =>
+      update({ params: { ...input.params, ...change } }),
+  }
 }
 
-async function runDebouncedWork(ms = 150) {
+type HistogramView = ReturnType<typeof renderHistogram>
+
+async function advance(ms: number) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms)
   })
 }
 
-async function runAllWork() {
-  await runDebouncedWork()
+/** Runs every queued run and refinement to the end. */
+async function runAll() {
   await act(async () => {
-    await vi.runOnlyPendingTimersAsync()
+    await vi.runAllTimersAsync()
   })
 }
 
-async function runChunkedWorkUntilReady(
-  result: ReturnType<typeof renderPreviewHistogram>['result'],
+/** Advances a millisecond at a time until a result other than `previous` lands. */
+async function nextReady(
+  view: HistogramView,
+  previous?: PreviewHistogramState,
 ) {
-  await runDebouncedWork()
-  for (
-    let attempt = 0;
-    attempt < 128 && result.current.state !== 'ready';
-    attempt += 1
-  ) {
-    await act(async () => {
-      await vi.runOnlyPendingTimersAsync()
-    })
+  for (let i = 0; i < 256; i += 1) {
+    const current = view.result.current
+    if (current.state === 'ready' && current !== previous) return current
+    await advance(1)
   }
+  throw new Error(`never ready: ${view.result.current.state}`)
 }
 
-async function runImmediateChunkedWorkUntilReady(
-  result: ReturnType<typeof renderPreviewHistogram>['result'],
-) {
-  for (
-    let attempt = 0;
-    attempt < 128 && result.current.state !== 'ready';
-    attempt += 1
-  ) {
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1)
-    })
-  }
+/** The first run has landed and an interval has passed since it started. */
+async function settledView(input?: Parameters<typeof renderHistogram>[0]) {
+  const view = renderHistogram(input)
+  const first = await nextReady(view)
+  await advance(HISTOGRAM_THROTTLE_MS)
+  return { view, first }
+}
+
+function measure(state: PreviewHistogramState) {
+  if (state.state !== 'ready') throw new Error(`not ready: ${state.state}`)
+  return { bins: state.bins, clipping: state.clipping }
+}
+
+async function settledMeasure(input: Partial<HookInput>) {
+  const view = renderHistogram({ image: frameImage(), ...input })
+  await runAll()
+  return measure(view.result.current)
 }
 
 describe('usePreviewHistogram', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-  })
-
-  it('requires the complete color intent', () => {
-    expectTypeOf<
-      Parameters<typeof usePreviewHistogram>[0]['params']
-    >().toEqualTypeOf<ColorGraphIntent>()
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-    vi.restoreAllMocks()
-  })
-
-  it('computes a quick histogram over the active buffer', async () => {
-    const image = createImage('quick')
-
-    const { result } = renderPreviewHistogram({ image })
-
-    expect(result.current).toEqual({ state: 'computing', previous: null })
-
-    await runAllWork()
-
-    expect(result.current.state).toBe('ready')
-    expect(result.current).toMatchObject({
-      state: 'ready',
-      source: 'quick',
-      width: 2,
-      height: 2,
-      sampledPixels: 4,
-      totalPixels: 4,
-    })
-    if (result.current.state === 'ready') {
-      expect(
-        result.current.bins.luma.reduce((sum, value) => sum + value, 0),
-      ).toBe(4)
-    }
-  })
-
-  it('bounds large preview sampling', async () => {
-    const width = 1000
-    const height = 501
-    const data = new Uint16Array(width * height * 3)
-    data.fill(32768)
-    const image = createImage('quick', { width, height, data })
-
-    const { result } = renderPreviewHistogram({ image })
-
-    await runChunkedWorkUntilReady(result)
-
-    expect(result.current.state).toBe('ready')
-    expect(result.current).toMatchObject({
-      state: 'ready',
-      source: 'quick',
-      totalPixels: width * height,
-    })
-    if (result.current.state === 'ready') {
-      expect(result.current.sampledPixels).toBeLessThan(
-        result.current.totalPixels,
-      )
-      expect(result.current.sampledPixels).toBeGreaterThan(0)
-    }
-  })
-
-  it('publishes a large quick preview histogram before debounce can be cancelled by HQ', async () => {
-    const width = 1000
-    const height = 501
-    const data = new Uint16Array(width * height * 3)
-    data.fill(32768)
-    const image = createImage('quick', { width, height, data })
-
-    const { result } = renderPreviewHistogram({ image })
-
-    await runImmediateChunkedWorkUntilReady(result)
-
-    expect(result.current).toMatchObject({
-      state: 'ready',
-      source: 'quick',
-    })
-  })
-
-  it.each<[string, ColorGraphIntent]>([
-    ['look inputs are unchanged', defaultParams],
-    [
-      'saturation and vibrance are omitted',
-      {
-        ...defaultParams,
-        userSaturation: undefined,
-        userVibrance: undefined,
-      } as unknown as ColorGraphIntent,
-    ],
-  ])(
-    'keeps a superseded first quick histogram observable before bounded-HQ is ready when %s',
-    async (_case, hqParams) => {
-      const quickWidth = 1000
-      const quickHeight = 501
-      const hqWidth = 1000
-      const hqHeight = 1001
-      const quickData = new Uint16Array(quickWidth * quickHeight * 3)
-      const hqData = new Uint16Array(hqWidth * hqHeight * 3)
-      quickData.fill(32768)
-      hqData.fill(49152)
-      const quick = createImage('quick', {
-        width: quickWidth,
-        height: quickHeight,
-        data: quickData,
-      })
-      const boundedHq = createImage('bounded-hq', {
-        width: hqWidth,
-        height: hqHeight,
-        data: hqData,
-      })
-      const { result, rerender, imageRef } = renderPreviewHistogram({
-        image: quick,
-      })
-
-      imageRef.current = boundedHq
-      rerender({
-        imageRef,
-        params: hqParams,
-        lutData: null,
-        displaySource: 'bounded-hq',
-      })
-
-      let observedQuick = false
-      for (let attempt = 0; attempt < 128 && !observedQuick; attempt += 1) {
-        await act(async () => {
-          await vi.advanceTimersToNextTimerAsync()
-        })
-        observedQuick =
-          result.current.state === 'ready' && result.current.source === 'quick'
-      }
-
-      expect(observedQuick).toBe(true)
-
-      for (
-        let attempt = 0;
-        attempt < 128 &&
-        !(
-          result.current.state === 'ready' &&
-          result.current.source === 'bounded-hq'
-        );
-        attempt += 1
-      ) {
-        await act(async () => {
-          await vi.advanceTimersToNextTimerAsync()
-        })
-      }
-
-      expect(result.current).toMatchObject({
-        state: 'ready',
-        source: 'bounded-hq',
-      })
-    },
-  )
-
-  it.each<[string, Partial<ColorGraphIntent>]>([
-    ['highlights', { userHighlights: -40 }],
-    ['saturation', { userSaturation: 40 }],
-    ['vibrance', { userVibrance: 40 }],
-  ])(
-    'cancels superseded first quick work when %s changes before bounded-HQ is ready',
-    async (_field, lookChange) => {
-      const quickWidth = 1000
-      const quickHeight = 501
-      const hqWidth = 1000
-      const hqHeight = 1001
-      const quickData = new Uint16Array(quickWidth * quickHeight * 3)
-      const hqData = new Uint16Array(hqWidth * hqHeight * 3)
-      quickData.fill(32768)
-      hqData.fill(49152)
-      const quick = createImage('quick', {
-        width: quickWidth,
-        height: quickHeight,
-        data: quickData,
-      })
-      const boundedHq = createImage('bounded-hq', {
-        width: hqWidth,
-        height: hqHeight,
-        data: hqData,
-      })
-      const { result, rerender, imageRef } = renderPreviewHistogram({
-        image: quick,
-      })
-
-      imageRef.current = boundedHq
-      rerender({
-        imageRef,
-        params: { ...defaultParams, ...lookChange },
-        lutData: null,
-        displaySource: 'bounded-hq',
-      })
-
-      let observedQuick = false
-      for (
-        let attempt = 0;
-        attempt < 128 &&
-        !(
-          result.current.state === 'ready' &&
-          result.current.source === 'bounded-hq'
-        );
-        attempt += 1
-      ) {
-        await act(async () => {
-          await vi.advanceTimersToNextTimerAsync()
-        })
-        observedQuick =
-          observedQuick ||
-          (result.current.state === 'ready' &&
-            result.current.source === 'quick')
-      }
-
-      expect(observedQuick).toBe(false)
-      expect(result.current).toMatchObject({
-        state: 'ready',
-        source: 'bounded-hq',
-      })
-    },
-  )
-
-  it('lets only the bounded-HQ frame that names it take over from the first quick run', async () => {
-    const quickData = new Uint16Array(1000 * 501 * 3)
-    const hqData = new Uint16Array(1000 * 1001 * 3)
-    quickData.fill(32768)
-    hqData.fill(49152)
-    const quick = createImage('quick', {
-      width: 1000,
-      height: 501,
-      data: quickData,
-    })
-    const boundedHq = createImage('bounded-hq', {
-      width: 1000,
-      height: 1001,
-      data: hqData,
-    })
-    const { result, rerender, imageRef } = renderPreviewHistogram({
-      image: quick,
-    })
-
-    // Same source and look, but the producer named no quick predecessor,
-    // so the quick run is not this frame's stand-in.
-    imageRef.current = boundedHq
-    rerender({
-      imageRef,
-      frame: describeFrame(boundedHq, { quickPredecessorFrameId: null }),
-      params: defaultParams,
-      lutData: null,
-      displaySource: 'bounded-hq',
-    })
-
-    let observedQuick = false
-    for (
-      let attempt = 0;
-      attempt < 128 &&
-      !(
-        result.current.state === 'ready' &&
-        result.current.source === 'bounded-hq'
-      );
-      attempt += 1
-    ) {
-      await act(async () => {
-        await vi.advanceTimersToNextTimerAsync()
-      })
-      observedQuick =
-        observedQuick ||
-        (result.current.state === 'ready' && result.current.source === 'quick')
-    }
-
-    expect(observedQuick).toBe(false)
-    expect(result.current).toMatchObject({
-      state: 'ready',
-      source: 'bounded-hq',
-    })
-  })
-
-  it('reports embedded-only preview as unavailable', () => {
-    const { result } = renderPreviewHistogram({
-      image: null,
-      displaySource: 'embedded',
-    })
-
-    expect(result.current).toEqual({
-      state: 'unavailable',
-      reason: 'embedded-only',
-    })
-  })
-
-  it('reports preview data with mismatched dimensions as unsupported', async () => {
-    const { result } = renderPreviewHistogram({
-      image: createImage('quick', {
-        width: 800,
-        height: 600,
-        data: new Uint16Array([0, 1024, 65535]),
-      }),
-    })
-
-    await runAllWork()
-
-    expect(result.current).toEqual({
-      state: 'unsupported',
-      reason: 'Preview histogram requires RGB16 Linear ProPhoto preview data.',
-    })
-  })
-
-  it('replaces quick histogram with bounded-HQ after source replacement', async () => {
-    const quick = createImage('quick')
-    const boundedHq = createImage('bounded-hq', {
-      data: new Uint16Array([
-        65535, 0, 0, 0, 65535, 0, 0, 0, 65535, 65535, 65535, 65535,
-      ]),
-    })
-    const { result, rerender, imageRef } = renderPreviewHistogram({
-      image: quick,
-    })
-
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    expect(result.current).toMatchObject({ state: 'ready', source: 'quick' })
-
-    imageRef.current = boundedHq
-    rerender({
-      imageRef,
-      params: defaultParams,
-      lutData: null,
-      displaySource: 'bounded-hq',
-    })
-
-    expect(result.current).toMatchObject({
-      state: 'stale',
-      previous: { state: 'ready', source: 'quick' },
-    })
-
-    await runAllWork()
-
-    expect(result.current.state).toBe('ready')
-    expect(result.current).toMatchObject({
-      state: 'ready',
-      source: 'bounded-hq',
-      sampledPixels: 4,
-    })
-  })
-
-  it('does not recompute for an equal intent record rebuilt upstream', async () => {
-    const { result, rerender, imageRef } = renderPreviewHistogram({
-      image: createImage('quick'),
-    })
-
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    const ready = result.current
-
-    rerender({
-      imageRef,
-      params: { ...defaultParams },
-      lutData: null,
-      displaySource: 'quick',
-    })
-
-    expect(result.current).toBe(ready)
-    await runAllWork()
-    expect(result.current).toBe(ready)
-  })
-
-  it('measures a replacing source of identical size, never the old run landing late', async () => {
-    const width = 1000
-    const height = 501
-    const oldData = new Uint16Array(width * height * 3)
-    const newData = new Uint16Array(width * height * 3)
-    oldData.fill(32768)
-    newData.fill(8192)
-    const oldImage = createImage('quick', { width, height, data: oldData })
-    const newImage = createImage('quick', { width, height, data: newData })
-    // Both producers numbered their first frame alike: only the session
-    // tells the replacing source apart.
-    const oldFrame = describeFrame(oldImage, {
-      sessionId: 'session-old',
-      frameId: 'decoded-frame-1',
-    })
-    const newFrame = describeFrame(newImage, {
-      sessionId: 'session-new',
-      frameId: 'decoded-frame-1',
-    })
-
-    const reference = renderPreviewHistogram({
-      image: newImage,
-      frame: describeFrame(newImage, { sessionId: 'session-reference' }),
-    })
-    await runChunkedWorkUntilReady(reference.result)
-    const expected = reference.result.current
-    reference.unmount()
-    expect(expected.state).toBe('ready')
-
-    const { result, rerender, imageRef, renders } = renderPreviewHistogram({
-      image: oldImage,
-      frame: oldFrame,
-    })
-
-    // The old source's first run is under way, chunked, when it is replaced.
-    await act(async () => {
-      await vi.advanceTimersToNextTimerAsync()
-    })
-    expect(result.current).toEqual({ state: 'computing', previous: null })
-
-    const rendersBeforeReplace = renders.length
-    imageRef.current = newImage
-    rerender({
-      imageRef,
-      frame: newFrame,
-      params: defaultParams,
-      lutData: null,
-      displaySource: 'quick',
-    })
-    await runChunkedWorkUntilReady(result)
-
-    const afterReplace = renders.slice(rendersBeforeReplace)
-    const landed = afterReplace.filter((state) => state.state === 'ready')
-    expect(landed.length).toBeGreaterThan(0)
-    for (const state of [...afterReplace, result.current]) {
-      expect(state.state === 'stale' ? state.previous : null).toBeNull()
-    }
-    if (result.current.state !== 'ready' || expected.state !== 'ready') {
-      throw new Error('expected both histograms to be ready')
-    }
-    for (const state of landed) {
-      if (state.state === 'ready') expect(state.bins).toEqual(expected.bins)
-    }
-    expect(result.current.bins).toEqual(expected.bins)
-  })
-
-  it('measures no pixels the workflow has not accepted', async () => {
-    const { result } = renderPreviewHistogram({
-      image: createImage('quick'),
-      frame: null,
-    })
-
-    expect(result.current).toEqual({ state: 'unavailable', reason: 'no-image' })
-    await runAllWork()
-    expect(result.current).toEqual({ state: 'unavailable', reason: 'no-image' })
-  })
-
-  it.each<[string, Partial<ColorGraphIntent>]>([
-    ['temperature', { userTemperature: 25 }],
-    ['saturation', { userSaturation: 25 }],
-    ['vibrance', { userVibrance: 25 }],
-  ])('recomputes on %s changes', async (_field, colorChange) => {
-    const { result, rerender, imageRef, renders } = renderPreviewHistogram({
-      image: createImage('quick'),
-    })
-
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    const previous = result.current
-    const rendersBeforeChange = renders.length
-
-    rerender({
-      imageRef,
-      params: { ...defaultParams, ...colorChange },
-      lutData: null,
-      displaySource: 'quick',
-    })
-
-    expect(renders.slice(rendersBeforeChange)).not.toContain(previous)
-    expect(result.current).toEqual({ state: 'stale', previous })
-
-    // A scrub run on the same source never flips the label to computing:
-    // the bins stay until the new run lands.
-    await runDebouncedWork(1)
-    expect(result.current.state).toBe('ready')
-    expect(result.current).not.toBe(previous)
-  })
-
-  it('keeps previous bins on screen, marked stale, until the new run lands', async () => {
-    const { result, rerender, imageRef } = renderPreviewHistogram({
-      image: createImage('quick'),
-    })
-
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    const previous = result.current
-
-    rerender({
-      imageRef,
-      params: { ...defaultParams, userExposureEv: 1 },
-      lutData: null,
-      displaySource: 'quick',
-    })
-
-    // A scrub run never flips the label to computing: the bins stay.
-    expect(result.current).toEqual({ state: 'stale', previous })
-
-    await act(async () => {
-      await vi.runOnlyPendingTimersAsync()
-    })
-    expect(result.current.state).toBe('ready')
-    expect(result.current).not.toBe(previous)
-  })
-
-  it('measures nothing for a built-in style the preview draws', () => {
-    const { result } = renderPreviewHistogram({
-      image: createImage('quick'),
-      params: {
-        ...defaultParams,
-        styleKind: 'builtin',
-        builtinPreset: 'cinematic',
-      },
-    })
-
-    expect(result.current).toEqual({
-      state: 'unsupported',
-      reason: 'The histogram does not measure built-in styles.',
-    })
-  })
-
-  it('recomputes when LUT data changes', async () => {
-    const { result, rerender, imageRef } = renderPreviewHistogram({
-      image: createImage('quick'),
-    })
-
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    const previous = result.current
-
-    rerender({
-      imageRef,
-      params: { ...defaultParams, styleKind: 'custom' },
-      lutData: createLutData(),
-      displaySource: 'quick',
-    })
-
-    expect(result.current).toEqual({ state: 'stale', previous })
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    expect(result.current).not.toBe(previous)
-  })
-
-  it('does not recompute for an equal HSL record rebuilt upstream', async () => {
-    const hsl = () => ({
-      ...NEUTRAL_SELECTIVE_COLOR,
-      red: { hue: 12, saturation: -8, lightness: 4 },
-    })
-    const params = { ...defaultParams, selectiveColor: hsl() }
-    const { result, rerender, imageRef } = renderPreviewHistogram({
-      image: createImage('quick'),
-      params,
-    })
-
-    await runAllWork()
-    const ready = result.current
-    expect(ready.state).toBe('ready')
-
-    rerender({
-      imageRef,
-      params: { ...params, selectiveColor: hsl() },
-      lutData: null,
-      displaySource: 'quick',
-    })
-
-    expect(result.current).toBe(ready)
-    expect(vi.getTimerCount()).toBe(0)
-  })
-
-  it('recomputes for a look strength between the detents', async () => {
-    const lutData = createLutData()
-    const params = { ...defaultParams, styleKind: 'custom' as const }
-    const { result, rerender, imageRef } = renderPreviewHistogram({
-      image: createImage('quick'),
-      params,
-      lutData,
-    })
-
-    await runAllWork()
-    const previous = result.current
-    expect(previous.state).toBe('ready')
-
-    rerender({
-      imageRef,
-      params: { ...params, intensity: 0.37 },
-      lutData,
-      displaySource: 'quick',
-    })
-
-    expect(result.current).toEqual({ state: 'stale', previous })
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    expect(result.current).not.toBe(previous)
-  })
-
-  it('recomputes when the same LUT bytes take another contract', async () => {
-    const lutData = createLutData()
-    const params = { ...defaultParams, styleKind: 'custom' as const }
-    const { result, rerender, imageRef } = renderPreviewHistogram({
-      image: createImage('quick'),
-      params,
-      lutData,
-    })
-
-    await runAllWork()
-    const previous = result.current
-    expect(previous.state).toBe('ready')
-
-    const recontracted = createLutData('test-vlog-other')
-    expect(recontracted.data).toEqual(lutData.data)
-    rerender({
-      imageRef,
-      params,
-      lutData: recontracted,
-      displaySource: 'quick',
-    })
-
-    expect(result.current).toEqual({ state: 'stale', previous })
-    await runAllWork()
-    expect(result.current.state).toBe('ready')
-    expect(result.current).not.toBe(previous)
-  })
-})
-
-describe('usePreviewHistogram over the look the preview draws', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
+    tracker.created.length = 0
+    tracker.interleaved = false
+    tracker.graphs.length = 0
+    tracker.clock = 0
+    tracker.rowCostMs = 0
+    tracker.rowsFed = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => tracker.clock)
   })
 
   afterEach(() => {
@@ -841,141 +283,480 @@ describe('usePreviewHistogram over the look the preview draws', () => {
     vi.restoreAllMocks()
   })
 
-  // Non-neutral user color, so a measure that drops it shows.
-  const adjusted: ColorGraphIntent = {
-    ...defaultParams,
-    styleKind: 'custom',
-    intensity: 0.7,
-    userExposureEv: 1,
-    userContrast: 30,
-    userSaturation: 20,
-  }
-
-  function refusedLut(kind: 'unconfirmed' | 'linear-output'): LUTData {
-    const lut = createLutData()
-    if (kind === 'unconfirmed') {
-      return { ...lut, profileResolution: { kind: 'unknown' } }
-    }
-    if (lut.profileResolution.kind !== 'confirmed') throw new Error('fixture')
-    return {
-      ...lut,
-      profileResolution: {
-        ...lut.profileResolution,
-        profile: {
-          ...lut.profileResolution.profile,
-          outputTransfer: 'linear',
+  describe('what it measures', () => {
+    it.each<
+      [string, Parameters<typeof renderHistogram>[0], PreviewHistogramState]
+    >([
+      [
+        'an embedded-only preview',
+        { image: null, displaySource: 'embedded' },
+        { state: 'unavailable', reason: 'embedded-only' },
+      ],
+      [
+        'pixels the workflow has not accepted',
+        { frame: null },
+        { state: 'unavailable', reason: 'no-image' },
+      ],
+      [
+        'preview data of the wrong length',
+        {
+          image: createTestDecodedImage({
+            width: 800,
+            height: 600,
+            data: new Uint16Array(3),
+          }),
         },
+        {
+          state: 'unsupported',
+          reason:
+            'Preview histogram requires RGB16 Linear ProPhoto preview data.',
+        },
+      ],
+      [
+        'a built-in style the preview draws, at any strength',
+        {
+          params: {
+            ...adjusted,
+            styleKind: 'builtin',
+            builtinPreset: 'cinematic',
+          },
+        },
+        {
+          state: 'unsupported',
+          reason: 'The histogram does not measure built-in styles.',
+        },
+      ],
+    ])('measures nothing for %s', async (_case, input, expected) => {
+      const view = renderHistogram(input)
+      expect(view.result.current).toEqual(expected)
+      for (const intensity of [0, 0.37, 1]) {
+        view.setParams({ intensity })
+        await runAll()
+        expect(view.result.current).toEqual(expected)
+      }
+      expect(tracker.created).toHaveLength(0)
+    })
+
+    it('measures the adjusted preview without a look export refuses', async () => {
+      const refused = await settledMeasure({
+        params: adjusted,
+        lutData: refusedLut(),
+      })
+
+      expect(refused).toEqual(
+        await settledMeasure({ params: { ...adjusted, styleKind: 'none' } }),
+      )
+      expect(refused).not.toEqual(await settledMeasure({ params: baseParams }))
+    })
+
+    it.each([
+      ['a LUT export refuses', refusedLut()],
+      ['a LUT that has not loaded', null],
+    ])(
+      'keeps the measure while the strength of %s moves',
+      async (_case, lutData) => {
+        const view = renderHistogram({ params: adjusted, lutData })
+        await runAll()
+        const ready = view.result.current
+        expect(ready.state).toBe('ready')
+
+        for (const intensity of [0, 0.37, 1]) {
+          view.setParams({ intensity })
+          expect(view.result.current).toBe(ready)
+          expect(vi.getTimerCount()).toBe(0)
+        }
       },
-    }
-  }
+    )
 
-  function measure(state: PreviewHistogramState) {
-    if (state.state !== 'ready') throw new Error(`not ready: ${state.state}`)
-    return { bins: state.bins, clipping: state.clipping }
-  }
+    it('keys the drawn LUT by its record, so a contract on the same bytes runs again', async () => {
+      const view = renderHistogram({ params: adjusted, lutData: refusedLut() })
+      await runAll()
+      const stripped = measure(view.result.current)
 
-  async function settled(
-    params: ColorGraphIntent,
-    lutData: LUTData | null = null,
-  ) {
-    const hook = renderPreviewHistogram({
-      image: createImage('quick'),
-      params,
-      lutData,
+      const accepted = createLutData()
+      view.update({ lutData: accepted })
+      expect(view.result.current.state).toBe('stale')
+      await runAll()
+      const withLook = view.result.current
+      expect(measure(withLook)).not.toEqual(stripped)
+
+      view.update({ lutData: createLutData('test-vlog-other') })
+      expect(view.result.current).toEqual({
+        state: 'stale',
+        previous: withLook,
+      })
+
+      view.update({ lutData: refusedLut(accepted) })
+      await runAll()
+      expect(measure(view.result.current)).toEqual(stripped)
     })
-    await runAllWork()
-    return hook
-  }
 
-  function rerenderWith(
-    hook: Awaited<ReturnType<typeof settled>>,
-    params: ColorGraphIntent,
-    lutData: LUTData | null,
-  ) {
-    hook.rerender({
-      imageRef: hook.imageRef,
-      params,
-      lutData,
-      displaySource: 'quick',
-    })
-  }
+    it('restarts and resolves nothing for an owner rerender or an equal intent rebuilt upstream', async () => {
+      const params: ColorGraphIntent = {
+        ...baseParams,
+        selectiveColor: {
+          ...NEUTRAL_SELECTIVE_COLOR,
+          red: { hue: 12, saturation: -8, lightness: 4 },
+        },
+      }
+      const view = renderHistogram({ params })
+      await runAll()
+      const ready = view.result.current
+      const graphs = tracker.graphs.length
+      const created = tracker.created.length
 
-  it.each(['unconfirmed', 'linear-output'] as const)(
-    'measures the adjusted preview without the look for a %s LUT',
-    async (kind) => {
-      const refused = await settled(adjusted, refusedLut(kind))
-      const stripped = await settled({ ...adjusted, styleKind: 'none' })
-      const neutral = await settled(defaultParams)
-
-      expect(refused.result.current.state).toBe('ready')
-      expect(measure(refused.result.current)).toEqual(
-        measure(stripped.result.current),
-      )
-      expect(measure(refused.result.current)).not.toEqual(
-        measure(neutral.result.current),
-      )
-    },
-  )
-
-  it('keeps the measure while the strength of a refused LUT moves', async () => {
-    const lut = refusedLut('linear-output')
-    const hook = await settled(adjusted, lut)
-    const ready = hook.result.current
-    expect(ready.state).toBe('ready')
-
-    for (const intensity of [0, 0.37, 1]) {
-      rerenderWith(hook, { ...adjusted, intensity }, lut)
-      expect(hook.result.current).toBe(ready)
+      view.update({})
+      view.update({ params: structuredClone(params) })
+      expect(view.result.current).toBe(ready)
       expect(vi.getTimerCount()).toBe(0)
-    }
-  })
-
-  it('measures the LUT once the same bytes take a contract export accepts, and drops it again', async () => {
-    const hook = await settled(adjusted, refusedLut('unconfirmed'))
-    const strippedMeasure = measure(hook.result.current)
-
-    const accepted = createLutData()
-    rerenderWith(hook, adjusted, accepted)
-    expect(hook.result.current.state).toBe('stale')
-    await runAllWork()
-    const withLook = measure(hook.result.current)
-    expect(withLook).not.toEqual(strippedMeasure)
-
-    rerenderWith(hook, adjusted, {
-      ...accepted,
-      profileResolution: { kind: 'unknown' },
+      expect(tracker.graphs).toHaveLength(graphs)
+      expect(tracker.created).toHaveLength(created)
     })
-    await runAllWork()
-    expect(measure(hook.result.current)).toEqual(strippedMeasure)
   })
 
-  it('measures no look for a custom style whose LUT is not loaded, at any strength', async () => {
-    const hook = await settled(adjusted)
-    const stripped = await settled({ ...adjusted, styleKind: 'none' })
-    const ready = hook.result.current
-    expect(measure(ready)).toEqual(measure(stripped.result.current))
+  describe('frames', () => {
+    it('computes the first quick histogram at once, at the full budget', async () => {
+      const view = renderHistogram()
+      expect(view.result.current).toEqual({
+        state: 'computing',
+        previous: null,
+      })
 
-    rerenderWith(hook, { ...adjusted, intensity: 0.37 }, null)
-    expect(hook.result.current).toBe(ready)
-    expect(vi.getTimerCount()).toBe(0)
+      await advance(5)
+      const ready = view.result.current
+      expect(ready).toMatchObject({
+        state: 'ready',
+        source: 'quick',
+        totalPixels: 1000 * 501,
+      })
+      expect((ready as Ready).sampledPixels).toBeGreaterThan(
+        SCRUB_HISTOGRAM_SAMPLED_PIXELS,
+      )
+    })
+
+    it.each<
+      [string, Partial<ColorGraphIntent>, Partial<DecodedPreviewFrame>, boolean]
+    >([
+      [
+        'shows the first quick histogram until the bounded-HQ frame that names it lands',
+        {},
+        {},
+        true,
+      ],
+      [
+        'drops the first quick run when the look changes with the bounded-HQ frame',
+        { userHighlights: -40 },
+        {},
+        false,
+      ],
+      [
+        'drops the first quick run for a bounded-HQ frame that names no quick predecessor',
+        {},
+        { quickPredecessorFrameId: null },
+        false,
+      ],
+    ])('%s', async (_case, look, frame, quickShown) => {
+      const view = renderHistogram()
+      view.update({
+        ...view.showFrame(frameImage('bounded-hq', { height: 1001 }), frame),
+        params: { ...baseParams, ...look },
+      })
+
+      let sawQuick = false
+      while (
+        view.result.current.state !== 'ready' ||
+        view.result.current.source !== 'bounded-hq'
+      ) {
+        const ready = await nextReady(view, view.result.current)
+        sawQuick ||= ready.source === 'quick'
+      }
+      expect(sawQuick).toBe(quickShown)
+    })
+
+    it('shows the quick bins, stale, until the bounded-HQ frame replacing them lands', async () => {
+      const view = renderHistogram()
+      await runAll()
+      const quick = view.result.current
+
+      view.accept(frameImage('bounded-hq'))
+      expect(view.result.current).toEqual({ state: 'stale', previous: quick })
+      await runAll()
+      expect(view.result.current).toMatchObject({
+        state: 'ready',
+        source: 'bounded-hq',
+      })
+    })
+
+    it('measures a replacing source of identical size, never the old run landing late', async () => {
+      const replacing = frameImage('quick', { seed: 7 })
+      const reference = renderHistogram({ image: replacing })
+      await runAll()
+      const expected = measure(reference.result.current)
+      reference.unmount()
+
+      // Both producers numbered their first frame alike: only the session
+      // tells the replacing source apart.
+      const view = renderHistogram({
+        frame: acceptFrame(frameImage(), {
+          sessionId: 'session-old',
+          frameId: 'decoded-frame-1',
+        }),
+      })
+      // The old source's first run is under way, chunked, when it is replaced.
+      await advance(0)
+      expect(view.result.current).toEqual({
+        state: 'computing',
+        previous: null,
+      })
+
+      const replacedAt = view.states.length
+      view.update({
+        ...view.showFrame(replacing),
+        frame: acceptFrame(replacing, {
+          sessionId: 'session-new',
+          frameId: 'decoded-frame-1',
+        }),
+      })
+      await runAll()
+
+      const after = view.states.slice(replacedAt)
+      for (const state of after) {
+        if (state.state === 'ready') expect(measure(state)).toEqual(expected)
+        if (state.state === 'stale') expect(state.previous).toBeNull()
+      }
+      expect(measure(view.result.current)).toEqual(expected)
+    })
   })
 
-  it('reports no numbers for a builtin preset the preview draws, at any strength', async () => {
-    const builtin: ColorGraphIntent = {
-      ...adjusted,
-      styleKind: 'builtin',
-      builtinPreset: 'cinematic',
-    }
-    const hook = await settled(builtin)
+  describe('scrub scheduling', () => {
+    it.each<
+      [string, Parameters<typeof renderHistogram>[0], Partial<ColorGraphIntent>]
+    >([
+      ['temperature', {}, { userTemperature: 25 }],
+      ['saturation', {}, { userSaturation: 25 }],
+      ['vibrance', {}, { userVibrance: 25 }],
+      [
+        'a drawn look strength between the detents',
+        {
+          params: { ...baseParams, styleKind: 'custom' },
+          lutData: createLutData(),
+        },
+        { intensity: 0.37 },
+      ],
+    ])(
+      'answers a %s change at once, keeping the bins stale until it lands',
+      async (_change, initial, change) => {
+        const { view, first } = await settledView(initial)
 
-    // No TS executor draws a preset: the stripped graph would not measure
-    // what the preview shows, so the histogram measures nothing.
-    expect(hook.result.current.state).toBe('unsupported')
-    expect(vi.getTimerCount()).toBe(0)
-    for (const intensity of [0, 0.37, 1]) {
-      rerenderWith(hook, { ...builtin, intensity }, null)
-      await runAllWork()
-      expect(hook.result.current.state).toBe('unsupported')
-    }
+        view.setParams(change)
+        expect(view.result.current).toEqual({ state: 'stale', previous: first })
+        // Leading edge: two bands at the scrub budget, a macrotask apiece.
+        await advance(2)
+        expect(view.result.current.state).toBe('ready')
+        expect(view.result.current).not.toBe(first)
+      },
+    )
+
+    it('keeps feedback live through a continuous scrub, at most one run per interval', async () => {
+      const { view, first } = await settledView()
+      const createdBefore = tracker.created.length
+
+      const landed = new Set<unknown>([first])
+      // A finger moving for 900ms, one change per frame.
+      for (let frame = 1; frame <= 56; frame += 1) {
+        view.setParams({ userExposureEv: frame / 100 })
+        await advance(16)
+        const current = view.result.current
+        landed.add(
+          current.state === 'ready'
+            ? current
+            : current.state === 'stale'
+              ? current.previous
+              : null,
+        )
+      }
+
+      expect(landed.size - 1).toBeGreaterThanOrEqual(5)
+      expect(tracker.created.length - createdBefore).toBeLessThanOrEqual(
+        Math.ceil(900 / HISTOGRAM_THROTTLE_MS) + 1,
+      )
+      expect(tracker.interleaved).toBe(false)
+
+      // The run after the scrub is for the last params, and it is ready.
+      await advance(HISTOGRAM_THROTTLE_MS)
+      expect(view.result.current.state).toBe('ready')
+    })
+
+    it.each([
+      ['the first full run', async () => renderHistogram()],
+      [
+        'a scrub run',
+        async () => {
+          const { view } = await settledView()
+          view.setParams({ userExposureEv: 0.1 })
+          return view
+        },
+      ],
+    ])(
+      'lets %s caught mid-way finish, then runs once for the latest params',
+      async (_run, start) => {
+        const view = await start()
+        // The run has done its first chunk and is still going...
+        await advance(0)
+        const running = tracker.created.at(-1)!
+        const created = tracker.created.length
+        expect(running.finished).toBe(false)
+
+        // ...while more changes arrive before it finishes.
+        view.setParams({ userExposureEv: 0.2 })
+        view.setParams({ userExposureEv: 0.3 })
+        for (let i = 0; i < 8 && !running.finished; i += 1) await advance(1)
+        // It ran to the end and shows, marked stale, while the latest waits.
+        expect(running.finished).toBe(true)
+        expect(view.result.current.state).toBe('stale')
+
+        await advance(HISTOGRAM_THROTTLE_MS)
+        expect(tracker.created).toHaveLength(created + 1)
+        expect(tracker.interleaved).toBe(false)
+        expect(view.result.current.state).toBe('ready')
+      },
+    )
+
+    it('samples less during a scrub and refines at the full budget once input settles', async () => {
+      const { view, first } = await settledView()
+
+      view.setParams({ userExposureEv: 0.5 })
+      const coarse = await nextReady(view, first)
+      expect(coarse.sampledPixels).toBeLessThanOrEqual(
+        SCRUB_HISTOGRAM_SAMPLED_PIXELS,
+      )
+      expect(coarse.sampledPixels).toBeLessThan(first.sampledPixels)
+
+      // Quiet for the settle time: a full-budget pass replaces it, without
+      // ever announcing itself as computing.
+      await advance(HISTOGRAM_SETTLE_MS - 1)
+      expect(view.result.current).toBe(coarse)
+      for (let i = 0; i < 64 && view.result.current === coarse; i += 1) {
+        await advance(1)
+        expect(view.result.current.state).not.toBe('computing')
+      }
+      expect(view.result.current).toMatchObject({
+        state: 'ready',
+        sampledPixels: first.sampledPixels,
+      })
+    })
+
+    it('stretches the interval so a slow run keeps the main thread mostly free', async () => {
+      const { view, first } = await settledView()
+
+      // Every sampled row of the next run costs 1.25ms of main thread: its
+      // chunks yield on their time budget, and their busy time adds up.
+      const rowCostMs = 1.25
+      tracker.rowCostMs = rowCostMs
+      view.setParams({ userExposureEv: 0.5 })
+      const coarse = await nextReady(view, first)
+      // About 40 rows, 50ms busy: past 150 / 6, so the interval becomes ~300ms.
+      const intervalMs =
+        (coarse.sampledPixels / 1000) *
+        rowCostMs *
+        HISTOGRAM_BUSY_SHARE_DENOMINATOR
+      expect(intervalMs).toBeGreaterThan(HISTOGRAM_THROTTLE_MS)
+
+      view.setParams({ userExposureEv: 0.6 })
+      const created = tracker.created.length
+      await advance(intervalMs - 20)
+      expect(tracker.created).toHaveLength(created)
+      expect(view.result.current.state).toBe('stale')
+      await advance(20)
+      expect(tracker.created).toHaveLength(created + 1)
+    })
+
+    it('yields mid-band once a chunk has spent its time budget', async () => {
+      const { view, first } = await settledView()
+
+      // 2ms a row: a 32-row band would hold the main thread for 64ms.
+      tracker.rowCostMs = 2
+      const fedBefore = tracker.rowsFed
+      view.setParams({ userExposureEv: 0.5 })
+      await advance(0)
+      const firstChunk = tracker.rowsFed - fedBefore
+      expect(firstChunk).toBeGreaterThan(0)
+      expect(firstChunk).toBeLessThan(32)
+      expect(view.result.current).toEqual({ state: 'stale', previous: first })
+
+      await nextReady(view, first)
+      expect(tracker.interleaved).toBe(false)
+    })
+  })
+
+  describe('visibility and release', () => {
+    it('resolves no graph and schedules nothing while no surface shows it', async () => {
+      const view = renderHistogram({ enabled: false })
+      const image = frameImage()
+      for (let step = 1; step <= 6; step += 1) {
+        view.setParams({ userExposureEv: step / 10 })
+        view.accept(image)
+        await advance(16)
+      }
+      await advance(HISTOGRAM_THROTTLE_MS + HISTOGRAM_SETTLE_MS)
+
+      expect(view.result.current).toEqual({
+        state: 'unsupported',
+        reason: 'No surface shows the preview histogram.',
+      })
+      expect(tracker.graphs).toHaveLength(0)
+      expect(tracker.created).toHaveLength(0)
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('clears every queued run and refinement once it is hidden mid-scrub', async () => {
+      const { view } = await settledView()
+      // A scrub run lands and queues its refinement, then a change inside the
+      // interval queues a trailing run.
+      view.setParams({ userExposureEv: 0.5 })
+      await advance(2)
+      view.setParams({ userExposureEv: 0.6 })
+      expect(vi.getTimerCount()).toBeGreaterThan(0)
+      const created = tracker.created.length
+
+      view.update({ enabled: false })
+      expect(vi.getTimerCount()).toBe(0)
+      await advance(HISTOGRAM_THROTTLE_MS + HISTOGRAM_SETTLE_MS)
+      expect(tracker.created).toHaveLength(created)
+      expect(view.result.current.state).toBe('unsupported')
+    })
+
+    it('computes the latest params once, at the full budget, when it is shown again', async () => {
+      const view = renderHistogram()
+      await nextReady(view)
+      view.update({ enabled: false })
+      view.setParams({ userExposureEv: 0.3 })
+      view.setParams({ userExposureEv: 0.6 })
+      await advance(HISTOGRAM_THROTTLE_MS)
+      const graphs = tracker.graphs.length
+      const created = tracker.created.length
+
+      view.update({ enabled: true })
+      expect(tracker.graphs.slice(graphs)).toEqual([0.6])
+      expect(view.result.current).toEqual({
+        state: 'computing',
+        previous: null,
+      })
+      const ready = await nextReady(view)
+      expect(ready.sampledPixels).toBeGreaterThan(
+        SCRUB_HISTOGRAM_SAMPLED_PIXELS,
+      )
+      expect(tracker.created).toHaveLength(created + 1)
+    })
+
+    it('drops a pending run when the hook unmounts', async () => {
+      const view = renderHistogram()
+      await nextReady(view)
+      view.setParams({ userExposureEv: 0.5 })
+      view.unmount()
+      const created = tracker.created.length
+      await advance(HISTOGRAM_THROTTLE_MS * 2)
+      expect(tracker.created).toHaveLength(created)
+    })
   })
 })
