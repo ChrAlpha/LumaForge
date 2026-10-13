@@ -2,12 +2,7 @@ import type {
   ColorGraphIntent,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
-import {
-  COLOR_GRAPH_INTENT_KEYS,
-  HSL_BAND_IDS,
-  HSL_SHIFT_AXES,
-  normalizeSelectiveColorParams,
-} from '@lumaforge/luma-color-runtime'
+import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import { assessProcessedExport } from '@lumaforge/render-engine/export'
 
@@ -244,38 +239,14 @@ export function hasSameRawRenderExposure(
 
 /**
  * Whether a params patch changes the color graph a ready export was rendered
- * from. Only the canonical color graph intent keys the patch carries are
- * compared. Scalars and the look are compared as written, so a non-detent
- * strength or an explicit undefined is a change. Selective color is compared
- * by its normalized bands, so explicitly undefined, partial and all-neutral
- * records are the same input.
+ * from: the intent with the patch over it, read as the color graph reads it.
  */
 export function changesRenderGraphParams(
   current: ColorGraphIntent,
   next: Partial<ColorGraphIntent>,
 ) {
-  return COLOR_GRAPH_INTENT_KEYS.some((key) => {
-    if (!Object.hasOwn(next, key)) return false
-    if (key === 'selectiveColor') {
-      return changesSelectiveColor(current.selectiveColor, next.selectiveColor)
-    }
-    return next[key] !== current[key]
-  })
-}
-
-function changesSelectiveColor(
-  current: ColorGraphIntent['selectiveColor'],
-  next: Partial<ColorGraphIntent>['selectiveColor'],
-) {
-  // The export color graph and the LUT bake read the normalized record, so
-  // this compares the contract that actually feeds the renderer.
-  const currentBands = normalizeSelectiveColorParams({
-    selectiveColor: current,
-  })
-  const nextBands = normalizeSelectiveColorParams({ selectiveColor: next })
-  return HSL_BAND_IDS.some((id) =>
-    HSL_SHIFT_AXES.some(
-      (axis) => currentBands[id][axis] !== nextBands[id][axis],
-    ),
+  return (
+    colorGraphIntentSignature(current) !==
+    colorGraphIntentSignature({ ...current, ...next })
   )
 }

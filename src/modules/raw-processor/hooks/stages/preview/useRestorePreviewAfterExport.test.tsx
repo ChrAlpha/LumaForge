@@ -153,7 +153,7 @@ const NON_ERROR_REJECTION = { reason: 'socket closed' }
 describe('useRestorePreviewAfterExport', () => {
   it.each([
     ['delivered', {}],
-    ['failed', { status: 'failed', lastErrorCode: 'EXPORT_RENDER_FAILED' }],
+    ['failed', { status: 'failed' }],
   ] satisfies Array<[string, Partial<ImageSession['exportState']>]>)(
     'restores the quick preview a %s export released, on a host lease',
     async (_label, exportState) => {

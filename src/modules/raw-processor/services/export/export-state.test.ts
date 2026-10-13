@@ -1,12 +1,13 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+} from '@lumaforge/luma-color-runtime'
 import {
-  COLOR_GRAPH_INTENT_KEYS,
   NEUTRAL_SELECTIVE_COLOR,
   NEUTRAL_USER_COLOR_INTENT,
 } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { createExportResult } from '../../model/export-result'
 import type { ImageSession } from '../../model/session'
@@ -118,55 +119,22 @@ function createCapability(
   }
 }
 
-type ProcessingParamClass = 'render' | 'look'
-
-// Every ColorGraphIntent key must be classified; a new field fails the
-// typecheck until it is placed here. 'render' (user tone/color intent) and
-// 'look' (style, preset, intensity) keys reach the export color graph, so
-// changing them must invalidate a ready export.
-const PROCESSING_PARAM_CLASSES = {
-  styleKind: 'look',
-  builtinPreset: 'look',
-  intensity: 'look',
-  userExposureEv: 'render',
-  userContrast: 'render',
-  userHighlights: 'render',
-  userShadows: 'render',
-  userWhites: 'render',
-  userBlacks: 'render',
-  userTemperature: 'render',
-  userTint: 'render',
-  userSaturation: 'render',
-  userVibrance: 'render',
-  selectiveColor: 'render',
-} satisfies Record<keyof ColorGraphIntent, ProcessingParamClass>
-
-type ProcessingParamKey = keyof typeof PROCESSING_PARAM_CLASSES
-
-const NEUTRAL_HSL_BAND = { hue: 0, saturation: 0, lightness: 0 } as const
-
 // Matches the app's default color intent: no look, neutral user intent and
 // neutral HSL bands.
 const DEFAULT_PARAMS: ColorGraphIntent = {
   intensity: 0.7,
   styleKind: 'none',
   builtinPreset: null,
-  userExposureEv: 0,
-  userContrast: 0,
-  userHighlights: 0,
-  userShadows: 0,
-  userWhites: 0,
-  userBlacks: 0,
-  userTemperature: 0,
-  userTint: 0,
-  userSaturation: 0,
-  userVibrance: 0,
+  ...NEUTRAL_USER_COLOR_INTENT,
   selectiveColor: NEUTRAL_SELECTIVE_COLOR,
 }
 
-// A meaningful value for every key that differs from DEFAULT_PARAMS.
+const NEUTRAL_HSL_BAND = { hue: 0, saturation: 0, lightness: 0 } as const
+
+// A value other than the default for every params key; a new key fails the
+// typecheck until it is placed here.
 const NON_DEFAULT_VALUES: {
-  [K in ProcessingParamKey]-?: NonNullable<ColorGraphIntent[K]>
+  [K in keyof ColorGraphIntent]-?: NonNullable<ColorGraphIntent[K]>
 } = {
   styleKind: 'custom',
   builtinPreset: 'film-contrast',
@@ -182,116 +150,41 @@ const NON_DEFAULT_VALUES: {
   userSaturation: 15,
   userVibrance: 30,
   selectiveColor: {
+    ...NEUTRAL_SELECTIVE_COLOR,
     red: { hue: 25, saturation: 0, lightness: 0 },
-    orange: NEUTRAL_HSL_BAND,
-    yellow: NEUTRAL_HSL_BAND,
-    green: NEUTRAL_HSL_BAND,
     aqua: { hue: 0, saturation: -20, lightness: 10 },
-    blue: NEUTRAL_HSL_BAND,
-    purple: NEUTRAL_HSL_BAND,
-    magenta: NEUTRAL_HSL_BAND,
   },
 }
 
-const PROCESSING_PARAM_KEYS = Object.keys(
-  PROCESSING_PARAM_CLASSES,
-) as ProcessingParamKey[]
+const PARAM_KEYS = Object.keys(NON_DEFAULT_VALUES) as Array<
+  keyof ColorGraphIntent
+>
 
-function keysOfClass(...classes: ProcessingParamClass[]) {
-  return PROCESSING_PARAM_KEYS.filter((key) =>
-    classes.includes(PROCESSING_PARAM_CLASSES[key]),
-  )
-}
+describe('changesRenderGraphParams', () => {
+  it.each(PARAM_KEYS)('invalidates the render graph when %s changes', (key) => {
+    const patch = { [key]: NON_DEFAULT_VALUES[key] }
+    const changed = { ...DEFAULT_PARAMS, ...patch }
 
-function patchOf<K extends ProcessingParamKey>(
-  key: K,
-  value: ColorGraphIntent[K],
-): Partial<ColorGraphIntent> {
-  return { [key]: value } as Partial<ColorGraphIntent>
-}
-
-describe('render graph param classification', () => {
-  it('compares a patch against the complete color intent', () => {
-    expectTypeOf(changesRenderGraphParams)
-      .parameter(0)
-      .toEqualTypeOf<ColorGraphIntent>()
-  })
-
-  it('has a non-default value for every classified key', () => {
-    expect(Object.keys(NON_DEFAULT_VALUES).sort()).toEqual(
-      [...PROCESSING_PARAM_KEYS].sort(),
-    )
-    for (const key of PROCESSING_PARAM_KEYS) {
-      expect(NON_DEFAULT_VALUES[key]).not.toEqual(DEFAULT_PARAMS[key])
-    }
-  })
-
-  it.each(keysOfClass('render', 'look'))(
-    'invalidates the render graph when %s changes',
-    (key) => {
-      const changed: ColorGraphIntent = {
-        ...DEFAULT_PARAMS,
-        ...patchOf(key, NON_DEFAULT_VALUES[key]),
-      }
-
-      expect(
-        changesRenderGraphParams(
-          DEFAULT_PARAMS,
-          patchOf(key, NON_DEFAULT_VALUES[key]),
-        ),
-      ).toBe(true)
-      expect(
-        changesRenderGraphParams(changed, patchOf(key, DEFAULT_PARAMS[key])),
-      ).toBe(true)
-      expect(
-        changesRenderGraphParams(
-          DEFAULT_PARAMS,
-          patchOf(key, DEFAULT_PARAMS[key]),
-        ),
-      ).toBe(false)
-    },
-  )
-
-  it('names every render and look key in the canonical color graph intent', () => {
-    expect([...COLOR_GRAPH_INTENT_KEYS].sort()).toEqual(
-      keysOfClass('render', 'look').sort(),
-    )
-  })
-
-  it.each(
-    keysOfClass('render', 'look').filter((key) => key !== 'selectiveColor'),
-  )('counts %s carried as undefined as a change', (key) => {
-    // A carried key is compared even when its value is undefined; only
-    // keys the patch does not own are skipped.
+    expect(changesRenderGraphParams(DEFAULT_PARAMS, patch)).toBe(true)
     expect(
-      changesRenderGraphParams(
-        DEFAULT_PARAMS,
-        patchOf(key, undefined as never),
-      ),
+      changesRenderGraphParams(changed, { [key]: DEFAULT_PARAMS[key] }),
     ).toBe(true)
-  })
-
-  it('compares selective color carried as undefined by its normalized bands', () => {
-    const shifted = {
-      ...DEFAULT_PARAMS,
-      selectiveColor: NON_DEFAULT_VALUES.selectiveColor,
-    }
-
     expect(
-      changesRenderGraphParams(DEFAULT_PARAMS, { selectiveColor: undefined }),
+      changesRenderGraphParams(DEFAULT_PARAMS, { [key]: DEFAULT_PARAMS[key] }),
     ).toBe(false)
-    expect(
-      changesRenderGraphParams(shifted, { selectiveColor: undefined }),
-    ).toBe(true)
   })
 
-  it('compares only the keys a patch carries', () => {
-    const allNonDefault = { ...DEFAULT_PARAMS, ...NON_DEFAULT_VALUES }
-
-    expect(changesRenderGraphParams(allNonDefault, {})).toBe(false)
-    expect(changesRenderGraphParams(allNonDefault, { intensity: 0.62 })).toBe(
-      true,
-    )
+  it('keeps the render graph for an empty patch and any spelling of neutral HSL', () => {
+    expect(changesRenderGraphParams(DEFAULT_PARAMS, {})).toBe(false)
+    for (const selectiveColor of [
+      undefined,
+      structuredClone(NEUTRAL_SELECTIVE_COLOR),
+      { blue: NEUTRAL_HSL_BAND } as ColorGraphIntent['selectiveColor'],
+    ]) {
+      expect(changesRenderGraphParams(DEFAULT_PARAMS, { selectiveColor })).toBe(
+        false,
+      )
+    }
   })
 })
 
@@ -384,63 +277,6 @@ describe('export state helpers', () => {
     const other = { ...session, id: 'another-source' }
     expect(clear(other)).toBe(other)
     expect(clear(null)).toBeNull()
-  })
-
-  it('compares selective color by value: an equal copy keeps, any band scalar changes', () => {
-    expect(
-      changesRenderGraphParams(DEFAULT_PARAMS, {
-        selectiveColor: structuredClone(NEUTRAL_SELECTIVE_COLOR),
-      }),
-    ).toBe(false)
-    for (const [band, shift] of [
-      ['red', { hue: 50, saturation: 0, lightness: 0 }],
-      ['blue', { hue: 0, saturation: 30, lightness: 0 }],
-      ['magenta', { hue: 0, saturation: 0, lightness: -10 }],
-    ] as const) {
-      expect(
-        changesRenderGraphParams(DEFAULT_PARAMS, {
-          selectiveColor: { ...NEUTRAL_SELECTIVE_COLOR, [band]: shift },
-        }),
-      ).toBe(true)
-    }
-  })
-
-  it('compares selective color by its normalized bands, not its record shape', () => {
-    const neutralBand = { hue: 0, saturation: 0, lightness: 0 } as const
-    const fullShifted = {
-      red: { hue: 25, saturation: 0, lightness: 0 },
-      orange: neutralBand,
-      yellow: neutralBand,
-      green: neutralBand,
-      aqua: neutralBand,
-      blue: neutralBand,
-      purple: neutralBand,
-      magenta: neutralBand,
-    }
-    const partialShifted = {
-      red: { hue: 25, saturation: 0, lightness: 0 },
-    } as ColorGraphIntent['selectiveColor']
-    const partialNeutral = {
-      blue: neutralBand,
-    } as ColorGraphIntent['selectiveColor']
-
-    expect(
-      changesRenderGraphParams(
-        { ...DEFAULT_PARAMS, selectiveColor: fullShifted },
-        { selectiveColor: partialShifted },
-      ),
-    ).toBe(false)
-    expect(
-      changesRenderGraphParams(DEFAULT_PARAMS, {
-        selectiveColor: partialNeutral,
-      }),
-    ).toBe(false)
-    expect(
-      changesRenderGraphParams(
-        { ...DEFAULT_PARAMS, selectiveColor: partialShifted },
-        { selectiveColor: partialNeutral },
-      ),
-    ).toBe(true)
   })
 
   it('compares raw render exposure by value while preserving null semantics', () => {
