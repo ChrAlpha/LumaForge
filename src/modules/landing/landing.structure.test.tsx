@@ -235,7 +235,7 @@ describe('landing semantic structure', () => {
     expect(screen.getByRole('main')).toHaveAttribute('id', 'landing-main')
   })
 
-  it('exposes truthful compare bounds and reaches them with Home and End', async () => {
+  it('exposes truthful compare bounds and reaches them from the keyboard', async () => {
     const user = userEvent.setup()
     renderLanding()
 
@@ -263,6 +263,13 @@ describe('landing semantic structure', () => {
       'aria-valuetext',
       '2% Muted treatment, 98% Color treatment',
     )
+    // Right and Up step towards the end, 2% at a time, and Home is a floor.
+    await user.keyboard('{ArrowLeft}')
+    expect(slider).toHaveAttribute('aria-valuenow', '2')
+    await user.keyboard('{ArrowRight}')
+    expect(slider).toHaveAttribute('aria-valuenow', '4')
+    await user.keyboard('{ArrowUp}')
+    expect(slider).toHaveAttribute('aria-valuenow', '6')
 
     await user.keyboard('{End}')
     expect(slider).toHaveAttribute('aria-valuenow', '98')
@@ -270,6 +277,13 @@ describe('landing semantic structure', () => {
       'aria-valuetext',
       '98% Muted treatment, 2% Color treatment',
     )
+    // Left and Down step back, and End is a ceiling.
+    await user.keyboard('{ArrowRight}')
+    expect(slider).toHaveAttribute('aria-valuenow', '98')
+    await user.keyboard('{ArrowLeft}')
+    expect(slider).toHaveAttribute('aria-valuenow', '96')
+    await user.keyboard('{ArrowDown}')
+    expect(slider).toHaveAttribute('aria-valuenow', '94')
   })
 
   it('rests at the centre when the visitor prefers reduced motion', () => {

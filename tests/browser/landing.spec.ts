@@ -264,38 +264,6 @@ test('compare reveals the finish once after the photograph loads', async ({
   expect(await readSliderValue(page)).toBe(COMPARE_REST)
 })
 
-test('compare supports its complete keyboard range', async ({ page }) => {
-  await openEnglishLanding(page)
-
-  const slider = page.getByRole('slider')
-  await expect(slider).toBeVisible()
-  const minimum = Number(await slider.getAttribute('aria-valuemin'))
-  const maximum = Number(await slider.getAttribute('aria-valuemax'))
-  expect(minimum).toBeLessThan(maximum)
-
-  await slider.focus()
-  await page.keyboard.press('Home')
-  await expect(slider).toHaveAttribute('aria-valuenow', String(minimum))
-
-  await page.keyboard.press('ArrowRight')
-  const afterRight = await readSliderValue(page)
-  expect(afterRight).toBeGreaterThan(minimum)
-
-  await page.keyboard.press('ArrowUp')
-  const afterUp = await readSliderValue(page)
-  expect(afterUp).toBeGreaterThan(afterRight)
-
-  await page.keyboard.press('End')
-  await expect(slider).toHaveAttribute('aria-valuenow', String(maximum))
-
-  await page.keyboard.press('ArrowLeft')
-  const afterLeft = await readSliderValue(page)
-  expect(afterLeft).toBeLessThan(maximum)
-
-  await page.keyboard.press('ArrowDown')
-  expect(await readSliderValue(page)).toBeLessThan(afterLeft)
-})
-
 test('primary action distinguishes hover and press feedback', async ({
   page,
 }, testInfo) => {
