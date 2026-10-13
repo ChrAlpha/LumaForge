@@ -334,21 +334,10 @@ export async function orchestrateFullResExport(
     rawRenderExposure: activeRawRenderExposure,
   })
 
+  // The session's look passed readiness; a store look the export graph
+  // cannot reproduce refuses the same way.
   if (!graph.supported) {
-    ctx.setError(graph.message)
-    ctx.setStatus('error')
-    ctx.setSession((prev) =>
-      prev
-        ? {
-            ...prev,
-            exportState: {
-              ...prev.exportState,
-              status: 'failed',
-              result: undefined,
-            },
-          }
-        : prev,
-    )
+    refuse({ code: 'look-unsupported' })
     return
   }
   // The request the result will answer, fixed from the same reads the graph

@@ -412,6 +412,7 @@
   "raw.export.reason.builtinStyle": "全分辨率 JPEG 导出不支持内置风格。",
   "raw.export.reason.lutInputUnconfirmed": "全分辨率导出前，请先选择 LUT 输入。",
   "raw.export.reason.lutOutputUnsupported": "全分辨率 JPEG 导出不支持此 LUT 的输出传递函数。",
+  "raw.export.reason.lookUnsupported": "全分辨率 JPEG 导出无法重现当前风格。请更换 LUT 或 LUT 契约后再导出。",
   "raw.export.reason.geometryUnplannable": "此变换无法在全分辨率下重现。请调整或重置变换后再导出。",
   "raw.export.reason.exposurePending": "RAW 预览曝光还在准备中。",
   "raw.export.reason.cannotSafelyComplete": "没有持久文件存储时，此浏览器无法安全完成这次较大的本地全分辨率导出。请使用启用 OPFS 的安全浏览器地址、改用桌面浏览器，或导出较小的版本。",

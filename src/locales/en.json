@@ -412,6 +412,7 @@
   "raw.export.reason.builtinStyle": "Built-in styles are not supported by full-resolution JPEG export.",
   "raw.export.reason.lutInputUnconfirmed": "Choose a LUT input profile before full-resolution export.",
   "raw.export.reason.lutOutputUnsupported": "This LUT output transfer is not supported by full-resolution JPEG export.",
+  "raw.export.reason.lookUnsupported": "Full-resolution JPEG export cannot reproduce this look. Choose another LUT or LUT contract to export.",
   "raw.export.reason.geometryUnplannable": "This Transform cannot be reproduced at full resolution. Adjust or reset Transform to export.",
   "raw.export.reason.exposurePending": "RAW preview exposure is still being prepared.",
   "raw.export.reason.cannotSafelyComplete": "This browser cannot safely complete this large local full-resolution export without durable file storage. Use a secure browser URL with OPFS enabled, try a desktop browser, or export a smaller version.",

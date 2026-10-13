@@ -25,6 +25,7 @@ export const FULL_RES_EXPORT_REASON_CODES = [
   'lut-input-unconfirmed',
   'lut-output-unsupported',
   'lut-output-refused',
+  'look-unsupported',
   'geometry-unplannable',
   'exposure-pending',
   'cannot-safely-complete',

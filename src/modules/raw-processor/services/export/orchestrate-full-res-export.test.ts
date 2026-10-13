@@ -1703,47 +1703,39 @@ describe('orchestrateFullResExport refusals', () => {
     expect(h.state.session).toBe(liveSession)
   })
 
-  it('refuses an unsupported color graph without touching other export work', async () => {
+  it('refuses a stored look the export graph cannot reproduce without touching other export work', async () => {
     const lut = tealLut({ kind: 'unknown' })
+    const session = createSession('session-1', {
+      activeStyle: {
+        kind: 'custom',
+        name: 'Teal',
+        defaultIntensity: 0.7,
+        currentIntensity: 0.7,
+        lutAsset: { format: 'cube', dimension: 17 },
+      },
+      exportState: {
+        status: 'ready',
+        result: createPreviousResult(),
+      },
+    })
     const h = createHarness({
       params: { ...DEFAULT_PARAMS, styleKind: 'custom' },
       lut,
-      session: createSession('session-1', {
-        activeStyle: {
-          kind: 'custom',
-          name: 'Teal',
-          defaultIntensity: 0.7,
-          currentIntensity: 0.7,
-          lutAsset: { format: 'cube', dimension: 17 },
-        },
-        exportState: {
-          status: 'ready',
-          result: createPreviousResult(),
-        },
-      }),
+      session,
     })
     const otherExport = new AbortController()
     h.ctx.exportAbortControllerRef.current = otherExport
 
     await orchestrateFullResExport(OPTIONS, h.ctx)
 
-    expect(h.trace).toEqual([
-      'state:error:Choose a LUT input profile before full-resolution export.',
-      'state:status:error',
-      'state:session:failed',
+    expect(h.trace).toEqual(['notify:refused'])
+    expect(h.notifications).toEqual([
+      { kind: 'refused', refusal: { code: 'look-unsupported' } },
     ])
-    expect(h.state.session?.exportState).toMatchObject({
-      status: 'failed',
-    })
-    expect(h.state.session?.exportState.result).toBeUndefined()
-    expect(h.state.status).toBe('error')
-    expect(h.state.error).toBe(
-      'Choose a LUT input profile before full-resolution export.',
-    )
+    expect(h.state.session).toBe(session)
     expect(otherExport.signal.aborted).toBe(false)
     expect(h.ctx.exportAbortControllerRef.current).toBe(otherExport)
     expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
-    expect(h.notifications).toEqual([])
   })
 
   it('fails closed when the run-time plan cannot safely complete after readiness passed', async () => {

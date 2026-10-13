@@ -127,6 +127,7 @@ export const FULL_RES_EXPORT_REASON_COPY = {
   'builtin-style': 'raw.export.reason.builtinStyle',
   'lut-input-unconfirmed': 'raw.export.reason.lutInputUnconfirmed',
   'lut-output-unsupported': 'raw.export.reason.lutOutputUnsupported',
+  'look-unsupported': 'raw.export.reason.lookUnsupported',
   'geometry-unplannable': 'raw.export.reason.geometryUnplannable',
   'exposure-pending': 'raw.export.reason.exposurePending',
   'cannot-safely-complete': 'raw.export.reason.cannotSafelyComplete',
