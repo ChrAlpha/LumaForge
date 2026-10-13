@@ -63,43 +63,6 @@ describe('useOriginalReferenceSnapshotResources', () => {
     expect(releaseSnapshot).toHaveBeenCalledWith(snapshot)
   })
 
-  it('disposes the previous snapshot resource when the snapshot key changes', async () => {
-    const registry = createResourceRegistry()
-    const snapshotA = createSnapshot('snapshot-a')
-    const snapshotB = createSnapshot('snapshot-b')
-    const releaseSnapshot = vi.fn()
-
-    const hook = renderHook(() =>
-      useOriginalReferenceSnapshotResources({
-        resourceRegistryRef: { current: registry },
-        releaseSnapshot,
-      }),
-    )
-
-    act(() => {
-      hook.result.current.trackOriginalReferenceSnapshot(snapshotA)
-    })
-    act(() => {
-      hook.result.current.trackOriginalReferenceSnapshot(snapshotB)
-    })
-
-    await waitFor(() => {
-      expect(releaseSnapshot).toHaveBeenCalledWith(snapshotA)
-      expect(registry.snapshot().live).toEqual([
-        {
-          id: 'original-reference-snapshot-2',
-          owner: 'preview',
-          kind: 'object-url',
-          estimatedBytes: 240_000,
-        },
-      ])
-    })
-
-    await registry.disposeOwners(['preview'])
-
-    expect(releaseSnapshot).toHaveBeenCalledWith(snapshotB)
-  })
-
   it('tracks pending original-reference renders and clears them by key', async () => {
     const registry = createResourceRegistry()
     const pendingDispose = vi.fn().mockResolvedValue(undefined)

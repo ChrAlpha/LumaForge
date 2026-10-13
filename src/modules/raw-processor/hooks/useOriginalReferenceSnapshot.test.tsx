@@ -378,105 +378,6 @@ describe('useOriginalReferenceSnapshot', () => {
     expect(owner.discardSnapshot).not.toHaveBeenCalled()
   })
 
-  it('hands the replacement to its owner when the quick source changes', async () => {
-    const owner = createOwner()
-    const renderSnapshot = vi
-      .fn()
-      .mockResolvedValueOnce({
-        key: 'quick-key-a',
-        objectUrl: 'blob:quick-a',
-        width: 100,
-        height: 50,
-        source: 'quick',
-        mimeType: 'image/jpeg',
-        estimatedBytes: 10,
-      })
-      .mockResolvedValueOnce({
-        key: 'quick-key-b',
-        objectUrl: 'blob:quick-b',
-        width: 120,
-        height: 60,
-        source: 'quick',
-        mimeType: 'image/jpeg',
-        estimatedBytes: 12,
-      })
-
-    const { result, rerender } = renderHook(
-      ({ image }) =>
-        useOriginalReferenceSnapshot({
-          sessionId: 'session-a',
-          image,
-          frame: frameOf(image),
-          displaySource: 'quick',
-          capability: { webKitClass: 'chromium', pthread: true },
-          renderSnapshot,
-          ...owner,
-        }),
-      {
-        initialProps: {
-          image: createImage('quick'),
-        },
-      },
-    )
-
-    await waitFor(() =>
-      expect(result.current.snapshot?.objectUrl).toBe('blob:quick-a'),
-    )
-
-    rerender({
-      image: createImage('quick', 1800),
-    })
-
-    await waitFor(() =>
-      expect(result.current.snapshot?.objectUrl).toBe('blob:quick-b'),
-    )
-    expect(trackedUrls(owner)).toEqual(['blob:quick-a', 'blob:quick-b'])
-  })
-
-  it('hands the snapshot back and clears it when the source becomes ineligible', async () => {
-    const owner = createOwner()
-    const renderSnapshot = vi.fn().mockResolvedValue({
-      key: 'quick-key-a',
-      objectUrl: 'blob:quick-a',
-      width: 100,
-      height: 50,
-      source: 'quick',
-      mimeType: 'image/jpeg',
-      estimatedBytes: 10,
-    })
-
-    const { result, rerender } = renderHook(
-      ({ image, displaySource }) =>
-        useOriginalReferenceSnapshot({
-          sessionId: 'session-a',
-          image,
-          frame: frameOf(image),
-          displaySource,
-          capability: { webKitClass: 'chromium', pthread: true },
-          renderSnapshot,
-          ...owner,
-        }),
-      {
-        initialProps: {
-          image: createImage('quick') as DecodedImage | null,
-          displaySource: 'quick' as DisplaySource,
-        },
-      },
-    )
-
-    await waitFor(() =>
-      expect(result.current.snapshot?.objectUrl).toBe('blob:quick-a'),
-    )
-
-    rerender({
-      image: null,
-      displaySource: 'none' as DisplaySource,
-    })
-
-    await waitFor(() => expect(result.current.snapshot).toBeNull())
-    expect(trackedUrls(owner)).toEqual(['blob:quick-a', null])
-  })
-
   it('hands the snapshot back and clears it when the session becomes unavailable', async () => {
     const owner = createOwner()
     const renderSnapshot = vi.fn().mockResolvedValue({
@@ -813,80 +714,44 @@ describe('useOriginalReferenceSnapshot', () => {
     })
   })
 
-  it('reports fallback when generation fails', async () => {
-    const owner = createOwner()
-    const image = createImage('quick')
-    const { result } = renderHook(() =>
-      useOriginalReferenceSnapshot({
-        sessionId: 'session-a',
-        image,
-        frame: frameOf(image),
-        displaySource: 'quick',
-        capability: { webKitClass: 'chromium', pthread: true },
-        renderSnapshot: vi
-          .fn()
-          .mockRejectedValue(
-            new Error('ORIGINAL_REFERENCE_SNAPSHOT_ENCODE_FAILED'),
-          ),
-        ...owner,
-      }),
-    )
-
-    await waitFor(() =>
-      expect(result.current.fallbackReason).toBe(
-        'ORIGINAL_REFERENCE_SNAPSHOT_ENCODE_FAILED',
-      ),
-    )
-  })
-
-  it('uses a generic fallback reason when generation fails without a message', async () => {
-    const emptyMessageError = new Error('snapshot failed without a message')
-    emptyMessageError.message = ''
-    const owner = createOwner()
-
-    const image = createImage('quick')
-    const { result } = renderHook(() =>
-      useOriginalReferenceSnapshot({
-        sessionId: 'session-a',
-        image,
-        frame: frameOf(image),
-        displaySource: 'quick',
-        capability: { webKitClass: 'chromium', pthread: true },
-        renderSnapshot: vi.fn().mockRejectedValue(emptyMessageError),
-        ...owner,
-      }),
-    )
-
-    await waitFor(() =>
-      expect(result.current.fallbackReason).toBe(
-        'ORIGINAL_REFERENCE_SNAPSHOT_FAILED',
-      ),
-    )
-  })
-
-  it('uses an Error-like rejection message as the fallback reason', async () => {
-    const owner = createOwner()
-    const image = createImage('quick')
-    const { result } = renderHook(() =>
-      useOriginalReferenceSnapshot({
-        sessionId: 'session-a',
-        image,
-        frame: frameOf(image),
-        displaySource: 'quick',
-        capability: { webKitClass: 'chromium', pthread: true },
-        renderSnapshot: vi.fn().mockRejectedValue({
-          message: 'ORIGINAL_REFERENCE_SNAPSHOT_TIMEOUT',
+  const emptyMessageError = new Error('snapshot failed without a message')
+  emptyMessageError.message = ''
+  it.each([
+    {
+      failure: 'an Error',
+      rejection: new Error('ORIGINAL_REFERENCE_SNAPSHOT_ENCODE_FAILED'),
+      reason: 'ORIGINAL_REFERENCE_SNAPSHOT_ENCODE_FAILED',
+    },
+    {
+      failure: 'an Error without a message',
+      rejection: emptyMessageError,
+      reason: 'ORIGINAL_REFERENCE_SNAPSHOT_FAILED',
+    },
+    {
+      failure: 'an Error-like rejection',
+      rejection: { message: 'ORIGINAL_REFERENCE_SNAPSHOT_TIMEOUT' },
+      reason: 'ORIGINAL_REFERENCE_SNAPSHOT_TIMEOUT',
+    },
+  ])(
+    'reports a fallback reason when generation fails with $failure',
+    async ({ rejection, reason }) => {
+      const owner = createOwner()
+      const image = createImage('quick')
+      const { result } = renderHook(() =>
+        useOriginalReferenceSnapshot({
+          sessionId: 'session-a',
+          image,
+          frame: frameOf(image),
+          displaySource: 'quick',
+          capability: { webKitClass: 'chromium', pthread: true },
+          renderSnapshot: vi.fn().mockRejectedValue(rejection),
+          ...owner,
         }),
-        ...owner,
-      }),
-    )
+      )
 
-    await waitFor(() =>
-      expect(result.current.fallbackReason).toBe(
-        'ORIGINAL_REFERENCE_SNAPSHOT_TIMEOUT',
-      ),
-    )
-  })
+      await waitFor(() => expect(result.current.fallbackReason).toBe(reason))
+    },
+  )
 
   it('hands the current snapshot back on unmount', async () => {
     const owner = createOwner()

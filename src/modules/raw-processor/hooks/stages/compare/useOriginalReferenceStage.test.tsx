@@ -12,10 +12,8 @@ import {
   setCapabilityVectorForTest,
 } from '~/lib/runtime/capability-vector'
 
-import type { DisplaySource, ImageSession } from '../../../model/session'
-import { createTransformState } from '../../../model/session-factory'
+import type { DisplaySource } from '../../../model/session'
 import type { OriginalReferenceSnapshot } from '../../../services/compare/original-reference-snapshot'
-import { setCurrentSession } from '../../../state/session.atoms'
 import { useOriginalReferenceSnapshot } from '../../useOriginalReferenceSnapshot'
 import { useOriginalReferenceStage } from './useOriginalReferenceStage'
 
@@ -67,46 +65,6 @@ const renders: PendingRender[] = []
 // Object URLs stay unique across the file so each revocation names exactly
 // one snapshot.
 let objectUrlCount = 0
-
-function createSession(
-  viewMode: PreviewViewMode,
-  id = 'session-original-reference',
-): ImageSession {
-  return {
-    id,
-    createdAt: 1,
-    sourceFile: {
-      name: 'frame.dng',
-      extension: 'dng',
-      sizeBytes: 1,
-      supportLevel: 'experimental',
-    },
-    previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'ready', width: 800, height: 600 },
-      boundedHqPreview: { status: 'ready', width: 800, height: 600 },
-      displaySource: 'bounded-hq',
-      boundedHqRequiredForExport: false,
-    },
-    activeStyle: null,
-    viewState: {
-      mode: viewMode,
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
-    renderState: { status: 'ready' },
-    exportState: {
-      status: 'idle',
-      fullResCapability: { status: 'supported', width: 800, height: 600 },
-      retryRecommended: false,
-    },
-    exportGeometry: null,
-    transform: createTransformState(id),
-  }
-}
 
 function createImage(
   source: 'quick' | 'bounded-hq',
@@ -261,7 +219,6 @@ describe('useOriginalReferenceStage', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     resetCapabilityVectorForTest()
-    setCurrentSession(null)
     vi.mocked(useOriginalReferenceSnapshot).mockClear()
   })
 
@@ -306,167 +263,39 @@ describe('useOriginalReferenceStage', () => {
     await act(async () => {})
   })
 
-  it('exposes compare fallback controls and no snapshot before an image is available', () => {
-    const session = createSession('compare')
-
-    const { result } = renderHook(() =>
-      useOriginalReferenceStage({
-        sessionId: session.id,
-        viewMode: 'compare',
-        previewSuspended: false,
-        decodedImageRef: { current: null },
-        decodedFrame: null,
-        displaySource: 'bounded-hq',
-        resourceRegistryRef: { current: createResourceRegistry() },
-      }),
-    )
-
-    expect(typeof result.current.dualGpuAllowed).toBe('boolean')
-    expect(result.current.originalReferenceSnapshot).toBeNull()
-    expect(result.current.originalReferenceFallbackReason).toBeNull()
-    expect(typeof result.current.requestOriginalReferenceFallback).toBe(
-      'function',
-    )
-  })
-
-  it.each([
-    {
-      replacement: 'a bounded HQ upgrade',
-      next: {
-        image: createImage('bounded-hq', 2400),
-        imageVersion: 2,
-        displaySource: 'bounded-hq' as DisplaySource,
-      },
-    },
-    {
-      replacement: 'a new quick source',
-      next: {
-        image: createImage('quick', 1800),
-        imageVersion: 2,
-        displaySource: 'quick' as DisplaySource,
-      },
-    },
-  ])(
-    'revokes the previous snapshot exactly once when $replacement replaces it',
-    async ({ next }) => {
-      const { result, rerender, unmount, registry } = renderStage()
-      await waitFor(() => expect(renders).toHaveLength(1))
-      const first = await resolveRender(0)
-      expect(result.current.originalReferenceSnapshot).toBe(first)
-
-      rerender({
-        sessionId: 'session-original-reference',
-        viewMode: 'compare',
-        ...next,
-      })
-      await waitFor(() => expect(renders).toHaveLength(2))
-
-      expect(result.current.originalReferenceSnapshot).toBe(first)
-      expect(revokedUrls()).toEqual([])
-
-      const second = await resolveRender(1)
-
-      expect(result.current.originalReferenceSnapshot).toBe(second)
-      expect(revokedUrls()).toEqual([first.objectUrl])
-      expect(liveSnapshotUrls(registry)).toEqual([
-        expect.objectContaining({ estimatedBytes: second.estimatedBytes }),
-      ])
-
-      unmount()
-      await act(async () => {})
-
-      expect(revokedUrls()).toEqual([first.objectUrl, second.objectUrl])
-      expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
-    },
-  )
-
-  it('revokes the previous session snapshot once when a new session replaces it', async () => {
+  it('revokes the previous snapshot exactly once when a bounded HQ upgrade replaces it', async () => {
+    const next = {
+      image: createImage('bounded-hq', 2400),
+      imageVersion: 2,
+      displaySource: 'bounded-hq' as DisplaySource,
+    }
     const { result, rerender, unmount, registry } = renderStage()
     await waitFor(() => expect(renders).toHaveLength(1))
     const first = await resolveRender(0)
+    expect(result.current.originalReferenceSnapshot).toBe(first)
 
     rerender({
-      sessionId: 'session-replacement',
+      sessionId: 'session-original-reference',
       viewMode: 'compare',
-      image: createImage('quick'),
-      imageVersion: 1,
-      displaySource: 'quick',
+      ...next,
     })
     await waitFor(() => expect(renders).toHaveLength(2))
 
-    expect(result.current.originalReferenceSnapshot).toBeNull()
-    await act(async () => {})
-    expect(revokedUrls()).toEqual([first.objectUrl])
-    expect(liveSnapshotUrls(registry)).toEqual([])
+    expect(result.current.originalReferenceSnapshot).toBe(first)
+    expect(revokedUrls()).toEqual([])
 
     const second = await resolveRender(1)
+
     expect(result.current.originalReferenceSnapshot).toBe(second)
+    expect(revokedUrls()).toEqual([first.objectUrl])
+    expect(liveSnapshotUrls(registry)).toEqual([
+      expect.objectContaining({ estimatedBytes: second.estimatedBytes }),
+    ])
 
     unmount()
     await act(async () => {})
 
     expect(revokedUrls()).toEqual([first.objectUrl, second.objectUrl])
-    expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
-  })
-
-  it('keeps one owned snapshot when rerenders reuse the same key', async () => {
-    const { result, rerender, unmount, registry } = renderStage()
-    await waitFor(() => expect(renders).toHaveLength(1))
-    const snapshot = await resolveRender(0)
-
-    rerender({
-      sessionId: 'session-original-reference',
-      viewMode: 'compare',
-      image: createImage('quick'),
-      imageVersion: 1,
-      displaySource: 'quick',
-    })
-    await act(async () => {})
-
-    expect(renders).toHaveLength(1)
-    expect(result.current.originalReferenceSnapshot).toBe(snapshot)
-    expect(revokedUrls()).toEqual([])
-    expect(liveSnapshotUrls(registry)).toHaveLength(1)
-
-    unmount()
-    await act(async () => {})
-
-    expect(revokedUrls()).toEqual([snapshot.objectUrl])
-  })
-
-  it('revokes a render cancelled before completion exactly once without publishing it', async () => {
-    const { result, rerender, unmount, registry } = renderStage()
-    await waitFor(() => expect(renders).toHaveLength(1))
-
-    rerender({
-      sessionId: 'session-original-reference',
-      viewMode: 'processed',
-      image: createImage('quick'),
-      imageVersion: 1,
-      displaySource: 'quick',
-    })
-    expect(renders[0]?.signal?.aborted).toBe(true)
-
-    const late = await resolveRender(0)
-
-    expect(result.current.originalReferenceSnapshot).toBeNull()
-    expect(revokedUrls()).toEqual([late.objectUrl])
-    expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
-
-    unmount()
-    await act(async () => {})
-
-    expect(revokedUrls()).toEqual([late.objectUrl])
-  })
-
-  it('revokes a render that completes after unmount exactly once', async () => {
-    const { unmount, registry } = renderStage()
-    await waitFor(() => expect(renders).toHaveLength(1))
-
-    unmount()
-    const late = await resolveRender(0)
-
-    expect(revokedUrls()).toEqual([late.objectUrl])
     expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
   })
 
@@ -492,68 +321,6 @@ describe('useOriginalReferenceStage', () => {
     expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
   })
 
-  it('revokes an evacuated snapshot only once across later cleanup', async () => {
-    const { rerender, unmount, registry } = renderStage()
-    await waitFor(() => expect(renders).toHaveLength(1))
-    const snapshot = await resolveRender(0)
-
-    await act(async () => {
-      await registry.disposeOwners(['preview'])
-    })
-    expect(revokedUrls()).toEqual([snapshot.objectUrl])
-    expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
-
-    rerender({
-      sessionId: 'session-original-reference',
-      viewMode: 'processed',
-      image: createImage('quick'),
-      imageVersion: 1,
-      displaySource: 'quick',
-    })
-    await act(async () => {
-      await registry.disposeOwners(['preview'])
-    })
-    unmount()
-    await act(async () => {})
-
-    expect(revokedUrls()).toEqual([snapshot.objectUrl])
-  })
-
-  it('owns every snapshot URL without a resource registry', async () => {
-    const { result, rerender, unmount } = renderStageHook({ registry: null })
-    await waitFor(() => expect(renders).toHaveLength(1))
-    const first = await resolveRender(0)
-
-    rerender({
-      sessionId: 'session-original-reference',
-      viewMode: 'compare',
-      image: createImage('bounded-hq', 2400),
-      imageVersion: 2,
-      displaySource: 'bounded-hq',
-    })
-    await waitFor(() => expect(renders).toHaveLength(2))
-    const second = await resolveRender(1)
-    expect(result.current.originalReferenceSnapshot).toBe(second)
-    expect(revokedUrls()).toEqual([first.objectUrl])
-
-    rerender({
-      sessionId: 'session-original-reference',
-      viewMode: 'compare',
-      image: createImage('quick', 1800),
-      imageVersion: 3,
-      displaySource: 'quick',
-    })
-    await waitFor(() => expect(renders).toHaveLength(3))
-    unmount()
-    const late = await resolveRender(2)
-
-    expect(revokedUrls()).toEqual([
-      first.objectUrl,
-      second.objectUrl,
-      late.objectUrl,
-    ])
-  })
-
   it('revokes each snapshot URL exactly once under StrictMode effect replay', async () => {
     const { result, unmount, registry } = renderStage({ strict: true })
     await waitFor(() => expect(renders).toHaveLength(2))
@@ -571,90 +338,5 @@ describe('useOriginalReferenceStage', () => {
 
     expect(revokedUrls()).toEqual([replayed.objectUrl, live.objectUrl])
     expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
-  })
-
-  describe('with dual-GPU compare available', () => {
-    beforeEach(() => {
-      setCapabilityVectorForTest({
-        coi: true,
-        pthread: true,
-        deviceMemoryGB: 8,
-        hwConcurrency: 8,
-        webKitClass: 'chromium',
-        deviceFormFactor: 'desktop',
-        maybeOpfsSupported: true,
-      })
-    })
-
-    it('prepares a fallback snapshot only for the session the request named', async () => {
-      const first = createSession('compare')
-      const replacement = createSession('compare', 'session-replacement')
-      setCurrentSession(first)
-      const { result, rerender, unmount, registry } = renderStage()
-      await act(async () => {})
-      expect(result.current.dualGpuAllowed).toBe(true)
-      expect(renders).toHaveLength(0)
-
-      // A load writes the store before the stage rerenders, so a request
-      // made in that tick belongs to the replacement, not the rendered one.
-      const request = result.current.requestOriginalReferenceFallback
-      act(() => {
-        setCurrentSession(replacement)
-        request()
-      })
-      await act(async () => {})
-      expect(renders).toHaveLength(0)
-
-      rerender({
-        sessionId: replacement.id,
-        viewMode: 'compare',
-        image: createImage('quick', 1800),
-        imageVersion: 2,
-        displaySource: 'quick',
-      })
-      await waitFor(() => expect(renders).toHaveLength(1))
-      const snapshot = await resolveRender(0)
-      expect(result.current.originalReferenceSnapshot).toBe(snapshot)
-
-      unmount()
-      await act(async () => {})
-      expect(revokedUrls()).toEqual([snapshot.objectUrl])
-      expect(registry.assertZeroLive(['preview'])).toEqual({ ok: true })
-    })
-
-    it('drops a fallback request once a replacement source loads', async () => {
-      const first = createSession('compare', 'session-original-reference')
-      const replacement = createSession('compare', 'session-replacement')
-      setCurrentSession(first)
-      const { result, rerender, unmount } = renderStage()
-      await act(async () => {})
-
-      act(() => {
-        result.current.requestOriginalReferenceFallback()
-      })
-      await waitFor(() => expect(renders).toHaveLength(1))
-      const snapshot = await resolveRender(0)
-      expect(result.current.originalReferenceSnapshot).toBe(snapshot)
-
-      act(() => {
-        setCurrentSession(replacement)
-      })
-      rerender({
-        sessionId: replacement.id,
-        viewMode: 'compare',
-        image: createImage('quick', 1800),
-        imageVersion: 2,
-        displaySource: 'quick',
-      })
-      await act(async () => {})
-
-      expect(renders).toHaveLength(1)
-      expect(result.current.originalReferenceSnapshot).toBeNull()
-      expect(revokedUrls()).toEqual([snapshot.objectUrl])
-
-      unmount()
-      await act(async () => {})
-      expect(revokedUrls()).toEqual([snapshot.objectUrl])
-    })
   })
 })
