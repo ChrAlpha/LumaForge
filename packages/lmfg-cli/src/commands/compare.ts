@@ -9,7 +9,11 @@ import { createIterationStore } from '../workspace/iteration-store'
 import { toFileUri } from '../workspace/paths'
 import type { CommandHost } from './context'
 import { runCommand } from './context'
-import { openRenderSession, withRuntime } from './render-shared'
+import {
+  openRenderSession,
+  parseNonNegativeInteger,
+  withRuntime,
+} from './render-shared'
 
 function parseLayout(value: string): { cols: number; rows: number } {
   const match = /^(\d+)x(\d+)$/i.exec(value.trim())
@@ -50,7 +54,7 @@ export function registerCompareCommands(
     .option(
       '--gap <n>',
       'gap between tiles in pixels',
-      (v: string) => Number.parseInt(v, 10),
+      parseNonNegativeInteger,
       4,
     )
     .option(

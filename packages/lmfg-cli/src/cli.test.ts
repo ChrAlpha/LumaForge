@@ -66,6 +66,21 @@ describe('runCli', () => {
     })
     const bad = io()
     expect(await runCli(['version', '--tier', 'gpu'], bad.io)).toBe(2)
+    for (const gap of ['wide', '-1']) {
+      const badGap = io()
+      expect(
+        await runCli(
+          ['compare', 'sheet', '--iteration', 'iter_0001', '--gap', gap],
+          badGap.io,
+        ),
+      ).toBe(2)
+      expect(JSON.parse(badGap.out.join(''))).toMatchObject({
+        error: {
+          code: 'args.invalid',
+          message: expect.stringMatching(/--gap/),
+        },
+      })
+    }
   })
 
   it('ndjson emit wraps the result in a completed event', async () => {

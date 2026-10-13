@@ -34,6 +34,14 @@ export function parsePositiveInteger(value: string): number {
   return parsed
 }
 
+export function parseNonNegativeInteger(value: string): number {
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new InvalidArgumentError('Expected a non-negative integer.')
+  }
+  return parsed
+}
+
 export async function loadParamsFile(
   ctx: CommandContext,
   file: string | undefined,
