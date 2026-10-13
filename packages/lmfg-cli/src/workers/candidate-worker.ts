@@ -35,13 +35,6 @@ async function main() {
   let chain: Promise<void> = Promise.resolve()
 
   port!.on('message', (request: CandidateWorkerRequest) => {
-    if (request.type === 'close') {
-      chain = chain.finally(() => {
-        jpeg.dispose()
-        port!.close()
-      })
-      return
-    }
     chain = chain.then(async () => {
       try {
         const rgba = renderCpuPreviewFrame({
@@ -67,22 +60,10 @@ async function main() {
           jpeg: bytes,
           tile: data.tile,
         })
-        post(
-          {
-            type: 'done',
-            index: output.index,
-            width: output.width,
-            height: output.height,
-            jpeg: output.jpeg,
-            sha256: output.sha256,
-            metrics: output.metrics,
-            tile: output.tile,
-          },
-          [
-            output.jpeg.buffer as ArrayBuffer,
-            output.tile.rgba.buffer as ArrayBuffer,
-          ],
-        )
+        post({ type: 'done', ...output }, [
+          output.jpeg.buffer as ArrayBuffer,
+          output.tile.rgba.buffer as ArrayBuffer,
+        ])
       } catch (error) {
         post({
           type: 'error',

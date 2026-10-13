@@ -36,29 +36,17 @@ export type SharedFrame = {
   height: number
 }
 
-/** Messages the pool sends to a candidate worker. */
-export type CandidateWorkerRequest =
-  | {
-      type: 'render'
-      index: number
-      graph: SupportedExportColorGraphDescriptor
-      quality: number
-    }
-  | { type: 'close' }
+/** A render the pool asks a candidate worker for; the pool terminates idle workers. */
+export type CandidateWorkerRequest = {
+  index: number
+  graph: SupportedExportColorGraphDescriptor
+  quality: number
+}
 
 /** Messages a candidate worker posts back. */
 export type CandidateWorkerResponse =
   | { type: 'ready' }
-  | {
-      type: 'done'
-      index: number
-      width: number
-      height: number
-      jpeg: Uint8Array
-      sha256: string
-      metrics: Metrics
-      tile: { rgba: Uint8ClampedArray; width: number; height: number }
-    }
+  | ({ type: 'done' } & CandidateOutput)
   | { type: 'error'; index: number | null; message: string; stack?: string }
 
 export type CandidateWorkerData = {
@@ -203,11 +191,6 @@ async function* renderInline(
   }
 }
 
-type PendingSlot = {
-  worker: Worker
-  busy: boolean
-}
-
 async function* renderWithWorkers(
   input: RenderCandidatesInput,
   concurrency: number,
@@ -215,7 +198,7 @@ async function* renderWithWorkers(
 ): AsyncGenerator<CandidateOutput> {
   const frame = shareFrame(input.frame)
   const workerData: CandidateWorkerData = { frame, tile: input.tile }
-  const slots: PendingSlot[] = []
+  const workers: Worker[] = []
   const queue: CandidateOutput[] = []
   let nextIndex = 0
   let completed = 0
@@ -237,19 +220,17 @@ async function* renderWithWorkers(
     notify()
   }
 
-  const dispatch = (slot: PendingSlot) => {
+  const dispatch = (worker: Worker) => {
     if (failure || nextIndex >= input.tasks.length) return
     const index = nextIndex
     nextIndex += 1
-    slot.busy = true
     const task = input.tasks[index]
     const message: CandidateWorkerRequest = {
-      type: 'render',
       index,
       graph: task.graph,
       quality: task.quality,
     }
-    slot.worker.postMessage(message)
+    worker.postMessage(message)
   }
 
   const onAbort = () => {
@@ -259,7 +240,7 @@ async function* renderWithWorkers(
 
   const terminateAll = async () => {
     input.signal?.removeEventListener('abort', onAbort)
-    await Promise.allSettled(slots.map((slot) => slot.worker.terminate()))
+    await Promise.allSettled(workers.map((worker) => worker.terminate()))
   }
 
   try {
@@ -267,11 +248,10 @@ async function* renderWithWorkers(
     for (let i = 0; i < concurrency; i += 1) {
       if (failure) break
       const worker = new Worker(workerScript, { workerData })
-      const slot: PendingSlot = { worker, busy: false }
-      slots.push(slot)
+      workers.push(worker)
       worker.on('message', (response: CandidateWorkerResponse) => {
         if (response.type === 'ready') {
-          dispatch(slot)
+          dispatch(worker)
           notify()
           return
         }
@@ -287,18 +267,10 @@ async function* renderWithWorkers(
           )
           return
         }
-        slot.busy = false
+        const { type: _done, ...output } = response
         completed += 1
-        queue.push({
-          index: response.index,
-          width: response.width,
-          height: response.height,
-          jpeg: response.jpeg,
-          sha256: response.sha256,
-          metrics: response.metrics,
-          tile: response.tile,
-        })
-        dispatch(slot)
+        queue.push(output)
+        dispatch(worker)
         notify()
       })
       worker.on('error', (error: unknown) => {
