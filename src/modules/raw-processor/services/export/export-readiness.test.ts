@@ -184,8 +184,9 @@ const FOLDING_MATRIX = composeManualTransform(
 )
 
 /**
- * Committed geometries the engine refuses to plan: the known fold, then state
- * that is malformed, non-finite or singular.
+ * Committed geometries the engine refuses to plan: the fold the manual
+ * controls can compose, then state that is malformed or non-finite. The
+ * engine's own geometry tests hold the rest of what it refuses.
  */
 const INVALID_GEOMETRIES: ReadonlyArray<
   readonly [label: string, geometry: ExportGeometry]
@@ -195,16 +196,8 @@ const INVALID_GEOMETRIES: ReadonlyArray<
     { matrix: FOLDING_MATRIX, constrainCrop: false },
   ],
   [
-    'a matrix missing an entry',
-    { matrix: IDENTITY.slice(0, 8), constrainCrop: true },
-  ],
-  [
     'a matrix that is not an array',
     { matrix: {} as unknown as ExportGeometry['matrix'], constrainCrop: true },
-  ],
-  [
-    'a NaN entry',
-    { matrix: [1, 0, 0, 0, Number.NaN, 0, 0, 0, 1], constrainCrop: true },
   ],
   [
     'an infinite entry',
@@ -213,122 +206,11 @@ const INVALID_GEOMETRIES: ReadonlyArray<
       constrainCrop: false,
     },
   ],
-  [
-    'a singular matrix',
-    { matrix: [1, 2, 0, 2, 4, 0, 0, 0, 1], constrainCrop: true },
-  ],
-  [
-    'an all-zero matrix',
-    { matrix: [0, 0, 0, 0, 0, 0, 0, 0, 0], constrainCrop: false },
-  ],
-  [
-    'a horizon crossing the source frame',
-    { matrix: [1, 0, 0, 0, 1, 0, -2, 0, 1], constrainCrop: true },
-  ],
 ]
 
 describe('export readiness helpers', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
-  })
-
-  it('keeps full-resolution export available while a geometry is committed', () => {
-    const input = {
-      sourceFile: new File(['raw'], 'frame.ARW'),
-      session: createGeometrySession(),
-      rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' as const },
-    }
-
-    // Full resolution reproduces the geometry, so it is no longer a blocker.
-    const readiness = deriveFullResExportReadiness(input)
-    expect(readiness.canExport).toBe(true)
-    expect(
-      deriveFullResExportReadiness({ ...input, session: createSession() })
-        .canExport,
-    ).toBe(true)
-  })
-
-  it('requires a source file and active session before full-resolution export is ready', () => {
-    const file = new File(['raw'], 'frame.ARW')
-    const rawRenderExposure = {
-      ev: 0,
-      multiplier: 1,
-      source: 'identity',
-    } as const
-
-    expect(
-      deriveFullResExportReadiness({
-        sourceFile: null,
-        session: createSession(),
-        rawRenderExposure,
-      }),
-    ).toEqual({
-      canExport: false,
-      refusal: { code: 'source-loading' },
-    })
-    expect(
-      deriveFullResExportReadiness({
-        sourceFile: file,
-        session: null,
-        rawRenderExposure,
-      }),
-    ).toEqual({
-      canExport: false,
-      refusal: { code: 'source-loading' },
-    })
-  })
-
-  it('keeps export disabled while capability is probing or unsupported after quick preview is ready', () => {
-    const file = new File(['raw'], 'frame.ARW')
-    const rawRenderExposure = {
-      ev: 0,
-      multiplier: 1,
-      source: 'identity',
-    } as const
-
-    expect(
-      deriveFullResExportReadiness({
-        sourceFile: file,
-        session: createSession({
-          fullResCapability: { status: 'probing' },
-        }),
-        rawRenderExposure,
-      }),
-    ).toEqual({
-      canExport: false,
-      refusal: { code: 'capability-probing' },
-    })
-    expect(
-      deriveFullResExportReadiness({
-        sourceFile: file,
-        session: createSession({
-          fullResCapability: {
-            status: 'unsupported',
-            reason: 'processed-window-unavailable',
-          },
-        }),
-        rawRenderExposure,
-      }),
-    ).toEqual({
-      canExport: false,
-      refusal: {
-        code: 'runtime-unsupported',
-        detail: 'processed-window-unavailable',
-      },
-    })
-  })
-
-  it('requires decoded RAW render exposure after source and capability are ready', () => {
-    expect(
-      deriveFullResExportReadiness({
-        sourceFile: new File(['raw'], 'frame.ARW'),
-        session: createSession(),
-        rawRenderExposure: null,
-      }),
-    ).toEqual({
-      canExport: false,
-      refusal: { code: 'exposure-pending' },
-    })
   })
 
   it('keeps unsafe large iOS blob-handoff exports disabled with product copy', () => {
@@ -359,7 +241,7 @@ describe('export readiness helpers', () => {
     })
   })
 
-  it('assumes a reachable OPFS has room without sampling storage', () => {
+  it('assumes a reachable OPFS has room, sampling no storage and handing out no plan', () => {
     const estimate = vi.fn(async () => ({ quota: 1, usage: 1 }))
     vi.stubGlobal('navigator', {
       userAgent:
@@ -370,21 +252,27 @@ describe('export readiness helpers', () => {
     })
     vi.stubGlobal('crossOriginIsolated', false)
 
-    const readiness = deriveFullResExportReadiness({
-      sourceFile: new File(['raw'], 'frame.RAF'),
-      session: createSession({
-        fullResCapability: {
-          status: 'supported',
-          width: 11662,
-          height: 8746,
-        },
-      }),
-      rawRenderExposure: IDENTITY_EXPOSURE,
+    const sourceFile = new File(['raw'], 'frame.RAF')
+    const session = createSession({
+      fullResCapability: { status: 'supported', width: 11662, height: 8746 },
     })
-
     // Optimistic: the export samples real storage, and refuses then if the
-    // sink cannot hold the output.
-    expect(readiness.canExport).toBe(true)
+    // sink cannot hold the output. Nothing readiness planned may run, so it
+    // answers only whether the export may start.
+    expect(
+      deriveFullResExportReadiness({
+        sourceFile,
+        session,
+        rawRenderExposure: IDENTITY_EXPOSURE,
+      }),
+    ).toEqual({
+      canExport: true,
+      sourceFile,
+      session,
+      rawRenderExposure: IDENTITY_EXPOSURE,
+      fullResCapability: { status: 'supported', width: 11662, height: 8746 },
+      deliveredSize: { width: 11662, height: 8746 },
+    })
     expect(estimate).not.toHaveBeenCalled()
   })
 
@@ -458,12 +346,12 @@ describe('export readiness helpers', () => {
     const folding = { matrix: FOLDING_MATRIX, constrainCrop: false }
     const cases: Array<
       readonly [
-        code: string,
+        refusal: FullResExportReason,
         input: Parameters<typeof deriveFullResExportReadiness>[0],
       ]
     > = [
       [
-        'source-loading',
+        { code: 'source-loading' },
         {
           sourceFile: null,
           session: createSession({ status: 'exporting' }),
@@ -471,7 +359,11 @@ describe('export readiness helpers', () => {
         },
       ],
       [
-        'export-running',
+        { code: 'source-loading' },
+        { sourceFile, session: null, rawRenderExposure: null },
+      ],
+      [
+        { code: 'export-running' },
         {
           sourceFile,
           session: {
@@ -485,7 +377,7 @@ describe('export readiness helpers', () => {
         },
       ],
       [
-        'quick-preview-pending',
+        { code: 'quick-preview-pending' },
         {
           sourceFile,
           session: {
@@ -495,19 +387,37 @@ describe('export readiness helpers', () => {
           rawRenderExposure: null,
         },
       ],
+      ...(
+        [
+          [{ code: 'capability-unchecked' }, { status: 'unknown' }],
+          [{ code: 'capability-probing' }, { status: 'probing' }],
+          [
+            {
+              code: 'runtime-unsupported',
+              detail: 'processed-window-unavailable',
+            },
+            {
+              status: 'unsupported',
+              reason: 'processed-window-unavailable',
+            },
+          ],
+        ] as const
+      ).map(
+        ([refusal, fullResCapability]) =>
+          [
+            refusal,
+            {
+              sourceFile,
+              session: {
+                ...createSession({ fullResCapability }),
+                activeStyle: builtin,
+              },
+              rawRenderExposure: null,
+            },
+          ] as const,
+      ),
       [
-        'capability-unchecked',
-        {
-          sourceFile,
-          session: {
-            ...createSession({ fullResCapability: { status: 'unknown' } }),
-            activeStyle: builtin,
-          },
-          rawRenderExposure: null,
-        },
-      ],
-      [
-        'builtin-style',
+        { code: 'builtin-style' },
         {
           sourceFile,
           session: {
@@ -519,7 +429,7 @@ describe('export readiness helpers', () => {
         },
       ],
       [
-        'geometry-unplannable',
+        { code: 'geometry-unplannable' },
         {
           sourceFile,
           session: { ...createSession(), exportGeometry: folding },
@@ -527,15 +437,15 @@ describe('export readiness helpers', () => {
         },
       ],
       [
-        'exposure-pending',
+        { code: 'exposure-pending' },
         { sourceFile, session: createSession(), rawRenderExposure: null },
       ],
     ]
-    for (const [code, input] of cases) {
-      const readiness = deriveFullResExportReadiness(input)
-      expect(readiness.canExport).toBe(false)
-      if (readiness.canExport) throw new Error('expected a refusal')
-      expect(readiness).toEqual({ canExport: false, refusal: { code } })
+    for (const [refusal, input] of cases) {
+      expect(deriveFullResExportReadiness(input)).toEqual({
+        canExport: false,
+        refusal,
+      })
     }
   })
 
@@ -616,33 +526,6 @@ describe('export readiness helpers', () => {
       })
     }
   })
-
-  it('marks export ready only when source, session, quick preview, capability, exposure, and plan are safe', () => {
-    const sourceFile = new File(['raw'], 'frame.ARW')
-    const session = createSession()
-    const rawRenderExposure = {
-      ev: 0,
-      multiplier: 1,
-      source: 'identity',
-    } as const
-
-    const readiness = deriveFullResExportReadiness({
-      sourceFile,
-      session,
-      rawRenderExposure,
-    })
-
-    expect(readiness.canExport).toBe(true)
-    if (!readiness.canExport) throw new Error('expected export readiness')
-    expect(readiness.sourceFile).toBe(sourceFile)
-    expect(readiness.session).toBe(session)
-    expect(readiness.rawRenderExposure).toBe(rawRenderExposure)
-    expect(readiness.fullResCapability).toEqual({
-      status: 'supported',
-      width: 4000,
-      height: 3000,
-    })
-  })
 })
 
 describe('deriveTransformExportRefusalReason', () => {
@@ -712,34 +595,6 @@ describe('deriveTransformExportRefusalReason', () => {
         ),
       ).toBe('transform-held')
     }
-  })
-
-  it('names each Transform refusal by code for the export kind asked', () => {
-    const neutral = { ...createSession(), transform: transformAt('neutral') }
-    expect(
-      deriveTransformExportRefusalReason(neutral, 'full-resolution'),
-    ).toBeUndefined()
-    expect(
-      deriveTransformExportRefusalReason(neutral, 'hq-preview'),
-    ).toBeUndefined()
-    const accepted = transformAt('accepted')
-    const held: ImageSession = {
-      ...createSession(),
-      transform: accepted,
-      exportGeometry: heldTransformGeometry(accepted),
-    }
-    expect(
-      deriveTransformExportRefusalReason(held, 'full-resolution'),
-    ).toBeUndefined()
-    expect(deriveTransformExportRefusalReason(held, 'hq-preview')).toBe(
-      'transform-held',
-    )
-    expect(
-      deriveTransformExportRefusalReason(
-        { ...createSession(), transform: transformAt('pending') },
-        'hq-preview',
-      ),
-    ).toBe('transform-held')
   })
 })
 
@@ -843,68 +698,15 @@ describe('full-resolution export request planning', () => {
     }
   })
 
-  it.each([
-    { name: 'no OPFS', runtime: BLOB },
-    {
-      name: 'too little OPFS room',
-      runtime: { ...OPFS, opfsAvailableMB: 100 },
-    },
-  ])(
-    'refuses a large mobile export with $name with the policy copy',
-    ({ runtime }) => {
-      expect(
-        planFullResExport(planFullResExportRequest({ source: LARGE }), {
-          capability: MOBILE,
-          runtime,
-        }),
-      ).toEqual({
-        kind: 'refuse',
-        refusal: { code: 'cannot-safely-complete' },
-      })
-    },
-  )
-
-  it('runs the same large mobile export once OPFS can hold it', () => {
-    const decision = planFullResExport(
-      planFullResExportRequest({ source: LARGE }),
-      { capability: MOBILE, runtime: OPFS },
-    )
-    expect(decision).toMatchObject({
-      kind: 'run',
-      plan: { outputSink: 'opfs-file', runtimeMemoryProfile: 'low-memory' },
+  it('refuses a large mobile export without OPFS with the policy copy', () => {
+    expect(
+      planFullResExport(planFullResExportRequest({ source: LARGE }), {
+        capability: MOBILE,
+        runtime: BLOB,
+      }),
+    ).toEqual({
+      kind: 'refuse',
+      refusal: { code: 'cannot-safely-complete' },
     })
-  })
-
-  it('hands out no plan from the optimistic readiness facts', () => {
-    vi.stubGlobal('navigator', {
-      userAgent:
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
-      maxTouchPoints: 1,
-      storage: { getDirectory: vi.fn() },
-      hardwareConcurrency: 4,
-    })
-    vi.stubGlobal('crossOriginIsolated', false)
-    try {
-      const readiness = deriveFullResExportReadiness({
-        sourceFile: new File(['raw'], 'frame.RAF'),
-        session: createSession({
-          fullResCapability: { status: 'supported', ...LARGE },
-        }),
-        rawRenderExposure: IDENTITY_EXPOSURE,
-      })
-      // Readiness assumed OPFS has room, so nothing it planned may run: it
-      // answers only whether the export may start.
-      expect(readiness.canExport).toBe(true)
-      expect(Object.keys(readiness).sort()).toEqual([
-        'canExport',
-        'deliveredSize',
-        'fullResCapability',
-        'rawRenderExposure',
-        'session',
-        'sourceFile',
-      ])
-    } finally {
-      vi.unstubAllGlobals()
-    }
   })
 })

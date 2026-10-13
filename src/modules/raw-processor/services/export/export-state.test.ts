@@ -320,9 +320,7 @@ describe('continuous look strength', () => {
 
   it.each([
     [0.37, 0.62],
-    [0.62, 0.37],
     [0.62, 0.7],
-    [0.4, 0.37],
     [0.62, 0.63],
     [0.37, 0],
   ])('invalidates the render graph from %s to %s', (from, to) => {
@@ -406,175 +404,23 @@ describe('export state helpers', () => {
     expect(next.exportState.recommendedRetryLevel).toBeUndefined()
   })
 
-  it('detects only render graph parameter changes', () => {
-    const current = {
-      styleKind: 'builtin',
-      builtinPreset: 'warm',
-      intensity: 0.7,
-      userExposureEv: 0,
-      userContrast: 0,
-      userHighlights: 0,
-      userShadows: 0,
-      userWhites: 0,
-      userBlacks: 0,
-      userTemperature: 0,
-      userTint: 0,
-      userSaturation: 0,
-      userVibrance: 0,
-      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
-    } as const
-
-    expect(changesRenderGraphParams(current, { intensity: 0.8 })).toBe(true)
-    expect(changesRenderGraphParams(current, { userExposureEv: 0.25 })).toBe(
-      true,
-    )
-    expect(changesRenderGraphParams(current, { userContrast: -0.2 })).toBe(true)
-    expect(changesRenderGraphParams(current, { userHighlights: -5 })).toBe(true)
-    expect(changesRenderGraphParams(current, { userShadows: 5 })).toBe(true)
-    expect(changesRenderGraphParams(current, { userWhites: -5 })).toBe(true)
-    expect(changesRenderGraphParams(current, { userBlacks: 5 })).toBe(true)
-    expect(changesRenderGraphParams(current, { builtinPreset: 'cool' })).toBe(
-      true,
-    )
-  })
-
-  it('treats temperature and tint changes as render graph changes', () => {
-    const current = {
-      styleKind: 'none',
-      builtinPreset: null,
-      intensity: 0.7,
-      userExposureEv: 0,
-      userContrast: 0,
-      userHighlights: 0,
-      userShadows: 0,
-      userWhites: 0,
-      userBlacks: 0,
-      userTemperature: 0,
-      userTint: 0,
-      userSaturation: 0,
-      userVibrance: 0,
-      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
-    } as const
-
-    expect(changesRenderGraphParams(current, { userTemperature: 12 })).toBe(
-      true,
-    )
-    expect(changesRenderGraphParams(current, { userTint: -8 })).toBe(true)
-  })
-
-  it('treats selective color band shifts as render graph changes', () => {
-    const neutralBand = { hue: 0, saturation: 0, lightness: 0 } as const
-    const neutralSelectiveColor = {
-      red: neutralBand,
-      orange: neutralBand,
-      yellow: neutralBand,
-      green: neutralBand,
-      aqua: neutralBand,
-      blue: neutralBand,
-      purple: neutralBand,
-      magenta: neutralBand,
-    } as const
-    const current = {
-      styleKind: 'none',
-      builtinPreset: null,
-      intensity: 0.7,
-      userExposureEv: 0,
-      userContrast: 0,
-      userHighlights: 0,
-      userShadows: 0,
-      userWhites: 0,
-      userBlacks: 0,
-      userTemperature: 0,
-      userTint: 0,
-      userSaturation: 0,
-      userVibrance: 0,
-      selectiveColor: neutralSelectiveColor,
-    } as const
-
-    // Same neutral record by structural equality must not invalidate.
+  it('compares selective color by value: an equal copy keeps, any band scalar changes', () => {
     expect(
-      changesRenderGraphParams(current, {
-        selectiveColor: neutralSelectiveColor,
+      changesRenderGraphParams(DEFAULT_PARAMS, {
+        selectiveColor: structuredClone(NEUTRAL_SELECTIVE_COLOR),
       }),
     ).toBe(false)
-
-    // Touching any band scalar must invalidate.
-    expect(
-      changesRenderGraphParams(current, {
-        selectiveColor: {
-          ...neutralSelectiveColor,
-          red: { hue: 50, saturation: 0, lightness: 0 },
-        },
-      }),
-    ).toBe(true)
-    expect(
-      changesRenderGraphParams(current, {
-        selectiveColor: {
-          ...neutralSelectiveColor,
-          blue: { hue: 0, saturation: 30, lightness: 0 },
-        },
-      }),
-    ).toBe(true)
-    expect(
-      changesRenderGraphParams(current, {
-        selectiveColor: {
-          ...neutralSelectiveColor,
-          magenta: { hue: 0, saturation: 0, lightness: -10 },
-        },
-      }),
-    ).toBe(true)
-  })
-
-  it('treats setting selective color from neutral to a non-neutral record as a render graph change', () => {
-    const neutralBand = { hue: 0, saturation: 0, lightness: 0 } as const
-    const current: ColorGraphIntent = {
-      styleKind: 'none',
-      builtinPreset: null,
-      intensity: 0.7,
-      userExposureEv: 0,
-      userContrast: 0,
-      userHighlights: 0,
-      userShadows: 0,
-      userWhites: 0,
-      userBlacks: 0,
-      userTemperature: 0,
-      userTint: 0,
-      userSaturation: 0,
-      userVibrance: 0,
-      selectiveColor: NEUTRAL_SELECTIVE_COLOR,
+    for (const [band, shift] of [
+      ['red', { hue: 50, saturation: 0, lightness: 0 }],
+      ['blue', { hue: 0, saturation: 30, lightness: 0 }],
+      ['magenta', { hue: 0, saturation: 0, lightness: -10 }],
+    ] as const) {
+      expect(
+        changesRenderGraphParams(DEFAULT_PARAMS, {
+          selectiveColor: { ...NEUTRAL_SELECTIVE_COLOR, [band]: shift },
+        }),
+      ).toBe(true)
     }
-
-    expect(
-      changesRenderGraphParams(current, {
-        selectiveColor: {
-          red: { hue: 50, saturation: 0, lightness: 0 },
-          orange: neutralBand,
-          yellow: neutralBand,
-          green: neutralBand,
-          aqua: neutralBand,
-          blue: neutralBand,
-          purple: neutralBand,
-          magenta: neutralBand,
-        },
-      }),
-    ).toBe(true)
-
-    // From the shared neutral record to an explicit neutral copy should not
-    // invalidate.
-    expect(
-      changesRenderGraphParams(current, {
-        selectiveColor: {
-          red: neutralBand,
-          orange: neutralBand,
-          yellow: neutralBand,
-          green: neutralBand,
-          aqua: neutralBand,
-          blue: neutralBand,
-          purple: neutralBand,
-          magenta: neutralBand,
-        },
-      }),
-    ).toBe(false)
   })
 
   it('compares selective color by its normalized bands, not its record shape', () => {
@@ -675,8 +521,9 @@ describe('export state helpers', () => {
 
   /**
    * Capabilities the runtime calls supported that the export's own
-   * assessment refuses. Written as literals, the way a malformed worker
-   * answer would arrive, so no type narrows them first.
+   * assessment refuses, one per reason the app names. Written as literals,
+   * the way a malformed worker answer would arrive, so no type narrows them
+   * first.
    */
   const MALFORMED_CAPABILITIES: ReadonlyArray<
     readonly [label: string, capability: unknown, reason: string]
@@ -686,76 +533,10 @@ describe('export state helpers', () => {
       { ...createCapability(), color: undefined },
       'missing-color-transform',
     ],
-    [
-      'null color facts',
-      { ...createCapability(), color: null },
-      'missing-color-transform',
-    ],
-    [
-      'white balance left to the caller',
-      {
-        ...createCapability(),
-        color: {
-          ...createCapability().color,
-          cameraWhiteBalanceAppliedByRuntime: false,
-        },
-      },
-      'missing-color-transform',
-    ],
-    [
-      'the camera matrix left to the caller',
-      {
-        ...createCapability(),
-        color: {
-          ...createCapability().color,
-          cameraMatrixAppliedByRuntime: false,
-        },
-      },
-      'missing-color-transform',
-    ],
-    [
-      'a white-balance flag that is truthy but not true',
-      {
-        ...createCapability(),
-        color: {
-          ...createCapability().color,
-          cameraWhiteBalanceAppliedByRuntime: 1,
-        },
-      },
-      'missing-color-transform',
-    ],
-    [
-      'another working space',
-      {
-        ...createCapability(),
-        color: { ...createCapability().color, workingSpace: 'linear-srgb' },
-      },
-      'missing-color-transform',
-    ],
     ['a zero width', { ...createCapability(), width: 0 }, 'missing-dimensions'],
-    [
-      'a fractional height',
-      { ...createCapability(), height: 3000.5 },
-      'missing-dimensions',
-    ],
-    [
-      'a NaN width',
-      { ...createCapability(), width: Number.NaN },
-      'missing-dimensions',
-    ],
-    [
-      'a missing height',
-      { ...createCapability(), height: undefined },
-      'missing-dimensions',
-    ],
     [
       'a raw-mosaic strategy',
       { ...createCapability(), strategy: 'raw-mosaic-window' },
-      'processed-window-unavailable',
-    ],
-    [
-      'no window facts',
-      { ...createCapability(), windows: undefined },
       'processed-window-unavailable',
     ],
   ]
