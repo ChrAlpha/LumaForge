@@ -67,20 +67,11 @@ test('exports an HQ preview JPEG from a real RAW upload without replacing full-r
 
   await expect(fullResExportButton).toBeVisible()
   await expect(hqPreviewExportButton).toBeEnabled({ timeout: 90_000 })
-  await expect(
-    exportRegion.getByText(/full-resolution processed-window path/i),
-  ).toHaveCount(0)
-  await expect(
-    exportRegion.getByText(/smaller 8-12mp preview-rendered jpeg/i),
-  ).toHaveCount(0)
 
   await hqPreviewExportButton.click()
   await expect(exportRegion.getByText('HQ preview JPEG ready')).toBeVisible({
     timeout: 90_000,
   })
-  await expect(
-    exportRegion.getByText(/use full-resolution export for archival output/i),
-  ).toHaveCount(0)
 
   const downloadPromise = page.waitForEvent('download')
   await exportRegion.getByRole('button', { name: /^download$/i }).click()

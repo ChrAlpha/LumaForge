@@ -64,16 +64,6 @@ async function hasFailClosedLargeExportMessage(page: Page) {
   )
 }
 
-async function openRawToolsIfCollapsed(page: Page) {
-  const toolsToggle = page.getByRole('button', { name: 'Tools' })
-  if (await toolsToggle.isVisible()) {
-    const expanded = await toolsToggle.getAttribute('aria-expanded')
-    if (expanded !== 'true') {
-      await toolsToggle.click()
-    }
-  }
-}
-
 async function loadRawFixture(page: Page, fixture: string) {
   const isMobileViewport = await page.evaluate(() => window.innerWidth <= 640)
   const mobileBrowseButton = page.getByRole('button', {
@@ -137,7 +127,6 @@ test('browser preflight records expected export policy before export', async ({
 
   await loadRawFixture(page, fixture)
 
-  await openRawToolsIfCollapsed(page)
   await openExportControls(page)
 
   const exportButton = page

@@ -134,33 +134,44 @@ test('keeps RAW Lab tool scrolling inside the viewport shell', async ({
     const documentRoot = document.documentElement
     const rawShell = document.querySelector<HTMLElement>(
       '[data-raw-lab-shell="viewport"]',
+    )!
+    const rail = document.querySelector<HTMLElement>('.raw-tool-surface')
+    const railScroll = document.querySelector<HTMLElement>(
+      '[data-raw-tool-scroll]',
     )
-    const toolStack = document.querySelector<HTMLElement>('.raw-tool-stack')
     // The empty mobile lab has no dock: its one action is pinned in the
     // thumb zone instead.
-    const mobileDock = document.querySelector<HTMLElement>('[data-mobile-dock]')
     const mobileCta = document.querySelector<HTMLElement>(
       '[data-mobile-empty-cta]',
     )
-    const mobileSheet = document.querySelector<HTMLElement>(
-      '.raw-mobile-tool-sheet',
-    )
-
+    // Only the rail's inner region scrolls. Scrolling every frame as far as
+    // it goes, the way a browser bringing a control into view would, moves
+    // nothing but that region.
+    railScroll?.scrollTo({ top: railScroll.scrollHeight })
+    for (const frame of [documentRoot, rawShell, rail]) {
+      if (frame) frame.scrollTop = frame.scrollHeight
+    }
     return {
+      viewportHeight: window.innerHeight,
+      viewportWidth: window.innerWidth,
+      isMobile: window.innerWidth <= 640,
       documentScrollOverflow:
         documentRoot.scrollHeight - documentRoot.clientHeight,
-      rawShellHeight: rawShell?.getBoundingClientRect().height ?? 0,
-      rawShellScrollOverflow: rawShell
-        ? rawShell.scrollHeight - rawShell.clientHeight
-        : 0,
-      toolStackScrollOverflow: toolStack
-        ? toolStack.scrollHeight - toolStack.clientHeight
-        : 0,
-      toolStackOverflowY: toolStack
-        ? getComputedStyle(toolStack).overflowY
-        : '',
-      isMobile: window.innerWidth <= 640,
-      mobileDockPresent: Boolean(mobileDock),
+      documentScrollTop: documentRoot.scrollTop,
+      rawShellHeight: rawShell.getBoundingClientRect().height,
+      rawShellScrollTop: rawShell.scrollTop,
+      railOverflowY: rail ? getComputedStyle(rail).overflowY : null,
+      railBottom: rail?.getBoundingClientRect().bottom ?? null,
+      railScrollTop: rail?.scrollTop ?? null,
+      railScrollOverflowY: railScroll
+        ? getComputedStyle(railScroll).overflowY
+        : null,
+      railScrollBottom: railScroll?.getBoundingClientRect().bottom ?? null,
+      railScrollOverflow: railScroll
+        ? railScroll.scrollHeight - railScroll.clientHeight
+        : null,
+      railScrollTopAfter: railScroll?.scrollTop ?? null,
+      mobileDockPresent: Boolean(document.querySelector('[data-mobile-dock]')),
       mobileCtaVisible: mobileCta
         ? getComputedStyle(mobileCta).display !== 'none'
         : false,
@@ -168,17 +179,13 @@ test('keeps RAW Lab tool scrolling inside the viewport shell', async ({
         ? window.innerHeight - mobileCta.getBoundingClientRect().bottom
         : null,
       mobileCtaWidth: mobileCta?.getBoundingClientRect().width ?? 0,
-      mobileSheetClosed: mobileSheet
-        ? mobileSheet.hidden || getComputedStyle(mobileSheet).display === 'none'
-        : true,
-      viewportHeight: window.innerHeight,
-      viewportWidth: window.innerWidth,
     }
   })
 
   expect(metrics.rawShellHeight).toBe(metrics.viewportHeight)
-  expect(metrics.rawShellScrollOverflow).toBe(0)
   expect(metrics.documentScrollOverflow).toBe(0)
+  expect(metrics.documentScrollTop).toBe(0)
+  expect(metrics.rawShellScrollTop).toBe(0)
 
   if (metrics.isMobile) {
     expect(metrics.mobileDockPresent).toBe(false)
@@ -190,9 +197,17 @@ test('keeps RAW Lab tool scrolling inside the viewport shell', async ({
     expect(metrics.mobileCtaWidth).toBeGreaterThanOrEqual(
       metrics.viewportWidth - 24 - 1,
     )
-    expect(metrics.mobileSheetClosed).toBe(true)
-  } else if (metrics.toolStackOverflowY === 'auto') {
-    expect(metrics.toolStackScrollOverflow).toBeGreaterThan(0)
+    return
+  }
+  // The rail is a fixed frame inside the viewport that clips, so nothing can
+  // scroll it; its inner region owns the scrolling and ends on screen.
+  expect(metrics.railOverflowY).toBe('clip')
+  expect(metrics.railScrollTop).toBe(0)
+  expect(metrics.railBottom).toBeLessThanOrEqual(metrics.viewportHeight)
+  expect(metrics.railScrollOverflowY).toBe('auto')
+  expect(metrics.railScrollBottom).toBeLessThanOrEqual(metrics.viewportHeight)
+  if (metrics.railScrollOverflow! > 0) {
+    expect(metrics.railScrollTopAfter).toBeGreaterThan(0)
   }
 })
 

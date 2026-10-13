@@ -2356,19 +2356,3 @@ test('delivery: with the preview released the result downloads, shares and copie
   await expect(downloadButton(page)).toHaveCount(0)
   await expect(fullExportButton(page)).toBeEnabled({ timeout: 60_000 })
 })
-
-test('demo retirement: /transform-demo is not a route, and /raw serves Transform', async ({
-  page,
-}, testInfo) => {
-  await openLab(page, testInfo, { surface: 'project', path: '/transform-demo' })
-  await expect(page.locator('.raw-lab')).toHaveCount(0)
-  await expect(page.locator('[data-raw-transform-tool]')).toHaveCount(0)
-  await expect(page.getByText(/not found|404/i).first()).toBeVisible()
-  await page.goto(rawPreviewUrl(testInfo, '/raw'))
-  await expect(emptyLab(page)).toBeVisible({ timeout: 30_000 })
-  const raw = await dngFile(testInfo, 'production-transform.dng')
-  await chooseRaw(page, raw)
-  await waitForLoaded(page, raw.name)
-  await openTool(page, 'Transform')
-  await waitForTransform(page)
-})

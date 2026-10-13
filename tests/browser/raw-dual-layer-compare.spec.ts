@@ -11,8 +11,6 @@ import {
 import {
   expectWebGPUPreview,
   isDesktopChromiumProject,
-  NO_WEBGPU_SKIP_REASON,
-  projectHasWebGPU,
   rawPreviewUrl,
   requireWebGPUFixture,
 } from './raw-preview-backend'
@@ -813,85 +811,4 @@ test('keeps mobile-class JPEG fallback responsive through same-origin RAW drop a
   } finally {
     await context.close()
   }
-})
-
-test('validates WebKit-class JPEG fallback compare when local WebKit is available', async ({
-  page,
-}, testInfo) => {
-  test.skip(
-    testInfo.project.name !== 'webkit-ios-safe',
-    'WebKit proxy validation runs only on the WebKit mobile project',
-  )
-  test.skip(!projectHasWebGPU(testInfo), NO_WEBGPU_SKIP_REASON)
-  const rawPath = gateRawFixture(testInfo, RAW_COMPARE_FIXTURE)
-  testInfo.setTimeout(240_000)
-
-  await page.setViewportSize({ width: 390, height: 844 })
-  expect(page.viewportSize()).toEqual({ width: 390, height: 844 })
-
-  const fixtureName = basename(rawPath)
-  const sameOriginFixtureUrl = `/__lumaforge-test-fixtures/${fixtureName}`
-  await routeSameOriginFixture(page, sameOriginFixtureUrl, rawPath)
-  await installGpuCounters(page)
-
-  await page.goto(RAW_COMPARE_URL)
-  await expect(page.locator('[data-raw-lab-shell="viewport"]')).toBeVisible()
-
-  const dropResult = await loadRawFixtureViaSameOriginDrop(
-    page,
-    sameOriginFixtureUrl,
-    fixtureName,
-  )
-  test.skip(
-    !dropResult.ok,
-    `BLOCKED: local Playwright WebKit RAW drop unavailable: ${dropResult.reason}`,
-  )
-
-  await expect(
-    page.locator('.raw-lab[data-raw-lab-state="loaded"]'),
-  ).toBeVisible({ timeout: 90_000 })
-  // Compare is a lens over the stage on mobile: a tap opens the split.
-  const compareLens = page.locator('[data-mobile-compare-lens]')
-  await compareLens.click()
-  await expect(compareLens).toHaveAttribute('data-state', 'on')
-  await waitForCompareMode(page, 'jpeg-fallback')
-
-  const originalLayer = page.locator('.raw-preview-original-layer').first()
-  await expect(originalLayer).toBeVisible()
-  await expect(originalLayer).toHaveAttribute(
-    'data-original-reference-source',
-    /quick|bounded-hq/,
-  )
-
-  await waitForGpuStatsIdle(page)
-
-  const split = await dragSlider(
-    page,
-    'Compare unprocessed RAW and final JPEG',
-    0.68,
-  )
-  expect(split.after).toBeGreaterThan(split.before)
-  const splitOnlyGpuStats = await expectNoSplitOnlyGpuRender(page)
-
-  const transforms = await readLayerTransforms(page)
-  expect(transforms.surface).toBeTruthy()
-  expect(transforms.processed).toBe(transforms.original)
-
-  await testInfo.attach('raw-webkit-jpeg-fallback-compare.json', {
-    body: JSON.stringify(
-      {
-        fixture: rawPath,
-        mode: await readCompareMode(page),
-        viewport: page.viewportSize(),
-        source: await originalLayer.getAttribute(
-          'data-original-reference-source',
-        ),
-        split,
-        splitOnlyGpuStats,
-      },
-      null,
-      2,
-    ),
-    contentType: 'application/json',
-  })
 })

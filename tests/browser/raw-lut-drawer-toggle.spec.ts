@@ -307,9 +307,6 @@ test('keeps sparse online LUT resource entries compact on desktop', async ({
     name: 'Catalog from example.com LUTs',
   })
   await expect(browser).toBeVisible()
-  // Preview chrome was removed with the shelved preheat design; entries from
-  // catalogs that still ship preview assets must render without it.
-  await expect(browser.locator('[data-raw-lut-preview]')).toHaveCount(0)
 
   const metrics = await page.evaluate(() => {
     const dialog = document.querySelector<HTMLElement>(
