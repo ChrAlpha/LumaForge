@@ -80,6 +80,8 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
 - `EXPORT_PLAIN_STEP_KINDS` and `EXPORT_LUT_STEP_KINDS`, the step sequences
   of a supported export graph without and with a LUT. The row-band executor
   accepts exactly these, and manifest readers validate against them.
+- `resolveEffectiveLUTOutputTransfer(profile)`: the output transfer a LUT
+  applies, the declared one or a display look's input transfer.
 
 ## 0.2.1 - 2026-10-12
 

@@ -11,6 +11,7 @@ import type {
   LUTColorProfile,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
+import { resolveEffectiveLUTOutputTransfer } from '@lumaforge/luma-color-runtime'
 
 import { canonicalizeJson } from './canonicalize'
 import type { ColorGraphIdentity } from './render-manifest'
@@ -72,9 +73,7 @@ export function describeLutProfile(
   profile: LUTColorProfile | null,
 ): ColorGraphLutProfileDescriptor | null {
   if (!profile) return null
-  const outputTransfer =
-    profile.outputTransfer ??
-    (profile.role === 'display-look' ? profile.inputTransfer : 'unknown')
+  const outputTransfer = resolveEffectiveLUTOutputTransfer(profile) ?? 'unknown'
   return {
     role: profile.role,
     input: {

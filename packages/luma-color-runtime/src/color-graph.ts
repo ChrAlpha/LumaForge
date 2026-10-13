@@ -158,7 +158,8 @@ const IDENTITY_RAW_RENDER_EXPOSURE: RawRenderExposure = {
   source: 'identity',
 }
 
-function resolveEffectiveLUTOutputTransfer(
+/** A LUT's output transfer: the declared one, or a display look's input. */
+export function resolveEffectiveLUTOutputTransfer(
   profile: LUTColorProfile,
 ): TransferFunctionId | undefined {
   if (profile.outputTransfer) return profile.outputTransfer

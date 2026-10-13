@@ -2,6 +2,7 @@
 // the effective input/output color contracts the graph will apply.
 
 import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
+import { resolveEffectiveLUTOutputTransfer } from '@lumaforge/luma-color-runtime'
 
 import type { LutColorContract, LutLocalFileIdentity } from './render-manifest'
 
@@ -35,9 +36,7 @@ export function lutIdentityFromProfile(input: {
   | { identity: LutLocalFileIdentity }
   | { identity: null; failure: LutIdentityFailure } {
   const { profile } = input
-  const outputTransfer =
-    profile.outputTransfer ??
-    (profile.role === 'display-look' ? profile.inputTransfer : undefined)
+  const outputTransfer = resolveEffectiveLUTOutputTransfer(profile)
   if (!outputTransfer) {
     return {
       identity: null,

@@ -10,6 +10,7 @@ import {
   NEUTRAL_USER_COLOR_INTENT,
   pickLookSelection,
   pickUserColorIntent,
+  resolveEffectiveLUTOutputTransfer,
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 
@@ -131,10 +132,7 @@ function lutContractRefusal(lut: LUTData): PreviewColorPlanReason | null {
   ) {
     return 'lut-output-profile-missing'
   }
-  // A display look without a declared output transfer outputs its input one.
-  const outputTransfer =
-    profile.outputTransfer ??
-    (profile.role === 'display-look' ? profile.inputTransfer : undefined)
+  const outputTransfer = resolveEffectiveLUTOutputTransfer(profile)
   if (!outputTransfer) return 'lut-output-profile-missing'
   if (outputTransfer === 'linear') return 'lut-output-transfer-linear'
   return null
