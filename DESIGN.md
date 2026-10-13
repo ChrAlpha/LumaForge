@@ -221,7 +221,7 @@ The chrome retokenizes the substrate, not the accents:
 - **On-Photo Paper High / Low / Warm**: `oklch(0.16 0.007 255 / 0.9)`, `oklch(0.085 0.006 255 / 0.74)`, `oklch(0.18 0.008 255 / 0.78)`. Tonal bands inside the chrome.
 - **On-Photo BG / BG Strong**: `oklch(0.125 0.006 255 / 0.56)`, `oklch(0.105 0.006 255 / 0.84)`. Hover / pressed / open washes.
 - **On-Photo Bord / Bord Soft**: `oklch(0.9 0.006 255 / 0.34)`, `oklch(0.9 0.006 255 / 0.18)`. Hairlines and structural seams; prefer the soft variant.
-- **Hero Ink** (`{colors.lf-hero-ink}`): Primary text on all chrome surfaces.
+- **Hero Ink** (`lf-on-photo-ink`): Primary text on all chrome surfaces.
 - **Stage Base** (`oklch(0.064 0.006 255)`): Behind the preview frame; deepest slate.
 - **Stage Panel / Hairline**: `oklch(0.13 0.006 255 / 0.78)`, `oklch(0.96 0.006 255 / 0.2)`. Compare handle and stage overlays.
 - **Lab Green / Sensor Rose**: Unchanged. Used for ready state, focus rings, and destructive hover.
@@ -240,7 +240,7 @@ The ladder, lowest to brightest:
 - **10% (lift-strong)** — segmented thumb active fill.
 - **14% (lift-highlight)** — segmented thumb top highlight, compare handle inset highlight.
 
-Do not pull structural lifts from `--color-lf-hero-ink` (warm).
+Do not pull structural lifts from `--color-lf-on-photo-ink` (warm).
 That hue was used briefly in early drafts and left a single warm wash inside an otherwise cool-keyed chrome; aligning to the ladder restores material continuity.
 
 ### Topbar
@@ -277,8 +277,8 @@ Their paint is centralized in `src/modules/raw-processor/components/shared/segme
 Paint contract (cross-platform):
 
 - **Track**: borderless **lift-soft wash** (`bg-[oklch(0.96_0.006_255/0.05)]`). No drawn hairline. The fill itself lifts the track above the chrome surface; on the flatter mobile LUT sheet that was previously the dominant edge of the control, while on the structured desktop tool card it became a third hairline competing with the existing seams.
-- **Inactive item**: `text-lf-hero-ink/72` at rest, `text-lf-hero-ink/92` on pointer hover — the segment under the pointer previews a lift before commit.
-- **Active item**: `text-lf-hero-ink` (full) + **`font-semibold`** weight contrast.
+- **Inactive item**: `text-lf-on-photo-ink/72` at rest, `text-lf-on-photo-ink/92` on pointer hover — the segment under the pointer previews a lift before commit.
+- **Active item**: `text-lf-on-photo-ink` (full) + **`font-semibold`** weight contrast.
   Weight is the readability anchor when the bg delta is subtle.
 - **Active thumb**: **lift-strong wash** (`oklch(0.96 0.006 255 / 0.10)`) + 1px **lift-highlight** top inset.
   No outline ring, no drop shadow, no glass border — earlier drafts stacked all three and the segment read as crystalline rather than as one of the chrome's surfaces.
@@ -294,8 +294,8 @@ Consumers own all color (track, item text, active thumb), as the Primitive Color
 Every body / numeric / label callsite on dark chrome maps to a fixed step of the ladder.
 The ladder lands every role above the WCAG AA floor on the slate substrate and preserves the label → value hierarchy.
 
-- **Headline** (full `lf-hero-ink`) — tool card titles, file name in topbar, modal titles.
-- **Hover label** (full `lf-hero-ink`) — anything under the pointer that wants to commit to "selected".
+- **Headline** (full `lf-on-photo-ink`) — tool card titles, file name in topbar, modal titles.
+- **Hover label** (full `lf-on-photo-ink`) — anything under the pointer that wants to commit to "selected".
 - **Numeric value** (`/80`, also `tabular-nums`) — Tone slider readout, histogram numeric counts when ready, file size and dimensions in the export result.
 - **Hover-state previews** (`/92`) — inactive segmented item hover, ghost button hover.
 - **Body / hints / notes** (`/72`) — tool card body copy, Tone / Compare / Histogram notes, LUT contract empty hints, online LUT source hints.
@@ -308,7 +308,7 @@ Hover and active states brighten one or two steps; do not invent intermediate va
 ### Stage and Compare Handle
 
 - Stage padding is `clamp(14px, 1.45vw, 20px)`. Frame border is `oklch(0.96 0.006 255 / 0.08)` at 10px radius with a soft `0 22px 64px` photo-panel shadow + 1px inset top highlight.
-- Compare handle circle is a glass panel (`backdrop-filter: blur(8px) saturate(120%)`) with `0.72` hero-ink border at rest.
+- Compare handle circle is a glass panel (`backdrop-filter: blur(8px) saturate(120%)`) with `0.72` on-photo ink border at rest.
 - Hover and drag earn an `lf-green` accent ring (4px `lf-green/18` halo), matching the same accent system the topbar focus and export-ready stripe use.
   Hover is desktop-only; **the drag state is shared** and also scales the knob to `1.06`, because mobile has no hover and otherwise had no state at all under the thumb while desktop had two.
 - The handle spans the full frame so its hit area stays a 44px column, but the drawn split line is clipped to the photograph through `--raw-compare-track-top` / `--raw-compare-track-height`, published by `CompareSplitHandle` while it measures.
@@ -440,7 +440,7 @@ Measured on the empty `/raw` at 1440x900 in Chromium with software GPU, over sev
 
 **The Inset Hairline Rule.** Seams between chrome surfaces are inset shadows (1px top highlight + 1px bottom shadow), not drawn borders. Borders are reserved for the stage frame and tool card open state.
 
-**The Cool Lift Rule.** Every structural lift (hover, track, active fill, top highlight, seam) uses the cool-white Lift Wash Ladder. Warmth is reserved for `lf-green` (ready / focus / committed) and `lf-rose` (destructive). Never pull a structural lift from `--color-lf-hero-ink` (warm) — it leaves a foreign warm element in an otherwise cool-keyed chrome.
+**The Cool Lift Rule.** Every structural lift (hover, track, active fill, top highlight, seam) uses the cool-white Lift Wash Ladder. Warmth is reserved for `lf-green` (ready / focus / committed) and `lf-rose` (destructive). Never pull a structural lift from `--color-lf-on-photo-ink` (warm) — it leaves a foreign warm element in an otherwise cool-keyed chrome.
 
 **The Borderless Track Rule.** Wells, tracks, and group containers inside the chrome (segmented controls, dropdown wells, inline button groups) define their edge by a Lift Wash fill, not by a drawn `border-*`. Drawn borders depend on substrate contrast and read heavier on flat sheets than on structured surfaces; a fill-based well behaves the same on both.
 
@@ -451,7 +451,7 @@ Measured on the empty `/raw` at 1440x900 in Chromium with software GPU, over sev
 ### Cross-platform parity
 
 Mobile `/raw` has used this language since the first mobile design.
-This section documents desktop catching up — both viewports now share one set of tokens (`lf-on-photo-*`, `lf-hero-ink`, the stage palette), one set of idioms (solid plates around the photo and glass on it, photo-owned stage, ghost actions, lf-green accent), and one mental model.
+This section documents desktop catching up — both viewports now share one set of tokens (`lf-on-photo-*`, `lf-on-photo-ink`, the stage palette), one set of idioms (solid plates around the photo and glass on it, photo-owned stage, ghost actions, lf-green accent), and one mental model.
 Avoid letting them diverge again.
 
 Parity now extends to interaction, not just paint: one Adjust row component
@@ -483,5 +483,5 @@ viewport.
 - **Don't** leave template attribution, placeholder demo widgets, or component-gallery copy on user-facing pages.
 - **Don't** drift the brand and the workspace chrome apart. Both must keep `lf-green` as the only ready/focus accent, `lf-rose` as the only destructive accent, Geist Sans as the only sans family, and the same rounded scale.
 - **Don't** hardcode color tokens (`text-text`, `text-text-secondary`, `bg-fill-*`, `bg-background`) into the `src/components/ui/*` primitives. `tailwind-merge` does not dedupe `@theme` tokens against arbitrary `bg-[oklch(...)]` / `text-[...]` overrides; the hardcoded default will silently win on any chrome variant whose `@media` override does not touch that specific token (the mobile track and the mobile active-text regressions both traced back to this exact shape). Keep primitives color-agnostic; let consumers paint.
-- **Don't** pull structural lifts from `oklch(from var(--color-lf-hero-ink) l c h / *)` (warm). Use the Lift Wash Ladder (`oklch(0.96 0.006 255 / *)`, cool). Warmth belongs to accent / destructive, not to neutral interaction.
+- **Don't** pull structural lifts from `oklch(from var(--color-lf-on-photo-ink) l c h / *)` (warm). Use the Lift Wash Ladder (`oklch(0.96 0.006 255 / *)`, cool). Warmth belongs to accent / destructive, not to neutral interaction.
 - **Don't** draw borders on segmented controls, dropdown wells, or button groups inside the chrome. A drawn 1px hairline reads heavier on the flatter mobile sheets than on the structurally-rich desktop tool card, breaking cross-platform parity. Use a Lift Wash fill instead.

@@ -36,7 +36,7 @@ export const SEGMENTED_TRACK = 'rounded-md bg-[oklch(0.96_0.006_255/0.05)] p-1'
 export const SEGMENTED_ITEM_TEXT =
   'font-medium text-lf-on-photo-ink/72 transition-colors duration-150 hover:text-lf-on-photo-ink/92'
 
-// Active item: full hero-ink + font-semibold weight contrast so the active
+// Active item: full on-photo ink + font-semibold weight contrast so the active
 // label wins even when the bg delta is subtle. The primitive intentionally
 // does NOT set an active text color; consumers MUST supply this.
 export const SEGMENTED_ITEM_TEXT_ACTIVE =
