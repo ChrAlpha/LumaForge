@@ -1,7 +1,5 @@
 import { cp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import process from 'node:process'
-import { pathToFileURL } from 'node:url'
 
 import { createDeployConfig, resolveDeployOptions } from './config.mjs'
 
@@ -95,8 +93,4 @@ export async function prepareDeployTarget(
   }
 
   await prepareVercelDeploy(config)
-}
-
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  await prepareDeployTarget()
 }

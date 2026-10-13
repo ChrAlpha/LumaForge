@@ -1,7 +1,6 @@
 import { spawn } from 'node:child_process'
 import { appendFile } from 'node:fs/promises'
 import process from 'node:process'
-import { pathToFileURL } from 'node:url'
 
 import { createDeployConfig, resolveDeployOptions } from './config.mjs'
 
@@ -39,10 +38,6 @@ function normalizeCloudflarePreviewBranch(branch) {
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '-')
     .replace(/^-+|-+$/g, '')
-}
-
-export function extractDeploymentUrl(output) {
-  return output.match(/https:\/\/[^\s"')>]+/)?.[0] ?? null
 }
 
 function extractUrls(output) {
@@ -249,8 +244,4 @@ export async function publishDeployTarget(
   await writeGithubOutput(env, 'deployment_url', deploymentUrl)
   await appendGithubSummary(env, { ...options, deploymentUrl })
   return { deploymentUrl }
-}
-
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  await publishDeployTarget()
 }

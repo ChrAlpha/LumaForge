@@ -11,8 +11,6 @@ export default defineConfig(
       '.vscode/**',
       'dist/**',
       'docs/**',
-      'agents.md',
-      'readme.md',
     ],
     lessOpinionated: true,
     preferESM: false,
@@ -47,9 +45,7 @@ export default defineConfig(
         'error',
         {
           name: 'location',
-          message:
-            "Since you don't use the same router instance in electron and browser, you can't use the global location to get the route info. \n\n" +
-            'Use `useLocation` from react-router to get the route info.',
+          message: 'Use `useLocation` from react-router to get the route info.',
         },
       ],
       'ts/no-explicit-any': 'off',
