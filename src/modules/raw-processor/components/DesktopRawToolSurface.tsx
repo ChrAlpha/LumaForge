@@ -69,7 +69,6 @@ export function DesktopRawToolSurface() {
             onDownloadExport={commands.onDownloadExport}
             onDownloadExportManifest={commands.onDownloadExportManifest}
             onCopyExport={commands.onCopyExport}
-            embedded
           />
         </section>
       }

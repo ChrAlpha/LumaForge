@@ -6,27 +6,26 @@ import { Button } from '~/components/ui/button'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
+import { formatBytes } from '../../format-bytes'
 import { useRawToolProgress } from '../../hooks/useRawToolState'
 import type {
   ExportResult,
   ExportShareCapability,
 } from '../../model/export-result'
-import type { ActiveExportPlanState } from '../../model/session'
 import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
+import type { ExportPanelKind } from '../../services/surface/export-panel-state'
+import {
+  deriveExportPanelState,
+  exportProgressPercent,
+} from '../../services/surface/export-panel-state'
 import type {
   FullExportActionReason,
   HqExportActionReason,
 } from '../../services/surface/raw-reason'
-import {
-  exportCopyActionLabel,
-  fullExportActionReasonText,
-  hqExportActionReasonText,
-} from '../../services/surface/raw-reason'
+import { exportCopyActionLabel } from '../../services/surface/raw-reason'
 import { currentSessionAtom } from '../../state/session.atoms'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { EXPORT_INTERRUPTION_NOTE_COPY } from '../RawWorkflowContext'
-
-type ExportKind = 'full' | 'hq'
 
 // Both export buttons refuse on one plate, so neither reads as the one still
 // on offer.
@@ -45,10 +44,7 @@ const RUNNING_BUTTON_CLASS =
  */
 const ExportRunningFace = memo(() => {
   const { t } = useI18n()
-  const progress = useRawToolProgress()
-  const percent = Number.isFinite(progress)
-    ? Math.round(Math.min(100, Math.max(0, progress)))
-    : 0
+  const percent = exportProgressPercent(useRawToolProgress()) ?? 0
   return (
     <>
       <LoaderCircle
@@ -97,12 +93,6 @@ function DeliveryIcon({
   )
 }
 
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
 export const ExportTool = memo(
   ({
     canExport,
@@ -119,7 +109,6 @@ export const ExportTool = memo(
     onDownloadExport,
     onDownloadExportManifest,
     onCopyExport,
-    activePlan,
     interruptionNote,
   }: {
     canExport: boolean
@@ -137,21 +126,18 @@ export const ExportTool = memo(
     onDownloadExport: () => void
     onDownloadExportManifest?: () => void | Promise<void>
     onCopyExport: () => void | Promise<void>
-    activePlan?: ActiveExportPlanState
     /**
      * A hint for the next export the user starts, never an action: the panel
      * offers no file picker for it.
      */
     interruptionNote?: ExportInterruptionNote | null
-    embedded?: boolean
   }) => {
     const { t } = useI18n()
     const fullReasonId = useId()
     const previewReasonId = useId()
     // Both exports run under one workflow status, so the panel remembers
     // which button started the one running.
-    const [startedKind, setStartedKind] = useState<ExportKind>('full')
-    const runningKind = isExporting ? startedKind : null
+    const [startedKind, setStartedKind] = useState<ExportPanelKind>('full')
     // One delivery at a time: a second press while one works (encoding a
     // copy, an open share sheet) does nothing.
     const [pendingDelivery, setPendingDelivery] =
@@ -172,47 +158,37 @@ export const ExportTool = memo(
     const noteClassName =
       'm-0 text-[0.78rem] leading-relaxed text-lf-on-surface/72 transition-opacity duration-150 ease-lf-standard starting:opacity-0 motion-reduce:transition-none'
     const session = useAtomValue(currentSessionAtom)
-    const currentActivePlan = activePlan ?? session?.exportState.activePlan
     const isLowMemoryPlan =
-      currentActivePlan?.runtimeMemoryProfile === 'low-memory'
-    // The next export the user starts uses the current RAW and edits on a
-    // safer plan; a running export already took it.
-    const showInterruption = !isProcessing && Boolean(interruptionNote)
-    // A busy stage refuses with its own reason (loading, decoding), which
-    // stays readable; a running export shows on its button instead.
-    const unavailableReason =
-      canExport || isExporting
-        ? null
-        : disabledReason
-          ? fullExportActionReasonText(disabledReason, t)
-          : t('raw.exportSourceLoading')
-    // The HQ preview can be refused on its own terms while full resolution is
-    // fine (a committed Transform does exactly that). Without this the button
-    // just goes dark and the reason prop is never read. A reason the line
-    // above already states is not repeated.
-    const previewUnavailableReason =
-      canPreviewExport || isExporting || !previewExportDisabledReason
-        ? null
-        : hqExportActionReasonText(previewExportDisabledReason, t)
-    const previewReason =
-      previewUnavailableReason === unavailableReason
-        ? null
-        : previewUnavailableReason
+      session?.exportState.activePlan?.runtimeMemoryProfile === 'low-memory'
+    const panel = deriveExportPanelState(
+      {
+        canExport,
+        disabledReason,
+        canPreviewExport,
+        previewExportDisabledReason,
+        isProcessing,
+        isExporting,
+        startedKind,
+        interruptionNote,
+        resultKind: exportResult?.kind,
+      },
+      t,
+    )
+    const { runningKind, fullReason: unavailableReason, previewReason } = panel
     const copyButtonLabel = exportCopyActionLabel(
       exportResult?.copyCapability,
       t,
     )
     // Only a result that names its kind takes that kind's label; one that
     // names none is never taken for a full-resolution JPEG.
-    const resultKind = exportResult?.kind
     const readyLabel =
-      resultKind === 'hq-preview'
+      panel.resultKind === 'hq-preview'
         ? t('raw.export.previewReady')
-        : resultKind === 'full-resolution'
+        : panel.resultKind === 'full-resolution'
           ? t('raw.export.ready')
           : null
 
-    const innerContent = (
+    return (
       <div className="grid min-w-0 gap-3">
         {exportResult ? (
           <div
@@ -330,9 +306,9 @@ export const ExportTool = memo(
             {isLowMemoryPlan && (
               <p className={noteClassName}>{t('raw.export.lowMemory')}</p>
             )}
-            {showInterruption && interruptionNote && (
+            {panel.interruptionNote && (
               <p data-export-interruption className={noteClassName}>
-                {t(EXPORT_INTERRUPTION_NOTE_COPY[interruptionNote.kind])}
+                {t(EXPORT_INTERRUPTION_NOTE_COPY[panel.interruptionNote.kind])}
               </p>
             )}
             {unavailableReason && (
@@ -391,7 +367,7 @@ export const ExportTool = memo(
               aria-describedby={
                 previewReason
                   ? previewReasonId
-                  : previewUnavailableReason
+                  : panel.previewRepeatsFull
                     ? fullReasonId
                     : undefined
               }
@@ -417,7 +393,5 @@ export const ExportTool = memo(
         )}
       </div>
     )
-
-    return innerContent
   },
 )

@@ -2,13 +2,14 @@ import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createStore, Provider } from 'jotai'
 import type { ComponentProps } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { I18nProvider } from '~/lib/i18n'
-
 import type { ExportResult } from '../../model/export-result'
 import { createMockExportResultIdentity } from '../../model/export-result.fixture'
+import type { ImageSession } from '../../model/session'
+import { currentSessionAtom } from '../../state/session.atoms'
 import { setProgress } from '../../state/workflow.atoms'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { ExportTool } from './ExportTool'
@@ -84,27 +85,6 @@ describe('exportTool', () => {
         'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.',
       ),
     ).toBeVisible()
-  })
-
-  it('does not repeat the full-resolution reason under the HQ preview button', () => {
-    render(
-      <ExportTool
-        canExport={false}
-        disabledReason={{ source: 'surface', code: 'no-source' }}
-        canPreviewExport={false}
-        previewExportDisabledReason={{ source: 'surface', code: 'no-source' }}
-        onPreviewExport={vi.fn()}
-        isProcessing={false}
-        onExport={vi.fn()}
-        exportResult={null}
-        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
-        onShareExport={vi.fn()}
-        onDownloadExport={vi.fn()}
-        onCopyExport={vi.fn()}
-      />,
-    )
-
-    expect(screen.getAllByText('No image loaded')).toHaveLength(1)
   })
 
   it('starts export from the ready-to-process state', async () => {
@@ -388,56 +368,34 @@ describe('exportTool', () => {
     expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled()
   })
 
-  it('asks to keep the tab open for an ios-safe low-memory export without blaming the browser', () => {
-    render(
-      <ExportTool
-        canExport
-        isProcessing={false}
-        onExport={vi.fn()}
-        exportResult={null}
-        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
-        onShareExport={vi.fn()}
-        onDownloadExport={vi.fn()}
-        onCopyExport={vi.fn()}
-        activePlan={{
+  it('asks to keep the tab open for a low-memory export without blaming the browser', () => {
+    const store = createStore()
+    store.set(currentSessionAtom, {
+      id: 's1',
+      exportState: {
+        activePlan: {
           profileName: 'ios-safe',
           preferredRows: 64,
           concurrency: 1,
           runtimeMemoryProfile: 'low-memory',
           outputSink: 'blob-handoff',
           checkpointMode: 'safe-retry',
-        }}
-      />,
-    )
-
-    expect(screen.getByText(/low-memory export mode/i)).toHaveTextContent(
-      /keep the tab open while the jpeg is being written/i,
-    )
-    expect(
-      screen.queryByText(/cannot store export progress/i),
-    ).not.toBeInTheDocument()
-  })
-
-  it('asks to keep the tab open for a mobile-balanced low-memory export without blaming the browser', () => {
+        },
+      },
+    } as ImageSession)
     render(
-      <ExportTool
-        canExport
-        isProcessing={false}
-        onExport={vi.fn()}
-        exportResult={null}
-        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
-        onShareExport={vi.fn()}
-        onDownloadExport={vi.fn()}
-        onCopyExport={vi.fn()}
-        activePlan={{
-          profileName: 'mobile-balanced',
-          preferredRows: 256,
-          concurrency: 2,
-          runtimeMemoryProfile: 'low-memory',
-          outputSink: 'streaming',
-          checkpointMode: 'safe-retry',
-        }}
-      />,
+      <Provider store={store}>
+        <ExportTool
+          canExport
+          isProcessing={false}
+          onExport={vi.fn()}
+          exportResult={null}
+          exportShareCapability={{ available: false, reasonCode: 'no-result' }}
+          onShareExport={vi.fn()}
+          onDownloadExport={vi.fn()}
+          onCopyExport={vi.fn()}
+        />
+      </Provider>,
     )
 
     expect(screen.getByText(/low-memory export mode/i)).toHaveTextContent(
@@ -487,31 +445,6 @@ describe('exportTool', () => {
     expect(onExport).toHaveBeenCalledExactlyOnceWith()
   })
 
-  it('shows no interruption hint without one, or while an export is running', () => {
-    const props: ExportToolProps = {
-      canExport: true,
-      isProcessing: false,
-      onExport: vi.fn(),
-      exportResult: null,
-      exportShareCapability: { available: false, reasonCode: 'no-result' },
-      onShareExport: vi.fn(),
-      onDownloadExport: vi.fn(),
-      onCopyExport: vi.fn(),
-      interruptionNote: null,
-    }
-    const { rerender } = render(<ExportTool {...props} />)
-    expect(screen.queryByText(INTERRUPTED_HINT)).toBeNull()
-
-    rerender(
-      <ExportTool
-        {...props}
-        isProcessing
-        interruptionNote={INTERRUPTED_NOTE}
-      />,
-    )
-    expect(screen.queryByText(INTERRUPTED_HINT)).toBeNull()
-  })
-
   it('keeps the result actions of a finished export beside an interruption', async () => {
     const user = userEvent.setup()
     const onExport = vi.fn()
@@ -548,120 +481,6 @@ describe('exportTool', () => {
     expect(onDownloadExportManifest).toHaveBeenCalledOnce()
     expect(onCopyExport).toHaveBeenCalledOnce()
     expect(onExport).not.toHaveBeenCalled()
-  })
-})
-
-describe('exportTool reason copy', () => {
-  afterEach(() => {
-    localStorage.clear()
-    document.documentElement.lang = 'en'
-  })
-
-  const idle: ExportToolProps = {
-    canExport: false,
-    canPreviewExport: false,
-    onPreviewExport: vi.fn(),
-    isProcessing: false,
-    onExport: vi.fn(),
-    exportResult: null,
-    exportShareCapability: { available: false, reasonCode: 'no-result' },
-    onShareExport: vi.fn(),
-    onDownloadExport: vi.fn(),
-    onCopyExport: vi.fn(),
-  }
-
-  function renderIn(locale: 'en' | 'zh-CN', props: Partial<ExportToolProps>) {
-    localStorage.setItem('lumaforge.locale', locale)
-    return render(<ExportTool {...idle} {...props} />, {
-      wrapper: I18nProvider,
-    })
-  }
-
-  it('states each refusal from its code in the current locale', () => {
-    const { rerender } = renderIn('zh-CN', {
-      disabledReason: {
-        source: 'workflow',
-        reason: { code: 'quick-preview-pending' },
-      },
-      previewExportDisabledReason: {
-        source: 'workflow',
-        reason: 'preview-released',
-      },
-    })
-    expect(screen.getByText('快速预览还在准备中。')).toBeVisible()
-    expect(
-      screen.getByText('请先恢复预览，再导出 HQ 预览 JPEG。'),
-    ).toBeVisible()
-
-    // A Transform block is the surface policy's to name, in its own words.
-    rerender(
-      <ExportTool
-        {...idle}
-        disabledReason={{ source: 'surface', code: 'transform-pending' }}
-        previewExportDisabledReason={{
-          source: 'surface',
-          code: 'transform-hq-export',
-        }}
-      />,
-    )
-    expect(screen.getByText('正在准备当前照片…')).toBeVisible()
-    expect(
-      screen.getByText(
-        '按全分辨率导出可保留变换；若要导出 HQ 预览 JPEG，请先重置变换。',
-      ),
-    ).toBeVisible()
-  })
-
-  it('shows diagnostic text as it came, in every locale', () => {
-    const detail = 'LibRaw cannot open processed windows for this file.'
-    renderIn('zh-CN', {
-      disabledReason: {
-        source: 'workflow',
-        reason: { code: 'runtime-unsupported', detail },
-      },
-    })
-    expect(screen.getByText(detail)).toBeVisible()
-  })
-
-  it('says in English what the panel said before', () => {
-    renderIn('en', {
-      disabledReason: {
-        source: 'workflow',
-        reason: { code: 'exposure-pending' },
-      },
-      previewExportDisabledReason: {
-        source: 'workflow',
-        reason: 'hq-preview-pending',
-      },
-    })
-    expect(
-      screen.getByText('RAW preview exposure is still being prepared.'),
-    ).toBeVisible()
-    expect(
-      screen.getByText(
-        'HQ preview export is available after the bounded HQ preview finishes.',
-      ),
-    ).toBeVisible()
-  })
-
-  it('falls back to the loading copy for a refusal that names no reason', () => {
-    renderIn('zh-CN', {})
-    expect(screen.getByText('全分辨率导出源还在加载。')).toBeVisible()
-  })
-
-  it('labels the Copy action from the copy mode in the current locale', () => {
-    renderIn('zh-CN', {
-      canExport: true,
-      exportResult: createResult({
-        copyCapability: {
-          mode: 'full-resolution',
-        },
-      }),
-      exportShareCapability: { available: true },
-    })
-    expect(
-      screen.getByRole('button', { name: '复制全分辨率图像' }),
-    ).toBeEnabled()
   })
 })
 

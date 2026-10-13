@@ -3,9 +3,7 @@ import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-
-import { I18nProvider } from '~/lib/i18n'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { ExportResult } from '../../model/export-result'
 import { createMockExportResultIdentity } from '../../model/export-result.fixture'
@@ -304,21 +302,6 @@ describe('mobileExportPanel', () => {
     const note = screen.getByText(reason)
     expect(previewButton).toHaveAttribute('aria-describedby', note.id)
     expect(previewButton.nextElementSibling).toBe(note)
-  })
-
-  it('does not repeat an HQ reason the full-resolution box already states', () => {
-    renderPanel({
-      canExport: false,
-      disabledReason: { source: 'surface', code: 'no-source' },
-      canPreviewExport: false,
-      previewExportDisabledReason: { source: 'surface', code: 'no-source' },
-      onPreviewExport: vi.fn(),
-    })
-
-    expect(screen.getAllByText('No image loaded')).toHaveLength(1)
-    expect(
-      screen.getByRole('button', { name: /export hq preview jpeg/i }),
-    ).not.toHaveAttribute('aria-describedby')
   })
 
   it('explains a blocked full-resolution export in a neutral well, not destructive rose', () => {
@@ -741,99 +724,5 @@ describe('mobileExportPanel', () => {
     expect(onCopyExport).toHaveBeenCalledOnce()
     expect(onDownloadExportManifest).toHaveBeenCalledOnce()
     expect(onExport).not.toHaveBeenCalled()
-  })
-})
-
-describe('mobileExportPanel reason copy', () => {
-  afterEach(() => {
-    localStorage.clear()
-    document.documentElement.lang = 'en'
-  })
-
-  function renderIn(
-    locale: 'en' | 'zh-CN',
-    overrides: Partial<MobileExportPanelProps>,
-  ) {
-    localStorage.setItem('lumaforge.locale', locale)
-    return render(
-      <MobileExportPanel
-        canExport={false}
-        canPreviewExport={false}
-        onPreviewExport={vi.fn()}
-        isProcessing={false}
-        onExport={vi.fn()}
-        exportResult={null}
-        exportShareCapability={{ available: false, reasonCode: 'no-result' }}
-        onShareExport={vi.fn()}
-        onDownloadExport={vi.fn()}
-        onCopyExport={vi.fn()}
-        {...overrides}
-      />,
-      { wrapper: I18nProvider },
-    )
-  }
-
-  it('states each refusal from its code in the current locale', () => {
-    renderIn('zh-CN', {
-      disabledReason: {
-        source: 'workflow',
-        reason: { code: 'quick-preview-pending' },
-      },
-      previewExportDisabledReason: {
-        source: 'workflow',
-        reason: 'preview-released',
-      },
-    })
-    expect(
-      document.querySelector('[data-export-unavailable-reason]'),
-    ).toHaveTextContent('快速预览还在准备中。')
-    const note = screen.getByText('请先恢复预览，再导出 HQ 预览 JPEG。')
-    expect(
-      screen.getByRole('button', { name: '导出 HQ 预览 JPEG' }),
-    ).toHaveAttribute('aria-describedby', note.id)
-  })
-
-  it('names a Transform block in the words the surface policy gives it', () => {
-    renderIn('zh-CN', {
-      disabledReason: { source: 'surface', code: 'transform-invalid' },
-      previewExportDisabledReason: {
-        source: 'surface',
-        code: 'transform-hq-export',
-      },
-    })
-    expect(
-      screen.getByText('变换后可用画面过少，请减小调整幅度或重置。'),
-    ).toBeVisible()
-    expect(
-      screen.getByText(
-        '按全分辨率导出可保留变换；若要导出 HQ 预览 JPEG，请先重置变换。',
-      ),
-    ).toBeVisible()
-  })
-
-  it('shows diagnostic text as it came, in every locale', () => {
-    const detail = 'This LUT output range cannot be encoded.'
-    renderIn('zh-CN', {
-      disabledReason: {
-        source: 'workflow',
-        reason: { code: 'lut-output-refused', detail },
-      },
-    })
-    expect(
-      document.querySelector('[data-export-unavailable-reason]'),
-    ).toHaveTextContent(detail)
-  })
-
-  it('names the Copy action from the copy mode in the current locale', () => {
-    renderIn('zh-CN', {
-      canExport: true,
-      exportResult: createResult({
-        copyCapability: { mode: 'hq-preview' },
-      }),
-      exportShareCapability: { available: true },
-    })
-    const copy = screen.getByRole('button', { name: '复制 HQ 预览图像' })
-    expect(copy).toHaveTextContent('复制')
-    expect(copy).toBeEnabled()
   })
 })

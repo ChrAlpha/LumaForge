@@ -12,6 +12,7 @@ import { useId, useState } from 'react'
 
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
+import { surfaceFade } from '~/lib/spring'
 
 import { formatBytes } from '../../format-bytes'
 import type {
@@ -20,23 +21,22 @@ import type {
 } from '../../model/export-result'
 import { TAP_SPRING } from '../../motion'
 import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
+import {
+  deriveExportPanelState,
+  exportProgressPercent,
+} from '../../services/surface/export-panel-state'
 import type {
   FullExportActionReason,
   HqExportActionReason,
 } from '../../services/surface/raw-reason'
-import {
-  exportCopyActionLabel,
-  fullExportActionReasonText,
-  hqExportActionReasonText,
-} from '../../services/surface/raw-reason'
+import { exportCopyActionLabel } from '../../services/surface/raw-reason'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { EXPORT_INTERRUPTION_NOTE_COPY } from '../RawWorkflowContext'
 import type { MobileExportRecap } from './export-recap'
 
-// Mirrors the handoff spec tokens: --mrl-ease + base 220ms duration so the
-// idle/busy/done transitions feel like the design rather than a hard snap.
-const MRL_EASE = [0.22, 1, 0.36, 1] as const
-const PANEL_TRANSITION = { duration: 0.22, ease: MRL_EASE }
+// The standard ease over 220ms, so the idle/busy/done transitions read as
+// one move rather than a hard snap.
+const PANEL_TRANSITION = { ...surfaceFade, duration: 0.22 }
 
 // A running export's button keeps its plate readable: the disabled fade
 // would read as refused while it is the one thing working.
@@ -230,55 +230,48 @@ export function MobileExportPanel(props: {
   // Both exports run under one workflow status, so the panel remembers
   // which button started the one running.
   const [startedKind, setStartedKind] = useState<'full' | 'hq'>('full')
-  const runningKind = isExporting ? startedKind : null
-  const percent =
-    typeof props.progress === 'number' && Number.isFinite(props.progress)
-      ? Math.round(Math.min(100, Math.max(0, props.progress)))
-      : null
+  const panel = deriveExportPanelState(
+    {
+      canExport: props.canExport,
+      disabledReason: props.disabledReason,
+      canPreviewExport: props.canPreviewExport,
+      previewExportDisabledReason: props.previewExportDisabledReason,
+      isProcessing: props.isProcessing,
+      isExporting,
+      startedKind,
+      interruptionNote: props.interruptionNote,
+      resultKind: props.exportResult?.kind,
+    },
+    t,
+  )
+  const { runningKind, interruptionNote } = panel
+  const percent = exportProgressPercent(props.progress)
   // Only a result that names its kind takes that kind's title. An HQ
   // preview result is the bounded compromise and never takes the
   // full-resolution "Exported" title, and a result that names no kind takes
   // neither.
-  const resultKind = props.exportResult?.kind
   const title = isExporting
     ? t('raw.mobile.export.exporting')
-    : resultKind === 'hq-preview'
+    : panel.resultKind === 'hq-preview'
       ? t('raw.mobile.export.previewDone')
-      : resultKind === 'full-resolution'
+      : panel.resultKind === 'full-resolution'
         ? t('raw.mobile.export.done')
         : t('raw.export.title')
-  const unavailableReason = props.disabledReason
-    ? fullExportActionReasonText(props.disabledReason, t)
-    : t('raw.exportSourceLoading')
+  const unavailableReason = panel.fullReason
   const copyButtonLabel = exportCopyActionLabel(
     props.exportResult?.copyCapability,
     t,
   )
-  // A busy stage refuses with its own reason (loading, decoding), which
-  // stays readable; a running export shows on its button instead.
-  const showUnavailableReason = !isExporting && !props.canExport
+  const showUnavailableReason = unavailableReason !== null
   // A block caused by the LUT's colour contract reads in amber, the
   // contract colour, and offers the route into the contract. Every other
   // block stays neutral.
   const contractBlock =
     showUnavailableReason && Boolean(props.onChooseLutContract)
-  // The HQ preview can be refused on its own terms while full resolution is
-  // fine (a committed Transform does exactly that), so a disabled HQ button
-  // names its reason instead of going quietly dark. A reason the full-res
-  // box above already states is not repeated.
-  const previewUnavailableReason =
-    props.previewExportDisabledReason &&
-    hqExportActionReasonText(props.previewExportDisabledReason, t)
+  const previewUnavailableReason = panel.previewReason
   const previewExportDisabled =
     !props.canPreviewExport || props.isProcessing || !props.onPreviewExport
-  const showPreviewUnavailableReason =
-    !isExporting &&
-    !props.canPreviewExport &&
-    Boolean(previewUnavailableReason) &&
-    !(showUnavailableReason && previewUnavailableReason === unavailableReason)
-  // The next export the user starts uses the current RAW and edits on a
-  // safer plan; a running export already took it.
-  const interruptionNote = props.isProcessing ? null : props.interruptionNote
+  const showPreviewUnavailableReason = previewUnavailableReason !== null
 
   const body = props.exportResult ? (
     <m.div
@@ -299,9 +292,9 @@ export function MobileExportPanel(props: {
             className="m-0 truncate text-[0.88rem] font-semibold"
             title={props.exportResult.filename}
           >
-            {resultKind === 'hq-preview'
+            {panel.resultKind === 'hq-preview'
               ? t('raw.export.previewReady')
-              : resultKind === 'full-resolution'
+              : panel.resultKind === 'full-resolution'
                 ? t('raw.export.fileReady', {
                     filename: props.exportResult.filename,
                   })
