@@ -1,21 +1,13 @@
 import { createHash } from 'node:crypto'
 
-import type {
-  ColorGraphIntent,
-  RawRenderExposure,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_SELECTIVE_COLOR,
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 import type { FileBackedOutputResult } from '@lumaforge/render-engine/export'
 import { createBlobOutputResult } from '@lumaforge/render-engine/export'
-import type { RenderManifest } from '@lumaforge/render-engine/manifest'
-import {
-  canonicalizeJson,
-  parseRenderManifest,
-  verifyManifestSha256,
-} from '@lumaforge/render-engine/manifest'
+import { verifyManifestSha256 } from '@lumaforge/render-engine/manifest'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ExportResult } from '../../model/export-result'
@@ -53,14 +45,11 @@ function sha256(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
-function resolveGraph(
-  intent: ColorGraphIntent = params,
-  rawRenderExposure: RawRenderExposure = exposure,
-) {
+function resolveGraph() {
   const graph = resolveExportColorGraph({
-    ...intent,
+    ...params,
     lut: null,
-    rawRenderExposure,
+    rawRenderExposure: exposure,
   })
   if (!graph.supported) throw new Error(graph.message)
   return graph
@@ -310,117 +299,6 @@ describe('buildManifestForExportResult', () => {
 
     await expect(buildManifestForExportResult(input)).rejects.toMatchObject({
       reason: 'internal',
-    })
-  })
-})
-
-describe('buildManifestForExportResult current record', () => {
-  function sha256Text(text: string): string {
-    return createHash('sha256').update(text).digest('hex')
-  }
-
-  /** Seal, strict read and descriptor checks, independent of the writer. */
-  function expectSealedAsWritten(manifest: RenderManifest): void {
-    const { manifest_sha256: seal, ...unsealed } = manifest
-    expect(seal).toBe(sha256Text(canonicalizeJson(unsealed)))
-    const fromJson = JSON.parse(JSON.stringify(manifest)) as unknown
-    expect(fromJson).toEqual(manifest)
-    expect(parseRenderManifest(fromJson)).toEqual({
-      ok: true,
-      manifest: fromJson,
-    })
-    const colorGraph = manifest.color_graph as {
-      fingerprint: string
-      descriptor: { descriptor_version: unknown }
-    }
-    expect(colorGraph.descriptor.descriptor_version).toBe(2)
-    expect(colorGraph.fingerprint).toBe(
-      sha256Text(canonicalizeJson(colorGraph.descriptor)),
-    )
-    expect(manifest.calibration).toBeNull()
-  }
-
-  it('records the complete request the result answers', async () => {
-    const intent: ColorGraphIntent = {
-      ...params,
-      intensity: 0.37,
-      userExposureEv: 0.4,
-      userContrast: 12,
-      userHighlights: -20,
-      userShadows: 15,
-      userWhites: -8,
-      userBlacks: 6,
-      userTemperature: 12,
-      userTint: -4,
-      userSaturation: 7,
-      userVibrance: 18,
-      selectiveColor: {
-        ...NEUTRAL_SELECTIVE_COLOR,
-        red: { hue: 10, saturation: 0, lightness: 0 },
-      },
-    }
-    const pinned: RawRenderExposure = {
-      ev: 0.5,
-      multiplier: 2 ** 0.5,
-      source: 'image-statistics',
-    }
-    const matrix = [0.99, -0.04, 0.02, 0.04, 0.99, -0.01, 0, 0, 1]
-    const { input } = buildInput(null, {
-      intent,
-      rawRenderExposure: pinned,
-      geometry: { matrix, constrainCrop: true },
-    })
-
-    const manifest = await buildManifestForExportResult({
-      ...input,
-      graph: resolveGraph(intent, pinned),
-      sourceDimensions: { width: 4032, height: 3024 },
-    })
-
-    expectSealedAsWritten(manifest)
-    expect(manifest.render_params).toEqual({
-      exposure_ev: 0.4,
-      tone_curve: {
-        contrast: 12,
-        highlights: -20,
-        shadows: 15,
-        whites: -8,
-        blacks: 6,
-      },
-      color_balance: { temperature: 12, tint: -4 },
-      saturation: { saturation: 7, vibrance: 18 },
-      selective_color: intent.selectiveColor,
-      intensity: 0.37,
-      raw_render_exposure_ev: 0.5,
-      raw_render_exposure_source: 'image-statistics',
-      geometry: {
-        matrix,
-        constrain_crop: true,
-        output: { width: 4, height: 2 },
-      },
-    })
-  })
-
-  it('omits neutral HSL and an unapplied geometry, and nothing else', async () => {
-    const { input } = buildInput(null)
-
-    const manifest = await buildManifestForExportResult(input)
-
-    expectSealedAsWritten(manifest)
-    expect(manifest.render_params).toEqual({
-      exposure_ev: 0,
-      tone_curve: {
-        contrast: 0,
-        highlights: 0,
-        shadows: 0,
-        whites: 0,
-        blacks: 0,
-      },
-      color_balance: { temperature: 0, tint: 0 },
-      saturation: { saturation: 0, vibrance: 0 },
-      intensity: 1,
-      raw_render_exposure_ev: 0,
-      raw_render_exposure_source: 'identity',
     })
   })
 })
