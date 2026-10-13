@@ -32,13 +32,13 @@ import { RawToolSurface } from './RawToolSurface'
 import type {
   RawPreviewStats,
   RawToolCommands,
-  RawToolSurfaceProps,
+  RawWorkflowSurfaceState,
 } from './RawWorkflowContext'
 import {
-  RawPreviewHistogramProvider,
-  RawPreviewStatsProvider,
-  RawToolCommandsProvider,
-  RawWorkflowProvider,
+  RawPreviewHistogramContext,
+  RawPreviewStatsContext,
+  RawToolCommandsContext,
+  RawWorkflowContext,
 } from './RawWorkflowContext'
 import type { ToneValue } from './tone-fields'
 import { TONE_NEUTRAL } from './tone-fields'
@@ -68,17 +68,26 @@ interface RawToolStoreFacts {
  */
 export type RawToolSurfaceFixtureProps = RawToolStoreFacts &
   Partial<RawToolCommands> &
-  Partial<RawToolSurfaceProps> & {
+  Partial<RawWorkflowSurfaceState> & {
     /** The preview histogram, through its own provider. */
     histogram?: PreviewHistogramState
     /** The preview stats, through their own provider. */
     stats?: RawPreviewStats | null
   }
 
-const CONTEXT_DEFAULTS: Omit<RawToolSurfaceProps, 'toolAvailability'> = {
+const CONTEXT_DEFAULTS: Omit<RawWorkflowSurfaceState, 'toolAvailability'> = {
   viewMode: 'processed',
-  compareSplit: 0.5,
+  compareSupported: true,
   canExport: false,
+  canPreviewExport: false,
+  exportBlockedByLutContract: false,
+  deliveredExportSize: null,
+  previewSuspended: false,
+  interruptionNote: null,
+  currentLutName: null,
+  appliedLut: null,
+  previewLookReason: null,
+  previewAspect: null,
   isProcessing: false,
   exportResult: null,
   exportShareCapability: { available: false, reasonCode: 'no-result' },
@@ -171,7 +180,7 @@ function createFixtureCommands(latest: {
 function contextFacts(
   props: RawToolSurfaceFixtureProps,
   commands: RawToolCommands,
-): Partial<RawToolSurfaceProps> {
+): Partial<RawWorkflowSurfaceState> {
   const {
     activeIntensity: _activeIntensity,
     tone: _tone,
@@ -204,7 +213,7 @@ function FixtureToolProviders({
   latest.current = props
   const [commands] = useState(() => createFixtureCommands(latest))
   return (
-    <RawWorkflowProvider
+    <RawWorkflowContext
       value={{
         ...CONTEXT_DEFAULTS,
         ...contextFacts(props, commands),
@@ -212,18 +221,18 @@ function FixtureToolProviders({
           props.toolAvailability ?? toolAvailabilityFixture(props),
       }}
     >
-      <RawToolCommandsProvider commands={commands}>
-        <RawPreviewStatsProvider stats={props.stats ?? null}>
-          <RawPreviewHistogramProvider
-            histogram={
+      <RawToolCommandsContext value={commands}>
+        <RawPreviewStatsContext value={props.stats ?? null}>
+          <RawPreviewHistogramContext
+            value={
               props.histogram ?? { state: 'unavailable', reason: 'no-image' }
             }
           >
             {children}
-          </RawPreviewHistogramProvider>
-        </RawPreviewStatsProvider>
-      </RawToolCommandsProvider>
-    </RawWorkflowProvider>
+          </RawPreviewHistogramContext>
+        </RawPreviewStatsContext>
+      </RawToolCommandsContext>
+    </RawWorkflowContext>
   )
 }
 

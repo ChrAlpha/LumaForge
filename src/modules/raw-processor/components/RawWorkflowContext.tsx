@@ -5,7 +5,6 @@ import type {
   LUTContractResolution,
   PreviewHistogramState,
 } from '@lumaforge/luma-color-runtime'
-import type { ReactNode } from 'react'
 import { createContext, useContext } from 'react'
 
 import type { MessageKey } from '~/lib/i18n'
@@ -31,7 +30,6 @@ import type {
 } from '../services/surface/raw-reason'
 import type { ColorValue } from './color-fields'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
-import type { AppliedLut } from './mobile/mobile-lut-strip'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type { ToneValue } from './tone-fields'
 
@@ -55,7 +53,17 @@ export const EXPORT_INTERRUPTION_NOTE_COPY = {
  * `useRawToolStatus`, `useRawToolProgress`), and every command from
  * `useRawToolCommands`.
  */
-export interface RawToolSurfaceProps {
+/** The LUT the session applies, as far as the surfaces need to know it. */
+export interface AppliedLut {
+  /** Style name; the strip falls back to it for a file's title. */
+  name: string
+  /** SHA-256 of the applied .cube bytes. */
+  sha256?: string | null
+  /** The file or URL name the LUT came from. */
+  sourceName?: string | null
+}
+
+export interface RawWorkflowSurfaceState {
   transform?: RawTransformFeature
   /**
    * What each action can do right now on each surface, from the shared
@@ -64,14 +72,13 @@ export interface RawToolSurfaceProps {
    */
   toolAvailability: Record<ToolSurface, ToolAvailability>
   viewMode: 'processed' | 'original' | 'compare'
-  compareSplit: number
   /**
    * The stage can render a RAW / final comparison. False in the CPU preview,
    * which has no split surface; a committed Transform is reported separately.
    */
-  compareSupported?: boolean
+  compareSupported: boolean
   /** The HQ preview export can start now, as the action policy decides. */
-  canPreviewExport?: boolean
+  canPreviewExport: boolean
   /** Why the HQ preview export is refused; unset while it can start. */
   previewExportDisabledReason?: HqExportActionReason
   /** The full-resolution export can start now, as the action policy decides. */
@@ -82,27 +89,27 @@ export interface RawToolSurfaceProps {
    * Full-resolution export is blocked by the applied LUT's colour contract,
    * so choosing a contract is the way forward.
    */
-  exportBlockedByLutContract?: boolean
+  exportBlockedByLutContract: boolean
   /**
    * The frame a full-resolution export will write (Transform included);
    * null or unset while unknown.
    */
-  deliveredExportSize?: DeliveredExportSize | null
+  deliveredExportSize: DeliveredExportSize | null
   isProcessing: boolean
   runtimeReadinessState?: RawRuntimeReadinessState
-  previewSuspended?: boolean
+  previewSuspended: boolean
   exportResult: ExportResult | null
   exportShareCapability: ExportShareCapability
   /** Set while the loaded source's previous export was interrupted. */
-  interruptionNote?: ExportInterruptionNote | null
+  interruptionNote: ExportInterruptionNote | null
   hasImage: boolean
   fileName: string
-  currentLutName?: string | null
+  currentLutName: string | null
   /**
    * The applied LUT's identity (name, .cube SHA-256, source name), so a
    * surface can tell which catalog entry, if any, is the applied look.
    */
-  appliedLut?: AppliedLut | null
+  appliedLut: AppliedLut | null
   lutProfileSelection?: LUTContractSelectionState | null
   lutProfileResolution?: LUTContractResolution | null
   /**
@@ -110,7 +117,7 @@ export interface RawToolSurfaceProps {
    * export refuses, or a built-in style on the CPU preview); null when it
    * draws the look as selected. The selection and strength stay unchanged.
    */
-  previewLookReason?: PreviewLookReason | null
+  previewLookReason: PreviewLookReason | null
   onlineLutSources?: UseOnlineLutSourcesResult
   supportLevel: SupportLevel
   metadata: ImageMetadata | null
@@ -120,7 +127,7 @@ export interface RawToolSurfaceProps {
    * while its overlay is up, otherwise the decoded preview. Null while no
    * decoded preview is held (before decode, or released for export).
    */
-  previewAspect?: number | null
+  previewAspect: number | null
   /** Set while the CPU preview notice is showing; mobile renders it. */
   cpuPreviewNotice?: CpuPreviewNotice
 }
@@ -169,100 +176,44 @@ export type RawPreviewStats = Pick<
   'processTime' | 'inputSize' | 'previewSize'
 >
 
-const RawWorkflowContext = createContext<RawToolSurfaceProps | null>(null)
-const RawToolCommandsContext = createContext<RawToolCommands | null>(null)
-/** Without a provider there is no photo, so nothing to measure. */
-const RawPreviewHistogramContext = createContext<PreviewHistogramState>({
+export const RawWorkflowContext = createContext<RawWorkflowSurfaceState | null>(
+  null,
+)
+export const RawToolCommandsContext = createContext<RawToolCommands | null>(
+  null,
+)
+/**
+ * The preview histogram and the preview stats move with every preview
+ * render, so each travels apart from the workflow context: a new histogram
+ * or timing renders what names it, not every surface reading the workflow.
+ * Without a provider there is no photo, so nothing to measure.
+ */
+export const RawPreviewHistogramContext = createContext<PreviewHistogramState>({
   state: 'unavailable',
   reason: 'no-image',
 })
-const RawPreviewStatsContext = createContext<RawPreviewStats | null>(null)
-
-export function RawToolCommandsProvider({
-  commands,
-  children,
-}: {
-  commands: RawToolCommands
-  children: ReactNode
-}) {
-  return (
-    <RawToolCommandsContext.Provider value={commands}>
-      {children}
-    </RawToolCommandsContext.Provider>
-  )
-}
+export const RawPreviewStatsContext = createContext<RawPreviewStats | null>(
+  null,
+)
 
 export function useRawToolCommands(): RawToolCommands {
   const commands = useContext(RawToolCommandsContext)
   if (!commands) {
-    throw new Error('RawToolCommandsProvider is missing')
+    throw new Error('RawToolCommandsContext is missing')
   }
   return commands
 }
 
-export function RawWorkflowProvider({
-  value,
-  children,
-}: {
-  value: RawToolSurfaceProps
-  children: ReactNode
-}) {
-  return (
-    <RawWorkflowContext.Provider value={value}>
-      {children}
-    </RawWorkflowContext.Provider>
-  )
-}
-
-export function useRawWorkflowContext(): RawToolSurfaceProps {
+export function useRawWorkflowContext(): RawWorkflowSurfaceState {
   const value = useContext(RawWorkflowContext)
   if (!value) {
-    throw new Error('RawWorkflowProvider is missing')
+    throw new Error('RawWorkflowContext is missing')
   }
   return value
 }
 
-/**
- * The preview histogram as the surfaces show it. It moves with every preview
- * render, so it travels apart from the workflow context: a new histogram
- * renders what draws it, not every surface reading the workflow.
- */
-export function RawPreviewHistogramProvider({
-  histogram,
-  children,
-}: {
-  histogram: PreviewHistogramState
-  children: ReactNode
-}) {
-  return (
-    <RawPreviewHistogramContext.Provider value={histogram}>
-      {children}
-    </RawPreviewHistogramContext.Provider>
-  )
-}
-
 export function useRawPreviewHistogram(): PreviewHistogramState {
   return useContext(RawPreviewHistogramContext)
-}
-
-/**
- * The preview pipeline's stats as the surfaces show them. A preview render
- * reports a new timing a few times a second while an edit moves, so they
- * travel apart from the workflow context: a new timing renders the facts
- * that name it, not every surface reading the workflow.
- */
-export function RawPreviewStatsProvider({
-  stats,
-  children,
-}: {
-  stats: RawPreviewStats | null
-  children: ReactNode
-}) {
-  return (
-    <RawPreviewStatsContext.Provider value={stats}>
-      {children}
-    </RawPreviewStatsContext.Provider>
-  )
 }
 
 /** Null before the first preview render. */

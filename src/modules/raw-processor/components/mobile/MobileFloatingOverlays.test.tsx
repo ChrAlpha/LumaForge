@@ -2,7 +2,7 @@ import type { PreviewHistogramState } from '@lumaforge/luma-color-runtime'
 import { render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { RawPreviewHistogramProvider } from '../RawWorkflowContext'
+import { RawPreviewHistogramContext } from '../RawWorkflowContext'
 import type { MobileFloatingOverlaysProps } from './MobileFloatingOverlays'
 import {
   getCpuNoticePlacement,
@@ -18,7 +18,7 @@ function renderOverlays({
   histogram?: PreviewHistogramState
 } = {}) {
   return render(
-    <RawPreviewHistogramProvider histogram={histogram}>
+    <RawPreviewHistogramContext value={histogram}>
       <MobileFloatingOverlays
         immersive={false}
         focusActive={false}
@@ -32,7 +32,7 @@ function renderOverlays({
         lensVisible
         {...overrides}
       />
-    </RawPreviewHistogramProvider>,
+    </RawPreviewHistogramContext>,
   )
 }
 

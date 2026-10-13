@@ -2,19 +2,10 @@ import type {
   OnlineLutLoadedEntry,
   UseOnlineLutSourcesResult,
 } from '../../hooks/useOnlineLutSources'
+import type { AppliedLut } from '../RawWorkflowContext'
 
 type OnlineEntry = UseOnlineLutSourcesResult['state']['entries'][number]
 type OnlineResource = UseOnlineLutSourcesResult['state']['resources'][number]
-
-/** The LUT the session applies, as far as the strip needs to know it. */
-export interface AppliedLut {
-  /** Style name; the strip falls back to it for a file's title. */
-  name: string
-  /** SHA-256 of the applied .cube bytes. */
-  sha256?: string | null
-  /** The file or URL name the LUT came from. */
-  sourceName?: string | null
-}
 
 /**
  * A catalog entry with no declared hash (a direct .cube URL) cannot be

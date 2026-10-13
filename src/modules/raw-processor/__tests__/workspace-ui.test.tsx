@@ -76,7 +76,6 @@ function rawToolSurfaceProps(
     onCompareReset: () => {},
     viewMode: 'processed',
     onViewModeChange: () => {},
-    compareSplit: 0.5,
     onCompareSplitChange: () => {},
     fileName: 'DSC09142.ARW',
     onReplaceFile: () => {},

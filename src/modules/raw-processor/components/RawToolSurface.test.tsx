@@ -57,7 +57,6 @@ const baseProps = {
   onCompareReset: vi.fn(),
   viewMode: 'processed' as const,
   onViewModeChange: vi.fn(),
-  compareSplit: 0.5,
   onCompareSplitChange: vi.fn(),
   fileName: 'DSC09142.ARW',
   onReplaceFile: vi.fn(),

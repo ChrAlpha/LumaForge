@@ -33,7 +33,6 @@ const base: RawToolSurfaceFixtureProps = {
   onCompareReset: vi.fn(),
   viewMode: 'processed',
   onViewModeChange: vi.fn(),
-  compareSplit: 0.5,
   onCompareSplitChange: vi.fn(),
   fileName: 'photo.NEF',
   onReplaceFile: vi.fn(),

@@ -32,7 +32,7 @@ export function MobileRawToolSurface() {
   const { isExporting } = useRawToolStatus()
   const progress = useRawToolProgress()
   const { t } = useI18n()
-  const previewSuspended = props.previewSuspended === true
+  const previewSuspended = props.previewSuspended
   // The dock, the deck, the lens and the topbar Export read the shared
   // action policy for this surface, which waits for any busy stage.
   const availability = props.toolAvailability.mobile
@@ -57,7 +57,7 @@ export function MobileRawToolSurface() {
       onSelectiveColorReset={commands.onSelectiveColorReset}
       viewMode={props.viewMode}
       onViewModeChange={commands.onViewModeChange}
-      compareSupported={props.compareSupported !== false}
+      compareSupported={props.compareSupported}
       fileName={props.fileName}
       fileMeta={fileMeta || props.fileName}
       supportLevel={props.supportLevel}
@@ -122,7 +122,7 @@ function MobileExportPanelSlot({
   })
   const recap = buildMobileExportRecap({
     canExport: props.canExport,
-    canPreviewExport: props.canPreviewExport === true,
+    canPreviewExport: props.canPreviewExport,
     deliveredSize: props.deliveredExportSize,
     lutName: lookTitle,
     intensity: adjustments.activeIntensity,
@@ -189,7 +189,7 @@ function MobileDetailsSheetSlot({
       previewLookReason: props.previewLookReason,
       transformActive: props.transform?.active === true,
       canExport: props.canExport,
-      canPreviewExport: props.canPreviewExport === true,
+      canPreviewExport: props.canPreviewExport,
     },
     t,
   )

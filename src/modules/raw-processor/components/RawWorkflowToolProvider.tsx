@@ -22,13 +22,13 @@ import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import type {
   ExportInterruptionNote,
   RawToolCommands,
-  RawToolSurfaceProps,
+  RawWorkflowSurfaceState,
 } from './RawWorkflowContext'
 import {
-  RawPreviewHistogramProvider,
-  RawPreviewStatsProvider,
-  RawToolCommandsProvider,
-  RawWorkflowProvider,
+  RawPreviewHistogramContext,
+  RawPreviewStatsContext,
+  RawToolCommandsContext,
+  RawWorkflowContext,
 } from './RawWorkflowContext'
 
 interface RawWorkflowToolProviderProps {
@@ -82,7 +82,7 @@ function PreviewStatsGate({
     [decodedPreviewSize, stats],
   )
   return (
-    <RawPreviewStatsProvider stats={shown}>{children}</RawPreviewStatsProvider>
+    <RawPreviewStatsContext value={shown}>{children}</RawPreviewStatsContext>
   )
 }
 
@@ -121,9 +121,9 @@ function PreviewHistogramGate({
     [isCpuMode, measured, t, transformActive],
   )
   return (
-    <RawPreviewHistogramProvider histogram={histogram}>
+    <RawPreviewHistogramContext value={histogram}>
       {children}
-    </RawPreviewHistogramProvider>
+    </RawPreviewHistogramContext>
   )
 }
 
@@ -469,7 +469,7 @@ export function RawWorkflowToolProvider({
         : null,
     [activeStyle],
   )
-  const value = useShallowStable<RawToolSurfaceProps>({
+  const value = useShallowStable<RawWorkflowSurfaceState>({
     transform: editableTransform,
     fileName: workflow.sourceFileName,
     toolAvailability,
@@ -481,7 +481,6 @@ export function RawWorkflowToolProvider({
       : isCpuMode && workflow.viewMode === 'compare'
         ? 'processed'
         : workflow.viewMode,
-    compareSplit: workflow.compareSplit,
     compareSupported: !isCpuMode,
     currentLutName: workflow.currentLutName,
     appliedLut,
@@ -519,8 +518,8 @@ export function RawWorkflowToolProvider({
   })
 
   return (
-    <RawWorkflowProvider value={value}>
-      <RawToolCommandsProvider commands={commands}>
+    <RawWorkflowContext value={value}>
+      <RawToolCommandsContext value={commands}>
         <PreviewStatsGate decodedPreviewSize={decodedPreviewSize}>
           <PreviewHistogramGate
             transformActive={transformActive}
@@ -529,7 +528,7 @@ export function RawWorkflowToolProvider({
             {children}
           </PreviewHistogramGate>
         </PreviewStatsGate>
-      </RawToolCommandsProvider>
-    </RawWorkflowProvider>
+      </RawToolCommandsContext>
+    </RawWorkflowContext>
   )
 }
