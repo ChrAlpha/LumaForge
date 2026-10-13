@@ -1,6 +1,7 @@
-import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import process from 'node:process'
+
+import { sha256Hex } from '@lumaforge/render-engine/manifest'
 
 import { LmfgError } from '../protocol/errors'
 import { fileExists, writeFileAtomic } from '../workspace/atomic-fs'
@@ -37,10 +38,6 @@ export function isNetworkAllowed(
     env.LMFG_ALLOW_NETWORK === '1' ||
     env.LMFG_ALLOW_NETWORK === 'true'
   )
-}
-
-function sha256Of(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex')
 }
 
 function isTimeout(error: unknown): boolean {
@@ -213,7 +210,7 @@ export async function fetchLutFile(
       existing.byteOffset,
       existing.byteLength,
     )
-    if (sha256Of(bytes) === expected) {
+    if (sha256Hex(bytes) === expected) {
       return {
         path: input.destination,
         url: url.href,
@@ -275,7 +272,7 @@ export async function fetchLutFile(
   }
 
   const bytes = await readBodyWithLimit(response, maxBytes, url, timeoutMs)
-  const actual = sha256Of(bytes)
+  const actual = sha256Hex(bytes)
   if (actual !== expected) {
     throw new LmfgError('hash.mismatch', {
       message: `SHA-256 mismatch for ${url.href}: expected ${expected.slice(0, 12)}…, got ${actual.slice(0, 12)}….`,

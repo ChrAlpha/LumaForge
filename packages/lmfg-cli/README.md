@@ -87,11 +87,12 @@ stderr; `--quiet` silences them.
 | `manifest verify <file>`, `manifest show <file>`                                           | Canonical-hash verification and display                                                                                          |
 
 Global flags: `--workspace <dir>` (default `.lmfg`), `--session <id>`,
-`--tier cpu|browser`, `--emit json|ndjson`, `--json`, `--quiet`, `--no-color`,
+`--tier cpu|browser`, `--emit json|ndjson` (default `json`), `--quiet`,
 `--dry-run`, `--yes`, `--timeout <ms>`, `--memory-profile desktop|low-memory`.
+The CLI writes no ANSI color codes.
 
 Environment: `LMFG_ALLOW_NETWORK=1` is equivalent to `--allow-network` for
-`lut fetch`; `NO_COLOR` disables ANSI output. Nothing else reads the network.
+`lut fetch`. Nothing else reads the network.
 
 Inline JSON: `--params-json`, `--plan-json`, and `--contract-json` accept the
 same objects as their `--params`, `--plan`, and `--contract` file counterparts,

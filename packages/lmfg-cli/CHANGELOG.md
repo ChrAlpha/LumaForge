@@ -13,6 +13,12 @@ follows Keep a Changelog; versions follow semver.
 - `workspacePaths` no longer has `luts`, `replays`, `replay`, or
   `workspaceReplay`. `replayOutputFile` and `replayManifestFile` take a
   `null` session id for a replay under the workspace root.
+- The global `--json` and `--no-color` flags are removed. Neither changed
+  anything: JSON on stdout is the default (`--emit json`), and the CLI writes
+  no ANSI color codes. Passing either now fails with `args.invalid`.
+- The native build id is read only from the per-variant
+  `native/provenance/raw-<variant>.json`; a lone `raw.json`, which no current
+  artifact package ships, no longer counts.
 
 ### Changed
 

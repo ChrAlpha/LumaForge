@@ -33,7 +33,7 @@ describe('runCli', () => {
 
   it('capabilities reports the cpu tier', async () => {
     const c = io()
-    expect(await runCli(['capabilities', '--json'], c.io)).toBe(0)
+    expect(await runCli(['capabilities'], c.io)).toBe(0)
     expect(JSON.parse(c.out.join('')).result.active_tier).toBe('cpu_wasm')
   })
 

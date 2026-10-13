@@ -48,7 +48,6 @@ describeWithFixture('runIteration', () => {
       const output = new Output({
         emit: 'ndjson',
         quiet: true,
-        color: false,
         stdout: (s) => {
           events.push(s)
         },
@@ -228,7 +227,6 @@ describe('runIteration automatic exposure', () => {
       output: new Output({
         emit: 'ndjson',
         quiet: true,
-        color: false,
         stdout: () => {},
         stderr: () => {},
       }),

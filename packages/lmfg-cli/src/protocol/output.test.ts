@@ -24,7 +24,6 @@ describe('output json mode', () => {
     const output = new Output({
       emit: 'json',
       quiet: false,
-      color: false,
       ...c.io,
     })
     output.log('working')
@@ -44,7 +43,6 @@ describe('output json mode', () => {
     const output = new Output({
       emit: 'json',
       quiet: true,
-      color: false,
       ...c.io,
     })
     output.log('hidden')
@@ -58,7 +56,6 @@ describe('output ndjson mode', () => {
     const output = new Output({
       emit: 'ndjson',
       quiet: true,
-      color: false,
       ...c.io,
     })
     output.event({ event: 'started', command: 'render.sweep' })
@@ -89,7 +86,6 @@ describe('output ndjson mode', () => {
     const output = new Output({
       emit: 'ndjson',
       quiet: true,
-      color: false,
       ...c.io,
     })
     output.error(new LmfgError('render.failed', { message: 'boom' }))

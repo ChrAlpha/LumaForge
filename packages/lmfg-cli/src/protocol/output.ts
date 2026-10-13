@@ -11,7 +11,6 @@ export type OutputIo = {
 export type OutputOptions = OutputIo & {
   emit: EmitMode
   quiet: boolean
-  color: boolean
 }
 
 export type LmfgEvent = { event: string } & Record<string, unknown>

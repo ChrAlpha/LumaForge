@@ -50,9 +50,7 @@ export function createProgram(
         .choices(['json', 'ndjson'])
         .default('json'),
     )
-    .option('--json', 'single JSON result on stdout (default)')
     .option('--quiet', 'suppress stderr diagnostics', false)
-    .option('--no-color', 'disable ANSI colors')
     .option(
       '--dry-run',
       'validate inputs and report the plan without rendering or writing',

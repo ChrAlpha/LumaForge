@@ -22,9 +22,7 @@ export type GlobalOptions = {
   session?: string
   tier: RenderTier
   emit: EmitMode
-  json?: boolean
   quiet: boolean
-  color: boolean
   dryRun: boolean
   yes: boolean
   timeout?: number
@@ -68,7 +66,6 @@ export function createCommandContext(
     output: new Output({
       emit: options.emit,
       quiet: options.quiet,
-      color: options.color,
       stdout: io.stdout,
       stderr: io.stderr,
     }),

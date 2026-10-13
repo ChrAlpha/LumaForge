@@ -74,17 +74,14 @@ export type NativeArtifactStatus = {
   jpeg_present: boolean
 }
 
-function readProvenance(dir: string, names: string[]): Provenance | null {
-  for (const name of names) {
-    const file = join(dir, 'native', 'provenance', name)
-    if (!existsSync(file)) continue
-    try {
-      return JSON.parse(readFileSync(file, 'utf8')) as Provenance
-    } catch {
-      return null
-    }
+function readProvenance(dir: string, name: string): Provenance | null {
+  try {
+    return JSON.parse(
+      readFileSync(join(dir, 'native', 'provenance', name), 'utf8'),
+    ) as Provenance
+  } catch {
+    return null
   }
-  return null
 }
 
 export function resolveNativeArtifacts(
@@ -104,8 +101,8 @@ export function resolveNativeArtifacts(
   }
   const rawWasm = join(dir, 'native', memoryProfile, 'luma_raw.wasm')
   const jpegWasm = join(dir, 'native', 'luma_jpeg.wasm')
-  const raw = readProvenance(dir, [`raw-${memoryProfile}.json`, 'raw.json'])
-  const jpeg = readProvenance(dir, ['jpeg.json'])
+  const raw = readProvenance(dir, `raw-${memoryProfile}.json`)
+  const jpeg = readProvenance(dir, 'jpeg.json')
   const rawSha = raw?.artifacts?.wasm?.sha256
   const jpegSha = jpeg?.artifacts?.wasm?.sha256
   return {

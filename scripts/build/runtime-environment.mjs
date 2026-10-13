@@ -41,7 +41,6 @@ export function resolveNativeBuildId({ rootDir, variant, env = process.env }) {
   const artifacts = artifactsDir(rootDir, env)
   const rawSha = provenanceWasmSha([
     join(artifacts, 'native', 'provenance', `raw-${variant}.json`),
-    join(artifacts, 'native', 'provenance', 'raw.json'),
     join(rootDir, 'packages', 'luma-raw-runtime', 'dist', 'native', variant, 'provenance.json'),
   ])
   const jpegSha = provenanceWasmSha([
