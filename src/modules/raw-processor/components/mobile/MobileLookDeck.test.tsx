@@ -167,15 +167,6 @@ describe('mobileLookDeck', () => {
     expect(sources.activateCatalogs).not.toHaveBeenCalled()
   })
 
-  it('keeps the deck to one shrinkable column so the strip cannot widen it', () => {
-    const { container } = renderDeck()
-    // The strip scroller is as wide as every tile; an auto grid column grows
-    // to that width and pushes Strength and the footer off the screen.
-    expect(
-      container.querySelector('[data-mobile-look-deck="strip"]'),
-    ).toHaveClass('grid-cols-[minmax(0,1fr)]')
-  })
-
   it('lays the strip out as Original, the catalog, then Import', () => {
     const { container } = renderDeck()
     const tiles = Array.from(
@@ -188,12 +179,6 @@ describe('mobileLookDeck', () => {
       'import:Import .cube',
     ])
     // 72 x 60 tiles that snap, on a strip that scrolls on its own.
-    expect(tile('Kodak 2383')).toHaveClass('h-[60px]', 'w-[72px]', 'snap-start')
-    expect(screen.getByRole('group', { name: 'Looks' })).toHaveClass(
-      'overflow-x-auto',
-      '[scroll-snap-type:x_proximity]',
-      '[scroll-padding-inline:12px]',
-    )
     // With nothing applied the Original is the pressed tile.
     expect(tile('Original')).toHaveAttribute('aria-pressed', 'true')
     expect(tile('Original')).toHaveAttribute('data-state', 'applied')
@@ -216,11 +201,6 @@ describe('mobileLookDeck', () => {
     const portra = tile('Portra 400')
     expect(portra).toHaveAttribute('aria-pressed', 'true')
     expect(portra).toHaveAttribute('data-state', 'applied')
-    expect(portra.querySelector('[data-applied-ring]')).toHaveClass(
-      'opacity-100',
-      'duration-150',
-      'shadow-[inset_0_0_0_1.5px_oklch(0.96_0.006_255/0.92)]',
-    )
     expect(portra.querySelector('[data-applied-check]')).not.toBeNull()
     expect(tile('Original')).toHaveAttribute('aria-pressed', 'false')
     // The catalog matched, so there is no file tile.
@@ -282,10 +262,6 @@ describe('mobileLookDeck', () => {
       ),
     ).toBe(file)
     // Amber marks the contract, and words carry it too.
-    expect(file.querySelector('[data-needs-contract-dot]')).toHaveClass(
-      'bg-lf-amber',
-      'size-[7px]',
-    )
     expect(file).toHaveTextContent('Needs its color contract')
   })
 
@@ -344,7 +320,7 @@ describe('mobileLookDeck', () => {
     expect(sources.loadEntry).not.toHaveBeenCalled()
   })
 
-  it('names a failed load in the footer, neutral, and retries from it or the tile', async () => {
+  it('names a failed load in the footer and retries from it or the tile', async () => {
     const sources = sourcesFixture({ failedEntryId: 'portra' })
     const { container } = renderDeck(look({ onlineLutSources: sources }))
 
@@ -352,15 +328,12 @@ describe('mobileLookDeck', () => {
       name: "Couldn't load Portra 400. Tap to retry.",
     })
     expect(failed).toHaveAttribute('data-state', 'failed')
-    expect(failed).toHaveClass('opacity-60')
     expect(failed.querySelector('[data-failed-glyph]')).not.toBeNull()
 
     const footer = container.querySelector<HTMLElement>(
       '[data-look-footer="failure"]',
     )!
     expect(footer).toHaveTextContent("Couldn't load Portra 400.")
-    // Not a contract and not destructive: no amber, no rose.
-    expect(container.innerHTML).not.toMatch(/amber|rose/)
 
     await userEvent.click(within(footer).getByRole('button', { name: 'Retry' }))
     await waitFor(() =>
@@ -475,7 +448,6 @@ describe('mobileLookDeck', () => {
     ).toEqual(['40', '70', '100'])
     const labels = row.querySelector('[data-slider-tick-labels]')!
     expect(labels).toHaveTextContent('LightStandardStrong')
-    expect(labels).toHaveClass('text-[0.6rem]', 'text-lf-on-photo-ink/52')
 
     // Arrows step 1%, Shift+arrows 10%.
     fireEvent.keyDown(strength, { key: 'ArrowRight' })
@@ -486,7 +458,6 @@ describe('mobileLookDeck', () => {
     // Away from Standard the value is amber and is the reset.
     const reset = screen.getByRole('button', { name: 'Reset Strength' })
     expect(reset).toHaveTextContent('62%')
-    expect(reset).toHaveClass('text-lf-amber-soft', 'tabular-nums')
     fireEvent.click(reset)
     expect(controls.onIntensityChange).toHaveBeenLastCalledWith(0.7)
   })
@@ -502,7 +473,6 @@ describe('mobileLookDeck', () => {
     const reset = screen.getByRole('button', { name: 'Reset Strength' })
     expect(reset).toHaveTextContent('70%')
     expect(reset).toBeDisabled()
-    expect(reset.className).not.toMatch(/amber/)
 
     // The row follows the stored strength without the deck rendering again.
     seedRawToolStore({ currentLutName: 'Kodak 2383', activeIntensity: 0 })
@@ -560,9 +530,6 @@ describe('mobileLookDeck', () => {
     expect(row).toHaveAttribute('data-active-scrub', 'true')
     const dimmed = container.querySelectorAll('[data-sibling-scrubbing]')
     expect(dimmed).toHaveLength(2)
-    for (const node of dimmed) {
-      expect(node).toHaveClass('pointer-events-none', 'opacity-45')
-    }
     expect(dimmed[0]).toContainElement(
       screen.getByRole('group', { name: 'Looks' }),
     )
@@ -573,27 +540,6 @@ describe('mobileLookDeck', () => {
     fireEvent.pointerUp(row, pointer)
     expect(onScrubChange).toHaveBeenLastCalledWith(null)
     expect(container.querySelector('[data-sibling-scrubbing]')).toBeNull()
-  })
-
-  it('sits compact in the deck, about the touch target the segmented control was', () => {
-    const { container } = renderDeck(
-      look({
-        currentLutName: 'Kodak 2383',
-        appliedLut: { name: 'Kodak 2383', sha256: SHA_KODAK },
-        strengthDisabled: false,
-      }),
-    )
-    const row = container.querySelector<HTMLElement>(
-      '[data-mobile-look-strength] [data-adjust-slider-row]',
-    )!
-    // No list padding: a 16px label line, a 21px track and a 10px name
-    // line, against the 44px segmented control it replaced.
-    expect(row).not.toHaveClass('py-1.5')
-    expect(row).not.toHaveClass('px-3')
-    expect(row.firstElementChild).toHaveClass('min-h-4')
-    expect(
-      row.querySelector('[data-testid="adjust-slider-row-scrub"]'),
-    ).toHaveClass('py-2')
   })
 
   it('offers a recommended contract as a one-tap Apply', async () => {

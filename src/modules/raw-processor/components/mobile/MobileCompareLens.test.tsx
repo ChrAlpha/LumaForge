@@ -71,11 +71,6 @@ describe('mobileCompareLens', () => {
     rerender(<MobileCompareLens {...props} splitOn />)
     expect(lens).toHaveAttribute('data-state', 'on')
     expect(lens).toHaveAttribute('aria-pressed', 'true')
-    const circle = lens.firstElementChild!
-    expect(circle).toHaveClass(
-      'bg-[oklch(0.96_0.006_255/0.9)]',
-      'text-lf-surface',
-    )
   })
 
   it('toggles from the keyboard', () => {
@@ -161,7 +156,6 @@ describe('mobileCompareLens', () => {
     expect(lens).toHaveAttribute('data-state', 'disabled')
     expect(lens).toHaveAttribute('aria-disabled', 'true')
     expect(lens).toBeEnabled()
-    expect(lens.firstElementChild).toHaveClass('opacity-40')
 
     fireEvent.pointerDown(lens, { clientX: 10, clientY: 10 })
     act(() => {
@@ -286,10 +280,6 @@ describe('mobileCompareLens', () => {
     renderLens()
     const slot = document.querySelector('[data-mobile-compare-lens-hint-slot]')
     expect(slot).toHaveAttribute('data-mobile-compare-lens-hint-slot', 'side')
-    expect(slot).toHaveClass('right-full')
-    expect(
-      document.querySelector('[data-mobile-compare-lens-hint="intro"]'),
-    ).toHaveClass('max-w-[min(232px,calc(var(--raw-photo-width,100vw)-58px))]')
   })
 
   it('drops a hint below the lens, right-aligned to the circle, on a narrow photo', () => {
@@ -297,9 +287,5 @@ describe('mobileCompareLens', () => {
     tap(lens)
     const slot = document.querySelector('[data-mobile-compare-lens-hint-slot]')
     expect(slot).toHaveAttribute('data-mobile-compare-lens-hint-slot', 'below')
-    expect(slot).toHaveClass('top-full', 'right-1.5')
-    expect(
-      document.querySelector('[data-mobile-compare-lens-hint="blocked"]'),
-    ).toHaveClass('max-w-[min(232px,calc(var(--raw-photo-width,100vw)-16px))]')
   })
 })

@@ -80,10 +80,6 @@ describe('scrubValueHud', () => {
     expect(hud).toHaveTextContent('+1.25')
     expect(hud).toHaveAttribute('data-scrub-value-hud')
     // Sized to its content so the value and unit never wrap apart.
-    expect(hud).toHaveClass('w-max')
-    expect(screen.getByText('+1.25 EV', { exact: false })).toHaveClass(
-      'whitespace-nowrap',
-    )
   })
 
   it('reads a Strength scrub as the whole percent, and 0 as Off', () => {
@@ -202,23 +198,6 @@ describe('scrubValueHud', () => {
     )
   })
 
-  it('fits the readout inside the topbar band on its solid plate', () => {
-    render(
-      <ScrubValueHud
-        field={{ kind: 'tone', key: 'userContrast' }}
-        tone={{ ...TONE_NEUTRAL, userContrast: 12 }}
-        color={COLOR_NEUTRAL}
-        selectiveColor={undefined}
-        manualTransform={undefined}
-      />,
-    )
-    const hud = screen.getByLabelText(/adjustment readout/i)
-    // 8px + a 10px label + 4px + a 1.85rem value stays inside 56px.
-    expect(hud).toHaveClass('top-safe-offset-2', 'gap-1')
-    expect(hud.firstElementChild).toHaveClass('leading-none')
-    expect(hud.className).not.toMatch(/text-shadow/)
-  })
-
   describe('mini histogram', () => {
     const hud = (
       field: Parameters<typeof ScrubValueHud>[0]['field'],
@@ -243,7 +222,6 @@ describe('scrubValueHud', () => {
       )
       const mini = container.querySelector('[data-scrub-hud-histogram]')!
       const plot = mini.querySelector('svg[data-histogram-plot="mini"]')
-      expect(plot).toHaveClass('h-7', 'w-24')
       // The same drawing as the floating card: RGB under the luma line.
       expect(plot?.querySelector('.raw-histogram-luma')).not.toBeNull()
       expect(

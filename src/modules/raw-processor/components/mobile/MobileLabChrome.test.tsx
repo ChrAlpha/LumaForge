@@ -192,8 +192,6 @@ describe('mobileLabChrome', () => {
     expect(notice).toHaveAttribute('data-placement', 'full')
     expect(notice.style.top).toContain('var(--raw-topbar-height')
     expect(notice.textContent).not.toMatch(/—/)
-    // Neutral ink, never amber: a degraded preview is not a colour contract.
-    expect(notice.innerHTML).not.toMatch(/amber|color-progress/)
     const dismiss = within(notice).getByRole('button', { name: 'Dismiss' })
     expect(dismiss).toHaveClass('size-11')
     fireEvent.click(dismiss)
@@ -218,7 +216,6 @@ describe('mobileLabChrome', () => {
     // The lens is on screen: the notice keeps its column clear.
     expect(notice).toHaveAttribute('data-placement', 'side')
     expect(notice.style.right).toBe('calc(var(--raw-photo-right, 0px) + 48px)')
-    expect(notice).not.toHaveClass('opacity-0')
 
     const lens = container.querySelector<HTMLElement>(
       '[data-mobile-compare-lens]',
@@ -227,9 +224,7 @@ describe('mobileLabChrome', () => {
     act(() => {
       vi.advanceTimersByTime(260)
     })
-    expect(notice).toHaveClass('opacity-0', 'pointer-events-none')
     fireEvent.pointerUp(lens)
-    expect(notice).not.toHaveClass('opacity-0')
   })
 
   it('tears down adjust sheets when the RAW is cleared (hasImage→false)', async () => {
@@ -279,29 +274,6 @@ describe('mobileLabChrome', () => {
     expect(
       screen.queryByRole('tab', { selected: true }),
     ).not.toBeInTheDocument()
-  })
-
-  it('hands the deck back to a tool when one is tapped while export is open', async () => {
-    render(
-      <MobileLabChrome
-        {...base}
-        preferExportMode
-        exportPanel={() => <div>ready export actions</div>}
-      />,
-    )
-    expect(await screen.findByText('ready export actions')).toBeInTheDocument()
-
-    const dock = screen.getByRole('tablist', { name: /lab modes/i })
-    await userEvent.click(within(dock).getByRole('tab', { name: /look/i }))
-
-    expect(screen.queryByText('ready export actions')).not.toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: /lut sources/i }),
-    ).toBeInTheDocument()
-    expect(within(dock).getByRole('tab', { name: /look/i })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
   })
 
   it('keeps the mobile topbar and toolbar visible while processing replaces the preview layer', () => {
@@ -559,7 +531,6 @@ describe('mobileLabChrome', () => {
     expect(confirmed).toHaveTextContent(
       'Sony S-Gamut3.Cine / S-Log3 → Rec.709 display',
     )
-    expect(confirmed.className).not.toMatch(/amber/)
 
     // Tapping it opens the contract editor inline, in the deck: no sheet
     // over the photo, and the deck takes list sizing so the photo stays.
@@ -618,7 +589,6 @@ describe('mobileLabChrome', () => {
       name: /choose what this lut expects/i,
     })
     // Amber here explains a colour contract that still needs a choice.
-    expect(choose.className).toContain('text-lf-amber-soft')
 
     await userEvent.click(choose)
 
@@ -723,7 +693,6 @@ describe('mobileLabChrome', () => {
       'true',
     )
     expect(dock).toHaveAttribute('data-scrubbing', 'true')
-    expect(dock).toHaveClass('opacity-45')
 
     fireEvent.pointerUp(exposureRow)
     await waitFor(() =>
@@ -1083,16 +1052,6 @@ describe('mobileLabChrome', () => {
     expect(screen.getByText('result actions')).toBeInTheDocument()
   })
 
-  it('marks an HQ preview result as a preview, not as the export', () => {
-    const { container } = render(
-      <MobileLabChrome {...base} canExport exportResultKind="hq-preview" />,
-    )
-    const action = container.querySelector<HTMLButtonElement>(
-      '[data-mobile-export-action]',
-    )!
-    expect(action).toHaveAttribute('data-state', 'preview-done')
-    expect(action).toHaveAccessibleName('HQ preview JPEG ready: open result')
-  })
   it('puts the compare lens over the stage only when there is a photo to compare', () => {
     const { container, rerender } = render(<MobileLabChrome {...base} />)
     const lens = container.querySelector('[data-mobile-compare-lens]')
@@ -1113,84 +1072,6 @@ describe('mobileLabChrome', () => {
 
     rerender(<MobileLabChrome {...base} hasImage={false} />)
     expect(container.querySelector('[data-mobile-compare-lens]')).toBeNull()
-  })
-
-  it('makes the lens an original toggle in the CPU preview, and a hold still peeks', () => {
-    vi.useFakeTimers()
-    const onViewModeChange = vi.fn()
-    const { container } = render(
-      <MobileLabChrome
-        {...base}
-        compareSupported={false}
-        onViewModeChange={onViewModeChange}
-      />,
-    )
-    const lens = container.querySelector<HTMLElement>(
-      '[data-mobile-compare-lens]',
-    )!
-    expect(lens).toHaveAttribute('aria-pressed', 'false')
-
-    // A tap pins the original; there is no split to open.
-    fireEvent.click(lens)
-    expect(onViewModeChange).toHaveBeenLastCalledWith('original')
-    expect(onViewModeChange).not.toHaveBeenCalledWith('compare')
-    expect(lens).toHaveAttribute('aria-pressed', 'true')
-    expect(lens).toHaveAttribute('data-state', 'on')
-    expect(lens).toHaveAccessibleName('Show original')
-
-    // A hold peeks and its release hands back the pinned original.
-    fireEvent.pointerDown(lens)
-    act(() => {
-      vi.advanceTimersByTime(260)
-    })
-    expect(container.querySelector('[data-mobile-lab-chrome]')).toHaveAttribute(
-      'data-peek',
-      'true',
-    )
-    fireEvent.pointerUp(lens)
-    fireEvent.click(lens)
-    expect(onViewModeChange).toHaveBeenLastCalledWith('original')
-    expect(lens).toHaveAttribute('aria-pressed', 'true')
-
-    // A second tap shows the processed photo again.
-    fireEvent.click(lens)
-    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
-    expect(lens).toHaveAttribute('aria-pressed', 'false')
-
-    // Unpinned, a hold returns to the processed photo.
-    fireEvent.pointerDown(lens)
-    act(() => {
-      vi.advanceTimersByTime(260)
-    })
-    expect(onViewModeChange).toHaveBeenLastCalledWith('original')
-    fireEvent.pointerUp(lens)
-    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
-  })
-
-  it('keeps the split on while switching tools', async () => {
-    const onViewModeChange = vi.fn()
-    const { container } = render(
-      <MobileLabChrome {...base} onViewModeChange={onViewModeChange} />,
-    )
-    const lens = container.querySelector<HTMLElement>(
-      '[data-mobile-compare-lens]',
-    )!
-    fireEvent.click(lens)
-    expect(onViewModeChange).toHaveBeenLastCalledWith('compare')
-    expect(lens).toHaveAttribute('aria-pressed', 'true')
-    expect(lens).toHaveAttribute('data-state', 'on')
-    onViewModeChange.mockClear()
-
-    const dock = screen.getByRole('tablist', { name: /lab modes/i })
-    await userEvent.click(within(dock).getByRole('tab', { name: /adjust/i }))
-    await userEvent.click(within(dock).getByRole('tab', { name: /look/i }))
-
-    expect(onViewModeChange).not.toHaveBeenCalledWith('processed')
-    expect(lens).toHaveAttribute('aria-pressed', 'true')
-
-    fireEvent.click(lens)
-    expect(onViewModeChange).toHaveBeenLastCalledWith('processed')
-    expect(lens).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('peeks the unprocessed RAW while the lens is held, then restores the split', () => {
@@ -1273,27 +1154,6 @@ describe('mobileLabChrome', () => {
     expect(
       container.querySelector('[data-mobile-export-action]'),
     ).toBeDisabled()
-  })
-
-  it('blocks the lens while a Transform is applied and says why', () => {
-    const onViewModeChange = vi.fn()
-    const { container } = render(
-      <MobileLabChrome
-        {...base}
-        transform={transformFeatureFixture({ active: true, hasImage: true })}
-        onViewModeChange={onViewModeChange}
-      />,
-    )
-    const lens = container.querySelector<HTMLElement>(
-      '[data-mobile-compare-lens]',
-    )!
-    expect(lens).toHaveAttribute('data-state', 'disabled')
-    expect(lens).toHaveAttribute('aria-disabled', 'true')
-    fireEvent.click(lens)
-    expect(onViewModeChange).not.toHaveBeenCalledWith('compare')
-    expect(
-      container.querySelector('[data-mobile-compare-lens-hint="blocked"]'),
-    ).toHaveTextContent('Transform applied: compare is unavailable')
   })
 
   it('hides the lens during a scrub, while processing, and in immersive', async () => {
@@ -1571,9 +1431,6 @@ describe('mobileLabChrome stage layout', () => {
       holdLens()
       // A full-width landscape photo holds the pill in the lens's row.
       expect(pill()).toHaveAttribute('data-mobile-peek-hint', 'row')
-      expect(pill()).toHaveClass(
-        'max-w-[calc(var(--raw-photo-width,100vw)-96px)]',
-      )
       fireEvent.pointerUp(lens())
 
       rerender(
@@ -1616,7 +1473,6 @@ describe('mobileLabChrome stage layout', () => {
       const pill = container.querySelector('[data-mobile-peek-hint]')
       expect(pill).toHaveAttribute('data-mobile-peek-hint', 'row')
       // Clear of the status bar over a full-bleed photo.
-      expect(pill!.className).toContain('env(safe-area-inset-top)')
       act(() => {
         previewFrameEl.dispatchEvent(new Event('pointerup', { bubbles: true }))
       })

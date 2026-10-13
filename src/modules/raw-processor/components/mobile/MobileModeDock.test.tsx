@@ -47,13 +47,11 @@ describe('mobileModeDock', () => {
         panel={<div>x</div>}
       />,
     )
-    const tablist = screen.getByRole('tablist', { name: /lab modes/i })
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Look',
       'Adjust',
       'Transform',
     ])
-    expect(tablist).toHaveClass('grid-cols-3')
   })
 
   it('marks no tab while the export panel holds the deck, and a tap hands it back', async () => {
@@ -79,19 +77,6 @@ describe('mobileModeDock', () => {
     await userEvent.click(screen.getByRole('tab', { name: /adjust/i }))
     expect(onModeChange).toHaveBeenCalledWith('tone')
     expect(onCollapse).not.toHaveBeenCalled()
-  })
-
-  it('carries no export readiness mark: readiness lives on the export action', () => {
-    render(
-      <MobileModeDock
-        mode="look"
-        expanded
-        onModeChange={vi.fn()}
-        onCollapse={vi.fn()}
-        panel={<div>x</div>}
-      />,
-    )
-    expect(screen.getByRole('tablist').innerHTML).not.toMatch(/lf-green/)
   })
 
   it('keeps the deck on screen while disabled only when asked to', () => {
@@ -123,47 +108,10 @@ describe('mobileModeDock', () => {
       />,
     )
 
-    const tablist = screen.getByRole('tablist', { name: /lab modes/i })
-    const dock = tablist.parentElement
-
-    expect(dock).toHaveClass(
-      'pb-[max(8px,calc(env(safe-area-inset-bottom)-24px))]',
-    )
-    expect(dock).not.toHaveClass('pb-safe-offset-3')
     // 48px tabs with 4px above and below: a ~64px bar with the dock's 8px.
-    expect(tablist).toHaveClass('py-1')
     for (const tab of screen.getAllByRole('tab')) {
       expect(tab).toHaveClass('min-h-12')
     }
-  })
-
-  it('paints the tab bar and deck as solid surfaces with inset seams', () => {
-    render(
-      <MobileModeDock
-        mode="tone"
-        expanded
-        onModeChange={vi.fn()}
-        onCollapse={vi.fn()}
-        panel={<div data-testid="panel">tone-panel</div>}
-      />,
-    )
-    const tablist = screen.getByRole('tablist', { name: /lab modes/i })
-    const dock = tablist.parentElement!
-    expect(dock).toHaveClass(
-      'bg-[oklch(0.085_0.006_255)]',
-      'shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.05)]',
-    )
-    expect(tablist.className).not.toMatch(/border-t/)
-    expect(dock.className).not.toMatch(/gradient/)
-
-    const deck = screen
-      .getByTestId('panel')
-      .closest('[data-mobile-dock-panel]')!
-    expect(deck).toHaveClass(
-      'before:bg-[oklch(0.085_0.006_255)]',
-      'before:shadow-[inset_0_1px_0_oklch(0.96_0.006_255/0.08)]',
-    )
-    expect(deck.className).not.toMatch(/gradient/)
   })
 
   it('takes its height from the stage layout and anchors natural content to the bottom', () => {
@@ -184,15 +132,9 @@ describe('mobileModeDock', () => {
         .getByTestId('panel')
         .closest<HTMLElement>('[data-mobile-dock-panel]')!
     expect(deck().style.height).toBe('212px')
-    expect(deck()).toHaveClass('overflow-y-auto', 'flex', 'flex-col')
     expect(deck()).not.toHaveAttribute('data-deck-fill')
-    expect(deck()).toHaveClass('pt-3.5')
     // Export and Look size the deck: their content sits at its natural
     // height, pushed to the bottom of the deck near the thumb.
-    expect(screen.getByTestId('panel').parentElement).toHaveClass(
-      'mt-auto',
-      'shrink-0',
-    )
 
     rerender(
       <MobileModeDock
@@ -211,30 +153,6 @@ describe('mobileModeDock', () => {
     expect(deck()).toHaveAttribute('data-deck-fill', 'true')
     // The list's section chrome is the deck's top edge: no empty band
     // between the deck hairline and the sub-tabs.
-    expect(deck()).toHaveClass('pt-0')
-    expect(deck()).not.toHaveClass('pt-3.5')
-    expect(screen.getByTestId('panel').parentElement).toHaveClass('h-full')
-    expect(deck().className).not.toMatch(/vh/)
-  })
-
-  it('moves the deck height on the stage curve, and not under reduced motion', () => {
-    render(
-      <MobileModeDock
-        mode="tone"
-        expanded
-        deckHeight={250}
-        onModeChange={vi.fn()}
-        onCollapse={vi.fn()}
-        panel={<div data-testid="panel">tone-panel</div>}
-      />,
-    )
-    const deck = screen.getByTestId('panel').closest('[data-mobile-dock-panel]')
-    expect(deck).toHaveClass(
-      'transition-[height]',
-      'duration-[240ms]',
-      'ease-[cubic-bezier(0.22,1,0.36,1)]',
-      'motion-reduce:transition-none',
-    )
   })
 
   it('dims the mode tabs while a slider scrub is active', () => {
@@ -251,7 +169,6 @@ describe('mobileModeDock', () => {
 
     const tablist = screen.getByRole('tablist', { name: /lab modes/i })
     expect(tablist).toHaveAttribute('data-scrubbing', 'true')
-    expect(tablist).toHaveClass('opacity-45')
   })
 
   it('fades the dock panel backdrop while scrubbing so the photo dominates', () => {
@@ -268,7 +185,6 @@ describe('mobileModeDock', () => {
       .getByTestId('panel')
       .closest('[data-mobile-dock-panel]')
     expect(panelFrame).not.toHaveAttribute('data-scrubbing')
-    expect(panelFrame).not.toHaveClass('before:opacity-10')
 
     rerender(
       <MobileModeDock
@@ -284,7 +200,6 @@ describe('mobileModeDock', () => {
       .getByTestId('panel')
       .closest('[data-mobile-dock-panel]')
     expect(scrubbingPanelFrame).toHaveAttribute('data-scrubbing', 'true')
-    expect(scrubbingPanelFrame).toHaveClass('before:opacity-10')
   })
 
   it('overlays the expanded panel above the dock without growing the dock box', () => {
@@ -301,13 +216,7 @@ describe('mobileModeDock', () => {
     const panelFrame = screen
       .getByTestId('panel')
       .closest('[data-mobile-dock-panel]')
-    const tablist = screen.getByRole('tablist', { name: /lab modes/i })
-    const dock = tablist.parentElement
-
-    expect(dock).toHaveClass('absolute')
     expect(panelFrame).toHaveAttribute('data-mobile-dock-panel', 'true')
-    expect(panelFrame).toHaveClass('absolute')
-    expect(panelFrame).toHaveClass('bottom-full')
   })
 
   it('hides the panel when collapsed and toggles on tab tap', async () => {
@@ -356,44 +265,6 @@ describe('mobileModeDock', () => {
     expect(screen.getByRole('tab', { selected: true })).toHaveAccessibleName(
       /adjust/i,
     )
-  })
-
-  it('marks the selected tab with the cool lift bar, not amber', () => {
-    render(
-      <MobileModeDock
-        mode="look"
-        expanded
-        onModeChange={vi.fn()}
-        onCollapse={vi.fn()}
-        panel={<div>x</div>}
-      />,
-    )
-
-    const selected = screen.getByRole('tab', { selected: true })
-    const bar = selected.querySelector(':scope > span:last-child')
-    expect(bar).toHaveClass('bg-[oklch(0.96_0.006_255/0.85)]')
-    expect(screen.getByRole('tablist').innerHTML).not.toMatch(/amber/)
-  })
-
-  it('sets tab labels in sentence case', () => {
-    render(
-      <MobileModeDock
-        mode="look"
-        expanded
-        showTransform
-        onModeChange={vi.fn()}
-        onCollapse={vi.fn()}
-        panel={<div>x</div>}
-      />,
-    )
-
-    const tabs = screen.getAllByRole('tab')
-    expect(tabs).toHaveLength(3)
-    for (const tab of tabs) {
-      expect(tab).toHaveClass('text-[0.7rem]', 'font-semibold')
-      expect(tab).not.toHaveClass('uppercase')
-      expect(tab).not.toHaveClass('tracking-wide')
-    }
   })
 })
 

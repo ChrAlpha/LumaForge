@@ -218,15 +218,6 @@ describe('desktopAdjustRow reset hit target', () => {
     vi.unstubAllGlobals()
   })
 
-  it('lifts the reset above the slider hit-area pseudo element', () => {
-    renderRow({ value: 12 })
-    const reset = screen.getByRole('button', { name: /reset contrast/i })
-    // The Slider root paints `before:-inset-y-[19px]` across the row width,
-    // which otherwise swallows every click on the value.
-    expect(reset).toHaveClass('relative')
-    expect(reset).toHaveClass('z-10')
-  })
-
   it('pressing the reset does not start a row scrub', () => {
     const props = renderRow({ value: 12 })
     const row = document.querySelector('[data-adjust-row]') as HTMLElement

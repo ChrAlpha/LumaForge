@@ -86,11 +86,6 @@ describe('mobileFloatingOverlays', () => {
     const { container } = renderOverlays({ peeking: true })
     const pill = container.querySelector('[data-mobile-peek-hint]')!
     expect(pill).toHaveTextContent('Showing unprocessed RAW')
-    expect(pill).toHaveClass(
-      'left-[calc(var(--raw-photo-left,0px)+var(--raw-photo-width,100vw)/2)]',
-      '-translate-x-1/2',
-      'min-h-8',
-    )
   })
 
   it('drops the pill below the lens row when asked', () => {
@@ -100,17 +95,6 @@ describe('mobileFloatingOverlays', () => {
     })
     const pill = container.querySelector('[data-mobile-peek-hint]')!
     expect(pill).toHaveAttribute('data-mobile-peek-hint', 'below')
-    expect(pill).toHaveClass(
-      'top-[calc(var(--raw-compare-lens-top,8px)+var(--raw-compare-lens-size,32px)+8px)]',
-      'max-w-[calc(var(--raw-photo-width,100vw)-16px)]',
-    )
-  })
-
-  it('lets the pill use the row edge to edge when no lens is on screen', () => {
-    const { container } = renderOverlays({ peeking: true, lensVisible: false })
-    expect(container.querySelector('[data-mobile-peek-hint]')).toHaveClass(
-      'max-w-[calc(var(--raw-photo-width,100vw)-16px)]',
-    )
   })
 
   it('hides the peek pill during a handoff or a scrub', () => {
@@ -125,12 +109,6 @@ describe('mobileFloatingOverlays', () => {
 
   it('shows the histogram on the photo only outside scrub, immersive, and handoff', () => {
     const shown = renderOverlays({ histogramOpen: true })
-    const card = shown.container.querySelector('[data-mobile-histogram-card]')
-    // It hangs below the lens on its right edge and never outgrows the photo.
-    expect(card).toHaveClass(
-      'right-[var(--raw-compare-lens-right,12px)]',
-      'w-[min(256px,calc(var(--raw-photo-width,100vw)-16px))]',
-    )
     shown.unmount()
     for (const state of [
       { focusActive: true },

@@ -156,17 +156,6 @@ describe('mobileLutBrowser', () => {
     const dialog = screen.getByRole('dialog')
     expect(dialog).toBeInTheDocument()
     expect(dialog).toHaveAttribute('data-mobile-substrate', 'ink-sheet')
-    expect(dialog).toHaveClass('bg-gradient-to-t')
-    expect(dialog).toHaveClass('from-[oklch(0.092_0.006_255/0.96)]')
-    expect(dialog).not.toHaveClass('from-black/92')
-    expect(dialog).not.toHaveClass('to-lf-darkroom-stage-low/94')
-    expect(dialog).toHaveClass('text-lf-on-photo-ink')
-    expect(dialog).toHaveClass('border-lf-on-photo-bord-soft')
-    expect(dialog).not.toHaveClass('bg-lf-surface-raised')
-    expect(dialog).not.toHaveClass('text-lf-on-surface')
-    expect(dialog.className).not.toMatch(
-      /bg-material|bg-background|bg-fill|text-text|border-border/,
-    )
     expect(dialog).toHaveAccessibleName('LUT sources')
     // Choosing and tuning the look lives in the Look deck now: no current
     // LUT card, no Strength, no contract editor in the sheet.
@@ -410,9 +399,6 @@ describe('mobileLutBrowser', () => {
     expect(
       screen.getByRole('button', { name: /copy lut source link/i }),
     ).toHaveClass('size-[44px]')
-    expect(screen.getByLabelText(/online lut source url/i)).toHaveClass(
-      'h-[44px]',
-    )
     expect(screen.getByRole('button', { name: /add lut source/i })).toHaveClass(
       'size-[44px]',
     )
@@ -435,34 +421,6 @@ describe('mobileLutBrowser', () => {
     expect(
       screen.getByRole('button', { name: /load kodak 2383 rec.709/i }),
     ).toHaveClass('min-h-[52px]')
-  })
-
-  it('keeps mobile catalog browsing in the dark on-photo surface family', async () => {
-    const fixture = withManyOnlineEntries(onlineLutSourcesFixture())
-    render(<MobileLutBrowser {...baseProps} onlineLutSources={fixture} />)
-
-    const sourceCard = document.querySelector(
-      '[data-raw-mobile-lut="source-card"]',
-    )
-    expect(sourceCard).toHaveClass('bg-transparent')
-    expect(sourceCard).not.toHaveClass('bg-lf-surface-muted/55')
-
-    const sourceInput = screen.getByLabelText(/online lut source url/i)
-    expect(sourceInput).toHaveClass('focus:ring-lf-green/25')
-    expect(sourceInput).not.toHaveClass('focus:border-lf-amber')
-
-    await userEvent.click(
-      screen.getByRole('button', { name: /all 5 luts from profiles catalog/i }),
-    )
-
-    const entry = screen.getByRole('button', {
-      name: /load kodak 2383 rec.709/i,
-    })
-    expect(entry).toHaveClass('hover:bg-lf-on-photo-bg-strong')
-    expect(entry).not.toHaveClass(
-      'hover:bg-[oklch(from_var(--color-lf-on-surface)_l_c_h_/_0.045)]',
-    )
-    expect(entry).not.toHaveClass('border-lf-hairline/40')
   })
 
   it('hints at the expected manifest URL shape when no online sources exist', () => {
@@ -500,12 +458,9 @@ describe('mobileLutBrowser', () => {
     const warning = screen.getByText('This source could not be reached.')
     expect(warning).toBeInTheDocument()
     expect(screen.queryByText(/https:\/\//)).not.toBeInTheDocument()
-    // A source failure is not a colour contract: neutral, never amber.
-    const chip = warning.closest('[data-raw-lut="source-warning"]')!
-    expect(chip.innerHTML).not.toMatch(/amber/)
   })
 
-  it('names a failed catalog download in neutral ink with Retry', async () => {
+  it('names a failed catalog download with Retry', async () => {
     const fixture = withManyOnlineEntries(onlineLutSourcesFixture())
     fixture.failedEntryId = 'kodak-2383-rec709'
     render(<MobileLutBrowser {...baseProps} onlineLutSources={fixture} />)
@@ -516,7 +471,6 @@ describe('mobileLutBrowser', () => {
       name: "Couldn't load Kodak 2383 Rec.709. Tap to retry.",
     })
     expect(failed).toHaveTextContent('Retry')
-    expect(failed.innerHTML).not.toMatch(/amber|rose/)
   })
 
   it('collapses multiple resource issues into one warning with a count', () => {

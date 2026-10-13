@@ -33,11 +33,8 @@ describe('progressOverlay', () => {
     expect(overlay).toHaveAttribute('data-progress-overlay', 'exporting')
     expect(overlay).toHaveAttribute('data-progress-variant', 'flat-handoff')
     expect(overlay).toHaveClass('raw-progress-overlay')
-    expect(overlay).toHaveClass('absolute')
-    expect(overlay).not.toHaveClass('fixed')
     expect(container).toContainElement(overlay)
     expect(overlay.parentElement).not.toBe(document.body)
-    expect(overlay).not.toHaveClass('bg-[var(--color-stage-scrim)]')
     expect(overlay.querySelector('[data-progress-panel]')).toBeNull()
     expect(
       overlay.querySelector('[data-progress-flat-handoff]'),

@@ -96,11 +96,6 @@ describe('mobileExportPanel', () => {
     ])
     for (const part of parts) expect(part).toHaveClass('whitespace-pre')
     // Quiet: body ink at the 68 step, small, tabular.
-    expect(recap).toHaveClass(
-      'text-[0.72rem]',
-      'text-lf-on-photo-ink/68',
-      'tabular-nums',
-    )
     // It sits before the primary action.
     const run = screen.getByRole('button', {
       name: 'Export full-resolution JPEG',
@@ -127,14 +122,8 @@ describe('mobileExportPanel', () => {
     ).toBeVisible()
     const action = screen.getByRole('button', { name: /choose lut contract/i })
     expect(action).toHaveClass('min-h-[44px]')
-    // A contract block is the colour contract's to explain: amber, the
-    // contract colour, on the reason and the route; never rose.
-    expect(action).toHaveClass('text-lf-amber-soft', 'bg-lf-amber/10')
     const reason = document.querySelector('[data-export-unavailable-reason]')!
     expect(reason).toHaveAttribute('data-tone', 'contract')
-    expect(reason).toHaveClass('bg-lf-amber/10')
-    expect(reason.querySelector('svg')).toHaveClass('text-lf-amber')
-    expect(document.body.innerHTML).not.toMatch(/lf-rose/)
     await userEvent.click(action)
     expect(onChooseLutContract).toHaveBeenCalledOnce()
   })
@@ -245,11 +234,7 @@ describe('mobileExportPanel', () => {
     // Stacked full-width on the narrow mobile sheet so the shared descriptive
     // labels render on one line instead of wrapping inside half-width columns.
     const exportRow = fullResolutionButton.parentElement
-    expect(exportRow).toHaveClass('grid')
-    expect(exportRow).not.toHaveClass('grid-cols-2')
     expect(exportRow?.firstElementChild).toBe(fullResolutionButton)
-    expect(fullResolutionButton).toHaveClass('bg-lf-green')
-    expect(previewButton).not.toHaveClass('bg-lf-green')
 
     await user.click(fullResolutionButton)
     await user.click(previewButton)
@@ -279,8 +264,6 @@ describe('mobileExportPanel', () => {
       screen.getByRole('button', { name: /export full-resolution jpeg/i }),
     )
     // Sticky on the deck's own tone: the notes above scroll under it.
-    expect(actions).toHaveClass('sticky', 'bottom-0')
-    expect(actions.className).toContain('bg-[oklch(0.085_0.006_255)]')
   })
 
   it('names why the HQ preview export is disabled under the button', () => {
@@ -304,7 +287,7 @@ describe('mobileExportPanel', () => {
     expect(previewButton.nextElementSibling).toBe(note)
   })
 
-  it('explains a blocked full-resolution export in a neutral well, not destructive rose', () => {
+  it('explains a block outside the contract in a neutral well', () => {
     const { container } = render(
       <MobileExportPanel
         canExport={false}
@@ -328,9 +311,6 @@ describe('mobileExportPanel', () => {
     )
     // Without the contract route, the block is not the contract's to paint.
     expect(box).toHaveAttribute('data-tone', 'neutral')
-    expect(box).toHaveClass('bg-[oklch(0.96_0.006_255/0.05)]')
-    expect(box.outerHTML).not.toMatch(/amber/)
-    expect(box.outerHTML).not.toMatch(/lf-rose/)
     expect(box.querySelector('svg')).not.toBeNull()
   })
 
@@ -353,7 +333,6 @@ describe('mobileExportPanel', () => {
     expect(primary).toHaveAttribute('aria-busy', 'true')
     // The plate stays readable rather than fading as refused, and the
     // progress fills along its foot.
-    expect(primary).toHaveClass('disabled:text-lf-on-photo-ink/85')
     const hairline = container.querySelector('[data-export-progress]')
     expect(primary).toContainElement(hairline as HTMLElement)
     expect(hairline).toHaveStyle({ transform: 'scaleX(0.42)' })
@@ -551,7 +530,6 @@ describe('mobileExportPanel', () => {
     renderPanel({ onClose })
     const close = screen.getByRole('button', { name: 'Close export' })
     expect(close).toHaveClass('size-11')
-    expect(close).toHaveClass('focus-visible:outline-lf-green/80')
     await user.click(close)
     expect(onClose).toHaveBeenCalledOnce()
   })

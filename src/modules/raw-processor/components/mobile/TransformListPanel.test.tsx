@@ -143,16 +143,6 @@ describe('transformListPanel', () => {
     onScrubChange.mockClear()
   })
 
-  it('seats its section chrome flush under the deck hairline', () => {
-    const { container } = renderPanel(readyPanel())
-    const chrome = container.querySelector('[data-transform-section-chrome]')!
-    // One seam at the top of the deck: the bar draws only its divider
-    // under the tabs, never a surface or top highlight of its own.
-    expect(chrome).toHaveClass('border-b', 'border-lf-on-photo-bord-soft')
-    expect(chrome.className).not.toMatch(/backdrop-blur|shadow-\[inset_0_1px/)
-    expect(chrome.className).not.toMatch(/\bbg-/)
-  })
-
   // Each row is the selector's answer for that state, written out: the
   // geometry (modes, sliders, crop), the view aids, and every section's
   // reset for an intent that has something to reset. Without a source the

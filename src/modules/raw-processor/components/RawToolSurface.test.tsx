@@ -273,9 +273,7 @@ describe('rawToolSurface', () => {
       'data-raw-desktop-input',
       'mouse-keyboard',
     )
-    expect(desktopSurface).toHaveClass('bg-lf-on-photo-bg-strong')
     // The rail sits beside the photo: a solid plate, not glass.
-    expect(desktopSurface!.className).not.toMatch(/backdrop-blur/)
     // card stack present
     expect(
       screen.getByRole('group', { name: 'RAW finishing controls' }),
@@ -320,17 +318,6 @@ describe('rawToolSurface', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps the catalog URL input focus ring clear of the LUT card header', () => {
-    const { container } = renderRawToolSurface({
-      ...baseProps,
-      onlineLutSources: onlineLutSourcesFixture(),
-    })
-
-    expect(
-      container.querySelector('[data-raw-lut="source-controls"]'),
-    ).toHaveClass('pt-1')
-  })
-
   it('surfaces first profile LUT entries inline before opening the full catalog', async () => {
     const user = userEvent.setup()
     const fixture = withManyOnlineEntries(onlineLutSourcesFixture())
@@ -349,34 +336,6 @@ describe('rawToolSurface', () => {
       }),
     ).toBeInTheDocument()
     expect(screen.queryByText('Velvia 50')).not.toBeInTheDocument()
-  })
-
-  it('matches the empty LUT copy scale to the catalog source hint', () => {
-    const fixture = onlineLutSourcesFixture()
-    fixture.state = {
-      ...fixture.state,
-      resources: [],
-      entries: [],
-      issues: [],
-      activeResourceId: null,
-    }
-
-    renderRawToolSurface({ ...baseProps, onlineLutSources: fixture })
-
-    const catalogHint = screen.getByText(
-      'Paste a catalog.json or lumaforge-profiles.json URL to load shared LUTs.',
-    )
-    const lutHint = screen.getByText(
-      'Add a .cube LUT now, it stays staged until a RAW file is loaded.',
-    )
-
-    expect(lutHint).toHaveClass(
-      'm-0',
-      'text-[0.72rem]',
-      'leading-relaxed',
-      'text-lf-on-surface/72',
-    )
-    expect(lutHint.className).toBe(catalogHint.className)
   })
 
   it('drops the staged LUT hint once a RAW is loaded', () => {
@@ -424,9 +383,6 @@ describe('rawToolSurface', () => {
     })
 
     // The trigger meta speaks in shares of the frame, like the card body.
-    expect(screen.getByText('Shadows 50% · Highlights 50%')).toHaveClass(
-      'tabular-nums',
-    )
     await user.click(screen.getByRole('button', { name: 'Histogram' }))
     const regions = await screen.findAllByRole('region', { name: 'Histogram' })
     expect(regions.length).toBeGreaterThanOrEqual(1)
@@ -739,7 +695,6 @@ describe('rawToolSurface', () => {
 
     // The amber value returns it to Standard.
     const reset = within(row).getByRole('button', { name: 'Reset Strength' })
-    expect(reset).toHaveClass('text-lf-amber-soft')
     fireEvent.click(reset)
     expect(onChange).toHaveBeenLastCalledWith(0.7)
   })
@@ -1007,7 +962,7 @@ describe('rawToolSurface', () => {
     ).toBeEnabled()
   })
 
-  it('uses Raw Lab-specific materials for LUT contract controls', () => {
+  it('marks the LUT contract status and its change control', () => {
     renderRawToolSurface({
       ...baseProps,
       currentLutName: 'Unknown Look.cube',

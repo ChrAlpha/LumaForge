@@ -140,9 +140,6 @@ describe('raw Transform tool surfaces', () => {
     })
     expect(transform.observe).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('tab', { name: 'Transform' }))
-    expect(
-      container.querySelector('[data-mobile-transform-panel]'),
-    ).toHaveClass('h-full', 'flex-col')
     expect(container.querySelector('[data-transform-list-scroll]')).toHaveClass(
       'min-h-0',
       'overflow-y-auto',

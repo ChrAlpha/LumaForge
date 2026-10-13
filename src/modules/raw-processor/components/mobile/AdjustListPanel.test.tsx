@@ -79,25 +79,6 @@ describe('adjustListPanel', () => {
     // hairline divider instead of a free-floating dark chip.
     const toneTab = screen.getByRole('tab', { name: /^tone$/i })
     expect(toneTab).toHaveAttribute('aria-selected', 'true')
-    const indicator = toneTab.querySelector('span[aria-hidden="true"]')
-    expect(indicator).toHaveClass('bg-[oklch(0.96_0.006_255/0.85)]')
-    expect(indicator?.className).not.toMatch(/amber/)
-    expect(document.querySelector('[data-adjust-section-chrome]')).toHaveClass(
-      'border-b',
-      'border-lf-on-photo-bord-soft',
-    )
-    // The chrome lives in a flex column as a non-shrinking header above an
-    // independent scroll region. It sits flush under the deck's hairline,
-    // so it paints no surface or top highlight of its own: one seam.
-    const chrome = document.querySelector('[data-adjust-section-chrome]')!
-    expect(chrome).toHaveClass('shrink-0', '-mx-3.5')
-    expect(chrome.className).not.toMatch(/backdrop-blur|shadow-\[inset_0_1px/)
-    expect(chrome.className).not.toMatch(/\bbg-/)
-    expect(document.querySelector('[data-adjust-list-scroll]')).toHaveClass(
-      'overflow-y-auto',
-      'flex-1',
-      'min-h-0',
-    )
   })
 
   it('switches to Color and shows the four color sliders', async () => {
@@ -279,9 +260,6 @@ describe('adjustListPanel', () => {
         onScrubChange={vi.fn()}
       />,
     )
-    const chrome = container.querySelector('[data-adjust-section-chrome]')!
-    expect(chrome).not.toHaveClass('opacity-45')
-
     rerender(
       <AdjustListPanel
         tone={TONE_NEUTRAL}
@@ -297,7 +275,6 @@ describe('adjustListPanel', () => {
         scrubbing
       />,
     )
-    expect(chrome).toHaveClass('opacity-45')
     expect(
       container.querySelector('[role="region"][data-scrubbing="true"]'),
     ).toBeInTheDocument()

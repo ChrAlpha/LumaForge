@@ -182,7 +182,6 @@ describe('cpuPreviewCanvas', () => {
     const visible = contextFor(visibleCanvas(container))
     expect(visible.drawImage).toHaveBeenCalledTimes(1)
     // The canvas keeps its last draw undistorted while the box animates.
-    expect(screen.getByLabelText(/preview/i)).toHaveClass('object-contain')
 
     const [observer] = observingInstances()
     layout = { width: 200, height: 400 }

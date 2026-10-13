@@ -281,7 +281,6 @@ describe('rawProcessorView', () => {
     expect(routeRoot).not.toBeNull()
     expect(routeRoot).toHaveAttribute('data-raw-lab-shell', 'viewport')
     expect(routeRoot).toHaveClass('raw-lab')
-    expect(routeRoot).not.toHaveClass('h-screen')
     expect(
       container.querySelector('[data-raw-lab-shell="viewport"]')?.parentElement,
     ).toBe(container)

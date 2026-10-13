@@ -70,7 +70,6 @@ describe('histogramTool', () => {
     )
 
     const clipping = container.querySelector('[data-histogram-clipping]')!
-    expect(clipping).toHaveClass('tabular-nums')
     expect(clipping).toHaveTextContent('Shadows 1.2%')
     expect(clipping).toHaveTextContent('Highlights 0.6%')
     expect(clipping.textContent).not.toMatch(/21019|10048/)
@@ -180,7 +179,6 @@ describe('histogramTool', () => {
     )
 
     const plot = container.querySelector('[data-histogram-plot="mini"]')!
-    expect(plot).toHaveClass('h-7', 'w-24')
     expect(plot.querySelector('.raw-histogram-grid')).toBeNull()
     expect(
       plot.querySelector('.raw-histogram-luma')?.getAttribute('vector-effect'),

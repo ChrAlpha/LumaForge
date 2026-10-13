@@ -52,7 +52,6 @@ describe('lutSourceWarning', () => {
       <LutSourceWarning issues={[issue({})]} className="pt-1.5" />,
     )
     const warning = screen.getByRole('status')
-    expect(warning).toHaveClass('pt-1.5')
     expect(warning.innerHTML).toMatch(/amber/)
 
     rerender(

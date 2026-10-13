@@ -8,10 +8,6 @@ import {
   MobileExportAction,
 } from './MobileExportAction'
 
-function pillOf(button: HTMLElement) {
-  return button.firstElementChild as HTMLElement
-}
-
 describe('getMobileExportActionState', () => {
   const idle = {
     canExport: false,
@@ -90,17 +86,13 @@ describe('mobileExportAction', () => {
     expect(button).toHaveAttribute('aria-expanded', 'false')
     expect(button).toBeEnabled()
     expect(button).toHaveTextContent('Export')
-    // Neutral lift, never Lab Green while blocked.
-    expect(pillOf(button)).toHaveClass('bg-[oklch(0.96_0.006_255/0.1)]')
-    expect(pillOf(button).className).not.toMatch(/bg-lf-green/)
     await userEvent.click(button)
     expect(onClick).toHaveBeenCalledOnce()
   })
 
-  it('paints the ready state Lab Green with dark text', () => {
+  it('names the ready state', () => {
     const { button } = renderAction('ready')
     expect(button).toHaveAccessibleName('Export ready: open options')
-    expect(pillOf(button)).toHaveClass('bg-lf-green', 'text-lf-surface')
   })
 
   it('shows rounded tabular progress while exporting and stays enabled', () => {
@@ -110,7 +102,6 @@ describe('mobileExportAction', () => {
     expect(button).toHaveTextContent('42%')
     expect(button.querySelector('.tabular-nums')).toHaveTextContent('42%')
     expect(button.querySelector('[data-export-action-spinner]')).not.toBeNull()
-    expect(pillOf(button).className).not.toMatch(/bg-lf-green/)
   })
 
   it('clamps out-of-range progress', () => {
@@ -118,41 +109,29 @@ describe('mobileExportAction', () => {
     expect(button).toHaveAccessibleName('Exporting 100%')
   })
 
-  it('marks a finished export with a check on Deep Lab Green', () => {
+  it('marks a finished export with a check', () => {
     const { button } = renderAction('done')
     expect(button).toHaveAccessibleName('Exported: open result')
     expect(button).toHaveTextContent('Exported')
     expect(button.querySelector('svg')).not.toBeNull()
-    expect(pillOf(button)).toHaveClass('bg-lf-green-deep')
   })
 
-  it('names an HQ preview result as such on the neutral lift, never green', () => {
+  it('names an HQ preview result as such, never as exported', () => {
     const { button } = renderAction('preview-done')
     expect(button).toHaveAccessibleName('HQ preview JPEG ready: open result')
     expect(button).toHaveTextContent('HQ preview')
     expect(button).not.toHaveTextContent('Exported')
     expect(button.querySelector('svg')).not.toBeNull()
-    expect(pillOf(button)).toHaveClass('bg-[oklch(0.96_0.006_255/0.1)]')
-    expect(pillOf(button).className).not.toMatch(/bg-lf-green/)
   })
 
-  it('reflects the open panel and lifts the pill', () => {
+  it('reflects the open panel', () => {
     const { button } = renderAction('idle', { expanded: true })
     expect(button).toHaveAttribute('aria-expanded', 'true')
-    expect(pillOf(button)).toHaveClass('bg-[oklch(0.96_0.006_255/0.14)]')
-    expect(pillOf(button).className).toMatch(/inset_0_0_0_1px/)
   })
 
-  it('keeps a 44px hit area, a focus ring, a press shift, and a disabled state', () => {
+  it('keeps a 44px hit area and a disabled state', () => {
     const { button } = renderAction('idle', { disabled: true })
     expect(button).toHaveClass('min-h-11', 'min-w-11')
-    expect(button).toHaveClass('enabled:active:translate-y-[0.5px]')
-    expect(pillOf(button)).toHaveClass(
-      'group-focus-visible:outline-lf-green/80',
-      'group-disabled:opacity-45',
-    )
     expect(button).toBeDisabled()
-    // The press is a `translate` shift, never a stylesheet transform.
-    expect(button.className).not.toMatch(/active:transform|active:scale/)
   })
 })

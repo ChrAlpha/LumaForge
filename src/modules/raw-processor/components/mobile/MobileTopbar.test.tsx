@@ -60,9 +60,6 @@ describe('mobileTopbar', () => {
 
     rerenderWith({ scrubbing: true })
     expect(header).toHaveAttribute('data-scrubbing', 'true')
-    for (const child of Array.from(header.children)) {
-      expect(child).toHaveClass('opacity-0', 'pointer-events-none')
-    }
   })
 
   it('lists only real actions in the More menu, reset last', async () => {

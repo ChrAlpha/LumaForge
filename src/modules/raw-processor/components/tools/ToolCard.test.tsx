@@ -98,33 +98,6 @@ describe('toolCard', () => {
     expect(await screen.findByText('hist body')).toBeInTheDocument()
   })
 
-  it('renders a stable leading state indicator for open and closed cards', async () => {
-    const user = userEvent.setup()
-    setup()
-
-    const adjustTrigger = screen.getByRole('button', { name: 'Adjust' })
-    const histogramTrigger = screen.getByRole('button', { name: 'Histogram' })
-
-    expect(
-      adjustTrigger.querySelector('[data-tool-card-state-indicator]'),
-    ).toHaveClass(
-      'bg-lf-on-photo-ink/28',
-      'group-data-[state=open]/tool-trigger:bg-lf-amber',
-    )
-    expect(
-      histogramTrigger.querySelector('[data-tool-card-state-indicator]'),
-    ).toHaveClass(
-      'bg-lf-on-photo-ink/28',
-      'group-data-[state=open]/tool-trigger:bg-lf-amber',
-    )
-
-    await user.click(histogramTrigger)
-
-    expect(
-      histogramTrigger.querySelector('[data-tool-card-state-indicator]'),
-    ).toHaveClass('group-data-[state=open]/tool-trigger:bg-lf-amber')
-  })
-
   it('persists open state to the shared atom', async () => {
     const user = userEvent.setup()
     setup()

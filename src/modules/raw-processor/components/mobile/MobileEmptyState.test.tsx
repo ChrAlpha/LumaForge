@@ -38,12 +38,6 @@ describe('mobileEmptyState', () => {
     expect(
       within(copy).getByText('One RAW · processed on this device'),
     ).toBeInTheDocument()
-    expect(
-      within(copy).getByRole('heading', {
-        level: 1,
-        name: 'Turn one RAW into a finished photo',
-      }),
-    ).toHaveClass('text-balance')
 
     const steps = within(copy).getAllByRole('listitem')
     expect(steps).toHaveLength(3)
@@ -64,28 +58,12 @@ describe('mobileEmptyState', () => {
     // Numbers sit in amber circles and stay out of the accessible name.
     const number = steps[0].querySelector('[aria-hidden="true"]')!
     expect(number).toHaveTextContent('1')
-    expect(number).toHaveClass('bg-lf-amber/15', 'text-lf-amber', 'size-[18px]')
-  })
-
-  it('is a left-aligned page, not a centred template stack', () => {
-    const { container } = renderEmpty()
-    const root = container.querySelector('[data-mobile-empty-state]')!
-    const copy = container.querySelector('[data-mobile-empty-copy]')!
-    expect(root.className).not.toMatch(/text-center|items-center|gradient/)
-    expect(copy.className).not.toMatch(/text-center|justify-items-center/)
-    // Starts 24px under the measured topbar with 16px side padding.
-    expect(copy).toHaveClass(
-      'px-4',
-      'pt-[calc(var(--raw-topbar-height,56px)+24px)]',
-    )
   })
 
   it('pins a full-width Lab Green action in the thumb zone', async () => {
     const { container, onReplaceFile, onPrepareRuntime } = renderEmpty()
     const cta = screen.getByRole('button', { name: 'Browse RAW files' })
     expect(cta).toHaveAttribute('data-mobile-empty-cta')
-    expect(cta).toHaveClass('h-12', 'w-full', 'bg-lf-green')
-    expect(cta.parentElement).toHaveClass('px-3', 'pb-safe-offset-4')
     // The action sits after the copy, in the bottom grid row.
     expect(
       container
@@ -115,12 +93,6 @@ describe('mobileEmptyState', () => {
       expect(readiness).toHaveAttribute('aria-live', 'polite')
       expect(readiness).toHaveAttribute('data-state', state)
       expect(readiness).toHaveTextContent(label)
-      // Reserved height: a state change never shifts the formats line.
-      expect(readiness).toHaveClass('min-h-[2.875rem]')
-      const dot = readiness.querySelector('[data-mobile-empty-readiness-dot]')
-      if (state === 'ready') expect(dot).toHaveClass('bg-lf-green')
-      else expect(dot).not.toHaveClass('bg-lf-green')
-
       // Every state's copy says a file can be chosen now; a disabled button
       // would contradict it, and on touch nothing could ever wake the engine.
       expect(

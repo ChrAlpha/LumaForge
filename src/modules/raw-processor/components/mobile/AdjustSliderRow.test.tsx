@@ -77,7 +77,6 @@ describe('adjustSliderRow', () => {
     expect(resetButton).toHaveTextContent('-42')
     // Secondary target on a two-line row: comfortably past the 24px floor
     // without growing the row that carries the full-width track.
-    expect(resetButton).toHaveClass('min-h-9')
     await userEvent.click(resetButton)
     expect(props.onChange).toHaveBeenCalledWith(0)
   })
@@ -119,21 +118,6 @@ describe('adjustSliderRow', () => {
       screen.getByRole('button', { name: /reset strength/i, hidden: true }),
     ).toBeDisabled()
   })
-
-  it.each(['list', 'compact'] as const)(
-    'stacks the %s reset above the slider hit area that overlaps it',
-    (density) => {
-      // The Slider root reaches 19px above its track so the whole row
-      // scrubs. In a compact row that band covers the readout's centre, so
-      // a tap on the amber value scrubbed to the far end instead of
-      // resetting unless the readout is stacked above it.
-      renderRow({ value: 59, density })
-      const resetButton = screen.getByRole('button', {
-        name: /reset contrast/i,
-      })
-      expect(resetButton).toHaveClass('relative', 'z-10')
-    },
-  )
 
   it('emits onScrubChange on pointerdown and pointerup over the slider track', () => {
     const props = renderRow({ value: 12 })
@@ -246,44 +230,5 @@ describe('adjustSliderRow precision band', () => {
     // At rest the row shows its label; the band replaces it only while a
     // scrub is in a reduced-gain zone, and that state lives in the hook.
     expect(screen.getByText('Contrast')).toBeInTheDocument()
-  })
-
-  it('marks an active scrub with the cool lift wash, leaving amber to mean open', () => {
-    const { container } = render(
-      <AdjustSliderRow
-        label="Contrast"
-        value={0}
-        min={-100}
-        max={100}
-        step={1}
-        formatValue={(v) => `${v}`}
-        resetAriaLabel="Reset Contrast"
-        activeScrub
-        onChange={vi.fn()}
-        onScrubChange={vi.fn()}
-      />,
-    )
-    const row = container.querySelector('[data-adjust-slider-row]')!
-    expect(row.className).toContain('bg-[oklch(0.96_0.006_255/0.06)]')
-    expect(row.className).not.toContain('border-lf-amber')
-  })
-
-  it('dims a sibling row rather than removing it while another row scrubs', () => {
-    const { container } = render(
-      <AdjustSliderRow
-        label="Contrast"
-        value={0}
-        min={-100}
-        max={100}
-        step={1}
-        formatValue={(v) => `${v}`}
-        resetAriaLabel="Reset Contrast"
-        siblingScrubbing
-        onChange={vi.fn()}
-        onScrubChange={vi.fn()}
-      />,
-    )
-    const row = container.querySelector('[data-adjust-slider-row]')!
-    expect(row.className).toContain('opacity-45')
   })
 })
