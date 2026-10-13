@@ -1,3 +1,4 @@
+import { createProgram } from '@lumaforge/lmfg-cli'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
@@ -46,155 +47,96 @@ describe('tool table', () => {
       '--timeout',
       '5000',
     ])
-    expect(
-      findTool('lmfg_render_export')!.argv({
-        session: 'sess_1',
-        iteration: 'iter_0001',
-        candidate: 'cand_0002',
-        yes: true,
-      }),
-    ).toEqual([
-      'render',
-      'export',
-      '--iteration',
-      'iter_0001',
-      '--candidate',
-      'cand_0002',
-      '--session',
-      'sess_1',
-      '--yes',
-    ])
-    expect(
-      findTool('lmfg_metrics_rank')!.argv({
-        session: 's',
-        iteration: 'i',
-        objective: { 'luma.mean': { target: 0.45 } },
-      }),
-    ).toEqual([
-      'metrics',
-      'rank',
-      '--iteration',
-      'i',
-      '--objective',
-      '{"luma.mean":{"target":0.45}}',
-      '--session',
-      's',
-    ])
   })
 })
 
-describe('every tool builds argv', () => {
-  const minimal: Record<string, Record<string, unknown>> = {
-    lmfg_version: {},
-    lmfg_capabilities: {},
-    lmfg_schema_list: {},
-    lmfg_schema_show: { id: 'lmfg.params.v1' },
-    lmfg_session_init: { source: 'a.dng' },
-    lmfg_session_status: { session: 's' },
-    lmfg_session_list: {},
-    lmfg_inspect: { file: 'a.dng' },
-    lmfg_lut_inspect: { lut: 'a.cube' },
-    lmfg_lut_contract_infer: { lut: 'a.cube' },
-    lmfg_lut_contract_validate: {
-      lut: 'a.cube',
-      contract: { role: 'display-look' },
-    },
-    lmfg_lut_fetch: { url: 'https://x/y.cube', sha256: 'a'.repeat(64) },
-    lmfg_render_preview: { session: 's' },
-    lmfg_render_candidate: { session: 's', plan: { candidates: [] } },
-    lmfg_render_sweep: { session: 's', plan: { axes: {} } },
-    lmfg_render_export: { session: 's', params: { exposure_ev: 0 } },
-    lmfg_render_replay: { manifest: 'm.json', session: 's' },
-    lmfg_compare_sheet: { session: 's', iteration: 'i' },
-    lmfg_metrics_compute: { session: 's', iteration: 'i', candidate: 'c' },
-    lmfg_metrics_compare: { session: 's', iteration: 'i' },
-    lmfg_metrics_rank: { session: 's', iteration: 'i', objective: {} },
-    lmfg_manifest_verify: { manifest: 'm.json' },
-    lmfg_manifest_show: { manifest: 'm.json' },
+/** A value of the input's type; argv only formats it, so no refinement applies. */
+function sample(schema: z.ZodType): unknown {
+  const def = schema._zod.def
+  switch (def.type) {
+    case 'optional':
+      return sample((schema as z.ZodOptional).unwrap() as z.ZodType)
+    case 'string':
+      return 'x'
+    case 'number':
+      return 2
+    case 'boolean':
+      return true
+    case 'enum':
+      return (schema as z.ZodEnum).options[0]
+    case 'literal':
+      return (schema as z.ZodLiteral).value
+    case 'union':
+      return sample((schema as z.ZodUnion).options[0] as z.ZodType)
+    case 'record':
+      return { k: 1 }
+    default:
+      throw new Error(`No sample for a ${def.type} input.`)
   }
-  const expectedPrefix: Record<string, string[]> = {
-    lmfg_version: ['version'],
-    lmfg_capabilities: ['capabilities'],
-    lmfg_schema_list: ['schema', 'list'],
-    lmfg_schema_show: ['schema', 'show', 'lmfg.params.v1'],
-    lmfg_session_init: ['session', 'init', '--source', 'a.dng'],
-    lmfg_session_status: ['session', 'status', '--session', 's'],
-    lmfg_session_list: ['session', 'list'],
-    lmfg_inspect: ['inspect', 'a.dng'],
-    lmfg_lut_inspect: ['lut', 'inspect', 'a.cube'],
-    lmfg_lut_contract_infer: ['lut', 'contract', 'infer', '--lut', 'a.cube'],
-    lmfg_lut_contract_validate: [
-      'lut',
-      'contract',
-      'validate',
-      '--lut',
-      'a.cube',
-      '--contract-json',
-    ],
-    lmfg_lut_fetch: ['lut', 'fetch', '--url', 'https://x/y.cube', '--sha256'],
-    lmfg_render_preview: ['render', 'preview', '--session', 's'],
-    lmfg_render_candidate: ['render', 'candidate', '--plan-json'],
-    lmfg_render_sweep: ['render', 'sweep', '--plan-json'],
-    lmfg_render_export: ['render', 'export', '--params-json'],
-    lmfg_render_replay: [
-      'render',
-      'replay',
-      '--manifest',
-      'm.json',
-      '--session',
-      's',
-    ],
-    lmfg_compare_sheet: [
-      'compare',
-      'sheet',
-      '--iteration',
-      'i',
-      '--session',
-      's',
-    ],
-    lmfg_metrics_compute: [
-      'metrics',
-      'compute',
-      '--iteration',
-      'i',
-      '--candidate',
-      'c',
-      '--session',
-      's',
-    ],
-    lmfg_metrics_compare: [
-      'metrics',
-      'compare',
-      '--iteration',
-      'i',
-      '--session',
-      's',
-    ],
-    lmfg_metrics_rank: [
-      'metrics',
-      'rank',
-      '--iteration',
-      'i',
-      '--objective',
-      '{}',
-      '--session',
-      's',
-    ],
-    lmfg_manifest_verify: ['manifest', 'verify', 'm.json'],
-    lmfg_manifest_show: ['manifest', 'show', 'm.json'],
-  }
+}
 
-  it('covers every tool with validated minimal input', () => {
-    expect(Object.keys(minimal).sort()).toEqual(
-      TOOLS.map((tool) => tool.name).sort(),
+type Command = ReturnType<typeof createProgram>
+
+function leafCommands(command: Command, path: string[] = []): string[][] {
+  if (command.commands.length === 0) return [path]
+  return command.commands.flatMap((sub) =>
+    leafCommands(sub, [...path, sub.name()]),
+  )
+}
+
+describe('tools against the CLI program', () => {
+  const program = createProgram(
+    { stdout: () => {}, stderr: () => {}, cwd: '/' },
+    () => {},
+  )
+
+  it('maps the tools one-to-one onto the leaf CLI commands', () => {
+    expect(TOOLS.map((tool) => tool.name).sort()).toEqual(
+      leafCommands(program)
+        .map((path) => `lmfg_${path.join('_')}`)
+        .sort(),
     )
-    for (const tool of TOOLS) {
-      const parsed = z.object(tool.inputShape).parse(minimal[tool.name])
-      const argv = tool.argv(parsed)
-      const prefix = expectedPrefix[tool.name]
-      expect(argv.slice(0, prefix.length), tool.name).toEqual(prefix)
-    }
   })
+
+  it.each(TOOLS.map((tool) => [tool.name, tool] as const))(
+    '%s passes every input as a declared argument or option of its command',
+    (name, tool) => {
+      const input = Object.fromEntries(
+        Object.entries(tool.inputShape).map(([key, schema]) => [
+          key,
+          sample(schema as z.ZodType),
+        ]),
+      )
+      const argv = tool.argv(input)
+      let command = program
+      const path: string[] = []
+      for (
+        let sub = command.commands.find((c) => c.name() === argv[path.length]);
+        sub;
+        sub = command.commands.find((c) => c.name() === argv[path.length])
+      ) {
+        command = sub
+        path.push(sub.name())
+      }
+      expect(`lmfg_${path.join('_')}`).toBe(name)
+      const options = [...command.options, ...program.options]
+      const positionals: string[] = []
+      for (let i = path.length; i < argv.length; i += 1) {
+        const option = options.find((o) => o.long === argv[i])
+        if (!argv[i].startsWith('--')) positionals.push(argv[i])
+        else if (!option) expect.fail(`${argv[i]} is not an option of ${name}`)
+        else if (option.required || option.optional) i += 1
+      }
+      expect(positionals.length).toBeLessThanOrEqual(
+        command.registeredArguments.length,
+      )
+      for (const key of Object.keys(tool.inputShape)) {
+        const { [key]: _omitted, ...rest } = input
+        if ((tool.inputShape[key] as z.ZodType).safeParse(undefined).success)
+          expect(tool.argv(rest), `${name} ${key}`).not.toEqual(argv)
+      }
+    },
+  )
 })
 
 describe('runCliTool / toCallToolResult', () => {

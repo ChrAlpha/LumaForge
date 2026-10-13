@@ -26,6 +26,7 @@ import {
   seal,
   sessionRecord,
 } from '../test-support/workspace-records'
+import { TOOLS } from '../tools'
 
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const BIN = join(PACKAGE_DIR, 'bin', 'lmfg-mcp.mjs')
@@ -63,22 +64,14 @@ describeWithDist('lmfg-mcp over stdio', () => {
     await rm(cwd, { recursive: true, force: true })
   })
 
-  it('lists every CLI command as a tool with an input schema', async () => {
+  it('serves every CLI tool and both MCP-native tools with an input schema', async () => {
     const { tools } = await client.listTools()
-    const names = tools.map((tool) => tool.name).sort()
-    expect(names).toEqual(
-      expect.arrayContaining([
-        'lmfg_version',
-        'lmfg_capabilities',
-        'lmfg_session_init',
-        'lmfg_render_preview',
-        'lmfg_render_sweep',
-        'lmfg_render_export',
-        'lmfg_render_replay',
-        'lmfg_metrics_rank',
-        'lmfg_manifest_verify',
+    expect(tools.map((tool) => tool.name).sort()).toEqual(
+      [
+        ...TOOLS.map((tool) => tool.name),
         'lmfg_export_detail',
-      ]),
+        'lmfg_image_read',
+      ].sort(),
     )
     for (const tool of tools) {
       expect(tool.inputSchema.type).toBe('object')
